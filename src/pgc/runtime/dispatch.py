@@ -19,7 +19,8 @@ def init(arch: str = "cpu"):
     elif arch == "vulkan":
         raise NotImplementedError("Vulkan backend not yet implemented")
     elif arch == "hip":
-        raise NotImplementedError("HIP backend not yet implemented")
+        from pgc.runtime.hip_backend import HIPBackend
+        _current_backend = HIPBackend()
     else:
         raise ValueError(f"Unknown architecture: {arch}")
 
