@@ -28,8 +28,15 @@ class Func:
         self._funcdef = self._ast.body[0]
         if not isinstance(self._funcdef, ast.FunctionDef):
             raise TypeError(f"@pgc.func must decorate a function, got {type(self._funcdef)}")
-        # Store in global registry
-        _func_registry[self.name] = self
+        # Class methods (first param is 'self') are registered by
+        # @pgc.data_oriented, not globally — avoids name collisions
+        # when multiple classes define methods with the same name.
+        self._is_method = (
+            len(self._funcdef.args.args) > 0 and
+            self._funcdef.args.args[0].arg == 'self'
+        )
+        if not self._is_method:
+            _func_registry[self.name] = self
 
     def __call__(self, *args, **kwargs):
         raise RuntimeError(

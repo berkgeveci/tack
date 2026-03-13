@@ -102,6 +102,69 @@ _CTYPES_MAP = {
 }
 
 
+def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:
+    """Detect which arguments are @pgc.data_oriented template objects.
+
+    Returns dict: param_index -> (param_name, template_object)
+    """
+    funcdef = kernel._funcdef
+    params = [a.arg for a in funcdef.args.args]
+    templates = {}
+    for i, (param_name, arg) in enumerate(zip(params, args)):
+        if hasattr(arg, '_data_oriented') and arg._data_oriented:
+            templates[i] = (param_name, arg)
+    return templates
+
+
+def _expand_template_args(args, template_args) -> tuple:
+    """Replace template args with their field attributes.
+
+    Returns new args tuple with template objects removed and their
+    field attributes appended.  Fields are appended in reverse template
+    index order to match the AST rewrite pass (which processes templates
+    from highest index to lowest).
+    """
+    if not template_args:
+        return args
+
+    from pgc.lang.template_rewrite import classify_template_attrs
+
+    new_args = []
+    extra_fields = []
+    # Collect template fields in reverse index order (matching rewrite order)
+    for idx in sorted(template_args.keys(), reverse=True):
+        _, obj = template_args[idx]
+        _, fields = classify_template_attrs(obj)
+        for attr_name in sorted(fields.keys()):
+            extra_fields.append(fields[attr_name])
+    # Build non-template args in order
+    for i, arg in enumerate(args):
+        if i not in template_args:
+            new_args.append(arg)
+    new_args.extend(extra_fields)
+    return tuple(new_args)
+
+
+def _detect_vector_fields_from_args(kernel, args, template_args) -> dict[str, int] | None:
+    """Detect vector fields, accounting for template parameters.
+
+    When template args are present, we need to skip them when matching
+    parameter names to arguments.
+    """
+    if not template_args:
+        return _detect_vector_fields(kernel, args)
+
+    funcdef = kernel._funcdef
+    params = [a.arg for a in funcdef.args.args]
+    vector_fields = {}
+    for i, (param_name, arg) in enumerate(zip(params, args)):
+        if i in template_args:
+            continue
+        if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
+            vector_fields[param_name] = arg._vector_n
+    return vector_fields if vector_fields else None
+
+
 def _detect_vector_fields(kernel, args) -> dict[str, int] | None:
     """Detect which kernel parameters are vector fields.
 
@@ -299,7 +362,7 @@ class CPUBackend:
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the CPU.
 
-        1. Detect vector fields and get appropriate IR
+        1. Detect template and vector fields, get specialized IR
         2. Resolve dimension sizes from actual field shapes
         3. Run type inference from actual arguments
         4. JIT-compile (or use cached version)
@@ -309,31 +372,41 @@ class CPUBackend:
         if kwargs:
             raise NotImplementedError("Keyword arguments not supported in kernels")
 
-        # Detect vector fields from actual arguments
-        vector_fields = _detect_vector_fields(kernel, args)
+        # Detect template arguments and expand them
+        template_args = _detect_template_args(kernel, args)
+        effective_args = _expand_template_args(args, template_args)
 
-        # Get IR (re-transforms if vector fields present)
-        ir_module = kernel.get_ir(vector_fields)
+        # Detect vector fields from effective arguments
+        vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
+
+        # Get IR (re-transforms if vector/template fields present)
+        ir_module = kernel.get_ir(
+            vector_fields,
+            template_args=template_args if template_args else None,
+        )
         ir_func = ir_module.functions[0]
 
         # Resolve dimension sizes (multi-dim indexing) using actual field shapes
         name_to_field = {}
-        for param, arg in zip(ir_func.params, args):
+        for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Field):
                 name_to_field[param.name] = arg
         from pgc.lang.ir_resolve import resolve_ir
         resolve_ir(ir_func, name_to_field)
 
         # Type inference
-        infer_param_types(ir_func, args)
+        infer_param_types(ir_func, effective_args)
 
         # Optimization passes (LICM, CSE)
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
 
-        # Cache key: kernel name + argument type signature
+        # Cache key: kernel name + argument type signature + template info
         type_sig = tuple(p.type_annotation for p in ir_func.params)
-        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}"
+        tmpl_key = ""
+        if template_args:
+            tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
+        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tmpl_key}"
 
         if cache_key not in self._cache:
             self._cache[cache_key] = _compile_kernel(ir_func)
@@ -342,7 +415,7 @@ class CPUBackend:
 
         # Extract field arguments
         field_args = []
-        for arg in args:
+        for arg in effective_args:
             if isinstance(arg, Field):
                 field_args.append(arg)
             else:
@@ -352,7 +425,7 @@ class CPUBackend:
                 )
 
         # Determine loop range
-        loop_end = _get_loop_range(ir_func, args)
+        loop_end = _get_loop_range(ir_func, effective_args)
 
         # Parallel execution: split range across threads
         # ThreadPoolExecutor overhead is ~0.1ms per dispatch, so only

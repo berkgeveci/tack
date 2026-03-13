@@ -4,6 +4,7 @@ from pgc.lang.types import f32, f64, i32, i64, u32, u64, template
 from pgc.lang.kernel import kernel
 from pgc.lang.func import func
 from pgc.lang.field import field, Vector
+from pgc.lang.data_oriented import data_oriented
 from pgc.runtime.dispatch import init
 
 # ndrange for multi-dimensional parallel iteration

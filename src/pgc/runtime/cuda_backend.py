@@ -180,23 +180,35 @@ class CUDABackend:
         if kwargs:
             raise NotImplementedError("Keyword arguments not supported in kernels")
 
-        # Detect vector fields and get appropriate IR
-        from pgc.runtime.cpu import _detect_vector_fields
+        # Detect template arguments and expand them
+        from pgc.runtime.cpu import (
+            _detect_template_args, _expand_template_args,
+            _detect_vector_fields_from_args,
+        )
         from pgc.lang.field import Field
-        vector_fields = _detect_vector_fields(kernel, args)
-        ir_module = kernel.get_ir(vector_fields)
+        template_args = _detect_template_args(kernel, args)
+        effective_args = _expand_template_args(args, template_args)
+
+        # Detect vector fields
+        vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
+
+        # Get IR
+        ir_module = kernel.get_ir(
+            vector_fields,
+            template_args=template_args if template_args else None,
+        )
         ir_func = ir_module.functions[0]
 
         # Resolve dimension sizes
         name_to_field = {}
-        for param, arg in zip(ir_func.params, args):
+        for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Field):
                 name_to_field[param.name] = arg
         from pgc.lang.ir_resolve import resolve_ir
         resolve_ir(ir_func, name_to_field)
 
         # Type inference
-        infer_param_types(ir_func, args)
+        infer_param_types(ir_func, effective_args)
 
         # Optimization passes (LICM, CSE)
         from pgc.lang.ir_optimize import optimize_ir
@@ -204,7 +216,10 @@ class CUDABackend:
 
         # Cache key
         type_sig = tuple(p.type_annotation for p in ir_func.params)
-        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}"
+        tmpl_key = ""
+        if template_args:
+            tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
+        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tmpl_key}"
 
         if cache_key not in self._cache:
             self._cache[cache_key] = self._compile_kernel(ir_func)
@@ -213,7 +228,7 @@ class CUDABackend:
 
         # Get device pointers directly from fields (already on device)
         device_ptrs = []
-        for arg in args:
+        for arg in effective_args:
             if isinstance(arg, Field):
                 device_ptrs.append(arg._buffer.device_ptr)
             else:
@@ -222,7 +237,7 @@ class CUDABackend:
                 )
 
         # Determine loop range
-        loop_end = _get_loop_range(ir_func, args)
+        loop_end = _get_loop_range(ir_func, effective_args)
 
         # Dispatch — no copies, data is already on device
         compiled(device_ptrs, loop_end)
