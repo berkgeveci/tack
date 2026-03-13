@@ -8,6 +8,7 @@ The loop range is split across threads for parallel execution.
 """
 
 import ctypes
+import ctypes.util
 import os
 from concurrent.futures import ThreadPoolExecutor
 
@@ -19,6 +20,71 @@ from pgc.lang.field import Field, NumpyBuffer
 from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
 from pgc.lang.type_inference import infer_param_types
 from pgc.codegen.llvm_gen import generate_llvm_ir
+
+
+# ── NUMA interleave support ──────────────────────────────────────────
+# If libnuma is available, we wrap numpy allocations with MPOL_INTERLEAVE
+# so pages are spread across all NUMA nodes.  This avoids the pathological
+# case where all memory lands on one node and remote threads pay 2x latency.
+
+_numa_available = False
+_numa_node_mask = 0
+_numa_max_node = 0
+_libc = None
+_SYS_SET_MEMPOLICY = 238  # x86_64 syscall number
+_MPOL_DEFAULT = 0
+_MPOL_INTERLEAVE = 5
+
+
+def _init_numa():
+    global _numa_available, _numa_node_mask, _numa_max_node, _libc
+    try:
+        numa = ctypes.CDLL(ctypes.util.find_library("numa"))
+        if numa.numa_available() == -1:
+            return
+        max_node = numa.numa_max_node()
+        # Only include nodes that actually have memory
+        nodes_with_mem = 0
+        mask = 0
+        for n in range(max_node + 1):
+            try:
+                with open(f"/sys/devices/system/node/node{n}/meminfo") as f:
+                    for line in f:
+                        if "MemTotal" in line:
+                            kb = int(line.split()[-2])
+                            if kb > 0:
+                                mask |= (1 << n)
+                                nodes_with_mem += 1
+                            break
+            except (OSError, ValueError):
+                continue
+        if nodes_with_mem < 2:
+            return  # single memory node, interleave won't help
+        _numa_node_mask = mask
+        _numa_max_node = max_node
+        _libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        _numa_available = True
+    except (OSError, AttributeError):
+        pass
+
+_init_numa()
+
+
+class _NumaInterleave:
+    """Context manager: set MPOL_INTERLEAVE for allocations, restore on exit."""
+
+    def __enter__(self):
+        if not _numa_available:
+            return self
+        mask = (ctypes.c_ulong * 1)(_numa_node_mask)
+        _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_INTERLEAVE, mask,
+                      _numa_max_node + 2)
+        return self
+
+    def __exit__(self, *exc):
+        if not _numa_available:
+            return
+        _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
 
 # Initialize LLVM native target (required before JIT compilation)
 llvm.initialize_native_target()
@@ -184,14 +250,35 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
     return CompiledKernel(engine, func_ptr, param_types, ir_func.name)
 
 
+def _physical_core_count() -> int:
+    """Return the number of physical CPU cores (not hyperthreads)."""
+    try:
+        with open("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list") as f:
+            threads_per_core = len(f.read().strip().split(","))
+        total = os.cpu_count() or 1
+        return max(1, total // threads_per_core)
+    except (OSError, ValueError):
+        return os.cpu_count() or 1
+
+
 class CPUBackend:
     """CPU backend — JIT compiles kernels and runs them with thread parallelism."""
 
     def __init__(self, num_threads: int | None = None):
-        self.num_threads = num_threads or os.cpu_count() or 1
+        self.num_threads = num_threads or _physical_core_count()
         self._cache: dict[str, CompiledKernel] = {}
+        self._pool: ThreadPoolExecutor | None = None
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> NumpyBuffer:
+        if _numa_available:
+            # Use np.empty (no page faults) under interleave policy,
+            # so the first write spreads pages across NUMA nodes.
+            with _NumaInterleave():
+                buf = NumpyBuffer.__new__(NumpyBuffer)
+                buf._data = np.empty(shape, dtype=dtype.numpy_dtype)
+                # Force page faults under interleave policy by touching all pages
+                buf._data.fill(0)
+            return buf
         return NumpyBuffer(dtype.numpy_dtype, shape)
 
     def execute(self, kernel, args, kwargs):
@@ -244,6 +331,12 @@ class CPUBackend:
         else:
             self._parallel_execute(compiled, field_args, 0, loop_end)
 
+    def _get_pool(self) -> ThreadPoolExecutor:
+        """Return the persistent thread pool, creating it on first use."""
+        if self._pool is None:
+            self._pool = ThreadPoolExecutor(max_workers=self.num_threads)
+        return self._pool
+
     def _parallel_execute(self, compiled: CompiledKernel,
                           field_args: list[Field],
                           start: int, end: int):
@@ -251,15 +344,15 @@ class CPUBackend:
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
 
-        with ThreadPoolExecutor(max_workers=self.num_threads) as executor:
-            futures = []
-            for t in range(self.num_threads):
-                t_start = start + t * chunk
-                t_end = min(t_start + chunk, end)
-                if t_start >= end:
-                    break
-                futures.append(
-                    executor.submit(compiled, field_args, t_start, t_end)
-                )
-            for f in futures:
-                f.result()  # propagate exceptions
+        pool = self._get_pool()
+        futures = []
+        for t in range(self.num_threads):
+            t_start = start + t * chunk
+            t_end = min(t_start + chunk, end)
+            if t_start >= end:
+                break
+            futures.append(
+                pool.submit(compiled, field_args, t_start, t_end)
+            )
+        for f in futures:
+            f.result()  # propagate exceptions
