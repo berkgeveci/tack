@@ -130,30 +130,38 @@ Port these Taichi examples as validation:
 6. **Jacobi iteration** — stencil pattern, read/write fields
 7. **Matrix multiply** — 2D indexing, accumulation
 
-## Phase 2: CUDA Backend (Linux + NVIDIA GPU)
+## Phase 2: CUDA Backend (Linux + NVIDIA GPU)  ✅ DONE
 
-### Step 7: CUDA C codegen
-- New codegen: PGC IR → CUDA C source (`src/pgc/codegen/cuda_gen.py`)
+### Step 7: CUDA C codegen  ✅
+- `src/pgc/codegen/cuda_gen.py` — PGC IR → CUDA C source
 - Parallel for-loop → `blockIdx.x * blockDim.x + threadIdx.x` with bounds guard
-- Field parameters → typed device pointers (`float*`, `double*`, `int*`)
+- Field parameters → typed device pointers (`float* __restrict__`)
 - Sequential for-loops, while-loops, if/else → standard C control flow
 - Math builtins → CUDA device math functions (`sqrtf`, `sinf`, `expf`, etc.)
-- Emit `extern "C" __global__` function for NVRTC compilation
+- Emits `extern "C" __global__` function for NVRTC compilation
+- Local variable C type tracking for correct integer index codegen
 
-### Step 8: CUDA runtime backend
-- New runtime: `src/pgc/runtime/cuda_backend.py`
-- Uses `cuda-python` package (NVIDIA's official Python bindings)
+### Step 8: CUDA runtime backend  ✅
+- `src/pgc/runtime/cuda_backend.py`
+- Uses `cuda-python` 13.2 (`cuda.bindings.driver`, `cuda.bindings.nvrtc`)
 - NVRTC for runtime compilation of CUDA C → PTX
 - CUDA driver API for device management, memory allocation, kernel launch
-- Device buffer caching per field (similar to Metal's `_get_metal_buffer`)
-- Explicit host↔device copies (no unified memory assumption for portability)
 - Grid/block size calculation: `blockDim = 256`, `gridDim = ceil(n / 256)`
 
-### Step 9: Integration and testing
-- Wire CUDA backend into `dispatch.py` and `__init__.py` (`pgc.cuda` arch)
-- Port all 8 Metal tests to CUDA
-- Run validation suite (`validate_all.py`) on CPU + CUDA
-- Run microbenchmark suite and compare CPU JIT vs CUDA vs NumPy
+### Step 9: Integration and testing  ✅
+- `pgc.cuda` arch wired into `dispatch.py` and `__init__.py`
+- 9 CUDA tests (vector add, SAXPY, subtraction, conditional, negation,
+  multiple ops, sqrt, caching, 1M-element large array)
+- All 7 validation suite tests pass on CPU + CUDA
+- 64 MB benchmark: CUDA 16-45x faster than CPU JIT, 14-520x faster than NumPy
+
+### Device-resident fields  ✅
+- Refactored `Field` to hold a `DeviceBuffer` (backend-specific storage)
+- `NumpyBuffer` (CPU), `MetalBuffer` (zero-copy shared), `CUDABuffer` (device ptr)
+- `field.from_numpy()` = host→device, `field.to_numpy()` = device→host
+- No per-dispatch copies — data stays on GPU between kernel calls
+- On Metal: zero-copy via unified memory (unchanged behavior)
+- On CUDA: `cuMemAlloc` at field creation, explicit transfers only on from/to_numpy
 
 ### Setup on Linux box
 ```bash

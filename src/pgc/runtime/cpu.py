@@ -15,8 +15,8 @@ import numpy as np
 from llvmlite import binding as llvm
 
 from pgc.lang import ir
-from pgc.lang.field import Field
-from pgc.lang.types import f32, f64, i32, i64, u32, u64
+from pgc.lang.field import Field, NumpyBuffer
+from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
 from pgc.lang.type_inference import infer_param_types
 from pgc.codegen.llvm_gen import generate_llvm_ir
 
@@ -127,7 +127,7 @@ class CompiledKernel:
         ctypes_args = []
         for field, ptype in zip(field_args, self._param_types):
             ct = _CTYPES_MAP[ptype]
-            ptr = field.data.ctypes.data_as(ctypes.POINTER(ct))
+            ptr = field._buffer._data.ctypes.data_as(ctypes.POINTER(ct))
             ctypes_args.append(ptr)
         ctypes_args.extend([ctypes.c_int64(loop_start), ctypes.c_int64(loop_end)])
         self._cfunc(*ctypes_args)
@@ -190,6 +190,9 @@ class CPUBackend:
     def __init__(self, num_threads: int | None = None):
         self.num_threads = num_threads or os.cpu_count() or 1
         self._cache: dict[str, CompiledKernel] = {}
+
+    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> NumpyBuffer:
+        return NumpyBuffer(dtype.numpy_dtype, shape)
 
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the CPU.

@@ -15,13 +15,36 @@ import numpy as np
 import pgc
 
 
-def run_on_both(name, setup_fn, kernel_fn, verify_fn):
-    """Run a validation test on CPU and Metal, verify correctness on both."""
+def _available_backends():
+    """Detect which backends are available on this machine."""
+    backends = ["cpu"]
+    try:
+        import Metal
+        if Metal.MTLCreateSystemDefaultDevice() is not None:
+            backends.append("metal")
+    except ImportError:
+        pass
+    try:
+        from cuda.bindings import driver
+        driver.cuInit(0)
+        err, dev = driver.cuDeviceGet(0)
+        if err == driver.CUresult.CUDA_SUCCESS:
+            backends.append("cuda")
+    except (ImportError, Exception):
+        pass
+    return backends
+
+
+BACKENDS = _available_backends()
+
+
+def run_on_all(name, setup_fn, kernel_fn, verify_fn):
+    """Run a validation test on all available backends, verify correctness."""
     print(f"\n{'─' * 60}")
     print(f"  {name}")
     print(f"{'─' * 60}")
 
-    for backend in ["cpu", "metal"]:
+    for backend in BACKENDS:
         pgc.init(arch=backend)
         fields = setup_fn()
         t0 = time.perf_counter()
@@ -301,8 +324,7 @@ def run_jacobi(src, dst):
     for _ in range(JACOBI_STEPS):
         jacobi_step(src, dst)
         # Swap: copy dst → src for next iteration
-        # (both are fields backed by the same backend)
-        np.copyto(src._data, dst._data)
+        src.from_numpy(dst.to_numpy())
 
 
 # ─────────────────────────────────────────────────────────────
@@ -351,17 +373,17 @@ def main():
     print("PGC Validation Suite")
     print("=" * 60)
 
-    run_on_both("1. Vector Add", va_setup, vector_add, va_verify)
-    run_on_both("2. SAXPY", saxpy_setup, saxpy, saxpy_verify)
-    run_on_both("3. Reduction (partial sums)", reduce_setup, partial_sum, reduce_verify)
-    run_on_both("4. Mandelbrot (800×600)", mandelbrot_setup, mandelbrot, mandelbrot_verify)
-    run_on_both("5. N-body (512 bodies)", nbody_setup, nbody_forces, nbody_verify)
+    run_on_all("1. Vector Add", va_setup, vector_add, va_verify)
+    run_on_all("2. SAXPY", saxpy_setup, saxpy, saxpy_verify)
+    run_on_all("3. Reduction (partial sums)", reduce_setup, partial_sum, reduce_verify)
+    run_on_all("4. Mandelbrot (800×600)", mandelbrot_setup, mandelbrot, mandelbrot_verify)
+    run_on_all("5. N-body (512 bodies)", nbody_setup, nbody_forces, nbody_verify)
 
     # Jacobi needs special handling (multi-step iteration)
     print(f"\n{'─' * 60}")
     print(f"  6. Jacobi Iteration (1D, {JACOBI_STEPS} steps)")
     print(f"{'─' * 60}")
-    for backend in ["cpu", "metal"]:
+    for backend in BACKENDS:
         pgc.init(arch=backend)
         src, dst = jacobi_setup()
         t0 = time.perf_counter()
@@ -373,7 +395,7 @@ def main():
         if not ok:
             raise AssertionError(f"Jacobi failed on {backend}")
 
-    run_on_both("7. Matrix Multiply (64×64)", matmul_setup, matmul, matmul_verify)
+    run_on_all("7. Matrix Multiply (64×64)", matmul_setup, matmul, matmul_verify)
 
     print(f"\n{'=' * 60}")
     print("  All validations passed!")

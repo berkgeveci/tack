@@ -8,5 +8,6 @@ from pgc.runtime.dispatch import init
 # Backend selectors
 cpu = "cpu"
 metal = "metal"
+cuda = "cuda"
 vulkan = "vulkan"
 hip = "hip"

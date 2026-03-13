@@ -13,6 +13,9 @@ def init(arch: str = "cpu"):
     elif arch == "metal":
         from pgc.runtime.metal import MetalBackend
         _current_backend = MetalBackend()
+    elif arch == "cuda":
+        from pgc.runtime.cuda_backend import CUDABackend
+        _current_backend = CUDABackend()
     elif arch == "vulkan":
         raise NotImplementedError("Vulkan backend not yet implemented")
     elif arch == "hip":

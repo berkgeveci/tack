@@ -133,30 +133,45 @@ def make_fields(n, count):
     return fields
 
 
+def _available_backends():
+    """Detect which GPU backends are available."""
+    backends = [("CPU JIT", pgc.cpu)]
+    try:
+        import Metal
+        if Metal.MTLCreateSystemDefaultDevice() is not None:
+            backends.append(("Metal GPU", pgc.metal))
+    except ImportError:
+        pass
+    try:
+        from cuda.bindings import driver
+        driver.cuInit(0)
+        err, dev = driver.cuDeviceGet(0)
+        if err == driver.CUresult.CUDA_SUCCESS:
+            backends.append(("CUDA GPU", pgc.cuda))
+    except (ImportError, Exception):
+        pass
+    return backends
+
+
+BENCH_BACKENDS = _available_backends()
+
+
 def run_kernel_bench(name, kernel, nfields_fn, np_fn, np_nargs_fn, n):
-    """Benchmark one kernel at one size across CPU, Metal, and NumPy."""
+    """Benchmark one kernel at one size across all available backends + NumPy."""
     nfields = nfields_fn(n)
 
-    # --- CPU ---
-    pgc.init(arch=pgc.cpu)
-    fields_cpu = make_fields(n, nfields)
-    # Warmup includes JIT
-    kernel(*fields_cpu)
-    cpu_times = bench(lambda: kernel(*fields_cpu))
-
-    # --- Metal ---
-    pgc.init(arch=pgc.metal)
-    fields_metal = make_fields(n, nfields)
-    # Warmup includes SPIR-V → MSL → pipeline
-    kernel(*fields_metal)
-    metal_times = bench(lambda: kernel(*fields_metal))
+    for label, arch in BENCH_BACKENDS:
+        pgc.init(arch=arch)
+        fields = make_fields(n, nfields)
+        kernel(*fields)  # warmup (includes compilation)
+        times = bench(lambda: kernel(*fields))
+        print_row(label, n, times)
 
     # --- NumPy ---
-    np_args = [fields_cpu[j].to_numpy() for j in range(np_nargs_fn(n))]
+    pgc.init(arch=pgc.cpu)
+    ref_fields = make_fields(n, nfields)
+    np_args = [ref_fields[j].to_numpy() for j in range(np_nargs_fn(n))]
     np_times = bench(lambda: np_fn(*np_args))
-
-    print_row("CPU JIT", n, cpu_times)
-    print_row("Metal GPU", n, metal_times)
     print_row("NumPy", n, np_times)
 
 
@@ -169,38 +184,42 @@ def bench_compilation():
     n = 10_000
 
     for name, kernel_fn, nfields_fn, _, _ in KERNELS:
-        # We need fresh kernels to avoid cache hits, so re-define inline
-        # Instead, clear caches by re-init
         print(f"\n  Kernel: {name}")
 
-        # CPU
-        pgc.init(arch=pgc.cpu)
-        # Clear the kernel's compiled cache
-        kernel_fn._compiled = {}
-        fields = make_fields(n, nfields_fn(n))
-        t0 = time.perf_counter()
-        kernel_fn(*fields)
-        t1 = time.perf_counter()
-        print(f"    CPU JIT compile:   {(t1-t0)*1000:>8.1f} ms")
-
-        # Metal
-        pgc.init(arch=pgc.metal)
-        kernel_fn._compiled = {}
-        fields = make_fields(n, nfields_fn(n))
-        t0 = time.perf_counter()
-        kernel_fn(*fields)
-        t1 = time.perf_counter()
-        print(f"    Metal compile:     {(t1-t0)*1000:>8.1f} ms")
+        for label, arch in BENCH_BACKENDS:
+            pgc.init(arch=arch)
+            kernel_fn._compiled = {}
+            fields = make_fields(n, nfields_fn(n))
+            t0 = time.perf_counter()
+            kernel_fn(*fields)
+            t1 = time.perf_counter()
+            print(f"    {label + ' compile:':<22s} {(t1-t0)*1000:>8.1f} ms")
 
 
 def main():
     np.random.seed(42)
 
     # Print system info
-    import Metal as MetalFramework
-    device = MetalFramework.MTLCreateSystemDefaultDevice()
-    print(f"Metal device: {device.name()}")
-    print(f"CPU cores: {__import__('os').cpu_count()}")
+    import os
+    print(f"CPU cores: {os.cpu_count()}")
+    for label, arch in BENCH_BACKENDS:
+        if arch == pgc.metal:
+            try:
+                import Metal as MetalFramework
+                device = MetalFramework.MTLCreateSystemDefaultDevice()
+                print(f"Metal device: {device.name()}")
+            except ImportError:
+                pass
+        elif arch == pgc.cuda:
+            try:
+                from cuda.bindings import driver
+                driver.cuInit(0)
+                err, dev = driver.cuDeviceGet(0)
+                err, name_bytes = driver.cuDeviceGetName(256, dev)
+                name_str = name_bytes.split(b'\x00')[0].decode()
+                print(f"CUDA device: {name_str}")
+            except Exception:
+                pass
     print()
 
     # Compilation benchmarks

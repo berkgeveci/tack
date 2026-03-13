@@ -13,12 +13,11 @@ copies are needed.
 
 import subprocess
 import tempfile
-import weakref
 
 import numpy as np
 
 from pgc.lang import ir
-from pgc.lang.field import Field
+from pgc.lang.field import Field, DeviceBuffer
 from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
 from pgc.lang.type_inference import infer_param_types
 from pgc.codegen.spirv_gen import generate_spirv
@@ -27,6 +26,40 @@ try:
     import Metal  # pyobjc-framework-Metal
 except ImportError:
     Metal = None
+
+
+class MetalBuffer(DeviceBuffer):
+    """Metal shared buffer — zero-copy on Apple Silicon unified memory.
+
+    The numpy view points directly into Metal shared buffer memory, so
+    from_numpy/to_numpy are just memory copies within CPU-accessible space
+    (no DMA transfers).
+    """
+
+    def __init__(self, device, numpy_dtype, shape):
+        nbytes = int(np.prod(shape)) * np.dtype(numpy_dtype).itemsize
+        # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory)
+        self._metal_buffer = device.newBufferWithLength_options_(nbytes, 0)
+        raw = self._metal_buffer.contents().as_buffer(nbytes)
+        self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
+        self._view[:] = 0
+
+    @property
+    def metal_buffer(self):
+        return self._metal_buffer
+
+    def from_numpy(self, arr: np.ndarray):
+        np.copyto(self._view, arr)
+
+    def to_numpy(self) -> np.ndarray:
+        return self._view.copy()
+
+    def fill(self, value):
+        self._view.fill(value)
+
+    @property
+    def nbytes(self) -> int:
+        return self._view.nbytes
 
 
 def _spirv_to_msl(spirv_bytes: bytes) -> str:
@@ -119,9 +152,9 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
 class MetalBackend:
     """Metal GPU backend — zero-copy dispatch on Apple Silicon unified memory.
 
-    Fields are backed by Metal shared buffers.  The numpy array returned by
-    field.data is a view into the Metal buffer, so CPU reads/writes and GPU
-    compute operate on the same physical memory with no copies.
+    Fields are backed by Metal shared buffers allocated at field creation time.
+    from_numpy/to_numpy operate on the numpy view into shared memory — no
+    host↔device transfers needed.
     """
 
     def __init__(self):
@@ -138,49 +171,8 @@ class MetalBackend:
         self._command_queue = self._device.newCommandQueue()
         self._cache: dict[str, CompiledMetalKernel] = {}
 
-        # field id → MTLBuffer  (we also store a weakref to the field
-        # so we can detect when a field is garbage-collected)
-        self._field_buffers: dict[int, tuple] = {}  # id(field) → (MTLBuffer, weakref)
-
-    def _get_metal_buffer(self, field: Field):
-        """Get or create a Metal shared buffer backing this field.
-
-        On first call for a given field, allocates a Metal shared buffer,
-        copies the current numpy data in, then replaces field._data with a
-        numpy view of the Metal buffer memory.  Subsequent calls return the
-        cached buffer immediately.
-        """
-        fid = id(field)
-
-        if fid in self._field_buffers:
-            buf, ref = self._field_buffers[fid]
-            # Check weakref is still alive (field not GC'd and id reused)
-            if ref() is field:
-                return buf
-            # Stale entry — field was GC'd and id was reused
-            del self._field_buffers[fid]
-
-        nbytes = field.data.nbytes
-
-        # Allocate Metal shared buffer with current field data
-        # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory)
-        buf = self._device.newBufferWithBytes_length_options_(
-            field.data.tobytes(), nbytes, 0
-        )
-
-        # Create a numpy view pointing directly at the Metal buffer memory
-        raw = buf.contents().as_buffer(nbytes)
-        view = np.frombuffer(raw, dtype=field.data.dtype).reshape(field.data.shape)
-
-        # Replace the field's backing array with the Metal-backed view.
-        # Now field.data, field.to_numpy(), field.from_numpy() all operate
-        # directly on Metal shared memory — zero copy.
-        field._data = view
-
-        # Cache with a weak reference so we can detect field GC
-        self._field_buffers[fid] = (buf, weakref.ref(field))
-
-        return buf
+    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> MetalBuffer:
+        return MetalBuffer(self._device, dtype.numpy_dtype, shape)
 
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the Metal GPU with zero-copy dispatch."""
@@ -204,15 +196,14 @@ class MetalBackend:
 
         compiled = self._cache[cache_key]
 
-        # Get Metal buffers for each field (zero-copy after first call)
+        # Get Metal buffers directly from fields (already allocated)
         metal_buffers = []
         for arg in args:
             if isinstance(arg, Field):
-                metal_buffers.append(self._get_metal_buffer(arg))
+                metal_buffers.append(arg._buffer.metal_buffer)
             else:
                 raise NotImplementedError(
-                    "Scalar kernel arguments not yet supported in Metal mode. "
-                    "Use constants in the kernel body instead."
+                    "Scalar kernel arguments not yet supported in Metal mode."
                 )
 
         # Determine loop range

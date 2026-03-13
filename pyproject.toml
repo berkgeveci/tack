@@ -5,6 +5,7 @@ description = "Portable GPU Compute — Python-first GPU compute framework"
 readme = "README.md"
 requires-python = ">=3.11,<3.14"
 dependencies = [
+    "cuda-python>=13.2.0",
     "llvmlite",
     "numpy",
 ]
