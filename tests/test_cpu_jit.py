@@ -1,0 +1,260 @@
+"""Tests for the CPU JIT backend — validates end-to-end compilation and execution."""
+
+import numpy as np
+import pytest
+import pgc
+
+
+@pytest.fixture(autouse=True)
+def init_cpu():
+    pgc.init(arch=pgc.cpu)
+
+
+def test_vector_add():
+    n = 1024
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    y = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np_x = np.arange(n, dtype=np.float32)
+    np_y = np.ones(n, dtype=np.float32) * 2.0
+    x.from_numpy(np_x)
+    y.from_numpy(np_y)
+
+    @pgc.kernel
+    def vector_add(x, y, out):
+        for i in range(x.shape[0]):
+            out[i] = x[i] + y[i]
+
+    vector_add(x, y, out)
+
+    result = out.to_numpy()
+    expected = np_x + np_y
+    np.testing.assert_allclose(result, expected)
+
+
+def test_saxpy():
+    n = 512
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    y = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np_x = np.arange(n, dtype=np.float32)
+    np_y = np.ones(n, dtype=np.float32) * 3.0
+    x.from_numpy(np_x)
+    y.from_numpy(np_y)
+
+    @pgc.kernel
+    def saxpy(x, y, out):
+        for i in range(x.shape[0]):
+            out[i] = 2.0 * x[i] + y[i]
+
+    saxpy(x, y, out)
+
+    result = out.to_numpy()
+    expected = 2.0 * np_x + np_y
+    np.testing.assert_allclose(result, expected)
+
+
+def test_negation():
+    n = 256
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np_x = np.arange(n, dtype=np.float32) - 128.0
+    x.from_numpy(np_x)
+
+    @pgc.kernel
+    def negate(x, out):
+        for i in range(x.shape[0]):
+            out[i] = -x[i]
+
+    negate(x, out)
+    np.testing.assert_allclose(out.to_numpy(), -np_x)
+
+
+def test_constant_range():
+    """Test kernel with a constant loop range (not derived from field shape)."""
+    n = 100
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    @pgc.kernel
+    def fill(out):
+        for i in range(100):
+            out[i] = 42.0
+
+    fill(out)
+    np.testing.assert_allclose(out.to_numpy(), 42.0)
+
+
+def test_conditional():
+    n = 256
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np_x = np.arange(n, dtype=np.float32) - 128.0
+    x.from_numpy(np_x)
+
+    @pgc.kernel
+    def clamp_positive(x, out):
+        for i in range(x.shape[0]):
+            if x[i] > 0.0:
+                out[i] = x[i]
+            else:
+                out[i] = 0.0
+
+    clamp_positive(x, out)
+    expected = np.maximum(np_x, 0.0)
+    np.testing.assert_allclose(out.to_numpy(), expected)
+
+
+def test_nested_loops():
+    """Test matrix-like operation with nested loops."""
+    n = 16
+    a = pgc.field(dtype=pgc.f32, shape=(n * n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n * n,))
+
+    np_a = np.arange(n * n, dtype=np.float32)
+    a.from_numpy(np_a)
+
+    @pgc.kernel
+    def scale_2d(a, out):
+        for i in range(16):
+            for j in range(16):
+                out[i * 16 + j] = a[i * 16 + j] * 2.0
+
+    scale_2d(a, out)
+    np.testing.assert_allclose(out.to_numpy(), np_a * 2.0)
+
+
+def test_while_loop():
+    n = 10
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    @pgc.kernel
+    def count_up(out):
+        for i in range(10):
+            val = 0.0
+            j = 0
+            while j < 5:
+                val = val + 1.0
+                j = j + 1
+            out[i] = val
+
+    count_up(out)
+    np.testing.assert_allclose(out.to_numpy(), 5.0)
+
+
+def test_math_sqrt():
+    n = 256
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np_x = np.arange(1, n + 1, dtype=np.float32)
+    x.from_numpy(np_x)
+
+    @pgc.kernel
+    def apply_sqrt(x, out):
+        for i in range(x.shape[0]):
+            out[i] = sqrt(x[i])
+
+    apply_sqrt(x, out)
+    expected = np.sqrt(np_x)
+    np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-5)
+
+
+def test_min_max():
+    n = 256
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    y = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np_x = np.random.randn(n).astype(np.float32)
+    np_y = np.random.randn(n).astype(np.float32)
+    x.from_numpy(np_x)
+    y.from_numpy(np_y)
+
+    @pgc.kernel
+    def element_min(x, y, out):
+        for i in range(x.shape[0]):
+            out[i] = min(x[i], y[i])
+
+    element_min(x, y, out)
+    np.testing.assert_allclose(out.to_numpy(), np.minimum(np_x, np_y))
+
+
+def test_abs():
+    n = 256
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np_x = np.random.randn(n).astype(np.float32)
+    x.from_numpy(np_x)
+
+    @pgc.kernel
+    def apply_abs(x, out):
+        for i in range(x.shape[0]):
+            out[i] = abs(x[i])
+
+    apply_abs(x, out)
+    np.testing.assert_allclose(out.to_numpy(), np.abs(np_x))
+
+
+def test_augmented_assignment():
+    n = 100
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    x.from_numpy(np.ones(n, dtype=np.float32))
+    out.from_numpy(np.arange(n, dtype=np.float32))
+
+    @pgc.kernel
+    def add_in_place(x, out):
+        for i in range(x.shape[0]):
+            out[i] += x[i]
+
+    add_in_place(x, out)
+    expected = np.arange(n, dtype=np.float32) + 1.0
+    np.testing.assert_allclose(out.to_numpy(), expected)
+
+
+def test_large_parallel():
+    """Test with enough elements to trigger multi-threaded execution."""
+    n = 100_000
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    y = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np_x = np.random.randn(n).astype(np.float32)
+    np_y = np.random.randn(n).astype(np.float32)
+    x.from_numpy(np_x)
+    y.from_numpy(np_y)
+
+    @pgc.kernel
+    def vector_add(x, y, out):
+        for i in range(x.shape[0]):
+            out[i] = x[i] + y[i]
+
+    vector_add(x, y, out)
+    np.testing.assert_allclose(out.to_numpy(), np_x + np_y)
+
+
+def test_cached_compilation():
+    """Calling the same kernel twice should use the cache."""
+    n = 64
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+    x.from_numpy(np.ones(n, dtype=np.float32))
+
+    @pgc.kernel
+    def double(x, out):
+        for i in range(x.shape[0]):
+            out[i] = x[i] * 2.0
+
+    double(x, out)
+    np.testing.assert_allclose(out.to_numpy(), 2.0)
+
+    # Call again — should hit cache
+    x.from_numpy(np.ones(n, dtype=np.float32) * 3.0)
+    double(x, out)
+    np.testing.assert_allclose(out.to_numpy(), 6.0)

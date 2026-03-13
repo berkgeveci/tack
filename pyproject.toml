@@ -1,0 +1,26 @@
+[project]
+name = "pgc"
+version = "0.1.0"
+description = "Portable GPU Compute — Python-first GPU compute framework"
+readme = "README.md"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "llvmlite",
+    "numpy",
+]
+
+[project.optional-dependencies]
+metal = [
+    "pyobjc-framework-Metal",
+    "pyobjc-framework-MetalKit",
+]
+dev = [
+    "pytest",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/pgc"]
