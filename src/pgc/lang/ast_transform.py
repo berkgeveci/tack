@@ -500,6 +500,9 @@ class KernelTransformer(ast.NodeVisitor):
 
     def visit_Expr(self, node: ast.Expr) -> ir.IRNode:
         """Expression statement (e.g., standalone function call)."""
+        # Skip docstrings and other standalone string constants
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            return None
         return self.visit(node.value)
 
     # --- @pgc.func inlining ---

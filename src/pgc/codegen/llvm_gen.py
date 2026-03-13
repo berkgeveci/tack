@@ -111,6 +111,7 @@ class LLVMCodeGen:
         entry = llvm_func.append_basic_block("entry")
         self.builder = llvm_ir.IRBuilder(entry)
         self._func = llvm_func
+        self._entry_block = entry
 
         self._emit_body(func.body)
 
@@ -374,10 +375,24 @@ class LLVMCodeGen:
         value = self._coerce_to(value, elem_type)
         self.builder.store(value, elem_ptr, align=4)
 
+    def _create_entry_alloca(self, typ, name):
+        """Create an alloca in the function entry block (ensures domination)."""
+        cur_block = self.builder.block
+        # Position at the start of the entry block
+        if self._entry_block.instructions:
+            self.builder.position_before(self._entry_block.instructions[0])
+        else:
+            self.builder.position_at_end(self._entry_block)
+        alloca = self.builder.alloca(typ, name=name)
+        # Restore builder position
+        self.builder.position_at_end(cur_block)
+        return alloca
+
     def _emit_assign(self, node: ir.IRAssign):
         """Emit local variable assignment.
 
         Uses alloca for local variables so they can be reassigned.
+        Allocas are placed in the entry block to ensure LLVM domination.
         """
         value = self._emit_expr(node.value)
 
@@ -389,11 +404,11 @@ class LLVMCodeGen:
                 self.builder.store(value, existing)
                 return
             # If it's a phi or direct value, replace with alloca
-            alloca = self.builder.alloca(value.type, name=node.target)
+            alloca = self._create_entry_alloca(value.type, node.target)
             self.builder.store(value, alloca)
             self._locals[node.target] = alloca
         else:
-            alloca = self.builder.alloca(value.type, name=node.target)
+            alloca = self._create_entry_alloca(value.type, node.target)
             self.builder.store(value, alloca)
             self._locals[node.target] = alloca
 

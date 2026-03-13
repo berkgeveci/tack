@@ -327,6 +327,10 @@ class CPUBackend:
         # Type inference
         infer_param_types(ir_func, args)
 
+        # Optimization passes (LICM, CSE)
+        from pgc.lang.ir_optimize import optimize_ir
+        optimize_ir(ir_func)
+
         # Cache key: kernel name + argument type signature
         type_sig = tuple(p.type_annotation for p in ir_func.params)
         cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}"

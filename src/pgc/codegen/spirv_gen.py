@@ -370,9 +370,13 @@ class SPIRVCodeGen:
         self._body += _make_instruction(OpCompositeExtract, u32_type, gid_x, gid_load, 0)
         self._id_types[gid_x] = "u32"
 
-        # Store as the parallel for variable
+        # Emit any statements before the parallel for (e.g., pre-loop setup)
         parallel_for = self._find_parallel_for()
         if parallel_for:
+            for stmt in self.ir_func.body:
+                if stmt is parallel_for:
+                    break
+                self._emit_stmt(stmt)
             self._vars[parallel_for.var] = gid_x
             # Emit the body of the parallel for (the loop itself is the dispatch)
             self._emit_body(parallel_for.body)
@@ -938,13 +942,15 @@ class SPIRVCodeGen:
         # Then
         self._body += _make_instruction(OpLabel, then_label)
         self._emit_body(node.then_body)
-        self._body += _make_instruction(OpBranch, merge_label)
+        if not self._last_is_terminator():
+            self._body += _make_instruction(OpBranch, merge_label)
 
         # Else
         if else_label:
             self._body += _make_instruction(OpLabel, else_label)
             self._emit_body(node.else_body)
-            self._body += _make_instruction(OpBranch, merge_label)
+            if not self._last_is_terminator():
+                self._body += _make_instruction(OpBranch, merge_label)
 
         self._body += _make_instruction(OpLabel, merge_label)
 
@@ -1014,7 +1020,8 @@ class SPIRVCodeGen:
         self._break_label = old_break
         self._continue_label = old_continue
 
-        self._body += _make_instruction(OpBranch, continue_label)
+        if not self._last_is_terminator():
+            self._body += _make_instruction(OpBranch, continue_label)
 
         # Continue block: increment and branch back to header
         self._body += _make_instruction(OpLabel, continue_label)

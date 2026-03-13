@@ -11,7 +11,7 @@ def _get_ir(kernel_fn, *field_shapes):
     fields = []
     for shape in field_shapes:
         fields.append(pgc.field(dtype=pgc.f32, shape=shape))
-    ir_func = kernel_fn._ir.functions[0]
+    ir_func = kernel_fn.get_ir().functions[0]
     infer_param_types(ir_func, tuple(fields))
     return ir_func
 

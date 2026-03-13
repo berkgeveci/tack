@@ -17,14 +17,16 @@ class Kernel:
         self._source = textwrap.dedent(inspect.getsource(func))
         self._ast = ast.parse(self._source)
         self._funcdef = self._ast.body[0]  # The FunctionDef node
-        # Eagerly transform with no vector field info (covers the common case)
-        self._ir = transform_kernel(self._ast)
+        # Lazy IR: defer transform until first dispatch (vector fields may be needed)
+        self._ir = None
         self._ir_cache = {}  # vector_fields key → IRModule
         self._compiled = {}  # backend -> compiled kernel
 
     def get_ir(self, vector_fields=None):
         """Get IR, re-transforming if vector field metadata is provided."""
         if not vector_fields:
+            if self._ir is None:
+                self._ir = transform_kernel(self._ast)
             return self._ir
         key = tuple(sorted(vector_fields.items()))
         if key not in self._ir_cache:
