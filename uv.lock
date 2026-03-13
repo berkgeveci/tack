@@ -151,12 +151,14 @@ name = "pgc"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "cuda-python" },
     { name = "llvmlite" },
     { name = "numpy" },
 ]
 
 [package.optional-dependencies]
+cuda = [
+    { name = "cuda-python" },
+]
 dev = [
     { name = "pytest" },
 ]
@@ -167,14 +169,14 @@ metal = [
 
 [package.metadata]
 requires-dist = [
-    { name = "cuda-python", specifier = ">=13.2.0" },
+    { name = "cuda-python", marker = "extra == 'cuda'", specifier = ">=13.2.0" },
     { name = "llvmlite" },
     { name = "numpy" },
     { name = "pyobjc-framework-metal", marker = "extra == 'metal'" },
     { name = "pyobjc-framework-metalkit", marker = "extra == 'metal'" },
     { name = "pytest", marker = "extra == 'dev'" },
 ]
-provides-extras = ["metal", "dev"]
+provides-extras = ["cuda", "metal", "dev"]
 
 [[package]]
 name = "pluggy"

@@ -92,3 +92,42 @@ def field(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
     backend = get_backend()
     buf = backend.allocate_field(dtype, shape)
     return Field(dtype, shape, buf)
+
+
+class Vector:
+    """Vector type for creating vector fields.
+
+    Usage:
+        # Create a vector field (3-component vectors, n elements)
+        v = pgc.Vector.field(3, dtype=pgc.f32, shape=(n,))
+
+        # In kernels, vectors are scalarized:
+        # v[i] loads 3 components from v[i*3], v[i*3+1], v[i*3+2]
+    """
+
+    @staticmethod
+    def field(n: int, dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
+        """Create a vector field with n components per element.
+
+        The underlying storage is a flat scalar field of size
+        prod(shape) * n elements.  In kernels, field[i] accesses
+        components at i*n, i*n+1, ..., i*n+(n-1).
+        """
+        from pgc.runtime.dispatch import get_backend
+
+        if isinstance(shape, int):
+            shape = (shape,)
+
+        # Flatten: total elements = prod(shape) * n
+        total = 1
+        for s in shape:
+            total *= s
+        flat_shape = (total * n,)
+
+        backend = get_backend()
+        buf = backend.allocate_field(dtype, flat_shape)
+        f = Field(dtype, flat_shape, buf)
+        # Mark as vector field so kernel dispatch can handle it
+        f._vector_n = n
+        f._logical_shape = shape
+        return f

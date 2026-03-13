@@ -11,7 +11,7 @@ A Python-first portable GPU compute framework inspired by VTK-m/Viskores worklet
 | Apple Metal | Metal Compute | Phase 1 (dev machine) |
 | CPU (threads) | llvmlite native JIT | Phase 1 |
 | AMD ROCm/HIP | HIP runtime | Phase 2 (Frontier) |
-| Intel GPUs | Level Zero | Phase 3 (Aurora) |
+| Intel GPUs | Level Zero (direct SPIR-V) | Phase 3 (Aurora) |
 | NVIDIA CUDA | CUDA driver API (NVRTC) | Phase 2 |
 | Vulkan | Vulkan Compute | Opportunistic (workstations) |
 
@@ -176,6 +176,60 @@ uv add cuda-python numpy pytest
 uv add llvmlite
 ```
 
+## Phase 3: Intel GPU / Level Zero (Aurora)
+
+### Step 10: SPIR-V execution model for Level Zero
+- Level Zero consumes SPIR-V directly — no translation step (unlike Metal's spirv-cross)
+- Current SPIR-V uses `GLCompute` execution model (Vulkan/Metal convention)
+- Level Zero expects `Kernel` execution model (OpenCL-style SPIR-V)
+- Changes in `spirv_gen.py`:
+  - Switch `ExecutionModel.GLCompute` → `ExecutionModel.Kernel`
+  - Remove `OpExecutionMode LocalSize` (Level Zero sets workgroup size at dispatch)
+  - Use `CrossWorkgroup` storage class for buffer pointers (instead of `StorageBuffer`)
+  - May need OpenCL-style `OpEntryPoint` interface list rules
+- Should be a small diff — the bulk of SPIR-V codegen (control flow, arithmetic,
+  type tracking) stays the same
+
+### Step 11: Level Zero runtime backend
+- New runtime: `src/pgc/runtime/level_zero.py`
+- Python bindings via ctypes against `libze_loader.so` (no pip package available)
+- Key API sequence:
+  ```
+  zeInit → zeDriverGet → zeDeviceGet → zeContextCreate
+  zeModuleCreate(spirv_bytes)   # direct SPIR-V ingestion
+  zeKernelCreate(module, name)
+  zeMemAllocDevice / zeMemAllocShared  # device memory
+  zeKernelSetArgumentValue     # bind buffers
+  zeKernelSetGroupSize
+  zeCommandListAppendLaunchKernel
+  zeCommandListClose → zeCommandQueueExecuteCommandLists
+  zeCommandQueueSynchronize
+  ```
+- Device buffer strategy: `zeMemAllocDevice` for explicit transfers (like CUDA),
+  or `zeMemAllocShared` for unified shared memory (Aurora Ponte Vecchio supports USM)
+- `DeviceBuffer` subclass: `LevelZeroBuffer`
+
+### Step 12: Integration and testing
+- Wire `pgc.level_zero` arch into `dispatch.py` and `__init__.py`
+- Port test suite and validation examples
+- Benchmark against CPU backend on Aurora compute nodes
+
+### Setup on Aurora
+```bash
+# Load Intel GPU software stack
+module load oneapi   # or specific level-zero module
+
+# Verify
+ls /usr/lib64/libze_loader.so*   # or find via module paths
+sycl-ls                          # should list Intel GPU devices
+
+# Level Zero has no pip package — accessed via ctypes
+# Only need core Python deps
+uv add numpy pytest
+# llvmlite for CPU backend (optional)
+uv add llvmlite
+```
+
 ## Dependencies
 
 ```
@@ -193,6 +247,10 @@ spirv-tools       # SPIR-V validation/optimization (pip or brew)
 
 # CUDA backend
 cuda-python           # NVIDIA CUDA driver API + NVRTC bindings
+
+# Level Zero backend (Intel GPUs / Aurora)
+# No pip package — ctypes bindings against libze_loader.so
+# Requires oneAPI / Level Zero runtime on the system
 
 # Development
 pytest
