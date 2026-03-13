@@ -12,7 +12,7 @@ A Python-first portable GPU compute framework inspired by VTK-m/Viskores worklet
 | CPU (threads) | llvmlite native JIT | Phase 1 |
 | AMD ROCm/HIP | HIP runtime | Phase 2 (Frontier) |
 | Intel GPUs | Level Zero | Phase 3 (Aurora) |
-| NVIDIA CUDA | Vulkan or CUDA driver API | Phase 4 |
+| NVIDIA CUDA | CUDA driver API (NVRTC) | Phase 2 |
 | Vulkan | Vulkan Compute | Opportunistic (workstations) |
 
 ## Compilation Pipeline
@@ -20,18 +20,23 @@ A Python-first portable GPU compute framework inspired by VTK-m/Viskores worklet
 ```
 Python @kernel function
     ↓
-AST transformation (lift from Taichi)
+AST transformation
     ↓
-LLVM IR generation (llvmlite)
+PGC IR (intermediate representation)
     ↓
-  ┌──────────┬──────────────┐
+  ┌──────────┬──────────────┬──────────────┐
+  ↓          ↓              ↓              ↓
+LLVM IR    SPIR-V        CUDA C         (future)
+(llvmlite) (binary)      source         HIP/Level Zero
   ↓          ↓              ↓
-CPU JIT   SPIR-V         SPIR-V
-(native)  (via translator) (via translator)
-  ↓          ↓              ↓
-threads   Metal/Vulkan   HIP/Level Zero
-          (MoltenVK or    (native runtime)
-           Metal direct)
+CPU JIT   spirv-cross    NVRTC
+(native)     ↓           (runtime compile)
+  ↓        MSL source       ↓
+threads      ↓           PTX
+           Metal API        ↓
+             ↓           CUDA driver API
+           GPU dispatch     ↓
+                         GPU dispatch
 ```
 
 ## API Design (Taichi-style)
@@ -125,6 +130,44 @@ Port these Taichi examples as validation:
 6. **Jacobi iteration** — stencil pattern, read/write fields
 7. **Matrix multiply** — 2D indexing, accumulation
 
+## Phase 2: CUDA Backend (Linux + NVIDIA GPU)
+
+### Step 7: CUDA C codegen
+- New codegen: PGC IR → CUDA C source (`src/pgc/codegen/cuda_gen.py`)
+- Parallel for-loop → `blockIdx.x * blockDim.x + threadIdx.x` with bounds guard
+- Field parameters → typed device pointers (`float*`, `double*`, `int*`)
+- Sequential for-loops, while-loops, if/else → standard C control flow
+- Math builtins → CUDA device math functions (`sqrtf`, `sinf`, `expf`, etc.)
+- Emit `extern "C" __global__` function for NVRTC compilation
+
+### Step 8: CUDA runtime backend
+- New runtime: `src/pgc/runtime/cuda_backend.py`
+- Uses `cuda-python` package (NVIDIA's official Python bindings)
+- NVRTC for runtime compilation of CUDA C → PTX
+- CUDA driver API for device management, memory allocation, kernel launch
+- Device buffer caching per field (similar to Metal's `_get_metal_buffer`)
+- Explicit host↔device copies (no unified memory assumption for portability)
+- Grid/block size calculation: `blockDim = 256`, `gridDim = ceil(n / 256)`
+
+### Step 9: Integration and testing
+- Wire CUDA backend into `dispatch.py` and `__init__.py` (`pgc.cuda` arch)
+- Port all 8 Metal tests to CUDA
+- Run validation suite (`validate_all.py`) on CPU + CUDA
+- Run microbenchmark suite and compare CPU JIT vs CUDA vs NumPy
+
+### Setup on Linux box
+```bash
+# Prerequisites: NVIDIA driver + CUDA toolkit installed
+# Verify: nvidia-smi && nvcc --version
+
+# Install cuda-python
+uv add cuda-python numpy pytest
+
+# No need for llvmlite on CUDA-only box (CUDA C codegen is independent)
+# But if running CPU backend too, add llvmlite
+uv add llvmlite
+```
+
 ## Dependencies
 
 ```
@@ -139,6 +182,9 @@ pyobjc-framework-MetalKit     # Metal utilities
 # SPIR-V toolchain
 spirv-tools       # SPIR-V validation/optimization (pip or brew)
 # SPIRV-Cross installed via brew for SPIR-V → MSL
+
+# CUDA backend
+cuda-python           # NVIDIA CUDA driver API + NVRTC bindings
 
 # Development
 pytest
@@ -212,12 +258,14 @@ pgc/                        # package name TBD
 │       │   └── field.py           # Field abstraction
 │       ├── codegen/
 │       │   ├── llvm_gen.py        # IR → LLVM IR (llvmlite)
-│       │   └── spirv_gen.py       # LLVM IR → SPIR-V
+│       │   ├── spirv_gen.py       # IR → SPIR-V binary
+│       │   └── cuda_gen.py        # IR → CUDA C source
 │       ├── runtime/
 │       │   ├── cpu.py             # CPU JIT backend
 │       │   ├── metal.py           # Metal compute backend
-│       │   ├── vulkan.py          # Vulkan compute backend
-│       │   └── hip.py             # ROCm/HIP backend
+│       │   ├── cuda_backend.py    # CUDA compute backend
+│       │   ├── vulkan.py          # Vulkan compute backend (future)
+│       │   └── hip.py             # ROCm/HIP backend (future)
 │       └── data/
 │           ├── array_handle.py    # VTK-m ArrayHandle concept
 │           └── cell_set.py        # VTK-m CellSet concept
