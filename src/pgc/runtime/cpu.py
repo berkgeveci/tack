@@ -102,6 +102,21 @@ _CTYPES_MAP = {
 }
 
 
+def _detect_vector_fields(kernel, args) -> dict[str, int] | None:
+    """Detect which kernel parameters are vector fields.
+
+    Returns a dict mapping parameter names to component counts,
+    or None if no vector fields are present.
+    """
+    funcdef = kernel._funcdef
+    params = [a.arg for a in funcdef.args.args]
+    vector_fields = {}
+    for param_name, arg in zip(params, args):
+        if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
+            vector_fields[param_name] = arg._vector_n
+    return vector_fields if vector_fields else None
+
+
 def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     """Extract the parallel for-loop range from the IR and actual arguments.
 
@@ -284,16 +299,30 @@ class CPUBackend:
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the CPU.
 
-        1. Run type inference from actual arguments
-        2. JIT-compile (or use cached version)
-        3. Determine loop range
-        4. Split range across threads and execute
+        1. Detect vector fields and get appropriate IR
+        2. Resolve dimension sizes from actual field shapes
+        3. Run type inference from actual arguments
+        4. JIT-compile (or use cached version)
+        5. Determine loop range
+        6. Split range across threads and execute
         """
         if kwargs:
             raise NotImplementedError("Keyword arguments not supported in kernels")
 
-        ir_module = kernel._ir
+        # Detect vector fields from actual arguments
+        vector_fields = _detect_vector_fields(kernel, args)
+
+        # Get IR (re-transforms if vector fields present)
+        ir_module = kernel.get_ir(vector_fields)
         ir_func = ir_module.functions[0]
+
+        # Resolve dimension sizes (multi-dim indexing) using actual field shapes
+        name_to_field = {}
+        for param, arg in zip(ir_func.params, args):
+            if isinstance(arg, Field):
+                name_to_field[param.name] = arg
+        from pgc.lang.ir_resolve import resolve_ir
+        resolve_ir(ir_func, name_to_field)
 
         # Type inference
         infer_param_types(ir_func, args)

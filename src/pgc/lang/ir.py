@@ -197,6 +197,18 @@ class IRCast(IRNode):
         self.dtype = dtype
 
 
+class IRDimSize(IRNode):
+    """Query the size of a specific dimension of a field parameter.
+
+    Resolved at dispatch time to an IRConstant when field shapes are known.
+    Used for multi-dimensional index linearization.
+    """
+
+    def __init__(self, field_name: str, dim: int):
+        self.field_name = field_name
+        self.dim = dim
+
+
 # --- IR pretty printer (for debugging) ---
 
 def dump(node, indent=0) -> str:
@@ -271,4 +283,6 @@ def dump(node, indent=0) -> str:
         return f"{prefix}Return {dump(node.value)}"
     if isinstance(node, IRCast):
         return f"{prefix}Cast({dump(node.value)}, {node.dtype})"
+    if isinstance(node, IRDimSize):
+        return f"{prefix}DimSize({node.field_name}, {node.dim})"
     return f"{prefix}<unknown: {type(node).__name__}>"

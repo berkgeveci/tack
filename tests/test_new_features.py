@@ -329,3 +329,182 @@ def test_func_with_multiple_locals():
     use_func_with_locals(x, out)
     result = out.to_numpy()
     assert np.allclose(result, 6.0)
+
+
+# ─── Multi-dimensional field indexing ─────────────────────────────────
+
+@pgc.kernel
+def fill_2d_field(out):
+    for i, j in pgc.ndrange(4, 3):
+        out[i, j] = float(i * 10 + j)
+
+
+def test_multidim_field_indexing():
+    """Multi-dimensional field indexing: field[i, j]."""
+    pgc.init(arch=pgc.cpu)
+    out = pgc.field(dtype=pgc.f32, shape=(4, 3))
+    fill_2d_field(out)
+    result = out.to_numpy()
+    expected = np.array([[i * 10 + j for j in range(3)] for i in range(4)],
+                        dtype=np.float32)
+    assert np.allclose(result, expected)
+
+
+# ─── Vector field load/store ──────────────────────────────────────────
+
+@pgc.kernel
+def vec_field_load(vf, out_x, out_y, out_z):
+    for i in range(out_x.shape[0]):
+        v = vf[i]
+        out_x[i] = v[0]
+        out_y[i] = v[1]
+        out_z[i] = v[2]
+
+
+def test_vector_field_load():
+    """Load vectors from a vector field."""
+    pgc.init(arch=pgc.cpu)
+    n = 10
+    vf = pgc.Vector.field(3, dtype=pgc.f32, shape=(n,))
+    out_x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out_y = pgc.field(dtype=pgc.f32, shape=(n,))
+    out_z = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    data = np.zeros(n * 3, dtype=np.float32)
+    for i in range(n):
+        data[i * 3 + 0] = float(i)
+        data[i * 3 + 1] = float(i * 10)
+        data[i * 3 + 2] = float(i * 100)
+    vf.from_numpy(data)
+
+    vec_field_load(vf, out_x, out_y, out_z)
+
+    assert np.allclose(out_x.to_numpy(), np.arange(n, dtype=np.float32))
+    assert np.allclose(out_y.to_numpy(), np.arange(n, dtype=np.float32) * 10)
+    assert np.allclose(out_z.to_numpy(), np.arange(n, dtype=np.float32) * 100)
+
+
+@pgc.kernel
+def vec_field_store(in_x, in_y, in_z, vf):
+    for i in range(in_x.shape[0]):
+        v = pgc.Vector([in_x[i], in_y[i], in_z[i]])
+        vf[i] = v
+
+
+def test_vector_field_store():
+    """Store vectors to a vector field."""
+    pgc.init(arch=pgc.cpu)
+    n = 10
+    in_x = pgc.field(dtype=pgc.f32, shape=(n,))
+    in_y = pgc.field(dtype=pgc.f32, shape=(n,))
+    in_z = pgc.field(dtype=pgc.f32, shape=(n,))
+    vf = pgc.Vector.field(3, dtype=pgc.f32, shape=(n,))
+
+    in_x.from_numpy(np.arange(n, dtype=np.float32))
+    in_y.from_numpy(np.arange(n, dtype=np.float32) * 10)
+    in_z.from_numpy(np.arange(n, dtype=np.float32) * 100)
+
+    vec_field_store(in_x, in_y, in_z, vf)
+
+    data = vf.to_numpy()
+    for i in range(n):
+        assert data[i * 3 + 0] == float(i)
+        assert data[i * 3 + 1] == float(i * 10)
+        assert data[i * 3 + 2] == float(i * 100)
+
+
+@pgc.kernel
+def scalar_vec_field_load(cam, out_x, out_y, out_z):
+    for i in range(out_x.shape[0]):
+        c = cam[None]
+        out_x[i] = c[0]
+        out_y[i] = c[1]
+        out_z[i] = c[2]
+
+
+def test_scalar_vector_field():
+    """Scalar vector field (shape=()) load with field[None]."""
+    pgc.init(arch=pgc.cpu)
+    cam = pgc.Vector.field(3, dtype=pgc.f32, shape=())
+    cam.from_numpy(np.array([1.0, 2.0, 3.0], dtype=np.float32))
+
+    n = 5
+    out_x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out_y = pgc.field(dtype=pgc.f32, shape=(n,))
+    out_z = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    scalar_vec_field_load(cam, out_x, out_y, out_z)
+
+    assert np.allclose(out_x.to_numpy(), 1.0)
+    assert np.allclose(out_y.to_numpy(), 2.0)
+    assert np.allclose(out_z.to_numpy(), 3.0)
+
+
+# ─── Multi-return from @pgc.func ─────────────────────────────────────
+
+@pgc.func
+def min_max(a, b):
+    lo = min(a, b)
+    hi = max(a, b)
+    return lo, hi
+
+
+@pgc.kernel
+def use_multi_return(x, y, lo_out, hi_out):
+    for i in range(x.shape[0]):
+        lo, hi = min_max(x[i], y[i])
+        lo_out[i] = lo
+        hi_out[i] = hi
+
+
+def test_multi_return_func():
+    """@pgc.func returning a tuple."""
+    pgc.init(arch=pgc.cpu)
+    n = 50
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    y = pgc.field(dtype=pgc.f32, shape=(n,))
+    lo_out = pgc.field(dtype=pgc.f32, shape=(n,))
+    hi_out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np.random.seed(42)
+    xn = np.random.randn(n).astype(np.float32)
+    yn = np.random.randn(n).astype(np.float32)
+    x.from_numpy(xn)
+    y.from_numpy(yn)
+
+    use_multi_return(x, y, lo_out, hi_out)
+
+    assert np.allclose(lo_out.to_numpy(), np.minimum(xn, yn))
+    assert np.allclose(hi_out.to_numpy(), np.maximum(xn, yn))
+
+
+# ─── Tuple unpacking / swap ──────────────────────────────────────────
+
+@pgc.kernel
+def sort_pair(x, y):
+    for i in range(x.shape[0]):
+        a = x[i]
+        b = y[i]
+        if a > b:
+            a, b = b, a
+        x[i] = a
+        y[i] = b
+
+
+def test_tuple_swap():
+    """Tuple swap: a, b = b, a."""
+    pgc.init(arch=pgc.cpu)
+    n = 100
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    y = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    np.random.seed(42)
+    xn = np.random.randn(n).astype(np.float32)
+    yn = np.random.randn(n).astype(np.float32)
+    x.from_numpy(xn)
+    y.from_numpy(yn)
+
+    sort_pair(x, y)
+
+    assert np.allclose(x.to_numpy(), np.minimum(xn, yn))
+    assert np.allclose(y.to_numpy(), np.maximum(xn, yn))

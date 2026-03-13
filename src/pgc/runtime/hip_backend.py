@@ -204,8 +204,20 @@ class HIPBackend:
         if kwargs:
             raise NotImplementedError("Keyword arguments not supported in kernels")
 
-        ir_module = kernel._ir
+        # Detect vector fields and get appropriate IR
+        from pgc.runtime.cpu import _detect_vector_fields
+        from pgc.lang.field import Field
+        vector_fields = _detect_vector_fields(kernel, args)
+        ir_module = kernel.get_ir(vector_fields)
         ir_func = ir_module.functions[0]
+
+        # Resolve dimension sizes
+        name_to_field = {}
+        for param, arg in zip(ir_func.params, args):
+            if isinstance(arg, Field):
+                name_to_field[param.name] = arg
+        from pgc.lang.ir_resolve import resolve_ir
+        resolve_ir(ir_func, name_to_field)
 
         # Type inference
         infer_param_types(ir_func, args)
