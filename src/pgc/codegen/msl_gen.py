@@ -81,7 +81,8 @@ class MSLCodeGen:
             self._param_types[param.name] = param.type_annotation
             if hasattr(param, '_is_field') and param._is_field:
                 self._field_params.add(param.name)
-            else:
+            elif not hasattr(param, '_is_field'):
+                # Default: treat as field for backwards compatibility
                 self._field_params.add(param.name)
 
         # Header
@@ -90,11 +91,16 @@ class MSLCodeGen:
         self._emit("")
 
         # Build function signature
+        # Track which params are scalars for dereference in the body
+        self._scalar_buffer_params: set[str] = set()
         params_msl = []
         for i, param in enumerate(func.params):
             msl_type = _MSL_TYPE_MAP[param.type_annotation]
             if param.name in self._field_params:
                 params_msl.append(f"device {msl_type}* {param.name} [[buffer({i})]]")
+            else:
+                # Scalar passed as a single-element constant buffer
+                params_msl.append(f"constant {msl_type}& {param.name} [[buffer({i})]]")
 
         params_msl.append("uint __tid__ [[thread_position_in_grid]]")
 
@@ -137,6 +143,8 @@ class MSLCodeGen:
             self._emit("break;")
         elif isinstance(node, ir.IRContinue):
             self._emit("continue;")
+        elif isinstance(node, ir.IRAtomicOp):
+            self._emit_atomic_op(node)
         elif isinstance(node, ir.IRCall):
             self._emit(f"{self._expr(node)};")
         else:
@@ -221,6 +229,66 @@ class MSLCodeGen:
                     if t:
                         return t
         return None
+
+    def _emit_atomic_op(self, node: ir.IRAtomicOp):
+        """Emit a Metal atomic operation.
+
+        Metal uses atomic_fetch_* on device atomic pointers.  For float atomics
+        (atomic_add), Metal 3.0+ supports atomic_fetch_add_explicit on float.
+        For min/max on floats, we use a compare-and-swap loop.
+        """
+        field = self._expr(node.field)
+        index = self._expr(node.index)
+        value = self._expr(node.value)
+        idx_type = self._infer_expr_type(node.index)
+        if idx_type in ("float",):
+            index = f"(({_INT})({index}))"
+
+        # Determine if field is float or int
+        field_name = self._get_field_name(node.field)
+        is_float = field_name and self._param_types.get(field_name) in (f32,)
+
+        if node.op == "add":
+            if is_float:
+                # Use atomic_fetch_add_explicit on float (Metal 3.0+)
+                self._emit(
+                    f"atomic_fetch_add_explicit("
+                    f"(volatile device atomic_float*)&{field}[{index}], "
+                    f"{value}, memory_order_relaxed);")
+            else:
+                self._emit(
+                    f"atomic_fetch_add_explicit("
+                    f"(volatile device atomic_int*)&{field}[{index}], "
+                    f"{value}, memory_order_relaxed);")
+        elif node.op in ("min", "max"):
+            if is_float:
+                # Float atomic min/max via compare-and-swap loop
+                self._emit("{")
+                self._indent += 1
+                self._emit(f"float __val__ = {value};")
+                self._emit(f"volatile device atomic_uint* __p__ = "
+                           f"(volatile device atomic_uint*)&{field}[{index}];")
+                self._emit(f"uint __old__ = atomic_load_explicit(__p__, memory_order_relaxed);")
+                self._emit(f"while (true) {{")
+                self._indent += 1
+                self._emit(f"float __old_f__ = as_type<float>(__old__);")
+                cmp = "<=" if node.op == "min" else ">="
+                self._emit(f"if (__old_f__ {cmp} __val__) break;")
+                self._emit(f"uint __new__ = as_type<uint>(__val__);")
+                self._emit(f"if (atomic_compare_exchange_weak_explicit(__p__, &__old__, __new__, "
+                           f"memory_order_relaxed, memory_order_relaxed)) break;")
+                self._indent -= 1
+                self._emit("}")
+                self._indent -= 1
+                self._emit("}")
+            else:
+                func = "atomic_fetch_min_explicit" if node.op == "min" else "atomic_fetch_max_explicit"
+                self._emit(
+                    f"{func}("
+                    f"(volatile device atomic_int*)&{field}[{index}], "
+                    f"{value}, memory_order_relaxed);")
+        else:
+            raise NotImplementedError(f"MSL atomic op: {node.op}")
 
     def _emit_field_store(self, node: ir.IRFieldStore):
         field = self._expr(node.field)

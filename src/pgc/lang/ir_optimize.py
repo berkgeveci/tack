@@ -144,6 +144,8 @@ def _collect_modified_vars(body: list) -> set:
                 modified |= _collect_modified_vars(stmt.else_body)
         elif isinstance(stmt, ir.IRFieldStore):
             pass  # Field stores don't define local variables
+        elif isinstance(stmt, ir.IRAtomicOp):
+            pass  # Atomic ops don't define local variables
     return modified
 
 
@@ -297,6 +299,14 @@ def _replace_names(node, mapping: dict):
             _replace_names(node.value, mapping),
         )
 
+    if isinstance(node, ir.IRAtomicOp):
+        return ir.IRAtomicOp(
+            node.op,
+            _replace_names(node.field, mapping),
+            _replace_names(node.index, mapping),
+            _replace_names(node.value, mapping),
+        )
+
     if isinstance(node, ir.IRBinOp):
         return ir.IRBinOp(
             node.op,
@@ -427,6 +437,15 @@ def _cse_body(body: list) -> list:
             if store_field_key is not None:
                 to_remove = [k for k in available
                              if k.startswith(f"load({store_field_key},")]
+                for k in to_remove:
+                    del available[k]
+            result.append(stmt)
+        elif isinstance(stmt, ir.IRAtomicOp):
+            # Atomic ops modify a field element — invalidate field loads
+            atomic_field_key = _expr_key(stmt.field)
+            if atomic_field_key is not None:
+                to_remove = [k for k in available
+                             if k.startswith(f"load({atomic_field_key},")]
                 for k in to_remove:
                     del available[k]
             result.append(stmt)

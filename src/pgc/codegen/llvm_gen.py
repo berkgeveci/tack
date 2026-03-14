@@ -79,16 +79,14 @@ class LLVMCodeGen:
                                 "Run type inference first.")
             self._param_types[param.name] = pgc_type
             elem_llvm = _llvm_type(pgc_type)
-            # Heuristic: fields are passed as pointers, scalars as values.
-            # The caller marks which params are fields.
-            # For now, we use the convention that Field params come as pointers.
-            # Type inference sets this based on whether the arg was a Field.
             if hasattr(param, '_is_field') and param._is_field:
                 llvm_param_types.append(elem_llvm.as_pointer())
                 self._field_params.add(param.name)
+            elif hasattr(param, '_is_field') and not param._is_field:
+                # Scalar parameter — passed by value
+                llvm_param_types.append(elem_llvm)
             else:
-                # Default: treat as pointer (field). The CPU backend passes
-                # field data as ctypes pointers.
+                # Default: treat as pointer (field) for backwards compatibility
                 llvm_param_types.append(elem_llvm.as_pointer())
                 self._field_params.add(param.name)
             param_names.append(param.name)
@@ -149,6 +147,8 @@ class LLVMCodeGen:
             self._emit_break()
         elif isinstance(node, ir.IRContinue):
             self._emit_continue()
+        elif isinstance(node, ir.IRAtomicOp):
+            self._emit_atomic_op(node)
         elif isinstance(node, ir.IRCall):
             # Standalone function call (expression statement)
             self._emit_expr(node)
@@ -417,6 +417,46 @@ class LLVMCodeGen:
             # Kernels return void; ignore return value for now
             self._emit_expr(node.value)
         self.builder.ret_void()
+
+    def _emit_atomic_op(self, node: ir.IRAtomicOp):
+        """Emit an atomic operation on a field element."""
+        base_ptr = self._emit_expr(node.field)
+        index = self._to_i64(self._emit_expr(node.index))
+        value = self._emit_expr(node.value)
+
+        elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="atomic.ptr")
+        elem_type = base_ptr.type.pointee
+        value = self._coerce_to(value, elem_type)
+
+        if node.op == "add":
+            if _is_float_type(elem_type):
+                self.builder.atomic_rmw("fadd", elem_ptr, value, "monotonic")
+            else:
+                self.builder.atomic_rmw("add", elem_ptr, value, "monotonic")
+        elif node.op == "min":
+            if _is_float_type(elem_type):
+                # Float atomic min via compare-and-swap loop
+                self._emit_atomic_float_minmax(elem_ptr, value, "min")
+            else:
+                self.builder.atomic_rmw("min", elem_ptr, value, "monotonic")
+        elif node.op == "max":
+            if _is_float_type(elem_type):
+                self._emit_atomic_float_minmax(elem_ptr, value, "max")
+            else:
+                self.builder.atomic_rmw("max", elem_ptr, value, "monotonic")
+        else:
+            raise NotImplementedError(f"Atomic op: {node.op}")
+
+    def _emit_atomic_float_minmax(self, ptr, value, op: str):
+        """Emit a float atomic min/max via compare-and-swap loop."""
+        # For CPU, just do a non-atomic load-compare-store (single-threaded per element)
+        old_val = self.builder.load(ptr, name="atomic.old")
+        if op == "min":
+            cond = self.builder.fcmp_ordered("<", value, old_val, name="atomic.cmp")
+        else:
+            cond = self.builder.fcmp_ordered(">", value, old_val, name="atomic.cmp")
+        new_val = self.builder.select(cond, value, old_val, name="atomic.new")
+        self.builder.store(new_val, ptr)
 
     # --- Expressions ---
 

@@ -249,30 +249,36 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
 class CompiledKernel:
     """A JIT-compiled kernel ready for execution."""
 
-    def __init__(self, engine, func_ptr, param_types, func_name):
+    def __init__(self, engine, func_ptr, param_types, param_is_field, func_name):
         self._engine = engine  # prevent GC
         self._func_ptr = func_ptr
         self._param_types = param_types
+        self._param_is_field = param_is_field  # list[bool]
         self._func_name = func_name
 
         # Build the ctypes function type
-        # params: one pointer per field, then i64 loop_start, i64 loop_end
         ctypes_params = []
-        for ptype in param_types:
+        for ptype, is_field in zip(param_types, param_is_field):
             ct = _CTYPES_MAP[ptype]
-            ctypes_params.append(ctypes.POINTER(ct))
+            if is_field:
+                ctypes_params.append(ctypes.POINTER(ct))
+            else:
+                ctypes_params.append(ct)
         ctypes_params.extend([ctypes.c_int64, ctypes.c_int64])
 
         self._cfunc_type = ctypes.CFUNCTYPE(None, *ctypes_params)
         self._cfunc = self._cfunc_type(func_ptr)
 
-    def __call__(self, field_args: list[Field], loop_start: int, loop_end: int):
-        """Call the compiled kernel with field pointers and loop range."""
+    def __call__(self, kernel_args: list, loop_start: int, loop_end: int):
+        """Call the compiled kernel with field pointers/scalars and loop range."""
         ctypes_args = []
-        for field, ptype in zip(field_args, self._param_types):
+        for arg, ptype, is_field in zip(kernel_args, self._param_types, self._param_is_field):
             ct = _CTYPES_MAP[ptype]
-            ptr = field._buffer._data.ctypes.data_as(ctypes.POINTER(ct))
-            ctypes_args.append(ptr)
+            if is_field:
+                ptr = arg._buffer._data.ctypes.data_as(ctypes.POINTER(ct))
+                ctypes_args.append(ptr)
+            else:
+                ctypes_args.append(ct(arg))
         ctypes_args.extend([ctypes.c_int64(loop_start), ctypes.c_int64(loop_end)])
         self._cfunc(*ctypes_args)
 
@@ -325,7 +331,8 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
         raise RuntimeError(f"Failed to JIT compile kernel '{ir_func.name}'")
 
     param_types = [p.type_annotation for p in ir_func.params]
-    return CompiledKernel(engine, func_ptr, param_types, ir_func.name)
+    param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+    return CompiledKernel(engine, func_ptr, param_types, param_is_field, ir_func.name)
 
 
 def _physical_core_count() -> int:
@@ -413,28 +420,17 @@ class CPUBackend:
 
         compiled = self._cache[cache_key]
 
-        # Extract field arguments
-        field_args = []
-        for arg in effective_args:
-            if isinstance(arg, Field):
-                field_args.append(arg)
-            else:
-                raise NotImplementedError(
-                    "Scalar kernel arguments not yet supported in JIT mode. "
-                    "Use constants in the kernel body instead."
-                )
+        # Build kernel args list (fields and scalars in order)
+        kernel_args = list(effective_args)
 
         # Determine loop range
         loop_end = _get_loop_range(ir_func, effective_args)
 
         # Parallel execution: split range across threads
-        # ThreadPoolExecutor overhead is ~0.1ms per dispatch with a warm pool,
-        # so parallelize for any non-trivial workload.
         if self.num_threads <= 1 or loop_end <= 1024:
-            # Single-threaded for small workloads
-            compiled(field_args, 0, loop_end)
+            compiled(kernel_args, 0, loop_end)
         else:
-            self._parallel_execute(compiled, field_args, 0, loop_end)
+            self._parallel_execute(compiled, kernel_args, 0, loop_end)
 
     def _get_pool(self) -> ThreadPoolExecutor:
         """Return the persistent thread pool, creating it on first use."""

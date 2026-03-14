@@ -34,7 +34,7 @@ def test_infer_scalar_types():
     ], [])
 
     types = infer_param_types(func, (x, 2.5, 10))
-    assert types == [f32, f64, i32]
+    assert types == [f32, f32, i32]
 
 
 def test_infer_wrong_arg_count():

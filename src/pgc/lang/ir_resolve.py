@@ -58,6 +58,12 @@ def _resolve(node, fields):
         node.value = _resolve(node.value, fields)
         return node
 
+    if isinstance(node, ir.IRAtomicOp):
+        node.field = _resolve(node.field, fields)
+        node.index = _resolve(node.index, fields)
+        node.value = _resolve(node.value, fields)
+        return node
+
     if isinstance(node, ir.IRAssign):
         node.value = _resolve(node.value, fields)
         return node

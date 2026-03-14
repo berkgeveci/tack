@@ -186,3 +186,44 @@ def test_cached_reuse():
     x.from_numpy(np.ones(n, dtype=np.float32) * 5.0)
     add(x, y, out)
     assert np.allclose(out.to_numpy(), 7.0)
+
+
+def test_atomic_add():
+    """Test atomic_add on Metal."""
+    n = 256
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(1,))
+
+    x.from_numpy(np.ones(n, dtype=np.float32))
+    out.from_numpy(np.zeros(1, dtype=np.float32))
+
+    @pgc.kernel
+    def sum_kernel(x, out):
+        for i in range(x.shape[0]):
+            pgc.atomic_add(out, 0, x[i])
+
+    sum_kernel(x, out)
+    np.testing.assert_allclose(out.to_numpy()[0], 256.0, rtol=1e-5)
+
+
+def test_atomic_min_max():
+    """Test atomic_min and atomic_max on Metal."""
+    n = 64
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    min_out = pgc.field(dtype=pgc.f32, shape=(1,))
+    max_out = pgc.field(dtype=pgc.f32, shape=(1,))
+
+    data = np.arange(n, dtype=np.float32) - 20.0
+    x.from_numpy(data)
+    min_out.from_numpy(np.array([1e10], dtype=np.float32))
+    max_out.from_numpy(np.array([-1e10], dtype=np.float32))
+
+    @pgc.kernel
+    def minmax_kernel(x, min_out, max_out):
+        for i in range(x.shape[0]):
+            pgc.atomic_min(min_out, 0, x[i])
+            pgc.atomic_max(max_out, 0, x[i])
+
+    minmax_kernel(x, min_out, max_out)
+    np.testing.assert_allclose(min_out.to_numpy()[0], -20.0)
+    np.testing.assert_allclose(max_out.to_numpy()[0], 43.0)

@@ -68,29 +68,41 @@ def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
 class CompiledMetalKernel:
     """A compiled Metal compute pipeline ready for dispatch."""
 
-    def __init__(self, device, command_queue, pipeline, func_name, param_types):
+    _NUMPY_MAP = {f32: np.float32, i32: np.int32, i64: np.int64, u32: np.uint32, u64: np.uint64}
+
+    def __init__(self, device, command_queue, pipeline, func_name, param_types, param_is_field):
         self._device = device
         self._command_queue = command_queue
         self._pipeline = pipeline
         self._func_name = func_name
         self._param_types = param_types
+        self._param_is_field = param_is_field
         self._thread_execution_width = pipeline.threadExecutionWidth()
         self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
 
-    def __call__(self, metal_buffers: list, loop_end: int):
-        """Dispatch the compute kernel on the GPU.
-
-        metal_buffers: list of MTLBuffer objects (already contain the field data).
-        """
+    def __call__(self, kernel_args: list, loop_end: int):
+        """Dispatch the compute kernel on the GPU."""
         command_buffer = self._command_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoderWithDescriptor_(
             Metal.MTLComputePassDescriptor.computePassDescriptor()
         )
         encoder.setComputePipelineState_(self._pipeline)
 
-        # Bind pre-existing Metal buffers — no data copy
-        for i, buf in enumerate(metal_buffers):
-            encoder.setBuffer_offset_atIndex_(buf, 0, i)
+        # Bind buffers — fields use their Metal buffers, scalars use temp buffers
+        temp_buffers = []
+        for i, (arg, ptype, is_field) in enumerate(
+                zip(kernel_args, self._param_types, self._param_is_field)):
+            if is_field:
+                encoder.setBuffer_offset_atIndex_(arg._buffer.metal_buffer, 0, i)
+            else:
+                # Scalar: create a tiny shared buffer with the value
+                ndt = self._NUMPY_MAP[ptype]
+                arr = np.array([arg], dtype=ndt)
+                nbytes = arr.nbytes
+                buf = self._device.newBufferWithBytes_length_options_(
+                    arr.tobytes(), nbytes, 0)
+                encoder.setBuffer_offset_atIndex_(buf, 0, i)
+                temp_buffers.append(buf)  # prevent GC
 
         # Dispatch threads
         threads_per_group = min(self._max_threads_per_group, 256)
@@ -136,7 +148,9 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
         raise RuntimeError(f"Metal pipeline creation failed: {error}")
 
     param_types = [p.type_annotation for p in ir_func.params]
-    return CompiledMetalKernel(device, command_queue, pipeline, ir_func.name, param_types)
+    param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+    return CompiledMetalKernel(device, command_queue, pipeline, ir_func.name,
+                               param_types, param_is_field)
 
 
 class MetalBackend:
@@ -216,18 +230,11 @@ class MetalBackend:
 
         compiled = self._cache[cache_key]
 
-        # Get Metal buffers directly from fields (already allocated)
-        metal_buffers = []
-        for arg in effective_args:
-            if isinstance(arg, Field):
-                metal_buffers.append(arg._buffer.metal_buffer)
-            else:
-                raise NotImplementedError(
-                    "Scalar kernel arguments not yet supported in Metal mode."
-                )
+        # Build kernel args list (fields and scalars in order)
+        kernel_args = list(effective_args)
 
         # Determine loop range
         loop_end = _get_loop_range(ir_func, effective_args)
 
-        # Dispatch — no data copies, buffers already in GPU-visible memory
-        compiled(metal_buffers, loop_end)
+        # Dispatch
+        compiled(kernel_args, loop_end)

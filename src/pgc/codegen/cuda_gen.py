@@ -104,7 +104,8 @@ class CUDACodeGen:
             self._param_types[param.name] = param.type_annotation
             if hasattr(param, '_is_field') and param._is_field:
                 self._field_params.add(param.name)
-            else:
+            elif not hasattr(param, '_is_field'):
+                # Default: treat as field for backwards compatibility
                 self._field_params.add(param.name)
 
         # Build function signature
@@ -156,6 +157,8 @@ class CUDACodeGen:
             self._emit("break;")
         elif isinstance(node, ir.IRContinue):
             self._emit("continue;")
+        elif isinstance(node, ir.IRAtomicOp):
+            self._emit_atomic_op(node)
         elif isinstance(node, ir.IRCall):
             self._emit(f"{self._expr(node)};")
         else:
@@ -245,6 +248,20 @@ class CUDACodeGen:
                     if t:
                         return t
         return None
+
+    def _emit_atomic_op(self, node: ir.IRAtomicOp):
+        """Emit a CUDA atomic operation."""
+        field = self._expr(node.field)
+        index = self._expr(node.index)
+        value = self._expr(node.value)
+        idx_type = self._infer_expr_type(node.index)
+        if idx_type in ("float", "double"):
+            index = f"(({_INT})({index}))"
+        _ATOMIC_FUNCS = {"add": "atomicAdd", "min": "atomicMin", "max": "atomicMax"}
+        func = _ATOMIC_FUNCS.get(node.op)
+        if func is None:
+            raise NotImplementedError(f"CUDA atomic op: {node.op}")
+        self._emit(f"{func}(&{field}[{index}], {value});")
 
     def _emit_field_store(self, node: ir.IRFieldStore):
         field = self._expr(node.field)

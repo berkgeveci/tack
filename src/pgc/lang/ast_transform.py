@@ -488,6 +488,16 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name == "ndrange":
             raise NotImplementedError("ndrange() outside of for-loop not supported")
 
+        # Atomic operations: atomic_add, atomic_min, atomic_max
+        if func_name in ("atomic_add", "atomic_min", "atomic_max"):
+            if len(node.args) != 3:
+                raise NotImplementedError(f"{func_name}() takes exactly 3 arguments (field, index, value)")
+            field = self.visit(node.args[0])
+            index = self.visit(node.args[1])
+            value = self.visit(node.args[2])
+            op = func_name.replace("atomic_", "")  # "add", "min", "max"
+            return ir.IRAtomicOp(op=op, field=field, index=index, value=value)
+
         # int(), float() type casts
         if func_name in ("int", "float"):
             if len(node.args) != 1:

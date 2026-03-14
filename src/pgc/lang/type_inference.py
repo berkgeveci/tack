@@ -25,12 +25,15 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
     for param, arg in zip(ir_func.params, args):
         if isinstance(arg, Field):
             param.type_annotation = arg.dtype
+            param._is_field = True
             types.append(arg.dtype)
         elif isinstance(arg, float):
-            param.type_annotation = f64
-            types.append(f64)
+            param.type_annotation = f32
+            param._is_field = False
+            types.append(f32)
         elif isinstance(arg, int):
             param.type_annotation = i32
+            param._is_field = False
             types.append(i32)
         else:
             raise TypeError(

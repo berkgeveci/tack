@@ -143,6 +143,16 @@ class IRFieldStore(IRNode):
         self.value = value
 
 
+class IRAtomicOp(IRNode):
+    """Atomic operation on a field: atomic_add(field, index, value), etc."""
+
+    def __init__(self, op: str, field, index, value):
+        self.op = op  # "add", "min", "max"
+        self.field = field
+        self.index = index
+        self.value = value
+
+
 class IRConstant(IRNode):
     """A constant value (int or float literal)."""
 
@@ -268,6 +278,8 @@ def dump(node, indent=0) -> str:
         return f"{prefix}{dump(node.field)}[{dump(node.index)}]"
     if isinstance(node, IRFieldStore):
         return f"{prefix}{dump(node.field)}[{dump(node.index)}] = {dump(node.value)}"
+    if isinstance(node, IRAtomicOp):
+        return f"{prefix}atomic_{node.op}({dump(node.field)}[{dump(node.index)}], {dump(node.value)})"
     if isinstance(node, IRConstant):
         return f"{prefix}{node.value!r}"
     if isinstance(node, IRName):

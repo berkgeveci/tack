@@ -79,6 +79,18 @@ class Field:
         """Fill the field with a scalar value."""
         self._buffer.fill(value)
 
+    def sum(self):
+        """Return the sum of all elements (copies to host)."""
+        return float(self._buffer.to_numpy().sum())
+
+    def min(self):
+        """Return the minimum element (copies to host)."""
+        return float(self._buffer.to_numpy().min())
+
+    def max(self):
+        """Return the maximum element (copies to host)."""
+        return float(self._buffer.to_numpy().max())
+
     def __repr__(self):
         return f"Field(dtype={self.dtype}, shape={self.shape})"
 

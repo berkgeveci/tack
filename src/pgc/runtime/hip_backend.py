@@ -150,22 +150,31 @@ def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     return cpu_get_loop_range(ir_func, args)
 
 
+_HIP_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlong,
+                   u32: ctypes.c_uint, u64: ctypes.c_ulonglong}
+
+
 class CompiledHIPKernel:
     """A compiled HIP kernel ready for dispatch."""
 
-    def __init__(self, module, func, func_name, param_types):
+    def __init__(self, module, func, func_name, param_types, param_is_field):
         self._module = module
         self._func = func
         self._func_name = func_name
         self._param_types = param_types
+        self._param_is_field = param_is_field
 
-    def __call__(self, device_ptrs: list, loop_end: int):
+    def __call__(self, kernel_args: list, loop_end: int):
         """Dispatch the HIP kernel."""
         n_val = ctypes.c_int(loop_end)
 
         arg_values = []
-        for dptr in device_ptrs:
-            arg_values.append(ctypes.c_void_p(int(dptr)))
+        for arg, ptype, is_field in zip(kernel_args, self._param_types, self._param_is_field):
+            if is_field:
+                arg_values.append(ctypes.c_void_p(int(arg._buffer.device_ptr)))
+            else:
+                ct = _HIP_CTYPES_MAP[ptype]
+                arg_values.append(ct(arg))
         arg_values.append(n_val)
 
         arg_ptrs = (ctypes.c_void_p * len(arg_values))()
@@ -250,21 +259,14 @@ class HIPBackend:
 
         compiled = self._cache[cache_key]
 
-        # Get device pointers directly from fields (already on device)
-        device_ptrs = []
-        for arg in effective_args:
-            if isinstance(arg, Field):
-                device_ptrs.append(arg._buffer.device_ptr)
-            else:
-                raise NotImplementedError(
-                    "Scalar kernel arguments not yet supported in HIP mode."
-                )
+        # Build kernel args list
+        kernel_args = list(effective_args)
 
         # Determine loop range
         loop_end = _get_loop_range(ir_func, effective_args)
 
-        # Dispatch — no copies, data is already on device
-        compiled(device_ptrs, loop_end)
+        # Dispatch
+        compiled(kernel_args, loop_end)
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledHIPKernel:
         """Compile PGC IR → HIP C → code object → hipFunction."""
@@ -278,7 +280,8 @@ class HIPBackend:
         _check_hip(err)
 
         param_types = [p.type_annotation for p in ir_func.params]
-        return CompiledHIPKernel(module, func, ir_func.name, param_types)
+        param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+        return CompiledHIPKernel(module, func, ir_func.name, param_types, param_is_field)
 
     def __del__(self):
         pass  # HIP context is managed by the runtime
