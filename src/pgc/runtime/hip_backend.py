@@ -161,7 +161,7 @@ class CompiledHIPKernel:
 
     def __call__(self, device_ptrs: list, loop_end: int):
         """Dispatch the HIP kernel."""
-        n_val = ctypes.c_longlong(loop_end)
+        n_val = ctypes.c_int(loop_end)
 
         arg_values = []
         for dptr in device_ptrs:
