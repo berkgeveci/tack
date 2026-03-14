@@ -28,11 +28,14 @@ MAX_STEPS = 600
 def fetch_cell(b, ix, iy, iz):
     """Fetch cell value from block b at integer indices, clamped."""
     dims = block_cell_dims[b]
-    ix_c = max(0.0, min(ix, dims[0] - 1.0))
-    iy_c = max(0.0, min(iy, dims[1] - 1.0))
-    iz_c = max(0.0, min(iz, dims[2] - 1.0))
-    offset = block_data_offsets[b]
-    idx = offset + ix_c + iy_c * dims[0] + iz_c * dims[0] * dims[1]
+    dx = float(dims[0])
+    dy = float(dims[1])
+    dz = float(dims[2])
+    ix_c = max(0.0, min(ix, dx - 1.0))
+    iy_c = max(0.0, min(iy, dy - 1.0))
+    iz_c = max(0.0, min(iz, dz - 1.0))
+    offset = float(block_data_offsets[b])
+    idx = offset + ix_c + iy_c * dx + iz_c * dx * dy
     return field_data[idx]
 
 
@@ -50,9 +53,10 @@ def sample_at(pos_x, pos_y, pos_z):
 
     # Lookup grid is flat 1D: index = (gi * LG + gj) * LG + gk
     lg = LG_CONST[0]
-    b = lookup_grid[(gi * lg + gj) * lg + gk]
+    b_i = lookup_grid[(gi * lg + gj) * lg + gk]
+    b = float(b_i)
     result = 0.0
-    if b >= 0.0:
+    if b_i >= 0:
         orig = block_origins[b]
         spac = block_spacings[b]
 
@@ -376,12 +380,12 @@ def main():
 
     block_origins = pgc.Vector.field(3, dtype=pgc.f32, shape=(MAX_BLOCKS,))
     block_spacings = pgc.Vector.field(3, dtype=pgc.f32, shape=(MAX_BLOCKS,))
-    block_cell_dims = pgc.Vector.field(3, dtype=pgc.f32, shape=(MAX_BLOCKS,))
-    block_data_offsets = pgc.field(dtype=pgc.f32, shape=(MAX_BLOCKS,))
+    block_cell_dims = pgc.Vector.field(3, dtype=pgc.i32, shape=(MAX_BLOCKS,))
+    block_data_offsets = pgc.field(dtype=pgc.i32, shape=(MAX_BLOCKS,))
 
     field_data = pgc.field(dtype=pgc.f32, shape=(MAX_CELLS,))
 
-    lookup_grid = pgc.field(dtype=pgc.f32, shape=(LG * LG * LG,))
+    lookup_grid = pgc.field(dtype=pgc.i32, shape=(LG * LG * LG,))
 
     tf_table = pgc.Vector.field(4, dtype=pgc.f32, shape=(TF_SIZE,))
 
@@ -408,15 +412,15 @@ def main():
     # Upload block metadata
     origins_np = np.zeros((MAX_BLOCKS, 3), dtype=np.float32)
     spacings_np = np.zeros((MAX_BLOCKS, 3), dtype=np.float32)
-    dims_np = np.zeros((MAX_BLOCKS, 3), dtype=np.float32)  # f32 for PGC
-    offsets_np = np.zeros(MAX_BLOCKS, dtype=np.float32)  # f32 for PGC
+    dims_np = np.zeros((MAX_BLOCKS, 3), dtype=np.int32)
+    offsets_np = np.zeros(MAX_BLOCKS, dtype=np.int32)
     all_data_list = []
 
     for i, b in enumerate(blocks):
         origins_np[i] = b['origin']
         spacings_np[i] = b['spacing']
-        dims_np[i] = b['cell_dims'].astype(np.float32)
-        offsets_np[i] = float(b['data_offset'])
+        dims_np[i] = b['cell_dims'].astype(np.int32)
+        offsets_np[i] = int(b['data_offset'])
         all_data_list.append(b['data'])
 
     block_origins.from_numpy(origins_np.flatten())
@@ -433,7 +437,7 @@ def main():
     dom_width = dom_max - dom_min
     lg_spacing = dom_width / LG
 
-    lookup = np.full(LG * LG * LG, -1.0, dtype=np.float32)  # f32, -1 for empty
+    lookup = np.full(LG * LG * LG, -1, dtype=np.int32)  # i32, -1 for empty
     sorted_blocks = sorted(enumerate(blocks), key=lambda x: x[1]['level'])
 
     for bi, b in sorted_blocks:
@@ -446,7 +450,7 @@ def main():
         for ii in range(lo[0], hi[0]):
             for jj in range(lo[1], hi[1]):
                 for kk in range(lo[2], hi[2]):
-                    lookup[(ii * LG + jj) * LG + kk] = float(bi)
+                    lookup[(ii * LG + jj) * LG + kk] = bi
 
     lookup_grid.from_numpy(lookup)
 

@@ -130,6 +130,14 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
     spirv_bytes = generate_spirv(ir_func)
     msl_source = _spirv_to_msl(spirv_bytes)
 
+    # Debug: dump MSL source for analysis
+    import os
+    if os.environ.get("PGC_DUMP_MSL"):
+        path = f"/tmp/pgc_{ir_func.name}.msl"
+        with open(path, "w") as f:
+            f.write(msl_source)
+        print(f"[PGC] Dumped MSL to {path}")
+
     options = Metal.MTLCompileOptions.alloc().init()
     library, error = device.newLibraryWithSource_options_error_(
         msl_source, options, None
