@@ -153,6 +153,104 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
                                param_types, param_is_field)
 
 
+_REDUCE_MSL_SUM = """
+#include <metal_stdlib>
+using namespace metal;
+
+kernel void reduce_sum_f32(
+    device float* input [[buffer(0)]],
+    device float* output [[buffer(1)]],
+    uint tid [[thread_position_in_grid]],
+    uint local_tid [[thread_position_in_threadgroup]],
+    uint group_id [[threadgroup_position_in_grid]],
+    uint local_size [[threads_per_threadgroup]])
+{
+    threadgroup float sdata[256];
+    uint n = as_type<uint>(output[1]);  // n stored as float bits at output[1]
+    sdata[local_tid] = (tid < n) ? input[tid] : 0.0f;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint s = local_size / 2; s > 0; s >>= 1) {
+        if (local_tid < s) sdata[local_tid] += sdata[local_tid + s];
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    if (local_tid == 0) {
+        atomic_fetch_add_explicit(
+            (volatile device atomic_float*)&output[0],
+            sdata[0], memory_order_relaxed);
+    }
+}
+"""
+
+_REDUCE_MSL_MIN = """
+#include <metal_stdlib>
+using namespace metal;
+
+kernel void reduce_min_f32(
+    device float* input [[buffer(0)]],
+    device float* output [[buffer(1)]],
+    uint tid [[thread_position_in_grid]],
+    uint local_tid [[thread_position_in_threadgroup]],
+    uint group_id [[threadgroup_position_in_grid]],
+    uint local_size [[threads_per_threadgroup]])
+{
+    threadgroup float sdata[256];
+    uint n = as_type<uint>(output[1]);
+    sdata[local_tid] = (tid < n) ? input[tid] : 1e38f;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint s = local_size / 2; s > 0; s >>= 1) {
+        if (local_tid < s) sdata[local_tid] = min(sdata[local_tid], sdata[local_tid + s]);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    if (local_tid == 0) {
+        // CAS loop for atomic min
+        volatile device atomic_uint* p = (volatile device atomic_uint*)&output[0];
+        uint old_bits = atomic_load_explicit(p, memory_order_relaxed);
+        while (true) {
+            float old_f = as_type<float>(old_bits);
+            if (old_f <= sdata[0]) break;
+            uint new_bits = as_type<uint>(sdata[0]);
+            if (atomic_compare_exchange_weak_explicit(p, &old_bits, new_bits,
+                memory_order_relaxed, memory_order_relaxed)) break;
+        }
+    }
+}
+"""
+
+_REDUCE_MSL_MAX = """
+#include <metal_stdlib>
+using namespace metal;
+
+kernel void reduce_max_f32(
+    device float* input [[buffer(0)]],
+    device float* output [[buffer(1)]],
+    uint tid [[thread_position_in_grid]],
+    uint local_tid [[thread_position_in_threadgroup]],
+    uint group_id [[threadgroup_position_in_grid]],
+    uint local_size [[threads_per_threadgroup]])
+{
+    threadgroup float sdata[256];
+    uint n = as_type<uint>(output[1]);
+    sdata[local_tid] = (tid < n) ? input[tid] : -1e38f;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+    for (uint s = local_size / 2; s > 0; s >>= 1) {
+        if (local_tid < s) sdata[local_tid] = max(sdata[local_tid], sdata[local_tid + s]);
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+    if (local_tid == 0) {
+        volatile device atomic_uint* p = (volatile device atomic_uint*)&output[0];
+        uint old_bits = atomic_load_explicit(p, memory_order_relaxed);
+        while (true) {
+            float old_f = as_type<float>(old_bits);
+            if (old_f >= sdata[0]) break;
+            uint new_bits = as_type<uint>(sdata[0]);
+            if (atomic_compare_exchange_weak_explicit(p, &old_bits, new_bits,
+                memory_order_relaxed, memory_order_relaxed)) break;
+        }
+    }
+}
+"""
+
+
 class MetalBackend:
     """Metal GPU backend — zero-copy dispatch on Apple Silicon unified memory.
 
@@ -174,6 +272,7 @@ class MetalBackend:
 
         self._command_queue = self._device.newCommandQueue()
         self._cache: dict[str, CompiledMetalKernel] = {}
+        self._reduce_pipelines: dict[str, object] = {}
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> MetalBuffer:
         return MetalBuffer(self._device, dtype.numpy_dtype, shape)
@@ -238,3 +337,67 @@ class MetalBackend:
 
         # Dispatch
         compiled(kernel_args, loop_end)
+
+    def _get_reduce_pipeline(self, op: str):
+        """Get or compile a Metal reduction pipeline."""
+        if op in self._reduce_pipelines:
+            return self._reduce_pipelines[op]
+
+        sources = {"sum": _REDUCE_MSL_SUM, "min": _REDUCE_MSL_MIN, "max": _REDUCE_MSL_MAX}
+        func_names = {"sum": "reduce_sum_f32", "min": "reduce_min_f32", "max": "reduce_max_f32"}
+        msl_source = sources[op]
+        func_name = func_names[op]
+
+        options = Metal.MTLCompileOptions.alloc().init()
+        library, error = self._device.newLibraryWithSource_options_error_(
+            msl_source, options, None)
+        if library is None:
+            raise RuntimeError(f"Metal reduce kernel compilation failed: {error}")
+
+        func = library.newFunctionWithName_(func_name)
+        pipeline, error = self._device.newComputePipelineStateWithFunction_error_(func, None)
+        if pipeline is None:
+            raise RuntimeError(f"Metal reduce pipeline failed: {error}")
+
+        self._reduce_pipelines[op] = pipeline
+        return pipeline
+
+    def reduce_field(self, field, op: str) -> float:
+        """GPU-side reduction: sum, min, or max."""
+        from pgc.lang.types import f32
+        if field.dtype is not f32:
+            # Fall back to numpy for non-f32
+            arr = field.to_numpy()
+            return float(getattr(arr, op)())
+
+        pipeline = self._get_reduce_pipeline(op)
+        n = int(np.prod(field.shape))
+
+        # Create output buffer: [result, n_as_float_bits]
+        import struct
+        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        out_data = np.array([init_vals[op], 0.0], dtype=np.float32)
+        # Pack n as uint32 bits into float slot
+        out_data[1] = np.frombuffer(struct.pack('I', n), dtype=np.float32)[0]
+        out_buf = self._device.newBufferWithBytes_length_options_(
+            out_data.tobytes(), out_data.nbytes, 0)
+
+        command_buffer = self._command_queue.commandBuffer()
+        encoder = command_buffer.computeCommandEncoderWithDescriptor_(
+            Metal.MTLComputePassDescriptor.computePassDescriptor())
+        encoder.setComputePipelineState_(pipeline)
+        encoder.setBuffer_offset_atIndex_(field._buffer.metal_buffer, 0, 0)
+        encoder.setBuffer_offset_atIndex_(out_buf, 0, 1)
+
+        block_dim = 256
+        grid_size = Metal.MTLSizeMake(n, 1, 1)
+        group_size = Metal.MTLSizeMake(block_dim, 1, 1)
+        encoder.dispatchThreads_threadsPerThreadgroup_(grid_size, group_size)
+        encoder.endEncoding()
+        command_buffer.commit()
+        command_buffer.waitUntilCompleted()
+
+        # Read result
+        raw = out_buf.contents().as_buffer(8)
+        result = np.frombuffer(raw, dtype=np.float32)[0]
+        return float(result)

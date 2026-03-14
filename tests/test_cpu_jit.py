@@ -311,3 +311,72 @@ def test_field_reductions():
     assert x.sum() == pytest.approx(data.sum())
     assert x.min() == pytest.approx(data.min())
     assert x.max() == pytest.approx(data.max())
+
+
+def test_range_with_step_sequential():
+    """Test nested for-loop with step: range(start, end, step)."""
+    n = 10
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    @pgc.kernel
+    def step_sum(out):
+        for i in range(out.shape[0]):
+            out[i] = 0.0
+            for j in range(0, 10, 2):
+                out[i] = out[i] + float(j)
+
+    step_sum(out)
+    # 0 + 2 + 4 + 6 + 8 = 20
+    np.testing.assert_allclose(out.to_numpy(), 20.0)
+
+
+def test_range_with_step_parallel():
+    """Test top-level parallel for-loop with step."""
+    out = pgc.field(dtype=pgc.f32, shape=(50,))
+
+    @pgc.kernel
+    def parallel_step(out):
+        for i in range(0, 100, 2):
+            out[i // 2] = float(i)
+
+    parallel_step(out)
+    expected = np.arange(0, 100, 2, dtype=np.float32)
+    np.testing.assert_allclose(out.to_numpy(), expected)
+
+
+def test_shared_memory():
+    """Test shared memory alloc, thread_id, and barrier on CPU."""
+    n = 10
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+    x.from_numpy(np.arange(n, dtype=np.float32))
+
+    @pgc.kernel
+    def shared_test(x, out):
+        smem = pgc.shared(pgc.f32, 256)
+        for i in range(x.shape[0]):
+            tid = pgc.thread_id()
+            smem[tid] = x[i] * 2.0
+            pgc.barrier()
+            out[i] = smem[tid]
+
+    shared_test(x, out)
+    expected = np.arange(n, dtype=np.float32) * 2.0
+    np.testing.assert_allclose(out.to_numpy(), expected)
+
+
+def test_print_in_kernel():
+    """Test that print() in kernel doesn't crash (CPU)."""
+    n = 3
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+    x.from_numpy(np.array([1.0, 2.0, 3.0], dtype=np.float32))
+
+    @pgc.kernel
+    def kern(x, out):
+        for i in range(x.shape[0]):
+            print("val:", x[i])
+            out[i] = x[i] * 2.0
+
+    kern(x, out)
+    np.testing.assert_allclose(out.to_numpy(), [2.0, 4.0, 6.0])

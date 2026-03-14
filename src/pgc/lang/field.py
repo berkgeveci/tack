@@ -80,15 +80,27 @@ class Field:
         self._buffer.fill(value)
 
     def sum(self):
-        """Return the sum of all elements (copies to host)."""
+        """Return the sum of all elements."""
+        from pgc.runtime.dispatch import get_backend
+        backend = get_backend()
+        if hasattr(backend, 'reduce_field'):
+            return backend.reduce_field(self, 'sum')
         return float(self._buffer.to_numpy().sum())
 
     def min(self):
-        """Return the minimum element (copies to host)."""
+        """Return the minimum element."""
+        from pgc.runtime.dispatch import get_backend
+        backend = get_backend()
+        if hasattr(backend, 'reduce_field'):
+            return backend.reduce_field(self, 'min')
         return float(self._buffer.to_numpy().min())
 
     def max(self):
-        """Return the maximum element (copies to host)."""
+        """Return the maximum element."""
+        from pgc.runtime.dispatch import get_backend
+        backend = get_backend()
+        if hasattr(backend, 'reduce_field'):
+            return backend.reduce_field(self, 'max')
         return float(self._buffer.to_numpy().max())
 
     def __repr__(self):

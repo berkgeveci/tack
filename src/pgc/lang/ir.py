@@ -45,11 +45,12 @@ class IRParallelFor(IRNode):
 class IRSequentialFor(IRNode):
     """A sequential for-loop (nested for in range())."""
 
-    def __init__(self, var: str, start, end, body: list):
+    def __init__(self, var: str, start, end, body: list, step=None):
         self.var = var
         self.start = start
         self.end = end
         self.body = body
+        self.step = step  # None means step=1
 
 
 class IRWhile(IRNode):
@@ -207,6 +208,33 @@ class IRCast(IRNode):
         self.dtype = dtype
 
 
+class IRSharedAlloc(IRNode):
+    """Allocate shared/threadgroup memory."""
+
+    def __init__(self, name: str, dtype: str, size):
+        self.name = name
+        self.dtype = dtype   # "float", "int", etc.
+        self.size = size     # IRNode expression for number of elements
+
+
+class IRBarrier(IRNode):
+    """Threadgroup synchronization barrier."""
+    pass
+
+
+class IRThreadId(IRNode):
+    """Thread index within workgroup (threadIdx.x / thread_position_in_threadgroup)."""
+    pass
+
+
+class IRPrint(IRNode):
+    """Print statement for kernel debugging."""
+
+    def __init__(self, args: list, format_parts: list = None):
+        self.args = args            # list of IRNode expressions
+        self.format_parts = format_parts  # list of (kind, value): kind is "str" or "expr"
+
+
 class IRDimSize(IRNode):
     """Query the size of a specific dimension of a field parameter.
 
@@ -241,7 +269,8 @@ def dump(node, indent=0) -> str:
             lines.append(dump(stmt, indent + 1))
         return "\n".join(lines)
     if isinstance(node, IRSequentialFor):
-        lines = [f"{prefix}SequentialFor {node.var} in [{dump(node.start)}, {dump(node.end)}):"]
+        step_str = f" step {dump(node.step)}" if node.step else ""
+        lines = [f"{prefix}SequentialFor {node.var} in [{dump(node.start)}, {dump(node.end)}){step_str}:"]
         for stmt in node.body:
             lines.append(dump(stmt, indent + 1))
         return "\n".join(lines)
@@ -295,6 +324,15 @@ def dump(node, indent=0) -> str:
         return f"{prefix}Return {dump(node.value)}"
     if isinstance(node, IRCast):
         return f"{prefix}Cast({dump(node.value)}, {node.dtype})"
+    if isinstance(node, IRSharedAlloc):
+        return f"{prefix}SharedAlloc {node.name}: {node.dtype}[{dump(node.size)}]"
+    if isinstance(node, IRBarrier):
+        return f"{prefix}Barrier"
+    if isinstance(node, IRThreadId):
+        return f"{prefix}ThreadId"
+    if isinstance(node, IRPrint):
+        args = ", ".join(dump(a) for a in node.args)
+        return f"{prefix}Print({args})"
     if isinstance(node, IRDimSize):
         return f"{prefix}DimSize({node.field_name}, {node.dim})"
     return f"{prefix}<unknown: {type(node).__name__}>"

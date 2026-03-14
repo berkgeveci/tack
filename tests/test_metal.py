@@ -227,3 +227,53 @@ def test_atomic_min_max():
     minmax_kernel(x, min_out, max_out)
     np.testing.assert_allclose(min_out.to_numpy()[0], -20.0)
     np.testing.assert_allclose(max_out.to_numpy()[0], 43.0)
+
+
+def test_range_with_step():
+    """Test for-loop with step on Metal."""
+    n = 64
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    @pgc.kernel
+    def step_test(out):
+        for i in range(out.shape[0]):
+            out[i] = 0.0
+            for j in range(0, 10, 3):
+                out[i] = out[i] + float(j)
+
+    step_test(out)
+    # 0 + 3 + 6 + 9 = 18
+    np.testing.assert_allclose(out.to_numpy(), 18.0)
+
+
+def test_shared_memory():
+    """Test shared memory, thread_id, and barrier on Metal."""
+    n = 256
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+    x.from_numpy(np.arange(n, dtype=np.float32))
+
+    @pgc.kernel
+    def shared_test(x, out):
+        smem = pgc.shared(pgc.f32, 256)
+        for i in range(x.shape[0]):
+            tid = pgc.thread_id()
+            smem[tid] = x[i] * 2.0
+            pgc.barrier()
+            out[i] = smem[tid]
+
+    shared_test(x, out)
+    expected = np.arange(n, dtype=np.float32) * 2.0
+    np.testing.assert_allclose(out.to_numpy(), expected)
+
+
+def test_gpu_reductions():
+    """Test GPU-side field.sum(), field.min(), field.max()."""
+    n = 10000
+    x = pgc.field(dtype=pgc.f32, shape=(n,))
+    data = np.arange(n, dtype=np.float32)
+    x.from_numpy(data)
+
+    np.testing.assert_allclose(x.sum(), data.sum(), rtol=1e-5)
+    np.testing.assert_allclose(x.min(), data.min())
+    np.testing.assert_allclose(x.max(), data.max())

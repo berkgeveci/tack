@@ -7,6 +7,19 @@ from pgc.lang.field import field, Vector
 from pgc.lang.data_oriented import data_oriented
 from pgc.runtime.dispatch import init
 
+# Shared memory, barrier, thread_id — only usable inside @pgc.kernel
+def shared(dtype, size):
+    """Allocate threadgroup shared memory. Only usable inside a @pgc.kernel."""
+    raise RuntimeError("shared() can only be used inside a @pgc.kernel")
+
+def barrier():
+    """Threadgroup synchronization barrier. Only usable inside a @pgc.kernel."""
+    raise RuntimeError("barrier() can only be used inside a @pgc.kernel")
+
+def thread_id():
+    """Thread index within workgroup. Only usable inside a @pgc.kernel."""
+    raise RuntimeError("thread_id() can only be used inside a @pgc.kernel")
+
 # Atomic operations — only usable inside @pgc.kernel
 def atomic_add(field, index, value):
     """Atomic add: field[index] += value. Only usable inside a @pgc.kernel."""

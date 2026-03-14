@@ -71,6 +71,10 @@ class MSLCodeGen:
     def generate(self) -> str:
         """Generate MSL source for the kernel."""
         func = self.ir_func
+        self._needs_local_tid = False
+
+        # Pre-scan IR for shared memory / thread_id usage
+        self._needs_local_tid = self._scan_for_threadgroup(func.body)
 
         # Build parameter info
         for param in func.params:
@@ -103,6 +107,8 @@ class MSLCodeGen:
                 params_msl.append(f"constant {msl_type}& {param.name} [[buffer({i})]]")
 
         params_msl.append("uint __tid__ [[thread_position_in_grid]]")
+        if self._needs_local_tid:
+            params_msl.append("uint __local_tid__ [[thread_position_in_threadgroup]]")
 
         sig = ",\n    ".join(params_msl)
         self._emit(f"kernel void {func.name}(")
@@ -145,6 +151,12 @@ class MSLCodeGen:
             self._emit("continue;")
         elif isinstance(node, ir.IRAtomicOp):
             self._emit_atomic_op(node)
+        elif isinstance(node, ir.IRPrint):
+            self._emit("/* print not supported on Metal */")
+        elif isinstance(node, ir.IRSharedAlloc):
+            self._emit(f"threadgroup {node.dtype} {node.name}[{self._expr(node.size)}];")
+        elif isinstance(node, ir.IRBarrier):
+            self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
         elif isinstance(node, ir.IRCall):
             self._emit(f"{self._expr(node)};")
         else:
@@ -160,13 +172,15 @@ class MSLCodeGen:
     def _emit_sequential_for(self, node: ir.IRSequentialFor):
         start = self._expr(node.start)
         end = self._expr(node.end)
+        step = self._expr(node.step) if node.step else None
+        incr = f"{node.var} += {step}" if step else f"{node.var}++"
         var = node.var
         if var not in self._declared_vars:
-            self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {var}++) {{")
+            self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {incr}) {{")
             self._local_vars[var] = _INT
             self._declared_vars.add(var)
         else:
-            self._emit(f"for ({var} = {start}; {var} < {end}; {var}++) {{")
+            self._emit(f"for ({var} = {start}; {var} < {end}; {incr}) {{")
         self._indent += 1
         self._emit_body(node.body)
         self._indent -= 1
@@ -400,6 +414,9 @@ class MSLCodeGen:
             return self._expr_cast(node)
         if isinstance(node, ir.IRIfExp):
             return self._expr_ifexp(node)
+        if isinstance(node, ir.IRThreadId):
+            self._needs_local_tid = True
+            return "__local_tid__"
         raise NotImplementedError(f"MSL expr: {type(node).__name__}")
 
     def _expr_constant(self, node: ir.IRConstant) -> str:
@@ -487,6 +504,53 @@ class MSLCodeGen:
         then = self._expr(node.then_value)
         else_ = self._expr(node.else_value)
         return f"({cond} ? {then} : {else_})"
+
+
+    def _scan_for_threadgroup(self, stmts: list) -> bool:
+        """Check if any statement uses threadgroup features."""
+        for stmt in stmts:
+            if isinstance(stmt, (ir.IRSharedAlloc, ir.IRBarrier, ir.IRThreadId)):
+                return True
+            if isinstance(stmt, ir.IRParallelFor):
+                if self._scan_for_threadgroup(stmt.body):
+                    return True
+            elif isinstance(stmt, ir.IRSequentialFor):
+                if self._scan_for_threadgroup(stmt.body):
+                    return True
+            elif isinstance(stmt, ir.IRWhile):
+                if self._scan_for_threadgroup(stmt.body):
+                    return True
+            elif isinstance(stmt, ir.IRIf):
+                if self._scan_for_threadgroup(stmt.then_body):
+                    return True
+                if stmt.else_body and self._scan_for_threadgroup(stmt.else_body):
+                    return True
+            # Check expressions for IRThreadId
+            elif isinstance(stmt, ir.IRAssign):
+                if self._expr_contains_thread_id(stmt.value):
+                    return True
+            elif isinstance(stmt, ir.IRFieldStore):
+                if (self._expr_contains_thread_id(stmt.index) or
+                        self._expr_contains_thread_id(stmt.value)):
+                    return True
+        return False
+
+    def _expr_contains_thread_id(self, node) -> bool:
+        """Check if an expression contains IRThreadId."""
+        if isinstance(node, ir.IRThreadId):
+            return True
+        if isinstance(node, ir.IRBinOp):
+            return (self._expr_contains_thread_id(node.left) or
+                    self._expr_contains_thread_id(node.right))
+        if isinstance(node, ir.IRUnaryOp):
+            return self._expr_contains_thread_id(node.operand)
+        if isinstance(node, ir.IRCall):
+            return any(self._expr_contains_thread_id(a) for a in node.args)
+        if isinstance(node, ir.IRCast):
+            return self._expr_contains_thread_id(node.value)
+        if isinstance(node, ir.IRFieldLoad):
+            return self._expr_contains_thread_id(node.index)
+        return False
 
 
 def generate_msl_source(ir_func: ir.IRFunction) -> str:

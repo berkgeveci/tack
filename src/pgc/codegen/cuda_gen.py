@@ -159,6 +159,12 @@ class CUDACodeGen:
             self._emit("continue;")
         elif isinstance(node, ir.IRAtomicOp):
             self._emit_atomic_op(node)
+        elif isinstance(node, ir.IRPrint):
+            self._emit_print(node)
+        elif isinstance(node, ir.IRSharedAlloc):
+            self._emit(f"__shared__ {node.dtype} {node.name}[{self._expr(node.size)}];")
+        elif isinstance(node, ir.IRBarrier):
+            self._emit("__syncthreads();")
         elif isinstance(node, ir.IRCall):
             self._emit(f"{self._expr(node)};")
         else:
@@ -176,13 +182,15 @@ class CUDACodeGen:
     def _emit_sequential_for(self, node: ir.IRSequentialFor):
         start = self._expr(node.start)
         end = self._expr(node.end)
+        step = self._expr(node.step) if node.step else None
+        incr = f"{node.var} += {step}" if step else f"{node.var}++"
         var = node.var
         if var not in self._declared_vars:
-            self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {var}++) {{")
+            self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {incr}) {{")
             self._local_vars[var] = _INT
             self._declared_vars.add(var)
         else:
-            self._emit(f"for ({var} = {start}; {var} < {end}; {var}++) {{")
+            self._emit(f"for ({var} = {start}; {var} < {end}; {incr}) {{")
         self._indent += 1
         self._emit_body(node.body)
         self._indent -= 1
@@ -248,6 +256,43 @@ class CUDACodeGen:
                     if t:
                         return t
         return None
+
+    def _emit_print(self, node: ir.IRPrint):
+        """Emit a printf call for kernel debugging."""
+        fmt_parts = []
+        args = []
+        if node.format_parts:
+            for i, (kind, val) in enumerate(node.format_parts):
+                if i > 0:
+                    fmt_parts.append(" ")
+                if kind == "str":
+                    fmt_parts.append(val.replace("%", "%%"))
+                else:
+                    expr = self._expr(node.args[val])
+                    expr_type = self._infer_expr_type(node.args[val])
+                    if expr_type in ("float", "double"):
+                        fmt_parts.append("%f")
+                    else:
+                        fmt_parts.append("%d")
+                    args.append(expr)
+        else:
+            for i, arg_node in enumerate(node.args):
+                if i > 0:
+                    fmt_parts.append(" ")
+                expr = self._expr(arg_node)
+                expr_type = self._infer_expr_type(arg_node)
+                if expr_type in ("float", "double"):
+                    fmt_parts.append("%f")
+                else:
+                    fmt_parts.append("%d")
+                args.append(expr)
+
+        fmt_str = "".join(fmt_parts) + "\\n"
+        args_str = ", ".join(args)
+        if args_str:
+            self._emit(f'printf("{fmt_str}", {args_str});')
+        else:
+            self._emit(f'printf("{fmt_str}");')
 
     def _emit_atomic_op(self, node: ir.IRAtomicOp):
         """Emit a CUDA atomic operation."""
@@ -380,6 +425,8 @@ class CUDACodeGen:
             return self._expr_cast(node)
         if isinstance(node, ir.IRIfExp):
             return self._expr_ifexp(node)
+        if isinstance(node, ir.IRThreadId):
+            return "threadIdx.x"
         raise NotImplementedError(f"CUDA expr: {type(node).__name__}")
 
     def _expr_constant(self, node: ir.IRConstant) -> str:

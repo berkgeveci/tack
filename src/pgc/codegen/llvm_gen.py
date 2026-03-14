@@ -149,6 +149,12 @@ class LLVMCodeGen:
             self._emit_continue()
         elif isinstance(node, ir.IRAtomicOp):
             self._emit_atomic_op(node)
+        elif isinstance(node, ir.IRPrint):
+            self._emit_print(node)
+        elif isinstance(node, ir.IRSharedAlloc):
+            self._emit_shared_alloc(node)
+        elif isinstance(node, ir.IRBarrier):
+            pass  # No-op on CPU (single-threaded per chunk)
         elif isinstance(node, ir.IRCall):
             # Standalone function call (expression statement)
             self._emit_expr(node)
@@ -179,6 +185,10 @@ class LLVMCodeGen:
             return self._emit_cast(node)
         if isinstance(node, ir.IRIfExp):
             return self._emit_ifexp(node)
+        if isinstance(node, ir.IRThreadId):
+            # On CPU, thread_id within a chunk is (loop_var - loop_start)
+            # Return 0 as a safe default (CPU doesn't have workgroups)
+            return llvm_ir.Constant(llvm_ir.IntType(64), 0)
         raise NotImplementedError(f"Cannot emit expression: {type(node).__name__}")
 
     # --- Loops ---
@@ -269,8 +279,13 @@ class LLVMCodeGen:
         self._continue_target = old_continue
 
         if not self.builder.block.is_terminated:
-            next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
-                                        name=f"{node.var}.next")
+            if node.step is not None:
+                step_val = self._to_i64(self._emit_expr(node.step))
+                next_val = self.builder.add(phi, step_val,
+                                            name=f"{node.var}.next")
+            else:
+                next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
+                                            name=f"{node.var}.next")
             phi.add_incoming(next_val, self.builder.block)
             self.builder.branch(header)
 
@@ -457,6 +472,88 @@ class LLVMCodeGen:
             cond = self.builder.fcmp_ordered(">", value, old_val, name="atomic.cmp")
         new_val = self.builder.select(cond, value, old_val, name="atomic.new")
         self.builder.store(new_val, ptr)
+
+    def _emit_shared_alloc(self, node: ir.IRSharedAlloc):
+        """Emit shared memory as a stack alloca (CPU has no shared memory)."""
+        _dtype_llvm = {"float": llvm_ir.FloatType(), "double": llvm_ir.DoubleType(),
+                       "int": llvm_ir.IntType(32), "long": llvm_ir.IntType(64),
+                       "uint": llvm_ir.IntType(32), "ulong": llvm_ir.IntType(64)}
+        elem_type = _dtype_llvm.get(node.dtype, llvm_ir.FloatType())
+        # Use constant size for the alloca
+        if isinstance(node.size, ir.IRConstant):
+            arr_type = llvm_ir.ArrayType(elem_type, node.size.value)
+            alloca = self._create_entry_alloca(arr_type, node.name)
+            # Bitcast to pointer for array access
+            ptr = self.builder.bitcast(alloca, elem_type.as_pointer())
+            self._locals[node.name] = ptr
+            self._field_params.add(node.name)  # treat as pointer for load/store
+        else:
+            # Dynamic size — use a fixed upper bound
+            arr_type = llvm_ir.ArrayType(elem_type, 256)
+            alloca = self._create_entry_alloca(arr_type, node.name)
+            ptr = self.builder.bitcast(alloca, elem_type.as_pointer())
+            self._locals[node.name] = ptr
+            self._field_params.add(node.name)
+
+    _printf_count = 0
+
+    def _emit_print(self, node: ir.IRPrint):
+        """Emit a printf call for kernel debugging."""
+        fmt_parts = []
+        call_args = []
+
+        if node.format_parts:
+            for i, (kind, val) in enumerate(node.format_parts):
+                if i > 0:
+                    fmt_parts.append(" ")
+                if kind == "str":
+                    fmt_parts.append(val.replace("%", "%%"))
+                else:
+                    arg_val = self._emit_expr(node.args[val])
+                    if _is_float_type(arg_val.type):
+                        arg_val = self.builder.fpext(arg_val, llvm_ir.DoubleType())
+                        fmt_parts.append("%f")
+                    else:
+                        fmt_parts.append("%lld")
+                    call_args.append(arg_val)
+        else:
+            for i, arg_node in enumerate(node.args):
+                if i > 0:
+                    fmt_parts.append(" ")
+                arg_val = self._emit_expr(arg_node)
+                if _is_float_type(arg_val.type):
+                    arg_val = self.builder.fpext(arg_val, llvm_ir.DoubleType())
+                    fmt_parts.append("%f")
+                else:
+                    fmt_parts.append("%lld")
+                call_args.append(arg_val)
+
+        fmt_str = "".join(fmt_parts) + "\n"
+
+        # Create global string constant for format
+        fmt_bytes = (fmt_str + "\0").encode("utf-8")
+        fmt_type = llvm_ir.ArrayType(llvm_ir.IntType(8), len(fmt_bytes))
+        LLVMCodeGen._printf_count += 1
+        fmt_global = llvm_ir.GlobalVariable(self.module, fmt_type,
+                                            name=f".printf_fmt.{LLVMCodeGen._printf_count}")
+        fmt_global.global_constant = True
+        fmt_global.linkage = "internal"
+        fmt_global.initializer = llvm_ir.Constant(fmt_type,
+                                                   bytearray(fmt_bytes))
+
+        # Get or declare printf
+        i8_ptr = llvm_ir.IntType(8).as_pointer()
+        try:
+            printf_fn = self.module.get_global("printf")
+        except KeyError:
+            printf_type = llvm_ir.FunctionType(llvm_ir.IntType(32), [i8_ptr], var_arg=True)
+            printf_fn = llvm_ir.Function(self.module, printf_type, name="printf")
+
+        # GEP to get pointer to first element of the format string
+        zero = llvm_ir.Constant(llvm_ir.IntType(32), 0)
+        fmt_ptr = self.builder.gep(fmt_global, [zero, zero], inbounds=True)
+
+        self.builder.call(printf_fn, [fmt_ptr] + call_args)
 
     # --- Expressions ---
 

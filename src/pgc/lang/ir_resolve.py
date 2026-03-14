@@ -77,6 +77,8 @@ def _resolve(node, fields):
     if isinstance(node, ir.IRSequentialFor):
         node.start = _resolve(node.start, fields)
         node.end = _resolve(node.end, fields)
+        if node.step is not None:
+            node.step = _resolve(node.step, fields)
         node.body = [_resolve(s, fields) for s in node.body]
         return node
 
@@ -103,6 +105,14 @@ def _resolve(node, fields):
 
     if isinstance(node, ir.IRCast):
         node.value = _resolve(node.value, fields)
+        return node
+
+    if isinstance(node, ir.IRSharedAlloc):
+        node.size = _resolve(node.size, fields)
+        return node
+
+    if isinstance(node, ir.IRPrint):
+        node.args = [_resolve(a, fields) for a in node.args]
         return node
 
     if isinstance(node, ir.IRReturn):
