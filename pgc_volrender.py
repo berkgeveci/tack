@@ -372,6 +372,8 @@ def main():
             arch = pgc.cpu
         if a == '--arch=cuda':
             arch = pgc.cuda
+        if a == '--arch=hip':
+            arch = pgc.hip
 
     pgc.init(arch=arch)
     print(f"Backend: {arch}")

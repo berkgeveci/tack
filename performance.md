@@ -43,6 +43,37 @@ GPU: NVIDIA GeForce RTX 4060 Ti 16GB, CUDA 13.1, 288 GB/s GDDR6.
   reduce  |       967 |     26,033 |    1,838 |      27x |       14x
 ```
 
+## Linux — AMD Instinct MI300X (HIP/ROCm)
+
+Machine: 20-core CPU, AMD Instinct MI300X, ROCm 7.1, HBM3 (~5.3 TB/s bandwidth).
+
+Reproduce: `uv run python bench_cpu_vs_hip.py`
+
+```
+  Kernel  | CPU JIT   | HIP GPU    |  Speedup
+          |   (ms)    |   (ms)     |  HIP/CPU
+----------+-----------+------------+----------
+  SAXPY   |     2.516 |      0.079 |     31.7x
+  MEMCPY  |     1.642 |      0.064 |     25.8x
+  FILL    |     1.206 |      0.060 |     20.2x
+  STENCIL |     1.644 |      0.072 |     22.7x
+  sqrt    |     1.638 |      0.061 |     26.9x
+  sin     |     9.627 |      0.067 |    144.2x
+  exp     |     4.951 |      0.068 |     72.5x
+  reduce  |     1.636 |      0.062 |     26.5x
+```
+
+Data size: 64 MB of f32 (16,777,216 elements), median of 5 trials after warmup.
+
+### Volume Render (800x800, Enzo 64^3 AMR, 718 grids, 1.2M cells)
+
+```
+  Backend |  Steady-state  |  Speedup
+----------+----------------+----------
+  CPU     |     251.3 ms   |     1.0x
+  HIP     |       2.4 ms   |   104.7x
+```
+
 ## Notes
 
 - **Metal GPU vs CUDA GPU** are in the same ballpark (~19-29 G elem/s) despite

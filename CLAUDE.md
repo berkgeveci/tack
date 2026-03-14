@@ -11,6 +11,7 @@ uv run pytest tests/test_hip.py        # run HIP backend tests (requires ROCm)
 uv run pytest -k "test_saxpy"          # run tests matching a pattern
 uv run python examples/validate_all.py # validation suite (CPU + GPU)
 uv run python benchmarks/microbenchmarks.py --bench saxpy  # run specific benchmark
+uv run python bench_cpu_vs_hip.py                         # CPU vs HIP/ROCm benchmark
 ```
 
 No build step — pure Python with JIT compilation at runtime.
@@ -121,6 +122,16 @@ CPU backend uses `ThreadPoolExecutor` only when loop range > 1024 elements. Belo
 
 The HIP codegen (`hip_gen.py`) extends `CUDACodeGen` — HIP device code uses the same syntax as CUDA (`blockIdx`, `threadIdx`, `__global__`, `__shared__`, `__syncthreads`). The only difference is `#include <hip/hip_runtime.h>`. The runtime (`hip_backend.py`) uses `hip-python` bindings for hipRTC compilation and dispatch.
 
-To test: `pip install hip-python` on a system with ROCm installed, then `pgc.init(arch=pgc.hip)`.
+To install hip-python (packages are on **Test PyPI**, not regular PyPI):
+
+```bash
+uv pip install --prerelease=allow --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ --index-strategy unsafe-best-match \
+  "hip-python~=7.1.0"
+```
+
+Then: `pgc.init(arch=pgc.hip)`.
+
+**Known issue**: `hiprtcDestroyProgram` segfaults in hip-python 7.1 bindings. The backend skips this call (minor leak, mitigated by kernel caching).
 
 ## Do not mention Claude in git commits

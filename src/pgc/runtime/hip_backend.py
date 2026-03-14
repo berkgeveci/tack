@@ -37,30 +37,18 @@ _NUMPY_DTYPE = {
 }
 
 
-def _check_hip(err):
-    """Check a HIP runtime result, raise on error."""
-    if isinstance(err, hip.hipError_t):
-        if err != hip.hipError_t.hipSuccess:
-            raise RuntimeError(f"HIP error: {err}")
+def _check_hip(result):
+    """Check a HIP runtime result, raise on error (handles tuple returns)."""
+    err = result[0] if isinstance(result, tuple) else result
+    if isinstance(err, hip.hipError_t) and err != hip.hipError_t.hipSuccess:
+        raise RuntimeError(f"HIP error: {err}")
 
 
-def _check_hiprtc(err):
-    """Check a hipRTC result, raise on error."""
-    if isinstance(err, hiprtc.hiprtcResult):
-        if err != hiprtc.hiprtcResult.HIPRTC_SUCCESS:
-            raise RuntimeError(f"hipRTC error: {err}")
-
-
-def _check(result):
-    """Check a HIP or hipRTC result (handles tuple returns)."""
-    if isinstance(result, tuple):
-        err = result[0]
-    else:
-        err = result
-    if isinstance(err, hip.hipError_t):
-        _check_hip(err)
-    elif isinstance(err, hiprtc.hiprtcResult):
-        _check_hiprtc(err)
+def _check_hiprtc(result):
+    """Check a hipRTC result, raise on error (handles tuple returns)."""
+    err = result[0] if isinstance(result, tuple) else result
+    if isinstance(err, hiprtc.hiprtcResult) and err != hiprtc.hiprtcResult.HIPRTC_SUCCESS:
+        raise RuntimeError(f"hipRTC error: {err}")
 
 
 class HIPBuffer(DeviceBuffer):
@@ -118,19 +106,19 @@ def _compile_code_object(hip_source: str, func_name: str) -> bytes:
     """Compile HIP C source to a code object via hipRTC."""
     src = hip_source.encode("utf-8")
     err, prog = hiprtc.hiprtcCreateProgram(
-        src, f"{func_name}.hip".encode(), 0, None, None,
+        src, f"{func_name}.hip".encode(), 0, [], [],
     )
     _check_hiprtc(err)
 
     # Compile for the current device architecture
-    compile_result = hiprtc.hiprtcCompileProgram(prog, 0, None)
+    compile_result = hiprtc.hiprtcCompileProgram(prog, 0, [])
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != hiprtc.hiprtcResult.HIPRTC_SUCCESS:
         err, log_size = hiprtc.hiprtcGetProgramLogSize(prog)
-        log = b" " * log_size
+        log = bytearray(log_size)
         hiprtc.hiprtcGetProgramLog(prog, log)
-        hiprtc.hiprtcDestroyProgram(prog)
+        # NOTE: skip hiprtcDestroyProgram — segfaults in hip-python 7.1
         raise RuntimeError(
             f"hipRTC compilation failed:\n{log.decode(errors='replace')}\n"
             f"Source:\n{hip_source}"
@@ -138,9 +126,9 @@ def _compile_code_object(hip_source: str, func_name: str) -> bytes:
 
     err, code_size = hiprtc.hiprtcGetCodeSize(prog)
     _check_hiprtc(err)
-    code = b" " * code_size
+    code = bytearray(code_size)
     _check_hiprtc(hiprtc.hiprtcGetCode(prog, code))
-    hiprtc.hiprtcDestroyProgram(prog)
+    # NOTE: skip hiprtcDestroyProgram — segfaults in hip-python 7.1
     return code
 
 
@@ -189,7 +177,7 @@ class CompiledHIPKernel:
             grid_dim, 1, 1,
             block_dim, 1, 1,
             0, None,
-            arg_ptrs,
+            arg_ptrs, None,
         ))
         _check_hip(hip.hipDeviceSynchronize())
 
@@ -276,7 +264,7 @@ class HIPBackend:
         err, module = hip.hipModuleLoadData(code)
         _check_hip(err)
 
-        err, func = hip.hipModuleGetFunction(module, ir_func.name)
+        err, func = hip.hipModuleGetFunction(module, ir_func.name.encode())
         _check_hip(err)
 
         param_types = [p.type_annotation for p in ir_func.params]
