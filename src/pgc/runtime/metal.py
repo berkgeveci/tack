@@ -1,7 +1,7 @@
-"""PGC Metal compute backend — compiles kernels via SPIR-V → MSL and dispatches on GPU.
+"""PGC Metal compute backend — compiles kernels to MSL and dispatches on GPU.
 
 Pipeline:
-    PGC IR → SPIR-V binary → MSL (via spirv-cross) → Metal compute pipeline
+    PGC IR → MSL (via msl_gen.py) → Metal compute pipeline
 
 Each field parameter becomes a Metal buffer at index matching its binding number.
 The parallel loop range is dispatched as a 1D grid of threads.
@@ -11,16 +11,13 @@ CPU and GPU.  Fields are backed directly by Metal buffer memory — no per-dispa
 copies are needed.
 """
 
-import subprocess
-import tempfile
-
 import numpy as np
 
 from pgc.lang import ir
 from pgc.lang.field import Field, DeviceBuffer
 from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
 from pgc.lang.type_inference import infer_param_types
-from pgc.codegen.spirv_gen import generate_spirv
+from pgc.codegen.msl_gen import generate_msl_source
 
 try:
     import Metal  # pyobjc-framework-Metal
@@ -60,20 +57,6 @@ class MetalBuffer(DeviceBuffer):
     @property
     def nbytes(self) -> int:
         return self._view.nbytes
-
-
-def _spirv_to_msl(spirv_bytes: bytes) -> str:
-    """Convert SPIR-V binary to Metal Shading Language via spirv-cross."""
-    with tempfile.NamedTemporaryFile(suffix=".spv", delete=False) as f:
-        f.write(spirv_bytes)
-        f.flush()
-        result = subprocess.run(
-            ["spirv-cross", "--msl", f.name],
-            capture_output=True, text=True,
-        )
-        if result.returncode != 0:
-            raise RuntimeError(f"spirv-cross failed: {result.stderr}")
-        return result.stdout
 
 
 def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
@@ -127,8 +110,7 @@ class CompiledMetalKernel:
 
 def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMetalKernel:
     """Compile a PGC IR function to a Metal compute pipeline."""
-    spirv_bytes = generate_spirv(ir_func)
-    msl_source = _spirv_to_msl(spirv_bytes)
+    msl_source = generate_msl_source(ir_func)
 
     # Debug: dump MSL source for analysis
     import os
@@ -143,11 +125,11 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
         msl_source, options, None
     )
     if library is None:
-        raise RuntimeError(f"Metal shader compilation failed: {error}")
+        raise RuntimeError(f"Metal shader compilation failed:\n{error}\n\nMSL source:\n{msl_source}")
 
-    func = library.newFunctionWithName_("main0")
+    func = library.newFunctionWithName_(ir_func.name)
     if func is None:
-        raise RuntimeError("Could not find 'main0' function in Metal library")
+        raise RuntimeError(f"Could not find '{ir_func.name}' function in Metal library")
 
     pipeline, error = device.newComputePipelineStateWithFunction_error_(func, None)
     if pipeline is None:
