@@ -428,10 +428,9 @@ class CPUBackend:
         loop_end = _get_loop_range(ir_func, effective_args)
 
         # Parallel execution: split range across threads
-        # ThreadPoolExecutor overhead is ~0.1ms per dispatch, so only
-        # parallelize when the workload is large enough to amortize it.
-        # TODO: use C-level pthreads for lower dispatch overhead.
-        if self.num_threads <= 1 or loop_end <= 4_000_000:
+        # ThreadPoolExecutor overhead is ~0.1ms per dispatch with a warm pool,
+        # so parallelize for any non-trivial workload.
+        if self.num_threads <= 1 or loop_end <= 1024:
             # Single-threaded for small workloads
             compiled(field_args, 0, loop_end)
         else:

@@ -370,6 +370,8 @@ def main():
             arch = pgc.metal
         if a == '--arch=cpu':
             arch = pgc.cpu
+        if a == '--arch=cuda':
+            arch = pgc.cuda
 
     pgc.init(arch=arch)
     print(f"Backend: {arch}")
@@ -491,17 +493,35 @@ def main():
     print(f"Uploaded {all_data_flat.size:,} cells, lookup grid {LG}^3")
     print("Rendering...")
 
+    def do_render():
+        render(pixels, pixel_alpha,
+               cam_pos, cam_focus, cam_up,
+               domain_min_f, domain_max_f,
+               step_size_f, opacity_scale_f, fov_half_tan_f,
+               tf_log_min_f, tf_log_range_f, tf_table,
+               block_origins, block_spacings, block_cell_dims,
+               block_data_offsets, field_data,
+               lookup_grid, lookup_spacing_f, LG_CONST)
+
     t0 = time.time()
-    render(pixels, pixel_alpha,
-           cam_pos, cam_focus, cam_up,
-           domain_min_f, domain_max_f,
-           step_size_f, opacity_scale_f, fov_half_tan_f,
-           tf_log_min_f, tf_log_range_f, tf_table,
-           block_origins, block_spacings, block_cell_dims,
-           block_data_offsets, field_data,
-           lookup_grid, lookup_spacing_f, LG_CONST)
+    do_render()
     t1 = time.time()
-    print(f"Render time: {t1 - t0:.3f}s")
+    print(f"Render time (incl. JIT): {t1 - t0:.3f}s")
+
+    # Benchmark mode: re-render N times after warmup
+    bench_n = 0
+    for a in sys.argv[1:]:
+        if a.startswith('--bench='):
+            bench_n = int(a.split('=', 1)[1])
+    if bench_n > 0:
+        times = []
+        for i in range(bench_n):
+            t0 = time.time()
+            do_render()
+            t = time.time() - t0
+            times.append(t)
+        avg = sum(times) / len(times)
+        print(f"Bench ({bench_n} runs): min={min(times):.4f}s avg={avg:.4f}s")
 
     save_image(pixels, pixel_alpha, save_path)
 

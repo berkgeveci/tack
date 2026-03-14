@@ -7,6 +7,9 @@ Generates an ``extern "C" __global__`` kernel function where:
     with a bounds guard.
   - Sequential for-loops, while-loops, if/else map to standard C control flow.
   - Math builtins map to CUDA device math functions (sqrtf, sinf, etc.).
+
+All integer locals and loop indices use 32-bit ``int`` to maximise GPU ALU
+throughput (64-bit integer math runs at half rate on consumer NVIDIA GPUs).
 """
 
 from pgc.lang import ir
@@ -21,6 +24,9 @@ _C_TYPE_MAP = {
     u32: "unsigned int",
     u64: "unsigned long long",
 }
+
+# Default integer type for locals on CUDA — 32-bit for throughput.
+_INT = "int"
 
 _MATH_FUNCS_F32 = {
     "sqrt": "sqrtf",
@@ -83,7 +89,8 @@ class CUDACodeGen:
         self._lines: list[str] = []
         self._param_types: dict[str, ScalarType] = {}
         self._field_params: set[str] = set()
-        self._local_vars: dict[str, str] = {}  # name → C type
+        self._local_vars: dict[str, str] = {}  # name → C type (all known vars)
+        self._declared_vars: set[str] = set()  # vars already emitted with declaration
         self._loop_end_name: str | None = None
 
     def generate(self) -> str:
@@ -109,8 +116,8 @@ class CUDACodeGen:
             else:
                 params_c.append(f"{c_type} {param.name}")
 
-        # Add the loop-end parameter (passed as kernel arg for bounds checking)
-        params_c.append("long long __n__")
+        # Loop-end parameter — 32-bit is sufficient for CUDA grid sizes
+        params_c.append(f"{_INT} __n__")
 
         sig = ", ".join(params_c)
         self._emit(f'extern "C" __global__ void {func.name}({sig}) {{')
@@ -157,18 +164,20 @@ class CUDACodeGen:
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         """Emit the parallel for-loop as CUDA thread index calculation."""
         idx = node.var
-        self._emit(f"long long {idx} = (long long)blockIdx.x * (long long)blockDim.x + (long long)threadIdx.x;")
+        self._emit(f"{_INT} {idx} = blockIdx.x * blockDim.x + threadIdx.x;")
         self._emit(f"if ({idx} >= __n__) return;")
-        self._local_vars[idx] = "long long"
+        self._local_vars[idx] = _INT
+        self._declared_vars.add(idx)
         self._emit_body(node.body)
 
     def _emit_sequential_for(self, node: ir.IRSequentialFor):
         start = self._expr(node.start)
         end = self._expr(node.end)
         var = node.var
-        if var not in self._local_vars:
-            self._emit(f"for (long long {var} = {start}; {var} < {end}; {var}++) {{")
-            self._local_vars[var] = "long long"
+        if var not in self._declared_vars:
+            self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {var}++) {{")
+            self._local_vars[var] = _INT
+            self._declared_vars.add(var)
         else:
             self._emit(f"for ({var} = {start}; {var} < {end}; {var}++) {{")
         self._indent += 1
@@ -185,6 +194,19 @@ class CUDACodeGen:
         self._emit("}")
 
     def _emit_if(self, node: ir.IRIf):
+        # Pre-declare variables assigned in branches so they are visible at
+        # the outer scope in C.
+        then_new = self._collect_new_assigns(node.then_body)
+        else_new = self._collect_new_assigns(node.else_body) if node.else_body else set()
+        needs_hoist = then_new | else_new
+        for var_name in sorted(needs_hoist):
+            if var_name not in self._declared_vars:
+                c_type = self._find_assign_type(var_name, node.then_body) or \
+                         self._find_assign_type(var_name, node.else_body or []) or "float"
+                self._emit(f"{c_type} {var_name};")
+                self._local_vars[var_name] = c_type
+                self._declared_vars.add(var_name)
+
         cond = self._expr(node.condition)
         self._emit(f"if ({cond}) {{")
         self._indent += 1
@@ -197,34 +219,65 @@ class CUDACodeGen:
             self._indent -= 1
         self._emit("}")
 
+    def _collect_new_assigns(self, stmts: list) -> set[str]:
+        """Collect variable names that would be newly declared in these stmts."""
+        result = set()
+        for stmt in stmts:
+            if isinstance(stmt, ir.IRAssign) and stmt.target not in self._declared_vars:
+                result.add(stmt.target)
+            elif isinstance(stmt, ir.IRIf):
+                result |= self._collect_new_assigns(stmt.then_body)
+                if stmt.else_body:
+                    result |= self._collect_new_assigns(stmt.else_body)
+        return result
+
+    def _find_assign_type(self, var_name: str, stmts: list) -> str | None:
+        """Find the inferred C type for a variable from its assignment in stmts."""
+        for stmt in stmts:
+            if isinstance(stmt, ir.IRAssign) and stmt.target == var_name:
+                return self._infer_c_type(stmt.value)
+            elif isinstance(stmt, ir.IRIf):
+                t = self._find_assign_type(var_name, stmt.then_body)
+                if t:
+                    return t
+                if stmt.else_body:
+                    t = self._find_assign_type(var_name, stmt.else_body)
+                    if t:
+                        return t
+        return None
+
     def _emit_field_store(self, node: ir.IRFieldStore):
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
+        # Ensure array index is integer
+        idx_type = self._infer_expr_type(node.index)
+        if idx_type in ("float", "double"):
+            index = f"(({_INT})({index}))"
         self._emit(f"{field}[{index}] = {value};")
 
     def _emit_assign(self, node: ir.IRAssign):
         value = self._expr(node.value)
-        if node.target in self._local_vars:
+        if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
             # Infer a C type from the expression
             c_type = self._infer_c_type(node.value)
             self._emit(f"{c_type} {node.target} = {value};")
             self._local_vars[node.target] = c_type
+            self._declared_vars.add(node.target)
 
     def _infer_c_type(self, node) -> str:
         """Best-effort C type inference for local variable declarations."""
         if isinstance(node, ir.IRConstant):
             if isinstance(node.value, float):
                 return "float"
-            return "long long"
+            return _INT
         if isinstance(node, ir.IRFieldLoad):
             field_name = self._get_field_name(node.field)
             if field_name and field_name in self._param_types:
                 return _C_TYPE_MAP[self._param_types[field_name]]
         if isinstance(node, ir.IRBinOp):
-            # If either operand involves a float, result is float
             lt = self._infer_c_type(node.left)
             rt = self._infer_c_type(node.right)
             if lt == "float" or rt == "float":
@@ -236,22 +289,49 @@ class CUDACodeGen:
             return "float"
         if isinstance(node, ir.IRCast):
             if node.dtype == "int":
-                return "long long"
+                return _INT
             if node.dtype == "float":
                 return "float"
         if isinstance(node, ir.IRIfExp):
             return self._infer_c_type(node.then_value)
         if isinstance(node, ir.IRCompare):
-            return "int"
+            return _INT
         if isinstance(node, ir.IRUnaryOp):
             return self._infer_c_type(node.operand)
         if isinstance(node, ir.IRName):
+            if node.name in self._field_params:
+                c_type = _C_TYPE_MAP[self._param_types[node.name]]
+                return f"{c_type}*"
             if node.name in self._param_types:
                 return _C_TYPE_MAP[self._param_types[node.name]]
             if node.name in self._local_vars:
                 return self._local_vars[node.name]
-            return "long long"
+            return _INT
         return "float"
+
+    def _infer_expr_type(self, node) -> str:
+        """Infer the runtime C type of an expression, considering variable reassignments."""
+        if isinstance(node, ir.IRName):
+            if node.name in self._local_vars:
+                return self._local_vars[node.name]
+            if node.name in self._param_types:
+                return _C_TYPE_MAP[self._param_types[node.name]]
+            return _INT
+        if isinstance(node, ir.IRBinOp):
+            lt = self._infer_expr_type(node.left)
+            rt = self._infer_expr_type(node.right)
+            if "float" in (lt, rt):
+                return "float"
+            if "double" in (lt, rt):
+                return "double"
+            return lt
+        if isinstance(node, ir.IRCall):
+            return "float"
+        if isinstance(node, ir.IRCast):
+            if node.dtype == "int":
+                return _INT
+            return "float"
+        return self._infer_c_type(node)
 
     def _get_field_name(self, node) -> str | None:
         if isinstance(node, ir.IRName):
@@ -287,7 +367,6 @@ class CUDACodeGen:
 
     def _expr_constant(self, node: ir.IRConstant) -> str:
         if isinstance(node.value, float):
-            # Use f suffix for float literals
             return f"{node.value!r}f"
         if isinstance(node.value, bool):
             return "1" if node.value else "0"
@@ -299,7 +378,13 @@ class CUDACodeGen:
         if node.op == "**":
             return f"powf({left}, {right})"
         if node.op == "//":
-            return f"(long long)floorf((float)({left}) / (float)({right}))"
+            # Use true integer division when both operands are integer types,
+            # matching LLVM sdiv semantics. Fall back to float floor for floats.
+            lt = self._infer_expr_type(node.left)
+            rt = self._infer_expr_type(node.right)
+            if lt not in ("float", "double") and rt not in ("float", "double"):
+                return f"({left} / {right})"
+            return f"({_INT})floorf((float)({left}) / (float)({right}))"
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"CUDA binop: {node.op}")
@@ -329,10 +414,13 @@ class CUDACodeGen:
     def _expr_field_load(self, node: ir.IRFieldLoad) -> str:
         field = self._expr(node.field)
         index = self._expr(node.index)
+        # Ensure array index is integer — float indices are invalid in CUDA
+        idx_type = self._infer_expr_type(node.index)
+        if idx_type in ("float", "double"):
+            index = f"(({_INT})({index}))"
         return f"{field}[{index}]"
 
     def _expr_attribute(self, node: ir.IRAttribute) -> str:
-        # field.shape[0] should have been resolved before codegen
         raise NotImplementedError(
             f"Attribute access '{node.attr}' should be resolved before CUDA codegen."
         )
@@ -340,13 +428,11 @@ class CUDACodeGen:
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
 
-        # min/max
         if node.func_name == "min" and len(args) == 2:
             return f"fminf({args[0]}, {args[1]})"
         if node.func_name == "max" and len(args) == 2:
             return f"fmaxf({args[0]}, {args[1]})"
 
-        # Standard math builtins (default to f32 versions)
         if node.func_name in _MATH_FUNCS_F32:
             func = _MATH_FUNCS_F32[node.func_name]
             return f"{func}({', '.join(args)})"
@@ -356,7 +442,7 @@ class CUDACodeGen:
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
         if node.dtype == "int":
-            return f"((long long)({val}))"
+            return f"(({_INT})({val}))"
         if node.dtype == "float":
             return f"((float)({val}))"
         raise NotImplementedError(f"CUDA cast: {node.dtype}")

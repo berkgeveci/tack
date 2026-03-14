@@ -14,10 +14,17 @@ Runs contour on two representations of the same curvilinear mesh:
 Both produce identical results, validating the abstraction.
 """
 
+import sys
 import numpy as np
 import pgc
 
-pgc.init(arch=pgc.cpu)
+_arch = pgc.cpu
+for a in sys.argv[1:]:
+    if a == '--arch=cuda':
+        _arch = pgc.cuda
+    elif a == '--arch=metal':
+        _arch = pgc.metal
+pgc.init(arch=_arch)
 
 # ================================================================
 # MARCHING SQUARES LOOKUP TABLES

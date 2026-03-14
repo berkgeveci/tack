@@ -420,11 +420,15 @@ class KernelTransformer(ast.NodeVisitor):
         # Vector field load: expand to n component loads
         if is_vector_field:
             ndim = self._vector_fields[field_name]
+            # Cast index to int before computing component offsets so that
+            # a float index like 127.7 maps to element 127, not a fractional
+            # position that shifts the component access.
+            int_index = ir.IRCast(value=index, dtype="int")
             result = []
             for c in range(ndim):
                 comp_idx = ir.IRBinOp(
                     op="+",
-                    left=ir.IRBinOp(op="*", left=index, right=ir.IRConstant(ndim)),
+                    left=ir.IRBinOp(op="*", left=int_index, right=ir.IRConstant(ndim)),
                     right=ir.IRConstant(c),
                 )
                 result.append(ir.IRFieldLoad(field=field_ir, index=comp_idx))
@@ -690,13 +694,14 @@ class KernelTransformer(ast.NodeVisitor):
         """Store a vector into a vector field: field[i] = vec."""
         field_node = self.visit(target.value)
         index_node = self._visit_subscript_index(target)
+        int_index = ir.IRCast(value=index_node, dtype="int")
         ndim = len(components)
         stmts = []
         for c in range(ndim):
-            # field[i * ndim + c]
+            # field[int(i) * ndim + c]
             actual_index = ir.IRBinOp(
                 op="+",
-                left=ir.IRBinOp(op="*", left=index_node, right=ir.IRConstant(ndim)),
+                left=ir.IRBinOp(op="*", left=int_index, right=ir.IRConstant(ndim)),
                 right=ir.IRConstant(c),
             )
             stmts.append(ir.IRFieldStore(field=field_node, index=actual_index, value=components[c]))
