@@ -912,6 +912,28 @@ def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     return cpu_get_loop_range(ir_func, args)
 
 
+def _build_reduce_kernels():
+    """Build PGC reduction kernels using atomics."""
+    import pgc as _pgc
+
+    @_pgc.kernel
+    def _reduce_sum(x, out):
+        for i in range(x.shape[0]):
+            _pgc.atomic_add(out, 0, x[i])
+
+    @_pgc.kernel
+    def _reduce_min(x, out):
+        for i in range(x.shape[0]):
+            _pgc.atomic_min(out, 0, x[i])
+
+    @_pgc.kernel
+    def _reduce_max(x, out):
+        for i in range(x.shape[0]):
+            _pgc.atomic_max(out, 0, x[i])
+
+    return {"sum": _reduce_sum, "min": _reduce_min, "max": _reduce_max}
+
+
 class VulkanBackend:
     """Vulkan GPU compute backend — host-visible fields, SPIR-V compilation."""
 
@@ -1256,6 +1278,28 @@ class VulkanBackend:
 
         return CompiledVulkanKernel(pipeline, pipeline_layout, desc_set_layout,
                                     num_bindings, workgroup_size)
+
+    def reduce_field(self, field, op: str) -> float:
+        """GPU-side reduction: sum, min, or max."""
+        from pgc.lang.types import f32
+        if field.dtype is not f32:
+            return float(getattr(field.to_numpy(), op)())
+
+        # Use PGC kernels with atomics for GPU reduction
+        if not hasattr(self, '_reduce_kernels'):
+            self._reduce_kernels = _build_reduce_kernels()
+
+        kern = self._reduce_kernels[op]
+        n = int(np.prod(field.shape))
+
+        import pgc as _pgc
+        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        out = _pgc.field(dtype=_pgc.f32, shape=(1,))
+        out.from_numpy(np.array([init_vals[op]], dtype=np.float32))
+
+        kern(field, out)
+
+        return float(out.to_numpy()[0])
 
     def _cleanup(self):
         """Orderly shutdown — called via atexit before Python tears down objects."""

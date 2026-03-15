@@ -35,6 +35,71 @@ _NUMPY_DTYPE = {
 }
 
 
+_REDUCE_CUDA_SUM = """
+extern "C" __global__ void reduce_sum_f32(float* input, float* output) {
+    extern __shared__ float sdata[];
+    unsigned int tid = threadIdx.x;
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int n = __float_as_uint(output[1]);
+    sdata[tid] = (i < n) ? input[i] : 0.0f;
+    __syncthreads();
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) sdata[tid] += sdata[tid + s];
+        __syncthreads();
+    }
+    if (tid == 0) atomicAdd(&output[0], sdata[0]);
+}
+"""
+
+_REDUCE_CUDA_MIN = """
+extern "C" __global__ void reduce_min_f32(float* input, float* output) {
+    extern __shared__ float sdata[];
+    unsigned int tid = threadIdx.x;
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int n = __float_as_uint(output[1]);
+    sdata[tid] = (i < n) ? input[i] : 1e38f;
+    __syncthreads();
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) sdata[tid] = fminf(sdata[tid], sdata[tid + s]);
+        __syncthreads();
+    }
+    if (tid == 0) {
+        int* addr = (int*)&output[0];
+        int old = *addr, assumed;
+        do {
+            assumed = old;
+            old = atomicCAS(addr, assumed,
+                __float_as_int(fminf(sdata[0], __int_as_float(assumed))));
+        } while (assumed != old);
+    }
+}
+"""
+
+_REDUCE_CUDA_MAX = """
+extern "C" __global__ void reduce_max_f32(float* input, float* output) {
+    extern __shared__ float sdata[];
+    unsigned int tid = threadIdx.x;
+    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
+    unsigned int n = __float_as_uint(output[1]);
+    sdata[tid] = (i < n) ? input[i] : -1e38f;
+    __syncthreads();
+    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
+        if (tid < s) sdata[tid] = fmaxf(sdata[tid], sdata[tid + s]);
+        __syncthreads();
+    }
+    if (tid == 0) {
+        int* addr = (int*)&output[0];
+        int old = *addr, assumed;
+        do {
+            assumed = old;
+            old = atomicCAS(addr, assumed,
+                __float_as_int(fmaxf(sdata[0], __int_as_float(assumed))));
+        } while (assumed != old);
+    }
+}
+"""
+
+
 def _check(err):
     """Check a CUDA driver or NVRTC result, raise on error."""
     if isinstance(err, tuple):
@@ -260,6 +325,67 @@ class CUDABackend:
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         return CompiledCUDAKernel(module, func, ir_func.name, param_types, param_is_field)
+
+    def reduce_field(self, field, op: str) -> float:
+        """GPU-side reduction: sum, min, or max."""
+        from pgc.lang.types import f32
+        if field.dtype is not f32:
+            return float(getattr(field.to_numpy(), op)())
+
+        if not hasattr(self, '_reduce_cache'):
+            self._reduce_cache = {}
+        if op not in self._reduce_cache:
+            self._reduce_cache[op] = self._compile_reduce(op)
+
+        func, module = self._reduce_cache[op]
+        n = int(np.prod(field.shape))
+
+        # Output: [result, n_as_uint_bits]
+        import struct as _struct
+        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        out_np = np.array([init_vals[op],
+                           np.frombuffer(_struct.pack('I', n), dtype=np.float32)[0]],
+                          dtype=np.float32)
+        out_buf = CUDABuffer(np.float32, (2,))
+        out_buf.from_numpy(out_np)
+
+        block_dim = 256
+        grid_dim = (n + block_dim - 1) // block_dim
+
+        # Dispatch
+        in_ptr = ctypes.c_void_p(int(field._buffer.device_ptr))
+        out_ptr = ctypes.c_void_p(int(out_buf.device_ptr))
+        args = (ctypes.c_void_p * 2)()
+        args[0] = ctypes.addressof(in_ptr)
+        args[1] = ctypes.addressof(out_ptr)
+
+        _check(driver.cuLaunchKernel(
+            func, grid_dim, 1, 1, block_dim, 1, 1,
+            block_dim * 4, 0, args, 0))
+        _check(driver.cuCtxSynchronize())
+
+        result = out_buf.to_numpy()
+        return float(result[0])
+
+    def _compile_reduce(self, op: str):
+        """Compile a reduction kernel for the given op."""
+        _REDUCE_CUDA = {
+            "sum": _REDUCE_CUDA_SUM,
+            "min": _REDUCE_CUDA_MIN,
+            "max": _REDUCE_CUDA_MAX,
+        }
+        func_names = {
+            "sum": "reduce_sum_f32",
+            "min": "reduce_min_f32",
+            "max": "reduce_max_f32",
+        }
+        src = _REDUCE_CUDA[op]
+        ptx = _compile_ptx(src, func_names[op])
+        err, module = driver.cuModuleLoadData(ptx)
+        _check(err)
+        err, func = driver.cuModuleGetFunction(module, func_names[op].encode())
+        _check(err)
+        return func, module
 
     def __del__(self):
         if hasattr(self, '_context'):
