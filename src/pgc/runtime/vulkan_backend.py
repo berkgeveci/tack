@@ -489,22 +489,28 @@ class VulkanBuffer(DeviceBuffer):
         vk.vkGetBufferMemoryRequirements(device, self._vk_buffer,
                                           ctypes.byref(mem_req))
 
-        # Find suitable memory type
-        mem_type_idx = backend._find_memory_type(
-            mem_req.memoryTypeBits,
-            VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT)
+        # Find suitable memory type — try DEVICE_LOCAL first, fall back to host
+        required = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        mem_type_idx = backend._find_memory_type(mem_req.memoryTypeBits, required)
 
-        # Allocate memory
+        # Allocate memory, retry without DEVICE_LOCAL preference on failure
+        self._vk_memory = VkDeviceMemory()
         alloc_info = VkMemoryAllocateInfo(
             sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
             pNext=None,
             allocationSize=mem_req.size,
             memoryTypeIndex=mem_type_idx,
         )
-        self._vk_memory = VkDeviceMemory()
-        _check_vk(vk.vkAllocateMemory(device, ctypes.byref(alloc_info), None,
-                                        ctypes.byref(self._vk_memory)),
-                   "vkAllocateMemory")
+        result = vk.vkAllocateMemory(device, ctypes.byref(alloc_info), None,
+                                      ctypes.byref(self._vk_memory))
+        if result != VK_SUCCESS:
+            # Small DEVICE_LOCAL BAR full — fall back to host-only heap
+            mem_type_idx = backend._find_memory_type(
+                mem_req.memoryTypeBits, required, prefer_device_local=False)
+            alloc_info.memoryTypeIndex = mem_type_idx
+            _check_vk(vk.vkAllocateMemory(device, ctypes.byref(alloc_info), None,
+                                            ctypes.byref(self._vk_memory)),
+                       "vkAllocateMemory")
 
         # Bind memory to buffer
         _check_vk(vk.vkBindBufferMemory(device, self._vk_buffer,
@@ -826,17 +832,19 @@ class VulkanBackend:
         self._cache: dict[str, CompiledVulkanKernel] = {}
         self._alive = True
 
-    def _find_memory_type(self, type_bits: int, required_flags: int) -> int:
+    def _find_memory_type(self, type_bits: int, required_flags: int,
+                          prefer_device_local: bool = True) -> int:
         """Find a memory type index matching the requirements."""
-        # Prefer DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT (resizable BAR)
-        for i in range(self._mem_props.memoryTypeCount):
-            if not (type_bits & (1 << i)):
-                continue
-            flags = self._mem_props.memoryTypes[i].propertyFlags
-            if (flags & (required_flags | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) == \
-               (required_flags | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT):
-                return i
-        # Fall back to HOST_VISIBLE | HOST_COHERENT
+        if prefer_device_local:
+            # Prefer DEVICE_LOCAL | HOST_VISIBLE | HOST_COHERENT (resizable BAR)
+            for i in range(self._mem_props.memoryTypeCount):
+                if not (type_bits & (1 << i)):
+                    continue
+                flags = self._mem_props.memoryTypes[i].propertyFlags
+                if (flags & (required_flags | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)) == \
+                   (required_flags | VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT):
+                    return i
+        # Fall back to HOST_VISIBLE | HOST_COHERENT (system memory)
         for i in range(self._mem_props.memoryTypeCount):
             if not (type_bits & (1 << i)):
                 continue

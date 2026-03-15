@@ -374,6 +374,8 @@ def main():
             arch = pgc.cuda
         if a == '--arch=hip':
             arch = pgc.hip
+        if a == '--arch=vulkan':
+            arch = pgc.vulkan
 
     pgc.init(arch=arch)
     print(f"Backend: {arch}")

@@ -116,6 +116,28 @@ OpLoopMerge = 246
 OpSelectionMerge = 247
 OpPhi = 245
 
+# Atomic operations
+OpAtomicLoad = 227
+OpAtomicStore = 228
+OpAtomicExchange = 229
+OpAtomicCompareExchange = 230
+OpAtomicIAdd = 234
+OpAtomicISub = 235
+OpAtomicSMin = 236
+OpAtomicUMin = 237
+OpAtomicSMax = 238
+OpAtomicUMax = 239
+
+# Barrier
+OpControlBarrier = 224
+
+# Memory semantics
+Scope_Device = 1
+Scope_Workgroup = 2
+MemorySemantics_None = 0x0
+MemorySemantics_AcquireRelease = 0x8
+MemorySemantics_WorkgroupMemory = 0x100
+
 # Execution models
 ExecutionModel_GLCompute = 5
 
@@ -126,9 +148,10 @@ MemoryModel_GLSL450 = 1
 # Storage classes
 StorageClass_Input = 1
 StorageClass_Uniform = 2
+StorageClass_Workgroup = 4
 StorageClass_Function = 7
-StorageClass_StorageBuffer = 12
 StorageClass_PushConstant = 9
+StorageClass_StorageBuffer = 12
 
 # Decorations
 Decoration_Block = 2
@@ -342,6 +365,18 @@ class SPIRVCodeGen:
         # OpEntryPoint interface list.  Storage buffer variables are NOT allowed.
         interface_vars = [self._global_invocation_id_var]
 
+        # Pre-scan: if the kernel uses thread_id/shared memory, declare LocalInvocationID
+        if self._ir_uses_threadgroup(self.ir_func.body):
+            ptr_type = self._get_type("ptr_uvec3_input")
+            var_id = self.module.alloc_id()
+            self.module.add_type_or_constant(
+                _make_instruction(OpVariable, ptr_type, var_id, StorageClass_Input))
+            self.module.add_annotation(
+                _make_instruction(OpDecorate, var_id, Decoration_BuiltIn,
+                                  BuiltIn_LocalInvocationId))
+            self._local_invocation_id_var = var_id
+            interface_vars.append(var_id)
+
         # Declare the main function
         void_type = self._get_type("void")
         func_type = self._declare_function_type(void_type, [])
@@ -428,6 +463,31 @@ class SPIRVCodeGen:
             if isinstance(stmt, ir.IRParallelFor):
                 return stmt
         return None
+
+    def _ir_uses_threadgroup(self, stmts: list) -> bool:
+        """Check if any statement uses shared memory or thread_id."""
+        for stmt in stmts:
+            if isinstance(stmt, (ir.IRSharedAlloc, ir.IRBarrier, ir.IRThreadId)):
+                return True
+            for child_list in self._stmt_children(stmt):
+                if self._ir_uses_threadgroup(child_list):
+                    return True
+        return False
+
+    def _stmt_children(self, stmt) -> list[list]:
+        """Return child statement lists of a statement."""
+        if isinstance(stmt, ir.IRParallelFor):
+            return [stmt.body]
+        if isinstance(stmt, ir.IRSequentialFor):
+            return [stmt.body]
+        if isinstance(stmt, ir.IRWhile):
+            return [stmt.body]
+        if isinstance(stmt, ir.IRIf):
+            result = [stmt.then_body]
+            if stmt.else_body:
+                result.append(stmt.else_body)
+            return result
+        return []
 
     def _last_is_terminator(self) -> bool:
         """Check if the last instruction emitted is a terminator."""
@@ -703,8 +763,16 @@ class SPIRVCodeGen:
             self._emit_continue()
         elif isinstance(node, ir.IRReturn):
             self._body += _make_instruction(OpReturn)
+        elif isinstance(node, ir.IRAtomicOp):
+            self._emit_atomic_op(node)
+        elif isinstance(node, ir.IRSharedAlloc):
+            self._emit_shared_alloc(node)
+        elif isinstance(node, ir.IRBarrier):
+            self._emit_barrier()
         elif isinstance(node, ir.IRCall):
             self._emit_expr(node)
+        elif isinstance(node, ir.IRPrint):
+            pass  # print not supported in SPIR-V
         else:
             raise NotImplementedError(f"SPIR-V stmt: {type(node).__name__}")
 
@@ -732,6 +800,8 @@ class SPIRVCodeGen:
             return self._emit_ifexp(node)
         if isinstance(node, ir.IRAttribute):
             return self._emit_attribute(node)
+        if isinstance(node, ir.IRThreadId):
+            return self._emit_thread_id()
         raise NotImplementedError(f"SPIR-V expr: {type(node).__name__}")
 
     def _emit_constant(self, node: ir.IRConstant) -> int:
@@ -756,6 +826,11 @@ class SPIRVCodeGen:
                 self._id_types[result] = type_key
                 return result
             return val
+        # Field param names can appear as bare IRName in template-inlined code
+        # (e.g. `local = __tmpl_grid_data__`). Return a sentinel so _emit_assign
+        # can propagate the buffer alias.
+        if node.name in self._param_buffers:
+            return node.name  # Return name as sentinel for buffer alias
         raise NameError(f"Undefined variable in SPIR-V: {node.name}")
 
     def _emit_binop(self, node: ir.IRBinOp) -> int:
@@ -875,21 +950,29 @@ class SPIRVCodeGen:
         return result
 
     def _emit_field_load(self, node: ir.IRFieldLoad) -> int:
-        """Load from storage buffer: buffer.data[index]."""
+        """Load from storage buffer or shared memory: buffer.data[index]."""
         if isinstance(node.field, ir.IRName) and node.field.name in self._param_buffers:
             buf_var, elem_key = self._param_buffers[node.field.name]
             index = self._emit_expr(node.index)
-            # Ensure index is u32
             index = self._to_u32(index)
-            elem_ptr_key = f"ptr_sb_{elem_key}"
-            elem_ptr_type = self._get_type(elem_ptr_key)
             elem_type = self._get_type(elem_key)
 
-            # AccessChain into struct member 0, then index
-            zero = self._const_u32(0)  # member 0 of the struct
-            ac = self.module.alloc_id()
-            self._body += _make_instruction(
-                OpAccessChain, elem_ptr_type, ac, buf_var, zero, index)
+            shared_vars = getattr(self, '_shared_vars', set())
+            if node.field.name in shared_vars:
+                # Shared memory: plain array, no struct wrapping
+                elem_ptr_key = f"ptr_wg_{elem_key}"
+                elem_ptr_type = self._get_type(elem_ptr_key)
+                ac = self.module.alloc_id()
+                self._body += _make_instruction(
+                    OpAccessChain, elem_ptr_type, ac, buf_var, index)
+            else:
+                # Storage buffer: struct { RuntimeArray }, access member 0
+                elem_ptr_key = f"ptr_sb_{elem_key}"
+                elem_ptr_type = self._get_type(elem_ptr_key)
+                zero = self._const_u32(0)
+                ac = self.module.alloc_id()
+                self._body += _make_instruction(
+                    OpAccessChain, elem_ptr_type, ac, buf_var, zero, index)
 
             result = self.module.alloc_id()
             self._body += _make_instruction(OpLoad, elem_type, result, ac)
@@ -899,27 +982,322 @@ class SPIRVCodeGen:
         raise NotImplementedError("Field load from non-parameter not supported")
 
     def _emit_field_store(self, node: ir.IRFieldStore):
-        """Store to storage buffer: buffer.data[index] = value."""
+        """Store to storage buffer or shared memory: buffer.data[index] = value."""
         if isinstance(node.field, ir.IRName) and node.field.name in self._param_buffers:
             buf_var, elem_key = self._param_buffers[node.field.name]
             index = self._emit_expr(node.index)
             index = self._to_u32(index)
             value = self._emit_expr(node.value)
 
-            elem_ptr_key = f"ptr_sb_{elem_key}"
-            elem_ptr_type = self._get_type(elem_ptr_key)
+            shared_vars = getattr(self, '_shared_vars', set())
+            if node.field.name in shared_vars:
+                elem_ptr_key = f"ptr_wg_{elem_key}"
+                elem_ptr_type = self._get_type(elem_ptr_key)
+                ac = self.module.alloc_id()
+                self._body += _make_instruction(
+                    OpAccessChain, elem_ptr_type, ac, buf_var, index)
+            else:
+                elem_ptr_key = f"ptr_sb_{elem_key}"
+                elem_ptr_type = self._get_type(elem_ptr_key)
+                zero = self._const_u32(0)
+                ac = self.module.alloc_id()
+                self._body += _make_instruction(
+                    OpAccessChain, elem_ptr_type, ac, buf_var, zero, index)
 
-            zero = self._const_u32(0)
-            ac = self.module.alloc_id()
-            self._body += _make_instruction(
-                OpAccessChain, elem_ptr_type, ac, buf_var, zero, index)
             self._body += _make_instruction(OpStore, ac, value)
             return
 
         raise NotImplementedError("Field store to non-parameter not supported")
 
+    def _emit_atomic_op(self, node: ir.IRAtomicOp):
+        """Emit a SPIR-V atomic operation on a storage buffer."""
+        if not (isinstance(node.field, ir.IRName) and node.field.name in self._param_buffers):
+            raise NotImplementedError("Atomic on non-parameter not supported")
+
+        buf_var, elem_key = self._param_buffers[node.field.name]
+        index = self._emit_expr(node.index)
+        index = self._to_u32(index)
+        value = self._emit_expr(node.value)
+
+        scope = self._const_u32(Scope_Device)
+        semantics = self._const_u32(MemorySemantics_None)
+
+        is_float = elem_key == "f32"
+
+        if is_float:
+            # For float atomics, use a uint-aliased view of the same buffer
+            # to perform CAS-based operations
+            uint_buf = self._get_uint_alias(node.field.name)
+            u32_type = self._get_type("u32")
+            u32_ptr_key = f"ptr_sb_u32"
+            self._get_or_create_type(u32_ptr_key, lambda: self._make_pointer_type(
+                StorageClass_StorageBuffer, u32_type, u32_ptr_key))
+            u32_ptr_type = self._get_type(u32_ptr_key)
+            zero = self._const_u32(0)
+            uint_ac = self.module.alloc_id()
+            self._body += _make_instruction(
+                OpAccessChain, u32_ptr_type, uint_ac, uint_buf, zero, index)
+
+            self._emit_float_atomic_cas_op(uint_ac, value, self._get_type(elem_key),
+                                            elem_key, scope, semantics, node.op)
+        else:
+            elem_ptr_key = f"ptr_sb_{elem_key}"
+            elem_ptr_type = self._get_type(elem_ptr_key)
+            elem_type = self._get_type(elem_key)
+            zero = self._const_u32(0)
+            ac = self.module.alloc_id()
+            self._body += _make_instruction(
+                OpAccessChain, elem_ptr_type, ac, buf_var, zero, index)
+
+            if node.op == "add":
+                result = self.module.alloc_id()
+                self._body += _make_instruction(
+                    OpAtomicIAdd, elem_type, result, ac, scope, semantics, value)
+            elif node.op in ("min", "max"):
+                spv_op = OpAtomicSMin if node.op == "min" else OpAtomicSMax
+                result = self.module.alloc_id()
+                self._body += _make_instruction(
+                    spv_op, elem_type, result, ac, scope, semantics, value)
+            else:
+                raise NotImplementedError(f"SPIR-V atomic op: {node.op}")
+
+    def _get_uint_alias(self, param_name: str) -> int:
+        """Get or create a uint-typed alias of a float storage buffer (same binding).
+
+        This allows CAS operations on float data using uint atomics.
+        """
+        alias_key = f"_uint_alias_{param_name}"
+        if alias_key in self._param_buffers:
+            return self._param_buffers[alias_key][0]
+
+        # Find the binding index for this param
+        binding = None
+        for i, param in enumerate(self.ir_func.params):
+            if param.name == param_name:
+                binding = i
+                break
+
+        u32_type = self._get_type("u32")
+
+        # RuntimeArray of uint
+        ra_key = "runtime_array_u32"
+        if ra_key not in self._type_cache:
+            ra_id = self.module.alloc_id()
+            self._type_cache[ra_key] = ra_id
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypeRuntimeArray, ra_id, u32_type))
+            self.module.add_annotation(
+                _make_instruction(OpDecorate, ra_id, Decoration_ArrayStride, 4))
+        ra_id = self._type_cache[ra_key]
+
+        # Struct wrapping the runtime array
+        struct_key = f"struct_ubuf_{binding}"
+        struct_id = self.module.alloc_id()
+        self._type_cache[struct_key] = struct_id
+        self.module.add_type_or_constant(
+            _make_instruction(OpTypeStruct, struct_id, ra_id))
+        self.module.add_annotation(
+            _make_instruction(OpDecorate, struct_id, Decoration_Block))
+        self.module.add_annotation(
+            _make_instruction(OpMemberDecorate, struct_id, 0, Decoration_Offset, 0))
+
+        # Pointer to struct
+        ptr_key = f"ptr_ubuf_{binding}"
+        ptr_id = self.module.alloc_id()
+        self._type_cache[ptr_key] = ptr_id
+        self.module.add_type_or_constant(
+            _make_instruction(OpTypePointer, ptr_id, StorageClass_StorageBuffer, struct_id))
+
+        # Variable (same binding, aliased)
+        var_id = self.module.alloc_id()
+        self.module.add_type_or_constant(
+            _make_instruction(OpVariable, ptr_id, var_id, StorageClass_StorageBuffer))
+        self.module.add_annotation(
+            _make_instruction(OpDecorate, var_id, Decoration_DescriptorSet, 0))
+        self.module.add_annotation(
+            _make_instruction(OpDecorate, var_id, Decoration_Binding, binding))
+        # Mark as aliased
+        Decoration_Aliased = 1800  # NonWritable=24, Aliased is not a standard decoration
+        # Actually use NonWritable on the original? No. The correct way is to
+        # just have two variables at the same binding — the driver handles aliasing.
+
+        self._param_buffers[alias_key] = (var_id, "u32")
+        return var_id
+
+    def _emit_float_atomic_cas_op(self, uint_ptr_id, new_float_val, float_type,
+                                   float_key, scope, semantics, op):
+        """Emit float atomic via CAS loop on a uint-aliased pointer.
+
+        uint_ptr_id points to uint storage (aliased with the float buffer).
+        new_float_val is the float value to add/min/max.
+        """
+        u32_type = self._get_type("u32")
+
+        # Load current uint value atomically
+        initial_uint = self.module.alloc_id()
+        self._body += _make_instruction(
+            OpAtomicLoad, u32_type, initial_uint, uint_ptr_id, scope, semantics)
+
+        # Store in a local for the loop
+        func_u32_ptr_key = "ptr_func_u32"
+        self._get_or_create_type(func_u32_ptr_key, lambda: self._make_pointer_type(
+            StorageClass_Function, u32_type, func_u32_ptr_key))
+        func_u32_ptr = self._get_type(func_u32_ptr_key)
+        old_var = self.module.alloc_id()
+        self._func_vars += _make_instruction(OpVariable, func_u32_ptr, old_var,
+                                              StorageClass_Function)
+        self._body += _make_instruction(OpStore, old_var, initial_uint)
+
+        # Loop
+        loop_header = self.module.alloc_id()
+        loop_body = self.module.alloc_id()
+        loop_continue = self.module.alloc_id()
+        loop_merge = self.module.alloc_id()
+
+        self._body += _make_instruction(OpBranch, loop_header)
+        self._body += _make_instruction(OpLabel, loop_header)
+        self._body += _make_instruction(OpLoopMerge, loop_merge, loop_continue,
+                                         LoopControl_None)
+        self._body += _make_instruction(OpBranch, loop_body)
+        self._body += _make_instruction(OpLabel, loop_body)
+
+        # Load expected uint
+        old_uint = self.module.alloc_id()
+        self._body += _make_instruction(OpLoad, u32_type, old_uint, old_var)
+
+        # Bitcast to float
+        old_float = self.module.alloc_id()
+        self._body += _make_instruction(OpBitcast, float_type, old_float, old_uint)
+
+        # Compute desired float
+        desired_float = self.module.alloc_id()
+        if op == "add":
+            self._body += _make_instruction(OpFAdd, float_type, desired_float,
+                                             old_float, new_float_val)
+        elif op == "min":
+            self._body += _make_instruction(
+                OpExtInst, float_type, desired_float, self._glsl_ext_id,
+                GLSL_FMin, old_float, new_float_val)
+        elif op == "max":
+            self._body += _make_instruction(
+                OpExtInst, float_type, desired_float, self._glsl_ext_id,
+                GLSL_FMax, old_float, new_float_val)
+
+        # Bitcast desired to uint
+        desired_uint = self.module.alloc_id()
+        self._body += _make_instruction(OpBitcast, u32_type, desired_uint, desired_float)
+
+        # CAS on uint pointer
+        cas_result = self.module.alloc_id()
+        self._body += _make_instruction(
+            OpAtomicCompareExchange, u32_type, cas_result, uint_ptr_id,
+            scope, semantics, semantics, desired_uint, old_uint)
+
+        # Check success
+        cmp = self.module.alloc_id()
+        self._body += _make_instruction(OpIEqual, self._get_type("bool"),
+                                         cmp, cas_result, old_uint)
+
+        # Update old_var for retry
+        self._body += _make_instruction(OpStore, old_var, cas_result)
+
+        self._body += _make_instruction(OpBranch, loop_continue)
+        self._body += _make_instruction(OpLabel, loop_continue)
+        self._body += _make_instruction(OpBranchConditional, cmp, loop_merge, loop_header)
+
+        self._body += _make_instruction(OpLabel, loop_merge)
+
+    def _emit_shared_alloc(self, node: ir.IRSharedAlloc):
+        """Emit a Workgroup (shared) memory variable."""
+        # Map dtype string to SPIR-V type key
+        dtype_map = {"float": "f32", "int": "i32"}
+        type_key = dtype_map.get(node.dtype, "f32")
+        elem_type = self._get_type(type_key)
+
+        # Get array size as constant
+        if isinstance(node.size, ir.IRConstant):
+            arr_size = node.size.value
+        else:
+            raise NotImplementedError("Shared memory with non-constant size")
+
+        # Declare array type
+        arr_key = f"arr_{type_key}_{arr_size}"
+        if arr_key not in self._type_cache:
+            arr_id = self.module.alloc_id()
+            self._type_cache[arr_key] = arr_id
+            size_const = self._const_u32(arr_size)
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypeArray, arr_id, elem_type, size_const))
+            # ArrayStride decoration
+            stride = 4  # f32/i32 = 4 bytes
+            self.module.add_annotation(
+                _make_instruction(OpDecorate, arr_id, Decoration_ArrayStride, stride))
+
+        arr_type = self._type_cache[arr_key]
+
+        # Pointer to array in Workgroup storage class
+        ptr_key = f"ptr_wg_{arr_key}"
+        if ptr_key not in self._type_cache:
+            ptr_id = self.module.alloc_id()
+            self._type_cache[ptr_key] = ptr_id
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypePointer, ptr_id,
+                                  StorageClass_Workgroup, arr_type))
+
+        ptr_type = self._type_cache[ptr_key]
+
+        # Declare variable (goes in global scope, not function)
+        var_id = self.module.alloc_id()
+        self.module.add_type_or_constant(
+            _make_instruction(OpVariable, ptr_type, var_id, StorageClass_Workgroup))
+
+        # Pointer to element in Workgroup
+        elem_ptr_key = f"ptr_wg_{type_key}"
+        if elem_ptr_key not in self._type_cache:
+            elem_ptr_id = self.module.alloc_id()
+            self._type_cache[elem_ptr_key] = elem_ptr_id
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypePointer, elem_ptr_id,
+                                  StorageClass_Workgroup, elem_type))
+
+        # Store as a "param buffer" so field load/store can access it
+        self._param_buffers[node.name] = (var_id, type_key)
+        # Mark it as shared (different access pattern — no struct wrapping)
+        self._shared_vars = getattr(self, '_shared_vars', set())
+        self._shared_vars.add(node.name)
+
+    def _emit_thread_id(self) -> int:
+        """Emit gl_LocalInvocationID.x (thread index within workgroup)."""
+        uvec3_type = self._get_type("uvec3")
+        u32_type = self._get_type("u32")
+        lid_load = self.module.alloc_id()
+        self._body += _make_instruction(OpLoad, uvec3_type, lid_load,
+                                         self._local_invocation_id_var)
+        lid_x = self.module.alloc_id()
+        self._body += _make_instruction(OpCompositeExtract, u32_type, lid_x, lid_load, 0)
+        self._id_types[lid_x] = "u32"
+        return lid_x
+
+    def _emit_barrier(self):
+        """Emit a workgroup memory barrier."""
+        scope_wg = self._const_u32(Scope_Workgroup)
+        scope_wg2 = self._const_u32(Scope_Workgroup)
+        semantics = self._const_u32(
+            MemorySemantics_AcquireRelease | MemorySemantics_WorkgroupMemory)
+        self._body += _make_instruction(
+            OpControlBarrier, scope_wg, scope_wg2, semantics)
+
     def _emit_assign(self, node: ir.IRAssign):
         value = self._emit_expr(node.value)
+        # Handle buffer alias: template inlining assigns a field param to a local
+        # (e.g. `local = __tmpl_grid_data__`). Propagate the buffer binding.
+        if isinstance(value, str) and value in self._param_buffers:
+            self._param_buffers[node.target] = self._param_buffers[value]
+            # Also propagate shared var status
+            shared = getattr(self, '_shared_vars', set())
+            if value in shared:
+                shared.add(node.target)
+            return
         if node.target in self._local_vars:
             ptr_id, type_key = self._local_vars[node.target]
             # Coerce value to the variable's type if needed
