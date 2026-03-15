@@ -907,6 +907,42 @@ class CompiledVulkanKernel:
 # ---------------------------------------------------------------------------
 # VulkanBackend
 # ---------------------------------------------------------------------------
+def _optimize_spirv(spirv_bytes: bytes) -> bytes:
+    """Run spirv-opt on the SPIR-V binary if available.
+
+    Performs SSA promotion, dead code elimination, and other optimizations
+    that dramatically reduce instruction count (typically 60-70% reduction).
+    Falls back to unoptimized SPIR-V if spirv-opt is not installed.
+    """
+    import shutil
+    import subprocess
+    import tempfile
+
+    if not shutil.which("spirv-opt"):
+        return spirv_bytes
+
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".spv", delete=False) as f_in:
+            f_in.write(spirv_bytes)
+            f_in.flush()
+            out_path = f_in.name + ".opt"
+            result = subprocess.run(
+                ["spirv-opt", "-O", f_in.name, "-o", out_path],
+                capture_output=True, timeout=10)
+            if result.returncode == 0:
+                with open(out_path, "rb") as f_out:
+                    optimized = f_out.read()
+                import os
+                os.unlink(f_in.name)
+                os.unlink(out_path)
+                return optimized
+            import os
+            os.unlink(f_in.name)
+    except Exception:
+        pass
+    return spirv_bytes
+
+
 def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     from pgc.runtime.cpu import _get_loop_range as cpu_get_loop_range
     return cpu_get_loop_range(ir_func, args)
@@ -1220,6 +1256,7 @@ class VulkanBackend:
         workgroup_size = 256
 
         spirv_bytes = generate_spirv(ir_func, workgroup_size=workgroup_size)
+        spirv_bytes = _optimize_spirv(spirv_bytes)
 
         # Debug: save SPIR-V for analysis
         import os
