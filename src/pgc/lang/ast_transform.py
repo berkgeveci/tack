@@ -607,9 +607,11 @@ class KernelTransformer(ast.NodeVisitor):
         for param_name in callee_params:
             rename_map[param_name] = f"__{func_name}_{param_name}_{suffix}__"
 
-        # Detect multi-return: does the func return a tuple?
+        # Detect return count: 0=void, 1=scalar, >1=tuple
         n_returns = self._detect_return_count(funcdef)
-        if n_returns > 1:
+        if n_returns == 0:
+            result_var = None
+        elif n_returns > 1:
             result_var = [f"__{func_name}_ret_{c}_{suffix}__" for c in range(n_returns)]
         else:
             result_var = f"__{func_name}_ret_{suffix}__"
@@ -668,6 +670,10 @@ class KernelTransformer(ast.NodeVisitor):
         self._pre_stmts = saved_pre_stmts
         self._pre_stmts.extend(stmts)
 
+        # Void function: no return value
+        if result_var is None:
+            return None
+
         # Multi-return: return list of IRNames (treated as tuple)
         if isinstance(result_var, list):
             return [ir.IRName(v) for v in result_var]
@@ -699,13 +705,14 @@ class KernelTransformer(ast.NodeVisitor):
     def _detect_return_count(self, funcdef) -> int:
         """Detect if a function returns a tuple (multi-return).
 
-        Returns the number of return values (1 for scalar, >1 for tuple).
+        Returns the number of return values (0 for void, 1 for scalar, >1 for tuple).
         """
         for node in ast.walk(funcdef):
             if isinstance(node, ast.Return) and node.value:
                 if isinstance(node.value, ast.Tuple):
                     return len(node.value.elts)
-        return 1
+                return 1
+        return 0
 
     # --- Vector operations ---
 
