@@ -360,6 +360,24 @@ class SPIRVCodeGen:
         entry_label = self.module.alloc_id()
         preamble += _make_instruction(OpLabel, entry_label)
 
+        # Pre-load scalar parameters from their storage buffers at index 0.
+        # The Vulkan backend wraps scalar args in 1-element storage buffers,
+        # so we load them once at the start of the kernel.
+        for param in self.ir_func.params:
+            if hasattr(param, '_is_field') and not param._is_field:
+                buf_var, elem_key = self._param_buffers[param.name]
+                elem_ptr_key = f"ptr_sb_{elem_key}"
+                elem_ptr_type = self._get_type(elem_ptr_key)
+                elem_type = self._get_type(elem_key)
+                zero = self._const_u32(0)
+                ac = self.module.alloc_id()
+                self._body += _make_instruction(
+                    OpAccessChain, elem_ptr_type, ac, buf_var, zero, zero)
+                val_id = self.module.alloc_id()
+                self._body += _make_instruction(OpLoad, elem_type, val_id, ac)
+                self._id_types[val_id] = elem_key
+                self._vars[param.name] = val_id
+
         # Load gl_GlobalInvocationID.x as the loop index
         uvec3_type = self._get_type("uvec3")
         u32_type = self._get_type("u32")
@@ -369,6 +387,21 @@ class SPIRVCodeGen:
         gid_x = self.module.alloc_id()
         self._body += _make_instruction(OpCompositeExtract, u32_type, gid_x, gid_load, 0)
         self._id_types[gid_x] = "u32"
+
+        # Bounds guard: load n from push constant, return if gid_x >= n
+        pc_n_ptr, pc_n_id = self._declare_push_constant_n()
+        n_val = self.module.alloc_id()
+        self._body += _make_instruction(OpLoad, u32_type, n_val, pc_n_id)
+        cmp_id = self.module.alloc_id()
+        self._body += _make_instruction(OpUGreaterThanEqual, self._get_type("bool"),
+                                         cmp_id, gid_x, n_val)
+        merge_label = self.module.alloc_id()
+        early_ret_label = self.module.alloc_id()
+        self._body += _make_instruction(OpSelectionMerge, merge_label, SelectionControl_None)
+        self._body += _make_instruction(OpBranchConditional, cmp_id, early_ret_label, merge_label)
+        self._body += _make_instruction(OpLabel, early_ret_label)
+        self._body += _make_instruction(OpReturn)
+        self._body += _make_instruction(OpLabel, merge_label)
 
         # Emit any statements before the parallel for (e.g., pre-loop setup)
         parallel_for = self._find_parallel_for()
@@ -560,6 +593,51 @@ class SPIRVCodeGen:
             _make_instruction(OpDecorate, var_id, Decoration_BuiltIn,
                               BuiltIn_GlobalInvocationId))
         self._global_invocation_id_var = var_id
+
+    def _declare_push_constant_n(self) -> tuple[int, int]:
+        """Declare a push constant block containing the loop bound n (uint32).
+
+        Returns (struct_var_id, access_chain_id_for_n).
+        The access chain is deferred to body emission; here we declare the type
+        and variable, and emit the AccessChain in the body instructions.
+        """
+        u32_type = self._get_type("u32")
+
+        # Struct { uint n; }
+        pc_struct = self.module.alloc_id()
+        self.module.add_type_or_constant(
+            _make_instruction(OpTypeStruct, pc_struct, u32_type))
+        self.module.add_annotation(
+            _make_instruction(OpDecorate, pc_struct, Decoration_Block))
+        self.module.add_annotation(
+            _make_instruction(OpMemberDecorate, pc_struct, 0, Decoration_Offset, 0))
+
+        # Pointer to struct in PushConstant storage class
+        ptr_pc = self.module.alloc_id()
+        self.module.add_type_or_constant(
+            _make_instruction(OpTypePointer, ptr_pc, StorageClass_PushConstant, pc_struct))
+
+        # Pointer to uint in PushConstant storage class (for AccessChain result)
+        ptr_u32_pc_key = "ptr_pc_u32"
+        if ptr_u32_pc_key not in self._type_cache:
+            ptr_u32_pc = self.module.alloc_id()
+            self._type_cache[ptr_u32_pc_key] = ptr_u32_pc
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypePointer, ptr_u32_pc,
+                                  StorageClass_PushConstant, u32_type))
+
+        # Variable
+        pc_var = self.module.alloc_id()
+        self.module.add_type_or_constant(
+            _make_instruction(OpVariable, ptr_pc, pc_var, StorageClass_PushConstant))
+
+        # AccessChain to member 0 (n)
+        idx_0 = self._const_i32(0)
+        ptr_u32_pc = self._type_cache[ptr_u32_pc_key]
+        ac_id = self.module.alloc_id()
+        self._body += _make_instruction(OpAccessChain, ptr_u32_pc, ac_id, pc_var, idx_0)
+
+        return pc_var, ac_id
 
     # --- Constants ---
 

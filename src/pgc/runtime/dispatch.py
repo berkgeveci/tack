@@ -17,7 +17,8 @@ def init(arch: str = "cpu"):
         from pgc.runtime.cuda_backend import CUDABackend
         _current_backend = CUDABackend()
     elif arch == "vulkan":
-        raise NotImplementedError("Vulkan backend not yet implemented")
+        from pgc.runtime.vulkan_backend import VulkanBackend
+        _current_backend = VulkanBackend()
     elif arch == "hip":
         from pgc.runtime.hip_backend import HIPBackend
         _current_backend = HIPBackend()
