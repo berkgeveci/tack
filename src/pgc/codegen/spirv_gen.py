@@ -104,6 +104,7 @@ OpConvertSToF = 111
 OpConvertUToF = 112
 OpBitcast = 124
 OpConvertUToF = 112
+OpFConvert = 115
 OpFNegate = 127
 OpSNegate = 126
 OpLabel = 248
@@ -175,6 +176,8 @@ ExecutionMode_LocalSize = 17
 
 # Capabilities
 Capability_Shader = 1
+Capability_Float64 = 10
+Capability_Int64 = 11
 
 # Selection/Loop control
 SelectionControl_None = 0
@@ -204,6 +207,7 @@ GLSL_FMin = 37
 GLSL_FMax = 40
 GLSL_FSign = 6
 GLSL_FClamp = 43
+GLSL_Log10 = 0  # Not in GLSL.std.450; we synthesize log10(x) = log(x) / log(10)
 
 _GLSL_FUNC_MAP = {
     "sqrt": GLSL_Sqrt, "sin": GLSL_Sin, "cos": GLSL_Cos, "tan": GLSL_Tan,
@@ -211,6 +215,7 @@ _GLSL_FUNC_MAP = {
     "exp": GLSL_Exp, "log": GLSL_Log, "exp2": GLSL_Exp2, "log2": GLSL_Log2,
     "pow": GLSL_Pow, "floor": GLSL_Floor, "ceil": GLSL_Ceil,
     "abs": GLSL_FAbs, "fabs": GLSL_FAbs, "min": GLSL_FMin, "max": GLSL_FMax,
+    "log10": "synthesized",  # handled specially in _emit_call
 }
 
 
@@ -534,6 +539,23 @@ class SPIRVCodeGen:
         self._type_cache["f32"] = fid
         self.module.add_type_or_constant(_make_instruction(OpTypeFloat, fid, 32))
 
+        # Declare wider types only if the kernel uses them
+        used_types = {p.type_annotation for p in self.ir_func.params
+                      if p.type_annotation is not None}
+        if f64 in used_types:
+            self.module.add_capability(Capability_Float64)
+            did = self.module.alloc_id()
+            self._type_cache["f64"] = did
+            self.module.add_type_or_constant(_make_instruction(OpTypeFloat, did, 64))
+        if i64 in used_types:
+            lid = self.module.alloc_id()
+            self._type_cache["i64"] = lid
+            self.module.add_type_or_constant(_make_instruction(OpTypeInt, lid, 64, 1))
+        if u64 in used_types:
+            ulid = self.module.alloc_id()
+            self._type_cache["u64"] = ulid
+            self.module.add_type_or_constant(_make_instruction(OpTypeInt, ulid, 64, 0))
+
         # uvec3 (for gl_GlobalInvocationID)
         uvec3 = self.module.alloc_id()
         self._type_cache["uvec3"] = uvec3
@@ -559,11 +581,11 @@ class SPIRVCodeGen:
         return self._type_cache[key]
 
     def _pgc_type_to_spirv_key(self, pgc_type: ScalarType) -> str:
-        if pgc_type is f32:
-            return "f32"
-        if pgc_type in (i32, u32):
-            return "i32"
-        raise TypeError(f"Unsupported PGC type for SPIR-V: {pgc_type}")
+        _MAP = {f32: "f32", f64: "f64", i32: "i32", i64: "i64", u32: "u32", u64: "u64"}
+        key = _MAP.get(pgc_type)
+        if key is None:
+            raise TypeError(f"Unsupported PGC type for SPIR-V: {pgc_type}")
+        return key
 
     def _declare_function_type(self, return_type: int, param_types: list[int]) -> int:
         key = f"functype_{return_type}_{'_'.join(str(p) for p in param_types)}"
@@ -631,7 +653,7 @@ class SPIRVCodeGen:
         self.module.add_type_or_constant(
             _make_instruction(OpTypeRuntimeArray, ra_id, elem_type))
         # ArrayStride decoration
-        stride = 4  # f32 and i32 are both 4 bytes
+        stride = 8 if elem_key in ("f64", "i64", "u64") else 4
         self.module.add_annotation(
             _make_instruction(OpDecorate, ra_id, Decoration_ArrayStride, stride))
         return ra_id
@@ -738,6 +760,21 @@ class SPIRVCodeGen:
         self.module.add_type_or_constant(
             _make_instruction(OpConstant, f32_type, cid, bits))
         self._id_types[cid] = "f32"
+        return cid
+
+    def _const_f64(self, value: float) -> int:
+        bits = struct.unpack("<Q", struct.pack("<d", value))[0]
+        key = ("f64", bits)
+        if key in self._const_cache:
+            return self._const_cache[key]
+        cid = self.module.alloc_id()
+        self._const_cache[key] = cid
+        f64_type = self._get_type("f64")
+        lo = bits & 0xFFFFFFFF
+        hi = (bits >> 32) & 0xFFFFFFFF
+        self.module.add_type_or_constant(
+            _make_instruction(OpConstant, f64_type, cid, lo, hi))
+        self._id_types[cid] = "f64"
         return cid
 
     # --- Code emission ---
@@ -1331,7 +1368,30 @@ class SPIRVCodeGen:
         if glsl_op is None:
             raise NotImplementedError(f"SPIR-V builtin: {node.func_name}")
         args = [self._emit_expr(a) for a in node.args]
-        return self._emit_glsl_ext(glsl_op, args, "f32")
+        # Determine result type: f64 if any arg is f64, else f32
+        result_key = "f32"
+        for a in args:
+            if self._id_types.get(a) == "f64":
+                result_key = "f64"
+                break
+        # Coerce integer args to float
+        if result_key == "f64":
+            args = [self._to_f64(a) for a in args]
+        else:
+            args = [self._to_f32(a) for a in args]
+        if node.func_name == "log10":
+            # Synthesize: log10(x) = log(x) * (1/log(10))
+            log_x = self._emit_glsl_ext(GLSL_Log, args, result_key)
+            if result_key == "f64":
+                inv_log10 = self._const_f64(0.4342944819032518)
+            else:
+                inv_log10 = self._const_f32(0.4342944819032518)
+            result = self.module.alloc_id()
+            self._body += _make_instruction(OpFMul, self._get_type(result_key),
+                                             result, log_x, inv_log10)
+            self._id_types[result] = result_key
+            return result
+        return self._emit_glsl_ext(glsl_op, args, result_key)
 
     def _emit_glsl_ext(self, glsl_op: int, args: list[int], result_type_key: str) -> int:
         result_type = self._get_type(result_type_key)
@@ -1592,11 +1652,29 @@ class SPIRVCodeGen:
             return val_id
         f32_type = self._get_type("f32")
         result = self.module.alloc_id()
-        if src_type == "u32":
+        if src_type == "u32" or src_type == "u64":
             self._body += _make_instruction(OpConvertUToF, f32_type, result, val_id)
+        elif src_type == "f64":
+            self._body += _make_instruction(OpFConvert, f32_type, result, val_id)
         else:
             self._body += _make_instruction(OpConvertSToF, f32_type, result, val_id)
         self._id_types[result] = "f32"
+        return result
+
+    def _to_f64(self, val_id: int) -> int:
+        """Convert a value to f64."""
+        src_type = self._id_types.get(val_id, "f32")
+        if src_type == "f64":
+            return val_id
+        f64_type = self._get_type("f64")
+        result = self.module.alloc_id()
+        if src_type == "f32":
+            self._body += _make_instruction(OpFConvert, f64_type, result, val_id)
+        elif src_type in ("u32", "u64"):
+            self._body += _make_instruction(OpConvertUToF, f64_type, result, val_id)
+        else:
+            self._body += _make_instruction(OpConvertSToF, f64_type, result, val_id)
+        self._id_types[result] = "f64"
         return result
 
     def _coerce_pair(self, left: int, right: int) -> tuple[int, int, str]:
@@ -1612,9 +1690,17 @@ class SPIRVCodeGen:
         if left_type == right_type:
             return left, right, left_type
 
-        # If either is float, promote both to float
+        # If either is f64, promote both to f64
+        if left_type == "f64" or right_type == "f64":
+            return self._to_f64(left), self._to_f64(right), "f64"
+
+        # If either is f32, promote both to f32
         if left_type == "f32" or right_type == "f32":
             return self._to_f32(left), self._to_f32(right), "f32"
+
+        # Integer widening: if either is 64-bit, promote
+        if left_type in ("i64", "u64") or right_type in ("i64", "u64"):
+            return left, right, left_type  # keep as-is, same width
 
         # Both integer but different signedness — use u32
         return left, right, "u32"
