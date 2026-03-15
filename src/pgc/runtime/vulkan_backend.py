@@ -10,6 +10,7 @@ Requires libvulkan.so (Linux), libvulkan.dylib (macOS/MoltenVK), or vulkan-1.dll
 No Python Vulkan packages needed — uses ctypes directly.
 """
 
+import atexit
 import ctypes
 import ctypes.util
 import platform
@@ -436,10 +437,101 @@ def _load_vulkan():
 _vk = None
 
 
+def _setup_argtypes(vk):
+    """Set argtypes/restype for all Vulkan functions to ensure correct 64-bit pointer handling."""
+    P = ctypes.c_void_p  # pointer args
+    U32 = ctypes.c_uint32
+    U64 = ctypes.c_uint64
+
+    vk.vkCreateInstance.argtypes = [P, P, P]
+    vk.vkCreateInstance.restype = VkResult
+    vk.vkDestroyInstance.argtypes = [P, P]
+    vk.vkDestroyInstance.restype = None
+    vk.vkEnumeratePhysicalDevices.argtypes = [P, P, P]
+    vk.vkEnumeratePhysicalDevices.restype = VkResult
+    vk.vkGetPhysicalDeviceMemoryProperties.argtypes = [P, P]
+    vk.vkGetPhysicalDeviceMemoryProperties.restype = None
+    vk.vkGetPhysicalDeviceQueueFamilyProperties.argtypes = [P, P, P]
+    vk.vkGetPhysicalDeviceQueueFamilyProperties.restype = None
+    vk.vkCreateDevice.argtypes = [P, P, P, P]
+    vk.vkCreateDevice.restype = VkResult
+    vk.vkDestroyDevice.argtypes = [P, P]
+    vk.vkDestroyDevice.restype = None
+    vk.vkDeviceWaitIdle.argtypes = [P]
+    vk.vkDeviceWaitIdle.restype = VkResult
+    vk.vkGetDeviceQueue.argtypes = [P, U32, U32, P]
+    vk.vkGetDeviceQueue.restype = None
+    vk.vkCreateBuffer.argtypes = [P, P, P, P]
+    vk.vkCreateBuffer.restype = VkResult
+    vk.vkDestroyBuffer.argtypes = [P, P, P]
+    vk.vkDestroyBuffer.restype = None
+    vk.vkGetBufferMemoryRequirements.argtypes = [P, P, P]
+    vk.vkGetBufferMemoryRequirements.restype = None
+    vk.vkAllocateMemory.argtypes = [P, P, P, P]
+    vk.vkAllocateMemory.restype = VkResult
+    vk.vkFreeMemory.argtypes = [P, P, P]
+    vk.vkFreeMemory.restype = None
+    vk.vkBindBufferMemory.argtypes = [P, P, P, U64]
+    vk.vkBindBufferMemory.restype = VkResult
+    vk.vkMapMemory.argtypes = [P, P, U64, U64, U32, P]
+    vk.vkMapMemory.restype = VkResult
+    vk.vkUnmapMemory.argtypes = [P, P]
+    vk.vkUnmapMemory.restype = None
+    vk.vkCreateShaderModule.argtypes = [P, P, P, P]
+    vk.vkCreateShaderModule.restype = VkResult
+    vk.vkDestroyShaderModule.argtypes = [P, P, P]
+    vk.vkDestroyShaderModule.restype = None
+    vk.vkCreateDescriptorSetLayout.argtypes = [P, P, P, P]
+    vk.vkCreateDescriptorSetLayout.restype = VkResult
+    vk.vkDestroyDescriptorSetLayout.argtypes = [P, P, P]
+    vk.vkDestroyDescriptorSetLayout.restype = None
+    vk.vkCreatePipelineLayout.argtypes = [P, P, P, P]
+    vk.vkCreatePipelineLayout.restype = VkResult
+    vk.vkDestroyPipelineLayout.argtypes = [P, P, P]
+    vk.vkDestroyPipelineLayout.restype = None
+    vk.vkCreateComputePipelines.argtypes = [P, P, U32, P, P, P]
+    vk.vkCreateComputePipelines.restype = VkResult
+    vk.vkDestroyPipeline.argtypes = [P, P, P]
+    vk.vkDestroyPipeline.restype = None
+    vk.vkCreateDescriptorPool.argtypes = [P, P, P, P]
+    vk.vkCreateDescriptorPool.restype = VkResult
+    vk.vkDestroyDescriptorPool.argtypes = [P, P, P]
+    vk.vkDestroyDescriptorPool.restype = None
+    vk.vkAllocateDescriptorSets.argtypes = [P, P, P]
+    vk.vkAllocateDescriptorSets.restype = VkResult
+    vk.vkUpdateDescriptorSets.argtypes = [P, U32, P, U32, P]
+    vk.vkUpdateDescriptorSets.restype = None
+    vk.vkCreateCommandPool.argtypes = [P, P, P, P]
+    vk.vkCreateCommandPool.restype = VkResult
+    vk.vkDestroyCommandPool.argtypes = [P, P, P]
+    vk.vkDestroyCommandPool.restype = None
+    vk.vkAllocateCommandBuffers.argtypes = [P, P, P]
+    vk.vkAllocateCommandBuffers.restype = VkResult
+    vk.vkResetCommandBuffer.argtypes = [P, U32]
+    vk.vkResetCommandBuffer.restype = VkResult
+    vk.vkBeginCommandBuffer.argtypes = [P, P]
+    vk.vkBeginCommandBuffer.restype = VkResult
+    vk.vkEndCommandBuffer.argtypes = [P]
+    vk.vkEndCommandBuffer.restype = VkResult
+    vk.vkCmdBindPipeline.argtypes = [P, U32, P]
+    vk.vkCmdBindPipeline.restype = None
+    vk.vkCmdBindDescriptorSets.argtypes = [P, U32, P, U32, U32, P, U32, P]
+    vk.vkCmdBindDescriptorSets.restype = None
+    vk.vkCmdPushConstants.argtypes = [P, P, U32, U32, U32, P]
+    vk.vkCmdPushConstants.restype = None
+    vk.vkCmdDispatch.argtypes = [P, U32, U32, U32]
+    vk.vkCmdDispatch.restype = None
+    vk.vkQueueSubmit.argtypes = [P, U32, P, P]
+    vk.vkQueueSubmit.restype = VkResult
+    vk.vkQueueWaitIdle.argtypes = [P]
+    vk.vkQueueWaitIdle.restype = VkResult
+
+
 def _get_vk():
     global _vk
     if _vk is None:
         _vk = _load_vulkan()
+        _setup_argtypes(_vk)
     return _vk
 
 
@@ -547,7 +639,7 @@ class VulkanBuffer(DeviceBuffer):
         """Explicitly free Vulkan resources."""
         if not hasattr(self, '_backend') or self._backend is None:
             return
-        if not self._backend._alive:
+        if not self._backend._alive or not self._backend._device:
             return
         vk = _get_vk()
         device = self._backend._device
@@ -831,6 +923,7 @@ class VulkanBackend:
 
         self._cache: dict[str, CompiledVulkanKernel] = {}
         self._alive = True
+        atexit.register(self._cleanup)
 
     def _find_memory_type(self, type_bits: int, required_flags: int,
                           prefer_device_local: bool = True) -> int:
@@ -1003,6 +1096,30 @@ class VulkanBackend:
         return CompiledVulkanKernel(pipeline, pipeline_layout, desc_set_layout,
                                     num_bindings, workgroup_size)
 
-    def __del__(self):
-        # Mark as dead so VulkanBuffer destructors skip cleanup
+    def _cleanup(self):
+        """Orderly shutdown — called via atexit before Python tears down objects."""
+        if not self._alive:
+            return
         self._alive = False
+        try:
+            vk = _get_vk()
+            vk.vkDeviceWaitIdle(self._device)
+            for compiled in self._cache.values():
+                vk.vkDestroyPipeline(self._device, compiled._pipeline, None)
+                vk.vkDestroyPipelineLayout(self._device,
+                                            compiled._pipeline_layout, None)
+                vk.vkDestroyDescriptorSetLayout(self._device,
+                                                 compiled._desc_set_layout, None)
+            self._cache.clear()
+            if self._cmd_pool:
+                vk.vkDestroyCommandPool(self._device, self._cmd_pool, None)
+                self._cmd_pool = None
+            vk.vkDestroyDevice(self._device, None)
+            self._device = None
+            vk.vkDestroyInstance(self._instance, None)
+            self._instance = None
+        except Exception:
+            pass
+
+    def __del__(self):
+        self._cleanup()
