@@ -234,6 +234,40 @@ def process(grid: pgc.template(), out):
 process(Grid(data_field, 0.1), output)
 ```
 
+## Examples
+
+20 progressive examples covering all features, from hello-world to real applications. All accept `--arch cpu|metal|cuda|hip`.
+
+```bash
+uv run python examples/01_hello_pgc.py              # simplest kernel
+uv run python examples/12_mandelbrot.py --arch metal # fractal on GPU
+uv run python examples/13_nbody.py --arch hip        # N-body on AMD
+uv run python examples/20_multi_backend.py           # compare all backends
+```
+
+| # | Example | Concepts |
+|---|---------|----------|
+| 01 | Hello PGC | `pgc.init`, `pgc.field`, `@pgc.kernel`, `from_numpy`/`to_numpy` |
+| 02 | Math Builtins | `sqrt`, `sin`, `cos`, `exp`, `log`, `abs`, `min`, `max`, ... |
+| 03 | Scalar Arguments | Passing Python int/float directly to kernels |
+| 04 | Control Flow | `if`/`else`, `while`, `break`, ternary, nested loops |
+| 05 | ndrange | 2D parallel iteration, stencil patterns |
+| 06 | Device Functions | `@pgc.func` helpers inlined at compile time |
+| 07 | Atomics | `atomic_add`, `atomic_min`, `atomic_max`, histogram |
+| 08 | Reductions | `field.sum()`, `field.min()`, `field.max()` |
+| 09 | Shared Memory | `pgc.shared`, `pgc.thread_id`, `pgc.barrier` |
+| 10 | Vectors | `pgc.Vector`, `.dot()`, `.cross()`, `.normalized()` |
+| 11 | Templates | `@pgc.data_oriented` classes with `pgc.template()` |
+| 12 | Mandelbrot | Fractal rendering with smooth coloring |
+| 13 | N-body | Gravitational simulation (O(N²) all-pairs) |
+| 14 | Jacobi Solver | 2D Laplace equation with iterative stencil |
+| 15 | Matrix Multiply | Dense matrix multiplication with benchmarking |
+| 16 | Game of Life | Conway's cellular automaton on a 2D grid |
+| 17 | Heat Equation | 2D diffusion with explicit Euler + 5-point stencil |
+| 18 | Wave Equation | 1D wave propagation with leapfrog integration |
+| 19 | Image Processing | Brightness/contrast, Sobel edges, separable blur |
+| 20 | Multi-Backend | Same kernel on all available backends with benchmarks |
+
 ## Testing
 
 ```bash

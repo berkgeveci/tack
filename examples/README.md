@@ -34,17 +34,16 @@ Progressive examples covering all PGC features, from basic to advanced.
 
 ## Running
 
+All examples accept `--arch cpu|metal|cuda|hip` to select the backend:
+
 ```bash
-# Run any example
-uv run python examples/01_hello_pgc.py
+uv run python examples/01_hello_pgc.py               # default: CPU
+uv run python examples/12_mandelbrot.py --arch metal  # Apple Silicon GPU
+uv run python examples/13_nbody.py --arch cuda        # NVIDIA GPU
+uv run python examples/15_matmul.py --arch hip        # AMD GPU (ROCm)
 
-# Run on a specific backend (edit the pgc.init line, or use example 20)
-# pgc.init(arch=pgc.metal)   # Apple Silicon GPU
-# pgc.init(arch=pgc.cuda)    # NVIDIA GPU
-# pgc.init(arch=pgc.hip)     # AMD GPU (ROCm)
-
-# Run validation suite (all backends)
+# Run validation suite (auto-detects all available backends)
 uv run python examples/validate_all.py
 ```
 
-Examples that produce images (12, 14, 17, 18, 19) save PNG files if matplotlib is installed.
+Examples 12, 14, 17, 18, 19 save PNG files if matplotlib is installed.

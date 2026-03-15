@@ -10,9 +10,11 @@ uv run pytest tests/test_cpu_jit.py    # run one test file
 uv run pytest tests/test_hip.py        # run HIP backend tests (requires ROCm)
 uv run pytest -k "test_saxpy"          # run tests matching a pattern
 uv run python examples/validate_all.py # validation suite (CPU + GPU)
-uv run python benchmarks/microbenchmarks.py --bench saxpy  # run specific benchmark
-uv run python bench_cpu_vs_hip.py                         # CPU vs HIP/ROCm benchmark
+uv run python examples/01_hello_pgc.py --arch hip   # run example on specific backend
+uv run python bench_cpu_vs_hip.py                    # CPU vs HIP/ROCm benchmark
 ```
+
+All examples (01-20) accept `--arch cpu|metal|cuda|hip` to select the backend.
 
 No build step — pure Python with JIT compilation at runtime.
 
