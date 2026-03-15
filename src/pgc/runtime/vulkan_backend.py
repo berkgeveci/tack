@@ -58,6 +58,8 @@ VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO = 42
 
 VK_API_VERSION_1_1 = (1 << 22) | (1 << 12)  # Vulkan 1.1
 
+VK_BUFFER_USAGE_TRANSFER_SRC_BIT = 0x00000001
+VK_BUFFER_USAGE_TRANSFER_DST_BIT = 0x00000002
 VK_BUFFER_USAGE_STORAGE_BUFFER_BIT = 0x00000020
 VK_SHARING_MODE_EXCLUSIVE = 0
 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT = 0x02
@@ -390,6 +392,14 @@ class VkCommandBufferBeginInfo(ctypes.Structure):
     ]
 
 
+class VkBufferCopy(ctypes.Structure):
+    _fields_ = [
+        ("srcOffset", VkDeviceSize),
+        ("dstOffset", VkDeviceSize),
+        ("size", VkDeviceSize),
+    ]
+
+
 class VkSubmitInfo(ctypes.Structure):
     _fields_ = [
         ("sType", ctypes.c_uint32),
@@ -521,6 +531,10 @@ def _setup_argtypes(vk):
     vk.vkCmdPushConstants.restype = None
     vk.vkCmdDispatch.argtypes = [P, U32, U32, U32]
     vk.vkCmdDispatch.restype = None
+    vk.vkCmdCopyBuffer.argtypes = [P, P, P, U32, P]
+    vk.vkCmdCopyBuffer.restype = None
+    vk.vkCmdFillBuffer.argtypes = [P, P, U64, U64, U32]
+    vk.vkCmdFillBuffer.restype = None
     vk.vkQueueSubmit.argtypes = [P, U32, P, P]
     vk.vkQueueSubmit.restype = VkResult
     vk.vkQueueWaitIdle.argtypes = [P]
@@ -543,12 +557,83 @@ def _check_vk(result, msg="Vulkan"):
 
 
 # ---------------------------------------------------------------------------
+# Helpers for creating Vulkan buffers and memory
+# ---------------------------------------------------------------------------
+def _create_bound_buffer(vk, device, size, usage, mem_type_idx):
+    """Create a VkBuffer, allocate memory, bind, return (buffer, memory, actual_size)."""
+    buf_info = VkBufferCreateInfo(
+        sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
+        pNext=None, flags=0,
+        size=size,
+        usage=usage,
+        sharingMode=VK_SHARING_MODE_EXCLUSIVE,
+        queueFamilyIndexCount=0, pQueueFamilyIndices=None,
+    )
+    buf = VkBuffer()
+    _check_vk(vk.vkCreateBuffer(device, ctypes.byref(buf_info), None,
+                                  ctypes.byref(buf)),
+               "vkCreateBuffer")
+
+    mem_req = VkMemoryRequirements()
+    vk.vkGetBufferMemoryRequirements(device, buf, ctypes.byref(mem_req))
+
+    alloc_info = VkMemoryAllocateInfo(
+        sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+        pNext=None,
+        allocationSize=mem_req.size,
+        memoryTypeIndex=mem_type_idx,
+    )
+    mem = VkDeviceMemory()
+    _check_vk(vk.vkAllocateMemory(device, ctypes.byref(alloc_info), None,
+                                    ctypes.byref(mem)),
+               "vkAllocateMemory")
+    _check_vk(vk.vkBindBufferMemory(device, buf, mem, 0), "vkBindBufferMemory")
+    return buf, mem
+
+
+def _copy_buffer(backend, src_buf, dst_buf, size):
+    """Record and submit a buffer-to-buffer copy command."""
+    vk = _get_vk()
+    cmd = backend._transfer_cmd
+    begin_info = VkCommandBufferBeginInfo(
+        sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+        pNext=None,
+        flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+        pInheritanceInfo=None,
+    )
+    _check_vk(vk.vkResetCommandBuffer(cmd, 0), "vkResetCommandBuffer")
+    _check_vk(vk.vkBeginCommandBuffer(cmd, ctypes.byref(begin_info)),
+               "vkBeginCommandBuffer")
+    region = VkBufferCopy(srcOffset=0, dstOffset=0, size=size)
+    vk.vkCmdCopyBuffer(cmd, src_buf, dst_buf, 1, ctypes.byref(region))
+    _check_vk(vk.vkEndCommandBuffer(cmd), "vkEndCommandBuffer")
+
+    cmd_bufs = (VkCommandBuffer * 1)(cmd)
+    submit = VkSubmitInfo(
+        sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,
+        pNext=None,
+        waitSemaphoreCount=0, pWaitSemaphores=None, pWaitDstStageMask=None,
+        commandBufferCount=1, pCommandBuffers=cmd_bufs,
+        signalSemaphoreCount=0, pSignalSemaphores=None,
+    )
+    _check_vk(vk.vkQueueSubmit(backend._queue, 1, ctypes.byref(submit), None),
+               "vkQueueSubmit")
+    _check_vk(vk.vkQueueWaitIdle(backend._queue), "vkQueueWaitIdle")
+
+
+# ---------------------------------------------------------------------------
 # VulkanBuffer
 # ---------------------------------------------------------------------------
 class VulkanBuffer(DeviceBuffer):
-    """Host-visible coherent buffer backed by Vulkan device memory.
+    """Device-resident buffer backed by Vulkan device memory.
 
-    Memory is persistently mapped for zero-copy access on integrated GPUs.
+    On discrete GPUs, data lives in DEVICE_LOCAL VRAM. Transfers use a
+    staging buffer in HOST_VISIBLE memory:
+        from_numpy → staging → vkCmdCopyBuffer → device
+        to_numpy   → vkCmdCopyBuffer → staging → host read
+
+    On integrated GPUs (or if no device-local memory), falls back to
+    HOST_VISIBLE | HOST_COHERENT with direct mapped access (zero-copy).
     """
 
     def __init__(self, backend, numpy_dtype, shape):
@@ -556,73 +641,89 @@ class VulkanBuffer(DeviceBuffer):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
-        # Ensure minimum size of 4 bytes (Vulkan requires non-zero buffer)
         alloc_size = max(self._nbytes, 4)
 
         vk = _get_vk()
         device = backend._device
 
-        # Create buffer
-        buf_info = VkBufferCreateInfo(
-            sType=VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
-            pNext=None, flags=0,
-            size=alloc_size,
-            usage=VK_BUFFER_USAGE_STORAGE_BUFFER_BIT,
-            sharingMode=VK_SHARING_MODE_EXCLUSIVE,
-            queueFamilyIndexCount=0, pQueueFamilyIndices=None,
-        )
-        self._vk_buffer = VkBuffer()
-        _check_vk(vk.vkCreateBuffer(device, ctypes.byref(buf_info), None,
-                                      ctypes.byref(self._vk_buffer)),
-                   "vkCreateBuffer")
+        self._staging_buf = None
+        self._staging_mem = None
+        self._mapped_ptr = None
+        self._vk_buffer = None
+        self._vk_memory = None
+        self._device_local = False
 
-        # Query memory requirements
-        mem_req = VkMemoryRequirements()
-        vk.vkGetBufferMemoryRequirements(device, self._vk_buffer,
-                                          ctypes.byref(mem_req))
+        if backend._has_device_local:
+            # Discrete GPU: device-local buffer + host-visible staging buffer
+            usage_device = (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                            VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                            VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            self._vk_buffer, self._vk_memory = _create_bound_buffer(
+                vk, device, alloc_size, usage_device, backend._device_local_mem_type)
 
-        # Find suitable memory type — try DEVICE_LOCAL first, fall back to host
-        required = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
-        mem_type_idx = backend._find_memory_type(mem_req.memoryTypeBits, required)
+            usage_staging = (VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                             VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            self._staging_buf, self._staging_mem = _create_bound_buffer(
+                vk, device, alloc_size, usage_staging, backend._host_visible_mem_type)
 
-        # Allocate memory, retry without DEVICE_LOCAL preference on failure
-        self._vk_memory = VkDeviceMemory()
-        alloc_info = VkMemoryAllocateInfo(
-            sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
-            pNext=None,
-            allocationSize=mem_req.size,
-            memoryTypeIndex=mem_type_idx,
-        )
-        result = vk.vkAllocateMemory(device, ctypes.byref(alloc_info), None,
-                                      ctypes.byref(self._vk_memory))
-        if result != VK_SUCCESS:
-            # Small DEVICE_LOCAL BAR full — fall back to host-only heap
-            mem_type_idx = backend._find_memory_type(
-                mem_req.memoryTypeBits, required, prefer_device_local=False)
-            alloc_info.memoryTypeIndex = mem_type_idx
-            _check_vk(vk.vkAllocateMemory(device, ctypes.byref(alloc_info), None,
-                                            ctypes.byref(self._vk_memory)),
-                       "vkAllocateMemory")
+            # Map staging buffer persistently
+            self._mapped_ptr = ctypes.c_void_p()
+            _check_vk(vk.vkMapMemory(device, self._staging_mem, 0, alloc_size, 0,
+                                       ctypes.byref(self._mapped_ptr)),
+                       "vkMapMemory")
+            self._device_local = True
+        else:
+            # Integrated GPU: host-visible buffer, direct access
+            usage = (VK_BUFFER_USAGE_STORAGE_BUFFER_BIT |
+                     VK_BUFFER_USAGE_TRANSFER_SRC_BIT |
+                     VK_BUFFER_USAGE_TRANSFER_DST_BIT)
+            self._vk_buffer, self._vk_memory = _create_bound_buffer(
+                vk, device, alloc_size, usage, backend._host_visible_mem_type)
 
-        # Bind memory to buffer
-        _check_vk(vk.vkBindBufferMemory(device, self._vk_buffer,
-                                          self._vk_memory, 0),
-                   "vkBindBufferMemory")
-
-        # Map memory persistently
-        self._mapped_ptr = ctypes.c_void_p()
-        _check_vk(vk.vkMapMemory(device, self._vk_memory, 0, alloc_size, 0,
-                                   ctypes.byref(self._mapped_ptr)),
-                   "vkMapMemory")
+            self._mapped_ptr = ctypes.c_void_p()
+            _check_vk(vk.vkMapMemory(device, self._vk_memory, 0, alloc_size, 0,
+                                       ctypes.byref(self._mapped_ptr)),
+                       "vkMapMemory")
 
         # Zero-initialize
         ctypes.memset(self._mapped_ptr, 0, alloc_size)
+        if self._device_local:
+            # Use vkCmdFillBuffer for efficient device-side zeroing
+            vk2 = _get_vk()
+            cmd = backend._transfer_cmd
+            begin_info = VkCommandBufferBeginInfo(
+                sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+                pNext=None,
+                flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+                pInheritanceInfo=None,
+            )
+            _check_vk(vk2.vkResetCommandBuffer(cmd, 0), "vkResetCommandBuffer")
+            _check_vk(vk2.vkBeginCommandBuffer(cmd, ctypes.byref(begin_info)),
+                       "vkBeginCommandBuffer")
+            vk2.vkCmdFillBuffer(cmd, self._vk_buffer, 0, alloc_size, 0)
+            _check_vk(vk2.vkEndCommandBuffer(cmd), "vkEndCommandBuffer")
+            cmd_bufs = (VkCommandBuffer * 1)(cmd)
+            submit = VkSubmitInfo(
+                sType=VK_STRUCTURE_TYPE_SUBMIT_INFO, pNext=None,
+                waitSemaphoreCount=0, pWaitSemaphores=None, pWaitDstStageMask=None,
+                commandBufferCount=1, pCommandBuffers=cmd_bufs,
+                signalSemaphoreCount=0, pSignalSemaphores=None,
+            )
+            _check_vk(vk2.vkQueueSubmit(backend._queue, 1, ctypes.byref(submit), None),
+                       "vkQueueSubmit")
+            _check_vk(vk2.vkQueueWaitIdle(backend._queue), "vkQueueWaitIdle")
 
     def from_numpy(self, arr: np.ndarray):
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
         ctypes.memmove(self._mapped_ptr, src.ctypes.data, self._nbytes)
+        if self._device_local:
+            _copy_buffer(self._backend, self._staging_buf, self._vk_buffer,
+                         max(self._nbytes, 4))
 
     def to_numpy(self) -> np.ndarray:
+        if self._device_local:
+            _copy_buffer(self._backend, self._vk_buffer, self._staging_buf,
+                         max(self._nbytes, 4))
         out = np.empty(self._shape, dtype=self._numpy_dtype)
         ctypes.memmove(out.ctypes.data, self._mapped_ptr, self._nbytes)
         return out
@@ -644,8 +745,16 @@ class VulkanBuffer(DeviceBuffer):
         vk = _get_vk()
         device = self._backend._device
         if self._mapped_ptr:
-            vk.vkUnmapMemory(device, self._vk_memory)
+            mem_to_unmap = self._staging_mem if self._device_local else self._vk_memory
+            if mem_to_unmap:
+                vk.vkUnmapMemory(device, mem_to_unmap)
             self._mapped_ptr = None
+        if self._staging_buf:
+            vk.vkDestroyBuffer(device, self._staging_buf, None)
+            self._staging_buf = None
+        if self._staging_mem:
+            vk.vkFreeMemory(device, self._staging_mem, None)
+            self._staging_mem = None
         if self._vk_buffer:
             vk.vkDestroyBuffer(device, self._vk_buffer, None)
             self._vk_buffer = None
@@ -920,6 +1029,50 @@ class VulkanBackend:
                                                 ctypes.byref(alloc_info),
                                                 ctypes.byref(self._cmd_buffer)),
                    "vkAllocateCommandBuffers")
+
+        # Allocate a second command buffer for transfer operations
+        alloc_info2 = VkCommandBufferAllocateInfo(
+            sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO,
+            pNext=None,
+            commandPool=self._cmd_pool,
+            level=VK_COMMAND_BUFFER_LEVEL_PRIMARY,
+            commandBufferCount=1,
+        )
+        self._transfer_cmd = VkCommandBuffer()
+        _check_vk(vk.vkAllocateCommandBuffers(self._device,
+                                                ctypes.byref(alloc_info2),
+                                                ctypes.byref(self._transfer_cmd)),
+                   "vkAllocateCommandBuffers (transfer)")
+
+        # Detect memory types for device-local and host-visible allocation
+        self._device_local_mem_type = None
+        self._host_visible_mem_type = None
+        self._has_device_local = False
+
+        host_flags = VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT | VK_MEMORY_PROPERTY_HOST_COHERENT_BIT
+        for i in range(self._mem_props.memoryTypeCount):
+            flags = self._mem_props.memoryTypes[i].propertyFlags
+            # Pure device-local (NOT host-visible) — VRAM on discrete GPUs
+            if (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT and
+                    not (flags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT)):
+                if self._device_local_mem_type is None:
+                    self._device_local_mem_type = i
+            # Host-visible coherent (NOT device-local) — system RAM
+            if (flags & host_flags) == host_flags:
+                if not (flags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT):
+                    if self._host_visible_mem_type is None:
+                        self._host_visible_mem_type = i
+
+        # Fallback: any host-visible coherent type
+        if self._host_visible_mem_type is None:
+            for i in range(self._mem_props.memoryTypeCount):
+                flags = self._mem_props.memoryTypes[i].propertyFlags
+                if (flags & host_flags) == host_flags:
+                    self._host_visible_mem_type = i
+                    break
+
+        self._has_device_local = (self._device_local_mem_type is not None and
+                                   self._host_visible_mem_type is not None)
 
         self._cache: dict[str, CompiledVulkanKernel] = {}
         self._alive = True
