@@ -162,14 +162,13 @@ kernel void reduce_sum_f32(
     device float* output [[buffer(1)]],
     uint tid [[thread_position_in_grid]],
     uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]],
-    uint local_size [[threads_per_threadgroup]])
+    uint group_id [[threadgroup_position_in_grid]])
 {
     threadgroup float sdata[256];
-    uint n = as_type<uint>(output[1]);  // n stored as float bits at output[1]
+    uint n = as_type<uint>(output[1]);
     sdata[local_tid] = (tid < n) ? input[tid] : 0.0f;
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = local_size / 2; s > 0; s >>= 1) {
+    for (uint s = 128; s > 0; s >>= 1) {
         if (local_tid < s) sdata[local_tid] += sdata[local_tid + s];
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
@@ -190,14 +189,13 @@ kernel void reduce_min_f32(
     device float* output [[buffer(1)]],
     uint tid [[thread_position_in_grid]],
     uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]],
-    uint local_size [[threads_per_threadgroup]])
+    uint group_id [[threadgroup_position_in_grid]])
 {
     threadgroup float sdata[256];
     uint n = as_type<uint>(output[1]);
     sdata[local_tid] = (tid < n) ? input[tid] : 1e38f;
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = local_size / 2; s > 0; s >>= 1) {
+    for (uint s = 128; s > 0; s >>= 1) {
         if (local_tid < s) sdata[local_tid] = min(sdata[local_tid], sdata[local_tid + s]);
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
@@ -225,14 +223,13 @@ kernel void reduce_max_f32(
     device float* output [[buffer(1)]],
     uint tid [[thread_position_in_grid]],
     uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]],
-    uint local_size [[threads_per_threadgroup]])
+    uint group_id [[threadgroup_position_in_grid]])
 {
     threadgroup float sdata[256];
     uint n = as_type<uint>(output[1]);
     sdata[local_tid] = (tid < n) ? input[tid] : -1e38f;
     threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = local_size / 2; s > 0; s >>= 1) {
+    for (uint s = 128; s > 0; s >>= 1) {
         if (local_tid < s) sdata[local_tid] = max(sdata[local_tid], sdata[local_tid + s]);
         threadgroup_barrier(mem_flags::mem_threadgroup);
     }
@@ -390,9 +387,10 @@ class MetalBackend:
         encoder.setBuffer_offset_atIndex_(out_buf, 0, 1)
 
         block_dim = 256
-        grid_size = Metal.MTLSizeMake(n, 1, 1)
+        num_groups = (n + block_dim - 1) // block_dim
+        grid_size = Metal.MTLSizeMake(num_groups, 1, 1)
         group_size = Metal.MTLSizeMake(block_dim, 1, 1)
-        encoder.dispatchThreads_threadsPerThreadgroup_(grid_size, group_size)
+        encoder.dispatchThreadgroups_threadsPerThreadgroup_(grid_size, group_size)
         encoder.endEncoding()
         command_buffer.commit()
         command_buffer.waitUntilCompleted()

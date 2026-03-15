@@ -12,7 +12,11 @@ import time
 import numpy as np
 import pgc
 
-pgc.init(arch=pgc.cpu)
+import argparse
+_parser = argparse.ArgumentParser()
+_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip'])
+_arch = getattr(pgc, _parser.parse_args().arch)
+pgc.init(arch=_arch)
 
 N = 1024
 DT = 0.001
