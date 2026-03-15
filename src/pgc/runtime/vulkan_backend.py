@@ -913,25 +913,60 @@ def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
 
 
 def _build_reduce_kernels():
-    """Build PGC reduction kernels using atomics."""
+    """Build PGC reduction kernels using a chunked parallel approach.
+
+    Each of P threads reduces a contiguous chunk of ~n/P elements
+    sequentially, writing its partial result to a partials buffer.
+    The host then reduces P partial results via numpy.
+
+    This avoids shared memory barriers (which conflict with PGC's
+    bounds-guard early-return) and atomic contention.
+    """
     import pgc as _pgc
 
     @_pgc.kernel
-    def _reduce_sum(x, out):
-        for i in range(x.shape[0]):
-            _pgc.atomic_add(out, 0, x[i])
+    def _partial_sum(x, partials, chunk_size, total_n):
+        for tid in range(partials.shape[0]):
+            start = tid * int(chunk_size)
+            end = start + int(chunk_size)
+            if end > int(total_n):
+                end = int(total_n)
+            acc = 0.0
+            j = start
+            while j < end:
+                acc = acc + x[j]
+                j = j + 1
+            partials[tid] = acc
 
     @_pgc.kernel
-    def _reduce_min(x, out):
-        for i in range(x.shape[0]):
-            _pgc.atomic_min(out, 0, x[i])
+    def _partial_min(x, partials, chunk_size, total_n):
+        for tid in range(partials.shape[0]):
+            start = tid * int(chunk_size)
+            end = start + int(chunk_size)
+            if end > int(total_n):
+                end = int(total_n)
+            acc = x[start]
+            j = start + 1
+            while j < end:
+                acc = min(acc, x[j])
+                j = j + 1
+            partials[tid] = acc
 
     @_pgc.kernel
-    def _reduce_max(x, out):
-        for i in range(x.shape[0]):
-            _pgc.atomic_max(out, 0, x[i])
+    def _partial_max(x, partials, chunk_size, total_n):
+        for tid in range(partials.shape[0]):
+            start = tid * int(chunk_size)
+            end = start + int(chunk_size)
+            if end > int(total_n):
+                end = int(total_n)
+            acc = x[start]
+            j = start + 1
+            while j < end:
+                acc = max(acc, x[j])
+                j = j + 1
+            partials[tid] = acc
 
-    return {"sum": _reduce_sum, "min": _reduce_min, "max": _reduce_max}
+    return {"sum": _partial_sum, "min": _partial_min, "max": _partial_max}
 
 
 class VulkanBackend:
@@ -1280,26 +1315,32 @@ class VulkanBackend:
                                     num_bindings, workgroup_size)
 
     def reduce_field(self, field, op: str) -> float:
-        """GPU-side reduction: sum, min, or max."""
+        """GPU-side reduction: sum, min, or max.
+
+        Uses a chunked parallel approach: P GPU threads each reduce ~n/P
+        elements sequentially, then the host reduces P partial results.
+        """
         from pgc.lang.types import f32
         if field.dtype is not f32:
             return float(getattr(field.to_numpy(), op)())
 
-        # Use PGC kernels with atomics for GPU reduction
         if not hasattr(self, '_reduce_kernels'):
             self._reduce_kernels = _build_reduce_kernels()
 
         kern = self._reduce_kernels[op]
         n = int(np.prod(field.shape))
 
+        # Use enough threads for good parallelism, each handling a chunk
+        num_threads = min(n, 4096)
+        chunk_size = (n + num_threads - 1) // num_threads
+
         import pgc as _pgc
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
-        out = _pgc.field(dtype=_pgc.f32, shape=(1,))
-        out.from_numpy(np.array([init_vals[op]], dtype=np.float32))
+        partials = _pgc.field(dtype=_pgc.f32, shape=(num_threads,))
 
-        kern(field, out)
+        kern(field, partials, float(chunk_size), float(n))
 
-        return float(out.to_numpy()[0])
+        partial_np = partials.to_numpy()
+        return float(getattr(partial_np, op)())
 
     def _cleanup(self):
         """Orderly shutdown — called via atexit before Python tears down objects."""
