@@ -57,6 +57,7 @@ VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO = 40
 VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO = 42
 
 VK_API_VERSION_1_1 = (1 << 22) | (1 << 12)  # Vulkan 1.1
+VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR = 0x00000001
 
 VK_BUFFER_USAGE_TRANSFER_SRC_BIT = 0x00000001
 VK_BUFFER_USAGE_TRANSFER_DST_BIT = 0x00000002
@@ -1021,12 +1022,28 @@ class VulkanBackend:
             engineVersion=1,
             apiVersion=VK_API_VERSION_1_1,
         )
+        # On macOS (MoltenVK), we need the portability enumeration extension
+        import sys
+        inst_flags = 0
+        inst_extensions = []
+        if sys.platform == "darwin":
+            inst_flags = VK_INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR
+            inst_extensions.append(b"VK_KHR_portability_enumeration")
+
+        if inst_extensions:
+            ext_array = (ctypes.c_char_p * len(inst_extensions))(*inst_extensions)
+            ext_ptr = ctypes.cast(ext_array, ctypes.c_void_p)
+            ext_count = len(inst_extensions)
+        else:
+            ext_ptr = None
+            ext_count = 0
+
         inst_info = VkInstanceCreateInfo(
             sType=VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO,
-            pNext=None, flags=0,
+            pNext=None, flags=inst_flags,
             pApplicationInfo=ctypes.pointer(app_info),
             enabledLayerCount=0, ppEnabledLayerNames=None,
-            enabledExtensionCount=0, ppEnabledExtensionNames=None,
+            enabledExtensionCount=ext_count, ppEnabledExtensionNames=ext_ptr,
         )
         self._instance = VkInstance()
         _check_vk(vk.vkCreateInstance(ctypes.byref(inst_info), None,
@@ -1381,7 +1398,7 @@ class VulkanBackend:
 
     def _cleanup(self):
         """Orderly shutdown — called via atexit before Python tears down objects."""
-        if not self._alive:
+        if not getattr(self, '_alive', False):
             return
         self._alive = False
         try:
