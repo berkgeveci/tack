@@ -92,6 +92,8 @@ class CUDACodeGen:
         self._local_vars: dict[str, str] = {}  # name → C type (all known vars)
         self._declared_vars: set[str] = set()  # vars already emitted with declaration
         self._loop_end_name: str | None = None
+        self._needs_float_atomic_min = False
+        self._needs_float_atomic_max = False
 
     def generate(self) -> str:
         """Generate CUDA C source for the kernel."""
@@ -129,6 +131,38 @@ class CUDACodeGen:
         self._indent -= 1
         self._emit("}")
 
+        prefix_lines = []
+        if self._needs_float_atomic_min:
+            prefix_lines.extend([
+                "__device__ float atomicMinFloat(float* addr, float val) {",
+                "    int* addr_as_int = (int*)addr;",
+                "    int old = *addr_as_int, assumed;",
+                "    do {",
+                "        assumed = old;",
+                "        old = atomicCAS(addr_as_int, assumed,",
+                "            __float_as_int(fminf(val, __int_as_float(assumed))));",
+                "    } while (assumed != old);",
+                "    return __int_as_float(old);",
+                "}",
+                "",
+            ])
+        if self._needs_float_atomic_max:
+            prefix_lines.extend([
+                "__device__ float atomicMaxFloat(float* addr, float val) {",
+                "    int* addr_as_int = (int*)addr;",
+                "    int old = *addr_as_int, assumed;",
+                "    do {",
+                "        assumed = old;",
+                "        old = atomicCAS(addr_as_int, assumed,",
+                "            __float_as_int(fmaxf(val, __int_as_float(assumed))));",
+                "    } while (assumed != old);",
+                "    return __int_as_float(old);",
+                "}",
+                "",
+            ])
+
+        if prefix_lines:
+            return "\n".join(prefix_lines) + "\n".join(self._lines) + "\n"
         return "\n".join(self._lines) + "\n"
 
     def _emit(self, line: str):
@@ -302,11 +336,24 @@ class CUDACodeGen:
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
             index = f"(({_INT})({index}))"
-        _ATOMIC_FUNCS = {"add": "atomicAdd", "min": "atomicMin", "max": "atomicMax"}
-        func = _ATOMIC_FUNCS.get(node.op)
-        if func is None:
-            raise NotImplementedError(f"CUDA atomic op: {node.op}")
-        self._emit(f"{func}(&{field}[{index}], {value});")
+
+        # Determine field type to handle float atomicMin/Max via CAS
+        field_name = self._get_field_name(node.field)
+        field_type = _C_TYPE_MAP.get(self._param_types.get(field_name)) if field_name else None
+        is_float = field_type in ("float", "double")
+
+        if node.op == "min" and is_float:
+            self._needs_float_atomic_min = True
+            self._emit(f"atomicMinFloat(&{field}[{index}], {value});")
+        elif node.op == "max" and is_float:
+            self._needs_float_atomic_max = True
+            self._emit(f"atomicMaxFloat(&{field}[{index}], {value});")
+        else:
+            _ATOMIC_FUNCS = {"add": "atomicAdd", "min": "atomicMin", "max": "atomicMax"}
+            func = _ATOMIC_FUNCS.get(node.op)
+            if func is None:
+                raise NotImplementedError(f"CUDA atomic op: {node.op}")
+            self._emit(f"{func}(&{field}[{index}], {value});")
 
     def _emit_field_store(self, node: ir.IRFieldStore):
         field = self._expr(node.field)

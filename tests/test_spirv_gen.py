@@ -1,6 +1,7 @@
 """Tests for SPIR-V code generation from PGC IR."""
 
 import ast
+import shutil
 import subprocess
 import tempfile
 import textwrap
@@ -11,6 +12,14 @@ from pgc.lang.ast_transform import transform_kernel
 from pgc.lang import ir
 from pgc.lang.types import f32
 from pgc.codegen.spirv_gen import generate_spirv
+
+_has_spirv_val = shutil.which("spirv-val") is not None
+_has_spirv_dis = shutil.which("spirv-dis") is not None
+_has_spirv_cross = shutil.which("spirv-cross") is not None
+
+_needs_spirv_val = pytest.mark.skipif(not _has_spirv_val, reason="spirv-val not installed")
+_needs_spirv_dis = pytest.mark.skipif(not _has_spirv_dis, reason="spirv-dis not installed")
+_needs_spirv_cross = pytest.mark.skipif(not _has_spirv_cross, reason="spirv-cross not installed")
 
 
 def _gen(source: str, param_types=None) -> bytes:
@@ -65,6 +74,7 @@ def test_vector_add_generates():
     assert spirv[:4] == b"\x03\x02\x23\x07"
 
 
+@_needs_spirv_dis
 def test_vector_add_disassembles():
     spirv = _gen("""
         def add(x, y, out):
@@ -79,6 +89,7 @@ def test_vector_add_disassembles():
     print(dis)
 
 
+@_needs_spirv_val
 def test_vector_add_validates():
     spirv = _gen("""
         def add(x, y, out):
@@ -93,6 +104,7 @@ def test_vector_add_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_val
 def test_saxpy_validates():
     spirv = _gen("""
         def saxpy(x, y, out):
@@ -103,6 +115,7 @@ def test_saxpy_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_val
 def test_conditional_validates():
     spirv = _gen("""
         def kern(x, out):
@@ -118,6 +131,7 @@ def test_conditional_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_val
 def test_negation_validates():
     spirv = _gen("""
         def kern(x, out):
@@ -128,6 +142,8 @@ def test_negation_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_dis
+@_needs_spirv_val
 def test_math_sqrt_validates():
     spirv = _gen("""
         def kern(x, out):
@@ -140,6 +156,7 @@ def test_math_sqrt_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_val
 def test_math_sin_cos_validates():
     spirv = _gen("""
         def kern(x, out):
@@ -150,6 +167,8 @@ def test_math_sin_cos_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_dis
+@_needs_spirv_val
 def test_min_max_validates():
     spirv = _gen("""
         def kern(x, y, out):
@@ -162,6 +181,7 @@ def test_min_max_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_val
 def test_abs_validates():
     spirv = _gen("""
         def kern(x, out):
@@ -172,6 +192,7 @@ def test_abs_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_val
 def test_pow_validates():
     spirv = _gen("""
         def kern(x, out):
@@ -182,6 +203,7 @@ def test_pow_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_val
 def test_multiple_ops_validates():
     """Tests subtraction, multiplication, division all in one kernel."""
     spirv = _gen("""
@@ -193,6 +215,7 @@ def test_multiple_ops_validates():
     assert rc == 0, f"SPIR-V validation failed: {output}"
 
 
+@_needs_spirv_dis
 def test_storage_buffer_bindings():
     """Verify each field gets its own binding."""
     spirv = _gen("""
@@ -206,6 +229,7 @@ def test_storage_buffer_bindings():
     assert "Binding 2" in dis
 
 
+@_needs_spirv_dis
 def test_workgroup_size():
     spirv = _gen("""
         def kern(x, out):
@@ -217,6 +241,9 @@ def test_workgroup_size():
     assert "LocalSize 256 1 1" in dis
 
 
+@_needs_spirv_cross
+@_needs_spirv_val
+@_needs_spirv_dis
 def test_spirv_cross_to_msl():
     """Verify the SPIR-V can be converted to Metal Shading Language."""
     spirv = _gen("""
