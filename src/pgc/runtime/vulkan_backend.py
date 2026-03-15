@@ -1164,6 +1164,14 @@ class VulkanBackend:
 
         spirv_bytes = generate_spirv(ir_func, workgroup_size=workgroup_size)
 
+        # Debug: save SPIR-V for analysis
+        import os
+        if os.environ.get("PGC_DUMP_SPIRV"):
+            path = f"/tmp/pgc_{ir_func.name}.spv"
+            with open(path, "wb") as _f:
+                _f.write(spirv_bytes)
+            print(f"[PGC] SPIR-V saved: {path} ({len(spirv_bytes)} bytes, {len(ir_func.params)} params)")
+
         # Create shader module
         shader_info = VkShaderModuleCreateInfo(
             sType=VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO,

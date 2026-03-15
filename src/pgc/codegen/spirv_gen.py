@@ -1307,6 +1307,8 @@ class SPIRVCodeGen:
                     value = self._to_f32(value)
                 elif type_key == "u32":
                     value = self._to_u32(value)
+                elif type_key == "i32":
+                    value = self._to_i32(value)
             self._body += _make_instruction(OpStore, ptr_id, value)
         else:
             # First assignment — infer type from value
@@ -1343,14 +1345,22 @@ class SPIRVCodeGen:
         value = self._emit_expr(node.value)
         if node.dtype == "int":
             i32_type = self._get_type("i32")
+            src_type = self._id_types.get(value, "f32")
+            if src_type == "i32":
+                return value  # already i32, no-op
             result = self.module.alloc_id()
-            self._body += _make_instruction(OpConvertFToS, i32_type, result, value)
+            if src_type == "u32":
+                self._body += _make_instruction(OpBitcast, i32_type, result, value)
+            else:
+                self._body += _make_instruction(OpConvertFToS, i32_type, result, value)
             self._id_types[result] = "i32"
             return result
         if node.dtype == "float":
             f32_type = self._get_type("f32")
-            result = self.module.alloc_id()
             src_type = self._id_types.get(value, "f32")
+            if src_type == "f32":
+                return value  # already f32, no-op
+            result = self.module.alloc_id()
             if src_type in ("u32", "i32"):
                 op = OpConvertSToF if src_type == "i32" else OpConvertUToF
                 self._body += _make_instruction(op, f32_type, result, value)
@@ -1558,6 +1568,22 @@ class SPIRVCodeGen:
             self._id_types[result] = "u32"
             return result
         return val_id
+
+    def _to_i32(self, val_id: int) -> int:
+        """Coerce to i32."""
+        src_type = self._id_types.get(val_id, "i32")
+        if src_type == "i32":
+            return val_id
+        i32_type = self._get_type("i32")
+        result = self.module.alloc_id()
+        if src_type == "f32":
+            self._body += _make_instruction(OpConvertFToS, i32_type, result, val_id)
+        elif src_type == "u32":
+            self._body += _make_instruction(OpBitcast, i32_type, result, val_id)
+        else:
+            self._body += _make_instruction(OpConvertFToS, i32_type, result, val_id)
+        self._id_types[result] = "i32"
+        return result
 
     def _to_f32(self, val_id: int) -> int:
         """Convert a value to f32."""
