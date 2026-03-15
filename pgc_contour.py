@@ -24,6 +24,10 @@ for a in sys.argv[1:]:
         _arch = pgc.cuda
     elif a == '--arch=metal':
         _arch = pgc.metal
+    elif a == '--arch=vulkan':
+        _arch = pgc.vulkan
+    elif a == '--arch=hip':
+        _arch = pgc.hip
 pgc.init(arch=_arch)
 
 # ================================================================
