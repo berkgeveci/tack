@@ -14,7 +14,7 @@ uv run python examples/01_hello_pgc.py --arch hip   # run example on specific ba
 uv run python bench_cpu_vs_hip.py                    # CPU vs HIP/ROCm benchmark
 ```
 
-All examples (01-20) accept `--arch cpu|metal|cuda|hip` to select the backend.
+All examples accept `--arch cpu|metal|cuda|hip` to select the backend.
 
 No build step — pure Python with JIT compilation at runtime.
 
@@ -80,7 +80,7 @@ The IR is a simple tree of nodes:
 
 - **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from field shapes, and resolves `IRAtomicOp` sub-expressions
 - **ir_optimize.py**: Three passes — Loop-Invariant Code Motion (LICM), copy propagation, Common Subexpression Elimination (CSE)
-- **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars map to `f32` (not `f64`) for GPU compatibility.
+- **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars map to `f32` (not `f64`) for GPU compatibility. Int scalars exceeding i32 range auto-promote to `i64`.
 
 ### Scalar kernel arguments
 
@@ -97,6 +97,14 @@ Functions decorated with `@pgc.func` are inlined at the AST level into kernels. 
 ### @pgc.data_oriented templates
 
 Classes decorated with `@pgc.data_oriented` can be passed as template arguments. Scalar attributes become compile-time constants, field attributes become kernel parameters, and `@pgc.func` methods are inlined with `self` resolved.
+
+### 64-bit loop indices on GPU
+
+GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).
+
+### Algorithms (pgc.algorithms)
+
+`exclusive_scan` and `inclusive_scan` implement Blelloch-style parallel prefix sums. They use a `_read_last` kernel to return the total sum without copying the entire buffer to numpy. The Blelloch scan uses O(log n) kernel launches, so for small arrays (< ~1M elements) a numpy CPU roundtrip may be faster due to kernel launch overhead.
 
 ### CPU threading threshold
 

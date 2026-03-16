@@ -32,6 +32,18 @@ Progressive examples covering all PGC features, from basic to advanced.
 | 19 | [Image Processing](19_image_processing.py) | Brightness/contrast, Sobel edges, separable blur |
 | 20 | [Multi-Backend](20_multi_backend.py) | Same kernel on CPU/Metal/CUDA/HIP with benchmarks |
 
+## Data Abstractions & Algorithms
+
+| # | Example | Description |
+|---|---------|-------------|
+| 21 | [Array Abstraction](21_array_abstraction.py) | VTK-style array abstraction with compile-time dispatch |
+| 22 | [Contour](22_contour.py) | Marching squares contour with GPU prefix sum |
+| 23 | [Tuple Arrays](23_tuple_arrays.py) | Multi-component AOS vs SOA layouts with generic kernels |
+| 24 | [Point Coordinates](24_point_coordinates.py) | Product vs AOS vs SOA coordinate performance benchmark |
+| 25 | [Point to Cell](25_point_to_cell.py) | Point-to-cell averaging with structured vs explicit connectivity |
+| 26 | [Marching Cubes](26_marching_cubes.py) | Cell-based marching cubes isosurface on 3D grids |
+| 27 | [Flying Edges](27_flying_edges.py) | True FlyingEdges with edge ownership, merged unique points |
+
 ## Running
 
 All examples accept `--arch cpu|metal|cuda|hip` to select the backend:

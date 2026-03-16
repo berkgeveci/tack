@@ -236,7 +236,7 @@ process(Grid(data_field, 0.1), output)
 
 ## Examples
 
-20 progressive examples covering all features, from hello-world to real applications. All accept `--arch cpu|metal|cuda|hip`.
+27 progressive examples covering all features, from hello-world to real applications. All accept `--arch cpu|metal|cuda|hip`.
 
 ```bash
 uv run python examples/01_hello_pgc.py              # simplest kernel
@@ -267,6 +267,13 @@ uv run python examples/20_multi_backend.py           # compare all backends
 | 18 | Wave Equation | 1D wave propagation with leapfrog integration |
 | 19 | Image Processing | Brightness/contrast, Sobel edges, separable blur |
 | 20 | Multi-Backend | Same kernel on all available backends with benchmarks |
+| 21 | Array Abstraction | VTK-style array abstraction with compile-time dispatch |
+| 22 | Contour | Marching squares contour with GPU prefix sum |
+| 23 | Tuple Arrays | Multi-component AOS vs SOA layouts with generic kernels |
+| 24 | Point Coordinates | Product vs AOS vs SOA coordinate performance benchmark |
+| 25 | Point to Cell | Point-to-cell averaging with structured vs explicit connectivity |
+| 26 | Marching Cubes | Cell-based marching cubes isosurface on 3D grids |
+| 27 | Flying Edges | True FlyingEdges with edge ownership, merged unique points |
 
 ## Testing
 
@@ -330,6 +337,8 @@ src/pgc/
     data_oriented.py       # @pgc.data_oriented decorator (templates)
     template_rewrite.py    # Template argument expansion
     types.py               # ScalarType: f32, f64, i32, i64, u32, u64
+  algorithms/
+    scan.py                # Parallel prefix sum (exclusive/inclusive scan)
   codegen/
     llvm_gen.py            # PGC IR → LLVM IR (CPU backend)
     msl_gen.py             # PGC IR → Metal Shading Language
@@ -349,7 +358,9 @@ tests/
   test_hip.py              # HIP end-to-end tests
   test_ast_transform.py    # AST transform unit tests
   test_llvm_gen.py         # LLVM codegen tests
+  test_cuda_gen.py         # CUDA codegen tests
   test_hip_gen.py          # HIP codegen tests
+  test_msl_gen.py          # MSL codegen tests
   test_type_inference.py   # Type inference tests
   test_new_features.py     # Scalar args, ndrange, while loops, etc.
   test_templates.py        # @pgc.data_oriented template tests
