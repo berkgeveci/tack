@@ -327,8 +327,8 @@ for _case in range(256):
 # ================================================================
 
 @pgc.data_oriented
-class GridParams:
-    """Grid constants — inlined as compile-time values via template."""
+class UniformGrid:
+    """Uniform grid — coordinates computed from origin + index * spacing."""
 
     def __init__(self, nx, ny, nz, x0, y0, z0, dx, dy, dz):
         self.nx = nx
@@ -343,6 +343,74 @@ class GridParams:
         self.dx = dx
         self.dy = dy
         self.dz = dz
+
+    @pgc.func
+    def get_x(self, i, j, k):
+        return self.x0 + float(i) * self.dx
+
+    @pgc.func
+    def get_y(self, i, j, k):
+        return self.y0 + float(j) * self.dy
+
+    @pgc.func
+    def get_z(self, i, j, k):
+        return self.z0 + float(k) * self.dz
+
+
+@pgc.data_oriented
+class RectilinearGrid:
+    """Rectilinear grid — separable 1D coordinate arrays."""
+
+    def __init__(self, nx, ny, nz, xcoords, ycoords, zcoords):
+        self.nx = nx
+        self.ny = ny
+        self.nz = nz
+        self.nx_p1 = nx + 1
+        self.ny_p1 = ny + 1
+        self.nxy_p1 = (nx + 1) * (ny + 1)
+        self.xcoords = xcoords  # pgc.field, shape (nx+1,)
+        self.ycoords = ycoords  # pgc.field, shape (ny+1,)
+        self.zcoords = zcoords  # pgc.field, shape (nz+1,)
+
+    @pgc.func
+    def get_x(self, i, j, k):
+        return self.xcoords[i]
+
+    @pgc.func
+    def get_y(self, i, j, k):
+        return self.ycoords[j]
+
+    @pgc.func
+    def get_z(self, i, j, k):
+        return self.zcoords[k]
+
+
+@pgc.data_oriented
+class StructuredGrid:
+    """Structured (curvilinear) grid — full per-point coordinate arrays."""
+
+    def __init__(self, nx, ny, nz, px, py, pz):
+        self.nx = nx
+        self.ny = ny
+        self.nz = nz
+        self.nx_p1 = nx + 1
+        self.ny_p1 = ny + 1
+        self.nxy_p1 = (nx + 1) * (ny + 1)
+        self.px = px  # pgc.field, shape (n_points,)
+        self.py = py  # pgc.field, shape (n_points,)
+        self.pz = pz  # pgc.field, shape (n_points,)
+
+    @pgc.func
+    def get_x(self, i, j, k):
+        return self.px[k * self.nxy_p1 + j * self.nx_p1 + i]
+
+    @pgc.func
+    def get_y(self, i, j, k):
+        return self.py[k * self.nxy_p1 + j * self.nx_p1 + i]
+
+    @pgc.func
+    def get_z(self, i, j, k):
+        return self.pz[k * self.nxy_p1 + j * self.nx_p1 + i]
 
 
 @pgc.data_oriented
@@ -416,9 +484,9 @@ def compute_scalar_field(scalar, grid: pgc.template(), n_points):
         ix = i % grid.nx_p1
         iy = (i // grid.nx_p1) % grid.ny_p1
         iz = i // grid.nxy_p1
-        x = grid.x0 + float(ix) * grid.dx
-        y = grid.y0 + float(iy) * grid.dy
-        z = grid.z0 + float(iz) * grid.dz
+        x = grid.get_x(ix, iy, iz)
+        y = grid.get_y(ix, iy, iz)
+        z = grid.get_z(ix, iy, iz)
         scalar[i] = sin(x) * cos(y) + sin(y) * cos(z) + sin(z) * cos(x)
 
 
@@ -482,9 +550,33 @@ def mc_emit(scalar, offsets, grid: pgc.template(),
         if v6 > isovalue: case_idx = case_idx + 64
         if v7 > isovalue: case_idx = case_idx + 128
 
-        x_lo = grid.x0 + float(ci) * grid.dx
-        y_lo = grid.y0 + float(cj) * grid.dy
-        z_lo = grid.z0 + float(ck) * grid.dz
+        # 8 corner coordinates — corners follow MC convention:
+        # 0=(0,0,0) 1=(1,0,0) 2=(1,1,0) 3=(0,1,0)
+        # 4=(0,0,1) 5=(1,0,1) 6=(1,1,1) 7=(0,1,1)
+        cx0 = grid.get_x(ci, cj, ck)
+        cx1 = grid.get_x(ci+1, cj, ck)
+        cx2 = grid.get_x(ci+1, cj+1, ck)
+        cx3 = grid.get_x(ci, cj+1, ck)
+        cx4 = grid.get_x(ci, cj, ck+1)
+        cx5 = grid.get_x(ci+1, cj, ck+1)
+        cx6 = grid.get_x(ci+1, cj+1, ck+1)
+        cx7 = grid.get_x(ci, cj+1, ck+1)
+        cy0 = grid.get_y(ci, cj, ck)
+        cy1 = grid.get_y(ci+1, cj, ck)
+        cy2 = grid.get_y(ci+1, cj+1, ck)
+        cy3 = grid.get_y(ci, cj+1, ck)
+        cy4 = grid.get_y(ci, cj, ck+1)
+        cy5 = grid.get_y(ci+1, cj, ck+1)
+        cy6 = grid.get_y(ci+1, cj+1, ck+1)
+        cy7 = grid.get_y(ci, cj+1, ck+1)
+        cz0 = grid.get_z(ci, cj, ck)
+        cz1 = grid.get_z(ci+1, cj, ck)
+        cz2 = grid.get_z(ci+1, cj+1, ck)
+        cz3 = grid.get_z(ci, cj+1, ck)
+        cz4 = grid.get_z(ci, cj, ck+1)
+        cz5 = grid.get_z(ci+1, cj, ck+1)
+        cz6 = grid.get_z(ci+1, cj+1, ck+1)
+        cz7 = grid.get_z(ci, cj+1, ck+1)
 
         out_idx = offsets[c] * 3
         for t in range(16):
@@ -495,12 +587,12 @@ def mc_emit(scalar, offsets, grid: pgc.template(),
                 va = select8(v0, v1, v2, v3, v4, v5, v6, v7, ca)
                 vb = select8(v0, v1, v2, v3, v4, v5, v6, v7, cb)
                 interp = (isovalue - va) / (vb - va + 1e-10)
-                xa = x_lo + tables.corner_x[ca] * grid.dx
-                xb = x_lo + tables.corner_x[cb] * grid.dx
-                ya = y_lo + tables.corner_y[ca] * grid.dy
-                yb = y_lo + tables.corner_y[cb] * grid.dy
-                za = z_lo + tables.corner_z[ca] * grid.dz
-                zb = z_lo + tables.corner_z[cb] * grid.dz
+                xa = select8(cx0, cx1, cx2, cx3, cx4, cx5, cx6, cx7, ca)
+                xb = select8(cx0, cx1, cx2, cx3, cx4, cx5, cx6, cx7, cb)
+                ya = select8(cy0, cy1, cy2, cy3, cy4, cy5, cy6, cy7, ca)
+                yb = select8(cy0, cy1, cy2, cy3, cy4, cy5, cy6, cy7, cb)
+                za = select8(cz0, cz1, cz2, cz3, cz4, cz5, cz6, cz7, ca)
+                zb = select8(cz0, cz1, cz2, cz3, cz4, cz5, cz6, cz7, cb)
                 out_x[out_idx] = xa + interp * (xb - xa)
                 out_y[out_idx] = ya + interp * (yb - ya)
                 out_z[out_idx] = za + interp * (zb - za)
@@ -624,9 +716,9 @@ def fe_emit_points_xyz(scalar, row_xo, row_yo, row_zo,
             above = 0
             if s > isovalue:
                 above = 1
-            px = grid.x0 + float(i) * grid.dx
-            py = grid.y0 + float(j) * grid.dy
-            pz = grid.z0 + float(k) * grid.dz
+            px = grid.get_x(i, j, k)
+            py = grid.get_y(i, j, k)
+            pz = grid.get_z(i, j, k)
             if i < grid.nx:
                 s_nx = scalar[node_idx + 1]
                 a_nx = 0
@@ -634,9 +726,12 @@ def fe_emit_points_xyz(scalar, row_xo, row_yo, row_zo,
                     a_nx = 1
                 if above != a_nx:
                     t = (isovalue - s) / (s_nx - s + 1.0e-10)
-                    pt_x[xi] = px + t * grid.dx
-                    pt_y[xi] = py
-                    pt_z[xi] = pz
+                    px1 = grid.get_x(i + 1, j, k)
+                    py1 = grid.get_y(i + 1, j, k)
+                    pz1 = grid.get_z(i + 1, j, k)
+                    pt_x[xi] = px + t * (px1 - px)
+                    pt_y[xi] = py + t * (py1 - py)
+                    pt_z[xi] = pz + t * (pz1 - pz)
                     xi = xi + 1
             if j < grid.ny:
                 s_ny = scalar[node_idx + grid.nx_p1]
@@ -645,9 +740,12 @@ def fe_emit_points_xyz(scalar, row_xo, row_yo, row_zo,
                     a_ny = 1
                 if above != a_ny:
                     t = (isovalue - s) / (s_ny - s + 1.0e-10)
-                    pt_x[yi] = px
-                    pt_y[yi] = py + t * grid.dy
-                    pt_z[yi] = pz
+                    px1 = grid.get_x(i, j + 1, k)
+                    py1 = grid.get_y(i, j + 1, k)
+                    pz1 = grid.get_z(i, j + 1, k)
+                    pt_x[yi] = px + t * (px1 - px)
+                    pt_y[yi] = py + t * (py1 - py)
+                    pt_z[yi] = pz + t * (pz1 - pz)
                     yi = yi + 1
             if k < grid.nz:
                 s_nz = scalar[node_idx + grid.nxy_p1]
@@ -656,9 +754,12 @@ def fe_emit_points_xyz(scalar, row_xo, row_yo, row_zo,
                     a_nz = 1
                 if above != a_nz:
                     t = (isovalue - s) / (s_nz - s + 1.0e-10)
-                    pt_x[zi] = px
-                    pt_y[zi] = py
-                    pt_z[zi] = pz + t * grid.dz
+                    px1 = grid.get_x(i, j, k + 1)
+                    py1 = grid.get_y(i, j, k + 1)
+                    pz1 = grid.get_z(i, j, k + 1)
+                    pt_x[zi] = px + t * (px1 - px)
+                    pt_y[zi] = py + t * (py1 - py)
+                    pt_z[zi] = pz + t * (pz1 - pz)
                     zi = zi + 1
 
 
@@ -829,7 +930,7 @@ print(f"Backend: {_args.arch}")
 print(f"Isovalue: {isovalue}")
 print()
 
-grid = GridParams(nx, ny, nz, x0, y0, z0, dx, dy, dz)
+grid = UniformGrid(nx, ny, nz, x0, y0, z0, dx, dy, dz)
 tables = MCTables()
 
 # Compute scalar field (shared)
@@ -1084,29 +1185,390 @@ print("  Points on isosurface: OK")
 
 
 # --- Summary ---
-print("\n" + "=" * 65)
-print(f"  {'Algorithm':<20} {'Time':>8}  {'Points':>12}  {'vs FE':>8}  {'vs VTK':>8}")
-print("-" * 65)
-vtk_time = results.get("VTK-FE", None)
+print("\n" + "=" * 70)
+print(f"  {'Algorithm':<25} {'Time':>8}  {'Points':>12}  {'Tris':>12}")
+print("-" * 70)
 
-t = results["FE"]
-vs_vtk = f"{vtk_time / t:>7.2f}x" if vtk_time else "  n/a  "
-print(f"  {'FE (merged)':<20} {t:>7.4f}s  {total_points_fe:>12,}  {1.0:>7.2f}x  {vs_vtk}")
+print(f"  {'PGC FE (uniform)':<25} {results['FE']:>7.4f}s  {total_points_fe:>12,}  {total_tris_fe:>12,}")
+print(f"  {'PGC MC (uniform)':<25} {results['MC']:>7.4f}s  {total_verts_mc:>12,}  {total_tris_mc:>12,}")
+if "VTK-FE" in results:
+    print(f"  {'VTK FE-image (TBB)':<25} {results['VTK-FE']:>7.4f}s  {vtk_total_points:>12,}  {vtk_total_tris:>12,}")
+if "FE-Rect" in results:
+    print(f"  {'PGC FE (rectilinear)':<25} {results['FE-Rect']:>7.4f}s  {rtp:>12,}  {rect_total_tris:>12,}")
+if "VTK-Rect" in results:
+    print(f"  {'VTK CF (rectilinear)':<25} {results['VTK-Rect']:>7.4f}s")
+if "FE-Struct" in results:
+    print(f"  {'PGC FE (structured)':<25} {results['FE-Struct']:>7.4f}s  {stp:>12,}  {struct_total_tris:>12,}")
+if "VTK-Struct" in results:
+    print(f"  {'VTK CF (structured)':<25} {results['VTK-Struct']:>7.4f}s")
 
-t = results["MC"]
-vs_fe = fe_time / t
-vs_vtk = f"{vtk_time / t:>7.2f}x" if vtk_time else "  n/a  "
-print(f"  {'MC (unmerged)':<20} {t:>7.4f}s  {total_verts_mc:>12,}  {vs_fe:>7.2f}x  {vs_vtk}")
+print("=" * 70)
 
-if vtk_time:
-    vs_fe = fe_time / vtk_time
-    vp = vtk_total_points if vtk_total_points else 0
-    print(f"  {'VTK-FE (TBB)':<20} {vtk_time:>7.4f}s  {vp:>12,}  {vs_fe:>7.2f}x  {1.0:>7.2f}x")
 
-print("=" * 65)
-print(f"""
-True FlyingEdges with edge ownership (no edge_ids buffer):
-  Merged points: {total_points_fe:,} unique vs {total_verts_mc:,} unmerged ({total_verts_mc / total_points_fe:.1f}x reduction)
-  Point IDs computed on the fly via running x/y/z edge counts per row
-  Node rows: {n_node_rows:,} (edge counting), Cell rows: {n_cell_rows:,} (triangle counting)
-""")
+# ================================================================
+# RECTILINEAR GRID TEST
+# ================================================================
+# Same gyroid on a cosine-spaced rectilinear grid (clusters points near
+# domain boundaries).  FE should produce valid isosurface points.
+
+print("--- Rectilinear grid ---")
+
+# Cosine spacing: more points near -pi and pi
+t_param = np.linspace(0, np.pi, nx + 1, dtype=np.float32)
+xc_rect = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param)) / 2.0
+t_param = np.linspace(0, np.pi, ny + 1, dtype=np.float32)
+yc_rect = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param)) / 2.0
+t_param = np.linspace(0, np.pi, nz + 1, dtype=np.float32)
+zc_rect = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param)) / 2.0
+
+xc_field = pgc.field(dtype=pgc.f32, shape=(nx + 1,))
+yc_field = pgc.field(dtype=pgc.f32, shape=(ny + 1,))
+zc_field = pgc.field(dtype=pgc.f32, shape=(nz + 1,))
+xc_field.from_numpy(xc_rect)
+yc_field.from_numpy(yc_rect)
+zc_field.from_numpy(zc_rect)
+
+rect_grid = RectilinearGrid(nx, ny, nz, xc_field, yc_field, zc_field)
+
+# Compute scalar field on rectilinear grid
+rect_scalar = pgc.field(dtype=pgc.f32, shape=(n_points,))
+compute_scalar_field(rect_scalar, rect_grid, n_points)
+
+# Initial FE run to get sizes
+rect_xc = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+rect_yc = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+rect_zc = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+fe_count_edges_xyz(rect_scalar, rect_xc, rect_yc, rect_zc, rect_grid, isovalue, n_node_rows)
+
+rxc_np = rect_xc.to_numpy()
+ryc_np = rect_yc.to_numpy()
+rzc_np = rect_zc.to_numpy()
+rtx = int(np.sum(rxc_np))
+rty = int(np.sum(ryc_np))
+rtz = int(np.sum(rzc_np))
+rtp = rtx + rty + rtz
+
+rxo_np = np.zeros(n_node_rows, dtype=np.int32)
+ryo_np = np.zeros(n_node_rows, dtype=np.int32)
+rzo_np = np.zeros(n_node_rows, dtype=np.int32)
+rxo_np[1:] = np.cumsum(rxc_np[:-1])
+ryo_np[1:] = np.cumsum(ryc_np[:-1])
+ryo_np += rtx
+rzo_np[1:] = np.cumsum(rzc_np[:-1])
+rzo_np += rtx + rty
+
+rect_xo = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+rect_yo = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+rect_zo = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+rect_xo.from_numpy(rxo_np)
+rect_yo.from_numpy(ryo_np)
+rect_zo.from_numpy(rzo_np)
+
+rect_tri_count = pgc.field(dtype=pgc.i32, shape=(n_cell_rows,))
+fe_count_rows(rect_scalar, rect_tri_count, rect_grid, tables, isovalue, n_cell_rows)
+rtc_np = rect_tri_count.to_numpy()
+rect_total_tris = int(np.sum(rtc_np))
+rto_np = np.zeros(n_cell_rows, dtype=np.int32)
+rto_np[1:] = np.cumsum(rtc_np[:-1])
+rect_tri_offset = pgc.field(dtype=pgc.i32, shape=(n_cell_rows,))
+rect_tri_offset.from_numpy(rto_np)
+
+rect_pt_x = pgc.field(dtype=pgc.f32, shape=(rtp,))
+rect_pt_y = pgc.field(dtype=pgc.f32, shape=(rtp,))
+rect_pt_z = pgc.field(dtype=pgc.f32, shape=(rtp,))
+rect_tv0 = pgc.field(dtype=pgc.i32, shape=(rect_total_tris,))
+rect_tv1 = pgc.field(dtype=pgc.i32, shape=(rect_total_tris,))
+rect_tv2 = pgc.field(dtype=pgc.i32, shape=(rect_total_tris,))
+
+print(f"  Points: {rtp:,}, Triangles: {rect_total_tris:,}")
+
+
+def _rect_fe_prefix_sums():
+    fe_count_edges_xyz(rect_scalar, rect_xc, rect_yc, rect_zc, rect_grid, isovalue, n_node_rows)
+    _xc = rect_xc.to_numpy()
+    _yc = rect_yc.to_numpy()
+    _zc = rect_zc.to_numpy()
+    _tx = int(np.sum(_xc))
+    rxo_np[0] = 0
+    rxo_np[1:] = np.cumsum(_xc[:-1])
+    ryo_np[0] = _tx
+    ryo_np[1:] = _tx + np.cumsum(_yc[:-1])
+    _ty = int(np.sum(_yc))
+    rzo_np[0] = _tx + _ty
+    rzo_np[1:] = _tx + _ty + np.cumsum(_zc[:-1])
+    rect_xo.from_numpy(rxo_np)
+    rect_yo.from_numpy(ryo_np)
+    rect_zo.from_numpy(rzo_np)
+    fe_count_rows(rect_scalar, rect_tri_count, rect_grid, tables, isovalue, n_cell_rows)
+    _tc = rect_tri_count.to_numpy()
+    rto_np[0] = 0
+    rto_np[1:] = np.cumsum(_tc[:-1])
+    rect_tri_offset.from_numpy(rto_np)
+
+
+def _rect_fe_full():
+    _rect_fe_prefix_sums()
+    fe_emit_points_xyz(rect_scalar, rect_xo, rect_yo, rect_zo,
+                       rect_pt_x, rect_pt_y, rect_pt_z,
+                       rect_grid, isovalue, n_node_rows)
+    fe_emit_tris(rect_scalar, rect_tri_offset, rect_xo, rect_yo, rect_zo,
+                 rect_tv0, rect_tv1, rect_tv2, rect_grid, tables, isovalue, n_cell_rows)
+
+
+for _w in range(warmup):
+    _rect_fe_full()
+
+times = []
+for _t in range(trials):
+    t0 = time.perf_counter()
+    _rect_fe_full()
+    t1 = time.perf_counter()
+    times.append(t1 - t0)
+
+rect_fe_time = min(times)
+print(f"  PGC FE: {rect_fe_time:.4f}s")
+results["FE-Rect"] = rect_fe_time
+
+rpx = rect_pt_x.to_numpy()
+rpy = rect_pt_y.to_numpy()
+rpz = rect_pt_z.to_numpy()
+rt0 = rect_tv0.to_numpy()
+
+assert np.all(rt0 >= 0) and np.all(rt0 < rtp), "rect tri_v0 out of range"
+n_rs = min(200, rtp)
+rs_vals = (np.sin(rpx[:n_rs]) * np.cos(rpy[:n_rs])
+         + np.sin(rpy[:n_rs]) * np.cos(rpz[:n_rs])
+         + np.sin(rpz[:n_rs]) * np.cos(rpx[:n_rs]))
+rs_err = np.max(np.abs(rs_vals - isovalue))
+print(f"  Validation: max scalar error {rs_err:.6f} — OK")
+
+# VTK rectilinear comparison
+try:
+    from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid
+    from vtkmodules.vtkFiltersCore import vtkContourFilter as _CF
+    from vtkmodules.util.numpy_support import numpy_to_vtk as _n2v
+
+    rg = vtkRectilinearGrid()
+    rg.SetDimensions(nx + 1, ny + 1, nz + 1)
+    rg.SetXCoordinates(_n2v(xc_rect.astype(np.float64), deep=True))
+    rg.SetYCoordinates(_n2v(yc_rect.astype(np.float64), deep=True))
+    rg.SetZCoordinates(_n2v(zc_rect.astype(np.float64), deep=True))
+    rg.GetPointData().SetScalars(_n2v(rect_scalar.to_numpy(), deep=True))
+
+    rcf = _CF()
+    rcf.SetInputData(rg)
+    rcf.SetValue(0, isovalue)
+    rcf.SetFastMode(True)
+
+    for _w in range(warmup):
+        rcf.Modified()
+        rcf.Update()
+
+    times = []
+    for _t in range(trials):
+        rcf.Modified()
+        t0 = time.perf_counter()
+        rcf.Update()
+        t1 = time.perf_counter()
+        times.append(t1 - t0)
+
+    vtk_rect_time = min(times)
+    vtk_rect_out = rcf.GetOutput()
+    print(f"  VTK ContourFilter (fast): {vtk_rect_time:.4f}s"
+          f"  ({vtk_rect_out.GetNumberOfCells():,} tris,"
+          f" {vtk_rect_out.GetNumberOfPoints():,} pts)")
+    results["VTK-Rect"] = vtk_rect_time
+    del rcf, rg
+except Exception as e:
+    print(f"  VTK rectilinear: skipped ({e})")
+
+
+# ================================================================
+# STRUCTURED (CURVILINEAR) GRID TEST
+# ================================================================
+# Same gyroid on a twisted grid — uniform spacing with a sinusoidal
+# perturbation that couples all three coordinates.
+
+print("\n--- Structured (curvilinear) grid ---")
+
+# Build per-point coordinates: uniform + twist perturbation (vectorized)
+si_1d = np.arange(nx + 1, dtype=np.float32)
+sj_1d = np.arange(ny + 1, dtype=np.float32)
+sk_1d = np.arange(nz + 1, dtype=np.float32)
+bz_3d, by_3d, bx_3d = np.meshgrid(
+    np.float32(z0) + sk_1d * np.float32(dz),
+    np.float32(y0) + sj_1d * np.float32(dy),
+    np.float32(x0) + si_1d * np.float32(dx),
+    indexing='ij')
+twist_3d = np.float32(0.1) * np.sin(np.float32(2.0) * bz_3d)
+s_px_np = (bx_3d + twist_3d * by_3d).ravel().astype(np.float32)
+s_py_np = (by_3d - twist_3d * bx_3d).ravel().astype(np.float32)
+s_pz_np = bz_3d.ravel().astype(np.float32)
+del bx_3d, by_3d, bz_3d, twist_3d
+
+s_px = pgc.field(dtype=pgc.f32, shape=(n_points,))
+s_py = pgc.field(dtype=pgc.f32, shape=(n_points,))
+s_pz = pgc.field(dtype=pgc.f32, shape=(n_points,))
+s_px.from_numpy(s_px_np)
+s_py.from_numpy(s_py_np)
+s_pz.from_numpy(s_pz_np)
+
+struct_grid = StructuredGrid(nx, ny, nz, s_px, s_py, s_pz)
+
+# Compute scalar field on structured grid
+struct_scalar = pgc.field(dtype=pgc.f32, shape=(n_points,))
+compute_scalar_field(struct_scalar, struct_grid, n_points)
+
+# Run FE
+s_xc = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+s_yc = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+s_zc = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+fe_count_edges_xyz(struct_scalar, s_xc, s_yc, s_zc, struct_grid, isovalue, n_node_rows)
+
+sxc_np = s_xc.to_numpy()
+syc_np = s_yc.to_numpy()
+szc_np = s_zc.to_numpy()
+stx = int(np.sum(sxc_np))
+sty = int(np.sum(syc_np))
+stz = int(np.sum(szc_np))
+stp = stx + sty + stz
+
+sxo_np = np.zeros(n_node_rows, dtype=np.int32)
+syo_np = np.zeros(n_node_rows, dtype=np.int32)
+szo_np = np.zeros(n_node_rows, dtype=np.int32)
+sxo_np[1:] = np.cumsum(sxc_np[:-1])
+syo_np[1:] = np.cumsum(syc_np[:-1])
+syo_np += stx
+szo_np[1:] = np.cumsum(szc_np[:-1])
+szo_np += stx + sty
+
+s_xo = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+s_yo = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+s_zo = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
+s_xo.from_numpy(sxo_np)
+s_yo.from_numpy(syo_np)
+s_zo.from_numpy(szo_np)
+
+s_tri_count = pgc.field(dtype=pgc.i32, shape=(n_cell_rows,))
+fe_count_rows(struct_scalar, s_tri_count, struct_grid, tables, isovalue, n_cell_rows)
+stc_np = s_tri_count.to_numpy()
+struct_total_tris = int(np.sum(stc_np))
+sto_np = np.zeros(n_cell_rows, dtype=np.int32)
+sto_np[1:] = np.cumsum(stc_np[:-1])
+s_tri_offset = pgc.field(dtype=pgc.i32, shape=(n_cell_rows,))
+s_tri_offset.from_numpy(sto_np)
+
+s_pt_x = pgc.field(dtype=pgc.f32, shape=(stp,))
+s_pt_y = pgc.field(dtype=pgc.f32, shape=(stp,))
+s_pt_z = pgc.field(dtype=pgc.f32, shape=(stp,))
+s_tv0 = pgc.field(dtype=pgc.i32, shape=(struct_total_tris,))
+s_tv1 = pgc.field(dtype=pgc.i32, shape=(struct_total_tris,))
+s_tv2 = pgc.field(dtype=pgc.i32, shape=(struct_total_tris,))
+
+print(f"  Points: {stp:,}, Triangles: {struct_total_tris:,}")
+
+
+def _struct_fe_prefix_sums():
+    fe_count_edges_xyz(struct_scalar, s_xc, s_yc, s_zc, struct_grid, isovalue, n_node_rows)
+    _xc = s_xc.to_numpy()
+    _yc = s_yc.to_numpy()
+    _zc = s_zc.to_numpy()
+    _tx = int(np.sum(_xc))
+    sxo_np[0] = 0
+    sxo_np[1:] = np.cumsum(_xc[:-1])
+    syo_np[0] = _tx
+    syo_np[1:] = _tx + np.cumsum(_yc[:-1])
+    _ty = int(np.sum(_yc))
+    szo_np[0] = _tx + _ty
+    szo_np[1:] = _tx + _ty + np.cumsum(_zc[:-1])
+    s_xo.from_numpy(sxo_np)
+    s_yo.from_numpy(syo_np)
+    s_zo.from_numpy(szo_np)
+    fe_count_rows(struct_scalar, s_tri_count, struct_grid, tables, isovalue, n_cell_rows)
+    _tc = s_tri_count.to_numpy()
+    sto_np[0] = 0
+    sto_np[1:] = np.cumsum(_tc[:-1])
+    s_tri_offset.from_numpy(sto_np)
+
+
+def _struct_fe_full():
+    _struct_fe_prefix_sums()
+    fe_emit_points_xyz(struct_scalar, s_xo, s_yo, s_zo,
+                       s_pt_x, s_pt_y, s_pt_z,
+                       struct_grid, isovalue, n_node_rows)
+    fe_emit_tris(struct_scalar, s_tri_offset, s_xo, s_yo, s_zo,
+                 s_tv0, s_tv1, s_tv2, struct_grid, tables, isovalue, n_cell_rows)
+
+
+for _w in range(warmup):
+    _struct_fe_full()
+
+times = []
+for _t in range(trials):
+    t0 = time.perf_counter()
+    _struct_fe_full()
+    t1 = time.perf_counter()
+    times.append(t1 - t0)
+
+struct_fe_time = min(times)
+print(f"  PGC FE: {struct_fe_time:.4f}s")
+results["FE-Struct"] = struct_fe_time
+
+spx = s_pt_x.to_numpy()
+spy = s_pt_y.to_numpy()
+spz = s_pt_z.to_numpy()
+st0 = s_tv0.to_numpy()
+
+assert np.all(st0 >= 0) and np.all(st0 < stp), "struct tri_v0 out of range"
+n_ss = min(200, stp)
+ss_vals = (np.sin(spx[:n_ss]) * np.cos(spy[:n_ss])
+         + np.sin(spy[:n_ss]) * np.cos(spz[:n_ss])
+         + np.sin(spz[:n_ss]) * np.cos(spx[:n_ss]))
+ss_err = np.max(np.abs(ss_vals - isovalue))
+print(f"  Validation: max scalar error {ss_err:.6f} — OK")
+
+# VTK structured grid comparison
+try:
+    from vtkmodules.vtkCommonDataModel import vtkStructuredGrid as _VSG
+    from vtkmodules.vtkCommonCore import vtkPoints as _VP
+    from vtkmodules.vtkFiltersCore import vtkContourFilter as _CF2
+    from vtkmodules.util.numpy_support import numpy_to_vtk as _n2v2
+
+    sg = _VSG()
+    sg.SetDimensions(nx + 1, ny + 1, nz + 1)
+    pts = _VP()
+    coords_np = np.column_stack([
+        s_px_np.astype(np.float64),
+        s_py_np.astype(np.float64),
+        s_pz_np.astype(np.float64),
+    ])
+    pts.SetData(_n2v2(coords_np, deep=True))
+    sg.SetPoints(pts)
+    sg.GetPointData().SetScalars(_n2v2(struct_scalar.to_numpy(), deep=True))
+
+    scf = _CF2()
+    scf.SetInputData(sg)
+    scf.SetValue(0, isovalue)
+    scf.SetFastMode(True)
+
+    for _w in range(warmup):
+        scf.Modified()
+        scf.Update()
+
+    times = []
+    for _t in range(trials):
+        scf.Modified()
+        t0 = time.perf_counter()
+        scf.Update()
+        t1 = time.perf_counter()
+        times.append(t1 - t0)
+
+    vtk_struct_time = min(times)
+    vtk_struct_out = scf.GetOutput()
+    print(f"  VTK ContourFilter (fast): {vtk_struct_time:.4f}s"
+          f"  ({vtk_struct_out.GetNumberOfCells():,} tris,"
+          f" {vtk_struct_out.GetNumberOfPoints():,} pts)")
+    results["VTK-Struct"] = vtk_struct_time
+    del scf, sg, pts, coords_np
+except Exception as e:
+    print(f"  VTK structured: skipped ({e})")
