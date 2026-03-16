@@ -27,14 +27,11 @@ STEPS = 10000
 def jacobi_step(src, dst, n):
     """One Jacobi iteration: dst[i,j] = average of 4 neighbors in src."""
     for i, j in pgc.ndrange(n, n):
-        if i > 0:
-            if i < n - 1:
-                if j > 0:
-                    if j < n - 1:
-                        dst[i, j] = 0.25 * (
-                            src[i - 1, j] + src[i + 1, j] +
-                            src[i, j - 1] + src[i, j + 1]
-                        )
+        if i > 0 and i < n - 1 and j > 0 and j < n - 1:
+            dst[i, j] = 0.25 * (
+                src[i - 1, j] + src[i + 1, j] +
+                src[i, j - 1] + src[i, j + 1]
+            )
 
 
 @pgc.kernel
