@@ -3,13 +3,13 @@
 Generates an ``extern "C" __global__`` kernel function where:
   - Each Field parameter becomes a typed device pointer (``float*``, etc.)
   - The outermost parallel for-loop maps to the standard CUDA thread index:
-        int __idx__ = blockIdx.x * blockDim.x + threadIdx.x;
+        long long __idx__ = blockIdx.x * blockDim.x + threadIdx.x;
     with a bounds guard.
   - Sequential for-loops, while-loops, if/else map to standard C control flow.
   - Math builtins map to CUDA device math functions (sqrtf, sinf, etc.).
 
-All integer locals and loop indices use 32-bit ``int`` to maximise GPU ALU
-throughput (64-bit integer math runs at half rate on consumer NVIDIA GPUs).
+All integer locals and loop indices use 64-bit ``long long`` to support grids
+with more than 2^31 elements.
 """
 
 from pgc.lang import ir
@@ -25,8 +25,8 @@ _C_TYPE_MAP = {
     u64: "unsigned long long",
 }
 
-# Default integer type for locals on CUDA — 32-bit for throughput.
-_INT = "int"
+# Default integer type for locals on CUDA — 64-bit to support large grids (>2^31 elements).
+_INT = "long long"
 
 _MATH_FUNCS_F32 = {
     "sqrt": "sqrtf",
@@ -553,7 +553,7 @@ class CUDACodeGen:
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
         if node.dtype == "int":
-            return f"(({_INT})({val}))"
+            return f"((int)({val}))"
         if node.dtype == "float":
             return f"((float)({val}))"
         raise NotImplementedError(f"CUDA cast: {node.dtype}")

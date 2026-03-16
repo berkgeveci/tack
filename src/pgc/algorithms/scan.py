@@ -22,18 +22,18 @@ def _copy_field(src, dst, n):
 
 
 @pgc.kernel
-def _upsweep(data, stride, n):
+def _upsweep(data, stride, n, count):
     """Up-sweep (reduce) phase: accumulate at stride boundaries."""
-    for i in range(n):
+    for i in range(count):
         k = (i + 1) * stride * 2 - 1
         if k < n:
             data[k] = data[k] + data[k - stride]
 
 
 @pgc.kernel
-def _downsweep(data, stride, n):
+def _downsweep(data, stride, n, count):
     """Down-sweep phase: propagate partial sums back down."""
-    for i in range(n):
+    for i in range(count):
         k = (i + 1) * stride * 2 - 1 + stride
         if k < n:
             data[k] = data[k] + data[k - stride]
@@ -49,6 +49,13 @@ def _shift_right(src, dst, n):
             dst[i] = src[i - 1]
 
 
+@pgc.kernel
+def _read_last(src, dst, idx):
+    """Copy a single element src[idx] into dst[0]."""
+    for i in range(1):
+        dst[0] = src[idx]
+
+
 def _blelloch_scan_inplace(work, n):
     """Run Blelloch up-sweep + down-sweep on a work buffer (in-place).
 
@@ -57,13 +64,17 @@ def _blelloch_scan_inplace(work, n):
     # Up-sweep (reduce) phase
     stride = 1
     while stride < n:
-        _upsweep(work, stride, n)
+        count = n // (stride * 2)
+        if count > 0:
+            _upsweep(work, stride, n, count)
         stride *= 2
 
     # Down-sweep phase
     stride //= 4
     while stride >= 1:
-        _downsweep(work, stride, n)
+        count = n // (stride * 2)
+        if count > 0:
+            _downsweep(work, stride, n, count)
         stride //= 2
 
 
@@ -86,8 +97,9 @@ def exclusive_scan(input_field, output_field, n):
     _shift_right(work, output_field, n)
 
     # Total = last element of inclusive scan
-    work_np = work.to_numpy()
-    return int(work_np[n - 1])
+    result = pgc.field(dtype=pgc.i32, shape=(1,))
+    _read_last(work, result, n - 1)
+    return int(result.to_numpy()[0])
 
 
 def inclusive_scan(input_field, output_field, n):
@@ -106,5 +118,6 @@ def inclusive_scan(input_field, output_field, n):
     _copy_field(input_field, output_field, n)
     _blelloch_scan_inplace(output_field, n)
 
-    out_np = output_field.to_numpy()
-    return int(out_np[n - 1])
+    result = pgc.field(dtype=pgc.i32, shape=(1,))
+    _read_last(output_field, result, n - 1)
+    return int(result.to_numpy()[0])

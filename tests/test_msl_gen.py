@@ -76,7 +76,7 @@ class TestMSLCodeGen:
                 out[i] = 42.0
 
         src = generate_msl_source(_get_ir(fill, _field()))
-        assert 'int i = __tid__;' in src
+        assert 'long i = __tid__;' in src
 
     def test_math_functions(self):
         @pgc.kernel
@@ -118,7 +118,7 @@ class TestMSLCodeGen:
                     b[i] = a[i]
 
         src = generate_msl_source(_get_ir(kern, _field(), _field()))
-        assert 'for (int j = 0; j < 10; j++)' in src
+        assert 'for (long j = 0; j < 10; j++)' in src
 
     def test_while_loop(self):
         @pgc.kernel

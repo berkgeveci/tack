@@ -154,7 +154,7 @@ class CompiledHIPKernel:
 
     def __call__(self, kernel_args: list, loop_end: int):
         """Dispatch the HIP kernel."""
-        n_val = ctypes.c_int(loop_end)
+        n_val = ctypes.c_longlong(loop_end)
 
         arg_values = []
         for arg, ptype, is_field in zip(kernel_args, self._param_types, self._param_is_field):

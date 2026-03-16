@@ -66,7 +66,7 @@ class TestCUDACodeGen:
                 out[i] = 1.0
 
         src = generate_cuda_source(_get_ir(fill, _field()))
-        assert 'int __n__' in src
+        assert 'long long __n__' in src
 
     def test_math_functions(self):
         @pgc.kernel
@@ -108,7 +108,7 @@ class TestCUDACodeGen:
                     b[i] = a[i]
 
         src = generate_cuda_source(_get_ir(kern, _field(), _field()))
-        assert 'for (int j = 0; j < 10; j++)' in src
+        assert 'for (long long j = 0; j < 10; j++)' in src
 
     def test_while_loop(self):
         @pgc.kernel

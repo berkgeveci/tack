@@ -6,8 +6,8 @@ Generates a ``kernel void`` compute function where:
   - Sequential for-loops, while-loops, if/else map to standard C control flow
   - Math builtins map to Metal stdlib functions (sqrt, sin, etc.)
 
-All integer locals and loop indices use 32-bit ``int`` to maximise GPU ALU
-throughput.  Apple GPUs do not support double precision.
+All integer locals and loop indices use 64-bit ``long`` to support grids
+with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
 from pgc.lang import ir
@@ -22,8 +22,8 @@ _MSL_TYPE_MAP = {
     u64: "ulong",
 }
 
-# Default integer type for locals — 32-bit for throughput.
-_INT = "int"
+# Default integer type for locals — 64-bit to support large grids (>2^31 elements).
+_INT = "long"
 
 _MATH_FUNCS = {
     "sqrt": "sqrt",
@@ -494,7 +494,7 @@ class MSLCodeGen:
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
         if node.dtype == "int":
-            return f"(({_INT})({val}))"
+            return f"((int)({val}))"
         if node.dtype == "float":
             return f"((float)({val}))"
         raise NotImplementedError(f"MSL cast: {node.dtype}")

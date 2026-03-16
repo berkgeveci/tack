@@ -106,4 +106,4 @@ class TestHIPCodeGen:
         # Should have all three field params as restrict pointers
         assert src.count('__restrict__') == 3
         # Should have the n parameter
-        assert 'int __n__' in src
+        assert 'long long __n__' in src

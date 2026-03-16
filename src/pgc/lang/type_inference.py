@@ -32,9 +32,14 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
             param._is_field = False
             types.append(f32)
         elif isinstance(arg, int):
-            param.type_annotation = i32
-            param._is_field = False
-            types.append(i32)
+            if arg > 2**31 - 1 or arg < -(2**31):
+                param.type_annotation = i64
+                param._is_field = False
+                types.append(i64)
+            else:
+                param.type_annotation = i32
+                param._is_field = False
+                types.append(i32)
         else:
             raise TypeError(
                 f"Unsupported argument type for parameter '{param.name}': {type(arg)}"
