@@ -14,7 +14,7 @@ uv run python examples/01_hello_pgc.py --arch hip   # run example on specific ba
 uv run python bench_cpu_vs_hip.py                    # CPU vs HIP/ROCm benchmark
 ```
 
-All examples accept `--arch cpu|metal|cuda|hip` to select the backend.
+All examples accept `--arch cpu|metal|cuda|hip|vulkan|level_zero` to select the backend.
 
 No build step — pure Python with JIT compilation at runtime.
 
@@ -30,7 +30,7 @@ PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are deco
     → Backend-specific codegen + dispatch
 ```
 
-### Four codegen backends from PGC IR
+### Codegen backends from PGC IR
 
 | Backend | Codegen | Runtime compilation | Dispatch |
 |---------|---------|-------------------|----------|
@@ -38,6 +38,8 @@ PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are deco
 | Metal | `msl_gen.py` → MSL source | Metal API (pyobjc) | compute pipeline |
 | CUDA | `cuda_gen.py` → CUDA C source | NVRTC → PTX | cuLaunchKernel |
 | HIP | `hip_gen.py` → HIP C source (extends CUDA) | hipRTC → code object | hipLaunchKernel |
+| Vulkan | `spirv_gen.py` → SPIR-V binary | N/A (direct binary) | vkCmdDispatch |
+| Level Zero | `opencl_gen.py` → OpenCL C source (extends CUDA) | libocloc → SPIR-V | zeCommandListAppendLaunchKernel |
 
 ### Key abstraction: Field with DeviceBuffer
 
@@ -46,6 +48,7 @@ PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are deco
 - **Metal**: `MetalBuffer` — Metal shared buffer (zero-copy unified memory on Apple Silicon). The numpy array view points directly into Metal buffer memory.
 - **CUDA**: `CUDABuffer` holds a device pointer (`cuMemAlloc`). Explicit host↔device copies on `from_numpy`/`to_numpy`.
 - **HIP**: `HIPBuffer` holds a device pointer (`hipMalloc`). Explicit host↔device copies.
+- **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Explicit host↔device copies via immediate command list.
 
 `pgc.field()` calls `backend.allocate_field()` to create the appropriate buffer type.
 
@@ -126,6 +129,7 @@ CPU backend uses `ThreadPoolExecutor` only when loop range > 1024 elements. Belo
 - **macOS (Metal)**: `pyobjc-framework-Metal`
 - **Linux/Windows (CUDA)**: `cuda-python>=13.2`, NVIDIA driver + CUDA toolkit
 - **Linux (HIP/ROCm)**: `hip-python`, ROCm toolkit
+- **Linux (Level Zero/Intel)**: `libze_loader.so`, `libocloc.so` (Intel compute runtime)
 - **CPU-only**: `llvmlite`, `numpy`
 
 ## HIP backend notes
@@ -143,5 +147,15 @@ uv pip install --prerelease=allow --index-url https://test.pypi.org/simple/ \
 Then: `pgc.init(arch=pgc.hip)`.
 
 **Known issue**: `hiprtcDestroyProgram` segfaults in hip-python 7.1 bindings. The backend skips this call (minor leak, mitigated by kernel caching).
+
+## Level Zero backend notes
+
+The Level Zero codegen (`opencl_gen.py`) extends `CUDACodeGen` — OpenCL C kernel syntax mirrors CUDA with different qualifiers (`__kernel`/`__global`, `get_global_id(0)`/`blockIdx*blockDim+threadIdx`, `__local`/`__shared__`, `barrier()`/`__syncthreads()`). Math functions are overloaded (no `f` suffix). The runtime (`level_zero_backend.py`) uses ctypes bindings to `libze_loader.so` and `libocloc.so`.
+
+Compilation pipeline: OpenCL C source → `libocloc.so` (in-process, via `oclocInvoke`) → SPIR-V → `zeModuleCreate` → `zeKernelCreate`. The ocloc library is part of the Intel compute runtime (`intel-opencl-icd` package).
+
+Requires: `libze_loader.so` (Level Zero runtime), `libocloc.so` (Intel offline compiler). No Python packages needed.
+
+Then: `pgc.init(arch=pgc.level_zero)`.
 
 ## Do not mention Claude in git commits

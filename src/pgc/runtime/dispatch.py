@@ -22,6 +22,9 @@ def init(arch: str = "cpu"):
     elif arch == "hip":
         from pgc.runtime.hip_backend import HIPBackend
         _current_backend = HIPBackend()
+    elif arch == "level_zero":
+        from pgc.runtime.level_zero_backend import LevelZeroBackend
+        _current_backend = LevelZeroBackend()
     else:
         raise ValueError(f"Unknown architecture: {arch}")
 

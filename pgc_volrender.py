@@ -376,6 +376,8 @@ def main():
             arch = pgc.hip
         if a == '--arch=vulkan':
             arch = pgc.vulkan
+        if a == '--arch=level_zero':
+            arch = pgc.level_zero
 
     pgc.init(arch=arch)
     print(f"Backend: {arch}")
