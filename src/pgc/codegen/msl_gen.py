@@ -94,29 +94,30 @@ class MSLCodeGen:
         self._emit("using namespace metal;")
         self._emit("")
 
-        # Pre-scan for texture samples to generate helper functions.
-        # We need to emit the kernel body first to discover texture helpers,
-        # then insert them. Instead, pre-scan the IR for IRTextureSample nodes.
-        self._texture_helpers = {}
-        self._tex_sample_counter = 0
-        self._pre_scan_textures(func.body)
-        helpers = self._generate_texture_helpers()
-        if helpers:
-            for line in helpers.strip().split('\n'):
-                self._lines.append(line)
-            self._emit("")
+        # Detect texture parameters
+        self._texture_params: set[str] = set()
+        for param in func.params:
+            if getattr(param, '_is_texture', False):
+                self._texture_params.add(param.name)
 
-        # Build function signature
-        # Track which params are scalars for dereference in the body
+        # Build function signature with separate buffer/texture binding indices
         self._scalar_buffer_params: set[str] = set()
         params_msl = []
-        for i, param in enumerate(func.params):
+        buf_idx = 0
+        tex_idx = 0
+        for param in func.params:
             msl_type = _MSL_TYPE_MAP[param.type_annotation]
-            if param.name in self._field_params:
-                params_msl.append(f"device {msl_type}* {param.name} [[buffer({i})]]")
+            if param.name in self._texture_params:
+                params_msl.append(
+                    f"texture3d<float, access::sample> {param.name} [[texture({tex_idx})]]")
+                tex_idx += 1
+            elif param.name in self._field_params:
+                params_msl.append(f"device {msl_type}* {param.name} [[buffer({buf_idx})]]")
+                buf_idx += 1
             else:
-                # Scalar passed as a single-element constant buffer
-                params_msl.append(f"constant {msl_type}& {param.name} [[buffer({i})]]")
+                params_msl.append(f"constant {msl_type}& {param.name} [[buffer({buf_idx})]]")
+                buf_idx += 1
+        self._has_textures = tex_idx > 0
 
         params_msl.append("uint __tid__ [[thread_position_in_grid]]")
         if self._needs_local_tid:
@@ -127,6 +128,11 @@ class MSLCodeGen:
         self._emit(f"    {sig})")
         self._emit("{")
         self._indent += 1
+
+        # Emit sampler for texture sampling
+        if self._has_textures:
+            self._emit("constexpr sampler __samp__(coord::normalized, "
+                       "filter::linear, address::clamp_to_edge);")
 
         self._emit_body(func.body)
 
@@ -536,28 +542,21 @@ class MSLCodeGen:
                     self._pre_scan_textures_node(v)
 
     def _expr_texture_sample(self, node: ir.IRTextureSample) -> str:
-        """Emit software trilinear interpolation for texture3d.sample()."""
+        """Emit hardware texture sampling via Metal texture3d.sample().
+
+        Our API convention: texel centers at i/(N-1), so u=0 → texel 0, u=1 → texel N-1.
+        Metal convention:   texel centers at (i+0.5)/N.
+        Transform: metal_u = (u * (N-1) + 0.5) / N
+        """
         W, H, D = node.shape
         u = self._expr(node.coords[0])
         v = self._expr(node.coords[1])
         w = self._expr(node.coords[2])
         field = node.field_name
-
-        # Use a unique counter to avoid name collisions in the same scope
-        n = getattr(self, '_tex_sample_counter', 0)
-        self._tex_sample_counter = n + 1
-        p = f"__ts{n}__"
-
-        # Emit inline trilinear as a sequence of local declarations.
-        # We use the _pre_stmts pattern — but MSL codegen doesn't have that.
-        # Instead, emit a block expression using a lambda or just inline vars.
-        # Simplest: emit a helper call. Generate a helper function once.
-        helper = f"__tex3d_linear_{W}_{H}_{D}__"
-        if not hasattr(self, '_texture_helpers'):
-            self._texture_helpers = {}
-        if helper not in self._texture_helpers:
-            self._texture_helpers[helper] = (W, H, D)
-        return f"{helper}({field}, {u}, {v}, {w})"
+        mu = f"(({u}) * {W - 1}.0f + 0.5f) / {W}.0f"
+        mv = f"(({v}) * {H - 1}.0f + 0.5f) / {H}.0f"
+        mw = f"(({w}) * {D - 1}.0f + 0.5f) / {D}.0f"
+        return f"{field}.sample(__samp__, float3({mu}, {mv}, {mw})).x"
 
     def _generate_texture_helpers(self) -> str:
         """Generate MSL helper functions for software texture sampling."""

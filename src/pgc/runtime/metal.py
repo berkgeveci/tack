@@ -70,13 +70,17 @@ class CompiledMetalKernel:
 
     _NUMPY_MAP = {f32: np.float32, i32: np.int32, i64: np.int64, u32: np.uint32, u64: np.uint64}
 
-    def __init__(self, device, command_queue, pipeline, func_name, param_types, param_is_field):
+    def __init__(self, device, command_queue, pipeline, func_name,
+                 param_types, param_is_field, param_is_texture=None,
+                 texture_shapes=None):
         self._device = device
         self._command_queue = command_queue
         self._pipeline = pipeline
         self._func_name = func_name
         self._param_types = param_types
         self._param_is_field = param_is_field
+        self._param_is_texture = param_is_texture or [False] * len(param_types)
+        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
         self._thread_execution_width = pipeline.threadExecutionWidth()
         self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
 
@@ -88,12 +92,48 @@ class CompiledMetalKernel:
         )
         encoder.setComputePipelineState_(self._pipeline)
 
-        # Bind buffers — fields use their Metal buffers, scalars use temp buffers
+        # Bind buffers and textures.
+        # Textures use a separate binding namespace (texture indices).
         temp_buffers = []
-        for i, (arg, ptype, is_field) in enumerate(
-                zip(kernel_args, self._param_types, self._param_is_field)):
-            if is_field:
-                encoder.setBuffer_offset_atIndex_(arg._buffer.metal_buffer, 0, i)
+        buf_idx = 0
+        tex_idx = 0
+        for i, (arg, ptype, is_field, is_tex) in enumerate(
+                zip(kernel_args, self._param_types, self._param_is_field,
+                    self._param_is_texture)):
+            if is_tex:
+                # Create MTLTexture and copy buffer data into it
+                W, H, D = self._texture_shapes[i]
+                cache_key = (id(arg._buffer.metal_buffer), W, H, D)
+                if not hasattr(self, '_tex_cache'):
+                    self._tex_cache = {}
+                if cache_key not in self._tex_cache:
+                    desc = Metal.MTLTextureDescriptor.alloc().init()
+                    desc.setTextureType_(7)  # MTLTextureType3D
+                    desc.setPixelFormat_(55)  # MTLPixelFormatR32Float
+                    desc.setWidth_(W)
+                    desc.setHeight_(H)
+                    desc.setDepth_(D)
+                    desc.setUsage_(1)  # MTLTextureUsageShaderRead
+                    desc.setStorageMode_(0)  # MTLStorageModeShared
+                    tex = self._device.newTextureWithDescriptor_(desc)
+                    # Copy from buffer to texture via blit
+                    blit_buf = self._command_queue.commandBuffer()
+                    blit_enc = blit_buf.blitCommandEncoder()
+                    bytes_per_row = W * 4
+                    bytes_per_image = W * H * 4
+                    blit_enc.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin_(
+                        arg._buffer.metal_buffer, 0, bytes_per_row, bytes_per_image,
+                        Metal.MTLSizeMake(W, H, D), tex, 0, 0,
+                        Metal.MTLOriginMake(0, 0, 0))
+                    blit_enc.endEncoding()
+                    blit_buf.commit()
+                    blit_buf.waitUntilCompleted()
+                    self._tex_cache[cache_key] = tex
+                encoder.setTexture_atIndex_(self._tex_cache[cache_key], tex_idx)
+                tex_idx += 1
+            elif is_field:
+                encoder.setBuffer_offset_atIndex_(arg._buffer.metal_buffer, 0, buf_idx)
+                buf_idx += 1
             else:
                 # Scalar: create a tiny shared buffer with the value
                 ndt = self._NUMPY_MAP[ptype]
@@ -101,8 +141,9 @@ class CompiledMetalKernel:
                 nbytes = arr.nbytes
                 buf = self._device.newBufferWithBytes_length_options_(
                     arr.tobytes(), nbytes, 0)
-                encoder.setBuffer_offset_atIndex_(buf, 0, i)
+                encoder.setBuffer_offset_atIndex_(buf, 0, buf_idx)
                 temp_buffers.append(buf)  # prevent GC
+                buf_idx += 1
 
         # Dispatch threads
         threads_per_group = min(self._max_threads_per_group, 256)
@@ -149,8 +190,15 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
 
     param_types = [p.type_annotation for p in ir_func.params]
     param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+    param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+    # Collect texture shapes from IRTextureSample nodes in the IR
+    texture_shapes = {}
+    for i, p in enumerate(ir_func.params):
+        if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
+            texture_shapes[i] = p._texture_shape
     return CompiledMetalKernel(device, command_queue, pipeline, ir_func.name,
-                               param_types, param_is_field)
+                               param_types, param_is_field, param_is_texture,
+                               texture_shapes)
 
 
 _REDUCE_MSL_SUM = """
@@ -313,11 +361,16 @@ class MetalBackend:
         # Type inference
         infer_param_types(ir_func, effective_args)
 
+        # Store texture shapes on params for codegen/dispatch
+        for param, arg in zip(ir_func.params, effective_args):
+            if isinstance(arg, Texture3D):
+                param._texture_shape = arg.shape_3d
+
         # Optimization passes (LICM, CSE)
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
 
-        # Cache key
+        # Cache key (include texture shapes for uniqueness)
         type_sig = tuple(p.type_annotation for p in ir_func.params)
         tmpl_key = ""
         if template_args:
