@@ -3,13 +3,15 @@ name = "pgc"
 version = "0.1.0"
 description = "Portable GPU Compute — Python-first GPU compute framework"
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.11"
 dependencies = [
-    "llvmlite",
     "numpy",
 ]
 
 [project.optional-dependencies]
+cpu = [
+    "llvmlite",
+]
 cuda = [
     "cuda-python>=13.2.0",
 ]
@@ -31,3 +33,6 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/pgc"]
+
+[tool.hatch.build.targets.wheel.shared-data]
+"examples" = "share/pgc/examples"
