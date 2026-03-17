@@ -837,6 +837,9 @@ class SPIRVCodeGen:
             return self._emit_ifexp(node)
         if isinstance(node, ir.IRAttribute):
             return self._emit_attribute(node)
+        if isinstance(node, ir.IRTextureSample):
+            raise NotImplementedError(
+                "texture3d.sample() is not yet supported on the Vulkan/SPIR-V backend")
         if isinstance(node, ir.IRThreadId):
             return self._emit_thread_id()
         raise NotImplementedError(f"SPIR-V expr: {type(node).__name__}")

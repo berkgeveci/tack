@@ -197,6 +197,9 @@ def _is_invariant(expr, modified: set) -> bool:
     if isinstance(expr, ir.IRDimSize):
         return True  # Dimension sizes are constants
 
+    if isinstance(expr, ir.IRTextureSample):
+        return all(_is_invariant(c, modified) for c in expr.coords)
+
     # Unknown node type — assume not invariant (conservative)
     return False
 

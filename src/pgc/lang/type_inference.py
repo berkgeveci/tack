@@ -5,7 +5,7 @@ This module infers scalar types for IR nodes based on the concrete argument type
 """
 
 from pgc.lang import ir
-from pgc.lang.field import Field
+from pgc.lang.field import Field, Texture3D
 from pgc.lang.types import ScalarType, f32, f64, i32, i64, from_numpy_dtype
 
 
@@ -23,7 +23,12 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
 
     types = []
     for param, arg in zip(ir_func.params, args):
-        if isinstance(arg, Field):
+        if isinstance(arg, Texture3D):
+            param.type_annotation = arg.dtype
+            param._is_field = True
+            param._is_texture = True
+            types.append(arg.dtype)
+        elif isinstance(arg, Field):
             param.type_annotation = arg.dtype
             param._is_field = True
             types.append(arg.dtype)

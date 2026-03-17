@@ -180,6 +180,20 @@ def _detect_vector_fields(kernel, args) -> dict[str, int] | None:
     return vector_fields if vector_fields else None
 
 
+def _detect_texture_fields(kernel, args, template_args=None) -> dict[str, tuple] | None:
+    """Detect which kernel parameters are Texture3D objects."""
+    from pgc.lang.field import Texture3D
+    funcdef = kernel._funcdef
+    params = [a.arg for a in funcdef.args.args]
+    texture_fields = {}
+    for i, (param_name, arg) in enumerate(zip(params, args)):
+        if template_args and i in template_args:
+            continue
+        if isinstance(arg, Texture3D):
+            texture_fields[param_name] = arg.shape_3d
+    return texture_fields if texture_fields else None
+
+
 def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     """Extract the parallel for-loop range from the IR and actual arguments.
 
@@ -383,25 +397,32 @@ class CPUBackend:
         template_args = _detect_template_args(kernel, args)
         effective_args = _expand_template_args(args, template_args)
 
-        # Detect vector fields from effective arguments
+        # Detect vector and texture fields from effective arguments
         vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
+        texture_fields = _detect_texture_fields(kernel, args, template_args)
 
-        # Get IR (re-transforms if vector/template fields present)
+        # Get IR (re-transforms if vector/template/texture fields present)
         ir_module = kernel.get_ir(
             vector_fields,
             template_args=template_args if template_args else None,
+            texture_fields=texture_fields,
         )
         ir_func = ir_module.functions[0]
 
-        # Resolve dimension sizes (multi-dim indexing) using actual field shapes
+        # Resolve dimension sizes and texture shapes using actual field shapes.
+        # For Texture3D args, register the Texture3D itself so ir_resolve can
+        # embed shape_3d into IRTextureSample nodes.
+        from pgc.lang.field import Texture3D
         name_to_field = {}
         for param, arg in zip(ir_func.params, effective_args):
-            if isinstance(arg, Field):
+            if isinstance(arg, Texture3D):
+                name_to_field[param.name] = arg
+            elif isinstance(arg, Field):
                 name_to_field[param.name] = arg
         from pgc.lang.ir_resolve import resolve_ir
         resolve_ir(ir_func, name_to_field)
 
-        # Type inference
+        # Type inference (Texture3D is handled — sets _is_texture flag)
         infer_param_types(ir_func, effective_args)
 
         # Optimization passes (LICM, CSE)
@@ -420,11 +441,12 @@ class CPUBackend:
 
         compiled = self._cache[cache_key]
 
-        # Build kernel args list (fields and scalars in order)
-        kernel_args = list(effective_args)
+        # Build kernel args list — unwrap Texture3D to underlying Field for dispatch
+        kernel_args = [a.field if isinstance(a, Texture3D) else a
+                       for a in effective_args]
 
-        # Determine loop range
-        loop_end = _get_loop_range(ir_func, effective_args)
+        # Determine loop range (use kernel_args which has Fields, not Texture3D)
+        loop_end = _get_loop_range(ir_func, kernel_args)
 
         # Parallel execution: split range across threads
         if self.num_threads <= 1 or loop_end <= 1024:

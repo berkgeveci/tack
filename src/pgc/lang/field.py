@@ -12,7 +12,7 @@ transfers are zero-copy.  On CUDA transfers go over PCIe.
 
 import numpy as np
 
-from pgc.lang.types import ScalarType, f32, from_numpy_dtype
+from pgc.lang.types import ScalarType, f32, f64, from_numpy_dtype
 
 
 class DeviceBuffer:
@@ -155,3 +155,30 @@ class Vector:
         f._vector_n = n
         f._logical_shape = shape
         return f
+
+
+class Texture3D:
+    """A 3D texture wrapping a Field, enabling hardware-accelerated sampling.
+
+    Created via ``pgc.texture3d(field, interp='linear')``.  In kernels,
+    ``tex.sample(u, v, w)`` samples at normalized [0,1] coordinates using
+    trilinear interpolation.
+
+    On GPU backends this maps to native texture hardware; on CPU it emits
+    software trilinear interpolation against the raw field data.
+    """
+
+    def __init__(self, source_field: Field, shape_3d: tuple, interp: str = 'linear'):
+        if source_field.dtype not in (f32, f64):
+            raise ValueError("texture3d requires f32 or f64 dtype")
+        self.field = source_field
+        self.shape_3d = shape_3d   # (W, H, D) logical 3D shape
+        self.interp = interp       # 'linear' or 'nearest'
+
+    @property
+    def dtype(self):
+        return self.field.dtype
+
+    def sample(self, u, v, w):
+        """Sample at normalized coordinates. Only usable inside @pgc.kernel."""
+        raise RuntimeError("Texture3D.sample() can only be used inside a @pgc.kernel")

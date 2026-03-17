@@ -120,5 +120,16 @@ def _resolve(node, fields):
             node.value = _resolve(node.value, fields)
         return node
 
+    if isinstance(node, ir.IRTextureSample):
+        node.coords = [_resolve(c, fields) for c in node.coords]
+        field = fields.get(node.field_name)
+        if field is not None:
+            from pgc.lang.field import Texture3D
+            if isinstance(field, Texture3D):
+                node.shape = field.shape_3d
+            else:
+                node.shape = field.shape
+        return node
+
     # Leaf nodes: IRConstant, IRName, IRAttribute, IRBreak, IRContinue
     return node

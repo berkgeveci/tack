@@ -1219,23 +1219,28 @@ class VulkanBackend:
 
         from pgc.runtime.cpu import (
             _detect_template_args, _expand_template_args,
-            _detect_vector_fields_from_args,
+            _detect_vector_fields_from_args, _detect_texture_fields,
         )
+        from pgc.lang.field import Texture3D
         template_args = _detect_template_args(kernel, args)
         effective_args = _expand_template_args(args, template_args)
 
         vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
+        texture_fields = _detect_texture_fields(kernel, args, template_args)
 
         ir_module = kernel.get_ir(
             vector_fields,
             template_args=template_args if template_args else None,
+            texture_fields=texture_fields,
         )
         ir_func = ir_module.functions[0]
 
-        # Resolve dimension sizes
+        # Resolve dimension sizes and texture shapes
         name_to_field = {}
         for param, arg in zip(ir_func.params, effective_args):
-            if isinstance(arg, Field):
+            if isinstance(arg, Texture3D):
+                name_to_field[param.name] = arg
+            elif isinstance(arg, Field):
                 name_to_field[param.name] = arg
         from pgc.lang.ir_resolve import resolve_ir
         resolve_ir(ir_func, name_to_field)
@@ -1259,8 +1264,10 @@ class VulkanBackend:
 
         compiled = self._cache[cache_key]
 
-        kernel_args = list(effective_args)
-        loop_end = _get_loop_range(ir_func, effective_args)
+        # Build kernel args list — unwrap Texture3D to underlying Field
+        kernel_args = [a.field if isinstance(a, Texture3D) else a
+                       for a in effective_args]
+        loop_end = _get_loop_range(ir_func, kernel_args)
 
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]

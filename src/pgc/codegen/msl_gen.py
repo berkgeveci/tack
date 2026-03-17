@@ -94,6 +94,18 @@ class MSLCodeGen:
         self._emit("using namespace metal;")
         self._emit("")
 
+        # Pre-scan for texture samples to generate helper functions.
+        # We need to emit the kernel body first to discover texture helpers,
+        # then insert them. Instead, pre-scan the IR for IRTextureSample nodes.
+        self._texture_helpers = {}
+        self._tex_sample_counter = 0
+        self._pre_scan_textures(func.body)
+        helpers = self._generate_texture_helpers()
+        if helpers:
+            for line in helpers.strip().split('\n'):
+                self._lines.append(line)
+            self._emit("")
+
         # Build function signature
         # Track which params are scalars for dereference in the body
         self._scalar_buffer_params: set[str] = set()
@@ -425,6 +437,8 @@ class MSLCodeGen:
             return self._expr_cast(node)
         if isinstance(node, ir.IRIfExp):
             return self._expr_ifexp(node)
+        if isinstance(node, ir.IRTextureSample):
+            return self._expr_texture_sample(node)
         if isinstance(node, ir.IRThreadId):
             self._needs_local_tid = True
             return "__local_tid__"
@@ -486,6 +500,106 @@ class MSLCodeGen:
         raise NotImplementedError(
             f"Attribute access '{node.attr}' should be resolved before MSL codegen."
         )
+
+    def _pre_scan_textures(self, stmts):
+        """Pre-scan IR to discover all IRTextureSample nodes and register helpers."""
+        for stmt in stmts:
+            self._pre_scan_textures_node(stmt)
+
+    def _pre_scan_textures_node(self, node):
+        if node is None:
+            return
+        if isinstance(node, ir.IRTextureSample):
+            W, H, D = node.shape
+            helper = f"__tex3d_linear_{W}_{H}_{D}__"
+            self._texture_helpers[helper] = (W, H, D)
+            for c in node.coords:
+                self._pre_scan_textures_node(c)
+            return
+        # Recurse into compound nodes
+        for attr in ('body', 'then_body', 'else_body'):
+            children = getattr(node, attr, None)
+            if isinstance(children, list):
+                self._pre_scan_textures(children)
+        for attr in ('value', 'condition', 'left', 'right', 'operand',
+                      'field', 'index', 'then_value', 'else_value'):
+            child = getattr(node, attr, None)
+            if isinstance(child, ir.IRNode):
+                self._pre_scan_textures_node(child)
+        if hasattr(node, 'args') and isinstance(node.args, list):
+            for a in node.args:
+                if isinstance(a, ir.IRNode):
+                    self._pre_scan_textures_node(a)
+        if hasattr(node, 'values') and isinstance(node.values, list):
+            for v in node.values:
+                if isinstance(v, ir.IRNode):
+                    self._pre_scan_textures_node(v)
+
+    def _expr_texture_sample(self, node: ir.IRTextureSample) -> str:
+        """Emit software trilinear interpolation for texture3d.sample()."""
+        W, H, D = node.shape
+        u = self._expr(node.coords[0])
+        v = self._expr(node.coords[1])
+        w = self._expr(node.coords[2])
+        field = node.field_name
+
+        # Use a unique counter to avoid name collisions in the same scope
+        n = getattr(self, '_tex_sample_counter', 0)
+        self._tex_sample_counter = n + 1
+        p = f"__ts{n}__"
+
+        # Emit inline trilinear as a sequence of local declarations.
+        # We use the _pre_stmts pattern — but MSL codegen doesn't have that.
+        # Instead, emit a block expression using a lambda or just inline vars.
+        # Simplest: emit a helper call. Generate a helper function once.
+        helper = f"__tex3d_linear_{W}_{H}_{D}__"
+        if not hasattr(self, '_texture_helpers'):
+            self._texture_helpers = {}
+        if helper not in self._texture_helpers:
+            self._texture_helpers[helper] = (W, H, D)
+        return f"{helper}({field}, {u}, {v}, {w})"
+
+    def _generate_texture_helpers(self) -> str:
+        """Generate MSL helper functions for software texture sampling."""
+        if not hasattr(self, '_texture_helpers') or not self._texture_helpers:
+            return ""
+        lines = []
+        for name, (W, H, D) in self._texture_helpers.items():
+            lines.append(f"""
+inline float {name}(device float* data, float u, float v, float w) {{
+    float fx = u * {W - 1}.0f;
+    float fy = v * {H - 1}.0f;
+    float fz = w * {D - 1}.0f;
+    long ix = (long)floor(fx);
+    long iy = (long)floor(fy);
+    long iz = (long)floor(fz);
+    float dx = fx - (float)ix;
+    float dy = fy - (float)iy;
+    float dz = fz - (float)iz;
+    ix = clamp(ix, 0L, {W - 1}L);
+    iy = clamp(iy, 0L, {H - 1}L);
+    iz = clamp(iz, 0L, {D - 1}L);
+    long ix1 = min(ix + 1, {W - 1}L);
+    long iy1 = min(iy + 1, {H - 1}L);
+    long iz1 = min(iz + 1, {D - 1}L);
+    float c000 = data[iz  * {W * H}L + iy  * {W}L + ix ];
+    float c100 = data[iz  * {W * H}L + iy  * {W}L + ix1];
+    float c010 = data[iz  * {W * H}L + iy1 * {W}L + ix ];
+    float c110 = data[iz  * {W * H}L + iy1 * {W}L + ix1];
+    float c001 = data[iz1 * {W * H}L + iy  * {W}L + ix ];
+    float c101 = data[iz1 * {W * H}L + iy  * {W}L + ix1];
+    float c011 = data[iz1 * {W * H}L + iy1 * {W}L + ix ];
+    float c111 = data[iz1 * {W * H}L + iy1 * {W}L + ix1];
+    float c00 = c000 * (1.0f - dx) + c100 * dx;
+    float c10 = c010 * (1.0f - dx) + c110 * dx;
+    float c01 = c001 * (1.0f - dx) + c101 * dx;
+    float c11 = c011 * (1.0f - dx) + c111 * dx;
+    float c0 = c00 * (1.0f - dy) + c10 * dy;
+    float c1 = c01 * (1.0f - dy) + c11 * dy;
+    return c0 * (1.0f - dz) + c1 * dz;
+}}
+""")
+        return "\n".join(lines)
 
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]

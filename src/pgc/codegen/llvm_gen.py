@@ -185,6 +185,8 @@ class LLVMCodeGen:
             return self._emit_cast(node)
         if isinstance(node, ir.IRIfExp):
             return self._emit_ifexp(node)
+        if isinstance(node, ir.IRTextureSample):
+            return self._emit_texture_sample(node)
         if isinstance(node, ir.IRThreadId):
             # On CPU, thread_id within a chunk is (loop_var - loop_start)
             # Return 0 as a safe default (CPU doesn't have workgroups)
@@ -695,6 +697,101 @@ class LLVMCodeGen:
         index = self._to_i64(self._emit_expr(node.index))
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="load.ptr")
         return self.builder.load(elem_ptr, name="load.val", align=4)
+
+    def _emit_texture_sample(self, node: ir.IRTextureSample) -> llvm_ir.Value:
+        """Emit software trilinear interpolation for texture3d.sample()."""
+        f32_type = llvm_ir.FloatType()
+        i64_type = llvm_ir.IntType(64)
+        W, H, D = node.shape
+
+        # Get field pointer
+        base_ptr = self._params[node.field_name]
+
+        # Evaluate normalized [0,1] coordinates
+        u = self._to_float(self._emit_expr(node.coords[0]))
+        v = self._to_float(self._emit_expr(node.coords[1]))
+        w = self._to_float(self._emit_expr(node.coords[2]))
+
+        # Convert to texel coordinates: fx = u * (W - 1), etc.
+        fx = self.builder.fmul(u, llvm_ir.Constant(f32_type, float(W - 1)), name="tex.fx")
+        fy = self.builder.fmul(v, llvm_ir.Constant(f32_type, float(H - 1)), name="tex.fy")
+        fz = self.builder.fmul(w, llvm_ir.Constant(f32_type, float(D - 1)), name="tex.fz")
+
+        # Integer part (floor)
+        floor_fn = self.module.declare_intrinsic("llvm.floor", [f32_type])
+        ix_f = self.builder.call(floor_fn, [fx], name="tex.ix_f")
+        iy_f = self.builder.call(floor_fn, [fy], name="tex.iy_f")
+        iz_f = self.builder.call(floor_fn, [fz], name="tex.iz_f")
+
+        # Fractional part
+        dx = self.builder.fsub(fx, ix_f, name="tex.dx")
+        dy = self.builder.fsub(fy, iy_f, name="tex.dy")
+        dz = self.builder.fsub(fz, iz_f, name="tex.dz")
+
+        # Convert to integer indices
+        ix = self.builder.fptosi(ix_f, i64_type, name="tex.ix")
+        iy = self.builder.fptosi(iy_f, i64_type, name="tex.iy")
+        iz = self.builder.fptosi(iz_f, i64_type, name="tex.iz")
+
+        # Clamp helper
+        def clamp_idx(val, max_val, name):
+            zero = llvm_ir.Constant(i64_type, 0)
+            mx = llvm_ir.Constant(i64_type, max_val)
+            c = self.builder.icmp_signed("<", val, zero)
+            val = self.builder.select(c, zero, val, name=f"{name}.lo")
+            c = self.builder.icmp_signed(">", val, mx)
+            return self.builder.select(c, mx, val, name=f"{name}.hi")
+
+        one = llvm_ir.Constant(i64_type, 1)
+        ix0 = clamp_idx(ix, W - 1, "ix0")
+        ix1 = clamp_idx(self.builder.add(ix, one), W - 1, "ix1")
+        iy0 = clamp_idx(iy, H - 1, "iy0")
+        iy1 = clamp_idx(self.builder.add(iy, one), H - 1, "iy1")
+        iz0 = clamp_idx(iz, D - 1, "iz0")
+        iz1 = clamp_idx(self.builder.add(iz, one), D - 1, "iz1")
+
+        # Linear index: iz * (W * H) + iy * W + ix
+        wh = llvm_ir.Constant(i64_type, W * H)
+        w_const = llvm_ir.Constant(i64_type, W)
+
+        def linear(xi, yi, zi):
+            return self.builder.add(
+                self.builder.add(self.builder.mul(zi, wh), self.builder.mul(yi, w_const)),
+                xi)
+
+        def load_at(xi, yi, zi, name):
+            idx = linear(xi, yi, zi)
+            ptr = self.builder.gep(base_ptr, [idx], inbounds=True)
+            return self.builder.load(ptr, name=name, align=4)
+
+        # 8 corner values
+        c000 = load_at(ix0, iy0, iz0, "c000")
+        c100 = load_at(ix1, iy0, iz0, "c100")
+        c010 = load_at(ix0, iy1, iz0, "c010")
+        c110 = load_at(ix1, iy1, iz0, "c110")
+        c001 = load_at(ix0, iy0, iz1, "c001")
+        c101 = load_at(ix1, iy0, iz1, "c101")
+        c011 = load_at(ix0, iy1, iz1, "c011")
+        c111 = load_at(ix1, iy1, iz1, "c111")
+
+        # Trilinear interpolation
+        one_f = llvm_ir.Constant(f32_type, 1.0)
+        inv_dx = self.builder.fsub(one_f, dx)
+        inv_dy = self.builder.fsub(one_f, dy)
+        inv_dz = self.builder.fsub(one_f, dz)
+
+        def lerp(a, b, t, inv_t, name):
+            return self.builder.fadd(
+                self.builder.fmul(a, inv_t),
+                self.builder.fmul(b, t), name=name)
+
+        c00 = lerp(c000, c100, dx, inv_dx, "c00")
+        c10 = lerp(c010, c110, dx, inv_dx, "c10")
+        c01 = lerp(c001, c101, dx, inv_dx, "c01")
+        c11 = lerp(c011, c111, dx, inv_dx, "c11")
+        c0 = lerp(c00, c10, dy, inv_dy, "c0")
+        c1 = lerp(c01, c11, dy, inv_dy, "c1")
+        return lerp(c0, c1, dz, inv_dz, "tex.result")
 
     def _emit_attribute(self, node: ir.IRAttribute) -> llvm_ir.Value:
         # x.shape[0] is resolved at compile time via type info

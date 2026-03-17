@@ -41,7 +41,7 @@ class KernelTransformer(ast.NodeVisitor):
       - Vector scalarization: Vector([a, b, c]) → 3 scalar variables
     """
 
-    def __init__(self, vector_fields=None):
+    def __init__(self, vector_fields=None, texture_fields=None):
         self._loop_depth = 0
         self._inline_counter = 0  # unique suffix for inlined variables
         # Vector tracking: name → number of components
@@ -52,6 +52,8 @@ class KernelTransformer(ast.NodeVisitor):
         self._shared_vars: set[str] = set()
         # Vector field metadata: param_name → number of components
         self._vector_fields: dict[str, int] = vector_fields or {}
+        # Texture field metadata: param_name → (W, H, D) shape
+        self._texture_fields: dict[str, tuple] = texture_fields or {}
 
     def visit_Module(self, node: ast.Module) -> ir.IRModule:
         module = ir.IRModule()
@@ -557,6 +559,15 @@ class KernelTransformer(ast.NodeVisitor):
             if len(node.args) != 1:
                 raise NotImplementedError(f"{func_name}() takes exactly one argument")
             return ir.IRCast(value=self.visit(node.args[0]), dtype=func_name)
+
+        # Check for texture3d.sample(u, v, w)
+        if isinstance(node.func, ast.Attribute) and node.func.attr == "sample":
+            if isinstance(node.func.value, ast.Name) and node.func.value.id in self._texture_fields:
+                if len(node.args) != 3:
+                    raise TypeError("sample() takes exactly 3 arguments (u, v, w)")
+                coords = [self.visit(a) for a in node.args]
+                return ir.IRTextureSample(
+                    field_name=node.func.value.id, coords=coords)
 
         # Check for vector method calls: v.normalized(), v.cross(w), v.dot(w), v.norm()
         if isinstance(node.func, ast.Attribute):
@@ -1075,13 +1086,17 @@ class _NameRenamer(ast.NodeTransformer):
         return node
 
 
-def transform_kernel(kernel_ast: ast.Module, vector_fields=None) -> ir.IRModule:
+def transform_kernel(kernel_ast: ast.Module, vector_fields=None,
+                     texture_fields=None) -> ir.IRModule:
     """Transform a kernel's Python AST into PGC IR.
 
     Args:
         kernel_ast: Parsed Python AST of the kernel function.
         vector_fields: Optional dict mapping parameter names to their
             vector component count (e.g., {"pixels": 3, "cam_pos": 3}).
+        texture_fields: Optional dict mapping parameter names to their
+            3D shape (e.g., {"vol": (100, 100, 100)}).
     """
-    transformer = KernelTransformer(vector_fields=vector_fields)
+    transformer = KernelTransformer(vector_fields=vector_fields,
+                                    texture_fields=texture_fields)
     return transformer.visit(kernel_ast)

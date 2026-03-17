@@ -247,6 +247,20 @@ class IRDimSize(IRNode):
         self.dim = dim
 
 
+class IRTextureSample(IRNode):
+    """Sample a 3D texture at normalized coordinates (u, v, w) in [0, 1].
+
+    field_name: name of the texture's underlying field parameter.
+    coords: list of 3 IRNode expressions [u, v, w].
+    shape: (W, H, D) tuple — filled in by ir_resolve from the field's shape.
+    """
+
+    def __init__(self, field_name: str, coords: list, shape: tuple = None):
+        self.field_name = field_name
+        self.coords = coords  # [u, v, w]
+        self.shape = shape    # (W, H, D) — set during resolve
+
+
 # --- IR pretty printer (for debugging) ---
 
 def dump(node, indent=0) -> str:
@@ -335,4 +349,7 @@ def dump(node, indent=0) -> str:
         return f"{prefix}Print({args})"
     if isinstance(node, IRDimSize):
         return f"{prefix}DimSize({node.field_name}, {node.dim})"
+    if isinstance(node, IRTextureSample):
+        coords = ", ".join(dump(c) for c in node.coords)
+        return f"{prefix}TexSample({node.field_name}, [{coords}], shape={node.shape})"
     return f"{prefix}<unknown: {type(node).__name__}>"

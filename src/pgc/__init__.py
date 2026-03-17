@@ -3,7 +3,7 @@
 from pgc.lang.types import f32, f64, i32, i64, u32, u64, template
 from pgc.lang.kernel import kernel
 from pgc.lang.func import func
-from pgc.lang.field import field, Vector
+from pgc.lang.field import field, Vector, Texture3D
 from pgc.lang.data_oriented import data_oriented
 from pgc.runtime.dispatch import init
 
@@ -41,6 +41,22 @@ def ndrange(*args):
     Cannot be called from Python directly.
     """
     raise RuntimeError("ndrange() can only be used inside a @pgc.kernel")
+
+def texture3d(source_field, shape=None, interp='linear'):
+    """Create a 3D texture from a field for hardware-accelerated sampling.
+
+    Args:
+        source_field: A pgc.field with f32 dtype.
+        shape: (W, H, D) tuple for the 3D dimensions.  If the field's shape
+               is already 3D, this can be omitted.
+        interp: Interpolation mode — 'linear' (default) or 'nearest'.
+    """
+    if shape is None:
+        shape = source_field.shape
+    if len(shape) != 3:
+        raise ValueError("texture3d requires a 3D shape")
+    return Texture3D(source_field, shape_3d=shape, interp=interp)
+
 
 # Backend selectors
 cpu = "cpu"
