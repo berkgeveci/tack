@@ -120,22 +120,18 @@ def find_cell(inv_table, coords, n_cells, inv_size, pos, cmin, inv_stride):
 
 
 @pgc.func
-def sample_scalar(scalar, xcoords, ycoords, zcoords,
-                  inv_x, inv_y, inv_z,
-                  nx_p1, ny_p1, nxy_p1,
-                  inv_size, cmin_x, cmin_y, cmin_z,
-                  inv_sx, inv_sy, inv_sz,
-                  px, py, pz):
-    """Trilinear interpolation with O(1) cell lookup."""
-    nx = nx_p1 - 1
-    ny = ny_p1 - 1
-    nz = nxy_p1 // nx_p1 - 1
-
+def sample_tex(tex, xcoords, ycoords, zcoords,
+               inv_x, inv_y, inv_z,
+               inv_size, cmin_x, cmin_y, cmin_z,
+               inv_sx, inv_sy, inv_sz,
+               nx, ny, nz,
+               px, py, pz):
+    """Sample scalar via texture3d with O(1) cell lookup for coord mapping."""
     ix = find_cell(inv_x, xcoords, nx, inv_size, px, cmin_x, inv_sx)
     iy = find_cell(inv_y, ycoords, ny, inv_size, py, cmin_y, inv_sy)
     iz = find_cell(inv_z, zcoords, nz, inv_size, pz, cmin_z, inv_sz)
 
-    # Fractional position within cell
+    # Fractional position within cell → normalized texture coordinate
     x0 = xcoords[ix]
     x1 = xcoords[ix + 1]
     y0 = ycoords[iy]
@@ -150,25 +146,12 @@ def sample_scalar(scalar, xcoords, ycoords, zcoords,
     fy = max(0.0, min(1.0, fy))
     fz = max(0.0, min(1.0, fz))
 
-    # Eight corner values  (k * nxy_p1 + j * nx_p1 + i  layout)
-    idx000 = iz * nxy_p1 + iy * nx_p1 + ix
-    idx100 = idx000 + 1
-    idx010 = idx000 + nx_p1
-    idx110 = idx010 + 1
-    idx001 = idx000 + nxy_p1
-    idx101 = idx001 + 1
-    idx011 = idx001 + nx_p1
-    idx111 = idx011 + 1
+    # Convert index+frac to normalized [0,1] for texture sampling
+    tu = (float(ix) + fx) / float(nx)
+    tv = (float(iy) + fy) / float(ny)
+    tw = (float(iz) + fz) / float(nz)
 
-    c00 = scalar[idx000] * (1.0 - fx) + scalar[idx100] * fx
-    c10 = scalar[idx010] * (1.0 - fx) + scalar[idx110] * fx
-    c01 = scalar[idx001] * (1.0 - fx) + scalar[idx101] * fx
-    c11 = scalar[idx011] * (1.0 - fx) + scalar[idx111] * fx
-
-    c0 = c00 * (1.0 - fy) + c10 * fy
-    c1 = c01 * (1.0 - fy) + c11 * fy
-
-    return c0 * (1.0 - fz) + c1 * fz
+    return tex.sample(tu, tv, tw)
 
 
 @pgc.func
@@ -186,7 +169,7 @@ def apply_tf(tf_r, tf_g, tf_b, tf_a, val, vmin, vrange):
 
 @pgc.kernel
 def render(img_r, img_g, img_b,
-           scalar, xcoords, ycoords, zcoords,
+           tex, xcoords, ycoords, zcoords,
            inv_x, inv_y, inv_z,
            tf_r, tf_g, tf_b, tf_a,
            fparams, iparams, n_pixels):
@@ -315,12 +298,29 @@ def render(img_r, img_g, img_b,
                 sy = cam_y + t * rd_y
                 sz = cam_z + t * rd_z
 
-                val = sample_scalar(scalar, xcoords, ycoords, zcoords,
-                                    inv_x, inv_y, inv_z,
-                                    nx_p1, ny_p1, nxy_p1,
-                                    inv_size, cmin_x, cmin_y, cmin_z,
-                                    inv_sx, inv_sy, inv_sz,
-                                    sx, sy, sz)
+                # Cell lookup → normalized texture coords → hardware sample
+                s_nx = nx_p1 - 1
+                s_ny = ny_p1 - 1
+                s_nz = nxy_p1 // nx_p1 - 1
+                s_ix = find_cell(inv_x, xcoords, s_nx, inv_size, sx, cmin_x, inv_sx)
+                s_iy = find_cell(inv_y, ycoords, s_ny, inv_size, sy, cmin_y, inv_sy)
+                s_iz = find_cell(inv_z, zcoords, s_nz, inv_size, sz, cmin_z, inv_sz)
+                s_x0 = xcoords[s_ix]
+                s_x1 = xcoords[s_ix + 1]
+                s_y0 = ycoords[s_iy]
+                s_y1 = ycoords[s_iy + 1]
+                s_z0 = zcoords[s_iz]
+                s_z1 = zcoords[s_iz + 1]
+                s_fx = (sx - s_x0) / (s_x1 - s_x0 + 1.0e-20)
+                s_fy = (sy - s_y0) / (s_y1 - s_y0 + 1.0e-20)
+                s_fz = (sz - s_z0) / (s_z1 - s_z0 + 1.0e-20)
+                s_fx = max(0.0, min(1.0, s_fx))
+                s_fy = max(0.0, min(1.0, s_fy))
+                s_fz = max(0.0, min(1.0, s_fz))
+                val = tex.sample(
+                    (float(s_ix) + s_fx) / float(s_nx),
+                    (float(s_iy) + s_fy) / float(s_ny),
+                    (float(s_iz) + s_fz) / float(s_nz))
 
                 sr, sg, sb, sa = apply_tf(tf_r, tf_g, tf_b, tf_a,
                                           val, vmin, vrange)
@@ -387,6 +387,9 @@ vmin = float(scalar_np.min())
 vmax = float(scalar_np.max())
 vrange = vmax - vmin
 print(f"Scalar range: [{vmin:.3f}, {vmax:.3f}]")
+
+# Wrap scalar field as a 3D texture for hardware-accelerated sampling
+tex = pgc.texture3d(scalar, shape=(nx + 1, ny + 1, nz + 1))
 
 
 # ================================================================
@@ -507,7 +510,7 @@ iparams = pgc.field(dtype=pgc.i32, shape=(len(iparams_np),))
 iparams.from_numpy(iparams_np)
 
 render_args = (img_r, img_g, img_b,
-               scalar, xcoords, ycoords, zcoords,
+               tex, xcoords, ycoords, zcoords,
                inv_x, inv_y, inv_z,
                tf_r, tf_g, tf_b, tf_a,
                fparams, iparams, n_pixels)

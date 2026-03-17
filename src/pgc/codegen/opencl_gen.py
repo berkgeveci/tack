@@ -110,6 +110,39 @@ class OpenCLCodeGen(CUDACodeGen):
         if uses_f64:
             header += "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n"
 
+        # Texture sampling helpers (software trilinear)
+        if hasattr(self, '_texture_helpers') and self._texture_helpers:
+            for name, (W, H, D) in self._texture_helpers.items():
+                prefix_lines.extend([
+                    f"inline float {name}(__global float* data, float u, float v, float w) {{",
+                    f"    float fx = u * {W - 1}.0f, fy = v * {H - 1}.0f, fz = w * {D - 1}.0f;",
+                    f"    {_OCL_INT} ix = ({_OCL_INT})floor(fx), iy = ({_OCL_INT})floor(fy), iz = ({_OCL_INT})floor(fz);",
+                    f"    float dx = fx - (float)ix, dy = fy - (float)iy, dz = fz - (float)iz;",
+                    f"    ix = max(({_OCL_INT})0, min(ix, ({_OCL_INT}){W - 1}));",
+                    f"    iy = max(({_OCL_INT})0, min(iy, ({_OCL_INT}){H - 1}));",
+                    f"    iz = max(({_OCL_INT})0, min(iz, ({_OCL_INT}){D - 1}));",
+                    f"    {_OCL_INT} ix1 = min(ix + 1, ({_OCL_INT}){W - 1});",
+                    f"    {_OCL_INT} iy1 = min(iy + 1, ({_OCL_INT}){H - 1});",
+                    f"    {_OCL_INT} iz1 = min(iz + 1, ({_OCL_INT}){D - 1});",
+                    f"    float c000 = data[iz  * {W * H}L + iy  * {W}L + ix ];",
+                    f"    float c100 = data[iz  * {W * H}L + iy  * {W}L + ix1];",
+                    f"    float c010 = data[iz  * {W * H}L + iy1 * {W}L + ix ];",
+                    f"    float c110 = data[iz  * {W * H}L + iy1 * {W}L + ix1];",
+                    f"    float c001 = data[iz1 * {W * H}L + iy  * {W}L + ix ];",
+                    f"    float c101 = data[iz1 * {W * H}L + iy  * {W}L + ix1];",
+                    f"    float c011 = data[iz1 * {W * H}L + iy1 * {W}L + ix ];",
+                    f"    float c111 = data[iz1 * {W * H}L + iy1 * {W}L + ix1];",
+                    f"    float c00 = c000 * (1.0f - dx) + c100 * dx;",
+                    f"    float c10 = c010 * (1.0f - dx) + c110 * dx;",
+                    f"    float c01 = c001 * (1.0f - dx) + c101 * dx;",
+                    f"    float c11 = c011 * (1.0f - dx) + c111 * dx;",
+                    f"    float c0 = c00 * (1.0f - dy) + c10 * dy;",
+                    f"    float c1 = c01 * (1.0f - dy) + c11 * dy;",
+                    f"    return c0 * (1.0f - dz) + c1 * dz;",
+                    f"}}",
+                    f"",
+                ])
+
         body = "\n".join(self._lines) + "\n"
         if prefix_lines:
             body = "\n".join(prefix_lines) + body
@@ -242,6 +275,19 @@ class OpenCLCodeGen(CUDACodeGen):
         if idx_type in ("float", "double"):
             index = f"(({_OCL_INT})({index}))"
         return f"{field}[{index}]"
+
+    # --- Texture sampling: software trilinear with OpenCL qualifiers ---
+
+    def _expr_texture_sample(self, node: ir.IRTextureSample) -> str:
+        W, H, D = node.shape
+        u = self._expr(node.coords[0])
+        v = self._expr(node.coords[1])
+        w = self._expr(node.coords[2])
+        helper = f"__tex3d_linear_{W}_{H}_{D}__"
+        if not hasattr(self, '_texture_helpers'):
+            self._texture_helpers = {}
+        self._texture_helpers[helper] = (W, H, D)
+        return f"{helper}({node.field_name}, {u}, {v}, {w})"
 
     # --- Type inference: map 'long long' → 'long' ---
 
