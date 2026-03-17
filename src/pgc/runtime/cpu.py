@@ -221,6 +221,21 @@ def _create_pack_fields(pack_info, args, backend):
     return fields
 
 
+def _update_pack_fields(pack_fields, pack_info, args):
+    """Update existing packed Field objects with new scalar values.
+
+    Reuses the allocated device buffers — only copies new values.
+    """
+    import numpy as np
+
+    for field, (pack_name, dtype, entries) in zip(pack_fields, pack_info):
+        np_dtype = dtype.numpy_dtype
+        arr = np.zeros(len(entries), dtype=np_dtype)
+        for _, orig_arg_idx, idx_in_pack in entries:
+            arr[idx_in_pack] = args[orig_arg_idx]
+        field.from_numpy(arr)
+
+
 def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     """Extract the parallel for-loop range from the IR and actual arguments.
 

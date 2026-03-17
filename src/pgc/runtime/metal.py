@@ -387,22 +387,24 @@ class MetalBackend:
             import copy
             from pgc.lang.ir_pack_scalars import pack_scalars
             from pgc.lang.ir_type_annotate import annotate_types
+            from pgc.runtime.cpu import _create_pack_fields
             ir_func_copy = copy.deepcopy(ir_func)
             _, pack_info = pack_scalars(ir_func_copy, effective_args)
             annotate_types(ir_func_copy)
             compiled = _compile_kernel(
                 self._device, self._command_queue, ir_func_copy
             )
-            self._cache[cache_key] = (compiled, pack_info)
+            pack_fields = _create_pack_fields(pack_info, effective_args, self) if pack_info else None
+            self._cache[cache_key] = (compiled, pack_info, pack_fields)
 
-        compiled, pack_info = self._cache[cache_key]
+        compiled, pack_info, pack_fields = self._cache[cache_key]
 
         # Build dispatch args: replace scalar args with packed field buffers
         if pack_info:
-            from pgc.runtime.cpu import _create_pack_fields
+            from pgc.runtime.cpu import _update_pack_fields
             from pgc.lang.ir_pack_scalars import split_args
+            _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
-            pack_fields = _create_pack_fields(pack_info, effective_args, self)
             kernel_args = [a.field if isinstance(a, Texture3D) else a
                            for a in kept_args]
             kernel_args = list(kernel_args) + pack_fields

@@ -1268,22 +1268,24 @@ class VulkanBackend:
             import copy
             from pgc.lang.ir_pack_scalars import pack_scalars
             from pgc.lang.ir_type_annotate import annotate_types
+            from pgc.runtime.cpu import _create_pack_fields
             ir_func_copy = copy.deepcopy(ir_func)
             _, pack_info = pack_scalars(ir_func_copy, effective_args)
             annotate_types(ir_func_copy)
             compiled = self._compile_kernel(ir_func_copy)
             packed_param_types = [p.type_annotation for p in ir_func_copy.params]
             packed_param_is_field = [getattr(p, '_is_field', True) for p in ir_func_copy.params]
-            self._cache[cache_key] = (compiled, pack_info, packed_param_types, packed_param_is_field)
+            pack_fields = _create_pack_fields(pack_info, effective_args, self) if pack_info else None
+            self._cache[cache_key] = (compiled, pack_info, packed_param_types, packed_param_is_field, pack_fields)
 
-        compiled, pack_info, param_types, param_is_field = self._cache[cache_key]
+        compiled, pack_info, param_types, param_is_field, pack_fields = self._cache[cache_key]
 
         # Build dispatch args
         if pack_info:
-            from pgc.runtime.cpu import _create_pack_fields
+            from pgc.runtime.cpu import _update_pack_fields
             from pgc.lang.ir_pack_scalars import split_args
+            _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
-            pack_fields = _create_pack_fields(pack_info, effective_args, self)
             kernel_args = [a.field if isinstance(a, Texture3D) else a
                            for a in kept_args]
             kernel_args = list(kernel_args) + pack_fields
