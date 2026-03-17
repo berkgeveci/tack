@@ -15,6 +15,10 @@ class ScalarType:
     def __repr__(self):
         return f"pgc.{self.name}"
 
+    def __deepcopy__(self, memo):
+        # ScalarTypes are singletons — preserve identity through deepcopy
+        return self
+
 
 # Scalar types
 f32 = ScalarType("f32", np.dtype(np.float32), "float", 32)

@@ -4,6 +4,8 @@ Type inference is performed at call time, when actual arguments are available.
 This module infers scalar types for IR nodes based on the concrete argument types.
 """
 
+import numpy as np
+
 from pgc.lang import ir
 from pgc.lang.field import Field, Texture3D
 from pgc.lang.types import ScalarType, f32, f64, i32, i64, from_numpy_dtype
@@ -32,12 +34,13 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
             param.type_annotation = arg.dtype
             param._is_field = True
             types.append(arg.dtype)
-        elif isinstance(arg, float):
+        elif isinstance(arg, (float, np.floating)):
             param.type_annotation = f32
             param._is_field = False
             types.append(f32)
-        elif isinstance(arg, int):
-            if arg > 2**31 - 1 or arg < -(2**31):
+        elif isinstance(arg, (int, np.integer)):
+            val = int(arg)
+            if val > 2**31 - 1 or val < -(2**31):
                 param.type_annotation = i64
                 param._is_field = False
                 types.append(i64)

@@ -172,56 +172,20 @@ def render(img_r, img_g, img_b,
            tex, xcoords, ycoords, zcoords,
            inv_x, inv_y, inv_z,
            tf_r, tf_g, tf_b, tf_a,
-           fparams, iparams, n_pixels):
-    """Cast one ray per pixel, front-to-back compositing.
-
-    fparams layout (30 floats):
-      0-2: cam_x/y/z, 3-5: fwd_x/y/z, 6-8: right_x/y/z, 9-11: up_x/y/z,
-      12-14: bmin_x/y/z, 15-17: bmax_x/y/z,
-      18: fov_half, 19: step_size, 20: opacity_scale, 21: vmin, 22: vrange,
-      23-25: cmin_x/y/z, 26-28: inv_stride_x/y/z
-
-    iparams layout (7 ints):
-      0: nx_p1, 1: ny_p1, 2: nxy_p1, 3: width, 4: height, 5: inv_size
-    """
-    # Unpack parameters
-    cam_x = fparams[0]
-    cam_y = fparams[1]
-    cam_z = fparams[2]
-    fwd_x = fparams[3]
-    fwd_y = fparams[4]
-    fwd_z = fparams[5]
-    right_x = fparams[6]
-    right_y = fparams[7]
-    right_z = fparams[8]
-    up_x = fparams[9]
-    up_y = fparams[10]
-    up_z = fparams[11]
-    bmin_x = fparams[12]
-    bmin_y = fparams[13]
-    bmin_z = fparams[14]
-    bmax_x = fparams[15]
-    bmax_y = fparams[16]
-    bmax_z = fparams[17]
-    fov_half = fparams[18]
-    step_size = fparams[19]
-    opacity_scale = fparams[20]
-    vmin = fparams[21]
-    vrange = fparams[22]
-    cmin_x = fparams[23]
-    cmin_y = fparams[24]
-    cmin_z = fparams[25]
-    inv_sx = fparams[26]
-    inv_sy = fparams[27]
-    inv_sz = fparams[28]
-
-    nx_p1 = iparams[0]
-    ny_p1 = iparams[1]
-    nxy_p1 = iparams[2]
-    width = iparams[3]
-    height = iparams[4]
-    inv_size = iparams[5]
-
+           cam_x, cam_y, cam_z,
+           fwd_x, fwd_y, fwd_z,
+           right_x, right_y, right_z,
+           up_x, up_y, up_z,
+           bmin_x, bmin_y, bmin_z,
+           bmax_x, bmax_y, bmax_z,
+           fov_half, step_size, opacity_scale,
+           vmin, vrange,
+           cmin_x, cmin_y, cmin_z,
+           inv_sx, inv_sy, inv_sz,
+           nx_p1, ny_p1, nxy_p1,
+           width, height, inv_size,
+           n_pixels):
+    """Cast one ray per pixel, front-to-back compositing."""
     for pixel in range(n_pixels):
         i = pixel % width
         j = pixel // width
@@ -469,35 +433,25 @@ inv_x.from_numpy(inv_x_np)
 inv_y.from_numpy(inv_y_np)
 inv_z.from_numpy(inv_z_np)
 
-# Pack scalar parameters into fields to stay within Metal's 31 buffer limit
-fparams_np = np.array([
-    cam_pos[0], cam_pos[1], cam_pos[2],       # 0-2: camera position
-    forward[0], forward[1], forward[2],        # 3-5: forward direction
-    right[0], right[1], right[2],              # 6-8: right direction
-    up[0], up[1], up[2],                       # 9-11: up direction
-    bmin[0], bmin[1], bmin[2],                 # 12-14: box min
-    bmax[0], bmax[1], bmax[2],                 # 15-17: box max
-    fov_half, step_size, opacity_scale,        # 18-20
-    vmin, vrange,                              # 21-22
-    cmin_x, cmin_y, cmin_z,                    # 23-25: coord mins
-    inv_sx, inv_sy, inv_sz,                    # 26-28: inverse strides
-], dtype=np.float32)
-fparams = pgc.field(dtype=pgc.f32, shape=(len(fparams_np),))
-fparams.from_numpy(fparams_np)
-
-iparams_np = np.array([
-    nx + 1, ny + 1, (nx + 1) * (ny + 1),  # 0-2: grid dims
-    WIDTH, HEIGHT,                          # 3-4: image dims
-    INV_TABLE_SIZE,                         # 5: inverse table size
-], dtype=np.int32)
-iparams = pgc.field(dtype=pgc.i32, shape=(len(iparams_np),))
-iparams.from_numpy(iparams_np)
-
+# Scalar parameters are passed directly — the backend automatically packs
+# them into constant buffers to stay within GPU binding limits.
 render_args = (img_r, img_g, img_b,
                tex, xcoords, ycoords, zcoords,
                inv_x, inv_y, inv_z,
                tf_r, tf_g, tf_b, tf_a,
-               fparams, iparams, n_pixels)
+               cam_pos[0], cam_pos[1], cam_pos[2],
+               forward[0], forward[1], forward[2],
+               right[0], right[1], right[2],
+               up[0], up[1], up[2],
+               bmin[0], bmin[1], bmin[2],
+               bmax[0], bmax[1], bmax[2],
+               fov_half, step_size, opacity_scale,
+               vmin, vrange,
+               cmin_x, cmin_y, cmin_z,
+               inv_sx, inv_sy, inv_sz,
+               nx + 1, ny + 1, (nx + 1) * (ny + 1),
+               WIDTH, HEIGHT, INV_TABLE_SIZE,
+               n_pixels)
 
 
 def do_render():

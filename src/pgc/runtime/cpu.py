@@ -194,6 +194,33 @@ def _detect_texture_fields(kernel, args, template_args=None) -> dict[str, tuple]
     return texture_fields if texture_fields else None
 
 
+def _create_pack_fields(pack_info, args, backend):
+    """Create packed Field objects from scalar pack info.
+
+    Args:
+        pack_info: list of (pack_name, dtype, [(orig_name, orig_arg_idx, idx_in_pack)])
+        args: the original effective_args tuple
+        backend: the active backend (for allocate_field)
+
+    Returns:
+        list of Field objects, one per pack group.
+    """
+    import numpy as np
+    from pgc.lang.field import Field
+
+    fields = []
+    for pack_name, dtype, entries in pack_info:
+        np_dtype = dtype.numpy_dtype
+        arr = np.zeros(len(entries), dtype=np_dtype)
+        for _, orig_arg_idx, idx_in_pack in entries:
+            arr[idx_in_pack] = args[orig_arg_idx]
+        buf = backend.allocate_field(dtype, (len(entries),))
+        f = Field(dtype, (len(entries),), buf)
+        f.from_numpy(arr)
+        fields.append(f)
+    return fields
+
+
 def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     """Extract the parallel for-loop range from the IR and actual arguments.
 

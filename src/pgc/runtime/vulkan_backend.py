@@ -1252,6 +1252,11 @@ class VulkanBackend:
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
 
+        # Determine loop range BEFORE packing
+        kernel_args = [a.field if isinstance(a, Texture3D) else a
+                       for a in effective_args]
+        loop_end = _get_loop_range(ir_func, kernel_args)
+
         # Cache key
         type_sig = tuple(p.type_annotation for p in ir_func.params)
         tmpl_key = ""
@@ -1260,17 +1265,29 @@ class VulkanBackend:
         cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tmpl_key}"
 
         if cache_key not in self._cache:
-            self._cache[cache_key] = self._compile_kernel(ir_func)
+            import copy
+            from pgc.lang.ir_pack_scalars import pack_scalars
+            ir_func_copy = copy.deepcopy(ir_func)
+            _, pack_info = pack_scalars(ir_func_copy, effective_args)
+            compiled = self._compile_kernel(ir_func_copy)
+            packed_param_types = [p.type_annotation for p in ir_func_copy.params]
+            packed_param_is_field = [getattr(p, '_is_field', True) for p in ir_func_copy.params]
+            self._cache[cache_key] = (compiled, pack_info, packed_param_types, packed_param_is_field)
 
-        compiled = self._cache[cache_key]
+        compiled, pack_info, param_types, param_is_field = self._cache[cache_key]
 
-        # Build kernel args list — unwrap Texture3D to underlying Field
-        kernel_args = [a.field if isinstance(a, Texture3D) else a
-                       for a in effective_args]
-        loop_end = _get_loop_range(ir_func, kernel_args)
-
-        param_types = [p.type_annotation for p in ir_func.params]
-        param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+        # Build dispatch args
+        if pack_info:
+            from pgc.runtime.cpu import _create_pack_fields
+            from pgc.lang.ir_pack_scalars import split_args
+            kept_args = split_args(effective_args, pack_info)
+            pack_fields = _create_pack_fields(pack_info, effective_args, self)
+            kernel_args = [a.field if isinstance(a, Texture3D) else a
+                           for a in kept_args]
+            kernel_args = list(kernel_args) + pack_fields
+        else:
+            kernel_args = [a.field if isinstance(a, Texture3D) else a
+                           for a in effective_args]
 
         compiled(kernel_args, param_is_field, param_types, loop_end, self)
 
