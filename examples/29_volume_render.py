@@ -88,48 +88,52 @@ def build_transfer_function(vmin, vmax, n_layers=10):
 # ================================================================
 
 @pgc.func
-def binary_search(coords, n, val):
-    """Find index i such that coords[i] <= val < coords[i+1].
+def find_cell(inv_table, coords, n_cells, inv_size, pos, cmin, inv_stride):
+    """O(1) cell lookup via inverse table + ±1 correction.
 
-    Returns clamped index in [0, n-2] (n = number of points on axis).
-    Uses a bounded for loop (21 iterations covers up to 2M cells per axis).
+    inv_table: precomputed table mapping uniform bins to cell indices.
+    coords:    the 1-D coordinate array (n_cells + 1 entries).
+    n_cells:   number of cells on this axis.
+    inv_size:  number of entries in inv_table.
+    pos:       world coordinate to locate.
+    cmin:      minimum coordinate value (coords[0]).
+    inv_stride: (cmax - cmin) / inv_size.
     """
-    lo = 0
-    hi = n - 2
-    for _ in range(21):
-        if lo >= hi:
-            break
-        mid = (lo + hi + 1) // 2
-        if coords[mid] > val:
-            hi = mid - 1
-        else:
-            lo = mid
-    return lo
+    # Uniform bin index → approximate cell index
+    k = int((pos - cmin) / inv_stride)
+    if k < 0:
+        k = 0
+    if k >= inv_size:
+        k = inv_size - 1
+    ix = inv_table[k]
+    # ±1 correction: the bin may round to the wrong cell at boundaries
+    if ix > 0 and pos < coords[ix]:
+        ix = ix - 1
+    if ix < n_cells - 1 and pos >= coords[ix + 1]:
+        ix = ix + 1
+    # Final clamp
+    if ix < 0:
+        ix = 0
+    if ix >= n_cells:
+        ix = n_cells - 1
+    return ix
 
 
 @pgc.func
 def sample_scalar(scalar, xcoords, ycoords, zcoords,
-                  nx_p1, ny_p1, nz_p1, nxy_p1,
+                  inv_x, inv_y, inv_z,
+                  nx_p1, ny_p1, nxy_p1,
+                  inv_size, cmin_x, cmin_y, cmin_z,
+                  inv_sx, inv_sy, inv_sz,
                   px, py, pz):
-    """Trilinear interpolation of scalar at world point (px, py, pz)."""
-    # Locate cell on each axis via binary search
-    ix = binary_search(xcoords, nx_p1, px)
-    iy = binary_search(ycoords, ny_p1, py)
-    iz = binary_search(zcoords, nz_p1, pz)
+    """Trilinear interpolation with O(1) cell lookup."""
+    nx = nx_p1 - 1
+    ny = ny_p1 - 1
+    nz = nxy_p1 // nx_p1 - 1
 
-    # Clamp (safety)
-    if ix < 0:
-        ix = 0
-    if iy < 0:
-        iy = 0
-    if iz < 0:
-        iz = 0
-    if ix >= nx_p1 - 1:
-        ix = nx_p1 - 2
-    if iy >= ny_p1 - 1:
-        iy = ny_p1 - 2
-    if iz >= nz_p1 - 1:
-        iz = nz_p1 - 2
+    ix = find_cell(inv_x, xcoords, nx, inv_size, px, cmin_x, inv_sx)
+    iy = find_cell(inv_y, ycoords, ny, inv_size, py, cmin_y, inv_sy)
+    iz = find_cell(inv_z, zcoords, nz, inv_size, pz, cmin_z, inv_sz)
 
     # Fractional position within cell
     x0 = xcoords[ix]
@@ -183,17 +187,19 @@ def apply_tf(tf_r, tf_g, tf_b, tf_a, val, vmin, vrange):
 @pgc.kernel
 def render(img_r, img_g, img_b,
            scalar, xcoords, ycoords, zcoords,
+           inv_x, inv_y, inv_z,
            tf_r, tf_g, tf_b, tf_a,
            fparams, iparams, n_pixels):
     """Cast one ray per pixel, front-to-back compositing.
 
-    fparams layout (23 floats):
+    fparams layout (30 floats):
       0-2: cam_x/y/z, 3-5: fwd_x/y/z, 6-8: right_x/y/z, 9-11: up_x/y/z,
       12-14: bmin_x/y/z, 15-17: bmax_x/y/z,
-      18: fov_half, 19: step_size, 20: opacity_scale, 21: vmin, 22: vrange
+      18: fov_half, 19: step_size, 20: opacity_scale, 21: vmin, 22: vrange,
+      23-25: cmin_x/y/z, 26-28: inv_stride_x/y/z
 
-    iparams layout (6 ints):
-      0: nx_p1, 1: ny_p1, 2: nz_p1, 3: nxy_p1, 4: width, 5: height
+    iparams layout (7 ints):
+      0: nx_p1, 1: ny_p1, 2: nxy_p1, 3: width, 4: height, 5: inv_size
     """
     # Unpack parameters
     cam_x = fparams[0]
@@ -219,13 +225,19 @@ def render(img_r, img_g, img_b,
     opacity_scale = fparams[20]
     vmin = fparams[21]
     vrange = fparams[22]
+    cmin_x = fparams[23]
+    cmin_y = fparams[24]
+    cmin_z = fparams[25]
+    inv_sx = fparams[26]
+    inv_sy = fparams[27]
+    inv_sz = fparams[28]
 
     nx_p1 = iparams[0]
     ny_p1 = iparams[1]
-    nz_p1 = iparams[2]
-    nxy_p1 = iparams[3]
-    width = iparams[4]
-    height = iparams[5]
+    nxy_p1 = iparams[2]
+    width = iparams[3]
+    height = iparams[4]
+    inv_size = iparams[5]
 
     for pixel in range(n_pixels):
         i = pixel % width
@@ -304,7 +316,11 @@ def render(img_r, img_g, img_b,
                 sz = cam_z + t * rd_z
 
                 val = sample_scalar(scalar, xcoords, ycoords, zcoords,
-                                    nx_p1, ny_p1, nz_p1, nxy_p1, sx, sy, sz)
+                                    inv_x, inv_y, inv_z,
+                                    nx_p1, ny_p1, nxy_p1,
+                                    inv_size, cmin_x, cmin_y, cmin_z,
+                                    inv_sx, inv_sy, inv_sz,
+                                    sx, sy, sz)
 
                 sr, sg, sb, sa = apply_tf(tf_r, tf_g, tf_b, tf_a,
                                           val, vmin, vrange)
@@ -436,6 +452,36 @@ img_r = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
 img_g = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
 img_b = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
 
+# Build inverse lookup tables for O(1) cell location
+INV_TABLE_SIZE = max(nx, ny, nz) * 2  # 2x oversampling for accuracy
+
+
+def build_inv_table(coords_np, n_cells, table_size):
+    """Build a uniform-binned inverse lookup: world coord → cell index."""
+    cmin = float(coords_np[0])
+    cmax = float(coords_np[-1])
+    stride = (cmax - cmin) / table_size
+    table = np.zeros(table_size, dtype=np.int32)
+    cell = 0
+    for k in range(table_size):
+        pos = cmin + (k + 0.5) * stride
+        while cell < n_cells - 1 and coords_np[cell + 1] <= pos:
+            cell += 1
+        table[k] = cell
+    return table, cmin, stride
+
+
+inv_x_np, cmin_x, inv_sx = build_inv_table(xc_np, nx, INV_TABLE_SIZE)
+inv_y_np, cmin_y, inv_sy = build_inv_table(yc_np, ny, INV_TABLE_SIZE)
+inv_z_np, cmin_z, inv_sz = build_inv_table(zc_np, nz, INV_TABLE_SIZE)
+
+inv_x = pgc.field(dtype=pgc.i32, shape=(INV_TABLE_SIZE,))
+inv_y = pgc.field(dtype=pgc.i32, shape=(INV_TABLE_SIZE,))
+inv_z = pgc.field(dtype=pgc.i32, shape=(INV_TABLE_SIZE,))
+inv_x.from_numpy(inv_x_np)
+inv_y.from_numpy(inv_y_np)
+inv_z.from_numpy(inv_z_np)
+
 # Pack scalar parameters into fields to stay within Metal's 31 buffer limit
 fparams_np = np.array([
     cam_pos[0], cam_pos[1], cam_pos[2],       # 0-2: camera position
@@ -446,19 +492,23 @@ fparams_np = np.array([
     bmax[0], bmax[1], bmax[2],                 # 15-17: box max
     fov_half, step_size, opacity_scale,        # 18-20
     vmin, vrange,                              # 21-22
+    cmin_x, cmin_y, cmin_z,                    # 23-25: coord mins
+    inv_sx, inv_sy, inv_sz,                    # 26-28: inverse strides
 ], dtype=np.float32)
 fparams = pgc.field(dtype=pgc.f32, shape=(len(fparams_np),))
 fparams.from_numpy(fparams_np)
 
 iparams_np = np.array([
-    nx + 1, ny + 1, nz + 1, (nx + 1) * (ny + 1),  # 0-3: grid dims
-    WIDTH, HEIGHT,                                   # 4-5: image dims
+    nx + 1, ny + 1, (nx + 1) * (ny + 1),  # 0-2: grid dims
+    WIDTH, HEIGHT,                          # 3-4: image dims
+    INV_TABLE_SIZE,                         # 5: inverse table size
 ], dtype=np.int32)
 iparams = pgc.field(dtype=pgc.i32, shape=(len(iparams_np),))
 iparams.from_numpy(iparams_np)
 
 render_args = (img_r, img_g, img_b,
                scalar, xcoords, ycoords, zcoords,
+               inv_x, inv_y, inv_z,
                tf_r, tf_g, tf_b, tf_a,
                fparams, iparams, n_pixels)
 
