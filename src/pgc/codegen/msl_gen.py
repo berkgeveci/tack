@@ -195,17 +195,28 @@ class MSLCodeGen:
         self._emit("}")
 
     def _emit_if(self, node: ir.IRIf):
-        # Pre-declare variables assigned in branches for outer scope visibility
+        # Pre-declare variables assigned in branches for outer scope visibility.
+        # Two-pass hoisting to handle forward references (e.g. tuple swap temps
+        # referencing variables that are also being hoisted in the same scope).
         then_new = self._collect_new_assigns(node.then_body)
         else_new = self._collect_new_assigns(node.else_body) if node.else_body else set()
         needs_hoist = then_new | else_new
+        hoist_types = {}
         for var_name in sorted(needs_hoist):
             if var_name not in self._declared_vars:
                 c_type = self._find_assign_type(var_name, node.then_body) or \
                          self._find_assign_type(var_name, node.else_body or []) or "float"
-                self._emit(f"{c_type} {var_name};")
+                hoist_types[var_name] = c_type
                 self._local_vars[var_name] = c_type
-                self._declared_vars.add(var_name)
+        for var_name in list(hoist_types):
+            if hoist_types[var_name] not in ("float", "double"):
+                c_type = self._find_assign_type(var_name, node.then_body) or \
+                         self._find_assign_type(var_name, node.else_body or []) or hoist_types[var_name]
+                hoist_types[var_name] = c_type
+                self._local_vars[var_name] = c_type
+        for var_name in sorted(hoist_types):
+            self._emit(f"{hoist_types[var_name]} {var_name};")
+            self._declared_vars.add(var_name)
 
         cond = self._expr(node.condition)
         self._emit(f"if ({cond}) {{")
