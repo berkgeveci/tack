@@ -97,7 +97,7 @@ try:
         ax.set_title(f"t={step}")
         ax.axis("off")
     plt.suptitle("Heat Equation Diffusion")
-    plt.savefig("heat_equation.png", dpi=150, bbox_inches="tight")
+    plt.savefig("/tmp/heat_equation.png", dpi=150, bbox_inches="tight")
     print("  Saved: heat_equation.png")
 except ImportError:
     print("  (install matplotlib to save image)")

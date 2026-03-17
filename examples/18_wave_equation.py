@@ -90,7 +90,7 @@ try:
     ax.set_ylabel("u")
     ax.set_title("1D Wave Equation — Gaussian pulse splitting")
     ax.legend()
-    plt.savefig("wave_equation.png", dpi=150, bbox_inches="tight")
+    plt.savefig("/tmp/wave_equation.png", dpi=150, bbox_inches="tight")
     print("  Saved: wave_equation.png")
 except ImportError:
     print("  (install matplotlib to save image)")

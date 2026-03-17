@@ -9,5 +9,9 @@ wheels/
 # Virtual environments
 .venv
 
+# Generated images
+*.png
+*.npy
+
 # Claude Code local config
 .claude/

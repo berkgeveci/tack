@@ -76,7 +76,7 @@ try:
     ax.set_title("Mandelbrot Set (PGC)")
     ax.set_xlabel("Real")
     ax.set_ylabel("Imaginary")
-    plt.savefig("mandelbrot.png", dpi=150, bbox_inches="tight")
+    plt.savefig("/tmp/mandelbrot.png", dpi=150, bbox_inches="tight")
     print("  Saved: mandelbrot.png")
 except ImportError:
     print("  (install matplotlib to save image)")

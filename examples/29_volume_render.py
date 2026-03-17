@@ -27,7 +27,7 @@ _parser.add_argument('--size', type=int, default=100,
                      help='Grid cells per dimension (default 100)')
 _parser.add_argument('--width', type=int, default=800)
 _parser.add_argument('--height', type=int, default=800)
-_parser.add_argument('--save', default='volrender_rect.png')
+_parser.add_argument('--save', default='/tmp/volrender_rect.png')
 _parser.add_argument('--warmup', type=int, default=2)
 _parser.add_argument('--trials', type=int, default=5)
 _args = _parser.parse_args()

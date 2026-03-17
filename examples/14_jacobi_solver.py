@@ -79,7 +79,7 @@ try:
     im = ax.imshow(result, origin="lower", cmap="hot", vmin=0, vmax=100)
     plt.colorbar(im, ax=ax, label="Temperature")
     ax.set_title(f"Laplace equation (Jacobi, {STEPS} iterations)")
-    plt.savefig("jacobi.png", dpi=150, bbox_inches="tight")
+    plt.savefig("/tmp/jacobi.png", dpi=150, bbox_inches="tight")
     print("  Saved: jacobi.png")
 except ImportError:
     print("  (install matplotlib to save image)")

@@ -427,7 +427,7 @@ if __name__ == "__main__":
         fig.suptitle("PGC Marching Squares: same algorithm, two cell set types",
                      fontsize=13, fontweight="bold")
         fig.subplots_adjust(top=0.88)
-        plt.savefig("contour_result.png", dpi=150, bbox_inches="tight")
+        plt.savefig("/tmp/contour_result.png", dpi=150, bbox_inches="tight")
         print("Saved contour_result.png")
         plt.show()
     except ImportError:

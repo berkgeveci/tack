@@ -152,7 +152,7 @@ try:
     for ax in axes.flat:
         ax.axis("off")
     plt.suptitle("PGC Image Processing")
-    plt.savefig("image_processing.png", dpi=150, bbox_inches="tight")
+    plt.savefig("/tmp/image_processing.png", dpi=150, bbox_inches="tight")
     print("  Saved: image_processing.png")
 except ImportError:
     print("  (install matplotlib to save image)")
