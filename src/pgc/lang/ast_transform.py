@@ -54,6 +54,8 @@ class KernelTransformer(ast.NodeVisitor):
         self._vector_fields: dict[str, int] = vector_fields or {}
         # Texture field metadata: param_name → (W, H, D) shape
         self._texture_fields: dict[str, tuple] = texture_fields or {}
+        # Maps renamed texture names back to the original kernel param name
+        self._texture_origin: dict[str, str] = {}
 
     def visit_Module(self, node: ast.Module) -> ir.IRModule:
         module = ir.IRModule()
@@ -562,12 +564,15 @@ class KernelTransformer(ast.NodeVisitor):
 
         # Check for texture3d.sample(u, v, w)
         if isinstance(node.func, ast.Attribute) and node.func.attr == "sample":
-            if isinstance(node.func.value, ast.Name) and node.func.value.id in self._texture_fields:
+            tex_name = getattr(node.func.value, 'id', None)
+            if tex_name and tex_name in self._texture_fields:
                 if len(node.args) != 3:
                     raise TypeError("sample() takes exactly 3 arguments (u, v, w)")
                 coords = [self.visit(a) for a in node.args]
+                # Use the original kernel param name, not the inlined rename
+                original_name = self._texture_origin.get(tex_name, tex_name)
                 return ir.IRTextureSample(
-                    field_name=node.func.value.id, coords=coords)
+                    field_name=original_name, coords=coords)
 
         # Check for vector method calls: v.normalized(), v.cross(w), v.dot(w), v.norm()
         if isinstance(node.func, ast.Attribute):
@@ -647,10 +652,28 @@ class KernelTransformer(ast.NodeVisitor):
                 flat_body.append(result)
         renamed_body = flat_body
 
+        # Propagate vector-ness and texture metadata for renamed parameters
+        # (must happen before parameter assignments so we can skip texture assigns)
+        for param_name in callee_params:
+            renamed = rename_map[param_name]
+            if isinstance(call_node.args[callee_params.index(param_name)], ast.Name):
+                arg_name = call_node.args[callee_params.index(param_name)].id
+                if arg_name in self._vector_vars:
+                    self._vector_vars[renamed] = self._vector_vars[arg_name]
+                if arg_name in self._texture_fields:
+                    self._texture_fields[renamed] = self._texture_fields[arg_name]
+                    # Track origin: the original kernel param name
+                    self._texture_origin[renamed] = self._texture_origin.get(arg_name, arg_name)
+
         # Emit parameter assignments
         stmts = []
         for param_name, arg_ast in zip(callee_params, call_node.args):
             renamed = rename_map[param_name]
+            # Skip assignment for texture params — IRTextureSample references
+            # the original field name directly, and textures can't be assigned
+            # to pointer variables in GPU shaders.
+            if renamed in self._texture_fields:
+                continue
             arg_val = self.visit(arg_ast)
             # Capture any stmts from visiting this arg (e.g. nested inlines)
             stmts.extend(self._pre_stmts)
@@ -663,15 +686,6 @@ class KernelTransformer(ast.NodeVisitor):
                     stmts.append(ir.IRAssign(target=f"{renamed}__{c}", value=arg_val[c]))
             else:
                 stmts.append(ir.IRAssign(target=renamed, value=arg_val))
-
-        # Also propagate vector-ness for renamed parameters
-        for param_name in callee_params:
-            renamed = rename_map[param_name]
-            # Check if the corresponding arg is a vector in the caller
-            if isinstance(call_node.args[callee_params.index(param_name)], ast.Name):
-                arg_name = call_node.args[callee_params.index(param_name)].id
-                if arg_name in self._vector_vars:
-                    self._vector_vars[renamed] = self._vector_vars[arg_name]
 
         # Visit the renamed body statements
         body_ir = self._visit_body(renamed_body)

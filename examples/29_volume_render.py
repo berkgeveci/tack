@@ -298,29 +298,13 @@ def render(img_r, img_g, img_b,
                 sy = cam_y + t * rd_y
                 sz = cam_z + t * rd_z
 
-                # Cell lookup → normalized texture coords → hardware sample
-                s_nx = nx_p1 - 1
-                s_ny = ny_p1 - 1
-                s_nz = nxy_p1 // nx_p1 - 1
-                s_ix = find_cell(inv_x, xcoords, s_nx, inv_size, sx, cmin_x, inv_sx)
-                s_iy = find_cell(inv_y, ycoords, s_ny, inv_size, sy, cmin_y, inv_sy)
-                s_iz = find_cell(inv_z, zcoords, s_nz, inv_size, sz, cmin_z, inv_sz)
-                s_x0 = xcoords[s_ix]
-                s_x1 = xcoords[s_ix + 1]
-                s_y0 = ycoords[s_iy]
-                s_y1 = ycoords[s_iy + 1]
-                s_z0 = zcoords[s_iz]
-                s_z1 = zcoords[s_iz + 1]
-                s_fx = (sx - s_x0) / (s_x1 - s_x0 + 1.0e-20)
-                s_fy = (sy - s_y0) / (s_y1 - s_y0 + 1.0e-20)
-                s_fz = (sz - s_z0) / (s_z1 - s_z0 + 1.0e-20)
-                s_fx = max(0.0, min(1.0, s_fx))
-                s_fy = max(0.0, min(1.0, s_fy))
-                s_fz = max(0.0, min(1.0, s_fz))
-                val = tex.sample(
-                    (float(s_ix) + s_fx) / float(s_nx),
-                    (float(s_iy) + s_fy) / float(s_ny),
-                    (float(s_iz) + s_fz) / float(s_nz))
+                val = sample_tex(tex, xcoords, ycoords, zcoords,
+                                 inv_x, inv_y, inv_z,
+                                 inv_size, cmin_x, cmin_y, cmin_z,
+                                 inv_sx, inv_sy, inv_sz,
+                                 nx_p1 - 1, ny_p1 - 1,
+                                 nxy_p1 // nx_p1 - 1,
+                                 sx, sy, sz)
 
                 sr, sg, sb, sa = apply_tf(tf_r, tf_g, tf_b, tf_a,
                                           val, vmin, vrange)
