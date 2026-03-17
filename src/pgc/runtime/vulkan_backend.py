@@ -1267,8 +1267,10 @@ class VulkanBackend:
         if cache_key not in self._cache:
             import copy
             from pgc.lang.ir_pack_scalars import pack_scalars
+            from pgc.lang.ir_type_annotate import annotate_types
             ir_func_copy = copy.deepcopy(ir_func)
             _, pack_info = pack_scalars(ir_func_copy, effective_args)
+            annotate_types(ir_func_copy)
             compiled = self._compile_kernel(ir_func_copy)
             packed_param_types = [p.type_annotation for p in ir_func_copy.params]
             packed_param_is_field = [getattr(p, '_is_field', True) for p in ir_func_copy.params]

@@ -254,8 +254,10 @@ class HIPBackend:
         if cache_key not in self._cache:
             import copy
             from pgc.lang.ir_pack_scalars import pack_scalars
+            from pgc.lang.ir_type_annotate import annotate_types
             ir_func_copy = copy.deepcopy(ir_func)
             _, pack_info = pack_scalars(ir_func_copy, effective_args)
+            annotate_types(ir_func_copy)
             compiled = self._compile_kernel(ir_func_copy)
             self._cache[cache_key] = (compiled, pack_info)
 

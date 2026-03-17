@@ -278,10 +278,8 @@ class CUDACodeGen:
         else_new = self._collect_new_assigns(node.else_body) if node.else_body else set()
         needs_hoist = then_new | else_new
 
-        # Two-pass hoisting: first pass infers types (some may default to _INT
-        # due to forward references — e.g. tuple swap temps referencing vars
-        # that are also being hoisted).  Second pass re-infers those, now that
-        # the referenced vars are registered in _local_vars.
+        # Hoist with resolved types when available (from ir_type_annotate pass),
+        # falling back to the two-pass inference for unannotated IR.
         hoist_types = {}
         for var_name in sorted(needs_hoist):
             if var_name not in self._declared_vars:
@@ -289,6 +287,8 @@ class CUDACodeGen:
                          self._find_assign_type(var_name, node.else_body or []) or "float"
                 hoist_types[var_name] = c_type
                 self._local_vars[var_name] = c_type
+        # Second pass re-infers non-float types now that referenced vars are
+        # registered in _local_vars (needed when _resolved_type is absent).
         for var_name in list(hoist_types):
             if hoist_types[var_name] not in ("float", "double"):
                 c_type = self._find_assign_type(var_name, node.then_body) or \
@@ -324,9 +324,12 @@ class CUDACodeGen:
         return result
 
     def _find_assign_type(self, var_name: str, stmts: list) -> str | None:
-        """Find the inferred C type for a variable from its assignment in stmts."""
+        """Find the C type for a variable from its assignment in stmts."""
         for stmt in stmts:
             if isinstance(stmt, ir.IRAssign) and stmt.target == var_name:
+                # Prefer pre-computed type from ir_type_annotate pass
+                if hasattr(stmt, '_resolved_type') and stmt._resolved_type is not None:
+                    return self._resolved_type_to_c(stmt._resolved_type)
                 return self._infer_c_type(stmt.value)
             elif isinstance(stmt, ir.IRIf):
                 t = self._find_assign_type(var_name, stmt.then_body)
@@ -412,13 +415,20 @@ class CUDACodeGen:
             index = f"(({_INT})({index}))"
         self._emit(f"{field}[{index}] = {value};")
 
+    def _resolved_type_to_c(self, scalar_type: 'ScalarType') -> str:
+        """Map a ScalarType to C type string. Overridden by OpenCL for long vs long long."""
+        return _C_TYPE_MAP.get(scalar_type, "float")
+
     def _emit_assign(self, node: ir.IRAssign):
         value = self._expr(node.value)
         if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
-            # Infer a C type from the expression
-            c_type = self._infer_c_type(node.value)
+            # Use pre-computed type annotation if available, else fall back
+            if hasattr(node, '_resolved_type') and node._resolved_type is not None:
+                c_type = self._resolved_type_to_c(node._resolved_type)
+            else:
+                c_type = self._infer_c_type(node.value)
             self._emit(f"{c_type} {node.target} = {value};")
             self._local_vars[node.target] = c_type
             self._declared_vars.add(node.target)

@@ -386,8 +386,10 @@ class MetalBackend:
             # Pack scalar params into typed field buffers (mutates ir_func)
             import copy
             from pgc.lang.ir_pack_scalars import pack_scalars
+            from pgc.lang.ir_type_annotate import annotate_types
             ir_func_copy = copy.deepcopy(ir_func)
             _, pack_info = pack_scalars(ir_func_copy, effective_args)
+            annotate_types(ir_func_copy)
             compiled = _compile_kernel(
                 self._device, self._command_queue, ir_func_copy
             )

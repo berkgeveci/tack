@@ -262,6 +262,8 @@ class MSLCodeGen:
     def _find_assign_type(self, var_name: str, stmts: list) -> str | None:
         for stmt in stmts:
             if isinstance(stmt, ir.IRAssign) and stmt.target == var_name:
+                if hasattr(stmt, '_resolved_type') and stmt._resolved_type is not None:
+                    return _MSL_TYPE_MAP.get(stmt._resolved_type, self._infer_type(stmt.value))
                 return self._infer_type(stmt.value)
             elif isinstance(stmt, ir.IRIf):
                 t = self._find_assign_type(var_name, stmt.then_body)
@@ -347,7 +349,10 @@ class MSLCodeGen:
         if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
-            c_type = self._infer_type(node.value)
+            if hasattr(node, '_resolved_type') and node._resolved_type is not None:
+                c_type = _MSL_TYPE_MAP.get(node._resolved_type, self._infer_type(node.value))
+            else:
+                c_type = self._infer_type(node.value)
             self._emit(f"{c_type} {node.target} = {value};")
             self._local_vars[node.target] = c_type
             self._declared_vars.add(node.target)

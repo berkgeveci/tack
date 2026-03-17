@@ -291,6 +291,9 @@ class OpenCLCodeGen(CUDACodeGen):
 
     # --- Type inference: map 'long long' → 'long' ---
 
+    def _resolved_type_to_c(self, scalar_type) -> str:
+        return _OCL_C_TYPE_MAP.get(scalar_type, "float")
+
     def _infer_c_type(self, node) -> str:
         result = super()._infer_c_type(node)
         return result.replace("long long", "long").replace("unsigned long long", "unsigned long")
