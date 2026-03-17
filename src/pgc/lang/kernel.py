@@ -70,7 +70,29 @@ class Kernel:
     def __call__(self, *args, **kwargs):
         from pgc.runtime.dispatch import get_backend
         backend = get_backend()
-        return backend.execute(self, args, kwargs)
+        try:
+            return backend.execute(self, args, kwargs)
+        except TypeError as e:
+            raise TypeError(
+                f"Kernel '{self.name}': {e}"
+            ) from None
+        except RuntimeError as e:
+            msg = str(e)
+            # Shader compilation errors: show a concise message
+            if "compilation failed" in msg.lower():
+                # Extract just the error lines, not the full source dump
+                lines = msg.split("\n")
+                error_lines = [l for l in lines if "error:" in l.lower()]
+                if error_lines:
+                    brief = "\n".join(error_lines[:5])
+                    raise RuntimeError(
+                        f"Kernel '{self.name}' failed to compile on {type(backend).__name__}:\n"
+                        f"{brief}\n"
+                        f"(Set PGC_DUMP_MSL=1 or PGC_DUMP_SPIRV=1 to inspect generated source)"
+                    ) from None
+            raise RuntimeError(
+                f"Kernel '{self.name}' failed on {type(backend).__name__}: {e}"
+            ) from None
 
     def __repr__(self):
         return f"Kernel({self.name})"
