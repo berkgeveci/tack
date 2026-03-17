@@ -63,6 +63,16 @@ ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS = 1
 # Command queue group property flags
 ZE_COMMAND_QUEUE_GROUP_PROPERTY_FLAG_COMPUTE = 0x1
 
+# Image constants
+ZE_STRUCTURE_TYPE_DEVICE_IMAGE_PROPERTIES = 0x05
+ZE_STRUCTURE_TYPE_IMAGE_DESC = 0x19
+ZE_IMAGE_TYPE_3D = 4
+ZE_IMAGE_FORMAT_LAYOUT_32 = 2       # single 32-bit channel
+ZE_IMAGE_FORMAT_TYPE_FLOAT = 1
+ZE_IMAGE_FORMAT_SWIZZLE_R = 0
+ZE_IMAGE_FORMAT_SWIZZLE_0 = 4
+ZE_IMAGE_FORMAT_SWIZZLE_1 = 5
+
 # Handle types (opaque pointers)
 ze_driver_handle_t = ctypes.c_void_p
 ze_device_handle_t = ctypes.c_void_p
@@ -214,6 +224,47 @@ class ze_command_queue_group_properties_t(ctypes.Structure):
     ]
 
 
+class ze_device_image_properties_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("maxImageDims1D", ctypes.c_uint32),
+        ("maxImageDims2D", ctypes.c_uint32),
+        ("maxImageDims3D", ctypes.c_uint32),
+        ("maxImageBufferSize", ctypes.c_uint64),
+        ("maxImageArraySlices", ctypes.c_uint32),
+        ("maxSamplers", ctypes.c_uint32),
+        ("maxReadImageArgs", ctypes.c_uint32),
+        ("maxWriteImageArgs", ctypes.c_uint32),
+    ]
+
+
+class ze_image_format_t(ctypes.Structure):
+    _fields_ = [
+        ("layout", ctypes.c_uint32),
+        ("type", ctypes.c_uint32),
+        ("x", ctypes.c_uint32),
+        ("y", ctypes.c_uint32),
+        ("z", ctypes.c_uint32),
+        ("w", ctypes.c_uint32),
+    ]
+
+
+class ze_image_desc_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("flags", ctypes.c_uint32),
+        ("type", ctypes.c_uint32),
+        ("format", ze_image_format_t),
+        ("width", ctypes.c_uint64),
+        ("height", ctypes.c_uint32),
+        ("depth", ctypes.c_uint32),
+        ("arraylevels", ctypes.c_uint32),
+        ("miplevels", ctypes.c_uint32),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # Library loading
 # ---------------------------------------------------------------------------
@@ -272,6 +323,9 @@ def _setup_argtypes(ze):
 
     ze.zeDeviceGetComputeProperties.argtypes = [P, P]
     ze.zeDeviceGetComputeProperties.restype = ctypes.c_int32
+
+    ze.zeDeviceGetImageProperties.argtypes = [P, P]
+    ze.zeDeviceGetImageProperties.restype = ctypes.c_int32
 
     ze.zeDeviceGetCommandQueueGroupProperties.argtypes = [P, ctypes.POINTER(U32), P]
     ze.zeDeviceGetCommandQueueGroupProperties.restype = ctypes.c_int32
@@ -347,6 +401,15 @@ def _setup_argtypes(ze):
 
     ze.zeKernelSetArgumentValue.argtypes = [P, U32, ctypes.c_size_t, P]
     ze.zeKernelSetArgumentValue.restype = ctypes.c_int32
+
+    ze.zeImageCreate.argtypes = [P, P, P, P]
+    ze.zeImageCreate.restype = ctypes.c_int32
+
+    ze.zeImageDestroy.argtypes = [P]
+    ze.zeImageDestroy.restype = ctypes.c_int32
+
+    ze.zeCommandListAppendImageCopyFromMemory.argtypes = [P, P, P, P, P, U32, P]
+    ze.zeCommandListAppendImageCopyFromMemory.restype = ctypes.c_int32
 
 
 def _setup_ocloc_argtypes(ocloc):
@@ -609,13 +672,76 @@ class CompiledL0Kernel:
     """A compiled Level Zero kernel ready for dispatch."""
 
     def __init__(self, module, kernel, func_name, param_types, param_is_field,
-                 workgroup_size):
+                 workgroup_size, param_is_texture=None, texture_shapes=None):
         self._module = module
         self._kernel = kernel
         self._func_name = func_name
         self._param_types = param_types
         self._param_is_field = param_is_field
         self._workgroup_size = workgroup_size
+        self._param_is_texture = param_is_texture or [False] * len(param_types)
+        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
+        self._image_cache: dict[tuple, ctypes.c_void_p] = {}
+
+    def _create_image(self, field, W, H, D, backend):
+        """Create a Level Zero 3D image from a field's device buffer."""
+        ze = _get_ze()
+        fmt = ze_image_format_t(
+            layout=ZE_IMAGE_FORMAT_LAYOUT_32,
+            type=ZE_IMAGE_FORMAT_TYPE_FLOAT,
+            x=ZE_IMAGE_FORMAT_SWIZZLE_R,
+            y=ZE_IMAGE_FORMAT_SWIZZLE_0,
+            z=ZE_IMAGE_FORMAT_SWIZZLE_0,
+            w=ZE_IMAGE_FORMAT_SWIZZLE_1,
+        )
+        desc = ze_image_desc_t(
+            stype=ZE_STRUCTURE_TYPE_IMAGE_DESC,
+            pNext=None,
+            flags=0,  # read-only (no ZE_IMAGE_FLAG_KERNEL_WRITE)
+            type=ZE_IMAGE_TYPE_3D,
+            format=fmt,
+            width=W,
+            height=H,
+            depth=D,
+            arraylevels=0,
+            miplevels=0,
+        )
+        image = ctypes.c_void_p()
+        _check_ze(ze.zeImageCreate(
+            backend._context, backend._device,
+            ctypes.byref(desc), ctypes.byref(image)),
+            "zeImageCreate")
+
+        # Copy data: device → host → image
+        # Direct device→image copy can fail with OOM on the host staging path,
+        # so we stage through a host allocation explicitly.
+        nbytes = W * H * D * 4  # R32F
+        host_desc = ze_host_mem_alloc_desc_t(
+            stype=ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC, pNext=None, flags=0)
+        host_ptr = ctypes.c_void_p()
+        _check_ze(ze.zeMemAllocHost(
+            backend._context, ctypes.byref(host_desc),
+            nbytes, 0, ctypes.byref(host_ptr)),
+            "zeMemAllocHost (image staging)")
+
+        # Device → host staging buffer
+        _check_ze(ze.zeCommandListAppendMemoryCopy(
+            backend._imm_cmd_list, host_ptr,
+            field._buffer.device_ptr, nbytes,
+            None, 0, None),
+            "zeCommandListAppendMemoryCopy (D2H staging)")
+
+        # Host staging buffer → image
+        _check_ze(ze.zeCommandListAppendImageCopyFromMemory(
+            backend._imm_cmd_list, image,
+            host_ptr, None,
+            None, 0, None),
+            "zeCommandListAppendImageCopyFromMemory")
+
+        # Free staging buffer
+        ze.zeMemFree(backend._context, host_ptr)
+
+        return image
 
     def __call__(self, kernel_args: list, loop_end: int, backend):
         """Dispatch the Level Zero kernel."""
@@ -624,8 +750,22 @@ class CompiledL0Kernel:
 
         # Set kernel arguments
         arg_idx = 0
-        for arg, ptype, is_field in zip(kernel_args, self._param_types, self._param_is_field):
-            if is_field:
+        for i, (arg, ptype, is_field, is_tex) in enumerate(
+                zip(kernel_args, self._param_types, self._param_is_field,
+                    self._param_is_texture)):
+            if is_tex:
+                # Bind as image3d_t
+                W, H, D = self._texture_shapes[i]
+                cache_key = (arg._buffer.device_ptr.value, W, H, D)
+                if cache_key not in self._image_cache:
+                    self._image_cache[cache_key] = self._create_image(
+                        arg, W, H, D, backend)
+                img_handle = self._image_cache[cache_key]
+                _check_ze(ze.zeKernelSetArgumentValue(
+                    kernel, arg_idx, ctypes.sizeof(ctypes.c_void_p),
+                    ctypes.byref(img_handle)),
+                    f"zeKernelSetArgumentValue (image arg {arg_idx})")
+            elif is_field:
                 ptr = arg._buffer.device_ptr
                 _check_ze(ze.zeKernelSetArgumentValue(
                     kernel, arg_idx, ctypes.sizeof(ctypes.c_void_p),
@@ -728,6 +868,14 @@ class LevelZeroBackend:
         _check_ze(ze.zeDeviceGetComputeProperties(
             self._device, ctypes.byref(self._compute_props)),
             "zeDeviceGetComputeProperties")
+
+        # Get image properties (for max 3D texture dimensions)
+        self._image_props = ze_device_image_properties_t(
+            stype=ZE_STRUCTURE_TYPE_DEVICE_IMAGE_PROPERTIES, pNext=None)
+        _check_ze(ze.zeDeviceGetImageProperties(
+            self._device, ctypes.byref(self._image_props)),
+            "zeDeviceGetImageProperties")
+        self._max_image_3d = self._image_props.maxImageDims3D
 
         # Find compute queue group ordinal
         qg_count = ctypes.c_uint32(0)
@@ -834,16 +982,29 @@ class LevelZeroBackend:
         # Type inference
         infer_param_types(ir_func, effective_args)
 
+        # Store texture shapes on params for codegen/dispatch.
+        # Fall back to software trilinear if any dimension exceeds hw limits.
+        max_dim = self._max_image_3d
+        for param, arg in zip(ir_func.params, effective_args):
+            if isinstance(arg, Texture3D):
+                W, H, D = arg.shape_3d
+                if W <= max_dim and H <= max_dim and D <= max_dim:
+                    param._texture_shape = arg.shape_3d
+                else:
+                    param._is_texture = False  # software fallback
+
         # Optimization passes (LICM, CSE)
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
 
-        # Cache key
+        # Cache key (include texture shapes for uniqueness)
         type_sig = tuple(p.type_annotation for p in ir_func.params)
+        tex_sig = tuple(
+            getattr(p, '_texture_shape', None) for p in ir_func.params)
         tmpl_key = ""
         if template_args:
             tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
-        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tmpl_key}"
+        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tex_sig}_{tmpl_key}"
 
         if cache_key not in self._cache:
             self._cache[cache_key] = self._compile_kernel(ir_func)
@@ -916,8 +1077,14 @@ class LevelZeroBackend:
 
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+        param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+        texture_shapes = {}
+        for i, p in enumerate(ir_func.params):
+            if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
+                texture_shapes[i] = p._texture_shape
         return CompiledL0Kernel(module, kernel, ir_func.name,
-                                param_types, param_is_field, workgroup_size)
+                                param_types, param_is_field, workgroup_size,
+                                param_is_texture, texture_shapes)
 
     def __del__(self):
         # Level Zero cleanup at interpreter shutdown can segfault because

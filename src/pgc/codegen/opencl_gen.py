@@ -56,11 +56,19 @@ class OpenCLCodeGen(CUDACodeGen):
             elif not hasattr(param, '_is_field'):
                 self._field_params.add(param.name)
 
+        # Detect texture parameters for hardware image3d path
+        self._texture_params: set[str] = set()
+        for param in func.params:
+            if getattr(param, '_is_texture', False):
+                self._texture_params.add(param.name)
+
         # Build function signature with OpenCL qualifiers
         params_c = []
         for param in func.params:
             c_type = _OCL_C_TYPE_MAP[param.type_annotation]
-            if param.name in self._field_params:
+            if param.name in self._texture_params:
+                params_c.append(f"__read_only image3d_t {param.name}")
+            elif param.name in self._field_params:
                 params_c.append(f"__global {c_type}* restrict {param.name}")
             else:
                 params_c.append(f"{c_type} {param.name}")
@@ -69,6 +77,12 @@ class OpenCLCodeGen(CUDACodeGen):
         sig = ", ".join(params_c)
         self._emit(f"__kernel void {func.name}({sig}) {{")
         self._indent += 1
+
+        # Emit constant sampler for hardware texture sampling
+        if self._texture_params:
+            self._emit("const sampler_t __samp__ = CLK_NORMALIZED_COORDS_TRUE "
+                       "| CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;")
+
         self._emit_body(func.body)
         self._indent -= 1
         self._emit("}")
@@ -276,13 +290,26 @@ class OpenCLCodeGen(CUDACodeGen):
             index = f"(({_OCL_INT})({index}))"
         return f"{field}[{index}]"
 
-    # --- Texture sampling: software trilinear with OpenCL qualifiers ---
+    # --- Texture sampling: hardware image3d or software trilinear fallback ---
 
     def _expr_texture_sample(self, node: ir.IRTextureSample) -> str:
         W, H, D = node.shape
         u = self._expr(node.coords[0])
         v = self._expr(node.coords[1])
         w = self._expr(node.coords[2])
+
+        if hasattr(self, '_texture_params') and node.field_name in self._texture_params:
+            # Hardware path: read_imagef with coordinate transform.
+            # PGC convention: texel centers at i/(N-1), u=0 → texel 0, u=1 → texel N-1.
+            # OpenCL normalized+linear: texel centers at (i+0.5)/N.
+            # Transform: ocl_u = (u * (N-1) + 0.5) / N
+            ou = f"(({u}) * {W - 1}.0f + 0.5f) / {W}.0f"
+            ov = f"(({v}) * {H - 1}.0f + 0.5f) / {H}.0f"
+            ow = f"(({w}) * {D - 1}.0f + 0.5f) / {D}.0f"
+            return (f"read_imagef({node.field_name}, __samp__, "
+                    f"(float4)({ou}, {ov}, {ow}, 0.0f)).x")
+
+        # Software trilinear fallback
         helper = f"__tex3d_linear_{W}_{H}_{D}__"
         if not hasattr(self, '_texture_helpers'):
             self._texture_helpers = {}
