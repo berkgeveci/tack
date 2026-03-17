@@ -869,13 +869,16 @@ class LevelZeroBackend:
             self._device, ctypes.byref(self._compute_props)),
             "zeDeviceGetComputeProperties")
 
-        # Get image properties (for max 3D texture dimensions)
+        # Get image properties (for max 3D texture dimensions and sampler support)
         self._image_props = ze_device_image_properties_t(
             stype=ZE_STRUCTURE_TYPE_DEVICE_IMAGE_PROPERTIES, pNext=None)
         _check_ze(ze.zeDeviceGetImageProperties(
             self._device, ctypes.byref(self._image_props)),
             "zeDeviceGetImageProperties")
         self._max_image_3d = self._image_props.maxImageDims3D
+        # Xe-HPC (Ponte Vecchio) has no hardware texture/sampler units —
+        # maxSamplers == 0 means filtered image reads would be driver-emulated.
+        self._has_hw_sampler = self._image_props.maxSamplers > 0
 
         # Find compute queue group ordinal
         qg_count = ctypes.c_uint32(0)
@@ -983,12 +986,14 @@ class LevelZeroBackend:
         infer_param_types(ir_func, effective_args)
 
         # Store texture shapes on params for codegen/dispatch.
-        # Fall back to software trilinear if any dimension exceeds hw limits.
+        # Fall back to software trilinear if the device lacks hardware samplers
+        # (Xe-HPC) or any dimension exceeds the device's image size limit.
         max_dim = self._max_image_3d
         for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Texture3D):
                 W, H, D = arg.shape_3d
-                if W <= max_dim and H <= max_dim and D <= max_dim:
+                if (self._has_hw_sampler
+                        and W <= max_dim and H <= max_dim and D <= max_dim):
                     param._texture_shape = arg.shape_3d
                 else:
                     param._is_texture = False  # software fallback
