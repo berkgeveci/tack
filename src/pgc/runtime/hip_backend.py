@@ -145,20 +145,87 @@ _HIP_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlon
 class CompiledHIPKernel:
     """A compiled HIP kernel ready for dispatch."""
 
-    def __init__(self, module, func, func_name, param_types, param_is_field):
+    def __init__(self, module, func, func_name, param_types, param_is_field,
+                 param_is_texture=None, texture_shapes=None):
         self._module = module
         self._func = func
         self._func_name = func_name
         self._param_types = param_types
         self._param_is_field = param_is_field
+        self._param_is_texture = param_is_texture or [False] * len(param_types)
+        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
+        self._tex_cache: dict[tuple, int] = {}
+
+    def _create_texture_object(self, field, W, H, D):
+        """Create a HIP texture object from a field's device buffer.
+
+        Allocates a HIP 3D array, copies the field data into it, then creates
+        a texture object with linear filtering and normalized coordinates.
+        """
+        # Create channel format descriptor: 1 channel, 32-bit float
+        channel_desc = hip.hipCreateChannelDesc(
+            32, 0, 0, 0, hip.hipChannelFormatKind.hipChannelFormatKindFloat)
+
+        # Create extent for the 3D array
+        extent = hip.make_hipExtent(W, H, D)
+
+        # Allocate 3D array
+        err, hip_array = hip.hipMalloc3DArray(channel_desc, extent, 0)
+        _check_hip(err)
+
+        # Copy device linear buffer → HIP 3D array
+        copy_params = hip.hipMemcpy3DParms()
+        # Source: device pointer as pitched pointer
+        copy_params.srcPtr = hip.make_hipPitchedPtr(
+            field._buffer.device_ptr, W * 4, W, H)
+        copy_params.srcPos = hip.make_hipPos(0, 0, 0)
+        # Destination: 3D array
+        copy_params.dstArray = hip_array
+        copy_params.dstPos = hip.make_hipPos(0, 0, 0)
+        copy_params.extent = extent
+        copy_params.kind = hip.hipMemcpyKind.hipMemcpyDeviceToDevice
+        _check_hip(hip.hipMemcpy3D(copy_params))
+
+        # Create resource descriptor
+        res_desc = hip.hipResourceDesc()
+        res_desc.resType = hip.hipResourceType.hipResourceTypeArray
+        res_desc.res.array.array = hip_array
+
+        # Create texture descriptor
+        tex_desc = hip.hipTextureDesc()
+        tex_desc.addressMode = (
+            hip.hipTextureAddressMode.hipAddressModeClamp,
+            hip.hipTextureAddressMode.hipAddressModeClamp,
+            hip.hipTextureAddressMode.hipAddressModeClamp,
+        )
+        tex_desc.filterMode = hip.hipTextureFilterMode.hipFilterModeLinear
+        tex_desc.normalizedCoords = 1
+        tex_desc.readMode = hip.hipTextureReadMode.hipReadModeElementType
+
+        # Create texture object
+        err, tex_obj = hip.hipCreateTextureObject(res_desc, tex_desc, None)
+        _check_hip(err)
+
+        return tex_obj, hip_array
 
     def __call__(self, kernel_args: list, loop_end: int):
         """Dispatch the HIP kernel."""
         n_val = ctypes.c_longlong(loop_end)
 
         arg_values = []
-        for arg, ptype, is_field in zip(kernel_args, self._param_types, self._param_is_field):
-            if is_field:
+        for i, (arg, ptype, is_field, is_tex) in enumerate(
+                zip(kernel_args, self._param_types, self._param_is_field,
+                    self._param_is_texture)):
+            if is_tex:
+                W, H, D = self._texture_shapes[i]
+                cache_key = (int(arg._buffer.device_ptr), W, H, D)
+                if cache_key not in self._tex_cache:
+                    tex_obj, hip_array = self._create_texture_object(arg, W, H, D)
+                    self._tex_cache[cache_key] = (tex_obj, hip_array)
+                tex_obj, _ = self._tex_cache[cache_key]
+                # hipTextureObject_t is unsigned long long (64-bit handle)
+                arg_values.append(ctypes.c_ulonglong(tex_obj))
+            elif is_field:
                 arg_values.append(ctypes.c_void_p(int(arg._buffer.device_ptr)))
             else:
                 ct = _HIP_CTYPES_MAP[ptype]
@@ -235,6 +302,11 @@ class HIPBackend:
         # Type inference
         infer_param_types(ir_func, effective_args)
 
+        # Store texture shapes on params for codegen/dispatch
+        for param, arg in zip(ir_func.params, effective_args):
+            if isinstance(arg, Texture3D):
+                param._texture_shape = arg.shape_3d
+
         # Optimization passes (LICM, CSE)
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
@@ -244,12 +316,14 @@ class HIPBackend:
                        for a in effective_args]
         loop_end = _get_loop_range(ir_func, kernel_args)
 
-        # Cache key
+        # Cache key (include texture shapes for uniqueness)
         type_sig = tuple(p.type_annotation for p in ir_func.params)
+        tex_sig = tuple(
+            getattr(p, '_texture_shape', None) for p in ir_func.params)
         tmpl_key = ""
         if template_args:
             tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
-        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tmpl_key}"
+        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tex_sig}_{tmpl_key}"
 
         if cache_key not in self._cache:
             import copy
@@ -292,7 +366,13 @@ class HIPBackend:
 
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
-        return CompiledHIPKernel(module, func, ir_func.name, param_types, param_is_field)
+        param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+        texture_shapes = {}
+        for i, p in enumerate(ir_func.params):
+            if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
+                texture_shapes[i] = p._texture_shape
+        return CompiledHIPKernel(module, func, ir_func.name, param_types,
+                                 param_is_field, param_is_texture, texture_shapes)
 
     def __del__(self):
         pass  # HIP context is managed by the runtime
