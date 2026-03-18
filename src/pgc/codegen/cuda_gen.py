@@ -110,11 +110,19 @@ class CUDACodeGen:
                 # Default: treat as field for backwards compatibility
                 self._field_params.add(param.name)
 
+        # Detect texture parameters for hardware texture object path
+        self._texture_params: set[str] = set()
+        for param in func.params:
+            if getattr(param, '_is_texture', False):
+                self._texture_params.add(param.name)
+
         # Build function signature
         params_c = []
         for param in func.params:
             c_type = _C_TYPE_MAP[param.type_annotation]
-            if param.name in self._field_params:
+            if param.name in self._texture_params:
+                params_c.append(f"cudaTextureObject_t {param.name}")
+            elif param.name in self._field_params:
                 params_c.append(f"{c_type}* __restrict__ {param.name}")
             else:
                 params_c.append(f"{c_type} {param.name}")
@@ -577,11 +585,23 @@ class CUDACodeGen:
         return result
 
     def _expr_texture_sample(self, node: ir.IRTextureSample) -> str:
-        """Software trilinear interpolation for texture3d.sample()."""
+        """Emit hardware texture sampling via CUDA tex3D, or software fallback."""
         W, H, D = node.shape
         u = self._expr(node.coords[0])
         v = self._expr(node.coords[1])
         w = self._expr(node.coords[2])
+
+        if hasattr(self, '_texture_params') and node.field_name in self._texture_params:
+            # Hardware path: tex3D<float> with coordinate transform.
+            # PGC convention: texel centers at i/(N-1), u=0 → texel 0, u=1 → texel N-1.
+            # CUDA normalized+linear: texel centers at (i+0.5)/N.
+            # Transform: cuda_u = (u * (N-1) + 0.5) / N
+            cu = f"(({u}) * {W - 1}.0f + 0.5f) / {W}.0f"
+            cv = f"(({v}) * {H - 1}.0f + 0.5f) / {H}.0f"
+            cw = f"(({w}) * {D - 1}.0f + 0.5f) / {D}.0f"
+            return f"tex3D<float>({node.field_name}, {cu}, {cv}, {cw})"
+
+        # Software trilinear fallback
         helper = f"__tex3d_linear_{W}_{H}_{D}__"
         if not hasattr(self, '_texture_helpers'):
             self._texture_helpers = {}

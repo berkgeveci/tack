@@ -53,6 +53,7 @@ OpAccessChain = 65
 OpDecorate = 71
 OpMemberDecorate = 72
 OpDecorationGroup = 73
+OpCompositeConstruct = 80
 OpCompositeExtract = 81
 OpIAdd = 128
 OpFAdd = 129
@@ -129,6 +130,19 @@ OpAtomicUMin = 237
 OpAtomicSMax = 238
 OpAtomicUMax = 239
 
+# Image/sampler opcodes
+OpTypeImage = 25
+OpTypeSampler = 26
+OpTypeSampledImage = 27
+OpSampledImage = 86
+OpImageSampleExplicitLod = 88
+
+# Image dimension
+Dim_3D = 2
+
+# Image operand mask
+ImageOperand_Lod = 0x2
+
 # Barrier
 OpControlBarrier = 224
 
@@ -147,6 +161,7 @@ AddressingModel_Logical = 0
 MemoryModel_GLSL450 = 1
 
 # Storage classes
+StorageClass_UniformConstant = 0
 StorageClass_Input = 1
 StorageClass_Uniform = 2
 StorageClass_Workgroup = 4
@@ -342,6 +357,11 @@ class SPIRVCodeGen:
         # SPIR-V ID → type key (e.g. "f32", "u32", "i32", "bool")
         self._id_types: dict[int, str] = {}
 
+        # Texture parameters (combined image/sampler instead of storage buffer)
+        self._texture_params: set[str] = {}
+        # Texture sampled-image variable IDs (param_name → var_id)
+        self._texture_vars: dict[str, int] = {}
+
         # IDs for key types/variables
         self._glsl_ext_id = 0
         self._global_invocation_id_var = 0
@@ -358,10 +378,22 @@ class SPIRVCodeGen:
         # Declare types we'll need
         self._declare_base_types()
 
-        # Declare storage buffers for each field parameter
+        # Detect texture parameters
+        self._texture_params = set()
+        for param in self.ir_func.params:
+            if getattr(param, '_is_texture', False):
+                self._texture_params.add(param.name)
+
+        # Declare storage buffers (or combined image/samplers) for each parameter
         for i, param in enumerate(self.ir_func.params):
-            buf_var = self._declare_storage_buffer(param, binding=i)
-            self._param_buffers[param.name] = buf_var
+            if param.name in self._texture_params:
+                tex_var = self._declare_texture_sampler(param, binding=i)
+                # Store as param buffer with special key so scalar pre-load skips it
+                self._param_buffers[param.name] = (tex_var, "sampled_image")
+                self._texture_vars[param.name] = tex_var
+            else:
+                buf_var = self._declare_storage_buffer(param, binding=i)
+                self._param_buffers[param.name] = buf_var
 
         # Declare gl_GlobalInvocationID
         self._declare_global_invocation_id()
@@ -404,6 +436,8 @@ class SPIRVCodeGen:
         # The Vulkan backend wraps scalar args in 1-element storage buffers,
         # so we load them once at the start of the kernel.
         for param in self.ir_func.params:
+            if param.name in self._texture_params:
+                continue  # texture params are loaded at sample time
             if hasattr(param, '_is_field') and not param._is_field:
                 buf_var, elem_key = self._param_buffers[param.name]
                 elem_ptr_key = f"ptr_sb_{elem_key}"
@@ -562,6 +596,17 @@ class SPIRVCodeGen:
         self.module.add_type_or_constant(
             _make_instruction(OpTypeVector, uvec3, uid, 3))
 
+        # vec3 (float3) and vec4 (float4) for texture sampling
+        vec3_f32 = self.module.alloc_id()
+        self._type_cache["vec3_f32"] = vec3_f32
+        self.module.add_type_or_constant(
+            _make_instruction(OpTypeVector, vec3_f32, fid, 3))
+
+        vec4_f32 = self.module.alloc_id()
+        self._type_cache["vec4_f32"] = vec4_f32
+        self.module.add_type_or_constant(
+            _make_instruction(OpTypeVector, vec4_f32, fid, 4))
+
         # Pointer to uvec3 (Input)
         ptr_uvec3_input = self.module.alloc_id()
         self._type_cache["ptr_uvec3_input"] = ptr_uvec3_input
@@ -647,6 +692,56 @@ class SPIRVCodeGen:
             StorageClass_StorageBuffer, elem_type, elem_ptr_key))
 
         return (var_id, elem_key)
+
+    def _declare_texture_sampler(self, param: ir.IRParam, binding: int) -> int:
+        """Declare a combined image/sampler for a texture parameter.
+
+        Returns the variable ID for the sampled-image uniform constant.
+        """
+        f32_type = self._get_type("f32")
+
+        # OpTypeImage %f32 3D 0 0 0 1 Unknown
+        #   Dim=2(3D), Depth=0, Arrayed=0, MS=0, Sampled=1, Format=0(Unknown)
+        image_key = "image3d_f32"
+        if image_key not in self._type_cache:
+            img_id = self.module.alloc_id()
+            self._type_cache[image_key] = img_id
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypeImage, img_id, f32_type,
+                                  Dim_3D, 0, 0, 0, 1, 0))
+
+        # OpTypeSampledImage %image_type
+        sampled_key = "sampled_image3d_f32"
+        if sampled_key not in self._type_cache:
+            si_id = self.module.alloc_id()
+            self._type_cache[sampled_key] = si_id
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypeSampledImage, si_id,
+                                  self._type_cache[image_key]))
+
+        # Pointer to sampled image in UniformConstant storage class
+        ptr_key = "ptr_uc_sampled_image3d_f32"
+        if ptr_key not in self._type_cache:
+            ptr_id = self.module.alloc_id()
+            self._type_cache[ptr_key] = ptr_id
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypePointer, ptr_id,
+                                  StorageClass_UniformConstant,
+                                  self._type_cache[sampled_key]))
+
+        # Variable
+        var_id = self.module.alloc_id()
+        self.module.add_type_or_constant(
+            _make_instruction(OpVariable, self._type_cache[ptr_key], var_id,
+                              StorageClass_UniformConstant))
+
+        # Decorate with binding and descriptor set
+        self.module.add_annotation(
+            _make_instruction(OpDecorate, var_id, Decoration_DescriptorSet, 0))
+        self.module.add_annotation(
+            _make_instruction(OpDecorate, var_id, Decoration_Binding, binding))
+
+        return var_id
 
     def _make_runtime_array(self, elem_type: int, elem_key: str) -> int:
         ra_id = self.module.alloc_id()
@@ -840,8 +935,7 @@ class SPIRVCodeGen:
         if isinstance(node, ir.IRAttribute):
             return self._emit_attribute(node)
         if isinstance(node, ir.IRTextureSample):
-            raise NotImplementedError(
-                "texture3d.sample() is not yet supported on the Vulkan/SPIR-V backend")
+            return self._emit_texture_sample(node)
         if isinstance(node, ir.IRThreadId):
             return self._emit_thread_id()
         if isinstance(node, ir.IRBlockReduce):
@@ -1034,6 +1128,64 @@ class SPIRVCodeGen:
             return result
 
         raise NotImplementedError("Field load from non-parameter not supported")
+
+    def _emit_texture_sample(self, node: ir.IRTextureSample) -> int:
+        """Emit hardware texture sampling via OpImageSampleExplicitLod.
+
+        PGC convention: texel centers at i/(N-1), u=0 → texel 0, u=1 → texel N-1.
+        Vulkan normalized+linear: texel centers at (i+0.5)/N.
+        Transform: vk_u = (u * (N-1) + 0.5) / N
+        """
+        W, H, D = node.shape
+        f32_type = self._get_type("f32")
+        vec3_type = self._get_type("vec3_f32")
+        vec4_type = self._get_type("vec4_f32")
+        sampled_type = self._get_type("sampled_image3d_f32")
+
+        # Load the combined image/sampler
+        tex_var = self._texture_vars[node.field_name]
+        loaded = self.module.alloc_id()
+        self._body += _make_instruction(OpLoad, sampled_type, loaded, tex_var)
+
+        # Emit and transform each coordinate
+        transformed = []
+        for dim_size, coord_node in zip((W, H, D), node.coords):
+            raw = self._to_f32(self._emit_expr(coord_node))
+            # vk_coord = (raw * (N-1) + 0.5) / N
+            n_minus_1 = self._const_f32(float(dim_size - 1))
+            half = self._const_f32(0.5)
+            n_f = self._const_f32(float(dim_size))
+
+            t1 = self.module.alloc_id()
+            self._body += _make_instruction(OpFMul, f32_type, t1, raw, n_minus_1)
+            self._id_types[t1] = "f32"
+            t2 = self.module.alloc_id()
+            self._body += _make_instruction(OpFAdd, f32_type, t2, t1, half)
+            self._id_types[t2] = "f32"
+            t3 = self.module.alloc_id()
+            self._body += _make_instruction(OpFDiv, f32_type, t3, t2, n_f)
+            self._id_types[t3] = "f32"
+            transformed.append(t3)
+
+        # Build vec3 coordinate
+        coord_vec = self.module.alloc_id()
+        self._body += _make_instruction(
+            OpCompositeConstruct, vec3_type, coord_vec,
+            transformed[0], transformed[1], transformed[2])
+
+        # Sample with explicit LOD 0.0
+        lod_0 = self._const_f32(0.0)
+        sample_result = self.module.alloc_id()
+        self._body += _make_instruction(
+            OpImageSampleExplicitLod, vec4_type, sample_result,
+            loaded, coord_vec, ImageOperand_Lod, lod_0)
+
+        # Extract .x (red channel)
+        scalar = self.module.alloc_id()
+        self._body += _make_instruction(
+            OpCompositeExtract, f32_type, scalar, sample_result, 0)
+        self._id_types[scalar] = "f32"
+        return scalar
 
     def _emit_field_store(self, node: ir.IRFieldStore):
         """Store to storage buffer or shared memory: buffer.data[index] = value."""
