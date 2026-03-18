@@ -9,6 +9,10 @@ class CellSetStructured3D:
 
     Grid of nx*ny*nz cells with (nx+1)*(ny+1)*(nz+1) points.
     Point ordering is x-fastest: point(i,j,k) = k*(nx+1)*(ny+1) + j*(nx+1) + i.
+
+    Uses the generic cell set interface:
+      - points_per_cell: compile-time constant (8 for hex)
+      - get_point_id(cell_id, local_idx): returns the global point index
     """
 
     def __init__(self, nx, ny, nz):
@@ -18,21 +22,33 @@ class CellSetStructured3D:
         self.nx_plus1 = nx + 1
         self.nxy = nx * ny
         self.nxy_plus1 = (nx + 1) * (ny + 1)
+        self.points_per_cell = 8
 
     @pgc.func
-    def get_cell_points(self, cell_id):
+    def get_point_id(self, cell_id, local_idx):
         ci = cell_id % self.nx
         cj = (cell_id // self.nx) % self.ny
         ck = cell_id // self.nxy
-
         base = ck * self.nxy_plus1 + cj * self.nx_plus1 + ci
 
-        p0 = base
-        p1 = base + 1
-        p2 = base + self.nx_plus1
-        p3 = base + self.nx_plus1 + 1
-        p4 = base + self.nxy_plus1
-        p5 = base + self.nxy_plus1 + 1
-        p6 = base + self.nxy_plus1 + self.nx_plus1
-        p7 = base + self.nxy_plus1 + self.nx_plus1 + 1
-        return p0, p1, p2, p3, p4, p5, p6, p7
+        # Local vertex ordering for hex:
+        #   0: (i,   j,   k  )    4: (i,   j,   k+1)
+        #   1: (i+1, j,   k  )    5: (i+1, j,   k+1)
+        #   2: (i,   j+1, k  )    6: (i,   j+1, k+1)
+        #   3: (i+1, j+1, k  )    7: (i+1, j+1, k+1)
+        result = base
+        if local_idx == 1:
+            result = base + 1
+        if local_idx == 2:
+            result = base + self.nx_plus1
+        if local_idx == 3:
+            result = base + self.nx_plus1 + 1
+        if local_idx == 4:
+            result = base + self.nxy_plus1
+        if local_idx == 5:
+            result = base + self.nxy_plus1 + 1
+        if local_idx == 6:
+            result = base + self.nxy_plus1 + self.nx_plus1
+        if local_idx == 7:
+            result = base + self.nxy_plus1 + self.nx_plus1 + 1
+        return result

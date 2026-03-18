@@ -6,5 +6,5 @@ Provides array abstractions (AOS, SOA, constant), cell set types
 
 from .dataset import Dataset, make_rectilinear_dataset, make_explicit_hex_dataset
 from .arrays import AOSArray, AOSTupleArray, ConstantArray, ConstantTupleArray3, make_soa_type
-from .cellsets import CellSetStructured3D, CellSetExplicitHex
+from .cellsets import CellSetStructured3D, CellSetExplicit
 from . import filters

@@ -77,9 +77,9 @@ def make_explicit_hex_dataset(points_np, connectivity_np):
         connectivity_np: flat int32 array, 8 point IDs per cell.
 
     Returns:
-        Dataset with AOSTupleArray coordinates and CellSetExplicitHex cell set.
+        Dataset with AOSTupleArray coordinates and CellSetExplicit cell set.
     """
-    from .cellsets import CellSetExplicitHex
+    from .cellsets import CellSetExplicit
 
     n_points = points_np.shape[0]
     n_cells = len(connectivity_np) // 8
@@ -91,6 +91,6 @@ def make_explicit_hex_dataset(points_np, connectivity_np):
 
     conn_field = pgc.field(dtype=pgc.i32, shape=(len(connectivity_np),))
     conn_field.from_numpy(connectivity_np.astype(np.int32))
-    cell_set = CellSetExplicitHex(conn_field)
+    cell_set = CellSetExplicit(conn_field, 8)
 
     return Dataset(coordinates, cell_set, n_points, n_cells)

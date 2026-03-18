@@ -2,8 +2,8 @@
 
 import numpy as np
 import pgc
-from ..arrays import AOSArray, AOSTupleArray
-from ..cellsets import CellSetExplicitHex
+from ..arrays import AOSArray
+from ..cellsets import CellSetExplicit
 from ..dataset import Dataset
 
 
@@ -19,19 +19,11 @@ def _classify(cell_data, mask, lo, hi, n):
 
 
 @pgc.kernel
-def _scatter_hex(cell_set: pgc.template(), mask, offsets, out_conn, n):
+def _scatter(cell_set: pgc.template(), mask, offsets, out_conn, n):
     for c in range(n):
         if mask[c] == 1:
-            p0, p1, p2, p3, p4, p5, p6, p7 = cell_set.get_cell_points(c)
-            base = offsets[c] * 8
-            out_conn[base] = p0
-            out_conn[base + 1] = p1
-            out_conn[base + 2] = p2
-            out_conn[base + 3] = p3
-            out_conn[base + 4] = p4
-            out_conn[base + 5] = p5
-            out_conn[base + 6] = p6
-            out_conn[base + 7] = p7
+            for v in range(cell_set.points_per_cell):
+                out_conn[offsets[c] * cell_set.points_per_cell + v] = cell_set.get_point_id(c, v)
 
 
 def threshold(dataset, cell_array_name, lo, hi):
@@ -41,15 +33,10 @@ def threshold(dataset, cell_array_name, lo, hi):
     qualifying cells. Point arrays are shared (not copied) since point
     indices remain valid.
 
-    Args:
-        dataset: input Dataset
-        cell_array_name: name of the cell data array to threshold on
-        lo, hi: scalar range [lo, hi] inclusive
-
-    Returns:
-        New Dataset with the extracted cells.
+    Works with any cell set type and any points-per-cell count.
     """
     n_cells = dataset.num_cells
+    ppc = dataset.cell_set.points_per_cell
     cell_arr = dataset.get_cell_array(cell_array_name)
 
     # Pass 1: classify
@@ -65,19 +52,17 @@ def threshold(dataset, cell_array_name, lo, hi):
     n_out = int(offsets_np[-1] + mask_np[-1])
 
     if n_out == 0:
-        # Empty result
         conn = pgc.field(dtype=pgc.i32, shape=(1,))
-        cell_set = CellSetExplicitHex(conn)
+        cell_set = CellSetExplicit(conn, ppc)
         return Dataset(dataset.coordinates, cell_set, dataset.num_points, 0)
 
     # Pass 2: scatter qualifying cells
-    out_conn = pgc.field(dtype=pgc.i32, shape=(n_out * 8,))
-    _scatter_hex(dataset.cell_set, mask, offsets, out_conn, n_cells)
+    out_conn = pgc.field(dtype=pgc.i32, shape=(n_out * ppc,))
+    _scatter(dataset.cell_set, mask, offsets, out_conn, n_cells)
 
-    cell_set = CellSetExplicitHex(out_conn)
+    cell_set = CellSetExplicit(out_conn, ppc)
     result = Dataset(dataset.coordinates, cell_set, dataset.num_points, n_out)
 
-    # Share point arrays (indices are still valid)
     for name, arr in dataset.point_data.items():
         result.add_point_array(name, arr)
 

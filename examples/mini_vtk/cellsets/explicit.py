@@ -5,48 +5,40 @@ import pgc
 
 
 @pgc.data_oriented
-class CellSetExplicitHex:
-    """Explicit hex mesh: 8 point IDs per cell in a flat i32 field.
+class CellSetExplicit:
+    """Explicit cell set with fixed points-per-cell.
 
-    Memory: [c0p0, c0p1, ..., c0p7, c1p0, ..., c1p7, ...]
+    Connectivity is a flat i32 field: [c0p0, ..., c0pN, c1p0, ..., c1pN, ...]
+    where N = points_per_cell.
+
+    Works for any cell type (hex=8, tet=4, wedge=6, etc.) — the same
+    kernel code compiles differently for each points_per_cell value via
+    the template system.
+
+    Uses the generic cell set interface:
+      - points_per_cell: compile-time constant
+      - get_point_id(cell_id, local_idx): returns the global point index
     """
 
-    def __init__(self, connectivity):
+    def __init__(self, connectivity, points_per_cell):
         self.connectivity = connectivity
+        self.points_per_cell = points_per_cell
 
     @pgc.func
-    def get_cell_points(self, cell_id):
-        base = cell_id * 8
-        p0 = self.connectivity[base]
-        p1 = self.connectivity[base + 1]
-        p2 = self.connectivity[base + 2]
-        p3 = self.connectivity[base + 3]
-        p4 = self.connectivity[base + 4]
-        p5 = self.connectivity[base + 5]
-        p6 = self.connectivity[base + 6]
-        p7 = self.connectivity[base + 7]
-        return p0, p1, p2, p3, p4, p5, p6, p7
+    def get_point_id(self, cell_id, local_idx):
+        return self.connectivity[cell_id * self.points_per_cell + local_idx]
 
 
 def from_structured(cell_set_structured, n_cells):
-    """Build explicit connectivity from a structured cell set.
+    """Build explicit connectivity from a structured cell set."""
+    ppc = cell_set_structured.points_per_cell
 
-    Useful for benchmarking explicit vs structured performance.
-    """
     @pgc.kernel
     def _expand(struct: pgc.template(), conn, n):
         for c in range(n):
-            p0, p1, p2, p3, p4, p5, p6, p7 = struct.get_cell_points(c)
-            base = c * 8
-            conn[base] = p0
-            conn[base + 1] = p1
-            conn[base + 2] = p2
-            conn[base + 3] = p3
-            conn[base + 4] = p4
-            conn[base + 5] = p5
-            conn[base + 6] = p6
-            conn[base + 7] = p7
+            for v in range(struct.points_per_cell):
+                conn[c * struct.points_per_cell + v] = struct.get_point_id(c, v)
 
-    conn = pgc.field(dtype=pgc.i32, shape=(n_cells * 8,))
+    conn = pgc.field(dtype=pgc.i32, shape=(n_cells * ppc,))
     _expand(cell_set_structured, conn, n_cells)
-    return CellSetExplicitHex(conn)
+    return CellSetExplicit(conn, ppc)
