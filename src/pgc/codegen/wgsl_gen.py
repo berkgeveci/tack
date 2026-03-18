@@ -48,12 +48,17 @@ class WGSLCodeGen:
         self._field_params: set[str] = set()
         self._local_vars: dict[str, str] = {}
         self._declared_vars: set[str] = set()
+        self._field_aliases: dict[str, str] = {}  # inlined name → original field
+        self._local_array_types: dict[str, str] = {}  # local array name → wgsl element type
 
     def _sanitize(self, name: str) -> str:
-        """WGSL forbids identifiers starting with '__'. Replace with 'p_'."""
-        if name.startswith("__"):
-            return "p_" + name[2:]
-        return name
+        """WGSL forbids identifiers containing '__'. Collapse all runs."""
+        result = name.lstrip("_")
+        if not result:
+            result = "v"
+        while "__" in result:
+            result = result.replace("__", "_")
+        return result
 
     def generate(self) -> str:
         func = self.ir_func
@@ -137,6 +142,7 @@ class WGSLCodeGen:
             self._emit(f"// shared: var<workgroup> {self._sanitize(node.name)}: array<{node.dtype}, {self._expr(node.size)}>;")
         elif isinstance(node, ir.IRLocalAlloc):
             wgsl_type = "f32" if node.dtype == "float" else "i32"
+            self._local_array_types[node.name] = wgsl_type
             self._emit(f"var {self._sanitize(node.name)}: array<{wgsl_type}, {self._expr(node.size)}>;")
         elif isinstance(node, ir.IRBarrier):
             self._emit("workgroupBarrier();")
@@ -231,16 +237,28 @@ class WGSLCodeGen:
         self._emit(f"{field}[{_INT}({index})] = {field_type}({value});")
 
     def _emit_assign(self, node: ir.IRAssign):
+        # Skip field-pointer assignments (from template inlining).
+        # In WGSL, storage bindings can't be assigned to local variables.
+        # Instead, create an alias so subsequent field loads use the original.
+        if hasattr(node, '_resolved_type') and node._resolved_type is None:
+            if isinstance(node.value, ir.IRName) and node.value.name in self._field_params:
+                self._field_aliases[node.target] = node.value.name
+                return
+
         value = self._expr(node.value)
         target = self._sanitize(node.target)
         if node.target in self._declared_vars:
+            # Cast to match declared type if needed (WGSL has no implicit conversion)
+            decl_type = self._local_vars.get(node.target)
+            if decl_type and decl_type != self._infer_type(node.value):
+                value = f"{decl_type}({value})"
             self._emit(f"{target} = {value};")
         else:
             if hasattr(node, '_resolved_type') and node._resolved_type:
                 wgsl_type = _WGSL_TYPE_MAP.get(node._resolved_type, "f32")
             else:
                 wgsl_type = self._infer_type(node.value)
-            self._emit(f"var {target}: {wgsl_type} = {value};")
+            self._emit(f"var {target}: {wgsl_type} = {wgsl_type}({value});")
             self._local_vars[node.target] = wgsl_type
             self._declared_vars.add(node.target)
 
@@ -267,7 +285,11 @@ class WGSLCodeGen:
                 return "true" if node.value else "false"
             return str(node.value)
         if isinstance(node, ir.IRName):
-            return self._sanitize(node.name)
+            name = node.name
+            # Resolve field aliases from template inlining
+            while name in self._field_aliases:
+                name = self._field_aliases[name]
+            return self._sanitize(name)
         if isinstance(node, ir.IRBinOp):
             return self._expr_binop(node)
         if isinstance(node, ir.IRUnaryOp):
@@ -340,8 +362,15 @@ class WGSLCodeGen:
         return val
 
     def _get_field_wgsl_type(self, field_node) -> str:
-        if isinstance(field_node, ir.IRName) and field_node.name in self._param_types:
-            return _WGSL_TYPE_MAP.get(self._param_types[field_node.name], "f32")
+        if isinstance(field_node, ir.IRName):
+            name = field_node.name
+            # Resolve aliases
+            while name in self._field_aliases:
+                name = self._field_aliases[name]
+            if name in self._local_array_types:
+                return self._local_array_types[name]
+            if name in self._param_types:
+                return _WGSL_TYPE_MAP.get(self._param_types[name], "f32")
         return "f32"
 
     def _infer_type(self, node) -> str:

@@ -16,7 +16,7 @@ import pgc
 import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
-                     choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
+                     choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero', 'wgpu'])
 _parser.add_argument('--size', type=int, default=50, help='Grid cells per dimension')
 _args = _parser.parse_args()
 pgc.init(arch=getattr(pgc, _args.arch))
