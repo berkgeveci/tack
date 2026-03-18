@@ -10,6 +10,7 @@ _BACKEND_HELP = {
     "cuda": "Requires NVIDIA GPU with CUDA toolkit and cuda-python>=13.2",
     "hip": "Requires AMD GPU with ROCm and hip-python",
     "level_zero": "Requires Intel GPU with Level Zero runtime and libocloc",
+    "wgpu": "Requires wgpu: pip install wgpu",
 }
 
 
@@ -23,6 +24,7 @@ def init(arch: str = "cpu"):
         "cuda": ("pgc.runtime.cuda_backend", "CUDABackend"),
         "hip": ("pgc.runtime.hip_backend", "HIPBackend"),
         "level_zero": ("pgc.runtime.level_zero_backend", "LevelZeroBackend"),
+        "wgpu": ("pgc.runtime.wgpu_backend", "WebGPUBackend"),
     }
 
     if arch not in _constructors:
