@@ -66,6 +66,7 @@ VK_SHARING_MODE_EXCLUSIVE = 0
 VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT = 0x02
 VK_MEMORY_PROPERTY_HOST_COHERENT_BIT = 0x04
 VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT = 0x01
+VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER = 1
 VK_DESCRIPTOR_TYPE_STORAGE_BUFFER = 7
 VK_SHADER_STAGE_COMPUTE_BIT = 0x00000020
 VK_PIPELINE_BIND_POINT_COMPUTE = 1
@@ -74,6 +75,34 @@ VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT = 0x00000001
 VK_COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT = 0x00000002
 VK_QUEUE_COMPUTE_BIT = 0x00000002
 VK_WHOLE_SIZE = ~0  # UINT64_MAX
+
+# Image / sampler constants
+VK_IMAGE_TYPE_3D = 2
+VK_IMAGE_VIEW_TYPE_3D = 5
+VK_FORMAT_R32_SFLOAT = 100
+VK_IMAGE_TILING_OPTIMAL = 0
+VK_IMAGE_USAGE_TRANSFER_DST_BIT = 0x00000002
+VK_IMAGE_USAGE_SAMPLED_BIT = 0x00000004
+VK_IMAGE_LAYOUT_UNDEFINED = 0
+VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL = 5
+VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL = 7
+VK_FILTER_LINEAR = 1
+VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE = 2
+VK_SAMPLER_MIPMAP_MODE_NEAREST = 0
+VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK = 3
+VK_COMPONENT_SWIZZLE_IDENTITY = 0
+VK_IMAGE_ASPECT_COLOR_BIT = 0x00000001
+VK_SAMPLE_COUNT_1_BIT = 0x00000001
+VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT = 0x00000001
+VK_PIPELINE_STAGE_TRANSFER_BIT = 0x00001000
+VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT = 0x00000800
+VK_ACCESS_TRANSFER_WRITE_BIT = 0x00001000
+VK_ACCESS_SHADER_READ_BIT = 0x00000020
+VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO = 14
+VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO = 15
+VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO = 31
+VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER = 45
+VK_QUEUE_FAMILY_IGNORED = 0xFFFFFFFF
 
 VK_MAX_MEMORY_TYPES = 32
 VK_MAX_MEMORY_HEAPS = 16
@@ -94,6 +123,9 @@ VkDescriptorSet = ctypes.c_void_p
 VkCommandPool = ctypes.c_void_p
 VkCommandBuffer = ctypes.c_void_p
 VkFence = ctypes.c_void_p
+VkImage = ctypes.c_void_p
+VkImageView = ctypes.c_void_p
+VkSampler = ctypes.c_void_p
 
 VkDeviceSize = ctypes.c_uint64
 VkFlags = ctypes.c_uint32
@@ -416,6 +448,143 @@ class VkSubmitInfo(ctypes.Structure):
 
 
 # ---------------------------------------------------------------------------
+# Image/sampler structures
+# ---------------------------------------------------------------------------
+class VkExtent3D(ctypes.Structure):
+    _fields_ = [
+        ("width", ctypes.c_uint32),
+        ("height", ctypes.c_uint32),
+        ("depth", ctypes.c_uint32),
+    ]
+
+
+class VkImageCreateInfo(ctypes.Structure):
+    _fields_ = [
+        ("sType", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("flags", VkFlags),
+        ("imageType", ctypes.c_uint32),
+        ("format", ctypes.c_uint32),
+        ("extent", VkExtent3D),
+        ("mipLevels", ctypes.c_uint32),
+        ("arrayLayers", ctypes.c_uint32),
+        ("samples", ctypes.c_uint32),
+        ("tiling", ctypes.c_uint32),
+        ("usage", VkFlags),
+        ("sharingMode", ctypes.c_uint32),
+        ("queueFamilyIndexCount", ctypes.c_uint32),
+        ("pQueueFamilyIndices", ctypes.c_void_p),
+        ("initialLayout", ctypes.c_uint32),
+    ]
+
+
+class VkImageSubresourceRange(ctypes.Structure):
+    _fields_ = [
+        ("aspectMask", VkFlags),
+        ("baseMipLevel", ctypes.c_uint32),
+        ("levelCount", ctypes.c_uint32),
+        ("baseArrayLayer", ctypes.c_uint32),
+        ("layerCount", ctypes.c_uint32),
+    ]
+
+
+class VkComponentMapping(ctypes.Structure):
+    _fields_ = [
+        ("r", ctypes.c_uint32),
+        ("g", ctypes.c_uint32),
+        ("b", ctypes.c_uint32),
+        ("a", ctypes.c_uint32),
+    ]
+
+
+class VkImageViewCreateInfo(ctypes.Structure):
+    _fields_ = [
+        ("sType", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("flags", VkFlags),
+        ("image", VkImage),
+        ("viewType", ctypes.c_uint32),
+        ("format", ctypes.c_uint32),
+        ("components", VkComponentMapping),
+        ("subresourceRange", VkImageSubresourceRange),
+    ]
+
+
+class VkSamplerCreateInfo(ctypes.Structure):
+    _fields_ = [
+        ("sType", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("flags", VkFlags),
+        ("magFilter", ctypes.c_uint32),
+        ("minFilter", ctypes.c_uint32),
+        ("mipmapMode", ctypes.c_uint32),
+        ("addressModeU", ctypes.c_uint32),
+        ("addressModeV", ctypes.c_uint32),
+        ("addressModeW", ctypes.c_uint32),
+        ("mipLodBias", ctypes.c_float),
+        ("anisotropyEnable", VkBool32),
+        ("maxAnisotropy", ctypes.c_float),
+        ("compareEnable", VkBool32),
+        ("compareOp", ctypes.c_uint32),
+        ("minLod", ctypes.c_float),
+        ("maxLod", ctypes.c_float),
+        ("borderColor", ctypes.c_uint32),
+        ("unnormalizedCoordinates", VkBool32),
+    ]
+
+
+class VkDescriptorImageInfo(ctypes.Structure):
+    _fields_ = [
+        ("sampler", VkSampler),
+        ("imageView", VkImageView),
+        ("imageLayout", ctypes.c_uint32),
+    ]
+
+
+class VkImageMemoryBarrier(ctypes.Structure):
+    _fields_ = [
+        ("sType", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("srcAccessMask", VkFlags),
+        ("dstAccessMask", VkFlags),
+        ("oldLayout", ctypes.c_uint32),
+        ("newLayout", ctypes.c_uint32),
+        ("srcQueueFamilyIndex", ctypes.c_uint32),
+        ("dstQueueFamilyIndex", ctypes.c_uint32),
+        ("image", VkImage),
+        ("subresourceRange", VkImageSubresourceRange),
+    ]
+
+
+class VkImageSubresourceLayers(ctypes.Structure):
+    _fields_ = [
+        ("aspectMask", VkFlags),
+        ("mipLevel", ctypes.c_uint32),
+        ("baseArrayLayer", ctypes.c_uint32),
+        ("layerCount", ctypes.c_uint32),
+    ]
+
+
+class VkOffset3D(ctypes.Structure):
+    _fields_ = [
+        ("x", ctypes.c_int32),
+        ("y", ctypes.c_int32),
+        ("z", ctypes.c_int32),
+    ]
+
+
+class VkBufferImageCopy(ctypes.Structure):
+    _fields_ = [
+        ("bufferOffset", VkDeviceSize),
+        ("bufferRowLength", ctypes.c_uint32),
+        ("bufferImageHeight", ctypes.c_uint32),
+        ("imageSubresource", VkImageSubresourceLayers),
+        ("imageOffset", VkOffset3D),
+        ("imageExtent", VkExtent3D),
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Library loading
 # ---------------------------------------------------------------------------
 def _load_vulkan():
@@ -540,6 +709,28 @@ def _setup_argtypes(vk):
     vk.vkQueueSubmit.restype = VkResult
     vk.vkQueueWaitIdle.argtypes = [P]
     vk.vkQueueWaitIdle.restype = VkResult
+
+    # Image / sampler functions
+    vk.vkCreateImage.argtypes = [P, P, P, P]
+    vk.vkCreateImage.restype = VkResult
+    vk.vkDestroyImage.argtypes = [P, P, P]
+    vk.vkDestroyImage.restype = None
+    vk.vkGetImageMemoryRequirements.argtypes = [P, P, P]
+    vk.vkGetImageMemoryRequirements.restype = None
+    vk.vkBindImageMemory.argtypes = [P, P, P, U64]
+    vk.vkBindImageMemory.restype = VkResult
+    vk.vkCreateImageView.argtypes = [P, P, P, P]
+    vk.vkCreateImageView.restype = VkResult
+    vk.vkDestroyImageView.argtypes = [P, P, P]
+    vk.vkDestroyImageView.restype = None
+    vk.vkCreateSampler.argtypes = [P, P, P, P]
+    vk.vkCreateSampler.restype = VkResult
+    vk.vkDestroySampler.argtypes = [P, P, P]
+    vk.vkDestroySampler.restype = None
+    vk.vkCmdPipelineBarrier.argtypes = [P, U32, U32, U32, U32, P, U32, P, U32, P]
+    vk.vkCmdPipelineBarrier.restype = None
+    vk.vkCmdCopyBufferToImage.argtypes = [P, P, P, U32, U32, P]
+    vk.vkCmdCopyBufferToImage.restype = None
 
 
 def _get_vk():
@@ -777,12 +968,200 @@ class CompiledVulkanKernel:
     """A compiled Vulkan compute pipeline ready for dispatch."""
 
     def __init__(self, pipeline, pipeline_layout, desc_set_layout,
-                 num_bindings, workgroup_size):
+                 num_bindings, workgroup_size,
+                 param_is_texture=None, texture_shapes=None):
         self._pipeline = pipeline
         self._pipeline_layout = pipeline_layout
         self._desc_set_layout = desc_set_layout
         self._num_bindings = num_bindings
         self._workgroup_size = workgroup_size
+        self._param_is_texture = param_is_texture or [False] * num_bindings
+        self._texture_shapes = texture_shapes or {}
+        self._tex_cache: dict[tuple, tuple] = {}  # cache_key → (image, mem, view, sampler)
+
+    def _create_texture(self, field, W, H, D, backend):
+        """Create a VkImage + VkImageView + VkSampler for 3D texture sampling."""
+        vk = _get_vk()
+        device = backend._device
+
+        # Create 3D image
+        img_info = VkImageCreateInfo(
+            sType=VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO,
+            pNext=None, flags=0,
+            imageType=VK_IMAGE_TYPE_3D,
+            format=VK_FORMAT_R32_SFLOAT,
+            extent=VkExtent3D(width=W, height=H, depth=D),
+            mipLevels=1, arrayLayers=1,
+            samples=VK_SAMPLE_COUNT_1_BIT,
+            tiling=VK_IMAGE_TILING_OPTIMAL,
+            usage=VK_IMAGE_USAGE_TRANSFER_DST_BIT | VK_IMAGE_USAGE_SAMPLED_BIT,
+            sharingMode=VK_SHARING_MODE_EXCLUSIVE,
+            queueFamilyIndexCount=0, pQueueFamilyIndices=None,
+            initialLayout=VK_IMAGE_LAYOUT_UNDEFINED,
+        )
+        image = VkImage()
+        _check_vk(vk.vkCreateImage(device, ctypes.byref(img_info), None,
+                                    ctypes.byref(image)),
+                   "vkCreateImage")
+
+        # Allocate and bind device-local memory
+        mem_req = VkMemoryRequirements()
+        vk.vkGetImageMemoryRequirements(device, image, ctypes.byref(mem_req))
+        mem_type = backend._find_memory_type(
+            mem_req.memoryTypeBits, VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+        alloc_info = VkMemoryAllocateInfo(
+            sType=VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO,
+            pNext=None,
+            allocationSize=mem_req.size,
+            memoryTypeIndex=mem_type,
+        )
+        mem = VkDeviceMemory()
+        _check_vk(vk.vkAllocateMemory(device, ctypes.byref(alloc_info), None,
+                                       ctypes.byref(mem)),
+                   "vkAllocateMemory (image)")
+        _check_vk(vk.vkBindImageMemory(device, image, mem, 0), "vkBindImageMemory")
+
+        # Transition layout: UNDEFINED → TRANSFER_DST_OPTIMAL
+        # Copy buffer → image
+        # Transition layout: TRANSFER_DST_OPTIMAL → SHADER_READ_ONLY_OPTIMAL
+        subres_range = VkImageSubresourceRange(
+            aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
+            baseMipLevel=0, levelCount=1,
+            baseArrayLayer=0, layerCount=1,
+        )
+
+        cmd = backend._transfer_cmd
+        begin_info = VkCommandBufferBeginInfo(
+            sType=VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO,
+            pNext=None,
+            flags=VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT,
+            pInheritanceInfo=None,
+        )
+        _check_vk(vk.vkResetCommandBuffer(cmd, 0), "vkResetCommandBuffer")
+        _check_vk(vk.vkBeginCommandBuffer(cmd, ctypes.byref(begin_info)),
+                   "vkBeginCommandBuffer")
+
+        # Barrier: UNDEFINED → TRANSFER_DST
+        barrier1 = VkImageMemoryBarrier(
+            sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            pNext=None,
+            srcAccessMask=0,
+            dstAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,
+            oldLayout=VK_IMAGE_LAYOUT_UNDEFINED,
+            newLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            image=image,
+            subresourceRange=subres_range,
+        )
+        vk.vkCmdPipelineBarrier(
+            cmd,
+            VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            0,
+            0, None,
+            0, None,
+            1, ctypes.byref(barrier1))
+
+        # Copy buffer → image
+        region = VkBufferImageCopy(
+            bufferOffset=0,
+            bufferRowLength=0,
+            bufferImageHeight=0,
+            imageSubresource=VkImageSubresourceLayers(
+                aspectMask=VK_IMAGE_ASPECT_COLOR_BIT,
+                mipLevel=0, baseArrayLayer=0, layerCount=1),
+            imageOffset=VkOffset3D(x=0, y=0, z=0),
+            imageExtent=VkExtent3D(width=W, height=H, depth=D),
+        )
+        # Use the device buffer as source — it has TRANSFER_SRC_BIT.
+        src_buf = field._buffer._vk_buffer
+        vk.vkCmdCopyBufferToImage(
+            cmd, src_buf, image,
+            VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            1, ctypes.byref(region))
+
+        # Barrier: TRANSFER_DST → SHADER_READ_ONLY
+        barrier2 = VkImageMemoryBarrier(
+            sType=VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER,
+            pNext=None,
+            srcAccessMask=VK_ACCESS_TRANSFER_WRITE_BIT,
+            dstAccessMask=VK_ACCESS_SHADER_READ_BIT,
+            oldLayout=VK_IMAGE_LAYOUT_TRANSFER_DST_OPTIMAL,
+            newLayout=VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+            srcQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            dstQueueFamilyIndex=VK_QUEUE_FAMILY_IGNORED,
+            image=image,
+            subresourceRange=subres_range,
+        )
+        vk.vkCmdPipelineBarrier(
+            cmd,
+            VK_PIPELINE_STAGE_TRANSFER_BIT,
+            VK_PIPELINE_STAGE_COMPUTE_SHADER_BIT,
+            0,
+            0, None,
+            0, None,
+            1, ctypes.byref(barrier2))
+
+        _check_vk(vk.vkEndCommandBuffer(cmd), "vkEndCommandBuffer")
+
+        cmd_bufs = (VkCommandBuffer * 1)(cmd)
+        submit = VkSubmitInfo(
+            sType=VK_STRUCTURE_TYPE_SUBMIT_INFO,
+            pNext=None,
+            waitSemaphoreCount=0, pWaitSemaphores=None, pWaitDstStageMask=None,
+            commandBufferCount=1, pCommandBuffers=cmd_bufs,
+            signalSemaphoreCount=0, pSignalSemaphores=None,
+        )
+        _check_vk(vk.vkQueueSubmit(backend._queue, 1, ctypes.byref(submit), None),
+                   "vkQueueSubmit")
+        _check_vk(vk.vkQueueWaitIdle(backend._queue), "vkQueueWaitIdle")
+
+        # Create image view
+        view_info = VkImageViewCreateInfo(
+            sType=VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO,
+            pNext=None, flags=0,
+            image=image,
+            viewType=VK_IMAGE_VIEW_TYPE_3D,
+            format=VK_FORMAT_R32_SFLOAT,
+            components=VkComponentMapping(
+                r=VK_COMPONENT_SWIZZLE_IDENTITY,
+                g=VK_COMPONENT_SWIZZLE_IDENTITY,
+                b=VK_COMPONENT_SWIZZLE_IDENTITY,
+                a=VK_COMPONENT_SWIZZLE_IDENTITY),
+            subresourceRange=subres_range,
+        )
+        view = VkImageView()
+        _check_vk(vk.vkCreateImageView(device, ctypes.byref(view_info), None,
+                                        ctypes.byref(view)),
+                   "vkCreateImageView")
+
+        # Create sampler (linear filtering, normalized coords, clamp)
+        sampler_info = VkSamplerCreateInfo(
+            sType=VK_STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+            pNext=None, flags=0,
+            magFilter=VK_FILTER_LINEAR,
+            minFilter=VK_FILTER_LINEAR,
+            mipmapMode=VK_SAMPLER_MIPMAP_MODE_NEAREST,
+            addressModeU=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            addressModeV=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            addressModeW=VK_SAMPLER_ADDRESS_MODE_CLAMP_TO_EDGE,
+            mipLodBias=0.0,
+            anisotropyEnable=0,
+            maxAnisotropy=1.0,
+            compareEnable=0,
+            compareOp=0,
+            minLod=0.0,
+            maxLod=0.0,
+            borderColor=VK_BORDER_COLOR_FLOAT_OPAQUE_BLACK,
+            unnormalizedCoordinates=0,
+        )
+        sampler = VkSampler()
+        _check_vk(vk.vkCreateSampler(device, ctypes.byref(sampler_info), None,
+                                      ctypes.byref(sampler)),
+                   "vkCreateSampler")
+
+        return image, mem, view, sampler
 
     def __call__(self, kernel_args, param_is_field, param_types,
                  loop_end, backend):
@@ -790,31 +1169,51 @@ class CompiledVulkanKernel:
         vk = _get_vk()
         device = backend._device
 
-        # Build list of VulkanBuffers for all bindings (fields + scalar wrappers)
-        buffers = []
+        # Build list of VulkanBuffers (for storage buffers) and texture info
+        buffers = []       # index → VulkanBuffer or None (for textures)
+        tex_infos = {}     # index → (image, mem, view, sampler)
         temp_buffers = []
-        for arg, is_field, ptype in zip(kernel_args, param_is_field, param_types):
-            if is_field:
+        for i, (arg, is_field, ptype, is_tex) in enumerate(
+                zip(kernel_args, param_is_field, param_types,
+                    self._param_is_texture)):
+            if is_tex:
+                W, H, D = self._texture_shapes[i]
+                cache_key = (id(arg._buffer._vk_buffer), W, H, D)
+                if cache_key not in self._tex_cache:
+                    self._tex_cache[cache_key] = self._create_texture(
+                        arg, W, H, D, backend)
+                tex_infos[i] = self._tex_cache[cache_key]
+                buffers.append(None)
+            elif is_field:
                 buffers.append(arg._buffer)
             else:
-                # Scalar arg: pack into a temporary 1-element buffer
                 np_dtype = _NUMPY_DTYPE[ptype]
                 tmp = VulkanBuffer(backend, np_dtype, (1,))
                 tmp.from_numpy(np.array([arg], dtype=np_dtype))
                 buffers.append(tmp)
                 temp_buffers.append(tmp)
 
-        # Create descriptor pool
-        pool_size = VkDescriptorPoolSize(
-            type=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
-            descriptorCount=self._num_bindings,
-        )
+        # Count descriptor types for pool
+        n_storage = sum(1 for t in self._param_is_texture if not t)
+        n_sampler = sum(1 for t in self._param_is_texture if t)
+
+        pool_sizes = []
+        if n_storage > 0:
+            pool_sizes.append(VkDescriptorPoolSize(
+                type=VK_DESCRIPTOR_TYPE_STORAGE_BUFFER,
+                descriptorCount=n_storage))
+        if n_sampler > 0:
+            pool_sizes.append(VkDescriptorPoolSize(
+                type=VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+                descriptorCount=n_sampler))
+        pool_sizes_arr = (VkDescriptorPoolSize * len(pool_sizes))(*pool_sizes)
+
         pool_info = VkDescriptorPoolCreateInfo(
             sType=VK_STRUCTURE_TYPE_DESCRIPTOR_POOL_CREATE_INFO,
             pNext=None, flags=0,
             maxSets=1,
-            poolSizeCount=1,
-            pPoolSizes=ctypes.pointer(pool_size),
+            poolSizeCount=len(pool_sizes),
+            pPoolSizes=pool_sizes_arr,
         )
         desc_pool = VkDescriptorPool()
         _check_vk(vk.vkCreateDescriptorPool(device, ctypes.byref(pool_info),
@@ -835,23 +1234,36 @@ class CompiledVulkanKernel:
                                                 ctypes.byref(desc_set)),
                    "vkAllocateDescriptorSets")
 
-        # Update descriptor set with buffer bindings
+        # Update descriptor set — mixed buffer and image bindings
+        # Keep arrays alive until vkUpdateDescriptorSets returns
         buf_infos = (VkDescriptorBufferInfo * self._num_bindings)()
+        img_infos = (VkDescriptorImageInfo * self._num_bindings)()
         writes = (VkWriteDescriptorSet * self._num_bindings)()
-        for i, buf in enumerate(buffers):
-            buf_infos[i].buffer = buf._vk_buffer
-            buf_infos[i].offset = 0
-            buf_infos[i].range = VK_WHOLE_SIZE
+        for i in range(self._num_bindings):
             writes[i].sType = VK_STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET
             writes[i].pNext = None
             writes[i].dstSet = desc_set
             writes[i].dstBinding = i
             writes[i].dstArrayElement = 0
             writes[i].descriptorCount = 1
-            writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
-            writes[i].pImageInfo = None
-            writes[i].pBufferInfo = ctypes.pointer(buf_infos[i])
             writes[i].pTexelBufferView = None
+
+            if self._param_is_texture[i]:
+                _, _, view, sampler = tex_infos[i]
+                img_infos[i].sampler = sampler
+                img_infos[i].imageView = view
+                img_infos[i].imageLayout = VK_IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+                writes[i].descriptorType = VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                writes[i].pImageInfo = ctypes.cast(
+                    ctypes.pointer(img_infos[i]), ctypes.c_void_p)
+                writes[i].pBufferInfo = None
+            else:
+                buf_infos[i].buffer = buffers[i]._vk_buffer
+                buf_infos[i].offset = 0
+                buf_infos[i].range = VK_WHOLE_SIZE
+                writes[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+                writes[i].pImageInfo = None
+                writes[i].pBufferInfo = ctypes.pointer(buf_infos[i])
 
         vk.vkUpdateDescriptorSets(device, self._num_bindings, writes, 0, None)
 
@@ -1248,6 +1660,11 @@ class VulkanBackend:
         # Type inference
         infer_param_types(ir_func, effective_args)
 
+        # Store texture shapes on params for codegen/dispatch
+        for param, arg in zip(ir_func.params, effective_args):
+            if isinstance(arg, Texture3D):
+                param._texture_shape = arg.shape_3d
+
         # Optimization passes
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
@@ -1257,12 +1674,14 @@ class VulkanBackend:
                        for a in effective_args]
         loop_end = _get_loop_range(ir_func, kernel_args)
 
-        # Cache key
+        # Cache key (include texture shapes for uniqueness)
         type_sig = tuple(p.type_annotation for p in ir_func.params)
+        tex_sig = tuple(
+            getattr(p, '_texture_shape', None) for p in ir_func.params)
         tmpl_key = ""
         if template_args:
             tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
-        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tmpl_key}"
+        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tex_sig}_{tmpl_key}"
 
         if cache_key not in self._cache:
             import copy
@@ -1322,12 +1741,21 @@ class VulkanBackend:
                                             ctypes.byref(shader_module)),
                    "vkCreateShaderModule")
 
-        # Descriptor set layout: one storage buffer per param
+        # Extract texture metadata
+        param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+        texture_shapes = {}
+        for i, p in enumerate(ir_func.params):
+            if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
+                texture_shapes[i] = p._texture_shape
+
+        # Descriptor set layout: storage buffer or combined image/sampler per param
         num_bindings = len(ir_func.params)
         bindings = (VkDescriptorSetLayoutBinding * num_bindings)()
         for i in range(num_bindings):
             bindings[i].binding = i
-            bindings[i].descriptorType = VK_DESCRIPTOR_TYPE_STORAGE_BUFFER
+            bindings[i].descriptorType = (VK_DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER
+                                          if param_is_texture[i]
+                                          else VK_DESCRIPTOR_TYPE_STORAGE_BUFFER)
             bindings[i].descriptorCount = 1
             bindings[i].stageFlags = VK_SHADER_STAGE_COMPUTE_BIT
             bindings[i].pImmutableSamplers = None
@@ -1392,7 +1820,8 @@ class VulkanBackend:
         vk.vkDestroyShaderModule(self._device, shader_module, None)
 
         return CompiledVulkanKernel(pipeline, pipeline_layout, desc_set_layout,
-                                    num_bindings, workgroup_size)
+                                    num_bindings, workgroup_size,
+                                    param_is_texture, texture_shapes)
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max.
