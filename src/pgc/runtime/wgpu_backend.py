@@ -100,12 +100,20 @@ class CompiledWGPUKernel:
         bind_group = device.create_bind_group(
             layout=self._bind_group_layout, entries=entries)
 
-        # Dispatch
+        # Dispatch with 2D grid if needed (WebGPU max 65535 per dimension)
+        num_groups = (loop_end + 255) // 256
+        max_dim = 65535
+
         encoder = device.create_command_encoder()
         pass_enc = encoder.begin_compute_pass()
         pass_enc.set_pipeline(self._pipeline)
         pass_enc.set_bind_group(0, bind_group)
-        pass_enc.dispatch_workgroups((loop_end + 255) // 256)
+        if num_groups <= max_dim:
+            pass_enc.dispatch_workgroups(num_groups)
+        else:
+            gx = max_dim
+            gy = (num_groups + max_dim - 1) // max_dim
+            pass_enc.dispatch_workgroups(gx, gy)
         pass_enc.end()
         device.queue.submit([encoder.finish()])
 
@@ -166,7 +174,16 @@ class WebGPUBackend:
         adapter = wgpu.gpu.request_adapter_sync(power_preference="high-performance")
         if adapter is None:
             raise RuntimeError("No WebGPU adapter found")
-        self._device = adapter.request_device_sync()
+
+        # Request the adapter's maximum limits for compute workloads
+        self._device = adapter.request_device_sync(
+            required_limits={
+                "max-buffer-size": adapter.limits["max-buffer-size"],
+                "max-storage-buffer-binding-size": adapter.limits["max-storage-buffer-binding-size"],
+                "max-compute-workgroups-per-dimension": adapter.limits["max-compute-workgroups-per-dimension"],
+                "max-storage-buffers-per-shader-stage": adapter.limits["max-storage-buffers-per-shader-stage"],
+            }
+        )
         self._adapter_info = adapter.info
         self._cache: dict[str, tuple] = {}
 

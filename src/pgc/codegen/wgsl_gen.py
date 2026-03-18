@@ -158,7 +158,7 @@ class WGSLCodeGen:
 
         self._lines.append("")
         self._lines.append("@compute @workgroup_size(256)")
-        self._lines.append(f"fn {func.name}(@builtin(global_invocation_id) pgc_gid: vec3<u32>) {{")
+        self._lines.append(f"fn {func.name}(@builtin(global_invocation_id) pgc_gid: vec3<u32>, @builtin(num_workgroups) pgc_nwg: vec3<u32>) {{")
         self._lines.extend(kernel_body)
         self._lines.append("}")
 
@@ -213,7 +213,8 @@ class WGSLCodeGen:
 
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         idx = self._sanitize(node.var)
-        self._emit(f"let {idx} = {_INT}(pgc_gid.x);")
+        # Flat index from potentially 2D grid: gid.x + gid.y * nwg.x * 256
+        self._emit(f"let {idx} = {_INT}(pgc_gid.x + pgc_gid.y * pgc_nwg.x * 256u);")
         self._emit(f"if ({idx} >= {_INT}(pgc_params[0])) {{ return; }}")
         self._local_vars[node.var] = _INT
         self._declared_vars.add(node.var)
