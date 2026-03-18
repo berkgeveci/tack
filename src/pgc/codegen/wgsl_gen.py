@@ -79,6 +79,10 @@ class WGSLCodeGen:
             if getattr(param, '_is_texture', False):
                 self._texture_params.add(param.name)
 
+        # Detect fields used in atomic operations — these need atomic<u32> storage
+        self._atomic_fields: set[str] = set()
+        self._collect_atomic_fields(func.body)
+
         # Emit binding declarations
         binding_idx = 0
         for param in func.params:
@@ -93,6 +97,11 @@ class WGSLCodeGen:
                 self._lines.append(
                     f"@group(0) @binding({binding_idx}) "
                     f"var {sname}_sampler: sampler;")
+            elif param.name in self._atomic_fields:
+                # Atomic field: use atomic<u32> with bitcast for f32 access
+                self._lines.append(
+                    f"@group(0) @binding({binding_idx}) "
+                    f"var<storage, read_write> {sname}: array<atomic<u32>>;")
             elif param.name in self._field_params:
                 self._lines.append(
                     f"@group(0) @binding({binding_idx}) "
@@ -312,8 +321,13 @@ class WGSLCodeGen:
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
-        field_type = self._get_field_wgsl_type(node.field)
-        self._emit(f"{field}[{_INT}({index})] = {field_type}({value});")
+        # Atomic fields use atomicStore with bitcast
+        field_name = node.field.name if isinstance(node.field, ir.IRName) else None
+        if field_name and field_name in self._atomic_fields:
+            self._emit(f"atomicStore(&{field}[{_INT}({index})], bitcast<u32>(f32({value})));")
+        else:
+            field_type = self._get_field_wgsl_type(node.field)
+            self._emit(f"{field}[{_INT}({index})] = {field_type}({value});")
 
     def _emit_assign(self, node: ir.IRAssign):
         # Skip field-pointer assignments (from template inlining).
@@ -342,17 +356,37 @@ class WGSLCodeGen:
             self._declared_vars.add(node.target)
 
     def _emit_atomic_op(self, node: ir.IRAtomicOp):
-        # WGSL atomics require atomic<> type — not directly compatible
-        # with storage arrays. For now, emit a non-atomic fallback.
+        """Emit float atomic via CAS loop on atomic<u32> with bitcast."""
+        if not hasattr(self, '_atomic_counter'):
+            self._atomic_counter = 0
+        idx = self._atomic_counter
+        self._atomic_counter += 1
+
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
+
+        old_var = f"cas_old_{idx}"
+        new_var = f"cas_new_{idx}"
+
         if node.op == "add":
-            self._emit(f"{field}[{_INT}({index})] = {field}[{_INT}({index})] + {value};")
+            op_expr = f"bitcast<u32>(bitcast<f32>({old_var}) + f32({value}))"
         elif node.op == "max":
-            self._emit(f"{field}[{_INT}({index})] = max({field}[{_INT}({index})], {value});")
+            op_expr = f"bitcast<u32>(max(bitcast<f32>({old_var}), f32({value})))"
         elif node.op == "min":
-            self._emit(f"{field}[{_INT}({index})] = min({field}[{_INT}({index})], {value});")
+            op_expr = f"bitcast<u32>(min(bitcast<f32>({old_var}), f32({value})))"
+        else:
+            raise NotImplementedError(f"WGSL atomic op: {node.op}")
+
+        self._emit(f"var {old_var}: u32 = atomicLoad(&{field}[{_INT}({index})]);")
+        self._emit(f"loop {{")
+        self._indent += 1
+        self._emit(f"let {new_var}: u32 = {op_expr};")
+        self._emit(f"let cas_result_{idx} = atomicCompareExchangeWeak(&{field}[{_INT}({index})], {old_var}, {new_var});")
+        self._emit(f"if (cas_result_{idx}.exchanged) {{ break; }}")
+        self._emit(f"{old_var} = cas_result_{idx}.old_value;")
+        self._indent -= 1
+        self._emit(f"}}")
 
     # --- Expression codegen ---
 
@@ -466,6 +500,10 @@ class WGSLCodeGen:
     def _expr_field_load(self, node: ir.IRFieldLoad) -> str:
         field = self._expr(node.field)
         index = self._expr(node.index)
+        # Atomic fields use atomicLoad with bitcast
+        field_name = node.field.name if isinstance(node.field, ir.IRName) else None
+        if field_name and field_name in self._atomic_fields:
+            return f"bitcast<f32>(atomicLoad(&{field}[{_INT}({index})]))"
         return f"{field}[{_INT}({index})]"
 
     def _expr_call(self, node: ir.IRCall) -> str:
@@ -519,6 +557,23 @@ class WGSLCodeGen:
             if node.name in self._param_types:
                 return _WGSL_TYPE_MAP.get(self._param_types[node.name], "f32")
         return "f32"
+
+    def _collect_atomic_fields(self, stmts):
+        """Recursively find fields used in atomic operations."""
+        for stmt in stmts:
+            if isinstance(stmt, ir.IRAtomicOp):
+                if isinstance(stmt.field, ir.IRName):
+                    self._atomic_fields.add(stmt.field.name)
+            elif isinstance(stmt, ir.IRParallelFor):
+                self._collect_atomic_fields(stmt.body)
+            elif isinstance(stmt, ir.IRSequentialFor):
+                self._collect_atomic_fields(stmt.body)
+            elif isinstance(stmt, ir.IRWhile):
+                self._collect_atomic_fields(stmt.body)
+            elif isinstance(stmt, ir.IRIf):
+                self._collect_atomic_fields(stmt.then_body)
+                if stmt.else_body:
+                    self._collect_atomic_fields(stmt.else_body)
 
     def _collect_shared_allocs(self, stmts) -> list:
         """Recursively collect IRSharedAlloc nodes for module-scope emission."""
