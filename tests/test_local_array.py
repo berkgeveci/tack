@@ -113,3 +113,64 @@ def test_local_array_with_template_size(backend):
     tmpl_local(cfg, out, n)
     expected = sum(range(5))
     np.testing.assert_allclose(out.to_numpy(), float(expected), rtol=1e-5)
+
+
+def test_local_array_passed_to_func(backend):
+    """Pass a local array to a @pgc.func that fills it."""
+    n = 16
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    @pgc.func
+    def fill_buf(arr, size):
+        for k in range(size):
+            arr[k] = float(k) * 10.0
+
+    @pgc.kernel
+    def use_func(out, n):
+        for i in range(n):
+            buf = pgc.local_array(pgc.f32, 4)
+            fill_buf(buf, 4)
+            out[i] = buf[0] + buf[1] + buf[2] + buf[3]
+
+    use_func(out, n)
+    np.testing.assert_allclose(out.to_numpy(), 0 + 10 + 20 + 30)
+
+
+def test_local_array_in_template_method(backend):
+    """Pass a local array to a @pgc.data_oriented method."""
+    n = 2
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+
+    @pgc.data_oriented
+    class CellSet:
+        def __init__(self, conn, ppc):
+            self.connectivity = conn
+            self.points_per_cell = ppc
+
+        @pgc.func
+        def get_cell_points(self, cell_id, pts):
+            for v in range(self.points_per_cell):
+                pts[v] = self.connectivity[cell_id * self.points_per_cell + v]
+
+    conn_np = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.int32)
+    data_np = np.array([10, 20, 30, 40, 50, 60, 70, 80], dtype=np.float32)
+
+    conn = pgc.field(dtype=pgc.i32, shape=(8,))
+    data = pgc.field(dtype=pgc.f32, shape=(8,))
+    conn.from_numpy(conn_np)
+    data.from_numpy(data_np)
+
+    @pgc.kernel
+    def avg(cs: pgc.template(), data, out, n_cells):
+        for c in range(n_cells):
+            pts = pgc.local_array(pgc.i32, cs.points_per_cell)
+            cs.get_cell_points(c, pts)
+            total = 0.0
+            for v in range(cs.points_per_cell):
+                total = total + data[pts[v]]
+            out[c] = total / float(cs.points_per_cell)
+
+    cs = CellSet(conn, 4)
+    avg(cs, data, out, 2)
+    # cell 0: (10+20+30+40)/4 = 25, cell 1: (50+60+70+80)/4 = 65
+    np.testing.assert_allclose(out.to_numpy(), [25.0, 65.0])

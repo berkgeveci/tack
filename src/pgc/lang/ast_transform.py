@@ -650,6 +650,16 @@ class KernelTransformer(ast.NodeVisitor):
             if name not in rename_map:
                 rename_map[name] = f"__{func_name}_{name}_{suffix}__"
 
+        # Override rename map for local array / shared memory params:
+        # alias the caller's array name directly so the inlined body
+        # accesses it without an assignment (arrays can't be assigned in C).
+        # Must happen BEFORE the renamer runs.
+        for param_name in callee_params:
+            if isinstance(call_node.args[callee_params.index(param_name)], ast.Name):
+                arg_name = call_node.args[callee_params.index(param_name)].id
+                if arg_name in self._shared_vars:
+                    rename_map[param_name] = arg_name
+
         # Rename the callee AST (deep copy first)
         renamed_body = copy.deepcopy(funcdef.body)
         renamer = _NameRenamer(rename_map, result_var)
@@ -673,17 +683,17 @@ class KernelTransformer(ast.NodeVisitor):
                     self._vector_vars[renamed] = self._vector_vars[arg_name]
                 if arg_name in self._texture_fields:
                     self._texture_fields[renamed] = self._texture_fields[arg_name]
-                    # Track origin: the original kernel param name
                     self._texture_origin[renamed] = self._texture_origin.get(arg_name, arg_name)
 
         # Emit parameter assignments
         stmts = []
         for param_name, arg_ast in zip(callee_params, call_node.args):
             renamed = rename_map[param_name]
-            # Skip assignment for texture params — IRTextureSample references
-            # the original field name directly, and textures can't be assigned
-            # to pointer variables in GPU shaders.
+            # Skip assignment for texture params and local array params —
+            # these are aliased to the caller's variable directly.
             if renamed in self._texture_fields:
+                continue
+            if renamed in self._shared_vars:
                 continue
             arg_val = self.visit(arg_ast)
             # Capture any stmts from visiting this arg (e.g. nested inlines)
