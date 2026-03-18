@@ -118,6 +118,30 @@ def field(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
     return Field(dtype, shape, buf)
 
 
+def field_like(arr: np.ndarray, dtype: ScalarType = None) -> Field:
+    """Create a field from a numpy array, inferring shape and dtype.
+
+    Allocates the field and copies the data in one step.
+
+    Args:
+        arr: numpy array to copy
+        dtype: override dtype (default: inferred from arr.dtype)
+
+    Returns:
+        A new Field with the data copied to the device.
+    """
+    from pgc.runtime.dispatch import get_backend
+
+    if dtype is None:
+        dtype = from_numpy_dtype(arr.dtype)
+    shape = arr.shape
+    backend = get_backend()
+    buf = backend.allocate_field(dtype, shape)
+    f = Field(dtype, shape, buf)
+    f.from_numpy(arr)
+    return f
+
+
 class Vector:
     """Vector type for creating vector fields.
 

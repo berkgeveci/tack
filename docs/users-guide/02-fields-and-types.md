@@ -31,10 +31,22 @@ grid = pgc.field(dtype=pgc.f32, shape=(100, 100))
 indices = pgc.field(dtype=pgc.i32, shape=(256,))
 ```
 
-### Numpy Interop
+### Creating from Numpy
+
+The easiest way to create a field with data is `pgc.field_like`:
 
 ```python
-# Copy data to the device
+# Create a field from a numpy array (infers shape and dtype)
+x = pgc.field_like(np.arange(1024, dtype=np.float32))
+
+# Override dtype
+y = pgc.field_like(some_array, dtype=pgc.f32)
+```
+
+Or allocate first, then copy:
+
+```python
+data = pgc.field(dtype=pgc.f32, shape=(1024,))
 data.from_numpy(np.arange(1024, dtype=np.float32))
 
 # Copy data back to numpy

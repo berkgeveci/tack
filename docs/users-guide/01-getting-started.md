@@ -25,15 +25,11 @@ import pgc
 
 pgc.init(arch=pgc.cpu)
 
-# Create fields (device-resident arrays)
+# Create fields from numpy arrays
 n = 1024
-x = pgc.field(dtype=pgc.f32, shape=(n,))
-y = pgc.field(dtype=pgc.f32, shape=(n,))
+x = pgc.field_like(np.arange(n, dtype=np.float32))
+y = pgc.field_like(np.ones(n, dtype=np.float32) * 2.0)
 out = pgc.field(dtype=pgc.f32, shape=(n,))
-
-# Load data from numpy
-x.from_numpy(np.arange(n, dtype=np.float32))
-y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
 
 # Define a kernel
 @pgc.kernel
