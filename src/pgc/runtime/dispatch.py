@@ -11,6 +11,7 @@ _BACKEND_HELP = {
     "hip": "Requires AMD GPU with ROCm and hip-python",
     "level_zero": "Requires Intel GPU with Level Zero runtime and libocloc",
     "wgpu": "Requires wgpu: pip install wgpu",
+    "dawn": "Requires dawn-python: pip install dawn-python",
 }
 
 
@@ -25,6 +26,7 @@ def init(arch: str = "cpu"):
         "hip": ("pgc.runtime.hip_backend", "HIPBackend"),
         "level_zero": ("pgc.runtime.level_zero_backend", "LevelZeroBackend"),
         "wgpu": ("pgc.runtime.wgpu_backend", "WebGPUBackend"),
+        "dawn": ("pgc.runtime.dawn_backend", "DawnBackend"),
     }
 
     if arch not in _constructors:
