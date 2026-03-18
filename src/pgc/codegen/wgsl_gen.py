@@ -112,6 +112,10 @@ class WGSLCodeGen:
                     f"var<storage, read> {sname}: array<{wgsl_type}>;")
             binding_idx += 1
 
+        # Check if kernel uses barriers/shared/block_reduce — requires
+        # uniform control flow (no early return from bounds check)
+        self._needs_uniform_control = self._uses_barriers(func.body)
+
         # Loop-end uniform
         self._n_binding = binding_idx
         self._lines.append(
@@ -247,7 +251,12 @@ class WGSLCodeGen:
         idx = self._sanitize(node.var)
         # Flat index from potentially 2D grid: gid.x + gid.y * nwg.x * 256
         self._emit(f"let {idx} = {_INT}(pgc_gid.x + pgc_gid.y * pgc_nwg.x * 256u);")
-        self._emit(f"if ({idx} >= {_INT}(pgc_params[0])) {{ return; }}")
+        if self._needs_uniform_control:
+            # When barriers are used, all threads must stay alive.
+            # Use an active mask instead of early return.
+            self._emit(f"let pgc_active = {idx} < {_INT}(pgc_params[0]);")
+        else:
+            self._emit(f"if ({idx} >= {_INT}(pgc_params[0])) {{ return; }}")
         self._local_vars[node.var] = _INT
         self._declared_vars.add(node.var)
         self._emit_body(node.body)
@@ -321,13 +330,16 @@ class WGSLCodeGen:
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
+        # Guard with active mask when using uniform control flow
+        guard = "if (pgc_active) { " if self._needs_uniform_control else ""
+        end = " }" if self._needs_uniform_control else ""
         # Atomic fields use atomicStore with bitcast
         field_name = node.field.name if isinstance(node.field, ir.IRName) else None
         if field_name and field_name in self._atomic_fields:
-            self._emit(f"atomicStore(&{field}[{_INT}({index})], bitcast<u32>(f32({value})));")
+            self._emit(f"{guard}atomicStore(&{field}[{_INT}({index})], bitcast<u32>(f32({value})));{end}")
         else:
             field_type = self._get_field_wgsl_type(node.field)
-            self._emit(f"{field}[{_INT}({index})] = {field_type}({value});")
+            self._emit(f"{guard}{field}[{_INT}({index})] = {field_type}({value});{end}")
 
     def _emit_assign(self, node: ir.IRAssign):
         # Skip field-pointer assignments (from template inlining).
@@ -378,6 +390,9 @@ class WGSLCodeGen:
         else:
             raise NotImplementedError(f"WGSL atomic op: {node.op}")
 
+        if self._needs_uniform_control:
+            self._emit(f"if (pgc_active) {{")
+            self._indent += 1
         self._emit(f"var {old_var}: u32 = atomicLoad(&{field}[{_INT}({index})]);")
         self._emit(f"loop {{")
         self._indent += 1
@@ -387,6 +402,9 @@ class WGSLCodeGen:
         self._emit(f"{old_var} = cas_result_{idx}.old_value;")
         self._indent -= 1
         self._emit(f"}}")
+        if self._needs_uniform_control:
+            self._indent -= 1
+            self._emit(f"}}")
 
     # --- Expression codegen ---
 
@@ -559,6 +577,30 @@ class WGSLCodeGen:
             if node.name in self._param_types:
                 return _WGSL_TYPE_MAP.get(self._param_types[node.name], "f32")
         return "f32"
+
+    def _uses_barriers(self, stmts) -> bool:
+        """Check if any statement uses barriers, shared memory, or block reduce."""
+        for stmt in stmts:
+            if isinstance(stmt, (ir.IRBarrier, ir.IRSharedAlloc, ir.IRBlockReduce)):
+                return True
+            if isinstance(stmt, ir.IRParallelFor):
+                if self._uses_barriers(stmt.body):
+                    return True
+            elif isinstance(stmt, ir.IRSequentialFor):
+                if self._uses_barriers(stmt.body):
+                    return True
+            elif isinstance(stmt, ir.IRWhile):
+                if self._uses_barriers(stmt.body):
+                    return True
+            elif isinstance(stmt, ir.IRIf):
+                if self._uses_barriers(stmt.then_body):
+                    return True
+                if stmt.else_body and self._uses_barriers(stmt.else_body):
+                    return True
+            elif isinstance(stmt, ir.IRAssign):
+                if isinstance(stmt.value, ir.IRBlockReduce):
+                    return True
+        return False
 
     def _collect_atomic_fields(self, stmts):
         """Recursively find fields used in atomic operations."""
