@@ -1212,6 +1212,12 @@ class VulkanBackend:
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> VulkanBuffer:
         return VulkanBuffer(self, dtype.numpy_dtype, shape)
 
+    def wrap_ptr(self, ptr, dtype, shape):
+        """Wrap an external Vulkan buffer. Not yet implemented."""
+        raise NotImplementedError(
+            "Vulkan pointer interop is not yet supported. "
+            "Use allocate_field + from_numpy instead.")
+
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the Vulkan GPU."""
         if kwargs:

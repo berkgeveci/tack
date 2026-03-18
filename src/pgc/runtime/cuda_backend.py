@@ -150,7 +150,7 @@ class CUDABuffer(DeviceBuffer):
         return self._nbytes
 
     def __del__(self):
-        if hasattr(self, '_device_ptr'):
+        if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
                 driver.cuMemFree(self._device_ptr)
             except Exception:
@@ -250,6 +250,16 @@ class CUDABackend:
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> CUDABuffer:
         return CUDABuffer(dtype.numpy_dtype, shape)
+
+    def wrap_ptr(self, ptr, dtype, shape):
+        """Wrap an existing CUDA device pointer without allocating or copying."""
+        buf = CUDABuffer.__new__(CUDABuffer)
+        buf._numpy_dtype = np.dtype(dtype.numpy_dtype)
+        buf._shape = shape
+        buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
+        buf._device_ptr = ptr  # integer or CUdeviceptr
+        buf._owned = False
+        return buf
 
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the CUDA GPU."""

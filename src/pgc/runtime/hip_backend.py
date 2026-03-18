@@ -95,7 +95,7 @@ class HIPBuffer(DeviceBuffer):
         return self._nbytes
 
     def __del__(self):
-        if hasattr(self, '_device_ptr'):
+        if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
                 hip.hipFree(self._device_ptr)
             except Exception:
@@ -195,6 +195,16 @@ class HIPBackend:
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> HIPBuffer:
         return HIPBuffer(dtype.numpy_dtype, shape)
+
+    def wrap_ptr(self, ptr, dtype, shape):
+        """Wrap an existing HIP device pointer without allocating or copying."""
+        buf = HIPBuffer.__new__(HIPBuffer)
+        buf._numpy_dtype = np.dtype(dtype.numpy_dtype)
+        buf._shape = shape
+        buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
+        buf._device_ptr = ptr
+        buf._owned = False
+        return buf
 
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the HIP GPU."""

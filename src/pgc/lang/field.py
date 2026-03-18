@@ -55,13 +55,22 @@ class NumpyBuffer(DeviceBuffer):
 class Field:
     """An n-dimensional array bound to a specific device backend."""
 
-    def __init__(self, dtype: ScalarType, shape: tuple[int, ...], buffer: DeviceBuffer):
+    def __init__(self, dtype: ScalarType, shape: tuple[int, ...], buffer: DeviceBuffer,
+                 writable: bool = True):
         self.dtype = dtype
         self.shape = shape
         self._buffer = buffer
+        self._writable = writable
+
+    def _check_writable(self):
+        if not self._writable:
+            raise RuntimeError(
+                "Field is read-only (created from an external pointer). "
+                "Use writable=True in field_from_ptr() to enable writes.")
 
     def from_numpy(self, arr: np.ndarray):
         """Copy data from a numpy array to the device."""
+        self._check_writable()
         expected = self.dtype.numpy_dtype
         if arr.dtype != expected:
             arr = arr.astype(expected)
@@ -77,6 +86,7 @@ class Field:
 
     def fill(self, value):
         """Fill the field with a scalar value."""
+        self._check_writable()
         self._buffer.fill(value)
 
     def sum(self):
@@ -140,6 +150,38 @@ def field_like(arr: np.ndarray, dtype: ScalarType = None) -> Field:
     f = Field(dtype, shape, buf)
     f.from_numpy(arr)
     return f
+
+
+def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
+                   writable: bool = False) -> Field:
+    """Wrap an existing device pointer as a PGC field without copying.
+
+    Use this for interop with external libraries (pycuda, cupy, Catalyst)
+    or when receiving a device pointer from a simulation framework.
+
+    The field does NOT own the memory — PGC will not free it.
+    Read-only by default; pass writable=True to enable writes.
+
+    Args:
+        ptr: device pointer (integer) or backend-specific buffer object.
+             - CPU: integer address or numpy array
+             - Metal: MTLBuffer object (from PyObjC)
+             - CUDA/HIP: device pointer as integer
+             - Level Zero: device pointer as integer
+        dtype: scalar type (pgc.f32, pgc.i32, etc.)
+        shape: tuple of dimensions
+        writable: if False (default), from_numpy() and fill() raise errors
+
+    Returns:
+        A Field wrapping the external memory.
+    """
+    from pgc.runtime.dispatch import get_backend
+
+    if isinstance(shape, int):
+        shape = (shape,)
+    backend = get_backend()
+    buf = backend.wrap_ptr(ptr, dtype, shape)
+    return Field(dtype, shape, buf, writable=writable)
 
 
 class Vector:

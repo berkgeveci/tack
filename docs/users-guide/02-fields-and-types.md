@@ -98,3 +98,23 @@ have binding limits (like Metal's 31-buffer limit). You can use as many
 scalar arguments as you need.
 
 Both Python types and numpy scalar types (`np.float32`, `np.int32`) work.
+
+## Device Pointer Interop
+
+For interop with external libraries (pycuda, cupy, Catalyst/in-situ), you
+can wrap an existing device pointer as a PGC field without copying:
+
+```python
+# Wrap a CUDA device pointer (read-only by default)
+field = pgc.field_from_ptr(cuda_device_ptr, dtype=pgc.f32, shape=(n,))
+
+# Wrap with write access
+field = pgc.field_from_ptr(ptr, dtype=pgc.f32, shape=(n,), writable=True)
+```
+
+The field does **not** own the memory — PGC will not free it. On CPU, you
+can pass a numpy array directly. On Metal, pass an `MTLBuffer` object. On
+CUDA/HIP/Level Zero, pass the device pointer as an integer.
+
+Read-only fields will raise an error on `from_numpy()` and `fill()`.
+Kernel reads work normally.

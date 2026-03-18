@@ -651,7 +651,7 @@ class L0Buffer(DeviceBuffer):
         return self._nbytes
 
     def __del__(self):
-        if hasattr(self, '_device_ptr') and self._device_ptr:
+        if hasattr(self, '_device_ptr') and self._device_ptr and getattr(self, '_owned', True):
             try:
                 ze = _get_ze()
                 ze.zeMemFree(self._backend._context, self._device_ptr)
@@ -945,6 +945,17 @@ class LevelZeroBackend:
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> L0Buffer:
         return L0Buffer(self, dtype.numpy_dtype, shape)
+
+    def wrap_ptr(self, ptr, dtype, shape):
+        """Wrap an existing Level Zero device pointer without allocating or copying."""
+        buf = L0Buffer.__new__(L0Buffer)
+        buf._backend = self
+        buf._numpy_dtype = np.dtype(dtype.numpy_dtype)
+        buf._shape = shape
+        buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
+        buf._device_ptr = ctypes.c_void_p(int(ptr))
+        buf._owned = False
+        return buf
 
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the Level Zero GPU."""

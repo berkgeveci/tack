@@ -422,6 +422,25 @@ class CPUBackend:
             return buf
         return NumpyBuffer(dtype.numpy_dtype, shape)
 
+    def wrap_ptr(self, ptr, dtype, shape):
+        """Wrap an existing pointer as a NumpyBuffer without copying.
+
+        Args:
+            ptr: integer memory address or numpy array.
+        """
+        import ctypes
+        buf = NumpyBuffer.__new__(NumpyBuffer)
+        if isinstance(ptr, np.ndarray):
+            # Wrap existing numpy array (shares memory, no copy)
+            buf._data = ptr.view(dtype.numpy_dtype).reshape(shape)
+        else:
+            # Wrap raw C pointer as numpy array
+            ct = np.ctypeslib.as_array(
+                (ctypes.c_char * (int(np.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize))
+                .from_address(int(ptr)))
+            buf._data = np.frombuffer(ct, dtype=dtype.numpy_dtype).reshape(shape)
+        return buf
+
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the CPU.
 

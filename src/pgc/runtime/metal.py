@@ -322,6 +322,15 @@ class MetalBackend:
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> MetalBuffer:
         return MetalBuffer(self._device, dtype.numpy_dtype, shape)
 
+    def wrap_ptr(self, ptr, dtype, shape):
+        """Wrap an existing MTLBuffer as a MetalBuffer without copying."""
+        buf = MetalBuffer.__new__(MetalBuffer)
+        buf._metal_buffer = ptr  # expects an MTLBuffer object
+        nbytes = int(np.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize
+        raw = ptr.contents().as_buffer(nbytes)
+        buf._view = np.frombuffer(raw, dtype=dtype.numpy_dtype).reshape(shape)
+        return buf
+
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the Metal GPU with zero-copy dispatch."""
         if kwargs:
