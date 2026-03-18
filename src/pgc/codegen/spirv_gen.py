@@ -844,6 +844,10 @@ class SPIRVCodeGen:
                 "texture3d.sample() is not yet supported on the Vulkan/SPIR-V backend")
         if isinstance(node, ir.IRThreadId):
             return self._emit_thread_id()
+        if isinstance(node, ir.IRBlockReduce):
+            raise NotImplementedError(
+                "pgc.block_sum/max/min are not yet supported on Vulkan/SPIR-V. "
+                "Use manual shared memory reductions instead.")
         raise NotImplementedError(f"SPIR-V expr: {type(node).__name__}")
 
     def _emit_constant(self, node: ir.IRConstant) -> int:

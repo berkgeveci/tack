@@ -115,6 +115,10 @@ def _resolve(node, fields):
         node.size = _resolve(node.size, fields)
         return node
 
+    if isinstance(node, ir.IRBlockReduce):
+        node.value = _resolve(node.value, fields)
+        return node
+
     if isinstance(node, ir.IRPrint):
         node.args = [_resolve(a, fields) for a in node.args]
         return node

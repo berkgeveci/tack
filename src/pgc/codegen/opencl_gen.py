@@ -206,7 +206,47 @@ class OpenCLCodeGen(CUDACodeGen):
     def _expr(self, node) -> str:
         if isinstance(node, ir.IRThreadId):
             return "get_local_id(0)"
+        if isinstance(node, ir.IRBlockReduce):
+            return self._expr_block_reduce_ocl(node)
         return super()._expr(node)
+
+    def _expr_block_reduce_ocl(self, node: ir.IRBlockReduce) -> str:
+        """Emit a local memory tree reduction in OpenCL."""
+        if not hasattr(self, '_block_reduce_counter'):
+            self._block_reduce_counter = 0
+        idx = self._block_reduce_counter
+        self._block_reduce_counter += 1
+
+        smem = f"__breduce_smem_{idx}__"
+        tid = f"__breduce_tid_{idx}__"
+        result = f"__breduce_result_{idx}__"
+
+        val_expr = self._expr(node.value)
+
+        op_expr = {
+            "sum": lambda a, b: f"({a} + {b})",
+            "max": lambda a, b: f"fmax({a}, {b})",
+            "min": lambda a, b: f"fmin({a}, {b})",
+        }[node.op]
+
+        self._emit(f"__local float {smem}[256];")
+        self._emit(f"int {tid} = get_local_id(0);")
+        self._emit(f"{smem}[{tid}] = (float)({val_expr});")
+        self._emit(f"barrier(CLK_LOCAL_MEM_FENCE);")
+        self._emit(f"for (int __s = 128; __s > 0; __s >>= 1) {{")
+        self._indent += 1
+        self._emit(f"if ({tid} < __s) {{")
+        self._indent += 1
+        self._emit(f"{smem}[{tid}] = {op_expr(f'{smem}[{tid}]', f'{smem}[{tid} + __s]')};")
+        self._indent -= 1
+        self._emit(f"}}")
+        self._emit(f"barrier(CLK_LOCAL_MEM_FENCE);")
+        self._indent -= 1
+        self._emit(f"}}")
+        self._emit(f"float {result} = {smem}[0];")
+        self._local_vars[result] = "float"
+        self._declared_vars.add(result)
+        return result
 
     # --- Math functions (overloaded, no 'f' suffix) ---
 

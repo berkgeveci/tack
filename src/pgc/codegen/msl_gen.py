@@ -454,7 +454,48 @@ class MSLCodeGen:
         if isinstance(node, ir.IRThreadId):
             self._needs_local_tid = True
             return "__local_tid__"
+        if isinstance(node, ir.IRBlockReduce):
+            return self._expr_block_reduce(node)
         raise NotImplementedError(f"MSL expr: {type(node).__name__}")
+
+    def _expr_block_reduce(self, node: ir.IRBlockReduce) -> str:
+        """Emit a threadgroup memory tree reduction."""
+        if not hasattr(self, '_block_reduce_counter'):
+            self._block_reduce_counter = 0
+        idx = self._block_reduce_counter
+        self._block_reduce_counter += 1
+
+        smem = f"__breduce_smem_{idx}__"
+        tid = f"__breduce_tid_{idx}__"
+        result = f"__breduce_result_{idx}__"
+
+        self._needs_local_tid = True
+        val_expr = self._expr(node.value)
+
+        op_expr = {
+            "sum": lambda a, b: f"({a} + {b})",
+            "max": lambda a, b: f"max((float)({a}), (float)({b}))",
+            "min": lambda a, b: f"min((float)({a}), (float)({b}))",
+        }[node.op]
+
+        self._emit(f"threadgroup float {smem}[256];")
+        self._emit(f"int {tid} = __local_tid__;")
+        self._emit(f"{smem}[{tid}] = (float)({val_expr});")
+        self._emit(f"threadgroup_barrier(mem_flags::mem_threadgroup);")
+        self._emit(f"for (int __s = 128; __s > 0; __s >>= 1) {{")
+        self._indent += 1
+        self._emit(f"if ({tid} < __s) {{")
+        self._indent += 1
+        self._emit(f"{smem}[{tid}] = {op_expr(f'{smem}[{tid}]', f'{smem}[{tid} + __s]')};")
+        self._indent -= 1
+        self._emit(f"}}")
+        self._emit(f"threadgroup_barrier(mem_flags::mem_threadgroup);")
+        self._indent -= 1
+        self._emit(f"}}")
+        self._emit(f"float {result} = {smem}[0];")
+        self._local_vars[result] = "float"
+        self._declared_vars.add(result)
+        return result
 
     def _expr_constant(self, node: ir.IRConstant) -> str:
         if isinstance(node.value, float):
@@ -639,7 +680,7 @@ inline float {name}(device float* data, float u, float v, float w) {{
     def _scan_for_threadgroup(self, stmts: list) -> bool:
         """Check if any statement uses threadgroup features."""
         for stmt in stmts:
-            if isinstance(stmt, (ir.IRSharedAlloc, ir.IRBarrier, ir.IRThreadId)):
+            if isinstance(stmt, (ir.IRSharedAlloc, ir.IRBarrier, ir.IRThreadId, ir.IRBlockReduce)):
                 return True
             if isinstance(stmt, ir.IRParallelFor):
                 if self._scan_for_threadgroup(stmt.body):
@@ -666,8 +707,8 @@ inline float {name}(device float* data, float u, float v, float w) {{
         return False
 
     def _expr_contains_thread_id(self, node) -> bool:
-        """Check if an expression contains IRThreadId."""
-        if isinstance(node, ir.IRThreadId):
+        """Check if an expression contains IRThreadId or IRBlockReduce."""
+        if isinstance(node, (ir.IRThreadId, ir.IRBlockReduce)):
             return True
         if isinstance(node, ir.IRBinOp):
             return (self._expr_contains_thread_id(node.left) or

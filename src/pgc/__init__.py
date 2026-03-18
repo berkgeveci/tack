@@ -42,6 +42,18 @@ def ndrange(*args):
     """
     raise RuntimeError("ndrange() can only be used inside a @pgc.kernel")
 
+def block_sum(value):
+    """Sum a value across all threads in the workgroup. Only usable inside a @pgc.kernel."""
+    raise RuntimeError("block_sum() can only be used inside a @pgc.kernel")
+
+def block_max(value):
+    """Max of a value across all threads in the workgroup. Only usable inside a @pgc.kernel."""
+    raise RuntimeError("block_max() can only be used inside a @pgc.kernel")
+
+def block_min(value):
+    """Min of a value across all threads in the workgroup. Only usable inside a @pgc.kernel."""
+    raise RuntimeError("block_min() can only be used inside a @pgc.kernel")
+
 def local_array(dtype, size):
     """Allocate a per-thread local array. Only usable inside a @pgc.kernel.
 

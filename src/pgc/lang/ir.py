@@ -226,6 +226,18 @@ class IRLocalAlloc(IRNode):
         self.size = size     # IRNode expression for number of elements
 
 
+class IRBlockReduce(IRNode):
+    """Block-level reduction across all threads in a workgroup.
+
+    Emits a shared memory tree reduction pattern:
+    shared[tid] = value; barrier; tree reduce; barrier; result = shared[0].
+    """
+
+    def __init__(self, op: str, value):
+        self.op = op      # "sum", "min", "max"
+        self.value = value # IRNode expression
+
+
 class IRBarrier(IRNode):
     """Threadgroup synchronization barrier."""
     pass
@@ -351,6 +363,8 @@ def dump(node, indent=0) -> str:
         return f"{prefix}SharedAlloc {node.name}: {node.dtype}[{dump(node.size)}]"
     if isinstance(node, IRLocalAlloc):
         return f"{prefix}LocalAlloc {node.name}: {node.dtype}[{dump(node.size)}]"
+    if isinstance(node, IRBlockReduce):
+        return f"{prefix}BlockReduce({node.op}, {dump(node.value)})"
     if isinstance(node, IRBarrier):
         return f"{prefix}Barrier"
     if isinstance(node, IRThreadId):

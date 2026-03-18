@@ -537,6 +537,13 @@ class KernelTransformer(ast.NodeVisitor):
             raise NotImplementedError(
                 "pgc.local_array() must be used in an assignment: arr = pgc.local_array(pgc.f32, 8)")
 
+        # Block reductions: pgc.block_sum(val), pgc.block_max(val), pgc.block_min(val)
+        if func_name in ("block_sum", "block_max", "block_min"):
+            if len(node.args) != 1:
+                raise NotImplementedError(f"pgc.{func_name}() takes exactly 1 argument")
+            op = func_name.replace("block_", "")  # "sum", "max", "min"
+            return ir.IRBlockReduce(op=op, value=self.visit(node.args[0]))
+
         # Barrier: pgc.barrier()
         if func_name == "barrier":
             return ir.IRBarrier()

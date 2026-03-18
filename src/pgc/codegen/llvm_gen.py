@@ -193,6 +193,12 @@ class LLVMCodeGen:
             # On CPU, thread_id within a chunk is (loop_var - loop_start)
             # Return 0 as a safe default (CPU doesn't have workgroups)
             return llvm_ir.Constant(llvm_ir.IntType(64), 0)
+        if isinstance(node, ir.IRBlockReduce):
+            # On CPU, there's one thread per "block" — reduction is identity
+            val = self._emit_expr(node.value)
+            if val.type != llvm_ir.FloatType():
+                val = self.builder.sitofp(val, llvm_ir.FloatType(), name="breduce_cast")
+            return val
         raise NotImplementedError(f"Cannot emit expression: {type(node).__name__}")
 
     # --- Loops ---
