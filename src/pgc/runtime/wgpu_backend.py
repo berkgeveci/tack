@@ -282,7 +282,7 @@ class WebGPUBackend:
         if kwargs:
             raise NotImplementedError("Keyword arguments not supported")
 
-        from pgc.runtime.cpu import (
+        from pgc.runtime.kernel_utils import (
             _detect_template_args, _expand_template_args,
             _detect_vector_fields_from_args, _detect_texture_fields,
             _get_loop_range,
@@ -339,7 +339,7 @@ class WebGPUBackend:
             import copy
             from pgc.lang.ir_pack_scalars import pack_scalars
             from pgc.lang.ir_type_annotate import annotate_types
-            from pgc.runtime.cpu import _create_pack_fields
+            from pgc.runtime.kernel_utils import _create_pack_fields
             ir_func_copy = copy.deepcopy(ir_func)
             _, pack_info = pack_scalars(ir_func_copy, effective_args)
             annotate_types(ir_func_copy)
@@ -351,7 +351,7 @@ class WebGPUBackend:
 
         # Build dispatch args — unwrap Texture3D to underlying Field
         if pack_info:
-            from pgc.runtime.cpu import _update_pack_fields
+            from pgc.runtime.kernel_utils import _update_pack_fields
             from pgc.lang.ir_pack_scalars import split_args
             _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
