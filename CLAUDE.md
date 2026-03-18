@@ -38,7 +38,6 @@ PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are deco
 | Metal | `msl_gen.py` → MSL source | Metal API (pyobjc) | compute pipeline |
 | CUDA | `cuda_gen.py` → CUDA C source | NVRTC → PTX | cuLaunchKernel |
 | HIP | `hip_gen.py` → HIP C source (extends CUDA) | hipRTC → code object | hipLaunchKernel |
-| Vulkan | `spirv_gen.py` → SPIR-V binary | N/A (direct binary) | vkCmdDispatch |
 | Level Zero | `opencl_gen.py` → OpenCL C source (extends CUDA) | libocloc → SPIR-V | zeCommandListAppendLaunchKernel |
 
 ### Key abstraction: Field with DeviceBuffer

@@ -82,6 +82,5 @@ def texture3d(source_field, shape=None, interp='linear'):
 cpu = "cpu"
 metal = "metal"
 cuda = "cuda"
-vulkan = "vulkan"
 hip = "hip"
 level_zero = "level_zero"

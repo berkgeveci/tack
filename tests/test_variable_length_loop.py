@@ -11,7 +11,7 @@ import pgc
 
 def _available_backends():
     backends = ["cpu"]
-    for arch in ["metal", "cuda", "hip", "vulkan", "level_zero"]:
+    for arch in ["metal", "cuda", "hip", "level_zero"]:
         try:
             pgc.init(arch=arch)
             backends.append(arch)

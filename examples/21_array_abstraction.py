@@ -20,7 +20,7 @@ import pgc
 
 import argparse
 _parser = argparse.ArgumentParser()
-_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'vulkan', 'level_zero'])
+_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(pgc, _parser.parse_args().arch)
 pgc.init(arch=_arch)
 

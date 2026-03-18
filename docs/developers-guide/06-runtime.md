@@ -81,7 +81,6 @@ backend-specific buffer:
 | Metal | `MetalBuffer` | Metal shared buffer (unified CPU+GPU) |
 | CUDA | `CUDABuffer` | Device pointer (`cuMemAlloc`) |
 | HIP | `HIPBuffer` | Device pointer (`hipMalloc`) |
-| Vulkan | `VulkanBuffer` | Device-local VRAM + staging buffer |
 | Level Zero | `L0Buffer` | Device pointer (`zeMemAllocDevice`) |
 
 `Field` wraps a buffer with dtype and shape metadata. `from_numpy()` /
@@ -107,13 +106,6 @@ for the grid size. Textures use a separate binding namespace
 
 Launches via `cuLaunchKernel` / `hipLaunchKernel` with a pointer array
 of arguments. Grid size = `ceil(loop_end / 256)`, block size = 256.
-
-### Vulkan
-
-Creates descriptor sets mapping fields to storage buffer bindings.
-Scalar fields become 1-element storage buffers. Dispatches via
-`vkCmdDispatch`. Uses device-local VRAM with staging buffers on
-discrete GPUs.
 
 ### Level Zero
 
@@ -141,7 +133,6 @@ allocation or copy. Each backend implements `wrap_ptr(ptr, dtype, shape)`:
 | CUDA | `CUdeviceptr` (int) | Stores pointer, skips `cuMemAlloc` |
 | HIP | device pointer (int) | Stores pointer, skips `hipMalloc` |
 | Level Zero | device pointer (int) | Stores `c_void_p`, skips `zeMemAllocDevice` |
-| Vulkan | — | Not yet implemented |
 
 ### Ownership
 

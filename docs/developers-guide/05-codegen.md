@@ -2,7 +2,7 @@
 
 Each backend has a code generator that walks the PGC IR and emits
 target-specific code. All codegens follow the same pattern: iterate over
-IR nodes, emit text (or binary for SPIR-V).
+IR nodes, emit text or LLVM IR.
 
 ## Backend Summary
 
@@ -13,7 +13,6 @@ IR nodes, emit text (or binary for SPIR-V).
 | CUDA | `cuda_gen.py` | CUDA C source | `CUDACodeGen` |
 | HIP | `hip_gen.py` | HIP C source | `HIPCodeGen(CUDACodeGen)` |
 | Level Zero | `opencl_gen.py` | OpenCL C source | `OpenCLCodeGen(CUDACodeGen)` |
-| Vulkan | `spirv_gen.py` | SPIR-V binary | `SPIRVCodeGen` |
 
 ## Inheritance
 
@@ -117,21 +116,6 @@ if (__idx__ >= __n__) return;
 ```
 
 Float atomic min/max use CAS-based helper functions emitted on demand.
-
-## SPIR-V Codegen (`spirv_gen.py`, 1,791 lines)
-
-The most complex codegen. Generates SPIR-V binary directly (no text
-intermediate). Key aspects:
-
-- Every type, constant, and variable gets a unique SPIR-V ID
-- Storage buffers: each field param becomes a struct with a runtime array
-  member, decorated with buffer binding indices
-- Local arrays use `StorageClass_Function` (per-invocation private memory)
-- Shared arrays use `StorageClass_Workgroup`
-- Float atomics via CAS loop (`OpAtomicCompareExchange` on uint-aliased
-  storage buffers)
-- Workgroup size is embedded as a `LocalSize` execution mode
-- Optional `spirv-opt` pass for further optimization
 
 ## OpenCL Codegen (`opencl_gen.py`, 338 lines)
 

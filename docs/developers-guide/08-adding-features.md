@@ -201,5 +201,4 @@ For any new IR node:
 - [ ] `cuda_gen.py`: CUDA C emission (inherited by HIP)
 - [ ] `msl_gen.py`: MSL emission
 - [ ] `opencl_gen.py`: OpenCL C emission (if different from CUDA)
-- [ ] `spirv_gen.py`: SPIR-V emission
 - [ ] Tests on all backends

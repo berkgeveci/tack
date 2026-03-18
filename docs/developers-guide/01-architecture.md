@@ -44,14 +44,12 @@ src/pgc/
         cuda_gen.py          # → CUDA C
         hip_gen.py           # → HIP C (extends cuda_gen)
         opencl_gen.py        # → OpenCL C (extends cuda_gen)
-        spirv_gen.py         # → SPIR-V binary (for Vulkan)
     runtime/                 # Dispatch and device management
         dispatch.py          # pgc.init(), backend selection
         cpu.py               # CPU backend (llvmlite JIT, thread pool)
         metal.py             # Metal backend (pyobjc)
         cuda_backend.py      # CUDA backend (cuda-python)
         hip_backend.py       # HIP backend (hip-python)
-        vulkan_backend.py    # Vulkan backend (ctypes)
         level_zero_backend.py # Level Zero backend (ctypes)
 ```
 

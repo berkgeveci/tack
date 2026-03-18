@@ -9,7 +9,6 @@ _BACKEND_HELP = {
     "metal": "Requires macOS with Apple Silicon and pyobjc-framework-Metal",
     "cuda": "Requires NVIDIA GPU with CUDA toolkit and cuda-python>=13.2",
     "hip": "Requires AMD GPU with ROCm and hip-python",
-    "vulkan": "Requires Vulkan runtime (libvulkan.so / vulkan-1.dll / MoltenVK)",
     "level_zero": "Requires Intel GPU with Level Zero runtime and libocloc",
 }
 
@@ -22,7 +21,6 @@ def init(arch: str = "cpu"):
         "cpu": ("pgc.runtime.cpu", "CPUBackend"),
         "metal": ("pgc.runtime.metal", "MetalBackend"),
         "cuda": ("pgc.runtime.cuda_backend", "CUDABackend"),
-        "vulkan": ("pgc.runtime.vulkan_backend", "VulkanBackend"),
         "hip": ("pgc.runtime.hip_backend", "HIPBackend"),
         "level_zero": ("pgc.runtime.level_zero_backend", "LevelZeroBackend"),
     }

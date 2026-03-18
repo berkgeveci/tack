@@ -11,7 +11,6 @@ its own compilation pipeline and memory model.
 | Metal | macOS | Apple Silicon | MSL source → Metal API | `pyobjc-framework-Metal` |
 | CUDA | Linux/Windows | NVIDIA | CUDA C → NVRTC → PTX | `cuda-python>=13.2` |
 | HIP | Linux | AMD (ROCm) | HIP C → hipRTC | `hip-python` |
-| Vulkan | Linux/macOS/Windows | Any Vulkan GPU | SPIR-V binary | Vulkan runtime |
 | Level Zero | Linux | Intel | OpenCL C → libocloc → SPIR-V | Level Zero runtime |
 
 ## CPU
@@ -75,18 +74,6 @@ uv pip install --prerelease=allow --index-url https://test.pypi.org/simple/ \
 pgc.init(arch=pgc.hip)
 ```
 
-## Vulkan
-
-Cross-platform via SPIR-V. Uses ctypes against `libvulkan` — no Python
-Vulkan packages needed. Supports discrete GPUs with device-local VRAM
-and staging buffers for transfers.
-
-On macOS, Vulkan runs through MoltenVK (Metal translation layer).
-
-```python
-pgc.init(arch=pgc.vulkan)
-```
-
 ## Level Zero
 
 Intel GPUs via the Level Zero API. OpenCL C source is compiled to SPIR-V
@@ -112,4 +99,4 @@ RuntimeError: Cannot initialize 'hip' backend: missing dependency.
 
 Kernel compilation errors show the kernel name, backend, and the relevant
 error lines without dumping the full generated source. Set `PGC_DUMP_MSL=1`
-or `PGC_DUMP_SPIRV=1` environment variables to inspect generated code.
+environment variables to inspect generated code.

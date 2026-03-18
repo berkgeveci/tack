@@ -56,7 +56,6 @@ pgc.init(arch=pgc.cpu)         # CPU via LLVM JIT
 pgc.init(arch=pgc.metal)       # Apple GPU
 pgc.init(arch=pgc.cuda)        # NVIDIA GPU
 pgc.init(arch=pgc.hip)         # AMD GPU (ROCm)
-pgc.init(arch=pgc.vulkan)      # Vulkan (cross-platform)
 pgc.init(arch=pgc.level_zero)  # Intel GPU
 ```
 

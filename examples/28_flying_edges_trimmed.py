@@ -24,7 +24,7 @@ from pgc import algorithms
 
 import argparse
 _parser = argparse.ArgumentParser()
-_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'vulkan'])
+_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip'])
 _parser.add_argument('--size', type=int, default=100,
                      help='Grid cells per dimension (default 100)')
 _parser.add_argument('--warmup', type=int, default=2)
