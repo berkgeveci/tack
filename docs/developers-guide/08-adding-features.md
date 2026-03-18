@@ -126,26 +126,6 @@ elif isinstance(node, ir.IRLocalAlloc):
     self._emit_shared_alloc(node)  # same as shared on CPU
 ```
 
-### SPIR-V Backend
-
-More involved — needs to declare a Function-storage-class array variable:
-
-```python
-def _emit_local_alloc(self, node):
-    # Declare array type
-    arr_type = ...  # OpTypeArray with element type and size
-    # Pointer in Function storage class
-    ptr_type = ...  # OpTypePointer(Function, arr_type)
-    # Declare variable
-    var_id = ...    # OpVariable(ptr_type, Function)
-    # Register for field load/store access
-    self._param_buffers[node.name] = (var_id, type_key)
-    self._local_arrays.add(node.name)  # distinguish from Workgroup
-```
-
-The SPIR-V field load/store handlers need to check `_local_arrays` to use
-`ptr_fn_` (Function storage) instead of `ptr_wg_` (Workgroup storage).
-
 ## 6. Write Tests
 
 Test on all available backends:

@@ -21,7 +21,7 @@ def vector_add(x, y, out):
         out[i] = x[i] + y[i]
 
 
-# Warm up (includes SPIR-V -> MSL compilation + Metal pipeline creation)
+# Warm up (includes MSL compilation + Metal pipeline creation)
 t0 = time.perf_counter()
 vector_add(x, y, out)
 t1 = time.perf_counter()

@@ -88,7 +88,7 @@ class Kernel:
                     raise RuntimeError(
                         f"Kernel '{self.name}' failed to compile on {type(backend).__name__}:\n"
                         f"{brief}\n"
-                        f"(Set PGC_DUMP_MSL=1 or PGC_DUMP_SPIRV=1 to inspect generated source)"
+                        f"(Set PGC_DUMP_MSL=1 to inspect generated source)"
                     ) from None
             raise RuntimeError(
                 f"Kernel '{self.name}' failed on {type(backend).__name__}: {e}"

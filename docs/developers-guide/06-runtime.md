@@ -85,7 +85,7 @@ backend-specific buffer:
 
 `Field` wraps a buffer with dtype and shape metadata. `from_numpy()` /
 `to_numpy()` handle host-device transfers (on Metal this is a memcpy
-within unified memory; on CUDA/HIP/Vulkan/L0 it involves explicit copies).
+within unified memory; on CUDA/HIP/L0 it involves explicit copies).
 
 ## Kernel Dispatch
 

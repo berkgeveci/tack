@@ -344,7 +344,6 @@ src/pgc/
     msl_gen.py             # PGC IR → Metal Shading Language
     cuda_gen.py            # PGC IR → CUDA C source
     hip_gen.py             # PGC IR → HIP C source (extends CUDACodeGen)
-    spirv_gen.py           # PGC IR → SPIR-V binary (legacy, used for Vulkan path)
   runtime/
     dispatch.py            # Backend selection (pgc.init)
     cpu.py                 # CPU backend: llvmlite JIT, ThreadPoolExecutor
@@ -364,6 +363,5 @@ tests/
   test_type_inference.py   # Type inference tests
   test_new_features.py     # Scalar args, ndrange, while loops, etc.
   test_templates.py        # @pgc.data_oriented template tests
-  test_spirv_gen.py        # SPIR-V codegen tests
   test_vector_add.py       # Basic vector add integration test
 ```

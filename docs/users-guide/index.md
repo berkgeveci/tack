@@ -13,4 +13,4 @@ on CPUs and GPUs across multiple backends.
 5. [Device Functions](05-device-functions.md) — `@pgc.func` for reusable device-side code
 6. [Templates](06-templates.md) — `@pgc.data_oriented` classes for zero-cost abstraction
 7. [Advanced Features](07-advanced.md) — Atomics, shared memory, local arrays, textures, vectors
-8. [Backends](08-backends.md) — CPU, Metal, CUDA, HIP, Vulkan, Level Zero
+8. [Backends](08-backends.md) — CPU, Metal, CUDA, HIP, Level Zero

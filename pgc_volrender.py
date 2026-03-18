@@ -374,8 +374,6 @@ def main():
             arch = pgc.cuda
         if a == '--arch=hip':
             arch = pgc.hip
-        if a == '--arch=vulkan':
-            arch = pgc.vulkan
         if a == '--arch=level_zero':
             arch = pgc.level_zero
 
