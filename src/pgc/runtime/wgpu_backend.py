@@ -117,6 +117,9 @@ class CompiledWGPUKernel:
         pass_enc.end()
         device.queue.submit([encoder.finish()])
 
+        # Wait for GPU to finish
+        device.queue.on_submitted_work_done_sync()
+
 
 def _compile_kernel(device, ir_func: ir.IRFunction) -> CompiledWGPUKernel:
     """Compile PGC IR → WGSL → WebGPU compute pipeline."""
