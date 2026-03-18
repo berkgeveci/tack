@@ -56,6 +56,10 @@ elev = ds.get_point_array("elevation")
 elev_np = elev.data.to_numpy()
 print(f"2. Point elevation: range [{elev_np.min():.3f}, {elev_np.max():.3f}] ({t1-t0:.4f}s)")
 
+# Add two more point scalars for the multi-field demo
+filters.point_elevation(ds, direction=(1.0, 0.0, 0.0), name="elev_x")
+filters.point_elevation(ds, direction=(0.0, 1.0, 0.0), name="elev_y")
+
 # ================================================================
 # 3. Cell average filter (simple averaging)
 # ================================================================
@@ -91,9 +95,28 @@ t1 = time.perf_counter()
 cx_np = ds.get_cell_array("center_x").data.to_numpy()
 cy_np = ds.get_cell_array("center_y").data.to_numpy()
 cz_np = ds.get_cell_array("center_z").data.to_numpy()
-print(f"5. Cell centers (hex): x=[{cx_np.min():.3f},{cx_np.max():.3f}], "
+print(f"5. Cell centers (hex, local_array): x=[{cx_np.min():.3f},{cx_np.max():.3f}], "
       f"y=[{cy_np.min():.3f},{cy_np.max():.3f}], "
       f"z=[{cz_np.min():.3f},{cz_np.max():.3f}] ({t1-t0:.4f}s)")
+
+# ================================================================
+# 5b. Multi-field parametric center with cached weights (local_array)
+# ================================================================
+t0 = time.perf_counter()
+filters.parametric_center_multi(
+    ds, Hexahedron(),
+    ["elevation", "elev_x", "elev_y"],
+    ["mc_elev", "mc_elev_x", "mc_elev_y"])
+t1 = time.perf_counter()
+
+mc_z = ds.get_cell_array("mc_elev").data.to_numpy()
+mc_x = ds.get_cell_array("mc_elev_x").data.to_numpy()
+mc_y = ds.get_cell_array("mc_elev_y").data.to_numpy()
+# Should match single-field parametric center results
+np.testing.assert_allclose(mc_z, pc_np, rtol=1e-4)
+np.testing.assert_allclose(mc_x, cx_np, rtol=1e-4)
+np.testing.assert_allclose(mc_y, cy_np, rtol=1e-4)
+print(f"5b. Multi-field center (local_array, 3 fields): ({t1-t0:.4f}s) — matches single-field OK")
 
 # ================================================================
 # 6. Threshold filter — extract cells in the middle third
