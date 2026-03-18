@@ -129,6 +129,38 @@ On subsequent calls, `_update_pack_fields()` just writes the new scalar
 values into the existing device buffers via `from_numpy()`. This avoids
 per-dispatch allocation overhead.
 
+## Device Pointer Interop
+
+`pgc.field_from_ptr()` wraps an existing device pointer as a Field without
+allocation or copy. Each backend implements `wrap_ptr(ptr, dtype, shape)`:
+
+| Backend | `ptr` type | Implementation |
+|---------|-----------|----------------|
+| CPU | numpy array or int address | `np.frombuffer` view into existing memory |
+| Metal | `MTLBuffer` object | Creates numpy view via `contents().as_buffer()` |
+| CUDA | `CUdeviceptr` (int) | Stores pointer, skips `cuMemAlloc` |
+| HIP | device pointer (int) | Stores pointer, skips `hipMalloc` |
+| Level Zero | device pointer (int) | Stores `c_void_p`, skips `zeMemAllocDevice` |
+| Vulkan | — | Not yet implemented |
+
+### Ownership
+
+Wrapped buffers set `_owned = False`. Buffer destructors (`__del__`) check
+this flag to skip freeing external memory:
+
+```python
+def __del__(self):
+    if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
+        driver.cuMemFree(self._device_ptr)  # skipped for wrapped ptrs
+```
+
+### Read-Only Protection
+
+`Field._writable` defaults to `True` for allocated fields and `False` for
+`field_from_ptr()`. The `_check_writable()` method guards `from_numpy()`
+and `fill()`. Kernel-level write protection is not enforced — the user is
+responsible for not writing to read-only external memory.
+
 ## Error Handling
 
 `Kernel.__call__` wraps backend errors:

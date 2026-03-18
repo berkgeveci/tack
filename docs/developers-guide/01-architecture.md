@@ -89,3 +89,10 @@ resolved by rewriting the kernel AST before IR transformation. Scalar
 attributes become constants, field attributes become parameters, and method
 calls become inlined function bodies. The IR and codegens never see
 templates.
+
+**Non-owning pointer interop.** `pgc.field_from_ptr()` wraps external
+device memory without allocation or copy. Each backend implements
+`wrap_ptr()` with an `_owned = False` flag to prevent deallocation.
+Fields are read-only by default for safety, with an explicit `writable`
+opt-in. This enables interop with in-situ frameworks (Catalyst), GPU
+libraries (pycuda, cupy), and cross-library buffer sharing.
