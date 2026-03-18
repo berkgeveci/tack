@@ -112,6 +112,22 @@ When a texture field is passed through `@pgc.func`, the inliner must:
 4. **Use original name**: `IRTextureSample.field_name` uses the original
    kernel param name (via `_texture_origin`), not the renamed inline name
 
+### Local Array Propagation
+
+When a `pgc.local_array` is passed to a `@pgc.func`, arrays can't be
+assigned in C (`int arr2[8] = arr1;` is invalid). The inliner handles
+this by aliasing the caller's array name directly:
+
+1. **Before the renamer runs**, check if the caller arg is in `_shared_vars`
+2. If so, override the rename map: `rename_map[param_name] = caller_arg_name`
+3. The renamer substitutes the callee's param name with the caller's array
+   name throughout the inlined body
+4. **Skip the parameter assignment** (like textures)
+
+This means the inlined body's `pts[v] = ...` compiles to `caller_array[v] = ...`
+with no intermediate variable. The same mechanism works for `pgc.shared()`
+arrays.
+
 ## Cache Keys
 
 Each unique combination of template types produces a different compiled

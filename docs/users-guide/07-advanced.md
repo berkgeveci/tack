@@ -28,6 +28,38 @@ def cached_interp(cs: pgc.template(), ct: pgc.template(),
 
 The size can be a literal or a template parameter (compile-time constant).
 
+### Passing Local Arrays to @pgc.func
+
+Local arrays can be passed to `@pgc.func` functions, enabling methods that
+fill an array for the caller. This is useful for cell set abstractions
+where `get_cell_points` populates a buffer in one call:
+
+```python
+@pgc.data_oriented
+class CellSetExplicit:
+    def __init__(self, connectivity, points_per_cell):
+        self.connectivity = connectivity
+        self.points_per_cell = points_per_cell
+
+    @pgc.func
+    def get_cell_points(self, cell_id, pts):
+        for v in range(self.points_per_cell):
+            pts[v] = self.connectivity[cell_id * self.points_per_cell + v]
+
+@pgc.kernel
+def cell_average(cs: pgc.template(), data, out, n_cells):
+    for c in range(n_cells):
+        pts = pgc.local_array(pgc.i32, cs.points_per_cell)
+        cs.get_cell_points(c, pts)      # fills pts in one call
+        total = 0.0
+        for v in range(cs.points_per_cell):
+            total = total + data[pts[v]]
+        out[c] = total / float(cs.points_per_cell)
+```
+
+The inliner aliases the local array name directly — no copy, no pointer
+assignment. The `@pgc.func` body accesses the caller's array in place.
+
 ## Atomic Operations
 
 Atomic operations are safe for concurrent writes from multiple threads:
