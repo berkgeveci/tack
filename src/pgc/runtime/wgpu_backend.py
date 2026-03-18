@@ -58,42 +58,89 @@ class CompiledWGPUKernel:
     """A compiled WebGPU compute pipeline ready for dispatch."""
 
     def __init__(self, device, pipeline, bind_group_layout,
-                 param_is_field, num_bindings):
+                 param_is_field, param_is_texture, texture_shapes,
+                 num_bindings):
         self._device = device
         self._pipeline = pipeline
         self._bind_group_layout = bind_group_layout
         self._param_is_field = param_is_field
+        self._param_is_texture = param_is_texture
+        self._texture_shapes = texture_shapes
         self._num_bindings = num_bindings
+        self._tex_cache: dict[tuple, tuple] = {}
+
+    def _create_texture(self, field, W, H, D):
+        """Create a GPUTexture + GPUSampler from field data."""
+        device = self._device
+        texture = device.create_texture(
+            size=(W, H, D),
+            format=wgpu.TextureFormat.r32float,
+            usage=wgpu.TextureUsage.TEXTURE_BINDING | wgpu.TextureUsage.COPY_DST,
+            dimension="3d",
+        )
+        # Copy field data into texture
+        data = field._buffer.to_numpy().tobytes()
+        device.queue.write_texture(
+            {"texture": texture},
+            data,
+            {"bytes_per_row": W * 4, "rows_per_image": H},
+            (W, H, D),
+        )
+        sampler = device.create_sampler(
+            mag_filter=wgpu.FilterMode.linear,
+            min_filter=wgpu.FilterMode.linear,
+            address_mode_u=wgpu.AddressMode.clamp_to_edge,
+            address_mode_v=wgpu.AddressMode.clamp_to_edge,
+            address_mode_w=wgpu.AddressMode.clamp_to_edge,
+        )
+        return texture, sampler
 
     def __call__(self, kernel_args, loop_end):
         device = self._device
 
         # Build bind group entries
         entries = []
-        for i, (arg, is_field) in enumerate(zip(kernel_args, self._param_is_field)):
-            if is_field:
+        binding_idx = 0
+        for i, (arg, is_field, is_tex) in enumerate(
+                zip(kernel_args, self._param_is_field, self._param_is_texture)):
+            if is_tex:
+                W, H, D = self._texture_shapes[i]
+                cache_key = (id(arg._buffer), W, H, D)
+                if cache_key not in self._tex_cache:
+                    self._tex_cache[cache_key] = self._create_texture(arg, W, H, D)
+                texture, sampler = self._tex_cache[cache_key]
                 entries.append({
-                    "binding": i,
+                    "binding": binding_idx,
+                    "resource": texture.create_view(),
+                })
+                binding_idx += 1
+                entries.append({
+                    "binding": binding_idx,
+                    "resource": sampler,
+                })
+            elif is_field:
+                entries.append({
+                    "binding": binding_idx,
                     "resource": {"buffer": arg._buffer.gpu_buffer},
                 })
             else:
-                # Scalar — shouldn't happen after packing, but handle it
                 val_np = np.array([arg], dtype=np.float32)
                 buf = device.create_buffer_with_data(
                     data=val_np.tobytes(),
                     usage=wgpu.BufferUsage.STORAGE)
                 entries.append({
-                    "binding": i,
+                    "binding": binding_idx,
                     "resource": {"buffer": buf},
                 })
+            binding_idx += 1
 
-        # Loop-end parameter buffer (__params__)
+        # Loop-end parameter buffer (pgc_params)
         params_np = np.array([loop_end], dtype=np.uint32)
         params_buf = device.create_buffer_with_data(
             data=params_np.tobytes(),
             usage=wgpu.BufferUsage.STORAGE)
         entries.append({
-            "binding": self._num_bindings,
+            "binding": binding_idx,
             "resource": {"buffer": params_buf},
         })
 
@@ -136,20 +183,46 @@ def _compile_kernel(device, ir_func: ir.IRFunction) -> CompiledWGPUKernel:
 
     shader_module = device.create_shader_module(code=wgsl_source)
 
-    # Build bind group layout: one storage buffer per param + __params__
+    # Build bind group layout with texture/sampler support
     param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
-    num_bindings = len(ir_func.params)
+    param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+    texture_shapes = {}
+    for i, p in enumerate(ir_func.params):
+        if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
+            texture_shapes[i] = p._texture_shape
 
     layout_entries = []
-    for i in range(num_bindings):
-        layout_entries.append({
-            "binding": i,
-            "visibility": wgpu.ShaderStage.COMPUTE,
-            "buffer": {"type": wgpu.BufferBindingType.storage},
-        })
-    # __params__ binding (loop end)
+    binding_idx = 0
+    for i in range(len(ir_func.params)):
+        if param_is_texture[i]:
+            # texture_3d binding
+            layout_entries.append({
+                "binding": binding_idx,
+                "visibility": wgpu.ShaderStage.COMPUTE,
+                "texture": {
+                    "sample_type": wgpu.TextureSampleType.float,
+                    "view_dimension": "3d",
+                },
+            })
+            binding_idx += 1
+            # sampler binding
+            layout_entries.append({
+                "binding": binding_idx,
+                "visibility": wgpu.ShaderStage.COMPUTE,
+                "sampler": {"type": wgpu.SamplerBindingType.filtering},
+            })
+        else:
+            layout_entries.append({
+                "binding": binding_idx,
+                "visibility": wgpu.ShaderStage.COMPUTE,
+                "buffer": {"type": wgpu.BufferBindingType.storage},
+            })
+        binding_idx += 1
+
+    # pgc_params binding (loop end)
+    num_bindings = binding_idx
     layout_entries.append({
-        "binding": num_bindings,
+        "binding": binding_idx,
         "visibility": wgpu.ShaderStage.COMPUTE,
         "buffer": {"type": wgpu.BufferBindingType.read_only_storage},
     })
@@ -163,7 +236,8 @@ def _compile_kernel(device, ir_func: ir.IRFunction) -> CompiledWGPUKernel:
         compute={"module": shader_module, "entry_point": ir_func.name})
 
     return CompiledWGPUKernel(device, pipeline, bind_group_layout,
-                              param_is_field, num_bindings)
+                              param_is_field, param_is_texture, texture_shapes,
+                              num_bindings)
 
 
 class WebGPUBackend:
@@ -178,8 +252,9 @@ class WebGPUBackend:
         if adapter is None:
             raise RuntimeError("No WebGPU adapter found")
 
-        # Request the adapter's maximum limits for compute workloads
+        # Request the adapter's maximum limits and float32-filterable for texture sampling
         self._device = adapter.request_device_sync(
+            required_features=["float32-filterable"],
             required_limits={
                 "max-buffer-size": adapter.limits["max-buffer-size"],
                 "max-storage-buffer-binding-size": adapter.limits["max-storage-buffer-binding-size"],
@@ -239,6 +314,11 @@ class WebGPUBackend:
         resolve_ir(ir_func, name_to_field)
 
         infer_param_types(ir_func, effective_args)
+
+        # Store texture shapes on params for codegen/dispatch
+        for param, arg in zip(ir_func.params, effective_args):
+            if isinstance(arg, Texture3D):
+                param._texture_shape = arg.shape_3d
 
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)

@@ -73,19 +73,31 @@ class WGSLCodeGen:
             elif not hasattr(param, '_is_field'):
                 self._field_params.add(param.name)
 
+        # Detect texture parameters
+        self._texture_params: set[str] = set()
+        for param in func.params:
+            if getattr(param, '_is_texture', False):
+                self._texture_params.add(param.name)
+
         # Emit binding declarations
         binding_idx = 0
         for param in func.params:
             wgsl_type = _WGSL_TYPE_MAP.get(param.type_annotation, "f32")
             sname = self._sanitize(param.name)
-            if param.name in self._field_params:
+            if param.name in self._texture_params:
+                # Hardware texture: texture_3d + sampler
+                self._lines.append(
+                    f"@group(0) @binding({binding_idx}) "
+                    f"var {sname}: texture_3d<f32>;")
+                binding_idx += 1
+                self._lines.append(
+                    f"@group(0) @binding({binding_idx}) "
+                    f"var {sname}_sampler: sampler;")
+            elif param.name in self._field_params:
                 self._lines.append(
                     f"@group(0) @binding({binding_idx}) "
                     f"var<storage, read_write> {sname}: array<{wgsl_type}>;")
             else:
-                # Scalar params are packed into fields by ir_pack_scalars,
-                # so this shouldn't happen after packing. But handle as
-                # a read-only storage buffer just in case.
                 self._lines.append(
                     f"@group(0) @binding({binding_idx}) "
                     f"var<storage, read> {sname}: array<{wgsl_type}>;")
@@ -392,11 +404,25 @@ class WGSLCodeGen:
         raise NotImplementedError(f"WGSL expr: {type(node).__name__}")
 
     def _expr_texture_sample(self, node: ir.IRTextureSample) -> str:
-        """Software trilinear interpolation via a helper function."""
+        """Hardware texture sampling or software trilinear fallback."""
         W, H, D = node.shape
         u = self._expr(node.coords[0])
         v = self._expr(node.coords[1])
         w = self._expr(node.coords[2])
+
+        if node.field_name in self._texture_params:
+            # Hardware path: textureSampleLevel with coordinate transform.
+            # PGC convention: texel centers at i/(N-1), u=0 → texel 0, u=1 → texel N-1.
+            # WebGPU normalized+linear: texel centers at (i+0.5)/N.
+            # Transform: wgpu_u = (u * (N-1) + 0.5) / N
+            sname = self._sanitize(node.field_name)
+            ou = f"(({u}) * {W - 1}.0 + 0.5) / {W}.0"
+            ov = f"(({v}) * {H - 1}.0 + 0.5) / {H}.0"
+            ow = f"(({w}) * {D - 1}.0 + 0.5) / {D}.0"
+            return (f"textureSampleLevel({sname}, {sname}_sampler, "
+                    f"vec3f({ou}, {ov}, {ow}), 0.0).x")
+
+        # Software trilinear fallback
         helper = f"tex3d_linear_{W}_{H}_{D}"
         if not hasattr(self, '_texture_helpers'):
             self._texture_helpers = {}
