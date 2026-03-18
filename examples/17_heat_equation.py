@@ -59,18 +59,23 @@ def copy_field(src, dst, n):
         dst[i, j] = src[i, j]
 
 
+@pgc.kernel
+def init_hotspots(u, n):
+    for i, j in pgc.ndrange(n, n):
+        r1 = sqrt(float((i - n // 3) * (i - n // 3) + (j - n // 3) * (j - n // 3)))
+        r2 = sqrt(float((i - 2 * n // 3) * (i - 2 * n // 3) + (j - 2 * n // 3) * (j - 2 * n // 3)))
+        if r1 < float(n // 8):
+            u[i, j] = 100.0
+        else:
+            if r2 < float(n // 8):
+                u[i, j] = 50.0
+            else:
+                u[i, j] = 0.0
+
+
 # Initial condition: two hot spots
-init = np.zeros((N, N), dtype=np.float32)
-# Hot spot 1: circle at (N/3, N/3)
-for i in range(N):
-    for j in range(N):
-        r1 = np.sqrt((i - N // 3) ** 2 + (j - N // 3) ** 2)
-        r2 = np.sqrt((i - 2 * N // 3) ** 2 + (j - 2 * N // 3) ** 2)
-        if r1 < N // 8:
-            init[i, j] = 100.0
-        elif r2 < N // 8:
-            init[i, j] = 50.0
-u.from_numpy(init)
+u.fill(0.0)
+init_hotspots(u, N)
 
 alpha_dt_dx2 = ALPHA * DT / (DX * DX)
 print(f"2D Heat equation: {N}x{N}, alpha={ALPHA}, dt={DT:.6f}")
