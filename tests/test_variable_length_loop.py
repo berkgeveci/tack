@@ -115,3 +115,59 @@ def test_indirect_gather(backend):
     # cell 0: (10+20+30)/3 = 20, cell 1: (20+30+40+50)/4 = 35
     expected = np.array([20.0, 35.0], dtype=np.float32)
     np.testing.assert_allclose(cell_data.to_numpy(), expected)
+
+
+def test_nested_field_access(backend):
+    """Direct nested indexing: data[conn[i]] without a temp variable."""
+
+    @pgc.kernel
+    def gather_direct(conn, data, output, n):
+        for i in range(n):
+            output[i] = data[conn[i]]
+
+    conn_np = np.array([2, 0, 3, 1], dtype=np.int32)
+    data_np = np.array([10, 20, 30, 40], dtype=np.float32)
+
+    conn = pgc.field(dtype=pgc.i32, shape=(4,))
+    data = pgc.field(dtype=pgc.f32, shape=(4,))
+    output = pgc.field(dtype=pgc.f32, shape=(4,))
+    conn.from_numpy(conn_np)
+    data.from_numpy(data_np)
+
+    gather_direct(conn, data, output, 4)
+
+    expected = data_np[conn_np]  # [30, 10, 40, 20]
+    np.testing.assert_allclose(output.to_numpy(), expected)
+
+
+def test_double_indirect_nested(backend):
+    """Double nesting: data[conn[offsets[c] + i]] in a variable-length loop."""
+
+    @pgc.kernel
+    def gather_double(offsets, conn, data, output, n):
+        for c in range(n):
+            start = offsets[c]
+            end = offsets[c + 1]
+            total = 0.0
+            for i in range(start, end):
+                total = total + data[conn[i]]
+            output[c] = total
+
+    offsets_np = np.array([0, 2, 4], dtype=np.int32)
+    conn_np = np.array([2, 0, 3, 1], dtype=np.int32)
+    data_np = np.array([10, 20, 30, 40], dtype=np.float32)
+
+    offsets = pgc.field(dtype=pgc.i32, shape=(3,))
+    conn = pgc.field(dtype=pgc.i32, shape=(4,))
+    data = pgc.field(dtype=pgc.f32, shape=(4,))
+    output = pgc.field(dtype=pgc.f32, shape=(2,))
+    offsets.from_numpy(offsets_np)
+    conn.from_numpy(conn_np)
+    data.from_numpy(data_np)
+
+    gather_double(offsets, conn, data, output, 2)
+
+    # cell 0: data[conn[0]] + data[conn[1]] = data[2] + data[0] = 30 + 10 = 40
+    # cell 1: data[conn[2]] + data[conn[3]] = data[3] + data[1] = 40 + 20 = 60
+    expected = np.array([40.0, 60.0], dtype=np.float32)
+    np.testing.assert_allclose(output.to_numpy(), expected)
