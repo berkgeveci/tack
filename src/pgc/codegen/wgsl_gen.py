@@ -109,13 +109,25 @@ class WGSLCodeGen:
             f"@group(0) @binding({binding_idx}) "
             f"var<storage, read> pgc_params: array<u32>;")
 
-        # Emit kernel body to a separate buffer (so we can prepend helpers)
+        # Collect shared memory declarations (must be module-scope in WGSL)
+        shared_decls = self._collect_shared_allocs(func.body)
+        for sname, sdtype, ssize in shared_decls:
+            wt = "f32" if sdtype == "float" else "i32"
+            self._lines.append(f"var<workgroup> {self._sanitize(sname)}: array<{wt}, {ssize}>;")
+
+        # Emit kernel body to a separate buffer (so we can prepend helpers
+        # and collect dynamically-generated shared memory from block_reduce)
         body_lines = self._lines
         self._lines = []
         self._indent = 1
         self._emit_body(func.body)
         kernel_body = self._lines
         self._lines = body_lines
+
+        # Insert any shared memory from block_reduce (emitted during body)
+        if hasattr(self, '_extra_shared'):
+            for sname, stype, ssize in self._extra_shared:
+                self._lines.append(f"var<workgroup> {sname}: array<{stype}, {ssize}>;")
 
         # Insert texture sampling helper functions before the kernel
         if hasattr(self, '_texture_helpers') and self._texture_helpers:
@@ -205,8 +217,7 @@ class WGSLCodeGen:
         elif isinstance(node, ir.IRAtomicOp):
             self._emit_atomic_op(node)
         elif isinstance(node, ir.IRSharedAlloc):
-            # WGSL workgroup vars must be module-scope; emit as comment
-            self._emit(f"// shared: var<workgroup> {self._sanitize(node.name)}: array<{node.dtype}, {self._expr(node.size)}>;")
+            pass  # emitted at module scope by _collect_shared_allocs
         elif isinstance(node, ir.IRLocalAlloc):
             wgsl_type = "f32" if node.dtype == "float" else "i32"
             self._local_array_types[node.name] = wgsl_type
@@ -397,8 +408,7 @@ class WGSLCodeGen:
         if isinstance(node, ir.IRThreadId):
             return "i32(pgc_gid.x) % 256"
         if isinstance(node, ir.IRBlockReduce):
-            raise NotImplementedError(
-                "pgc.block_sum/max/min not yet supported on WebGPU")
+            return self._expr_block_reduce(node)
         if isinstance(node, ir.IRTextureSample):
             return self._expr_texture_sample(node)
         raise NotImplementedError(f"WGSL expr: {type(node).__name__}")
@@ -509,6 +519,66 @@ class WGSLCodeGen:
             if node.name in self._param_types:
                 return _WGSL_TYPE_MAP.get(self._param_types[node.name], "f32")
         return "f32"
+
+    def _collect_shared_allocs(self, stmts) -> list:
+        """Recursively collect IRSharedAlloc nodes for module-scope emission."""
+        result = []
+        for stmt in stmts:
+            if isinstance(stmt, ir.IRSharedAlloc):
+                if isinstance(stmt.size, ir.IRConstant):
+                    result.append((stmt.name, stmt.dtype, stmt.size.value))
+            elif isinstance(stmt, ir.IRParallelFor):
+                result.extend(self._collect_shared_allocs(stmt.body))
+            elif isinstance(stmt, ir.IRSequentialFor):
+                result.extend(self._collect_shared_allocs(stmt.body))
+            elif isinstance(stmt, ir.IRWhile):
+                result.extend(self._collect_shared_allocs(stmt.body))
+            elif isinstance(stmt, ir.IRIf):
+                result.extend(self._collect_shared_allocs(stmt.then_body))
+                if stmt.else_body:
+                    result.extend(self._collect_shared_allocs(stmt.else_body))
+        return result
+
+    def _expr_block_reduce(self, node: ir.IRBlockReduce) -> str:
+        """Emit a workgroup-level tree reduction."""
+        if not hasattr(self, '_block_reduce_counter'):
+            self._block_reduce_counter = 0
+        idx = self._block_reduce_counter
+        self._block_reduce_counter += 1
+
+        smem = f"breduce_smem_{idx}"
+        tid = f"breduce_tid_{idx}"
+        result = f"breduce_result_{idx}"
+
+        # Register the shared memory for module-scope emission
+        if not hasattr(self, '_extra_shared'):
+            self._extra_shared = []
+        self._extra_shared.append((smem, "f32", 256))
+
+        val_expr = self._expr(node.value)
+        op_expr = {
+            "sum": lambda a, b: f"({a} + {b})",
+            "max": lambda a, b: f"max({a}, {b})",
+            "min": lambda a, b: f"min({a}, {b})",
+        }[node.op]
+
+        self._emit(f"var {tid}: i32 = i32(pgc_gid.x) % 256;")
+        self._emit(f"{smem}[{tid}] = f32({val_expr});")
+        self._emit(f"workgroupBarrier();")
+        self._emit(f"for (var s_br: i32 = 128; s_br > 0; s_br >>= 1) {{")
+        self._indent += 1
+        self._emit(f"if ({tid} < s_br) {{")
+        self._indent += 1
+        self._emit(f"{smem}[{tid}] = {op_expr(f'{smem}[{tid}]', f'{smem}[{tid} + s_br]')};")
+        self._indent -= 1
+        self._emit(f"}}")
+        self._emit(f"workgroupBarrier();")
+        self._indent -= 1
+        self._emit(f"}}")
+        self._emit(f"var {result}: f32 = {smem}[0];")
+        self._local_vars[result] = "f32"
+        self._declared_vars.add(result)
+        return result
 
 
 def generate_wgsl_source(ir_func: ir.IRFunction) -> str:
