@@ -15,7 +15,7 @@ import pgc
 def _available_backends():
     """Return list of available backends for parametrized tests."""
     backends = ["cpu"]
-    for arch in ["metal", "cuda", "hip", "level_zero"]:
+    for arch in ["metal", "cuda", "hip", "level_zero", "wgpu"]:
         try:
             pgc.init(arch=arch)
             backends.append(arch)

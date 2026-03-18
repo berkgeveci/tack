@@ -28,6 +28,72 @@ from pgc.lang.type_inference import infer_param_types
 from pgc.codegen.opencl_gen import generate_opencl_source
 
 # ---------------------------------------------------------------------------
+# Reduce kernel sources (OpenCL C)
+# ---------------------------------------------------------------------------
+_REDUCE_OCL_SUM = """
+__kernel void reduce_sum_f32(__global float* input, __global float* output, long __n__) {
+    __local float sdata[256];
+    int tid = get_local_id(0);
+    long i = get_global_id(0);
+    sdata[tid] = (i < __n__) ? input[i] : 0.0f;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int s = 128; s > 0; s >>= 1) {
+        if (tid < s) sdata[tid] += sdata[tid + s];
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+    if (tid == 0) {
+        volatile __global int* addr = (volatile __global int*)&output[0];
+        int old = *addr, assumed;
+        do { assumed = old;
+            old = atomic_cmpxchg(addr, assumed, as_int(as_float(assumed) + sdata[0]));
+        } while (assumed != old);
+    }
+}
+"""
+
+_REDUCE_OCL_MIN = """
+__kernel void reduce_min_f32(__global float* input, __global float* output, long __n__) {
+    __local float sdata[256];
+    int tid = get_local_id(0);
+    long i = get_global_id(0);
+    sdata[tid] = (i < __n__) ? input[i] : 1e38f;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int s = 128; s > 0; s >>= 1) {
+        if (tid < s) sdata[tid] = fmin(sdata[tid], sdata[tid + s]);
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+    if (tid == 0) {
+        volatile __global int* addr = (volatile __global int*)&output[0];
+        int old = *addr, assumed;
+        do { assumed = old;
+            old = atomic_cmpxchg(addr, assumed, as_int(fmin(sdata[0], as_float(assumed))));
+        } while (assumed != old);
+    }
+}
+"""
+
+_REDUCE_OCL_MAX = """
+__kernel void reduce_max_f32(__global float* input, __global float* output, long __n__) {
+    __local float sdata[256];
+    int tid = get_local_id(0);
+    long i = get_global_id(0);
+    sdata[tid] = (i < __n__) ? input[i] : -1e38f;
+    barrier(CLK_LOCAL_MEM_FENCE);
+    for (int s = 128; s > 0; s >>= 1) {
+        if (tid < s) sdata[tid] = fmax(sdata[tid], sdata[tid + s]);
+        barrier(CLK_LOCAL_MEM_FENCE);
+    }
+    if (tid == 0) {
+        volatile __global int* addr = (volatile __global int*)&output[0];
+        int old = *addr, assumed;
+        do { assumed = old;
+            old = atomic_cmpxchg(addr, assumed, as_int(fmax(sdata[0], as_float(assumed))));
+        } while (assumed != old);
+    }
+}
+"""
+
+# ---------------------------------------------------------------------------
 # Numpy dtype mapping
 # ---------------------------------------------------------------------------
 _NUMPY_DTYPE = {
@@ -1121,6 +1187,107 @@ class LevelZeroBackend:
         return CompiledL0Kernel(module, kernel, ir_func.name,
                                 param_types, param_is_field, workgroup_size,
                                 param_is_texture, texture_shapes)
+
+    def reduce_field(self, field, op: str) -> float:
+        """GPU-side reduction: sum, min, or max."""
+        if field.dtype is not f32:
+            return float(getattr(field.to_numpy(), op)())
+
+        if not hasattr(self, '_reduce_cache'):
+            self._reduce_cache = {}
+        if op not in self._reduce_cache:
+            self._reduce_cache[op] = self._compile_reduce(op)
+
+        compiled_kernel = self._reduce_cache[op]
+        n = int(np.prod(field.shape))
+
+        # Create output buffer with init value
+        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        out_np = np.array([init_vals[op]], dtype=np.float32)
+        out_buf = L0Buffer(self, np.float32, (1,))
+        out_buf.from_numpy(out_np)
+
+        # Dispatch
+        ze = _get_ze()
+        kernel = compiled_kernel._kernel
+        block_dim = compiled_kernel._workgroup_size
+
+        # Set arguments: input, output, __n__
+        in_ptr = field._buffer.device_ptr
+        out_ptr = out_buf.device_ptr
+        _check_ze(ze.zeKernelSetArgumentValue(
+            kernel, 0, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(in_ptr)),
+            "zeKernelSetArgumentValue (reduce input)")
+        _check_ze(ze.zeKernelSetArgumentValue(
+            kernel, 1, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(out_ptr)),
+            "zeKernelSetArgumentValue (reduce output)")
+        n_val = ctypes.c_longlong(n)
+        _check_ze(ze.zeKernelSetArgumentValue(
+            kernel, 2, ctypes.sizeof(n_val), ctypes.byref(n_val)),
+            "zeKernelSetArgumentValue (reduce __n__)")
+
+        _check_ze(ze.zeKernelSetGroupSize(kernel, block_dim, 1, 1),
+                   "zeKernelSetGroupSize")
+
+        group_count_x = (n + block_dim - 1) // block_dim
+        group_count = ze_group_count_t(
+            groupCountX=group_count_x, groupCountY=1, groupCountZ=1)
+
+        cmd_list = self._cmd_list
+        _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
+        _check_ze(ze.zeCommandListAppendLaunchKernel(
+            cmd_list, kernel, ctypes.byref(group_count), None, 0, None),
+            "zeCommandListAppendLaunchKernel")
+        _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
+        cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
+        _check_ze(ze.zeCommandQueueExecuteCommandLists(
+            self._cmd_queue, 1, cmd_lists, None),
+            "zeCommandQueueExecuteCommandLists")
+        _check_ze(ze.zeCommandQueueSynchronize(
+            self._cmd_queue, 0xFFFFFFFFFFFFFFFF),
+            "zeCommandQueueSynchronize")
+
+        return float(out_buf.to_numpy()[0])
+
+    def _compile_reduce(self, op: str) -> CompiledL0Kernel:
+        """Compile a reduction kernel for the given op."""
+        ze = _get_ze()
+        _REDUCE_SRC = {"sum": _REDUCE_OCL_SUM, "min": _REDUCE_OCL_MIN, "max": _REDUCE_OCL_MAX}
+        func_names = {"sum": "reduce_sum_f32", "min": "reduce_min_f32", "max": "reduce_max_f32"}
+
+        src = _REDUCE_SRC[op]
+        spirv = _compile_to_spirv(src, self._device_id)
+
+        spirv_buf = (ctypes.c_uint8 * len(spirv)).from_buffer_copy(spirv)
+        module_desc = ze_module_desc_t(
+            stype=ZE_STRUCTURE_TYPE_MODULE_DESC, pNext=None,
+            format=ZE_MODULE_FORMAT_IL_SPIRV,
+            inputSize=len(spirv),
+            pInputModule=ctypes.cast(spirv_buf, ctypes.c_void_p),
+            pBuildFlags=b"-cl-std=CL2.0",
+            pConstants=None)
+
+        module = ze_module_handle_t()
+        build_log = ze_module_build_log_handle_t()
+        result = ze.zeModuleCreate(
+            self._context, self._device, ctypes.byref(module_desc),
+            ctypes.byref(module), ctypes.byref(build_log))
+        if result != ZE_RESULT_SUCCESS:
+            raise RuntimeError(f"Reduce kernel compile failed (0x{result:08x})")
+        if build_log:
+            ze.zeModuleBuildLogDestroy(build_log)
+
+        kernel_desc = ze_kernel_desc_t(
+            stype=ZE_STRUCTURE_TYPE_KERNEL_DESC, pNext=None,
+            flags=0, pKernelName=func_names[op].encode())
+        kernel = ze_kernel_handle_t()
+        _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
+                                     ctypes.byref(kernel)), "zeKernelCreate")
+
+        workgroup_size = min(256, self._compute_props.maxGroupSizeX)
+        return CompiledL0Kernel(module, kernel, func_names[op],
+                                [f32, f32, i64], [True, True, False],
+                                workgroup_size)
 
     def __del__(self):
         # Level Zero cleanup at interpreter shutdown can segfault because

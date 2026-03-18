@@ -551,6 +551,8 @@ class WGSLCodeGen:
             return _INT if node.dtype == "int" else "f32"
         if isinstance(node, ir.IRCompare):
             return _INT
+        if isinstance(node, ir.IRThreadId):
+            return _INT
         if isinstance(node, ir.IRName):
             if node.name in self._local_vars:
                 return self._local_vars[node.name]

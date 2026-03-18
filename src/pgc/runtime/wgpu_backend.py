@@ -363,3 +363,149 @@ class WebGPUBackend:
                            for a in effective_args]
 
         compiled(kernel_args, loop_end)
+
+    def reduce_field(self, field, op: str) -> float:
+        """GPU-side reduction: sum, min, or max."""
+        if field.dtype is not f32:
+            return float(getattr(field.to_numpy(), op)())
+
+        if not hasattr(self, '_reduce_cache'):
+            self._reduce_cache = {}
+        if op not in self._reduce_cache:
+            self._reduce_cache[op] = self._compile_reduce(op)
+
+        pipeline, layout = self._reduce_cache[op]
+        n = int(np.prod(field.shape))
+
+        # Create output buffer with init value
+        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        out_np = np.array([init_vals[op]], dtype=np.float32)
+        out_buf = self._device.create_buffer(
+            size=4,
+            usage=(wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_SRC |
+                   wgpu.BufferUsage.COPY_DST))
+        self._device.queue.write_buffer(out_buf, 0, out_np.tobytes())
+
+        # Params buffer: [n]
+        params_np = np.array([n], dtype=np.uint32)
+        params_buf = self._device.create_buffer(
+            size=4,
+            usage=(wgpu.BufferUsage.STORAGE | wgpu.BufferUsage.COPY_DST))
+        self._device.queue.write_buffer(params_buf, 0, params_np.tobytes())
+
+        bind_group = self._device.create_bind_group(
+            layout=layout,
+            entries=[
+                {"binding": 0, "resource": {"buffer": field._buffer.gpu_buffer}},
+                {"binding": 1, "resource": {"buffer": out_buf}},
+                {"binding": 2, "resource": {"buffer": params_buf}},
+            ])
+
+        block_dim = 256
+        num_groups = (n + block_dim - 1) // block_dim
+        max_dim = 65535
+
+        encoder = self._device.create_command_encoder()
+        compute_pass = encoder.begin_compute_pass()
+        compute_pass.set_pipeline(pipeline)
+        compute_pass.set_bind_group(0, bind_group)
+        if num_groups <= max_dim:
+            compute_pass.dispatch_workgroups(num_groups)
+        else:
+            gx = max_dim
+            gy = (num_groups + max_dim - 1) // max_dim
+            compute_pass.dispatch_workgroups(gx, gy)
+        compute_pass.end()
+        self._device.queue.submit([encoder.finish()])
+        self._device.queue.on_submitted_work_done_sync()
+
+        data = self._device.queue.read_buffer(out_buf)
+        return float(np.frombuffer(data.cast("B"), dtype=np.float32)[0])
+
+    def _compile_reduce(self, op: str):
+        """Compile a WGSL reduction shader for the given op."""
+        op_map = {
+            "sum": ("0.0", "old + local_val"),
+            "min": ("1e38", "min(old, local_val)"),
+            "max": ("-1e38", "max(old, local_val)"),
+        }
+        identity, combine = op_map[op]
+
+        # Use atomicAdd for sum, CAS loop for min/max
+        if op == "sum":
+            atomic_update = """
+            // CAS-based float atomic add
+            var old_bits = atomicLoad(&out_atomic[0]);
+            loop {
+                let old_val = bitcast<f32>(old_bits);
+                let new_val = old_val + sdata[0];
+                let new_bits = bitcast<u32>(new_val);
+                let result = atomicCompareExchangeWeak(&out_atomic[0], old_bits, new_bits);
+                if result.exchanged { break; }
+                old_bits = result.old_value;
+            }"""
+        else:
+            fn = "min" if op == "min" else "max"
+            atomic_update = f"""
+            var old_bits = atomicLoad(&out_atomic[0]);
+            loop {{
+                let old_val = bitcast<f32>(old_bits);
+                let new_val = {fn}(sdata[0], old_val);
+                let new_bits = bitcast<u32>(new_val);
+                let result = atomicCompareExchangeWeak(&out_atomic[0], old_bits, new_bits);
+                if result.exchanged {{ break; }}
+                old_bits = result.old_value;
+            }}"""
+
+        src = f"""
+@group(0) @binding(0) var<storage, read> input: array<f32>;
+@group(0) @binding(1) var<storage, read_write> out_atomic: array<atomic<u32>>;
+@group(0) @binding(2) var<storage, read> params: array<u32>;
+
+var<workgroup> sdata: array<f32, 256>;
+
+@compute @workgroup_size(256)
+fn main(@builtin(local_invocation_id) lid: vec3u,
+        @builtin(global_invocation_id) gid: vec3u,
+        @builtin(num_workgroups) nwg: vec3u) {{
+    let tid = lid.x;
+    let i = gid.x + gid.y * nwg.x * 256u;
+    let n = params[0];
+    if i < n {{
+        sdata[tid] = input[i];
+    }} else {{
+        sdata[tid] = {identity};
+    }}
+    workgroupBarrier();
+    var s: u32 = 128u;
+    loop {{
+        if s == 0u {{ break; }}
+        if tid < s {{
+            let local_val = sdata[tid + s];
+            let old = sdata[tid];
+            sdata[tid] = {combine};
+        }}
+        workgroupBarrier();
+        s = s >> 1u;
+    }}
+    if tid == 0u {{
+        {atomic_update}
+    }}
+}}
+"""
+        shader = self._device.create_shader_module(code=src)
+        layout_entries = [
+            {"binding": 0, "visibility": wgpu.ShaderStage.COMPUTE,
+             "buffer": {"type": wgpu.BufferBindingType.read_only_storage}},
+            {"binding": 1, "visibility": wgpu.ShaderStage.COMPUTE,
+             "buffer": {"type": wgpu.BufferBindingType.storage}},
+            {"binding": 2, "visibility": wgpu.ShaderStage.COMPUTE,
+             "buffer": {"type": wgpu.BufferBindingType.read_only_storage}},
+        ]
+        bind_layout = self._device.create_bind_group_layout(entries=layout_entries)
+        pipe_layout = self._device.create_pipeline_layout(
+            bind_group_layouts=[bind_layout])
+        pipeline = self._device.create_compute_pipeline(
+            layout=pipe_layout,
+            compute={"module": shader, "entry_point": "main"})
+        return pipeline, bind_layout
