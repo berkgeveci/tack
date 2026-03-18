@@ -24,23 +24,22 @@ W, H = 256, 256
 
 
 # --- Create a synthetic test image ---
-def make_test_image():
+
+@pgc.kernel
+def make_test_image(img, w, h):
     """Concentric rings + gradient."""
-    img = np.zeros((H, W), dtype=np.float32)
-    for i in range(H):
-        for j in range(W):
-            dx = j - W / 2
-            dy = i - H / 2
-            r = np.sqrt(dx**2 + dy**2)
-            img[i, j] = 0.5 + 0.5 * np.sin(r * 0.3) * np.exp(-r * 0.005)
-    return img
+    for i, j in pgc.ndrange(h, w):
+        dx = float(j) - float(w) / 2.0
+        dy = float(i) - float(h) / 2.0
+        r = sqrt(dx * dx + dy * dy)
+        img[i, j] = 0.5 + 0.5 * sin(r * 0.3) * exp(0.0 - r * 0.005)
 
 
 src = pgc.field(dtype=pgc.f32, shape=(H, W))
 dst = pgc.field(dtype=pgc.f32, shape=(H, W))
 
-test_img = make_test_image()
-src.from_numpy(test_img)
+make_test_image(src, W, H)
+test_img = src.to_numpy().reshape(H, W)
 
 
 # --- 1. Brightness and contrast ---

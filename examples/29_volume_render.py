@@ -291,6 +291,18 @@ def render(img_r, img_g, img_b,
         img_b[pixel] = cb + (1.0 - alpha) * bg
 
 
+@pgc.kernel
+def compute_gyroid(scalar, xcoords, ycoords, zcoords, nx_p1, ny_p1):
+    for i in range(scalar.shape[0]):
+        ix = i % nx_p1
+        iy = (i // nx_p1) % ny_p1
+        iz = i // (nx_p1 * ny_p1)
+        x = xcoords[ix]
+        y = ycoords[iy]
+        z = zcoords[iz]
+        scalar[i] = sin(x) * cos(y) + sin(y) * cos(z) + sin(z) * cos(x)
+
+
 # ================================================================
 # BUILD GRID AND SCALAR FIELD
 # ================================================================
@@ -318,22 +330,13 @@ xcoords.from_numpy(xc_np)
 ycoords.from_numpy(yc_np)
 zcoords.from_numpy(zc_np)
 
-# Compute gyroid scalar field on CPU and upload
-# sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
+# Compute gyroid scalar field on GPU
 print("Computing scalar field...")
-ii = np.arange(nx + 1, dtype=np.float32)
-jj = np.arange(ny + 1, dtype=np.float32)
-kk = np.arange(nz + 1, dtype=np.float32)
-zz, yy, xx = np.meshgrid(zc_np, yc_np, xc_np, indexing='ij')
-scalar_np = (np.sin(xx) * np.cos(yy) + np.sin(yy) * np.cos(zz)
-             + np.sin(zz) * np.cos(xx)).ravel().astype(np.float32)
-del xx, yy, zz
-
 scalar = pgc.field(dtype=pgc.f32, shape=(n_points,))
-scalar.from_numpy(scalar_np)
+compute_gyroid(scalar, xcoords, ycoords, zcoords, nx + 1, ny + 1)
 
-vmin = float(scalar_np.min())
-vmax = float(scalar_np.max())
+vmin = float(scalar.min())
+vmax = float(scalar.max())
 vrange = vmax - vmin
 print(f"Scalar range: [{vmin:.3f}, {vmax:.3f}]")
 

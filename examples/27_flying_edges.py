@@ -478,6 +478,22 @@ def _add_offset(field, offset, n):
 
 
 @pgc.kernel
+def build_twisted_coords(px, py, pz, x0f, y0f, z0f, dxf, dyf, dzf, nx_p1, ny_p1):
+    """Compute twisted structured grid coordinates directly on device."""
+    for i in range(px.shape[0]):
+        ix = i % nx_p1
+        iy = (i // nx_p1) % ny_p1
+        iz = i // (nx_p1 * ny_p1)
+        bx = x0f + float(ix) * dxf
+        by = y0f + float(iy) * dyf
+        bz = z0f + float(iz) * dzf
+        twist = 0.1 * sin(2.0 * bz)
+        px[i] = bx + twist * by
+        py[i] = by - twist * bx
+        pz[i] = bz
+
+
+@pgc.kernel
 def compute_scalar_field(scalar, grid: pgc.template(), n_points):
     """Gyroid: sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)."""
     for i in range(n_points):
@@ -1391,27 +1407,14 @@ except Exception as e:
 
 print("\n--- Structured (curvilinear) grid ---")
 
-# Build per-point coordinates: uniform + twist perturbation (vectorized)
-si_1d = np.arange(nx + 1, dtype=np.float32)
-sj_1d = np.arange(ny + 1, dtype=np.float32)
-sk_1d = np.arange(nz + 1, dtype=np.float32)
-bz_3d, by_3d, bx_3d = np.meshgrid(
-    np.float32(z0) + sk_1d * np.float32(dz),
-    np.float32(y0) + sj_1d * np.float32(dy),
-    np.float32(x0) + si_1d * np.float32(dx),
-    indexing='ij')
-twist_3d = np.float32(0.1) * np.sin(np.float32(2.0) * bz_3d)
-s_px_np = (bx_3d + twist_3d * by_3d).ravel().astype(np.float32)
-s_py_np = (by_3d - twist_3d * bx_3d).ravel().astype(np.float32)
-s_pz_np = bz_3d.ravel().astype(np.float32)
-del bx_3d, by_3d, bz_3d, twist_3d
-
+# Build per-point coordinates: uniform + twist perturbation (GPU kernel)
 s_px = pgc.field(dtype=pgc.f32, shape=(n_points,))
 s_py = pgc.field(dtype=pgc.f32, shape=(n_points,))
 s_pz = pgc.field(dtype=pgc.f32, shape=(n_points,))
-s_px.from_numpy(s_px_np)
-s_py.from_numpy(s_py_np)
-s_pz.from_numpy(s_pz_np)
+build_twisted_coords(s_px, s_py, s_pz,
+                     float(x0), float(y0), float(z0),
+                     float(dx), float(dy), float(dz),
+                     nx + 1, ny + 1)
 
 struct_grid = StructuredGrid(nx, ny, nz, s_px, s_py, s_pz)
 
