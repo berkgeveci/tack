@@ -97,14 +97,69 @@ class WGSLCodeGen:
             f"@group(0) @binding({binding_idx}) "
             f"var<storage, read> pgc_params: array<u32>;")
 
+        # Emit kernel body to a separate buffer (so we can prepend helpers)
+        body_lines = self._lines
+        self._lines = []
+        self._indent = 1
+        self._emit_body(func.body)
+        kernel_body = self._lines
+        self._lines = body_lines
+
+        # Insert texture sampling helper functions before the kernel
+        if hasattr(self, '_texture_helpers') and self._texture_helpers:
+            for helper_name, (W, H, D) in self._texture_helpers.items():
+                field_name = self._texture_helper_fields[helper_name]
+                sfield = self._sanitize(field_name)
+                self._lines.append("")
+                self._lines.append(
+                    f"fn {helper_name}(u: f32, v: f32, w: f32) -> f32 {{")
+                self._lines.append(
+                    f"    var fx: f32 = u * {W - 1}.0; var fy: f32 = v * {H - 1}.0; var fz: f32 = w * {D - 1}.0;")
+                self._lines.append(
+                    f"    var ix: i32 = i32(floor(fx)); var iy: i32 = i32(floor(fy)); var iz: i32 = i32(floor(fz));")
+                self._lines.append(
+                    f"    var dx: f32 = fx - f32(ix); var dy: f32 = fy - f32(iy); var dz: f32 = fz - f32(iz);")
+                self._lines.append(
+                    f"    ix = max(0, min(ix, {W - 1})); iy = max(0, min(iy, {H - 1})); iz = max(0, min(iz, {D - 1}));")
+                self._lines.append(
+                    f"    var ix1: i32 = min(ix + 1, {W - 1}); var iy1: i32 = min(iy + 1, {H - 1}); var iz1: i32 = min(iz + 1, {D - 1});")
+                WH = W * H
+                self._lines.append(
+                    f"    var c000: f32 = {sfield}[iz  * {WH} + iy  * {W} + ix ];")
+                self._lines.append(
+                    f"    var c100: f32 = {sfield}[iz  * {WH} + iy  * {W} + ix1];")
+                self._lines.append(
+                    f"    var c010: f32 = {sfield}[iz  * {WH} + iy1 * {W} + ix ];")
+                self._lines.append(
+                    f"    var c110: f32 = {sfield}[iz  * {WH} + iy1 * {W} + ix1];")
+                self._lines.append(
+                    f"    var c001: f32 = {sfield}[iz1 * {WH} + iy  * {W} + ix ];")
+                self._lines.append(
+                    f"    var c101: f32 = {sfield}[iz1 * {WH} + iy  * {W} + ix1];")
+                self._lines.append(
+                    f"    var c011: f32 = {sfield}[iz1 * {WH} + iy1 * {W} + ix ];")
+                self._lines.append(
+                    f"    var c111: f32 = {sfield}[iz1 * {WH} + iy1 * {W} + ix1];")
+                self._lines.append(
+                    f"    var c00: f32 = c000 * (1.0 - dx) + c100 * dx;")
+                self._lines.append(
+                    f"    var c10: f32 = c010 * (1.0 - dx) + c110 * dx;")
+                self._lines.append(
+                    f"    var c01: f32 = c001 * (1.0 - dx) + c101 * dx;")
+                self._lines.append(
+                    f"    var c11: f32 = c011 * (1.0 - dx) + c111 * dx;")
+                self._lines.append(
+                    f"    var c0: f32 = c00 * (1.0 - dy) + c10 * dy;")
+                self._lines.append(
+                    f"    var c1: f32 = c01 * (1.0 - dy) + c11 * dy;")
+                self._lines.append(
+                    f"    return c0 * (1.0 - dz) + c1 * dz;")
+                self._lines.append(f"}}")
+
         self._lines.append("")
         self._lines.append("@compute @workgroup_size(256)")
         self._lines.append(f"fn {func.name}(@builtin(global_invocation_id) pgc_gid: vec3<u32>) {{")
-        self._indent += 1
-
-        self._emit_body(func.body)
-
-        self._indent -= 1
+        self._lines.extend(kernel_body)
         self._lines.append("}")
 
         return "\n".join(self._lines) + "\n"
@@ -301,6 +356,13 @@ class WGSLCodeGen:
         if isinstance(node, ir.IRCompare):
             left = self._expr(node.left)
             right = self._expr(node.right)
+            lt = self._infer_type(node.left)
+            rt = self._infer_type(node.right)
+            if lt != rt:
+                if lt == "f32" and rt == _INT:
+                    right = f"f32({right})"
+                elif rt == "f32" and lt == _INT:
+                    left = f"f32({left})"
             return f"({left} {node.op} {right})"
         if isinstance(node, ir.IRBoolOp):
             parts = [self._expr(v) for v in node.values]
@@ -325,14 +387,37 @@ class WGSLCodeGen:
             raise NotImplementedError(
                 "pgc.block_sum/max/min not yet supported on WebGPU")
         if isinstance(node, ir.IRTextureSample):
-            raise NotImplementedError(
-                "texture3d not yet supported on WebGPU")
+            return self._expr_texture_sample(node)
         raise NotImplementedError(f"WGSL expr: {type(node).__name__}")
+
+    def _expr_texture_sample(self, node: ir.IRTextureSample) -> str:
+        """Software trilinear interpolation via a helper function."""
+        W, H, D = node.shape
+        u = self._expr(node.coords[0])
+        v = self._expr(node.coords[1])
+        w = self._expr(node.coords[2])
+        helper = f"tex3d_linear_{W}_{H}_{D}"
+        if not hasattr(self, '_texture_helpers'):
+            self._texture_helpers = {}
+            self._texture_helper_fields = {}
+        self._texture_helpers[helper] = (W, H, D)
+        self._texture_helper_fields[helper] = node.field_name
+        return f"{helper}({u}, {v}, {w})"
 
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        lt = self._infer_type(node.left)
+        rt = self._infer_type(node.right)
         op = node.op
+        # WGSL requires operands to have the same type — promote to f32 if mixed
+        if lt != rt:
+            if lt == "f32" and rt == _INT:
+                right = f"f32({right})"
+                rt = "f32"
+            elif rt == "f32" and lt == _INT:
+                left = f"f32({left})"
+                lt = "f32"
         if op == "**":
             return f"pow({left}, {right})"
         if op == "//":

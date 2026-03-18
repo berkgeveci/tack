@@ -208,9 +208,12 @@ class WebGPUBackend:
         ir_func = ir_module.functions[0]
 
         # Resolve and type inference
+        from pgc.lang.field import Texture3D
         name_to_field = {}
         for param, arg in zip(ir_func.params, effective_args):
-            if isinstance(arg, Field):
+            if isinstance(arg, Texture3D):
+                name_to_field[param.name] = arg
+            elif isinstance(arg, Field):
                 name_to_field[param.name] = arg
         from pgc.lang.ir_resolve import resolve_ir
         resolve_ir(ir_func, name_to_field)
@@ -220,8 +223,9 @@ class WebGPUBackend:
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
 
-        # Loop range before packing
-        kernel_args = list(effective_args)
+        # Loop range before packing — unwrap Texture3D
+        kernel_args = [a.field if isinstance(a, Texture3D) else a
+                       for a in effective_args]
         loop_end = _get_loop_range(ir_func, kernel_args)
 
         # Cache key
@@ -245,14 +249,17 @@ class WebGPUBackend:
 
         compiled, pack_info, pack_fields = self._cache[cache_key]
 
-        # Build dispatch args
+        # Build dispatch args — unwrap Texture3D to underlying Field
         if pack_info:
             from pgc.runtime.cpu import _update_pack_fields
             from pgc.lang.ir_pack_scalars import split_args
             _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
-            kernel_args = list(kept_args) + pack_fields
+            kernel_args = [a.field if isinstance(a, Texture3D) else a
+                           for a in kept_args]
+            kernel_args = list(kernel_args) + pack_fields
         else:
-            kernel_args = list(effective_args)
+            kernel_args = [a.field if isinstance(a, Texture3D) else a
+                           for a in effective_args]
 
         compiled(kernel_args, loop_end)
