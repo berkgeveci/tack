@@ -804,6 +804,8 @@ class SPIRVCodeGen:
             self._emit_atomic_op(node)
         elif isinstance(node, ir.IRSharedAlloc):
             self._emit_shared_alloc(node)
+        elif isinstance(node, ir.IRLocalAlloc):
+            self._emit_local_alloc(node)
         elif isinstance(node, ir.IRBarrier):
             self._emit_barrier()
         elif isinstance(node, ir.IRCall):
@@ -998,7 +1000,15 @@ class SPIRVCodeGen:
             elem_type = self._get_type(elem_key)
 
             shared_vars = getattr(self, '_shared_vars', set())
-            if node.field.name in shared_vars:
+            local_arrays = getattr(self, '_local_arrays', set())
+            if node.field.name in local_arrays:
+                # Local (Function) memory: plain array, no struct wrapping
+                elem_ptr_key = f"ptr_fn_{elem_key}"
+                elem_ptr_type = self._get_type(elem_ptr_key)
+                ac = self.module.alloc_id()
+                self._body += _make_instruction(
+                    OpAccessChain, elem_ptr_type, ac, buf_var, index)
+            elif node.field.name in shared_vars:
                 # Shared memory: plain array, no struct wrapping
                 elem_ptr_key = f"ptr_wg_{elem_key}"
                 elem_ptr_type = self._get_type(elem_ptr_key)
@@ -1030,7 +1040,14 @@ class SPIRVCodeGen:
             value = self._emit_expr(node.value)
 
             shared_vars = getattr(self, '_shared_vars', set())
-            if node.field.name in shared_vars:
+            local_arrays = getattr(self, '_local_arrays', set())
+            if node.field.name in local_arrays:
+                elem_ptr_key = f"ptr_fn_{elem_key}"
+                elem_ptr_type = self._get_type(elem_ptr_key)
+                ac = self.module.alloc_id()
+                self._body += _make_instruction(
+                    OpAccessChain, elem_ptr_type, ac, buf_var, index)
+            elif node.field.name in shared_vars:
                 elem_ptr_key = f"ptr_wg_{elem_key}"
                 elem_ptr_type = self._get_type(elem_ptr_key)
                 ac = self.module.alloc_id()
@@ -1305,6 +1322,65 @@ class SPIRVCodeGen:
         # Mark it as shared (different access pattern — no struct wrapping)
         self._shared_vars = getattr(self, '_shared_vars', set())
         self._shared_vars.add(node.name)
+
+    def _emit_local_alloc(self, node: ir.IRLocalAlloc):
+        """Emit a Function (per-thread local) memory variable."""
+        dtype_map = {"float": "f32", "int": "i32"}
+        type_key = dtype_map.get(node.dtype, "f32")
+        elem_type = self._get_type(type_key)
+
+        if isinstance(node.size, ir.IRConstant):
+            arr_size = node.size.value
+        else:
+            raise NotImplementedError("Local array with non-constant size")
+
+        # Declare array type
+        arr_key = f"arr_{type_key}_{arr_size}"
+        if arr_key not in self._type_cache:
+            arr_id = self.module.alloc_id()
+            self._type_cache[arr_key] = arr_id
+            size_const = self._const_u32(arr_size)
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypeArray, arr_id, elem_type, size_const))
+            stride = 4
+            self.module.add_annotation(
+                _make_instruction(OpDecorate, arr_id, Decoration_ArrayStride, stride))
+
+        arr_type = self._type_cache[arr_key]
+
+        # Pointer to array in Function storage class
+        ptr_key = f"ptr_fn_{arr_key}"
+        if ptr_key not in self._type_cache:
+            ptr_id = self.module.alloc_id()
+            self._type_cache[ptr_key] = ptr_id
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypePointer, ptr_id,
+                                  StorageClass_Function, arr_type))
+
+        ptr_type = self._type_cache[ptr_key]
+
+        # Declare variable in function scope
+        var_id = self.module.alloc_id()
+        self._body += _make_instruction(OpVariable, ptr_type, var_id,
+                                         StorageClass_Function)
+
+        # Element pointer type in Function storage class
+        elem_ptr_key = f"ptr_fn_{type_key}"
+        if elem_ptr_key not in self._type_cache:
+            elem_ptr_id = self.module.alloc_id()
+            self._type_cache[elem_ptr_key] = elem_ptr_id
+            self.module.add_type_or_constant(
+                _make_instruction(OpTypePointer, elem_ptr_id,
+                                  StorageClass_Function, elem_type))
+
+        # Store as a "param buffer" so field load/store can access it
+        self._param_buffers[node.name] = (var_id, type_key)
+        self._shared_vars = getattr(self, '_shared_vars', set())
+        self._shared_vars.add(node.name)
+        # Track local arrays for Function storage class access
+        if not hasattr(self, '_local_arrays'):
+            self._local_arrays = set()
+        self._local_arrays.add(node.name)
 
     def _emit_thread_id(self) -> int:
         """Emit gl_LocalInvocationID.x (thread index within workgroup)."""

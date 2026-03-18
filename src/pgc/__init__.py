@@ -42,6 +42,14 @@ def ndrange(*args):
     """
     raise RuntimeError("ndrange() can only be used inside a @pgc.kernel")
 
+def local_array(dtype, size):
+    """Allocate a per-thread local array. Only usable inside a @pgc.kernel.
+
+    Usage: arr = pgc.local_array(pgc.f32, 8)
+    Then: arr[i] = value, value = arr[i]
+    """
+    raise RuntimeError("local_array() can only be used inside a @pgc.kernel")
+
 def texture3d(source_field, shape=None, interp='linear'):
     """Create a 3D texture from a field for hardware-accelerated sampling.
 

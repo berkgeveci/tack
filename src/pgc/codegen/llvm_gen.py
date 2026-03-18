@@ -153,6 +153,8 @@ class LLVMCodeGen:
             self._emit_print(node)
         elif isinstance(node, ir.IRSharedAlloc):
             self._emit_shared_alloc(node)
+        elif isinstance(node, ir.IRLocalAlloc):
+            self._emit_shared_alloc(node)  # same as shared on CPU: stack alloca
         elif isinstance(node, ir.IRBarrier):
             pass  # No-op on CPU (single-threaded per chunk)
         elif isinstance(node, ir.IRCall):

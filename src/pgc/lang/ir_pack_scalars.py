@@ -183,6 +183,10 @@ def _rewrite(node, replace_map):
         node.size = _rewrite(node.size, replace_map)
         return node
 
+    if isinstance(node, ir.IRLocalAlloc):
+        node.size = _rewrite(node.size, replace_map)
+        return node
+
     if isinstance(node, ir.IRPrint):
         node.args = [_rewrite(a, replace_map) for a in node.args]
         return node

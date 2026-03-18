@@ -173,6 +173,8 @@ class MSLCodeGen:
             self._emit("/* print not supported on Metal */")
         elif isinstance(node, ir.IRSharedAlloc):
             self._emit(f"threadgroup {node.dtype} {node.name}[{self._expr(node.size)}];")
+        elif isinstance(node, ir.IRLocalAlloc):
+            self._emit(f"{node.dtype} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRBarrier):
             self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
         elif isinstance(node, ir.IRCall):
@@ -193,12 +195,11 @@ class MSLCodeGen:
         step = self._expr(node.step) if node.step else None
         incr = f"{node.var} += {step}" if step else f"{node.var}++"
         var = node.var
-        if var not in self._declared_vars:
-            self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {incr}) {{")
-            self._local_vars[var] = _INT
-            self._declared_vars.add(var)
-        else:
-            self._emit(f"for ({var} = {start}; {var} < {end}; {incr}) {{")
+        # Always declare the loop variable in the for-header to handle
+        # re-use of the same variable name in sibling loops (C block scoping).
+        self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {incr}) {{")
+        self._local_vars[var] = _INT
+        self._declared_vars.add(var)
         self._indent += 1
         self._emit_body(node.body)
         self._indent -= 1

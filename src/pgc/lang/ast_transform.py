@@ -267,6 +267,12 @@ class KernelTransformer(ast.NodeVisitor):
             if shared_result is not None:
                 return shared_result
 
+        # Check for local array allocation: arr = pgc.local_array(pgc.f32, 8)
+        if isinstance(target, ast.Name) and isinstance(value, ast.Call):
+            local_result = self._try_parse_local_alloc(target.id, value)
+            if local_result is not None:
+                return local_result
+
         # Check for vector construction: v = pgc.Vector([a, b, c])
         vec_elts = self._try_parse_vector_construct(value)
         if vec_elts is not None and isinstance(target, ast.Name):
@@ -526,6 +532,11 @@ class KernelTransformer(ast.NodeVisitor):
             raise NotImplementedError(
                 "pgc.shared() must be used in an assignment: smem = pgc.shared(pgc.f32, 256)")
 
+        # Local array: pgc.local_array(dtype, size)
+        if func_name == "local_array":
+            raise NotImplementedError(
+                "pgc.local_array() must be used in an assignment: arr = pgc.local_array(pgc.f32, 8)")
+
         # Barrier: pgc.barrier()
         if func_name == "barrier":
             return ir.IRBarrier()
@@ -770,6 +781,35 @@ class KernelTransformer(ast.NodeVisitor):
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)
         return ir.IRSharedAlloc(name=target_name, dtype=c_type, size=size)
+
+    def _try_parse_local_alloc(self, target_name: str, value_node: ast.Call):
+        """Try to parse arr = pgc.local_array(pgc.f32, 8). Returns IRLocalAlloc or None."""
+        try:
+            name = self._resolve_call_name(value_node)
+        except (NotImplementedError, AttributeError):
+            return None
+        if name != "local_array":
+            return None
+        if len(value_node.args) != 2:
+            raise NotImplementedError("pgc.local_array() takes exactly 2 arguments (dtype, size)")
+
+        dtype_arg = value_node.args[0]
+        if isinstance(dtype_arg, ast.Attribute):
+            dtype_str = dtype_arg.attr
+        elif isinstance(dtype_arg, ast.Name):
+            dtype_str = dtype_arg.id
+        else:
+            raise NotImplementedError("pgc.local_array() dtype must be pgc.f32, pgc.i32, etc.")
+
+        _DTYPE_TO_C = {"f32": "float", "f64": "double", "i32": "int", "i64": "long",
+                       "u32": "uint", "u64": "ulong"}
+        c_type = _DTYPE_TO_C.get(dtype_str)
+        if c_type is None:
+            raise NotImplementedError(f"Unsupported local array dtype: {dtype_str}")
+
+        size = self.visit(value_node.args[1])
+        self._shared_vars.add(target_name)  # treat as array for indexing purposes
+        return ir.IRLocalAlloc(name=target_name, dtype=c_type, size=size)
 
     def _try_parse_vector_construct(self, value_node: ast.expr) -> list | None:
         """Try to parse a Vector([a, b, c]) constructor. Returns list of AST element nodes or None."""

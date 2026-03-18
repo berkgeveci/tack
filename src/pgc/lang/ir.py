@@ -217,6 +217,15 @@ class IRSharedAlloc(IRNode):
         self.size = size     # IRNode expression for number of elements
 
 
+class IRLocalAlloc(IRNode):
+    """Allocate a per-thread local array (private memory on GPU, stack on CPU)."""
+
+    def __init__(self, name: str, dtype: str, size):
+        self.name = name
+        self.dtype = dtype   # "float", "int", etc.
+        self.size = size     # IRNode expression for number of elements
+
+
 class IRBarrier(IRNode):
     """Threadgroup synchronization barrier."""
     pass
@@ -340,6 +349,8 @@ def dump(node, indent=0) -> str:
         return f"{prefix}Cast({dump(node.value)}, {node.dtype})"
     if isinstance(node, IRSharedAlloc):
         return f"{prefix}SharedAlloc {node.name}: {node.dtype}[{dump(node.size)}]"
+    if isinstance(node, IRLocalAlloc):
+        return f"{prefix}LocalAlloc {node.name}: {node.dtype}[{dump(node.size)}]"
     if isinstance(node, IRBarrier):
         return f"{prefix}Barrier"
     if isinstance(node, IRThreadId):

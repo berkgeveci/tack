@@ -175,7 +175,11 @@ def _annotate_stmt(node, env, field_params):
         return
 
     if isinstance(node, ir.IRSharedAlloc):
-        # Shared memory variable — type from its dtype
+        if hasattr(node, 'dtype_annotation'):
+            env[node.name] = node.dtype_annotation
+        return
+
+    if isinstance(node, ir.IRLocalAlloc):
         if hasattr(node, 'dtype_annotation'):
             env[node.name] = node.dtype_annotation
         return
