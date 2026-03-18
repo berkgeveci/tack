@@ -17,7 +17,7 @@ kernel(x, y, out, alpha, n)
 
 ## Backend.execute() Flow
 
-All 6 backends follow the same flow in their `execute()` method:
+All 5 backends follow the same flow in their `execute()` method:
 
 ```python
 def execute(self, kernel, args, kwargs):

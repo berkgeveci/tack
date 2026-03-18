@@ -60,8 +60,8 @@ The entire framework is ~12,000 lines of Python:
 | Directory | Lines | Role |
 |-----------|-------|------|
 | `lang/` | ~3,300 | Frontend: AST transform, IR, passes |
-| `codegen/` | ~4,500 | 6 code generators |
-| `runtime/` | ~4,400 | 6 backend runtimes |
+| `codegen/` | ~2,700 | 5 code generators |
+| `runtime/` | ~3,000 | 5 backend runtimes |
 
 No C/C++ code. No build step. Everything is pure Python with JIT
 compilation at runtime.
