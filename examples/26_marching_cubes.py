@@ -1,4 +1,4 @@
-"""26 — Marching cubes isosurface extraction.
+"""26 -- Marching cubes isosurface extraction.
 
 Two-pass marching cubes on a structured 3D grid:
 
@@ -10,7 +10,7 @@ Uses the cell set abstraction (CellSetStructured3D) and multi-return
 @pgc.func for get_cell_points() and get_cell_bounds().  The marching
 cubes lookup tables are stored as pgc fields (read-only data on GPU).
 
-Scalar field: a gyroid — sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
+Scalar field: a gyroid -- sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
 This produces a beautiful triply-periodic minimal surface at isovalue 0.
 
 Usage:
@@ -40,7 +40,7 @@ pgc.init(arch=_arch)
 # MARCHING CUBES TABLES
 # ================================================================
 # Standard tables from VTK (vtkMarchingCubesTriangleCases.cxx).
-# Edge-to-corner pairs and triangle table (256 cases × 16 entries).
+# Edge-to-corner pairs and triangle table (256 cases x 16 entries).
 
 # 12 edges, each connecting two corners (VTK ordering)
 EDGE_CORNERS = np.array([
@@ -55,7 +55,7 @@ CORNER_X = np.array([0, 1, 1, 0, 0, 1, 1, 0], dtype=np.float32)
 CORNER_Y = np.array([0, 0, 1, 1, 0, 0, 1, 1], dtype=np.float32)
 CORNER_Z = np.array([0, 0, 0, 0, 1, 1, 1, 1], dtype=np.float32)
 
-# Triangle table: 256 cases × 16 entries (-1 terminated)
+# Triangle table: 256 cases x 16 entries (-1 terminated)
 # fmt: off
 TRI_TABLE = np.array([
     -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,
@@ -535,7 +535,7 @@ compute_scalar_field(scalar, grid, n_points)
 num_tri = pgc.field(dtype=pgc.i32, shape=(n_cells,))
 classify_cells(scalar, num_tri, grid, tables, n_cells, isovalue)
 
-# Prefix sum → scatter offsets
+# Prefix sum -> scatter offsets
 offsets = pgc.field(dtype=pgc.i32, shape=(n_cells,))
 total_tris = algorithms.exclusive_scan(num_tri, offsets, n_cells)
 total_verts = total_tris * 3
@@ -649,7 +649,7 @@ try:
     del cf, cf2, img, vtk_output, vtk_fe_output
 
 except ImportError:
-    print("\nVTK not installed — skipping VTK comparison.")
+    print("\nVTK not installed -- skipping VTK comparison.")
     print("  Install with: uv pip install vtk")
 
 

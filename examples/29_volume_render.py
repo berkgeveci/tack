@@ -1,4 +1,4 @@
-"""29 — Volume rendering of a rectilinear grid.
+"""29 -- Volume rendering of a rectilinear grid.
 
 Ray-cast volume renderer using front-to-back compositing with a simple
 transfer function.  The scalar field is the same gyroid used in example 27,
@@ -27,7 +27,8 @@ _parser.add_argument('--size', type=int, default=100,
                      help='Grid cells per dimension (default 100)')
 _parser.add_argument('--width', type=int, default=800)
 _parser.add_argument('--height', type=int, default=800)
-_parser.add_argument('--save', default='/tmp/volrender_rect.png')
+import os as _os
+_parser.add_argument('--save', default=_os.path.join(_os.path.dirname(__file__), '..', 'results', 'volrender_rect.png'))
 _parser.add_argument('--warmup', type=int, default=2)
 _parser.add_argument('--trials', type=int, default=5)
 _args = _parser.parse_args()
@@ -62,11 +63,11 @@ def build_transfer_function(vmin, vmax, n_layers=10):
 
     for k in range(n_layers):
         frac = k / max(n_layers - 1, 1)
-        # Cool-to-warm: blue → white → red
+        # Cool-to-warm: blue -> white -> red
         r = np.clip(2.0 * frac, 0, 1)
         g = np.clip(1.0 - 2.5 * abs(frac - 0.5), 0, 1)
         b = np.clip(2.0 * (1.0 - frac), 0, 1)
-        # Opacity peaks at extremes, dips near center → transparency
+        # Opacity peaks at extremes, dips near center -> transparency
         dist_from_center = abs(frac - 0.5) * 2.0  # 0 at center, 1 at edges
         alpha = 0.005 + 0.06 * dist_from_center ** 1.5
         gauss = np.exp(-(t - centers[k]) ** 2 / width)
@@ -89,7 +90,7 @@ def build_transfer_function(vmin, vmax, n_layers=10):
 
 @pgc.func
 def find_cell(inv_table, coords, n_cells, inv_size, pos, cmin, inv_stride):
-    """O(1) cell lookup via inverse table + ±1 correction.
+    """O(1) cell lookup via inverse table + +/-1 correction.
 
     inv_table: precomputed table mapping uniform bins to cell indices.
     coords:    the 1-D coordinate array (n_cells + 1 entries).
@@ -99,14 +100,14 @@ def find_cell(inv_table, coords, n_cells, inv_size, pos, cmin, inv_stride):
     cmin:      minimum coordinate value (coords[0]).
     inv_stride: (cmax - cmin) / inv_size.
     """
-    # Uniform bin index → approximate cell index
+    # Uniform bin index -> approximate cell index
     k = int((pos - cmin) / inv_stride)
     if k < 0:
         k = 0
     if k >= inv_size:
         k = inv_size - 1
     ix = inv_table[k]
-    # ±1 correction: the bin may round to the wrong cell at boundaries
+    # +/-1 correction: the bin may round to the wrong cell at boundaries
     if ix > 0 and pos < coords[ix]:
         ix = ix - 1
     if ix < n_cells - 1 and pos >= coords[ix + 1]:
@@ -131,7 +132,7 @@ def sample_tex(tex, xcoords, ycoords, zcoords,
     iy = find_cell(inv_y, ycoords, ny, inv_size, py, cmin_y, inv_sy)
     iz = find_cell(inv_z, zcoords, nz, inv_size, pz, cmin_z, inv_sz)
 
-    # Fractional position within cell → normalized texture coordinate
+    # Fractional position within cell -> normalized texture coordinate
     x0 = xcoords[ix]
     x1 = xcoords[ix + 1]
     y0 = ycoords[iy]
@@ -408,7 +409,7 @@ INV_TABLE_SIZE = max(nx, ny, nz) * 2  # 2x oversampling for accuracy
 
 
 def build_inv_table(coords_np, n_cells, table_size):
-    """Build a uniform-binned inverse lookup: world coord → cell index."""
+    """Build a uniform-binned inverse lookup: world coord -> cell index."""
     cmin = float(coords_np[0])
     cmax = float(coords_np[-1])
     stride = (cmax - cmin) / table_size
@@ -433,7 +434,7 @@ inv_x.from_numpy(inv_x_np)
 inv_y.from_numpy(inv_y_np)
 inv_z.from_numpy(inv_z_np)
 
-# Scalar parameters are passed directly — the backend automatically packs
+# Scalar parameters are passed directly -- the backend automatically packs
 # them into constant buffers to stay within GPU binding limits.
 render_args = (img_r, img_g, img_b,
                tex, xcoords, ycoords, zcoords,
@@ -507,7 +508,7 @@ try:
     plt.close()
     print(f"Saved: {_args.save}")
 except ImportError:
-    print("matplotlib not available — skipping image save")
+    print("matplotlib not available -- skipping image save")
     # Fallback: save raw as .npy
     np.save(_args.save.replace('.png', '.npy'), img)
     print(f"Saved raw array: {_args.save.replace('.png', '.npy')}")

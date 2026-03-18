@@ -1,4 +1,4 @@
-"""Dataset — a mesh container with coordinates, cell sets, and data arrays."""
+"""Dataset -- a mesh container with coordinates, cell sets, and data arrays."""
 
 import numpy as np
 import pgc
@@ -10,7 +10,7 @@ from .cellsets import CellSetStructured3D
 class Dataset:
     """Container for a mesh with associated data arrays.
 
-    Not @pgc.data_oriented — this is a Python-side container.
+    Not @pgc.data_oriented -- this is a Python-side container.
     The individual components (coordinates, cell_set, arrays) are
     @pgc.data_oriented and can be passed into kernels as templates.
     """

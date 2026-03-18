@@ -1,4 +1,4 @@
-"""03 — Scalar arguments: pass Python numbers directly to kernels.
+"""03 -- Scalar arguments: pass Python numbers directly to kernels.
 
 Kernels can accept plain Python int/float values alongside fields.
 This is useful for passing constants like time steps, coefficients,
@@ -33,7 +33,7 @@ def saxpy(x, y, out, alpha, n):
         out[i] = alpha * x[i] + y[i]
 
 
-# Pass scalar values directly — no need to wrap in fields
+# Pass scalar values directly -- no need to wrap in fields
 alpha = 2.5
 saxpy(x, y, out, alpha, n)
 
@@ -42,7 +42,7 @@ expected = alpha * np.arange(n, dtype=np.float32) + 3.0
 assert np.allclose(result, expected)
 print(f"SAXPY with alpha={alpha}: first 5 results = {result[:5]}")
 
-# Call again with a different alpha — same compiled kernel is reused
+# Call again with a different alpha -- same compiled kernel is reused
 saxpy(x, y, out, -1.0, n)
 result2 = out.to_numpy()
 expected2 = -1.0 * np.arange(n, dtype=np.float32) + 3.0

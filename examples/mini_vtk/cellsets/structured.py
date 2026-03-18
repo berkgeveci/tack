@@ -1,4 +1,4 @@
-"""Structured (rectilinear) cell set — connectivity from grid dimensions."""
+"""Structured (rectilinear) cell set -- connectivity from grid dimensions."""
 
 import pgc
 

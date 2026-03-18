@@ -1,13 +1,13 @@
-"""Validation suite — runs Taichi-style examples on both CPU and Metal backends.
+"""Validation suite -- runs Taichi-style examples on both CPU and Metal backends.
 
 Tests:
-  1. Vector add       — simplest kernel, validates basic pipeline
-  2. SAXPY            — scalar * vector + vector, fused ops
-  3. Reduction        — sum of array (multi-pass)
-  4. Mandelbrot       — nested loops, complex math, 2D output
-  5. N-body           — multiple fields, distance calculations
-  6. Jacobi iteration — stencil pattern, read/write fields
-  7. Matrix multiply  — 2D indexing, accumulation
+  1. Vector add       -- simplest kernel, validates basic pipeline
+  2. SAXPY            -- scalar * vector + vector, fused ops
+  3. Reduction        -- sum of array (multi-pass)
+  4. Mandelbrot       -- nested loops, complex math, 2D output
+  5. N-body           -- multiple fields, distance calculations
+  6. Jacobi iteration -- stencil pattern, read/write fields
+  7. Matrix multiply  -- 2D indexing, accumulation
 """
 
 import time
@@ -40,9 +40,9 @@ BACKENDS = _available_backends()
 
 def run_on_all(name, setup_fn, kernel_fn, verify_fn):
     """Run a validation test on all available backends, verify correctness."""
-    print(f"\n{'─' * 60}")
+    print(f"\n{'-' * 60}")
     print(f"  {name}")
-    print(f"{'─' * 60}")
+    print(f"{'-' * 60}")
 
     for backend in BACKENDS:
         pgc.init(arch=backend)
@@ -57,9 +57,9 @@ def run_on_all(name, setup_fn, kernel_fn, verify_fn):
             raise AssertionError(f"{name} failed on {backend}")
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # 1. Vector add
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 @pgc.kernel
 def vector_add(x, y, out):
@@ -83,9 +83,9 @@ def va_verify(x, y, out):
     return np.allclose(result, expected)
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # 2. SAXPY
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 @pgc.kernel
 def saxpy(x, y, out):
@@ -109,9 +109,9 @@ def saxpy_verify(x, y, out):
     return np.allclose(result, expected, rtol=1e-4, atol=1e-6)
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # 3. Reduction (parallel partial sums + CPU final reduce)
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 REDUCE_BLOCK = 256
 
@@ -142,9 +142,9 @@ def reduce_verify(data, partial):
     return abs(total - expected) < 1.0
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # 4. Mandelbrot
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 WIDTH = 800
 HEIGHT = 600
@@ -187,8 +187,8 @@ def mandelbrot_setup():
 def mandelbrot_verify(pixels):
     data = pixels.to_numpy().reshape(HEIGHT, WIDTH)
     # Center of Mandelbrot set (0,0 maps to px=533,py=300) should have max iterations
-    center_px = int(2.0 / 3.0 * WIDTH)  # x0=0 → px=533
-    center_py = int(1.5 / 3.0 * HEIGHT)  # y0=0 → py=300
+    center_px = int(2.0 / 3.0 * WIDTH)  # x0=0 -> px=533
+    center_py = int(1.5 / 3.0 * HEIGHT)  # y0=0 -> py=300
     center_val = data[center_py, center_px]
     if center_val < MAX_ITER:
         return False
@@ -211,9 +211,9 @@ def mandelbrot_verify(pixels):
     return True
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # 5. N-body (gravitational force calculation)
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 N_BODIES = 512
 SOFTENING = 0.01
@@ -282,9 +282,9 @@ def nbody_verify(px, py, pz, mass, fx, fy, fz):
             np.allclose(fz.to_numpy(), ref_fz.astype(np.float32), rtol=1e-3, atol=1e-3))
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # 6. Jacobi iteration (1D heat equation)
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 JACOBI_N = 1024
 JACOBI_STEPS = 100
@@ -323,13 +323,13 @@ def jacobi_verify(src, dst):
 def run_jacobi(src, dst):
     for _ in range(JACOBI_STEPS):
         jacobi_step(src, dst)
-        # Swap: copy dst → src for next iteration
+        # Swap: copy dst -> src for next iteration
         src.from_numpy(dst.to_numpy())
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # 7. Matrix multiply
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 MAT_N = 64
 
@@ -364,9 +364,9 @@ def matmul_verify(a, b, c):
     return np.allclose(np_c, expected, rtol=1e-3, atol=1e-3)
 
 
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 # Main
-# ─────────────────────────────────────────────────────────────
+# -------------------------------------------------------------
 
 def main():
     np.random.seed(42)
@@ -376,13 +376,13 @@ def main():
     run_on_all("1. Vector Add", va_setup, vector_add, va_verify)
     run_on_all("2. SAXPY", saxpy_setup, saxpy, saxpy_verify)
     run_on_all("3. Reduction (partial sums)", reduce_setup, partial_sum, reduce_verify)
-    run_on_all("4. Mandelbrot (800×600)", mandelbrot_setup, mandelbrot, mandelbrot_verify)
+    run_on_all("4. Mandelbrot (800x600)", mandelbrot_setup, mandelbrot, mandelbrot_verify)
     run_on_all("5. N-body (512 bodies)", nbody_setup, nbody_forces, nbody_verify)
 
     # Jacobi needs special handling (multi-step iteration)
-    print(f"\n{'─' * 60}")
+    print(f"\n{'-' * 60}")
     print(f"  6. Jacobi Iteration (1D, {JACOBI_STEPS} steps)")
-    print(f"{'─' * 60}")
+    print(f"{'-' * 60}")
     for backend in BACKENDS:
         pgc.init(arch=backend)
         src, dst = jacobi_setup()
@@ -395,7 +395,7 @@ def main():
         if not ok:
             raise AssertionError(f"Jacobi failed on {backend}")
 
-    run_on_all("7. Matrix Multiply (64×64)", matmul_setup, matmul, matmul_verify)
+    run_on_all("7. Matrix Multiply (64x64)", matmul_setup, matmul, matmul_verify)
 
     print(f"\n{'=' * 60}")
     print("  All validations passed!")

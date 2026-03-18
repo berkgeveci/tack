@@ -1,10 +1,10 @@
-"""10 — Vector operations in kernels.
+"""10 -- Vector operations in kernels.
 
 PGC has a built-in Vector type for 3D math.  Construct vectors from
 scalar values, then use methods like .dot(), .cross(), .normalized(),
 .norm(), and .norm_sqr().
 
-Vectors are temporary values inside kernels — component data lives in
+Vectors are temporary values inside kernels -- component data lives in
 separate scalar fields (one field per component).
 
 Usage:

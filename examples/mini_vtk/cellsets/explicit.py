@@ -1,4 +1,4 @@
-"""Explicit cell set — connectivity stored in a flat field."""
+"""Explicit cell set -- connectivity stored in a flat field."""
 
 import numpy as np
 import pgc
@@ -11,7 +11,7 @@ class CellSetExplicit:
     Connectivity is a flat i32 field: [c0p0, ..., c0pN, c1p0, ..., c1pN, ...]
     where N = points_per_cell.
 
-    Works for any cell type (hex=8, tet=4, wedge=6, etc.) — the same
+    Works for any cell type (hex=8, tet=4, wedge=6, etc.) -- the same
     kernel code compiles differently for each points_per_cell value via
     the template system.
 

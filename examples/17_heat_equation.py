@@ -1,6 +1,6 @@
-"""17 — 2D Heat equation with explicit time stepping.
+"""17 -- 2D Heat equation with explicit time stepping.
 
-Solves the heat equation ∂u/∂t = α ∇²u on a 2D grid using forward
+Solves the heat equation du/dt = alpha * laplacian(u) on a 2D grid using forward
 Euler time integration and a 5-point Laplacian stencil.
 
 Initial condition: two hot spots on a cold background.
@@ -73,8 +73,8 @@ for i in range(N):
 u.from_numpy(init)
 
 alpha_dt_dx2 = ALPHA * DT / (DX * DX)
-print(f"2D Heat equation: {N}x{N}, α={ALPHA}, dt={DT:.6f}")
-print(f"  CFL parameter α*dt/dx² = {alpha_dt_dx2:.4f} (must be < 0.25)")
+print(f"2D Heat equation: {N}x{N}, alpha={ALPHA}, dt={DT:.6f}")
+print(f"  CFL parameter alpha*dt/dx^2 = {alpha_dt_dx2:.4f} (must be < 0.25)")
 
 snapshots = []
 for step in range(STEPS):
@@ -97,7 +97,8 @@ try:
         ax.set_title(f"t={step}")
         ax.axis("off")
     plt.suptitle("Heat Equation Diffusion")
-    plt.savefig("/tmp/heat_equation.png", dpi=150, bbox_inches="tight")
+    import os
+    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "heat_equation.png"), dpi=150, bbox_inches="tight")
     print("  Saved: heat_equation.png")
 except ImportError:
     print("  (install matplotlib to save image)")

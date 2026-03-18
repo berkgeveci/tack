@@ -1,4 +1,4 @@
-"""Threshold filter — extract cells where a scalar is within a range."""
+"""Threshold filter -- extract cells where a scalar is within a range."""
 
 import numpy as np
 import pgc

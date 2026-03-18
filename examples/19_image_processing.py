@@ -1,4 +1,4 @@
-"""19 — Image processing kernels.
+"""19 -- Image processing kernels.
 
 Demonstrates common image processing operations as PGC kernels:
   1. Brightness/contrast adjustment
@@ -152,7 +152,8 @@ try:
     for ax in axes.flat:
         ax.axis("off")
     plt.suptitle("PGC Image Processing")
-    plt.savefig("/tmp/image_processing.png", dpi=150, bbox_inches="tight")
+    import os
+    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "image_processing.png"), dpi=150, bbox_inches="tight")
     print("  Saved: image_processing.png")
 except ImportError:
     print("  (install matplotlib to save image)")

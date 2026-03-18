@@ -1,4 +1,4 @@
-"""Vector addition — simplest PGC example, now JIT-compiled."""
+"""Vector addition -- simplest PGC example, now JIT-compiled."""
 
 import time
 import numpy as np

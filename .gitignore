@@ -10,7 +10,7 @@ wheels/
 .venv
 
 # Generated images
-*.png
+results/
 *.npy
 
 # Claude Code local config

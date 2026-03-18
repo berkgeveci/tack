@@ -1,4 +1,4 @@
-"""12 — Mandelbrot set fractal.
+"""12 -- Mandelbrot set fractal.
 
 Classic GPU compute example: compute the Mandelbrot set on a 2D grid.
 Each pixel is independent, making this embarrassingly parallel.
@@ -76,7 +76,8 @@ try:
     ax.set_title("Mandelbrot Set (PGC)")
     ax.set_xlabel("Real")
     ax.set_ylabel("Imaginary")
-    plt.savefig("/tmp/mandelbrot.png", dpi=150, bbox_inches="tight")
+    import os
+    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "mandelbrot.png"), dpi=150, bbox_inches="tight")
     print("  Saved: mandelbrot.png")
 except ImportError:
     print("  (install matplotlib to save image)")

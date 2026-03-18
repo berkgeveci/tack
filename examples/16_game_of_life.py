@@ -1,4 +1,4 @@
-"""16 — Conway's Game of Life.
+"""16 -- Conway's Game of Life.
 
 A cellular automaton on a 2D grid.  Each cell is alive (1) or dead (0).
 Rules applied simultaneously to all cells:

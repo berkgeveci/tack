@@ -1,4 +1,4 @@
-"""11 — Template classes with @pgc.data_oriented.
+"""11 -- Template classes with @pgc.data_oriented.
 
 Use @pgc.data_oriented to bundle fields and scalar parameters into a
 class that can be passed to kernels.  Field attributes become kernel
@@ -28,8 +28,8 @@ class Grid:
     """A 1D grid with uniform spacing and stored values."""
 
     def __init__(self, data, dx):
-        self.data = data   # field → becomes a kernel buffer parameter
-        self.dx = dx       # scalar → becomes a compile-time constant
+        self.data = data   # field -> becomes a kernel buffer parameter
+        self.dx = dx       # scalar -> becomes a compile-time constant
 
     @pgc.func
     def sample(self, i):
@@ -80,7 +80,7 @@ expected_sample = np.sin(x_vals) * dx
 assert np.allclose(sampled, expected_sample, atol=1e-5)
 print("Grid sampling: OK")
 
-# Verify: gradient of sin(x) ≈ cos(x)
+# Verify: gradient of sin(x) ~= cos(x)
 grad = grad_out.to_numpy()
 expected_grad = np.cos(x_vals)
 interior = slice(2, n - 2)  # skip boundary effects

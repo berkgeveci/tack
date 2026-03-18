@@ -23,7 +23,7 @@ Progressive examples covering all PGC features, from basic to advanced.
 | # | Example | Description |
 |---|---------|-------------|
 | 12 | [Mandelbrot](12_mandelbrot.py) | Fractal rendering with smooth coloring |
-| 13 | [N-body](13_nbody.py) | Gravitational simulation (O(N²) all-pairs) |
+| 13 | [N-body](13_nbody.py) | Gravitational simulation (O(N^2) all-pairs) |
 | 14 | [Jacobi Solver](14_jacobi_solver.py) | 2D Laplace equation with iterative stencil |
 | 15 | [Matrix Multiply](15_matmul.py) | Dense matrix multiplication with benchmarking |
 | 16 | [Game of Life](16_game_of_life.py) | Conway's cellular automaton on a 2D grid |

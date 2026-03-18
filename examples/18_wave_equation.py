@@ -1,6 +1,6 @@
-"""18 — 1D Wave equation simulation.
+"""18 -- 1D Wave equation simulation.
 
-Solves the wave equation ∂²u/∂t² = c² ∂²u/∂x² using the leapfrog
+Solves the wave equation d2u/dt2 = c^2 * d2u/dx2 using the leapfrog
 (Verlet) method.  Three time levels are used: u_prev, u_curr, u_next.
 
 Initial condition: Gaussian pulse at the center.
@@ -32,7 +32,7 @@ u_next = pgc.field(dtype=pgc.f32, shape=(N,))
 
 @pgc.kernel
 def wave_step(u_prev, u_curr, u_next, courant2, n):
-    """Leapfrog update: u_next = 2*u_curr - u_prev + c²dt²/dx² * (u[i+1] - 2u[i] + u[i-1])"""
+    """Leapfrog update: u_next = 2*u_curr - u_prev + c^2*dt^2/dx^2 * (u[i+1] - 2u[i] + u[i-1])"""
     for i in range(n):
         if i > 0:
             if i < n - 1:
@@ -46,7 +46,7 @@ def wave_step(u_prev, u_curr, u_next, courant2, n):
 
 @pgc.kernel
 def shift(u_prev, u_curr, u_next, n):
-    """Shift time levels: prev ← curr, curr ← next."""
+    """Shift time levels: prev <- curr, curr <- next."""
     for i in range(n):
         u_prev[i] = u_curr[i]
         u_curr[i] = u_next[i]
@@ -60,7 +60,7 @@ u_curr.from_numpy(pulse)
 u_prev.from_numpy(pulse)  # zero initial velocity
 
 courant2 = (C * DT / DX) ** 2
-print(f"1D Wave equation: N={N}, c={C}, Courant²={courant2:.4f}")
+print(f"1D Wave equation: N={N}, c={C}, Courant^2={courant2:.4f}")
 
 snapshots = []
 for step in range(STEPS):
@@ -88,9 +88,10 @@ try:
         ax.plot(x, data, label=f"t={step}", alpha=0.7)
     ax.set_xlabel("x")
     ax.set_ylabel("u")
-    ax.set_title("1D Wave Equation — Gaussian pulse splitting")
+    ax.set_title("1D Wave Equation -- Gaussian pulse splitting")
     ax.legend()
-    plt.savefig("/tmp/wave_equation.png", dpi=150, bbox_inches="tight")
+    import os
+    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "wave_equation.png"), dpi=150, bbox_inches="tight")
     print("  Saved: wave_equation.png")
 except ImportError:
     print("  (install matplotlib to save image)")

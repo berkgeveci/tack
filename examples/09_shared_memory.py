@@ -1,12 +1,12 @@
-"""09 — Shared memory and thread synchronization.
+"""09 -- Shared memory and thread synchronization.
 
 On GPUs, threads within a workgroup (threadgroup on Metal, thread block
 on CUDA/HIP) can communicate through fast shared memory.
 
 Key APIs:
-  pgc.shared(dtype, size)  — allocate threadgroup-local memory
-  pgc.thread_id()          — local thread index within the workgroup
-  pgc.barrier()            — synchronize all threads in the workgroup
+  pgc.shared(dtype, size)  -- allocate threadgroup-local memory
+  pgc.thread_id()          -- local thread index within the workgroup
+  pgc.barrier()            -- synchronize all threads in the workgroup
 
 Usage:
   uv run python examples/09_shared_memory.py

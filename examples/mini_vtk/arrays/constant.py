@@ -1,4 +1,4 @@
-"""Constant (implicit) array types — O(1) memory."""
+"""Constant (implicit) array types -- O(1) memory."""
 
 import pgc
 

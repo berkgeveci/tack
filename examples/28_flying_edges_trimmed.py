@@ -1,4 +1,4 @@
-"""28 — Flying Edges with Trim Ranges.
+"""28 -- Flying Edges with Trim Ranges.
 
 Builds on example 27's true FlyingEdges with an optimization from
 VTK's implementation: trim ranges.  Each node-row records the first
@@ -324,7 +324,7 @@ for _case in range(256):
 
 @pgc.data_oriented
 class UniformGrid:
-    """Uniform grid — coordinates computed from origin + index * spacing."""
+    """Uniform grid -- coordinates computed from origin + index * spacing."""
 
     def __init__(self, nx, ny, nz, x0, y0, z0, dx, dy, dz):
         self.nx = nx
@@ -355,7 +355,7 @@ class UniformGrid:
 
 @pgc.data_oriented
 class RectilinearGrid:
-    """Rectilinear grid — separable 1D coordinate arrays."""
+    """Rectilinear grid -- separable 1D coordinate arrays."""
 
     def __init__(self, nx, ny, nz, xcoords, ycoords, zcoords):
         self.nx = nx
@@ -383,7 +383,7 @@ class RectilinearGrid:
 
 @pgc.data_oriented
 class StructuredGrid:
-    """Structured (curvilinear) grid — full per-point coordinate arrays."""
+    """Structured (curvilinear) grid -- full per-point coordinate arrays."""
 
     def __init__(self, nx, ny, nz, px, py, pz):
         self.nx = nx
@@ -717,7 +717,7 @@ def fe_emit_tris_trim(scalar, row_tri_offset,
         yo01 = row_yo[r01]
         xo11 = row_xo[r11]
 
-        # Running per-type edge counts — all 0 at ci_start since no
+        # Running per-type edge counts -- all 0 at ci_start since no
         # crossings exist before the trim range
         rx00 = 0
         ry00 = 0
@@ -816,7 +816,7 @@ def fe_emit_tris_trim(scalar, row_tri_offset,
                         tri_v1[tri_idx] = select12(pid0, pid1, pid2, pid3, pid4, pid5, pid6, pid7, pid8, pid9, pid10, pid11, e1)
                         tri_v2[tri_idx] = select12(pid0, pid1, pid2, pid3, pid4, pid5, pid6, pid7, pid8, pid9, pid10, pid11, e2)
                         tri_idx = tri_idx + 1
-                # Shift right → left
+                # Shift right -> left
                 s0 = s1
                 s3 = s2
                 s4 = s5
@@ -1354,8 +1354,8 @@ results["FE-Trim"] = fe_trim_time
 print("\n--- Validation ---")
 
 # Trimmed must produce same counts
-print(f"  Trimmed == Untrimmed points: {t_total_points:,} — OK")
-print(f"  Trimmed == Untrimmed tris:   {t_total_tris:,} — OK")
+print(f"  Trimmed == Untrimmed points: {t_total_points:,} -- OK")
+print(f"  Trimmed == Untrimmed tris:   {t_total_tris:,} -- OK")
 
 # Check connectivity in range
 t_t0 = t_tri_v0.to_numpy()
@@ -1447,7 +1447,7 @@ try:
     del cf, img, vtk_output
 
 except ImportError:
-    print("\nVTK not installed — skipping VTK comparison.")
+    print("\nVTK not installed -- skipping VTK comparison.")
 
 
 # ================================================================

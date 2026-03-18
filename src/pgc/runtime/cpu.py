@@ -64,7 +64,7 @@ def _init_numa():
         _numa_max_node = max_node
         _libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
         _numa_available = True
-    except (OSError, AttributeError):
+    except (OSError, AttributeError, TypeError):
         pass
 
 _init_numa()

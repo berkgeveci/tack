@@ -1,14 +1,14 @@
-"""25 — Point-to-cell averaging: structured vs explicit connectivity.
+"""25 -- Point-to-cell averaging: structured vs explicit connectivity.
 
 Demonstrates the cell set abstraction for 3D hexahedral meshes.  The same
 averaging kernel works with both connectivity representations:
 
-1. CellSetStructured3D — connectivity computed on the fly from grid
+1. CellSetStructured3D -- connectivity computed on the fly from grid
    dimensions using div/mod.  Zero connectivity storage.
-2. CellSetExplicitHex — connectivity stored in an explicit array of
+2. CellSetExplicitHex -- connectivity stored in an explicit array of
    8 point IDs per cell.
 
-Both cell set types expose get_cell_points(cell_id) → (p0, ..., p7)
+Both cell set types expose get_cell_points(cell_id) -> (p0, ..., p7)
 via multi-return @pgc.func.  The structured version computes the 8 corner
 point IDs from (ci, cj, ck) decomposition; the explicit version reads
 them from a flat connectivity field.
@@ -96,7 +96,7 @@ class CellSetExplicitHex:
 
 
 # ================================================================
-# AVERAGING KERNEL — works with any cell set type
+# AVERAGING KERNEL -- works with any cell set type
 # ================================================================
 
 @pgc.kernel
@@ -267,7 +267,7 @@ try:
     del p2c, img, vtk_out
 
 except ImportError:
-    print("\nVTK not installed — skipping VTK comparison.")
+    print("\nVTK not installed -- skipping VTK comparison.")
     print("  Install with: uv pip install vtk")
 
 
@@ -537,7 +537,7 @@ try:
     del p2c, img, vtk_out
 
 except ImportError:
-    print("\nVTK not installed — skipping VTK comparison.")
+    print("\nVTK not installed -- skipping VTK comparison.")
 
 
 # --- Validation (multi-component) ---

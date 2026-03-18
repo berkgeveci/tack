@@ -1,4 +1,4 @@
-"""64 MB benchmark — CPU JIT vs CUDA GPU vs NumPy, formatted table."""
+"""64 MB benchmark -- CPU JIT vs CUDA GPU vs NumPy, formatted table."""
 
 import time
 import numpy as np
@@ -21,7 +21,7 @@ def bench(fn, warmup=5, trials=30):
     return sorted(times)[len(times) // 2]
 
 
-# ── Kernel definitions ──────────────────────────────────────────
+# -- Kernel definitions ------------------------------------------
 
 @pgc.kernel
 def k_saxpy(x, y, out):
@@ -78,7 +78,7 @@ def k_reduce(data, out):
         out[block_idx] = s
 
 
-# ── NumPy references ────────────────────────────────────────────
+# -- NumPy references --------------------------------------------
 
 def np_saxpy(x, y):     return 2.0 * x + y
 def np_memcpy(src):      return src.copy()
@@ -94,7 +94,7 @@ def np_abs(x):           return np.abs(x)
 def np_reduce(x):        return x.reshape(-1, 256).sum(axis=1)
 
 
-# ── Benchmark runner ────────────────────────────────────────────
+# -- Benchmark runner --------------------------------------------
 
 def throughput(median_sec):
     return N / median_sec / 1e6  # M elements/sec
@@ -134,7 +134,7 @@ def main():
         pass
     print()
 
-    # ── Define benchmarks ──
+    # -- Define benchmarks --
     def setup_2in_1out():
         x = pgc.field(dtype=pgc.f32, shape=(N,))
         y = pgc.field(dtype=pgc.f32, shape=(N,))
@@ -187,7 +187,7 @@ def main():
         r = run_kernel(name, pgc_fn, pgc_setup, np_fn, np_setup)
         rows.append((name, r))
 
-    # ── Print table ──
+    # -- Print table --
     hdr  = "  Kernel  | CPU JIT   | CUDA GPU   |  NumPy   | CUDA vs  | CUDA vs   "
     hdr2 = "          |   (M/s)   |   (M/s)    |  (M/s)   |    CPU   |   NumPy   "
     sep  = "----------+-----------+------------+----------+----------+-----------"

@@ -1,4 +1,4 @@
-"""Tetrahedron cell type — barycentric interpolation."""
+"""Tetrahedron cell type -- barycentric interpolation."""
 
 import pgc
 

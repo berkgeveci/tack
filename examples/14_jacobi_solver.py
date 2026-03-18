@@ -1,6 +1,6 @@
-"""14 — Jacobi iterative solver for the 2D Laplace equation.
+"""14 -- Jacobi iterative solver for the 2D Laplace equation.
 
-Solves ∇²u = 0 on a 2D grid with fixed boundary conditions using
+Solves laplacian(u) = 0 on a 2D grid with fixed boundary conditions using
 the Jacobi iteration method.  This is a classic stencil computation.
 
 The grid has u=100 on the top edge and u=0 on the other three edges.
@@ -69,7 +69,7 @@ print(f"  Center:                       {result[N//2, N//2]:.4f}")
 print(f"  Top edge    (should be 100):  {result[-1, N//2]:.4f}")
 
 # With only the top edge at 100 and the other three at 0, the analytic
-# center value is about 25 (not 50 — this isn't a 1D problem).
+# center value is about 25 (not 50 -- this isn't a 1D problem).
 assert 20.0 < result[N // 2, N // 2] < 30.0, "Center should be near 25"
 
 # Try to save image
@@ -79,7 +79,8 @@ try:
     im = ax.imshow(result, origin="lower", cmap="hot", vmin=0, vmax=100)
     plt.colorbar(im, ax=ax, label="Temperature")
     ax.set_title(f"Laplace equation (Jacobi, {STEPS} iterations)")
-    plt.savefig("/tmp/jacobi.png", dpi=150, bbox_inches="tight")
+    import os
+    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "jacobi.png"), dpi=150, bbox_inches="tight")
     print("  Saved: jacobi.png")
 except ImportError:
     print("  (install matplotlib to save image)")

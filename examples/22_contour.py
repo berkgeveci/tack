@@ -1,4 +1,4 @@
-"""22 — Marching squares contour with GPU prefix sum.
+"""22 -- Marching squares contour with GPU prefix sum.
 
 Port of the PGC contour example demonstrating:
 - Cell set abstraction via @pgc.data_oriented templates
@@ -11,8 +11,8 @@ produces 0, 1, or 2 line segments.  A prefix sum computes scatter offsets
 so each cell knows where to write its output in the shared output arrays.
 
 Runs contour on two representations of the same curvilinear mesh:
-1. CellSetStructured2D — connectivity computed from dimensions (zero storage)
-2. CellSetExplicitQuads — connectivity stored in arrays
+1. CellSetStructured2D -- connectivity computed from dimensions (zero storage)
+2. CellSetExplicitQuads -- connectivity stored in arrays
 
 Both produce identical results, validating the abstraction.
 
@@ -265,7 +265,7 @@ def run_contour(cell_set, coords_x, coords_y, scalar_field, isovalue,
     isovalue_f = pgc.field(dtype=pgc.f32, shape=(1,))
     isovalue_f.from_numpy(np.array([isovalue], dtype=np.float32))
 
-    # Pass 1: classify cells — count output lines per cell
+    # Pass 1: classify cells -- count output lines per cell
     classify_cells(cell_set, ms_tables, scalar_field, isovalue_f, num_lines_f)
 
     # Pass 1.5: GPU exclusive prefix sum to compute scatter offsets
@@ -427,7 +427,8 @@ if __name__ == "__main__":
         fig.suptitle("PGC Marching Squares: same algorithm, two cell set types",
                      fontsize=13, fontweight="bold")
         fig.subplots_adjust(top=0.88)
-        plt.savefig("/tmp/contour_result.png", dpi=150, bbox_inches="tight")
+        import os
+        plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "contour_result.png"), dpi=150, bbox_inches="tight")
         print("Saved contour_result.png")
         plt.show()
     except ImportError:

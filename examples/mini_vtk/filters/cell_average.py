@@ -1,4 +1,4 @@
-"""Cell average filter — average point data to cell data."""
+"""Cell average filter -- average point data to cell data."""
 
 import pgc
 from ..arrays import AOSArray
@@ -17,7 +17,7 @@ def cell_average(dataset, point_array_name, cell_array_name=None):
     """Average a point scalar to cells using the dataset's cell set.
 
     Works with any cell set type (structured, explicit) and any
-    points-per-cell count — the kernel compiles to the right loop
+    points-per-cell count -- the kernel compiles to the right loop
     count via the template system.
     """
     if cell_array_name is None:

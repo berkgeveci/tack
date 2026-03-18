@@ -1,4 +1,4 @@
-"""Parametric center filter — interpolate point data to cell centers."""
+"""Parametric center filter -- interpolate point data to cell centers."""
 
 import pgc
 from ..arrays import AOSArray
@@ -24,7 +24,7 @@ def _center_coords(cell_set: pgc.template(), cell_type: pgc.template(),
                    coords: pgc.template(), center_x, center_y, center_z, n_cells):
     """Interpolate coordinates to cell centers.
 
-    Uses pgc.local_array to cache weights — computed once per cell,
+    Uses pgc.local_array to cache weights -- computed once per cell,
     reused for all 3 coordinate components.
     """
     for c in range(n_cells):

@@ -1,4 +1,4 @@
-"""27 — Flying Edges: merged-point isosurface extraction.
+"""27 -- Flying Edges: merged-point isosurface extraction.
 
 True FlyingEdges algorithm with edge ownership for merged (unique) points.
 Each of the 12 MC edges is owned by exactly one voxel via its corner-0 node.
@@ -8,12 +8,12 @@ intersection is computed and stored exactly once.
 Pipeline:
 1. Count edge intersections per node-row + triangles per cell-row
 2. Prefix sum over edge counts and triangle counts
-3. Emit unique interpolated points, fill edge→point-ID mapping
-4. Emit triangle connectivity using edge→point-ID lookups
+3. Emit unique interpolated points, fill edge->point-ID mapping
+4. Emit triangle connectivity using edge->point-ID lookups
 
 Produces ~6x fewer output points than unmerged marching cubes.
 
-Scalar field: gyroid — sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
+Scalar field: gyroid -- sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
 
 Usage:
   uv run python examples/27_flying_edges.py
@@ -328,7 +328,7 @@ for _case in range(256):
 
 @pgc.data_oriented
 class UniformGrid:
-    """Uniform grid — coordinates computed from origin + index * spacing."""
+    """Uniform grid -- coordinates computed from origin + index * spacing."""
 
     def __init__(self, nx, ny, nz, x0, y0, z0, dx, dy, dz):
         self.nx = nx
@@ -359,7 +359,7 @@ class UniformGrid:
 
 @pgc.data_oriented
 class RectilinearGrid:
-    """Rectilinear grid — separable 1D coordinate arrays."""
+    """Rectilinear grid -- separable 1D coordinate arrays."""
 
     def __init__(self, nx, ny, nz, xcoords, ycoords, zcoords):
         self.nx = nx
@@ -387,7 +387,7 @@ class RectilinearGrid:
 
 @pgc.data_oriented
 class StructuredGrid:
-    """Structured (curvilinear) grid — full per-point coordinate arrays."""
+    """Structured (curvilinear) grid -- full per-point coordinate arrays."""
 
     def __init__(self, nx, ny, nz, px, py, pz):
         self.nx = nx
@@ -550,7 +550,7 @@ def mc_emit(scalar, offsets, grid: pgc.template(),
         if v6 > isovalue: case_idx = case_idx + 64
         if v7 > isovalue: case_idx = case_idx + 128
 
-        # 8 corner coordinates — corners follow MC convention:
+        # 8 corner coordinates -- corners follow MC convention:
         # 0=(0,0,0) 1=(1,0,0) 2=(1,1,0) 3=(0,1,0)
         # 4=(0,0,1) 5=(1,0,1) 6=(1,1,1) 7=(0,1,1)
         cx0 = grid.get_x(ci, cj, ck)
@@ -639,7 +639,7 @@ def fe_count_rows(scalar, row_tri_count, grid: pgc.template(),
 
             count = count + tables.num_tris[case_idx]
 
-            # Shift right → left
+            # Shift right -> left
             s0 = s1
             s3 = s2
             s4 = s5
@@ -654,7 +654,7 @@ def fe_count_edges_xyz(scalar, row_xc, row_yc, row_zc,
     """Count x/y/z edge intersections separately per node-row.
 
     Separate counts allow computing point IDs on the fly during
-    triangle emission without a global edge→point-ID buffer.
+    triangle emission without a global edge->point-ID buffer.
     """
     for row in range(n_node_rows):
         j = row % grid.ny_p1
@@ -775,7 +775,7 @@ def fe_emit_tris(scalar, row_tri_offset,
     the 8 cell-corner scalars (already loaded for MC classification).
     No edge_ids buffer needed.
 
-    Edge→row/type mapping (dj,dk relative to cell's cj,ck):
+    Edge->row/type mapping (dj,dk relative to cell's cj,ck):
       Edge 0:  x at ci,   row(0,0)    Edge 1:  y at ci+1, row(0,0)
       Edge 2:  x at ci,   row(+1,0)   Edge 3:  y at ci,   row(0,0)
       Edge 4:  x at ci,   row(0,+1)   Edge 5:  y at ci+1, row(0,+1)
@@ -898,7 +898,7 @@ def fe_emit_tris(scalar, row_tri_offset,
                     tri_v1[tri_idx] = select12(pid0, pid1, pid2, pid3, pid4, pid5, pid6, pid7, pid8, pid9, pid10, pid11, e1)
                     tri_v2[tri_idx] = select12(pid0, pid1, pid2, pid3, pid4, pid5, pid6, pid7, pid8, pid9, pid10, pid11, e2)
                     tri_idx = tri_idx + 1
-            # Shift right → left
+            # Shift right -> left
             s0 = s1
             s3 = s2
             s4 = s5
@@ -949,7 +949,7 @@ row_yc = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
 row_zc = pgc.field(dtype=pgc.i32, shape=(n_node_rows,))
 fe_count_edges_xyz(scalar, row_xc, row_yc, row_zc, grid, isovalue, n_node_rows)
 
-# 3 separate prefix sums → per-type offsets (CPU, row arrays are small)
+# 3 separate prefix sums -> per-type offsets (CPU, row arrays are small)
 xc_np = row_xc.to_numpy()
 yc_np = row_yc.to_numpy()
 zc_np = row_zc.to_numpy()
@@ -989,7 +989,7 @@ print(f"  Unique points: {total_points_fe:,} (x:{total_x:,} y:{total_y:,} z:{tot
 print(f"  Triangles:     {total_tris_fe:,}")
 print(f"  Merge ratio:   {total_tris_fe * 3 / total_points_fe:.1f}x fewer points than unmerged")
 
-# Allocate output — NO edge_ids buffer needed!
+# Allocate output -- NO edge_ids buffer needed!
 pt_x = pgc.field(dtype=pgc.f32, shape=(total_points_fe,))
 pt_y = pgc.field(dtype=pgc.f32, shape=(total_points_fe,))
 pt_z = pgc.field(dtype=pgc.f32, shape=(total_points_fe,))
@@ -1144,7 +1144,7 @@ try:
     del cf, img, vtk_output
 
 except ImportError:
-    print("\nVTK not installed — skipping VTK comparison.")
+    print("\nVTK not installed -- skipping VTK comparison.")
     print("  Install with: uv pip install vtk")
 
 
@@ -1340,7 +1340,7 @@ rs_vals = (np.sin(rpx[:n_rs]) * np.cos(rpy[:n_rs])
          + np.sin(rpy[:n_rs]) * np.cos(rpz[:n_rs])
          + np.sin(rpz[:n_rs]) * np.cos(rpx[:n_rs]))
 rs_err = np.max(np.abs(rs_vals - isovalue))
-print(f"  Validation: max scalar error {rs_err:.6f} — OK")
+print(f"  Validation: max scalar error {rs_err:.6f} -- OK")
 
 # VTK rectilinear comparison
 try:
@@ -1386,7 +1386,7 @@ except Exception as e:
 # ================================================================
 # STRUCTURED (CURVILINEAR) GRID TEST
 # ================================================================
-# Same gyroid on a twisted grid — uniform spacing with a sinusoidal
+# Same gyroid on a twisted grid -- uniform spacing with a sinusoidal
 # perturbation that couples all three coordinates.
 
 print("\n--- Structured (curvilinear) grid ---")
@@ -1525,7 +1525,7 @@ ss_vals = (np.sin(spx[:n_ss]) * np.cos(spy[:n_ss])
          + np.sin(spy[:n_ss]) * np.cos(spz[:n_ss])
          + np.sin(spz[:n_ss]) * np.cos(spx[:n_ss]))
 ss_err = np.max(np.abs(ss_vals - isovalue))
-print(f"  Validation: max scalar error {ss_err:.6f} — OK")
+print(f"  Validation: max scalar error {ss_err:.6f} -- OK")
 
 # VTK structured grid comparison
 try:

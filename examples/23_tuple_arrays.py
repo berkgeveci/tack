@@ -1,16 +1,16 @@
-"""23 — Multi-component tuple arrays: AOS vs SOA layouts.
+"""23 -- Multi-component tuple arrays: AOS vs SOA layouts.
 
 Inspired by VTK's vtkDataArray hierarchy.  Both AOS and SOA array types
 expose the same get_value(i, comp) / set_value(i, comp, val) interface
 via @pgc.data_oriented templates.  Kernels written against this interface
-work with either layout — the template system inlines the correct indexing.
+work with either layout -- the template system inlines the correct indexing.
 
 AOS (Array of Structures):
-    Storage: one flat field — [x0, y0, z0, x1, y1, z1, ...]
+    Storage: one flat field -- [x0, y0, z0, x1, y1, z1, ...]
     get_value(i, c) = data[i * num_components + c]
 
 SOA (Structure of Arrays):
-    Storage: one field per component — x=[x0, x1, ...], y=[y0, y1, ...], ...
+    Storage: one field per component -- x=[x0, x1, ...], y=[y0, y1, ...], ...
     get_value(i, c) dispatches to the correct component field
 
 Storage is provided externally, just like example 21.
@@ -32,7 +32,7 @@ pgc.init(arch=_arch)
 
 
 # ================================================================
-# ARRAY TYPES — same get_value/set_value interface, different layouts
+# ARRAY TYPES -- same get_value/set_value interface, different layouts
 # ================================================================
 
 @pgc.data_oriented
@@ -44,7 +44,7 @@ class AOSTupleArray:
     """
 
     def __init__(self, data, num_tuples, num_components):
-        self.data = data                # pgc.field — provided externally
+        self.data = data                # pgc.field -- provided externally
         self.num_tuples = num_tuples
         self.num_components = num_components
 
@@ -58,7 +58,7 @@ class AOSTupleArray:
 
 
 # ================================================================
-# SOA FACTORY — generates SOATupleArray classes for any N components
+# SOA FACTORY -- generates SOATupleArray classes for any N components
 # ================================================================
 # PGC templates need named field attributes (self.c0, self.c1, ...),
 # and @pgc.func needs inspectable source.  We generate the class
@@ -119,7 +119,7 @@ class SOATupleArray{nc}:
 
 
 # ================================================================
-# GENERIC KERNELS — work with either AOS or SOA
+# GENERIC KERNELS -- work with either AOS or SOA
 # ================================================================
 
 @pgc.kernel
@@ -285,22 +285,22 @@ aos_out = AOSTupleArray(aos_out_field, n, nc)
 soa_out = make_soa_output(nc, n)
 expected = data_a + data_b
 
-# AOS + SOA → AOS
+# AOS + SOA -> AOS
 add_tuple_arrays(aos_a, soa_b, aos_out, n, nc)
 assert np.allclose(aos_to_numpy(aos_out), expected, atol=1e-4)
-print("  AOS + SOA → AOS: OK")
+print("  AOS + SOA -> AOS: OK")
 
-# AOS + SOA → SOA
+# AOS + SOA -> SOA
 add_tuple_arrays(aos_a, soa_b, soa_out, n, nc)
 assert np.allclose(soa_to_numpy(soa_out, nc), expected, atol=1e-4)
-print("  AOS + SOA → SOA: OK")
+print("  AOS + SOA -> SOA: OK")
 
-# SOA + AOS → SOA
+# SOA + AOS -> SOA
 soa_a = make_soa(data_a)
 aos_b = make_aos(data_b)
 add_tuple_arrays(soa_a, aos_b, soa_out, n, nc)
 assert np.allclose(soa_to_numpy(soa_out, nc), expected, atol=1e-4)
-print("  SOA + AOS → SOA: OK")
+print("  SOA + AOS -> SOA: OK")
 
 # --- Arbitrary component count ---
 print("\n--- 5-component SOA (arbitrary N) ---")
@@ -327,7 +327,7 @@ print("  SOA(5) dot: OK")
 aos5_a = make_aos(data_5a)
 add_tuple_arrays(aos5_a, soa5_b, soa5_out, n, nc5)
 assert np.allclose(soa_to_numpy(soa5_out, nc5), data_5a + data_5b, atol=1e-4)
-print("  AOS(5) + SOA(5) → SOA(5): OK")
+print("  AOS(5) + SOA(5) -> SOA(5): OK")
 
 
 print(f"\nAll tests passed!")

@@ -1,4 +1,4 @@
-"""07 — Atomic operations for thread-safe accumulation.
+"""07 -- Atomic operations for thread-safe accumulation.
 
 When multiple threads write to the same memory location, you need
 atomic operations to avoid race conditions.

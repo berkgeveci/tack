@@ -1,13 +1,13 @@
-"""01 — Hello PGC: your first kernel.
+"""01 -- Hello PGC: your first kernel.
 
 This is the simplest possible PGC program.  It creates two arrays,
 adds them element-wise on the GPU (or CPU), and checks the result.
 
 Key concepts:
-  - pgc.init()    — choose a backend (cpu, metal, cuda, hip)
-  - pgc.field()   — allocate a device array
-  - @pgc.kernel   — mark a function for GPU compilation
-  - from_numpy / to_numpy — move data between host and device
+  - pgc.init()    -- choose a backend (cpu, metal, cuda, hip)
+  - pgc.field()   -- allocate a device array
+  - @pgc.kernel   -- mark a function for GPU compilation
+  - from_numpy / to_numpy -- move data between host and device
 
 Usage:
   uv run python examples/01_hello_pgc.py

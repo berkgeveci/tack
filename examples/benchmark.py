@@ -1,7 +1,7 @@
-"""Thorough performance benchmark — CPU JIT vs Metal GPU vs NumPy.
+"""Thorough performance benchmark -- CPU JIT vs Metal GPU vs NumPy.
 
 Tests across:
-  - Data sizes: 1K → 10M elements
+  - Data sizes: 1K -> 10M elements
   - Kernel complexity: simple add, SAXPY, multi-op, math-heavy, conditional
   - Measures: compilation time, per-call latency, throughput (elements/sec)
 """
@@ -45,7 +45,7 @@ def fmt_throughput(n, median_sec):
 def print_row(label, n, times):
     med, lo, hi = stats(times)
     tp = fmt_throughput(n, med)
-    print(f"  {label:<12s}  median {med*1e6:>8.0f} µs  "
+    print(f"  {label:<12s}  median {med*1e6:>8.0f} us  "
           f"(min {lo*1e6:.0f}, max {hi*1e6:.0f})  "
           f"{tp:>8s} M elem/s")
 

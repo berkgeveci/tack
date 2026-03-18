@@ -1,4 +1,4 @@
-"""Point elevation filter — compute a scalar from point coordinates."""
+"""Point elevation filter -- compute a scalar from point coordinates."""
 
 import pgc
 from ..arrays import AOSArray

@@ -1,12 +1,12 @@
-"""30 — Scalar packing: many scalar parameters without hitting GPU limits.
+"""30 -- Scalar packing: many scalar parameters without hitting GPU limits.
 
 GPU backends (especially Metal) have a limited number of buffer bindings
 per kernel. PGC automatically packs scalar parameters into typed constant
 buffers behind the scenes, so you can write kernels with as many scalar
 arguments as you need.
 
-This example passes 40+ scalar parameters to a kernel — well beyond
-Metal's 31 buffer binding limit — and it works transparently on all
+This example passes 40+ scalar parameters to a kernel -- well beyond
+Metal's 31 buffer binding limit -- and it works transparently on all
 backends.
 
 Usage:
@@ -61,7 +61,7 @@ offset = 100.0
 stride = 1
 count = n
 
-# Call the kernel — all 33 scalars are packed automatically
+# Call the kernel -- all 33 scalars are packed automatically
 weighted_sum(out, a, b, *weights, offset, stride, count)
 
 result = out.to_numpy()
@@ -71,4 +71,4 @@ assert np.allclose(result, expected, rtol=1e-4), f"Mismatch: max err = {np.max(n
 print(f"Total weight: {total_w:.1f}")
 print(f"First 5 results: {result[:5]}")
 print(f"Expected:        {expected[:5]}")
-print(f"\n33 scalar parameters packed automatically — all correct!")
+print(f"\n33 scalar parameters packed automatically -- all correct!")

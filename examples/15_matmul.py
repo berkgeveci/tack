@@ -1,4 +1,4 @@
-"""15 — Matrix multiplication.
+"""15 -- Matrix multiplication.
 
 Compute C = A @ B for square matrices stored as flat 1D fields.
 Uses 2D indexing with manual row-major layout.

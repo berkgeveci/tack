@@ -1,4 +1,4 @@
-"""mini_vtk demo — end-to-end: create dataset, run filters, inspect results.
+"""mini_vtk demo -- end-to-end: create dataset, run filters, inspect results.
 
 Usage:
   uv run python -m examples.mini_vtk.demo
@@ -30,7 +30,7 @@ from examples.mini_vtk.cellsets.explicit import from_structured
 
 
 N = _args.size
-print(f"mini_vtk demo — {N}x{N}x{N} rectilinear grid on {_args.arch}")
+print(f"mini_vtk demo -- {N}x{N}x{N} rectilinear grid on {_args.arch}")
 print("=" * 60)
 
 # ================================================================
@@ -83,10 +83,10 @@ print(f"4. Parametric center (hex): range [{pc_np.min():.3f}, {pc_np.max():.3f}]
 
 # For a linear field on a regular grid, cell average == parametric center
 np.testing.assert_allclose(pc_np, cell_np, rtol=1e-4)
-print("   Matches cell average for linear field — OK")
+print("   Matches cell average for linear field -- OK")
 
 # ================================================================
-# 5. Parametric center for coordinates → cell center positions
+# 5. Parametric center for coordinates -> cell center positions
 # ================================================================
 t0 = time.perf_counter()
 filters.parametric_center(ds, Hexahedron(), output_name="center")
@@ -116,10 +116,10 @@ mc_y = ds.get_cell_array("mc_elev_y").data.to_numpy()
 np.testing.assert_allclose(mc_z, pc_np, rtol=1e-4)
 np.testing.assert_allclose(mc_x, cx_np, rtol=1e-4)
 np.testing.assert_allclose(mc_y, cy_np, rtol=1e-4)
-print(f"5b. Multi-field center (local_array, 3 fields): ({t1-t0:.4f}s) — matches single-field OK")
+print(f"5b. Multi-field center (local_array, 3 fields): ({t1-t0:.4f}s) -- matches single-field OK")
 
 # ================================================================
-# 6. Threshold filter — extract cells in the middle third
+# 6. Threshold filter -- extract cells in the middle third
 # ================================================================
 lo, hi = 0.33, 0.67
 t0 = time.perf_counter()
@@ -173,7 +173,7 @@ tet_center = tet_ds.get_cell_array("tet_center").data.to_numpy()[0]
 # Center of tet at (0.25, 0.25, 0.25): expected = 0.25*1 + 0.25*1 + 0.25*1 = 0.75
 expected_tet = 0.25 * 1.0 + 0.25 * 1.0 + 0.25 * 1.0
 assert abs(tet_center - expected_tet) < 1e-5, f"tet center: got {tet_center}, expected {expected_tet}"
-print(f"8. Tet parametric center: {tet_center:.4f} (expected {expected_tet:.4f}) — OK")
+print(f"8. Tet parametric center: {tet_center:.4f} (expected {expected_tet:.4f}) -- OK")
 
 # ================================================================
 # 9. Build explicit connectivity from structured (for comparison)
@@ -189,7 +189,7 @@ filters.point_elevation(ds_explicit, direction=(0.0, 0.0, 1.0), name="elevation"
 filters.cell_average(ds_explicit, "elevation", "cell_elevation")
 expl_np = ds_explicit.get_cell_array("cell_elevation").data.to_numpy()
 np.testing.assert_allclose(expl_np, cell_np, rtol=1e-5)
-print("   Explicit matches structured — OK")
+print("   Explicit matches structured -- OK")
 
 print("\n" + "=" * 60)
 print("All checks passed!")

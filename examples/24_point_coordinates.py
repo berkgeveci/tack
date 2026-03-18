@@ -1,13 +1,13 @@
-"""24 — Point coordinates: Product vs AOS vs SOA performance benchmark.
+"""24 -- Point coordinates: Product vs AOS vs SOA performance benchmark.
 
 Compares three ways to store 3D point coordinates when evaluating an
 expensive scalar function (wavelet) over a large rectilinear grid:
 
-1. ProductPoints — three 1D arrays, coordinates computed on the fly.
+1. ProductPoints -- three 1D arrays, coordinates computed on the fly.
    Storage: O(nx+ny+nz).  No coordinate memory allocated.
-2. SOAPoints — three full-size arrays (x, y, z).  Storage: O(3N).
-3. AOSPoints — one interleaved array.  Storage: O(3N).
-4. numpy — CPU reference using broadcasting.
+2. SOAPoints -- three full-size arrays (x, y, z).  Storage: O(3N).
+3. AOSPoints -- one interleaved array.  Storage: O(3N).
+4. numpy -- CPU reference using broadcasting.
 
 The wavelet function:  f(x,y,z) = sin(kx*x) * cos(ky*y) * sin(kz*z + x*y)
 
@@ -26,7 +26,7 @@ import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'vulkan', 'level_zero'])
 _parser.add_argument('--size', type=int, default=500,
-                     help='Grid size per dimension (default 500 → 125M points)')
+                     help='Grid size per dimension (default 500 -> 125M points)')
 _parser.add_argument('--warmup', type=int, default=2)
 _parser.add_argument('--trials', type=int, default=5)
 _args = _parser.parse_args()
@@ -107,7 +107,7 @@ class ProductPoints:
 
 
 # ================================================================
-# WAVELET KERNEL — same kernel for all coordinate types
+# WAVELET KERNEL -- same kernel for all coordinate types
 # ================================================================
 
 @pgc.kernel
@@ -184,7 +184,7 @@ sx = pgc.field(dtype=pgc.f32, shape=(num_points,))
 sy = pgc.field(dtype=pgc.f32, shape=(num_points,))
 sz = pgc.field(dtype=pgc.f32, shape=(num_points,))
 
-# Build SOA coordinates using a Product → SOA expansion kernel
+# Build SOA coordinates using a Product -> SOA expansion kernel
 xc = pgc.field(dtype=pgc.f32, shape=(N,))
 yc = pgc.field(dtype=pgc.f32, shape=(N,))
 zc = pgc.field(dtype=pgc.f32, shape=(N,))
@@ -257,7 +257,7 @@ gc.collect()
 print("\nAOS Points...")
 aos_field = pgc.field(dtype=pgc.f32, shape=(num_points * 3,))
 
-# Build AOS coordinates via Product → AOS expansion
+# Build AOS coordinates via Product -> AOS expansion
 xc = pgc.field(dtype=pgc.f32, shape=(N,))
 yc = pgc.field(dtype=pgc.f32, shape=(N,))
 zc = pgc.field(dtype=pgc.f32, shape=(N,))

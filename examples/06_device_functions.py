@@ -1,4 +1,4 @@
-"""06 — Device functions with @pgc.func.
+"""06 -- Device functions with @pgc.func.
 
 Use @pgc.func to define helper functions that are inlined into kernels
 at compile time.  This keeps kernels clean and lets you reuse logic.

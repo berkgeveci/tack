@@ -1,4 +1,4 @@
-"""08 — Field reductions: sum, min, max.
+"""08 -- Field reductions: sum, min, max.
 
 Fields have built-in reduction methods.  On Metal, these run entirely
 on the GPU using optimized threadgroup reduction kernels.  On other
@@ -24,7 +24,7 @@ np.random.seed(42)
 data = np.random.randn(n).astype(np.float32) * 50.0
 x.from_numpy(data)
 
-# Built-in reductions — no kernel needed
+# Built-in reductions -- no kernel needed
 total = x.sum()
 lo = x.min()
 hi = x.max()

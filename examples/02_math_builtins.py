@@ -1,4 +1,4 @@
-"""02 — Math builtins available inside kernels.
+"""02 -- Math builtins available inside kernels.
 
 PGC kernels have access to standard math functions without any imports.
 They compile to hardware intrinsics (LLVM on CPU, device functions on GPU).

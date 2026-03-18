@@ -1,4 +1,4 @@
-"""20 — Running the same kernel on multiple backends.
+"""20 -- Running the same kernel on multiple backends.
 
 One of PGC's key features: write your kernel once, run it on CPU,
 Metal, CUDA, or HIP.  This example detects available backends and

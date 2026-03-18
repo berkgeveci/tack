@@ -1,4 +1,4 @@
-"""Wedge (pentahedron) cell type — prismatic interpolation."""
+"""Wedge (pentahedron) cell type -- prismatic interpolation."""
 
 import pgc
 

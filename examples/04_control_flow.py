@@ -1,4 +1,4 @@
-"""04 — Control flow: if/else, while loops, break, ternary expressions.
+"""04 -- Control flow: if/else, while loops, break, ternary expressions.
 
 PGC kernels support standard Python control flow.  The top-level for-range
 is parallelized; everything inside runs per-thread.

@@ -1,4 +1,4 @@
-"""Hexahedron cell type — trilinear interpolation."""
+"""Hexahedron cell type -- trilinear interpolation."""
 
 import pgc
 

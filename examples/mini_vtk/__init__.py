@@ -1,4 +1,4 @@
-"""mini_vtk — a minimal VTK/Viskores-like library built on PGC.
+"""mini_vtk -- a minimal VTK/Viskores-like library built on PGC.
 
 Provides array abstractions (AOS, SOA, constant), cell set types
 (structured, explicit), cell type abstractions (hex, tet, wedge),

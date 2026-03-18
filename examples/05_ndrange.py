@@ -1,4 +1,4 @@
-"""05 — Multi-dimensional parallel iteration with pgc.ndrange.
+"""05 -- Multi-dimensional parallel iteration with pgc.ndrange.
 
 Instead of computing linear indices manually, use pgc.ndrange(w, h) to
 iterate over a 2D grid in parallel.  Each (i, j) pair maps to a separate

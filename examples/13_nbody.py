@@ -1,8 +1,8 @@
-"""13 — N-body gravitational simulation.
+"""13 -- N-body gravitational simulation.
 
 Compute gravitational forces between N particles using the direct
 O(N^2) algorithm.  Each particle accumulates force from every other
-particle — a classic GPU compute workload.
+particle -- a classic GPU compute workload.
 
 Usage:
   uv run python examples/13_nbody.py
