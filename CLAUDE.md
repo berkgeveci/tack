@@ -14,7 +14,7 @@ uv run python examples/01_hello_pgc.py --arch hip   # run example on specific ba
 uv run python bench_cpu_vs_hip.py                    # CPU vs HIP/ROCm benchmark
 ```
 
-All examples accept `--arch cpu|metal|cuda|hip|vulkan|level_zero` to select the backend.
+All examples accept `--arch cpu|metal|cuda|hip|level_zero` to select the backend.
 
 No build step — pure Python with JIT compilation at runtime.
 
