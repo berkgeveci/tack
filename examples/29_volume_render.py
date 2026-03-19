@@ -89,30 +89,23 @@ def build_transfer_function(vmin, vmax, n_layers=10):
 # ================================================================
 
 @pgc.func
-def find_cell(inv_table, coords, n_cells, inv_size, pos, cmin, inv_stride):
+def find_cell(inv_table, coords, n_cells, inv_size, pos, cmin, inv_stride,
+              inv_off, coord_off):
     """O(1) cell lookup via inverse table + +/-1 correction.
 
-    inv_table: precomputed table mapping uniform bins to cell indices.
-    coords:    the 1-D coordinate array (n_cells + 1 entries).
-    n_cells:   number of cells on this axis.
-    inv_size:  number of entries in inv_table.
-    pos:       world coordinate to locate.
-    cmin:      minimum coordinate value (coords[0]).
-    inv_stride: (cmax - cmin) / inv_size.
+    inv_table: concatenated inverse tables (use inv_off for this axis).
+    coords:    concatenated coordinate arrays (use coord_off for this axis).
     """
-    # Uniform bin index -> approximate cell index
     k = int((pos - cmin) / inv_stride)
     if k < 0:
         k = 0
     if k >= inv_size:
         k = inv_size - 1
-    ix = inv_table[k]
-    # +/-1 correction: the bin may round to the wrong cell at boundaries
-    if ix > 0 and pos < coords[ix]:
+    ix = inv_table[inv_off + k]
+    if ix > 0 and pos < coords[coord_off + ix]:
         ix = ix - 1
-    if ix < n_cells - 1 and pos >= coords[ix + 1]:
+    if ix < n_cells - 1 and pos >= coords[coord_off + ix + 1]:
         ix = ix + 1
-    # Final clamp
     if ix < 0:
         ix = 0
     if ix >= n_cells:
@@ -121,24 +114,29 @@ def find_cell(inv_table, coords, n_cells, inv_size, pos, cmin, inv_stride):
 
 
 @pgc.func
-def sample_tex(tex, xcoords, ycoords, zcoords,
-               inv_x, inv_y, inv_z,
+def sample_tex(tex, coords, inv_tables,
                inv_size, cmin_x, cmin_y, cmin_z,
                inv_sx, inv_sy, inv_sz,
                nx, ny, nz,
+               coord_off_y, coord_off_z,
+               inv_off_y, inv_off_z,
                px, py, pz):
-    """Sample scalar via texture3d with O(1) cell lookup for coord mapping."""
-    ix = find_cell(inv_x, xcoords, nx, inv_size, px, cmin_x, inv_sx)
-    iy = find_cell(inv_y, ycoords, ny, inv_size, py, cmin_y, inv_sy)
-    iz = find_cell(inv_z, zcoords, nz, inv_size, pz, cmin_z, inv_sz)
+    """Sample scalar via texture3d with O(1) cell lookup for coord mapping.
+
+    coords:     concatenated [xcoords..., ycoords..., zcoords...]
+    inv_tables: concatenated [inv_x..., inv_y..., inv_z...]
+    """
+    ix = find_cell(inv_tables, coords, nx, inv_size, px, cmin_x, inv_sx, 0, 0)
+    iy = find_cell(inv_tables, coords, ny, inv_size, py, cmin_y, inv_sy, inv_off_y, coord_off_y)
+    iz = find_cell(inv_tables, coords, nz, inv_size, pz, cmin_z, inv_sz, inv_off_z, coord_off_z)
 
     # Fractional position within cell -> normalized texture coordinate
-    x0 = xcoords[ix]
-    x1 = xcoords[ix + 1]
-    y0 = ycoords[iy]
-    y1 = ycoords[iy + 1]
-    z0 = zcoords[iz]
-    z1 = zcoords[iz + 1]
+    x0 = coords[ix]
+    x1 = coords[ix + 1]
+    y0 = coords[coord_off_y + iy]
+    y1 = coords[coord_off_y + iy + 1]
+    z0 = coords[coord_off_z + iz]
+    z1 = coords[coord_off_z + iz + 1]
 
     fx = (px - x0) / (x1 - x0 + 1.0e-20)
     fy = (py - y0) / (y1 - y0 + 1.0e-20)
@@ -156,8 +154,11 @@ def sample_tex(tex, xcoords, ycoords, zcoords,
 
 
 @pgc.func
-def apply_tf(tf_r, tf_g, tf_b, tf_a, val, vmin, vrange):
-    """Look up transfer function RGBA for a scalar value."""
+def apply_tf(tf, val, vmin, vrange):
+    """Look up transfer function RGBA for a scalar value.
+
+    tf is interleaved RGBA: [r0,g0,b0,a0, r1,g1,b1,a1, ...]
+    """
     t = (val - vmin) / vrange
     t = max(0.0, min(1.0, t))
     idx = int(t * 255.0)
@@ -165,14 +166,12 @@ def apply_tf(tf_r, tf_g, tf_b, tf_a, val, vmin, vrange):
         idx = 0
     if idx > 255:
         idx = 255
-    return tf_r[idx], tf_g[idx], tf_b[idx], tf_a[idx]
+    base = idx * 4
+    return tf[base], tf[base + 1], tf[base + 2], tf[base + 3]
 
 
 @pgc.kernel
-def render(img_r, img_g, img_b,
-           tex, xcoords, ycoords, zcoords,
-           inv_x, inv_y, inv_z,
-           tf_r, tf_g, tf_b, tf_a,
+def render(img, tex, coords, inv_tables, tf,
            cam_x, cam_y, cam_z,
            fwd_x, fwd_y, fwd_z,
            right_x, right_y, right_z,
@@ -185,8 +184,17 @@ def render(img_r, img_g, img_b,
            inv_sx, inv_sy, inv_sz,
            nx_p1, ny_p1, nxy_p1,
            width, height, inv_size,
+           coord_off_y, coord_off_z,
+           inv_off_y, inv_off_z,
            n_pixels):
-    """Cast one ray per pixel, front-to-back compositing."""
+    """Cast one ray per pixel, front-to-back compositing.
+
+    Consolidated fields (VTK-style packed buffers):
+      img:        interleaved RGB [r0,g0,b0, r1,g1,b1, ...]
+      coords:     concatenated [xcoords..., ycoords..., zcoords...]
+      inv_tables: concatenated [inv_x..., inv_y..., inv_z...]
+      tf:         interleaved RGBA [r0,g0,b0,a0, r1,g1,b1,a1, ...]
+    """
     for pixel in range(n_pixels):
         i = pixel % width
         j = pixel // width
@@ -263,16 +271,16 @@ def render(img_r, img_g, img_b,
                 sy = cam_y + t * rd_y
                 sz = cam_z + t * rd_z
 
-                val = sample_tex(tex, xcoords, ycoords, zcoords,
-                                 inv_x, inv_y, inv_z,
+                val = sample_tex(tex, coords, inv_tables,
                                  inv_size, cmin_x, cmin_y, cmin_z,
                                  inv_sx, inv_sy, inv_sz,
                                  nx_p1 - 1, ny_p1 - 1,
                                  nxy_p1 // nx_p1 - 1,
+                                 coord_off_y, coord_off_z,
+                                 inv_off_y, inv_off_z,
                                  sx, sy, sz)
 
-                sr, sg, sb, sa = apply_tf(tf_r, tf_g, tf_b, tf_a,
-                                          val, vmin, vrange)
+                sr, sg, sb, sa = apply_tf(tf, val, vmin, vrange)
                 sa = 1.0 - exp(0.0 - sa * opacity_scale * step_size)
                 if sa > 1.0:
                     sa = 1.0
@@ -286,9 +294,9 @@ def render(img_r, img_g, img_b,
 
         # Background: dark gray gradient
         bg = 0.15 + 0.1 * float(j) / float(height)
-        img_r[pixel] = cr + (1.0 - alpha) * bg
-        img_g[pixel] = cg + (1.0 - alpha) * bg
-        img_b[pixel] = cb + (1.0 - alpha) * bg
+        img[pixel * 3] = cr + (1.0 - alpha) * bg
+        img[pixel * 3 + 1] = cg + (1.0 - alpha) * bg
+        img[pixel * 3 + 2] = cb + (1.0 - alpha) * bg
 
 
 @pgc.kernel
@@ -349,14 +357,6 @@ tex = pgc.texture3d(scalar, shape=(nx + 1, ny + 1, nz + 1))
 # ================================================================
 
 tf_np = build_transfer_function(vmin, vmax)
-tf_r = pgc.field(dtype=pgc.f32, shape=(TF_SIZE,))
-tf_g = pgc.field(dtype=pgc.f32, shape=(TF_SIZE,))
-tf_b = pgc.field(dtype=pgc.f32, shape=(TF_SIZE,))
-tf_a = pgc.field(dtype=pgc.f32, shape=(TF_SIZE,))
-tf_r.from_numpy(tf_np[:, 0].copy())
-tf_g.from_numpy(tf_np[:, 1].copy())
-tf_b.from_numpy(tf_np[:, 2].copy())
-tf_a.from_numpy(tf_np[:, 3].copy())
 
 
 # ================================================================
@@ -403,9 +403,7 @@ print(f"Step size: {step_size:.5f}, opacity scale: {opacity_scale}")
 # ================================================================
 
 n_pixels = WIDTH * HEIGHT
-img_r = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
-img_g = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
-img_b = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
+img = pgc.field(dtype=pgc.f32, shape=(n_pixels * 3,))
 
 # Build inverse lookup tables for O(1) cell location
 INV_TABLE_SIZE = max(nx, ny, nz) * 2  # 2x oversampling for accuracy
@@ -430,19 +428,27 @@ inv_x_np, cmin_x, inv_sx = build_inv_table(xc_np, nx, INV_TABLE_SIZE)
 inv_y_np, cmin_y, inv_sy = build_inv_table(yc_np, ny, INV_TABLE_SIZE)
 inv_z_np, cmin_z, inv_sz = build_inv_table(zc_np, nz, INV_TABLE_SIZE)
 
-inv_x = pgc.field(dtype=pgc.i32, shape=(INV_TABLE_SIZE,))
-inv_y = pgc.field(dtype=pgc.i32, shape=(INV_TABLE_SIZE,))
-inv_z = pgc.field(dtype=pgc.i32, shape=(INV_TABLE_SIZE,))
-inv_x.from_numpy(inv_x_np)
-inv_y.from_numpy(inv_y_np)
-inv_z.from_numpy(inv_z_np)
+# Consolidated fields (VTK-style packed buffers):
+# coords: concatenated [xcoords, ycoords, zcoords]
+coords_np = np.concatenate([xc_np, yc_np, zc_np])
+coords = pgc.field(dtype=pgc.f32, shape=(len(coords_np),))
+coords.from_numpy(coords_np)
+coord_off_y = len(xc_np)
+coord_off_z = len(xc_np) + len(yc_np)
 
-# Scalar parameters are passed directly -- the backend automatically packs
-# them into constant buffers to stay within GPU binding limits.
-render_args = (img_r, img_g, img_b,
-               tex, xcoords, ycoords, zcoords,
-               inv_x, inv_y, inv_z,
-               tf_r, tf_g, tf_b, tf_a,
+# inv_tables: concatenated [inv_x, inv_y, inv_z]
+inv_np = np.concatenate([inv_x_np, inv_y_np, inv_z_np])
+inv_tables = pgc.field(dtype=pgc.i32, shape=(len(inv_np),))
+inv_tables.from_numpy(inv_np)
+inv_off_y = INV_TABLE_SIZE
+inv_off_z = INV_TABLE_SIZE * 2
+
+# tf: interleaved RGBA [r0,g0,b0,a0, r1,g1,b1,a1, ...]
+tf_interleaved = tf_np.astype(np.float32).ravel()  # already (256, 4) row-major
+tf = pgc.field(dtype=pgc.f32, shape=(len(tf_interleaved),))
+tf.from_numpy(tf_interleaved)
+
+render_args = (img, tex, coords, inv_tables, tf,
                cam_pos[0], cam_pos[1], cam_pos[2],
                forward[0], forward[1], forward[2],
                right[0], right[1], right[2],
@@ -455,6 +461,8 @@ render_args = (img_r, img_g, img_b,
                inv_sx, inv_sy, inv_sz,
                nx + 1, ny + 1, (nx + 1) * (ny + 1),
                WIDTH, HEIGHT, INV_TABLE_SIZE,
+               coord_off_y, coord_off_z,
+               inv_off_y, inv_off_z,
                n_pixels)
 
 
@@ -492,19 +500,17 @@ print(f"  Mrays/s: {n_pixels / min(times) / 1e6:.1f}")
 # SAVE IMAGE
 # ================================================================
 
-r_np = img_r.to_numpy().reshape(HEIGHT, WIDTH)
-g_np = img_g.to_numpy().reshape(HEIGHT, WIDTH)
-b_np = img_b.to_numpy().reshape(HEIGHT, WIDTH)
-img = np.stack([r_np, g_np, b_np], axis=-1)
-img = np.clip(img, 0.0, 1.0)
-img = img[::-1]  # flip vertically (row 0 = bottom)
+# Read back interleaved RGB and reshape to (H, W, 3)
+img_np = img.to_numpy().reshape(HEIGHT, WIDTH, 3)
+img_np = np.clip(img_np, 0.0, 1.0)
+img_np = img_np[::-1]  # flip vertically (row 0 = bottom)
 
 try:
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.imshow(img)
+    ax.imshow(img_np)
     ax.set_axis_off()
     plt.tight_layout()
     fig.savefig(_args.save, dpi=150, bbox_inches='tight', pad_inches=0)
@@ -513,5 +519,5 @@ try:
 except ImportError:
     print("matplotlib not available -- skipping image save")
     # Fallback: save raw as .npy
-    np.save(_args.save.replace('.png', '.npy'), img)
+    np.save(_args.save.replace('.png', '.npy'), img_np)
     print(f"Saved raw array: {_args.save.replace('.png', '.npy')}")
