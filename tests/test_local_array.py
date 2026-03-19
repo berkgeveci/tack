@@ -8,7 +8,7 @@ import pgc
 # Test on all available backends
 def _available_backends():
     backends = []
-    for arch in ["cpu", "metal", "cuda", "hip", "level_zero", "wgpu"]:
+    for arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
         try:
             pgc.init(arch=arch)
             backends.append(arch)

@@ -24,7 +24,7 @@ import pgc
 
 import argparse
 _parser = argparse.ArgumentParser()
-_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero', 'wgpu'])
+_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _parser.add_argument('--size', type=int, default=500,
                      help='Grid size per dimension (default 500 -> 125M points)')
 _parser.add_argument('--warmup', type=int, default=2)
