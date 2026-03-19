@@ -113,6 +113,24 @@ class Field:
             return backend.reduce_field(self, 'max')
         return float(self._buffer.to_numpy().max())
 
+    def __dlpack__(self, *, stream=None, max_version=None, dl_device=None, copy=None):
+        """Export this field as a DLPack capsule for zero-copy interop.
+
+        Usage:
+            torch_tensor = torch.from_dlpack(pgc_field)
+            cupy_array = cupy.from_dlpack(pgc_field)
+            np_array = np.from_dlpack(pgc_field)  # numpy 1.25+
+        """
+        from pgc.lang.dlpack import field_to_dlpack
+        if copy is True:
+            raise BufferError("PGC DLPack export does not support copy=True")
+        return field_to_dlpack(self)
+
+    def __dlpack_device__(self):
+        """Return (device_type, device_id) for the DLPack protocol."""
+        from pgc.lang.dlpack import dlpack_device
+        return dlpack_device(self)
+
     def __repr__(self):
         return f"Field(dtype={self.dtype}, shape={self.shape})"
 
@@ -150,6 +168,28 @@ def field_like(arr: np.ndarray, dtype: ScalarType = None) -> Field:
     f = Field(dtype, shape, buf)
     f.from_numpy(arr)
     return f
+
+
+def from_dlpack(capsule) -> Field:
+    """Create a PGC field from a DLPack capsule or any object with __dlpack__.
+
+    Zero-copy when the source is on CPU. Copies for GPU sources that
+    don't match the current backend.
+
+    Usage:
+        field = pgc.from_dlpack(torch_tensor)
+        field = pgc.from_dlpack(cupy_array)
+        field = pgc.from_dlpack(numpy_array)
+    """
+    # If it has __dlpack__, call it to get the capsule
+    if hasattr(capsule, '__dlpack__'):
+        arr = np.from_dlpack(capsule)
+    elif isinstance(capsule, np.ndarray):
+        arr = capsule
+    else:
+        arr = np.from_dlpack(capsule)
+
+    return field_like(arr)
 
 
 def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
