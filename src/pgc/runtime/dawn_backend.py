@@ -79,6 +79,69 @@ class CompiledDawnKernel:
         self._param_is_texture = param_is_texture
         self._texture_shapes = texture_shapes
         self._num_bindings = num_bindings
+        self._tex_cache: dict[tuple, tuple] = {}
+
+    def _create_texture(self, field, W, H, D):
+        """Create a Dawn 3D texture + sampler from field data."""
+        device = self._device
+
+        # Create 3D texture
+        desc = webgpu.WGPUTextureDescriptor()
+        desc.usage = webgpu.WGPUTextureUsage_TextureBinding | webgpu.WGPUTextureUsage_CopyDst
+        desc.dimension = webgpu.WGPUTextureDimension_3D
+        desc.size = webgpu.WGPUExtent3D(width=W, height=H, depthOrArrayLayers=D)
+        desc.format = webgpu.WGPUTextureFormat_R32Float
+        desc.mipLevelCount = 1
+        desc.sampleCount = 1
+        desc.viewFormatCount = 0
+        desc.viewFormats = None
+
+        texture = webgpu.wgpuDeviceCreateTexture(device, desc)
+
+        # Copy field data into texture
+        data_bytes = field._buffer.to_numpy().tobytes()
+        src_layout = webgpu.WGPUTextureDataLayout()
+        src_layout.offset = 0
+        src_layout.bytesPerRow = W * 4
+        src_layout.rowsPerImage = H
+
+        dst = webgpu.WGPUImageCopyTexture()
+        dst.texture = texture
+        dst.mipLevel = 0
+        dst.origin = webgpu.WGPUOrigin3D(x=0, y=0, z=0)
+        dst.aspect = webgpu.WGPUTextureAspect_All
+
+        extent = webgpu.WGPUExtent3D(width=W, height=H, depthOrArrayLayers=D)
+
+        src_ptr = (ctypes.c_uint8 * len(data_bytes)).from_buffer_copy(data_bytes)
+        queue = webgpu.wgpuDeviceGetQueue(device)
+        webgpu.wgpuQueueWriteTexture(queue, dst, src_ptr, len(data_bytes),
+                                      src_layout, extent)
+
+        # Create texture view
+        view_desc = webgpu.WGPUTextureViewDescriptor()
+        view_desc.format = webgpu.WGPUTextureFormat_R32Float
+        view_desc.dimension = webgpu.WGPUTextureViewDimension_3D
+        view_desc.baseMipLevel = 0
+        view_desc.mipLevelCount = 1
+        view_desc.baseArrayLayer = 0
+        view_desc.arrayLayerCount = 1
+        view = webgpu.wgpuTextureCreateView(texture, view_desc)
+
+        # Create sampler
+        samp_desc = webgpu.WGPUSamplerDescriptor()
+        samp_desc.addressModeU = webgpu.WGPUAddressMode_ClampToEdge
+        samp_desc.addressModeV = webgpu.WGPUAddressMode_ClampToEdge
+        samp_desc.addressModeW = webgpu.WGPUAddressMode_ClampToEdge
+        samp_desc.magFilter = webgpu.WGPUFilterMode_Linear
+        samp_desc.minFilter = webgpu.WGPUFilterMode_Linear
+        samp_desc.mipmapFilter = webgpu.WGPUMipmapFilterMode_Nearest
+        samp_desc.lodMinClamp = 0.0
+        samp_desc.lodMaxClamp = 0.0
+        samp_desc.maxAnisotropy = 1
+        sampler = webgpu.wgpuDeviceCreateSampler(device, samp_desc)
+
+        return texture, view, sampler
 
     def __call__(self, kernel_args, loop_end):
         device = self._device
@@ -89,29 +152,40 @@ class CompiledDawnKernel:
         for i, (arg, is_field, is_tex) in enumerate(
                 zip(kernel_args, self._param_is_field, self._param_is_texture)):
             if is_tex:
-                # TODO: hardware texture support for Dawn
-                # For now, textures are passed as regular storage buffers
-                # (software trilinear via WGSL helper)
-                entries.append({
-                    "binding": binding_idx,
-                    "resource": {"buffer": arg._buffer.gpu_buffer, "offset": 0,
-                                 "size": arg._buffer.nbytes},
-                })
+                W, H, D = self._texture_shapes[i]
+                cache_key = (id(arg._buffer), W, H, D)
+                if cache_key not in self._tex_cache:
+                    self._tex_cache[cache_key] = self._create_texture(arg, W, H, D)
+                _, view, sampler = self._tex_cache[cache_key]
+                # Texture view entry
+                entry = webgpu.WGPUBindGroupEntry()
+                entry.binding = binding_idx
+                entry.textureView = view
+                entries.append(entry)
+                binding_idx += 1
+                # Sampler entry
+                entry2 = webgpu.WGPUBindGroupEntry()
+                entry2.binding = binding_idx
+                entry2.sampler = sampler
+                entries.append(entry2)
             elif is_field:
-                entries.append({
-                    "binding": binding_idx,
-                    "resource": {"buffer": arg._buffer.gpu_buffer, "offset": 0,
-                                 "size": arg._buffer.nbytes},
-                })
+                entry = webgpu.WGPUBindGroupEntry()
+                entry.binding = binding_idx
+                entry.buffer = arg._buffer.gpu_buffer
+                entry.offset = 0
+                entry.size = arg._buffer.nbytes
+                entries.append(entry)
             else:
                 val_np = np.array([arg], dtype=np.float32)
                 buf = dawn.create_buffer(device, 4,
                     _USAGE_STORAGE | _USAGE_COPY_DST)
                 dawn.write_buffer(device, buf, 0, val_np.tobytes())
-                entries.append({
-                    "binding": binding_idx,
-                    "resource": {"buffer": buf, "offset": 0, "size": 4},
-                })
+                entry = webgpu.WGPUBindGroupEntry()
+                entry.binding = binding_idx
+                entry.buffer = buf
+                entry.offset = 0
+                entry.size = 4
+                entries.append(entry)
             binding_idx += 1
 
         # Loop-end parameter buffer (pgc_params)
@@ -119,13 +193,20 @@ class CompiledDawnKernel:
         params_buf = dawn.create_buffer(device, 4,
             _USAGE_STORAGE | _USAGE_COPY_DST)
         dawn.write_buffer(device, params_buf, 0, params_np.tobytes())
-        entries.append({
-            "binding": binding_idx,
-            "resource": {"buffer": params_buf, "offset": 0, "size": 4},
-        })
+        entry = webgpu.WGPUBindGroupEntry()
+        entry.binding = binding_idx
+        entry.buffer = params_buf
+        entry.offset = 0
+        entry.size = 4
+        entries.append(entry)
 
-        bind_group = dawn.create_bind_group(
-            device, self._bind_group_layout, entries)
+        # Build bind group directly (not via utils, to support mixed buffer/texture)
+        bg_desc = webgpu.WGPUBindGroupDescriptor()
+        bg_desc.layout = self._bind_group_layout
+        bg_desc.entryCount = len(entries)
+        entries_array = (webgpu.WGPUBindGroupEntry * len(entries))(*entries)
+        bg_desc.entries = entries_array
+        bind_group = webgpu.wgpuDeviceCreateBindGroup(device, bg_desc)
 
         # Dispatch with 2D grid if needed (WebGPU max 65535 per dimension)
         num_groups = (loop_end + 255) // 256
@@ -172,25 +253,57 @@ def _compile_kernel(device, ir_func: ir.IRFunction) -> CompiledDawnKernel:
         if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
             texture_shapes[i] = p._texture_shape
 
+    # Build bind group layout entries (raw structs to support texture/sampler)
     layout_entries = []
     binding_idx = 0
     for i in range(len(ir_func.params)):
-        layout_entries.append({
-            "binding": binding_idx,
-            "visibility": webgpu.WGPUShaderStage_Compute,
-            "buffer": {"type": webgpu.WGPUBufferBindingType_Storage},
-        })
+        entry = webgpu.WGPUBindGroupLayoutEntry()
+        entry.binding = binding_idx
+        entry.visibility = webgpu.WGPUShaderStage_Compute
+        if param_is_texture[i]:
+            # Texture binding
+            tex_layout = webgpu.WGPUTextureBindingLayout()
+            tex_layout.sampleType = webgpu.WGPUTextureSampleType_Float
+            tex_layout.viewDimension = webgpu.WGPUTextureViewDimension_3D
+            tex_layout.multisampled = False
+            entry.texture = tex_layout
+            layout_entries.append(entry)
+            binding_idx += 1
+            # Sampler binding
+            entry2 = webgpu.WGPUBindGroupLayoutEntry()
+            entry2.binding = binding_idx
+            entry2.visibility = webgpu.WGPUShaderStage_Compute
+            samp_layout = webgpu.WGPUSamplerBindingLayout()
+            samp_layout.type = webgpu.WGPUSamplerBindingType_Filtering
+            entry2.sampler = samp_layout
+            layout_entries.append(entry2)
+        else:
+            buf_layout = webgpu.WGPUBufferBindingLayout()
+            buf_layout.type = webgpu.WGPUBufferBindingType_Storage
+            entry.buffer = buf_layout
+            layout_entries.append(entry)
         binding_idx += 1
 
     # pgc_params binding (loop end)
     num_bindings = binding_idx
-    layout_entries.append({
-        "binding": binding_idx,
-        "visibility": webgpu.WGPUShaderStage_Compute,
-        "buffer": {"type": webgpu.WGPUBufferBindingType_ReadOnlyStorage},
-    })
+    params_entry = webgpu.WGPUBindGroupLayoutEntry()
+    params_entry.binding = binding_idx
+    params_entry.visibility = webgpu.WGPUShaderStage_Compute
+    params_buf_layout = webgpu.WGPUBufferBindingLayout()
+    params_buf_layout.type = webgpu.WGPUBufferBindingType_ReadOnlyStorage
+    params_entry.buffer = params_buf_layout
+    layout_entries.append(params_entry)
 
-    bind_group_layout = dawn.create_bind_group_layout(device, layout_entries)
+    # Create layout from raw entries
+    bgl_desc = webgpu.WGPUBindGroupLayoutDescriptor()
+    bgl_desc.entryCount = len(layout_entries)
+    entries_arr = (webgpu.WGPUBindGroupLayoutEntry * len(layout_entries))(*layout_entries)
+    bgl_desc.entries = ctypes.cast(entries_arr, ctypes.POINTER(webgpu.WGPUBindGroupLayoutEntry))
+    webgpu.wgpuDevicePushErrorScope(device, webgpu.WGPUErrorFilter_Validation)
+    bind_group_layout = webgpu.wgpuDeviceCreateBindGroupLayout(device, bgl_desc)
+    bgl_error = dawn.pop_error(device)
+    if bgl_error:
+        raise RuntimeError(f"Bind group layout error: {bgl_error}")
     pipeline_layout = dawn.create_pipeline_layout(device, [bind_group_layout])
     pipeline = dawn.create_compute_pipeline(
         device, pipeline_layout,
@@ -215,7 +328,9 @@ class DawnBackend:
             power_preference=webgpu.WGPUPowerPreference_HighPerformance)
         if adapter is None:
             raise RuntimeError("No Dawn WebGPU adapter found")
-        self._device = dawn.request_device_sync(adapter)
+        self._device = dawn.request_device_sync(adapter, [
+            webgpu.WGPUFeatureName_Float32Filterable,
+        ])
         self._cache: dict[str, tuple] = {}
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> DawnBuffer:
@@ -267,12 +382,10 @@ class DawnBackend:
 
         infer_param_types(ir_func, effective_args)
 
-        # Textures use software trilinear on Dawn (no hardware texture layout
-        # support in pydawn utils yet). Clear _is_texture so codegen uses
-        # the software fallback path.
+        # Store texture shapes on params for codegen/dispatch
         for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Texture3D):
-                param._is_texture = False
+                param._texture_shape = arg.shape_3d
 
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
