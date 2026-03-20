@@ -435,8 +435,18 @@ class CUDABackend:
         _check(driver.cuInit(0))
         err, self._device = driver.cuDeviceGet(0)
         _check(err)
-        err, self._context = driver.cuCtxCreate(None, 0, self._device)
-        _check(err)
+
+        # Reuse an existing CUDA context if one is already active (e.g. from
+        # a simulation framework like AMReX).  Only create a new context when
+        # no current context exists.
+        err, ctx = driver.cuCtxGetCurrent()
+        if err == driver.CUresult.CUDA_SUCCESS and ctx:
+            self._context = ctx
+            self._owns_context = False
+        else:
+            err, self._context = driver.cuCtxCreate(None, 0, self._device)
+            _check(err)
+            self._owns_context = True
 
         self._cache: dict[str, CompiledCUDAKernel] = {}
 
@@ -445,6 +455,31 @@ class CUDABackend:
         if exportable:
             return ExportableCUDABuffer(dtype.numpy_dtype, shape)
         return CUDABuffer(dtype.numpy_dtype, shape)
+
+    def memory_space(self, ptr) -> str:
+        """Query where a pointer resides: 'cpu', 'cuda', or 'cuda_managed'.
+
+        Uses the CUDA driver API (cuPointerGetAttribute) via cuda-python
+        bindings to classify the pointer.
+
+        Returns:
+            'cuda'         — device memory (cudaMalloc)
+            'cuda_pinned'  — pinned host memory (cudaMallocHost)
+            'cuda_managed' — unified memory (cudaMallocManaged)
+            'cpu'          — unregistered host memory
+        """
+        try:
+            err, mem_type = driver.cuPointerGetAttribute(
+                driver.CUpointer_attribute.CU_POINTER_ATTRIBUTE_MEMORY_TYPE,
+                int(ptr))
+            if err != driver.CUresult.CUDA_SUCCESS:
+                return "cpu"
+            # CU_MEMORYTYPE_HOST=1, CU_MEMORYTYPE_DEVICE=2,
+            # CU_MEMORYTYPE_ARRAY=3, CU_MEMORYTYPE_UNIFIED=4
+            return {1: "cuda_pinned", 2: "cuda", 4: "cuda_managed"}.get(
+                int(mem_type), "cpu")
+        except Exception:
+            return "cpu"
 
     def wrap_ptr(self, ptr, dtype, shape):
         """Wrap an existing CUDA device pointer without allocating or copying."""

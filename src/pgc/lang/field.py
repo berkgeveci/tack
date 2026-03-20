@@ -230,6 +230,34 @@ def from_dlpack(capsule) -> Field:
     return field_like(arr)
 
 
+def memory_space(ptr) -> str:
+    """Query the memory space of a pointer.
+
+    Uses the active backend to determine where the pointer resides.
+
+    Returns:
+        'cpu'          — unregistered host memory (regular malloc/new)
+        'cuda'         — CUDA device memory (cudaMalloc)
+        'cuda_pinned'  — CUDA pinned host memory (cudaMallocHost)
+        'cuda_managed' — CUDA unified memory (cudaMallocManaged)
+        'hip'          — HIP device memory (hipMalloc)
+        'hip_pinned'   — HIP pinned host memory (hipHostMalloc)
+        'hip_managed'  — HIP unified memory (hipMallocManaged)
+    """
+    from pgc.runtime.dispatch import get_backend
+    backend = get_backend()
+    if hasattr(backend, 'memory_space'):
+        return backend.memory_space(ptr)
+    return "cpu"
+
+
+# Mapping from backend arch names to their expected device memory spaces.
+_BACKEND_DEVICE_SPACES = {
+    "cuda": {"cuda", "cuda_pinned", "cuda_managed"},
+    "hip": {"hip", "hip_pinned", "hip_managed"},
+}
+
+
 def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
                    writable: bool = False) -> Field:
     """Wrap an existing device pointer as a PGC field without copying.
@@ -239,6 +267,9 @@ def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
 
     The field does NOT own the memory — PGC will not free it.
     Read-only by default; pass writable=True to enable writes.
+
+    Raises ValueError if the pointer's memory space does not match the
+    active backend (e.g. a CPU pointer with the CUDA backend).
 
     Args:
         ptr: device pointer (integer) or backend-specific buffer object.
@@ -258,6 +289,30 @@ def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
     if isinstance(shape, int):
         shape = (shape,)
     backend = get_backend()
+
+    # Validate pointer memory space for GPU backends.
+    # Skip validation for non-integer pointers (e.g. Metal MTLBuffer objects,
+    # numpy arrays on CPU backend).
+    if isinstance(ptr, int) and hasattr(backend, 'memory_space'):
+        space = backend.memory_space(ptr)
+        # Determine which backend type we're running
+        backend_type = type(backend).__name__
+        if "CUDA" in backend_type:
+            arch = "cuda"
+        elif "HIP" in backend_type:
+            arch = "hip"
+        else:
+            arch = None
+
+        if arch and arch in _BACKEND_DEVICE_SPACES:
+            valid_spaces = _BACKEND_DEVICE_SPACES[arch]
+            if space not in valid_spaces:
+                raise ValueError(
+                    f"Pointer is in '{space}' memory but the active backend "
+                    f"is '{arch}'. field_from_ptr() requires a device pointer. "
+                    f"Use pgc.field() + field.from_numpy() to copy host data "
+                    f"to the device.")
+
     buf = backend.wrap_ptr(ptr, dtype, shape)
     return Field(dtype, shape, buf, writable=writable)
 

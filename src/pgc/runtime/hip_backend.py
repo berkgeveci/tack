@@ -331,6 +331,28 @@ class HIPBackend:
                         exportable: bool = False) -> HIPBuffer:
         return HIPBuffer(dtype.numpy_dtype, shape)
 
+    def memory_space(self, ptr) -> str:
+        """Query where a pointer resides: 'cpu', 'hip', or 'hip_managed'.
+
+        Uses hipPointerGetAttributes to classify the pointer.
+
+        Returns:
+            'hip'         — device memory (hipMalloc)
+            'hip_pinned'  — pinned host memory (hipHostMalloc)
+            'hip_managed' — unified memory (hipMallocManaged)
+            'cpu'         — unregistered host memory
+        """
+        try:
+            err, attrs = hip.hipPointerGetAttributes(hip.hipDeviceptr_t(int(ptr)))
+            if err != hip.hipSuccess:
+                return "cpu"
+            mem_type = attrs.type if hasattr(attrs, 'type') else attrs.memoryType
+            # hipMemoryTypeHost=1, hipMemoryTypeDevice=2, hipMemoryTypeUnified=3
+            return {1: "hip_pinned", 2: "hip", 3: "hip_managed"}.get(
+                int(mem_type), "cpu")
+        except Exception:
+            return "cpu"
+
     def wrap_ptr(self, ptr, dtype, shape):
         """Wrap an existing HIP device pointer without allocating or copying."""
         buf = HIPBuffer.__new__(HIPBuffer)

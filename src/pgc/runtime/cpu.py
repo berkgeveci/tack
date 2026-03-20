@@ -237,6 +237,10 @@ class CPUBackend:
             return buf
         return NumpyBuffer(dtype.numpy_dtype, shape)
 
+    def memory_space(self, ptr) -> str:
+        """CPU backend: all pointers are host memory."""
+        return "cpu"
+
     def wrap_ptr(self, ptr, dtype, shape):
         """Wrap an existing pointer as a NumpyBuffer without copying.
 
