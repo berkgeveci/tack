@@ -1,30 +1,36 @@
-"""31 -- Zero-copy Metal buffer interop between PGC and Dawn.
+"""31 -- Zero-copy buffer interop between PGC and Dawn.
 
-Demonstrates sharing a Metal buffer between PGC (compute) and Dawn
-(WebGPU rendering engine used by VTK). PGC computes into an MTLBuffer,
+Demonstrates sharing GPU memory between PGC (compute) and Dawn
+(WebGPU rendering engine used by VTK). PGC computes into a buffer,
 then Dawn imports it via SharedBufferMemory -- no data copies.
+
+Works on any backend: Metal (MTLBuffer sharing) or CUDA (Vulkan fd import).
+The example code is backend-agnostic thanks to ExportedMemory.
 
 This enables workflows where PGC runs GPU compute (filters, simulations)
 and VTK renders the results, both operating on the same GPU memory.
 
 Requirements:
-  - macOS with Apple Silicon
-  - pgc with Metal backend
-  - dawn-python (pip install dawn-python) built with SharedBufferMemoryMTL
+  - pgc with Metal or CUDA backend
+  - dawn-python (pip install dawn-python)
 
 Usage:
   uv run python examples/31_dawn_interop.py
+  uv run python examples/31_dawn_interop.py --arch cuda
 """
 
 import numpy as np
-import objc
 import pgc
 
 # ================================================================
-# Step 1: PGC computes into a Metal buffer
+# Step 1: PGC computes into a GPU buffer
 # ================================================================
 
-pgc.init(arch=pgc.metal)
+import argparse
+parser = argparse.ArgumentParser()
+parser.add_argument("--arch", default="metal", choices=["metal", "cuda"])
+args = parser.parse_args()
+pgc.init(arch=args.arch)
 
 N = 1024
 
@@ -50,32 +56,37 @@ print(f"PGC computed SAXPY: first 5 = {pgc_result[:5]}")
 print(f"  (expected: {alpha * np.arange(5, dtype=np.float32) + 2.0})")
 
 # ================================================================
-# Step 2: Get the raw MTLBuffer pointer from PGC
+# Step 2: Export GPU memory (backend-agnostic)
 # ================================================================
 
-mtl_buffer = out._buffer.metal_buffer
-mtl_ptr = objc.pyobjc_id(mtl_buffer)
-buffer_size = out._buffer.nbytes
+exported = out.export_memory()
+buffer_size = exported.size
 
-print(f"\nMTLBuffer: {mtl_buffer.length()} bytes at 0x{mtl_ptr:x}")
-print(f"  Storage mode: {'Shared' if mtl_buffer.storageMode() == 0 else 'Other'}")
+print(f"\nExported memory: backend={exported.backend}, "
+      f"size={exported.size}, alloc_size={exported.allocation_size}")
 
 # ================================================================
 # Step 3: Import into Dawn (zero-copy)
 # ================================================================
 
-import ctypes
 from pydawn import utils as dawn, webgpu
+
+if exported.backend == "metal":
+    features = [webgpu.WGPUFeatureName_SharedBufferMemoryMTLBuffer]
+else:
+    features = [webgpu.WGPUFeatureName_SharedBufferMemoryOpaqueFD]
 
 adapter = dawn.request_adapter_sync(
     power_preference=webgpu.WGPUPowerPreference_HighPerformance)
-device = dawn.request_device_sync(adapter, [
-    webgpu.WGPUFeatureName_SharedBufferMemoryMTLBuffer,
-])
+device = dawn.request_device_sync(adapter, features)
 print(f"\nDawn device created")
 
-# Import the MTLBuffer as a Dawn shared buffer memory
-shared_mem = dawn.import_shared_buffer_memory_mtl(device, mtl_ptr)
+# Import using backend-appropriate path
+if exported.backend == "metal":
+    shared_mem = dawn.import_shared_buffer_memory_mtl(device, exported.handle)
+else:
+    shared_mem = dawn.import_shared_buffer_memory_opaque_fd(
+        device, exported.handle, exported.allocation_size)
 print(f"Imported SharedBufferMemory: {shared_mem}")
 
 # Create a Dawn buffer from the shared memory
@@ -156,7 +167,7 @@ cmd = dawn.command_encoder_finish(encoder)
 dawn.submit(device, [cmd])
 dawn.sync(device)
 
-# PGC reads the same Metal buffer — should see doubled values
+# PGC reads the same buffer — should see doubled values
 pgc_after = out.to_numpy()
 expected = pgc_result * 2.0
 print(f"\nAfter Dawn compute (double):")
@@ -164,5 +175,5 @@ print(f"  PGC reads: first 5 = {pgc_after[:5]}")
 print(f"  Expected:  first 5 = {expected[:5]}")
 
 assert np.allclose(pgc_after, expected), "Round-trip mismatch!"
-print(f"\nBidirectional zero-copy interop verified!")
-print("  PGC compute → shared MTLBuffer → Dawn compute → PGC reads back")
+print(f"\nBidirectional zero-copy interop verified! (backend={exported.backend})")
+print("  PGC compute → shared buffer → Dawn compute → PGC reads back")

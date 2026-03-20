@@ -327,7 +327,8 @@ class HIPBackend:
 
         self._cache: dict[str, CompiledHIPKernel] = {}
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> HIPBuffer:
+    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+                        exportable: bool = False) -> HIPBuffer:
         return HIPBuffer(dtype.numpy_dtype, shape)
 
     def wrap_ptr(self, ptr, dtype, shape):

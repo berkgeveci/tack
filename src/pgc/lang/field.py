@@ -10,6 +10,7 @@ On CPU the "device" is just numpy.  On Metal (Apple Silicon unified memory)
 transfers are zero-copy.  On CUDA transfers go over PCIe.
 """
 
+from dataclasses import dataclass
 import numpy as np
 
 from pgc.lang.types import ScalarType, f32, f64, from_numpy_dtype
@@ -50,6 +51,21 @@ class NumpyBuffer(DeviceBuffer):
     @property
     def nbytes(self) -> int:
         return self._data.nbytes
+
+
+@dataclass
+class ExportedMemory:
+    """Handle for sharing GPU memory across APIs (e.g. PGC → Dawn/Vulkan).
+
+    Contains only plain Python values — no dependency on any GPU library.
+    The consumer dispatches on ``backend`` to choose the right import path
+    (e.g. MTLBuffer pointer for Metal, POSIX fd for CUDA/Vulkan).
+    """
+    backend: str            # "metal", "cuda", "hip", "level_zero"
+    size: int               # usable data size in bytes
+    allocation_size: int    # actual allocation size (may be rounded up)
+    handle: object          # backend-specific: MTLBuffer ptr (int), fd (int), etc.
+    device_uuid: bytes | None = None  # GPU device UUID (CUDA/HIP/L0)
 
 
 class Field:
@@ -113,6 +129,19 @@ class Field:
             return backend.reduce_field(self, 'max')
         return float(self._buffer.to_numpy().max())
 
+    def export_memory(self) -> ExportedMemory:
+        """Export the field's GPU memory for cross-API sharing.
+
+        Returns an ExportedMemory with backend tag and a handle suitable for
+        importing into another API (e.g. Dawn, Vulkan, pycuda).
+        If the field was not allocated with ``exportable=True``, a one-time
+        copy into exportable memory is performed automatically.
+        """
+        if not hasattr(self._buffer, 'export_memory'):
+            raise RuntimeError(
+                f"Backend {type(self._buffer).__name__} does not support memory export")
+        return self._buffer.export_memory()
+
     def __dlpack__(self, *, stream=None, max_version=None, dl_device=None, copy=None):
         """Export this field as a DLPack capsule for zero-copy interop.
 
@@ -135,14 +164,23 @@ class Field:
         return f"Field(dtype={self.dtype}, shape={self.shape})"
 
 
-def field(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
-    """Create a new field on the currently active backend."""
+def field(dtype: ScalarType = f32, shape: tuple[int, ...] = (),
+          exportable: bool = False) -> Field:
+    """Create a new field on the currently active backend.
+
+    Args:
+        dtype: scalar element type (default: f32)
+        shape: dimensions of the field
+        exportable: if True, allocate with cross-API export capability
+                    (e.g. CUDA VMM with POSIX FD handles). Enables zero-copy
+                    ``field.export_memory()`` without a re-allocation.
+    """
     from pgc.runtime.dispatch import get_backend
 
     if isinstance(shape, int):
         shape = (shape,)
     backend = get_backend()
-    buf = backend.allocate_field(dtype, shape)
+    buf = backend.allocate_field(dtype, shape, exportable=exportable)
     return Field(dtype, shape, buf)
 
 

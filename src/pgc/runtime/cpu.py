@@ -224,7 +224,8 @@ class CPUBackend:
         self._cache: dict[str, CompiledKernel] = {}
         self._pool: ThreadPoolExecutor | None = None
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> NumpyBuffer:
+    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+                        exportable: bool = False) -> NumpyBuffer:
         if _numa_available:
             # Use np.empty (no page faults) under interleave policy,
             # so the first write spreads pages across NUMA nodes.

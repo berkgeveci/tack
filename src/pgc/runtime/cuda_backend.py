@@ -149,12 +149,127 @@ class CUDABuffer(DeviceBuffer):
     def nbytes(self) -> int:
         return self._nbytes
 
+    def export_memory(self):
+        """Export as ExportedMemory. Lazily copies into exportable memory."""
+        if not hasattr(self, '_export_buf'):
+            self._export_buf = ExportableCUDABuffer(self._numpy_dtype, self._shape)
+            _check(driver.cuMemcpyDtoD(
+                self._export_buf._device_ptr, self._device_ptr, self._nbytes))
+        return self._export_buf.export_memory()
+
     def __del__(self):
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
                 driver.cuMemFree(self._device_ptr)
             except Exception:
                 pass
+
+
+class ExportableCUDABuffer(DeviceBuffer):
+    """Device buffer allocated via CUDA VMM with POSIX FD export capability.
+
+    Uses cuMemCreate/cuMemMap instead of cuMemAlloc so the underlying
+    memory can be exported as a file descriptor for cross-API sharing
+    (e.g. Vulkan import via VK_KHR_external_memory_fd).
+    """
+
+    def __init__(self, numpy_dtype, shape):
+        self._numpy_dtype = np.dtype(numpy_dtype)
+        self._shape = shape
+        self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
+
+        err, self._cuda_device = driver.cuCtxGetDevice()
+        _check(err)
+
+        prop = driver.CUmemAllocationProp()
+        prop.type = driver.CUmemAllocationType.CU_MEM_ALLOCATION_TYPE_PINNED
+        prop.location.type = driver.CUmemLocationType.CU_MEM_LOCATION_TYPE_DEVICE
+        prop.location.id = self._cuda_device
+        prop.requestedHandleTypes = (
+            driver.CUmemAllocationHandleType.CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR)
+
+        err, granularity = driver.cuMemGetAllocationGranularity(
+            prop, driver.CUmemAllocationGranularity_flags.CU_MEM_ALLOC_GRANULARITY_MINIMUM)
+        _check(err)
+
+        self._alloc_size = ((max(self._nbytes, 1) + granularity - 1)
+                            // granularity) * granularity
+
+        err, self._mem_handle = driver.cuMemCreate(self._alloc_size, prop, 0)
+        _check(err)
+
+        err, self._device_ptr = driver.cuMemAddressReserve(
+            self._alloc_size, granularity, 0, 0)
+        _check(err)
+
+        _check(driver.cuMemMap(
+            self._device_ptr, self._alloc_size, 0, self._mem_handle, 0))
+
+        access = driver.CUmemAccessDesc()
+        access.location.type = driver.CUmemLocationType.CU_MEM_LOCATION_TYPE_DEVICE
+        access.location.id = self._cuda_device
+        access.flags = (
+            driver.CUmemAccess_flags.CU_MEM_ACCESS_FLAGS_PROT_READWRITE)
+        _check(driver.cuMemSetAccess(
+            self._device_ptr, self._alloc_size, [access], 1))
+
+        # Zero-initialise
+        _check(driver.cuMemsetD8(self._device_ptr, 0, self._alloc_size))
+
+        self._exported_fd = None
+
+    @property
+    def device_ptr(self):
+        return self._device_ptr
+
+    def from_numpy(self, arr: np.ndarray):
+        src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
+        _check(driver.cuMemcpyHtoD(self._device_ptr, src, self._nbytes))
+
+    def to_numpy(self) -> np.ndarray:
+        out = np.empty(self._shape, dtype=self._numpy_dtype)
+        _check(driver.cuMemcpyDtoH(out, self._device_ptr, self._nbytes))
+        return out
+
+    def fill(self, value):
+        arr = np.full(self._shape, value, dtype=self._numpy_dtype)
+        self.from_numpy(arr)
+
+    @property
+    def nbytes(self) -> int:
+        return self._nbytes
+
+    def export_memory(self):
+        """Export as ExportedMemory (fd + size + UUID). FD is cached."""
+        from pgc.lang.field import ExportedMemory
+        if self._exported_fd is None:
+            err, fd = driver.cuMemExportToShareableHandle(
+                self._mem_handle,
+                driver.CUmemAllocationHandleType.CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR,
+                0)
+            _check(err)
+            self._exported_fd = fd
+        err, uuid = driver.cuDeviceGetUuid(self._cuda_device)
+        _check(err)
+        return ExportedMemory(
+            backend="cuda",
+            size=self._nbytes,
+            allocation_size=self._alloc_size,
+            handle=self._exported_fd,
+            device_uuid=bytes(uuid.bytes),
+        )
+
+    def __del__(self):
+        try:
+            if self._exported_fd is not None:
+                import os
+                os.close(self._exported_fd)
+                self._exported_fd = None
+            driver.cuMemUnmap(self._device_ptr, self._alloc_size)
+            driver.cuMemAddressFree(self._device_ptr, self._alloc_size)
+            driver.cuMemRelease(self._mem_handle)
+        except Exception:
+            pass
 
 
 def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
@@ -325,7 +440,10 @@ class CUDABackend:
 
         self._cache: dict[str, CompiledCUDAKernel] = {}
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> CUDABuffer:
+    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+                        exportable: bool = False) -> CUDABuffer:
+        if exportable:
+            return ExportableCUDABuffer(dtype.numpy_dtype, shape)
         return CUDABuffer(dtype.numpy_dtype, shape)
 
     def wrap_ptr(self, ptr, dtype, shape):

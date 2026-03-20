@@ -1009,7 +1009,8 @@ class LevelZeroBackend:
 
         self._cache: dict[str, CompiledL0Kernel] = {}
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> L0Buffer:
+    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+                        exportable: bool = False) -> L0Buffer:
         return L0Buffer(self, dtype.numpy_dtype, shape)
 
     def wrap_ptr(self, ptr, dtype, shape):

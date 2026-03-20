@@ -14,7 +14,7 @@ copies are needed.
 import numpy as np
 
 from pgc.lang import ir
-from pgc.lang.field import Field, DeviceBuffer
+from pgc.lang.field import Field, DeviceBuffer, ExportedMemory
 from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
 from pgc.lang.type_inference import infer_param_types
 from pgc.codegen.msl_gen import generate_msl_source
@@ -57,6 +57,16 @@ class MetalBuffer(DeviceBuffer):
     @property
     def nbytes(self) -> int:
         return self._view.nbytes
+
+    def export_memory(self):
+        """Export as ExportedMemory with the MTLBuffer pointer."""
+        import objc
+        return ExportedMemory(
+            backend="metal",
+            size=self._view.nbytes,
+            allocation_size=self._metal_buffer.length(),
+            handle=objc.pyobjc_id(self._metal_buffer),
+        )
 
 
 def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
@@ -319,7 +329,8 @@ class MetalBackend:
         self._cache: dict[str, CompiledMetalKernel] = {}
         self._reduce_pipelines: dict[str, object] = {}
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...]) -> MetalBuffer:
+    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+                        exportable: bool = False) -> MetalBuffer:
         return MetalBuffer(self._device, dtype.numpy_dtype, shape)
 
     def wrap_ptr(self, ptr, dtype, shape):
