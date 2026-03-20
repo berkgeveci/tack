@@ -10,6 +10,7 @@ On CPU the "device" is just numpy.  On Metal (Apple Silicon unified memory)
 transfers are zero-copy.  On CUDA transfers go over PCIe.
 """
 
+from dataclasses import dataclass
 import numpy as np
 
 from pgc.lang.types import ScalarType, f32, f64, from_numpy_dtype
@@ -50,6 +51,20 @@ class NumpyBuffer(DeviceBuffer):
     @property
     def nbytes(self) -> int:
         return self._data.nbytes
+
+
+@dataclass
+class ExportedMemory:
+    """Handle for sharing GPU memory across APIs (e.g. CUDA → Vulkan/Dawn).
+
+    Contains only plain integers and bytes — no dependency on any GPU library.
+    The consumer uses ``fd`` to import the device memory into their own API
+    (e.g. ``VkImportMemoryFdInfoKHR`` or Dawn's ``SharedBufferMemoryVkOpaqueFDDescriptor``).
+    """
+    fd: int                 # POSIX file descriptor for the GPU memory
+    size: int               # usable data size in bytes
+    allocation_size: int    # total allocation size (may be larger due to alignment)
+    device_uuid: bytes      # 16-byte GPU UUID for device matching
 
 
 class Field:
@@ -113,18 +128,39 @@ class Field:
             return backend.reduce_field(self, 'max')
         return float(self._buffer.to_numpy().max())
 
+    def export_memory(self) -> ExportedMemory:
+        """Export the field's GPU memory for cross-API sharing.
+
+        Returns an ExportedMemory with a POSIX file descriptor and metadata.
+        If the field was not allocated with ``exportable=True``, a one-time
+        copy into exportable memory is performed automatically.
+        """
+        if not hasattr(self._buffer, 'export_memory'):
+            raise RuntimeError(
+                f"Backend {type(self._buffer).__name__} does not support memory export")
+        return self._buffer.export_memory()
+
     def __repr__(self):
         return f"Field(dtype={self.dtype}, shape={self.shape})"
 
 
-def field(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
-    """Create a new field on the currently active backend."""
+def field(dtype: ScalarType = f32, shape: tuple[int, ...] = (),
+          exportable: bool = False) -> Field:
+    """Create a new field on the currently active backend.
+
+    Args:
+        dtype: scalar element type (default: f32)
+        shape: dimensions of the field
+        exportable: if True, allocate with cross-API export capability
+                    (e.g. CUDA VMM with POSIX FD handles). Enables zero-copy
+                    ``field.export_memory()`` without a re-allocation.
+    """
     from pgc.runtime.dispatch import get_backend
 
     if isinstance(shape, int):
         shape = (shape,)
     backend = get_backend()
-    buf = backend.allocate_field(dtype, shape)
+    buf = backend.allocate_field(dtype, shape, exportable=exportable)
     return Field(dtype, shape, buf)
 
 
