@@ -25,7 +25,6 @@ tri_ids : i32 (n_tris,)
 
 import numpy as np
 import pgc
-from pgc.algorithms import exclusive_scan
 
 
 STACK_DEPTH = 24
@@ -138,57 +137,72 @@ def _compute_morton_codes(centroids, codes,
 
 
 # ================================================================
-# GPU RADIX SORT (1-bit, 30 passes for 30-bit Morton codes)
+# GPU BITONIC SORT
 # ================================================================
 
 @pgc.kernel
-def _extract_not_bit(codes, not_bit, bit_pos, n):
-    """Extract inverted bit at position bit_pos: 1 if bit is 0, else 0."""
+def _bitonic_step(keys, vals, j, k, n):
+    """One step of bitonic sort: compare-and-swap pairs at distance j."""
     for i in range(n):
-        bit = (codes[i] >> bit_pos) & 1
-        not_bit[i] = 1 - bit
+        l = i ^ j
+        if l > i:
+            swap = 0
+            ki = keys[i]
+            kl = keys[l]
+            if (i & k) == 0:
+                if ki > kl:
+                    swap = 1
+            if (i & k) != 0:
+                if ki < kl:
+                    swap = 1
+            if swap == 1:
+                keys[i] = kl
+                keys[l] = ki
+                vi = vals[i]
+                vals[i] = vals[l]
+                vals[l] = vi
 
 
 @pgc.kernel
-def _scatter_by_bit(keys_in, vals_in, keys_out, vals_out,
-                    scan, not_bit, n):
-    """Scatter keys and values based on single-bit radix split."""
-    for i in range(n):
-        total_zeros = scan[n - 1] + not_bit[n - 1]
-        b = 1 - not_bit[i]
-        dest = scan[i]
-        if b == 1:
-            dest = total_zeros + i - scan[i]
-        keys_out[dest] = keys_in[i]
-        vals_out[dest] = vals_in[i]
+def _copy_and_pad(src_keys, src_vals, dst_keys, dst_vals,
+                  n_real, pad_val, n_padded):
+    """Copy real data and pad with max values."""
+    for i in range(n_padded):
+        if i < n_real:
+            dst_keys[i] = src_keys[i]
+            dst_vals[i] = src_vals[i]
+        if i >= n_real:
+            dst_keys[i] = pad_val
+            dst_vals[i] = 0
 
 
-def _gpu_radix_sort(codes, tri_ids, n):
-    """Sort codes and tri_ids by Morton code using GPU radix sort.
+def _gpu_sort(codes, tri_ids, n):
+    """Sort codes and tri_ids using GPU bitonic sort.
 
-    1-bit radix sort: 30 passes for 30-bit Morton codes.  Each pass
-    uses exclusive_scan + scatter.  Returns the fields containing the
-    sorted result (may be the originals or the temp buffers).
+    Pads to next power of 2, sorts in-place, returns padded fields
+    (first n elements are the sorted result).
+    ~210 kernel launches for 1M elements.
     """
-    not_bit = pgc.field(dtype=pgc.i32, shape=(n,))
-    scan_out = pgc.field(dtype=pgc.i32, shape=(n,))
-    codes_tmp = pgc.field(dtype=pgc.i32, shape=(n,))
-    ids_tmp = pgc.field(dtype=pgc.i32, shape=(n,))
+    n_padded = 1
+    while n_padded < n:
+        n_padded *= 2
 
-    src_codes, src_ids = codes, tri_ids
-    dst_codes, dst_ids = codes_tmp, ids_tmp
+    keys = pgc.field(dtype=pgc.i32, shape=(n_padded,))
+    vals = pgc.field(dtype=pgc.i32, shape=(n_padded,))
 
-    for bit in range(30):
-        _extract_not_bit(src_codes, not_bit, bit, n)
-        exclusive_scan(not_bit, scan_out, n)
-        _scatter_by_bit(src_codes, src_ids, dst_codes, dst_ids,
-                        scan_out, not_bit, n)
-        # Swap src/dst for next pass
-        src_codes, dst_codes = dst_codes, src_codes
-        src_ids, dst_ids = dst_ids, src_ids
+    pad_val = 1073741823  # 0x3FFFFFFF — max 30-bit value
+    _copy_and_pad(codes, tri_ids, keys, vals, n, pad_val, n_padded)
 
-    # After 30 swaps (even), src points to the original fields
-    return src_codes, src_ids
+    # Bitonic sort: O(log^2(n)) steps
+    k = 2
+    while k <= n_padded:
+        j = k // 2
+        while j >= 1:
+            _bitonic_step(keys, vals, j, k, n_padded)
+            j = j // 2
+        k = k * 2
+
+    return keys, vals
 
 
 @pgc.kernel
@@ -337,13 +351,14 @@ class BVH:
         self.n_inner = 0
         self.n_tris = 0
 
-    def build(self, points, conn, n_tris):
+    def build(self, points, conn, n_tris, gpu_sort=True):
         """Build BVH from pgc fields.
 
         Args:
             points: pgc.field f32, shape (n_verts * 3,) — interleaved xyz.
             conn: pgc.field i32, shape (n_tris * 3,) — triangle indices.
             n_tris: number of triangles.
+            gpu_sort: if True, use GPU bitonic sort; if False, use numpy.
         """
         self.n_tris = n_tris
 
@@ -383,8 +398,16 @@ class BVH:
         tri_ids = pgc.field(dtype=pgc.i32, shape=(n_tris,))
         tri_ids.from_numpy(np.arange(n_tris, dtype=np.int32))
 
-        # GPU radix sort by Morton code
-        sorted_codes, tri_ids = _gpu_radix_sort(codes, tri_ids, n_tris)
+        # Sort by Morton code
+        if gpu_sort:
+            sorted_codes, tri_ids = _gpu_sort(codes, tri_ids, n_tris)
+        else:
+            codes_np = codes.to_numpy().astype(np.uint32)
+            sorted_ids = np.argsort(codes_np).astype(np.int32)
+            tri_ids = pgc.field(dtype=pgc.i32, shape=(n_tris,))
+            tri_ids.from_numpy(sorted_ids)
+            sorted_codes = pgc.field(dtype=pgc.i32, shape=(n_tris,))
+            sorted_codes.from_numpy(codes_np[sorted_ids].astype(np.int32))
         self.tri_ids = tri_ids
         _t2 = _time.perf_counter()
 
