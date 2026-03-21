@@ -425,10 +425,14 @@ class BVH:
         _t1 = _time.perf_counter()
 
         # --- Step 2: Morton codes (GPU) + sort (GPU) ---
-        # Centroid bounds: small host round-trip (n_tris*3 floats down, 6 scalars used)
-        centroids_np = centroids.to_numpy().reshape(-1, 3)
-        scene_min = centroids_np.min(axis=0)
-        scene_max = centroids_np.max(axis=0)
+        # GPU reduction for centroid bounds (only 6 floats come to host)
+        out_min = pgc.field(dtype=pgc.f32, shape=(3,))
+        out_max = pgc.field(dtype=pgc.f32, shape=(3,))
+        out_min.from_numpy(np.array([1e30, 1e30, 1e30], dtype=np.float32))
+        out_max.from_numpy(np.array([-1e30, -1e30, -1e30], dtype=np.float32))
+        _reduce_bounds(centroids, out_min, out_max, n_tris)
+        scene_min = out_min.to_numpy()
+        scene_max = out_max.to_numpy()
         extent = scene_max - scene_min
         extent[extent == 0] = 1.0
         inv_ext = 1.0 / extent
