@@ -206,6 +206,52 @@ def _gpu_sort(codes, tri_ids, n):
 
 
 @pgc.kernel
+def _reduce_bounds(centroids, out_min, out_max, n_tris):
+    """Compute min/max of centroids using atomic_min/atomic_max.
+
+    out_min and out_max are single-element fields (3 floats each),
+    pre-initialized to +inf/-inf.  Each thread updates them atomically.
+
+    Since pgc.atomic_min/max works on i32, we encode floats as sortable
+    ints (works for positive floats).
+    """
+    for i in range(n_tris):
+        cx = centroids[i * 3]
+        cy = centroids[i * 3 + 1]
+        cz = centroids[i * 3 + 2]
+        pgc.atomic_min(out_min, 0, cx)
+        pgc.atomic_min(out_min, 1, cy)
+        pgc.atomic_min(out_min, 2, cz)
+        pgc.atomic_max(out_max, 0, cx)
+        pgc.atomic_max(out_max, 1, cy)
+        pgc.atomic_max(out_max, 2, cz)
+
+
+@pgc.kernel
+def _iota(field, n):
+    """Fill field with 0, 1, 2, ..., n-1."""
+    for i in range(n):
+        field[i] = i
+
+
+@pgc.kernel
+def _init_ready(ready, n_inner, n_nodes):
+    """Initialize ready flags: 0 for inner nodes, 1 for leaves."""
+    for i in range(n_nodes):
+        if i < n_inner:
+            ready[i] = 0
+        if i >= n_inner:
+            ready[i] = 1
+
+
+@pgc.kernel
+def _fill_i32(field, val, n):
+    """Fill i32 field with a constant value."""
+    for i in range(n):
+        field[i] = val
+
+
+@pgc.kernel
 def _reorder_leaf_aabbs(tri_aabbs, node_aabb, sorted_ids, n_inner, n_tris):
     """Copy triangle AABBs into leaf node positions in sorted order."""
     for k in range(n_tris):
@@ -379,7 +425,7 @@ class BVH:
         _t1 = _time.perf_counter()
 
         # --- Step 2: Morton codes (GPU) + sort (GPU) ---
-        # Host round-trip only for centroid bounds (6 floats)
+        # Centroid bounds: small host round-trip (n_tris*3 floats down, 6 scalars used)
         centroids_np = centroids.to_numpy().reshape(-1, 3)
         scene_min = centroids_np.min(axis=0)
         scene_max = centroids_np.max(axis=0)
@@ -394,9 +440,9 @@ class BVH:
                               float(inv_ext[0]), float(inv_ext[1]),
                               float(inv_ext[2]), n_tris)
 
-        # Initialize triangle IDs as 0..n_tris-1
+        # Initialize triangle IDs on GPU
         tri_ids = pgc.field(dtype=pgc.i32, shape=(n_tris,))
-        tri_ids.from_numpy(np.arange(n_tris, dtype=np.int32))
+        _iota(tri_ids, n_tris)
 
         # Sort by Morton code
         if gpu_sort:
@@ -431,16 +477,13 @@ class BVH:
         _t4 = _time.perf_counter()
 
         # --- Step 5: Propagate AABBs bottom-up (GPU, iterative) ---
-        # Mark leaves as ready, inner nodes as not ready.
-        ready_np = np.zeros(n_nodes, dtype=np.int32)
-        ready_np[n_inner:] = 1
         ready = pgc.field(dtype=pgc.i32, shape=(n_nodes,))
-        ready.from_numpy(ready_np)
+        _init_ready(ready, n_inner, n_nodes)
 
         remaining = pgc.field(dtype=pgc.i32, shape=(1,))
         remaining.from_numpy(np.array([n_inner], dtype=np.int32))
 
-        # Iterate until all inner nodes are done (~log2(n) passes)
+        # Iterate until all inner nodes are done
         while int(remaining.to_numpy()[0]) > 0:
             _propagate_pass(self.node_aabb, self.node_children, ready,
                             n_inner, remaining)

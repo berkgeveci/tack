@@ -22,19 +22,44 @@ def compute_normals(points_np, conn_np):
     v2 = points_np[conn_np[:, 2]]
     e1 = v1 - v0
     e2 = v2 - v0
-    face_normals = np.cross(e1, e2)  # (n_tris, 3), not normalized (area-weighted)
+    face_normals = np.cross(e1, e2)
 
-    # Accumulate face normals to each vertex
     np.add.at(normals, conn_np[:, 0], face_normals)
     np.add.at(normals, conn_np[:, 1], face_normals)
     np.add.at(normals, conn_np[:, 2], face_normals)
 
-    # Normalize
     lengths = np.linalg.norm(normals, axis=1, keepdims=True)
     lengths[lengths == 0] = 1.0
     normals /= lengths
 
     return normals.astype(np.float32)
+
+
+# ================================================================
+# GPU KERNELS for scene preparation
+# ================================================================
+
+@pgc.kernel
+def _copy_points(src, dst, dst_offset, n):
+    """Copy n floats from src to dst starting at dst_offset."""
+    for i in range(n):
+        dst[dst_offset + i] = src[i]
+
+
+@pgc.kernel
+def _copy_conn_offset(src, dst, dst_offset, vert_offset, n):
+    """Copy connectivity with vertex offset added."""
+    for i in range(n):
+        dst[dst_offset + i] = src[i] + vert_offset
+
+
+@pgc.kernel
+def _fill_color(tri_colors, offset, cr, cg, cb, n_tris):
+    """Fill per-triangle colors for one actor."""
+    for i in range(n_tris):
+        tri_colors[offset + i * 3] = cr
+        tri_colors[offset + i * 3 + 1] = cg
+        tri_colors[offset + i * 3 + 2] = cb
 
 
 class Actor:
@@ -58,13 +83,7 @@ class Actor:
 
 
 class PointLight:
-    """Point light source.
-
-    Args:
-        position: (x, y, z) world position.
-        intensity: scalar brightness, default 1.0.
-        color: RGB tuple in [0, 1], default white.
-    """
+    """Point light source."""
 
     def __init__(self, position, intensity=1.0, color=(1.0, 1.0, 1.0)):
         self.position = tuple(float(v) for v in position)
@@ -95,57 +114,80 @@ class Scene:
     def _prepare(self):
         """Merge all actors into unified geometry arrays.
 
-        Returns dict with pgc fields (points, conn, tri_colors, normals)
-        and metadata for BVH construction.
+        Single-actor: zero-copy for points and connectivity.
+        Multi-actor: GPU kernels concatenate fields (no host round-trip
+        for geometry).  Normals still require host for compute_normals().
         """
-        all_points = []
-        all_conn = []
-        all_colors = []
+        any_smooth = any(a.smooth for a in self.actors)
+
+        # --- Single actor: zero copy for geometry ---
+        if len(self.actors) == 1:
+            actor = self.actors[0]
+            n_tris = actor.n_tris
+
+            colors_field = pgc.field(dtype=pgc.f32, shape=(n_tris * 3,))
+            _fill_color(colors_field, 0,
+                        actor.color[0], actor.color[1], actor.color[2],
+                        n_tris)
+
+            has_normals = 0
+            normals_field = pgc.field(dtype=pgc.f32, shape=(3,))
+            if actor.smooth:
+                pts_np = actor.points.to_numpy().reshape(-1, 3)
+                conn_np = actor.connectivity.to_numpy().reshape(-1, 3)
+                normals_np = compute_normals(pts_np, conn_np)
+                normals_field = pgc.field(dtype=pgc.f32,
+                                          shape=(normals_np.size,))
+                normals_field.from_numpy(normals_np.reshape(-1))
+                has_normals = 1
+
+            return {
+                'points': actor.points,
+                'conn': actor.connectivity,
+                'tri_colors': colors_field,
+                'normals': normals_field,
+                'has_normals': has_normals,
+                'n_tris': n_tris,
+            }
+
+        # --- Multi-actor: GPU concat ---
+        total_verts = sum(a.n_verts for a in self.actors)
+        total_tris = sum(a.n_tris for a in self.actors)
+
+        points_field = pgc.field(dtype=pgc.f32, shape=(total_verts * 3,))
+        conn_field = pgc.field(dtype=pgc.i32, shape=(total_tris * 3,))
+        colors_field = pgc.field(dtype=pgc.f32, shape=(total_tris * 3,))
+
         vert_offset = 0
-        any_smooth = False
+        pts_offset = 0
+        conn_offset = 0
+        color_offset = 0
 
         for actor in self.actors:
-            pts_np = actor.points.to_numpy()
-            conn_np = actor.connectivity.to_numpy()
-            n_verts = pts_np.shape[0] // 3
-            n_tris = conn_np.shape[0] // 3
+            n_v = actor.n_verts
+            n_t = actor.n_tris
 
-            all_points.append(pts_np.astype(np.float32))
-            all_conn.append(conn_np.astype(np.int32) + vert_offset)
+            _copy_points(actor.points, points_field, pts_offset, n_v * 3)
+            _copy_conn_offset(actor.connectivity, conn_field,
+                              conn_offset, vert_offset, n_t * 3)
+            _fill_color(colors_field, color_offset,
+                        actor.color[0], actor.color[1], actor.color[2], n_t)
 
-            c = np.array(actor.color, dtype=np.float32)
-            all_colors.append(np.tile(c, n_tris))
+            vert_offset += n_v
+            pts_offset += n_v * 3
+            conn_offset += n_t * 3
+            color_offset += n_t * 3
 
-            if actor.smooth:
-                any_smooth = True
-
-            vert_offset += n_verts
-
-        points_flat = np.concatenate(all_points)
-        conn_flat = np.concatenate(all_conn)
-        colors_flat = np.concatenate(all_colors)
-
-        n_tris = conn_flat.shape[0] // 3
-        total_verts = points_flat.shape[0] // 3
-
-        points_field = pgc.field(dtype=pgc.f32, shape=(points_flat.shape[0],))
-        points_field.from_numpy(points_flat)
-
-        conn_field = pgc.field(dtype=pgc.i32, shape=(conn_flat.shape[0],))
-        conn_field.from_numpy(conn_flat)
-
-        colors_field = pgc.field(dtype=pgc.f32, shape=(colors_flat.shape[0],))
-        colors_field.from_numpy(colors_flat)
-
-        # Compute vertex normals if any actor requests smooth shading
+        # Normals (requires host for np.add.at)
         has_normals = 0
+        normals_field = pgc.field(dtype=pgc.f32, shape=(3,))
         if any_smooth:
-            normals_np = compute_normals(points_flat.reshape(-1, 3),
-                                         conn_flat.reshape(-1, 3))
-            # Zero out normals for flat-shaded actors' vertices
+            pts_np = points_field.to_numpy().reshape(-1, 3)
+            conn_np = conn_field.to_numpy().reshape(-1, 3)
+            normals_np = compute_normals(pts_np, conn_np)
             offset = 0
             for actor in self.actors:
-                n_v = actor.points.shape[0] // 3
+                n_v = actor.n_verts
                 if not actor.smooth:
                     normals_np[offset:offset + n_v] = 0.0
                 offset += n_v
@@ -153,9 +195,6 @@ class Scene:
                                       shape=(normals_np.size,))
             normals_field.from_numpy(normals_np.reshape(-1))
             has_normals = 1
-        else:
-            # Dummy 1-element field (kernel still needs a field parameter)
-            normals_field = pgc.field(dtype=pgc.f32, shape=(3,))
 
         return {
             'points': points_field,
@@ -163,5 +202,5 @@ class Scene:
             'tri_colors': colors_field,
             'normals': normals_field,
             'has_normals': has_normals,
-            'n_tris': n_tris,
+            'n_tris': total_tris,
         }
