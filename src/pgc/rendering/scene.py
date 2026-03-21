@@ -40,6 +40,68 @@ def compute_normals(points_np, conn_np):
 # ================================================================
 
 @pgc.kernel
+def _accumulate_face_normals(points, conn, normals, n_tris):
+    """Accumulate area-weighted face normals to vertices using atomic_add."""
+    for t in range(n_tris):
+        i0 = conn[t * 3]
+        i1 = conn[t * 3 + 1]
+        i2 = conn[t * 3 + 2]
+        e1x = points[i1 * 3]     - points[i0 * 3]
+        e1y = points[i1 * 3 + 1] - points[i0 * 3 + 1]
+        e1z = points[i1 * 3 + 2] - points[i0 * 3 + 2]
+        e2x = points[i2 * 3]     - points[i0 * 3]
+        e2y = points[i2 * 3 + 1] - points[i0 * 3 + 1]
+        e2z = points[i2 * 3 + 2] - points[i0 * 3 + 2]
+        nx = e1y * e2z - e1z * e2y
+        ny = e1z * e2x - e1x * e2z
+        nz = e1x * e2y - e1y * e2x
+        pgc.atomic_add(normals, i0 * 3,     nx)
+        pgc.atomic_add(normals, i0 * 3 + 1, ny)
+        pgc.atomic_add(normals, i0 * 3 + 2, nz)
+        pgc.atomic_add(normals, i1 * 3,     nx)
+        pgc.atomic_add(normals, i1 * 3 + 1, ny)
+        pgc.atomic_add(normals, i1 * 3 + 2, nz)
+        pgc.atomic_add(normals, i2 * 3,     nx)
+        pgc.atomic_add(normals, i2 * 3 + 1, ny)
+        pgc.atomic_add(normals, i2 * 3 + 2, nz)
+
+
+@pgc.kernel
+def _normalize_vectors(normals, n_verts):
+    """Normalize each 3-component vector in-place."""
+    for i in range(n_verts):
+        nx = normals[i * 3]
+        ny = normals[i * 3 + 1]
+        nz = normals[i * 3 + 2]
+        length = sqrt(nx * nx + ny * ny + nz * nz) + 1.0e-20
+        normals[i * 3]     = nx / length
+        normals[i * 3 + 1] = ny / length
+        normals[i * 3 + 2] = nz / length
+
+
+@pgc.kernel
+def _zero_normals_range(normals, start, count):
+    """Zero out normals for a range of vertices (flat-shaded actors)."""
+    for i in range(count):
+        normals[(start + i) * 3] = 0.0
+        normals[(start + i) * 3 + 1] = 0.0
+        normals[(start + i) * 3 + 2] = 0.0
+
+
+def compute_normals_gpu(points, conn, n_verts, n_tris):
+    """Compute per-vertex normals entirely on GPU.
+
+    Returns pgc.field f32 (n_verts * 3,) with normalized vertex normals.
+    """
+    normals = pgc.field(dtype=pgc.f32, shape=(n_verts * 3,))
+    # Zero-initialize (field may contain garbage)
+    _zero_normals_range(normals, 0, n_verts)
+    _accumulate_face_normals(points, conn, normals, n_tris)
+    _normalize_vectors(normals, n_verts)
+    return normals
+
+
+@pgc.kernel
 def _copy_points(src, dst, dst_offset, n):
     """Copy n floats from src to dst starting at dst_offset."""
     for i in range(n):
@@ -133,12 +195,9 @@ class Scene:
             has_normals = 0
             normals_field = pgc.field(dtype=pgc.f32, shape=(3,))
             if actor.smooth:
-                pts_np = actor.points.to_numpy().reshape(-1, 3)
-                conn_np = actor.connectivity.to_numpy().reshape(-1, 3)
-                normals_np = compute_normals(pts_np, conn_np)
-                normals_field = pgc.field(dtype=pgc.f32,
-                                          shape=(normals_np.size,))
-                normals_field.from_numpy(normals_np.reshape(-1))
+                normals_field = compute_normals_gpu(
+                    actor.points, actor.connectivity,
+                    actor.n_verts, n_tris)
                 has_normals = 1
 
             return {
@@ -178,22 +237,19 @@ class Scene:
             conn_offset += n_t * 3
             color_offset += n_t * 3
 
-        # Normals (requires host for np.add.at)
+        # Normals (GPU: atomic_add accumulation + normalize)
         has_normals = 0
         normals_field = pgc.field(dtype=pgc.f32, shape=(3,))
         if any_smooth:
-            pts_np = points_field.to_numpy().reshape(-1, 3)
-            conn_np = conn_field.to_numpy().reshape(-1, 3)
-            normals_np = compute_normals(pts_np, conn_np)
+            normals_field = compute_normals_gpu(
+                points_field, conn_field, total_verts, total_tris)
+            # Zero out normals for flat-shaded actors
             offset = 0
             for actor in self.actors:
                 n_v = actor.n_verts
                 if not actor.smooth:
-                    normals_np[offset:offset + n_v] = 0.0
+                    _zero_normals_range(normals_field, offset, n_v)
                 offset += n_v
-            normals_field = pgc.field(dtype=pgc.f32,
-                                      shape=(normals_np.size,))
-            normals_field.from_numpy(normals_np.reshape(-1))
             has_normals = 1
 
         return {
