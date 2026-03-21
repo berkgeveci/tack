@@ -58,7 +58,7 @@ def _ray_tri(ox, oy, oz, dx, dy, dz,
     u_out = 0.0
     v_out = 0.0
 
-    if det < -0.00001 or det > 0.00001:
+    if det < -1.0e-10 or det > 1.0e-10:
         inv_det = 1.0 / det
         sx = ox - v0x
         sy = oy - v0y

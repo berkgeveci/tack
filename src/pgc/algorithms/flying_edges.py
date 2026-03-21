@@ -817,4 +817,6 @@ def flying_edges_multiblock(blocks, isovalue):
         'conn_field': conn,       # raw pgc field for GPU interop
         'total_points': total_points,
         'total_tris': total_tris,
+        'block_point_counts': [int(infos[b]['total_points']) for b in range(n_blocks)],
+        'block_tri_counts': [int(infos[b]['total_tris']) for b in range(n_blocks)],
     }
