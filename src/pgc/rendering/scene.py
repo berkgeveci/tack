@@ -78,10 +78,15 @@ class Scene:
     def __init__(self):
         self.actors = []
         self.lights = []
+        self._version = 0
+        self._cached_geom = None
+        self._cached_bvh = None
+        self._cache_version = -1
 
     def add(self, obj):
         if isinstance(obj, Actor):
             self.actors.append(obj)
+            self._version += 1
         elif isinstance(obj, PointLight):
             self.lights.append(obj)
         else:

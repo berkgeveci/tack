@@ -2,8 +2,9 @@
 
 Builds a bounding volume hierarchy from triangle geometry using Morton codes
 and the Karras parallel tree construction algorithm.  GPU kernels handle
-centroid/AABB computation, tree construction, and AABB propagation.
-Sorting is done on the CPU (numpy argsort) with a small device-host round trip.
+all stages: centroid/AABB computation, Morton codes, radix sort, tree
+construction, and AABB propagation.  The only host round-trip is reading
+centroid bounds for Morton code normalization.
 
 Node layout
 -----------
@@ -24,6 +25,7 @@ tri_ids : i32 (n_tris,)
 
 import numpy as np
 import pgc
+from pgc.algorithms import exclusive_scan
 
 
 STACK_DEPTH = 24
@@ -133,6 +135,60 @@ def _compute_morton_codes(centroids, codes,
         if iz < 0: iz = 0
         if iz > 1023: iz = 1023
         codes[t] = (_expand_bits(iz) << 2) | (_expand_bits(iy) << 1) | _expand_bits(ix)
+
+
+# ================================================================
+# GPU RADIX SORT (1-bit, 30 passes for 30-bit Morton codes)
+# ================================================================
+
+@pgc.kernel
+def _extract_not_bit(codes, not_bit, bit_pos, n):
+    """Extract inverted bit at position bit_pos: 1 if bit is 0, else 0."""
+    for i in range(n):
+        bit = (codes[i] >> bit_pos) & 1
+        not_bit[i] = 1 - bit
+
+
+@pgc.kernel
+def _scatter_by_bit(keys_in, vals_in, keys_out, vals_out,
+                    scan, not_bit, n):
+    """Scatter keys and values based on single-bit radix split."""
+    for i in range(n):
+        total_zeros = scan[n - 1] + not_bit[n - 1]
+        b = 1 - not_bit[i]
+        dest = scan[i]
+        if b == 1:
+            dest = total_zeros + i - scan[i]
+        keys_out[dest] = keys_in[i]
+        vals_out[dest] = vals_in[i]
+
+
+def _gpu_radix_sort(codes, tri_ids, n):
+    """Sort codes and tri_ids by Morton code using GPU radix sort.
+
+    1-bit radix sort: 30 passes for 30-bit Morton codes.  Each pass
+    uses exclusive_scan + scatter.  Returns the fields containing the
+    sorted result (may be the originals or the temp buffers).
+    """
+    not_bit = pgc.field(dtype=pgc.i32, shape=(n,))
+    scan_out = pgc.field(dtype=pgc.i32, shape=(n,))
+    codes_tmp = pgc.field(dtype=pgc.i32, shape=(n,))
+    ids_tmp = pgc.field(dtype=pgc.i32, shape=(n,))
+
+    src_codes, src_ids = codes, tri_ids
+    dst_codes, dst_ids = codes_tmp, ids_tmp
+
+    for bit in range(30):
+        _extract_not_bit(src_codes, not_bit, bit, n)
+        exclusive_scan(not_bit, scan_out, n)
+        _scatter_by_bit(src_codes, src_ids, dst_codes, dst_ids,
+                        scan_out, not_bit, n)
+        # Swap src/dst for next pass
+        src_codes, dst_codes = dst_codes, src_codes
+        src_ids, dst_ids = dst_ids, src_ids
+
+    # After 30 swaps (even), src points to the original fields
+    return src_codes, src_ids
 
 
 @pgc.kernel
@@ -307,7 +363,8 @@ class BVH:
         _compute_centroids_and_aabbs(points, conn, centroids, tri_aabbs, n_tris)
         _t1 = _time.perf_counter()
 
-        # --- Step 2: Morton codes (GPU) + sort (CPU) ---
+        # --- Step 2: Morton codes (GPU) + sort (GPU) ---
+        # Host round-trip only for centroid bounds (6 floats)
         centroids_np = centroids.to_numpy().reshape(-1, 3)
         scene_min = centroids_np.min(axis=0)
         scene_max = centroids_np.max(axis=0)
@@ -322,16 +379,13 @@ class BVH:
                               float(inv_ext[0]), float(inv_ext[1]),
                               float(inv_ext[2]), n_tris)
 
-        codes_np = codes.to_numpy().astype(np.uint32)
-        sorted_ids = np.argsort(codes_np).astype(np.int32)
-        sorted_codes_np = codes_np[sorted_ids].astype(np.int32)
-
+        # Initialize triangle IDs as 0..n_tris-1
         tri_ids = pgc.field(dtype=pgc.i32, shape=(n_tris,))
-        tri_ids.from_numpy(sorted_ids)
-        self.tri_ids = tri_ids
+        tri_ids.from_numpy(np.arange(n_tris, dtype=np.int32))
 
-        sorted_codes = pgc.field(dtype=pgc.i32, shape=(n_tris,))
-        sorted_codes.from_numpy(sorted_codes_np)
+        # GPU radix sort by Morton code
+        sorted_codes, tri_ids = _gpu_radix_sort(codes, tri_ids, n_tris)
+        self.tri_ids = tri_ids
         _t2 = _time.perf_counter()
 
         if n_tris == 1:
@@ -369,5 +423,5 @@ class BVH:
                             n_inner, remaining)
         _t5 = _time.perf_counter()
 
-        print(f"    [bvh] centroids={_t1-_t0:.3f}s  morton+sort={_t2-_t1:.3f}s  "
+        print(f"    [bvh] centroids={_t1-_t0:.3f}s  morton+radix={_t2-_t1:.3f}s  "
               f"karras={_t3-_t2:.3f}s  reorder={_t4-_t3:.3f}s  propagate={_t5-_t4:.3f}s")

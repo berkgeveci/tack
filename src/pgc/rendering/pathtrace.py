@@ -467,19 +467,32 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     """
     import time as _time
 
-    # Merge geometry
-    _t0 = _time.perf_counter()
-    geom = scene._prepare()
-    n_tris = geom['n_tris']
-    if n_tris == 0:
-        return
-    _t_prepare = _time.perf_counter() - _t0
+    # Use cached geometry + BVH if scene hasn't changed
+    if scene._cache_version == scene._version:
+        geom = scene._cached_geom
+        bvh = scene._cached_bvh
+        n_tris = geom['n_tris']
+        _t_prepare = 0.0
+        _t_bvh = 0.0
+    else:
+        # Merge geometry
+        _t0 = _time.perf_counter()
+        geom = scene._prepare()
+        n_tris = geom['n_tris']
+        if n_tris == 0:
+            return
+        _t_prepare = _time.perf_counter() - _t0
 
-    # BVH
-    _t0 = _time.perf_counter()
-    bvh = BVH()
-    bvh.build(geom['points'], geom['conn'], n_tris)
-    _t_bvh = _time.perf_counter() - _t0
+        # BVH
+        _t0 = _time.perf_counter()
+        bvh = BVH()
+        bvh.build(geom['points'], geom['conn'], n_tris)
+        _t_bvh = _time.perf_counter() - _t0
+
+        # Cache
+        scene._cached_geom = geom
+        scene._cached_bvh = bvh
+        scene._cache_version = scene._version
 
     # Light
     if light_position is None:
