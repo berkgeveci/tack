@@ -73,12 +73,13 @@ def cell_to_point(cell_data, nx_cells, ny_cells, nz_cells):
 
     Args:
         cell_data: pgc.field, shape (nx_cells * ny_cells * nz_cells,)
+            Supports f32 and f64 — output dtype matches input.
         nx_cells, ny_cells, nz_cells: cell dimensions
 
     Returns:
         pgc.field, shape ((nx_cells+1) * (ny_cells+1) * (nz_cells+1),)
     """
     n_points = (nx_cells + 1) * (ny_cells + 1) * (nz_cells + 1)
-    point_data = pgc.field(dtype=pgc.f32, shape=(n_points,))
+    point_data = pgc.field(dtype=cell_data.dtype, shape=(n_points,))
     _cell_to_point(cell_data, point_data, nx_cells, ny_cells, nz_cells, n_points)
     return point_data
