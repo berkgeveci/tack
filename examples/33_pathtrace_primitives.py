@@ -113,7 +113,7 @@ plane_pts, plane_conn = upload_mesh(plane_v, plane_t)
 
 scene = Scene()
 scene.add(Actor(cube_pts, cube_conn, color=(0.9, 0.3, 0.2)))
-scene.add(Actor(sphere_pts, sphere_conn, color=(0.2, 0.5, 0.9)))
+scene.add(Actor(sphere_pts, sphere_conn, color=(0.2, 0.5, 0.9), smooth=True))
 scene.add(Actor(plane_pts, plane_conn, color=(0.7, 0.7, 0.7)))
 scene.add(PointLight(position=(5, 8, 5), intensity=150.0))
 

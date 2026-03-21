@@ -20,7 +20,7 @@ render(canvas, scene, camera, ...)
 
 from pgc.rendering.camera import PerspectiveCamera
 from pgc.rendering.canvas import Canvas
-from pgc.rendering.scene import Scene, Actor, PointLight
+from pgc.rendering.scene import Scene, Actor, PointLight, compute_normals
 from pgc.rendering.pathtrace import render
 
 __all__ = [
@@ -29,5 +29,6 @@ __all__ = [
     "Scene",
     "Actor",
     "PointLight",
+    "compute_normals",
     "render",
 ]

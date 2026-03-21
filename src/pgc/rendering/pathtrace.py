@@ -156,12 +156,13 @@ def _halton3(index):
 
 @pgc.kernel
 def _pathtrace(fb_r, fb_g, fb_b,
-               points, conn, tri_colors,
+               points, conn, tri_colors, normals,
                node_aabb, node_children, tri_ids,
                stack,
                camera: pgc.template(),
                config: pgc.template(),
-               width, height, n_inner, n_tris, n_samples, n_pixels):
+               width, height, n_inner, n_tris, n_samples, has_normals,
+               n_pixels):
     """Trace all samples for each pixel and accumulate into fb_r/g/b."""
 
     for pid in range(n_pixels):
@@ -208,6 +209,8 @@ def _pathtrace(fb_r, fb_g, fb_b,
             # ---- BVH traversal: closest hit ----
             hit_t = 1.0e30
             hit_tri = -1
+            hit_u = 0.0
+            hit_v = 0.0
 
             stack[stack_base] = 0
             sp = 1
@@ -237,6 +240,8 @@ def _pathtrace(fb_r, fb_g, fb_b,
                         if t > 0.0 and t < hit_t:
                             hit_t = t
                             hit_tri = tri
+                            hit_u = u
+                            hit_v = v
                     else:
                         # Inner — push children
                         left = node_children[node * 2]
@@ -264,6 +269,8 @@ def _pathtrace(fb_r, fb_g, fb_b,
                 i0 = conn[hit_tri * 3]
                 i1 = conn[hit_tri * 3 + 1]
                 i2 = conn[hit_tri * 3 + 2]
+
+                # Compute face normal (always needed as fallback)
                 e1x = points[i1 * 3]     - points[i0 * 3]
                 e1y = points[i1 * 3 + 1] - points[i0 * 3 + 1]
                 e1z = points[i1 * 3 + 2] - points[i0 * 3 + 2]
@@ -277,6 +284,18 @@ def _pathtrace(fb_r, fb_g, fb_b,
                 nx = nx / n_len
                 ny = ny / n_len
                 nz = nz / n_len
+
+                if has_normals == 1:
+                    # Try interpolating vertex normals
+                    w0 = 1.0 - hit_u - hit_v
+                    snx = w0 * normals[i0 * 3]     + hit_u * normals[i1 * 3]     + hit_v * normals[i2 * 3]
+                    sny = w0 * normals[i0 * 3 + 1] + hit_u * normals[i1 * 3 + 1] + hit_v * normals[i2 * 3 + 1]
+                    snz = w0 * normals[i0 * 3 + 2] + hit_u * normals[i1 * 3 + 2] + hit_v * normals[i2 * 3 + 2]
+                    sn_len = sqrt(snx * snx + sny * sny + snz * snz)
+                    if sn_len > 0.01:
+                        nx = snx / sn_len
+                        ny = sny / sn_len
+                        nz = snz / sn_len
 
                 # Flip normal to face the ray
                 if nx * rdx + ny * rdy + nz * rdz > 0.0:
@@ -492,10 +511,12 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     _t0 = _time.perf_counter()
     _pathtrace(fb_r, fb_g, fb_b,
                geom['points'], geom['conn'], geom['tri_colors'],
+               geom['normals'],
                bvh.node_aabb, bvh.node_children, bvh.tri_ids,
                stack,
                camera, config,
-               width, height, bvh.n_inner, n_tris, samples, n_pixels)
+               width, height, bvh.n_inner, n_tris, samples,
+               geom['has_normals'], n_pixels)
     _t_trace = _time.perf_counter() - _t0
 
     # Resolve to canvas
