@@ -125,23 +125,43 @@ def _fill_color(tri_colors, offset, cr, cg, cb, n_tris):
 
 
 class Actor:
-    """Triangle mesh with uniform color.
+    """Triangle mesh with per-vertex or uniform color.
 
     Args:
         points: pgc.field f32, shape (n_verts * 3,) — interleaved xyz.
         connectivity: pgc.field i32, shape (n_tris * 3,) — triangle indices.
-        color: RGB tuple in [0, 1], default mid-grey.
+        color: RGB tuple in [0, 1], default mid-grey. Used when
+            point_colors is not provided.
+        point_colors: per-vertex colors. Can be:
+            - pgc.field f32, shape (n_verts * 3,) — RGB in [0, 1]
+            - numpy uint8 array, shape (n_verts, 3) or (n_verts * 3,) —
+              converted to f32 [0, 1] and uploaded.
+            - None — uses uniform ``color``.
         smooth: if True, compute and use vertex normals for smooth shading.
     """
 
     def __init__(self, points, connectivity, color=(0.8, 0.8, 0.8),
-                 smooth=False):
+                 point_colors=None, smooth=False):
         self.points = points
         self.connectivity = connectivity
         self.color = tuple(float(c) for c in color)
         self.n_verts = points.shape[0] // 3
         self.n_tris = connectivity.shape[0] // 3
         self.smooth = smooth
+
+        # Handle point_colors input
+        if point_colors is None:
+            self.point_colors = None
+        elif isinstance(point_colors, np.ndarray):
+            # Convert numpy array (uint8 or float) to pgc.field f32
+            pc = point_colors.reshape(-1).astype(np.float32)
+            if point_colors.dtype == np.uint8:
+                pc = pc / 255.0
+            self.point_colors = pgc.field(dtype=pgc.f32, shape=(pc.shape[0],))
+            self.point_colors.from_numpy(pc)
+        else:
+            # Assume pgc.field f32
+            self.point_colors = point_colors
 
 
 class PointLight:
@@ -200,10 +220,18 @@ class Scene:
                     actor.n_verts, n_tris)
                 has_normals = 1
 
+            has_point_colors = 0
+            pc_field = pgc.field(dtype=pgc.f32, shape=(3,))
+            if actor.point_colors is not None:
+                pc_field = actor.point_colors
+                has_point_colors = 1
+
             return {
                 'points': actor.points,
                 'conn': actor.connectivity,
                 'tri_colors': colors_field,
+                'point_colors': pc_field,
+                'has_point_colors': has_point_colors,
                 'normals': normals_field,
                 'has_normals': has_normals,
                 'n_tris': n_tris,
@@ -252,10 +280,33 @@ class Scene:
                 offset += n_v
             has_normals = 1
 
+        # Per-vertex colors
+        any_point_colors = any(a.point_colors is not None for a in self.actors)
+        has_point_colors = 0
+        pc_field = pgc.field(dtype=pgc.f32, shape=(3,))
+        if any_point_colors:
+            pc_field = pgc.field(dtype=pgc.f32, shape=(total_verts * 3,))
+            v_offset = 0
+            for actor in self.actors:
+                n_v = actor.n_verts
+                if actor.point_colors is not None:
+                    _copy_points(actor.point_colors, pc_field,
+                                 v_offset * 3, n_v * 3)
+                else:
+                    # Fill with uniform actor color for actors without
+                    # per-vertex colors
+                    _fill_color(pc_field, v_offset * 3,
+                                actor.color[0], actor.color[1],
+                                actor.color[2], n_v)
+                v_offset += n_v
+            has_point_colors = 1
+
         return {
             'points': points_field,
             'conn': conn_field,
             'tri_colors': colors_field,
+            'point_colors': pc_field,
+            'has_point_colors': has_point_colors,
             'normals': normals_field,
             'has_normals': has_normals,
             'n_tris': total_tris,

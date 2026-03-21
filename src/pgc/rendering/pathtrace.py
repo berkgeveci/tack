@@ -156,13 +156,13 @@ def _halton3(index):
 
 @pgc.kernel
 def _pathtrace(fb_r, fb_g, fb_b,
-               points, conn, tri_colors, normals,
+               points, conn, tri_colors, point_colors, normals,
                node_aabb, node_children, tri_ids,
                stack,
                camera: pgc.template(),
                config: pgc.template(),
-               width, height, n_inner, n_tris, n_samples, has_normals,
-               n_pixels):
+               width, height, n_inner, n_tris, n_samples,
+               has_normals, has_point_colors, n_pixels):
     """Trace all samples for each pixel and accumulate into fb_r/g/b."""
 
     for pid in range(n_pixels):
@@ -307,6 +307,11 @@ def _pathtrace(fb_r, fb_g, fb_b,
                 alb_r = tri_colors[hit_tri * 3]
                 alb_g = tri_colors[hit_tri * 3 + 1]
                 alb_b = tri_colors[hit_tri * 3 + 2]
+                if has_point_colors == 1:
+                    pc_w0 = 1.0 - hit_u - hit_v
+                    alb_r = pc_w0 * point_colors[i0 * 3]     + hit_u * point_colors[i1 * 3]     + hit_v * point_colors[i2 * 3]
+                    alb_g = pc_w0 * point_colors[i0 * 3 + 1] + hit_u * point_colors[i1 * 3 + 1] + hit_v * point_colors[i2 * 3 + 1]
+                    alb_b = pc_w0 * point_colors[i0 * 3 + 2] + hit_u * point_colors[i1 * 3 + 2] + hit_v * point_colors[i2 * 3 + 2]
 
                 # ---- direct lighting ----
                 lx = config.light_x - hx
@@ -524,12 +529,12 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     _t0 = _time.perf_counter()
     _pathtrace(fb_r, fb_g, fb_b,
                geom['points'], geom['conn'], geom['tri_colors'],
-               geom['normals'],
+               geom['point_colors'], geom['normals'],
                bvh.node_aabb, bvh.node_children, bvh.tri_ids,
                stack,
                camera, config,
                width, height, bvh.n_inner, n_tris, samples,
-               geom['has_normals'], n_pixels)
+               geom['has_normals'], geom['has_point_colors'], n_pixels)
     _t_trace = _time.perf_counter() - _t0
 
     # Resolve to canvas
