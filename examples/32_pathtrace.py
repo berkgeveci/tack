@@ -65,7 +65,7 @@ if result is None:
     print("No isosurface produced.")
     exit(1)
 
-print(f"  {result['n_points']:,} points, {result['n_tris']:,} triangles")
+print(f"  {result['total_points']:,} points, {result['total_tris']:,} triangles")
 print(f"  Flying Edges: {t_fe:.4f}s")
 
 
@@ -76,7 +76,8 @@ print(f"  Flying Edges: {t_fe:.4f}s")
 w = h = _args.resolution
 
 scene = Scene()
-scene.add(Actor(result['points'], result['conn'], color=(0.7, 0.85, 0.95)))
+scene.add(Actor(result['points_field'], result['conn_field'],
+                color=(0.7, 0.85, 0.95), smooth=True))
 scene.add(PointLight(position=(8, 10, 6), intensity=200.0))
 
 camera = PerspectiveCamera(
