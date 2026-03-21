@@ -102,8 +102,12 @@ print(f"\nStructured grid: {grid.GetNumberOfPoints():,} points, "
 # Step 4: Run viskores contour filter
 # ================================================================
 
-contour = vtk.vtkContourFilter()
+from vtkmodules.vtkAcceleratorsVTKmFilters import vtkmContour
+
+contour = vtkmContour()
 contour.SetInputData(grid)
+contour.SetInputArrayToProcess(0, 0, 0,
+    vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "gyroid")
 contour.SetValue(0, 0.0)
 contour.Update()
 
