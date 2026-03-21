@@ -78,7 +78,7 @@ def vtk_to_field(vtk_array):
             f"({vtk_array.GetDataTypeAsString()})")
 
     np_dtype, pgc_dtype = _VTK_TYPE_MAP[data_type]
-    n_values = vtk_array.GetNumberOfValues()  # tuples * components
+    n_values = int(vtk_array.GetNumberOfValues())  # tuples * components
 
     memory_space = vtk_array.GetMemorySpace()
 
@@ -90,7 +90,7 @@ def vtk_to_field(vtk_array):
             raise RuntimeError(
                 "vtk_to_field: GetDeviceVoidPointer returned null. "
                 "Array reports device memory but pointer is unavailable.")
-        return pgc.field_from_ptr(addr, n_values, pgc_dtype)
+        return pgc.field_from_ptr(addr, (n_values,), pgc_dtype)
 
     # Host array — use GetVoidPointer
     ptr_str = vtk_array.GetVoidPointer(0)
@@ -98,7 +98,7 @@ def vtk_to_field(vtk_array):
     if addr == 0:
         raise RuntimeError(
             "vtk_to_field: GetVoidPointer returned null.")
-    return pgc.field_from_ptr(addr, n_values, pgc_dtype)
+    return pgc.field_from_ptr(addr, (n_values,), pgc_dtype)
 
 
 def field_to_vtk(field, n_components=1):
