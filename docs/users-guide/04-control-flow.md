@@ -46,15 +46,6 @@ def find_threshold(data, out, threshold, n):
         out[i] = count
 ```
 
-## Type Casts
-
-```python
-idx = int(float_val)     # float → int (truncation)
-fval = float(int_val)    # int → float
-```
-
-These map to the corresponding GPU cast operations.
-
 ## Math Builtins
 
 All standard math functions are available inside kernels:

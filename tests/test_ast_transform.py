@@ -354,7 +354,8 @@ def test_int_cast():
     """)
     store = module.functions[0].body[0].body[0]
     assert isinstance(store.value, ir.IRCast)
-    assert store.value.dtype == "int"
+    from pgc.lang.types import i32 as _i32
+    assert store.value.dtype is _i32
 
 
 def test_float_cast():
@@ -365,7 +366,8 @@ def test_float_cast():
     """)
     store = module.functions[0].body[0].body[0]
     assert isinstance(store.value, ir.IRCast)
-    assert store.value.dtype == "float"
+    from pgc.lang.types import f32 as _f32
+    assert store.value.dtype is _f32
 
 
 # --- Augmented assignment ---

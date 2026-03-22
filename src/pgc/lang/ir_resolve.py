@@ -109,6 +109,21 @@ def _resolve(node, fields):
 
     if isinstance(node, ir.IRSharedAlloc):
         node.size = _resolve(node.size, fields)
+        # Resolve shared_like: fill dtype from the source field's type
+        if node.dtype is None and node.field_name is not None:
+            field = fields.get(node.field_name)
+            if field is None:
+                raise RuntimeError(
+                    f"Cannot resolve shared_like: unknown field '{node.field_name}'")
+            from pgc.lang.types import f32, f64, i32, i64, u32, u64
+            _DTYPE_TO_C = {
+                f32: "float", f64: "double", i32: "int", i64: "long",
+                u32: "uint", u64: "ulong",
+            }
+            node.dtype = _DTYPE_TO_C.get(field.dtype)
+            if node.dtype is None:
+                raise RuntimeError(
+                    f"Unsupported dtype for shared_like: {field.dtype}")
         return node
 
     if isinstance(node, ir.IRLocalAlloc):

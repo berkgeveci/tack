@@ -359,64 +359,28 @@ class MSLCodeGen:
             self._declared_vars.add(node.target)
 
     def _infer_type(self, node) -> str:
-        """Best-effort type inference for local variable declarations."""
-        if isinstance(node, ir.IRConstant):
-            if isinstance(node.value, float):
-                return "float"
-            return _INT
-        if isinstance(node, ir.IRFieldLoad):
-            field_name = self._get_field_name(node.field)
-            if field_name and field_name in self._param_types:
-                return _MSL_TYPE_MAP[self._param_types[field_name]]
-        if isinstance(node, ir.IRBinOp):
-            lt = self._infer_type(node.left)
-            rt = self._infer_type(node.right)
-            if lt == "float" or rt == "float":
-                return "float"
-            return lt
-        if isinstance(node, ir.IRCall):
-            return "float"
-        if isinstance(node, ir.IRCast):
-            if node.dtype == "int":
-                return _INT
-            if node.dtype == "float":
-                return "float"
-        if isinstance(node, ir.IRIfExp):
-            return self._infer_type(node.then_value)
-        if isinstance(node, ir.IRCompare):
-            return _INT
-        if isinstance(node, ir.IRUnaryOp):
-            return self._infer_type(node.operand)
+        """Get MSL type for an IR expression node, using annotated dtype."""
+        # Use type annotation from ir_type_annotate pass
+        dtype = getattr(node, 'dtype', None)
+        if dtype is not None:
+            return _MSL_TYPE_MAP.get(dtype, "float")
+        # Check _resolved_cast_type for IRCast nodes
+        rct = getattr(node, '_resolved_cast_type', None)
+        if rct is not None:
+            return _MSL_TYPE_MAP.get(rct, "float")
+        # Fallback for unannotated nodes (e.g., field pointer references)
         if isinstance(node, ir.IRName):
             if node.name in self._field_params:
                 c_type = _MSL_TYPE_MAP[self._param_types[node.name]]
                 return f"device {c_type}*"
-            if node.name in self._param_types:
-                return _MSL_TYPE_MAP[self._param_types[node.name]]
             if node.name in self._local_vars:
                 return self._local_vars[node.name]
+            if node.name in self._param_types:
+                return _MSL_TYPE_MAP[self._param_types[node.name]]
             return _INT
         return "float"
 
     def _infer_expr_type(self, node) -> str:
-        if isinstance(node, ir.IRName):
-            if node.name in self._local_vars:
-                return self._local_vars[node.name]
-            if node.name in self._param_types:
-                return _MSL_TYPE_MAP[self._param_types[node.name]]
-            return _INT
-        if isinstance(node, ir.IRBinOp):
-            lt = self._infer_expr_type(node.left)
-            rt = self._infer_expr_type(node.right)
-            if "float" in (lt, rt):
-                return "float"
-            return lt
-        if isinstance(node, ir.IRCall):
-            return "float"
-        if isinstance(node, ir.IRCast):
-            if node.dtype == "int":
-                return _INT
-            return "float"
         return self._infer_type(node)
 
     def _get_field_name(self, node) -> str | None:
@@ -664,6 +628,12 @@ inline float {name}(device float* data, float u, float v, float w) {{
 
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
+        if isinstance(node.dtype, ScalarType):
+            msl_type = _MSL_TYPE_MAP.get(node.dtype)
+            if msl_type is None:
+                raise NotImplementedError(f"MSL does not support {node.dtype} (Apple GPUs lack f64)")
+            return f"(({msl_type})({val}))"
+        # Legacy string fallback
         if node.dtype == "int":
             return f"((int)({val}))"
         if node.dtype == "float":

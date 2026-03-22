@@ -57,7 +57,7 @@ def test_assign_from_binop_promotes():
 
 
 def test_assign_from_cast_int():
-    cast = ir.IRCast(value=ir.IRConstant(3.14), dtype="int")
+    cast = ir.IRCast(value=ir.IRConstant(3.14), dtype=i32)
     assign = ir.IRAssign(target="idx", value=cast)
     func = _make_func([], [assign])
     annotate_types(func)
@@ -65,7 +65,7 @@ def test_assign_from_cast_int():
 
 
 def test_assign_from_cast_float():
-    cast = ir.IRCast(value=ir.IRConstant(42), dtype="float")
+    cast = ir.IRCast(value=ir.IRConstant(42), dtype=f32)
     assign = ir.IRAssign(target="val", value=cast)
     func = _make_func([], [assign])
     annotate_types(func)

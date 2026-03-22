@@ -443,69 +443,29 @@ class CUDACodeGen:
             self._declared_vars.add(node.target)
 
     def _infer_c_type(self, node) -> str:
-        """Best-effort C type inference for local variable declarations."""
-        if isinstance(node, ir.IRConstant):
-            if isinstance(node.value, float):
-                return "float"
-            return _INT
-        if isinstance(node, ir.IRFieldLoad):
-            field_name = self._get_field_name(node.field)
-            if field_name and field_name in self._param_types:
-                return _C_TYPE_MAP[self._param_types[field_name]]
-        if isinstance(node, ir.IRBinOp):
-            lt = self._infer_c_type(node.left)
-            rt = self._infer_c_type(node.right)
-            if lt == "float" or rt == "float":
-                return "float"
-            if lt == "double" or rt == "double":
-                return "double"
-            return lt
-        if isinstance(node, ir.IRCall):
-            return "float"
-        if isinstance(node, ir.IRCast):
-            if node.dtype == "int":
-                return _INT
-            if node.dtype == "float":
-                return "float"
-        if isinstance(node, ir.IRIfExp):
-            return self._infer_c_type(node.then_value)
-        if isinstance(node, ir.IRCompare):
-            return _INT
-        if isinstance(node, ir.IRUnaryOp):
-            return self._infer_c_type(node.operand)
+        """Get C type for an IR expression node, using annotated dtype."""
+        # Use type annotation from ir_type_annotate pass
+        dtype = getattr(node, 'dtype', None)
+        if dtype is not None:
+            return self._resolved_type_to_c(dtype)
+        # Check _resolved_cast_type for IRCast nodes
+        rct = getattr(node, '_resolved_cast_type', None)
+        if rct is not None:
+            return self._resolved_type_to_c(rct)
+        # Fallback for unannotated nodes (e.g., field pointer references)
         if isinstance(node, ir.IRName):
             if node.name in self._field_params:
                 c_type = _C_TYPE_MAP[self._param_types[node.name]]
                 return f"{c_type}*"
-            if node.name in self._param_types:
-                return _C_TYPE_MAP[self._param_types[node.name]]
             if node.name in self._local_vars:
                 return self._local_vars[node.name]
+            if node.name in self._param_types:
+                return _C_TYPE_MAP[self._param_types[node.name]]
             return _INT
         return "float"
 
     def _infer_expr_type(self, node) -> str:
-        """Infer the runtime C type of an expression, considering variable reassignments."""
-        if isinstance(node, ir.IRName):
-            if node.name in self._local_vars:
-                return self._local_vars[node.name]
-            if node.name in self._param_types:
-                return _C_TYPE_MAP[self._param_types[node.name]]
-            return _INT
-        if isinstance(node, ir.IRBinOp):
-            lt = self._infer_expr_type(node.left)
-            rt = self._infer_expr_type(node.right)
-            if "float" in (lt, rt):
-                return "float"
-            if "double" in (lt, rt):
-                return "double"
-            return lt
-        if isinstance(node, ir.IRCall):
-            return "float"
-        if isinstance(node, ir.IRCast):
-            if node.dtype == "int":
-                return _INT
-            return "float"
+        """Get C type of an expression, using annotated dtype."""
         return self._infer_c_type(node)
 
     def _get_field_name(self, node) -> str | None:
@@ -684,6 +644,10 @@ class CUDACodeGen:
 
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
+        if isinstance(node.dtype, ScalarType):
+            c_type = _C_TYPE_MAP[node.dtype]
+            return f"(({c_type})({val}))"
+        # Legacy string fallback
         if node.dtype == "int":
             return f"((int)({val}))"
         if node.dtype == "float":

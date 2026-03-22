@@ -6,11 +6,12 @@ pass walks the IR tree and mutates it in place.
 ## Pass Order
 
 ```
-1. ir_resolve      — Replace IRDimSize with constants, set texture shapes
+1. ir_resolve      — Replace IRDimSize with constants, set texture shapes, resolve shared_like
 2. type_inference   — Annotate params with types from actual arguments
-3. ir_optimize      — LICM, copy propagation, CSE
-4. ir_type_annotate — Annotate IRAssign nodes with resolved types
-5. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
+3. check_dispatch_types — Validate field dtypes against backend capabilities
+4. ir_optimize      — LICM, copy propagation, CSE
+5. ir_type_annotate — Annotate all expression nodes with dtype (ScalarType)
+6. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
 ```
 
 ## IR Resolve (`ir_resolve.py`, 139 lines)
@@ -32,8 +33,18 @@ Annotates each `IRParam` with:
 Type rules:
 - `Field` → dtype of the field
 - `Texture3D` → dtype of the underlying field
-- Python `float` or `np.floating` → `f32` (not f64, for GPU compatibility)
+- Python `float` or `np.floating` → `f32` by default; auto-promotes to `f64` if any field argument uses `f64`
 - Python `int` or `np.integer` → `i32` (auto-promotes to `i64` if value > 2^31)
+
+## Dispatch-Time Type Checking (`type_inference.py`)
+
+`check_dispatch_types()` validates that all field argument dtypes are
+supported by the target backend. This runs after type inference in every
+backend's `execute()` method.
+
+Each backend defines its supported dtypes (e.g., Metal excludes `f64`).
+Unsupported dtypes produce a clear `TypeError` naming the kernel, parameter,
+dtype, and backend.
 
 ## IR Optimize (`ir_optimize.py`, 539 lines)
 
@@ -68,23 +79,25 @@ loads are considered identical if they read from the same field at the same
 index (structurally compared). The second load is replaced with a reference
 to the first load's result variable.
 
-## IR Type Annotate (`ir_type_annotate.py`, 188 lines)
+## IR Type Annotate (`ir_type_annotate.py`)
 
-Walks the IR and annotates each `IRAssign` with a `_resolved_type`
-attribute — a `ScalarType` that tells codegen what C type to emit for the
-variable declaration.
+Walks the IR and annotates **every expression node** with a `dtype` attribute
+(a `ScalarType`). This also sets `_resolved_type` on each `IRAssign`.
 
-This replaces the fragile `_infer_c_type` heuristic in codegens, which
-previously defaulted unknown variables to `_INT` (causing bugs like the
-tuple swap type mismatch).
+After this pass, codegen backends read `node.dtype` directly instead of
+reimplementing type inference heuristics. This eliminated ~40 lines of
+duplicated `_infer_c_type` / `_infer_expr_type` logic per codegen backend.
 
 Key rules:
-- `IRConstant(3.14)` → `f32`, `IRConstant(42)` → `i32`
+- `IRConstant(3.14)` → `f32`, `IRConstant(42)` → `i32`, `IRConstant(2**31)` → `i64`
 - `IRFieldLoad` → element type of the field
-- `IRBinOp(float, int)` → `f32` (float wins)
-- `IRCast("int", ...)` → `i32`
-- `IRName` referencing a field param → `None` (field pointers can't be
-  typed as scalars — codegen falls back to its own logic)
+- `IRBinOp` → `promote_types(left, right)` (f64 > f32 > i64 > i32)
+- `IRCast(value, ScalarType)` → the target ScalarType
+- `IRCall("sqrt", ...)` → `f32` (or `f64` if any arg is f64)
+- `IRCall("abs", [int_arg])` → preserves integer type
+- `IRCall("min"/"max", ...)` → promoted type of arguments
+- `IRCompare`, `IRBoolOp` → `i32`
+- `IRName` referencing a field param → `None` (field pointers aren't scalars)
 
 The pass tracks a type environment (`var_name → ScalarType`) and propagates
 types through assignment chains.

@@ -33,9 +33,10 @@ def execute(self, kernel, args, kwargs):
     ir_module = kernel.get_ir(vector_fields, template_args, texture_fields)
     ir_func = ir_module.functions[0]
 
-    # 4. Resolve, type inference, optimization (mutates cached IR)
+    # 4. Resolve, type inference, type checking, optimization
     resolve_ir(ir_func, name_to_field)
     infer_param_types(ir_func, effective_args)
+    check_dispatch_types(ir_func, effective_args, supported_dtypes, backend_name)
     optimize_ir(ir_func)
 
     # 5. Extract loop range BEFORE packing

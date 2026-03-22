@@ -13,6 +13,7 @@ import copy
 import math
 
 from pgc.lang import ir
+from pgc.lang.types import f32, f64, i32, i64, u32, u64
 
 
 # Math builtins that map to LLVM intrinsics / libm calls
@@ -262,10 +263,14 @@ class KernelTransformer(ast.NodeVisitor):
             return self._visit_tuple_unpack(target, value)
 
         # Check for shared memory allocation: smem = pgc.shared(pgc.f32, 256)
+        #                             or: smem = pgc.shared_like(field, 256)
         if isinstance(target, ast.Name) and isinstance(value, ast.Call):
             shared_result = self._try_parse_shared_alloc(target.id, value)
             if shared_result is not None:
                 return shared_result
+            shared_like_result = self._try_parse_shared_like(target.id, value)
+            if shared_like_result is not None:
+                return shared_like_result
 
         # Check for local array allocation: arr = pgc.local_array(pgc.f32, 8)
         if isinstance(target, ast.Name) and isinstance(value, ast.Call):
@@ -462,7 +467,7 @@ class KernelTransformer(ast.NodeVisitor):
             # Cast index to int before computing component offsets so that
             # a float index like 127.7 maps to element 127, not a fractional
             # position that shifts the component access.
-            int_index = ir.IRCast(value=index, dtype="int")
+            int_index = ir.IRCast(value=index, dtype=i32)
             result = []
             for c in range(ndim):
                 comp_idx = ir.IRBinOp(
@@ -527,10 +532,13 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name == "ndrange":
             raise NotImplementedError("ndrange() outside of for-loop not supported")
 
-        # Shared memory: pgc.shared(dtype, size)
+        # Shared memory: pgc.shared(dtype, size) or pgc.shared_like(field, size)
         if func_name == "shared":
             raise NotImplementedError(
                 "pgc.shared() must be used in an assignment: smem = pgc.shared(pgc.f32, 256)")
+        if func_name == "shared_like":
+            raise NotImplementedError(
+                "pgc.shared_like() must be used in an assignment: smem = pgc.shared_like(field, 256)")
 
         # Local array: pgc.local_array(dtype, size)
         if func_name == "local_array":
@@ -574,11 +582,17 @@ class KernelTransformer(ast.NodeVisitor):
                     expr_args.append(self.visit(arg))
             return ir.IRPrint(args=expr_args, format_parts=format_parts)
 
-        # int(), float() type casts
-        if func_name in ("int", "float"):
+        # Type casts: int(), float(), and explicit pgc.f32/f64/i32/i64/u32/u64
+        _CAST_MAP = {
+            "int": i32, "float": f32,
+            "f32": f32, "f64": f64,
+            "i32": i32, "i64": i64,
+            "u32": u32, "u64": u64,
+        }
+        if func_name in _CAST_MAP:
             if len(node.args) != 1:
                 raise NotImplementedError(f"{func_name}() takes exactly one argument")
-            return ir.IRCast(value=self.visit(node.args[0]), dtype=func_name)
+            return ir.IRCast(value=self.visit(node.args[0]), dtype=_CAST_MAP[func_name])
 
         # Check for texture3d.sample(u, v, w)
         if isinstance(node.func, ast.Attribute) and node.func.attr == "sample":
@@ -799,6 +813,30 @@ class KernelTransformer(ast.NodeVisitor):
         self._shared_vars.add(target_name)
         return ir.IRSharedAlloc(name=target_name, dtype=c_type, size=size)
 
+    def _try_parse_shared_like(self, target_name: str, value_node: ast.Call):
+        """Try to parse smem = pgc.shared_like(field, 256). Returns IRSharedAlloc or None."""
+        try:
+            name = self._resolve_call_name(value_node)
+        except (NotImplementedError, AttributeError):
+            return None
+        if name != "shared_like":
+            return None
+        if len(value_node.args) != 2:
+            raise NotImplementedError("pgc.shared_like() takes exactly 2 arguments (field, size)")
+
+        # First arg is the field reference
+        field_arg = value_node.args[0]
+        if isinstance(field_arg, ast.Name):
+            field_name = field_arg.id
+        elif isinstance(field_arg, ast.Attribute):
+            field_name = field_arg.attr
+        else:
+            raise NotImplementedError("pgc.shared_like() first argument must be a field name")
+
+        size = self.visit(value_node.args[1])
+        self._shared_vars.add(target_name)
+        return ir.IRSharedAlloc(name=target_name, dtype=None, size=size, field_name=field_name)
+
     def _try_parse_local_alloc(self, target_name: str, value_node: ast.Call):
         """Try to parse arr = pgc.local_array(pgc.f32, 8). Returns IRLocalAlloc or None."""
         try:
@@ -877,7 +915,7 @@ class KernelTransformer(ast.NodeVisitor):
         """Store a vector into a vector field: field[i] = vec."""
         field_node = self.visit(target.value)
         index_node = self._visit_subscript_index(target)
-        int_index = ir.IRCast(value=index_node, dtype="int")
+        int_index = ir.IRCast(value=index_node, dtype=i32)
         ndim = len(components)
         stmts = []
         for c in range(ndim):

@@ -18,7 +18,10 @@ from llvmlite import binding as llvm
 from pgc.lang import ir
 from pgc.lang.field import Field, NumpyBuffer
 from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
-from pgc.lang.type_inference import infer_param_types
+from pgc.lang.type_inference import infer_param_types, check_dispatch_types
+from pgc.lang.types import f32, f64, i32, i64, u32, u64
+
+_CPU_SUPPORTED_DTYPES = {f32, f64, i32, i64, u32, u64}
 from pgc.codegen.llvm_gen import generate_llvm_ir
 
 
@@ -302,8 +305,11 @@ class CPUBackend:
         from pgc.lang.ir_resolve import resolve_ir
         resolve_ir(ir_func, name_to_field)
 
-        # Type inference (Texture3D is handled — sets _is_texture flag)
+        # Type inference and dispatch-time type checking
         infer_param_types(ir_func, effective_args)
+        check_dispatch_types(ir_func, effective_args,
+                             supported_dtypes=_CPU_SUPPORTED_DTYPES,
+                             backend_name="CPU")
 
         # Optimization passes (LICM, CSE)
         from pgc.lang.ir_optimize import optimize_ir

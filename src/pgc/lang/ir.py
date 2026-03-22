@@ -89,6 +89,7 @@ class IRIfExp(IRNode):
         self.condition = condition
         self.then_value = then_value
         self.else_value = else_value
+        self.dtype = None
 
 
 # --- Expressions ---
@@ -100,6 +101,7 @@ class IRBinOp(IRNode):
         self.op = op
         self.left = left
         self.right = right
+        self.dtype = None
 
 
 class IRUnaryOp(IRNode):
@@ -108,6 +110,7 @@ class IRUnaryOp(IRNode):
     def __init__(self, op: str, operand):
         self.op = op
         self.operand = operand
+        self.dtype = None
 
 
 class IRCompare(IRNode):
@@ -117,6 +120,7 @@ class IRCompare(IRNode):
         self.op = op
         self.left = left
         self.right = right
+        self.dtype = None
 
 
 class IRBoolOp(IRNode):
@@ -125,6 +129,7 @@ class IRBoolOp(IRNode):
     def __init__(self, op: str, values: list):
         self.op = op  # "and" or "or"
         self.values = values
+        self.dtype = None
 
 
 class IRFieldLoad(IRNode):
@@ -133,6 +138,7 @@ class IRFieldLoad(IRNode):
     def __init__(self, field, index):
         self.field = field
         self.index = index
+        self.dtype = None
 
 
 class IRFieldStore(IRNode):
@@ -152,6 +158,7 @@ class IRAtomicOp(IRNode):
         self.field = field
         self.index = index
         self.value = value
+        self.dtype = None
 
 
 class IRConstant(IRNode):
@@ -167,6 +174,7 @@ class IRName(IRNode):
 
     def __init__(self, name: str):
         self.name = name
+        self.dtype = None
 
 
 class IRAttribute(IRNode):
@@ -175,6 +183,7 @@ class IRAttribute(IRNode):
     def __init__(self, obj, attr: str):
         self.obj = obj
         self.attr = attr
+        self.dtype = None
 
 
 class IRCall(IRNode):
@@ -183,6 +192,7 @@ class IRCall(IRNode):
     def __init__(self, func_name: str, args: list):
         self.func_name = func_name
         self.args = args
+        self.dtype = None
 
 
 class IRAssign(IRNode):
@@ -205,16 +215,17 @@ class IRCast(IRNode):
 
     def __init__(self, value, dtype):
         self.value = value
-        self.dtype = dtype
+        self.dtype = dtype  # currently "int"/"float" strings, will become ScalarType
 
 
 class IRSharedAlloc(IRNode):
     """Allocate shared/threadgroup memory."""
 
-    def __init__(self, name: str, dtype: str, size):
+    def __init__(self, name: str, dtype: str, size, field_name: str = None):
         self.name = name
-        self.dtype = dtype   # "float", "int", etc.
-        self.size = size     # IRNode expression for number of elements
+        self.dtype = dtype         # "float", "int", etc. (None for shared_like, resolved later)
+        self.size = size           # IRNode expression for number of elements
+        self.field_name = field_name  # source field name for shared_like (resolved in ir_resolve)
 
 
 class IRLocalAlloc(IRNode):
@@ -236,6 +247,7 @@ class IRBlockReduce(IRNode):
     def __init__(self, op: str, value):
         self.op = op      # "sum", "min", "max"
         self.value = value # IRNode expression
+        self.dtype = None
 
 
 class IRBarrier(IRNode):
@@ -245,7 +257,9 @@ class IRBarrier(IRNode):
 
 class IRThreadId(IRNode):
     """Thread index within workgroup (threadIdx.x / thread_position_in_threadgroup)."""
-    pass
+
+    def __init__(self):
+        self.dtype = None
 
 
 class IRPrint(IRNode):
@@ -280,6 +294,7 @@ class IRTextureSample(IRNode):
         self.field_name = field_name
         self.coords = coords  # [u, v, w]
         self.shape = shape    # (W, H, D) — set during resolve
+        self.dtype = None
 
 
 # --- IR pretty printer (for debugging) ---
@@ -358,7 +373,8 @@ def dump(node, indent=0) -> str:
     if isinstance(node, IRReturn):
         return f"{prefix}Return {dump(node.value)}"
     if isinstance(node, IRCast):
-        return f"{prefix}Cast({dump(node.value)}, {node.dtype})"
+        dtype_str = node.dtype.name if hasattr(node.dtype, 'name') else node.dtype
+        return f"{prefix}Cast({dump(node.value)}, {dtype_str})"
     if isinstance(node, IRSharedAlloc):
         return f"{prefix}SharedAlloc {node.name}: {node.dtype}[{dump(node.size)}]"
     if isinstance(node, IRLocalAlloc):

@@ -21,7 +21,9 @@ import numpy as np
 from pgc.lang import ir
 from pgc.lang.field import Field, DeviceBuffer
 from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
-from pgc.lang.type_inference import infer_param_types
+from pgc.lang.type_inference import infer_param_types, check_dispatch_types
+
+_HIP_SUPPORTED_DTYPES = {f32, f64, i32, i64, u32, u64}
 from pgc.codegen.hip_gen import generate_hip_source
 
 from hip import hip, hiprtc
@@ -399,8 +401,11 @@ class HIPBackend:
         from pgc.lang.ir_resolve import resolve_ir
         resolve_ir(ir_func, name_to_field)
 
-        # Type inference
+        # Type inference and dispatch-time type checking
         infer_param_types(ir_func, effective_args)
+        check_dispatch_types(ir_func, effective_args,
+                             supported_dtypes=_HIP_SUPPORTED_DTYPES,
+                             backend_name="HIP")
 
         # Store texture shapes on params for codegen/dispatch
         for param, arg in zip(ir_func.params, effective_args):

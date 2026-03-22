@@ -4,9 +4,10 @@ On GPUs, threads within a workgroup (threadgroup on Metal, thread block
 on CUDA/HIP) can communicate through fast shared memory.
 
 Key APIs:
-  pgc.shared(dtype, size)  -- allocate threadgroup-local memory
-  pgc.thread_id()          -- local thread index within the workgroup
-  pgc.barrier()            -- synchronize all threads in the workgroup
+  pgc.shared(dtype, size)       -- allocate threadgroup-local memory
+  pgc.shared_like(field, size)  -- allocate shared memory matching a field's dtype
+  pgc.thread_id()               -- local thread index within the workgroup
+  pgc.barrier()                 -- synchronize all threads in the workgroup
 
 Usage:
   uv run python examples/09_shared_memory.py
@@ -54,3 +55,35 @@ expected = np.arange(n, dtype=np.float32) * 2.0
 assert np.allclose(out.to_numpy(), expected)
 print(f"Shared memory double: first 10 = {out.to_numpy()[:10]}")
 print("Shared memory + barrier: OK")
+
+
+# --- shared_like: inherit dtype from a field ---
+# When the shared memory dtype should match a field parameter, use
+# pgc.shared_like instead of hardcoding the type. This makes kernels
+# generic over field dtype.
+
+x_i32 = pgc.field(dtype=pgc.i32, shape=(n,))
+out_i32 = pgc.field(dtype=pgc.i32, shape=(n,))
+x_i32.from_numpy(np.arange(n, dtype=np.int32))
+
+
+@pgc.kernel
+def double_via_shared_like(x, out):
+    """Same pattern, but shared memory dtype matches the field automatically."""
+    smem = pgc.shared_like(x, 256)
+    for i in range(x.shape[0]):
+        tid = pgc.thread_id()
+        smem[tid] = x[i] * 2
+        pgc.barrier()
+        out[i] = smem[tid]
+
+
+# Works with i32 fields — shared memory is automatically int
+double_via_shared_like(x_i32, out_i32)
+assert np.array_equal(out_i32.to_numpy(), np.arange(n, dtype=np.int32) * 2)
+print("shared_like with i32: OK")
+
+# Works with f32 fields too — same kernel, shared memory is automatically float
+double_via_shared_like(x, out)
+assert np.allclose(out.to_numpy(), expected)
+print("shared_like with f32: OK")

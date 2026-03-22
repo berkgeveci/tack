@@ -23,6 +23,14 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
             f"got {len(args)}"
         )
 
+    # Determine the float context from field arguments: if any field is f64,
+    # Python float scalars should be f64 to avoid silent precision loss.
+    float_context = f32
+    for arg in args:
+        if isinstance(arg, (Field, Texture3D)) and arg.dtype is f64:
+            float_context = f64
+            break
+
     types = []
     for param, arg in zip(ir_func.params, args):
         if isinstance(arg, Texture3D):
@@ -35,9 +43,9 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
             param._is_field = True
             types.append(arg.dtype)
         elif isinstance(arg, (float, np.floating)):
-            param.type_annotation = f32
+            param.type_annotation = float_context
             param._is_field = False
-            types.append(f32)
+            types.append(float_context)
         elif isinstance(arg, (int, np.integer)):
             val = int(arg)
             if val > 2**31 - 1 or val < -(2**31):
@@ -53,6 +61,28 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
                 f"Unsupported argument type for parameter '{param.name}': {type(arg)}"
             )
     return types
+
+
+def check_dispatch_types(ir_func: ir.IRFunction, args: tuple,
+                         supported_dtypes: set[ScalarType] | None = None,
+                         backend_name: str = ""):
+    """Validate field and scalar types at dispatch time.
+
+    Checks:
+    - Field dtypes are supported by the target backend
+    - All arguments have valid PGC types
+
+    Raises TypeError with a clear message if validation fails.
+    """
+    for param, arg in zip(ir_func.params, args):
+        if isinstance(arg, (Field, Texture3D)):
+            dtype = arg.dtype
+            if supported_dtypes is not None and dtype not in supported_dtypes:
+                raise TypeError(
+                    f"Kernel '{ir_func.name}': parameter '{param.name}' has dtype "
+                    f"{dtype}, which is not supported on {backend_name}. "
+                    f"Supported dtypes: {', '.join(str(t) for t in sorted(supported_dtypes, key=lambda t: t.name))}"
+                )
 
 
 def infer_types(ir_module: ir.IRModule, args: tuple):

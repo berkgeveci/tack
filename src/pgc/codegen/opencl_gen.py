@@ -357,18 +357,44 @@ class OpenCLCodeGen(CUDACodeGen):
         self._texture_helpers[helper] = (W, H, D)
         return f"{helper}({node.field_name}, {u}, {v}, {w})"
 
-    # --- Type inference: map 'long long' → 'long' ---
+    def _expr_cast(self, node) -> str:
+        val = self._expr(node.value)
+        if isinstance(node.dtype, ScalarType):
+            c_type = _OCL_C_TYPE_MAP[node.dtype]
+            return f"(({c_type})({val}))"
+        if node.dtype == "int":
+            return f"((int)({val}))"
+        if node.dtype == "float":
+            return f"((float)({val}))"
+        raise NotImplementedError(f"OpenCL cast: {node.dtype}")
+
+    # --- Type inference ---
 
     def _resolved_type_to_c(self, scalar_type) -> str:
         return _OCL_C_TYPE_MAP.get(scalar_type, "float")
 
     def _infer_c_type(self, node) -> str:
-        result = super()._infer_c_type(node)
-        return result.replace("long long", "long").replace("unsigned long long", "unsigned long")
+        """Get OpenCL C type for an IR expression node, using annotated dtype."""
+        dtype = getattr(node, 'dtype', None)
+        if dtype is not None:
+            return self._resolved_type_to_c(dtype)
+        rct = getattr(node, '_resolved_cast_type', None)
+        if rct is not None:
+            return self._resolved_type_to_c(rct)
+        # Fallback for unannotated nodes (e.g., field pointer references)
+        if isinstance(node, ir.IRName):
+            if node.name in self._field_params:
+                c_type = _OCL_C_TYPE_MAP[self._param_types[node.name]]
+                return f"{c_type}*"
+            if node.name in self._local_vars:
+                return self._local_vars[node.name]
+            if node.name in self._param_types:
+                return _OCL_C_TYPE_MAP[self._param_types[node.name]]
+            return _OCL_INT
+        return "float"
 
     def _infer_expr_type(self, node) -> str:
-        result = super()._infer_expr_type(node)
-        return result.replace("long long", "long").replace("unsigned long long", "unsigned long")
+        return self._infer_c_type(node)
 
 
 def generate_opencl_source(ir_func: ir.IRFunction) -> str:

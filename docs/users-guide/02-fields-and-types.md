@@ -13,8 +13,9 @@ PGC provides these scalar types:
 | `pgc.u32` | 32-bit unsigned int | `np.uint32` |
 | `pgc.u64` | 64-bit unsigned int | `np.uint64` |
 
-GPU backends use `f32` by default. Python `float` arguments are mapped to
-`f32` (not `f64`) for GPU compatibility.
+GPU backends use `f32` by default. Python `float` scalar arguments are
+automatically promoted to `f64` when any field argument uses `f64`, preventing
+silent precision loss. Otherwise, float scalars default to `f32`.
 
 ## Fields
 
@@ -98,6 +99,29 @@ have binding limits (like Metal's 31-buffer limit). You can use as many
 scalar arguments as you need.
 
 Both Python types and numpy scalar types (`np.float32`, `np.int32`) work.
+
+## Type Casts
+
+Inside kernels, `int()` and `float()` cast to `i32` and `f32` respectively.
+For explicit control over the target type, use the PGC type cast functions:
+
+```python
+@pgc.kernel
+def precise_compute(x, out):
+    for i in range(x.shape[0]):
+        val = pgc.f64(x[i])      # promote to double precision
+        out[i] = pgc.f32(val)    # back to single
+
+@pgc.kernel
+def bitwise_ops(data, out):
+    for i in range(data.shape[0]):
+        bits = pgc.u32(data[i])  # unsigned for bitwise ops
+        out[i] = pgc.i32(bits >> 8)
+```
+
+Available casts: `pgc.f32()`, `pgc.f64()`, `pgc.i32()`, `pgc.i64()`, `pgc.u32()`, `pgc.u64()`.
+
+Note: `pgc.f64()` is not supported on Metal (Apple GPUs lack double precision).
 
 ## Device Pointer Interop
 

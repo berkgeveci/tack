@@ -12,6 +12,10 @@ def shared(dtype, size):
     """Allocate threadgroup shared memory. Only usable inside a @pgc.kernel."""
     raise RuntimeError("shared() can only be used inside a @pgc.kernel")
 
+def shared_like(field, size):
+    """Allocate shared memory with the same dtype as a field. Only usable inside a @pgc.kernel."""
+    raise RuntimeError("shared_like() can only be used inside a @pgc.kernel")
+
 def barrier():
     """Threadgroup synchronization barrier. Only usable inside a @pgc.kernel."""
     raise RuntimeError("barrier() can only be used inside a @pgc.kernel")

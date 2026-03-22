@@ -107,6 +107,25 @@ def block_reduce(data, partial_sums, n):
 - `pgc.barrier()` — synchronize threads in the workgroup
 - `pgc.thread_id()` — thread index within the workgroup
 
+### `shared_like`
+
+When the shared memory dtype should match a field parameter, use `pgc.shared_like`
+instead of hardcoding the type:
+
+```python
+@pgc.kernel
+def generic_reduce(data, partial_sums):
+    for i in range(data.shape[0]):
+        smem = pgc.shared_like(data, 256)   # inherits dtype from data
+        tid = pgc.thread_id()
+        smem[tid] = data[i]
+        pgc.barrier()
+        # ... reduction ...
+```
+
+This is especially useful for kernels that need to work with both `f32` and `i32`
+fields without separate implementations.
+
 ## 3D Textures
 
 Wrap a field as a 3D texture for hardware-accelerated trilinear interpolation:

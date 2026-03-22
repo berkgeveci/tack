@@ -100,3 +100,24 @@ RuntimeError: Cannot initialize 'hip' backend: missing dependency.
 Kernel compilation errors show the kernel name, backend, and the relevant
 error lines without dumping the full generated source. Set `PGC_DUMP_MSL=1`
 environment variables to inspect generated code.
+
+## Type Checking
+
+PGC validates field dtypes at dispatch time before compilation. If a field
+uses a dtype not supported by the target backend, you get a clear error:
+
+```
+TypeError: Kernel 'my_kernel': parameter 'data' has dtype pgc.f64,
+which is not supported on Metal.
+Supported dtypes: f32, i32, i64, u32, u64
+```
+
+Supported dtypes per backend:
+
+| Backend | Supported dtypes |
+|---------|-----------------|
+| CPU | f32, f64, i32, i64, u32, u64 |
+| Metal | f32, i32, i64, u32, u64 (no f64) |
+| CUDA | f32, f64, i32, i64, u32, u64 |
+| HIP | f32, f64, i32, i64, u32, u64 |
+| Level Zero | f32, f64, i32, i64, u32, u64 |

@@ -35,11 +35,15 @@ These share common patterns:
 ### Variable Declaration and Type Inference
 
 When emitting `IRAssign`, the codegen needs a C type for the variable
-declaration. It checks (in order):
+declaration. It uses `_resolved_type` from the IR type annotation pass,
+mapped to a C type string via the backend's type map (`_C_TYPE_MAP`,
+`_MSL_TYPE_MAP`, `_OCL_C_TYPE_MAP`).
 
-1. `_resolved_type` from the IR type annotation pass (preferred)
-2. `_infer_c_type()` heuristic (fallback for unannotated IR)
-3. `_local_vars` dict (for already-declared variables)
+For expression nodes used in other contexts (index casts, printf format
+selection, floor division), the codegen reads `node.dtype` directly.
+The `_infer_c_type(node)` method checks `node.dtype` first and falls
+back to `_local_vars` only for field pointer references (which have
+`dtype=None`).
 
 The `_resolved_type_to_c()` method maps `ScalarType` → C type string,
 and is overridden by OpenCL to use `long` instead of `long long`.

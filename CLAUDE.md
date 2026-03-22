@@ -58,9 +58,11 @@ PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are deco
 3. Detect vector fields and set up scalarization metadata
 4. AST transform → IR, with dimension size resolution (`ir_resolve.py`)
 5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field` flag
-6. IR optimization: LICM, copy propagation, CSE (`ir_optimize.py`)
-7. Codegen produces backend-specific code (cached by kernel name + type signature + template key)
-8. Dispatch: CPU splits range across threads; GPU launches grid of threads
+6. Dispatch-time type checking (`check_dispatch_types`) — validates field dtypes against backend
+7. IR optimization: LICM, copy propagation, CSE (`ir_optimize.py`)
+8. Type annotation (`ir_type_annotate.py`) — sets `dtype` (ScalarType) on every expression node
+9. Codegen produces backend-specific code (cached by kernel name + type signature + template key)
+10. Dispatch: CPU splits range across threads; GPU launches grid of threads
 
 ### IR structure (lang/ir.py)
 
@@ -80,9 +82,10 @@ The IR is a simple tree of nodes:
 
 ### IR passes
 
-- **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from field shapes, and resolves `IRAtomicOp` sub-expressions
+- **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from field shapes, resolves `IRAtomicOp` sub-expressions, and resolves `shared_like` dtypes from fields
 - **ir_optimize.py**: Three passes — Loop-Invariant Code Motion (LICM), copy propagation, Common Subexpression Elimination (CSE)
-- **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars map to `f32` (not `f64`) for GPU compatibility. Int scalars exceeding i32 range auto-promote to `i64`.
+- **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars auto-promote to `f64` when any field arg uses `f64`; otherwise default to `f32`. Int scalars exceeding i32 range auto-promote to `i64`. `check_dispatch_types()` validates field dtypes against backend capabilities.
+- **ir_type_annotate.py**: Sets `dtype` (a `ScalarType`) on every expression IR node. Codegens read `node.dtype` directly instead of reimplementing type inference heuristics.
 
 ### Scalar kernel arguments
 
@@ -116,9 +119,9 @@ CPU backend uses `ThreadPoolExecutor` only when loop range > 1024 elements. Belo
 
 - **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in pgc.ndrange(w, h)`, `while`, `break`, `continue`
 - **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max`, `pow`
-- **Types**: `int()`, `float()` casts
+- **Types**: `int()`, `float()` casts, plus explicit `pgc.f32()`, `pgc.f64()`, `pgc.i32()`, `pgc.i64()`, `pgc.u32()`, `pgc.u64()`
 - **Atomics**: `pgc.atomic_add(field, idx, val)`, `pgc.atomic_min(...)`, `pgc.atomic_max(...)`
-- **GPU primitives**: `pgc.shared(dtype, size)`, `pgc.barrier()`, `pgc.thread_id()`
+- **GPU primitives**: `pgc.shared(dtype, size)`, `pgc.shared_like(field, size)`, `pgc.barrier()`, `pgc.thread_id()`
 - **Debug**: `print("label:", value)` — emits printf on CPU/CUDA/HIP, no-op on Metal
 - **Fields**: `field[i]`, `field[i, j]`, `field[None]`, `field.shape[0]`, `len(field)`
 - **Reductions**: `field.sum()`, `field.min()`, `field.max()` — GPU-native on Metal, numpy on CPU

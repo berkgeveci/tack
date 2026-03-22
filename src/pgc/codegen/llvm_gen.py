@@ -909,6 +909,31 @@ class LLVMCodeGen:
 
     def _emit_cast(self, node: ir.IRCast) -> llvm_ir.Value:
         val = self._emit_expr(node.value)
+        if isinstance(node.dtype, ScalarType):
+            target = _llvm_type(node.dtype)
+            if _is_float_type(val.type) and _is_int_type(target):
+                # float → int: use unsigned conversion for u32/u64
+                if node.dtype in (u32, u64):
+                    return self.builder.fptoui(val, target, name="touint")
+                return self.builder.fptosi(val, target, name="toint")
+            if _is_int_type(val.type) and _is_float_type(target):
+                return self.builder.sitofp(val, target, name="tofloat")
+            if _is_float_type(val.type) and _is_float_type(target):
+                if val.type == target:
+                    return val
+                if target == llvm_ir.DoubleType():
+                    return self.builder.fpext(val, target, name="fpext")
+                return self.builder.fptrunc(val, target, name="fptrunc")
+            if _is_int_type(val.type) and _is_int_type(target):
+                if val.type.width == target.width:
+                    return val
+                if val.type.width < target.width:
+                    if node.dtype in (u32, u64):
+                        return self.builder.zext(val, target, name="zext")
+                    return self.builder.sext(val, target, name="sext")
+                return self.builder.trunc(val, target, name="trunc")
+            return val
+        # Legacy string fallback
         if node.dtype == "int":
             if _is_float_type(val.type):
                 return self.builder.fptosi(val, llvm_ir.IntType(64), name="toint")
