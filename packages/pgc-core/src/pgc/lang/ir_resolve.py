@@ -13,8 +13,32 @@ def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
 
     Mutates ir_func.body in place.
     """
+    # Build field alias map: inlined @pgc.func parameters create assignments
+    # like __func_out_x0_0__ = out_x0, where out_x0 is a field. Track these
+    # so shared_like/DimSize can resolve the mangled name to the actual field.
+    aliases = _collect_field_aliases(ir_func.body, name_to_field)
+    extended = {**name_to_field, **aliases}
+
     for i, stmt in enumerate(ir_func.body):
-        ir_func.body[i] = _resolve(stmt, name_to_field)
+        ir_func.body[i] = _resolve(stmt, extended)
+
+
+def _collect_field_aliases(stmts, known_fields):
+    """Scan for IRAssign(target, IRName(field)) and build alias -> Field map."""
+    aliases = {}
+    for stmt in stmts:
+        if isinstance(stmt, ir.IRAssign) and isinstance(stmt.value, ir.IRName):
+            src = stmt.value.name
+            if src in known_fields:
+                aliases[stmt.target] = known_fields[src]
+            elif src in aliases:
+                aliases[stmt.target] = aliases[src]
+        # Recurse into compound statements
+        for attr in ('body', 'then_body', 'else_body'):
+            children = getattr(stmt, attr, None)
+            if isinstance(children, list):
+                aliases.update(_collect_field_aliases(children, {**known_fields, **aliases}))
+    return aliases
 
 
 def _resolve(node, fields):
