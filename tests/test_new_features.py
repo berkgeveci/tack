@@ -2,9 +2,25 @@
 field[None], Vector types, and vector methods."""
 
 import numpy as np
+import pytest
 import pgc
 from pgc.lang.ast_transform import transform_kernel
 from pgc.lang import ir
+
+# Build list of available backends
+_backends = []
+for _arch in ["cpu", "metal"]:
+    try:
+        pgc.init(arch=getattr(pgc, _arch))
+        _backends.append(_arch)
+    except (ImportError, RuntimeError, OSError):
+        pass
+
+
+@pytest.fixture(params=_backends)
+def backend(request):
+    pgc.init(arch=getattr(pgc, request.param))
+    return request.param
 
 
 # ─── @pgc.func inlining ───────────────────────────────────────────────
@@ -31,9 +47,8 @@ def use_lerp(a, b, out):
         out[i] = lerp(a[i], b[i], 0.5)
 
 
-def test_func_inline_basic():
+def test_func_inline_basic(backend):
     """@pgc.func with simple return value."""
-    pgc.init(arch=pgc.cpu)
     n = 100
     x = pgc.field(dtype=pgc.f32, shape=(n,))
     out = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -44,9 +59,8 @@ def test_func_inline_basic():
     assert np.allclose(result, expected)
 
 
-def test_func_inline_multi_arg():
+def test_func_inline_multi_arg(backend):
     """@pgc.func with multiple arguments."""
-    pgc.init(arch=pgc.cpu)
     n = 100
     a = pgc.field(dtype=pgc.f32, shape=(n,))
     b = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -70,9 +84,8 @@ def use_nested_func(x, out):
         out[i] = add_one(square(x[i]))
 
 
-def test_func_inline_nested():
+def test_func_inline_nested(backend):
     """Nested @pgc.func calls."""
-    pgc.init(arch=pgc.cpu)
     n = 50
     x = pgc.field(dtype=pgc.f32, shape=(n,))
     out = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -91,9 +104,8 @@ def scale_field(x, factor, out):
         out[i] = x[i] * factor[0]
 
 
-def test_scalar_field():
+def test_scalar_field(backend):
     """Scalar field (1-element) used as a parameter."""
-    pgc.init(arch=pgc.cpu)
     n = 100
     x = pgc.field(dtype=pgc.f32, shape=(n,))
     factor = pgc.field(dtype=pgc.f32, shape=(1,))
@@ -114,9 +126,8 @@ def fill_2d(out, w_field):
         out[i * 4 + j] = float(i * 10 + j)
 
 
-def test_ndrange_2d():
+def test_ndrange_2d(backend):
     """2D parallel iteration with ndrange."""
-    pgc.init(arch=pgc.cpu)
     out = pgc.field(dtype=pgc.f32, shape=(16,))
     w_field = pgc.field(dtype=pgc.f32, shape=(1,))
     w_field.from_numpy(np.array([4.0], dtype=np.float32))
@@ -140,9 +151,8 @@ def vec_add(ax, ay, az, bx, by, bz, cx, cy, cz):
         cz[i] = c[2]
 
 
-def test_vector_add():
+def test_vector_add(backend):
     """Vector addition with component extraction."""
-    pgc.init(arch=pgc.cpu)
     n = 100
     fields = []
     for _ in range(9):
@@ -174,9 +184,8 @@ def vec_scalar_mul(ax, ay, az, cx, cy, cz):
         cz[i] = c[2]
 
 
-def test_vector_scalar_mul():
+def test_vector_scalar_mul(backend):
     """Scalar * vector multiplication."""
-    pgc.init(arch=pgc.cpu)
     n = 50
     ax = pgc.field(dtype=pgc.f32, shape=(n,))
     ay = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -206,9 +215,8 @@ def vec_dot(ax, ay, az, bx, by, bz, out):
         out[i] = a.dot(b)
 
 
-def test_vector_dot():
+def test_vector_dot(backend):
     """Vector dot product."""
-    pgc.init(arch=pgc.cpu)
     n = 50
     ax = pgc.field(dtype=pgc.f32, shape=(n,))
     ay = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -242,9 +250,8 @@ def vec_cross(ax, ay, az, bx, by, bz, cx, cy, cz):
         cz[i] = c[2]
 
 
-def test_vector_cross():
+def test_vector_cross(backend):
     """Vector cross product."""
-    pgc.init(arch=pgc.cpu)
     n = 1
     ax = pgc.field(dtype=pgc.f32, shape=(n,))
     ay = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -281,9 +288,8 @@ def vec_normalize(ax, ay, az, cx, cy, cz):
         cz[i] = n[2]
 
 
-def test_vector_normalized():
+def test_vector_normalized(backend):
     """Vector normalization."""
-    pgc.init(arch=pgc.cpu)
     n = 1
     ax = pgc.field(dtype=pgc.f32, shape=(n,))
     ay = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -319,9 +325,8 @@ def use_func_with_locals(x, out):
         out[i] = vec_scale(x[i], x[i], x[i], 3.0)
 
 
-def test_func_with_multiple_locals():
+def test_func_with_multiple_locals(backend):
     """@pgc.func with multiple local variables."""
-    pgc.init(arch=pgc.cpu)
     n = 50
     x = pgc.field(dtype=pgc.f32, shape=(n,))
     out = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -339,9 +344,8 @@ def fill_2d_field(out):
         out[i, j] = float(i * 10 + j)
 
 
-def test_multidim_field_indexing():
+def test_multidim_field_indexing(backend):
     """Multi-dimensional field indexing: field[i, j]."""
-    pgc.init(arch=pgc.cpu)
     out = pgc.field(dtype=pgc.f32, shape=(4, 3))
     fill_2d_field(out)
     result = out.to_numpy()
@@ -361,9 +365,8 @@ def vec_field_load(vf, out_x, out_y, out_z):
         out_z[i] = v[2]
 
 
-def test_vector_field_load():
+def test_vector_field_load(backend):
     """Load vectors from a vector field."""
-    pgc.init(arch=pgc.cpu)
     n = 10
     vf = pgc.Vector.field(3, dtype=pgc.f32, shape=(n,))
     out_x = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -391,9 +394,8 @@ def vec_field_store(in_x, in_y, in_z, vf):
         vf[i] = v
 
 
-def test_vector_field_store():
+def test_vector_field_store(backend):
     """Store vectors to a vector field."""
-    pgc.init(arch=pgc.cpu)
     n = 10
     in_x = pgc.field(dtype=pgc.f32, shape=(n,))
     in_y = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -422,9 +424,8 @@ def scalar_vec_field_load(cam, out_x, out_y, out_z):
         out_z[i] = c[2]
 
 
-def test_scalar_vector_field():
+def test_scalar_vector_field(backend):
     """Scalar vector field (shape=()) load with field[None]."""
-    pgc.init(arch=pgc.cpu)
     cam = pgc.Vector.field(3, dtype=pgc.f32, shape=())
     cam.from_numpy(np.array([1.0, 2.0, 3.0], dtype=np.float32))
 
@@ -457,9 +458,8 @@ def use_multi_return(x, y, lo_out, hi_out):
         hi_out[i] = hi
 
 
-def test_multi_return_func():
+def test_multi_return_func(backend):
     """@pgc.func returning a tuple."""
-    pgc.init(arch=pgc.cpu)
     n = 50
     x = pgc.field(dtype=pgc.f32, shape=(n,))
     y = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -491,9 +491,8 @@ def sort_pair(x, y):
         y[i] = b
 
 
-def test_tuple_swap():
+def test_tuple_swap(backend):
     """Tuple swap: a, b = b, a."""
-    pgc.init(arch=pgc.cpu)
     n = 100
     x = pgc.field(dtype=pgc.f32, shape=(n,))
     y = pgc.field(dtype=pgc.f32, shape=(n,))

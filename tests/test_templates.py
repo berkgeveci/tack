@@ -1,9 +1,23 @@
 """Tests for @pgc.data_oriented template parameters."""
 
 import numpy as np
+import pytest
 import pgc
 
-pgc.init(arch=pgc.cpu)
+# Build list of available backends
+_backends = []
+for _arch in ["cpu", "metal"]:
+    try:
+        pgc.init(arch=getattr(pgc, _arch))
+        _backends.append(_arch)
+    except (ImportError, RuntimeError, OSError):
+        pass
+
+
+@pytest.fixture(params=_backends)
+def backend(request):
+    pgc.init(arch=getattr(pgc, request.param))
+    return request.param
 
 
 # --- Structured cell set (scalar attrs only, no field attrs) ---
@@ -42,7 +56,7 @@ def extract_point0(cell_set, output):
         output[i] = cell_set.get_cell_point0(i)
 
 
-def test_structured_template():
+def test_structured_template(backend):
     """Template with scalar attrs only (nx, ny become constants)."""
     nx, ny = 4, 3
     num_cells = (nx - 1) * (ny - 1)
@@ -56,7 +70,7 @@ def test_structured_template():
     np.testing.assert_array_equal(result, expected)
 
 
-def test_explicit_template():
+def test_explicit_template(backend):
     """Template with field attrs (connectivity becomes extra parameter)."""
     # Build connectivity for a 4x3 structured grid
     nx, ny = 4, 3
@@ -77,7 +91,7 @@ def test_explicit_template():
     np.testing.assert_array_equal(result, expected)
 
 
-def test_same_kernel_different_templates():
+def test_same_kernel_different_templates(backend):
     """Same kernel works with different template types."""
     nx, ny = 4, 3
     num_cells = (nx - 1) * (ny - 1)
@@ -102,7 +116,7 @@ def test_same_kernel_different_templates():
     np.testing.assert_array_equal(output_s.to_numpy(), output_e.to_numpy())
 
 
-def test_different_scalar_values():
+def test_different_scalar_values(backend):
     """Same template type with different scalar values produces different code."""
     cs_a = CellSetStructured(4, 3)
     cs_b = CellSetStructured(5, 4)

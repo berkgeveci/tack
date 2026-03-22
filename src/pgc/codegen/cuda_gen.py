@@ -630,14 +630,16 @@ class CUDACodeGen:
 
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
+        use_f64 = getattr(node, 'dtype', None) is f64
 
         if node.func_name == "min" and len(args) == 2:
-            return f"fminf({args[0]}, {args[1]})"
+            return f"fmin({args[0]}, {args[1]})" if use_f64 else f"fminf({args[0]}, {args[1]})"
         if node.func_name == "max" and len(args) == 2:
-            return f"fmaxf({args[0]}, {args[1]})"
+            return f"fmax({args[0]}, {args[1]})" if use_f64 else f"fmaxf({args[0]}, {args[1]})"
 
-        if node.func_name in _MATH_FUNCS_F32:
-            func = _MATH_FUNCS_F32[node.func_name]
+        func_map = _MATH_FUNCS_F64 if use_f64 else _MATH_FUNCS_F32
+        if node.func_name in func_map:
+            func = func_map[node.func_name]
             return f"{func}({', '.join(args)})"
 
         raise NotImplementedError(f"CUDA builtin: {node.func_name}")
