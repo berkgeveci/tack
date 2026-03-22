@@ -65,11 +65,16 @@ def rewrite_templates(kernel_ast, template_args):
         cls = type(obj)
         method_name_map = {}  # original method name -> resolved func name
         if hasattr(cls, '_pgc_func_methods'):
+            # First pass: build the name map so methods can reference siblings
             for method_name, func_obj in cls._pgc_func_methods.items():
                 resolved_name = f"__tmpl_{cls.__name__}_{method_name}_{id(obj)}__"
                 method_name_map[method_name] = resolved_name
+            # Second pass: register resolved methods with the full name map
+            for method_name, func_obj in cls._pgc_func_methods.items():
+                resolved_name = method_name_map[method_name]
                 _register_resolved_method(
-                    func_obj, resolved_name, scalars, field_param_map
+                    func_obj, resolved_name, scalars, field_param_map,
+                    method_name_map,
                 )
 
         # Rewrite the kernel function definition
@@ -82,13 +87,15 @@ def rewrite_templates(kernel_ast, template_args):
     return rewritten
 
 
-def _register_resolved_method(func_obj, resolved_name, scalars, field_param_map):
+def _register_resolved_method(func_obj, resolved_name, scalars, field_param_map,
+                               method_name_map=None):
     """Register a resolved copy of a template method in the func registry.
 
     The resolved copy has:
     - 'self' parameter removed
     - self.scalar_attr replaced with constants
     - self.field_attr replaced with synthetic parameter names
+    - self.method(args) calls replaced with resolved function calls
     """
     funcdef = copy.deepcopy(func_obj._funcdef)
 
@@ -99,8 +106,8 @@ def _register_resolved_method(func_obj, resolved_name, scalars, field_param_map)
     for attr_name, synth_name in sorted(field_param_map.items()):
         funcdef.args.args.append(ast.arg(arg=synth_name))
 
-    # Resolve self.attr references in the body
-    resolver = _SelfResolver(scalars, field_param_map)
+    # Resolve self.attr and self.method(args) references in the body
+    resolver = _SelfResolver(scalars, field_param_map, method_name_map)
     for i, stmt in enumerate(funcdef.body):
         funcdef.body[i] = resolver.visit(stmt)
 
@@ -121,11 +128,31 @@ class _ResolvedFunc:
 
 
 class _SelfResolver(ast.NodeTransformer):
-    """Replaces self.attr with constants or synthetic parameter names."""
+    """Replaces self.attr with constants, synthetic parameter names, or method calls."""
 
-    def __init__(self, scalars, field_param_map):
+    def __init__(self, scalars, field_param_map, method_name_map=None):
         self.scalars = scalars
         self.field_param_map = field_param_map
+        self.method_name_map = method_name_map or {}
+
+    def visit_Call(self, node):
+        node = self.generic_visit(node)
+        # Rewrite self.method(args) → resolved_method(args, *synth_field_params)
+        if (isinstance(node.func, ast.Attribute) and
+                isinstance(node.func.value, ast.Name) and
+                node.func.value.id == 'self' and
+                node.func.attr in self.method_name_map):
+            resolved_name = self.method_name_map[node.func.attr]
+            extra_args = [
+                ast.Name(id=synth_name, ctx=ast.Load())
+                for _, synth_name in sorted(self.field_param_map.items())
+            ]
+            return ast.Call(
+                func=ast.Name(id=resolved_name, ctx=ast.Load()),
+                args=node.args + extra_args,
+                keywords=[],
+            )
+        return node
 
     def visit_Attribute(self, node):
         node = self.generic_visit(node)
@@ -136,10 +163,14 @@ class _SelfResolver(ast.NodeTransformer):
                 return ast.Name(
                     id=self.field_param_map[node.attr], ctx=ast.Load()
                 )
-            raise ValueError(
-                f"Template method references self.{node.attr} which is "
-                f"neither a scalar (int/float) nor a pgc.Field"
-            )
+            # Method references used without calling (e.g., passing as arg)
+            # are handled by visit_Call; bare attribute access on a method
+            # that isn't in scalars/fields is an error
+            if node.attr not in self.method_name_map:
+                raise ValueError(
+                    f"Template method references self.{node.attr} which is "
+                    f"neither a scalar (int/float), a pgc.Field, nor a @pgc.func method"
+                )
         return node
 
 
