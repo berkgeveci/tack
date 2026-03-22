@@ -1,3 +1,7 @@
+# Enable namespace package merging across pgc-core, pgc-rendering, pgc-vis
+from pkgutil import extend_path
+__path__ = extend_path(__path__, __name__)
+
 """PGC — Portable GPU Compute framework."""
 
 from pgc.lang.types import f32, f64, i32, i64, u32, u64, template

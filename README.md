@@ -27,19 +27,21 @@ result = out.to_numpy()
 
 ## Installation
 
+PGC is split into three packages: **pgc-core** (compute framework), **pgc-rendering** (path tracer), and **pgc-vis** (visualization algorithms).
+
 ```bash
-# CPU only (requires llvmlite)
-pip install -e .
+# Install everything from source with uv
+git clone <repo-url>
+cd pgc
+uv sync
 
-# Metal (macOS, Apple Silicon)
-pip install -e ".[metal]"
-
-# CUDA (Linux/Windows, NVIDIA GPU)
-pip install -e ".[cuda]"
-
-# HIP (Linux, AMD GPU with ROCm)
-pip install hip-python
-pip install -e .
+# Or install individual packages
+pip install pgc-core              # core only
+pip install pgc-core[cpu]         # core + CPU backend (LLVM JIT)
+pip install pgc-core[metal]       # core + Metal backend (macOS)
+pip install pgc-core[cuda]        # core + CUDA backend
+pip install pgc-rendering         # path tracer (pulls in pgc-core)
+pip install pgc-vis               # visualization (pulls in pgc-core)
 ```
 
 ## Backends
@@ -236,56 +238,31 @@ process(Grid(data_field, 0.1), output)
 
 ## Examples
 
-27 progressive examples covering all features, from hello-world to real applications. All accept `--arch cpu|metal|cuda|hip`.
+40+ progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip`.
 
 ```bash
-uv run python examples/01_hello_pgc.py              # simplest kernel
-uv run python examples/12_mandelbrot.py --arch metal # fractal on GPU
-uv run python examples/13_nbody.py --arch hip        # N-body on AMD
-uv run python examples/20_multi_backend.py           # compare all backends
+uv run python packages/pgc-core/examples/01_hello_pgc.py              # simplest kernel
+uv run python packages/pgc-core/examples/12_mandelbrot.py --arch metal # fractal on GPU
+uv run python packages/pgc-vis/examples/27_flying_edges.py --arch cuda # isosurface
+uv run python examples/32_pathtrace.py --arch metal                    # path tracing
 ```
 
-| # | Example | Concepts |
-|---|---------|----------|
-| 01 | Hello PGC | `pgc.init`, `pgc.field`, `@pgc.kernel`, `from_numpy`/`to_numpy` |
-| 02 | Math Builtins | `sqrt`, `sin`, `cos`, `exp`, `log`, `abs`, `min`, `max`, ... |
-| 03 | Scalar Arguments | Passing Python int/float directly to kernels |
-| 04 | Control Flow | `if`/`else`, `while`, `break`, ternary, nested loops |
-| 05 | ndrange | 2D parallel iteration, stencil patterns |
-| 06 | Device Functions | `@pgc.func` helpers inlined at compile time |
-| 07 | Atomics | `atomic_add`, `atomic_min`, `atomic_max`, histogram |
-| 08 | Reductions | `field.sum()`, `field.min()`, `field.max()` |
-| 09 | Shared Memory | `pgc.shared`, `pgc.thread_id`, `pgc.barrier` |
-| 10 | Vectors | `pgc.Vector`, `.dot()`, `.cross()`, `.normalized()` |
-| 11 | Templates | `@pgc.data_oriented` classes with `pgc.template()` |
-| 12 | Mandelbrot | Fractal rendering with smooth coloring |
-| 13 | N-body | Gravitational simulation (O(N²) all-pairs) |
-| 14 | Jacobi Solver | 2D Laplace equation with iterative stencil |
-| 15 | Matrix Multiply | Dense matrix multiplication with benchmarking |
-| 16 | Game of Life | Conway's cellular automaton on a 2D grid |
-| 17 | Heat Equation | 2D diffusion with explicit Euler + 5-point stencil |
-| 18 | Wave Equation | 1D wave propagation with leapfrog integration |
-| 19 | Image Processing | Brightness/contrast, Sobel edges, separable blur |
-| 20 | Multi-Backend | Same kernel on all available backends with benchmarks |
-| 21 | Array Abstraction | VTK-style array abstraction with compile-time dispatch |
-| 22 | Contour | Marching squares contour with GPU prefix sum |
-| 23 | Tuple Arrays | Multi-component AOS vs SOA layouts with generic kernels |
-| 24 | Point Coordinates | Product vs AOS vs SOA coordinate performance benchmark |
-| 25 | Point to Cell | Point-to-cell averaging with structured vs explicit connectivity |
-| 26 | Marching Cubes | Cell-based marching cubes isosurface on 3D grids |
-| 27 | Flying Edges | True FlyingEdges with edge ownership, merged unique points |
+| # | Package | Example | Concepts |
+|---|---------|---------|----------|
+| 01-11 | core | Getting Started | Kernels, fields, math, control flow, vectors, templates |
+| 12-20 | core | Applications | Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave |
+| 22-28 | vis | Visualization | Contour, flying edges, marching cubes, point-to-cell |
+| 32-38 | rendering | Path Tracing | GPU BVH, path tracing, denoising |
+| 32, 37 | cross | Pipelines | Flying edges → path trace, in-situ simulation |
 
 ## Testing
 
 ```bash
-uv run pytest                           # all tests
-uv run pytest tests/test_cpu_jit.py     # CPU backend
-uv run pytest tests/test_metal.py       # Metal backend
-uv run pytest tests/test_hip.py         # HIP backend (requires ROCm)
-uv run pytest tests/test_cuda.py        # CUDA backend (requires CUDA)
-uv run pytest tests/test_llvm_gen.py    # LLVM codegen unit tests
-uv run pytest tests/test_hip_gen.py     # HIP codegen unit tests
-uv run pytest tests/test_ast_transform.py  # AST transform tests
+uv run pytest                                                # all tests
+uv run pytest packages/pgc-core/tests/test_cpu_jit.py        # CPU backend
+uv run pytest packages/pgc-core/tests/test_metal.py          # Metal backend
+uv run pytest packages/pgc-core/tests/test_hip.py            # HIP backend
+uv run pytest packages/pgc-vis/tests/test_algorithms.py      # vis algorithms
 ```
 
 ## ROCm / HIP Setup
@@ -293,75 +270,42 @@ uv run pytest tests/test_ast_transform.py  # AST transform tests
 On a system with ROCm installed:
 
 ```bash
-# Install hip-python
+# Install hip-python and PGC
 pip install hip-python
-
-# Install PGC
-pip install -e .
-
-# Test
-python -c "
-import pgc, numpy as np
-pgc.init(arch=pgc.hip)
-x = pgc.field(dtype=pgc.f32, shape=(1024,))
-out = pgc.field(dtype=pgc.f32, shape=(1024,))
-x.from_numpy(np.arange(1024, dtype=np.float32))
-
-@pgc.kernel
-def double(x, out):
-    for i in range(x.shape[0]):
-        out[i] = x[i] * 2.0
-
-double(x, out)
-print('Result:', out.to_numpy()[:5])  # [0, 2, 4, 6, 8]
-"
+pip install pgc-core
 
 # Run HIP test suite
-pytest tests/test_hip.py -v
+uv run pytest packages/pgc-core/tests/test_hip.py -v
 ```
 
 ## Project Structure
 
+PGC is a monorepo with three packages sharing the `pgc` namespace:
+
 ```
-src/pgc/
-  __init__.py              # Public API: field, kernel, func, types, atomics, shared, etc.
-  lang/
-    ir.py                  # IR node definitions (20+ node types)
-    ast_transform.py       # Python AST → PGC IR
-    type_inference.py      # Runtime type annotation from actual arguments
-    ir_resolve.py          # Resolve dimension sizes to constants
-    ir_optimize.py         # LICM, copy propagation, CSE
-    field.py               # Field, DeviceBuffer, Vector, NumpyBuffer
-    kernel.py              # @pgc.kernel decorator
-    func.py                # @pgc.func decorator (device functions)
-    data_oriented.py       # @pgc.data_oriented decorator (templates)
-    template_rewrite.py    # Template argument expansion
-    types.py               # ScalarType: f32, f64, i32, i64, u32, u64
-  algorithms/
-    scan.py                # Parallel prefix sum (exclusive/inclusive scan)
-  codegen/
-    llvm_gen.py            # PGC IR → LLVM IR (CPU backend)
-    msl_gen.py             # PGC IR → Metal Shading Language
-    cuda_gen.py            # PGC IR → CUDA C source
-    hip_gen.py             # PGC IR → HIP C source (extends CUDACodeGen)
-  runtime/
-    dispatch.py            # Backend selection (pgc.init)
-    cpu.py                 # CPU backend: llvmlite JIT, ThreadPoolExecutor
-    metal.py               # Metal backend: pyobjc, compute pipelines, GPU reductions
-    cuda_backend.py        # CUDA backend: cuda-python, NVRTC, cuLaunchKernel
-    hip_backend.py         # HIP backend: hip-python, hipRTC, hipLaunchKernel
-tests/
-  test_cpu_jit.py          # CPU end-to-end tests
-  test_metal.py            # Metal end-to-end tests
-  test_cuda.py             # CUDA end-to-end tests
-  test_hip.py              # HIP end-to-end tests
-  test_ast_transform.py    # AST transform unit tests
-  test_llvm_gen.py         # LLVM codegen tests
-  test_cuda_gen.py         # CUDA codegen tests
-  test_hip_gen.py          # HIP codegen tests
-  test_msl_gen.py          # MSL codegen tests
-  test_type_inference.py   # Type inference tests
-  test_new_features.py     # Scalar args, ndrange, while loops, etc.
-  test_templates.py        # @pgc.data_oriented template tests
-  test_vector_add.py       # Basic vector add integration test
+packages/
+  pgc-core/                # Core compute framework
+    src/pgc/
+      __init__.py           # Public API + namespace merging
+      lang/                 # AST transform, IR, type inference, optimization
+      codegen/              # LLVM, MSL, CUDA, HIP, OpenCL code generators
+      runtime/              # Backend dispatch and device management
+      algorithms/           # General primitives (scan, copy)
+    tests/                  # Core tests (CPU, Metal, CUDA, HIP, codegen)
+    examples/               # Core examples (01-21)
+
+  pgc-rendering/            # Path tracing renderer
+    src/pgc/rendering/      # Camera, BVH, scene, pathtrace kernels
+    examples/               # Rendering examples (33-36, 38)
+
+  pgc-vis/                  # Scientific visualization
+    src/pgc/
+      algorithms/           # Flying edges, normals, cell-to-point
+      data/                 # Data abstractions
+      interop/              # VTK interop
+    tests/                  # Vis algorithm tests
+    examples/               # Vis examples (22, 25-28, 39)
+
+examples/                   # Cross-package examples (32, 37)
+docs/                       # Shared documentation
 ```

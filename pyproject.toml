@@ -1,38 +1,31 @@
 [project]
-name = "pgc"
+name = "pgc-workspace"
 version = "0.1.0"
-description = "Portable GPU Compute — Python-first GPU compute framework"
+description = "PGC monorepo workspace — Portable GPU Compute"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "numpy",
+    "pgc-core",
+    "pgc-rendering",
+    "pgc-vis",
 ]
 
 [project.optional-dependencies]
-cpu = [
-    "llvmlite",
-]
-cuda = [
-    "cuda-python>=13.2.0",
-]
-metal = [
-    "pyobjc-framework-Metal",
-    "pyobjc-framework-MetalKit",
-]
-# hip-python>=7.1.0 is only on Test PyPI; install manually:
-#   uv pip install --prerelease=allow --index-url https://test.pypi.org/simple/ \
-#     --extra-index-url https://pypi.org/simple/ --index-strategy unsafe-best-match \
-#     "hip-python~=7.1.0"
 dev = [
     "pytest",
 ]
 
-[build-system]
-requires = ["hatchling"]
-build-backend = "hatchling.build"
+[tool.uv.sources]
+pgc-core = { workspace = true }
+pgc-rendering = { workspace = true }
+pgc-vis = { workspace = true }
 
-[tool.hatch.build.targets.wheel]
-packages = ["src/pgc"]
+[tool.uv.workspace]
+members = ["packages/*"]
 
-[tool.hatch.build.targets.wheel.shared-data]
-"examples" = "share/pgc/examples"
+[tool.pytest.ini_options]
+testpaths = [
+    "packages/pgc-core/tests",
+    "packages/pgc-rendering/tests",
+    "packages/pgc-vis/tests",
+]

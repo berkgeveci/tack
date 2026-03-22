@@ -2,6 +2,14 @@ version = 1
 revision = 3
 requires-python = ">=3.11"
 
+[manifest]
+members = [
+    "pgc-core",
+    "pgc-rendering",
+    "pgc-vis",
+    "pgc-workspace",
+]
+
 [[package]]
 name = "colorama"
 version = "0.4.6"
@@ -178,9 +186,9 @@ wheels = [
 ]
 
 [[package]]
-name = "pgc"
+name = "pgc-core"
 version = "0.1.0"
-source = { editable = "." }
+source = { editable = "packages/pgc-core" }
 dependencies = [
     { name = "numpy" },
 ]
@@ -210,6 +218,52 @@ requires-dist = [
     { name = "pytest", marker = "extra == 'dev'" },
 ]
 provides-extras = ["cpu", "cuda", "metal", "dev"]
+
+[[package]]
+name = "pgc-rendering"
+version = "0.1.0"
+source = { editable = "packages/pgc-rendering" }
+dependencies = [
+    { name = "pgc-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pgc-core", editable = "packages/pgc-core" }]
+
+[[package]]
+name = "pgc-vis"
+version = "0.1.0"
+source = { editable = "packages/pgc-vis" }
+dependencies = [
+    { name = "pgc-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "pgc-core", editable = "packages/pgc-core" }]
+
+[[package]]
+name = "pgc-workspace"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "pgc-core" },
+    { name = "pgc-rendering" },
+    { name = "pgc-vis" },
+]
+
+[package.optional-dependencies]
+dev = [
+    { name = "pytest" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pgc-core", editable = "packages/pgc-core" },
+    { name = "pgc-rendering", editable = "packages/pgc-rendering" },
+    { name = "pgc-vis", editable = "packages/pgc-vis" },
+    { name = "pytest", marker = "extra == 'dev'" },
+]
+provides-extras = ["dev"]
 
 [[package]]
 name = "pluggy"

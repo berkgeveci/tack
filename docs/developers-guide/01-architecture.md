@@ -19,39 +19,71 @@ When a `@pgc.kernel` is called, PGC runs this pipeline:
 Each step mutates or annotates the IR in place. The compiled kernel is
 cached by name + type signature, so subsequent calls skip the pipeline.
 
-## Module Layout
+## Package Structure
+
+PGC is split into three packages in a monorepo:
 
 ```
-src/pgc/
-    __init__.py              # Public API: field, kernel, func, init, types
-    lang/                    # Frontend: AST → IR
-        kernel.py            # @pgc.kernel decorator, Kernel class
-        func.py              # @pgc.func decorator, Func class, registry
-        data_oriented.py     # @pgc.data_oriented decorator
-        ast_transform.py     # Python AST → PGC IR (1156 lines, the largest)
-        template_rewrite.py  # AST pre-pass for template parameters
-        ir.py                # IR node definitions (25+ node types)
-        ir_resolve.py        # Replace IRDimSize with constants
-        ir_optimize.py       # LICM, copy propagation, CSE
-        ir_type_annotate.py  # Annotate IRAssign with resolved types
-        ir_pack_scalars.py   # Group scalar params into field buffers
-        type_inference.py    # Annotate IR params from actual args
-        types.py             # ScalarType: f32, i32, i64, etc.
-        field.py             # Field, Texture3D, Vector
-    codegen/                 # IR → target code
-        llvm_gen.py          # → LLVM IR (for CPU backend)
-        msl_gen.py           # → Metal Shading Language
-        cuda_gen.py          # → CUDA C
-        hip_gen.py           # → HIP C (extends cuda_gen)
-        opencl_gen.py        # → OpenCL C (extends cuda_gen)
-    runtime/                 # Dispatch and device management
-        dispatch.py          # pgc.init(), backend selection
-        cpu.py               # CPU backend (llvmlite JIT, thread pool)
-        metal.py             # Metal backend (pyobjc)
-        cuda_backend.py      # CUDA backend (cuda-python)
-        hip_backend.py       # HIP backend (hip-python)
-        level_zero_backend.py # Level Zero backend (ctypes)
+packages/
+    pgc-core/                    # Core compute framework
+        src/pgc/
+            __init__.py          # Public API + pkgutil.extend_path
+            lang/                # Frontend: AST → IR
+                kernel.py        # @pgc.kernel decorator, Kernel class
+                func.py          # @pgc.func decorator, Func class, registry
+                data_oriented.py # @pgc.data_oriented decorator
+                ast_transform.py # Python AST → PGC IR
+                template_rewrite.py  # AST pre-pass for template parameters
+                ir.py            # IR node definitions (25+ node types)
+                ir_resolve.py    # Replace IRDimSize with constants
+                ir_optimize.py   # LICM, copy propagation, CSE
+                ir_type_annotate.py  # Annotate expressions with dtype
+                ir_pack_scalars.py   # Group scalar params into field buffers
+                type_inference.py    # Annotate IR params from actual args
+                types.py         # ScalarType: f32, i32, i64, etc.
+                field.py         # Field, Texture3D, Vector
+            codegen/             # IR → target code
+                llvm_gen.py      # → LLVM IR (for CPU backend)
+                msl_gen.py       # → Metal Shading Language
+                cuda_gen.py      # → CUDA C
+                hip_gen.py       # → HIP C (extends cuda_gen)
+                opencl_gen.py    # → OpenCL C (extends cuda_gen)
+            runtime/             # Dispatch and device management
+                dispatch.py      # pgc.init(), backend selection
+                cpu.py           # CPU backend (llvmlite JIT, thread pool)
+                metal.py         # Metal backend (pyobjc)
+                cuda_backend.py  # CUDA backend (cuda-python)
+                hip_backend.py   # HIP backend (hip-python)
+                level_zero_backend.py # Level Zero backend (ctypes)
+            algorithms/          # General-purpose parallel primitives
+                scan.py          # Parallel prefix sum (exclusive/inclusive)
+                copy.py          # copy, fill_value
+
+    pgc-rendering/               # Path tracing renderer
+        src/pgc/
+            rendering/
+                camera.py        # PerspectiveCamera
+                canvas.py        # Canvas (framebuffer)
+                scene.py         # Scene, Actor, PointLight
+                bvh.py           # GPU BVH construction
+                pathtrace.py     # Path tracing kernel
+
+    pgc-vis/                     # Scientific visualization algorithms
+        src/pgc/
+            algorithms/          # Vis-specific algorithms
+                flying_edges.py  # FlyingEdges isosurface
+                compute_normals.py
+                cell_to_point.py
+                amr_blanking.py
+            data/                # Data abstractions (placeholder)
+                array_handle.py
+                cell_set.py
+            interop/             # External framework interop
+                vtk.py           # VTK ↔ PGC zero-copy exchange
 ```
+
+All three packages share the `pgc` namespace via `pkgutil.extend_path`.
+`pgc-rendering` and `pgc-vis` depend on `pgc-core` but not on each other.
 
 ## Code Size
 

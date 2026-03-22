@@ -168,17 +168,17 @@ to local arrays but was caught by the new tests.
 
 ## Summary Checklist
 
-For any new IR node:
+For any new IR node (all files under `packages/pgc-core/src/pgc/`):
 
-- [ ] `ir.py`: Node class + dump entry
+- [ ] `lang/ir.py`: Node class + dump entry
 - [ ] `__init__.py`: Python-side API placeholder
-- [ ] `ast_transform.py`: AST recognition + parser
-- [ ] `ir_resolve.py`: Recurse into child expressions
-- [ ] `ir_pack_scalars.py`: Recurse into child expressions
-- [ ] `ir_type_annotate.py`: Handle or skip
-- [ ] `ir_optimize.py`: Handle if it affects optimization
-- [ ] `llvm_gen.py`: LLVM emission
-- [ ] `cuda_gen.py`: CUDA C emission (inherited by HIP)
-- [ ] `msl_gen.py`: MSL emission
-- [ ] `opencl_gen.py`: OpenCL C emission (if different from CUDA)
-- [ ] Tests on all backends
+- [ ] `lang/ast_transform.py`: AST recognition + parser
+- [ ] `lang/ir_resolve.py`: Recurse into child expressions
+- [ ] `lang/ir_pack_scalars.py`: Recurse into child expressions
+- [ ] `lang/ir_type_annotate.py`: Annotate dtype or skip
+- [ ] `lang/ir_optimize.py`: Handle if it affects optimization
+- [ ] `codegen/llvm_gen.py`: LLVM emission
+- [ ] `codegen/cuda_gen.py`: CUDA C emission (inherited by HIP)
+- [ ] `codegen/msl_gen.py`: MSL emission
+- [ ] `codegen/opencl_gen.py`: OpenCL C emission (if different from CUDA)
+- [ ] Tests on all backends (in `packages/pgc-core/tests/`)

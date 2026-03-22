@@ -3,18 +3,23 @@
 ## Installation
 
 PGC is a pure Python package with JIT compilation at runtime — no build step.
+It is split into three packages:
+
+- **pgc-core** — the compute framework (kernels, fields, types, backends)
+- **pgc-rendering** — path tracing renderer
+- **pgc-vis** — scientific visualization algorithms (flying edges, VTK interop)
 
 ```bash
-# Base install (numpy only, no backend)
-pip install pgc
-
-# With CPU backend (LLVM JIT)
-pip install 'pgc[cpu]'
-
-# Or install from source with uv
+# Install everything from source with uv
 git clone <repo-url>
 cd pgc
 uv sync
+
+# Or install individual packages
+pip install pgc-core          # core only
+pip install pgc-core[cpu]     # core + CPU backend (LLVM JIT)
+pip install pgc-rendering     # rendering (pulls in pgc-core)
+pip install pgc-vis           # visualization (pulls in pgc-core)
 ```
 
 ## Your First Kernel
@@ -62,7 +67,7 @@ pgc.init(arch=pgc.level_zero)  # Intel GPU
 All examples accept `--arch` on the command line:
 
 ```bash
-uv run python examples/01_hello_pgc.py --arch metal
+uv run python packages/pgc-core/examples/01_hello_pgc.py --arch metal
 ```
 
 The same kernel code runs on all backends — PGC handles the compilation

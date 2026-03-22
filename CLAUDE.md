@@ -2,16 +2,28 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Monorepo Structure
+
+PGC is split into 3 packages under `packages/`:
+
+| Package | Path | Contents |
+|---------|------|----------|
+| `pgc-core` | `packages/pgc-core/` | Kernels, fields, types, IR, codegen, backends, scan/copy |
+| `pgc-rendering` | `packages/pgc-rendering/` | Path tracer (BVH, camera, scene) |
+| `pgc-vis` | `packages/pgc-vis/` | Visualization algorithms (flying edges, normals, VTK interop) |
+
+All share the `pgc` namespace via `pkgutil.extend_path`.
+
 ## Build & Test Commands
 
 ```bash
-uv run pytest                          # run all tests
-uv run pytest tests/test_cpu_jit.py    # run one test file
-uv run pytest tests/test_hip.py        # run HIP backend tests (requires ROCm)
-uv run pytest -k "test_saxpy"          # run tests matching a pattern
-uv run python examples/validate_all.py # validation suite (CPU + GPU)
-uv run python examples/01_hello_pgc.py --arch hip   # run example on specific backend
-uv run python bench_cpu_vs_hip.py                    # CPU vs HIP/ROCm benchmark
+uv sync                                                     # install all packages (editable)
+uv run pytest                                                # run all tests
+uv run pytest packages/pgc-core/tests/test_cpu_jit.py        # run one test file
+uv run pytest packages/pgc-core/tests/test_hip.py            # run HIP backend tests
+uv run pytest -k "test_saxpy"                                # run tests matching a pattern
+uv run python packages/pgc-core/examples/validate_all.py     # validation suite
+uv run python packages/pgc-core/examples/01_hello_pgc.py --arch hip  # example on backend
 ```
 
 All examples accept `--arch cpu|metal|cuda|hip|level_zero` to select the backend.
