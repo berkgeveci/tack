@@ -194,6 +194,12 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+all = [
+    { name = "cuda-python" },
+    { name = "llvmlite" },
+    { name = "pyobjc-framework-metal" },
+    { name = "pyobjc-framework-metalkit" },
+]
 cpu = [
     { name = "llvmlite" },
 ]
@@ -213,11 +219,12 @@ requires-dist = [
     { name = "cuda-python", marker = "extra == 'cuda'", specifier = ">=13.2.0" },
     { name = "llvmlite", marker = "extra == 'cpu'" },
     { name = "numpy" },
+    { name = "pgc-core", extras = ["cpu", "cuda", "metal", "hip", "level-zero"], marker = "extra == 'all'", editable = "packages/pgc-core" },
     { name = "pyobjc-framework-metal", marker = "extra == 'metal'" },
     { name = "pyobjc-framework-metalkit", marker = "extra == 'metal'" },
     { name = "pytest", marker = "extra == 'dev'" },
 ]
-provides-extras = ["cpu", "cuda", "metal", "dev"]
+provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "dev", "all"]
 
 [[package]]
 name = "pgc-rendering"
@@ -246,7 +253,7 @@ name = "pgc-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "pgc-core" },
+    { name = "pgc-core", extra = ["cpu", "cuda"] },
     { name = "pgc-rendering" },
     { name = "pgc-vis" },
 ]
@@ -258,7 +265,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "pgc-core", editable = "packages/pgc-core" },
+    { name = "pgc-core", extras = ["cpu", "cuda", "hip", "level-zero"], editable = "packages/pgc-core" },
     { name = "pgc-rendering", editable = "packages/pgc-rendering" },
     { name = "pgc-vis", editable = "packages/pgc-vis" },
     { name = "pytest", marker = "extra == 'dev'" },

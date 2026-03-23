@@ -19,8 +19,13 @@ metal = [
     "pyobjc-framework-Metal",
     "pyobjc-framework-MetalKit",
 ]
+hip = []
+level_zero = []
 dev = [
     "pytest",
+]
+all = [
+    "pgc-core[cpu,cuda,metal,hip,level_zero]",
 ]
 
 [build-system]

@@ -5,7 +5,7 @@ description = "PGC monorepo workspace — Portable GPU Compute"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pgc-core",
+    "pgc-core[cpu,cuda,hip,level_zero]",
     "pgc-rendering",
     "pgc-vis",
 ]
