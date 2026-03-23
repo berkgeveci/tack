@@ -28,7 +28,7 @@ template_args = _detect_template_args(kernel, args)
 # → {0: ("grid", grid_obj)}  (param index → (name, object))
 
 effective_args = _expand_template_args(args, template_args)
-# → removes template objects, inserts their field attributes
+# → removes template objects, inserts their field attributes and runtime scalars
 
 ir_module = kernel.get_ir(..., template_args=template_args)
 # → calls template_rewrite.rewrite_templates() before AST transform
@@ -52,22 +52,36 @@ Called with `CellSetStructured3D(nx=50, ny=50, nz=50)`:
 
 1. **Remove template param** from signature: `cs` is removed
 2. **Add field params**: `cs.connectivity` (if it exists) becomes a new
-   parameter `__tmpl_CellSetStructured3D_connectivity_<id>__`
-3. **Replace scalar attribute access**: `cs.points_per_cell` →
+   parameter `__tmpl_cs_connectivity__`
+3. **Add runtime scalar params**: `cs.width` (instance scalar) becomes
+   parameter `__tmpl_cs_width__`
+4. **Replace class constant access**: `cs.points_per_cell` →
    `ast.Constant(8)` (baked in)
-4. **Replace method calls**: `cs.get_point_id(c, v)` → inline the
+5. **Replace instance scalar access**: `cs.width` →
+   `ast.Name("__tmpl_cs_width__")` (runtime parameter)
+6. **Replace method calls**: `cs.get_point_id(c, v)` → inline the
    method body with `self` references resolved
 
 ### Attribute Classification
 
-`classify_template_attrs(obj)` splits an object's attributes:
+`classify_template_attrs(obj)` splits an object's attributes into three categories:
 
 ```python
-scalars = {"nx": 50, "ny": 50, "points_per_cell": 8, ...}  # int/float
-fields = {"connectivity": <Field>}                           # pgc.Field
+scalars = {"points_per_cell": 8}              # class variables → compile-time constants
+fields = {"connectivity": <Field>}             # instance Fields → kernel parameters
+runtime_scalars = {"width": 512, "height": 512}  # instance scalars → runtime parameters
 ```
 
-Scalars become AST constants. Fields become kernel parameters.
+- **Class-level scalars** (defined on the class, e.g., `points_per_cell = 8`)
+  become AST constants, baked into generated code, and are part of the cache key.
+  Changing them triggers recompilation.
+- **Instance scalars** (set in `__init__`, e.g., `self.width = width`) become
+  synthetic kernel scalar parameters. They are passed at dispatch time and
+  do **not** appear in the cache key — changing them reuses the compiled kernel.
+- **Instance fields** become synthetic kernel buffer parameters (as before).
+
+This distinction avoids unnecessary JIT recompilation when only runtime
+values (like image dimensions) change between calls.
 
 ## @pgc.func Inlining
 

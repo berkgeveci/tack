@@ -113,7 +113,7 @@ Functions decorated with `@pgc.func` are inlined at the AST level into kernels. 
 
 ### @pgc.data_oriented templates
 
-Classes decorated with `@pgc.data_oriented` can be passed as template arguments. Scalar attributes become compile-time constants, field attributes become kernel parameters, and `@pgc.func` methods are inlined with `self` resolved.
+Classes decorated with `@pgc.data_oriented` can be passed as template arguments. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@pgc.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`.
 
 ### 64-bit loop indices on GPU
 

@@ -19,7 +19,7 @@ class AOSArray:
 @pgc.data_oriented
 class ConstantArray:
     def __init__(self, value):
-        self.value = value     # Python scalar → compile-time constant
+        self.value = value     # instance scalar → runtime parameter
 
     @pgc.func
     def get_value(self, i):
@@ -43,14 +43,59 @@ add_arrays(AOSArray(field1), ConstantArray(3.14), out, n)
 
 When a `@pgc.data_oriented` object is passed as a `pgc.template()` argument:
 
-- **Field attributes** (`self.data`) become kernel buffer parameters
-- **Scalar attributes** (`self.value`) become compile-time constants baked
-  into the generated code
-- **`@pgc.func` methods** are inlined at the call site
+- **Class-level scalars** (defined on the class, not in `__init__`) → compile-time
+  constants baked into generated code. Changing them triggers recompilation.
+- **Instance scalars** (set in `__init__`) → runtime kernel scalar parameters.
+  Changing them does **not** trigger recompilation.
+- **Instance fields** (`pgc.Field` set in `__init__`) → kernel buffer parameters
+- **`@pgc.func` methods** → inlined at the call site
 
-Each unique combination of template types produces a separately compiled
-kernel. `add_arrays(AOSArray, AOSArray)` and `add_arrays(AOSArray, ConstantArray)`
-are two different compiled kernels with different generated code.
+Each unique combination of template types and **class-level constants** produces
+a separately compiled kernel. Instance scalars and fields can change freely
+between calls without recompilation.
+
+## Class Constants vs Instance Scalars
+
+Use **class variables** for structural constants that the compiler needs
+(allocation sizes, topology parameters). Use **instance variables** for
+runtime values (dimensions, coefficients, thresholds):
+
+```python
+@pgc.data_oriented
+class ImageFilter:
+    block_size = 16          # class variable → compile-time constant
+    num_channels = 3         # class variable → compile-time constant
+
+    def __init__(self, width, height, data):
+        self.width = width   # instance → runtime parameter (no recompile)
+        self.height = height # instance → runtime parameter (no recompile)
+        self.data = data     # instance → field parameter
+
+    @pgc.func
+    def get_pixel(self, x, y):
+        return self.data[y * self.width + x]
+```
+
+**Rule of thumb:** if it controls an allocation size (`pgc.local_array`,
+`pgc.shared`), it **must** be a class variable. Everything else can be
+an instance variable.
+
+```python
+@pgc.kernel
+def process(filt: pgc.template(), out):
+    for i in range(filt.width):              # runtime — OK as instance var
+        buf = pgc.local_array(pgc.f32, filt.block_size)  # must be class constant
+        # ...
+```
+
+Calling the same kernel with different image sizes reuses the compiled kernel:
+
+```python
+filt_small = ImageFilter(256, 256, small_data)
+filt_large = ImageFilter(1024, 1024, large_data)
+process(filt_small, out1)   # compiles once
+process(filt_large, out2)   # reuses compiled kernel — no JIT
+```
 
 ## Cell Set Example
 
@@ -60,13 +105,14 @@ should work with different mesh representations:
 ```python
 @pgc.data_oriented
 class CellSetStructured3D:
+    points_per_cell = 8  # class constant — used for local_array sizes
+
     def __init__(self, nx, ny, nz):
-        self.nx = nx               # compile-time constant
+        self.nx = nx               # runtime parameter
         self.ny = ny
         self.nxy = nx * ny
         self.nx_plus1 = nx + 1
         self.nxy_plus1 = (nx + 1) * (ny + 1)
-        self.points_per_cell = 8
 
     @pgc.func
     def get_point_id(self, cell_id, local_idx):
@@ -83,9 +129,10 @@ class CellSetStructured3D:
 
 @pgc.data_oriented
 class CellSetExplicit:
-    def __init__(self, connectivity, points_per_cell):
+    points_per_cell = 4  # class constant — used for local_array sizes
+
+    def __init__(self, connectivity):
         self.connectivity = connectivity    # pgc.field
-        self.points_per_cell = points_per_cell  # compile-time constant
 
     @pgc.func
     def get_point_id(self, cell_id, local_idx):
@@ -116,8 +163,7 @@ You can separate topology (cell set) from geometry (cell type):
 ```python
 @pgc.data_oriented
 class Hexahedron:
-    def __init__(self):
-        self.num_points = 8
+    num_points = 8  # class constant
 
     @pgc.func
     def center(self, dim):
