@@ -1541,9 +1541,9 @@ try:
     sg.SetDimensions(nx + 1, ny + 1, nz + 1)
     pts = _VP()
     coords_np = np.column_stack([
-        s_px_np.astype(np.float64),
-        s_py_np.astype(np.float64),
-        s_pz_np.astype(np.float64),
+        s_px.to_numpy().astype(np.float64),
+        s_py.to_numpy().astype(np.float64),
+        s_pz.to_numpy().astype(np.float64),
     ])
     pts.SetData(_n2v2(coords_np, deep=True))
     sg.SetPoints(pts)
