@@ -176,9 +176,11 @@ class MSLCodeGen:
         elif isinstance(node, ir.IRPrint):
             self._emit("/* print not supported on Metal */")
         elif isinstance(node, ir.IRSharedAlloc):
-            self._emit(f"threadgroup {node.dtype} {node.name}[{self._expr(node.size)}];")
+            msl_type = _MSL_TYPE_MAP[node.dtype]
+            self._emit(f"threadgroup {msl_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRLocalAlloc):
-            self._emit(f"{node.dtype} {node.name}[{self._expr(node.size)}];")
+            msl_type = _MSL_TYPE_MAP[node.dtype]
+            self._emit(f"{msl_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRBarrier):
             self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
         elif isinstance(node, ir.IRCall):

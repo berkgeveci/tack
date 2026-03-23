@@ -806,21 +806,20 @@ class KernelTransformer(ast.NodeVisitor):
         # Parse dtype argument — pgc.f32, pgc.i32, etc.
         dtype_arg = value_node.args[0]
         if isinstance(dtype_arg, ast.Attribute):
-            dtype_str = dtype_arg.attr  # e.g., "f32", "i32"
+            dtype_str = dtype_arg.attr
         elif isinstance(dtype_arg, ast.Name):
             dtype_str = dtype_arg.id
         else:
             raise NotImplementedError("pgc.shared() dtype must be pgc.f32, pgc.i32, etc.")
 
-        _DTYPE_TO_C = {"f32": "float", "f64": "double", "i32": "int", "i64": "long",
-                       "u32": "uint", "u64": "ulong"}
-        c_type = _DTYPE_TO_C.get(dtype_str)
-        if c_type is None:
+        from pgc.lang.types import _NAME_TO_TYPE
+        scalar_type = _NAME_TO_TYPE.get(dtype_str)
+        if scalar_type is None:
             raise NotImplementedError(f"Unsupported shared memory dtype: {dtype_str}")
 
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)
-        return ir.IRSharedAlloc(name=target_name, dtype=c_type, size=size)
+        return ir.IRSharedAlloc(name=target_name, dtype=scalar_type, size=size)
 
     def _try_parse_shared_like(self, target_name: str, value_node: ast.Call):
         """Try to parse smem = pgc.shared_like(field, 256). Returns IRSharedAlloc or None."""
@@ -865,15 +864,14 @@ class KernelTransformer(ast.NodeVisitor):
         else:
             raise NotImplementedError("pgc.local_array() dtype must be pgc.f32, pgc.i32, etc.")
 
-        _DTYPE_TO_C = {"f32": "float", "f64": "double", "i32": "int", "i64": "long",
-                       "u32": "uint", "u64": "ulong"}
-        c_type = _DTYPE_TO_C.get(dtype_str)
-        if c_type is None:
+        from pgc.lang.types import _NAME_TO_TYPE
+        scalar_type = _NAME_TO_TYPE.get(dtype_str)
+        if scalar_type is None:
             raise NotImplementedError(f"Unsupported local array dtype: {dtype_str}")
 
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)  # treat as array for indexing purposes
-        return ir.IRLocalAlloc(name=target_name, dtype=c_type, size=size)
+        return ir.IRLocalAlloc(name=target_name, dtype=scalar_type, size=size)
 
     def _try_parse_local_array_like(self, target_name: str, value_node: ast.Call):
         """Try to parse arr = pgc.local_array_like(field, 8). Returns IRLocalAlloc or None."""

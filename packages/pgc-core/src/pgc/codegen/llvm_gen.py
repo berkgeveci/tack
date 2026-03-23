@@ -489,10 +489,7 @@ class LLVMCodeGen:
 
     def _emit_shared_alloc(self, node: ir.IRSharedAlloc):
         """Emit shared memory as a stack alloca (CPU has no shared memory)."""
-        _dtype_llvm = {"float": llvm_ir.FloatType(), "double": llvm_ir.DoubleType(),
-                       "int": llvm_ir.IntType(32), "long": llvm_ir.IntType(64),
-                       "uint": llvm_ir.IntType(32), "ulong": llvm_ir.IntType(64)}
-        elem_type = _dtype_llvm.get(node.dtype, llvm_ir.FloatType())
+        elem_type = _llvm_type(node.dtype)
         # Use constant size for the alloca
         if isinstance(node.size, ir.IRConstant):
             arr_type = llvm_ir.ArrayType(elem_type, node.size.value)

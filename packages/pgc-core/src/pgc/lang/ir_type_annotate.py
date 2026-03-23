@@ -253,13 +253,13 @@ def _annotate_stmt(node, env, field_params):
         return
 
     if isinstance(node, ir.IRSharedAlloc):
-        if hasattr(node, 'dtype_annotation'):
-            env[node.name] = node.dtype_annotation
+        if isinstance(node.dtype, ScalarType):
+            env[node.name] = node.dtype
         return
 
     if isinstance(node, ir.IRLocalAlloc):
-        if hasattr(node, 'dtype_annotation'):
-            env[node.name] = node.dtype_annotation
+        if isinstance(node.dtype, ScalarType):
+            env[node.name] = node.dtype
         return
 
     if isinstance(node, (ir.IRBreak, ir.IRContinue, ir.IRBarrier)):

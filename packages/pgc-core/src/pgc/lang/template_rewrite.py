@@ -71,10 +71,12 @@ def rewrite_templates(kernel_ast, template_args):
         template_args: dict of param_index -> (param_name, template_object)
 
     Returns:
-        Rewritten AST with template params resolved.
+        (rewritten_ast, registered_keys) — the rewritten AST and a list of
+        keys added to _func_registry (for cleanup after transform_kernel).
     """
     rewritten = copy.deepcopy(kernel_ast)
     funcdef = rewritten.body[0]
+    registered_keys = []
 
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
@@ -106,6 +108,7 @@ def rewrite_templates(kernel_ast, template_args):
                     func_obj, resolved_name, scalars, field_param_map,
                     method_name_map, runtime_scalar_param_map,
                 )
+                registered_keys.append(resolved_name)
 
         # Rewrite the kernel function definition
         rewriter = _KernelTemplateRewriter(
@@ -115,7 +118,7 @@ def rewrite_templates(kernel_ast, template_args):
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
 
-    return rewritten
+    return rewritten, registered_keys
 
 
 def _register_resolved_method(func_obj, resolved_name, scalars, field_param_map,

@@ -47,6 +47,14 @@ _numpy_to_pgc = {
 }
 
 
+# Map type name strings to ScalarType singletons
+_NAME_TO_TYPE = {
+    "i8": i8, "u8": u8, "i16": i16, "u16": u16,
+    "i32": i32, "u32": u32, "i64": i64, "u64": u64,
+    "f32": f32, "f64": f64,
+}
+
+
 def from_numpy_dtype(dtype: np.dtype) -> ScalarType:
     """Convert a numpy dtype to a PGC scalar type."""
     dtype = np.dtype(dtype)

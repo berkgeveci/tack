@@ -198,9 +198,11 @@ class OpenCLCodeGen(CUDACodeGen):
 
     def _emit_stmt(self, node):
         if isinstance(node, ir.IRSharedAlloc):
-            self._emit(f"__local {node.dtype} {node.name}[{self._expr(node.size)}];")
+            c_type = _OCL_C_TYPE_MAP[node.dtype]
+            self._emit(f"__local {c_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRLocalAlloc):
-            self._emit(f"{node.dtype} {node.name}[{self._expr(node.size)}];")
+            c_type = _OCL_C_TYPE_MAP[node.dtype]
+            self._emit(f"{c_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRBarrier):
             self._emit("barrier(CLK_LOCAL_MEM_FENCE);")
         else:

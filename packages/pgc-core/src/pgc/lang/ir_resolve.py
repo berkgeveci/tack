@@ -133,46 +133,24 @@ def _resolve(node, fields):
 
     if isinstance(node, ir.IRSharedAlloc):
         node.size = _resolve(node.size, fields)
-        # Resolve shared_like: fill dtype from the source field's type
+        # Resolve shared_like: fill dtype from the source field's ScalarType
         if node.dtype is None and node.field_name is not None:
             field = fields.get(node.field_name)
             if field is None:
                 raise RuntimeError(
                     f"Cannot resolve shared_like: unknown field '{node.field_name}'")
-            from pgc.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-            _DTYPE_TO_C = {
-                i8: "signed char", u8: "unsigned char",
-                i16: "short", u16: "unsigned short",
-                i32: "int", u32: "unsigned int",
-                i64: "long", u64: "unsigned long",
-                f32: "float", f64: "double",
-            }
-            node.dtype = _DTYPE_TO_C.get(field.dtype)
-            if node.dtype is None:
-                raise RuntimeError(
-                    f"Unsupported dtype for shared_like: {field.dtype}")
+            node.dtype = field.dtype
         return node
 
     if isinstance(node, ir.IRLocalAlloc):
         node.size = _resolve(node.size, fields)
-        # Resolve local_array_like: fill dtype from the source field's type
+        # Resolve local_array_like: fill dtype from the source field's ScalarType
         if node.dtype is None and node.field_name is not None:
             field = fields.get(node.field_name)
             if field is None:
                 raise RuntimeError(
                     f"Cannot resolve local_array_like: unknown field '{node.field_name}'")
-            from pgc.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-            _DTYPE_TO_C = {
-                i8: "signed char", u8: "unsigned char",
-                i16: "short", u16: "unsigned short",
-                i32: "int", u32: "unsigned int",
-                i64: "long", u64: "unsigned long",
-                f32: "float", f64: "double",
-            }
-            node.dtype = _DTYPE_TO_C.get(field.dtype)
-            if node.dtype is None:
-                raise RuntimeError(
-                    f"Unsupported dtype for local_array_like: {field.dtype}")
+            node.dtype = field.dtype
         return node
 
     if isinstance(node, ir.IRBlockReduce):

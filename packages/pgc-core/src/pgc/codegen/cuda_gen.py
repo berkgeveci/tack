@@ -241,9 +241,11 @@ class CUDACodeGen:
         elif isinstance(node, ir.IRPrint):
             self._emit_print(node)
         elif isinstance(node, ir.IRSharedAlloc):
-            self._emit(f"__shared__ {node.dtype} {node.name}[{self._expr(node.size)}];")
+            c_type = _C_TYPE_MAP[node.dtype]
+            self._emit(f"__shared__ {c_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRLocalAlloc):
-            self._emit(f"{node.dtype} {node.name}[{self._expr(node.size)}];")
+            c_type = _C_TYPE_MAP[node.dtype]
+            self._emit(f"{c_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRBarrier):
             self._emit("__syncthreads();")
         elif isinstance(node, ir.IRCall):

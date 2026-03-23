@@ -28,11 +28,15 @@ class Kernel:
             key = self._make_cache_key(vector_fields, template_args, texture_fields)
             if key not in self._ir_cache:
                 from pgc.lang.template_rewrite import rewrite_templates
-                rewritten_ast = rewrite_templates(self._ast, template_args)
+                from pgc.lang.func import _func_registry
+                rewritten_ast, registered_keys = rewrite_templates(self._ast, template_args)
                 self._ir_cache[key] = transform_kernel(
                     rewritten_ast, vector_fields=vector_fields,
                     texture_fields=texture_fields,
                 )
+                # Clean up temporary func registry entries from template rewrite
+                for rk in registered_keys:
+                    _func_registry.pop(rk, None)
             return self._ir_cache[key]
         if not vector_fields and not texture_fields:
             if self._ir is None:
