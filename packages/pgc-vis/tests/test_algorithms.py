@@ -1,13 +1,26 @@
 """Tests for pgc.algorithms module."""
 
 import numpy as np
+import pytest
 import pgc
 from pgc import algorithms
 
-pgc.init(arch=pgc.cpu)
+_backends = []
+for _arch in ["cpu", "metal"]:
+    try:
+        pgc.init(arch=getattr(pgc, _arch))
+        _backends.append(_arch)
+    except (ImportError, RuntimeError, OSError):
+        pass
 
 
-def test_exclusive_scan_basic():
+@pytest.fixture(params=_backends)
+def backend(request):
+    pgc.init(arch=getattr(pgc, request.param))
+    return request.param
+
+
+def test_exclusive_scan_basic(backend):
     """Exclusive scan: output[i] = sum(input[0..i-1])."""
     n = 8
     inp = pgc.field(dtype=pgc.i32, shape=(n,))
@@ -22,7 +35,7 @@ def test_exclusive_scan_basic():
     assert total == 31  # sum of all elements
 
 
-def test_exclusive_scan_ones():
+def test_exclusive_scan_ones(backend):
     """Exclusive scan of all ones = [0, 1, 2, ..., n-1]."""
     n = 100
     inp = pgc.field(dtype=pgc.i32, shape=(n,))
@@ -36,7 +49,7 @@ def test_exclusive_scan_ones():
     assert total == n
 
 
-def test_exclusive_scan_zeros():
+def test_exclusive_scan_zeros(backend):
     """Exclusive scan of all zeros stays zero."""
     n = 16
     inp = pgc.field(dtype=pgc.i32, shape=(n,))
@@ -49,7 +62,7 @@ def test_exclusive_scan_zeros():
     assert total == 0
 
 
-def test_exclusive_scan_power_of_two():
+def test_exclusive_scan_power_of_two(backend):
     """Scan with power-of-two size."""
     n = 16
     inp = pgc.field(dtype=pgc.i32, shape=(n,))
@@ -65,7 +78,7 @@ def test_exclusive_scan_power_of_two():
     assert total == int(np.sum(data))
 
 
-def test_exclusive_scan_non_power_of_two():
+def test_exclusive_scan_non_power_of_two(backend):
     """Scan with non-power-of-two size."""
     n = 37
     inp = pgc.field(dtype=pgc.i32, shape=(n,))
@@ -81,7 +94,7 @@ def test_exclusive_scan_non_power_of_two():
     assert total == int(np.sum(data))
 
 
-def test_inclusive_scan_basic():
+def test_inclusive_scan_basic(backend):
     """Inclusive scan: output[i] = sum(input[0..i])."""
     n = 8
     inp = pgc.field(dtype=pgc.i32, shape=(n,))
@@ -96,7 +109,7 @@ def test_inclusive_scan_basic():
     assert total == 31
 
 
-def test_inclusive_scan_ones():
+def test_inclusive_scan_ones(backend):
     """Inclusive scan of all ones = [1, 2, 3, ..., n]."""
     n = 64
     inp = pgc.field(dtype=pgc.i32, shape=(n,))
@@ -109,7 +122,7 @@ def test_inclusive_scan_ones():
     assert total == n
 
 
-def test_exclusive_scan_preserves_input():
+def test_exclusive_scan_preserves_input(backend):
     """Exclusive scan should not modify the input field."""
     n = 16
     inp = pgc.field(dtype=pgc.i32, shape=(n,))
@@ -122,7 +135,7 @@ def test_exclusive_scan_preserves_input():
     np.testing.assert_array_equal(inp.to_numpy(), data)
 
 
-def test_copy():
+def test_copy(backend):
     """Copy field contents."""
     n = 100
     src = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -135,7 +148,7 @@ def test_copy():
     np.testing.assert_array_equal(dst.to_numpy(), data)
 
 
-def test_fill_value():
+def test_fill_value(backend):
     """Fill field with constant value."""
     n = 100
     dst = pgc.field(dtype=pgc.f32, shape=(n,))

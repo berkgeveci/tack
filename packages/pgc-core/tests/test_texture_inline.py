@@ -4,13 +4,22 @@ import numpy as np
 import pytest
 import pgc
 
+_backends = []
+for _arch in ["cpu", "metal"]:
+    try:
+        pgc.init(arch=getattr(pgc, _arch))
+        _backends.append(_arch)
+    except (ImportError, RuntimeError, OSError):
+        pass
 
-@pytest.fixture(autouse=True)
-def init_cpu():
-    pgc.init(arch=pgc.cpu)
+
+@pytest.fixture(params=_backends)
+def backend(request):
+    pgc.init(arch=getattr(pgc, request.param))
+    return request.param
 
 
-def test_texture_sample_direct():
+def test_texture_sample_direct(backend):
     """tex.sample() called directly in a kernel works."""
     W, H, D = 4, 4, 4
     n = W * H * D
@@ -35,7 +44,7 @@ def test_texture_sample_direct():
     assert abs(result - 0.0) < 0.1
 
 
-def test_texture_sample_in_func():
+def test_texture_sample_in_func(backend):
     """tex.sample() inside a @pgc.func should work after inlining."""
     W, H, D = 4, 4, 4
     n = W * H * D
@@ -61,7 +70,7 @@ def test_texture_sample_in_func():
     np.testing.assert_allclose(result, 7.0, rtol=1e-5)
 
 
-def test_texture_sample_in_nested_func():
+def test_texture_sample_in_nested_func(backend):
     """tex.sample() in a @pgc.func called by another @pgc.func."""
     W, H, D = 4, 4, 4
     n = W * H * D
@@ -89,7 +98,7 @@ def test_texture_sample_in_nested_func():
     np.testing.assert_allclose(result, 6.0, rtol=1e-5)
 
 
-def test_texture_with_other_field_args():
+def test_texture_with_other_field_args(backend):
     """tex.sample() in @pgc.func alongside regular field parameters."""
     W, H, D = 4, 4, 4
     n = W * H * D

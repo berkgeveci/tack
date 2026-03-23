@@ -1,12 +1,25 @@
 """Test vector addition — simplest kernel, validates basic pipeline."""
 
 import numpy as np
+import pytest
 import pgc
 
+_backends = []
+for _arch in ["cpu", "metal"]:
+    try:
+        pgc.init(arch=getattr(pgc, _arch))
+        _backends.append(_arch)
+    except (ImportError, RuntimeError, OSError):
+        pass
 
-def test_vector_add():
-    pgc.init(arch=pgc.cpu)
 
+@pytest.fixture(params=_backends)
+def backend(request):
+    pgc.init(arch=getattr(pgc, request.param))
+    return request.param
+
+
+def test_vector_add(backend):
     n = 1024
     x = pgc.field(dtype=pgc.f32, shape=(n,))
     y = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -30,7 +43,7 @@ def test_vector_add():
     np.testing.assert_allclose(result, expected)
 
 
-def test_field_basics():
+def test_field_basics(backend):
     f = pgc.field(dtype=pgc.f32, shape=(10,))
     assert f.shape == (10,)
     assert f.dtype == pgc.f32
