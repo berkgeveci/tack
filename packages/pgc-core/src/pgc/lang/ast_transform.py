@@ -273,10 +273,14 @@ class KernelTransformer(ast.NodeVisitor):
                 return shared_like_result
 
         # Check for local array allocation: arr = pgc.local_array(pgc.f32, 8)
+        #                            or: arr = pgc.local_array_like(field, 8)
         if isinstance(target, ast.Name) and isinstance(value, ast.Call):
             local_result = self._try_parse_local_alloc(target.id, value)
             if local_result is not None:
                 return local_result
+            local_like_result = self._try_parse_local_array_like(target.id, value)
+            if local_like_result is not None:
+                return local_like_result
 
         # Check for vector construction: v = pgc.Vector([a, b, c])
         vec_elts = self._try_parse_vector_construct(value)
@@ -540,10 +544,13 @@ class KernelTransformer(ast.NodeVisitor):
             raise NotImplementedError(
                 "pgc.shared_like() must be used in an assignment: smem = pgc.shared_like(field, 256)")
 
-        # Local array: pgc.local_array(dtype, size)
+        # Local array: pgc.local_array(dtype, size) or pgc.local_array_like(field, size)
         if func_name == "local_array":
             raise NotImplementedError(
                 "pgc.local_array() must be used in an assignment: arr = pgc.local_array(pgc.f32, 8)")
+        if func_name == "local_array_like":
+            raise NotImplementedError(
+                "pgc.local_array_like() must be used in an assignment: arr = pgc.local_array_like(field, 8)")
 
         # Block reductions: pgc.block_sum(val), pgc.block_max(val), pgc.block_min(val)
         if func_name in ("block_sum", "block_max", "block_min"):
@@ -865,6 +872,30 @@ class KernelTransformer(ast.NodeVisitor):
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)  # treat as array for indexing purposes
         return ir.IRLocalAlloc(name=target_name, dtype=c_type, size=size)
+
+    def _try_parse_local_array_like(self, target_name: str, value_node: ast.Call):
+        """Try to parse arr = pgc.local_array_like(field, 8). Returns IRLocalAlloc or None."""
+        try:
+            name = self._resolve_call_name(value_node)
+        except (NotImplementedError, AttributeError):
+            return None
+        if name != "local_array_like":
+            return None
+        if len(value_node.args) != 2:
+            raise NotImplementedError("pgc.local_array_like() takes exactly 2 arguments (field, size)")
+
+        # First arg is the field reference
+        field_arg = value_node.args[0]
+        if isinstance(field_arg, ast.Name):
+            field_name = field_arg.id
+        elif isinstance(field_arg, ast.Attribute):
+            field_name = field_arg.attr
+        else:
+            raise NotImplementedError("pgc.local_array_like() first argument must be a field name")
+
+        size = self.visit(value_node.args[1])
+        self._shared_vars.add(target_name)  # treat as array for indexing purposes
+        return ir.IRLocalAlloc(name=target_name, dtype=None, size=size, field_name=field_name)
 
     def _try_parse_vector_construct(self, value_node: ast.expr) -> list | None:
         """Try to parse a Vector([a, b, c]) constructor. Returns list of AST element nodes or None."""

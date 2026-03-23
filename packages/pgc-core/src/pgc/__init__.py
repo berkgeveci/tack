@@ -70,6 +70,10 @@ def local_array(dtype, size):
     """
     raise RuntimeError("local_array() can only be used inside a @pgc.kernel")
 
+def local_array_like(field, size):
+    """Allocate a per-thread local array with the same dtype as a field. Only usable inside a @pgc.kernel."""
+    raise RuntimeError("local_array_like() can only be used inside a @pgc.kernel")
+
 def texture3d(source_field, shape=None, interp='linear'):
     """Create a 3D texture from a field for hardware-accelerated sampling.
 

@@ -231,10 +231,11 @@ class IRSharedAlloc(IRNode):
 class IRLocalAlloc(IRNode):
     """Allocate a per-thread local array (private memory on GPU, stack on CPU)."""
 
-    def __init__(self, name: str, dtype: str, size):
+    def __init__(self, name: str, dtype: str, size, field_name: str = None):
         self.name = name
-        self.dtype = dtype   # "float", "int", etc.
+        self.dtype = dtype   # "float", "int", etc. (None for local_array_like, resolved later)
         self.size = size     # IRNode expression for number of elements
+        self.field_name = field_name  # source field name for local_array_like (resolved in ir_resolve)
 
 
 class IRBlockReduce(IRNode):
