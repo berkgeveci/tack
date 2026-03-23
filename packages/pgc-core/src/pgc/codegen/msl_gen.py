@@ -11,15 +11,19 @@ with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
 from pgc.lang import ir
-from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
+from pgc.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 
 
 _MSL_TYPE_MAP = {
-    f32: "float",
+    i8:  "char",
+    u8:  "uchar",
+    i16: "short",
+    u16: "ushort",
     i32: "int",
-    i64: "long",
     u32: "uint",
+    i64: "long",
     u64: "ulong",
+    f32: "float",
 }
 
 # Default integer type for locals — 64-bit to support large grids (>2^31 elements).

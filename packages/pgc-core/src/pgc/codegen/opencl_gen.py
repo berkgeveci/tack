@@ -12,18 +12,22 @@ This module reuses the CUDA codegen with OpenCL-specific overrides.
 
 from pgc.lang import ir
 from pgc.codegen.cuda_gen import CUDACodeGen, _BINOP_MAP, _CMP_MAP
-from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
+from pgc.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 
 # OpenCL uses 'long' for 64-bit integers (not 'long long')
 _OCL_INT = "long"
 
 _OCL_C_TYPE_MAP = {
+    i8:  "char",
+    u8:  "uchar",
+    i16: "short",
+    u16: "ushort",
+    i32: "int",
+    u32: "unsigned int",
+    i64: "long",
+    u64: "unsigned long",
     f32: "float",
     f64: "double",
-    i32: "int",
-    i64: "long",
-    u32: "unsigned int",
-    u64: "unsigned long",
 }
 
 _OCL_MATH_FUNCS = {

@@ -13,16 +13,20 @@ with more than 2^31 elements.
 """
 
 from pgc.lang import ir
-from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
+from pgc.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 
 
 _C_TYPE_MAP = {
+    i8:  "signed char",
+    u8:  "unsigned char",
+    i16: "short",
+    u16: "unsigned short",
+    i32: "int",
+    u32: "unsigned int",
+    i64: "long long",
+    u64: "unsigned long long",
     f32: "float",
     f64: "double",
-    i32: "int",
-    i64: "long long",
-    u32: "unsigned int",
-    u64: "unsigned long long",
 }
 
 # Default integer type for locals on CUDA — 64-bit to support large grids (>2^31 elements).

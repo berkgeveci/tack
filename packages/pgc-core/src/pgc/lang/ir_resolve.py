@@ -139,10 +139,13 @@ def _resolve(node, fields):
             if field is None:
                 raise RuntimeError(
                     f"Cannot resolve shared_like: unknown field '{node.field_name}'")
-            from pgc.lang.types import f32, f64, i32, i64, u32, u64
+            from pgc.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
             _DTYPE_TO_C = {
-                f32: "float", f64: "double", i32: "int", i64: "long",
-                u32: "uint", u64: "ulong",
+                i8: "signed char", u8: "unsigned char",
+                i16: "short", u16: "unsigned short",
+                i32: "int", u32: "unsigned int",
+                i64: "long", u64: "unsigned long",
+                f32: "float", f64: "double",
             }
             node.dtype = _DTYPE_TO_C.get(field.dtype)
             if node.dtype is None:
@@ -158,10 +161,13 @@ def _resolve(node, fields):
             if field is None:
                 raise RuntimeError(
                     f"Cannot resolve local_array_like: unknown field '{node.field_name}'")
-            from pgc.lang.types import f32, f64, i32, i64, u32, u64
+            from pgc.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
             _DTYPE_TO_C = {
-                f32: "float", f64: "double", i32: "int", i64: "long",
-                u32: "uint", u64: "ulong",
+                i8: "signed char", u8: "unsigned char",
+                i16: "short", u16: "unsigned short",
+                i32: "int", u32: "unsigned int",
+                i64: "long", u64: "unsigned long",
+                f32: "float", f64: "double",
             }
             node.dtype = _DTYPE_TO_C.get(field.dtype)
             if node.dtype is None:

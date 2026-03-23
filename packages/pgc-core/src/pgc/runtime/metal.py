@@ -15,11 +15,10 @@ import numpy as np
 
 from pgc.lang import ir
 from pgc.lang.field import Field, DeviceBuffer, ExportedMemory
-from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
+from pgc.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 from pgc.lang.type_inference import infer_param_types, check_dispatch_types
-from pgc.lang.types import f32, i32, i64, u32, u64
 
-_METAL_SUPPORTED_DTYPES = {f32, i32, i64, u32, u64}
+_METAL_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
 from pgc.codegen.msl_gen import generate_msl_source
 
 try:

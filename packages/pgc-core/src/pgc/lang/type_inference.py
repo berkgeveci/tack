@@ -8,7 +8,7 @@ import numpy as np
 
 from pgc.lang import ir
 from pgc.lang.field import Field, Texture3D
-from pgc.lang.types import ScalarType, f32, f64, i32, i64, from_numpy_dtype
+from pgc.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64, from_numpy_dtype
 
 
 def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
@@ -97,7 +97,8 @@ def infer_types(ir_module: ir.IRModule, args: tuple):
 
 
 # Type promotion rules for binary operations
-_PROMOTION_ORDER = {i32: 0, i64: 1, f32: 2, f64: 3}
+# Signed/unsigned pairs share the same rank; mixed-sign promotes to the next wider type.
+_PROMOTION_ORDER = {i8: 0, u8: 0, i16: 1, u16: 1, i32: 2, u32: 2, i64: 3, u64: 3, f32: 4, f64: 5}
 
 
 def promote_types(a: ScalarType, b: ScalarType) -> ScalarType:

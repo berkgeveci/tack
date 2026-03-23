@@ -17,11 +17,10 @@ from llvmlite import binding as llvm
 
 from pgc.lang import ir
 from pgc.lang.field import Field, NumpyBuffer
-from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
+from pgc.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 from pgc.lang.type_inference import infer_param_types, check_dispatch_types
-from pgc.lang.types import f32, f64, i32, i64, u32, u64
 
-_CPU_SUPPORTED_DTYPES = {f32, f64, i32, i64, u32, u64}
+_CPU_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from pgc.codegen.llvm_gen import generate_llvm_ir
 
 
@@ -96,12 +95,16 @@ llvm.initialize_native_asmprinter()
 
 # ctypes type for each PGC scalar type (used for pointer casting)
 _CTYPES_MAP = {
+    i8:  ctypes.c_int8,
+    u8:  ctypes.c_uint8,
+    i16: ctypes.c_int16,
+    u16: ctypes.c_uint16,
+    i32: ctypes.c_int32,
+    u32: ctypes.c_uint32,
+    i64: ctypes.c_int64,
+    u64: ctypes.c_uint64,
     f32: ctypes.c_float,
     f64: ctypes.c_double,
-    i32: ctypes.c_int32,
-    i64: ctypes.c_int64,
-    u32: ctypes.c_uint32,
-    u64: ctypes.c_uint64,
 }
 
 
@@ -314,6 +317,11 @@ class CPUBackend:
         # Optimization passes (LICM, CSE)
         from pgc.lang.ir_optimize import optimize_ir
         optimize_ir(ir_func)
+
+        # Type annotation (sets dtype on all expression nodes — needed by
+        # LLVM codegen for signed/unsigned distinction on casts)
+        from pgc.lang.ir_type_annotate import annotate_types
+        annotate_types(ir_func)
 
         # Cache key: kernel name + argument type signature + template info
         type_sig = tuple(p.type_annotation for p in ir_func.params)

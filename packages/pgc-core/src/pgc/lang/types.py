@@ -21,21 +21,29 @@ class ScalarType:
 
 
 # Scalar types
+i8  = ScalarType("i8",  np.dtype(np.int8),    "i8",  8)
+u8  = ScalarType("u8",  np.dtype(np.uint8),   "i8",  8)
+i16 = ScalarType("i16", np.dtype(np.int16),   "i16", 16)
+u16 = ScalarType("u16", np.dtype(np.uint16),  "i16", 16)
+i32 = ScalarType("i32", np.dtype(np.int32),   "i32", 32)
+u32 = ScalarType("u32", np.dtype(np.uint32),  "i32", 32)
+i64 = ScalarType("i64", np.dtype(np.int64),   "i64", 64)
+u64 = ScalarType("u64", np.dtype(np.uint64),  "i64", 64)
 f32 = ScalarType("f32", np.dtype(np.float32), "float", 32)
 f64 = ScalarType("f64", np.dtype(np.float64), "double", 64)
-i32 = ScalarType("i32", np.dtype(np.int32), "i32", 32)
-i64 = ScalarType("i64", np.dtype(np.int64), "i64", 64)
-u32 = ScalarType("u32", np.dtype(np.uint32), "i32", 32)
-u64 = ScalarType("u64", np.dtype(np.uint64), "i64", 64)
 
 # Map numpy dtypes back to pgc types
 _numpy_to_pgc = {
+    np.dtype(np.int8):    i8,
+    np.dtype(np.uint8):   u8,
+    np.dtype(np.int16):   i16,
+    np.dtype(np.uint16):  u16,
+    np.dtype(np.int32):   i32,
+    np.dtype(np.uint32):  u32,
+    np.dtype(np.int64):   i64,
+    np.dtype(np.uint64):  u64,
     np.dtype(np.float32): f32,
     np.dtype(np.float64): f64,
-    np.dtype(np.int32): i32,
-    np.dtype(np.int64): i64,
-    np.dtype(np.uint32): u32,
-    np.dtype(np.uint64): u64,
 }
 
 

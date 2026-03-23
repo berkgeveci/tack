@@ -11,7 +11,7 @@ across threads and calls the kernel with different (start, end) pairs.
 from llvmlite import ir as llvm_ir
 
 from pgc.lang import ir
-from pgc.lang.types import ScalarType, f32, f64, i32, i64, u32, u64
+from pgc.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 
 
 def _llvm_type(pgc_type: ScalarType) -> llvm_ir.Type:
@@ -20,6 +20,10 @@ def _llvm_type(pgc_type: ScalarType) -> llvm_ir.Type:
         return llvm_ir.FloatType()
     if pgc_type is f64:
         return llvm_ir.DoubleType()
+    if pgc_type in (i8, u8):
+        return llvm_ir.IntType(8)
+    if pgc_type in (i16, u16):
+        return llvm_ir.IntType(16)
     if pgc_type in (i32, u32):
         return llvm_ir.IntType(32)
     if pgc_type in (i64, u64):
@@ -913,10 +917,14 @@ class LLVMCodeGen:
             target = _llvm_type(node.dtype)
             if _is_float_type(val.type) and _is_int_type(target):
                 # float → int: use unsigned conversion for u32/u64
-                if node.dtype in (u32, u64):
+                if node.dtype in (u8, u16, u32, u64):
                     return self.builder.fptoui(val, target, name="touint")
                 return self.builder.fptosi(val, target, name="toint")
             if _is_int_type(val.type) and _is_float_type(target):
+                # int → float: use unsigned conversion if source is unsigned
+                src_dtype = getattr(node.value, 'dtype', None)
+                if src_dtype in (u8, u16, u32, u64):
+                    return self.builder.uitofp(val, target, name="tofloat")
                 return self.builder.sitofp(val, target, name="tofloat")
             if _is_float_type(val.type) and _is_float_type(target):
                 if val.type == target:
@@ -928,7 +936,7 @@ class LLVMCodeGen:
                 if val.type.width == target.width:
                     return val
                 if val.type.width < target.width:
-                    if node.dtype in (u32, u64):
+                    if node.dtype in (u8, u16, u32, u64):
                         return self.builder.zext(val, target, name="zext")
                     return self.builder.sext(val, target, name="sext")
                 return self.builder.trunc(val, target, name="trunc")

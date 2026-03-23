@@ -13,7 +13,7 @@ import copy
 import math
 
 from pgc.lang import ir
-from pgc.lang.types import f32, f64, i32, i64, u32, u64
+from pgc.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 
 
 # Math builtins that map to LLVM intrinsics / libm calls
@@ -592,9 +592,11 @@ class KernelTransformer(ast.NodeVisitor):
         # Type casts: int(), float(), and explicit pgc.f32/f64/i32/i64/u32/u64
         _CAST_MAP = {
             "int": i32, "float": f32,
+            "i8": i8, "u8": u8,
+            "i16": i16, "u16": u16,
+            "i32": i32, "u32": u32,
+            "i64": i64, "u64": u64,
             "f32": f32, "f64": f64,
-            "i32": i32, "i64": i64,
-            "u32": u32, "u64": u64,
         }
         if func_name in _CAST_MAP:
             if len(node.args) != 1:
