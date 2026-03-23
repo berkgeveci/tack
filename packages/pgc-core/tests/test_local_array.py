@@ -175,3 +175,63 @@ def test_local_array_in_template_method(backend):
     avg(cs, data, out, 2)
     # cell 0: (10+20+30+40)/4 = 25, cell 1: (50+60+70+80)/4 = 65
     np.testing.assert_allclose(out.to_numpy(), [25.0, 65.0])
+
+
+# --- local_array_like: inherit dtype from field ---
+
+def test_local_array_like_f32(backend):
+    """local_array_like inherits f32 from the field."""
+    n = 10
+    data = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+    data.from_numpy(np.arange(n, dtype=np.float32))
+
+    @pgc.kernel
+    def kern(data, out):
+        for i in range(data.shape[0]):
+            buf = pgc.local_array_like(data, 4)
+            buf[0] = data[i] * 2.0
+            out[i] = buf[0]
+
+    kern(data, out)
+    np.testing.assert_allclose(out.to_numpy(), np.arange(n, dtype=np.float32) * 2.0)
+
+
+def test_local_array_like_i32(backend):
+    """local_array_like inherits i32 from the field."""
+    n = 10
+    data = pgc.field(dtype=pgc.i32, shape=(n,))
+    out = pgc.field(dtype=pgc.i32, shape=(n,))
+    data.from_numpy(np.arange(n, dtype=np.int32))
+
+    @pgc.kernel
+    def kern(data, out):
+        for i in range(data.shape[0]):
+            buf = pgc.local_array_like(data, 4)
+            buf[0] = data[i] * 2
+            out[i] = buf[0]
+
+    kern(data, out)
+    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int32) * 2)
+
+
+def test_local_array_like_in_func(backend):
+    """local_array_like inside @pgc.func resolves mangled field names."""
+    n = 10
+    data = pgc.field(dtype=pgc.f32, shape=(n,))
+    out = pgc.field(dtype=pgc.f32, shape=(n,))
+    data.from_numpy(np.arange(n, dtype=np.float32))
+
+    @pgc.func
+    def process(data, out, idx):
+        buf = pgc.local_array_like(data, 4)
+        buf[0] = data[idx] * 3.0
+        out[idx] = buf[0]
+
+    @pgc.kernel
+    def kern(data, out):
+        for i in range(data.shape[0]):
+            process(data, out, i)
+
+    kern(data, out)
+    np.testing.assert_allclose(out.to_numpy(), np.arange(n, dtype=np.float32) * 3.0)

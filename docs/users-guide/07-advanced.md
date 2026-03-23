@@ -28,6 +28,22 @@ def cached_interp(cs: pgc.template(), ct: pgc.template(),
 
 The size can be a literal or a template parameter (compile-time constant).
 
+### `local_array_like`
+
+When the local array dtype should match a field parameter, use
+`pgc.local_array_like` instead of hardcoding the type:
+
+```python
+@pgc.kernel
+def generic_process(data, out):
+    for i in range(data.shape[0]):
+        buf = pgc.local_array_like(data, 8)   # inherits dtype from data
+        buf[0] = data[i]
+        out[i] = buf[0]
+```
+
+This works with both `f32` and `i32` fields without separate kernels.
+
 ### Passing Local Arrays to @pgc.func
 
 Local arrays can be passed to `@pgc.func` functions, enabling methods that
