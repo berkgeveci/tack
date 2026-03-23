@@ -10,16 +10,24 @@ from pgc.fe.basis import (
 from pgc.fe.accessor import ContiguousDofs, contiguous_from_numpy
 from pgc.fe.geometry import LinearQuadMap, linear_quad_map_from_numpy
 
-import os
 import pytest
 
-_arch = os.environ.get("PGC_ARCH", "cpu")
-np_fp = np.float32 if _arch == "metal" else np.float64
+# FE tests use f64 — run on all backends except Metal
+_f64_backends = []
+for _arch in ["cpu", "cuda", "hip", "level_zero"]:
+    try:
+        pgc.init(arch=getattr(pgc, _arch))
+        _f64_backends.append(_arch)
+    except (ImportError, RuntimeError, OSError):
+        pass
+
+np_fp = np.float64
 
 
-@pytest.fixture(autouse=True)
-def _init_backend():
-    pgc.init(arch=getattr(pgc, _arch))
+@pytest.fixture(autouse=True, params=_f64_backends)
+def backend(request):
+    pgc.init(arch=getattr(pgc, request.param))
+    return request.param
 
 
 def test_lagrange_1d_cardinal():
