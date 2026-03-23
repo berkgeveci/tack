@@ -11,8 +11,15 @@ from pgc.fe.accessor import ContiguousDofs, contiguous_from_numpy
 from pgc.fe.geometry import LinearQuadMap, linear_quad_map_from_numpy
 
 import os
-pgc.init(os.environ.get("PGC_ARCH", "cpu"))
-np_fp = np.float32 if os.environ.get("PGC_ARCH") == "metal" else np.float64
+import pytest
+
+_arch = os.environ.get("PGC_ARCH", "cpu")
+np_fp = np.float32 if _arch == "metal" else np.float64
+
+
+@pytest.fixture(autouse=True)
+def _init_backend():
+    pgc.init(arch=getattr(pgc, _arch))
 
 
 def test_lagrange_1d_cardinal():
