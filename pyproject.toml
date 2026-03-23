@@ -5,15 +5,18 @@ description = "PGC monorepo workspace — Portable GPU Compute"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pgc-core[cpu,cuda,hip,level_zero]",
+    "pgc-core",
     "pgc-rendering",
     "pgc-vis",
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest",
-]
+cpu = ["pgc-core[cpu]"]
+cuda = ["pgc-core[cuda]"]
+metal = ["pgc-core[metal]"]
+hip = ["pgc-core[hip]"]
+level_zero = ["pgc-core[level_zero]"]
+dev = ["pytest"]
 
 [tool.uv.sources]
 pgc-core = { workspace = true }

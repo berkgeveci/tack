@@ -253,24 +253,44 @@ name = "pgc-workspace"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
-    { name = "pgc-core", extra = ["cpu", "cuda"] },
+    { name = "pgc-core" },
     { name = "pgc-rendering" },
     { name = "pgc-vis" },
 ]
 
 [package.optional-dependencies]
+cpu = [
+    { name = "pgc-core", extra = ["cpu"] },
+]
+cuda = [
+    { name = "pgc-core", extra = ["cuda"] },
+]
 dev = [
     { name = "pytest" },
+]
+hip = [
+    { name = "pgc-core" },
+]
+level-zero = [
+    { name = "pgc-core" },
+]
+metal = [
+    { name = "pgc-core", extra = ["metal"] },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "pgc-core", extras = ["cpu", "cuda", "hip", "level-zero"], editable = "packages/pgc-core" },
+    { name = "pgc-core", editable = "packages/pgc-core" },
+    { name = "pgc-core", extras = ["cpu"], marker = "extra == 'cpu'", editable = "packages/pgc-core" },
+    { name = "pgc-core", extras = ["cuda"], marker = "extra == 'cuda'", editable = "packages/pgc-core" },
+    { name = "pgc-core", extras = ["hip"], marker = "extra == 'hip'", editable = "packages/pgc-core" },
+    { name = "pgc-core", extras = ["level-zero"], marker = "extra == 'level-zero'", editable = "packages/pgc-core" },
+    { name = "pgc-core", extras = ["metal"], marker = "extra == 'metal'", editable = "packages/pgc-core" },
     { name = "pgc-rendering", editable = "packages/pgc-rendering" },
     { name = "pgc-vis", editable = "packages/pgc-vis" },
     { name = "pytest", marker = "extra == 'dev'" },
 ]
-provides-extras = ["dev"]
+provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "dev"]
 
 [[package]]
 name = "pluggy"
