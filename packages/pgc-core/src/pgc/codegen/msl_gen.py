@@ -55,6 +55,22 @@ _BINOP_MAP = {
     "<<": "<<", ">>": ">>", "&": "&", "|": "|", "^": "^",
 }
 
+# C/MSL reserved words that cannot be used as kernel function names
+_MSL_RESERVED = frozenset({
+    "auto", "break", "case", "char", "const", "continue", "default", "do",
+    "double", "else", "enum", "extern", "float", "for", "goto", "if",
+    "inline", "int", "long", "register", "return", "short", "signed",
+    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
+    "void", "volatile", "while", "half", "uint", "uchar", "ushort", "ulong",
+})
+
+
+def _safe_kernel_name(name: str) -> str:
+    if name in _MSL_RESERVED:
+        return f"_pgc_{name}"
+    return name
+
+
 _CMP_MAP = {
     "==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
 }
@@ -128,7 +144,8 @@ class MSLCodeGen:
             params_msl.append("uint __local_tid__ [[thread_position_in_threadgroup]]")
 
         sig = ",\n    ".join(params_msl)
-        self._emit(f"kernel void {func.name}(")
+        safe_name = _safe_kernel_name(func.name)
+        self._emit(f"kernel void {safe_name}(")
         self._emit(f"    {sig})")
         self._emit("{")
         self._indent += 1

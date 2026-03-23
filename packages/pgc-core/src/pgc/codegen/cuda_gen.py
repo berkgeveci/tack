@@ -84,6 +84,23 @@ _CMP_MAP = {
 }
 
 
+# C/C++ reserved words that cannot be used as kernel function names
+_C_RESERVED = frozenset({
+    "auto", "break", "case", "char", "const", "continue", "default", "do",
+    "double", "else", "enum", "extern", "float", "for", "goto", "if",
+    "inline", "int", "long", "register", "return", "short", "signed",
+    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
+    "void", "volatile", "while",
+})
+
+
+def _safe_kernel_name(name: str) -> str:
+    """Prefix kernel names that collide with C reserved words."""
+    if name in _C_RESERVED:
+        return f"_pgc_{name}"
+    return name
+
+
 class CUDACodeGen:
     """Generates CUDA C source from a PGC IR function."""
 
@@ -135,7 +152,8 @@ class CUDACodeGen:
         params_c.append(f"{_INT} __n__")
 
         sig = ", ".join(params_c)
-        self._emit(f'extern "C" __global__ void {func.name}({sig}) {{')
+        safe_name = _safe_kernel_name(func.name)
+        self._emit(f'extern "C" __global__ void {safe_name}({sig}) {{')
         self._indent += 1
 
         self._emit_body(func.body)

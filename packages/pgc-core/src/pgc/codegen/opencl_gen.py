@@ -79,7 +79,9 @@ class OpenCLCodeGen(CUDACodeGen):
         params_c.append(f"{_OCL_INT} __n__")
 
         sig = ", ".join(params_c)
-        self._emit(f"__kernel void {func.name}({sig}) {{")
+        from pgc.codegen.cuda_gen import _safe_kernel_name
+        safe_name = _safe_kernel_name(func.name)
+        self._emit(f"__kernel void {safe_name}({sig}) {{")
         self._indent += 1
 
         # Emit constant sampler for hardware texture sampling

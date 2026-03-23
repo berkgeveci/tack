@@ -1105,6 +1105,8 @@ class LevelZeroBackend:
             from pgc.lang.ir_type_annotate import annotate_types
             from pgc.runtime.cpu import _create_pack_fields
             ir_func_copy = copy.deepcopy(ir_func)
+            from pgc.codegen.cuda_gen import _safe_kernel_name
+            ir_func_copy.name = _safe_kernel_name(ir_func_copy.name)
             _, pack_info = pack_scalars(ir_func_copy, effective_args)
             annotate_types(ir_func_copy)
             compiled = self._compile_kernel(ir_func_copy)
