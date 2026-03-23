@@ -78,11 +78,25 @@ class TestScalarParamInference:
         assert types[1] is f32
 
 
-# --- End-to-end CPU tests (f64 not supported on Metal) ---
+# --- End-to-end f64 tests (all backends except Metal) ---
 
-def test_saxpy_f64_precision():
+f64_backends = []
+for _a in ["cpu", "cuda", "hip", "level_zero"]:
+    try:
+        pgc.init(arch=getattr(pgc, _a))
+        f64_backends.append(_a)
+    except (ImportError, RuntimeError, OSError):
+        pass
+
+
+@pytest.fixture(params=f64_backends)
+def f64_backend(request):
+    pgc.init(arch=getattr(pgc, request.param))
+    return request.param
+
+
+def test_saxpy_f64_precision(f64_backend):
     """Float scalar gets f64 precision when used with f64 fields."""
-    pgc.init(arch=pgc.cpu)
     n = 4
     x = pgc.field(dtype=pgc.f64, shape=(n,))
     y = pgc.field(dtype=pgc.f64, shape=(n,))
@@ -104,9 +118,8 @@ def test_saxpy_f64_precision():
     np.testing.assert_allclose(result, expected, rtol=1e-14)
 
 
-def test_f32_fields_keep_f32_scalar():
+def test_f32_fields_keep_f32_scalar(backend):
     """Float scalars stay f32 with f32 fields (no unnecessary promotion)."""
-    pgc.init(arch=pgc.cpu)
     n = 4
     x = pgc.field(dtype=pgc.f32, shape=(n,))
     out = pgc.field(dtype=pgc.f32, shape=(n,))
@@ -123,19 +136,15 @@ def test_f32_fields_keep_f32_scalar():
     assert result.dtype == np.float32
 
 
-# --- Metal tests (f32 only) ---
+# --- All-backend tests ---
 
 backends = []
-try:
-    pgc.init(arch=pgc.cpu)
-    backends.append("cpu")
-except Exception:
-    pass
-try:
-    pgc.init(arch=pgc.metal)
-    backends.append("metal")
-except Exception:
-    pass
+for _b in ["cpu", "metal", "cuda", "hip", "level_zero"]:
+    try:
+        pgc.init(arch=getattr(pgc, _b))
+        backends.append(_b)
+    except (ImportError, RuntimeError, OSError):
+        pass
 
 
 @pytest.fixture(params=backends)

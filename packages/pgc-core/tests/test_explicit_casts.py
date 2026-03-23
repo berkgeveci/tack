@@ -9,20 +9,25 @@ import pytest
 import pgc
 
 backends = []
-try:
-    pgc.init(arch=pgc.cpu)
-    backends.append("cpu")
-except Exception:
-    pass
-try:
-    pgc.init(arch=pgc.metal)
-    backends.append("metal")
-except Exception:
-    pass
+f64_backends = []
+for _arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
+    try:
+        pgc.init(arch=getattr(pgc, _arch))
+        backends.append(_arch)
+        if _arch != "metal":  # Metal lacks f64
+            f64_backends.append(_arch)
+    except (ImportError, RuntimeError, OSError):
+        pass
 
 
 @pytest.fixture(params=backends)
 def backend(request):
+    pgc.init(arch=getattr(pgc, request.param))
+    return request.param
+
+
+@pytest.fixture(params=f64_backends)
+def f64_backend(request):
     pgc.init(arch=getattr(pgc, request.param))
     return request.param
 
@@ -97,10 +102,9 @@ def test_pgc_f32_cast(backend):
     np.testing.assert_allclose(result, [0.5, 1.0, 1.5, 2.0])
 
 
-# --- pgc.f64() (CPU only — Metal lacks f64 support) ---
+# --- pgc.f64() (all backends except Metal) ---
 
-def test_pgc_f64_cast():
-    pgc.init(arch=pgc.cpu)
+def test_pgc_f64_cast(f64_backend):
     x = pgc.field(dtype=pgc.f32, shape=(4,))
     out = pgc.field(dtype=pgc.f64, shape=(4,))
     x.from_numpy(np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
@@ -138,8 +142,7 @@ def test_pgc_i64_cast(backend):
 
 # --- pgc.u32() ---
 
-def test_pgc_u32_cast():
-    pgc.init(arch=pgc.cpu)
+def test_pgc_u32_cast(backend):
     x = pgc.field(dtype=pgc.i32, shape=(4,))
     out = pgc.field(dtype=pgc.u32, shape=(4,))
     x.from_numpy(np.array([0, 1, 255, 1000], dtype=np.int32))
