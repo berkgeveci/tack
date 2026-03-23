@@ -116,8 +116,8 @@ Supported dtypes per backend:
 
 | Backend | Supported dtypes |
 |---------|-----------------|
-| CPU | f32, f64, i32, i64, u32, u64 |
-| Metal | f32, i32, i64, u32, u64 (no f64) |
-| CUDA | f32, f64, i32, i64, u32, u64 |
-| HIP | f32, f64, i32, i64, u32, u64 |
-| Level Zero | f32, f64, i32, i64, u32, u64 |
+| CPU | i8, u8, i16, u16, i32, u32, i64, u64, f32, f64 |
+| Metal | i8, u8, i16, u16, i32, u32, i64, u64, f32 (no f64) |
+| CUDA | i8, u8, i16, u16, i32, u32, i64, u64, f32, f64 |
+| HIP | i8, u8, i16, u16, i32, u32, i64, u64, f32, f64 |
+| Level Zero | i8, u8, i16, u16, i32, u32, i64, u64, f32, f64 |

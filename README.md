@@ -73,12 +73,12 @@ Kernels are compiled on first call and cached by type signature. Subsequent call
 
 | Type | Description |
 |------|-------------|
+| `pgc.i8` / `pgc.u8` | 8-bit signed / unsigned integer |
+| `pgc.i16` / `pgc.u16` | 16-bit signed / unsigned integer |
+| `pgc.i32` / `pgc.u32` | 32-bit signed / unsigned integer |
+| `pgc.i64` / `pgc.u64` | 64-bit signed / unsigned integer |
 | `pgc.f32` | 32-bit float |
 | `pgc.f64` | 64-bit float (CPU/CUDA only — Metal does not support double) |
-| `pgc.i32` | 32-bit signed integer |
-| `pgc.i64` | 64-bit signed integer |
-| `pgc.u32` | 32-bit unsigned integer |
-| `pgc.u64` | 64-bit unsigned integer |
 
 ## Fields
 

@@ -131,7 +131,7 @@ CPU backend uses `ThreadPoolExecutor` only when loop range > 1024 elements. Belo
 
 - **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in pgc.ndrange(w, h)`, `while`, `break`, `continue`
 - **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max`, `pow`
-- **Types**: `int()`, `float()` casts, plus explicit `pgc.f32()`, `pgc.f64()`, `pgc.i32()`, `pgc.i64()`, `pgc.u32()`, `pgc.u64()`
+- **Types**: `int()`, `float()` casts, plus explicit `pgc.i8()`, `pgc.u8()`, `pgc.i16()`, `pgc.u16()`, `pgc.i32()`, `pgc.u32()`, `pgc.i64()`, `pgc.u64()`, `pgc.f32()`, `pgc.f64()`
 - **Atomics**: `pgc.atomic_add(field, idx, val)`, `pgc.atomic_min(...)`, `pgc.atomic_max(...)`
 - **GPU primitives**: `pgc.shared(dtype, size)`, `pgc.shared_like(field, size)`, `pgc.barrier()`, `pgc.thread_id()`
 - **Debug**: `print("label:", value)` — emits printf on CPU/CUDA/HIP, no-op on Metal

@@ -6,12 +6,16 @@ PGC provides these scalar types:
 
 | Type | Description | Numpy equivalent |
 |------|-------------|-----------------|
+| `pgc.i8` | 8-bit signed int | `np.int8` |
+| `pgc.u8` | 8-bit unsigned int | `np.uint8` |
+| `pgc.i16` | 16-bit signed int | `np.int16` |
+| `pgc.u16` | 16-bit unsigned int | `np.uint16` |
+| `pgc.i32` | 32-bit signed int | `np.int32` |
+| `pgc.u32` | 32-bit unsigned int | `np.uint32` |
+| `pgc.i64` | 64-bit signed int | `np.int64` |
+| `pgc.u64` | 64-bit unsigned int | `np.uint64` |
 | `pgc.f32` | 32-bit float | `np.float32` |
 | `pgc.f64` | 64-bit float | `np.float64` |
-| `pgc.i32` | 32-bit signed int | `np.int32` |
-| `pgc.i64` | 64-bit signed int | `np.int64` |
-| `pgc.u32` | 32-bit unsigned int | `np.uint32` |
-| `pgc.u64` | 64-bit unsigned int | `np.uint64` |
 
 GPU backends use `f32` by default. Python `float` scalar arguments are
 automatically promoted to `f64` when any field argument uses `f64`, preventing
@@ -119,7 +123,8 @@ def bitwise_ops(data, out):
         out[i] = pgc.i32(bits >> 8)
 ```
 
-Available casts: `pgc.f32()`, `pgc.f64()`, `pgc.i32()`, `pgc.i64()`, `pgc.u32()`, `pgc.u64()`.
+Available casts: `pgc.i8()`, `pgc.u8()`, `pgc.i16()`, `pgc.u16()`, `pgc.i32()`, `pgc.u32()`,
+`pgc.i64()`, `pgc.u64()`, `pgc.f32()`, `pgc.f64()`.
 
 Note: `pgc.f64()` is not supported on Metal (Apple GPUs lack double precision).
 
