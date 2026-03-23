@@ -14,7 +14,11 @@ for _arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
     try:
         pgc.init(arch=getattr(pgc, _arch))
         backends.append(_arch)
-        if _arch != "metal":  # Metal lacks f64
+        if _arch == "metal":
+            continue  # Metal lacks f64
+        from pgc.runtime.dispatch import get_backend as _get_backend
+        _be = _get_backend()
+        if getattr(_be, 'supports_f64', True):
             f64_backends.append(_arch)
     except (ImportError, RuntimeError, OSError):
         pass

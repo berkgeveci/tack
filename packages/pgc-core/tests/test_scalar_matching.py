@@ -84,7 +84,10 @@ f64_backends = []
 for _a in ["cpu", "cuda", "hip", "level_zero"]:
     try:
         pgc.init(arch=getattr(pgc, _a))
-        f64_backends.append(_a)
+        from pgc.runtime.dispatch import get_backend as _get_backend
+        _be = _get_backend()
+        if getattr(_be, 'supports_f64', True):
+            f64_backends.append(_a)
     except (ImportError, RuntimeError, OSError):
         pass
 

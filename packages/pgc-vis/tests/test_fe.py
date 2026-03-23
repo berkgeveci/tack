@@ -12,12 +12,15 @@ from pgc.fe.geometry import LinearQuadMap, linear_quad_map_from_numpy
 
 import pytest
 
-# FE tests use f64 — run on all backends except Metal
+# FE tests use f64 — run on backends that support it
 _f64_backends = []
 for _arch in ["cpu", "cuda", "hip", "level_zero"]:
     try:
         pgc.init(arch=getattr(pgc, _arch))
-        _f64_backends.append(_arch)
+        from pgc.runtime.dispatch import get_backend as _get_backend
+        _be = _get_backend()
+        if getattr(_be, 'supports_f64', True):
+            _f64_backends.append(_arch)
     except (ImportError, RuntimeError, OSError):
         pass
 

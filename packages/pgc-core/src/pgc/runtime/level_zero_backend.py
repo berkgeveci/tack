@@ -120,6 +120,7 @@ ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC = 0x16
 ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES = 0x03
 ZE_STRUCTURE_TYPE_DEVICE_COMPUTE_PROPERTIES = 0x04
 ZE_STRUCTURE_TYPE_COMMAND_QUEUE_GROUP_PROPERTIES = 0x06
+ZE_STRUCTURE_TYPE_DEVICE_MODULE_PROPERTIES = 0x07
 
 # Module format
 ZE_MODULE_FORMAT_IL_SPIRV = 0
@@ -279,6 +280,21 @@ class ze_device_compute_properties_t(ctypes.Structure):
         ("numSubGroupSizes", ctypes.c_uint32),
         # subGroupSizes is uint32_t[8] in the spec
         ("subGroupSizes", ctypes.c_uint32 * 8),
+    ]
+
+
+class ze_device_module_properties_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("spirvVersionSupported", ctypes.c_uint32),
+        ("flags", ctypes.c_uint32),
+        ("fp16flags", ctypes.c_uint32),
+        ("fp32flags", ctypes.c_uint32),
+        ("fp64flags", ctypes.c_uint32),
+        ("maxArgumentsSize", ctypes.c_uint32),
+        ("printfBufferSize", ctypes.c_uint32),
+        ("nativeKernelSupported", ze_device_uuid_t),
     ]
 
 
@@ -948,6 +964,19 @@ class LevelZeroBackend:
         # maxSamplers == 0 means filtered image reads would be driver-emulated.
         self._has_hw_sampler = self._image_props.maxSamplers > 0
 
+        # Get module properties (for fp64 support detection)
+        self._module_props = ze_device_module_properties_t(
+            stype=ZE_STRUCTURE_TYPE_DEVICE_MODULE_PROPERTIES, pNext=None)
+        _check_ze(ze.zeDeviceGetModuleProperties(
+            self._device, ctypes.byref(self._module_props)),
+            "zeDeviceGetModuleProperties")
+        self._supports_fp64 = self._module_props.fp64flags != 0
+
+        # Build supported dtypes based on device capabilities
+        self._supported_dtypes = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
+        if self._supports_fp64:
+            self._supported_dtypes.add(f64)
+
         # Find compute queue group ordinal
         qg_count = ctypes.c_uint32(0)
         _check_ze(ze.zeDeviceGetCommandQueueGroupProperties(
@@ -1011,6 +1040,11 @@ class LevelZeroBackend:
 
         self._cache: dict[str, CompiledL0Kernel] = {}
 
+    @property
+    def supports_f64(self) -> bool:
+        """Whether this device supports 64-bit floating point."""
+        return self._supports_fp64
+
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> L0Buffer:
         return L0Buffer(self, dtype.numpy_dtype, shape)
@@ -1065,7 +1099,7 @@ class LevelZeroBackend:
         # Type inference and dispatch-time type checking
         infer_param_types(ir_func, effective_args)
         check_dispatch_types(ir_func, effective_args,
-                             supported_dtypes=_L0_SUPPORTED_DTYPES,
+                             supported_dtypes=self._supported_dtypes,
                              backend_name="Level Zero")
 
         # Store texture shapes on params for codegen/dispatch.

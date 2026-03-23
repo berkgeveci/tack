@@ -126,7 +126,10 @@ class OpenCLCodeGen(CUDACodeGen):
 
         # Header pragmas
         header = ""
-        uses_f64 = any(p.type_annotation in (f64,) for p in func.params)
+        body_text = "\n".join(self._lines)
+        uses_f64 = "double" in body_text or any(
+            p.type_annotation in (f64,) for p in func.params
+        )
         if uses_f64:
             header += "#pragma OPENCL EXTENSION cl_khr_fp64 : enable\n"
 
