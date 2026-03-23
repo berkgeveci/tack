@@ -57,8 +57,11 @@ class Kernel:
             for idx in sorted(template_args.keys()):
                 param_name, obj = template_args[idx]
                 from pgc.lang.template_rewrite import classify_template_attrs
-                scalars, fields = classify_template_attrs(obj)
+                scalars, fields, _runtime = classify_template_attrs(obj)
                 cls = type(obj)
+                # Only class-level scalars (constants) are part of the cache key.
+                # Instance scalars are runtime parameters — changing them does
+                # not trigger recompilation.
                 parts.append((
                     f"tmpl_{idx}",
                     cls.__qualname__,

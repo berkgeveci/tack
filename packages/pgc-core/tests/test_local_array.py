@@ -96,8 +96,7 @@ def test_local_array_with_template_size(backend):
 
     @pgc.data_oriented
     class Config:
-        def __init__(self, sz):
-            self.size = sz
+        size = 5  # class variable → compile-time constant (needed for local_array size)
 
     @pgc.kernel
     def tmpl_local(cfg: pgc.template(), out, n):
@@ -110,7 +109,7 @@ def test_local_array_with_template_size(backend):
                 total = total + buf[k]
             out[i] = total
 
-    cfg = Config(5)
+    cfg = Config()
     tmpl_local(cfg, out, n)
     expected = sum(range(5))
     np.testing.assert_allclose(out.to_numpy(), float(expected), rtol=1e-5)
@@ -144,9 +143,10 @@ def test_local_array_in_template_method(backend):
 
     @pgc.data_oriented
     class CellSet:
-        def __init__(self, conn, ppc):
+        points_per_cell = 4  # class variable → compile-time constant (needed for local_array size)
+
+        def __init__(self, conn):
             self.connectivity = conn
-            self.points_per_cell = ppc
 
         @pgc.func
         def get_cell_points(self, cell_id, pts):
@@ -171,7 +171,7 @@ def test_local_array_in_template_method(backend):
                 total = total + data[pts[v]]
             out[c] = total / float(cs.points_per_cell)
 
-    cs = CellSet(conn, 4)
+    cs = CellSet(conn)
     avg(cs, data, out, 2)
     # cell 0: (10+20+30+40)/4 = 25, cell 1: (50+60+70+80)/4 = 65
     np.testing.assert_allclose(out.to_numpy(), [25.0, 65.0])

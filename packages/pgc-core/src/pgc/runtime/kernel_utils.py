@@ -24,12 +24,12 @@ def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:
 
 
 def _expand_template_args(args, template_args) -> tuple:
-    """Replace template args with their field attributes.
+    """Replace template args with their field and runtime scalar attributes.
 
     Returns new args tuple with template objects removed and their
-    field attributes appended.  Fields are appended in reverse template
-    index order to match the AST rewrite pass (which processes templates
-    from highest index to lowest).
+    field attributes and runtime scalars appended.  These are appended
+    in reverse template index order to match the AST rewrite pass
+    (which processes templates from highest index to lowest).
     """
     if not template_args:
         return args
@@ -37,18 +37,20 @@ def _expand_template_args(args, template_args) -> tuple:
     from pgc.lang.template_rewrite import classify_template_attrs
 
     new_args = []
-    extra_fields = []
-    # Collect template fields in reverse index order (matching rewrite order)
+    extra = []
+    # Collect template fields and runtime scalars in reverse index order
     for idx in sorted(template_args.keys(), reverse=True):
         _, obj = template_args[idx]
-        _, fields = classify_template_attrs(obj)
+        _, fields, runtime_scalars = classify_template_attrs(obj)
         for attr_name in sorted(fields.keys()):
-            extra_fields.append(fields[attr_name])
+            extra.append(fields[attr_name])
+        for attr_name in sorted(runtime_scalars.keys()):
+            extra.append(runtime_scalars[attr_name])
     # Build non-template args in order
     for i, arg in enumerate(args):
         if i not in template_args:
             new_args.append(arg)
-    new_args.extend(extra_fields)
+    new_args.extend(extra)
     return tuple(new_args)
 
 
