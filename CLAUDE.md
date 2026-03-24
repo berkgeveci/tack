@@ -131,6 +131,10 @@ GPU backends use 64-bit integers for loop variables and index arithmetic (`long`
 
 Multiple `PointLight` instances can be added to a `Scene`. Each light contributes independently with its own shadow ray. Light data is packed into a flat field (7 floats per light: x, y, z, intensity, r, g, b) and passed to the pathtrace kernel, which loops over all lights in the direct-illumination section. Light color (previously ignored) is now applied to each light's contribution. The `render()` function's `light_position` kwarg still works as a single-light override for backward compatibility.
 
+### Volume rendering (pgc.rendering)
+
+`Volume` represents a uniform-grid scalar field for ray-casting volume rendering. `TransferFunction` maps scalars to RGBA (reuses ColorTable preset colors + user-defined opacity function). `render_volume(canvas, volume, camera)` ray marches through the volume with front-to-back compositing, trilinear interpolation via `pgc.texture3d`, and opacity-corrected compositing. Currently a standalone render pass (no depth-correct compositing with surfaces). `Volume` can be added to a `Scene` for future integration.
+
 ### CPU threading threshold
 
 CPU backend uses `ThreadPoolExecutor` only when loop range > 1024 elements. Below that, Python thread dispatch overhead outweighs the parallelism benefit.

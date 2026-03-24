@@ -207,10 +207,11 @@ class PointLight:
 
 
 class Scene:
-    """Container for actors and lights."""
+    """Container for actors, volumes, and lights."""
 
     def __init__(self):
         self.actors = []
+        self.volumes = []
         self.lights = []
         self._version = 0
         self._cached_geom = None
@@ -218,8 +219,12 @@ class Scene:
         self._cache_version = -1
 
     def add(self, obj):
+        from pgc.rendering.volume import Volume
         if isinstance(obj, Actor):
             self.actors.append(obj)
+            self._version += 1
+        elif isinstance(obj, Volume):
+            self.volumes.append(obj)
             self._version += 1
         elif isinstance(obj, PointLight):
             self.lights.append(obj)

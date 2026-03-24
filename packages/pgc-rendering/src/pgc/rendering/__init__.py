@@ -1,6 +1,6 @@
-"""pgc.rendering — Path tracing renderer for in situ visualization.
+"""pgc.rendering — Path tracing and volume rendering for in situ visualization.
 
-Provides a GPU-accelerated path tracer that operates directly on pgc fields.
+Provides GPU-accelerated renderers that operate directly on pgc fields.
 Geometry from algorithms like flying_edges can be rendered without host copies.
 
 Public API
@@ -17,8 +17,14 @@ Scene, Actor, PointLight
 ColorTable
     Maps scalar fields to RGB colors via sampled lookup tables.
 
+Volume, TransferFunction
+    Uniform-grid volume with RGBA transfer function for ray casting.
+
 render(canvas, scene, camera, ...)
     Path trace the scene into a canvas.
+
+render_volume(canvas, volume, camera, ...)
+    Ray-cast a volume into a canvas.
 """
 
 from pgc.rendering.camera import PerspectiveCamera
@@ -26,6 +32,7 @@ from pgc.rendering.canvas import Canvas
 from pgc.rendering.colortable import ColorTable
 from pgc.rendering.scene import Scene, Actor, PointLight, compute_normals
 from pgc.rendering.pathtrace import render
+from pgc.rendering.volume import Volume, TransferFunction, render_volume
 
 __all__ = [
     "PerspectiveCamera",
@@ -36,4 +43,7 @@ __all__ = [
     "PointLight",
     "compute_normals",
     "render",
+    "Volume",
+    "TransferFunction",
+    "render_volume",
 ]
