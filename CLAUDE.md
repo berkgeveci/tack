@@ -133,7 +133,11 @@ Multiple `PointLight` instances can be added to a `Scene`. Each light contribute
 
 ### Volume rendering (pgc.rendering)
 
-`Volume` represents a uniform-grid scalar field for ray-casting volume rendering. `TransferFunction` maps scalars to RGBA (reuses ColorTable preset colors + user-defined opacity function). `render_volume(canvas, volume, camera)` ray marches through the volume with front-to-back compositing, trilinear interpolation via `pgc.texture3d`, and opacity-corrected compositing. Currently a standalone render pass (no depth-correct compositing with surfaces). `Volume` can be added to a `Scene` for future integration.
+`Volume` represents a uniform-grid scalar field for ray-casting volume rendering. `TransferFunction` maps scalars to RGBA (reuses ColorTable preset colors + user-defined opacity function). `render_volume(canvas, volume, camera)` ray marches through the volume with front-to-back compositing, trilinear interpolation via `pgc.texture3d`, and opacity-corrected compositing.
+
+### Unified render dispatcher (pgc.rendering)
+
+`render()` in `render.py` is the unified entry point. It inspects `scene.actors` and `scene.volumes` and dispatches to the path tracer (`pathtrace.render`) for surfaces and the ray caster (`volume.render_volume`) for volumes. Mixed scenes render surfaces first, then volumes on top. Surface-specific kwargs (`samples`, `max_bounces`, `light_position`) are forwarded to the path tracer; volumes only use `background`. `render_volume()` remains available for direct single-volume rendering without a Scene.
 
 ### CPU threading threshold
 

@@ -11,8 +11,8 @@ import sys
 import numpy as np
 import pgc
 from pgc.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, ColorTable, render,
-    Volume, TransferFunction, render_volume,
+    PerspectiveCamera, Canvas, Scene, Actor, PointLight, ColorTable,
+    Volume, TransferFunction, render, render_volume,
 )
 
 import argparse
@@ -266,40 +266,39 @@ class App:
     def do_render(self):
         import time
 
+        # Rebuild scene contents as needed
+        if self.render_mode == 1:
+            if self._vol_dirty or self._volume is None:
+                self._rebuild_volume()
+            # Build a volume-only scene
+            scene = Scene()
+            scene.add(self._volume)
+        else:
+            if self.scene_dirty:
+                self._rebuild_scene()
+            scene = self._scene
+
         camera = PerspectiveCamera(
             position=self.camera_position(),
             look_at=tuple(self.target),
             fov=self.fov,
             width=self.w, height=self.h)
 
-        if self.render_mode == 1:
-            # Volume rendering
-            if self._vol_dirty or self._volume is None:
-                self._rebuild_volume()
+        # Unified render dispatch
+        t0 = time.perf_counter()
+        render(self.canvas, scene, camera,
+               samples=self.samples,
+               max_bounces=self.max_bounces,
+               background=tuple(self.bg_color))
+        self.render_ms = (time.perf_counter() - t0) * 1000.0
+
+        if self.render_mode == 0 and self.use_denoise and self.has_oidn:
             t0 = time.perf_counter()
-            render_volume(self.canvas, self._volume, camera,
-                          background=tuple(self.bg_color))
-            self.render_ms = (time.perf_counter() - t0) * 1000.0
+            self.image = self._denoise()
+            self.denoise_ms = (time.perf_counter() - t0) * 1000.0
+        else:
             self.image = self.canvas.to_numpy()
             self.denoise_ms = 0.0
-        else:
-            # Surface rendering
-            if self.scene_dirty:
-                self._rebuild_scene()
-            t0 = time.perf_counter()
-            render(self.canvas, self._scene, camera,
-                   samples=self.samples,
-                   max_bounces=self.max_bounces,
-                   background=tuple(self.bg_color))
-            self.render_ms = (time.perf_counter() - t0) * 1000.0
-
-            if self.use_denoise and self.has_oidn:
-                t0 = time.perf_counter()
-                self.image = self._denoise()
-                self.denoise_ms = (time.perf_counter() - t0) * 1000.0
-            else:
-                self.image = self.canvas.to_numpy()
-                self.denoise_ms = 0.0
 
         self.texture.update(self.image)
         self.needs_render = False

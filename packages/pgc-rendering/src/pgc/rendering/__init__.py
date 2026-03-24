@@ -21,17 +21,18 @@ Volume, TransferFunction
     Uniform-grid volume with RGBA transfer function for ray casting.
 
 render(canvas, scene, camera, ...)
-    Path trace the scene into a canvas.
+    Unified renderer — dispatches to path tracing for surface actors
+    and ray casting for volumes based on scene contents.
 
 render_volume(canvas, volume, camera, ...)
-    Ray-cast a volume into a canvas.
+    Ray-cast a single volume directly (without a Scene).
 """
 
 from pgc.rendering.camera import PerspectiveCamera
 from pgc.rendering.canvas import Canvas
 from pgc.rendering.colortable import ColorTable
 from pgc.rendering.scene import Scene, Actor, PointLight, compute_normals
-from pgc.rendering.pathtrace import render
+from pgc.rendering.render import render
 from pgc.rendering.volume import Volume, TransferFunction, render_volume
 
 __all__ = [
