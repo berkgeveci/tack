@@ -390,9 +390,9 @@ def render_volume(canvas, volume, camera, background=(0.05, 0.05, 0.1)):
     height = camera.height
     n_pixels = width * height
 
-    fb_r = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
-    fb_g = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
-    fb_b = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
+    fb_r = canvas.get_work_buffer('vol_fb_r', pgc.f32, (n_pixels,))
+    fb_g = canvas.get_work_buffer('vol_fb_g', pgc.f32, (n_pixels,))
+    fb_b = canvas.get_work_buffer('vol_fb_b', pgc.f32, (n_pixels,))
 
     _t0 = _time.perf_counter()
     _volume_render(fb_r, fb_g, fb_b,

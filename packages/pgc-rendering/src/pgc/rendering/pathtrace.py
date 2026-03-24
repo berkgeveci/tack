@@ -788,13 +788,14 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     n_lights = len(lights_list)
     light_np = np.array(
         [v for lt in lights_list for v in lt], dtype=np.float32)
-    light_data = pgc.field(dtype=pgc.f32, shape=(light_np.shape[0],))
+    light_data = canvas.get_work_buffer('light_data', pgc.f32,
+                                        (light_np.shape[0],))
     light_data.from_numpy(light_np)
 
     # Volume data (first volume in scene, or dummy)
     has_volume = 0
-    vol_tf = pgc.field(dtype=pgc.f32, shape=(4,))  # dummy
-    vol_data = pgc.field(dtype=pgc.f32, shape=(1,))  # dummy
+    vol_tf = canvas.get_work_buffer('vol_tf_dummy', pgc.f32, (4,))
+    vol_data = canvas.get_work_buffer('vol_data_dummy', pgc.f32, (1,))
     if scene.volumes:
         vol = scene.volumes[0]
         tf = vol.transfer_function
@@ -820,13 +821,14 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     height = camera.height
     n_pixels = width * height
 
-    # Accumulation buffers
-    fb_r = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
-    fb_g = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
-    fb_b = pgc.field(dtype=pgc.f32, shape=(n_pixels,))
+    # Accumulation buffers (cached on canvas to avoid per-frame allocation)
+    fb_r = canvas.get_work_buffer('fb_r', pgc.f32, (n_pixels,))
+    fb_g = canvas.get_work_buffer('fb_g', pgc.f32, (n_pixels,))
+    fb_b = canvas.get_work_buffer('fb_b', pgc.f32, (n_pixels,))
 
-    # BVH traversal stack
-    stack = pgc.field(dtype=pgc.i32, shape=(n_pixels * STACK_DEPTH,))
+    # BVH traversal stack (cached)
+    stack = canvas.get_work_buffer('stack', pgc.i32,
+                                   (n_pixels * STACK_DEPTH,))
 
     # Render all samples in a single kernel launch
     _t0 = _time.perf_counter()

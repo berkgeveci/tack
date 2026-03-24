@@ -8,7 +8,8 @@ class Canvas:
     """RGBA framebuffer backed by pgc fields.
 
     Stores color as three f32 fields (linear RGB, 0-1 range)
-    and an optional depth buffer (f32) for rasterization.
+    and a depth buffer (f32) for rasterization.  Also caches work
+    buffers used by the renderers to avoid per-frame allocations.
     """
 
     def __init__(self, width, height):
@@ -19,6 +20,18 @@ class Canvas:
         self.color_g = pgc.field(dtype=pgc.f32, shape=(n,))
         self.color_b = pgc.field(dtype=pgc.f32, shape=(n,))
         self.depth = pgc.field(dtype=pgc.f32, shape=(n,))
+        self._work = {}  # cached work buffers keyed by (name, dtype, shape)
+
+    def get_work_buffer(self, name, dtype, shape):
+        """Get or create a reusable work buffer.
+
+        Buffers are cached by (name, dtype, shape) and reused across
+        renders to avoid per-frame GPU memory allocations.
+        """
+        key = (name, dtype, shape)
+        if key not in self._work:
+            self._work[key] = pgc.field(dtype=dtype, shape=shape)
+        return self._work[key]
 
     def to_numpy(self):
         """Return (H, W, 4) uint8 RGBA array."""

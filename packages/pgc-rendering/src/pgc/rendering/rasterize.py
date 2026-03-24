@@ -351,7 +351,7 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
 
     mvp = _build_mvp(camera)
     mvp_flat = mvp.astype(np.float32).ravel()
-    mvp_field = pgc.field(dtype=pgc.f32, shape=(16,))
+    mvp_field = canvas.get_work_buffer('mvp', pgc.f32, (16,))
     mvp_field.from_numpy(mvp_flat)
 
     # Clear
@@ -366,7 +366,8 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
     _t0 = _time.perf_counter()
     for actor in scene.actors:
         if actor.render_mode == "wireframe":
-            colors_field = pgc.field(dtype=pgc.f32, shape=(actor.n_tris * 3,))
+            colors_field = canvas.get_work_buffer(
+                f'wire_col_{id(actor)}', pgc.f32, (actor.n_tris * 3,))
             from pgc.rendering.scene import _fill_color
             _fill_color(colors_field, 0,
                         actor.color[0], actor.color[1], actor.color[2],
@@ -379,7 +380,8 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
 
         elif actor.render_mode == "points":
             has_colors = 0
-            colors_field = pgc.field(dtype=pgc.f32, shape=(3,))
+            colors_field = canvas.get_work_buffer(
+                'pt_col_dummy', pgc.f32, (3,))
             if actor.point_colors is not None:
                 colors_field = actor.point_colors
                 has_colors = 1
@@ -389,8 +391,9 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
                 has_colors = 1
             else:
                 from pgc.rendering.scene import _fill_color
-                colors_field = pgc.field(dtype=pgc.f32,
-                                         shape=(actor.n_verts * 3,))
+                colors_field = canvas.get_work_buffer(
+                    f'pt_col_{id(actor)}', pgc.f32,
+                    (actor.n_verts * 3,))
                 _fill_color(colors_field, 0,
                             actor.color[0], actor.color[1], actor.color[2],
                             actor.n_verts)
