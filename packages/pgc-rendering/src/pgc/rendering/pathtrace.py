@@ -54,6 +54,9 @@ class _RenderConfig:
         self.vol_opacity = float(vol_opacity)
         self.vol_tf_size = int(vol_tf_size)
         self.vol_max_steps = int(vol_max_steps)
+        self.vol_nx = 0
+        self.vol_ny = 0
+        self.vol_nz = 0
 
 
 # ================================================================
@@ -166,6 +169,60 @@ def _vol_tf_lookup(vol_tf, val, vmin, vrange, tf_size):
 
 
 @pgc.func
+def _vol_sample(vol_data, u, v, w, nx, ny, nz):
+    """Trilinear interpolation into a flat 3D scalar field.
+
+    u, v, w in [0, 1].  nx, ny, nz are the grid dimensions.
+    Data layout: x varies fastest (index = ix + iy*nx + iz*nx*ny).
+    """
+    # Map [0,1] to grid coordinates
+    fx = u * float(nx - 1)
+    fy = v * float(ny - 1)
+    fz = w * float(nz - 1)
+    # Clamp
+    if fx < 0.0:
+        fx = 0.0
+    if fx > float(nx - 2):
+        fx = float(nx - 2)
+    if fy < 0.0:
+        fy = 0.0
+    if fy > float(ny - 2):
+        fy = float(ny - 2)
+    if fz < 0.0:
+        fz = 0.0
+    if fz > float(nz - 2):
+        fz = float(nz - 2)
+
+    ix = int(fx)
+    iy = int(fy)
+    iz = int(fz)
+    dx = fx - float(ix)
+    dy = fy - float(iy)
+    dz = fz - float(iz)
+
+    # 8 corners
+    stride_y = nx
+    stride_z = nx * ny
+    i000 = ix + iy * stride_y + iz * stride_z
+    i100 = i000 + 1
+    i010 = i000 + stride_y
+    i110 = i000 + stride_y + 1
+    i001 = i000 + stride_z
+    i101 = i001 + 1
+    i011 = i001 + stride_y
+    i111 = i001 + stride_y + 1
+
+    # Trilinear interpolation
+    c00 = vol_data[i000] * (1.0 - dx) + vol_data[i100] * dx
+    c10 = vol_data[i010] * (1.0 - dx) + vol_data[i110] * dx
+    c01 = vol_data[i001] * (1.0 - dx) + vol_data[i101] * dx
+    c11 = vol_data[i011] * (1.0 - dx) + vol_data[i111] * dx
+    c0 = c00 * (1.0 - dy) + c10 * dy
+    c1 = c01 * (1.0 - dy) + c11 * dy
+    return c0 * (1.0 - dz) + c1 * dz
+
+
+@pgc.func
 def _halton2(index):
     """Halton sequence base 2."""
     result = 0.0
@@ -202,11 +259,10 @@ def _pathtrace(fb_r, fb_g, fb_b,
                points, conn, tri_colors, point_colors, normals,
                node_aabb, node_children, tri_ids,
                light_data,
-               vol_tf,
+               vol_tf, vol_data,
                stack,
                camera: pgc.template(),
                config: pgc.template(),
-               vol_tex: pgc.template(),
                width, height, n_inner, n_tris, n_samples,
                has_normals, has_point_colors, n_lights,
                has_volume, n_pixels):
@@ -358,7 +414,9 @@ def _pathtrace(fb_r, fb_g, fb_b,
                         vtu = (vsx - config.vol_bmin_x) / (config.vol_ext_x + 1.0e-20)
                         vtv = (vsy - config.vol_bmin_y) / (config.vol_ext_y + 1.0e-20)
                         vtw = (vsz - config.vol_bmin_z) / (config.vol_ext_z + 1.0e-20)
-                        vval = vol_tex.sample(vtu, vtv, vtw)
+                        vval = _vol_sample(vol_data, vtu, vtv, vtw,
+                                           config.vol_nx, config.vol_ny,
+                                           config.vol_nz)
                         vsr, vsg, vsb, vsa = _vol_tf_lookup(
                             vol_tf, vval, config.vol_vmin,
                             config.vol_vrange, config.vol_tf_size)
@@ -654,6 +712,7 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     # Volume data (first volume in scene, or dummy)
     has_volume = 0
     vol_tf = pgc.field(dtype=pgc.f32, shape=(4,))  # dummy
+    vol_data = pgc.field(dtype=pgc.f32, shape=(1,))  # dummy
     if scene.volumes:
         vol = scene.volumes[0]
         tf = vol.transfer_function
@@ -666,14 +725,14 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
             vol_opacity=vol.opacity_scale,
             vol_tf_size=tf.n_samples,
             vol_max_steps=vol.max_steps)
+        config.vol_nx = vol.dims[0]
+        config.vol_ny = vol.dims[1]
+        config.vol_nz = vol.dims[2]
         vol_tf = tf._get_lut_field()
-        vol_tex = vol._texture
+        vol_data = vol.scalar_field
         has_volume = 1
     else:
         config = _RenderConfig(background, max_bounces)
-        # Dummy 2x2x2 texture (needed as template arg)
-        _dummy = pgc.field(dtype=pgc.f32, shape=(8,))
-        vol_tex = pgc.texture3d(_dummy, shape=(2, 2, 2))
 
     width = camera.width
     height = camera.height
@@ -694,9 +753,9 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
                geom['point_colors'], geom['normals'],
                bvh.node_aabb, bvh.node_children, bvh.tri_ids,
                light_data,
-               vol_tf,
+               vol_tf, vol_data,
                stack,
-               camera, config, vol_tex,
+               camera, config,
                width, height, bvh.n_inner, n_tris, samples,
                geom['has_normals'], geom['has_point_colors'],
                n_lights, has_volume, n_pixels)

@@ -145,7 +145,7 @@ class App:
         self.sphere_color = [0.8, 0.8, 0.8]
 
         # Volume settings
-        self.vol_preset_idx = self.presets.index('cool_to_warm')
+        self.vol_preset_idx = self.presets.index('inferno')
         self.vol_opacity_scale = 8.0
         self.vol_grid_size = 48
 
@@ -216,6 +216,8 @@ class App:
         spacing = 2 * np.pi / (N - 1)
 
         def opacity(t):
+            # Transparent near center (gyroid zero-crossing),
+            # opaque at extreme positive/negative values
             dist = abs(t - 0.5) * 2.0
             return 0.005 + 0.06 * dist ** 1.5
 
@@ -275,16 +277,27 @@ class App:
             scene.add(self._volume)
         elif self.render_mode == 2:
             # Surface + Volume (integrated ray tracing)
-            if self.scene_dirty:
-                self._rebuild_scene()
+            # Use only the sphere (no ground plane — it fills the volume
+            # and cuts the march short, hiding the volume structure)
             if self._vol_dirty or self._volume is None:
                 self._rebuild_volume()
-            # Copy surface scene and add volume
             scene = Scene()
-            for a in self._scene.actors:
-                scene.add(a)
-            for lt in self._scene.lights:
-                scene.add(lt)
+            if self.use_scalar_coloring:
+                ct = ColorTable(self.presets[self.preset_idx])
+                scene.add(Actor(self.sp, self.sc,
+                                scalars=self.height_scalars,
+                                color_table=ct, smooth=True))
+            else:
+                scene.add(Actor(self.sp, self.sc,
+                                color=tuple(self.sphere_color), smooth=True))
+            for lt_cfg in self.lights:
+                if lt_cfg["enabled"]:
+                    scene.add(PointLight(
+                        position=tuple(lt_cfg["pos"]),
+                        intensity=lt_cfg["intensity"],
+                        color=tuple(lt_cfg["color"])))
+            if not any(lt_cfg["enabled"] for lt_cfg in self.lights):
+                scene.add(PointLight(position=(5, 8, 5), intensity=100.0))
             scene.add(self._volume)
         else:
             # Surface only
@@ -361,7 +374,7 @@ def run_gui(app):
         if app.texture.tex_id is not None:
             avail = imgui.get_content_region_avail()
             avail_h = avail.y - 24  # room for status text
-            scale = min(avail.x / app.w, avail_h / app.h, 1.0)
+            scale = min(avail.x / app.w, avail_h / app.h)
             draw_w = app.w * scale
             draw_h = app.h * scale
             # Center
@@ -524,8 +537,7 @@ def run_gui(app):
 
     params = hello_imgui.RunnerParams()
     params.app_window_params.window_title = "PGC Interactive Renderer"
-    params.app_window_params.window_geometry.size = (
-        app.w + PANEL_WIDTH + 20, max(app.h + 40, 600))
+    params.app_window_params.window_geometry.size = (1200, 800)
     params.fps_idling.fps_idle = 30.0
     params.callbacks.show_gui = gui
 
