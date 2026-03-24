@@ -139,7 +139,8 @@ class App:
 
         # Render mode: 0 = Surface, 1 = Volume
         self.render_mode = 0
-        self.render_modes = ["Surface", "Volume", "Surface + Volume"]
+        self.render_modes = ["Surface", "Volume", "Surface + Volume",
+                             "Wireframe", "Points"]
 
         # Color table / surface coloring
         self.presets = ColorTable.available_presets()
@@ -156,6 +157,7 @@ class App:
         self.sphere_material = 0  # 0=Matte, 1=Specular, 2=Transparent
         self.material_names = ["Matte", "Specular", "Transparent"]
         self.glass_ior = 1.5
+        self.point_size = 3
 
         # Build surface geometry: center sphere + two side spheres + ground
         self.sv, self.st = make_sphere((0, 0, 0), 1.0, 32)
@@ -336,6 +338,22 @@ class App:
             if not any(lt_cfg["enabled"] for lt_cfg in self.lights):
                 scene.add(PointLight(position=(5, 8, 5), intensity=100.0))
             scene.add(self._volume)
+        elif self.render_mode in (3, 4):
+            # Wireframe or Points
+            rmode = "wireframe" if self.render_mode == 3 else "points"
+            scene = Scene()
+            if self.use_scalar_coloring:
+                ct = ColorTable(self.presets[self.preset_idx])
+                scene.add(Actor(self.sp, self.sc,
+                                scalars=self.height_scalars,
+                                color_table=ct, smooth=True,
+                                render_mode=rmode))
+            else:
+                scene.add(Actor(self.sp, self.sc,
+                                color=tuple(self.sphere_color),
+                                render_mode=rmode))
+            scene.add(Actor(self.pp, self.pc, color=(0.5, 0.5, 0.5),
+                            render_mode=rmode))
         else:
             # Surface only
             if self.scene_dirty:
@@ -360,7 +378,8 @@ class App:
         render(self.canvas, scene, camera,
                samples=self.samples,
                max_bounces=self.max_bounces,
-               background=tuple(self.bg_color))
+               background=tuple(self.bg_color),
+               point_size=float(self.point_size))
         self.render_ms = (time.perf_counter() - t0) * 1000.0
 
         if self.render_mode == 0 and self.use_denoise and self.has_oidn:
@@ -472,7 +491,7 @@ def run_gui(app):
         changed, app.render_mode = imgui.combo(
             "Mode", app.render_mode, app.render_modes)
         if changed:
-            app.distance = (app.distance_volume if app.render_mode >= 1
+            app.distance = (app.distance_volume if app.render_mode in (1, 2)
                             else app.distance_surface)
             app.needs_render = True
         changed, app.camera_type = imgui.combo(
@@ -499,10 +518,10 @@ def run_gui(app):
                 if changed:
                     app.needs_render = True
 
-            has_surf = app.render_mode in (0, 2)
+            has_surf = app.render_mode in (0, 2, 3, 4)
             has_vol = app.render_mode in (1, 2)
 
-            if has_surf:
+            if has_surf and app.render_mode in (0, 2):
                 changed, app.samples = imgui.slider_int(
                     "Samples", app.samples, 1, 16)
                 if changed:
@@ -522,6 +541,12 @@ def run_gui(app):
                         imgui.checkbox("Denoise (OIDN not found)", False)
                         imgui.end_disabled()
 
+            if app.render_mode == 4:
+                changed, app.point_size = imgui.slider_int(
+                    "Point Size", app.point_size, 1, 10)
+                if changed:
+                    app.needs_render = True
+
             if has_vol:
                 changed, app.vol_opacity_scale = imgui.slider_float(
                     "Opacity Scale", app.vol_opacity_scale, 0.1, 30.0)
@@ -532,7 +557,7 @@ def run_gui(app):
                 if changed:
                     app.invalidate_volume()
 
-        if app.render_mode in (0, 2):
+        if app.render_mode in (0, 2, 3, 4):
             # -- Surface coloring + material --
             if imgui.collapsing_header("Surface",
                                        imgui.TreeNodeFlags_.default_open):
@@ -598,7 +623,7 @@ def run_gui(app):
         if imgui.button("Re-render"):
             if app.render_mode in (1, 2):
                 app.invalidate_volume()
-            if app.render_mode in (0, 2):
+            if app.render_mode in (0, 2, 3, 4):
                 app.invalidate_scene()
 
         imgui.end_child()

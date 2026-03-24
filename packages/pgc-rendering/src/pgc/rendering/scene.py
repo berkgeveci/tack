@@ -183,11 +183,13 @@ class Actor:
         smooth: if True, compute and use vertex normals for smooth shading.
         material: :class:`Material` instance.  Default is
             ``Material(Material.MATTE)``.
+        render_mode: ``"solid"`` (default, path traced), ``"wireframe"``,
+            or ``"points"``.
     """
 
     def __init__(self, points, connectivity, color=(0.8, 0.8, 0.8),
                  point_colors=None, scalars=None, color_table=None,
-                 smooth=False, material=None):
+                 smooth=False, material=None, render_mode="solid"):
         self.points = points
         self.connectivity = connectivity
         self.color = tuple(float(c) for c in color)
@@ -195,6 +197,11 @@ class Actor:
         self.n_tris = connectivity.shape[0] // 3
         self.smooth = smooth
         self.material = material if material is not None else Material()
+        if render_mode not in ("solid", "wireframe", "points"):
+            raise ValueError(
+                f"render_mode must be 'solid', 'wireframe', or 'points', "
+                f"got '{render_mode}'")
+        self.render_mode = render_mode
 
         # Handle point_colors input
         if point_colors is None:
