@@ -11,8 +11,8 @@ import sys
 import numpy as np
 import pgc
 from pgc.rendering import (
-    PerspectiveCamera, OrthographicCamera, Canvas, Scene, Actor, PointLight, ColorTable,
-    Volume, TransferFunction, render, render_volume,
+    PerspectiveCamera, OrthographicCamera, Canvas, Scene, Actor, PointLight,
+    ColorTable, Material, Volume, TransferFunction, render, render_volume,
 )
 
 import argparse
@@ -106,10 +106,10 @@ class App:
         # Camera orbit
         self.yaw = 0.0
         self.pitch = 0.3
-        self.distance = 5.0
+        self.distance = 8.0
         self.target = np.array([0.0, 0.0, 0.0])
         self.fov = 45.0
-        self.distance_surface = 5.0
+        self.distance_surface = 8.0
         self.distance_volume = 12.0
         self.camera_type = 0  # 0 = Perspective, 1 = Orthographic
         self.camera_types = ["Perspective", "Orthographic"]
@@ -117,7 +117,7 @@ class App:
 
         # Render settings
         self.samples = 1
-        self.max_bounces = 1
+        self.max_bounces = 3
         self.bg_color = [0.05, 0.05, 0.1]
         self.use_denoise = False
         self.denoise_ms = 0.0
@@ -152,12 +152,23 @@ class App:
         self.vol_opacity_scale = 8.0
         self.vol_grid_size = 48
 
-        # Build surface geometry
+        # Material settings
+        self.sphere_material = 0  # 0=Matte, 1=Specular, 2=Transparent
+        self.material_names = ["Matte", "Specular", "Transparent"]
+        self.glass_ior = 1.5
+
+        # Build surface geometry: center sphere + two side spheres + ground
         self.sv, self.st = make_sphere((0, 0, 0), 1.0, 32)
         self.sp, self.sc = upload(self.sv, self.st)
         self.height_scalars = self.sv[:, 1].copy()
 
-        pv = np.array([[-3, -1, -3], [3, -1, -3], [3, -1, 3], [-3, -1, 3]],
+        self.sv_l, self.st_l = make_sphere((-2.5, 0, 0), 0.8, 24)
+        self.sp_l, self.sc_l = upload(self.sv_l, self.st_l)
+
+        self.sv_r, self.st_r = make_sphere((2.5, 0, 0), 0.8, 24)
+        self.sp_r, self.sc_r = upload(self.sv_r, self.st_r)
+
+        pv = np.array([[-5, -1, -5], [5, -1, -5], [5, -1, 5], [-5, -1, 5]],
                        dtype=np.float32)
         pt = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
         self.pp, self.pc = upload(pv, pt)
@@ -187,14 +198,33 @@ class App:
 
     def _rebuild_scene(self):
         scene = Scene()
+        mat_types = [Material.MATTE, Material.SPECULAR, Material.TRANSPARENT]
+        center_mat = Material(mat_types[self.sphere_material],
+                              ior=self.glass_ior)
+
+        # Center sphere: user-selected material + coloring
         if self.use_scalar_coloring:
             ct = ColorTable(self.presets[self.preset_idx])
             scene.add(Actor(self.sp, self.sc,
                             scalars=self.height_scalars,
-                            color_table=ct, smooth=True))
+                            color_table=ct, smooth=True,
+                            material=center_mat))
         else:
             scene.add(Actor(self.sp, self.sc,
-                            color=tuple(self.sphere_color), smooth=True))
+                            color=tuple(self.sphere_color), smooth=True,
+                            material=center_mat))
+
+        # Left sphere: mirror (specular)
+        scene.add(Actor(self.sp_l, self.sc_l,
+                        color=(0.9, 0.9, 0.9), smooth=True,
+                        material=Material(Material.SPECULAR)))
+
+        # Right sphere: glass (transparent)
+        scene.add(Actor(self.sp_r, self.sc_r,
+                        color=(0.95, 0.95, 1.0), smooth=True,
+                        material=Material(Material.TRANSPARENT, ior=1.5)))
+
+        # Ground plane (matte)
         scene.add(Actor(self.pp, self.pc, color=(0.7, 0.7, 0.7)))
 
         for lt in self.lights:
@@ -280,19 +310,23 @@ class App:
             scene.add(self._volume)
         elif self.render_mode == 2:
             # Surface + Volume (integrated ray tracing)
-            # Use only the sphere (no ground plane — it fills the volume
-            # and cuts the march short, hiding the volume structure)
+            # Use only center sphere (no ground plane — it fills the volume)
             if self._vol_dirty or self._volume is None:
                 self._rebuild_volume()
+            mat_types = [Material.MATTE, Material.SPECULAR, Material.TRANSPARENT]
+            center_mat = Material(mat_types[self.sphere_material],
+                                  ior=self.glass_ior)
             scene = Scene()
             if self.use_scalar_coloring:
                 ct = ColorTable(self.presets[self.preset_idx])
                 scene.add(Actor(self.sp, self.sc,
                                 scalars=self.height_scalars,
-                                color_table=ct, smooth=True))
+                                color_table=ct, smooth=True,
+                                material=center_mat))
             else:
                 scene.add(Actor(self.sp, self.sc,
-                                color=tuple(self.sphere_color), smooth=True))
+                                color=tuple(self.sphere_color), smooth=True,
+                                material=center_mat))
             for lt_cfg in self.lights:
                 if lt_cfg["enabled"]:
                     scene.add(PointLight(
@@ -499,9 +533,23 @@ def run_gui(app):
                     app.invalidate_volume()
 
         if app.render_mode in (0, 2):
-            # -- Surface coloring --
-            if imgui.collapsing_header("Coloring",
+            # -- Surface coloring + material --
+            if imgui.collapsing_header("Surface",
                                        imgui.TreeNodeFlags_.default_open):
+                changed, app.sphere_material = imgui.combo(
+                    "Center Material", app.sphere_material,
+                    app.material_names)
+                if changed:
+                    app.invalidate_scene()
+                if app.sphere_material == 2:
+                    changed, app.glass_ior = imgui.slider_float(
+                        "IOR", app.glass_ior, 1.0, 2.5)
+                    if changed:
+                        app.invalidate_scene()
+                if app.render_mode == 0:
+                    imgui.text("Left: mirror  Right: glass")
+
+                imgui.separator()
                 changed, app.use_scalar_coloring = imgui.checkbox(
                     "Scalar Coloring", app.use_scalar_coloring)
                 if changed:
