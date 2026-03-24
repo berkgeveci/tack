@@ -124,6 +124,40 @@ def _fill_color(tri_colors, offset, cr, cg, cb, n_tris):
         tri_colors[offset + i * 3 + 2] = cb
 
 
+@pgc.kernel
+def _fill_material_id(mat_ids, offset, mat_id, n_tris):
+    """Fill per-triangle material IDs for one actor."""
+    for i in range(n_tris):
+        mat_ids[offset + i] = mat_id
+
+
+class Material:
+    """Surface material controlling shading behavior.
+
+    Args:
+        mat_type: ``Material.MATTE`` (Lambertian diffuse, default),
+            ``Material.SPECULAR`` (perfect mirror reflection), or
+            ``Material.TRANSPARENT`` (glass with refraction).
+        ior: Index of refraction for transparent materials (default 1.5).
+    """
+
+    MATTE = 0
+    SPECULAR = 1
+    TRANSPARENT = 2
+
+    def __init__(self, mat_type=0, ior=1.5):
+        self.mat_type = int(mat_type)
+        self.ior = float(ior)
+
+    def __eq__(self, other):
+        return (isinstance(other, Material) and
+                self.mat_type == other.mat_type and
+                self.ior == other.ior)
+
+    def __hash__(self):
+        return hash((self.mat_type, self.ior))
+
+
 class Actor:
     """Triangle mesh with per-vertex, scalar-mapped, or uniform color.
 
@@ -147,17 +181,20 @@ class Actor:
             mapping ``scalars`` to RGB colors.  Required when ``scalars``
             is provided.
         smooth: if True, compute and use vertex normals for smooth shading.
+        material: :class:`Material` instance.  Default is
+            ``Material(Material.MATTE)``.
     """
 
     def __init__(self, points, connectivity, color=(0.8, 0.8, 0.8),
                  point_colors=None, scalars=None, color_table=None,
-                 smooth=False):
+                 smooth=False, material=None):
         self.points = points
         self.connectivity = connectivity
         self.color = tuple(float(c) for c in color)
         self.n_verts = points.shape[0] // 3
         self.n_tris = connectivity.shape[0] // 3
         self.smooth = smooth
+        self.material = material if material is not None else Material()
 
         # Handle point_colors input
         if point_colors is None:
@@ -268,6 +305,15 @@ class Scene:
                     actor.scalars, actor.n_verts)
                 has_point_colors = 1
 
+            # Material
+            mat_ids = pgc.field(dtype=pgc.i32, shape=(n_tris,))
+            _fill_material_id(mat_ids, 0, 0, n_tris)
+            mat_np = np.array([float(actor.material.mat_type),
+                               actor.material.ior, 0.0, 0.0],
+                              dtype=np.float32)
+            mat_table = pgc.field(dtype=pgc.f32, shape=(4,))
+            mat_table.from_numpy(mat_np)
+
             return {
                 'points': actor.points,
                 'conn': actor.connectivity,
@@ -276,6 +322,8 @@ class Scene:
                 'has_point_colors': has_point_colors,
                 'normals': normals_field,
                 'has_normals': has_normals,
+                'mat_ids': mat_ids,
+                'mat_table': mat_table,
                 'n_tris': n_tris,
             }
 
@@ -350,6 +398,27 @@ class Scene:
                 v_offset += n_v
             has_point_colors = 1
 
+        # Materials: build material table and per-triangle IDs
+        mat_ids_field = pgc.field(dtype=pgc.i32, shape=(total_tris,))
+        unique_mats = []
+        mat_index_map = {}
+        tri_offset = 0
+        for actor in self.actors:
+            m = actor.material
+            if m not in mat_index_map:
+                mat_index_map[m] = len(unique_mats)
+                unique_mats.append(m)
+            mid = mat_index_map[m]
+            _fill_material_id(mat_ids_field, tri_offset, mid, actor.n_tris)
+            tri_offset += actor.n_tris
+        n_mats = len(unique_mats)
+        mat_np = np.zeros(n_mats * 4, dtype=np.float32)
+        for i, m in enumerate(unique_mats):
+            mat_np[i * 4] = float(m.mat_type)
+            mat_np[i * 4 + 1] = float(m.ior)
+        mat_table = pgc.field(dtype=pgc.f32, shape=(n_mats * 4,))
+        mat_table.from_numpy(mat_np)
+
         return {
             'points': points_field,
             'conn': conn_field,
@@ -358,5 +427,7 @@ class Scene:
             'has_point_colors': has_point_colors,
             'normals': normals_field,
             'has_normals': has_normals,
+            'mat_ids': mat_ids_field,
+            'mat_table': mat_table,
             'n_tris': total_tris,
         }

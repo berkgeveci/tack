@@ -34,7 +34,7 @@ render_volume(canvas, volume, camera, ...)
 from pgc.rendering.camera import PerspectiveCamera, OrthographicCamera
 from pgc.rendering.canvas import Canvas
 from pgc.rendering.colortable import ColorTable
-from pgc.rendering.scene import Scene, Actor, PointLight, compute_normals
+from pgc.rendering.scene import Scene, Actor, PointLight, Material, compute_normals
 from pgc.rendering.render import render
 from pgc.rendering.volume import Volume, TransferFunction, render_volume
 from pgc.rendering.annotate import (
@@ -49,6 +49,7 @@ __all__ = [
     "Scene",
     "Actor",
     "PointLight",
+    "Material",
     "compute_normals",
     "render",
     "Volume",

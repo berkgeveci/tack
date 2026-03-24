@@ -260,6 +260,7 @@ def _pathtrace(fb_r, fb_g, fb_b,
                node_aabb, node_children, tri_ids,
                light_data,
                vol_tf, vol_data,
+               mat_ids, mat_table,
                stack,
                camera: pgc.template(),
                config: pgc.template(),
@@ -478,8 +479,11 @@ def _pathtrace(fb_r, fb_g, fb_b,
                         ny = sny / sn_len
                         nz = snz / sn_len
 
+                # Save dot product before flip (needed for glass)
+                d_dot_n = nx * rdx + ny * rdy + nz * rdz
+
                 # Flip normal to face the ray
-                if nx * rdx + ny * rdy + nz * rdz > 0.0:
+                if d_dot_n > 0.0:
                     nx = -nx
                     ny = -ny
                     nz = -nz
@@ -494,121 +498,197 @@ def _pathtrace(fb_r, fb_g, fb_b,
                     alb_g = pc_w0 * point_colors[i0 * 3 + 1] + hit_u * point_colors[i1 * 3 + 1] + hit_v * point_colors[i2 * 3 + 1]
                     alb_b = pc_w0 * point_colors[i0 * 3 + 2] + hit_u * point_colors[i1 * 3 + 2] + hit_v * point_colors[i2 * 3 + 2]
 
-                # ---- direct lighting (loop over all lights) ----
-                s_ox = hx + nx * 0.005
-                s_oy = hy + ny * 0.005
-                s_oz = hz + nz * 0.005
+                # ---- material lookup ----
+                mb = mat_ids[hit_tri] * 4
+                mat_type = int(mat_table[mb])
+                mat_ior = mat_table[mb + 1]
 
-                for li in range(n_lights):
-                    lb = li * 7
-                    lx = light_data[lb] - hx
-                    ly = light_data[lb + 1] - hy
-                    lz = light_data[lb + 2] - hz
-                    l_dist = sqrt(lx * lx + ly * ly + lz * lz) + 1.0e-20
-                    lx = lx / l_dist
-                    ly = ly / l_dist
-                    lz = lz / l_dist
-                    n_dot_l = nx * lx + ny * ly + nz * lz
-                    if n_dot_l < 0.0:
-                        n_dot_l = 0.0
+                # ---- direct lighting (matte only) ----
+                if mat_type == 0:
+                    s_ox = hx + nx * 0.005
+                    s_oy = hy + ny * 0.005
+                    s_oz = hz + nz * 0.005
 
-                    # Shadow ray (any-hit BVH traversal)
-                    in_shadow = 0
-                    s_inv_dx = 1.0 / (lx + 1.0e-20)
-                    s_inv_dy = 1.0 / (ly + 1.0e-20)
-                    s_inv_dz = 1.0 / (lz + 1.0e-20)
+                    for li in range(n_lights):
+                        lb = li * 7
+                        lx = light_data[lb] - hx
+                        ly = light_data[lb + 1] - hy
+                        lz = light_data[lb + 2] - hz
+                        l_dist = sqrt(lx * lx + ly * ly + lz * lz) + 1.0e-20
+                        lx = lx / l_dist
+                        ly = ly / l_dist
+                        lz = lz / l_dist
+                        n_dot_l = nx * lx + ny * ly + nz * lz
+                        if n_dot_l < 0.0:
+                            n_dot_l = 0.0
 
-                    stack[stack_base] = 0
-                    sp = 1
-                    while sp > 0:
-                      if in_shadow == 0:
-                        sp = sp - 1
-                        s_node = stack[stack_base + sp]
-                        s_ab = s_node * 6
-                        s_tn, s_tf = _ray_aabb(s_ox, s_oy, s_oz,
-                                               s_inv_dx, s_inv_dy, s_inv_dz,
-                                               node_aabb[s_ab], node_aabb[s_ab + 1],
-                                               node_aabb[s_ab + 2], node_aabb[s_ab + 3],
-                                               node_aabb[s_ab + 4], node_aabb[s_ab + 5])
-                        if s_tn <= s_tf and s_tf >= 0.0 and s_tn < l_dist:
-                            if s_node >= n_inner:
-                                s_tri = tri_ids[s_node - n_inner]
-                                si0 = conn[s_tri * 3]
-                                si1 = conn[s_tri * 3 + 1]
-                                si2 = conn[s_tri * 3 + 2]
-                                st, su, sv = _ray_tri(
-                                    s_ox, s_oy, s_oz, lx, ly, lz,
-                                    points[si0 * 3], points[si0 * 3 + 1], points[si0 * 3 + 2],
-                                    points[si1 * 3], points[si1 * 3 + 1], points[si1 * 3 + 2],
-                                    points[si2 * 3], points[si2 * 3 + 1], points[si2 * 3 + 2])
-                                if st > 0.0 and st < l_dist:
-                                    in_shadow = 1
-                            else:
-                                s_left = node_children[s_node * 2]
-                                s_right = node_children[s_node * 2 + 1]
-                                if sp < 23:
-                                    stack[stack_base + sp] = s_left
-                                    sp = sp + 1
-                                if sp < 23:
-                                    stack[stack_base + sp] = s_right
-                                    sp = sp + 1
-                      if in_shadow == 1:
-                        sp = 0
+                        # Shadow ray (any-hit BVH traversal)
+                        in_shadow = 0
+                        s_inv_dx = 1.0 / (lx + 1.0e-20)
+                        s_inv_dy = 1.0 / (ly + 1.0e-20)
+                        s_inv_dz = 1.0 / (lz + 1.0e-20)
 
-                    if in_shadow == 0:
-                        l_int = light_data[lb + 3]
-                        l_cr = light_data[lb + 4]
-                        l_cg = light_data[lb + 5]
-                        l_cb = light_data[lb + 6]
-                        light_c = l_int * n_dot_l / (l_dist * l_dist)
-                        acc_r = acc_r + thr_r * alb_r * light_c * l_cr
-                        acc_g = acc_g + thr_g * alb_g * light_c * l_cg
-                        acc_b = acc_b + thr_b * alb_b * light_c * l_cb
+                        stack[stack_base] = 0
+                        sp = 1
+                        while sp > 0:
+                          if in_shadow == 0:
+                            sp = sp - 1
+                            s_node = stack[stack_base + sp]
+                            s_ab = s_node * 6
+                            s_tn, s_tf = _ray_aabb(s_ox, s_oy, s_oz,
+                                                   s_inv_dx, s_inv_dy, s_inv_dz,
+                                                   node_aabb[s_ab], node_aabb[s_ab + 1],
+                                                   node_aabb[s_ab + 2], node_aabb[s_ab + 3],
+                                                   node_aabb[s_ab + 4], node_aabb[s_ab + 5])
+                            if s_tn <= s_tf and s_tf >= 0.0 and s_tn < l_dist:
+                                if s_node >= n_inner:
+                                    s_tri = tri_ids[s_node - n_inner]
+                                    si0 = conn[s_tri * 3]
+                                    si1 = conn[s_tri * 3 + 1]
+                                    si2 = conn[s_tri * 3 + 2]
+                                    st, su, sv = _ray_tri(
+                                        s_ox, s_oy, s_oz, lx, ly, lz,
+                                        points[si0 * 3], points[si0 * 3 + 1], points[si0 * 3 + 2],
+                                        points[si1 * 3], points[si1 * 3 + 1], points[si1 * 3 + 2],
+                                        points[si2 * 3], points[si2 * 3 + 1], points[si2 * 3 + 2])
+                                    if st > 0.0 and st < l_dist:
+                                        in_shadow = 1
+                                else:
+                                    s_left = node_children[s_node * 2]
+                                    s_right = node_children[s_node * 2 + 1]
+                                    if sp < 23:
+                                        stack[stack_base + sp] = s_left
+                                        sp = sp + 1
+                                    if sp < 23:
+                                        stack[stack_base + sp] = s_right
+                                        sp = sp + 1
+                          if in_shadow == 1:
+                            sp = 0
+
+                        if in_shadow == 0:
+                            l_int = light_data[lb + 3]
+                            l_cr = light_data[lb + 4]
+                            l_cg = light_data[lb + 5]
+                            l_cb = light_data[lb + 6]
+                            light_c = l_int * n_dot_l / (l_dist * l_dist)
+                            acc_r = acc_r + thr_r * alb_r * light_c * l_cr
+                            acc_g = acc_g + thr_g * alb_g * light_c * l_cg
+                            acc_b = acc_b + thr_b * alb_b * light_c * l_cb
 
                 # ---- prepare bounce ray ----
                 seq = _hash(seed * (config.max_bounces + 1) + bounce)
                 u1 = _halton2(seq)
-                u2 = _halton3(seq)
-                r_h = sqrt(u1)
-                theta = 6.2831853 * u2
-                sx_h = r_h * cos(theta)
-                sy_h = r_h * sin(theta)
-                sz_h = sqrt(1.0 - u1)
-                if sz_h < 0.0:
-                    sz_h = 0.0
 
-                # Tangent frame from normal
-                ref_x = 0.0
-                ref_y = 1.0
-                ref_z = 0.0
-                if abs(ny) > 0.9:
-                    ref_x = 1.0
-                    ref_y = 0.0
-                tx = ny * ref_z - nz * ref_y
-                ty = nz * ref_x - nx * ref_z
-                tz = nx * ref_y - ny * ref_x
-                t_len = sqrt(tx * tx + ty * ty + tz * tz) + 1.0e-20
-                tx = tx / t_len
-                ty = ty / t_len
-                tz = tz / t_len
-                bx = ny * tz - nz * ty
-                by = nz * tx - nx * tz
-                bz = nx * ty - ny * tx
+                if mat_type == 0:
+                    # ---- Matte: cosine-weighted hemisphere ----
+                    u2 = _halton3(seq)
+                    r_h = sqrt(u1)
+                    theta = 6.2831853 * u2
+                    sx_h = r_h * cos(theta)
+                    sy_h = r_h * sin(theta)
+                    sz_h = sqrt(1.0 - u1)
+                    if sz_h < 0.0:
+                        sz_h = 0.0
+                    ref_x = 0.0
+                    ref_y = 1.0
+                    ref_z = 0.0
+                    if abs(ny) > 0.9:
+                        ref_x = 1.0
+                        ref_y = 0.0
+                    tx = ny * ref_z - nz * ref_y
+                    ty = nz * ref_x - nx * ref_z
+                    tz = nx * ref_y - ny * ref_x
+                    t_len = sqrt(tx * tx + ty * ty + tz * tz) + 1.0e-20
+                    tx = tx / t_len
+                    ty = ty / t_len
+                    tz = tz / t_len
+                    bx = ny * tz - nz * ty
+                    by = nz * tx - nx * tz
+                    bz = nx * ty - ny * tx
+                    rdx = sx_h * tx + sy_h * bx + sz_h * nx
+                    rdy = sx_h * ty + sy_h * by + sz_h * ny
+                    rdz = sx_h * tz + sy_h * bz + sz_h * nz
+                    rox = hx + nx * 0.005
+                    roy = hy + ny * 0.005
+                    roz = hz + nz * 0.005
+                    thr_r = thr_r * alb_r
+                    thr_g = thr_g * alb_g
+                    thr_b = thr_b * alb_b
 
-                # New direction in world space
-                rdx = sx_h * tx + sy_h * bx + sz_h * nx
-                rdy = sx_h * ty + sy_h * by + sz_h * ny
-                rdz = sx_h * tz + sy_h * bz + sz_h * nz
+                if mat_type == 1:
+                    # ---- Specular: perfect reflection ----
+                    refl_dot = rdx * nx + rdy * ny + rdz * nz
+                    rdx = rdx - 2.0 * refl_dot * nx
+                    rdy = rdy - 2.0 * refl_dot * ny
+                    rdz = rdz - 2.0 * refl_dot * nz
+                    rox = hx + nx * 0.005
+                    roy = hy + ny * 0.005
+                    roz = hz + nz * 0.005
+                    thr_r = thr_r * alb_r
+                    thr_g = thr_g * alb_g
+                    thr_b = thr_b * alb_b
 
-                # New origin offset from surface
-                rox = hx + nx * 0.005
-                roy = hy + ny * 0.005
-                roz = hz + nz * 0.005
+                if mat_type == 2:
+                    # ---- Transparent: Snell's law + Fresnel ----
+                    # Determine entering or exiting
+                    entering = 1
+                    if d_dot_n > 0.0:
+                        entering = 0
 
-                # Update throughput (Lambertian: throughput *= albedo)
-                thr_r = thr_r * alb_r
-                thr_g = thr_g * alb_g
-                thr_b = thr_b * alb_b
+                    if entering == 1:
+                        eta = 1.0 / mat_ior
+                        nn_x = nx
+                        nn_y = ny
+                        nn_z = nz
+                    else:
+                        eta = mat_ior
+                        nn_x = -nx
+                        nn_y = -ny
+                        nn_z = -nz
+
+                    cos_i = -(rdx * nn_x + rdy * nn_y + rdz * nn_z)
+                    if cos_i < 0.0:
+                        cos_i = 0.0
+                    sin2_t = eta * eta * (1.0 - cos_i * cos_i)
+
+                    # Schlick Fresnel approximation
+                    r0 = (1.0 - mat_ior) / (1.0 + mat_ior)
+                    r0 = r0 * r0
+                    fresnel = r0 + (1.0 - r0) * pow(1.0 - cos_i, 5.0)
+
+                    if sin2_t > 1.0:
+                        # Total internal reflection
+                        refl_dot = rdx * nn_x + rdy * nn_y + rdz * nn_z
+                        rdx = rdx - 2.0 * refl_dot * nn_x
+                        rdy = rdy - 2.0 * refl_dot * nn_y
+                        rdz = rdz - 2.0 * refl_dot * nn_z
+                        rox = hx + nn_x * 0.005
+                        roy = hy + nn_y * 0.005
+                        roz = hz + nn_z * 0.005
+                    else:
+                        if u1 < fresnel:
+                            # Reflect
+                            refl_dot = rdx * nn_x + rdy * nn_y + rdz * nn_z
+                            rdx = rdx - 2.0 * refl_dot * nn_x
+                            rdy = rdy - 2.0 * refl_dot * nn_y
+                            rdz = rdz - 2.0 * refl_dot * nn_z
+                            rox = hx + nn_x * 0.005
+                            roy = hy + nn_y * 0.005
+                            roz = hz + nn_z * 0.005
+                        else:
+                            # Refract (Snell's law)
+                            cos_t = sqrt(1.0 - sin2_t)
+                            rdx = eta * rdx + (eta * cos_i - cos_t) * nn_x
+                            rdy = eta * rdy + (eta * cos_i - cos_t) * nn_y
+                            rdz = eta * rdz + (eta * cos_i - cos_t) * nn_z
+                            # Offset origin against normal (into the surface)
+                            rox = hx - nn_x * 0.005
+                            roy = hy - nn_y * 0.005
+                            roz = hz - nn_z * 0.005
+                    # Glass is clear — no throughput loss (or *= albedo for tint)
+                    thr_r = thr_r * alb_r
+                    thr_g = thr_g * alb_g
+                    thr_b = thr_b * alb_b
 
          # ---- accumulate sample ----
          total_r = total_r + acc_r
@@ -756,6 +836,7 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
                bvh.node_aabb, bvh.node_children, bvh.tri_ids,
                light_data,
                vol_tf, vol_data,
+               geom['mat_ids'], geom['mat_table'],
                stack,
                camera, config,
                width, height, bvh.n_inner, n_tris, samples,

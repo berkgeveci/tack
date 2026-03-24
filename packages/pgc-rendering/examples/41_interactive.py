@@ -11,7 +11,7 @@ import sys
 import numpy as np
 import pgc
 from pgc.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, ColorTable,
+    PerspectiveCamera, OrthographicCamera, Canvas, Scene, Actor, PointLight, ColorTable,
     Volume, TransferFunction, render, render_volume,
 )
 
@@ -111,6 +111,9 @@ class App:
         self.fov = 45.0
         self.distance_surface = 5.0
         self.distance_volume = 12.0
+        self.camera_type = 0  # 0 = Perspective, 1 = Orthographic
+        self.camera_types = ["Perspective", "Orthographic"]
+        self.ortho_view_height = 8.0
 
         # Render settings
         self.samples = 1
@@ -305,11 +308,18 @@ class App:
                 self._rebuild_scene()
             scene = self._scene
 
-        camera = PerspectiveCamera(
-            position=self.camera_position(),
-            look_at=tuple(self.target),
-            fov=self.fov,
-            width=self.w, height=self.h)
+        if self.camera_type == 1:
+            camera = OrthographicCamera(
+                position=self.camera_position(),
+                look_at=tuple(self.target),
+                view_height=self.ortho_view_height,
+                width=self.w, height=self.h)
+        else:
+            camera = PerspectiveCamera(
+                position=self.camera_position(),
+                look_at=tuple(self.target),
+                fov=self.fov,
+                width=self.w, height=self.h)
 
         # Unified render dispatch
         t0 = time.perf_counter()
@@ -396,8 +406,15 @@ def run_gui(app):
                     app.needs_render = True
 
                 if io.mouse_wheel != 0.0:
-                    app.distance -= io.mouse_wheel * 0.3
-                    app.distance = max(1.0, min(20.0, app.distance))
+                    if app.camera_type == 1:
+                        # Ortho: zoom by changing view height
+                        app.ortho_view_height -= io.mouse_wheel * 0.5
+                        app.ortho_view_height = max(1.0,
+                                                    min(30.0,
+                                                        app.ortho_view_height))
+                    else:
+                        app.distance -= io.mouse_wheel * 0.3
+                        app.distance = max(1.0, min(20.0, app.distance))
                     app.needs_render = True
 
         status = f"Trace: {app.render_ms:.1f} ms"
@@ -424,6 +441,10 @@ def run_gui(app):
             app.distance = (app.distance_volume if app.render_mode >= 1
                             else app.distance_surface)
             app.needs_render = True
+        changed, app.camera_type = imgui.combo(
+            "Camera", app.camera_type, app.camera_types)
+        if changed:
+            app.needs_render = True
         imgui.separator()
 
         # -- Common settings --
@@ -433,10 +454,16 @@ def run_gui(app):
                                                       app.bg_color)
             if changed:
                 app.needs_render = True
-            changed, app.fov = imgui.slider_float(
-                "FOV", app.fov, 10.0, 120.0)
-            if changed:
-                app.needs_render = True
+            if app.camera_type == 0:
+                changed, app.fov = imgui.slider_float(
+                    "FOV", app.fov, 10.0, 120.0)
+                if changed:
+                    app.needs_render = True
+            else:
+                changed, app.ortho_view_height = imgui.slider_float(
+                    "View Height", app.ortho_view_height, 1.0, 30.0)
+                if changed:
+                    app.needs_render = True
 
             has_surf = app.render_mode in (0, 2)
             has_vol = app.render_mode in (1, 2)
