@@ -137,7 +137,7 @@ Multiple `PointLight` instances can be added to a `Scene`. Each light contribute
 
 ### Unified render dispatcher (pgc.rendering)
 
-`render()` in `render.py` is the unified entry point. It inspects `scene.actors` and `scene.volumes` and dispatches to the path tracer (`pathtrace.render`) for surfaces and the ray caster (`volume.render_volume`) for volumes. Mixed scenes render surfaces first, then volumes on top. Surface-specific kwargs (`samples`, `max_bounces`, `light_position`) are forwarded to the path tracer; volumes only use `background`. `render_volume()` remains available for direct single-volume rendering without a Scene.
+`render()` in `render.py` is the unified entry point. When a scene has both surfaces and volumes, the path tracer integrates volume ray marching directly — for each primary ray, after BVH traversal finds the closest surface hit, the volume is marched from the ray origin to the hit distance with front-to-back compositing. Volume opacity attenuates the throughput so surfaces are correctly visible through semi-transparent volumes. Volume-only scenes use the standalone ray caster. `render_volume()` remains available for direct single-volume rendering without a Scene.
 
 ### CPU threading threshold
 

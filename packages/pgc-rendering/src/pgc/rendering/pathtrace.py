@@ -19,11 +19,41 @@ from pgc.rendering.bvh import BVH, STACK_DEPTH
 class _RenderConfig:
     """Compile-time rendering parameters."""
 
-    def __init__(self, bg_color, max_bounces):
+    def __init__(self, bg_color, max_bounces,
+                 vol_bounds=None, vol_scalar_range=None,
+                 vol_step=0.0, vol_opacity=0.0,
+                 vol_tf_size=0, vol_max_steps=0):
         self.bg_r = float(bg_color[0])
         self.bg_g = float(bg_color[1])
         self.bg_b = float(bg_color[2])
         self.max_bounces = int(max_bounces)
+        # Volume params (zeros when no volume)
+        if vol_bounds is not None:
+            self.vol_bmin_x = float(vol_bounds[0][0])
+            self.vol_bmin_y = float(vol_bounds[0][1])
+            self.vol_bmin_z = float(vol_bounds[0][2])
+            self.vol_bmax_x = float(vol_bounds[1][0])
+            self.vol_bmax_y = float(vol_bounds[1][1])
+            self.vol_bmax_z = float(vol_bounds[1][2])
+            self.vol_ext_x = self.vol_bmax_x - self.vol_bmin_x
+            self.vol_ext_y = self.vol_bmax_y - self.vol_bmin_y
+            self.vol_ext_z = self.vol_bmax_z - self.vol_bmin_z
+        else:
+            self.vol_bmin_x = 0.0
+            self.vol_bmin_y = 0.0
+            self.vol_bmin_z = 0.0
+            self.vol_bmax_x = 0.0
+            self.vol_bmax_y = 0.0
+            self.vol_bmax_z = 0.0
+            self.vol_ext_x = 0.0
+            self.vol_ext_y = 0.0
+            self.vol_ext_z = 0.0
+        self.vol_vmin = float(vol_scalar_range[0]) if vol_scalar_range else 0.0
+        self.vol_vrange = float(vol_scalar_range[1] - vol_scalar_range[0]) if vol_scalar_range else 1.0
+        self.vol_step = float(vol_step)
+        self.vol_opacity = float(vol_opacity)
+        self.vol_tf_size = int(vol_tf_size)
+        self.vol_max_steps = int(vol_max_steps)
 
 
 # ================================================================
@@ -119,6 +149,23 @@ def _hash(x):
 
 
 @pgc.func
+def _vol_tf_lookup(vol_tf, val, vmin, vrange, tf_size):
+    """Look up RGBA from volume transfer function."""
+    t = (val - vmin) / vrange
+    if t < 0.0:
+        t = 0.0
+    if t > 1.0:
+        t = 1.0
+    idx = int(t * float(tf_size - 1))
+    if idx < 0:
+        idx = 0
+    if idx >= tf_size:
+        idx = tf_size - 1
+    base = idx * 4
+    return vol_tf[base], vol_tf[base + 1], vol_tf[base + 2], vol_tf[base + 3]
+
+
+@pgc.func
 def _halton2(index):
     """Halton sequence base 2."""
     result = 0.0
@@ -155,11 +202,14 @@ def _pathtrace(fb_r, fb_g, fb_b,
                points, conn, tri_colors, point_colors, normals,
                node_aabb, node_children, tri_ids,
                light_data,
+               vol_tf,
                stack,
                camera: pgc.template(),
                config: pgc.template(),
+               vol_tex: pgc.template(),
                width, height, n_inner, n_tris, n_samples,
-               has_normals, has_point_colors, n_lights, n_pixels):
+               has_normals, has_point_colors, n_lights,
+               has_volume, n_pixels):
     """Trace all samples for each pixel and accumulate into fb_r/g/b."""
 
     for pid in range(n_pixels):
@@ -249,6 +299,80 @@ def _pathtrace(fb_r, fb_g, fb_b,
                         if sp < 23:
                             stack[stack_base + sp] = right
                             sp = sp + 1
+
+            # ---- volume march (primary ray only) ----
+            if has_volume == 1 and bounce == 0:
+                # Ray-AABB for volume bounds
+                vn = -3.4e38
+                vf = 3.4e38
+                if abs(rdx) < 1.0e-10:
+                    if rox < config.vol_bmin_x or rox > config.vol_bmax_x:
+                        vn = 3.4e38
+                        vf = -3.4e38
+                else:
+                    vt1 = (config.vol_bmin_x - rox) * inv_dx
+                    vt2 = (config.vol_bmax_x - rox) * inv_dx
+                    if vt1 > vt2:
+                        vt1, vt2 = vt2, vt1
+                    vn = max(vn, vt1)
+                    vf = min(vf, vt2)
+                if abs(rdy) < 1.0e-10:
+                    if roy < config.vol_bmin_y or roy > config.vol_bmax_y:
+                        vn = 3.4e38
+                        vf = -3.4e38
+                else:
+                    vt1 = (config.vol_bmin_y - roy) * inv_dy
+                    vt2 = (config.vol_bmax_y - roy) * inv_dy
+                    if vt1 > vt2:
+                        vt1, vt2 = vt2, vt1
+                    vn = max(vn, vt1)
+                    vf = min(vf, vt2)
+                if abs(rdz) < 1.0e-10:
+                    if roz < config.vol_bmin_z or roz > config.vol_bmax_z:
+                        vn = 3.4e38
+                        vf = -3.4e38
+                else:
+                    vt1 = (config.vol_bmin_z - roz) * inv_dz
+                    vt2 = (config.vol_bmax_z - roz) * inv_dz
+                    if vt1 > vt2:
+                        vt1, vt2 = vt2, vt1
+                    vn = max(vn, vt1)
+                    vf = min(vf, vt2)
+
+                if vn < 0.0:
+                    vn = 0.0
+                # Stop at surface hit
+                if hit_tri >= 0 and hit_t < vf:
+                    vf = hit_t
+
+                if vn < vf:
+                    vt = vn
+                    for _vs in range(config.vol_max_steps):
+                        if vt >= vf:
+                            break
+                        if thr_r < 0.01 and thr_g < 0.01 and thr_b < 0.01:
+                            break
+                        vsx = rox + vt * rdx
+                        vsy = roy + vt * rdy
+                        vsz = roz + vt * rdz
+                        vtu = (vsx - config.vol_bmin_x) / (config.vol_ext_x + 1.0e-20)
+                        vtv = (vsy - config.vol_bmin_y) / (config.vol_ext_y + 1.0e-20)
+                        vtw = (vsz - config.vol_bmin_z) / (config.vol_ext_z + 1.0e-20)
+                        vval = vol_tex.sample(vtu, vtv, vtw)
+                        vsr, vsg, vsb, vsa = _vol_tf_lookup(
+                            vol_tf, vval, config.vol_vmin,
+                            config.vol_vrange, config.vol_tf_size)
+                        vsa = 1.0 - exp(0.0 - vsa * config.vol_opacity * config.vol_step)
+                        if vsa > 1.0:
+                            vsa = 1.0
+                        # Add volume contribution and reduce throughput
+                        acc_r = acc_r + thr_r * vsa * vsr
+                        acc_g = acc_g + thr_g * vsa * vsg
+                        acc_b = acc_b + thr_b * vsa * vsb
+                        thr_r = thr_r * (1.0 - vsa)
+                        thr_g = thr_g * (1.0 - vsa)
+                        thr_b = thr_b * (1.0 - vsa)
+                        vt = vt + config.vol_step
 
             # ---- miss: background ----
             if hit_tri < 0:
@@ -465,11 +589,13 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     """Path trace the scene into the canvas.
 
     All lights in the scene are used for direct illumination.  Each light
-    contributes independently with its own shadow ray.
+    contributes independently with its own shadow ray.  If the scene
+    contains a volume, it is ray-marched along each primary ray with
+    correct depth compositing against surfaces.
 
     Args:
         canvas: Canvas to render into.
-        scene: Scene containing actors and lights.
+        scene: Scene containing actors, volumes, and lights.
         camera: PerspectiveCamera.
         samples: Number of samples per pixel (quality knob).
         max_bounces: Maximum path depth (0 = direct only).
@@ -525,7 +651,29 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     light_data = pgc.field(dtype=pgc.f32, shape=(light_np.shape[0],))
     light_data.from_numpy(light_np)
 
-    config = _RenderConfig(background, max_bounces)
+    # Volume data (first volume in scene, or dummy)
+    has_volume = 0
+    vol_tf = pgc.field(dtype=pgc.f32, shape=(4,))  # dummy
+    if scene.volumes:
+        vol = scene.volumes[0]
+        tf = vol.transfer_function
+        sr = tf.range if tf.range is not None else vol.scalar_range
+        config = _RenderConfig(
+            background, max_bounces,
+            vol_bounds=(vol.bounds_min, vol.bounds_max),
+            vol_scalar_range=sr,
+            vol_step=vol.step_size,
+            vol_opacity=vol.opacity_scale,
+            vol_tf_size=tf.n_samples,
+            vol_max_steps=vol.max_steps)
+        vol_tf = tf._get_lut_field()
+        vol_tex = vol._texture
+        has_volume = 1
+    else:
+        config = _RenderConfig(background, max_bounces)
+        # Dummy 2x2x2 texture (needed as template arg)
+        _dummy = pgc.field(dtype=pgc.f32, shape=(8,))
+        vol_tex = pgc.texture3d(_dummy, shape=(2, 2, 2))
 
     width = camera.width
     height = camera.height
@@ -546,11 +694,12 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
                geom['point_colors'], geom['normals'],
                bvh.node_aabb, bvh.node_children, bvh.tri_ids,
                light_data,
+               vol_tf,
                stack,
-               camera, config,
+               camera, config, vol_tex,
                width, height, bvh.n_inner, n_tris, samples,
                geom['has_normals'], geom['has_point_colors'],
-               n_lights, n_pixels)
+               n_lights, has_volume, n_pixels)
     _t_trace = _time.perf_counter() - _t0
 
     # Resolve to canvas

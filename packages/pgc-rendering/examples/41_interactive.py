@@ -136,7 +136,7 @@ class App:
 
         # Render mode: 0 = Surface, 1 = Volume
         self.render_mode = 0
-        self.render_modes = ["Surface", "Volume"]
+        self.render_modes = ["Surface", "Volume", "Surface + Volume"]
 
         # Color table / surface coloring
         self.presets = ColorTable.available_presets()
@@ -268,12 +268,26 @@ class App:
 
         # Rebuild scene contents as needed
         if self.render_mode == 1:
+            # Volume only
             if self._vol_dirty or self._volume is None:
                 self._rebuild_volume()
-            # Build a volume-only scene
             scene = Scene()
             scene.add(self._volume)
+        elif self.render_mode == 2:
+            # Surface + Volume (integrated ray tracing)
+            if self.scene_dirty:
+                self._rebuild_scene()
+            if self._vol_dirty or self._volume is None:
+                self._rebuild_volume()
+            # Copy surface scene and add volume
+            scene = Scene()
+            for a in self._scene.actors:
+                scene.add(a)
+            for lt in self._scene.lights:
+                scene.add(lt)
+            scene.add(self._volume)
         else:
+            # Surface only
             if self.scene_dirty:
                 self._rebuild_scene()
             scene = self._scene
@@ -394,7 +408,7 @@ def run_gui(app):
         changed, app.render_mode = imgui.combo(
             "Mode", app.render_mode, app.render_modes)
         if changed:
-            app.distance = (app.distance_volume if app.render_mode == 1
+            app.distance = (app.distance_volume if app.render_mode >= 1
                             else app.distance_surface)
             app.needs_render = True
         imgui.separator()
@@ -411,8 +425,10 @@ def run_gui(app):
             if changed:
                 app.needs_render = True
 
-            if app.render_mode == 0:
-                # Surface-specific
+            has_surf = app.render_mode in (0, 2)
+            has_vol = app.render_mode in (1, 2)
+
+            if has_surf:
                 changed, app.samples = imgui.slider_int(
                     "Samples", app.samples, 1, 16)
                 if changed:
@@ -421,17 +437,18 @@ def run_gui(app):
                     "Bounces", app.max_bounces, 0, 8)
                 if changed:
                     app.needs_render = True
-                if app.has_oidn:
-                    changed, app.use_denoise = imgui.checkbox(
-                        "Denoise (OIDN)", app.use_denoise)
-                    if changed:
-                        app.needs_render = True
-                else:
-                    imgui.begin_disabled()
-                    imgui.checkbox("Denoise (OIDN not found)", False)
-                    imgui.end_disabled()
-            else:
-                # Volume-specific
+                if app.render_mode == 0:
+                    if app.has_oidn:
+                        changed, app.use_denoise = imgui.checkbox(
+                            "Denoise (OIDN)", app.use_denoise)
+                        if changed:
+                            app.needs_render = True
+                    else:
+                        imgui.begin_disabled()
+                        imgui.checkbox("Denoise (OIDN not found)", False)
+                        imgui.end_disabled()
+
+            if has_vol:
                 changed, app.vol_opacity_scale = imgui.slider_float(
                     "Opacity Scale", app.vol_opacity_scale, 0.1, 30.0)
                 if changed:
@@ -441,7 +458,7 @@ def run_gui(app):
                 if changed:
                     app.invalidate_volume()
 
-        if app.render_mode == 0:
+        if app.render_mode in (0, 2):
             # -- Surface coloring --
             if imgui.collapsing_header("Coloring",
                                        imgui.TreeNodeFlags_.default_open):
@@ -491,9 +508,9 @@ def run_gui(app):
 
         imgui.separator()
         if imgui.button("Re-render"):
-            if app.render_mode == 1:
+            if app.render_mode in (1, 2):
                 app.invalidate_volume()
-            else:
+            if app.render_mode in (0, 2):
                 app.invalidate_scene()
 
         imgui.end_child()
