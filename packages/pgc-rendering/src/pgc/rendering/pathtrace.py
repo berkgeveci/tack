@@ -281,16 +281,18 @@ def _pathtrace(fb_r, fb_g, fb_b,
          seed = _hash(pid) + samp
          jx = _halton2(seed) - 0.5
          jy = _halton3(seed) - 0.5
-         rdx = camera.corner_x + camera.dx_x * (float(px) + 0.5 + jx) + camera.dy_x * (float(py) + 0.5 + jy)
-         rdy = camera.corner_y + camera.dx_y * (float(px) + 0.5 + jx) + camera.dy_y * (float(py) + 0.5 + jy)
-         rdz = camera.corner_z + camera.dx_z * (float(px) + 0.5 + jx) + camera.dy_z * (float(py) + 0.5 + jy)
+         ppx = float(px) + 0.5 + jx
+         ppy = float(py) + 0.5 + jy
+         rdx = camera.corner_x + camera.dx_x * ppx + camera.dy_x * ppy
+         rdy = camera.corner_y + camera.dx_y * ppx + camera.dy_y * ppy
+         rdz = camera.corner_z + camera.dx_z * ppx + camera.dy_z * ppy
          rd_len = sqrt(rdx * rdx + rdy * rdy + rdz * rdz)
          rdx = rdx / rd_len
          rdy = rdy / rd_len
          rdz = rdz / rd_len
-         rox = camera.pos_x
-         roy = camera.pos_y
-         roz = camera.pos_z
+         rox = camera.pos_x + camera.odx_x * ppx + camera.ody_x * ppy
+         roy = camera.pos_y + camera.odx_y * ppx + camera.ody_y * ppy
+         roz = camera.pos_z + camera.odx_z * ppx + camera.ody_z * ppy
 
          # ---- path trace state ----
          acc_r = 0.0

@@ -31,7 +31,7 @@ render_volume(canvas, volume, camera, ...)
     Ray-cast a single volume directly (without a Scene).
 """
 
-from pgc.rendering.camera import PerspectiveCamera
+from pgc.rendering.camera import PerspectiveCamera, OrthographicCamera
 from pgc.rendering.canvas import Canvas
 from pgc.rendering.colortable import ColorTable
 from pgc.rendering.scene import Scene, Actor, PointLight, compute_normals
@@ -43,6 +43,7 @@ from pgc.rendering.annotate import (
 
 __all__ = [
     "PerspectiveCamera",
+    "OrthographicCamera",
     "Canvas",
     "ColorTable",
     "Scene",
