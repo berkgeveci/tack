@@ -57,6 +57,12 @@ class PerspectiveCamera:
         self.width = width
         self.height = height
 
+        # Store basis vectors for CPU-side use (annotations, etc.)
+        # Prefixed with _ so @pgc.data_oriented ignores them.
+        self._right = right.copy()
+        self._up = true_up.copy()
+        self._forward = forward.copy()
+
     @pgc.func
     def ray_dx(self, px, py):
         return self.corner_x + self.dx_x * (float(px) + 0.5) + self.dy_x * (float(py) + 0.5)

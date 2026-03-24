@@ -20,6 +20,9 @@ ColorTable
 Volume, TransferFunction
     Uniform-grid volume with RGBA transfer function for ray casting.
 
+ColorBar, AxisIndicator, TextOverlay, annotate
+    Post-render annotations drawn on numpy images.
+
 render(canvas, scene, camera, ...)
     Unified renderer — dispatches to path tracing for surface actors
     and ray casting for volumes based on scene contents.
@@ -34,6 +37,9 @@ from pgc.rendering.colortable import ColorTable
 from pgc.rendering.scene import Scene, Actor, PointLight, compute_normals
 from pgc.rendering.render import render
 from pgc.rendering.volume import Volume, TransferFunction, render_volume
+from pgc.rendering.annotate import (
+    ColorBar, AxisIndicator, TextOverlay, annotate,
+)
 
 __all__ = [
     "PerspectiveCamera",
@@ -47,4 +53,8 @@ __all__ = [
     "Volume",
     "TransferFunction",
     "render_volume",
+    "ColorBar",
+    "AxisIndicator",
+    "TextOverlay",
+    "annotate",
 ]
