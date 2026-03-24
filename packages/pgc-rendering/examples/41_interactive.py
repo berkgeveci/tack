@@ -186,7 +186,10 @@ class App:
         self.needs_render = True
         self.scene_dirty = True
         self.render_ms = 0.0
-        self._scene = None
+        self._scene = None         # mode 0 scene cache
+        self._scene_mode2 = None   # mode 2 scene cache
+        self._scene_mode34 = None  # mode 3/4 scene cache
+        self._mode34_rmode = None  # track which rmode was cached
 
     def camera_position(self):
         x = self.target[0] + self.distance * math.cos(self.pitch) * math.sin(self.yaw)
@@ -196,6 +199,8 @@ class App:
 
     def invalidate_scene(self):
         self.scene_dirty = True
+        self._scene_mode2 = None
+        self._scene_mode34 = None
         self.needs_render = True
 
     def _rebuild_scene(self):
@@ -269,6 +274,7 @@ class App:
 
     def invalidate_volume(self):
         self._vol_dirty = True
+        self._scene_mode2 = None
         self.needs_render = True
 
     def _denoise(self):
@@ -303,7 +309,7 @@ class App:
     def do_render(self):
         import time
 
-        # Rebuild scene contents as needed
+        # Rebuild scene contents as needed (cached per mode)
         if self.render_mode == 1:
             # Volume only
             if self._vol_dirty or self._volume is None:
@@ -312,48 +318,55 @@ class App:
             scene.add(self._volume)
         elif self.render_mode == 2:
             # Surface + Volume (integrated ray tracing)
-            # Use only center sphere (no ground plane — it fills the volume)
-            if self._vol_dirty or self._volume is None:
-                self._rebuild_volume()
-            mat_types = [Material.MATTE, Material.SPECULAR, Material.TRANSPARENT]
-            center_mat = Material(mat_types[self.sphere_material],
-                                  ior=self.glass_ior)
-            scene = Scene()
-            if self.use_scalar_coloring:
-                ct = ColorTable(self.presets[self.preset_idx])
-                scene.add(Actor(self.sp, self.sc,
-                                scalars=self.height_scalars,
-                                color_table=ct, smooth=True,
-                                material=center_mat))
-            else:
-                scene.add(Actor(self.sp, self.sc,
-                                color=tuple(self.sphere_color), smooth=True,
-                                material=center_mat))
-            for lt_cfg in self.lights:
-                if lt_cfg["enabled"]:
-                    scene.add(PointLight(
-                        position=tuple(lt_cfg["pos"]),
-                        intensity=lt_cfg["intensity"],
-                        color=tuple(lt_cfg["color"])))
-            if not any(lt_cfg["enabled"] for lt_cfg in self.lights):
-                scene.add(PointLight(position=(5, 8, 5), intensity=100.0))
-            scene.add(self._volume)
+            if self._scene_mode2 is None:
+                if self._vol_dirty or self._volume is None:
+                    self._rebuild_volume()
+                mat_types = [Material.MATTE, Material.SPECULAR,
+                             Material.TRANSPARENT]
+                center_mat = Material(mat_types[self.sphere_material],
+                                      ior=self.glass_ior)
+                scene = Scene()
+                if self.use_scalar_coloring:
+                    ct = ColorTable(self.presets[self.preset_idx])
+                    scene.add(Actor(self.sp, self.sc,
+                                    scalars=self.height_scalars,
+                                    color_table=ct, smooth=True,
+                                    material=center_mat))
+                else:
+                    scene.add(Actor(self.sp, self.sc,
+                                    color=tuple(self.sphere_color),
+                                    smooth=True, material=center_mat))
+                for lt_cfg in self.lights:
+                    if lt_cfg["enabled"]:
+                        scene.add(PointLight(
+                            position=tuple(lt_cfg["pos"]),
+                            intensity=lt_cfg["intensity"],
+                            color=tuple(lt_cfg["color"])))
+                if not any(lt_cfg["enabled"] for lt_cfg in self.lights):
+                    scene.add(PointLight(position=(5, 8, 5), intensity=100.0))
+                scene.add(self._volume)
+                self._scene_mode2 = scene
+            scene = self._scene_mode2
         elif self.render_mode in (3, 4):
             # Wireframe or Points
             rmode = "wireframe" if self.render_mode == 3 else "points"
-            scene = Scene()
-            if self.use_scalar_coloring:
-                ct = ColorTable(self.presets[self.preset_idx])
-                scene.add(Actor(self.sp, self.sc,
-                                scalars=self.height_scalars,
-                                color_table=ct, smooth=True,
+            if self._scene_mode34 is None or self._mode34_rmode != rmode:
+                scene = Scene()
+                if self.use_scalar_coloring:
+                    ct = ColorTable(self.presets[self.preset_idx])
+                    scene.add(Actor(self.sp, self.sc,
+                                    scalars=self.height_scalars,
+                                    color_table=ct, smooth=True,
+                                    render_mode=rmode))
+                else:
+                    scene.add(Actor(self.sp, self.sc,
+                                    color=tuple(self.sphere_color),
+                                    render_mode=rmode))
+                scene.add(Actor(self.pp, self.pc, color=(0.5, 0.5, 0.5),
                                 render_mode=rmode))
-            else:
-                scene.add(Actor(self.sp, self.sc,
-                                color=tuple(self.sphere_color),
-                                render_mode=rmode))
-            scene.add(Actor(self.pp, self.pc, color=(0.5, 0.5, 0.5),
-                            render_mode=rmode))
+                self._scene_mode34 = scene
+                self._mode34_rmode = rmode
+            scene = self._scene_mode34
         else:
             # Surface only
             if self.scene_dirty:
