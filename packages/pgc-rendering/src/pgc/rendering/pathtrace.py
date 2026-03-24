@@ -19,11 +19,7 @@ from pgc.rendering.bvh import BVH, STACK_DEPTH
 class _RenderConfig:
     """Compile-time rendering parameters."""
 
-    def __init__(self, light_pos, light_intensity, bg_color, max_bounces):
-        self.light_x = float(light_pos[0])
-        self.light_y = float(light_pos[1])
-        self.light_z = float(light_pos[2])
-        self.light_intensity = float(light_intensity)
+    def __init__(self, bg_color, max_bounces):
         self.bg_r = float(bg_color[0])
         self.bg_g = float(bg_color[1])
         self.bg_b = float(bg_color[2])
@@ -158,11 +154,12 @@ def _halton3(index):
 def _pathtrace(fb_r, fb_g, fb_b,
                points, conn, tri_colors, point_colors, normals,
                node_aabb, node_children, tri_ids,
+               light_data,
                stack,
                camera: pgc.template(),
                config: pgc.template(),
                width, height, n_inner, n_tris, n_samples,
-               has_normals, has_point_colors, n_pixels):
+               has_normals, has_point_colors, n_lights, n_pixels):
     """Trace all samples for each pixel and accumulate into fb_r/g/b."""
 
     for pid in range(n_pixels):
@@ -313,69 +310,76 @@ def _pathtrace(fb_r, fb_g, fb_b,
                     alb_g = pc_w0 * point_colors[i0 * 3 + 1] + hit_u * point_colors[i1 * 3 + 1] + hit_v * point_colors[i2 * 3 + 1]
                     alb_b = pc_w0 * point_colors[i0 * 3 + 2] + hit_u * point_colors[i1 * 3 + 2] + hit_v * point_colors[i2 * 3 + 2]
 
-                # ---- direct lighting ----
-                lx = config.light_x - hx
-                ly = config.light_y - hy
-                lz = config.light_z - hz
-                l_dist = sqrt(lx * lx + ly * ly + lz * lz) + 1.0e-20
-                lx = lx / l_dist
-                ly = ly / l_dist
-                lz = lz / l_dist
-                n_dot_l = nx * lx + ny * ly + nz * lz
-                if n_dot_l < 0.0:
-                    n_dot_l = 0.0
-
-                # Shadow ray (any-hit BVH traversal)
-                in_shadow = 0
+                # ---- direct lighting (loop over all lights) ----
                 s_ox = hx + nx * 0.005
                 s_oy = hy + ny * 0.005
                 s_oz = hz + nz * 0.005
-                s_inv_dx = 1.0 / (lx + 1.0e-20)
-                s_inv_dy = 1.0 / (ly + 1.0e-20)
-                s_inv_dz = 1.0 / (lz + 1.0e-20)
 
-                stack[stack_base] = 0
-                sp = 1
-                while sp > 0:
-                  if in_shadow == 0:
-                    sp = sp - 1
-                    s_node = stack[stack_base + sp]
-                    s_ab = s_node * 6
-                    s_tn, s_tf = _ray_aabb(s_ox, s_oy, s_oz,
-                                           s_inv_dx, s_inv_dy, s_inv_dz,
-                                           node_aabb[s_ab], node_aabb[s_ab + 1],
-                                           node_aabb[s_ab + 2], node_aabb[s_ab + 3],
-                                           node_aabb[s_ab + 4], node_aabb[s_ab + 5])
-                    if s_tn <= s_tf and s_tf >= 0.0 and s_tn < l_dist:
-                        if s_node >= n_inner:
-                            s_tri = tri_ids[s_node - n_inner]
-                            si0 = conn[s_tri * 3]
-                            si1 = conn[s_tri * 3 + 1]
-                            si2 = conn[s_tri * 3 + 2]
-                            st, su, sv = _ray_tri(
-                                s_ox, s_oy, s_oz, lx, ly, lz,
-                                points[si0 * 3], points[si0 * 3 + 1], points[si0 * 3 + 2],
-                                points[si1 * 3], points[si1 * 3 + 1], points[si1 * 3 + 2],
-                                points[si2 * 3], points[si2 * 3 + 1], points[si2 * 3 + 2])
-                            if st > 0.0 and st < l_dist:
-                                in_shadow = 1
-                        else:
-                            s_left = node_children[s_node * 2]
-                            s_right = node_children[s_node * 2 + 1]
-                            if sp < 23:
-                                stack[stack_base + sp] = s_left
-                                sp = sp + 1
-                            if sp < 23:
-                                stack[stack_base + sp] = s_right
-                                sp = sp + 1
-                  if in_shadow == 1:
-                    sp = 0
+                for li in range(n_lights):
+                    lb = li * 7
+                    lx = light_data[lb] - hx
+                    ly = light_data[lb + 1] - hy
+                    lz = light_data[lb + 2] - hz
+                    l_dist = sqrt(lx * lx + ly * ly + lz * lz) + 1.0e-20
+                    lx = lx / l_dist
+                    ly = ly / l_dist
+                    lz = lz / l_dist
+                    n_dot_l = nx * lx + ny * ly + nz * lz
+                    if n_dot_l < 0.0:
+                        n_dot_l = 0.0
 
-                if in_shadow == 0:
-                    light_c = config.light_intensity * n_dot_l / (l_dist * l_dist)
-                    acc_r = acc_r + thr_r * alb_r * light_c
-                    acc_g = acc_g + thr_g * alb_g * light_c
-                    acc_b = acc_b + thr_b * alb_b * light_c
+                    # Shadow ray (any-hit BVH traversal)
+                    in_shadow = 0
+                    s_inv_dx = 1.0 / (lx + 1.0e-20)
+                    s_inv_dy = 1.0 / (ly + 1.0e-20)
+                    s_inv_dz = 1.0 / (lz + 1.0e-20)
+
+                    stack[stack_base] = 0
+                    sp = 1
+                    while sp > 0:
+                      if in_shadow == 0:
+                        sp = sp - 1
+                        s_node = stack[stack_base + sp]
+                        s_ab = s_node * 6
+                        s_tn, s_tf = _ray_aabb(s_ox, s_oy, s_oz,
+                                               s_inv_dx, s_inv_dy, s_inv_dz,
+                                               node_aabb[s_ab], node_aabb[s_ab + 1],
+                                               node_aabb[s_ab + 2], node_aabb[s_ab + 3],
+                                               node_aabb[s_ab + 4], node_aabb[s_ab + 5])
+                        if s_tn <= s_tf and s_tf >= 0.0 and s_tn < l_dist:
+                            if s_node >= n_inner:
+                                s_tri = tri_ids[s_node - n_inner]
+                                si0 = conn[s_tri * 3]
+                                si1 = conn[s_tri * 3 + 1]
+                                si2 = conn[s_tri * 3 + 2]
+                                st, su, sv = _ray_tri(
+                                    s_ox, s_oy, s_oz, lx, ly, lz,
+                                    points[si0 * 3], points[si0 * 3 + 1], points[si0 * 3 + 2],
+                                    points[si1 * 3], points[si1 * 3 + 1], points[si1 * 3 + 2],
+                                    points[si2 * 3], points[si2 * 3 + 1], points[si2 * 3 + 2])
+                                if st > 0.0 and st < l_dist:
+                                    in_shadow = 1
+                            else:
+                                s_left = node_children[s_node * 2]
+                                s_right = node_children[s_node * 2 + 1]
+                                if sp < 23:
+                                    stack[stack_base + sp] = s_left
+                                    sp = sp + 1
+                                if sp < 23:
+                                    stack[stack_base + sp] = s_right
+                                    sp = sp + 1
+                      if in_shadow == 1:
+                        sp = 0
+
+                    if in_shadow == 0:
+                        l_int = light_data[lb + 3]
+                        l_cr = light_data[lb + 4]
+                        l_cg = light_data[lb + 5]
+                        l_cb = light_data[lb + 6]
+                        light_c = l_int * n_dot_l / (l_dist * l_dist)
+                        acc_r = acc_r + thr_r * alb_r * light_c * l_cr
+                        acc_g = acc_g + thr_g * alb_g * light_c * l_cg
+                        acc_b = acc_b + thr_b * alb_b * light_c * l_cb
 
                 # ---- prepare bounce ray ----
                 seq = _hash(seed * (config.max_bounces + 1) + bounce)
@@ -460,14 +464,18 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
            background=(0.05, 0.05, 0.1)):
     """Path trace the scene into the canvas.
 
+    All lights in the scene are used for direct illumination.  Each light
+    contributes independently with its own shadow ray.
+
     Args:
         canvas: Canvas to render into.
         scene: Scene containing actors and lights.
         camera: PerspectiveCamera.
         samples: Number of samples per pixel (quality knob).
         max_bounces: Maximum path depth (0 = direct only).
-        light_position: (x, y, z) override; defaults to first scene light.
-        light_intensity: Scalar brightness override.
+        light_position: (x, y, z) override for a single light.  When set,
+            scene lights are ignored and a single white light is used.
+        light_intensity: Scalar brightness for the override light.
         background: RGB background color in [0, 1].
     """
     import time as _time
@@ -499,19 +507,25 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
         scene._cached_bvh = bvh
         scene._cache_version = scene._version
 
-    # Light
-    if light_position is None:
-        if scene.lights:
-            lp = scene.lights[0].position
-            li = scene.lights[0].intensity
-        else:
-            lp = (10.0, 10.0, 10.0)
-            li = light_intensity
+    # Pack lights into a flat field: 7 floats per light (x,y,z, intensity, r,g,b)
+    if light_position is not None:
+        # Override: single white light
+        lights_list = [(*light_position, light_intensity, 1.0, 1.0, 1.0)]
+    elif scene.lights:
+        lights_list = [
+            (*lt.position, lt.intensity, *lt.color) for lt in scene.lights
+        ]
     else:
-        lp = light_position
-        li = light_intensity
+        # Default fallback
+        lights_list = [(10.0, 10.0, 10.0, light_intensity, 1.0, 1.0, 1.0)]
 
-    config = _RenderConfig(lp, li, background, max_bounces)
+    n_lights = len(lights_list)
+    light_np = np.array(
+        [v for lt in lights_list for v in lt], dtype=np.float32)
+    light_data = pgc.field(dtype=pgc.f32, shape=(light_np.shape[0],))
+    light_data.from_numpy(light_np)
+
+    config = _RenderConfig(background, max_bounces)
 
     width = camera.width
     height = camera.height
@@ -531,10 +545,12 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
                geom['points'], geom['conn'], geom['tri_colors'],
                geom['point_colors'], geom['normals'],
                bvh.node_aabb, bvh.node_children, bvh.tri_ids,
+               light_data,
                stack,
                camera, config,
                width, height, bvh.n_inner, n_tris, samples,
-               geom['has_normals'], geom['has_point_colors'], n_pixels)
+               geom['has_normals'], geom['has_point_colors'],
+               n_lights, n_pixels)
     _t_trace = _time.perf_counter() - _t0
 
     # Resolve to canvas

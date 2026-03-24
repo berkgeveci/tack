@@ -125,23 +125,33 @@ def _fill_color(tri_colors, offset, cr, cg, cb, n_tris):
 
 
 class Actor:
-    """Triangle mesh with per-vertex or uniform color.
+    """Triangle mesh with per-vertex, scalar-mapped, or uniform color.
 
     Args:
         points: pgc.field f32, shape (n_verts * 3,) — interleaved xyz.
         connectivity: pgc.field i32, shape (n_tris * 3,) — triangle indices.
-        color: RGB tuple in [0, 1], default mid-grey. Used when
-            point_colors is not provided.
+        color: RGB tuple in [0, 1], default mid-grey. Used when neither
+            point_colors nor scalars is provided.
         point_colors: per-vertex colors. Can be:
             - pgc.field f32, shape (n_verts * 3,) — RGB in [0, 1]
             - numpy uint8 array, shape (n_verts, 3) or (n_verts * 3,) —
               converted to f32 [0, 1] and uploaded.
-            - None — uses uniform ``color``.
+            - None — uses uniform ``color`` or scalar coloring.
+        scalars: per-vertex scalar field for color-table mapping. Can be:
+            - pgc.field f32, shape (n_verts,)
+            - numpy float32 array, shape (n_verts,)
+            - None — no scalar coloring.
+            Requires ``color_table`` to be set.  Takes precedence over
+            ``color`` but not over ``point_colors``.
+        color_table: :class:`~pgc.rendering.ColorTable` instance for
+            mapping ``scalars`` to RGB colors.  Required when ``scalars``
+            is provided.
         smooth: if True, compute and use vertex normals for smooth shading.
     """
 
     def __init__(self, points, connectivity, color=(0.8, 0.8, 0.8),
-                 point_colors=None, smooth=False):
+                 point_colors=None, scalars=None, color_table=None,
+                 smooth=False):
         self.points = points
         self.connectivity = connectivity
         self.color = tuple(float(c) for c in color)
@@ -163,9 +173,32 @@ class Actor:
             # Assume pgc.field f32
             self.point_colors = point_colors
 
+        # Handle scalar field + color table
+        if scalars is not None and color_table is None:
+            raise ValueError("scalars requires a color_table")
+        self.color_table = color_table
+        if scalars is None:
+            self.scalars = None
+        elif isinstance(scalars, np.ndarray):
+            s = scalars.reshape(-1).astype(np.float32)
+            self.scalars = pgc.field(dtype=pgc.f32, shape=(s.shape[0],))
+            self.scalars.from_numpy(s)
+        else:
+            # Assume pgc.field f32
+            self.scalars = scalars
+
 
 class PointLight:
-    """Point light source."""
+    """Point light source.
+
+    Multiple lights can be added to a scene.  Each light contributes
+    independently with its own shadow ray during rendering.
+
+    Args:
+        position: (x, y, z) world-space position.
+        intensity: Scalar brightness.
+        color: (r, g, b) light color in [0, 1].  Default white.
+    """
 
     def __init__(self, position, intensity=1.0, color=(1.0, 1.0, 1.0)):
         self.position = tuple(float(v) for v in position)
@@ -225,6 +258,10 @@ class Scene:
             if actor.point_colors is not None:
                 pc_field = actor.point_colors
                 has_point_colors = 1
+            elif actor.scalars is not None:
+                pc_field = actor.color_table.map_scalars(
+                    actor.scalars, actor.n_verts)
+                has_point_colors = 1
 
             return {
                 'points': actor.points,
@@ -280,8 +317,11 @@ class Scene:
                 offset += n_v
             has_normals = 1
 
-        # Per-vertex colors
-        any_point_colors = any(a.point_colors is not None for a in self.actors)
+        # Per-vertex colors (explicit point_colors or scalar-mapped)
+        def _actor_has_vertex_colors(a):
+            return a.point_colors is not None or a.scalars is not None
+
+        any_point_colors = any(_actor_has_vertex_colors(a) for a in self.actors)
         has_point_colors = 0
         pc_field = pgc.field(dtype=pgc.f32, shape=(3,))
         if any_point_colors:
@@ -292,6 +332,10 @@ class Scene:
                 if actor.point_colors is not None:
                     _copy_points(actor.point_colors, pc_field,
                                  v_offset * 3, n_v * 3)
+                elif actor.scalars is not None:
+                    mapped = actor.color_table.map_scalars(
+                        actor.scalars, n_v)
+                    _copy_points(mapped, pc_field, v_offset * 3, n_v * 3)
                 else:
                     # Fill with uniform actor color for actors without
                     # per-vertex colors

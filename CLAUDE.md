@@ -9,7 +9,7 @@ PGC is split into 3 packages under `packages/`:
 | Package | Path | Contents |
 |---------|------|----------|
 | `pgc-core` | `packages/pgc-core/` | Kernels, fields, types, IR, codegen, backends, scan/copy |
-| `pgc-rendering` | `packages/pgc-rendering/` | Path tracer (BVH, camera, scene) |
+| `pgc-rendering` | `packages/pgc-rendering/` | Path tracer (BVH, camera, scene, ColorTable) |
 | `pgc-vis` | `packages/pgc-vis/` | Visualization algorithms (flying edges, normals, VTK interop) |
 
 All share the `pgc` namespace via `pkgutil.extend_path`.
@@ -122,6 +122,14 @@ GPU backends use 64-bit integers for loop variables and index arithmetic (`long`
 ### Algorithms (pgc.algorithms)
 
 `exclusive_scan` and `inclusive_scan` implement Blelloch-style parallel prefix sums. They use a `_read_last` kernel to return the total sum without copying the entire buffer to numpy. The Blelloch scan uses O(log n) kernel launches, so for small arrays (< ~1M elements) a numpy CPU roundtrip may be faster due to kernel launch overhead.
+
+### ColorTable (pgc.rendering)
+
+`ColorTable` maps per-vertex scalar fields to RGB colors via a sampled lookup table. Presets: `viridis`, `cool_to_warm`, `inferno`, `plasma`, `grayscale`, `rainbow`. The `Actor` class accepts `scalars` (pgc.field or numpy) + `color_table` (ColorTable) to enable scalar field coloring. During `Scene._prepare()`, scalars are mapped to per-vertex colors on GPU via linear interpolation into the lookup table. The pathtrace kernel's existing per-vertex color interpolation handles the rest — no kernel changes needed.
+
+### Multiple lights (pgc.rendering)
+
+Multiple `PointLight` instances can be added to a `Scene`. Each light contributes independently with its own shadow ray. Light data is packed into a flat field (7 floats per light: x, y, z, intensity, r, g, b) and passed to the pathtrace kernel, which loops over all lights in the direct-illumination section. Light color (previously ignored) is now applied to each light's contribution. The `render()` function's `light_position` kwarg still works as a single-light override for backward compatibility.
 
 ### CPU threading threshold
 

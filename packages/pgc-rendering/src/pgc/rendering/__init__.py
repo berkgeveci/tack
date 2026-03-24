@@ -14,18 +14,23 @@ Canvas
 Scene, Actor, PointLight
     Scene graph objects.
 
+ColorTable
+    Maps scalar fields to RGB colors via sampled lookup tables.
+
 render(canvas, scene, camera, ...)
     Path trace the scene into a canvas.
 """
 
 from pgc.rendering.camera import PerspectiveCamera
 from pgc.rendering.canvas import Canvas
+from pgc.rendering.colortable import ColorTable
 from pgc.rendering.scene import Scene, Actor, PointLight, compute_normals
 from pgc.rendering.pathtrace import render
 
 __all__ = [
     "PerspectiveCamera",
     "Canvas",
+    "ColorTable",
     "Scene",
     "Actor",
     "PointLight",
