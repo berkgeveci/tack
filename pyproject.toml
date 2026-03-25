@@ -8,6 +8,7 @@ dependencies = [
     "pgc-core",
     "pgc-rendering",
     "pgc-vis",
+    "tack",
 ]
 
 [project.optional-dependencies]
@@ -22,6 +23,7 @@ dev = ["pytest"]
 pgc-core = { workspace = true }
 pgc-rendering = { workspace = true }
 pgc-vis = { workspace = true }
+tack = { workspace = true }
 
 [tool.uv.workspace]
 members = ["packages/*"]
