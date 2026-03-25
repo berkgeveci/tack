@@ -95,6 +95,42 @@ Multiple actors can be added to a scene. The renderer builds a unified
 BVH (bounding volume hierarchy) across all geometry for efficient ray
 traversal.
 
+### Transforms
+
+Each actor can have a 4x4 affine transformation matrix applied to its
+vertices during scene preparation:
+
+```python
+import numpy as np
+
+# Translation
+xform = np.eye(4, dtype=np.float32)
+xform[0, 3] = 2.0  # shift x by 2
+
+actor = Actor(points, triangles, transform=xform)
+
+# Rotation (90° around Z axis)
+rot = np.array([
+    [0, -1, 0, 0],
+    [1,  0, 0, 0],
+    [0,  0, 1, 0],
+    [0,  0, 0, 1],
+], dtype=np.float32)
+
+actor = Actor(points, triangles, transform=rot)
+
+# Scale
+scale = np.diag([2.0, 2.0, 2.0, 1.0]).astype(np.float32)
+actor = Actor(points, triangles, transform=scale)
+```
+
+The transform is applied on GPU. Normals are automatically transformed
+using the inverse-transpose of the 3x3 rotation part, ensuring correct
+lighting. The original points field is not modified — a copy is made.
+
+Different actors in the same scene can have different transforms, enabling
+instanced rendering of the same mesh at multiple positions/orientations.
+
 ### render()
 
 ```python
