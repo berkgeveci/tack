@@ -442,7 +442,7 @@ class CUDABackend:
         # a simulation framework like AMReX).  Only create a new context when
         # no current context exists.
         err, ctx = driver.cuCtxGetCurrent()
-        if err == driver.CUresult.CUDA_SUCCESS and ctx:
+        if err == driver.CUresult.CUDA_SUCCESS and int(ctx) != 0:
             self._context = ctx
             self._owns_context = False
         else:
@@ -673,7 +673,7 @@ class CUDABackend:
         return func, module
 
     def __del__(self):
-        if hasattr(self, '_context'):
+        if hasattr(self, '_context') and self._owns_context:
             try:
                 driver.cuCtxDestroy(self._context)
             except Exception:
