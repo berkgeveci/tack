@@ -125,6 +125,66 @@ def _fill_color(tri_colors, offset, cr, cg, cb, n_tris):
 
 
 @pgc.kernel
+def _transform_points(points, xform, n_verts):
+    """Apply a 4x4 affine transform to interleaved xyz points.
+
+    xform is a flat f32 field of 16 elements (row-major 4x4 matrix).
+    Only the upper 3x4 part is used (affine, no perspective divide).
+    """
+    for i in range(n_verts):
+        x = points[i * 3]
+        y = points[i * 3 + 1]
+        z = points[i * 3 + 2]
+        points[i * 3]     = xform[0] * x + xform[1] * y + xform[2]  * z + xform[3]
+        points[i * 3 + 1] = xform[4] * x + xform[5] * y + xform[6]  * z + xform[7]
+        points[i * 3 + 2] = xform[8] * x + xform[9] * y + xform[10] * z + xform[11]
+
+
+@pgc.kernel
+def _transform_normals(normals, nxform, n_verts):
+    """Apply the inverse-transpose 3x3 to normals and renormalize.
+
+    nxform is a flat f32 field of 9 elements (row-major 3x3 matrix).
+    """
+    for i in range(n_verts):
+        nx = normals[i * 3]
+        ny = normals[i * 3 + 1]
+        nz = normals[i * 3 + 2]
+        tx = nxform[0] * nx + nxform[1] * ny + nxform[2] * nz
+        ty = nxform[3] * nx + nxform[4] * ny + nxform[5] * nz
+        tz = nxform[6] * nx + nxform[7] * ny + nxform[8] * nz
+        length = sqrt(tx * tx + ty * ty + tz * tz) + 1.0e-20
+        normals[i * 3]     = tx / length
+        normals[i * 3 + 1] = ty / length
+        normals[i * 3 + 2] = tz / length
+
+
+def _apply_transform(points_field, n_verts, transform_4x4):
+    """Apply a 4x4 transform to a points field on GPU. Returns new field."""
+    # Copy points so we don't mutate the original
+    out = points_field.copy()
+    xform = pgc.field(dtype=pgc.f32, shape=(16,))
+    xform.from_numpy(transform_4x4.ravel().astype(np.float32))
+    _transform_points(out, xform, n_verts)
+    return out
+
+
+def _apply_normal_transform(normals_field, n_verts, transform_4x4):
+    """Apply inverse-transpose 3x3 to normals on GPU. Returns new field."""
+    out = normals_field.copy()
+    # Inverse-transpose of upper-left 3x3
+    m33 = transform_4x4[:3, :3].astype(np.float64)
+    try:
+        nmat = np.linalg.inv(m33).T.astype(np.float32)
+    except np.linalg.LinAlgError:
+        nmat = m33.astype(np.float32)  # fallback for singular
+    nxform = pgc.field(dtype=pgc.f32, shape=(9,))
+    nxform.from_numpy(nmat.ravel())
+    _transform_normals(out, nxform, n_verts)
+    return out
+
+
+@pgc.kernel
 def _fill_material_id(mat_ids, offset, mat_id, n_tris):
     """Fill per-triangle material IDs for one actor."""
     for i in range(n_tris):
@@ -190,18 +250,23 @@ class Actor:
             ``Material(Material.MATTE)``.
         render_mode: ``"solid"`` (default, path traced), ``"wireframe"``,
             or ``"points"``.
+        transform: 4x4 affine transformation matrix (numpy array or nested
+            list). Applied to vertices (and inverse-transpose to normals)
+            during ``Scene._prepare()``. Default: None (identity).
     """
 
     def __init__(self, points, connectivity, color=(0.8, 0.8, 0.8),
                  point_colors=None, scalars=None, color_table=None,
                  smooth=False, normals=None, material=None,
-                 render_mode="solid"):
+                 render_mode="solid", transform=None):
         self.points = points
         self.connectivity = connectivity
         self.color = tuple(float(c) for c in color)
         self.n_verts = points.shape[0] // 3
         self.n_tris = connectivity.shape[0] // 3
         self.smooth = smooth
+        self.transform = (np.asarray(transform, dtype=np.float32).reshape(4, 4)
+                          if transform is not None else None)
 
         # Handle pre-computed normals
         if normals is None:
@@ -318,10 +383,15 @@ class Scene:
         any_has_normals = any(
             a.normals is not None or a.smooth for a in self.actors)
 
-        # --- Single actor: zero copy for geometry ---
+        # --- Single actor: zero copy for geometry (unless transform) ---
         if len(self.actors) == 1:
             actor = self.actors[0]
             n_tris = actor.n_tris
+
+            # Apply transform if present
+            pts = actor.points
+            if actor.transform is not None:
+                pts = _apply_transform(pts, actor.n_verts, actor.transform)
 
             colors_field = pgc.field(dtype=pgc.f32, shape=(n_tris * 3,))
             _fill_color(colors_field, 0,
@@ -332,10 +402,13 @@ class Scene:
             normals_field = pgc.field(dtype=pgc.f32, shape=(3,))
             if actor.normals is not None:
                 normals_field = actor.normals
+                if actor.transform is not None:
+                    normals_field = _apply_normal_transform(
+                        normals_field, actor.n_verts, actor.transform)
                 has_normals = 1
             elif actor.smooth:
                 normals_field = compute_normals_gpu(
-                    actor.points, actor.connectivity,
+                    pts, actor.connectivity,
                     actor.n_verts, n_tris)
                 has_normals = 1
 
@@ -359,7 +432,7 @@ class Scene:
             mat_table.from_numpy(mat_np)
 
             return {
-                'points': actor.points,
+                'points': pts,
                 'conn': actor.connectivity,
                 'tri_colors': colors_field,
                 'point_colors': pc_field,
@@ -388,7 +461,11 @@ class Scene:
             n_v = actor.n_verts
             n_t = actor.n_tris
 
-            _copy_points(actor.points, points_field, pts_offset, n_v * 3)
+            if actor.transform is not None:
+                xformed = _apply_transform(actor.points, n_v, actor.transform)
+                _copy_points(xformed, points_field, pts_offset, n_v * 3)
+            else:
+                _copy_points(actor.points, points_field, pts_offset, n_v * 3)
             _copy_conn_offset(actor.connectivity, conn_field,
                               conn_offset, vert_offset, n_t * 3)
             _fill_color(colors_field, color_offset,
@@ -406,23 +483,31 @@ class Scene:
             # Check if all actors provide pre-computed normals
             all_precomputed = all(a.normals is not None for a in self.actors)
             if all_precomputed:
-                # Concatenate pre-computed normals
+                # Concatenate pre-computed normals (transform if needed)
                 normals_field = pgc.field(dtype=pgc.f32,
                                           shape=(total_verts * 3,))
                 v_off = 0
                 for actor in self.actors:
-                    _copy_points(actor.normals, normals_field,
+                    nrm = actor.normals
+                    if actor.transform is not None:
+                        nrm = _apply_normal_transform(
+                            nrm, actor.n_verts, actor.transform)
+                    _copy_points(nrm, normals_field,
                                  v_off * 3, actor.n_verts * 3)
                     v_off += actor.n_verts
             else:
-                # Compute normals on GPU, then overwrite with pre-computed
+                # Compute normals on GPU from (already-transformed) points
                 normals_field = compute_normals_gpu(
                     points_field, conn_field, total_verts, total_tris)
                 offset = 0
                 for actor in self.actors:
                     n_v = actor.n_verts
                     if actor.normals is not None:
-                        _copy_points(actor.normals, normals_field,
+                        nrm = actor.normals
+                        if actor.transform is not None:
+                            nrm = _apply_normal_transform(
+                                nrm, n_v, actor.transform)
+                        _copy_points(nrm, normals_field,
                                      offset * 3, n_v * 3)
                     elif not actor.smooth:
                         _zero_normals_range(normals_field, offset, n_v)
