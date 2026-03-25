@@ -101,6 +101,17 @@ x.fill(0.0)               # fill with scalar
 total = x.sum()
 lo = x.min()
 hi = x.max()
+
+# Convenience constructors
+z = pgc.zeros(dtype=pgc.f32, shape=(1024,))
+o = pgc.ones(dtype=pgc.i32, shape=(256,))
+idx = pgc.arange(100)
+
+# Copy, convert, reshape, concatenate
+backup = x.copy()
+x_f64 = x.astype(pgc.f64)
+flat = img.reshape((512 * 512,))
+combined = pgc.concat([part_a, part_b])
 ```
 
 ## Kernel Language

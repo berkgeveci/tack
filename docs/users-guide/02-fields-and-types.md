@@ -85,6 +85,49 @@ minimum = data.min()
 maximum = data.max()
 ```
 
+## Field Utilities
+
+### Constructors
+
+```python
+# Allocate filled fields
+x = pgc.zeros(dtype=pgc.f32, shape=(1024,))
+y = pgc.ones(dtype=pgc.i32, shape=(256,))
+z = pgc.full(pgc.f32, (100,), 3.14)
+idx = pgc.arange(64)                          # [0, 1, 2, ..., 63] as i32
+idx_f = pgc.arange(64, dtype=pgc.f32)         # [0.0, 1.0, ..., 63.0]
+```
+
+### Copy, Convert, Reshape
+
+```python
+# Copy (new field, separate buffer)
+backup = data.copy()
+
+# Convert dtype (returns new field)
+data_f64 = data.astype(pgc.f64)
+indices_u8 = indices.astype(pgc.u8)
+
+# Reshape (metadata only, shares buffer — no copy)
+flat = grid.reshape((width * height,))
+grid2d = flat.reshape((height, width))
+```
+
+### Concatenate
+
+```python
+# Concatenate 1D fields (same dtype required)
+combined = pgc.concat([part_a, part_b, part_c])
+```
+
+### Size and Length
+
+```python
+f = pgc.field(dtype=pgc.f32, shape=(4, 3))
+f.size       # 12 (total elements)
+len(f)       # 4 (first dimension)
+```
+
 ## Scalar Arguments
 
 Kernels accept Python scalars directly — no need to wrap them in fields:
