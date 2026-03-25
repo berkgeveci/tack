@@ -129,6 +129,10 @@ class Field:
             return backend.reduce_field(self, 'max')
         return float(self._buffer.to_numpy().max())
 
+    def mean(self):
+        """Return the mean of all elements (GPU sum / size)."""
+        return self.sum() / self.size
+
     def export_memory(self) -> ExportedMemory:
         """Export the field's GPU memory for cross-API sharing.
 
