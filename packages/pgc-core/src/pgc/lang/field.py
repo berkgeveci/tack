@@ -177,23 +177,27 @@ class Field:
         return self.shape[0] if self.shape else 0
 
     def copy(self) -> 'Field':
-        """Return a new field with a copy of this field's data."""
+        """Return a new field with a copy of this field's data (GPU kernel, no host roundtrip)."""
         from pgc.runtime.dispatch import get_backend
+        from pgc.algorithms.copy import copy as _copy
         backend = get_backend()
         buf = backend.allocate_field(self.dtype, self.shape)
         new_field = Field(self.dtype, self.shape, buf)
-        new_field.from_numpy(self.to_numpy())
+        _copy(self, new_field, self.size)
         return new_field
 
     def astype(self, new_dtype: ScalarType) -> 'Field':
-        """Return a new field with data converted to a different dtype."""
+        """Return a new field with data converted to a different dtype (GPU kernel, no host roundtrip)."""
         if new_dtype is self.dtype:
             return self.copy()
         from pgc.runtime.dispatch import get_backend
+        from pgc.algorithms.copy import copy as _copy
         backend = get_backend()
         buf = backend.allocate_field(new_dtype, self.shape)
         new_field = Field(new_dtype, self.shape, buf)
-        new_field.from_numpy(self.to_numpy().astype(new_dtype.numpy_dtype))
+        # The copy kernel handles cross-dtype conversion naturally:
+        # dst[i] = src[i] where dst and src have different dtypes
+        _copy(self, new_field, self.size)
         return new_field
 
     def reshape(self, new_shape: tuple[int, ...]) -> 'Field':
@@ -289,7 +293,7 @@ def arange(n: int, dtype: ScalarType = i32) -> Field:
 
 
 def concat(fields_list: list[Field]) -> Field:
-    """Concatenate a list of 1D fields into a single field.
+    """Concatenate a list of 1D fields into a single field (GPU kernel, no host roundtrip).
 
     All fields must have the same dtype. Returns a new field with
     shape (total_elements,).
@@ -302,9 +306,15 @@ def concat(fields_list: list[Field]) -> Field:
             raise TypeError(
                 f"concat: all fields must have the same dtype, "
                 f"got {dt} and {f.dtype}")
-    arrays = [f.to_numpy().ravel() for f in fields_list]
-    combined = np.concatenate(arrays)
-    return field_like(combined, dtype=dt)
+    total = sum(f.size for f in fields_list)
+    result = field(dtype=dt, shape=(total,))
+    from pgc.algorithms.copy import copy_with_offset
+    offset = 0
+    for f in fields_list:
+        n = f.size
+        copy_with_offset(f, result, offset, n)
+        offset += n
+    return result
 
 
 def from_dlpack(capsule) -> Field:

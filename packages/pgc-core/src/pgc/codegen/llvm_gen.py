@@ -64,6 +64,8 @@ class LLVMCodeGen:
         self._field_params: set[str] = set()
         # Local variable storage (name -> alloca)
         self._locals: dict[str, llvm_ir.Value] = {}
+        # Track LLVM values that carry unsigned semantics (for correct sitofp vs uitofp)
+        self._unsigned_vals: set[int] = set()  # set of id(llvm_value)
 
         # Break/continue targets for loops
         self._break_target: llvm_ir.Block | None = None
@@ -705,7 +707,12 @@ class LLVMCodeGen:
         base_ptr = self._emit_expr(node.field)
         index = self._to_i64(self._emit_expr(node.index))
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="load.ptr")
-        return self.builder.load(elem_ptr, name="load.val", align=4)
+        val = self.builder.load(elem_ptr, name="load.val", align=4)
+        # Track unsigned values for correct coercion (uitofp vs sitofp)
+        dtype = getattr(node, 'dtype', None)
+        if dtype in (u8, u16, u32, u64):
+            self._unsigned_vals.add(id(val))
+        return val
 
     def _emit_texture_sample(self, node: ir.IRTextureSample) -> llvm_ir.Value:
         """Emit software trilinear interpolation for texture3d.sample()."""
@@ -982,6 +989,8 @@ class LLVMCodeGen:
         if _is_float_type(val.type):
             return val
         if _is_int_type(val.type):
+            if id(val) in self._unsigned_vals:
+                return self.builder.uitofp(val, llvm_ir.FloatType(), name="to.float")
             return self.builder.sitofp(val, llvm_ir.FloatType(), name="to.float")
         raise TypeError(f"Cannot convert {val.type} to float")
 
@@ -998,6 +1007,8 @@ class LLVMCodeGen:
 
         # int -> float
         if _is_int_type(val.type) and _is_float_type(target):
+            if id(val) in self._unsigned_vals:
+                return self.builder.uitofp(val, target, name="uitofp")
             return self.builder.sitofp(val, target, name="sitofp")
 
         # float -> int
@@ -1007,6 +1018,8 @@ class LLVMCodeGen:
         # int -> int (widen/narrow)
         if _is_int_type(val.type) and _is_int_type(target):
             if val.type.width < target.width:
+                if id(val) in self._unsigned_vals:
+                    return self.builder.zext(val, target, name="zext")
                 return self.builder.sext(val, target, name="sext")
             return self.builder.trunc(val, target, name="trunc")
 
