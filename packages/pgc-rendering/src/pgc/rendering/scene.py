@@ -181,6 +181,11 @@ class Actor:
             mapping ``scalars`` to RGB colors.  Required when ``scalars``
             is provided.
         smooth: if True, compute and use vertex normals for smooth shading.
+        normals: pre-computed per-vertex normals. Can be:
+            - pgc.field f32, shape (n_verts * 3,) — interleaved xyz
+            - numpy float32 array, shape (n_verts, 3) or (n_verts * 3,)
+            - None — uses ``smooth`` to decide.
+            Takes precedence over ``smooth`` when provided.
         material: :class:`Material` instance.  Default is
             ``Material(Material.MATTE)``.
         render_mode: ``"solid"`` (default, path traced), ``"wireframe"``,
@@ -189,13 +194,24 @@ class Actor:
 
     def __init__(self, points, connectivity, color=(0.8, 0.8, 0.8),
                  point_colors=None, scalars=None, color_table=None,
-                 smooth=False, material=None, render_mode="solid"):
+                 smooth=False, normals=None, material=None,
+                 render_mode="solid"):
         self.points = points
         self.connectivity = connectivity
         self.color = tuple(float(c) for c in color)
         self.n_verts = points.shape[0] // 3
         self.n_tris = connectivity.shape[0] // 3
         self.smooth = smooth
+
+        # Handle pre-computed normals
+        if normals is None:
+            self.normals = None
+        elif isinstance(normals, np.ndarray):
+            n = normals.reshape(-1).astype(np.float32)
+            self.normals = pgc.field(dtype=pgc.f32, shape=(n.shape[0],))
+            self.normals.from_numpy(n)
+        else:
+            self.normals = normals
         self.material = material if material is not None else Material()
         if render_mode not in ("solid", "wireframe", "points"):
             raise ValueError(
@@ -299,7 +315,8 @@ class Scene:
         Multi-actor: GPU kernels concatenate fields (no host round-trip
         for geometry).  Normals still require host for compute_normals().
         """
-        any_smooth = any(a.smooth for a in self.actors)
+        any_has_normals = any(
+            a.normals is not None or a.smooth for a in self.actors)
 
         # --- Single actor: zero copy for geometry ---
         if len(self.actors) == 1:
@@ -313,7 +330,10 @@ class Scene:
 
             has_normals = 0
             normals_field = pgc.field(dtype=pgc.f32, shape=(3,))
-            if actor.smooth:
+            if actor.normals is not None:
+                normals_field = actor.normals
+                has_normals = 1
+            elif actor.smooth:
                 normals_field = compute_normals_gpu(
                     actor.points, actor.connectivity,
                     actor.n_verts, n_tris)
@@ -379,19 +399,34 @@ class Scene:
             conn_offset += n_t * 3
             color_offset += n_t * 3
 
-        # Normals (GPU: atomic_add accumulation + normalize)
+        # Normals: pre-computed normals take precedence, then smooth, then flat
         has_normals = 0
         normals_field = pgc.field(dtype=pgc.f32, shape=(3,))
-        if any_smooth:
-            normals_field = compute_normals_gpu(
-                points_field, conn_field, total_verts, total_tris)
-            # Zero out normals for flat-shaded actors
-            offset = 0
-            for actor in self.actors:
-                n_v = actor.n_verts
-                if not actor.smooth:
-                    _zero_normals_range(normals_field, offset, n_v)
-                offset += n_v
+        if any_has_normals:
+            # Check if all actors provide pre-computed normals
+            all_precomputed = all(a.normals is not None for a in self.actors)
+            if all_precomputed:
+                # Concatenate pre-computed normals
+                normals_field = pgc.field(dtype=pgc.f32,
+                                          shape=(total_verts * 3,))
+                v_off = 0
+                for actor in self.actors:
+                    _copy_points(actor.normals, normals_field,
+                                 v_off * 3, actor.n_verts * 3)
+                    v_off += actor.n_verts
+            else:
+                # Compute normals on GPU, then overwrite with pre-computed
+                normals_field = compute_normals_gpu(
+                    points_field, conn_field, total_verts, total_tris)
+                offset = 0
+                for actor in self.actors:
+                    n_v = actor.n_verts
+                    if actor.normals is not None:
+                        _copy_points(actor.normals, normals_field,
+                                     offset * 3, n_v * 3)
+                    elif not actor.smooth:
+                        _zero_normals_range(normals_field, offset, n_v)
+                    offset += n_v
             has_normals = 1
 
         # Per-vertex colors (explicit point_colors or scalar-mapped)
