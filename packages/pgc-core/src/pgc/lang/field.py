@@ -13,7 +13,7 @@ transfers are zero-copy.  On CUDA transfers go over PCIe.
 from dataclasses import dataclass
 import numpy as np
 
-from pgc.lang.types import ScalarType, f32, f64, from_numpy_dtype
+from pgc.lang.types import ScalarType, f32, f64, i32, from_numpy_dtype
 
 
 class DeviceBuffer:
@@ -160,6 +160,55 @@ class Field:
         from pgc.lang.dlpack import dlpack_device
         return dlpack_device(self)
 
+    @property
+    def size(self) -> int:
+        """Total number of elements in the field."""
+        result = 1
+        for s in self.shape:
+            result *= s
+        return result
+
+    def __len__(self) -> int:
+        """Number of elements along the first dimension."""
+        return self.shape[0] if self.shape else 0
+
+    def copy(self) -> 'Field':
+        """Return a new field with a copy of this field's data."""
+        from pgc.runtime.dispatch import get_backend
+        backend = get_backend()
+        buf = backend.allocate_field(self.dtype, self.shape)
+        new_field = Field(self.dtype, self.shape, buf)
+        new_field.from_numpy(self.to_numpy())
+        return new_field
+
+    def astype(self, new_dtype: ScalarType) -> 'Field':
+        """Return a new field with data converted to a different dtype."""
+        if new_dtype is self.dtype:
+            return self.copy()
+        from pgc.runtime.dispatch import get_backend
+        backend = get_backend()
+        buf = backend.allocate_field(new_dtype, self.shape)
+        new_field = Field(new_dtype, self.shape, buf)
+        new_field.from_numpy(self.to_numpy().astype(new_dtype.numpy_dtype))
+        return new_field
+
+    def reshape(self, new_shape: tuple[int, ...]) -> 'Field':
+        """Return a new field with the same data but a different shape.
+
+        The total number of elements must match. This is a metadata-only
+        operation — the underlying buffer is shared (no copy).
+        """
+        if isinstance(new_shape, int):
+            new_shape = (new_shape,)
+        new_size = 1
+        for s in new_shape:
+            new_size *= s
+        if new_size != self.size:
+            raise ValueError(
+                f"Cannot reshape {self.shape} ({self.size} elements) "
+                f"to {new_shape} ({new_size} elements)")
+        return Field(self.dtype, new_shape, self._buffer, self._writable)
+
     def __repr__(self):
         return f"Field(dtype={self.dtype}, shape={self.shape})"
 
@@ -206,6 +255,52 @@ def field_like(arr: np.ndarray, dtype: ScalarType = None) -> Field:
     f = Field(dtype, shape, buf)
     f.from_numpy(arr)
     return f
+
+
+def zeros(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
+    """Create a field filled with zeros."""
+    f = field(dtype=dtype, shape=shape)
+    f.fill(0)
+    return f
+
+
+def ones(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
+    """Create a field filled with ones."""
+    f = field(dtype=dtype, shape=shape)
+    f.fill(1)
+    return f
+
+
+def full(dtype: ScalarType, shape: tuple[int, ...], value) -> Field:
+    """Create a field filled with a constant value."""
+    f = field(dtype=dtype, shape=shape)
+    f.fill(value)
+    return f
+
+
+def arange(n: int, dtype: ScalarType = i32) -> Field:
+    """Create a field with values [0, 1, 2, ..., n-1]."""
+    arr = np.arange(n, dtype=dtype.numpy_dtype)
+    return field_like(arr, dtype=dtype)
+
+
+def concat(fields_list: list[Field]) -> Field:
+    """Concatenate a list of 1D fields into a single field.
+
+    All fields must have the same dtype. Returns a new field with
+    shape (total_elements,).
+    """
+    if not fields_list:
+        raise ValueError("concat requires at least one field")
+    dt = fields_list[0].dtype
+    for f in fields_list[1:]:
+        if f.dtype is not dt:
+            raise TypeError(
+                f"concat: all fields must have the same dtype, "
+                f"got {dt} and {f.dtype}")
+    arrays = [f.to_numpy().ravel() for f in fields_list]
+    combined = np.concatenate(arrays)
+    return field_like(combined, dtype=dt)
 
 
 def from_dlpack(capsule) -> Field:
