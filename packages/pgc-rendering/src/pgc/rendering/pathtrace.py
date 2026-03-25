@@ -510,14 +510,26 @@ def _pathtrace(fb_r, fb_g, fb_b,
                     s_oz = hz + nz * 0.005
 
                     for li in range(n_lights):
-                        lb = li * 7
-                        lx = light_data[lb] - hx
-                        ly = light_data[lb + 1] - hy
-                        lz = light_data[lb + 2] - hz
-                        l_dist = sqrt(lx * lx + ly * ly + lz * lz) + 1.0e-20
-                        lx = lx / l_dist
-                        ly = ly / l_dist
-                        lz = lz / l_dist
+                        lb = li * 8
+                        l_type = light_data[lb + 7]
+
+                        # Light direction and distance
+                        if l_type < 0.5:
+                            # Point light: direction from hit to light position
+                            lx = light_data[lb] - hx
+                            ly = light_data[lb + 1] - hy
+                            lz = light_data[lb + 2] - hz
+                            l_dist = sqrt(lx * lx + ly * ly + lz * lz) + 1.0e-20
+                            lx = lx / l_dist
+                            ly = ly / l_dist
+                            lz = lz / l_dist
+                        else:
+                            # Directional light: fixed direction, infinite distance
+                            lx = light_data[lb]
+                            ly = light_data[lb + 1]
+                            lz = light_data[lb + 2]
+                            l_dist = 1.0e20
+
                         n_dot_l = nx * lx + ny * ly + nz * lz
                         if n_dot_l < 0.0:
                             n_dot_l = 0.0
@@ -570,7 +582,10 @@ def _pathtrace(fb_r, fb_g, fb_b,
                             l_cr = light_data[lb + 4]
                             l_cg = light_data[lb + 5]
                             l_cb = light_data[lb + 6]
-                            light_c = l_int * n_dot_l / (l_dist * l_dist)
+                            if l_type < 0.5:
+                                light_c = l_int * n_dot_l / (l_dist * l_dist)
+                            else:
+                                light_c = l_int * n_dot_l
                             acc_r = acc_r + thr_r * alb_r * light_c * l_cr
                             acc_g = acc_g + thr_g * alb_g * light_c * l_cg
                             acc_b = acc_b + thr_b * alb_b * light_c * l_cb
@@ -773,17 +788,22 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
         scene._cached_bvh = bvh
         scene._cache_version = scene._version
 
-    # Pack lights into a flat field: 7 floats per light (x,y,z, intensity, r,g,b)
+    # Pack lights: 8 floats per light (x,y,z, intensity, r,g,b, type)
+    # type 0=point (x,y,z is position), type 1=directional (x,y,z is direction)
+    from pgc.rendering.scene import DirectionalLight
     if light_position is not None:
-        # Override: single white light
-        lights_list = [(*light_position, light_intensity, 1.0, 1.0, 1.0)]
+        lights_list = [(*light_position, light_intensity, 1.0, 1.0, 1.0, 0.0)]
     elif scene.lights:
-        lights_list = [
-            (*lt.position, lt.intensity, *lt.color) for lt in scene.lights
-        ]
+        lights_list = []
+        for lt in scene.lights:
+            if isinstance(lt, DirectionalLight):
+                lights_list.append(
+                    (*lt.direction, lt.intensity, *lt.color, 1.0))
+            else:
+                lights_list.append(
+                    (*lt.position, lt.intensity, *lt.color, 0.0))
     else:
-        # Default fallback
-        lights_list = [(10.0, 10.0, 10.0, light_intensity, 1.0, 1.0, 1.0)]
+        lights_list = [(10.0, 10.0, 10.0, light_intensity, 1.0, 1.0, 1.0, 0.0)]
 
     n_lights = len(lights_list)
     light_np = np.array(

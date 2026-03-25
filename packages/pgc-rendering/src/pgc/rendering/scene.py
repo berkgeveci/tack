@@ -250,6 +250,23 @@ class PointLight:
         self.color = tuple(float(c) for c in color)
 
 
+class DirectionalLight:
+    """Directional (infinite distance) light source.
+
+    Args:
+        direction: (x, y, z) light direction (points toward the light).
+        intensity: Scalar brightness.
+        color: (r, g, b) light color in [0, 1].
+    """
+
+    def __init__(self, direction, intensity=1.0, color=(1.0, 1.0, 1.0)):
+        d = np.array(direction, dtype=np.float64)
+        d = d / (np.linalg.norm(d) + 1e-20)
+        self.direction = tuple(float(v) for v in d)
+        self.intensity = float(intensity)
+        self.color = tuple(float(c) for c in color)
+
+
 class Scene:
     """Container for actors, volumes, and lights."""
 
@@ -270,7 +287,7 @@ class Scene:
         elif isinstance(obj, Volume):
             self.volumes.append(obj)
             self._version += 1
-        elif isinstance(obj, PointLight):
+        elif isinstance(obj, (PointLight, DirectionalLight)):
             self.lights.append(obj)
         else:
             raise TypeError(f"Cannot add {type(obj).__name__} to Scene")
