@@ -6,6 +6,7 @@ __path__ = extend_path(__path__, __name__)
 
 from pgc.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64, template
 from pgc.lang.kernel import kernel
+from pgc.lang.inspect_kernel import inspect
 from pgc.lang.func import func
 from pgc.lang.field import (
     field, field_like, field_from_ptr, from_dlpack, memory_space,

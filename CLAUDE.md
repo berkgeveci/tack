@@ -76,6 +76,10 @@ PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are deco
 9. Codegen produces backend-specific code (cached by kernel name + type signature + template key)
 10. Dispatch: CPU splits range across threads; GPU launches grid of threads
 
+### Kernel code inspection
+
+`pgc.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (PGC IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR, CPU only). Implementation in `lang/inspect_kernel.py`.
+
 ### IR structure (lang/ir.py)
 
 The IR is a simple tree of nodes:
