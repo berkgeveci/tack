@@ -33,6 +33,14 @@ class Canvas:
             self._work[key] = pgc.field(dtype=dtype, shape=shape)
         return self._work[key]
 
+    def depth_to_numpy(self):
+        """Return (H, W) float32 depth buffer.
+
+        Values are ray hit distances. -1 means no hit (background).
+        Available after rendering.
+        """
+        return self.depth.to_numpy().reshape(self.height, self.width)
+
     def to_numpy(self):
         """Return (H, W, 4) uint8 RGBA array."""
         r = self.color_r.to_numpy().reshape(self.height, self.width)

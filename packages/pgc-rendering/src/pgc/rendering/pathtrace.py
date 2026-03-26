@@ -255,7 +255,7 @@ def _halton3(index):
 # ================================================================
 
 @pgc.kernel
-def _pathtrace(fb_r, fb_g, fb_b,
+def _pathtrace(fb_r, fb_g, fb_b, fb_depth,
                points, conn, tri_colors, point_colors, normals,
                node_aabb, node_children, tri_ids,
                light_data,
@@ -267,7 +267,10 @@ def _pathtrace(fb_r, fb_g, fb_b,
                width, height, n_inner, n_tris, n_samples,
                has_normals, has_point_colors, n_lights,
                has_volume, n_pixels):
-    """Trace all samples for each pixel and accumulate into fb_r/g/b."""
+    """Trace all samples for each pixel and accumulate into fb_r/g/b.
+
+    Also writes primary-ray depth (first sample, first bounce) to fb_depth.
+    """
 
     for pid in range(n_pixels):
         px = pid % width
@@ -434,6 +437,13 @@ def _pathtrace(fb_r, fb_g, fb_b,
                         thr_g = thr_g * (1.0 - vsa)
                         thr_b = thr_b * (1.0 - vsa)
                         vt = vt + config.vol_step
+
+            # ---- write depth on primary ray (first sample, first bounce) ----
+            if bounce == 0 and samp == 0:
+                if hit_tri >= 0:
+                    fb_depth[pid] = hit_t
+                else:
+                    fb_depth[pid] = -1.0
 
             # ---- miss: background ----
             if hit_tri < 0:
@@ -846,13 +856,16 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     fb_g = canvas.get_work_buffer('fb_g', pgc.f32, (n_pixels,))
     fb_b = canvas.get_work_buffer('fb_b', pgc.f32, (n_pixels,))
 
+    # Depth buffer (cached)
+    fb_depth = canvas.get_work_buffer('fb_depth', pgc.f32, (n_pixels,))
+
     # BVH traversal stack (cached)
     stack = canvas.get_work_buffer('stack', pgc.i32,
                                    (n_pixels * STACK_DEPTH,))
 
     # Render all samples in a single kernel launch
     _t0 = _time.perf_counter()
-    _pathtrace(fb_r, fb_g, fb_b,
+    _pathtrace(fb_r, fb_g, fb_b, fb_depth,
                geom['points'], geom['conn'], geom['tri_colors'],
                geom['point_colors'], geom['normals'],
                bvh.node_aabb, bvh.node_children, bvh.tri_ids,
@@ -870,5 +883,9 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     inv_samples = 1.0 / float(samples)
     _resolve(canvas.color_r, canvas.color_g, canvas.color_b,
              fb_r, fb_g, fb_b, inv_samples, n_pixels)
+
+    # Copy depth buffer to canvas
+    from pgc.algorithms.copy import copy as _copy
+    _copy(fb_depth, canvas.depth, n_pixels)
 
     print(f"  [breakdown] prepare={_t_prepare:.3f}s  bvh={_t_bvh:.3f}s  trace={_t_trace:.3f}s")

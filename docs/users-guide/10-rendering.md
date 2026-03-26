@@ -146,6 +146,27 @@ render(
 Each sample launches one GPU kernel where every pixel traces a complete
 light path. Multiple samples are accumulated progressively.
 
+### Depth Buffer
+
+The path tracer writes a depth buffer alongside the color output.
+After rendering, access it via `canvas.depth_to_numpy()`:
+
+```python
+render(canvas, scene, camera, samples=4)
+
+# Get depth as (H, W) float32 array
+depth = canvas.depth_to_numpy()
+
+# -1 means background (no hit), positive values are ray distances
+hit_mask = depth >= 0
+print(f"Closest: {depth[hit_mask].min():.2f}")
+print(f"Farthest: {depth[hit_mask].max():.2f}")
+```
+
+The depth values are ray hit distances from the camera origin (not
+clip-space Z). Useful for depth-of-field effects, compositing, or
+exporting depth maps.
+
 ## GPU Pipeline
 
 The renderer is built entirely from PGC kernels:
