@@ -1,23 +1,23 @@
 # Path Tracing Renderer
 
-The `pgc-rendering` package provides a GPU-accelerated path tracer that
-operates directly on PGC fields. Geometry from visualization algorithms
+The `tack-rendering` package provides a GPU-accelerated path tracer that
+operates directly on Tack fields. Geometry from visualization algorithms
 (like flying edges) can be rendered without any host copies.
 
 ```bash
-pip install pgc-rendering    # pulls in pgc-core automatically
+pip install tack-rendering    # pulls in tack-core automatically
 ```
 
 ## Quick Start
 
 ```python
 import numpy as np
-import pgc
-from pgc.rendering import (
+import tack
+from tack.rendering import (
     PerspectiveCamera, Canvas, Scene, Actor, PointLight, render,
 )
 
-pgc.init(arch=pgc.metal)
+tack.init(arch=tack.metal)
 
 # Create geometry (triangle mesh as numpy arrays)
 points = np.array([[0,0,0], [1,0,0], [0.5,1,0]], dtype=np.float32)
@@ -48,7 +48,7 @@ image = canvas.to_numpy()  # (512, 512, 4) uint8
 
 ### PerspectiveCamera
 
-A `@pgc.data_oriented` perspective camera. All parameters become compile-time
+A `@tack.data_oriented` perspective camera. All parameters become compile-time
 constants in the path tracing kernel.
 
 ```python
@@ -63,7 +63,7 @@ camera = PerspectiveCamera(
 
 ### Canvas
 
-An RGBA framebuffer backed by PGC fields (three f32 fields for R, G, B):
+An RGBA framebuffer backed by Tack fields (three f32 fields for R, G, B):
 
 ```python
 canvas = Canvas(width, height)
@@ -169,7 +169,7 @@ exporting depth maps.
 
 ## GPU Pipeline
 
-The renderer is built entirely from PGC kernels:
+The renderer is built entirely from Tack kernels:
 
 1. **BVH construction** — GPU kernel builds a bounding volume hierarchy
    over all triangles using Morton codes and radix-like insertion
@@ -183,11 +183,11 @@ any host-device transfers.
 
 ## Integration with Visualization
 
-The most powerful use case combines `pgc-vis` with `pgc-rendering`:
+The most powerful use case combines `tack-vis` with `tack-rendering`:
 
 ```python
-from pgc.algorithms.flying_edges import flying_edges, UniformGrid
-from pgc.rendering import PerspectiveCamera, Canvas, Scene, Actor, PointLight, render
+from tack.algorithms.flying_edges import flying_edges, UniformGrid
+from tack.rendering import PerspectiveCamera, Canvas, Scene, Actor, PointLight, render
 
 # Extract isosurface (GPU)
 points, conn, n_pts, n_tris = flying_edges(scalar, grid, isovalue=0.0)

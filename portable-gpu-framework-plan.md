@@ -22,7 +22,7 @@ Python @kernel function
     ↓
 AST transformation
     ↓
-PGC IR (intermediate representation)
+Tack IR (intermediate representation)
     ↓
   ┌──────────┬──────────────┬──────────────┐
   ↓          ↓              ↓              ↓
@@ -42,17 +42,17 @@ threads      ↓           PTX
 ## API Design (Taichi-style)
 
 ```python
-import pgc  # portable gpu compute — name TBD
+import tack  # portable gpu compute — name TBD
 
-pgc.init(arch=pgc.metal)  # or pgc.cpu, pgc.hip, pgc.vulkan
+tack.init(arch=tack.metal)  # or tack.cpu, tack.hip, tack.vulkan
 
 # Fields (n-d arrays living on device)
-x = pgc.field(dtype=pgc.f32, shape=(1024,))
-y = pgc.field(dtype=pgc.f32, shape=(1024,))
-out = pgc.field(dtype=pgc.f32, shape=(1024,))
+x = tack.field(dtype=tack.f32, shape=(1024,))
+y = tack.field(dtype=tack.f32, shape=(1024,))
+out = tack.field(dtype=tack.f32, shape=(1024,))
 
-@pgc.kernel
-def vector_add(x: pgc.template(), y: pgc.template(), out: pgc.template()):
+@tack.kernel
+def vector_add(x: tack.template(), y: tack.template(), out: tack.template()):
     for i in range(x.shape[0]):  # auto-parallelized
         out[i] = x[i] + y[i]
 
@@ -68,17 +68,17 @@ result = out.to_numpy()
 ### VTK-m Worklet Patterns (later phases)
 
 ```python
-@pgc.worklet(pgc.MapField)
-def magnitude(vec: pgc.Vec3f) -> pgc.f32:
-    return pgc.sqrt(vec[0]**2 + vec[1]**2 + vec[2]**2)
+@tack.worklet(tack.MapField)
+def magnitude(vec: tack.Vec3f) -> tack.f32:
+    return tack.sqrt(vec[0]**2 + vec[1]**2 + vec[2]**2)
 
-@pgc.worklet(pgc.Reduce)
-def sum_reduce(a: pgc.f32, b: pgc.f32) -> pgc.f32:
+@tack.worklet(tack.Reduce)
+def sum_reduce(a: tack.f32, b: tack.f32) -> tack.f32:
     return a + b
 
 # Topology worklets (later)
-@pgc.worklet(pgc.PointToCell)
-def cell_average(cell_points: pgc.PointGroup, field: pgc.FieldIn) -> pgc.f32:
+@tack.worklet(tack.PointToCell)
+def cell_average(cell_points: tack.PointGroup, field: tack.FieldIn) -> tack.f32:
     total = 0.0
     for i in range(cell_points.count()):
         total += field[cell_points[i]]
@@ -133,7 +133,7 @@ Port these Taichi examples as validation:
 ## Phase 2: CUDA Backend (Linux + NVIDIA GPU)  ✅ DONE
 
 ### Step 7: CUDA C codegen  ✅
-- `src/pgc/codegen/cuda_gen.py` — PGC IR → CUDA C source
+- `src/tack/codegen/cuda_gen.py` — Tack IR → CUDA C source
 - Parallel for-loop → `blockIdx.x * blockDim.x + threadIdx.x` with bounds guard
 - Field parameters → typed device pointers (`float* __restrict__`)
 - Sequential for-loops, while-loops, if/else → standard C control flow
@@ -142,14 +142,14 @@ Port these Taichi examples as validation:
 - Local variable C type tracking for correct integer index codegen
 
 ### Step 8: CUDA runtime backend  ✅
-- `src/pgc/runtime/cuda_backend.py`
+- `src/tack/runtime/cuda_backend.py`
 - Uses `cuda-python` 13.2 (`cuda.bindings.driver`, `cuda.bindings.nvrtc`)
 - NVRTC for runtime compilation of CUDA C → PTX
 - CUDA driver API for device management, memory allocation, kernel launch
 - Grid/block size calculation: `blockDim = 256`, `gridDim = ceil(n / 256)`
 
 ### Step 9: Integration and testing  ✅
-- `pgc.cuda` arch wired into `dispatch.py` and `__init__.py`
+- `tack.cuda` arch wired into `dispatch.py` and `__init__.py`
 - 9 CUDA tests (vector add, SAXPY, subtraction, conditional, negation,
   multiple ops, sqrt, caching, 1M-element large array)
 - All 7 validation suite tests pass on CPU + CUDA
@@ -191,7 +191,7 @@ uv add llvmlite
   type tracking) stays the same
 
 ### Step 11: Level Zero runtime backend
-- New runtime: `src/pgc/runtime/level_zero.py`
+- New runtime: `src/tack/runtime/level_zero.py`
 - Python bindings via ctypes against `libze_loader.so` (no pip package available)
 - Key API sequence:
   ```
@@ -210,7 +210,7 @@ uv add llvmlite
 - `DeviceBuffer` subclass: `LevelZeroBuffer`
 
 ### Step 12: Integration and testing
-- Wire `pgc.level_zero` arch into `dispatch.py` and `__init__.py`
+- Wire `tack.level_zero` arch into `dispatch.py` and `__init__.py`
 - Port test suite and validation examples
 - Benchmark against CPU backend on Aurora compute nodes
 
@@ -311,11 +311,11 @@ Study and selectively lift from these files (Apache 2.0 licensed):
 ## Directory Structure
 
 ```
-pgc/                        # package name TBD
+tack/                        # package name TBD
 ├── pyproject.toml
 ├── src/
-│   └── pgc/
-│       ├── __init__.py     # pgc.init(), pgc.field(), pgc.kernel
+│   └── tack/
+│       ├── __init__.py     # tack.init(), tack.field(), tack.kernel
 │       ├── lang/
 │       │   ├── ast_transform.py   # Python AST → IR
 │       │   ├── ir.py              # Internal IR nodes
@@ -349,7 +349,7 @@ pgc/                        # package name TBD
 ## Getting Started
 
 ```bash
-mkdir pgc && cd pgc
+mkdir tack && cd tack
 uv init
 uv add llvmlite numpy pyobjc-framework-Metal pytest
 # Copy this plan into the project

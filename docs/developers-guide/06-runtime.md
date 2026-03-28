@@ -5,7 +5,7 @@
 Each backend follows the same lifecycle:
 
 ```
-pgc.init(arch=pgc.metal)
+tack.init(arch=tack.metal)
     → dispatch.py creates MetalBackend()
     → Backend discovers device, creates command queue / context
 
@@ -124,7 +124,7 @@ per-dispatch allocation overhead.
 
 ## Device Pointer Interop
 
-`pgc.field_from_ptr()` wraps an existing device pointer as a Field without
+`tack.field_from_ptr()` wraps an existing device pointer as a Field without
 allocation or copy. Each backend implements `wrap_ptr(ptr, dtype, shape)`:
 
 | Backend | `ptr` type | Implementation |
@@ -160,5 +160,5 @@ responsible for not writing to read-only external memory.
 - Compilation failure → extracts error lines, suppresses full source dump
 - `RuntimeError` → includes kernel name and backend class name
 
-`pgc.init()` wraps backend initialization errors with the architecture
+`tack.init()` wraps backend initialization errors with the architecture
 name, platform, and install instructions.

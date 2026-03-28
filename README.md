@@ -1,22 +1,22 @@
-# PGC — Portable GPU Compute
+# Tack — GPU compute framework
 
 A Python-first GPU compute framework. Write compute kernels as decorated Python functions, run them on CPU, Metal (Apple Silicon), CUDA (NVIDIA), or HIP (AMD) — same code, any backend.
 
 ```python
-import pgc
+import tack
 import numpy as np
 
-pgc.init(arch=pgc.metal)  # or pgc.cpu, pgc.cuda, pgc.hip
+tack.init(arch=tack.metal)  # or tack.cpu, tack.cuda, tack.hip
 
 n = 1_000_000
-x = pgc.field(dtype=pgc.f32, shape=(n,))
-y = pgc.field(dtype=pgc.f32, shape=(n,))
-out = pgc.field(dtype=pgc.f32, shape=(n,))
+x = tack.field(dtype=tack.f32, shape=(n,))
+y = tack.field(dtype=tack.f32, shape=(n,))
+out = tack.field(dtype=tack.f32, shape=(n,))
 
 x.from_numpy(np.random.randn(n).astype(np.float32))
 y.from_numpy(np.random.randn(n).astype(np.float32))
 
-@pgc.kernel
+@tack.kernel
 def vector_add(x, y, out):
     for i in range(x.shape[0]):
         out[i] = x[i] + y[i]
@@ -27,38 +27,38 @@ result = out.to_numpy()
 
 ## Installation
 
-PGC is split into three packages: **pgc-core** (compute framework), **pgc-rendering** (path tracer), and **pgc-vis** (visualization algorithms).
+Tack is split into three packages: **tack-core** (compute framework), **tack-rendering** (path tracer), and **tack-vis** (visualization algorithms).
 
 ```bash
 # Install everything from source with uv
 git clone <repo-url>
-cd pgc
+cd tack
 uv sync
 
 # Or install individual packages
-pip install pgc-core              # core only
-pip install pgc-core[cpu]         # core + CPU backend (LLVM JIT)
-pip install pgc-core[metal]       # core + Metal backend (macOS)
-pip install pgc-core[cuda]        # core + CUDA backend
-pip install pgc-rendering         # path tracer (pulls in pgc-core)
-pip install pgc-vis               # visualization (pulls in pgc-core)
+pip install tack-core              # core only
+pip install tack-core[cpu]         # core + CPU backend (LLVM JIT)
+pip install tack-core[metal]       # core + Metal backend (macOS)
+pip install tack-core[cuda]        # core + CUDA backend
+pip install tack-rendering         # path tracer (pulls in tack-core)
+pip install tack-vis               # visualization (pulls in tack-core)
 ```
 
 ## Backends
 
 | Backend | Platform | Init | Dependencies |
 |---------|----------|------|-------------|
-| CPU | Any | `pgc.init(arch=pgc.cpu)` | `llvmlite`, `numpy` |
-| Metal | macOS (Apple Silicon) | `pgc.init(arch=pgc.metal)` | `pyobjc-framework-Metal` |
-| CUDA | Linux/Windows (NVIDIA) | `pgc.init(arch=pgc.cuda)` | `cuda-python>=13.2`, CUDA toolkit |
-| HIP | Linux (AMD) | `pgc.init(arch=pgc.hip)` | `hip-python`, ROCm toolkit |
+| CPU | Any | `tack.init(arch=tack.cpu)` | `llvmlite`, `numpy` |
+| Metal | macOS (Apple Silicon) | `tack.init(arch=tack.metal)` | `pyobjc-framework-Metal` |
+| CUDA | Linux/Windows (NVIDIA) | `tack.init(arch=tack.cuda)` | `cuda-python>=13.2`, CUDA toolkit |
+| HIP | Linux (AMD) | `tack.init(arch=tack.hip)` | `hip-python`, ROCm toolkit |
 
 ## Compilation Pipeline
 
 ```
-@pgc.kernel Python function
+@tack.kernel Python function
     → Python AST
-    → PGC IR (intermediate representation)
+    → Tack IR (intermediate representation)
     → IR passes (resolve, type inference, LICM, copy propagation, CSE)
     → Backend codegen:
         CPU:   LLVM IR → llvmlite JIT → native code
@@ -73,24 +73,24 @@ Kernels are compiled on first call and cached by type signature. Subsequent call
 
 | Type | Description |
 |------|-------------|
-| `pgc.i8` / `pgc.u8` | 8-bit signed / unsigned integer |
-| `pgc.i16` / `pgc.u16` | 16-bit signed / unsigned integer |
-| `pgc.i32` / `pgc.u32` | 32-bit signed / unsigned integer |
-| `pgc.i64` / `pgc.u64` | 64-bit signed / unsigned integer |
-| `pgc.f32` | 32-bit float |
-| `pgc.f64` | 64-bit float (CPU/CUDA only — Metal does not support double) |
+| `tack.i8` / `tack.u8` | 8-bit signed / unsigned integer |
+| `tack.i16` / `tack.u16` | 16-bit signed / unsigned integer |
+| `tack.i32` / `tack.u32` | 32-bit signed / unsigned integer |
+| `tack.i64` / `tack.u64` | 64-bit signed / unsigned integer |
+| `tack.f32` | 32-bit float |
+| `tack.f64` | 64-bit float (CPU/CUDA only — Metal does not support double) |
 
 ## Fields
 
 Fields are n-dimensional arrays that live on the backend device.
 
 ```python
-x = pgc.field(dtype=pgc.f32, shape=(1024,))         # 1D
-img = pgc.field(dtype=pgc.f32, shape=(512, 512))     # 2D
-vol = pgc.field(dtype=pgc.f32, shape=(64, 64, 64))   # 3D
+x = tack.field(dtype=tack.f32, shape=(1024,))         # 1D
+img = tack.field(dtype=tack.f32, shape=(512, 512))     # 2D
+vol = tack.field(dtype=tack.f32, shape=(64, 64, 64))   # 3D
 
 # Vector fields (3-component per element)
-pixels = pgc.Vector.field(3, dtype=pgc.f32, shape=(width, height))
+pixels = tack.Vector.field(3, dtype=tack.f32, shape=(width, height))
 
 # Data transfer
 x.from_numpy(np_array)    # host → device
@@ -103,15 +103,15 @@ lo = x.min()
 hi = x.max()
 
 # Convenience constructors
-z = pgc.zeros(dtype=pgc.f32, shape=(1024,))
-o = pgc.ones(dtype=pgc.i32, shape=(256,))
-idx = pgc.arange(100)
+z = tack.zeros(dtype=tack.f32, shape=(1024,))
+o = tack.ones(dtype=tack.i32, shape=(256,))
+idx = tack.arange(100)
 
 # Copy, convert, reshape, concatenate
 backup = x.copy()
-x_f64 = x.astype(pgc.f64)
+x_f64 = x.astype(tack.f64)
 flat = img.reshape((512 * 512,))
-combined = pgc.concat([part_a, part_b])
+combined = tack.concat([part_a, part_b])
 ```
 
 ## Kernel Language
@@ -119,7 +119,7 @@ combined = pgc.concat([part_a, part_b])
 ### Loops
 
 ```python
-@pgc.kernel
+@tack.kernel
 def kern(x, out):
     # Top-level for-range is parallelized across GPU threads
     for i in range(x.shape[0]):
@@ -132,7 +132,7 @@ def kern(x, out):
         out[i // 2] = float(i)
 
     # Multi-dimensional parallel iteration
-    for i, j in pgc.ndrange(width, height):
+    for i, j in tack.ndrange(width, height):
         img[i, j] = compute(i, j)
 
     # While loops with break/continue
@@ -148,7 +148,7 @@ def kern(x, out):
 Kernels accept Python scalars directly alongside fields:
 
 ```python
-@pgc.kernel
+@tack.kernel
 def saxpy(x, y, out, alpha, n):
     for i in range(n):
         out[i] = alpha * x[i] + y[i]
@@ -163,36 +163,36 @@ saxpy(x, y, out, 2.5, 1000)  # alpha=2.5, n=1000 passed as scalars
 ### Atomic Operations
 
 ```python
-@pgc.kernel
+@tack.kernel
 def histogram(data, bins):
     for i in range(data.shape[0]):
         bin_idx = int(data[i] * 10.0)
-        pgc.atomic_add(bins, bin_idx, 1.0)
+        tack.atomic_add(bins, bin_idx, 1.0)
 
-@pgc.kernel
+@tack.kernel
 def find_minmax(x, min_out, max_out):
     for i in range(x.shape[0]):
-        pgc.atomic_min(min_out, 0, x[i])
-        pgc.atomic_max(max_out, 0, x[i])
+        tack.atomic_min(min_out, 0, x[i])
+        tack.atomic_max(max_out, 0, x[i])
 ```
 
 ### Shared Memory & Synchronization
 
 ```python
-@pgc.kernel
+@tack.kernel
 def reduce_kernel(x, out):
-    smem = pgc.shared(pgc.f32, 256)
+    smem = tack.shared(tack.f32, 256)
     for i in range(x.shape[0]):
-        tid = pgc.thread_id()          # thread index within workgroup
+        tid = tack.thread_id()          # thread index within workgroup
         smem[tid] = x[i]
-        pgc.barrier()                  # synchronize workgroup threads
+        tack.barrier()                  # synchronize workgroup threads
         # ... use smem for cooperative computation ...
 ```
 
 ### Debug Printing
 
 ```python
-@pgc.kernel
+@tack.kernel
 def debug_kern(x, out):
     for i in range(x.shape[0]):
         if x[i] < 0.0:
@@ -203,11 +203,11 @@ def debug_kern(x, out):
 ### Device Functions
 
 ```python
-@pgc.func
+@tack.func
 def lerp(a, b, t):
     return a + t * (b - a)
 
-@pgc.kernel
+@tack.kernel
 def interpolate(x, y, out, t):
     for i in range(x.shape[0]):
         out[i] = lerp(x[i], y[i], t)  # inlined at compile time
@@ -216,10 +216,10 @@ def interpolate(x, y, out, t):
 ### Vector Operations
 
 ```python
-@pgc.kernel
+@tack.kernel
 def normalize_field(positions, normals):
     for i in range(positions.shape[0]):
-        v = pgc.Vector([positions[i][0], positions[i][1], positions[i][2]])
+        v = tack.Vector([positions[i][0], positions[i][1], positions[i][2]])
         n = v.normalized()
         normals[i] = n
 
@@ -229,18 +229,18 @@ def normalize_field(positions, normals):
 ### Template Classes
 
 ```python
-@pgc.data_oriented
+@tack.data_oriented
 class Grid:
     def __init__(self, data, dx):
         self.data = data   # field → becomes kernel parameter
         self.dx = dx       # scalar → compile-time constant
 
-    @pgc.func
+    @tack.func
     def sample(self, i):
         return self.data[i] * self.dx
 
-@pgc.kernel
-def process(grid: pgc.template(), out):
+@tack.kernel
+def process(grid: tack.template(), out):
     for i in range(out.shape[0]):
         out[i] = grid.sample(i)
 
@@ -252,9 +252,9 @@ process(Grid(data_field, 0.1), output)
 40+ progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip`.
 
 ```bash
-uv run python packages/pgc-core/examples/01_hello_pgc.py              # simplest kernel
-uv run python packages/pgc-core/examples/12_mandelbrot.py --arch metal # fractal on GPU
-uv run python packages/pgc-vis/examples/27_flying_edges.py --arch cuda # isosurface
+uv run python packages/tack-core/examples/01_hello_tack.py              # simplest kernel
+uv run python packages/tack-core/examples/12_mandelbrot.py --arch metal # fractal on GPU
+uv run python packages/tack-vis/examples/27_flying_edges.py --arch cuda # isosurface
 uv run python examples/32_pathtrace.py --arch metal                    # path tracing
 ```
 
@@ -270,10 +270,10 @@ uv run python examples/32_pathtrace.py --arch metal                    # path tr
 
 ```bash
 uv run pytest                                                # all tests
-uv run pytest packages/pgc-core/tests/test_cpu_jit.py        # CPU backend
-uv run pytest packages/pgc-core/tests/test_metal.py          # Metal backend
-uv run pytest packages/pgc-core/tests/test_hip.py            # HIP backend
-uv run pytest packages/pgc-vis/tests/test_algorithms.py      # vis algorithms
+uv run pytest packages/tack-core/tests/test_cpu_jit.py        # CPU backend
+uv run pytest packages/tack-core/tests/test_metal.py          # Metal backend
+uv run pytest packages/tack-core/tests/test_hip.py            # HIP backend
+uv run pytest packages/tack-vis/tests/test_algorithms.py      # vis algorithms
 ```
 
 ## ROCm / HIP Setup
@@ -281,22 +281,22 @@ uv run pytest packages/pgc-vis/tests/test_algorithms.py      # vis algorithms
 On a system with ROCm installed:
 
 ```bash
-# Install hip-python and PGC
+# Install hip-python and Tack
 pip install hip-python
-pip install pgc-core
+pip install tack-core
 
 # Run HIP test suite
-uv run pytest packages/pgc-core/tests/test_hip.py -v
+uv run pytest packages/tack-core/tests/test_hip.py -v
 ```
 
 ## Project Structure
 
-PGC is a monorepo with three packages sharing the `pgc` namespace:
+Tack is a monorepo with three packages sharing the `tack` namespace:
 
 ```
 packages/
-  pgc-core/                # Core compute framework
-    src/pgc/
+  tack-core/                # Core compute framework
+    src/tack/
       __init__.py           # Public API + namespace merging
       lang/                 # AST transform, IR, type inference, optimization
       codegen/              # LLVM, MSL, CUDA, HIP, OpenCL code generators
@@ -305,12 +305,12 @@ packages/
     tests/                  # Core tests (CPU, Metal, CUDA, HIP, codegen)
     examples/               # Core examples (01-21)
 
-  pgc-rendering/            # Path tracing renderer
-    src/pgc/rendering/      # Camera, BVH, scene, pathtrace kernels
+  tack-rendering/            # Path tracing renderer
+    src/tack/rendering/      # Camera, BVH, scene, pathtrace kernels
     examples/               # Rendering examples (33-36, 38)
 
-  pgc-vis/                  # Scientific visualization
-    src/pgc/
+  tack-vis/                  # Scientific visualization
+    src/tack/
       algorithms/           # Flying edges, normals, cell-to-point
       data/                 # Data abstractions
       interop/              # VTK interop

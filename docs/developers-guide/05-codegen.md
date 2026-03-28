@@ -1,6 +1,6 @@
 # Codegen
 
-Each backend has a code generator that walks the PGC IR and emits
+Each backend has a code generator that walks the Tack IR and emits
 target-specific code. All codegens follow the same pattern: iterate over
 IR nodes, emit text or LLVM IR.
 
@@ -108,7 +108,7 @@ Generates Metal Shading Language for Apple GPUs. Notable features:
 - Threadgroup detection: scans IR for `IRSharedAlloc`/`IRBarrier` to decide
   between `dispatch_threads` (simple) and threadgroup-based dispatch
 - Hardware texture sampling: `tex.sample(__samp__, float3(u, v, w))`
-  with coordinate transform for PGC's texel-center convention
+  with coordinate transform for Tack's texel-center convention
 - Float atomic min/max via CAS loop on `atomic_uint`
 
 ## CUDA Codegen (`cuda_gen.py`, 643 lines)

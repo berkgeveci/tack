@@ -1,7 +1,7 @@
 """32 -- Path tracing: render an isosurface with global illumination.
 
 Extracts a gyroid isosurface using Flying Edges, then path traces it
-with the pgc.rendering module.
+with the tack.rendering module.
 
 Usage:
   uv run python examples/32_pathtrace.py
@@ -12,9 +12,9 @@ Usage:
 
 import time
 import numpy as np
-import pgc
-from pgc.algorithms.flying_edges import flying_edges, UniformGrid
-from pgc.rendering import (
+import tack
+from tack.algorithms.flying_edges import flying_edges, UniformGrid
+from tack.rendering import (
     PerspectiveCamera, Canvas, Scene, Actor, PointLight, render,
 )
 
@@ -27,16 +27,16 @@ _parser.add_argument('--bounces', type=int, default=2)
 _parser.add_argument('--resolution', type=int, default=512)
 _parser.add_argument('--grid_size', type=int, default=64)
 _args = _parser.parse_args()
-_arch = getattr(pgc, _args.arch)
-pgc.init(arch=_arch)
+_arch = getattr(tack, _args.arch)
+tack.init(arch=_arch)
 
 
 # ================================================================
 # GENERATE ISOSURFACE
 # ================================================================
 
-@pgc.kernel
-def compute_gyroid(scalar, grid: pgc.template(), n_points):
+@tack.kernel
+def compute_gyroid(scalar, grid: tack.template(), n_points):
     for i in range(n_points):
         ix = i % grid.nx_p1
         iy = (i // grid.nx_p1) % grid.ny_p1
@@ -53,7 +53,7 @@ grid = UniformGrid(n, n, n,
                    -domain, -domain, -domain,
                    2 * domain / n, 2 * domain / n, 2 * domain / n)
 n_points = (n + 1) ** 3
-scalar = pgc.field(dtype=pgc.f32, shape=(n_points,))
+scalar = tack.field(dtype=tack.f32, shape=(n_points,))
 compute_gyroid(scalar, grid, n_points)
 
 print(f"Extracting isosurface ({n}^3 grid)...")

@@ -1,0 +1,65 @@
+"""tack.rendering — Path tracing and volume rendering for in situ visualization.
+
+Provides GPU-accelerated renderers that operate directly on tack fields.
+Geometry from algorithms like flying_edges can be rendered without host copies.
+
+Public API
+----------
+PerspectiveCamera
+    Perspective projection camera.
+
+Canvas
+    Framebuffer for rendered images.
+
+Scene, Actor, PointLight
+    Scene graph objects.
+
+ColorTable
+    Maps scalar fields to RGB colors via sampled lookup tables.
+
+Volume, TransferFunction
+    Uniform-grid volume with RGBA transfer function for ray casting.
+
+ColorBar, AxisIndicator, TextOverlay, annotate
+    Post-render annotations drawn on numpy images.
+
+render(canvas, scene, camera, ...)
+    Unified renderer — dispatches to path tracing for surface actors
+    and ray casting for volumes based on scene contents.
+
+render_volume(canvas, volume, camera, ...)
+    Ray-cast a single volume directly (without a Scene).
+"""
+
+from tack.rendering.camera import PerspectiveCamera, OrthographicCamera
+from tack.rendering.canvas import Canvas
+from tack.rendering.colortable import ColorTable
+from tack.rendering.scene import (
+    Scene, Actor, PointLight, DirectionalLight, Material, compute_normals,
+)
+from tack.rendering.render import render
+from tack.rendering.volume import Volume, TransferFunction, render_volume
+from tack.rendering.annotate import (
+    ColorBar, AxisIndicator, TextOverlay, annotate,
+)
+
+__all__ = [
+    "PerspectiveCamera",
+    "OrthographicCamera",
+    "Canvas",
+    "ColorTable",
+    "Scene",
+    "Actor",
+    "PointLight",
+    "DirectionalLight",
+    "Material",
+    "compute_normals",
+    "render",
+    "Volume",
+    "TransferFunction",
+    "render_volume",
+    "ColorBar",
+    "AxisIndicator",
+    "TextOverlay",
+    "annotate",
+]

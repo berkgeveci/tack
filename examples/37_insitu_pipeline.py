@@ -18,9 +18,9 @@ Usage:
 
 import time
 import numpy as np
-import pgc
-from pgc.algorithms.flying_edges import flying_edges, UniformGrid
-from pgc.rendering import (
+import tack
+from tack.algorithms.flying_edges import flying_edges, UniformGrid
+from tack.rendering import (
     PerspectiveCamera, Canvas, Scene, Actor, PointLight, render,
 )
 
@@ -35,15 +35,15 @@ _p.add_argument('--bounces', type=int, default=0)
 _p.add_argument('--denoise', action='store_true')
 _p.add_argument('--resolution', type=int, default=1024)
 _args = _p.parse_args()
-pgc.init(arch=getattr(pgc, _args.arch))
+tack.init(arch=getattr(tack, _args.arch))
 
 
 # ================================================================
 # STEP 1: SIMULATE — generate scalar field on GPU
 # ================================================================
 
-@pgc.kernel
-def compute_field(scalar, grid: pgc.template(), n_points, time_val):
+@tack.kernel
+def compute_field(scalar, grid: tack.template(), n_points, time_val):
     """Gyroid with time-varying phase (simulates evolving data)."""
     for i in range(n_points):
         ix = i % grid.nx_p1
@@ -61,7 +61,7 @@ grid = UniformGrid(n, n, n,
                    -domain, -domain, -domain,
                    2 * domain / n, 2 * domain / n, 2 * domain / n)
 n_points = (n + 1) ** 3
-scalar = pgc.field(dtype=pgc.f32, shape=(n_points,))
+scalar = tack.field(dtype=tack.f32, shape=(n_points,))
 
 print(f"In situ pipeline: {_args.arch}, {n}^3 grid, {_args.resolution}x{_args.resolution}")
 print(f"  {_args.samples} spp, {_args.bounces} bounces" +

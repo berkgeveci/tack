@@ -1,4 +1,4 @@
-"""PGC Microbenchmark Suite — Taichi-style systematic performance sweep.
+"""Tack Microbenchmark Suite — Taichi-style systematic performance sweep.
 
 Sweeps across:
   - Data sizes: 16KB, 256KB, 4MB, 64MB
@@ -14,7 +14,7 @@ import time
 import sys
 
 import numpy as np
-import pgc
+import tack
 
 # ─────────────────────────────────────────────────────────────
 # Infrastructure
@@ -99,49 +99,49 @@ def print_row(size_tag, n, backend, times, n_arrays=2):
 # Kernel definitions
 # ─────────────────────────────────────────────────────────────
 
-@pgc.kernel
+@tack.kernel
 def k_saxpy(x, y, z):
     for i in range(x.shape[0]):
         z[i] = 17.0 * x[i] + y[i]
 
 
-@pgc.kernel
+@tack.kernel
 def k_memcpy(src, dst):
     for i in range(src.shape[0]):
         dst[i] = src[i]
 
 
-@pgc.kernel
+@tack.kernel
 def k_fill(dst):
     for i in range(dst.shape[0]):
         dst[i] = 42.0
 
 
-@pgc.kernel
+@tack.kernel
 def k_stencil1d(src, dst):
     for i in range(dst.shape[0]):
         dst[i] = 0.5 * (src[i] + src[i + 1])
 
 
-@pgc.kernel
+@tack.kernel
 def k_sqrt(x, out):
     for i in range(x.shape[0]):
         out[i] = sqrt(x[i])
 
 
-@pgc.kernel
+@tack.kernel
 def k_sin(x, out):
     for i in range(x.shape[0]):
         out[i] = sin(x[i])
 
 
-@pgc.kernel
+@tack.kernel
 def k_exp(x, out):
     for i in range(x.shape[0]):
         out[i] = exp(x[i])
 
 
-@pgc.kernel
+@tack.kernel
 def k_abs(x, out):
     for i in range(x.shape[0]):
         out[i] = abs(x[i])
@@ -150,7 +150,7 @@ def k_abs(x, out):
 REDUCE_BLOCK = 256
 
 
-@pgc.kernel
+@tack.kernel
 def k_reduce(data, out):
     for block_idx in range(out.shape[0]):
         s = 0.0
@@ -166,7 +166,7 @@ def k_reduce(data, out):
 def make_fields(n, count):
     fields = []
     for _ in range(count):
-        f = pgc.field(dtype=pgc.f32, shape=(n,))
+        f = tack.field(dtype=tack.f32, shape=(n,))
         f.from_numpy(np.random.randn(n).astype(np.float32).clip(-10, 10))
         fields.append(f)
     return fields
@@ -181,7 +181,7 @@ def bench_saxpy(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            pgc.init(arch=backend)
+            tack.init(arch=backend)
             x, y, z = make_fields(n, 3)
             k_saxpy(x, y, z)  # warmup/compile
             times = bench(lambda: k_saxpy(x, y, z), warmup=3, trials=repeats)
@@ -211,7 +211,7 @@ def bench_memcpy(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            pgc.init(arch=backend)
+            tack.init(arch=backend)
             src, dst = make_fields(n, 2)
             k_memcpy(src, dst)
             times = bench(lambda: k_memcpy(src, dst), warmup=3, trials=repeats)
@@ -238,7 +238,7 @@ def bench_fill(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            pgc.init(arch=backend)
+            tack.init(arch=backend)
             dst, = make_fields(n, 1)
             k_fill(dst)
             times = bench(lambda: k_fill(dst), warmup=3, trials=repeats)
@@ -264,11 +264,11 @@ def bench_stencil(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            pgc.init(arch=backend)
+            tack.init(arch=backend)
             # src needs n+1 elements so src[i+1] is valid when i = n-1
-            src = pgc.field(dtype=pgc.f32, shape=(n + 1,))
+            src = tack.field(dtype=tack.f32, shape=(n + 1,))
             src.from_numpy(np.random.randn(n + 1).astype(np.float32).clip(-10, 10))
-            dst = pgc.field(dtype=pgc.f32, shape=(n,))
+            dst = tack.field(dtype=tack.f32, shape=(n,))
             dst.from_numpy(np.zeros(n, dtype=np.float32))
             k_stencil1d(src, dst)
             times = bench(lambda: k_stencil1d(src, dst), warmup=3, trials=repeats)
@@ -305,7 +305,7 @@ def bench_math(sizes):
             repeats = scaled_repeats(size_bytes)
 
             for backend in ["cpu", "metal"]:
-                pgc.init(arch=backend)
+                tack.init(arch=backend)
                 x, out = make_fields(n, 2)
                 # Ensure positive values for sqrt/exp
                 x.from_numpy(np.abs(np.random.randn(n).astype(np.float32)) + 0.1)
@@ -339,9 +339,9 @@ def bench_reduce(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            pgc.init(arch=backend)
-            data = pgc.field(dtype=pgc.f32, shape=(n,))
-            out = pgc.field(dtype=pgc.f32, shape=(n_blocks,))
+            tack.init(arch=backend)
+            data = tack.field(dtype=tack.f32, shape=(n,))
+            out = tack.field(dtype=tack.f32, shape=(n_blocks,))
             data.from_numpy(np.random.randn(n).astype(np.float32))
             k_reduce(data, out)
             times = bench(lambda: k_reduce(data, out), warmup=3, trials=repeats)
@@ -363,7 +363,7 @@ def bench_reduce(sizes):
 # ─────────────────────────────────────────────────────────────
 
 def main():
-    parser = argparse.ArgumentParser(description="PGC Microbenchmark Suite")
+    parser = argparse.ArgumentParser(description="Tack Microbenchmark Suite")
     parser.add_argument("--output", "-o", help="Save results to JSON file")
     parser.add_argument("--bench", "-b", nargs="+",
                         choices=["saxpy", "memcpy", "fill", "stencil", "math", "reduce", "all"],

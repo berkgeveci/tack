@@ -3,7 +3,7 @@
 ## Conditionals
 
 ```python
-@pgc.kernel
+@tack.kernel
 def clamp(data, lo, hi, n):
     for i in range(n):
         val = data[i]
@@ -20,7 +20,7 @@ use `if`/`else` blocks instead.
 ## While Loops
 
 ```python
-@pgc.kernel
+@tack.kernel
 def newton_sqrt(x, out, n):
     for i in range(n):
         val = x[i]
@@ -35,7 +35,7 @@ def newton_sqrt(x, out, n):
 ## Break and Continue
 
 ```python
-@pgc.kernel
+@tack.kernel
 def find_threshold(data, out, threshold, n):
     for i in range(n):
         count = 0
@@ -69,7 +69,7 @@ the native GPU math intrinsics (e.g., `sinf` on CUDA, `metal::sin` on MSL).
 ```python
 from math import sqrt, sin, cos, exp, log, floor, ceil, abs, min, max, pow
 
-@pgc.kernel
+@tack.kernel
 def wave(out, t, n):
     for i in range(n):
         x = float(i) / float(n)

@@ -1,7 +1,7 @@
 """CPU vs HIP performance comparison."""
 import time
 import numpy as np
-import pgc
+import tack
 
 DATA_SIZES = {
     "16KB":   16 * 1024 // 4,
@@ -11,44 +11,44 @@ DATA_SIZES = {
 }
 
 # Kernels
-@pgc.kernel
+@tack.kernel
 def k_saxpy(x, y, z):
     for i in range(x.shape[0]):
         z[i] = 17.0 * x[i] + y[i]
 
-@pgc.kernel
+@tack.kernel
 def k_memcpy(src, dst):
     for i in range(src.shape[0]):
         dst[i] = src[i]
 
-@pgc.kernel
+@tack.kernel
 def k_fill(dst):
     for i in range(dst.shape[0]):
         dst[i] = 42.0
 
-@pgc.kernel
+@tack.kernel
 def k_stencil1d(src, dst):
     for i in range(dst.shape[0]):
         dst[i] = 0.5 * (src[i] + src[i + 1])
 
-@pgc.kernel
+@tack.kernel
 def k_sqrt(x, out):
     for i in range(x.shape[0]):
         out[i] = sqrt(x[i])
 
-@pgc.kernel
+@tack.kernel
 def k_sin(x, out):
     for i in range(x.shape[0]):
         out[i] = sin(x[i])
 
-@pgc.kernel
+@tack.kernel
 def k_exp(x, out):
     for i in range(x.shape[0]):
         out[i] = exp(x[i])
 
 REDUCE_BLOCK = 256
 
-@pgc.kernel
+@tack.kernel
 def k_reduce(data, out):
     for block_idx in range(out.shape[0]):
         s = 0.0
@@ -73,7 +73,7 @@ def bench(fn, warmup=3, trials=10):
 def make_fields(n, count):
     fields = []
     for _ in range(count):
-        f = pgc.field(dtype=pgc.f32, shape=(n,))
+        f = tack.field(dtype=tack.f32, shape=(n,))
         f.from_numpy(np.abs(np.random.randn(n).astype(np.float32)) + 0.1)
         fields.append(f)
     return fields
@@ -92,18 +92,18 @@ def run_bench(name, kernel_fn, n, n_arrays):
         dst, = make_fields(n, 1)
         fn = lambda: kernel_fn(dst)
     elif name == "stencil1d":
-        src = pgc.field(dtype=pgc.f32, shape=(n + 1,))
+        src = tack.field(dtype=tack.f32, shape=(n + 1,))
         src.from_numpy(np.random.randn(n + 1).astype(np.float32))
-        dst = pgc.field(dtype=pgc.f32, shape=(n,))
+        dst = tack.field(dtype=tack.f32, shape=(n,))
         fn = lambda: kernel_fn(src, dst)
     elif name in ("sqrt", "sin", "exp"):
         x, out = make_fields(n, 2)
         fn = lambda: kernel_fn(x, out)
     elif name == "reduce":
         n = (n // REDUCE_BLOCK) * REDUCE_BLOCK
-        data = pgc.field(dtype=pgc.f32, shape=(n,))
+        data = tack.field(dtype=tack.f32, shape=(n,))
         data.from_numpy(np.random.randn(n).astype(np.float32))
-        out = pgc.field(dtype=pgc.f32, shape=(n // REDUCE_BLOCK,))
+        out = tack.field(dtype=tack.f32, shape=(n // REDUCE_BLOCK,))
         fn = lambda: kernel_fn(data, out)
     else:
         raise ValueError(name)
@@ -131,7 +131,7 @@ def main():
     # Collect results
     results = {}
     for backend in ["cpu", "hip"]:
-        pgc.init(arch=backend)
+        tack.init(arch=backend)
         print(f"\n--- Running on {backend.upper()} ---")
         for bench_name, kernel, n_arrays in benchmarks:
             for size_tag, n in DATA_SIZES.items():
@@ -157,7 +157,7 @@ def main():
 
     # Volrender comparison (already measured externally, just print note)
     print(f"\n{'='*90}")
-    print(f"  VOLUME RENDER: see --bench output from pgc_volrender.py")
+    print(f"  VOLUME RENDER: see --bench output from tack_volrender.py")
     print(f"{'='*90}")
 
 

@@ -1,6 +1,6 @@
 # Backends
 
-PGC compiles the same kernel source to different GPU APIs. Each backend has
+Tack compiles the same kernel source to different GPU APIs. Each backend has
 its own compilation pipeline and memory model.
 
 ## Overview
@@ -21,11 +21,11 @@ thread pool. Below 1024 elements, single-threaded execution is used to
 avoid thread dispatch overhead.
 
 ```bash
-pip install 'pgc[cpu]'
+pip install 'tack[cpu]'
 ```
 
 ```python
-pgc.init(arch=pgc.cpu)
+tack.init(arch=tack.cpu)
 ```
 
 ## Metal
@@ -38,10 +38,10 @@ pip install pyobjc-framework-Metal
 ```
 
 ```python
-pgc.init(arch=pgc.metal)
+tack.init(arch=tack.metal)
 ```
 
-Metal has a 31-buffer binding limit per kernel. PGC automatically packs
+Metal has a 31-buffer binding limit per kernel. Tack automatically packs
 scalar parameters into constant buffers to stay within this limit.
 
 Hardware 3D texture sampling is supported via `texture3d<float>.sample()`.
@@ -56,7 +56,7 @@ pip install 'cuda-python>=13.2'
 ```
 
 ```python
-pgc.init(arch=pgc.cuda)
+tack.init(arch=tack.cuda)
 ```
 
 ## HIP
@@ -71,7 +71,7 @@ uv pip install --prerelease=allow --index-url https://test.pypi.org/simple/ \
 ```
 
 ```python
-pgc.init(arch=pgc.hip)
+tack.init(arch=tack.hip)
 ```
 
 ## Level Zero
@@ -84,12 +84,12 @@ devices with texture units (Xe-HPG/Xe-LPG). Xe-HPC (Ponte Vecchio) falls
 back to software trilinear since it has no sampler hardware.
 
 ```python
-pgc.init(arch=pgc.level_zero)
+tack.init(arch=tack.level_zero)
 ```
 
 ## Error Messages
 
-If a backend is unavailable, `pgc.init()` gives a clear error:
+If a backend is unavailable, `tack.init()` gives a clear error:
 
 ```
 RuntimeError: Cannot initialize 'hip' backend: missing dependency.
@@ -98,16 +98,16 @@ RuntimeError: Cannot initialize 'hip' backend: missing dependency.
 ```
 
 Kernel compilation errors show the kernel name, backend, and the relevant
-error lines without dumping the full generated source. Set `PGC_DUMP_MSL=1`
+error lines without dumping the full generated source. Set `TACK_DUMP_MSL=1`
 environment variables to inspect generated code.
 
 ## Type Checking
 
-PGC validates field dtypes at dispatch time before compilation. If a field
+Tack validates field dtypes at dispatch time before compilation. If a field
 uses a dtype not supported by the target backend, you get a clear error:
 
 ```
-TypeError: Kernel 'my_kernel': parameter 'data' has dtype pgc.f64,
+TypeError: Kernel 'my_kernel': parameter 'data' has dtype tack.f64,
 which is not supported on Metal.
 Supported dtypes: f32, i32, i64, u32, u64
 ```

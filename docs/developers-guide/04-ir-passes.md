@@ -1,6 +1,6 @@
 # IR Passes
 
-PGC runs several IR passes between AST transformation and codegen. Each
+Tack runs several IR passes between AST transformation and codegen. Each
 pass walks the IR tree and mutates it in place.
 
 ## Pass Order
@@ -53,7 +53,7 @@ Three sub-passes run in sequence:
 ### Loop-Invariant Code Motion (LICM)
 
 Hoists `IRAssign` nodes out of loops when their RHS depends only on values
-defined outside the loop. This is critical after `@pgc.func` inlining —
+defined outside the loop. This is critical after `@tack.func` inlining —
 inlined function bodies often re-load field values every iteration that
 could be loaded once.
 
@@ -66,7 +66,7 @@ Algorithm:
 ### Copy Propagation
 
 Resolves chains of `a = b` assignments by replacing references to `a` with
-`b`. This is common after `@pgc.func` inlining, which creates parameter
+`b`. This is common after `@tack.func` inlining, which creates parameter
 assignments like `__func_x_0__ = x`.
 
 Handles field alias propagation: if `a = x` where `x` is a field parameter,

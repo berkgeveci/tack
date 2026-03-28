@@ -4,11 +4,10 @@ requires-python = ">=3.11"
 
 [manifest]
 members = [
-    "pgc-core",
-    "pgc-rendering",
-    "pgc-vis",
-    "pgc-workspace",
-    "tack",
+    "tack-core",
+    "tack-rendering",
+    "tack-vis",
+    "tack-workspace",
 ]
 
 [[package]]
@@ -187,115 +186,6 @@ wheels = [
 ]
 
 [[package]]
-name = "pgc-core"
-version = "0.1.0"
-source = { editable = "packages/pgc-core" }
-dependencies = [
-    { name = "numpy" },
-]
-
-[package.optional-dependencies]
-all = [
-    { name = "cuda-python" },
-    { name = "llvmlite" },
-    { name = "pyobjc-framework-metal" },
-    { name = "pyobjc-framework-metalkit" },
-]
-cpu = [
-    { name = "llvmlite" },
-]
-cuda = [
-    { name = "cuda-python" },
-]
-dev = [
-    { name = "pytest" },
-]
-metal = [
-    { name = "pyobjc-framework-metal" },
-    { name = "pyobjc-framework-metalkit" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "cuda-python", marker = "extra == 'cuda'", specifier = ">=13.2.0" },
-    { name = "llvmlite", marker = "extra == 'cpu'" },
-    { name = "numpy" },
-    { name = "pgc-core", extras = ["cpu", "cuda", "metal", "hip", "level-zero"], marker = "extra == 'all'", editable = "packages/pgc-core" },
-    { name = "pyobjc-framework-metal", marker = "extra == 'metal'" },
-    { name = "pyobjc-framework-metalkit", marker = "extra == 'metal'" },
-    { name = "pytest", marker = "extra == 'dev'" },
-]
-provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "dev", "all"]
-
-[[package]]
-name = "pgc-rendering"
-version = "0.1.0"
-source = { editable = "packages/pgc-rendering" }
-dependencies = [
-    { name = "pgc-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pgc-core", editable = "packages/pgc-core" }]
-
-[[package]]
-name = "pgc-vis"
-version = "0.1.0"
-source = { editable = "packages/pgc-vis" }
-dependencies = [
-    { name = "pgc-core" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "pgc-core", editable = "packages/pgc-core" }]
-
-[[package]]
-name = "pgc-workspace"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "pgc-core" },
-    { name = "pgc-rendering" },
-    { name = "pgc-vis" },
-    { name = "tack" },
-]
-
-[package.optional-dependencies]
-cpu = [
-    { name = "pgc-core", extra = ["cpu"] },
-]
-cuda = [
-    { name = "pgc-core", extra = ["cuda"] },
-]
-dev = [
-    { name = "pytest" },
-]
-hip = [
-    { name = "pgc-core" },
-]
-level-zero = [
-    { name = "pgc-core" },
-]
-metal = [
-    { name = "pgc-core", extra = ["metal"] },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "pgc-core", editable = "packages/pgc-core" },
-    { name = "pgc-core", extras = ["cpu"], marker = "extra == 'cpu'", editable = "packages/pgc-core" },
-    { name = "pgc-core", extras = ["cuda"], marker = "extra == 'cuda'", editable = "packages/pgc-core" },
-    { name = "pgc-core", extras = ["hip"], marker = "extra == 'hip'", editable = "packages/pgc-core" },
-    { name = "pgc-core", extras = ["level-zero"], marker = "extra == 'level-zero'", editable = "packages/pgc-core" },
-    { name = "pgc-core", extras = ["metal"], marker = "extra == 'metal'", editable = "packages/pgc-core" },
-    { name = "pgc-rendering", editable = "packages/pgc-rendering" },
-    { name = "pgc-vis", editable = "packages/pgc-vis" },
-    { name = "pytest", marker = "extra == 'dev'" },
-    { name = "tack", editable = "packages/tack" },
-]
-provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "dev"]
-
-[[package]]
 name = "pluggy"
 version = "1.6.0"
 source = { registry = "https://pypi.org/simple" }
@@ -398,12 +288,108 @@ wheels = [
 ]
 
 [[package]]
-name = "tack"
+name = "tack-core"
 version = "0.1.0"
-source = { editable = "packages/tack" }
+source = { editable = "packages/tack-core" }
 dependencies = [
-    { name = "pgc-core" },
+    { name = "numpy" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "cuda-python" },
+    { name = "llvmlite" },
+    { name = "pyobjc-framework-metal" },
+    { name = "pyobjc-framework-metalkit" },
+]
+cpu = [
+    { name = "llvmlite" },
+]
+cuda = [
+    { name = "cuda-python" },
+]
+dev = [
+    { name = "pytest" },
+]
+metal = [
+    { name = "pyobjc-framework-metal" },
+    { name = "pyobjc-framework-metalkit" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "pgc-core", editable = "packages/pgc-core" }]
+requires-dist = [
+    { name = "cuda-python", marker = "extra == 'cuda'", specifier = ">=13.2.0" },
+    { name = "llvmlite", marker = "extra == 'cpu'" },
+    { name = "numpy" },
+    { name = "pyobjc-framework-metal", marker = "extra == 'metal'" },
+    { name = "pyobjc-framework-metalkit", marker = "extra == 'metal'" },
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "tack-core", extras = ["cpu", "cuda", "metal", "hip", "level-zero"], marker = "extra == 'all'", editable = "packages/tack-core" },
+]
+provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "dev", "all"]
+
+[[package]]
+name = "tack-rendering"
+version = "0.1.0"
+source = { editable = "packages/tack-rendering" }
+dependencies = [
+    { name = "tack-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tack-core", editable = "packages/tack-core" }]
+
+[[package]]
+name = "tack-vis"
+version = "0.1.0"
+source = { editable = "packages/tack-vis" }
+dependencies = [
+    { name = "tack-core" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "tack-core", editable = "packages/tack-core" }]
+
+[[package]]
+name = "tack-workspace"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "tack-core" },
+    { name = "tack-rendering" },
+    { name = "tack-vis" },
+]
+
+[package.optional-dependencies]
+cpu = [
+    { name = "tack-core", extra = ["cpu"] },
+]
+cuda = [
+    { name = "tack-core", extra = ["cuda"] },
+]
+dev = [
+    { name = "pytest" },
+]
+hip = [
+    { name = "tack-core" },
+]
+level-zero = [
+    { name = "tack-core" },
+]
+metal = [
+    { name = "tack-core", extra = ["metal"] },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "pytest", marker = "extra == 'dev'" },
+    { name = "tack-core", editable = "packages/tack-core" },
+    { name = "tack-core", extras = ["cpu"], marker = "extra == 'cpu'", editable = "packages/tack-core" },
+    { name = "tack-core", extras = ["cuda"], marker = "extra == 'cuda'", editable = "packages/tack-core" },
+    { name = "tack-core", extras = ["hip"], marker = "extra == 'hip'", editable = "packages/tack-core" },
+    { name = "tack-core", extras = ["level-zero"], marker = "extra == 'level-zero'", editable = "packages/tack-core" },
+    { name = "tack-core", extras = ["metal"], marker = "extra == 'metal'", editable = "packages/tack-core" },
+    { name = "tack-rendering", editable = "packages/tack-rendering" },
+    { name = "tack-vis", editable = "packages/tack-vis" },
+]
+provides-extras = ["cpu", "cuda", "metal", "hip", "level-zero", "dev"]

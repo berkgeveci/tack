@@ -1,27 +1,27 @@
 # Templates
 
-## @pgc.data_oriented
+## @tack.data_oriented
 
 The template system lets you write generic kernels that work with different
-data structures. Classes decorated with `@pgc.data_oriented` can be passed
-as kernel arguments with `pgc.template()` type hints:
+data structures. Classes decorated with `@tack.data_oriented` can be passed
+as kernel arguments with `tack.template()` type hints:
 
 ```python
-@pgc.data_oriented
+@tack.data_oriented
 class AOSArray:
     def __init__(self, data):
-        self.data = data       # pgc.field → becomes a buffer parameter
+        self.data = data       # tack.field → becomes a buffer parameter
 
-    @pgc.func
+    @tack.func
     def get_value(self, i):
         return self.data[i]
 
-@pgc.data_oriented
+@tack.data_oriented
 class ConstantArray:
     def __init__(self, value):
         self.value = value     # instance scalar → runtime parameter
 
-    @pgc.func
+    @tack.func
     def get_value(self, i):
         return self.value
 ```
@@ -29,8 +29,8 @@ class ConstantArray:
 A single kernel works with both:
 
 ```python
-@pgc.kernel
-def add_arrays(a: pgc.template(), b: pgc.template(), out, n):
+@tack.kernel
+def add_arrays(a: tack.template(), b: tack.template(), out, n):
     for i in range(n):
         out[i] = a.get_value(i) + b.get_value(i)
 
@@ -41,14 +41,14 @@ add_arrays(AOSArray(field1), ConstantArray(3.14), out, n)
 
 ## How It Works
 
-When a `@pgc.data_oriented` object is passed as a `pgc.template()` argument:
+When a `@tack.data_oriented` object is passed as a `tack.template()` argument:
 
 - **Class-level scalars** (defined on the class, not in `__init__`) → compile-time
   constants baked into generated code. Changing them triggers recompilation.
 - **Instance scalars** (set in `__init__`) → runtime kernel scalar parameters.
   Changing them does **not** trigger recompilation.
-- **Instance fields** (`pgc.Field` set in `__init__`) → kernel buffer parameters
-- **`@pgc.func` methods** → inlined at the call site
+- **Instance fields** (`tack.Field` set in `__init__`) → kernel buffer parameters
+- **`@tack.func` methods** → inlined at the call site
 
 Each unique combination of template types and **class-level constants** produces
 a separately compiled kernel. Instance scalars and fields can change freely
@@ -61,7 +61,7 @@ Use **class variables** for structural constants that the compiler needs
 runtime values (dimensions, coefficients, thresholds):
 
 ```python
-@pgc.data_oriented
+@tack.data_oriented
 class ImageFilter:
     block_size = 16          # class variable → compile-time constant
     num_channels = 3         # class variable → compile-time constant
@@ -71,20 +71,20 @@ class ImageFilter:
         self.height = height # instance → runtime parameter (no recompile)
         self.data = data     # instance → field parameter
 
-    @pgc.func
+    @tack.func
     def get_pixel(self, x, y):
         return self.data[y * self.width + x]
 ```
 
-**Rule of thumb:** if it controls an allocation size (`pgc.local_array`,
-`pgc.shared`), it **must** be a class variable. Everything else can be
+**Rule of thumb:** if it controls an allocation size (`tack.local_array`,
+`tack.shared`), it **must** be a class variable. Everything else can be
 an instance variable.
 
 ```python
-@pgc.kernel
-def process(filt: pgc.template(), out):
+@tack.kernel
+def process(filt: tack.template(), out):
     for i in range(filt.width):              # runtime — OK as instance var
-        buf = pgc.local_array(pgc.f32, filt.block_size)  # must be class constant
+        buf = tack.local_array(tack.f32, filt.block_size)  # must be class constant
         # ...
 ```
 
@@ -103,7 +103,7 @@ Templates are ideal for topology abstractions where the same algorithm
 should work with different mesh representations:
 
 ```python
-@pgc.data_oriented
+@tack.data_oriented
 class CellSetStructured3D:
     points_per_cell = 8  # class constant — used for local_array sizes
 
@@ -114,7 +114,7 @@ class CellSetStructured3D:
         self.nx_plus1 = nx + 1
         self.nxy_plus1 = (nx + 1) * (ny + 1)
 
-    @pgc.func
+    @tack.func
     def get_point_id(self, cell_id, local_idx):
         # Compute connectivity from grid dimensions — zero storage
         ci = cell_id % self.nx
@@ -127,14 +127,14 @@ class CellSetStructured3D:
         # ... (7 more vertices)
         return result
 
-@pgc.data_oriented
+@tack.data_oriented
 class CellSetExplicit:
     points_per_cell = 4  # class constant — used for local_array sizes
 
     def __init__(self, connectivity):
-        self.connectivity = connectivity    # pgc.field
+        self.connectivity = connectivity    # tack.field
 
-    @pgc.func
+    @tack.func
     def get_point_id(self, cell_id, local_idx):
         return self.connectivity[cell_id * self.points_per_cell + local_idx]
 ```
@@ -142,8 +142,8 @@ class CellSetExplicit:
 One kernel, two cell set types:
 
 ```python
-@pgc.kernel
-def cell_average(cs: pgc.template(), point_data, cell_data, n_cells):
+@tack.kernel
+def cell_average(cs: tack.template(), point_data, cell_data, n_cells):
     for c in range(n_cells):
         total = 0.0
         for v in range(cs.points_per_cell):    # loop count is a constant
@@ -161,15 +161,15 @@ different generated GPU code.
 You can separate topology (cell set) from geometry (cell type):
 
 ```python
-@pgc.data_oriented
+@tack.data_oriented
 class Hexahedron:
     num_points = 8  # class constant
 
-    @pgc.func
+    @tack.func
     def center(self, dim):
         return 0.5
 
-    @pgc.func
+    @tack.func
     def weight(self, vertex, r, s, t):
         # Trilinear shape function
         wr = r
@@ -187,8 +187,8 @@ class Hexahedron:
 A generic interpolation kernel takes both:
 
 ```python
-@pgc.kernel
-def interpolate_to_center(cs: pgc.template(), ct: pgc.template(),
+@tack.kernel
+def interpolate_to_center(cs: tack.template(), ct: tack.template(),
                           point_data, cell_data, n_cells):
     for c in range(n_cells):
         pc0 = ct.center(0)

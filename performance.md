@@ -1,4 +1,4 @@
-# PGC Performance Results
+# Tack Performance Results
 
 64 MB of f32 data (16,777,216 elements), median of 30 trials after warmup.
 

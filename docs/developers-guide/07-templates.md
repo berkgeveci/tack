@@ -7,20 +7,20 @@ compiles to different GPU code depending on the concrete types passed.
 
 Three pieces work together:
 
-1. **`@pgc.data_oriented`** (`data_oriented.py`, 29 lines) — marks a class
-   as passable to kernels. Collects `@pgc.func` methods into
-   `cls._pgc_func_methods`.
+1. **`@tack.data_oriented`** (`data_oriented.py`, 29 lines) — marks a class
+   as passable to kernels. Collects `@tack.func` methods into
+   `cls._tack_func_methods`.
 
-2. **`@pgc.func`** (`func.py`, 53 lines) — captures a function's AST for
+2. **`@tack.func`** (`func.py`, 53 lines) — captures a function's AST for
    inlining. Non-method functions go into the global `_func_registry`.
-   Class methods are stored on the class by `@pgc.data_oriented`.
+   Class methods are stored on the class by `@tack.data_oriented`.
 
 3. **Template rewrite** (`template_rewrite.py`, 207 lines) — AST pre-pass
    that resolves template parameters before IR transformation.
 
 ## Template Rewrite Flow
 
-When `backend.execute()` detects a `@pgc.data_oriented` argument:
+When `backend.execute()` detects a `@tack.data_oriented` argument:
 
 ```python
 # In cpu.py / metal.py / etc.:
@@ -39,8 +39,8 @@ ir_module = kernel.get_ir(..., template_args=template_args)
 Given a kernel:
 
 ```python
-@pgc.kernel
-def avg(cs: pgc.template(), data, out, n):
+@tack.kernel
+def avg(cs: tack.template(), data, out, n):
     for c in range(n):
         total = 0.0
         for v in range(cs.points_per_cell):
@@ -83,9 +83,9 @@ runtime_scalars = {"width": 512, "height": 512}  # instance scalars → runtime 
 This distinction avoids unnecessary JIT recompilation when only runtime
 values (like image dimensions) change between calls.
 
-## @pgc.func Inlining
+## @tack.func Inlining
 
-When the AST transformer encounters a `@pgc.func` call, it runs
+When the AST transformer encounters a `@tack.func` call, it runs
 `_inline_func_call()`:
 
 1. **Generate unique suffix**: `__{func_name}_{param}_{counter}__`
@@ -105,7 +105,7 @@ the statement containing the call.
 For functions returning tuples:
 
 ```python
-@pgc.func
+@tack.func
 def minmax(a, b):
     if a < b:
         return a, b
@@ -118,7 +118,7 @@ assignments to these variables.
 
 ### Texture Propagation
 
-When a texture field is passed through `@pgc.func`, the inliner must:
+When a texture field is passed through `@tack.func`, the inliner must:
 
 1. **Propagate `_texture_fields`**: renamed param → same shape metadata
 2. **Track origin**: `_texture_origin[renamed] = original_param_name`
@@ -128,7 +128,7 @@ When a texture field is passed through `@pgc.func`, the inliner must:
 
 ### Local Array Propagation
 
-When a `pgc.local_array` is passed to a `@pgc.func`, arrays can't be
+When a `tack.local_array` is passed to a `@tack.func`, arrays can't be
 assigned in C (`int arr2[8] = arr1;` is invalid). The inliner handles
 this by aliasing the caller's array name directly:
 
@@ -139,7 +139,7 @@ this by aliasing the caller's array name directly:
 4. **Skip the parameter assignment** (like textures)
 
 This means the inlined body's `pts[v] = ...` compiles to `caller_array[v] = ...`
-with no intermediate variable. The same mechanism works for `pgc.shared()`
+with no intermediate variable. The same mechanism works for `tack.shared()`
 arrays.
 
 ## Cache Keys

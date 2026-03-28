@@ -1,7 +1,7 @@
 # Adding a New Feature
 
-This chapter walks through the process of adding a new IR node to PGC,
-using `pgc.local_array()` as the example. This was an actual feature
+This chapter walks through the process of adding a new IR node to Tack,
+using `tack.local_array()` as the example. This was an actual feature
 added in a single session.
 
 ## 1. Define the IR Node
@@ -32,8 +32,8 @@ handling happens at AST level):
 
 ```python
 def local_array(dtype, size):
-    """Allocate a per-thread local array. Only usable inside a @pgc.kernel."""
-    raise RuntimeError("local_array() can only be used inside a @pgc.kernel")
+    """Allocate a per-thread local array. Only usable inside a @tack.kernel."""
+    raise RuntimeError("local_array() can only be used inside a @tack.kernel")
 ```
 
 ## 3. Handle in AST Transform
@@ -55,15 +55,15 @@ if isinstance(target, ast.Name) and isinstance(value, ast.Call):
 ```python
 if func_name == "local_array":
     raise NotImplementedError(
-        "pgc.local_array() must be used in an assignment: "
-        "arr = pgc.local_array(pgc.f32, 8)")
+        "tack.local_array() must be used in an assignment: "
+        "arr = tack.local_array(tack.f32, 8)")
 ```
 
 **Parser method** (mirrors `_try_parse_shared_alloc`):
 
 ```python
 def _try_parse_local_alloc(self, target_name, value_node):
-    # Parse pgc.local_array(pgc.f32, 8) → IRLocalAlloc
+    # Parse tack.local_array(tack.f32, 8) → IRLocalAlloc
     name = self._resolve_call_name(value_node)
     if name != "local_array":
         return None
@@ -135,23 +135,23 @@ def _available_backends():
     backends = ["cpu"]
     for arch in ["metal", "cuda", "hip", "level_zero"]:
         try:
-            pgc.init(arch=arch)
+            tack.init(arch=arch)
             backends.append(arch)
         except (ImportError, RuntimeError, OSError):
             pass
-    pgc.init(arch="cpu")
+    tack.init(arch="cpu")
     return backends
 
 @pytest.fixture(params=_available_backends())
 def backend(request):
-    pgc.init(arch=request.param)
+    tack.init(arch=request.param)
     return request.param
 
 def test_local_array_store_load(backend):
-    @pgc.kernel
+    @tack.kernel
     def use_local(out, n):
         for i in range(n):
-            arr = pgc.local_array(pgc.f32, 4)
+            arr = tack.local_array(tack.f32, 4)
             arr[0] = 1.0
             arr[1] = 2.0
             out[i] = arr[0] + arr[1]
@@ -160,7 +160,7 @@ def test_local_array_store_load(backend):
 
 ## 7. Incidental Fixes
 
-New features often expose pre-existing bugs. `pgc.local_array` revealed
+New features often expose pre-existing bugs. `tack.local_array` revealed
 that reusing a loop variable name in sibling `for` loops caused
 "undeclared identifier" errors on GPU backends due to C block scoping.
 The fix (always re-declare loop variables in the for-header) was unrelated
@@ -168,7 +168,7 @@ to local arrays but was caught by the new tests.
 
 ## Summary Checklist
 
-For any new IR node (all files under `packages/pgc-core/src/pgc/`):
+For any new IR node (all files under `packages/tack-core/src/tack/`):
 
 - [ ] `lang/ir.py`: Node class + dump entry
 - [ ] `__init__.py`: Python-side API placeholder
@@ -181,4 +181,4 @@ For any new IR node (all files under `packages/pgc-core/src/pgc/`):
 - [ ] `codegen/cuda_gen.py`: CUDA C emission (inherited by HIP)
 - [ ] `codegen/msl_gen.py`: MSL emission
 - [ ] `codegen/opencl_gen.py`: OpenCL C emission (if different from CUDA)
-- [ ] Tests on all backends (in `packages/pgc-core/tests/`)
+- [ ] Tests on all backends (in `packages/tack-core/tests/`)

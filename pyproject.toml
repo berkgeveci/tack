@@ -1,36 +1,34 @@
 [project]
-name = "pgc-workspace"
+name = "tack-workspace"
 version = "0.1.0"
-description = "PGC monorepo workspace — Portable GPU Compute"
+description = "Tack monorepo workspace"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "pgc-core",
-    "pgc-rendering",
-    "pgc-vis",
-    "tack",
+    "tack-core",
+    "tack-rendering",
+    "tack-vis",
 ]
 
 [project.optional-dependencies]
-cpu = ["pgc-core[cpu]"]
-cuda = ["pgc-core[cuda]"]
-metal = ["pgc-core[metal]"]
-hip = ["pgc-core[hip]"]
-level_zero = ["pgc-core[level_zero]"]
+cpu = ["tack-core[cpu]"]
+cuda = ["tack-core[cuda]"]
+metal = ["tack-core[metal]"]
+hip = ["tack-core[hip]"]
+level_zero = ["tack-core[level_zero]"]
 dev = ["pytest"]
 
 [tool.uv.sources]
-pgc-core = { workspace = true }
-pgc-rendering = { workspace = true }
-pgc-vis = { workspace = true }
-tack = { workspace = true }
+tack-core = { workspace = true }
+tack-rendering = { workspace = true }
+tack-vis = { workspace = true }
 
 [tool.uv.workspace]
 members = ["packages/*"]
 
 [tool.pytest.ini_options]
 testpaths = [
-    "packages/pgc-core/tests",
-    "packages/pgc-rendering/tests",
-    "packages/pgc-vis/tests",
+    "packages/tack-core/tests",
+    "packages/tack-rendering/tests",
+    "packages/tack-vis/tests",
 ]

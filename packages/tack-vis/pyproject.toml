@@ -1,0 +1,18 @@
+[project]
+name = "tack-vis"
+version = "0.1.0"
+description = "Tack — Scientific visualization algorithms"
+requires-python = ">=3.11"
+dependencies = [
+    "tack-core>=0.1.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/tack"]
+
+[tool.hatch.build]
+exclude = ["src/tack/__init__.py"]

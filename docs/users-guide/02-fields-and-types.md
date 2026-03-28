@@ -2,20 +2,20 @@
 
 ## Scalar Types
 
-PGC provides these scalar types:
+Tack provides these scalar types:
 
 | Type | Description | Numpy equivalent |
 |------|-------------|-----------------|
-| `pgc.i8` | 8-bit signed int | `np.int8` |
-| `pgc.u8` | 8-bit unsigned int | `np.uint8` |
-| `pgc.i16` | 16-bit signed int | `np.int16` |
-| `pgc.u16` | 16-bit unsigned int | `np.uint16` |
-| `pgc.i32` | 32-bit signed int | `np.int32` |
-| `pgc.u32` | 32-bit unsigned int | `np.uint32` |
-| `pgc.i64` | 64-bit signed int | `np.int64` |
-| `pgc.u64` | 64-bit unsigned int | `np.uint64` |
-| `pgc.f32` | 32-bit float | `np.float32` |
-| `pgc.f64` | 64-bit float | `np.float64` |
+| `tack.i8` | 8-bit signed int | `np.int8` |
+| `tack.u8` | 8-bit unsigned int | `np.uint8` |
+| `tack.i16` | 16-bit signed int | `np.int16` |
+| `tack.u16` | 16-bit unsigned int | `np.uint16` |
+| `tack.i32` | 32-bit signed int | `np.int32` |
+| `tack.u32` | 32-bit unsigned int | `np.uint32` |
+| `tack.i64` | 64-bit signed int | `np.int64` |
+| `tack.u64` | 64-bit unsigned int | `np.uint64` |
+| `tack.f32` | 32-bit float | `np.float32` |
+| `tack.f64` | 64-bit float | `np.float64` |
 
 GPU backends use `f32` by default. Python `float` scalar arguments are
 automatically promoted to `f64` when any field argument uses `f64`, preventing
@@ -23,35 +23,35 @@ silent precision loss. Otherwise, float scalars default to `f32`.
 
 ## Fields
 
-A field is a device-resident array — the fundamental data container in PGC.
+A field is a device-resident array — the fundamental data container in Tack.
 
 ```python
 # 1D field
-data = pgc.field(dtype=pgc.f32, shape=(1024,))
+data = tack.field(dtype=tack.f32, shape=(1024,))
 
 # 2D field (linearized internally)
-grid = pgc.field(dtype=pgc.f32, shape=(100, 100))
+grid = tack.field(dtype=tack.f32, shape=(100, 100))
 
 # Integer field
-indices = pgc.field(dtype=pgc.i32, shape=(256,))
+indices = tack.field(dtype=tack.i32, shape=(256,))
 ```
 
 ### Creating from Numpy
 
-The easiest way to create a field with data is `pgc.field_like`:
+The easiest way to create a field with data is `tack.field_like`:
 
 ```python
 # Create a field from a numpy array (infers shape and dtype)
-x = pgc.field_like(np.arange(1024, dtype=np.float32))
+x = tack.field_like(np.arange(1024, dtype=np.float32))
 
 # Override dtype
-y = pgc.field_like(some_array, dtype=pgc.f32)
+y = tack.field_like(some_array, dtype=tack.f32)
 ```
 
 Or allocate first, then copy:
 
 ```python
-data = pgc.field(dtype=pgc.f32, shape=(1024,))
+data = tack.field(dtype=tack.f32, shape=(1024,))
 data.from_numpy(np.arange(1024, dtype=np.float32))
 
 # Copy data back to numpy
@@ -65,7 +65,7 @@ explicit host-device copies.
 ### Field Access in Kernels
 
 ```python
-@pgc.kernel
+@tack.kernel
 def example(data, grid):
     for i in range(data.shape[0]):
         val = data[i]           # 1D access
@@ -88,10 +88,10 @@ average = data.mean()
 
 ### Statistics and Analysis
 
-GPU-accelerated statistics are available in `pgc.algorithms`:
+GPU-accelerated statistics are available in `tack.algorithms`:
 
 ```python
-from pgc.algorithms import var, std, norm, absmax, count_nonzero, dot, histogram
+from tack.algorithms import var, std, norm, absmax, count_nonzero, dot, histogram
 
 # Variance and standard deviation (GPU kernel-based)
 v = var(data)
@@ -120,11 +120,11 @@ operations for reductions — no host roundtrips.
 
 ```python
 # Allocate filled fields
-x = pgc.zeros(dtype=pgc.f32, shape=(1024,))
-y = pgc.ones(dtype=pgc.i32, shape=(256,))
-z = pgc.full(pgc.f32, (100,), 3.14)
-idx = pgc.arange(64)                          # [0, 1, 2, ..., 63] as i32
-idx_f = pgc.arange(64, dtype=pgc.f32)         # [0.0, 1.0, ..., 63.0]
+x = tack.zeros(dtype=tack.f32, shape=(1024,))
+y = tack.ones(dtype=tack.i32, shape=(256,))
+z = tack.full(tack.f32, (100,), 3.14)
+idx = tack.arange(64)                          # [0, 1, 2, ..., 63] as i32
+idx_f = tack.arange(64, dtype=tack.f32)         # [0.0, 1.0, ..., 63.0]
 ```
 
 ### Copy, Convert, Reshape
@@ -134,8 +134,8 @@ idx_f = pgc.arange(64, dtype=pgc.f32)         # [0.0, 1.0, ..., 63.0]
 backup = data.copy()
 
 # Convert dtype (returns new field)
-data_f64 = data.astype(pgc.f64)
-indices_u8 = indices.astype(pgc.u8)
+data_f64 = data.astype(tack.f64)
+indices_u8 = indices.astype(tack.u8)
 
 # Reshape (metadata only, shares buffer — no copy)
 flat = grid.reshape((width * height,))
@@ -146,13 +146,13 @@ grid2d = flat.reshape((height, width))
 
 ```python
 # Concatenate 1D fields (same dtype required)
-combined = pgc.concat([part_a, part_b, part_c])
+combined = tack.concat([part_a, part_b, part_c])
 ```
 
 ### Size and Length
 
 ```python
-f = pgc.field(dtype=pgc.f32, shape=(4, 3))
+f = tack.field(dtype=tack.f32, shape=(4, 3))
 f.size       # 12 (total elements)
 len(f)       # 4 (first dimension)
 ```
@@ -162,7 +162,7 @@ len(f)       # 4 (first dimension)
 Kernels accept Python scalars directly — no need to wrap them in fields:
 
 ```python
-@pgc.kernel
+@tack.kernel
 def saxpy(x, y, out, alpha, n):
     for i in range(n):
         out[i] = alpha * x[i] + y[i]
@@ -179,41 +179,41 @@ Both Python types and numpy scalar types (`np.float32`, `np.int32`) work.
 ## Type Casts
 
 Inside kernels, `int()` and `float()` cast to `i32` and `f32` respectively.
-For explicit control over the target type, use the PGC type cast functions:
+For explicit control over the target type, use the Tack type cast functions:
 
 ```python
-@pgc.kernel
+@tack.kernel
 def precise_compute(x, out):
     for i in range(x.shape[0]):
-        val = pgc.f64(x[i])      # promote to double precision
-        out[i] = pgc.f32(val)    # back to single
+        val = tack.f64(x[i])      # promote to double precision
+        out[i] = tack.f32(val)    # back to single
 
-@pgc.kernel
+@tack.kernel
 def bitwise_ops(data, out):
     for i in range(data.shape[0]):
-        bits = pgc.u32(data[i])  # unsigned for bitwise ops
-        out[i] = pgc.i32(bits >> 8)
+        bits = tack.u32(data[i])  # unsigned for bitwise ops
+        out[i] = tack.i32(bits >> 8)
 ```
 
-Available casts: `pgc.i8()`, `pgc.u8()`, `pgc.i16()`, `pgc.u16()`, `pgc.i32()`, `pgc.u32()`,
-`pgc.i64()`, `pgc.u64()`, `pgc.f32()`, `pgc.f64()`.
+Available casts: `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`,
+`tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`.
 
-Note: `pgc.f64()` is not supported on Metal (Apple GPUs lack double precision).
+Note: `tack.f64()` is not supported on Metal (Apple GPUs lack double precision).
 
 ## Device Pointer Interop
 
 For interop with external libraries (pycuda, cupy, Catalyst/in-situ), you
-can wrap an existing device pointer as a PGC field without copying:
+can wrap an existing device pointer as a Tack field without copying:
 
 ```python
 # Wrap a CUDA device pointer (read-only by default)
-field = pgc.field_from_ptr(cuda_device_ptr, dtype=pgc.f32, shape=(n,))
+field = tack.field_from_ptr(cuda_device_ptr, dtype=tack.f32, shape=(n,))
 
 # Wrap with write access
-field = pgc.field_from_ptr(ptr, dtype=pgc.f32, shape=(n,), writable=True)
+field = tack.field_from_ptr(ptr, dtype=tack.f32, shape=(n,), writable=True)
 ```
 
-The field does **not** own the memory — PGC will not free it. On CPU, you
+The field does **not** own the memory — Tack will not free it. On CPU, you
 can pass a numpy array directly. On Metal, pass an `MTLBuffer` object. On
 CUDA/HIP/Level Zero, pass the device pointer as an integer.
 

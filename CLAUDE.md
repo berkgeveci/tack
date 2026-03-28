@@ -4,26 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Monorepo Structure
 
-PGC is split into 3 packages under `packages/`:
+Tack is split into 3 packages under `packages/`:
 
 | Package | Path | Contents |
 |---------|------|----------|
-| `pgc-core` | `packages/pgc-core/` | Kernels, fields, types, IR, codegen, backends, scan/copy |
-| `pgc-rendering` | `packages/pgc-rendering/` | Path tracer (BVH, camera, scene, ColorTable) |
-| `pgc-vis` | `packages/pgc-vis/` | Visualization algorithms (flying edges, normals, VTK interop) |
+| `tack-core` | `packages/tack-core/` | Kernels, fields, types, IR, codegen, backends, scan/copy |
+| `tack-rendering` | `packages/tack-rendering/` | Path tracer (BVH, camera, scene, ColorTable) |
+| `tack-vis` | `packages/tack-vis/` | Visualization algorithms (flying edges, normals, VTK interop) |
 
-All share the `pgc` namespace via `pkgutil.extend_path`.
+All share the `tack` namespace via `pkgutil.extend_path`.
 
 ## Build & Test Commands
 
 ```bash
 uv sync                                                     # install all packages (editable)
 uv run pytest                                                # run all tests
-uv run pytest packages/pgc-core/tests/test_cpu_jit.py        # run one test file
-uv run pytest packages/pgc-core/tests/test_hip.py            # run HIP backend tests
+uv run pytest packages/tack-core/tests/test_cpu_jit.py        # run one test file
+uv run pytest packages/tack-core/tests/test_hip.py            # run HIP backend tests
 uv run pytest -k "test_saxpy"                                # run tests matching a pattern
-uv run python packages/pgc-core/examples/validate_all.py     # validation suite
-uv run python packages/pgc-core/examples/01_hello_pgc.py --arch hip  # example on backend
+uv run python packages/tack-core/examples/validate_all.py     # validation suite
+uv run python packages/tack-core/examples/01_hello_tack.py --arch hip  # example on backend
 ```
 
 All examples accept `--arch cpu|metal|cuda|hip|level_zero` to select the backend.
@@ -32,17 +32,17 @@ No build step — pure Python with JIT compilation at runtime.
 
 ## Architecture
 
-PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are decorated Python functions that compile at call time through this pipeline:
+Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are decorated Python functions that compile at call time through this pipeline:
 
 ```
-@pgc.kernel Python function
+@tack.kernel Python function
     → AST transform (ast_transform.py)
-    → PGC IR (ir.py)
+    → Tack IR (ir.py)
     → IR passes: resolve (ir_resolve.py) → type inference → optimize (ir_optimize.py)
     → Backend-specific codegen + dispatch
 ```
 
-### Codegen backends from PGC IR
+### Codegen backends from Tack IR
 
 | Backend | Codegen | Runtime compilation | Dispatch |
 |---------|---------|-------------------|----------|
@@ -61,12 +61,12 @@ PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are deco
 - **HIP**: `HIPBuffer` holds a device pointer (`hipMalloc`). Explicit host↔device copies.
 - **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Explicit host↔device copies via immediate command list.
 
-`pgc.field()` calls `backend.allocate_field()` to create the appropriate buffer type.
+`tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type.
 
 ### Kernel execution flow
 
 1. `Kernel.__call__` → `backend.execute(kernel, args)`
-2. Detect template arguments (`@pgc.data_oriented` classes) and expand them
+2. Detect template arguments (`@tack.data_oriented` classes) and expand them
 3. Detect vector fields and set up scalarization metadata
 4. AST transform → IR, with dimension size resolution (`ir_resolve.py`)
 5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field` flag
@@ -78,7 +78,7 @@ PGC is a Python-first GPU compute framework inspired by Taichi. Kernels are deco
 
 ### Kernel code inspection
 
-`pgc.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (PGC IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR, CPU only). Implementation in `lang/inspect_kernel.py`.
+`tack.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (Tack IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR, CPU only). Implementation in `lang/inspect_kernel.py`.
 
 ### IR structure (lang/ir.py)
 
@@ -109,55 +109,55 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 ### Vector scalarization
 
-`pgc.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
+`tack.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
 
-### @pgc.func inlining
+### @tack.func inlining
 
-Functions decorated with `@pgc.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.
+Functions decorated with `@tack.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.
 
-### @pgc.data_oriented templates
+### @tack.data_oriented templates
 
-Classes decorated with `@pgc.data_oriented` can be passed as template arguments. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@pgc.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`.
+Classes decorated with `@tack.data_oriented` can be passed as template arguments. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`.
 
 ### 64-bit loop indices on GPU
 
 GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).
 
-### Algorithms (pgc.algorithms)
+### Algorithms (tack.algorithms)
 
 `exclusive_scan` and `inclusive_scan` implement Blelloch-style parallel prefix sums. They use a `_read_last` kernel to return the total sum without copying the entire buffer to numpy. The Blelloch scan uses O(log n) kernel launches, so for small arrays (< ~1M elements) a numpy CPU roundtrip may be faster due to kernel launch overhead.
 
-### ColorTable (pgc.rendering)
+### ColorTable (tack.rendering)
 
-`ColorTable` maps per-vertex scalar fields to RGB colors via a sampled lookup table. Presets: `viridis`, `cool_to_warm`, `inferno`, `plasma`, `grayscale`, `rainbow`. The `Actor` class accepts `scalars` (pgc.field or numpy) + `color_table` (ColorTable) to enable scalar field coloring. During `Scene._prepare()`, scalars are mapped to per-vertex colors on GPU via linear interpolation into the lookup table. The pathtrace kernel's existing per-vertex color interpolation handles the rest — no kernel changes needed.
+`ColorTable` maps per-vertex scalar fields to RGB colors via a sampled lookup table. Presets: `viridis`, `cool_to_warm`, `inferno`, `plasma`, `grayscale`, `rainbow`. The `Actor` class accepts `scalars` (tack.field or numpy) + `color_table` (ColorTable) to enable scalar field coloring. During `Scene._prepare()`, scalars are mapped to per-vertex colors on GPU via linear interpolation into the lookup table. The pathtrace kernel's existing per-vertex color interpolation handles the rest — no kernel changes needed.
 
-### Multiple lights (pgc.rendering)
+### Multiple lights (tack.rendering)
 
 Multiple `PointLight` instances can be added to a `Scene`. Each light contributes independently with its own shadow ray. Light data is packed into a flat field (7 floats per light: x, y, z, intensity, r, g, b) and passed to the pathtrace kernel, which loops over all lights in the direct-illumination section. Light color (previously ignored) is now applied to each light's contribution. The `render()` function's `light_position` kwarg still works as a single-light override for backward compatibility.
 
-### Volume rendering (pgc.rendering)
+### Volume rendering (tack.rendering)
 
-`Volume` represents a uniform-grid scalar field for ray-casting volume rendering. `TransferFunction` maps scalars to RGBA (reuses ColorTable preset colors + user-defined opacity function). `render_volume(canvas, volume, camera)` ray marches through the volume with front-to-back compositing, trilinear interpolation via `pgc.texture3d`, and opacity-corrected compositing.
+`Volume` represents a uniform-grid scalar field for ray-casting volume rendering. `TransferFunction` maps scalars to RGBA (reuses ColorTable preset colors + user-defined opacity function). `render_volume(canvas, volume, camera)` ray marches through the volume with front-to-back compositing, trilinear interpolation via `tack.texture3d`, and opacity-corrected compositing.
 
-### Unified render dispatcher (pgc.rendering)
+### Unified render dispatcher (tack.rendering)
 
 `render()` in `render.py` is the unified entry point. When a scene has both surfaces and volumes, the path tracer integrates volume ray marching directly — for each primary ray, after BVH traversal finds the closest surface hit, the volume is marched from the ray origin to the hit distance with front-to-back compositing. Volume opacity attenuates the throughput so surfaces are correctly visible through semi-transparent volumes. Volume-only scenes use the standalone ray caster. `render_volume()` remains available for direct single-volume rendering without a Scene.
 
-### Annotations (pgc.rendering)
+### Annotations (tack.rendering)
 
 `annotate(image, annotations)` draws overlays on `(H, W, 4) uint8` numpy arrays (from `Canvas.to_numpy()`). Three annotation types: `ColorBar` (gradient strip + tick labels from ColorTable/TransferFunction), `AxisIndicator` (projected XYZ axes from camera orientation), `TextOverlay` (arbitrary text). Lines and rectangles use pure numpy; text requires Pillow (soft dependency, gracefully skipped if absent). Camera stores `_right`, `_up`, `_forward` basis vectors for the axis indicator.
 
-### Orthographic camera (pgc.rendering)
+### Orthographic camera (tack.rendering)
 
 `OrthographicCamera` generates parallel rays — all rays have the same direction, but origins vary per pixel. Uses the same scalar attribute pattern as `PerspectiveCamera` with added `odx_x/y/z` and `ody_x/y/z` origin-per-pixel deltas. `PerspectiveCamera` sets these to zero for backward compatibility. Works with both path tracer and volume renderer. The `view_height` parameter controls the world-space height of the view rectangle.
 
-### Material system (pgc.rendering)
+### Material system (tack.rendering)
 
 `Material` class with three types: `MATTE` (Lambertian diffuse, default), `SPECULAR` (perfect mirror reflection), `TRANSPARENT` (glass with Snell's law refraction + Schlick Fresnel). Set per-actor via `Actor(..., material=Material(Material.SPECULAR))`. Per-triangle material IDs (`mat_ids` i32 field) index into a flat material table (`mat_table` f32 field, stride 4: type, ior, reserved, reserved). Direct lighting is only computed for matte surfaces. Specular bounces reflect perfectly; transparent surfaces refract or reflect based on Fresnel probability using Halton random numbers.
 
-### Wireframe and point rendering (pgc.rendering)
+### Wireframe and point rendering (tack.rendering)
 
-`Actor` accepts `render_mode="solid"` (default, path traced), `"wireframe"` (triangle edges), or `"points"` (vertex discs). Wireframe and point actors are dispatched to GPU rasterization kernels in `rasterize.py` instead of the path tracer. Uses an MVP projection matrix passed as a flat f32 field, Bresenham line rasterization for wireframe, disc rasterization for points, and `pgc.atomic_min` depth testing. Supports perspective and orthographic cameras, per-actor colors, scalar coloring, and configurable point size.
+`Actor` accepts `render_mode="solid"` (default, path traced), `"wireframe"` (triangle edges), or `"points"` (vertex discs). Wireframe and point actors are dispatched to GPU rasterization kernels in `rasterize.py` instead of the path tracer. Uses an MVP projection matrix passed as a flat f32 field, Bresenham line rasterization for wireframe, disc rasterization for points, and `tack.atomic_min` depth testing. Supports perspective and orthographic cameras, per-actor colors, scalar coloring, and configurable point size.
 
 ### CPU threading threshold
 
@@ -165,11 +165,11 @@ CPU backend uses `ThreadPoolExecutor` only when loop range > 1024 elements. Belo
 
 ## Kernel language features
 
-- **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in pgc.ndrange(w, h)`, `while`, `break`, `continue`
+- **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndrange(w, h)`, `while`, `break`, `continue`
 - **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max`, `pow`
-- **Types**: `int()`, `float()` casts, plus explicit `pgc.i8()`, `pgc.u8()`, `pgc.i16()`, `pgc.u16()`, `pgc.i32()`, `pgc.u32()`, `pgc.i64()`, `pgc.u64()`, `pgc.f32()`, `pgc.f64()`
-- **Atomics**: `pgc.atomic_add(field, idx, val)`, `pgc.atomic_min(...)`, `pgc.atomic_max(...)`
-- **GPU primitives**: `pgc.shared(dtype, size)`, `pgc.shared_like(field, size)`, `pgc.barrier()`, `pgc.thread_id()`
+- **Types**: `int()`, `float()` casts, plus explicit `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`, `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`
+- **Atomics**: `tack.atomic_add(field, idx, val)`, `tack.atomic_min(...)`, `tack.atomic_max(...)`
+- **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(field, size)`, `tack.barrier()`, `tack.thread_id()`
 - **Debug**: `print("label:", value)` — emits printf on CPU/CUDA/HIP, no-op on Metal
 - **Fields**: `field[i]`, `field[i, j]`, `field[None]`, `field.shape[0]`, `len(field)`
 - **Reductions**: `field.sum()`, `field.min()`, `field.max()` — GPU-native on Metal, numpy on CPU
@@ -194,7 +194,7 @@ uv pip install --prerelease=allow --index-url https://test.pypi.org/simple/ \
   "hip-python~=7.1.0"
 ```
 
-Then: `pgc.init(arch=pgc.hip)`.
+Then: `tack.init(arch=tack.hip)`.
 
 **Known issue**: `hiprtcDestroyProgram` segfaults in hip-python 7.1 bindings. The backend skips this call (minor leak, mitigated by kernel caching).
 
@@ -206,6 +206,6 @@ Compilation pipeline: OpenCL C source → `libocloc.so` (in-process, via `oclocI
 
 Requires: `libze_loader.so` (Level Zero runtime), `libocloc.so` (Intel offline compiler). No Python packages needed.
 
-Then: `pgc.init(arch=pgc.level_zero)`.
+Then: `tack.init(arch=tack.level_zero)`.
 
 ## Do not mention Claude in git commits
