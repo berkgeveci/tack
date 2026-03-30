@@ -14,7 +14,12 @@ _BACKEND_HELP = {
 
 
 def init(arch: str = "cpu"):
-    """Initialize Tack with a specific backend architecture."""
+    """Initialize Tack with a specific backend architecture.
+
+    Set ``TACK_NO_REINIT=1`` to skip re-initialization when a backend
+    is already active (useful when embedded in an ANARI device that
+    shares the same process).
+    """
     global _current_backend
 
     _constructors = {
@@ -28,6 +33,10 @@ def init(arch: str = "cpu"):
     if arch not in _constructors:
         available = ", ".join(sorted(_constructors.keys()))
         raise ValueError(f"Unknown architecture: '{arch}'. Available: {available}")
+
+    import os
+    if _current_backend is not None and os.environ.get("TACK_NO_REINIT"):
+        return
 
     module_name, class_name = _constructors[arch]
     help_msg = _BACKEND_HELP[arch]
