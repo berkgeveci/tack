@@ -16,13 +16,14 @@ _BACKEND_HELP = {
 def init(arch: str = "cpu"):
     """Initialize Tack with a specific backend architecture.
 
-    If a backend is already active, this is a no-op.  Set
-    ``TACK_REINIT=1`` to force re-initialization.
+    Set ``TACK_NO_REINIT=1`` to skip re-initialization when a backend
+    is already active (useful when embedded in an ANARI device that
+    shares the same process).
     """
     global _current_backend
 
     import os
-    if _current_backend is not None and not os.environ.get("TACK_REINIT"):
+    if _current_backend is not None and os.environ.get("TACK_NO_REINIT"):
         return
 
     _constructors = {
