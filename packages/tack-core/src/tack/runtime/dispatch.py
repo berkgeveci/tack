@@ -14,8 +14,16 @@ _BACKEND_HELP = {
 
 
 def init(arch: str = "cpu"):
-    """Initialize Tack with a specific backend architecture."""
+    """Initialize Tack with a specific backend architecture.
+
+    If a backend is already active, this is a no-op.  Set
+    ``TACK_REINIT=1`` to force re-initialization.
+    """
     global _current_backend
+
+    import os
+    if _current_backend is not None and not os.environ.get("TACK_REINIT"):
+        return
 
     _constructors = {
         "cpu": ("tack.runtime.cpu", "CPUBackend"),
