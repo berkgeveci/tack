@@ -20,6 +20,8 @@ MCTables
     Marching-cubes lookup tables as tack fields.
 """
 
+import weakref
+
 import numpy as np
 import tack
 
@@ -350,15 +352,23 @@ class MCTables:
         self.num_tris.from_numpy(_NUM_TRIS)
 
 
-# Singleton — created on first use.
-_tables = None
+# One table set per backend, created on first use.  Keying on the backend
+# matters because tack.init() builds a fresh backend object and MCTables
+# holds device fields — a single global would hand a CPU NumpyBuffer to
+# Metal after a backend switch.  Weak keys let a retired backend's tables
+# go with it.
+_tables = weakref.WeakKeyDictionary()
 
 
 def _get_tables():
-    global _tables
-    if _tables is None:
-        _tables = MCTables()
-    return _tables
+    from tack.runtime.dispatch import get_backend
+
+    backend = get_backend()
+    tables = _tables.get(backend)
+    if tables is None:
+        tables = MCTables()
+        _tables[backend] = tables
+    return tables
 
 
 # ================================================================

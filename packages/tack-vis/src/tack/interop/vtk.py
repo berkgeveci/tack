@@ -90,7 +90,7 @@ def vtk_to_field(vtk_array):
             raise RuntimeError(
                 "vtk_to_field: GetDeviceVoidPointer returned null. "
                 "Array reports device memory but pointer is unavailable.")
-        return tack.field_from_ptr(addr, (n_values,), tack_dtype)
+        return tack.field_from_ptr(addr, tack_dtype, (n_values,))
 
     # Host array — use GetVoidPointer
     ptr_str = vtk_array.GetVoidPointer(0)
@@ -98,7 +98,7 @@ def vtk_to_field(vtk_array):
     if addr == 0:
         raise RuntimeError(
             "vtk_to_field: GetVoidPointer returned null.")
-    return tack.field_from_ptr(addr, (n_values,), tack_dtype)
+    return tack.field_from_ptr(addr, tack_dtype, (n_values,))
 
 
 def field_to_vtk(field, n_components=1):

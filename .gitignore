@@ -15,3 +15,7 @@ results/
 
 # Claude Code local config
 .claude/
+
+# Test artifacts
+.coverage
+.pytest_cache/
