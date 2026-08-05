@@ -22,6 +22,16 @@ from tack.lang import ir
 from tack.lang.field import Field, DeviceBuffer
 from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 from tack.lang.type_inference import infer_param_types, check_dispatch_types
+from tack.runtime.kernel_utils import (
+    new_kernel_cache,
+    kernel_cache_slot,
+    kernel_variant_key,
+    _detect_template_args,
+    _expand_template_args,
+    _detect_vector_fields_from_args,
+    _detect_texture_fields,
+    _get_loop_range,
+)
 
 _HIP_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from tack.codegen.hip_gen import generate_hip_source
@@ -201,12 +211,6 @@ def _compile_code_object(hip_source: str, func_name: str) -> bytes:
     return code
 
 
-def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
-    """Extract the parallel for-loop range from the IR and actual arguments."""
-    from tack.runtime.cpu import _get_loop_range as cpu_get_loop_range
-    return cpu_get_loop_range(ir_func, args)
-
-
 _HIP_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlong,
                    u32: ctypes.c_uint, u64: ctypes.c_ulonglong}
 
@@ -327,7 +331,7 @@ class HIPBackend:
         _check_hip(err)
         self._device = device
 
-        self._cache: dict[str, CompiledHIPKernel] = {}
+        self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledHIPKernel}
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> HIPBuffer:
@@ -371,10 +375,6 @@ class HIPBackend:
             raise NotImplementedError("Keyword arguments not supported in kernels")
 
         # Detect template arguments and expand them
-        from tack.runtime.cpu import (
-            _detect_template_args, _expand_template_args,
-            _detect_vector_fields_from_args, _detect_texture_fields,
-        )
         from tack.lang.field import Field, Texture3D
         template_args = _detect_template_args(kernel, args)
         effective_args = _expand_template_args(args, template_args)
@@ -422,19 +422,15 @@ class HIPBackend:
         loop_end = _get_loop_range(ir_func, kernel_args)
 
         # Cache key (include texture shapes for uniqueness)
-        type_sig = tuple(p.type_annotation for p in ir_func.params)
-        tex_sig = tuple(
-            getattr(p, '_texture_shape', None) for p in ir_func.params)
-        tmpl_key = ""
-        if template_args:
-            tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
-        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tex_sig}_{tmpl_key}"
+        slot = kernel_cache_slot(self._cache, kernel)
+        cache_key = kernel_variant_key(
+            ir_func, kernel, vector_fields, template_args)
 
-        if cache_key not in self._cache:
+        if cache_key not in slot:
             import copy
             from tack.lang.ir_pack_scalars import pack_scalars
             from tack.lang.ir_type_annotate import annotate_types
-            from tack.runtime.cpu import _create_pack_fields
+            from tack.runtime.kernel_utils import _create_pack_fields
             ir_func_copy = copy.deepcopy(ir_func)
             from tack.codegen.cuda_gen import _safe_kernel_name
             ir_func_copy.name = _safe_kernel_name(ir_func_copy.name)
@@ -442,13 +438,13 @@ class HIPBackend:
             annotate_types(ir_func_copy)
             compiled = self._compile_kernel(ir_func_copy)
             pack_fields = _create_pack_fields(pack_info, effective_args, self) if pack_info else None
-            self._cache[cache_key] = (compiled, pack_info, pack_fields)
+            slot[cache_key] = (compiled, pack_info, pack_fields)
 
-        compiled, pack_info, pack_fields = self._cache[cache_key]
+        compiled, pack_info, pack_fields = slot[cache_key]
 
         # Build dispatch args
         if pack_info:
-            from tack.runtime.cpu import _update_pack_fields
+            from tack.runtime.kernel_utils import _update_pack_fields
             from tack.lang.ir_pack_scalars import split_args
             _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)

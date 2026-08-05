@@ -108,7 +108,15 @@ _CTYPES_MAP = {
 }
 
 
-# Re-export shared utilities so existing `from tack.runtime.cpu import ...` works
+from tack.runtime.kernel_utils import (
+    new_kernel_cache,
+    kernel_cache_slot,
+    kernel_variant_key,
+)
+
+# Re-export shared utilities so existing `from tack.runtime.cpu import ...` works.
+# Backends must NOT rely on this — importing this module pulls in llvmlite, which
+# is a CPU-only dependency.  Import from tack.runtime.kernel_utils instead.
 from tack.runtime.kernel_utils import (  # noqa: F401
     _detect_template_args,
     _expand_template_args,
@@ -227,7 +235,7 @@ class CPUBackend:
 
     def __init__(self, num_threads: int | None = None):
         self.num_threads = num_threads or _physical_core_count()
-        self._cache: dict[str, CompiledKernel] = {}
+        self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledKernel}
         self._pool: ThreadPoolExecutor | None = None
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
@@ -323,17 +331,14 @@ class CPUBackend:
         from tack.lang.ir_type_annotate import annotate_types
         annotate_types(ir_func)
 
-        # Cache key: kernel name + argument type signature + template info
-        type_sig = tuple(p.type_annotation for p in ir_func.params)
-        tmpl_key = ""
-        if template_args:
-            tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
-        cache_key = f"{kernel.name}_{id(kernel)}_{type_sig}_{tmpl_key}"
+        # Cache: per-kernel slot, then argument types + template info
+        slot = kernel_cache_slot(self._cache, kernel)
+        cache_key = kernel_variant_key(ir_func, kernel, vector_fields, template_args)
 
-        if cache_key not in self._cache:
-            self._cache[cache_key] = _compile_kernel(ir_func)
+        if cache_key not in slot:
+            slot[cache_key] = _compile_kernel(ir_func)
 
-        compiled = self._cache[cache_key]
+        compiled = slot[cache_key]
 
         # Build kernel args list — unwrap Texture3D to underlying Field for dispatch
         kernel_args = [a.field if isinstance(a, Texture3D) else a

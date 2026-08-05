@@ -5,8 +5,50 @@ loop range resolution, and scalar packing — common pre-dispatch logic shared
 across CPU, GPU, and WebGPU backends.
 """
 
+import weakref
+
 from tack.lang import ir
 from tack.lang.field import Field
+
+
+def new_kernel_cache():
+    """Create a backend compiled-kernel cache.
+
+    Maps ``Kernel`` → {variant_key: compiled}, holding the kernel weakly.
+    """
+    return weakref.WeakKeyDictionary()
+
+
+def kernel_cache_slot(cache, kernel) -> dict:
+    """Return (creating if needed) the per-kernel variant dict in ``cache``.
+
+    Keyed on the ``Kernel`` object itself rather than ``id(kernel)``.  This is
+    a correctness requirement, not a style choice: ``id()`` is a memory
+    address, and a garbage-collected kernel frees its address for reuse.  A
+    later kernel allocated at the same address with the same name and type
+    signature would hit the previous kernel's compiled code and silently
+    return wrong results.  Holding the key weakly also lets compiled code and
+    its device modules be released once the kernel itself goes away.
+    """
+    slot = cache.get(kernel)
+    if slot is None:
+        slot = cache[kernel] = {}
+    return slot
+
+
+def kernel_variant_key(ir_func, kernel, vector_fields, template_args) -> tuple:
+    """Build the cache key distinguishing compiled variants of one kernel.
+
+    The kernel identity is carried by the enclosing per-kernel slot, so this
+    only needs to separate specializations: argument types, texture shapes,
+    and template constants.
+    """
+    type_sig = tuple(p.type_annotation for p in ir_func.params)
+    tex_sig = tuple(getattr(p, '_texture_shape', None) for p in ir_func.params)
+    tmpl_key = ""
+    if template_args:
+        tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
+    return (type_sig, tex_sig, tmpl_key)
 
 
 def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:
