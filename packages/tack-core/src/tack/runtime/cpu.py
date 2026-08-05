@@ -5,11 +5,31 @@ The kernel function signature is:
 
 Fields are passed as ctypes pointers to their underlying numpy data.
 The loop range is split across threads for parallel execution.
+
+Threading decision
+------------------
+A fan-out costs ~200 µs of pure Python thread wakeup on a 10-core machine,
+so it only pays when the serial run would take meaningfully longer than
+that.  Both sides of the comparison are *measured* rather than assumed:
+the backend calibrates the fan-out cost once, and every compiled kernel
+carries a running estimate of its serial nanoseconds per element.
+
+A fixed element-count threshold cannot do this job, because the crossover
+moves by three orders of magnitude with the kernel's arithmetic intensity.
+Measured here (10 physical cores, f32):
+
+    out[i] = x[i]*2 + 1          memory bound     crossover ~4,000,000
+    out[i] = sqrt(..) + sin(..)  ~10 flop/elem    crossover   ~130,000
+    20-iteration inner loop      ~120 flop/elem   crossover     ~4,000
+
+The old constant of 1024 sat below all three, so every mid-size dispatch
+of a cheap kernel paid ~200 µs to save ~20 µs — a 3-10x pessimization.
 """
 
 import ctypes
 import ctypes.util
 import os
+import time
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
@@ -130,6 +150,31 @@ from tack.runtime.kernel_utils import (  # noqa: F401
 )
 
 
+# Thread only on a real win: parallel takes overhead + T_serial/P, so the
+# break-even is already P/(P-1); the rest is margin against a mis-estimate.
+_PARALLEL_BREAK_EVEN = 2.0
+
+# Weight of the newest sample in the per-kernel cost estimate. Low enough
+# that one preempted dispatch cannot flip the decision, high enough to
+# track a kernel whose cost depends on its data.
+_COST_SMOOTHING = 0.25
+
+# Below this, the first dispatch of an unmeasured kernel just runs serially
+# rather than splitting off a timing probe — a range this small cannot
+# repay a fan-out even for the most expensive kernel body.
+_PROBE_MIN_RANGE = 16384
+
+_CALIBRATION_REPS = 5
+
+# Stand-in fan-out cost until the real one is measured. Pessimistic on
+# purpose: being too high only delays the first fan-out by one dispatch,
+# whereas being too low fans out work that would have been faster serial.
+_DEFAULT_FAN_OUT_NS = 200_000.0
+
+# "Do not thread this" — larger than any realistic loop range.
+_NEVER = 1 << 62
+
+
 class CompiledKernel:
     """A JIT-compiled kernel ready for execution."""
 
@@ -153,18 +198,39 @@ class CompiledKernel:
         self._cfunc_type = ctypes.CFUNCTYPE(None, *ctypes_params)
         self._cfunc = self._cfunc_type(func_ptr)
 
-    def __call__(self, kernel_args: list, loop_start: int, loop_end: int):
-        """Call the compiled kernel with field pointers/scalars and loop range."""
-        ctypes_args = []
-        for arg, ptype, is_field in zip(kernel_args, self._param_types, self._param_is_field):
+        # Measured serial nanoseconds per element, updated on every serial
+        # dispatch. 0.0 means "not measured yet".
+        self.ns_per_elem = 0.0
+        # Range size at which a fan-out starts paying for itself, derived
+        # from ns_per_elem. Precomputed so the dispatch hot path is a single
+        # integer compare. _NEVER until the kernel has been timed once.
+        self.parallel_min_elems = _NEVER
+
+    def bind(self, kernel_args: list) -> tuple:
+        """Marshal the field pointers and scalars once for a dispatch.
+
+        Only loop_start/loop_end differ between the chunks of one dispatch,
+        so doing this per chunk re-derived every pointer under the GIL —
+        about 3.5 µs a chunk, against a 4.6 µs serial dispatch. Pass the
+        result to `call_range` for each chunk.
+        """
+        prefix = []
+        for arg, ptype, is_field in zip(kernel_args, self._param_types,
+                                        self._param_is_field):
             ct = _CTYPES_MAP[ptype]
             if is_field:
-                ptr = arg._buffer._data.ctypes.data_as(ctypes.POINTER(ct))
-                ctypes_args.append(ptr)
+                prefix.append(arg._buffer._data.ctypes.data_as(ctypes.POINTER(ct)))
             else:
-                ctypes_args.append(ct(arg))
-        ctypes_args.extend([ctypes.c_int64(loop_start), ctypes.c_int64(loop_end)])
-        self._cfunc(*ctypes_args)
+                prefix.append(ct(arg))
+        return tuple(prefix)
+
+    def call_range(self, prefix: tuple, loop_start: int, loop_end: int):
+        """Run one chunk. Fresh c_int64s — chunks run concurrently."""
+        self._cfunc(*prefix, ctypes.c_int64(loop_start), ctypes.c_int64(loop_end))
+
+    def __call__(self, kernel_args: list, loop_start: int, loop_end: int):
+        """Call the compiled kernel with field pointers/scalars and loop range."""
+        self.call_range(self.bind(kernel_args), loop_start, loop_end)
 
 
 def _create_target_machine():
@@ -234,9 +300,14 @@ class CPUBackend:
     """CPU backend — JIT compiles kernels and runs them with thread parallelism."""
 
     def __init__(self, num_threads: int | None = None):
-        self.num_threads = num_threads or _physical_core_count()
+        if num_threads is None:
+            env = os.environ.get("TACK_CPU_THREADS")
+            num_threads = int(env) if env else _physical_core_count()
+        self.num_threads = max(1, num_threads)
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledKernel}
         self._pool: ThreadPoolExecutor | None = None
+        # Cost of a fan-out on this machine, measured on first use.
+        self._fan_out_ns: float | None = None
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> NumpyBuffer:
@@ -347,11 +418,78 @@ class CPUBackend:
         # Determine loop range (use kernel_args which has Fields, not Texture3D)
         loop_end = _get_loop_range(ir_func, kernel_args)
 
-        # Parallel execution: split range across threads
-        if self.num_threads <= 1 or loop_end <= 1024:
-            compiled(kernel_args, 0, loop_end)
+        self._dispatch(compiled, kernel_args, loop_end)
+
+    # ── Dispatch: serial or fan-out ──────────────────────────────────
+
+    def _dispatch(self, compiled: CompiledKernel, kernel_args: list,
+                  loop_end: int):
+        """Run the loop range, threading it only when that is faster."""
+        prefix = compiled.bind(kernel_args)
+
+        if loop_end >= compiled.parallel_min_elems:
+            if self._fan_out_ns is None:
+                # First range big enough to want threads: measure what they
+                # actually cost here, then re-check against the real number.
+                self._calibrate_fan_out(compiled, prefix)
+                compiled.parallel_min_elems = self._min_elems(compiled.ns_per_elem)
+                if loop_end < compiled.parallel_min_elems:
+                    self._run_serial(compiled, prefix, 0, loop_end)
+                    return
+            self._parallel_execute(compiled, prefix, 0, loop_end)
+            return
+
+        if compiled.ns_per_elem > 0.0 or loop_end < _PROBE_MIN_RANGE \
+                or self.num_threads <= 1:
+            # Already measured and too small, or too small to be worth
+            # splitting off a probe.
+            self._run_serial(compiled, prefix, 0, loop_end)
+            return
+
+        # First sight of this kernel at a range where threading might pay.
+        # Time a small prefix, then decide about the rest — so a one-shot
+        # large dispatch is not stuck running serially for want of a sample.
+        probe_end = max(_PROBE_MIN_RANGE // 16, loop_end // 64)
+        self._run_serial(compiled, prefix, 0, probe_end)
+        if loop_end - probe_end >= compiled.parallel_min_elems:
+            self._parallel_execute(compiled, prefix, probe_end, loop_end)
         else:
-            self._parallel_execute(compiled, kernel_args, 0, loop_end)
+            self._run_serial(compiled, prefix, probe_end, loop_end)
+
+    def _run_serial(self, compiled: CompiledKernel, prefix: tuple,
+                    start: int, end: int):
+        """Run a range on this thread, refreshing the cost estimate."""
+        if end <= start:
+            return
+        t0 = time.perf_counter_ns()
+        compiled.call_range(prefix, start, end)
+        elapsed = time.perf_counter_ns() - t0
+
+        sample = elapsed / (end - start)
+        prev = compiled.ns_per_elem
+        # Smoothed so one preempted dispatch cannot flip the decision, but
+        # still able to track a kernel whose cost is data-dependent.
+        ns_per_elem = sample if prev <= 0.0 else \
+            prev + _COST_SMOOTHING * (sample - prev)
+        compiled.ns_per_elem = ns_per_elem
+        compiled.parallel_min_elems = self._min_elems(ns_per_elem)
+
+    def _min_elems(self, ns_per_elem: float) -> int:
+        """Smallest range worth fanning out, for a kernel of this cost.
+
+        Threading takes overhead + T_serial/P, so it wins once T_serial
+        passes overhead·P/(P-1); the break-even factor covers that term and
+        leaves margin, so we thread on a real win rather than a predicted
+        tie. Until the fan-out has been measured this uses a deliberately
+        pessimistic default, which only delays the first fan-out.
+        """
+        if ns_per_elem <= 0.0 or self.num_threads <= 1:
+            return _NEVER
+        fan_out = self._fan_out_ns
+        if fan_out is None:
+            fan_out = _DEFAULT_FAN_OUT_NS
+        return max(self.num_threads,
+                   int(fan_out * _PARALLEL_BREAK_EVEN / ns_per_elem))
 
     def _get_pool(self) -> ThreadPoolExecutor:
         """Return the persistent thread pool, creating it on first use."""
@@ -359,22 +497,46 @@ class CPUBackend:
             self._pool = ThreadPoolExecutor(max_workers=self.num_threads)
         return self._pool
 
-    def _parallel_execute(self, compiled: CompiledKernel,
-                          field_args: list[Field],
+    def _calibrate_fan_out(self, compiled: CompiledKernel, prefix: tuple):
+        """Measure what a parallel dispatch costs before any work happens.
+
+        Fans out *empty* ranges through the real dispatch path — submit,
+        wake, ctypes call, join, with the GIL contention a real dispatch
+        sees. An empty range runs no loop iterations, so the probe writes
+        nothing and is safe on any kernel, including ones that accumulate
+        with atomics.
+
+        Measured against a real 1024-element fan-out on this machine: probe
+        223 µs, actual 235 µs. A pure-Python no-op probe reads 122 µs, which
+        would have understated the cost by nearly half.
+        """
+        pool = self._get_pool()
+        run = compiled.call_range
+        best = None
+        for _ in range(_CALIBRATION_REPS):
+            t0 = time.perf_counter_ns()
+            futures = [pool.submit(run, prefix, 0, 0)
+                       for _ in range(self.num_threads)]
+            for f in futures:
+                f.result()
+            elapsed = time.perf_counter_ns() - t0
+            best = elapsed if best is None else min(best, elapsed)
+        self._fan_out_ns = float(best)
+
+    def _parallel_execute(self, compiled: CompiledKernel, prefix: tuple,
                           start: int, end: int):
         """Split the loop range across threads."""
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
 
         pool = self._get_pool()
+        run = compiled.call_range
         futures = []
         for t in range(self.num_threads):
             t_start = start + t * chunk
             t_end = min(t_start + chunk, end)
             if t_start >= end:
                 break
-            futures.append(
-                pool.submit(compiled, field_args, t_start, t_end)
-            )
+            futures.append(pool.submit(run, prefix, t_start, t_end))
         for f in futures:
             f.result()  # propagate exceptions

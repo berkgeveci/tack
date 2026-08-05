@@ -159,9 +159,17 @@ Multiple `PointLight` instances can be added to a `Scene`. Each light contribute
 
 `Actor` accepts `render_mode="solid"` (default, path traced), `"wireframe"` (triangle edges), or `"points"` (vertex discs). Wireframe and point actors are dispatched to GPU rasterization kernels in `rasterize.py` instead of the path tracer. Uses an MVP projection matrix passed as a flat f32 field, Bresenham line rasterization for wireframe, disc rasterization for points, and `tack.atomic_min` depth testing. Supports perspective and orthographic cameras, per-actor colors, scalar coloring, and configurable point size.
 
-### CPU threading threshold
+### CPU threading decision
 
-CPU backend uses `ThreadPoolExecutor` only when loop range > 1024 elements. Below that, Python thread dispatch overhead outweighs the parallelism benefit.
+The CPU backend fans a loop range out to its `ThreadPoolExecutor` only when the serial run would cost meaningfully more than the fan-out. Both sides are measured, not assumed:
+
+- Each `CompiledKernel` carries `ns_per_elem`, a smoothed estimate of its serial cost, updated on every serial dispatch. From it the backend precomputes `parallel_min_elems`, so the dispatch hot path is one integer compare.
+- The backend measures its own fan-out cost once (`_fan_out_ns`), by dispatching *empty* ranges through the real path — no loop iterations, so the probe has no side effects.
+- The first time a kernel is seen at a range large enough to matter, a small prefix is timed serially and the rest is decided on that sample.
+
+A fixed element count cannot work here: the crossover moves ~1000× with arithmetic intensity (~4M elements for `out[i] = x[i]*2+1`, ~130K for a `sqrt`/`sin` expression, ~4K for a 20-iteration inner loop). The previous constant of 1024 sat below all of them, making mid-size dispatches of cheap kernels 3–10× slower than running them serially.
+
+`TACK_CPU_THREADS` overrides the thread count; `1` keeps everything on the calling thread.
 
 ## Kernel language features
 

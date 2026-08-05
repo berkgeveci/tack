@@ -17,8 +17,19 @@ its own compilation pipeline and memory model.
 
 The CPU backend uses LLVM JIT (via llvmlite) to compile kernels to native
 machine code. Work is split across physical CPU cores using a persistent
-thread pool. Below 1024 elements, single-threaded execution is used to
-avoid thread dispatch overhead.
+thread pool.
+
+Threading is not free — a fan-out costs on the order of 200 µs of Python
+thread wakeup — so the backend only uses it when the serial run would take
+meaningfully longer than that. It measures both sides: the fan-out cost of
+the machine it is on, and the per-element cost of each compiled kernel.
+That matters because the break-even point depends on how much work the
+kernel does per element, and moves by a factor of a thousand between a
+memory-bound expression and a compute-heavy one.
+
+Set `TACK_CPU_THREADS` to override the thread count. `TACK_CPU_THREADS=1`
+runs everything on the calling thread, which is useful when profiling or
+when Tack is embedded in a host that manages its own threads.
 
 ```bash
 pip install 'tack[cpu]'
