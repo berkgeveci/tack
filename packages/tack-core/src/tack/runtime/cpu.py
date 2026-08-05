@@ -38,7 +38,6 @@ from llvmlite import binding as llvm
 from tack.lang import ir
 from tack.lang.field import Field, NumpyBuffer
 from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-from tack.lang.type_inference import infer_param_types, check_dispatch_types
 
 _CPU_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from tack.codegen.llvm_gen import generate_llvm_ir
@@ -130,8 +129,7 @@ _CTYPES_MAP = {
 
 from tack.runtime.kernel_utils import (
     new_kernel_cache,
-    kernel_cache_slot,
-    kernel_variant_key,
+    resolve_variant,
 )
 
 # Re-export shared utilities so existing `from tack.runtime.cpu import ...` works.
@@ -348,77 +346,32 @@ class CPUBackend:
     def execute(self, kernel, args, kwargs):
         """Execute a kernel on the CPU.
 
-        1. Detect template and vector fields, get specialized IR
-        2. Resolve dimension sizes from actual field shapes
-        3. Run type inference from actual arguments
-        4. JIT-compile (or use cached version)
-        5. Determine loop range
-        6. Split range across threads and execute
+        The IR passes and the JIT run only when this argument shape/type
+        combination is new; see `resolve_variant`. A repeat dispatch resolves
+        the loop range, marshals the arguments, and runs.
         """
-        if kwargs:
-            raise NotImplementedError("Keyword arguments not supported in kernels")
-
-        # Detect template arguments and expand them
-        template_args = _detect_template_args(kernel, args)
-        effective_args = _expand_template_args(args, template_args)
-
-        # Detect vector and texture fields from effective arguments
-        vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
-        texture_fields = _detect_texture_fields(kernel, args, template_args)
-
-        # Get IR (re-transforms if vector/template/texture fields present)
-        ir_module = kernel.get_ir(
-            vector_fields,
-            template_args=template_args if template_args else None,
-            texture_fields=texture_fields,
-        )
-        ir_func = ir_module.functions[0]
-
-        # Resolve dimension sizes and texture shapes using actual field shapes.
-        # For Texture3D args, register the Texture3D itself so ir_resolve can
-        # embed shape_3d into IRTextureSample nodes.
         from tack.lang.field import Texture3D
-        name_to_field = {}
-        for param, arg in zip(ir_func.params, effective_args):
-            if isinstance(arg, Texture3D):
-                name_to_field[param.name] = arg
-            elif isinstance(arg, Field):
-                name_to_field[param.name] = arg
-        from tack.lang.ir_resolve import resolve_ir
-        resolve_ir(ir_func, name_to_field)
 
-        # Type inference and dispatch-time type checking
-        infer_param_types(ir_func, effective_args)
-        check_dispatch_types(ir_func, effective_args,
-                             supported_dtypes=_CPU_SUPPORTED_DTYPES,
-                             backend_name="CPU")
+        variant, effective_args = resolve_variant(
+            self, kernel, args, kwargs,
+            supported_dtypes=_CPU_SUPPORTED_DTYPES,
+            backend_name="CPU",
+            build=self._build_variant,
+        )
 
-        # Optimization passes (LICM, CSE)
-        from tack.lang.ir_optimize import optimize_ir
-        optimize_ir(ir_func)
-
-        # Type annotation (sets dtype on all expression nodes — needed by
-        # LLVM codegen for signed/unsigned distinction on casts)
-        from tack.lang.ir_type_annotate import annotate_types
-        annotate_types(ir_func)
-
-        # Cache: per-kernel slot, then argument types + template info
-        slot = kernel_cache_slot(self._cache, kernel)
-        cache_key = kernel_variant_key(ir_func, kernel, vector_fields, template_args)
-
-        if cache_key not in slot:
-            slot[cache_key] = _compile_kernel(ir_func)
-
-        compiled = slot[cache_key]
-
-        # Build kernel args list — unwrap Texture3D to underlying Field for dispatch
+        # Unwrap Texture3D to the underlying Field for dispatch
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
+        loop_end = _get_loop_range(variant.ir, kernel_args)
 
-        # Determine loop range (use kernel_args which has Fields, not Texture3D)
-        loop_end = _get_loop_range(ir_func, kernel_args)
+        self._dispatch(variant.payload, kernel_args, loop_end)
 
-        self._dispatch(compiled, kernel_args, loop_end)
+    @staticmethod
+    def _build_variant(ir_func, effective_args):
+        """Annotate types and JIT-compile. Runs once per variant."""
+        from tack.lang.ir_type_annotate import annotate_types
+        annotate_types(ir_func)
+        return _compile_kernel(ir_func)
 
     # ── Dispatch: serial or fan-out ──────────────────────────────────
 

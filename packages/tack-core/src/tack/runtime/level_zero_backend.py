@@ -24,15 +24,9 @@ import numpy as np
 from tack.lang import ir
 from tack.lang.field import Field, DeviceBuffer
 from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-from tack.lang.type_inference import infer_param_types, check_dispatch_types
 from tack.runtime.kernel_utils import (
     new_kernel_cache,
-    kernel_cache_slot,
-    kernel_variant_key,
-    _detect_template_args,
-    _expand_template_args,
-    _detect_vector_fields_from_args,
-    _detect_texture_fields,
+    resolve_variant,
     _get_loop_range,
 )
 
@@ -1066,46 +1060,49 @@ class LevelZeroBackend:
         return buf
 
     def execute(self, kernel, args, kwargs):
-        """Execute a kernel on the Level Zero GPU."""
-        if kwargs:
-            raise NotImplementedError("Keyword arguments not supported in kernels")
+        """Execute a kernel on the Level Zero GPU.
 
-        # Detect template arguments and expand them
+        The IR passes and device compilation run only when this argument
+        shape/type combination is new; see `resolve_variant`.
+        """
         from tack.lang.field import Texture3D
-        template_args = _detect_template_args(kernel, args)
-        effective_args = _expand_template_args(args, template_args)
 
-        # Detect vector and texture fields
-        vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
-        texture_fields = _detect_texture_fields(kernel, args, template_args)
-
-        # Get IR
-        ir_module = kernel.get_ir(
-            vector_fields,
-            template_args=template_args if template_args else None,
-            texture_fields=texture_fields,
+        variant, effective_args = resolve_variant(
+            self, kernel, args, kwargs,
+            supported_dtypes=self._supported_dtypes,
+            backend_name="Level Zero",
+            build=self._build_variant,
+            store_texture_shapes=self._store_texture_shapes,
         )
-        ir_func = ir_module.functions[0]
+        compiled, pack_info, pack_fields = variant.payload
 
-        # Resolve dimension sizes and texture shapes
-        name_to_field = {}
-        for param, arg in zip(ir_func.params, effective_args):
-            if isinstance(arg, Texture3D):
-                name_to_field[param.name] = arg
-            elif isinstance(arg, Field):
-                name_to_field[param.name] = arg
-        from tack.lang.ir_resolve import resolve_ir
-        resolve_ir(ir_func, name_to_field)
+        # Loop range comes from the pre-packing IR: packing rewrites the
+        # parameter list, and the range expression names the original args.
+        kernel_args = [a.field if isinstance(a, Texture3D) else a
+                       for a in effective_args]
+        loop_end = _get_loop_range(variant.ir, kernel_args)
 
-        # Type inference and dispatch-time type checking
-        infer_param_types(ir_func, effective_args)
-        check_dispatch_types(ir_func, effective_args,
-                             supported_dtypes=self._supported_dtypes,
-                             backend_name="Level Zero")
+        # Replace scalar args with the packed field buffers
+        if pack_info:
+            from tack.runtime.kernel_utils import _update_pack_fields
+            from tack.lang.ir_pack_scalars import split_args
+            _update_pack_fields(pack_fields, pack_info, effective_args)
+            kept_args = split_args(effective_args, pack_info)
+            kernel_args = [a.field if isinstance(a, Texture3D) else a
+                           for a in kept_args]
+            kernel_args = list(kernel_args) + pack_fields
 
-        # Store texture shapes on params for codegen/dispatch.
-        # Fall back to software trilinear if the device lacks hardware samplers
-        # (Xe-HPC) or any dimension exceeds the device's image size limit.
+        compiled(kernel_args, loop_end, self)
+
+    def _store_texture_shapes(self, ir_func, effective_args):
+        """Record Texture3D extents, falling back to software sampling.
+
+        Devices without hardware samplers (Xe-HPC), or textures past the
+        device's 3D image limit, are sampled in software instead. That
+        changes the generated code, so it is decided here — before the
+        variant key is built — rather than at codegen time.
+        """
+        from tack.lang.field import Texture3D
         max_dim = self._max_image_3d
         for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Texture3D):
@@ -1116,51 +1113,26 @@ class LevelZeroBackend:
                 else:
                     param._is_texture = False  # software fallback
 
-        # Optimization passes (LICM, CSE)
-        from tack.lang.ir_optimize import optimize_ir
-        optimize_ir(ir_func)
+    def _build_variant(self, ir_func, effective_args):
+        """Pack scalars, annotate, compile. Runs once per variant.
 
-        # Determine loop range BEFORE packing
-        kernel_args = [a.field if isinstance(a, Texture3D) else a
-                       for a in effective_args]
-        loop_end = _get_loop_range(ir_func, kernel_args)
+        Packing rewrites the parameter list, so it works on its own copy —
+        the caller keeps `ir_func` for loop-range resolution.
+        """
+        import copy
+        from tack.lang.ir_pack_scalars import pack_scalars
+        from tack.lang.ir_type_annotate import annotate_types
+        from tack.codegen.cuda_gen import _safe_kernel_name
+        from tack.runtime.kernel_utils import _create_pack_fields
 
-        # Cache key (include texture shapes for uniqueness)
-        slot = kernel_cache_slot(self._cache, kernel)
-        cache_key = kernel_variant_key(
-            ir_func, kernel, vector_fields, template_args)
-
-        if cache_key not in slot:
-            import copy
-            from tack.lang.ir_pack_scalars import pack_scalars
-            from tack.lang.ir_type_annotate import annotate_types
-            from tack.runtime.kernel_utils import _create_pack_fields
-            ir_func_copy = copy.deepcopy(ir_func)
-            from tack.codegen.cuda_gen import _safe_kernel_name
-            ir_func_copy.name = _safe_kernel_name(ir_func_copy.name)
-            _, pack_info = pack_scalars(ir_func_copy, effective_args)
-            annotate_types(ir_func_copy)
-            compiled = self._compile_kernel(ir_func_copy)
-            pack_fields = _create_pack_fields(pack_info, effective_args, self) if pack_info else None
-            slot[cache_key] = (compiled, pack_info, pack_fields)
-
-        compiled, pack_info, pack_fields = slot[cache_key]
-
-        # Build dispatch args
-        if pack_info:
-            from tack.runtime.kernel_utils import _update_pack_fields
-            from tack.lang.ir_pack_scalars import split_args
-            _update_pack_fields(pack_fields, pack_info, effective_args)
-            kept_args = split_args(effective_args, pack_info)
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in kept_args]
-            kernel_args = list(kernel_args) + pack_fields
-        else:
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in effective_args]
-
-        # Dispatch
-        compiled(kernel_args, loop_end, self)
+        packed = copy.deepcopy(ir_func)
+        packed.name = _safe_kernel_name(packed.name)
+        _, pack_info = pack_scalars(packed, effective_args)
+        annotate_types(packed)
+        compiled = self._compile_kernel(packed)
+        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+                       if pack_info else None)
+        return compiled, pack_info, pack_fields
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledL0Kernel:
         """Compile Tack IR → OpenCL C → SPIR-V → ze_module → ze_kernel."""

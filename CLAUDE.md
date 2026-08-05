@@ -65,16 +65,32 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 
 ### Kernel execution flow
 
-1. `Kernel.__call__` → `backend.execute(kernel, args)`
+All five backends share one entry point: `resolve_variant()` in `runtime/kernel_utils.py`. It turns a call into a compiled variant, running the IR pass pipeline **only when that variant is new**.
+
+Every dispatch:
+1. `Kernel.__call__` → `backend.execute(kernel, args)` → `resolve_variant(...)`
 2. Detect template arguments (`@tack.data_oriented` classes) and expand them
 3. Detect vector fields and set up scalarization metadata
-4. AST transform → IR, with dimension size resolution (`ir_resolve.py`)
-5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field` flag
-6. Dispatch-time type checking (`check_dispatch_types`) — validates field dtypes against backend
-7. IR optimization: LICM, copy propagation, CSE (`ir_optimize.py`)
-8. Type annotation (`ir_type_annotate.py`) — sets `dtype` (ScalarType) on every expression node
-9. Codegen produces backend-specific code (cached by kernel name + type signature + template key)
-10. Dispatch: CPU splits range across threads; GPU launches grid of threads
+4. `kernel.get_ir(...)` returns the **pristine IR template** for this specialization
+5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field`
+6. Build the variant key and look it up (see below)
+7. Resolve the loop range from the variant's IR; dispatch (CPU decides serial vs threads, GPU launches a grid)
+
+Only on a cache miss:
+1. Deep-copy the template — the passes below mutate IR in place and must not touch the template
+2. Dimension size resolution (`ir_resolve.py`)
+3. Dispatch-time type checking (`check_dispatch_types`) — validates field dtypes against the backend
+4. IR optimization: LICM, copy propagation, CSE (`ir_optimize.py`)
+5. Backend `build` callback: scalar packing (GPU), type annotation (`ir_type_annotate.py`), codegen, compile
+
+### Variant cache key
+
+Keyed per `Kernel` (weakly, so compiled code is released with the kernel), then by:
+argument type signature + texture extents + template constants + **`shape_signature`**.
+
+That last one matters for correctness, not speed. `ir_resolve` substitutes dimension sizes as literals — `a[i, j]` linearizes to `i * dim1 + j` with `dim1` baked in — so the row stride is part of the compiled code's identity. `shape_signature()` reports exactly the dimensions a kernel bakes in (memoized per IR; empty for 1-D kernels, so varying a flat length does **not** re-specialize).
+
+Because the passes mutate IR in place, the template from `get_ir()` must be treated as immutable — a pass that consumed its `IRDimSize` nodes would leave nothing for a later shape to resolve.
 
 ### Kernel code inspection
 
