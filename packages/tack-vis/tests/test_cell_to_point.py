@@ -71,13 +71,7 @@ def test_interior_node_averages_eight_cells(f64_backend):
 
 
 def test_matches_a_numpy_reference(f64_backend):
-    """Every node, checked against a direct numpy stencil.
-
-    The tolerance is f32-sized even though the field is f64: the kernel's
-    ``total = 0.0`` accumulator is currently typed from the literal, so
-    each add round-trips through f32.  See the xfail in tack-core's
-    tests/test_local_var_types.py — tighten this to 1e-12 once that lands.
-    """
+    """Every node, checked against a direct numpy stencil at f64 precision."""
     nx, ny, nz = 3, 4, 2
     rng = np.random.default_rng(7)
     cells = rng.random(nx * ny * nz)
@@ -96,7 +90,7 @@ def test_matches_a_numpy_reference(f64_backend):
                 ]
                 expected[idx] = np.mean(neighbours)
                 idx += 1
-    np.testing.assert_allclose(out, expected, rtol=1e-6)
+    np.testing.assert_allclose(out, expected, rtol=1e-14)
 
 
 def test_linear_ramp_stays_linear_in_the_interior(f64_backend):
@@ -110,7 +104,7 @@ def test_linear_ramp_stays_linear_in_the_interior(f64_backend):
     node = out.reshape(nz + 1, nyp, nxp)
     # Interior node i sits between cell centres i-1 and i → value i - 0.5.
     for ii in range(1, nx):
-        np.testing.assert_allclose(node[2, 2, ii], ii - 0.5, rtol=1e-6)
+        np.testing.assert_allclose(node[2, 2, ii], ii - 0.5, rtol=1e-14)
 
 
 def test_output_dtype_follows_input(f64_backend):

@@ -424,8 +424,15 @@ class LLVMCodeGen:
 
         Uses alloca for local variables so they can be reassigned.
         Allocas are placed in the entry block to ensure LLVM domination.
+
+        The slot type comes from `_resolved_type`, which the annotation pass
+        sets to the promotion of every type assigned to this variable. Sizing
+        the slot from the first stored value instead would narrow every later
+        store: `total = 0.0` would allocate a float and truncate the f64 adds
+        that follow.
         """
         value = self._emit_expr(node.value)
+        slot_type = self._slot_type(node, value)
 
         if node.target in self._locals:
             existing = self._locals[node.target]
@@ -435,13 +442,23 @@ class LLVMCodeGen:
                 self.builder.store(value, existing)
                 return
             # If it's a phi or direct value, replace with alloca
-            alloca = self._create_entry_alloca(value.type, node.target)
-            self.builder.store(value, alloca)
+            alloca = self._create_entry_alloca(slot_type, node.target)
+            self.builder.store(self._coerce_to(value, slot_type), alloca)
             self._locals[node.target] = alloca
         else:
-            alloca = self._create_entry_alloca(value.type, node.target)
-            self.builder.store(value, alloca)
+            alloca = self._create_entry_alloca(slot_type, node.target)
+            self.builder.store(self._coerce_to(value, slot_type), alloca)
             self._locals[node.target] = alloca
+
+    def _slot_type(self, node: ir.IRAssign, value) -> llvm_ir.Type:
+        """LLVM type for a local's storage slot."""
+        resolved = getattr(node, '_resolved_type', None)
+        if isinstance(resolved, ScalarType):
+            try:
+                return _llvm_type(resolved)
+            except TypeError:
+                pass
+        return value.type
 
     def _emit_return(self, node: ir.IRReturn):
         if node.value is not None:
