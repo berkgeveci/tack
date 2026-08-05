@@ -107,6 +107,21 @@ def _static_field_aliases(ir_func) -> dict:
     return aliases
 
 
+def _dependent_nodes(ir_func):
+    """Every node whose value gets compiled into the generated code.
+
+    Skips the outermost parallel loop's bound: it is passed to the launch
+    rather than emitted, so `for i in range(x.shape[0])` must not make the
+    compiled kernel depend on the array's length.
+    """
+    for stmt in ir_func.body:
+        if isinstance(stmt, ir.IRParallelFor):
+            yield from _walk_ir(stmt.start)
+            yield from _walk_ir(stmt.body)
+        else:
+            yield from _walk_ir(stmt)
+
+
 def ir_shape_deps(ir_func) -> tuple:
     """Which field dimensions the resolve pass will bake into this IR.
 
@@ -121,7 +136,7 @@ def ir_shape_deps(ir_func) -> tuple:
 
     aliases = _static_field_aliases(ir_func)
     found = set()
-    for node in _walk_ir(ir_func.body):
+    for node in _dependent_nodes(ir_func):
         if isinstance(node, ir.IRDimSize):
             found.add((aliases.get(node.field_name, node.field_name), node.dim))
         elif isinstance(node, ir.IRTextureSample):
@@ -347,6 +362,16 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
     """Resolve a range expression to a concrete integer value."""
     if isinstance(node, ir.IRConstant):
         return int(node.value)
+
+    # x.shape[k] / len(x) in the grid bound. The resolve pass deliberately
+    # leaves these alone so the compiled kernel does not depend on the
+    # array's length; they are evaluated here instead, per dispatch.
+    if isinstance(node, ir.IRDimSize):
+        arg = name_to_arg.get(node.field_name)
+        if arg is not None:
+            shape = getattr(arg, 'shape_3d', None) \
+                or getattr(arg, '_logical_shape', None) or arg.shape
+            return shape[node.dim]
 
     # x.shape[0]  →  IRFieldLoad(IRAttribute(IRName("x"), "shape"), IRConstant(0))
     if isinstance(node, ir.IRFieldLoad):

@@ -9,9 +9,10 @@ wheels/
 # Virtual environments
 .venv
 
-# Generated images
+# Generated images and example output
 results/
 *.npy
+*.vtu
 
 # Claude Code local config
 .claude/

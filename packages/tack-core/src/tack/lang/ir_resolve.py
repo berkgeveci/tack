@@ -20,7 +20,17 @@ def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
     extended = {**name_to_field, **aliases}
 
     for i, stmt in enumerate(ir_func.body):
-        ir_func.body[i] = _resolve(stmt, extended)
+        if isinstance(stmt, ir.IRParallelFor):
+            # Leave the grid bound unresolved. It never reaches generated
+            # code — codegen reads the __loop_end__ parameter — so dispatch
+            # evaluates it against the actual arguments instead. Folding it
+            # to a literal would make the compiled kernel depend on the
+            # array's length and force a recompile for every new size.
+            stmt.start = _resolve(stmt.start, extended)
+            stmt.body = [_resolve(s, extended) for s in stmt.body]
+            ir_func.body[i] = stmt
+        else:
+            ir_func.body[i] = _resolve(stmt, extended)
 
 
 def _collect_field_aliases(stmts, known_fields):

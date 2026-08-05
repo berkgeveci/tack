@@ -457,6 +457,11 @@ class KernelTransformer(ast.NodeVisitor):
                 comp = node.slice.value
                 return ir.IRName(f"{node.value.id}__{comp}")
 
+        # field.shape[k] — a dimension query, not a load from a field
+        dim_size = self._as_dim_size(node)
+        if dim_size is not None:
+            return dim_size
+
         # Get field name for vector field detection
         field_name = node.value.id if isinstance(node.value, ast.Name) else None
         is_vector_field = field_name is not None and field_name in self._vector_fields
@@ -483,6 +488,28 @@ class KernelTransformer(ast.NodeVisitor):
             return result
 
         return ir.IRFieldLoad(field=field_ir, index=index)
+
+    def _as_dim_size(self, node: ast.Subscript) -> ir.IRDimSize | None:
+        """`f.shape[k]` on a field → IRDimSize, which resolve_ir folds.
+
+        Emitting a generic IRAttribute here is what limited `.shape` to the
+        outermost loop bound: dispatch evaluated that one expression
+        numerically, and every other position reached codegen unresolved.
+        IRDimSize is the node the resolve pass already knows how to fold,
+        and it recurses through every body.
+        """
+        value = node.value
+        if not (isinstance(value, ast.Attribute) and value.attr == "shape"):
+            return None
+        if not isinstance(value.value, ast.Name):
+            return None
+        index = node.slice
+        if not (isinstance(index, ast.Constant) and isinstance(index.value, int)):
+            raise NotImplementedError(
+                f"'{value.value.id}.shape[...]' needs a constant dimension "
+                f"index; the shape is resolved when the kernel is compiled."
+            )
+        return ir.IRDimSize(field_name=value.value.id, dim=index.value)
 
     def visit_Attribute(self, node: ast.Attribute) -> ir.IRAttribute:
         return ir.IRAttribute(
@@ -521,11 +548,14 @@ class KernelTransformer(ast.NodeVisitor):
             args = [self.visit(arg) for arg in node.args]
             return ir.IRCall(func_name=func_name, args=args)
 
-        # len(field) → attribute access to shape
+        # len(field) → the field's first dimension
         if func_name == "len":
             if len(node.args) != 1:
                 raise NotImplementedError("len() takes exactly one argument")
-            arg = self.visit(node.args[0])
+            target = node.args[0]
+            if isinstance(target, ast.Name) and target.id not in self._vector_vars:
+                return ir.IRDimSize(field_name=target.id, dim=0)
+            arg = self.visit(target)
             return ir.IRAttribute(obj=arg, attr="__len__")
 
         # range() is handled in visit_For; if it appears elsewhere, error

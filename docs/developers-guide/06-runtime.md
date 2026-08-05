@@ -66,10 +66,17 @@ resolves it against actual arguments. It supports:
 
 - `IRConstant(N)` — literal bound
 - `IRName("n")` — scalar parameter
-- `IRFieldLoad(IRAttribute(IRName("x"), "shape"), IRConstant(0))` — `x.shape[0]`
-- `IRAttribute(IRName("x"), "__len__")` — `len(x)`
+- `IRDimSize("x", 0)` — `x.shape[0]` or `len(x)`
+- `IRBinOp` over any of the above — e.g. `range(n - 1)`
 
 This must run before scalar packing since packing removes scalar params.
+
+The grid bound is the one `IRDimSize` that `resolve_ir` deliberately leaves
+unresolved. Everywhere else it folds to a literal, because the value has to
+appear in the generated code; the grid bound does not — codegen reads the
+`__loop_end__` parameter — so folding it would make the compiled kernel
+depend on the array's length and force a recompile for every new size.
+`ir_shape_deps()` excludes it from the variant key for the same reason.
 
 ## Field Allocation
 

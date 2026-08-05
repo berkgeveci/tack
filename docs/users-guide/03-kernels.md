@@ -20,6 +20,40 @@ The loop bound can come from:
 - A field shape: `range(data.shape[0])`
 - `len(data)`
 
+## Field Dimensions
+
+`field.shape[k]` and `len(field)` work anywhere in a kernel — not only as
+the loop bound:
+
+```python
+@tack.kernel
+def reverse(x, out):
+    for i in range(x.shape[0]):
+        out[i] = x[x.shape[0] - 1 - i]
+
+@tack.kernel
+def normalize_rows(a, out):
+    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+        out[i, j] = a[i, j] / float(a.shape[1])
+```
+
+The dimension index must be a literal: `x.shape[0]` is fine, `x.shape[d]`
+with a runtime `d` is not.
+
+One thing to know about compilation. A dimension used in the loop bound is
+passed to the launch, so one compiled kernel serves every array length.
+A dimension used *inside* the kernel becomes part of the generated code,
+so Tack compiles a separate version per shape. That is usually what you
+want — it lets the compiler fold and vectorize around a known size. If you
+would rather not specialize, pass the length as a scalar argument:
+
+```python
+@tack.kernel
+def reverse(x, out, n):     # one compiled kernel for every n
+    for i in range(n):
+        out[i] = x[n - 1 - i]
+```
+
 ## Multi-Dimensional Iteration
 
 Use `tack.ndrange` for 2D or 3D parallel iteration:

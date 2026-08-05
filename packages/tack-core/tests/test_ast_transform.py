@@ -3,6 +3,8 @@
 import ast
 import textwrap
 
+import pytest
+
 from tack.lang.ast_transform import transform_kernel
 from tack.lang import ir
 
@@ -400,16 +402,54 @@ def test_augassign_variable():
 # --- Attribute access ---
 
 def test_attribute_shape():
+    """x.shape[k] becomes IRDimSize, the node the resolve pass folds."""
     module = _transform("""
         def kern(x, out):
             for i in range(x.shape[0]):
                 out[i] = x[i]
     """)
     loop = module.functions[0].body[0]
-    # range(x.shape[0]) → end is FieldLoad(Attribute(x, "shape"), 0)
-    assert isinstance(loop.end, ir.IRFieldLoad)
-    assert isinstance(loop.end.field, ir.IRAttribute)
-    assert loop.end.field.attr == "shape"
+    assert isinstance(loop.end, ir.IRDimSize)
+    assert loop.end.field_name == "x"
+    assert loop.end.dim == 0
+
+
+def test_attribute_shape_in_the_body():
+    """It is the same node wherever it appears — not just the loop bound."""
+    module = _transform("""
+        def kern(x, out):
+            for i in range(x.shape[0]):
+                out[i] = x[x.shape[0] - 1 - i]
+    """)
+    store = module.functions[0].body[0].body[0]
+    # x[x.shape[0] - 1 - i] → index is ((DimSize - 1) - i)
+    index = store.value.index
+    assert isinstance(index.left.left, ir.IRDimSize)
+    assert index.left.left.field_name == "x"
+    assert index.left.left.dim == 0
+
+
+def test_len_becomes_dim_size():
+    module = _transform("""
+        def kern(x, out):
+            for i in range(len(x)):
+                out[i] = float(len(x))
+    """)
+    loop = module.functions[0].body[0]
+    assert isinstance(loop.end, ir.IRDimSize)
+    assert (loop.end.field_name, loop.end.dim) == ("x", 0)
+    inner = loop.body[0].value.value    # float(...) wraps the DimSize
+    assert isinstance(inner, ir.IRDimSize)
+
+
+def test_non_constant_shape_index_is_rejected():
+    """The dimension has to be known when the kernel is compiled."""
+    with pytest.raises(NotImplementedError, match="constant dimension"):
+        _transform("""
+            def kern(x, out, d):
+                for i in range(x.shape[d]):
+                    out[i] = x[i]
+        """)
 
 
 # --- Complex kernels ---
