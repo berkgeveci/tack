@@ -15,20 +15,6 @@ import pytest
 
 import tack
 
-_backends = []
-for _arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        _backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 def _variant_count(kernel):
     from tack.runtime.dispatch import get_backend

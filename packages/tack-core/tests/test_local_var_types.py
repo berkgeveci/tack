@@ -13,22 +13,6 @@ import pytest
 
 import tack
 
-f64_backends = []
-for _arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-    except (ImportError, RuntimeError, OSError):
-        continue
-    from tack.runtime.dispatch import get_backend as _get_backend
-    if _arch != "metal" and getattr(_get_backend(), "supports_f64", True):
-        f64_backends.append(_arch)
-
-
-@pytest.fixture(params=f64_backends)
-def f64_backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 # A value that is not representable in f32.
 EXACT = np.float64(0.625095466604667)

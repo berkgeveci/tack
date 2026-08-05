@@ -198,8 +198,8 @@ class KernelVariant:
         self.payload = payload
 
 
-def resolve_variant(backend, kernel, args, kwargs, supported_dtypes,
-                    backend_name, build, store_texture_shapes=None) -> tuple:
+def resolve_variant(backend, kernel, args, kwargs, build,
+                    store_texture_shapes=None) -> tuple:
     """Find or build the compiled variant for this call.
 
     On a cache hit this touches no IR beyond parameter type inference. On a
@@ -254,8 +254,8 @@ def resolve_variant(backend, kernel, args, kwargs, supported_dtypes,
         resolve_ir(ir_func, name_to_field)
         infer_param_types(ir_func, effective_args)
         check_dispatch_types(ir_func, effective_args,
-                             supported_dtypes=supported_dtypes,
-                             backend_name=backend_name)
+                             supported_dtypes=backend.supported_dtypes,
+                             backend_name=backend.label)
         store_texture_shapes(ir_func, effective_args)
         optimize_ir(ir_func)
         variant = KernelVariant(ir_func, build(ir_func, effective_args))

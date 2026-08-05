@@ -63,6 +63,12 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 
 `tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type.
 
+### Backend contract
+
+All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_field`, `wrap_ptr`, `execute`) and the capability attributes callers read instead of probing with `hasattr`: `name`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `device_memory_spaces`.
+
+Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
+
 ### Kernel execution flow
 
 All five backends share one entry point: `resolve_variant()` in `runtime/kernel_utils.py`. It turns a call into a compiled variant, running the IR pass pipeline **only when that variant is new**.

@@ -19,6 +19,7 @@ import numpy as np
 from tack.lang import ir
 from tack.lang.field import Field, DeviceBuffer
 from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
+from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
@@ -428,8 +429,15 @@ class CompiledCUDAKernel:
         _check(driver.cuCtxSynchronize())
 
 
-class CUDABackend:
+class CUDABackend(Backend):
     """CUDA GPU backend — device-resident fields, NVRTC compilation."""
+
+    name = "cuda"
+    display_name = "CUDA"
+    supported_dtypes = _CUDA_SUPPORTED_DTYPES
+    supports_device_reductions = True
+    device_memory_spaces = frozenset({"cuda", "cuda_pinned", "cuda_managed"})
+
 
     def __init__(self):
         _check(driver.cuInit(0))
@@ -501,8 +509,6 @@ class CUDABackend:
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
-            supported_dtypes=_CUDA_SUPPORTED_DTYPES,
-            backend_name="CUDA",
             build=self._build_variant,
         )
         compiled, pack_info, pack_fields = variant.payload

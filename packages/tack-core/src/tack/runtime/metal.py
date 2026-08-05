@@ -16,6 +16,7 @@ import numpy as np
 from tack.lang import ir
 from tack.lang.field import Field, DeviceBuffer, ExportedMemory
 from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
+from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
@@ -306,13 +307,21 @@ kernel void reduce_max_f32(
 """
 
 
-class MetalBackend:
+class MetalBackend(Backend):
     """Metal GPU backend — zero-copy dispatch on Apple Silicon unified memory.
 
     Fields are backed by Metal shared buffers allocated at field creation time.
     from_numpy/to_numpy operate on the numpy view into shared memory — no
     host↔device transfers needed.
     """
+
+    name = "metal"
+    display_name = "Metal"
+    supported_dtypes = _METAL_SUPPORTED_DTYPES   # no f64: Apple GPUs lack it
+    supports_device_reductions = True
+    # Metal shared buffers live in unified memory, so a pointer into one is
+    # CPU-addressable; the inherited memory_space() answer is right.
+
 
     def __init__(self):
         if Metal is None:
@@ -352,8 +361,6 @@ class MetalBackend:
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
-            supported_dtypes=_METAL_SUPPORTED_DTYPES,
-            backend_name="Metal",
             build=self._build_variant,
         )
         compiled, pack_info, pack_fields = variant.payload

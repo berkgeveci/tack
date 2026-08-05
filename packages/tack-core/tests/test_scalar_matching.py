@@ -78,24 +78,7 @@ class TestScalarParamInference:
         assert types[1] is f32
 
 
-# --- End-to-end f64 tests (all backends except Metal) ---
-
-f64_backends = []
-for _a in ["cpu", "cuda", "hip", "level_zero"]:
-    try:
-        tack.init(arch=getattr(tack, _a))
-        from tack.runtime.dispatch import get_backend as _get_backend
-        _be = _get_backend()
-        if getattr(_be, 'supports_f64', True):
-            f64_backends.append(_a)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=f64_backends)
-def f64_backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
+# --- End-to-end f64 tests ---
 
 
 def test_saxpy_f64_precision(f64_backend):

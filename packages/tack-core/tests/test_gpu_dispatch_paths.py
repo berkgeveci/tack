@@ -37,8 +37,8 @@ BACKENDS = {
         cls="from tack.runtime.level_zero_backend import LevelZeroBackend as Backend",
         stubs=[],
         attrs=(
-            "backend._supported_dtypes = {tack.lang.types.f32, tack.lang.types.i32,\n"
-            "                             tack.lang.types.i64, tack.lang.types.f64}\n"
+            "backend.supported_dtypes = {tack.lang.types.f32, tack.lang.types.i32,\n"
+            "                            tack.lang.types.i64, tack.lang.types.f64}\n"
             "    backend._max_image_3d = 16384\n"
             "    backend._has_hw_sampler = True"
         ),
@@ -181,6 +181,21 @@ from tack.runtime.kernel_utils import _walk_ir
 tmpl = rowwise.get_ir().functions[0]
 dims = [n for n in _walk_ir(tmpl.body) if isinstance(n, _ir.IRDimSize)]
 check("template lost its IRDimSize nodes to an in-place pass", bool(dims))
+
+# --- the declared capability contract -------------------------------
+from tack.runtime.backend import Backend as BaseBackend
+b = make_backend()
+check("subclasses Backend", isinstance(b, BaseBackend))
+check("declares an arch name", b.name != BaseBackend.name)
+check("arch name is an init value", hasattr(tack, b.name))
+check("declares supported dtypes", bool(b.supported_dtypes))
+check("supports_f64 is derived from supported_dtypes",
+      b.supports_f64 == (tack.lang.types.f64 in b.supported_dtypes))
+check("label is prose, not an identifier", "_" not in b.label)
+check("memory_space answers", isinstance(b.memory_space(0), str))
+if b.device_memory_spaces:
+    check("classifies the pointers it validates",
+          type(b).memory_space is not BaseBackend.memory_space)
 
 print("OK")
 '''

@@ -8,33 +8,6 @@ import numpy as np
 import pytest
 import tack
 
-backends = []
-f64_backends = []
-for _arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        backends.append(_arch)
-        if _arch == "metal":
-            continue  # Metal lacks f64
-        from tack.runtime.dispatch import get_backend as _get_backend
-        _be = _get_backend()
-        if getattr(_be, 'supports_f64', True):
-            f64_backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
-
-@pytest.fixture(params=f64_backends)
-def f64_backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 # --- int() and float() still work ---
 

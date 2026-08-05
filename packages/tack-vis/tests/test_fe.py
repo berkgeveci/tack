@@ -12,25 +12,13 @@ from tack.fe.geometry import LinearQuadMap, linear_quad_map_from_numpy
 
 import pytest
 
-# FE tests use f64 — run on backends that support it
-_f64_backends = []
-for _arch in ["cpu", "cuda", "hip", "level_zero"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        from tack.runtime.dispatch import get_backend as _get_backend
-        _be = _get_backend()
-        if getattr(_be, 'supports_f64', True):
-            _f64_backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
 np_fp = np.float64
 
 
-@pytest.fixture(autouse=True, params=_f64_backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
+@pytest.fixture(autouse=True)
+def _use_f64_backend(f64_backend):
+    """FE tests need f64 throughout."""
+    return f64_backend
 
 
 def test_lagrange_1d_cardinal():

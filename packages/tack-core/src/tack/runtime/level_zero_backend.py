@@ -24,6 +24,7 @@ import numpy as np
 from tack.lang import ir
 from tack.lang.field import Field, DeviceBuffer
 from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
+from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
@@ -908,8 +909,16 @@ class CompiledL0Kernel:
 # ---------------------------------------------------------------------------
 # LevelZeroBackend
 # ---------------------------------------------------------------------------
-class LevelZeroBackend:
+class LevelZeroBackend(Backend):
     """Level Zero GPU backend — device-resident fields, ocloc compilation."""
+
+    name = "level_zero"
+    display_name = "Level Zero"
+    # supported_dtypes is set per device in __init__: f64 only when the
+    # device reports it.
+    supported_dtypes = _L0_SUPPORTED_DTYPES
+    supports_device_reductions = True
+
 
     def __init__(self):
         ze = _get_ze()
@@ -969,12 +978,12 @@ class LevelZeroBackend:
         _check_ze(ze.zeDeviceGetModuleProperties(
             self._device, ctypes.byref(self._module_props)),
             "zeDeviceGetModuleProperties")
-        self._supports_fp64 = self._module_props.fp64flags != 0
-
-        # Build supported dtypes based on device capabilities
-        self._supported_dtypes = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
-        if self._supports_fp64:
-            self._supported_dtypes.add(f64)
+        # Device-dependent, so this shadows the class attribute rather than
+        # replacing it. supports_f64 derives from it; there is no second flag
+        # to keep in step.
+        self.supported_dtypes = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
+        if self._module_props.fp64flags != 0:
+            self.supported_dtypes.add(f64)
 
         # Find compute queue group ordinal
         qg_count = ctypes.c_uint32(0)
@@ -1039,11 +1048,6 @@ class LevelZeroBackend:
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledL0Kernel}
 
-    @property
-    def supports_f64(self) -> bool:
-        """Whether this device supports 64-bit floating point."""
-        return self._supports_fp64
-
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> L0Buffer:
         return L0Buffer(self, dtype.numpy_dtype, shape)
@@ -1069,8 +1073,6 @@ class LevelZeroBackend:
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
-            supported_dtypes=self._supported_dtypes,
-            backend_name="Level Zero",
             build=self._build_variant,
             store_texture_shapes=self._store_texture_shapes,
         )

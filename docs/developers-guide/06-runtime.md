@@ -1,5 +1,33 @@
 # Runtime and Dispatch
 
+## The Backend Contract
+
+Every backend subclasses `Backend` (`runtime/backend.py`), which declares
+what a backend must implement and what callers may ask it.
+
+Required: `allocate_field()`, `wrap_ptr()`, `execute()`.
+
+Declared capabilities — read these instead of probing with `hasattr`:
+
+| Attribute | Meaning |
+|---|---|
+| `name` | Arch identifier, matching `tack.init(arch=...)` |
+| `display_name` / `label` | How to write the backend in a message |
+| `supported_dtypes` | Scalar types accepted as field dtypes |
+| `supports_f64` | Derived from `supported_dtypes` — never declared separately |
+| `supports_device_reductions` | Whether `reduce_field()` runs on device; otherwise `Field.sum()` and friends fall back to numpy |
+| `device_memory_spaces` | Memory spaces a pointer must be in for `field_from_ptr()`; empty means no check |
+
+Anything derivable is derived. `supports_f64` used to be declared
+independently, existed on Level Zero alone, and so
+`getattr(backend, 'supports_f64', True)` reported `True` for Metal — which
+has no f64 at all. Deriving it from `supported_dtypes` means there is
+nothing to keep in step.
+
+Level Zero sets `supported_dtypes` in `__init__` rather than on the class,
+because f64 depends on what the device reports. That shadows the class
+attribute, and `supports_f64` follows automatically.
+
 ## Backend Lifecycle
 
 Each backend follows the same lifecycle:

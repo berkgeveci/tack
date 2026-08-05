@@ -105,29 +105,25 @@ class Field:
         self._check_writable()
         self._buffer.fill(value)
 
-    def sum(self):
-        """Return the sum of all elements."""
+    def _reduce(self, op: str):
+        """Reduce on the device where that is supported, else via numpy."""
         from tack.runtime.dispatch import get_backend
         backend = get_backend()
-        if hasattr(backend, 'reduce_field'):
-            return backend.reduce_field(self, 'sum')
-        return float(self._buffer.to_numpy().sum())
+        if backend.supports_device_reductions:
+            return backend.reduce_field(self, op)
+        return float(getattr(self._buffer.to_numpy(), op)())
+
+    def sum(self):
+        """Return the sum of all elements."""
+        return self._reduce('sum')
 
     def min(self):
         """Return the minimum element."""
-        from tack.runtime.dispatch import get_backend
-        backend = get_backend()
-        if hasattr(backend, 'reduce_field'):
-            return backend.reduce_field(self, 'min')
-        return float(self._buffer.to_numpy().min())
+        return self._reduce('min')
 
     def max(self):
         """Return the maximum element."""
-        from tack.runtime.dispatch import get_backend
-        backend = get_backend()
-        if hasattr(backend, 'reduce_field'):
-            return backend.reduce_field(self, 'max')
-        return float(self._buffer.to_numpy().max())
+        return self._reduce('max')
 
     def mean(self):
         """Return the mean of all elements (GPU sum / size)."""
@@ -354,17 +350,7 @@ def memory_space(ptr) -> str:
         'hip_managed'  — HIP unified memory (hipMallocManaged)
     """
     from tack.runtime.dispatch import get_backend
-    backend = get_backend()
-    if hasattr(backend, 'memory_space'):
-        return backend.memory_space(ptr)
-    return "cpu"
-
-
-# Mapping from backend arch names to their expected device memory spaces.
-_BACKEND_DEVICE_SPACES = {
-    "cuda": {"cuda", "cuda_pinned", "cuda_managed"},
-    "hip": {"hip", "hip_pinned", "hip_managed"},
-}
+    return get_backend().memory_space(ptr)
 
 
 def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
@@ -399,28 +385,17 @@ def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
         shape = (shape,)
     backend = get_backend()
 
-    # Validate pointer memory space for GPU backends.
-    # Skip validation for non-integer pointers (e.g. Metal MTLBuffer objects,
-    # numpy arrays on CPU backend).
-    if isinstance(ptr, int) and hasattr(backend, 'memory_space'):
+    # Validate the pointer's memory space against what this backend expects.
+    # Skipped for non-integer pointers (Metal MTLBuffer objects, numpy arrays
+    # on CPU) and for backends that do not distinguish device memory.
+    if isinstance(ptr, int) and backend.device_memory_spaces:
         space = backend.memory_space(ptr)
-        # Determine which backend type we're running
-        backend_type = type(backend).__name__
-        if "CUDA" in backend_type:
-            arch = "cuda"
-        elif "HIP" in backend_type:
-            arch = "hip"
-        else:
-            arch = None
-
-        if arch and arch in _BACKEND_DEVICE_SPACES:
-            valid_spaces = _BACKEND_DEVICE_SPACES[arch]
-            if space not in valid_spaces:
-                raise ValueError(
-                    f"Pointer is in '{space}' memory but the active backend "
-                    f"is '{arch}'. field_from_ptr() requires a device pointer. "
-                    f"Use tack.field() + field.from_numpy() to copy host data "
-                    f"to the device.")
+        if space not in backend.device_memory_spaces:
+            raise ValueError(
+                f"Pointer is in '{space}' memory but the active backend "
+                f"is '{backend.label}'. field_from_ptr() requires a device "
+                f"pointer. Use tack.field() + field.from_numpy() to copy "
+                f"host data to the device.")
 
     buf = backend.wrap_ptr(ptr, dtype, shape)
     return Field(dtype, shape, buf, writable=writable)

@@ -127,6 +127,7 @@ _CTYPES_MAP = {
 }
 
 
+from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
@@ -294,8 +295,15 @@ def _physical_core_count() -> int:
         return os.cpu_count() or 1
 
 
-class CPUBackend:
+class CPUBackend(Backend):
     """CPU backend — JIT compiles kernels and runs them with thread parallelism."""
+
+    name = "cpu"
+    display_name = "CPU"
+    supported_dtypes = _CPU_SUPPORTED_DTYPES
+    # Reductions go through numpy on the host — the data is already there.
+    supports_device_reductions = False
+
 
     def __init__(self, num_threads: int | None = None):
         if num_threads is None:
@@ -354,8 +362,6 @@ class CPUBackend:
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
-            supported_dtypes=_CPU_SUPPORTED_DTYPES,
-            backend_name="CPU",
             build=self._build_variant,
         )
 

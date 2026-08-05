@@ -17,20 +17,6 @@ import pytest
 
 import tack
 
-backends = []
-for _arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 def _build_kernel(tmp_path, factor, index):
     """Compile a fresh Kernel object that scales by ``factor``.
