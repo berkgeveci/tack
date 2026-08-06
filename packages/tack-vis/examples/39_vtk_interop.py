@@ -1,136 +1,157 @@
-"""39 -- VTK interop: vtkmDataArray → vtkStructuredGrid → viskores filter.
+"""39 -- VTK interop: hand data between Tack and VTK without copying.
 
-Demonstrates zero-copy pipeline:
-  1. Create raw arrays (simulating GPU memory)
-  2. Wrap in vtkmDataArray via vtkMemoryDescriptor + vtkmDataArrayFactory
-  3. Build vtkStructuredGrid from vtkmDataArrays
-  4. Run viskores-accelerated contour filter
-  5. Extract output memory descriptors
+Tack computes, VTK filters, Tack computes again -- and the data never
+moves. Both speak DLPack, so an exchange is one call in each direction and
+the memory is shared, not copied.
 
-On CUDA/HIP, replace "host" with "cuda"/"hip" and pass device pointers.
-The same pipeline keeps data on GPU through the entire filter execution.
+    field = vtk_to_field(vtk_array)   # VTK  -> Tack
+    array = field_to_vtk(field)       # Tack -> VTK
+
+A vtkDataArray is tuples x components and a Tack field is n-dimensional,
+so the shapes line up on their own: a (n, 3) field is n tuples of 3.
+Nothing has to be declared.
+
+The pipeline below is the one that matters in practice -- a Tack kernel
+generating a field, a VTK filter consuming it, and a Tack kernel measuring
+the result. On CUDA or HIP the same code keeps everything on the device:
+DLPack carries the device pointer, and neither side copies to the host.
+That path additionally needs VTK built with the Viskores accelerators
+(-DVTK_MODULE_ENABLE_VTK_AcceleratorsVTKmCore=YES), which is what wraps
+device memory as a vtkmDataArray.
 
 Usage:
-  python examples/39_vtk_interop.py
+  python examples/39_vtk_interop.py [--arch cpu|metal|cuda|hip]
+
+Needs VTK with vtkmodules.util.dlpack_support.
 """
 
+import argparse
+
 import numpy as np
+
+import tack
+from tack.interop.vtk import field_to_vtk, vtk_to_field
+from tack.runtime.dispatch import get_backend
+
+parser = argparse.ArgumentParser()
+parser.add_argument("--arch", default="cpu",
+                    choices=["cpu", "metal", "cuda", "hip", "level_zero"])
+args = parser.parse_args()
+tack.init(arch=getattr(tack, args.arch))
+
+NX = NY = NZ = 64
+N_POINTS = NX * NY * NZ
+
+
+# ── Step 1: generate the grid with a Tack kernel ─────────────────────
+#
+# Points as (n, 3) and scalars as (n,) -- the shapes VTK wants, so no
+# reshaping happens anywhere below.
+
+@tack.kernel
+def gyroid(points, scalars, nx, ny, nz):
+    two_pi = 6.283185307179586
+    for idx in range(nx * ny * nz):
+        i = idx % nx
+        j = (idx // nx) % ny
+        k = idx // (nx * ny)
+
+        x = float(i) / float(nx - 1)
+        y = float(j) / float(ny - 1)
+        z = float(k) / float(nz - 1)
+
+        points[idx, 0] = x
+        points[idx, 1] = y
+        points[idx, 2] = z
+
+        a = x * two_pi
+        b = y * two_pi
+        c = z * two_pi
+        scalars[idx] = (tack.sin(a) * tack.cos(b) +
+                        tack.sin(b) * tack.cos(c) +
+                        tack.sin(c) * tack.cos(a))
+
+
+points = tack.field(dtype=tack.f32, shape=(N_POINTS, 3))
+scalars = tack.field(dtype=tack.f32, shape=(N_POINTS,))
+gyroid(points, scalars, NX, NY, NZ)
+
+print(f"Tack ({get_backend().label}): {NX}x{NY}x{NZ} = {N_POINTS:,} points")
+print(f"  points  {points.shape}  -> {points.shape[1]} components")
+print(f"  scalars {scalars.shape}")
+
+
+# ── Step 2: hand them to VTK ─────────────────────────────────────────
+#
+# No component count to pass: points.shape already says 3.
+
+coord_array = field_to_vtk(points, name="Points")
+scalar_array = field_to_vtk(scalars, name="gyroid")
+
+print(f"\nVTK arrays (shared memory, not copied):")
+print(f"  {coord_array.GetClassName()}: "
+      f"{coord_array.GetNumberOfTuples():,} x {coord_array.GetNumberOfComponents()}")
+print(f"  {scalar_array.GetClassName()}: "
+      f"{scalar_array.GetNumberOfTuples():,} x {scalar_array.GetNumberOfComponents()}")
+
 import vtk
-from vtkmodules.vtkCommonCore import vtkMemoryDescriptor
-from vtkmodules.vtkAcceleratorsVTKmCore import vtkmDataArrayFactory
 
-
-# ================================================================
-# Step 1: Create raw data arrays (simulating external memory)
-# ================================================================
-
-nx, ny, nz = 64, 64, 64
-n_points = nx * ny * nz
-
-# Coordinates (interleaved xyz, AoS layout)
-coords = np.zeros(n_points * 3, dtype=np.float32)
-idx = 0
-for k in range(nz):
-    for j in range(ny):
-        for i in range(nx):
-            coords[idx * 3]     = float(i) / (nx - 1)
-            coords[idx * 3 + 1] = float(j) / (ny - 1)
-            coords[idx * 3 + 2] = float(k) / (nz - 1)
-            idx += 1
-
-# Scalar field: gyroid
-scalars = np.zeros(n_points, dtype=np.float32)
-idx = 0
-for k in range(nz):
-    for j in range(ny):
-        for i in range(nx):
-            x = coords[idx * 3] * 2 * np.pi
-            y = coords[idx * 3 + 1] * 2 * np.pi
-            z = coords[idx * 3 + 2] * 2 * np.pi
-            scalars[idx] = (np.sin(x) * np.cos(y) +
-                            np.sin(y) * np.cos(z) +
-                            np.sin(z) * np.cos(x))
-            idx += 1
-
-print(f"Grid: {nx}x{ny}x{nz} = {n_points:,} points")
-
-
-# ================================================================
-# Step 2: Wrap in vtkmDataArray via factory (zero-copy)
-# ================================================================
-
-def make_vtkm_array(data, n_tuples, n_components, name):
-    """Wrap a numpy array as a vtkmDataArray via the factory."""
-    desc = vtkMemoryDescriptor()
-    desc.Set(data.ctypes.data, data.nbytes, "host")
-
-    factory = vtkmDataArrayFactory()
-    factory.SetNumberOfTuples(n_tuples)
-    factory.SetNumberOfComponents(n_components)
-    factory.SetDataType(10)  # VTK_FLOAT
-    factory.AddBuffer(desc)
-
-    arr = factory.CreateArray()
-    arr.SetName(name)
-    return arr
-
-
-coord_array = make_vtkm_array(coords, n_points, 3, "Points")
-scalar_array = make_vtkm_array(scalars, n_points, 1, "gyroid")
-
-print(f"Coord array:  {coord_array.GetClassName()}")
-print(f"Scalar array: {scalar_array.GetClassName()}")
-
-
-# ================================================================
-# Step 3: Build vtkStructuredGrid
-# ================================================================
-
-points = vtk.vtkPoints()
-points.SetData(coord_array)
+vtk_points = vtk.vtkPoints()
+vtk_points.SetData(coord_array)
 
 grid = vtk.vtkStructuredGrid()
-grid.SetDimensions(nx, ny, nz)
-grid.SetPoints(points)
+grid.SetDimensions(NX, NY, NZ)
+grid.SetPoints(vtk_points)
 grid.GetPointData().SetScalars(scalar_array)
 
-print(f"\nStructured grid: {grid.GetNumberOfPoints():,} points, "
-      f"{grid.GetNumberOfCells():,} cells")
 
+# ── Step 3: run a VTK filter over Tack's memory ──────────────────────
 
-# ================================================================
-# Step 4: Run viskores contour filter
-# ================================================================
+from vtkmodules.vtkFiltersCore import vtkContourFilter
 
-from vtkmodules.vtkAcceleratorsVTKmFilters import vtkmContour
-
-contour = vtkmContour()
+contour = vtkContourFilter()
 contour.SetInputData(grid)
-contour.SetInputArrayToProcess(0, 0, 0,
-    vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "gyroid")
+contour.SetInputArrayToProcess(
+    0, 0, 0, vtk.vtkDataObject.FIELD_ASSOCIATION_POINTS, "gyroid")
 contour.SetValue(0, 0.0)
 contour.Update()
 
 output = contour.GetOutput()
-print(f"\nContour result:")
-print(f"  Points:    {output.GetNumberOfPoints():,}")
-print(f"  Triangles: {output.GetNumberOfCells():,}")
+print(f"\nContour: {output.GetNumberOfPoints():,} points, "
+      f"{output.GetNumberOfCells():,} triangles")
 
-if output.GetNumberOfPoints() > 0:
-    out_pts = output.GetPoints().GetData()
-    print(f"  Output points type: {out_pts.GetClassName()}")
+if output.GetNumberOfPoints() == 0:
+    raise SystemExit("contour produced nothing")
 
 
-# ================================================================
-# Step 5: Extract output memory descriptors
-# ================================================================
+# ── Step 4: bring the result back into Tack ──────────────────────────
 
-    descs = out_pts.GetMemoryDescriptors()
-    print(f"\n  Output memory descriptors: {descs.GetNumberOfItems()}")
-    for i in range(descs.GetNumberOfItems()):
-        d = descs.GetItemAsObject(i)
-        print(f"    [{i}] role={d.GetRole()}, space={d.GetMemorySpace()}, "
-              f"size={d.GetSizeInBytes():,} bytes, ptr=0x{d.GetPointer():x}")
+result = vtk_to_field(output.GetPoints().GetData())
+print(f"\nBack in Tack: {result.shape} -- {result.shape[1]} components, "
+      f"still VTK's memory")
 
-    print(f"\nFull pipeline: raw memory → vtkmDataArray → "
-          f"vtkStructuredGrid → viskores contour → output ✓")
+
+# ── Step 5: compute on it, to show it is really there ────────────────
+
+@tack.kernel
+def bounds(pts, lo, hi, n):
+    for i in range(n):
+        for c in range(3):
+            tack.atomic_min(lo, c, pts[i, c])
+            tack.atomic_max(hi, c, pts[i, c])
+
+
+n_out = result.shape[0]
+lo = tack.field(dtype=tack.f32, shape=(3,))
+hi = tack.field(dtype=tack.f32, shape=(3,))
+lo.from_numpy(np.full(3, 1e30, dtype=np.float32))
+hi.from_numpy(np.full(3, -1e30, dtype=np.float32))
+
+bounds(result, lo, hi, n_out)
+
+lo_v, hi_v = lo.to_numpy(), hi.to_numpy()
+print(f"  bounds x [{lo_v[0]:.3f}, {hi_v[0]:.3f}]  "
+      f"y [{lo_v[1]:.3f}, {hi_v[1]:.3f}]  "
+      f"z [{lo_v[2]:.3f}, {hi_v[2]:.3f}]")
+
+print("\nTack kernel -> VTK filter -> Tack kernel, no copies")

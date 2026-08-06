@@ -127,10 +127,25 @@ from tack.interop.vtk import vtk_to_field, field_to_vtk
 # VTK → Tack (zero-copy for both host and device arrays)
 field = vtk_to_field(vtk_data_array)
 
-# Tack → VTK (host arrays)
-vtk_array = field_to_vtk(field, n_components=3)
+# Tack → VTK (zero-copy)
+vtk_array = field_to_vtk(field)
 ```
 
-This works with both regular `vtkDataArray` (host memory) and
-`vtkmDataArray` (GPU device memory from VTK-m/Viskores). For device
-arrays, the GPU pointer is wrapped directly — no host-device copy.
+A vtkDataArray is *tuples × components* and a Tack field is
+n-dimensional, so the shapes line up on their own — a `(1000, 3)` field is
+1000 tuples of 3 components, and `field.shape[1]` is the component count.
+Nothing has to be declared.
+
+Tack's own visualization algorithms are the exception: `flying_edges` and
+`compute_normals` work on *flat interleaved* arrays, so ask for that form
+explicitly.
+
+```python
+points = vtk_to_field(vtk_points, flatten=True)   # (n*3,)
+array  = field_to_vtk(points, n_components=3)     # back to n × 3
+```
+
+Both directions go through DLPack, which VTK speaks via
+`vtkmodules.util.dlpack_support`. This works with regular `vtkDataArray`
+(host memory) and `vtkmDataArray` (device memory from Viskores); for
+device arrays the GPU pointer is wrapped directly — no host-device copy.

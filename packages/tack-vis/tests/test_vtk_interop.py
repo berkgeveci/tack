@@ -12,7 +12,7 @@ logic is tack's own and is tested with a stand-in for VTK's module, which
 also keeps those tests honest about what they actually exercise.
 """
 
-import sys
+
 import types
 
 import numpy as np
@@ -217,8 +217,20 @@ def test_round_trip_preserves_shape(fake_vtk):
 
 
 def test_missing_vtk_reports_what_is_missing(monkeypatch):
-    """The failure should name the module, not surface an ImportError."""
-    monkeypatch.setitem(sys.modules, "vtkmodules", None)
+    """The failure should name the module, not surface an ImportError.
+
+    Blocking the import itself rather than clearing sys.modules, so this
+    tests the same thing whether or not VTK is installed here.
+    """
+    import builtins
+    real_import = builtins.__import__
+
+    def blocked(name, *args, **kwargs):
+        if name.startswith("vtkmodules"):
+            raise ImportError("no vtkmodules")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr(builtins, "__import__", blocked)
     with pytest.raises(RuntimeError, match="dlpack_support"):
         interop._dlpack_support()
 
