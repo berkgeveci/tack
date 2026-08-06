@@ -157,7 +157,7 @@ def main():
 
     # Volrender comparison (already measured externally, just print note)
     print(f"\n{'='*90}")
-    print(f"  VOLUME RENDER: see --bench output from tack_volrender.py")
+    print(f"  VOLUME RENDER: see --bench output from packages/tack-rendering/examples/tack_volrender.py")
     print(f"{'='*90}")
 
 

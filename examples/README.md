@@ -1,7 +1,10 @@
 # Tack Examples
 
 Examples are split across packages. Each package has its own `examples/` directory.
-Cross-package examples (requiring both tack-rendering and tack-vis) live here at the root.
+
+The two examples in *this* directory need both `tack-vis` and `tack-rendering`, and
+neither package depends on the other — so neither can own them. That is why they live
+at the repository root rather than under `packages/`.
 
 ## Core Examples (`packages/tack-core/examples/`)
 

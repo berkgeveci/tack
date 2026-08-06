@@ -47,7 +47,7 @@ GPU: NVIDIA GeForce RTX 4060 Ti 16GB, CUDA 13.1, 288 GB/s GDDR6.
 
 Machine: 20-core CPU, AMD Instinct MI300X, ROCm 7.1, HBM3 (~5.3 TB/s bandwidth).
 
-Reproduce: `uv run python bench_cpu_vs_hip.py`
+Reproduce: `uv run python benchmarks/bench_cpu_vs_hip.py`
 
 ```
   Kernel  | CPU JIT   | HIP GPU    |  Speedup

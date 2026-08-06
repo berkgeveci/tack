@@ -356,13 +356,21 @@ def save_image(pixels_field, alpha_field, path):
 
 def main():
     # Parse arguments
-    dataset = '/Users/berk.geveci/Work/yt/data/enzo_tiny_cosmology/DD0046/DD0046'
-    save_path = '/Users/berk.geveci/Work/yt/data/tack_volrender.png'
+    dataset = None
+    save_path = 'tack_volrender.png'
     arch = tack.cpu
 
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
     if args:
         dataset = args[0]
+    if dataset is None:
+        sys.exit(
+            "usage: tack_volrender.py <dataset> [--arch=cpu|metal] [--save=out.png]\n"
+            "\n"
+            "Needs an AMR dataset that yt can open — for example an Enzo or\n"
+            "FLASH output directory. Unlike the numbered examples this one is\n"
+            "not self-contained: it requires `yt` and data you supply."
+        )
     for a in sys.argv[1:]:
         if a.startswith('--save='):
             save_path = a.split('=', 1)[1]

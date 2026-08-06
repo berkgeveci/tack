@@ -1,12 +1,15 @@
 # Tack — GPU compute framework
 
-A Python-first GPU compute framework. Write compute kernels as decorated Python functions, run them on CPU, Metal (Apple Silicon), CUDA (NVIDIA), or HIP (AMD) — same code, any backend.
+[![CI](https://github.com/Kitware/tack/actions/workflows/ci.yml/badge.svg)](https://github.com/Kitware/tack/actions/workflows/ci.yml)
+[![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
+
+A Python-first GPU compute framework. Write compute kernels as decorated Python functions, run them on CPU, Metal (Apple Silicon), CUDA (NVIDIA), HIP (AMD) or Level Zero (Intel) — same code, any backend.
 
 ```python
 import tack
 import numpy as np
 
-tack.init(arch=tack.metal)  # or tack.cpu, tack.cuda, tack.hip
+tack.init(arch=tack.metal)  # or tack.cpu, tack.cuda, tack.hip, tack.level_zero
 
 n = 1_000_000
 x = tack.field(dtype=tack.f32, shape=(n,))
@@ -31,7 +34,7 @@ Tack is split into three packages: **tack-core** (compute framework), **tack-ren
 
 ```bash
 # Install everything from source with uv
-git clone <repo-url>
+git clone https://github.com/Kitware/tack.git
 cd tack
 uv sync
 
@@ -40,6 +43,8 @@ pip install tack-core              # core only
 pip install tack-core[cpu]         # core + CPU backend (LLVM JIT)
 pip install tack-core[metal]       # core + Metal backend (macOS)
 pip install tack-core[cuda]        # core + CUDA backend
+pip install tack-core[hip]         # core + HIP backend (see note below)
+pip install tack-core[level_zero]  # core + Level Zero backend (Intel)
 pip install tack-rendering         # path tracer (pulls in tack-core)
 pip install tack-vis               # visualization (pulls in tack-core)
 ```
@@ -52,6 +57,18 @@ pip install tack-vis               # visualization (pulls in tack-core)
 | Metal | macOS (Apple Silicon) | `tack.init(arch=tack.metal)` | `pyobjc-framework-Metal` |
 | CUDA | Linux/Windows (NVIDIA) | `tack.init(arch=tack.cuda)` | `cuda-python>=13.2`, CUDA toolkit |
 | HIP | Linux (AMD) | `tack.init(arch=tack.hip)` | `hip-python`, ROCm toolkit |
+| Level Zero | Linux (Intel) | `tack.init(arch=tack.level_zero)` | `libze_loader.so`, `libocloc.so` |
+
+`hip-python` is published on Test PyPI rather than PyPI, so the `[hip]` extra cannot
+declare it. Install it separately:
+
+```bash
+pip install --pre --index-url https://test.pypi.org/simple/ \
+  --extra-index-url https://pypi.org/simple/ "hip-python~=7.1.0"
+```
+
+Level Zero needs no Python package — just the system Level Zero runtime and Intel's
+offline compiler (`intel-opencl-icd`).
 
 ## Compilation Pipeline
 
@@ -249,7 +266,7 @@ process(Grid(data_field, 0.1), output)
 
 ## Examples
 
-40+ progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip`.
+49 progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip|level_zero`.
 
 ```bash
 uv run python packages/tack-core/examples/01_hello_tack.py              # simplest kernel
@@ -258,13 +275,16 @@ uv run python packages/tack-vis/examples/27_flying_edges.py --arch cuda # isosur
 uv run python examples/32_pathtrace.py --arch metal                    # path tracing
 ```
 
-| # | Package | Example | Concepts |
-|---|---------|---------|----------|
-| 01-11 | core | Getting Started | Kernels, fields, math, control flow, vectors, templates |
-| 12-20 | core | Applications | Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave |
-| 22-28 | vis | Visualization | Contour, flying edges, marching cubes, point-to-cell |
-| 32-38 | rendering | Path Tracing | GPU BVH, path tracing, denoising |
-| 32, 37 | cross | Pipelines | Flying edges → path trace, in-situ simulation |
+| Location | Count | Covers |
+|----------|------:|--------|
+| `packages/tack-core/examples/` | 28 | Kernels, fields, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
+| `packages/tack-vis/examples/` | 9 | Contour, marching cubes, flying edges (single- and multi-block), cell↔point, FE isolines and isosurfaces, VTK interop |
+| `packages/tack-rendering/examples/` | 10 | GPU BVH, path tracing, denoising, materials, multiple lights, scalar colouring, volume rendering, annotations |
+| `examples/` | 2 | Cross-package pipelines that need both tack-vis and tack-rendering |
+
+Numbers are unique within a package but repeat across packages — `tack-vis/41_fe_isosurface.py`
+and `tack-rendering/41_interactive.py` both exist. The cross-package examples live at the
+repository root because neither package depends on the other, so neither can own them.
 
 ## Testing
 
@@ -303,11 +323,11 @@ packages/
       runtime/              # Backend dispatch and device management
       algorithms/           # General primitives (scan, copy)
     tests/                  # Core tests (CPU, Metal, CUDA, HIP, codegen)
-    examples/               # Core examples (01-21)
+    examples/               # Core examples
 
   tack-rendering/            # Path tracing renderer
     src/tack/rendering/      # Camera, BVH, scene, pathtrace kernels
-    examples/               # Rendering examples (33-36, 38)
+    examples/               # Rendering examples
 
   tack-vis/                  # Scientific visualization
     src/tack/
@@ -315,8 +335,22 @@ packages/
       data/                 # Data abstractions
       interop/              # VTK interop
     tests/                  # Vis algorithm tests
-    examples/               # Vis examples (22, 25-28, 39)
+    examples/               # Vis algorithm examples
 
-examples/                   # Cross-package examples (32, 37)
-docs/                       # Shared documentation
+examples/                   # Cross-package examples (need vis + rendering)
+benchmarks/                 # Performance benchmarks
+docs/                       # Users guide, developers guide, performance notes
 ```
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md). In short: `uv sync --extra cpu --extra dev`,
+then `uv run pytest`. Tests for a backend you don't have skip themselves, so a green
+run on one machine does not mean every backend was exercised — the CI log prints
+which backends it found.
+
+## License
+
+BSD 3-Clause. See [LICENSE](LICENSE).
+
+Copyright (c) 2026, Kitware, Inc.
