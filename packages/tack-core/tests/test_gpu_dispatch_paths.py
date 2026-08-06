@@ -202,10 +202,18 @@ print("OK")
 
 
 @pytest.mark.parametrize("name", sorted(BACKENDS))
-def test_gpu_dispatch_path(name):
+def test_gpu_dispatch_path(name, tmp_path):
     spec = BACKENDS[name]
     script = textwrap.dedent(_PREAMBLE).format(**spec) + textwrap.dedent(_CHECKS)
-    proc = subprocess.run([sys.executable, "-c", script],
+
+    # Run from a real file, not `python -c`. @tack.kernel reads its function's
+    # source with inspect.getsource, and only Python 3.13+ registers a `-c`
+    # command in linecache — on 3.11 and 3.12 the kernels in this script fail
+    # to build with "could not get source code".
+    script_path = tmp_path / f"gpu_dispatch_{name}.py"
+    script_path.write_text(script)
+
+    proc = subprocess.run([sys.executable, str(script_path)],
                           capture_output=True, text=True)
     assert proc.returncode == 0, (
         f"{name} dispatch path failed:\n{proc.stdout}\n{proc.stderr}")

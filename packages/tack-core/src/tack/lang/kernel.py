@@ -14,13 +14,35 @@ class Kernel:
     def __init__(self, func):
         self.func = func
         self.name = func.__name__
-        self._source = textwrap.dedent(inspect.getsource(func))
+        self._source = textwrap.dedent(self._read_source(func))
         self._ast = ast.parse(self._source)
         self._funcdef = self._ast.body[0]  # The FunctionDef node
         # Lazy IR: defer transform until first dispatch (vector fields may be needed)
         self._ir = None
         self._ir_cache = {}  # vector_fields key → IRModule
         self._compiled = {}  # backend -> compiled kernel
+
+    @staticmethod
+    def _read_source(func) -> str:
+        """Read the function's source, or explain why it could not be read.
+
+        A kernel is compiled from its source text, so Tack needs to find it.
+        `inspect.getsource` cannot when the function has no file behind it —
+        `exec()`, a bare REPL, or `python -c` before 3.13. The raw OSError
+        says only "could not get source code", which gives no hint that the
+        problem is *where the function was defined* rather than the kernel.
+        """
+        try:
+            return inspect.getsource(func)
+        except (OSError, TypeError) as e:
+            raise RuntimeError(
+                f"Cannot read the source of kernel '{func.__name__}'. Tack "
+                f"compiles kernels from their source text, so they must be "
+                f"defined somewhere Python can read back — a module, a script, "
+                f"or a Jupyter cell. Defining one with exec(), in a bare REPL, "
+                f"or via `python -c` (before Python 3.13) does not work.\n"
+                f"  original error: {e}"
+            ) from e
 
     def get_ir(self, vector_fields=None, template_args=None, texture_fields=None):
         """Get IR, re-transforming if vector/texture field or template metadata is provided."""
