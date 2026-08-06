@@ -19,6 +19,8 @@ kDLCPU = 1
 kDLCUDA = 2
 kDLCUDAManaged = 13
 kDLROCM = 10
+kDLCUDAHost = 3
+kDLROCMHost = 11
 kDLMetal = 8
 kDLOneAPI = 14
 
@@ -242,3 +244,187 @@ def dlpack_device(field):
     """Return (device_type, device_id) tuple for DLPack protocol."""
     device_type, device_id, _ = _get_device_info(field)
     return (device_type, device_id)
+
+
+# ── Import ───────────────────────────────────────────────────────────
+#
+# The mirror of the export side. A consumer that adopts a tensor takes on
+# calling its deleter, so an imported field has to hold the capsule and
+# release it when the field dies -- otherwise the producer frees memory
+# the field is still pointing at.
+
+# DLPack v1.0 adds a versioned managed tensor, which is the only form that
+# can say a buffer is read-only. NumPy 2.x will only export a read-only array
+# through it, so a consumer that asks for the legacy capsule alone cannot
+# import one at all.
+class DLPackVersion(ctypes.Structure):
+    _fields_ = [("major", ctypes.c_uint32), ("minor", ctypes.c_uint32)]
+
+
+class DLManagedTensorVersioned(ctypes.Structure):
+    _fields_ = [
+        ("version", DLPackVersion),
+        ("manager_ctx", ctypes.c_void_p),
+        ("deleter", ctypes.CFUNCTYPE(None, ctypes.c_void_p)),
+        ("flags", ctypes.c_uint64),
+        ("dl_tensor", DLTensor),
+    ]
+
+
+DLPACK_FLAG_BITMASK_READ_ONLY = 1 << 0
+
+_PyCapsule_SetName = ctypes.pythonapi.PyCapsule_SetName
+_PyCapsule_SetName.restype = ctypes.c_int
+_PyCapsule_SetName.argtypes = [ctypes.py_object, ctypes.c_char_p]
+
+# DLPack device type -> the memory spaces a backend reports for it. An
+# imported tensor has to land on a backend that can actually address it.
+_DEVICE_BACKENDS = {
+    kDLCPU: ("cpu", "metal"),
+    kDLCUDAHost: ("cpu",),
+    kDLROCMHost: ("cpu",),
+    kDLMetal: ("metal",),
+    kDLCUDA: ("cuda",),
+    kDLCUDAManaged: ("cuda",),
+    kDLROCM: ("hip",),
+    kDLOneAPI: ("level_zero",),
+}
+
+
+def _request_capsule(source):
+    """Get a capsule from *source*, preferring the versioned protocol.
+
+    Asking for v1.0 first matters: NumPy refuses to export a read-only array
+    over the legacy protocol, because that protocol has no way to say so. A
+    producer that predates v1.0 raises TypeError on max_version, so fall back.
+    """
+    if not hasattr(source, "__dlpack__"):
+        return source
+    try:
+        return source.__dlpack__(max_version=(1, 0))
+    except TypeError:
+        return source.__dlpack__()
+
+
+class _CapsuleHold:
+    """Keeps an adopted DLPack tensor alive, and releases it exactly once.
+
+    Attached to the imported field, so the producer is told the memory is
+    free the moment the field is collected -- and not before.
+    """
+
+    __slots__ = ("_capsule", "_managed_ptr", "_struct", "_released")
+
+    def __init__(self, capsule, managed_ptr, struct=None):
+        self._capsule = capsule
+        self._managed_ptr = managed_ptr
+        self._struct = struct or DLManagedTensor
+        self._released = False
+
+    def release(self):
+        if self._released:
+            return
+        self._released = True
+        managed = ctypes.cast(
+            self._managed_ptr, ctypes.POINTER(self._struct)).contents
+        if managed.deleter:
+            managed.deleter(self._managed_ptr)
+        self._capsule = None
+
+    def __del__(self):
+        try:
+            self.release()
+        except Exception:
+            # Interpreter teardown can pull ctypes out from under us; a
+            # failed release at exit is not worth an unraisable traceback.
+            pass
+
+
+def dlpack_to_field(source, writable=True):
+    """Wrap a DLPack tensor as a Tack field, without copying.
+
+    `source` may be a capsule or anything implementing ``__dlpack__`` -- a
+    CuPy array, a PyTorch tensor, a VTK array via
+    ``vtkmodules.util.dlpack_support``.
+
+    The tensor is held for as long as the field lives, so the source may be
+    dropped immediately. The field does not copy, so the two share memory
+    and a write through either is visible to the other.
+
+    Raises RuntimeError if the tensor lives somewhere the active backend
+    cannot address -- importing CUDA memory while running on the CPU
+    backend is a mistake, not something to paper over with a copy.
+    """
+    from tack.lang.field import field_from_ptr
+    from tack.runtime.dispatch import get_backend
+
+    capsule = _request_capsule(source)
+
+    capsule_ptr = ctypes.cast(id(capsule), ctypes.c_void_p)
+    if _PyCapsule_IsValid(capsule_ptr, b"dltensor_versioned"):
+        name, used_name = b"dltensor_versioned", b"used_dltensor_versioned"
+        struct = DLManagedTensorVersioned
+    elif _PyCapsule_IsValid(capsule_ptr, b"dltensor"):
+        name, used_name = b"dltensor", b"used_dltensor"
+        struct = DLManagedTensor
+    else:
+        raise ValueError(
+            "expected an unconsumed DLPack capsule; this one has already "
+            "been taken by another consumer")
+
+    managed_ptr = _PyCapsule_GetPointer(capsule_ptr, name)
+    managed = ctypes.cast(managed_ptr, ctypes.POINTER(struct)).contents
+    tensor = managed.dl_tensor
+
+    if struct is DLManagedTensorVersioned and \
+            managed.flags & DLPACK_FLAG_BITMASK_READ_ONLY:
+        # The producer says this memory must not be written. Honour it rather
+        # than handing back a field whose writes go somewhere unexpected.
+        writable = False
+
+    if not tensor.data:
+        raise ValueError("the tensor has a null data pointer")
+
+    dtype = _DLPACK_TO_DTYPE.get((tensor.dtype.code, tensor.dtype.bits))
+    if dtype is None:
+        raise TypeError(
+            f"no Tack dtype for DLPack (code={tensor.dtype.code}, "
+            f"bits={tensor.dtype.bits})")
+    if tensor.dtype.lanes != 1:
+        raise TypeError(
+            f"vectorized DLPack dtypes are not supported (lanes={tensor.dtype.lanes})")
+
+    shape = tuple(tensor.shape[i] for i in range(tensor.ndim))
+
+    # Only C-contiguous tensors can be wrapped. Anything else would be read
+    # with the wrong stride, which produces plausible-looking wrong numbers.
+    if tensor.strides:
+        expected, stride = [0] * tensor.ndim, 1
+        for i in range(tensor.ndim - 1, -1, -1):
+            expected[i] = stride
+            stride *= shape[i]
+        actual = [tensor.strides[i] for i in range(tensor.ndim)]
+        if actual != expected:
+            raise ValueError(
+                f"only C-contiguous tensors can be wrapped without copying; "
+                f"strides {tuple(actual)} != {tuple(expected)}")
+
+    backend = get_backend()
+    allowed = _DEVICE_BACKENDS.get(tensor.device.device_type)
+    if allowed is None:
+        raise ValueError(
+            f"unsupported DLPack device type {tensor.device.device_type}")
+    if backend.name not in allowed:
+        raise RuntimeError(
+            f"the tensor is on a device the '{backend.name}' backend cannot "
+            f"address (DLPack device type {tensor.device.device_type}). "
+            f"Initialize a backend from {allowed}, or copy the data yourself.")
+
+    field = field_from_ptr(
+        (tensor.data or 0) + tensor.byte_offset, dtype, shape, writable=writable)
+
+    # Adopt the capsule: rename it so nobody else releases it, and attach the
+    # hold to the field so the producer is told when the field is gone.
+    _PyCapsule_SetName(capsule, used_name)
+    field._dlpack_hold = _CapsuleHold(capsule, managed_ptr, struct)
+    return field

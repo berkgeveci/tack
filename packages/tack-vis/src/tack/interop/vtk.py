@@ -1,146 +1,110 @@
 """tack.interop.vtk — Zero-copy interop between VTK arrays and Tack fields.
 
-Supports both host (vtkDataArray) and device (vtkmDataArray) arrays.
-vtkmDataArray is not directly exposed to Python, but virtual dispatch
-on vtkDataArray's GetDeviceVoidPointer() and GetMemorySpace() works
-transparently through the vtable.
-
-Usage
------
-::
-
     from tack.interop.vtk import vtk_to_field, field_to_vtk
 
-    # VTK → Tack (zero-copy for host and device arrays)
-    field = vtk_to_field(vtk_data_array)
+    field = vtk_to_field(vtk_array)              # VTK  -> Tack
+    array = field_to_vtk(field, n_components=3)  # Tack -> VTK
 
-    # Tack → VTK (zero-copy for host arrays)
-    vtk_array = field_to_vtk(field, n_components=3)
+Both directions share memory rather than copying, on the host and on the
+device, and each side keeps the other alive for as long as it is needed.
+
+What this module is for
+-----------------------
+The transport is DLPack, which VTK and Tack both speak, so almost nothing
+is left here: no pointer parsing, no memory-space tables, no dtype maps.
+What remains is the one thing DLPack cannot know, which is how the two
+libraries disagree about shape.
+
+A vtkDataArray is *tuples x components* -- 1000 points of 3 floats is
+1000 tuples of 3. A Tack field is flat: the same data is 3000 values, and
+vector-ness is a property of the kernel reading it. So every exchange has
+to decide whether to flatten, and that decision is what this module owns.
+
+Requirements
+------------
+VTK with ``vtkmodules.util.dlpack_support``. Device arrays additionally
+need VTK built with Viskores; host arrays work with any VTK that has the
+DLPack module.
 """
 
-import numpy as np
 import tack
 
-
-# VTK MemorySpace enum values (from vtkDataArray.h)
-_HOST_MEMORY = 0
-_CUDA_DEVICE_MEMORY = 1
-_HIP_DEVICE_MEMORY = 2
-
-# VTK type enum → (numpy dtype, tack dtype)
-_VTK_TYPE_MAP = {
-    10: (np.float32, tack.f32),   # VTK_FLOAT
-    11: (np.float64, tack.f64),   # VTK_DOUBLE
-    6:  (np.int32,   tack.i32),   # VTK_INT
-    8:  (np.int64,   tack.i64),   # VTK_LONG_LONG (or VTK_ID_TYPE on 64-bit)
-    12: (np.int64,   tack.i64),   # VTK_ID_TYPE
-}
+__all__ = ["vtk_to_field", "field_to_vtk"]
 
 
-def _parse_vtk_pointer(ptr_str):
-    """Extract integer address from VTK's mangled pointer string.
-
-    VTK wraps void* returns as '_HEXADDR_p_void' strings.
-    Returns 0 if ptr_str is None or cannot be parsed.
-    """
-    if ptr_str is None:
-        return 0
+def _dlpack_support():
+    """Import VTK's DLPack module, or explain what is missing."""
     try:
-        return int(ptr_str.split('_')[1], 16)
-    except (IndexError, ValueError):
-        return 0
+        from vtkmodules.util import dlpack_support
+    except ImportError as exc:
+        raise RuntimeError(
+            "tack.interop.vtk needs vtkmodules.util.dlpack_support, which is "
+            "not in this VTK. It provides the zero-copy exchange both "
+            "directions rely on."
+        ) from exc
+    return dlpack_support
 
 
-def vtk_to_field(vtk_array):
-    """Convert a vtkDataArray to a tack.field (zero-copy when possible).
-
-    For host arrays (vtkFloatArray, etc.): wraps the host pointer via
-    field_from_ptr.  The VTK array must outlive the returned field.
-
-    For device arrays (vtkmDataArray): wraps the device pointer via
-    field_from_ptr.  Works for CUDA, HIP, and any backend where
-    vtkmDataArray stores data on-device.
+def vtk_to_field(vtk_array, flatten=True):
+    """Wrap a vtkDataArray as a Tack field, without copying.
 
     Args:
-        vtk_array: A vtkDataArray instance.
+        vtk_array: any vtkDataArray, on the host or on a device.
+        flatten: if True (default) the field is 1-D of
+            ``tuples * components`` values, which is how Tack kernels index
+            interleaved data and what ``tack.Vector`` fields expect. If
+            False the field keeps VTK's ``(tuples, components)`` shape.
 
     Returns:
-        tack.field wrapping the array's memory (zero-copy).
+        A tack.field sharing the array's memory. The VTK array is held for
+        as long as the field lives, so it may be dropped immediately.
 
     Raises:
-        TypeError: If the array type is not supported.
-        RuntimeError: If the pointer cannot be extracted.
+        RuntimeError: if the array lives somewhere the active Tack backend
+            cannot address -- a CUDA array under the CPU backend, say.
+        ValueError: for an array with no memory to share (implicit and
+            computed arrays have none) or a non-contiguous layout.
     """
-    data_type = vtk_array.GetDataType()
-    if data_type not in _VTK_TYPE_MAP:
-        raise TypeError(
-            f"Unsupported VTK data type: {data_type} "
-            f"({vtk_array.GetDataTypeAsString()})")
+    dlpack_support = _dlpack_support()
 
-    np_dtype, tack_dtype = _VTK_TYPE_MAP[data_type]
-    n_values = int(vtk_array.GetNumberOfValues())  # tuples * components
-
-    memory_space = vtk_array.GetMemorySpace()
-
-    if memory_space != _HOST_MEMORY:
-        # Device array — use GetDeviceVoidPointer
-        ptr_str = vtk_array.GetDeviceVoidPointer(0)
-        addr = _parse_vtk_pointer(ptr_str)
-        if addr == 0:
-            raise RuntimeError(
-                "vtk_to_field: GetDeviceVoidPointer returned null. "
-                "Array reports device memory but pointer is unavailable.")
-        return tack.field_from_ptr(addr, tack_dtype, (n_values,))
-
-    # Host array — use GetVoidPointer
-    ptr_str = vtk_array.GetVoidPointer(0)
-    addr = _parse_vtk_pointer(ptr_str)
-    if addr == 0:
-        raise RuntimeError(
-            "vtk_to_field: GetVoidPointer returned null.")
-    return tack.field_from_ptr(addr, tack_dtype, (n_values,))
+    field = tack.from_dlpack(dlpack_support.vtk_to_dlpack(vtk_array))
+    if flatten and len(field.shape) > 1:
+        return field.reshape((field.size,))
+    return field
 
 
-def field_to_vtk(field, n_components=1):
-    """Create a vtkDataArray wrapping a tack.field's memory (zero-copy).
-
-    The field must be on the host (CPU backend or after to_numpy()).
-    The returned VTK array shares memory with the field — the field
-    must outlive the VTK array.
+def field_to_vtk(field, n_components=1, name=None):
+    """Wrap a Tack field as a vtkDataArray, without copying.
 
     Args:
-        field: A tack.field.
-        n_components: Number of components per tuple (default 1).
+        field: the tack.field to share.
+        n_components: components per tuple. A flat field of 3000 values
+            with n_components=3 becomes 1000 tuples of 3 -- which is what
+            VTK wants for points, vectors and colours.
+        name: array name, as VTK uses to identify it in a dataset.
 
     Returns:
-        A vtkDataArray (e.g. vtkFloatArray) sharing the field's memory.
+        A vtkDataArray sharing the field's memory. The field is held for as
+        long as the array lives.
+
+    Raises:
+        ValueError: if the field's size is not a multiple of n_components.
     """
-    try:
-        import vtkmodules.vtkCommonCore as vtk_core
-    except ImportError:
-        import vtk as vtk_core
+    # Validate before reaching for VTK, so a shape mistake reports itself
+    # rather than being masked by a missing-VTK error.
+    if n_components < 1:
+        raise ValueError(f"n_components must be at least 1, got {n_components}")
+    if field.size % n_components:
+        raise ValueError(
+            f"a field of {field.size} values does not divide into tuples of "
+            f"{n_components}")
 
-    arr_np = field.to_numpy()
-    n_tuples = arr_np.shape[0] // n_components
+    dlpack_support = _dlpack_support()
 
-    # Map dtype to VTK array type
-    dtype = arr_np.dtype
-    if dtype == np.float32:
-        vtk_arr = vtk_core.vtkFloatArray()
-    elif dtype == np.float64:
-        vtk_arr = vtk_core.vtkDoubleArray()
-    elif dtype == np.int32:
-        vtk_arr = vtk_core.vtkIntArray()
-    elif dtype == np.int64:
-        vtk_arr = vtk_core.vtkLongLongArray()
-    else:
-        raise TypeError(f"Unsupported dtype: {dtype}")
+    # VTK reads a DLPack tensor as (tuples, components), so reshape rather
+    # than leaving it to guess -- a flat field would arrive as N tuples of 1.
+    shaped = field
+    if n_components > 1 or len(field.shape) != 2:
+        shaped = field.reshape((field.size // n_components, n_components))
 
-    vtk_arr.SetNumberOfComponents(n_components)
-    vtk_arr.SetNumberOfTuples(n_tuples)
-
-    # Copy data (VTK Python doesn't support SetVoidArray from Python easily)
-    from vtkmodules.util.numpy_support import numpy_to_vtk
-    result = numpy_to_vtk(arr_np, deep=False)
-    result.SetNumberOfComponents(n_components)
-    return result
+    return dlpack_support.dlpack_to_vtk(shaped, name=name)

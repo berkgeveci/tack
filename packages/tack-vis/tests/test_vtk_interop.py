@@ -1,189 +1,225 @@
 """Tests for tack.interop.vtk.
 
-VTK is an optional dependency and is not installed in CI, so these tests
-drive vtk_to_field through a stand-in that implements only the four
-vtkDataArray methods the converter actually calls.  That is enough to
-cover the type mapping, the pointer parsing, and the zero-copy wrap —
-which is where the bugs live.  field_to_vtk needs real VTK and skips.
+The module is now a thin layer over DLPack: VTK and Tack both speak it, so
+the pointer plumbing that used to live here is gone. What remains is the
+shape mapping between VTK's *tuples x components* and Tack's flat fields,
+which is the one thing DLPack cannot know.
+
+VTK is an optional dependency and is not installed in CI, so the exchange
+itself is covered by tests that skip without it. The shape and validation
+logic is tack's own and is tested with a stand-in for VTK's module, which
+also keeps those tests honest about what they actually exercise.
 """
+
+import sys
+import types
 
 import numpy as np
 import pytest
 
 import tack
-from tack.interop.vtk import _parse_vtk_pointer, vtk_to_field
+from tack.interop import vtk as interop
 
-# VTK type enum values used by the converter
-VTK_FLOAT, VTK_DOUBLE, VTK_INT, VTK_LONG_LONG, VTK_ID_TYPE = 10, 11, 6, 8, 12
+try:
+    from vtkmodules.util import dlpack_support as _real_dlpack_support
+    HAVE_VTK_DLPACK = True
+except ImportError:
+    _real_dlpack_support = None
+    HAVE_VTK_DLPACK = False
 
-_HOST_MEMORY = 0
-_CUDA_DEVICE_MEMORY = 1
+needs_vtk = pytest.mark.skipif(
+    not HAVE_VTK_DLPACK,
+    reason="needs VTK with vtkmodules.util.dlpack_support")
 
+
+@pytest.fixture(autouse=True)
+def cpu():
+    tack.init(arch=tack.cpu)
+
+
+# ── A stand-in for VTK's module ──────────────────────────────────────
+#
+# Records what tack hands it, so the shape mapping can be checked without
+# a VTK build. It consumes the DLPack capsule for real, so a broken
+# capsule still fails here.
 
 class FakeVTKArray:
-    """The slice of vtkDataArray that vtk_to_field depends on."""
+    def __init__(self, array, name):
+        self.array = array
+        self.name = name
 
-    def __init__(self, array, data_type, memory_space=_HOST_MEMORY,
-                 null_pointer=False):
-        self._array = array           # keeps the buffer alive
-        self._data_type = data_type
-        self._memory_space = memory_space
-        self._null = null_pointer
+    def GetNumberOfTuples(self):
+        return self.array.shape[0]
 
-    def GetDataType(self):
-        return self._data_type
-
-    def GetDataTypeAsString(self):
-        return f"type{self._data_type}"
-
-    def GetNumberOfValues(self):
-        return self._array.size
-
-    def GetMemorySpace(self):
-        return self._memory_space
-
-    def _ptr_string(self):
-        if self._null:
-            return "_0000000000000000_p_void"
-        return "_%016x_p_void" % self._array.ctypes.data
-
-    def GetVoidPointer(self, _i):
-        return self._ptr_string()
-
-    def GetDeviceVoidPointer(self, _i):
-        return self._ptr_string()
+    def GetNumberOfComponents(self):
+        return self.array.shape[1] if self.array.ndim > 1 else 1
 
 
-# ================================================================
-# Pointer parsing
-# ================================================================
+@pytest.fixture
+def fake_vtk(monkeypatch):
+    """Install a stand-in for vtkmodules.util.dlpack_support."""
+    module = types.ModuleType("vtkmodules.util.dlpack_support")
 
-def test_parse_pointer():
-    assert _parse_vtk_pointer("_00007f9a1c2d3e40_p_void") == 0x7F9A1C2D3E40
+    def dlpack_to_vtk(source, name=None):
+        return FakeVTKArray(np.from_dlpack(source), name)
 
+    def vtk_to_dlpack(array, device_id=0):
+        return array.array.__dlpack__()
 
-def test_parse_pointer_none_is_null():
-    assert _parse_vtk_pointer(None) == 0
-
-
-def test_parse_pointer_garbage_is_null():
-    assert _parse_vtk_pointer("not a vtk pointer") == 0
-    assert _parse_vtk_pointer("_zzzz_p_void") == 0
-    assert _parse_vtk_pointer("") == 0
-
-
-# ================================================================
-# vtk_to_field
-# ================================================================
-
-def _cpu_only(backend):
-    if backend != "cpu":
-        pytest.skip("host-pointer wrapping needs the CPU backend")
+    module.dlpack_to_vtk = dlpack_to_vtk
+    module.vtk_to_dlpack = vtk_to_dlpack
+    monkeypatch.setattr(interop, "_dlpack_support", lambda: module)
+    return module
 
 
-@pytest.mark.parametrize("vtk_type,np_dtype,tack_dtype", [
-    (VTK_FLOAT, np.float32, tack.f32),
-    (VTK_DOUBLE, np.float64, tack.f64),
-    (VTK_INT, np.int32, tack.i32),
-    (VTK_LONG_LONG, np.int64, tack.i64),
-    (VTK_ID_TYPE, np.int64, tack.i64),
-])
-def test_host_array_round_trip(backend, vtk_type, np_dtype, tack_dtype):
-    """Each supported VTK type maps to the right tack dtype and values."""
-    _cpu_only(backend)
-    values = np.arange(6, dtype=np_dtype)
-    field = vtk_to_field(FakeVTKArray(values, vtk_type))
-    assert field.dtype is tack_dtype
-    assert field.shape == (6,)
-    np.testing.assert_array_equal(field.to_numpy(), values)
+def _field(values):
+    f = tack.field(dtype=tack.f32, shape=(len(values),))
+    f.from_numpy(np.asarray(values, dtype=np.float32))
+    return f
 
 
-def test_wrap_is_zero_copy(backend):
-    """The field is a view: writes through VTK show up in the field."""
-    _cpu_only(backend)
-    values = np.arange(4, dtype=np.float32)
-    field = vtk_to_field(FakeVTKArray(values, VTK_FLOAT))
-    values[2] = 99.0
-    assert field.to_numpy()[2] == 99.0
+# ── Shape mapping: Tack -> VTK ───────────────────────────────────────
+
+def test_flat_field_becomes_tuples_of_one(fake_vtk):
+    array = interop.field_to_vtk(_field(range(6)))
+    assert array.GetNumberOfTuples() == 6
+    assert array.GetNumberOfComponents() == 1
 
 
-def test_multi_component_array_is_flattened(backend):
-    """GetNumberOfValues counts tuples × components, so the field is flat."""
-    _cpu_only(backend)
-    values = np.arange(12, dtype=np.float32).reshape(4, 3)
-    field = vtk_to_field(FakeVTKArray(values, VTK_FLOAT))
+def test_components_group_the_values(fake_vtk):
+    """3000 values with 3 components is 1000 points, not 3000."""
+    array = interop.field_to_vtk(_field(range(12)), n_components=3)
+    assert array.GetNumberOfTuples() == 4
+    assert array.GetNumberOfComponents() == 3
+
+
+def test_values_survive_the_grouping(fake_vtk):
+    array = interop.field_to_vtk(_field(range(12)), n_components=3)
+    np.testing.assert_array_equal(array.array.ravel(), np.arange(12))
+    np.testing.assert_array_equal(array.array[1], [3, 4, 5])
+
+
+def test_name_is_passed_through(fake_vtk):
+    array = interop.field_to_vtk(_field(range(4)), name="velocity")
+    assert array.name == "velocity"
+
+
+def test_indivisible_size_is_rejected(fake_vtk):
+    """7 values cannot be tuples of 3, and guessing would corrupt the data."""
+    with pytest.raises(ValueError, match="does not divide"):
+        interop.field_to_vtk(_field(range(7)), n_components=3)
+
+
+def test_zero_components_is_rejected(fake_vtk):
+    with pytest.raises(ValueError, match="at least 1"):
+        interop.field_to_vtk(_field(range(6)), n_components=0)
+
+
+def test_validation_does_not_need_vtk():
+    """A shape mistake reports itself even where VTK is absent."""
+    with pytest.raises(ValueError, match="does not divide"):
+        interop.field_to_vtk(_field(range(7)), n_components=3)
+
+
+# ── Shape mapping: VTK -> Tack ───────────────────────────────────────
+
+def test_import_flattens_by_default(fake_vtk):
+    """Tack kernels index interleaved data flat."""
+    source = FakeVTKArray(np.arange(12, dtype=np.float32).reshape(4, 3), None)
+    field = interop.vtk_to_field(source)
     assert field.shape == (12,)
-    np.testing.assert_array_equal(field.to_numpy(), values.ravel())
+    np.testing.assert_array_equal(field.to_numpy(), np.arange(12))
 
 
-def test_unsupported_type_raises(backend):
-    values = np.zeros(4, dtype=np.uint8)
-    with pytest.raises(TypeError, match="Unsupported VTK data type"):
-        vtk_to_field(FakeVTKArray(values, 3))  # VTK_UNSIGNED_CHAR
+def test_import_can_keep_vtk_shape(fake_vtk):
+    source = FakeVTKArray(np.arange(12, dtype=np.float32).reshape(4, 3), None)
+    field = interop.vtk_to_field(source, flatten=False)
+    assert field.shape == (4, 3)
 
 
-def test_null_host_pointer_raises(backend):
-    _cpu_only(backend)
-    values = np.zeros(4, dtype=np.float32)
-    with pytest.raises(RuntimeError, match="GetVoidPointer returned null"):
-        vtk_to_field(FakeVTKArray(values, VTK_FLOAT, null_pointer=True))
+def test_import_is_zero_copy(fake_vtk):
+    data = np.arange(6, dtype=np.float32).reshape(3, 2)
+    field = interop.vtk_to_field(FakeVTKArray(data, None))
+    data[0, 0] = 99.0
+    assert field.to_numpy()[0] == 99.0
 
 
-def test_null_device_pointer_raises(backend):
-    values = np.zeros(4, dtype=np.float32)
-    with pytest.raises(RuntimeError, match="GetDeviceVoidPointer returned null"):
-        vtk_to_field(FakeVTKArray(values, VTK_FLOAT,
-                                  memory_space=_CUDA_DEVICE_MEMORY,
-                                  null_pointer=True))
+def test_imported_field_outlives_the_source(fake_vtk):
+    """The field holds the tensor, so the VTK array may be dropped."""
+    import gc
+
+    source = FakeVTKArray(np.arange(6, dtype=np.float32).reshape(3, 2), None)
+    field = interop.vtk_to_field(source)
+    del source
+    for _ in range(3):
+        gc.collect()
+    np.testing.assert_array_equal(field.to_numpy(), np.arange(6))
 
 
-def test_device_memory_space_takes_the_device_path(backend):
-    """A non-host memory space is routed through GetDeviceVoidPointer.
+def test_missing_vtk_reports_what_is_missing(monkeypatch):
+    """The failure should name the module, not surface an ImportError."""
+    real_import = __builtins__["__import__"] if isinstance(__builtins__, dict) \
+        else __builtins__.__import__
 
-    On the CPU backend the address is still host memory, so the wrap
-    succeeds — the point is that the device branch was taken at all.
-    """
-    _cpu_only(backend)
-    values = np.arange(4, dtype=np.float32)
+    def blocked(name, *args, **kwargs):
+        if name.startswith("vtkmodules"):
+            raise ImportError("no vtkmodules")
+        return real_import(name, *args, **kwargs)
 
-    calls = []
-
-    class Tracking(FakeVTKArray):
-        def GetVoidPointer(self, i):
-            calls.append("host")
-            return super().GetVoidPointer(i)
-
-        def GetDeviceVoidPointer(self, i):
-            calls.append("device")
-            return super().GetDeviceVoidPointer(i)
-
-    field = vtk_to_field(Tracking(values, VTK_FLOAT,
-                                  memory_space=_CUDA_DEVICE_MEMORY))
-    assert calls == ["device"]
-    np.testing.assert_array_equal(field.to_numpy(), values)
+    monkeypatch.setitem(sys.modules, "vtkmodules", None)
+    with pytest.raises(RuntimeError, match="dlpack_support"):
+        interop._dlpack_support()
 
 
-def test_empty_array(backend):
-    _cpu_only(backend)
-    values = np.zeros(0, dtype=np.float32)
-    field = vtk_to_field(FakeVTKArray(values, VTK_FLOAT))
-    assert field.shape == (0,)
+# ── Against a real VTK, when there is one ────────────────────────────
+
+@needs_vtk
+def test_round_trip_through_real_vtk():
+    from vtkmodules.vtkCommonCore import vtkFloatArray
+
+    array = vtkFloatArray()
+    array.SetNumberOfComponents(3)
+    array.SetNumberOfTuples(4)
+    for i in range(12):
+        array.SetValue(i, float(i))
+
+    field = interop.vtk_to_field(array)
+    assert field.shape == (12,)
+    np.testing.assert_array_equal(field.to_numpy(), np.arange(12))
+
+    back = interop.field_to_vtk(field, n_components=3, name="round")
+    assert back.GetNumberOfTuples() == 4
+    assert back.GetNumberOfComponents() == 3
+    assert back.GetName() == "round"
 
 
-# ================================================================
-# field_to_vtk — needs real VTK
-# ================================================================
+@needs_vtk
+def test_real_vtk_exchange_is_zero_copy():
+    from vtkmodules.vtkCommonCore import vtkFloatArray
 
-def test_field_to_vtk_round_trip(backend):
-    pytest.importorskip("vtkmodules.util.numpy_support")
-    _cpu_only(backend)
-    from tack.interop.vtk import field_to_vtk
+    array = vtkFloatArray()
+    array.SetNumberOfComponents(1)
+    array.SetNumberOfTuples(4)
+    for i in range(4):
+        array.SetValue(i, 0.0)
 
-    values = np.arange(9, dtype=np.float32)
-    field = tack.field(dtype=tack.f32, shape=(9,))
-    field.from_numpy(values)
+    field = interop.vtk_to_field(array)
+    array.SetValue(2, 42.0)
+    assert field.to_numpy()[2] == 42.0
 
-    vtk_array = field_to_vtk(field, n_components=3)
-    assert vtk_array.GetNumberOfComponents() == 3
-    assert vtk_array.GetNumberOfTuples() == 3
-    assert vtk_array.GetTuple3(1) == pytest.approx((3.0, 4.0, 5.0))
+
+@needs_vtk
+def test_kernel_output_reaches_vtk_without_a_copy():
+    """The point of the whole exercise."""
+
+    @tack.kernel
+    def ramp(out, n):
+        for i in range(n):
+            out[i] = float(i) * 2.0
+
+    out = tack.field(dtype=tack.f32, shape=(9,))
+    ramp(out, 9)
+
+    array = interop.field_to_vtk(out, n_components=3, name="ramp")
+    assert array.GetNumberOfTuples() == 3
+    assert array.GetTuple3(1) == pytest.approx((6.0, 8.0, 10.0))

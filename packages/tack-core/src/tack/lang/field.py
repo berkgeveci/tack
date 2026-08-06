@@ -98,7 +98,14 @@ class Field:
 
     def to_numpy(self) -> np.ndarray:
         """Copy data from the device to a new numpy array."""
-        return self._buffer.to_numpy()
+        arr = self._buffer.to_numpy()
+        # The buffer keeps the shape it was allocated with, so a reshaped
+        # view has to impose its own -- otherwise field.shape and
+        # to_numpy().shape disagree, while from_numpy() validates against
+        # field.shape. Same data either way; only the view differs.
+        if arr.shape != self.shape:
+            arr = arr.reshape(self.shape)
+        return arr
 
     def fill(self, value):
         """Fill the field with a scalar value."""
@@ -211,7 +218,14 @@ class Field:
             raise ValueError(
                 f"Cannot reshape {self.shape} ({self.size} elements) "
                 f"to {new_shape} ({new_size} elements)")
-        return Field(self.dtype, new_shape, self._buffer, self._writable)
+        reshaped = Field(self.dtype, new_shape, self._buffer, self._writable)
+        # An imported field holds its DLPack source open. The reshaped view
+        # points at the same memory, so it has to hold it too -- otherwise
+        # dropping the original releases memory the view is still using.
+        hold = getattr(self, '_dlpack_hold', None)
+        if hold is not None:
+            reshaped._dlpack_hold = hold
+        return reshaped
 
     def __repr__(self):
         return f"Field(dtype={self.dtype}, shape={self.shape})"
@@ -313,26 +327,27 @@ def concat(fields_list: list[Field]) -> Field:
     return result
 
 
-def from_dlpack(capsule) -> Field:
+def from_dlpack(source, copy: bool = False) -> Field:
     """Create a Tack field from a DLPack capsule or any object with __dlpack__.
 
-    Zero-copy when the source is on CPU. Copies for GPU sources that
-    don't match the current backend.
+    Zero-copy: the field shares memory with the source, and the source is
+    held alive for as long as the field lives. Works for device tensors as
+    well as host ones, provided the active backend can address them.
+
+    Pass copy=True for an independent field instead.
 
     Usage:
         field = tack.from_dlpack(torch_tensor)
         field = tack.from_dlpack(cupy_array)
         field = tack.from_dlpack(numpy_array)
+        field = tack.from_dlpack(vtk_capsule)
     """
-    # If it has __dlpack__, call it to get the capsule
-    if hasattr(capsule, '__dlpack__'):
-        arr = np.from_dlpack(capsule)
-    elif isinstance(capsule, np.ndarray):
-        arr = capsule
-    else:
-        arr = np.from_dlpack(capsule)
+    if copy:
+        arr = source if isinstance(source, np.ndarray) else np.from_dlpack(source)
+        return field_like(arr)
 
-    return field_like(arr)
+    from tack.lang.dlpack import dlpack_to_field
+    return dlpack_to_field(source)
 
 
 def memory_space(ptr) -> str:
