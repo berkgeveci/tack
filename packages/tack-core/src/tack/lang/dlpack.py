@@ -10,7 +10,7 @@ Python protocol: https://data-apis.org/array-api/latest/API_specification/genera
 import ctypes
 import numpy as np
 
-from tack.lang.types import f32, f64, i32, i64, u32, u64
+from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 # DLPack device types
 kDLCPU = 1
@@ -25,12 +25,19 @@ kDLFloat = 2
 kDLInt = 0
 kDLUInt = 1
 
-# Map Tack types to DLPack (code, bits, lanes)
+# Map Tack types to DLPack (code, bits, lanes).
+# Every dtype a backend accepts as a field belongs here — the narrow ints
+# were missing, so tack.i8 and friends round-tripped through numpy fine but
+# raised "DLPack does not support dtype" on export.
 _DTYPE_TO_DLPACK = {
     f32: (kDLFloat, 32, 1),
     f64: (kDLFloat, 64, 1),
+    i8:  (kDLInt, 8, 1),
+    i16: (kDLInt, 16, 1),
     i32: (kDLInt, 32, 1),
     i64: (kDLInt, 64, 1),
+    u8:  (kDLUInt, 8, 1),
+    u16: (kDLUInt, 16, 1),
     u32: (kDLUInt, 32, 1),
     u64: (kDLUInt, 64, 1),
 }
@@ -39,8 +46,12 @@ _DTYPE_TO_DLPACK = {
 _DLPACK_TO_DTYPE = {
     (kDLFloat, 32): f32,
     (kDLFloat, 64): f64,
+    (kDLInt, 8): i8,
+    (kDLInt, 16): i16,
     (kDLInt, 32): i32,
     (kDLInt, 64): i64,
+    (kDLUInt, 8): u8,
+    (kDLUInt, 16): u16,
     (kDLUInt, 32): u32,
     (kDLUInt, 64): u64,
 }

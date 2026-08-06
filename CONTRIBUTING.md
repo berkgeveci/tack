@@ -34,6 +34,17 @@ for a in ('cpu','metal','cuda','hip','level_zero'):
 
 CI prints the same thing in its log.
 
+The 49 shipped examples are deselected from the default run — the sweep takes
+about a minute against an 18-second suite. Run them with:
+
+```bash
+uv run pytest -m slow -rs
+```
+
+`-rs` prints why anything skipped; examples needing an optional package
+(matplotlib, vtk, oidn, imgui_bundle) skip themselves rather than failing. CI
+runs this as its own job.
+
 Two suites cover ground your machine probably cannot:
 
 - `tests/test_gpu_dispatch_paths.py` drives the CUDA/HIP/Level Zero dispatch path in a

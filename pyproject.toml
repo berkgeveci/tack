@@ -27,6 +27,13 @@ tack-vis = { workspace = true }
 members = ["packages/*"]
 
 [tool.pytest.ini_options]
+# The example sweep takes ~1 minute against an 18-second suite, so it is
+# deselected by default and run as its own CI job. `pytest -m slow` runs it;
+# an explicit -m on the command line overrides this.
+addopts = "-m 'not slow'"
+markers = [
+    "slow: runs every shipped example as a subprocess (see tests/test_examples.py)",
+]
 testpaths = [
     "packages/tack-core/tests",
     "packages/tack-rendering/tests",

@@ -4,7 +4,8 @@
 #
 #   tests      — the suite on Python 3.11/3.12/3.13 (Linux, CPU backend)
 #   packaging  — proves a GPU install works without llvmlite
-#   metal      — best-effort Metal coverage on an Apple Silicon runner
+#   examples   — runs all 49 shipped examples (deselected from the suite)
+#   metal      — the suite on an Apple Silicon runner, with a real GPU
 #
 # The runners have no NVIDIA or AMD GPU. That is less limiting than it
 # sounds: the Metal, CUDA, HIP and Level Zero test files each detect their
@@ -129,6 +130,37 @@ jobs:
         run: |
           /tmp/gpuenv/bin/python -m pytest -q \
             packages/tack-core/tests/test_backend_isolation.py
+
+  # ── Examples ───────────────────────────────────────────────────────
+  # The 49 shipped examples are the code new users copy, and they exercise
+  # combinations the unit tests do not — templates feeding a path tracer,
+  # flying edges into a renderer. They are deselected from the default
+  # suite because the sweep takes about a minute against an 18-second
+  # suite, so this is where they actually get run.
+  #
+  # Examples needing an optional package (matplotlib, vtk, oidn,
+  # imgui_bundle) skip themselves with the reason; -rs prints those, so
+  # the log says what was really checked rather than just "green".
+  examples:
+    name: examples
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          python-version: "3.13"
+
+      - name: Sync the workspace
+        run: uv sync --extra cpu --extra dev
+
+      - name: Run every example
+        run: uv run pytest -m slow -q -rs
 
   # ── Metal ──────────────────────────────────────────────────────────
   # GitHub's macOS runners are Apple Silicon and Metal compute works on

@@ -387,7 +387,10 @@ class BVH:
 
     - ``node_aabb``:  f32 (n_nodes * 6,)
     - ``node_children``: i32 (n_inner * 2,)
-    - ``tri_ids``: i32 (n_tris,)
+    - ``tri_ids``: i32 — **only the first ``n_tris`` entries are meaningful.**
+      The GPU bitonic sort pads to the next power of two, and this is that
+      padded field, so ``len(tri_ids)`` is ``n_padded`` rather than
+      ``n_tris``. Slice it before treating it as a permutation.
     """
 
     def __init__(self):
