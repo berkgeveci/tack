@@ -122,6 +122,113 @@ def test_the_field_outlives_its_capsule():
     np.testing.assert_array_equal(view, np.arange(8, dtype=np.float32))
 
 
+# ── Export lifetime ──────────────────────────────────────────────────
+#
+# The producer pins the field, the managed tensor and the shape/stride
+# arrays for as long as a consumer holds the tensor. Getting this wrong in
+# either direction is bad and silent: release too early and the consumer
+# reads freed memory; never release and every export leaks — device memory
+# included, which is far less forgiving than host memory.
+
+def _pinned():
+    from tack.lang import dlpack
+    return len(dlpack._prevent_gc)
+
+
+def test_a_consumed_export_is_released():
+    """The bug this replaced: nothing was ever released.
+
+    The retained objects were keyed by a counter while the deleter popped
+    id(pointer), so the keys never matched. 50 export-and-drop cycles left
+    50 fields pinned forever.
+    """
+    import gc
+    before = _pinned()
+    for _ in range(25):
+        field = _field(np.arange(64, dtype=np.float32), tack.f32)
+        view = np.from_dlpack(field)
+        del field, view
+    gc.collect()
+    assert _pinned() == before
+
+
+def test_an_unconsumed_capsule_is_released():
+    """A capsule nobody adopts must still be cleaned up.
+
+    Consumers rename the capsule to "used_dltensor" and take over calling
+    the deleter. If it is dropped still named "dltensor", only the capsule
+    destructor can free what was pinned.
+    """
+    import gc
+    before = _pinned()
+    for _ in range(10):
+        field = _field(np.arange(16, dtype=np.float32), tack.f32)
+        capsule = field.__dlpack__()
+        del capsule, field
+    gc.collect()
+    assert _pinned() == before
+
+
+def test_the_field_survives_while_a_consumer_holds_it():
+    """Release must not be eager: the view owns the data now."""
+    import gc
+    field = _field(np.arange(8, dtype=np.float32), tack.f32)
+    view = np.from_dlpack(field)
+    del field
+    for _ in range(3):
+        gc.collect()
+    np.testing.assert_array_equal(view, np.arange(8, dtype=np.float32))
+
+
+def test_kernel_output_survives_its_field():
+    """The realistic case: compute into a field, hand the result away."""
+    import gc
+
+    @tack.kernel
+    def triple(out, n):
+        for i in range(n):
+            out[i] = float(i) * 3.0
+
+    out = _field(np.zeros(6, dtype=np.float32), tack.f32)
+    triple(out, 6)
+    view = np.from_dlpack(out)
+    del out
+    for _ in range(3):
+        gc.collect()
+    np.testing.assert_allclose(view, np.arange(6) * 3.0, rtol=1e-6)
+
+
+def test_many_live_exports_are_tracked_independently():
+    import gc
+    before = _pinned()
+    views = [np.from_dlpack(_field(np.arange(16, dtype=np.float32), tack.f32))
+             for _ in range(25)]
+    assert _pinned() == before + 25
+    for v in views:
+        np.testing.assert_array_equal(v, np.arange(16, dtype=np.float32))
+    del v          # the loop variable holds the last view past the loop
+    del views
+    gc.collect()
+    assert _pinned() == before
+
+
+def test_the_context_key_is_recoverable_from_the_tensor():
+    """manager_ctx is the only thing the deleter gets; it must carry the key."""
+    import ctypes
+    from tack.lang import dlpack
+
+    field = _field(np.arange(4, dtype=np.float32), tack.f32)
+    capsule = field.__dlpack__()
+
+    ptr = dlpack._PyCapsule_GetPointer(
+        ctypes.cast(id(capsule), ctypes.c_void_p), b"dltensor")
+    managed = ctypes.cast(
+        ptr, ctypes.POINTER(dlpack.DLManagedTensor)).contents
+
+    assert managed.manager_ctx, "manager_ctx is NULL — the deleter cannot find its state"
+    assert managed.manager_ctx in dlpack._prevent_gc
+
+
 def test_two_exports_share_the_same_memory():
     field = _field(np.arange(4, dtype=np.float32), tack.f32)
     a, b = np.from_dlpack(field), np.from_dlpack(field)

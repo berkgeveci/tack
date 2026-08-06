@@ -8,6 +8,8 @@ Python protocol: https://data-apis.org/array-api/latest/API_specification/genera
 """
 
 import ctypes
+import itertools
+
 import numpy as np
 
 from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
@@ -86,24 +88,76 @@ class DLTensor(ctypes.Structure):
     ]
 
 
-# Prevent GC of the DLManagedTensor and its dependencies
-_prevent_gc = {}
-_capsule_counter = 0
-
-
-@ctypes.CFUNCTYPE(None, ctypes.c_void_p)
-def _dlpack_deleter(ptr):
-    """Called when the consumer releases the DLPack capsule."""
-    # Remove from the prevent-GC set
-    _prevent_gc.pop(id(ptr), None)
-
-
 class DLManagedTensor(ctypes.Structure):
     _fields_ = [
         ("dl_tensor", DLTensor),
         ("manager_ctx", ctypes.c_void_p),
         ("deleter", ctypes.CFUNCTYPE(None, ctypes.c_void_p)),
     ]
+
+
+# ── Export lifetime ──────────────────────────────────────────────────
+#
+# An exported capsule points at the field's memory, so everything backing
+# it has to outlive the consumer: the field itself, the DLManagedTensor,
+# and the shape/stride arrays. They are pinned here and released when the
+# consumer is done.
+#
+# The key is what makes this work. DLPack hands the deleter the
+# DLManagedTensor, not the context, so the producer's bookkeeping key has
+# to travel inside it — that is what `manager_ctx` is for. Keying the
+# table by anything the deleter cannot recover means nothing is ever
+# released and every export leaks, on the device as well as the host.
+
+_prevent_gc = {}
+
+# Starts at 1: 0 round-trips through c_void_p as None and would be
+# indistinguishable from "no context".
+_ctx_keys = itertools.count(1)
+
+_PyCapsule_New = ctypes.pythonapi.PyCapsule_New
+_PyCapsule_New.restype = ctypes.py_object
+_PyCapsule_New.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
+
+# Raw pointers rather than py_object throughout: these run during capsule
+# teardown, where touching the object's refcount risks resurrecting it.
+_PyCapsule_IsValid = ctypes.pythonapi.PyCapsule_IsValid
+_PyCapsule_IsValid.restype = ctypes.c_int
+_PyCapsule_IsValid.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+
+_PyCapsule_GetPointer = ctypes.pythonapi.PyCapsule_GetPointer
+_PyCapsule_GetPointer.restype = ctypes.c_void_p
+_PyCapsule_GetPointer.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+
+
+def _release(managed_ptr):
+    """Unpin whatever was retained for the export at `managed_ptr`."""
+    if not managed_ptr:
+        return
+    managed = ctypes.cast(managed_ptr,
+                          ctypes.POINTER(DLManagedTensor)).contents
+    _prevent_gc.pop(managed.manager_ctx, None)
+
+
+@ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+def _dlpack_deleter(managed_ptr):
+    """Called by the consumer once it has finished with the tensor."""
+    _release(managed_ptr)
+
+
+@ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+def _capsule_destructor(capsule_ptr):
+    """Release an export that no consumer ever adopted.
+
+    A consumer that takes the tensor renames the capsule to
+    "used_dltensor" and becomes responsible for calling the deleter. If a
+    capsule is collected still named "dltensor" nobody adopted it, and
+    without this the pinned objects would never be freed.
+    """
+    if not capsule_ptr:
+        return
+    if _PyCapsule_IsValid(capsule_ptr, b"dltensor"):
+        _release(_PyCapsule_GetPointer(capsule_ptr, b"dltensor"))
 
 
 def _get_device_info(field):
@@ -143,8 +197,6 @@ def field_to_dlpack(field):
 
     Returns a PyCapsule with name 'dltensor' containing a DLManagedTensor.
     """
-    global _capsule_counter
-
     device_type, device_id, data_ptr = _get_device_info(field)
 
     dl_dtype = _DTYPE_TO_DLPACK.get(field.dtype)
@@ -170,21 +222,20 @@ def field_to_dlpack(field):
     managed.dl_tensor.shape = shape_arr
     managed.dl_tensor.strides = strides_arr
     managed.dl_tensor.byte_offset = 0
-    managed.manager_ctx = None
-    managed.deleter = _dlpack_deleter
 
-    # Prevent GC of the field, managed tensor, shape/strides arrays
-    key = _capsule_counter
-    _capsule_counter += 1
+    # The key travels in manager_ctx, which is the only thing the deleter
+    # gets back. Pin everything the capsule points at under that key.
+    key = next(_ctx_keys)
+    managed.manager_ctx = ctypes.c_void_p(key)
+    managed.deleter = _dlpack_deleter
     _prevent_gc[key] = (field, managed, shape_arr, strides_arr)
 
-    # Create PyCapsule
-    PyCapsule_New = ctypes.pythonapi.PyCapsule_New
-    PyCapsule_New.restype = ctypes.py_object
-    PyCapsule_New.argtypes = [ctypes.c_void_p, ctypes.c_char_p, ctypes.c_void_p]
-
-    capsule = PyCapsule_New(ctypes.byref(managed), b"dltensor", None)
-    return capsule
+    # addressof, not byref: byref yields a temporary whose lifetime is not
+    # tied to the capsule. `managed` itself is kept alive by _prevent_gc.
+    return _PyCapsule_New(
+        ctypes.addressof(managed), b"dltensor",
+        ctypes.cast(_capsule_destructor, ctypes.c_void_p),
+    )
 
 
 def dlpack_device(field):
