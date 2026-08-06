@@ -59,8 +59,9 @@ pip install tack-vis               # visualization (pulls in tack-core)
 | HIP | Linux (AMD) | `tack.init(arch=tack.hip)` | `hip-python`, ROCm toolkit |
 | Level Zero | Linux (Intel) | `tack.init(arch=tack.level_zero)` | `libze_loader.so`, `libocloc.so` |
 
-`hip-python` is published on Test PyPI rather than PyPI, so the `[hip]` extra cannot
-declare it. Install it separately:
+`hip-python` is published on Test PyPI rather than PyPI, so the `[hip]` extra is empty
+and cannot declare it — `tack.init(arch=tack.hip)` prints these instructions if it is
+missing. Install it separately:
 
 ```bash
 pip install --pre --index-url https://test.pypi.org/simple/ \

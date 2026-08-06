@@ -102,9 +102,14 @@ class Kernel:
         try:
             return backend.execute(self, args, kwargs)
         except TypeError as e:
+            # `from e`, not `from None`. Naming the kernel is worth doing, but
+            # discarding the chain with it means a codegen failure reports
+            # only "Kernel 'x' failed" with no way to see where it came from
+            # short of editing this file. The chained traceback prints above
+            # the clean message, so the readable summary is still last.
             raise TypeError(
                 f"Kernel '{self.name}': {e}"
-            ) from None
+            ) from e
         except RuntimeError as e:
             msg = str(e)
             # Shader compilation errors: show a concise message
@@ -118,10 +123,10 @@ class Kernel:
                         f"Kernel '{self.name}' failed to compile on {type(backend).__name__}:\n"
                         f"{brief}\n"
                         f"(Set TACK_DUMP_MSL=1 to inspect generated source)"
-                    ) from None
+                    ) from e
             raise RuntimeError(
                 f"Kernel '{self.name}' failed on {type(backend).__name__}: {e}"
-            ) from None
+            ) from e
 
     def __repr__(self):
         return f"Kernel({self.name})"

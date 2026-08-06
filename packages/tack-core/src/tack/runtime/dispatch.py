@@ -4,12 +4,32 @@ import platform
 
 _current_backend = None
 
+# What to actually do when a backend will not start. Two of these cannot be
+# expressed as a pip extra at all, so the message has to carry them: hip-python
+# is published on Test PyPI, and Level Zero needs system libraries rather than
+# a Python package. Saying only "requires hip-python" sends people to
+# `pip install hip-python`, which fails with a confusing "no matching
+# distribution".
 _BACKEND_HELP = {
-    "cpu": "Requires llvmlite: pip install 'tack[cpu]'",
-    "metal": "Requires macOS with Apple Silicon and pyobjc-framework-Metal",
-    "cuda": "Requires NVIDIA GPU with CUDA toolkit and cuda-python>=13.2",
-    "hip": "Requires AMD GPU with ROCm and hip-python",
-    "level_zero": "Requires Intel GPU with Level Zero runtime and libocloc",
+    "cpu": "Requires llvmlite:  pip install 'tack-core[cpu]'",
+    "metal": ("Requires macOS on Apple Silicon:  "
+              "pip install 'tack-core[metal]'"),
+    "cuda": ("Requires an NVIDIA GPU and the CUDA toolkit:  "
+             "pip install 'tack-core[cuda]'"),
+    "hip": (
+        "Requires an AMD GPU with ROCm, plus hip-python.\n"
+        "  hip-python is on Test PyPI, not PyPI, so the [hip] extra cannot\n"
+        "  declare it. Install it directly:\n"
+        "    pip install --pre --index-url https://test.pypi.org/simple/ \\\n"
+        "      --extra-index-url https://pypi.org/simple/ 'hip-python~=7.1.0'"
+    ),
+    "level_zero": (
+        "Requires an Intel GPU with the Level Zero runtime.\n"
+        "  These are system libraries, not Python packages, so the\n"
+        "  [level_zero] extra has nothing to install: you need\n"
+        "  libze_loader.so (level-zero runtime) and libocloc.so\n"
+        "  (intel-opencl-icd)."
+    ),
 }
 
 
@@ -51,13 +71,13 @@ def init(arch: str = "cpu"):
             f"Cannot initialize '{arch}' backend: missing dependency.\n"
             f"  {e}\n"
             f"  {help_msg}"
-        ) from None
+        ) from e
     except RuntimeError as e:
         raise RuntimeError(
             f"Cannot initialize '{arch}' backend on {platform.system()}.\n"
             f"  {e}\n"
             f"  {help_msg}"
-        ) from None
+        ) from e
 
 
 def get_backend():

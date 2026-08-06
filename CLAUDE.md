@@ -14,6 +14,8 @@ Tack is split into 3 packages under `packages/`:
 
 All share the `tack` namespace via `pkgutil.extend_path`.
 
+**One catch worth knowing.** `extend_path` merges the *contents* of same-named directories, but only one `__init__.py` runs — the first found on the path. Both tack-core and tack-vis have a `tack/algorithms/` directory, so tack-core's `__init__.py` wins and is where the vis worklets are re-exported (guarded, so tack-core still works alone). Adding a second `algorithms/__init__.py` makes it dead code; `packages/tack-vis/tests/test_namespace.py` guards against that.
+
 ## Build & Test Commands
 
 ```bash

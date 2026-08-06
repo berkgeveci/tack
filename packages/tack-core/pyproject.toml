@@ -33,6 +33,11 @@ metal = [
     "pyobjc-framework-Metal",
     "pyobjc-framework-MetalKit",
 ]
+# Deliberately empty, and kept rather than deleted so the names stay valid
+# and `uv sync --extra hip` works in the workspace. Neither backend's
+# requirement can be expressed as a pip dependency: hip-python is published
+# on Test PyPI, and Level Zero needs system libraries. tack.init() prints the
+# real instructions when either backend fails to start; see the README.
 hip = []
 level_zero = []
 dev = [
