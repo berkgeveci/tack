@@ -1,6 +1,6 @@
 # tack-core
 
-Kernels, fields, types, IR, codegen and backends for [Tack](https://github.com/Kitware/tack) —
+Kernels, fields, types, IR, codegen and backends for [Tack](https://github.com/berkgeveci/tack) —
 a Python-first GPU compute framework.
 
 Write compute kernels as decorated Python functions; they are JIT-compiled at first call and
@@ -53,6 +53,6 @@ pip install tack-core[level_zero]   # Intel — needs the system Level Zero runt
 - `tack-vis` — flying edges, normals, cell↔point, VTK interop
 
 Full documentation, examples and the kernel-language reference are in the
-[repository](https://github.com/Kitware/tack).
+[repository](https://github.com/berkgeveci/tack).
 
 BSD 3-Clause licensed.

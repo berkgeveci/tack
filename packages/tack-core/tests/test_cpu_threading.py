@@ -139,6 +139,13 @@ def test_cheap_kernel_needs_more_elements_than_an_expensive_one(cpu):
     A fixed element count cannot be right for both: measured here, the
     crossover for a multiply-add is ~1000x further out than for a kernel
     with a 24-iteration inner loop.
+
+    The claim under test is the *ordering* of the two thresholds. Ratios
+    between the two per-element costs are deliberately not asserted: a
+    cheap kernel's measurement is dominated by fixed dispatch overhead, so
+    on a loaded machine — a CI runner, or a laptop that has just finished
+    a build — it is largely noise. An earlier version of this test wanted
+    a 10x ratio and flaked exactly there.
     """
     backend = CPUBackend()
     n = 20000
@@ -148,11 +155,12 @@ def test_cheap_kernel_needs_more_elements_than_an_expensive_one(cpu):
 
     cheap = _compile_for(backend, _scale, [x, out, n])
     costly = _compile_for(backend, _expensive, [x, out, n])
-    for _ in range(3):
+    # Enough dispatches for the smoothed estimate to settle.
+    for _ in range(10):
         backend._dispatch(cheap, [x, out, n], n)
         backend._dispatch(costly, [x, out, n], n)
 
-    assert costly.ns_per_elem > cheap.ns_per_elem * 10
+    assert costly.ns_per_elem > cheap.ns_per_elem
     assert costly.parallel_min_elems < cheap.parallel_min_elems
 
 

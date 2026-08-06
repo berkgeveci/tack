@@ -32,7 +32,7 @@ packages = ["src/tack"]
 exclude = ["src/tack/__init__.py"]
 
 [project.urls]
-Homepage = "https://github.com/Kitware/tack"
-Repository = "https://github.com/Kitware/tack"
-Documentation = "https://github.com/Kitware/tack/tree/main/docs"
-Issues = "https://github.com/Kitware/tack/issues"
+Homepage = "https://github.com/berkgeveci/tack"
+Repository = "https://github.com/berkgeveci/tack"
+Documentation = "https://github.com/berkgeveci/tack/tree/main/docs"
+Issues = "https://github.com/berkgeveci/tack/issues"

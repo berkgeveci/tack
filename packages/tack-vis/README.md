@@ -1,6 +1,6 @@
 # tack-vis
 
-Scientific visualization algorithms for [Tack](https://github.com/Kitware/tack).
+Scientific visualization algorithms for [Tack](https://github.com/berkgeveci/tack).
 
 Every algorithm is written as `@tack.kernel` functions, so it runs on every backend
 `tack-core` supports — CPU, Metal, CUDA, HIP and Level Zero — from one source.

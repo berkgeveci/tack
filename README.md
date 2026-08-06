@@ -1,6 +1,6 @@
 # Tack — GPU compute framework
 
-[![CI](https://github.com/Kitware/tack/actions/workflows/ci.yml/badge.svg)](https://github.com/Kitware/tack/actions/workflows/ci.yml)
+[![CI](https://github.com/berkgeveci/tack/actions/workflows/ci.yml/badge.svg)](https://github.com/berkgeveci/tack/actions/workflows/ci.yml)
 [![License: BSD-3-Clause](https://img.shields.io/badge/License-BSD_3--Clause-blue.svg)](LICENSE)
 
 A Python-first GPU compute framework. Write compute kernels as decorated Python functions, run them on CPU, Metal (Apple Silicon), CUDA (NVIDIA), HIP (AMD) or Level Zero (Intel) — same code, any backend.
@@ -34,7 +34,7 @@ Tack is split into three packages: **tack-core** (compute framework), **tack-ren
 
 ```bash
 # Install everything from source with uv
-git clone https://github.com/Kitware/tack.git
+git clone https://github.com/berkgeveci/tack.git
 cd tack
 uv sync
 
