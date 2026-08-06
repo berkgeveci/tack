@@ -1,0 +1,169 @@
+# CI for Tack.
+#
+# Three jobs, all independent so they report in parallel:
+#
+#   tests      — the suite on Python 3.11/3.12/3.13 (Linux, CPU backend)
+#   packaging  — proves a GPU install works without llvmlite
+#   metal      — best-effort Metal coverage on an Apple Silicon runner
+#
+# The runners have no NVIDIA or AMD GPU. That is less limiting than it
+# sounds: the Metal, CUDA, HIP and Level Zero test files each detect their
+# backend at import and skip themselves, while the shared front end (AST
+# transform → IR → resolve → type inference → LICM/CSE → type annotation),
+# every host-side codegen test, and the subprocess harness that drives the
+# GPU backends' dispatch path with stubbed bindings all still run. That is
+# the large majority of the suite, in well under a minute.
+#
+# Real CUDA/HIP coverage needs a self-hosted runner with the hardware
+# attached; that would be a fourth job, not a change to these.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: nothing here writes to the repo.
+permissions:
+  contents: read
+
+# A new push to the same branch makes the previous run redundant.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ── The main gate ──────────────────────────────────────────────────
+  tests:
+    name: tests (py${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      # Report every version. Without this, one failure cancels the others
+      # and hides whether the problem is version-specific.
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Sync the workspace
+        run: uv sync --python ${{ matrix.python-version }} --extra cpu --extra dev
+
+      - name: Report which backends this runner has
+        run: |
+          uv run python - <<'EOF'
+          import tack
+          found = []
+          for arch in ("cpu", "metal", "cuda", "hip", "level_zero"):
+              try:
+                  tack.init(arch=getattr(tack, arch))
+              except Exception:
+                  continue
+              found.append(arch)
+          print("backends available:", ", ".join(found) or "none")
+          EOF
+
+      - name: Run the suite
+        run: uv run pytest -q
+
+  # ── Packaging gate ─────────────────────────────────────────────────
+  # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not
+  # include llvmlite — it is a CPU-only dependency. So a GPU install must
+  # never reach tack.runtime.cpu, which imports llvmlite at module scope.
+  #
+  # This shipped broken once: the GPU backends pulled their shared dispatch
+  # helpers from the CPU backend, and GPU users hit ImportError on their
+  # first kernel launch. The bug is invisible in any environment that
+  # happens to have llvmlite installed — which is every development machine
+  # — so it needs its own job with a deliberately minimal install.
+  packaging:
+    name: GPU install needs no llvmlite
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Install tack-core with no extras
+        run: |
+          uv venv /tmp/gpuenv --python 3.13
+          VIRTUAL_ENV=/tmp/gpuenv uv pip install ./packages/tack-core pytest
+
+      - name: A GPU backend must import without llvmlite
+        run: |
+          /tmp/gpuenv/bin/python - <<'EOF'
+          import importlib.util, sys
+          assert importlib.util.find_spec("llvmlite") is None, \
+              "llvmlite is installed — this job proves nothing"
+          import tack
+          # level_zero_backend binds its driver through ctypes, so it is the
+          # one GPU backend importable with no vendor SDK present.
+          import tack.runtime.level_zero_backend
+          assert "llvmlite" not in sys.modules, \
+              "importing a GPU backend dragged in llvmlite"
+          print("OK: tack + a GPU backend import cleanly without llvmlite")
+          EOF
+
+      - name: Run the isolation guards against that install
+        run: |
+          /tmp/gpuenv/bin/python -m pytest -q \
+            packages/tack-core/tests/test_backend_isolation.py
+
+  # ── Metal, best effort ─────────────────────────────────────────────
+  # GitHub's macOS runners are Apple Silicon, but whether Metal compute
+  # works on them has been inconsistent. If it does, this is real GPU
+  # coverage that no other runner can give us. If it does not, the Metal
+  # tests skip themselves and the job still passes — so the only thing
+  # continue-on-error guards against is the runner itself misbehaving.
+  # Read the "backends available" line in the log to see which happened.
+  metal:
+    name: metal (best effort)
+    runs-on: macos-latest
+    timeout-minutes: 20
+    continue-on-error: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Sync the workspace
+        run: uv sync --python 3.13 --extra cpu --extra metal --extra dev
+
+      - name: Report which backends this runner has
+        run: |
+          uv run python - <<'EOF'
+          import tack
+          found = []
+          for arch in ("cpu", "metal"):
+              try:
+                  tack.init(arch=getattr(tack, arch))
+              except Exception as e:
+                  print(f"{arch}: unavailable ({type(e).__name__})")
+                  continue
+              found.append(arch)
+          print("backends available:", ", ".join(found) or "none")
+          EOF
+
+      - name: Run the suite
+        run: uv run pytest -q
