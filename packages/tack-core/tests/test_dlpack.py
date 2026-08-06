@@ -10,10 +10,14 @@ impossible to notice: that the export is genuinely zero-copy, that the
 dtype and shape survive, and that the exported buffer stays alive.
 """
 
+import ctypes
+import gc
+
 import numpy as np
 import pytest
 
 import tack
+from tack.lang import dlpack
 
 ALL_DTYPES = [
     (tack.f32, np.float32), (tack.f64, np.float64),
@@ -70,23 +74,87 @@ def test_writes_through_the_field_show_up_in_the_view():
     np.testing.assert_array_equal(view, [1, 2, 3, 4])
 
 
-def test_the_exported_view_is_read_only():
-    """Documents a real limitation of the current export.
+def _versioned_tensor(capsule):
+    """Read back a versioned capsule tack just produced.
 
-    `__dlpack__` hands out the unversioned "dltensor" capsule. That
-    protocol has no writability flag, so numpy cannot tell whether writing
-    is safe and marks the result read-only. Consumers can therefore read
-    Tack results without a copy, but not write back through them.
+    The caller must keep `capsule` alive: the struct is pinned only until
+    the capsule's destructor runs, so a temporary leaves this pointing at
+    freed memory.
+    """
+    ptr = dlpack._PyCapsule_GetPointer(
+        ctypes.c_void_p(id(capsule)), b"dltensor_versioned")
+    return ctypes.cast(
+        ptr, ctypes.POINTER(dlpack.DLManagedTensorVersioned)).contents
 
-    Lifting this means implementing DLPack v1.0 — the versioned
-    `DLManagedTensorVersioned` capsule, which carries a read-only flag.
-    Until then this test is the record that the limitation is known.
+
+def test_the_exported_view_is_writable():
+    """A consumer asking for v1.0 gets a writable view.
+
+    The legacy capsule has no writability flag, so numpy has to assume the
+    worst and marks what it gets read-only. Exporting the versioned form
+    is what makes writing back possible.
     """
     field = _field(np.arange(4, dtype=np.float32), tack.f32)
     view = np.from_dlpack(field)
-    assert not view.flags.writeable
-    with pytest.raises(ValueError, match="read-only"):
-        view[0] = 1.0
+    assert view.flags.writeable
+    view[0] = 99.0
+    assert field.to_numpy()[0] == 99.0
+
+
+def test_an_exported_view_can_be_exported_again():
+    """The case that proves it matters.
+
+    numpy refuses to re-export a read-only array over DLPack, so with only
+    the legacy capsule any round trip through a consumer that hands the
+    array back would fail -- as VTK interop does.
+    """
+    field = _field(np.arange(6, dtype=np.float32), tack.f32)
+    again = np.from_dlpack(np.from_dlpack(field))
+    np.testing.assert_array_equal(again, np.arange(6))
+
+
+def test_a_read_only_field_exports_the_flag():
+    """A field over immutable memory must not hand out a writable view."""
+    source = np.arange(4, dtype=np.float32)
+    source.flags.writeable = False
+    field = tack.from_dlpack(source)
+    assert not field._writable
+
+    capsule = field.__dlpack__(max_version=(1, 0))
+    tensor = _versioned_tensor(capsule)
+    assert tensor.flags & dlpack.DLPACK_FLAG_BITMASK_READ_ONLY
+    assert not np.from_dlpack(field).flags.writeable
+
+
+def test_a_writable_field_exports_no_flag():
+    field = _field(np.arange(4, dtype=np.float32), tack.f32)
+    capsule = field.__dlpack__(max_version=(1, 0))
+    tensor = _versioned_tensor(capsule)
+    assert not tensor.flags & dlpack.DLPACK_FLAG_BITMASK_READ_ONLY
+    assert (tensor.version.major, tensor.version.minor) == (1, 0)
+
+
+def test_the_capsule_name_matches_the_struct():
+    """Reading one layout as the other misreads every field silently."""
+    field = _field(np.arange(4, dtype=np.float32), tack.f32)
+    legacy = field.__dlpack__()
+    assert dlpack._PyCapsule_IsValid(ctypes.c_void_p(id(legacy)), b"dltensor")
+
+    versioned = field.__dlpack__(max_version=(1, 0))
+    assert dlpack._PyCapsule_IsValid(
+        ctypes.c_void_p(id(versioned)), b"dltensor_versioned")
+
+
+def test_an_unconsumed_versioned_capsule_is_released():
+    """The destructor has to recognise both capsule names."""
+    gc.collect()
+    before = len(dlpack._prevent_gc)
+    for _ in range(25):
+        field = _field(np.arange(4, dtype=np.float32), tack.f32)
+        capsule = field.__dlpack__(max_version=(1, 0))
+        del field, capsule
+    gc.collect()
+    assert len(dlpack._prevent_gc) == before
 
 
 @pytest.mark.parametrize("shape", [(6,), (2, 3), (2, 3, 4), (1, 1)])
@@ -131,7 +199,6 @@ def test_the_field_outlives_its_capsule():
 # included, which is far less forgiving than host memory.
 
 def _pinned():
-    from tack.lang import dlpack
     return len(dlpack._prevent_gc)
 
 
@@ -215,7 +282,6 @@ def test_many_live_exports_are_tracked_independently():
 def test_the_context_key_is_recoverable_from_the_tensor():
     """manager_ctx is the only thing the deleter gets; it must carry the key."""
     import ctypes
-    from tack.lang import dlpack
 
     field = _field(np.arange(4, dtype=np.float32), tack.f32)
     capsule = field.__dlpack__()

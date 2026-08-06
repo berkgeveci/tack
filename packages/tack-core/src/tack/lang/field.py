@@ -156,11 +156,18 @@ class Field:
             torch_tensor = torch.from_dlpack(tack_field)
             cupy_array = cupy.from_dlpack(tack_field)
             np_array = np.from_dlpack(tack_field)  # numpy 1.25+
+
+        A consumer passing max_version >= (1, 0) gets a versioned capsule,
+        which is the only form that can carry the read-only flag. Without
+        it the consumer must assume the memory is writable, so NumPy marks
+        what it gets read-only and then cannot re-export it -- which breaks
+        round trips through anything that hands the array back.
         """
         from tack.lang.dlpack import field_to_dlpack
         if copy is True:
             raise BufferError("Tack DLPack export does not support copy=True")
-        return field_to_dlpack(self)
+        versioned = max_version is not None and max_version[0] >= 1
+        return field_to_dlpack(self, versioned=versioned)
 
     def __dlpack_device__(self):
         """Return (device_type, device_id) for the DLPack protocol."""

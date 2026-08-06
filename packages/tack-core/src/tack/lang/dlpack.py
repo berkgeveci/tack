@@ -98,6 +98,31 @@ class DLManagedTensor(ctypes.Structure):
     ]
 
 
+# DLPack v1.0 adds a versioned managed tensor, which is the only form that
+# can say a buffer is read-only. Both directions need it: NumPy will only
+# export a read-only array through it, and it is the only way tack can
+# say that a field over external memory must not be written.
+#
+# Note the field order differs from the unversioned struct -- dl_tensor
+# moves to the end. Reading one as the other silently misreads every
+# field, so the two are never used interchangeably.
+class DLPackVersion(ctypes.Structure):
+    _fields_ = [("major", ctypes.c_uint32), ("minor", ctypes.c_uint32)]
+
+
+class DLManagedTensorVersioned(ctypes.Structure):
+    _fields_ = [
+        ("version", DLPackVersion),
+        ("manager_ctx", ctypes.c_void_p),
+        ("deleter", ctypes.CFUNCTYPE(None, ctypes.c_void_p)),
+        ("flags", ctypes.c_uint64),
+        ("dl_tensor", DLTensor),
+    ]
+
+
+DLPACK_FLAG_BITMASK_READ_ONLY = 1 << 0
+
+
 # ── Export lifetime ──────────────────────────────────────────────────
 #
 # An exported capsule points at the field's memory, so everything backing
@@ -132,19 +157,29 @@ _PyCapsule_GetPointer.restype = ctypes.c_void_p
 _PyCapsule_GetPointer.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 
 
-def _release(managed_ptr):
-    """Unpin whatever was retained for the export at `managed_ptr`."""
+def _release(managed_ptr, struct):
+    """Unpin whatever was retained for the export at `managed_ptr`.
+
+    `struct` says which layout to read, since manager_ctx sits at a
+    different offset in the two.
+    """
     if not managed_ptr:
         return
-    managed = ctypes.cast(managed_ptr,
-                          ctypes.POINTER(DLManagedTensor)).contents
+    managed = ctypes.cast(managed_ptr, ctypes.POINTER(struct)).contents
     _prevent_gc.pop(managed.manager_ctx, None)
 
 
 @ctypes.CFUNCTYPE(None, ctypes.c_void_p)
 def _dlpack_deleter(managed_ptr):
     """Called by the consumer once it has finished with the tensor."""
-    _release(managed_ptr)
+    _release(managed_ptr, DLManagedTensor)
+
+
+@ctypes.CFUNCTYPE(None, ctypes.c_void_p)
+def _dlpack_deleter_versioned(managed_ptr):
+    """As above, for a v1.0 tensor -- a separate function because the
+    deleter is handed only the pointer and cannot tell the two apart."""
+    _release(managed_ptr, DLManagedTensorVersioned)
 
 
 @ctypes.CFUNCTYPE(None, ctypes.c_void_p)
@@ -159,7 +194,11 @@ def _capsule_destructor(capsule_ptr):
     if not capsule_ptr:
         return
     if _PyCapsule_IsValid(capsule_ptr, b"dltensor"):
-        _release(_PyCapsule_GetPointer(capsule_ptr, b"dltensor"))
+        _release(_PyCapsule_GetPointer(capsule_ptr, b"dltensor"),
+                 DLManagedTensor)
+    elif _PyCapsule_IsValid(capsule_ptr, b"dltensor_versioned"):
+        _release(_PyCapsule_GetPointer(capsule_ptr, b"dltensor_versioned"),
+                 DLManagedTensorVersioned)
 
 
 def _get_device_info(field):
@@ -194,10 +233,14 @@ def _get_device_info(field):
         raise RuntimeError(f"DLPack not supported for buffer type: {cls_name}")
 
 
-def field_to_dlpack(field):
+def field_to_dlpack(field, versioned=False):
     """Create a DLPack capsule from a Tack field.
 
-    Returns a PyCapsule with name 'dltensor' containing a DLManagedTensor.
+    With `versioned`, produces a v1.0 DLManagedTensorVersioned in a
+    'dltensor_versioned' capsule; otherwise the legacy DLManagedTensor in
+    a 'dltensor' one. Only the versioned form can carry the read-only
+    flag, so a non-writable field exported the legacy way arrives as
+    writable -- the legacy protocol simply has no way to say otherwise.
     """
     device_type, device_id, data_ptr = _get_device_info(field)
 
@@ -216,7 +259,17 @@ def field_to_dlpack(field):
         strides_arr[i] = stride
         stride *= field.shape[i]
 
-    managed = DLManagedTensor()
+    if versioned:
+        managed = DLManagedTensorVersioned()
+        managed.version = DLPackVersion(major=1, minor=0)
+        managed.flags = 0 if field._writable else DLPACK_FLAG_BITMASK_READ_ONLY
+        capsule_name = b"dltensor_versioned"
+        deleter = _dlpack_deleter_versioned
+    else:
+        managed = DLManagedTensor()
+        capsule_name = b"dltensor"
+        deleter = _dlpack_deleter
+
     managed.dl_tensor.data = ctypes.c_void_p(data_ptr)
     managed.dl_tensor.device = DLDevice(device_type=device_type, device_id=device_id)
     managed.dl_tensor.ndim = ndim
@@ -229,13 +282,13 @@ def field_to_dlpack(field):
     # gets back. Pin everything the capsule points at under that key.
     key = next(_ctx_keys)
     managed.manager_ctx = ctypes.c_void_p(key)
-    managed.deleter = _dlpack_deleter
+    managed.deleter = deleter
     _prevent_gc[key] = (field, managed, shape_arr, strides_arr)
 
     # addressof, not byref: byref yields a temporary whose lifetime is not
     # tied to the capsule. `managed` itself is kept alive by _prevent_gc.
     return _PyCapsule_New(
-        ctypes.addressof(managed), b"dltensor",
+        ctypes.addressof(managed), capsule_name,
         ctypes.cast(_capsule_destructor, ctypes.c_void_p),
     )
 
@@ -252,26 +305,6 @@ def dlpack_device(field):
 # calling its deleter, so an imported field has to hold the capsule and
 # release it when the field dies -- otherwise the producer frees memory
 # the field is still pointing at.
-
-# DLPack v1.0 adds a versioned managed tensor, which is the only form that
-# can say a buffer is read-only. NumPy 2.x will only export a read-only array
-# through it, so a consumer that asks for the legacy capsule alone cannot
-# import one at all.
-class DLPackVersion(ctypes.Structure):
-    _fields_ = [("major", ctypes.c_uint32), ("minor", ctypes.c_uint32)]
-
-
-class DLManagedTensorVersioned(ctypes.Structure):
-    _fields_ = [
-        ("version", DLPackVersion),
-        ("manager_ctx", ctypes.c_void_p),
-        ("deleter", ctypes.CFUNCTYPE(None, ctypes.c_void_p)),
-        ("flags", ctypes.c_uint64),
-        ("dl_tensor", DLTensor),
-    ]
-
-
-DLPACK_FLAG_BITMASK_READ_ONLY = 1 << 0
 
 _PyCapsule_SetName = ctypes.pythonapi.PyCapsule_SetName
 _PyCapsule_SetName.restype = ctypes.c_int
