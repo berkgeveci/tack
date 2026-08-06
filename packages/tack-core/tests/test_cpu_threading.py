@@ -133,35 +133,72 @@ def test_cost_estimate_is_recorded(cpu):
     assert compiled.parallel_min_elems > 0
 
 
-def test_cheap_kernel_needs_more_elements_than_an_expensive_one(cpu):
-    """The threshold tracks the kernel's cost, which is the whole point.
+def test_a_cheaper_kernel_gets_a_larger_threshold(cpu):
+    """The policy itself: threshold is inversely proportional to cost.
 
-    A fixed element count cannot be right for both: measured here, the
-    crossover for a multiply-add is ~1000x further out than for a kernel
-    with a 24-iteration inner loop.
+    This is the whole reason the decision is measured rather than a fixed
+    element count, and it is a pure function — so it is tested as one,
+    with costs supplied rather than timed. Two earlier versions of this
+    test timed two real kernels and compared them, and both flaked on CI:
+    first on a 10x ratio between the measured costs, then on the ordering
+    of the thresholds *derived* from those same measurements, which
+    inherits exactly the same noise (it failed 2279 < 2266 — a 0.6% gap).
 
-    The claim under test is the *ordering* of the two thresholds. Ratios
-    between the two per-element costs are deliberately not asserted: a
-    cheap kernel's measurement is dominated by fixed dispatch overhead, so
-    on a loaded machine — a CI runner, or a laptop that has just finished
-    a build — it is largely noise. An earlier version of this test wanted
-    a 10x ratio and flaked exactly there.
+    A cheap kernel's per-element cost is dominated by fixed dispatch
+    overhead, so on a shared runner it is largely noise. Nothing derived
+    from it should be asserted at all.
     """
     backend = CPUBackend()
-    n = 20000
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    backend._fan_out_ns = 200_000.0   # pin it; this is about the arithmetic
+
+    cheap = backend._min_elems(0.1)     # ~memory-bound multiply-add
+    medium = backend._min_elems(3.0)    # ~a sqrt/sin expression
+    costly = backend._min_elems(128.0)  # ~a long inner loop
+
+    assert costly < medium < cheap
+    # And the relationship is the reciprocal one, not merely monotone.
+    assert cheap == pytest.approx(medium * 30, rel=0.01)
+
+
+def test_threshold_falls_back_when_the_cost_is_unknown(cpu):
+    """An unmeasured kernel must not be threaded on a guess."""
+    backend = CPUBackend()
+    assert backend._min_elems(0.0) > 10 ** 12
+
+
+def test_threshold_never_drops_below_the_thread_count(cpu):
+    """Fewer elements than threads cannot be worth a fan-out."""
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    backend._fan_out_ns = 1.0    # absurdly cheap threads
+    assert backend._min_elems(10 ** 9) >= backend.num_threads
+
+
+def test_measured_cost_ranks_two_real_kernels(cpu):
+    """The measurement does work — checked where noise cannot reach it.
+
+    Timed over a range big enough that the expensive kernel takes
+    milliseconds and the cheap one microseconds, the gap is ~1000x. That
+    survives any runner. `_run_serial` is called directly so the parallel
+    decision cannot stop the estimate from updating.
+    """
+    backend = CPUBackend()
+    n = 100_000
     x = tack.field(dtype=tack.f32, shape=(n,))
     out = tack.field(dtype=tack.f32, shape=(n,))
     x.from_numpy(np.linspace(0, 1, n, dtype=np.float32))
 
     cheap = _compile_for(backend, _scale, [x, out, n])
     costly = _compile_for(backend, _expensive, [x, out, n])
-    # Enough dispatches for the smoothed estimate to settle.
-    for _ in range(10):
-        backend._dispatch(cheap, [x, out, n], n)
-        backend._dispatch(costly, [x, out, n], n)
+    args = [x, out, n]
 
-    assert costly.ns_per_elem > cheap.ns_per_elem
-    assert costly.parallel_min_elems < cheap.parallel_min_elems
+    backend._run_serial(cheap, cheap.bind(args), 0, n)
+    backend._run_serial(costly, costly.bind(args), 0, n)
+
+    assert costly.ns_per_elem > cheap.ns_per_elem * 20
 
 
 def test_single_thread_backend_never_threads(cpu):
