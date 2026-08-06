@@ -48,16 +48,20 @@ jobs:
         python-version: ["3.11", "3.12", "3.13"]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9
         with:
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
+          # Sets UV_PYTHON, so `uv sync` and `uv run` agree. Passing
+          # --python to sync alone is not enough: `uv run` then falls back
+          # to .python-version (3.13) and looks in a different environment.
+          python-version: ${{ matrix.python-version }}
 
       - name: Sync the workspace
-        run: uv sync --python ${{ matrix.python-version }} --extra cpu --extra dev
+        run: uv sync --extra cpu --extra dev
 
       - name: Report which backends this runner has
         run: |
@@ -92,13 +96,14 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9
         with:
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
+          python-version: "3.13"
 
       - name: Install tack-core with no extras
         run: |
@@ -125,30 +130,33 @@ jobs:
           /tmp/gpuenv/bin/python -m pytest -q \
             packages/tack-core/tests/test_backend_isolation.py
 
-  # ── Metal, best effort ─────────────────────────────────────────────
-  # GitHub's macOS runners are Apple Silicon, but whether Metal compute
-  # works on them has been inconsistent. If it does, this is real GPU
-  # coverage that no other runner can give us. If it does not, the Metal
-  # tests skip themselves and the job still passes — so the only thing
-  # continue-on-error guards against is the runner itself misbehaving.
-  # Read the "backends available" line in the log to see which happened.
+  # ── Metal ──────────────────────────────────────────────────────────
+  # GitHub's macOS runners are Apple Silicon and Metal compute works on
+  # them: the first run reported `backends available: cpu, metal` and
+  # 938 passed / 44 skipped, matching a local Apple Silicon machine
+  # exactly. So this is a real gate, not an experiment — it is the only
+  # job that exercises a GPU backend end to end.
+  #
+  # If Metal ever becomes unavailable on the runners the tests skip
+  # themselves and this still passes, so a red here means a genuine Metal
+  # regression. The "backends available" line says which case you are in.
   metal:
-    name: metal (best effort)
+    name: metal
     runs-on: macos-latest
     timeout-minutes: 20
-    continue-on-error: true
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Install uv
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v9
         with:
           enable-cache: true
           cache-dependency-glob: "**/uv.lock"
+          python-version: "3.13"
 
       - name: Sync the workspace
-        run: uv sync --python 3.13 --extra cpu --extra metal --extra dev
+        run: uv sync --extra cpu --extra metal --extra dev
 
       - name: Report which backends this runner has
         run: |
