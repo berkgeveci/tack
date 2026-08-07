@@ -4,20 +4,6 @@ import numpy as np
 import pytest
 import tack
 
-_backends = []
-for _arch in ["cpu", "metal"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        _backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 @tack.kernel
 def vector_add(x, y, out):
@@ -41,17 +27,39 @@ def test_inspect_ir(backend):
     assert "ParallelFor" in result
 
 
+# What each backend's generated source has to contain: the spelling of its
+# kernel entry point. Every backend is listed, and an unknown one is a
+# failure rather than a pass -- this test used to check "cpu" and "metal"
+# and fall through everywhere else, so on a CUDA machine it asserted only
+# that the string was longer than fifty characters.
+_ENTRY_POINT = {
+    "cpu": "define",              # LLVM IR
+    "metal": "kernel void",       # MSL
+    "cuda": "__global__",         # CUDA C
+    "hip": "__global__",          # HIP C, which extends the CUDA codegen
+    "level_zero": "__kernel",     # OpenCL C
+}
+
+
 def test_inspect_source(backend):
     x, y, out = _make_fields()
     result = tack.inspect(vector_add, x, y, out, mode="source")
     assert isinstance(result, str)
     assert len(result) > 50
-    if backend == "cpu":
-        # LLVM IR
-        assert "define" in result
-    elif backend == "metal":
-        # MSL
-        assert "kernel void" in result
+
+    assert backend in _ENTRY_POINT, (
+        f"no entry point known for {backend!r}; add it rather than let this "
+        f"test pass without checking anything")
+    assert _ENTRY_POINT[backend] in result
+
+
+def test_hip_source_carries_its_runtime_header(backend):
+    """HIP shares the CUDA codegen and differs by exactly this include."""
+    if backend != "hip":
+        pytest.skip("HIP only")
+    x, y, out = _make_fields()
+    result = tack.inspect(vector_add, x, y, out, mode="source")
+    assert "#include <hip/hip_runtime.h>" in result
 
 
 def test_inspect_default_mode(backend):

@@ -6,20 +6,6 @@ import tack
 from tack.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 from tack.lang.type_inference import promote_types
 
-_backends = []
-for _arch in ["cpu", "metal"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        _backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 # --- Signed/unsigned promotion rules ---
 

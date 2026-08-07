@@ -4,20 +4,6 @@ import numpy as np
 import pytest
 import tack
 
-_backends = []
-for _arch in ["cpu", "metal"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        _backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 def test_texture_sample_direct(backend):
     """tex.sample() called directly in a kernel works."""

@@ -6,28 +6,6 @@ import tack
 
 
 # Test on all available backends
-def _available_backends():
-    backends = []
-    for arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
-        try:
-            tack.init(arch=arch)
-            backends.append(arch)
-        except (ImportError, RuntimeError, OSError):
-            pass
-    if backends:
-        tack.init(arch=backends[0])
-    return backends
-
-_backends = _available_backends()
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    try:
-        tack.init(arch=request.param)
-    except (ImportError, RuntimeError, OSError) as e:
-        pytest.skip(f"{request.param} not available: {e}")
-    return request.param
 
 
 def test_local_array_store_load(backend):

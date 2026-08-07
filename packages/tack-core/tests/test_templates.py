@@ -5,19 +5,6 @@ import pytest
 import tack
 
 # Build list of available backends
-_backends = []
-for _arch in ["cpu", "metal"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        _backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
 
 
 # --- Structured cell set (scalar attrs only, no field attrs) ---

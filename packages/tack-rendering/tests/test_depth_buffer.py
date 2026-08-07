@@ -5,20 +5,6 @@ import pytest
 import tack
 from tack.rendering import PerspectiveCamera, Canvas, Scene, Actor, PointLight, render
 
-_backends = []
-for _arch in ["cpu", "metal"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        _backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 def _make_scene(z=0.0):
     """Triangle at z=z, camera at z=3."""

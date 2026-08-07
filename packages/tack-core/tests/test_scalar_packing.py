@@ -12,32 +12,6 @@ import tack
 
 # --- Backend parametrization ---
 
-def _available_backends():
-    """Return list of available backends for parametrized tests."""
-    backends = []
-    for arch in ["cpu", "metal", "cuda", "hip", "level_zero"]:
-        try:
-            tack.init(arch=arch)
-            backends.append(arch)
-        except (ImportError, RuntimeError, OSError):
-            pass
-    if backends:
-        tack.init(arch=backends[0])
-    return backends
-
-
-_backends = _available_backends()
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    """Parametrized fixture that runs each test on all available backends."""
-    try:
-        tack.init(arch=request.param)
-    except (ImportError, RuntimeError, OSError) as e:
-        pytest.skip(f"{request.param} not available: {e}")
-    return request.param
-
 
 # --- Tests ---
 

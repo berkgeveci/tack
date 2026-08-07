@@ -6,20 +6,6 @@ import tack
 from tack.lang import ir
 from tack.lang.types import ScalarType, _NAME_TO_TYPE, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
 
-_backends = []
-for _arch in ["cpu", "metal"]:
-    try:
-        tack.init(arch=getattr(tack, _arch))
-        _backends.append(_arch)
-    except (ImportError, RuntimeError, OSError):
-        pass
-
-
-@pytest.fixture(params=_backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 # --- _NAME_TO_TYPE completeness ---
 
