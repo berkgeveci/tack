@@ -19,11 +19,13 @@ Usage:
   uv run python examples/25_point_to_cell.py --arch metal --size 200
 """
 
+import argparse
 import time
+
 import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _parser.add_argument('--size', type=int, default=100,
@@ -158,7 +160,7 @@ results = {}
 # --- Structured ---
 print("Structured cell set...")
 struct = CellSetStructured3D(nx, ny, nz)
-print(f"  Connectivity memory: 0 bytes (computed on the fly)")
+print("  Connectivity memory: 0 bytes (computed on the fly)")
 
 for i in range(warmup):
     point_to_cell_average(struct, point_data, cell_data, n_cells)
@@ -228,9 +230,9 @@ print(f"  Best of {trials}: {numpy_time:.4f}s")
 # --- VTK (optional) ---
 vtk_result = None
 try:
+    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
     from vtkmodules.vtkCommonDataModel import vtkImageData
     from vtkmodules.vtkFiltersCore import vtkPointDataToCellData
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
     print("\nVTK vtkPointDataToCellData...")
 
@@ -499,9 +501,9 @@ print(f"  Best of {trials}: {numpy_mc_time:.4f}s")
 # --- VTK (3-component) ---
 vtk_mc_result = None
 try:
+    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
     from vtkmodules.vtkCommonDataModel import vtkImageData
     from vtkmodules.vtkFiltersCore import vtkPointDataToCellData
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
     print("\nVTK (3 components)...")
 

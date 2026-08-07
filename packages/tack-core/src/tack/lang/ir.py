@@ -3,7 +3,6 @@
 
 class IRNode:
     """Base class for all IR nodes."""
-    pass
 
 
 class IRModule(IRNode):
@@ -63,12 +62,10 @@ class IRWhile(IRNode):
 
 class IRBreak(IRNode):
     """Break statement."""
-    pass
 
 
 class IRContinue(IRNode):
     """Continue statement."""
-    pass
 
 
 # --- Control flow ---
@@ -221,7 +218,7 @@ class IRCast(IRNode):
 class IRSharedAlloc(IRNode):
     """Allocate shared/threadgroup memory."""
 
-    def __init__(self, name: str, dtype: str, size, field_name: str = None):
+    def __init__(self, name: str, dtype: str, size, field_name: str | None = None):
         self.name = name
         self.dtype = dtype         # "float", "int", etc. (None for shared_like, resolved later)
         self.size = size           # IRNode expression for number of elements
@@ -231,7 +228,7 @@ class IRSharedAlloc(IRNode):
 class IRLocalAlloc(IRNode):
     """Allocate a per-thread local array (private memory on GPU, stack on CPU)."""
 
-    def __init__(self, name: str, dtype: str, size, field_name: str = None):
+    def __init__(self, name: str, dtype: str, size, field_name: str | None = None):
         self.name = name
         self.dtype = dtype   # "float", "int", etc. (None for local_array_like, resolved later)
         self.size = size     # IRNode expression for number of elements
@@ -253,7 +250,6 @@ class IRBlockReduce(IRNode):
 
 class IRBarrier(IRNode):
     """Threadgroup synchronization barrier."""
-    pass
 
 
 class IRThreadId(IRNode):
@@ -266,7 +262,7 @@ class IRThreadId(IRNode):
 class IRPrint(IRNode):
     """Print statement for kernel debugging."""
 
-    def __init__(self, args: list, format_parts: list = None):
+    def __init__(self, args: list, format_parts: list | None = None):
         self.args = args            # list of IRNode expressions
         self.format_parts = format_parts  # list of (kind, value): kind is "str" or "expr"
 
@@ -291,7 +287,7 @@ class IRTextureSample(IRNode):
     shape: (W, H, D) tuple — filled in by ir_resolve from the field's shape.
     """
 
-    def __init__(self, field_name: str, coords: list, shape: tuple = None):
+    def __init__(self, field_name: str, coords: list, shape: tuple | None = None):
         self.field_name = field_name
         self.coords = coords  # [u, v, w]
         self.shape = shape    # (W, H, D) — set during resolve

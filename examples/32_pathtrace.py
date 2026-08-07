@@ -10,15 +10,22 @@ Usage:
   uv run python examples/32_pathtrace.py --resolution 1024
 """
 
+import argparse
 import time
+
 import numpy as np
+
 import tack
-from tack.algorithms.flying_edges import flying_edges, UniformGrid
+from tack.algorithms.flying_edges import UniformGrid, flying_edges
 from tack.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, render,
+    Actor,
+    Canvas,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    render,
 )
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
                      choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
@@ -102,7 +109,7 @@ img = canvas.to_numpy()
 try:
     from PIL import Image
     Image.fromarray(img).save("pathtrace_gyroid.png")
-    print(f"  Saved: pathtrace_gyroid.png")
+    print("  Saved: pathtrace_gyroid.png")
 except ImportError:
     np.save("pathtrace_gyroid.npy", img)
-    print(f"  Saved: pathtrace_gyroid.npy (install Pillow for PNG)")
+    print("  Saved: pathtrace_gyroid.npy (install Pillow for PNG)")

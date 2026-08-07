@@ -15,10 +15,12 @@ Usage:
   uv run python examples/21_array_abstraction.py
 """
 
+import argparse
+
 import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(tack, _parser.parse_args().arch)
@@ -123,7 +125,7 @@ offset = ConstantArray(42.0)
 add_arrays(a, offset, out, n)
 result = out_data.to_numpy()
 expected = a_np + 42.0
-assert np.allclose(result, expected), f"AOS+Constant failed"
+assert np.allclose(result, expected), "AOS+Constant failed"
 print("Test 2 -- AOS + Constant -> AOS: OK")
 
 
@@ -135,7 +137,7 @@ ramp = AffineArray(0.5, 10.0)  # value[i] = 0.5 * i + 10.0
 add_arrays(a, ramp, out, n)
 result = out_data.to_numpy()
 expected = a_np + (0.5 * np.arange(n) + 10.0).astype(np.float32)
-assert np.allclose(result, expected, atol=1e-3), f"AOS+Affine failed"
+assert np.allclose(result, expected, atol=1e-3), "AOS+Affine failed"
 print("Test 3 -- AOS + Affine -> AOS: OK")
 
 
@@ -147,7 +149,7 @@ c = ConstantArray(100.0)
 add_arrays(c, ramp, out, n)
 result = out_data.to_numpy()
 expected = (100.0 + 0.5 * np.arange(n) + 10.0).astype(np.float32)
-assert np.allclose(result, expected, atol=1e-3), f"Constant+Affine failed"
+assert np.allclose(result, expected, atol=1e-3), "Constant+Affine failed"
 print("Test 4 -- Constant + Affine -> AOS: OK (no input buffers needed!)")
 
 
@@ -159,7 +161,7 @@ factor = ConstantArray(3.0)
 scale_array(a, factor, out, n)
 result = out_data.to_numpy()
 expected = a_np * 3.0
-assert np.allclose(result, expected), f"Scale by constant failed"
+assert np.allclose(result, expected), "Scale by constant failed"
 print("Test 5 -- AOS * Constant -> AOS: OK")
 
 

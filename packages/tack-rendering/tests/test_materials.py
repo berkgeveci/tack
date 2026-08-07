@@ -2,9 +2,16 @@
 
 import numpy as np
 import pytest
+
 import tack
 from tack.rendering import (
-    Scene, Actor, PointLight, Material, PerspectiveCamera, Canvas, render,
+    Actor,
+    Canvas,
+    Material,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    render,
 )
 
 

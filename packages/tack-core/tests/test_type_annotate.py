@@ -1,17 +1,13 @@
 """Tests for the IR type annotation pass."""
 
-import pytest
-import tack
 from tack.lang import ir
-from tack.lang.types import f32, i32, i64
-from tack.lang.type_inference import infer_param_types
 from tack.lang.ir_type_annotate import annotate_types
+from tack.lang.types import f32, i32
 
 
 def _make_func(params, body):
     """Helper to create a simple IRFunction."""
-    func = ir.IRFunction("test", params, body)
-    return func
+    return ir.IRFunction("test", params, body)
 
 
 def test_assign_from_constant_float():

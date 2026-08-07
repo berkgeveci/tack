@@ -15,6 +15,7 @@ build_mask(blocks_by_level, refinement_ratios)
 """
 
 import numpy as np
+
 import tack
 
 # VTK ghost type flags

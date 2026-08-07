@@ -20,11 +20,13 @@ Usage:
   uv run python examples/23_tuple_arrays.py --arch metal
 """
 
-import numpy as np
+import argparse
 import linecache
+
+import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(tack, _parser.parse_args().arch)
@@ -330,7 +332,7 @@ assert np.allclose(soa_to_numpy(soa5_out, nc5), data_5a + data_5b, atol=1e-4)
 print("  AOS(5) + SOA(5) -> SOA(5): OK")
 
 
-print(f"\nAll tests passed!")
+print("\nAll tests passed!")
 print("""
 Key insight: the same kernels (compute_magnitude, add_tuple_arrays,
 scale_tuple_array, dot_product) work with ANY combination of AOS and

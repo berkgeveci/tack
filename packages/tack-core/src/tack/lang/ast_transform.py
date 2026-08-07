@@ -10,11 +10,9 @@ Inspired by Taichi's AST transformer (Apache 2.0), simplified for Tack's needs.
 
 import ast
 import copy
-import math
 
 from tack.lang import ir
-from tack.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-
+from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 # Math builtins that map to LLVM intrinsics / libm calls
 MATH_BUILTINS = {
@@ -142,11 +140,10 @@ class KernelTransformer(ast.NodeVisitor):
                         right=ir.IRBinOp(op="*", left=ir.IRName(idx_name), right=step)),
                 )
                 return ir.IRParallelFor(var=idx_name, start=ir.IRConstant(0),
-                                        end=total, body=[decomp] + body)
+                                        end=total, body=[decomp, *body])
             return ir.IRParallelFor(var=target.id, start=start, end=end, body=body)
-        else:
-            return ir.IRSequentialFor(var=target.id, start=start, end=end,
-                                      body=body, step=step)
+        return ir.IRSequentialFor(var=target.id, start=start, end=end,
+                                  body=body, step=step)
 
     def _visit_ndrange_for(self, node: ast.For):
         """Handle: for i, j in ndrange(w, h) or for i, j in tack.ndrange(w, h)."""
@@ -217,9 +214,8 @@ class KernelTransformer(ast.NodeVisitor):
         if self._loop_depth == 0:
             return ir.IRParallelFor(
                 var=idx_name, start=ir.IRConstant(0), end=total, body=full_body)
-        else:
-            return ir.IRSequentialFor(
-                var=idx_name, start=ir.IRConstant(0), end=total, body=full_body)
+        return ir.IRSequentialFor(
+            var=idx_name, start=ir.IRConstant(0), end=total, body=full_body)
 
     def visit_While(self, node: ast.While) -> ir.IRWhile:
         if node.orelse:
@@ -415,10 +411,9 @@ class KernelTransformer(ast.NodeVisitor):
                 if len(left) != len(right):
                     raise TypeError("Vector dimension mismatch in binary op")
                 return [ir.IRBinOp(op=op, left=l, right=r) for l, r in zip(left, right)]
-            elif left_is_vec:
+            if left_is_vec:
                 return [ir.IRBinOp(op=op, left=l, right=right) for l in left]
-            else:
-                return [ir.IRBinOp(op=op, left=left, right=r) for r in right]
+            return [ir.IRBinOp(op=op, left=left, right=r) for r in right]
 
         return ir.IRBinOp(op=op, left=left, right=right)
 
@@ -1131,12 +1126,11 @@ class KernelTransformer(ast.NodeVisitor):
         args = call_node.args
         if len(args) == 1:
             return ir.IRConstant(0), self.visit(args[0]), None
-        elif len(args) == 2:
+        if len(args) == 2:
             return self.visit(args[0]), self.visit(args[1]), None
-        elif len(args) == 3:
+        if len(args) == 3:
             return self.visit(args[0]), self.visit(args[1]), self.visit(args[2])
-        else:
-            raise NotImplementedError("range() takes 1-3 arguments")
+        raise NotImplementedError("range() takes 1-3 arguments")
 
     def _resolve_call_name(self, node: ast.Call) -> str:
         """Resolve the function name from a Call node.

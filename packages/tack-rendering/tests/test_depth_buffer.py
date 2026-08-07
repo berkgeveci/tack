@@ -2,8 +2,9 @@
 
 import numpy as np
 import pytest
+
 import tack
-from tack.rendering import PerspectiveCamera, Canvas, Scene, Actor, PointLight, render
+from tack.rendering import Actor, Canvas, PerspectiveCamera, PointLight, Scene, render
 
 
 def _make_scene(z=0.0):

@@ -26,6 +26,81 @@ tack-vis = { workspace = true }
 [tool.uv.workspace]
 members = ["packages/*"]
 
+[tool.ruff]
+line-length = 100
+# The floor the packages declare. Ruff reads it to reject syntax newer than
+# the oldest supported interpreter -- which is how the f-string backslash in
+# bench_64mb.py was found, unparseable on 3.11 since it was written, in a
+# file no test collected and on a CI job that runs 3.13.
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E4", "E7", "E9",  # pycodestyle: imports, statements, syntax
+    "F",               # pyflakes
+    "I",               # import sorting
+    "B",               # bugbear
+    "C4",              # comprehensions
+    "PIE", "RET",      # dead code, returns
+    "ISC", "G", "INT", # string concat, logging, gettext
+    "PLE",             # pylint errors
+    "RUF",
+]
+
+ignore = [
+    # Kernel bodies are not Python. `sqrt`, `sin` and friends are resolved by
+    # the AST transform, so every one of them reads as undefined here -- 135
+    # of them, in src, tests and examples alike. There is no scoping this to
+    # a directory; kernels are written everywhere.
+    "F821",
+
+    # Same reason, and it took running the linter once to see it: a kernel's
+    # locals are consumed by the transform too. `s = tack.shared(...)` then
+    # `tack.barrier()` reads as an unused variable, and kernels are written
+    # in src, tests and examples alike. Enabling this found two pieces of
+    # genuine dead code in library code -- both fixed on the way in -- and
+    # then had nowhere left to live.
+    "F841", "RUF059",
+
+    # `err, value = driver.cuSomething()` is the shape of the CUDA and HIP
+    # bindings. Prefixing every ignored status would be noise.
+    "F811",
+
+    # `if not x: return` on one line, used throughout and readable.
+    "E701", "E702",
+
+    # Deliberate: assigned lambdas, and `l`/`I` as loop variables in codegen
+    # where they mirror the emitted names.
+    "E731", "E741",
+
+    # Backends import their driver bindings inside try blocks after module
+    # setup. That is the point -- a missing CUDA runtime must not be an
+    # ImportError at the top of the file.
+    "E402",
+
+    # Style, and both would have this codebase rename loop variables it reads
+    # fine with.
+    "B007", "B905",
+
+    # Em dashes, arrows and multiplication signs in prose and printed output.
+    # The docstrings and the examples' output are meant to be read.
+    "RUF001", "RUF002", "RUF003",
+
+    "RUF012",  # mutable class defaults, used deliberately for IR node tables
+    "RUF043",  # pytest.raises patterns are regexes on purpose
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Re-exports are the whole job of these files.
+"**/__init__.py" = ["F401"]
+# Lambdas built in a loop and called in the same iteration. Late binding
+# cannot bite where nothing outlives the turn of the loop.
+"benchmarks/*.py" = ["B023"]
+"**/examples/*.py" = ["B023"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["tack"]
+
 [tool.pytest.ini_options]
 # The example sweep takes ~1 minute against an 18-second suite, so it is
 # deselected by default and run as its own CI job. `pytest -m slow` runs it;

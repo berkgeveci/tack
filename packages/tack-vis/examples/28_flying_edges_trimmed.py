@@ -17,12 +17,13 @@ Usage:
   uv run python examples/28_flying_edges_trimmed.py --arch metal --size 200
 """
 
-import time
-import numpy as np
-import tack
-from tack import algorithms
-
 import argparse
+import time
+
+import numpy as np
+
+import tack
+
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip'])
 _parser.add_argument('--size', type=int, default=100,
@@ -1403,9 +1404,9 @@ try:
     if vtk_tbb_path not in sys.path:
         sys.path.insert(0, vtk_tbb_path)
 
+    from vtkmodules.util.numpy_support import numpy_to_vtk
     from vtkmodules.vtkCommonDataModel import vtkImageData
     from vtkmodules.vtkFiltersCore import vtkContourFilter
-    from vtkmodules.util.numpy_support import numpy_to_vtk
 
     print("\nVTK FlyingEdges...")
 

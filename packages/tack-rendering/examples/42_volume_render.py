@@ -1,12 +1,18 @@
 """42 -- Volume rendering of a gyroid scalar field on a uniform grid."""
 
+import argparse
+
 import numpy as np
+
 import tack
 from tack.rendering import (
-    PerspectiveCamera, Canvas, Volume, TransferFunction, render_volume,
+    Canvas,
+    PerspectiveCamera,
+    TransferFunction,
+    Volume,
+    render_volume,
 )
 
-import argparse
 _p = argparse.ArgumentParser()
 _p.add_argument('--arch', default='cpu',
                 choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])

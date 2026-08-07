@@ -26,7 +26,7 @@ import weakref
 
 from tack.lang import ir
 from tack.lang.field import Field
-from tack.lang.type_inference import infer_param_types, check_dispatch_types
+from tack.lang.type_inference import check_dispatch_types, infer_param_types
 
 
 def new_kernel_cache():
@@ -192,8 +192,13 @@ class _ProbeParam:
     of these is built per parameter per dispatch.
     """
 
-    __slots__ = ("name", "type_annotation", "_is_field", "_is_texture",
-                 "_texture_shape")
+    __slots__ = (
+        "_is_field",
+        "_is_texture",
+        "_texture_shape",
+        "name",
+        "type_annotation",
+    )
 
     def __init__(self, name):
         self.name = name
@@ -293,8 +298,8 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     slot = kernel_cache_slot(backend._cache, kernel)
     variant = slot.get(key)
     if variant is None:
-        from tack.lang.ir_resolve import resolve_ir
         from tack.lang.ir_optimize import optimize_ir
+        from tack.lang.ir_resolve import resolve_ir
 
         ir_func = copy.deepcopy(template)
         resolve_ir(ir_func, name_to_field)
@@ -492,6 +497,7 @@ def _create_pack_fields(pack_info, args, backend):
         list of Field objects, one per pack group.
     """
     import numpy as np
+
     from tack.lang.field import Field
 
     fields = []

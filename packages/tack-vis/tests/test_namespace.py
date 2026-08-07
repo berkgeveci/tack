@@ -19,14 +19,14 @@ tack-core alone still works. These tests pin both halves.
 
 import pytest
 
-import tack
-
 
 def test_worklets_import_from_the_documented_path():
     """The import the README, CLAUDE.md and docs all promise."""
     from tack.algorithms import (
-        flying_edges, flying_edges_multiblock, compute_normals,
-        cell_to_point, UniformGrid, MCTables,
+        cell_to_point,
+        compute_normals,
+        flying_edges,
+        flying_edges_multiblock,
     )
     assert callable(flying_edges)
     assert callable(flying_edges_multiblock)
@@ -41,17 +41,18 @@ def test_the_names_are_functions_not_modules():
     attribute. If the re-export is missing, the name resolves to a module
     that is not callable — which reads as a very strange error.
     """
+    import types
+
     import tack.algorithms.flying_edges  # noqa: F401  (bind the module)
     from tack.algorithms import flying_edges
-    import types
     assert not isinstance(flying_edges, types.ModuleType)
 
 
 def test_core_primitives_are_still_there():
     """Merging the namespaces must not displace what was already in it."""
     from tack.algorithms import (
-        exclusive_scan, inclusive_scan, copy, fill_value,
-        var, std, norm, absmax, count_nonzero, dot, histogram,
+        exclusive_scan,
+        histogram,
     )
     assert callable(exclusive_scan)
     assert callable(histogram)

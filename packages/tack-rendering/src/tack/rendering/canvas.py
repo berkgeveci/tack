@@ -1,6 +1,7 @@
 """Framebuffer for rendered images."""
 
 import numpy as np
+
 import tack
 
 

@@ -7,9 +7,10 @@ Tests across:
 """
 
 import time
-import numpy as np
-import tack
 
+import numpy as np
+
+import tack
 
 # ---------------------------------------------------------------------------
 # Benchmark infrastructure

@@ -14,12 +14,14 @@ Usage:
 
 import argparse
 import math
-import numpy as np
 import os
+
+import numpy as np
+
 import tack
+from tack.fe.accessor import contiguous_from_numpy
 from tack.fe.basis import QuadBasis, precompute_basis_matrix_2d
-from tack.fe.accessor import ContiguousDofs, contiguous_from_numpy
-from tack.fe.geometry import LinearQuadMap, linear_quad_map_from_numpy
+from tack.fe.geometry import linear_quad_map_from_numpy
 
 
 def make_quad_mesh(nx, ny):

@@ -1,9 +1,10 @@
 """64 MB benchmark -- CPU JIT vs CUDA GPU vs NumPy, formatted table."""
 
 import time
-import numpy as np
-import tack
 
+import numpy as np
+
+import tack
 
 # 64 MB of f32 = 16,777,216 elements
 N = 64 * 1024 * 1024 // 4
@@ -129,7 +130,8 @@ def main():
         driver.cuInit(0)
         err, dev = driver.cuDeviceGet(0)
         err, name_bytes = driver.cuDeviceGetName(256, dev)
-        print(f"CUDA device: {name_bytes.split(b'\\x00')[0].decode()}")
+        name = name_bytes.split(b"\\x00")[0].decode()
+        print(f"CUDA device: {name}")
     except Exception:
         pass
     print()

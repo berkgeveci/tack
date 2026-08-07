@@ -24,8 +24,8 @@ tri_ids : i32 (n_tris,)
 """
 
 import numpy as np
-import tack
 
+import tack
 
 STACK_DEPTH = 24
 
@@ -40,8 +40,7 @@ def _expand_bits(v):
     v = (v | (v << 16)) & 50331903
     v = (v | (v << 8))  & 50393103
     v = (v | (v << 4))  & 51146947
-    v = (v | (v << 2))  & 153391689
-    return v
+    return (v | (v << 2))  & 153391689
 
 
 @tack.func

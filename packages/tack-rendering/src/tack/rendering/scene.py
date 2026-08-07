@@ -1,6 +1,7 @@
 """Scene graph: actors, lights, and scene container."""
 
 import numpy as np
+
 import tack
 
 

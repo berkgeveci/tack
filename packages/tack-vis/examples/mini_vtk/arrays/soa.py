@@ -1,6 +1,7 @@
 """Struct-of-Arrays array types, generated dynamically."""
 
 import linecache
+
 import tack
 
 _soa_cache = {}

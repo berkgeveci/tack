@@ -2,10 +2,17 @@
 
 import numpy as np
 import pytest
+
 import tack
 from tack.rendering import (
-    Scene, Actor, PointLight, Volume, TransferFunction,
-    PerspectiveCamera, Canvas, ColorTable, render,
+    Actor,
+    Canvas,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    TransferFunction,
+    Volume,
+    render,
 )
 
 

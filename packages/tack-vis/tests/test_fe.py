@@ -1,16 +1,16 @@
 """Tests for tack.fe — finite element basis, accessor, geometry."""
 
 import numpy as np
+import pytest
+
 import tack
+from tack.fe.accessor import contiguous_from_numpy
 from tack.fe.basis import (
-    QuadBasis, HexBasis,
-    extract_gl_nodes_1d, extract_gl_nodes_1d_3d,
+    QuadBasis,
+    extract_gl_nodes_1d,
     precompute_basis_matrix_2d,
 )
-from tack.fe.accessor import ContiguousDofs, contiguous_from_numpy
-from tack.fe.geometry import LinearQuadMap, linear_quad_map_from_numpy
-
-import pytest
+from tack.fe.geometry import linear_quad_map_from_numpy
 
 np_fp = np.float64
 

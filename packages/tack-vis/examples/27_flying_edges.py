@@ -21,12 +21,14 @@ Usage:
   uv run python examples/27_flying_edges.py --arch metal --size 200
 """
 
+import argparse
 import time
+
 import numpy as np
+
 import tack
 from tack import algorithms
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _parser.add_argument('--size', type=int, default=100,
@@ -1116,9 +1118,9 @@ try:
     if vtk_tbb_path not in sys.path:
         sys.path.insert(0, vtk_tbb_path)
 
+    from vtkmodules.util.numpy_support import numpy_to_vtk
     from vtkmodules.vtkCommonDataModel import vtkImageData
     from vtkmodules.vtkFiltersCore import vtkContourFilter
-    from vtkmodules.util.numpy_support import numpy_to_vtk
 
     print("\nVTK FlyingEdges...")
 
@@ -1172,7 +1174,7 @@ print(f"  FE == MC triangle count: OK ({total_tris_fe:,})")
 if vtk_total_tris is not None:
     diff = abs(total_tris_fe - vtk_total_tris)
     if diff == 0:
-        print(f"  FE == VTK triangles: OK")
+        print("  FE == VTK triangles: OK")
     elif diff < total_tris_fe * 0.001:
         print(f"  FE ~ VTK triangles: diff={diff} ({diff/total_tris_fe*100:.2f}%, f32 vs f64)")
 
@@ -1360,9 +1362,9 @@ print(f"  Validation: max scalar error {rs_err:.6f} -- OK")
 
 # VTK rectilinear comparison
 try:
+    from vtkmodules.util.numpy_support import numpy_to_vtk as _n2v
     from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid
     from vtkmodules.vtkFiltersCore import vtkContourFilter as _CF
-    from vtkmodules.util.numpy_support import numpy_to_vtk as _n2v
 
     rg = vtkRectilinearGrid()
     rg.SetDimensions(nx + 1, ny + 1, nz + 1)
@@ -1532,10 +1534,10 @@ print(f"  Validation: max scalar error {ss_err:.6f} -- OK")
 
 # VTK structured grid comparison
 try:
-    from vtkmodules.vtkCommonDataModel import vtkStructuredGrid as _VSG
-    from vtkmodules.vtkCommonCore import vtkPoints as _VP
-    from vtkmodules.vtkFiltersCore import vtkContourFilter as _CF2
     from vtkmodules.util.numpy_support import numpy_to_vtk as _n2v2
+    from vtkmodules.vtkCommonCore import vtkPoints as _VP
+    from vtkmodules.vtkCommonDataModel import vtkStructuredGrid as _VSG
+    from vtkmodules.vtkFiltersCore import vtkContourFilter as _CF2
 
     sg = _VSG()
     sg.SetDimensions(nx + 1, ny + 1, nz + 1)

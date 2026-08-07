@@ -1,8 +1,8 @@
 """Tests for HIP C code generation — no GPU required."""
 
 import tack
-from tack.lang.type_inference import infer_param_types
 from tack.codegen.hip_gen import generate_hip_source
+from tack.lang.type_inference import infer_param_types
 
 
 def _get_ir(kernel_fn, *field_shapes):

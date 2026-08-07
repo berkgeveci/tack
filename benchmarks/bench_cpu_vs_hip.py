@@ -1,6 +1,8 @@
 """CPU vs HIP performance comparison."""
 import time
+
 import numpy as np
+
 import tack
 
 DATA_SIZES = {
@@ -142,7 +144,7 @@ def main():
 
     # Summary table
     print(f"\n{'='*90}")
-    print(f"  SUMMARY: CPU vs HIP (median time in ms, speedup = CPU/HIP)")
+    print("  SUMMARY: CPU vs HIP (median time in ms, speedup = CPU/HIP)")
     print(f"{'='*90}")
     print(f"  {'Benchmark':>12s}  {'Size':>6s}  {'CPU (ms)':>10s}  {'HIP (ms)':>10s}  {'Speedup':>8s}")
     print(f"  {'-'*12}  {'-'*6}  {'-'*10}  {'-'*10}  {'-'*8}")
@@ -157,7 +159,7 @@ def main():
 
     # Volrender comparison (already measured externally, just print note)
     print(f"\n{'='*90}")
-    print(f"  VOLUME RENDER: see --bench output from packages/tack-rendering/examples/tack_volrender.py")
+    print("  VOLUME RENDER: see --bench output from packages/tack-rendering/examples/tack_volrender.py")
     print(f"{'='*90}")
 
 

@@ -23,44 +23,54 @@ on its own when tack-vis is not installed.
 """
 
 from pkgutil import extend_path
+
 __path__ = extend_path(__path__, __name__)
 
-from tack.algorithms.scan import exclusive_scan, inclusive_scan
 from tack.algorithms.copy import copy, fill_value
+from tack.algorithms.scan import exclusive_scan, inclusive_scan
 from tack.algorithms.stats import (
-    var, std, norm, absmax, count_nonzero, dot, histogram,
+    absmax,
+    count_nonzero,
+    dot,
+    histogram,
+    norm,
+    std,
+    var,
 )
 
 __all__ = [
-    "exclusive_scan",
-    "inclusive_scan",
-    "copy",
-    "fill_value",
-    "var",
-    "std",
-    "norm",
     "absmax",
+    "copy",
     "count_nonzero",
     "dot",
+    "exclusive_scan",
+    "fill_value",
     "histogram",
+    "inclusive_scan",
+    "norm",
+    "std",
+    "var",
 ]
 
 # tack-vis worklets, if that package is installed. The modules live in the
 # tack-vis tree and reach this namespace through extend_path above.
 try:
-    from tack.algorithms.flying_edges import (
-        flying_edges, flying_edges_multiblock, UniformGrid, MCTables,
-    )
-    from tack.algorithms.compute_normals import compute_normals
     from tack.algorithms.cell_to_point import cell_to_point
+    from tack.algorithms.compute_normals import compute_normals
+    from tack.algorithms.flying_edges import (
+        MCTables,
+        UniformGrid,
+        flying_edges,
+        flying_edges_multiblock,
+    )
 except ImportError:
     pass  # tack-vis not installed — core primitives above still work
 else:
     __all__ += [
+        "MCTables",
+        "UniformGrid",
+        "cell_to_point",
+        "compute_normals",
         "flying_edges",
         "flying_edges_multiblock",
-        "UniformGrid",
-        "MCTables",
-        "compute_normals",
-        "cell_to_point",
     ]

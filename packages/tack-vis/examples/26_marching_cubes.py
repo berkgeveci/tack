@@ -19,12 +19,14 @@ Usage:
   uv run python examples/26_marching_cubes.py --arch metal --size 200
 """
 
+import argparse
 import time
+
 import numpy as np
+
 import tack
 from tack import algorithms
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _parser.add_argument('--size', type=int, default=100,
@@ -579,9 +581,9 @@ results = {"Tack": tack_time}
 # --- VTK comparison ---
 vtk_total_tris = None
 try:
+    from vtkmodules.util.numpy_support import numpy_to_vtk
     from vtkmodules.vtkCommonDataModel import vtkImageData
     from vtkmodules.vtkFiltersCore import vtkContourFilter
-    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 
     print("\nVTK vtkContourFilter...")
 

@@ -8,8 +8,8 @@ Euler characteristic, and enclosed volume.
 from collections import Counter
 
 import numpy as np
-import tack
 
+import tack
 from tack.algorithms.flying_edges import UniformGrid
 
 

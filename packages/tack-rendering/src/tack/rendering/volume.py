@@ -6,10 +6,9 @@ and Canvas from tack.rendering.
 """
 
 import numpy as np
+
 import tack
-
 from tack.rendering.colortable import _PRESETS
-
 
 # ================================================================
 # TRANSFER FUNCTION
@@ -45,7 +44,7 @@ class TransferFunction:
                 f"Unknown preset '{preset}'. "
                 f"Available: {', '.join(sorted(_PRESETS))}")
         if opacity_func is None:
-            opacity_func = lambda t: t * 0.5  # noqa: E731
+            opacity_func = lambda t: t * 0.5
 
         self.preset = preset
         self.n_samples = n_samples

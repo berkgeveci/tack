@@ -6,16 +6,26 @@ Controls:
   Right panel          Render settings, lights, colormap
 """
 
+import argparse
 import math
-import sys
+
 import numpy as np
+
 import tack
 from tack.rendering import (
-    PerspectiveCamera, OrthographicCamera, Canvas, Scene, Actor, PointLight,
-    ColorTable, Material, Volume, TransferFunction, render, render_volume,
+    Actor,
+    Canvas,
+    ColorTable,
+    Material,
+    OrthographicCamera,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    TransferFunction,
+    Volume,
+    render,
 )
 
-import argparse
 _p = argparse.ArgumentParser()
 _p.add_argument('--arch', default='cpu',
                 choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
@@ -412,7 +422,7 @@ class App:
 # ================================================================
 
 def run_gui(app):
-    from imgui_bundle import imgui, hello_imgui
+    from imgui_bundle import hello_imgui, imgui
 
     first_frame = [True]
 

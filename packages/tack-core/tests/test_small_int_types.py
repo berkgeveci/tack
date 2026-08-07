@@ -1,9 +1,8 @@
 """Tests for i8/u8/i16/u16 scalar types."""
 
 import numpy as np
-import pytest
-import tack
 
+import tack
 
 # --- Field creation and read/write ---
 
@@ -175,11 +174,10 @@ def test_u8_plus_i32_promotes(backend):
 
 def test_cuda_codegen_i8_u8():
     """CUDA codegen emits correct C types for i8/u8."""
-    from tack.lang import ir
-    from tack.lang.types import u8, i8
-    from tack.lang.type_inference import infer_param_types
-    from tack.lang.ir_type_annotate import annotate_types
     from tack.codegen.cuda_gen import generate_cuda_source
+    from tack.lang import ir
+    from tack.lang.ir_type_annotate import annotate_types
+    from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
     data = tack.field(dtype=tack.u8, shape=(10,))
@@ -201,11 +199,10 @@ def test_cuda_codegen_i8_u8():
 
 def test_msl_codegen_u16():
     """MSL codegen emits correct type for u16."""
-    from tack.lang import ir
-    from tack.lang.types import u16
-    from tack.lang.type_inference import infer_param_types
-    from tack.lang.ir_type_annotate import annotate_types
     from tack.codegen.msl_gen import generate_msl_source
+    from tack.lang import ir
+    from tack.lang.ir_type_annotate import annotate_types
+    from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
     data = tack.field(dtype=tack.u16, shape=(10,))

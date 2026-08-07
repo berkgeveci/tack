@@ -14,10 +14,12 @@ Usage:
   uv run python examples/30_scalar_packing.py --arch metal
 """
 
+import argparse
+
 import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
                      choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
@@ -71,4 +73,4 @@ assert np.allclose(result, expected, rtol=1e-4), f"Mismatch: max err = {np.max(n
 print(f"Total weight: {total_w:.1f}")
 print(f"First 5 results: {result[:5]}")
 print(f"Expected:        {expected[:5]}")
-print(f"\n33 scalar parameters packed automatically -- all correct!")
+print("\n33 scalar parameters packed automatically -- all correct!")

@@ -5,15 +5,18 @@ Usage:
   uv run python -m examples.mini_vtk.demo --arch metal
 """
 
-import sys
 import os
+import sys
+
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 
-import numpy as np
+import argparse
 import time
+
+import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
                      choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
@@ -22,12 +25,15 @@ _args = _parser.parse_args()
 tack.init(arch=getattr(tack, _args.arch))
 
 from examples.mini_vtk import (
-    make_rectilinear_dataset, make_explicit_hex_dataset, filters,
-    AOSArray, CellSetExplicit, Hexahedron, Tetrahedron, Wedge,
-    AOSTupleArray,
+                     AOSArray,
+                     AOSTupleArray,
+                     CellSetExplicit,
+                     Hexahedron,
+                     Tetrahedron,
+                     filters,
+                     make_rectilinear_dataset,
 )
 from examples.mini_vtk.cellsets.explicit import from_structured
-
 
 N = _args.size
 print(f"mini_vtk demo -- {N}x{N}x{N} rectilinear grid on {_args.arch}")
@@ -155,6 +161,7 @@ conn_field = tack.field(dtype=tack.i32, shape=(4,))
 conn_field.from_numpy(tet_conn)
 
 from examples.mini_vtk.dataset import Dataset
+
 tet_ds = Dataset(
     AOSTupleArray(coord_field, 4, 3),
     CellSetExplicit(conn_field, 4),

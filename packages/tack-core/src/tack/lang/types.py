@@ -65,7 +65,6 @@ def from_numpy_dtype(dtype: np.dtype) -> ScalarType:
 
 class TemplateType:
     """Marker for template (generic) kernel arguments — resolved at call time."""
-    pass
 
 
 def template() -> TemplateType:

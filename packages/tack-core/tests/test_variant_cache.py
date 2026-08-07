@@ -11,7 +11,6 @@ flat length is not compiled in, so varying it must not force a recompile.
 """
 
 import numpy as np
-import pytest
 
 import tack
 

@@ -23,8 +23,8 @@ MCTables
 import weakref
 
 import numpy as np
-import tack
 
+import tack
 
 # ================================================================
 # MARCHING CUBES TABLES

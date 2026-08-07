@@ -10,9 +10,9 @@ OpenCL C uses ``long`` for 64-bit integers (``long long`` is not standard OpenCL
 This module reuses the CUDA codegen with OpenCL-specific overrides.
 """
 
+from tack.codegen.cuda_gen import _BINOP_MAP, CUDACodeGen
 from tack.lang import ir
-from tack.codegen.cuda_gen import CUDACodeGen, _BINOP_MAP, _CMP_MAP
-from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
+from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 # OpenCL uses 'long' for 64-bit integers (not 'long long')
 _OCL_INT = "long"
@@ -140,7 +140,7 @@ class OpenCLCodeGen(CUDACodeGen):
                     f"inline float {name}(__global float* data, float u, float v, float w) {{",
                     f"    float fx = u * {W - 1}.0f, fy = v * {H - 1}.0f, fz = w * {D - 1}.0f;",
                     f"    {_OCL_INT} ix = ({_OCL_INT})floor(fx), iy = ({_OCL_INT})floor(fy), iz = ({_OCL_INT})floor(fz);",
-                    f"    float dx = fx - (float)ix, dy = fy - (float)iy, dz = fz - (float)iz;",
+                    "    float dx = fx - (float)ix, dy = fy - (float)iy, dz = fz - (float)iz;",
                     f"    ix = max(({_OCL_INT})0, min(ix, ({_OCL_INT}){W - 1}));",
                     f"    iy = max(({_OCL_INT})0, min(iy, ({_OCL_INT}){H - 1}));",
                     f"    iz = max(({_OCL_INT})0, min(iz, ({_OCL_INT}){D - 1}));",
@@ -155,15 +155,15 @@ class OpenCLCodeGen(CUDACodeGen):
                     f"    float c101 = data[iz1 * {W * H}L + iy  * {W}L + ix1];",
                     f"    float c011 = data[iz1 * {W * H}L + iy1 * {W}L + ix ];",
                     f"    float c111 = data[iz1 * {W * H}L + iy1 * {W}L + ix1];",
-                    f"    float c00 = c000 * (1.0f - dx) + c100 * dx;",
-                    f"    float c10 = c010 * (1.0f - dx) + c110 * dx;",
-                    f"    float c01 = c001 * (1.0f - dx) + c101 * dx;",
-                    f"    float c11 = c011 * (1.0f - dx) + c111 * dx;",
-                    f"    float c0 = c00 * (1.0f - dy) + c10 * dy;",
-                    f"    float c1 = c01 * (1.0f - dy) + c11 * dy;",
-                    f"    return c0 * (1.0f - dz) + c1 * dz;",
-                    f"}}",
-                    f"",
+                    "    float c00 = c000 * (1.0f - dx) + c100 * dx;",
+                    "    float c10 = c010 * (1.0f - dx) + c110 * dx;",
+                    "    float c01 = c001 * (1.0f - dx) + c101 * dx;",
+                    "    float c11 = c011 * (1.0f - dx) + c111 * dx;",
+                    "    float c0 = c00 * (1.0f - dy) + c10 * dy;",
+                    "    float c1 = c01 * (1.0f - dy) + c11 * dy;",
+                    "    return c0 * (1.0f - dz) + c1 * dz;",
+                    "}",
+                    "",
                 ])
 
         body = "\n".join(self._lines) + "\n"
@@ -242,17 +242,17 @@ class OpenCLCodeGen(CUDACodeGen):
         self._emit(f"__local float {smem}[256];")
         self._emit(f"int {tid} = get_local_id(0);")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
-        self._emit(f"barrier(CLK_LOCAL_MEM_FENCE);")
-        self._emit(f"for (int __s = 128; __s > 0; __s >>= 1) {{")
+        self._emit("barrier(CLK_LOCAL_MEM_FENCE);")
+        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
         self._emit(f"{smem}[{tid}] = {op_expr(f'{smem}[{tid}]', f'{smem}[{tid} + __s]')};")
         self._indent -= 1
-        self._emit(f"}}")
-        self._emit(f"barrier(CLK_LOCAL_MEM_FENCE);")
+        self._emit("}")
+        self._emit("barrier(CLK_LOCAL_MEM_FENCE);")
         self._indent -= 1
-        self._emit(f"}}")
+        self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)
@@ -312,10 +312,10 @@ class OpenCLCodeGen(CUDACodeGen):
         elif node.op == "add" and is_float:
             # CAS-based float atomic add
             self._emit(f"{{ volatile __global int* __addr = (volatile __global int*)&{field}[{index}];")
-            self._emit(f"  int __old = *__addr, __assumed;")
-            self._emit(f"  do {{ __assumed = __old;")
+            self._emit("  int __old = *__addr, __assumed;")
+            self._emit("  do { __assumed = __old;")
             self._emit(f"    __old = atomic_cmpxchg(__addr, __assumed, as_int(as_float(__assumed) + {value}));")
-            self._emit(f"  }} while (__assumed != __old); }}")
+            self._emit("  } while (__assumed != __old); }")
         else:
             _ATOMIC_FUNCS = {"add": "atomic_add", "min": "atomic_min", "max": "atomic_max"}
             func = _ATOMIC_FUNCS.get(node.op)

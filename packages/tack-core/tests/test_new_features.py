@@ -2,10 +2,8 @@
 field[None], Vector types, and vector methods."""
 
 import numpy as np
-import pytest
+
 import tack
-from tack.lang.ast_transform import transform_kernel
-from tack.lang import ir
 
 # Build list of available backends
 

@@ -1,6 +1,7 @@
 """Cell average filter -- average point data to cell data."""
 
 import tack
+
 from ..arrays import AOSArray
 
 

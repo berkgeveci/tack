@@ -1,9 +1,8 @@
 """Tests for tack.local_array — per-thread private arrays."""
 
 import numpy as np
-import pytest
-import tack
 
+import tack
 
 # Test on all available backends
 

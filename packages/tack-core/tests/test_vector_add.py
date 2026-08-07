@@ -1,7 +1,7 @@
 """Test vector addition — simplest kernel, validates basic pipeline."""
 
 import numpy as np
-import pytest
+
 import tack
 
 

@@ -1,12 +1,20 @@
 """39 -- Scalar field coloring: sphere colored by height using ColorTable."""
 
+import argparse
+
 import numpy as np
+
 import tack
 from tack.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, ColorTable, render,
+    Actor,
+    Canvas,
+    ColorTable,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    render,
 )
 
-import argparse
 _p = argparse.ArgumentParser()
 _p.add_argument('--arch', default='cpu',
                 choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])

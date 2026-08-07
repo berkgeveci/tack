@@ -2,8 +2,9 @@
 
 import numpy as np
 import pytest
+
 import tack
-from tack.rendering import Scene, Actor, PointLight
+from tack.rendering import Actor, PointLight, Scene
 
 
 def _triangle():

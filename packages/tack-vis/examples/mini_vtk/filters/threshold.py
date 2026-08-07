@@ -1,8 +1,9 @@
 """Threshold filter -- extract cells where a scalar is within a range."""
 
 import numpy as np
+
 import tack
-from ..arrays import AOSArray
+
 from ..cellsets import CellSetExplicit
 from ..dataset import Dataset
 

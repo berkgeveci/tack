@@ -13,11 +13,10 @@ silently — the code still compiles as C, it just addresses the wrong
 memory or synchronizes the wrong scope.
 """
 
-import pytest
 
 import tack
-from tack.lang.type_inference import infer_param_types
 from tack.codegen.opencl_gen import generate_opencl_source
+from tack.lang.type_inference import infer_param_types
 
 
 def _source(kernel_fn, *args):

@@ -23,26 +23,26 @@ import textwrap
 import pytest
 
 BACKENDS = {
-    "cuda": dict(
-        cls="from tack.runtime.cuda_backend import CUDABackend as Backend",
-        stubs=["cuda", "cuda.bindings"],
-        attrs="",
-    ),
-    "hip": dict(
-        cls="from tack.runtime.hip_backend import HIPBackend as Backend",
-        stubs=["hip"],
-        attrs="",
-    ),
-    "level_zero": dict(
-        cls="from tack.runtime.level_zero_backend import LevelZeroBackend as Backend",
-        stubs=[],
-        attrs=(
+    "cuda": {
+        "cls": "from tack.runtime.cuda_backend import CUDABackend as Backend",
+        "stubs": ["cuda", "cuda.bindings"],
+        "attrs": "",
+    },
+    "hip": {
+        "cls": "from tack.runtime.hip_backend import HIPBackend as Backend",
+        "stubs": ["hip"],
+        "attrs": "",
+    },
+    "level_zero": {
+        "cls": "from tack.runtime.level_zero_backend import LevelZeroBackend as Backend",
+        "stubs": [],
+        "attrs": (
             "backend.supported_dtypes = {tack.lang.types.f32, tack.lang.types.i32,\n"
             "                            tack.lang.types.i64, tack.lang.types.f64}\n"
             "    backend._max_image_3d = 16384\n"
             "    backend._has_hw_sampler = True"
         ),
-    ),
+    },
 }
 
 _PREAMBLE = '''

@@ -11,8 +11,8 @@ products for efficiency.
 """
 
 import numpy as np
-import tack
 
+import tack
 
 # ── Host-side helpers ───────────────────────────────────────────────
 

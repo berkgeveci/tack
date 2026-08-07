@@ -21,11 +21,13 @@ Usage:
   uv run python examples/22_contour.py --arch metal
 """
 
+import argparse
+
 import numpy as np
+
 import tack
 from tack import algorithms
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(tack, _parser.parse_args().arch)

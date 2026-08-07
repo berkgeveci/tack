@@ -6,8 +6,8 @@ on the mesh coordinate DOFs (Mesh::Nodes in MFEM).
 """
 
 import numpy as np
-import tack
 
+import tack
 
 # ── Linear (order 1) maps ──────────────────────────────────────────
 
@@ -75,9 +75,8 @@ class LinearQuadMap:
         if col == 0:
             # d/dr
             return -(1.0 - s) * p0 + (1.0 - s) * p1 + s * p2 - s * p3
-        else:
-            # d/ds
-            return -(1.0 - r) * p0 - r * p1 + r * p2 + (1.0 - r) * p3
+        # d/ds
+        return -(1.0 - r) * p0 - r * p1 + r * p2 + (1.0 - r) * p3
 
 
 @tack.data_oriented

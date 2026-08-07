@@ -1,20 +1,32 @@
 # Enable namespace package merging across tack-core, tack-rendering, tack-vis
 from pkgutil import extend_path
+
 __path__ = extend_path(__path__, __name__)
 
 """Tack — GPU compute framework framework."""
 
-from tack.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64, template
-from tack.lang.kernel import kernel
-from tack.lang.inspect_kernel import inspect
-from tack.lang.func import func
-from tack.lang.field import (
-    field, field_like, field_from_ptr, from_dlpack, memory_space,
-    zeros, ones, full, arange, concat,
-    Vector, Texture3D, ExportedMemory,
-)
 from tack.lang.data_oriented import data_oriented
+from tack.lang.field import (
+    ExportedMemory,
+    Texture3D,
+    Vector,
+    arange,
+    concat,
+    field,
+    field_from_ptr,
+    field_like,
+    from_dlpack,
+    full,
+    memory_space,
+    ones,
+    zeros,
+)
+from tack.lang.func import func
+from tack.lang.inspect_kernel import inspect
+from tack.lang.kernel import kernel
+from tack.lang.types import f32, f64, i8, i16, i32, i64, template, u8, u16, u32, u64
 from tack.runtime.dispatch import init
+
 
 # Shared memory, barrier, thread_id — only usable inside @tack.kernel
 def shared(dtype, size):

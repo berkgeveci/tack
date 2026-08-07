@@ -13,7 +13,7 @@ import pytest
 
 import tack
 from tack.runtime import cpu as cpu_mod
-from tack.runtime.cpu import CPUBackend, _MAX_SAMPLE_RATIO
+from tack.runtime.cpu import _MAX_SAMPLE_RATIO, CPUBackend
 from tack.runtime.dispatch import get_backend
 
 
@@ -277,6 +277,7 @@ def test_core_count_is_sane():
     """Physical cores, not logical: a hyperthread shares an execution unit,
     so a second compute thread on one costs a fan-out slot to buy little."""
     import os
+
     from tack.runtime.cpu import _physical_core_count
 
     count = _physical_core_count()
@@ -288,8 +289,7 @@ def test_core_count_is_sane():
 
 def test_every_platform_probe_answers_or_declines():
     """A probe off its own platform must return None, not guess."""
-    from tack.runtime.cpu import (_linux_core_count, _macos_core_count,
-                                  _windows_core_count)
+    from tack.runtime.cpu import _linux_core_count, _macos_core_count, _windows_core_count
     answered = 0
     for probe in (_linux_core_count, _macos_core_count, _windows_core_count):
         result = probe()
@@ -545,8 +545,8 @@ def test_expensive_kernel_does_fan_out(cpu):
 
 def _compile_for(backend, kernel, args):
     """Compile `kernel` for `args` into `backend`'s cache and return it."""
-    from tack.lang.ir_resolve import resolve_ir
     from tack.lang.ir_optimize import optimize_ir
+    from tack.lang.ir_resolve import resolve_ir
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
     from tack.runtime.cpu import _compile_kernel

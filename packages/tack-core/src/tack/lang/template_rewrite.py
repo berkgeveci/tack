@@ -15,7 +15,7 @@ import ast
 import copy
 
 from tack.lang.field import Field
-from tack.lang.func import Func, _func_registry
+from tack.lang.func import _func_registry
 
 
 def classify_template_attrs(obj):

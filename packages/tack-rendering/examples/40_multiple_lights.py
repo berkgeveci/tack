@@ -1,12 +1,19 @@
 """40 -- Multiple colored lights illuminating a scene."""
 
+import argparse
+
 import numpy as np
+
 import tack
 from tack.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, render,
+    Actor,
+    Canvas,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    render,
 )
 
-import argparse
 _p = argparse.ArgumentParser()
 _p.add_argument('--arch', default='cpu',
                 choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])

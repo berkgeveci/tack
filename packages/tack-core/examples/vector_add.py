@@ -1,7 +1,9 @@
 """Vector addition -- simplest Tack example, now JIT-compiled."""
 
 import time
+
 import numpy as np
+
 import tack
 
 tack.init(arch=tack.cpu)

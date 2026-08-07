@@ -9,10 +9,8 @@ silently lost precision.
 """
 
 import numpy as np
-import pytest
 
 import tack
-
 
 # A value that is not representable in f32.
 EXACT = np.float64(0.625095466604667)

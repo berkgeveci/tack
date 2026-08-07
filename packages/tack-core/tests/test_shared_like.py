@@ -6,8 +6,8 @@ with the same dtype as the given field.
 
 import numpy as np
 import pytest
-import tack
 
+import tack
 
 backends = []
 try:
@@ -32,7 +32,9 @@ def backend(request):
 
 def test_shared_like_produces_ir():
     """shared_like(field, size) should produce IRSharedAlloc with field_name."""
-    import ast, textwrap
+    import ast
+    import textwrap
+
     from tack.lang.ast_transform import transform_kernel
     source = textwrap.dedent("""
 def kern(data, out):
@@ -102,12 +104,11 @@ def test_shared_like_i32(backend):
 
 def test_shared_like_cuda_codegen():
     """CUDA codegen emits correct shared type from shared_like."""
+    from tack.codegen.cuda_gen import generate_cuda_source
     from tack.lang import ir
-    from tack.lang.types import f32, i32
-    from tack.lang.type_inference import infer_param_types
     from tack.lang.ir_resolve import resolve_ir
     from tack.lang.ir_type_annotate import annotate_types
-    from tack.codegen.cuda_gen import generate_cuda_source
+    from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
     data = tack.field(dtype=tack.f32, shape=(10,))
@@ -130,12 +131,11 @@ def test_shared_like_cuda_codegen():
 
 def test_shared_like_i32_cuda_codegen():
     """CUDA codegen emits int shared type from i32 field."""
+    from tack.codegen.cuda_gen import generate_cuda_source
     from tack.lang import ir
-    from tack.lang.types import i32
-    from tack.lang.type_inference import infer_param_types
     from tack.lang.ir_resolve import resolve_ir
     from tack.lang.ir_type_annotate import annotate_types
-    from tack.codegen.cuda_gen import generate_cuda_source
+    from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
     data = tack.field(dtype=tack.i32, shape=(10,))

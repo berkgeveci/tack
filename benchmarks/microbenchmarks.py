@@ -11,9 +11,9 @@ Measures median time (ms) and throughput (GB/s or GFlop/s).
 import argparse
 import json
 import time
-import sys
 
 import numpy as np
+
 import tack
 
 # ─────────────────────────────────────────────────────────────

@@ -1,8 +1,8 @@
 """Tests for CUDA C code generation — no GPU required."""
 
 import tack
-from tack.lang.type_inference import infer_param_types
 from tack.codegen.cuda_gen import generate_cuda_source
+from tack.lang.type_inference import infer_param_types
 
 
 def _get_ir(kernel_fn, *args):

@@ -1,6 +1,7 @@
 """Array-of-Structures array types."""
 
 import numpy as np
+
 import tack
 
 

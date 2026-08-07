@@ -16,15 +16,22 @@ Usage:
   uv run python examples/37_insitu_pipeline.py --arch metal --grid 128 --denoise
 """
 
+import argparse
 import time
+
 import numpy as np
+
 import tack
-from tack.algorithms.flying_edges import flying_edges, UniformGrid
+from tack.algorithms.flying_edges import UniformGrid, flying_edges
 from tack.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, render,
+    Actor,
+    Canvas,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    render,
 )
 
-import argparse
 _p = argparse.ArgumentParser()
 _p.add_argument('--arch', default='cpu',
                 choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])

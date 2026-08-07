@@ -10,10 +10,12 @@ Usage:
   uv run python examples/18_wave_equation.py
 """
 
+import argparse
+
 import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(tack, _parser.parse_args().arch)

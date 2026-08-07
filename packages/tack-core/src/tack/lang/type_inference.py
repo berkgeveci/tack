@@ -8,7 +8,19 @@ import numpy as np
 
 from tack.lang import ir
 from tack.lang.field import Field, Texture3D
-from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64, from_numpy_dtype
+from tack.lang.types import (
+    ScalarType,
+    f32,
+    f64,
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    u64,
+)
 
 
 def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:

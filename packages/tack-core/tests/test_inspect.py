@@ -1,7 +1,7 @@
 """Test tack.inspect() — kernel code inspection without execution."""
 
-import numpy as np
 import pytest
+
 import tack
 
 

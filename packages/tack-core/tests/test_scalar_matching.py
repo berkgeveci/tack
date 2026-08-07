@@ -7,11 +7,11 @@ Validates that Python float scalars match the field dtype context:
 
 import numpy as np
 import pytest
+
 import tack
 from tack.lang import ir
-from tack.lang.types import f32, f64, i32, i64
 from tack.lang.type_inference import infer_param_types
-
+from tack.lang.types import f32, f64, i32
 
 # --- IR-level tests ---
 

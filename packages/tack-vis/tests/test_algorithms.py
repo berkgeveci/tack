@@ -1,7 +1,7 @@
 """Tests for tack.algorithms module."""
 
 import numpy as np
-import pytest
+
 import tack
 from tack import algorithms
 

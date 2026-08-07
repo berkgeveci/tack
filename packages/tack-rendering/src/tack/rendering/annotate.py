@@ -6,8 +6,8 @@ lines and rectangles are drawn with pure numpy.
 """
 
 import warnings
-import numpy as np
 
+import numpy as np
 
 # ================================================================
 # Pillow helpers
@@ -40,7 +40,8 @@ def _draw_text(image, text, x, y, color=(255, 255, 255), font_size=14,
     """
     if not _has_pillow():
         return
-    from PIL import Image as PILImage, ImageDraw, ImageFont
+    from PIL import Image as PILImage
+    from PIL import ImageDraw, ImageFont
     pil_img = PILImage.fromarray(image)
     draw = ImageDraw.Draw(pil_img)
     try:
@@ -308,8 +309,9 @@ class AxisIndicator:
             # Project world axis onto screen
             sx = float(np.dot(axis, right))
             sy = -float(np.dot(axis, up))  # screen y is down
-            length = max(abs(sx), abs(sy), 0.001)
-            # Normalize but preserve relative lengths
+            # Not normalised: sx and sy are already direction cosines, so
+            # their magnitude is the foreshortening and scaling it away
+            # would draw all three axes the same length whatever the camera.
             sx_pix = int(cx + sx * r)
             sy_pix = int(cy + sy * r)
 

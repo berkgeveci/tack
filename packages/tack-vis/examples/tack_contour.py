@@ -15,7 +15,9 @@ Both produce identical results, validating the abstraction.
 """
 
 import sys
+
 import numpy as np
+
 import tack
 
 _arch = tack.cpu

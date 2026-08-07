@@ -1,9 +1,10 @@
 """Dataset -- a mesh container with coordinates, cell sets, and data arrays."""
 
 import numpy as np
+
 import tack
 
-from .arrays import AOSArray, AOSTupleArray
+from .arrays import AOSTupleArray
 from .cellsets import CellSetStructured3D
 
 

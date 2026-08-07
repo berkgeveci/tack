@@ -16,17 +16,25 @@ stops being a closed manifold immediately.
 
 import numpy as np
 import pytest
+from vis_helpers import (
+    directed_edge_counts,
+    enclosed_volume,
+    euler_characteristic,
+    make_grid,
+    node_coords,
+    plane_field,
+    sphere_field,
+    undirected_edge_counts,
+    upload,
+)
 
 import tack
 from tack.algorithms.flying_edges import (
-    flying_edges, flying_edges_multiblock, MCTables,
-    _TRI_TABLE, _NUM_TRIS,
-)
-
-from vis_helpers import (
-    make_grid, node_coords, upload, sphere_field, plane_field,
-    undirected_edge_counts, directed_edge_counts,
-    enclosed_volume, euler_characteristic,
+    _NUM_TRIS,
+    _TRI_TABLE,
+    MCTables,
+    flying_edges,
+    flying_edges_multiblock,
 )
 
 RADIUS = 1.0

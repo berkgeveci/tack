@@ -1,11 +1,11 @@
 """Tests for type inference on kernel arguments."""
 
 import pytest
-import numpy as np
+
 import tack
+from tack.lang import ir
 from tack.lang.type_inference import infer_param_types, promote_types
 from tack.lang.types import f32, f64, i32, i64
-from tack.lang import ir
 
 
 def test_infer_field_types():

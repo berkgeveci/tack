@@ -2,10 +2,10 @@
 
 import numpy as np
 import pytest
-import tack
-from tack.lang.types import i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-from tack.lang.type_inference import promote_types
 
+import tack
+from tack.lang.type_inference import promote_types
+from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 # --- Signed/unsigned promotion rules ---
 
@@ -102,10 +102,10 @@ def test_kernel_named_int(backend):
 
 def test_codegen_escapes_reserved_name():
     """Verify codegen output uses _tack_ prefix for reserved names."""
-    from tack.lang import ir
-    from tack.lang.type_inference import infer_param_types
-    from tack.lang.ir_type_annotate import annotate_types
     from tack.codegen.cuda_gen import generate_cuda_source
+    from tack.lang import ir
+    from tack.lang.ir_type_annotate import annotate_types
+    from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
     out = tack.field(dtype=tack.f32, shape=(4,))

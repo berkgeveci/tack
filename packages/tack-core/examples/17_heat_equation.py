@@ -10,10 +10,10 @@ Usage:
   uv run python examples/17_heat_equation.py
 """
 
-import numpy as np
+import argparse
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(tack, _parser.parse_args().arch)

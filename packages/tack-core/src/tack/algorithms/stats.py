@@ -6,7 +6,6 @@ unless noted. Uses atomic operations for reductions and histogram binning.
 
 import tack
 
-
 # ================================================================
 # KERNELS
 # ================================================================

@@ -19,14 +19,15 @@ Usage:
   uv run python examples/31_dawn_interop.py --arch cuda
 """
 
-import numpy as np
-import tack
-
 # ================================================================
 # Step 1: Tack computes into a GPU buffer
 # ================================================================
-
 import argparse
+
+import numpy as np
+
+import tack
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--arch", default="metal", choices=["metal", "cuda"])
 args = parser.parse_args()
@@ -69,7 +70,8 @@ print(f"\nExported memory: backend={exported.backend}, "
 # Step 3: Import into Dawn (zero-copy)
 # ================================================================
 
-from pydawn import utils as dawn, webgpu
+from pydawn import utils as dawn
+from pydawn import webgpu
 
 if exported.backend == "metal":
     features = [webgpu.WGPUFeatureName_SharedBufferMemoryMTLBuffer]
@@ -79,7 +81,7 @@ else:
 adapter = dawn.request_adapter_sync(
     power_preference=webgpu.WGPUPowerPreference_HighPerformance)
 device = dawn.request_device_sync(adapter, features)
-print(f"\nDawn device created")
+print("\nDawn device created")
 
 # Import using backend-appropriate path
 if exported.backend == "metal":
@@ -170,7 +172,7 @@ dawn.sync(device)
 # Tack reads the same buffer — should see doubled values
 tack_after = out.to_numpy()
 expected = tack_result * 2.0
-print(f"\nAfter Dawn compute (double):")
+print("\nAfter Dawn compute (double):")
 print(f"  Tack reads: first 5 = {tack_after[:5]}")
 print(f"  Expected:  first 5 = {expected[:5]}")
 

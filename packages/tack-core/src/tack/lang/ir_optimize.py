@@ -356,22 +356,20 @@ def _replace_names(node, mapping: dict):
         )
 
     if isinstance(node, ir.IRParallelFor):
-        new_node = ir.IRParallelFor(
+        return ir.IRParallelFor(
             node.var,
             _replace_names(node.start, mapping),
             _replace_names(node.end, mapping),
             [_replace_names(s, mapping) for s in node.body],
         )
-        return new_node
 
     if isinstance(node, ir.IRSequentialFor):
-        new_node = ir.IRSequentialFor(
+        return ir.IRSequentialFor(
             node.var,
             _replace_names(node.start, mapping),
             _replace_names(node.end, mapping),
             [_replace_names(s, mapping) for s in node.body],
         )
-        return new_node
 
     if isinstance(node, ir.IRWhile):
         return ir.IRWhile(

@@ -1,7 +1,7 @@
 """Tests for @tack.data_oriented template parameters."""
 
 import numpy as np
-import pytest
+
 import tack
 
 # Build list of available backends

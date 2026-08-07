@@ -1,11 +1,23 @@
 """Tests for type system cleanup: ScalarType on allocs, _NAME_TO_TYPE, registry leak."""
 
 import numpy as np
-import pytest
+
 import tack
 from tack.lang import ir
-from tack.lang.types import ScalarType, _NAME_TO_TYPE, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-
+from tack.lang.types import (
+    _NAME_TO_TYPE,
+    ScalarType,
+    f32,
+    f64,
+    i8,
+    i16,
+    i32,
+    i64,
+    u8,
+    u16,
+    u32,
+    u64,
+)
 
 # --- _NAME_TO_TYPE completeness ---
 
@@ -27,7 +39,9 @@ class TestNameToType:
 class TestAllocDtypeIsScalarType:
     def test_shared_alloc_from_ast(self):
         """tack.shared(tack.f32, 256) produces IRSharedAlloc with ScalarType dtype."""
-        import ast, textwrap
+        import ast
+        import textwrap
+
         from tack.lang.ast_transform import transform_kernel
         source = textwrap.dedent("""
 def kern(data, out):
@@ -46,7 +60,9 @@ def kern(data, out):
 
     def test_shared_alloc_i32(self):
         """tack.shared(tack.i32, 128) produces IRSharedAlloc with i32 dtype."""
-        import ast, textwrap
+        import ast
+        import textwrap
+
         from tack.lang.ast_transform import transform_kernel
         source = textwrap.dedent("""
 def kern(data, out):
@@ -63,7 +79,9 @@ def kern(data, out):
 
     def test_local_alloc_from_ast(self):
         """tack.local_array(tack.u8, 16) produces IRLocalAlloc with u8 dtype."""
-        import ast, textwrap
+        import ast
+        import textwrap
+
         from tack.lang.ast_transform import transform_kernel
         source = textwrap.dedent("""
 def kern(data, out):
@@ -93,8 +111,8 @@ def kern(data, out):
         pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), [shared_alloc])
         func = ir.IRFunction("test", [p_data, p_out], [pfor])
 
-        from tack.lang.type_inference import infer_param_types
         from tack.lang.ir_resolve import resolve_ir
+        from tack.lang.type_inference import infer_param_types
         infer_param_types(func, (data, out))
         resolve_ir(func, {"data": data, "out": out})
 
@@ -106,9 +124,9 @@ def kern(data, out):
 
 def test_cuda_shared_alloc_types():
     """CUDA codegen maps ScalarType to correct C types for shared/local alloc."""
-    from tack.lang.type_inference import infer_param_types
-    from tack.lang.ir_type_annotate import annotate_types
     from tack.codegen.cuda_gen import generate_cuda_source
+    from tack.lang.ir_type_annotate import annotate_types
+    from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
     data = tack.field(dtype=tack.f32, shape=(10,))
@@ -130,9 +148,9 @@ def test_cuda_shared_alloc_types():
 
 def test_msl_shared_alloc_types():
     """MSL codegen maps ScalarType to correct MSL types."""
-    from tack.lang.type_inference import infer_param_types
-    from tack.lang.ir_type_annotate import annotate_types
     from tack.codegen.msl_gen import generate_msl_source
+    from tack.lang.ir_type_annotate import annotate_types
+    from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
     data = tack.field(dtype=tack.f32, shape=(10,))

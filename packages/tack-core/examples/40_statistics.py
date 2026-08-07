@@ -18,11 +18,13 @@ Usage:
   uv run python packages/tack-core/examples/40_statistics.py --arch metal
 """
 
-import numpy as np
-import tack
-from tack.algorithms import var, std, norm, absmax, count_nonzero, dot, histogram
-
 import argparse
+
+import numpy as np
+
+import tack
+from tack.algorithms import absmax, count_nonzero, dot, histogram, norm, std, var
+
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
                      choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
@@ -58,7 +60,7 @@ print("  (matches numpy)")
 # NORMS
 # ================================================================
 
-print(f"\nNorms:")
+print("\nNorms:")
 print(f"  L1   = {norm(data, ord=1):.4f}")
 print(f"  L2   = {norm(data, ord=2):.4f}")
 print(f"  Linf = {norm(data, ord=float('inf')):.4f}")
@@ -118,7 +120,7 @@ print(f"  Total in range: {total_in_range:,} / {n:,}")
 # ANALYSIS WORKFLOW: residual norm
 # ================================================================
 
-print(f"\nResidual norm example:")
+print("\nResidual norm example:")
 # Simulate solving Ax = b: compute residual r = b - Ax
 x = tack.field(dtype=tack.f32, shape=(1000,))
 b_field = tack.field(dtype=tack.f32, shape=(1000,))

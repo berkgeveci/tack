@@ -11,8 +11,7 @@ with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
 from tack.lang import ir
-from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-
+from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 _MSL_TYPE_MAP = {
     i8:  "char",
@@ -289,7 +288,7 @@ class MSLCodeGen:
                 if hasattr(stmt, '_resolved_type') and stmt._resolved_type is not None:
                     return _MSL_TYPE_MAP.get(stmt._resolved_type, self._infer_type(stmt.value))
                 return self._infer_type(stmt.value)
-            elif isinstance(stmt, ir.IRIf):
+            if isinstance(stmt, ir.IRIf):
                 t = self._find_assign_type(var_name, stmt.then_body)
                 if t:
                     return t
@@ -337,15 +336,15 @@ class MSLCodeGen:
                 self._emit(f"float __val__ = {value};")
                 self._emit(f"volatile device atomic_uint* __p__ = "
                            f"(volatile device atomic_uint*)&{field}[{index}];")
-                self._emit(f"uint __old__ = atomic_load_explicit(__p__, memory_order_relaxed);")
-                self._emit(f"while (true) {{")
+                self._emit("uint __old__ = atomic_load_explicit(__p__, memory_order_relaxed);")
+                self._emit("while (true) {")
                 self._indent += 1
-                self._emit(f"float __old_f__ = as_type<float>(__old__);")
+                self._emit("float __old_f__ = as_type<float>(__old__);")
                 cmp = "<=" if node.op == "min" else ">="
                 self._emit(f"if (__old_f__ {cmp} __val__) break;")
-                self._emit(f"uint __new__ = as_type<uint>(__val__);")
-                self._emit(f"if (atomic_compare_exchange_weak_explicit(__p__, &__old__, __new__, "
-                           f"memory_order_relaxed, memory_order_relaxed)) break;")
+                self._emit("uint __new__ = as_type<uint>(__val__);")
+                self._emit("if (atomic_compare_exchange_weak_explicit(__p__, &__old__, __new__, "
+                           "memory_order_relaxed, memory_order_relaxed)) break;")
                 self._indent -= 1
                 self._emit("}")
                 self._indent -= 1
@@ -468,17 +467,17 @@ class MSLCodeGen:
         self._emit(f"threadgroup float {smem}[256];")
         self._emit(f"int {tid} = __local_tid__;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
-        self._emit(f"threadgroup_barrier(mem_flags::mem_threadgroup);")
-        self._emit(f"for (int __s = 128; __s > 0; __s >>= 1) {{")
+        self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
+        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
         self._emit(f"{smem}[{tid}] = {op_expr(f'{smem}[{tid}]', f'{smem}[{tid} + __s]')};")
         self._indent -= 1
-        self._emit(f"}}")
-        self._emit(f"threadgroup_barrier(mem_flags::mem_threadgroup);")
+        self._emit("}")
+        self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
         self._indent -= 1
-        self._emit(f"}}")
+        self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)

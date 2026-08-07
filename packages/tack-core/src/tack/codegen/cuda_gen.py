@@ -13,8 +13,7 @@ with more than 2^31 elements.
 """
 
 from tack.lang import ir
-from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
-
+from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 _C_TYPE_MAP = {
     i8:  "signed char",
@@ -198,7 +197,7 @@ class CUDACodeGen:
                     f"__device__ inline float {name}(float* data, float u, float v, float w) {{",
                     f"    float fx = u * {W - 1}.0f, fy = v * {H - 1}.0f, fz = w * {D - 1}.0f;",
                     f"    {_INT} ix = ({_INT})floorf(fx), iy = ({_INT})floorf(fy), iz = ({_INT})floorf(fz);",
-                    f"    float dx = fx - (float)ix, dy = fy - (float)iy, dz = fz - (float)iz;",
+                    "    float dx = fx - (float)ix, dy = fy - (float)iy, dz = fz - (float)iz;",
                     f"    ix = max(({_INT})0, min(ix, ({_INT}){W - 1}));",
                     f"    iy = max(({_INT})0, min(iy, ({_INT}){H - 1}));",
                     f"    iz = max(({_INT})0, min(iz, ({_INT}){D - 1}));",
@@ -213,15 +212,15 @@ class CUDACodeGen:
                     f"    float c101 = data[iz1 * {W * H}LL + iy  * {W}LL + ix1];",
                     f"    float c011 = data[iz1 * {W * H}LL + iy1 * {W}LL + ix ];",
                     f"    float c111 = data[iz1 * {W * H}LL + iy1 * {W}LL + ix1];",
-                    f"    float c00 = c000 * (1.0f - dx) + c100 * dx;",
-                    f"    float c10 = c010 * (1.0f - dx) + c110 * dx;",
-                    f"    float c01 = c001 * (1.0f - dx) + c101 * dx;",
-                    f"    float c11 = c011 * (1.0f - dx) + c111 * dx;",
-                    f"    float c0 = c00 * (1.0f - dy) + c10 * dy;",
-                    f"    float c1 = c01 * (1.0f - dy) + c11 * dy;",
-                    f"    return c0 * (1.0f - dz) + c1 * dz;",
-                    f"}}",
-                    f"",
+                    "    float c00 = c000 * (1.0f - dx) + c100 * dx;",
+                    "    float c10 = c010 * (1.0f - dx) + c110 * dx;",
+                    "    float c01 = c001 * (1.0f - dx) + c101 * dx;",
+                    "    float c11 = c011 * (1.0f - dx) + c111 * dx;",
+                    "    float c0 = c00 * (1.0f - dy) + c10 * dy;",
+                    "    float c1 = c01 * (1.0f - dy) + c11 * dy;",
+                    "    return c0 * (1.0f - dz) + c1 * dz;",
+                    "}",
+                    "",
                 ])
 
         if prefix_lines:
@@ -364,7 +363,7 @@ class CUDACodeGen:
                 if hasattr(stmt, '_resolved_type') and stmt._resolved_type is not None:
                     return self._resolved_type_to_c(stmt._resolved_type)
                 return self._infer_c_type(stmt.value)
-            elif isinstance(stmt, ir.IRIf):
+            if isinstance(stmt, ir.IRIf):
                 t = self._find_assign_type(var_name, stmt.then_body)
                 if t:
                     return t
@@ -552,17 +551,17 @@ class CUDACodeGen:
         self._emit(f"__shared__ float {smem}[256];")
         self._emit(f"int {tid} = threadIdx.x;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
-        self._emit(f"__syncthreads();")
-        self._emit(f"for (int __s = 128; __s > 0; __s >>= 1) {{")
+        self._emit("__syncthreads();")
+        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
         self._emit(f"{smem}[{tid}] = {op_expr(f'{smem}[{tid}]', f'{smem}[{tid} + __s]')};")
         self._indent -= 1
-        self._emit(f"}}")
-        self._emit(f"__syncthreads();")
+        self._emit("}")
+        self._emit("__syncthreads();")
         self._indent -= 1
-        self._emit(f"}}")
+        self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)

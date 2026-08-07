@@ -1,14 +1,21 @@
 """36 -- Path trace + OIDN denoising: 1 spp → clean image."""
 
+import argparse
 import time
+
 import numpy as np
-import tack
 import oidn
+
+import tack
 from tack.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, render,
+    Actor,
+    Canvas,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    render,
 )
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
                      choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])

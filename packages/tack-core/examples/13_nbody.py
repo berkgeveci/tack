@@ -8,11 +8,13 @@ Usage:
   uv run python examples/13_nbody.py
 """
 
+import argparse
 import time
+
 import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(tack, _parser.parse_args().arch)

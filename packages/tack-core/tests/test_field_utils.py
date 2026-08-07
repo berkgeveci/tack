@@ -2,8 +2,8 @@
 
 import numpy as np
 import pytest
-import tack
 
+import tack
 
 # --- Field.size and len() ---
 

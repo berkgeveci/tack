@@ -1,7 +1,7 @@
 """Tests for texture3d sampling through @tack.func inlining."""
 
 import numpy as np
-import pytest
+
 import tack
 
 

@@ -98,8 +98,36 @@ than a recorded output. It catches a class of bug that golden files do not.
 
 Match the surrounding code. Comments explain *why*, not *what*.
 
+Run the linter before you push:
+
+```bash
+uvx ruff check .
+```
+
+CI runs the same thing and it is the fastest job, so it will tell you first
+either way. It is configured in `pyproject.toml` under `[tool.ruff]`.
+
+Two things about that config are worth knowing before you argue with it.
+
+**Kernel bodies are not Python.** Inside `@tack.kernel`, names like `sqrt` and
+`sin` are resolved by the AST transform, and locals like the `s` in
+`s = tack.shared(...)` are consumed by it. Ruff sees undefined names and unused
+variables — 135 of the first kind. `F821`, `F841` and `RUF059` are off for that
+reason, and cannot be scoped to a directory because kernels are written
+everywhere.
+
+**Formatting is not enforced.** `ruff format` would rewrite 182 of 235 files.
+Reformatting the repository is a decision about its whole history, not a lint
+rule, so it has not been made. Match what is around you.
+
 ## Submitting
 
-Open a PR against `main`. CI runs the suite on Python 3.11/3.12/3.13, the packaging
-gate, and a best-effort Metal job. All three should be green — the Metal job is
-`continue-on-error`, so read its log rather than trusting its status.
+Open a PR against `main`. CI runs lint, the suite on Python 3.11/3.12/3.13, the
+packaging gate, the example sweep, and a Metal job on an Apple Silicon runner.
+All of them should be green.
+
+The lint job is worth running locally first because it is the one that catches
+things no test can. Its first run found an f-string with a backslash in an
+example — legal from Python 3.12 and a `SyntaxError` on 3.11, which the packages
+declare support for. No test collected that file, and the examples job runs
+3.13, so nothing else here could have found it.

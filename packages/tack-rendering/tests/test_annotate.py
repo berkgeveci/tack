@@ -1,13 +1,16 @@
 """Tests for annotations: ColorBar, AxisIndicator, TextOverlay."""
 
 import numpy as np
-import pytest
+
 from tack.rendering import (
-    ColorTable, PerspectiveCamera,
-    ColorBar, AxisIndicator, TextOverlay, annotate,
+    AxisIndicator,
+    ColorBar,
+    ColorTable,
+    PerspectiveCamera,
+    TextOverlay,
+    annotate,
 )
 from tack.rendering.annotate import _draw_line, _draw_rect
-
 
 # ================================================================
 # Drawing helpers

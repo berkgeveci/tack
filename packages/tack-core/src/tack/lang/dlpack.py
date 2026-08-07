@@ -10,8 +10,6 @@ Python protocol: https://data-apis.org/array-api/latest/API_specification/genera
 import ctypes
 import itertools
 
-import numpy as np
-
 from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 # DLPack device types
@@ -211,26 +209,25 @@ def _get_device_info(field):
         data_ptr = buf._data.ctypes.data
         return kDLCPU, 0, data_ptr
 
-    elif cls_name == "MetalBuffer":
+    if cls_name == "MetalBuffer":
         # Metal: shared memory — expose as CPU since it's unified memory
         # and the numpy view points into the same physical memory
         data_ptr = buf._view.ctypes.data
         return kDLCPU, 0, data_ptr
 
-    elif cls_name == "CUDABuffer":
+    if cls_name == "CUDABuffer":
         data_ptr = int(buf._device_ptr)
         return kDLCUDA, 0, data_ptr
 
-    elif cls_name == "HIPBuffer":
+    if cls_name == "HIPBuffer":
         data_ptr = int(buf._device_ptr)
         return kDLROCM, 0, data_ptr
 
-    elif cls_name == "L0Buffer":
+    if cls_name == "L0Buffer":
         data_ptr = buf._device_ptr.value if hasattr(buf._device_ptr, 'value') else int(buf._device_ptr)
         return kDLOneAPI, 0, data_ptr
 
-    else:
-        raise RuntimeError(f"DLPack not supported for buffer type: {cls_name}")
+    raise RuntimeError(f"DLPack not supported for buffer type: {cls_name}")
 
 
 def field_to_dlpack(field, versioned=False):
@@ -346,7 +343,7 @@ class _CapsuleHold:
     free the moment the field is collected -- and not before.
     """
 
-    __slots__ = ("_capsule", "_managed_ptr", "_struct", "_released")
+    __slots__ = ("_capsule", "_managed_ptr", "_released", "_struct")
 
     def __init__(self, capsule, managed_ptr, struct=None):
         self._capsule = capsule

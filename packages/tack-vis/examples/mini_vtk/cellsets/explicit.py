@@ -1,6 +1,5 @@
 """Explicit cell set -- connectivity stored in a flat field."""
 
-import numpy as np
 import tack
 
 

@@ -3,10 +3,9 @@
 import ast
 import textwrap
 
-from tack.lang.ast_transform import transform_kernel
-from tack.lang import ir
-from tack.lang.types import f32, f64, i32
 from tack.codegen.llvm_gen import generate_llvm_ir
+from tack.lang.ast_transform import transform_kernel
+from tack.lang.types import f32
 
 
 def _gen(source: str, param_types=None) -> str:

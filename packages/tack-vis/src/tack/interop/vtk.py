@@ -35,7 +35,7 @@ DLPack module.
 
 import tack
 
-__all__ = ["vtk_to_field", "field_to_vtk"]
+__all__ = ["field_to_vtk", "vtk_to_field"]
 
 
 def _dlpack_support():

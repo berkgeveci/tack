@@ -88,7 +88,7 @@ print(f"  scalars {scalars.shape}")
 coord_array = field_to_vtk(points, name="Points")
 scalar_array = field_to_vtk(scalars, name="gyroid")
 
-print(f"\nVTK arrays (shared memory, not copied):")
+print("\nVTK arrays (shared memory, not copied):")
 print(f"  {coord_array.GetClassName()}: "
       f"{coord_array.GetNumberOfTuples():,} x {coord_array.GetNumberOfComponents()}")
 print(f"  {scalar_array.GetClassName()}: "

@@ -1,6 +1,7 @@
 """Parametric center filter -- interpolate point data to cell centers."""
 
 import tack
+
 from ..arrays import AOSArray
 
 

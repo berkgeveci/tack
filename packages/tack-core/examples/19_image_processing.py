@@ -11,10 +11,10 @@ Usage:
   uv run python examples/19_image_processing.py
 """
 
-import numpy as np
+import argparse
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(tack, _parser.parse_args().arch)
@@ -88,7 +88,7 @@ src.from_numpy(test_img)
 dst.fill(0.0)
 sobel(src, dst, W, H)
 edges = dst.to_numpy().reshape(H, W)
-print(f"\n2. Sobel edge detection: OK")
+print("\n2. Sobel edge detection: OK")
 print(f"   Edge strength: max={edges.max():.3f}, mean={edges.mean():.3f}")
 
 
@@ -133,7 +133,7 @@ src.from_numpy(test_img)
 blur_horizontal(src, tmp, W, H)
 blur_vertical(tmp, dst, W, H)
 blurred = dst.to_numpy().reshape(H, W)
-print(f"\n3. Separable blur (5-tap): OK")
+print("\n3. Separable blur (5-tap): OK")
 print(f"   Input  variance: {test_img.var():.6f}")
 print(f"   Output variance: {blurred.var():.6f} (should be smaller)")
 

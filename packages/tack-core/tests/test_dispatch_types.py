@@ -6,11 +6,11 @@ before hitting the compiler.
 
 import numpy as np
 import pytest
+
 import tack
 from tack.lang import ir
-from tack.lang.types import f32, f64, i32, i64, u32, u64
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
-
+from tack.lang.types import f32, f64, i32, i64, u32, u64
 
 # --- Unit tests for check_dispatch_types ---
 
@@ -91,7 +91,7 @@ class TestCheckDispatchTypes:
 
     def test_all_supported_types_pass(self):
         """All standard types should pass on CPU (full support)."""
-        from tack.lang.types import f32, f64, i32, i64, u32, u64
+        from tack.lang.types import f32, i32
         all_dtypes = {f32, f64, i32, i64, u32, u64}
         for dtype in [tack.f32, tack.f64, tack.i32, tack.i64, tack.u32, tack.u64]:
             func = ir.IRFunction("k", [ir.IRParam("data")], [])

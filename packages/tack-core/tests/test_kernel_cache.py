@@ -13,7 +13,6 @@ import sys
 import textwrap
 
 import numpy as np
-import pytest
 
 import tack
 

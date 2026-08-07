@@ -54,6 +54,7 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     if raster_actors:
         # Rasterize wireframe/point actors
         from tack.rendering.rasterize import render_raster
+
         # Build a temporary scene with only raster actors
         from tack.rendering.scene import Scene
         raster_scene = Scene()

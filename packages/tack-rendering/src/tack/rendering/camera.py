@@ -12,7 +12,9 @@ Orthographic: direction is constant, origin varies per pixel.
 """
 
 import math
+
 import numpy as np
+
 import tack
 
 

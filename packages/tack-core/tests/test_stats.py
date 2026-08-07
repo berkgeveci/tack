@@ -1,11 +1,10 @@
 """Tests for GPU statistics and analysis (tack.algorithms.stats)."""
 
-import math
 import numpy as np
 import pytest
-import tack
-from tack.algorithms import var, std, norm, absmax, count_nonzero, dot, histogram
 
+import tack
+from tack.algorithms import absmax, count_nonzero, dot, histogram, norm, std, var
 
 # --- field.mean() ---
 

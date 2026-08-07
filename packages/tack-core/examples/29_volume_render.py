@@ -15,11 +15,13 @@ Usage:
   uv run python examples/29_volume_render.py --arch metal --size 200
 """
 
+import argparse
 import time
+
 import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
                      choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
@@ -28,6 +30,7 @@ _parser.add_argument('--size', type=int, default=100,
 _parser.add_argument('--width', type=int, default=800)
 _parser.add_argument('--height', type=int, default=800)
 import os as _os
+
 _parser.add_argument('--save', default=_os.path.join(_os.path.dirname(__file__), '..', 'results', 'volrender_rect.png'))
 _parser.add_argument('--warmup', type=int, default=2)
 _parser.add_argument('--trials', type=int, default=5)

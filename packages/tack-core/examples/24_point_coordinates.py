@@ -17,12 +17,14 @@ Usage:
   uv run python examples/24_point_coordinates.py --arch metal --size 500
 """
 
+import argparse
 import gc
 import time
+
 import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _parser.add_argument('--size', type=int, default=500,

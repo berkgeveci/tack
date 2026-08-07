@@ -7,8 +7,8 @@ tack.field and reused across renders.
 """
 
 import numpy as np
-import tack
 
+import tack
 
 # ================================================================
 # PRESET COLORMAP DATA

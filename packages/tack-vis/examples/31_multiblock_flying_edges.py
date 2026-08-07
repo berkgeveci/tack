@@ -10,12 +10,14 @@ Usage:
   uv run python examples/31_multiblock_flying_edges.py --nblocks 100
 """
 
-import time
-import numpy as np
-import tack
-from tack.algorithms.flying_edges import flying_edges_multiblock, UniformGrid
-
 import argparse
+import time
+
+import numpy as np
+
+import tack
+from tack.algorithms.flying_edges import UniformGrid, flying_edges_multiblock
+
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
                      choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
@@ -88,7 +90,7 @@ nblocks = _args.nblocks
 block_size = _args.block_size
 isovalue = 0.0
 
-print(f"Multi-block Flying Edges")
+print("Multi-block Flying Edges")
 print(f"  Backend:    {_args.arch}")
 print(f"  Blocks:     {nblocks} x {block_size}^3 cells each")
 print(f"  Isovalue:   {isovalue}")

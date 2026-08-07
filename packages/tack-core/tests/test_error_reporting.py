@@ -1,6 +1,7 @@
 """Tests for user-friendly error reporting."""
 
 import pytest
+
 import tack
 
 

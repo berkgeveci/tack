@@ -8,10 +8,11 @@ goes wrong, so the tests drive both directly.
 """
 
 import numpy as np
-import pytest
 
 from tack.algorithms.amr_blanking import (
-    build_masks, DUPLICATECELL, REFINEDCELL,
+    DUPLICATECELL,
+    REFINEDCELL,
+    build_masks,
 )
 
 

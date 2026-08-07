@@ -1,14 +1,21 @@
 """34 -- Path trace scalability test: 100K, 500K, 1M triangles."""
 
-import time
+import argparse
 import math
+import time
+
 import numpy as np
+
 import tack
 from tack.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, render,
+    Actor,
+    Canvas,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    render,
 )
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
                      choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])

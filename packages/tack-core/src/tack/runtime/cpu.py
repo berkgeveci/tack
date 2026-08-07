@@ -48,12 +48,11 @@ import numpy as np
 from llvmlite import binding as llvm
 
 from tack.lang import ir
-from tack.lang.field import Field, NumpyBuffer
-from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
+from tack.lang.field import NumpyBuffer
+from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 _CPU_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from tack.codegen.llvm_gen import generate_llvm_ir
-
 
 # ── NUMA interleave support ──────────────────────────────────────────
 # If libnuma is available, we wrap numpy allocations with MPOL_INTERLEAVE
@@ -140,26 +139,23 @@ _CTYPES_MAP = {
 
 
 from tack.runtime.backend import Backend
-from tack.runtime.kernel_utils import (
-    new_kernel_cache,
-    resolve_variant,
-)
 
 # Re-export shared utilities so existing `from tack.runtime.cpu import ...` works.
 # Backends must NOT rely on this — importing this module pulls in llvmlite, which
 # is a CPU-only dependency.  Import from tack.runtime.kernel_utils instead.
 from tack.runtime.kernel_utils import (  # noqa: F401
+    _create_pack_fields,
     _detect_template_args,
-    _expand_template_args,
+    _detect_texture_fields,
     _detect_vector_fields,
     _detect_vector_fields_from_args,
-    _detect_texture_fields,
-    _create_pack_fields,
-    _update_pack_fields,
+    _expand_template_args,
     _get_loop_range,
     _resolve_range_expr,
+    _update_pack_fields,
+    new_kernel_cache,
+    resolve_variant,
 )
-
 
 # Thread only on a real win: parallel takes overhead + T_serial/P, so the
 # break-even is already P/(P-1); the rest is margin against a mis-estimate.
@@ -426,7 +422,7 @@ def _windows_core_count() -> int | None:
                 cores += 1
             offset += record_size
         return cores or None
-    except Exception:                                   # noqa: BLE001
+    except Exception:
         return None
 
 

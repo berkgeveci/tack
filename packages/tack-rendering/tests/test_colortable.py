@@ -2,8 +2,9 @@
 
 import numpy as np
 import pytest
+
 import tack
-from tack.rendering import ColorTable, Scene, Actor, PointLight, Canvas, PerspectiveCamera, render
+from tack.rendering import Actor, Canvas, ColorTable, PerspectiveCamera, PointLight, Scene, render
 
 
 @pytest.fixture(autouse=True)

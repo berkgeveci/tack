@@ -6,13 +6,11 @@ and area weighting actually applied.
 """
 
 import numpy as np
-import pytest
+from vis_helpers import make_grid, sphere_field, upload
 
 import tack
 from tack.algorithms.compute_normals import compute_normals
 from tack.algorithms.flying_edges import flying_edges
-
-from vis_helpers import make_grid, upload, sphere_field
 
 
 def _normals(points_np, conn_np):

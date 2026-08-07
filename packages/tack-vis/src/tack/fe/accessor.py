@@ -9,6 +9,7 @@ Use as tack.template() parameter to specialize kernels at compile time.
 """
 
 import numpy as np
+
 import tack
 
 

@@ -1,13 +1,24 @@
 """43 -- Annotated render: color bar, axis indicator, and text overlay."""
 
+import argparse
+
 import numpy as np
+
 import tack
 from tack.rendering import (
-    PerspectiveCamera, Canvas, Scene, Actor, PointLight, ColorTable,
-    render, annotate, ColorBar, AxisIndicator, TextOverlay,
+    Actor,
+    AxisIndicator,
+    Canvas,
+    ColorBar,
+    ColorTable,
+    PerspectiveCamera,
+    PointLight,
+    Scene,
+    TextOverlay,
+    annotate,
+    render,
 )
 
-import argparse
 _p = argparse.ArgumentParser()
 _p.add_argument('--arch', default='cpu',
                 choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])

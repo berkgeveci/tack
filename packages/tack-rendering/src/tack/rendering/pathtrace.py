@@ -6,10 +6,9 @@ bounces).  Multiple samples are accumulated and resolved to the canvas.
 """
 
 import numpy as np
+
 import tack
-
 from tack.rendering.bvh import BVH, STACK_DEPTH
-
 
 # ================================================================
 # RENDER CONFIGURATION (template)

@@ -17,7 +17,6 @@ import pytest
 
 import tack
 
-
 N = 8
 
 

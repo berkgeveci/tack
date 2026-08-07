@@ -31,35 +31,43 @@ render_volume(canvas, volume, camera, ...)
     Ray-cast a single volume directly (without a Scene).
 """
 
-from tack.rendering.camera import PerspectiveCamera, OrthographicCamera
+from tack.rendering.annotate import (
+    AxisIndicator,
+    ColorBar,
+    TextOverlay,
+    annotate,
+)
+from tack.rendering.camera import OrthographicCamera, PerspectiveCamera
 from tack.rendering.canvas import Canvas
 from tack.rendering.colortable import ColorTable
-from tack.rendering.scene import (
-    Scene, Actor, PointLight, DirectionalLight, Material, compute_normals,
-)
 from tack.rendering.render import render
-from tack.rendering.volume import Volume, TransferFunction, render_volume
-from tack.rendering.annotate import (
-    ColorBar, AxisIndicator, TextOverlay, annotate,
+from tack.rendering.scene import (
+    Actor,
+    DirectionalLight,
+    Material,
+    PointLight,
+    Scene,
+    compute_normals,
 )
+from tack.rendering.volume import TransferFunction, Volume, render_volume
 
 __all__ = [
-    "PerspectiveCamera",
-    "OrthographicCamera",
-    "Canvas",
-    "ColorTable",
-    "Scene",
     "Actor",
-    "PointLight",
+    "AxisIndicator",
+    "Canvas",
+    "ColorBar",
+    "ColorTable",
     "DirectionalLight",
     "Material",
+    "OrthographicCamera",
+    "PerspectiveCamera",
+    "PointLight",
+    "Scene",
+    "TextOverlay",
+    "TransferFunction",
+    "Volume",
+    "annotate",
     "compute_normals",
     "render",
-    "Volume",
-    "TransferFunction",
     "render_volume",
-    "ColorBar",
-    "AxisIndicator",
-    "TextOverlay",
-    "annotate",
 ]

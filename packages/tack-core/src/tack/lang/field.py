@@ -11,9 +11,10 @@ transfers are zero-copy.  On CUDA transfers go over PCIe.
 """
 
 from dataclasses import dataclass
+
 import numpy as np
 
-from tack.lang.types import ScalarType, f32, f64, i32, from_numpy_dtype
+from tack.lang.types import ScalarType, f32, f64, from_numpy_dtype, i32
 
 
 class DeviceBuffer:
@@ -188,8 +189,8 @@ class Field:
 
     def copy(self) -> 'Field':
         """Return a new field with a copy of this field's data (GPU kernel, no host roundtrip)."""
-        from tack.runtime.dispatch import get_backend
         from tack.algorithms.copy import copy as _copy
+        from tack.runtime.dispatch import get_backend
         backend = get_backend()
         buf = backend.allocate_field(self.dtype, self.shape)
         new_field = Field(self.dtype, self.shape, buf)
@@ -200,8 +201,8 @@ class Field:
         """Return a new field with data converted to a different dtype (GPU kernel, no host roundtrip)."""
         if new_dtype is self.dtype:
             return self.copy()
-        from tack.runtime.dispatch import get_backend
         from tack.algorithms.copy import copy as _copy
+        from tack.runtime.dispatch import get_backend
         backend = get_backend()
         buf = backend.allocate_field(new_dtype, self.shape)
         new_field = Field(new_dtype, self.shape, buf)

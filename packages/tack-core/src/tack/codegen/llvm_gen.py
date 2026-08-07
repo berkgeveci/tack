@@ -11,7 +11,7 @@ across threads and calls the kernel with different (start, end) pairs.
 from llvmlite import ir as llvm_ir
 
 from tack.lang import ir
-from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
+from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 
 def _llvm_type(tack_type: ScalarType) -> llvm_ir.Type:
@@ -583,7 +583,7 @@ class LLVMCodeGen:
         zero = llvm_ir.Constant(llvm_ir.IntType(32), 0)
         fmt_ptr = self.builder.gep(fmt_global, [zero, zero], inbounds=True)
 
-        self.builder.call(printf_fn, [fmt_ptr] + call_args)
+        self.builder.call(printf_fn, [fmt_ptr, *call_args])
 
     # --- Expressions ---
 

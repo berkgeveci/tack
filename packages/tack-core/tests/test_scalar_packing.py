@@ -6,9 +6,8 @@ Both paths are tested here.
 """
 
 import numpy as np
-import pytest
-import tack
 
+import tack
 
 # --- Backend parametrization ---
 

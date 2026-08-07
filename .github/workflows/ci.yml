@@ -36,6 +36,35 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+
+  # ── Lint ───────────────────────────────────────────────────────────
+  # Cheapest job here and the one most likely to catch something before a
+  # human looks. It found a real bug on its first run: an f-string with a
+  # backslash in packages/tack-core/examples/bench_64mb.py, legal from 3.12
+  # and a SyntaxError on 3.11, which the packages declare support for. No
+  # test collected that file and the examples job runs 3.13, so nothing
+  # here could have caught it. Ruff reads requires-python and did.
+  #
+  # Lint only, deliberately. `ruff format` would rewrite 182 of 235 files,
+  # which is a decision about the whole repository's history rather than
+  # something to slip into a lint gate.
+  lint:
+    name: lint
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Ruff
+        run: uvx ruff check --output-format=github .
+
   # ── The main gate ──────────────────────────────────────────────────
   tests:
     name: tests (py${{ matrix.python-version }})

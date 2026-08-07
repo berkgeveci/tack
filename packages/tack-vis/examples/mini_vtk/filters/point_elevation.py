@@ -1,6 +1,7 @@
 """Point elevation filter -- compute a scalar from point coordinates."""
 
 import tack
+
 from ..arrays import AOSArray
 
 

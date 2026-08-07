@@ -47,7 +47,7 @@ def main():
     for label, probe in probes:
         try:
             result = probe()
-        except Exception as exc:                        # noqa: BLE001
+        except Exception as exc:
             result = f"raised {type(exc).__name__}: {exc}"
         print(f"  {label} probe   : {result}")
         if isinstance(result, int):

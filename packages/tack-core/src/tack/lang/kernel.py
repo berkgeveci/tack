@@ -5,7 +5,6 @@ import inspect
 import textwrap
 
 from tack.lang.ast_transform import transform_kernel
-from tack.lang.type_inference import infer_types
 
 
 class Kernel:
@@ -49,8 +48,8 @@ class Kernel:
         if template_args:
             key = self._make_cache_key(vector_fields, template_args, texture_fields)
             if key not in self._ir_cache:
-                from tack.lang.template_rewrite import rewrite_templates
                 from tack.lang.func import _func_registry
+                from tack.lang.template_rewrite import rewrite_templates
                 rewritten_ast, registered_keys = rewrite_templates(self._ast, template_args)
                 self._ir_cache[key] = transform_kernel(
                     rewritten_ast, vector_fields=vector_fields,

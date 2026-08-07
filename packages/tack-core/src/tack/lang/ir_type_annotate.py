@@ -17,8 +17,8 @@ Must run after type inference (needs _is_field and type_annotation on params).
 """
 
 from tack.lang import ir
-from tack.lang.types import ScalarType, f32, f64, i32, i64, u32
 from tack.lang.type_inference import promote_types
+from tack.lang.types import ScalarType, f32, f64, i32, i64
 
 # The join is monotone (types only widen), so it settles in a couple of
 # rounds. The cap is a backstop against a pathological IR, not a budget.

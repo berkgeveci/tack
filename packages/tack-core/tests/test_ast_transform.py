@@ -5,8 +5,8 @@ import textwrap
 
 import pytest
 
-from tack.lang.ast_transform import transform_kernel
 from tack.lang import ir
+from tack.lang.ast_transform import transform_kernel
 
 
 def _transform(source: str) -> ir.IRModule:

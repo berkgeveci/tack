@@ -2,9 +2,14 @@
 
 import numpy as np
 import pytest
+
 import tack
 from tack.rendering import (
-    TransferFunction, Volume, PerspectiveCamera, Canvas, Scene,
+    Canvas,
+    PerspectiveCamera,
+    Scene,
+    TransferFunction,
+    Volume,
     render_volume,
 )
 
@@ -85,10 +90,9 @@ def _make_test_volume(n=8):
     tf = TransferFunction('cool_to_warm',
                           opacity_func=lambda t: 0.3 * (1.0 - t),
                           range=(0.0, 1.7))
-    vol = Volume(scalars, dims=(nx, ny, nz),
+    return Volume(scalars, dims=(nx, ny, nz),
                  origin=(-1, -1, -1), spacing=(2.0/(nx-1), 2.0/(ny-1), 2.0/(nz-1)),
                  transfer_function=tf)
-    return vol
 
 
 class TestVolume:

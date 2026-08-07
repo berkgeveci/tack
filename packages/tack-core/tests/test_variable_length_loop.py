@@ -5,7 +5,7 @@ connectivity: for i in range(offsets[c], offsets[c+1]).
 """
 
 import numpy as np
-import pytest
+
 import tack
 
 

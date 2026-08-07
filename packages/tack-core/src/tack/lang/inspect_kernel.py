@@ -9,15 +9,15 @@ import copy
 
 from tack.lang import ir
 from tack.lang.field import Field
-from tack.lang.type_inference import infer_param_types, check_dispatch_types
-from tack.lang.ir_resolve import resolve_ir
 from tack.lang.ir_optimize import optimize_ir
+from tack.lang.ir_resolve import resolve_ir
 from tack.lang.ir_type_annotate import annotate_types
+from tack.lang.type_inference import infer_param_types
 from tack.runtime.kernel_utils import (
     _detect_template_args,
-    _expand_template_args,
-    _detect_vector_fields_from_args,
     _detect_texture_fields,
+    _detect_vector_fields_from_args,
+    _expand_template_args,
 )
 
 
@@ -118,6 +118,7 @@ def _generate_source(kernel, args, optimize=False):
         llvm_ir_str = str(llvm_module)
         if optimize:
             from llvmlite import binding as llvm
+
             from tack.runtime.cpu import _create_target_machine, _optimize_module
             mod = llvm.parse_assembly(llvm_ir_str)
             mod.verify()
@@ -127,7 +128,7 @@ def _generate_source(kernel, args, optimize=False):
         return llvm_ir_str
 
     if backend_name == "MetalBackend":
-        from tack.codegen.msl_gen import generate_msl_source, _safe_kernel_name
+        from tack.codegen.msl_gen import _safe_kernel_name, generate_msl_source
         ir_func.name = _safe_kernel_name(ir_func.name)
         return generate_msl_source(ir_func)
 

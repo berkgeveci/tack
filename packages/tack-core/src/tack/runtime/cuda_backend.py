@@ -17,20 +17,19 @@ import ctypes
 import numpy as np
 
 from tack.lang import ir
-from tack.lang.field import Field, DeviceBuffer
-from tack.lang.types import ScalarType, i8, u8, i16, u16, i32, u32, i64, u64, f32, f64
+from tack.lang.field import DeviceBuffer
+from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
+    _get_loop_range,
     new_kernel_cache,
     resolve_variant,
-    _get_loop_range,
 )
 
 _CUDA_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
-from tack.codegen.cuda_gen import generate_cuda_source
-
 from cuda.bindings import driver, nvrtc
 
+from tack.codegen.cuda_gen import generate_cuda_source
 
 _NUMPY_DTYPE = {
     f32: np.float32,
@@ -521,8 +520,8 @@ class CUDABackend(Backend):
 
         # Replace scalar args with the packed field buffers
         if pack_info:
-            from tack.runtime.kernel_utils import _update_pack_fields
             from tack.lang.ir_pack_scalars import split_args
+            from tack.runtime.kernel_utils import _update_pack_fields
             _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
             kernel_args = [a.field if isinstance(a, Texture3D) else a
@@ -538,9 +537,10 @@ class CUDABackend(Backend):
         the caller keeps `ir_func` for loop-range resolution.
         """
         import copy
+
+        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
         from tack.lang.ir_type_annotate import annotate_types
-        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.runtime.kernel_utils import _create_pack_fields
 
         packed = copy.deepcopy(ir_func)

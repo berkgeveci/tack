@@ -13,8 +13,8 @@ differences are in the host-side runtime API, not the kernel language.
 This module reuses the CUDA codegen with a HIP-specific header.
 """
 
-from tack.lang import ir
 from tack.codegen.cuda_gen import CUDACodeGen
+from tack.lang import ir
 
 
 class HIPCodeGen(CUDACodeGen):

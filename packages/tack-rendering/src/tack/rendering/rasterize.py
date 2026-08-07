@@ -4,10 +4,9 @@ GPU kernels that project geometry to screen space and rasterize edges
 (wireframe) or discs (points) with depth testing.
 """
 
-import math
 import numpy as np
-import tack
 
+import tack
 
 # ================================================================
 # PROJECTION CONFIG (template — carries the MVP matrix)

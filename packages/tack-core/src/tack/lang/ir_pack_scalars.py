@@ -8,10 +8,8 @@ buffers, consuming only 1 buffer binding per type instead of 1 per scalar.
 Must run after type inference (needs _is_field and type_annotation).
 """
 
-import copy
 
 from tack.lang import ir
-from tack.lang.types import f32, i32, i64
 
 
 def pack_scalars(ir_func: ir.IRFunction, args: tuple):
@@ -37,7 +35,6 @@ def pack_scalars(ir_func: ir.IRFunction, args: tuple):
     replace_map = {}
     pack_info = []
     new_params = []
-    new_args = []
     scalar_indices = set()
 
     for dtype, entries in groups.items():

@@ -6,8 +6,8 @@ casts in kernels, running on actual backends.
 
 import numpy as np
 import pytest
-import tack
 
+import tack
 
 # --- int() and float() still work ---
 
@@ -157,10 +157,10 @@ def test_cast_in_expression(backend):
 
 def test_cuda_codegen_explicit_cast():
     """CUDA codegen emits correct C types for explicit casts."""
-    from tack.lang import ir
-    from tack.lang.types import f32, f64, i32, i64, u32
-    from tack.lang.ir_type_annotate import annotate_types
     from tack.codegen.cuda_gen import generate_cuda_source
+    from tack.lang import ir
+    from tack.lang.ir_type_annotate import annotate_types
+    from tack.lang.types import f32, f64, i64, u32
 
     p = ir.IRParam("x", f32)
     p._is_field = True
@@ -181,10 +181,10 @@ def test_cuda_codegen_explicit_cast():
 
 def test_msl_codegen_explicit_cast():
     """MSL codegen emits correct types for explicit casts."""
-    from tack.lang import ir
-    from tack.lang.types import f32, i32, i64, u32
-    from tack.lang.ir_type_annotate import annotate_types
     from tack.codegen.msl_gen import generate_msl_source
+    from tack.lang import ir
+    from tack.lang.ir_type_annotate import annotate_types
+    from tack.lang.types import f32, i64, u32
 
     p = ir.IRParam("x", f32)
     p._is_field = True
@@ -203,10 +203,10 @@ def test_msl_codegen_explicit_cast():
 
 def test_msl_codegen_rejects_f64():
     """MSL codegen should reject f64 casts (Apple GPUs don't support double)."""
-    from tack.lang import ir
-    from tack.lang.types import f32, f64
-    from tack.lang.ir_type_annotate import annotate_types
     from tack.codegen.msl_gen import generate_msl_source
+    from tack.lang import ir
+    from tack.lang.ir_type_annotate import annotate_types
+    from tack.lang.types import f32, f64
 
     p = ir.IRParam("x", f32)
     p._is_field = True

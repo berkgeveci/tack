@@ -15,24 +15,25 @@ Usage:
 
 import argparse
 import math
-import numpy as np
 import os
 import sys
 
+import numpy as np
+
 import tack
-from tack.fe.basis import HexBasis, precompute_basis_matrix_3d
 from tack.fe.accessor import contiguous_from_numpy
+from tack.fe.basis import HexBasis, precompute_basis_matrix_3d
 from tack.fe.geometry import linear_hex_map_from_numpy
 
 # MC tables
 sys.path.insert(0, os.path.dirname(__file__))
 try:
-    from mc_tables import TRI_TABLE, NUM_TRIS, EDGE_VERTS
+    from mc_tables import EDGE_VERTS, NUM_TRIS, TRI_TABLE
 except ImportError:
     # Fall back to the MFEM examples copy
     sys.path.insert(
         0, os.path.expanduser("~/Work/mfem/mfem/examples"))
-    from mc_tables import TRI_TABLE, NUM_TRIS, EDGE_VERTS
+    from mc_tables import EDGE_VERTS, NUM_TRIS, TRI_TABLE
 
 
 def make_hex_mesh(nx, ny, nz):

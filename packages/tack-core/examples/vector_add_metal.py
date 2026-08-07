@@ -1,7 +1,9 @@
 """Vector addition on Metal GPU -- same kernel as CPU, different backend."""
 
 import time
+
 import numpy as np
+
 import tack
 
 tack.init(arch=tack.metal)

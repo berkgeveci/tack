@@ -8,11 +8,10 @@ tests aim at it.
 
 import numpy as np
 import pytest
+from vis_helpers import upload
 
 import tack
 from tack.algorithms.cell_to_point import cell_to_point
-
-from vis_helpers import upload
 
 
 def _run(cell_np, nx, ny, nz, dtype=tack.f32, np_dtype=np.float32):

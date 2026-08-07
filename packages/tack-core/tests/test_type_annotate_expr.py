@@ -5,10 +5,9 @@ not just _resolved_type on IRAssign. These tests exercise the annotation
 pass directly on IR trees, independent of any backend.
 """
 
-import pytest
 from tack.lang import ir
-from tack.lang.types import f32, f64, i32, i64, u32
 from tack.lang.ir_type_annotate import annotate_types
+from tack.lang.types import f32, f64, i32, i64, u32
 
 
 def _make_func(params, body):

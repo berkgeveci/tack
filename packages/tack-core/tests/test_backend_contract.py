@@ -69,6 +69,7 @@ def test_f64_dispatch_agrees_with_the_declaration(backend):
     said no.
     """
     import numpy as np
+
     from tack.runtime.dispatch import get_backend
     be = get_backend()
 
@@ -101,6 +102,7 @@ def test_label_is_human_readable(backend):
 def test_reductions_declaration_matches_behaviour(backend):
     """Reductions give the right answer either way; the flag says how."""
     import numpy as np
+
     from tack.runtime.dispatch import get_backend
     be = get_backend()
 

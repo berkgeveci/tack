@@ -10,10 +10,12 @@ Usage:
   uv run python examples/14_jacobi_solver.py
 """
 
+import argparse
+
 import numpy as np
+
 import tack
 
-import argparse
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _arch = getattr(tack, _parser.parse_args().arch)
@@ -63,7 +65,7 @@ for step in range(STEPS):
         print(f"  step {step+1:>5d}: center = {center:.4f}")
 
 result = u.to_numpy().reshape(N, N)
-print(f"\nFinal solution:")
+print("\nFinal solution:")
 print(f"  Bottom edge (should be 0):    {result[0, N//2]:.4f}")
 print(f"  Center:                       {result[N//2, N//2]:.4f}")
 print(f"  Top edge    (should be 100):  {result[-1, N//2]:.4f}")
