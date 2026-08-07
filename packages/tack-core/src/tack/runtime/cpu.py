@@ -183,6 +183,14 @@ _PROBE_MIN_RANGE = 16384
 
 _CALIBRATION_REPS = 5
 
+# Repetitions when timing a kernel's fixed per-call cost. It runs once per
+# compiled kernel, on empty ranges.
+_OVERHEAD_REPS = 5
+
+# Floor for the per-element estimate, so a kernel whose body disappears into
+# the noise still reads as measured rather than as never measured.
+_MIN_NS_PER_ELEM = 1e-3
+
 # Stand-in fan-out cost until the real one is measured. Pessimistic on
 # purpose: being too high only delays the first fan-out by one dispatch,
 # whereas being too low fans out work that would have been faster serial.
@@ -218,6 +226,9 @@ class CompiledKernel:
         # Measured serial nanoseconds per element, updated on every serial
         # dispatch. 0.0 means "not measured yet".
         self.ns_per_elem = 0.0
+        # What one call_range costs before touching a single element --
+        # ctypes marshalling, mostly. Timed once, on an empty range.
+        self.call_overhead_ns = 0.0
         # Range size at which a fan-out starts paying for itself, derived
         # from ns_per_elem. Precomputed so the dispatch hot path is a single
         # integer compare. _NEVER until the kernel has been timed once.
@@ -471,16 +482,38 @@ class CPUBackend(Backend):
         else:
             self._run_serial(compiled, prefix, probe_end, loop_end)
 
+    def _measure_call_overhead(self, compiled: CompiledKernel, prefix: tuple):
+        """Time an empty call_range — the part that is not per-element.
+
+        Empty ranges run no iterations, so this writes nothing and is safe
+        on any kernel, including ones that accumulate with atomics.
+        """
+        best = None
+        for _ in range(_OVERHEAD_REPS):
+            t0 = time.perf_counter_ns()
+            compiled.call_range(prefix, 0, 0)
+            dt = time.perf_counter_ns() - t0
+            best = dt if best is None else min(best, dt)
+        compiled.call_overhead_ns = float(best)
+
     def _run_serial(self, compiled: CompiledKernel, prefix: tuple,
                     start: int, end: int):
         """Run a range on this thread, refreshing the cost estimate."""
         if end <= start:
             return
+        if compiled.call_overhead_ns <= 0.0:
+            self._measure_call_overhead(compiled, prefix)
+
         t0 = time.perf_counter_ns()
         compiled.call_range(prefix, start, end)
         elapsed = time.perf_counter_ns() - t0
 
-        sample = elapsed / (end - start)
+        # Charge only the per-element part. The rest is a fixed cost every
+        # chunk pays, so threading does not divide it down -- and folding it
+        # into a per-element rate is what made a cheap kernel read 2.6x more
+        # expensive than it is, and fan out where serial was faster.
+        work_ns = elapsed - compiled.call_overhead_ns
+        sample = max(work_ns / (end - start), _MIN_NS_PER_ELEM)
         prev = compiled.ns_per_elem
 
         # The response is deliberately asymmetric, because the two errors

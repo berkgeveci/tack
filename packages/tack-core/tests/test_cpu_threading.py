@@ -202,6 +202,66 @@ def test_measured_cost_ranks_two_real_kernels(cpu):
     assert costly.ns_per_elem > cheap.ns_per_elem * 20
 
 
+# ── What the estimate is an estimate of ──────────────────────────────
+#
+# A dispatch costs a fixed amount before it touches a single element --
+# ctypes marshalling, mostly, about a microsecond. Dividing that into a
+# per-element rate makes a cheap kernel read as more expensive than it is,
+# and the threshold derived from it then fans out ranges that serial would
+# have finished sooner. Measured across a fine sweep of three kernels, that
+# was eight wrong fan-out decisions in eighteen; charging only the
+# per-element part leaves two, both near-ties in the other direction.
+#
+# It matters exactly where the decision is tightest: for an expensive
+# kernel the fixed cost is lost in the work, for a cheap one it *is* the
+# measurement.
+
+def test_the_fixed_call_cost_is_measured(cpu):
+    backend = CPUBackend()
+    compiled, _ = _measured(backend, _scale, 4096)
+    assert compiled.call_overhead_ns > 0.0
+
+
+def test_the_fixed_cost_is_not_charged_per_element(cpu, monkeypatch):
+    """Two runs differing only in fixed cost must give one rate."""
+    backend = CPUBackend()
+    n = 8192
+    compiled, args = _measured(backend, _scale, n)
+    prefix = compiled.bind(args)
+
+    work = 4096.0                      # ns of actual per-element work
+    overhead = compiled.call_overhead_ns
+
+    compiled.ns_per_elem = 0.0         # start clean, so the sample is taken as-is
+    seq = iter([0, int(overhead + work)])
+    monkeypatch.setattr(cpu_mod.time, "perf_counter_ns", lambda: next(seq))
+    backend._run_serial(compiled, prefix, 0, n)
+
+    assert compiled.ns_per_elem == pytest.approx(work / n, rel=0.02), (
+        f"{compiled.ns_per_elem:.4f} ns/elem for {work} ns of work over {n} "
+        f"elements; the {overhead:.0f} ns call cost is being charged to the "
+        f"elements")
+
+
+def test_a_kernel_that_does_nothing_still_reads_as_measured(cpu, monkeypatch):
+    """Subtracting the fixed cost must not leave a zero.
+
+    ns_per_elem of 0.0 means "never measured", which would send the backend
+    round the probe path on every dispatch forever.
+    """
+    backend = CPUBackend()
+    n = 8192
+    compiled, args = _measured(backend, _scale, n)
+    prefix = compiled.bind(args)
+
+    compiled.ns_per_elem = 0.0
+    seq = iter([0, int(compiled.call_overhead_ns)])   # all fixed cost, no work
+    monkeypatch.setattr(cpu_mod.time, "perf_counter_ns", lambda: next(seq))
+    backend._run_serial(compiled, prefix, 0, n)
+
+    assert compiled.ns_per_elem > 0.0
+
+
 # ── Recovering from a bad estimate ───────────────────────────────────
 #
 # The estimate is only refreshed by serial runs, so switching to threads
@@ -217,9 +277,15 @@ def test_measured_cost_ranks_two_real_kernels(cpu):
 # Timings are supplied rather than measured, so none of this depends on
 # how busy the machine is.
 
-def _fixed_timing(monkeypatch, elapsed_ns):
-    """Make the next _run_serial believe it took exactly this long."""
-    seq = iter([0, int(elapsed_ns)])
+def _fixed_timing(monkeypatch, compiled, work_ns):
+    """Make the next _run_serial believe its *elements* took this long.
+
+    The backend subtracts the fixed per-call cost before working out a
+    per-element rate, so a supplied timing has to carry that cost the way a
+    real one does — otherwise the test is measuring a run that never happened.
+    """
+    elapsed = int(compiled.call_overhead_ns + work_ns)
+    seq = iter([0, elapsed])
     monkeypatch.setattr(cpu_mod.time, "perf_counter_ns", lambda: next(seq))
 
 
@@ -239,7 +305,7 @@ def test_one_outlier_sample_cannot_flip_the_decision(cpu, monkeypatch):
     compiled, args = _measured(backend, _scale, n)
     settled = compiled.ns_per_elem
 
-    _fixed_timing(monkeypatch, settled * n * 1000)
+    _fixed_timing(monkeypatch, compiled, settled * n * 1000)
     backend._run_serial(compiled, compiled.bind(args), 0, n)
 
     assert compiled.ns_per_elem <= settled * _MAX_SAMPLE_RATIO, (
@@ -255,7 +321,7 @@ def test_a_believable_rise_is_still_tracked(cpu, monkeypatch):
     settled = compiled.ns_per_elem
 
     for _ in range(6):
-        _fixed_timing(monkeypatch, settled * n * 3)
+        _fixed_timing(monkeypatch, compiled, settled * n * 3)
         backend._run_serial(compiled, compiled.bind(args), 0, n)
 
     assert compiled.ns_per_elem > settled * 2, (
@@ -316,6 +382,11 @@ def test_recheck_keeps_the_parallelism(cpu):
     backend._run_serial = lambda c, p, a, b: (ranges.append((a, b)),
                                               real_serial(c, p, a, b))[1]
 
+    # Pretend the fan-out cost is already known. Otherwise the first
+    # parallel dispatch calibrates it and re-derives the threshold, which
+    # sends this range back to a plain serial run before the recheck is
+    # ever reached.
+    backend._fan_out_ns = 1000.0
     compiled.parallel_min_elems = 1          # force the parallel branch
     compiled.recheck_after = 1
     compiled.parallel_since_measure = 0
