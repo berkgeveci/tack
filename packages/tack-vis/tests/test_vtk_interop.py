@@ -273,6 +273,60 @@ def test_real_vtk_exchange_is_zero_copy():
 
 
 @needs_vtk
+@pytest.mark.parametrize("dtype,np_dtype", [
+    (tack.f32, np.float32), (tack.f64, np.float64),
+    (tack.i8, np.int8), (tack.u8, np.uint8),
+    (tack.i16, np.int16), (tack.u16, np.uint16),
+    (tack.i32, np.int32), (tack.u32, np.uint32),
+    (tack.i64, np.int64), (tack.u64, np.uint64),
+], ids=lambda v: str(v) if hasattr(v, "name") else "")
+def test_every_dtype_survives_real_vtk(dtype, np_dtype):
+    """Only f32 was ever exercised against a real VTK build."""
+    values = np.arange(12, dtype=np_dtype).reshape(6, 2)
+    field = tack.field(dtype=dtype, shape=(6, 2))
+    field.from_numpy(values)
+
+    back = interop.vtk_to_field(interop.field_to_vtk(field, name="t"))
+    assert back.shape == (6, 2)
+    np.testing.assert_array_equal(back.to_numpy(), values)
+
+
+@needs_vtk
+def test_a_struct_of_arrays_is_refused_not_flattened():
+    """VTK can store a component per buffer; DLPack describes one.
+
+    Flattening it would hand back a field over a temporary VTK generated:
+    writes to it go nowhere and writes to the array are never seen, in
+    silence. Refusing is the only honest answer.
+    """
+    from vtkmodules.vtkCommonCore import vtkSOADataArrayTemplate
+
+    soa = vtkSOADataArrayTemplate["float32"]()
+    soa.SetNumberOfComponents(2)
+    soa.SetNumberOfTuples(3)
+    for t in range(3):
+        for c in range(2):
+            soa.SetTypedComponent(t, c, float(t * 2 + c))
+
+    with pytest.raises(ValueError, match="SoA|contiguous"):
+        interop.vtk_to_field(soa)
+
+
+@needs_vtk
+def test_an_array_with_no_storage_is_refused():
+    """An implicit array computes its values; there is nothing to share."""
+    from vtkmodules.vtkCommonCore import vtkConstantArray
+
+    array = vtkConstantArray["float32"]()
+    array.ConstructBackend(3.0)
+    array.SetNumberOfComponents(1)
+    array.SetNumberOfTuples(4)
+
+    with pytest.raises(ValueError, match="no memory"):
+        interop.vtk_to_field(array)
+
+
+@needs_vtk
 def test_kernel_output_reaches_vtk_without_a_copy():
     """The point of the whole exercise."""
 
