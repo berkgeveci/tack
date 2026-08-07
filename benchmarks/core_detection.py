@@ -72,9 +72,15 @@ def main():
         print("Physical equals logical. Correct on a machine without SMT "
               "(Apple silicon, some server parts); on an x86 box with "
               "hyperthreading enabled it means the probe did not work.")
+    elif answered[0][0] == "macos":
+        print(f"{chosen} of {logical}. Apple silicon has no SMT, so this is "
+              f"performance cores counted and efficiency cores left out: the "
+              f"fan-out splits a range into equal chunks and waits for the "
+              f"slowest, and an efficiency core sets that pace. On an Intel "
+              f"Mac the same gap would instead be hyperthreads.")
     else:
-        print(f"{chosen} physical of {logical} logical — as expected on an "
-              f"SMT machine.")
+        print(f"{chosen} physical of {logical} logical — as expected where "
+              f"SMT is enabled.")
 
     print("\nTACK_CPU_THREADS overrides this if the answer is wrong; 1 keeps "
           "everything on the calling thread.")
