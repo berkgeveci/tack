@@ -202,6 +202,102 @@ def test_measured_cost_ranks_two_real_kernels(cpu):
     assert costly.ns_per_elem > cheap.ns_per_elem * 20
 
 
+# ── Constants that are not constants ─────────────────────────────────
+#
+# Two thresholds used to be element counts, and an element count silently
+# encodes the thread cost and timer of whichever machine it was picked on.
+# Both are now derived from measurements taken here.
+
+def test_probe_threshold_scales_with_the_fan_out_cost(cpu):
+    """Where threads are cheap, a shorter range can repay one."""
+    backend = CPUBackend()
+
+    backend._fan_out_ns = 200_000.0
+    expensive = backend._probe_min_range()
+    backend._fan_out_ns = 20_000.0
+    cheap_threads = backend._probe_min_range()
+
+    assert cheap_threads < expensive, (
+        f"threshold stayed at {cheap_threads} elements when fan-out got "
+        f"ten times cheaper")
+    assert cheap_threads == pytest.approx(expensive / 10, rel=0.05)
+
+
+def test_probe_threshold_has_a_value_before_calibration(cpu):
+    backend = CPUBackend()
+    assert backend._fan_out_ns is None
+    assert backend._probe_min_range() > backend.num_threads
+
+
+def test_sample_size_scales_with_the_kernel(cpu):
+    """A costly kernel needs fewer elements to time than a cheap one."""
+    backend = CPUBackend()
+    compiled, _ = _measured(backend, _scale, 4096)
+    compiled.call_overhead_ns = 1000.0
+    n = 1 << 20
+
+    compiled.ns_per_elem = 100.0          # costly
+    few = backend._sample_elems(compiled, n)
+    compiled.ns_per_elem = 0.1            # cheap
+    many = backend._sample_elems(compiled, n)
+
+    assert few < many
+
+
+def test_sample_size_survives_a_corrupt_estimate(cpu):
+    """The re-measurement must not be sized by the thing it re-measures.
+
+    A wildly high estimate asks for a handful of elements, whose timing is
+    then almost all fixed call cost — so the sample confirms the corruption
+    instead of correcting it. Measured directly, that took a corrupted
+    estimate three elements at a time and left it 640x high.
+    """
+    backend = CPUBackend()
+    compiled, _ = _measured(backend, _scale, 4096)
+    honest = compiled.ns_per_elem
+    n = 1 << 20
+
+    compiled.ns_per_elem = honest * 10_000
+    corrupt = backend._sample_elems(compiled, n)
+
+    assert corrupt >= n // 64, (
+        f"a corrupt estimate shrank the sample to {corrupt} of {n} elements")
+
+
+def test_a_range_too_small_to_thread_is_timed_whole(cpu):
+    backend = CPUBackend()
+    compiled, _ = _measured(backend, _scale, 4096)
+    n = backend._probe_min_range() // 2
+    assert backend._sample_elems(compiled, n) == n
+
+
+# ── Counting cores ───────────────────────────────────────────────────
+
+def test_core_count_is_sane():
+    """Physical cores, not logical: a hyperthread shares an execution unit,
+    so a second compute thread on one costs a fan-out slot to buy little."""
+    import os
+    from tack.runtime.cpu import _physical_core_count
+
+    count = _physical_core_count()
+    assert count >= 1
+    assert count <= (os.cpu_count() or 1), (
+        f"reported {count} cores, more than the {os.cpu_count()} logical "
+        f"processors that exist")
+
+
+def test_every_platform_probe_answers_or_declines():
+    """A probe off its own platform must return None, not guess."""
+    from tack.runtime.cpu import (_linux_core_count, _macos_core_count,
+                                  _windows_core_count)
+    answered = 0
+    for probe in (_linux_core_count, _macos_core_count, _windows_core_count):
+        result = probe()
+        assert result is None or result >= 1, f"{probe.__name__} -> {result}"
+        answered += result is not None
+    assert answered >= 1, "no platform probe recognised this machine"
+
+
 # ── What the estimate is an estimate of ──────────────────────────────
 #
 # A dispatch costs a fixed amount before it touches a single element --

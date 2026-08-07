@@ -8,22 +8,34 @@ The loop range is split across threads for parallel execution.
 
 Threading decision
 ------------------
-A fan-out costs ~200 µs of pure Python thread wakeup on a 10-core machine,
-so it only pays when the serial run would take meaningfully longer than
-that.  Both sides of the comparison are *measured* rather than assumed:
-the backend calibrates the fan-out cost once, and every compiled kernel
-carries a running estimate of its serial nanoseconds per element.
+Waking a pool of Python threads costs on the order of a hundred
+microseconds, so a fan-out only pays when the serial run would take
+meaningfully longer than that.  Both sides of that comparison are
+*measured*, never assumed: the backend times its own fan-out once, and
+every compiled kernel carries a running estimate of its serial nanoseconds
+per element, less the fixed cost of the call around it.
 
 A fixed element-count threshold cannot do this job, because the crossover
 moves by three orders of magnitude with the kernel's arithmetic intensity.
-Measured here (10 physical cores, f32):
+Measured on a 10-core Apple silicon machine, f32:
 
     out[i] = x[i]*2 + 1          memory bound     crossover ~4,000,000
     out[i] = sqrt(..) + sin(..)  ~10 flop/elem    crossover   ~130,000
     20-iteration inner loop      ~120 flop/elem   crossover     ~4,000
 
-The old constant of 1024 sat below all three, so every mid-size dispatch
-of a cheap kernel paid ~200 µs to save ~20 µs — a 3-10x pessimization.
+The original constant of 1024 sat below all three, so every mid-size
+dispatch of a cheap kernel paid ~200 µs to save ~20 µs.
+
+Those numbers are one machine's.  Anything here expressed in nanoseconds or
+elements is derived from a measurement taken on the machine in hand rather
+than written down, because a threshold in elements silently encodes the
+thread cost and timer resolution of wherever it was chosen.  What is
+written down are ratios -- how much margin to demand, how much of a sample
+to trust -- which carry across machines in a way element counts do not.
+
+None of this has been validated off Apple silicon.  CI exercises the logic
+on Linux, but the tests supply their own timings so they do not measure
+tuning quality.
 """
 
 import ctypes
@@ -165,10 +177,12 @@ _COST_SMOOTHING = 0.25
 # still converges within a few dispatches.
 _MAX_SAMPLE_RATIO = 8.0
 
-# Smallest slice worth timing when refreshing the estimate mid-fan-out.
-# Below this the whole range is timed instead: a range that small cannot
-# repay a fan-out anyway, so there is nothing to protect by splitting it.
-_RECHECK_PROBE_MIN = 4096
+# How much longer a timed slice should take than the fixed per-call cost.
+# The rate comes from subtracting that cost, so the remainder has to be the
+# bulk of the sample or the rate inherits the fixed cost's own error. Ten
+# times over puts that under a few per cent, and lets the slice scale with
+# the kernel: two elements of a costly one, thousands of a cheap one.
+_SAMPLE_OVERHEAD_RATIO = 10.0
 
 # Parallel dispatches to allow between refreshes of the cost estimate.
 # Doubles up to the cap, so a wrong decision to thread is caught after a
@@ -176,10 +190,14 @@ _RECHECK_PROBE_MIN = 4096
 # one serial run per cap.
 _RECHECK_CAP = 1024
 
-# Below this, the first dispatch of an unmeasured kernel just runs serially
-# rather than splitting off a timing probe — a range this small cannot
-# repay a fan-out even for the most expensive kernel body.
-_PROBE_MIN_RANGE = 16384
+# Per-element cost assumed when deciding whether an *unmeasured* kernel is
+# worth probing. It cannot be measured yet — that is what the probe is for —
+# so the threshold answers "could a kernel this expensive repay a fan-out
+# over this range?". Kernels dearer than this exist; guessing low costs them
+# one serial dispatch before the estimate exists, which is the cheapest way
+# to be wrong here. The range it implies scales with the measured fan-out,
+# so a machine with cheaper threads starts probing sooner.
+_PROBE_REFERENCE_NS_PER_ELEM = 24.0
 
 _CALIBRATION_REPS = 5
 
@@ -335,15 +353,96 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
     return CompiledKernel(engine, func_ptr, param_types, param_is_field, ir_func.name)
 
 
-def _physical_core_count() -> int:
-    """Return the number of physical CPU cores (not hyperthreads)."""
+def _linux_core_count() -> int | None:
+    """Physical cores from sysfs, discounting SMT siblings."""
     try:
         with open("/sys/devices/system/cpu/cpu0/topology/thread_siblings_list") as f:
             threads_per_core = len(f.read().strip().split(","))
         total = os.cpu_count() or 1
         return max(1, total // threads_per_core)
     except (OSError, ValueError):
-        return os.cpu_count() or 1
+        return None
+
+
+def _macos_core_count() -> int | None:
+    """Performance cores, or physical cores where there is one kind.
+
+    Apple silicon mixes performance and efficiency cores, and the fan-out
+    splits a range into equal chunks. An efficiency core takes several times
+    as long over the same chunk, and every thread waits for the slowest, so
+    counting the efficiency cores in makes the whole dispatch run at their
+    pace. Measured on an 8+2 machine, eight threads beat ten.
+    """
+    try:
+        libc = ctypes.CDLL("libc.dylib")
+    except OSError:
+        return None
+    for key in (b"hw.perflevel0.physicalcpu", b"hw.physicalcpu"):
+        value = ctypes.c_int(0)
+        length = ctypes.c_size_t(ctypes.sizeof(value))
+        rc = libc.sysctlbyname(key, ctypes.byref(value), ctypes.byref(length),
+                               None, ctypes.c_size_t(0))
+        if rc == 0 and value.value > 0:
+            return value.value
+    return None
+
+
+def _windows_core_count() -> int | None:
+    """Physical cores via GetLogicalProcessorInformationEx.
+
+    os.cpu_count() reports logical processors, so on any SMT machine it is
+    double what we want. The records are variable length, but each carries
+    its own size, so counting the processor-core ones needs no unpacking of
+    the union that follows.
+
+    Untested — no Windows machine to hand. It fails to None rather than
+    guessing, and the caller falls back to the logical count.
+    """
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        RelationProcessorCore = 0
+        kernel32 = ctypes.windll.kernel32
+        size = wintypes.DWORD(0)
+        kernel32.GetLogicalProcessorInformationEx(
+            RelationProcessorCore, None, ctypes.byref(size))
+        if size.value == 0:
+            return None
+        buf = (ctypes.c_byte * size.value)()
+        if not kernel32.GetLogicalProcessorInformationEx(
+                RelationProcessorCore, buf, ctypes.byref(size)):
+            return None
+
+        raw = bytes(buf)
+        offset = 0
+        cores = 0
+        while offset + 8 <= size.value:
+            relationship = int.from_bytes(raw[offset:offset + 4], "little")
+            record_size = int.from_bytes(raw[offset + 4:offset + 8], "little")
+            if record_size == 0:
+                break
+            if relationship == RelationProcessorCore:
+                cores += 1
+            offset += record_size
+        return cores or None
+    except Exception:                                   # noqa: BLE001
+        return None
+
+
+def _physical_core_count() -> int:
+    """Number of cores worth running one compute thread on each.
+
+    Not the logical processor count: hyperthreads share an execution unit,
+    so a second thread on one buys little for compute-bound work while
+    costing a full fan-out slot. os.cpu_count() counts them, which is why
+    each platform is asked properly first.
+    """
+    for probe in (_linux_core_count, _macos_core_count, _windows_core_count):
+        count = probe()
+        if count:
+            return count
+    return os.cpu_count() or 1
 
 
 class CPUBackend(Backend):
@@ -456,7 +555,7 @@ class CPUBackend(Backend):
                 # from costing the dispatch its parallelism; small ranges,
                 # where a fan-out is the expensive option anyway, run whole.
                 probe_end = min(loop_end,
-                                max(_RECHECK_PROBE_MIN, loop_end // 64))
+                                self._sample_elems(compiled, loop_end))
                 self._run_serial(compiled, prefix, 0, probe_end)
                 if loop_end > probe_end:
                     self._parallel_execute(compiled, prefix, probe_end,
@@ -465,7 +564,8 @@ class CPUBackend(Backend):
             self._parallel_execute(compiled, prefix, 0, loop_end)
             return
 
-        if compiled.ns_per_elem > 0.0 or loop_end < _PROBE_MIN_RANGE \
+        probe_min_range = self._probe_min_range()
+        if compiled.ns_per_elem > 0.0 or loop_end < probe_min_range \
                 or self.num_threads <= 1:
             # Already measured and too small, or too small to be worth
             # splitting off a probe.
@@ -475,12 +575,54 @@ class CPUBackend(Backend):
         # First sight of this kernel at a range where threading might pay.
         # Time a small prefix, then decide about the rest — so a one-shot
         # large dispatch is not stuck running serially for want of a sample.
-        probe_end = max(_PROBE_MIN_RANGE // 16, loop_end // 64)
+        probe_end = max(probe_min_range // 16, loop_end // 64)
         self._run_serial(compiled, prefix, 0, probe_end)
         if loop_end - probe_end >= compiled.parallel_min_elems:
             self._parallel_execute(compiled, prefix, probe_end, loop_end)
         else:
             self._run_serial(compiled, prefix, probe_end, loop_end)
+
+    def _probe_min_range(self) -> int:
+        """Smallest range worth splitting a timing probe off.
+
+        Derived from the machine's own fan-out cost rather than fixed: where
+        waking threads is cheap a shorter range can repay it, so measuring
+        should start sooner. A hardcoded element count silently encodes the
+        thread cost of whichever machine it was chosen on.
+        """
+        fan_out = self._fan_out_ns
+        if fan_out is None:
+            fan_out = _DEFAULT_FAN_OUT_NS
+        return max(self.num_threads,
+                   int(fan_out * _PARALLEL_BREAK_EVEN
+                       / _PROBE_REFERENCE_NS_PER_ELEM))
+
+    def _sample_elems(self, compiled: CompiledKernel, loop_end: int) -> int:
+        """Elements to time so the sample outweighs the fixed call cost.
+
+        Targets a duration rather than a count, since what makes a sample
+        trustworthy is that the per-element work dominates the fixed cost
+        subtracted from it — and how many elements that takes is entirely
+        the kernel's business.
+
+        The two guards matter more than the target. A re-measurement exists
+        because the estimate may be wrong, so sizing the slice purely from
+        that estimate is circular: a wildly high one asks for a handful of
+        elements, whose timing is then almost all fixed cost, which keeps
+        the estimate wrong. Measured directly, that took a corrupted
+        estimate three elements at a time and left it 640x high after four
+        dispatches.
+
+        So the slice is never a smaller share than 1/64 of the range, and a
+        range too small to want threading at all is simply timed whole.
+        """
+        if loop_end <= self._probe_min_range():
+            return loop_end
+
+        rate = max(compiled.ns_per_elem, _MIN_NS_PER_ELEM)
+        target_ns = _SAMPLE_OVERHEAD_RATIO * max(compiled.call_overhead_ns, 1.0)
+        target = int(target_ns / rate)
+        return max(1, min(loop_end, max(target, loop_end // 64)))
 
     def _measure_call_overhead(self, compiled: CompiledKernel, prefix: tuple):
         """Time an empty call_range — the part that is not per-element.
