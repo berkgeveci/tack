@@ -183,6 +183,49 @@ def _store_texture_shapes(ir_func, effective_args):
             param._texture_shape = arg.shape_3d
 
 
+class _ProbeParam:
+    """A blank parameter for `_KeyProbe` to have the passes write onto.
+
+    Nothing is carried over from the template's own param: the two passes
+    assign every attribute read back below, so starting empty is both
+    faithful and cheaper than copying. Slots rather than a dict because one
+    of these is built per parameter per dispatch.
+    """
+
+    __slots__ = ("name", "type_annotation", "_is_field", "_is_texture",
+                 "_texture_shape")
+
+    def __init__(self, name):
+        self.name = name
+        self.type_annotation = None
+        self._is_field = False
+        self._is_texture = False
+        self._texture_shape = None
+
+
+class _KeyProbe:
+    """A stand-in carrying only what the key derivation touches.
+
+    `infer_param_types` and `store_texture_shapes` record their answers by
+    writing onto the params they are handed, and the key is then read back
+    off those same params. The IR template is shared by every dispatch of a
+    kernel, so doing that to the template publishes one call's argument
+    types to every other thread for the window between the write and the
+    read — long enough for a concurrent dispatch to compute its key from
+    somebody else's dtypes and fetch a variant compiled for them, which is
+    silent wrong numbers.
+
+    Standing in a fresh parameter list closes that. The body, which neither
+    pass touches, stays shared.
+    """
+
+    __slots__ = ("name", "params")
+
+    def __init__(self, ir_func):
+        self.name = ir_func.name
+        self.params = [_ProbeParam(p.name) for p in ir_func.params]
+
+
 class KernelVariant:
     """One compiled specialization of a kernel, plus the IR behind it.
 
@@ -237,11 +280,14 @@ def resolve_variant(backend, kernel, args, kwargs, build,
 
     # Parameter types and texture extents come from the actual arguments and
     # are part of the key, so they have to be derived before the lookup.
-    # Both only write to the param objects, leaving the body pristine.
-    infer_param_types(template, effective_args)
-    store_texture_shapes(template, effective_args)
+    # They are derived on a private copy of the parameter list rather than on
+    # the template — see _KeyProbe for why the template must not be written
+    # to here. `shape_signature` only reads, so it takes the template.
+    probe = _KeyProbe(template)
+    infer_param_types(probe, effective_args)
+    store_texture_shapes(probe, effective_args)
 
-    key = kernel_variant_key(template, kernel, vector_fields, template_args,
+    key = kernel_variant_key(probe, kernel, vector_fields, template_args,
                              shape_signature(template, name_to_field))
 
     slot = kernel_cache_slot(backend._cache, kernel)
