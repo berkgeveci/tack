@@ -59,13 +59,15 @@ pip install tack-vis               # visualization (pulls in tack-core)
 | HIP | Linux (AMD) | `tack.init(arch=tack.hip)` | `hip-python`, ROCm toolkit |
 | Level Zero | Linux (Intel) | `tack.init(arch=tack.level_zero)` | `libze_loader.so`, `libocloc.so` |
 
-`hip-python` is published on Test PyPI rather than PyPI, so the `[hip]` extra is empty
-and cannot declare it — `tack.init(arch=tack.hip)` prints these instructions if it is
-missing. Install it separately:
+`hip-python` is on PyPI, so `pip install tack-core[hip]` is enough. It ships
+manylinux x86_64 wheels only, so the dependency carries a platform marker and
+installs nothing elsewhere rather than failing to resolve.
+
+Its version tracks the ROCm release it binds to — 7.1.x against ROCm 7.1, 7.2.x
+against 7.2 — so if yours does not match, ask for the one that does:
 
 ```bash
-pip install --pre --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ "hip-python~=7.1.0"
+pip install "hip-python~=7.2.0"
 ```
 
 Level Zero needs no Python package — just the system Level Zero runtime and Intel's

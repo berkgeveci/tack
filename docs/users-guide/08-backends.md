@@ -76,9 +76,7 @@ AMD GPUs via ROCm. The codegen extends CUDA — HIP device code uses the same
 syntax (`blockIdx`, `threadIdx`, `__global__`).
 
 ```bash
-uv pip install --prerelease=allow --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ --index-strategy unsafe-best-match \
-  "hip-python~=7.1.0"
+uv sync --extra hip        # hip-python is on PyPI
 ```
 
 ```python

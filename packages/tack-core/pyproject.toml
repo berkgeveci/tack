@@ -33,12 +33,25 @@ metal = [
     "pyobjc-framework-Metal",
     "pyobjc-framework-MetalKit",
 ]
-# Deliberately empty, and kept rather than deleted so the names stay valid
-# and `uv sync --extra hip` works in the workspace. Neither backend's
-# requirement can be expressed as a pip dependency: hip-python is published
-# on Test PyPI, and Level Zero needs system libraries. tack.init() prints the
-# real instructions when either backend fails to start; see the README.
-hip = []
+# hip-python moved from Test PyPI to PyPI proper, so this is a real
+# dependency now. It ships manylinux x86_64 wheels only, hence the marker:
+# without it, `pip install tack-core[hip]` fails to resolve on macOS and
+# Windows instead of quietly installing nothing, which is the friendlier
+# outcome given tack.init() already explains what a missing HIP runtime
+# means.
+#
+# Lower bound only. hip-python's version tracks the ROCm release it binds
+# to -- 7.1.x against ROCm 7.1, 7.2.x against 7.2 -- so the right version
+# is whichever matches the system's ROCm, and pinning one here would be
+# guessing at somebody else's install.
+hip = [
+    "hip-python>=7.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
+]
+
+# Genuinely empty, and kept rather than deleted so the name stays valid and
+# `uv sync --extra level_zero` works. Level Zero is reached through ctypes
+# to libze_loader.so and libocloc.so, which are system libraries from the
+# Intel compute runtime; there is no Python package to depend on.
 level_zero = []
 dev = [
     "pytest",

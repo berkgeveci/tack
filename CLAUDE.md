@@ -19,7 +19,7 @@ All share the `tack` namespace via `pkgutil.extend_path`.
 ## Build & Test Commands
 
 ```bash
-uv sync                                                     # install all packages (editable)
+uv sync --extra cpu --extra dev                             # install everything the tests need
 uv run pytest                                                # run all tests
 uv run pytest packages/tack-core/tests/test_cpu_jit.py        # run one test file
 uv run pytest packages/tack-core/tests/test_hip.py            # run HIP backend tests
@@ -233,17 +233,17 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 
 The HIP codegen (`hip_gen.py`) extends `CUDACodeGen` — HIP device code uses the same syntax as CUDA (`blockIdx`, `threadIdx`, `__global__`, `__shared__`, `__syncthreads`). The only difference is `#include <hip/hip_runtime.h>`. The runtime (`hip_backend.py`) uses `hip-python` bindings for hipRTC compilation and dispatch.
 
-To install hip-python (packages are on **Test PyPI**, not regular PyPI):
+`hip-python` is on PyPI now (it used to be Test-PyPI only), so the `[hip]` extra declares it:
 
 ```bash
-uv pip install --prerelease=allow --index-url https://test.pypi.org/simple/ \
-  --extra-index-url https://pypi.org/simple/ --index-strategy unsafe-best-match \
-  "hip-python~=7.1.0"
+uv sync --extra hip     # or: pip install tack-core[hip]
 ```
+
+manylinux x86_64 wheels only, so the dependency carries a platform marker and is skipped elsewhere. Its version tracks the ROCm release it binds to — 7.1.x against ROCm 7.1, 7.2.x against 7.2 — so the extra sets a lower bound rather than a pin, and a mismatched ROCm wants an explicit `hip-python~=7.2.0`.
 
 Then: `tack.init(arch=tack.hip)`.
 
-**Known issue**: `hiprtcDestroyProgram` segfaults in hip-python 7.1 bindings. The backend skips this call (minor leak, mitigated by kernel caching).
+**Known issue**: `hiprtcDestroyProgram` segfaults in hip-python **7.1** bindings. The backend skips the call (minor leak, mitigated by kernel caching). Whether 7.2 fixed it is untested — there is no ROCm machine here — so the workaround stays until somebody can check.
 
 ## Level Zero backend notes
 

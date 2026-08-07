@@ -65,6 +65,17 @@ wheels = [
 ]
 
 [[package]]
+name = "hip-python"
+version = "7.2.2.562.43"
+source = { registry = "https://pypi.org/simple" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/fd/1b/4047e7978bd5e8a6b53f0aa2f4fce504f71c2fd3d7309e66ec32b3c70f25/hip_python-7.2.2.562.43-cp311-cp311-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:631890c8f3a67901a0d2d0856f74815085818625570e010d0c56ea2ab10b1236", size = 66664832, upload-time = "2026-04-24T15:31:57.774Z" },
+    { url = "https://files.pythonhosted.org/packages/56/f0/b34fdfdc50a25b7f12ba74f43ec17b722224f8705ac9faf10794af5d5768/hip_python-7.2.2.562.43-cp312-cp312-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:4aabfa3347c99f26a2f81fb2f3be3c80117c797973554822f4ba7a859b723827", size = 66879676, upload-time = "2026-04-24T15:32:02.659Z" },
+    { url = "https://files.pythonhosted.org/packages/73/a6/0418dd7966c3f05cfd8a39339358abe0e91d52d672b1d220359fc169626b/hip_python-7.2.2.562.43-cp313-cp313-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:778b1cbc144b4439ddef2a6b6c5e3784c79f0fb675edaeba98be1af2780164e6", size = 67171202, upload-time = "2026-04-24T15:32:07.76Z" },
+    { url = "https://files.pythonhosted.org/packages/54/71/c760feb2e061fdb5ba2c6836f1482701bed36ab812f03682d5137ba799de/hip_python-7.2.2.562.43-cp314-cp314-manylinux2014_x86_64.manylinux_2_17_x86_64.manylinux_2_28_x86_64.whl", hash = "sha256:f236449db41c97b5a2ddcc5951ea9ba292edd5ecc8ded75dc328fb46e516a010", size = 66977229, upload-time = "2026-04-20T19:24:56.726Z" },
+]
+
+[[package]]
 name = "iniconfig"
 version = "2.3.0"
 source = { registry = "https://pypi.org/simple" }
@@ -298,6 +309,7 @@ dependencies = [
 [package.optional-dependencies]
 all = [
     { name = "cuda-python" },
+    { name = "hip-python", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
     { name = "llvmlite" },
     { name = "pyobjc-framework-metal" },
     { name = "pyobjc-framework-metalkit" },
@@ -311,6 +323,9 @@ cuda = [
 dev = [
     { name = "pytest" },
 ]
+hip = [
+    { name = "hip-python", marker = "platform_machine == 'x86_64' and sys_platform == 'linux'" },
+]
 metal = [
     { name = "pyobjc-framework-metal" },
     { name = "pyobjc-framework-metalkit" },
@@ -319,6 +334,7 @@ metal = [
 [package.metadata]
 requires-dist = [
     { name = "cuda-python", marker = "extra == 'cuda'", specifier = ">=13.2.0" },
+    { name = "hip-python", marker = "platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'hip'", specifier = ">=7.0" },
     { name = "llvmlite", marker = "extra == 'cpu'" },
     { name = "numpy" },
     { name = "pyobjc-framework-metal", marker = "extra == 'metal'" },
@@ -371,7 +387,7 @@ dev = [
     { name = "pytest" },
 ]
 hip = [
-    { name = "tack-core" },
+    { name = "tack-core", extra = ["hip"] },
 ]
 level-zero = [
     { name = "tack-core" },

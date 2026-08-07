@@ -14,7 +14,7 @@ Add the extra for your hardware if you have it — `--extra metal`, `--extra cud
 extras you list, so syncing without `--extra metal` will *remove* Metal from an
 environment that had it.
 
-`hip-python` lives on Test PyPI and cannot be declared as a dependency; see the
+`hip-python` is on PyPI and the `[hip]` extra declares it; see the
 README for the install line.
 
 ## The thing to know about the tests
