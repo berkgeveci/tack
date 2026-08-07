@@ -12,7 +12,8 @@ import numpy as np
 import pytest
 
 import tack
-from tack.runtime.cpu import CPUBackend
+from tack.runtime import cpu as cpu_mod
+from tack.runtime.cpu import CPUBackend, _MAX_SAMPLE_RATIO
 from tack.runtime.dispatch import get_backend
 
 
@@ -199,6 +200,133 @@ def test_measured_cost_ranks_two_real_kernels(cpu):
     backend._run_serial(costly, costly.bind(args), 0, n)
 
     assert costly.ns_per_elem > cheap.ns_per_elem * 20
+
+
+# ── Recovering from a bad estimate ───────────────────────────────────
+#
+# The estimate is only refreshed by serial runs, so switching to threads
+# also switches off the thing that would notice the switch was wrong. Left
+# alone that is a one-way door: one mistimed sample turns threading on for
+# a range that does not want it, and every dispatch after pays ~200 us to
+# do work worth ~20 us, for the life of the process.
+#
+# It cannot be caught by comparing against the estimate either -- a wildly
+# high one predicts an even worse serial run, so fanning out looks like a
+# win however slow it really is. Only a fresh measurement settles it.
+#
+# Timings are supplied rather than measured, so none of this depends on
+# how busy the machine is.
+
+def _fixed_timing(monkeypatch, elapsed_ns):
+    """Make the next _run_serial believe it took exactly this long."""
+    seq = iter([0, int(elapsed_ns)])
+    monkeypatch.setattr(cpu_mod.time, "perf_counter_ns", lambda: next(seq))
+
+
+def _measured(backend, kernel, n):
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    compiled = _compile_for(backend, kernel, [x, out, n])
+    backend._dispatch(compiled, [x, out, n], n)
+    assert compiled.ns_per_elem > 0.0
+    return compiled, [x, out, n]
+
+
+def test_one_outlier_sample_cannot_flip_the_decision(cpu, monkeypatch):
+    """A descheduled dispatch times far above the kernel's real cost."""
+    backend = CPUBackend()
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    settled = compiled.ns_per_elem
+
+    _fixed_timing(monkeypatch, settled * n * 1000)
+    backend._run_serial(compiled, compiled.bind(args), 0, n)
+
+    assert compiled.ns_per_elem <= settled * _MAX_SAMPLE_RATIO, (
+        f"one sample moved the estimate {settled:.1f} -> "
+        f"{compiled.ns_per_elem:.1f} ns/elem")
+
+
+def test_a_believable_rise_is_still_tracked(cpu, monkeypatch):
+    """Clamping outliers must not deafen it to a real change."""
+    backend = CPUBackend()
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    settled = compiled.ns_per_elem
+
+    for _ in range(6):
+        _fixed_timing(monkeypatch, settled * n * 3)
+        backend._run_serial(compiled, compiled.bind(args), 0, n)
+
+    assert compiled.ns_per_elem > settled * 2, (
+        f"a sustained 3x rise left the estimate at {compiled.ns_per_elem:.1f}, "
+        f"from {settled:.1f}")
+
+
+def test_a_wrong_decision_to_thread_gets_corrected(cpu):
+    """However the estimate got wrong, dispatching has to recover."""
+    backend = CPUBackend()
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    honest = compiled.ns_per_elem
+
+    # The state a bad sample leaves: threading on for a range far too small.
+    compiled.ns_per_elem = honest * 10_000
+    compiled.parallel_min_elems = backend._min_elems(compiled.ns_per_elem)
+    assert n >= compiled.parallel_min_elems, "test did not set up the flip"
+
+    for _ in range(4):
+        backend._dispatch(compiled, args, n)
+
+    assert n < compiled.parallel_min_elems, (
+        "still threading a range this size; the estimate is never "
+        "re-measured once threading is on")
+    assert compiled.ns_per_elem < honest * 10, (
+        f"estimate stuck at {compiled.ns_per_elem:.1f}, honest is {honest:.1f}")
+
+
+def test_recheck_backs_off(cpu):
+    """Re-measuring every dispatch would tax kernels that want threads."""
+    backend = CPUBackend()
+    compiled, _ = _measured(backend, _scale, 16)
+
+    fired = sum(1 for _ in range(4096) if compiled.recheck_due())
+
+    # 1, 2, 4 ... 1024, then every 1024.
+    assert 10 <= fired <= 20, f"{fired} re-measurements in 4096 dispatches"
+
+
+def test_recheck_keeps_the_parallelism(cpu):
+    """A re-measurement times a slice, not the whole range.
+
+    Running the entire range serially to check on it would cost the
+    dispatch everything threading was bought for.
+    """
+    backend = CPUBackend()
+    n = 1 << 17
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.arange(n, dtype=np.float32) * 0.001)
+    compiled = _compile_for(backend, _scale, [x, out, n])
+
+    backend._dispatch(compiled, [x, out, n], n)
+
+    ranges = []
+    real_serial = backend._run_serial
+    backend._run_serial = lambda c, p, a, b: (ranges.append((a, b)),
+                                              real_serial(c, p, a, b))[1]
+
+    compiled.parallel_min_elems = 1          # force the parallel branch
+    compiled.recheck_after = 1
+    compiled.parallel_since_measure = 0
+    backend._dispatch(compiled, [x, out, n], n)
+
+    assert ranges, "no re-measurement happened"
+    start, end = ranges[0]
+    assert end - start < n // 2, (
+        f"re-measured {end - start} of {n} elements serially")
+    np.testing.assert_allclose(
+        out.to_numpy(), x.to_numpy() * 2.0 + 1.0, rtol=1e-5)
 
 
 def test_single_thread_backend_never_threads(cpu):

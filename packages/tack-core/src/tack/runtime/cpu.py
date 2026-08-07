@@ -154,9 +154,27 @@ from tack.runtime.kernel_utils import (  # noqa: F401
 _PARALLEL_BREAK_EVEN = 2.0
 
 # Weight of the newest sample in the per-kernel cost estimate. Low enough
-# that one preempted dispatch cannot flip the decision, high enough to
-# track a kernel whose cost depends on its data.
+# to ride out ordinary jitter, high enough to track a kernel whose cost
+# depends on its data.
 _COST_SMOOTHING = 0.25
+
+# Most a single sample may claim, as a multiple of the running estimate.
+# Smoothing alone does not contain an outlier: a dispatch preempted mid-run
+# can time a thousand times the kernel's real cost, and a quarter of that is
+# still enough to flip the decision. A kernel whose cost genuinely rises
+# still converges within a few dispatches.
+_MAX_SAMPLE_RATIO = 8.0
+
+# Smallest slice worth timing when refreshing the estimate mid-fan-out.
+# Below this the whole range is timed instead: a range that small cannot
+# repay a fan-out anyway, so there is nothing to protect by splitting it.
+_RECHECK_PROBE_MIN = 4096
+
+# Parallel dispatches to allow between refreshes of the cost estimate.
+# Doubles up to the cap, so a wrong decision to thread is caught after a
+# single dispatch, while a kernel that really wants threads settles into
+# one serial run per cap.
+_RECHECK_CAP = 1024
 
 # Below this, the first dispatch of an unmeasured kernel just runs serially
 # rather than splitting off a timing probe — a range this small cannot
@@ -204,6 +222,28 @@ class CompiledKernel:
         # from ns_per_elem. Precomputed so the dispatch hot path is a single
         # integer compare. _NEVER until the kernel has been timed once.
         self.parallel_min_elems = _NEVER
+
+        # Only serial runs measure, so the decision to thread rests on an
+        # estimate that threading itself stops refreshing. Left alone that
+        # is a one-way door: one mistimed sample turns threading on, and
+        # nothing afterwards can discover it was wrong. These schedule an
+        # occasional serial run to re-measure.
+        self.parallel_since_measure = 0
+        self.recheck_after = 1
+
+    def recheck_due(self) -> bool:
+        """Whether this parallel dispatch should re-measure instead.
+
+        Backs off geometrically: the first wrong fan-out is caught
+        immediately, while a kernel that genuinely wants threads converges
+        to one serial run per `_RECHECK_CAP`.
+        """
+        self.parallel_since_measure += 1
+        if self.parallel_since_measure < self.recheck_after:
+            return False
+        self.parallel_since_measure = 0
+        self.recheck_after = min(self.recheck_after * 2, _RECHECK_CAP)
+        return True
 
     def bind(self, kernel_args: list) -> tuple:
         """Marshal the field pointers and scalars once for a dispatch.
@@ -395,6 +435,22 @@ class CPUBackend(Backend):
                 if loop_end < compiled.parallel_min_elems:
                     self._run_serial(compiled, prefix, 0, loop_end)
                     return
+            if compiled.recheck_due():
+                # Refresh the estimate on a slice, then fan out the rest.
+                # The estimate that chose threading cannot be checked
+                # against itself — a wildly high one predicts an even worse
+                # serial run, so fanning out looks like a win however slow
+                # it actually is — so the only way to find out is to time
+                # one. Taking a slice rather than the whole range keeps that
+                # from costing the dispatch its parallelism; small ranges,
+                # where a fan-out is the expensive option anyway, run whole.
+                probe_end = min(loop_end,
+                                max(_RECHECK_PROBE_MIN, loop_end // 64))
+                self._run_serial(compiled, prefix, 0, probe_end)
+                if loop_end > probe_end:
+                    self._parallel_execute(compiled, prefix, probe_end,
+                                           loop_end)
+                return
             self._parallel_execute(compiled, prefix, 0, loop_end)
             return
 
@@ -426,10 +482,26 @@ class CPUBackend(Backend):
 
         sample = elapsed / (end - start)
         prev = compiled.ns_per_elem
-        # Smoothed so one preempted dispatch cannot flip the decision, but
-        # still able to track a kernel whose cost is data-dependent.
-        ns_per_elem = sample if prev <= 0.0 else \
-            prev + _COST_SMOOTHING * (sample - prev)
+
+        # The response is deliberately asymmetric, because the two errors
+        # are not: an estimate that is too high fans out ranges that cannot
+        # repay it and costs an order of magnitude, while one that is too
+        # low only leaves some parallelism unclaimed.
+        if prev <= 0.0:
+            ns_per_elem = sample
+        elif sample > prev * _MAX_SAMPLE_RATIO:
+            # Almost always a descheduled run rather than a real change.
+            # Bound what it may claim; a genuine rise still arrives over a
+            # few dispatches.
+            ns_per_elem = prev + _COST_SMOOTHING * (
+                prev * _MAX_SAMPLE_RATIO - prev)
+        elif sample * _MAX_SAMPLE_RATIO < prev:
+            # The estimate sits far above what the kernel now measures.
+            # Believe the measurement outright: easing toward it would leave
+            # threading on for thousands of dispatches on the way down.
+            ns_per_elem = sample
+        else:
+            ns_per_elem = prev + _COST_SMOOTHING * (sample - prev)
         compiled.ns_per_elem = ns_per_elem
         compiled.parallel_min_elems = self._min_elems(ns_per_elem)
 
