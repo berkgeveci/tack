@@ -41,6 +41,7 @@ tuning quality.
 import ctypes
 import ctypes.util
 import os
+import platform
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -63,13 +64,41 @@ _numa_available = False
 _numa_node_mask = 0
 _numa_max_node = 0
 _libc = None
-_SYS_SET_MEMPOLICY = 238  # x86_64 syscall number
+# Syscall numbers are per-architecture.  These are x86-64's; arm64 numbers the
+# same calls differently -- 238 is migrate_pages there -- so _init_numa declines
+# on any other machine rather than issuing a syscall it cannot name.
+_SYS_SET_MEMPOLICY = 238
+_SYS_GET_MEMPOLICY = 239
 _MPOL_DEFAULT = 0
-_MPOL_INTERLEAVE = 5
+# From linux/mempolicy.h.  Note 5 is MPOL_PREFERRED_MANY, a non-binding hint
+# that leaves pages on the faulting node -- i.e. does nothing this code wants.
+_MPOL_INTERLEAVE = 3
+
+
+def _mempolicy_interleaves() -> bool:
+    """Ask the kernel to interleave, then ask it what it actually stored.
+
+    Neither wrong constant fails loudly.  A bad syscall number or an
+    unsupported mode returns -1, which nothing here would notice, and a mode
+    that exists but means something else installs cleanly and then never
+    interleaves.  Both were true of this code before, and both are invisible
+    without reading the policy back, so it is read back.
+    """
+    mask = (ctypes.c_ulong * 1)(_numa_node_mask)
+    if _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_INTERLEAVE, mask,
+                     _numa_max_node + 2) != 0:
+        return False
+    mode = ctypes.c_int(-1)
+    rc = _libc.syscall(_SYS_GET_MEMPOLICY, ctypes.byref(mode), None,
+                       ctypes.c_ulong(0), None, 0)
+    _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
+    return rc == 0 and mode.value == _MPOL_INTERLEAVE
 
 
 def _init_numa():
     global _numa_available, _numa_node_mask, _numa_max_node, _libc
+    if platform.machine() != "x86_64":
+        return  # the syscall numbers above are x86-64's
     try:
         numa = ctypes.CDLL(ctypes.util.find_library("numa"))
         if numa.numa_available() == -1:
@@ -95,6 +124,10 @@ def _init_numa():
         _numa_node_mask = mask
         _numa_max_node = max_node
         _libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+        if not _mempolicy_interleaves():
+            _libc = None
+            _numa_node_mask = 0
+            return
         _numa_available = True
     except (OSError, AttributeError, TypeError):
         pass
