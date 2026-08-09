@@ -341,3 +341,96 @@ def test_kernel_output_reaches_vtk_without_a_copy():
     array = interop.field_to_vtk(out, n_components=3, name="ramp")
     assert array.GetNumberOfTuples() == 3
     assert array.GetTuple3(1) == pytest.approx((6.0, 8.0, 10.0))
+
+
+# ── The device half ──────────────────────────────────────────────────
+#
+# Everything above runs on host memory. A field a GPU backend allocated
+# takes a different path through both libraries -- VTK's memory-space
+# handling on one side, the descriptor wrapper on the other -- and that
+# path had never executed anywhere, because it needs three things at
+# once: a device, a VTK built to know about it, and tack on that
+# device's backend. Written and compiled is not the same as run, and
+# every other part of this exchange had a bug the first time something
+# ran it.
+#
+# VTK's MemorySpace enum has exactly three values, so a backend is only
+# testable here if VTK has a name for where its memory lives. That is a
+# fact about the pair, not about tack, so it is spelled as the mapping
+# it is rather than as a list of backend names.
+
+_VTK_SPACE_FOR = {"cuda": "CudaDeviceMemory", "hip": "HipDeviceMemory"}
+
+
+def _device_arches():
+    """Backends on this machine whose memory VTK can describe."""
+    from tack.runtime.dispatch import get_backend
+
+    found = []
+    for arch, space in _VTK_SPACE_FOR.items():
+        try:
+            tack.init(arch=getattr(tack, arch))
+        except (ImportError, RuntimeError, OSError, AttributeError):
+            continue  # not built, no device, or no driver
+        if get_backend().device_memory_spaces:
+            found.append(pytest.param(arch, space, id=arch))
+    tack.init(arch=tack.cpu)
+    return found
+
+
+DEVICE_ARCHES = _device_arches()
+
+
+@needs_vtk
+@pytest.mark.parametrize("arch,space", DEVICE_ARCHES)
+def test_device_memory_reaches_vtk_as_device_memory(arch, space):
+    """VTK must be told where the memory is, not handed a host pointer.
+
+    Reporting host memory would be the dangerous failure: VTK would read
+    a device address as if it could dereference it.
+    """
+    from vtkmodules.vtkCommonCore import vtkDataArray
+
+    tack.init(arch=getattr(tack, arch))
+    field = tack.field(dtype=tack.f32, shape=(8,))
+
+    array = interop.field_to_vtk(field, n_components=1, name="ondevice")
+
+    assert array.GetMemorySpace() == getattr(vtkDataArray, space)
+    assert array.GetMemorySpace() != vtkDataArray.HostMemory
+
+
+@needs_vtk
+@pytest.mark.parametrize("arch,space", DEVICE_ARCHES)
+def test_a_device_round_trip_still_shares_one_allocation(arch, space):
+    """Zero-copy, asked the only way that cannot be faked.
+
+    Comparing pointers would prove they match; writing through one handle
+    and reading through the other proves they are the same memory. A copy
+    made anywhere along the way passes the pointer check on a stale
+    address and fails this.
+    """
+    tack.init(arch=getattr(tack, arch))
+
+    @tack.kernel
+    def ramp(out, n):
+        for i in range(n):
+            out[i] = float(i) * 2.0
+
+    original = tack.field(dtype=tack.f32, shape=(8,))
+    ramp(original, 8)
+
+    back = interop.vtk_to_field(interop.field_to_vtk(original, n_components=1))
+    assert back.shape == (8,)
+    np.testing.assert_array_equal(back.to_numpy().reshape(-1),
+                                  np.arange(8, dtype=np.float32) * 2.0)
+
+    # Write through the round-tripped handle; the original must see it.
+    @tack.kernel
+    def negate(out, n):
+        for i in range(n):
+            out[i] = -out[i]
+
+    negate(back, 8)
+    np.testing.assert_array_equal(original.to_numpy().reshape(-1),
+                                  -(np.arange(8, dtype=np.float32) * 2.0))
