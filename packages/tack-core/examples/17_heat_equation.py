@@ -103,7 +103,9 @@ try:
         ax.axis("off")
     plt.suptitle("Heat Equation Diffusion")
     import os
-    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "heat_equation.png"), dpi=150, bbox_inches="tight")
+    out = os.path.join(os.path.dirname(__file__), "..", "results", "heat_equation.png")
+    os.makedirs(os.path.dirname(out), exist_ok=True)  # gitignored; may not exist
+    plt.savefig(out, dpi=150, bbox_inches="tight")
     print("  Saved: heat_equation.png")
 except ImportError:
     print("  (install matplotlib to save image)")

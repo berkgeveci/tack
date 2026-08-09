@@ -93,7 +93,9 @@ try:
     ax.set_title("1D Wave Equation -- Gaussian pulse splitting")
     ax.legend()
     import os
-    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "wave_equation.png"), dpi=150, bbox_inches="tight")
+    out = os.path.join(os.path.dirname(__file__), "..", "results", "wave_equation.png")
+    os.makedirs(os.path.dirname(out), exist_ok=True)  # gitignored; may not exist
+    plt.savefig(out, dpi=150, bbox_inches="tight")
     print("  Saved: wave_equation.png")
 except ImportError:
     print("  (install matplotlib to save image)")

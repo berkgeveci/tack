@@ -19,6 +19,7 @@ This lives under tack-core/tests because it spans all three packages and
 `testpaths` only covers the package test directories.
 """
 
+import os
 import pathlib
 import re
 import subprocess
@@ -32,6 +33,7 @@ EXAMPLES = (sorted(REPO.glob("packages/*/examples/[0-9]*.py"))
             + sorted(REPO.glob("examples/[0-9]*.py")))
 
 _MISSING_MODULE = re.compile(r"ModuleNotFoundError: No module named '([\w.]+)'")
+_ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _example_id(path: pathlib.Path) -> str:
@@ -50,14 +52,23 @@ def test_example_runs(path):
     # Several examples save output here; it is gitignored.
     (REPO / "results").mkdir(exist_ok=True)
 
+    # Python 3.13 colours tracebacks, and FORCE_COLOR -- which several
+    # terminals and CI runners export -- makes it do so even into a pipe.
+    # The escape codes land between "ModuleNotFoundError" and its message,
+    # so every skip below stops matching and an absent optional dependency
+    # reads as a broken example.  Ask for plain text, and strip anything
+    # that arrives coloured anyway.
+    env = {**os.environ, "PYTHON_COLORS": "0", "NO_COLOR": "1"}
+    env.pop("FORCE_COLOR", None)
+
     proc = subprocess.run(
         [sys.executable, str(path), "--arch", "cpu"],
-        capture_output=True, text=True, cwd=REPO, timeout=300,
+        capture_output=True, text=True, cwd=REPO, timeout=300, env=env,
     )
     if proc.returncode == 0:
         return
 
-    combined = proc.stdout + proc.stderr
+    combined = _ANSI.sub("", proc.stdout + proc.stderr)
 
     missing = _MISSING_MODULE.search(combined)
     if missing and not missing.group(1).startswith("tack"):

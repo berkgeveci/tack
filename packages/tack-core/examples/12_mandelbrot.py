@@ -79,7 +79,9 @@ try:
     ax.set_xlabel("Real")
     ax.set_ylabel("Imaginary")
     import os
-    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "mandelbrot.png"), dpi=150, bbox_inches="tight")
+    out = os.path.join(os.path.dirname(__file__), "..", "results", "mandelbrot.png")
+    os.makedirs(os.path.dirname(out), exist_ok=True)  # gitignored; may not exist
+    plt.savefig(out, dpi=150, bbox_inches="tight")
     print("  Saved: mandelbrot.png")
 except ImportError:
     print("  (install matplotlib to save image)")

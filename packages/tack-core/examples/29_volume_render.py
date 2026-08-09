@@ -508,6 +508,9 @@ img_np = img.to_numpy().reshape(HEIGHT, WIDTH, 3)
 img_np = np.clip(img_np, 0.0, 1.0)
 img_np = img_np[::-1]  # flip vertically (row 0 = bottom)
 
+# results/ is gitignored, so a fresh checkout does not have one.
+_os.makedirs(_os.path.dirname(_args.save), exist_ok=True)
+
 try:
     import matplotlib
     matplotlib.use('Agg')

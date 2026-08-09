@@ -152,7 +152,9 @@ try:
         ax.axis("off")
     plt.suptitle("Tack Image Processing")
     import os
-    plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "image_processing.png"), dpi=150, bbox_inches="tight")
+    out = os.path.join(os.path.dirname(__file__), "..", "results", "image_processing.png")
+    os.makedirs(os.path.dirname(out), exist_ok=True)  # gitignored; may not exist
+    plt.savefig(out, dpi=150, bbox_inches="tight")
     print("  Saved: image_processing.png")
 except ImportError:
     print("  (install matplotlib to save image)")
