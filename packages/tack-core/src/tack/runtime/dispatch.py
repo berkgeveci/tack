@@ -4,12 +4,17 @@ import platform
 
 _current_backend = None
 
-# What to actually do when a backend will not start. Two of these cannot be
-# expressed as a pip extra at all, so the message has to carry them: hip-python
-# is published on Test PyPI, and Level Zero needs system libraries rather than
-# a Python package. Saying only "requires hip-python" sends people to
-# `pip install hip-python`, which fails with a confusing "no matching
-# distribution".
+# What to actually do when a backend will not start. Two of these want more
+# than the extra's name, for opposite reasons: [hip] installs hip-python but
+# cannot know which ROCm the machine has, and [level_zero] installs nothing
+# at all because its dependencies are system libraries.
+#
+# This text has been wrong once already. It used to route people to Test
+# PyPI, which was the only place hip-python was published; the package moved
+# to PyPI proper, the extra started declaring it, and the message stayed
+# behind — pointing at the wrong index, for a version the extra deliberately
+# does not pin. It prints only where there is no ROCm and somebody asks for
+# HIP, so nothing catches it going stale except reading it.
 _BACKEND_HELP = {
     "cpu": "Requires llvmlite:  pip install 'tack-core[cpu]'",
     "metal": ("Requires macOS on Apple Silicon:  "
@@ -17,11 +22,13 @@ _BACKEND_HELP = {
     "cuda": ("Requires an NVIDIA GPU and the CUDA toolkit:  "
              "pip install 'tack-core[cuda]'"),
     "hip": (
-        "Requires an AMD GPU with ROCm, plus hip-python.\n"
-        "  hip-python is on Test PyPI, not PyPI, so the [hip] extra cannot\n"
-        "  declare it. Install it directly:\n"
-        "    pip install --pre --index-url https://test.pypi.org/simple/ \\\n"
-        "      --extra-index-url https://pypi.org/simple/ 'hip-python~=7.1.0'"
+        "Requires an AMD GPU with ROCm, plus hip-python:\n"
+        "    pip install 'tack-core[hip]'\n"
+        "  hip-python ships manylinux x86_64 wheels only, and its version\n"
+        "  tracks the ROCm release it binds to — 7.1.x against ROCm 7.1,\n"
+        "  7.2.x against 7.2. The extra sets a lower bound rather than a\n"
+        "  pin, so a system on a different ROCm wants it spelled out:\n"
+        "    pip install 'hip-python~=7.2.0'"
     ),
     "level_zero": (
         "Requires an Intel GPU with the Level Zero runtime.\n"

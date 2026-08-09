@@ -9,9 +9,21 @@ editing the library to see the real traceback.
 
 And a backend that will not start used to say "Requires AMD GPU with ROCm
 and hip-python", which sends you to `pip install hip-python` — a command
-that fails, because hip-python is on Test PyPI. The message now carries
-the command that works.
+that failed at the time, because hip-python was only on Test PyPI. The
+message now carries the command that works.
+
+Which turned out to be the harder half. The first fix wrote the Test-PyPI
+incantation into the message, and the test below asserted it was there —
+so when hip-python moved to PyPI proper and the [hip] extra started
+declaring it for real, the message kept pointing at the wrong index and
+the test kept that in place. A test that pins a fact about the world
+outside the repo goes stale with it, silently, because it still passes.
+What these pin now is that the message and pyproject.toml agree with each
+other, which is a fact about this repo and cannot drift on its own.
 """
+
+import pathlib
+import tomllib
 
 import pytest
 
@@ -83,13 +95,60 @@ def test_the_readable_summary_is_still_the_last_line():
 
 # ── Unavailable backends explain themselves ──────────────────────────
 
-def test_hip_message_gives_the_command_that_works():
-    """`pip install hip-python` fails; the message must not imply it works."""
+def _extra_requirements(package: str, extra: str) -> list[str]:
+    """What `pyproject.toml` actually declares for one extra."""
+    pyproject = (pathlib.Path(__file__).resolve().parents[3]
+                 / "packages" / package / "pyproject.toml")
+    with pyproject.open("rb") as f:
+        data = tomllib.load(f)
+    return data["project"]["optional-dependencies"][extra]
+
+
+def test_hip_message_matches_what_the_extra_installs():
+    """The message and the packaging must not contradict each other.
+
+    They did, for a while: the extra declared hip-python and the message
+    said it could not. Asking pyproject.toml rather than asserting a
+    remembered fact means the next move — a new index, a dropped
+    dependency — fails here instead of misleading somebody.
+    """
     from tack.runtime.dispatch import _BACKEND_HELP
     help_text = _BACKEND_HELP["hip"]
-    assert "test.pypi.org" in help_text, \
-        "hip-python is not on PyPI; the message has to say where it is"
+    requirements = _extra_requirements("tack-core", "hip")
+
+    if any("hip-python" in req for req in requirements):
+        assert "tack-core[hip]" in help_text, \
+            "the extra installs hip-python; the message has to say so"
+        assert "test.pypi.org" not in help_text, \
+            "hip-python is on PyPI proper — Test PyPI is the stale answer"
+    else:
+        assert "hip-python" in help_text, \
+            "the extra installs nothing, so the message must name the dep"
+
     assert "pip install" in help_text
+
+
+def test_hip_message_does_not_pin_against_the_extra():
+    """The extra sets a lower bound because the pin belongs to the machine.
+
+    hip-python's version tracks the ROCm it binds to, so the right one is
+    whichever matches the system. A message that hands over a specific
+    version as *the* command contradicts that; naming one as the override
+    for a mismatched ROCm does not.
+    """
+    from tack.runtime.dispatch import _BACKEND_HELP
+    requirements = _extra_requirements("tack-core", "hip")
+    hip_req = next((r for r in requirements if "hip-python" in r), None)
+    if hip_req is None:
+        pytest.skip("the [hip] extra no longer declares hip-python")
+
+    # Split the environment marker off first — it carries `==` of its own
+    # (`sys_platform == 'linux'`), which is not a version pin.
+    specifier = hip_req.split(";")[0]
+    assert "==" not in specifier and "~=" not in specifier, \
+        "pyproject pinned hip-python; this test's premise is gone"
+    assert "tack-core[hip]" in _BACKEND_HELP["hip"].splitlines()[1], \
+        "the first command offered should be the unpinned extra"
 
 
 def test_level_zero_message_says_the_extra_installs_nothing():

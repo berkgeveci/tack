@@ -11,7 +11,7 @@ Fields are device-resident: ``tack.field()`` allocates a device buffer via
 
 No per-dispatch copies — data stays on the GPU between kernel calls.
 
-Requires: hip-python (``pip install hip-python``)
+Requires: hip-python (``pip install 'tack-core[hip]'``)
 """
 
 import ctypes
