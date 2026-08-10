@@ -1,0 +1,112 @@
+site_name: Tack
+site_description: A Python-first GPU compute framework — one kernel, five backends.
+site_url: https://tack.readthedocs.io/
+repo_url: https://github.com/berkgeveci/tack
+repo_name: berkgeveci/tack
+edit_uri: edit/main/docs/
+
+# The guides were written as plain markdown long before this file existed and
+# are used as-is. That is why Material is here rather than Sphinx: the 2,800
+# lines under docs/ needed no conversion, and tack's docstrings are prose
+# rather than Args:/Returns: blocks, so autodoc's structured-parameter
+# handling -- the main thing Sphinx would buy -- has almost nothing to act on.
+docs_dir: docs
+
+theme:
+  name: material
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.tracking
+    - content.code.copy
+    - content.code.annotate
+    # Ties every backend tab on the page together: pick CUDA once and every
+    # other example on the page follows. Five backends is exactly the case
+    # this exists for.
+    - content.tabs.link
+    - search.suggest
+    - toc.follow
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tabbed:
+      alternate_style: true
+      slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths:
+            - packages/tack-core/src
+            - packages/tack-rendering/src
+            - packages/tack-vis/src
+          options:
+            docstring_style: google
+            show_source: true
+            show_root_heading: true
+            heading_level: 3
+            members_order: source
+            separate_signature: true
+            show_signature_annotations: true
+            merge_init_into_class: true
+
+nav:
+  - Home: index.md
+  - User's Guide:
+      - users-guide/index.md
+      - Getting Started: users-guide/01-getting-started.md
+      - Fields and Types: users-guide/02-fields-and-types.md
+      - Kernels: users-guide/03-kernels.md
+      - Control Flow and Math: users-guide/04-control-flow.md
+      - Device Functions: users-guide/05-device-functions.md
+      - Templates: users-guide/06-templates.md
+      - Advanced Features: users-guide/07-advanced.md
+      - Backends: users-guide/08-backends.md
+      - Visualization: users-guide/09-visualization.md
+      - Rendering: users-guide/10-rendering.md
+  - Developer's Guide:
+      - developers-guide/index.md
+      - Architecture: developers-guide/01-architecture.md
+      - AST Transform: developers-guide/02-ast-transform.md
+      - IR: developers-guide/03-ir.md
+      - IR Passes: developers-guide/04-ir-passes.md
+      - Codegen: developers-guide/05-codegen.md
+      - Runtime: developers-guide/06-runtime.md
+      - Templates: developers-guide/07-templates.md
+      - Adding Features: developers-guide/08-adding-features.md
+  - Reference:
+      - Backends: reference/backends.md
+      - API: reference/api.md
+      - Performance: performance.md
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/berkgeveci/tack

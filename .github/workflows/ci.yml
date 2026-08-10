@@ -65,6 +65,38 @@ jobs:
       - name: Ruff
         run: uvx ruff check --output-format=github .
 
+  # ── Docs ───────────────────────────────────────────────────────────
+  #
+  # --strict makes a broken internal link or a page missing from the nav a
+  # failed build. That is the point of having it in CI at all: H2 in the
+  # audit was documentation drift -- a README claiming four backends when
+  # there were five, and "40+ examples" against 49 on disk -- and drift is
+  # only cheap to fix while it is small.
+  #
+  # Read the Docs builds the published site from .readthedocs.yaml. This
+  # job exists so a pull request that breaks the docs fails here rather
+  # than on the RTD dashboard after merge.
+
+  docs:
+    name: docs
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+
+      - name: Sync the docs extra
+        run: uv sync --extra docs
+
+      - name: Build the site
+        run: uv run mkdocs build --strict
+
   # ── The main gate ──────────────────────────────────────────────────
   tests:
     name: tests (py${{ matrix.python-version }})

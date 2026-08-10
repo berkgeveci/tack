@@ -17,6 +17,18 @@ metal = ["tack-core[metal]"]
 hip = ["tack-core[hip]"]
 level_zero = ["tack-core[level_zero]"]
 dev = ["pytest"]
+docs = [
+    "mkdocs-material",
+    "mkdocstrings[python]",
+    # mkdocstrings formats signatures with Black or Ruff if one is present
+    # and silently leaves them unformatted otherwise. Ruff is already this
+    # project's linter.
+    "ruff",
+    # The API pages import tack to read its docstrings, and importing the
+    # CPU backend pulls in llvmlite. Without this the build succeeds and
+    # silently renders empty pages.
+    "tack-core[cpu]",
+]
 
 [tool.uv.sources]
 tack-core = { workspace = true }

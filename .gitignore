@@ -20,3 +20,6 @@ results/
 # Test artifacts
 .coverage
 .pytest_cache/
+
+# MkDocs build output
+site/

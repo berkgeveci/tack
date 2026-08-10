@@ -12,10 +12,42 @@ uv run pytest
 Add the extra for your hardware if you have it — `--extra metal`, `--extra cuda`,
 `--extra level_zero`. Note that `uv sync` makes the environment match exactly the
 extras you list, so syncing without `--extra metal` will *remove* Metal from an
-environment that had it.
+environment that had it. That includes syncing for a different purpose: `uv sync
+--extra docs` on its own drops every backend but the default, and the only symptom
+is the suite quietly collecting a few hundred fewer tests. List them all together:
+
+```bash
+uv sync --extra cpu --extra metal --extra dev --extra docs
+```
 
 `hip-python` is on PyPI and the `[hip]` extra declares it; see the
 README for the install line.
+
+## Documentation
+
+The site is [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) with
+[mkdocstrings](https://mkdocstrings.github.io/) for the API pages, published to
+Read the Docs from `.readthedocs.yaml`.
+
+```bash
+uv run mkdocs serve            # live reload on http://127.0.0.1:8000
+uv run mkdocs build --strict   # what CI runs
+```
+
+`--strict` turns a broken internal link or a page missing from the nav into a
+failed build, and CI runs it on every pull request. That is deliberate: the
+audit's H2 finding was documentation drift — a README claiming four backends
+when there were five — and drift is only cheap to fix while it is small.
+
+The guides under `docs/` are plain markdown and were written before the site
+existed. Keep them that way where you can: the Material-specific syntax is
+confined to a few places on purpose (content tabs on the landing page,
+admonitions in the reference), so the content stays portable if the tooling
+ever changes.
+
+**`docs/reference/backends.md` is the source of truth for the backend table.**
+Link to it rather than restating it — that table has already drifted once
+across the README, `CLAUDE.md` and the guides.
 
 ## The thing to know about the tests
 
