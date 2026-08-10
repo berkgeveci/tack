@@ -59,6 +59,8 @@ import json
 import os
 import platform
 import socket
+import subprocess
+import sys
 import time
 
 import numpy as np
@@ -352,6 +354,88 @@ def variant_for(backend, name):
     raise LookupError(f"no compiled variant for {name}")
 
 
+class BackgroundLoad:
+    """N CPU-bound subprocesses, for scoring the policy on a busy machine.
+
+    Tack does not run on idle machines. It runs on workstations with a
+    browser open, on shared cluster nodes, and -- as this file learned the
+    hard way -- on a laptop in a video call. Treating that as contamination
+    to be waited out means the policy is never scored under the conditions
+    it actually meets, so load belongs here as an *independent variable*.
+
+    Subprocesses, not threads. Python threads spinning hold the GIL, so the
+    measuring thread cannot run at all and every reading comes back tens of
+    milliseconds long -- that measures GIL starvation, not CPU contention.
+    Cost one wrong result before it was noticed.
+
+    Killed rather than terminated, and in a finally, because a benchmark
+    that leaves spinners behind poisons every run after it on that machine.
+    """
+
+    SPIN = "\nwhile True:\n    sum(i * i for i in range(10000))\n"
+
+    def __init__(self, procs: int):
+        self.procs = procs
+        self._children: list = []
+
+    def __enter__(self):
+        for _ in range(self.procs):
+            self._children.append(
+                subprocess.Popen([sys.executable, "-c", self.SPIN],
+                                 stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL))
+        if self._children:
+            time.sleep(1.0)          # let the scheduler settle on them
+        return self
+
+    def __exit__(self, *exc):
+        for p in self._children:
+            p.kill()
+        for p in self._children:
+            p.wait()
+        if self._children:
+            time.sleep(1.0)
+        return False
+
+
+def contention_index(backend, compiled, prefix, reps=21):
+    """How much dearer a fan-out is right now than at its own best.
+
+    Measured on an *empty* fan-out, which is deliberate twice over. It
+    isolates thread scheduling from the work, and it is the quantity load
+    actually attacks: waking `num_threads` workers needs that many cores
+    to be free, where a serial run needs one.
+
+    The first version of this timed a serial dispatch instead and read
+    1.00x on a machine at load 6 -- correctly, because a 50 us
+    single-threaded run is rarely preempted at all. It measured something
+    real and useless.
+
+    Reported instead of a load average because on macOS the load average
+    counts threads this has no reason to care about: yavin read 3.7 while
+    the CPU was 85% idle, and 34 while it was 70% idle.
+    """
+    pool = backend._get_pool()
+    run = compiled.call_range
+    times = []
+    for _ in range(reps):
+        t0 = time.perf_counter_ns()
+        futures = [pool.submit(run, prefix, 0, 0)
+                   for _ in range(backend.num_threads)]
+        for f in futures:
+            f.result()
+        times.append(time.perf_counter_ns() - t0)
+    times.sort()
+    lo = times[0]
+    return {
+        "min_ns": lo,
+        "median_ns": times[len(times) // 2],
+        "p90_ns": times[int(len(times) * 0.9)],
+        "index": times[len(times) // 2] / lo if lo else float("nan"),
+        "tail": times[int(len(times) * 0.9)] / lo if lo else float("nan"),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scale", type=float, default=1.0,
@@ -360,6 +444,11 @@ def main():
     parser.add_argument("--json", metavar="PATH",
                         help="also write every measured and derived number "
                              "here, for comparing machines")
+    parser.add_argument("--load", type=int, default=0, metavar="N",
+                        help="run with N CPU-bound background processes, so "
+                             "the score describes a busy machine rather than "
+                             "an idle one. Try 0, then a quarter and a half "
+                             "of the core count.")
     args = parser.parse_args()
 
     tack.init(arch=tack.cpu)
@@ -376,6 +465,30 @@ def main():
     out = tack.field(dtype=tack.f32, shape=(biggest,))
 
     print(f"threads    : {backend.num_threads}")
+    if args.load:
+        print(f"load       : {args.load} background CPU processes")
+
+    with BackgroundLoad(args.load):
+        conditions_before = _conditions(backend, x, out)
+        print(f"fan-out now: {conditions_before['median_ns']/1000:.0f}us "
+              f"median, {conditions_before['tail']:.1f}x p90/min spread")
+        result = _score(args, backend, x, out, biggest)
+        result["conditions_before"] = conditions_before
+        result["conditions_after"] = _conditions(backend, x, out)
+
+    _report(args, backend, machine, result)
+
+
+def _conditions(backend, x, out):
+    """Measure how contended this machine is, using the real pool."""
+    n = GRIDS["cheap"][0]
+    KERNELS["cheap"](x, out, n)
+    compiled = variant_for(backend, "cheap")
+    return contention_index(backend, compiled, compiled.bind([x, out, n]))
+
+
+def _score(args, backend, x, out, biggest):
+    """The scoring sweep. Everything timed happens inside the load."""
     print(f"{'kernel':7s} {'n':>9s} {'serial':>10s} {'parallel':>10s} "
           f"{'faster':>9s} {'chose':>9s}   regret")
 
@@ -432,23 +545,60 @@ def main():
               "they mean the cost estimate reads high, or the fan-out here "
               "costs more than the threshold assumes.")
 
-    # Both after scoring, so neither perturbs it.
+    # Both after scoring, so neither perturbs it -- and both inside the
+    # load, so the floor and the slopes describe the same machine the
+    # decisions were scored on.
     anchor = variant_for(backend, "cheap")
     floor = fan_out_floor(backend, anchor,
                           anchor.bind([x, out, GRIDS["cheap"][0]]))
     model_pts = measure_model_grid(backend, x, out, args.scale)
-    fits = model_report(rows, model_pts, floor, backend, args.scale)
+    return {
+        "rows": rows, "floor": floor, "model_pts": model_pts,
+        "score": {"wrong": wrong, "over_eager": over_eager,
+                  "regret_us": regret_total, "total": total},
+    }
+
+
+def _report(args, backend, machine, result):
+    """Everything that only reads what was measured, after the load stops."""
+    rows, floor = result["rows"], result["floor"]
+    s = result["score"]
+    fits = model_report(rows, result["model_pts"], floor, backend, args.scale)
+
+    before, after = result["conditions_before"], result["conditions_after"]
+    lo, hi = before["median_ns"] / 1000, after["median_ns"] / 1000
+    print("\n--- conditions this score was measured under ---")
+    print(f"empty fan-out, median: {lo:.0f}us before the sweep, "
+          f"{hi:.0f}us after   (p90/min spread {before['tail']:.1f}x -> "
+          f"{after['tail']:.1f}x)")
+    print("compare that median between runs; it is the cost the policy pays "
+          "and the\nthing background load moves. The ratio is jitter, and is "
+          "itself noisy --\ntreat it as a hint, not a measurement.")
+
+    drift = abs(hi - lo) / max(lo, 1e-9)
+    if drift > 0.4:
+        print(f"\n  The machine changed under the run ({drift*100:.0f}% "
+              f"drift in the fan-out median),\n  so this score describes a "
+              f"moving target. Re-run, or pin conditions with --load.")
+    if not args.load and max(before["tail"], after["tail"]) > 3.0:
+        print("\n  Large jitter with --load 0. If that was not intended, the "
+              "machine had\n  company: the numbers describe conditions nobody "
+              "chose. Either quieten it\n  or set --load and make the load a "
+              "variable rather than a surprise.")
 
     if args.json:
         with open(args.json, "w") as fh:
             json.dump({
                 "machine": machine, "scale": args.scale,
+                "load_procs": args.load,
+                "conditions_before": before, "conditions_after": after,
                 "break_even": _PARALLEL_BREAK_EVEN,
+                "policy": getattr(backend, "policy", "v1"),
+                "margin": getattr(backend, "margin", _PARALLEL_BREAK_EVEN),
                 "fan_out_probe_ns": backend._fan_out_ns,
                 "fan_out_floor": {str(k): v for k, v in floor.items()},
-                "model_points": model_pts,
-                "score": {"wrong": wrong, "over_eager": over_eager,
-                          "regret_us": regret_total, "total": total},
+                "model_points": result["model_pts"],
+                "score": s,
                 "rows": rows, "fits": fits,
             }, fh, indent=2)
         print(f"\nwrote {args.json}")
