@@ -111,6 +111,71 @@ def best_of(fn, reps):
     return min(times)
 
 
+# How far above the crossover to fit the slopes. Near the crossover the
+# parallel column is mostly fan-out floor, so a slope fitted there fits
+# noise -- on mustafar-linux that produced P_eff = 95.8 on 16 threads,
+# and a "fan-out" that varied 3x across kernels when it is a property of
+# the machine. Up here the work dominates and the slope is the rate.
+MODEL_SCALE = 8
+
+# Idle gaps to sweep the fan-out cost across, in ms. The backend probes
+# back-to-back (the 0 row); a real dispatch usually meets workers that
+# have been idle, which is the rest of the table.
+FLOOR_GAPS_MS = (0, 1, 10, 50)
+FLOOR_REPS = 9
+
+
+def fan_out_floor(backend, compiled, prefix):
+    """What a fan-out costs after the workers have been idle a while.
+
+    Mirrors `_calibrate_fan_out` exactly -- num_threads empty ranges
+    through the real pool -- so these are comparable to the probe's own
+    number. The differences are the idle gap before each rep, and
+    reporting the spread instead of the minimum.
+
+    An empty range runs no loop iterations, so this measures fan-out and
+    nothing else, and is safe on any kernel. It is also why the floor
+    cannot depend on which kernel is used to measure it.
+    """
+    pool = backend._get_pool()
+    run = compiled.call_range
+    out = {}
+    for gap in FLOOR_GAPS_MS:
+        times = []
+        for _ in range(FLOOR_REPS):
+            if gap:
+                time.sleep(gap / 1000.0)
+            t0 = time.perf_counter_ns()
+            futures = [pool.submit(run, prefix, 0, 0)
+                       for _ in range(backend.num_threads)]
+            for f in futures:
+                f.result()
+            times.append(time.perf_counter_ns() - t0)
+        times.sort()
+        out[gap] = {"min": times[0], "median": times[len(times) // 2],
+                    "max": times[-1]}
+    return out
+
+
+def measure_model_grid(backend, x, out_field, scale):
+    """Time both paths well above the crossover, where the slopes are real."""
+    result = {}
+    for name, kernel in KERNELS.items():
+        grid = GRIDS[name]
+        pts = []
+        for base in (grid[0], grid[len(grid) // 2], grid[-1]):
+            n = int(base * scale * MODEL_SCALE)
+            kernel(x, out_field, n)          # ensure a compiled variant
+            compiled = variant_for(backend, name)
+            prefix = compiled.bind([x, out_field, n])
+            serial = best_of(lambda: compiled.call_range(prefix, 0, n), 4)
+            parallel = best_of(
+                lambda: backend._parallel_execute(compiled, prefix, 0, n), 4)
+            pts.append({"n": n, "serial_ns": serial, "parallel_ns": parallel})
+        result[name] = pts
+    return result
+
+
 def fit_line(xs, ys):
     """Least-squares `a + b*x`, returned as (intercept, slope)."""
     slope, intercept = np.polyfit(np.asarray(xs, dtype=float),
@@ -131,12 +196,29 @@ def machine_id(backend):
     }
 
 
-def model_report(rows, backend, scale):
-    """Fit both paths, then decompose the threshold error.
+def model_report(rows, model_pts, floor, backend, scale):
+    """Decompose the threshold error, from a measured floor and real slopes.
 
     Returns the per-kernel dicts so `--json` can carry the same numbers
     the table shows.
     """
+    print("\n--- fan-out cost vs idle gap ---")
+    print(f"{'gap before':>11s} {'min':>9s} {'median':>9s} {'max':>9s}")
+    for gap, s in floor.items():
+        label = "back-to-back" if gap == 0 else f"{gap} ms"
+        print(f"{label:>11s} {s['min']/1000:8.1f}us {s['median']/1000:8.1f}us "
+              f"{s['max']/1000:8.1f}us")
+    probe = backend._fan_out_ns
+    realistic = floor[10]["median"] if 10 in floor else None
+    hot = floor[0]["median"]
+    print(f"\nthe probe reads {probe/1000:.1f}us (min of back-to-back). A "
+          f"dispatch meeting workers\nidle for 10 ms pays "
+          f"{realistic/1000:.1f}us -- "
+          f"{realistic/probe:.2f}x what the threshold assumes.")
+    print("there is no single right answer here: a loop dispatching "
+          "back-to-back really does\nmeet the hot floor. Both crossovers "
+          "are reported below.")
+
     fits = {}
     for name in KERNELS:
         pts = [r for r in rows if r["kernel"] == name]
@@ -144,14 +226,31 @@ def model_report(rows, backend, scale):
             continue
         ns = [p["n"] for p in pts]
         serial_c, serial_s = fit_line(ns, [p["serial_ns"] for p in pts])
-        par_a, par_b = fit_line(ns, [p["parallel_ns"] for p in pts])
+
+        # Slopes from well above the crossover; floor measured, not fitted.
+        mp = model_pts.get(name, [])
+        m_ns = [p["n"] for p in mp]
+        _, serial_s_hi = fit_line(m_ns, [p["serial_ns"] for p in mp])
+        _, par_b = fit_line(m_ns, [p["parallel_ns"] for p in mp])
+        par_a = float(realistic)
 
         # P_eff is the honest parallel speedup of the *work*, which the
-        # backend's formula assumes is the thread count.
-        p_eff = serial_s / par_b if par_b > 0 else float("inf")
-        # Where the two fitted lines actually meet.
-        crossover = ((par_a - serial_c) / (serial_s - par_b)
-                     if serial_s > par_b else None)
+        # backend's formula assumes is the thread count. Both rates come
+        # from the same regime, so cache effects do not bias the ratio.
+        p_eff = serial_s_hi / par_b if par_b > 0 else float("inf")
+
+        # Two honest crossovers, because there are two honest floors.
+        # A loop dispatching back-to-back meets the hot floor; a script
+        # dispatching now and then meets the idle one. The scoring table
+        # above is measured back-to-back (best_of repeats immediately),
+        # so its own decisions belong to the hot regime -- scoring them
+        # against the idle crossover would mix conditions.
+        def _cross(floor_ns):
+            return ((floor_ns - serial_c) / (serial_s - par_b)
+                    if serial_s > par_b else None)
+
+        crossover = _cross(par_a)
+        crossover_hot = _cross(float(hot))
 
         # The backend's own inputs, read at the grid point nearest the
         # crossover -- that is where the decision is in doubt, so it is
@@ -162,20 +261,25 @@ def model_report(rows, backend, scale):
         # The same formula the backend uses, fed the fitted inputs.
         ideal = par_a * _PARALLEL_BREAK_EVEN / serial_s if serial_s > 0 else None
 
+        # Against the hot crossover: that is the regime the scoring grid
+        # is measured in, so it is the one its rows can be scored against.
         lo, hi = min(ns), max(ns)
-        if crossover is None:
+        c = crossover_hot
+        if c is None:
             bracket = "no crossover — parallel never wins on this grid"
-        elif crossover < lo:
-            bracket = f"BELOW grid ({crossover/lo:.2f}x under {lo}) — grid too coarse"
-        elif crossover > hi:
-            bracket = f"ABOVE grid ({crossover/hi:.2f}x over {hi}) — grid too coarse"
+        elif c < lo:
+            bracket = f"BELOW grid ({c/lo:.2f}x under {lo}) — grid too coarse"
+        elif c > hi:
+            bracket = f"ABOVE grid ({c/hi:.2f}x over {hi}) — grid too coarse"
         else:
             bracket = "brackets it"
 
         fits[name] = {
             "serial_fixed_ns": serial_c, "serial_ns_per_elem": serial_s,
+            "serial_ns_per_elem_hi": serial_s_hi,
             "parallel_fan_out_ns": par_a, "parallel_ns_per_elem": par_b,
             "p_eff": p_eff, "crossover": crossover,
+            "crossover_hot": crossover_hot, "fan_out_hot_ns": float(hot),
             "backend_ns_per_elem": anchor["ns_per_elem"],
             "backend_threshold": anchor["parallel_min_elems"],
             "backend_fan_out_ns": backend._fan_out_ns,
@@ -186,39 +290,46 @@ def model_report(rows, backend, scale):
     if not fits:
         return fits
 
-    print("\n--- model ---")
-    print(f"{'kernel':7s} {'fan-out fit':>12s} {'serial ns/el':>13s} "
-          f"{'par ns/el':>10s} {'P_eff':>7s} {'crossover':>11s}")
+    print("\n--- model (floor measured; slopes fitted above the crossover) ---")
+    print(f"{'kernel':7s} {'serial ns/el':>13s} {'par ns/el':>10s} "
+          f"{'P_eff':>7s} {'cross (hot)':>12s} {'cross (idle)':>13s}")
     for name, f in fits.items():
-        cross = f"{f['crossover']:11.0f}" if f["crossover"] else f"{'none':>11s}"
-        print(f"{name:7s} {f['parallel_fan_out_ns']/1000:10.1f}us "
-              f"{f['serial_ns_per_elem']:13.2f} {f['parallel_ns_per_elem']:10.2f} "
-              f"{f['p_eff']:7.1f} {cross}")
+        def _n(v):
+            return f"{v:.0f}" if v else "none"
+        print(f"{name:7s} {f['serial_ns_per_elem']:13.2f} "
+              f"{f['parallel_ns_per_elem']:10.2f} {f['p_eff']:7.1f} "
+              f"{_n(f['crossover_hot']):>12s} {_n(f['crossover']):>13s}")
 
     print(f"\nthe backend assumes P_eff is the thread count "
-          f"({backend.num_threads}); the fits above are what it is.")
+          f"({backend.num_threads}); the column above is what it is.")
+    for name, f in fits.items():
+        lo, hi = f["serial_ns_per_elem"], f["serial_ns_per_elem_hi"]
+        if hi > 0 and not 0.7 <= lo / hi <= 1.4:
+            print(f"  note: {name}'s serial rate differs between regimes "
+                  f"({lo:.2f} near the crossover, {hi:.2f} above it) -- "
+                  f"P_eff\n        is the ratio up top, so read the "
+                  f"crossover as approximate.")
 
     print("\n--- where the threshold error comes from ---")
     print(f"{'kernel':7s} {'fan-out':>18s} {'ns/elem':>18s} "
-          f"{'threshold':>11s} {'measure':>8s} {'model':>7s} {'total':>7s}")
+          f"{'threshold':>11s} {'measure':>8s} {'model':>7s} "
+          f"{'hot':>6s} {'idle':>6s}")
     for name, f in fits.items():
-        fan_err = (f["backend_fan_out_ns"] / f["parallel_fan_out_ns"]
-                   if f["parallel_fan_out_ns"] > 0 else float("nan"))
-        rate_err = (f["backend_ns_per_elem"] / f["serial_ns_per_elem"]
-                    if f["serial_ns_per_elem"] > 0 else float("nan"))
-        thr, ideal, cross = (f["backend_threshold"], f["ideal_threshold"],
-                             f["crossover"])
+        thr, ideal = f["backend_threshold"], f["ideal_threshold"]
         meas = thr / ideal if ideal else float("nan")
-        model = ideal / cross if (ideal and cross) else float("nan")
-        total = thr / cross if cross else float("nan")
+        model = (ideal / f["crossover"]
+                 if (ideal and f["crossover"]) else float("nan"))
+        t_hot = thr / f["crossover_hot"] if f["crossover_hot"] else float("nan")
+        t_idle = thr / f["crossover"] if f["crossover"] else float("nan")
         print(f"{name:7s} "
               f"{f['backend_fan_out_ns']/1000:7.0f}/{f['parallel_fan_out_ns']/1000:<6.0f}us "
               f"{f['backend_ns_per_elem']:8.2f}/{f['serial_ns_per_elem']:<8.2f} "
-              f"{thr:11d} {meas:7.2f}x {model:6.2f}x {total:6.2f}x")
+              f"{thr:11d} {meas:7.2f}x {model:6.2f}x {t_hot:5.2f}x {t_idle:5.2f}x")
     print("read each pair as backend/fitted. measure = the backend's inputs "
           "vs the fitted\nones through the same formula; model = that formula "
-          "with correct inputs vs the\nreal crossover. 1.00x is right; below "
-          "1.00x fans out too early.")
+          "with correct inputs vs the\nidle crossover. hot and idle are the "
+          "threshold over each real crossover.\n1.00x is right; below 1.00x "
+          "fans out too early.")
 
     print("\n--- does the grid still bracket the crossovers? ---")
     for name, f in fits.items():
@@ -258,7 +369,8 @@ def main():
           f"{machine['physical_cores']}p/{machine['logical_cores']}l cores)")
     print(f"platform   : {machine['platform']}  py{machine['python']}")
 
-    biggest = int(max(max(g) for g in GRIDS.values()) * args.scale)
+    # MODEL_SCALE, because the slope fit runs well above the scoring grid.
+    biggest = int(max(max(g) for g in GRIDS.values()) * args.scale * MODEL_SCALE)
     x = tack.field(dtype=tack.f32, shape=(biggest,))
     x.from_numpy(np.ones(biggest, dtype=np.float32))
     out = tack.field(dtype=tack.f32, shape=(biggest,))
@@ -320,7 +432,12 @@ def main():
               "they mean the cost estimate reads high, or the fan-out here "
               "costs more than the threshold assumes.")
 
-    fits = model_report(rows, backend, args.scale)
+    # Both after scoring, so neither perturbs it.
+    anchor = variant_for(backend, "cheap")
+    floor = fan_out_floor(backend, anchor,
+                          anchor.bind([x, out, GRIDS["cheap"][0]]))
+    model_pts = measure_model_grid(backend, x, out, args.scale)
+    fits = model_report(rows, model_pts, floor, backend, args.scale)
 
     if args.json:
         with open(args.json, "w") as fh:
@@ -328,6 +445,8 @@ def main():
                 "machine": machine, "scale": args.scale,
                 "break_even": _PARALLEL_BREAK_EVEN,
                 "fan_out_probe_ns": backend._fan_out_ns,
+                "fan_out_floor": {str(k): v for k, v in floor.items()},
+                "model_points": model_pts,
                 "score": {"wrong": wrong, "over_eager": over_eager,
                           "regret_us": regret_total, "total": total},
                 "rows": rows, "fits": fits,
