@@ -1,6 +1,11 @@
 site_name: Tack
 site_description: A Python-first GPU compute framework — one kernel, five backends.
-site_url: https://tack.readthedocs.io/
+# Published to GitHub Pages, so this is the project-page URL rather than a
+# Read the Docs one. It matters beyond cosmetics: canonical tags and the
+# generated sitemap are built from it. `.readthedocs.yaml` is still in the
+# repo and still correct -- if that is ever connected too, RTD sets its own
+# canonical and this stays pointing at the Pages site.
+site_url: https://berkgeveci.github.io/tack/
 repo_url: https://github.com/berkgeveci/tack
 repo_name: berkgeveci/tack
 edit_uri: edit/main/docs/
