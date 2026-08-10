@@ -251,6 +251,23 @@ _FAN_OUT_SMOOTHING = 0.15
 # something that scales with how busy the program is.
 _FAN_OUT_REFRESH_NS = 100_000_000.0
 
+# The derived margin: `1 + K * cv`, where cv is the smoothed relative
+# deviation of fan-out samples from the running estimate. K and the clamps
+# are calibrated below against a load sweep; they are ratios, which is the
+# kind of quantity P5 established does travel between machines.
+# Calibrated, not chosen. Measured cv on yavin is 0.14-0.27 quiet, 0.40 at
+# --load 4 and 0.59 at --load 8; the sweep says quiet wants ~1.0-1.25 and
+# --load 4 needs at least 1.5. K = 1.3 puts those at 1.18-1.35 and 1.52.
+_MARGIN_K = 1.3
+_MARGIN_MIN = 1.0
+_MARGIN_MAX = 2.5
+# Most one sample may claim, so an early wild miss cannot pin the margin
+# at its ceiling for the life of the process.
+_CV_SAMPLE_CAP = 3.0
+# Deliberately slower than the fan-out's own smoothing: the margin should
+# follow a machine that has become unreliable, not a single odd dispatch.
+_CV_SMOOTHING = 0.10
+
 # Shortest worker chunk whose timing is worth believing. `perf_counter_ns`
 # resolves to tens of nanoseconds, so a microsecond of work is a couple of
 # hundred ticks and the quantisation is nothing.
@@ -597,15 +614,30 @@ class CPUBackend(Backend):
         # have been idle -- [(gap_ns, cost_ns)], ascending -- plus the clock
         # reading that says which point of it this dispatch is at.
         self.policy = os.environ.get("TACK_CPU_POLICY", "v1")
+        # Precomputed because the dispatch path tests it on every call, and
+        # v1 should not pay a string comparison for a feature it does not
+        # use. The path P2 spent its effort getting to ~11.7 us.
+        self._v2 = self.policy == "v2"
         # The margin is insurance against a mis-estimate, so how much is
         # wanted depends on how good the estimates are -- and under v1 the
         # 2.0 written here was never the margin applied: P6 discounts it to
         # `2.0 * (1 - 1/P_eff)`, which for a bandwidth-bound kernel is under
         # 1.0. Correcting that makes 2.0 mean 2.0 for the first time, so the
         # number itself wants re-choosing rather than inheriting.
+        #
+        # Under v2 it is derived rather than chosen -- see `_margin()`. The
+        # constant here is what an explicit override falls back from, and
+        # what v1 keeps using.
         default_margin = (_V2_MARGIN if self.policy == "v2"
                           else _PARALLEL_BREAK_EVEN)
-        self.margin = float(os.environ.get("TACK_CPU_MARGIN", default_margin))
+        _env_margin = os.environ.get("TACK_CPU_MARGIN")
+        self.margin_override = float(_env_margin) if _env_margin else None
+        self.margin = (self.margin_override if self.margin_override is not None
+                       else default_margin)
+        # Smoothed relative deviation of fan-out samples from the running
+        # estimate: how much this machine's fan-out cost is currently
+        # moving about. Drives the derived margin.
+        self._fan_out_cv = 0.0
         self._fan_out_curve: list[tuple[float, float]] = []
         self._last_dispatch_ns = 0
         # When the fan-out was last measured, by either route. Drives the
@@ -684,7 +716,7 @@ class CPUBackend(Backend):
         """Run the loop range, threading it only when that is faster."""
         prefix = compiled.bind(kernel_args)
 
-        if self.policy == "v2" and self._fan_out_curve:
+        if self._v2 and self._fan_out_curve:
             self._refresh_fan_out(compiled, prefix)
 
         if loop_end >= compiled.parallel_min_elems:
@@ -859,10 +891,10 @@ class CPUBackend(Backend):
             return _NEVER
         fan_out = self._fan_out_estimate()
         rate = ns_per_elem
-        if self.policy == "v2":
+        if self._v2:
             rate = ns_per_elem - min(ns_per_elem_parallel, ns_per_elem * 0.9)
         return max(self.num_threads,
-                   int(fan_out * self.margin / rate))
+                   int(fan_out * self._margin() / rate))
 
     def _get_pool(self) -> ThreadPoolExecutor:
         """Return the persistent thread pool, creating it on first use."""
@@ -1025,6 +1057,54 @@ class CPUBackend(Backend):
         self._fan_out_measured_ns = self._last_dispatch_ns = \
             time.perf_counter_ns()
 
+    def _margin(self) -> float:
+        """How much better than break-even a fan-out must look, right now.
+
+        A margin is insurance against the estimates being wrong, so how
+        much is wanted depends on how wrong they currently are -- which is
+        measurable, and moves. Swept on one machine with load as the
+        variable, no constant serves both ends:
+
+            M      --load 0                  --load 4
+            1.0    0 over-eager,   37 us     4 over-eager,  640 us
+            1.25   0 over-eager,  102 us     4 over-eager,  811 us
+            1.5    0 over-eager,  281 us     0 over-eager,  162 us
+
+        Quiet, the smallest margin tried wins and there is no over-eager
+        risk to insure against. Busy, anything under 1.5 fans out and
+        loses. That is not two machines wanting different numbers -- it is
+        one machine in two conditions, and the condition was what nobody
+        was varying.
+
+        So it is derived from the spread of the fan-out samples: tight
+        when the machine is repeatable, wide when it is not. This is
+        **P5**'s move a third time -- ratios travel, constants do not --
+        and it subsumes **P6**, which is the same mistake one level down.
+
+        Scored against the same sweep: at `--load 0` this beats every
+        fixed margin tried (19-26 us against 37 at 1.0 and 281 at 1.5),
+        which is the case it was built for. At `--load 4` it is
+        inconsistent -- 281 us with no over-eager fan-outs on one run, 975
+        with four on the next.
+
+        **The known limitation, and it is in the signal rather than the
+        tuning.** Deviation-from-estimate measures how *unpredictable* the
+        machine is, not how *slow*. A steadily loaded machine is entirely
+        predictable, so its cv stays low and it gets a small margin -- and
+        that is right whenever the estimates have tracked the new cost,
+        which is why `--load 0` and the erratic `--load 8` both come out
+        well. The bad `--load 4` runs are the estimates failing to track,
+        not the margin being too small, so widening the margin would treat
+        a symptom. What that case wants is faster tracking, which is a
+        separate change and is not made here.
+        """
+        if self.margin_override is not None:
+            return self.margin_override
+        if not self._v2:
+            return self.margin
+        return min(_MARGIN_MAX,
+                   max(_MARGIN_MIN, 1.0 + _MARGIN_K * self._fan_out_cv))
+
     def _update_fan_out_knot(self, sample: float, gap_ns: float):
         """Fold one fan-out measurement into the knot it belongs to."""
         curve = self._fan_out_curve
@@ -1033,6 +1113,13 @@ class CPUBackend(Backend):
         idx = min(range(len(curve)),
                   key=lambda i: abs(curve[i][0] - gap_ns))
         gap_at, cost = curve[idx]
+        if cost > 0.0:
+            # Relative deviation, bounded: an early sample can miss by
+            # orders of magnitude before the curve has settled, and one of
+            # those should not pin the margin at its ceiling for the life
+            # of the process.
+            dev = min(abs(sample - cost) / cost, _CV_SAMPLE_CAP)
+            self._fan_out_cv += _CV_SMOOTHING * (dev - self._fan_out_cv)
         curve[idx] = (gap_at, cost + _FAN_OUT_SMOOTHING * (sample - cost))
 
     def _record_fan_out(self, elapsed: float, slowest_work: float,
@@ -1135,7 +1222,7 @@ class CPUBackend(Backend):
 
         pool = self._get_pool()
         run = compiled.call_range
-        measure = self.policy == "v2"
+        measure = self._v2
 
         if not measure:
             # v1's path, untouched: no clock read, no per-worker wrapper.
