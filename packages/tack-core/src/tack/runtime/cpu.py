@@ -221,6 +221,22 @@ _FAN_OUT_GAP_REPS = 3
 # that time. Below this the remainder is fan-out jitter, not a rate.
 _RP_MIN_WORK_RATIO = 1.3
 
+# v2's margin, and lower than v1's 2.0 deliberately. Under v1 the margin
+# was absorbing *systematic* error -- an understated probe and, on a
+# 2-socket box, an overstated serial rate -- which is why 2.0 was still
+# not enough for a bandwidth-bound kernel and too much for every other.
+# v2 removes both, leaving sampling noise: the floor repeats within
+# 10-15% across runs and r_p smooths similarly, so 1.5 covers what is
+# left about three times over.
+#
+# It is also close to what v1 already applied where it behaved. The
+# effective margin is `M * (1 - 1/P_eff)`, so v1's 2.0 came to 1.65 for a
+# ~10 flop/elem kernel and 1.77 for a heavy one; 1.5 leaves those roughly
+# where they ship. What moves is the bandwidth-bound case, whose
+# effective margin was 0.67-1.09 -- around and below break-even, which is
+# the entire defect.
+_V2_MARGIN = 1.5
+
 # Weight of the newest sample in the per-kernel cost estimate. Low enough
 # to ride out ordinary jitter, high enough to track a kernel whose cost
 # depends on its data.
@@ -535,8 +551,9 @@ class CPUBackend(Backend):
         # `2.0 * (1 - 1/P_eff)`, which for a bandwidth-bound kernel is under
         # 1.0. Correcting that makes 2.0 mean 2.0 for the first time, so the
         # number itself wants re-choosing rather than inheriting.
-        self.margin = float(os.environ.get("TACK_CPU_MARGIN",
-                                           _PARALLEL_BREAK_EVEN))
+        default_margin = (_V2_MARGIN if self.policy == "v2"
+                          else _PARALLEL_BREAK_EVEN)
+        self.margin = float(os.environ.get("TACK_CPU_MARGIN", default_margin))
         self._fan_out_curve: list[tuple[float, float]] = []
         self._last_dispatch_ns = 0
 
