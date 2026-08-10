@@ -258,6 +258,14 @@ _FAN_OUT_SMOOTHING = 0.15
 # something that scales with how busy the program is.
 _FAN_OUT_REFRESH_NS = 100_000_000.0
 
+# Refreshing the *hot* knot costs a warm-up plus several samples, so it
+# runs on a slower clock and only when this dispatch arrived cold -- a
+# tight loop already feeds that knot for free through `_record_fan_out`.
+# Recovery from a censored estimate, not tracking.
+_FAN_OUT_HOT_REFRESH_NS = 1_000_000_000.0
+_FAN_OUT_HOT_GAP_NS = 5_000_000.0
+_FAN_OUT_HOT_REPS = 3
+
 # The derived margin: `1 + K * cv`, where cv is the smoothed relative
 # deviation of fan-out samples from the running estimate. K and the clamps
 # are calibrated below against a load sweep; they are ratios, which is the
@@ -659,6 +667,9 @@ class CPUBackend(Backend):
         # scheduled re-probe, which is what keeps a censored estimate from
         # freezing at whatever the machine was doing when it last spoke.
         self._fan_out_measured_ns = 0
+        # Separate clock for the hot knot's recovery probe, which is
+        # dearer and wanted far less often.
+        self._hot_refreshed_ns = 0
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> NumpyBuffer:
@@ -1054,19 +1065,42 @@ class CPUBackend(Backend):
                 f.result()
             return float(time.perf_counter_ns() - t0)
 
-        # Two of them, and the second is the point. The first lands at
-        # whatever gap this dispatch arrived with; the second follows it
-        # immediately, so it samples the *hot* knot.
+        gap = float(now - self._last_dispatch_ns)
+        self._update_fan_out_knot(once(), gap)
+
+        # The hot knot needs its own treatment, and getting there took two
+        # wrong answers.
         #
-        # Without it the hot knot is unreachable exactly when it matters.
-        # Once the threshold rises far enough that nothing fans out, every
-        # dispatch runs serial, the pool goes untouched, and the gap only
-        # ever grows -- so every refresh lands on the longest knot and the
-        # hot end keeps whatever value the busy machine last gave it, with
-        # nothing able to bring it down. Measured: the hot knot sat at
-        # 573 µs for the rest of the process after the load stopped.
-        self._update_fan_out_knot(once(), float(now - self._last_dispatch_ns))
-        self._update_fan_out_knot(once(), 0.0)
+        # Taking a second sample straight after the first and filing it as
+        # hot does not work: one fan-out does not leave the pool warm.
+        # Measured after a 500 ms pause -- 1004 µs, then **1198** for the
+        # one meant to be hot, then 395, then 509. The cores take several
+        # fan-outs to ramp and the second is sometimes dearer than the
+        # first, so the hot knot was fed half-cold samples and a tight
+        # loop was priced as though its workers had been asleep: gap 0.0
+        # ms, estimate 574 µs against a true 183, threshold 3.6x high.
+        #
+        # Simply not refreshing it does not work either. Once the
+        # threshold rises far enough that nothing fans out, no dispatch
+        # supplies a hot sample, and the knot keeps whatever the busy
+        # machine last gave it -- measured, 325 µs and a threshold 6.7x
+        # its calibrated value, six seconds after the load stopped.
+        #
+        # So it is warmed properly and then measured, and the minimum is
+        # the right statistic *here* precisely because "hot" is the
+        # cheapest condition the pool has -- which is the one thing the
+        # shipped v1 probe got right before it applied that number to
+        # every other condition too.
+        #
+        # Only when this dispatch arrived cold, because a tight loop feeds
+        # the knot through `_record_fan_out` for free, and only on a
+        # slower clock, because this is recovery rather than tracking.
+        if (gap > _FAN_OUT_HOT_GAP_NS
+                and now - self._hot_refreshed_ns > _FAN_OUT_HOT_REFRESH_NS):
+            once()                                   # warm
+            self._update_fan_out_knot(
+                min(once() for _ in range(_FAN_OUT_HOT_REPS)), 0.0)
+            self._hot_refreshed_ns = time.perf_counter_ns()
         # The pool has just run, so the workers really are warm now and the
         # next dispatch's gap should be measured from here.
         self._fan_out_measured_ns = self._last_dispatch_ns = \
