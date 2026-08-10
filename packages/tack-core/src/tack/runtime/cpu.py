@@ -33,9 +33,16 @@ thread cost and timer resolution of wherever it was chosen.  What is
 written down are ratios -- how much margin to demand, how much of a sample
 to trust -- which carry across machines in a way element counts do not.
 
-None of this has been validated off Apple silicon.  CI exercises the logic
-on Linux, but the tests supply their own timings so they do not measure
-tuning quality.
+Validated on two machines -- an M1 Max and a 2-socket Xeon -- across four
+background loads.  CI exercises the logic on Linux, but the tests supply
+their own timings, so they check the decision and not the tuning; that is
+what `benchmarks/threading_decisions.py` is for.
+
+The quantity that decides which policy wins is not load but whether the
+fan-out cost *moves under the run*.  An otherwise-idle machine is the
+unsteady case: cores left alone descend into deep idle states and the
+cost swings by 2x, where sustained load pins them awake and holds it
+steady to within a few percent.
 """
 
 import ctypes
@@ -195,7 +202,7 @@ from tack.runtime.kernel_utils import (  # noqa: F401
 # break-even is already P/(P-1); the rest is margin against a mis-estimate.
 _PARALLEL_BREAK_EVEN = 2.0
 
-# --- policy v2, off by default (TACK_CPU_POLICY=v2) ------------------------
+# --- policy v2, the default since 2026-08-10 (TACK_CPU_POLICY=v1 opts out) ---
 #
 # Two measured defects, which want fixing together because each is the only
 # thing currently masking the other.
@@ -613,7 +620,15 @@ class CPUBackend(Backend):
         # policy v2: the fan-out cost as a function of how long the workers
         # have been idle -- [(gap_ns, cost_ns)], ascending -- plus the clock
         # reading that says which point of it this dispatch is at.
-        self.policy = os.environ.get("TACK_CPU_POLICY", "v1")
+        # v2 is the default since 2026-08-10. It costs some under-eager
+        # regret on a machine whose fan-out cost is steady, and removes the
+        # over-eager kind on one whose is not -- and an otherwise-idle
+        # workstation is the *un*steady case, because cores left alone
+        # descend into deep idle states and the cost swings by 2x within a
+        # run. Measured across two machines and four background loads, v1
+        # threw away up to 8.8 ms a sweep there; v2's worst case is bounded
+        # speedup not taken. `TACK_CPU_POLICY=v1` restores the old policy.
+        self.policy = os.environ.get("TACK_CPU_POLICY", "v2")
         # Precomputed because the dispatch path tests it on every call, and
         # v1 should not pay a string comparison for a feature it does not
         # use. The path P2 spent its effort getting to ~11.7 us.
