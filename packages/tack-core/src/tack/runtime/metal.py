@@ -322,6 +322,18 @@ class MetalBackend(Backend):
     # Metal shared buffers live in unified memory, so a pointer into one is
     # CPU-addressable; the inherited memory_space() answer is right.
 
+    # ...which is exactly why refusing a host tensor needs explaining. The
+    # generic "cannot address it" is false here and sends a reader after the
+    # wrong problem: the GPU can read that memory perfectly well. What it
+    # cannot do is wrap it without a copy.
+    dlpack_refusal_note = (
+        "Metal's own allocations are host-addressable, but not the reverse: "
+        "wrapping a host pointer as an MTLBuffer without copying needs a "
+        "page-aligned address, which host allocations only get by accident "
+        "of size. Use tack.field() + from_numpy(), or "
+        "tack.from_dlpack(source, copy=True)."
+    )
+
 
     def __init__(self):
         if Metal is None:
@@ -343,7 +355,19 @@ class MetalBackend(Backend):
         return MetalBuffer(self._device, dtype.numpy_dtype, shape)
 
     def wrap_ptr(self, ptr, dtype, shape):
-        """Wrap an existing MTLBuffer as a MetalBuffer without copying."""
+        """Wrap an existing MTLBuffer as a MetalBuffer without copying.
+
+        An MTLBuffer *object*, not an address: Metal owns the mapping
+        between the two and there is no way back from an integer. Saying
+        so costs a line and saves reading `AttributeError: 'int' object
+        has no attribute 'contents'` from four frames down.
+        """
+        if not hasattr(ptr, "contents"):
+            raise TypeError(
+                f"the Metal backend wraps an MTLBuffer object, not "
+                f"{type(ptr).__name__}. An address cannot be turned back "
+                f"into an MTLBuffer; allocate with tack.field() and copy "
+                f"into it with from_numpy().")
         buf = MetalBuffer.__new__(MetalBuffer)
         buf._metal_buffer = ptr  # expects an MTLBuffer object
         nbytes = int(np.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize

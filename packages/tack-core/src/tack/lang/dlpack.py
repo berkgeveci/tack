@@ -309,8 +309,19 @@ _PyCapsule_SetName.argtypes = [ctypes.py_object, ctypes.c_char_p]
 
 # DLPack device type -> the memory spaces a backend reports for it. An
 # imported tensor has to land on a backend that can actually address it.
+#
+# kDLCPU listed "metal" once, on the reasoning that Apple silicon memory is
+# unified so a host pointer is reachable from the GPU. Reachable is not the
+# same as wrappable: a MetalBuffer needs an MTLBuffer, and turning a host
+# pointer into one without copying needs `newBufferWithBytesNoCopy`, which
+# wants a page-aligned address. Host allocations are page-aligned only by
+# accident of size -- measured on an M1 Max, a 4000-byte numpy array is and
+# a 256-byte one is not -- so supporting it would work or fail depending on
+# how big the array happened to be. The entry never worked in any case:
+# `dlpack_to_field` hands `wrap_ptr` an integer address and Metal's expects
+# an MTLBuffer object, so every such import raised AttributeError.
 _DEVICE_BACKENDS = {
-    kDLCPU: ("cpu", "metal"),
+    kDLCPU: ("cpu",),
     kDLCUDAHost: ("cpu",),
     kDLROCMHost: ("cpu",),
     kDLMetal: ("metal",),
@@ -382,8 +393,10 @@ def dlpack_to_field(source, writable=True):
     and a write through either is visible to the other.
 
     Raises RuntimeError if the tensor lives somewhere the active backend
-    cannot address -- importing CUDA memory while running on the CPU
-    backend is a mistake, not something to paper over with a copy.
+    cannot wrap -- importing CUDA memory while running on the CPU backend
+    is a mistake, not something to paper over with a copy. Metal refuses
+    host tensors for a different reason, and says which: it can read that
+    memory, it just cannot make an MTLBuffer out of it.
     """
     from tack.lang.field import field_from_ptr
     from tack.runtime.dispatch import get_backend
@@ -445,10 +458,14 @@ def dlpack_to_field(source, writable=True):
         raise ValueError(
             f"unsupported DLPack device type {tensor.device.device_type}")
     if backend.name not in allowed:
-        raise RuntimeError(
+        message = (
             f"the tensor is on a device the '{backend.name}' backend cannot "
-            f"address (DLPack device type {tensor.device.device_type}). "
+            f"wrap without copying (DLPack device type "
+            f"{tensor.device.device_type}). "
             f"Initialize a backend from {allowed}, or copy the data yourself.")
+        if backend.dlpack_refusal_note:
+            message += f" {backend.dlpack_refusal_note}"
+        raise RuntimeError(message)
 
     field = field_from_ptr(
         (tensor.data or 0) + tensor.byte_offset, dtype, shape, writable=writable)

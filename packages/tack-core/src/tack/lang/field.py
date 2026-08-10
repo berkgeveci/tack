@@ -340,9 +340,12 @@ def from_dlpack(source, copy: bool = False) -> Field:
 
     Zero-copy: the field shares memory with the source, and the source is
     held alive for as long as the field lives. Works for device tensors as
-    well as host ones, provided the active backend can address them.
+    well as host ones, provided the active backend can wrap them.
 
-    Pass copy=True for an independent field instead.
+    Wrap, not address: the Metal backend reads host memory perfectly well
+    but cannot turn a host pointer into the MTLBuffer a field needs, so it
+    refuses host tensors and says so. Pass copy=True for an independent
+    field instead.
 
     Usage:
         field = tack.from_dlpack(torch_tensor)

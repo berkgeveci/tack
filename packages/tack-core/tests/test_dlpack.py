@@ -354,3 +354,125 @@ def test_unsupported_dtype_is_rejected_clearly():
     field.dtype = "not-a-dtype"
     with pytest.raises(TypeError, match="DLPack"):
         field.__dlpack__()
+
+
+# ── Metal ────────────────────────────────────────────────────────────
+#
+# Everything above runs on the CPU backend, pinned by the autouse fixture
+# — which is why none of it ever reached the Metal path. The audit listed
+# Metal's zero-copy claim as asserted by `_get_device_info` and never
+# tested against a real MTLBuffer. These are that test.
+
+def _metal_or_skip():
+    try:
+        tack.init(arch=tack.metal)
+    except (ImportError, RuntimeError, OSError) as e:
+        pytest.skip(f"no Metal backend: {e}")
+
+
+@pytest.fixture
+def metal():
+    _metal_or_skip()
+    yield
+    tack.init(arch=tack.cpu)
+
+
+def test_a_metal_export_points_into_the_mtlbuffer(metal):
+    """The claim: the numpy view is the Metal allocation, not a copy.
+
+    An address comparison is the weaker half — it cannot tell a live
+    alias from a stale pointer, which is exactly how D6 slipped past a
+    passing suite. The aliasing checks below are the real ones; this
+    pins the address because a mismatch here localises the fault.
+    """
+    f = tack.field(dtype=tack.f32, shape=(8,))
+    f.from_numpy(np.arange(8, dtype=np.float32))
+
+    view = np.from_dlpack(f)
+    assert view.ctypes.data == f._buffer._view.ctypes.data
+    np.testing.assert_array_equal(view, np.arange(8, dtype=np.float32))
+
+
+def test_a_gpu_kernel_sees_writes_made_through_the_exported_view(metal):
+    """Write through the DLPack view, read it back with a real dispatch.
+
+    No `from_numpy` anywhere: if the export were a copy, the kernel would
+    read the field's original contents and the values below would be the
+    ones it was seeded with.
+    """
+    @tack.kernel
+    def scale(x, out):
+        for i in range(x.shape[0]):
+            out[i] = x[i] * 10.0
+
+    f = tack.field(dtype=tack.f32, shape=(8,))
+    f.from_numpy(np.zeros(8, dtype=np.float32))
+    out = tack.field(dtype=tack.f32, shape=(8,))
+
+    view = np.from_dlpack(f)
+    assert view.flags.writeable, "the versioned capsule should export writable"
+    view[:] = np.arange(100, 108, dtype=np.float32)
+
+    scale(f, out)
+    np.testing.assert_array_equal(
+        out.to_numpy(), np.arange(100, 108, dtype=np.float32) * 10.0)
+
+
+def test_the_exported_view_sees_what_a_gpu_kernel_writes(metal):
+    """And the other direction, through a view taken before the dispatch."""
+    @tack.kernel
+    def sevens(out):
+        for i in range(out.shape[0]):
+            out[i] = 7.0
+
+    f = tack.field(dtype=tack.f32, shape=(8,))
+    view = np.from_dlpack(f)
+
+    sevens(f)
+    np.testing.assert_array_equal(view, np.full(8, 7.0, dtype=np.float32))
+
+
+def test_importing_host_memory_on_metal_is_refused_with_a_reason(metal):
+    """It used to raise AttributeError from inside wrap_ptr.
+
+    `_DEVICE_BACKENDS` allowed kDLCPU on metal, so the import was
+    advertised; it then handed `wrap_ptr` an integer address where an
+    MTLBuffer object was expected. Nothing could reach this path from
+    the CPU-pinned tests above, so it had never run.
+    """
+    with pytest.raises(RuntimeError) as excinfo:
+        tack.from_dlpack(np.arange(8, dtype=np.float32))
+
+    message = str(excinfo.value)
+    assert "page-aligned" in message, \
+        "the refusal has to say why, not just that"
+    assert "copy=True" in message, "and what to do instead"
+
+
+def test_a_metal_field_does_not_round_trip_through_dlpack(metal):
+    """The same refusal, reached from the field's own capsule.
+
+    A Metal field exports as kDLCPU — correctly, its memory is
+    host-addressable — so re-importing it takes the host path and hits
+    the same wall. Worth pinning separately: it is the case that looks
+    like it obviously ought to work.
+    """
+    f = tack.field(dtype=tack.f32, shape=(8,))
+    with pytest.raises(RuntimeError, match="page-aligned"):
+        tack.from_dlpack(f)
+
+
+def test_copying_is_still_offered_on_metal(metal):
+    """The refusal names `copy=True`, so that had better work."""
+    values = np.arange(8, dtype=np.float32)
+    f = tack.from_dlpack(values, copy=True)
+    np.testing.assert_array_equal(f.to_numpy(), values)
+    values[0] = 99.0
+    assert f.to_numpy()[0] == 0.0, "copy=True must not alias"
+
+
+def test_wrap_ptr_rejects_an_address_clearly(metal):
+    """field_from_ptr is public, and its Metal contract is an object."""
+    from tack.runtime.dispatch import get_backend
+    with pytest.raises(TypeError, match="MTLBuffer object"):
+        get_backend().wrap_ptr(0x1234, tack.f32, (8,))

@@ -62,6 +62,13 @@ class Backend:
     #: backend does not distinguish, so no check is made.
     device_memory_spaces: frozenset[str] = frozenset()
 
+    #: Appended to the error when `from_dlpack` refuses a tensor this
+    #: backend cannot wrap, for backends whose reason the DLPack device
+    #: type does not convey. Metal sets it: its own memory is
+    #: host-addressable, so "cannot address it" is the wrong summary and
+    #: would send a reader looking for the wrong problem.
+    dlpack_refusal_note: str = ""
+
     @property
     def supports_f64(self) -> bool:
         """Whether kernels can be dispatched with f64 fields.
