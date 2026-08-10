@@ -194,6 +194,33 @@ from tack.runtime.kernel_utils import (  # noqa: F401
 # break-even is already P/(P-1); the rest is margin against a mis-estimate.
 _PARALLEL_BREAK_EVEN = 2.0
 
+# --- policy v2, off by default (TACK_CPU_POLICY=v2) ------------------------
+#
+# Two measured defects, which want fixing together because each is the only
+# thing currently masking the other.
+#
+# The probe takes the minimum of back-to-back fan-outs, which is the hot end
+# of a distribution a real dispatch rarely meets: workers that have been idle
+# cost 2.45x that on a 2-socket Xeon and 3.81x on an M1 Max. But the *shape*
+# of the descent differs -- the Xeon has finished falling by 10 ms, the M1 Max
+# is barely started at 10 and still going at 50 -- so no single "idle floor"
+# constant travels. Calibrating at several gaps and interpolating on the
+# actual idleness at dispatch does travel, and costs one timestamp.
+#
+# And the threshold assumes the parallel speedup of the work is the thread
+# count. It is not: P_eff is 1.5-9.2 depending on the kernel, so the margin
+# the formula really applies is `M * (1 - 1/P_eff)`, which goes to zero as
+# P_eff goes to 1. Deriving the threshold from `r_s - r_p` instead removes
+# the assumption -- and reduces to the old formula exactly when r_p is 0,
+# which is what it is until a parallel dispatch has been observed.
+_FAN_OUT_GAPS_MS = (0.0, 10.0, 50.0)
+_FAN_OUT_GAP_REPS = 3
+
+# A parallel dispatch measures r_p by subtracting the fan-out from its own
+# elapsed time, so it is only informative when the work is a real share of
+# that time. Below this the remainder is fan-out jitter, not a rate.
+_RP_MIN_WORK_RATIO = 1.3
+
 # Weight of the newest sample in the per-kernel cost estimate. Low enough
 # to ride out ordinary jitter, high enough to track a kernel whose cost
 # depends on its data.
@@ -273,6 +300,11 @@ class CompiledKernel:
         # Measured serial nanoseconds per element, updated on every serial
         # dispatch. 0.0 means "not measured yet".
         self.ns_per_elem = 0.0
+        # The same rate for a fanned-out run, updated on every parallel
+        # dispatch big enough to measure one (policy v2). 0.0 means "not
+        # measured yet", which makes the v2 threshold reduce to the v1 one
+        # rather than needing a special case. P_eff is ns_per_elem over it.
+        self.ns_per_elem_parallel = 0.0
         # What one call_range costs before touching a single element --
         # ctypes marshalling, mostly. Timed once, on an empty range.
         self.call_overhead_ns = 0.0
@@ -493,6 +525,20 @@ class CPUBackend(Backend):
         self._pool: ThreadPoolExecutor | None = None
         # Cost of a fan-out on this machine, measured on first use.
         self._fan_out_ns: float | None = None
+        # policy v2: the fan-out cost as a function of how long the workers
+        # have been idle -- [(gap_ns, cost_ns)], ascending -- plus the clock
+        # reading that says which point of it this dispatch is at.
+        self.policy = os.environ.get("TACK_CPU_POLICY", "v1")
+        # The margin is insurance against a mis-estimate, so how much is
+        # wanted depends on how good the estimates are -- and under v1 the
+        # 2.0 written here was never the margin applied: P6 discounts it to
+        # `2.0 * (1 - 1/P_eff)`, which for a bandwidth-bound kernel is under
+        # 1.0. Correcting that makes 2.0 mean 2.0 for the first time, so the
+        # number itself wants re-choosing rather than inheriting.
+        self.margin = float(os.environ.get("TACK_CPU_MARGIN",
+                                           _PARALLEL_BREAK_EVEN))
+        self._fan_out_curve: list[tuple[float, float]] = []
+        self._last_dispatch_ns = 0
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> NumpyBuffer:
@@ -570,7 +616,8 @@ class CPUBackend(Backend):
                 # First range big enough to want threads: measure what they
                 # actually cost here, then re-check against the real number.
                 self._calibrate_fan_out(compiled, prefix)
-                compiled.parallel_min_elems = self._min_elems(compiled.ns_per_elem)
+                compiled.parallel_min_elems = self._min_elems(compiled.ns_per_elem,
+                                                    compiled.ns_per_elem_parallel)
                 if loop_end < compiled.parallel_min_elems:
                     self._run_serial(compiled, prefix, 0, loop_end)
                     return
@@ -707,24 +754,39 @@ class CPUBackend(Backend):
         else:
             ns_per_elem = prev + _COST_SMOOTHING * (sample - prev)
         compiled.ns_per_elem = ns_per_elem
-        compiled.parallel_min_elems = self._min_elems(ns_per_elem)
+        compiled.parallel_min_elems = self._min_elems(
+            ns_per_elem, compiled.ns_per_elem_parallel)
 
-    def _min_elems(self, ns_per_elem: float) -> int:
+    def _min_elems(self, ns_per_elem: float,
+                   ns_per_elem_parallel: float = 0.0) -> int:
         """Smallest range worth fanning out, for a kernel of this cost.
 
-        Threading takes overhead + T_serial/P, so it wins once T_serial
-        passes overhead·P/(P-1); the break-even factor covers that term and
-        leaves margin, so we thread on a real win rather than a predicted
-        tie. Until the fan-out has been measured this uses a deliberately
-        pessimistic default, which only delays the first fan-out.
+        The two paths cost `n·r_s` and `fan_out + n·r_p`, so they cross at
+        `fan_out / (r_s - r_p)` and the threshold is that with a margin --
+        a real win rather than a predicted tie. Until the fan-out has been
+        measured this uses a deliberately pessimistic default, which only
+        delays the first fan-out.
+
+        The shipped formula drops `r_p`, i.e. assumes a fanned-out run
+        spreads the work across every thread and so costs nothing per
+        element next to the serial rate. It does not: the measured speedup
+        of the *work* is 1.5-9.2 depending on how much of the kernel is
+        memory rather than arithmetic. Dropping the term inflates the
+        denominator, and the margin actually applied comes out as
+        `M·(1 - 1/P_eff)` -- which for a bandwidth-bound kernel with
+        P_eff ≈ 1.5 is 0.67, i.e. below break-even, so the threshold lands
+        *under* the crossover and the fan-out loses. Keeping the term needs
+        no special case for "not measured yet": r_p is 0 then, and the
+        expression reduces to exactly the old one.
         """
         if ns_per_elem <= 0.0 or self.num_threads <= 1:
             return _NEVER
-        fan_out = self._fan_out_ns
-        if fan_out is None:
-            fan_out = _DEFAULT_FAN_OUT_NS
+        fan_out = self._fan_out_estimate()
+        rate = ns_per_elem
+        if self.policy == "v2":
+            rate = ns_per_elem - min(ns_per_elem_parallel, ns_per_elem * 0.9)
         return max(self.num_threads,
-                   int(fan_out * _PARALLEL_BREAK_EVEN / ns_per_elem))
+                   int(fan_out * self.margin / rate))
 
     def _get_pool(self) -> ThreadPoolExecutor:
         """Return the persistent thread pool, creating it on first use."""
@@ -757,12 +819,106 @@ class CPUBackend(Backend):
             elapsed = time.perf_counter_ns() - t0
             best = elapsed if best is None else min(best, elapsed)
         self._fan_out_ns = float(best)
+        if self.policy == "v2":
+            self._calibrate_fan_out_curve(compiled, prefix)
+
+    def _calibrate_fan_out_curve(self, compiled: CompiledKernel,
+                                 prefix: tuple):
+        """Measure the fan-out cost at several degrees of worker idleness.
+
+        The probe above answers "what does a fan-out cost right after
+        another one", which is the cheapest it ever is. A dispatch that
+        follows a pause pays more, because the cores have descended into
+        deeper idle states -- and how much more, and how soon, is a fact
+        about the machine: finished by 10 ms on a 2-socket Xeon, still
+        falling at 50 ms on an M1 Max. Sampling the curve rather than
+        picking a constant is what lets one mechanism fit both.
+
+        Costs the sum of the gaps once, on the first fan-out.
+        """
+        pool = self._get_pool()
+        run = compiled.call_range
+        curve = []
+        for gap_ms in _FAN_OUT_GAPS_MS:
+            times = []
+            for _ in range(_FAN_OUT_GAP_REPS):
+                if gap_ms:
+                    time.sleep(gap_ms / 1000.0)
+                t0 = time.perf_counter_ns()
+                futures = [pool.submit(run, prefix, 0, 0)
+                           for _ in range(self.num_threads)]
+                for f in futures:
+                    f.result()
+                times.append(time.perf_counter_ns() - t0)
+            times.sort()
+            # Median, not minimum: the minimum is what made the shipped
+            # probe read the hot end of its own distribution.
+            curve.append((gap_ms * 1e6, float(times[len(times) // 2])))
+        # Monotone by construction -- a longer pause cannot wake threads
+        # faster, and a dip is sampling noise that would otherwise make
+        # the interpolation non-monotone.
+        for i in range(1, len(curve)):
+            if curve[i][1] < curve[i - 1][1]:
+                curve[i] = (curve[i][0], curve[i - 1][1])
+        self._fan_out_curve = curve
+
+    def _fan_out_estimate(self) -> float:
+        """What a fan-out costs *for this dispatch*, given its idleness.
+
+        Piecewise-linear on the measured curve, clamped at both ends. With
+        no curve (policy v1, or before calibration) this is the single
+        probe value, so callers need no branch -- and the clock is not read
+        at all, which keeps the shipped path exactly as it was.
+        """
+        curve = self._fan_out_curve
+        if not curve:
+            return (self._fan_out_ns if self._fan_out_ns is not None
+                    else _DEFAULT_FAN_OUT_NS)
+        gap = time.perf_counter_ns() - self._last_dispatch_ns
+        if gap <= curve[0][0]:
+            return curve[0][1]
+        for (g0, c0), (g1, c1) in zip(curve, curve[1:]):
+            if gap <= g1:
+                span = g1 - g0
+                return c0 + (c1 - c0) * ((gap - g0) / span) if span else c1
+        return curve[-1][1]
+
+    def _record_parallel_cost(self, compiled: CompiledKernel, elapsed: float,
+                              fan_out: float, elems: int):
+        """Learn `r_p` from a dispatch that actually fanned out.
+
+        The subtraction is only meaningful when the work is a real share
+        of the elapsed time; nearer the threshold the remainder is fan-out
+        jitter, and smoothing it in would corrupt the rate with noise from
+        the very quantity it is supposed to be independent of.
+
+        Censoring is the reason this is safe to learn only from parallel
+        runs: the backend fans out precisely on the ranges where the work
+        term dominates, so the observations it naturally collects are the
+        informative ones. The reverse loop -- a threshold set so high that
+        nothing fans out and nothing can lower it -- is already broken by
+        `recheck_due`, which schedules serial re-measurement.
+        """
+        if elems <= 0 or elapsed < fan_out * _RP_MIN_WORK_RATIO:
+            return
+        sample = max((elapsed - fan_out) / elems, _MIN_NS_PER_ELEM)
+        prev = compiled.ns_per_elem_parallel
+        compiled.ns_per_elem_parallel = (
+            sample if prev <= 0.0
+            else prev + _COST_SMOOTHING * (sample - prev))
+        compiled.parallel_min_elems = self._min_elems(
+            compiled.ns_per_elem, compiled.ns_per_elem_parallel)
 
     def _parallel_execute(self, compiled: CompiledKernel, prefix: tuple,
                           start: int, end: int):
         """Split the loop range across threads."""
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
+
+        measure = self.policy == "v2"
+        if measure:
+            fan_out = self._fan_out_estimate()
+            t0 = time.perf_counter_ns()
 
         pool = self._get_pool()
         run = compiled.call_range
@@ -775,3 +931,9 @@ class CPUBackend(Backend):
             futures.append(pool.submit(run, prefix, t_start, t_end))
         for f in futures:
             f.result()  # propagate exceptions
+
+        if measure:
+            now = time.perf_counter_ns()
+            self._record_parallel_cost(compiled, float(now - t0), fan_out,
+                                       total)
+            self._last_dispatch_ns = now
