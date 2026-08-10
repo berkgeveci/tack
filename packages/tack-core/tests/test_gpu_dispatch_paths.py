@@ -197,6 +197,39 @@ if b.device_memory_spaces:
     check("classifies the pointers it validates",
           type(b).memory_space is not BaseBackend.memory_space)
 
+    # The handler in memory_space() is narrow on purpose: a driver fault
+    # must not be reported as host memory, because the damage lands
+    # upstream -- field_from_ptr then refuses a good device pointer with a
+    # message about the wrong thing. Under these stubs the query raises a
+    # marshalling error, which is one of the kinds it *should* absorb; a
+    # RuntimeError is not, and has to escape.
+    # Import only this run's backend: each subprocess stubs the bindings
+    # for its own and no other, so reaching for a sibling module fails on
+    # the real import rather than the thing under test.
+    import importlib
+    _where = {"cuda": ("tack.runtime.cuda_backend", "driver",
+                       "cuPointerGetAttribute"),
+              "hip": ("tack.runtime.hip_backend", "hip",
+                      "hipPointerGetAttributes")}.get(b.name)
+    if _where is not None:
+        _mod_name, _api_name, call = _where
+        api = getattr(importlib.import_module(_mod_name), _api_name)
+        original = getattr(api, call)
+
+        def _boom(*a, **kw):
+            raise RuntimeError("driver fault")
+
+        setattr(api, call, _boom)
+        try:
+            escaped = False
+            try:
+                b.memory_space(0)
+            except RuntimeError:
+                escaped = True
+            check("a driver fault is not reported as host memory", escaped)
+        finally:
+            setattr(api, call, original)
+
 print("OK")
 '''
 

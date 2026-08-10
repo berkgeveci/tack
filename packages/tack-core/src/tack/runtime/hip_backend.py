@@ -359,7 +359,14 @@ class HIPBackend(Backend):
             # hipMemoryTypeHost=1, hipMemoryTypeDevice=2, hipMemoryTypeUnified=3
             return {1: "hip_pinned", 2: "hip", 3: "hip_managed"}.get(
                 int(mem_type), "cpu")
-        except Exception:
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            # See the same handler in cuda_backend: HIP's own failures come
+            # back as an error code, handled above, so what is caught here
+            # is a binding whose shape differs from this one's assumptions
+            # -- `attrs.type` versus `attrs.memoryType`, which the line
+            # above already has to guess at -- or a `ptr` that is not an
+            # address. A real driver fault propagates now instead of being
+            # reported as host memory.
             return "cpu"
 
     def wrap_ptr(self, ptr, dtype, shape):

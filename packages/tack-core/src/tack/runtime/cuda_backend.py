@@ -487,7 +487,19 @@ class CUDABackend(Backend):
             # CU_MEMORYTYPE_ARRAY=3, CU_MEMORYTYPE_UNIFIED=4
             return {1: "cuda_pinned", 2: "cuda", 4: "cuda_managed"}.get(
                 int(mem_type), "cpu")
-        except Exception:
+        except (AttributeError, TypeError, ValueError, OverflowError):
+            # Narrow deliberately. CUDA's own failures arrive as an error
+            # *code*, handled above, so anything raised here is a
+            # Python-side problem: a binding whose shape differs from the
+            # one this was written against (AttributeError), or a `ptr`
+            # that is not an address (the rest). Those do mean "cannot
+            # establish that this is device memory", which is what "cpu"
+            # says.
+            #
+            # `except Exception` also swallowed real driver faults and
+            # reported them as host memory, and the damage is done
+            # upstream rather than here: `field_from_ptr` then refuses a
+            # good device pointer with a message about the wrong thing.
             return "cpu"
 
     def wrap_ptr(self, ptr, dtype, shape):

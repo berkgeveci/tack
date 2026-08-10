@@ -587,7 +587,16 @@ def _windows_core_count() -> int | None:
                 cores += 1
             offset += record_size
         return cores or None
-    except Exception:
+    except (AttributeError, OSError, TypeError, ValueError):
+        # `ctypes.windll` is absent off Windows (AttributeError), the call
+        # itself can fail (OSError), and a record layout that does not
+        # parse raises from `int.from_bytes` (ValueError/TypeError).
+        #
+        # Narrow specifically *because* this code has never run -- there is
+        # no Windows machine here. A broad `except Exception` would hide a
+        # genuine bug in it for exactly as long as that stays true, which
+        # is the worst place to be lenient: untested code is where an
+        # unexpected exception is most likely to be information.
         return None
 
 
@@ -741,10 +750,28 @@ class CPUBackend(Backend):
                   loop_end: int):
         """Run the loop range, threading it only when that is faster."""
         prefix = compiled.bind(kernel_args)
+        try:
+            self._run(compiled, prefix, loop_end)
+        finally:
+            # After the work, never before it. The refresh wakes every
+            # worker, so putting it in front of a dispatch both delays the
+            # caller and disturbs whatever that dispatch measures -- and
+            # the recheck path times a slice of a few thousand elements,
+            # which at a fraction of a nanosecond each is hundreds of
+            # nanoseconds against a probe costing hundreds of
+            # *micro*seconds. Measured: P3's recovery test went from
+            # failing 2 runs in 6 on this machine to 4 in 6 with the
+            # refresh in front of the dispatch.
+            #
+            # Nothing is lost by deferring. The threshold this dispatch
+            # used is a stored value, so a fresher fan-out would not have
+            # changed its decision -- only the next one's, which is what
+            # an estimate is for.
+            if self._v2 and self._fan_out_curve:
+                self._refresh_fan_out(compiled, prefix)
 
-        if self._v2 and self._fan_out_curve:
-            self._refresh_fan_out(compiled, prefix)
-
+    def _run(self, compiled: CompiledKernel, prefix: tuple, loop_end: int):
+        """Choose serial or fan-out, and run it."""
         if loop_end >= compiled.parallel_min_elems:
             if self._fan_out_ns is None:
                 # First range big enough to want threads: measure what they
