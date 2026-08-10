@@ -217,6 +217,40 @@ _PARALLEL_BREAK_EVEN = 2.0
 _FAN_OUT_GAPS_MS = (0.0, 10.0, 50.0)
 _FAN_OUT_GAP_REPS = 3
 
+# The curve is calibrated once at startup and refined from every fan-out
+# after that. Calibrating alone was not enough: it records whatever the
+# machine was doing at startup, and machines do not hold still. Scored
+# with `--load 8` on eight threads, the shipped policy makes 4-11
+# over-eager fan-outs of 18 -- a threshold chosen in a quiet moment,
+# surviving into a busy one.
+#
+# Share of a dispatch that may be work before its fan-out sample is
+# dropped. `fan_out = elapsed - slowest_worker` is well conditioned only
+# when the thing subtracted is small: at a third, an error in the work
+# phase moves the answer by half as much again; near the crossover, where
+# the two are equal by definition, it would move it by its own size.
+#
+# This is a regime condition, not the ratio guard that had to be removed
+# from `r_p`. That one compared against an *estimated* fan-out, so no
+# setting existed that both admitted samples and kept them honest. Here
+# both terms are measured, and dispatches meeting the condition arise on
+# their own for any kernel with real parallelism: at the threshold the
+# work share is `M/(P_eff - 1 + M)`, which is 0.18 for a kernel with
+# P_eff 8 and only fails to qualify for the bandwidth-bound case.
+_FAN_OUT_MAX_WORK_SHARE = 0.35
+
+# Weight of one fan-out sample against the running curve. Lower than the
+# per-kernel cost smoothing because there is one curve serving every
+# kernel, so it sees many more samples and can afford to trust each less.
+_FAN_OUT_SMOOTHING = 0.15
+
+# How stale the fan-out may get before it is re-measured directly with an
+# empty fan-out. Bounded in wall clock rather than dispatch count, so the
+# cost is a fraction of *time* -- one empty fan-out per interval, a few
+# hundred microseconds against a hundred milliseconds -- rather than
+# something that scales with how busy the program is.
+_FAN_OUT_REFRESH_NS = 100_000_000.0
+
 # Shortest worker chunk whose timing is worth believing. `perf_counter_ns`
 # resolves to tens of nanoseconds, so a microsecond of work is a couple of
 # hundred ticks and the quantisation is nothing.
@@ -574,6 +608,10 @@ class CPUBackend(Backend):
         self.margin = float(os.environ.get("TACK_CPU_MARGIN", default_margin))
         self._fan_out_curve: list[tuple[float, float]] = []
         self._last_dispatch_ns = 0
+        # When the fan-out was last measured, by either route. Drives the
+        # scheduled re-probe, which is what keeps a censored estimate from
+        # freezing at whatever the machine was doing when it last spoke.
+        self._fan_out_measured_ns = 0
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> NumpyBuffer:
@@ -645,6 +683,9 @@ class CPUBackend(Backend):
                   loop_end: int):
         """Run the loop range, threading it only when that is faster."""
         prefix = compiled.bind(kernel_args)
+
+        if self.policy == "v2" and self._fan_out_curve:
+            self._refresh_fan_out(compiled, prefix)
 
         if loop_end >= compiled.parallel_min_elems:
             if self._fan_out_ns is None:
@@ -910,13 +951,143 @@ class CPUBackend(Backend):
             return (self._fan_out_ns if self._fan_out_ns is not None
                     else _DEFAULT_FAN_OUT_NS)
         gap = time.perf_counter_ns() - self._last_dispatch_ns
+
+        # Monotone on read: a longer pause cannot wake threads faster, so
+        # the answer for a gap is at least the answer for every shorter
+        # one. Imposing it here rather than on the stored knots lets each
+        # knot fall when the machine quietens, and lets a knot that real
+        # traffic never visits stay out of the way instead of dragging
+        # its neighbours -- back-to-back dispatches only ever sample the
+        # first one, and under sustained load that one carries the truth.
+        running = curve[0][1]
         if gap <= curve[0][0]:
-            return curve[0][1]
-        for (g0, c0), (g1, c1) in itertools.pairwise(curve):
+            return running
+        for (g0, _c0), (g1, c1) in itertools.pairwise(curve):
+            lo, hi = running, max(running, c1)
             if gap <= g1:
                 span = g1 - g0
-                return c0 + (c1 - c0) * ((gap - g0) / span) if span else c1
-        return curve[-1][1]
+                return lo + (hi - lo) * ((gap - g0) / span) if span else hi
+            running = hi
+        return running
+
+    def _refresh_fan_out(self, compiled: CompiledKernel, prefix: tuple):
+        """Re-measure the fan-out directly, on a schedule, whatever else happens.
+
+        Learning it from real dispatches alone deadlocks, and the loop is
+        self-reinforcing rather than merely inconvenient: load raises the
+        cost, which raises the threshold, which stops anything fanning
+        out, which stops the samples that would bring the threshold back
+        down. Measured -- the curve rose to 564 µs under load and sat
+        there for the rest of the process after the load stopped, with
+        the threshold ten times its quiet value and climbing.
+
+        The fan-out is the one quantity that escapes this, because it can
+        be measured with **no work at all**: an empty range runs no loop
+        iterations, so a fan-out over one is the cost and nothing else,
+        and it is safe on any kernel including ones that accumulate with
+        atomics. Nothing has to be subtracted and nothing has to be
+        inferred, so no censoring applies.
+
+        Rate-limited by wall clock rather than by dispatch count, so the
+        cost is bounded as a fraction of *time* -- one empty fan-out per
+        refresh interval, which is well under a percent -- instead of
+        scaling with how busy the program is.
+        """
+        now = time.perf_counter_ns()
+        if now - self._fan_out_measured_ns < _FAN_OUT_REFRESH_NS:
+            return
+        pool = self._get_pool()
+        run = compiled.call_range
+
+        def once() -> float:
+            t0 = time.perf_counter_ns()
+            futures = [pool.submit(run, prefix, 0, 0)
+                       for _ in range(self.num_threads)]
+            for f in futures:
+                f.result()
+            return float(time.perf_counter_ns() - t0)
+
+        # Two of them, and the second is the point. The first lands at
+        # whatever gap this dispatch arrived with; the second follows it
+        # immediately, so it samples the *hot* knot.
+        #
+        # Without it the hot knot is unreachable exactly when it matters.
+        # Once the threshold rises far enough that nothing fans out, every
+        # dispatch runs serial, the pool goes untouched, and the gap only
+        # ever grows -- so every refresh lands on the longest knot and the
+        # hot end keeps whatever value the busy machine last gave it, with
+        # nothing able to bring it down. Measured: the hot knot sat at
+        # 573 µs for the rest of the process after the load stopped.
+        self._update_fan_out_knot(once(), float(now - self._last_dispatch_ns))
+        self._update_fan_out_knot(once(), 0.0)
+        # The pool has just run, so the workers really are warm now and the
+        # next dispatch's gap should be measured from here.
+        self._fan_out_measured_ns = self._last_dispatch_ns = \
+            time.perf_counter_ns()
+
+    def _update_fan_out_knot(self, sample: float, gap_ns: float):
+        """Fold one fan-out measurement into the knot it belongs to."""
+        curve = self._fan_out_curve
+        if not curve or sample <= 0.0:
+            return
+        idx = min(range(len(curve)),
+                  key=lambda i: abs(curve[i][0] - gap_ns))
+        gap_at, cost = curve[idx]
+        curve[idx] = (gap_at, cost + _FAN_OUT_SMOOTHING * (sample - cost))
+
+    def _record_fan_out(self, elapsed: float, slowest_work: float,
+                        gap_ns: float):
+        """Refine the fan-out curve from a dispatch that just happened.
+
+        `elapsed - slowest_work` is the fan-out: the whole dispatch minus
+        the work phase it contains, and the dispatch waits for its
+        slowest worker so that is the phase. **Both terms are measured** --
+        this is not the residual-against-an-estimate that made `r_p`
+        useless before `108d020`, and it is only possible because the
+        workers now report their own times.
+
+        Why it has to be refreshed rather than calibrated once: the
+        startup probe records whatever the machine was doing at startup.
+        Scored with `--load 8` on eight threads, the shipped policy makes
+        four to eleven over-eager fan-outs of eighteen -- a threshold set
+        in a quiet moment surviving into a busy one, with a fan-out that
+        measured 79 µs at calibration costing 329 µs by the end of the
+        same sweep.
+
+        Accepted only when the work is a small share of the dispatch,
+        because that is what makes the subtraction well conditioned: at a
+        third or less, an error in the work phase moves the fan-out by
+        half as much again, where near the crossover it would move it by
+        its own size. That is a *regime* condition, not the ratio guard
+        that had no working setting -- here the term being compared is
+        measured rather than estimated, and dispatches meeting it arise
+        naturally for any kernel with real parallelism to offer.
+        """
+        sample = elapsed - slowest_work
+        if sample <= 0.0 or slowest_work > elapsed * _FAN_OUT_MAX_WORK_SHARE:
+            return
+        if not self._fan_out_curve:
+            return
+        # Update the knot this dispatch's idleness belongs to, so the curve
+        # keeps its shape -- how the cost grows with the pause is a fact
+        # about the machine -- while its level tracks what the machine is
+        # doing now. Free samples, on top of `_refresh_fan_out`'s scheduled
+        # ones: this path costs nothing but only fires when a dispatch
+        # happens to have a small work share, so it sharpens the estimate
+        # without being relied on to supply it.
+        self._update_fan_out_knot(sample, gap_ns)
+        self._fan_out_measured_ns = time.perf_counter_ns()
+        # No monotone pass here, deliberately. Forcing it after *every*
+        # update turns the curve into a ratchet: each knot is pinned by
+        # the one below it, so a rise propagates upward and nothing can
+        # ever come back down. Measured, that is exactly what happened --
+        # the curve went 172/181/264 µs to a flat 379 under load and
+        # stayed at 379 for the rest of the process after the load
+        # stopped, having also lost the shape it exists to carry, because
+        # back-to-back dispatches only ever update the first knot.
+        #
+        # Monotonicity is a property of the *answer*, not of the stored
+        # samples, so `_fan_out_estimate` imposes it on read instead.
 
     def _record_parallel_cost(self, compiled: CompiledKernel,
                               worker_rates: list, workers: int):
@@ -979,16 +1150,21 @@ class CPUBackend(Backend):
                 f.result()  # propagate exceptions
             return
 
-        # One slot per worker, written only by that worker, so the rates
-        # need no lock -- which matters because a lock here would be held
+        # One slot per worker, written only by that worker, so neither list
+        # needs a lock -- which matters because a lock here would be held
         # inside the measured region.
         rates: list = [0.0] * self.num_threads
+        spans: list = [0.0] * self.num_threads
+
+        gap = time.perf_counter_ns() - self._last_dispatch_ns
+        dispatch_t0 = time.perf_counter_ns()
 
         def timed(slot: int, t_start: int, t_end: int):
             t = time.perf_counter_ns()
             run(prefix, t_start, t_end)
             elapsed = time.perf_counter_ns() - t
             elems = t_end - t_start
+            spans[slot] = elapsed
             if elems > 0 and elapsed >= _RP_MIN_WORKER_NS:
                 rates[slot] = elapsed / elems
 
@@ -1004,6 +1180,12 @@ class CPUBackend(Backend):
         for f in futures:
             f.result()  # propagate exceptions
 
+        dispatch_ns = time.perf_counter_ns() - dispatch_t0
         self._record_parallel_cost(compiled, [r for r in rates if r > 0.0],
                                    workers)
+        # The dispatch waits for its slowest worker, so that is the work
+        # phase -- and here the max is the right statistic rather than the
+        # wrong one it is for `r_p`, because this is the quantity the
+        # dispatch actually spent, not a rate being generalised from.
+        self._record_fan_out(float(dispatch_ns), max(spans), float(gap))
         self._last_dispatch_ns = time.perf_counter_ns()
