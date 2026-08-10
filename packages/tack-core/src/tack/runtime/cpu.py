@@ -40,6 +40,7 @@ tuning quality.
 
 import ctypes
 import ctypes.util
+import itertools
 import os
 import platform
 import time
@@ -216,10 +217,27 @@ _PARALLEL_BREAK_EVEN = 2.0
 _FAN_OUT_GAPS_MS = (0.0, 10.0, 50.0)
 _FAN_OUT_GAP_REPS = 3
 
-# A parallel dispatch measures r_p by subtracting the fan-out from its own
-# elapsed time, so it is only informative when the work is a real share of
-# that time. Below this the remainder is fan-out jitter, not a rate.
-_RP_MIN_WORK_RATIO = 1.3
+# Shortest worker chunk whose timing is worth believing. `perf_counter_ns`
+# resolves to tens of nanoseconds, so a microsecond of work is a couple of
+# hundred ticks and the quantisation is nothing.
+#
+# This replaced a guard of a very different kind, and the difference is the
+# whole point. `r_p` used to be learned as a residual --
+# `(elapsed - fan_out_estimate) / elems` -- which charges every error in the
+# fan-out estimate to `r_p`, amplified by `1/elems`. Its guard therefore had
+# to demand that the work be a large multiple of the fan-out, and on yavin
+# no such multiple existed in the range that matters: at 1.3x it admitted
+# noise (r_p biased 1.3-13.6x high, and a P_eff of 0.13 for the
+# bandwidth-bound kernel, which says fanning out makes work slower per
+# element), and at 3x and above no dispatch in the scoring grid qualified at
+# all, so `r_p` stayed 0.0 and v2 reduced silently to v1.
+#
+# That is not a badly chosen constant; near the crossover work and fan-out
+# are the same size *by definition*, so no ratio can separate them. Timing
+# the workers instead removes the subtraction, and with it the need to
+# compare against the fan-out at all -- so what is left to guard is only
+# whether the clock can see the interval.
+_RP_MIN_WORKER_NS = 1_000.0
 
 # v2's margin, and lower than v1's 2.0 deliberately. Under v1 the margin
 # was absorbing *systematic* error -- an understated probe and, on a
@@ -894,31 +912,43 @@ class CPUBackend(Backend):
         gap = time.perf_counter_ns() - self._last_dispatch_ns
         if gap <= curve[0][0]:
             return curve[0][1]
-        for (g0, c0), (g1, c1) in zip(curve, curve[1:]):
+        for (g0, c0), (g1, c1) in itertools.pairwise(curve):
             if gap <= g1:
                 span = g1 - g0
                 return c0 + (c1 - c0) * ((gap - g0) / span) if span else c1
         return curve[-1][1]
 
-    def _record_parallel_cost(self, compiled: CompiledKernel, elapsed: float,
-                              fan_out: float, elems: int):
-        """Learn `r_p` from a dispatch that actually fanned out.
+    def _record_parallel_cost(self, compiled: CompiledKernel,
+                              worker_rates: list, workers: int):
+        """Learn `r_p` from what the workers themselves reported.
 
-        The subtraction is only meaningful when the work is a real share
-        of the elapsed time; nearer the threshold the remainder is fan-out
-        jitter, and smoothing it in would corrupt the rate with noise from
-        the very quantity it is supposed to be independent of.
+        `worker_rates` holds each worker's own ns-per-element for the
+        chunk it ran. Those timestamps are taken *inside* the worker,
+        around `call_range` and nothing else, so they contain no fan-out
+        to subtract and no wakeup to be confused by.
 
-        Censoring is the reason this is safe to learn only from parallel
-        runs: the backend fans out precisely on the ranges where the work
-        term dominates, so the observations it naturally collects are the
-        informative ones. The reverse loop -- a threshold set so high that
-        nothing fans out and nothing can lower it -- is already broken by
-        `recheck_due`, which schedules serial re-measurement.
+        Two conversions, and both are easy to get backwards.
+
+        A worker's own rate is roughly the *serial* rate: the speedup of
+        a fan-out comes from running `P` chunks at once, not from any
+        element becoming cheaper. So the aggregate rate the crossover
+        model wants is the worker rate divided by the number of workers
+        that actually ran -- which is not always `num_threads`, since a
+        range shorter than `num_threads` chunks starts fewer.
+
+        And the statistic is the **median** across workers, not the max.
+        The dispatch does wait for the slowest, so the max is what the
+        model literally describes -- but on a machine with any background
+        load the max over eight samples is whichever worker was
+        descheduled, which measures the scheduler rather than the kernel.
+        Probed on a loaded yavin, max read 10-134x the fitted rate where
+        the median read 0.5-6.3x.
         """
-        if elems <= 0 or elapsed < fan_out * _RP_MIN_WORK_RATIO:
+        rates = sorted(worker_rates)
+        if not rates or workers <= 0:
             return
-        sample = max((elapsed - fan_out) / elems, _MIN_NS_PER_ELEM)
+        median_rate = rates[len(rates) // 2]
+        sample = max(median_rate / workers, _MIN_NS_PER_ELEM)
         prev = compiled.ns_per_elem_parallel
         compiled.ns_per_elem_parallel = (
             sample if prev <= 0.0
@@ -932,25 +962,48 @@ class CPUBackend(Backend):
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
 
-        measure = self.policy == "v2"
-        if measure:
-            fan_out = self._fan_out_estimate()
-            t0 = time.perf_counter_ns()
-
         pool = self._get_pool()
         run = compiled.call_range
+        measure = self.policy == "v2"
+
+        if not measure:
+            # v1's path, untouched: no clock read, no per-worker wrapper.
+            futures = []
+            for t in range(self.num_threads):
+                t_start = start + t * chunk
+                t_end = min(t_start + chunk, end)
+                if t_start >= end:
+                    break
+                futures.append(pool.submit(run, prefix, t_start, t_end))
+            for f in futures:
+                f.result()  # propagate exceptions
+            return
+
+        # One slot per worker, written only by that worker, so the rates
+        # need no lock -- which matters because a lock here would be held
+        # inside the measured region.
+        rates: list = [0.0] * self.num_threads
+
+        def timed(slot: int, t_start: int, t_end: int):
+            t = time.perf_counter_ns()
+            run(prefix, t_start, t_end)
+            elapsed = time.perf_counter_ns() - t
+            elems = t_end - t_start
+            if elems > 0 and elapsed >= _RP_MIN_WORKER_NS:
+                rates[slot] = elapsed / elems
+
         futures = []
+        workers = 0
         for t in range(self.num_threads):
             t_start = start + t * chunk
             t_end = min(t_start + chunk, end)
             if t_start >= end:
                 break
-            futures.append(pool.submit(run, prefix, t_start, t_end))
+            workers += 1
+            futures.append(pool.submit(timed, t, t_start, t_end))
         for f in futures:
             f.result()  # propagate exceptions
 
-        if measure:
-            now = time.perf_counter_ns()
-            self._record_parallel_cost(compiled, float(now - t0), fan_out,
-                                       total)
-            self._last_dispatch_ns = now
+        self._record_parallel_cost(compiled, [r for r in rates if r > 0.0],
+                                   workers)
+        self._last_dispatch_ns = time.perf_counter_ns()
