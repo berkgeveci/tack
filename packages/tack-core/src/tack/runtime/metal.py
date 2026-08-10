@@ -40,6 +40,8 @@ class MetalBuffer(DeviceBuffer):
     (no DMA transfers).
     """
 
+    backend_name = "metal"
+
     def __init__(self, device, numpy_dtype, shape):
         nbytes = int(np.prod(shape)) * np.dtype(numpy_dtype).itemsize
         # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory)

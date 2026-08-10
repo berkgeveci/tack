@@ -131,6 +131,8 @@ class HIPBuffer(DeviceBuffer):
     ``to_numpy`` copies device→host.
     """
 
+    backend_name = "hip"
+
     def __init__(self, numpy_dtype, shape):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape

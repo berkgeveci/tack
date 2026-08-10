@@ -20,6 +20,13 @@ from tack.lang.types import ScalarType, f32, f64, from_numpy_dtype, i32
 class DeviceBuffer:
     """Abstract interface for backend-specific field storage."""
 
+    #: `Backend.name` of whoever allocates this kind of buffer. A class
+    #: attribute, so it costs nothing and survives buffers built with
+    #: `__new__` (Metal's `wrap_ptr` does that). Only a diagnostic reads
+    #: it — see `_fields_from_another_backend` in lang/kernel.py, which
+    #: uses it to explain the AttributeError a backend switch produces.
+    backend_name: str = ""
+
     def from_numpy(self, arr: np.ndarray):
         raise NotImplementedError
 
@@ -36,6 +43,8 @@ class DeviceBuffer:
 
 class NumpyBuffer(DeviceBuffer):
     """CPU backend buffer — just a numpy array."""
+
+    backend_name = "cpu"
 
     def __init__(self, numpy_dtype, shape):
         self._data = np.zeros(shape, dtype=numpy_dtype)

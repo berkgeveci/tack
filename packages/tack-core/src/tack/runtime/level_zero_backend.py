@@ -676,6 +676,8 @@ class L0Buffer(DeviceBuffer):
     ``to_numpy`` copies device→host.
     """
 
+    backend_name = "level_zero"
+
     def __init__(self, backend, numpy_dtype, shape):
         self._backend = backend
         self._numpy_dtype = np.dtype(numpy_dtype)

@@ -47,10 +47,16 @@ def kernel_cache_slot(cache, kernel) -> dict:
     signature would hit the previous kernel's compiled code and silently
     return wrong results.  Holding the key weakly also lets compiled code and
     its device modules be released once the kernel itself goes away.
+
+    `setdefault` rather than an assignment because two threads can both see
+    no slot: with `cache[kernel] = {}` the second one installs a fresh dict
+    over the first's, discarding a variant that had just been compiled. The
+    results stay correct either way — each thread returns the variant it
+    built — so this only saves the recompile, but it saves it for free.
     """
     slot = cache.get(kernel)
     if slot is None:
-        slot = cache[kernel] = {}
+        slot = cache.setdefault(kernel, {})
     return slot
 
 

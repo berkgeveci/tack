@@ -16,6 +16,7 @@ describe the thing it names.
 """
 
 import threading
+import time
 
 import numpy as np
 import pytest
@@ -201,3 +202,198 @@ def test_many_threads_one_kernel():
     assert not errors, errors
     assert len(results) == 8
     assert all(results.values()), f"wrong values from {results}"
+
+
+# ── The template rewrite's shared registry ───────────────────────────
+#
+# `rewrite_templates` registers each resolved @tack.func method in the
+# module-global `_func_registry`, `transform_kernel` reads it back, and
+# `get_ir` pops it afterwards. The name is built from `id(obj)`, so two
+# threads sharing one @tack.data_oriented object build the *same* name and
+# whichever finishes first deletes the entry the other is about to read.
+#
+# It survived on CPython only because that whole sequence fits in one GIL
+# slice. Measured before the fix: 8 threads over 25 kernels were clean at
+# the default 5 ms switch interval and at 1 ms, and 72 of 200 dispatches
+# failed at 0.1 ms. Rather than depend on that, these force a switch at the
+# exact point by making the transform yield.
+
+
+@tack.data_oriented
+class _Scaler:
+    factor = 3.0
+
+    def __init__(self, bias):
+        self.bias = bias
+
+    @tack.func
+    def apply(self, v):
+        return v * self.factor + self.bias
+
+
+@tack.kernel
+def _use_template(s, x, out):
+    for i in range(x.shape[0]):
+        out[i] = s.apply(x[i])
+
+
+def _yield_during_transform(monkeypatch):
+    """Make every transform give up the GIL at its start.
+
+    Deterministic where a switch interval is not: each thread is guaranteed
+    to be inside the register→transform→pop window when the next one enters
+    it. Post-fix the lock serialises them, so this yields rather than
+    deadlocks — the stalled thread is not waiting on anybody.
+    """
+    import tack.lang.kernel as kernel_mod
+    real = kernel_mod.transform_kernel
+
+    def slow_transform(*args, **kwargs):
+        time.sleep(0.01)
+        return real(*args, **kwargs)
+
+    monkeypatch.setattr(kernel_mod, "transform_kernel", slow_transform)
+
+
+def test_threads_sharing_a_template_object_all_succeed(monkeypatch):
+    """The failure was `Function call '__tmpl_..._<id>__' not supported`."""
+    _yield_during_transform(monkeypatch)
+    shared = _Scaler(10.0)
+    results, errors = {}, []
+    lock = threading.Lock()
+
+    def run(tid):
+        try:
+            x = tack.field(dtype=tack.f32, shape=(8,))
+            out = tack.field(dtype=tack.f32, shape=(8,))
+            x.from_numpy(np.ones(8, dtype=np.float32))
+            _use_template(shared, x, out)
+            with lock:
+                results[tid] = out.to_numpy()
+        except Exception as e:
+            with lock:
+                errors.append(f"{type(e).__name__}: {e}")
+
+    threads = [threading.Thread(target=run, args=(i,)) for i in range(8)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(TIMEOUT)
+
+    assert not errors, f"concurrent template dispatch failed: {errors[:3]}"
+    assert len(results) == 8
+    for tid, got in results.items():
+        np.testing.assert_allclose(got, 1.0 * 3.0 + 10.0)
+
+
+def test_the_registry_is_left_clean(monkeypatch):
+    """Temporaries must not outlive the transform that made them.
+
+    The name carries `id(obj)`, which the allocator reuses, so a leaked
+    entry is a stale method body waiting for an unrelated object to be born
+    at the same address.
+
+    Unlike the two either side of it, this one **passes on the pre-fix
+    code**: distinct objects have distinct ids, so nothing collides and
+    every pop finds its own entry. It is here as a guard on the invariant,
+    not as a reproducer — worth saying, because a test that never failed is
+    evidence of nothing until something changes.
+    """
+    from tack.lang.func import _func_registry
+
+    _yield_during_transform(monkeypatch)
+    before = set(_func_registry)
+
+    def run(bias):
+        s = _Scaler(bias)
+        x = tack.field(dtype=tack.f32, shape=(4,))
+        out = tack.field(dtype=tack.f32, shape=(4,))
+        _use_template(s, x, out)
+
+    threads = [threading.Thread(target=run, args=(float(i),)) for i in range(6)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join(TIMEOUT)
+
+    leaked = set(_func_registry) - before
+    assert not leaked, f"template temporaries left in the registry: {leaked}"
+
+
+@tack.data_oriented
+class _ColdScaler:
+    """A distinct class-level constant, so its IR cache entry is cold.
+
+    `_make_cache_key` keys on the class name and its class-level scalars,
+    so reusing `_Scaler` here would hit the entry the tests above built and
+    never reach the transform this one needs to fail.
+    """
+
+    factor = 5.0
+
+    def __init__(self, bias):
+        self.bias = bias
+
+    @tack.func
+    def apply(self, v):
+        return v * self.factor + self.bias
+
+
+def test_a_failed_transform_still_cleans_up(monkeypatch):
+    """The pop used to sit after the transform, so a raise skipped it."""
+    import tack.lang.kernel as kernel_mod
+    from tack.lang.func import _func_registry
+
+    before = set(_func_registry)
+
+    def boom(*args, **kwargs):
+        raise ValueError("synthetic transform failure")
+
+    monkeypatch.setattr(kernel_mod, "transform_kernel", boom)
+
+    s = _ColdScaler(1.0)
+    x = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.field(dtype=tack.f32, shape=(4,))
+    with pytest.raises(Exception, match="synthetic transform failure"):
+        _use_template(s, x, out)
+
+    assert set(_func_registry) == before, \
+        "a failed transform left its registry temporaries behind"
+
+
+# ── Switching backends under a live field ────────────────────────────
+
+def test_a_backend_switch_under_a_live_field_says_so():
+    """`tack.init()` rebinds a module global; fields do not follow it.
+
+    The raw failure is `'NumpyBuffer' object has no attribute
+    'metal_buffer'`, which names neither the cause nor the fix. Any second
+    backend will do — the point is the diagnosis, not which one.
+    """
+    second = None
+    for arch in ("metal", "cuda", "hip", "level_zero"):
+        try:
+            tack.init(arch=getattr(tack, arch))
+            second = arch
+            break
+        except (ImportError, RuntimeError, OSError):
+            continue
+    if second is None:
+        pytest.skip("only one backend on this machine")
+
+    try:
+        tack.init(arch=tack.cpu)
+        x = tack.field(dtype=tack.f32, shape=(8,))
+        out = tack.field(dtype=tack.f32, shape=(8,))
+        x.from_numpy(np.arange(8, dtype=np.float32))
+
+        tack.init(arch=getattr(tack, second))
+        with pytest.raises(RuntimeError) as excinfo:
+            _scale(x, out, 8)
+
+        message = str(excinfo.value)
+        assert "another backend" in message
+        assert "cpu" in message, "the message must name where the field came from"
+        assert "Re-allocate" in message, "and what to do about it"
+    finally:
+        tack.init(arch=tack.cpu)
