@@ -1,4 +1,4 @@
-"""Validation suite -- runs Taichi-style examples on both CPU and Metal backends.
+"""Validation suite -- runs Taichi-style examples on every backend this machine has.
 
 Tests:
   1. Vector add       -- simplest kernel, validates basic pipeline
@@ -18,22 +18,22 @@ import tack
 
 
 def _available_backends():
-    """Detect which backends are available on this machine."""
-    backends = ["cpu"]
-    try:
-        import Metal
-        if Metal.MTLCreateSystemDefaultDevice() is not None:
-            backends.append("metal")
-    except ImportError:
-        pass
-    try:
-        from cuda.bindings import driver
-        driver.cuInit(0)
-        err, dev = driver.cuDeviceGet(0)
-        if err == driver.CUresult.CUDA_SUCCESS:
-            backends.append("cuda")
-    except (ImportError, Exception):
-        pass
+    """Detect which backends are available on this machine.
+
+    Probes every backend tack ships. This listed only cpu/metal/cuda until
+    2026-08-11, so on a ROCm or Intel box it validated the CPU backend and
+    reported "All validations passed!" -- a pass that named a machine it had
+    not touched. `tack.init` is the honest probe: it is what the caller would
+    do, and it fails the same way for a missing runtime as for a missing
+    device.
+    """
+    backends = []
+    for arch in ("cpu", "metal", "cuda", "hip", "level_zero"):
+        try:
+            tack.init(arch=getattr(tack, arch))
+        except Exception:
+            continue
+        backends.append(arch)
     return backends
 
 

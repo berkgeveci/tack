@@ -31,7 +31,13 @@ BACKENDS = {
     "hip": {
         "cls": "from tack.runtime.hip_backend import HIPBackend as Backend",
         "stubs": ["hip"],
-        "attrs": "",
+        # Texture capability is queried in __init__, which __new__ skips.
+        # Stand in for a device that has texture units, so the dispatch
+        # path under test is the hardware one.
+        "attrs": (
+            "backend._has_image_support = True\n"
+            "    backend._max_image_3d = 16384"
+        ),
     },
     "level_zero": {
         "cls": "from tack.runtime.level_zero_backend import LevelZeroBackend as Backend",

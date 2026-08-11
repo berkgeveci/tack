@@ -21,8 +21,14 @@ class HIPCodeGen(CUDACodeGen):
     """Generates HIP C source from a Tack IR function.
 
     HIP device kernels use the same syntax as CUDA (blockIdx, threadIdx,
-    __global__, etc.).  The only difference is the required header include.
+    __global__, etc.).  The differences are the required header include and
+    the texture handle type: ``tex3D`` is spelled the same, but the object
+    passed to it is ``hipTextureObject_t``.  Inheriting CUDA's spelling put
+    ``cudaTextureObject_t`` in the source and hipRTC rejected it, so every
+    hardware-sampled texture kernel failed to compile.
     """
+
+    _TEXTURE_OBJECT_TYPE = "hipTextureObject_t"
 
     def generate(self) -> str:
         """Generate HIP C source for the kernel."""

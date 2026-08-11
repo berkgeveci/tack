@@ -334,7 +334,63 @@ class HIPBackend(Backend):
         _check_hip(err)
         self._device = device
 
+        # Whether this device has texture/image hardware. CDNA parts
+        # (gfx940/941/942 — MI300 and friends) have none: hipRTC marks
+        # tex3D "unavailable: The image/texture API not supported on the
+        # device" and refuses to compile. The runtime answers honestly via
+        # hipDeviceAttributeImageSupport, so ask rather than assume, and
+        # sample in software where the answer is no.
+        self._has_image_support = self._query_image_support()
+        self._max_image_3d = (
+            self._query_max_image_3d() if self._has_image_support else 0)
+
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledHIPKernel}
+
+    def _query_image_support(self) -> bool:
+        """True when the device exposes the texture/image API."""
+        err, val = hip.hipDeviceGetAttribute(
+            hip.hipDeviceAttribute_t.hipDeviceAttributeImageSupport,
+            self._device)
+        _check_hip(err)
+        return bool(val)
+
+    def _query_max_image_3d(self) -> int:
+        """Smallest of the three max 3D texture extents, 0 if unreported.
+
+        Only consulted on devices that claim image support; a device that
+        reports a non-positive extent is treated as unbounded rather than
+        as forbidding every texture, since the extent is advisory and the
+        support flag above is the real gate.
+        """
+        dims = []
+        for name in ("hipDeviceAttributeMaxTexture3DWidth",
+                     "hipDeviceAttributeMaxTexture3DHeight",
+                     "hipDeviceAttributeMaxTexture3DDepth"):
+            err, val = hip.hipDeviceGetAttribute(
+                getattr(hip.hipDeviceAttribute_t, name), self._device)
+            _check_hip(err)
+            dims.append(val)
+        return min(dims) if all(d > 0 for d in dims) else 0
+
+    def _store_texture_shapes(self, ir_func, effective_args):
+        """Record Texture3D extents, falling back to software sampling.
+
+        Mirrors the Level Zero backend: devices with no texture hardware,
+        or textures past the device's 3D image limit, are sampled in
+        software instead. That changes the generated code, so it is decided
+        here — before the variant key is built — rather than at codegen time.
+        """
+        from tack.lang.field import Texture3D
+        max_dim = self._max_image_3d
+        for param, arg in zip(ir_func.params, effective_args):
+            if isinstance(arg, Texture3D):
+                W, H, D = arg.shape_3d
+                if self._has_image_support and (
+                        max_dim == 0
+                        or (W <= max_dim and H <= max_dim and D <= max_dim)):
+                    param._texture_shape = arg.shape_3d
+                else:
+                    param._is_texture = False  # software fallback
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> HIPBuffer:
@@ -350,24 +406,40 @@ class HIPBackend(Backend):
             'hip_pinned'  — pinned host memory (hipHostMalloc)
             'hip_managed' — unified memory (hipMallocManaged)
             'cpu'         — unregistered host memory
+
+        This answered 'cpu' for every pointer until 2026-08-11, on the first
+        machine that could run it. Two mistakes, both swallowed by a broad
+        `except` that returned 'cpu': `hipPointerGetAttributes` takes the
+        attribute struct as an out-parameter rather than returning it, and
+        `hip.hipSuccess` does not exist (it is `hip.hipError_t.hipSuccess`).
+        Since `field_from_ptr` validates against this, *every* attempt to
+        wrap a HIP device pointer was rejected as host memory — which is the
+        DLPack import path and the VTK device interop, both of them.
         """
         try:
-            err, attrs = hip.hipPointerGetAttributes(hip.hipDeviceptr_t(int(ptr)))
-            if err != hip.hipSuccess:
-                return "cpu"
-            mem_type = attrs.type if hasattr(attrs, 'type') else attrs.memoryType
-            # hipMemoryTypeHost=1, hipMemoryTypeDevice=2, hipMemoryTypeUnified=3
-            return {1: "hip_pinned", 2: "hip", 3: "hip_managed"}.get(
-                int(mem_type), "cpu")
-        except (AttributeError, TypeError, ValueError, OverflowError):
-            # See the same handler in cuda_backend: HIP's own failures come
-            # back as an error code, handled above, so what is caught here
-            # is a binding whose shape differs from this one's assumptions
-            # -- `attrs.type` versus `attrs.memoryType`, which the line
-            # above already has to guess at -- or a `ptr` that is not an
-            # address. A real driver fault propagates now instead of being
-            # reported as host memory.
+            addr = int(ptr)
+        except (TypeError, ValueError, OverflowError):
+            # Not an address at all — Metal hands MTLBuffer objects around,
+            # and callers pass whatever they have.
             return "cpu"
+
+        # `attributes` is an out-parameter: hip-python allocates nothing for
+        # you, and the result tuple carries only the error code. Getting this
+        # wrong is how this function came to answer "cpu" for every pointer
+        # it was ever given -- see the note below.
+        attrs = hip.hipPointerAttribute_t()
+        res = hip.hipPointerGetAttributes(attrs, hip.hipDeviceptr_t(addr))
+        err = res[0] if isinstance(res, tuple) else res
+        if int(err) != int(hip.hipError_t.hipSuccess):
+            # Documented outcome for a pointer HIP does not recognise, which
+            # is what an ordinary host allocation is.
+            return "cpu"
+
+        # hipMemoryTypeUnregistered=0 (plain host memory), Host=1, Device=2,
+        # Managed=3, Array=10, Unified=11. Anything not device-addressable
+        # falls through to "cpu".
+        return {1: "hip_pinned", 2: "hip", 3: "hip_managed",
+                11: "hip_managed"}.get(int(attrs.type), "cpu")
 
     def wrap_ptr(self, ptr, dtype, shape):
         """Wrap an existing HIP device pointer without allocating or copying."""
@@ -390,6 +462,7 @@ class HIPBackend(Backend):
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
             build=self._build_variant,
+            store_texture_shapes=self._store_texture_shapes,
         )
         compiled, pack_info, pack_fields = variant.payload
 

@@ -2,7 +2,9 @@
 
 import tack
 from tack.codegen.hip_gen import generate_hip_source
+from tack.lang.ir_resolve import resolve_ir
 from tack.lang.type_inference import infer_param_types
+from tack.runtime.kernel_utils import dispatch_name_to_field
 
 
 def _get_ir(kernel_fn, *field_shapes):
@@ -107,3 +109,58 @@ class TestHIPCodeGen:
         assert src.count('__restrict__') == 3
         # Should have the n parameter
         assert 'long long __n__' in src
+
+
+def _texture_ir():
+    """IR for a texture-sampling kernel, with the texture param marked.
+
+    `infer_param_types` is what sets `_is_texture`, so passing a real
+    Texture3D is enough — the hardware-sampling path is selected exactly as
+    it would be on a device that has texture units.
+    """
+    tack.init(arch=tack.cpu)
+    data = tack.field(dtype=tack.f32, shape=(64,))
+    out = tack.field(dtype=tack.f32, shape=(1,))
+    tex = tack.texture3d(data, shape=(4, 4, 4))
+
+    @tack.kernel
+    def sample(out, tex, count):
+        for i in range(count):
+            out[i] = tex.sample(0.5, 0.5, 0.5)
+
+    # The transform has to be told which param is a texture, or `tex.sample`
+    # is just an unknown method call.
+    ir_func = sample.get_ir(texture_fields={'tex': (4, 4, 4)}).functions[0]
+    # resolve fills IRTextureSample.shape, which codegen reads. Build the
+    # name map the same way dispatch does, so the texture resolves to its
+    # 3D extent rather than the flat field's length.
+    args = (out, tex, 1)
+    resolve_ir(ir_func, dispatch_name_to_field(ir_func, args))
+    infer_param_types(ir_func, args)
+    for param, arg in zip(ir_func.params, args):
+        if getattr(param, '_is_texture', False):
+            param._texture_shape = arg.shape_3d
+    return ir_func
+
+
+class TestHIPTextureHandleType:
+    """The texture handle is the one type HIP does not spell like CUDA.
+
+    `hip_gen` inherits the whole signature builder from `CUDACodeGen`, so
+    the handle came out as `cudaTextureObject_t` and hipRTC rejected the
+    kernel outright: "unknown type name 'cudaTextureObject_t'". No device
+    is needed to see it — the string is in the generated source.
+    """
+
+    def test_hip_emits_hip_texture_object(self):
+        src = generate_hip_source(_texture_ir())
+        assert 'hipTextureObject_t' in src
+        assert 'cudaTextureObject_t' not in src
+
+    def test_cuda_still_emits_cuda_texture_object(self):
+        """The shared constant must not have moved CUDA onto HIP's spelling."""
+        from tack.codegen.cuda_gen import generate_cuda_source
+
+        src = generate_cuda_source(_texture_ir())
+        assert 'cudaTextureObject_t' in src
+        assert 'hipTextureObject_t' not in src

@@ -231,7 +231,9 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 
 ## HIP backend notes
 
-The HIP codegen (`hip_gen.py`) extends `CUDACodeGen` — HIP device code uses the same syntax as CUDA (`blockIdx`, `threadIdx`, `__global__`, `__shared__`, `__syncthreads`). The only difference is `#include <hip/hip_runtime.h>`. The runtime (`hip_backend.py`) uses `hip-python` bindings for hipRTC compilation and dispatch.
+The HIP codegen (`hip_gen.py`) extends `CUDACodeGen` — HIP device code uses the same syntax as CUDA (`blockIdx`, `threadIdx`, `__global__`, `__shared__`, `__syncthreads`). The differences are `#include <hip/hip_runtime.h>` and the texture handle type, which HIP spells `hipTextureObject_t` (`_TEXTURE_OBJECT_TYPE`, overridden from CUDA's). The runtime (`hip_backend.py`) uses `hip-python` bindings for hipRTC compilation and dispatch.
+
+**Textures need a device that has them.** CDNA parts — gfx940/941/942, i.e. MI300 — have no texture/image hardware, and hipRTC refuses `tex3D` outright ("The image/texture API not supported on the device"). The backend asks `hipDeviceAttributeImageSupport` at init and falls back to software trilinear sampling where the answer is no, the same way the Level Zero backend handles Xe-HPC. The decision is made in `_store_texture_shapes`, before the variant key is built, because it changes the generated code.
 
 `hip-python` is on PyPI now (it used to be Test-PyPI only), so the `[hip]` extra declares it:
 
@@ -239,11 +241,13 @@ The HIP codegen (`hip_gen.py`) extends `CUDACodeGen` — HIP device code uses th
 uv sync --extra hip     # or: pip install tack-core[hip]
 ```
 
-manylinux x86_64 wheels only, so the dependency carries a platform marker and is skipped elsewhere. Its version tracks the ROCm release it binds to — 7.1.x against ROCm 7.1, 7.2.x against 7.2 — so the extra sets a lower bound rather than a pin, and a mismatched ROCm wants an explicit `hip-python~=7.2.0`.
+manylinux x86_64 wheels only, so the dependency carries a platform marker and is skipped elsewhere. Its version tracks the ROCm release it binds to — 7.1.x against ROCm 7.1, 7.2.x against 7.2 — so the extra sets a lower bound rather than a pin, and a mismatched ROCm may want an explicit `hip-python~=7.0.0`.
+
+That mismatch is not always fatal, which is worth knowing before pinning on principle: the lower bound resolves to the newest wheel, so **ROCm 7.0.2 got hip-python 7.2.2 — two minor versions ahead — and the whole suite passed on it**, MI300X, 2026-08-11. Treat the pin as the fix for an actual failure rather than a precaution.
 
 Then: `tack.init(arch=tack.hip)`.
 
-**Known issue**: `hiprtcDestroyProgram` segfaults in hip-python **7.1** bindings. The backend skips the call (minor leak, mitigated by kernel caching). Whether 7.2 fixed it is untested — there is no ROCm machine here — so the workaround stays until somebody can check.
+**Known issue**: `hiprtcDestroyProgram` segfaults in hip-python. The backend skips the call (minor leak, mitigated by kernel caching). Recorded against **7.1**; **checked on 2026-08-11 against hip-python 7.2.2 / ROCm 7.0.2 on an MI300X and it still segfaults** — SIGSEGV on the first call, after a successful compile. The documented calling convention is the one that crashes: `hiprtcDestroyProgram(prog)` takes the program directly, and passing a pointer to it is rejected by the binding as a type error. The workaround stays.
 
 ## Level Zero backend notes
 

@@ -103,6 +103,11 @@ def _safe_kernel_name(name: str) -> str:
 class CUDACodeGen:
     """Generates CUDA C source from a Tack IR function."""
 
+    # Spelling of the opaque texture handle in the generated source. HIP
+    # reuses this whole class and calls the type something else, so it is
+    # named here rather than inlined into the signature below.
+    _TEXTURE_OBJECT_TYPE = "cudaTextureObject_t"
+
     def __init__(self, ir_func: ir.IRFunction):
         self.ir_func = ir_func
         self._indent = 0
@@ -141,7 +146,7 @@ class CUDACodeGen:
         for param in func.params:
             c_type = _C_TYPE_MAP[param.type_annotation]
             if param.name in self._texture_params:
-                params_c.append(f"cudaTextureObject_t {param.name}")
+                params_c.append(f"{self._TEXTURE_OBJECT_TYPE} {param.name}")
             elif param.name in self._field_params:
                 params_c.append(f"{c_type}* __restrict__ {param.name}")
             else:

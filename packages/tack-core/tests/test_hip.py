@@ -435,3 +435,57 @@ def test_print_in_kernel():
 
     kern(x, out)
     np.testing.assert_allclose(out.to_numpy(), [2.0, 4.0, 6.0])
+
+
+# --- Pointer classification and DLPack ---
+
+def test_memory_space_classifies_device_memory():
+    """A hipMalloc pointer must not be reported as host memory.
+
+    This returned 'cpu' for every pointer until the first ROCm machine ran
+    it: the attribute struct is an out-parameter and `hip.hipSuccess` does
+    not exist, and a broad `except` turned both mistakes into 'cpu'.
+    """
+    x = tack.field(dtype=tack.f32, shape=(8,))
+    assert tack.memory_space(int(x._buffer.device_ptr)) == "hip"
+
+
+def test_memory_space_classifies_host_memory():
+    """An ordinary host allocation still reads as 'cpu'."""
+    host = np.arange(8, dtype=np.float32)
+    assert tack.memory_space(host.ctypes.data) == "cpu"
+
+
+def test_dlpack_device_is_rocm():
+    x = tack.field(dtype=tack.f32, shape=(8,))
+    device_type, _ = x.__dlpack_device__()
+    assert device_type == 10  # kDLROCM
+
+
+def test_dlpack_round_trip_aliases():
+    """A HIP field imported back through DLPack shares its allocation.
+
+    Checked by writing through each handle with a kernel and reading the
+    other, since equal values alone cannot tell an alias from a copy.
+    """
+    x = tack.field(dtype=tack.f32, shape=(8,))
+    x.from_numpy(np.zeros(8, dtype=np.float32))
+
+    y = tack.from_dlpack(x)
+    assert int(y._buffer.device_ptr) == int(x._buffer.device_ptr)
+
+    @tack.kernel
+    def bump(a, n):
+        for i in range(n):
+            a[i] = a[i] + 5.0
+
+    bump(y, 8)
+    np.testing.assert_allclose(x.to_numpy(), 5.0)
+    bump(x, 8)
+    np.testing.assert_allclose(y.to_numpy(), 10.0)
+
+
+def test_dlpack_refuses_host_tensor():
+    """A host tensor cannot be wrapped without copying, and says so."""
+    with pytest.raises(RuntimeError, match="cannot wrap without copying"):
+        tack.from_dlpack(np.arange(8, dtype=np.float32))
