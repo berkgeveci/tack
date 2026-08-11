@@ -13,11 +13,18 @@ Nothing has to be declared.
 
 The pipeline below is the one that matters in practice -- a Tack kernel
 generating a field, a VTK filter consuming it, and a Tack kernel measuring
-the result. On CUDA or HIP the same code keeps everything on the device:
-DLPack carries the device pointer, and neither side copies to the host.
-That path additionally needs VTK built with the Viskores accelerators
-(-DVTK_MODULE_ENABLE_VTK_AcceleratorsVTKmCore=YES), which is what wraps
-device memory as a vtkmDataArray.
+the result. On CUDA or HIP the *handoff* stays on the device: DLPack
+carries the device pointer and VTK wraps it as a vtkmDataArray, which needs
+VTK built with the Viskores accelerators
+(-DVTK_MODULE_ENABLE_VTK_AcceleratorsVTKmCore=YES).
+
+What the handoff cannot decide is where the filter runs. vtkContourFilter
+is a host filter: it reads through GetComponent(), so Viskores stages the
+data down to the host to feed it, and the array it produces is host memory.
+So on a device backend the way in is zero-copy and the way back is not --
+and step 4 says so rather than hiding it. Keeping the whole pipeline on the
+device needs a device filter (vtkmContour and friends), which is a
+different pipeline than this one.
 
 Usage:
   python examples/39_vtk_interop.py [--arch cpu|metal|cuda|hip]
@@ -125,10 +132,31 @@ if output.GetNumberOfPoints() == 0:
 
 
 # ── Step 4: bring the result back into Tack ──────────────────────────
+#
+# Where the result lives is the filter's choice, not ours, so ask rather
+# than assume. A host filter's output is host memory even when its input
+# was on the device, and wrapping host memory into a device backend would
+# hand a kernel an address it cannot dereference -- so vtk_to_field
+# refuses it, and the copy is made here where it is visible.
 
-result = vtk_to_field(output.GetPoints().GetData())
-print(f"\nBack in Tack: {result.shape} -- {result.shape[1]} components, "
-      f"still VTK's memory")
+from vtkmodules.util.numpy_support import vtk_to_numpy
+from vtkmodules.vtkCommonCore import vtkDataArray
+
+out_array = output.GetPoints().GetData()
+on_device = bool(get_backend().device_memory_spaces)
+output_is_host = out_array.GetMemorySpace() == vtkDataArray.HostMemory
+staged_back = on_device and output_is_host
+
+if staged_back:
+    host = vtk_to_numpy(out_array)
+    result = tack.field(dtype=tack.f32, shape=host.shape)
+    result.from_numpy(host)
+    where = "copied up from the host, because the filter ran there"
+else:
+    result = vtk_to_field(out_array)
+    where = "still VTK's memory"
+
+print(f"\nBack in Tack: {result.shape} -- {result.shape[1]} components, {where}")
 
 
 # ── Step 5: compute on it, to show it is really there ────────────────
@@ -154,4 +182,9 @@ print(f"  bounds x [{lo_v[0]:.3f}, {hi_v[0]:.3f}]  "
       f"y [{lo_v[1]:.3f}, {hi_v[1]:.3f}]  "
       f"z [{lo_v[2]:.3f}, {hi_v[2]:.3f}]")
 
-print("\nTack kernel -> VTK filter -> Tack kernel, no copies")
+if staged_back:
+    print("\nTack kernel -> VTK filter -> Tack kernel.")
+    print("The handoff was zero-copy both ways; the host filter in the "
+          "middle is what staged the data down and back.")
+else:
+    print("\nTack kernel -> VTK filter -> Tack kernel, no copies")
