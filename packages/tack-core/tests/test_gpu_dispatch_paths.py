@@ -198,17 +198,28 @@ check("declares supported dtypes", bool(b.supported_dtypes))
 check("supports_f64 is derived from supported_dtypes",
       b.supports_f64 == (tack.lang.types.f64 in b.supported_dtypes))
 check("label is prose, not an identifier", "_" not in b.label)
-check("memory_space answers", isinstance(b.memory_space(0), str))
+# Deliberately not `memory_space(0)`. Zero is a plausible address, so it
+# reaches the bindings -- and under MagicMock the bindings cannot answer,
+# so whatever came back was the mock's invention rather than the
+# backend's. Asserting it was a string was asserting that the stub had
+# produced *something*, which it always will.
+#
+# What is knowable under stubs is the part decided before the driver is
+# involved: an input that cannot be an address is refused by `as_address`,
+# so these answers are the backend's own.
+check("refuses a non-integer as an address",
+      b.memory_space("not a pointer") == "cpu")
+check("refuses an integer too large to be an address",
+      b.memory_space(1 << 200) == "cpu")
 if b.device_memory_spaces:
     check("classifies the pointers it validates",
           type(b).memory_space is not BaseBackend.memory_space)
 
-    # The handler in memory_space() is narrow on purpose: a driver fault
-    # must not be reported as host memory, because the damage lands
-    # upstream -- field_from_ptr then refuses a good device pointer with a
-    # message about the wrong thing. Under these stubs the query raises a
-    # marshalling error, which is one of the kinds it *should* absorb; a
-    # RuntimeError is not, and has to escape.
+    # And a real address does reach the driver, which is the point of
+    # moving the call outside the `try`: a fault there must not come back
+    # as host memory, because the damage lands upstream -- field_from_ptr
+    # then refuses a good device pointer with a message about the wrong
+    # thing. D9 is what that costs when it goes unnoticed.
     # Import only this run's backend: each subprocess stubs the bindings
     # for its own and no other, so reaching for a sibling module fails on
     # the real import rather than the thing under test.

@@ -24,6 +24,7 @@ from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u3
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
+    as_address,
     new_kernel_cache,
     resolve_variant,
 )
@@ -416,11 +417,13 @@ class HIPBackend(Backend):
         wrap a HIP device pointer was rejected as host memory — which is the
         DLPack import path and the VTK device interop, both of them.
         """
-        try:
-            addr = int(ptr)
-        except (TypeError, ValueError, OverflowError):
+        addr = as_address(ptr)
+        if addr is None:
             # Not an address at all — Metal hands MTLBuffer objects around,
-            # and callers pass whatever they have.
+            # and callers pass whatever they have. The range half of that
+            # question matters here too: `int()` accepts 1 << 200 happily
+            # and the binding then refuses it from inside its own
+            # marshalling, which used to be caught and reported as "cpu".
             return "cpu"
 
         # `attributes` is an out-parameter: hip-python allocates nothing for

@@ -29,6 +29,33 @@ from tack.lang.field import Field
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
 
 
+def as_address(ptr) -> int | None:
+    """`ptr` as a machine address, or None if it cannot be one.
+
+    Both GPU backends' `memory_space()` needs this, and both arrived at it
+    by catching whatever the attempt happened to raise. That is the shape
+    D9 is about: a handler wide enough to absorb "not an address" is wide
+    enough to absorb "I called the binding wrong", and it answers both with
+    the same confident `"cpu"`.
+
+    The two cases separate cleanly if the question is asked directly.
+    `int()` rejects objects and strings; the range check rejects integers
+    that are the right type and still cannot be addresses -- negatives, and
+    anything past 64 bits, which the bindings would otherwise refuse from
+    inside their own marshalling. Doing it here means neither backend has
+    to catch `OverflowError` around the API call, so the call can sit
+    outside the `try` where a mistaken one is a traceback.
+
+    Deliberately not a validity check: any 64-bit value can be an address,
+    and deciding whether this one *is* is the driver's job.
+    """
+    try:
+        addr = int(ptr)
+    except (TypeError, ValueError):
+        return None
+    return addr if 0 <= addr < (1 << 64) else None
+
+
 def new_kernel_cache():
     """Create a backend compiled-kernel cache.
 

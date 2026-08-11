@@ -22,6 +22,7 @@ from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u3
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
+    as_address,
     new_kernel_cache,
     resolve_variant,
 )
@@ -477,30 +478,25 @@ class CUDABackend(Backend):
             'cuda_managed' — unified memory (cudaMallocManaged)
             'cpu'          — unregistered host memory
         """
-        try:
-            err, mem_type = driver.cuPointerGetAttribute(
-                driver.CUpointer_attribute.CU_POINTER_ATTRIBUTE_MEMORY_TYPE,
-                int(ptr))
-            if err != driver.CUresult.CUDA_SUCCESS:
-                return "cpu"
-            # CU_MEMORYTYPE_HOST=1, CU_MEMORYTYPE_DEVICE=2,
-            # CU_MEMORYTYPE_ARRAY=3, CU_MEMORYTYPE_UNIFIED=4
-            return {1: "cuda_pinned", 2: "cuda", 4: "cuda_managed"}.get(
-                int(mem_type), "cpu")
-        except (AttributeError, TypeError, ValueError, OverflowError):
-            # Narrow deliberately. CUDA's own failures arrive as an error
-            # *code*, handled above, so anything raised here is a
-            # Python-side problem: a binding whose shape differs from the
-            # one this was written against (AttributeError), or a `ptr`
-            # that is not an address (the rest). Those do mean "cannot
-            # establish that this is device memory", which is what "cpu"
-            # says.
-            #
-            # `except Exception` also swallowed real driver faults and
-            # reported them as host memory, and the damage is done
-            # upstream rather than here: `field_from_ptr` then refuses a
-            # good device pointer with a message about the wrong thing.
+        addr = as_address(ptr)
+        if addr is None:
+            # Not an address at all. Asked and answered before the driver
+            # is involved, so the API call below needs no `try` around it
+            # and a mistaken one is a traceback rather than a quiet "cpu".
             return "cpu"
+
+        err, mem_type = driver.cuPointerGetAttribute(
+            driver.CUpointer_attribute.CU_POINTER_ATTRIBUTE_MEMORY_TYPE, addr)
+        if err != driver.CUresult.CUDA_SUCCESS:
+            # The documented reply for memory the driver does not know --
+            # CUDA_ERROR_INVALID_VALUE for an ordinary host allocation.
+            # Verified on an RTX 4060 Ti, 2026-08-11: this branch answers
+            # for every pointer and the old fallback never fired.
+            return "cpu"
+        # CU_MEMORYTYPE_HOST=1, CU_MEMORYTYPE_DEVICE=2,
+        # CU_MEMORYTYPE_ARRAY=3, CU_MEMORYTYPE_UNIFIED=4
+        return {1: "cuda_pinned", 2: "cuda", 4: "cuda_managed"}.get(
+            int(mem_type), "cpu")
 
     def wrap_ptr(self, ptr, dtype, shape):
         """Wrap an existing CUDA device pointer without allocating or copying."""

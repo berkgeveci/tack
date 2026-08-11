@@ -133,3 +133,54 @@ def test_device_memory_spaces_are_self_consistent(backend):
     if be.device_memory_spaces:
         assert type(be).memory_space is not Backend.memory_space, \
             f"{be.name} lists device memory spaces but inherits the default"
+
+
+# ── What counts as an address ────────────────────────────────────────
+#
+# D9: HIP's memory_space() answered "cpu" for every pointer it was ever
+# given, because two binding mistakes landed in a handler wide enough to
+# absorb them. The handler was wide because it had to cover "not an
+# address" as well, and those two questions want separating -- a handler
+# that cannot tell "not a pointer" from "I called this wrong" should not
+# answer either confidently.
+#
+# `as_address` is that separation, so it is worth pinning directly: it is
+# the reason both GPU backends can now make their API call outside a
+# `try`, where a mistaken one is a traceback.
+
+@pytest.mark.parametrize("value,expected", [
+    (0, 0),
+    (4096, 4096),
+    ((1 << 64) - 1, (1 << 64) - 1),      # the last address there is
+])
+def test_addresses_pass_through(value, expected):
+    from tack.runtime.kernel_utils import as_address
+    assert as_address(value) == expected
+
+
+@pytest.mark.parametrize("value", [
+    "not a pointer",
+    None,
+    object(),                            # Metal hands MTLBuffer objects around
+])
+def test_things_that_are_not_integers_are_refused(value):
+    from tack.runtime.kernel_utils import as_address
+    assert as_address(value) is None
+
+
+@pytest.mark.parametrize("value", [
+    1 << 64,                             # one past the last address
+    1 << 200,                            # the case that motivated the range check
+    -1,
+])
+def test_integers_too_big_or_negative_to_be_addresses_are_refused(value):
+    """The half `int()` alone cannot see.
+
+    `int(1 << 200)` succeeds -- Python integers are unbounded -- and the
+    bindings then refuse it from inside their own marshalling, raising
+    after the API call rather than before it. Caught, that became "cpu";
+    uncaught, it is an OverflowError from somewhere the caller has no
+    context for. Asking here makes it neither.
+    """
+    from tack.runtime.kernel_utils import as_address
+    assert as_address(value) is None
