@@ -68,13 +68,16 @@ class ExportedMemory:
     """Handle for sharing GPU memory across APIs (e.g. Tack → Dawn/Vulkan).
 
     Contains only plain Python values — no dependency on any GPU library.
-    The consumer dispatches on ``backend`` to choose the right import path
-    (e.g. MTLBuffer pointer for Metal, POSIX fd for CUDA/Vulkan).
+    The consumer dispatches on ``handle_type`` to choose the right import
+    path. ``backend`` alone does not settle it: CUDA exports a POSIX fd on
+    Linux and a Win32 KMT handle on Windows, and those are imported by
+    different calls.
     """
     backend: str            # "metal", "cuda", "hip", "level_zero"
     size: int               # usable data size in bytes
     allocation_size: int    # actual allocation size (may be rounded up)
     handle: object          # backend-specific: MTLBuffer ptr (int), fd (int), etc.
+    handle_type: str | None = None    # "mtl_buffer", "posix_fd", "win32_kmt"
     device_uuid: bytes | None = None  # GPU device UUID (CUDA/HIP/L0)
 
 

@@ -75,6 +75,7 @@ class MetalBuffer(DeviceBuffer):
             size=self._view.nbytes,
             allocation_size=self._metal_buffer.length(),
             handle=objc.pyobjc_id(self._metal_buffer),
+            handle_type="mtl_buffer",
         )
 
 
