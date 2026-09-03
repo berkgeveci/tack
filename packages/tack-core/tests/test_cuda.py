@@ -240,3 +240,118 @@ def test_export_memory():
 
     # Exporting copies into VMM-backed memory; the field itself is untouched.
     assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+
+
+# --- Context ownership across re-initialization ---
+
+def test_repeated_init_keeps_context_usable():
+    """``tack.init(arch=tack.cuda)`` twice in a row must not kill the context.
+
+    ``init()`` builds the new backend before dropping the old one, so for a
+    moment two CUDABackend objects hold the same context. The adopting one
+    used to record ``_owns_context = False`` -- correct for a context owned
+    by an embedding application, wrong for one Tack created -- and the
+    outgoing backend's ``__del__`` then destroyed the context out from under
+    it. Every later CUDA call failed with CUDA_ERROR_INVALID_CONTEXT.
+
+    The autouse fixture has already initialized CUDA, so the init below is
+    the second one.
+    """
+    import gc
+
+    tack.init(arch=tack.cuda)
+    gc.collect()  # force the outgoing backend's __del__ to run now
+
+    n = 64
+    f = tack.field(dtype=tack.f32, shape=(n,))
+    f.from_numpy(np.arange(n, dtype=np.float32))
+    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+
+
+def test_many_repeated_inits_do_not_leak_contexts():
+    """Re-initializing repeatedly reuses one context rather than stacking them.
+
+    The invariant is that the refcount equals the number of live backends,
+    however many that happens to be: a plain script settles at one, but a
+    test runner can keep a superseded backend alive in a frame or traceback
+    for a while, and that is not a leak. What would be a leak is the count
+    climbing with the number of inits, or a second context appearing.
+    """
+    import gc
+
+    from tack.runtime.cuda_backend import _OWNED_CONTEXTS, CUDABackend
+
+    for _ in range(5):
+        tack.init(arch=tack.cuda)
+    gc.collect()
+
+    live = sum(1 for o in gc.get_objects() if isinstance(o, CUDABackend))
+    assert len(_OWNED_CONTEXTS) == 1
+    assert list(_OWNED_CONTEXTS.values()) == [live]
+
+    f = tack.field(dtype=tack.f32, shape=(32,))
+    f.from_numpy(np.ones(32, dtype=np.float32))
+    assert f.to_numpy()[0] == 1.0
+
+
+def test_kernel_runs_after_reinit():
+    """A dispatch after re-initialization compiles and runs against a live context."""
+    tack.init(arch=tack.cuda)
+
+    n = 128
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.ones(n, dtype=np.float32))
+
+    @tack.kernel
+    def triple(x, out):
+        for i in range(x.shape[0]):
+            out[i] = x[i] * 3.0
+
+    triple(x, out)
+    assert np.allclose(out.to_numpy(), 3.0)
+
+
+def test_foreign_context_is_adopted_but_never_destroyed():
+    """A context Tack did not create stays alive after every backend is gone.
+
+    This is the case the adoption logic exists for -- an embedding framework
+    (AMReX and friends) sets up its own context and expects Tack to share it,
+    not to take it away. Refcounting ownership must not regress that: a
+    foreign context is never recorded as owned, so nothing ever destroys it.
+    """
+    import gc
+
+    from cuda.bindings import driver
+
+    from tack.runtime import dispatch
+    from tack.runtime.cuda_backend import _OWNED_CONTEXTS
+
+    # Drop Tack's own context first, so the one we create is the current one.
+    tack.init(arch=tack.cpu)
+    gc.collect()
+
+    driver.cuInit(0)
+    err, dev = driver.cuDeviceGet(0)
+    assert err == driver.CUresult.CUDA_SUCCESS
+    err, foreign = driver.cuCtxCreate(None, 0, dev)
+    assert err == driver.CUresult.CUDA_SUCCESS
+
+    try:
+        tack.init(arch=tack.cuda)
+        backend = dispatch.get_backend()
+
+        assert int(backend._context) == int(foreign)
+        assert backend._owns_context is False
+        assert int(foreign) not in _OWNED_CONTEXTS
+
+        # Tear every Tack backend down; the foreign context must survive.
+        del backend
+        tack.init(arch=tack.cpu)
+        gc.collect()
+
+        err, ptr = driver.cuMemAlloc(256)
+        assert err == driver.CUresult.CUDA_SUCCESS, "foreign context was destroyed"
+        driver.cuMemFree(ptr)
+    finally:
+        driver.cuCtxDestroy(foreign)

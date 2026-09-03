@@ -518,6 +518,13 @@ class CompiledCUDAKernel:
         _check(driver.cuCtxSynchronize())
 
 
+# Contexts Tack itself created, mapped to the number of live CUDABackend
+# objects using each. A context is destroyed when that count reaches zero.
+# Contexts created by an embedding application never appear here, so they
+# are never destroyed.
+_OWNED_CONTEXTS: dict[int, int] = {}
+
+
 class CUDABackend(Backend):
     """CUDA GPU backend — device-resident fields, NVRTC compilation."""
 
@@ -536,14 +543,31 @@ class CUDABackend(Backend):
         # Reuse an existing CUDA context if one is already active (e.g. from
         # a simulation framework like AMReX).  Only create a new context when
         # no current context exists.
+        #
+        # Whether the context may be destroyed is a property of the context,
+        # not of the backend that happens to hold it: `tack.init(arch=...)`
+        # builds the new backend before dropping the old one, so two
+        # CUDABackend objects routinely share one context for a moment. When
+        # that context is ours, both must agree that the *last* one out
+        # destroys it -- an adopter that recorded `_owns_context = False`
+        # would be left holding a destroyed context as soon as its creator
+        # was collected, and every later call would fail with
+        # CUDA_ERROR_INVALID_CONTEXT. Refcounting the context gets that
+        # right while leaving a foreign context untouched, which is the
+        # whole point of adopting one.
         err, ctx = driver.cuCtxGetCurrent()
         if err == driver.CUresult.CUDA_SUCCESS and int(ctx) != 0:
             self._context = ctx
-            self._owns_context = False
+            # Ours only if some live backend created it; anything else
+            # belongs to the embedding application and is never destroyed.
+            self._owns_context = int(ctx) in _OWNED_CONTEXTS
+            if self._owns_context:
+                _OWNED_CONTEXTS[int(ctx)] += 1
         else:
             err, self._context = driver.cuCtxCreate(None, 0, self._device)
             _check(err)
             self._owns_context = True
+            _OWNED_CONTEXTS[int(self._context)] = 1
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledCUDAKernel}
 
@@ -734,6 +758,12 @@ class CUDABackend(Backend):
     def __del__(self):
         if hasattr(self, '_context') and self._owns_context:
             try:
-                driver.cuCtxDestroy(self._context)
+                key = int(self._context)
+                remaining = _OWNED_CONTEXTS.get(key, 0) - 1
+                if remaining > 0:
+                    _OWNED_CONTEXTS[key] = remaining
+                else:
+                    _OWNED_CONTEXTS.pop(key, None)
+                    driver.cuCtxDestroy(self._context)
             except Exception:
                 pass
