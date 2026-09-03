@@ -279,15 +279,15 @@ def test_many_repeated_inits_do_not_leak_contexts():
     """
     import gc
 
-    from tack.runtime.cuda_backend import _OWNED_CONTEXTS, CUDABackend
+    from tack.runtime.cuda_backend import _CONTEXTS, CUDABackend
 
     for _ in range(5):
         tack.init(arch=tack.cuda)
     gc.collect()
 
     live = sum(1 for o in gc.get_objects() if isinstance(o, CUDABackend))
-    assert len(_OWNED_CONTEXTS) == 1
-    assert list(_OWNED_CONTEXTS.values()) == [live]
+    assert len(_CONTEXTS) == 1
+    assert [t.users for t in _CONTEXTS.values()] == [live]
 
     f = tack.field(dtype=tack.f32, shape=(32,))
     f.from_numpy(np.ones(32, dtype=np.float32))
@@ -325,7 +325,7 @@ def test_foreign_context_is_adopted_but_never_destroyed():
     from cuda.bindings import driver
 
     from tack.runtime import dispatch
-    from tack.runtime.cuda_backend import _OWNED_CONTEXTS
+    from tack.runtime.cuda_backend import _CONTEXTS
 
     # Drop Tack's own context first, so the one we create is the current one.
     tack.init(arch=tack.cpu)
@@ -343,7 +343,9 @@ def test_foreign_context_is_adopted_but_never_destroyed():
 
         assert int(backend._context) == int(foreign)
         assert backend._owns_context is False
-        assert int(foreign) not in _OWNED_CONTEXTS
+        # Tracked, so buffers get a token to hold, but not owned -- which is
+        # what keeps it out of cuCtxDestroy's way.
+        assert _CONTEXTS[int(foreign)].owned is False
 
         # Tear every Tack backend down; the foreign context must survive.
         del backend
@@ -355,3 +357,116 @@ def test_foreign_context_is_adopted_but_never_destroyed():
         driver.cuMemFree(ptr)
     finally:
         driver.cuCtxDestroy(foreign)
+
+
+# --- Fields do not outlive their context ---
+
+# These run in a subprocess for two reasons. The scenario used to be a
+# SIGSEGV, and a segfault in-process takes the whole test session with it --
+# there would be no failure report, just a dead runner. And the root
+# conftest holds a CUDABackend in a module global for the life of the
+# session, so the CUDA context never actually reaches zero users here and an
+# in-process test could not build a stale field even if it were safe to.
+
+_STALE_PRELUDE = """
+import gc, sys
+import numpy as np
+import tack
+
+@tack.kernel
+def double(x, out):
+    for i in range(x.shape[0]):
+        out[i] = x[i] * 2.0
+
+tack.init(arch=tack.cuda)
+f = tack.field(dtype=tack.f32, shape=(64,))
+f.from_numpy(np.arange(64, dtype=np.float32))
+double(f, f)                 # compile a variant while the context is alive
+tack.init(arch=tack.cpu)     # destroys the CUDA context
+gc.collect()
+tack.init(arch=tack.cuda)    # fresh context; the old pointers stay dead
+"""
+
+
+def _run_stale_script(tmp_path, body):
+    """Run a stale-field access in a subprocess; return the CompletedProcess."""
+    import subprocess
+    import sys
+
+    script = tmp_path / "stale.py"
+    script.write_text(_STALE_PRELUDE + body)
+    return subprocess.run([sys.executable, "-u", str(script)],
+                          capture_output=True, text=True, timeout=300)
+
+
+def _assert_no_crash(proc):
+    """The process must have died of a Python exception, not a signal."""
+    assert proc.returncode >= 0, f"killed by signal {-proc.returncode}"
+    assert proc.returncode != 139, "segfaulted"
+
+
+@pytest.mark.parametrize("verb,action", [
+    ("read", "f.to_numpy()"),
+    ("write", "f.from_numpy(np.ones(64, dtype=np.float32))"),
+    ("fill", "f.fill(1.0)"),
+    ("export", "f.export_memory()"),
+    ("launch", "double(f, f)"),
+])
+def test_stale_field_raises_instead_of_segfaulting(tmp_path, verb, action):
+    """Touching a field whose context is gone must raise, not crash.
+
+    cuCtxDestroy invalidates every allocation made in the context, and a copy
+    through one of those pointers faults inside the driver -- SIGSEGV, with no
+    CUresult to check and no traceback to print. The buffer cannot learn this
+    from its own pointer, so it holds a token that the context marks dead on
+    the way out.
+    """
+    body = f"""
+try:
+    {action}
+except RuntimeError as e:
+    assert "context" in str(e), e
+    print("RAISED")
+    sys.exit(0)
+print("NO ERROR")
+sys.exit(1)
+"""
+    proc = _run_stale_script(tmp_path, body)
+    _assert_no_crash(proc)
+    assert "RAISED" in proc.stdout, (
+        f"{verb} did not raise (rc={proc.returncode})\n"
+        f"stdout: {proc.stdout}\nstderr: {proc.stderr[-2000:]}")
+
+
+def test_stale_field_can_be_collected_without_crashing(tmp_path):
+    """Freeing a dead allocation is the same fault as copying into one.
+
+    The context took the allocation with it, so ``__del__`` has to skip
+    cuMemFree rather than call it into a context that no longer exists.
+    """
+    body = """
+del f
+gc.collect()
+g = tack.field(dtype=tack.f32, shape=(16,))
+g.from_numpy(np.ones(16, dtype=np.float32))
+assert g.to_numpy()[0] == 1.0
+print("OK")
+"""
+    proc = _run_stale_script(tmp_path, body)
+    _assert_no_crash(proc)
+    assert proc.returncode == 0, f"stderr: {proc.stderr[-2000:]}"
+    assert "OK" in proc.stdout
+
+
+def test_field_survives_repeated_init():
+    """Re-initializing CUDA keeps the context, so existing fields stay valid."""
+    import gc
+
+    n = 64
+    f = tack.field(dtype=tack.f32, shape=(n,))
+    f.from_numpy(np.arange(n, dtype=np.float32))
+
+    tack.init(arch=tack.cuda)
+    gc.collect()
+
+    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))

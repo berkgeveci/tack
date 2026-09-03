@@ -157,6 +157,55 @@ def _check(err):
             raise RuntimeError(f"NVRTC error: {err}")
 
 
+class _ContextToken:
+    """Liveness shared by a CUDA context and every buffer allocated in it.
+
+    Device pointers do not outlive their context. ``cuCtxDestroy`` invalidates
+    every allocation made in it, and copying through one of those pointers
+    afterwards faults inside the driver -- a SIGSEGV, not a CUresult we could
+    check and report. So a buffer cannot ask whether its own pointer is still
+    good; it has to be told. Buffers hold the token their context handed out
+    and consult it before touching device memory.
+
+    ``users`` counts the live CUDABackend objects sharing the context.
+    ``tack.init()`` builds the new backend before dropping the old one, so two
+    of them routinely overlap, and the context must survive until the last one
+    goes. ``owned`` is False for a context an embedding application created:
+    Tack adopts those but never destroys them, so their token never dies here.
+    """
+
+    __slots__ = ("alive", "handle", "owned", "users")
+
+    def __init__(self, handle, owned):
+        self.handle = handle
+        self.users = 1
+        self.alive = True
+        self.owned = owned
+
+
+# Every CUDA context Tack is currently aware of, keyed by handle. Contexts an
+# embedding application created are in here too, marked ``owned=False``, so
+# that buffers allocated in them still get a token to hold.
+_CONTEXTS: dict[int, _ContextToken] = {}
+
+
+def _current_context_token():
+    """Token for the context that is current right now, or None if untracked."""
+    err, ctx = driver.cuCtxGetCurrent()
+    if err != driver.CUresult.CUDA_SUCCESS or int(ctx) == 0:
+        return None
+    return _CONTEXTS.get(int(ctx))
+
+
+_DEAD_CONTEXT_MSG = (
+    "the CUDA context this field was allocated in has been destroyed. "
+    "Switching backends -- tack.init(arch=tack.cpu) after tack.init("
+    "arch=tack.cuda) -- tears down the CUDA context, and every device "
+    "pointer allocated in it dies with the context. Fields do not survive "
+    "that; allocate them again after switching back."
+)
+
+
 class CUDABuffer(DeviceBuffer):
     """Device-resident buffer backed by a CUDA device pointer.
 
@@ -170,20 +219,32 @@ class CUDABuffer(DeviceBuffer):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
+        self._token = _current_context_token()
         err, self._device_ptr = driver.cuMemAlloc(self._nbytes)
         _check(err)
         # Zero-initialise
         _check(driver.cuMemsetD8(self._device_ptr, 0, self._nbytes))
 
+    def _live(self, verb):
+        """Refuse to touch device memory whose context is gone."""
+        token = getattr(self, "_token", None)
+        if token is not None and not token.alive:
+            raise RuntimeError(f"Cannot {verb} this CUDA field: {_DEAD_CONTEXT_MSG}")
+
     @property
     def device_ptr(self):
+        # Guarded because this is what a kernel launch reads: without the
+        # check a dispatch against a stale field faults in the driver.
+        self._live("run a kernel against")
         return self._device_ptr
 
     def from_numpy(self, arr: np.ndarray):
+        self._live("write to")
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
         _check(driver.cuMemcpyHtoD(self._device_ptr, src, self._nbytes))
 
     def to_numpy(self) -> np.ndarray:
+        self._live("read")
         out = np.empty(self._shape, dtype=self._numpy_dtype)
         _check(driver.cuMemcpyDtoH(out, self._device_ptr, self._nbytes))
         return out
@@ -198,6 +259,7 @@ class CUDABuffer(DeviceBuffer):
 
     def export_memory(self):
         """Export as ExportedMemory. Lazily copies into exportable memory."""
+        self._live("export")
         if not hasattr(self, '_export_buf'):
             self._export_buf = ExportableCUDABuffer(self._numpy_dtype, self._shape)
             _check(driver.cuMemcpyDtoD(
@@ -205,6 +267,11 @@ class CUDABuffer(DeviceBuffer):
         return self._export_buf.export_memory()
 
     def __del__(self):
+        # Freeing into a destroyed context is the same fault as copying into
+        # one, and the context took this allocation with it anyway.
+        token = getattr(self, "_token", None)
+        if token is not None and not token.alive:
+            return
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
                 driver.cuMemFree(self._device_ptr)
@@ -234,6 +301,7 @@ class ExportableCUDABuffer(DeviceBuffer):
         self._device_ptr = None
         self._exported_handle = None
         self._handle_type_name = None
+        self._token = _current_context_token()
 
         err, self._cuda_device = driver.cuCtxGetDevice()
         _check(err)
@@ -359,6 +427,11 @@ class ExportableCUDABuffer(DeviceBuffer):
             if self._exported_handle is not None and self._handle_type_name == "posix_fd":
                 os.close(self._exported_handle)
             self._exported_handle = None
+            # The fd is ours whatever happened to the context, but the
+            # mapping and the handle went down with it.
+            token = getattr(self, "_token", None)
+            if token is not None and not token.alive:
+                return
             if self._device_ptr is not None:
                 driver.cuMemUnmap(self._device_ptr, self._alloc_size)
                 driver.cuMemAddressFree(self._device_ptr, self._alloc_size)
@@ -518,13 +591,6 @@ class CompiledCUDAKernel:
         _check(driver.cuCtxSynchronize())
 
 
-# Contexts Tack itself created, mapped to the number of live CUDABackend
-# objects using each. A context is destroyed when that count reaches zero.
-# Contexts created by an embedding application never appear here, so they
-# are never destroyed.
-_OWNED_CONTEXTS: dict[int, int] = {}
-
-
 class CUDABackend(Backend):
     """CUDA GPU backend — device-resident fields, NVRTC compilation."""
 
@@ -558,16 +624,22 @@ class CUDABackend(Backend):
         err, ctx = driver.cuCtxGetCurrent()
         if err == driver.CUresult.CUDA_SUCCESS and int(ctx) != 0:
             self._context = ctx
-            # Ours only if some live backend created it; anything else
-            # belongs to the embedding application and is never destroyed.
-            self._owns_context = int(ctx) in _OWNED_CONTEXTS
-            if self._owns_context:
-                _OWNED_CONTEXTS[int(ctx)] += 1
+            token = _CONTEXTS.get(int(ctx))
+            if token is None:
+                # Nobody here created this one, so it belongs to the embedding
+                # application: adopt it, but never destroy it.
+                token = _ContextToken(ctx, owned=False)
+                _CONTEXTS[int(ctx)] = token
+            else:
+                token.users += 1
+            self._token = token
+            self._owns_context = token.owned
         else:
             err, self._context = driver.cuCtxCreate(None, 0, self._device)
             _check(err)
+            self._token = _ContextToken(self._context, owned=True)
+            _CONTEXTS[int(self._context)] = self._token
             self._owns_context = True
-            _OWNED_CONTEXTS[int(self._context)] = 1
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledCUDAKernel}
 
@@ -617,6 +689,7 @@ class CUDABackend(Backend):
         buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
         buf._device_ptr = ptr  # integer or CUdeviceptr
         buf._owned = False
+        buf._token = _current_context_token()
         return buf
 
     def execute(self, kernel, args, kwargs):
@@ -756,14 +829,18 @@ class CUDABackend(Backend):
         return func, module
 
     def __del__(self):
-        if hasattr(self, '_context') and self._owns_context:
-            try:
-                key = int(self._context)
-                remaining = _OWNED_CONTEXTS.get(key, 0) - 1
-                if remaining > 0:
-                    _OWNED_CONTEXTS[key] = remaining
-                else:
-                    _OWNED_CONTEXTS.pop(key, None)
-                    driver.cuCtxDestroy(self._context)
-            except Exception:
-                pass
+        token = getattr(self, "_token", None)
+        if token is None:
+            return
+        try:
+            token.users -= 1
+            if token.users > 0:
+                return
+            _CONTEXTS.pop(int(token.handle), None)
+            if token.owned:
+                # Mark dead before destroying, so any buffer still holding
+                # this token reports the problem instead of faulting.
+                token.alive = False
+                driver.cuCtxDestroy(token.handle)
+        except Exception:
+            pass
