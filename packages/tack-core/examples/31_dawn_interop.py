@@ -4,8 +4,10 @@ Demonstrates sharing GPU memory between Tack (compute) and Dawn
 (WebGPU rendering engine used by VTK). Tack computes into a buffer,
 then Dawn imports it via SharedBufferMemory -- no data copies.
 
-Works on any backend: Metal (MTLBuffer sharing) or CUDA (Vulkan fd import).
-The example code is backend-agnostic thanks to ExportedMemory.
+Works on Metal (MTLBuffer sharing) and on CUDA where the export is a
+POSIX fd (Vulkan fd import). CUDA on Windows exports a Win32 KMT handle
+instead, which Dawn imports through a different entry point than the one
+used here. The example dispatches on ExportedMemory.handle_type.
 
 This enables workflows where Tack runs GPU compute (filters, simulations)
 and VTK renders the results, both operating on the same GPU memory.
@@ -64,7 +66,16 @@ exported = out.export_memory()
 buffer_size = exported.size
 
 print(f"\nExported memory: backend={exported.backend}, "
+      f"handle_type={exported.handle_type}, "
       f"size={exported.size}, alloc_size={exported.allocation_size}")
+
+# Dawn imports shared memory through a per-handle-type entry point. The two
+# wired up below are the ones pydawn exposes; a Win32 KMT handle needs
+# another, so say so plainly rather than handing Dawn the wrong kind.
+if exported.handle_type not in ("mtl_buffer", "posix_fd"):
+    print(f"\nExport works, but this example has no Dawn import path for a "
+          f"{exported.handle_type!r} handle -- stopping here.")
+    raise SystemExit(0)
 
 # ================================================================
 # Step 3: Import into Dawn (zero-copy)
@@ -73,7 +84,7 @@ print(f"\nExported memory: backend={exported.backend}, "
 from pydawn import utils as dawn
 from pydawn import webgpu
 
-if exported.backend == "metal":
+if exported.handle_type == "mtl_buffer":
     features = [webgpu.WGPUFeatureName_SharedBufferMemoryMTLBuffer]
 else:
     features = [webgpu.WGPUFeatureName_SharedBufferMemoryOpaqueFD]
@@ -84,7 +95,7 @@ device = dawn.request_device_sync(adapter, features)
 print("\nDawn device created")
 
 # Import using backend-appropriate path
-if exported.backend == "metal":
+if exported.handle_type == "mtl_buffer":
     shared_mem = dawn.import_shared_buffer_memory_mtl(device, exported.handle)
 else:
     shared_mem = dawn.import_shared_buffer_memory_opaque_fd(

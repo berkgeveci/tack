@@ -13,6 +13,8 @@ No per-dispatch copies — data stays on the GPU between kernel calls.
 """
 
 import ctypes
+import os
+import sys
 
 import numpy as np
 
@@ -31,6 +33,42 @@ _CUDA_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from cuda.bindings import driver, nvrtc
 
 from tack.codegen.cuda_gen import generate_cuda_source
+
+# Shareable-handle types ExportableCUDABuffer may ask the driver for, in
+# preference order, per platform. Each entry is (name, handle type, the device
+# attribute that claims support).
+#
+# Windows deliberately does not list CU_MEM_HANDLE_TYPE_WIN32 -- the NT handle
+# that Vulkan calls OPAQUE_WIN32 and would be the nicer thing to hand a
+# consumer. Two measured reasons, on a GeForce RTX 5060 (WDDM, driver 616.56):
+#
+#   * cuMemCreate refuses it with CUDA_ERROR_INVALID_VALUE however
+#     win32HandleMetaData is built -- NULL, an SDDL self-relative descriptor,
+#     or the absolute descriptor with a real DACL that the CUDA samples
+#     construct. The device attribute claims the type is supported anyway,
+#     which is why _create_backing() trusts the allocation and not the
+#     attribute.
+#   * Asking cuda-python (13.3.1) for it is worse than an error: cuMemCreate
+#     segfaults the interpreter whenever requestedHandleTypes is
+#     CU_MEM_HANDLE_TYPE_WIN32 and win32HandleMetaData is non-NULL. The same
+#     struct passed straight to nvcuda.dll through ctypes returns the error
+#     code instead, so the fault is in the binding. There is no way to try NT
+#     handles here and recover from a bad guess.
+#
+# WIN32_KMT is the legacy global handle (Vulkan's OPAQUE_WIN32_KMT). It needs
+# no security attributes, and it works.
+if sys.platform == "win32":
+    _EXPORT_HANDLE_TYPES = [(
+        "win32_kmt",
+        driver.CUmemAllocationHandleType.CU_MEM_HANDLE_TYPE_WIN32_KMT,
+        driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_WIN32_KMT_HANDLE_SUPPORTED,
+    )]
+else:
+    _EXPORT_HANDLE_TYPES = [(
+        "posix_fd",
+        driver.CUmemAllocationHandleType.CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR,
+        driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR_SUPPORTED,
+    )]
 
 _NUMPY_DTYPE = {
     f32: np.float32,
@@ -175,11 +213,15 @@ class CUDABuffer(DeviceBuffer):
 
 
 class ExportableCUDABuffer(DeviceBuffer):
-    """Device buffer allocated via CUDA VMM with POSIX FD export capability.
+    """Device buffer allocated via CUDA VMM so it can be shared with other APIs.
 
-    Uses cuMemCreate/cuMemMap instead of cuMemAlloc so the underlying
-    memory can be exported as a file descriptor for cross-API sharing
-    (e.g. Vulkan import via VK_KHR_external_memory_fd).
+    Uses cuMemCreate/cuMemMap instead of cuMemAlloc so the underlying memory
+    can be exported as an OS handle for cross-API sharing (e.g. Vulkan import
+    via VK_KHR_external_memory_fd, or its Win32 equivalent).
+
+    Which kind of handle that is depends on the platform, so the caller is
+    told rather than left to assume: see ``ExportedMemory.handle_type`` and
+    ``_EXPORT_HANDLE_TYPES``.
     """
 
     def __init__(self, numpy_dtype, shape):
@@ -187,28 +229,19 @@ class ExportableCUDABuffer(DeviceBuffer):
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
 
+        # Set before anything can fail, so __del__ can tell what was reached.
+        self._mem_handle = None
+        self._device_ptr = None
+        self._exported_handle = None
+        self._handle_type_name = None
+
         err, self._cuda_device = driver.cuCtxGetDevice()
         _check(err)
 
-        prop = driver.CUmemAllocationProp()
-        prop.type = driver.CUmemAllocationType.CU_MEM_ALLOCATION_TYPE_PINNED
-        prop.location.type = driver.CUmemLocationType.CU_MEM_LOCATION_TYPE_DEVICE
-        prop.location.id = self._cuda_device
-        prop.requestedHandleTypes = (
-            driver.CUmemAllocationHandleType.CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR)
-
-        err, granularity = driver.cuMemGetAllocationGranularity(
-            prop, driver.CUmemAllocationGranularity_flags.CU_MEM_ALLOC_GRANULARITY_MINIMUM)
-        _check(err)
-
-        self._alloc_size = ((max(self._nbytes, 1) + granularity - 1)
-                            // granularity) * granularity
-
-        err, self._mem_handle = driver.cuMemCreate(self._alloc_size, prop, 0)
-        _check(err)
+        self._create_backing()
 
         err, self._device_ptr = driver.cuMemAddressReserve(
-            self._alloc_size, granularity, 0, 0)
+            self._alloc_size, self._granularity, 0, 0)
         _check(err)
 
         _check(driver.cuMemMap(
@@ -225,7 +258,58 @@ class ExportableCUDABuffer(DeviceBuffer):
         # Zero-initialise
         _check(driver.cuMemsetD8(self._device_ptr, 0, self._alloc_size))
 
-        self._exported_fd = None
+    def _allocation_prop(self, handle_type):
+        prop = driver.CUmemAllocationProp()
+        prop.type = driver.CUmemAllocationType.CU_MEM_ALLOCATION_TYPE_PINNED
+        prop.location.type = driver.CUmemLocationType.CU_MEM_LOCATION_TYPE_DEVICE
+        prop.location.id = self._cuda_device
+        prop.requestedHandleTypes = handle_type
+        return prop
+
+    def _create_backing(self):
+        """Allocate physical memory with the first handle type that works.
+
+        The device attribute is consulted first but is not taken as the
+        answer: an RTX 5060 reports HANDLE_TYPE_WIN32_HANDLE_SUPPORTED = 1 and
+        then fails the matching cuMemCreate. The allocation succeeding is the
+        only real evidence, so every candidate is actually tried.
+        """
+        attempts = []
+        for name, handle_type, attribute in _EXPORT_HANDLE_TYPES:
+            err, supported = driver.cuDeviceGetAttribute(attribute, self._cuda_device)
+            if err != driver.CUresult.CUDA_SUCCESS or not supported:
+                attempts.append(f"{name}: device reports no support for this handle type")
+                continue
+
+            prop = self._allocation_prop(handle_type)
+            err, granularity = driver.cuMemGetAllocationGranularity(
+                prop, driver.CUmemAllocationGranularity_flags.CU_MEM_ALLOC_GRANULARITY_MINIMUM)
+            if err != driver.CUresult.CUDA_SUCCESS:
+                attempts.append(f"{name}: cuMemGetAllocationGranularity failed with {err}")
+                continue
+
+            alloc_size = ((max(self._nbytes, 1) + granularity - 1)
+                          // granularity) * granularity
+            err, mem_handle = driver.cuMemCreate(alloc_size, prop, 0)
+            if err != driver.CUresult.CUDA_SUCCESS:
+                attempts.append(f"{name}: cuMemCreate failed with {err}")
+                continue
+
+            self._handle_type_name = name
+            self._handle_type = handle_type
+            self._mem_handle = mem_handle
+            self._granularity = granularity
+            self._alloc_size = alloc_size
+            return
+
+        raise RuntimeError(
+            "This CUDA device cannot allocate exportable memory on "
+            f"{sys.platform}. Tried:\n"
+            + "\n".join(f"  {a}" for a in attempts)
+            + "\nExportable memory is only needed by Field.export_memory() for "
+              "sharing with another API; ordinary tack.field() allocations are "
+              "unaffected."
+        )
 
     @property
     def device_ptr(self):
@@ -249,34 +333,37 @@ class ExportableCUDABuffer(DeviceBuffer):
         return self._nbytes
 
     def export_memory(self):
-        """Export as ExportedMemory (fd + size + UUID). FD is cached."""
+        """Export as ExportedMemory (handle + size + UUID). The handle is cached."""
         from tack.lang.field import ExportedMemory
-        if self._exported_fd is None:
-            err, fd = driver.cuMemExportToShareableHandle(
-                self._mem_handle,
-                driver.CUmemAllocationHandleType.CU_MEM_HANDLE_TYPE_POSIX_FILE_DESCRIPTOR,
-                0)
+        if self._exported_handle is None:
+            err, handle = driver.cuMemExportToShareableHandle(
+                self._mem_handle, self._handle_type, 0)
             _check(err)
-            self._exported_fd = fd
+            self._exported_handle = int(handle)
         err, uuid = driver.cuDeviceGetUuid(self._cuda_device)
         _check(err)
         return ExportedMemory(
             backend="cuda",
             size=self._nbytes,
             allocation_size=self._alloc_size,
-            handle=self._exported_fd,
+            handle=self._exported_handle,
+            handle_type=self._handle_type_name,
             device_uuid=bytes(uuid.bytes),
         )
 
     def __del__(self):
         try:
-            if self._exported_fd is not None:
-                import os
-                os.close(self._exported_fd)
-                self._exported_fd = None
-            driver.cuMemUnmap(self._device_ptr, self._alloc_size)
-            driver.cuMemAddressFree(self._device_ptr, self._alloc_size)
-            driver.cuMemRelease(self._mem_handle)
+            # A POSIX fd is ours to close. A WIN32_KMT handle is not a kernel
+            # handle at all -- it is a legacy global D3DKMT value, closing it
+            # is not our job and CloseHandle on it would be a bug.
+            if self._exported_handle is not None and self._handle_type_name == "posix_fd":
+                os.close(self._exported_handle)
+            self._exported_handle = None
+            if self._device_ptr is not None:
+                driver.cuMemUnmap(self._device_ptr, self._alloc_size)
+                driver.cuMemAddressFree(self._device_ptr, self._alloc_size)
+            if self._mem_handle is not None:
+                driver.cuMemRelease(self._mem_handle)
         except Exception:
             pass
 

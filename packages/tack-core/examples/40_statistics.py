@@ -77,7 +77,7 @@ a.from_numpy(np.ones(1000, dtype=np.float32))
 b.from_numpy(np.arange(1000, dtype=np.float32))
 
 d = dot(a, b)
-print(f"\nDot product of ones · [0..999] = {d:.0f}")
+print(f"\nDot product of ones and [0..999] = {d:.0f}")
 assert abs(d - 499500.0) < 1.0
 
 
@@ -139,6 +139,6 @@ compute_residual(b_field, x, residual)
 r_norm = norm(residual, ord=2)
 r_max = absmax(residual)
 print(f"  ||r||_2 = {r_norm:.6f}")
-print(f"  ||r||_∞ = {r_max:.6f}")
+print(f"  ||r||_inf = {r_max:.6f}")
 
 print("\nAll statistics computed on GPU!")

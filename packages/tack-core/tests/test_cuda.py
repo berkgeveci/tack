@@ -207,3 +207,36 @@ def test_large_array():
 
     result = out.to_numpy()
     assert np.allclose(result, 7.0)
+
+
+# --- Memory export (cross-API sharing) ---
+
+def test_export_memory():
+    """export_memory() must hand back a usable handle on this platform.
+
+    Which kind of handle that is varies -- a POSIX fd on Linux, a Win32 KMT
+    handle on Windows -- so this asserts the shape of the result rather than
+    one particular kind. Nothing exercised this path before, which is how the
+    backend shipped asking for a POSIX fd unconditionally and dying on Windows
+    with a bare CUDA_ERROR_INVALID_VALUE.
+    """
+    n = 256
+    f = tack.field(dtype=tack.f32, shape=(n,))
+    f.from_numpy(np.arange(n, dtype=np.float32))
+
+    exported = f.export_memory()
+
+    assert exported.backend == "cuda"
+    assert exported.handle_type in ("posix_fd", "win32_kmt")
+    assert exported.size == n * 4
+    assert exported.allocation_size >= exported.size
+    assert isinstance(exported.handle, int)
+    assert exported.handle != 0
+    assert len(exported.device_uuid) == 16
+
+    # The handle is cached, so a second export is the same one and not a leak
+    # of a second OS handle per call.
+    assert f.export_memory().handle == exported.handle
+
+    # Exporting copies into VMM-backed memory; the field itself is untouched.
+    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
