@@ -1,5 +1,10 @@
 # Kernels
 
+The [kernel language contract (draft)](../reference/language-contract.md)
+distinguishes intended guarantees from current limitations and numerical
+policies still being decided. Consult it when depending on ordering,
+aliasing, or Python-compatible expression semantics.
+
 ## Parallel Loops
 
 The outermost `for` loop in a kernel is the parallel loop — each iteration

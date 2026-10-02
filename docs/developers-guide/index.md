@@ -3,6 +3,10 @@
 This guide explains Tack's internals for contributors and anyone who wants to
 understand how Python kernel source becomes GPU machine code.
 
+The [kernel language contract (draft)](../reference/language-contract.md)
+records intended semantics, known compiler violations, open design decisions,
+and the executable baseline for compiler hardening.
+
 ## Table of Contents
 
 1. [Architecture Overview](01-architecture.md) — Compilation pipeline, module layout
