@@ -102,16 +102,18 @@ def kernel_variant_key(ir_func, kernel, vector_fields, template_args,
     in as a literal, so reusing that code for a differently shaped field
     reads the wrong addresses and silently returns wrong numbers.
     """
-    type_sig = tuple(p.type_annotation for p in ir_func.params)
-    arg_sig = tuple((getattr(p, '_is_field', True), getattr(p, '_is_texture', False))
-                    for p in ir_func.params)
-    vec_sig = tuple(sorted((vector_fields or {}).items()))
-    tex_sig = tuple(getattr(p, '_texture_shape', None) for p in ir_func.params)
+    # One pass over the params: this runs on every dispatch, and a separate
+    # walk per property cost a measurable few microseconds.
+    param_sig = tuple(
+        (p.type_annotation, getattr(p, '_is_field', True),
+         getattr(p, '_is_texture', False), getattr(p, '_texture_shape', None))
+        for p in ir_func.params)
+    vec_sig = tuple(sorted(vector_fields.items())) if vector_fields else ()
     tmpl_key = ()
     if template_args:
         # Keep the structural key: stringifying it loses class identity.
         tmpl_key = kernel._make_cache_key(vector_fields, template_args)
-    return (type_sig, arg_sig, vec_sig, tex_sig, tmpl_key, shape_sig)
+    return (param_sig, vec_sig, tmpl_key, shape_sig)
 
 
 def _walk_ir(node):

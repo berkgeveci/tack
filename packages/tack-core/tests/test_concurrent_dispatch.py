@@ -125,7 +125,8 @@ def test_concurrent_dtypes_get_their_own_variants(monkeypatch):
 
     keys = list(_slot().keys())
     assert len(keys) == 2, f"expected one variant per dtype, got {keys}"
-    type_sigs = {k[0][:2] for k in keys}
+    # Each key leads with one entry per parameter, the dtype first.
+    type_sigs = {tuple(p[0] for p in k[0][:2]) for k in keys}
     assert (tack.f32, tack.f32) in type_sigs
     assert (tack.f64, tack.f64) in type_sigs
 
