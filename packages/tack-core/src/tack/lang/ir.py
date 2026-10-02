@@ -67,6 +67,11 @@ class IRBreak(IRNode):
 class IRContinue(IRNode):
     """Continue statement."""
 
+    # True when the loop being continued is the parallel one. A GPU kernel
+    # body is a single iteration with no loop around it, so there the
+    # statement has to end the kernel instead.
+    outermost = False
+
 
 # --- Control flow ---
 

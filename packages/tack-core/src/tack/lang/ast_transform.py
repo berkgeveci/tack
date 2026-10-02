@@ -71,6 +71,9 @@ class KernelTransformer(ast.NodeVisitor):
                 type_annotation=None,  # resolved during type inference
             ))
         body = self._visit_body(node.body)
+        for stmt in body:
+            if isinstance(stmt, ir.IRParallelFor):
+                _mark_outermost_continues(stmt.body)
         return ir.IRFunction(name=node.name, params=params, body=body)
 
     def _visit_body(self, stmts: list) -> list:
@@ -732,7 +735,7 @@ class KernelTransformer(ast.NodeVisitor):
                     rename_map[param_name] = arg_name
 
         # Rename the callee AST (deep copy first)
-        renamed_body = copy.deepcopy(funcdef.body)
+        renamed_body = _structure_returns(copy.deepcopy(funcdef.body), func_name)
         renamer = _NameRenamer(rename_map, result_var)
         # Flatten in case visit_Return returns a list (multi-return)
         flat_body = []
@@ -1209,6 +1212,46 @@ class KernelTransformer(ast.NodeVisitor):
         if op_type not in ops:
             raise NotImplementedError(f"Unsupported comparison operator: {op_type.__name__}")
         return ops[op_type]
+
+
+def _mark_outermost_continues(stmts: list):
+    """Flag each `continue` that belongs to the parallel loop itself."""
+    for stmt in stmts:
+        if isinstance(stmt, ir.IRContinue):
+            stmt.outermost = True
+        elif isinstance(stmt, ir.IRIf):
+            _mark_outermost_continues(stmt.then_body)
+            _mark_outermost_continues(stmt.else_body or [])
+        # Nested loops own their continues; do not descend into them.
+
+
+def _has_return(stmts: list) -> bool:
+    return any(isinstance(n, ast.Return) for s in stmts for n in ast.walk(s))
+
+
+def _structure_returns(stmts: list, func_name: str) -> list:
+    """Make every `return` the last statement on its path.
+
+    Inlining lowers `return x` to an assignment, which does not leave the
+    function: after `if c: return a` the statements that follow would still
+    run and overwrite the result. Statements after an `if` that returns are
+    moved into its branches, so each path ends at its own return.
+    """
+    for idx, stmt in enumerate(stmts):
+        if isinstance(stmt, ast.Return):
+            return stmts[:idx + 1]  # the rest is unreachable
+        if isinstance(stmt, (ast.For, ast.While)) and _has_return([stmt]):
+            raise NotImplementedError(
+                f"@tack.func '{func_name}': 'return' inside a loop is not "
+                f"supported. Assign the result to a variable, 'break', and "
+                f"return after the loop.")
+        if isinstance(stmt, ast.If) and _has_return([stmt]):
+            rest = stmts[idx + 1:]
+            stmt.body = _structure_returns(
+                stmt.body + copy.deepcopy(rest), func_name)
+            stmt.orelse = _structure_returns(stmt.orelse + rest, func_name)
+            return [*stmts[:idx], stmt]
+    return stmts
 
 
 class _NameRenamer(ast.NodeTransformer):

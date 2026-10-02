@@ -216,6 +216,7 @@ class LLVMCodeGen:
 
         header = self._func.append_basic_block(f"for.{node.var}.header")
         body = self._func.append_basic_block(f"for.{node.var}.body")
+        latch = self._func.append_basic_block(f"for.{node.var}.latch")
         exit_bb = self._func.append_basic_block(f"for.{node.var}.exit")
 
         entry_block = self.builder.block
@@ -234,22 +235,27 @@ class LLVMCodeGen:
         old_local = self._locals.get(node.var)
         self._locals[node.var] = phi
 
+        # `continue` goes to the latch, not the header: the header's phi
+        # needs the incremented index from every edge that re-enters it.
         old_break = self._break_target
         old_continue = self._continue_target
         self._break_target = exit_bb
-        self._continue_target = header
+        self._continue_target = latch
 
         self._emit_body(node.body)
 
         self._break_target = old_break
         self._continue_target = old_continue
 
-        # Increment and branch back
         if not self.builder.block.is_terminated:
-            next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
-                                        name=f"{node.var}.next")
-            phi.add_incoming(next_val, self.builder.block)
-            self.builder.branch(header)
+            self.builder.branch(latch)
+
+        # Increment and branch back
+        self.builder = llvm_ir.IRBuilder(latch)
+        next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
+                                    name=f"{node.var}.next")
+        phi.add_incoming(next_val, latch)
+        self.builder.branch(header)
 
         if old_local is not None:
             self._locals[node.var] = old_local
@@ -266,6 +272,7 @@ class LLVMCodeGen:
 
         header = self._func.append_basic_block(f"for.{node.var}.header")
         body = self._func.append_basic_block(f"for.{node.var}.body")
+        latch = self._func.append_basic_block(f"for.{node.var}.latch")
         exit_bb = self._func.append_basic_block(f"for.{node.var}.exit")
 
         entry_block = self.builder.block
@@ -283,10 +290,11 @@ class LLVMCodeGen:
         old_local = self._locals.get(node.var)
         self._locals[node.var] = phi
 
+        # See _emit_parallel_for: `continue` must reach the increment.
         old_break = self._break_target
         old_continue = self._continue_target
         self._break_target = exit_bb
-        self._continue_target = header
+        self._continue_target = latch
 
         self._emit_body(node.body)
 
@@ -294,15 +302,18 @@ class LLVMCodeGen:
         self._continue_target = old_continue
 
         if not self.builder.block.is_terminated:
-            if node.step is not None:
-                step_val = self._to_i64(self._emit_expr(node.step))
-                next_val = self.builder.add(phi, step_val,
-                                            name=f"{node.var}.next")
-            else:
-                next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
-                                            name=f"{node.var}.next")
-            phi.add_incoming(next_val, self.builder.block)
-            self.builder.branch(header)
+            self.builder.branch(latch)
+
+        self.builder = llvm_ir.IRBuilder(latch)
+        if node.step is not None:
+            step_val = self._to_i64(self._emit_expr(node.step))
+            next_val = self.builder.add(phi, step_val,
+                                        name=f"{node.var}.next")
+        else:
+            next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
+                                        name=f"{node.var}.next")
+        phi.add_incoming(next_val, latch)
+        self.builder.branch(header)
 
         if old_local is not None:
             self._locals[node.var] = old_local

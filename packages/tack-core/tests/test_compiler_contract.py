@@ -262,6 +262,184 @@ def test_empty_parallel_range_runs_nothing(backend):
     np.testing.assert_array_equal(out.to_numpy(), np.full(7, -1))
 
 
+@tack.kernel
+def _param_assigned_in_branch(out, value, flag):
+    for i in range(out.shape[0]):
+        if flag > 0:
+            value = 50
+        out[i] = value
+
+
+@tack.kernel
+def _param_assigned_in_loop(out, value, count):
+    for i in range(out.shape[0]):
+        for j in range(count):
+            value = value + 1
+        out[i] = value
+
+
+@tack.kernel
+def _param_augmented(out, value, step):
+    for i in range(out.shape[0]):
+        value += step
+        out[i] = value
+
+
+@pytest.mark.parametrize("kernel, arg, expected", [
+    (_param_assigned_in_branch, 0, 7),
+    (_param_assigned_in_branch, 1, 50),
+    (_param_assigned_in_loop, 0, 7),
+    (_param_assigned_in_loop, 3, 10),
+    (_param_augmented, 0, 7),
+    (_param_augmented, 3, 10),
+], ids=["branch-skipped", "branch-taken", "loop-0", "loop-3", "augmented-0", "augmented-3"])
+def test_scalar_parameter_assignment_is_per_iteration(backend, kernel, arg, expected):
+    """LC6: an assigned scalar parameter is a local, fresh in each iteration."""
+    out = _int_field([-1] * 7)
+    kernel(out, 7, arg)
+    np.testing.assert_array_equal(out.to_numpy(), np.full(7, expected))
+
+
+def test_parameter_reassignment_without_tack_optimizations(backend, monkeypatch):
+    """The reassigned-parameter result must not depend on copy propagation."""
+    import tack.lang.ir_optimize as opt
+
+    @tack.kernel
+    def late_copy(out, value, replacement):
+        for i in range(out.shape[0]):
+            before = value
+            value = replacement
+            out[i] = before + value
+
+    monkeypatch.setattr(opt, "optimize_ir", lambda ir_func: None)
+    out = _int_field([-1])
+    late_copy(out, 3, 7)
+    np.testing.assert_array_equal(out.to_numpy(), [10])
+
+
+@tack.func
+def _contract_clamp(value, low, high):
+    if value < low:
+        return low
+    if value > high:
+        return high
+    return value
+
+
+@tack.func
+def _contract_classify(value):
+    if value < 0:
+        if value < -10:
+            return -2
+        return -1
+    elif value == 0:  # noqa: RET505 — the branch after a return is the case under test
+        return 0
+    return 1
+
+
+def test_early_return_in_inlined_function(backend):
+    """LC7: a return ends the function; later statements must not run."""
+    @tack.kernel
+    def apply(x, clamped, kind):
+        for i in range(x.shape[0]):
+            clamped[i] = _contract_clamp(x[i], 0, 5)
+            kind[i] = _contract_classify(x[i])
+
+    values = np.array([-20, -3, 0, 4, 9])
+    clamped = _int_field([99] * 5)
+    kind = _int_field([99] * 5)
+    apply(_int_field(values), clamped, kind)
+    np.testing.assert_array_equal(clamped.to_numpy(), np.clip(values, 0, 5))
+    np.testing.assert_array_equal(kind.to_numpy(), [-2, -1, 0, 1, 1])
+
+
+def test_return_inside_a_loop_is_rejected():
+    @tack.func
+    def _contract_find(data, n, wanted):
+        for j in range(n):
+            if data[j] == wanted:
+                return j
+        return -1
+
+    @tack.kernel
+    def find(data, out, n):
+        for i in range(out.shape[0]):
+            out[i] = _contract_find(data, n, i)
+
+    with pytest.raises(NotImplementedError, match="inside a loop"):
+        find.get_ir()
+
+
+def test_continue_skips_to_the_next_iteration(backend):
+    """LC8: continue in a nested loop, and in the outermost one."""
+    @tack.kernel
+    def sum_others(out, n):
+        for i in range(out.shape[0]):
+            total = 0
+            for j in range(n):
+                if j == i:
+                    continue
+                total = total + j
+            out[i] = total
+
+    @tack.kernel
+    def skip_odd(out):
+        for i in range(out.shape[0]):
+            if i % 2 == 1:
+                continue
+            out[i] = i
+
+    out = _int_field([-1] * 4)
+    sum_others(out, 4)
+    np.testing.assert_array_equal(out.to_numpy(), [6, 5, 4, 3])
+
+    out = _int_field([-1] * 6)
+    skip_odd(out)
+    np.testing.assert_array_equal(out.to_numpy(), [0, -1, 2, -1, 4, -1])
+
+
+@pytest.mark.parametrize("generator", ["cuda", "hip", "opencl", "msl"])
+def test_outermost_continue_leaves_the_gpu_kernel(generator):
+    """A GPU kernel body is one iteration: only a nested continue has a loop.
+
+    Host-side, so the generators without hardware here are covered too.
+    """
+    import importlib
+
+    from tack.lang.type_inference import infer_param_types
+
+    module = importlib.import_module(f"tack.codegen.{generator}_gen")
+    generate = getattr(module, f"generate_{generator}_source")
+
+    def source(kernel):
+        tack.init(arch=tack.cpu)
+        ir_func = kernel.get_ir().functions[0]
+        infer_param_types(ir_func, (tack.field(dtype=tack.i32, shape=(8,)),))
+        return generate(ir_func)
+
+    @tack.kernel
+    def nested_only(out):
+        for i in range(out.shape[0]):
+            for j in range(3):
+                if j == 1:
+                    continue
+                out[i] = j
+
+    @tack.kernel
+    def both(out):
+        for i in range(out.shape[0]):
+            if i % 2 == 1:
+                continue
+            for j in range(3):
+                if j == 1:
+                    continue
+                out[i] = j
+
+    baseline, src = source(nested_only), source(both)
+    assert baseline.count("continue;") == src.count("continue;") == 1
+    assert src.count("return;") == baseline.count("return;") + 1
+
+
 @pytest.mark.xfail(
     strict=True, raises=pytest.fail.Exception,
     reason="LC4: the shared frontend silently discards unsupported assert statements",

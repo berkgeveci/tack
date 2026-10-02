@@ -41,11 +41,11 @@ all corner cases have been validated.
 
 | Family | Kernel surface | Boundary |
 |---|---|---|
-| Values | Numeric literals, scalar parameters, field loads, local variables | Fixed-width Tack types, not arbitrary Python objects |
+| Values | Numeric literals, scalar parameters, field loads, local variables | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6) |
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins | Numerical and evaluation rules below |
 | Assignments | Local assignment, augmented assignment, field stores, supported tuple unpacking | Storage and ordering rules below |
 | Control flow | `range`, `tack.ndrange`, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel iteration space in the portable baseline |
-| Composition | `@tack.func` inlining and `@tack.data_oriented` templates | Static source transformation, not arbitrary Python calls |
+| Composition | `@tack.func` inlining and `@tack.data_oriented` templates | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
 | Storage | Scalar fields, vector fields, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
 
@@ -81,8 +81,11 @@ Backends launch their grids from zero, so the frontend moves a nonzero start
 into the body; the length of the interval remains a per-dispatch value and
 does not specialize the compiled kernel. See LC5.
 
-Early exits must preserve the defined control flow. This draft does not
-extend Python's sequential outer-loop `break` behavior to a parallel loop.
+Early exits must preserve the defined control flow. `continue` ends the
+current iteration of its nearest enclosing loop, including the top-level
+parallel one, where it skips the rest of that iteration only (LC8). This
+draft does not extend Python's sequential outer-loop `break` behavior to a
+parallel loop.
 Multiple top-level parallel loops, outer-loop early exits, negative or
 zero `range` steps, and cross-iteration communication need explicit
 validation or a specified rejection policy before joining the portable
@@ -212,6 +215,9 @@ not from recording Tack's current output.
 | LC3 | Vector widths specialize independently | Width 2 followed by width 3 reuses the first variant and gives incorrect squared norms |
 | LC4 | Unsupported statements are rejected | `assert False` disappears from transformed IR without a diagnostic |
 | LC5 | The top-level range honors its start | `range(3, 7)` over eight elements writes indices `0`–`6`; a stencil's `x[i - 1]` reads before the buffer |
+| LC6 | Assignment to a scalar parameter takes effect | `value = value + 1` is lost on GPU, where every read of the name is rewritten to the packed scalar; on CPU an assignment inside a branch or loop reaches only the reads emitted after it |
+| LC7 | A `return` in an inlined function ends that function | `if a > limit: return limit` followed by `return a` always yields `a` |
+| LC8 | `continue` advances its loop | Any `continue` in a `for` loop fails LLVM verification on CPU; in the top-level loop it does not compile on GPU |
 
 The suite includes empty/single-iteration and distinct-buffer controls,
 same-field and reshape-view aliases, and both orders of vector-width changes.
@@ -233,7 +239,19 @@ dimension-derived bound at two lengths, and an empty `range(n)`. The last
 previously failed at launch on CUDA with a driver error rather than a wrong
 result; the GPU backends now return before launching an empty grid.
 
-There are **24 numerical cases per backend**, plus one frontend case.
+LC6–LC8 were found by reviewing stage two with hand-written kernels and
+also predate it. All three are fixed. A scalar parameter the kernel assigns
+to is renamed, at variant build, to a local seeded from the parameter at
+the top of each iteration. Inlining restructures a function so that every
+`return` is the last statement on its path. CPU loops gained a latch block
+for `continue`, and a `continue` of the top-level loop leaves the kernel on
+GPU. One stage-two case, a parameter read before and after its
+reassignment, passed on GPU only because copy propagation rewrote the read;
+it now has a twin with Tack's passes bypassed.
+
+There are **33 numerical cases per backend**, plus six host-side cases:
+LC4, rejection of `return` inside a loop, and one generated-source check
+per GPU generator for the top-level `continue`.
 `test_variant_cache.py` covers field/scalar calling conventions, same-named
 template classes, typed template constants including signed zero, and changes
 to runtime template attribute layouts.

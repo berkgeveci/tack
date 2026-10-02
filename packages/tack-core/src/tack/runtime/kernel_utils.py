@@ -348,11 +348,52 @@ def resolve_variant(backend, kernel, args, kwargs, build,
                              supported_dtypes=backend.supported_dtypes,
                              backend_name=backend.label)
         store_texture_shapes(ir_func, effective_args)
+        _localize_assigned_scalar_params(ir_func)
         optimize_ir(ir_func)
         variant = KernelVariant(ir_func, build(ir_func, effective_args))
         slot[key] = variant
 
     return variant, effective_args
+
+
+def _localize_assigned_scalar_params(ir_func):
+    """Give each scalar parameter the kernel assigns to a per-iteration local.
+
+    A scalar parameter is one value shared by every iteration, and codegen
+    reads it straight from the argument — or, on GPU, from the packed scalar
+    buffer, where every read of the name is rewritten to a buffer load. An
+    assignment to that name was therefore lost on GPU, and on CPU reached
+    only the reads emitted after it. Renaming the name inside the loop body
+    to a local seeded from the parameter makes it an ordinary variable on
+    every backend, fresh in each iteration.
+
+    Needs the `_is_field` annotations, so it runs after type inference.
+    """
+    scalars = {p.name for p in ir_func.params
+               if not getattr(p, '_is_field', True)}
+    if not scalars:
+        return
+    for stmt in ir_func.body:
+        if not isinstance(stmt, ir.IRParallelFor):
+            continue
+        assigned = {n.target for n in _walk_ir(stmt.body)
+                    if isinstance(n, ir.IRAssign) and n.target in scalars}
+        if not assigned:
+            continue
+        renames = {name: f"__{name}_local__" for name in assigned}
+        # The loop bound can share nodes with the body, and it has to keep
+        # naming the parameter: dispatch evaluates it against the arguments.
+        body = copy.deepcopy(stmt.body)
+        for node in _walk_ir(body):
+            if isinstance(node, ir.IRName) and node.name in renames:
+                node.name = renames[node.name]
+            elif isinstance(node, ir.IRAssign) and node.target in renames:
+                node.target = renames[node.target]
+            elif isinstance(node, ir.IRSequentialFor) and node.var in renames:
+                node.var = renames[node.var]
+        seeds = [ir.IRAssign(renames[name], ir.IRName(name))
+                 for name in sorted(assigned)]
+        stmt.body = seeds + body
 
 
 def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:

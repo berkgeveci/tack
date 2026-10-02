@@ -186,7 +186,9 @@ class MSLCodeGen:
         elif isinstance(node, ir.IRBreak):
             self._emit("break;")
         elif isinstance(node, ir.IRContinue):
-            self._emit("continue;")
+            # The kernel body is one iteration of the parallel loop, so
+            # continuing that loop means leaving the kernel.
+            self._emit("return;" if node.outermost else "continue;")
         elif isinstance(node, ir.IRAtomicOp):
             self._emit_atomic_op(node)
         elif isinstance(node, ir.IRPrint):
