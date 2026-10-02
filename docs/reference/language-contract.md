@@ -75,6 +75,12 @@ iteration, absent a conflicting access from another iteration. This holds
 across loop iterations, conditionals, and inlined device-function bodies.
 An empty sequential loop does not execute its body. See LC1.
 
+The top-level `range(start, end)` executes exactly the indices in
+`[start, end)`, and no iteration when that interval is empty or reversed.
+Backends launch their grids from zero, so the frontend moves a nonzero start
+into the body; the length of the interval remains a per-dispatch value and
+does not specialize the compiled kernel. See LC5.
+
 Early exits must preserve the defined control flow. This draft does not
 extend Python's sequential outer-loop `break` behavior to a parallel loop.
 Multiple top-level parallel loops, outer-loop early exits, negative or
@@ -205,6 +211,7 @@ not from recording Tack's current output.
 | LC2 | Support for overlapping arguments | Write `1` through `a`, write `2` through aliased `b`, read `a`: returns `1` |
 | LC3 | Vector widths specialize independently | Width 2 followed by width 3 reuses the first variant and gives incorrect squared norms |
 | LC4 | Unsupported statements are rejected | `assert False` disappears from transformed IR without a diagnostic |
+| LC5 | The top-level range honors its start | `range(3, 7)` over eight elements writes indices `0`–`6`; a stencil's `x[i - 1]` reads before the buffer |
 
 The suite includes empty/single-iteration and distinct-buffer controls,
 same-field and reshape-view aliases, and both orders of vector-width changes.
@@ -217,8 +224,16 @@ LC1–LC3 on CUDA. Stage two removes their expected-failure markers: all
 numerical cases are now ordinary assertions on every available backend.
 The suite also covers zero-trip local assignments, while-loop mutation,
 mutation through aliases, CSE across alias stores, and copy propagation's
-statement order, loop steps, and loop-variable bindings. There are
-**17 numerical cases per backend**, plus one frontend case.
+statement order, loop steps, and loop-variable bindings.
+
+LC5 was found on CUDA hardware testing of stage two and predates it: every
+backend resolved only the end of the top-level range. It is fixed, with
+cases for interior, single-element, empty, and reversed intervals, a
+dimension-derived bound at two lengths, and an empty `range(n)`. The last
+previously failed at launch on CUDA with a driver error rather than a wrong
+result; the GPU backends now return before launching an empty grid.
+
+There are **24 numerical cases per backend**, plus one frontend case.
 `test_variant_cache.py` covers field/scalar calling conventions, same-named
 template classes, typed template constants including signed zero, and changes
 to runtime template attribute layouts.

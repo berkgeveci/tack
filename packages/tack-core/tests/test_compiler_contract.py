@@ -219,6 +219,49 @@ def test_copy_propagation_counts_loop_variable_bindings(backend):
     np.testing.assert_array_equal(out.to_numpy(), [21])
 
 
+@tack.kernel
+def _mark_range(out, start, end):
+    for i in range(start, end):
+        out[i] = i + 1
+
+
+@pytest.mark.parametrize("start, end", [(0, 7), (3, 7), (6, 7), (4, 4), (5, 2)])
+def test_parallel_range_honors_its_start(backend, start, end):
+    """LC5: the outermost range covers [start, end), or nothing when empty."""
+    out = _int_field([-1] * 7)
+    _mark_range(out, start, end)
+    expected = np.full(7, -1)
+    expected[start:end] = np.arange(start, end) + 1
+    np.testing.assert_array_equal(out.to_numpy(), expected)
+
+
+def test_parallel_range_start_with_a_dimension_bound(backend):
+    """A stencil's interior range must not touch, or read past, the edges."""
+    @tack.kernel
+    def neighbor_sum(x, out):
+        for i in range(1, x.shape[0] - 1):
+            out[i] = x[i - 1] + x[i + 1]
+
+    for n in (5, 9):
+        values = np.arange(1, n + 1)
+        out = _int_field([-1] * n)
+        neighbor_sum(_int_field(values), out)
+        expected = np.full(n, -1)
+        expected[1:-1] = values[:-2] + values[2:]
+        np.testing.assert_array_equal(out.to_numpy(), expected)
+
+
+def test_empty_parallel_range_runs_nothing(backend):
+    @tack.kernel
+    def fill(out, n):
+        for i in range(n):
+            out[i] = 7
+
+    out = _int_field([-1] * 7)
+    fill(out, 0)
+    np.testing.assert_array_equal(out.to_numpy(), np.full(7, -1))
+
+
 @pytest.mark.xfail(
     strict=True, raises=pytest.fail.Exception,
     reason="LC4: the shared frontend silently discards unsupported assert statements",

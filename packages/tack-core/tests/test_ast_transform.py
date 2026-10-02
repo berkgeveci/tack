@@ -62,9 +62,17 @@ def test_range_two_args():
             for i in range(1, 10):
                 x[i] = 0.0
     """)
+    # The grid always launches from zero, so the start moves into the body:
+    # for idx in range(0, 10 - 1): i = 1 + idx
     loop = module.functions[0].body[0]
     assert isinstance(loop.start, ir.IRConstant)
-    assert loop.start.value == 1
+    assert loop.start.value == 0
+    assert isinstance(loop.end, ir.IRBinOp) and loop.end.op == "-"
+    assert (loop.end.left.value, loop.end.right.value) == (10, 1)
+    offset = loop.body[0]
+    assert isinstance(offset, ir.IRAssign) and offset.target == "i"
+    assert offset.value.left.value == 1
+    assert offset.value.right.name == loop.var
 
 
 # --- Binary ops ---

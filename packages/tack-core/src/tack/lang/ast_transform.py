@@ -141,6 +141,22 @@ class KernelTransformer(ast.NodeVisitor):
                 )
                 return ir.IRParallelFor(var=idx_name, start=ir.IRConstant(0),
                                         end=total, body=[decomp, *body])
+            if not (isinstance(start, ir.IRConstant) and start.value == 0):
+                # Every backend launches the grid over [0, n) and never sees
+                # the start, so it has to live in the body.
+                # Transform: for i in range(start, end)
+                # Into: for __start_idx__ in range(0, end - start):
+                #            i = start + __start_idx__
+                idx_name = f"__start_idx_{self._inline_counter}__"
+                self._inline_counter += 1
+                decomp = ir.IRAssign(
+                    target=target.id,
+                    value=ir.IRBinOp(op="+", left=start, right=ir.IRName(idx_name)),
+                )
+                return ir.IRParallelFor(
+                    var=idx_name, start=ir.IRConstant(0),
+                    end=ir.IRBinOp(op="-", left=end, right=start),
+                    body=[decomp, *body])
             return ir.IRParallelFor(var=target.id, start=start, end=end, body=body)
         return ir.IRSequentialFor(var=target.id, start=start, end=end,
                                   body=body, step=step)

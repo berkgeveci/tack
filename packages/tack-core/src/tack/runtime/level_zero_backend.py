@@ -1085,6 +1085,9 @@ class LevelZeroBackend(Backend):
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end = _get_loop_range(variant.ir, kernel_args)
+        if loop_end <= 0:
+            # range(0) runs nothing; a negative count would wrap as uint32.
+            return
 
         # Replace scalar args with the packed field buffers
         if pack_info:
