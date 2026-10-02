@@ -394,13 +394,35 @@ class LLVMCodeGen:
         self.builder = llvm_ir.IRBuilder(merge_bb)
 
     def _emit_ifexp(self, node: ir.IRIfExp) -> llvm_ir.Value:
-        """Emit a ternary expression using select."""
+        """Evaluate only the selected arm, including its loads and calls."""
         cond = self._emit_expr(node.condition)
         cond = self._to_i1(cond)
+        then_bb = self._func.append_basic_block('select.then')
+        else_bb = self._func.append_basic_block('select.else')
+        merge_bb = self._func.append_basic_block('select.merge')
+        self.builder.cbranch(cond, then_bb, else_bb)
+
+        self.builder = llvm_ir.IRBuilder(then_bb)
         then_val = self._emit_expr(node.then_value)
+        then_end = self.builder.block
+        self.builder = llvm_ir.IRBuilder(else_bb)
         else_val = self._emit_expr(node.else_value)
-        then_val, else_val = self._coerce_pair(then_val, else_val)
-        return self.builder.select(cond, then_val, else_val, name="ifexp")
+        else_end = self.builder.block
+
+        # Coercions belong to their respective branches: neither value
+        # dominates the other branch or the join before its phi.
+        target = self._common_type(then_val.type, else_val.type)
+        self.builder = llvm_ir.IRBuilder(then_end)
+        then_val = self._coerce_to(then_val, target)
+        self.builder.branch(merge_bb)
+        self.builder = llvm_ir.IRBuilder(else_end)
+        else_val = self._coerce_to(else_val, target)
+        self.builder.branch(merge_bb)
+        self.builder = llvm_ir.IRBuilder(merge_bb)
+        result = self.builder.phi(target, name='ifexp')
+        result.add_incoming(then_val, then_end)
+        result.add_incoming(else_val, else_end)
+        return result
 
     # --- Assignments ---
 
@@ -598,12 +620,12 @@ class LLVMCodeGen:
     # --- Expressions ---
 
     def _emit_constant(self, node: ir.IRConstant) -> llvm_ir.Value:
+        if isinstance(node.value, bool):
+            return llvm_ir.Constant(llvm_ir.IntType(32), int(node.value))
         if isinstance(node.value, float):
             return llvm_ir.Constant(llvm_ir.FloatType(), node.value)
         if isinstance(node.value, int):
             return llvm_ir.Constant(llvm_ir.IntType(64), node.value)
-        if isinstance(node.value, bool):
-            return llvm_ir.Constant(llvm_ir.IntType(1), int(node.value))
         raise TypeError(f"Unsupported constant type: {type(node.value)}")
 
     def _emit_name(self, node: ir.IRName) -> llvm_ir.Value:
@@ -691,7 +713,8 @@ class LLVMCodeGen:
             return operand
         if node.op == "not":
             operand = self._to_i1(operand)
-            return self.builder.not_(operand, name="not")
+            value = self.builder.not_(operand, name="not")
+            return self.builder.zext(value, llvm_ir.IntType(32), name='boolean')
         if node.op == "~":
             return self.builder.not_(operand, name="invert")
         raise NotImplementedError(f"Unary op: {node.op}")
@@ -707,7 +730,8 @@ class LLVMCodeGen:
                 "<": "<", "<=": "<=",
                 ">": ">", ">=": ">=",
             }
-            return self.builder.fcmp_ordered(fcmp_ops[node.op], left, right, name="cmp")
+            value = self.builder.fcmp_ordered(fcmp_ops[node.op], left, right, name="cmp")
+            return self.builder.zext(value, llvm_ir.IntType(32), name='boolean')
 
         if _is_int_type(left.type):
             icmp_ops = {
@@ -715,20 +739,32 @@ class LLVMCodeGen:
                 "<": "<", "<=": "<=",
                 ">": ">", ">=": ">=",
             }
-            return self.builder.icmp_signed(icmp_ops[node.op], left, right, name="cmp")
+            value = self.builder.icmp_signed(icmp_ops[node.op], left, right, name="cmp")
+            return self.builder.zext(value, llvm_ir.IntType(32), name='boolean')
 
         raise TypeError(f"Cannot compare type: {left.type}")
 
     def _emit_boolop(self, node: ir.IRBoolOp) -> llvm_ir.Value:
-        """Emit boolean and/or (eager evaluation — not short-circuit)."""
+        """Short-circuit left to right and return Tack's normalized i32 bool."""
         result = self._to_i1(self._emit_expr(node.values[0]))
+        merge_bb = self._func.append_basic_block('boolean.merge')
+        incoming = []
         for val_node in node.values[1:]:
-            val = self._to_i1(self._emit_expr(val_node))
-            if node.op == "and":
-                result = self.builder.and_(result, val, name="and")
+            next_bb = self._func.append_basic_block('boolean.next')
+            incoming.append((result, self.builder.block))
+            if node.op == 'and':
+                self.builder.cbranch(result, next_bb, merge_bb)
             else:
-                result = self.builder.or_(result, val, name="or")
-        return result
+                self.builder.cbranch(result, merge_bb, next_bb)
+            self.builder = llvm_ir.IRBuilder(next_bb)
+            result = self._to_i1(self._emit_expr(val_node))
+        incoming.append((result, self.builder.block))
+        self.builder.branch(merge_bb)
+        self.builder = llvm_ir.IRBuilder(merge_bb)
+        joined = self.builder.phi(llvm_ir.IntType(1), name='boolean')
+        for value, block in incoming:
+            joined.add_incoming(value, block)
+        return self.builder.zext(joined, llvm_ir.IntType(32), name='boolean.result')
 
     def _emit_field_load(self, node: ir.IRFieldLoad) -> llvm_ir.Value:
         base_ptr = self._emit_expr(node.field)
@@ -1054,28 +1090,30 @@ class LLVMCodeGen:
 
     def _coerce_pair(self, a: llvm_ir.Value, b: llvm_ir.Value):
         """Coerce two values to a common type (type promotion)."""
-        if a.type == b.type:
-            return a, b
+        target = self._common_type(a.type, b.type)
+        return self._coerce_to(a, target), self._coerce_to(b, target)
+
+    @staticmethod
+    def _common_type(a, b):
+        """Choose a join type without emitting casts in the wrong branch."""
+        if a == b:
+            return a
 
         # Float wins over int
-        if _is_float_type(a.type) and _is_int_type(b.type):
-            return a, self._coerce_to(b, a.type)
-        if _is_int_type(a.type) and _is_float_type(b.type):
-            return self._coerce_to(a, b.type), b
+        if _is_float_type(a) and _is_int_type(b):
+            return a
+        if _is_int_type(a) and _is_float_type(b):
+            return b
 
         # Wider float wins
-        if _is_float_type(a.type) and _is_float_type(b.type):
-            if isinstance(a.type, llvm_ir.DoubleType):
-                return a, self._coerce_to(b, a.type)
-            return self._coerce_to(a, b.type), b
+        if _is_float_type(a) and _is_float_type(b):
+            return a if isinstance(a, llvm_ir.DoubleType) else b
 
         # Wider int wins
-        if _is_int_type(a.type) and _is_int_type(b.type):
-            if a.type.width > b.type.width:
-                return a, self._coerce_to(b, a.type)
-            return self._coerce_to(a, b.type), b
+        if _is_int_type(a) and _is_int_type(b):
+            return a if a.width > b.width else b
 
-        raise TypeError(f"Cannot coerce pair: {a.type}, {b.type}")
+        raise TypeError(f"Cannot coerce pair: {a}, {b}")
 
 
 def generate_llvm_ir(ir_func: ir.IRFunction) -> llvm_ir.Module:

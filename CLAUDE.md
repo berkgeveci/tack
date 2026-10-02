@@ -38,6 +38,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 
 ```
 @tack.kernel Python function
+    → Source validation (source_validation.py)
     → AST transform (ast_transform.py)
     → Tack IR (ir.py)
     → IR passes: resolve (ir_resolve.py) → type inference → optimize (ir_optimize.py)
@@ -155,6 +156,8 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 ### @tack.func inlining
 
 Functions decorated with `@tack.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.
+
+Original kernels and device functions are validated before lowering; unsupported syntax raises `UnsupportedSyntaxError` with the function and captured-source line/column. Device source is checked before return restructuring, including unreachable statements. `and`, `or`, and conditional expressions short-circuit, including inlined effects. Scalar operands/arguments evaluate left to right; augmented stores evaluate their index once, and sequential `range` bounds/steps are captured at entry. Comparisons and logical expressions yield i32 `0`/`1`. Outer parallel `break`, kernel `return`, keyword arguments, and assertions are rejected; atomics and barriers are statement-only. See `docs/reference/language-contract.md` and `test_source_validation.py` / `test_differential.py`.
 
 ### @tack.data_oriented templates
 

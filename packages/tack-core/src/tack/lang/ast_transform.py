@@ -12,6 +12,7 @@ import ast
 import copy
 
 from tack.lang import ir
+from tack.lang.source_validation import UnsupportedSyntaxError, validate_source
 from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 # Math builtins that map to LLVM intrinsics / libm calls
@@ -55,15 +56,38 @@ class KernelTransformer(ast.NodeVisitor):
         self._texture_fields: dict[str, tuple] = texture_fields or {}
         # Maps renamed texture names back to the original kernel param name
         self._texture_origin: dict[str, str] = {}
+        self._function_name = '<module>'
+
+    def visit(self, node):
+        try:
+            return super().visit(node)
+        except NotImplementedError as error:
+            if isinstance(error, UnsupportedSyntaxError):
+                raise
+            line = getattr(node, 'lineno', 1)
+            column = getattr(node, 'col_offset', 0) + 1
+            raise UnsupportedSyntaxError(
+                f"Kernel '{self._function_name}': {error} "
+                f"at line {line}, column {column}") from error
 
     def visit_Module(self, node: ast.Module) -> ir.IRModule:
         module = ir.IRModule()
         for stmt in node.body:
             if isinstance(stmt, ast.FunctionDef):
+                validate_source(stmt)
                 module.functions.append(self.visit_FunctionDef(stmt))
+            else:
+                raise NotImplementedError(f"Unsupported module statement: {type(stmt).__name__}")
         return module
 
+    def generic_visit(self, node):
+        raise NotImplementedError(f"Unsupported kernel syntax: {type(node).__name__}")
+
+    def visit_Pass(self, node):
+        return None
+
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ir.IRFunction:
+        self._function_name = node.name
         params = []
         for arg in node.args.args:
             params.append(ir.IRParam(
@@ -83,6 +107,7 @@ class KernelTransformer(ast.NodeVisitor):
         inlining of @tack.func calls and inserts them before the statement
         that triggered them.
         """
+        saved_pre_stmts = self._pre_stmts
         result = []
         for stmt in stmts:
             self._pre_stmts = []
@@ -95,7 +120,39 @@ class KernelTransformer(ast.NodeVisitor):
                     result.extend(visited)
                 else:
                     result.append(visited)
+        self._pre_stmts = saved_pre_stmts
         return result
+
+    def _visit_expression(self, node):
+        """Capture the statements needed to evaluate exactly this expression."""
+        saved = self._pre_stmts
+        self._pre_stmts = []
+        value = self.visit(node)
+        statements = self._pre_stmts
+        self._pre_stmts = saved
+        return value, statements
+
+    def _capture_value(self, value, statements, *, freeze_name=False):
+        """Evaluate a delayed value before a later operand's side effects."""
+        if isinstance(value, list):
+            return [self._capture_value(v, statements) for v in value]
+        if isinstance(value, ir.IRConstant) or (isinstance(value, ir.IRName) and not freeze_name):
+            return value
+        name = f"__eval_{self._inline_counter}__"
+        self._inline_counter += 1
+        statements.append(ir.IRAssign(name, value))
+        return ir.IRName(name)
+
+    def _visit_ordered(self, nodes):
+        """Preserve left-to-right evaluation across expression-level inlining."""
+        values = []
+        for node in nodes:
+            value, statements = self._visit_expression(node)
+            if statements:
+                values = [self._capture_value(v, self._pre_stmts) for v in values]
+                self._pre_stmts.extend(statements)
+            values.append(value)
+        return values
 
     # --- Loops ---
 
@@ -117,6 +174,13 @@ class KernelTransformer(ast.NodeVisitor):
             raise NotImplementedError("Only range() loops supported in kernels")
 
         start, end, step = self._parse_range_args(node.iter)
+        if self._loop_depth:
+            # Python's range evaluates its arguments once, before entering
+            # the loop, even when the body rebinds a bound or step variable.
+            start = self._capture_value(start, self._pre_stmts, freeze_name=True)
+            end = self._capture_value(end, self._pre_stmts, freeze_name=True)
+            if step is not None:
+                step = self._capture_value(step, self._pre_stmts, freeze_name=True)
 
         self._loop_depth += 1
         body = self._visit_body(node.body)
@@ -239,8 +303,17 @@ class KernelTransformer(ast.NodeVisitor):
     def visit_While(self, node: ast.While) -> ir.IRWhile:
         if node.orelse:
             raise NotImplementedError("'else' clause on while-loop not supported in kernels")
-        condition = self.visit(node.test)
+        condition, condition_stmts = self._visit_expression(node.test)
+        self._loop_depth += 1
         body = self._visit_body(node.body)
+        self._loop_depth -= 1
+        if condition_stmts:
+            # The condition's inlined calls execute on every test, including
+            # after continue, rather than once before entering the loop.
+            body = [*condition_stmts,
+                    ir.IRIf(ir.IRUnaryOp('not', condition), [ir.IRBreak()], []),
+                    *body]
+            condition = ir.IRConstant(1)
         return ir.IRWhile(condition=condition, body=body)
 
     def visit_Break(self, node: ast.Break) -> ir.IRBreak:
@@ -258,11 +331,20 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRIf(condition=condition, then_body=then_body, else_body=else_body)
 
     def visit_IfExp(self, node: ast.IfExp) -> ir.IRIfExp:
-        return ir.IRIfExp(
-            condition=self.visit(node.test),
-            then_value=self.visit(node.body),
-            else_value=self.visit(node.orelse),
-        )
+        condition, before = self._visit_expression(node.test)
+        then_value, then_stmts = self._visit_expression(node.body)
+        else_value, else_stmts = self._visit_expression(node.orelse)
+        self._pre_stmts.extend(before)
+        if then_stmts or else_stmts:
+            name = f"__conditional_{self._inline_counter}__"
+            self._inline_counter += 1
+            self._pre_stmts.append(ir.IRIf(
+                condition,
+                [*then_stmts, ir.IRAssign(name, then_value)],
+                [*else_stmts, ir.IRAssign(name, else_value)],
+            ))
+            return ir.IRName(name)
+        return ir.IRIfExp(condition, then_value, else_value)
 
     # --- Assignments ---
 
@@ -315,8 +397,7 @@ class KernelTransformer(ast.NodeVisitor):
 
         # field[i] = expr  →  IRFieldStore
         if isinstance(target, ast.Subscript):
-            field = self.visit(target.value)
-            index = self._visit_subscript_index(target)
+            field, index, visited_value = self._visit_store_location(target, visited_value)
             return ir.IRFieldStore(field=field, index=index, value=visited_value)
 
         # x = expr  →  IRAssign
@@ -342,12 +423,20 @@ class KernelTransformer(ast.NodeVisitor):
                 stmts.append(ir.IRAssign(target=f"{target.id}__{c}", value=rhs))
             return stmts
 
-        rhs = ir.IRBinOp(op=op, left=self.visit(target), right=self.visit(node.value))
+        left = self.visit(target)
+        # Evaluate a subscript once, reusing its address for the store.
+        if isinstance(left, ir.IRFieldLoad):
+            left.index = self._capture_value(left.index, self._pre_stmts)
+        right, statements = self._visit_expression(node.value)
+        if statements:
+            read = self._capture_value(left, self._pre_stmts)
+            self._pre_stmts.extend(statements)
+        else:
+            read = left
+        rhs = ir.IRBinOp(op=op, left=read, right=right)
 
         if isinstance(target, ast.Subscript):
-            field = self.visit(target.value)
-            index = self._visit_subscript_index(target)
-            return ir.IRFieldStore(field=field, index=index, value=rhs)
+            return ir.IRFieldStore(field=left.field, index=left.index, value=rhs)
 
         if isinstance(target, ast.Name):
             return ir.IRAssign(target=target.id, value=rhs)
@@ -374,9 +463,8 @@ class KernelTransformer(ast.NodeVisitor):
                     f"Tuple unpacking: expected {n} values, got {len(value_node.elts)}")
             stmts = []
             temps = []
-            for i, elt in enumerate(value_node.elts):
+            for i, val in enumerate(self._visit_ordered(value_node.elts)):
                 tmp = f"__unpack_tmp_{self._inline_counter}_{i}__"
-                val = self.visit(elt)
                 if isinstance(val, list):
                     ndim = len(val)
                     self._vector_vars[tmp] = ndim
@@ -418,8 +506,7 @@ class KernelTransformer(ast.NodeVisitor):
 
     def visit_BinOp(self, node: ast.BinOp) -> ir.IRNode:
         op = self._binop_str(node.op)
-        left = self.visit(node.left)
-        right = self.visit(node.right)
+        left, right = self._visit_ordered([node.left, node.right])
 
         # Vector-scalar or vector-vector binary ops
         left_is_vec = isinstance(left, list)
@@ -446,11 +533,35 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRUnaryOp(op=op, operand=operand)
 
     def visit_Compare(self, node: ast.Compare) -> ir.IRNode:
+        if len(node.ops) == 1:
+            left, right = self._visit_ordered([node.left, node.comparators[0]])
+            return ir.IRCompare(self._cmpop_str(node.ops[0]), left, right)
+
+        operands = [self._visit_expression(n) for n in [node.left, *node.comparators]]
+        if any(stmts for _, stmts in operands):
+            name = f"__comparison_{self._inline_counter}__"
+            self._inline_counter += 1
+            left, before = operands[0]
+            self._pre_stmts.extend(before)
+            left = self._capture_value(left, self._pre_stmts)
+
+            def lower_link(index, previous):
+                right, before = operands[index + 1]
+                body = list(before)
+                right = self._capture_value(right, body)
+                comparison = ir.IRCompare(self._cmpop_str(node.ops[index]), previous, right)
+                body.append(ir.IRAssign(name, comparison))
+                if index + 1 < len(node.ops):
+                    body.append(ir.IRIf(ir.IRName(name), lower_link(index + 1, right), []))
+                return body
+
+            self._pre_stmts.extend(lower_link(0, left))
+            return ir.IRName(name)
+
         # Desugar chained comparisons: a < b < c  →  (a < b) and (b < c)
         comparisons = []
-        left = self.visit(node.left)
-        for op_node, comparator in zip(node.ops, node.comparators):
-            right = self.visit(comparator)
+        left = operands[0][0]
+        for op_node, (right, _) in zip(node.ops, operands[1:]):
             op = self._cmpop_str(op_node)
             comparisons.append(ir.IRCompare(op=op, left=left, right=right))
             left = right
@@ -461,7 +572,24 @@ class KernelTransformer(ast.NodeVisitor):
 
     def visit_BoolOp(self, node: ast.BoolOp) -> ir.IRBoolOp:
         op = "and" if isinstance(node.op, ast.And) else "or"
-        values = [self.visit(v) for v in node.values]
+        operands = [self._visit_expression(n) for n in node.values]
+        values = [value for value, _ in operands]
+        if any(stmts for _, stmts in operands):
+            name = f"__boolean_{self._inline_counter}__"
+            self._inline_counter += 1
+            value, before = operands[0]
+            self._pre_stmts.extend(before)
+            self._pre_stmts.append(ir.IRAssign(name, ir.IRCompare('!=', value, ir.IRConstant(0))))
+            for value, before in operands[1:]:
+                guard = ir.IRName(name)
+                if op == 'or':
+                    guard = ir.IRUnaryOp('not', guard)
+                self._pre_stmts.append(ir.IRIf(
+                    guard,
+                    [*before, ir.IRAssign(name, ir.IRCompare('!=', value, ir.IRConstant(0)))],
+                    [],
+                ))
+            return ir.IRName(name)
         return ir.IRBoolOp(op=op, values=values)
 
     def visit_Subscript(self, node: ast.Subscript) -> ir.IRNode:
@@ -543,7 +671,7 @@ class KernelTransformer(ast.NodeVisitor):
 
     def visit_Tuple(self, node: ast.Tuple) -> list:
         """Visit tuple — used for multi-dimensional indexing like field[i, j]."""
-        return [self.visit(elt) for elt in node.elts]
+        return self._visit_ordered(node.elts)
 
     def visit_Call(self, node: ast.Call) -> ir.IRNode:
         func_name = self._resolve_call_name(node)
@@ -559,7 +687,10 @@ class KernelTransformer(ast.NodeVisitor):
 
         # Math builtins from the math module or bare names
         if func_name in MATH_BUILTINS:
-            args = [self.visit(arg) for arg in node.args]
+            arity = 2 if func_name in ('atan2', 'pow', 'min', 'max') else 1
+            if len(node.args) != arity:
+                raise NotImplementedError(f"{func_name}() takes exactly {arity} arguments")
+            args = self._visit_ordered(node.args)
             return ir.IRCall(func_name=func_name, args=args)
 
         # len(field) → the field's first dimension
@@ -615,23 +746,21 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name in ("atomic_add", "atomic_min", "atomic_max"):
             if len(node.args) != 3:
                 raise NotImplementedError(f"{func_name}() takes exactly 3 arguments (field, index, value)")
-            field = self.visit(node.args[0])
-            index = self.visit(node.args[1])
-            value = self.visit(node.args[2])
+            field, index, value = self._visit_ordered(node.args)
             op = func_name.replace("atomic_", "")  # "add", "min", "max"
             return ir.IRAtomicOp(op=op, field=field, index=index, value=value)
 
         # print() for kernel debugging
         if func_name == "print":
             format_parts = []
-            expr_args = []
+            expr_nodes = []
             for arg in node.args:
                 if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                     format_parts.append(("str", arg.value))
                 else:
-                    format_parts.append(("expr", len(expr_args)))
-                    expr_args.append(self.visit(arg))
-            return ir.IRPrint(args=expr_args, format_parts=format_parts)
+                    format_parts.append(("expr", len(expr_nodes)))
+                    expr_nodes.append(arg)
+            return ir.IRPrint(args=self._visit_ordered(expr_nodes), format_parts=format_parts)
 
         # Type casts: int(), float(), and explicit tack.f32/f64/i32/i64/u32/u64
         _CAST_MAP = {
@@ -672,7 +801,10 @@ class KernelTransformer(ast.NodeVisitor):
         # Skip docstrings and other standalone string constants
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             return None
-        return self.visit(node.value)
+        value = self.visit(node.value)
+        # A function/atomic expression can have generated all its effects
+        # in pre-statements. Its scalar result is unused here.
+        return None if isinstance(value, (ir.IRName, list)) else value
 
     # --- @tack.func inlining ---
 
@@ -686,6 +818,7 @@ class KernelTransformer(ast.NodeVisitor):
 
         func_obj = _func_registry[func_name]
         funcdef = func_obj._funcdef
+        validate_source(funcdef, kind='Device function')
 
         # Save and reset _pre_stmts so nested inlining doesn't interfere
         saved_pre_stmts = self._pre_stmts
@@ -965,17 +1098,11 @@ class KernelTransformer(ast.NodeVisitor):
         arg = node.args[0]
         if not isinstance(arg, ast.List):
             raise NotImplementedError("Vector() argument must be a list literal")
-        return [self.visit(elt) for elt in arg.elts]
+        return self._visit_ordered(arg.elts)
 
     def _assign_vector(self, name: str, ast_elts: list) -> list:
         """Assign a vector construction to a variable: v = Vector([a, b, c])."""
-        ndim = len(ast_elts)
-        self._vector_vars[name] = ndim
-        stmts = []
-        for c, elt in enumerate(ast_elts):
-            val = self.visit(elt)
-            stmts.append(ir.IRAssign(target=f"{name}__{c}", value=val))
-        return stmts
+        return self._assign_vector_from_ir(name, self._visit_ordered(ast_elts))
 
     def _assign_vector_from_ir(self, name: str, components: list) -> list:
         """Assign a vector expression result to a variable."""
@@ -988,8 +1115,7 @@ class KernelTransformer(ast.NodeVisitor):
 
     def _store_vector_field(self, target: ast.Subscript, components: list) -> list:
         """Store a vector into a vector field: field[i] = vec."""
-        field_node = self.visit(target.value)
-        index_node = self._visit_subscript_index(target)
+        field_node, index_node, components = self._visit_store_location(target, components)
         int_index = ir.IRCast(value=index_node, dtype=i32)
         ndim = len(components)
         stmts = []
@@ -1038,6 +1164,8 @@ class KernelTransformer(ast.NodeVisitor):
 
     def _emit_vector_method(self, method_name: str, components: list, ndim: int, arg_nodes: list):
         """Emit IR for a vector method call."""
+        if method_name in ('normalized', 'norm', 'norm_sqr') and arg_nodes:
+            raise NotImplementedError(f"{method_name}() takes no arguments")
         if method_name == "normalized":
             # length = sqrt(sum(c*c for c in components))
             sum_sq = components[0]
@@ -1100,6 +1228,19 @@ class KernelTransformer(ast.NodeVisitor):
 
     # --- Helpers ---
 
+    def _visit_store_location(self, target, value):
+        """Evaluate an assignment RHS before side effects in its target."""
+        saved = self._pre_stmts
+        self._pre_stmts = []
+        field = self.visit(target.value)
+        index = self._visit_subscript_index(target)
+        statements = self._pre_stmts
+        self._pre_stmts = saved
+        if statements:
+            value = self._capture_value(value, self._pre_stmts)
+            self._pre_stmts.extend(statements)
+        return field, index, value
+
     def _visit_subscript_index(self, node: ast.Subscript):
         """Extract and linearize index from a subscript.
 
@@ -1119,7 +1260,7 @@ class KernelTransformer(ast.NodeVisitor):
             if field_name is None:
                 raise NotImplementedError("Multi-dim indexing requires a named field")
 
-            indices = [self.visit(elt) for elt in node.slice.elts]
+            indices = self._visit_ordered(node.slice.elts)
 
             # Linearize: (i * dim1 + j) * dim2 + k
             result = indices[0]
@@ -1142,13 +1283,13 @@ class KernelTransformer(ast.NodeVisitor):
 
     def _parse_range_args(self, call_node: ast.Call):
         """Parse range(end), range(start, end), or range(start, end, step)."""
-        args = call_node.args
+        args = self._visit_ordered(call_node.args)
         if len(args) == 1:
-            return ir.IRConstant(0), self.visit(args[0]), None
+            return ir.IRConstant(0), args[0], None
         if len(args) == 2:
-            return self.visit(args[0]), self.visit(args[1]), None
+            return args[0], args[1], None
         if len(args) == 3:
-            return self.visit(args[0]), self.visit(args[1]), self.visit(args[2])
+            return args[0], args[1], args[2]
         raise NotImplementedError("range() takes 1-3 arguments")
 
     def _resolve_call_name(self, node: ast.Call) -> str:

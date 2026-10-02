@@ -149,8 +149,8 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
 
     if isinstance(node, ir.IRUnaryOp):
         t = _annotate_expr(node.operand, env, field_params)
-        node.dtype = t
-        return t
+        node.dtype = i32 if node.op == 'not' else t
+        return node.dtype
 
     if isinstance(node, ir.IRCall):
         # Annotate arguments

@@ -1,9 +1,7 @@
 """Behavioral baseline for docs/reference/language-contract.md.
 
-LC1–LC3 are ordinary regressions on every available backend. The remaining
-shared-frontend defect LC4 is a strict expected failure until stage three.
-
-Run with --runxfail to expose the current defects as ordinary failures.
+LC1–LC8 are ordinary regressions. Numerical cases run on every available
+backend; rejection and generated-source cases exercise the shared frontend.
 """
 
 import numpy as np
@@ -440,10 +438,6 @@ def test_outermost_continue_leaves_the_gpu_kernel(generator):
     assert src.count("return;") == baseline.count("return;") + 1
 
 
-@pytest.mark.xfail(
-    strict=True, raises=pytest.fail.Exception,
-    reason="LC4: the shared frontend silently discards unsupported assert statements",
-)
 def test_unsupported_assert_is_rejected():
     """Reject assert at the frontend until its execution semantics are defined."""
     @tack.kernel

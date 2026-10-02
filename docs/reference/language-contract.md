@@ -1,6 +1,6 @@
 # Kernel language contract (draft)
 
-This is the draft contract for compiler hardening, updated at stage two on
+This is the draft contract for compiler hardening, updated at stage three on
 2026-10-02.
 It defines the intended portable kernel model, identifies known violations,
 and separates decisions still open for discussion. It is **not a claim that
@@ -32,8 +32,10 @@ guides remain useful examples, but are not an exhaustive semantics specification
 **Required:** the frontend must either translate a construct according to
 its defined semantics or reject it with a diagnostic. Silently dropping a
 statement, operand, or control-flow effect is not acceptable. Diagnostics
-should identify the construct and kernel; source locations are a later
-hardening deliverable.
+identify the construct, kernel or device function, and source location.
+The frontend validates original source before lowering, including
+unreachable statements in device functions. Locations currently refer to
+the captured, dedented source, rather than absolute file coordinates.
 
 The current language surface includes the following families. Inclusion
 does not imply that every Python use of the syntax is supported or that
@@ -50,10 +52,14 @@ all corner cases have been validated.
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
 
 Python exceptions, `try`, context managers, generators, and runtime Python
-object manipulation are outside this baseline. `assert` should be rejected
-until Tack defines its device execution and failure-reporting behavior
-(LC4). Supporting assertions later would require changing this contract
-and its rejection test together.
+object manipulation are outside this baseline and rejected. So are imports,
+assertions (LC4), nested definitions, comprehensions, annotated assignments,
+keyword/starred arguments, and unsupported operators. Docstrings and `pass`
+are explicit no-ops. Parameter annotations and decorators remain host
+metadata; ordinary positional parameters without defaults are supported.
+Supporting device assertions later would require changing this contract
+and its rejection test together. Atomics and barriers are currently
+statement-only operations; their return values are not supported.
 
 **Current behavior:** kernels are compiled from inspectable source; a bare
 REPL or dynamically generated function may not provide that source. Kernel
@@ -75,6 +81,16 @@ iteration, absent a conflicting access from another iteration. This holds
 across loop iterations, conditionals, and inlined device-function bodies.
 An empty sequential loop does not execute its body. See LC1.
 
+**Required:** scalar operands and function arguments evaluate from left to
+right. Inlined calls retain their original execution position. `and` and
+`or` short-circuit; a conditional expression evaluates only its selected
+arm. Chained comparisons stop at the first false comparison and evaluate
+the middle operands' effects once. Ordinary assignment evaluates its value
+before its store index. Augmented assignment evaluates its index once and
+reads the old value before evaluating the right-hand side. Sequential
+`range` arguments are evaluated once before entering the loop, including
+when its body changes a bound or step variable.
+
 The top-level `range(start, end)` executes exactly the indices in
 `[start, end)`, and no iteration when that interval is empty or reversed.
 Backends launch their grids from zero, so the frontend moves a nonzero start
@@ -84,13 +100,14 @@ does not specialize the compiled kernel. See LC5.
 Early exits must preserve the defined control flow. `continue` ends the
 current iteration of its nearest enclosing loop, including the top-level
 parallel one, where it skips the rest of that iteration only (LC8). This
-draft does not extend Python's sequential outer-loop `break` behavior to a
-parallel loop.
-Multiple top-level parallel loops, outer-loop early exits, negative or
-zero `range` steps, and cross-iteration communication need explicit
-validation or a specified rejection policy before joining the portable
-baseline. Positive step support already exists; its lowering still must
-preserve the iteration sequence.
+frontend rejects `break` from the parallel loop: there is no ordered prefix
+of parallel iterations to stop. Kernel `return` is also rejected; results
+are written to fields. Positive `range` steps are supported, and literal
+zero or negative steps are rejected. A dynamic step must be positive;
+runtime validation of that caller constraint remains open. Multiple
+top-level parallel loops and cross-iteration communication require further
+validation before joining the portable baseline. Outer launch bounds must
+be resolvable from host arguments and field metadata.
 
 **Required:** optimizations preserve the observable behavior of every
 defined, race-free program, whether or not a current example uses that
@@ -142,6 +159,13 @@ derived from their assignments. These are Tack rules, not Python's dynamic
 typing rules. The hardening work must validate that inferred expression
 types and emitted operations agree, including signedness and narrowing.
 
+Comparisons, `not`, `and`, and `or` produce normalized i32 values `0` or `1`.
+In particular, Tack's `and` and `or` return Boolean values, rather than the
+selected operand that Python returns for numeric operands. Boolean literals
+also have numeric values `0` and `1`. Short-circuiting governs execution
+independently of this result-type rule. Stage three corrects CPU results
+that previously sign-extended a true LLVM i1 to `-1`.
+
 For the initial regression baseline, numerical expectations use small,
 representable integers and exact f32 values. The following policies remain
 **open** and must be resolved before broader numerical conformance claims:
@@ -149,13 +173,13 @@ representable integers and exact f32 values. The following policies remain
 | Question | Current evidence | Decision needed |
 |---|---|---|
 | Signed `//` and `%` | CPU integer `-3 // 2` produces `-1`, not Python's `-2` | Python floor semantics or explicitly specified alternative |
-| Boolean and conditional evaluation | CPU Boolean lowering is eager; conditional expressions emit LLVM `select` after computing operands | Whether guards short-circuit and which operands may be evaluated |
 | Overflow and conversion | Fixed-width types and promotion rules exist | Overflow, out-of-range casts, mixed signed/unsigned values, invalid shifts, division by zero |
 | Floating-point results | Backends use their own arithmetic and math implementations | Rounding, contraction/reassociation, NaNs, infinities, signed zero, denormals, error tolerances |
 | Reductions | Parallel implementations may change operation order | Permitted order variation, determinism, and numerical tolerances |
 
-This stage adds no test asserting that an accidental numerical result is
-the desired permanent behavior. Defined integer results should match
+The differential tests cover small exact integer results and an exact
+floating-point promotion case; they do not settle the open numerical
+policies by recording accidental outputs. Defined integer results should match
 exactly across backends. Floating-point comparisons need stated tolerances
 and supported input domains rather than a general bitwise-equality promise.
 
@@ -256,11 +280,22 @@ per GPU generator for the top-level `continue`.
 template classes, typed template constants including signed zero, and changes
 to runtime template attribute layouts.
 
-LC4 remains a shared-frontend strict expected failure, restricted to failure
-to raise the required diagnostic. A fix producing an unexpected pass fails
-the normal suite until its marker is removed. CPU validation of stage two
-does not establish that the GPU fixes pass on hardware; each backend still
-needs the runs below.
+Stage three fixes LC4 and removes its expected-failure marker. All contract
+cases are ordinary assertions. `test_source_validation.py` adds rejection
+and diagnostic coverage, while `test_differential.py` runs identical source
+as a compiled kernel and as serial Python over independent NumPy arrays.
+It compares every field, including fields mutated by inlined calls. Its
+generated cases use a fixed grammar and reproducible seed IDs, varying
+bounds, positive steps, branches, `break`, and `continue`. They exclude
+atomics, cooperative workgroups, vector methods, and open numerical cases.
+
+The differential tests exposed and fixed eager guarded calls, discarded
+condition-call statements, delayed operand loads, repeated augmented-store
+indices, and changing sequential range bounds. CPU lowering now uses
+control-flow joins for Boolean and conditional expressions. Native GPU
+expressions already short-circuit; their inlined statement effects now
+stay inside the corresponding guards in shared IR. CPU validation alone
+does not establish hardware correctness; each backend needs the runs below.
 
 Run the baseline on all locally discoverable backends:
 
@@ -268,10 +303,10 @@ Run the baseline on all locally discoverable backends:
 uv run --no-sync pytest packages/tack-core/tests/test_compiler_contract.py -v -rxX
 ```
 
-Expose the remaining frontend defect as a normal test failure for diagnosis:
+Run frontend and differential coverage as ordinary assertions:
 
 ```bash
-uv run --no-sync pytest packages/tack-core/tests/test_compiler_contract.py --runxfail -v
+uv run --no-sync pytest packages/tack-core/tests/test_source_validation.py packages/tack-core/tests/test_differential.py -v
 ```
 
 For a GPU handoff, initialize the requested backend explicitly first, then
@@ -281,7 +316,7 @@ For example, after installing the CUDA extra and runtime:
 
 ```bash
 uv run --no-sync python -c 'import tack; tack.init(arch=tack.cuda)' && \
-  uv run --no-sync pytest packages/tack-core/tests/test_compiler_contract.py -k cuda -v -rxX
+  uv run --no-sync pytest packages/tack-core/tests/test_compiler_contract.py packages/tack-core/tests/test_differential.py -k cuda -v -rxX
 ```
 
 Use `tack.hip` / `-k hip` or `tack.level_zero` / `-k level_zero` for those
@@ -294,7 +329,8 @@ differences. Do not waive numerical failures by adding expected-failure markers.
 
 Stage one established the draft and reproductions. Stage two disables unsafe
 transformations, supports overlapping arguments, and repairs specialization
-identity. Later stages add stage-specific IR verification, source diagnostics,
-shared traversal support, and broader differential/generated-program testing.
-Language decisions above must be settled explicitly before those tests
-encode them as permanent guarantees.
+identity. Stage three adds strict frontend rejection with source context,
+defines guarded expression execution and Boolean values, and brings forward
+differential/generated-program tests. Stage-specific IR verification and
+shared traversal support remain future work, along with broader testing and
+the numerical/capability decisions above.
