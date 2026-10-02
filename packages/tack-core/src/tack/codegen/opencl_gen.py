@@ -73,7 +73,7 @@ class OpenCLCodeGen(CUDACodeGen):
             if param.name in self._texture_params:
                 params_c.append(f"__read_only image3d_t {param.name}")
             elif param.name in self._field_params:
-                params_c.append(f"__global {c_type}* restrict {param.name}")
+                params_c.append(f"__global {c_type}* {param.name}")
             else:
                 params_c.append(f"{c_type} {param.name}")
         params_c.append(f"{_OCL_INT} __n__")

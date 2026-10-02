@@ -1,6 +1,7 @@
 # Kernel language contract (draft)
 
-This is the first-stage contract for compiler hardening, dated 2026-10-02.
+This is the draft contract for compiler hardening, updated at stage two on
+2026-10-02.
 It defines the intended portable kernel model, identifies known violations,
 and separates decisions still open for discussion. It is **not a claim that
 the current implementation satisfies every requirement below**. The baseline
@@ -89,6 +90,12 @@ invariant. Moving a computation must also respect whether it executes at
 all; moving a load out of a zero-trip loop can introduce an invalid access.
 When a pass cannot establish safety, it must leave the computation in place.
 
+**Current implementation:** Tack performs conservative copy propagation,
+retaining assignments and replacing only subsequent uses when neither the
+copy nor its source is rebound in the block. Custom load hoisting and CSE
+are disabled until memory and control-flow analyses can establish their
+safety. LLVM and the vendor compilers still perform their own optimizations.
+
 ## Memory and aliasing
 
 Fields are typed, shaped storage associated with a backend. A field view or
@@ -97,18 +104,14 @@ does not establish that two fields have different backing allocations.
 Callers must keep external storage alive for its use and must use fields
 compatible with the active backend.
 
-**Proposed:** support overlapping field arguments by default, preserving
+**Required:** support overlapping field arguments by default, preserving
 program order within each iteration. This includes passing the same field
 twice and passing distinct views over the same storage. It does not make
-cross-iteration data races valid. LC2 tests this proposed policy. The current
-implementation is unsafe for this use: LLVM emits `noalias` for every field
-parameter, and CUDA-derived source emits `__restrict__`.
-
-An alternative policy would prohibit specified overlaps and diagnose them.
-That decision remains open; if chosen, LC2 must become a rejection test.
-Either policy must define what happens before the compiler promises the
-backend that pointers do not alias. Runtime checks must account for storage
-overlap, not just whether Python objects are identical.
+cross-iteration data races valid. LC2 tests this policy. LLVM field parameters
+carry no `noalias` promise; CUDA/HIP and OpenCL field pointers carry no
+`__restrict__` or `restrict` promise. A future opt-in disjoint-storage
+specialization would need an explicit contract and a justification based
+on storage overlap, rather than Python object identity.
 
 **Required caller constraints for this baseline:** access only in-bounds
 elements and initialized values; write only to writable storage. Bounds
@@ -176,6 +179,15 @@ body can require specialization even when that dimension also sets the
 launch length. Class-level template constants and instance-level runtime
 scalars retain their distinct roles.
 
+The current key includes argument dtypes and field/scalar/texture categories,
+vector widths, texture extents, and resolved shape dependencies. Template
+identity includes the actual class, typed constants, field metadata, and
+runtime scalar attribute names. Floating-point constants use their bit
+patterns, distinguishing signed zeros and making NaN cache keys stable.
+Different classes with identical names can have different methods, and
+adding a runtime attribute changes the parameter
+layout even when its value is not a compilation constant.
+
 The frontend's cached IR template must remain pristine. Mutating passes
 operate on a variant's copy. A backend cache must belong to the backend
 configuration that compiled its entries; compiled code must not outlive
@@ -190,7 +202,7 @@ not from recording Tack's current output.
 | ID | Requirement | CPU evidence at the baseline |
 |---|---|---|
 | LC1 | Sequential field loads observe preceding writes | Three increments produce `1`; bypassing Tack IR optimization produces `3` |
-| LC2 | Proposed support for overlapping arguments | Write `1` through `a`, write `2` through aliased `b`, read `a`: returns `1` |
+| LC2 | Support for overlapping arguments | Write `1` through `a`, write `2` through aliased `b`, read `a`: returns `1` |
 | LC3 | Vector widths specialize independently | Width 2 followed by width 3 reuses the first variant and gives incorrect squared norms |
 | LC4 | Unsupported statements are rejected | `assert False` disappears from transformed IR without a diagnostic |
 
@@ -200,12 +212,22 @@ Vector inputs have enough allocated storage to keep even the incorrect cached
 indexing in bounds. The mutation reference bypasses Tack's IR optimizations
 only; LLVM/vendor optimization remains active.
 
-LC1–LC3 have **strict expected-failure markers on CPU only**, restricted to
-numerical assertion failures. Unexpected compilation errors remain failures.
-Other available backends execute the same tests with ordinary assertions;
-their behavior has not been assumed. LC4 is a shared-frontend expected failure
-restricted to failure to raise the required diagnostic. A fix producing an
-unexpected pass fails the normal suite until its marker is removed.
+Stage one recorded these defects on CPU; subsequent Linux testing reproduced
+LC1–LC3 on CUDA. Stage two removes their expected-failure markers: all
+numerical cases are now ordinary assertions on every available backend.
+The suite also covers zero-trip local assignments, while-loop mutation,
+mutation through aliases, CSE across alias stores, and copy propagation's
+statement order, loop steps, and loop-variable bindings. There are
+**17 numerical cases per backend**, plus one frontend case.
+`test_variant_cache.py` covers field/scalar calling conventions, same-named
+template classes, typed template constants including signed zero, and changes
+to runtime template attribute layouts.
+
+LC4 remains a shared-frontend strict expected failure, restricted to failure
+to raise the required diagnostic. A fix producing an unexpected pass fails
+the normal suite until its marker is removed. CPU validation of stage two
+does not establish that the GPU fixes pass on hardware; each backend still
+needs the runs below.
 
 Run the baseline on all locally discoverable backends:
 
@@ -213,7 +235,7 @@ Run the baseline on all locally discoverable backends:
 uv run --no-sync pytest packages/tack-core/tests/test_compiler_contract.py -v -rxX
 ```
 
-Expose expected defects as normal test failures for diagnosis:
+Expose the remaining frontend defect as a normal test failure for diagnosis:
 
 ```bash
 uv run --no-sync pytest packages/tack-core/tests/test_compiler_contract.py --runxfail -v
@@ -233,13 +255,13 @@ Use `tack.hip` / `-k hip` or `tack.level_zero` / `-k level_zero` for those
 backends. `--no-sync` preserves the existing environment's backend extras.
 The shared-frontend LC4 test runs in the unfiltered command. Record backend,
 device, runtime/binding versions, pass/fail/xfail counts, and numerical
-differences before extending any expected-failure markers.
+differences. Do not waive numerical failures by adding expected-failure markers.
 
 ## Subsequent stages
 
-This first stage establishes the draft and reproductions. Stage two fixes
-or conservatively disables unsafe transformations and resolves the alias
-policy. Later stages add stage-specific IR verification, source diagnostics,
+Stage one established the draft and reproductions. Stage two disables unsafe
+transformations, supports overlapping arguments, and repairs specialization
+identity. Later stages add stage-specific IR verification, source diagnostics,
 shared traversal support, and broader differential/generated-program testing.
 Language decisions above must be settled explicitly before those tests
 encode them as permanent guarantees.

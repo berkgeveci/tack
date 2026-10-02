@@ -147,11 +147,16 @@ arrays.
 Each unique combination of template types produces a different compiled
 kernel. The cache key includes:
 
-- Kernel name and identity (`id(kernel)`)
-- Type signature of all params
-- Template class names and their scalar/field attribute values
-- Vector field metadata
+- Kernel object identity (held weakly by the backend cache)
+- Type signature and field/scalar/texture category of all params
+- Actual template class identity, typed compile-time constants, field
+  metadata, and runtime scalar attribute names
+- Vector field widths
 - Texture shapes
+- Dimension sizes baked into code by shape resolution
+
+Runtime scalar values do not specialize, but changing the set of runtime
+attributes changes the parameter layout and requires another variant.
 
 This means `avg(structured_cs, ...)` and `avg(explicit_cs, ...)` produce
 two separately cached compilations with different generated code.

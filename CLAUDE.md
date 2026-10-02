@@ -88,17 +88,19 @@ Only on a cache miss:
 1. Deep-copy the template — the passes below mutate IR in place and must not touch the template
 2. Dimension size resolution (`ir_resolve.py`)
 3. Dispatch-time type checking (`check_dispatch_types`) — validates field dtypes against the backend
-4. IR optimization: LICM, copy propagation, CSE (`ir_optimize.py`)
+4. IR optimization: conservative copy propagation (`ir_optimize.py`)
 5. Backend `build` callback: scalar packing (GPU), type annotation (`ir_type_annotate.py`), codegen, compile
 
 ### Variant cache key
 
 Keyed per `Kernel` (weakly, so compiled code is released with the kernel), then by:
-argument type signature + texture extents + template constants + **`shape_signature`**.
+argument type signature + field/scalar/texture categories + vector widths + texture extents + template structure/constants + **`shape_signature`**. Template keys preserve actual class identity, typed constants, field metadata, and runtime scalar attribute names; runtime scalar values do not specialize.
 
 That last one matters for correctness, not speed. `ir_resolve` substitutes dimension sizes as literals — `a[i, j]` linearizes to `i * dim1 + j` with `dim1` baked in — so the row stride is part of the compiled code's identity. `shape_signature()` reports exactly the dimensions a kernel bakes in (memoized per IR; empty for 1-D kernels, so varying a flat length does **not** re-specialize).
 
 Because the passes mutate IR in place, the template from `get_ir()` must be treated as immutable — a pass that consumed its `IRDimSize` nodes would leave nothing for a later shape to resolve.
+
+Fields may share storage, including distinct views and imported pointers. Preserve program order within each race-free iteration; field parameters must not carry unconditional `noalias`/`restrict` promises.
 
 ### Field dimensions
 
@@ -138,7 +140,7 @@ The IR is a simple tree of nodes:
 ### IR passes
 
 - **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from field shapes, resolves `IRAtomicOp` sub-expressions, and resolves `shared_like` dtypes from fields
-- **ir_optimize.py**: Three passes — Loop-Invariant Code Motion (LICM), copy propagation, Common Subexpression Elimination (CSE)
+- **ir_optimize.py**: Conservative copy propagation for inlined arguments; custom LICM and CSE are disabled because they lack memory/control-flow safety analysis. LLVM and vendor compilers still optimize generated code.
 - **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars auto-promote to `f64` when any field arg uses `f64`; otherwise default to `f32`. Int scalars exceeding i32 range auto-promote to `i64`. `check_dispatch_types()` validates field dtypes against backend capabilities.
 - **ir_type_annotate.py**: Sets `dtype` (a `ScalarType`) on every expression IR node. Codegens read `node.dtype` directly instead of reimplementing type inference heuristics.
 

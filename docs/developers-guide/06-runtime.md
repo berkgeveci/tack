@@ -45,47 +45,30 @@ kernel(x, y, out, alpha, n)
 
 ## Backend.execute() Flow
 
-All 5 backends follow the same flow in their `execute()` method:
+Every backend uses `resolve_variant()` in `runtime/kernel_utils.py` to
+find or build a specialization:
 
-```python
-def execute(self, kernel, args, kwargs):
-    # 1. Detect and expand template arguments
-    template_args = _detect_template_args(kernel, args)
-    effective_args = _expand_template_args(args, template_args)
+1. Expand template arguments and detect vector and texture fields.
+2. Obtain the pristine IR template for this specialization.
+3. Infer argument dtypes and categories on a private parameter probe, record
+   texture extents, and derive resolved shape dependencies.
+4. Look up the variant in the backend's weakly keyed per-kernel cache.
+5. On a miss, deep-copy the template, resolve dimensions, infer/check types,
+   and run conservative copy propagation. The backend build callback then
+   packs scalars where needed, annotates types, generates code, and compiles.
+6. Resolve the launch range from the variant's IR for this dispatch, bind
+   arguments (updating any scalar pack buffers), and execute.
 
-    # 2. Detect vector and texture fields
-    vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
-    texture_fields = _detect_texture_fields(kernel, args, template_args)
+The compiled key includes dtypes, field/scalar/texture categories, vector
+widths, texture extents, template structure/constants, and baked-in dimension
+sizes. Template structure includes actual class identity and runtime scalar
+attribute names. Changing scalar values alone does not recompile; changing
+an attribute layout or a vector width does.
 
-    # 3. Get IR (cached by kernel + specialization key)
-    ir_module = kernel.get_ir(vector_fields, template_args, texture_fields)
-    ir_func = ir_module.functions[0]
-
-    # 4. Resolve, type inference, type checking, optimization
-    resolve_ir(ir_func, name_to_field)
-    infer_param_types(ir_func, effective_args)
-    check_dispatch_types(ir_func, effective_args, supported_dtypes, backend_name)
-    optimize_ir(ir_func)
-
-    # 5. Extract loop range BEFORE packing
-    loop_end = _get_loop_range(ir_func, kernel_args)
-
-    # 6. Cache check — compile on miss
-    if cache_key not in self._cache:
-        ir_func_copy = copy.deepcopy(ir_func)
-        pack_scalars(ir_func_copy, effective_args)
-        annotate_types(ir_func_copy)
-        compiled = self._compile_kernel(ir_func_copy)
-        pack_fields = _create_pack_fields(pack_info, effective_args, self)
-        self._cache[cache_key] = (compiled, pack_info, pack_fields)
-
-    # 7. Build dispatch args (update cached pack fields)
-    _update_pack_fields(pack_fields, pack_info, effective_args)
-    kernel_args = kept_field_args + pack_fields
-
-    # 8. Dispatch
-    compiled(kernel_args, loop_end)
-```
+Passes run only on a cache miss and never mutate the pristine template.
+Parameter probing is private to each dispatch so concurrent calls cannot
+observe another call's types. Fields may overlap in storage; generated field
+parameters therefore carry no unconditional `noalias` or `restrict` promise.
 
 ## Loop Range Resolution
 

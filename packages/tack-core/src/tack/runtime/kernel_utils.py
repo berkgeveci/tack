@@ -92,9 +92,10 @@ def kernel_variant_key(ir_func, kernel, vector_fields, template_args,
     """Build the cache key distinguishing compiled variants of one kernel.
 
     The kernel identity is carried by the enclosing per-kernel slot, so this
-    only needs to separate specializations: argument types, texture shapes,
-    template constants, and every dimension size the resolve pass bakes
-    into the generated code (``shape_sig``, from ``shape_signature``).
+    only needs to separate specializations: argument types and categories,
+    vector widths, texture shapes, template structure/constants, and every
+    dimension size the resolve pass bakes into generated code (``shape_sig``,
+    from ``shape_signature``).
 
     Leaving the dimension sizes out is a correctness bug, not a missed
     optimization: a kernel that indexes ``a[i, j]`` compiles the row stride
@@ -102,11 +103,15 @@ def kernel_variant_key(ir_func, kernel, vector_fields, template_args,
     reads the wrong addresses and silently returns wrong numbers.
     """
     type_sig = tuple(p.type_annotation for p in ir_func.params)
+    arg_sig = tuple((getattr(p, '_is_field', True), getattr(p, '_is_texture', False))
+                    for p in ir_func.params)
+    vec_sig = tuple(sorted((vector_fields or {}).items()))
     tex_sig = tuple(getattr(p, '_texture_shape', None) for p in ir_func.params)
-    tmpl_key = ""
+    tmpl_key = ()
     if template_args:
-        tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
-    return (type_sig, tex_sig, tmpl_key, shape_sig)
+        # Keep the structural key: stringifying it loses class identity.
+        tmpl_key = kernel._make_cache_key(vector_fields, template_args)
+    return (type_sig, arg_sig, vec_sig, tex_sig, tmpl_key, shape_sig)
 
 
 def _walk_ir(node):

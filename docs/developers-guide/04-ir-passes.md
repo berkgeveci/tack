@@ -9,7 +9,7 @@ pass walks the IR tree and mutates it in place.
 1. ir_resolve      — Replace IRDimSize with constants, set texture shapes, resolve shared_like
 2. type_inference   — Annotate params with types from actual arguments
 3. check_dispatch_types — Validate field dtypes against backend capabilities
-4. ir_optimize      — LICM, copy propagation, CSE
+4. ir_optimize      — conservative copy propagation
 5. ir_type_annotate — Annotate all expression nodes with dtype (ScalarType)
 6. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
 ```
@@ -46,38 +46,26 @@ Each backend defines its supported dtypes (e.g., Metal excludes `f64`).
 Unsupported dtypes produce a clear `TypeError` naming the kernel, parameter,
 dtype, and backend.
 
-## IR Optimize (`ir_optimize.py`, 539 lines)
+## IR Optimize (`ir_optimize.py`)
 
-Three sub-passes run in sequence:
+Copy propagation replaces subsequent uses of a single-assignment copy with
+its source when the source is never rebound in the containing block.
+Assignment counts include nested control flow, loop-variable bindings, and
+local/shared array bindings.
+Assignments remain in place, reads before the assignment are unchanged,
+and rewritten sequential loops retain their step.
 
-### Loop-Invariant Code Motion (LICM)
+This is useful after `@tack.func` inlining, which creates assignments such
+as `__func_x_0__ = x`. Field aliases can then use the original parameter:
+`a = x` followed by `a[i]` becomes `x[i]`.
 
-Hoists `IRAssign` nodes out of loops when their RHS depends only on values
-defined outside the loop. This is critical after `@tack.func` inlining —
-inlined function bodies often re-load field values every iteration that
-could be loaded once.
-
-Algorithm:
-1. Collect all variables assigned inside the loop body
-2. For each assignment, check if its RHS references only variables defined
-   outside the loop (parameters, or variables assigned before the loop)
-3. Move qualifying assignments before the loop
-
-### Copy Propagation
-
-Resolves chains of `a = b` assignments by replacing references to `a` with
-`b`. This is common after `@tack.func` inlining, which creates parameter
-assignments like `__func_x_0__ = x`.
-
-Handles field alias propagation: if `a = x` where `x` is a field parameter,
-subsequent `a[i]` loads are rewritten to `x[i]`.
-
-### Common Subexpression Elimination (CSE)
-
-Deduplicates identical `IRFieldLoad` expressions within a basic block. Two
-loads are considered identical if they read from the same field at the same
-index (structurally compared). The second load is replaced with a reference
-to the first load's result variable.
+Tack's custom loop-invariant code motion and common subexpression
+elimination are disabled. An invariant address does not imply an invariant
+loaded value, and hoisting an assignment can change a zero-trip loop's
+behavior. Loads must also account for stores through overlapping fields.
+These passes need memory and control-flow safety analyses before they can
+return. LLVM and vendor compilers continue to optimize generated code,
+without unconditional disjoint-storage promises on field parameters.
 
 ## IR Type Annotate (`ir_type_annotate.py`)
 

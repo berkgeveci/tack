@@ -11,6 +11,7 @@ flat length is not compiled in, so varying it must not force a recompile.
 """
 
 import numpy as np
+import pytest
 
 import tack
 
@@ -129,3 +130,115 @@ def test_template_ir_is_not_mutated_by_dispatch(backend):
     template = _scale2d.get_ir().functions[0]
     dims = [n for n in _walk_ir(template.body) if isinstance(n, ir.IRDimSize)]
     assert dims, "a dispatch consumed the template's IRDimSize nodes"
+
+
+@pytest.mark.parametrize("order", [("field", "scalar"), ("scalar", "field")])
+def test_field_and_scalar_arguments_have_distinct_calling_conventions(backend, order):
+    @tack.kernel
+    def fill(unused, out):
+        for i in range(out.shape[0]):
+            out[i] = 2.0
+
+    field = tack.field(dtype=tack.f32, shape=(7,))
+    out = tack.field(dtype=tack.f32, shape=(7,))
+    for kind in (*order, order[0]):
+        out.fill(-1)
+        fill(field if kind == "field" else 1.0, out)
+        np.testing.assert_array_equal(out.to_numpy(), np.full(7, 2.0))
+    assert _variant_count(fill) == 2
+
+
+def test_same_named_template_classes_keep_their_own_methods(backend):
+    @tack.func
+    def plus_one(self, value):
+        return value + 1
+
+    @tack.func
+    def plus_two(self, value):
+        return value + 2
+
+    def make_class(method):
+        @tack.data_oriented
+        class Mapper:
+            apply = method
+        return Mapper
+
+    first = make_class(plus_one)
+    second = make_class(plus_two)
+    assert first.__qualname__ == second.__qualname__
+
+    @tack.kernel
+    def apply(mapper, data, out):
+        for i in range(out.shape[0]):
+            out[i] = mapper.apply(data[i])
+
+    data = tack.field(dtype=tack.i32, shape=(7,))
+    data.from_numpy(np.arange(7, dtype=np.int32))
+    out = tack.field(dtype=tack.i32, shape=(7,))
+    for cls, offset in ((first, 1), (second, 2), (first, 1)):
+        apply(cls(), data, out)
+        np.testing.assert_array_equal(out.to_numpy(), np.arange(7) + offset)
+    assert _variant_count(apply) == 2
+
+
+def test_template_runtime_attribute_layout_is_part_of_ir_identity(backend):
+    @tack.data_oriented
+    class Config:
+        def __init__(self, value, extra=None):
+            self.value = value
+            if extra is not None:
+                self.extra = extra
+
+    @tack.kernel
+    def fill(config, out):
+        for i in range(out.shape[0]):
+            out[i] = config.value
+
+    out = tack.field(dtype=tack.i32, shape=(7,))
+    for config in (Config(3), Config(7, extra=11), Config(5)):
+        fill(config, out)
+        np.testing.assert_array_equal(out.to_numpy(), np.full(7, config.value))
+    assert _variant_count(fill) == 2
+
+
+def test_template_constant_types_specialize_independently(backend):
+    @tack.data_oriented
+    class Config:
+        value = 1
+
+        def __init__(self, value):
+            self.value = value
+
+    @tack.kernel
+    def fill(config, out):
+        for i in range(out.shape[0]):
+            out[i] = config.value
+
+    out = tack.field(dtype=tack.f32, shape=(7,))
+    # Python keys consider 1 and 1.0 equal, but their literals lower to
+    # different Tack types. Revisiting either type must reuse its variant.
+    for value in (1, 1.0, 1, 1.0):
+        fill(Config(value), out)
+        np.testing.assert_array_equal(out.to_numpy(), np.ones(7))
+    assert _variant_count(fill) == 2
+
+
+@pytest.mark.parametrize("values", [(0.0, -0.0, 0.0), (-0.0, 0.0, -0.0)])
+def test_template_float_constants_preserve_signed_zero(backend, values):
+    @tack.data_oriented
+    class Config:
+        value = 0.0
+
+        def __init__(self, value):
+            self.value = value
+
+    @tack.kernel
+    def fill(config, out):
+        for i in range(out.shape[0]):
+            out[i] = config.value
+
+    out = tack.field(dtype=tack.f32, shape=(7,))
+    for value in values:
+        fill(Config(value), out)
+        np.testing.assert_array_equal(np.signbit(out.to_numpy()), np.full(7, np.signbit(value)))
+    assert _variant_count(fill) == 2

@@ -56,8 +56,9 @@ def test_field_parameters_are_global_pointers():
             out[i] = x[i] * 2.0
 
     src = _source(scale, _field(), _field())
-    assert "__global float* restrict x" in src
-    assert "__global float* restrict out" in src
+    assert "__global float* x" in src
+    assert "__global float* out" in src
+    assert "restrict" not in src
 
 
 def test_scalar_parameters_are_not_pointers():
@@ -68,7 +69,7 @@ def test_scalar_parameters_are_not_pointers():
 
     src = _source(scale, _field(), _field(), 2.5)
     assert "float alpha" in src
-    assert "__global float* restrict alpha" not in src
+    assert "__global float* alpha" not in src
 
 
 def test_dtype_mapping():
@@ -78,7 +79,7 @@ def test_dtype_mapping():
             out[i] = x[i]
 
     src = _source(copy_ints, _field(dtype=tack.i32), _field(dtype=tack.i32))
-    assert "__global int* restrict" in src
+    assert "__global int*" in src
 
 
 # ── Thread indexing ──────────────────────────────────────────────────

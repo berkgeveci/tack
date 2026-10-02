@@ -148,7 +148,9 @@ class CUDACodeGen:
             if param.name in self._texture_params:
                 params_c.append(f"{self._TEXTURE_OBJECT_TYPE} {param.name}")
             elif param.name in self._field_params:
-                params_c.append(f"{c_type}* __restrict__ {param.name}")
+                # Fields can alias; restrict would let the compiler reuse
+                # a value across a store through another field argument.
+                params_c.append(f"{c_type}* {param.name}")
             else:
                 params_c.append(f"{c_type} {param.name}")
 

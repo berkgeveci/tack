@@ -63,7 +63,7 @@ class TestHIPCodeGen:
         src = generate_hip_source(ir_func)
         assert 'if (i >= __n__) return;' in src
 
-    def test_restrict_pointers(self):
+    def test_field_pointers_allow_aliasing(self):
         @tack.kernel
         def add(x, y, out):
             for i in range(x.shape[0]):
@@ -71,7 +71,8 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(add, (64,), (64,), (64,))
         src = generate_hip_source(ir_func)
-        assert 'float* __restrict__' in src
+        assert 'float* x' in src
+        assert '__restrict__' not in src
 
     def test_math_functions(self):
         @tack.kernel
@@ -105,8 +106,8 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(saxpy, (64,), (64,), (64,))
         src = generate_hip_source(ir_func)
-        # Should have all three field params as restrict pointers
-        assert src.count('__restrict__') == 3
+        # Field parameters do not promise disjoint storage
+        assert '__restrict__' not in src
         # Should have the n parameter
         assert 'long long __n__' in src
 

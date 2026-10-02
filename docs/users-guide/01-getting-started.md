@@ -79,8 +79,10 @@ When you call a kernel for the first time, Tack:
 
 1. Reads the Python source of the decorated function
 2. Transforms the AST into Tack's internal IR
-3. Runs optimization passes (LICM, CSE, copy propagation)
+3. Resolves shapes and types, then propagates safe copies
 4. Generates backend-specific code (LLVM IR, MSL, CUDA C, etc.)
 5. Compiles and dispatches
 
-Subsequent calls with the same argument types reuse the compiled kernel.
+LLVM and vendor compilers optimize the generated code. Subsequent calls
+with the same specialization reuse the compiled kernel; dtypes, vector
+widths, baked-in shapes, and template structure can require another variant.

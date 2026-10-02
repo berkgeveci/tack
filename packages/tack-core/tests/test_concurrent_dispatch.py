@@ -324,7 +324,7 @@ def test_the_registry_is_left_clean(monkeypatch):
 class _ColdScaler:
     """A distinct class-level constant, so its IR cache entry is cold.
 
-    `_make_cache_key` keys on the class name and its class-level scalars,
+    `_make_cache_key` keys on class identity and its class-level scalars,
     so reusing `_Scaler` here would hit the entry the tests above built and
     never reach the transform this one needs to fail.
     """

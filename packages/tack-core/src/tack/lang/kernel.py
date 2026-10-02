@@ -2,6 +2,7 @@
 
 import ast
 import inspect
+import struct
 import textwrap
 import threading
 
@@ -142,16 +143,21 @@ class Kernel:
             for idx in sorted(template_args.keys()):
                 param_name, obj = template_args[idx]
                 from tack.lang.template_rewrite import classify_template_attrs
-                scalars, fields, _runtime = classify_template_attrs(obj)
+                scalars, fields, runtime = classify_template_attrs(obj)
                 cls = type(obj)
                 # Only class-level scalars (constants) are part of the cache key.
                 # Instance scalars are runtime parameters — changing them does
                 # not trigger recompilation.
                 parts.append((
                     f"tmpl_{idx}",
-                    cls.__qualname__,
-                    tuple(sorted(scalars.items())),
-                    tuple((k, f.dtype, f.shape) for k, f in sorted(fields.items())),
+                    cls,
+                    # Float bit patterns distinguish signed zero and give
+                    # NaN constants a stable key despite NaN != NaN.
+                    tuple((k, type(v), struct.pack('!d', v) if isinstance(v, float) else v)
+                          for k, v in sorted(scalars.items())),
+                    tuple((k, f.dtype, f.shape, getattr(f, '_vector_n', None))
+                          for k, f in sorted(fields.items())),
+                    tuple(sorted(runtime)),
                 ))
         return tuple(parts)
 

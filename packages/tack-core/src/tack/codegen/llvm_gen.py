@@ -105,12 +105,11 @@ class LLVMCodeGen:
         fn_type = llvm_ir.FunctionType(llvm_ir.VoidType(), llvm_param_types)
         llvm_func = llvm_ir.Function(self.module, fn_type, name=func.name)
 
-        # Name the arguments and mark pointer params as noalias
-        for i, (arg, name) in enumerate(zip(llvm_func.args, param_names)):
+        # Field arguments may refer to overlapping storage, including
+        # distinct reshaped/imported views. Do not promise noalias.
+        for arg, name in zip(llvm_func.args, param_names):
             arg.name = name
             self._params[name] = arg
-            if name in self._field_params:
-                llvm_func.args[i].add_attribute("noalias")
 
         entry = llvm_func.append_basic_block("entry")
         self.builder = llvm_ir.IRBuilder(entry)
