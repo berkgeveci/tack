@@ -11,7 +11,9 @@ with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
+from tack.codegen.integer_ops import IntegerCodeGen
 from tack.lang import ir
+from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 _MSL_TYPE_MAP = {
@@ -79,6 +81,8 @@ _CMP_MAP = {
 class MSLCodeGen:
     """Generates MSL source from a Tack IR function."""
 
+    _integer_type_map = _MSL_TYPE_MAP
+
     def __init__(self, ir_func: ir.IRFunction):
         self.ir_func = ir_func
         self._indent = 0
@@ -88,6 +92,9 @@ class MSLCodeGen:
         self._local_vars: dict[str, str] = {}  # name -> MSL type
         self._declared_vars: set[str] = set()
         self._integer_division_helpers = set()
+        self._integers = IntegerCodeGen(self._integer_type_map, bitcast=True)
+        self._dynamic_range_depth = 0
+        self._opaque_integer_add = False
 
     def generate(self) -> str:
         """Generate MSL source for the kernel."""
@@ -185,7 +192,7 @@ class MSLCodeGen:
         self._emit("}")
 
         helpers = integer_division_helpers(
-            self._integer_division_helpers, _MSL_TYPE_MAP, 'inline')
+            self._integer_division_helpers, _MSL_TYPE_MAP, 'inline') + self._integers.definitions('inline')
         return "\n".join(self._lines[:preamble_end] + helpers
                          + self._lines[preamble_end:]) + "\n"
 
@@ -253,7 +260,10 @@ class MSLCodeGen:
         self._local_vars[var] = _INT
         self._declared_vars.add(var)
         self._indent += 1
+        dynamic = not isinstance(node.end, ir.IRConstant)
+        self._dynamic_range_depth += int(dynamic)
         self._emit_body(node.body)
+        self._dynamic_range_depth -= int(dynamic)
         self._indent -= 1
         self._emit("}")
 
@@ -392,13 +402,19 @@ class MSLCodeGen:
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, 'dtype', None))
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
             index = f"(({_INT})({index}))"
         self._emit(f"{field}[{index}] = {value};")
 
     def _emit_assign(self, node: ir.IRAssign):
+        previous = self._opaque_integer_add
+        self._opaque_integer_add = self._dynamic_range_depth > 0 and any(
+            isinstance(n, ir.IRName) and n.name == node.target for n in walk_ir(node.value))
         value = self._expr(node.value)
+        self._opaque_integer_add = previous
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, '_resolved_type', None))
         if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
@@ -518,11 +534,29 @@ class MSLCodeGen:
             return f"{node.value!r}f"
         if isinstance(node.value, bool):
             return "1" if node.value else "0"
+        if isinstance(node.value, int) and -(2**31) < node.value < 2**31:
+            return str(node.value)
+        if isinstance(node.value, int) and getattr(node, 'dtype', None) is not None:
+            ctype = self._integer_type_map[node.dtype]
+            # Spell signed minimum using representable tokens.
+            literal = f'(-{-(node.value + 1)}LL - 1LL)' if node.value < 0 else f'{node.value}ULL'
+            return f'(({ctype})({literal}))'
         return str(node.value)
 
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, 'dtype', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        if node.op not in ('<<', '>>'):
+            right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
+        # M1 Max pipeline compilation crashes when wrapping 64-bit additions
+        # participate in reduction optimization for runtime-bounded loops.
+        # Keep this helper opaque there; other integer operations stay inline.
+        noinline = self._opaque_integer_add and node.op == '+' and dtype in (i64, u64)
+        fixed = self._integers.operation(node.op, dtype, left, right, noinline=noinline)
+        if fixed is not None:
+            return fixed
         integer = integer_division_expr(
             node, left, right, _MSL_TYPE_MAP, self._integer_division_helpers)
         if integer is not None:
@@ -541,6 +575,10 @@ class MSLCodeGen:
 
     def _expr_unaryop(self, node: ir.IRUnaryOp) -> str:
         operand = self._expr(node.operand)
+        op = 'neg' if node.op == '-' else node.op
+        fixed = self._integers.operation(op, getattr(node, 'dtype', None), operand)
+        if fixed is not None:
+            return fixed
         if node.op == "-":
             return f"(-{operand})"
         if node.op == "+":
@@ -554,6 +592,9 @@ class MSLCodeGen:
     def _expr_compare(self, node: ir.IRCompare) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, '_operand_type', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
         return f"({left} {_CMP_MAP[node.op]} {right})"
 
     def _expr_boolop(self, node: ir.IRBoolOp) -> str:
@@ -669,6 +710,13 @@ inline float {name}(device float* data, float u, float v, float w) {{
 
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
+        dtype = getattr(node, 'dtype', None)
+        if node.func_name in ('abs', 'min', 'max'):
+            converted = [self._integers.convert(a, getattr(n, 'dtype', None), dtype)
+                         for a, n in zip(args, node.args)]
+            fixed = self._integers.operation(node.func_name, dtype, *converted)
+            if fixed is not None:
+                return fixed
 
         if node.func_name == "min" and len(args) == 2:
             # Cast to float to avoid ambiguity between min(int,int) and min(float,float)
@@ -684,6 +732,9 @@ inline float {name}(device float* data, float u, float v, float w) {{
 
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
+        converted = self._integers.convert(val, getattr(node.value, 'dtype', None), node.dtype)
+        if converted != val:
+            return converted
         if isinstance(node.dtype, ScalarType):
             msl_type = _MSL_TYPE_MAP.get(node.dtype)
             if msl_type is None:
@@ -700,6 +751,9 @@ inline float {name}(device float* data, float u, float v, float w) {{
         cond = self._expr(node.condition)
         then = self._expr(node.then_value)
         else_ = self._expr(node.else_value)
+        dtype = getattr(node, 'dtype', None)
+        then = self._integers.convert(then, getattr(node.then_value, 'dtype', None), dtype)
+        else_ = self._integers.convert(else_, getattr(node.else_value, 'dtype', None), dtype)
         return f"({cond} ? {then} : {else_})"
 
 

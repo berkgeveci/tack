@@ -16,6 +16,7 @@ from tack.lang.types import (
     i16,
     i32,
     i64,
+    integer_type_for_value,
     u8,
     u16,
     u32,
@@ -60,14 +61,10 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
             types.append(float_context)
         elif isinstance(arg, (int, np.integer)):
             val = int(arg)
-            if val > 2**31 - 1 or val < -(2**31):
-                param.type_annotation = i64
-                param._is_field = False
-                types.append(i64)
-            else:
-                param.type_annotation = i32
-                param._is_field = False
-                types.append(i32)
+            dtype = integer_type_for_value(val)
+            param.type_annotation = dtype
+            param._is_field = False
+            types.append(dtype)
         else:
             raise TypeError(
                 f"Unsupported argument type for parameter '{param.name}': {type(arg)}"
@@ -114,21 +111,12 @@ _PROMOTION_ORDER = {i8: 0, u8: 0, i16: 1, u16: 1, i32: 2, u32: 2, i64: 3, u64: 3
 # Unsigned types and their signed counterpart at the same width
 _IS_UNSIGNED = {u8, u16, u32, u64}
 
-# When mixing signed + unsigned of the same width, promote to the next wider signed type
-_MIXED_SIGN_PROMOTE = {
-    0: i16,   # i8 + u8 → i16
-    1: i32,   # i16 + u16 → i32
-    2: i64,   # i32 + u32 → i64
-    3: i64,   # i64 + u64 → i64 (no wider signed type; best we can do)
-}
-
-
 def promote_types(a: ScalarType, b: ScalarType) -> ScalarType:
     """Return the promoted type for a binary operation between types a and b.
 
-    When mixing signed and unsigned integers of the same width, promotes to
-    the next wider signed type to avoid unsigned overflow surprises
-    (e.g., u8 + i8 → i16, u32 + i32 → i64).
+    Integer promotion preserves the full ranges of both operands. A signed
+    type mixed with u64 needs an explicit cast: no Tack integer contains
+    both ranges. Floating-point promotion remains a separate policy.
     """
     if a is b:
         return a
@@ -136,13 +124,11 @@ def promote_types(a: ScalarType, b: ScalarType) -> ScalarType:
     rank_b = _PROMOTION_ORDER.get(b, -1)
     if rank_a < 0 or rank_b < 0:
         raise TypeError(f"Cannot promote types: {a}, {b}")
-    if rank_a == rank_b:
-        # Same width — check for signed/unsigned mismatch
-        a_unsigned = a in _IS_UNSIGNED
-        b_unsigned = b in _IS_UNSIGNED
-        if a_unsigned != b_unsigned:
-            return _MIXED_SIGN_PROMOTE[rank_a]
-        # Same signedness, same width but different types shouldn't happen
-        # (caught by a is b above), but return the higher-ranked one
-        return a
+    if rank_a < 4 and rank_b < 4 and (a in _IS_UNSIGNED) != (b in _IS_UNSIGNED):
+        signed, unsigned = (b, a) if a in _IS_UNSIGNED else (a, b)
+        bits = max(signed.bits, unsigned.bits + 1)
+        for candidate in (i8, i16, i32, i64):
+            if candidate.bits >= bits:
+                return candidate
+        raise TypeError(f"Cannot implicitly mix {a} and {b}: use an explicit integer cast")
     return a if rank_a > rank_b else b

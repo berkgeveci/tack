@@ -19,7 +19,7 @@ Must run after type inference (needs _is_field and type_annotation on params).
 from tack.lang import ir
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.type_inference import promote_types
-from tack.lang.types import ScalarType, f32, f64, i32, i64
+from tack.lang.types import INTEGER_TYPES, ScalarType, f32, f64, i32, i64, integer_type_for_value
 
 # The join is monotone (types only widen), so it settles in a couple of
 # rounds. The cap is a backstop against a pathological IR, not a budget.
@@ -84,12 +84,7 @@ def _join(current, new):
         return new
     if new is None or current is new:
         return current
-    try:
-        return promote_types(current, new)
-    except TypeError:
-        # Unpromotable pair (shouldn't happen for scalars) — keep the first
-        # type rather than guess, matching the old first-assignment-wins.
-        return current
+    return promote_types(current, new)
 
 
 def _annotate_expr(node, env, field_params) -> ScalarType | None:
@@ -105,11 +100,7 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         if isinstance(node.value, float):
             node.dtype = f32
         elif isinstance(node.value, int):
-            val = node.value
-            if val > 2**31 - 1 or val < -(2**31):
-                node.dtype = i64
-            else:
-                node.dtype = i32
+            node.dtype = integer_type_for_value(node.value)
         else:
             node.dtype = i32
         return node.dtype
@@ -137,7 +128,7 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         rt = _annotate_expr(node.right, env, field_params)
         if lt is None or rt is None:
             return None
-        node.dtype = promote_types(lt, rt)
+        node.dtype = lt if node.op in ('<<', '>>') else promote_types(lt, rt)
         return node.dtype
 
     if isinstance(node, ir.IRUnaryOp):
@@ -159,7 +150,7 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         else:
             node.dtype = f32
         # Integer-returning builtins
-        if node.func_name in ("abs",) and arg_types and arg_types[0] in (i32, i64):
+        if node.func_name in ("abs",) and arg_types and arg_types[0] in INTEGER_TYPES:
             node.dtype = arg_types[0]
         if node.func_name in ("min", "max") and arg_types:
             node.dtype = arg_types[0]
@@ -189,8 +180,9 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         return node.dtype
 
     if isinstance(node, ir.IRCompare):
-        _annotate_expr(node.left, env, field_params)
-        _annotate_expr(node.right, env, field_params)
+        lt = _annotate_expr(node.left, env, field_params)
+        rt = _annotate_expr(node.right, env, field_params)
+        node._operand_type = promote_types(lt, rt)
         node.dtype = i32  # comparisons always produce int
         return i32
 
@@ -309,6 +301,7 @@ def _annotate_stmt(node, env, field_params, var_types=None, collected=None):
     if isinstance(node, ir.IRFieldStore):
         _annotate_expr(node.index, env, field_params)
         _annotate_expr(node.value, env, field_params)
+        node.dtype = env.get(_get_field_name(node.field))
         return
 
     if isinstance(node, ir.IRAtomicOp):

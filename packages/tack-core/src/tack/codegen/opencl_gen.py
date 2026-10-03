@@ -48,6 +48,8 @@ class OpenCLCodeGen(CUDACodeGen):
     atomics, shared memory, and barriers.
     """
 
+    _integer_type_map = _OCL_C_TYPE_MAP
+
     def generate(self) -> str:
         func = self.ir_func
 
@@ -96,7 +98,7 @@ class OpenCLCodeGen(CUDACodeGen):
 
         # Prepend atomic helpers if needed
         prefix_lines = integer_division_helpers(
-            self._integer_division_helpers, _OCL_C_TYPE_MAP, 'static inline')
+            self._integer_division_helpers, _OCL_C_TYPE_MAP, 'static inline') + self._integers.definitions('static inline')
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "float atomicMinFloat(volatile __global float* addr, float val) {",
@@ -264,6 +266,13 @@ class OpenCLCodeGen(CUDACodeGen):
 
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
+        dtype = getattr(node, 'dtype', None)
+        if node.func_name in ('abs', 'min', 'max'):
+            converted = [self._integers.convert(a, getattr(n, 'dtype', None), dtype)
+                         for a, n in zip(args, node.args)]
+            fixed = self._integers.operation(node.func_name, dtype, *converted)
+            if fixed is not None:
+                return fixed
 
         if node.func_name == "min" and len(args) == 2:
             return f"fmin({args[0]}, {args[1]})"
@@ -279,6 +288,13 @@ class OpenCLCodeGen(CUDACodeGen):
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, 'dtype', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        if node.op not in ('<<', '>>'):
+            right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
+        fixed = self._integers.operation(node.op, dtype, left, right)
+        if fixed is not None:
+            return fixed
         integer = integer_division_expr(
             node, left, right, _OCL_C_TYPE_MAP, self._integer_division_helpers)
         if integer is not None:
@@ -376,6 +392,9 @@ class OpenCLCodeGen(CUDACodeGen):
 
     def _expr_cast(self, node) -> str:
         val = self._expr(node.value)
+        converted = self._integers.convert(val, getattr(node.value, 'dtype', None), node.dtype)
+        if converted != val:
+            return converted
         if isinstance(node.dtype, ScalarType):
             c_type = _OCL_C_TYPE_MAP[node.dtype]
             return f"(({c_type})({val}))"

@@ -174,9 +174,17 @@ Fields have explicit fixed-width integer or floating-point element types.
 Backend capabilities restrict which types can execute. Unsupported types
 must be rejected rather than silently narrowed to a supported type.
 
+CPU field loads and stores promise only byte alignment, since imported
+buffers may be unaligned and byte-sized elements do not preserve four-byte
+alignment. The numerical regression checks imported buffers at a one-byte
+offset for all ten scalar types and verifies that emitted LLVM does not
+claim stronger alignment than the storage provides.
+
 **Current behavior:** Python floating-point arguments default to f32 unless
 an f64 field argument establishes an f64 context. Integer scalar arguments
-use i32 or widen to i64 based on magnitude. Locals receive one storage type
+use i32, i64, or u64 based on magnitude; values outside the supported
+64-bit integer ranges are rejected. Signed integer literals are classified
+by their complete value, so `-9223372036854775808` fits i64. Locals receive one storage type
 derived from their assignments. These are Tack rules, not Python's dynamic
 typing rules. The hardening work must validate that inferred expression
 types and emitted operations agree, including signedness and narrowing.
@@ -204,11 +212,9 @@ above. Unsigned operands use unsigned division and remainder.
 The operation uses the type annotation pass's promoted integer type; both
 operands are converted to that type before arithmetic, and the result has
 that type. This increment defines results when those conversions preserve
-both input values and the quotient fits the promoted type. It covers all
-same-type integer pairs and lossless mixed-type promotions. In particular,
-i32 with u32 promotes to i64, rather than following C's implicit unsigned
-conversion. General mixed-sign promotion and out-of-range conversion
-policies remain open.
+both input values and the quotient fits the promoted type. Integer promotion
+now preserves both full input ranges, as defined below. In particular,
+i32 with u32 promotes to i64.
 
 **Required caller constraints:** the evaluated divisor is nonzero. For a
 signed promoted type, the minimum representable value with divisor `-1`
@@ -227,12 +233,74 @@ single evaluation of inlined operands, and guarded zero divisors. CUDA,
 HIP, Metal, and OpenCL generators share typed C-family helpers; LLVM emits
 signed truncating operations with floor correction, or unsigned operations.
 
+**Required: fixed-width arithmetic and integer conversion.** Integer `+`,
+`-`, `*`, unary negation, and bitwise operations produce the low N bits at
+the annotated result width. Signed types interpret those bits as two's
+complement; unsigned types interpret them as nonnegative integers. Thus
+i8 `127 + 1` gives `-128`, and u16 `65535 * 65535` gives `1`. Each nested
+operation wraps before its result is used by another operation. Integer
+`abs` preserves its input type; the signed minimum therefore remains the
+minimum under this wrapping policy. Unsigned `abs` is the identity.
+Integer `min`, `max`, and comparisons use exact integer values and the
+promoted operand type, including unsigned high-bit values.
+
+Promotion chooses the narrowest integer type that preserves both full
+operand ranges. Equal signedness chooses the wider type. Mixed signedness
+chooses a signed type with sufficient width: i8 with u16 gives i32, and
+i16 with u32 gives i64. Mixing any signed type with u64 is rejected with
+an explicit-cast diagnostic. This applies to arithmetic, comparisons,
+conditional arms, and joining assignments to one local variable.
+An explicit cast can express intentional wrapping before promotion.
+
+Integer-to-integer casts and integer field stores reduce the mathematical
+value modulo 2^N at the destination width, then interpret the resulting
+bits using the destination signedness. Widening therefore respects the
+**source** signedness: i8 `-1` to u64 gives `2^64 - 1`, while u8 `255`
+to i64 gives `255`. Narrowing and changing signedness are defined even
+when the original value cannot be represented by the destination type.
+
+Shifts preserve the left operand's type, independently of the count type.
+Left shifts wrap at that width; signed right shifts fill with the sign bit,
+and unsigned right shifts fill with zero. **Required caller constraint:**
+the count is an integer in `[0, N)`. Invalid evaluated counts have no
+portable result or promised runtime exception. Guarded unselected shifts
+must not execute.
+
+Floating-to-integer conversions truncate toward zero. **Required caller
+constraints:** the input is finite and its truncated value fits the
+destination type. NaNs, infinities, and out-of-range values have no portable
+result or promised runtime exception. This increment tests unsigned
+conversions and signedness through locals, but does not establish a general
+floating-point rounding or optimization policy.
+
+`test_integer_semantics.py` uses Python big integers as the oracle for
+wrapping, all 64 integer cast pairs, mixed promotion, comparisons, exact
+integer builtins, shifts, and complete-width literals/scalars. LLVM uses
+the annotated width, source signedness for extension, and unsigned
+operations where appropriate. Its wrapping arithmetic has no `nsw`/`nuw`
+flags; see the [LLVM arithmetic specification](https://llvm.org/docs/LangRef.html#add-instruction).
+The C-family generators use unsigned carriers of at least 32 bits to avoid
+signed overflow caused by implicit integer promotion, then reconstruct
+signed values using representable casts. Metal uses `as_type` to reinterpret
+the bits. Signed right shift is emitted without relying on C's
+implementation-defined behavior. See C11 draft N1570 sections 6.3.1.3,
+6.3.1.4, 6.5, and 6.5.7 in the
+[language specification](https://www.open-std.org/jtc1/sc22/wg14/www/docs/n1570.pdf).
+
+On the tested M1 Max, pipeline compilation crashes when wrapping 64-bit
+additions are optimized inside loops with runtime bounds. Metal emits a
+separate `noinline` i64/u64 addition helper for assignments that update a local
+using its previous value in those loop bodies. Other operations and
+additions remain inline. The dynamic-bound
+regression covers empty ranges, overflowing i32 bounds, and steps 1 and 2;
+this workaround needs performance and hardware validation on other Apple GPUs.
+
 The following policies remain
 **open** and must be resolved before broader numerical conformance claims:
 
 | Question | Current evidence | Decision needed |
 |---|---|---|
-| Overflow and conversion | Fixed-width types and promotion rules exist | Overflow, out-of-range casts, mixed signed/unsigned values, invalid shifts, division by zero |
+| Remaining arithmetic domains | Fixed-width wrapping, integer casts/promotion, and valid shifts are defined | Integer `/` and `**`, floating `//`/`%`, and any extension beyond the stated invalid-operation constraints |
 | Floating-point results | Backends use their own arithmetic and math implementations | Rounding, contraction/reassociation, NaNs, infinities, signed zero, denormals, error tolerances |
 | Reductions | Parallel implementations may change operation order | Permitted order variation, determinism, and numerical tolerances |
 

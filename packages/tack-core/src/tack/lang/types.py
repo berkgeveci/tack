@@ -32,6 +32,21 @@ u64 = ScalarType("u64", np.dtype(np.uint64),  "i64", 64)
 f32 = ScalarType("f32", np.dtype(np.float32), "float", 32)
 f64 = ScalarType("f64", np.dtype(np.float64), "double", 64)
 
+INTEGER_TYPES = frozenset((i8, i16, i32, i64, u8, u16, u32, u64))
+UNSIGNED_TYPES = frozenset((u8, u16, u32, u64))
+
+
+def integer_type_for_value(value: int) -> ScalarType:
+    """Choose a representable type for an integer literal or scalar argument."""
+    if -(2**31) <= value < 2**31:
+        return i32
+    if -(2**63) <= value < 2**63:
+        return i64
+    if 0 <= value < 2**64:
+        return u64
+    raise TypeError(f"Integer value {value} is outside Tack's 64-bit range")
+
+
 # Map numpy dtypes back to tack types
 _numpy_to_tack = {
     np.dtype(np.int8):    i8,
