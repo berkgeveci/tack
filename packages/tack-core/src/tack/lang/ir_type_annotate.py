@@ -17,6 +17,7 @@ Must run after type inference (needs _is_field and type_annotation on params).
 """
 
 from tack.lang import ir
+from tack.lang.ir_traversal import walk_ir
 from tack.lang.type_inference import promote_types
 from tack.lang.types import ScalarType, f32, f64, i32, i64
 
@@ -66,22 +67,14 @@ def annotate_types(ir_func: ir.IRFunction):
     _annotate_body(ir_func.body, env, field_params, var_types, None)
 
 
-def _collect_pinned(stmts, out=None):
+def _collect_pinned(stmts):
     """Names bound by a loop or an explicit allocation, not by assignment."""
-    if out is None:
-        out = set()
-    for stmt in stmts:
-        if isinstance(stmt, (ir.IRParallelFor, ir.IRSequentialFor)):
-            out.add(stmt.var)
-            _collect_pinned(stmt.body, out)
-        elif isinstance(stmt, ir.IRWhile):
-            _collect_pinned(stmt.body, out)
-        elif isinstance(stmt, ir.IRIf):
-            _collect_pinned(stmt.then_body, out)
-            if stmt.else_body:
-                _collect_pinned(stmt.else_body, out)
-        elif isinstance(stmt, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
-            out.add(stmt.name)
+    out = set()
+    for node in walk_ir(stmts):
+        if isinstance(node, (ir.IRParallelFor, ir.IRSequentialFor)):
+            out.add(node.var)
+        elif isinstance(node, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
+            out.add(node.name)
     return out
 
 
@@ -239,7 +232,8 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         return node.dtype
 
     if isinstance(node, ir.IRDimSize):
-        # DimSize returns an integer (dimension size)
+        # DimSize is retained only in the host-evaluated grid bound.
+        node.dtype = i64
         return i64
 
     # Fallback
@@ -332,11 +326,13 @@ def _annotate_stmt(node, env, field_params, var_types=None, collected=None):
         return
 
     if isinstance(node, ir.IRSharedAlloc):
+        _annotate_expr(node.size, env, field_params)
         if isinstance(node.dtype, ScalarType):
             env[node.name] = node.dtype
         return
 
     if isinstance(node, ir.IRLocalAlloc):
+        _annotate_expr(node.size, env, field_params)
         if isinstance(node.dtype, ScalarType):
             env[node.name] = node.dtype
         return

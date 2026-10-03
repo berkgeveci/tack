@@ -12,12 +12,14 @@ from tack.lang.field import Field
 from tack.lang.ir_optimize import optimize_ir
 from tack.lang.ir_resolve import resolve_ir
 from tack.lang.ir_type_annotate import annotate_types
+from tack.lang.ir_verify import verify_ir
 from tack.lang.type_inference import infer_param_types
 from tack.runtime.kernel_utils import (
     _detect_template_args,
     _detect_texture_fields,
     _detect_vector_fields_from_args,
     _expand_template_args,
+    _localize_assigned_scalar_params,
 )
 
 
@@ -46,20 +48,27 @@ def _prepare_ir(kernel, args):
         if isinstance(arg, (Field, Texture3D)):
             name_to_field[param.name] = arg
     resolve_ir(ir_func, name_to_field)
+    verify_ir(ir_func, 'resolved')
 
     # Type inference
     infer_param_types(ir_func, effective_args)
+    verify_ir(ir_func, 'inferred')
 
     # Store texture shapes on params for codegen
     for param, arg in zip(ir_func.params, effective_args):
         if isinstance(arg, Texture3D):
             param._texture_shape = arg.shape_3d
 
+    _localize_assigned_scalar_params(ir_func)
+    verify_ir(ir_func, 'localized')
+
     # Optimize
     optimize_ir(ir_func)
+    verify_ir(ir_func, 'optimized')
 
     # Type annotation
     annotate_types(ir_func)
+    verify_ir(ir_func, 'typed')
 
     return ir_func, effective_args
 
@@ -109,8 +118,10 @@ def _generate_source(kernel, args, optimize=False):
     if backend_name in ("MetalBackend", "CUDABackend", "HIPBackend", "LevelZeroBackend"):
         from tack.lang.ir_pack_scalars import pack_scalars
         pack_scalars(ir_func, effective_args)
+        verify_ir(ir_func, 'packed')
         # Re-annotate after packing
         annotate_types(ir_func)
+        verify_ir(ir_func, 'typed')
 
     if backend_name == "CPUBackend":
         from tack.codegen.llvm_gen import generate_llvm_ir

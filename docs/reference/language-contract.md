@@ -331,6 +331,11 @@ Stage one established the draft and reproductions. Stage two disables unsafe
 transformations, supports overlapping arguments, and repairs specialization
 identity. Stage three adds strict frontend rejection with source context,
 defines guarded expression execution and Boolean values, and brings forward
-differential/generated-program tests. Stage-specific IR verification and
-shared traversal support remain future work, along with broader testing and
-the numerical/capability decisions above.
+differential/generated-program tests. Stage four adds shared structural
+traversal and verification after lowering, resolution, inference, scalar
+localization, optimization, GPU packing, and type annotation. These checks
+run at template/variant construction and during inspection, preserving the
+cache-hit dispatch path. They check structure, binding existence, loop
+targets, and required resolution/type metadata; they do not prove definite
+assignment, bounds safety, or barrier uniformity. Broader testing and the
+numerical/capability decisions above remain subsequent work.

@@ -6,15 +6,55 @@ pass walks the IR tree and mutates it in place.
 ## Pass Order
 
 ```
-1. ir_resolve      — Replace IRDimSize with constants, set texture shapes, resolve shared_like
+1. ir_resolve       — Replace compiled-in dimensions, set texture shapes, resolve array-like dtypes
 2. type_inference   — Annotate params with types from actual arguments
 3. check_dispatch_types — Validate field dtypes against backend capabilities
-4. ir_optimize      — conservative copy propagation
-5. ir_type_annotate — Annotate all expression nodes with dtype (ScalarType)
+4. scalar localization — Give assigned scalar params per-iteration local storage
+5. ir_optimize      — Conservative copy propagation
 6. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
+7. ir_type_annotate — Annotate scalar expressions and assignment storage types
 ```
 
-## IR Resolve (`ir_resolve.py`, 139 lines)
+`resolve_variant()` runs the common passes only for a new compiled variant.
+GPU packing works on a separate copy so launch-range resolution retains the
+original parameter names. CPU skips packing. `tack.inspect()` also performs
+scalar localization and verification; its source preparation annotates once
+before packing and again afterwards on GPU.
+
+## Verification (`ir_verify.py`)
+
+The production pipeline calls `verify_ir()` at these boundaries:
+
+| Stage | Checks added to structural and loop checks |
+|-------|--------------------------------------------|
+| `lowered` | Valid statement/expression roles, known node kinds/operators, numeric constants, unique parameters, existing bindings, exactly one normalized top-level parallel loop, and consistent `break`/`continue` targets |
+| `resolved` | No dimensions or attributes in generated expressions; allocation dtypes and texture extents resolved |
+| `inferred` | Scalar parameter types and field/scalar categories present; field accesses name field parameters or allocated arrays, including inlined pointer copies |
+| `localized` | Recheck the invariants after assigned scalar parameters become locals |
+| `optimized` | Recheck the invariants after copy propagation |
+| `packed` | Recheck the invariants and ensure no scalar parameters remain on GPU |
+| `typed` | Every generated scalar expression and scalar assignment has a type; logical results have i32 dtype |
+
+The parallel loop end is evaluated by the host on each dispatch. Dimension
+queries in that expression remain legal and do not force specialization on
+a flat field's length. Field references are pointers and do not require a
+scalar expression dtype.
+
+`IRVerificationError` reports the kernel, stage, node kind, and structural
+path. Failed variants never reach compilation or enter the compiled cache.
+Template verification runs before caching lowered IR; the remaining checks
+run on variant misses. Warm dispatch performs no verification walks. Direct
+low-level pass/codegen calls used to build IR fragments must invoke the
+verifier themselves when they need the full kernel contract.
+
+These checks establish tree and annotation invariants. Binding checks test
+whether a name exists anywhere in the function, not whether every path
+initializes it before a read. They do not prove bounds safety, alias safety
+of future optimizations, absence of races, barrier uniformity, or numerical
+equivalence. Differential tests and backend hardware validation remain
+necessary.
+
+## IR Resolve (`ir_resolve.py`)
 
 Replaces `IRDimSize(field_name, dim)` with `IRConstant(shape[dim])` using
 the actual field shapes passed at call time. Also sets
@@ -39,8 +79,8 @@ Type rules:
 ## Dispatch-Time Type Checking (`type_inference.py`)
 
 `check_dispatch_types()` validates that all field argument dtypes are
-supported by the target backend. This runs after type inference in every
-backend's `execute()` method.
+supported by the target backend. This runs after type inference when
+building a new compiled variant.
 
 Each backend defines its supported dtypes (e.g., Metal excludes `f64`).
 Unsupported dtypes produce a clear `TypeError` naming the kernel, parameter,
@@ -90,7 +130,7 @@ Key rules:
 The pass tracks a type environment (`var_name → ScalarType`) and propagates
 types through assignment chains.
 
-## Scalar Packing (`ir_pack_scalars.py`, 204 lines)
+## Scalar Packing (`ir_pack_scalars.py`)
 
 GPU backends only. Groups scalar parameters by type into packed field
 buffers to reduce buffer binding count (critical for Metal's 31-binding

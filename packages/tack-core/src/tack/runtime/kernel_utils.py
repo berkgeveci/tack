@@ -26,6 +26,7 @@ import weakref
 
 from tack.lang import ir
 from tack.lang.field import Field
+from tack.lang.ir_traversal import walk_ir as _walk_ir
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
 
 
@@ -114,17 +115,6 @@ def kernel_variant_key(ir_func, kernel, vector_fields, template_args,
         # Keep the structural key: stringifying it loses class identity.
         tmpl_key = kernel._make_cache_key(vector_fields, template_args)
     return (param_sig, vec_sig, tmpl_key, shape_sig)
-
-
-def _walk_ir(node):
-    """Yield every IR node under `node`, including itself."""
-    if isinstance(node, ir.IRNode):
-        yield node
-        for value in vars(node).values():
-            yield from _walk_ir(value)
-    elif isinstance(node, (list, tuple)):
-        for value in node:
-            yield from _walk_ir(value)
 
 
 def _static_field_aliases(ir_func) -> dict:
@@ -340,16 +330,21 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     if variant is None:
         from tack.lang.ir_optimize import optimize_ir
         from tack.lang.ir_resolve import resolve_ir
+        from tack.lang.ir_verify import verify_ir
 
         ir_func = copy.deepcopy(template)
         resolve_ir(ir_func, name_to_field)
+        verify_ir(ir_func, 'resolved')
         infer_param_types(ir_func, effective_args)
+        store_texture_shapes(ir_func, effective_args)
+        verify_ir(ir_func, 'inferred')
         check_dispatch_types(ir_func, effective_args,
                              supported_dtypes=backend.supported_dtypes,
                              backend_name=backend.label)
-        store_texture_shapes(ir_func, effective_args)
         _localize_assigned_scalar_params(ir_func)
+        verify_ir(ir_func, 'localized')
         optimize_ir(ir_func)
+        verify_ir(ir_func, 'optimized')
         variant = KernelVariant(ir_func, build(ir_func, effective_args))
         slot[key] = variant
 

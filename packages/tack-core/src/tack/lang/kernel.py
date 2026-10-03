@@ -7,6 +7,14 @@ import textwrap
 import threading
 
 from tack.lang.ast_transform import transform_kernel
+from tack.lang.ir_verify import verify_ir
+
+
+def _verified_transform(*args, **kwargs):
+    module = transform_kernel(*args, **kwargs)
+    for function in module.functions:
+        verify_ir(function, 'lowered')
+    return module
 
 # Serialises AST→IR transformation. Two things make this necessary rather
 # than tidy.
@@ -101,7 +109,7 @@ class Kernel:
                     rewritten_ast, registered_keys = rewrite_templates(
                         self._ast, template_args)
                     try:
-                        self._ir_cache[key] = transform_kernel(
+                        self._ir_cache[key] = _verified_transform(
                             rewritten_ast, vector_fields=vector_fields,
                             texture_fields=texture_fields,
                         )
@@ -118,7 +126,7 @@ class Kernel:
             if self._ir is None:
                 with _transform_lock:
                     if self._ir is None:
-                        self._ir = transform_kernel(self._ast)
+                        self._ir = _verified_transform(self._ast)
             return self._ir
         key = self._make_cache_key(vector_fields, None, texture_fields)
         cached = self._ir_cache.get(key)
@@ -126,7 +134,7 @@ class Kernel:
             return cached
         with _transform_lock:
             if key not in self._ir_cache:
-                self._ir_cache[key] = transform_kernel(
+                self._ir_cache[key] = _verified_transform(
                     self._ast, vector_fields=vector_fields,
                     texture_fields=texture_fields,
                 )

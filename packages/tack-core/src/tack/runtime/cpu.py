@@ -785,7 +785,9 @@ class CPUBackend(Backend):
     def _build_variant(ir_func, effective_args):
         """Annotate types and JIT-compile. Runs once per variant."""
         from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_verify import verify_ir
         annotate_types(ir_func)
+        verify_ir(ir_func, 'typed')
         return _compile_kernel(ir_func)
 
     # ── Dispatch: serial or fan-out ──────────────────────────────────

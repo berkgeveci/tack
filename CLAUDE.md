@@ -144,6 +144,8 @@ The IR is a simple tree of nodes:
 - **ir_optimize.py**: Conservative copy propagation for inlined arguments; custom LICM and CSE are disabled because they lack memory/control-flow safety analysis. LLVM and vendor compilers still optimize generated code.
 - **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars auto-promote to `f64` when any field arg uses `f64`; otherwise default to `f32`. Int scalars exceeding i32 range auto-promote to `i64`. `check_dispatch_types()` validates field dtypes against backend capabilities.
 - **ir_type_annotate.py**: Sets `dtype` (a `ScalarType`) on every expression IR node. Codegens read `node.dtype` directly instead of reimplementing type inference heuristics.
+- **ir_traversal.py**: Explicit structural child schema, preorder `walk_ir`, and postorder `transform_ir`. Resolution, scalar packing, copy substitution, and shape-dependency queries share it. Metadata is not traversed; unregistered node kinds fail loudly.
+- **ir_verify.py**: Checks lowered templates before caching and variant IR after resolve, infer, scalar localization, optimize, GPU packing, and annotation. Errors report kernel, stage, node kind, and tree path. Checks cover structure, bindings, loop targets, unresolved dimensions/allocation types/texture extents, parameter categories, and scalar annotations. Host-evaluated grid ends retain dimension queries; field pointers need no scalar dtype. Cache hits do not run the verifier. This is not definite-assignment, bounds, race, or barrier-uniformity analysis. Direct pass/codegen calls on IR fragments must request verification themselves.
 
 ### Scalar kernel arguments
 

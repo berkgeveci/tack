@@ -1131,12 +1131,15 @@ class LevelZeroBackend(Backend):
         from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
         from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
         packed = copy.deepcopy(ir_func)
         packed.name = _safe_kernel_name(packed.name)
         _, pack_info = pack_scalars(packed, effective_args)
+        verify_ir(packed, 'packed')
         annotate_types(packed)
+        verify_ir(packed, 'typed')
         compiled = self._compile_kernel(packed)
         pack_fields = (_create_pack_fields(pack_info, effective_args, self)
                        if pack_info else None)

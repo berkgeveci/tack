@@ -11,6 +11,7 @@ single-assignment copy whose source is not modified in its block.
 """
 
 from tack.lang import ir
+from tack.lang.ir_traversal import transform_ir, walk_ir
 
 
 def optimize_ir(ir_func: ir.IRFunction):
@@ -21,24 +22,16 @@ def optimize_ir(ir_func: ir.IRFunction):
 def _count_assignments(body: list) -> dict[str, int]:
     """Count how many times each variable is assigned in a statement list (recursive)."""
     counts: dict[str, int] = {}
-    for stmt in body:
-        if isinstance(stmt, ir.IRAssign):
-            counts[stmt.target] = counts.get(stmt.target, 0) + 1
-        elif isinstance(stmt, (ir.IRLocalAlloc, ir.IRSharedAlloc)):
-            counts[stmt.name] = counts.get(stmt.name, 0) + 1
-        elif isinstance(stmt, (ir.IRParallelFor, ir.IRSequentialFor)):
-            counts[stmt.var] = counts.get(stmt.var, 0) + 1
-            for k, v in _count_assignments(stmt.body).items():
-                counts[k] = counts.get(k, 0) + v
-        elif isinstance(stmt, ir.IRWhile):
-            for k, v in _count_assignments(stmt.body).items():
-                counts[k] = counts.get(k, 0) + v
-        elif isinstance(stmt, ir.IRIf):
-            for k, v in _count_assignments(stmt.then_body).items():
-                counts[k] = counts.get(k, 0) + v
-            if stmt.else_body:
-                for k, v in _count_assignments(stmt.else_body).items():
-                    counts[k] = counts.get(k, 0) + v
+    for node in walk_ir(body):
+        if isinstance(node, ir.IRAssign):
+            name = node.target
+        elif isinstance(node, (ir.IRLocalAlloc, ir.IRSharedAlloc)):
+            name = node.name
+        elif isinstance(node, (ir.IRParallelFor, ir.IRSequentialFor)):
+            name = node.var
+        else:
+            continue
+        counts[name] = counts.get(name, 0) + 1
     return counts
 
 
@@ -96,109 +89,14 @@ def _copy_prop_recurse(body: list) -> list:
 
 
 def _replace_names(node, mapping: dict):
-    """Replace variable names in an IR node according to the mapping."""
-    if isinstance(node, ir.IRName):
-        if node.name in mapping:
-            return ir.IRName(mapping[node.name])
+    """Replace name uses while preserving node annotations and metadata."""
+    def replace_name(node):
+        if isinstance(node, ir.IRName) and node.name in mapping:
+            replacement = ir.IRName(mapping[node.name])
+            replacement.dtype = node.dtype
+            return replacement
         return node
 
-    if isinstance(node, ir.IRAssign):
-        return ir.IRAssign(node.target, _replace_names(node.value, mapping))
-
-    if isinstance(node, ir.IRFieldLoad):
-        return ir.IRFieldLoad(
-            _replace_names(node.field, mapping),
-            _replace_names(node.index, mapping),
-        )
-
-    if isinstance(node, ir.IRFieldStore):
-        return ir.IRFieldStore(
-            _replace_names(node.field, mapping),
-            _replace_names(node.index, mapping),
-            _replace_names(node.value, mapping),
-        )
-
-    if isinstance(node, ir.IRAtomicOp):
-        return ir.IRAtomicOp(
-            node.op,
-            _replace_names(node.field, mapping),
-            _replace_names(node.index, mapping),
-            _replace_names(node.value, mapping),
-        )
-
-    if isinstance(node, ir.IRBinOp):
-        return ir.IRBinOp(
-            node.op,
-            _replace_names(node.left, mapping),
-            _replace_names(node.right, mapping),
-        )
-
-    if isinstance(node, ir.IRUnaryOp):
-        return ir.IRUnaryOp(node.op, _replace_names(node.operand, mapping))
-
-    if isinstance(node, ir.IRCompare):
-        return ir.IRCompare(
-            node.op,
-            _replace_names(node.left, mapping),
-            _replace_names(node.right, mapping),
-        )
-
-    if isinstance(node, ir.IRBoolOp):
-        return ir.IRBoolOp(
-            node.op, [_replace_names(v, mapping) for v in node.values]
-        )
-
-    if isinstance(node, ir.IRCall):
-        return ir.IRCall(
-            node.func_name,
-            [_replace_names(a, mapping) for a in node.args],
-        )
-
-    if isinstance(node, ir.IRCast):
-        return ir.IRCast(_replace_names(node.value, mapping), node.dtype)
-
-    if isinstance(node, ir.IRIfExp):
-        return ir.IRIfExp(
-            _replace_names(node.condition, mapping),
-            _replace_names(node.then_value, mapping),
-            _replace_names(node.else_value, mapping),
-        )
-
-    if isinstance(node, ir.IRIf):
-        return ir.IRIf(
-            _replace_names(node.condition, mapping),
-            [_replace_names(s, mapping) for s in node.then_body],
-            [_replace_names(s, mapping) for s in node.else_body] if node.else_body else [],
-        )
-
-    if isinstance(node, ir.IRParallelFor):
-        return ir.IRParallelFor(
-            node.var,
-            _replace_names(node.start, mapping),
-            _replace_names(node.end, mapping),
-            [_replace_names(s, mapping) for s in node.body],
-        )
-
-    if isinstance(node, ir.IRSequentialFor):
-        return ir.IRSequentialFor(
-            node.var,
-            _replace_names(node.start, mapping),
-            _replace_names(node.end, mapping),
-            [_replace_names(s, mapping) for s in node.body],
-            step=_replace_names(node.step, mapping) if node.step is not None else None,
-        )
-
-    if isinstance(node, ir.IRWhile):
-        return ir.IRWhile(
-            _replace_names(node.condition, mapping),
-            [_replace_names(s, mapping) for s in node.body],
-        )
-
-    if isinstance(node, ir.IRReturn):
-        return ir.IRReturn(_replace_names(node.value, mapping))
-
-    if isinstance(node, ir.IRAttribute):
-        return ir.IRAttribute(_replace_names(node.obj, mapping), node.attr)
-
-    # Constants, Break, Continue, DimSize — no names to replace
-    return node
+    # A shared expression can occur before and after a copy assignment.
+    # Rewriting the later occurrence must not change the earlier one.
+    return transform_ir(node, replace_name, copy_nodes=True)
