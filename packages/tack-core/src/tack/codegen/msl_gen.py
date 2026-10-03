@@ -548,8 +548,10 @@ class MSLCodeGen:
         right = self._expr(node.right)
         dtype = getattr(node, 'dtype', None)
         left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
-        if node.op not in ('<<', '>>'):
+        if node.op not in ('<<', '>>', '**'):
             right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
+        if node.op == '/' and dtype is f32:
+            return f'(((float)({left})) / ((float)({right})))'
         # M1 Max pipeline compilation crashes when wrapping 64-bit additions
         # participate in reduction optimization for runtime-bounded loops.
         # Keep this helper opaque there; other integer operations stay inline.
@@ -562,7 +564,7 @@ class MSLCodeGen:
         if integer is not None:
             return integer
         if node.op == "**":
-            return f"pow({left}, {right})"
+            return f'pow((float)({left}), (float)({right}))'
         if node.op == "//":
             lt = self._infer_expr_type(node.left)
             rt = self._infer_expr_type(node.right)
@@ -711,6 +713,11 @@ inline float {name}(device float* data, float u, float v, float w) {{
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
         dtype = getattr(node, 'dtype', None)
+        if node.func_name == 'pow':
+            fixed = self._integers.operation('**', dtype, *args)
+            if fixed is not None:
+                return fixed
+            return f'pow((float)({args[0]}), (float)({args[1]}))'
         if node.func_name in ('abs', 'min', 'max'):
             converted = [self._integers.convert(a, getattr(n, 'dtype', None), dtype)
                          for a, n in zip(args, node.args)]

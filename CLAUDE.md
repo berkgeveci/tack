@@ -209,8 +209,22 @@ LLVM tracks signedness on every
 annotated integer expression, including loads of locals and scalar arguments.
 Literals/scalars choose i32/i64/u64 by magnitude and reject unrepresentable
 integers. Float-to-int inputs must be finite with a representable truncated
-value. Integer `/`/`**`, general floating-point policy, and reductions remain
-open. See `test_integer_semantics.py` and the language contract.
+value. See `test_integer_semantics.py` and the language contract.
+
+Integer `/` converts operands independently to f32 and returns f32, rather
+than truncating; explicit floating casts request f64 on capable backends.
+The output field does not widen the intermediate precision. The evaluated
+integer divisor must be nonzero. With a floating operand, division uses
+the promoted floating precision. Integer `**` and two-argument `pow`
+preserve the base type, with an independently typed nonnegative exponent,
+and compute exact power modulo the base width. Signed/u64 pairs are valid
+for `/` and power. Negative literal integer exponents are rejected; dynamic
+negative ones are outside the caller domain. `0 ** 0` is 1. Cast the base
+to float for negative powers. GPU generators share exponentiation-by-squaring
+helpers in `integer_ops.py`; LLVM emits an internal helper with wrapping
+products and a logical count shift. With a floating operand, both power
+arguments use the promoted floating precision. See `test_division_and_power.py`.
+Floating `//`/`%`, the general floating-point policy, and reductions remain open.
 
 ### 64-bit loop indices on GPU
 

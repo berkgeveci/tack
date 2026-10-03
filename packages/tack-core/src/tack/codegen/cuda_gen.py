@@ -628,8 +628,11 @@ class CUDACodeGen:
         right = self._expr(node.right)
         dtype = getattr(node, 'dtype', None)
         left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
-        if node.op not in ('<<', '>>'):
+        if node.op not in ('<<', '>>', '**'):
             right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
+        if node.op == '/' and dtype in (f32, f64):
+            t = self._integer_type_map[dtype]
+            return f'((({t})({left})) / (({t})({right})))'
         fixed = self._integers.operation(node.op, dtype, left, right)
         if fixed is not None:
             return fixed
@@ -638,7 +641,9 @@ class CUDACodeGen:
         if integer is not None:
             return integer
         if node.op == "**":
-            return f"powf({left}, {right})"
+            t = self._integer_type_map[f64 if dtype is f64 else f32]
+            name = 'pow' if dtype is f64 else 'powf'
+            return f'{name}(({t})({left}), ({t})({right}))'
         if node.op == "//":
             # Use true integer division when both operands are integer types,
             # for legacy unannotated IR. Fall back to float floor for floats.
@@ -697,6 +702,13 @@ class CUDACodeGen:
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
         dtype = getattr(node, 'dtype', None)
+        if node.func_name == 'pow':
+            fixed = self._integers.operation('**', dtype, *args)
+            if fixed is not None:
+                return fixed
+            t = self._integer_type_map[f64 if dtype is f64 else f32]
+            name = 'pow' if dtype is f64 else 'powf'
+            return f'{name}(({t})({args[0]}), ({t})({args[1]}))'
         if node.func_name in ('abs', 'min', 'max'):
             converted = [self._integers.convert(a, getattr(n, 'dtype', None), dtype)
                          for a, n in zip(args, node.args)]

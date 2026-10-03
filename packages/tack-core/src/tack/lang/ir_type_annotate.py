@@ -128,7 +128,13 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         rt = _annotate_expr(node.right, env, field_params)
         if lt is None or rt is None:
             return None
-        node.dtype = lt if node.op in ('<<', '>>') else promote_types(lt, rt)
+        if node.op == '/' and lt in INTEGER_TYPES and rt in INTEGER_TYPES:
+            node.dtype = f32
+        elif node.op == '**' and lt in INTEGER_TYPES and rt in INTEGER_TYPES:
+            _check_integer_exponent(node.right)
+            node.dtype = lt
+        else:
+            node.dtype = lt if node.op in ('<<', '>>') else promote_types(lt, rt)
         return node.dtype
 
     if isinstance(node, ir.IRUnaryOp):
@@ -156,6 +162,10 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
             node.dtype = arg_types[0]
             for t in arg_types[1:]:
                 node.dtype = promote_types(node.dtype, t)
+        if node.func_name == 'pow' and len(arg_types) == 2 \
+                and all(t in INTEGER_TYPES for t in arg_types):
+            _check_integer_exponent(node.args[1])
+            node.dtype = arg_types[0]
         return node.dtype
 
     if isinstance(node, ir.IRCast):
@@ -236,6 +246,13 @@ def _get_field_name(node) -> str | None:
     if isinstance(node, ir.IRName):
         return node.name
     return None
+
+
+def _check_integer_exponent(node):
+    """Reject negative integer literals; dynamic exponents are a caller constraint."""
+    if isinstance(node, ir.IRConstant) and isinstance(node.value, int) and node.value < 0:
+        raise TypeError('Integer power requires a nonnegative exponent; '
+                        'cast the base to a floating-point type for negative powers')
 
 
 def _annotate_body(stmts, env, field_params, var_types=None, collected=None):

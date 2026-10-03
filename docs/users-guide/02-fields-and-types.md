@@ -216,6 +216,21 @@ write `value + tack.u64(1)`. Choose a signed cast instead if signed wrapping
 is intended. Integer `min`/`max` use exact values; `abs` retains the input
 type, so the signed minimum stays negative under the wrapping rule.
 
+Integer `/` produces an `f32` quotient: `7 / 2` is `3.5`. For `f64`
+precision, explicitly cast the operands, for example
+`tack.f64(a) / tack.f64(b)`; an `f64` output field alone does not change
+the intermediate precision. An evaluated integer divisor must be nonzero.
+With a floating operand, division uses the promoted floating precision.
+
+Integer `**` and two-argument `pow` preserve the base type and compute exact
+power modulo its width. For an `i8` base, `3 ** 5` is `-13`, regardless of
+the exponent's integer width. Signed/u64 pairs are accepted for both true
+division and power because their type rules differ from integer promotion.
+Integer exponents must be nonnegative; negative literals are rejected.
+`0 ** 0` is `1`. Cast the base to floating point for negative powers or
+floating results: `tack.f32(a) ** e`. With a floating operand, both power
+operands use the promoted floating precision.
+
 Shifts keep the left operand's type. Counts must be integers from zero up
 to one less than that type's width. Unsigned right shifts fill with zeros;
 signed right shifts fill with the sign bit. Float-to-integer conversions

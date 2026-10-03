@@ -117,18 +117,27 @@ reimplementing type inference heuristics. This eliminated ~40 lines of
 duplicated `_infer_c_type` / `_infer_expr_type` logic per codegen backend.
 
 Key rules:
+
 - `IRConstant(3.14)` → `f32`, `IRConstant(42)` → `i32`, `IRConstant(2**31)` → `i64`
 - `IRFieldLoad` → element type of the field
-- `IRBinOp` → `promote_types(left, right)` (f64 > f32 > i64 > i32)
+- `IRBinOp` → promoted type, except integer `/` → `f32`, and shifts or
+  integer `**` → the left/base type independent of the count/exponent type
 - `IRCast(value, ScalarType)` → the target ScalarType
 - `IRCall("sqrt", ...)` → `f32` (or `f64` if any arg is f64)
 - `IRCall("abs", [int_arg])` → preserves integer type
 - `IRCall("min"/"max", ...)` → promoted type of arguments
+- `IRCall("pow", [int_base, int_exponent])` → the base type; otherwise the
+  promoted floating precision
 - `IRCompare`, `IRBoolOp` → `i32`
 - `IRName` referencing a field param → `None` (field pointers aren't scalars)
 
-The pass tracks a type environment (`var_name → ScalarType`) and propagates
-types through assignment chains.
+Integer promotion preserves both full operand ranges; signed/u64 pairs
+require an explicit cast where promotion applies. True division and power
+use their distinct rules instead. Negative literal integer exponents are
+rejected here. See the [language contract](../reference/language-contract.md).
+
+The pass joins all assignments to each local to one storage type, then
+annotates expressions using the settled environment (`var_name → ScalarType`).
 
 ## Scalar Packing (`ir_pack_scalars.py`)
 

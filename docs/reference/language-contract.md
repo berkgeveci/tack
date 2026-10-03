@@ -1,6 +1,6 @@
 # Kernel language contract (draft)
 
-This is the draft contract for compiler hardening, updated for the first
+This is the draft contract for compiler hardening, updated for the third
 numerical-semantics increment on 2026-10-03.
 It defines the intended portable kernel model, identifies known violations,
 and separates decisions still open for discussion. It is **not a claim that
@@ -250,7 +250,8 @@ chooses a signed type with sufficient width: i8 with u16 gives i32, and
 i16 with u32 gives i64. Mixing any signed type with u64 is rejected with
 an explicit-cast diagnostic. This applies to arithmetic, comparisons,
 conditional arms, and joining assignments to one local variable.
-An explicit cast can express intentional wrapping before promotion.
+An explicit cast can express intentional wrapping before promotion. True
+division and integer power have the distinct result-type rules below.
 
 Integer-to-integer casts and integer field stores reduce the mathematical
 value modulo 2^N at the destination width, then interpret the resulting
@@ -295,12 +296,64 @@ additions remain inline. The dynamic-bound
 regression covers empty ranges, overflowing i32 bounds, and steps 1 and 2;
 this workaround needs performance and hardware validation on other Apple GPUs.
 
+**Required: true division.** Integer `a / b` converts each operand to f32
+and produces an f32 quotient, including signed/u64 pairs. It does not
+truncate to an integer. For example, `7 / 2` gives `3.5`, and `(7 / 2) * 2`
+gives `7.0`. This follows Python's distinction between true and floor
+division, with Tack's default floating-point precision. To request f64 on
+a capable backend, cast explicitly: `tack.f64(a) / tack.f64(b)`. An f64
+destination field alone does not widen the division. With a floating-point
+operand, `/` uses the promoted floating type: f64 if present, otherwise f32.
+
+**Required caller constraint for integer operands:** the evaluated divisor
+is nonzero. Guarded unselected divisions must not execute. Storing a
+fractional result in an integer field follows the floating-to-integer
+conversion constraints above. Large integer inputs may lose precision
+during conversion, and this increment does not promise bitwise-identical
+floating results or settle the general rounding/optimization policy.
+
+**Required: integer power.** For two integer operands, `a ** e` and
+two-argument `pow(a, e)` preserve the **base's** type independently of the
+exponent's type. For nonnegative `e`, they produce the exact mathematical
+power modulo 2^N, interpreted using the base's signedness. Intermediate
+products wrap, without passing through floating-point `pow`. Thus i8
+`3 ** 5` gives `-13`; an i8 base with a u64 exponent still produces i8.
+`0 ** 0` is `1`. Every nonnegative exponent representable by its integer
+type is supported, including u64's full range. Both operands evaluate once,
+left to right, and guarded unselected operations must not execute.
+
+**Required caller constraint:** an evaluated integer exponent is
+nonnegative. Negative integer literals are rejected with a diagnostic;
+dynamic negative integer exponents have no portable result or promised
+runtime exception. Cast the base to floating point to use negative powers:
+`tack.f32(a) ** e`. With either operand floating, `**` and `pow` convert
+both operands to the promoted floating precision and use floating-point
+power. Its accuracy and exceptional-input policy remain open.
+
+**Behavior change:** prior integer `/` used truncating C-family division
+or a CPU floating result narrowed back to its integer annotation. Prior
+integer `**` used floating `pow` and could lose large results; integer
+`pow` could also disagree with `**`. Use `//` for integer floor division,
+or an explicit integer cast of `/` for truncation toward zero within the
+conversion domain. Use a floating cast for floating power. Result types
+are now consistent between annotation and all five emitters.
+
+`test_division_and_power.py` uses Python modular exponentiation as an exact
+oracle across all 64 integer base/exponent type pairs, exhaustive small
+domains, high-bit exponents, and nested expressions. Division checks
+fractional results, signedness, explicit f64 precision, side effects,
+guards, and large integer inputs with a four-ULP regression tolerance.
+That tolerance is for these tested inputs, not a general floating accuracy
+guarantee. All GPU generators share unsigned-carrier power helpers; LLVM
+uses an internal typed helper. Exponentiation by squaring bounds execution
+to at most 64 iterations, including outside-domain negative signed counts.
+
 The following policies remain
 **open** and must be resolved before broader numerical conformance claims:
 
 | Question | Current evidence | Decision needed |
 |---|---|---|
-| Remaining arithmetic domains | Fixed-width wrapping, integer casts/promotion, and valid shifts are defined | Integer `/` and `**`, floating `//`/`%`, and any extension beyond the stated invalid-operation constraints |
+| Remaining arithmetic domains | Fixed-width wrapping, casts/promotion, valid shifts, true division, and integer power are defined | Floating `//`/`%` and any extension beyond the stated invalid-operation constraints |
 | Floating-point results | Backends use their own arithmetic and math implementations | Rounding, contraction/reassociation, NaNs, infinities, signed zero, denormals, error tolerances |
 | Reductions | Parallel implementations may change operation order | Permitted order variation, determinism, and numerical tolerances |
 
@@ -483,7 +536,8 @@ tables are precomputed, while all checks still run at their pass boundaries.
 Broader testing and the
 numerical/capability decisions above remain subsequent work.
 
-Stage five has begun with integer floor division and remainder, including
-the lossless promotion domain and explicit exclusions above. This is the
-first numerical increment, not completion of overflow/conversion,
-floating-point, reduction, or workgroup/capability contracts.
+Stage five has implemented integer floor division/remainder, fixed-width
+arithmetic and conversions, true division, and integer power, including
+their promotion domains and caller constraints above. Floating `//`/`%`,
+the general floating-point policy, and reductions remain within stage five.
+The workgroup/capability contract remains a separate stage.

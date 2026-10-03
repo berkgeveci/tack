@@ -671,6 +671,13 @@ class LLVMCodeGen:
     def _emit_binop(self, node: ir.IRBinOp) -> llvm_ir.Value:
         left = self._emit_expr(node.left)
         right = self._emit_expr(node.right)
+        dtype = getattr(node, 'dtype', None)
+        if node.op == '**' and dtype in INTEGER_TYPES:
+            return self._emit_integer_power(dtype, left, right)
+        if node.op in ('/', '**') and dtype in (f32, f64):
+            target = _llvm_type(dtype)
+            return self._emit_float_binop(node.op, self._coerce_to(left, target),
+                                         self._coerce_to(right, target))
         if node.op in ('//', '%') and getattr(node, 'dtype', None) in INTEGER_TYPES:
             return self._emit_integer_division(node, left, right)
         if getattr(node, 'dtype', None) in INTEGER_TYPES and node.op not in ('/', '**'):
@@ -687,6 +694,53 @@ class LLVMCodeGen:
         if _is_int_type(left.type):
             return self._emit_int_binop(node.op, left, right)
         raise TypeError(f"Unsupported operand type for {node.op}: {left.type}")
+
+    def _emit_integer_power(self, dtype, base, exponent):
+        """Exact modular exponentiation, with at most 64 iterations.
+
+        The exponent has its own integer type and does not widen the base.
+        A dynamic negative exponent is outside the defined domain; using a
+        logical shift still guarantees that the helper terminates.
+        """
+        t = _llvm_type(dtype)
+        base = self._coerce_to(base, t)
+        exponent = self._to_i64(exponent)
+        name = f'__tack_pow_{dtype.name}__'
+        helper = self.module.globals.get(name)
+        if helper is None:
+            i64_type = llvm_ir.IntType(64)
+            helper = llvm_ir.Function(self.module, llvm_ir.FunctionType(t, [t, i64_type]),
+                                      name=name)
+            helper.linkage = 'internal'
+            entry = helper.append_basic_block('entry')
+            header = helper.append_basic_block('header')
+            body = helper.append_basic_block('body')
+            exit_bb = helper.append_basic_block('exit')
+            builder = llvm_ir.IRBuilder(entry)
+            builder.branch(header)
+            builder.position_at_end(header)
+            result = builder.phi(t, name='result')
+            factor = builder.phi(t, name='factor')
+            count = builder.phi(i64_type, name='count')
+            result.add_incoming(llvm_ir.Constant(t, 1), entry)
+            factor.add_incoming(helper.args[0], entry)
+            count.add_incoming(helper.args[1], entry)
+            builder.cbranch(builder.icmp_unsigned('!=', count, llvm_ir.Constant(i64_type, 0)),
+                            body, exit_bb)
+            builder.position_at_end(body)
+            odd = builder.and_(count, llvm_ir.Constant(i64_type, 1))
+            product = builder.mul(result, factor)
+            next_result = builder.select(
+                builder.icmp_unsigned('!=', odd, llvm_ir.Constant(i64_type, 0)), product, result)
+            next_factor = builder.mul(factor, factor)
+            next_count = builder.lshr(count, llvm_ir.Constant(i64_type, 1))
+            result.add_incoming(next_result, body)
+            factor.add_incoming(next_factor, body)
+            count.add_incoming(next_count, body)
+            builder.branch(header)
+            builder.position_at_end(exit_bb)
+            builder.ret(result)
+        return self.builder.call(helper, [base, exponent], name='pow.integer')
 
     def _emit_integer_division(self, node, left, right):
         target = _llvm_type(node.dtype)
@@ -756,20 +810,6 @@ class LLVMCodeGen:
         }
         if op in ops:
             return ops[op](left, right, name="binop")
-        if op == "/":
-            # Integer division → convert to float, divide, convert back
-            f64_type = llvm_ir.DoubleType()
-            fl = self.builder.sitofp(left, f64_type)
-            fr = self.builder.sitofp(right, f64_type)
-            return self.builder.fdiv(fl, fr, name="div")
-        if op == "**":
-            # Integer power: convert to float, use pow, convert back
-            f64_type = llvm_ir.DoubleType()
-            fl = self.builder.sitofp(left, f64_type)
-            fr = self.builder.sitofp(right, f64_type)
-            powf = self.module.declare_intrinsic('llvm.pow', [f64_type])
-            result = self.builder.call(powf, [fl, fr], name="pow")
-            return self.builder.fptosi(result, left.type, name="pow.int")
         raise NotImplementedError(f"Integer binary op: {op}")
 
     def _emit_unaryop(self, node: ir.IRUnaryOp) -> llvm_ir.Value:
@@ -1003,9 +1043,13 @@ class LLVMCodeGen:
 
         # pow(x, y)
         if node.func_name == "pow" and len(args) == 2:
+            dtype = getattr(node, 'dtype', None)
+            if dtype in INTEGER_TYPES:
+                return self._emit_integer_power(dtype, *args)
             a, b = args
-            a = self._to_float(a)
-            b = self._coerce_to(b, a.type)
+            target = _llvm_type(f64 if dtype is f64 else f32)
+            a = self._coerce_to(a, target)
+            b = self._coerce_to(b, target)
             powf = self.module.declare_intrinsic('llvm.pow', [a.type])
             return self.builder.call(powf, [a, b], name="pow")
 

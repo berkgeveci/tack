@@ -267,6 +267,12 @@ class OpenCLCodeGen(CUDACodeGen):
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
         dtype = getattr(node, 'dtype', None)
+        if node.func_name == 'pow':
+            fixed = self._integers.operation('**', dtype, *args)
+            if fixed is not None:
+                return fixed
+            t = _OCL_C_TYPE_MAP[f64 if dtype is f64 else f32]
+            return f'pow(({t})({args[0]}), ({t})({args[1]}))'
         if node.func_name in ('abs', 'min', 'max'):
             converted = [self._integers.convert(a, getattr(n, 'dtype', None), dtype)
                          for a, n in zip(args, node.args)]
@@ -290,8 +296,11 @@ class OpenCLCodeGen(CUDACodeGen):
         right = self._expr(node.right)
         dtype = getattr(node, 'dtype', None)
         left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
-        if node.op not in ('<<', '>>'):
+        if node.op not in ('<<', '>>', '**'):
             right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
+        if node.op == '/' and dtype in (f32, f64):
+            t = _OCL_C_TYPE_MAP[dtype]
+            return f'((({t})({left})) / (({t})({right})))'
         fixed = self._integers.operation(node.op, dtype, left, right)
         if fixed is not None:
             return fixed
@@ -300,7 +309,8 @@ class OpenCLCodeGen(CUDACodeGen):
         if integer is not None:
             return integer
         if node.op == "**":
-            return f"pow({left}, {right})"
+            t = _OCL_C_TYPE_MAP[f64 if dtype is f64 else f32]
+            return f'pow(({t})({left}), ({t})({right}))'
         if node.op == "//":
             lt = self._infer_expr_type(node.left)
             rt = self._infer_expr_type(node.right)
@@ -421,7 +431,7 @@ class OpenCLCodeGen(CUDACodeGen):
         if isinstance(node, ir.IRName):
             if node.name in self._field_params:
                 c_type = _OCL_C_TYPE_MAP[self._param_types[node.name]]
-                return f"{c_type}*"
+                return f"__global {c_type}*"
             if node.name in self._local_vars:
                 return self._local_vars[node.name]
             if node.name in self._param_types:

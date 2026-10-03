@@ -13,7 +13,7 @@ _UNSIGNED = {8: u8, 16: u16, 32: u32, 64: u64}
 _OPERATIONS = {'+': 'add', '-': 'sub', '*': 'mul', '&': 'and',
                '|': 'or', '^': 'xor', '<<': 'shl', '>>': 'shr',
                'neg': 'neg', '~': 'invert', 'abs': 'abs',
-               'min': 'min', 'max': 'max'}
+               'min': 'min', 'max': 'max', '**': 'pow'}
 
 
 class IntegerCodeGen:
@@ -62,10 +62,28 @@ class IntegerCodeGen:
             u = self.type_map[_UNSIGNED[dtype.bits]]
             carrier = self.type_map[u32 if dtype.bits < 32 else _UNSIGNED[dtype.bits]]
             a, b = f'(({carrier})a)', f'(({carrier})b)'
-            binary = op in ('+', '-', '*', '&', '|', '^', '<<', '>>', 'min', 'max')
-            # Shift counts have their own domain and do not change the result width.
-            bt = self.type_map[u64] if op in ('<<', '>>') else t
+            binary = op in ('+', '-', '*', '&', '|', '^', '<<', '>>', 'min', 'max', '**')
+            # Shift counts and exponents do not change the result width.
+            bt = self.type_map[u64] if op in ('<<', '>>', '**') else t
             params = f'{t} a, {bt} b' if binary else f'{t} a'
+            if op == '**':
+                # Exponentiation by squaring in an unsigned ring. The carrier
+                # is at least 32 bits, so small C integers cannot promote to a
+                # signed int and overflow. Returning the low N bits gives the
+                # same result as wrapping every multiplication at width N.
+                bits = f'(({u})result)'
+                result = bits if dtype in UNSIGNED_TYPES else f'{self._wrap_name(dtype)}({bits})'
+                name = f'__tack_pow_{dtype.name}__'
+                lines += [f'{qualifier} {t} {name}({params}) {{',
+                          f'    {carrier} factor = {a};',
+                          f'    {carrier} result = 1;',
+                          '    while (b != 0) {',
+                          '        if (b & 1) result *= factor;',
+                          '        b >>= 1;',
+                          '        factor *= factor;',
+                          '    }',
+                          f'    return {result};', '}', '']
+                continue
             if op in ('min', 'max'):
                 expr = f'a {"<" if op == "min" else ">"} b ? a : b'
             else:
