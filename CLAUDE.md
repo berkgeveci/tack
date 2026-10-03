@@ -182,6 +182,20 @@ Original kernels and device functions are validated before lowering; unsupported
 
 Classes decorated with `@tack.data_oriented` can be passed as template arguments. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`.
 
+### Integer floor division and remainder
+
+Integer `//` rounds down and `%` is zero or follows the divisor's sign,
+matching Python within the defined fixed-width domain. Both operands are
+converted to the annotated promoted type before the operation; unsigned
+types use unsigned division. LLVM applies an integer correction to signed
+truncating division/remainder. The CUDA/HIP, Metal, and OpenCL generators
+share typed helpers in `codegen/integer_division.py`, evaluating operands
+once. Do not replace these with floating-point division or rely on C's
+implicit signed/unsigned promotions. Evaluated divisors must be nonzero;
+signed minimum with divisor -1 is excluded for both operators. Out-of-range
+conversions and general overflow/mixed-sign policies remain open. See
+`test_integer_division.py` and the language contract.
+
 ### 64-bit loop indices on GPU
 
 GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).

@@ -12,6 +12,7 @@ All integer locals and loop indices use 64-bit ``long long`` to support grids
 with more than 2^31 elements.
 """
 
+from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -119,6 +120,7 @@ class CUDACodeGen:
         self._loop_end_name: str | None = None
         self._needs_float_atomic_min = False
         self._needs_float_atomic_max = False
+        self._integer_division_helpers = set()
 
     def generate(self) -> str:
         """Generate CUDA C source for the kernel."""
@@ -167,7 +169,8 @@ class CUDACodeGen:
         self._indent -= 1
         self._emit("}")
 
-        prefix_lines = []
+        prefix_lines = integer_division_helpers(
+            self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline')
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "__device__ float atomicMinFloat(float* addr, float val) {",
@@ -610,11 +613,15 @@ class CUDACodeGen:
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        integer = integer_division_expr(
+            node, left, right, _C_TYPE_MAP, self._integer_division_helpers)
+        if integer is not None:
+            return integer
         if node.op == "**":
             return f"powf({left}, {right})"
         if node.op == "//":
             # Use true integer division when both operands are integer types,
-            # matching LLVM sdiv semantics. Fall back to float floor for floats.
+            # for legacy unannotated IR. Fall back to float floor for floats.
             lt = self._infer_expr_type(node.left)
             rt = self._infer_expr_type(node.right)
             if lt not in ("float", "double") and rt not in ("float", "double"):

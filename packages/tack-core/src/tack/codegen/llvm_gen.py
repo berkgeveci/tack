@@ -10,6 +10,7 @@ across threads and calls the kernel with different (start, end) pairs.
 
 from llvmlite import ir as llvm_ir
 
+from tack.codegen.integer_division import INTEGER_TYPES, UNSIGNED_TYPES
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -649,6 +650,8 @@ class LLVMCodeGen:
     def _emit_binop(self, node: ir.IRBinOp) -> llvm_ir.Value:
         left = self._emit_expr(node.left)
         right = self._emit_expr(node.right)
+        if node.op in ('//', '%') and getattr(node, 'dtype', None) in INTEGER_TYPES:
+            return self._emit_integer_division(node, left, right)
         left, right = self._coerce_pair(left, right)
 
         if _is_float_type(left.type):
@@ -656,6 +659,39 @@ class LLVMCodeGen:
         if _is_int_type(left.type):
             return self._emit_int_binop(node.op, left, right)
         raise TypeError(f"Unsupported operand type for {node.op}: {left.type}")
+
+    def _emit_integer_division(self, node, left, right):
+        target = _llvm_type(node.dtype)
+
+        def convert(value, operand):
+            if value.type == target:
+                return value
+            if value.type.width < target.width:
+                extend = self.builder.zext if operand.dtype in UNSIGNED_TYPES \
+                    else self.builder.sext
+                return extend(value, target)
+            return self.builder.trunc(value, target)
+
+        left, right = convert(left, node.left), convert(right, node.right)
+        if node.dtype in UNSIGNED_TYPES:
+            operation = self.builder.udiv if node.op == '//' else self.builder.urem
+            result = operation(left, right, name='unsigned.divmod')
+            self._unsigned_vals.add(id(result))
+            return result
+
+        remainder = self.builder.srem(left, right, name='divmod.remainder')
+        zero = llvm_ir.Constant(target, 0)
+        nonzero = self.builder.icmp_signed('!=', remainder, zero)
+        signs_differ = self.builder.xor(
+            self.builder.icmp_signed('<', remainder, zero),
+            self.builder.icmp_signed('<', right, zero))
+        adjust = self.builder.and_(nonzero, signs_differ)
+        if node.op == '//':
+            quotient = self.builder.sdiv(left, right, name='divmod.quotient')
+            correction = self.builder.zext(adjust, target)
+            return self.builder.sub(quotient, correction, name='floordiv')
+        corrected = self.builder.add(remainder, right)
+        return self.builder.select(adjust, corrected, remainder, name='mod')
 
     def _emit_float_binop(self, op: str, left, right) -> llvm_ir.Value:
         ops = {

@@ -10,6 +10,7 @@ All integer locals and loop indices use 64-bit ``long`` to support grids
 with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
+from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -86,6 +87,7 @@ class MSLCodeGen:
         self._field_params: set[str] = set()
         self._local_vars: dict[str, str] = {}  # name -> MSL type
         self._declared_vars: set[str] = set()
+        self._integer_division_helpers = set()
 
     def generate(self) -> str:
         """Generate MSL source for the kernel."""
@@ -112,6 +114,7 @@ class MSLCodeGen:
         self._emit("#include <metal_stdlib>")
         self._emit("using namespace metal;")
         self._emit("")
+        preamble_end = len(self._lines)
 
         # Detect texture parameters
         self._texture_params: set[str] = set()
@@ -181,7 +184,10 @@ class MSLCodeGen:
         self._indent -= 1
         self._emit("}")
 
-        return "\n".join(self._lines) + "\n"
+        helpers = integer_division_helpers(
+            self._integer_division_helpers, _MSL_TYPE_MAP, 'inline')
+        return "\n".join(self._lines[:preamble_end] + helpers
+                         + self._lines[preamble_end:]) + "\n"
 
     def _emit(self, line: str):
         self._lines.append("    " * self._indent + line)
@@ -517,6 +523,10 @@ class MSLCodeGen:
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        integer = integer_division_expr(
+            node, left, right, _MSL_TYPE_MAP, self._integer_division_helpers)
+        if integer is not None:
+            return integer
         if node.op == "**":
             return f"pow({left}, {right})"
         if node.op == "//":
