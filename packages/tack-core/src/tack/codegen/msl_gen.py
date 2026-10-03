@@ -1,7 +1,7 @@
 """Tack MSL code generation — transforms Tack IR to Metal Shading Language source.
 
 Generates a ``kernel void`` compute function where:
-  - Each Field parameter becomes a ``device`` pointer with ``[[buffer(N)]]``
+  - Field pointers are members of one argument buffer, so they may alias
   - The outermost parallel for-loop maps to ``[[thread_position_in_grid]]``
   - Sequential for-loops, while-loops, if/else map to standard C control flow
   - Math builtins map to Metal stdlib functions (sqrt, sin, etc.)
@@ -119,10 +119,29 @@ class MSLCodeGen:
             if getattr(param, '_is_texture', False):
                 self._texture_params.add(param.name)
 
-        # Build function signature with separate buffer/texture binding indices
+        # Separate device-buffer arguments promise disjoint storage in MSL
+        # (section 5.2). Indirect pointers in one argument buffer preserve
+        # Tack's overlap contract without specializing on alias relationships.
+        buffer_params = [p for p in func.params
+                         if p.name in self._field_params
+                         and p.name not in self._texture_params]
+        if buffer_params:
+            self._emit("struct __tack_buffer_args__ {")
+            for i, param in enumerate(func.params):
+                if param.name in self._field_params and param.name not in self._texture_params:
+                    msl_type = _MSL_TYPE_MAP[param.type_annotation]
+                    self._emit(f"    device {msl_type}* {param.name} [[id({i})]];")
+            self._emit("};")
+            self._emit("")
+
+        # Textures keep their separate binding namespace. Unpacked scalars
+        # remain constant references; normal dispatch packs them into fields.
         self._scalar_buffer_params: set[str] = set()
         params_msl = []
         buf_idx = 0
+        if buffer_params:
+            params_msl.append("constant __tack_buffer_args__& __tack_buffers__ [[buffer(0)]]")
+            buf_idx = 1
         tex_idx = 0
         for param in func.params:
             msl_type = _MSL_TYPE_MAP[param.type_annotation]
@@ -131,8 +150,7 @@ class MSLCodeGen:
                     f"texture3d<float, access::sample> {param.name} [[texture({tex_idx})]]")
                 tex_idx += 1
             elif param.name in self._field_params:
-                params_msl.append(f"device {msl_type}* {param.name} [[buffer({buf_idx})]]")
-                buf_idx += 1
+                continue
             else:
                 params_msl.append(f"constant {msl_type}& {param.name} [[buffer({buf_idx})]]")
                 buf_idx += 1
@@ -148,6 +166,10 @@ class MSLCodeGen:
         self._emit(f"    {sig})")
         self._emit("{")
         self._indent += 1
+
+        for param in buffer_params:
+            msl_type = _MSL_TYPE_MAP[param.type_annotation]
+            self._emit(f"device {msl_type}* {param.name} = __tack_buffers__.{param.name};")
 
         # Emit sampler for texture sampling
         if self._has_textures:

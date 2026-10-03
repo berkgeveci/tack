@@ -6,7 +6,7 @@ Verification runs when building a template/variant, never on a cache hit.
 """
 
 from tack.lang import ir
-from tack.lang.ir_traversal import LIST_ROLES, child_fields
+from tack.lang.ir_traversal import CHILD_FIELDS, LIST_ROLES, child_fields
 from tack.lang.types import ScalarType, i32
 
 STAGES = ('lowered', 'resolved', 'inferred', 'localized', 'optimized', 'packed', 'typed')
@@ -38,6 +38,13 @@ ATTRIBUTES = {
     ir.IRLocalAlloc: ('name', 'dtype', 'field_name'),
     ir.IRDimSize: ('field_name', 'dim'), ir.IRTextureSample: ('field_name', 'shape'),
     ir.IRPrint: ('format_parts',),
+}
+ROLE_KINDS = {'function': {ir.IRFunction}, 'param': {ir.IRParam},
+              'stmt': STMTS, 'expr': EXPRS}
+SINGULAR_ROLES = {'params': 'param', 'stmts': 'stmt', 'exprs': 'expr'}
+REQUIRED_ATTRIBUTES = {
+    kind: ATTRIBUTES.get(kind, ()) + tuple(attr for attr, _ in fields)
+    for kind, fields in CHILD_FIELDS.items()
 }
 
 
@@ -77,15 +84,15 @@ def verify_ir(function: ir.IRFunction, stage: str):
 
     def visit(node, path, role, loops=(), host_bound=False):
         kind = type(node)
-        allowed = {'function': {ir.IRFunction}, 'param': {ir.IRParam},
-                   'stmt': STMTS, 'expr': EXPRS}[role]
+        allowed = ROLE_KINDS[role]
         require(node, path, kind in allowed, f'expected {role} node')
         require(node, path, id(node) not in active, 'cycle in IR tree')
         active.add(id(node))
         nodes.append((node, path, host_bound))
         fields = child_fields(node)
-        for attr in (*ATTRIBUTES.get(kind, ()), *(name for name, _ in fields)):
-            require(node, path, hasattr(node, attr), f'missing attribute {attr}')
+        for attr in REQUIRED_ATTRIBUTES[kind]:
+            if not hasattr(node, attr):
+                fail(node, path, f'missing attribute {attr}')
 
         if kind in (ir.IRFunction, ir.IRParam, ir.IRName,
                     ir.IRSharedAlloc, ir.IRLocalAlloc):
@@ -165,7 +172,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
                         require(node, path, len(value) >= 2, 'Boolean operation needs two values')
                     if kind is ir.IRTextureSample:
                         require(node, path, len(value) == 3, 'texture sample needs three coordinates')
-                    singular = {'params': 'param', 'stmts': 'stmt', 'exprs': 'expr'}[child_role]
+                    singular = SINGULAR_ROLES[child_role]
                     for index, child in enumerate(value):
                         visit(child, f'{child_path}[{index}]', singular, child_loops, child_host)
                 elif value is not None or child_role != 'optional_expr':

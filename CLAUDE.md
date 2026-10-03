@@ -30,6 +30,12 @@ uv run python packages/tack-core/examples/01_hello_tack.py --arch hip  # example
 
 All examples accept `--arch cpu|metal|cuda|hip|level_zero` to select the backend.
 
+On this Mac, sandboxed processes cannot discover the Apple M1 Max GPU:
+`MTLCreateSystemDefaultDevice()` returns `None` even with the bindings installed.
+Run Metal hardware validation with GPU access outside that sandbox and explicitly
+initialize `tack.metal` first. A sandboxed CPU-only pytest collection does not
+validate Metal. Keep `TACK_NO_REINIT` unset for multi-backend runs.
+
 No build step — pure Python with JIT compilation at runtime.
 
 ## Architecture
@@ -103,6 +109,15 @@ Because the passes mutate IR in place, the template from `get_ir()` must be trea
 
 Fields may share storage, including distinct views and imported pointers. Preserve program order within each race-free iteration; field parameters must not carry unconditional `noalias`/`restrict` promises.
 
+Metal field pointers are members of one argument buffer, rather than separate
+device-buffer kernel arguments (which implicitly promise disjoint storage in
+MSL). Members use the packed parameter positions as `[[id(N)]]` indices;
+textures retain their separate binding namespace. Each cached dispatch refreshes
+the buffer references and declares indirect-resource residency with
+`useResource`. The encoder and argument buffer are reused after synchronous
+completion. This fixes the four overlap cases confirmed at `922b642` and
+`e265e7f`, without alias-based specialization or disabling vendor optimization.
+
 ### Field dimensions
 
 `field.shape[k]` and `len(field)` both lower to `IRDimSize` in `ast_transform.py`, which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).
@@ -141,7 +156,7 @@ The IR is a simple tree of nodes:
 ### IR passes
 
 - **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from field shapes, resolves `IRAtomicOp` sub-expressions, and resolves `shared_like` dtypes from fields
-- **ir_optimize.py**: Conservative copy propagation for inlined arguments; custom LICM and CSE are disabled because they lack memory/control-flow safety analysis. LLVM and vendor compilers still optimize generated code.
+- **ir_optimize.py**: Conservative copy propagation for inlined arguments. Assignment counts are computed once per kernel and reused in nested blocks: the copy target must have one binding and its source must have no assignments, loop bindings, or allocations anywhere in the kernel. This leaves some block-local copies to LLVM/vendor optimization and avoids repeated subtree counting during cold compilation. Custom LICM and CSE remain disabled because they lack memory/control-flow safety analysis.
 - **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars auto-promote to `f64` when any field arg uses `f64`; otherwise default to `f32`. Int scalars exceeding i32 range auto-promote to `i64`. `check_dispatch_types()` validates field dtypes against backend capabilities.
 - **ir_type_annotate.py**: Sets `dtype` (a `ScalarType`) on every expression IR node. Codegens read `node.dtype` directly instead of reimplementing type inference heuristics.
 - **ir_traversal.py**: Explicit structural child schema, preorder `walk_ir`, and postorder `transform_ir`. Resolution, scalar packing, copy substitution, and shape-dependency queries share it. Metadata is not traversed; unregistered node kinds fail loudly.

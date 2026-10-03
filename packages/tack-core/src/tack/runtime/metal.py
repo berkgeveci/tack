@@ -3,7 +3,7 @@
 Pipeline:
     Tack IR → MSL (via msl_gen.py) → Metal compute pipeline
 
-Each field parameter becomes a Metal buffer at index matching its binding number.
+Field pointers are encoded in one argument buffer to permit overlapping storage.
 The parallel loop range is dispatched as a 1D grid of threads.
 
 On Apple Silicon, Metal shared buffers live in unified memory accessible by both
@@ -86,7 +86,7 @@ class CompiledMetalKernel:
 
     def __init__(self, device, command_queue, pipeline, func_name,
                  param_types, param_is_field, param_is_texture=None,
-                 texture_shapes=None):
+                 texture_shapes=None, argument_encoder=None):
         self._device = device
         self._command_queue = command_queue
         self._pipeline = pipeline
@@ -95,6 +95,12 @@ class CompiledMetalKernel:
         self._param_is_field = param_is_field
         self._param_is_texture = param_is_texture or [False] * len(param_types)
         self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
+        self._argument_encoder = argument_encoder
+        self._argument_buffer = None
+        if argument_encoder is not None:
+            self._argument_buffer = device.newBufferWithLength_options_(
+                argument_encoder.encodedLength(), Metal.MTLResourceStorageModeShared)
+            argument_encoder.setArgumentBuffer_offset_(self._argument_buffer, 0)
         self._thread_execution_width = pipeline.threadExecutionWidth()
         self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
 
@@ -110,6 +116,9 @@ class CompiledMetalKernel:
         # Textures use a separate binding namespace (texture indices).
         temp_buffers = []
         buf_idx = 0
+        if self._argument_encoder is not None:
+            encoder.setBuffer_offset_atIndex_(self._argument_buffer, 0, 0)
+            buf_idx = 1
         tex_idx = 0
         for i, (arg, ptype, is_field, is_tex) in enumerate(
                 zip(kernel_args, self._param_types, self._param_is_field,
@@ -146,8 +155,13 @@ class CompiledMetalKernel:
                 encoder.setTexture_atIndex_(self._tex_cache[cache_key], tex_idx)
                 tex_idx += 1
             elif is_field:
-                encoder.setBuffer_offset_atIndex_(arg._buffer.metal_buffer, 0, buf_idx)
-                buf_idx += 1
+                # Update every dispatch: a cached variant can receive new
+                # buffers or a different alias relationship. The indirect
+                # resources also require explicit residency declarations.
+                buffer = arg._buffer.metal_buffer
+                self._argument_encoder.setBuffer_offset_atIndex_(buffer, 0, i)
+                encoder.useResource_usage_(
+                    buffer, Metal.MTLResourceUsageRead | Metal.MTLResourceUsageWrite)
             else:
                 # Scalar: create a tiny shared buffer with the value
                 ndt = self._NUMPY_MAP[ptype]
@@ -210,9 +224,15 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
     for i, p in enumerate(ir_func.params):
         if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
             texture_shapes[i] = p._texture_shape
+    argument_encoder = None
+    if any(is_field and not is_texture for is_field, is_texture
+           in zip(param_is_field, param_is_texture)):
+        argument_encoder = func.newArgumentEncoderWithBufferIndex_(0)
+        if argument_encoder is None:
+            raise RuntimeError(f"Could not create argument encoder for '{ir_func.name}'")
     return CompiledMetalKernel(device, command_queue, pipeline, ir_func.name,
                                param_types, param_is_field, param_is_texture,
-                               texture_shapes)
+                               texture_shapes, argument_encoder)
 
 
 _REDUCE_MSL_SUM = """

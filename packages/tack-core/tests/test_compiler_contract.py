@@ -88,6 +88,26 @@ def test_overlapping_field_arguments_preserve_program_order(backend, alias):
     np.testing.assert_array_equal(out.to_numpy(), np.full(7, 2))
 
 
+@pytest.mark.parametrize("dtype", [tack.i32, tack.f32])
+def test_cached_kernel_handles_changing_alias_relationships(backend, dtype):
+    """Bindings, including aliases, must refresh on every cached dispatch."""
+    from tack.runtime.dispatch import get_backend
+
+    get_backend()._cache.pop(_ordered_writes, None)
+    for n, alias in ((7, False), (19, True), (7, False), (19, True)):
+        a = tack.field(dtype=dtype, shape=(n,))
+        b = a.reshape((n,)) if alias else tack.field(dtype=dtype, shape=(n,))
+        out = tack.field(dtype=dtype, shape=(n,))
+        a.fill(19)
+        b.fill(23)
+        out.fill(-1)
+        _ordered_writes(a, b, out)
+        np.testing.assert_array_equal(a.to_numpy(), np.full(n, 2 if alias else 1))
+        np.testing.assert_array_equal(b.to_numpy(), np.full(n, 2))
+        np.testing.assert_array_equal(out.to_numpy(), np.full(n, 2 if alias else 1))
+    assert len(get_backend()._cache[_ordered_writes]) == 1
+
+
 @tack.kernel
 def _squared_norms(vectors, out):
     for i in range(out.shape[0]):

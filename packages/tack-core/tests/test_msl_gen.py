@@ -47,8 +47,10 @@ class TestMSLCodeGen:
 
         src = generate_msl_source(_get_ir(add, _field(), _field(), _field()))
         assert '[[buffer(0)]]' in src
-        assert '[[buffer(1)]]' in src
-        assert '[[buffer(2)]]' in src
+        assert src.count('[[buffer(') == 1
+        assert 'device float* x [[id(0)]]' in src
+        assert 'device float* y [[id(1)]]' in src
+        assert 'device float* out [[id(2)]]' in src
 
     def test_device_pointers(self):
         @tack.kernel

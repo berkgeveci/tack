@@ -118,7 +118,10 @@ When a pass cannot establish safety, it must leave the computation in place.
 
 **Current implementation:** Tack performs conservative copy propagation,
 retaining assignments and replacing only subsequent uses when neither the
-copy nor its source is rebound in the block. Custom load hoisting and CSE
+copy nor its source is rebound anywhere in the kernel. One kernel-wide
+assignment summary, including loop and allocation bindings, is reused in
+nested blocks. This deliberately leaves some block-local copies to the
+backend compiler instead of recounting every subtree. Custom load hoisting and CSE
 are disabled until memory and control-flow analyses can establish their
 safety. LLVM and the vendor compilers still perform their own optimizations.
 
@@ -135,7 +138,9 @@ program order within each iteration. This includes passing the same field
 twice and passing distinct views over the same storage. It does not make
 cross-iteration data races valid. LC2 tests this policy. LLVM field parameters
 carry no `noalias` promise; CUDA/HIP and OpenCL field pointers carry no
-`__restrict__` or `restrict` promise. A future opt-in disjoint-storage
+`__restrict__` or `restrict` promise. Metal loads field pointers from one
+argument buffer, so overlapping fields are not passed as separate device-buffer
+kernel arguments. A future opt-in disjoint-storage
 specialization would need an explicit contract and a justification based
 on storage overlap, rather than Python object identity.
 
@@ -252,6 +257,20 @@ only; LLVM/vendor optimization remains active.
 Stage one recorded these defects on CPU; subsequent Linux testing reproduced
 LC1–LC3 on CUDA. Stage two removes their expected-failure markers: all
 numerical cases are now ordinary assertions on every available backend.
+
+**Metal validation, 2026-10-03:** at `922b642`, four overlap-contract cases
+failed numerically on Apple M1 Max: same-field and reshape-view ordered
+writes, inner-loop mutation through an alias, and a read after an alias store.
+The same failures reproduce at the pre-stage-four `e265e7f`. Direct MSL kernel
+buffer arguments must be disjoint under the [Metal language specification,
+section 5.2](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf).
+Metal now uses indirect field pointers in one argument buffer, supported since
+Metal 2, rather than separate device-buffer arguments. The runtime refreshes
+references on each cached dispatch and explicitly declares resource residency.
+All four original failures pass on Apple M1 Max, with additional coverage for
+changing alias relationships, all supported dtypes through imported buffer
+wrappers, mixed scalar packs, and aliased atomic updates. Assertions remain
+ordinary tests and vendor optimization remains enabled.
 The suite also covers zero-trip local assignments, while-loop mutation,
 mutation through aliases, CSE across alias stores, and copy propagation's
 statement order, loop steps, and loop-variable bindings.
@@ -337,5 +356,7 @@ localization, optimization, GPU packing, and type annotation. These checks
 run at template/variant construction and during inspection, preserving the
 cache-hit dispatch path. They check structure, binding existence, loop
 targets, and required resolution/type metadata; they do not prove definite
-assignment, bounds safety, or barrier uniformity. Broader testing and the
+assignment, bounds safety, or barrier uniformity. Verifier role and attribute
+tables are precomputed, while all checks still run at their pass boundaries.
+Broader testing and the
 numerical/capability decisions above remain subsequent work.
