@@ -263,3 +263,17 @@ def test_disjoint_variant_does_not_respecialize_on_length():
     for n in (4, 16, 64):
         _accumulate(_f32(n), _f32(4), _f32(n), n)
     assert len(get_backend()._cache[_accumulate]) == 1
+
+
+def test_span_is_the_array_byte_range():
+    """``span`` must work on whichever NumPy is installed: NumPy 2 keeps
+    ``byte_bounds`` in ``numpy.lib.array_utils``, NumPy 1 at top level, and
+    the dependency is declared as plain ``numpy``. Every CPU dispatch reads
+    it, so a missing import would fail every kernel call."""
+    x = tack.field(dtype=tack.f32, shape=(1024,))
+    start, end = x._buffer.span
+    data = x._buffer._data
+    assert start == data.ctypes.data
+    assert end == data.ctypes.data + data.nbytes
+    view = x._buffer._data[256:512]
+    assert np.shares_memory(view, data)

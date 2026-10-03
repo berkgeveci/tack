@@ -41,6 +41,15 @@ class DeviceBuffer:
         raise NotImplementedError
 
 
+# NumPy 2 moved ``byte_bounds`` to ``numpy.lib.array_utils``; NumPy 1 has it
+# at top level. The dependency is declared as plain ``numpy``, so both must
+# work, and the choice is made here, once, not on every dispatch.
+try:
+    from numpy.lib.array_utils import byte_bounds as _byte_bounds
+except ImportError:  # NumPy 1.x
+    _byte_bounds = np.byte_bounds
+
+
 class NumpyBuffer(DeviceBuffer):
     """CPU backend buffer — just a numpy array."""
 
@@ -75,8 +84,7 @@ class NumpyBuffer(DeviceBuffer):
                 return span
         except AttributeError:
             pass
-        from numpy.lib.array_utils import byte_bounds
-        span = byte_bounds(self._data)
+        span = _byte_bounds(self._data)
         self._span = (self._data, span)
         return span
 

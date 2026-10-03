@@ -809,11 +809,17 @@ def test_recheck_backs_off(cpu):
     assert 10 <= fired <= 20, f"{fired} re-measurements in 4096 dispatches"
 
 
-def test_recheck_keeps_the_parallelism(cpu):
+def test_recheck_keeps_the_parallelism(cpu, monkeypatch):
     """A re-measurement times a slice, not the whole range.
 
     Running the entire range serially to check on it would cost the
     dispatch everything threading was bought for.
+
+    The slice size is derived from the kernel's measured rate, the fixed
+    call cost and the fan-out estimate, so those are pinned here: left to
+    the clock, a 0.05 ns/element reading against a 400 ns call cost asks
+    for 80,000 elements of 131,072, which is a correct answer to the
+    wrong question and failed this test about once in twenty runs.
     """
     backend = CPUBackend()
     n = 1 << 17
@@ -834,6 +840,10 @@ def test_recheck_keeps_the_parallelism(cpu):
     # sends this range back to a plain serial run before the recheck is
     # ever reached.
     backend._fan_out_ns = 1000.0
+    monkeypatch.setattr(backend, "_fan_out_estimate", lambda: 1000.0)
+    compiled.ns_per_elem = 1.0               # 1 ns/elem, 1 us call cost:
+    compiled.call_overhead_ns = 1000.0       # a 10,000-element slice
+    compiled.serial_floor_ns = 0.0
     compiled.parallel_min_elems = 1          # force the parallel branch
     compiled.recheck_after = 1
     compiled.parallel_since_measure = 0
