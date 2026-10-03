@@ -176,6 +176,20 @@ class LLVMCodeGen:
             raise NotImplementedError(f"Cannot emit statement: {type(node).__name__}")
 
     def _emit_expr(self, node: ir.IRNode) -> llvm_ir.Value:
+        value = self._emit_expr_value(node)
+        dtype = getattr(node, 'dtype', None)
+        if dtype in INTEGER_TYPES and _is_int_type(value.type):
+            value = self._coerce_to(value, _llvm_type(dtype))
+            unsigned = dtype in UNSIGNED_TYPES
+            if unsigned != (id(value) in self._unsigned_vals):
+                # LLVM integer types have no signedness. A same-width cast
+                # needs its own value so it cannot retag a reused SSA value.
+                value = self.builder.or_(value, llvm_ir.Constant(value.type, 0))
+            if unsigned:
+                self._unsigned_vals.add(id(value))
+        return value
+
+    def _emit_expr_value(self, node: ir.IRNode) -> llvm_ir.Value:
         """Emit an expression and return its LLVM value."""
         if isinstance(node, ir.IRConstant):
             return self._emit_constant(node)
@@ -418,7 +432,9 @@ class LLVMCodeGen:
 
         # Coercions belong to their respective branches: neither value
         # dominates the other branch or the join before its phi.
-        target = self._common_type(then_val.type, else_val.type)
+        dtype = getattr(node, 'dtype', None)
+        target = _llvm_type(dtype) if dtype in INTEGER_TYPES else \
+            self._common_type(then_val.type, else_val.type)
         self.builder = llvm_ir.IRBuilder(then_end)
         then_val = self._coerce_to(then_val, target)
         self.builder.branch(merge_bb)
@@ -442,8 +458,11 @@ class LLVMCodeGen:
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="store.ptr")
         # Cast value to the element type of the pointer
         elem_type = base_ptr.type.pointee
-        value = self._coerce_to(value, elem_type)
-        self.builder.store(value, elem_ptr, align=4)
+        value = self._coerce_to(value, elem_type,
+                                getattr(node, 'dtype', None) in UNSIGNED_TYPES)
+        # Imported buffers may start at any byte; small element
+        # offsets also cannot satisfy an unconditional four-byte promise.
+        self.builder.store(value, elem_ptr, align=1)
 
     def _create_entry_alloca(self, typ, name):
         """Create an alloca in the function entry block (ensures domination)."""
@@ -632,7 +651,9 @@ class LLVMCodeGen:
         if isinstance(node.value, float):
             return llvm_ir.Constant(llvm_ir.FloatType(), node.value)
         if isinstance(node.value, int):
-            return llvm_ir.Constant(llvm_ir.IntType(64), node.value)
+            dtype = getattr(node, 'dtype', None)
+            target = _llvm_type(dtype) if dtype in INTEGER_TYPES else llvm_ir.IntType(64)
+            return llvm_ir.Constant(target, node.value)
         raise TypeError(f"Unsupported constant type: {type(node.value)}")
 
     def _emit_name(self, node: ir.IRName) -> llvm_ir.Value:
@@ -652,6 +673,13 @@ class LLVMCodeGen:
         right = self._emit_expr(node.right)
         if node.op in ('//', '%') and getattr(node, 'dtype', None) in INTEGER_TYPES:
             return self._emit_integer_division(node, left, right)
+        if getattr(node, 'dtype', None) in INTEGER_TYPES and node.op not in ('/', '**'):
+            target = _llvm_type(node.dtype)
+            left = self._coerce_to(left, target)
+            right = self._coerce_to(right, target)
+            if node.op == '>>' and node.dtype in UNSIGNED_TYPES:
+                return self.builder.lshr(left, right, name='unsigned.shift')
+            return self._emit_int_binop(node.op, left, right)
         left, right = self._coerce_pair(left, right)
 
         if _is_float_type(left.type):
@@ -764,7 +792,12 @@ class LLVMCodeGen:
     def _emit_compare(self, node: ir.IRCompare) -> llvm_ir.Value:
         left = self._emit_expr(node.left)
         right = self._emit_expr(node.right)
-        left, right = self._coerce_pair(left, right)
+        dtype = getattr(node, '_operand_type', None)
+        if dtype in INTEGER_TYPES:
+            target = _llvm_type(dtype)
+            left, right = self._coerce_to(left, target), self._coerce_to(right, target)
+        else:
+            left, right = self._coerce_pair(left, right)
 
         if _is_float_type(left.type):
             fcmp_ops = {
@@ -781,7 +814,9 @@ class LLVMCodeGen:
                 "<": "<", "<=": "<=",
                 ">": ">", ">=": ">=",
             }
-            value = self.builder.icmp_signed(icmp_ops[node.op], left, right, name="cmp")
+            compare = self.builder.icmp_unsigned if dtype in UNSIGNED_TYPES \
+                else self.builder.icmp_signed
+            value = compare(icmp_ops[node.op], left, right, name="cmp")
             return self.builder.zext(value, llvm_ir.IntType(32), name='boolean')
 
         raise TypeError(f"Cannot compare type: {left.type}")
@@ -812,7 +847,7 @@ class LLVMCodeGen:
         base_ptr = self._emit_expr(node.field)
         index = self._to_i64(self._emit_expr(node.index))
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="load.ptr")
-        val = self.builder.load(elem_ptr, name="load.val", align=4)
+        val = self.builder.load(elem_ptr, name="load.val", align=1)
         # Track unsigned values for correct coercion (uitofp vs sitofp)
         dtype = getattr(node, 'dtype', None)
         if dtype in (u8, u16, u32, u64):
@@ -929,10 +964,19 @@ class LLVMCodeGen:
 
         # min/max with two args
         if node.func_name in ("min", "max") and len(args) == 2:
+            dtype = getattr(node, 'dtype', None)
+            if dtype in INTEGER_TYPES:
+                args = [self._coerce_to(a, _llvm_type(dtype)) for a in args]
+                compare = self.builder.icmp_unsigned if dtype in UNSIGNED_TYPES \
+                    else self.builder.icmp_signed
+                cond = compare('<' if node.func_name == 'min' else '>', *args)
+                return self.builder.select(cond, *args)
             return self._emit_minmax(node.func_name, args[0], args[1])
 
         # abs
         if node.func_name == "abs" and len(args) == 1:
+            if getattr(node, 'dtype', None) in UNSIGNED_TYPES:
+                return args[0]
             return self._emit_abs(args[0])
 
         # LLVM intrinsics (single-arg math functions)
@@ -1045,7 +1089,7 @@ class LLVMCodeGen:
                 if val.type.width == target.width:
                     return val
                 if val.type.width < target.width:
-                    if node.dtype in (u8, u16, u32, u64):
+                    if getattr(node.value, 'dtype', None) in UNSIGNED_TYPES:
                         return self.builder.zext(val, target, name="zext")
                     return self.builder.sext(val, target, name="sext")
                 return self.builder.trunc(val, target, name="trunc")
@@ -1070,7 +1114,8 @@ class LLVMCodeGen:
             return val
         if _is_int_type(val.type):
             if val.type.width < 64:
-                return self.builder.sext(val, i64_type, name="to.i64")
+                extend = self.builder.zext if id(val) in self._unsigned_vals else self.builder.sext
+                return extend(val, i64_type, name="to.i64")
             return self.builder.trunc(val, i64_type, name="to.i64")
         if _is_float_type(val.type):
             return self.builder.fptosi(val, i64_type, name="to.i64")
@@ -1099,7 +1144,8 @@ class LLVMCodeGen:
             return self.builder.sitofp(val, llvm_ir.FloatType(), name="to.float")
         raise TypeError(f"Cannot convert {val.type} to float")
 
-    def _coerce_to(self, val: llvm_ir.Value, target: llvm_ir.Type) -> llvm_ir.Value:
+    def _coerce_to(self, val: llvm_ir.Value, target: llvm_ir.Type,
+                   target_unsigned: bool = False) -> llvm_ir.Value:
         """Coerce a value to a target LLVM type."""
         if val.type == target:
             return val
@@ -1118,6 +1164,8 @@ class LLVMCodeGen:
 
         # float -> int
         if _is_float_type(val.type) and _is_int_type(target):
+            if target_unsigned:
+                return self.builder.fptoui(val, target, name="fptoui")
             return self.builder.fptosi(val, target, name="fptosi")
 
         # int -> int (widen/narrow)

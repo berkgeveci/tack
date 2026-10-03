@@ -31,7 +31,8 @@ def test_imported_buffer_alias_preserves_order(dtype):
     def ordered(a, b, out):
         for i in range(out.shape[0]):
             before = a[i]
-            b[i] = before + 2
+            # Explicit unsigned literal also works with the full u64 range.
+            b[i] = before + tack.u8(2)
             out[i] = a[i] - before
 
     ordered(a, alias, out)

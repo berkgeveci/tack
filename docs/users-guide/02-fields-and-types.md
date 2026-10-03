@@ -175,6 +175,9 @@ have binding limits (like Metal's 31-buffer limit). You can use as many
 scalar arguments as you need.
 
 Both Python types and numpy scalar types (`np.float32`, `np.int32`) work.
+Integer arguments use `i32` when their value fits, then `i64`, then `u64`
+for positive values above the signed 64-bit maximum. Values below `-2^63`
+or above `2^64 - 1` are rejected. Integer literals follow the same rule.
 
 ## Type Casts
 
@@ -199,6 +202,26 @@ Available casts: `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32
 `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`.
 
 Note: `tack.f64()` is not supported on Metal (Apple GPUs lack double precision).
+
+Integer arithmetic (`+`, `-`, `*`, negation, and bitwise operations) wraps at
+the expression's fixed width. Integer casts and stores keep the low bits at
+the destination width: `tack.u8(-1)` is 255, and `tack.i8(255)` is -1.
+Widening preserves the source value before wrapping; `tack.i64(tack.u8(255))`
+is 255. Each intermediate operation wraps at its own inferred width.
+
+Integer promotion preserves both input ranges. For example, `i8 + u16`
+uses `i32`, and `i32 + u32` uses `i64`. Combining a signed type with `u64`
+requires an explicit cast, including comparisons. To add an unsigned literal,
+write `value + tack.u64(1)`. Choose a signed cast instead if signed wrapping
+is intended. Integer `min`/`max` use exact values; `abs` retains the input
+type, so the signed minimum stays negative under the wrapping rule.
+
+Shifts keep the left operand's type. Counts must be integers from zero up
+to one less than that type's width. Unsigned right shifts fill with zeros;
+signed right shifts fill with the sign bit. Float-to-integer conversions
+truncate toward zero and require finite input with a representable truncated
+value. See the [language contract](../reference/language-contract.md) for
+division constraints and numerical policies still under development.
 
 ## Device Pointer Interop
 

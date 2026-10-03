@@ -584,6 +584,11 @@ class KernelTransformer(ast.NodeVisitor):
         op = self._unaryop_str(node.op)
         operand = self.visit(node.operand)
 
+        # A signed integer literal is classified by its complete value.
+        # In particular, -2**63 fits i64 even though its positive token does not.
+        if op in ('+', '-') and isinstance(operand, ir.IRConstant) and isinstance(operand.value, int):
+            return ir.IRConstant(-operand.value if op == '-' else operand.value)
+
         if isinstance(operand, list):
             return [ir.IRUnaryOp(op=op, operand=c) for c in operand]
 

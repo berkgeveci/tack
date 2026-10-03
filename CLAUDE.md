@@ -192,9 +192,25 @@ truncating division/remainder. The CUDA/HIP, Metal, and OpenCL generators
 share typed helpers in `codegen/integer_division.py`, evaluating operands
 once. Do not replace these with floating-point division or rely on C's
 implicit signed/unsigned promotions. Evaluated divisors must be nonzero;
-signed minimum with divisor -1 is excluded for both operators. Out-of-range
-conversions and general overflow/mixed-sign policies remain open. See
+signed minimum with divisor -1 is excluded for both operators. See
 `test_integer_division.py` and the language contract.
+
+Integer `+`, `-`, `*`, unary negation, bitwise operations, and left shifts
+wrap at their annotated width; signed right shifts are arithmetic and
+unsigned right shifts logical. Counts must lie in `[0, width)`. Integer
+casts/stores wrap modulo the destination width, with source signedness
+controlling extension. Promotion preserves both complete operand ranges;
+any signed/u64 pair requires an explicit cast. Comparisons and integer
+`abs`/`min`/`max` retain exact integer semantics. `codegen/integer_ops.py`
+shares unsigned-carrier helpers across GPU generators; Metal uses `as_type`
+for signed bits and separate noinline i64/u64-add helpers for accumulator
+updates inside runtime-bound loops to avoid an M1 Max compiler crash.
+LLVM tracks signedness on every
+annotated integer expression, including loads of locals and scalar arguments.
+Literals/scalars choose i32/i64/u64 by magnitude and reject unrepresentable
+integers. Float-to-int inputs must be finite with a representable truncated
+value. Integer `/`/`**`, general floating-point policy, and reductions remain
+open. See `test_integer_semantics.py` and the language contract.
 
 ### 64-bit loop indices on GPU
 

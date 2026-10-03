@@ -13,6 +13,7 @@ with more than 2^31 elements.
 """
 
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
+from tack.codegen.integer_ops import IntegerCodeGen
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -109,6 +110,8 @@ class CUDACodeGen:
     # named here rather than inlined into the signature below.
     _TEXTURE_OBJECT_TYPE = "cudaTextureObject_t"
 
+    _integer_type_map = _C_TYPE_MAP
+
     def __init__(self, ir_func: ir.IRFunction):
         self.ir_func = ir_func
         self._indent = 0
@@ -121,6 +124,7 @@ class CUDACodeGen:
         self._needs_float_atomic_min = False
         self._needs_float_atomic_max = False
         self._integer_division_helpers = set()
+        self._integers = IntegerCodeGen(self._integer_type_map)
 
     def generate(self) -> str:
         """Generate CUDA C source for the kernel."""
@@ -170,7 +174,7 @@ class CUDACodeGen:
         self._emit("}")
 
         prefix_lines = integer_division_helpers(
-            self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline')
+            self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline') + self._integers.definitions('__device__ inline')
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "__device__ float atomicMinFloat(float* addr, float val) {",
@@ -453,6 +457,7 @@ class CUDACodeGen:
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, 'dtype', None))
         # Ensure array index is integer
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
@@ -465,6 +470,7 @@ class CUDACodeGen:
 
     def _emit_assign(self, node: ir.IRAssign):
         value = self._expr(node.value)
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, '_resolved_type', None))
         if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
@@ -608,11 +614,25 @@ class CUDACodeGen:
             return f"{node.value!r}f"
         if isinstance(node.value, bool):
             return "1" if node.value else "0"
+        if isinstance(node.value, int) and -(2**31) < node.value < 2**31:
+            return str(node.value)
+        if isinstance(node.value, int) and getattr(node, 'dtype', None) is not None:
+            ctype = self._integer_type_map[node.dtype]
+            # Spell signed minimum using representable tokens.
+            literal = f'(-{-(node.value + 1)}LL - 1LL)' if node.value < 0 else f'{node.value}ULL'
+            return f'(({ctype})({literal}))'
         return str(node.value)
 
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, 'dtype', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        if node.op not in ('<<', '>>'):
+            right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
+        fixed = self._integers.operation(node.op, dtype, left, right)
+        if fixed is not None:
+            return fixed
         integer = integer_division_expr(
             node, left, right, _C_TYPE_MAP, self._integer_division_helpers)
         if integer is not None:
@@ -633,6 +653,10 @@ class CUDACodeGen:
 
     def _expr_unaryop(self, node: ir.IRUnaryOp) -> str:
         operand = self._expr(node.operand)
+        op = 'neg' if node.op == '-' else node.op
+        fixed = self._integers.operation(op, getattr(node, 'dtype', None), operand)
+        if fixed is not None:
+            return fixed
         if node.op == "-":
             return f"(-{operand})"
         if node.op == "+":
@@ -646,6 +670,9 @@ class CUDACodeGen:
     def _expr_compare(self, node: ir.IRCompare) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, '_operand_type', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
         return f"({left} {_CMP_MAP[node.op]} {right})"
 
     def _expr_boolop(self, node: ir.IRBoolOp) -> str:
@@ -669,6 +696,13 @@ class CUDACodeGen:
 
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
+        dtype = getattr(node, 'dtype', None)
+        if node.func_name in ('abs', 'min', 'max'):
+            converted = [self._integers.convert(a, getattr(n, 'dtype', None), dtype)
+                         for a, n in zip(args, node.args)]
+            fixed = self._integers.operation(node.func_name, dtype, *converted)
+            if fixed is not None:
+                return fixed
         use_f64 = getattr(node, 'dtype', None) is f64
 
         if node.func_name == "min" and len(args) == 2:
@@ -685,6 +719,9 @@ class CUDACodeGen:
 
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
+        converted = self._integers.convert(val, getattr(node.value, 'dtype', None), node.dtype)
+        if converted != val:
+            return converted
         if isinstance(node.dtype, ScalarType):
             c_type = _C_TYPE_MAP[node.dtype]
             return f"(({c_type})({val}))"
@@ -699,6 +736,9 @@ class CUDACodeGen:
         cond = self._expr(node.condition)
         then = self._expr(node.then_value)
         else_ = self._expr(node.else_value)
+        dtype = getattr(node, 'dtype', None)
+        then = self._integers.convert(then, getattr(node.then_value, 'dtype', None), dtype)
+        else_ = self._integers.convert(else_, getattr(node.else_value, 'dtype', None), dtype)
         return f"({cond} ? {then} : {else_})"
 
 

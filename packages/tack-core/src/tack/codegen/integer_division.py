@@ -6,10 +6,7 @@ promotions cannot override Tack's promotion rules. Helpers evaluate each
 operand once; all adjustments stay in integer arithmetic.
 """
 
-from tack.lang.types import i8, i16, i32, i64, u8, u16, u32, u64
-
-INTEGER_TYPES = frozenset((i8, i16, i32, i64, u8, u16, u32, u64))
-UNSIGNED_TYPES = frozenset((u8, u16, u32, u64))
+from tack.lang.types import INTEGER_TYPES, UNSIGNED_TYPES
 
 
 def integer_division_expr(node, left, right, type_map, helpers):
