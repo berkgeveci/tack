@@ -557,10 +557,10 @@ def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
     backend._parallel_execute = lambda c, p, a, b, **kw: (parallel.append((a, b)),
                                                         real_parallel(c, p, a, b, **kw))[1]
 
-    # First sight probes a prefix, and the first fan-out calibrates the
-    # real fan-out cost and re-decides against it -- which, from a
-    # prefix-biased estimate, may legitimately run that one dispatch
-    # whole. Everything after that has an unbiased sample to go on.
+    # First sight probes a slice, and the first fan-out calibrates the
+    # real fan-out cost and re-decides against it -- which may
+    # legitimately run that one dispatch whole. Everything after that
+    # has more than one sample to go on.
     for _ in range(2):
         backend._dispatch(compiled, args, n)
     if not parallel:
@@ -586,6 +586,40 @@ def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
         (np.sin(src[:, None] + j2) * np.cos(src[:, None] - j2)).sum(axis=1),
         (np.sin(src[:, None] + j24) * np.cos(src[:, None] - j24)).sum(axis=1))
     np.testing.assert_allclose(out.to_numpy(), expected, atol=2e-4)
+
+
+@tack.kernel
+def _count_visits(visits, n):
+    for i in range(n):
+        visits[i] = visits[i] + 1
+
+
+def test_first_sight_samples_inside_the_range_not_its_prefix(cpu):
+    """The first estimate a kernel gets decides its next dispatch, so it
+    must not come from the cheap front of an image either. On a 256²
+    volume render the prefix sample sent the following dispatch -- the
+    whole frame -- to one thread, once per process.
+    """
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    n = 1 << 20
+    visits = tack.field(dtype=tack.i32, shape=(n,))
+    args = [visits, n]
+    compiled = _compile_for(backend, _count_visits, args)
+    assert n >= backend._probe_min_range()
+
+    serial = []
+    real_serial = backend._run_serial
+    backend._run_serial = lambda c, p, a, b: (serial.append((a, b)),
+                                              real_serial(c, p, a, b))[1]
+    backend._dispatch(compiled, args, n)
+
+    first_start, first_end = serial[0]
+    assert first_start > n // 2, f"first sample was {serial[0]}"
+    assert first_end - first_start < n // 8
+    # Head, sample and tail together cover every element exactly once.
+    np.testing.assert_array_equal(visits.to_numpy(), np.ones(n, dtype=np.int32))
 
 
 # ── Counting cores ───────────────────────────────────────────────────

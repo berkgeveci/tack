@@ -70,6 +70,18 @@ Parameter probing is private to each dispatch so concurrent calls cannot
 observe another call's types. Fields may overlap in storage; generated field
 parameters therefore carry no unconditional `noalias` or `restrict` promise.
 
+The CPU backend adds one more key element: whether this call's fields are
+disjoint. `fields_disjoint()` compares the byte ranges of the field arguments
+on every dispatch (about a microsecond) and passes when no field the kernel
+writes overlaps another field. Qualifying calls use a variant compiled with
+`noalias` on its field pointers; the rest use the variant without it. Without
+the promise LLVM must reload after every store, which costs 2-3x on x86 for
+kernels that accumulate through a field in an inner loop.
+
+Template classes appear in keys as a token rather than the class object.
+When a `@tack.data_oriented` class is collected, a finalizer drops the IR and
+the compiled variants specialized on it from every backend's cache.
+
 ## Loop Range Resolution
 
 `_get_loop_range()` extracts the parallel for-loop bound from the IR and

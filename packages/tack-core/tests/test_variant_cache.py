@@ -242,3 +242,72 @@ def test_template_float_constants_preserve_signed_zero(backend, values):
         fill(Config(value), out)
         np.testing.assert_array_equal(np.signbit(out.to_numpy()), np.full(7, np.signbit(value)))
     assert _variant_count(fill) == 2
+
+
+@tack.kernel
+def _scale_by_template(x, out, cfg: tack.template()):
+    for i in range(out.shape[0]):
+        out[i] = cfg.apply(x[i])
+
+
+def _per_call_class(factor):
+    @tack.data_oriented
+    class Scale:
+        FACTOR = factor
+
+        @tack.func
+        def apply(self, v):
+            return v * self.FACTOR
+
+    return Scale
+
+
+def test_variants_of_a_collected_template_class_are_released(backend):
+    """A class defined per call must not leave a variant behind each time."""
+    import gc
+    import weakref
+
+    from tack.runtime.dispatch import get_backend
+
+    get_backend()._cache.pop(_scale_by_template, None)
+    _scale_by_template._ir_cache.clear()
+    x = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.field(dtype=tack.f32, shape=(4,))
+    x.fill(2.0)
+
+    refs = []
+    for round_ in range(6):
+        cls = _per_call_class(3.0)
+        refs.append(weakref.ref(cls))
+        _scale_by_template(x, out, cls())
+        np.testing.assert_array_equal(out.to_numpy(), np.full(4, 6.0, np.float32))
+        del cls
+    gc.collect()
+
+    assert all(ref() is None for ref in refs)
+    assert len(get_backend()._cache[_scale_by_template]) == 0
+    assert len(_scale_by_template._ir_cache) == 0
+
+
+def test_a_live_template_class_keeps_its_variant(backend):
+    import gc
+
+    from tack.runtime.dispatch import get_backend
+
+    get_backend()._cache.pop(_scale_by_template, None)
+    _scale_by_template._ir_cache.clear()
+    x = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.field(dtype=tack.f32, shape=(4,))
+    x.fill(2.0)
+
+    kept = _per_call_class(5.0)
+    _scale_by_template(x, out, kept())
+    _scale_by_template(x, out, _per_call_class(7.0)())
+    np.testing.assert_array_equal(out.to_numpy(), np.full(4, 14.0, np.float32))
+    gc.collect()
+
+    slot = get_backend()._cache[_scale_by_template]
+    assert len(slot) == 1
+    _scale_by_template(x, out, kept())
+    np.testing.assert_array_equal(out.to_numpy(), np.full(4, 10.0, np.float32))
+    assert len(slot) == 1

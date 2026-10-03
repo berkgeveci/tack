@@ -5,9 +5,11 @@ import inspect
 import struct
 import textwrap
 import threading
+import weakref
 
 from tack.lang.ast_transform import transform_kernel
 from tack.lang.ir_verify import verify_ir
+from tack.lang.source_validation import UnsupportedSyntaxError
 
 
 def _verified_transform(*args, **kwargs):
@@ -56,6 +58,57 @@ def _fields_from_another_backend(args, backend) -> set:
         if origin and origin != backend.name:
             stale.add(origin)
     return stale
+
+
+class _ClassToken:
+    """Stands in for a template class in cache keys.
+
+    Specializations are keyed on the identity of the `@tack.data_oriented`
+    class, because two classes with the same name can carry different
+    methods. Keying on the class object itself would keep it alive for as
+    long as the kernel lives, so a class created per call -- defined inside
+    a function, say -- would leave one compiled variant behind each time.
+    The token is the identity without the reference: when the class is
+    collected, every specialization built for it is dropped.
+    """
+
+    __slots__ = ('__weakref__', 'kernels')
+
+    def __init__(self):
+        self.kernels = weakref.WeakSet()  # kernels specialized on this class
+
+
+_class_tokens = weakref.WeakKeyDictionary()  # class → _ClassToken
+
+
+def _class_token(cls) -> _ClassToken:
+    token = _class_tokens.get(cls)
+    if token is None:
+        fresh = _ClassToken()
+        token = _class_tokens.setdefault(cls, fresh)
+        if token is fresh:
+            weakref.finalize(cls, _retire_class, token)
+    return token
+
+
+def _key_tokens(key):
+    """The class tokens named by a `_make_cache_key` result."""
+    return [part[1] for part in key
+            if len(part) > 1 and isinstance(part[1], _ClassToken)]
+
+
+def _retire_class(token):
+    """Drop every specialization built for a class that no longer exists."""
+    from tack.runtime.kernel_utils import drop_variants
+
+    def stale(key):
+        return token in _key_tokens(key)
+
+    for kernel in list(token.kernels):
+        for key in [k for k in list(kernel._ir_cache) if stale(k)]:
+            kernel._ir_cache.pop(key, None)
+        # The template key sits third in a compiled variant's key.
+        drop_variants(kernel, lambda variant_key: stale(variant_key[2]))
 
 
 class Kernel:
@@ -113,6 +166,8 @@ class Kernel:
                             rewritten_ast, vector_fields=vector_fields,
                             texture_fields=texture_fields,
                         )
+                        for token in _key_tokens(key):
+                            token.kernels.add(self)
                     finally:
                         # try/finally so a failed transform does not leave its
                         # temporaries behind: the name carries id(obj), which
@@ -152,7 +207,7 @@ class Kernel:
                 param_name, obj = template_args[idx]
                 from tack.lang.template_rewrite import classify_template_attrs
                 scalars, fields, runtime = classify_template_attrs(obj)
-                cls = type(obj)
+                cls = _class_token(type(obj))
                 # Only class-level scalars (constants) are part of the cache key.
                 # Instance scalars are runtime parameters — changing them does
                 # not trigger recompilation.
@@ -203,6 +258,11 @@ class Kernel:
             raise TypeError(
                 f"Kernel '{self.name}': {e}"
             ) from e
+        except UnsupportedSyntaxError:
+            # Already names the kernel and the source position, and callers
+            # can catch it by type. It is a RuntimeError by inheritance, so
+            # without this it would be re-wrapped below as a backend failure.
+            raise
         except RuntimeError as e:
             msg = str(e)
             # Shader compilation errors: show a concise message

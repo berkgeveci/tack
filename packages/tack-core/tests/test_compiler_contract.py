@@ -105,7 +105,10 @@ def test_cached_kernel_handles_changing_alias_relationships(backend, dtype):
         np.testing.assert_array_equal(a.to_numpy(), np.full(n, 2 if alias else 1))
         np.testing.assert_array_equal(b.to_numpy(), np.full(n, 2))
         np.testing.assert_array_equal(out.to_numpy(), np.full(n, 2 if alias else 1))
-    assert len(get_backend()._cache[_ordered_writes]) == 1
+    # CPU compiles the disjoint calls with a no-overlap promise and the
+    # aliased ones without, so it holds one variant per relationship.
+    expected = 2 if backend == "cpu" else 1
+    assert len(get_backend()._cache[_ordered_writes]) == expected
 
 
 @tack.kernel

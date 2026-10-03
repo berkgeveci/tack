@@ -506,6 +506,14 @@ class CompiledKernel:
         self.call_range(self.bind(kernel_args), loop_start, loop_end)
 
 
+# Compile a separate `noalias` variant for calls whose field arguments are
+# checked, per dispatch, not to overlap. Fields may alias, so the promise is
+# never made unconditionally; without it LLVM must reload after every store
+# and cannot vectorize a loop that accumulates through a field, which costs
+# 2-3x on such kernels. Overlapping calls get the variant without it.
+_SPECIALIZE_DISJOINT = True
+
+
 def _create_target_machine():
     """Create a target machine for the host CPU with full feature support."""
     target = llvm.Target.from_default_triple()
@@ -772,6 +780,7 @@ class CPUBackend(Backend):
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
             build=self._build_variant,
+            specialize_disjoint=_SPECIALIZE_DISJOINT,
         )
 
         # Unwrap Texture3D to the underlying Field for dispatch
@@ -870,14 +879,29 @@ class CPUBackend(Backend):
             return
 
         # First sight of this kernel at a range where threading might pay.
-        # Time a small prefix, then decide about the rest — so a one-shot
+        # Time a small slice, then decide about the rest — so a one-shot
         # large dispatch is not stuck running serially for want of a sample.
-        probe_end = max(probe_min_range // 16, loop_end // 64)
-        self._run_serial(compiled, prefix, 0, probe_end)
-        if loop_end - probe_end >= compiled.parallel_min_elems:
-            self._parallel_execute(compiled, prefix, probe_end, loop_end)
+        #
+        # The slice comes from inside the range, like a recheck's, not from
+        # the front of it. An image kernel's first rows are background, and
+        # a prefix sample read a volume render 10-70x too cheap: the next
+        # dispatch, armed with a real fan-out cost and that estimate,
+        # concluded a 256² frame was too small to thread and ran all of it
+        # on one thread, once per process.
+        probe = min(loop_end, max(probe_min_range // 16, loop_end // 64))
+        start = compiled.next_sample_start(loop_end - probe)
+        self._run_serial(compiled, prefix, start, start + probe)
+        if start >= compiled.parallel_min_elems:
+            self._parallel_execute(compiled, prefix, 0, start)
         else:
-            self._run_serial(compiled, prefix, probe_end, loop_end)
+            # Untimed: the point of moving the slice is to keep the prefix
+            # out of the estimate.
+            compiled.call_range(prefix, 0, start)
+        tail = start + probe
+        if loop_end - tail >= compiled.parallel_min_elems:
+            self._parallel_execute(compiled, prefix, tail, loop_end)
+        else:
+            self._run_serial(compiled, prefix, tail, loop_end)
 
     def _probe_min_range(self) -> int:
         """Smallest range worth splitting a timing probe off.

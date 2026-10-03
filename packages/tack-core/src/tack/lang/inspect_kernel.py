@@ -125,6 +125,12 @@ def _generate_source(kernel, args, optimize=False):
 
     if backend_name == "CPUBackend":
         from tack.codegen.llvm_gen import generate_llvm_ir
+        from tack.runtime import cpu
+        from tack.runtime.kernel_utils import fields_disjoint
+
+        # Show the variant these arguments would run.
+        ir_func.disjoint_fields = (
+            cpu._SPECIALIZE_DISJOINT and fields_disjoint(ir_func, effective_args))
         llvm_module = generate_llvm_ir(ir_func)
         llvm_ir_str = str(llvm_module)
         if optimize:

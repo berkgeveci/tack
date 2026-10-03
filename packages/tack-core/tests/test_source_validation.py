@@ -132,3 +132,131 @@ def supported(out):
             break
 '''))
     assert module.functions[0].body[0].body
+
+
+# ── Names the kernel never binds, and aliases of arrays ─────────────
+
+_MODULE_SCALE = 3.0
+
+
+@tack.func
+def _reads_module_value(v):
+    return v * _MODULE_SCALE
+
+
+@tack.kernel
+def _kernel_reads_module_value(x, out):
+    for i in range(out.shape[0]):
+        out[i] = x[i] * _MODULE_SCALE
+
+
+@tack.kernel
+def _func_reads_module_value(x, out):
+    for i in range(out.shape[0]):
+        out[i] = _reads_module_value(x[i])
+
+
+@tack.kernel
+def _aliases_local_array(x, out):
+    for i in range(out.shape[0]):
+        tmp = tack.local_array(tack.f32, 2)
+        view = tmp
+        view[0] = x[i]
+        out[i] = tmp[0]
+
+
+@tack.func
+def _fill_first(arr, v):
+    arr[0] = v
+
+
+@tack.kernel
+def _passes_local_array(x, out):
+    for i in range(out.shape[0]):
+        tmp = tack.local_array(tack.f32, 2)
+        _fill_first(tmp, x[i] + 1.0)
+        out[i] = tmp[0]
+
+
+def _pair(n=4):
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.fill(2.0)
+    return x, out
+
+
+def test_module_value_in_kernel_is_named_with_its_position(backend):
+    with pytest.raises(NameError) as error:
+        _kernel_reads_module_value(*_pair())
+    message = str(error.value)
+    assert "Kernel '_kernel_reads_module_value'" in message
+    assert "'_MODULE_SCALE' at line 4, column 25" in message
+    assert "pass the value as an argument" in message
+
+
+def test_module_value_in_device_function_names_the_function(backend):
+    with pytest.raises(NameError) as error:
+        _func_reads_module_value(*_pair())
+    message = str(error.value)
+    assert "Device function '_reads_module_value'" in message
+    assert "inlined into kernel '_func_reads_module_value'" in message
+    assert "'_MODULE_SCALE' at line 3, column 16" in message
+
+
+def test_undefined_name_in_lowering_reports_a_name_error():
+    with pytest.raises(NameError, match="Kernel 'bad': name 'missing' at line 4, column 25"):
+        transform_kernel(ast.parse('''
+def bad(x, out):
+    for i in range(out.shape[0]):
+        out[i] = x[i] + missing
+'''))
+
+
+def test_unbound_field_in_dimension_query():
+    with pytest.raises(NameError, match="name 'ghost'"):
+        transform_kernel(ast.parse('''
+def bad(out):
+    for i in range(ghost.shape[0]):
+        out[i] = 1
+'''))
+
+
+def test_branch_and_loop_bindings_are_not_unbound():
+    transform_kernel(ast.parse('''
+def good(x, out, n):
+    for i in range(n):
+        if x[i] > 0:
+            v = x[i]
+        for j in range(2):
+            v = v + j
+        out[i] = v
+'''))
+
+
+def test_aliasing_a_local_array_is_rejected_with_its_position(backend):
+    with pytest.raises(UnsupportedSyntaxError) as error:
+        _aliases_local_array(*_pair())
+    message = str(error.value)
+    assert message.startswith("Kernel '_aliases_local_array': cannot bind 'view'")
+    assert "array 'tmp'" in message
+    assert "line 5, column 9" in message
+    # Not re-wrapped as a backend failure.
+    assert "failed on" not in message
+
+
+def test_passing_a_local_array_to_a_device_function_still_works(backend):
+    x, out = _pair()
+    _passes_local_array(x, out)
+    assert out.to_numpy().tolist() == [3.0] * 4
+
+
+def test_unsupported_syntax_reaches_the_caller_unwrapped(backend):
+    @tack.kernel
+    def asserts(x, out):
+        for i in range(out.shape[0]):
+            assert x[i] > 0
+            out[i] = x[i]
+
+    with pytest.raises(UnsupportedSyntaxError) as error:
+        asserts(*_pair())
+    assert str(error.value).startswith("Kernel 'asserts': unsupported Assert")

@@ -57,6 +57,12 @@ assertions (LC4), nested definitions, comprehensions, annotated assignments,
 keyword/starred arguments, and unsupported operators. Docstrings and `pass`
 are explicit no-ops. Parameter annotations and decorators remain host
 metadata; ordinary positional parameters without defaults are supported.
+Kernels capture nothing from the enclosing Python scope: reading a name
+that is not a parameter and is never assigned raises `NameError` with the
+kernel (or inlined device function) and source position. Local and shared
+arrays are storage, not values: binding another name to one (`view = tmp`)
+is rejected, while indexing it or passing it to a device function is
+supported.
 Supporting device assertions later would require changing this contract
 and its rejection test together. Atomics and barriers are currently
 statement-only operations; their return values are not supported.
@@ -140,9 +146,20 @@ cross-iteration data races valid. LC2 tests this policy. LLVM field parameters
 carry no `noalias` promise; CUDA/HIP and OpenCL field pointers carry no
 `__restrict__` or `restrict` promise. Metal loads field pointers from one
 argument buffer, so overlapping fields are not passed as separate device-buffer
-kernel arguments. A future opt-in disjoint-storage
-specialization would need an explicit contract and a justification based
-on storage overlap, rather than Python object identity.
+kernel arguments.
+
+**Disjoint-storage specialization (CPU).** The CPU backend may compile a
+second variant whose field pointers carry `noalias`, and uses it only for
+calls it has checked. The check runs on every dispatch and compares the byte
+ranges of the field arguments, never Python object identity: a call
+qualifies when no field the kernel stores to, directly, atomically, or
+through an inlined device function, shares a byte with any other field
+argument. Fields that are only read may overlap each other. Calls that do
+not qualify run the variant without the promise, so the overlap policy above
+is unchanged and the two variants must agree on every race-free program.
+The qualification is part of the compiled-variant key. `test_disjoint_fields.py`
+covers the analysis, partial overlaps of imported storage, the generated
+signatures, and switching between overlapping and disjoint calls.
 
 **Required caller constraints for this baseline:** access only in-bounds
 elements and initialized values; write only to writable storage. Bounds

@@ -106,10 +106,16 @@ class LLVMCodeGen:
         llvm_func = llvm_ir.Function(self.module, fn_type, name=func.name)
 
         # Field arguments may refer to overlapping storage, including
-        # distinct reshaped/imported views. Do not promise noalias.
+        # distinct reshaped/imported views, so noalias is never promised
+        # unconditionally. The dispatcher sets `disjoint_fields` only on a
+        # variant it compiles for calls whose written fields it has checked
+        # share no storage with any other field (`fields_disjoint`).
+        disjoint = getattr(func, 'disjoint_fields', False)
         for arg, name in zip(llvm_func.args, param_names):
             arg.name = name
             self._params[name] = arg
+            if disjoint and name in self._field_params:
+                arg.add_attribute("noalias")
 
         entry = llvm_func.append_basic_block("entry")
         self.builder = llvm_ir.IRBuilder(entry)

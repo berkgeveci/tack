@@ -62,6 +62,24 @@ class NumpyBuffer(DeviceBuffer):
     def nbytes(self) -> int:
         return self._data.nbytes
 
+    @property
+    def span(self) -> tuple[int, int]:
+        """The half-open byte range ``[start, end)`` this buffer occupies.
+
+        Read on every CPU dispatch to decide whether the field arguments
+        overlap, so it is computed once per array rather than per call.
+        """
+        try:
+            data, span = self._span
+            if data is self._data:
+                return span
+        except AttributeError:
+            pass
+        from numpy.lib.array_utils import byte_bounds
+        span = byte_bounds(self._data)
+        self._span = (self._data, span)
+        return span
+
 
 @dataclass
 class ExportedMemory:

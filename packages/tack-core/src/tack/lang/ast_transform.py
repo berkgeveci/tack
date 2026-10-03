@@ -56,6 +56,10 @@ class KernelTransformer(ast.NodeVisitor):
         self._texture_fields: dict[str, tuple] = texture_fields or {}
         # Maps renamed texture names back to the original kernel param name
         self._texture_origin: dict[str, str] = {}
+        # Where each name is first read: name → (line, column, device
+        # function it was inlined from or None). Only for diagnostics.
+        self._name_reads: dict[str, tuple] = {}
+        self._inline_stack: list[str] = []
         self._function_name = '<module>'
 
     def visit(self, node):
@@ -98,7 +102,51 @@ class KernelTransformer(ast.NodeVisitor):
         for stmt in body:
             if isinstance(stmt, ir.IRParallelFor):
                 _mark_outermost_continues(stmt.body)
-        return ir.IRFunction(name=node.name, params=params, body=body)
+        function = ir.IRFunction(name=node.name, params=params, body=body)
+        self._check_names_bound(function)
+        return function
+
+    def _check_names_bound(self, function: ir.IRFunction):
+        """Reject a read of a name the kernel never binds.
+
+        The usual cause is a module-level Python value: a kernel is compiled
+        from its own source and captures nothing from the enclosing scope.
+        The IR verifier would refuse the same thing a moment later, but only
+        as a tree path into the lowered IR; here the source position is still
+        known. Existence only -- not definite assignment on every path.
+        """
+        from tack.lang.ir_traversal import walk_ir
+
+        bound = {p.name for p in function.params}
+        used = []
+        for n in walk_ir(function.body):
+            if isinstance(n, ir.IRAssign):
+                bound.add(n.target)
+            elif isinstance(n, (ir.IRParallelFor, ir.IRSequentialFor)):
+                bound.add(n.var)
+            elif isinstance(n, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
+                bound.add(n.name)
+            elif isinstance(n, ir.IRName):
+                used.append(n.name)
+            elif isinstance(n, (ir.IRDimSize, ir.IRTextureSample)):
+                used.append(n.field_name)
+        for name in used:
+            if name in bound:
+                continue
+            where = f"Kernel '{function.name}'"
+            read = self._name_reads.get(name)
+            at = ""
+            if read is not None:
+                line, column, inlined_from = read
+                at = f" at line {line}, column {column}"
+                if inlined_from is not None:
+                    where = (f"Device function '{inlined_from}' "
+                             f"(inlined into kernel '{function.name}')")
+            raise NameError(
+                f"{where}: name '{name}'{at} is not a parameter and is never "
+                f"assigned. Kernels do not capture Python variables from the "
+                f"enclosing scope: pass the value as an argument, or make it "
+                f"a class-level constant of a @tack.data_oriented template.")
 
     def _visit_body(self, stmts: list) -> list:
         """Visit a list of statements, filtering out None results.
@@ -378,6 +426,15 @@ class KernelTransformer(ast.NodeVisitor):
             local_like_result = self._try_parse_local_array_like(target.id, value)
             if local_like_result is not None:
                 return local_like_result
+
+        if (isinstance(target, ast.Name) and isinstance(value, ast.Name)
+                and value.id in self._shared_vars):
+            # An array is storage, not a value: C has no array assignment,
+            # and binding a second name to it lowers to a scalar copy.
+            raise NotImplementedError(
+                f"cannot bind '{target.id}' to the local or shared array "
+                f"'{value.id}'; index '{value.id}' directly, or pass it to "
+                f"a @tack.func")
 
         # Check for vector construction: v = tack.Vector([a, b, c])
         vec_elts = self._try_parse_vector_construct(value)
@@ -660,6 +717,10 @@ class KernelTransformer(ast.NodeVisitor):
         )
 
     def visit_Name(self, node: ast.Name) -> ir.IRNode:
+        if node.id not in self._name_reads and hasattr(node, 'lineno'):
+            self._name_reads[node.id] = (
+                node.lineno, node.col_offset + 1,
+                self._inline_stack[-1] if self._inline_stack else None)
         # If this name is a vector variable, return its components as a list
         if node.id in self._vector_vars:
             ndim = self._vector_vars[node.id]
@@ -809,6 +870,23 @@ class KernelTransformer(ast.NodeVisitor):
     # --- @tack.func inlining ---
 
     def _inline_func_call(self, func_name: str, call_node: ast.Call):
+        """Inline a @tack.func call, tracking it for diagnostics."""
+        # Arguments belong to the caller's source; visiting them first
+        # records their positions before the callee's are in play.
+        for arg in call_node.args:
+            for sub in ast.walk(arg):
+                if (isinstance(sub, ast.Name) and hasattr(sub, 'lineno')
+                        and sub.id not in self._name_reads):
+                    self._name_reads[sub.id] = (
+                        sub.lineno, sub.col_offset + 1,
+                        self._inline_stack[-1] if self._inline_stack else None)
+        self._inline_stack.append(func_name)
+        try:
+            return self._inline_func_body(func_name, call_node)
+        finally:
+            self._inline_stack.pop()
+
+    def _inline_func_body(self, func_name: str, call_node: ast.Call):
         """Inline a @tack.func call at the call site.
 
         Produces a list of IR statements (parameter assignments + body),
