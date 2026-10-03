@@ -110,10 +110,20 @@ within unified memory; on CUDA/HIP/L0 it involves explicit copies).
 
 ### CPU
 
-The LLVM-JIT'd function is called via ctypes. For loop ranges > 1024
-elements, work is split across physical CPU cores using a persistent
-`ThreadPoolExecutor`. Each thread calls the compiled function with
-a `(start, end)` sub-range.
+The LLVM-JIT'd function is called via ctypes. The backend compares measured
+serial work against measured thread fan-out cost, splitting worthwhile
+ranges across a persistent `ThreadPoolExecutor`. Each thread calls the
+compiled function with a `(start, end)` sub-range.
+
+Periodic serial rechecks sample different positions in the range. Long
+worker spans establish a floor under the serial estimate, preventing cheap
+image slices from making an expensive frame look cheap. That floor applies
+to the measured workload: runtime inputs can change without recompilation.
+When every worker of a complete dispatch later finishes below the trusted
+span duration, the backend retires the old floor and schedules a serial
+recheck on the next call. Partial head/tail dispatches and a short median
+with any long worker cannot retire it. Worker spans below the rate clock's
+resolution still establish that the complete dispatch was short.
 
 ### Metal
 

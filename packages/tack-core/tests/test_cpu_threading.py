@@ -395,6 +395,131 @@ def test_a_long_fan_out_floors_the_serial_estimate(cpu):
 
 
 @tack.kernel
+def _variable_work(x, out, n, repeats):
+    for i in range(n):
+        acc = 0.0
+        for j in range(repeats):
+            acc = acc + sin(x[i] + float(j)) * cos(x[i] - float(j))
+        out[i] = acc
+
+
+def test_a_workload_that_becomes_cheap_returns_to_serial(cpu, monkeypatch):
+    """A cost floor measured on old inputs must not trap new inputs in
+    threading, even after the recheck schedule has reached its cap.
+
+    Execute real kernel ranges, but supply the cost observations so CI
+    load and the clock cannot decide whether this transition passes.
+    """
+    backend = CPUBackend(num_threads=4)
+    if not backend._v2:
+        pytest.skip("policy v1 does not measure the parallel rate")
+    n = 1 << 17
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.linspace(0, 3, n, dtype=np.float32))
+    args = [x, out, n, 24]
+    compiled = _compile_for(backend, _variable_work, args)
+    compiled.call_range(compiled.bind(args), 0, n)
+
+    # A costly previous workload established a floor and backed off its
+    # rechecks. The same compiled code now receives zero repetitions.
+    backend._fan_out_ns = 2_500_000.0
+    monkeypatch.setattr(backend, '_fan_out_estimate', lambda: 2_500_000.0)
+    compiled.call_overhead_ns = 1000.0
+    compiled.ns_per_elem = compiled.serial_floor_ns = 1000.0
+    compiled.ns_per_elem_parallel = 1000.0
+    compiled.parallel_min_elems = backend._min_elems(1000.0, 1000.0)
+    compiled.recheck_after = cpu_mod._RECHECK_CAP
+    args[-1] = 0
+    prefix = compiled.bind(args)
+    serial_ranges = []
+    real_serial = backend._run_serial
+
+    def serial(c, p, start, end):
+        serial_ranges.append((start, end))
+        _fixed_timing(monkeypatch, c, end - start)  # one ns per element
+        real_serial(c, p, start, end)
+
+    def parallel(c, p, start, end, **kwargs):
+        c.call_range(p, start, end)
+        # All worker spans are now short, including on the whole range.
+        if kwargs.get('whole_range', False):
+            backend._record_parallel_cost(c, [1.0] * 4, 4,
+                                          retire_serial_floor=True)
+        else:
+            backend._record_parallel_cost(c, [1.0] * 4, 4)
+
+    monkeypatch.setattr(backend, '_run_serial', serial)
+    monkeypatch.setattr(backend, '_parallel_execute', parallel)
+    for _ in range(3):
+        backend._run(compiled, prefix, n)
+
+    assert serial_ranges and serial_ranges[-1] == (0, n), (
+        'the cheap workload never returned to whole-range serial execution')
+    assert compiled.parallel_min_elems > n
+    np.testing.assert_array_equal(out.to_numpy(), np.zeros(n, dtype=np.float32))
+
+
+@pytest.mark.parametrize('whole_range, worker_spans, retire', [
+    (True, [1000] * 4, True),
+    (True, [50] * 4, True),  # below the rate measurement's clock threshold
+    (False, [1000] * 4, False),
+    (True, [1000, 1000, 1000, 160000], False),  # one costly image region
+], ids=['whole-short', 'whole-below-clock', 'partial-short', 'whole-mixed'])
+def test_floor_retirement_requires_the_whole_range_to_be_fast(
+        cpu, monkeypatch, whole_range, worker_spans, retire):
+    """Short slices and a short median must not erase the renderer's floor.
+    Supply worker clocks, but execute each real kernel range exactly once.
+    """
+    from concurrent.futures import Future
+
+    backend = CPUBackend(num_threads=4)
+    if not backend._v2:
+        pytest.skip("policy v1 does not measure the parallel rate")
+    n = 4096
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.arange(n, dtype=np.float32))
+    out.fill(0)
+    args = [x, out, n]
+    compiled = _compile_for(backend, _scale, args)
+    compiled.call_overhead_ns = 1000.0
+    compiled.ns_per_elem = compiled.serial_floor_ns = 1000.0
+    compiled.recheck_after = cpu_mod._RECHECK_CAP
+    clock = [0]
+    spans = iter(worker_spans)
+    real_call = compiled.call_range
+
+    def call(p, start, end):
+        real_call(p, start, end)
+        clock[0] += next(spans)
+
+    class InlinePool:
+        def submit(self, fn, *args):
+            result = Future()
+            result.set_result(fn(*args))
+            return result
+
+    monkeypatch.setattr(backend, '_get_pool', InlinePool)
+    monkeypatch.setattr(compiled, 'call_range', call)
+    monkeypatch.setattr(cpu_mod.time, 'perf_counter_ns', lambda: clock[0])
+    end = n if whole_range else n // 2
+    backend._parallel_execute(compiled, compiled.bind(args), 0, end,
+                              whole_range=whole_range)
+
+    if retire:
+        assert compiled.recheck_due(), 'stale evidence delayed a fresh serial sample'
+        assert compiled.serial_floor_ns == 0.0
+    else:
+        assert backend._sample_elems(compiled, n) < n
+        assert compiled.serial_floor_ns == 1000.0
+        assert not compiled.recheck_due()
+    expected = np.zeros(n, dtype=np.float32)
+    expected[:end] = x.to_numpy()[:end] * 2.0 + 1.0
+    np.testing.assert_array_equal(out.to_numpy(), expected)
+
+
+@tack.kernel
 def _front_loaded(x, out, n, cut):
     for i in range(n):
         v = x[i]
@@ -429,8 +554,8 @@ def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
     real_serial, real_parallel = backend._run_serial, backend._parallel_execute
     backend._run_serial = lambda c, p, a, b: (serial.append((a, b)),
                                               real_serial(c, p, a, b))[1]
-    backend._parallel_execute = lambda c, p, a, b: (parallel.append((a, b)),
-                                                    real_parallel(c, p, a, b))[1]
+    backend._parallel_execute = lambda c, p, a, b, **kw: (parallel.append((a, b)),
+                                                        real_parallel(c, p, a, b, **kw))[1]
 
     # First sight probes a prefix, and the first fan-out calibrates the
     # real fan-out cost and re-decides against it -- which, from a

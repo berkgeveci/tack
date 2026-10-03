@@ -421,7 +421,8 @@ class CompiledKernel:
         self.ns_per_elem_parallel = 0.0
         # The last parallel rate measured on spans long enough to be
         # believed as a lower bound on the serial rate (see
-        # `_RP_BOUND_SPAN_RATIO`); 0.0 until there is one.
+        # `_RP_BOUND_SPAN_RATIO`); 0.0 until there is one, or after a
+        # whole-range dispatch shows that the workload has become cheap.
         self.serial_floor_ns = 0.0
         # What one call_range costs before touching a single element --
         # ctypes marshalling, mostly. Timed once, on an empty range.
@@ -854,7 +855,8 @@ class CPUBackend(Backend):
                     self._parallel_execute(compiled, prefix, start + probe,
                                            loop_end)
                 return
-            self._parallel_execute(compiled, prefix, 0, loop_end)
+            self._parallel_execute(compiled, prefix, 0, loop_end,
+                                   whole_range=True)
             return
 
         probe_min_range = self._probe_min_range()
@@ -1359,12 +1361,18 @@ class CPUBackend(Backend):
 
     def _record_parallel_cost(self, compiled: CompiledKernel,
                               worker_rates: list, workers: int,
-                              bounds_serial: bool = False):
+                              bounds_serial: bool = False,
+                              retire_serial_floor: bool = False):
         """Learn `r_p` from what the workers themselves reported.
 
         `bounds_serial` says the spans were long enough (see
         `_RP_BOUND_SPAN_RATIO`) for the aggregate rate to also serve as a
         floor under the serial estimate.
+
+        `retire_serial_floor` says every worker of a whole-range dispatch
+        finished below that duration. The old inputs' floor is stale;
+        schedule a fresh serial sample rather than waiting up to 1024
+        dispatches. Cheap head/tail slices cannot provide this evidence.
 
         `worker_rates` holds each worker's own ns-per-element for the
         chunk it ran. Those timestamps are taken *inside* the worker,
@@ -1388,8 +1396,14 @@ class CPUBackend(Backend):
         Probed on a loaded yavin, max read 10-134x the fitted rate where
         the median read 0.5-6.3x.
         """
+        if workers <= 0:
+            return
+        if retire_serial_floor and compiled.serial_floor_ns > 0.0:
+            compiled.serial_floor_ns = 0.0
+            compiled.parallel_since_measure = 0
+            compiled.recheck_after = 1
         rates = sorted(worker_rates)
-        if not rates or workers <= 0:
+        if not rates:
             return
         median_rate = rates[len(rates) // 2]
         sample = max(median_rate / workers, _MIN_NS_PER_ELEM)
@@ -1406,7 +1420,7 @@ class CPUBackend(Backend):
         self._set_serial_cost(compiled, compiled.ns_per_elem)
 
     def _parallel_execute(self, compiled: CompiledKernel, prefix: tuple,
-                          start: int, end: int):
+                          start: int, end: int, *, whole_range: bool = False):
         """Split the loop range across threads."""
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
@@ -1460,11 +1474,15 @@ class CPUBackend(Backend):
 
         dispatch_ns = time.perf_counter_ns() - dispatch_t0
         measured = sorted(spans[t] for t in range(workers) if rates[t] > 0.0)
+        trusted_span = _RP_BOUND_SPAN_RATIO * workers * compiled.call_overhead_ns
         bounds_serial = bool(measured) and (
-            measured[len(measured) // 2]
-            >= _RP_BOUND_SPAN_RATIO * workers * compiled.call_overhead_ns)
+            measured[len(measured) // 2] >= trusted_span)
+        # A short median could still hide expensive image regions. Only
+        # retire the floor when the entire range has no long worker span,
+        # including spans below the rate measurement's clock threshold.
+        retire_floor = whole_range and workers > 0 and max(spans) < trusted_span
         self._record_parallel_cost(compiled, [r for r in rates if r > 0.0],
-                                   workers, bounds_serial)
+                                   workers, bounds_serial, retire_floor)
         # The dispatch waits for its slowest worker, so that is the work
         # phase -- and here the max is the right statistic rather than the
         # wrong one it is for `r_p`, because this is the quantity the
