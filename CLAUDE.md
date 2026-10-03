@@ -210,6 +210,7 @@ The CPU backend fans a loop range out to its `ThreadPoolExecutor` only when the 
 - Each `CompiledKernel` carries `ns_per_elem`, a smoothed estimate of its serial cost, updated on every serial dispatch. From it the backend precomputes `parallel_min_elems`, so the dispatch hot path is one integer compare.
 - The backend measures its own fan-out cost once (`_fan_out_ns`), by dispatching *empty* ranges through the real path — no loop iterations, so the probe has no side effects.
 - The first time a kernel is seen at a range large enough to matter, a small prefix is timed serially and the rest is decided on that sample.
+- Once a kernel threads, occasional rechecks (dispatches 1, 2, 4, … 1024, then every 1024) re-time a serial slice. The slice walks the range in golden-ratio steps rather than always sampling the prefix, because an image kernel's first rows are background and a prefix sample read a volume render 10–70× too cheap. A range whose serial run costs no more than a fan-out is re-timed whole; the serial estimate is floored at the measured parallel rate.
 
 A fixed element count cannot work here: the crossover moves ~1000× with arithmetic intensity (~4M elements for `out[i] = x[i]*2+1`, ~130K for a `sqrt`/`sin` expression, ~4K for a 20-iteration inner loop). The previous constant of 1024 sat below all of them, making mid-size dispatches of cheap kernels 3–10× slower than running them serially.
 

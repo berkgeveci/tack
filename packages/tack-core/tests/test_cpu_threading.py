@@ -264,11 +264,203 @@ def test_sample_size_survives_a_corrupt_estimate(cpu):
         f"a corrupt estimate shrank the sample to {corrupt} of {n} elements")
 
 
-def test_a_range_too_small_to_thread_is_timed_whole(cpu):
+def test_a_range_cheap_to_run_whole_is_timed_whole(cpu, monkeypatch):
+    """Splitting a probe off a range that costs less than a fan-out buys
+    nothing: the serial run is the cheap option either way."""
     backend = CPUBackend()
     compiled, _ = _measured(backend, _scale, 4096)
-    n = backend._probe_min_range() // 2
+    monkeypatch.setattr(backend, "_fan_out_estimate", lambda: 2_500_000.0)
+    compiled.ns_per_elem = 10.0
+    n = 100_000                                   # 1.0 ms of work
     assert backend._sample_elems(compiled, n) == n
+
+
+def test_a_costly_kernel_is_sampled_even_on_a_short_range(cpu, monkeypatch):
+    """The guard is in the kernel's own rate, not an element count.
+
+    A 384² volume render is ~150k pixels at ~3500 ns each: 0.5 s of work,
+    which no fan-out cost justifies re-running on one thread. The old
+    guard compared the count against what a 24 ns/element reference
+    kernel needs to repay a fan-out, and re-timed the whole frame on every
+    recheck.
+    """
+    backend = CPUBackend()
+    compiled, _ = _measured(backend, _scale, 4096)
+    monkeypatch.setattr(backend, "_fan_out_estimate", lambda: 2_500_000.0)
+    compiled.ns_per_elem = 3500.0
+    compiled.serial_floor_ns = 400.0        # what one fan-out measured
+    n = backend._probe_min_range() // 2
+    assert n * 400.0 > 2_500_000.0, "test range is not costly enough"
+    assert backend._sample_elems(compiled, n) < n // 2
+
+
+def test_a_corrupt_estimate_still_times_a_small_range_whole(cpu, monkeypatch):
+    """The guard must not take the estimate's word for "expensive": a
+    corrupt-high one would turn a measurable whole run into a 64-element
+    slice that measures nothing but the clock."""
+    backend = CPUBackend()
+    compiled, _ = _measured(backend, _scale, 4096)
+    monkeypatch.setattr(backend, "_fan_out_estimate", lambda: 2_500_000.0)
+    honest = compiled.ns_per_elem
+    n = 4096
+
+    compiled.ns_per_elem = honest * 10_000
+    assert backend._sample_elems(compiled, n) == n
+
+
+def test_a_low_estimate_cannot_shrink_the_sample_guard(cpu, monkeypatch):
+    """A prefix-biased (low) estimate must ask for a larger slice, never
+    for the whole range -- the whole range is the failure mode."""
+    backend = CPUBackend()
+    compiled, _ = _measured(backend, _scale, 4096)
+    monkeypatch.setattr(backend, "_fan_out_estimate", lambda: 2_500_000.0)
+    n = 1 << 18
+    compiled.ns_per_elem = 3500.0
+    honest = backend._sample_elems(compiled, n)
+    compiled.ns_per_elem = 50.0                   # 70x under
+    biased = backend._sample_elems(compiled, n)
+    assert honest <= biased < n
+
+
+# ── The serial estimate is floored at the parallel rate ──────────────
+
+def test_serial_estimate_never_sits_below_the_parallel_rate(cpu, monkeypatch):
+    """A fan-out cannot make an element cheaper than it is serially, so a
+    serial sample under the measured parallel rate is a biased sample."""
+    backend = CPUBackend()
+    if not backend._v2:
+        pytest.skip("policy v1 does not measure the parallel rate")
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    honest = compiled.ns_per_elem
+
+    compiled.serial_floor_ns = honest * 50
+    _fixed_timing(monkeypatch, compiled, honest * n)
+    backend._run_serial(compiled, compiled.bind(args), 0, n)
+
+    assert compiled.ns_per_elem >= honest * 50
+
+
+def test_a_parallel_measurement_lifts_a_low_serial_estimate(cpu):
+    """The floor applies as soon as a fan-out has measured the range, not
+    only on the next serial sample, which may be 1024 dispatches away."""
+    backend = CPUBackend()
+    if not backend._v2:
+        pytest.skip("policy v1 does not measure the parallel rate")
+    compiled, _ = _measured(backend, _scale, 4096)
+    honest = compiled.ns_per_elem
+    before = compiled.parallel_min_elems
+
+    workers = 4
+    backend._record_parallel_cost(compiled, [honest * 400.0] * workers, workers,
+                                  bounds_serial=True)
+
+    assert compiled.ns_per_elem_parallel == pytest.approx(honest * 100.0)
+    assert compiled.ns_per_elem >= compiled.ns_per_elem_parallel
+    assert compiled.parallel_min_elems < before
+
+
+def test_a_short_fan_out_does_not_floor_the_serial_estimate(cpu):
+    """Worker spans of a few microseconds are mostly GIL hand-back, not
+    the kernel: 100x the serial rate, measured. Such a fan-out may still
+    inform `r_p`, which the threshold tolerates, but never the floor."""
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+
+    backend._parallel_execute(compiled, compiled.bind(args), 0, n)
+
+    assert compiled.serial_floor_ns == 0.0
+
+
+def test_a_long_fan_out_floors_the_serial_estimate(cpu):
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    if not backend._v2:
+        pytest.skip("policy v1 does not measure the parallel rate")
+    n = 200000
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.linspace(0, 1, n, dtype=np.float32))
+    compiled = _compile_for(backend, _expensive, [x, out, n])
+    backend._dispatch(compiled, [x, out, n], n)      # measures the call cost
+
+    backend._parallel_execute(compiled, compiled.bind([x, out, n]), 0, n)
+
+    assert compiled.serial_floor_ns > 0.0
+    assert compiled.ns_per_elem >= compiled.serial_floor_ns
+
+
+@tack.kernel
+def _front_loaded(x, out, n, cut):
+    for i in range(n):
+        v = x[i]
+        reps = 2
+        if i >= cut:
+            reps = 24
+        acc = 0.0
+        for j in range(reps):
+            acc = acc + sin(v + float(j)) * cos(v - float(j))
+        out[i] = acc
+
+
+def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
+    """An image kernel's first rows are background: cheap, and not what
+    the frame costs. Measured from them, the estimate undershoots, and
+    with the old guard every recheck then re-ran the whole frame serially
+    (1.1 s against 150 ms threaded on a 512² volume render). Once a
+    fan-out has measured the range, a recheck must take a slice.
+    """
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    n = 1 << 17
+    cut = n // 4
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.linspace(0.0, 3.0, n, dtype=np.float32))
+    args = [x, out, n, cut]
+    compiled = _compile_for(backend, _front_loaded, args)
+
+    serial, parallel = [], []
+    real_serial, real_parallel = backend._run_serial, backend._parallel_execute
+    backend._run_serial = lambda c, p, a, b: (serial.append((a, b)),
+                                              real_serial(c, p, a, b))[1]
+    backend._parallel_execute = lambda c, p, a, b: (parallel.append((a, b)),
+                                                    real_parallel(c, p, a, b))[1]
+
+    # First sight probes a prefix, and the first fan-out calibrates the
+    # real fan-out cost and re-decides against it -- which, from a
+    # prefix-biased estimate, may legitimately run that one dispatch
+    # whole. Everything after that has an unbiased sample to go on.
+    for _ in range(2):
+        backend._dispatch(compiled, args, n)
+    if not parallel:
+        pytest.skip("this machine does not thread this kernel at all")
+    serial.clear()
+    for _ in range(12):                           # rechecks on 1, 2, 4, 8
+        backend._dispatch(compiled, args, n)
+
+    whole = [(a, b) for a, b in serial if b - a >= n // 2]
+    assert not whole, (
+        f"{len(whole)} recheck(s) re-ran the whole range serially: {whole}; "
+        f"estimate {compiled.ns_per_elem:.0f} ns/elem, parallel "
+        f"{compiled.ns_per_elem_parallel:.0f}")
+    starts = {a for a, b in serial}
+    assert len(starts) > 1, f"every sample came from the same place: {starts}"
+    assert compiled.ns_per_elem >= compiled.ns_per_elem_parallel
+
+    j2 = np.arange(2, dtype=np.float64)
+    j24 = np.arange(24, dtype=np.float64)
+    src = x.to_numpy()
+    expected = np.where(
+        np.arange(n) < cut,
+        (np.sin(src[:, None] + j2) * np.cos(src[:, None] - j2)).sum(axis=1),
+        (np.sin(src[:, None] + j24) * np.cos(src[:, None] - j24)).sum(axis=1))
+    np.testing.assert_allclose(out.to_numpy(), expected, atol=2e-4)
 
 
 # ── Counting cores ───────────────────────────────────────────────────
