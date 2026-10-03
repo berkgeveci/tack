@@ -41,7 +41,13 @@ class KernelTransformer(ast.NodeVisitor):
       - Vector scalarization: Vector([a, b, c]) → 3 scalar variables
     """
 
-    def __init__(self, vector_fields=None, texture_fields=None):
+    def __init__(self, vector_fields=None, texture_fields=None, python_func=None,
+                 bindings=None, template_funcs=None):
+        self._python_func = python_func
+        self._bindings = bindings
+        self._template_funcs = template_funcs
+        self._call_bindings = None
+        self._active_funcs = set()
         self._loop_depth = 0
         self._inline_counter = 0  # unique suffix for inlined variables
         # Vector tracking: name → number of components
@@ -78,7 +84,10 @@ class KernelTransformer(ast.NodeVisitor):
         module = ir.IRModule()
         for stmt in node.body:
             if isinstance(stmt, ast.FunctionDef):
-                validate_source(stmt)
+                from tack.lang.call_bindings import CallBindings
+                self._call_bindings = CallBindings(
+                    stmt, self._python_func, self._bindings, self._template_funcs)
+                validate_source(stmt, call_bindings=self._call_bindings)
                 module.functions.append(self.visit_FunctionDef(stmt))
             else:
                 raise NotImplementedError(f"Unsupported module statement: {type(stmt).__name__}")
@@ -740,12 +749,11 @@ class KernelTransformer(ast.NodeVisitor):
         return self._visit_ordered(node.elts)
 
     def visit_Call(self, node: ast.Call) -> ir.IRNode:
-        func_name = self._resolve_call_name(node)
-
         # Check for @tack.func calls → inline
-        from tack.lang.func import _func_registry
-        if func_name in _func_registry:
-            return self._inline_func_call(func_name, node)
+        func_obj = self._call_bindings.device_func(node.func)
+        if func_obj is not None:
+            return self._inline_func_call(func_obj, node)
+        func_name = self._resolve_call_name(node)
 
         # Vector constructor: Vector([a, b, c]) or tack.Vector([a, b, c])
         if func_name == "Vector":
@@ -874,7 +882,7 @@ class KernelTransformer(ast.NodeVisitor):
 
     # --- @tack.func inlining ---
 
-    def _inline_func_call(self, func_name: str, call_node: ast.Call):
+    def _inline_func_call(self, func_obj, call_node: ast.Call):
         """Inline a @tack.func call, tracking it for diagnostics."""
         # Arguments belong to the caller's source; visiting them first
         # records their positions before the callee's are in play.
@@ -885,23 +893,24 @@ class KernelTransformer(ast.NodeVisitor):
                     self._name_reads[sub.id] = (
                         sub.lineno, sub.col_offset + 1,
                         self._inline_stack[-1] if self._inline_stack else None)
-        self._inline_stack.append(func_name)
+        self._inline_stack.append(func_obj.name)
         try:
-            return self._inline_func_body(func_name, call_node)
+            return self._inline_func_body(func_obj, call_node)
         finally:
             self._inline_stack.pop()
 
-    def _inline_func_body(self, func_name: str, call_node: ast.Call):
+    def _inline_func_body(self, func_obj, call_node: ast.Call):
         """Inline a @tack.func call at the call site.
 
         Produces a list of IR statements (parameter assignments + body),
         and returns the result variable name as an IRName.
         """
-        from tack.lang.func import _func_registry
-
-        func_obj = _func_registry[func_name]
+        from tack.lang.call_bindings import CallBindings
+        func_name = func_obj.name
         funcdef = func_obj._funcdef
-        validate_source(funcdef, kind='Device function')
+        callee_bindings = CallBindings(funcdef, func_obj.func,
+                                      template_funcs=self._template_funcs)
+        validate_source(funcdef, kind='Device function', call_bindings=callee_bindings)
 
         # Save and reset _pre_stmts so nested inlining doesn't interfere
         saved_pre_stmts = self._pre_stmts
@@ -999,7 +1008,17 @@ class KernelTransformer(ast.NodeVisitor):
                 stmts.append(ir.IRAssign(target=renamed, value=arg_val))
 
         # Visit the renamed body statements
-        body_ir = self._visit_body(renamed_body)
+        if func_obj in self._active_funcs:
+            raise NotImplementedError(f"Recursive @tack.func '{func_name}' is not supported")
+        caller_bindings = self._call_bindings
+        callee_bindings.locals.update(rename_map.values())
+        self._call_bindings = callee_bindings
+        self._active_funcs.add(func_obj)
+        try:
+            body_ir = self._visit_body(renamed_body)
+        finally:
+            self._active_funcs.remove(func_obj)
+            self._call_bindings = caller_bindings
         stmts.extend(body_ir)
 
         # Restore saved pre_stmts and append all inline stmts
@@ -1361,8 +1380,7 @@ class KernelTransformer(ast.NodeVisitor):
     def _is_range_call(self, node: ast.expr) -> bool:
         """Check if an AST node is a call to range()."""
         return (isinstance(node, ast.Call) and
-                isinstance(node.func, ast.Name) and
-                node.func.id == "range")
+                self._resolve_call_name(node) == 'range')
 
     def _parse_range_args(self, call_node: ast.Call):
         """Parse range(end), range(start, end), or range(start, end, step)."""
@@ -1383,13 +1401,7 @@ class KernelTransformer(ast.NodeVisitor):
           - module attribute: math.sqrt(x) → "sqrt"
           - tack attribute: tack.sqrt(x) → "sqrt"
         """
-        func = node.func
-        if isinstance(func, ast.Name):
-            return func.id
-        if isinstance(func, ast.Attribute):
-            # math.sqrt, tack.sqrt → just "sqrt"
-            return func.attr
-        raise NotImplementedError(f"Unsupported function call syntax: {ast.dump(func)}")
+        return self._call_bindings.call_name(node.func)
 
     def _binop_str(self, op: ast.operator) -> str:
         ops = {
@@ -1534,7 +1546,8 @@ class _NameRenamer(ast.NodeTransformer):
 
 
 def transform_kernel(kernel_ast: ast.Module, vector_fields=None,
-                     texture_fields=None) -> ir.IRModule:
+                     texture_fields=None, python_func=None, bindings=None,
+                     template_funcs=None) -> ir.IRModule:
     """Transform a kernel's Python AST into Tack IR.
 
     Args:
@@ -1543,7 +1556,11 @@ def transform_kernel(kernel_ast: ast.Module, vector_fields=None,
             vector component count (e.g., {"pixels": 3, "cam_pos": 3}).
         texture_fields: Optional dict mapping parameter names to their
             3D shape (e.g., {"vol": (100, 100, 100)}).
+        python_func: Defining Python callable for globals/closure bindings.
+        bindings: Explicit namespace for AST-only callers without a callable.
+        template_funcs: Transformation-local map of resolved template methods.
     """
     transformer = KernelTransformer(vector_fields=vector_fields,
-                                    texture_fields=texture_fields)
+                                    texture_fields=texture_fields, python_func=python_func,
+                                    bindings=bindings, template_funcs=template_funcs)
     return transformer.visit(kernel_ast)

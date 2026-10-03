@@ -92,20 +92,18 @@ def test_diagnostic_reports_exact_captured_source_location():
         transform_kernel(ast.parse(source))
 
 
-def test_registered_function_can_shadow_intrinsic(monkeypatch):
-    from tack.lang.func import Func, _func_registry
+def test_bound_function_can_shadow_intrinsic():
+    from tack.lang.func import Func
 
     def barrier(value):
         return value
 
-    # Func registers itself; restore the original registry after this test.
-    monkeypatch.setattr('tack.lang.func._func_registry', dict(_func_registry))
-    Func(barrier)
+    bound = Func(barrier)
     module = transform_kernel(ast.parse('''
 def supported(out):
     for i in range(4):
         out[i] = barrier(i)
-'''))
+'''), bindings={'barrier': bound})
     assert module.functions[0].body[0].body
 
 

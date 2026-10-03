@@ -9,12 +9,19 @@ the frontend.
 ```python
 # In kernel.py, when get_ir() is called:
 from tack.lang.ast_transform import transform_kernel
-ir_module = transform_kernel(ast_tree, vector_fields=..., texture_fields=...)
+ir_module = transform_kernel(ast_tree, vector_fields=..., texture_fields=...,
+                             python_func=kernel.func, template_funcs=...)
 ```
 
 `transform_kernel` creates a `KernelTransformer` (an `ast.NodeVisitor`)
 and visits the module. The result is an `IRModule` containing one
 `IRFunction`.
+
+`call_bindings.py` supplies static device-call resolution from the defining
+Python callable and transformation-local template method map. AST-only
+callers can supply an explicit `bindings` dictionary. Bare kernel intrinsics
+remain available without a Python import; device functions require a bound
+`Func` object. No global function-name registry is consulted.
 
 Original kernel source is validated by `source_validation.py` before
 transformation. Original `@tack.func` bodies are also validated before

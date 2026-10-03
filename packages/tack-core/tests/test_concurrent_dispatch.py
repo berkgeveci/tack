@@ -205,19 +205,11 @@ def test_many_threads_one_kernel():
     assert all(results.values()), f"wrong values from {results}"
 
 
-# ── The template rewrite's shared registry ───────────────────────────
+# ── Concurrent template construction ────────────────────────────────
 #
-# `rewrite_templates` registers each resolved @tack.func method in the
-# module-global `_func_registry`, `transform_kernel` reads it back, and
-# `get_ir` pops it afterwards. The name is built from `id(obj)`, so two
-# threads sharing one @tack.data_oriented object build the *same* name and
-# whichever finishes first deletes the entry the other is about to read.
-#
-# It survived on CPython only because that whole sequence fits in one GIL
-# slice. Measured before the fix: 8 threads over 25 kernels were clean at
-# the default 5 ms switch interval and at 1 ms, and 72 of 200 dispatches
-# failed at 0.1 ms. Rather than depend on that, these force a switch at the
-# exact point by making the transform yield.
+# The old process-wide method registry could be overwritten or cleared by
+# another transform. Method maps now belong to each transform; the cache
+# construction lock still protects concurrent misses for a shared kernel.
 
 
 @tack.data_oriented
@@ -239,13 +231,7 @@ def _use_template(s, x, out):
 
 
 def _yield_during_transform(monkeypatch):
-    """Make every transform give up the GIL at its start.
-
-    Deterministic where a switch interval is not: each thread is guaranteed
-    to be inside the register→transform→pop window when the next one enters
-    it. Post-fix the lock serialises them, so this yields rather than
-    deadlocks — the stalled thread is not waiting on anybody.
-    """
+    """Yield during construction to exercise shared template cache misses."""
     import tack.lang.kernel as kernel_mod
     real = kernel_mod.transform_kernel
 
@@ -287,23 +273,12 @@ def test_threads_sharing_a_template_object_all_succeed(monkeypatch):
         np.testing.assert_allclose(got, 1.0 * 3.0 + 10.0)
 
 
-def test_the_registry_is_left_clean(monkeypatch):
-    """Temporaries must not outlive the transform that made them.
-
-    The name carries `id(obj)`, which the allocator reuses, so a leaked
-    entry is a stale method body waiting for an unrelated object to be born
-    at the same address.
-
-    Unlike the two either side of it, this one **passes on the pre-fix
-    code**: distinct objects have distinct ids, so nothing collides and
-    every pop finds its own entry. It is here as a guard on the invariant,
-    not as a reproducer — worth saying, because a test that never failed is
-    evidence of nothing until something changes.
-    """
-    from tack.lang.func import _func_registry
+def test_concurrent_templates_preserve_method_source(monkeypatch):
+    """Concurrent resolution must not modify the shared class method body."""
+    import ast
 
     _yield_during_transform(monkeypatch)
-    before = set(_func_registry)
+    before = ast.dump(_Scaler._tack_func_methods['apply']._funcdef)
 
     def run(bias):
         s = _Scaler(bias)
@@ -317,8 +292,7 @@ def test_the_registry_is_left_clean(monkeypatch):
     for t in threads:
         t.join(TIMEOUT)
 
-    leaked = set(_func_registry) - before
-    assert not leaked, f"template temporaries left in the registry: {leaked}"
+    assert ast.dump(_Scaler._tack_func_methods['apply']._funcdef) == before
 
 
 @tack.data_oriented
@@ -341,11 +315,12 @@ class _ColdScaler:
 
 
 def test_a_failed_transform_still_cleans_up(monkeypatch):
-    """The pop used to sit after the transform, so a raise skipped it."""
-    import tack.lang.kernel as kernel_mod
-    from tack.lang.func import _func_registry
+    """A failed transform must not mutate source or publish a cache entry."""
+    import ast
 
-    before = set(_func_registry)
+    import tack.lang.kernel as kernel_mod
+
+    before = ast.dump(_ColdScaler._tack_func_methods['apply']._funcdef)
 
     def boom(*args, **kwargs):
         raise ValueError("synthetic transform failure")
@@ -358,8 +333,9 @@ def test_a_failed_transform_still_cleans_up(monkeypatch):
     with pytest.raises(Exception, match="synthetic transform failure"):
         _use_template(s, x, out)
 
-    assert set(_func_registry) == before, \
-        "a failed transform left its registry temporaries behind"
+    assert ast.dump(_ColdScaler._tack_func_methods['apply']._funcdef) == before
+    assert not _use_template._ir_cache.get(
+        _use_template._make_cache_key(None, {0: ('s', s)}))
 
 
 # ── Switching backends under a live field ────────────────────────────

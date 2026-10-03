@@ -57,7 +57,7 @@ assertions (LC4), nested definitions, comprehensions, annotated assignments,
 keyword/starred arguments, and unsupported operators. Docstrings and `pass`
 are explicit no-ops. Parameter annotations and decorators remain host
 metadata; ordinary positional parameters without defaults are supported.
-Kernels capture nothing from the enclosing Python scope: reading a name
+Kernels do not capture numerical values from the enclosing Python scope: reading a name
 that is not a parameter and is never assigned raises `NameError` with the
 kernel (or inlined device function) and source position. Local and shared
 arrays are storage, not values: binding another name to one (`view = tmp`)
@@ -66,6 +66,27 @@ supported.
 Supporting device assertions later would require changing this contract
 and its rejection test together. Atomics and barriers are currently
 statement-only operations; their return values are not supported.
+
+**Required: device-function binding.** A static `@tack.func` call resolves
+to the function object bound in the defining kernel or device function's
+Python globals or closure. Imported aliases and module-qualified calls are
+supported. Each nested callee uses its own defining namespace; arguments
+use the caller's namespace. Importing another module with a same-named
+function must not change either cold or cached compilation. Local names
+and parameters shadow external callable bindings; runtime function values
+and ordinary Python callables are rejected rather than resolved by name.
+Resolution follows module dictionaries only and does not evaluate object
+properties or arbitrary Python expressions. Recursive device calls are
+rejected with a source diagnostic.
+
+Template methods retain their original defining bindings after `self`
+resolution. Generated method calls use a transformation-local map and a
+source marker, so a user function with the same generated spelling remains
+distinct. No process-wide device-function registry participates in
+validation or lowering. Static bindings are consulted when an IR
+specialization is first built; cached IR preserves the inlined bodies.
+Rebinding a callable afterward is not a supported way to update compiled
+kernels; recreate the kernel to capture changed bindings.
 
 **Current behavior:** kernels are compiled from inspectable source; a bare
 REPL or dynamically generated function may not provide that source. Kernel

@@ -7,6 +7,8 @@ captured, dedented source; annotations and decorators are host metadata.
 
 import ast
 
+from tack.lang.call_bindings import CallBindings
+
 
 class UnsupportedSyntaxError(NotImplementedError):
     """A source construct outside Tack's kernel language."""
@@ -23,12 +25,13 @@ class _SourceValidator(ast.NodeVisitor):
         ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
     )
 
-    def __init__(self, function, kind):
+    def __init__(self, function, kind, call_bindings):
         self.function = function
         self.kind = kind
         self.loops = []
         self.location = function
         self.statement_call = None
+        self.call_bindings = call_bindings
 
     def visit(self, node):
         saved = self.location
@@ -94,9 +97,11 @@ class _SourceValidator(ast.NodeVisitor):
         if node.keywords:
             self.reject(node, "keyword arguments and **kwargs are not supported")
         self.visit(node.func)
-        name = node.func.id if isinstance(node.func, ast.Name) else getattr(node.func, 'attr', '')
-        from tack.lang.func import _func_registry
-        intrinsic = name not in _func_registry
+        intrinsic = self.call_bindings.device_func(node.func) is None
+        try:
+            name = self.call_bindings.call_name(node.func) if intrinsic else ''
+        except NotImplementedError as error:
+            self.reject(node, str(error))
         if intrinsic and name in ('atomic_add', 'atomic_min', 'atomic_max', 'barrier') \
                 and node is not self.statement_call:
             self.reject(node, f"{name}() is only supported as a statement")
@@ -160,6 +165,6 @@ class _SourceValidator(ast.NodeVisitor):
             self.visit(node.value)
 
 
-def validate_source(function: ast.FunctionDef, kind='Kernel'):
+def validate_source(function: ast.FunctionDef, kind='Kernel', call_bindings=None):
     """Validate one original kernel or device function, ignoring host metadata."""
-    _SourceValidator(function, kind).validate()
+    _SourceValidator(function, kind, call_bindings or CallBindings(function)).validate()

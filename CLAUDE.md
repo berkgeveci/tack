@@ -176,6 +176,18 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 Functions decorated with `@tack.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.
 
+Device calls resolve by object identity from the defining callable's globals
+and closure bindings (`call_bindings.py`), including aliases and module-qualified
+calls. Arguments use caller bindings; nested bodies use callee bindings.
+Validation and lowering share the resolver. Runtime callable parameters,
+ordinary Python functions, object-property lookup, and recursion are rejected.
+Numeric captures remain unsupported. Template rewrite returns a local method
+map with marked synthetic calls and retains each method's original Python
+callable; no global function registry or register/cleanup sequence remains.
+Keep the IR cache construction lock. Cached IR retains its inlined bodies;
+rebinding a callable requires recreating the kernel. AST-only transforms may
+pass an explicit `bindings` dictionary. See `test_func_bindings.py`.
+
 Original kernels and device functions are validated before lowering; unsupported syntax raises `UnsupportedSyntaxError` with the function and captured-source line/column. Device source is checked before return restructuring, including unreachable statements. `and`, `or`, and conditional expressions short-circuit, including inlined effects. Scalar operands/arguments evaluate left to right; augmented stores evaluate their index once, and sequential `range` bounds/steps are captured at entry. Comparisons and logical expressions yield i32 `0`/`1`. Outer parallel `break`, kernel `return`, keyword arguments, and assertions are rejected; atomics and barriers are statement-only. Reading a name the kernel never binds (typically a module-level Python value) raises `NameError` naming the kernel or inlined device function and the source position; binding a second name to a local or shared array (`view = tmp`) raises `UnsupportedSyntaxError`. `Kernel.__call__` lets `UnsupportedSyntaxError` through unwrapped. See `docs/reference/language-contract.md` and `test_source_validation.py` / `test_differential.py`.
 
 ### @tack.data_oriented templates

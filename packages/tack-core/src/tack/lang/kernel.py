@@ -18,26 +18,9 @@ def _verified_transform(*args, **kwargs):
         verify_ir(function, 'lowered')
     return module
 
-# Serialises AST→IR transformation. Two things make this necessary rather
-# than tidy.
-#
-# `rewrite_templates` registers each resolved method in the *module-global*
-# `_func_registry` under a name built from `id(obj)`, `transform_kernel`
-# reads it back, and the caller pops it afterwards. Two threads sharing one
-# @tack.data_oriented object build the same name, so whichever finishes
-# first deletes the entry the other is about to look up. The loser fails
-# with "Function call '__tmpl_Scaler_apply_4406896896__' not supported in
-# kernels", or a bare KeyError from the transform.
-#
-# It survives on CPython today only because the whole register→transform→pop
-# sequence fits inside one GIL slice: measured here, 200 dispatches across 8
-# threads are clean at the default 5 ms switch interval and at 1 ms, and 72
-# of them fail at 0.1 ms. A free-threaded build removes the slice entirely.
-#
-# Holding it across the cache check closes the check-then-act on
-# `_ir_cache` too, which was benign but is free to fix here. The lock is
-# taken only on a miss-shaped path — a warm dispatch never reaches it — so
-# it costs nothing in steady state.
+# Serialises AST→IR construction and the IR-cache check/update. Template
+# method maps are now local to each transform, but shared kernel cache
+# misses still need synchronization. Warm dispatches do not take this lock.
 _transform_lock = threading.RLock()
 
 
@@ -157,31 +140,22 @@ class Kernel:
             with _transform_lock:
                 # Re-check: another thread may have built it while we waited.
                 if key not in self._ir_cache:
-                    from tack.lang.func import _func_registry
                     from tack.lang.template_rewrite import rewrite_templates
-                    rewritten_ast, registered_keys = rewrite_templates(
+                    rewritten_ast, resolved_funcs = rewrite_templates(
                         self._ast, template_args)
-                    try:
-                        self._ir_cache[key] = _verified_transform(
-                            rewritten_ast, vector_fields=vector_fields,
-                            texture_fields=texture_fields,
-                        )
-                        for token in _key_tokens(key):
-                            token.kernels.add(self)
-                    finally:
-                        # try/finally so a failed transform does not leave its
-                        # temporaries behind: the name carries id(obj), which
-                        # the allocator reuses, so a leaked entry is a stale
-                        # method body waiting for an unrelated object to be
-                        # born at the same address.
-                        for rk in registered_keys:
-                            _func_registry.pop(rk, None)
+                    self._ir_cache[key] = _verified_transform(
+                        rewritten_ast, vector_fields=vector_fields,
+                        texture_fields=texture_fields, python_func=self.func,
+                        template_funcs=resolved_funcs,
+                    )
+                    for token in _key_tokens(key):
+                        token.kernels.add(self)
                 return self._ir_cache[key]
         if not vector_fields and not texture_fields:
             if self._ir is None:
                 with _transform_lock:
                     if self._ir is None:
-                        self._ir = _verified_transform(self._ast)
+                        self._ir = _verified_transform(self._ast, python_func=self.func)
             return self._ir
         key = self._make_cache_key(vector_fields, None, texture_fields)
         cached = self._ir_cache.get(key)
@@ -191,7 +165,7 @@ class Kernel:
             if key not in self._ir_cache:
                 self._ir_cache[key] = _verified_transform(
                     self._ast, vector_fields=vector_fields,
-                    texture_fields=texture_fields,
+                    texture_fields=texture_fields, python_func=self.func,
                 )
             return self._ir_cache[key]
 

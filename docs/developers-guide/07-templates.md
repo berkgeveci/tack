@@ -11,11 +11,11 @@ Three pieces work together:
    as passable to kernels. Collects `@tack.func` methods into
    `cls._tack_func_methods`.
 
-2. **`@tack.func`** (`func.py`, 53 lines) — captures a function's AST for
-   inlining. Non-method functions go into the global `_func_registry`.
+2. **`@tack.func`** (`func.py`) — captures a function's AST and original
+   Python callable for inlining and static binding resolution.
    Class methods are stored on the class by `@tack.data_oriented`.
 
-3. **Template rewrite** (`template_rewrite.py`, 207 lines) — AST pre-pass
+3. **Template rewrite** (`template_rewrite.py`) — AST pre-pass
    that resolves template parameters before IR transformation.
 
 ## Template Rewrite Flow
@@ -62,6 +62,14 @@ Called with `CellSetStructured3D(nx=50, ny=50, nz=50)`:
 6. **Replace method calls**: `cs.get_point_id(c, v)` → inline the
    method body with `self` references resolved
 
+The rewrite returns the AST and a local map of resolved methods. Method
+names include the template parameter name, so repeated object arguments
+retain distinct synthetic field/scalar layouts. Generated calls carry an
+AST marker to distinguish them from user functions with the same spelling.
+The map belongs to this transformation; no registration or global cleanup
+is required. Resolved methods retain the original Python callable for
+globals/closure lookup and do not mutate the class's captured source.
+
 ### Attribute Classification
 
 `classify_template_attrs(obj)` splits an object's attributes into three categories:
@@ -87,6 +95,14 @@ values (like image dimensions) change between calls.
 
 When the AST transformer encounters a `@tack.func` call, it runs
 `_inline_func_call()`:
+
+Calls are first resolved by `call_bindings.py` using the defining callable's
+globals and closure cells, or the marked template-method map. Function
+identity determines the body. Arguments are lowered under the caller's
+bindings; body traversal temporarily switches to the callee's bindings.
+Validation uses the same resolver, including intrinsic shadowing checks.
+Only static module attributes are followed; object properties and runtime
+callables are unsupported. The active function identities detect recursion.
 
 1. **Generate unique suffix**: `__{func_name}_{param}_{counter}__`
 2. **Build rename map**: callee param names → unique names
