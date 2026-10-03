@@ -11,6 +11,7 @@ This module reuses the CUDA codegen with OpenCL-specific overrides.
 """
 
 from tack.codegen.cuda_gen import _BINOP_MAP, CUDACodeGen
+from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -94,7 +95,8 @@ class OpenCLCodeGen(CUDACodeGen):
         self._emit("}")
 
         # Prepend atomic helpers if needed
-        prefix_lines = []
+        prefix_lines = integer_division_helpers(
+            self._integer_division_helpers, _OCL_C_TYPE_MAP, 'static inline')
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "float atomicMinFloat(volatile __global float* addr, float val) {",
@@ -277,6 +279,10 @@ class OpenCLCodeGen(CUDACodeGen):
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        integer = integer_division_expr(
+            node, left, right, _OCL_C_TYPE_MAP, self._integer_division_helpers)
+        if integer is not None:
+            return integer
         if node.op == "**":
             return f"pow({left}, {right})"
         if node.op == "//":

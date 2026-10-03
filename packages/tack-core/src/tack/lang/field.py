@@ -14,6 +14,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
+try:
+    from numpy.lib.array_utils import byte_bounds
+except ImportError:  # NumPy 1.x exposes this in its top-level namespace.
+    from numpy import byte_bounds
+
 from tack.lang.types import ScalarType, f32, f64, from_numpy_dtype, i32
 
 
@@ -39,15 +44,6 @@ class DeviceBuffer:
     @property
     def nbytes(self) -> int:
         raise NotImplementedError
-
-
-# NumPy 2 moved ``byte_bounds`` to ``numpy.lib.array_utils``; NumPy 1 has it
-# at top level. The dependency is declared as plain ``numpy``, so both must
-# work, and the choice is made here, once, not on every dispatch.
-try:
-    from numpy.lib.array_utils import byte_bounds as _byte_bounds
-except ImportError:  # NumPy 1.x
-    _byte_bounds = np.byte_bounds
 
 
 class NumpyBuffer(DeviceBuffer):
@@ -84,7 +80,7 @@ class NumpyBuffer(DeviceBuffer):
                 return span
         except AttributeError:
             pass
-        span = _byte_bounds(self._data)
+        span = byte_bounds(self._data)
         self._span = (self._data, span)
         return span
 

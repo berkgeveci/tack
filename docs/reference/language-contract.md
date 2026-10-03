@@ -1,7 +1,7 @@
 # Kernel language contract (draft)
 
-This is the draft contract for compiler hardening, updated at stage three on
-2026-10-02.
+This is the draft contract for compiler hardening, updated for the first
+numerical-semantics increment on 2026-10-03.
 It defines the intended portable kernel model, identifies known violations,
 and separates decisions still open for discussion. It is **not a claim that
 the current implementation satisfies every requirement below**. The baseline
@@ -189,12 +189,49 @@ independently of this result-type rule. Stage three corrects CPU results
 that previously sign-extended a true LLVM i1 to `-1`.
 
 For the initial regression baseline, numerical expectations use small,
-representable integers and exact f32 values. The following policies remain
+representable integers and exact f32 values.
+
+**Required: integer floor division and remainder.** For integer operands,
+`a // b` rounds the mathematical quotient toward negative infinity. The
+remainder `a % b` satisfies `a == (a // b) * b + (a % b)`, has magnitude
+less than `abs(b)`, and is zero or has the divisor's sign. For example,
+`-7 // 3 == -3`, `-7 % 3 == 2`, `7 // -3 == -3`, and `7 % -3 == -2`.
+This follows [Python's integer arithmetic rules](https://docs.python.org/3/reference/expressions.html#binary-arithmetic-operations).
+Both operators use integer arithmetic, including i64/u64 values beyond
+floating-point precision. Operands evaluate once in the ordering defined
+above. Unsigned operands use unsigned division and remainder.
+
+The operation uses the type annotation pass's promoted integer type; both
+operands are converted to that type before arithmetic, and the result has
+that type. This increment defines results when those conversions preserve
+both input values and the quotient fits the promoted type. It covers all
+same-type integer pairs and lossless mixed-type promotions. In particular,
+i32 with u32 promotes to i64, rather than following C's implicit unsigned
+conversion. General mixed-sign promotion and out-of-range conversion
+policies remain open.
+
+**Required caller constraints:** the evaluated divisor is nonzero. For a
+signed promoted type, the minimum representable value with divisor `-1`
+is excluded for both `//` and `%`; the quotient is unrepresentable and
+[LLVM's signed remainder also excludes this pair](https://llvm.org/docs/LangRef.html#srem-instruction).
+Runtime exceptions or defined overflow results for these cases are not
+promised. Guarding an operation with `if` or a conditional expression must
+avoid executing it on the unselected path. Floating-point `//` and `%` are
+outside this integer guarantee.
+
+`test_integer_division.py` compares against Python integer arithmetic on
+every available backend, including exhaustive valid i8 pairs, all integer
+widths, unsigned high-bit values, boundary and seeded random inputs,
+nested/local expressions, literal and lossless mixed-type promotion,
+single evaluation of inlined operands, and guarded zero divisors. CUDA,
+HIP, Metal, and OpenCL generators share typed C-family helpers; LLVM emits
+signed truncating operations with floor correction, or unsigned operations.
+
+The following policies remain
 **open** and must be resolved before broader numerical conformance claims:
 
 | Question | Current evidence | Decision needed |
 |---|---|---|
-| Signed `//` and `%` | CPU integer `-3 // 2` produces `-1`, not Python's `-2` | Python floor semantics or explicitly specified alternative |
 | Overflow and conversion | Fixed-width types and promotion rules exist | Overflow, out-of-range casts, mixed signed/unsigned values, invalid shifts, division by zero |
 | Floating-point results | Backends use their own arithmetic and math implementations | Rounding, contraction/reassociation, NaNs, infinities, signed zero, denormals, error tolerances |
 | Reductions | Parallel implementations may change operation order | Permitted order variation, determinism, and numerical tolerances |
@@ -377,3 +414,8 @@ assignment, bounds safety, or barrier uniformity. Verifier role and attribute
 tables are precomputed, while all checks still run at their pass boundaries.
 Broader testing and the
 numerical/capability decisions above remain subsequent work.
+
+Stage five has begun with integer floor division and remainder, including
+the lossless promotion domain and explicit exclusions above. This is the
+first numerical increment, not completion of overflow/conversion,
+floating-point, reduction, or workgroup/capability contracts.
