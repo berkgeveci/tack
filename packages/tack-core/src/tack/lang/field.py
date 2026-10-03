@@ -14,6 +14,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
+try:
+    from numpy.lib.array_utils import byte_bounds
+except ImportError:  # NumPy 1.x exposes this in its top-level namespace.
+    from numpy import byte_bounds
+
 from tack.lang.types import ScalarType, f32, f64, from_numpy_dtype, i32
 
 
@@ -75,7 +80,6 @@ class NumpyBuffer(DeviceBuffer):
                 return span
         except AttributeError:
             pass
-        from numpy.lib.array_utils import byte_bounds
         span = byte_bounds(self._data)
         self._span = (self._data, span)
         return span
