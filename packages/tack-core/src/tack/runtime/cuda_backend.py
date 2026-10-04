@@ -379,8 +379,12 @@ def _compile_ptx(cuda_source: str, func_name: str, *, precise_math=False) -> byt
     opts = [b"--extra-device-vectorization"]
     if not precise_math:
         opts.append(b"--use_fast_math")
-    c_opts = (ctypes.c_char_p * len(opts))(*opts)
-    compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), c_opts)
+    # Pass the Python list, not a ctypes array. cuda-python marshals the
+    # list itself; handed a `c_char_p` array it mis-reads the second entry
+    # in this order ("unrecognized option d-extra-invalid index found"),
+    # which with the old order happened to work and with this order failed
+    # every fast-math kernel on the branch (CX7).
+    compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != nvrtc.nvrtcResult.NVRTC_SUCCESS:

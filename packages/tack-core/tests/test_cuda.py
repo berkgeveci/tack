@@ -240,3 +240,56 @@ def test_export_memory():
 
     # Exporting copies into VMM-backed memory; the field itself is untouched.
     assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+
+
+# --- NVRTC option passing (CX7) ---
+
+def test_nvrtc_accepts_both_option_sets():
+    """Every option set the backend uses must compile a trivial kernel.
+
+    cuda-python marshals a Python list of bytes itself; handed a ctypes
+    ``c_char_p`` array it mis-read the second entry when
+    ``--extra-device-vectorization`` came first and rejected the compile
+    with "unrecognized option". That broke every kernel that keeps fast
+    math, which is nearly all of them, while the precise-math kernels that
+    pass a single option kept working.
+    """
+    from tack.runtime.cuda_backend import _compile_ptx
+    src = 'extern "C" __global__ void k(float* a) { a[0] = 1.0f; }'
+    assert _compile_ptx(src, "k", precise_math=False)
+    assert _compile_ptx(src, "k", precise_math=True)
+
+
+def test_fast_math_and_precise_kernels_compile_in_either_order():
+    """A floating floor division selects the precise option set; an
+    ordinary kernel keeps fast math. Both must compile in one process,
+    whichever comes first."""
+    x = tack.field(dtype=tack.f32, shape=(8,))
+    y = tack.field(dtype=tack.f32, shape=(8,))
+    out = tack.field(dtype=tack.f32, shape=(8,))
+    x.from_numpy(np.array([6.0, 7.5, -7.5, 1e30, 0.3, -0.0, 5.0, 2.0], dtype=np.float32))
+    y.from_numpy(np.array([0.1, -3.0, 3.0, 1e-10, 0.1, 1.0, -2.0, 0.5], dtype=np.float32))
+
+    @tack.kernel
+    def plain_first(x, y, out):
+        for i in range(out.shape[0]):
+            out[i] = x[i] * y[i] + 1.0
+
+    @tack.kernel
+    def floor_div(x, y, out):
+        for i in range(out.shape[0]):
+            out[i] = x[i] // y[i]
+
+    @tack.kernel
+    def plain_second(x, y, out):
+        for i in range(out.shape[0]):
+            out[i] = x[i] * y[i] - 1.0
+
+    plain_first(x, y, out)
+    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * y.to_numpy() + 1.0, rtol=1e-6)
+    floor_div(x, y, out)
+    with np.errstate(all="ignore"):              # 1e30 // 1e-10 overflows to inf
+        expected = np.floor_divide(x.to_numpy(), y.to_numpy())
+    np.testing.assert_array_equal(out.to_numpy(), expected)
+    plain_second(x, y, out)
+    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * y.to_numpy() - 1.0, rtol=1e-6)
