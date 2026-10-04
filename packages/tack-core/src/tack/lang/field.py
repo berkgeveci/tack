@@ -150,25 +150,30 @@ class Field:
     def _reduce(self, op: str):
         """Reduce on the device where that is supported, else via numpy."""
         from tack.runtime.dispatch import get_backend
+        from tack.runtime.reductions import empty_reduction, reduce_numpy
+        if self.size == 0:
+            return empty_reduction(op)
         backend = get_backend()
         if backend.supports_device_reductions:
             return backend.reduce_field(self, op)
-        return float(getattr(self._buffer.to_numpy(), op)())
+        return reduce_numpy(self.to_numpy(), op)
 
     def sum(self):
-        """Return the sum of all elements."""
+        """Return a float sum; parallel floating addition order may vary."""
         return self._reduce('sum')
 
     def min(self):
-        """Return the minimum element."""
+        """Return a float minimum; propagate NaNs and prefer negative zero."""
         return self._reduce('min')
 
     def max(self):
-        """Return the maximum element."""
+        """Return a float maximum; propagate NaNs and prefer positive zero."""
         return self._reduce('max')
 
     def mean(self):
-        """Return the mean of all elements (GPU sum / size)."""
+        """Return sum / size, or NaN for an empty field."""
+        if self.size == 0:
+            return float('nan')
         return self.sum() / self.size
 
     def export_memory(self) -> ExportedMemory:

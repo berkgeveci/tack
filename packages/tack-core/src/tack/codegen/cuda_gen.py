@@ -16,6 +16,7 @@ from tack.codegen.float_division import float_division_expr, float_division_help
 from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
+from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -109,6 +110,7 @@ class CUDACodeGen:
         self._needs_float_atomic_max = False
         self._integer_division_helpers = set()
         self._float_division_helpers = set()
+        self._block_extrema = set()
         self._integers = IntegerCodeGen(self._integer_type_map)
 
     def generate(self) -> str:
@@ -164,6 +166,7 @@ class CUDACodeGen:
             + integer_division_helpers(
                 self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline')
             + self._integers.definitions('__device__ inline')
+            + f32_reduction_helpers('cuda', self._block_extrema)
         )
         if self._needs_float_atomic_min:
             prefix_lines.extend([
@@ -550,10 +553,13 @@ class CUDACodeGen:
 
         val_expr = self._expr(node.value)
 
+        if node.op != 'sum':
+            self._block_extrema.add(node.op)
+
         op_expr = {
             "sum": lambda a, b: f"({a} + {b})",
-            "max": lambda a, b: f"(({a}) > ({b}) ? ({a}) : ({b}))",
-            "min": lambda a, b: f"(({a}) < ({b}) ? ({a}) : ({b}))",
+            "max": lambda a, b: f"tack_reduce_max_f32({a}, {b})",
+            "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
         self._emit(f"__shared__ float {smem}[256];")

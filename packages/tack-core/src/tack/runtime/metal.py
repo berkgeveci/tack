@@ -13,6 +13,7 @@ copies are needed.
 
 import numpy as np
 
+from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer, ExportedMemory
 from tack.lang.types import ScalarType, f32, i8, i16, i32, i64, u8, u16, u32, u64
@@ -22,6 +23,7 @@ from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _METAL_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
 from tack.codegen.identifiers import kernel_entry_name
@@ -238,99 +240,9 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
                                texture_shapes, argument_encoder)
 
 
-_REDUCE_MSL_SUM = """
-#include <metal_stdlib>
-using namespace metal;
-
-kernel void reduce_sum_f32(
-    device float* input [[buffer(0)]],
-    device float* output [[buffer(1)]],
-    uint tid [[thread_position_in_grid]],
-    uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]])
-{
-    threadgroup float sdata[256];
-    uint n = as_type<uint>(output[1]);
-    sdata[local_tid] = (tid < n) ? input[tid] : 0.0f;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = 128; s > 0; s >>= 1) {
-        if (local_tid < s) sdata[local_tid] += sdata[local_tid + s];
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-    if (local_tid == 0) {
-        atomic_fetch_add_explicit(
-            (volatile device atomic_float*)&output[0],
-            sdata[0], memory_order_relaxed);
-    }
-}
-"""
-
-_REDUCE_MSL_MIN = """
-#include <metal_stdlib>
-using namespace metal;
-
-kernel void reduce_min_f32(
-    device float* input [[buffer(0)]],
-    device float* output [[buffer(1)]],
-    uint tid [[thread_position_in_grid]],
-    uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]])
-{
-    threadgroup float sdata[256];
-    uint n = as_type<uint>(output[1]);
-    sdata[local_tid] = (tid < n) ? input[tid] : 1e38f;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = 128; s > 0; s >>= 1) {
-        if (local_tid < s) sdata[local_tid] = min(sdata[local_tid], sdata[local_tid + s]);
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-    if (local_tid == 0) {
-        // CAS loop for atomic min
-        volatile device atomic_uint* p = (volatile device atomic_uint*)&output[0];
-        uint old_bits = atomic_load_explicit(p, memory_order_relaxed);
-        while (true) {
-            float old_f = as_type<float>(old_bits);
-            if (old_f <= sdata[0]) break;
-            uint new_bits = as_type<uint>(sdata[0]);
-            if (atomic_compare_exchange_weak_explicit(p, &old_bits, new_bits,
-                memory_order_relaxed, memory_order_relaxed)) break;
-        }
-    }
-}
-"""
-
-_REDUCE_MSL_MAX = """
-#include <metal_stdlib>
-using namespace metal;
-
-kernel void reduce_max_f32(
-    device float* input [[buffer(0)]],
-    device float* output [[buffer(1)]],
-    uint tid [[thread_position_in_grid]],
-    uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]])
-{
-    threadgroup float sdata[256];
-    uint n = as_type<uint>(output[1]);
-    sdata[local_tid] = (tid < n) ? input[tid] : -1e38f;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = 128; s > 0; s >>= 1) {
-        if (local_tid < s) sdata[local_tid] = max(sdata[local_tid], sdata[local_tid + s]);
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-    if (local_tid == 0) {
-        volatile device atomic_uint* p = (volatile device atomic_uint*)&output[0];
-        uint old_bits = atomic_load_explicit(p, memory_order_relaxed);
-        while (true) {
-            float old_f = as_type<float>(old_bits);
-            if (old_f >= sdata[0]) break;
-            uint new_bits = as_type<uint>(sdata[0]);
-            if (atomic_compare_exchange_weak_explicit(p, &old_bits, new_bits,
-                memory_order_relaxed, memory_order_relaxed)) break;
-        }
-    }
-}
-"""
+_REDUCE_MSL_SUM = field_reduction_source('metal', 'sum')
+_REDUCE_MSL_MIN = field_reduction_source('metal', 'min')
+_REDUCE_MSL_MAX = field_reduction_source('metal', 'max')
 
 
 class MetalBackend(Backend):
@@ -486,17 +398,18 @@ class MetalBackend(Backend):
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
+        if field.size == 0:
+            return empty_reduction(op)
         if field.dtype is not f32:
             # Fall back to numpy for non-f32
-            arr = field.to_numpy()
-            return float(getattr(arr, op)())
+            return reduce_numpy(field.to_numpy(), op)
 
         pipeline = self._get_reduce_pipeline(op)
         n = int(np.prod(field.shape))
 
         # Create output buffer: [result, n_as_float_bits]
         import struct
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        init_vals = REDUCTION_IDENTITIES
         out_data = np.array([init_vals[op], 0.0], dtype=np.float32)
         # Pack n as uint32 bits into float slot
         out_data[1] = np.frombuffer(struct.pack('I', n), dtype=np.float32)[0]

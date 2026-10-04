@@ -230,7 +230,9 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
 
     if isinstance(node, ir.IRBlockReduce):
         t = _annotate_expr(node.value, env, field_params)
-        node.dtype = t if t is not None else f32
+        if t is not f32:
+            raise TypeError(f'block_{node.op} requires f32 input; use an explicit f32 cast')
+        node.dtype = f32
         return node.dtype
 
     if isinstance(node, ir.IRDimSize):

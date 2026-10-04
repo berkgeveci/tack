@@ -14,6 +14,7 @@ from tack.codegen.cuda_gen import _BINOP_MAP, CUDACodeGen
 from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
+from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -104,6 +105,7 @@ class OpenCLCodeGen(CUDACodeGen):
             + integer_division_helpers(
                 self._integer_division_helpers, _OCL_C_TYPE_MAP, 'static inline')
             + self._integers.definitions('static inline')
+            + f32_reduction_helpers('opencl', self._block_extrema)
         )
         if self._needs_float_atomic_min:
             prefix_lines.extend([
@@ -243,10 +245,13 @@ class OpenCLCodeGen(CUDACodeGen):
 
         val_expr = self._expr(node.value)
 
+        if node.op != 'sum':
+            self._block_extrema.add(node.op)
+
         op_expr = {
             "sum": lambda a, b: f"({a} + {b})",
-            "max": lambda a, b: f"fmax({a}, {b})",
-            "min": lambda a, b: f"fmin({a}, {b})",
+            "max": lambda a, b: f"tack_reduce_max_f32({a}, {b})",
+            "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
         self._emit(f"__local float {smem}[256];")

@@ -18,6 +18,7 @@ import ctypes
 
 import numpy as np
 
+from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
@@ -28,6 +29,7 @@ from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _HIP_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from hip import hip, hiprtc
@@ -35,72 +37,9 @@ from hip import hip, hiprtc
 from tack.codegen.hip_gen import generate_hip_source
 from tack.codegen.identifiers import kernel_entry_name
 
-_REDUCE_HIP_SUM = """
-#include <hip/hip_runtime.h>
-extern "C" __global__ void reduce_sum_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : 0.0f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        __syncthreads();
-    }
-    if (tid == 0) atomicAdd(&output[0], sdata[0]);
-}
-"""
-
-_REDUCE_HIP_MIN = """
-#include <hip/hip_runtime.h>
-extern "C" __global__ void reduce_min_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : 1e38f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fminf(sdata[tid], sdata[tid + s]);
-        __syncthreads();
-    }
-    if (tid == 0) {
-        int* addr = (int*)&output[0];
-        int old = *addr, assumed;
-        do {
-            assumed = old;
-            old = atomicCAS(addr, assumed,
-                __float_as_int(fminf(sdata[0], __int_as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_HIP_MAX = """
-#include <hip/hip_runtime.h>
-extern "C" __global__ void reduce_max_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : -1e38f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmaxf(sdata[tid], sdata[tid + s]);
-        __syncthreads();
-    }
-    if (tid == 0) {
-        int* addr = (int*)&output[0];
-        int old = *addr, assumed;
-        do {
-            assumed = old;
-            old = atomicCAS(addr, assumed,
-                __float_as_int(fmaxf(sdata[0], __int_as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
+_REDUCE_HIP_SUM = field_reduction_source('hip', 'sum')
+_REDUCE_HIP_MIN = field_reduction_source('hip', 'min')
+_REDUCE_HIP_MAX = field_reduction_source('hip', 'max')
 
 _NUMPY_DTYPE = {
     f32: np.float32,
@@ -538,8 +477,10 @@ class HIPBackend(Backend):
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
+        if field.size == 0:
+            return empty_reduction(op)
         if field.dtype is not f32:
-            return float(getattr(field.to_numpy(), op)())
+            return reduce_numpy(field.to_numpy(), op)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -551,7 +492,7 @@ class HIPBackend(Backend):
 
         # Output: [result, n_as_uint_bits]
         import struct as _struct
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        init_vals = REDUCTION_IDENTITIES
         out_np = np.array([init_vals[op],
                            np.frombuffer(_struct.pack('I', n), dtype=np.float32)[0]],
                           dtype=np.float32)

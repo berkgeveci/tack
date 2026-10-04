@@ -21,6 +21,7 @@ import ctypes.util
 
 import numpy as np
 
+from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
@@ -30,6 +31,7 @@ from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _L0_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from tack.codegen.identifiers import kernel_entry_name
@@ -38,69 +40,9 @@ from tack.codegen.opencl_gen import generate_opencl_source
 # ---------------------------------------------------------------------------
 # Reduce kernel sources (OpenCL C)
 # ---------------------------------------------------------------------------
-_REDUCE_OCL_SUM = """
-__kernel void reduce_sum_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : 0.0f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(as_float(assumed) + sdata[0]));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_OCL_MIN = """
-__kernel void reduce_min_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : 1e38f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmin(sdata[tid], sdata[tid + s]);
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(fmin(sdata[0], as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_OCL_MAX = """
-__kernel void reduce_max_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : -1e38f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmax(sdata[tid], sdata[tid + s]);
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(fmax(sdata[0], as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
+_REDUCE_OCL_SUM = field_reduction_source('opencl', 'sum')
+_REDUCE_OCL_MIN = field_reduction_source('opencl', 'min')
+_REDUCE_OCL_MAX = field_reduction_source('opencl', 'max')
 # ---------------------------------------------------------------------------
 # Numpy dtype mapping
 # ---------------------------------------------------------------------------
@@ -1211,8 +1153,12 @@ class LevelZeroBackend(Backend):
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
-        if field.dtype is not f32:
-            return float(getattr(field.to_numpy(), op)())
+        if field.size == 0:
+            return empty_reduction(op)
+        if (field.dtype is not f32
+                or self._compute_props.maxGroupSizeX < 256
+                or self._compute_props.maxTotalGroupSize < 256):
+            return reduce_numpy(field.to_numpy(), op)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -1223,7 +1169,7 @@ class LevelZeroBackend(Backend):
         n = int(np.prod(field.shape))
 
         # Create output buffer with init value
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        init_vals = REDUCTION_IDENTITIES
         out_np = np.array([init_vals[op]], dtype=np.float32)
         out_buf = L0Buffer(self, np.float32, (1,))
         out_buf.from_numpy(out_np)
@@ -1305,7 +1251,7 @@ class LevelZeroBackend(Backend):
         _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
                                      ctypes.byref(kernel)), "zeKernelCreate")
 
-        workgroup_size = min(256, self._compute_props.maxGroupSizeX)
+        workgroup_size = 256
         return CompiledL0Kernel(module, kernel, func_names[op],
                                 [f32, f32, i64], [True, True, False],
                                 workgroup_size)

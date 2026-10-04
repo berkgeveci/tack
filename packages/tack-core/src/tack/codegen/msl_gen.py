@@ -14,6 +14,7 @@ from tack.codegen.float_division import float_division_expr, float_division_help
 from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
+from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
@@ -79,6 +80,7 @@ class MSLCodeGen:
         self._declared_vars: set[str] = set()
         self._integer_division_helpers = set()
         self._float_division_helpers = set()
+        self._block_extrema = set()
         self._integers = IntegerCodeGen(self._integer_type_map, bitcast=True)
         self._dynamic_range_depth = 0
         self._opaque_integer_add = False
@@ -184,6 +186,7 @@ class MSLCodeGen:
             + integer_division_helpers(
                 self._integer_division_helpers, _MSL_TYPE_MAP, 'inline')
             + self._integers.definitions('inline')
+            + f32_reduction_helpers('metal', self._block_extrema)
         )
         return "\n".join(self._lines[:preamble_end] + helpers
                          + self._lines[preamble_end:]) + "\n"
@@ -496,10 +499,13 @@ class MSLCodeGen:
         self._needs_local_tid = True
         val_expr = self._expr(node.value)
 
+        if node.op != 'sum':
+            self._block_extrema.add(node.op)
+
         op_expr = {
             "sum": lambda a, b: f"({a} + {b})",
-            "max": lambda a, b: f"max((float)({a}), (float)({b}))",
-            "min": lambda a, b: f"min((float)({a}), (float)({b}))",
+            "max": lambda a, b: f"tack_reduce_max_f32({a}, {b})",
+            "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
         self._emit(f"threadgroup float {smem}[256];")

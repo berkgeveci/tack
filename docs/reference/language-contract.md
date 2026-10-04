@@ -544,6 +544,94 @@ appropriate external `tanf`/`tan`, `asinf`/`asin`, `acosf`/`acos`,
 convert to their annotated type, avoiding ambiguous OpenCL overloads for
 integer and mixed arguments. No performance improvement is claimed.
 
+### Field and parallel reductions
+
+`Field.sum()`, `min()`, `max()` and `mean()` reduce all logical elements
+and return Python `float` values. Reshaping a field does not select an axis
+or change the set of elements. CPU uses NumPy; GPU backends reduce eligible
+f32 fields on the device and use the shared NumPy fallback for other dtypes.
+Allocation and field/backend ownership requirements still apply. Current
+CUDA/HIP/Metal field kernels require element counts fitting an unsigned
+32-bit integer; larger native reductions are outside this contract.
+
+**Accumulation precision:** f32 sums accumulate in f32, and f64 sums in
+f64. Integer sums promote signed inputs to i64 and unsigned inputs to u64,
+independently of the host word size, and wrap modulo 2^64 in that accumulator.
+The accumulated value, or selected integer extremum, is then converted to
+a Python float; integer results beyond binary64's exact range can round.
+`mean()` divides that returned sum by the element count in host binary64;
+it does not request a wider or compensated accumulator. Integer means
+therefore inherit integer-sum wrapping.
+
+**Empty and exceptional inputs:** an empty sum returns positive zero,
+an empty mean returns NaN, and empty min/max raise `ValueError`. These
+results require no device launch or storage read. This does not promise
+that every backend allocator can create a zero-byte buffer. Floating
+min/max propagate any NaN, accept both infinities and the full normal
+finite range, and resolve zero ties independently of order: minimum prefers
+negative zero and maximum positive zero. An all-negative-zero maximum
+remains negative zero; an all-positive-zero minimum remains positive zero.
+NaN payload/sign preservation is not promised. The selected non-NaN
+extremum is exact in the input's storage precision.
+
+Floating sums propagate NaNs and combine infinities using floating addition.
+Opposite infinities give NaN; an infinity retains its sign when other
+partial sums remain finite. Overflow can depend on grouping, including
+whether an intermediate becomes infinite before cancellation. There is
+no portable finite-result promise when intermediates overflow. A zero sum
+may have either zero sign. Nonzero denormal inputs/intermediates/results
+remain outside the floating baseline above.
+
+**Order and reproducibility:** floating summation may reorder and regroup
+elements, and may produce different low bits across calls, devices,
+backends, compiler versions or implementations. Current GPU field sums
+use 256-lane trees followed by atomically accumulated group partials;
+group arrival order is unspecified. No deterministic or compensated sum
+mode is currently exposed. Repeated equality in a test does not establish
+a reproducibility guarantee. Floating extrema are order-independent under
+the class/zero rules above, apart from NaN representation. Integer field
+reductions have the defined accumulator/conversion behavior independently
+of reduction order.
+
+For n finite floating inputs with no overflow or nonzero underflow in any
+partial sum, round-to-nearest addition, and n*u < 1, the supported absolute
+error budget is `abs(computed_sum - exact_sum) <= gamma_n * sum(abs(x))`,
+where `gamma_n = n*u/(1-n*u)`, `u = 2^-24` for f32 and `2^-53` for f64.
+This conservative addition bound covers tree and serial accumulation.
+It does not promise a small relative or ULP error near cancellation.
+The exact sum is over stored input values; input conversion and errors in
+expressions producing terms require separate budgets. Mean inherits the
+sum error divided by n plus host division rounding. See
+[Higham, The Accuracy of Floating Point Summation](https://nhigham.com/wp-content/uploads/2023/10/high93s.pdf),
+especially the general summation analysis in section 3.
+
+**Kernel reductions:** `block_sum`, `block_min` and `block_max` currently
+require f32 arguments and return f32. Integer/f64 arguments require an
+explicit `tack.f32(...)` conversion; they are rejected rather than silently
+narrowed or given an inconsistent annotation. On correctly participating
+GPU workgroups, block extrema use the same NaN/zero rules as field extrema,
+and block sums permit order variation with the same addition budget over
+their contributed terms. The tested GPU domain here is fully participating
+256-lane groups. Full participation, launch sizes, partial groups,
+and CPU support remain the separate workgroup contract below; the current
+CPU identity lowering is not a cooperative reduction model.
+
+User reductions combining `atomic_add` with block partials likewise have
+unspecified accumulation order. Atomic min/max are separate backend
+primitives: their NaN and signed-zero handling is outside the portable
+atomic-extrema domain, which requires finite nonzero floating operands
+and stored values. The field/block extrema guarantees do not imply those
+atomic semantics. Atomic scope, supported widths and cooperative execution
+capabilities remain stage-six work. The statistical algorithms in
+`tack.algorithms.stats` use f32 atomic accumulators for floating statistics;
+an f64 input alone does not establish f64 accuracy or determinism for them.
+
+`test_reduction_semantics.py` covers full-range extrema, NaNs and zero ties
+across groups and tails, exact and bounded-error sums, allowed cancellation
+groupings, nonfinite classes, host fallback types and empty fields, explicit
+block precision, and complete GPU groups. Host-sanitized helpers and full
+CUDA/HIP/OpenCL syntax checks supplement actual backend execution.
+
 The following extensions remain **open** before broader numerical
 conformance claims:
 
@@ -551,7 +639,7 @@ conformance claims:
 |---|---|---|
 | Remaining arithmetic domains | Fixed-width wrapping, casts/promotion, valid shifts, true division, integer power, and floating `//`/`%` are defined | Any extension beyond the stated invalid-operation and denormal constraints |
 | Floating-point extensions | Safe math, annotated precision, classes/signs, grouping and permitted contraction are defined above | Denormal support and tighter function/domain-specific accuracy or reproducibility guarantees |
-| Reductions | Parallel implementations may change operation order | Permitted order variation, determinism, and numerical tolerances |
+| Reduction extensions | Accumulator precision, exceptional classes, extrema ties, permitted order variation and an absolute addition budget are defined above | Optional deterministic/compensated modes and wider statistical accumulators |
 
 The differential tests cover small exact integer results and an exact
 floating-point promotion case; they do not settle the open numerical
