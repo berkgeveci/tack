@@ -8,6 +8,8 @@ the same answer — the probe path splits a range in two, so a kernel must
 survive being run in pieces.
 """
 
+import os
+
 import numpy as np
 import pytest
 
@@ -532,12 +534,47 @@ def _front_loaded(x, out, n, cut):
         out[i] = acc
 
 
-def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
+def _front_loaded_rate(cut, cheap=100.0, dense=1000.0):
+    """A scripted cost for `_front_loaded`: `cheap` ns/element below
+    `cut`, `dense` above -- the shape of an image whose top rows are
+    background."""
+    def rate(start, end):
+        lo = max(0, min(end, cut) - start)
+        return (lo * cheap + (end - start - lo) * dense) / (end - start)
+    return rate
+
+
+def _cheap_prefix_dispatches(backend, monkeypatch, compiled, args, n, rounds=12):
+    serial, parallel = [], []
+    real_serial, real_parallel = backend._run_serial, backend._parallel_execute
+    backend._run_serial = lambda c, p, a, b: (serial.append((a, b)),
+                                              real_serial(c, p, a, b))[1]
+    backend._parallel_execute = lambda c, p, a, b, **kw: (parallel.append((a, b)),
+                                                        real_parallel(c, p, a, b, **kw))[1]
+    # First sight probes a slice and the first fan-out re-decides against
+    # the calibrated cost, which may legitimately run one dispatch whole;
+    # everything after that has more than one sample to go on.
+    for _ in range(2):
+        backend._dispatch(compiled, args, n)
+    serial.clear()
+    for _ in range(rounds):                       # rechecks on 1, 2, 4, 8
+        backend._dispatch(compiled, args, n)
+    return serial, parallel
+
+
+def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu, monkeypatch):
     """An image kernel's first rows are background: cheap, and not what
     the frame costs. Measured from them, the estimate undershoots, and
     with the old guard every recheck then re-ran the whole frame serially
     (1.1 s against 150 ms threaded on a 512² volume render). Once a
-    fan-out has measured the range, a recheck must take a slice.
+    fan-out has measured the range, a recheck must take a slice, and the
+    slices must not all come from the same place.
+
+    Controlled: the serial clock is scripted to the front-loaded shape
+    (100 ns/element in the first quarter, 1000 beyond) and the fan-out
+    cost is pinned, so the sample positions and the whole-range guard
+    are exercised without this host's clock in the loop. The fan-outs
+    are real. The real-clock version is in the timing group below.
     """
     backend = CPUBackend()
     if backend.num_threads < 2:
@@ -549,25 +586,18 @@ def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
     x.from_numpy(np.linspace(0.0, 3.0, n, dtype=np.float32))
     args = [x, out, n, cut]
     compiled = _compile_for(backend, _front_loaded, args)
+    backend._measure_call_overhead(compiled, compiled.bind(args))
+    _pin_fan_out(monkeypatch, backend, fan_out_ns=2_500_000.0)
+    _controlled_serial_clock(backend, _front_loaded_rate(cut))
+    # The fan-outs run for real but their worker rates are not recorded:
+    # a single high r_p draw can lift the serial floor and with it the
+    # estimate, which would put this host's scheduler back in the loop.
+    # The floor's own behaviour has its own tests above.
+    monkeypatch.setattr(CPUBackend, "_record_parallel_cost",
+                        lambda self, *a, **k: None)
 
-    serial, parallel = [], []
-    real_serial, real_parallel = backend._run_serial, backend._parallel_execute
-    backend._run_serial = lambda c, p, a, b: (serial.append((a, b)),
-                                              real_serial(c, p, a, b))[1]
-    backend._parallel_execute = lambda c, p, a, b, **kw: (parallel.append((a, b)),
-                                                        real_parallel(c, p, a, b, **kw))[1]
-
-    # First sight probes a slice, and the first fan-out calibrates the
-    # real fan-out cost and re-decides against it -- which may
-    # legitimately run that one dispatch whole. Everything after that
-    # has more than one sample to go on.
-    for _ in range(2):
-        backend._dispatch(compiled, args, n)
-    if not parallel:
-        pytest.skip("this machine does not thread this kernel at all")
-    serial.clear()
-    for _ in range(12):                           # rechecks on 1, 2, 4, 8
-        backend._dispatch(compiled, args, n)
+    serial, parallel = _cheap_prefix_dispatches(backend, monkeypatch, compiled, args, n)
+    assert parallel, "the controlled rates must make this kernel thread"
 
     whole = [(a, b) for a, b in serial if b - a >= n // 2]
     assert not whole, (
@@ -577,7 +607,51 @@ def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
     starts = {a for a, b in serial}
     assert len(starts) > 1, f"every sample came from the same place: {starts}"
     assert compiled.ns_per_elem >= compiled.ns_per_elem_parallel
+    # The golden-ratio positions all land past the cheap quarter, so the
+    # estimate reads the dense rows, not the background.
+    assert compiled.ns_per_elem > 500.0, (
+        f"rotating samples left the estimate at {compiled.ns_per_elem:.0f}")
+    _check_front_loaded(x, out, n, cut)
 
+
+def test_negative_control_prefix_only_sampling_is_detected(cpu, monkeypatch):
+    """With the sample position pinned to the prefix, the controlled
+    scenario above fails its position assertion: every sample comes from
+    the cheap rows. That is the defect the rotation exists to prevent."""
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    n = 1 << 17
+    cut = n // 4
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.linspace(0.0, 3.0, n, dtype=np.float32))
+    args = [x, out, n, cut]
+    compiled = _compile_for(backend, _front_loaded, args)
+    backend._measure_call_overhead(compiled, compiled.bind(args))
+    _pin_fan_out(monkeypatch, backend, fan_out_ns=2_500_000.0)
+    _controlled_serial_clock(backend, _front_loaded_rate(cut))
+    # The fan-outs run for real but their worker rates are not recorded:
+    # a single high r_p draw can lift the serial floor and with it the
+    # estimate, which would put this host's scheduler back in the loop.
+    # The floor's own behaviour has its own tests above.
+    monkeypatch.setattr(CPUBackend, "_record_parallel_cost",
+                        lambda self, *a, **k: None)
+    monkeypatch.setattr(type(compiled), "next_sample_start", lambda self, room: 0)
+
+    serial, parallel = _cheap_prefix_dispatches(backend, monkeypatch, compiled, args, n)
+
+    starts = {a for a, b in serial}
+    assert starts == {0}, f"prefix pinning did not take: {starts}"
+    # Sampling the cheap rows alone leaves the estimate at their rate --
+    # or at the trusted parallel floor, the only thing allowed to lift it.
+    assert compiled.ns_per_elem == pytest.approx(
+        max(100.0, compiled.serial_floor_ns), rel=0.05), (
+        f"estimate {compiled.ns_per_elem:.0f} with prefix-only samples "
+        f"(floor {compiled.serial_floor_ns:.0f}): a dense-row sample leaked in")
+
+
+def _check_front_loaded(x, out, n, cut):
     j2 = np.arange(2, dtype=np.float64)
     j24 = np.arange(24, dtype=np.float64)
     src = x.to_numpy()
@@ -586,6 +660,41 @@ def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
         (np.sin(src[:, None] + j2) * np.cos(src[:, None] - j2)).sum(axis=1),
         (np.sin(src[:, None] + j24) * np.cos(src[:, None] - j24)).sum(axis=1))
     np.testing.assert_allclose(out.to_numpy(), expected, atol=2e-4)
+
+
+@pytest.mark.timing
+def test_timing_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
+    """Real clock, real scheduler: the controlled test above with nothing
+    pinned. Needs an idle host (see `_require_idle`); a failure here with
+    the controlled test passing points at the scheduler or the sampling
+    heuristics' margins on this machine, not at the policy's logic.
+    """
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    _require_idle(backend)
+    n = 1 << 17
+    cut = n // 4
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.linspace(0.0, 3.0, n, dtype=np.float32))
+    args = [x, out, n, cut]
+    compiled = _compile_for(backend, _front_loaded, args)
+
+    serial, parallel = _cheap_prefix_dispatches(backend, None, compiled, args, n)
+    if not parallel:
+        pytest.skip("this machine does not thread this kernel at all")
+
+    whole = [(a, b) for a, b in serial if b - a >= n // 2]
+    assert not whole, (
+        f"{len(whole)} recheck(s) re-ran the whole range serially: {whole}; "
+        f"estimate {compiled.ns_per_elem:.0f} ns/elem, parallel "
+        f"{compiled.ns_per_elem_parallel:.0f}, threads {backend.num_threads}, "
+        f"load {os.getloadavg()[0]:.1f}")
+    starts = {a for a, b in serial}
+    assert len(starts) > 1, f"every sample came from the same place: {starts}"
+    assert compiled.ns_per_elem >= compiled.ns_per_elem_parallel
+    _check_front_loaded(x, out, n, cut)
 
 
 @tack.kernel
@@ -745,6 +854,56 @@ def _measured(backend, kernel, n):
     return compiled, [x, out, n]
 
 
+def _controlled_serial_clock(backend, rate_fn):
+    """Give every serial sample the rate `rate_fn(start, end)` ns/element.
+
+    The kernel still runs, so results stay checkable; only the clock the
+    policy reads around that run is scripted. `_run_serial` reads it
+    exactly twice, and a sample is `(elapsed - call_overhead) / elems`,
+    so the two ticks are 0 and `overhead + rate * elems`. Everything
+    downstream -- smoothing, the 8x cap, confirmation, the floor, the
+    threshold -- then sees a rate chosen by the test, not by this host.
+    Pin `_fan_out_estimate` in the same test: with a fan-out curve it
+    reads the clock too, and would consume a tick.
+    """
+    real = backend._run_serial
+
+    def run_serial(compiled, prefix, start, end):
+        if end <= start:
+            return
+        assert compiled.call_overhead_ns > 0.0, "measure the call cost first"
+        ticks = iter([0, int(compiled.call_overhead_ns
+                             + rate_fn(start, end) * (end - start))])
+        saved = cpu_mod.time.perf_counter_ns
+        cpu_mod.time.perf_counter_ns = lambda: next(ticks)
+        try:
+            real(compiled, prefix, start, end)
+        finally:
+            cpu_mod.time.perf_counter_ns = saved
+
+    backend._run_serial = run_serial
+
+
+def _pin_fan_out(monkeypatch, backend, fan_out_ns=400_000.0, margin=1.5):
+    """Fix the fan-out cost and margin so thresholds are arithmetic."""
+    backend._fan_out_ns = fan_out_ns
+    monkeypatch.setattr(backend, "_fan_out_estimate", lambda: fan_out_ns)
+    monkeypatch.setattr(backend, "_margin", lambda: margin)
+
+
+def _require_idle(backend):
+    """Timing-group precondition: these tests assert what the scheduler
+    actually did, so they need the cores to themselves. Skipped, with the
+    numbers, when the load average says otherwise."""
+    try:
+        load = os.getloadavg()[0]
+    except (AttributeError, OSError):
+        return
+    if load > backend.num_threads / 2:
+        pytest.skip(f"timing test needs an idle host: load average {load:.1f} "
+                    f"against {backend.num_threads} threads")
+
+
 def test_one_outlier_sample_cannot_flip_the_decision(cpu, monkeypatch):
     """A descheduled dispatch times far above the kernel's real cost."""
     backend = CPUBackend()
@@ -776,12 +935,24 @@ def test_a_believable_rise_is_still_tracked(cpu, monkeypatch):
         f"from {settled:.1f}")
 
 
-def test_a_wrong_decision_to_thread_gets_corrected(cpu):
-    """However the estimate got wrong, dispatching has to recover."""
+def test_a_wrong_decision_to_thread_gets_corrected(cpu, monkeypatch):
+    """However the estimate got wrong, dispatching has to recover.
+
+    Controlled: the fan-out cost is pinned and every serial sample reads
+    the honest rate, so the only thing under test is the policy's
+    response -- a recheck on the first parallel dispatch, a sample 8x
+    below the estimate believed outright, and the threshold recomputed
+    above the range. The real-clock version of this scenario is in the
+    timing group below.
+    """
     backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
     n = 4096
     compiled, args = _measured(backend, _scale, n)
     honest = compiled.ns_per_elem
+    _pin_fan_out(monkeypatch, backend)
+    _controlled_serial_clock(backend, lambda a, b: honest)
 
     # The state a bad sample leaves: threading on for a range far too small.
     compiled.ns_per_elem = honest * 10_000
@@ -794,8 +965,33 @@ def test_a_wrong_decision_to_thread_gets_corrected(cpu):
     assert n < compiled.parallel_min_elems, (
         "still threading a range this size; the estimate is never "
         "re-measured once threading is on")
-    assert compiled.ns_per_elem < honest * 10, (
-        f"estimate stuck at {compiled.ns_per_elem:.1f}, honest is {honest:.1f}")
+    assert compiled.ns_per_elem == pytest.approx(honest, rel=1e-6), (
+        f"estimate {compiled.ns_per_elem:.3f} after a clean sample of "
+        f"{honest:.3f}: the 8x-below rule did not believe it outright")
+
+
+def test_negative_control_no_rechecks_means_no_correction(cpu, monkeypatch):
+    """The scenario above depends on the recheck: with rechecks switched
+    off, the same controlled dispatches leave the corrupt estimate and the
+    wrong decision exactly where they were."""
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    honest = compiled.ns_per_elem
+    _pin_fan_out(monkeypatch, backend)
+    _controlled_serial_clock(backend, lambda a, b: honest)
+    monkeypatch.setattr(type(compiled), "recheck_due", lambda self: False)
+    compiled.ns_per_elem = honest * 10_000
+    compiled.parallel_min_elems = backend._min_elems(compiled.ns_per_elem)
+    assert n >= compiled.parallel_min_elems
+
+    for _ in range(4):
+        backend._dispatch(compiled, args, n)
+
+    assert n >= compiled.parallel_min_elems
+    assert compiled.ns_per_elem == honest * 10_000
 
 
 def test_a_sample_after_a_fan_out_cannot_raise_the_estimate(cpu, monkeypatch):
@@ -852,33 +1048,86 @@ def test_the_first_clean_sample_is_believed(cpu, monkeypatch):
     assert compiled.rate_confirmed
 
 
-def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
-    """P9: only fan-outs measure r_p, so serial runs cannot correct it.
+def _stale_parallel_rate_setup(backend, monkeypatch):
+    """P9's trap, reproduced by construction on any host.
 
-    Worker rates for identical fan-outs spread 8x run to run on a
-    one-socket Xeon, and one high draw -- 5.25 ns/element against ~0.4 --
-    set r_p to the serial rate. The threshold formula then credited
-    fanning out with no gain at all, held a 6-34M-element dispatch of a
-    cheap kernel serial (up to 6x slower), and nothing ever fanned out
-    again to find out. The mirror of P3's one-way door.
+    Only fan-outs measure r_p, so a high draw that holds a kernel serial
+    is never corrected by the serial runs that follow. To put a kernel in
+    that state without depending on this host's speed: measure its honest
+    serial rate, pin every later serial sample to exactly that rate (so
+    the serial side can neither free nor further trap it), and set r_p a
+    hair below it, which makes the threshold formula credit fanning out
+    with no gain and hold a range serial that is worth 2.5 fan-outs. The
+    two setup assertions check both halves of that state.
     """
-    backend = CPUBackend()
-    if not backend._v2 or backend.num_threads < 2:
-        pytest.skip("policy v2 with threads only")
     n = 1 << 22
     compiled, args = _measured(backend, _scale, n)
-    # Pinned, so the stale state does not depend on this machine's clock:
-    # a range worth ~2.5 fan-outs serially, held serial only by r_p.
-    backend._fan_out_ns = 400_000.0
-    monkeypatch.setattr(backend, "_fan_out_estimate", lambda: 400_000.0)
-    monkeypatch.setattr(backend, "_margin", lambda: 1.5)
-    rate = 0.25
+    rate = compiled.ns_per_elem
+    # Pin the fan-out cost *relative* to the measured rate: the range is
+    # then worth 3.3 fan-outs serially on every host, and with r_p at
+    # 0.95 of the serial rate the threshold formula's gap is 0.1 of it,
+    # which puts the threshold at 4.5 ranges -- held serial, by r_p only.
+    _pin_fan_out(monkeypatch, backend, fan_out_ns=n * rate / 3.3)
+    _controlled_serial_clock(backend, lambda a, b: rate)
     compiled.rate_confirmed = True
-    compiled.ns_per_elem_parallel = rate * 0.95       # one bad draw
+    compiled.ns_per_elem_parallel = rate * 0.95       # the one bad draw
+    compiled.serial_floor_ns = 0.0
     backend._set_serial_cost(compiled, rate)
     assert n < compiled.parallel_min_elems, "test did not set up the stale state"
     assert n * rate >= backend._fan_out_estimate() * backend._margin(), (
         "range too small for r_p to be what keeps it serial")
+    return compiled, args, n, rate
+
+
+def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
+    """P9: a parallel rate that holds a kernel serial gets re-measured.
+
+    Worker rates for identical fan-outs spread 2-8x run to run, and one
+    high draw -- 5.25 ns/element against ~0.4 on a one-socket Xeon -- set
+    r_p to the serial rate and held 6-34M-element dispatches of a cheap
+    kernel serial, up to 6x slower, for good: the mirror of P3's one-way
+    door. The fix fans out on the serial rechecks' back-off schedule when
+    r_p alone is what keeps the range serial.
+
+    The re-measured r_p is real, so a single one can itself be a high
+    draw; what the fix guarantees is that the kernel keeps fanning out to
+    find out, so the best of them must get under the stale value. On any
+    machine with more than one core that holds by a wide margin: the
+    honest r_p is the serial rate over the effective parallelism.
+    """
+    backend = CPUBackend()
+    if not backend._v2 or backend.num_threads < 2:
+        pytest.skip("policy v2 with threads only")
+    compiled, args, n, rate = _stale_parallel_rate_setup(backend, monkeypatch)
+
+    fanned = []
+    real = backend._parallel_execute
+    backend._parallel_execute = lambda c, p, a, b, **kw: (fanned.append((a, b)),
+                                                        real(c, p, a, b, **kw))[1]
+    seen = []
+    for _ in range(8):
+        backend._dispatch(compiled, args, n)
+        seen.append(compiled.ns_per_elem_parallel)
+
+    assert fanned, "a parallel rate that holds the range serial was never re-measured"
+    assert min(seen) < rate * 0.95, (
+        f"re-measured r_p never got under the stale {rate * 0.95:.3f}: {seen}")
+    x, out = args[0].to_numpy(), args[1].to_numpy()
+    np.testing.assert_allclose(out, x * 2.0 + 1.0, rtol=1e-6)
+
+
+def test_negative_control_stale_rate_without_recovery_stays_serial(
+        cpu, monkeypatch):
+    """The scenario above is held serial *only* by r_p: with P9's parallel
+    recheck switched off, eight dispatches never fan out and r_p never
+    moves. This is what makes the test above a test of the recovery path
+    rather than of this host's threshold arithmetic."""
+    backend = CPUBackend()
+    if not backend._v2 or backend.num_threads < 2:
+        pytest.skip("policy v2 with threads only")
+    monkeypatch.setattr(CPUBackend, "_parallel_recheck_due",
+                        lambda self, compiled, loop_end: False)
+    compiled, args, n, rate = _stale_parallel_rate_setup(backend, monkeypatch)
 
     fanned = []
     real = backend._parallel_execute
@@ -887,8 +1136,9 @@ def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
     for _ in range(8):
         backend._dispatch(compiled, args, n)
 
-    assert fanned, "a parallel rate that holds the range serial was never re-measured"
-    assert compiled.ns_per_elem_parallel < rate * 0.95
+    assert not fanned, f"fanned out without the recovery path: {fanned}"
+    assert compiled.ns_per_elem_parallel == rate * 0.95
+    assert n < compiled.parallel_min_elems
 
 
 def test_one_high_parallel_draw_cannot_set_the_serial_floor(cpu):
@@ -1089,11 +1339,44 @@ def test_explicit_thread_count_wins_over_environment(cpu, monkeypatch):
     assert CPUBackend(num_threads=2).num_threads == 2
 
 
-def test_expensive_kernel_does_fan_out(cpu):
-    """An expensive kernel over a large range must actually use threads."""
+def test_a_dear_kernel_over_a_large_range_is_fanned_out(cpu, monkeypatch):
+    """Policy check with nothing measured: a kernel whose pinned serial
+    rate makes the range worth hundreds of fan-outs must take the parallel
+    branch, and a kernel a thousand times cheaper over the same range must
+    not. The real-clock version is in the timing group below."""
     backend = CPUBackend()
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
+    n = 200000
+    compiled, args = _measured(backend, _expensive, n)
+    _pin_fan_out(monkeypatch, backend)
+    fanned = []
+    real = backend._parallel_execute
+    backend._parallel_execute = lambda c, p, a, b, **kw: (fanned.append((a, b)),
+                                                        real(c, p, a, b, **kw))[1]
+
+    for rate, expect in ((1000.0, True), (0.001, False)):
+        fanned.clear()
+        compiled.rate_confirmed = True
+        compiled.ns_per_elem_parallel = 0.0
+        compiled.serial_floor_ns = 0.0
+        _controlled_serial_clock(backend, lambda a, b, r=rate: r)
+        backend._set_serial_cost(compiled, rate)
+        assert (n >= compiled.parallel_min_elems) == expect
+        backend._dispatch(compiled, args, n)
+        assert bool(fanned) == expect, (
+            f"{rate} ns/elem over {n}: fanned {fanned}, expected {expect}")
+
+
+@pytest.mark.timing
+def test_timing_expensive_kernel_does_fan_out(cpu):
+    """Real clock, real scheduler: an expensive kernel over a large range
+    must actually spin up the pool and settle on threading. Needs an idle
+    host (see `_require_idle`)."""
+    backend = CPUBackend()
+    if backend.num_threads < 2:
+        pytest.skip("machine has one core")
+    _require_idle(backend)
 
     n = 200000
     x = tack.field(dtype=tack.f32, shape=(n,))
@@ -1106,7 +1389,11 @@ def test_expensive_kernel_does_fan_out(cpu):
 
     assert backend._pool is not None
     assert backend._fan_out_ns > 0
-    assert compiled.parallel_min_elems <= n
+    assert compiled.parallel_min_elems <= n, (
+        f"threshold {compiled.parallel_min_elems} above {n}: estimate "
+        f"{compiled.ns_per_elem:.1f} ns/elem, parallel "
+        f"{compiled.ns_per_elem_parallel:.1f}, fan-out {backend._fan_out_ns:.0f} ns, "
+        f"threads {backend.num_threads}, load {os.getloadavg()[0]:.1f}")
 
 
 def _compile_for(backend, kernel, args):
