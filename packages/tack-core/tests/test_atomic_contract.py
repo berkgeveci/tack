@@ -56,6 +56,38 @@ def _field(values, dtype):
     return result
 
 
+def _check_floating_extrema_zero(dtype, op, zero):
+    # Numeric zeros are valid extrema. Their sign on a tie is unspecified.
+    direction = 1 if op == 'min' else -1
+    data = _field([zero] * 4097, dtype)
+    out = _field([direction * 4], dtype)
+    KERNELS[op](data, out, 4097)
+    assert out.to_numpy()[0] == 0
+    for stored in [0.0, -0.0]:
+        out.fill(stored)
+        data.fill(direction * 2)
+        KERNELS[op](data, out, 4097)
+        assert out.to_numpy()[0] == 0
+        data.fill(-direction * 2)
+        KERNELS[op](data, out, 4097)
+        assert out.to_numpy()[0] == -direction * 2
+
+
+@pytest.mark.parametrize('op', ['min', 'max'])
+@pytest.mark.parametrize('zero', [0.0, -0.0])
+def test_f32_atomic_extrema_numeric_zeros(backend, op, zero):
+    _check_floating_extrema_zero(tack.f32, op, zero)
+
+
+@pytest.mark.parametrize('op', ['min', 'max'])
+@pytest.mark.parametrize('zero', [0.0, -0.0])
+def test_f64_atomic_extrema_numeric_zeros(f64_backend, op, zero):
+    be = get_backend()
+    if tack.f64 not in be.supported_atomic_dtypes:
+        pytest.skip('Backend has f64 fields but no f64 atomics')
+    _check_floating_extrema_zero(tack.f64, op, zero)
+
+
 def _wrap(value, dtype):
     if dtype in (tack.f32, tack.f64):
         return dtype.numpy_dtype.type(value)

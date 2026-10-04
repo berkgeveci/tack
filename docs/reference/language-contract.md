@@ -768,10 +768,11 @@ with the target's signedness, including unsigned values above the signed
 maximum. Floating addition rounds at field precision with unspecified
 interleaving; exact reduction order and bitwise reproducibility are not
 promised. Normal floating arithmetic constraints, including the denormal
-exclusion, apply. Floating atomic extrema's portable domain remains **finite,
-nonzero stored values and contributed operands**. NaNs, infinities and
-signed-zero ties are outside that extrema domain; field/block extrema's
-stronger exceptional-value policy does not apply to user atomic extrema.
+exclusion, apply. Floating atomic extrema's portable domain is **finite
+stored values and contributed operands, including numeric zero**. Both zero
+signs compare equal; the sign of a zero result on a tie is unspecified.
+NaNs and infinities remain outside that extrema domain; field/block
+extrema's stronger exceptional-value policy does not apply to user atomics.
 
 **Ordering and scope:** updates to the same element are indivisible among
 kernel participants across CPU worker threads or GPU workgroups on the

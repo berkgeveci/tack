@@ -112,8 +112,19 @@ reductions use explicit relaxed device scope, rather than legacy atomics'
 workgroup-only guarantee. Values convert once to target precision and are
 captured outside CAS retries. Atomics are relaxed, spanning CPU workers or
 GPU workgroups on one device; they are not publication fences or host/device
-system-scope operations. Floating extrema remain finite/nonzero only.
+system-scope operations. Floating extrema support finite values and numeric
+zeros, with unspecified result sign on a zero tie; NaNs/infinities remain
+outside their domain.
 See `test_atomic_contract.py` and the language contract.
+
+Rasterized points and wireframes use three completed passes per actor:
+atomic depth reduction, atomic lowest-ID selection at the completed depth,
+and one color writer per pixel. Never combine atomic depth updates with
+ordinary depth reads and competing RGB stores in one geometry dispatch.
+`rendering/rasterize.py` uses cached i32 winner scratch; equal-depth
+primitives select the lowest index, while equal-depth actors overwrite in
+scene order. See `test_raster_winners.py` for contention across workgroups,
+forced CPU workers, ties, repeated frames and compositing.
 
 Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
 
