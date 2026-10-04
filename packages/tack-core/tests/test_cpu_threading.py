@@ -867,12 +867,27 @@ def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
         pytest.skip("policy v2 with threads only")
     n = 1 << 22
     compiled, args = _measured(backend, _scale, n)
-    # Pinned, so the stale state does not depend on this machine's clock:
-    # a range worth ~2.5 fan-outs serially, held serial only by r_p.
     backend._fan_out_ns = 400_000.0
     monkeypatch.setattr(backend, "_fan_out_estimate", lambda: 400_000.0)
     monkeypatch.setattr(backend, "_margin", lambda: 1.5)
-    rate = 0.25
+    # The stale rate has to sit *above* what a fan-out really measures
+    # here, or re-measuring correctly moves it up and the test reads
+    # that as failure: a fixed 0.25 ns/element was 0.24-0.64 on a 2012
+    # Sandy Bridge Xeon (4M elements of `_scale` across 16 workers) and
+    # failed 9 runs in 10 there. So measure one honest fan-out first and
+    # pin the stale state relative to it, within the window the setup
+    # assertions below need (n*rate >= 1.5 fan-outs, yet held serial).
+    honest = None
+    for _ in range(3):                       # draws spread 2-8x; take the best
+        compiled.ns_per_elem_parallel = 0.0
+        backend._parallel_execute(compiled, compiled.bind(args), 0, n,
+                                  whole_range=True)
+        honest = (compiled.ns_per_elem_parallel if honest is None
+                  else min(honest, compiled.ns_per_elem_parallel))
+    rate = min(max(0.25, honest * 2.5), 1.4)
+    if honest >= rate * 0.95:
+        pytest.skip(f"parallel rate {honest:.2f} ns/elem leaves no room "
+                    f"for a stale value under the serial window")
     compiled.rate_confirmed = True
     compiled.ns_per_elem_parallel = rate * 0.95       # one bad draw
     backend._set_serial_cost(compiled, rate)
@@ -884,11 +899,18 @@ def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
     real = backend._parallel_execute
     backend._parallel_execute = lambda c, p, a, b, **kw: (fanned.append((a, b)),
                                                         real(c, p, a, b, **kw))[1]
+    seen = []
     for _ in range(8):
         backend._dispatch(compiled, args, n)
+        seen.append(compiled.ns_per_elem_parallel)
 
     assert fanned, "a parallel rate that holds the range serial was never re-measured"
-    assert compiled.ns_per_elem_parallel < rate * 0.95
+    # One re-measurement is a draw from the same 2-8x spread that caused
+    # P9, so a single sample can land above the stale value; what the fix
+    # guarantees is that the kernel keeps fanning out to find out, so the
+    # best of the re-measurements must get under the stale rate.
+    assert min(seen) < rate * 0.95, (
+        f"re-measured r_p never got under the stale {rate * 0.95:.3f}: {seen}")
 
 
 def test_one_high_parallel_draw_cannot_set_the_serial_floor(cpu):
