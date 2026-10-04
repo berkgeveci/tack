@@ -208,8 +208,8 @@ def define_kernels():
                     s0 = float(sj) * inv_n
                     s1 = float(sj + 1) * inv_n
 
-                    cr = tack.shared_like(out_x0, 4)
-                    cs = tack.shared_like(out_x0, 4)
+                    cr = tack.local_array_like(out_x0, 4)
+                    cs = tack.local_array_like(out_x0, 4)
                     nc = 0
 
                     if (v0 >= isovalue) != (v1 >= isovalue):

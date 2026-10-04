@@ -471,6 +471,7 @@ class CUDABackend(Backend):
     display_name = "CUDA"
     supported_dtypes = _CUDA_SUPPORTED_DTYPES
     supports_device_reductions = True
+    supports_workgroups = True
     device_memory_spaces = frozenset({"cuda", "cuda_pinned", "cuda_managed"})
 
 

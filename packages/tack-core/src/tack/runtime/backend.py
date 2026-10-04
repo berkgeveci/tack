@@ -57,6 +57,11 @@ class Backend:
     #: False, `Field.sum()`/`min()`/`max()` fall back to numpy on the host.
     supports_device_reductions: bool = False
 
+    #: Native workgroup execution for shared memory, barriers, local thread
+    #: IDs and block reductions. This does not promise uniform participation,
+    #: supported atomic types/scopes, or safe partial-workgroup execution.
+    supports_workgroups: bool = False
+
     #: Memory-space names (as returned by `memory_space()`) that a pointer
     #: must be in for `field_from_ptr()` to wrap it. Empty means this
     #: backend does not distinguish, so no check is made.

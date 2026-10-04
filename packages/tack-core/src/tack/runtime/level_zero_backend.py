@@ -863,6 +863,7 @@ class LevelZeroBackend(Backend):
     # device reports it.
     supported_dtypes = _L0_SUPPORTED_DTYPES
     supports_device_reductions = True
+    supports_workgroups = True
 
 
     def __init__(self):

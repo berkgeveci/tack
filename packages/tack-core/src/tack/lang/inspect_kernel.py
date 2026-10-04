@@ -13,6 +13,7 @@ from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_type_annotate import annotate_types
 from tack.lang.ir_verify import verify_ir
 from tack.lang.type_inference import infer_param_types
+from tack.lang.workgroup_support import check_workgroup_support
 from tack.runtime.kernel_utils import (
     _detect_template_args,
     _detect_texture_fields,
@@ -22,10 +23,12 @@ from tack.runtime.kernel_utils import (
 )
 
 
-def _prepare_ir(kernel, args):
+def _prepare_ir(kernel, args, *, backend=None):
     """Run the common IR preparation pipeline: transform, resolve, infer, optimize.
 
     Returns (ir_func, effective_args) with a deep-copied, fully annotated IR.
+    Supply a backend to enforce target capabilities. Cross-target codegen
+    tools may omit it and let their selected generator check support.
     """
     from tack.lang.field import Texture3D
 
@@ -39,7 +42,13 @@ def _prepare_ir(kernel, args):
         template_args=template_args if template_args else None,
         texture_fields=texture_fields,
     )
-    ir_func = clone_ir(ir_module.functions[0])
+    template = ir_module.functions[0]
+    if backend is not None:
+        check_workgroup_support(
+            template, supports_workgroups=backend.supports_workgroups,
+            backend_label=backend.label, cache_features=True,
+        )
+    ir_func = clone_ir(template)
 
     # Resolve dimension sizes
     name_to_field = {}
@@ -91,7 +100,8 @@ def inspect(kernel, *args, mode="source"):
         raise TypeError(f"Expected a @tack.kernel, got {type(kernel).__name__}")
 
     if mode == "ir":
-        ir_func, _ = _prepare_ir(kernel, args)
+        from tack.runtime.dispatch import get_backend
+        ir_func, _ = _prepare_ir(kernel, args, backend=get_backend())
         return ir.dump(ir_func)
 
     if mode == "source":
@@ -111,7 +121,7 @@ def _generate_source(kernel, args, optimize=False):
     backend = get_backend()
     backend_name = type(backend).__name__
 
-    ir_func, effective_args = _prepare_ir(kernel, args)
+    ir_func, effective_args = _prepare_ir(kernel, args, backend=backend)
 
     # GPU backends need scalar packing
     if backend_name in ("MetalBackend", "CUDABackend", "HIPBackend", "LevelZeroBackend"):

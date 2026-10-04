@@ -122,11 +122,12 @@ elif isinstance(node, ir.IRLocalAlloc):
 
 ### LLVM Backend
 
-Reuse the shared memory alloca pattern (both are stack allocations on CPU):
+Use private stack allocation for local arrays on CPU. Shared memory requires
+workgroup execution and is rejected by the CPU target:
 
 ```python
 elif isinstance(node, ir.IRLocalAlloc):
-    self._emit_shared_alloc(node)  # same as shared on CPU
+    self._emit_local_alloc(node)
 ```
 
 ## 6. Write Tests

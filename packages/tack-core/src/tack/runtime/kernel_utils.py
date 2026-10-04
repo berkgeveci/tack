@@ -28,6 +28,7 @@ from tack.lang.field import Field, Texture3D
 from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_traversal import walk_ir as _walk_ir
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
+from tack.lang.workgroup_support import check_workgroup_support
 
 
 def as_address(ptr) -> int | None:
@@ -444,6 +445,11 @@ def resolve_variant(backend, kernel, args, kwargs, build,
         template_args=template_args if template_args else None,
         texture_fields=texture_fields,
     ).functions[0]
+
+    check_workgroup_support(
+        template, supports_workgroups=backend.supports_workgroups,
+        backend_label=backend.label, cache_features=True,
+    )
 
     name_to_field = dispatch_name_to_field(template, effective_args)
 

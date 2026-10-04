@@ -16,6 +16,7 @@ Declared capabilities — read these instead of probing with `hasattr`:
 | `supported_dtypes` | Scalar types accepted as field dtypes |
 | `supports_f64` | Derived from `supported_dtypes` — never declared separately |
 | `supports_device_reductions` | Whether `reduce_field()` runs on device; otherwise `Field.sum()` and friends fall back to numpy |
+| `supports_workgroups` | Native workgroup execution for shared memory, barriers, local thread IDs and block reductions; false on CPU |
 | `device_memory_spaces` | Memory spaces a pointer must be in for `field_from_ptr()`; empty means no check |
 
 Anything derivable is derived. `supports_f64` used to be declared
@@ -49,7 +50,10 @@ Every backend uses `resolve_variant()` in `runtime/kernel_utils.py` to
 find or build a specialization:
 
 1. Expand template arguments and detect vector and texture fields.
-2. Obtain the pristine IR template for this specialization.
+2. Obtain the pristine IR template for this specialization and check required
+   workgroup primitives against the backend's `supports_workgroups`. CPU
+   memoizes feature discovery on the immutable template so warm dispatch
+   does not walk the body again. GPU targets bypass this rejection check.
 3. Infer argument dtypes and categories on a private parameter probe, record
    texture extents, and derive resolved shape dependencies.
 4. Look up the variant in the backend's weakly keyed per-kernel cache.
@@ -81,6 +85,12 @@ kernels that accumulate through a field in an inner loop.
 Template classes appear in keys as a token rather than the class object.
 When a `@tack.data_oriented` class is collected, a finalizer drops the IR and
 the compiled variants specialized on it from every backend's cache.
+
+Public inspection checks the selected backend's workgroup capability before
+preparing a variant. Private `_prepare_ir` may omit a backend for cross-target
+codegen tools/tests. Direct LLVM generation always checks the supplied IR
+afresh because callers may mutate it. None of these checks analyzes barrier
+participation or atomic type/scope support.
 
 ## Loop Range Resolution
 

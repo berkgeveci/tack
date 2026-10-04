@@ -114,7 +114,7 @@ def test_helper_names_encoding_lookalikes_and_packed_local_collision(backend):
         np.testing.assert_array_equal(out.to_numpy(), expected)
 
 
-def test_shared_allocation_and_thread_builtin_names(backend):
+def test_shared_allocation_and_thread_builtin_names(workgroup_backend):
     @tack.kernel
     def kernel(default, out):
         for __tid__ in range(default.shape[0]):

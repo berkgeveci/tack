@@ -193,7 +193,7 @@ def _block_extrema(data, out):
 
 @pytest.mark.parametrize('values', [[np.nan], [np.inf], [-np.inf],
                                    [-0.0], [0.0, -0.0], [2e38, 3e38]])
-def test_full_workgroup_f32_extrema(reduction_backend, values):
+def test_full_workgroup_f32_extrema(workgroup_backend, values):
     data = np.resize(np.asarray(values, np.float32), 512)
     out = tack.field(tack.f32, (2, 2))
     _block_extrema(_field(data), out)
@@ -217,16 +217,22 @@ def _block_sum(data, out):
 
 
 def test_block_integer_input_requires_explicit_f32(backend):
-    with pytest.raises((TypeError, RuntimeError), match='requires f32 input'):
+    from tack.runtime.dispatch import get_backend
+    message = ('requires f32 input' if get_backend().supports_workgroups
+               else 'CPU backend does not support workgroup execution')
+    with pytest.raises((TypeError, RuntimeError), match=message):
         _block_sum(_field(np.ones(256), tack.i32), tack.field(tack.f32, (1,)))
 
 
 def test_block_f64_input_requires_explicit_f32(f64_backend):
-    with pytest.raises((TypeError, RuntimeError), match='requires f32 input'):
+    from tack.runtime.dispatch import get_backend
+    message = ('requires f32 input' if get_backend().supports_workgroups
+               else 'CPU backend does not support workgroup execution')
+    with pytest.raises((TypeError, RuntimeError), match=message):
         _block_sum(_field(np.ones(256), tack.f64), tack.field(tack.f32, (1,)))
 
 
-def test_full_workgroup_sum_accuracy(reduction_backend):
+def test_full_workgroup_sum_accuracy(workgroup_backend):
     rng = np.random.default_rng(5812)
     values = rng.uniform(-64, 64, 512).astype(np.float32)
     out = tack.field(tack.f32, (2,))
@@ -239,7 +245,7 @@ def test_full_workgroup_sum_accuracy(reduction_backend):
         assert abs(float(actual) - exact) <= bound
 
 
-def test_block_explicit_f32_cast(reduction_backend):
+def test_block_explicit_f32_cast(workgroup_backend):
     @tack.kernel
     def cast_sum(data, out):
         for i in range(data.shape[0]):
