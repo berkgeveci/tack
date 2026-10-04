@@ -33,6 +33,7 @@ _CUDA_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from cuda.bindings import driver, nvrtc
 
 from tack.codegen.cuda_gen import generate_cuda_source
+from tack.codegen.identifiers import kernel_entry_name
 
 # Shareable-handle types ExportableCUDABuffer may ask the driver for, in
 # preference order, per platform. Each entry is (name, handle type, the device
@@ -638,14 +639,12 @@ class CUDABackend(Backend):
         """
         import copy
 
-        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
         packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
         _, pack_info = pack_scalars(packed, effective_args)
         verify_ir(packed, 'packed')
         annotate_types(packed)
@@ -657,13 +656,14 @@ class CUDABackend(Backend):
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledCUDAKernel:
         """Compile Tack IR → CUDA C → PTX → CUfunction."""
+        kernel_name = kernel_entry_name(ir_func.name)
         cuda_source = generate_cuda_source(ir_func)
-        ptx = _compile_ptx(cuda_source, ir_func.name)
+        ptx = _compile_ptx(cuda_source, kernel_name)
 
         err, module = driver.cuModuleLoadData(ptx)
         _check(err)
 
-        err, func = driver.cuModuleGetFunction(module, ir_func.name.encode())
+        err, func = driver.cuModuleGetFunction(module, kernel_name.encode())
         _check(err)
 
         param_types = [p.type_annotation for p in ir_func.params]
@@ -673,7 +673,7 @@ class CUDABackend(Backend):
         for i, p in enumerate(ir_func.params):
             if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
                 texture_shapes[i] = p._texture_shape
-        return CompiledCUDAKernel(module, func, ir_func.name, param_types,
+        return CompiledCUDAKernel(module, func, kernel_name, param_types,
                                   param_is_field, param_is_texture, texture_shapes)
 
     def reduce_field(self, field, op: str) -> float:

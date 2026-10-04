@@ -501,6 +501,9 @@ def _localize_assigned_scalar_params(ir_func):
 
     Needs the `_is_field` annotations, so it runs after type inference.
     """
+    from tack.lang.ir_names import fresh_name, ir_names
+
+    used_names = ir_names(ir_func)
     scalars = {p.name for p in ir_func.params
                if not getattr(p, '_is_field', True)}
     if not scalars:
@@ -512,7 +515,8 @@ def _localize_assigned_scalar_params(ir_func):
                     if isinstance(n, ir.IRAssign) and n.target in scalars}
         if not assigned:
             continue
-        renames = {name: f"__{name}_local__" for name in assigned}
+        renames = {name: fresh_name(f"__{name}_local__", used_names)
+                   for name in sorted(assigned)}
         # The loop bound can share nodes with the body, and it has to keep
         # naming the parameter: dispatch evaluates it against the arguments.
         body = copy.deepcopy(stmt.body)

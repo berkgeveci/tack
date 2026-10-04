@@ -32,6 +32,28 @@ expressions) and inherit everything else.
 
 These share common patterns:
 
+### Identifier Namespaces
+
+`codegen/identifiers.py` makes a structural copy of the prepared IR for
+GPU emission. `lang/ir_names.py` enumerates binding and reference slots:
+parameters, assignments, loops, allocations, names, dimensions and
+texture references. Intrinsic call names, attributes and type/dispatch
+metadata are not renamed. Every binding uses `tack_var_`; every kernel
+entry uses `tack_kernel_`. ASCII names use the `a_` branch, with `Z` and
+underscores escaped as `Z1` and `Z0`; Unicode names use `u_` plus UTF-8 hex.
+The encodings are injective, produce ASCII identifiers without double
+underscores, and keep user names separate from emitted helpers and
+temporaries. No vendor keyword list is needed.
+
+Runtime compilation and inspection call `kernel_entry_name` on the
+original IR name; do not encode the IR function name in place or encode
+an already emitted spelling. LLVM uses the same entry encoding because
+llvmlite's JIT lookup requires ASCII. Canonical IR and its metadata keep
+their original names, and parameter positions/resource indices are
+preserved. Before this final emission step, lowering, template expansion,
+vector scalarization, scalar localization and packing use `fresh_name`
+to avoid merging generated bindings with source bindings.
+
 ### Variable Declaration and Type Inference
 
 When emitting `IRAssign`, the codegen needs a C type for the variable

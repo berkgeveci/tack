@@ -144,8 +144,8 @@ def test_cuda_shared_alloc_types():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "__shared__ float smem[256]" in src
-    assert "long long buf[8]" in src
+    assert "__shared__ float tack_var_a_smem[256]" in src
+    assert "long long tack_var_a_buf[8]" in src
 
 
 def test_msl_shared_alloc_types():
@@ -167,7 +167,7 @@ def test_msl_shared_alloc_types():
     annotate_types(func)
     src = generate_msl_source(func)
 
-    assert "threadgroup uchar smem[256]" in src
+    assert "threadgroup uchar tack_var_a_smem[256]" in src
 
 
 # --- End-to-end: shared and local alloc with ScalarType ---

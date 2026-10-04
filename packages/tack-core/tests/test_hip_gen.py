@@ -61,7 +61,7 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(fill, (64,))
         src = generate_hip_source(ir_func)
-        assert 'if (i >= __n__) return;' in src
+        assert 'if (tack_var_a_i >= __n__) return;' in src
 
     def test_field_pointers_allow_aliasing(self):
         @tack.kernel
@@ -71,7 +71,7 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(add, (64,), (64,), (64,))
         src = generate_hip_source(ir_func)
-        assert 'float* x' in src
+        assert 'float* tack_var_a_x' in src
         assert '__restrict__' not in src
 
     def test_math_functions(self):

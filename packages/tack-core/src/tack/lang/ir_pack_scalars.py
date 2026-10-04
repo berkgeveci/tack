@@ -10,6 +10,7 @@ Must run after type inference (needs _is_field and type_annotation).
 
 
 from tack.lang import ir
+from tack.lang.ir_names import fresh_name, ir_names
 from tack.lang.ir_traversal import transform_ir
 
 
@@ -37,9 +38,10 @@ def pack_scalars(ir_func: ir.IRFunction, args: tuple):
     pack_info = []
     new_params = []
     scalar_indices = set()
+    used_names = ir_names(ir_func)
 
     for dtype, entries in groups.items():
-        pack_name = f"__pack_{dtype.name}__"
+        pack_name = fresh_name(f"__pack_{dtype.name}__", used_names)
         pack_param = ir.IRParam(name=pack_name, type_annotation=dtype)
         pack_param._is_field = True
         new_params.append(pack_param)

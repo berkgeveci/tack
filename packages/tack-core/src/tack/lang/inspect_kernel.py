@@ -145,8 +145,7 @@ def _generate_source(kernel, args, optimize=False):
         return llvm_ir_str
 
     if backend_name == "MetalBackend":
-        from tack.codegen.msl_gen import _safe_kernel_name, generate_msl_source
-        ir_func.name = _safe_kernel_name(ir_func.name)
+        from tack.codegen.msl_gen import generate_msl_source
         return generate_msl_source(ir_func)
 
     if backend_name == "CUDABackend":

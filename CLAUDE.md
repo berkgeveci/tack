@@ -137,6 +137,14 @@ To avoid that, pass the length as a scalar argument (`def reverse(x, out, n)`) â
 
 ### Kernel code inspection
 
+Generated GPU variables and all backend kernel entry names use the shared,
+injective encoding in `codegen/identifiers.py`. The GPU generator renames
+only a structural IR copy; canonical IR names and dispatch metadata remain
+original. Runtime lookup must call `kernel_entry_name` on the original
+function name exactly once. Lowering/templates/vector components/scalar
+localization/packing allocate generated bindings through `fresh_name`
+(`lang/ir_names.py`) so they cannot merge with Python source names.
+
 `tack.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (Tack IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR, CPU only). Implementation in `lang/inspect_kernel.py`.
 
 ### IR structure (lang/ir.py)

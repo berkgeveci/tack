@@ -16,6 +16,7 @@ import copy
 
 from tack.lang.field import Field
 from tack.lang.func import Func
+from tack.lang.ir_names import fresh_name
 
 
 def _method_call_name(name):
@@ -85,6 +86,17 @@ def rewrite_templates(kernel_ast, template_args):
     rewritten = copy.deepcopy(kernel_ast)
     funcdef = rewritten.body[0]
     resolved_funcs = {}
+    # Reserve source names in both the caller and template methods before
+    # allocating synthetic parameters. Attribute expansion must not merge a
+    # user's binding with a field/scalar reference in the rewritten AST.
+    sources = [funcdef]
+    for _, obj in template_args.values():
+        sources.extend(method._funcdef for method in
+                       getattr(type(obj), '_tack_func_methods', {}).values())
+    used_names = {n.id for source in sources for n in ast.walk(source)
+                  if isinstance(n, ast.Name)}
+    used_names.update(n.arg for source in sources for n in ast.walk(source)
+                      if isinstance(n, ast.arg))
 
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
@@ -94,12 +106,14 @@ def rewrite_templates(kernel_ast, template_args):
         # Build mapping from field attr name to synthetic parameter name
         field_param_map = {}
         for attr_name in sorted(fields.keys()):
-            field_param_map[attr_name] = f"__tmpl_{param_name}_{attr_name}__"
+            field_param_map[attr_name] = fresh_name(
+                f"__tmpl_{param_name}_{attr_name}__", used_names)
 
         # Build mapping from runtime scalar attr name to synthetic parameter name
         runtime_scalar_param_map = {}
         for attr_name in sorted(runtime_scalars.keys()):
-            runtime_scalar_param_map[attr_name] = f"__tmpl_{param_name}_{attr_name}__"
+            runtime_scalar_param_map[attr_name] = fresh_name(
+                f"__tmpl_{param_name}_{attr_name}__", used_names)
 
         # Resolve the template object's methods in this transformation's map.
         cls = type(obj)
@@ -107,7 +121,7 @@ def rewrite_templates(kernel_ast, template_args):
         if hasattr(cls, '_tack_func_methods'):
             # First pass: build the name map so methods can reference siblings
             for method_name, func_obj in cls._tack_func_methods.items():
-                resolved_name = f"__tmpl_{param_name}_{method_name}__"
+                resolved_name = fresh_name(f"__tmpl_{param_name}_{method_name}__", used_names)
                 method_name_map[method_name] = resolved_name
             # Second pass: resolve methods with the full sibling name map.
             for method_name, func_obj in cls._tack_func_methods.items():

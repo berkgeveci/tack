@@ -33,7 +33,7 @@ def test_vector_add_generates():
             for i in range(10):
                 out[i] = x[i] + y[i]
     """)
-    assert "define void @\"add\"" in ll
+    assert "define void @\"tack_kernel_a_add\"" in ll
     assert "fadd float" in ll
     assert "getelementptr" in ll
     assert "load float" in ll

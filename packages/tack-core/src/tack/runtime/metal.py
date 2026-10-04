@@ -24,6 +24,7 @@ from tack.runtime.kernel_utils import (
 )
 
 _METAL_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.msl_gen import generate_msl_source
 
 try:
@@ -191,12 +192,13 @@ class CompiledMetalKernel:
 
 def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMetalKernel:
     """Compile a Tack IR function to a Metal compute pipeline."""
+    kernel_name = kernel_entry_name(ir_func.name)
     msl_source = generate_msl_source(ir_func)
 
     # Debug: dump MSL source for analysis
     import os
     if os.environ.get("TACK_DUMP_MSL"):
-        path = f"/tmp/tack_{ir_func.name}.msl"
+        path = f"/tmp/tack_{kernel_name}.msl"
         with open(path, "w") as f:
             f.write(msl_source)
         print(f"[Tack] Dumped MSL to {path}")
@@ -208,9 +210,9 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
     if library is None:
         raise RuntimeError(f"Metal shader compilation failed:\n{error}\n\nMSL source:\n{msl_source}")
 
-    func = library.newFunctionWithName_(ir_func.name)
+    func = library.newFunctionWithName_(kernel_name)
     if func is None:
-        raise RuntimeError(f"Could not find '{ir_func.name}' function in Metal library")
+        raise RuntimeError(f"Could not find '{kernel_name}' function in Metal library")
 
     pipeline, error = device.newComputePipelineStateWithFunction_error_(func, None)
     if pipeline is None:
@@ -229,8 +231,8 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
            in zip(param_is_field, param_is_texture)):
         argument_encoder = func.newArgumentEncoderWithBufferIndex_(0)
         if argument_encoder is None:
-            raise RuntimeError(f"Could not create argument encoder for '{ir_func.name}'")
-    return CompiledMetalKernel(device, command_queue, pipeline, ir_func.name,
+            raise RuntimeError(f"Could not create argument encoder for '{kernel_name}'")
+    return CompiledMetalKernel(device, command_queue, pipeline, kernel_name,
                                param_types, param_is_field, param_is_texture,
                                texture_shapes, argument_encoder)
 
@@ -441,14 +443,12 @@ class MetalBackend(Backend):
         """
         import copy
 
-        from tack.codegen.msl_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
         packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
         _, pack_info = pack_scalars(packed, effective_args)
         verify_ir(packed, 'packed')
         annotate_types(packed)

@@ -10,6 +10,7 @@ across threads and calls the kernel with different (start, end) pairs.
 
 from llvmlite import ir as llvm_ir
 
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.integer_division import INTEGER_TYPES, UNSIGNED_TYPES
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
@@ -104,7 +105,7 @@ class LLVMCodeGen:
         param_names.extend(["__loop_start__", "__loop_end__"])
 
         fn_type = llvm_ir.FunctionType(llvm_ir.VoidType(), llvm_param_types)
-        llvm_func = llvm_ir.Function(self.module, fn_type, name=func.name)
+        llvm_func = llvm_ir.Function(self.module, fn_type, name=kernel_entry_name(func.name))
 
         # Field arguments may refer to overlapping storage, including
         # distinct reshaped/imported views, so noalias is never promised

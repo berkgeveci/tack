@@ -12,6 +12,7 @@ All integer locals and loop indices use 64-bit ``long long`` to support grids
 with more than 2^31 elements.
 """
 
+from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
 from tack.lang import ir
@@ -84,24 +85,6 @@ _CMP_MAP = {
     "==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
 }
 
-
-# C/C++ reserved words that cannot be used as kernel function names
-_C_RESERVED = frozenset({
-    "auto", "break", "case", "char", "const", "continue", "default", "do",
-    "double", "else", "enum", "extern", "float", "for", "goto", "if",
-    "inline", "int", "long", "register", "return", "short", "signed",
-    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
-    "void", "volatile", "while",
-})
-
-
-def _safe_kernel_name(name: str) -> str:
-    """Prefix kernel names that collide with C reserved words."""
-    if name in _C_RESERVED:
-        return f"_tack_{name}"
-    return name
-
-
 class CUDACodeGen:
     """Generates CUDA C source from a Tack IR function."""
 
@@ -113,7 +96,7 @@ class CUDACodeGen:
     _integer_type_map = _C_TYPE_MAP
 
     def __init__(self, ir_func: ir.IRFunction):
-        self.ir_func = ir_func
+        self.ir_func = rename_gpu_bindings(ir_func)
         self._indent = 0
         self._lines: list[str] = []
         self._param_types: dict[str, ScalarType] = {}
@@ -164,7 +147,7 @@ class CUDACodeGen:
         params_c.append(f"{_INT} __n__")
 
         sig = ", ".join(params_c)
-        safe_name = _safe_kernel_name(func.name)
+        safe_name = kernel_entry_name(func.name)
         self._emit(f'extern "C" __global__ void {safe_name}({sig}) {{')
         self._indent += 1
 

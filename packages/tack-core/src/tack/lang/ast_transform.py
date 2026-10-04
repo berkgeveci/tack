@@ -12,6 +12,7 @@ import ast
 import copy
 
 from tack.lang import ir
+from tack.lang.ir_names import fresh_name
 from tack.lang.source_validation import UnsupportedSyntaxError, validate_source
 from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -49,6 +50,8 @@ class KernelTransformer(ast.NodeVisitor):
         self._call_bindings = None
         self._active_funcs = set()
         self._loop_depth = 0
+        self._used_names: set[str] = set()
+        self._component_names: dict[tuple[str, int], str] = {}
         self._inline_counter = 0  # unique suffix for inlined variables
         # Vector tracking: name → number of components
         self._vector_vars: dict[str, int] = {}
@@ -101,6 +104,8 @@ class KernelTransformer(ast.NodeVisitor):
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ir.IRFunction:
         self._function_name = node.name
+        self._used_names.update(n.id for n in ast.walk(node) if isinstance(n, ast.Name))
+        self._used_names.update(arg.arg for arg in node.args.args)
         params = []
         for arg in node.args.args:
             params.append(ir.IRParam(
@@ -114,6 +119,15 @@ class KernelTransformer(ast.NodeVisitor):
         function = ir.IRFunction(name=node.name, params=params, body=body)
         self._check_names_bound(function)
         return function
+
+    def _fresh_name(self, preferred):
+        return fresh_name(preferred, self._used_names)
+
+    def _component_name(self, name, component):
+        key = (name, component)
+        if key not in self._component_names:
+            self._component_names[key] = self._fresh_name(f"{name}__{component}")
+        return self._component_names[key]
 
     def _check_names_bound(self, function: ir.IRFunction):
         """Reject a read of a name the kernel never binds.
@@ -195,7 +209,7 @@ class KernelTransformer(ast.NodeVisitor):
             return [self._capture_value(v, statements) for v in value]
         if isinstance(value, ir.IRConstant) or (isinstance(value, ir.IRName) and not freeze_name):
             return value
-        name = f"__eval_{self._inline_counter}__"
+        name = self._fresh_name(f"__eval_{self._inline_counter}__")
         self._inline_counter += 1
         statements.append(ir.IRAssign(name, value))
         return ir.IRName(name)
@@ -249,7 +263,7 @@ class KernelTransformer(ast.NodeVisitor):
                 # Transform: for i in range(start, end, step)
                 # Into: for __step_idx__ in range(0, (end - start + step - 1) // step):
                 #            i = start + __step_idx__ * step
-                idx_name = f"__step_idx_{self._inline_counter}__"
+                idx_name = self._fresh_name(f"__step_idx_{self._inline_counter}__")
                 self._inline_counter += 1
                 total = ir.IRBinOp(
                     op="//",
@@ -271,7 +285,7 @@ class KernelTransformer(ast.NodeVisitor):
                 # Transform: for i in range(start, end)
                 # Into: for __start_idx__ in range(0, end - start):
                 #            i = start + __start_idx__
-                idx_name = f"__start_idx_{self._inline_counter}__"
+                idx_name = self._fresh_name(f"__start_idx_{self._inline_counter}__")
                 self._inline_counter += 1
                 decomp = ir.IRAssign(
                     target=target.id,
@@ -324,7 +338,7 @@ class KernelTransformer(ast.NodeVisitor):
         #     i = __nd_idx__ // dim1
         #     j = __nd_idx__ % dim1
         # For 3D: i = idx // (d1*d2), j = (idx // d2) % d1, k = idx % d2
-        idx_name = f"__nd_idx_{self._inline_counter}__"
+        idx_name = self._fresh_name(f"__nd_idx_{self._inline_counter}__")
         self._inline_counter += 1
 
         decomp_stmts = []
@@ -393,7 +407,7 @@ class KernelTransformer(ast.NodeVisitor):
         else_value, else_stmts = self._visit_expression(node.orelse)
         self._pre_stmts.extend(before)
         if then_stmts or else_stmts:
-            name = f"__conditional_{self._inline_counter}__"
+            name = self._fresh_name(f"__conditional_{self._inline_counter}__")
             self._inline_counter += 1
             self._pre_stmts.append(ir.IRIf(
                 condition,
@@ -484,9 +498,9 @@ class KernelTransformer(ast.NodeVisitor):
             rhs_components = self._visit_as_vector(node.value, ndim)
             stmts = []
             for c in range(ndim):
-                lhs = ir.IRName(f"{target.id}__{c}")
+                lhs = ir.IRName(self._component_name(target.id, c))
                 rhs = ir.IRBinOp(op=op, left=lhs, right=rhs_components[c])
-                stmts.append(ir.IRAssign(target=f"{target.id}__{c}", value=rhs))
+                stmts.append(ir.IRAssign(target=self._component_name(target.id, c), value=rhs))
             return stmts
 
         left = self.visit(target)
@@ -530,12 +544,12 @@ class KernelTransformer(ast.NodeVisitor):
             stmts = []
             temps = []
             for i, val in enumerate(self._visit_ordered(value_node.elts)):
-                tmp = f"__unpack_tmp_{self._inline_counter}_{i}__"
+                tmp = self._fresh_name(f"__unpack_tmp_{self._inline_counter}_{i}__")
                 if isinstance(val, list):
                     ndim = len(val)
                     self._vector_vars[tmp] = ndim
                     for c, comp in enumerate(val):
-                        stmts.append(ir.IRAssign(target=f"{tmp}__{c}", value=comp))
+                        stmts.append(ir.IRAssign(target=self._component_name(tmp, c), value=comp))
                     temps.append(('vector', tmp, ndim))
                 else:
                     stmts.append(ir.IRAssign(target=tmp, value=val))
@@ -547,7 +561,8 @@ class KernelTransformer(ast.NodeVisitor):
                     self._vector_vars[name] = ndim
                     for c in range(ndim):
                         stmts.append(ir.IRAssign(
-                            target=f"{name}__{c}", value=ir.IRName(f"{tmp}__{c}")))
+                            target=self._component_name(name, c),
+                            value=ir.IRName(self._component_name(tmp, c))))
                 else:
                     self._vector_vars.pop(name, None)
                     stmts.append(ir.IRAssign(target=name, value=ir.IRName(tmp)))
@@ -610,7 +625,7 @@ class KernelTransformer(ast.NodeVisitor):
 
         operands = [self._visit_expression(n) for n in [node.left, *node.comparators]]
         if any(stmts for _, stmts in operands):
-            name = f"__comparison_{self._inline_counter}__"
+            name = self._fresh_name(f"__comparison_{self._inline_counter}__")
             self._inline_counter += 1
             left, before = operands[0]
             self._pre_stmts.extend(before)
@@ -646,7 +661,7 @@ class KernelTransformer(ast.NodeVisitor):
         operands = [self._visit_expression(n) for n in node.values]
         values = [value for value, _ in operands]
         if any(stmts for _, stmts in operands):
-            name = f"__boolean_{self._inline_counter}__"
+            name = self._fresh_name(f"__boolean_{self._inline_counter}__")
             self._inline_counter += 1
             value, before = operands[0]
             self._pre_stmts.extend(before)
@@ -668,7 +683,7 @@ class KernelTransformer(ast.NodeVisitor):
         if isinstance(node.value, ast.Name) and node.value.id in self._vector_vars:
             if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, int):
                 comp = node.slice.value
-                return ir.IRName(f"{node.value.id}__{comp}")
+                return ir.IRName(self._component_name(node.value.id, comp))
 
         # field.shape[k] — a dimension query, not a load from a field
         dim_size = self._as_dim_size(node)
@@ -738,7 +753,7 @@ class KernelTransformer(ast.NodeVisitor):
         # If this name is a vector variable, return its components as a list
         if node.id in self._vector_vars:
             ndim = self._vector_vars[node.id]
-            return [ir.IRName(f"{node.id}__{c}") for c in range(ndim)]
+            return [ir.IRName(self._component_name(node.id, c)) for c in range(ndim)]
         return ir.IRName(name=node.id)
 
     def visit_Constant(self, node: ast.Constant) -> ir.IRConstant:
@@ -931,23 +946,24 @@ class KernelTransformer(ast.NodeVisitor):
         # Create a name renamer for the callee's body
         rename_map = {}
         for param_name in callee_params:
-            rename_map[param_name] = f"__{func_name}_{param_name}_{suffix}__"
+            rename_map[param_name] = self._fresh_name(f"__{func_name}_{param_name}_{suffix}__")
 
         # Detect return count: 0=void, 1=scalar, >1=tuple
         n_returns = self._detect_return_count(funcdef)
         if n_returns == 0:
             result_var = None
         elif n_returns > 1:
-            result_var = [f"__{func_name}_ret_{c}_{suffix}__" for c in range(n_returns)]
+            result_var = [self._fresh_name(f"__{func_name}_ret_{c}_{suffix}__")
+                          for c in range(n_returns)]
         else:
-            result_var = f"__{func_name}_ret_{suffix}__"
+            result_var = self._fresh_name(f"__{func_name}_ret_{suffix}__")
 
         # Rename all local variables in the callee body to avoid collisions
         # We collect all assigned names and create renames for them
         assigned_names = self._collect_assigned_names(funcdef.body)
-        for name in assigned_names:
+        for name in sorted(assigned_names):
             if name not in rename_map:
-                rename_map[name] = f"__{func_name}_{name}_{suffix}__"
+                rename_map[name] = self._fresh_name(f"__{func_name}_{name}_{suffix}__")
 
         # Override rename map for local array / shared memory params:
         # alias the caller's array name directly so the inlined body
@@ -1003,7 +1019,8 @@ class KernelTransformer(ast.NodeVisitor):
                 ndim = len(arg_val)
                 self._vector_vars[renamed] = ndim
                 for c in range(ndim):
-                    stmts.append(ir.IRAssign(target=f"{renamed}__{c}", value=arg_val[c]))
+                    stmts.append(ir.IRAssign(
+                        target=self._component_name(renamed, c), value=arg_val[c]))
             else:
                 stmts.append(ir.IRAssign(target=renamed, value=arg_val))
 
@@ -1036,7 +1053,7 @@ class KernelTransformer(ast.NodeVisitor):
         # Check if result is a vector
         if result_var in self._vector_vars:
             ndim = self._vector_vars[result_var]
-            return [ir.IRName(f"{result_var}__{c}") for c in range(ndim)]
+            return [ir.IRName(self._component_name(result_var, c)) for c in range(ndim)]
 
         return ir.IRName(result_var)
 
@@ -1212,7 +1229,7 @@ class KernelTransformer(ast.NodeVisitor):
         self._vector_vars[name] = ndim
         stmts = []
         for c, comp in enumerate(components):
-            stmts.append(ir.IRAssign(target=f"{name}__{c}", value=comp))
+            stmts.append(ir.IRAssign(target=self._component_name(name, c), value=comp))
         return stmts
 
     def _store_vector_field(self, target: ast.Subscript, components: list) -> list:
@@ -1253,7 +1270,7 @@ class KernelTransformer(ast.NodeVisitor):
         if isinstance(obj_node, ast.Name) and obj_node.id in self._vector_vars:
             vec_name = obj_node.id
             ndim = self._vector_vars[vec_name]
-            components = [ir.IRName(f"{vec_name}__{c}") for c in range(ndim)]
+            components = [ir.IRName(self._component_name(vec_name, c)) for c in range(ndim)]
             return self._emit_vector_method(method_name, components, ndim, node.args)
 
         # Also handle chained expressions: (expr).normalized()

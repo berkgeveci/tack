@@ -10,6 +10,7 @@ All integer locals and loop indices use 64-bit ``long`` to support grids
 with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
+from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
 from tack.lang import ir
@@ -57,22 +58,6 @@ _BINOP_MAP = {
     "<<": "<<", ">>": ">>", "&": "&", "|": "|", "^": "^",
 }
 
-# C/MSL reserved words that cannot be used as kernel function names
-_MSL_RESERVED = frozenset({
-    "auto", "break", "case", "char", "const", "continue", "default", "do",
-    "double", "else", "enum", "extern", "float", "for", "goto", "if",
-    "inline", "int", "long", "register", "return", "short", "signed",
-    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
-    "void", "volatile", "while", "half", "uint", "uchar", "ushort", "ulong",
-})
-
-
-def _safe_kernel_name(name: str) -> str:
-    if name in _MSL_RESERVED:
-        return f"_tack_{name}"
-    return name
-
-
 _CMP_MAP = {
     "==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
 }
@@ -84,7 +69,7 @@ class MSLCodeGen:
     _integer_type_map = _MSL_TYPE_MAP
 
     def __init__(self, ir_func: ir.IRFunction):
-        self.ir_func = ir_func
+        self.ir_func = rename_gpu_bindings(ir_func)
         self._indent = 0
         self._lines: list[str] = []
         self._param_types: dict[str, ScalarType] = {}
@@ -171,7 +156,7 @@ class MSLCodeGen:
             params_msl.append("uint __local_tid__ [[thread_position_in_threadgroup]]")
 
         sig = ",\n    ".join(params_msl)
-        safe_name = _safe_kernel_name(func.name)
+        safe_name = kernel_entry_name(func.name)
         self._emit(f"kernel void {safe_name}(")
         self._emit(f"    {sig})")
         self._emit("{")

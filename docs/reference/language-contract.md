@@ -88,6 +88,16 @@ specialization is first built; cached IR preserves the inlined bodies.
 Rebinding a callable afterward is not a supported way to update compiled
 kernels; recreate the kernel to capture changed bindings.
 
+**Required: identifier preservation.** Python-legal parameter, local,
+loop, allocation and kernel names retain their binding identity even when
+they are target-language keywords, builtins or compiler helper names.
+GPU code generation encodes every binding into a dedicated namespace and
+all backends use a shared encoding for kernel entry lookup, including
+Unicode names. Generated lowering temporaries, vector components,
+template parameters and packed scalar buffers allocate fresh spellings
+before code generation. These internal spellings are not a public ABI;
+argument order and resource binding indices stay unchanged.
+
 **Current behavior:** kernels are compiled from inspectable source; a bare
 REPL or dynamically generated function may not provide that source. Kernel
 arguments are positional. Kernel return values are not a host result API;

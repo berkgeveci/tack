@@ -56,8 +56,8 @@ def test_field_parameters_are_global_pointers():
             out[i] = x[i] * 2.0
 
     src = _source(scale, _field(), _field())
-    assert "__global float* x" in src
-    assert "__global float* out" in src
+    assert "__global float* tack_var_a_x" in src
+    assert "__global float* tack_var_a_out" in src
     assert "restrict" not in src
 
 
@@ -68,8 +68,8 @@ def test_scalar_parameters_are_not_pointers():
             out[i] = x[i] * alpha
 
     src = _source(scale, _field(), _field(), 2.5)
-    assert "float alpha" in src
-    assert "__global float* alpha" not in src
+    assert "float tack_var_a_alpha" in src
+    assert "__global float* tack_var_a_alpha" not in src
 
 
 def test_dtype_mapping():
@@ -123,7 +123,7 @@ def test_shared_memory_is_local_address_space():
             out[i] = buf[tack.thread_id()]
 
     src = _source(reduce_ish, _field(), _field())
-    assert "__local float buf[256]" in src
+    assert "__local float tack_var_a_buf[256]" in src
     assert "__shared__" not in src
 
 

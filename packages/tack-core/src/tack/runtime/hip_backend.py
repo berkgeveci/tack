@@ -33,6 +33,7 @@ _HIP_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from hip import hip, hiprtc
 
 from tack.codegen.hip_gen import generate_hip_source
+from tack.codegen.identifiers import kernel_entry_name
 
 _REDUCE_HIP_SUM = """
 #include <hip/hip_runtime.h>
@@ -498,14 +499,12 @@ class HIPBackend(Backend):
         """
         import copy
 
-        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
         packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
         _, pack_info = pack_scalars(packed, effective_args)
         verify_ir(packed, 'packed')
         annotate_types(packed)
@@ -517,13 +516,14 @@ class HIPBackend(Backend):
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledHIPKernel:
         """Compile Tack IR → HIP C → code object → hipFunction."""
+        kernel_name = kernel_entry_name(ir_func.name)
         hip_source = generate_hip_source(ir_func)
-        code = _compile_code_object(hip_source, ir_func.name)
+        code = _compile_code_object(hip_source, kernel_name)
 
         err, module = hip.hipModuleLoadData(code)
         _check_hip(err)
 
-        err, func = hip.hipModuleGetFunction(module, ir_func.name.encode())
+        err, func = hip.hipModuleGetFunction(module, kernel_name.encode())
         _check_hip(err)
 
         param_types = [p.type_annotation for p in ir_func.params]
@@ -533,7 +533,7 @@ class HIPBackend(Backend):
         for i, p in enumerate(ir_func.params):
             if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
                 texture_shapes[i] = p._texture_shape
-        return CompiledHIPKernel(module, func, ir_func.name, param_types,
+        return CompiledHIPKernel(module, func, kernel_name, param_types,
                                  param_is_field, param_is_texture, texture_shapes)
 
     def reduce_field(self, field, op: str) -> float:

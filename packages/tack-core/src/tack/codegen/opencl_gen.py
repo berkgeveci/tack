@@ -11,6 +11,7 @@ This module reuses the CUDA codegen with OpenCL-specific overrides.
 """
 
 from tack.codegen.cuda_gen import _BINOP_MAP, CUDACodeGen
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
@@ -82,8 +83,7 @@ class OpenCLCodeGen(CUDACodeGen):
         params_c.append(f"{_OCL_INT} __n__")
 
         sig = ", ".join(params_c)
-        from tack.codegen.cuda_gen import _safe_kernel_name
-        safe_name = _safe_kernel_name(func.name)
+        safe_name = kernel_entry_name(func.name)
         self._emit(f"__kernel void {safe_name}({sig}) {{")
         self._indent += 1
 

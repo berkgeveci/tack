@@ -32,6 +32,7 @@ from tack.runtime.kernel_utils import (
 )
 
 _L0_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.opencl_gen import generate_opencl_source
 
 # ---------------------------------------------------------------------------
@@ -1128,14 +1129,12 @@ class LevelZeroBackend(Backend):
         """
         import copy
 
-        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
         packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
         _, pack_info = pack_scalars(packed, effective_args)
         verify_ir(packed, 'packed')
         annotate_types(packed)
@@ -1147,6 +1146,7 @@ class LevelZeroBackend(Backend):
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledL0Kernel:
         """Compile Tack IR → OpenCL C → SPIR-V → ze_module → ze_kernel."""
+        kernel_name = kernel_entry_name(ir_func.name)
         ze = _get_ze()
         workgroup_size = min(256, self._compute_props.maxGroupSizeX)
 
@@ -1193,7 +1193,7 @@ class LevelZeroBackend(Backend):
         # Create kernel
         kernel_desc = ze_kernel_desc_t(
             stype=ZE_STRUCTURE_TYPE_KERNEL_DESC, pNext=None,
-            flags=0, pKernelName=ir_func.name.encode())
+            flags=0, pKernelName=kernel_name.encode())
         kernel = ze_kernel_handle_t()
         _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
                                      ctypes.byref(kernel)),
@@ -1206,7 +1206,7 @@ class LevelZeroBackend(Backend):
         for i, p in enumerate(ir_func.params):
             if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
                 texture_shapes[i] = p._texture_shape
-        return CompiledL0Kernel(module, kernel, ir_func.name,
+        return CompiledL0Kernel(module, kernel, kernel_name,
                                 param_types, param_is_field, workgroup_size,
                                 param_is_texture, texture_shapes)
 

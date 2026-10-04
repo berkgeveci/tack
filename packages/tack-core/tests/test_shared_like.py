@@ -126,7 +126,7 @@ def test_shared_like_cuda_codegen():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "__shared__ float smem[256]" in src
+    assert "__shared__ float tack_var_a_smem[256]" in src
 
 
 def test_shared_like_i32_cuda_codegen():
@@ -153,4 +153,4 @@ def test_shared_like_i32_cuda_codegen():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "__shared__ int smem[256]" in src
+    assert "__shared__ int tack_var_a_smem[256]" in src

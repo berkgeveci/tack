@@ -101,7 +101,7 @@ def test_kernel_named_int(backend):
 
 
 def test_codegen_escapes_reserved_name():
-    """Verify codegen output uses _tack_ prefix for reserved names."""
+    """Verify codegen output uses the GPU kernel namespace for reserved names."""
     from tack.codegen.cuda_gen import generate_cuda_source
     from tack.lang import ir
     from tack.lang.ir_type_annotate import annotate_types
@@ -118,7 +118,7 @@ def test_codegen_escapes_reserved_name():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "_tack_double" in src
+    assert "tack_kernel_a_double" in src
     assert "void double(" not in src
 
 

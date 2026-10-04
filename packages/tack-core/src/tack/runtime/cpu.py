@@ -61,6 +61,7 @@ from tack.lang.field import NumpyBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 _CPU_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.llvm_gen import generate_llvm_ir
 
 # ── NUMA interleave support ──────────────────────────────────────────
@@ -557,7 +558,7 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
     engine = llvm.create_mcjit_compiler(mod, tm_jit)
 
     # Get function pointer
-    func_ptr = engine.get_function_address(ir_func.name)
+    func_ptr = engine.get_function_address(kernel_entry_name(ir_func.name))
     if func_ptr == 0:
         raise RuntimeError(f"Failed to JIT compile kernel '{ir_func.name}'")
 
