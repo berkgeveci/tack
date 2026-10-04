@@ -244,26 +244,25 @@ def test_export_memory():
 
 # --- NVRTC option passing (CX7) ---
 
-def test_nvrtc_accepts_both_option_sets():
-    """Every option set the backend uses must compile a trivial kernel.
+def test_nvrtc_accepts_safe_option_set():
+    """The backend's safe option set must compile a trivial kernel.
 
     cuda-python marshals a Python list of bytes itself; handed a ctypes
     ``c_char_p`` array it mis-read the second entry when
     ``--extra-device-vectorization`` came first and rejected the compile
     with "unrecognized option". That broke every kernel that keeps fast
-    math, which is nearly all of them, while the precise-math kernels that
-    pass a single option kept working.
+    math, while the precise-math kernels that passed a single option kept
+    working. All kernels now use the same safe settings; this regression
+    exercises the current multi-option list through the actual binding.
     """
     from tack.runtime.cuda_backend import _compile_ptx
     src = 'extern "C" __global__ void k(float* a) { a[0] = 1.0f; }'
-    assert _compile_ptx(src, "k", precise_math=False)
-    assert _compile_ptx(src, "k", precise_math=True)
+    assert _compile_ptx(src, "k")
 
 
-def test_fast_math_and_precise_kernels_compile_in_either_order():
-    """A floating floor division selects the precise option set; an
-    ordinary kernel keeps fast math. Both must compile in one process,
-    whichever comes first."""
+def test_ordinary_and_floor_division_kernels_compile_in_sequence():
+    """Ordinary and floating floor-division kernels compile and run in
+    one process with the same safe settings, preserving the CX7 coverage."""
     x = tack.field(dtype=tack.f32, shape=(8,))
     y = tack.field(dtype=tack.f32, shape=(8,))
     out = tack.field(dtype=tack.f32, shape=(8,))

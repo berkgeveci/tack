@@ -9,7 +9,6 @@ import pytest
 
 import tack
 from tack.codegen.cuda_gen import generate_cuda_source
-from tack.codegen.float_division import uses_float_division
 from tack.codegen.hip_gen import generate_hip_source
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.msl_gen import generate_msl_source
@@ -224,7 +223,7 @@ def test_destination_f64_does_not_widen_f32_operations(f64_backend):
 
 
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
-def test_annotations_and_precise_math_detection(dtype):
+def test_annotations_keep_floating_result_types(dtype):
     tack.init(arch=tack.cpu)
     a, b = _field([7.5], dtype), _field([3.0], dtype)
     out = tack.field(dtype, (1, 4))
@@ -233,10 +232,11 @@ def test_annotations_and_precise_math_detection(dtype):
                   if isinstance(n, ir.IRBinOp) and n.op in ('//', '%')]
     assert len(operations) == 4
     assert all(n.dtype is dtype for n in operations)
-    assert uses_float_division(function)
     integer_args = _field([7], tack.i32), _field([3], tack.i32), tack.field(tack.i32, (1, 4))
     integer_function, _ = _prepare_ir(_divmod, integer_args)
-    assert not uses_float_division(integer_function)
+    integer_operations = [n for n in walk_ir(integer_function)
+                          if isinstance(n, ir.IRBinOp) and n.op in ('//', '%')]
+    assert all(n.dtype is tack.i32 for n in integer_operations)
 
 
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)

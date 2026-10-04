@@ -24,7 +24,6 @@ from tack.runtime.kernel_utils import (
 )
 
 _METAL_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
-from tack.codegen.float_division import uses_float_division
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.msl_gen import generate_msl_source
 
@@ -205,8 +204,7 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
         print(f"[Tack] Dumped MSL to {path}")
 
     options = Metal.MTLCompileOptions.alloc().init()
-    if uses_float_division(ir_func):
-        options.setFastMathEnabled_(False)
+    options.setFastMathEnabled_(False)
     library, error = device.newLibraryWithSource_options_error_(
         msl_source, options, None
     )
@@ -472,6 +470,7 @@ class MetalBackend(Backend):
         func_name = func_names[op]
 
         options = Metal.MTLCompileOptions.alloc().init()
+        options.setFastMathEnabled_(False)
         library, error = self._device.newLibraryWithSource_options_error_(
             msl_source, options, None)
         if library is None:

@@ -33,7 +33,6 @@ _CUDA_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from cuda.bindings import driver, nvrtc
 
 from tack.codegen.cuda_gen import generate_cuda_source
-from tack.codegen.float_division import uses_float_division
 from tack.codegen.identifiers import kernel_entry_name
 
 # Shareable-handle types ExportableCUDABuffer may ask the driver for, in
@@ -370,20 +369,17 @@ class ExportableCUDABuffer(DeviceBuffer):
             pass
 
 
-def _compile_ptx(cuda_source: str, func_name: str, *, precise_math=False) -> bytes:
+def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     """Compile CUDA C source to PTX via NVRTC."""
     src = cuda_source.encode("utf-8")
     err, prog = nvrtc.nvrtcCreateProgram(src, f"{func_name}.cu".encode(), 0, None, None)
     _check(err)
 
-    opts = [b"--extra-device-vectorization"]
-    if not precise_math:
-        opts.append(b"--use_fast_math")
-    # Pass the Python list, not a ctypes array. cuda-python marshals the
-    # list itself; handed a `c_char_p` array it mis-reads the second entry
-    # in this order ("unrecognized option d-extra-invalid index found"),
-    # which with the old order happened to work and with this order failed
-    # every fast-math kernel on the branch (CX7).
+    # Preserve NaNs, signed zeros, and expression grouping in every kernel.
+    # Adjacent multiply/add contraction is permitted by the language contract.
+    opts = [b"--ftz=false", b"--prec-div=true", b"--prec-sqrt=true",
+            b"--fmad=true", b"--extra-device-vectorization"]
+    # cuda-python marshals a list of bytes; a ctypes array can be misread.
     compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
@@ -665,8 +661,7 @@ class CUDABackend(Backend):
         """Compile Tack IR → CUDA C → PTX → CUfunction."""
         kernel_name = kernel_entry_name(ir_func.name)
         cuda_source = generate_cuda_source(ir_func)
-        ptx = _compile_ptx(cuda_source, kernel_name,
-                           precise_math=uses_float_division(ir_func))
+        ptx = _compile_ptx(cuda_source, kernel_name)
 
         err, module = driver.cuModuleLoadData(ptx)
         _check(err)

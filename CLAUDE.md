@@ -254,12 +254,27 @@ divisor's sign; zero quotient follows true division's sign. NaNs and
 infinite dividends return NaNs; finite/infinite pairs follow Python-style
 sign correction. Evaluated divisors must be nonzero, and denormal support
 remains outside this portable increment. CUDA omits `--use_fast_math`
-and Metal disables `fastMathEnabled` only for kernels containing these
-typed floating operations, including other math in that compiled kernel.
+and explicitly selects non-flushing, precise division/sqrt and permitted
+multiply/add contraction. Metal disables `fastMathEnabled` for every
+kernel, including runtime reduction sources on both backends.
 CPU floating negation uses LLVM `fneg`; floating `!=` and truth tests use
 unordered inequality so NaN guards and signed-zero expressions agree.
-See `test_float_division.py` and the language contract. The general
-floating-point policy and reductions remain open.
+See `test_float_division.py` and the language contract.
+
+The floating-point baseline requires annotated precision, exceptional
+classes/signs and expression grouping. Adjacent multiply/add contraction
+is permitted; general reassociation is not. CPU emits no fast-math flags;
+HIP/OpenCL retain default settings without unsafe options. Floating math
+calls convert arguments to the result precision first; integer arguments
+default to f32, irrespective of the destination field. CPU libm calls use
+the matching f32/f64 symbols and return that precision before nested
+arithmetic. Scalar floating min/max prefer a number to NaN and permit
+either zero sign on ties. Denormals, NaN payloads/signaling, exception
+flags/traps, cross-backend bitwise agreement and global math error bounds
+are outside the portable baseline. CPU callers must retain the default
+round-to-nearest, untrapped environment. `test_float_semantics.py` checks
+classes/signs, grouping, permitted contraction and bounded-domain math.
+Reduction order/accuracy guarantees remain the next stage-five task.
 
 ### 64-bit loop indices on GPU
 

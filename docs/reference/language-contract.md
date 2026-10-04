@@ -1,6 +1,6 @@
 # Kernel language contract (draft)
 
-This is the draft contract for compiler hardening, updated for the fourth
+This is the draft contract for compiler hardening, updated for the fifth
 numerical-semantics increment on 2026-10-03.
 It defines the intended portable kernel model, identifies known violations,
 and separates decisions still open for discussion. It is **not a claim that
@@ -293,23 +293,24 @@ floating infinity; it must not go through an invalid float-to-integer cast.
 Floating negation flips zero's sign. Floating `!=` and truth tests treat
 NaN as unequal/nonzero, so a nonzero-divisor guard does not accidentally
 discard a NaN operation on CPU. Other ordered comparisons with NaN are
-false. These expression rules are covered alongside the operator helpers;
-the broader GPU math-mode policy for kernels without them remains open.
+false. These expression rules apply to ordinary kernels as well as the
+operator helpers; see the floating-point execution policy below.
 
 **Required caller constraint:** the evaluated divisor is nonzero. No
 device `ZeroDivisionError` is promised; guards must preserve the stated
 evaluation/side-effect ordering. Portable guarantees here exclude denormal
-inputs and nonzero denormal intermediate/results: device denormal support
-and flush behavior remain part of the open general floating-point policy.
+inputs and nonzero denormal intermediate/results, as specified by the
+floating-point execution policy below. Extending denormal support would
+require a capability policy or fallback.
 Operands evaluate once, left to right, before the typed arithmetic.
 
-CUDA kernels containing typed floating `//` or `%` compile without
-`--use_fast_math`; Metal disables `fastMathEnabled` for those kernels.
-This applies to the whole compiled kernel, so other arithmetic within it
-also sees the stricter mode. Kernels without these operations retain their
-existing settings. LLVM helpers use ordinary floating instructions without
-fast-math flags; HIP/OpenCL retain their existing default math settings.
-This scoped requirement follows the
+All CUDA kernels compile without `--use_fast_math`; Metal disables
+`fastMathEnabled` for all kernels. LLVM helpers use ordinary floating
+instructions without fast-math flags; HIP/OpenCL retain default math
+settings without unsafe options. The previous increment restricted safe
+math to kernels with floating `//` or `%`; the execution policy below
+extends it to every kernel, including runtime reduction sources. These
+settings follow the
 [NVRTC fast-math options](https://docs.nvidia.com/cuda/nvrtc/index.html#supported-compile-options)
 and [Metal compile options](https://developer.apple.com/documentation/metal/mtlcompileoptions/fastmathenabled).
 
@@ -444,13 +445,112 @@ guarantee. All GPU generators share unsigned-carrier power helpers; LLVM
 uses an internal typed helper. Exponentiation by squaring bounds execution
 to at most 64 iterations, including outside-domain negative signed counts.
 
-The following policies remain
-**open** and must be resolved before broader numerical conformance claims:
+### Floating-point execution policy
+
+**Required baseline:** f32 and f64 expressions use their annotated
+precision. Floating operands promote to f64 if present, otherwise f32;
+an output field does not widen the input computation. Floating math
+builtins convert arguments to their annotated result precision before
+the call and return that precision before enclosing arithmetic. Integer
+arguments to `sqrt`, trigonometric, exponential and logarithmic functions
+convert to f32 unless another argument is f64. Integer `abs`, `min`, `max`
+and power retain the integer rules above. For example, storing `sqrt(i64)`
+in an f64 field widens an f32 result; `sqrt(tack.f64(i64))` requests f64.
+
+The caller must leave the CPU floating-point environment at its default
+round-to-nearest, ties-to-even mode, with exceptions untrapped. Kernels do
+not change or restore that environment. Basic arithmetic uses the backend's
+normal floating operations; f32 division and square root are not promised
+to be correctly rounded on every GPU. Overflow remains floating infinity
+rather than narrowing through an integer. Floating `/` by signed zero
+produces signed infinity for a finite nonzero numerator, and zero/zero
+produces NaN; it does not raise a Python exception. This does not extend
+the valid divisor domain of integer division or floating `//`/`%`.
+
+**Required exceptional behavior:** ordinary operations preserve the
+specified NaN/infinity classes, comparisons, truth tests and signed zeros.
+In particular, `NaN != NaN` is true; other comparisons with NaN are false;
+NaN is true in a condition; multiplying infinity by zero or subtracting
+infinity from itself produces NaN. An optimizer must not replace `x-x`
+or `x*0` by positive zero for arbitrary floating inputs. Unary negation
+flips zero's sign; `abs`/`fabs` clear it. `floor` and `ceil` preserve signed
+zero and nonfinite classes. `sqrt` preserves signed zero and positive
+infinity and returns NaN for negative nonzero inputs. NaN payloads/signs,
+signaling versus quiet NaNs, exception flags and traps are outside the
+portable API.
+
+Floating `min`/`max` prefer the numeric operand when exactly one input is
+NaN and return NaN when both are NaN. This is a numerical-kernel rule,
+rather than Python's order-dependent handling of NaNs in `min`/`max`.
+When both inputs compare equal to zero, either input zero sign is allowed.
+Reduction and atomic min/max are separate operations and do not acquire
+these guarantees from the scalar builtin rule.
+
+**Permitted contraction:** a backend may fuse adjacent multiply/add or
+multiply/subtract operations into one rounding. Contraction can change
+low bits, cancellation, intermediate overflow and zero signs. It is
+permitted, not required; CPU and GPU need not choose the same result.
+General reassociation of addition or multiplication is not permitted:
+`(a+b)+c` and `a+(b+c)` retain their grouping. No cross-backend bitwise
+reproducibility or rounding of every source intermediate is promised.
+Tests use an exact rational oracle to accept either the separate or fused
+result for a contraction-sensitive expression, and separately require
+parenthesized sums with cancellation to retain their order.
+
+**Compiler configuration:** CUDA explicitly selects `--ftz=false`,
+`--prec-div=true`, `--prec-sqrt=true`, and `--fmad=true`, without
+`--use_fast_math`. Metal sets `fastMathEnabled` false. Both apply to
+ordinary kernels and runtime reduction sources. CPU emits no LLVM
+fast-math flags; HIP and OpenCL receive no unsafe/relaxed-math options.
+These choices preserve classes and grouping while retaining permitted
+backend contraction. There is currently one policy, so no mutable math
+mode is omitted from the variant cache key and no per-dispatch scan is
+needed. A future selectable mode must participate in specialization
+identity and preserve any operator-specific restrictions.
+
+**Portable domain and accuracy:** nonzero denormal inputs, intermediates
+and results remain outside this baseline. Safe math does not imply that
+all hardware supports gradual underflow. Denormal capability reporting
+or a software fallback would be needed to extend this domain. Math
+builtins use standard backend routines, rather than deliberately selected
+fast/native approximations. Except for the class/sign rules above,
+transcendental and floating-power exceptional inputs outside their finite
+mathematical domains have no portable result promise. Global error bounds
+vary by function, precision and backend; there is no blanket ULP bound.
+Algorithms requiring tighter accuracy must establish their own domain and
+error budget. See [OpenCL numerical compliance](https://registry.khronos.org/OpenCL/specs/unified/html/OpenCL_C.html#opencl-numerical-compliance)
+and the [CUDA math reference](https://docs.nvidia.com/cuda/cuda-math-api/index.html).
+
+`test_float_semantics.py` checks CPU/GPU execution without introducing
+`//` or `%` to select stricter compilation. It covers seeded normal inputs,
+exceptional arithmetic, signed zeros, unsafe identity folds, comparisons
+and truth, scalar min/max, parenthesized cancellation and permitted
+contraction, sqrt edge cases, all fifteen math/power forms on bounded
+domains, mixed integer/float arguments, f32 libm result rounding and
+explicit widening. Standalone arithmetic/sqrt finite checks use four ULP;
+the bounded math smoke checks use eight ULP against typed NumPy. These
+are stated regression bounds for their tested domains, not an exhaustive
+proof or a new general math-library guarantee. Host-sanitized CUDA/HIP
+checks and OpenCL syntax checks supplement hardware testing.
+
+**Behavior change:** CUDA's unconditional fast-math option and Metal's
+default fast mode are removed. Programs may observe different low bits,
+images and throughput. The prior Metal mode demonstrably replaced
+nonfinite identity expressions with zero, folded NaN self-comparisons to
+false, and reassociated parenthesized additions. CPU libm calls previously
+failed while declaring an empty intrinsic; they now call the precision-
+appropriate external `tanf`/`tan`, `asinf`/`asin`, `acosf`/`acos`,
+`atanf`/`atan` and `atan2f`/`atan2` symbols. GPU math arguments explicitly
+convert to their annotated type, avoiding ambiguous OpenCL overloads for
+integer and mixed arguments. No performance improvement is claimed.
+
+The following extensions remain **open** before broader numerical
+conformance claims:
 
 | Question | Current evidence | Decision needed |
 |---|---|---|
 | Remaining arithmetic domains | Fixed-width wrapping, casts/promotion, valid shifts, true division, integer power, and floating `//`/`%` are defined | Any extension beyond the stated invalid-operation and denormal constraints |
-| Floating-point results | Backends use their own arithmetic and math implementations | Rounding, contraction/reassociation, NaNs, infinities, signed zero, denormals, error tolerances |
+| Floating-point extensions | Safe math, annotated precision, classes/signs, grouping and permitted contraction are defined above | Denormal support and tighter function/domain-specific accuracy or reproducibility guarantees |
 | Reductions | Parallel implementations may change operation order | Permitted order variation, determinism, and numerical tolerances |
 
 The differential tests cover small exact integer results and an exact
@@ -635,6 +735,8 @@ numerical/capability decisions above remain subsequent work.
 Stage five has implemented integer floor division/remainder, fixed-width
 arithmetic and conversions, true division, integer power, and floating
 floor division/remainder, including their promotion domains and caller
-constraints above. The general floating-point policy and reductions
+constraints above. The floating-point baseline now defines safe compilation,
+precision, exceptional classes, grouping and permitted contraction, with
+explicit denormal and accuracy limits. Reduction order/accuracy guarantees
 remain within stage five.
 The workgroup/capability contract remains a separate stage.

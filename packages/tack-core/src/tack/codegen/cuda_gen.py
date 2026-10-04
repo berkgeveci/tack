@@ -695,6 +695,9 @@ class CUDACodeGen:
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
         dtype = getattr(node, 'dtype', None)
+        if dtype in (f32, f64):
+            ctype = self._integer_type_map[dtype]
+            args = [f'(({ctype})({arg}))' for arg in args]
         if node.func_name == 'pow':
             fixed = self._integers.operation('**', dtype, *args)
             if fixed is not None:

@@ -119,12 +119,29 @@ rounded-division boundary errors and integer conversion overflow. The
 helpers explicitly preserve signed zeros and nonfinite result classes.
 Do not replace them with C `%` or an integer cast of `floor(a / b)`.
 
-`uses_float_division` inspects typed IR only on variant compilation.
-CUDA uses this to omit `--use_fast_math`, and Metal disables
-`fastMathEnabled` for these kernels. Inspection emits the same helpers;
-the compile option applies to the entire kernel. Integer-only kernels and
-kernels without floating `//`/`%` keep their existing math settings.
+All CUDA kernels omit `--use_fast_math`, explicitly selecting non-flushing,
+precise division/sqrt and permitted multiply/add contraction. Metal
+disables `fastMathEnabled` for all kernels. Runtime reduction sources use
+the same settings. No operator scan or mutable per-kernel math mode is
+needed. Inspection emits the same arithmetic helpers as dispatch.
 See the language contract for the nonzero-divisor and denormal domains.
+
+## Floating-point policy
+
+Floating math calls convert arguments to their annotated result precision
+before calling backend routines. CPU libm functions use their f32/f64
+symbols and return that precision before enclosing arithmetic; integer
+math arguments default to f32 even when the destination field is f64.
+OpenCL/Metal calls need explicit casts to avoid overload ambiguity.
+
+CPU emits no fast-math flags and HIP/OpenCL retain standard compiler
+settings without unsafe math options. Expression grouping and nonfinite
+classes/signs must survive optimization. Adjacent multiply/add contraction
+is permitted, so CPU/GPU results need not agree bitwise. Scalar floating
+min/max prefer a number to NaN; the sign of equal zero ties is unspecified.
+Denormal support and global math accuracy are not inferred from safe
+compiler settings. `test_float_semantics.py` checks execution and explicit
+regression bounds; the language contract states the supported domains.
 
 ## LLVM Codegen (`llvm_gen.py`, 1,008 lines)
 

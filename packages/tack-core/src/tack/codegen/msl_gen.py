@@ -710,6 +710,9 @@ inline float {name}(device float* data, float u, float v, float w) {{
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
         dtype = getattr(node, 'dtype', None)
+        if dtype in (f32, f64):
+            ctype = _MSL_TYPE_MAP[dtype]
+            args = [f'(({ctype})({arg}))' for arg in args]
         if node.func_name == 'pow':
             fixed = self._integers.operation('**', dtype, *args)
             if fixed is not None:

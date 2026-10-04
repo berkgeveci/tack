@@ -6,16 +6,7 @@ can disagree at rounded integer boundaries. Zero divisors are outside the
 caller domain; signed zero and nonfinite inputs need safe compiler math.
 """
 
-from tack.lang import ir
-from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import f32, f64
-
-
-def uses_float_division(ir_func):
-    """Whether a typed kernel needs safe math for floating // or %."""
-    return any(isinstance(node, ir.IRBinOp) and node.op in ('//', '%')
-               and getattr(node, 'dtype', None) in (f32, f64)
-               for node in walk_ir(ir_func))
 
 
 def float_division_expr(node, left, right, type_map, helpers, *, dtype=None):

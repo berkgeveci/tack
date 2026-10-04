@@ -1035,6 +1035,9 @@ class LLVMCodeGen:
     def _emit_call(self, node: ir.IRCall) -> llvm_ir.Value:
         """Emit a math builtin call."""
         args = [self._emit_expr(a) for a in node.args]
+        dtype = getattr(node, 'dtype', None)
+        if dtype in (f32, f64):
+            args = [self._coerce_to(a, _llvm_type(dtype)) for a in args]
 
         # min/max with two args
         if node.func_name in ("min", "max") and len(args) == 2:
@@ -1129,13 +1132,11 @@ class LLVMCodeGen:
     def _emit_libm_call(self, name: str, args: list[llvm_ir.Value]) -> llvm_ir.Value:
         """Emit a call to a libm function (linked at runtime)."""
         args = [self._to_float(a) for a in args]
-        # Use f64 for libm
-        f64_type = llvm_ir.DoubleType()
-        args = [self._coerce_to(a, f64_type) for a in args]
-        fn_type = llvm_ir.FunctionType(f64_type, [f64_type] * len(args))
-        fn = self.module.declare_intrinsic(f'llvm.{name}' if False else '', [])
-        # Actually, use a regular external function declaration for libm
-        fn_name = name
+        target = llvm_ir.DoubleType() if any(isinstance(a.type, llvm_ir.DoubleType)
+                                            for a in args) else llvm_ir.FloatType()
+        args = [self._coerce_to(a, target) for a in args]
+        fn_type = llvm_ir.FunctionType(target, [target] * len(args))
+        fn_name = name if isinstance(target, llvm_ir.DoubleType) else name + 'f'
         try:
             fn = self.module.get_global(fn_name)
         except KeyError:
