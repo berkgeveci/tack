@@ -133,7 +133,7 @@ def test_negation():
             for i in range(10):
                 out[i] = -x[i]
     """)
-    assert "fsub float" in ll
+    assert "fneg float" in ll
 
 
 def test_comparison_ops():

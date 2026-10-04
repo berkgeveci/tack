@@ -33,6 +33,7 @@ _CUDA_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from cuda.bindings import driver, nvrtc
 
 from tack.codegen.cuda_gen import generate_cuda_source
+from tack.codegen.float_division import uses_float_division
 from tack.codegen.identifiers import kernel_entry_name
 
 # Shareable-handle types ExportableCUDABuffer may ask the driver for, in
@@ -369,13 +370,15 @@ class ExportableCUDABuffer(DeviceBuffer):
             pass
 
 
-def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
+def _compile_ptx(cuda_source: str, func_name: str, *, precise_math=False) -> bytes:
     """Compile CUDA C source to PTX via NVRTC."""
     src = cuda_source.encode("utf-8")
     err, prog = nvrtc.nvrtcCreateProgram(src, f"{func_name}.cu".encode(), 0, None, None)
     _check(err)
 
-    opts = [b"--use_fast_math", b"--extra-device-vectorization"]
+    opts = [b"--extra-device-vectorization"]
+    if not precise_math:
+        opts.append(b"--use_fast_math")
     c_opts = (ctypes.c_char_p * len(opts))(*opts)
     compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), c_opts)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
@@ -658,7 +661,8 @@ class CUDABackend(Backend):
         """Compile Tack IR → CUDA C → PTX → CUfunction."""
         kernel_name = kernel_entry_name(ir_func.name)
         cuda_source = generate_cuda_source(ir_func)
-        ptx = _compile_ptx(cuda_source, kernel_name)
+        ptx = _compile_ptx(cuda_source, kernel_name,
+                           precise_math=uses_float_division(ir_func))
 
         err, module = driver.cuModuleLoadData(ptx)
         _check(err)

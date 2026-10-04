@@ -108,6 +108,24 @@ to support grids with more than 2^31 elements:
 - MSL: `long`
 - OpenCL: `long`
 
+### Floating Floor Division and Remainder
+
+`float_division.py` shares typed GPU helpers for `//` and `%`; LLVM emits
+internal typed helpers with the same operations. Both operands convert to
+the annotated floating precision before a truncating remainder is computed.
+Sign correction makes nonzero remainders follow the divisor. Quotients
+are reconstructed and snapped to integral floating values, avoiding both
+rounded-division boundary errors and integer conversion overflow. The
+helpers explicitly preserve signed zeros and nonfinite result classes.
+Do not replace them with C `%` or an integer cast of `floor(a / b)`.
+
+`uses_float_division` inspects typed IR only on variant compilation.
+CUDA uses this to omit `--use_fast_math`, and Metal disables
+`fastMathEnabled` for these kernels. Inspection emits the same helpers;
+the compile option applies to the entire kernel. Integer-only kernels and
+kernels without floating `//`/`%` keep their existing math settings.
+See the language contract for the nonzero-divisor and denormal domains.
+
 ## LLVM Codegen (`llvm_gen.py`, 1,008 lines)
 
 Uses llvmlite's `IRBuilder` to construct LLVM IR. Fields become pointer

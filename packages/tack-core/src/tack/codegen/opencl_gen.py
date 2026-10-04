@@ -11,6 +11,7 @@ This module reuses the CUDA codegen with OpenCL-specific overrides.
 """
 
 from tack.codegen.cuda_gen import _BINOP_MAP, CUDACodeGen
+from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.lang import ir
@@ -97,8 +98,13 @@ class OpenCLCodeGen(CUDACodeGen):
         self._emit("}")
 
         # Prepend atomic helpers if needed
-        prefix_lines = integer_division_helpers(
-            self._integer_division_helpers, _OCL_C_TYPE_MAP, 'static inline') + self._integers.definitions('static inline')
+        prefix_lines = (
+            float_division_helpers(
+                self._float_division_helpers, _OCL_C_TYPE_MAP, 'static inline')
+            + integer_division_helpers(
+                self._integer_division_helpers, _OCL_C_TYPE_MAP, 'static inline')
+            + self._integers.definitions('static inline')
+        )
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "float atomicMinFloat(volatile __global float* addr, float val) {",
@@ -311,12 +317,17 @@ class OpenCLCodeGen(CUDACodeGen):
         if node.op == "**":
             t = _OCL_C_TYPE_MAP[f64 if dtype is f64 else f32]
             return f'pow(({t})({left}), ({t})({right}))'
+        if node.op in ('//', '%') and dtype is None:
+            # Support the low-level generator API's legacy unannotated IR.
+            operands = (self._infer_expr_type(node.left), self._infer_expr_type(node.right))
+            dtype = f64 if 'double' in operands else f32 if 'float' in operands else None
+        floating = float_division_expr(
+            node, left, right, _OCL_C_TYPE_MAP, self._float_division_helpers, dtype=dtype)
+        if floating is not None:
+            return floating
         if node.op == "//":
-            lt = self._infer_expr_type(node.left)
-            rt = self._infer_expr_type(node.right)
-            if lt not in ("float", "double") and rt not in ("float", "double"):
-                return f"({left} / {right})"
-            return f"({_OCL_INT})floor((float)({left}) / (float)({right}))"
+            # Legacy unannotated integer IR; normal dispatch is fully typed.
+            return f"({left} / {right})"
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"OpenCL binop: {node.op}")

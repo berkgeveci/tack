@@ -1,6 +1,6 @@
 # Kernel language contract (draft)
 
-This is the draft contract for compiler hardening, updated for the third
+This is the draft contract for compiler hardening, updated for the fourth
 numerical-semantics increment on 2026-10-03.
 It defines the intended portable kernel model, identifies known violations,
 and separates decisions still open for discussion. It is **not a claim that
@@ -264,6 +264,71 @@ single evaluation of inlined operands, and guarded zero divisors. CUDA,
 HIP, Metal, and OpenCL generators share typed C-family helpers; LLVM emits
 signed truncating operations with floor correction, or unsigned operations.
 
+**Required: floating floor division and remainder.** With either operand
+floating, `a // b` and `a % b` convert both operands to the promoted
+floating type: f64 if present, otherwise f32. Both results have that type;
+`//` returns an integer-valued **float**, without narrowing to an integer.
+An f64 output field alone does not widen f32 field operands; explicit f64
+casts do. Mixed integer operands can lose precision in this conversion.
+
+The operations use a truncating floating remainder, corrected to the
+divisor's sign. The quotient is reconstructed from that remainder and
+snapped to a nearby integral floating value, following
+[CPython's floating division/remainder algorithm](https://github.com/python/cpython/blob/3.13/Objects/floatobject.c).
+For finite operands this preserves Python-style floor/sign behavior near
+rounded division boundaries; merely applying `floor(a / b)` is insufficient.
+Floating rounding may make a corrected remainder equal to the divisor's
+magnitude or prevent exact reconstruction of `a` from `q*b + r`.
+This does not promise exact real arithmetic or general bitwise agreement.
+
+A zero remainder has the divisor's sign. A zero quotient has the sign of
+the true quotient, including when the dividend is signed zero. NaN in
+either operand, or an infinite dividend, produces NaN for both operations
+(NaN sign/payload is unspecified). With a finite dividend and infinite
+divisor, zero dividends produce the signed zeros above; a nonzero dividend
+of the same sign produces signed-zero quotient and the original dividend
+as remainder, while opposite signs produce `-1.0` and the signed infinite
+divisor as remainder. Overflow of a finite reconstructed quotient remains
+floating infinity; it must not go through an invalid float-to-integer cast.
+Floating negation flips zero's sign. Floating `!=` and truth tests treat
+NaN as unequal/nonzero, so a nonzero-divisor guard does not accidentally
+discard a NaN operation on CPU. Other ordered comparisons with NaN are
+false. These expression rules are covered alongside the operator helpers;
+the broader GPU math-mode policy for kernels without them remains open.
+
+**Required caller constraint:** the evaluated divisor is nonzero. No
+device `ZeroDivisionError` is promised; guards must preserve the stated
+evaluation/side-effect ordering. Portable guarantees here exclude denormal
+inputs and nonzero denormal intermediate/results: device denormal support
+and flush behavior remain part of the open general floating-point policy.
+Operands evaluate once, left to right, before the typed arithmetic.
+
+CUDA kernels containing typed floating `//` or `%` compile without
+`--use_fast_math`; Metal disables `fastMathEnabled` for those kernels.
+This applies to the whole compiled kernel, so other arithmetic within it
+also sees the stricter mode. Kernels without these operations retain their
+existing settings. LLVM helpers use ordinary floating instructions without
+fast-math flags; HIP/OpenCL retain their existing default math settings.
+This scoped requirement follows the
+[NVRTC fast-math options](https://docs.nvidia.com/cuda/nvrtc/index.html#supported-compile-options)
+and [Metal compile options](https://developer.apple.com/documentation/metal/mtlcompileoptions/fastmathenabled).
+
+**Behavior change:** CPU floating `%` previously used dividend-signed
+truncating remainder, and its `//` directly floored the rounded division.
+GPU floating `%` could emit an invalid integer-only C `%` expression;
+GPU `//` forced f32 division and then narrowed to a 64-bit integer, losing
+f64 precision and overflowing for large/nonfinite results. All five
+emitters now preserve the annotated floating result type.
+
+`test_float_division.py` compares to NumPy's typed `divmod` after explicit
+operand conversion. It covers signs, rounded multiples and neighbours,
+large/overflowed quotients, seeded finite inputs, NaNs/infinities/signed
+zeros, every floating/integer type pair, explicit precision, nested
+expressions, single evaluation and guarded zero divisors. Expected zeros
+and exceptional classes/signs match exactly; tested finite nonzero results
+use a four-ULP tolerance. This is a regression bound for these supported
+inputs, not the still-open general arithmetic accuracy guarantee.
+
 **Required: fixed-width arithmetic and integer conversion.** Integer `+`,
 `-`, `*`, unary negation, and bitwise operations produce the low N bits at
 the annotated result width. Signed types interpret those bits as two's
@@ -384,7 +449,7 @@ The following policies remain
 
 | Question | Current evidence | Decision needed |
 |---|---|---|
-| Remaining arithmetic domains | Fixed-width wrapping, casts/promotion, valid shifts, true division, and integer power are defined | Floating `//`/`%` and any extension beyond the stated invalid-operation constraints |
+| Remaining arithmetic domains | Fixed-width wrapping, casts/promotion, valid shifts, true division, integer power, and floating `//`/`%` are defined | Any extension beyond the stated invalid-operation and denormal constraints |
 | Floating-point results | Backends use their own arithmetic and math implementations | Rounding, contraction/reassociation, NaNs, infinities, signed zero, denormals, error tolerances |
 | Reductions | Parallel implementations may change operation order | Permitted order variation, determinism, and numerical tolerances |
 
@@ -568,7 +633,8 @@ Broader testing and the
 numerical/capability decisions above remain subsequent work.
 
 Stage five has implemented integer floor division/remainder, fixed-width
-arithmetic and conversions, true division, and integer power, including
-their promotion domains and caller constraints above. Floating `//`/`%`,
-the general floating-point policy, and reductions remain within stage five.
+arithmetic and conversions, true division, integer power, and floating
+floor division/remainder, including their promotion domains and caller
+constraints above. The general floating-point policy and reductions
+remain within stage five.
 The workgroup/capability contract remains a separate stage.

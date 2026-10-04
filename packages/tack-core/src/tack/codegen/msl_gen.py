@@ -10,6 +10,7 @@ All integer locals and loop indices use 64-bit ``long`` to support grids
 with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
+from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
@@ -77,6 +78,7 @@ class MSLCodeGen:
         self._local_vars: dict[str, str] = {}  # name -> MSL type
         self._declared_vars: set[str] = set()
         self._integer_division_helpers = set()
+        self._float_division_helpers = set()
         self._integers = IntegerCodeGen(self._integer_type_map, bitcast=True)
         self._dynamic_range_depth = 0
         self._opaque_integer_add = False
@@ -176,8 +178,13 @@ class MSLCodeGen:
         self._indent -= 1
         self._emit("}")
 
-        helpers = integer_division_helpers(
-            self._integer_division_helpers, _MSL_TYPE_MAP, 'inline') + self._integers.definitions('inline')
+        helpers = (
+            float_division_helpers(
+                self._float_division_helpers, _MSL_TYPE_MAP, 'inline')
+            + integer_division_helpers(
+                self._integer_division_helpers, _MSL_TYPE_MAP, 'inline')
+            + self._integers.definitions('inline')
+        )
         return "\n".join(self._lines[:preamble_end] + helpers
                          + self._lines[preamble_end:]) + "\n"
 
@@ -550,12 +557,17 @@ class MSLCodeGen:
             return integer
         if node.op == "**":
             return f'pow((float)({left}), (float)({right}))'
+        if node.op in ('//', '%') and dtype is None:
+            # Support the low-level generator API's legacy unannotated IR.
+            operands = (self._infer_expr_type(node.left), self._infer_expr_type(node.right))
+            dtype = f64 if 'double' in operands else f32 if 'float' in operands else None
+        floating = float_division_expr(
+            node, left, right, _MSL_TYPE_MAP, self._float_division_helpers, dtype=dtype)
+        if floating is not None:
+            return floating
         if node.op == "//":
-            lt = self._infer_expr_type(node.left)
-            rt = self._infer_expr_type(node.right)
-            if lt not in ("float",) and rt not in ("float",):
-                return f"({left} / {right})"
-            return f"(({_INT})floor((float)({left}) / (float)({right})))"
+            # Legacy unannotated integer IR; normal dispatch is fully typed.
+            return f"({left} / {right})"
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"MSL binop: {node.op}")

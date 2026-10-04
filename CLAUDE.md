@@ -244,7 +244,22 @@ to float for negative powers. GPU generators share exponentiation-by-squaring
 helpers in `integer_ops.py`; LLVM emits an internal helper with wrapping
 products and a logical count shift. With a floating operand, both power
 arguments use the promoted floating precision. See `test_division_and_power.py`.
-Floating `//`/`%`, the general floating-point policy, and reductions remain open.
+
+Floating `//` and `%` convert to f64 if either operand is f64, otherwise
+f32, and return that floating type. Shared GPU helpers in
+`codegen/float_division.py` and typed LLVM helpers use a truncating
+remainder with divisor-sign correction and reconstruct/snap the quotient
+instead of directly flooring rounded division. Zero remainder follows the
+divisor's sign; zero quotient follows true division's sign. NaNs and
+infinite dividends return NaNs; finite/infinite pairs follow Python-style
+sign correction. Evaluated divisors must be nonzero, and denormal support
+remains outside this portable increment. CUDA omits `--use_fast_math`
+and Metal disables `fastMathEnabled` only for kernels containing these
+typed floating operations, including other math in that compiled kernel.
+CPU floating negation uses LLVM `fneg`; floating `!=` and truth tests use
+unordered inequality so NaN guards and signed-zero expressions agree.
+See `test_float_division.py` and the language contract. The general
+floating-point policy and reductions remain open.
 
 ### 64-bit loop indices on GPU
 

@@ -12,6 +12,7 @@ All integer locals and loop indices use 64-bit ``long long`` to support grids
 with more than 2^31 elements.
 """
 
+from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
@@ -107,6 +108,7 @@ class CUDACodeGen:
         self._needs_float_atomic_min = False
         self._needs_float_atomic_max = False
         self._integer_division_helpers = set()
+        self._float_division_helpers = set()
         self._integers = IntegerCodeGen(self._integer_type_map)
 
     def generate(self) -> str:
@@ -156,8 +158,13 @@ class CUDACodeGen:
         self._indent -= 1
         self._emit("}")
 
-        prefix_lines = integer_division_helpers(
-            self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline') + self._integers.definitions('__device__ inline')
+        prefix_lines = (
+            float_division_helpers(
+                self._float_division_helpers, _C_TYPE_MAP, '__device__ inline', cuda_math=True)
+            + integer_division_helpers(
+                self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline')
+            + self._integers.definitions('__device__ inline')
+        )
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "__device__ float atomicMinFloat(float* addr, float val) {",
@@ -627,14 +634,17 @@ class CUDACodeGen:
             t = self._integer_type_map[f64 if dtype is f64 else f32]
             name = 'pow' if dtype is f64 else 'powf'
             return f'{name}(({t})({left}), ({t})({right}))'
+        if node.op in ('//', '%') and dtype is None:
+            # Support the low-level generator API's legacy unannotated IR.
+            operands = (self._infer_expr_type(node.left), self._infer_expr_type(node.right))
+            dtype = f64 if 'double' in operands else f32 if 'float' in operands else None
+        floating = float_division_expr(
+            node, left, right, _C_TYPE_MAP, self._float_division_helpers, dtype=dtype)
+        if floating is not None:
+            return floating
         if node.op == "//":
-            # Use true integer division when both operands are integer types,
-            # for legacy unannotated IR. Fall back to float floor for floats.
-            lt = self._infer_expr_type(node.left)
-            rt = self._infer_expr_type(node.right)
-            if lt not in ("float", "double") and rt not in ("float", "double"):
-                return f"({left} / {right})"
-            return f"({_INT})floorf((float)({left}) / (float)({right}))"
+            # Legacy unannotated integer IR; normal dispatch is fully typed.
+            return f"({left} / {right})"
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"CUDA binop: {node.op}")

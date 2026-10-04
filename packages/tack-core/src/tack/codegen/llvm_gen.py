@@ -675,7 +675,7 @@ class LLVMCodeGen:
         dtype = getattr(node, 'dtype', None)
         if node.op == '**' and dtype in INTEGER_TYPES:
             return self._emit_integer_power(dtype, left, right)
-        if node.op in ('/', '**') and dtype in (f32, f64):
+        if node.op in ('/', '**', '//', '%') and dtype in (f32, f64):
             target = _llvm_type(dtype)
             return self._emit_float_binop(node.op, self._coerce_to(left, target),
                                          self._coerce_to(right, target))
@@ -777,24 +777,57 @@ class LLVMCodeGen:
         return self.builder.select(adjust, corrected, remainder, name='mod')
 
     def _emit_float_binop(self, op: str, left, right) -> llvm_ir.Value:
+        if op in ('//', '%'):
+            return self._emit_float_division(op, left, right)
         ops = {
             "+": self.builder.fadd,
             "-": self.builder.fsub,
             "*": self.builder.fmul,
             "/": self.builder.fdiv,
-            "%": self.builder.frem,
         }
         if op in ops:
             return ops[op](left, right, name="binop")
         if op == "**":
             powf = self.module.declare_intrinsic('llvm.pow', [left.type])
             return self.builder.call(powf, [left, right], name="pow")
-        if op == "//":
-            # Floor division for floats: floor(a / b)
-            div = self.builder.fdiv(left, right, name="div")
-            floorf = self.module.declare_intrinsic('llvm.floor', [left.type])
-            return self.builder.call(floorf, [div], name="floordiv")
         raise NotImplementedError(f"Float binary op: {op}")
+
+    def _emit_float_division(self, op, left, right):
+        """Typed helper keeps sign correction and quotient reconstruction together."""
+        t = left.type
+        kind = 'floordiv' if op == '//' else 'mod'
+        precision = 'f32' if isinstance(t, llvm_ir.FloatType) else 'f64'
+        name = f'__tack_{kind}_{precision}__'
+        helper = self.module.globals.get(name)
+        if helper is None:
+            helper = llvm_ir.Function(self.module, llvm_ir.FunctionType(t, [t, t]), name=name)
+            helper.linkage = 'internal'
+            builder = llvm_ir.IRBuilder(helper.append_basic_block('entry'))
+            a, b = helper.args
+            zero, one, half = (llvm_ir.Constant(t, v) for v in (0.0, 1.0, 0.5))
+            r = builder.frem(a, b, name='remainder')
+            nonzero = builder.fcmp_unordered('!=', r, zero)
+            opposite = builder.xor(builder.fcmp_ordered('<', r, zero),
+                                   builder.fcmp_ordered('<', b, zero))
+            adjust = builder.and_(nonzero, opposite)
+            copysign = self.module.declare_intrinsic(
+                'llvm.copysign', [t], fnty=llvm_ir.FunctionType(t, [t, t]))
+            if op == '%':
+                corrected = builder.select(adjust, builder.fadd(r, b), r)
+                signed_zero = builder.call(copysign, [zero, b])
+                result = builder.select(nonzero, corrected, signed_zero)
+            else:
+                q = builder.fdiv(builder.fsub(a, r), b)
+                q = builder.select(adjust, builder.fsub(q, one), q)
+                floor = self.module.declare_intrinsic('llvm.floor', [t])
+                integral = builder.call(floor, [q])
+                round_up = builder.fcmp_ordered('>', builder.fsub(q, integral), half)
+                snapped = builder.select(round_up, builder.fadd(integral, one), integral)
+                signed_zero = builder.call(copysign, [zero, builder.fdiv(a, b)])
+                result = builder.select(builder.fcmp_unordered('!=', q, zero),
+                                        snapped, signed_zero)
+            builder.ret(result)
+        return self.builder.call(helper, [left, right], name=kind)
 
     def _emit_int_binop(self, op: str, left, right) -> llvm_ir.Value:
         ops = {
@@ -817,8 +850,7 @@ class LLVMCodeGen:
         operand = self._emit_expr(node.operand)
         if node.op == "-":
             if _is_float_type(operand.type):
-                return self.builder.fsub(
-                    llvm_ir.Constant(operand.type, 0.0), operand, name="neg")
+                return self.builder.fneg(operand, name="neg")
             return self.builder.neg(operand, name="neg")
         if node.op == "+":
             return operand
@@ -846,7 +878,8 @@ class LLVMCodeGen:
                 "<": "<", "<=": "<=",
                 ">": ">", ">=": ">=",
             }
-            value = self.builder.fcmp_ordered(fcmp_ops[node.op], left, right, name="cmp")
+            compare = self.builder.fcmp_unordered if node.op == '!=' else self.builder.fcmp_ordered
+            value = compare(fcmp_ops[node.op], left, right, name="cmp")
             return self.builder.zext(value, llvm_ir.IntType(32), name='boolean')
 
         if _is_int_type(left.type):
@@ -1175,7 +1208,7 @@ class LLVMCodeGen:
             return self.builder.icmp_signed("!=", val,
                                             llvm_ir.Constant(val.type, 0), name="to.bool")
         if _is_float_type(val.type):
-            return self.builder.fcmp_ordered("!=", val,
+            return self.builder.fcmp_unordered("!=", val,
                                              llvm_ir.Constant(val.type, 0.0), name="to.bool")
         raise TypeError(f"Cannot convert {val.type} to i1")
 
