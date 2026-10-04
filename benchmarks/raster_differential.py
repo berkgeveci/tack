@@ -5,8 +5,8 @@ API only -- ``Actor``, ``Scene``, ``Canvas``, ``OrthographicCamera`` and
 ``render_raster`` -- and checks every frame against an oracle that does not
 come from the run under test:
 
-* **Reference composition.** Each candidate actor is rendered alone, which
-  cannot race, and the expected frame is composed per pixel from those
+* **Reference composition.** Candidate actors are rendered separately, and
+  the expected frame is composed per pixel from those
   references: the candidate with the smallest depth wins, its colour and
   depth are expected, and candidates at exactly equal depth form a set any
   of whose colours is acceptable. Uncovered pixels must match an empty
@@ -15,8 +15,8 @@ come from the run under test:
   for the same pixels (the canonical 4097 coincident points), each point
   carries a distinct, index-coded colour, so a pixel's RGB must equal one
   primitive's colour exactly. A mixed pixel -- red from one point, green
-  from another -- is the race signature CX8 fixed, and it cannot hide in a
-  checksum.
+  from another -- is the race signature CX8 fixed. The palette detects
+  many such mixtures, although some can coincide with a valid colour.
 
 Because the probe uses only interfaces that exist in every tree since the
 rasterizer gained points and wireframes, the identical bytes run unmodified
@@ -38,6 +38,7 @@ import json
 import platform
 import sys
 import time
+import weakref
 
 import numpy as np
 
@@ -193,7 +194,8 @@ def _index_colors(n):
     """Distinct f32 colours, one per primitive, with the blue channel a hash
     of the other two: a pixel whose red came from one primitive and whose
     green came from another almost never forms a valid triple, so mixed
-    channels -- the race signature -- cannot pass as a legitimate colour.
+    channels -- the race signature -- are usually rejected. Some mixtures
+    collide with a valid colour, so this is not an exhaustive detector.
     Channel values are multiples of 1/64, exactly representable."""
     i = np.arange(n)
     r = i % 64
@@ -203,15 +205,21 @@ def _index_colors(n):
     return ((np.column_stack([r, g, b]) + 1) / 64.0).astype(np.float32)
 
 
-_gamma_cache: dict = {}
+_gamma_cache: weakref.WeakKeyDictionary = weakref.WeakKeyDictionary()
 
 
 def _as_rendered(value: float) -> float:
     """What the renderer stores for a channel value, measured once per value
     by rendering a single point of that colour: colour correction happens on
     the device, so the oracle learns the mapping instead of assuming it."""
+    from tack.runtime.dispatch import get_backend
+
+    # Colour correction can differ across backends/devices. Reinitializing
+    # even the same architecture creates a new backend; calibrate it afresh
+    # without keeping discarded backends alive through this diagnostic cache.
+    channels = _gamma_cache.setdefault(get_backend(), {})
     key = float(value)
-    if key not in _gamma_cache:
+    if key not in channels:
         # Green and blue at full so the disc is visible even when the value
         # under test is the background's own 0.0; red carries the value.
         rgb, depth = _planes(_render([_point_actor([[0, 0, 0]], [[key, 1.0, 1.0]])]))
@@ -219,8 +227,8 @@ def _as_rendered(value: float) -> float:
         covered = depth != empty_depth
         vals = np.unique(rgb[covered, 0])
         assert len(vals) == 1, vals
-        _gamma_cache[key] = float(vals[0])
-    return _gamma_cache[key]
+        channels[key] = float(vals[0])
+    return channels[key]
 
 
 def _rendered_palette(colors):
@@ -242,8 +250,10 @@ def scenario_coincident_points(repeats, winner_at):
     actor = _point_actor(xyz, colors)
     # Reference: the winner alone (cannot race) and the losers alone.
     win_ref = _reference(_point_actor(xyz[[winner_at]], colors[[winner_at]]))
-    lose_idx = np.setdiff1d(np.arange(COUNT), [winner_at])
-    lose_ref = _reference(_point_actor(xyz[lose_idx], colors[lose_idx]))
+    # All losers share geometry and depth. A single representative avoids
+    # making the reference render itself contend on the pre-fix tree.
+    loser_at = 0 if winner_at != 0 else 1
+    lose_ref = _reference(_point_actor(xyz[[loser_at]], colors[[loser_at]]))
     expected = Expected([win_ref, lose_ref], _empty())
     assert expected.covered.sum() == 29, expected.covered.sum()
     failures = []
@@ -257,7 +267,8 @@ def scenario_coincident_points(repeats, winner_at):
 
 def scenario_equal_depth_ties(repeats):
     """4097 coincident points at one depth: every pixel must carry exactly
-    one primitive's colour (no channel mixing), and 29 pixels are covered."""
+    one valid primitive colour, and 29 pixels are covered. Palette collisions
+    mean some channel mixtures can satisfy this historical tie oracle."""
     xyz = np.zeros((COUNT, 3), np.float32)
     colors = _index_colors(COUNT)
     allowed = _rendered_palette(colors)
@@ -276,6 +287,10 @@ def scenario_equal_depth_ties(repeats):
         if not np.array_equal(covered, any_ref[2]):
             failures.append(f"frame {f}: covered mask differs from the reference disc")
             continue
+        stray = np.flatnonzero(np.any(rgb != empty_rgb, axis=1) & ~covered)
+        if len(stray):
+            failures.append(f"frame {f}: uncovered pixel {stray[0]} changed colour")
+            continue
         bad = [pid for pid in np.flatnonzero(covered) if tuple(rgb[pid]) not in allowed]
         if bad:
             failures.append(f"frame {f}: {len(bad)} mixed-colour pixel(s), first {bad[0]} "
@@ -291,7 +306,9 @@ def scenario_equal_depth_ties(repeats):
 
 def scenario_overlapping_wireframes(repeats):
     """Two overlapping horizontal lines, one tilted in depth: the winner
-    changes along the line and is decided per pixel by interpolated depth."""
+    changes along the line and is decided per pixel by interpolated depth.
+    Separate actors render sequentially: this checks composition rather than
+    intra-actor edge contention."""
     flat = _line_actor((-1.5, 0.0, 0.0), (1.5, 0.0, 0.0), (0, 1, 0))
     tilt = _line_actor((-1.5, 0.0, 0.5), (1.5, 0.0, -0.5), (1, 0, 0))
     expected = Expected([_reference(flat), _reference(tilt)], _empty())

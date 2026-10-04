@@ -3,8 +3,8 @@
 `benchmarks/raster_differential.py` checks raster frames against an oracle
 composed from reference renders of each candidate alone, plus an
 index-coded palette whose third channel hashes the other two so a pixel
-with channels from two different primitives cannot pass as a valid
-colour. Here it runs with a small repeat count on every available
+with channels from two different primitives is usually rejected (some
+mixtures collide with valid colours). Here it runs on every available
 backend, and its oracle is itself exercised with planted defects so a
 passing frame means the check could have failed.
 """
@@ -100,3 +100,68 @@ def test_rendered_channel_mapping_is_measured_not_assumed(backend):
     mid = probe._as_rendered(0.25)
     assert 0.25 <= mid <= 1.0                          # colour correction only brightens
     assert probe._as_rendered(0.5) > mid               # and is monotone
+
+
+def test_channel_mapping_follows_backend_switches_and_reinitialization(monkeypatch):
+    """Two instances of the same architecture may measure different values.
+
+    Use distinct calibration results to expose stale reuse on any host,
+    including hosts where the real backends happen to round identically.
+    """
+    from tack.runtime import dispatch
+
+    class CalibrationBackend:
+        name = "calibration"
+
+        def __init__(self, measured):
+            self.measured = measured
+
+    first = CalibrationBackend(0.5)
+    second = CalibrationBackend(0.75)
+    active = [first]
+    measurements = []
+
+    def calibrate(actors):
+        assert actors[0][0][0] == 0.25
+        measured = active[0].measured
+        measurements.append(measured)
+        return np.full((probe.SIZE ** 2, 3), measured, np.float32), np.zeros(
+            probe.SIZE ** 2, np.float32
+        )
+
+    monkeypatch.setattr(dispatch, "get_backend", lambda: active[0])
+    monkeypatch.setattr(probe, "_point_actor", lambda xyz, colors: colors)
+    monkeypatch.setattr(probe, "_render", calibrate)
+    monkeypatch.setattr(probe, "_planes", lambda canvas: canvas)
+    monkeypatch.setattr(probe, "_empty", lambda: (
+        np.zeros((probe.SIZE ** 2, 3), np.float32),
+        np.full(probe.SIZE ** 2, -1.0, np.float32),
+    ))
+    probe._gamma_cache.clear()
+    assert probe._as_rendered(0.25) == 0.5
+    assert probe._as_rendered(0.25) == 0.5
+    active[0] = second
+    assert probe._as_rendered(0.25) == 0.75
+    active[0] = first
+    assert probe._as_rendered(0.25) == 0.5
+    assert measurements == [0.5, 0.75]
+
+
+def test_tie_oracle_rejects_colour_outside_the_disc(backend, monkeypatch):
+    render = probe._render
+
+    def render_with_stray_pixel(actors, *args, **kwargs):
+        canvas = render(actors, *args, **kwargs)
+        # Corrupt only the contended frame, leaving its depth unchanged and
+        # the single-point references/calibration measurements untouched.
+        if len(actors) == 1 and actors[0].points.shape == (probe.COUNT * 3,):
+            red = canvas.color_r.to_numpy().copy()
+            red[0] = 1.0                           # outside the central disc
+            canvas.color_r.from_numpy(red)
+        return canvas
+
+    monkeypatch.setattr(probe, "_render", render_with_stray_pixel)
+    frames, failures, *_ = probe.scenario_equal_depth_ties(1)
+    assert frames == 1
+    assert len(failures) == 1
+    assert "uncovered pixel 0 changed colour" in failures[0]
