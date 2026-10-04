@@ -22,6 +22,7 @@ from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
@@ -117,6 +118,10 @@ class CUDABuffer(DeviceBuffer):
         _check(err)
         # Zero-initialise
         _check(driver.cuMemsetD8(self._device_ptr, 0, self._nbytes))
+
+    @property
+    def address(self) -> int:
+        return int(self._device_ptr)
 
     @property
     def device_ptr(self):
@@ -253,6 +258,10 @@ class ExportableCUDABuffer(DeviceBuffer):
               "sharing with another API; ordinary tack.field() allocations are "
               "unaffected."
         )
+
+    @property
+    def address(self) -> int:
+        return int(self._device_ptr)
 
     @property
     def device_ptr(self):
@@ -451,7 +460,7 @@ class CompiledCUDAKernel:
         for i, val in enumerate(arg_values):
             arg_ptrs[i] = ctypes.addressof(val)
 
-        block_dim = 256
+        block_dim = WORKGROUP_SIZE
         grid_dim = (loop_end + block_dim - 1) // block_dim
 
         _check(driver.cuLaunchKernel(

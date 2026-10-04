@@ -139,7 +139,7 @@ def test_barrier_names_its_fence():
             out[i] = buf[0]
 
     src = _source(sync, _field(), _field())
-    assert "barrier(CLK_LOCAL_MEM_FENCE)" in src
+    assert "barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE)" in src
     assert "__syncthreads" not in src
 
 
@@ -195,7 +195,8 @@ def test_integer_atomic_add():
             tack.atomic_add(out, 0, 1)
 
     src = _source(count, _field(), _field(dtype=tack.i32))
-    assert "atomic_add" in src
+    assert "atomic_fetch_add_explicit" in src
+    assert "memory_scope_device" in src
 
 
 def test_float_atomic_min_uses_compare_and_swap():
@@ -208,7 +209,8 @@ def test_float_atomic_min_uses_compare_and_swap():
 
     src = _source(amin, _field(), _field())
     assert "atomicMinFloat" in src
-    assert "atomic_cmpxchg" in src
+    assert "atomic_compare_exchange_weak_explicit" in src
+    assert "memory_scope_device" in src
     assert "volatile __global" in src
 
 
@@ -220,7 +222,8 @@ def test_float_atomic_max_uses_compare_and_swap():
 
     src = _source(amax, _field(), _field())
     assert "atomicMaxFloat" in src
-    assert "atomic_cmpxchg" in src
+    assert "atomic_compare_exchange_weak_explicit" in src
+    assert "memory_scope_device" in src
 
 
 # ── Control flow ─────────────────────────────────────────────────────

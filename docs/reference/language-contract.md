@@ -621,8 +621,8 @@ unspecified accumulation order. Atomic min/max are separate backend
 primitives: their NaN and signed-zero handling is outside the portable
 atomic-extrema domain, which requires finite nonzero floating operands
 and stored values. The field/block extrema guarantees do not imply those
-atomic semantics. Atomic scope, supported widths and workgroup participation
-remain stage-six work. The statistical algorithms in
+atomic semantics. Atomic scope and supported widths are defined below;
+workgroup participation follows its separate contract. The statistical algorithms in
 `tack.algorithms.stats` use f32 atomic accumulators for floating statistics;
 an f64 input alone does not establish f64 accuracy or determinism for them.
 
@@ -651,8 +651,9 @@ and supported input domains rather than a general bitwise-equality promise.
 
 Shared memory, barriers, thread indices, and block reductions require an
 explicit workgroup execution model. A barrier orders participating threads
-within its workgroup; it is not a global barrier between parallel iterations
-on different workgroups. Programs must not rely on divergent participation
+within its workgroup, fencing both shared and global field memory; it is not
+a global barrier between parallel iterations on different workgroups.
+Programs must not rely on divergent participation
 or uninitialized shared memory.
 
 **Target support:** backends declare `supports_workgroups` (CPU: false;
@@ -670,12 +671,147 @@ CPU does not emulate workgroups. Use `local_array` or `local_array_like`
 for private scratch arrays; these remain supported on CPU, as do ordinary
 scalar kernels, host field reductions and supported atomic operations.
 
-**Remaining limits:** `supports_workgroups` declares the execution model;
-it does not establish supported atomic widths/scopes, barrier uniformity,
-or safety of partial final groups. Workgroup size, launch restrictions,
-participation and atomic ordering/scope still need contracts and hardware
-tests. The new cross-lane exchange tests use fully participating 256-lane
-groups. A CPU result alone cannot validate cooperative GPU execution.
+**GPU launch domain:** barriers and block reductions require complete
+**256-lane workgroups**. Positive logical iteration counts must be divisible
+by 256, including normalized stepped ranges and `ndrange`. Cold dispatch
+rejects partial groups before compilation; cached dispatch rechecks every
+count before execution without repeating analysis. Zero/negative counts
+run nothing. Metal pipeline limits and Level Zero X/total device limits
+must admit 256 lanes; smaller groups are rejected. CUDA/HIP launch width
+matches the generated reduction tree. Shared-memory/thread-ID kernels
+without collectives retain partial-grid support. Bounds and initialized
+shared values remain the user's responsibility.
+
+**GPU participation domain:** `workgroup_participation.py` conservatively
+proves uniform control flow. Constants, scalar arguments, shape queries,
+immutable runtime scalar packs and collective results are uniform across
+a workgroup. Lane indices and ordinary memory/texture loads are varying.
+Assignments and branch joins propagate this classification; loop fixed
+points account for loop-carried conditions and varying `break`/`continue`
+paths, including exits after a barrier that affect subsequent iterations.
+Uniform scalar branches/loops and varying memory updates that reconverge
+before a barrier are supported. Varying loops without collectives may
+reconverge before a later barrier. Device functions are checked after inlining.
+
+Collectives must occur inside the parallel body. Reductions in ternary
+branches, later short-circuit operands or `while` conditions are rejected
+even for uniform predicates: current source generators cannot preserve
+their guarded or repeated evaluation. Move the reduction into an explicit
+supported statement sequence. Other unproven cases, including field-loaded
+conditions and mathematically uniform expressions such as `i // 256`, are
+rejected too. This is a conservative domain, not a complete uniformity prover.
+
+Failures raise `ValueError` naming the kernel, primitive and IR location or
+launch count/size. Public inspection checks participation and logical counts.
+Direct GPU generators check mutable IR afresh; their callers must validate
+eventual launch counts and device limits. Variant construction checks before
+optimization/packing; packed scalar parameters carry `_is_scalar_pack` to
+preserve uniformity. The full-group requirement is cached on `KernelVariant`.
+
+The all-participants requirement follows the
+[CUDA synchronization specification](https://docs.nvidia.com/cuda/archive/12.9.1/pdf/CUDA_C_Programming_Guide.pdf)
+and [OpenCL C barrier specification](https://registry.khronos.org/OpenCL/specs/3.0-unified/pdf/OpenCL_C.pdf).
+Metal can produce smaller final groups with nonuniform dispatch; see
+[Apple's grid-size guidance](https://developer.apple.com/documentation/metal/calculating-threadgroup-and-grid-sizes).
+The fixed width is Tack's implementation domain, not a general hardware
+limit. No automatic padding or CPU workgroup emulator is supplied.
+
+Generated block reductions include a barrier after every lane has read the
+result, before the shared array can be reused by another loop iteration.
+Callers need no extra barrier to protect the collective's result broadcast.
+
+**Remaining limits:** this analysis does not establish race freedom,
+initialization, bounds safety or termination, or synchronize different
+workgroups. Hardware confirmation is required per backend; CPU results do
+not validate cooperative GPU execution.
+
+## Atomic field updates
+
+`atomic_add`, `atomic_min` and `atomic_max` are statement-only operations on
+one scalar element of a global field. They do not return the previous value.
+`Backend.supported_atomic_dtypes` declares the implemented add/min/max domain,
+independently of the ordinary field types or workgroup capability:
+
+| Target | Atomic field types, for all three operations |
+|---|---|
+| CPU | i8/u8, i16/u16, i32/u32, i64/u64, f32/f64 |
+| CUDA / HIP | i32/u32, i64/u64, f32/f64 |
+| Metal / Level Zero | i32/u32, f32 |
+
+Metal/Level Zero 64-bit atomics and GPU 8/16-bit atomics are outside this
+implementation domain, even when ordinary fields of those widths are
+supported. No reinterpretation as a neighbouring wider field is allowed.
+Private/shared arrays, textures, scalar arguments, and targets that cannot
+be traced uniquely to a global field parameter are rejected. Field-pointer
+copies introduced by device-function inlining are traced to that parameter.
+The checker runs before optimization, including structurally unreachable
+operations and empty grids. Public inspection in every mode enforces the
+same target domain. Direct generators check mutable IR afresh and do not
+trust stale atomic dtype annotations. Unsupported operations/types/targets
+raise `TypeError` naming the kernel, target, operation and reason.
+
+Atomic targets require natural alignment (1/2/4/8 bytes for their width).
+Allocated fields satisfy this; imported field addresses are checked before
+cold compilation and on every cached dispatch. Unaligned targets raise
+`ValueError` before updating storage. Cached variants retain parameter indices
+and alignment requirements, not addresses; changed arguments are checked
+without repeating IR analysis. Direct-codegen callers must validate the
+addresses used by their eventual launch. Index bounds, allocated extent,
+initialization and valid floating-to-integer conversion remain caller
+requirements. Ordinary non-atomic field accesses retain their existing
+support for unaligned imported storage.
+
+The contributed scalar is converted to the field's dtype once before the
+read-modify-write operation, using the existing scalar conversion domain.
+Integer addition wraps modulo the target width. Integer extrema compare
+with the target's signedness, including unsigned values above the signed
+maximum. Floating addition rounds at field precision with unspecified
+interleaving; exact reduction order and bitwise reproducibility are not
+promised. Normal floating arithmetic constraints, including the denormal
+exclusion, apply. Floating atomic extrema's portable domain remains **finite,
+nonzero stored values and contributed operands**. NaNs, infinities and
+signed-zero ties are outside that extrema domain; field/block extrema's
+stronger exceptional-value policy does not apply to user atomic extrema.
+
+**Ordering and scope:** updates to the same element are indivisible among
+kernel participants across CPU worker threads or GPU workgroups on the
+executing device. The portable memory order is **relaxed**. An atomic update
+is not an acquire/release fence for other fields or a publication flag, and
+there is no system-scope guarantee spanning concurrent host accesses or
+other devices. Do not mix ordinary reads/writes with conflicting atomic
+updates during a kernel unless appropriate workgroup synchronization orders
+them. Workgroup barriers order shared and global field memory among that
+workgroup's lanes; they do not synchronize different workgroups. Current
+synchronous dispatch waits for completion before host readback or the next
+kernel call, providing the supported way to consume a cross-workgroup result.
+Atomics alone do not require a complete workgroup or uniform participation;
+partial final groups and lane-dependent atomic branches are permitted.
+
+CPU uses LLVM monotonic atomic read-modify-write instructions, including
+unsigned extrema, and integer-bit compare-and-swap loops for floating min/max.
+CUDA/HIP 64-bit operations use 64-bit integer CAS, avoiding optional native
+f64-add and signed-i64-add overloads; f32 extrema also begin with an atomic
+read. Metal uses correctly typed `atomic_int`/`atomic_uint` and f32 atomics.
+OpenCL uses explicit relaxed, device-scope C11 atomics, including the final
+combine in native field reductions. Its former legacy functions guarantee
+only workgroup scope in the specification, which is insufficient for that
+combine. Compare-and-swap retries compare integer bits and capture the
+contributed value once; they do not repeat the user's value expression.
+Explicit Metal/OpenCL user barriers fence global as well as shared memory;
+internal shared-only reduction-tree barriers retain their narrower fences.
+
+The ordering/lowering choices follow the
+[LLVM atomic instructions](https://www.llvm.org/docs/LangRef.html#cmpxchg-instruction),
+[CUDA atomic specification](https://docs.nvidia.com/cuda/archive/13.0.0/cuda-c-programming-guide/index.html#atomic-functions),
+[HIP atomic specification](https://rocm.docs.amd.com/projects/HIP/en/docs-7.0.1/how-to/hip_cpp_language_extensions.html#atomic-functions),
+and [OpenCL atomic specification](https://registry.khronos.org/OpenCL/specs/unified/html/OpenCL_C.html#atomic-functions).
+`test_atomic_contract.py` covers unsigned boundaries, wrapping/conversion,
+actual contended CPU workers, GPU updates across groups and tails, aliases
+and inlined targets, cached alignment checks, unsupported target rejection,
+global-field publication within a workgroup, LLVM verification and GPU
+source compilation checks. Device hardware confirmation is required for
+CUDA/HIP/Level Zero; host syntax checks do not establish atomic scheduling
+or memory-order behavior on those devices.
 
 ## Specialization and compilation identity
 

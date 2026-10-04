@@ -13,6 +13,7 @@ from llvmlite import ir as llvm_ir
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.integer_division import INTEGER_TYPES, UNSIGNED_TYPES
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_support
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_support import check_workgroup_support
 
@@ -77,6 +78,7 @@ class LLVMCodeGen:
     def generate(self) -> llvm_ir.Module:
         """Generate LLVM IR for the kernel. Returns the LLVM module."""
         func = self.ir_func
+        check_atomic_support(func, backend_name='cpu')
         check_workgroup_support(
             func, supports_workgroups=False, backend_label='CPU',
         )
@@ -523,7 +525,7 @@ class LLVMCodeGen:
 
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="atomic.ptr")
         elem_type = base_ptr.type.pointee
-        value = self._coerce_to(value, elem_type)
+        value = self._coerce_to(value, elem_type, node.dtype in UNSIGNED_TYPES)
 
         if node.op == "add":
             if _is_float_type(elem_type):
@@ -535,25 +537,39 @@ class LLVMCodeGen:
                 # Float atomic min via compare-and-swap loop
                 self._emit_atomic_float_minmax(elem_ptr, value, "min")
             else:
-                self.builder.atomic_rmw("min", elem_ptr, value, "monotonic")
+                self.builder.atomic_rmw("umin" if node.dtype in UNSIGNED_TYPES else "min",
+                                        elem_ptr, value, "monotonic")
         elif node.op == "max":
             if _is_float_type(elem_type):
                 self._emit_atomic_float_minmax(elem_ptr, value, "max")
             else:
-                self.builder.atomic_rmw("max", elem_ptr, value, "monotonic")
+                self.builder.atomic_rmw("umax" if node.dtype in UNSIGNED_TYPES else "max",
+                                        elem_ptr, value, "monotonic")
         else:
             raise NotImplementedError(f"Atomic op: {node.op}")
 
     def _emit_atomic_float_minmax(self, ptr, value, op: str):
         """Emit a float atomic min/max via compare-and-swap loop."""
-        # For CPU, just do a non-atomic load-compare-store (single-threaded per element)
-        old_val = self.builder.load(ptr, name="atomic.old")
-        if op == "min":
-            cond = self.builder.fcmp_ordered("<", value, old_val, name="atomic.cmp")
-        else:
-            cond = self.builder.fcmp_ordered(">", value, old_val, name="atomic.cmp")
-        new_val = self.builder.select(cond, value, old_val, name="atomic.new")
-        self.builder.store(new_val, ptr)
+        bits_type = llvm_ir.IntType(32 if isinstance(value.type, llvm_ir.FloatType) else 64)
+        bits_ptr = self.builder.bitcast(ptr, bits_type.as_pointer())
+        initial = self.builder.load_atomic(bits_ptr, 'monotonic', bits_type.width // 8)
+        entry = self.builder.block
+        loop = self.builder.function.append_basic_block('atomic.retry')
+        done = self.builder.function.append_basic_block('atomic.done')
+        self.builder.branch(loop)
+        self.builder.position_at_end(loop)
+        old = self.builder.phi(bits_type, 'atomic.old.bits')
+        old.add_incoming(initial, entry)
+        old_val = self.builder.bitcast(old, value.type)
+        cond = self.builder.fcmp_ordered('<' if op == 'min' else '>', value, old_val)
+        new_val = self.builder.select(cond, value, old_val)
+        new_bits = self.builder.bitcast(new_val, bits_type)
+        result = self.builder.cmpxchg(bits_ptr, old, new_bits, 'monotonic', 'monotonic')
+        observed = self.builder.extract_value(result, 0)
+        success = self.builder.extract_value(result, 1)
+        old.add_incoming(observed, loop)
+        self.builder.cbranch(success, done, loop)
+        self.builder.position_at_end(done)
 
     def _emit_local_alloc(self, node: ir.IRLocalAlloc):
         """Emit private scratch storage as a stack alloca."""

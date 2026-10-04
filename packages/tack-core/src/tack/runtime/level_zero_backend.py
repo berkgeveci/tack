@@ -25,6 +25,11 @@ from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import (
+    WORKGROUP_SIZE,
+    check_workgroup_launch,
+    requires_full_workgroups,
+)
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
@@ -646,6 +651,10 @@ class L0Buffer(DeviceBuffer):
         self._copy_to_device(zeros)
 
     @property
+    def address(self) -> int:
+        return int(self._device_ptr.value)
+
+    @property
     def device_ptr(self):
         return self._device_ptr
 
@@ -706,7 +715,12 @@ class CompiledL0Kernel:
     """A compiled Level Zero kernel ready for dispatch."""
 
     def __init__(self, module, kernel, func_name, param_types, param_is_field,
-                 workgroup_size, param_is_texture=None, texture_shapes=None):
+                 workgroup_size, param_is_texture=None, texture_shapes=None, *,
+                 requires_full_workgroups=False):
+        self._requires_full_workgroups = requires_full_workgroups
+        if requires_full_workgroups:
+            check_workgroup_launch(func_name, 0, backend_label='Level Zero',
+                                   workgroup_size=workgroup_size)
         self._module = module
         self._kernel = kernel
         self._func_name = func_name
@@ -779,6 +793,9 @@ class CompiledL0Kernel:
 
     def __call__(self, kernel_args: list, loop_end: int, backend):
         """Dispatch the Level Zero kernel."""
+        if self._requires_full_workgroups:
+            check_workgroup_launch(self._func_name, loop_end, backend_label='Level Zero',
+                                   workgroup_size=self._workgroup_size)
         ze = _get_ze()
         kernel = self._kernel
 
@@ -1089,8 +1106,13 @@ class LevelZeroBackend(Backend):
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledL0Kernel:
         """Compile Tack IR → OpenCL C → SPIR-V → ze_module → ze_kernel."""
         kernel_name = kernel_entry_name(ir_func.name)
+        workgroup_size = min(WORKGROUP_SIZE, self._compute_props.maxGroupSizeX,
+                             self._compute_props.maxTotalGroupSize)
+        full_groups = requires_full_workgroups(ir_func)
+        if full_groups:
+            check_workgroup_launch(ir_func.name, 0, backend_label=self.label,
+                                   workgroup_size=workgroup_size)
         ze = _get_ze()
-        workgroup_size = min(256, self._compute_props.maxGroupSizeX)
 
         # Generate OpenCL C source
         opencl_source = generate_opencl_source(ir_func)
@@ -1150,7 +1172,8 @@ class LevelZeroBackend(Backend):
                 texture_shapes[i] = p._texture_shape
         return CompiledL0Kernel(module, kernel, kernel_name,
                                 param_types, param_is_field, workgroup_size,
-                                param_is_texture, texture_shapes)
+                                param_is_texture, texture_shapes,
+                                requires_full_workgroups=full_groups)
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""

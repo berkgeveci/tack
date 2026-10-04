@@ -17,6 +17,11 @@ from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer, ExportedMemory
 from tack.lang.types import ScalarType, f32, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import (
+    WORKGROUP_SIZE,
+    check_workgroup_launch,
+    requires_full_workgroups,
+)
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
@@ -54,6 +59,10 @@ class MetalBuffer(DeviceBuffer):
         self._view[:] = 0
 
     @property
+    def address(self) -> int:
+        return self._view.ctypes.data
+
+    @property
     def metal_buffer(self):
         return self._metal_buffer
 
@@ -89,7 +98,14 @@ class CompiledMetalKernel:
 
     def __init__(self, device, command_queue, pipeline, func_name,
                  param_types, param_is_field, param_is_texture=None,
-                 texture_shapes=None, argument_encoder=None):
+                 texture_shapes=None, argument_encoder=None, *,
+                 requires_full_workgroups=False):
+        self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
+        self._workgroup_size = min(self._max_threads_per_group, WORKGROUP_SIZE)
+        self._requires_full_workgroups = requires_full_workgroups
+        if requires_full_workgroups:
+            check_workgroup_launch(func_name, 0, backend_label='Metal',
+                                   workgroup_size=self._workgroup_size)
         self._device = device
         self._command_queue = command_queue
         self._pipeline = pipeline
@@ -105,10 +121,12 @@ class CompiledMetalKernel:
                 argument_encoder.encodedLength(), Metal.MTLResourceStorageModeShared)
             argument_encoder.setArgumentBuffer_offset_(self._argument_buffer, 0)
         self._thread_execution_width = pipeline.threadExecutionWidth()
-        self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
 
     def __call__(self, kernel_args: list, loop_end: int):
         """Dispatch the compute kernel on the GPU."""
+        if self._requires_full_workgroups:
+            check_workgroup_launch(self._func_name, loop_end, backend_label='Metal',
+                                   workgroup_size=self._workgroup_size)
         command_buffer = self._command_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoderWithDescriptor_(
             Metal.MTLComputePassDescriptor.computePassDescriptor()
@@ -177,7 +195,7 @@ class CompiledMetalKernel:
                 buf_idx += 1
 
         # Dispatch threads
-        threads_per_group = min(self._max_threads_per_group, 256)
+        threads_per_group = self._workgroup_size
         grid_size = Metal.MTLSizeMake(loop_end, 1, 1)
         group_size = Metal.MTLSizeMake(threads_per_group, 1, 1)
 
@@ -237,7 +255,8 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
             raise RuntimeError(f"Could not create argument encoder for '{kernel_name}'")
     return CompiledMetalKernel(device, command_queue, pipeline, kernel_name,
                                param_types, param_is_field, param_is_texture,
-                               texture_shapes, argument_encoder)
+                               texture_shapes, argument_encoder,
+                               requires_full_workgroups=requires_full_workgroups(ir_func))
 
 
 _REDUCE_MSL_SUM = field_reduction_source('metal', 'sum')

@@ -12,13 +12,16 @@ All integer locals and loop indices use 64-bit ``long long`` to support grids
 with more than 2^31 elements.
 """
 
+from tack.codegen.atomics import cuda_atomic64_helpers
 from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
 from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_support
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
 
 _C_TYPE_MAP = {
     i8:  "signed char",
@@ -95,6 +98,7 @@ class CUDACodeGen:
     # named here rather than inlined into the signature below.
     _TEXTURE_OBJECT_TYPE = "cudaTextureObject_t"
 
+    _atomic_backend = 'cuda'
     _integer_type_map = _C_TYPE_MAP
 
     def __init__(self, ir_func: ir.IRFunction):
@@ -106,6 +110,7 @@ class CUDACodeGen:
         self._local_vars: dict[str, str] = {}  # name → C type (all known vars)
         self._declared_vars: set[str] = set()  # vars already emitted with declaration
         self._loop_end_name: str | None = None
+        self._atomic64 = set()
         self._needs_float_atomic_min = False
         self._needs_float_atomic_max = False
         self._integer_division_helpers = set()
@@ -116,6 +121,8 @@ class CUDACodeGen:
     def generate(self) -> str:
         """Generate CUDA C source for the kernel."""
         func = self.ir_func
+        check_atomic_support(func, backend_name=self._atomic_backend)
+        check_workgroup_participation(func)
 
         # Build parameter info
         for param in func.params:
@@ -168,11 +175,12 @@ class CUDACodeGen:
             + self._integers.definitions('__device__ inline')
             + f32_reduction_helpers('cuda', self._block_extrema)
         )
+        prefix_lines += cuda_atomic64_helpers(self._atomic64)
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "__device__ float atomicMinFloat(float* addr, float val) {",
                 "    int* addr_as_int = (int*)addr;",
-                "    int old = *addr_as_int, assumed;",
+                "    int old = atomicCAS(addr_as_int, 0, 0), assumed;",
                 "    do {",
                 "        assumed = old;",
                 "        old = atomicCAS(addr_as_int, assumed,",
@@ -186,7 +194,7 @@ class CUDACodeGen:
             prefix_lines.extend([
                 "__device__ float atomicMaxFloat(float* addr, float val) {",
                 "    int* addr_as_int = (int*)addr;",
-                "    int old = *addr_as_int, assumed;",
+                "    int old = atomicCAS(addr_as_int, 0, 0), assumed;",
                 "    do {",
                 "        assumed = old;",
                 "        old = atomicCAS(addr_as_int, assumed,",
@@ -428,15 +436,16 @@ class CUDACodeGen:
         if idx_type in ("float", "double"):
             index = f"(({_INT})({index}))"
 
-        # Determine field type to handle float atomicMin/Max via CAS
-        field_name = self._get_field_name(node.field)
-        field_type = _C_TYPE_MAP.get(self._param_types.get(field_name)) if field_name else None
-        is_float = field_type in ("float", "double")
-
-        if node.op == "min" and is_float:
+        dtype = node.dtype
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), dtype)
+        value = f"(({_C_TYPE_MAP[dtype]})({value}))"
+        if dtype in (i64, u64, f64):
+            self._atomic64.add((node.op, dtype))
+            self._emit(f"tack_atomic_{node.op}_{dtype.name}(&{field}[{index}], {value});")
+        elif node.op == "min" and dtype is f32:
             self._needs_float_atomic_min = True
             self._emit(f"atomicMinFloat(&{field}[{index}], {value});")
-        elif node.op == "max" and is_float:
+        elif node.op == "max" and dtype is f32:
             self._needs_float_atomic_max = True
             self._emit(f"atomicMaxFloat(&{field}[{index}], {value});")
         else:
@@ -562,11 +571,11 @@ class CUDACodeGen:
             "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"__shared__ float {smem}[256];")
+        self._emit(f"__shared__ float {smem}[{WORKGROUP_SIZE}];")
         self._emit(f"int {tid} = threadIdx.x;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("__syncthreads();")
-        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
+        self._emit(f"for (int __s = {WORKGROUP_SIZE // 2}; __s > 0; __s >>= 1) {{")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
@@ -577,6 +586,9 @@ class CUDACodeGen:
         self._indent -= 1
         self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
+        # Every lane must finish reading before a later loop iteration
+        # reuses this static shared array.
+        self._emit("__syncthreads();")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)
         return result

@@ -1,7 +1,7 @@
 # IR Passes
 
 Tack runs several IR passes between AST transformation and codegen. Each
-pass walks the IR tree and mutates it in place.
+pass inspects the IR tree; transformation passes mutate a private copy.
 
 ## Pass Order
 
@@ -10,9 +10,10 @@ pass walks the IR tree and mutates it in place.
 2. type_inference   — Annotate params with types from actual arguments
 3. check_dispatch_types — Validate field dtypes against backend capabilities
 4. scalar localization — Give assigned scalar params per-iteration local storage
-5. ir_optimize      — Conservative copy propagation
-6. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
-7. ir_type_annotate — Annotate scalar expressions and assignment storage types
+5. workgroup participation — Prove the supported collective control-flow domain (GPU only)
+6. ir_optimize      — Conservative copy propagation
+7. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
+8. ir_type_annotate — Annotate scalar expressions and assignment storage types
 ```
 
 `resolve_variant()` runs the common passes only for a new compiled variant.
@@ -111,6 +112,25 @@ building a new compiled variant.
 Each backend defines its supported dtypes (e.g., Metal excludes `f64`).
 Unsupported dtypes produce a clear `TypeError` naming the kernel, parameter,
 dtype, and backend.
+
+## Workgroup Participation (`workgroup_participation.py`)
+
+GPU variant construction checks collective control flow after scalar
+localization, before optimization and scalar packing. A structured uniformity
+analysis follows assignments and branch joins, with monotone loop fixed
+points for carried values and lane-dependent exits. It rejects unproven
+participation before code generation and returns the full-256-lane launch
+requirement, cached on `KernelVariant`. Cached dispatch checks logical counts
+without repeating this pass. Public inspection follows the same boundary;
+direct GPU generation checks mutable IR afresh.
+
+Ordinary memory/texture loads are varying. Scalar arguments and immutable
+scalar packs are uniform; `pack_scalars` marks generated parameters with
+`_is_scalar_pack` so packed codegen retains that fact. Shape metadata and
+collective results are uniform too. Conditional/short-circuit reductions and
+while-condition reductions are restricted where codegen cannot preserve
+evaluation. See the language contract and `test_workgroup_participation.py`.
+This does not replace structural verification or prove race freedom.
 
 ## IR Optimize (`ir_optimize.py`)
 

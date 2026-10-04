@@ -16,8 +16,11 @@ from tack.codegen.integer_division import integer_division_expr, integer_divisio
 from tack.codegen.integer_ops import IntegerCodeGen
 from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_support
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
+from tack.lang.workgroup_support import workgroup_features
 
 _MSL_TYPE_MAP = {
     i8:  "char",
@@ -88,10 +91,9 @@ class MSLCodeGen:
     def generate(self) -> str:
         """Generate MSL source for the kernel."""
         func = self.ir_func
-        self._needs_local_tid = False
-
-        # Pre-scan IR for shared memory / thread_id usage
-        self._needs_local_tid = self._scan_for_threadgroup(func.body)
+        check_atomic_support(func, backend_name='metal')
+        check_workgroup_participation(func)
+        self._needs_local_tid = bool(workgroup_features(func))
 
         # Build parameter info
         for param in func.params:
@@ -230,7 +232,7 @@ class MSLCodeGen:
             msl_type = _MSL_TYPE_MAP[node.dtype]
             self._emit(f"{msl_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRBarrier):
-            self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
+            self._emit("threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device);")
         elif isinstance(node, ir.IRCall):
             self._emit(f"{self._expr(node)};")
         else:
@@ -347,9 +349,11 @@ class MSLCodeGen:
         if idx_type in ("float",):
             index = f"(({_INT})({index}))"
 
-        # Determine if field is float or int
-        field_name = self._get_field_name(node.field)
-        is_float = field_name and self._param_types.get(field_name) in (f32,)
+        dtype = node.dtype
+        is_float = dtype is f32
+        atomic_type = 'atomic_uint' if dtype is u32 else 'atomic_int'
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), dtype)
+        value = f"(({_MSL_TYPE_MAP[dtype]})({value}))"
 
         if node.op == "add":
             if is_float:
@@ -361,7 +365,7 @@ class MSLCodeGen:
             else:
                 self._emit(
                     f"atomic_fetch_add_explicit("
-                    f"(volatile device atomic_int*)&{field}[{index}], "
+                    f"(volatile device {atomic_type}*)&{field}[{index}], "
                     f"{value}, memory_order_relaxed);")
         elif node.op in ("min", "max"):
             if is_float:
@@ -388,7 +392,7 @@ class MSLCodeGen:
                 func = "atomic_fetch_min_explicit" if node.op == "min" else "atomic_fetch_max_explicit"
                 self._emit(
                     f"{func}("
-                    f"(volatile device atomic_int*)&{field}[{index}], "
+                    f"(volatile device {atomic_type}*)&{field}[{index}], "
                     f"{value}, memory_order_relaxed);")
         else:
             raise NotImplementedError(f"MSL atomic op: {node.op}")
@@ -508,11 +512,11 @@ class MSLCodeGen:
             "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"threadgroup float {smem}[256];")
+        self._emit(f"threadgroup float {smem}[{WORKGROUP_SIZE}];")
         self._emit(f"int {tid} = __local_tid__;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
-        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
+        self._emit(f"for (int __s = {WORKGROUP_SIZE // 2}; __s > 0; __s >>= 1) {{")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
@@ -523,6 +527,8 @@ class MSLCodeGen:
         self._indent -= 1
         self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
+        # Protect the result read against shared-array reuse in loops.
+        self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)
         return result
@@ -769,52 +775,6 @@ inline float {name}(device float* data, float u, float v, float w) {{
         else_ = self._integers.convert(else_, getattr(node.else_value, 'dtype', None), dtype)
         return f"({cond} ? {then} : {else_})"
 
-
-    def _scan_for_threadgroup(self, stmts: list) -> bool:
-        """Check if any statement uses threadgroup features."""
-        for stmt in stmts:
-            if isinstance(stmt, (ir.IRSharedAlloc, ir.IRBarrier, ir.IRThreadId, ir.IRBlockReduce)):
-                return True
-            if isinstance(stmt, ir.IRParallelFor):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRSequentialFor):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRWhile):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRIf):
-                if self._scan_for_threadgroup(stmt.then_body):
-                    return True
-                if stmt.else_body and self._scan_for_threadgroup(stmt.else_body):
-                    return True
-            # Check expressions for IRThreadId
-            elif isinstance(stmt, ir.IRAssign):
-                if self._expr_contains_thread_id(stmt.value):
-                    return True
-            elif isinstance(stmt, ir.IRFieldStore):
-                if (self._expr_contains_thread_id(stmt.index) or
-                        self._expr_contains_thread_id(stmt.value)):
-                    return True
-        return False
-
-    def _expr_contains_thread_id(self, node) -> bool:
-        """Check if an expression contains IRThreadId or IRBlockReduce."""
-        if isinstance(node, (ir.IRThreadId, ir.IRBlockReduce)):
-            return True
-        if isinstance(node, ir.IRBinOp):
-            return (self._expr_contains_thread_id(node.left) or
-                    self._expr_contains_thread_id(node.right))
-        if isinstance(node, ir.IRUnaryOp):
-            return self._expr_contains_thread_id(node.operand)
-        if isinstance(node, ir.IRCall):
-            return any(self._expr_contains_thread_id(a) for a in node.args)
-        if isinstance(node, ir.IRCast):
-            return self._expr_contains_thread_id(node.value)
-        if isinstance(node, ir.IRFieldLoad):
-            return self._expr_contains_thread_id(node.index)
-        return False
 
 
 def generate_msl_source(ir_func: ir.IRFunction) -> str:

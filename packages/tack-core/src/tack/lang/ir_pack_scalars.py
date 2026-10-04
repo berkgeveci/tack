@@ -44,6 +44,7 @@ def pack_scalars(ir_func: ir.IRFunction, args: tuple):
         pack_name = fresh_name(f"__pack_{dtype.name}__", used_names)
         pack_param = ir.IRParam(name=pack_name, type_annotation=dtype)
         pack_param._is_field = True
+        pack_param._is_scalar_pack = True  # Runtime-owned immutable uniform inputs.
         new_params.append(pack_param)
 
         values = []

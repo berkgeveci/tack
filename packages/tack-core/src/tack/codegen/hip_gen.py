@@ -28,6 +28,7 @@ class HIPCodeGen(CUDACodeGen):
     hardware-sampled texture kernel failed to compile.
     """
 
+    _atomic_backend = "hip"
     _TEXTURE_OBJECT_TYPE = "hipTextureObject_t"
 
     def generate(self) -> str:

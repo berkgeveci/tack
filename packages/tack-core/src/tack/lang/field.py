@@ -42,6 +42,11 @@ class DeviceBuffer:
         raise NotImplementedError
 
     @property
+    def address(self) -> int:
+        """Address used by kernels, for validating imported atomic storage."""
+        raise NotImplementedError
+
+    @property
     def nbytes(self) -> int:
         raise NotImplementedError
 
@@ -66,6 +71,10 @@ class NumpyBuffer(DeviceBuffer):
     @property
     def nbytes(self) -> int:
         return self._data.nbytes
+
+    @property
+    def address(self) -> int:
+        return self._data.ctypes.data
 
     @property
     def span(self) -> tuple[int, int]:

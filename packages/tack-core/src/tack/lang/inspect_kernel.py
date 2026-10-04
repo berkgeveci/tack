@@ -6,6 +6,7 @@ Usage:
 """
 
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_alignment, check_atomic_support
 from tack.lang.field import Field
 from tack.lang.ir_optimize import optimize_ir
 from tack.lang.ir_resolve import resolve_ir
@@ -13,12 +14,17 @@ from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_type_annotate import annotate_types
 from tack.lang.ir_verify import verify_ir
 from tack.lang.type_inference import infer_param_types
+from tack.lang.workgroup_participation import (
+    check_workgroup_launch,
+    check_workgroup_participation,
+)
 from tack.lang.workgroup_support import check_workgroup_support
 from tack.runtime.kernel_utils import (
     _detect_template_args,
     _detect_texture_fields,
     _detect_vector_fields_from_args,
     _expand_template_args,
+    _get_loop_range,
     _localize_assigned_scalar_params,
 )
 
@@ -69,6 +75,16 @@ def _prepare_ir(kernel, args, *, backend=None):
 
     _localize_assigned_scalar_params(ir_func)
     verify_ir(ir_func, 'localized')
+    if backend is not None:
+        targets = check_atomic_support(
+            ir_func, backend_name=backend.name,
+            supported_dtypes=backend.supported_atomic_dtypes,
+        )
+        check_atomic_alignment(ir_func.name, targets, effective_args)
+    if backend is not None and backend.supports_workgroups:
+        if check_workgroup_participation(ir_func):
+            check_workgroup_launch(ir_func.name, _get_loop_range(ir_func, effective_args),
+                                   backend_label=backend.label)
 
     # Optimize
     optimize_ir(ir_func)

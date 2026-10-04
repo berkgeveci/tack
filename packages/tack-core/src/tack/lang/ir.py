@@ -244,7 +244,8 @@ class IRBlockReduce(IRNode):
     """Block-level reduction across all threads in a workgroup.
 
     Emits a shared memory tree reduction pattern:
-    shared[tid] = value; barrier; tree reduce; barrier; result = shared[0].
+    shared[tid] = value; barrier; tree reduce; barrier; result = shared[0];
+    barrier (protect the result read before the array is reused in a loop).
     """
 
     def __init__(self, op: str, value):

@@ -184,7 +184,7 @@ class TestMSLCodeGen:
 
         src = generate_msl_source(_get_ir(kern, _field(), _field()))
         assert 'threadgroup' in src
-        assert 'threadgroup_barrier(mem_flags::mem_threadgroup)' in src
+        assert 'threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device)' in src
 
     def test_shared_memory_adds_local_tid(self):
         @tack.kernel

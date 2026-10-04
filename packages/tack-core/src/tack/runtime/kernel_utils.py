@@ -24,10 +24,15 @@ see ``shape_signature`` — and it makes the pristine IR from
 import weakref
 
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_alignment, check_atomic_support
 from tack.lang.field import Field, Texture3D
 from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_traversal import walk_ir as _walk_ir
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
+from tack.lang.workgroup_participation import (
+    check_workgroup_launch,
+    check_workgroup_participation,
+)
 from tack.lang.workgroup_support import check_workgroup_support
 
 
@@ -398,11 +403,13 @@ class KernelVariant:
     whatever the backend needed to cache alongside it.
     """
 
-    __slots__ = ("ir", "payload")
+    __slots__ = ("atomic_targets", "ir", "payload", "requires_full_workgroups")
 
-    def __init__(self, ir_func, payload):
+    def __init__(self, ir_func, payload, *, requires_full_workgroups=False, atomic_targets=()):
         self.ir = ir_func
         self.payload = payload
+        self.requires_full_workgroups = requires_full_workgroups
+        self.atomic_targets = atomic_targets
 
 
 def resolve_variant(backend, kernel, args, kwargs, build,
@@ -485,12 +492,28 @@ def resolve_variant(backend, kernel, args, kwargs, build,
                              backend_name=backend.label)
         _localize_assigned_scalar_params(ir_func)
         verify_ir(ir_func, 'localized')
+        atomic_targets = check_atomic_support(
+            ir_func, backend_name=backend.name,
+            supported_dtypes=backend.supported_atomic_dtypes,
+        )
+        check_atomic_alignment(ir_func.name, atomic_targets, effective_args)
+        full_groups = (backend.supports_workgroups and
+                       check_workgroup_participation(ir_func))
+        if full_groups:
+            check_workgroup_launch(ir_func.name, _get_loop_range(ir_func, effective_args),
+                                   backend_label=backend.label)
         optimize_ir(ir_func)
         verify_ir(ir_func, 'optimized')
         ir_func.disjoint_fields = disjoint
-        variant = KernelVariant(ir_func, build(ir_func, effective_args))
+        variant = KernelVariant(ir_func, build(ir_func, effective_args),
+                                requires_full_workgroups=full_groups,
+                                atomic_targets=atomic_targets)
         slot[key] = variant
+    elif variant.requires_full_workgroups:
+        check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
+                               backend_label=backend.label)
 
+    check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
     return variant, effective_args
 
 

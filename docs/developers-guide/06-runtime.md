@@ -89,8 +89,15 @@ the compiled variants specialized on it from every backend's cache.
 Public inspection checks the selected backend's workgroup capability before
 preparing a variant. Private `_prepare_ir` may omit a backend for cross-target
 codegen tools/tests. Direct LLVM generation always checks the supplied IR
-afresh because callers may mutate it. None of these checks analyzes barrier
-participation or atomic type/scope support.
+afresh because callers may mutate it.
+
+GPU variant construction checks conservative workgroup participation after
+scalar localization, before optimization/packing. `KernelVariant` caches
+the full-group requirement; every collective dispatch checks its logical
+count, including cache hits. Direct GPU generators check mutable IR afresh,
+using `_is_scalar_pack` metadata for immutable runtime scalar inputs. Metal
+pipeline capacity and Level Zero X/total limits must admit 256 lanes.
+These checks do not establish atomic type/scope support or race freedom.
 
 ## Loop Range Resolution
 
