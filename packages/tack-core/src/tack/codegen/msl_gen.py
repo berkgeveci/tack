@@ -16,6 +16,7 @@ from tack.codegen.integer_division import integer_division_expr, integer_divisio
 from tack.codegen.integer_ops import IntegerCodeGen
 from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_support
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
@@ -90,6 +91,7 @@ class MSLCodeGen:
     def generate(self) -> str:
         """Generate MSL source for the kernel."""
         func = self.ir_func
+        check_atomic_support(func, backend_name='metal')
         check_workgroup_participation(func)
         self._needs_local_tid = bool(workgroup_features(func))
 
@@ -230,7 +232,7 @@ class MSLCodeGen:
             msl_type = _MSL_TYPE_MAP[node.dtype]
             self._emit(f"{msl_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRBarrier):
-            self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
+            self._emit("threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device);")
         elif isinstance(node, ir.IRCall):
             self._emit(f"{self._expr(node)};")
         else:
@@ -347,9 +349,11 @@ class MSLCodeGen:
         if idx_type in ("float",):
             index = f"(({_INT})({index}))"
 
-        # Determine if field is float or int
-        field_name = self._get_field_name(node.field)
-        is_float = field_name and self._param_types.get(field_name) in (f32,)
+        dtype = node.dtype
+        is_float = dtype is f32
+        atomic_type = 'atomic_uint' if dtype is u32 else 'atomic_int'
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), dtype)
+        value = f"(({_MSL_TYPE_MAP[dtype]})({value}))"
 
         if node.op == "add":
             if is_float:
@@ -361,7 +365,7 @@ class MSLCodeGen:
             else:
                 self._emit(
                     f"atomic_fetch_add_explicit("
-                    f"(volatile device atomic_int*)&{field}[{index}], "
+                    f"(volatile device {atomic_type}*)&{field}[{index}], "
                     f"{value}, memory_order_relaxed);")
         elif node.op in ("min", "max"):
             if is_float:
@@ -388,7 +392,7 @@ class MSLCodeGen:
                 func = "atomic_fetch_min_explicit" if node.op == "min" else "atomic_fetch_max_explicit"
                 self._emit(
                     f"{func}("
-                    f"(volatile device atomic_int*)&{field}[{index}], "
+                    f"(volatile device {atomic_type}*)&{field}[{index}], "
                     f"{value}, memory_order_relaxed);")
         else:
             raise NotImplementedError(f"MSL atomic op: {node.op}")

@@ -120,6 +120,10 @@ class CUDABuffer(DeviceBuffer):
         _check(driver.cuMemsetD8(self._device_ptr, 0, self._nbytes))
 
     @property
+    def address(self) -> int:
+        return int(self._device_ptr)
+
+    @property
     def device_ptr(self):
         return self._device_ptr
 
@@ -254,6 +258,10 @@ class ExportableCUDABuffer(DeviceBuffer):
               "sharing with another API; ordinary tack.field() allocations are "
               "unaffected."
         )
+
+    @property
+    def address(self) -> int:
+        return int(self._device_ptr)
 
     @property
     def device_ptr(self):

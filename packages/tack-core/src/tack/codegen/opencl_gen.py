@@ -16,6 +16,7 @@ from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_support
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
 
@@ -56,6 +57,7 @@ class OpenCLCodeGen(CUDACodeGen):
 
     def generate(self) -> str:
         func = self.ir_func
+        check_atomic_support(func, backend_name='level_zero')
         check_workgroup_participation(func)
 
         # Build parameter info
@@ -112,13 +114,14 @@ class OpenCLCodeGen(CUDACodeGen):
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "float atomicMinFloat(volatile __global float* addr, float val) {",
-                "    volatile __global int* addr_as_int = (volatile __global int*)addr;",
-                "    int old = *addr_as_int, assumed;",
+                "    volatile __global atomic_int* addr_as_int = (volatile __global atomic_int*)addr;",
+                "    int old = atomic_load_explicit(addr_as_int, memory_order_relaxed, memory_scope_device), assumed;",
                 "    do {",
                 "        assumed = old;",
-                "        old = atomic_cmpxchg(addr_as_int, assumed,",
-                "            as_int(fmin(val, as_float(assumed))));",
-                "    } while (assumed != old);",
+                "        int next = as_int(fmin(val, as_float(assumed)));",
+                "        if (atomic_compare_exchange_weak_explicit(addr_as_int, &old, next,",
+                "            memory_order_relaxed, memory_order_relaxed, memory_scope_device)) break;",
+                "    } while (true);",
                 "    return as_float(old);",
                 "}",
                 "",
@@ -126,13 +129,14 @@ class OpenCLCodeGen(CUDACodeGen):
         if self._needs_float_atomic_max:
             prefix_lines.extend([
                 "float atomicMaxFloat(volatile __global float* addr, float val) {",
-                "    volatile __global int* addr_as_int = (volatile __global int*)addr;",
-                "    int old = *addr_as_int, assumed;",
+                "    volatile __global atomic_int* addr_as_int = (volatile __global atomic_int*)addr;",
+                "    int old = atomic_load_explicit(addr_as_int, memory_order_relaxed, memory_scope_device), assumed;",
                 "    do {",
                 "        assumed = old;",
-                "        old = atomic_cmpxchg(addr_as_int, assumed,",
-                "            as_int(fmax(val, as_float(assumed))));",
-                "    } while (assumed != old);",
+                "        int next = as_int(fmax(val, as_float(assumed)));",
+                "        if (atomic_compare_exchange_weak_explicit(addr_as_int, &old, next,",
+                "            memory_order_relaxed, memory_order_relaxed, memory_scope_device)) break;",
+                "    } while (true);",
                 "    return as_float(old);",
                 "}",
                 "",
@@ -223,7 +227,7 @@ class OpenCLCodeGen(CUDACodeGen):
             c_type = _OCL_C_TYPE_MAP[node.dtype]
             self._emit(f"{c_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRBarrier):
-            self._emit("barrier(CLK_LOCAL_MEM_FENCE);")
+            self._emit("barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);")
         else:
             super()._emit_stmt(node)
 
@@ -354,29 +358,36 @@ class OpenCLCodeGen(CUDACodeGen):
         if idx_type in ("float", "double"):
             index = f"(({_OCL_INT})({index}))"
 
-        field_name = self._get_field_name(node.field)
-        field_type = _OCL_C_TYPE_MAP.get(self._param_types.get(field_name)) if field_name else None
-        is_float = field_type in ("float", "double")
-
-        if node.op == "min" and is_float:
+        dtype = node.dtype
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), dtype)
+        value = f"(({_OCL_C_TYPE_MAP[dtype]})({value}))"
+        if node.op == "min" and dtype is f32:
             self._needs_float_atomic_min = True
             self._emit(f"atomicMinFloat(&{field}[{index}], {value});")
-        elif node.op == "max" and is_float:
+        elif node.op == "max" and dtype is f32:
             self._needs_float_atomic_max = True
             self._emit(f"atomicMaxFloat(&{field}[{index}], {value});")
-        elif node.op == "add" and is_float:
-            # CAS-based float atomic add
-            self._emit(f"{{ volatile __global int* __addr = (volatile __global int*)&{field}[{index}];")
-            self._emit("  int __old = *__addr, __assumed;")
-            self._emit("  do { __assumed = __old;")
-            self._emit(f"    __old = atomic_cmpxchg(__addr, __assumed, as_int(as_float(__assumed) + {value}));")
-            self._emit("  } while (__assumed != __old); }")
+        elif dtype is f32:
+            # Evaluate the contributed value once, outside retries.
+            self._emit("{")
+            self._indent += 1
+            self._emit(f"float __val = {value};")
+            self._emit(f"volatile __global atomic_uint* __addr = (volatile __global atomic_uint*)&{field}[{index}];")
+            self._emit("uint __old = atomic_load_explicit(__addr, memory_order_relaxed, memory_scope_device);")
+            self._emit("while (true) {")
+            self._indent += 1
+            self._emit("uint __next = as_uint(as_float(__old) + __val);")
+            self._emit("if (atomic_compare_exchange_weak_explicit(__addr, &__old, __next, "
+                       "memory_order_relaxed, memory_order_relaxed, memory_scope_device)) break;")
+            self._indent -= 1
+            self._emit("}")
+            self._indent -= 1
+            self._emit("}")
         else:
-            _ATOMIC_FUNCS = {"add": "atomic_add", "min": "atomic_min", "max": "atomic_max"}
-            func = _ATOMIC_FUNCS.get(node.op)
-            if func is None:
-                raise NotImplementedError(f"OpenCL atomic op: {node.op}")
-            self._emit(f"{func}(&{field}[{index}], {value});")
+            atomic_type = 'atomic_uint' if dtype is u32 else 'atomic_int'
+            self._emit(f"atomic_fetch_{node.op}_explicit("
+                       f"(volatile __global {atomic_type}*)&{field}[{index}], {value}, "
+                       "memory_order_relaxed, memory_scope_device);")
 
     # --- Field store/load (use 'long' for index casts) ---
 

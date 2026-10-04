@@ -85,6 +85,10 @@ class HIPBuffer(DeviceBuffer):
         _check_hip(hip.hipMemset(self._device_ptr, 0, self._nbytes))
 
     @property
+    def address(self) -> int:
+        return int(self._device_ptr)
+
+    @property
     def device_ptr(self):
         return self._device_ptr
 

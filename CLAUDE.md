@@ -92,9 +92,28 @@ cached launches recheck counts without structural analysis. Inspection and
 direct GPU generators validate participation too. Scalar-pack params carry
 `_is_scalar_pack` to preserve uniformity. Metal pipeline and Level Zero
 X/total device limits cannot silently shrink collective groups. MSL uses
-structural feature discovery, including thread IDs in conditions. Atomic
-contracts remain stage-six work. See `test_workgroup_contract.py`,
-`test_workgroup_participation.py` and the language contract.
+structural feature discovery, including thread IDs in conditions. Explicit
+user barriers fence shared and global field memory within the workgroup.
+See `test_workgroup_contract.py`, `test_workgroup_participation.py` and the
+language contract.
+
+`Backend.supported_atomic_dtypes` declares add/min/max targets: CPU all
+shipped scalar widths; CUDA/HIP i32/u32/i64/u64/f32/f64; Metal/Level Zero
+only i32/u32/f32. `lang/atomic_support.py` checks global field targets,
+including uniquely traced inlined pointer copies, before optimization and
+in all inspection modes. Direct generators scan mutable IR afresh. Reject
+private/shared arrays, textures, unsupported widths and ambiguous targets.
+Atomic fields require natural alignment; `DeviceBuffer.address` exposes
+current storage for the cold/cached checks. Variants retain target parameter
+indices/alignments, not addresses; warm dispatch does not scan IR. CPU
+floating extrema use real CAS loops; unsigned extrema use unsigned RMW.
+CUDA/HIP wide operations use 64-bit CAS. OpenCL user atomics and field
+reductions use explicit relaxed device scope, rather than legacy atomics'
+workgroup-only guarantee. Values convert once to target precision and are
+captured outside CAS retries. Atomics are relaxed, spanning CPU workers or
+GPU workgroups on one device; they are not publication fences or host/device
+system-scope operations. Floating extrema remain finite/nonzero only.
+See `test_atomic_contract.py` and the language contract.
 
 Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
 
@@ -360,7 +379,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 - **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(field, size)`, `tack.barrier()`, `tack.thread_id()`
 - **Debug**: `print("label:", value)` — emits printf on CPU/CUDA/HIP, no-op on Metal
 - **Fields**: `field[i]`, `field[i, j]`, `field[None]`, `field.shape[k]`, `len(field)` — usable anywhere in a kernel (loop bounds, conditions, arithmetic, indices), not just as the outer loop bound. The dimension index must be a literal. See "Field dimensions" below for what specializes.
-- **Reductions**: `field.sum()`, `field.min()`, `field.max()`, `field.mean()` return Python floats. Eligible f32 fields reduce on GPU; CPU and other dtypes use shared NumPy semantics. f32/f64 sums retain their precision; signed/unsigned integer sums use wrapping i64/u64 accumulators before float conversion. Floating extrema propagate NaNs and use negative-zero min / positive-zero max ties. Empty sum is +0, empty mean NaN, empty extrema raise. Floating addition order may vary; see the absolute error budget in `docs/reference/language-contract.md`. Runtime kernels and GPU block extrema share `codegen/reductions.py`; block arguments/results are f32, requiring explicit casts for other inputs. CPU rejects cooperative kernels; GPU workgroup participation remains stage-six work. See `test_reduction_semantics.py`.
+- **Reductions**: `field.sum()`, `field.min()`, `field.max()`, `field.mean()` return Python floats. Eligible f32 fields reduce on GPU; CPU and other dtypes use shared NumPy semantics. f32/f64 sums retain their precision; signed/unsigned integer sums use wrapping i64/u64 accumulators before float conversion. Floating extrema propagate NaNs and use negative-zero min / positive-zero max ties. Empty sum is +0, empty mean NaN, empty extrema raise. Floating addition order may vary; see the absolute error budget in `docs/reference/language-contract.md`. Runtime kernels and GPU block extrema share `codegen/reductions.py`; block arguments/results are f32, requiring explicit casts for other inputs. CPU rejects cooperative kernels; GPU participation and atomic target/order/scope domains are defined in the language contract. See `test_reduction_semantics.py`.
 
 ## Platform-specific dependencies
 

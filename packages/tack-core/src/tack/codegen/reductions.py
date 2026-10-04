@@ -80,13 +80,14 @@ def field_reduction_source(dialect, op):
         setup = '__local float sdata[256];\n    uint tid = get_local_id(0);\n    long i = get_global_id(0);'
         barrier = 'barrier(CLK_LOCAL_MEM_FENCE);'
         atomic = f'''
-        volatile __global uint* addr = (volatile __global uint*)&output[0];
-        uint old = atomic_cmpxchg(addr, 0u, 0u), assumed;
-        do {{
-            assumed = old;
-            float old_f = {to_float}(assumed);
-            old = atomic_cmpxchg(addr, assumed, {to_bits}({final}));
-        }} while (assumed != old);'''
+        volatile __global atomic_uint* addr = (volatile __global atomic_uint*)&output[0];
+        uint old = atomic_load_explicit(addr, memory_order_relaxed, memory_scope_device);
+        while (true) {{
+            float old_f = {to_float}(old);
+            uint next = {to_bits}({final});
+            if (atomic_compare_exchange_weak_explicit(addr, &old, next,
+                memory_order_relaxed, memory_order_relaxed, memory_scope_device)) break;
+        }}'''
     helpers = '\n'.join(f32_reduction_helpers(dialect, (op,))) if op != 'sum' else ''
     return header + helpers + f'''
 {signature} {{

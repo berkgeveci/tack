@@ -59,6 +59,10 @@ class MetalBuffer(DeviceBuffer):
         self._view[:] = 0
 
     @property
+    def address(self) -> int:
+        return self._view.ctypes.data
+
+    @property
     def metal_buffer(self):
         return self._metal_buffer
 

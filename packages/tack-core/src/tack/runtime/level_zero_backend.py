@@ -651,6 +651,10 @@ class L0Buffer(DeviceBuffer):
         self._copy_to_device(zeros)
 
     @property
+    def address(self) -> int:
+        return int(self._device_ptr.value)
+
+    @property
     def device_ptr(self):
         return self._device_ptr
 

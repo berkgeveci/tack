@@ -75,6 +75,12 @@ class Backend:
     dlpack_refusal_note: str = ""
 
     @property
+    def supported_atomic_dtypes(self) -> frozenset[ScalarType]:
+        """Global field types supporting add/min/max on this target."""
+        from tack.lang.atomic_support import ATOMIC_DTYPES
+        return ATOMIC_DTYPES.get(self.name, frozenset()) & self.supported_dtypes
+
+    @property
     def supports_f64(self) -> bool:
         """Whether kernels can be dispatched with f64 fields.
 
