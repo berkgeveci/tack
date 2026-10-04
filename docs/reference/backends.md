@@ -57,8 +57,11 @@ reductions require this capability. CPU rejects such kernels before
 compilation or execution; use `local_array` / `local_array_like` for
 private scratch storage instead.
 
-This flag describes the execution model, not barrier uniformity, partial
-workgroup safety or supported atomic types/scopes. See the
+Collectives require complete 256-lane groups and conservatively proven
+uniform participation. Smaller Metal pipeline/Level Zero device limits
+and partial collective grids are rejected. Shared/thread-ID kernels without
+collectives retain partial-grid support. The flag itself describes the
+execution model and does not certify participation or atomics. See the
 [workgroup contract](language-contract.md#workgroups-and-synchronization).
 
 ## Installing

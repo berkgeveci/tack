@@ -19,6 +19,7 @@ from tack.codegen.integer_ops import IntegerCodeGen
 from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
 
 _C_TYPE_MAP = {
     i8:  "signed char",
@@ -116,6 +117,7 @@ class CUDACodeGen:
     def generate(self) -> str:
         """Generate CUDA C source for the kernel."""
         func = self.ir_func
+        check_workgroup_participation(func)
 
         # Build parameter info
         for param in func.params:
@@ -562,11 +564,11 @@ class CUDACodeGen:
             "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"__shared__ float {smem}[256];")
+        self._emit(f"__shared__ float {smem}[{WORKGROUP_SIZE}];")
         self._emit(f"int {tid} = threadIdx.x;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("__syncthreads();")
-        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
+        self._emit(f"for (int __s = {WORKGROUP_SIZE // 2}; __s > 0; __s >>= 1) {{")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
@@ -577,6 +579,9 @@ class CUDACodeGen:
         self._indent -= 1
         self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
+        # Every lane must finish reading before a later loop iteration
+        # reuses this static shared array.
+        self._emit("__syncthreads();")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)
         return result

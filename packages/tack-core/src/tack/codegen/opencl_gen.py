@@ -17,6 +17,7 @@ from tack.codegen.integer_division import integer_division_expr, integer_divisio
 from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
 
 # OpenCL uses 'long' for 64-bit integers (not 'long long')
 _OCL_INT = "long"
@@ -55,6 +56,7 @@ class OpenCLCodeGen(CUDACodeGen):
 
     def generate(self) -> str:
         func = self.ir_func
+        check_workgroup_participation(func)
 
         # Build parameter info
         for param in func.params:
@@ -254,11 +256,11 @@ class OpenCLCodeGen(CUDACodeGen):
             "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"__local float {smem}[256];")
+        self._emit(f"__local float {smem}[{WORKGROUP_SIZE}];")
         self._emit(f"int {tid} = get_local_id(0);")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("barrier(CLK_LOCAL_MEM_FENCE);")
-        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
+        self._emit(f"for (int __s = {WORKGROUP_SIZE // 2}; __s > 0; __s >>= 1) {{")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
@@ -269,6 +271,8 @@ class OpenCLCodeGen(CUDACodeGen):
         self._indent -= 1
         self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
+        # Protect the result read against shared-array reuse in loops.
+        self._emit("barrier(CLK_LOCAL_MEM_FENCE);")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)
         return result

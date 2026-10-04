@@ -670,12 +670,60 @@ CPU does not emulate workgroups. Use `local_array` or `local_array_like`
 for private scratch arrays; these remain supported on CPU, as do ordinary
 scalar kernels, host field reductions and supported atomic operations.
 
-**Remaining limits:** `supports_workgroups` declares the execution model;
-it does not establish supported atomic widths/scopes, barrier uniformity,
-or safety of partial final groups. Workgroup size, launch restrictions,
-participation and atomic ordering/scope still need contracts and hardware
-tests. The new cross-lane exchange tests use fully participating 256-lane
-groups. A CPU result alone cannot validate cooperative GPU execution.
+**GPU launch domain:** barriers and block reductions require complete
+**256-lane workgroups**. Positive logical iteration counts must be divisible
+by 256, including normalized stepped ranges and `ndrange`. Cold dispatch
+rejects partial groups before compilation; cached dispatch rechecks every
+count before execution without repeating analysis. Zero/negative counts
+run nothing. Metal pipeline limits and Level Zero X/total device limits
+must admit 256 lanes; smaller groups are rejected. CUDA/HIP launch width
+matches the generated reduction tree. Shared-memory/thread-ID kernels
+without collectives retain partial-grid support. Bounds and initialized
+shared values remain the user's responsibility.
+
+**GPU participation domain:** `workgroup_participation.py` conservatively
+proves uniform control flow. Constants, scalar arguments, shape queries,
+immutable runtime scalar packs and collective results are uniform across
+a workgroup. Lane indices and ordinary memory/texture loads are varying.
+Assignments and branch joins propagate this classification; loop fixed
+points account for loop-carried conditions and varying `break`/`continue`
+paths, including exits after a barrier that affect subsequent iterations.
+Uniform scalar branches/loops and varying memory updates that reconverge
+before a barrier are supported. Varying loops without collectives may
+reconverge before a later barrier. Device functions are checked after inlining.
+
+Collectives must occur inside the parallel body. Reductions in ternary
+branches, later short-circuit operands or `while` conditions are rejected
+even for uniform predicates: current source generators cannot preserve
+their guarded or repeated evaluation. Move the reduction into an explicit
+supported statement sequence. Other unproven cases, including field-loaded
+conditions and mathematically uniform expressions such as `i // 256`, are
+rejected too. This is a conservative domain, not a complete uniformity prover.
+
+Failures raise `ValueError` naming the kernel, primitive and IR location or
+launch count/size. Public inspection checks participation and logical counts.
+Direct GPU generators check mutable IR afresh; their callers must validate
+eventual launch counts and device limits. Variant construction checks before
+optimization/packing; packed scalar parameters carry `_is_scalar_pack` to
+preserve uniformity. The full-group requirement is cached on `KernelVariant`.
+
+The all-participants requirement follows the
+[CUDA synchronization specification](https://docs.nvidia.com/cuda/archive/12.9.1/pdf/CUDA_C_Programming_Guide.pdf)
+and [OpenCL C barrier specification](https://registry.khronos.org/OpenCL/specs/3.0-unified/pdf/OpenCL_C.pdf).
+Metal can produce smaller final groups with nonuniform dispatch; see
+[Apple's grid-size guidance](https://developer.apple.com/documentation/metal/calculating-threadgroup-and-grid-sizes).
+The fixed width is Tack's implementation domain, not a general hardware
+limit. No automatic padding or CPU workgroup emulator is supplied.
+
+Generated block reductions include a barrier after every lane has read the
+result, before the shared array can be reused by another loop iteration.
+Callers need no extra barrier to protect the collective's result broadcast.
+
+**Remaining limits:** supported atomic types/widths/ordering/scopes remain
+separate work. This analysis does not establish race freedom, initialization,
+bounds safety or termination, or synchronize different workgroups. Hardware
+confirmation is required per backend; CPU results do not validate cooperative
+GPU execution.
 
 ## Specialization and compilation identity
 

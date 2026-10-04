@@ -85,9 +85,16 @@ construction; public inspection and direct LLVM generation also reject them.
 only on immutable frontend templates. Direct LLVM generation scans mutable
 IR afresh. GPU targets bypass this rejection check. Local arrays, ordinary
 atomics and host field reductions remain supported on CPU. This flag does
-not prove full-group participation, barrier uniformity or atomic type/scope
-support; those contracts remain stage-six work. See
-`test_workgroup_contract.py` and the language contract.
+not itself prove participation or atomic type/scope support. GPU collectives
+also require full 256-lane groups and conservative uniform participation
+(`workgroup_participation.py`). Check variants before optimization/packing;
+cached launches recheck counts without structural analysis. Inspection and
+direct GPU generators validate participation too. Scalar-pack params carry
+`_is_scalar_pack` to preserve uniformity. Metal pipeline and Level Zero
+X/total device limits cannot silently shrink collective groups. MSL uses
+structural feature discovery, including thread IDs in conditions. Atomic
+contracts remain stage-six work. See `test_workgroup_contract.py`,
+`test_workgroup_participation.py` and the language contract.
 
 Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
 

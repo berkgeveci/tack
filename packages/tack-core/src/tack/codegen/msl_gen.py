@@ -18,6 +18,8 @@ from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
+from tack.lang.workgroup_support import workgroup_features
 
 _MSL_TYPE_MAP = {
     i8:  "char",
@@ -88,10 +90,8 @@ class MSLCodeGen:
     def generate(self) -> str:
         """Generate MSL source for the kernel."""
         func = self.ir_func
-        self._needs_local_tid = False
-
-        # Pre-scan IR for shared memory / thread_id usage
-        self._needs_local_tid = self._scan_for_threadgroup(func.body)
+        check_workgroup_participation(func)
+        self._needs_local_tid = bool(workgroup_features(func))
 
         # Build parameter info
         for param in func.params:
@@ -508,11 +508,11 @@ class MSLCodeGen:
             "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"threadgroup float {smem}[256];")
+        self._emit(f"threadgroup float {smem}[{WORKGROUP_SIZE}];")
         self._emit(f"int {tid} = __local_tid__;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
-        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
+        self._emit(f"for (int __s = {WORKGROUP_SIZE // 2}; __s > 0; __s >>= 1) {{")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
@@ -523,6 +523,8 @@ class MSLCodeGen:
         self._indent -= 1
         self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
+        # Protect the result read against shared-array reuse in loops.
+        self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)
         return result
@@ -769,52 +771,6 @@ inline float {name}(device float* data, float u, float v, float w) {{
         else_ = self._integers.convert(else_, getattr(node.else_value, 'dtype', None), dtype)
         return f"({cond} ? {then} : {else_})"
 
-
-    def _scan_for_threadgroup(self, stmts: list) -> bool:
-        """Check if any statement uses threadgroup features."""
-        for stmt in stmts:
-            if isinstance(stmt, (ir.IRSharedAlloc, ir.IRBarrier, ir.IRThreadId, ir.IRBlockReduce)):
-                return True
-            if isinstance(stmt, ir.IRParallelFor):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRSequentialFor):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRWhile):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRIf):
-                if self._scan_for_threadgroup(stmt.then_body):
-                    return True
-                if stmt.else_body and self._scan_for_threadgroup(stmt.else_body):
-                    return True
-            # Check expressions for IRThreadId
-            elif isinstance(stmt, ir.IRAssign):
-                if self._expr_contains_thread_id(stmt.value):
-                    return True
-            elif isinstance(stmt, ir.IRFieldStore):
-                if (self._expr_contains_thread_id(stmt.index) or
-                        self._expr_contains_thread_id(stmt.value)):
-                    return True
-        return False
-
-    def _expr_contains_thread_id(self, node) -> bool:
-        """Check if an expression contains IRThreadId or IRBlockReduce."""
-        if isinstance(node, (ir.IRThreadId, ir.IRBlockReduce)):
-            return True
-        if isinstance(node, ir.IRBinOp):
-            return (self._expr_contains_thread_id(node.left) or
-                    self._expr_contains_thread_id(node.right))
-        if isinstance(node, ir.IRUnaryOp):
-            return self._expr_contains_thread_id(node.operand)
-        if isinstance(node, ir.IRCall):
-            return any(self._expr_contains_thread_id(a) for a in node.args)
-        if isinstance(node, ir.IRCast):
-            return self._expr_contains_thread_id(node.value)
-        if isinstance(node, ir.IRFieldLoad):
-            return self._expr_contains_thread_id(node.index)
-        return False
 
 
 def generate_msl_source(ir_func: ir.IRFunction) -> str:
