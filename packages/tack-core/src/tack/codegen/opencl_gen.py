@@ -263,10 +263,26 @@ class OpenCLCodeGen(CUDACodeGen):
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
 
-        if node.func_name == "min" and len(args) == 2:
-            return f"fmin({args[0]}, {args[1]})"
-        if node.func_name == "max" and len(args) == 2:
-            return f"fmax({args[0]}, {args[1]})"
+        # OpenCL C overloads `fmin`/`fmax` over float, double and half, and
+        # `min`/`max` over every integer type. Neither family accepts an
+        # argument that needs converting: `fmin(int, int)` has no unique best
+        # match and is rejected outright -- "call to 'fmin' is ambiguous" --
+        # rather than promoting the way C would. CUDA's `fminf` is a single
+        # non-overloaded function, so inheriting its spelling from CUDACodeGen
+        # was silently wrong here for every integer min/max, which is most of
+        # the BVH builder.
+        #
+        # The annotated result dtype already carries the promotion the IR
+        # decided on, so naming the family from it and casting both arguments
+        # to it leaves exactly one candidate -- including for mixed int/float
+        # arguments, where the bare call would be ambiguous again.
+        if node.func_name in ("min", "max") and len(args) == 2:
+            c_type = self._infer_c_type(node)
+            prefix = "f" if c_type in ("float", "double") else ""
+            return (
+                f"{prefix}{node.func_name}"
+                f"(({c_type})({args[0]}), ({c_type})({args[1]}))"
+            )
 
         if node.func_name in _OCL_MATH_FUNCS:
             func = _OCL_MATH_FUNCS[node.func_name]

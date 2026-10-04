@@ -16,6 +16,7 @@ memory or synchronizes the wrong scope.
 
 import tack
 from tack.codegen.opencl_gen import generate_opencl_source
+from tack.lang.ir_type_annotate import annotate_types
 from tack.lang.type_inference import infer_param_types
 
 
@@ -24,6 +25,24 @@ def _source(kernel_fn, *args):
     tack.init(arch=tack.cpu)
     ir_func = kernel_fn.get_ir().functions[0]
     infer_param_types(ir_func, tuple(args))
+    return generate_opencl_source(ir_func)
+
+
+def _annotated_source(kernel_fn, *args):
+    """Like `_source`, but runs the type-annotation pass the backend runs.
+
+    `_source` stops at `infer_param_types`, which carries the structural
+    checks above but leaves every expression node without a `dtype`. The
+    generator then falls back to `float` for all of them, so a test built
+    on `_source` can assert on code no device ever receives. The real path
+    is `pack_scalars` -> `annotate_types` -> codegen; see
+    `LevelZeroBackend._build_variant`. Anything that reads an expression's
+    type -- integer `min`/`max` is the first -- has to use this instead.
+    """
+    tack.init(arch=tack.cpu)
+    ir_func = kernel_fn.get_ir().functions[0]
+    infer_param_types(ir_func, tuple(args))
+    annotate_types(ir_func)
     return generate_opencl_source(ir_func)
 
 
@@ -183,6 +202,63 @@ def test_power_uses_pow_not_powf():
     src = _source(powered, _field(), _field())
     assert "pow(" in src
     assert "powf(" not in src
+
+
+# ── min / max ─────────────────────────────────────────────
+
+def test_integer_min_max_avoid_the_float_family():
+    """`fmin(int, int)` is a compile error in OpenCL, not a promotion.
+
+    OpenCL overloads `fmin`/`fmax` over float, double and half, and
+    `min`/`max` over the integer types. Neither family takes an argument
+    that needs converting, so the integer call has no unique best match
+    and ocloc rejects it: "call to 'fmin' is ambiguous". CUDA's `fminf`
+    is a single non-overloaded function, which is why the spelling
+    inherited from CUDACodeGen looked right and broke every integer
+    min/max on the device -- the Karras BVH builder included.
+    """
+
+    @tack.kernel
+    def span(a, b, out):
+        for i in range(a.shape[0]):
+            out[i] = min(a[i], b[i]) + max(a[i], b[i])
+
+    src = _annotated_source(
+        span, _field(dtype=tack.i32), _field(dtype=tack.i32), _field(dtype=tack.i32)
+    )
+    assert "min((int)" in src
+    assert "max((int)" in src
+    assert "fmin" not in src
+    assert "fmax" not in src
+
+
+def test_float_min_max_keep_the_float_family():
+    """The integer spelling is just as wrong the other way round."""
+
+    @tack.kernel
+    def span(a, b, out):
+        for i in range(a.shape[0]):
+            out[i] = min(a[i], b[i]) + max(a[i], b[i])
+
+    src = _annotated_source(span, _field(), _field(), _field())
+    assert "fmin((float)" in src
+    assert "fmax((float)" in src
+
+
+def test_min_max_promote_mixed_arguments():
+    """An int/float pair is ambiguous unadorned; both sides get the result type."""
+
+    @tack.kernel
+    def span(a, b, out):
+        for i in range(a.shape[0]):
+            out[i] = min(a[i], b[i])
+
+    src = _annotated_source(
+        span, _field(dtype=tack.i32), _field(dtype=tack.f32), _field(dtype=tack.f32)
+    )
+    assert "fmin((float)" in src
+    # Neither argument may reach the call with its own type.
+    assert "(int)" not in src.split("fmin(")[1].split(";")[0]
 
 
 # ── Atomics ──────────────────────────────────────────────────────────
