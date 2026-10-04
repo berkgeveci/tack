@@ -28,7 +28,9 @@ uv run python packages/tack-core/examples/validate_all.py     # validation suite
 uv run python packages/tack-core/examples/01_hello_tack.py --arch hip  # example on backend
 ```
 
-All examples accept `--arch cpu|metal|cuda|hip|level_zero` to select the backend.
+Examples accept `--arch` to select the backend. `09_shared_memory.py`
+requires an explicit GPU choice (`metal|cuda|hip|level_zero`); CPU has no
+workgroup execution model.
 
 On this Mac, sandboxed processes cannot discover the Apple M1 Max GPU:
 `MTLCreateSystemDefaultDevice()` returns `None` even with the bindings installed.
@@ -74,7 +76,18 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 
 ### Backend contract
 
-All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_field`, `wrap_ptr`, `execute`) and the capability attributes callers read instead of probing with `hasattr`: `name`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `device_memory_spaces`.
+All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_field`, `wrap_ptr`, `execute`) and the capability attributes callers read instead of probing with `hasattr`: `name`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `supports_workgroups`, `device_memory_spaces`.
+
+`supports_workgroups` is false on CPU and true on GPU backends. CPU rejects
+shared allocations, barriers, thread IDs and block reductions before variant
+construction; public inspection and direct LLVM generation also reject them.
+`lang/workgroup_support.py` discovers nested/inlined requirements, memoized
+only on immutable frontend templates. Direct LLVM generation scans mutable
+IR afresh. GPU targets bypass this rejection check. Local arrays, ordinary
+atomics and host field reductions remain supported on CPU. This flag does
+not prove full-group participation, barrier uniformity or atomic type/scope
+support; those contracts remain stage-six work. See
+`test_workgroup_contract.py` and the language contract.
 
 Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
 
@@ -86,7 +99,7 @@ Every dispatch:
 1. `Kernel.__call__` → `backend.execute(kernel, args)` → `resolve_variant(...)`
 2. Detect template arguments (`@tack.data_oriented` classes) and expand them
 3. Detect vector fields and set up scalarization metadata
-4. `kernel.get_ir(...)` returns the **pristine IR template** for this specialization
+4. `kernel.get_ir(...)` returns the **pristine IR template** for this specialization; check required workgroup support against the backend
 5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field`
 6. Build the variant key and look it up (see below)
 7. Resolve the loop range from the variant's IR; dispatch (CPU decides serial vs threads, GPU launches a grid)
@@ -340,7 +353,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 - **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(field, size)`, `tack.barrier()`, `tack.thread_id()`
 - **Debug**: `print("label:", value)` — emits printf on CPU/CUDA/HIP, no-op on Metal
 - **Fields**: `field[i]`, `field[i, j]`, `field[None]`, `field.shape[k]`, `len(field)` — usable anywhere in a kernel (loop bounds, conditions, arithmetic, indices), not just as the outer loop bound. The dimension index must be a literal. See "Field dimensions" below for what specializes.
-- **Reductions**: `field.sum()`, `field.min()`, `field.max()`, `field.mean()` return Python floats. Eligible f32 fields reduce on GPU; CPU and other dtypes use shared NumPy semantics. f32/f64 sums retain their precision; signed/unsigned integer sums use wrapping i64/u64 accumulators before float conversion. Floating extrema propagate NaNs and use negative-zero min / positive-zero max ties. Empty sum is +0, empty mean NaN, empty extrema raise. Floating addition order may vary; see the absolute error budget in `docs/reference/language-contract.md`. Runtime kernels and GPU block extrema share `codegen/reductions.py`; block arguments/results are f32, requiring explicit casts for other inputs. CPU cooperative execution and workgroup participation remain separate stage-six work. See `test_reduction_semantics.py`.
+- **Reductions**: `field.sum()`, `field.min()`, `field.max()`, `field.mean()` return Python floats. Eligible f32 fields reduce on GPU; CPU and other dtypes use shared NumPy semantics. f32/f64 sums retain their precision; signed/unsigned integer sums use wrapping i64/u64 accumulators before float conversion. Floating extrema propagate NaNs and use negative-zero min / positive-zero max ties. Empty sum is +0, empty mean NaN, empty extrema raise. Floating addition order may vary; see the absolute error budget in `docs/reference/language-contract.md`. Runtime kernels and GPU block extrema share `codegen/reductions.py`; block arguments/results are f32, requiring explicit casts for other inputs. CPU rejects cooperative kernels; GPU workgroup participation remains stage-six work. See `test_reduction_semantics.py`.
 
 ## Platform-specific dependencies
 

@@ -5,28 +5,8 @@ with the same dtype as the given field.
 """
 
 import numpy as np
-import pytest
 
 import tack
-
-backends = []
-try:
-    tack.init(arch=tack.cpu)
-    backends.append("cpu")
-except Exception:
-    pass
-try:
-    tack.init(arch=tack.metal)
-    backends.append("metal")
-except Exception:
-    pass
-
-
-@pytest.fixture(params=backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 # --- AST transform level ---
 
@@ -56,7 +36,7 @@ def kern(data, out):
 
 # --- End-to-end: shared_like with f32 field ---
 
-def test_shared_like_f32(backend):
+def test_shared_like_f32(workgroup_backend):
     """shared_like inherits f32 from the field."""
     n = 256
     data = tack.field(dtype=tack.f32, shape=(n,))
@@ -79,7 +59,7 @@ def test_shared_like_f32(backend):
 
 # --- End-to-end: shared_like with i32 field ---
 
-def test_shared_like_i32(backend):
+def test_shared_like_i32(workgroup_backend):
     """shared_like inherits i32 from the field."""
     n = 256
     data = tack.field(dtype=tack.i32, shape=(n,))

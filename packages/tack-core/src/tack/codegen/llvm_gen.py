@@ -14,6 +14,7 @@ from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.integer_division import INTEGER_TYPES, UNSIGNED_TYPES
 from tack.lang import ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_support import check_workgroup_support
 
 
 def _llvm_type(tack_type: ScalarType) -> llvm_ir.Type:
@@ -76,6 +77,9 @@ class LLVMCodeGen:
     def generate(self) -> llvm_ir.Module:
         """Generate LLVM IR for the kernel. Returns the LLVM module."""
         func = self.ir_func
+        check_workgroup_support(
+            func, supports_workgroups=False, backend_label='CPU',
+        )
 
         # Classify parameters: fields become pointers, scalars stay scalar
         llvm_param_types = []
@@ -164,12 +168,8 @@ class LLVMCodeGen:
             self._emit_atomic_op(node)
         elif isinstance(node, ir.IRPrint):
             self._emit_print(node)
-        elif isinstance(node, ir.IRSharedAlloc):
-            self._emit_shared_alloc(node)
         elif isinstance(node, ir.IRLocalAlloc):
-            self._emit_shared_alloc(node)  # same as shared on CPU: stack alloca
-        elif isinstance(node, ir.IRBarrier):
-            pass  # No-op on CPU (single-threaded per chunk)
+            self._emit_local_alloc(node)
         elif isinstance(node, ir.IRCall):
             # Standalone function call (expression statement)
             self._emit_expr(node)
@@ -216,16 +216,6 @@ class LLVMCodeGen:
             return self._emit_ifexp(node)
         if isinstance(node, ir.IRTextureSample):
             return self._emit_texture_sample(node)
-        if isinstance(node, ir.IRThreadId):
-            # On CPU, thread_id within a chunk is (loop_var - loop_start)
-            # Return 0 as a safe default (CPU doesn't have workgroups)
-            return llvm_ir.Constant(llvm_ir.IntType(64), 0)
-        if isinstance(node, ir.IRBlockReduce):
-            # On CPU, there's one thread per "block" — reduction is identity
-            val = self._emit_expr(node.value)
-            if val.type != llvm_ir.FloatType():
-                val = self.builder.sitofp(val, llvm_ir.FloatType(), name="breduce_cast")
-            return val
         raise NotImplementedError(f"Cannot emit expression: {type(node).__name__}")
 
     # --- Loops ---
@@ -565,8 +555,8 @@ class LLVMCodeGen:
         new_val = self.builder.select(cond, value, old_val, name="atomic.new")
         self.builder.store(new_val, ptr)
 
-    def _emit_shared_alloc(self, node: ir.IRSharedAlloc):
-        """Emit shared memory as a stack alloca (CPU has no shared memory)."""
+    def _emit_local_alloc(self, node: ir.IRLocalAlloc):
+        """Emit private scratch storage as a stack alloca."""
         elem_type = _llvm_type(node.dtype)
         # Use constant size for the alloca
         if isinstance(node.size, ir.IRConstant):

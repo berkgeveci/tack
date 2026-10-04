@@ -172,7 +172,7 @@ def test_msl_shared_alloc_types():
 
 # --- End-to-end: shared and local alloc with ScalarType ---
 
-def test_shared_f32_end_to_end(backend):
+def test_shared_f32_end_to_end(workgroup_backend):
     """tack.shared(tack.f32, ...) works end-to-end."""
     n = 256
     data = tack.field(dtype=tack.f32, shape=(n,))

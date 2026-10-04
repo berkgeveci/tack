@@ -346,7 +346,7 @@ def test_range_with_step_parallel():
 
 
 def test_shared_memory():
-    """Test shared memory alloc, thread_id, and barrier on CPU."""
+    """CPU must reject cooperative kernels before writing output."""
     n = 10
     x = tack.field(dtype=tack.f32, shape=(n,))
     out = tack.field(dtype=tack.f32, shape=(n,))
@@ -361,9 +361,9 @@ def test_shared_memory():
             tack.barrier()
             out[i] = smem[tid]
 
-    shared_test(x, out)
-    expected = np.arange(n, dtype=np.float32) * 2.0
-    np.testing.assert_allclose(out.to_numpy(), expected)
+    with pytest.raises(RuntimeError, match="CPU backend does not support workgroup"):
+        shared_test(x, out)
+    np.testing.assert_array_equal(out.to_numpy(), np.zeros(n, np.float32))
 
 
 def test_print_in_kernel():

@@ -49,6 +49,18 @@ print(get_backend().supports_f64)
 `supports_f64` is derived from `supported_dtypes` rather than stored
 separately, so the two cannot disagree.
 
+## Workgroup execution
+
+`supports_workgroups` is false on CPU and true on Metal, CUDA, HIP and
+Level Zero. Shared memory, barriers, local thread indices and block
+reductions require this capability. CPU rejects such kernels before
+compilation or execution; use `local_array` / `local_array_like` for
+private scratch storage instead.
+
+This flag describes the execution model, not barrier uniformity, partial
+workgroup safety or supported atomic types/scopes. See the
+[workgroup contract](language-contract.md#workgroups-and-synchronization).
+
 ## Installing
 
 ```bash

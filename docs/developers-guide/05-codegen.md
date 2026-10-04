@@ -153,8 +153,9 @@ Key differences from C-like codegens:
 - Types are LLVM types (`FloatType()`, `IntType(64)`, etc.)
 - No variable declaration needed — LLVM uses SSA
 - Uses `alloca` for mutable local variables
-- `IRSharedAlloc` and `IRLocalAlloc` both map to stack allocas (no shared
-  memory on CPU)
+- `IRLocalAlloc` maps to a private stack alloca. Shared allocations, barriers,
+  thread IDs and block reductions are rejected by `workgroup_support.py`
+  before emission; CPU has no workgroup execution model.
 
 ## MSL Codegen (`msl_gen.py`, 689 lines)
 

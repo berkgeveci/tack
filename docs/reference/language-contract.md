@@ -612,17 +612,17 @@ narrowed or given an inconsistent annotation. On correctly participating
 GPU workgroups, block extrema use the same NaN/zero rules as field extrema,
 and block sums permit order variation with the same addition budget over
 their contributed terms. The tested GPU domain here is fully participating
-256-lane groups. Full participation, launch sizes, partial groups,
-and CPU support remain the separate workgroup contract below; the current
-CPU identity lowering is not a cooperative reduction model.
+256-lane groups. Full participation, launch sizes and partial groups
+remain the separate workgroup contract below. CPU rejects block reductions
+because it has no workgroup execution model.
 
 User reductions combining `atomic_add` with block partials likewise have
 unspecified accumulation order. Atomic min/max are separate backend
 primitives: their NaN and signed-zero handling is outside the portable
 atomic-extrema domain, which requires finite nonzero floating operands
 and stored values. The field/block extrema guarantees do not imply those
-atomic semantics. Atomic scope, supported widths and cooperative execution
-capabilities remain stage-six work. The statistical algorithms in
+atomic semantics. Atomic scope, supported widths and workgroup participation
+remain stage-six work. The statistical algorithms in
 `tack.algorithms.stats` use f32 atomic accumulators for floating statistics;
 an f64 input alone does not establish f64 accuracy or determinism for them.
 
@@ -655,12 +655,27 @@ within its workgroup; it is not a global barrier between parallel iterations
 on different workgroups. Programs must not rely on divergent participation
 or uninitialized shared memory.
 
-**Current limitation:** the CPU generator treats `IRBarrier` as a no-op and
-allocates shared arrays on the stack. A CPU result alone therefore cannot
-validate cooperative GPU execution. Workgroup size, partial final groups,
-barrier participation, atomic ordering/scope, and CPU support or rejection
-for cooperative kernels require a separate capability contract and hardware
-tests. The first-stage regressions deliberately need none of these features.
+**Target support:** backends declare `supports_workgroups` (CPU: false;
+Metal/CUDA/HIP/Level Zero: true). CPU rejects kernels containing `shared`,
+`shared_like`, `barrier`, `thread_id`, `block_sum`, `block_min` or `block_max`
+before compilation or execution. Inspection in every mode and direct LLVM
+generation enforce the same restriction. The diagnostic names the kernel,
+backend and required primitives. Dispatch wraps the `NotImplementedError`
+in its usual kernel `RuntimeError`; inspection and direct generation raise
+`NotImplementedError` directly.
+
+This is a structural requirement, including nested branches and inlined
+device functions, even if the primitive would be unreachable at runtime.
+CPU does not emulate workgroups. Use `local_array` or `local_array_like`
+for private scratch arrays; these remain supported on CPU, as do ordinary
+scalar kernels, host field reductions and supported atomic operations.
+
+**Remaining limits:** `supports_workgroups` declares the execution model;
+it does not establish supported atomic widths/scopes, barrier uniformity,
+or safety of partial final groups. Workgroup size, launch restrictions,
+participation and atomic ordering/scope still need contracts and hardware
+tests. The new cross-lane exchange tests use fully participating 256-lane
+groups. A CPU result alone cannot validate cooperative GPU execution.
 
 ## Specialization and compilation identity
 

@@ -266,6 +266,7 @@ class HIPBackend(Backend):
     display_name = "HIP"
     supported_dtypes = _HIP_SUPPORTED_DTYPES
     supports_device_reductions = True
+    supports_workgroups = True
     device_memory_spaces = frozenset({"hip", "hip_pinned", "hip_managed"})
 
 

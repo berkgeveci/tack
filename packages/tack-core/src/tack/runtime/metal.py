@@ -257,6 +257,7 @@ class MetalBackend(Backend):
     display_name = "Metal"
     supported_dtypes = _METAL_SUPPORTED_DTYPES   # no f64: Apple GPUs lack it
     supports_device_reductions = True
+    supports_workgroups = True
     # Metal shared buffers live in unified memory, so a pointer into one is
     # CPU-addressable; the inherited memory_space() answer is right.
 
