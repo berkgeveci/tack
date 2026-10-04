@@ -8,6 +8,18 @@ Tests:
   5. N-body           -- multiple fields, distance calculations
   6. Jacobi iteration -- stencil pattern, read/write fields
   7. Matrix multiply  -- 2D indexing, accumulation
+
+Each test runs three times per backend, on fresh fields, and prints the
+first and the third. The first call pays runtime compilation: on an MI300X
+a saxpy's first call is 146 ms and its warm call 0.05 ms, so a single-call
+column reported hipRTC rather than the device, which is why every test used
+to read ~145 ms there whatever its workload.
+
+The second call is not printed because it is not warm on CPU either. A
+first-sight cost sample can read a cheap kernel ~15x dear, which makes the
+next dispatch calibrate the thread fan-out -- ~200 ms, once per backend --
+before deciding to run serially anyway. Timing the second call put that
+calibration in the "warm" column of three tests.
 """
 
 import time
@@ -40,6 +52,27 @@ def _available_backends():
 BACKENDS = _available_backends()
 
 
+def _time_call(setup_fn, call_fn):
+    """Run `call_fn` over fresh fields, returning its wall time and the fields."""
+    fields = setup_fn()
+    t0 = time.perf_counter()
+    call_fn(*fields)
+    t1 = time.perf_counter()
+    return (t1 - t0) * 1000, fields
+
+
+def _report(name, backend, setup_fn, call_fn, verify_fn):
+    """Time the first and a warm call, verify the warm one, and print both."""
+    first, _ = _time_call(setup_fn, call_fn)
+    _time_call(setup_fn, call_fn)          # one-time backend tuning lands here
+    warm, fields = _time_call(setup_fn, call_fn)
+    ok = verify_fn(*fields)
+    status = "OK" if ok else "FAIL"
+    print(f"  {backend:>5s}:  first {first:>8.2f} ms   warm {warm:>8.3f} ms  [{status}]")
+    if not ok:
+        raise AssertionError(f"{name} failed on {backend}")
+
+
 def run_on_all(name, setup_fn, kernel_fn, verify_fn):
     """Run a validation test on all available backends, verify correctness."""
     print(f"\n{'-' * 60}")
@@ -48,15 +81,7 @@ def run_on_all(name, setup_fn, kernel_fn, verify_fn):
 
     for backend in BACKENDS:
         tack.init(arch=backend)
-        fields = setup_fn()
-        t0 = time.perf_counter()
-        kernel_fn(*fields)
-        t1 = time.perf_counter()
-        ok = verify_fn(*fields)
-        status = "OK" if ok else "FAIL"
-        print(f"  {backend:>5s}:  {(t1-t0)*1000:>8.2f} ms  [{status}]")
-        if not ok:
-            raise AssertionError(f"{name} failed on {backend}")
+        _report(name, backend, setup_fn, kernel_fn, verify_fn)
 
 
 # -------------------------------------------------------------
@@ -387,15 +412,7 @@ def main():
     print(f"{'-' * 60}")
     for backend in BACKENDS:
         tack.init(arch=backend)
-        src, dst = jacobi_setup()
-        t0 = time.perf_counter()
-        run_jacobi(src, dst)
-        t1 = time.perf_counter()
-        ok = jacobi_verify(src, dst)
-        status = "OK" if ok else "FAIL"
-        print(f"  {backend:>5s}:  {(t1-t0)*1000:>8.2f} ms  [{status}]")
-        if not ok:
-            raise AssertionError(f"Jacobi failed on {backend}")
+        _report("Jacobi", backend, jacobi_setup, run_jacobi, jacobi_verify)
 
     run_on_all("7. Matrix Multiply (64x64)", matmul_setup, matmul, matmul_verify)
 

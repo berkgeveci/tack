@@ -797,6 +797,22 @@ The suite also covers zero-trip local assignments, while-loop mutation,
 mutation through aliases, CSE across alias stores, and copy propagation's
 statement order, loop steps, and loop-variable bindings.
 
+**CPU and HIP validation, 2026-10-04:** at `fea2ad7`, on one AMD Instinct
+MI300X VF (gfx942) with ROCm 7.0.2, hip-python 7.2.2, and an Intel Xeon
+Platinum 8568Y+ host (one socket, 20 cores, Linux 6.8). Both backends
+initialized explicitly. The contract, source-validation, differential,
+stage-five semantics, variant-cache, IR-clone and identifier suites gave
+**772 passed, 3 skipped** on CPU and **518 passed, 0 skipped** under
+`-k hip`. Of the HIP selection, 463 cases executed on the device; 53 are
+host-side checks of generated HIP source, and 2 are CPU cases that match
+only because `relationships` contains `hip`. With ROCm's clang on `PATH`,
+the 40 clang-gated OpenCL/C++ syntax checks also ran; without it they skip.
+The three CPU skips are a Metal f64 generator case and two GPU-only block
+reduction patterns. There were no failures, expected failures, or
+numerical differences. All 45 runnable examples passed on each backend
+(four need optional `oidn`, `imgui_bundle`, VTK, or a Metal/CUDA backend),
+as did `validate_all.py`.
+
 LC5 was found on CUDA hardware testing of stage two and predates it: every
 backend resolved only the end of the top-level range. It is fixed, with
 cases for interior, single-element, empty, and reversed intervals, a
