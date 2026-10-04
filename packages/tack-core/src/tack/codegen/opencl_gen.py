@@ -59,6 +59,9 @@ class OpenCLCodeGen(CUDACodeGen):
         func = self.ir_func
         check_atomic_support(func, backend_name='level_zero')
         check_workgroup_participation(func)
+        # Declarations collected by `_declare_local` while the body is emitted,
+        # spliced in below at the one scope OpenCL C accepts them in.
+        self._hoisted_locals: dict[str, str] = {}
 
         # Build parameter info
         for param in func.params:
@@ -98,7 +101,11 @@ class OpenCLCodeGen(CUDACodeGen):
             self._emit("const sampler_t __samp__ = CLK_NORMALIZED_COORDS_TRUE "
                        "| CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;")
 
+        hoist_at = len(self._lines)
         self._emit_body(func.body)
+        self._lines[hoist_at:hoist_at] = [
+            "    " + decl for decl in self._hoisted_locals.values()
+        ]
         self._indent -= 1
         self._emit("}")
 
@@ -219,10 +226,35 @@ class OpenCLCodeGen(CUDACodeGen):
 
     # --- Shared memory, barrier, thread ID ---
 
+    def _declare_local(self, name: str, decl: str) -> None:
+        """Queue a local-address-space declaration for the kernel's top scope.
+
+        OpenCL C admits `__local` declarations only in the outermost scope of a
+        kernel function, so one emitted where it is used -- inside an `if`, or
+        inside a loop -- is a compile error. CUDA and Metal both allow a nested
+        `__shared__`/`threadgroup`, so the inherited placement is legal there.
+        `generate()` splices these in directly after the signature.
+
+        Hoisting is safe because local memory is per-workgroup, statically
+        sized and always written before it is read; only the declaration moves,
+        never a store or a barrier, so stage six's participation guarantees are
+        untouched.
+        """
+        previous = self._hoisted_locals.get(name)
+        if previous is None:
+            self._hoisted_locals[name] = decl
+        elif previous != decl:
+            raise NotImplementedError(
+                f"Local allocation '{name}' is declared twice with different "
+                f"types or sizes ({previous!r} vs {decl!r}). Hoisting to kernel "
+                f"scope cannot keep both; rename one of them."
+            )
+
     def _emit_stmt(self, node):
         if isinstance(node, ir.IRSharedAlloc):
             c_type = _OCL_C_TYPE_MAP[node.dtype]
-            self._emit(f"__local {c_type} {node.name}[{self._expr(node.size)}];")
+            self._declare_local(
+                node.name, f"__local {c_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRLocalAlloc):
             c_type = _OCL_C_TYPE_MAP[node.dtype]
             self._emit(f"{c_type} {node.name}[{self._expr(node.size)}];")
@@ -230,6 +262,22 @@ class OpenCLCodeGen(CUDACodeGen):
             self._emit("barrier(CLK_LOCAL_MEM_FENCE | CLK_GLOBAL_MEM_FENCE);")
         else:
             super()._emit_stmt(node)
+
+    def _ifexp_condition(self, node) -> str:
+        """Compare a floating condition against zero before using it in `?:`.
+
+        OpenCL C requires the condition of the conditional operator to be of
+        scalar *integer* type; a float is rejected outright ("used type 'float'
+        where floating point type is not allowed"). C++ converts it implicitly,
+        which is why the inherited CUDA/HIP spelling is correct there and why
+        this only ever failed on a device. `if (x)` is unaffected -- OpenCL C
+        allows a float there, following C99 -- so only the ternary needs this.
+        """
+        cond = self._expr(node)
+        dtype = getattr(node, 'dtype', None)
+        if dtype in (f32, f64):
+            return f"({cond}) != {'0.0' if dtype is f64 else '0.0f'}"
+        return cond
 
     def _expr(self, node) -> str:
         if isinstance(node, ir.IRThreadId):
@@ -260,7 +308,7 @@ class OpenCLCodeGen(CUDACodeGen):
             "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"__local float {smem}[{WORKGROUP_SIZE}];")
+        self._declare_local(smem, f"__local float {smem}[{WORKGROUP_SIZE}];")
         self._emit(f"int {tid} = get_local_id(0);")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("barrier(CLK_LOCAL_MEM_FENCE);")
@@ -309,7 +357,25 @@ class OpenCLCodeGen(CUDACodeGen):
 
         if node.func_name in _OCL_MATH_FUNCS:
             func = _OCL_MATH_FUNCS[node.func_name]
-            return f"{func}({', '.join(args)})"
+            call = f"{func}({', '.join(args)})"
+            if node.func_name in ('floor', 'ceil') and dtype is f64:
+                # Intel's compute runtime returns +0.0 from the double
+                # `floor`/`ceil` where IEEE-754 roundToIntegral requires the
+                # sign of the operand to be preserved: `ceil(-0.1)` and
+                # `floor(-0.0)` both come back +0.0 on an Intel Data Center GPU
+                # Max 1100 (intel-opencl-icd 25.05.32567.17), with -cl-std=CL2.0
+                # and no relaxed-math option asked for. The f32 overload is
+                # correct, and every other f64 operation preserves signed zero,
+                # so this is narrowly those two builtins at double width.
+                #
+                # `floor` and `ceil` never change the sign of their operand --
+                # for x > 0 the result is >= 0, for x < 0 it is <= x, and a zero
+                # result keeps x's sign -- so restoring it from the operand is
+                # exact for every input, including infinities. Where the runtime
+                # is already correct this is a no-op, so it needs no device
+                # check; drop it once Intel ships the fix.
+                return f"copysign({call}, {args[0]})"
+            return call
 
         raise NotImplementedError(f"OpenCL builtin: {node.func_name}")
 
