@@ -120,6 +120,7 @@ known-first-party = ["tack"]
 addopts = "-m 'not slow'"
 markers = [
     "slow: runs every shipped example as a subprocess (see tests/test_examples.py)",
+    "timing: asserts what the CPU scheduler actually did; needs an idle host and skips itself otherwise (see test_cpu_threading.py)",
 ]
 testpaths = [
     "packages/tack-core/tests",
