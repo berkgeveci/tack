@@ -57,6 +57,11 @@ class Backend:
     #: False, `Field.sum()`/`min()`/`max()` fall back to numpy on the host.
     supports_device_reductions: bool = False
 
+    #: Native workgroup execution for shared memory, barriers, local thread
+    #: IDs and block reductions. This does not promise uniform participation,
+    #: supported atomic types/scopes, or safe partial-workgroup execution.
+    supports_workgroups: bool = False
+
     #: Memory-space names (as returned by `memory_space()`) that a pointer
     #: must be in for `field_from_ptr()` to wrap it. Empty means this
     #: backend does not distinguish, so no check is made.
@@ -68,6 +73,12 @@ class Backend:
     #: host-addressable, so "cannot address it" is the wrong summary and
     #: would send a reader looking for the wrong problem.
     dlpack_refusal_note: str = ""
+
+    @property
+    def supported_atomic_dtypes(self) -> frozenset[ScalarType]:
+        """Global field types supporting add/min/max on this target."""
+        from tack.lang.atomic_support import ATOMIC_DTYPES
+        return ATOMIC_DTYPES.get(self.name, frozenset()) & self.supported_dtypes
 
     @property
     def supports_f64(self) -> bool:

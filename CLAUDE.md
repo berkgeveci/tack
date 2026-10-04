@@ -28,7 +28,15 @@ uv run python packages/tack-core/examples/validate_all.py     # validation suite
 uv run python packages/tack-core/examples/01_hello_tack.py --arch hip  # example on backend
 ```
 
-All examples accept `--arch cpu|metal|cuda|hip|level_zero` to select the backend.
+Examples accept `--arch` to select the backend. `09_shared_memory.py`
+requires an explicit GPU choice (`metal|cuda|hip|level_zero`); CPU has no
+workgroup execution model.
+
+On this Mac, sandboxed processes cannot discover the Apple M1 Max GPU:
+`MTLCreateSystemDefaultDevice()` returns `None` even with the bindings installed.
+Run Metal hardware validation with GPU access outside that sandbox and explicitly
+initialize `tack.metal` first. A sandboxed CPU-only pytest collection does not
+validate Metal. Keep `TACK_NO_REINIT` unset for multi-backend runs.
 
 No build step — pure Python with JIT compilation at runtime.
 
@@ -38,6 +46,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 
 ```
 @tack.kernel Python function
+    → Source validation (source_validation.py)
     → AST transform (ast_transform.py)
     → Tack IR (ir.py)
     → IR passes: resolve (ir_resolve.py) → type inference → optimize (ir_optimize.py)
@@ -67,7 +76,44 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 
 ### Backend contract
 
-All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_field`, `wrap_ptr`, `execute`) and the capability attributes callers read instead of probing with `hasattr`: `name`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `device_memory_spaces`.
+All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_field`, `wrap_ptr`, `execute`) and the capability attributes callers read instead of probing with `hasattr`: `name`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `supports_workgroups`, `device_memory_spaces`.
+
+`supports_workgroups` is false on CPU and true on GPU backends. CPU rejects
+shared allocations, barriers, thread IDs and block reductions before variant
+construction; public inspection and direct LLVM generation also reject them.
+`lang/workgroup_support.py` discovers nested/inlined requirements, memoized
+only on immutable frontend templates. Direct LLVM generation scans mutable
+IR afresh. GPU targets bypass this rejection check. Local arrays, ordinary
+atomics and host field reductions remain supported on CPU. This flag does
+not itself prove participation or atomic type/scope support. GPU collectives
+also require full 256-lane groups and conservative uniform participation
+(`workgroup_participation.py`). Check variants before optimization/packing;
+cached launches recheck counts without structural analysis. Inspection and
+direct GPU generators validate participation too. Scalar-pack params carry
+`_is_scalar_pack` to preserve uniformity. Metal pipeline and Level Zero
+X/total device limits cannot silently shrink collective groups. MSL uses
+structural feature discovery, including thread IDs in conditions. Explicit
+user barriers fence shared and global field memory within the workgroup.
+See `test_workgroup_contract.py`, `test_workgroup_participation.py` and the
+language contract.
+
+`Backend.supported_atomic_dtypes` declares add/min/max targets: CPU all
+shipped scalar widths; CUDA/HIP i32/u32/i64/u64/f32/f64; Metal/Level Zero
+only i32/u32/f32. `lang/atomic_support.py` checks global field targets,
+including uniquely traced inlined pointer copies, before optimization and
+in all inspection modes. Direct generators scan mutable IR afresh. Reject
+private/shared arrays, textures, unsupported widths and ambiguous targets.
+Atomic fields require natural alignment; `DeviceBuffer.address` exposes
+current storage for the cold/cached checks. Variants retain target parameter
+indices/alignments, not addresses; warm dispatch does not scan IR. CPU
+floating extrema use real CAS loops; unsigned extrema use unsigned RMW.
+CUDA/HIP wide operations use 64-bit CAS. OpenCL user atomics and field
+reductions use explicit relaxed device scope, rather than legacy atomics'
+workgroup-only guarantee. Values convert once to target precision and are
+captured outside CAS retries. Atomics are relaxed, spanning CPU workers or
+GPU workgroups on one device; they are not publication fences or host/device
+system-scope operations. Floating extrema remain finite/nonzero only.
+See `test_atomic_contract.py` and the language contract.
 
 Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
 
@@ -79,26 +125,39 @@ Every dispatch:
 1. `Kernel.__call__` → `backend.execute(kernel, args)` → `resolve_variant(...)`
 2. Detect template arguments (`@tack.data_oriented` classes) and expand them
 3. Detect vector fields and set up scalarization metadata
-4. `kernel.get_ir(...)` returns the **pristine IR template** for this specialization
+4. `kernel.get_ir(...)` returns the **pristine IR template** for this specialization; check required workgroup support against the backend
 5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field`
 6. Build the variant key and look it up (see below)
 7. Resolve the loop range from the variant's IR; dispatch (CPU decides serial vs threads, GPU launches a grid)
 
 Only on a cache miss:
-1. Deep-copy the template — the passes below mutate IR in place and must not touch the template
+1. Deep-copy the template with `clone_ir()` — the passes below mutate IR in place and must not touch the template
 2. Dimension size resolution (`ir_resolve.py`)
 3. Dispatch-time type checking (`check_dispatch_types`) — validates field dtypes against the backend
-4. IR optimization: LICM, copy propagation, CSE (`ir_optimize.py`)
+4. IR optimization: conservative copy propagation (`ir_optimize.py`)
 5. Backend `build` callback: scalar packing (GPU), type annotation (`ir_type_annotate.py`), codegen, compile
 
 ### Variant cache key
 
 Keyed per `Kernel` (weakly, so compiled code is released with the kernel), then by:
-argument type signature + texture extents + template constants + **`shape_signature`**.
+argument type signature + field/scalar/texture categories + vector widths + texture extents + template structure/constants + **`shape_signature`** + (CPU only) whether the call's fields are disjoint. Template keys preserve actual class identity through a `_ClassToken` rather than the class object, so a `@tack.data_oriented` class that is garbage-collected takes its IR and compiled variants with it on every backend (a class defined per call still compiles per call, but no longer accumulates). Template keys also preserve typed constants, field metadata, and runtime scalar attribute names; runtime scalar values do not specialize.
 
 That last one matters for correctness, not speed. `ir_resolve` substitutes dimension sizes as literals — `a[i, j]` linearizes to `i * dim1 + j` with `dim1` baked in — so the row stride is part of the compiled code's identity. `shape_signature()` reports exactly the dimensions a kernel bakes in (memoized per IR; empty for 1-D kernels, so varying a flat length does **not** re-specialize).
 
 Because the passes mutate IR in place, the template from `get_ir()` must be treated as immutable — a pass that consumed its `IRDimSize` nodes would leave nothing for a later shape to resolve.
+
+Fields may share storage, including distinct views and imported pointers. Preserve program order within each race-free iteration; field parameters must not carry unconditional `noalias`/`restrict` promises.
+
+The CPU backend makes that promise *conditionally*. On every dispatch `fields_disjoint()` (`runtime/kernel_utils.py`) compares the byte ranges of the field arguments: the call is disjoint when no field the kernel stores to (`written_field_params`, memoized per IR) overlaps any other field. Read-only fields may overlap each other. The answer is the last element of the variant key, so a kernel holds at most two CPU variants per specialization: one compiled with `noalias` on its field pointers, used only for calls that passed the check, and one without. The check is based on storage ranges, never object identity, and costs about 1 µs per dispatch. `cpu._SPECIALIZE_DISJOINT = False` turns it off. GPU backends do not specialize: removing `__restrict__` cost nothing measurable on CUDA.
+
+Metal field pointers are members of one argument buffer, rather than separate
+device-buffer kernel arguments (which implicitly promise disjoint storage in
+MSL). Members use the packed parameter positions as `[[id(N)]]` indices;
+textures retain their separate binding namespace. Each cached dispatch refreshes
+the buffer references and declares indirect-resource residency with
+`useResource`. The encoder and argument buffer are reused after synchronous
+completion. This fixes the four overlap cases confirmed at `922b642` and
+`e265e7f`, without alias-based specialization or disabling vendor optimization.
 
 ### Field dimensions
 
@@ -116,6 +175,14 @@ for i in range(x.shape[0]):        # one variant for all lengths
 To avoid that, pass the length as a scalar argument (`def reverse(x, out, n)`) — scalars are runtime parameters and don't specialize.
 
 ### Kernel code inspection
+
+Generated GPU variables and all backend kernel entry names use the shared,
+injective encoding in `codegen/identifiers.py`. The GPU generator renames
+only a structural IR copy; canonical IR names and dispatch metadata remain
+original. Runtime lookup must call `kernel_entry_name` on the original
+function name exactly once. Lowering/templates/vector components/scalar
+localization/packing allocate generated bindings through `fresh_name`
+(`lang/ir_names.py`) so they cannot merge with Python source names.
 
 `tack.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (Tack IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR, CPU only). Implementation in `lang/inspect_kernel.py`.
 
@@ -138,9 +205,11 @@ The IR is a simple tree of nodes:
 ### IR passes
 
 - **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from field shapes, resolves `IRAtomicOp` sub-expressions, and resolves `shared_like` dtypes from fields
-- **ir_optimize.py**: Three passes — Loop-Invariant Code Motion (LICM), copy propagation, Common Subexpression Elimination (CSE)
+- **ir_optimize.py**: Conservative copy propagation for inlined arguments. Assignment counts are computed once per kernel and reused in nested blocks: the copy target must have one binding and its source must have no assignments, loop bindings, or allocations anywhere in the kernel. This leaves some block-local copies to LLVM/vendor optimization and avoids repeated subtree counting during cold compilation. Custom LICM and CSE remain disabled because they lack memory/control-flow safety analysis.
 - **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars auto-promote to `f64` when any field arg uses `f64`; otherwise default to `f32`. Int scalars exceeding i32 range auto-promote to `i64`. `check_dispatch_types()` validates field dtypes against backend capabilities.
 - **ir_type_annotate.py**: Sets `dtype` (a `ScalarType`) on every expression IR node. Codegens read `node.dtype` directly instead of reimplementing type inference heuristics.
+- **ir_traversal.py**: Explicit structural child schema, preorder `walk_ir`, and postorder `transform_ir`. Resolution, scalar packing, copy substitution, and shape-dependency queries share it. Metadata is not traversed; unregistered node kinds fail loudly. `clone_ir` specializes deep copying for registered plain IR nodes and list/dict containers, copying every attribute (including metadata) with one identity memo. It preserves shared references, cycles and ScalarType identity; other metadata retains Python's deepcopy protocol. Variant preparation, scalar localization, GPU packing and inspection use it; cache hits do not clone IR. Keep all verifier boundaries. Compare copying costs with `uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json`; this is a CPU component benchmark, not an end-to-end latency measurement.
+- **ir_verify.py**: Checks lowered templates before caching and variant IR after resolve, infer, scalar localization, optimize, GPU packing, and annotation. Errors report kernel, stage, node kind, and tree path. Checks cover structure, bindings, loop targets, unresolved dimensions/allocation types/texture extents, parameter categories, and scalar annotations. Host-evaluated grid ends retain dimension queries; field pointers need no scalar dtype. Cache hits do not run the verifier. This is not definite-assignment, bounds, race, or barrier-uniformity analysis. Direct pass/codegen calls on IR fragments must request verification themselves.
 
 ### Scalar kernel arguments
 
@@ -154,9 +223,97 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 Functions decorated with `@tack.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.
 
+Device calls resolve by object identity from the defining callable's globals
+and closure bindings (`call_bindings.py`), including aliases and module-qualified
+calls. Arguments use caller bindings; nested bodies use callee bindings.
+Validation and lowering share the resolver. Runtime callable parameters,
+ordinary Python functions, object-property lookup, and recursion are rejected.
+Numeric captures remain unsupported. Template rewrite returns a local method
+map with marked synthetic calls and retains each method's original Python
+callable; no global function registry or register/cleanup sequence remains.
+Keep the IR cache construction lock. Cached IR retains its inlined bodies;
+rebinding a callable requires recreating the kernel. AST-only transforms may
+pass an explicit `bindings` dictionary. See `test_func_bindings.py`.
+
+Original kernels and device functions are validated before lowering; unsupported syntax raises `UnsupportedSyntaxError` with the function and captured-source line/column. Device source is checked before return restructuring, including unreachable statements. `and`, `or`, and conditional expressions short-circuit, including inlined effects. Scalar operands/arguments evaluate left to right; augmented stores evaluate their index once, and sequential `range` bounds/steps are captured at entry. Comparisons and logical expressions yield i32 `0`/`1`. Outer parallel `break`, kernel `return`, keyword arguments, and assertions are rejected; atomics and barriers are statement-only. Reading a name the kernel never binds (typically a module-level Python value) raises `NameError` naming the kernel or inlined device function and the source position; binding a second name to a local or shared array (`view = tmp`) raises `UnsupportedSyntaxError`. `Kernel.__call__` lets `UnsupportedSyntaxError` through unwrapped. See `docs/reference/language-contract.md` and `test_source_validation.py` / `test_differential.py`.
+
 ### @tack.data_oriented templates
 
 Classes decorated with `@tack.data_oriented` can be passed as template arguments. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`.
+
+### Integer floor division and remainder
+
+Integer `//` rounds down and `%` is zero or follows the divisor's sign,
+matching Python within the defined fixed-width domain. Both operands are
+converted to the annotated promoted type before the operation; unsigned
+types use unsigned division. LLVM applies an integer correction to signed
+truncating division/remainder. The CUDA/HIP, Metal, and OpenCL generators
+share typed helpers in `codegen/integer_division.py`, evaluating operands
+once. Do not replace these with floating-point division or rely on C's
+implicit signed/unsigned promotions. Evaluated divisors must be nonzero;
+signed minimum with divisor -1 is excluded for both operators. See
+`test_integer_division.py` and the language contract.
+
+Integer `+`, `-`, `*`, unary negation, bitwise operations, and left shifts
+wrap at their annotated width; signed right shifts are arithmetic and
+unsigned right shifts logical. Counts must lie in `[0, width)`. Integer
+casts/stores wrap modulo the destination width, with source signedness
+controlling extension. Promotion preserves both complete operand ranges;
+any signed/u64 pair requires an explicit cast. Comparisons and integer
+`abs`/`min`/`max` retain exact integer semantics. `codegen/integer_ops.py`
+shares unsigned-carrier helpers across GPU generators; Metal uses `as_type`
+for signed bits and separate noinline i64/u64-add helpers for accumulator
+updates inside runtime-bound loops to avoid an M1 Max compiler crash.
+LLVM tracks signedness on every
+annotated integer expression, including loads of locals and scalar arguments.
+Literals/scalars choose i32/i64/u64 by magnitude and reject unrepresentable
+integers. Float-to-int inputs must be finite with a representable truncated
+value. See `test_integer_semantics.py` and the language contract.
+
+Integer `/` converts operands independently to f32 and returns f32, rather
+than truncating; explicit floating casts request f64 on capable backends.
+The output field does not widen the intermediate precision. The evaluated
+integer divisor must be nonzero. With a floating operand, division uses
+the promoted floating precision. Integer `**` and two-argument `pow`
+preserve the base type, with an independently typed nonnegative exponent,
+and compute exact power modulo the base width. Signed/u64 pairs are valid
+for `/` and power. Negative literal integer exponents are rejected; dynamic
+negative ones are outside the caller domain. `0 ** 0` is 1. Cast the base
+to float for negative powers. GPU generators share exponentiation-by-squaring
+helpers in `integer_ops.py`; LLVM emits an internal helper with wrapping
+products and a logical count shift. With a floating operand, both power
+arguments use the promoted floating precision. See `test_division_and_power.py`.
+
+Floating `//` and `%` convert to f64 if either operand is f64, otherwise
+f32, and return that floating type. Shared GPU helpers in
+`codegen/float_division.py` and typed LLVM helpers use a truncating
+remainder with divisor-sign correction and reconstruct/snap the quotient
+instead of directly flooring rounded division. Zero remainder follows the
+divisor's sign; zero quotient follows true division's sign. NaNs and
+infinite dividends return NaNs; finite/infinite pairs follow Python-style
+sign correction. Evaluated divisors must be nonzero, and denormal support
+remains outside this portable increment. CUDA omits `--use_fast_math`
+and explicitly selects non-flushing, precise division/sqrt and permitted
+multiply/add contraction. Metal disables `fastMathEnabled` for every
+kernel, including runtime reduction sources on both backends.
+CPU floating negation uses LLVM `fneg`; floating `!=` and truth tests use
+unordered inequality so NaN guards and signed-zero expressions agree.
+See `test_float_division.py` and the language contract.
+
+The floating-point baseline requires annotated precision, exceptional
+classes/signs and expression grouping. Adjacent multiply/add contraction
+is permitted; general reassociation is not. CPU emits no fast-math flags;
+HIP/OpenCL retain default settings without unsafe options. Floating math
+calls convert arguments to the result precision first; integer arguments
+default to f32, irrespective of the destination field. CPU libm calls use
+the matching f32/f64 symbols and return that precision before nested
+arithmetic. Scalar floating min/max prefer a number to NaN and permit
+either zero sign on ties. Denormals, NaN payloads/signaling, exception
+flags/traps, cross-backend bitwise agreement and global math error bounds
+are outside the portable baseline. CPU callers must retain the default
+round-to-nearest, untrapped environment. `test_float_semantics.py` checks
+classes/signs, grouping, permitted contraction and bounded-domain math.
+Reduction order/accuracy guarantees remain the next stage-five task.
 
 ### 64-bit loop indices on GPU
 
@@ -198,13 +355,16 @@ Multiple `PointLight` instances can be added to a `Scene`. Each light contribute
 
 `Actor` accepts `render_mode="solid"` (default, path traced), `"wireframe"` (triangle edges), or `"points"` (vertex discs). Wireframe and point actors are dispatched to GPU rasterization kernels in `rasterize.py` instead of the path tracer. Uses an MVP projection matrix passed as a flat f32 field, Bresenham line rasterization for wireframe, disc rasterization for points, and `tack.atomic_min` depth testing. Supports perspective and orthographic cameras, per-actor colors, scalar coloring, and configurable point size.
 
+In a scene that also has solid actors or volumes, `render()` path traces a solid-only sub-scene (cached on the parent so the BVH survives across frames) and then calls `render_raster(..., composite=True)`: wireframe and point actors are drawn into scratch buffers and laid over the existing image instead of clearing it. With solids, the path tracer's primary-ray distances are converted to the rasterizer's clip-space depth (rebuilding each pixel's jittered first-sample ray) so surfaces hide rasterized geometry behind them; `_SURFACE_DEPTH_BIAS` pushes surfaces back 0.5% so a wireframe lying on its own surface is drawn. A ray-cast volume has no depth, so rasterized actors are drawn over it. `canvas.depth` keeps the path tracer's ray distances in a mixed scene.
+
 ### CPU threading decision
 
 The CPU backend fans a loop range out to its `ThreadPoolExecutor` only when the serial run would cost meaningfully more than the fan-out. Both sides are measured, not assumed:
 
 - Each `CompiledKernel` carries `ns_per_elem`, a smoothed estimate of its serial cost, updated on every serial dispatch. From it the backend precomputes `parallel_min_elems`, so the dispatch hot path is one integer compare.
-- The backend measures its own fan-out cost once (`_fan_out_ns`), by dispatching *empty* ranges through the real path — no loop iterations, so the probe has no side effects.
-- The first time a kernel is seen at a range large enough to matter, a small prefix is timed serially and the rest is decided on that sample.
+- The backend measures its own fan-out cost by dispatching *empty* ranges through the real path — no loop iterations, so the probe has no side effects. Under the default policy (v2; `TACK_CPU_POLICY=v1` opts out) that is a curve calibrated at several idle gaps, interpolated on the actual idleness at dispatch, refined from real fan-outs, and re-measured directly at most every 100 ms. v1 measures it once.
+- The first time a kernel is seen at a range large enough to matter, a small slice is timed serially and the rest is decided on that sample. The slice comes from inside the range (the same golden-ratio walk as the rechecks), not its prefix.
+- Once a kernel threads, occasional rechecks (dispatches 1, 2, 4, … 1024, then every 1024) re-time a serial slice. The slice walks the range in golden-ratio steps rather than always sampling the prefix, because an image kernel's first rows are background and a prefix sample read a volume render 10–70× too cheap. A range whose serial run costs no more than a fan-out is re-timed whole; sufficiently long worker spans establish a floor under the serial estimate. If every worker of a complete dispatch later finishes below that duration, the old floor is retired and the next call rechecks serial cost. Cheap partial slices or a short median alone cannot retire it.
 
 A fixed element count cannot work here: the crossover moves ~1000× with arithmetic intensity (~4M elements for `out[i] = x[i]*2+1`, ~130K for a `sqrt`/`sin` expression, ~4K for a 20-iteration inner loop). The previous constant of 1024 sat below all of them, making mid-size dispatches of cheap kernels 3–10× slower than running them serially.
 
@@ -219,7 +379,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 - **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(field, size)`, `tack.barrier()`, `tack.thread_id()`
 - **Debug**: `print("label:", value)` — emits printf on CPU/CUDA/HIP, no-op on Metal
 - **Fields**: `field[i]`, `field[i, j]`, `field[None]`, `field.shape[k]`, `len(field)` — usable anywhere in a kernel (loop bounds, conditions, arithmetic, indices), not just as the outer loop bound. The dimension index must be a literal. See "Field dimensions" below for what specializes.
-- **Reductions**: `field.sum()`, `field.min()`, `field.max()` — GPU-native on Metal, numpy on CPU
+- **Reductions**: `field.sum()`, `field.min()`, `field.max()`, `field.mean()` return Python floats. Eligible f32 fields reduce on GPU; CPU and other dtypes use shared NumPy semantics. f32/f64 sums retain their precision; signed/unsigned integer sums use wrapping i64/u64 accumulators before float conversion. Floating extrema propagate NaNs and use negative-zero min / positive-zero max ties. Empty sum is +0, empty mean NaN, empty extrema raise. Floating addition order may vary; see the absolute error budget in `docs/reference/language-contract.md`. Runtime kernels and GPU block extrema share `codegen/reductions.py`; block arguments/results are f32, requiring explicit casts for other inputs. CPU rejects cooperative kernels; GPU participation and atomic target/order/scope domains are defined in the language contract. See `test_reduction_semantics.py`.
 
 ## Platform-specific dependencies
 

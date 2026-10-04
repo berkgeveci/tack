@@ -47,17 +47,17 @@ class TestCUDACodeGen:
                 out[i] = 42.0
 
         src = generate_cuda_source(_get_ir(fill, _field()))
-        assert 'if (i >= __n__) return;' in src
+        assert 'if (tack_var_a_i >= __n__) return;' in src
 
-    def test_restrict_pointers(self):
+    def test_field_pointers_allow_aliasing(self):
         @tack.kernel
         def add(x, y, out):
             for i in range(x.shape[0]):
                 out[i] = x[i] + y[i]
 
         src = generate_cuda_source(_get_ir(add, _field(), _field(), _field()))
-        assert 'float* __restrict__' in src
-        assert src.count('__restrict__') == 3
+        assert 'float* tack_var_a_x' in src
+        assert '__restrict__' not in src
 
     def test_n_parameter(self):
         @tack.kernel
@@ -108,7 +108,7 @@ class TestCUDACodeGen:
                     b[i] = a[i]
 
         src = generate_cuda_source(_get_ir(kern, _field(), _field()))
-        assert 'for (long long j = 0; j < 10; j++)' in src
+        assert 'for (long long tack_var_a_j = 0; tack_var_a_j < 10; tack_var_a_j++)' in src
 
     def test_while_loop(self):
         @tack.kernel
@@ -130,8 +130,8 @@ class TestCUDACodeGen:
 
         src = generate_cuda_source(_get_ir(saxpy, _field(), _field(), _field(), 2.5))
         # alpha should be a value, not a pointer
-        assert 'float alpha' in src
-        assert 'float* __restrict__ alpha' not in src
+        assert 'float tack_var_a_alpha' in src
+        assert 'float* tack_var_a_alpha' not in src
 
     def test_atomic_add(self):
         @tack.kernel

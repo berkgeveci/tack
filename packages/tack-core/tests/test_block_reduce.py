@@ -1,12 +1,11 @@
 """Tests for tack.block_sum, tack.block_max, tack.block_min."""
 
 import numpy as np
-import pytest
 
 import tack
 
 
-def test_block_sum(backend):
+def test_block_sum(workgroup_backend):
     """Each workgroup sums its elements and writes to partial_sums."""
     n = 256
     data = tack.field(dtype=tack.f32, shape=(n,))
@@ -26,10 +25,8 @@ def test_block_sum(backend):
     np.testing.assert_allclose(result, 256.0, rtol=1e-4)
 
 
-def test_block_max(backend):
+def test_block_max(workgroup_backend):
     """Block max finds the maximum in each workgroup."""
-    if backend == "cpu":
-        pytest.skip("block_max with thread_id guard is a GPU-only pattern")
     n = 256
     data = tack.field(dtype=tack.f32, shape=(n,))
     out = tack.field(dtype=tack.f32, shape=(1,))
@@ -47,10 +44,8 @@ def test_block_max(backend):
     np.testing.assert_allclose(result, 255.0, rtol=1e-4)
 
 
-def test_block_min(backend):
+def test_block_min(workgroup_backend):
     """Block min finds the minimum in each workgroup."""
-    if backend == "cpu":
-        pytest.skip("block_min with thread_id guard is a GPU-only pattern")
     n = 256
     data = tack.field(dtype=tack.f32, shape=(n,))
     out = tack.field(dtype=tack.f32, shape=(1,))
@@ -68,7 +63,7 @@ def test_block_min(backend):
     np.testing.assert_allclose(result, 10.0, rtol=1e-4)
 
 
-def test_block_sum_multi_workgroup(backend):
+def test_block_sum_multi_workgroup(workgroup_backend):
     """Sum across multiple workgroups using atomic accumulation."""
     n = 1024  # 4 workgroups of 256
     data = tack.field(dtype=tack.f32, shape=(n,))

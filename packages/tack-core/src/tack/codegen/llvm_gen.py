@@ -10,8 +10,12 @@ across threads and calls the kernel with different (start, end) pairs.
 
 from llvmlite import ir as llvm_ir
 
+from tack.codegen.identifiers import kernel_entry_name
+from tack.codegen.integer_division import INTEGER_TYPES, UNSIGNED_TYPES
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_support
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_support import check_workgroup_support
 
 
 def _llvm_type(tack_type: ScalarType) -> llvm_ir.Type:
@@ -74,6 +78,10 @@ class LLVMCodeGen:
     def generate(self) -> llvm_ir.Module:
         """Generate LLVM IR for the kernel. Returns the LLVM module."""
         func = self.ir_func
+        check_atomic_support(func, backend_name='cpu')
+        check_workgroup_support(
+            func, supports_workgroups=False, backend_label='CPU',
+        )
 
         # Classify parameters: fields become pointers, scalars stay scalar
         llvm_param_types = []
@@ -103,14 +111,19 @@ class LLVMCodeGen:
         param_names.extend(["__loop_start__", "__loop_end__"])
 
         fn_type = llvm_ir.FunctionType(llvm_ir.VoidType(), llvm_param_types)
-        llvm_func = llvm_ir.Function(self.module, fn_type, name=func.name)
+        llvm_func = llvm_ir.Function(self.module, fn_type, name=kernel_entry_name(func.name))
 
-        # Name the arguments and mark pointer params as noalias
-        for i, (arg, name) in enumerate(zip(llvm_func.args, param_names)):
+        # Field arguments may refer to overlapping storage, including
+        # distinct reshaped/imported views, so noalias is never promised
+        # unconditionally. The dispatcher sets `disjoint_fields` only on a
+        # variant it compiles for calls whose written fields it has checked
+        # share no storage with any other field (`fields_disjoint`).
+        disjoint = getattr(func, 'disjoint_fields', False)
+        for arg, name in zip(llvm_func.args, param_names):
             arg.name = name
             self._params[name] = arg
-            if name in self._field_params:
-                llvm_func.args[i].add_attribute("noalias")
+            if disjoint and name in self._field_params:
+                arg.add_attribute("noalias")
 
         entry = llvm_func.append_basic_block("entry")
         self.builder = llvm_ir.IRBuilder(entry)
@@ -157,12 +170,8 @@ class LLVMCodeGen:
             self._emit_atomic_op(node)
         elif isinstance(node, ir.IRPrint):
             self._emit_print(node)
-        elif isinstance(node, ir.IRSharedAlloc):
-            self._emit_shared_alloc(node)
         elif isinstance(node, ir.IRLocalAlloc):
-            self._emit_shared_alloc(node)  # same as shared on CPU: stack alloca
-        elif isinstance(node, ir.IRBarrier):
-            pass  # No-op on CPU (single-threaded per chunk)
+            self._emit_local_alloc(node)
         elif isinstance(node, ir.IRCall):
             # Standalone function call (expression statement)
             self._emit_expr(node)
@@ -170,6 +179,20 @@ class LLVMCodeGen:
             raise NotImplementedError(f"Cannot emit statement: {type(node).__name__}")
 
     def _emit_expr(self, node: ir.IRNode) -> llvm_ir.Value:
+        value = self._emit_expr_value(node)
+        dtype = getattr(node, 'dtype', None)
+        if dtype in INTEGER_TYPES and _is_int_type(value.type):
+            value = self._coerce_to(value, _llvm_type(dtype))
+            unsigned = dtype in UNSIGNED_TYPES
+            if unsigned != (id(value) in self._unsigned_vals):
+                # LLVM integer types have no signedness. A same-width cast
+                # needs its own value so it cannot retag a reused SSA value.
+                value = self.builder.or_(value, llvm_ir.Constant(value.type, 0))
+            if unsigned:
+                self._unsigned_vals.add(id(value))
+        return value
+
+    def _emit_expr_value(self, node: ir.IRNode) -> llvm_ir.Value:
         """Emit an expression and return its LLVM value."""
         if isinstance(node, ir.IRConstant):
             return self._emit_constant(node)
@@ -195,16 +218,6 @@ class LLVMCodeGen:
             return self._emit_ifexp(node)
         if isinstance(node, ir.IRTextureSample):
             return self._emit_texture_sample(node)
-        if isinstance(node, ir.IRThreadId):
-            # On CPU, thread_id within a chunk is (loop_var - loop_start)
-            # Return 0 as a safe default (CPU doesn't have workgroups)
-            return llvm_ir.Constant(llvm_ir.IntType(64), 0)
-        if isinstance(node, ir.IRBlockReduce):
-            # On CPU, there's one thread per "block" — reduction is identity
-            val = self._emit_expr(node.value)
-            if val.type != llvm_ir.FloatType():
-                val = self.builder.sitofp(val, llvm_ir.FloatType(), name="breduce_cast")
-            return val
         raise NotImplementedError(f"Cannot emit expression: {type(node).__name__}")
 
     # --- Loops ---
@@ -217,6 +230,7 @@ class LLVMCodeGen:
 
         header = self._func.append_basic_block(f"for.{node.var}.header")
         body = self._func.append_basic_block(f"for.{node.var}.body")
+        latch = self._func.append_basic_block(f"for.{node.var}.latch")
         exit_bb = self._func.append_basic_block(f"for.{node.var}.exit")
 
         entry_block = self.builder.block
@@ -235,22 +249,27 @@ class LLVMCodeGen:
         old_local = self._locals.get(node.var)
         self._locals[node.var] = phi
 
+        # `continue` goes to the latch, not the header: the header's phi
+        # needs the incremented index from every edge that re-enters it.
         old_break = self._break_target
         old_continue = self._continue_target
         self._break_target = exit_bb
-        self._continue_target = header
+        self._continue_target = latch
 
         self._emit_body(node.body)
 
         self._break_target = old_break
         self._continue_target = old_continue
 
-        # Increment and branch back
         if not self.builder.block.is_terminated:
-            next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
-                                        name=f"{node.var}.next")
-            phi.add_incoming(next_val, self.builder.block)
-            self.builder.branch(header)
+            self.builder.branch(latch)
+
+        # Increment and branch back
+        self.builder = llvm_ir.IRBuilder(latch)
+        next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
+                                    name=f"{node.var}.next")
+        phi.add_incoming(next_val, latch)
+        self.builder.branch(header)
 
         if old_local is not None:
             self._locals[node.var] = old_local
@@ -267,6 +286,7 @@ class LLVMCodeGen:
 
         header = self._func.append_basic_block(f"for.{node.var}.header")
         body = self._func.append_basic_block(f"for.{node.var}.body")
+        latch = self._func.append_basic_block(f"for.{node.var}.latch")
         exit_bb = self._func.append_basic_block(f"for.{node.var}.exit")
 
         entry_block = self.builder.block
@@ -284,10 +304,11 @@ class LLVMCodeGen:
         old_local = self._locals.get(node.var)
         self._locals[node.var] = phi
 
+        # See _emit_parallel_for: `continue` must reach the increment.
         old_break = self._break_target
         old_continue = self._continue_target
         self._break_target = exit_bb
-        self._continue_target = header
+        self._continue_target = latch
 
         self._emit_body(node.body)
 
@@ -295,15 +316,18 @@ class LLVMCodeGen:
         self._continue_target = old_continue
 
         if not self.builder.block.is_terminated:
-            if node.step is not None:
-                step_val = self._to_i64(self._emit_expr(node.step))
-                next_val = self.builder.add(phi, step_val,
-                                            name=f"{node.var}.next")
-            else:
-                next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
-                                            name=f"{node.var}.next")
-            phi.add_incoming(next_val, self.builder.block)
-            self.builder.branch(header)
+            self.builder.branch(latch)
+
+        self.builder = llvm_ir.IRBuilder(latch)
+        if node.step is not None:
+            step_val = self._to_i64(self._emit_expr(node.step))
+            next_val = self.builder.add(phi, step_val,
+                                        name=f"{node.var}.next")
+        else:
+            next_val = self.builder.add(phi, llvm_ir.Constant(i64_type, 1),
+                                        name=f"{node.var}.next")
+        phi.add_incoming(next_val, latch)
+        self.builder.branch(header)
 
         if old_local is not None:
             self._locals[node.var] = old_local
@@ -384,13 +408,37 @@ class LLVMCodeGen:
         self.builder = llvm_ir.IRBuilder(merge_bb)
 
     def _emit_ifexp(self, node: ir.IRIfExp) -> llvm_ir.Value:
-        """Emit a ternary expression using select."""
+        """Evaluate only the selected arm, including its loads and calls."""
         cond = self._emit_expr(node.condition)
         cond = self._to_i1(cond)
+        then_bb = self._func.append_basic_block('select.then')
+        else_bb = self._func.append_basic_block('select.else')
+        merge_bb = self._func.append_basic_block('select.merge')
+        self.builder.cbranch(cond, then_bb, else_bb)
+
+        self.builder = llvm_ir.IRBuilder(then_bb)
         then_val = self._emit_expr(node.then_value)
+        then_end = self.builder.block
+        self.builder = llvm_ir.IRBuilder(else_bb)
         else_val = self._emit_expr(node.else_value)
-        then_val, else_val = self._coerce_pair(then_val, else_val)
-        return self.builder.select(cond, then_val, else_val, name="ifexp")
+        else_end = self.builder.block
+
+        # Coercions belong to their respective branches: neither value
+        # dominates the other branch or the join before its phi.
+        dtype = getattr(node, 'dtype', None)
+        target = _llvm_type(dtype) if dtype in INTEGER_TYPES else \
+            self._common_type(then_val.type, else_val.type)
+        self.builder = llvm_ir.IRBuilder(then_end)
+        then_val = self._coerce_to(then_val, target)
+        self.builder.branch(merge_bb)
+        self.builder = llvm_ir.IRBuilder(else_end)
+        else_val = self._coerce_to(else_val, target)
+        self.builder.branch(merge_bb)
+        self.builder = llvm_ir.IRBuilder(merge_bb)
+        result = self.builder.phi(target, name='ifexp')
+        result.add_incoming(then_val, then_end)
+        result.add_incoming(else_val, else_end)
+        return result
 
     # --- Assignments ---
 
@@ -403,8 +451,11 @@ class LLVMCodeGen:
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="store.ptr")
         # Cast value to the element type of the pointer
         elem_type = base_ptr.type.pointee
-        value = self._coerce_to(value, elem_type)
-        self.builder.store(value, elem_ptr, align=4)
+        value = self._coerce_to(value, elem_type,
+                                getattr(node, 'dtype', None) in UNSIGNED_TYPES)
+        # Imported buffers may start at any byte; small element
+        # offsets also cannot satisfy an unconditional four-byte promise.
+        self.builder.store(value, elem_ptr, align=1)
 
     def _create_entry_alloca(self, typ, name):
         """Create an alloca in the function entry block (ensures domination)."""
@@ -474,7 +525,7 @@ class LLVMCodeGen:
 
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="atomic.ptr")
         elem_type = base_ptr.type.pointee
-        value = self._coerce_to(value, elem_type)
+        value = self._coerce_to(value, elem_type, node.dtype in UNSIGNED_TYPES)
 
         if node.op == "add":
             if _is_float_type(elem_type):
@@ -486,28 +537,42 @@ class LLVMCodeGen:
                 # Float atomic min via compare-and-swap loop
                 self._emit_atomic_float_minmax(elem_ptr, value, "min")
             else:
-                self.builder.atomic_rmw("min", elem_ptr, value, "monotonic")
+                self.builder.atomic_rmw("umin" if node.dtype in UNSIGNED_TYPES else "min",
+                                        elem_ptr, value, "monotonic")
         elif node.op == "max":
             if _is_float_type(elem_type):
                 self._emit_atomic_float_minmax(elem_ptr, value, "max")
             else:
-                self.builder.atomic_rmw("max", elem_ptr, value, "monotonic")
+                self.builder.atomic_rmw("umax" if node.dtype in UNSIGNED_TYPES else "max",
+                                        elem_ptr, value, "monotonic")
         else:
             raise NotImplementedError(f"Atomic op: {node.op}")
 
     def _emit_atomic_float_minmax(self, ptr, value, op: str):
         """Emit a float atomic min/max via compare-and-swap loop."""
-        # For CPU, just do a non-atomic load-compare-store (single-threaded per element)
-        old_val = self.builder.load(ptr, name="atomic.old")
-        if op == "min":
-            cond = self.builder.fcmp_ordered("<", value, old_val, name="atomic.cmp")
-        else:
-            cond = self.builder.fcmp_ordered(">", value, old_val, name="atomic.cmp")
-        new_val = self.builder.select(cond, value, old_val, name="atomic.new")
-        self.builder.store(new_val, ptr)
+        bits_type = llvm_ir.IntType(32 if isinstance(value.type, llvm_ir.FloatType) else 64)
+        bits_ptr = self.builder.bitcast(ptr, bits_type.as_pointer())
+        initial = self.builder.load_atomic(bits_ptr, 'monotonic', bits_type.width // 8)
+        entry = self.builder.block
+        loop = self.builder.function.append_basic_block('atomic.retry')
+        done = self.builder.function.append_basic_block('atomic.done')
+        self.builder.branch(loop)
+        self.builder.position_at_end(loop)
+        old = self.builder.phi(bits_type, 'atomic.old.bits')
+        old.add_incoming(initial, entry)
+        old_val = self.builder.bitcast(old, value.type)
+        cond = self.builder.fcmp_ordered('<' if op == 'min' else '>', value, old_val)
+        new_val = self.builder.select(cond, value, old_val)
+        new_bits = self.builder.bitcast(new_val, bits_type)
+        result = self.builder.cmpxchg(bits_ptr, old, new_bits, 'monotonic', 'monotonic')
+        observed = self.builder.extract_value(result, 0)
+        success = self.builder.extract_value(result, 1)
+        old.add_incoming(observed, loop)
+        self.builder.cbranch(success, done, loop)
+        self.builder.position_at_end(done)
 
-    def _emit_shared_alloc(self, node: ir.IRSharedAlloc):
-        """Emit shared memory as a stack alloca (CPU has no shared memory)."""
+    def _emit_local_alloc(self, node: ir.IRLocalAlloc):
+        """Emit private scratch storage as a stack alloca."""
         elem_type = _llvm_type(node.dtype)
         # Use constant size for the alloca
         if isinstance(node.size, ir.IRConstant):
@@ -588,12 +653,14 @@ class LLVMCodeGen:
     # --- Expressions ---
 
     def _emit_constant(self, node: ir.IRConstant) -> llvm_ir.Value:
+        if isinstance(node.value, bool):
+            return llvm_ir.Constant(llvm_ir.IntType(32), int(node.value))
         if isinstance(node.value, float):
             return llvm_ir.Constant(llvm_ir.FloatType(), node.value)
         if isinstance(node.value, int):
-            return llvm_ir.Constant(llvm_ir.IntType(64), node.value)
-        if isinstance(node.value, bool):
-            return llvm_ir.Constant(llvm_ir.IntType(1), int(node.value))
+            dtype = getattr(node, 'dtype', None)
+            target = _llvm_type(dtype) if dtype in INTEGER_TYPES else llvm_ir.IntType(64)
+            return llvm_ir.Constant(target, node.value)
         raise TypeError(f"Unsupported constant type: {type(node.value)}")
 
     def _emit_name(self, node: ir.IRName) -> llvm_ir.Value:
@@ -611,6 +678,22 @@ class LLVMCodeGen:
     def _emit_binop(self, node: ir.IRBinOp) -> llvm_ir.Value:
         left = self._emit_expr(node.left)
         right = self._emit_expr(node.right)
+        dtype = getattr(node, 'dtype', None)
+        if node.op == '**' and dtype in INTEGER_TYPES:
+            return self._emit_integer_power(dtype, left, right)
+        if node.op in ('/', '**', '//', '%') and dtype in (f32, f64):
+            target = _llvm_type(dtype)
+            return self._emit_float_binop(node.op, self._coerce_to(left, target),
+                                         self._coerce_to(right, target))
+        if node.op in ('//', '%') and getattr(node, 'dtype', None) in INTEGER_TYPES:
+            return self._emit_integer_division(node, left, right)
+        if getattr(node, 'dtype', None) in INTEGER_TYPES and node.op not in ('/', '**'):
+            target = _llvm_type(node.dtype)
+            left = self._coerce_to(left, target)
+            right = self._coerce_to(right, target)
+            if node.op == '>>' and node.dtype in UNSIGNED_TYPES:
+                return self.builder.lshr(left, right, name='unsigned.shift')
+            return self._emit_int_binop(node.op, left, right)
         left, right = self._coerce_pair(left, right)
 
         if _is_float_type(left.type):
@@ -619,25 +702,138 @@ class LLVMCodeGen:
             return self._emit_int_binop(node.op, left, right)
         raise TypeError(f"Unsupported operand type for {node.op}: {left.type}")
 
+    def _emit_integer_power(self, dtype, base, exponent):
+        """Exact modular exponentiation, with at most 64 iterations.
+
+        The exponent has its own integer type and does not widen the base.
+        A dynamic negative exponent is outside the defined domain; using a
+        logical shift still guarantees that the helper terminates.
+        """
+        t = _llvm_type(dtype)
+        base = self._coerce_to(base, t)
+        exponent = self._to_i64(exponent)
+        name = f'__tack_pow_{dtype.name}__'
+        helper = self.module.globals.get(name)
+        if helper is None:
+            i64_type = llvm_ir.IntType(64)
+            helper = llvm_ir.Function(self.module, llvm_ir.FunctionType(t, [t, i64_type]),
+                                      name=name)
+            helper.linkage = 'internal'
+            entry = helper.append_basic_block('entry')
+            header = helper.append_basic_block('header')
+            body = helper.append_basic_block('body')
+            exit_bb = helper.append_basic_block('exit')
+            builder = llvm_ir.IRBuilder(entry)
+            builder.branch(header)
+            builder.position_at_end(header)
+            result = builder.phi(t, name='result')
+            factor = builder.phi(t, name='factor')
+            count = builder.phi(i64_type, name='count')
+            result.add_incoming(llvm_ir.Constant(t, 1), entry)
+            factor.add_incoming(helper.args[0], entry)
+            count.add_incoming(helper.args[1], entry)
+            builder.cbranch(builder.icmp_unsigned('!=', count, llvm_ir.Constant(i64_type, 0)),
+                            body, exit_bb)
+            builder.position_at_end(body)
+            odd = builder.and_(count, llvm_ir.Constant(i64_type, 1))
+            product = builder.mul(result, factor)
+            next_result = builder.select(
+                builder.icmp_unsigned('!=', odd, llvm_ir.Constant(i64_type, 0)), product, result)
+            next_factor = builder.mul(factor, factor)
+            next_count = builder.lshr(count, llvm_ir.Constant(i64_type, 1))
+            result.add_incoming(next_result, body)
+            factor.add_incoming(next_factor, body)
+            count.add_incoming(next_count, body)
+            builder.branch(header)
+            builder.position_at_end(exit_bb)
+            builder.ret(result)
+        return self.builder.call(helper, [base, exponent], name='pow.integer')
+
+    def _emit_integer_division(self, node, left, right):
+        target = _llvm_type(node.dtype)
+
+        def convert(value, operand):
+            if value.type == target:
+                return value
+            if value.type.width < target.width:
+                extend = self.builder.zext if operand.dtype in UNSIGNED_TYPES \
+                    else self.builder.sext
+                return extend(value, target)
+            return self.builder.trunc(value, target)
+
+        left, right = convert(left, node.left), convert(right, node.right)
+        if node.dtype in UNSIGNED_TYPES:
+            operation = self.builder.udiv if node.op == '//' else self.builder.urem
+            result = operation(left, right, name='unsigned.divmod')
+            self._unsigned_vals.add(id(result))
+            return result
+
+        remainder = self.builder.srem(left, right, name='divmod.remainder')
+        zero = llvm_ir.Constant(target, 0)
+        nonzero = self.builder.icmp_signed('!=', remainder, zero)
+        signs_differ = self.builder.xor(
+            self.builder.icmp_signed('<', remainder, zero),
+            self.builder.icmp_signed('<', right, zero))
+        adjust = self.builder.and_(nonzero, signs_differ)
+        if node.op == '//':
+            quotient = self.builder.sdiv(left, right, name='divmod.quotient')
+            correction = self.builder.zext(adjust, target)
+            return self.builder.sub(quotient, correction, name='floordiv')
+        corrected = self.builder.add(remainder, right)
+        return self.builder.select(adjust, corrected, remainder, name='mod')
+
     def _emit_float_binop(self, op: str, left, right) -> llvm_ir.Value:
+        if op in ('//', '%'):
+            return self._emit_float_division(op, left, right)
         ops = {
             "+": self.builder.fadd,
             "-": self.builder.fsub,
             "*": self.builder.fmul,
             "/": self.builder.fdiv,
-            "%": self.builder.frem,
         }
         if op in ops:
             return ops[op](left, right, name="binop")
         if op == "**":
             powf = self.module.declare_intrinsic('llvm.pow', [left.type])
             return self.builder.call(powf, [left, right], name="pow")
-        if op == "//":
-            # Floor division for floats: floor(a / b)
-            div = self.builder.fdiv(left, right, name="div")
-            floorf = self.module.declare_intrinsic('llvm.floor', [left.type])
-            return self.builder.call(floorf, [div], name="floordiv")
         raise NotImplementedError(f"Float binary op: {op}")
+
+    def _emit_float_division(self, op, left, right):
+        """Typed helper keeps sign correction and quotient reconstruction together."""
+        t = left.type
+        kind = 'floordiv' if op == '//' else 'mod'
+        precision = 'f32' if isinstance(t, llvm_ir.FloatType) else 'f64'
+        name = f'__tack_{kind}_{precision}__'
+        helper = self.module.globals.get(name)
+        if helper is None:
+            helper = llvm_ir.Function(self.module, llvm_ir.FunctionType(t, [t, t]), name=name)
+            helper.linkage = 'internal'
+            builder = llvm_ir.IRBuilder(helper.append_basic_block('entry'))
+            a, b = helper.args
+            zero, one, half = (llvm_ir.Constant(t, v) for v in (0.0, 1.0, 0.5))
+            r = builder.frem(a, b, name='remainder')
+            nonzero = builder.fcmp_unordered('!=', r, zero)
+            opposite = builder.xor(builder.fcmp_ordered('<', r, zero),
+                                   builder.fcmp_ordered('<', b, zero))
+            adjust = builder.and_(nonzero, opposite)
+            copysign = self.module.declare_intrinsic(
+                'llvm.copysign', [t], fnty=llvm_ir.FunctionType(t, [t, t]))
+            if op == '%':
+                corrected = builder.select(adjust, builder.fadd(r, b), r)
+                signed_zero = builder.call(copysign, [zero, b])
+                result = builder.select(nonzero, corrected, signed_zero)
+            else:
+                q = builder.fdiv(builder.fsub(a, r), b)
+                q = builder.select(adjust, builder.fsub(q, one), q)
+                floor = self.module.declare_intrinsic('llvm.floor', [t])
+                integral = builder.call(floor, [q])
+                round_up = builder.fcmp_ordered('>', builder.fsub(q, integral), half)
+                snapped = builder.select(round_up, builder.fadd(integral, one), integral)
+                signed_zero = builder.call(copysign, [zero, builder.fdiv(a, b)])
+                result = builder.select(builder.fcmp_unordered('!=', q, zero),
+                                        snapped, signed_zero)
+            builder.ret(result)
+        return self.builder.call(helper, [left, right], name=kind)
 
     def _emit_int_binop(self, op: str, left, right) -> llvm_ir.Value:
         ops = {
@@ -654,34 +850,20 @@ class LLVMCodeGen:
         }
         if op in ops:
             return ops[op](left, right, name="binop")
-        if op == "/":
-            # Integer division → convert to float, divide, convert back
-            f64_type = llvm_ir.DoubleType()
-            fl = self.builder.sitofp(left, f64_type)
-            fr = self.builder.sitofp(right, f64_type)
-            return self.builder.fdiv(fl, fr, name="div")
-        if op == "**":
-            # Integer power: convert to float, use pow, convert back
-            f64_type = llvm_ir.DoubleType()
-            fl = self.builder.sitofp(left, f64_type)
-            fr = self.builder.sitofp(right, f64_type)
-            powf = self.module.declare_intrinsic('llvm.pow', [f64_type])
-            result = self.builder.call(powf, [fl, fr], name="pow")
-            return self.builder.fptosi(result, left.type, name="pow.int")
         raise NotImplementedError(f"Integer binary op: {op}")
 
     def _emit_unaryop(self, node: ir.IRUnaryOp) -> llvm_ir.Value:
         operand = self._emit_expr(node.operand)
         if node.op == "-":
             if _is_float_type(operand.type):
-                return self.builder.fsub(
-                    llvm_ir.Constant(operand.type, 0.0), operand, name="neg")
+                return self.builder.fneg(operand, name="neg")
             return self.builder.neg(operand, name="neg")
         if node.op == "+":
             return operand
         if node.op == "not":
             operand = self._to_i1(operand)
-            return self.builder.not_(operand, name="not")
+            value = self.builder.not_(operand, name="not")
+            return self.builder.zext(value, llvm_ir.IntType(32), name='boolean')
         if node.op == "~":
             return self.builder.not_(operand, name="invert")
         raise NotImplementedError(f"Unary op: {node.op}")
@@ -689,7 +871,12 @@ class LLVMCodeGen:
     def _emit_compare(self, node: ir.IRCompare) -> llvm_ir.Value:
         left = self._emit_expr(node.left)
         right = self._emit_expr(node.right)
-        left, right = self._coerce_pair(left, right)
+        dtype = getattr(node, '_operand_type', None)
+        if dtype in INTEGER_TYPES:
+            target = _llvm_type(dtype)
+            left, right = self._coerce_to(left, target), self._coerce_to(right, target)
+        else:
+            left, right = self._coerce_pair(left, right)
 
         if _is_float_type(left.type):
             fcmp_ops = {
@@ -697,7 +884,9 @@ class LLVMCodeGen:
                 "<": "<", "<=": "<=",
                 ">": ">", ">=": ">=",
             }
-            return self.builder.fcmp_ordered(fcmp_ops[node.op], left, right, name="cmp")
+            compare = self.builder.fcmp_unordered if node.op == '!=' else self.builder.fcmp_ordered
+            value = compare(fcmp_ops[node.op], left, right, name="cmp")
+            return self.builder.zext(value, llvm_ir.IntType(32), name='boolean')
 
         if _is_int_type(left.type):
             icmp_ops = {
@@ -705,26 +894,40 @@ class LLVMCodeGen:
                 "<": "<", "<=": "<=",
                 ">": ">", ">=": ">=",
             }
-            return self.builder.icmp_signed(icmp_ops[node.op], left, right, name="cmp")
+            compare = self.builder.icmp_unsigned if dtype in UNSIGNED_TYPES \
+                else self.builder.icmp_signed
+            value = compare(icmp_ops[node.op], left, right, name="cmp")
+            return self.builder.zext(value, llvm_ir.IntType(32), name='boolean')
 
         raise TypeError(f"Cannot compare type: {left.type}")
 
     def _emit_boolop(self, node: ir.IRBoolOp) -> llvm_ir.Value:
-        """Emit boolean and/or (eager evaluation — not short-circuit)."""
+        """Short-circuit left to right and return Tack's normalized i32 bool."""
         result = self._to_i1(self._emit_expr(node.values[0]))
+        merge_bb = self._func.append_basic_block('boolean.merge')
+        incoming = []
         for val_node in node.values[1:]:
-            val = self._to_i1(self._emit_expr(val_node))
-            if node.op == "and":
-                result = self.builder.and_(result, val, name="and")
+            next_bb = self._func.append_basic_block('boolean.next')
+            incoming.append((result, self.builder.block))
+            if node.op == 'and':
+                self.builder.cbranch(result, next_bb, merge_bb)
             else:
-                result = self.builder.or_(result, val, name="or")
-        return result
+                self.builder.cbranch(result, merge_bb, next_bb)
+            self.builder = llvm_ir.IRBuilder(next_bb)
+            result = self._to_i1(self._emit_expr(val_node))
+        incoming.append((result, self.builder.block))
+        self.builder.branch(merge_bb)
+        self.builder = llvm_ir.IRBuilder(merge_bb)
+        joined = self.builder.phi(llvm_ir.IntType(1), name='boolean')
+        for value, block in incoming:
+            joined.add_incoming(value, block)
+        return self.builder.zext(joined, llvm_ir.IntType(32), name='boolean.result')
 
     def _emit_field_load(self, node: ir.IRFieldLoad) -> llvm_ir.Value:
         base_ptr = self._emit_expr(node.field)
         index = self._to_i64(self._emit_expr(node.index))
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="load.ptr")
-        val = self.builder.load(elem_ptr, name="load.val", align=4)
+        val = self.builder.load(elem_ptr, name="load.val", align=1)
         # Track unsigned values for correct coercion (uitofp vs sitofp)
         dtype = getattr(node, 'dtype', None)
         if dtype in (u8, u16, u32, u64):
@@ -838,13 +1041,25 @@ class LLVMCodeGen:
     def _emit_call(self, node: ir.IRCall) -> llvm_ir.Value:
         """Emit a math builtin call."""
         args = [self._emit_expr(a) for a in node.args]
+        dtype = getattr(node, 'dtype', None)
+        if dtype in (f32, f64):
+            args = [self._coerce_to(a, _llvm_type(dtype)) for a in args]
 
         # min/max with two args
         if node.func_name in ("min", "max") and len(args) == 2:
+            dtype = getattr(node, 'dtype', None)
+            if dtype in INTEGER_TYPES:
+                args = [self._coerce_to(a, _llvm_type(dtype)) for a in args]
+                compare = self.builder.icmp_unsigned if dtype in UNSIGNED_TYPES \
+                    else self.builder.icmp_signed
+                cond = compare('<' if node.func_name == 'min' else '>', *args)
+                return self.builder.select(cond, *args)
             return self._emit_minmax(node.func_name, args[0], args[1])
 
         # abs
         if node.func_name == "abs" and len(args) == 1:
+            if getattr(node, 'dtype', None) in UNSIGNED_TYPES:
+                return args[0]
             return self._emit_abs(args[0])
 
         # LLVM intrinsics (single-arg math functions)
@@ -871,9 +1086,13 @@ class LLVMCodeGen:
 
         # pow(x, y)
         if node.func_name == "pow" and len(args) == 2:
+            dtype = getattr(node, 'dtype', None)
+            if dtype in INTEGER_TYPES:
+                return self._emit_integer_power(dtype, *args)
             a, b = args
-            a = self._to_float(a)
-            b = self._coerce_to(b, a.type)
+            target = _llvm_type(f64 if dtype is f64 else f32)
+            a = self._coerce_to(a, target)
+            b = self._coerce_to(b, target)
             powf = self.module.declare_intrinsic('llvm.pow', [a.type])
             return self.builder.call(powf, [a, b], name="pow")
 
@@ -919,13 +1138,11 @@ class LLVMCodeGen:
     def _emit_libm_call(self, name: str, args: list[llvm_ir.Value]) -> llvm_ir.Value:
         """Emit a call to a libm function (linked at runtime)."""
         args = [self._to_float(a) for a in args]
-        # Use f64 for libm
-        f64_type = llvm_ir.DoubleType()
-        args = [self._coerce_to(a, f64_type) for a in args]
-        fn_type = llvm_ir.FunctionType(f64_type, [f64_type] * len(args))
-        fn = self.module.declare_intrinsic(f'llvm.{name}' if False else '', [])
-        # Actually, use a regular external function declaration for libm
-        fn_name = name
+        target = llvm_ir.DoubleType() if any(isinstance(a.type, llvm_ir.DoubleType)
+                                            for a in args) else llvm_ir.FloatType()
+        args = [self._coerce_to(a, target) for a in args]
+        fn_type = llvm_ir.FunctionType(target, [target] * len(args))
+        fn_name = name if isinstance(target, llvm_ir.DoubleType) else name + 'f'
         try:
             fn = self.module.get_global(fn_name)
         except KeyError:
@@ -957,7 +1174,7 @@ class LLVMCodeGen:
                 if val.type.width == target.width:
                     return val
                 if val.type.width < target.width:
-                    if node.dtype in (u8, u16, u32, u64):
+                    if getattr(node.value, 'dtype', None) in UNSIGNED_TYPES:
                         return self.builder.zext(val, target, name="zext")
                     return self.builder.sext(val, target, name="sext")
                 return self.builder.trunc(val, target, name="trunc")
@@ -982,7 +1199,8 @@ class LLVMCodeGen:
             return val
         if _is_int_type(val.type):
             if val.type.width < 64:
-                return self.builder.sext(val, i64_type, name="to.i64")
+                extend = self.builder.zext if id(val) in self._unsigned_vals else self.builder.sext
+                return extend(val, i64_type, name="to.i64")
             return self.builder.trunc(val, i64_type, name="to.i64")
         if _is_float_type(val.type):
             return self.builder.fptosi(val, i64_type, name="to.i64")
@@ -997,7 +1215,7 @@ class LLVMCodeGen:
             return self.builder.icmp_signed("!=", val,
                                             llvm_ir.Constant(val.type, 0), name="to.bool")
         if _is_float_type(val.type):
-            return self.builder.fcmp_ordered("!=", val,
+            return self.builder.fcmp_unordered("!=", val,
                                              llvm_ir.Constant(val.type, 0.0), name="to.bool")
         raise TypeError(f"Cannot convert {val.type} to i1")
 
@@ -1011,7 +1229,8 @@ class LLVMCodeGen:
             return self.builder.sitofp(val, llvm_ir.FloatType(), name="to.float")
         raise TypeError(f"Cannot convert {val.type} to float")
 
-    def _coerce_to(self, val: llvm_ir.Value, target: llvm_ir.Type) -> llvm_ir.Value:
+    def _coerce_to(self, val: llvm_ir.Value, target: llvm_ir.Type,
+                   target_unsigned: bool = False) -> llvm_ir.Value:
         """Coerce a value to a target LLVM type."""
         if val.type == target:
             return val
@@ -1030,6 +1249,8 @@ class LLVMCodeGen:
 
         # float -> int
         if _is_float_type(val.type) and _is_int_type(target):
+            if target_unsigned:
+                return self.builder.fptoui(val, target, name="fptoui")
             return self.builder.fptosi(val, target, name="fptosi")
 
         # int -> int (widen/narrow)
@@ -1044,28 +1265,30 @@ class LLVMCodeGen:
 
     def _coerce_pair(self, a: llvm_ir.Value, b: llvm_ir.Value):
         """Coerce two values to a common type (type promotion)."""
-        if a.type == b.type:
-            return a, b
+        target = self._common_type(a.type, b.type)
+        return self._coerce_to(a, target), self._coerce_to(b, target)
+
+    @staticmethod
+    def _common_type(a, b):
+        """Choose a join type without emitting casts in the wrong branch."""
+        if a == b:
+            return a
 
         # Float wins over int
-        if _is_float_type(a.type) and _is_int_type(b.type):
-            return a, self._coerce_to(b, a.type)
-        if _is_int_type(a.type) and _is_float_type(b.type):
-            return self._coerce_to(a, b.type), b
+        if _is_float_type(a) and _is_int_type(b):
+            return a
+        if _is_int_type(a) and _is_float_type(b):
+            return b
 
         # Wider float wins
-        if _is_float_type(a.type) and _is_float_type(b.type):
-            if isinstance(a.type, llvm_ir.DoubleType):
-                return a, self._coerce_to(b, a.type)
-            return self._coerce_to(a, b.type), b
+        if _is_float_type(a) and _is_float_type(b):
+            return a if isinstance(a, llvm_ir.DoubleType) else b
 
         # Wider int wins
-        if _is_int_type(a.type) and _is_int_type(b.type):
-            if a.type.width > b.type.width:
-                return a, self._coerce_to(b, a.type)
-            return self._coerce_to(a, b.type), b
+        if _is_int_type(a) and _is_int_type(b):
+            return a if a.width > b.width else b
 
-        raise TypeError(f"Cannot coerce pair: {a.type}, {b.type}")
+        raise TypeError(f"Cannot coerce pair: {a}, {b}")
 
 
 def generate_llvm_ir(ir_func: ir.IRFunction) -> llvm_ir.Module:

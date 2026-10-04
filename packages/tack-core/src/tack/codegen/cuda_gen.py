@@ -12,8 +12,16 @@ All integer locals and loop indices use 64-bit ``long long`` to support grids
 with more than 2^31 elements.
 """
 
+from tack.codegen.atomics import cuda_atomic64_helpers
+from tack.codegen.float_division import float_division_expr, float_division_helpers
+from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
+from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
+from tack.codegen.integer_ops import IntegerCodeGen
+from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_support
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
 
 _C_TYPE_MAP = {
     i8:  "signed char",
@@ -82,24 +90,6 @@ _CMP_MAP = {
     "==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
 }
 
-
-# C/C++ reserved words that cannot be used as kernel function names
-_C_RESERVED = frozenset({
-    "auto", "break", "case", "char", "const", "continue", "default", "do",
-    "double", "else", "enum", "extern", "float", "for", "goto", "if",
-    "inline", "int", "long", "register", "return", "short", "signed",
-    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
-    "void", "volatile", "while",
-})
-
-
-def _safe_kernel_name(name: str) -> str:
-    """Prefix kernel names that collide with C reserved words."""
-    if name in _C_RESERVED:
-        return f"_tack_{name}"
-    return name
-
-
 class CUDACodeGen:
     """Generates CUDA C source from a Tack IR function."""
 
@@ -108,8 +98,11 @@ class CUDACodeGen:
     # named here rather than inlined into the signature below.
     _TEXTURE_OBJECT_TYPE = "cudaTextureObject_t"
 
+    _atomic_backend = 'cuda'
+    _integer_type_map = _C_TYPE_MAP
+
     def __init__(self, ir_func: ir.IRFunction):
-        self.ir_func = ir_func
+        self.ir_func = rename_gpu_bindings(ir_func)
         self._indent = 0
         self._lines: list[str] = []
         self._param_types: dict[str, ScalarType] = {}
@@ -117,12 +110,19 @@ class CUDACodeGen:
         self._local_vars: dict[str, str] = {}  # name → C type (all known vars)
         self._declared_vars: set[str] = set()  # vars already emitted with declaration
         self._loop_end_name: str | None = None
+        self._atomic64 = set()
         self._needs_float_atomic_min = False
         self._needs_float_atomic_max = False
+        self._integer_division_helpers = set()
+        self._float_division_helpers = set()
+        self._block_extrema = set()
+        self._integers = IntegerCodeGen(self._integer_type_map)
 
     def generate(self) -> str:
         """Generate CUDA C source for the kernel."""
         func = self.ir_func
+        check_atomic_support(func, backend_name=self._atomic_backend)
+        check_workgroup_participation(func)
 
         # Build parameter info
         for param in func.params:
@@ -148,7 +148,9 @@ class CUDACodeGen:
             if param.name in self._texture_params:
                 params_c.append(f"{self._TEXTURE_OBJECT_TYPE} {param.name}")
             elif param.name in self._field_params:
-                params_c.append(f"{c_type}* __restrict__ {param.name}")
+                # Fields can alias; restrict would let the compiler reuse
+                # a value across a store through another field argument.
+                params_c.append(f"{c_type}* {param.name}")
             else:
                 params_c.append(f"{c_type} {param.name}")
 
@@ -156,7 +158,7 @@ class CUDACodeGen:
         params_c.append(f"{_INT} __n__")
 
         sig = ", ".join(params_c)
-        safe_name = _safe_kernel_name(func.name)
+        safe_name = kernel_entry_name(func.name)
         self._emit(f'extern "C" __global__ void {safe_name}({sig}) {{')
         self._indent += 1
 
@@ -165,12 +167,20 @@ class CUDACodeGen:
         self._indent -= 1
         self._emit("}")
 
-        prefix_lines = []
+        prefix_lines = (
+            float_division_helpers(
+                self._float_division_helpers, _C_TYPE_MAP, '__device__ inline', cuda_math=True)
+            + integer_division_helpers(
+                self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline')
+            + self._integers.definitions('__device__ inline')
+            + f32_reduction_helpers('cuda', self._block_extrema)
+        )
+        prefix_lines += cuda_atomic64_helpers(self._atomic64)
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "__device__ float atomicMinFloat(float* addr, float val) {",
                 "    int* addr_as_int = (int*)addr;",
-                "    int old = *addr_as_int, assumed;",
+                "    int old = atomicCAS(addr_as_int, 0, 0), assumed;",
                 "    do {",
                 "        assumed = old;",
                 "        old = atomicCAS(addr_as_int, assumed,",
@@ -184,7 +194,7 @@ class CUDACodeGen:
             prefix_lines.extend([
                 "__device__ float atomicMaxFloat(float* addr, float val) {",
                 "    int* addr_as_int = (int*)addr;",
-                "    int old = *addr_as_int, assumed;",
+                "    int old = atomicCAS(addr_as_int, 0, 0), assumed;",
                 "    do {",
                 "        assumed = old;",
                 "        old = atomicCAS(addr_as_int, assumed,",
@@ -257,7 +267,9 @@ class CUDACodeGen:
         elif isinstance(node, ir.IRBreak):
             self._emit("break;")
         elif isinstance(node, ir.IRContinue):
-            self._emit("continue;")
+            # The kernel body is one iteration of the parallel loop, so
+            # continuing that loop means leaving the kernel.
+            self._emit("return;" if node.outermost else "continue;")
         elif isinstance(node, ir.IRAtomicOp):
             self._emit_atomic_op(node)
         elif isinstance(node, ir.IRPrint):
@@ -424,15 +436,16 @@ class CUDACodeGen:
         if idx_type in ("float", "double"):
             index = f"(({_INT})({index}))"
 
-        # Determine field type to handle float atomicMin/Max via CAS
-        field_name = self._get_field_name(node.field)
-        field_type = _C_TYPE_MAP.get(self._param_types.get(field_name)) if field_name else None
-        is_float = field_type in ("float", "double")
-
-        if node.op == "min" and is_float:
+        dtype = node.dtype
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), dtype)
+        value = f"(({_C_TYPE_MAP[dtype]})({value}))"
+        if dtype in (i64, u64, f64):
+            self._atomic64.add((node.op, dtype))
+            self._emit(f"tack_atomic_{node.op}_{dtype.name}(&{field}[{index}], {value});")
+        elif node.op == "min" and dtype is f32:
             self._needs_float_atomic_min = True
             self._emit(f"atomicMinFloat(&{field}[{index}], {value});")
-        elif node.op == "max" and is_float:
+        elif node.op == "max" and dtype is f32:
             self._needs_float_atomic_max = True
             self._emit(f"atomicMaxFloat(&{field}[{index}], {value});")
         else:
@@ -446,6 +459,7 @@ class CUDACodeGen:
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, 'dtype', None))
         # Ensure array index is integer
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
@@ -458,6 +472,7 @@ class CUDACodeGen:
 
     def _emit_assign(self, node: ir.IRAssign):
         value = self._expr(node.value)
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, '_resolved_type', None))
         if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
@@ -547,17 +562,20 @@ class CUDACodeGen:
 
         val_expr = self._expr(node.value)
 
+        if node.op != 'sum':
+            self._block_extrema.add(node.op)
+
         op_expr = {
             "sum": lambda a, b: f"({a} + {b})",
-            "max": lambda a, b: f"(({a}) > ({b}) ? ({a}) : ({b}))",
-            "min": lambda a, b: f"(({a}) < ({b}) ? ({a}) : ({b}))",
+            "max": lambda a, b: f"tack_reduce_max_f32({a}, {b})",
+            "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"__shared__ float {smem}[256];")
+        self._emit(f"__shared__ float {smem}[{WORKGROUP_SIZE}];")
         self._emit(f"int {tid} = threadIdx.x;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("__syncthreads();")
-        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
+        self._emit(f"for (int __s = {WORKGROUP_SIZE // 2}; __s > 0; __s >>= 1) {{")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
@@ -568,6 +586,9 @@ class CUDACodeGen:
         self._indent -= 1
         self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
+        # Every lane must finish reading before a later loop iteration
+        # reuses this static shared array.
+        self._emit("__syncthreads();")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)
         return result
@@ -601,27 +622,57 @@ class CUDACodeGen:
             return f"{node.value!r}f"
         if isinstance(node.value, bool):
             return "1" if node.value else "0"
+        if isinstance(node.value, int) and -(2**31) < node.value < 2**31:
+            return str(node.value)
+        if isinstance(node.value, int) and getattr(node, 'dtype', None) is not None:
+            ctype = self._integer_type_map[node.dtype]
+            # Spell signed minimum using representable tokens.
+            literal = f'(-{-(node.value + 1)}LL - 1LL)' if node.value < 0 else f'{node.value}ULL'
+            return f'(({ctype})({literal}))'
         return str(node.value)
 
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, 'dtype', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        if node.op not in ('<<', '>>', '**'):
+            right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
+        if node.op == '/' and dtype in (f32, f64):
+            t = self._integer_type_map[dtype]
+            return f'((({t})({left})) / (({t})({right})))'
+        fixed = self._integers.operation(node.op, dtype, left, right)
+        if fixed is not None:
+            return fixed
+        integer = integer_division_expr(
+            node, left, right, _C_TYPE_MAP, self._integer_division_helpers)
+        if integer is not None:
+            return integer
         if node.op == "**":
-            return f"powf({left}, {right})"
+            t = self._integer_type_map[f64 if dtype is f64 else f32]
+            name = 'pow' if dtype is f64 else 'powf'
+            return f'{name}(({t})({left}), ({t})({right}))'
+        if node.op in ('//', '%') and dtype is None:
+            # Support the low-level generator API's legacy unannotated IR.
+            operands = (self._infer_expr_type(node.left), self._infer_expr_type(node.right))
+            dtype = f64 if 'double' in operands else f32 if 'float' in operands else None
+        floating = float_division_expr(
+            node, left, right, _C_TYPE_MAP, self._float_division_helpers, dtype=dtype)
+        if floating is not None:
+            return floating
         if node.op == "//":
-            # Use true integer division when both operands are integer types,
-            # matching LLVM sdiv semantics. Fall back to float floor for floats.
-            lt = self._infer_expr_type(node.left)
-            rt = self._infer_expr_type(node.right)
-            if lt not in ("float", "double") and rt not in ("float", "double"):
-                return f"({left} / {right})"
-            return f"({_INT})floorf((float)({left}) / (float)({right}))"
+            # Legacy unannotated integer IR; normal dispatch is fully typed.
+            return f"({left} / {right})"
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"CUDA binop: {node.op}")
 
     def _expr_unaryop(self, node: ir.IRUnaryOp) -> str:
         operand = self._expr(node.operand)
+        op = 'neg' if node.op == '-' else node.op
+        fixed = self._integers.operation(op, getattr(node, 'dtype', None), operand)
+        if fixed is not None:
+            return fixed
         if node.op == "-":
             return f"(-{operand})"
         if node.op == "+":
@@ -635,6 +686,9 @@ class CUDACodeGen:
     def _expr_compare(self, node: ir.IRCompare) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, '_operand_type', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
         return f"({left} {_CMP_MAP[node.op]} {right})"
 
     def _expr_boolop(self, node: ir.IRBoolOp) -> str:
@@ -658,6 +712,23 @@ class CUDACodeGen:
 
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
+        dtype = getattr(node, 'dtype', None)
+        if dtype in (f32, f64):
+            ctype = self._integer_type_map[dtype]
+            args = [f'(({ctype})({arg}))' for arg in args]
+        if node.func_name == 'pow':
+            fixed = self._integers.operation('**', dtype, *args)
+            if fixed is not None:
+                return fixed
+            t = self._integer_type_map[f64 if dtype is f64 else f32]
+            name = 'pow' if dtype is f64 else 'powf'
+            return f'{name}(({t})({args[0]}), ({t})({args[1]}))'
+        if node.func_name in ('abs', 'min', 'max'):
+            converted = [self._integers.convert(a, getattr(n, 'dtype', None), dtype)
+                         for a, n in zip(args, node.args)]
+            fixed = self._integers.operation(node.func_name, dtype, *converted)
+            if fixed is not None:
+                return fixed
         use_f64 = getattr(node, 'dtype', None) is f64
 
         if node.func_name == "min" and len(args) == 2:
@@ -674,6 +745,9 @@ class CUDACodeGen:
 
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
+        converted = self._integers.convert(val, getattr(node.value, 'dtype', None), node.dtype)
+        if converted != val:
+            return converted
         if isinstance(node.dtype, ScalarType):
             c_type = _C_TYPE_MAP[node.dtype]
             return f"(({c_type})({val}))"
@@ -684,10 +758,21 @@ class CUDACodeGen:
             return f"((float)({val}))"
         raise NotImplementedError(f"CUDA cast: {node.dtype}")
 
+    def _ifexp_condition(self, node) -> str:
+        """Render the condition of a ternary.
+
+        C and C++ convert any scalar to bool here, so the condition needs no
+        help. OpenCL C does not: see ``OpenCLCodeGen._ifexp_condition``.
+        """
+        return self._expr(node)
+
     def _expr_ifexp(self, node: ir.IRIfExp) -> str:
-        cond = self._expr(node.condition)
+        cond = self._ifexp_condition(node.condition)
         then = self._expr(node.then_value)
         else_ = self._expr(node.else_value)
+        dtype = getattr(node, 'dtype', None)
+        then = self._integers.convert(then, getattr(node.then_value, 'dtype', None), dtype)
+        else_ = self._integers.convert(else_, getattr(node.else_value, 'dtype', None), dtype)
         return f"({cond} ? {then} : {else_})"
 
 

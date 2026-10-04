@@ -9,8 +9,9 @@ Marked `slow` and deselected from the default run, because the full sweep
 takes about a minute against an 18-second suite. CI runs it as its own
 job; locally, `pytest -m slow`.
 
-Examples that need an optional third-party package, or that do not offer a
-CPU backend, skip themselves with the reason. That keeps the suite honest
+Examples that need an optional third-party package, or that do not offer
+the selected backend (CPU unless `TACK_EXAMPLES_ARCH` names another), skip
+themselves with the reason. That keeps the suite honest
 about what it actually checked, and means adding an example with a new
 optional dependency will not turn CI red. A missing *tack* module is not
 treated as optional — that is a real failure.
@@ -31,6 +32,11 @@ REPO = pathlib.Path(__file__).resolve().parents[3]
 
 EXAMPLES = (sorted(REPO.glob("packages/*/examples/[0-9]*.py"))
             + sorted(REPO.glob("examples/[0-9]*.py")))
+
+# CI has no GPU, so the sweep runs on CPU unless told otherwise. On a machine
+# with a device, `TACK_EXAMPLES_ARCH=metal pytest -m slow` (or cuda, hip,
+# level_zero) runs every example there instead.
+ARCH = os.environ.get("TACK_EXAMPLES_ARCH", "cpu")
 
 _MISSING_MODULE = re.compile(r"ModuleNotFoundError: No module named '([\w.]+)'")
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
@@ -62,7 +68,7 @@ def test_example_runs(path):
     env.pop("FORCE_COLOR", None)
 
     proc = subprocess.run(
-        [sys.executable, str(path), "--arch", "cpu"],
+        [sys.executable, str(path), "--arch", ARCH],
         capture_output=True, text=True, cwd=REPO, timeout=300, env=env,
     )
     if proc.returncode == 0:
@@ -74,8 +80,8 @@ def test_example_runs(path):
     if missing and not missing.group(1).startswith("tack"):
         pytest.skip(f"needs optional dependency '{missing.group(1)}'")
 
-    if "invalid choice: 'cpu'" in combined:
-        pytest.skip("example does not offer a CPU backend")
+    if f"invalid choice: '{ARCH}'" in combined:
+        pytest.skip(f"example does not offer the {ARCH} backend")
 
     pytest.fail(f"{_example_id(path)} exited {proc.returncode}\n"
                 f"{combined[-3000:]}")

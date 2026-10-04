@@ -24,10 +24,9 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
         background: RGB background color in [0, 1].
         point_size: Pixel radius for point rendering.
     """
-    has_surfaces = len(scene.actors) > 0
     has_volumes = len(scene.volumes) > 0
 
-    if not has_surfaces and not has_volumes:
+    if not scene.actors and not has_volumes:
         return
 
     # Classify actors by render mode
@@ -40,13 +39,13 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
     if solid_actors:
         # Path tracer handles solid surfaces and volumes
         from tack.rendering.pathtrace import render as _render_pathtrace
-        _render_pathtrace(canvas, scene, camera,
+        _render_pathtrace(canvas, _solid_scene(scene, solid_actors), camera,
                           samples=samples, max_bounces=max_bounces,
                           light_position=light_position,
                           light_intensity=light_intensity,
                           background=background)
-    elif has_volumes and not raster_actors:
-        # Volume-only: standalone ray caster
+    elif has_volumes:
+        # No solid surfaces: standalone ray caster
         from tack.rendering.volume import render_volume
         for vol in scene.volumes:
             render_volume(canvas, vol, camera, background=background)
@@ -60,6 +59,34 @@ def render(canvas, scene, camera, samples=1, max_bounces=3,
         raster_scene = Scene()
         for a in raster_actors:
             raster_scene.add(a)
+        # Over a path-traced or ray-cast image the rasterizer composites,
+        # depth-tested against the solid surfaces.  A ray-cast volume has no
+        # depth, so rasterized actors are drawn over it.
         render_raster(canvas, raster_scene, camera,
-                      background=background if not solid_actors else (0, 0, 0),
-                      point_size=point_size)
+                      background=background,
+                      point_size=point_size,
+                      composite=bool(solid_actors) or has_volumes,
+                      surface_depth=bool(solid_actors))
+
+
+def _solid_scene(scene, solid_actors):
+    """The scene the path tracer sees: solid actors, volumes and lights.
+
+    Wireframe and point actors are rasterized, so they must not also be
+    traced as surfaces.  The sub-scene is kept on the parent so its merged
+    geometry and BVH stay cached across frames.
+    """
+    if len(solid_actors) == len(scene.actors):
+        return scene
+    key = (scene._version, tuple(id(a) for a in solid_actors))
+    cached = getattr(scene, '_solid_subscene', None)
+    if cached is None or cached[0] != key:
+        from tack.rendering.scene import Scene
+        sub = Scene()
+        sub.actors = list(solid_actors)
+        cached = (key, sub)
+        scene._solid_subscene = cached
+    sub = cached[1]
+    sub.volumes = scene.volumes
+    sub.lights = scene.lights
+    return sub

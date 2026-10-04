@@ -193,8 +193,8 @@ def test_cuda_codegen_i8_u8():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "unsigned char* __restrict__ data" in src
-    assert "signed char* __restrict__ out" in src
+    assert "unsigned char* tack_var_a_data" in src
+    assert "signed char* tack_var_a_out" in src
 
 
 def test_msl_codegen_u16():
@@ -218,5 +218,5 @@ def test_msl_codegen_u16():
     annotate_types(func)
     src = generate_msl_source(func)
 
-    assert "device ushort* data" in src
-    assert "device ushort* out" in src
+    assert "device ushort* tack_var_a_data" in src
+    assert "device ushort* tack_var_a_out" in src

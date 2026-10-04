@@ -1,7 +1,7 @@
 """Tack MSL code generation — transforms Tack IR to Metal Shading Language source.
 
 Generates a ``kernel void`` compute function where:
-  - Each Field parameter becomes a ``device`` pointer with ``[[buffer(N)]]``
+  - Field pointers are members of one argument buffer, so they may alias
   - The outermost parallel for-loop maps to ``[[thread_position_in_grid]]``
   - Sequential for-loops, while-loops, if/else map to standard C control flow
   - Math builtins map to Metal stdlib functions (sqrt, sin, etc.)
@@ -10,8 +10,17 @@ All integer locals and loop indices use 64-bit ``long`` to support grids
 with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
+from tack.codegen.float_division import float_division_expr, float_division_helpers
+from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
+from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
+from tack.codegen.integer_ops import IntegerCodeGen
+from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
+from tack.lang.atomic_support import check_atomic_support
+from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
+from tack.lang.workgroup_support import workgroup_features
 
 _MSL_TYPE_MAP = {
     i8:  "char",
@@ -54,22 +63,6 @@ _BINOP_MAP = {
     "<<": "<<", ">>": ">>", "&": "&", "|": "|", "^": "^",
 }
 
-# C/MSL reserved words that cannot be used as kernel function names
-_MSL_RESERVED = frozenset({
-    "auto", "break", "case", "char", "const", "continue", "default", "do",
-    "double", "else", "enum", "extern", "float", "for", "goto", "if",
-    "inline", "int", "long", "register", "return", "short", "signed",
-    "sizeof", "static", "struct", "switch", "typedef", "union", "unsigned",
-    "void", "volatile", "while", "half", "uint", "uchar", "ushort", "ulong",
-})
-
-
-def _safe_kernel_name(name: str) -> str:
-    if name in _MSL_RESERVED:
-        return f"_tack_{name}"
-    return name
-
-
 _CMP_MAP = {
     "==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
 }
@@ -78,22 +71,29 @@ _CMP_MAP = {
 class MSLCodeGen:
     """Generates MSL source from a Tack IR function."""
 
+    _integer_type_map = _MSL_TYPE_MAP
+
     def __init__(self, ir_func: ir.IRFunction):
-        self.ir_func = ir_func
+        self.ir_func = rename_gpu_bindings(ir_func)
         self._indent = 0
         self._lines: list[str] = []
         self._param_types: dict[str, ScalarType] = {}
         self._field_params: set[str] = set()
         self._local_vars: dict[str, str] = {}  # name -> MSL type
         self._declared_vars: set[str] = set()
+        self._integer_division_helpers = set()
+        self._float_division_helpers = set()
+        self._block_extrema = set()
+        self._integers = IntegerCodeGen(self._integer_type_map, bitcast=True)
+        self._dynamic_range_depth = 0
+        self._opaque_integer_add = False
 
     def generate(self) -> str:
         """Generate MSL source for the kernel."""
         func = self.ir_func
-        self._needs_local_tid = False
-
-        # Pre-scan IR for shared memory / thread_id usage
-        self._needs_local_tid = self._scan_for_threadgroup(func.body)
+        check_atomic_support(func, backend_name='metal')
+        check_workgroup_participation(func)
+        self._needs_local_tid = bool(workgroup_features(func))
 
         # Build parameter info
         for param in func.params:
@@ -112,6 +112,7 @@ class MSLCodeGen:
         self._emit("#include <metal_stdlib>")
         self._emit("using namespace metal;")
         self._emit("")
+        preamble_end = len(self._lines)
 
         # Detect texture parameters
         self._texture_params: set[str] = set()
@@ -119,10 +120,29 @@ class MSLCodeGen:
             if getattr(param, '_is_texture', False):
                 self._texture_params.add(param.name)
 
-        # Build function signature with separate buffer/texture binding indices
+        # Separate device-buffer arguments promise disjoint storage in MSL
+        # (section 5.2). Indirect pointers in one argument buffer preserve
+        # Tack's overlap contract without specializing on alias relationships.
+        buffer_params = [p for p in func.params
+                         if p.name in self._field_params
+                         and p.name not in self._texture_params]
+        if buffer_params:
+            self._emit("struct __tack_buffer_args__ {")
+            for i, param in enumerate(func.params):
+                if param.name in self._field_params and param.name not in self._texture_params:
+                    msl_type = _MSL_TYPE_MAP[param.type_annotation]
+                    self._emit(f"    device {msl_type}* {param.name} [[id({i})]];")
+            self._emit("};")
+            self._emit("")
+
+        # Textures keep their separate binding namespace. Unpacked scalars
+        # remain constant references; normal dispatch packs them into fields.
         self._scalar_buffer_params: set[str] = set()
         params_msl = []
         buf_idx = 0
+        if buffer_params:
+            params_msl.append("constant __tack_buffer_args__& __tack_buffers__ [[buffer(0)]]")
+            buf_idx = 1
         tex_idx = 0
         for param in func.params:
             msl_type = _MSL_TYPE_MAP[param.type_annotation]
@@ -131,8 +151,7 @@ class MSLCodeGen:
                     f"texture3d<float, access::sample> {param.name} [[texture({tex_idx})]]")
                 tex_idx += 1
             elif param.name in self._field_params:
-                params_msl.append(f"device {msl_type}* {param.name} [[buffer({buf_idx})]]")
-                buf_idx += 1
+                continue
             else:
                 params_msl.append(f"constant {msl_type}& {param.name} [[buffer({buf_idx})]]")
                 buf_idx += 1
@@ -143,11 +162,15 @@ class MSLCodeGen:
             params_msl.append("uint __local_tid__ [[thread_position_in_threadgroup]]")
 
         sig = ",\n    ".join(params_msl)
-        safe_name = _safe_kernel_name(func.name)
+        safe_name = kernel_entry_name(func.name)
         self._emit(f"kernel void {safe_name}(")
         self._emit(f"    {sig})")
         self._emit("{")
         self._indent += 1
+
+        for param in buffer_params:
+            msl_type = _MSL_TYPE_MAP[param.type_annotation]
+            self._emit(f"device {msl_type}* {param.name} = __tack_buffers__.{param.name};")
 
         # Emit sampler for texture sampling
         if self._has_textures:
@@ -159,7 +182,16 @@ class MSLCodeGen:
         self._indent -= 1
         self._emit("}")
 
-        return "\n".join(self._lines) + "\n"
+        helpers = (
+            float_division_helpers(
+                self._float_division_helpers, _MSL_TYPE_MAP, 'inline')
+            + integer_division_helpers(
+                self._integer_division_helpers, _MSL_TYPE_MAP, 'inline')
+            + self._integers.definitions('inline')
+            + f32_reduction_helpers('metal', self._block_extrema)
+        )
+        return "\n".join(self._lines[:preamble_end] + helpers
+                         + self._lines[preamble_end:]) + "\n"
 
     def _emit(self, line: str):
         self._lines.append("    " * self._indent + line)
@@ -186,7 +218,9 @@ class MSLCodeGen:
         elif isinstance(node, ir.IRBreak):
             self._emit("break;")
         elif isinstance(node, ir.IRContinue):
-            self._emit("continue;")
+            # The kernel body is one iteration of the parallel loop, so
+            # continuing that loop means leaving the kernel.
+            self._emit("return;" if node.outermost else "continue;")
         elif isinstance(node, ir.IRAtomicOp):
             self._emit_atomic_op(node)
         elif isinstance(node, ir.IRPrint):
@@ -198,7 +232,7 @@ class MSLCodeGen:
             msl_type = _MSL_TYPE_MAP[node.dtype]
             self._emit(f"{msl_type} {node.name}[{self._expr(node.size)}];")
         elif isinstance(node, ir.IRBarrier):
-            self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
+            self._emit("threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device);")
         elif isinstance(node, ir.IRCall):
             self._emit(f"{self._expr(node)};")
         else:
@@ -223,7 +257,10 @@ class MSLCodeGen:
         self._local_vars[var] = _INT
         self._declared_vars.add(var)
         self._indent += 1
+        dynamic = not isinstance(node.end, ir.IRConstant)
+        self._dynamic_range_depth += int(dynamic)
         self._emit_body(node.body)
+        self._dynamic_range_depth -= int(dynamic)
         self._indent -= 1
         self._emit("}")
 
@@ -312,9 +349,11 @@ class MSLCodeGen:
         if idx_type in ("float",):
             index = f"(({_INT})({index}))"
 
-        # Determine if field is float or int
-        field_name = self._get_field_name(node.field)
-        is_float = field_name and self._param_types.get(field_name) in (f32,)
+        dtype = node.dtype
+        is_float = dtype is f32
+        atomic_type = 'atomic_uint' if dtype is u32 else 'atomic_int'
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), dtype)
+        value = f"(({_MSL_TYPE_MAP[dtype]})({value}))"
 
         if node.op == "add":
             if is_float:
@@ -326,7 +365,7 @@ class MSLCodeGen:
             else:
                 self._emit(
                     f"atomic_fetch_add_explicit("
-                    f"(volatile device atomic_int*)&{field}[{index}], "
+                    f"(volatile device {atomic_type}*)&{field}[{index}], "
                     f"{value}, memory_order_relaxed);")
         elif node.op in ("min", "max"):
             if is_float:
@@ -353,7 +392,7 @@ class MSLCodeGen:
                 func = "atomic_fetch_min_explicit" if node.op == "min" else "atomic_fetch_max_explicit"
                 self._emit(
                     f"{func}("
-                    f"(volatile device atomic_int*)&{field}[{index}], "
+                    f"(volatile device {atomic_type}*)&{field}[{index}], "
                     f"{value}, memory_order_relaxed);")
         else:
             raise NotImplementedError(f"MSL atomic op: {node.op}")
@@ -362,13 +401,19 @@ class MSLCodeGen:
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, 'dtype', None))
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
             index = f"(({_INT})({index}))"
         self._emit(f"{field}[{index}] = {value};")
 
     def _emit_assign(self, node: ir.IRAssign):
+        previous = self._opaque_integer_add
+        self._opaque_integer_add = self._dynamic_range_depth > 0 and any(
+            isinstance(n, ir.IRName) and n.name == node.target for n in walk_ir(node.value))
         value = self._expr(node.value)
+        self._opaque_integer_add = previous
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, '_resolved_type', None))
         if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
@@ -458,17 +503,20 @@ class MSLCodeGen:
         self._needs_local_tid = True
         val_expr = self._expr(node.value)
 
+        if node.op != 'sum':
+            self._block_extrema.add(node.op)
+
         op_expr = {
             "sum": lambda a, b: f"({a} + {b})",
-            "max": lambda a, b: f"max((float)({a}), (float)({b}))",
-            "min": lambda a, b: f"min((float)({a}), (float)({b}))",
+            "max": lambda a, b: f"tack_reduce_max_f32({a}, {b})",
+            "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"threadgroup float {smem}[256];")
+        self._emit(f"threadgroup float {smem}[{WORKGROUP_SIZE}];")
         self._emit(f"int {tid} = __local_tid__;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
-        self._emit("for (int __s = 128; __s > 0; __s >>= 1) {")
+        self._emit(f"for (int __s = {WORKGROUP_SIZE // 2}; __s > 0; __s >>= 1) {{")
         self._indent += 1
         self._emit(f"if ({tid} < __s) {{")
         self._indent += 1
@@ -479,6 +527,8 @@ class MSLCodeGen:
         self._indent -= 1
         self._emit("}")
         self._emit(f"float {result} = {smem}[0];")
+        # Protect the result read against shared-array reuse in loops.
+        self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")
         self._local_vars[result] = "float"
         self._declared_vars.add(result)
         return result
@@ -488,25 +538,58 @@ class MSLCodeGen:
             return f"{node.value!r}f"
         if isinstance(node.value, bool):
             return "1" if node.value else "0"
+        if isinstance(node.value, int) and -(2**31) < node.value < 2**31:
+            return str(node.value)
+        if isinstance(node.value, int) and getattr(node, 'dtype', None) is not None:
+            ctype = self._integer_type_map[node.dtype]
+            # Spell signed minimum using representable tokens.
+            literal = f'(-{-(node.value + 1)}LL - 1LL)' if node.value < 0 else f'{node.value}ULL'
+            return f'(({ctype})({literal}))'
         return str(node.value)
 
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, 'dtype', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        if node.op not in ('<<', '>>', '**'):
+            right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
+        if node.op == '/' and dtype is f32:
+            return f'(((float)({left})) / ((float)({right})))'
+        # M1 Max pipeline compilation crashes when wrapping 64-bit additions
+        # participate in reduction optimization for runtime-bounded loops.
+        # Keep this helper opaque there; other integer operations stay inline.
+        noinline = self._opaque_integer_add and node.op == '+' and dtype in (i64, u64)
+        fixed = self._integers.operation(node.op, dtype, left, right, noinline=noinline)
+        if fixed is not None:
+            return fixed
+        integer = integer_division_expr(
+            node, left, right, _MSL_TYPE_MAP, self._integer_division_helpers)
+        if integer is not None:
+            return integer
         if node.op == "**":
-            return f"pow({left}, {right})"
+            return f'pow((float)({left}), (float)({right}))'
+        if node.op in ('//', '%') and dtype is None:
+            # Support the low-level generator API's legacy unannotated IR.
+            operands = (self._infer_expr_type(node.left), self._infer_expr_type(node.right))
+            dtype = f64 if 'double' in operands else f32 if 'float' in operands else None
+        floating = float_division_expr(
+            node, left, right, _MSL_TYPE_MAP, self._float_division_helpers, dtype=dtype)
+        if floating is not None:
+            return floating
         if node.op == "//":
-            lt = self._infer_expr_type(node.left)
-            rt = self._infer_expr_type(node.right)
-            if lt not in ("float",) and rt not in ("float",):
-                return f"({left} / {right})"
-            return f"(({_INT})floor((float)({left}) / (float)({right})))"
+            # Legacy unannotated integer IR; normal dispatch is fully typed.
+            return f"({left} / {right})"
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"MSL binop: {node.op}")
 
     def _expr_unaryop(self, node: ir.IRUnaryOp) -> str:
         operand = self._expr(node.operand)
+        op = 'neg' if node.op == '-' else node.op
+        fixed = self._integers.operation(op, getattr(node, 'dtype', None), operand)
+        if fixed is not None:
+            return fixed
         if node.op == "-":
             return f"(-{operand})"
         if node.op == "+":
@@ -520,6 +603,9 @@ class MSLCodeGen:
     def _expr_compare(self, node: ir.IRCompare) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
+        dtype = getattr(node, '_operand_type', None)
+        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
+        right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
         return f"({left} {_CMP_MAP[node.op]} {right})"
 
     def _expr_boolop(self, node: ir.IRBoolOp) -> str:
@@ -635,6 +721,21 @@ inline float {name}(device float* data, float u, float v, float w) {{
 
     def _expr_call(self, node: ir.IRCall) -> str:
         args = [self._expr(a) for a in node.args]
+        dtype = getattr(node, 'dtype', None)
+        if dtype in (f32, f64):
+            ctype = _MSL_TYPE_MAP[dtype]
+            args = [f'(({ctype})({arg}))' for arg in args]
+        if node.func_name == 'pow':
+            fixed = self._integers.operation('**', dtype, *args)
+            if fixed is not None:
+                return fixed
+            return f'pow((float)({args[0]}), (float)({args[1]}))'
+        if node.func_name in ('abs', 'min', 'max'):
+            converted = [self._integers.convert(a, getattr(n, 'dtype', None), dtype)
+                         for a, n in zip(args, node.args)]
+            fixed = self._integers.operation(node.func_name, dtype, *converted)
+            if fixed is not None:
+                return fixed
 
         if node.func_name == "min" and len(args) == 2:
             # Cast to float to avoid ambiguity between min(int,int) and min(float,float)
@@ -650,6 +751,9 @@ inline float {name}(device float* data, float u, float v, float w) {{
 
     def _expr_cast(self, node: ir.IRCast) -> str:
         val = self._expr(node.value)
+        converted = self._integers.convert(val, getattr(node.value, 'dtype', None), node.dtype)
+        if converted != val:
+            return converted
         if isinstance(node.dtype, ScalarType):
             msl_type = _MSL_TYPE_MAP.get(node.dtype)
             if msl_type is None:
@@ -666,54 +770,11 @@ inline float {name}(device float* data, float u, float v, float w) {{
         cond = self._expr(node.condition)
         then = self._expr(node.then_value)
         else_ = self._expr(node.else_value)
+        dtype = getattr(node, 'dtype', None)
+        then = self._integers.convert(then, getattr(node.then_value, 'dtype', None), dtype)
+        else_ = self._integers.convert(else_, getattr(node.else_value, 'dtype', None), dtype)
         return f"({cond} ? {then} : {else_})"
 
-
-    def _scan_for_threadgroup(self, stmts: list) -> bool:
-        """Check if any statement uses threadgroup features."""
-        for stmt in stmts:
-            if isinstance(stmt, (ir.IRSharedAlloc, ir.IRBarrier, ir.IRThreadId, ir.IRBlockReduce)):
-                return True
-            if isinstance(stmt, ir.IRParallelFor):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRSequentialFor):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRWhile):
-                if self._scan_for_threadgroup(stmt.body):
-                    return True
-            elif isinstance(stmt, ir.IRIf):
-                if self._scan_for_threadgroup(stmt.then_body):
-                    return True
-                if stmt.else_body and self._scan_for_threadgroup(stmt.else_body):
-                    return True
-            # Check expressions for IRThreadId
-            elif isinstance(stmt, ir.IRAssign):
-                if self._expr_contains_thread_id(stmt.value):
-                    return True
-            elif isinstance(stmt, ir.IRFieldStore):
-                if (self._expr_contains_thread_id(stmt.index) or
-                        self._expr_contains_thread_id(stmt.value)):
-                    return True
-        return False
-
-    def _expr_contains_thread_id(self, node) -> bool:
-        """Check if an expression contains IRThreadId or IRBlockReduce."""
-        if isinstance(node, (ir.IRThreadId, ir.IRBlockReduce)):
-            return True
-        if isinstance(node, ir.IRBinOp):
-            return (self._expr_contains_thread_id(node.left) or
-                    self._expr_contains_thread_id(node.right))
-        if isinstance(node, ir.IRUnaryOp):
-            return self._expr_contains_thread_id(node.operand)
-        if isinstance(node, ir.IRCall):
-            return any(self._expr_contains_thread_id(a) for a in node.args)
-        if isinstance(node, ir.IRCast):
-            return self._expr_contains_thread_id(node.value)
-        if isinstance(node, ir.IRFieldLoad):
-            return self._expr_contains_thread_id(node.index)
-        return False
 
 
 def generate_msl_source(ir_func: ir.IRFunction) -> str:

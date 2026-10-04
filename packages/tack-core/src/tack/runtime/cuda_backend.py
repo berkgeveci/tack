@@ -18,9 +18,11 @@ import sys
 
 import numpy as np
 
+from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
@@ -28,11 +30,13 @@ from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _CUDA_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
 from cuda.bindings import driver, nvrtc
 
 from tack.codegen.cuda_gen import generate_cuda_source
+from tack.codegen.identifiers import kernel_entry_name
 
 # Shareable-handle types ExportableCUDABuffer may ask the driver for, in
 # preference order, per platform. Each entry is (name, handle type, the device
@@ -80,69 +84,9 @@ _NUMPY_DTYPE = {
 }
 
 
-_REDUCE_CUDA_SUM = """
-extern "C" __global__ void reduce_sum_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : 0.0f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        __syncthreads();
-    }
-    if (tid == 0) atomicAdd(&output[0], sdata[0]);
-}
-"""
-
-_REDUCE_CUDA_MIN = """
-extern "C" __global__ void reduce_min_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : 1e38f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fminf(sdata[tid], sdata[tid + s]);
-        __syncthreads();
-    }
-    if (tid == 0) {
-        int* addr = (int*)&output[0];
-        int old = *addr, assumed;
-        do {
-            assumed = old;
-            old = atomicCAS(addr, assumed,
-                __float_as_int(fminf(sdata[0], __int_as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_CUDA_MAX = """
-extern "C" __global__ void reduce_max_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : -1e38f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmaxf(sdata[tid], sdata[tid + s]);
-        __syncthreads();
-    }
-    if (tid == 0) {
-        int* addr = (int*)&output[0];
-        int old = *addr, assumed;
-        do {
-            assumed = old;
-            old = atomicCAS(addr, assumed,
-                __float_as_int(fmaxf(sdata[0], __int_as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
+_REDUCE_CUDA_SUM = field_reduction_source('cuda', 'sum')
+_REDUCE_CUDA_MIN = field_reduction_source('cuda', 'min')
+_REDUCE_CUDA_MAX = field_reduction_source('cuda', 'max')
 
 
 def _check(err):
@@ -230,6 +174,10 @@ class CUDABuffer(DeviceBuffer):
         token = getattr(self, "_token", None)
         if token is not None and not token.alive:
             raise RuntimeError(f"Cannot {verb} this CUDA field: {_DEAD_CONTEXT_MSG}")
+
+    @property
+    def address(self) -> int:
+        return int(self._device_ptr)
 
     @property
     def device_ptr(self):
@@ -380,6 +328,10 @@ class ExportableCUDABuffer(DeviceBuffer):
         )
 
     @property
+    def address(self) -> int:
+        return int(self._device_ptr)
+
+    @property
     def device_ptr(self):
         return self._device_ptr
 
@@ -447,9 +399,12 @@ def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     err, prog = nvrtc.nvrtcCreateProgram(src, f"{func_name}.cu".encode(), 0, None, None)
     _check(err)
 
-    opts = [b"--use_fast_math", b"--extra-device-vectorization"]
-    c_opts = (ctypes.c_char_p * len(opts))(*opts)
-    compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), c_opts)
+    # Preserve NaNs, signed zeros, and expression grouping in every kernel.
+    # Adjacent multiply/add contraction is permitted by the language contract.
+    opts = [b"--ftz=false", b"--prec-div=true", b"--prec-sqrt=true",
+            b"--fmad=true", b"--extra-device-vectorization"]
+    # cuda-python marshals a list of bytes; a ctypes array can be misread.
+    compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
@@ -578,7 +533,7 @@ class CompiledCUDAKernel:
         for i, val in enumerate(arg_values):
             arg_ptrs[i] = ctypes.addressof(val)
 
-        block_dim = 256
+        block_dim = WORKGROUP_SIZE
         grid_dim = (loop_end + block_dim - 1) // block_dim
 
         _check(driver.cuLaunchKernel(
@@ -598,6 +553,7 @@ class CUDABackend(Backend):
     display_name = "CUDA"
     supported_dtypes = _CUDA_SUPPORTED_DTYPES
     supports_device_reductions = True
+    supports_workgroups = True
     device_memory_spaces = frozenset({"cuda", "cuda_pinned", "cuda_managed"})
 
 
@@ -711,6 +667,9 @@ class CUDABackend(Backend):
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end = _get_loop_range(variant.ir, kernel_args)
+        if loop_end <= 0:
+            # range(0) runs nothing, and cuLaunchKernel rejects an empty grid.
+            return
 
         # Replace scalar args with the packed field buffers
         if pack_info:
@@ -730,17 +689,17 @@ class CUDABackend(Backend):
         Packing rewrites the parameter list, so it works on its own copy —
         the caller keeps `ir_func` for loop-range resolution.
         """
-        import copy
-
-        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
+        from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
-        packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
+        packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
+        verify_ir(packed, 'packed')
         annotate_types(packed)
+        verify_ir(packed, 'typed')
         compiled = self._compile_kernel(packed)
         pack_fields = (_create_pack_fields(pack_info, effective_args, self)
                        if pack_info else None)
@@ -748,13 +707,14 @@ class CUDABackend(Backend):
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledCUDAKernel:
         """Compile Tack IR → CUDA C → PTX → CUfunction."""
+        kernel_name = kernel_entry_name(ir_func.name)
         cuda_source = generate_cuda_source(ir_func)
-        ptx = _compile_ptx(cuda_source, ir_func.name)
+        ptx = _compile_ptx(cuda_source, kernel_name)
 
         err, module = driver.cuModuleLoadData(ptx)
         _check(err)
 
-        err, func = driver.cuModuleGetFunction(module, ir_func.name.encode())
+        err, func = driver.cuModuleGetFunction(module, kernel_name.encode())
         _check(err)
 
         param_types = [p.type_annotation for p in ir_func.params]
@@ -764,14 +724,16 @@ class CUDABackend(Backend):
         for i, p in enumerate(ir_func.params):
             if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
                 texture_shapes[i] = p._texture_shape
-        return CompiledCUDAKernel(module, func, ir_func.name, param_types,
+        return CompiledCUDAKernel(module, func, kernel_name, param_types,
                                   param_is_field, param_is_texture, texture_shapes)
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
+        if field.size == 0:
+            return empty_reduction(op)
         if field.dtype is not f32:
-            return float(getattr(field.to_numpy(), op)())
+            return reduce_numpy(field.to_numpy(), op)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -783,7 +745,7 @@ class CUDABackend(Backend):
 
         # Output: [result, n_as_uint_bits]
         import struct as _struct
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        init_vals = REDUCTION_IDENTITIES
         out_np = np.array([init_vals[op],
                            np.frombuffer(_struct.pack('I', n), dtype=np.float32)[0]],
                           dtype=np.float32)

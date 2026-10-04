@@ -79,7 +79,7 @@ offline compiler (`intel-opencl-icd`).
 @tack.kernel Python function
     → Python AST
     → Tack IR (intermediate representation)
-    → IR passes (resolve, type inference, LICM, copy propagation, CSE)
+    → IR passes (resolve, type inference, conservative copy propagation)
     → Backend codegen:
         CPU:   LLVM IR → llvmlite JIT → native code
         Metal: MSL source → Metal compile → compute pipeline

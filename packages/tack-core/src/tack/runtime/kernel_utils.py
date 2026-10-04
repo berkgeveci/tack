@@ -21,12 +21,19 @@ see ``shape_signature`` — and it makes the pristine IR from
 ``kernel.get_ir()`` a template that must never be mutated in place.
 """
 
-import copy
 import weakref
 
 from tack.lang import ir
-from tack.lang.field import Field
+from tack.lang.atomic_support import check_atomic_alignment, check_atomic_support
+from tack.lang.field import Field, Texture3D
+from tack.lang.ir_traversal import clone_ir
+from tack.lang.ir_traversal import walk_ir as _walk_ir
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
+from tack.lang.workgroup_participation import (
+    check_workgroup_launch,
+    check_workgroup_participation,
+)
+from tack.lang.workgroup_support import check_workgroup_support
 
 
 def as_address(ptr) -> int | None:
@@ -56,12 +63,35 @@ def as_address(ptr) -> int | None:
     return addr if 0 <= addr < (1 << 64) else None
 
 
+# Every backend's compiled cache, held weakly, so variants can be dropped
+# across all of them when what they were specialized on goes away.
+_kernel_caches = []
+
+
 def new_kernel_cache():
     """Create a backend compiled-kernel cache.
 
     Maps ``Kernel`` → {variant_key: compiled}, holding the kernel weakly.
     """
-    return weakref.WeakKeyDictionary()
+    cache = weakref.WeakKeyDictionary()
+    _kernel_caches[:] = [ref for ref in _kernel_caches if ref() is not None]
+    _kernel_caches.append(weakref.ref(cache))
+    return cache
+
+
+def drop_variants(kernel, is_stale):
+    """Remove `kernel`'s compiled variants whose key satisfies `is_stale`.
+
+    Applies to every live backend cache, not only the active one: a variant
+    compiled before a `tack.init()` switch is retained by the old backend.
+    """
+    for ref in list(_kernel_caches):
+        cache = ref()
+        slot = cache.get(kernel) if cache is not None else None
+        if not slot:
+            continue
+        for key in [k for k in list(slot) if is_stale(k)]:
+            slot.pop(key, None)
 
 
 def kernel_cache_slot(cache, kernel) -> dict:
@@ -88,36 +118,34 @@ def kernel_cache_slot(cache, kernel) -> dict:
 
 
 def kernel_variant_key(ir_func, kernel, vector_fields, template_args,
-                       shape_sig=()) -> tuple:
+                       shape_sig=(), disjoint=False) -> tuple:
     """Build the cache key distinguishing compiled variants of one kernel.
 
     The kernel identity is carried by the enclosing per-kernel slot, so this
-    only needs to separate specializations: argument types, texture shapes,
-    template constants, and every dimension size the resolve pass bakes
-    into the generated code (``shape_sig``, from ``shape_signature``).
+    only needs to separate specializations: argument types and categories,
+    vector widths, texture shapes, template structure/constants, and every
+    dimension size the resolve pass bakes into generated code (``shape_sig``,
+    from ``shape_signature``).  ``disjoint`` separates code compiled with a
+    no-overlap promise on its field pointers from code compiled without one;
+    only backends that ask for that specialization ever pass it.
 
     Leaving the dimension sizes out is a correctness bug, not a missed
     optimization: a kernel that indexes ``a[i, j]`` compiles the row stride
     in as a literal, so reusing that code for a differently shaped field
     reads the wrong addresses and silently returns wrong numbers.
     """
-    type_sig = tuple(p.type_annotation for p in ir_func.params)
-    tex_sig = tuple(getattr(p, '_texture_shape', None) for p in ir_func.params)
-    tmpl_key = ""
+    # One pass over the params: this runs on every dispatch, and a separate
+    # walk per property cost a measurable few microseconds.
+    param_sig = tuple(
+        (p.type_annotation, getattr(p, '_is_field', True),
+         getattr(p, '_is_texture', False), getattr(p, '_texture_shape', None))
+        for p in ir_func.params)
+    vec_sig = tuple(sorted(vector_fields.items())) if vector_fields else ()
+    tmpl_key = ()
     if template_args:
-        tmpl_key = str(kernel._make_cache_key(vector_fields, template_args))
-    return (type_sig, tex_sig, tmpl_key, shape_sig)
-
-
-def _walk_ir(node):
-    """Yield every IR node under `node`, including itself."""
-    if isinstance(node, ir.IRNode):
-        yield node
-        for value in vars(node).values():
-            yield from _walk_ir(value)
-    elif isinstance(node, (list, tuple)):
-        for value in node:
-            yield from _walk_ir(value)
+        # Keep the structural key: stringifying it loses class identity.
+        tmpl_key = kernel._make_cache_key(vector_fields, template_args)
+    return (param_sig, vec_sig, tmpl_key, shape_sig, disjoint)
 
 
 def _static_field_aliases(ir_func) -> dict:
@@ -198,6 +226,109 @@ def shape_signature(ir_func, name_to_field) -> tuple:
     return tuple(sig)
 
 
+def written_field_params(ir_func):
+    """Names of the field parameters this kernel may store to.
+
+    Returns a frozenset, or ``None`` when a store goes through something
+    this cannot trace back to a parameter or a local allocation, in which
+    case every field has to be assumed written.  Memoized on the IR
+    function: it is a property of the source, not of a dispatch.
+    """
+    cached = ir_func.__dict__.get('_written_params', False)
+    if cached is not False:
+        return cached
+
+    params = {p.name for p in ir_func.params}
+    local = set()
+    copies = []
+    stores = []
+    for node in _walk_ir(ir_func.body):
+        if isinstance(node, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
+            local.add(node.name)
+        elif isinstance(node, ir.IRAssign) and isinstance(node.value, ir.IRName):
+            copies.append((node.target, node.value.name))
+        elif isinstance(node, (ir.IRFieldStore, ir.IRAtomicOp)):
+            stores.append(node.field)
+
+    # A name can be bound to different fields on different paths, so each
+    # one maps to every parameter it might stand for.
+    sources = {name: {name} for name in params}
+    changed = True
+    while changed:
+        changed = False
+        for target, src in copies:
+            reach = sources.get(src)
+            if reach and not reach <= sources.setdefault(target, set()):
+                sources[target] |= reach
+                changed = True
+
+    written = set()
+    for field in stores:
+        name = getattr(field, 'name', None) if isinstance(field, ir.IRName) \
+            else None
+        if name in sources:
+            written |= sources[name]
+        elif name is None or name not in local:
+            written = None
+            break
+    result = None if written is None else frozenset(written)
+    ir_func._written_params = result
+    return result
+
+
+def _written_flags(ir_func) -> tuple:
+    """`written_field_params` as one bool per parameter, memoized."""
+    flags = ir_func.__dict__.get('_written_flags')
+    if flags is None:
+        written = written_field_params(ir_func)
+        flags = tuple(written is None or p.name in written
+                      for p in ir_func.params)
+        ir_func._written_flags = flags
+    return flags
+
+
+def fields_disjoint(ir_func, effective_args) -> bool:
+    """Whether this call's field storage satisfies a no-overlap promise.
+
+    True when no field the kernel stores to shares a byte with any other
+    field argument.  Fields that are only read may overlap each other
+    freely -- ``dot(x, x)`` is still disjoint in the sense that matters,
+    because nothing read through one pointer can change under the other.
+
+    Needs host addresses, so it is only meaningful for buffers that have a
+    ``span``; a field without one makes the answer False.
+
+    This runs on every dispatch, hence the plain loops.
+    """
+    spans = []
+    written = []
+    for is_written, arg in zip(_written_flags(ir_func), effective_args):
+        if isinstance(arg, Field):
+            buf = arg._buffer
+        elif isinstance(arg, Texture3D):
+            buf = arg.field._buffer
+        else:
+            continue
+        try:
+            span = buf.span
+        except AttributeError:
+            return False
+        if span[1] > span[0]:
+            if is_written:
+                written.append(len(spans))
+            spans.append(span)
+    if not written or len(spans) < 2:
+        return True
+    # Each written range against every other one. Kernels write to a
+    # handful of fields at most, so this beats sorting the ranges.
+    for w in written:
+        start, end = spans[w]
+        for i, (other_start, other_end) in enumerate(spans):
+            if other_start < end and start < other_end and i != w:
+                return False
+    return True
+
+
 def dispatch_name_to_field(ir_func, effective_args) -> dict:
     """Map parameter names to the Field/Texture3D arguments bound to them."""
     from tack.lang.field import Texture3D
@@ -272,15 +403,18 @@ class KernelVariant:
     whatever the backend needed to cache alongside it.
     """
 
-    __slots__ = ("ir", "payload")
+    __slots__ = ("atomic_targets", "ir", "payload", "requires_full_workgroups")
 
-    def __init__(self, ir_func, payload):
+    def __init__(self, ir_func, payload, *, requires_full_workgroups=False, atomic_targets=()):
         self.ir = ir_func
         self.payload = payload
+        self.requires_full_workgroups = requires_full_workgroups
+        self.atomic_targets = atomic_targets
 
 
 def resolve_variant(backend, kernel, args, kwargs, build,
-                    store_texture_shapes=None) -> tuple:
+                    store_texture_shapes=None,
+                    specialize_disjoint=False) -> tuple:
     """Find or build the compiled variant for this call.
 
     On a cache hit this touches no IR beyond parameter type inference. On a
@@ -293,6 +427,11 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     the params — Level Zero falls back to software sampling on devices
     without hardware samplers, and that choice changes the generated code,
     so it has to happen before the key is built.
+
+    `specialize_disjoint` asks for a separate variant when this call's field
+    storage is provably non-overlapping (see `fields_disjoint`). The answer
+    is part of the key and is recorded on the variant's IR as
+    `disjoint_fields`, for the backend's codegen to act on.
 
     Returns ``(variant, effective_args)``.
     """
@@ -314,6 +453,11 @@ def resolve_variant(backend, kernel, args, kwargs, build,
         texture_fields=texture_fields,
     ).functions[0]
 
+    check_workgroup_support(
+        template, supports_workgroups=backend.supports_workgroups,
+        backend_label=backend.label, cache_features=True,
+    )
+
     name_to_field = dispatch_name_to_field(template, effective_args)
 
     # Parameter types and texture extents come from the actual arguments and
@@ -325,27 +469,96 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     infer_param_types(probe, effective_args)
     store_texture_shapes(probe, effective_args)
 
+    disjoint = specialize_disjoint and fields_disjoint(template, effective_args)
     key = kernel_variant_key(probe, kernel, vector_fields, template_args,
-                             shape_signature(template, name_to_field))
+                             shape_signature(template, name_to_field),
+                             disjoint)
 
     slot = kernel_cache_slot(backend._cache, kernel)
     variant = slot.get(key)
     if variant is None:
         from tack.lang.ir_optimize import optimize_ir
         from tack.lang.ir_resolve import resolve_ir
+        from tack.lang.ir_verify import verify_ir
 
-        ir_func = copy.deepcopy(template)
+        ir_func = clone_ir(template)
         resolve_ir(ir_func, name_to_field)
+        verify_ir(ir_func, 'resolved')
         infer_param_types(ir_func, effective_args)
+        store_texture_shapes(ir_func, effective_args)
+        verify_ir(ir_func, 'inferred')
         check_dispatch_types(ir_func, effective_args,
                              supported_dtypes=backend.supported_dtypes,
                              backend_name=backend.label)
-        store_texture_shapes(ir_func, effective_args)
+        _localize_assigned_scalar_params(ir_func)
+        verify_ir(ir_func, 'localized')
+        atomic_targets = check_atomic_support(
+            ir_func, backend_name=backend.name,
+            supported_dtypes=backend.supported_atomic_dtypes,
+        )
+        check_atomic_alignment(ir_func.name, atomic_targets, effective_args)
+        full_groups = (backend.supports_workgroups and
+                       check_workgroup_participation(ir_func))
+        if full_groups:
+            check_workgroup_launch(ir_func.name, _get_loop_range(ir_func, effective_args),
+                                   backend_label=backend.label)
         optimize_ir(ir_func)
-        variant = KernelVariant(ir_func, build(ir_func, effective_args))
+        verify_ir(ir_func, 'optimized')
+        ir_func.disjoint_fields = disjoint
+        variant = KernelVariant(ir_func, build(ir_func, effective_args),
+                                requires_full_workgroups=full_groups,
+                                atomic_targets=atomic_targets)
         slot[key] = variant
+    elif variant.requires_full_workgroups:
+        check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
+                               backend_label=backend.label)
 
+    check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
     return variant, effective_args
+
+
+def _localize_assigned_scalar_params(ir_func):
+    """Give each scalar parameter the kernel assigns to a per-iteration local.
+
+    A scalar parameter is one value shared by every iteration, and codegen
+    reads it straight from the argument — or, on GPU, from the packed scalar
+    buffer, where every read of the name is rewritten to a buffer load. An
+    assignment to that name was therefore lost on GPU, and on CPU reached
+    only the reads emitted after it. Renaming the name inside the loop body
+    to a local seeded from the parameter makes it an ordinary variable on
+    every backend, fresh in each iteration.
+
+    Needs the `_is_field` annotations, so it runs after type inference.
+    """
+    from tack.lang.ir_names import fresh_name, ir_names
+
+    used_names = ir_names(ir_func)
+    scalars = {p.name for p in ir_func.params
+               if not getattr(p, '_is_field', True)}
+    if not scalars:
+        return
+    for stmt in ir_func.body:
+        if not isinstance(stmt, ir.IRParallelFor):
+            continue
+        assigned = {n.target for n in _walk_ir(stmt.body)
+                    if isinstance(n, ir.IRAssign) and n.target in scalars}
+        if not assigned:
+            continue
+        renames = {name: fresh_name(f"__{name}_local__", used_names)
+                   for name in sorted(assigned)}
+        # The loop bound can share nodes with the body, and it has to keep
+        # naming the parameter: dispatch evaluates it against the arguments.
+        body = clone_ir(stmt.body)
+        for node in _walk_ir(body):
+            if isinstance(node, ir.IRName) and node.name in renames:
+                node.name = renames[node.name]
+            elif isinstance(node, ir.IRAssign) and node.target in renames:
+                node.target = renames[node.target]
+            elif isinstance(node, ir.IRSequentialFor) and node.var in renames:
+                node.var = renames[node.var]
+        seeds = [ir.IRAssign(renames[name], ir.IRName(name))
+                 for name in sorted(assigned)]
+        stmt.body = seeds + body
 
 
 def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:

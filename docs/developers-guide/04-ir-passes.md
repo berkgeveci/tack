@@ -1,20 +1,87 @@
 # IR Passes
 
 Tack runs several IR passes between AST transformation and codegen. Each
-pass walks the IR tree and mutates it in place.
+pass inspects the IR tree; transformation passes mutate a private copy.
 
 ## Pass Order
 
 ```
-1. ir_resolve      — Replace IRDimSize with constants, set texture shapes, resolve shared_like
+1. ir_resolve       — Replace compiled-in dimensions, set texture shapes, resolve array-like dtypes
 2. type_inference   — Annotate params with types from actual arguments
 3. check_dispatch_types — Validate field dtypes against backend capabilities
-4. ir_optimize      — LICM, copy propagation, CSE
-5. ir_type_annotate — Annotate all expression nodes with dtype (ScalarType)
-6. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
+4. scalar localization — Give assigned scalar params per-iteration local storage
+5. workgroup participation — Prove the supported collective control-flow domain (GPU only)
+6. ir_optimize      — Conservative copy propagation
+7. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
+8. ir_type_annotate — Annotate scalar expressions and assignment storage types
 ```
 
-## IR Resolve (`ir_resolve.py`, 139 lines)
+`resolve_variant()` runs the common passes only for a new compiled variant.
+GPU packing works on a separate copy so launch-range resolution retains the
+original parameter names. CPU skips packing. `tack.inspect()` also performs
+scalar localization and verification; its source preparation annotates once
+before packing and again afterwards on GPU.
+
+## Copying and Template Ownership (`ir_traversal.py`)
+
+Cached templates remain pristine. Variant preparation, assigned-scalar
+localization, GPU packing and inspection use `clone_ir()` for their working
+copies. This specializes Python deep copying for registered plain IR nodes
+and list/dict containers. It copies every node attribute, including pass
+annotations and metadata, rather than only structural children. One memo
+preserves aliases and cycles across the entire graph, while mutable state is
+independent of the original. `ScalarType` objects retain their identity;
+other metadata uses Python's `deepcopy` protocol. Structural cycles remain
+invalid and are rejected by the verifier.
+
+Cache hits do not clone IR. All pass-boundary checks below remain in place.
+Adding a registered node with slots or a custom copying protocol requires
+revisiting the cloning fast path; the registered nodes currently use plain
+attribute dictionaries. Clone regression tests cover every registered kind,
+metadata ownership and cached dispatch.
+
+`uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json`
+compares generic copying and specialized cloning on example 33's pristine
+and typed CPU IR. It prepares the scene before clearing the variant cache,
+then captures the render kernels and alternates copy methods on each graph.
+It reports median and individual samples plus unique-node and occurrence
+counts. Setup, compilation and rendering are outside those timings; this
+measures copying cost, not total cold compilation or GPU performance.
+
+## Verification (`ir_verify.py`)
+
+The production pipeline calls `verify_ir()` at these boundaries:
+
+| Stage | Checks added to structural and loop checks |
+|-------|--------------------------------------------|
+| `lowered` | Valid statement/expression roles, known node kinds/operators, numeric constants, unique parameters, existing bindings, exactly one normalized top-level parallel loop, and consistent `break`/`continue` targets |
+| `resolved` | No dimensions or attributes in generated expressions; allocation dtypes and texture extents resolved |
+| `inferred` | Scalar parameter types and field/scalar categories present; field accesses name field parameters or allocated arrays, including inlined pointer copies |
+| `localized` | Recheck the invariants after assigned scalar parameters become locals |
+| `optimized` | Recheck the invariants after copy propagation |
+| `packed` | Recheck the invariants and ensure no scalar parameters remain on GPU |
+| `typed` | Every generated scalar expression and scalar assignment has a type; logical results have i32 dtype |
+
+The parallel loop end is evaluated by the host on each dispatch. Dimension
+queries in that expression remain legal and do not force specialization on
+a flat field's length. Field references are pointers and do not require a
+scalar expression dtype.
+
+`IRVerificationError` reports the kernel, stage, node kind, and structural
+path. Failed variants never reach compilation or enter the compiled cache.
+Template verification runs before caching lowered IR; the remaining checks
+run on variant misses. Warm dispatch performs no verification walks. Direct
+low-level pass/codegen calls used to build IR fragments must invoke the
+verifier themselves when they need the full kernel contract.
+
+These checks establish tree and annotation invariants. Binding checks test
+whether a name exists anywhere in the function, not whether every path
+initializes it before a read. They do not prove bounds safety, alias safety
+of future optimizations, absence of races, barrier uniformity, or numerical
+equivalence. Differential tests and backend hardware validation remain
+necessary.
+
+## IR Resolve (`ir_resolve.py`)
 
 Replaces `IRDimSize(field_name, dim)` with `IRConstant(shape[dim])` using
 the actual field shapes passed at call time. Also sets
@@ -39,45 +106,52 @@ Type rules:
 ## Dispatch-Time Type Checking (`type_inference.py`)
 
 `check_dispatch_types()` validates that all field argument dtypes are
-supported by the target backend. This runs after type inference in every
-backend's `execute()` method.
+supported by the target backend. This runs after type inference when
+building a new compiled variant.
 
 Each backend defines its supported dtypes (e.g., Metal excludes `f64`).
 Unsupported dtypes produce a clear `TypeError` naming the kernel, parameter,
 dtype, and backend.
 
-## IR Optimize (`ir_optimize.py`, 539 lines)
+## Workgroup Participation (`workgroup_participation.py`)
 
-Three sub-passes run in sequence:
+GPU variant construction checks collective control flow after scalar
+localization, before optimization and scalar packing. A structured uniformity
+analysis follows assignments and branch joins, with monotone loop fixed
+points for carried values and lane-dependent exits. It rejects unproven
+participation before code generation and returns the full-256-lane launch
+requirement, cached on `KernelVariant`. Cached dispatch checks logical counts
+without repeating this pass. Public inspection follows the same boundary;
+direct GPU generation checks mutable IR afresh.
 
-### Loop-Invariant Code Motion (LICM)
+Ordinary memory/texture loads are varying. Scalar arguments and immutable
+scalar packs are uniform; `pack_scalars` marks generated parameters with
+`_is_scalar_pack` so packed codegen retains that fact. Shape metadata and
+collective results are uniform too. Conditional/short-circuit reductions and
+while-condition reductions are restricted where codegen cannot preserve
+evaluation. See the language contract and `test_workgroup_participation.py`.
+This does not replace structural verification or prove race freedom.
 
-Hoists `IRAssign` nodes out of loops when their RHS depends only on values
-defined outside the loop. This is critical after `@tack.func` inlining —
-inlined function bodies often re-load field values every iteration that
-could be loaded once.
+## IR Optimize (`ir_optimize.py`)
 
-Algorithm:
-1. Collect all variables assigned inside the loop body
-2. For each assignment, check if its RHS references only variables defined
-   outside the loop (parameters, or variables assigned before the loop)
-3. Move qualifying assignments before the loop
+Copy propagation replaces subsequent uses of a single-assignment copy with
+its source when the source is never rebound in the containing block.
+Assignment counts include nested control flow, loop-variable bindings, and
+local/shared array bindings.
+Assignments remain in place, reads before the assignment are unchanged,
+and rewritten sequential loops retain their step.
 
-### Copy Propagation
+This is useful after `@tack.func` inlining, which creates assignments such
+as `__func_x_0__ = x`. Field aliases can then use the original parameter:
+`a = x` followed by `a[i]` becomes `x[i]`.
 
-Resolves chains of `a = b` assignments by replacing references to `a` with
-`b`. This is common after `@tack.func` inlining, which creates parameter
-assignments like `__func_x_0__ = x`.
-
-Handles field alias propagation: if `a = x` where `x` is a field parameter,
-subsequent `a[i]` loads are rewritten to `x[i]`.
-
-### Common Subexpression Elimination (CSE)
-
-Deduplicates identical `IRFieldLoad` expressions within a basic block. Two
-loads are considered identical if they read from the same field at the same
-index (structurally compared). The second load is replaced with a reference
-to the first load's result variable.
+Tack's custom loop-invariant code motion and common subexpression
+elimination are disabled. An invariant address does not imply an invariant
+loaded value, and hoisting an assignment can change a zero-trip loop's
+behavior. Loads must also account for stores through overlapping fields.
+These passes need memory and control-flow safety analyses before they can
+return. LLVM and vendor compilers continue to optimize generated code,
+without unconditional disjoint-storage promises on field parameters.
 
 ## IR Type Annotate (`ir_type_annotate.py`)
 
@@ -89,20 +163,29 @@ reimplementing type inference heuristics. This eliminated ~40 lines of
 duplicated `_infer_c_type` / `_infer_expr_type` logic per codegen backend.
 
 Key rules:
+
 - `IRConstant(3.14)` → `f32`, `IRConstant(42)` → `i32`, `IRConstant(2**31)` → `i64`
 - `IRFieldLoad` → element type of the field
-- `IRBinOp` → `promote_types(left, right)` (f64 > f32 > i64 > i32)
+- `IRBinOp` → promoted type, except integer `/` → `f32`, and shifts or
+  integer `**` → the left/base type independent of the count/exponent type
 - `IRCast(value, ScalarType)` → the target ScalarType
 - `IRCall("sqrt", ...)` → `f32` (or `f64` if any arg is f64)
 - `IRCall("abs", [int_arg])` → preserves integer type
 - `IRCall("min"/"max", ...)` → promoted type of arguments
+- `IRCall("pow", [int_base, int_exponent])` → the base type; otherwise the
+  promoted floating precision
 - `IRCompare`, `IRBoolOp` → `i32`
 - `IRName` referencing a field param → `None` (field pointers aren't scalars)
 
-The pass tracks a type environment (`var_name → ScalarType`) and propagates
-types through assignment chains.
+Integer promotion preserves both full operand ranges; signed/u64 pairs
+require an explicit cast where promotion applies. True division and power
+use their distinct rules instead. Negative literal integer exponents are
+rejected here. See the [language contract](../reference/language-contract.md).
 
-## Scalar Packing (`ir_pack_scalars.py`, 204 lines)
+The pass joins all assignments to each local to one storage type, then
+annotates expressions using the settled environment (`var_name → ScalarType`).
+
+## Scalar Packing (`ir_pack_scalars.py`)
 
 GPU backends only. Groups scalar parameters by type into packed field
 buffers to reduce buffer binding count (critical for Metal's 31-binding
@@ -114,10 +197,10 @@ Algorithm:
 3. Rewrite `IRName("scalar_param")` → `IRFieldLoad(IRName("__pack_f32__"), IRConstant(idx))`
 4. Remove original scalar params, append pack params
 
-The pass runs on a `deepcopy` of the IR (to preserve the cached original)
+The pass runs on a `clone_ir` copy of the IR (to preserve the cached original)
 and stores `pack_info` metadata for the dispatch layer. Pack field buffers
 are allocated once and cached alongside the compiled kernel — subsequent
 calls just update the scalar values via `from_numpy`.
 
-`ScalarType.__deepcopy__` returns `self` to preserve singleton identity
-through the deep copy (type map lookups rely on object identity).
+`clone_ir` preserves `ScalarType` identity, matching its `__deepcopy__`
+protocol (type map lookups rely on object identity).

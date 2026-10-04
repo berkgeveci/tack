@@ -12,9 +12,6 @@ import ast
 import inspect
 import textwrap
 
-# Global registry of @tack.func functions (name → Func)
-_func_registry: dict[str, "Func"] = {}
-
 
 class Func:
     """A captured device-side function, ready for AST inlining."""
@@ -28,15 +25,12 @@ class Func:
         self._funcdef = self._ast.body[0]
         if not isinstance(self._funcdef, ast.FunctionDef):
             raise TypeError(f"@tack.func must decorate a function, got {type(self._funcdef)}")
-        # Class methods (first param is 'self') are registered by
-        # @tack.data_oriented, not globally — avoids name collisions
-        # when multiple classes define methods with the same name.
+        # Class methods are collected by @tack.data_oriented and resolved
+        # per template transformation. Ordinary functions need no registry.
         self._is_method = (
             len(self._funcdef.args.args) > 0 and
             self._funcdef.args.args[0].arg == 'self'
         )
-        if not self._is_method:
-            _func_registry[self.name] = self
 
     def __call__(self, *args, **kwargs):
         raise RuntimeError(

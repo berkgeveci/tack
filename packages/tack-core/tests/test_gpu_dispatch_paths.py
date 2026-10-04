@@ -247,6 +247,37 @@ if b.device_memory_spaces:
         finally:
             setattr(api, call, original)
 
+# --- verification stays off the repeated dispatch path --------------
+import tack.lang.ir_verify as verifier
+verified = []
+real_verify = verifier.verify_ir
+def record_verify(function, stage):
+    verified.append(stage)
+    real_verify(function, stage)
+verifier.verify_ir = record_verify
+b = make_backend()
+for _ in range(5):
+    b.execute(elementwise, (x, out, 64), {})
+verifier.verify_ir = real_verify
+check("GPU boundaries verified once", verified ==
+      ["resolved", "inferred", "localized", "optimized", "packed", "typed"])
+
+# --- bad packing cannot reach device compilation or the cache -------
+import tack.lang.ir_pack_scalars as packing
+real_pack = packing.pack_scalars
+packing.pack_scalars = lambda function, args: (args, None)
+b = make_backend()
+try:
+    b.execute(elementwise, (x, out, 64), {})
+except verifier.IRVerificationError as error:
+    check("failure attributed to packing", "after packed" in str(error))
+else:
+    raise AssertionError("unpacked scalars reached GPU compilation")
+finally:
+    packing.pack_scalars = real_pack
+check("invalid packing not compiled", not b.compiled)
+check("invalid packing not cached", not b._cache.get(elementwise))
+
 print("OK")
 '''
 

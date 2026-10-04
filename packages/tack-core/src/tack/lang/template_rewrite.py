@@ -15,7 +15,15 @@ import ast
 import copy
 
 from tack.lang.field import Field
-from tack.lang.func import _func_registry
+from tack.lang.func import Func
+from tack.lang.ir_names import fresh_name
+
+
+def _method_call_name(name):
+    """Tag generated method calls so user bindings cannot collide with them."""
+    node = ast.Name(id=name, ctx=ast.Load())
+    node._tack_template_call = True
+    return node
 
 
 def classify_template_attrs(obj):
@@ -71,12 +79,24 @@ def rewrite_templates(kernel_ast, template_args):
         template_args: dict of param_index -> (param_name, template_object)
 
     Returns:
-        (rewritten_ast, registered_keys) — the rewritten AST and a list of
-        keys added to _func_registry (for cleanup after transform_kernel).
+        (rewritten_ast, resolved_funcs) — the rewritten AST and a mapping
+        of synthetic call names to resolved device functions. The mapping
+        belongs to this transformation and never enters global state.
     """
     rewritten = copy.deepcopy(kernel_ast)
     funcdef = rewritten.body[0]
-    registered_keys = []
+    resolved_funcs = {}
+    # Reserve source names in both the caller and template methods before
+    # allocating synthetic parameters. Attribute expansion must not merge a
+    # user's binding with a field/scalar reference in the rewritten AST.
+    sources = [funcdef]
+    for _, obj in template_args.values():
+        sources.extend(method._funcdef for method in
+                       getattr(type(obj), '_tack_func_methods', {}).values())
+    used_names = {n.id for source in sources for n in ast.walk(source)
+                  if isinstance(n, ast.Name)}
+    used_names.update(n.arg for source in sources for n in ast.walk(source)
+                      if isinstance(n, ast.arg))
 
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
@@ -86,29 +106,30 @@ def rewrite_templates(kernel_ast, template_args):
         # Build mapping from field attr name to synthetic parameter name
         field_param_map = {}
         for attr_name in sorted(fields.keys()):
-            field_param_map[attr_name] = f"__tmpl_{param_name}_{attr_name}__"
+            field_param_map[attr_name] = fresh_name(
+                f"__tmpl_{param_name}_{attr_name}__", used_names)
 
         # Build mapping from runtime scalar attr name to synthetic parameter name
         runtime_scalar_param_map = {}
         for attr_name in sorted(runtime_scalars.keys()):
-            runtime_scalar_param_map[attr_name] = f"__tmpl_{param_name}_{attr_name}__"
+            runtime_scalar_param_map[attr_name] = fresh_name(
+                f"__tmpl_{param_name}_{attr_name}__", used_names)
 
-        # Register resolved versions of the template object's @tack.func methods
+        # Resolve the template object's methods in this transformation's map.
         cls = type(obj)
         method_name_map = {}  # original method name -> resolved func name
         if hasattr(cls, '_tack_func_methods'):
             # First pass: build the name map so methods can reference siblings
             for method_name, func_obj in cls._tack_func_methods.items():
-                resolved_name = f"__tmpl_{cls.__name__}_{method_name}_{id(obj)}__"
+                resolved_name = fresh_name(f"__tmpl_{param_name}_{method_name}__", used_names)
                 method_name_map[method_name] = resolved_name
-            # Second pass: register resolved methods with the full name map
+            # Second pass: resolve methods with the full sibling name map.
             for method_name, func_obj in cls._tack_func_methods.items():
                 resolved_name = method_name_map[method_name]
-                _register_resolved_method(
+                resolved_funcs[resolved_name] = _resolve_method(
                     func_obj, resolved_name, scalars, field_param_map,
                     method_name_map, runtime_scalar_param_map,
                 )
-                registered_keys.append(resolved_name)
 
         # Rewrite the kernel function definition
         rewriter = _KernelTemplateRewriter(
@@ -118,12 +139,12 @@ def rewrite_templates(kernel_ast, template_args):
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
 
-    return rewritten, registered_keys
+    return rewritten, resolved_funcs
 
 
-def _register_resolved_method(func_obj, resolved_name, scalars, field_param_map,
-                               method_name_map=None, runtime_scalar_param_map=None):
-    """Register a resolved copy of a template method in the func registry.
+def _resolve_method(func_obj, resolved_name, scalars, field_param_map,
+                    method_name_map=None, runtime_scalar_param_map=None):
+    """Resolve a template method while retaining its defining Python callable.
 
     The resolved copy has:
     - 'self' parameter removed
@@ -155,17 +176,16 @@ def _register_resolved_method(func_obj, resolved_name, scalars, field_param_map,
     funcdef.name = resolved_name
     ast.fix_missing_locations(funcdef)
 
-    # Create a Func-like entry in the registry
-    resolved_func = _ResolvedFunc(resolved_name, funcdef)
-    _func_registry[resolved_name] = resolved_func
+    return _ResolvedFunc(resolved_name, funcdef, func_obj.func)
 
 
-class _ResolvedFunc:
-    """A resolved template method, compatible with the func registry."""
+class _ResolvedFunc(Func):
+    """A method body with template attributes resolved and bindings retained."""
 
-    def __init__(self, name, funcdef):
+    def __init__(self, name, funcdef, python_func):
         self.name = name
         self._funcdef = funcdef
+        self.func = python_func
 
 
 class _SelfResolver(ast.NodeTransformer):
@@ -199,7 +219,7 @@ class _SelfResolver(ast.NodeTransformer):
                 node.func.attr in self.method_name_map):
             resolved_name = self.method_name_map[node.func.attr]
             return ast.Call(
-                func=ast.Name(id=resolved_name, ctx=ast.Load()),
+                func=_method_call_name(resolved_name),
                 args=node.args + self._synth_extra_args(),
                 keywords=[],
             )
@@ -280,7 +300,7 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
             if method_name in self.method_name_map:
                 resolved_name = self.method_name_map[method_name]
                 return ast.Call(
-                    func=ast.Name(id=resolved_name, ctx=ast.Load()),
+                    func=_method_call_name(resolved_name),
                     args=node.args + self._synth_extra_args(),
                     keywords=[],
                 )

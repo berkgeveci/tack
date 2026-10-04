@@ -61,6 +61,7 @@ from tack.lang.field import NumpyBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 _CPU_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.llvm_gen import generate_llvm_ir
 
 # ── NUMA interleave support ──────────────────────────────────────────
@@ -305,6 +306,20 @@ _CV_SMOOTHING = 0.10
 # whether the clock can see the interval.
 _RP_MIN_WORKER_NS = 1_000.0
 
+# How long a worker's span must be, in units of (workers x per-call cost),
+# before its rate is believed as a *lower bound on the serial rate*. The
+# threshold model only needs `r_p` to be roughly right, and the clamp in
+# `_min_elems` tolerates a wrong one; a bound has no such tolerance. The
+# per-worker clock stops only once the worker has the GIL back, and with W
+# workers returning from ctypes together the median waits behind about
+# W/2 of them -- a few microseconds each, i.e. of the order of the per-call
+# cost. Measured: 256-element chunks of a 1 ns/element kernel read
+# 60-340 ns/element across 16 workers, 100x the serial rate, which as a
+# floor would have kept that kernel threading for good. At 20x the wait is
+# a few per cent of the span; a volume render's workers run for
+# milliseconds and clear it by orders of magnitude.
+_RP_BOUND_SPAN_RATIO = 20.0
+
 # v2's margin, and lower than v1's 2.0 deliberately. Under v1 the margin
 # was absorbing *systematic* error -- an understated probe and, on a
 # 2-socket box, an overstated serial rate -- which is why 2.0 was still
@@ -405,6 +420,11 @@ class CompiledKernel:
         # measured yet", which makes the v2 threshold reduce to the v1 one
         # rather than needing a special case. P_eff is ns_per_elem over it.
         self.ns_per_elem_parallel = 0.0
+        # The last parallel rate measured on spans long enough to be
+        # believed as a lower bound on the serial rate (see
+        # `_RP_BOUND_SPAN_RATIO`); 0.0 until there is one, or after a
+        # whole-range dispatch shows that the workload has become cheap.
+        self.serial_floor_ns = 0.0
         # What one call_range costs before touching a single element --
         # ctypes marshalling, mostly. Timed once, on an empty range.
         self.call_overhead_ns = 0.0
@@ -420,6 +440,9 @@ class CompiledKernel:
         # occasional serial run to re-measure.
         self.parallel_since_measure = 0
         self.recheck_after = 1
+        # Which recheck this is, which decides where in the range its
+        # serial sample is taken from. See `next_sample_start`.
+        self.sample_phase = 0
 
     def recheck_due(self) -> bool:
         """Whether this parallel dispatch should re-measure instead.
@@ -434,6 +457,28 @@ class CompiledKernel:
         self.parallel_since_measure = 0
         self.recheck_after = min(self.recheck_after * 2, _RECHECK_CAP)
         return True
+
+    def next_sample_start(self, room: int) -> int:
+        """Where the next recheck should take its serial sample.
+
+        The sample used to be the first few thousand elements, every
+        time. For an image kernel those are the top rows -- background
+        rays, which for a volume renderer cost 10-70x less than the
+        frame's average -- so every recheck confirmed the same
+        underestimate, and the policy kept concluding that a frame which
+        threads 8x faster was too small to thread. So the rechecks walk
+        the range in golden-ratio steps, which spread the sample
+        positions evenly however many rechecks there turn out to be,
+        without a RNG and without ever repeating a position early. The
+        first recheck does not get the prefix either: measured on a 256²
+        volume render, one prefix sample was enough to pull the estimate
+        back under the threshold and cost a 330 ms whole-frame serial
+        run on the next dispatch.
+        """
+        self.sample_phase += 1
+        if room <= 0:
+            return 0
+        return int(room * ((self.sample_phase * 0.6180339887498949) % 1.0))
 
     def bind(self, kernel_args: list) -> tuple:
         """Marshal the field pointers and scalars once for a dispatch.
@@ -460,6 +505,14 @@ class CompiledKernel:
     def __call__(self, kernel_args: list, loop_start: int, loop_end: int):
         """Call the compiled kernel with field pointers/scalars and loop range."""
         self.call_range(self.bind(kernel_args), loop_start, loop_end)
+
+
+# Compile a separate `noalias` variant for calls whose field arguments are
+# checked, per dispatch, not to overlap. Fields may alias, so the promise is
+# never made unconditionally; without it LLVM must reload after every store
+# and cannot vectorize a loop that accumulates through a field, which costs
+# 2-3x on such kernels. Overlapping calls get the variant without it.
+_SPECIALIZE_DISJOINT = True
 
 
 def _create_target_machine():
@@ -505,7 +558,7 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
     engine = llvm.create_mcjit_compiler(mod, tm_jit)
 
     # Get function pointer
-    func_ptr = engine.get_function_address(ir_func.name)
+    func_ptr = engine.get_function_address(kernel_entry_name(ir_func.name))
     if func_ptr == 0:
         raise RuntimeError(f"Failed to JIT compile kernel '{ir_func.name}'")
 
@@ -728,6 +781,7 @@ class CPUBackend(Backend):
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
             build=self._build_variant,
+            specialize_disjoint=_SPECIALIZE_DISJOINT,
         )
 
         # Unwrap Texture3D to the underlying Field for dispatch
@@ -741,7 +795,9 @@ class CPUBackend(Backend):
     def _build_variant(ir_func, effective_args):
         """Annotate types and JIT-compile. Runs once per variant."""
         from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_verify import verify_ir
         annotate_types(ir_func)
+        verify_ir(ir_func, 'typed')
         return _compile_kernel(ir_func)
 
     # ── Dispatch: serial or fan-out ──────────────────────────────────
@@ -791,14 +847,28 @@ class CPUBackend(Backend):
                 # one. Taking a slice rather than the whole range keeps that
                 # from costing the dispatch its parallelism; small ranges,
                 # where a fan-out is the expensive option anyway, run whole.
-                probe_end = min(loop_end,
-                                self._sample_elems(compiled, loop_end))
-                self._run_serial(compiled, prefix, 0, probe_end)
-                if loop_end > probe_end:
-                    self._parallel_execute(compiled, prefix, probe_end,
+                probe = min(loop_end, self._sample_elems(compiled, loop_end))
+                if probe >= loop_end:
+                    self._run_serial(compiled, prefix, 0, loop_end)
+                    return
+                # Not always the prefix: a slice from the same place every
+                # time measures that place, not the kernel. The head before
+                # the slice is fanned out when it is worth a fan-out and
+                # otherwise just run -- untimed, since the point of moving
+                # the slice is to keep the prefix out of the sample.
+                start = compiled.next_sample_start(loop_end - probe)
+                if start > 0:
+                    if start * compiled.ns_per_elem > self._fan_out_estimate():
+                        self._parallel_execute(compiled, prefix, 0, start)
+                    else:
+                        compiled.call_range(prefix, 0, start)
+                self._run_serial(compiled, prefix, start, start + probe)
+                if loop_end > start + probe:
+                    self._parallel_execute(compiled, prefix, start + probe,
                                            loop_end)
                 return
-            self._parallel_execute(compiled, prefix, 0, loop_end)
+            self._parallel_execute(compiled, prefix, 0, loop_end,
+                                   whole_range=True)
             return
 
         probe_min_range = self._probe_min_range()
@@ -810,14 +880,29 @@ class CPUBackend(Backend):
             return
 
         # First sight of this kernel at a range where threading might pay.
-        # Time a small prefix, then decide about the rest — so a one-shot
+        # Time a small slice, then decide about the rest — so a one-shot
         # large dispatch is not stuck running serially for want of a sample.
-        probe_end = max(probe_min_range // 16, loop_end // 64)
-        self._run_serial(compiled, prefix, 0, probe_end)
-        if loop_end - probe_end >= compiled.parallel_min_elems:
-            self._parallel_execute(compiled, prefix, probe_end, loop_end)
+        #
+        # The slice comes from inside the range, like a recheck's, not from
+        # the front of it. An image kernel's first rows are background, and
+        # a prefix sample read a volume render 10-70x too cheap: the next
+        # dispatch, armed with a real fan-out cost and that estimate,
+        # concluded a 256² frame was too small to thread and ran all of it
+        # on one thread, once per process.
+        probe = min(loop_end, max(probe_min_range // 16, loop_end // 64))
+        start = compiled.next_sample_start(loop_end - probe)
+        self._run_serial(compiled, prefix, start, start + probe)
+        if start >= compiled.parallel_min_elems:
+            self._parallel_execute(compiled, prefix, 0, start)
         else:
-            self._run_serial(compiled, prefix, probe_end, loop_end)
+            # Untimed: the point of moving the slice is to keep the prefix
+            # out of the estimate.
+            compiled.call_range(prefix, 0, start)
+        tail = start + probe
+        if loop_end - tail >= compiled.parallel_min_elems:
+            self._parallel_execute(compiled, prefix, tail, loop_end)
+        else:
+            self._run_serial(compiled, prefix, tail, loop_end)
 
     def _probe_min_range(self) -> int:
         """Smallest range worth splitting a timing probe off.
@@ -851,12 +936,37 @@ class CPUBackend(Backend):
         dispatches.
 
         So the slice is never a smaller share than 1/64 of the range, and a
-        range too small to want threading at all is simply timed whole.
+        range cheap enough to run whole for the price of a fan-out is simply
+        timed whole.
+
+        "Cheap" is judged in the kernel's own measured rate, not by an
+        element count. The guard used to be `_probe_min_range()`, which is
+        the count a *reference* kernel of 24 ns/element needs to repay a
+        fan-out -- the right yardstick before a kernel has been measured,
+        and the wrong one after. For a volume renderer at 3500 ns/pixel it
+        was 150x off: every 384² image sat under it, so each recheck re-ran
+        the whole frame on one thread -- 0.75 s against 100 ms threaded, on
+        dispatches 1, 2, 4, ... 1024 and then every 1024.
+
+        The rate the guard uses is not simply the estimate, for the same
+        circularity: a corrupt-high estimate would call a 4096-element
+        range of a 1 ns kernel "expensive", take the 1/64 slice -- 64
+        elements, under the clock's noise once the fixed call cost is
+        subtracted -- and the sample meant to correct the estimate would
+        be noise. So the estimate is believed only up to the reference
+        rate (`_PROBE_REFERENCE_NS_PER_ELEM`): a range cheap *for a
+        reference kernel* is timed whole however dear the estimate claims
+        the kernel is, which is the old guard exactly. What lifts it is a
+        trusted parallel rate (`serial_floor_ns`), which cannot exceed the
+        serial rate: once the volume render has fanned out once, its 384²
+        frame reads as the half-second of work it is.
         """
-        if loop_end <= self._probe_min_range():
+        rate = max(compiled.ns_per_elem, _MIN_NS_PER_ELEM)
+        guard_rate = max(compiled.serial_floor_ns,
+                         min(rate, _PROBE_REFERENCE_NS_PER_ELEM))
+        if loop_end * guard_rate <= self._fan_out_estimate():
             return loop_end
 
-        rate = max(compiled.ns_per_elem, _MIN_NS_PER_ELEM)
         target_ns = _SAMPLE_OVERHEAD_RATIO * max(compiled.call_overhead_ns, 1.0)
         target = int(target_ns / rate)
         return max(1, min(loop_end, max(target, loop_end // 64)))
@@ -914,6 +1024,30 @@ class CPUBackend(Backend):
             ns_per_elem = sample
         else:
             ns_per_elem = prev + _COST_SMOOTHING * (sample - prev)
+        self._set_serial_cost(compiled, ns_per_elem)
+
+    def _set_serial_cost(self, compiled: CompiledKernel, ns_per_elem: float):
+        """Store the serial estimate, floored at a trusted parallel rate.
+
+        The serial estimate comes from a slice, and a slice can be
+        unrepresentative: an image kernel's first rows are background,
+        which for a volume renderer meant an estimate 10-70x under the
+        frame's real average. Moving the slice (`next_sample_start`) is
+        the fix for the rechecks; this is the backstop for the first-sight
+        sample, which has to be the prefix. The parallel rate, by
+        contrast, is measured over the whole range on every fan-out. A
+        fan-out cannot make an element cheaper than it is serially (`r_p`
+        is the worker rate divided by the workers that ran), so
+        `r_s >= r_p` holds whenever `r_p` comes from spans long enough for
+        the per-worker clock to be trusted (`serial_floor_ns`, see
+        `_RP_BOUND_SPAN_RATIO`), and it catches a prefix-biased estimate
+        on the first dispatch after a fan-out rather than never. It does
+        not make the estimate right -- `r_p` is `r_s / P_eff`, so the
+        floor is still P_eff below the truth -- but it keeps the decision
+        from flipping to "too small to thread" on a range the kernel has
+        already shown to thread well.
+        """
+        ns_per_elem = max(ns_per_elem, compiled.serial_floor_ns)
         compiled.ns_per_elem = ns_per_elem
         compiled.parallel_min_elems = self._min_elems(
             ns_per_elem, compiled.ns_per_elem_parallel)
@@ -1253,8 +1387,19 @@ class CPUBackend(Backend):
         # samples, so `_fan_out_estimate` imposes it on read instead.
 
     def _record_parallel_cost(self, compiled: CompiledKernel,
-                              worker_rates: list, workers: int):
+                              worker_rates: list, workers: int,
+                              bounds_serial: bool = False,
+                              retire_serial_floor: bool = False):
         """Learn `r_p` from what the workers themselves reported.
+
+        `bounds_serial` says the spans were long enough (see
+        `_RP_BOUND_SPAN_RATIO`) for the aggregate rate to also serve as a
+        floor under the serial estimate.
+
+        `retire_serial_floor` says every worker of a whole-range dispatch
+        finished below that duration. The old inputs' floor is stale;
+        schedule a fresh serial sample rather than waiting up to 1024
+        dispatches. Cheap head/tail slices cannot provide this evidence.
 
         `worker_rates` holds each worker's own ns-per-element for the
         chunk it ran. Those timestamps are taken *inside* the worker,
@@ -1278,8 +1423,14 @@ class CPUBackend(Backend):
         Probed on a loaded yavin, max read 10-134x the fitted rate where
         the median read 0.5-6.3x.
         """
+        if workers <= 0:
+            return
+        if retire_serial_floor and compiled.serial_floor_ns > 0.0:
+            compiled.serial_floor_ns = 0.0
+            compiled.parallel_since_measure = 0
+            compiled.recheck_after = 1
         rates = sorted(worker_rates)
-        if not rates or workers <= 0:
+        if not rates:
             return
         median_rate = rates[len(rates) // 2]
         sample = max(median_rate / workers, _MIN_NS_PER_ELEM)
@@ -1287,11 +1438,16 @@ class CPUBackend(Backend):
         compiled.ns_per_elem_parallel = (
             sample if prev <= 0.0
             else prev + _COST_SMOOTHING * (sample - prev))
-        compiled.parallel_min_elems = self._min_elems(
-            compiled.ns_per_elem, compiled.ns_per_elem_parallel)
+        if bounds_serial:
+            compiled.serial_floor_ns = sample
+        # The serial estimate may only have seen a cheap prefix; this
+        # measurement saw the whole range. Apply the `r_s >= r_p` floor
+        # now rather than waiting up to `_RECHECK_CAP` dispatches for the
+        # next serial sample to apply it.
+        self._set_serial_cost(compiled, compiled.ns_per_elem)
 
     def _parallel_execute(self, compiled: CompiledKernel, prefix: tuple,
-                          start: int, end: int):
+                          start: int, end: int, *, whole_range: bool = False):
         """Split the loop range across threads."""
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
@@ -1344,8 +1500,16 @@ class CPUBackend(Backend):
             f.result()  # propagate exceptions
 
         dispatch_ns = time.perf_counter_ns() - dispatch_t0
+        measured = sorted(spans[t] for t in range(workers) if rates[t] > 0.0)
+        trusted_span = _RP_BOUND_SPAN_RATIO * workers * compiled.call_overhead_ns
+        bounds_serial = bool(measured) and (
+            measured[len(measured) // 2] >= trusted_span)
+        # A short median could still hide expensive image regions. Only
+        # retire the floor when the entire range has no long worker span,
+        # including spans below the rate measurement's clock threshold.
+        retire_floor = whole_range and workers > 0 and max(spans) < trusted_span
         self._record_parallel_cost(compiled, [r for r in rates if r > 0.0],
-                                   workers)
+                                   workers, bounds_serial, retire_floor)
         # The dispatch waits for its slowest worker, so that is the work
         # phase -- and here the max is the right statistic rather than the
         # wrong one it is for `r_p`, because this is the quantity the

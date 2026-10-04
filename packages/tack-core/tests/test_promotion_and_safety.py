@@ -22,10 +22,10 @@ class TestMixedSignPromotion:
         assert promote_types(u32, i32) is i64
         assert promote_types(i32, u32) is i64
 
-    def test_u64_i64_promotes_to_i64(self):
-        """No wider signed type — stays i64."""
-        assert promote_types(u64, i64) is i64
-        assert promote_types(i64, u64) is i64
+    def test_u64_i64_requires_explicit_cast(self):
+        for a, b in ((u64, i64), (i64, u64)):
+            with pytest.raises(TypeError, match="explicit integer cast"):
+                promote_types(a, b)
 
     def test_same_sign_same_width(self):
         """Same type returns itself."""
@@ -53,9 +53,9 @@ class TestMixedSignPromotion:
         """Different widths: u8 (rank 0) + i32 (rank 2) → i32."""
         assert promote_types(u8, i32) is i32
 
-    def test_u16_i8_promotes_to_u16(self):
-        """u16 (rank 1) > i8 (rank 0) → u16."""
-        assert promote_types(u16, i8) is u16
+    def test_u16_i8_promotes_to_i32(self):
+        """i32 preserves negative i8 and the full u16 range."""
+        assert promote_types(u16, i8) is i32
 
 
 # --- C keyword kernel name escaping ---
@@ -101,7 +101,7 @@ def test_kernel_named_int(backend):
 
 
 def test_codegen_escapes_reserved_name():
-    """Verify codegen output uses _tack_ prefix for reserved names."""
+    """Verify codegen output uses the GPU kernel namespace for reserved names."""
     from tack.codegen.cuda_gen import generate_cuda_source
     from tack.lang import ir
     from tack.lang.ir_type_annotate import annotate_types
@@ -118,7 +118,7 @@ def test_codegen_escapes_reserved_name():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "_tack_double" in src
+    assert "tack_kernel_a_double" in src
     assert "void double(" not in src
 
 

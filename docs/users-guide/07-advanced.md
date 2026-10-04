@@ -96,7 +96,20 @@ Available atomics:
 ## Shared Memory
 
 Shared memory is visible to all threads within a workgroup. Use it for
-cooperative algorithms like parallel reductions:
+cooperative algorithms like parallel reductions.
+
+These kernels require a GPU backend with `supports_workgroups=True`.
+CPU rejects shared memory, barriers, `thread_id` and block reductions.
+For scratch storage private to each iteration, use `tack.local_array`
+or `tack.local_array_like`; both work on CPU and GPU.
+
+Positive iteration counts must be divisible by 256. Scalar arguments can
+control collective branches and loops; field-loaded conditions and
+lane-dependent exits are rejected. See the
+[workgroup contract](../reference/language-contract.md#workgroups-and-synchronization)
+for the conservative supported domain and unsupported collective expressions.
+
+For example, with fully participating 256-lane workgroups:
 
 ```python
 @tack.kernel

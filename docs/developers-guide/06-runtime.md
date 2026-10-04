@@ -16,6 +16,7 @@ Declared capabilities — read these instead of probing with `hasattr`:
 | `supported_dtypes` | Scalar types accepted as field dtypes |
 | `supports_f64` | Derived from `supported_dtypes` — never declared separately |
 | `supports_device_reductions` | Whether `reduce_field()` runs on device; otherwise `Field.sum()` and friends fall back to numpy |
+| `supports_workgroups` | Native workgroup execution for shared memory, barriers, local thread IDs and block reductions; false on CPU |
 | `device_memory_spaces` | Memory spaces a pointer must be in for `field_from_ptr()`; empty means no check |
 
 Anything derivable is derived. `supports_f64` used to be declared
@@ -45,47 +46,58 @@ kernel(x, y, out, alpha, n)
 
 ## Backend.execute() Flow
 
-All 5 backends follow the same flow in their `execute()` method:
+Every backend uses `resolve_variant()` in `runtime/kernel_utils.py` to
+find or build a specialization:
 
-```python
-def execute(self, kernel, args, kwargs):
-    # 1. Detect and expand template arguments
-    template_args = _detect_template_args(kernel, args)
-    effective_args = _expand_template_args(args, template_args)
+1. Expand template arguments and detect vector and texture fields.
+2. Obtain the pristine IR template for this specialization and check required
+   workgroup primitives against the backend's `supports_workgroups`. CPU
+   memoizes feature discovery on the immutable template so warm dispatch
+   does not walk the body again. GPU targets bypass this rejection check.
+3. Infer argument dtypes and categories on a private parameter probe, record
+   texture extents, and derive resolved shape dependencies.
+4. Look up the variant in the backend's weakly keyed per-kernel cache.
+5. On a miss, deep-copy the template, resolve dimensions, infer/check types,
+   and run conservative copy propagation. The backend build callback then
+   packs scalars where needed, annotates types, generates code, and compiles.
+6. Resolve the launch range from the variant's IR for this dispatch, bind
+   arguments (updating any scalar pack buffers), and execute.
 
-    # 2. Detect vector and texture fields
-    vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
-    texture_fields = _detect_texture_fields(kernel, args, template_args)
+The compiled key includes dtypes, field/scalar/texture categories, vector
+widths, texture extents, template structure/constants, and baked-in dimension
+sizes. Template structure includes actual class identity and runtime scalar
+attribute names. Changing scalar values alone does not recompile; changing
+an attribute layout or a vector width does.
 
-    # 3. Get IR (cached by kernel + specialization key)
-    ir_module = kernel.get_ir(vector_fields, template_args, texture_fields)
-    ir_func = ir_module.functions[0]
+Passes run only on a cache miss and never mutate the pristine template.
+Parameter probing is private to each dispatch so concurrent calls cannot
+observe another call's types. Fields may overlap in storage; generated field
+parameters therefore carry no unconditional `noalias` or `restrict` promise.
 
-    # 4. Resolve, type inference, type checking, optimization
-    resolve_ir(ir_func, name_to_field)
-    infer_param_types(ir_func, effective_args)
-    check_dispatch_types(ir_func, effective_args, supported_dtypes, backend_name)
-    optimize_ir(ir_func)
+The CPU backend adds one more key element: whether this call's fields are
+disjoint. `fields_disjoint()` compares the byte ranges of the field arguments
+on every dispatch (about a microsecond) and passes when no field the kernel
+writes overlaps another field. Qualifying calls use a variant compiled with
+`noalias` on its field pointers; the rest use the variant without it. Without
+the promise LLVM must reload after every store, which costs 2-3x on x86 for
+kernels that accumulate through a field in an inner loop.
 
-    # 5. Extract loop range BEFORE packing
-    loop_end = _get_loop_range(ir_func, kernel_args)
+Template classes appear in keys as a token rather than the class object.
+When a `@tack.data_oriented` class is collected, a finalizer drops the IR and
+the compiled variants specialized on it from every backend's cache.
 
-    # 6. Cache check — compile on miss
-    if cache_key not in self._cache:
-        ir_func_copy = copy.deepcopy(ir_func)
-        pack_scalars(ir_func_copy, effective_args)
-        annotate_types(ir_func_copy)
-        compiled = self._compile_kernel(ir_func_copy)
-        pack_fields = _create_pack_fields(pack_info, effective_args, self)
-        self._cache[cache_key] = (compiled, pack_info, pack_fields)
+Public inspection checks the selected backend's workgroup capability before
+preparing a variant. Private `_prepare_ir` may omit a backend for cross-target
+codegen tools/tests. Direct LLVM generation always checks the supplied IR
+afresh because callers may mutate it.
 
-    # 7. Build dispatch args (update cached pack fields)
-    _update_pack_fields(pack_fields, pack_info, effective_args)
-    kernel_args = kept_field_args + pack_fields
-
-    # 8. Dispatch
-    compiled(kernel_args, loop_end)
-```
+GPU variant construction checks conservative workgroup participation after
+scalar localization, before optimization/packing. `KernelVariant` caches
+the full-group requirement; every collective dispatch checks its logical
+count, including cache hits. Direct GPU generators check mutable IR afresh,
+using `_is_scalar_pack` metadata for immutable runtime scalar inputs. Metal
+pipeline capacity and Level Zero X/total limits must admit 256 lanes.
+These checks do not establish atomic type/scope support or race freedom.
 
 ## Loop Range Resolution
 
@@ -127,10 +139,20 @@ within unified memory; on CUDA/HIP/L0 it involves explicit copies).
 
 ### CPU
 
-The LLVM-JIT'd function is called via ctypes. For loop ranges > 1024
-elements, work is split across physical CPU cores using a persistent
-`ThreadPoolExecutor`. Each thread calls the compiled function with
-a `(start, end)` sub-range.
+The LLVM-JIT'd function is called via ctypes. The backend compares measured
+serial work against measured thread fan-out cost, splitting worthwhile
+ranges across a persistent `ThreadPoolExecutor`. Each thread calls the
+compiled function with a `(start, end)` sub-range.
+
+Periodic serial rechecks sample different positions in the range. Long
+worker spans establish a floor under the serial estimate, preventing cheap
+image slices from making an expensive frame look cheap. That floor applies
+to the measured workload: runtime inputs can change without recompilation.
+When every worker of a complete dispatch later finishes below the trusted
+span duration, the backend retires the old floor and schedules a serial
+recheck on the next call. Partial head/tail dispatches and a short median
+with any long worker cannot retire it. Worker spans below the rate clock's
+resolution still establish that the complete dispatch was short.
 
 ### Metal
 

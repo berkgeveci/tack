@@ -3,7 +3,7 @@
 Pipeline:
     Tack IR → MSL (via msl_gen.py) → Metal compute pipeline
 
-Each field parameter becomes a Metal buffer at index matching its binding number.
+Field pointers are encoded in one argument buffer to permit overlapping storage.
 The parallel loop range is dispatched as a 1D grid of threads.
 
 On Apple Silicon, Metal shared buffers live in unified memory accessible by both
@@ -13,17 +13,25 @@ copies are needed.
 
 import numpy as np
 
+from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer, ExportedMemory
 from tack.lang.types import ScalarType, f32, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import (
+    WORKGROUP_SIZE,
+    check_workgroup_launch,
+    requires_full_workgroups,
+)
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _METAL_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.msl_gen import generate_msl_source
 
 try:
@@ -49,6 +57,10 @@ class MetalBuffer(DeviceBuffer):
         raw = self._metal_buffer.contents().as_buffer(nbytes)
         self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
         self._view[:] = 0
+
+    @property
+    def address(self) -> int:
+        return self._view.ctypes.data
 
     @property
     def metal_buffer(self):
@@ -86,7 +98,14 @@ class CompiledMetalKernel:
 
     def __init__(self, device, command_queue, pipeline, func_name,
                  param_types, param_is_field, param_is_texture=None,
-                 texture_shapes=None):
+                 texture_shapes=None, argument_encoder=None, *,
+                 requires_full_workgroups=False):
+        self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
+        self._workgroup_size = min(self._max_threads_per_group, WORKGROUP_SIZE)
+        self._requires_full_workgroups = requires_full_workgroups
+        if requires_full_workgroups:
+            check_workgroup_launch(func_name, 0, backend_label='Metal',
+                                   workgroup_size=self._workgroup_size)
         self._device = device
         self._command_queue = command_queue
         self._pipeline = pipeline
@@ -95,11 +114,19 @@ class CompiledMetalKernel:
         self._param_is_field = param_is_field
         self._param_is_texture = param_is_texture or [False] * len(param_types)
         self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
+        self._argument_encoder = argument_encoder
+        self._argument_buffer = None
+        if argument_encoder is not None:
+            self._argument_buffer = device.newBufferWithLength_options_(
+                argument_encoder.encodedLength(), Metal.MTLResourceStorageModeShared)
+            argument_encoder.setArgumentBuffer_offset_(self._argument_buffer, 0)
         self._thread_execution_width = pipeline.threadExecutionWidth()
-        self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
 
     def __call__(self, kernel_args: list, loop_end: int):
         """Dispatch the compute kernel on the GPU."""
+        if self._requires_full_workgroups:
+            check_workgroup_launch(self._func_name, loop_end, backend_label='Metal',
+                                   workgroup_size=self._workgroup_size)
         command_buffer = self._command_queue.commandBuffer()
         encoder = command_buffer.computeCommandEncoderWithDescriptor_(
             Metal.MTLComputePassDescriptor.computePassDescriptor()
@@ -110,6 +137,9 @@ class CompiledMetalKernel:
         # Textures use a separate binding namespace (texture indices).
         temp_buffers = []
         buf_idx = 0
+        if self._argument_encoder is not None:
+            encoder.setBuffer_offset_atIndex_(self._argument_buffer, 0, 0)
+            buf_idx = 1
         tex_idx = 0
         for i, (arg, ptype, is_field, is_tex) in enumerate(
                 zip(kernel_args, self._param_types, self._param_is_field,
@@ -146,8 +176,13 @@ class CompiledMetalKernel:
                 encoder.setTexture_atIndex_(self._tex_cache[cache_key], tex_idx)
                 tex_idx += 1
             elif is_field:
-                encoder.setBuffer_offset_atIndex_(arg._buffer.metal_buffer, 0, buf_idx)
-                buf_idx += 1
+                # Update every dispatch: a cached variant can receive new
+                # buffers or a different alias relationship. The indirect
+                # resources also require explicit residency declarations.
+                buffer = arg._buffer.metal_buffer
+                self._argument_encoder.setBuffer_offset_atIndex_(buffer, 0, i)
+                encoder.useResource_usage_(
+                    buffer, Metal.MTLResourceUsageRead | Metal.MTLResourceUsageWrite)
             else:
                 # Scalar: create a tiny shared buffer with the value
                 ndt = self._NUMPY_MAP[ptype]
@@ -160,7 +195,7 @@ class CompiledMetalKernel:
                 buf_idx += 1
 
         # Dispatch threads
-        threads_per_group = min(self._max_threads_per_group, 256)
+        threads_per_group = self._workgroup_size
         grid_size = Metal.MTLSizeMake(loop_end, 1, 1)
         group_size = Metal.MTLSizeMake(threads_per_group, 1, 1)
 
@@ -177,26 +212,28 @@ class CompiledMetalKernel:
 
 def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMetalKernel:
     """Compile a Tack IR function to a Metal compute pipeline."""
+    kernel_name = kernel_entry_name(ir_func.name)
     msl_source = generate_msl_source(ir_func)
 
     # Debug: dump MSL source for analysis
     import os
     if os.environ.get("TACK_DUMP_MSL"):
-        path = f"/tmp/tack_{ir_func.name}.msl"
+        path = f"/tmp/tack_{kernel_name}.msl"
         with open(path, "w") as f:
             f.write(msl_source)
         print(f"[Tack] Dumped MSL to {path}")
 
     options = Metal.MTLCompileOptions.alloc().init()
+    options.setFastMathEnabled_(False)
     library, error = device.newLibraryWithSource_options_error_(
         msl_source, options, None
     )
     if library is None:
         raise RuntimeError(f"Metal shader compilation failed:\n{error}\n\nMSL source:\n{msl_source}")
 
-    func = library.newFunctionWithName_(ir_func.name)
+    func = library.newFunctionWithName_(kernel_name)
     if func is None:
-        raise RuntimeError(f"Could not find '{ir_func.name}' function in Metal library")
+        raise RuntimeError(f"Could not find '{kernel_name}' function in Metal library")
 
     pipeline, error = device.newComputePipelineStateWithFunction_error_(func, None)
     if pipeline is None:
@@ -210,104 +247,21 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
     for i, p in enumerate(ir_func.params):
         if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
             texture_shapes[i] = p._texture_shape
-    return CompiledMetalKernel(device, command_queue, pipeline, ir_func.name,
+    argument_encoder = None
+    if any(is_field and not is_texture for is_field, is_texture
+           in zip(param_is_field, param_is_texture)):
+        argument_encoder = func.newArgumentEncoderWithBufferIndex_(0)
+        if argument_encoder is None:
+            raise RuntimeError(f"Could not create argument encoder for '{kernel_name}'")
+    return CompiledMetalKernel(device, command_queue, pipeline, kernel_name,
                                param_types, param_is_field, param_is_texture,
-                               texture_shapes)
+                               texture_shapes, argument_encoder,
+                               requires_full_workgroups=requires_full_workgroups(ir_func))
 
 
-_REDUCE_MSL_SUM = """
-#include <metal_stdlib>
-using namespace metal;
-
-kernel void reduce_sum_f32(
-    device float* input [[buffer(0)]],
-    device float* output [[buffer(1)]],
-    uint tid [[thread_position_in_grid]],
-    uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]])
-{
-    threadgroup float sdata[256];
-    uint n = as_type<uint>(output[1]);
-    sdata[local_tid] = (tid < n) ? input[tid] : 0.0f;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = 128; s > 0; s >>= 1) {
-        if (local_tid < s) sdata[local_tid] += sdata[local_tid + s];
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-    if (local_tid == 0) {
-        atomic_fetch_add_explicit(
-            (volatile device atomic_float*)&output[0],
-            sdata[0], memory_order_relaxed);
-    }
-}
-"""
-
-_REDUCE_MSL_MIN = """
-#include <metal_stdlib>
-using namespace metal;
-
-kernel void reduce_min_f32(
-    device float* input [[buffer(0)]],
-    device float* output [[buffer(1)]],
-    uint tid [[thread_position_in_grid]],
-    uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]])
-{
-    threadgroup float sdata[256];
-    uint n = as_type<uint>(output[1]);
-    sdata[local_tid] = (tid < n) ? input[tid] : 1e38f;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = 128; s > 0; s >>= 1) {
-        if (local_tid < s) sdata[local_tid] = min(sdata[local_tid], sdata[local_tid + s]);
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-    if (local_tid == 0) {
-        // CAS loop for atomic min
-        volatile device atomic_uint* p = (volatile device atomic_uint*)&output[0];
-        uint old_bits = atomic_load_explicit(p, memory_order_relaxed);
-        while (true) {
-            float old_f = as_type<float>(old_bits);
-            if (old_f <= sdata[0]) break;
-            uint new_bits = as_type<uint>(sdata[0]);
-            if (atomic_compare_exchange_weak_explicit(p, &old_bits, new_bits,
-                memory_order_relaxed, memory_order_relaxed)) break;
-        }
-    }
-}
-"""
-
-_REDUCE_MSL_MAX = """
-#include <metal_stdlib>
-using namespace metal;
-
-kernel void reduce_max_f32(
-    device float* input [[buffer(0)]],
-    device float* output [[buffer(1)]],
-    uint tid [[thread_position_in_grid]],
-    uint local_tid [[thread_position_in_threadgroup]],
-    uint group_id [[threadgroup_position_in_grid]])
-{
-    threadgroup float sdata[256];
-    uint n = as_type<uint>(output[1]);
-    sdata[local_tid] = (tid < n) ? input[tid] : -1e38f;
-    threadgroup_barrier(mem_flags::mem_threadgroup);
-    for (uint s = 128; s > 0; s >>= 1) {
-        if (local_tid < s) sdata[local_tid] = max(sdata[local_tid], sdata[local_tid + s]);
-        threadgroup_barrier(mem_flags::mem_threadgroup);
-    }
-    if (local_tid == 0) {
-        volatile device atomic_uint* p = (volatile device atomic_uint*)&output[0];
-        uint old_bits = atomic_load_explicit(p, memory_order_relaxed);
-        while (true) {
-            float old_f = as_type<float>(old_bits);
-            if (old_f >= sdata[0]) break;
-            uint new_bits = as_type<uint>(sdata[0]);
-            if (atomic_compare_exchange_weak_explicit(p, &old_bits, new_bits,
-                memory_order_relaxed, memory_order_relaxed)) break;
-        }
-    }
-}
-"""
+_REDUCE_MSL_SUM = field_reduction_source('metal', 'sum')
+_REDUCE_MSL_MIN = field_reduction_source('metal', 'min')
+_REDUCE_MSL_MAX = field_reduction_source('metal', 'max')
 
 
 class MetalBackend(Backend):
@@ -322,6 +276,7 @@ class MetalBackend(Backend):
     display_name = "Metal"
     supported_dtypes = _METAL_SUPPORTED_DTYPES   # no f64: Apple GPUs lack it
     supports_device_reductions = True
+    supports_workgroups = True
     # Metal shared buffers live in unified memory, so a pointer into one is
     # CPU-addressable; the inherited memory_space() answer is right.
 
@@ -397,6 +352,9 @@ class MetalBackend(Backend):
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end = _get_loop_range(variant.ir, kernel_args)
+        if loop_end <= 0:
+            # range(0) runs nothing; do not dispatch an empty grid.
+            return
 
         # Replace scalar args with the packed field buffers
         if pack_info:
@@ -416,17 +374,17 @@ class MetalBackend(Backend):
         Packing rewrites the parameter list, so it works on its own copy —
         the caller keeps `ir_func` for loop-range resolution.
         """
-        import copy
-
-        from tack.codegen.msl_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
+        from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
-        packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
+        packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
+        verify_ir(packed, 'packed')
         annotate_types(packed)
+        verify_ir(packed, 'typed')
         compiled = _compile_kernel(self._device, self._command_queue, packed)
         pack_fields = (_create_pack_fields(pack_info, effective_args, self)
                        if pack_info else None)
@@ -443,6 +401,7 @@ class MetalBackend(Backend):
         func_name = func_names[op]
 
         options = Metal.MTLCompileOptions.alloc().init()
+        options.setFastMathEnabled_(False)
         library, error = self._device.newLibraryWithSource_options_error_(
             msl_source, options, None)
         if library is None:
@@ -459,17 +418,18 @@ class MetalBackend(Backend):
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
+        if field.size == 0:
+            return empty_reduction(op)
         if field.dtype is not f32:
             # Fall back to numpy for non-f32
-            arr = field.to_numpy()
-            return float(getattr(arr, op)())
+            return reduce_numpy(field.to_numpy(), op)
 
         pipeline = self._get_reduce_pipeline(op)
         n = int(np.prod(field.shape))
 
         # Create output buffer: [result, n_as_float_bits]
         import struct
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        init_vals = REDUCTION_IDENTITIES
         out_data = np.array([init_vals[op], 0.0], dtype=np.float32)
         # Pack n as uint32 bits into float slot
         out_data[1] = np.frombuffer(struct.pack('I', n), dtype=np.float32)[0]

@@ -7,6 +7,12 @@ GPU kernels that project geometry to screen space and rasterize edges
 import numpy as np
 
 import tack
+from tack.rendering.pathtrace import _halton2, _halton3, _hash
+
+# Relative distance by which path-traced surfaces are pushed back before
+# rasterized geometry is depth-tested against them, so that a wireframe or
+# point cloud lying on a surface is drawn rather than z-fighting with it.
+_SURFACE_DEPTH_BIAS = 5.0e-3
 
 # ================================================================
 # PROJECTION CONFIG (template — carries the MVP matrix)
@@ -153,6 +159,49 @@ def _clear_fb(canvas_r, canvas_g, canvas_b, depth_buf,
         canvas_g[i] = bg_g
         canvas_b[i] = bg_b
         depth_buf[i] = 1.0e30
+
+
+@tack.kernel
+def _surface_depth_to_raster(depth_buf, surface_depth, mvp_data,
+                             camera: tack.template(), width, bias, n_pixels):
+    """Seed the raster depth buffer from path-traced primary-ray distances.
+
+    The path tracer stores the hit distance along the first sample's
+    jittered ray (-1 for a miss); the rasterizer tests projected clip-space
+    depth.  Rebuild that ray, push the hit point back by ``bias`` (relative
+    to its distance) and project it with the rasterizer's own matrix.
+    """
+    for pid in range(n_pixels):
+        t = surface_depth[pid]
+        d = 1.0e30
+        if t > 0.0:
+            seed = _hash(pid)
+            ppx = float(pid % width) + _halton2(seed)
+            ppy = float(pid // width) + _halton3(seed)
+            rdx = camera.corner_x + camera.dx_x * ppx + camera.dy_x * ppy
+            rdy = camera.corner_y + camera.dx_y * ppx + camera.dy_y * ppy
+            rdz = camera.corner_z + camera.dx_z * ppx + camera.dy_z * ppy
+            rd_len = sqrt(rdx * rdx + rdy * rdy + rdz * rdz)
+            t = t * (1.0 + bias) / rd_len
+            hx = camera.pos_x + camera.odx_x * ppx + camera.ody_x * ppy + rdx * t
+            hy = camera.pos_y + camera.odx_y * ppx + camera.ody_y * ppy + rdy * t
+            hz = camera.pos_z + camera.odx_z * ppx + camera.ody_z * ppy + rdz * t
+            cz = mvp_data[8] * hx + mvp_data[9] * hy + mvp_data[10] * hz + mvp_data[11]
+            cw = mvp_data[12] * hx + mvp_data[13] * hy + mvp_data[14] * hz + mvp_data[15]
+            if cw >= 0.001:
+                d = cz / cw
+        depth_buf[pid] = d
+
+
+@tack.kernel
+def _composite_raster(canvas_r, canvas_g, canvas_b,
+                      raster_r, raster_g, raster_b, n_pixels):
+    """Gamma-correct the pixels the rasterizer drew and lay them over the canvas."""
+    for i in range(n_pixels):
+        if raster_r[i] >= 0.0:
+            canvas_r[i] = pow(min(raster_r[i], 1.0), 0.4545)
+            canvas_g[i] = pow(min(raster_g[i], 1.0), 0.4545)
+            canvas_b[i] = pow(min(raster_b[i], 1.0), 0.4545)
 
 
 @tack.kernel
@@ -332,15 +381,20 @@ def _apply_gamma(canvas_r, canvas_g, canvas_b, n_pixels):
 # ================================================================
 
 def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
-                  point_size=3.0):
+                  point_size=3.0, composite=False, surface_depth=False):
     """Rasterize wireframe and point actors into the canvas.
 
     Args:
         canvas: Canvas to render into.
         scene: Scene containing wireframe/point actors.
         camera: PerspectiveCamera or OrthographicCamera.
-        background: RGB background color in [0, 1].
+        background: RGB background color in [0, 1].  Unused when compositing.
         point_size: Radius in pixels for point rendering.
+        composite: Draw over the image already in the canvas instead of
+            clearing it.  ``canvas.depth`` is left untouched.
+        surface_depth: With ``composite``, ``canvas.depth`` holds the path
+            tracer's primary-ray hit distances for this camera; rasterized
+            geometry behind those surfaces is hidden.
     """
     import time as _time
 
@@ -353,11 +407,26 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
     mvp_field = canvas.get_work_buffer('mvp', tack.f32, (16,))
     mvp_field.from_numpy(mvp_flat)
 
-    # Clear
-    _clear_fb(canvas.color_r, canvas.color_g, canvas.color_b,
-              canvas.depth,
-              float(background[0]), float(background[1]),
-              float(background[2]), n_pixels)
+    if composite:
+        # Draw into scratch buffers: the canvas already holds a resolved,
+        # gamma-corrected image, and its depth is not in raster units.
+        out_r = canvas.get_work_buffer('raster_r', tack.f32, (n_pixels,))
+        out_g = canvas.get_work_buffer('raster_g', tack.f32, (n_pixels,))
+        out_b = canvas.get_work_buffer('raster_b', tack.f32, (n_pixels,))
+        out_depth = canvas.get_work_buffer('raster_depth', tack.f32,
+                                           (n_pixels,))
+        # A negative red channel marks a pixel nothing was drawn to.
+        _clear_fb(out_r, out_g, out_b, out_depth, -1.0, 0.0, 0.0, n_pixels)
+        if surface_depth:
+            _surface_depth_to_raster(out_depth, canvas.depth, mvp_field,
+                                     camera, width, _SURFACE_DEPTH_BIAS,
+                                     n_pixels)
+    else:
+        out_r, out_g, out_b = canvas.color_r, canvas.color_g, canvas.color_b
+        out_depth = canvas.depth
+        _clear_fb(out_r, out_g, out_b, out_depth,
+                  float(background[0]), float(background[1]),
+                  float(background[2]), n_pixels)
 
     max_edge_len = width + height
     pt_sz = max(1, int(point_size))
@@ -372,7 +441,7 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
                         actor.color[0], actor.color[1], actor.color[2],
                         actor.n_tris)
             _rasterize_wireframe(
-                canvas.color_r, canvas.color_g, canvas.color_b, canvas.depth,
+                out_r, out_g, out_b, out_depth,
                 actor.points, actor.connectivity, colors_field,
                 mvp_field,
                 width, height, actor.n_tris, max_edge_len)
@@ -399,14 +468,18 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
                 has_colors = 1
 
             _rasterize_points(
-                canvas.color_r, canvas.color_g, canvas.color_b, canvas.depth,
+                out_r, out_g, out_b, out_depth,
                 actor.points, colors_field, has_colors,
                 mvp_field,
                 width, height, pt_sz, actor.n_verts, pt_sz)
 
     _t_raster = _time.perf_counter() - _t0
 
-    # Gamma correction
-    _apply_gamma(canvas.color_r, canvas.color_g, canvas.color_b, n_pixels)
+    if composite:
+        _composite_raster(canvas.color_r, canvas.color_g, canvas.color_b,
+                          out_r, out_g, out_b, n_pixels)
+    else:
+        # Gamma correction
+        _apply_gamma(canvas.color_r, canvas.color_g, canvas.color_b, n_pixels)
 
     print(f"  [rasterize] {_t_raster:.3f}s")

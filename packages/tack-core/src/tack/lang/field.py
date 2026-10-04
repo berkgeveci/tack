@@ -14,6 +14,11 @@ from dataclasses import dataclass
 
 import numpy as np
 
+try:
+    from numpy.lib.array_utils import byte_bounds
+except ImportError:  # NumPy 1.x exposes this in its top-level namespace.
+    from numpy import byte_bounds
+
 from tack.lang.types import ScalarType, f32, f64, from_numpy_dtype, i32
 
 
@@ -34,6 +39,11 @@ class DeviceBuffer:
         raise NotImplementedError
 
     def fill(self, value):
+        raise NotImplementedError
+
+    @property
+    def address(self) -> int:
+        """Address used by kernels, for validating imported atomic storage."""
         raise NotImplementedError
 
     @property
@@ -61,6 +71,27 @@ class NumpyBuffer(DeviceBuffer):
     @property
     def nbytes(self) -> int:
         return self._data.nbytes
+
+    @property
+    def address(self) -> int:
+        return self._data.ctypes.data
+
+    @property
+    def span(self) -> tuple[int, int]:
+        """The half-open byte range ``[start, end)`` this buffer occupies.
+
+        Read on every CPU dispatch to decide whether the field arguments
+        overlap, so it is computed once per array rather than per call.
+        """
+        try:
+            data, span = self._span
+            if data is self._data:
+                return span
+        except AttributeError:
+            pass
+        span = byte_bounds(self._data)
+        self._span = (self._data, span)
+        return span
 
 
 @dataclass
@@ -128,25 +159,30 @@ class Field:
     def _reduce(self, op: str):
         """Reduce on the device where that is supported, else via numpy."""
         from tack.runtime.dispatch import get_backend
+        from tack.runtime.reductions import empty_reduction, reduce_numpy
+        if self.size == 0:
+            return empty_reduction(op)
         backend = get_backend()
         if backend.supports_device_reductions:
             return backend.reduce_field(self, op)
-        return float(getattr(self._buffer.to_numpy(), op)())
+        return reduce_numpy(self.to_numpy(), op)
 
     def sum(self):
-        """Return the sum of all elements."""
+        """Return a float sum; parallel floating addition order may vary."""
         return self._reduce('sum')
 
     def min(self):
-        """Return the minimum element."""
+        """Return a float minimum; propagate NaNs and prefer negative zero."""
         return self._reduce('min')
 
     def max(self):
-        """Return the maximum element."""
+        """Return a float maximum; propagate NaNs and prefer positive zero."""
         return self._reduce('max')
 
     def mean(self):
-        """Return the mean of all elements (GPU sum / size)."""
+        """Return sum / size, or NaN for an empty field."""
+        if self.size == 0:
+            return float('nan')
         return self.sum() / self.size
 
     def export_memory(self) -> ExportedMemory:

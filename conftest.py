@@ -15,6 +15,8 @@ f64_backend
     better than skipping inside the test.
 reduction_backend
     Those that reduce on the device rather than through numpy.
+workgroup_backend
+    Those with native workgroup execution for cooperative kernels.
 
 A test that names one of these runs once per matching backend, so which
 backends exist is a property of the machine and never of the test file.
@@ -38,6 +40,7 @@ _ALL_ARCHES = ["cpu", "metal", "cuda", "hip", "level_zero"]
 available_backends = []
 f64_backends = []
 reduction_backends = []
+workgroup_backends = []
 
 for _arch in _ALL_ARCHES:
     try:
@@ -54,6 +57,8 @@ for _arch in _ALL_ARCHES:
         f64_backends.append(_arch)
     if _be.supports_device_reductions:
         reduction_backends.append(_arch)
+    if _be.supports_workgroups:
+        workgroup_backends.append(_arch)
 
 
 @pytest.fixture(params=available_backends)
@@ -73,5 +78,12 @@ def f64_backend(request):
 @pytest.fixture(params=reduction_backends)
 def reduction_backend(request):
     """Run a test once per backend that reduces on the device."""
+    tack.init(arch=getattr(tack, request.param))
+    return request.param
+
+
+@pytest.fixture(params=workgroup_backends)
+def workgroup_backend(request):
+    """Run a test once per available backend with workgroup execution."""
     tack.init(arch=getattr(tack, request.param))
     return request.param

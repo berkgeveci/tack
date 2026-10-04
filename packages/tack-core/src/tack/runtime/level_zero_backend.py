@@ -21,85 +21,33 @@ import ctypes.util
 
 import numpy as np
 
+from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import (
+    WORKGROUP_SIZE,
+    check_workgroup_launch,
+    requires_full_workgroups,
+)
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _L0_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.opencl_gen import generate_opencl_source
 
 # ---------------------------------------------------------------------------
 # Reduce kernel sources (OpenCL C)
 # ---------------------------------------------------------------------------
-_REDUCE_OCL_SUM = """
-__kernel void reduce_sum_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : 0.0f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(as_float(assumed) + sdata[0]));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_OCL_MIN = """
-__kernel void reduce_min_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : 1e38f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmin(sdata[tid], sdata[tid + s]);
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(fmin(sdata[0], as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_OCL_MAX = """
-__kernel void reduce_max_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : -1e38f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmax(sdata[tid], sdata[tid + s]);
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(fmax(sdata[0], as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
+_REDUCE_OCL_SUM = field_reduction_source('opencl', 'sum')
+_REDUCE_OCL_MIN = field_reduction_source('opencl', 'min')
+_REDUCE_OCL_MAX = field_reduction_source('opencl', 'max')
 # ---------------------------------------------------------------------------
 # Numpy dtype mapping
 # ---------------------------------------------------------------------------
@@ -703,6 +651,10 @@ class L0Buffer(DeviceBuffer):
         self._copy_to_device(zeros)
 
     @property
+    def address(self) -> int:
+        return int(self._device_ptr.value)
+
+    @property
     def device_ptr(self):
         return self._device_ptr
 
@@ -763,7 +715,12 @@ class CompiledL0Kernel:
     """A compiled Level Zero kernel ready for dispatch."""
 
     def __init__(self, module, kernel, func_name, param_types, param_is_field,
-                 workgroup_size, param_is_texture=None, texture_shapes=None):
+                 workgroup_size, param_is_texture=None, texture_shapes=None, *,
+                 requires_full_workgroups=False):
+        self._requires_full_workgroups = requires_full_workgroups
+        if requires_full_workgroups:
+            check_workgroup_launch(func_name, 0, backend_label='Level Zero',
+                                   workgroup_size=workgroup_size)
         self._module = module
         self._kernel = kernel
         self._func_name = func_name
@@ -836,6 +793,9 @@ class CompiledL0Kernel:
 
     def __call__(self, kernel_args: list, loop_end: int, backend):
         """Dispatch the Level Zero kernel."""
+        if self._requires_full_workgroups:
+            check_workgroup_launch(self._func_name, loop_end, backend_label='Level Zero',
+                                   workgroup_size=self._workgroup_size)
         ze = _get_ze()
         kernel = self._kernel
 
@@ -920,6 +880,7 @@ class LevelZeroBackend(Backend):
     # device reports it.
     supported_dtypes = _L0_SUPPORTED_DTYPES
     supports_device_reductions = True
+    supports_workgroups = True
 
 
     def __init__(self):
@@ -1085,6 +1046,9 @@ class LevelZeroBackend(Backend):
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end = _get_loop_range(variant.ir, kernel_args)
+        if loop_end <= 0:
+            # range(0) runs nothing; a negative count would wrap as uint32.
+            return
 
         # Replace scalar args with the packed field buffers
         if pack_info:
@@ -1123,17 +1087,17 @@ class LevelZeroBackend(Backend):
         Packing rewrites the parameter list, so it works on its own copy —
         the caller keeps `ir_func` for loop-range resolution.
         """
-        import copy
-
-        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
+        from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
-        packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
+        packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
+        verify_ir(packed, 'packed')
         annotate_types(packed)
+        verify_ir(packed, 'typed')
         compiled = self._compile_kernel(packed)
         pack_fields = (_create_pack_fields(pack_info, effective_args, self)
                        if pack_info else None)
@@ -1141,8 +1105,14 @@ class LevelZeroBackend(Backend):
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledL0Kernel:
         """Compile Tack IR → OpenCL C → SPIR-V → ze_module → ze_kernel."""
+        kernel_name = kernel_entry_name(ir_func.name)
+        workgroup_size = min(WORKGROUP_SIZE, self._compute_props.maxGroupSizeX,
+                             self._compute_props.maxTotalGroupSize)
+        full_groups = requires_full_workgroups(ir_func)
+        if full_groups:
+            check_workgroup_launch(ir_func.name, 0, backend_label=self.label,
+                                   workgroup_size=workgroup_size)
         ze = _get_ze()
-        workgroup_size = min(256, self._compute_props.maxGroupSizeX)
 
         # Generate OpenCL C source
         opencl_source = generate_opencl_source(ir_func)
@@ -1187,7 +1157,7 @@ class LevelZeroBackend(Backend):
         # Create kernel
         kernel_desc = ze_kernel_desc_t(
             stype=ZE_STRUCTURE_TYPE_KERNEL_DESC, pNext=None,
-            flags=0, pKernelName=ir_func.name.encode())
+            flags=0, pKernelName=kernel_name.encode())
         kernel = ze_kernel_handle_t()
         _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
                                      ctypes.byref(kernel)),
@@ -1200,14 +1170,19 @@ class LevelZeroBackend(Backend):
         for i, p in enumerate(ir_func.params):
             if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
                 texture_shapes[i] = p._texture_shape
-        return CompiledL0Kernel(module, kernel, ir_func.name,
+        return CompiledL0Kernel(module, kernel, kernel_name,
                                 param_types, param_is_field, workgroup_size,
-                                param_is_texture, texture_shapes)
+                                param_is_texture, texture_shapes,
+                                requires_full_workgroups=full_groups)
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
-        if field.dtype is not f32:
-            return float(getattr(field.to_numpy(), op)())
+        if field.size == 0:
+            return empty_reduction(op)
+        if (field.dtype is not f32
+                or self._compute_props.maxGroupSizeX < 256
+                or self._compute_props.maxTotalGroupSize < 256):
+            return reduce_numpy(field.to_numpy(), op)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -1218,7 +1193,7 @@ class LevelZeroBackend(Backend):
         n = int(np.prod(field.shape))
 
         # Create output buffer with init value
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        init_vals = REDUCTION_IDENTITIES
         out_np = np.array([init_vals[op]], dtype=np.float32)
         out_buf = L0Buffer(self, np.float32, (1,))
         out_buf.from_numpy(out_np)
@@ -1300,7 +1275,7 @@ class LevelZeroBackend(Backend):
         _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
                                      ctypes.byref(kernel)), "zeKernelCreate")
 
-        workgroup_size = min(256, self._compute_props.maxGroupSizeX)
+        workgroup_size = 256
         return CompiledL0Kernel(module, kernel, func_names[op],
                                 [f32, f32, i64], [True, True, False],
                                 workgroup_size)

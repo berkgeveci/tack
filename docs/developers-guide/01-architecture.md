@@ -10,7 +10,7 @@ When a `@tack.kernel` is called, Tack runs this pipeline:
     → AST transform → Tack IR                            [ast_transform.py]
     → IR resolve (dimension sizes, texture shapes)       [ir_resolve.py]
     → Type inference (from actual arguments)              [type_inference.py]
-    → IR optimize (LICM, copy prop, CSE)                 [ir_optimize.py]
+    → IR optimize (conservative copy propagation)                 [ir_optimize.py]
     → IR type annotate (resolved types for codegen)      [ir_type_annotate.py]
     → Scalar packing (GPU backends only)                 [ir_pack_scalars.py]
     → Backend-specific codegen + dispatch
@@ -36,7 +36,7 @@ packages/
                 template_rewrite.py  # AST pre-pass for template parameters
                 ir.py            # IR node definitions (25+ node types)
                 ir_resolve.py    # Replace IRDimSize with constants
-                ir_optimize.py   # LICM, copy propagation, CSE
+                ir_optimize.py   # conservative copy propagation
                 ir_type_annotate.py  # Annotate expressions with dtype
                 ir_pack_scalars.py   # Group scalar params into field buffers
                 type_inference.py    # Annotate IR params from actual args

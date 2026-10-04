@@ -6,6 +6,7 @@ Runs after AST transform, before codegen. Replaces:
 """
 
 from tack.lang import ir
+from tack.lang.ir_traversal import transform_ir, walk_ir
 
 
 def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
@@ -34,158 +35,38 @@ def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
 
 
 def _collect_field_aliases(stmts, known_fields):
-    """Scan for IRAssign(target, IRName(field)) and build alias -> Field map."""
+    """Collect inlined field aliases in structural statement order."""
     aliases = {}
-    for stmt in stmts:
-        if isinstance(stmt, ir.IRAssign) and isinstance(stmt.value, ir.IRName):
-            src = stmt.value.name
+    for node in walk_ir(stmts):
+        if isinstance(node, ir.IRAssign) and isinstance(node.value, ir.IRName):
+            src = node.value.name
             if src in known_fields:
-                aliases[stmt.target] = known_fields[src]
+                aliases[node.target] = known_fields[src]
             elif src in aliases:
-                aliases[stmt.target] = aliases[src]
-        # Recurse into compound statements
-        for attr in ('body', 'then_body', 'else_body'):
-            children = getattr(stmt, attr, None)
-            if isinstance(children, list):
-                aliases.update(_collect_field_aliases(children, {**known_fields, **aliases}))
+                aliases[node.target] = aliases[src]
     return aliases
 
 
 def _resolve(node, fields):
-    """Recursively resolve dispatch-time constants in an IR node."""
-    if node is None:
-        return None
-
-    if isinstance(node, ir.IRDimSize):
-        field = fields.get(node.field_name)
-        if field is None:
-            raise RuntimeError(f"Cannot resolve dimension size: unknown field '{node.field_name}'")
-        shape = getattr(field, '_logical_shape', None) or field.shape
-        return ir.IRConstant(shape[node.dim])
-
-    if isinstance(node, ir.IRBinOp):
-        node.left = _resolve(node.left, fields)
-        node.right = _resolve(node.right, fields)
-        return node
-
-    if isinstance(node, ir.IRUnaryOp):
-        node.operand = _resolve(node.operand, fields)
-        return node
-
-    if isinstance(node, ir.IRCompare):
-        node.left = _resolve(node.left, fields)
-        node.right = _resolve(node.right, fields)
-        return node
-
-    if isinstance(node, ir.IRBoolOp):
-        node.values = [_resolve(v, fields) for v in node.values]
-        return node
-
-    if isinstance(node, ir.IRFieldLoad):
-        node.field = _resolve(node.field, fields)
-        node.index = _resolve(node.index, fields)
-        return node
-
-    if isinstance(node, ir.IRFieldStore):
-        node.field = _resolve(node.field, fields)
-        node.index = _resolve(node.index, fields)
-        node.value = _resolve(node.value, fields)
-        return node
-
-    if isinstance(node, ir.IRAtomicOp):
-        node.field = _resolve(node.field, fields)
-        node.index = _resolve(node.index, fields)
-        node.value = _resolve(node.value, fields)
-        return node
-
-    if isinstance(node, ir.IRAssign):
-        node.value = _resolve(node.value, fields)
-        return node
-
-    if isinstance(node, ir.IRParallelFor):
-        node.start = _resolve(node.start, fields)
-        node.end = _resolve(node.end, fields)
-        node.body = [_resolve(s, fields) for s in node.body]
-        return node
-
-    if isinstance(node, ir.IRSequentialFor):
-        node.start = _resolve(node.start, fields)
-        node.end = _resolve(node.end, fields)
-        if node.step is not None:
-            node.step = _resolve(node.step, fields)
-        node.body = [_resolve(s, fields) for s in node.body]
-        return node
-
-    if isinstance(node, ir.IRWhile):
-        node.condition = _resolve(node.condition, fields)
-        node.body = [_resolve(s, fields) for s in node.body]
-        return node
-
-    if isinstance(node, ir.IRIf):
-        node.condition = _resolve(node.condition, fields)
-        node.then_body = [_resolve(s, fields) for s in node.then_body]
-        node.else_body = [_resolve(s, fields) for s in node.else_body]
-        return node
-
-    if isinstance(node, ir.IRIfExp):
-        node.condition = _resolve(node.condition, fields)
-        node.then_value = _resolve(node.then_value, fields)
-        node.else_value = _resolve(node.else_value, fields)
-        return node
-
-    if isinstance(node, ir.IRCall):
-        node.args = [_resolve(a, fields) for a in node.args]
-        return node
-
-    if isinstance(node, ir.IRCast):
-        node.value = _resolve(node.value, fields)
-        return node
-
-    if isinstance(node, ir.IRSharedAlloc):
-        node.size = _resolve(node.size, fields)
-        # Resolve shared_like: fill dtype from the source field's ScalarType
-        if node.dtype is None and node.field_name is not None:
+    """Resolve dispatch-time leaves using the shared structural traversal."""
+    def resolve_leaf(node):
+        if isinstance(node, ir.IRDimSize):
             field = fields.get(node.field_name)
             if field is None:
-                raise RuntimeError(
-                    f"Cannot resolve shared_like: unknown field '{node.field_name}'")
-            node.dtype = field.dtype
-        return node
-
-    if isinstance(node, ir.IRLocalAlloc):
-        node.size = _resolve(node.size, fields)
-        # Resolve local_array_like: fill dtype from the source field's ScalarType
-        if node.dtype is None and node.field_name is not None:
+                raise RuntimeError(f"Cannot resolve dimension size: unknown field '{node.field_name}'")
+            shape = getattr(field, '_logical_shape', None) or field.shape
+            return ir.IRConstant(shape[node.dim])
+        if isinstance(node, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
+            if node.dtype is None and node.field_name is not None:
+                field = fields.get(node.field_name)
+                if field is None:
+                    kind = 'shared_like' if isinstance(node, ir.IRSharedAlloc) else 'local_array_like'
+                    raise RuntimeError(f"Cannot resolve {kind}: unknown field '{node.field_name}'")
+                node.dtype = field.dtype
+        if isinstance(node, ir.IRTextureSample):
             field = fields.get(node.field_name)
-            if field is None:
-                raise RuntimeError(
-                    f"Cannot resolve local_array_like: unknown field '{node.field_name}'")
-            node.dtype = field.dtype
+            if field is not None:
+                node.shape = getattr(field, 'shape_3d', None) or field.shape
         return node
 
-    if isinstance(node, ir.IRBlockReduce):
-        node.value = _resolve(node.value, fields)
-        return node
-
-    if isinstance(node, ir.IRPrint):
-        node.args = [_resolve(a, fields) for a in node.args]
-        return node
-
-    if isinstance(node, ir.IRReturn):
-        if node.value:
-            node.value = _resolve(node.value, fields)
-        return node
-
-    if isinstance(node, ir.IRTextureSample):
-        node.coords = [_resolve(c, fields) for c in node.coords]
-        field = fields.get(node.field_name)
-        if field is not None:
-            from tack.lang.field import Texture3D
-            if isinstance(field, Texture3D):
-                node.shape = field.shape_3d
-            else:
-                node.shape = field.shape
-        return node
-
-    # Leaf nodes: IRConstant, IRName, IRAttribute, IRBreak, IRContinue
-    return node
+    return transform_ir(node, resolve_leaf)
