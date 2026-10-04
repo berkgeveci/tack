@@ -223,7 +223,19 @@ _PARALLEL_BREAK_EVEN = 2.0
 # the assumption -- and reduces to the old formula exactly when r_p is 0,
 # which is what it is until a parallel dispatch has been observed.
 _FAN_OUT_GAPS_MS = (0.0, 10.0, 50.0)
-_FAN_OUT_GAP_REPS = 3
+
+# What an idle knot is assumed to cost, as a multiple of the hot one, until
+# a fan-out has been measured after a pause near it (P8). The knots used to
+# be calibrated by sleeping through each gap -- three reps at 10 and 50 ms,
+# 180 ms of `time.sleep` inside whichever dispatch first looked worth
+# threading, which for a 100k-element add was a thousand times its own
+# run. Now the first fan-out measures only the hot end, and each idle knot
+# is filled by the first fan-out measured at a pause the program actually
+# took (`_update_fan_out_knot`). Until then it must err high, because a
+# low fan-out cost is what fans out work that loses: measured idle/hot
+# ratios are 2.45x on a 2-socket Xeon, 3.81x on an M1 Max at 50 ms and
+# 2.1x on a 1-socket Xeon, so 4x is above all three.
+_FAN_OUT_IDLE_PRIOR = 4.0
 
 # The curve is calibrated once at startup and refined from every fan-out
 # after that. Calibrating alone was not enough: it records whatever the
@@ -457,6 +469,9 @@ class CompiledKernel:
         # The range of the dispatch in progress, for pricing a serial run
         # of it from inside `_run_serial`.
         self.loop_end = 0
+        # The latest serial sample as measured, before smoothing or any
+        # bound -- what `_second_opinion` compares two slices by.
+        self.last_sample = 0.0
 
         # Only serial runs measure, so the decision to thread rests on an
         # estimate that threading itself stops refreshing. Left alone that
@@ -749,6 +764,8 @@ class CPUBackend(Backend):
         # moving about. Drives the derived margin.
         self._fan_out_cv = 0.0
         self._fan_out_curve: list[tuple[float, float]] = []
+        # Per knot: whether it holds a measurement or still the prior.
+        self._fan_out_knot_measured: list[bool] = []
         self._last_dispatch_ns = 0
         # When the fan-out was last measured, by either route. Drives the
         # scheduled re-probe, which is what keeps a censored estimate from
@@ -889,15 +906,16 @@ class CPUBackend(Backend):
                 # otherwise just run -- untimed, since the point of moving
                 # the slice is to keep the prefix out of the sample.
                 start = compiled.next_sample_start(loop_end - probe)
-                if start > 0:
-                    if start * compiled.ns_per_elem > self._fan_out_estimate():
-                        self._parallel_execute(compiled, prefix, 0, start)
-                    else:
-                        compiled.call_range(prefix, 0, start)
+                self._run_untimed(compiled, prefix, 0, start)
+                before = compiled.ns_per_elem
                 self._run_serial(compiled, prefix, start, start + probe)
-                if loop_end > start + probe:
-                    self._parallel_execute(compiled, prefix, start + probe,
-                                           loop_end)
+                pos = start + probe
+                if (self._v2 and compiled.last_sample * _MAX_SAMPLE_RATIO < before
+                        and loop_end - pos >= 2 * probe):
+                    pos = self._second_opinion(compiled, prefix, before,
+                                               pos, probe, loop_end)
+                if loop_end > pos:
+                    self._parallel_execute(compiled, prefix, pos, loop_end)
                 return
             self._parallel_execute(compiled, prefix, 0, loop_end,
                                    whole_range=True)
@@ -945,6 +963,49 @@ class CPUBackend(Backend):
             # Every element ran on this thread, so the next sample is clean.
             compiled.scattered = False
 
+    def _run_untimed(self, compiled: CompiledKernel, prefix: tuple,
+                     start: int, end: int):
+        """Run a range that is not being measured, threading it if it pays."""
+        if end <= start:
+            return
+        if (end - start) * compiled.ns_per_elem > self._fan_out_estimate():
+            self._parallel_execute(compiled, prefix, start, end)
+        else:
+            compiled.call_range(prefix, start, end)
+
+    def _second_opinion(self, compiled: CompiledKernel, prefix: tuple,
+                        before: float, pos: int, probe: int,
+                        loop_end: int) -> int:
+        """Check a slice that read the kernel far cheaper against another.
+
+        A sample that far under the estimate is believed outright, because
+        a workload that has become cheap should leave threading at once.
+        But one slice cannot tell a cheap workload from a cheap *region*:
+        on an image kernel it can land in the background rows, and one
+        such slice took a front-loaded frame's estimate from 312 to 17
+        ns/element and the next dispatch ran the whole frame on one thread
+        -- 9x slower. That had been passing by accident: the first fan-out
+        used to calibrate by sleeping 180 ms just before this slice, and a
+        slice timed on a core that had just gone idle read dear enough to
+        survive. Removing the sleeps (P8) exposed it.
+
+        So a second slice is timed from later in the range, at the next
+        golden-ratio position within what remains -- rarely the same
+        region, though not never. If it agrees, the workload really
+        did change and the first verdict stands. If not, the range is
+        uneven, and the estimate eases from where it was toward the mean
+        of the two instead. Returns where the untouched remainder begins.
+        """
+        first = compiled.last_sample
+        second = pos + compiled.next_sample_start(loop_end - pos - probe)
+        self._run_untimed(compiled, prefix, pos, second)
+        self._run_serial(compiled, prefix, second, second + probe)
+        if compiled.last_sample * _MAX_SAMPLE_RATIO >= before:
+            mean = (first + compiled.last_sample) / 2.0
+            self._set_serial_cost(
+                compiled, before + _COST_SMOOTHING * (mean - before))
+        return second + probe
+
     def _needs_confirmation(self, compiled: CompiledKernel,
                             loop_end: int) -> bool:
         """Whether this fan-out should wait for a clean serial sample.
@@ -961,12 +1022,14 @@ class CPUBackend(Backend):
                               loop_end: int) -> bool:
         """Whether running this range serially costs at most a few fan-outs.
 
-        Priced from the serial estimate alone. Pricing it from one worker's
-        rate too (`r_p` times the workers) was tried, to guard against an
-        estimate that reads cheap, and it switched the whole of P7's fix
-        off: twenty workers contending for memory each run a
-        bandwidth-bound kernel several times slower than one thread alone
-        does, so every range near the crossover read as unaffordable.
+        Priced from the serial estimate alone. Two dearer prices were
+        tried, and each switched P7's fix back off for the kernel it was
+        built for: one worker's rate (`r_p` times the workers), since
+        twenty workers contending for memory each run a bandwidth-bound
+        kernel several times slower than one thread alone; and the latest
+        raw sample, since a scattered slice reads it 3-6x dear too. Both
+        were guarding an image kernel whose estimate starts low, which
+        `_second_opinion` now covers at its source.
         """
         budget = _CONFIRM_BAND * self._margin() * self._fan_out_estimate()
         return loop_end * compiled.ns_per_elem <= budget
@@ -1080,6 +1143,7 @@ class CPUBackend(Backend):
         # expensive than it is, and fan out where serial was faster.
         work_ns = elapsed - compiled.call_overhead_ns
         sample = max(work_ns / (end - start), _MIN_NS_PER_ELEM)
+        compiled.last_sample = sample
         prev = compiled.ns_per_elem
 
         # The response is deliberately asymmetric, because the two errors
@@ -1103,6 +1167,15 @@ class CPUBackend(Backend):
             ns_per_elem = prev + _COST_SMOOTHING * (sample - prev)
         if self._v2:
             if not compiled.scattered:
+                if not compiled.rate_confirmed and sample < ns_per_elem:
+                    # The first clean sample, and everything before it was
+                    # an upper bound. Smoothed in at a quarter's weight it
+                    # was a coin flip whether the threshold cleared the
+                    # range: when it did not, the kernel fanned out again,
+                    # every later sample was scattered, and the estimate
+                    # stuck at ~3x -- two runs in three on a one-socket
+                    # Xeon. So it is believed outright.
+                    ns_per_elem = sample
                 compiled.rate_confirmed = True
             elif prev > 0.0 and self._serial_is_affordable(
                     compiled, compiled.loop_end):
@@ -1203,58 +1276,41 @@ class CPUBackend(Backend):
         """
         pool = self._get_pool()
         run = compiled.call_range
-        best = None
-        for _ in range(_CALIBRATION_REPS):
+
+        def once() -> int:
             t0 = time.perf_counter_ns()
             futures = [pool.submit(run, prefix, 0, 0)
                        for _ in range(self.num_threads)]
             for f in futures:
                 f.result()
-            elapsed = time.perf_counter_ns() - t0
-            best = elapsed if best is None else min(best, elapsed)
-        self._fan_out_ns = float(best)
+            return time.perf_counter_ns() - t0
+
+        self._fan_out_ns = float(min(once() for _ in range(_CALIBRATION_REPS)))
         if self.policy == "v2":
-            self._calibrate_fan_out_curve(compiled, prefix)
-
-    def _calibrate_fan_out_curve(self, compiled: CompiledKernel,
-                                 prefix: tuple):
-        """Measure the fan-out cost at several degrees of worker idleness.
-
-        The probe above answers "what does a fan-out cost right after
-        another one", which is the cheapest it ever is. A dispatch that
-        follows a pause pays more, because the cores have descended into
-        deeper idle states -- and how much more, and how soon, is a fact
-        about the machine: finished by 10 ms on a 2-socket Xeon, still
-        falling at 50 ms on an M1 Max. Sampling the curve rather than
-        picking a constant is what lets one mechanism fit both.
-
-        Costs the sum of the gaps once, on the first fan-out.
-        """
-        pool = self._get_pool()
-        run = compiled.call_range
-        curve = []
-        for gap_ms in _FAN_OUT_GAPS_MS:
-            times = []
-            for _ in range(_FAN_OUT_GAP_REPS):
-                if gap_ms:
-                    time.sleep(gap_ms / 1000.0)
-                t0 = time.perf_counter_ns()
-                futures = [pool.submit(run, prefix, 0, 0)
-                           for _ in range(self.num_threads)]
-                for f in futures:
-                    f.result()
-                times.append(time.perf_counter_ns() - t0)
-            times.sort()
+            # Separate reps after the probe's, as before P8: the probe's
+            # first ones start the pool's threads (7.6 ms, then 2.7, then
+            # ~0.4 on a one-socket Xeon), so its median reads ~1.5x hot.
             # Median, not minimum: the minimum is what made the shipped
             # probe read the hot end of its own distribution.
-            curve.append((gap_ms * 1e6, float(times[len(times) // 2])))
-        # Monotone by construction -- a longer pause cannot wake threads
-        # faster, and a dip is sampling noise that would otherwise make
-        # the interpolation non-monotone.
-        for i in range(1, len(curve)):
-            if curve[i][1] < curve[i - 1][1]:
-                curve[i] = (curve[i][0], curve[i - 1][1])
-        self._fan_out_curve = curve
+            hot = sorted(once() for _ in range(_FAN_OUT_HOT_REPS))
+            self._seed_fan_out_curve(float(hot[len(hot) // 2]))
+
+    def _seed_fan_out_curve(self, hot_ns: float):
+        """Start the fan-out curve from its hot end and a pessimistic prior.
+
+        The curve exists because a dispatch that follows a pause pays more
+        than one that follows another fan-out -- the cores have descended
+        into deeper idle states -- and how much more, and how soon, is a
+        fact about the machine: finished by 10 ms on a 2-socket Xeon, still
+        falling at 50 ms on an M1 Max. So the idle knots are measured
+        rather than assumed, but at pauses the program takes, not ones it
+        is made to wait through (`_FAN_OUT_IDLE_PRIOR`, P8).
+        """
+        self._fan_out_curve = [(0.0, hot_ns)] + [
+            (gap_ms * 1e6, hot_ns * _FAN_OUT_IDLE_PRIOR)
+            for gap_ms in _FAN_OUT_GAPS_MS[1:]]
+        self._fan_out_knot_measured = [True] + [False] * (
+            len(_FAN_OUT_GAPS_MS) - 1)
 
     def _fan_out_estimate(self) -> float:
         """What a fan-out costs *for this dispatch*, given its idleness.
@@ -1277,11 +1333,22 @@ class CPUBackend(Backend):
         # traffic never visits stay out of the way instead of dragging
         # its neighbours -- back-to-back dispatches only ever sample the
         # first one, and under sustained load that one carries the truth.
+        #
+        # A knot still holding the prior is a step, not a ramp: it prices
+        # gaps at or past it and nothing below. Ramping up to it priced a
+        # dispatch's own 1-2 ms of preamble at up to 2.5x the hot cost
+        # until the first real pause was seen, which held a frame that
+        # threads 9x faster on one thread. The step costs at most one
+        # dispatch per knot, because a gap nearest an unmeasured knot has
+        # it measured straight afterwards (`_prior_knot_near`).
         running = curve[0][1]
         if gap <= curve[0][0]:
             return running
-        for (g0, _c0), (g1, c1) in itertools.pairwise(curve):
+        measured = self._fan_out_knot_measured
+        for i, ((g0, _c0), (g1, c1)) in enumerate(itertools.pairwise(curve)):
             lo, hi = running, max(running, c1)
+            if gap < g1 and not measured[i + 1]:
+                return lo
             if gap <= g1:
                 span = g1 - g0
                 return lo + (hi - lo) * ((gap - g0) / span) if span else hi
@@ -1312,7 +1379,9 @@ class CPUBackend(Backend):
         scaling with how busy the program is.
         """
         now = time.perf_counter_ns()
-        if now - self._fan_out_measured_ns < _FAN_OUT_REFRESH_NS:
+        gap = float(now - self._last_dispatch_ns)
+        if (now - self._fan_out_measured_ns < _FAN_OUT_REFRESH_NS
+                and not self._prior_knot_near(gap)):
             return
         pool = self._get_pool()
         run = compiled.call_range
@@ -1325,7 +1394,6 @@ class CPUBackend(Backend):
                 f.result()
             return float(time.perf_counter_ns() - t0)
 
-        gap = float(now - self._last_dispatch_ns)
         self._update_fan_out_knot(once(), gap)
 
         # The hot knot needs its own treatment, and getting there took two
@@ -1365,6 +1433,22 @@ class CPUBackend(Backend):
         # next dispatch's gap should be measured from here.
         self._fan_out_measured_ns = self._last_dispatch_ns = \
             time.perf_counter_ns()
+
+    def _prior_knot_near(self, gap_ns: float) -> bool:
+        """Whether the knot a dispatch at this gap reads still holds the prior.
+
+        Such a knot is measured at once rather than on the refresh clock:
+        the prior errs high on purpose, and a serial run is itself a pause
+        -- a 23 ms frame leaves the workers idle 23 ms -- so waiting up to
+        `_FAN_OUT_REFRESH_NS` kept a frame that threads 9x faster on one
+        thread for dispatch after dispatch. At most once per idle knot.
+        """
+        curve = self._fan_out_curve
+        if not curve:
+            return False
+        idx = min(range(len(curve)),
+                  key=lambda i: abs(curve[i][0] - gap_ns))
+        return not self._fan_out_knot_measured[idx]
 
     def _margin(self) -> float:
         """How much better than break-even a fan-out must look, right now.
@@ -1421,6 +1505,16 @@ class CPUBackend(Backend):
             return
         idx = min(range(len(curve)),
                   key=lambda i: abs(curve[i][0] - gap_ns))
+        if not self._fan_out_knot_measured[idx]:
+            # The knot still holds the prior: replace it, and move it to
+            # the pause it was measured at, so the curve describes the
+            # gaps this program has. Moving the nearest knot keeps the
+            # knots in order. No deviation is recorded -- the gap between
+            # a prior and a measurement says nothing about how much the
+            # machine is moving about.
+            curve[idx] = (float(gap_ns), sample)
+            self._fan_out_knot_measured[idx] = True
+            return
         gap_at, cost = curve[idx]
         if cost > 0.0:
             # Relative deviation, bounded: an early sample can miss by

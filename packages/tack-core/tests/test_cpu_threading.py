@@ -825,6 +825,33 @@ def test_a_sample_after_a_fan_out_cannot_raise_the_estimate(cpu, monkeypatch):
         f"{settled:.3f} -> {compiled.ns_per_elem:.3f} ns/elem")
 
 
+def test_the_first_clean_sample_is_believed(cpu, monkeypatch):
+    """P7's relapse: every sample before the first clean one is an upper bound.
+
+    Smoothed in at a quarter's weight, the first clean sample decided by
+    chance whether the threshold cleared the range. When it did not, the
+    kernel fanned out again, every later sample was scattered again, and
+    the estimate stuck near 3x -- two harness runs in three.
+    """
+    backend = CPUBackend()
+    if not backend._v2:
+        pytest.skip("policy v2 only")
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    prefix = compiled.bind(args)
+    backend._set_serial_cost(compiled, 1.0)         # built from upper bounds
+    compiled.rate_confirmed = False
+    compiled.scattered = False                      # a serial run laid it out
+
+    _fixed_timing(monkeypatch, compiled, 0.3 * n)
+    backend._run_serial(compiled, prefix, 0, n)
+
+    assert compiled.ns_per_elem == pytest.approx(0.3, rel=1e-3), (
+        f"the first clean sample (0.3) only moved the estimate to "
+        f"{compiled.ns_per_elem:.3f}")
+    assert compiled.rate_confirmed
+
+
 def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
     """P7: the first sample of a kernel can read it ~15x too dear.
 
@@ -861,6 +888,57 @@ def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
     assert n < compiled.parallel_min_elems
     np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * 2.0 + 1.0,
                                rtol=1e-6)
+
+
+def test_a_dispatch_never_sleeps(cpu, monkeypatch):
+    """P8: the first fan-out used to calibrate the idle curve by sleeping.
+
+    Three reps at 0, 10 and 50 ms gaps is 180 ms of `time.sleep` on the
+    caller's thread, inside whichever dispatch first looked worth
+    threading -- measured at 210 ms in all for a 100k-element add whose
+    own run is 0.2 ms. The idle knots are learned from the pauses the
+    program actually takes instead.
+    """
+    backend = CPUBackend()
+    if not backend._v2 or backend.num_threads < 2:
+        pytest.skip("policy v2 with threads only")
+    slept = []
+    monkeypatch.setattr(cpu_mod.time, "sleep", lambda s: slept.append(s))
+    n = 1 << 16
+    compiled, args = _measured(backend, _scale, n)
+    backend._set_serial_cost(compiled, 1e4)      # dear: fans out at once
+    compiled.rate_confirmed = True
+    backend._dispatch(compiled, args, n)
+
+    assert backend._fan_out_ns is not None, "test did not reach a fan-out"
+    assert backend._fan_out_curve, "v2 built no fan-out curve"
+    assert not slept, f"a dispatch slept {sum(slept) * 1e3:.0f} ms"
+
+
+def test_an_idle_knot_is_learned_where_it_was_measured(cpu):
+    """Until a pause has been seen, an idle knot is a pessimistic prior.
+
+    The first fan-out measured at a natural pause replaces it outright and
+    moves the knot to that pause, so the curve describes the gaps this
+    program has rather than ones it was made to wait through.
+    """
+    backend = CPUBackend()
+    if not backend._v2 or backend.num_threads < 2:
+        pytest.skip("policy v2 with threads only")
+    n = 1 << 16
+    compiled, args = _measured(backend, _scale, n)
+    backend._calibrate_fan_out(compiled, compiled.bind(args))
+    hot = backend._fan_out_curve[0][1]
+    idle = [cost for _, cost in backend._fan_out_curve[1:]]
+    assert idle and all(cost >= hot * 2 for cost in idle), (
+        f"unmeasured idle knots {idle} are not pessimistic against hot {hot}")
+
+    backend._update_fan_out_knot(hot * 1.5, 30e6)       # a 30 ms pause
+
+    gaps = [gap for gap, _ in backend._fan_out_curve]
+    assert 30e6 in gaps, f"the knot did not move to its measured gap: {gaps}"
+    assert backend._fan_out_curve[gaps.index(30e6)][1] == hot * 1.5
+    assert gaps == sorted(gaps)
 
 
 def test_recheck_backs_off(cpu):
