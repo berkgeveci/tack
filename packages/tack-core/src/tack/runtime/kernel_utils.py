@@ -21,11 +21,11 @@ see ``shape_signature`` — and it makes the pristine IR from
 ``kernel.get_ir()`` a template that must never be mutated in place.
 """
 
-import copy
 import weakref
 
 from tack.lang import ir
 from tack.lang.field import Field, Texture3D
+from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_traversal import walk_ir as _walk_ir
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
 
@@ -468,7 +468,7 @@ def resolve_variant(backend, kernel, args, kwargs, build,
         from tack.lang.ir_resolve import resolve_ir
         from tack.lang.ir_verify import verify_ir
 
-        ir_func = copy.deepcopy(template)
+        ir_func = clone_ir(template)
         resolve_ir(ir_func, name_to_field)
         verify_ir(ir_func, 'resolved')
         infer_param_types(ir_func, effective_args)
@@ -519,7 +519,7 @@ def _localize_assigned_scalar_params(ir_func):
                    for name in sorted(assigned)}
         # The loop bound can share nodes with the body, and it has to keep
         # naming the parameter: dispatch evaluates it against the arguments.
-        body = copy.deepcopy(stmt.body)
+        body = clone_ir(stmt.body)
         for node in _walk_ir(body):
             if isinstance(node, ir.IRName) and node.name in renames:
                 node.name = renames[node.name]

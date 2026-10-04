@@ -21,6 +21,32 @@ original parameter names. CPU skips packing. `tack.inspect()` also performs
 scalar localization and verification; its source preparation annotates once
 before packing and again afterwards on GPU.
 
+## Copying and Template Ownership (`ir_traversal.py`)
+
+Cached templates remain pristine. Variant preparation, assigned-scalar
+localization, GPU packing and inspection use `clone_ir()` for their working
+copies. This specializes Python deep copying for registered plain IR nodes
+and list/dict containers. It copies every node attribute, including pass
+annotations and metadata, rather than only structural children. One memo
+preserves aliases and cycles across the entire graph, while mutable state is
+independent of the original. `ScalarType` objects retain their identity;
+other metadata uses Python's `deepcopy` protocol. Structural cycles remain
+invalid and are rejected by the verifier.
+
+Cache hits do not clone IR. All pass-boundary checks below remain in place.
+Adding a registered node with slots or a custom copying protocol requires
+revisiting the cloning fast path; the registered nodes currently use plain
+attribute dictionaries. Clone regression tests cover every registered kind,
+metadata ownership and cached dispatch.
+
+`uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json`
+compares generic copying and specialized cloning on example 33's pristine
+and typed CPU IR. It prepares the scene before clearing the variant cache,
+then captures the render kernels and alternates copy methods on each graph.
+It reports median and individual samples plus unique-node and occurrence
+counts. Setup, compilation and rendering are outside those timings; this
+measures copying cost, not total cold compilation or GPU performance.
+
 ## Verification (`ir_verify.py`)
 
 The production pipeline calls `verify_ir()` at these boundaries:
@@ -151,10 +177,10 @@ Algorithm:
 3. Rewrite `IRName("scalar_param")` → `IRFieldLoad(IRName("__pack_f32__"), IRConstant(idx))`
 4. Remove original scalar params, append pack params
 
-The pass runs on a `deepcopy` of the IR (to preserve the cached original)
+The pass runs on a `clone_ir` copy of the IR (to preserve the cached original)
 and stores `pack_info` metadata for the dispatch layer. Pack field buffers
 are allocated once and cached alongside the compiled kernel — subsequent
 calls just update the scalar values via `from_numpy`.
 
-`ScalarType.__deepcopy__` returns `self` to preserve singleton identity
-through the deep copy (type map lookups rely on object identity).
+`clone_ir` preserves `ScalarType` identity, matching its `__deepcopy__`
+protocol (type map lookups rely on object identity).

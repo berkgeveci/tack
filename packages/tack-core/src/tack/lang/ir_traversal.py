@@ -8,6 +8,7 @@ part of the tree. The traversal visits each occurrence of a shared node.
 import copy
 
 from tack.lang import ir
+from tack.lang.types import ScalarType
 
 # (attribute, role). Lists have plural roles; only optional_expr may be None.
 CHILD_FIELDS = {
@@ -47,6 +48,56 @@ CHILD_FIELDS = {
 }
 
 LIST_ROLES = {'functions', 'params', 'stmts', 'exprs'}
+_COPY_ATOMIC = {type(None), bool, int, float, complex, str, bytes, range,
+                type(Ellipsis), type(NotImplemented), ScalarType}
+
+
+def clone_ir(root):
+    """Deep-copy an IR graph, including annotations, with one identity memo.
+
+    Registered nodes are plain attribute containers: avoid their generic
+    reconstruction protocol, but copy every attribute, not just structural
+    children. Lists/dicts use the same memo to preserve sharing and cycles.
+    Other metadata retains Python's deepcopy protocol and ScalarType identity.
+    Verification still rejects malformed structural cycles at pass boundaries.
+    """
+    memo = {}
+    keep_alive = []
+    memo[id(memo)] = keep_alive
+
+    def clone(value):
+        kind = type(value)
+        if kind in _COPY_ATOMIC:
+            return value
+        identity = id(value)
+        if identity in memo:
+            return memo[identity]
+        if kind in CHILD_FIELDS:
+            result = object.__new__(kind)
+            memo[identity] = result
+            keep_alive.append(value)
+            result.__dict__ = clone(vars(value))
+        elif kind is list:
+            result = []
+            memo[identity] = result
+            keep_alive.append(value)
+            result.extend(clone(item) for item in value)
+        elif kind is dict:
+            result = {}
+            memo[identity] = result
+            keep_alive.append(value)
+            for key, item in value.items():
+                result[clone(key)] = clone(item)
+        else:
+            result = copy.deepcopy(value, memo)
+        return result
+
+    try:
+        return clone(root)
+    finally:
+        # Break the recursive closure's self-reference so its memo releases
+        # both graphs immediately rather than waiting for cyclic collection.
+        clone = None
 
 
 def child_fields(node):

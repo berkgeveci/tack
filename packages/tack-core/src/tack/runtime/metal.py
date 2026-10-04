@@ -442,14 +442,13 @@ class MetalBackend(Backend):
         Packing rewrites the parameter list, so it works on its own copy —
         the caller keeps `ir_func` for loop-range resolution.
         """
-        import copy
-
         from tack.lang.ir_pack_scalars import pack_scalars
+        from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
-        packed = copy.deepcopy(ir_func)
+        packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
         verify_ir(packed, 'packed')
         annotate_types(packed)

@@ -5,12 +5,11 @@ Usage:
     print(tack.inspect(my_kernel, arg1, arg2, mode="ir"))   # Tack IR
 """
 
-import copy
-
 from tack.lang import ir
 from tack.lang.field import Field
 from tack.lang.ir_optimize import optimize_ir
 from tack.lang.ir_resolve import resolve_ir
+from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_type_annotate import annotate_types
 from tack.lang.ir_verify import verify_ir
 from tack.lang.type_inference import infer_param_types
@@ -40,7 +39,7 @@ def _prepare_ir(kernel, args):
         template_args=template_args if template_args else None,
         texture_fields=texture_fields,
     )
-    ir_func = copy.deepcopy(ir_module.functions[0])
+    ir_func = clone_ir(ir_module.functions[0])
 
     # Resolve dimension sizes
     name_to_field = {}
