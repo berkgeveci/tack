@@ -18,58 +18,17 @@ nodes without a `dtype` -- so a float ternary built that way is not recognizably
 float and the defect disappears from the test rather than from the code.
 """
 
-import os
-import shutil
 import subprocess
 
 import pytest
+from compiler_tools import require_clang
 
 import tack
 from tack.codegen.opencl_gen import OpenCLCodeGen
 from tack.lang.inspect_kernel import _prepare_ir
 
-# Newest first: a later Clang knows at least the rules an earlier one did.
-_CLANG_NAMES = ("clang", "clang-20", "clang-19", "clang-18", "clang-17", "clang-16")
-
-# What the Level Zero backend passes libocloc, so the host check matches it.
+# What the Level Zero backend passes libocloc.
 _CL_STD = "-cl-std=CL2.0"
-
-
-def _find_clang():
-    explicit = os.environ.get("TACK_CLANG")
-    if explicit:
-        usable = os.path.isfile(explicit) and os.access(explicit, os.X_OK)
-        return explicit if usable else None
-    for name in _CLANG_NAMES:
-        found = shutil.which(name)
-        if found:
-            return found
-    return None
-
-
-def require_clang():
-    """Resolve a Clang, or decide between skipping and failing.
-
-    A developer machine may legitimately not have one, so the default is a
-    skip that says what is missing. A validation run sets `TACK_REQUIRE_CLANG`
-    and then absence is a failure: this task exists because a silent skip on
-    the one host with an Intel GPU let two device defects through, and "no
-    clang" must not read as "checks passed". `TACK_CLANG` names an explicit
-    binary, for a Clang that is installed outside `PATH`.
-    """
-    found = _find_clang()
-    if found:
-        return found
-    if os.environ.get("TACK_REQUIRE_CLANG", "") not in ("", "0"):
-        pytest.fail(
-            "TACK_REQUIRE_CLANG is set but no Clang was found. Tried "
-            f"TACK_CLANG and {', '.join(_CLANG_NAMES)} on PATH. These OpenCL C "
-            "compilation checks cannot be counted as passing without one."
-        )
-    pytest.skip(
-        "Clang is required for the OpenCL C compilation checks. Set TACK_CLANG "
-        "to a binary, or TACK_REQUIRE_CLANG=1 to make this a failure."
-    )
 
 
 @pytest.fixture(scope="module")

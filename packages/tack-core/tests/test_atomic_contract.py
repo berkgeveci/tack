@@ -1,12 +1,12 @@
 """Atomic widths, signedness, contention, target rejection and device scope."""
 
-import shutil
 import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
 import numpy as np
 import pytest
+from compiler_tools import require_clang
 from llvmlite import binding as llvm
 
 import tack
@@ -265,9 +265,7 @@ def test_cached_atomic_alignment_without_ir_scan(monkeypatch):
 @pytest.mark.parametrize('dtype', [tack.i32, tack.u32, tack.f32], ids=lambda t: t.name)
 @pytest.mark.parametrize('op', KERNELS)
 def test_opencl_device_scope_syntax(dtype, op, tmp_path):
-    clang = shutil.which('clang')
-    if not clang:
-        pytest.skip('requires clang')
+    clang = require_clang()
     func, _ = _typed_ir(dtype, op)
     source = tmp_path / 'atomic.cl'
     source.write_text(generate_opencl_source(func))
@@ -280,9 +278,7 @@ def test_opencl_device_scope_syntax(dtype, op, tmp_path):
 @pytest.mark.parametrize('dtype', [tack.i64, tack.u64, tack.f64], ids=lambda t: t.name)
 @pytest.mark.parametrize('op', KERNELS)
 def test_cuda_hip_wide_atomic_syntax(arch, generator, dtype, op, tmp_path):
-    clang = shutil.which('clang++')
-    if not clang:
-        pytest.skip('requires clang++')
+    clang = require_clang('cxx')
     func, _ = _typed_ir(dtype, op)
     body = generator(func).replace('#include <hip/hip_runtime.h>\n', '')
     preamble = '''#define __device__
@@ -429,9 +425,7 @@ def test_atomic_alias_cannot_hide_a_nonfield_target(arch, generator):
 def test_wide_cas_helpers_host_sanitized(dtype, op, tmp_path):
     from tack.codegen.atomics import cuda_atomic64_helpers
 
-    clang = shutil.which('clang++')
-    if not clang:
-        pytest.skip('requires clang++')
+    clang = require_clang('ubsan')
     ctype = {'i64': 'long long', 'u64': 'unsigned long long', 'f64': 'double'}[dtype.name]
     initial = (2**63 - 6 if dtype is tack.i64 else 2**64 - 6) if op == 'add' else (
         np.iinfo(dtype.numpy_dtype).max if op == 'min' and dtype is not tack.f64 else

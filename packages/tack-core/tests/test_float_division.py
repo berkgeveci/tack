@@ -1,11 +1,11 @@
 """Floating // and % preserve precision, divisor sign, and exceptional classes."""
 
 import itertools
-import shutil
 import subprocess
 
 import numpy as np
 import pytest
+from compiler_tools import require_clang
 
 import tack
 from tack.codegen.cuda_gen import generate_cuda_source
@@ -254,9 +254,7 @@ def test_generators_keep_floating_result_types_and_compile_opencl(dtype, generat
     assert f'__tack_floordiv_{dtype.name}__' in source
     assert f'__tack_mod_{dtype.name}__' in source
     if generate is generate_opencl_source:
-        clang = shutil.which('clang')
-        if clang is None:
-            pytest.skip('Clang is required for OpenCL syntax validation')
+        clang = require_clang()
         path = tmp_path / 'float_division.cl'
         path.write_text(source)
         result = subprocess.run([clang, '-target', 'x86_64-unknown-linux-gnu', '-x', 'cl',
@@ -269,9 +267,7 @@ def test_generators_keep_floating_result_types_and_compile_opencl(dtype, generat
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source],
                          ids=['cuda-host', 'hip-host'])
 def test_generated_cpp_executes_boundaries_and_exceptional_inputs(dtype, generate, tmp_path):
-    clang = shutil.which('clang++')
-    if clang is None:
-        pytest.skip('Clang++ is required for generated C++ validation')
+    clang = require_clang('ubsan')
     tack.init(arch=tack.cpu)
     pairs = np.concatenate([_finite_pairs(dtype), _exceptional_pairs(dtype)])
     a, b = (_field(pairs[:, i], dtype) for i in range(2))

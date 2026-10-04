@@ -1,11 +1,11 @@
 """Reduction classes, precision, order variation and exceptional extrema."""
 
 import math
-import shutil
 import subprocess
 
 import numpy as np
 import pytest
+from compiler_tools import require_clang
 
 import tack
 from tack.codegen.reductions import f32_reduction_helpers, field_reduction_source
@@ -261,9 +261,7 @@ def test_block_explicit_f32_cast(workgroup_backend):
 @pytest.mark.parametrize('dialect', ['cuda', 'hip'])
 @pytest.mark.parametrize('op', ['sum', 'min', 'max'])
 def test_native_reduction_cpp_syntax(dialect, op, tmp_path):
-    clang = shutil.which('clang++')
-    if not clang:
-        pytest.skip('requires clang++')
+    clang = require_clang('cxx')
     # Validate full kernel C++ with declared GPU builtins, without pretending
     # this checks the vendor compiler, GPU barriers or atomic scheduling.
     preamble = '''#include <stdint.h>
@@ -288,9 +286,7 @@ unsigned int atomicCAS(unsigned int*, unsigned int, unsigned int);
 
 @pytest.mark.parametrize('op', ['sum', 'min', 'max'])
 def test_opencl_native_reduction_syntax(op, tmp_path):
-    clang = shutil.which('clang')
-    if not clang:
-        pytest.skip('requires clang')
+    clang = require_clang()
     source = tmp_path / 'reduce.cl'
     source.write_text(field_reduction_source('opencl', op))
     result = subprocess.run([clang, '-x', 'cl', '-cl-std=CL2.0', '-fsyntax-only', str(source)],
@@ -300,9 +296,7 @@ def test_opencl_native_reduction_syntax(op, tmp_path):
 
 @pytest.mark.parametrize('dialect', ['cuda', 'hip', 'metal', 'opencl'])
 def test_extrema_helpers_host_sanitized(dialect, tmp_path):
-    clang = shutil.which('clang++')
-    if not clang:
-        pytest.skip('requires clang++')
+    clang = require_clang('ubsan')
     values = np.array([0.0, -0.0, 1, -1, 2e38, -2e38, np.inf, -np.inf, np.nan], np.float32)
     checks = []
     for a in values:

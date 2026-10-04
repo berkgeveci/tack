@@ -2,11 +2,11 @@
 
 import itertools
 import random
-import shutil
 import subprocess
 
 import numpy as np
 import pytest
+from compiler_tools import require_clang
 
 import tack
 from tack.codegen.cuda_gen import generate_cuda_source
@@ -219,9 +219,7 @@ def test_operands_execute_once_in_order(backend):
 
 
 def test_opencl_inlined_effects_preserve_field_address_space(tmp_path):
-    clang = shutil.which('clang')
-    if clang is None:
-        pytest.skip('Clang is required for OpenCL C syntax validation')
+    clang = require_clang()
     tack.init(arch=tack.cpu)
     state = _field([0], tack.i32)
     powers, quotients = tack.field(tack.i32, (1, 2)), tack.field(tack.f32, (1,))

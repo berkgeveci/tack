@@ -1,12 +1,12 @@
 """Portable floating expressions use safe math without requiring // or %."""
 
 import itertools
-import shutil
 import subprocess
 from fractions import Fraction
 
 import numpy as np
 import pytest
+from compiler_tools import require_clang
 
 import tack
 from tack.codegen.cuda_gen import generate_cuda_source
@@ -353,9 +353,7 @@ def test_math_generators_accept_integer_and_mixed_arguments(dtype, generate, tmp
     function, _ = _prepare_ir(_mixed_math, (a, b, out))
     source = generate(function)
     if generate is generate_opencl_source:
-        clang = shutil.which('clang')
-        if clang is None:
-            pytest.skip('Clang is required for OpenCL syntax validation')
+        clang = require_clang()
         path = tmp_path / 'math.cl'
         path.write_text(source)
         result = subprocess.run([clang, '-target', 'x86_64-unknown-linux-gnu', '-x', 'cl',
@@ -368,9 +366,7 @@ def test_math_generators_accept_integer_and_mixed_arguments(dtype, generate, tmp
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source],
                          ids=['cuda-host', 'hip-host'])
 def test_generated_cpp_executes_safe_identities(dtype, generate, tmp_path):
-    clang = shutil.which('clang++')
-    if clang is None:
-        pytest.skip('Clang++ is required for generated C++ validation')
+    clang = require_clang('ubsan')
     tack.init(arch=tack.cpu)
     values = np.asarray([0.0, -0.0, 1.0, -1.0, np.inf, -np.inf, np.nan], dtype=dtype.numpy_dtype)
     a, out = _field(values, dtype), tack.field(dtype, (len(values), 4))

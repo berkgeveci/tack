@@ -2,12 +2,12 @@
 
 import copy
 import importlib.util
-import shutil
 import subprocess
 import sys
 
 import numpy as np
 import pytest
+from compiler_tools import require_clang
 
 import tack
 from tack.codegen.cuda_gen import generate_cuda_source
@@ -269,9 +269,7 @@ def test_texture_reference_slots_are_encoded(generate):
 
 
 def test_opencl_compiles_keyword_and_internal_collisions(named_kernel, tmp_path):
-    clang = shutil.which('clang')
-    if clang is None:
-        pytest.skip('Clang is required for OpenCL syntax validation')
+    clang = require_clang()
     tack.init(arch=tack.cpu)
     data, out = _inputs()
     for kernel in [named_kernel, _helper_collisions]:
@@ -288,9 +286,7 @@ def test_opencl_compiles_keyword_and_internal_collisions(named_kernel, tmp_path)
                          ids=['cuda-host', 'hip-host'])
 def test_generated_cpp_compiles_and_executes_collisions(generate, named_kernel, tmp_path):
     """Host C++ execution validates naming, independently of GPU availability."""
-    clang = shutil.which('clang++')
-    if clang is None:
-        pytest.skip('Clang++ is required for generated C++ validation')
+    clang = require_clang('ubsan')
     tack.init(arch=tack.cpu)
     data, out = _inputs()
     function = _packed(named_kernel, (data, out, 2))
