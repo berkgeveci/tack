@@ -102,6 +102,18 @@ GRIDS = {
 KERNELS = {"cheap": cheap, "medium": medium, "heavy": heavy}
 
 
+def _estimator_state(obj):
+    """The plain-data attributes an estimator decides from, copied."""
+    return {k: (list(v) if isinstance(v, list) else v)
+            for k, v in vars(obj).items()
+            if isinstance(v, (bool, int, float, list, type(None)))}
+
+
+def _restore(obj, state):
+    for k, v in state.items():
+        setattr(obj, k, list(v) if isinstance(v, list) else v)
+
+
 def best_of(fn, reps):
     fn()
     fn()
@@ -508,13 +520,41 @@ def _score(args, backend, x, out, biggest):
             prefix = compiled.bind([x, out, n])
             reps = 30 if n <= 262144 else 8
 
+            # The decision is the one the backend reached on its own
+            # dispatches, so it is read here -- before timing. Timing the
+            # parallel path goes through `_parallel_execute`, which updates
+            # r_p, the fan-out curve and the margin's cv: read afterwards,
+            # the score described a state the measurement had made, and the
+            # carried-over r_p hid P9 from this harness entirely. The state
+            # is restored after timing for the same reason, so no grid
+            # point inherits another's measurement fan-outs.
+            chose = ("parallel" if n >= compiled.parallel_min_elems
+                     else "serial")
+            inputs = {
+                # the backend's own inputs, as they stood for this call
+                "ns_per_elem": compiled.ns_per_elem,
+                "parallel_min_elems": compiled.parallel_min_elems,
+                # The rest of the threshold's inputs, so a wrong one can be
+                # factored into fan-out, margin and rate error rather than
+                # attributed to whichever is easiest to name.
+                "ns_per_elem_parallel": compiled.ns_per_elem_parallel,
+                "margin": backend._margin(),
+                "fan_out_estimate_ns": backend._fan_out_estimate(),
+            }
+            saved = (_estimator_state(compiled), _estimator_state(backend))
+
             serial = best_of(lambda: compiled.call_range(prefix, 0, n), reps)
             parallel = best_of(
                 lambda: backend._parallel_execute(compiled, prefix, 0, n), reps)
+            _restore(compiled, saved[0])
+            _restore(backend, saved[1])
+            # Except what describes the data rather than an estimate: the
+            # last timing run was a fan-out, so the range really is spread
+            # across the workers' caches now. Restoring "laid out serially"
+            # let the next grid point take a scattered sample as clean.
+            compiled.scattered = True
 
             faster = "parallel" if parallel < serial else "serial"
-            chose = ("parallel" if n >= compiled.parallel_min_elems
-                     else "serial")
             got = parallel if chose == "parallel" else serial
             regret = (got - min(serial, parallel)) / 1000
             regret_total += regret
@@ -524,9 +564,7 @@ def _score(args, backend, x, out, biggest):
             rows.append({
                 "kernel": name, "n": n,
                 "serial_ns": serial, "parallel_ns": parallel,
-                # the backend's own inputs, as they stood for this call
-                "ns_per_elem": compiled.ns_per_elem,
-                "parallel_min_elems": compiled.parallel_min_elems,
+                **inputs,
                 "faster": faster, "chose": chose, "regret_us": regret,
             })
             flag = "" if faster == chose else (

@@ -9,17 +9,16 @@ Tests:
   6. Jacobi iteration -- stencil pattern, read/write fields
   7. Matrix multiply  -- 2D indexing, accumulation
 
-Each test runs three times per backend, on fresh fields, and prints the
-first and the third. The first call pays runtime compilation: on an MI300X
-a saxpy's first call is 146 ms and its warm call 0.05 ms, so a single-call
-column reported hipRTC rather than the device, which is why every test used
-to read ~145 ms there whatever its workload.
+Each test runs four times per backend, on fresh fields, and prints the
+first call and the fastest of the other three. The first call pays runtime
+compilation: on an MI300X a saxpy's first call is 146 ms and its warm call
+0.05 ms, so a single-call column reported hipRTC rather than the device,
+which is why every test used to read ~145 ms there whatever its workload.
 
-The second call is not printed because it is not warm on CPU either. A
-first-sight cost sample can read a cheap kernel ~15x dear, which makes the
-next dispatch calibrate the thread fan-out -- ~200 ms, once per backend --
-before deciding to run serially anyway. Timing the second call put that
-calibration in the "warm" column of three tests.
+"Warm" is a minimum rather than a fixed call because the CPU backend also
+tunes itself once, at its first fan-out: ~200 ms of calibration, landing on
+whichever call first looks worth threading. On fresh fields that can be the
+second call or the third, so naming one put the calibration in the column.
 """
 
 import time
@@ -64,8 +63,8 @@ def _time_call(setup_fn, call_fn):
 def _report(name, backend, setup_fn, call_fn, verify_fn):
     """Time the first and a warm call, verify the warm one, and print both."""
     first, _ = _time_call(setup_fn, call_fn)
-    _time_call(setup_fn, call_fn)          # one-time backend tuning lands here
-    warm, fields = _time_call(setup_fn, call_fn)
+    runs = [_time_call(setup_fn, call_fn) for _ in range(3)]
+    warm, fields = min(runs, key=lambda run: run[0])
     ok = verify_fn(*fields)
     status = "OK" if ok else "FAIL"
     print(f"  {backend:>5s}:  first {first:>8.2f} ms   warm {warm:>8.3f} ms  [{status}]")
