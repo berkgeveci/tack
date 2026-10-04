@@ -30,9 +30,10 @@ ones worth chasing: those are fan-outs that lost to a serial run.
 **A perfect score is a failure mode, not the goal.** It usually means the
 grid has walked off the crossovers and every row is a decision that was
 never in doubt — this happened on mustafar-linux with `--scale 8`, read
-as a passing score for a day. The MODEL section below now fits the real
-crossover and says outright whether the grid still brackets it. Read that
-verdict before reading the score.
+as a passing score for a day. The MODEL section below fits approximate
+crossovers, while the coverage verdict requires measured serial wins below
+measured parallel wins. Ties are neutral; reversed or interleaved winners
+need remeasurement. Read that verdict before reading the score.
 
 The MODEL section exists to decompose a wrong decision instead of
 attributing it. The backend's threshold is
@@ -210,6 +211,32 @@ def machine_id(backend):
     }
 
 
+def _measured_bracket(points):
+    """Describe an ordered split between directly measured winning paths."""
+    serial = sorted(p['n'] for p in points if p['serial_ns'] < p['parallel_ns'])
+    parallel = sorted(p['n'] for p in points if p['parallel_ns'] < p['serial_ns'])
+    ties = sorted(p['n'] for p in points if p['parallel_ns'] == p['serial_ns'])
+    lower = upper = None
+    if not points:
+        verdict = 'no measured points'
+    elif not serial and not parallel:
+        verdict = 'all measured points tie'
+    elif not parallel:
+        verdict = 'no measured parallel wins'
+    elif not serial:
+        verdict = 'no measured serial wins'
+    elif max(serial) >= min(parallel):
+        verdict = 'non-monotonic measured winners'
+    else:
+        verdict = 'brackets it'
+        lower, upper = max(serial), min(parallel)
+    return {
+        'brackets': verdict, 'bracket_basis': 'measured timings',
+        'serial_win_sizes': serial, 'parallel_win_sizes': parallel, 'tie_sizes': ties,
+        'bracket_lo': lower, 'bracket_hi': upper,
+    }
+
+
 def model_report(rows, model_pts, floor, backend, scale):
     """Decompose the threshold error, from a measured floor and real slopes.
 
@@ -275,18 +302,19 @@ def model_report(rows, model_pts, floor, backend, scale):
         # The same formula the backend uses, fed the fitted inputs.
         ideal = par_a * _PARALLEL_BREAK_EVEN / serial_s if serial_s > 0 else None
 
-        # Against the hot crossover: that is the regime the scoring grid
-        # is measured in, so it is the one its rows can be scored against.
+        # Locate the fitted hot crossover, but keep it separate from the
+        # directly measured bracket. A fit inside the grid does not imply
+        # that any sampled size was actually faster in parallel.
         lo, hi = min(ns), max(ns)
         c = crossover_hot
         if c is None:
-            bracket = "no crossover — parallel never wins on this grid"
+            fitted_location = "no fitted crossover"
         elif c < lo:
-            bracket = f"BELOW grid ({c/lo:.2f}x under {lo}) — grid too coarse"
+            fitted_location = f"BELOW grid ({c/lo:.2f}x under {lo})"
         elif c > hi:
-            bracket = f"ABOVE grid ({c/hi:.2f}x over {hi}) — grid too coarse"
+            fitted_location = f"ABOVE grid ({c/hi:.2f}x over {hi})"
         else:
-            bracket = "brackets it"
+            fitted_location = "inside grid"
 
         fits[name] = {
             "serial_fixed_ns": serial_c, "serial_ns_per_elem": serial_s,
@@ -298,7 +326,9 @@ def model_report(rows, model_pts, floor, backend, scale):
             "backend_threshold": anchor["parallel_min_elems"],
             "backend_fan_out_ns": backend._fan_out_ns,
             "ideal_threshold": ideal,
-            "grid_lo": lo, "grid_hi": hi, "brackets": bracket,
+            "grid_lo": lo, "grid_hi": hi,
+            "fitted_crossover_location": fitted_location,
+            **_measured_bracket(pts),
         }
 
     if not fits:
@@ -345,16 +375,23 @@ def model_report(rows, model_pts, floor, backend, scale):
           "threshold over each real crossover.\n1.00x is right; below 1.00x "
           "fans out too early.")
 
-    print("\n--- does the grid still bracket the crossovers? ---")
+    print("\n--- does the measured grid bracket the crossovers? ---")
     for name, f in fits.items():
         mark = "ok " if f["brackets"] == "brackets it" else "XX "
+        counts = '/'.join(str(len(f[key])) for key in
+                          ('serial_win_sizes', 'parallel_win_sizes', 'tie_sizes'))
         print(f"{mark}{name:7s} grid {f['grid_lo']}-{f['grid_hi']} "
-              f"(scale {scale:g}): {f['brackets']}")
+              f"(scale {scale:g}): {f['brackets']} (serial/parallel/ties: {counts})")
+        if f['bracket_lo'] is not None:
+            print(f"    measured bracket: {f['bracket_lo']}-{f['bracket_hi']}")
+        fitted = f"{f['crossover_hot']:.0f}" if f['crossover_hot'] is not None else 'none'
+        print(f"    fitted hot crossing: {fitted} — {f['fitted_crossover_location']}")
     if any(f["brackets"] != "brackets it" for f in fits.values()):
-        print("\nA grid that does not bracket the crossover cannot score "
-              "the decision:\nevery row is a call that was never in doubt. "
-              "Re-centre with --scale before\nreading the count above as "
-              "anything.")
+        print("\nSome kernels have incomplete or ambiguous measured crossover "
+              "coverage.\nRepeat ambiguous timings, or re-centre with --scale "
+              "until serial wins lie\nbelow parallel wins. Treat those decision "
+              "scores as incomplete crossover\ncoverage; a fitted crossing "
+              "inside the grid does not establish a measured bracket.")
     return fits
 
 
