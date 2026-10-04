@@ -798,6 +798,71 @@ def test_a_wrong_decision_to_thread_gets_corrected(cpu):
         f"estimate stuck at {compiled.ns_per_elem:.1f}, honest is {honest:.1f}")
 
 
+def test_a_sample_after_a_fan_out_cannot_raise_the_estimate(cpu, monkeypatch):
+    """P7: a fan-out leaves the range in other cores' caches.
+
+    A serial run straight afterwards pays to pull every line back, so it
+    times a bandwidth-bound kernel 3-4x above what serial costs once it is
+    running serially -- measured on a one-socket Xeon, 0.72 against 0.20
+    ns/element. Believed, that keeps the estimate high, which keeps the
+    backend fanning out, which keeps the next sample high. The sample is an
+    upper bound, so it may lower the estimate and must not raise it.
+    """
+    backend = CPUBackend()
+    if not backend._v2:
+        pytest.skip("policy v2 only")
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    prefix = compiled.bind(args)
+    settled = compiled.ns_per_elem
+
+    backend._parallel_execute(compiled, prefix, 0, n)
+    _fixed_timing(monkeypatch, compiled, settled * n * 3)
+    backend._run_serial(compiled, prefix, 0, n)
+
+    assert compiled.ns_per_elem <= settled, (
+        f"a sample taken after a fan-out raised the estimate "
+        f"{settled:.3f} -> {compiled.ns_per_elem:.3f} ns/elem")
+
+
+def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
+    """P7: the first sample of a kernel can read it ~15x too dear.
+
+    It is taken on a range nothing has touched yet, so it pays first-touch
+    page faults on top of a short slice's start-up: 15 ns/element for a
+    kernel that runs at 0.2 once its fields are resident, on a one-socket
+    Xeon. Believed, that puts the threshold under the range, and the next
+    dispatch calibrates the fan-out -- 210 ms of deliberate sleeps -- to
+    learn the range never wanted threads. A range a serial run finishes
+    in a few fan-outs' time should be timed serially first.
+    """
+    backend = CPUBackend()
+    if not backend._v2 or backend.num_threads < 2:
+        pytest.skip("policy v2 with threads only")
+    n = 100_000
+    assert n >= backend._probe_min_range(), "test needs the first-sight path"
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(np.arange(n, dtype=np.float32))
+    args = [x, out, n]
+    compiled = _compile_for(backend, _scale, args)
+    backend._dispatch(compiled, args, n)
+
+    # The state a first-touch sample leaves, made certain rather than
+    # left to whether this machine's page faults happen to be slow.
+    backend._set_serial_cost(compiled, 4.0)
+    assert n >= compiled.parallel_min_elems, "test did not set up the flip"
+
+    for _ in range(3):
+        backend._dispatch(compiled, args, n)
+
+    assert backend._fan_out_ns is None, (
+        "calibrated the fan-out for a range serial finishes in microseconds")
+    assert n < compiled.parallel_min_elems
+    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * 2.0 + 1.0,
+                               rtol=1e-6)
+
+
 def test_recheck_backs_off(cpu):
     """Re-measuring every dispatch would tax kernels that want threads."""
     backend = CPUBackend()

@@ -355,6 +355,20 @@ _MAX_SAMPLE_RATIO = 8.0
 # the kernel: two elements of a costly one, thousands of a cheap one.
 _SAMPLE_OVERHEAD_RATIO = 10.0
 
+# How dear a serial run v2 will spend, in units of the fan-out it would
+# have paid for (times the margin), to get a clean sample before fanning a
+# kernel out for the first time (P7). A serial sample is clean only when a
+# serial run laid the range out before it; one taken on untouched pages or
+# straight after a fan-out read a bandwidth-bound kernel 3-4x dear on a
+# one-socket Xeon, and a first sample up to 15x. Errors that size pull the
+# threshold down by the same factor, so the ranges they can wrongly fan out
+# cost at most that many fan-outs to run serially -- beyond it the decision
+# survives the error. Bounded in time rather than in elements, because an
+# element band ignores what serial costs: for a front-loaded image kernel,
+# one in elements meant two whole-frame serial runs. Confirming costs at
+# most two serial dispatches, once per kernel.
+_CONFIRM_BAND = 4.0
+
 # Parallel dispatches to allow between refreshes of the cost estimate.
 # Doubles up to the cap, so a wrong decision to thread is caught after a
 # single dispatch, while a kernel that really wants threads settles into
@@ -432,6 +446,17 @@ class CompiledKernel:
         # from ns_per_elem. Precomputed so the dispatch hot path is a single
         # integer compare. _NEVER until the kernel has been timed once.
         self.parallel_min_elems = _NEVER
+        # Whether the range may sit anywhere but where a serial run would
+        # leave it: never run yet, or fanned out since the last serial run
+        # of the whole range. A serial sample taken while scattered pays
+        # to gather the range first, so v2 treats it as an upper bound.
+        self.scattered = True
+        # Whether any serial sample has been clean. v2 will not fan out a
+        # range near its threshold on an estimate that never was (P7).
+        self.rate_confirmed = False
+        # The range of the dispatch in progress, for pricing a serial run
+        # of it from inside `_run_serial`.
+        self.loop_end = 0
 
         # Only serial runs measure, so the decision to thread rests on an
         # estimate that threading itself stops refreshing. Left alone that
@@ -828,7 +853,14 @@ class CPUBackend(Backend):
 
     def _run(self, compiled: CompiledKernel, prefix: tuple, loop_end: int):
         """Choose serial or fan-out, and run it."""
+        compiled.loop_end = loop_end
         if loop_end >= compiled.parallel_min_elems:
+            if self._needs_confirmation(compiled, loop_end):
+                # Ahead of calibrating the fan-out, too: for a small cheap
+                # kernel on a dear first sample, that calibration was
+                # 210 ms of sleeps spent deciding to run serially.
+                self._run_whole_serial(compiled, prefix, loop_end)
+                return
             if self._fan_out_ns is None:
                 # First range big enough to want threads: measure what they
                 # actually cost here, then re-check against the real number.
@@ -836,7 +868,7 @@ class CPUBackend(Backend):
                 compiled.parallel_min_elems = self._min_elems(compiled.ns_per_elem,
                                                     compiled.ns_per_elem_parallel)
                 if loop_end < compiled.parallel_min_elems:
-                    self._run_serial(compiled, prefix, 0, loop_end)
+                    self._run_whole_serial(compiled, prefix, loop_end)
                     return
             if compiled.recheck_due():
                 # Refresh the estimate on a slice, then fan out the rest.
@@ -849,7 +881,7 @@ class CPUBackend(Backend):
                 # where a fan-out is the expensive option anyway, run whole.
                 probe = min(loop_end, self._sample_elems(compiled, loop_end))
                 if probe >= loop_end:
-                    self._run_serial(compiled, prefix, 0, loop_end)
+                    self._run_whole_serial(compiled, prefix, loop_end)
                     return
                 # Not always the prefix: a slice from the same place every
                 # time measures that place, not the kernel. The head before
@@ -876,7 +908,7 @@ class CPUBackend(Backend):
                 or self.num_threads <= 1:
             # Already measured and too small, or too small to be worth
             # splitting off a probe.
-            self._run_serial(compiled, prefix, 0, loop_end)
+            self._run_whole_serial(compiled, prefix, loop_end)
             return
 
         # First sight of this kernel at a range where threading might pay.
@@ -892,17 +924,62 @@ class CPUBackend(Backend):
         probe = min(loop_end, max(probe_min_range // 16, loop_end // 64))
         start = compiled.next_sample_start(loop_end - probe)
         self._run_serial(compiled, prefix, start, start + probe)
-        if start >= compiled.parallel_min_elems:
+        # A first sample is never clean, so a range near the threshold it
+        # implies stays serial until a clean one agrees (P7).
+        serial = self._needs_confirmation(compiled, loop_end)
+        head_fans = not serial and start >= compiled.parallel_min_elems
+        if head_fans:
             self._parallel_execute(compiled, prefix, 0, start)
         else:
             # Untimed: the point of moving the slice is to keep the prefix
             # out of the estimate.
             compiled.call_range(prefix, 0, start)
         tail = start + probe
-        if loop_end - tail >= compiled.parallel_min_elems:
+        tail_fans = (not serial
+                     and loop_end - tail >= compiled.parallel_min_elems)
+        if tail_fans:
             self._parallel_execute(compiled, prefix, tail, loop_end)
         else:
             self._run_serial(compiled, prefix, tail, loop_end)
+        if not (head_fans or tail_fans):
+            # Every element ran on this thread, so the next sample is clean.
+            compiled.scattered = False
+
+    def _needs_confirmation(self, compiled: CompiledKernel,
+                            loop_end: int) -> bool:
+        """Whether this fan-out should wait for a clean serial sample.
+
+        Only v2, only while the serial run is cheap (`_CONFIRM_BAND`), and
+        only until the kernel has had one: after that, scattered samples
+        can still lower the estimate, and serial runs refresh it cleanly.
+        """
+        if not self._v2 or compiled.rate_confirmed or self.num_threads <= 1:
+            return False
+        return self._serial_is_affordable(compiled, loop_end)
+
+    def _serial_is_affordable(self, compiled: CompiledKernel,
+                              loop_end: int) -> bool:
+        """Whether running this range serially costs at most a few fan-outs.
+
+        Priced from the serial estimate alone. Pricing it from one worker's
+        rate too (`r_p` times the workers) was tried, to guard against an
+        estimate that reads cheap, and it switched the whole of P7's fix
+        off: twenty workers contending for memory each run a
+        bandwidth-bound kernel several times slower than one thread alone
+        does, so every range near the crossover read as unaffordable.
+        """
+        budget = _CONFIRM_BAND * self._margin() * self._fan_out_estimate()
+        return loop_end * compiled.ns_per_elem <= budget
+
+    def _run_whole_serial(self, compiled: CompiledKernel, prefix: tuple,
+                          loop_end: int):
+        """Run the whole range on this thread, which gathers it here.
+
+        The sample it takes is clean only if the range was not scattered
+        before it; either way, the next one will be.
+        """
+        self._run_serial(compiled, prefix, 0, loop_end)
+        compiled.scattered = False
 
     def _probe_min_range(self) -> int:
         """Smallest range worth splitting a timing probe off.
@@ -1024,6 +1101,28 @@ class CPUBackend(Backend):
             ns_per_elem = sample
         else:
             ns_per_elem = prev + _COST_SMOOTHING * (sample - prev)
+        if self._v2:
+            if not compiled.scattered:
+                compiled.rate_confirmed = True
+            elif prev > 0.0 and self._serial_is_affordable(
+                    compiled, compiled.loop_end):
+                # P7. A scattered range is gathered on this thread before
+                # it is worked on -- lines owned by other cores, or pages
+                # never touched -- so the sample is an upper bound. It can
+                # say the estimate is too high; it cannot say it is too
+                # low. Believing a high one was a fixed point: it kept the
+                # backend fanning out, and the fan-out kept the next
+                # sample high, 3-4x over the serial rate on a one-socket
+                # Xeon. Holding back the rise errs toward serial, whose
+                # next sample is clean.
+                #
+                # Only where that serial run is cheap, which is also the
+                # only place the error flips a decision. Where it is dear,
+                # a rise is the evidence that matters: an image kernel's
+                # estimate starts low from its background rows, and the
+                # rechecks that raise it are what keep a whole frame off
+                # one thread.
+                ns_per_elem = min(ns_per_elem, prev)
         self._set_serial_cost(compiled, ns_per_elem)
 
     def _set_serial_cost(self, compiled: CompiledKernel, ns_per_elem: float):
@@ -1449,6 +1548,7 @@ class CPUBackend(Backend):
     def _parallel_execute(self, compiled: CompiledKernel, prefix: tuple,
                           start: int, end: int, *, whole_range: bool = False):
         """Split the loop range across threads."""
+        compiled.scattered = True
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
 
