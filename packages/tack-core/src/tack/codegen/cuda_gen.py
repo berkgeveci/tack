@@ -758,8 +758,16 @@ class CUDACodeGen:
             return f"((float)({val}))"
         raise NotImplementedError(f"CUDA cast: {node.dtype}")
 
+    def _ifexp_condition(self, node) -> str:
+        """Render the condition of a ternary.
+
+        C and C++ convert any scalar to bool here, so the condition needs no
+        help. OpenCL C does not: see ``OpenCLCodeGen._ifexp_condition``.
+        """
+        return self._expr(node)
+
     def _expr_ifexp(self, node: ir.IRIfExp) -> str:
-        cond = self._expr(node.condition)
+        cond = self._ifexp_condition(node.condition)
         then = self._expr(node.then_value)
         else_ = self._expr(node.else_value)
         dtype = getattr(node, 'dtype', None)
