@@ -852,6 +852,68 @@ def test_the_first_clean_sample_is_believed(cpu, monkeypatch):
     assert compiled.rate_confirmed
 
 
+def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
+    """P9: only fan-outs measure r_p, so serial runs cannot correct it.
+
+    Worker rates for identical fan-outs spread 8x run to run on a
+    one-socket Xeon, and one high draw -- 5.25 ns/element against ~0.4 --
+    set r_p to the serial rate. The threshold formula then credited
+    fanning out with no gain at all, held a 6-34M-element dispatch of a
+    cheap kernel serial (up to 6x slower), and nothing ever fanned out
+    again to find out. The mirror of P3's one-way door.
+    """
+    backend = CPUBackend()
+    if not backend._v2 or backend.num_threads < 2:
+        pytest.skip("policy v2 with threads only")
+    n = 1 << 22
+    compiled, args = _measured(backend, _scale, n)
+    # Pinned, so the stale state does not depend on this machine's clock:
+    # a range worth ~2.5 fan-outs serially, held serial only by r_p.
+    backend._fan_out_ns = 400_000.0
+    monkeypatch.setattr(backend, "_fan_out_estimate", lambda: 400_000.0)
+    monkeypatch.setattr(backend, "_margin", lambda: 1.5)
+    rate = 0.25
+    compiled.rate_confirmed = True
+    compiled.ns_per_elem_parallel = rate * 0.95       # one bad draw
+    backend._set_serial_cost(compiled, rate)
+    assert n < compiled.parallel_min_elems, "test did not set up the stale state"
+    assert n * rate >= backend._fan_out_estimate() * backend._margin(), (
+        "range too small for r_p to be what keeps it serial")
+
+    fanned = []
+    real = backend._parallel_execute
+    backend._parallel_execute = lambda c, p, a, b, **kw: (fanned.append((a, b)),
+                                                        real(c, p, a, b, **kw))[1]
+    for _ in range(8):
+        backend._dispatch(compiled, args, n)
+
+    assert fanned, "a parallel rate that holds the range serial was never re-measured"
+    assert compiled.ns_per_elem_parallel < rate * 0.95
+
+
+def test_one_high_parallel_draw_cannot_set_the_serial_floor(cpu):
+    """P9: the floor came from a single r_p sample, taken raw.
+
+    One draw at 5.25 ns/element per worker -- against ~0.4 -- floored the
+    serial estimate at r_p itself, and the threshold formula then saw no
+    gain from fanning out at all.
+    """
+    backend = CPUBackend()
+    if not backend._v2:
+        pytest.skip("policy v2 only")
+    compiled, _ = _measured(backend, _scale, 4096)
+    compiled.ns_per_elem_parallel = 0.02
+    backend._set_serial_cost(compiled, 0.2)
+    workers = 20
+
+    backend._record_parallel_cost(compiled, [0.3 * workers] * workers,
+                                  workers, bounds_serial=True)
+
+    assert compiled.serial_floor_ns < 0.15, (
+        f"one draw set the floor to {compiled.serial_floor_ns:.3f}")
+    assert compiled.ns_per_elem < 0.3
+
+
 def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
     """P7: the first sample of a kernel can read it ~15x too dear.
 

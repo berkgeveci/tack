@@ -483,6 +483,11 @@ class CompiledKernel:
         # Which recheck this is, which decides where in the range its
         # serial sample is taken from. See `next_sample_start`.
         self.sample_phase = 0
+        # The same one-way door from the other side (P9): only fan-outs
+        # measure `r_p`, so a kernel held serial by a high one never
+        # finds out it was wrong. These schedule an occasional fan-out.
+        self.serial_since_rp = 0
+        self.rp_recheck_after = 1
 
     def recheck_due(self) -> bool:
         """Whether this parallel dispatch should re-measure instead.
@@ -921,6 +926,11 @@ class CPUBackend(Backend):
                                    whole_range=True)
             return
 
+        if self._parallel_recheck_due(compiled, loop_end):
+            self._parallel_execute(compiled, prefix, 0, loop_end,
+                                   whole_range=True)
+            return
+
         probe_min_range = self._probe_min_range()
         if compiled.ns_per_elem > 0.0 or loop_end < probe_min_range \
                 or self.num_threads <= 1:
@@ -962,6 +972,45 @@ class CPUBackend(Backend):
         if not (head_fans or tail_fans):
             # Every element ran on this thread, so the next sample is clean.
             compiled.scattered = False
+
+    def _parallel_recheck_due(self, compiled: CompiledKernel,
+                              loop_end: int) -> bool:
+        """Whether this serial-bound dispatch should fan out to re-measure r_p.
+
+        P3's one-way door, mirrored. The serial estimate needed rechecks
+        because only serial runs measure it; `r_p` is the converse --
+        only fan-outs measure it -- and a high one holds a kernel serial,
+        which stops the fan-outs that would correct it. Worker rates for
+        identical fan-outs spread 8x run to run on a one-socket Xeon, and
+        one high draw (5.25 ns/element against ~0.4) set `r_p` to the
+        serial rate; the threshold formula then credited fanning out with
+        no gain at all and held 6-34M-element dispatches of a cheap
+        kernel serial, up to 6x slower, for good.
+
+        Due only when `r_p` is what keeps this range serial -- it would
+        fan out on the serial rate alone -- and on the same geometric
+        back-off as the serial rechecks. A range that size costs at least
+        a margin's worth of fan-outs serially, so a fan-out that turns out
+        to lose costs about one fan-out, and a kernel that really gains
+        nothing settles to one per `_RECHECK_CAP`. After P7's
+        confirmation only, so the two cannot pull against each other.
+        """
+        if (not self._v2 or self.num_threads <= 1
+                or not compiled.rate_confirmed
+                or compiled.ns_per_elem_parallel <= 0.0
+                or self._fan_out_ns is None):
+            return False
+        held_by_r_p = (loop_end * compiled.ns_per_elem
+                       >= self._margin() * self._fan_out_estimate())
+        if not held_by_r_p:
+            return False
+        compiled.serial_since_rp += 1
+        if compiled.serial_since_rp < compiled.rp_recheck_after:
+            return False
+        compiled.serial_since_rp = 0
+        compiled.rp_recheck_after = min(compiled.rp_recheck_after * 2,
+                                        _RECHECK_CAP)
+        return True
 
     def _run_untimed(self, compiled: CompiledKernel, prefix: tuple,
                      start: int, end: int):
@@ -1632,7 +1681,18 @@ class CPUBackend(Backend):
             sample if prev <= 0.0
             else prev + _COST_SMOOTHING * (sample - prev))
         if bounds_serial:
-            compiled.serial_floor_ns = sample
+            # The lesser of this sample and the smoothed rate (P9). Each
+            # is wrong in its own direction. Worker rates for identical
+            # fan-outs spread 8x run to run, and a floor taken from one
+            # high draw raised `r_s` to `r_p` outright -- the point where
+            # the threshold formula credits fanning out with no gain, so
+            # the range went serial and stayed there. The smoothed rate
+            # also carries samples from short fan-outs that never qualify
+            # as a bound, and a floor taken from it alone jumped to 8 ns
+            # for a 0.2 ns kernel. A floor has to be a lower bound, so
+            # it takes the smaller.
+            compiled.serial_floor_ns = min(sample,
+                                           compiled.ns_per_elem_parallel)
         # The serial estimate may only have seen a cheap prefix; this
         # measurement saw the whole range. Apply the `r_s >= r_p` floor
         # now rather than waiting up to `_RECHECK_CAP` dispatches for the
