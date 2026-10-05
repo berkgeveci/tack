@@ -31,11 +31,27 @@ Requirements
 VTK with ``vtkmodules.util.dlpack_support``. Device arrays additionally
 need VTK built with Viskores; host arrays work with any VTK that has the
 DLPack module.
+
+Level Zero
+----------
+CUDA and HIP pointers identify themselves: the runtime keeps one context per
+device for the whole process. A Level Zero pointer does not -- it means
+something only inside the context it was allocated from, and DLPack has no
+field for a context. So the two libraries have to be in the same one before
+any array is exchanged:
+
+    from tack.interop.vtk import init_level_zero
+    init_level_zero()        # instead of tack.init(arch=tack.level_zero)
+
+That starts Tack's Level Zero backend inside the context VTK's Viskores
+device already uses. It needs VTK built with Viskores on Kokkos' SYCL
+backend. Fields made before the call belong to another context and cannot
+be shared.
 """
 
 import tack
 
-__all__ = ["field_to_vtk", "vtk_to_field"]
+__all__ = ["field_to_vtk", "vtk_to_field", "init_level_zero"]
 
 
 def _dlpack_support():
@@ -49,6 +65,46 @@ def _dlpack_support():
             "directions rely on."
         ) from exc
     return dlpack_support
+
+
+def init_level_zero():
+    """Start Tack's Level Zero backend in the context VTK's device memory uses.
+
+    Raises RuntimeError if this VTK cannot report one: it predates
+    ``dlpack_support.level_zero_handles``, was built without Viskores on
+    Kokkos' SYCL backend, or is not running on a Level Zero device.
+    """
+    dlpack_support = _dlpack_support()
+    handles = getattr(dlpack_support, "level_zero_handles", lambda: None)()
+    if not handles:
+        raise RuntimeError(
+            "this VTK has no Level Zero context to share. Device interop on "
+            "Level Zero needs VTK built with Viskores on Kokkos' SYCL "
+            "backend, running on a Level Zero device.")
+    tack.init(arch=tack.level_zero, external_context=handles)
+
+
+def _require_shared_level_zero_context(dlpack_support):
+    """Refuse to exchange Level Zero memory across contexts.
+
+    Nothing downstream can catch this. The driver answers for a pointer from
+    any context, so VTK's own check passes, and on some drivers the memory
+    even reads correctly -- which makes it a mistake that works until it
+    does not. Tack knows which context it allocates in, so it is checked
+    here.
+    """
+    from tack.runtime.dispatch import get_backend
+
+    backend = get_backend()
+    if backend.name != "level_zero":
+        return
+    handles = getattr(dlpack_support, "level_zero_handles", lambda: None)()
+    if not handles or backend._context.value != handles["context"]:
+        raise RuntimeError(
+            "Tack's Level Zero backend and VTK are not in the same Level "
+            "Zero context, so a device pointer from one means nothing to "
+            "the other. Start Tack with tack.interop.vtk.init_level_zero() "
+            "instead of tack.init(arch=tack.level_zero).")
 
 
 def vtk_to_field(vtk_array, flatten=False):
@@ -74,6 +130,7 @@ def vtk_to_field(vtk_array, flatten=False):
             computed arrays have none) or a non-contiguous layout.
     """
     dlpack_support = _dlpack_support()
+    _require_shared_level_zero_context(dlpack_support)
 
     # VTK always exports 2-D, (tuples, components).
     field = tack.from_dlpack(dlpack_support.vtk_to_dlpack(vtk_array))
@@ -132,6 +189,7 @@ def field_to_vtk(field, n_components=None, name=None):
                 f"of {n_components}")
 
     dlpack_support = _dlpack_support()
+    _require_shared_level_zero_context(dlpack_support)
 
     # VTK reads the tensor as (tuples, components), so give it that shape.
     shaped = field

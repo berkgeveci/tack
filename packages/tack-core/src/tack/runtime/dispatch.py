@@ -40,8 +40,13 @@ _BACKEND_HELP = {
 }
 
 
-def init(arch: str = "cpu"):
+def init(arch: str = "cpu", **options):
     """Initialize Tack with a specific backend architecture.
+
+    Keyword options go to the backend and must be ones it declares in
+    `Backend.init_options`. Level Zero accepts ``external_context``, the
+    driver, device and context handles of a context owned by another
+    library, so both can address the same device memory.
 
     Set ``TACK_NO_REINIT=1`` to skip re-initialization when a backend
     is already active (useful when embedded in an ANARI device that
@@ -72,7 +77,13 @@ def init(arch: str = "cpu"):
         import importlib
         mod = importlib.import_module(module_name)
         cls = getattr(mod, class_name)
-        _current_backend = cls()
+        unknown = sorted(set(options) - cls.init_options)
+        if unknown:
+            accepted = ", ".join(sorted(cls.init_options)) or "none"
+            raise ValueError(
+                f"The '{arch}' backend does not accept the option(s) "
+                f"{', '.join(unknown)}. Accepted: {accepted}.")
+        _current_backend = cls(**options)
     except ImportError as e:
         raise RuntimeError(
             f"Cannot initialize '{arch}' backend: missing dependency.\n"

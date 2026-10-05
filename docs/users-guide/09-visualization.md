@@ -149,3 +149,28 @@ Both directions go through DLPack, which VTK speaks via
 `vtkmodules.util.dlpack_support`. This works with regular `vtkDataArray`
 (host memory) and `vtkmDataArray` (device memory from Viskores); for
 device arrays the GPU pointer is wrapped directly — no host-device copy.
+
+### Level Zero
+
+On CUDA and HIP a device pointer identifies itself, because the runtime
+keeps one context per device for the whole process. A Level Zero pointer
+means something only inside the context that allocated it, and DLPack has
+no field for a context. So on Level Zero, start Tack inside the context
+VTK's Viskores device already uses, before creating any field:
+
+```python
+from tack.interop.vtk import init_level_zero
+
+init_level_zero()   # instead of tack.init(arch=tack.level_zero)
+```
+
+This needs VTK built with Viskores on Kokkos' SYCL backend, whose
+`dlpack_support` provides `level_zero_handles()`. Fields created in a
+context of Tack's own cannot be exchanged: `field_to_vtk` and
+`vtk_to_field` refuse them, because the Intel driver cannot tell the two
+contexts apart and nothing downstream would catch the mistake.
+
+The underlying option is general: `tack.init(arch=tack.level_zero,
+external_context={"driver": ..., "device": ..., "context": ...})` adopts
+any Level Zero context another library owns. Tack never destroys an
+adopted context.

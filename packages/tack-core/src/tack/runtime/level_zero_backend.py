@@ -33,6 +33,7 @@ from tack.lang.workgroup_participation import (
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
+    as_address,
     new_kernel_cache,
     resolve_variant,
 )
@@ -70,6 +71,9 @@ ZE_STRUCTURE_TYPE_MODULE_DESC = 0x1b
 ZE_STRUCTURE_TYPE_KERNEL_DESC = 0x1d
 ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC = 0x15
 ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC = 0x16
+ZE_STRUCTURE_TYPE_MEMORY_ALLOCATION_PROPERTIES = 0x17
+ZE_MEMORY_TYPE_DEVICE = 2
+ZE_MEMORY_TYPE_SHARED = 3
 ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES = 0x03
 ZE_STRUCTURE_TYPE_DEVICE_COMPUTE_PROPERTIES = 0x04
 ZE_STRUCTURE_TYPE_COMMAND_QUEUE_GROUP_PROPERTIES = 0x06
@@ -168,6 +172,16 @@ class ze_group_count_t(ctypes.Structure):
         ("groupCountX", ctypes.c_uint32),
         ("groupCountY", ctypes.c_uint32),
         ("groupCountZ", ctypes.c_uint32),
+    ]
+
+
+class ze_memory_allocation_properties_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("type", ctypes.c_uint32),
+        ("id", ctypes.c_uint64),
+        ("pageSize", ctypes.c_uint64),
     ]
 
 
@@ -414,6 +428,9 @@ def _setup_argtypes(ze):
 
     ze.zeMemFree.argtypes = [P, P]
     ze.zeMemFree.restype = ctypes.c_int32
+
+    ze.zeMemGetAllocProperties.argtypes = [P, P, P, P]
+    ze.zeMemGetAllocProperties.restype = ctypes.c_int32
 
     ze.zeModuleCreate.argtypes = [P, P, P, P, P]
     ze.zeModuleCreate.restype = ctypes.c_int32
@@ -881,14 +898,79 @@ class LevelZeroBackend(Backend):
     supported_dtypes = _L0_SUPPORTED_DTYPES
     supports_device_reductions = True
     supports_workgroups = True
+    init_options = frozenset({"external_context"})
+    device_memory_spaces = frozenset({"level_zero"})
 
-
-    def __init__(self):
+    def __init__(self, external_context=None):
         ze = _get_ze()
 
         # Initialize Level Zero
         _check_ze(ze.zeInit(0), "zeInit")
 
+        # A USM pointer means something only inside the context it was
+        # allocated from, and nothing that exchanges pointers -- DLPack, a
+        # raw address -- carries one. Sharing device memory with another
+        # library therefore means allocating in *its* context, so all three
+        # handles are taken from it: a driver or device handle obtained
+        # separately need not be the one that context was created against.
+        self._owns_context = external_context is None
+        if external_context is None:
+            self._init_own_driver_and_device(ze)
+        else:
+            missing = [k for k in ("driver", "device", "context")
+                       if not external_context.get(k)]
+            if missing:
+                raise ValueError(
+                    "external_context needs non-null 'driver', 'device' and "
+                    f"'context' handles; missing or null: {', '.join(missing)}")
+            self._driver = int(external_context["driver"])
+            self._device = int(external_context["device"])
+
+        self._query_device(ze)
+
+        if self._owns_context:
+            ctx_desc = ze_context_desc_t(
+                stype=ZE_STRUCTURE_TYPE_CONTEXT_DESC, pNext=None, flags=0)
+            self._context = ze_context_handle_t()
+            _check_ze(ze.zeContextCreate(self._driver, ctypes.byref(ctx_desc),
+                                          ctypes.byref(self._context)),
+                       "zeContextCreate")
+        else:
+            self._context = ze_context_handle_t(int(external_context["context"]))
+
+        self._create_queues(ze)
+        self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledL0Kernel}
+
+    @property
+    def shares_external_context(self) -> bool:
+        """Whether this backend allocates in a context another library owns."""
+        return not self._owns_context
+
+    def memory_space(self, ptr) -> str:
+        """Classify an address by asking the context what it allocated there.
+
+        'level_zero' for USM device or shared memory, 'cpu' otherwise. An
+        address the driver does not recognise -- ordinary host memory -- is
+        a successful query of type UNKNOWN, so a failed query is a fault and
+        raises rather than being reported as host memory (see D9 in
+        `hip_backend.memory_space`).
+
+        Intel's driver answers for pointers from any context on the device,
+        so this cannot tell whether `ptr` was allocated in *this* context.
+        """
+        addr = as_address(ptr)
+        if addr is None:
+            return "cpu"
+        props = ze_memory_allocation_properties_t(
+            stype=ZE_STRUCTURE_TYPE_MEMORY_ALLOCATION_PROPERTIES, pNext=None)
+        _check_ze(_get_ze().zeMemGetAllocProperties(
+            self._context, ctypes.c_void_p(addr), ctypes.byref(props), None),
+            "zeMemGetAllocProperties")
+        if props.type in (ZE_MEMORY_TYPE_DEVICE, ZE_MEMORY_TYPE_SHARED):
+            return "level_zero"
+        return "cpu"
+
+    def _init_own_driver_and_device(self, ze):
         # Get first driver
         count = ctypes.c_uint32(0)
         _check_ze(ze.zeDriverGet(ctypes.byref(count), None), "zeDriverGet (count)")
@@ -909,6 +991,7 @@ class LevelZeroBackend(Backend):
                    "zeDeviceGet")
         self._device = devices[0]
 
+    def _query_device(self, ze):
         # Get device properties (for device ID and name)
         self._dev_props = ze_device_properties_t(
             stype=ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES, pNext=None)
@@ -969,14 +1052,7 @@ class LevelZeroBackend(Backend):
         if self._compute_ordinal is None:
             raise RuntimeError("No compute queue group found on Level Zero device")
 
-        # Create context
-        ctx_desc = ze_context_desc_t(
-            stype=ZE_STRUCTURE_TYPE_CONTEXT_DESC, pNext=None, flags=0)
-        self._context = ze_context_handle_t()
-        _check_ze(ze.zeContextCreate(self._driver, ctypes.byref(ctx_desc),
-                                      ctypes.byref(self._context)),
-                   "zeContextCreate")
-
+    def _create_queues(self, ze):
         # Create command queue (synchronous mode for simplicity)
         queue_desc = ze_command_queue_desc_t(
             stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
@@ -1008,8 +1084,6 @@ class LevelZeroBackend(Backend):
             self._context, self._device, ctypes.byref(imm_desc),
             ctypes.byref(self._imm_cmd_list)),
             "zeCommandListCreateImmediate")
-
-        self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledL0Kernel}
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> L0Buffer:

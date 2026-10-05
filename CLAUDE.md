@@ -432,4 +432,16 @@ Requires: `libze_loader.so` (Level Zero runtime), `libocloc.so` (Intel offline c
 
 Then: `tack.init(arch=tack.level_zero)`.
 
+**Sharing memory needs a shared context.** A Level Zero USM pointer is only
+meaningful in the context that allocated it, and DLPack carries none.
+`tack.init(arch=tack.level_zero, external_context={driver, device, context})`
+adopts another library's handles instead of creating a context (all three
+are required; `Backend.init_options` declares accepted keywords and
+`tack.init` rejects others). `tack.interop.vtk.init_level_zero()` takes them
+from VTK's Viskores/Kokkos SYCL queue, and the VTK interop refuses Level Zero
+fields from any other context. Intel's driver resolves pointers from any
+context, so this check is the only one that catches the mistake. The
+backend reports `device_memory_spaces = {"level_zero"}` via
+`zeMemGetAllocProperties`. See `test_level_zero_context.py`.
+
 ## Do not mention Claude in git commits

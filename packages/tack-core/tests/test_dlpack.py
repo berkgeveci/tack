@@ -476,3 +476,31 @@ def test_wrap_ptr_rejects_an_address_clearly(metal):
     from tack.runtime.dispatch import get_backend
     with pytest.raises(TypeError, match="MTLBuffer object"):
         get_backend().wrap_ptr(0x1234, tack.f32, (8,))
+
+
+# ---------------------------------------------------------------------------
+# Capsule teardown after the module's globals are gone
+# ---------------------------------------------------------------------------
+def _without_globals(function):
+    """`function` as it runs once its module has been torn down."""
+    import types
+    return types.FunctionType(function.__code__, {"__builtins__": {}},
+                              function.__name__, function.__defaults__)
+
+
+@pytest.mark.parametrize("versioned", [False, True])
+def test_an_unadopted_capsule_is_released_without_module_globals(versioned):
+    """A capsule can outlive `tack.lang.dlpack`.
+
+    A consumer that failed part-way through an import was seen holding one
+    until interpreter exit, where the destructor's global lookups raised
+    NameError and the pinned field was never released. The destructor must
+    work from what it captured at definition.
+    """
+    field = tack.field(dtype=tack.f32, shape=(4,))
+    capsule = dlpack.field_to_dlpack(field, versioned=versioned)
+    pinned = len(dlpack._prevent_gc)
+
+    _without_globals(dlpack._destroy_capsule)(id(capsule))
+
+    assert len(dlpack._prevent_gc) == pinned - 1
