@@ -78,7 +78,8 @@ def field_reduction_source(dialect, op):
         header = ''
         signature = f'''__kernel void reduce_{op}_f32(
     __global float* input, __global float* output, long n)'''
-        setup = '__local float sdata[256];\n    uint tid = get_local_id(0);\n    long i = get_global_id(0);'
+        setup = ('__local float sdata[256];\n    uint tid = get_local_id(0);\n'
+                 '    long i = (long)get_group_id(0) * (long)get_local_size(0) + tid;')
         barrier = 'barrier(CLK_LOCAL_MEM_FENCE);'
         atomic = f'''
         volatile __global atomic_uint* addr = (volatile __global atomic_uint*)&output[0];

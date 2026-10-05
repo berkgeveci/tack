@@ -18,6 +18,7 @@ import pytest
 
 import tack
 from tack.codegen.opencl_gen import generate_opencl_source
+from tack.codegen.reductions import field_reduction_source
 from tack.lang.inspect_kernel import _prepare_ir
 from tack.lang.type_inference import infer_param_types
 
@@ -101,8 +102,9 @@ def test_dtype_mapping():
 
 # ── Thread indexing ──────────────────────────────────────────────────
 
-def test_parallel_loop_uses_get_global_id():
-    """CUDA's blockIdx*blockDim+threadIdx has no meaning in OpenCL C."""
+def test_parallel_loop_index_is_64_bit_from_the_group_id():
+    """CUDA's blockIdx*blockDim+threadIdx has no meaning in OpenCL C, and
+    get_global_id(0) wraps at 2^32 on Intel's driver despite its size_t."""
 
     @tack.kernel
     def fill(out):
@@ -110,8 +112,17 @@ def test_parallel_loop_uses_get_global_id():
             out[i] = 1.0
 
     src = _source(fill, _field())
-    assert "get_global_id(0)" in src
+    assert ("long tack_var_a_i = (long)get_group_id(0) * (long)get_local_size(0) "
+            "+ (long)get_local_id(0);") in src
+    assert "get_global_id" not in src
     assert "blockIdx" not in src
+
+
+@pytest.mark.parametrize("op", ["sum", "min", "max"])
+def test_native_reduction_index_is_64_bit_from_the_group_id(op):
+    src = field_reduction_source("opencl", op)
+    assert "long i = (long)get_group_id(0) * (long)get_local_size(0) + tid;" in src
+    assert "get_global_id" not in src
     assert "threadIdx" not in src
     assert "blockDim" not in src
 

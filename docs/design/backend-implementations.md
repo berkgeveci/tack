@@ -303,7 +303,9 @@ would capture almost all of that cost; it has not been done.
 **Launch.** The group size is `min(256, maxGroupSizeX, maxTotalGroupSize)`.
 Each argument is set with `zeKernelSetArgumentValue`, followed by the loop
 end as a 64-bit `__n__`; the kernel starts with
-`long i = get_global_id(0); if (i >= __n__) return;`. Dispatch resets the
+`long i = (long)get_group_id(0) * (long)get_local_size(0) + (long)get_local_id(0);
+if (i >= __n__) return;`, because this driver's `get_global_id(0)` wraps
+at 2^32 (see [Parallel execution](parallel-execution.md)). Dispatch resets the
 reusable command list, appends the launch with
 `ceil(loop_end / group_size)` groups, closes it, executes it on the queue,
 and waits with `zeCommandQueueSynchronize` and an infinite timeout. An empty
