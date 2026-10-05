@@ -3,7 +3,8 @@
 Scientific visualization algorithms for [Tack](https://github.com/berkgeveci/tack).
 
 Every algorithm is written as `@tack.kernel` functions, so it runs on every backend
-`tack-core` supports — CPU, Metal, CUDA, HIP and Level Zero — from one source.
+`tack-core` supports — CPU, Metal, CUDA, HIP and Level Zero — from one source, within each
+backend's capabilities (for example, `f64` inputs need a backend with `f64`).
 
 ```python
 import tack

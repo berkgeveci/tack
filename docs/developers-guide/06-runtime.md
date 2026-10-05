@@ -57,7 +57,8 @@ find or build a specialization:
 3. Infer argument dtypes and categories on a private parameter probe, record
    texture extents, and derive resolved shape dependencies.
 4. Look up the variant in the backend's weakly keyed per-kernel cache.
-5. On a miss, deep-copy the template, resolve dimensions, infer/check types,
+5. On a miss, clone the template (`clone_ir` in `lang/ir_traversal.py`, not
+   `copy.deepcopy`), resolve dimensions, infer/check types,
    and run conservative copy propagation. The backend build callback then
    packs scalars where needed, annotates types, generates code, and compiles.
 6. Resolve the launch range from the variant's IR for this dispatch, bind
@@ -76,11 +77,17 @@ parameters therefore carry no unconditional `noalias` or `restrict` promise.
 
 The CPU backend adds one more key element: whether this call's fields are
 disjoint. `fields_disjoint()` compares the byte ranges of the field arguments
-on every dispatch (about a microsecond) and passes when no field the kernel
-writes overlaps another field. Qualifying calls use a variant compiled with
-`noalias` on its field pointers; the rest use the variant without it. Without
-the promise LLVM must reload after every store, which costs 2-3x on x86 for
-kernels that accumulate through a field in an inner loop.
+on every dispatch and passes when no field the kernel writes overlaps another
+field. Qualifying calls use a variant compiled with `noalias` on its field
+pointers; the rest use the variant without it. Without the promise LLVM must
+reload after every store, which matters for kernels that accumulate through a
+field in an inner loop. Measured on 2026-10-03, single-threaded: on a 2012
+Xeon E5-2650 the store-accumulator kernel at 2^20 elements ran in 2465 µs
+without the promise and 736 µs with it, and a stencil in 776 µs and 604 µs;
+the check added about 3–4 µs per 16-element dispatch there and about 1–1.6 µs
+on an Apple M1 Max, where the accumulator showed no comparable gain. See
+[Specialization and Caching](../design/specialization-and-caching.md) and
+[Memory and Aliasing](../design/memory-and-aliasing.md).
 
 Template classes appear in keys as a token rather than the class object.
 When a `@tack.data_oriented` class is collected, a finalizer drops the IR and
@@ -162,7 +169,7 @@ for the grid size. Textures use a separate binding namespace
 
 ### CUDA / HIP
 
-Launches via `cuLaunchKernel` / `hipLaunchKernel` with a pointer array
+Launches via `cuLaunchKernel` / `hipModuleLaunchKernel` with a pointer array
 of arguments. Grid size = `ceil(loop_end / 256)`, block size = 256.
 
 ### Level Zero

@@ -109,10 +109,21 @@ def sum_segments(offsets, data, output, n_cells):
 
 ## Kernel Caching
 
-Kernels are compiled on first call and cached by name and argument type
-signature. Subsequent calls with the same types reuse the compiled kernel.
-Changing scalar values (e.g., passing `alpha=2.5` then `alpha=3.0`) does
-**not** trigger recompilation — only type changes do.
+Kernels are compiled on first call. A compiled *variant* is reused by later
+calls that agree on everything the generated code depends on: argument
+dtypes, which arguments are fields, scalars or textures, vector widths,
+texture extents, `@tack.data_oriented` class constants and layout, any field
+dimensions the kernel bakes in (for example `x.shape[1]` used as a row
+stride), and on CPU whether the fields overlap. Anything else is a runtime
+parameter.
+
+So changing scalar values (passing `alpha=2.5`, then `alpha=3.0`) does
+**not** recompile, and neither does changing the length of a 1-D field
+used only as the parallel loop bound. Changing a dtype, a vector width or a
+baked-in dimension does. If a kernel recompiles for every array size, pass
+the size as a scalar argument instead of reading it from `shape` inside the
+body. [Specialization and Caching](../design/specialization-and-caching.md)
+lists exactly what goes into the key, with worked examples.
 
 ## Inspecting Generated Code
 

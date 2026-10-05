@@ -60,7 +60,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 | CPU | `llvm_gen.py` → LLVM IR | llvmlite JIT | ctypes function call |
 | Metal | `msl_gen.py` → MSL source | Metal API (pyobjc) | compute pipeline |
 | CUDA | `cuda_gen.py` → CUDA C source | NVRTC → PTX | cuLaunchKernel |
-| HIP | `hip_gen.py` → HIP C source (extends CUDA) | hipRTC → code object | hipLaunchKernel |
+| HIP | `hip_gen.py` → HIP C source (extends CUDA) | hipRTC → code object | hipModuleLaunchKernel |
 | Level Zero | `opencl_gen.py` → OpenCL C source (extends CUDA) | libocloc → SPIR-V | zeCommandListAppendLaunchKernel |
 
 ### Key abstraction: Field with DeviceBuffer
