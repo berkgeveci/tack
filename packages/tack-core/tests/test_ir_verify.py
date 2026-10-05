@@ -9,6 +9,7 @@ import tack
 from tack.lang import ir
 from tack.lang.ir_type_annotate import annotate_types
 from tack.lang.ir_verify import IRVerificationError, verify_ir
+from tack.lang.source_validation import UnsupportedSyntaxError
 from tack.lang.types import f32, i32, i64
 
 
@@ -319,8 +320,9 @@ def test_a_second_top_level_loop_is_rejected():
 
     a = tack.field(tack.f32, (4,))
     b = tack.field(tack.f32, (4,))
-    with pytest.raises(RuntimeError,
-                       match='exactly one top-level parallel loop') as error:
+    # The frontend reports it at the second loop's source position, before
+    # the verifier's own "exactly one top-level parallel loop" check.
+    with pytest.raises(UnsupportedSyntaxError,
+                       match='line 5, column 5 is outside the parallel loop') as error:
         two_loops(a, b)
-    assert isinstance(error.value.__cause__, IRVerificationError)
     assert str(error.value).count("Kernel 'two_loops'") == 1
