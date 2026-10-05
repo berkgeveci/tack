@@ -97,6 +97,8 @@ class CUDACodeGen:
     # Spelling of the opaque texture handle in the generated source. HIP
     # reuses this whole class and calls the type something else, so it is
     # named here rather than inlined into the signature below.
+    # The C type of a sequential loop's variable; OpenCL spells 64 bits `long`.
+    _LOOP_INDEX = _INT
     _TEXTURE_OBJECT_TYPE = "cudaTextureObject_t"
 
     _atomic_backend = 'cuda'
@@ -308,13 +310,27 @@ class CUDACodeGen:
         var = node.var
         # Always declare the loop variable in the for-header to handle
         # re-use of the same variable name in sibling loops (C block scoping).
-        self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {incr}) {{")
-        self._local_vars[var] = _INT
+        self._emit(f"for ({self._LOOP_INDEX} {var} = {start}; {var} < {end}; {incr}) {{")
+        # The header's declaration ends with the loop, so a later plain
+        # assignment to the same name must declare it again: restore the
+        # bookkeeping on exit rather than leaving the name marked declared.
+        outer = (var in self._declared_vars, self._local_vars.get(var))
+        self._local_vars[var] = self._LOOP_INDEX
         self._declared_vars.add(var)
         self._indent += 1
         self._emit_body(node.body)
         self._indent -= 1
         self._emit("}")
+        self._leave_loop_scope(var, outer)
+
+    def _leave_loop_scope(self, var, outer):
+        """Forget a for-header declaration once its block closes."""
+        was_declared, outer_type = outer
+        if was_declared:
+            self._local_vars[var] = outer_type
+        else:
+            self._declared_vars.discard(var)
+            self._local_vars.pop(var, None)
 
     def _emit_while(self, node: ir.IRWhile):
         cond = self._expr(node.condition)

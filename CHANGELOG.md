@@ -3,6 +3,17 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## Unreleased
+
+### Fixes with no source change needed
+
+- A kernel that used a name as a sequential loop's variable and later
+  assigned it as a plain local (`for d in range(4): ...` then `d = ...`)
+  failed to compile on Metal, CUDA, HIP and Level Zero with an undeclared
+  identifier; CPU accepted it. The C-family generators now treat the loop
+  header's declaration as ending with its block, so the later assignment
+  declares a new local, as on CPU.
+
 ## 0.2.0 — 2026-10-05
 
 The headline: Tack now has a written language contract, and the compiler

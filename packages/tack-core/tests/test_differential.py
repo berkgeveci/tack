@@ -190,6 +190,28 @@ def test_sequential_range_argument_order_matches_python(backend, tmp_path):
     _check(kernel, [-1, 0, 1])
 
 
+def test_loop_variable_rebound_as_a_local_matches_python(backend, tmp_path):
+    """A name that was a sequential loop's variable and is later assigned as
+    a plain local, with and without a branch around the second binding. The
+    C-family GPU generators used to emit the second binding undeclared."""
+    kernel = _load_kernel(tmp_path, """
+        def run(x, state, out):
+            for i in range(out.shape[0]):
+                acc = 0
+                for d in range(4):
+                    acc = acc + d
+                d = x[i] * 2
+                if acc > d:
+                    d = d + 100
+                else:
+                    d = d - 100
+                out[i] = acc + d
+                for d in range(2):
+                    state[i] = state[i] + d
+    """)
+    _check(kernel, [-1, 0, 1, 7])
+
+
 @pytest.mark.parametrize("seed", range(24))
 def test_generated_control_flow_matches_python(backend, tmp_path, seed):
     # Fixed grammar/seed IDs make every failure reproducible without a

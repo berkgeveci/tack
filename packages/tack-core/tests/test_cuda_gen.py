@@ -112,6 +112,22 @@ class TestCUDACodeGen:
         src = generate_cuda_source(_get_ir(kern, _field(), _field()))
         assert 'for (long long tack_var_a_j = 0; tack_var_a_j < 10; tack_var_a_j++)' in src
 
+    def test_loop_variable_rebound_as_a_local_is_declared(self):
+        """The for-header declaration ends with its block; a later plain
+        assignment to the same name is a new local and needs its own."""
+        @tack.kernel
+        def kern(x, out):
+            for i in range(x.shape[0]):
+                acc = 0
+                for d in range(4):
+                    acc = acc + d
+                d = tack.i32(x[i])
+                out[i] = acc + d
+
+        src = generate_cuda_source(_get_ir(kern, _field(dtype=tack.i32), _field(dtype=tack.i32)))
+        assert 'for (long long tack_var_a_d = 0; tack_var_a_d < 4; tack_var_a_d++)' in src
+        assert 'int tack_var_a_d = ' in src
+
     def test_while_loop(self):
         @tack.kernel
         def kern(x, out):
