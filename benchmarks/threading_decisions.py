@@ -35,21 +35,24 @@ crossovers, while the coverage verdict requires measured serial wins below
 measured parallel wins. Ties are neutral; reversed or interleaved winners
 need remeasurement. Read that verdict before reading the score.
 
-The MODEL section exists to decompose a wrong decision instead of
-attributing it. The backend's threshold is
+The MODEL section compares cached thresholds with measured/fitted costs.
+The backend's threshold, before integer rounding and the worker-count floor,
+is
 
-    parallel_min_elems = fan_out_ns * BREAK_EVEN / ns_per_elem
+    parallel_min_elems = fan_out_ns * margin / rate
 
-so two measured inputs feed it, and a wrong threshold can come from
-either — or from the formula itself, which assumes parallel time is
-`overhead + T_serial/P` with P the thread count. Fitting `a + b*n`
-through both the serial and parallel columns gives all of it directly:
-the true fan-out cost (a), the true per-element rates, the effective
+where v1 uses the serial rate and v2 subtracts the parallel rate, capped
+at 90% of the serial rate. The fan-out, margin and rates are estimates;
+fitting `a + b*n` through measured serial and parallel times provides
+approximate fixed costs, per-element rates and effective
 parallelism P_eff = s/b (which is *not* the thread count on a
-bandwidth-bound machine), and the real crossover. The report then splits
-the threshold error into a MEASUREMENT part (the backend's inputs vs the
-fitted ones) and a MODEL part (the formula fed correct inputs vs the
-real crossover).
+bandwidth-bound machine), and fitted crossovers. The report then compares
+the threshold against a v1 model reference and the fitted crossovers.
+Row estimates are live readings after settling, not recorded inputs from
+when the cached threshold was constructed. A reconstruction check exposes
+inconsistent snapshots; even a matching snapshot does not establish its
+construction history. These diagnostics do not change the stored-threshold
+choices or scores, and cannot alone attribute a policy error to a component.
 
 Use `--json out.json` to collect runs from several machines and compare
 them; every derived quantity is in there, keyed by kernel.
@@ -67,7 +70,7 @@ import time
 import numpy as np
 
 import tack
-from tack.runtime.cpu import _PARALLEL_BREAK_EVEN, _physical_core_count
+from tack.runtime.cpu import _NEVER, _PARALLEL_BREAK_EVEN, _physical_core_count
 from tack.runtime.dispatch import get_backend
 
 
@@ -113,6 +116,52 @@ def _estimator_state(obj):
 def _restore(obj, state):
     for k, v in state.items():
         setattr(obj, k, list(v) if isinstance(v, list) else v)
+
+
+def _threshold_snapshot(row, policy, num_threads):
+    """Check later-read inputs against a cached threshold, without runtime reads.
+
+    Matching the formula is consistency evidence, not construction provenance.
+    Older JSON may lack inputs or policy metadata; do not invent them from a
+    final backend probe or a fit. The score always uses the stored threshold.
+    """
+    result = {
+        "threshold_inputs_basis": row.get("threshold_inputs_basis", "unrecorded"),
+        "threshold_snapshot_status": "unavailable",
+        "snapshot_parallel_min_elems": None,
+        "snapshot_choice_differs": None,
+    }
+    required = ("ns_per_elem", "ns_per_elem_parallel", "margin",
+                "fan_out_estimate_ns", "parallel_min_elems")
+    if policy not in ("v1", "v2") or num_threads is None or any(
+        row.get(key) is None for key in required
+    ):
+        return result
+    rs, rp, margin, fan_out, stored = (row[key] for key in required)
+    if not all(np.isfinite(value) for value in (rs, rp, margin, fan_out, stored)):
+        return result
+    if rs <= 0 or num_threads <= 1:
+        threshold = _NEVER
+    else:
+        rate = rs - min(rp, rs * 0.9) if policy == "v2" else rs
+        threshold = max(num_threads, int(fan_out * margin / rate))
+    result.update({
+        "threshold_snapshot_status": "consistent" if threshold == stored else "different",
+        "snapshot_parallel_min_elems": threshold,
+        "snapshot_choice_differs": (row["n"] >= threshold) != (row["n"] >= stored),
+    })
+    return result
+
+
+def _threshold_snapshot_summary(rows, policy, num_threads):
+    checks = [_threshold_snapshot(row, policy, num_threads) for row in rows]
+    return {
+        "basis": "later snapshots; threshold construction inputs were not recorded",
+        "consistent": sum(check["threshold_snapshot_status"] == "consistent" for check in checks),
+        "different": sum(check["threshold_snapshot_status"] == "different" for check in checks),
+        "unavailable": sum(check["threshold_snapshot_status"] == "unavailable" for check in checks),
+        "choice_differences": sum(check["snapshot_choice_differs"] is True for check in checks),
+    }
 
 
 def best_of(fn, reps):
@@ -238,11 +287,22 @@ def _measured_bracket(points):
 
 
 def model_report(rows, model_pts, floor, backend, scale):
-    """Decompose the threshold error, from a measured floor and real slopes.
+    """Compare thresholds with fitted crossovers and qualify input snapshots.
 
     Returns the per-kernel dicts so `--json` can carry the same numbers
     the table shows.
     """
+    policy = getattr(backend, "policy", None)
+    num_threads = getattr(backend, "num_threads", None)
+    diagnostics = _threshold_snapshot_summary(rows, policy, num_threads)
+    print("\n--- cached thresholds vs later live input snapshots ---")
+    print(f"consistent: {diagnostics['consistent']}; different: {diagnostics['different']}; "
+          f"unavailable: {diagnostics['unavailable']}; "
+          f"different implied choices: {diagnostics['choice_differences']}")
+    print("Construction inputs were not recorded. Even matching later inputs "
+          "are not proof\nof how a threshold was built; differing inputs cannot "
+          "explain it exactly.\nChoices and regret use the stored threshold, "
+          "never its reconstruction.")
     print("\n--- fan-out cost vs idle gap ---")
     print(f"{'gap before':>11s} {'min':>9s} {'median':>9s} {'max':>9s}")
     for gap, s in floor.items():
@@ -255,7 +315,7 @@ def model_report(rows, model_pts, floor, backend, scale):
     print(f"\nthe probe reads {probe/1000:.1f}us (min of back-to-back). A "
           f"dispatch meeting workers\nidle for 10 ms pays "
           f"{realistic/1000:.1f}us -- "
-          f"{realistic/probe:.2f}x what the threshold assumes.")
+          f"{realistic/probe:.2f}x this final probe value.")
     print("there is no single right answer here: a loop dispatching "
           "back-to-back really does\nmeet the hot floor. Both crossovers "
           "are reported below.")
@@ -275,8 +335,7 @@ def model_report(rows, model_pts, floor, backend, scale):
         _, par_b = fit_line(m_ns, [p["parallel_ns"] for p in mp])
         par_a = float(realistic)
 
-        # P_eff is the honest parallel speedup of the *work*, which the
-        # backend's formula assumes is the thread count. Both rates come
+        # P_eff estimates parallel speedup of the *work*. Both rates come
         # from the same regime, so cache effects do not bias the ratio.
         p_eff = serial_s_hi / par_b if par_b > 0 else float("inf")
 
@@ -293,13 +352,12 @@ def model_report(rows, model_pts, floor, backend, scale):
         crossover = _cross(par_a)
         crossover_hot = _cross(float(hot))
 
-        # The backend's own inputs, read at the grid point nearest the
-        # crossover -- that is where the decision is in doubt, so it is
-        # the estimate that mattered.
+        # Choose the stored-threshold row nearest the fitted crossover.
+        # Its estimates were read later and need not have built that threshold.
         anchor = (min(pts, key=lambda p: abs(p["n"] - crossover))
                   if crossover else pts[-1])
 
-        # The same formula the backend uses, fed the fitted inputs.
+        # A v1 reference formula, not the v2 threshold's decomposition.
         ideal = par_a * _PARALLEL_BREAK_EVEN / serial_s if serial_s > 0 else None
 
         # Locate the fitted hot crossover, but keep it separate from the
@@ -325,6 +383,9 @@ def model_report(rows, model_pts, floor, backend, scale):
             "backend_ns_per_elem": anchor["ns_per_elem"],
             "backend_threshold": anchor["parallel_min_elems"],
             "backend_fan_out_ns": backend._fan_out_ns,
+            "backend_fan_out_basis": "final backend probe; not threshold construction",
+            "anchor_threshold_snapshot": _threshold_snapshot(anchor, policy, num_threads),
+            "threshold_diagnostics": _threshold_snapshot_summary(pts, policy, num_threads),
             "ideal_threshold": ideal,
             "grid_lo": lo, "grid_hi": hi,
             "fitted_crossover_location": fitted_location,
@@ -344,8 +405,8 @@ def model_report(rows, model_pts, floor, backend, scale):
               f"{f['parallel_ns_per_elem']:10.2f} {f['p_eff']:7.1f} "
               f"{_n(f['crossover_hot']):>12s} {_n(f['crossover']):>13s}")
 
-    print(f"\nthe backend assumes P_eff is the thread count "
-          f"({backend.num_threads}); the column above is what it is.")
+    print(f"\nworker count: {backend.num_threads}; P_eff above is the "
+          "fitted work-rate ratio, not\na threshold-construction input.")
     for name, f in fits.items():
         lo, hi = f["serial_ns_per_elem"], f["serial_ns_per_elem_hi"]
         if hi > 0 and not 0.7 <= lo / hi <= 1.4:
@@ -354,7 +415,7 @@ def model_report(rows, model_pts, floor, backend, scale):
                   f"P_eff\n        is the ratio up top, so read the "
                   f"crossover as approximate.")
 
-    print("\n--- where the threshold error comes from ---")
+    print("\n--- threshold comparisons (v1 reference, not component attribution) ---")
     print(f"{'kernel':7s} {'fan-out':>18s} {'ns/elem':>18s} "
           f"{'threshold':>11s} {'measure':>8s} {'model':>7s} "
           f"{'hot':>6s} {'idle':>6s}")
@@ -369,10 +430,12 @@ def model_report(rows, model_pts, floor, backend, scale):
               f"{f['backend_fan_out_ns']/1000:7.0f}/{f['parallel_fan_out_ns']/1000:<6.0f}us "
               f"{f['backend_ns_per_elem']:8.2f}/{f['serial_ns_per_elem']:<8.2f} "
               f"{thr:11d} {meas:7.2f}x {model:6.2f}x {t_hot:5.2f}x {t_idle:5.2f}x")
-    print("read each pair as backend/fitted. measure = the backend's inputs "
-          "vs the fitted\nones through the same formula; model = that formula "
-          "with correct inputs vs the\nidle crossover. hot and idle are the "
-          "threshold over each real crossover.\n1.00x is right; below 1.00x "
+    print("read each pair as backend/fitted. measure = the stored threshold "
+          "over a v1\nreference using fitted inputs; model = that reference "
+          "over the idle crossover.\nThe backend probe is read at reporting "
+          "time, not threshold construction.\nThese are comparisons, not an "
+          "exact component decomposition. hot and idle are the "
+          "threshold over each fitted crossover.\n1.00x is right; below 1.00x "
           "fans out too early.")
 
     print("\n--- does the measured grid bracket the crossovers? ---")
@@ -568,15 +631,15 @@ def _score(args, backend, x, out, biggest):
             chose = ("parallel" if n >= compiled.parallel_min_elems
                      else "serial")
             inputs = {
-                # the backend's own inputs, as they stood for this call
+                # Current rates and cached threshold after the settling calls.
                 "ns_per_elem": compiled.ns_per_elem,
                 "parallel_min_elems": compiled.parallel_min_elems,
-                # The rest of the threshold's inputs, so a wrong one can be
-                # factored into fan-out, margin and rate error rather than
-                # attributed to whichever is easiest to name.
+                # Live reads can change after threshold construction. Keep
+                # their provenance separate from the cached threshold's.
                 "ns_per_elem_parallel": compiled.ns_per_elem_parallel,
                 "margin": backend._margin(),
                 "fan_out_estimate_ns": backend._fan_out_estimate(),
+                "threshold_inputs_basis": "post-settlement live snapshot",
             }
             saved = (_estimator_state(compiled), _estimator_state(backend))
 
@@ -598,12 +661,15 @@ def _score(args, backend, x, out, biggest):
             if faster != chose:
                 wrong += 1
                 over_eager += chose == "parallel"
-            rows.append({
+            row = {
                 "kernel": name, "n": n,
                 "serial_ns": serial, "parallel_ns": parallel,
                 **inputs,
                 "faster": faster, "chose": chose, "regret_us": regret,
-            })
+            }
+            # Pure postprocessing; no additional timing/calibration reads.
+            row.update(_threshold_snapshot(row, backend.policy, backend.num_threads))
+            rows.append(row)
             flag = "" if faster == chose else (
                 "   <-- fanned out and lost" if chose == "parallel"
                 else "   <-- missed a win")
@@ -616,9 +682,9 @@ def _score(args, backend, x, out, biggest):
     print(f"fan-out cost measured here: "
           f"{backend._fan_out_ns and round(backend._fan_out_ns / 1000, 1)} us")
     if over_eager:
-        print("\nFan-outs that lost to a serial run are the ones to chase: "
-              "they mean the cost estimate reads high, or the fan-out here "
-              "costs more than the threshold assumes.")
+        print("\nFan-outs that lost to a serial run warrant investigation. "
+              "Later input snapshots\nand fitted comparisons alone cannot "
+              "attribute their cause.")
 
     # Both after scoring, so neither perturbs it -- and both inside the
     # load, so the floor and the slopes describe the same machine the
@@ -675,6 +741,8 @@ def _report(args, backend, machine, result):
                 "model_points": result["model_pts"],
                 "score": s,
                 "rows": rows, "fits": fits,
+                "threshold_diagnostics": _threshold_snapshot_summary(
+                    rows, backend.policy, backend.num_threads),
             }, fh, indent=2)
         print(f"\nwrote {args.json}")
 
