@@ -254,6 +254,14 @@ exactly once. Only the helpers a kernel uses are emitted.
     `__attribute__((noinline))` i64/u64 add helper for it. The contract
     records this as needing validation on other Apple GPUs.
 
+!!! note "Level Zero negation and `abs` workaround"
+    On an Intel Data Center GPU Max 1100 with IGC 2.7.11, the wrapped
+    negation or `abs` of a signed minimum lost its sign once widened: i16
+    `-(-32768)` widened to `32768`, and the i8/i16/i32 `abs` minimum to
+    its magnitude. `OpenCLCodeGen` emits `neg` below 32 bits and `abs`
+    below 64 bits as `__attribute__((noinline))` helpers, the one shape
+    that held; see [Backend implementations](backend-implementations.md).
+
 ### Conversions
 
 Integer-to-integer casts and integer field stores reduce the value modulo

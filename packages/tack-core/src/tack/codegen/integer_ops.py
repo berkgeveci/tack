@@ -17,9 +17,15 @@ _OPERATIONS = {'+': 'add', '-': 'sub', '*': 'mul', '&': 'and',
 
 
 class IntegerCodeGen:
-    def __init__(self, type_map, bitcast=False):
+    def __init__(self, type_map, bitcast=False, opaque_negation=False):
         self.type_map = type_map
         self.bitcast = bitcast
+        # Emit signed negation and abs as noinline helpers wherever their
+        # result can still be sign-extended: neg below 32 bits, abs below 64.
+        # Intel's IGC 2.7.11 widened the wrapped -(-32768) as 32768 and
+        # abs(INT_MIN) as 2^31 once it could see the helper body; no inlined
+        # form tried survived its folding. Same-width results were correct.
+        self.opaque_negation = opaque_negation
         self.wraps = set()
         self.operations = set()
 
@@ -41,6 +47,9 @@ class IntegerCodeGen:
     def operation(self, op, dtype, *args, noinline=False):
         if dtype not in INTEGER_TYPES or op not in _OPERATIONS:
             return None
+        if (self.opaque_negation and dtype not in UNSIGNED_TYPES
+                and dtype.bits < {'neg': 32, 'abs': 64}.get(op, 0)):
+            noinline = True
         self.operations.add((op, dtype, noinline))
         if dtype not in UNSIGNED_TYPES:
             self.wraps.add(dtype)

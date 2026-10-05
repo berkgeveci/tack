@@ -447,6 +447,20 @@ its own target, inside a sequential loop whose end is not a constant;
 `__attribute__((noinline))` (`IntegerCodeGen` in `codegen/integer_ops.py`).
 Every other integer operation stays inline.
 
+**Level Zero: opaque signed negation and `abs`.** On an Intel Data Center
+GPU Max 1100 (IGC 2.7.11), a wrapped negation or `abs` of a signed minimum
+was correct at its own width but lost its sign when widened: i16
+`-(-32768)` stored to an i32 field read `32768`, and `abs` of the i8, i16
+and i32 minimum widened as its magnitude. The SPIR-V from `ocloc` was
+correct, `-ze-opt-disable` hid the error, and no inlined form tried —
+`as_short`, a select on the minimum, complement-plus-one, a sign mask —
+survived the driver's folding; LLVM canonicalizes them all to the same
+shape. `OpenCLCodeGen` sets `_opaque_negation`, and `IntegerCodeGen`
+emits `neg` below 32 bits and `abs` below 64 bits as
+`__attribute__((noinline))` helpers. i32 negation, i64 `abs` and every
+other operation stay inline. `test_wrapped_negation_and_abs_survive_widening`
+covers the widened results on each backend.
+
 **Level Zero: `f64` `floor` and `ceil` lose the sign of zero.** On an Intel
 Data Center GPU Max 1100 (intel-opencl-icd 25.05.32567.17), the double
 overloads returned `+0.0` for `ceil(-0.1)` and `floor(-0.0)`, where IEEE 754

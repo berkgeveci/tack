@@ -62,6 +62,8 @@ class OpenCLCodeGen(CUDACodeGen):
     """
 
     _integer_type_map = _OCL_C_TYPE_MAP
+    # IGC misfolds widened negation/abs of a signed minimum; see IntegerCodeGen.
+    _opaque_negation = True
 
     def generate(self) -> str:
         func = self.ir_func

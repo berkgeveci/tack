@@ -436,6 +436,12 @@ additions remain inline. The dynamic-bound
 regression covers empty ranges, overflowing i32 bounds, and steps 1 and 2;
 this workaround needs performance and hardware validation on other Apple GPUs.
 
+On the tested Intel Data Center GPU Max 1100 (IGC 2.7.11), the device compiler
+widened the wrapped negation or `abs` of a signed minimum as its magnitude.
+Level Zero emits signed negation below 32 bits and signed `abs` below 64 bits
+as separate `noinline` helpers, so the result keeps the wrapping policy above
+when it is later converted to a wider type. Other operations remain inline.
+
 **Required: true division.** Integer `a / b` converts each operand to f32
 and produces an f32 quotient, including signed/u64 pairs. It does not
 truncate to an integer. For example, `7 / 2` gives `3.5`, and `(7 / 2) * 2`

@@ -101,6 +101,7 @@ class CUDACodeGen:
 
     _atomic_backend = 'cuda'
     _integer_type_map = _C_TYPE_MAP
+    _opaque_negation = False
 
     def __init__(self, ir_func: ir.IRFunction):
         self.ir_func = rename_gpu_bindings(ir_func)
@@ -117,7 +118,8 @@ class CUDACodeGen:
         self._integer_division_helpers = set()
         self._float_division_helpers = set()
         self._block_extrema = set()
-        self._integers = IntegerCodeGen(self._integer_type_map)
+        self._integers = IntegerCodeGen(
+            self._integer_type_map, opaque_negation=self._opaque_negation)
 
     def generate(self) -> str:
         """Generate CUDA C source for the kernel."""

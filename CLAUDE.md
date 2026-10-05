@@ -306,6 +306,8 @@ any signed/u64 pair requires an explicit cast. Comparisons and integer
 shares unsigned-carrier helpers across GPU generators; Metal uses `as_type`
 for signed bits and separate noinline i64/u64-add helpers for accumulator
 updates inside runtime-bound loops to avoid an M1 Max compiler crash.
+OpenCL emits signed `neg` below 32 bits and `abs` below 64 as noinline
+helpers: IGC 2.7.11 widened the wrapped minimum as its magnitude.
 LLVM tracks signedness on every
 annotated integer expression, including loads of locals and scalar arguments.
 Literals/scalars choose i32/i64/u64 by magnitude and reject unrepresentable

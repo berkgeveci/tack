@@ -92,6 +92,28 @@ def test_wrapping_arithmetic_and_unsigned_order(backend, dtype):
 
 
 @tack.kernel
+def _negate_widened(a, out):
+    for i in range(a.shape[0]):
+        x = a[i]
+        out[i, 0] = -x
+        out[i, 1] = abs(x)
+        n = -x
+        out[i, 2] = tack.i64(n)
+
+
+@pytest.mark.parametrize('dtype', [tack.i8, tack.i16, tack.i32, tack.i64], ids=lambda t: t.name)
+def test_wrapped_negation_and_abs_survive_widening(backend, dtype):
+    # The minimum negates to itself, and must still be the minimum once
+    # sign-extended. Intel's IGC 2.7.11 widened i16 -(-32768) as 32768,
+    # and abs of the i8/i16/i32 minimum as its magnitude.
+    values = _values(dtype)
+    out = tack.field(tack.i64, (len(values), 3))
+    _negate_widened(_field(values, dtype), out)
+    expected = [[_wrap(-x, dtype), _wrap(abs(x), dtype), _wrap(-x, dtype)] for x in values]
+    np.testing.assert_array_equal(out.to_numpy(), np.asarray(expected, dtype=np.int64))
+
+
+@tack.kernel
 def _convert(a, oi8, ou8, oi16, ou16, oi32, ou32, oi64, ou64):
     for i in range(a.shape[0]):
         x = a[i]

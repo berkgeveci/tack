@@ -118,6 +118,29 @@ def test_parallel_loop_index_is_64_bit_from_the_group_id():
     assert "blockIdx" not in src
 
 
+@pytest.mark.parametrize("dtype,opaque_neg,opaque_abs", [
+    (tack.i8, True, True), (tack.i16, True, True),
+    (tack.i32, False, True), (tack.i64, False, False),
+])
+def test_widenable_negation_and_abs_are_noinline(dtype, opaque_neg, opaque_abs):
+    """IGC 2.7.11 folds the wrapped minimum into its magnitude when it can
+    see these helpers' bodies; a call boundary is the one shape that held."""
+
+    @tack.kernel
+    def negate(x, neg, mag):
+        for i in range(x.shape[0]):
+            neg[i] = -x[i]
+            mag[i] = abs(x[i])
+
+    src = _annotated_source(negate, _field(dtype=dtype), _field(dtype=dtype),
+                            _field(dtype=dtype))
+    t = {tack.i8: "char", tack.i16: "short", tack.i32: "int", tack.i64: "long"}[dtype]
+    for op, opaque in (("neg", opaque_neg), ("abs", opaque_abs)):
+        name = f"__tack_{op}_{dtype.name}"
+        assert (f"__attribute__((noinline)) {t} {name}_noinline__(" in src) == opaque
+        assert (f"static inline {t} {name}__(" in src) == (not opaque)
+
+
 @pytest.mark.parametrize("op", ["sum", "min", "max"])
 def test_native_reduction_index_is_64_bit_from_the_group_id(op):
     src = field_reduction_source("opencl", op)
