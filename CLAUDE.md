@@ -171,6 +171,18 @@ the buffer references and declares indirect-resource residency with
 completion. This fixes the four overlap cases confirmed at `922b642` and
 `e265e7f`, without alias-based specialization or disabling vendor optimization.
 
+Dispatching one variant from several Python threads: CPU binds arguments
+per call and shares no launch state. GPU variants do — the scalar pack
+buffers, and Metal's argument buffer — so CUDA, HIP and Metal hold
+`KernelVariant.dispatch_lock` from the pack update through the synchronous
+launch. Level Zero holds one backend `_launch_lock` (reentrant) over
+launches, reductions and copies, because its command lists are
+backend-wide. Unlocked, half of the CUDA dispatches from four threads
+computed with another thread's scalars (`test_concurrent_dispatch.py`).
+CUDA's context comes from `cuCtxCreate` and is current only on the thread
+that called `tack.init`; another thread must make it current first, or
+its dispatch fails with `CUDA_ERROR_INVALID_CONTEXT`.
+
 ### Field dimensions
 
 `field.shape[k]` and `len(field)` both lower to `IRDimSize` in `ast_transform.py`, which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).

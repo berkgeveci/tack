@@ -205,6 +205,67 @@ def test_many_threads_one_kernel():
     assert all(results.values()), f"wrong values from {results}"
 
 
+# ── One compiled variant, dispatched from several threads ───────────
+#
+# A variant's launch state is shared on the GPU backends: the buffer its
+# scalars are packed into, and on Metal the argument buffer its field
+# bindings are encoded into. Unlocked, a thread could write its scalars,
+# have another thread overwrite them, and launch with the other's -- on
+# CUDA, half the dispatches below came back computed with the wrong ones.
+
+@tack.kernel
+def _affine(x, out, scale, offset):
+    for i in range(x.shape[0]):
+        out[i] = x[i] * scale + offset
+
+
+def _bind_device_to_this_thread():
+    """CUDA's context is current only on the thread that initialized Tack.
+
+    Without this, a second thread's dispatch fails outright with
+    CUDA_ERROR_INVALID_CONTEXT, before any shared state is touched.
+    """
+    from tack.runtime.dispatch import get_backend
+    backend = get_backend()
+    if backend.name == "cuda":
+        from cuda.bindings import driver
+        (err,) = driver.cuCtxSetCurrent(backend._context)
+        assert err == driver.CUresult.CUDA_SUCCESS, err
+
+
+def test_threads_sharing_a_variant_each_get_their_own_scalars(backend):
+    threads, iterations, n = 4, 100, 1024
+    base = np.arange(n, dtype=np.float32) % 97
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(base)
+    outs = [tack.field(dtype=tack.f32, shape=(n,)) for _ in range(threads)]
+    _affine(x, outs[0], 1.0, 0.0)  # one variant, compiled before the race
+    start = threading.Barrier(threads)
+    wrong, errors = [], []
+
+    def work(t):
+        try:
+            _bind_device_to_this_thread()
+            start.wait(TIMEOUT)
+            for k in range(iterations):
+                scale, offset = float(t + 1), float(1000 * t + k % 7)
+                _affine(x, outs[t], scale, offset)
+                if not np.array_equal(outs[t].to_numpy(), base * scale + offset):
+                    wrong.append((t, k))
+        except Exception as exc:                        # pragma: no cover
+            errors.append(exc)
+
+    workers = [threading.Thread(target=work, args=(t,)) for t in range(threads)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join(4 * TIMEOUT)
+    assert not any(w.is_alive() for w in workers), "threads did not finish"
+    assert not errors, errors
+    assert not wrong, (f"{len(wrong)} of {threads * iterations} dispatches "
+                       f"used another thread's arguments, first {wrong[:3]}")
+
+
 # ── Concurrent template construction ────────────────────────────────
 #
 # The old process-wide method registry could be overwritten or cleared by

@@ -424,17 +424,20 @@ class HIPBackend(Backend):
             # range(0) runs nothing; do not ask the driver for an empty grid.
             return
 
-        # Replace scalar args with the packed field buffers
-        if pack_info:
-            from tack.lang.ir_pack_scalars import split_args
-            from tack.runtime.kernel_utils import _update_pack_fields
-            _update_pack_fields(pack_fields, pack_info, effective_args)
-            kept_args = split_args(effective_args, pack_info)
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in kept_args]
-            kernel_args = list(kernel_args) + pack_fields
+        # Replace scalar args with the packed field buffers. The buffers
+        # belong to the variant, so writing them and the launch that reads
+        # them happen under its lock (see KernelVariant.dispatch_lock).
+        with variant.dispatch_lock:
+            if pack_info:
+                from tack.lang.ir_pack_scalars import split_args
+                from tack.runtime.kernel_utils import _update_pack_fields
+                _update_pack_fields(pack_fields, pack_info, effective_args)
+                kept_args = split_args(effective_args, pack_info)
+                kernel_args = [a.field if isinstance(a, Texture3D) else a
+                               for a in kept_args]
+                kernel_args = list(kernel_args) + pack_fields
 
-        compiled(kernel_args, loop_end)
+            compiled(kernel_args, loop_end)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.

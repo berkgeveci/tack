@@ -21,6 +21,7 @@ see ``shape_signature`` — and it makes the pristine IR from
 ``kernel.get_ir()`` a template that must never be mutated in place.
 """
 
+import threading
 import weakref
 
 from tack.lang import ir
@@ -403,10 +404,19 @@ class KernelVariant:
     whatever the backend needed to cache alongside it. `written_fields`
     lists ``(index, name)`` for each field argument the kernel may store
     to, so a dispatch can refuse read-only storage without walking IR.
+
+    `dispatch_lock` serializes dispatches of this variant on backends whose
+    payload holds per-variant launch state: the GPU scalar pack buffers,
+    and Metal's argument buffer. Two threads dispatching one variant would
+    otherwise each write their scalars and field bindings into the same
+    buffers, and a launch could read the other call's -- measured on CUDA,
+    half of the dispatches from four threads computed with another
+    thread's scalars. The lock is held across the synchronous launch;
+    different variants still dispatch concurrently.
     """
 
-    __slots__ = ("atomic_targets", "ir", "payload", "requires_full_workgroups",
-                 "written_fields")
+    __slots__ = ("atomic_targets", "dispatch_lock", "ir", "payload",
+                 "requires_full_workgroups", "written_fields")
 
     def __init__(self, ir_func, payload, *, requires_full_workgroups=False,
                  atomic_targets=(), written_fields=()):
@@ -415,6 +425,7 @@ class KernelVariant:
         self.requires_full_workgroups = requires_full_workgroups
         self.atomic_targets = atomic_targets
         self.written_fields = written_fields
+        self.dispatch_lock = threading.Lock()
 
 
 def _written_field_args(template, effective_args) -> tuple:
