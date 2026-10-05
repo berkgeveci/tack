@@ -25,6 +25,7 @@ from tack.lang.workgroup_participation import (
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
+    bind_textures,
     new_kernel_cache,
     resolve_variant,
 )
@@ -91,6 +92,45 @@ class MetalBuffer(DeviceBuffer):
         )
 
 
+class MetalTextureImage:
+    """A shader-read R32Float 3D MTLTexture.
+
+    Owned by one `Texture3D`, which uploads its field's data at creation and
+    on ``update()``. Nothing else keeps a reference, so the texture is
+    released with it: no later texture can be served one that was made from
+    someone else's buffer.
+    """
+
+    def __init__(self, device, command_queue, shape_3d):
+        W, H, D = shape_3d
+        self._command_queue = command_queue
+        self._shape = shape_3d
+        desc = Metal.MTLTextureDescriptor.alloc().init()
+        desc.setTextureType_(7)  # MTLTextureType3D
+        desc.setPixelFormat_(55)  # MTLPixelFormatR32Float
+        desc.setWidth_(W)
+        desc.setHeight_(H)
+        desc.setDepth_(D)
+        desc.setUsage_(1)  # MTLTextureUsageShaderRead
+        desc.setStorageMode_(0)  # MTLStorageModeShared
+        self.texture = device.newTextureWithDescriptor_(desc)
+
+    def upload(self, field):
+        """Copy a field's buffer into the texture via blit."""
+        W, H, D = self._shape
+        blit_buf = self._command_queue.commandBuffer()
+        blit_enc = blit_buf.blitCommandEncoder()
+        bytes_per_row = W * 4
+        bytes_per_image = W * H * 4
+        blit_enc.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin_(
+            field._buffer.metal_buffer, 0, bytes_per_row, bytes_per_image,
+            Metal.MTLSizeMake(W, H, D), self.texture, 0, 0,
+            Metal.MTLOriginMake(0, 0, 0))
+        blit_enc.endEncoding()
+        blit_buf.commit()
+        blit_buf.waitUntilCompleted()
+
+
 class CompiledMetalKernel:
     """A compiled Metal compute pipeline ready for dispatch."""
 
@@ -98,7 +138,7 @@ class CompiledMetalKernel:
 
     def __init__(self, device, command_queue, pipeline, func_name,
                  param_types, param_is_field, param_is_texture=None,
-                 texture_shapes=None, argument_encoder=None, *,
+                 argument_encoder=None, *,
                  requires_full_workgroups=False):
         self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
         self._workgroup_size = min(self._max_threads_per_group, WORKGROUP_SIZE)
@@ -113,7 +153,6 @@ class CompiledMetalKernel:
         self._param_types = param_types
         self._param_is_field = param_is_field
         self._param_is_texture = param_is_texture or [False] * len(param_types)
-        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
         self._argument_encoder = argument_encoder
         self._argument_buffer = None
         if argument_encoder is not None:
@@ -145,35 +184,8 @@ class CompiledMetalKernel:
                 zip(kernel_args, self._param_types, self._param_is_field,
                     self._param_is_texture)):
             if is_tex:
-                # Create MTLTexture and copy buffer data into it
-                W, H, D = self._texture_shapes[i]
-                cache_key = (id(arg._buffer.metal_buffer), W, H, D)
-                if not hasattr(self, '_tex_cache'):
-                    self._tex_cache = {}
-                if cache_key not in self._tex_cache:
-                    desc = Metal.MTLTextureDescriptor.alloc().init()
-                    desc.setTextureType_(7)  # MTLTextureType3D
-                    desc.setPixelFormat_(55)  # MTLPixelFormatR32Float
-                    desc.setWidth_(W)
-                    desc.setHeight_(H)
-                    desc.setDepth_(D)
-                    desc.setUsage_(1)  # MTLTextureUsageShaderRead
-                    desc.setStorageMode_(0)  # MTLStorageModeShared
-                    tex = self._device.newTextureWithDescriptor_(desc)
-                    # Copy from buffer to texture via blit
-                    blit_buf = self._command_queue.commandBuffer()
-                    blit_enc = blit_buf.blitCommandEncoder()
-                    bytes_per_row = W * 4
-                    bytes_per_image = W * H * 4
-                    blit_enc.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin_(
-                        arg._buffer.metal_buffer, 0, bytes_per_row, bytes_per_image,
-                        Metal.MTLSizeMake(W, H, D), tex, 0, 0,
-                        Metal.MTLOriginMake(0, 0, 0))
-                    blit_enc.endEncoding()
-                    blit_buf.commit()
-                    blit_buf.waitUntilCompleted()
-                    self._tex_cache[cache_key] = tex
-                encoder.setTexture_atIndex_(self._tex_cache[cache_key], tex_idx)
+                # A MetalTextureImage, in the texture binding namespace
+                encoder.setTexture_atIndex_(arg.texture, tex_idx)
                 tex_idx += 1
             elif is_field:
                 # Update every dispatch: a cached variant can receive new
@@ -242,11 +254,6 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
     param_types = [p.type_annotation for p in ir_func.params]
     param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
     param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-    # Collect texture shapes from IRTextureSample nodes in the IR
-    texture_shapes = {}
-    for i, p in enumerate(ir_func.params):
-        if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
-            texture_shapes[i] = p._texture_shape
     argument_encoder = None
     if any(is_field and not is_texture for is_field, is_texture
            in zip(param_is_field, param_is_texture)):
@@ -255,7 +262,7 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
             raise RuntimeError(f"Could not create argument encoder for '{kernel_name}'")
     return CompiledMetalKernel(device, command_queue, pipeline, kernel_name,
                                param_types, param_is_field, param_is_texture,
-                               texture_shapes, argument_encoder,
+                               argument_encoder,
                                requires_full_workgroups=requires_full_workgroups(ir_func))
 
 
@@ -312,6 +319,12 @@ class MetalBackend(Backend):
                         exportable: bool = False) -> MetalBuffer:
         return MetalBuffer(self._device, dtype.numpy_dtype, shape)
 
+    def texture_in_hardware(self, shape_3d) -> bool:
+        return True
+
+    def create_texture_image(self, shape_3d) -> MetalTextureImage:
+        return MetalTextureImage(self._device, self._command_queue, shape_3d)
+
     def wrap_ptr(self, ptr, dtype, shape):
         """Wrap an existing MTLBuffer as a MetalBuffer without copying.
 
@@ -356,15 +369,16 @@ class MetalBackend(Backend):
             # range(0) runs nothing; do not dispatch an empty grid.
             return
 
+        # Textures bind their own snapshot, not the field they came from.
+        kernel_args = bind_textures(effective_args)
+
         # Replace scalar args with the packed field buffers
         if pack_info:
             from tack.lang.ir_pack_scalars import split_args
             from tack.runtime.kernel_utils import _update_pack_fields
             _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in kept_args]
-            kernel_args = list(kernel_args) + pack_fields
+            kernel_args = bind_textures(kept_args) + pack_fields
 
         compiled(kernel_args, loop_end)
 
