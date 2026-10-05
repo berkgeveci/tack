@@ -20,7 +20,7 @@ this page explains how the implementation meets them and what that costs.
 | `dtype` | A `ScalarType` (`tack.f32`, `tack.u8`, ...) |
 | `shape` | A tuple of dimensions; what kernels and `to_numpy()` see |
 | `_buffer` | The `DeviceBuffer` that owns, or refers to, the storage |
-| `_writable` | Whether host-side writes (`from_numpy()`, `fill()`) are allowed |
+| `_writable` | Whether the storage may be written: by `from_numpy()` and `fill()` on the host, and by kernel stores and atomics |
 
 Everything that touches memory goes through the buffer. `DeviceBuffer` is a
 small abstract interface — `from_numpy()`, `to_numpy()`, `fill()`, `nbytes`
@@ -78,7 +78,10 @@ checks that the element count matches (`ValueError` otherwise) and copies
 otherwise dropping the original would release memory the view still uses.
 
 The buffer keeps the shape it was allocated with, so `Field.to_numpy()`
-reshapes the buffer's result to the field's own shape. `reshape` is the
+reshapes the buffer's result to the field's own shape, and the CPU and
+Metal buffers' `from_numpy()` reshape the incoming array to the buffer's
+shape before copying (the element count was already checked against the
+field's shape). `reshape` is the
 only view operation; there is no slicing, so every view of a buffer covers
 all of it.
 
@@ -135,9 +138,9 @@ did not allocate. Each backend's `wrap_ptr()` builds the buffer with
 |---|---|---|
 | CPU | a NumPy array, or an integer address | Array: a `view(...).reshape(...)` of it, which keeps the source array alive. Address: `np.frombuffer` over a ctypes array at that address — nothing keeps the memory alive. |
 | Metal | an `MTLBuffer` object (anything with `contents`) | The buffer references the `MTLBuffer` object, which keeps it alive. An integer raises `TypeError`: an address cannot be turned back into an `MTLBuffer`. |
-| CUDA | an integer or `CUdeviceptr` | `_owned = False`; also records the current context's token |
-| HIP | an integer | `_owned = False` |
-| Level Zero | an integer | `_owned = False`, stored as `c_void_p` |
+| CUDA | an address: an integer, NumPy integer or `CUdeviceptr` | `_owned = False`; also records the current context's token |
+| HIP | an address: an integer or anything `int()` accepts | `_owned = False` |
+| Level Zero | an address, as for HIP | `_owned = False`, stored as `c_void_p` |
 
 The `__del__` methods test `getattr(self, '_owned', True)` and skip the free
 for wrapped buffers. That flag is the whole ownership protocol: Tack never
@@ -147,19 +150,28 @@ as the field — and every reshaped view of it — is in use. The contract
 states this as a caller constraint; violating it is undefined behavior, not
 an error Tack can detect.
 
-`field_from_ptr()` defaults to `writable=False`. `_writable` guards only the
-host-side `from_numpy()` and `fill()`; kernels can still store through the
-field. The contract is explicit that host-side write checks are not
-evidence that generated kernels enforce read-only access.
+`field_from_ptr()` defaults to `writable=False`, and a read-only DLPack
+tensor imports as a non-writable field. `_writable` guards the host-side
+`from_numpy()` and `fill()` (`RuntimeError`) and kernel dispatch. Each
+variant records, in `KernelVariant.written_fields`, the index and name of
+every field argument the kernel may store to or use as an atomic target,
+from `written_field_params` (all of them when a store can't be traced).
+`check_writable_fields()` runs on every dispatch, over only those indices,
+and raises `ValueError` before the launch when one of them is bound to a
+read-only field. The warm-path cost is about 0.15 µs. Generated code itself
+does not enforce read-only access; the dispatch check is complete because
+a store the analysis cannot trace makes every field count as written.
 
 ### Memory-space validation
 
 A pointer of the wrong kind — a host address handed to the CUDA backend —
 would make a kernel fault inside the driver. So `field_from_ptr()` asks the
-backend before wrapping an integer pointer:
+backend before wrapping, whatever form the pointer arrives in:
 
 ```python
-if isinstance(ptr, int) and backend.device_memory_spaces:
+if backend.device_memory_spaces:
+    if as_address(ptr) is None:
+        raise TypeError(...)
     space = backend.memory_space(ptr)
     if space not in backend.device_memory_spaces:
         raise ValueError(...)
@@ -167,8 +179,11 @@ if isinstance(ptr, int) and backend.device_memory_spaces:
 
 `device_memory_spaces` is a capability declared on each backend (see
 `Backend` in `runtime/backend.py`); an empty set means "this backend does
-not distinguish", and no check is made. Non-integer pointers (`MTLBuffer`
-objects, NumPy arrays, `CUdeviceptr` objects) are not checked.
+not distinguish", and no check is made, which is why `MTLBuffer` objects
+and CPU NumPy arrays need none. Where the set is non-empty, every pointer
+is checked: a NumPy integer or a `CUdeviceptr` holding a host address is
+refused like a Python `int`, and a value that is not an address at all
+raises `TypeError`.
 
 | Backend | `memory_space()` asks | `device_memory_spaces` |
 |---|---|---|
@@ -378,7 +393,8 @@ The pieces, in `runtime/kernel_utils.py` unless noted:
    cached on the buffer together with the array it was computed from, so a
    dispatch normally pays one attribute read per field.
 3. **`fields_disjoint(ir_func, effective_args)`** collects the spans of
-   every `Field` and `Texture3D` argument, skipping empty ones, and returns
+   every `Field` argument and of each `Texture3D` argument's private
+   storage (the copy the kernel samples), skipping empty ones, and returns
    `True` when no *written* span intersects any *other* span. Fields that
    are only read may overlap each other — `dot(x, x)` qualifies, because
    nothing read through one pointer can change under the other. A buffer
@@ -442,12 +458,13 @@ would avoid the per-dispatch check, has not been tried.
 | Fresh allocation | Zero-initialized on every backend | buffer constructors | — |
 | Host transfer shape | `from_numpy` shape must equal `field.shape` | `Field.from_numpy` | `ValueError` |
 | Read-only host writes | `from_numpy`/`fill` refused when `_writable` is false | `Field._check_writable` | `RuntimeError` |
-| Pointer kind | Integer pointers must be device memory where the backend distinguishes | `field_from_ptr` | `ValueError` |
+| Read-only kernel writes | A read-only field bound to a parameter the kernel may store to is refused, on every dispatch | `check_writable_fields` | `ValueError` |
+| Pointer kind | Pointers must be device addresses where the backend distinguishes | `field_from_ptr` | `TypeError` (not an address), `ValueError` (wrong space) |
 | Dead CUDA context | Buffer refuses to touch its memory | `CUDABuffer._live` | `RuntimeError` |
 | Atomic alignment | Natural alignment, checked on every dispatch | `check_atomic_alignment` | `ValueError` |
 | Overlapping fields | Program order within an iteration | code generation (no `noalias`/`restrict`; Metal argument buffer) | — |
 | External lifetime | Caller keeps wrapped memory alive | not checked | undefined behavior |
-| In-kernel bounds and read-only access | Not promised | not checked | undefined behavior |
+| In-kernel bounds | Not promised | not checked | undefined behavior |
 
 See also [Specialization and Caching](specialization-and-caching.md) for
 how the variant key is built, [Backend

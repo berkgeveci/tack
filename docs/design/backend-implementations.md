@@ -34,11 +34,11 @@ with `supported_dtypes`, so neither can disagree with the field types.
 | `supports_workgroups` | no | yes | yes | yes | yes |
 | `supported_atomic_dtypes` (derived) | all ten | `i32`, `u32`, `f32` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` | as CUDA | `i32`, `u32`, `f32` |
 | `device_memory_spaces` | — | — | `cuda`, `cuda_pinned`, `cuda_managed` | `hip`, `hip_pinned`, `hip_managed` | `level_zero` |
-| `init_options` | — | — | — | — | `external_context` |
+| `init_options` | `num_threads` | — | — | — | `external_context` |
 | `dlpack_refusal_note` | — | set | — | — | — |
 
 "All ten" is `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`,
-`f64`. `init_options` lists the keyword arguments `tack.init()` forwards to
+`f64`. `supported_dtypes` is a `frozenset` on every backend. `init_options` lists the keyword arguments `tack.init()` forwards to
 the backend's constructor; `tack.init()` (`runtime/dispatch.py`) raises
 `ValueError` for any other keyword before constructing anything, so a
 misspelled option cannot be silently dropped. The user-facing summary of
@@ -109,7 +109,8 @@ Aliasing](memory-and-aliasing.md#the-cpu-disjoint-fields-specialization).
 **Features.** `supports_workgroups` is false, so kernels using shared
 memory, barriers, local thread IDs or block reductions are rejected before
 compilation. Textures are sampled in software: `LLVMCodeGen` emits the
-trilinear interpolation inline, with the extent baked in as constants.
+trilinear interpolation inline over the texture's private copy of its
+field, with the extent baked in as constants.
 Reductions use NumPy on the host — the data is already there. Loop indices
 are 64-bit.
 
@@ -125,7 +126,9 @@ creates one command queue. There are no options.
 using an `MTLCompileOptions` whose `fastMathEnabled` is false, looks up the
 entry function, and builds a compute pipeline state. Any of the three steps
 failing raises `RuntimeError`; a library failure includes the MSL source.
-Setting `TACK_DUMP_MSL` writes the source to `/tmp/tack_<entry>.msl`.
+Setting `TACK_DUMP_MSL` (a boolean flag read by `dispatch.env_flag`, so `0`,
+`false`, `no` and `off` leave it off) writes the source to
+`/tmp/tack_<entry>.msl`.
 
 **Arguments.** Field pointers go into one argument buffer — the mechanism
 that makes overlapping fields legal in MSL, explained in [Memory and
@@ -142,7 +145,9 @@ dispatch creates a command buffer and a compute encoder, commits, and waits
 with `waitUntilCompleted`; a command-buffer error raises `RuntimeError`. An
 empty range returns before encoding anything. The loop index is declared
 `long` but initialized from `[[thread_position_in_grid]]`, which Metal
-types as `uint`, so one dispatch covers at most 2³² iterations.
+types as `uint`, so one dispatch covers at most 2³² iterations;
+`check_launch_size()` refuses a longer one against `_MAX_LAUNCH` with
+`ValueError` before encoding.
 
 ## CUDA
 
@@ -159,7 +164,9 @@ explains why.
 !!! note "One thread's context"
 
     The context is current on the thread that called `tack.init()`. The
-    launch path does not make it current on other threads.
+    launch path does not make it current on other threads, so a thread that
+    dispatches must first call `cuCtxSetCurrent` with the backend's
+    context, or its launch fails with `CUDA_ERROR_INVALID_CONTEXT`.
 
 **Compilation.** `_compile_ptx` compiles with NVRTC using exactly these
 options:
@@ -184,14 +191,16 @@ on both paths.
 `long long __n__` parameter and begins
 
 ```c
-long long i = blockIdx.x * blockDim.x + threadIdx.x;
+long long i = (long long)blockIdx.x * blockDim.x + threadIdx.x;
 if (i >= __n__) return;
 ```
 
-Locals and loop indices are `long long`. The product
-`blockIdx.x * blockDim.x` is formed in 32-bit unsigned arithmetic before it
-is widened, so as on Metal a single launch addresses at most 2³²
-iterations. Arguments are passed as a ctypes array of pointers to argument
+Locals and loop indices are `long long`. The built-ins are 32-bit
+unsigned, so `blockIdx.x` is widened *before* the multiply; a 32-bit
+product would wrap once a launch reached 2³² threads. At initialization the
+backend reads `CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X`, and a launch of more
+than that many blocks of 256 is refused by `check_launch_size()` with
+`ValueError`. Arguments are passed as a ctypes array of pointers to argument
 values; every launch is followed by `cuCtxSynchronize()`. An empty range
 returns before launching, since `cuLaunchKernel` rejects an empty grid.
 
@@ -219,8 +228,11 @@ texture handle `hipTextureObject_t` (`_TEXTURE_OBJECT_TYPE`), because
 hipRTC rejects CUDA's `cudaTextureObject_t`.
 
 **Launch.** Identical geometry to CUDA — 256-thread blocks, a ceiling-divided
-grid, the same guard and 64-bit locals — through `hipModuleLaunchKernel`,
-followed by `hipDeviceSynchronize()`.
+grid, the same 64-bit index, guard and locals — through
+`hipModuleLaunchKernel`, followed by `hipDeviceSynchronize()`. The launch
+limit (`_query_max_launch`) is the device's maximum `gridDim.x` times 256,
+capped at 2³² − 256, because the dispatch packet on AMD GPUs holds the
+grid's total work-item count in 32 bits.
 
 **Known toolchain defect.** ROCm 7.0.2's device compiler (AMD clang 20,
 embedded in hipRTC's comgr) miscompiles one generated integer expression
@@ -247,7 +259,7 @@ handles from another library instead — see
 | Query | Used for |
 |---|---|
 | `zeDeviceGetProperties` | `deviceId`, passed to `ocloc -device`; the device name |
-| `zeDeviceGetComputeProperties` | `maxGroupSizeX` and `maxTotalGroupSize`, which cap the group size |
+| `zeDeviceGetComputeProperties` | `maxGroupSizeX` and `maxTotalGroupSize`, which cap the group size, and `maxGroupCountX`, which with it bounds one launch |
 | `zeDeviceGetImageProperties` | `maxImageDims3D`, and `maxSamplers > 0` as "has texture samplers" |
 | `zeDeviceGetModuleProperties` | `fp64flags != 0` adds `f64` to `supported_dtypes` |
 | `zeDeviceGetCommandQueueGroupProperties` | the first queue group with the compute flag |
@@ -256,7 +268,10 @@ handles from another library instead — see
 attribute, so `supports_f64` follows the device automatically.
 `_create_queues` makes a synchronous command queue, one reusable command
 list for kernel launches, and one synchronous immediate command list for
-memory copies.
+memory copies. Both lists, and each kernel's argument state, are shared by
+every dispatch on the backend, and Level Zero forbids using them from two
+threads at once, so a reentrant `_launch_lock` is held around every launch,
+native reduction and host copy.
 
 **Compilation.** OpenCL C from `generate_opencl_source` is compiled to
 SPIR-V *in process* by `_compile_to_spirv`, which calls `oclocInvoke` in
@@ -293,6 +308,9 @@ reusable command list, appends the launch with
 `ceil(loop_end / group_size)` groups, closes it, executes it on the queue,
 and waits with `zeCommandQueueSynchronize` and an infinite timeout. An empty
 range returns first; a negative count would wrap as an unsigned group count.
+The group count is a ctypes `uint32` field that truncates rather than
+rejects, so a launch of more than `maxGroupCountX` groups is refused by
+`check_launch_size()` first.
 
 `LevelZeroBackend.__del__` intentionally does nothing: Level Zero cleanup
 at interpreter shutdown can crash because the driver may already be
@@ -316,16 +334,42 @@ variant's payload. Each dispatch writes the new values with
 Zero and a memory copy on Metal. Changing a scalar's value therefore never
 recompiles. The loop range is resolved from the *unpacked* IR, because
 packing rewrites the parameter list that the range expression refers to.
-Since the pack fields belong to the variant, two threads dispatching the
-same variant at once share them.
+
+Since the pack fields belong to the variant, as does Metal's argument
+buffer, two threads dispatching the same variant at once would each write
+their arguments into the same buffers, and a launch could run with the
+other call's scalars or fields. Reproduced on CUDA with four threads, 248
+of 400 dispatches computed with another thread's scalars. CUDA, HIP and
+Metal therefore hold `KernelVariant.dispatch_lock` from the pack update
+through the synchronous launch, so different variants still run
+concurrently; uncontended, the lock cost about 0.25 µs against a 95 µs CUDA
+dispatch. Level Zero takes its backend-wide `_launch_lock` instead (see
+[Level Zero](#level-zero)). The CPU binds arguments per call and takes no
+lock.
 
 ## Textures
 
-`tack.texture3d(field, shape)` wraps a field as a `Texture3D`; in a kernel,
-`tex.sample(u, v, w)` interpolates trilinearly at normalized coordinates,
-where `0` and `1` are the centers of the first and last texels. Hardware
-samplers put texel centers at `(i + 0.5) / N`, so every hardware path
-rewrites each coordinate to `(u * (N - 1) + 0.5) / N`.
+`tack.texture3d(field, shape)` creates a `Texture3D` (`lang/field.py`)
+holding a copy of the field; in a kernel, `tex.sample(u, v, w)`
+interpolates trilinearly at normalized coordinates, where `0` and `1` are
+the centers of the first and last texels. Hardware samplers put texel
+centers at `(i + 0.5) / N`, so every hardware path rewrites each coordinate
+to `(u * (N - 1) + 0.5) / N`.
+
+**Storage.** The texture copies its field when it is created, on every
+backend, and `tex.update()` copies it again; writes to the field in
+between don't reach it. The copy is storage the texture owns, in
+`tex._storage`. `Backend.texture_in_hardware(shape_3d)` chooses it: where
+the answer is true, `create_texture_image()` returns a backend image
+object (`MetalTextureImage`, `CUDATextureImage`, `HIPTextureImage` or
+`L0TextureImage`) whose `upload(field)` does the copy; otherwise the
+texture allocates a private `f32` field and `update()` copies into it with
+the device copy kernel. Only one extra copy is held per texture. Images
+are built eagerly and updated in place, so their texture objects stay
+valid, and they free their device objects when the texture is collected
+(CUDA's only while its context is alive). At dispatch, `bind_textures()`
+(`runtime/kernel_utils.py`) replaces each `Texture3D` argument with its
+storage, never its field. No compiled kernel caches texture objects.
 
 | Backend | Hardware path | Software fallback when |
 |---|---|---|
@@ -336,10 +380,12 @@ rewrites each coordinate to `(u * (N - 1) + 0.5) / N`.
 | Level Zero | `zeImageCreate` (3D, 32-bit float), filled through a host staging allocation; `CLK_NORMALIZED_COORDS_TRUE \| CLK_ADDRESS_CLAMP_TO_EDGE \| CLK_FILTER_LINEAR` | `maxSamplers == 0` (Xe-HPC), or an extent exceeds `maxImageDims3D` |
 
 The fallback decision changes the generated code, so HIP and Level Zero
-make it in their own `_store_texture_shapes`, passed to `resolve_variant`,
-which runs before the variant key is built. Falling back clears the
-parameter's `_is_texture` flag and the generator emits a software trilinear
-helper over the raw field instead.
+ask `texture_in_hardware()` again in their own `_store_texture_shapes`,
+passed to `resolve_variant`, which runs before the variant key is built.
+The texture and the variant therefore agree on which storage is bound.
+Falling back clears the parameter's `_is_texture` flag and the generator
+emits a software trilinear helper over the texture's private field instead.
+`tack.inspect` calls the same hook, so it shows the code dispatch compiles.
 
 CDNA parts — gfx940/941/942, the MI300 family — have no texture hardware,
 and hipRTC refuses `tex3D` outright there ("The image/texture API not
@@ -347,14 +393,20 @@ supported on the device"), which is why HIP asks
 `hipDeviceAttributeImageSupport` rather than assuming. Xe-HPC similarly has
 no samplers; filtered image reads would be driver-emulated.
 
-!!! warning "Hardware textures are copies"
-
-    Every hardware path copies the field into a separate texture object the
-    first time a compiled kernel sees it, and caches that object in the
-    compiled kernel keyed by the field's buffer (its `MTLBuffer` identity or
-    device address) and extent. While that entry exists, a later write to
-    the field is not copied again, so the texture keeps the values it had
-    at its first use. The images are single-channel 32-bit float.
+**Why a snapshot on every backend.** Hardware samplers read an image, not
+the field, so on those paths a texture is a copy whatever Tack does. The
+only portable rule is therefore that a texture is a copy everywhere, taken
+at points the program chooses: at creation and on `update()`. Owning the
+image in the texture, rather than caching it in a compiled kernel under
+the field's device address, means no texture is ever handed another's
+image (a new field that reuses a freed field's address, or a second
+texture over the same field, gets its own copy), and the image is released
+with its texture. The images are single-channel 32-bit float, so
+`texture3d()` rejects non-`f32` fields rather than reinterpreting them,
+and it rejects shapes whose `W*H*D` differs from the field's size, which
+the copies would read past. `render_volume()` calls `update()` before each
+render, since the mixed-scene path tracer reads the volume's field
+directly. `test_texture_snapshot.py` pins these rules.
 
 ## Device reductions
 
@@ -365,7 +417,10 @@ using a source from `field_reduction_source(dialect, op)`
 (`codegen/reductions.py`): a 256-lane tree in each group, followed by
 unordered atomic accumulation of the partial results. Any other dtype falls
 back to NumPy, as does Level Zero when the device's group-size limits are
-below 256. An empty field returns `0.0` for `sum` and raises `ValueError`
+below 256. CUDA, HIP and Level Zero pass the element count as a 64-bit
+argument and check it with `check_launch_size()`. Metal's kernel holds the
+count in 32 bits, so Metal reduces a field of 2³² or more elements with
+NumPy over its shared buffer. An empty field returns `0.0` for `sum` and raises `ValueError`
 for `min` and `max` on every backend. The ordering and accuracy promises are
 in the [contract](../reference/language-contract.md#field-and-parallel-reductions).
 

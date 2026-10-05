@@ -14,11 +14,12 @@
 | **CPU** | `llvm_gen.py` → LLVM IR | llvmlite JIT | ctypes call, thread pool | `NumpyBuffer` |
 | **Metal** | `msl_gen.py` → MSL | Metal API (pyobjc) | compute pipeline | `MetalBuffer` |
 | **CUDA** | `cuda_gen.py` → CUDA C | NVRTC → PTX | `cuLaunchKernel` | `CUDABuffer` |
-| **HIP** | `hip_gen.py` → HIP C | hipRTC | `hipLaunchKernel` | `HIPBuffer` |
+| **HIP** | `hip_gen.py` → HIP C | hipRTC | `hipModuleLaunchKernel` | `HIPBuffer` |
 | **Level Zero** | `opencl_gen.py` → OpenCL C | `libocloc` → SPIR-V | `zeCommandListAppendLaunchKernel` | `L0Buffer` |
 
-`hip_gen.py` is nine statements: it subclasses the CUDA generator and swaps
-the `#include`, because HIP device code uses CUDA's syntax. `opencl_gen.py`
+`hip_gen.py` is a few statements: it subclasses the CUDA generator and swaps
+the `#include` and the texture handle type (`hipTextureObject_t`), because
+HIP device code otherwise uses CUDA's syntax. `opencl_gen.py`
 also extends the CUDA generator, but overrides considerably more — OpenCL C
 spells address spaces, thread indices, barriers and math differently, and the
 wrong spelling still compiles as C.
@@ -102,7 +103,7 @@ from tack.runtime.dispatch import get_backend
 be = get_backend()
 be.name                       # 'cpu', 'metal', 'cuda', 'hip', 'level_zero'
 be.label                      # how to spell it in a message
-be.supported_dtypes           # the set dispatch checks field arguments against
+be.supported_dtypes           # the frozenset dispatch checks field arguments against
 be.supports_f64               # derived from the above
 be.supports_device_reductions # whether .sum()/.min()/.max() run on device
 be.device_memory_spaces       # what memory_space() must return for a pointer

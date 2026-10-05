@@ -9,7 +9,7 @@ kernel *computes* is defined by the
 [kernel language contract](../reference/language-contract.md). What each
 backend supports is defined in [Backend capabilities](backend-capabilities.md).
 
-All statements describe release candidate `745e01f`. They use the labels
+All statements describe release candidate `23d6e1d`. They use the labels
 defined in [Contracts](index.md#how-to-read-a-contract).
 
 ## Backend selection
@@ -22,7 +22,7 @@ re-exported as `tack.init`.
 | | |
 |---|---|
 | `arch` | One of the strings `"cpu"`, `"metal"`, `"cuda"`, `"hip"` and `"level_zero"`. The constants `tack.cpu`, `tack.metal`, `tack.cuda`, `tack.hip` and `tack.level_zero` are those strings |
-| `**options` | Forwarded to the backend constructor. Each option must be in that backend's `init_options`. Only Level Zero declares one, `external_context` |
+| `**options` | Forwarded to the backend constructor. Each option must be in that backend's `init_options`. CPU declares `num_threads`, which takes precedence over `TACK_CPU_THREADS`, and Level Zero declares `external_context`. The other backends declare none |
 
 **Current behavior:**
 
@@ -46,16 +46,17 @@ re-exported as `tack.init`.
 |---|---|
 | Unknown `arch` | `ValueError`: "Unknown architecture: '`vulkan`'. Available: cpu, cuda, hip, level_zero, metal" |
 | Missing Python dependency (an `ImportError` from the backend module or constructor) | `RuntimeError`: "Cannot initialize '`hip`' backend: missing dependency." followed by the original error and install instructions. The original exception is chained |
-| Option not in `init_options` | `ValueError`: "The '`cpu`' backend does not accept the option(s) `num_threads`. Accepted: none." Raised after the backend module is imported, so a missing dependency is reported first |
+| Option not in `init_options` | `ValueError`: "The '`metal`' backend does not accept the option(s) `num_threads`. Accepted: none." Raised after the backend module is imported, so a missing dependency is reported first |
 | Device or runtime failure (a `RuntimeError` from the constructor) | `RuntimeError`: "Cannot initialize '`cuda`' backend on Linux." followed by the original message and install instructions. Chained |
 | Any other constructor failure, such as `ValueError` for an incomplete `external_context` or a non-integer `TACK_CPU_THREADS` | Propagates unwrapped |
 
 **`TACK_NO_REINIT`:** if a backend is already active and this variable is
-set to *any non-empty value*, `init` returns immediately and does nothing.
-It ignores `arch` and `options`, and it doesn't validate either. `"0"`
-counts as set. This exists for embedding, for example inside an ANARI
-device that shares the process. Unset it for testing, because it
-suppresses backend switching.
+switched on, `init` returns immediately and does nothing. It ignores `arch`
+and `options`, and it doesn't validate either. The variable is read by
+`dispatch.env_flag`: unset, empty, `0`, `false`, `no` and `off` (in any
+case, ignoring surrounding spaces) mean off, and any other value means on.
+This exists for embedding, for example inside an ANARI device that shares
+the process. Unset it for testing, because it suppresses backend switching.
 
 ### `get_backend()`
 
@@ -81,7 +82,7 @@ owned by the backend that allocated it.
 | `tack.field_like(arr, dtype=None)` | Allocates `arr.shape`. The dtype is inferred from `arr.dtype` unless given. Then copies `arr` in |
 | `tack.concat(fields)` | A new 1-D field holding all elements in order, copied on the device |
 | `tack.Vector.field(n, dtype=f32, shape=())` | A flat scalar field of `prod(shape) * n` elements that kernels index as `n`-component vectors |
-| `tack.texture3d(field, shape=None, interp="linear")` | A `Texture3D` view of a field for `sample(u, v, w)` in kernels. See [Textures](backend-capabilities.md#textures) |
+| `tack.texture3d(field, shape=None, interp="linear")` | A `Texture3D` holding a copy of the field taken at creation, for `sample(u, v, w)` in kernels. `tex.update()` copies the field again. See [Textures](backend-capabilities.md#textures) |
 
 **Current behavior:**
 
@@ -109,25 +110,22 @@ owned by the backend that allocated it.
 | `field_like` with a dtype that has no Tack type, such as `float16` | `TypeError`: "Unsupported numpy dtype: float16" |
 | `concat([])` | `ValueError` |
 | `concat` with mixed dtypes | `TypeError` |
-| `texture3d` on a field that isn't `f32` or `f64` | `ValueError`: "texture3d requires f32 or f64 dtype" |
+| `texture3d` on a field that isn't `f32` | `ValueError`: "texture3d requires an f32 field, got f64; convert it first with field.astype(tack.f32)" |
 | `texture3d` without a 3-D shape | `ValueError`: "texture3d requires a 3D shape" |
+| `texture3d` with a shape whose `W*H*D` differs from the field's size | `ValueError` naming both element counts |
+| `texture3d` with `interp` other than `"linear"` | `ValueError`: "texture3d supports interp='linear' only, ..." |
 
 ### Host operations
 
 | Operation | Guarantee | Errors |
 |---|---|---|
-| `f.from_numpy(arr)` | Copies `arr` into the field. If `arr.dtype` differs from the field's dtype, the array is converted first with NumPy `astype`, which is an unchecked cast | `RuntimeError` if the field is read-only. `ValueError` "Shape mismatch: field is (8,), got (4,)" unless `arr.shape == f.shape` exactly. `AttributeError` if `arr` isn't an ndarray |
+| `f.from_numpy(arr)` | Copies `arr` into the field. If `arr.dtype` differs from the field's dtype, the array is converted first with NumPy `astype`, which is an unchecked cast. Works on reshaped views: the buffer copies the data in its own allocated shape | `RuntimeError` if the field is read-only. `ValueError` "Shape mismatch: field is (8,), got (4,)" unless `arr.shape == f.shape` exactly. `AttributeError` if `arr` isn't an ndarray |
 | `f.to_numpy()` | Returns a **new** array with shape `f.shape` and the field's dtype. Never a view, including on Metal | — |
 | `f.fill(value)` | Sets every element | `RuntimeError` if read-only |
 | `f.reshape(shape)` | A metadata-only view that shares the buffer, the writability and any DLPack hold. Accepts an `int` | `ValueError` if the element count differs |
 | `f.copy()` / `f.astype(dtype)` | A new field on the **active** backend, filled by a device copy kernel. `astype` converts with the kernel language's conversion rules | Kernel errors, if any |
 | `f.size`, `len(f)` | `size` is the product of the extents. `len` is `shape[0]`, or `0` for `shape == ()` | — |
 | `f.export_memory()` | Returns an `ExportedMemory` handle for cross-API sharing. On CUDA, a field allocated without `exportable=True` is copied **once** into exportable memory, so the export is a snapshot | `RuntimeError` on CPU, HIP and Level Zero |
-
-**Current behavior (known defect):** `from_numpy` on a reshaped view
-raises a NumPy `ValueError` ("could not broadcast") on CPU and Metal,
-because the buffer keeps its allocated shape. Write through the original
-field instead.
 
 **Required caller constraint:** a field is synchronized at kernel-call
 boundaries only. Dispatch is synchronous on every backend, so a kernel has
@@ -160,24 +158,31 @@ Wraps existing memory as a field without copying. Tack never frees it.
 |---|---|
 | CPU | An integer address or a NumPy array |
 | Metal | An `MTLBuffer` object. Any other value raises `TypeError` ("the Metal backend wraps an MTLBuffer object, not int ...") |
-| CUDA, HIP | A device pointer as an integer |
-| Level Zero | A USM device or shared pointer as an integer, allocated in Tack's context |
+| CUDA, HIP | A device address: an `int`, or anything `int()` accepts, such as a NumPy integer or a `CUdeviceptr` |
+| Level Zero | A USM device or shared address in the same forms, allocated in Tack's context |
 
-**Guarantee:** when `ptr` is a Python `int` and the backend declares
-`device_memory_spaces`, the pointer is classified with `memory_space()`. A
-pointer outside those spaces raises `ValueError` ("Pointer is in 'cpu'
-memory but the active backend is 'CUDA'. ..."). **Current behavior:** other
-pointer types, such as NumPy integers and `CUdeviceptr`, skip this check.
-On Level Zero the driver answers for pointers from any context on the
-device, so the check can't detect a pointer from a different context.
+**Guarantee:** on a backend that declares `device_memory_spaces` (CUDA,
+HIP and Level Zero), every pointer is converted with `as_address`
+(`runtime/kernel_utils.py`) and classified with `memory_space()`. A value
+that isn't an address raises `TypeError` ("field_from_ptr() on the CUDA
+backend takes a device address ..."), and a pointer outside those spaces
+raises `ValueError` ("Pointer is in 'cpu' memory but the active backend is
+'CUDA'. ..."). On Level Zero the driver answers for pointers from any
+context on the device, so the check can't detect a pointer from a
+different context.
+
+**Guarantee:** a field created with `writable=False`, the default, is
+read-only on the host and in kernels. `fill()` and `from_numpy()` raise
+`RuntimeError`. A dispatch that binds it to a parameter the kernel may
+store to, or use as an atomic target, raises `ValueError` before the
+launch: "Kernel '`k`': parameter '`out`' may be written, but its field is
+read-only. ...". A parameter whose stores can't be traced counts as
+written.
 
 **Required caller constraints:**
 
 - Keep the memory alive and unmoved for the field's lifetime.
 - Provide at least `prod(shape) * itemsize` contiguous bytes.
-- `writable=False` is enforced **only on the host**: `fill()` and
-  `from_numpy()` raise `RuntimeError`. Kernels can still store to a
-  read-only field. Don't pass one as a kernel output.
 
 ### `tack.memory_space(ptr)`
 
@@ -214,7 +219,8 @@ and `Field.__dlpack_device__()`.
 - With `copy=False`, the field shares the tensor's memory and holds the
   capsule until the field and every view of it are collected. Then the
   producer's deleter runs exactly once.
-- A read-only versioned tensor produces a non-writable field.
+- A read-only versioned tensor produces a non-writable field, which
+  host writes and kernel stores refuse as for `field_from_ptr`.
 - With `copy=True`, the source is read through `np.from_dlpack` and copied
   into a new field with `field_like`. That works only for sources that
   NumPy can read on the host.
@@ -226,15 +232,16 @@ and `Field.__dlpack_device__()`.
 | Non-C-contiguous strides | `ValueError`: "only C-contiguous tensors can be wrapped without copying; ..." |
 | DLPack dtype without a Tack type, or `lanes != 1` | `TypeError` |
 | Unknown device type | `ValueError` |
+| `kDLMetal` tensor | `ValueError`: "Metal DLPack tensors (kDLMetal) cannot be imported: ..." |
 | Device type that the active backend can't wrap | `RuntimeError` naming the backend and the device type, followed by `dlpack_refusal_note` |
 | Wrapped pointer outside `device_memory_spaces` | `ValueError` from `field_from_ptr` |
 
-**Current behavior:** Metal has no working zero-copy import. Host tensors
+**Current behavior:** Metal has no zero-copy import. Host tensors
 (`kDLCPU`) are refused with an explanation, because wrapping a host pointer
-as an `MTLBuffer` without a copy needs page alignment. `kDLMetal` is
-accepted by the device table, but the pointer that reaches
-`MetalBackend.wrap_ptr` is an integer, so the import raises `TypeError`. On
-Metal, use `copy=True`.
+as an `MTLBuffer` without a copy needs page alignment. `kDLMetal` tensors
+are refused up front on every backend, because their data is an opaque
+`MTLBuffer` handle plus a byte offset, which nothing in Tack can wrap yet.
+On Metal, use `copy=True` with a host tensor.
 
 ### VTK
 
@@ -266,11 +273,14 @@ doesn't populate the backend's variant cache.
 |---|---|
 | `"ir"` | Tack IR after resolution, inference, scalar localization, optimization and type annotation (`ir.dump`), before GPU scalar packing |
 | `"source"` | The backend's source. On CPU, LLVM IR for the variant these arguments would select, including the disjoint-field specialization. On Metal, CUDA, HIP and Level Zero, MSL, CUDA C, HIP C or OpenCL C after scalar packing |
-| `"optimized"` | On CPU, the LLVM module after the backend's O3 pipeline. **Current behavior:** on GPU backends, the same text as `"source"`. Vendor compilers' output is never shown |
+| `"optimized"` | CPU only: the LLVM module after the backend's O3 pipeline. On any other backend it raises `ValueError` ("inspect mode 'optimized' is CPU only: ..."), after the kernel's own checks have run, because the GPU backends' optimizers run inside vendor compilers whose output is never shown |
 
-**Guarantees:** inspection enforces the same workgroup-support, atomic,
-alignment, participation and launch-count checks as dispatch, and it raises
-the frontend's errors. See
+**Guarantees:** inspection enforces the same dtype, workgroup-support,
+atomic, alignment, participation and workgroup launch-count checks as
+dispatch, and it raises the frontend's errors. It records texture extents through the
+backend's `_store_texture_shapes()`, so on HIP and Level Zero devices
+without texture hardware the source it shows uses software sampling, as
+dispatch would. See
 [the note on inspection](backend-capabilities.md#what-each-capability-gates)
 for the dispatch checks it skips.
 
@@ -278,14 +288,16 @@ for the dispatch checks it skips.
 first argument isn't a `Kernel`. `ValueError` "Unknown inspect mode:
 '`ptx`'. Use 'ir', 'source', or 'optimized'." Unlike dispatch, inspection
 doesn't wrap errors. For example, a workgroup primitive on CPU raises
-`NotImplementedError` directly.
+`NotImplementedError` directly, and an unsupported field dtype raises the
+dtype check's `TypeError`.
 
 ## Decorators
 
 ### `@tack.kernel`
 
 Returns a `Kernel` (`lang/kernel.py`). Decoration reads the function's
-source with `inspect.getsource` and parses it. **Current behavior:**
+source with `read_source` (`lang/func.py`, a wrapper around
+`inspect.getsource`) and parses it. **Current behavior:**
 nothing is validated or compiled at decoration. Source validation, name
 resolution and lowering happen at the first dispatch or inspection, and
 their errors are raised there.
@@ -306,7 +318,7 @@ rejection are **Required** items of the language contract. See
 | Condition | Exception |
 |---|---|
 | Decorating something that isn't a `def`, such as a lambda | `TypeError` at decoration |
-| Source isn't readable | The `OSError` from `inspect.getsource`, unwrapped, at decoration |
+| Source isn't readable | `RuntimeError` at decoration, the same explanation as for kernels, naming the device function. The `OSError` is chained |
 | Calling the function from Python | `RuntimeError`: "@tack.func '`f`' cannot be called from Python. ..." |
 
 ### `@tack.data_oriented` and `tack.template()`
@@ -343,9 +355,9 @@ and returns only after the kernel completes.
 | Argument | Treated as |
 |---|---|
 | `Field` | A field parameter. Its dtype must be in `supported_dtypes` |
-| `Texture3D` | A sampled texture parameter |
+| `Texture3D` | A sampled texture parameter. The kernel samples the texture's own copy, not its field |
 | `int`, `bool` or NumPy integer | A scalar: `i32` if it fits, else `i64`, else `u64`. Outside the `u64` range raises `TypeError` |
-| `float` or NumPy floating | A scalar: `f64` if any field or texture argument is `f64`, otherwise `f32`. A NumPy `float64` with only `f32` fields becomes `f32` |
+| `float` or NumPy floating | A scalar: `f64` if any field argument is `f64`, otherwise `f32`. Textures are always `f32`. A NumPy `float64` with only `f32` fields becomes `f32` |
 | `@tack.data_oriented` instance | Expanded as described above |
 | Anything else | `TypeError`: "Unsupported argument type for parameter '`a`': <class 'str'>" |
 
@@ -355,8 +367,20 @@ and returns only after the kernel completes.
   *type*, a field's dtype or vector width, a baked shape dimension, or a
   texture extent compiles a new variant. See
   [Specialization and compilation identity](../reference/language-contract.md#specialization-and-compilation-identity).
-- One kernel may be dispatched from several threads concurrently.
-  `test_concurrent_dispatch.py` covers this.
+- One kernel may be dispatched from several threads concurrently. Each
+  thread's dispatch uses its own arguments. On CUDA, HIP and Metal,
+  dispatches of the same compiled variant are serialized by a
+  per-variant lock, `KernelVariant.dispatch_lock`, held from packing the
+  scalars to the end of the synchronous launch, so different variants
+  still run concurrently. Level Zero serializes all launches, reductions
+  and copies on one backend lock (`_launch_lock`). CPU takes no lock,
+  because it binds arguments per call. `test_concurrent_dispatch.py`
+  covers this.
+- **Required caller constraint:** on CUDA, Tack's context is current only
+  on the thread that called `tack.init`. Another thread must make it
+  current, for example with `cuCtxSetCurrent(backend._context)`, before
+  dispatching. Otherwise the launch fails with
+  `CUDA_ERROR_INVALID_CONTEXT`.
 
 **Rejected:**
 
@@ -364,19 +388,20 @@ and returns only after the kernel completes.
   `NotImplementedError("Keyword arguments not supported in kernels")`,
   which reaches the caller as `RuntimeError`: "Kernel '`k`' failed on
   CPUBackend: Keyword arguments not supported in kernels".
-- **A wrong argument count.** `TypeError`: "Kernel '`k`': Kernel '`k`'
-  expects 2 arguments, got 1". Arguments are counted after template
-  expansion.
+- **A wrong argument count.** `TypeError`: "Kernel '`k`' expects 2
+  arguments, got 1". Arguments are counted after template expansion.
+- **A read-only field where the kernel may store.** `ValueError` before
+  the launch. See [Pointer interop](#pointer-interop).
 
 ## Environment variables
 
 | Variable | Read by | Effect |
 |---|---|---|
-| `TACK_CPU_THREADS` | `CPUBackend.__init__` | CPU worker count. Read each time a CPU backend is constructed. Values below 1 become 1. `1` runs everything on the calling thread. A non-integer raises `ValueError` from `tack.init` |
-| `TACK_CPU_POLICY` | `CPUBackend.__init__` | Threading policy. `v2` is the default. `v1` restores the earlier policy. Any value other than `v2` currently selects the v1 code paths |
+| `TACK_CPU_THREADS` | `CPUBackend.__init__` | CPU worker count. Read each time a CPU backend is constructed, unless `tack.init(arch="cpu", num_threads=...)` gives one. Values below 1 become 1. `1` runs everything on the calling thread. A non-integer raises `ValueError` from `tack.init` |
+| `TACK_CPU_POLICY` | `CPUBackend.__init__` | Threading policy: `v1` or `v2`. Unset or empty means `v2`, the default. Any other value raises `ValueError` from `tack.init`, listing the accepted values |
 | `TACK_CPU_MARGIN` | `CPUBackend.__init__` | Float override of the threading decision's safety margin |
-| `TACK_NO_REINIT` | `tack.init` | Any non-empty value makes `init` a no-op while a backend is active. See above |
-| `TACK_DUMP_MSL` | Metal kernel compilation | **Metal only.** Writes each compiled kernel's MSL to `/tmp/tack_<entry>.msl` and prints the path. Other backends ignore it. Use `tack.inspect` instead |
+| `TACK_NO_REINIT` | `tack.init` | A boolean flag (`dispatch.env_flag`): when on, `init` is a no-op while a backend is active. `0`, `false`, `no`, `off` and empty mean off. See above |
+| `TACK_DUMP_MSL` | Metal kernel compilation | **Metal only.** A boolean flag read like `TACK_NO_REINIT`. When on, writes each compiled kernel's MSL to `/tmp/tack_<entry>.msl` and prints the path. Other backends ignore it. Use `tack.inspect` instead |
 | `TACK_REQUIRE_CLANG` | Test suite (`tests/compiler_tools.py`) | Any value other than empty or `0` turns missing or unusable Clang tooling into a test failure instead of a skip |
 | `TACK_CLANG`, `TACK_CLANGXX` | Test suite | An explicit Clang driver for OpenCL/C and C++ host checks. An explicit choice that fails its preflight is a failure, and there is no fallback to `PATH` |
 | `TACK_EXAMPLES_ARCH` | Test suite (`tests/test_examples.py`) | Backend for the slow example sweep. The default is `cpu` |
@@ -385,7 +410,7 @@ The CPU threading variables are tuning controls, not part of the language
 contract. They change scheduling and never change results of race-free
 programs. See [CPU Threading Policy](../design/cpu-threading.md). Two vis
 examples (`40_fe_isoline.py`, `41_fe_isosurface.py`) read a default
-`--arch` from `Tack_ARCH`, spelled with that capitalization.
+`--arch` from `TACK_ARCH`.
 
 ## Exceptions
 
@@ -397,11 +422,12 @@ in Python subclasses `RuntimeError`.
 
 - It re-raises `UnsupportedSyntaxError` unchanged.
 - It re-raises a `TypeError` as a `TypeError` prefixed with
-  `Kernel '<name>': `.
+  `Kernel '<name>': `, unless the message already starts with that name,
+  so the kernel is named once.
 - It re-raises any other `RuntimeError`, including `NotImplementedError`,
-  as `RuntimeError("Kernel '<name>' failed on <BackendClass>: ...")`. For
-  compiler failures, it uses a short "failed to compile" form that lists
-  the error lines.
+  as `RuntimeError("Kernel '<name>' failed on <BackendClass>: ...")`,
+  dropping an inner `Kernel '<name>': ` prefix. For compiler failures, it
+  uses a short "failed to compile" form that lists the error lines.
 - It diagnoses an `AttributeError` caused by stale fields as a
   `RuntimeError`.
 - It passes everything else through unchanged, notably `ValueError` and
@@ -411,12 +437,12 @@ Translated exceptions keep the original as `__cause__`.
 
 | Exception | Raised for | Where |
 |---|---|---|
-| `UnsupportedSyntaxError` | Syntax outside the kernel language, in a kernel or a device function, including unreachable statements | First dispatch or inspection (frontend) |
+| `UnsupportedSyntaxError` | Syntax outside the kernel language, in a kernel or a device function, including unreachable statements; a kernel without exactly one parallel loop directly in its body; a store, atomic, barrier, block reduction or `print` outside the parallel loop, including through an inlined device function or template method | First dispatch or inspection (frontend) |
 | `NameError` | A name that is neither a parameter nor assigned. Kernels don't capture Python globals | First dispatch or inspection (frontend) |
-| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, `field_like` or DLPack dtypes, `concat` dtypes, a non-`MTLBuffer` on Metal | Dispatch (cold), inspection, host calls |
-| `ValueError` | Unknown arch or option, incomplete `external_context`, workgroup participation, launch counts or device group size, atomic alignment, `field_from_ptr` memory space, shape mismatches, `reshape`, `texture3d` arguments, empty `min`/`max`, empty `concat`, unknown inspect mode, template method or attribute errors, malformed DLPack tensors | Initialization, dispatch (cold or every call), inspection, host calls |
+| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, `field_like` or DLPack dtypes, `concat` dtypes, a non-`MTLBuffer` on Metal, a `field_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
+| `ValueError` | Unknown arch or option, an unknown `TACK_CPU_POLICY`, incomplete `external_context`, workgroup participation, launch counts or device group size, a launch or reduction larger than one grid can index, atomic alignment, a read-only field the kernel may store to, `field_from_ptr` memory space, shape mismatches, `reshape`, `texture3d` arguments, empty `min`/`max`, empty `concat`, unknown inspect mode or `"optimized"` off CPU, template method or attribute errors, malformed or `kDLMetal` DLPack tensors | Initialization, dispatch (cold or every call), inspection, host calls |
 | `NotImplementedError` | Workgroup primitives on CPU, keyword arguments, and the few lowering checks that source validation doesn't already report as `UnsupportedSyntaxError` | Raised directly by inspection. Wrapped in `RuntimeError` at dispatch |
-| `RuntimeError` | Initialization failures, compilation and launch failures, stale fields after a backend switch, unreadable kernel source, host writes to read-only fields, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, for example a kernel without exactly one top-level parallel loop) | Everywhere |
+| `RuntimeError` | Initialization failures, compilation and launch failures, stale fields after a backend switch, unreadable kernel or device-function source, host writes to read-only fields, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, raised when a pass leaves IR that breaks a structural invariant) | Everywhere |
 | `BufferError` | `__dlpack__(copy=True)` | Export |
 | `AttributeError` | Passing a NumPy dtype where a Tack type is expected, or a non-array to `from_numpy` or `field_like` | Host calls (unvalidated caller constraint) |
 
@@ -424,4 +450,6 @@ Translated exceptions keep the original as `__cause__`.
 [Backend capabilities](backend-capabilities.md) is raised before the kernel
 launches, so a rejected call leaves field storage unchanged.
 `test_workgroup_contract.py` tests this property for workgroup rejections,
-and `test_atomic_contract.py` tests it for alignment.
+`test_atomic_contract.py` for alignment, `test_launch_limits.py` for
+oversized launches, and `test_outside_parallel_loop.py` for effects outside
+the parallel loop.

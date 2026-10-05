@@ -16,14 +16,16 @@ When a `@tack.kernel` is called, every backend's `execute()` goes through
     → IR resolve (dimension sizes, texture shapes)       [ir_resolve.py]
     → Type inference (from actual arguments)             [type_inference.py]
     → Dispatch type check (backend dtypes)               [type_inference.py]
-    → Scalar localization (assigned scalar params)       [kernel_utils.py]
+    → Scalar localization (params and outer locals)      [kernel_utils.py]
     → Atomic / workgroup checks                          [atomic_support.py, workgroup_*.py]
     → IR optimize (conservative copy propagation)        [ir_optimize.py]
     → Scalar packing (GPU backends only, on a copy)      [ir_pack_scalars.py]
     → IR type annotate (resolved types for codegen)      [ir_type_annotate.py]
     → Backend-specific codegen + native compile
   Every call:
-    → Derive the variant key, look it up, launch
+    → Derive the variant key, look it up
+    → Alignment, read-only and launch-size checks        [kernel_utils.py]
+    → Bind texture storage and arguments, launch
 ```
 
 `verify_ir()` checks the IR after each of these stages. The IR template
@@ -118,15 +120,15 @@ All three packages share the `tack` namespace via `pkgutil.extend_path`.
 
 ## Code Size
 
-`tack-core` is about 16,000 lines of Python, including docstrings and
+`tack-core` is about 16,700 lines of Python, including docstrings and
 comments (`wc -l` over `packages/tack-core/src` at this release);
 `tack-rendering` and `tack-vis` add about 3,800 and 1,900:
 
 | Directory | Lines | Role |
 |-----------|-------|------|
-| `lang/` | ~5,700 | Frontend: validation, AST transform, IR, passes, verification |
+| `lang/` | ~6,000 | Frontend: validation, AST transform, IR, passes, verification |
 | `codegen/` | ~3,900 | 5 code generators and shared helpers |
-| `runtime/` | ~6,000 | 5 backend runtimes, variant resolution, CPU threading |
+| `runtime/` | ~6,300 | 5 backend runtimes, variant resolution, CPU threading |
 
 No C/C++ code. No build step. Everything is pure Python with JIT
 compilation at runtime.
@@ -165,7 +167,8 @@ device memory without allocation or copy. Each backend implements
 `wrap_ptr()` so that the wrapped memory is never freed by Tack (the
 CUDA, HIP and Level Zero buffers carry an `_owned = False` flag).
 Such fields are read-only by default, with an explicit `writable`
-opt-in. The flag is checked by host-side `Field` methods; generated
-kernels do not enforce it. This enables interop with in-situ frameworks
+opt-in. The flag is checked by host-side `Field` methods and, for
+kernels, at dispatch: a read-only field bound to a parameter the kernel
+may store to is refused before the launch. This enables interop with in-situ frameworks
 (Catalyst), GPU libraries (pycuda, cupy), and cross-library buffer
 sharing. See [Interoperability](../design/interoperability.md).

@@ -289,6 +289,16 @@ are dictionary reads.
   replaces the other's slot dictionary, and the second `slot[key] = variant`
   overwrites the first. Each thread returns the variant it built, and both
   are correct, so the only cost is a duplicate compile.
+- **Launching a variant** is serialized on the GPU backends, because a
+  variant owns launch state: the pack buffers its scalars are written
+  into, and on Metal the argument buffer its field bindings are encoded
+  into. CUDA, HIP and Metal hold the variant's `dispatch_lock` (a slot of
+  `KernelVariant`) from the pack update through the synchronous launch, so
+  dispatches of *different* variants still overlap. Level Zero holds one
+  backend-wide `_launch_lock`, because its command lists and kernel
+  argument state are shared by the whole backend. The CPU binds arguments
+  per call and takes no lock. See
+  [Backend Implementations](backend-implementations.md#scalar-arguments-on-the-gpu).
 
 ## Hit versus miss
 
@@ -302,12 +312,13 @@ are dictionary reads.
 | `clone_ir`, resolve, infer, check, localize, atomic/workgroup analysis, optimize | | ✓ |
 | `verify_ir` at each boundary | | ✓ |
 | GPU clone and scalar packing, `annotate_types`, codegen, native compile | | ✓ |
-| `check_workgroup_launch` (collective kernels), `check_atomic_alignment` | ✓ | ✓ |
-| evaluate the launch range, update pack buffers (GPU), launch | ✓ | ✓ |
+| `check_workgroup_launch` (collective kernels), `check_atomic_alignment`, `check_writable_fields` | ✓ | ✓ |
+| evaluate the launch range, `check_launch_size` (GPU), update pack buffers and launch under the variant's lock (GPU) | ✓ | ✓ |
 
 A hit clones nothing, runs no passes and performs no verification. The
 memoized template facts (`_shape_deps`, `_written_flags`,
-`_workgroup_features`) keep the remaining per-dispatch work proportional to
+`_workgroup_features`) and the variant's recorded `atomic_targets` and
+`written_fields` keep the remaining per-dispatch work proportional to
 the parameter count rather than to the kernel's size.
 
 ## The correctness argument

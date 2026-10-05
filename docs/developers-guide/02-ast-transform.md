@@ -36,8 +36,19 @@ transformer's default visitor also rejects unknown nodes. Docstrings and
 
 The transformer tracks several pieces of state:
 
-- **`_loop_depth`** — 0 at the top level. The first `for i in range(...)` at
+- **`_loop_depth`** — 0 at the top level. The `for i in range(...)` at
   depth 0 becomes `IRParallelFor`; nested loops become `IRSequentialFor`.
+- **`_in_parallel_loop`**, **`_parallel_loop_seen`** and **`_kernel_body`**
+  — enforce the one-loop rule and the outside-the-loop rule.
+  `_visit_parallel_for` accepts one `for` statement directly in the kernel
+  body; a second one, or one inside a top-level `if` or `while`, raises
+  `UnsupportedSyntaxError`, as does a kernel with none. While
+  `_in_parallel_loop` is false, `_visit_body` passes each lowered statement
+  to `_check_outside_parallel_loop`, which rejects a field or array store,
+  atomic, barrier, block reduction or `print` (`_effect_name`) at the
+  statement's source position. It runs on the lowered IR so effects from
+  inlined device functions and template methods are seen; nested bodies
+  are visited first, so the reported position is the innermost one.
 - **`_inline_counter`** — monotonic counter for generating unique variable
   names during `@tack.func` inlining.
 - **`_vector_vars`** — tracks which local variables are vectors (name → component count).

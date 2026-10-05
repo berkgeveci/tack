@@ -27,6 +27,10 @@ with a different meaning.
 | Atomic field types | all ten | `i32`, `u32`, `f32` | 32- and 64-bit ints, `f32`, `f64` | 32- and 64-bit ints, `f32`, `f64` | `i32`, `u32`, `f32` |
 | `sum`/`min`/`max` on the device | no (NumPy) | `f32` | `f32` | `f32` | `f32` |
 | 3D textures | software | hardware | hardware | hardware where the device has image support | hardware where the device has samplers |
+| Iterations per launch | no limit | 2^32 | device limit (max grid × 256) | device limit, at most 2^32 − 256 | device limit (max group count × group size) |
+
+A launch past a backend's limit raises `ValueError` naming the kernel, the
+count and the limit; split the work across several calls.
 
 The [backend capability contract](../contracts/backend-capabilities.md) has
 the full matrix, what each capability rejects and when, and the subset that
@@ -53,8 +57,9 @@ That matters because the break-even point depends on how much work the
 kernel does per element, and moves by a factor of a thousand between a
 memory-bound expression and a compute-heavy one.
 
-Set `TACK_CPU_THREADS` to override the thread count. `TACK_CPU_THREADS=1`
-runs everything on the calling thread, which is useful when profiling or
+Set `TACK_CPU_THREADS`, or pass `tack.init(arch=tack.cpu, num_threads=n)`,
+to override the thread count. A thread count of 1 runs everything on the
+calling thread, which is useful when profiling or
 when Tack is embedded in a host that manages its own threads.
 
 The CPU has no workgroup execution model, and Tack doesn't emulate one.
@@ -105,6 +110,21 @@ pip install 'cuda-python>=13.2'
 ```python
 tack.init(arch=tack.cuda)
 ```
+
+Tack's CUDA context is current only on the thread that called
+`tack.init()`. To call kernels from another thread, make the context
+current there first:
+
+```python
+from cuda.bindings import driver
+from tack.runtime.dispatch import get_backend
+
+driver.cuCtxSetCurrent(get_backend()._context)  # in the other thread
+```
+
+Calls of one kernel from several threads are safe on every backend: each
+call runs with its own arguments. On GPU backends calls of the same
+compiled kernel take turns.
 
 ## HIP
 
@@ -180,10 +200,12 @@ Tack validates field dtypes at dispatch time before compilation. If a field
 uses a dtype not supported by the target backend, you get a clear error:
 
 ```
-TypeError: Kernel 'my_kernel': Kernel 'my_kernel': parameter 'data' has dtype
-tack.f64, which is not supported on Metal. Supported dtypes: tack.f32,
-tack.i16, tack.i32, tack.i64, tack.i8, tack.u16, tack.u32, tack.u64, tack.u8
+TypeError: Kernel 'my_kernel': parameter 'data' has dtype tack.f64, which is
+not supported on Metal. Supported dtypes: tack.f32, tack.i16, tack.i32,
+tack.i64, tack.i8, tack.u16, tack.u32, tack.u64, tack.u8
 ```
+
+`tack.inspect` applies the same check.
 
 Supported dtypes per backend:
 

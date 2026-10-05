@@ -20,21 +20,27 @@ page, [CPU Threading Policy](cpu-threading.md).
 ### One top-level parallel loop
 
 A kernel has exactly one top-level `for` loop over `range(...)` or
-`tack.ndrange(...)`. `KernelTransformer.visit_For`
-(`lang/ast_transform.py`) lowers it to `IRParallelFor`; every loop nested
-inside it becomes an `IRSequentialFor`. Each parallel iteration owns its
-local variables. There is **no defined order between iterations**, so a
-kernel must not let two iterations make conflicting accesses to the same
-memory unless it uses an atomic or a supported synchronization. Within one
-iteration, statements run in program order and a load sees that iteration's
-earlier stores (LC1).
+`tack.ndrange(...)`, a statement directly in the kernel body.
+`KernelTransformer.visit_For` (`lang/ast_transform.py`) lowers the first
+`for` it meets outside a loop through `_visit_parallel_for` to
+`IRParallelFor`; every loop nested inside it becomes an `IRSequentialFor`.
+Each parallel iteration owns its local variables. There is **no defined
+order between iterations**, so a kernel must not let two iterations make
+conflicting accesses to the same memory unless it uses an atomic or a
+supported synchronization. Within one iteration, statements run in program
+order and a load sees that iteration's earlier stores (LC1).
 
-The IR verifier (`lang/ir_verify.py`) enforces the single loop: a kernel with
-two top-level loops fails with "kernel must contain exactly one top-level
-parallel loop", an `IRVerificationError`. That class derives from
-`RuntimeError`, and dispatch reports it as a `RuntimeError` naming the
-kernel. Multiple parallel phases are written as separate kernels; since
-dispatch is synchronous, the second kernel sees everything the first wrote.
+The frontend enforces the single loop while lowering, with a source
+position. A kernel without a parallel loop raises `UnsupportedSyntaxError`
+at its definition ("definition at line 1, column 1 has no parallel loop:
+..."). A second top-level loop, or a loop inside a top-level `if` or
+`while`, raises it at that loop ("for loop at line 4, column 5 is outside
+the parallel loop. A kernel has one parallel loop, ..."). The IR verifier
+(`lang/ir_verify.py`) checks the same invariant ("kernel must contain
+exactly one top-level parallel loop") on every later stage, as a backstop
+for passes rather than as the user's diagnostic. Multiple parallel phases
+are written as separate kernels; since dispatch is synchronous, the second
+kernel sees everything the first wrote.
 
 **Why one loop.** A single flat index space is the one shape every backend
 supports with no runtime machinery: a grid on a GPU, a range split into
@@ -82,25 +88,72 @@ new array length reuses the compiled variant; see
 | | CPU | Metal | CUDA / HIP | Level Zero |
 |---|---|---|---|---|
 | Kernel shape | function over `[__loop_start__, __loop_end__)`, called per chunk | one thread per iteration | one thread per iteration | one work-item per iteration |
-| Index source | i64 loop variable | `uint [[thread_position_in_grid]]`, widened to `long` | `blockIdx.x * blockDim.x + threadIdx.x`, widened to `long long` | `get_global_id(0)` as `long` |
+| Index source | i64 loop variable | `uint [[thread_position_in_grid]]`, widened to `long` | `(long long)blockIdx.x * blockDim.x + threadIdx.x` | `get_global_id(0)` (a `size_t`) as `long` |
 | Group size | n/a | `min(maxTotalThreadsPerThreadgroup, 256)` | 256 | `min(256, maxGroupSizeX, maxTotalGroupSize)` |
 | Launch | chunks on a thread pool, or serial | `dispatchThreads` with the exact count | `ceil(n / 256)` blocks | `ceil(n / group)` groups |
 | Tail handling | loop condition | exact grid; final group may be smaller | `if (idx >= __n__) return;` | `if (idx >= __n__) return;` |
+| Largest launch | no limit | 2^32 (`_MAX_LAUNCH`) | CUDA: max `gridDim.x` × 256; HIP: the same, capped at 2^32 − 256 | `maxGroupCountX` × group size |
 
 Loop variables are 64-bit on every backend (`long long` for CUDA/HIP,
 `long` for MSL and OpenCL, i64 in LLVM), so index arithmetic derived from
 them does not overflow 32 bits for large fields. The thread index itself
-is narrower on some targets: Metal's grid position is a 32-bit `uint`, and
-the CUDA/HIP expression above is evaluated in 32-bit unsigned arithmetic
-before it is widened. A single dispatch on those backends therefore covers
-at most 2^32 iterations; nothing currently checks that bound.
+must be formed at that width too. CUDA's `blockIdx.x`, `blockDim.x` and
+`threadIdx.x` are 32-bit unsigned, so `CUDACodeGen._emit_parallel_for`
+casts `blockIdx.x` to `long long` *before* the multiply; a 32-bit product
+would wrap once a launch reached 2^32 threads, and those threads would
+repeat the first iterations while the tail never ran. HIP inherits the
+generator, and the native reduction kernels in `codegen/reductions.py` use
+the same expression. OpenCL's `get_global_id` already returns a 64-bit
+`size_t`.
 
-!!! warning "Code outside the parallel loop"
-    Statements before the top-level loop are emitted ahead of it. On a GPU
-    every thread executes them; on the CPU they run once per call of the
-    compiled function, which is once per chunk, including the timing calls
-    the threading policy makes. They therefore run an unspecified number of
-    times. Keep them to side-effect-free scalar setup such as `k = n * 2`.
+**Every iteration runs, or the launch is refused.** Each GPU backend's
+`execute` calls `check_launch_size()` (`runtime/kernel_utils.py`) with the
+iteration count before launching, and raises `ValueError` ("Kernel '`k`':
+`N` iterations exceed the `M` that one CUDA launch can index; split the
+work across several launches.") rather than letting a driver refuse the
+grid with a bare error code or a narrowed count wrap. The limits in the
+table above come from what each backend can index. CUDA's is its device's
+maximum `gridDim.x` times 256. HIP's is the same, capped at 2^32 − 256,
+because the AMD dispatch packet holds the total work-item count in 32 bits.
+Level Zero's group count is a `uint32` that ctypes would truncate, so its
+limit is `maxGroupCountX` times the group size. Metal's thread position is a
+`uint`, so one dispatch indexes at most 2^32 threads.
+`test_launch_limits.py` runs 2^32 + 256 iterations on CUDA and Level Zero
+and checks that the last 256 run, and checks the refusal on HIP and Metal.
+
+### Statements outside the parallel loop
+
+Statements before or after the top-level loop are emitted outside it. On a
+GPU every thread executes them; on the CPU they run once per call of the
+compiled function, which is once per chunk, threading probe or timing
+sample. They have no defined execution count, so they must be
+unobservable however often they run. `KernelTransformer._visit_body` checks
+each statement outside the loop after lowering it
+(`_check_outside_parallel_loop`) and accepts only local assignments, field
+loads, `tack.shared`/`tack.local_array` declarations and `thread_id()`
+reads. A field or array store, an atomic, a barrier, a block reduction or a
+`print` raises `UnsupportedSyntaxError` naming the construct and its line
+and column ("store at line 2, column 5 is outside the parallel loop. ..."),
+including inside top-level `if` and `while` statements.
+
+The check runs on lowered IR rather than on the source AST, because device
+functions and template methods are resolved and inlined only during
+lowering, and effects also arrive through vector stores, tuple unpacking and
+augmented stores. Nested and inlined bodies are checked first, so the error
+names the innermost statement, in the device function or method where it
+was written ("Device function '`bump`' (inlined into kernel '`k`'):
+atomic_add() at line 3, column 5 ..."). The IR verifier rejects any
+`IRFieldStore`, `IRAtomicOp`, `IRBlockReduce`, `IRBarrier` or `IRPrint`
+outside the loop at every later stage.
+
+Local assignments are not unobservable on their own. On the CPU a local
+assigned before the loop and reassigned inside it would carry its value
+from one iteration to the next within a chunk, where every GPU thread
+starts afresh. `_localize_outer_scalars` (`runtime/kernel_utils.py`)
+therefore gives every scalar parameter and outer local that the loop body
+assigns a fresh per-iteration local seeded from the outer value, so each
+iteration starts from the values the outer statements bound, on every
+backend.
 
 ### Early exits
 
@@ -524,7 +577,9 @@ the native field reduction's final combine uses them too.
 | Situation | Exception | Raised by |
 |---|---|---|
 | `break` in the parallel loop, `return` in a kernel, atomic or barrier used as a value | `UnsupportedSyntaxError` (a `NotImplementedError`) | `lang/source_validation.py` |
-| More than one top-level parallel loop | `RuntimeError` at dispatch (`IRVerificationError`) | `lang/ir_verify.py` |
+| No parallel loop, a second one, or one inside a top-level `if` or `while` | `UnsupportedSyntaxError` | `KernelTransformer._visit_parallel_for`, `visit_FunctionDef` |
+| Store, atomic, barrier, block reduction or `print` outside the parallel loop | `UnsupportedSyntaxError` | `KernelTransformer._check_outside_parallel_loop` |
+| Launch longer than one grid of the backend can index | `ValueError` | `check_launch_size` |
 | Loop bound the host cannot evaluate | `RuntimeError` | `_resolve_range_expr` |
 | Workgroup primitive on CPU | `RuntimeError` at dispatch; `NotImplementedError` from inspection and `LLVMCodeGen` | `check_workgroup_support` |
 | Collective on control flow not proven uniform | `ValueError` | `check_workgroup_participation` |
@@ -536,6 +591,9 @@ the native field reduction's final combine uses them too.
 The capability attributes referenced on this page are collected, with the
 rest of each backend's declared capabilities, in
 [Backend Capabilities](../contracts/backend-capabilities.md). Tests:
+`test_outside_parallel_loop.py` (effects outside the loop, directly and
+through inlined functions and template methods, the one-loop rule, and
+per-iteration outer locals), `test_launch_limits.py`,
 `test_workgroup_contract.py` (CPU rejection in dispatch, every inspection
 mode and direct LLVM, before any side effect), `test_workgroup_participation.py`
 (every rejected pattern above on all four generators and on dispatch,

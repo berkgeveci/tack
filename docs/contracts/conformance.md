@@ -8,9 +8,10 @@ it. Tack has two kinds of evidence:
 - **hardware validation**, a recorded run of the full suite and the
   example sweeps on a named device at an exact commit
 
-This page maps the contracts to their tests, describes the oracles the
-tests trust, and gives the procedure for a hardware validation and the
-current status of each backend at release candidate `745e01f`.
+This page maps the contracts to their tests at release candidate
+`23d6e1d`, describes the oracles the tests trust, and gives the procedure
+for a hardware validation and the most recent status of each backend,
+recorded at `745e01f`.
 
 !!! note "What counts as evidence"
 
@@ -57,20 +58,22 @@ named.
 | Contract area | Test modules |
 |---|---|
 | Regression baseline LC1–LC8 | `test_compiler_contract.py` |
-| Source validation and diagnostics | `test_source_validation.py`, `test_error_messages.py`, `test_error_reporting.py` |
+| Source validation and diagnostics | `test_source_validation.py`, `test_outside_parallel_loop.py`, `test_error_messages.py`, `test_error_reporting.py` |
 | Execution order, short-circuiting and control flow | `test_differential.py`, `test_variable_length_loop.py`, `test_field_shape.py` |
 | Fixed-width integers, division and power | `test_integer_semantics.py`, `test_integer_division.py`, `test_integer_expression_differential.py`, `test_division_and_power.py`, `test_small_int_types.py`, `test_promotion_and_safety.py`, `test_explicit_casts.py` |
-| Floating-point policy | `test_float_semantics.py`, `test_float_division.py`, `test_scalar_matching.py`, `test_local_var_types.py` |
+| Floating-point policy | `test_float_semantics.py`, `test_float_literals.py`, `test_float_division.py`, `test_scalar_matching.py`, `test_local_var_types.py` |
 | Field, block and statistical reductions | `test_reduction_semantics.py`, `test_block_reduce.py`, `test_stats.py` |
 | Workgroups and participation | `test_workgroup_contract.py`, `test_workgroup_participation.py`, `test_shared_like.py` |
 | Atomics | `test_atomic_contract.py` |
 | Memory and aliasing, CPU disjoint specialization | `test_compiler_contract.py` (LC2), `test_disjoint_fields.py` |
-| Specialization identity and caching | `test_variant_cache.py`, `test_kernel_cache.py`, `test_concurrent_dispatch.py`, `test_templates.py` |
+| Specialization identity, caching and concurrent dispatch | `test_variant_cache.py`, `test_kernel_cache.py`, `test_concurrent_dispatch.py`, `test_templates.py` |
+| GPU launch indexing and size limits | `test_launch_limits.py`, `test_cuda_gen.py`, `test_hip_gen.py` |
 | Device-function binding and inlining | `test_func_bindings.py`, `test_new_features.py`, `test_texture_inline.py` |
 | Identifier preservation in generated code | `test_gpu_identifiers.py` |
 | IR structure and passes | `test_ir_verify.py`, `test_ir_clone.py`, `test_ir_traversal.py`, `test_ir_optimize.py`, `test_ast_transform.py`, `test_type_annotate.py`, `test_type_annotate_expr.py`, `test_type_inference.py` |
 | Backend capability declarations | `test_backend_contract.py`, `test_dispatch_types.py`, `test_backend_isolation.py` |
 | Runtime API: fields, inspection, local arrays | `test_field_utils.py`, `test_inspect.py`, `test_local_array.py`, `test_vector_add.py`, `test_cpu_jit.py` |
+| Texture snapshots and storage | `test_texture_snapshot.py`, `test_texture_inline.py`, `test_gpu_dispatch_paths.py`, `tack-rendering/tests/test_volume.py` |
 | Interop | `test_dlpack.py`, `test_level_zero_context.py`, `tack-vis/tests/test_vtk_interop.py` |
 | Code generators (host-side, no device) | `test_llvm_gen.py`, `test_msl_gen.py`, `test_cuda_gen.py`, `test_hip_gen.py`, `test_opencl_gen.py`, `test_opencl_compilation.py`, `test_scalar_packing.py` |
 | GPU dispatch paths without a GPU | `test_gpu_dispatch_paths.py` |
@@ -230,3 +233,6 @@ example, the CPU + Metal skips are the HIP, CUDA and Level Zero suites
 (no device), VTK without DLPack support, NUMA tests that need a multi-node
 machine, Metal atomics outside `supported_atomic_dtypes`, and Metal's
 missing `f64`.
+
+The fixes committed after `7de38d2`, up to release candidate `23d6e1d`,
+are awaiting hardware validation at the next release candidate.

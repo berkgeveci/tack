@@ -110,7 +110,10 @@ The zero-copy path is `dlpack_to_field(source, writable=True)`:
 2. **Check it is unconsumed.** A capsule not named `"dltensor_versioned"`
    or `"dltensor"` has already been taken: `ValueError`.
 3. **Honor read-only.** A versioned tensor with the read-only flag makes
-   the field non-writable, overriding the default.
+   the field non-writable, overriding the default. Host writes to it raise
+   `RuntimeError`, and a dispatch that binds it where the kernel may store
+   raises `ValueError` (see
+   [Memory and Aliasing](memory-and-aliasing.md#wrapped-buffers)).
 4. **Validate the tensor.** A null data pointer raises `ValueError`; a
    dtype with no Tack equivalent, or `lanes != 1`, raises `TypeError`;
    non-C-contiguous strides raise `ValueError`, because reading with the
@@ -125,9 +128,15 @@ The zero-copy path is `dlpack_to_field(source, writable=True)`:
     | `kDLCUDA`, `kDLCUDAManaged` | `cuda` |
     | `kDLROCM` | `hip` |
     | `kDLOneAPI` | `level_zero` |
-    | `kDLMetal` | `metal` |
 
-    An unknown device type raises `ValueError`. A known one on the wrong
+    `kDLMetal` is deliberately absent. Its `data` is an opaque
+    `id<MTLBuffer>` handle, not an address, and `byte_offset` locates the
+    tensor inside that buffer; wrapping one would need the handle turned
+    back into a PyObjC object and an offset carried through `MetalBuffer`
+    and the argument-buffer binding, neither of which exists. So a
+    `kDLMetal` tensor raises `ValueError` up front, on any backend, with a
+    message saying to move the tensor to host memory and import it with
+    `copy=True`. Any other unknown device type raises `ValueError`. A known one on the wrong
     backend raises `RuntimeError` — importing CUDA memory while running the
     CPU backend is a mistake, not something to paper over with a copy. The
     tensor's device id is not compared.
@@ -159,16 +168,15 @@ opts out.
     without copying needs a page-aligned address, which host allocations
     have only by accident of size, so support would work or fail depending
     on how big the array happened to be. The refusal appends Metal's
-    `dlpack_refusal_note`, which says so and points to `copy=True`. The
-    `kDLMetal` entry reaches `MetalBackend.wrap_ptr`, which accepts only an
-    `MTLBuffer` object; given an address it raises `TypeError`.
+    `dlpack_refusal_note`, which says so and points to `copy=True`.
+    `kDLMetal` tensors are refused before any backend sees them (step 5).
 
 ## Raw pointers
 
 `tack.field_from_ptr(ptr, dtype, shape, writable=False)` is the lowest
-level: no capsule, no deleter, no device type. Tack validates integer
-pointers with `memory_space()` where the backend distinguishes device
-memory, wraps them without taking ownership, and leaves lifetime entirely to
+level: no capsule, no deleter, no device type. Tack validates every
+pointer with `as_address()` and `memory_space()` where the backend
+distinguishes device memory, wraps them without taking ownership, and leaves lifetime entirely to
 the caller. The per-backend details are in [Memory and
 Aliasing](memory-and-aliasing.md#wrapped-buffers). Use it for in situ
 frameworks and simulation codes that hand over a device pointer, and prefer

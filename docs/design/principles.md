@@ -28,7 +28,9 @@ Tack keeps the syntax and defines its own meaning for it.
 - Types are fixed-width and inferred at dispatch: `infer_param_types`
   (`lang/type_inference.py`) gives Python `int` arguments `i32`, `i64` or
   `u64` by value, and Python `float` arguments `f32` unless an `f64` field
-  is present.
+  is present. Float literals are weakly typed, as NumPy's NEP 50 treats
+  Python scalars: `annotate_types` gives a literal the floating type of the
+  operand, cast or target it meets, and f32 otherwise.
 - Comparisons and `and`/`or` produce `i32` `0`/`1` rather than Python's
   selected operand. Floating `min`/`max` prefer the numeric operand over a
   NaN, unlike Python's order-dependent result.
@@ -72,6 +74,13 @@ can have. An early version of the transformer did exactly this with
 - Unsupported field dtypes are rejected by `check_dispatch_types`, never
   narrowed. Unsupported workgroup primitives and atomic types are rejected
   before compilation.
+- A statement with no defined execution count is rejected rather than run
+  an arbitrary number of times: a store, atomic, barrier, block reduction
+  or `print` outside the parallel loop raises `UnsupportedSyntaxError` at
+  its source position (`_check_outside_parallel_loop`). Likewise a GPU
+  launch longer than one grid can index raises `ValueError`
+  (`check_launch_size`) instead of wrapping, and a kernel store to a
+  read-only field is refused at dispatch.
 - `verify_ir` (`lang/ir_verify.py`) applies the same idea to the compiler
   itself: a pass that breaks an invariant stops the variant before code
   generation.

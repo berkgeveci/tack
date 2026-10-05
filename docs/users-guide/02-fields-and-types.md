@@ -21,6 +21,15 @@ GPU backends use `f32` by default. Python `float` scalar arguments are
 automatically promoted to `f64` when any field argument uses `f64`, preventing
 silent precision loss. Otherwise, float scalars default to `f32`.
 
+Float literals in a kernel take the precision of what they meet, the way
+NumPy treats Python scalars. With an `f64` field `x`, `x[i] * 0.1` computes
+in `f64` with the `f64` nearest 0.1, and `tack.f64(0.1)` is that value
+exactly. A literal on its own or beside only integers is `f32`, and so is a
+local assigned only literals (`a = 0.1`); write `a = tack.f64(0.1)` to keep
+full precision. The
+[language contract](../reference/language-contract.md#floating-point-execution-policy)
+has the full rule.
+
 ## Fields
 
 A field is a device-resident array — the fundamental data container in Tack.
@@ -66,14 +75,19 @@ explicit host-device copies.
 
 ```python
 @tack.kernel
-def example(data, grid):
+def double(data):
     for i in range(data.shape[0]):
         val = data[i]           # 1D access
         data[i] = val * 2.0
 
+@tack.kernel
+def clear(grid):
     for idx in range(grid.shape[0] * grid.shape[1]):
         grid[idx] = 0.0         # Flat indexing into 2D field
 ```
+
+A kernel has exactly one parallel loop, so independent loops go in
+separate kernels.
 
 ### Reductions
 
@@ -253,7 +267,9 @@ field = tack.field_from_ptr(ptr, dtype=tack.f32, shape=(n,), writable=True)
 
 The field does **not** own the memory — Tack will not free it. On CPU, you
 can pass a numpy array directly. On Metal, pass an `MTLBuffer` object. On
-CUDA/HIP/Level Zero, pass the device pointer as an integer.
+CUDA/HIP/Level Zero, pass the device address as an integer (a NumPy integer
+or a `CUdeviceptr` works too); a host address is rejected with `ValueError`.
 
-Read-only fields will raise an error on `from_numpy()` and `fill()`.
-Kernel reads work normally.
+Read-only fields raise an error on `from_numpy()` and `fill()`, and a kernel
+call that passes one where the kernel may store to it raises `ValueError`
+before the kernel runs. Kernel reads work normally.

@@ -109,7 +109,7 @@ callables are unsupported. The active function identities detect recursion.
 3. **Deep-copy callee AST** and rename all variables
 4. **Propagate metadata**: vector variables, texture fields
 5. **Emit parameter assignments**: `__func_x_0__ = caller_arg`
-   (skipped for texture params — they reference the original field)
+   (skipped for texture params — they reference the original kernel parameter)
 6. **Visit renamed body** to produce IR statements
 7. **Return result variable** as `IRName`
 

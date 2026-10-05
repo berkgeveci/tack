@@ -49,12 +49,14 @@ flowchart TD
 
 **`Kernel`** (`packages/tack-core/src/tack/lang/kernel.py`). The
 `@tack.kernel` decorator only captures the function. `Kernel.__init__`
-reads its source with `inspect.getsource`, dedents it and parses it with
-`ast.parse`. Nothing is validated or lowered at decoration time. If the
-source cannot be read (a function created by `exec()`, a bare REPL, or
-`python -c` before Python 3.13), `Kernel._read_source` raises
-`RuntimeError` at once. A kernel is compiled from its source text, so
-there is nothing to fall back on.
+reads its source with `read_source` (`lang/func.py`, a wrapper around
+`inspect.getsource`), dedents it and parses it with `ast.parse`. Nothing
+is validated or lowered at decoration time. If the source cannot be read
+(a function created by `exec()`, a bare REPL, or `python -c` before
+Python 3.13), `read_source` raises `RuntimeError` at once, naming the
+function and chaining the `OSError`. A kernel is compiled from its source
+text, so there is nothing to fall back on. `@tack.func` reads device
+functions through the same helper.
 
 **`Kernel.__call__`** asks `tack.runtime.dispatch.get_backend()` for the
 active backend (initializing the CPU backend if none was chosen) and calls
@@ -70,8 +72,8 @@ translates them by exception type:
 | Raised inside the pipeline | Reaches the caller as |
 |---|---|
 | `UnsupportedSyntaxError` | unchanged (it already names the kernel and source position) |
-| `TypeError` | `TypeError("Kernel '<name>': …")`, chained to the original |
-| other `RuntimeError`, including `NotImplementedError` and `IRVerificationError` | `RuntimeError("Kernel '<name>' failed on <BackendClass>: …")`, chained. A message containing "compilation failed" is shortened to its `error:` lines |
+| `TypeError` | `TypeError("Kernel '<name>': …")`, chained to the original. A message that already starts with the kernel's name (argument count, backend dtypes, atomic targets) keeps it, so the name appears once |
+| other `RuntimeError`, including `NotImplementedError` and `IRVerificationError` | `RuntimeError("Kernel '<name>' failed on <BackendClass>: …")`, chained, with any inner `Kernel '<name>': ` prefix removed. A message containing "compilation failed" is shortened to its `error:` lines |
 | `AttributeError` caused by fields allocated by a different backend | `RuntimeError` explaining that `tack.init()` replaced the backend |
 | anything else (`NameError`, `ValueError`, …) | unchanged |
 
@@ -173,8 +175,11 @@ lowers the validated AST to the tree of nodes defined in
 `packages/tack-core/src/tack/lang/ir.py`. The decisions that matter for the
 rest of the pipeline are these:
 
-- **Loops.** The outermost `for … in range(...)` becomes the single
-  `IRParallelFor`, *normalized to start at zero*. A nonzero start or a step
+- **Loops.** The kernel body's one `for … in range(...)` becomes the
+  single `IRParallelFor`, *normalized to start at zero*. A kernel without
+  one, a second one, or one inside a top-level `if` or `while` raises
+  `UnsupportedSyntaxError` at the definition or the loop
+  (`_visit_parallel_for`). A nonzero start or a step
   is moved into the body as `i = start + idx * step`, because every backend
   launches its grid over `[0, n)` and never sees the start (regression
   **LC5**). Nested loops become `IRSequentialFor`, and their `range`
@@ -191,6 +196,16 @@ rest of the pipeline are these:
   statements produced by expression-level inlining (`_pre_stmts`). When a
   later operand has side effects, they capture earlier operands into
   temporaries first. Together they preserve left-to-right evaluation.
+- **Statements outside the loop.** `_visit_body` checks each statement
+  lowered outside the parallel loop with `_check_outside_parallel_loop`.
+  A field or array store, atomic, barrier, block reduction or `print`
+  there raises `UnsupportedSyntaxError` at its source position, since such
+  statements may run any number of times per launch. The check runs on the
+  lowered statement, so effects arriving through inlined device functions,
+  template methods, vector stores or tuple unpacking are caught too, and
+  nested bodies are checked first, so the position is the innermost
+  statement's. See
+  [Parallel Execution](parallel-execution.md#statements-outside-the-parallel-loop).
 - **`continue`.** `_mark_outermost_continues` flags each `continue` that
   belongs to the parallel loop, so code generators end the iteration rather
   than the kernel (regression **LC8**).
@@ -306,7 +321,7 @@ and each verification boundary rechecks the whole tree.
 | 3 | Infer | `infer_param_types` (`lang/type_inference.py`), `store_texture_shapes` | `type_annotation`, `_is_field`, `_is_texture` and `_texture_shape` on every parameter | wrong argument count or unsupported argument type: `TypeError` |
 | | | `verify_ir(…, 'inferred')` | | |
 | 4 | Check types | `check_dispatch_types` | every field dtype is in `backend.supported_dtypes` | `TypeError` naming the kernel, parameter, dtype and backend |
-| 5 | Localize scalars | `_localize_assigned_scalar_params` (`runtime/kernel_utils.py`) | a scalar parameter the body assigns to becomes a fresh local, seeded at the top of each iteration (regression **LC6**) | — |
+| 5 | Localize scalars | `_localize_outer_scalars` (`runtime/kernel_utils.py`) | a scalar parameter, or a local bound before the loop, that the loop body assigns to becomes a fresh local, seeded at the top of each iteration (regression **LC6**) | — |
 | | | `verify_ir(…, 'localized')` | | |
 | 6 | Atomics | `check_atomic_support`, `check_atomic_alignment` (`lang/atomic_support.py`) | each atomic target is a global field parameter of a dtype the backend supports, and suitably aligned | `TypeError` (target or dtype), `ValueError` (alignment) |
 | 7 | Workgroups (GPU) | `check_workgroup_participation`, `check_workgroup_launch` (`lang/workgroup_participation.py`) | collectives sit in provably uniform control flow; records whether the variant needs full 256-lane groups | `ValueError` |
@@ -318,7 +333,10 @@ and each verification boundary rechecks the whole tree.
 Scalar localization runs after inference because it needs `_is_field`. It
 runs before packing because packing rewrites every read of a scalar
 parameter into a load from the pack buffer, so on GPU an assignment to that
-name would otherwise be lost. The rename deliberately skips the parallel
+name would otherwise be lost. Outer locals are renamed for a different
+reason: on the CPU the statements before the loop run once per chunk, so
+without a per-iteration copy an iteration's assignment would carry into
+the next iteration of its chunk. The rename deliberately skips the parallel
 loop's `end`, which must keep naming the parameter for host evaluation.
 
 Copy propagation is the only Tack-level optimization. Loop-invariant code
@@ -353,7 +371,10 @@ and workgroup participation on their own input, because direct generation
 can receive IR that no dispatch prepared.
 
 The finished `KernelVariant(ir, payload, requires_full_workgroups,
-atomic_targets)` is stored under its key. If any step raised, nothing is
+atomic_targets, written_fields)` is stored under its key. `written_fields`
+lists the index and name of each field argument the kernel may store to
+(all of them when a store can't be traced), and the variant carries its
+own `dispatch_lock`. If any step raised, nothing is
 stored. The next call retries the variant (and fails the same way) rather
 than finding it cached in a broken state.
 
@@ -363,16 +384,23 @@ On a hit or a miss, `resolve_variant` ends with the checks that depend on
 this call's *values*. When the variant needs full workgroups,
 `check_workgroup_launch` requires the logical count to be a multiple of
 256. `check_atomic_alignment` checks the alignment of the current atomic
-targets' storage. The backend then takes over:
+targets' storage, and `check_writable_fields` refuses a read-only field
+(from `field_from_ptr` without `writable=True`, or a read-only DLPack
+import) bound to a parameter in `written_fields`, with `ValueError`. The
+backend then takes over:
 
-1. It unwraps `Texture3D` arguments to their fields.
-2. It evaluates the launch count with `_get_loop_range(variant.ir, args)`.
-   This interprets the parallel loop's `end` against the arguments; it
-   understands constants, scalar parameters, `IRDimSize`, and `+ - * //`
+1. It evaluates the launch count with `_get_loop_range(variant.ir, args)`.
+   This interprets the parallel loop's `end` against the arguments, with a
+   texture standing for its source field; it understands constants, scalar parameters, `IRDimSize`, and `+ - * //`
    over those. GPU backends return without launching when the count is not
-   positive.
+   positive, and refuse a count past what one grid can index with
+   `check_launch_size()` (`ValueError`).
+2. It replaces each `Texture3D` argument with the storage the texture owns,
+   its hardware image or private field (`bind_textures`).
 3. On GPU, it writes the scalar values into the cached pack buffers
    (`_update_pack_fields`) and appends those buffers to the argument list.
+   CUDA, HIP and Metal do this and the launch under the variant's
+   `dispatch_lock`; Level Zero under its backend `_launch_lock`.
 4. It launches. The CPU backend chooses between a serial call and its
    thread pool (see [CPU Threading Policy](cpu-threading.md)); GPU
    backends launch a grid.
@@ -388,7 +416,7 @@ example `function.body[0].body[2].value`.
 
 | Stage | Called from | Adds |
 |-------|-------------|------|
-| *(all)* | — | every node is a registered kind in a valid role (statement, expression, parameter); required attributes are present; names are nonempty; operators come from the known sets; constants are numeric; no cycles; parameter names are unique; exactly one top-level `IRParallelFor`, starting at constant `0`; sequential loops sit inside it; `break` targets a sequential loop; each `continue`'s `outermost` flag matches its loop; no `IRReturn`; every name read is bound somewhere in the function |
+| *(all)* | — | every node is a registered kind in a valid role (statement, expression, parameter); required attributes are present; names are nonempty; operators come from the known sets; constants are numeric; no cycles; parameter names are unique; exactly one top-level `IRParallelFor`, starting at constant `0`; no field store, atomic, block reduction, barrier or print outside it; sequential loops sit inside it; `break` targets a sequential loop; each `continue`'s `outermost` flag matches its loop; no `IRReturn`; every name read is bound somewhere in the function |
 | `lowered` | `kernel._verified_transform` | nothing further; a `shared_like` allocation may still lack its dtype |
 | `resolved` | `resolve_variant`, `inspect` | no `IRDimSize` or `IRAttribute` outside the parallel loop's end; allocation dtypes are `ScalarType`s; texture extents are three positive integers |
 | `inferred` | `resolve_variant`, `inspect` | every parameter has a `ScalarType` and a boolean `_is_field`; every field load, store and atomic names a field parameter, an allocation, or a pointer copy of one |
@@ -478,12 +506,16 @@ unregistered kind:
 `tack.inspect(kernel, *args, mode=...)`
 (`packages/tack-core/src/tack/lang/inspect_kernel.py`) runs the same
 pipeline without the cache and without a launch. `_prepare_ir` clones the
-template and runs resolve, infer, localize, the atomic and workgroup
-checks, optimize and annotate, with the same verification stages. For
+template and runs resolve, infer, the backend's `_store_texture_shapes`,
+`check_dispatch_types`, localize, the atomic and workgroup checks,
+optimize and annotate, with the same verification stages, so it rejects
+what dispatch would and makes the same texture decision. For
 `mode="source"` on a GPU backend it then packs and re-annotates (`packed`,
 `typed`). On the CPU it computes the disjoint-fields bit for the given
 arguments, so the LLVM it shows is the variant those arguments would run.
-Inspection never populates the variant cache.
+`mode="optimized"` is the CPU module after O3; on other backends it raises
+`ValueError` once the kernel's own checks have passed. Inspection never
+populates the variant cache.
 
 ## Related pages
 

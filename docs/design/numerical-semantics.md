@@ -65,8 +65,10 @@ helper depends on is part of the variant key through the argument types.
 arguments and integer literals go through `integer_type_for_value`
 (`lang/types.py`): i32 if the value fits, else i64, else u64; anything
 outside `[-2^63, 2^64 - 1]` raises `TypeError`. Python `float` arguments are
-f32, unless *any* field or texture argument is f64, in which case they are
-f64. Float literals in the kernel body are f32.
+f32, unless *any* field argument is f64, in which case they are f64. (A
+texture is always f32: `tack.texture3d()` rejects other fields.) Float
+literals in the kernel body are weakly typed; see
+[Float literals](#float-literals).
 
 That float-context rule has a consequence worth knowing. An f64 output
 field does not widen an f32 *field* computation, but it does make a Python
@@ -80,14 +82,40 @@ def scale(a, out, s):          # a: f32 field, out: f64 field, s: Python float
         out[i] = a[i] * s      # s is f64 here, so the product is f64
 ```
 
-!!! warning "Float literals are f32, even in f64 expressions"
-    A literal such as `0.1` is annotated f32 wherever it appears, so
-    `x * 0.1` with an f64 `x` multiplies by `0.10000000149011612`, the f32
-    value of `0.1` widened to f64. Casting the literal does not help:
-    `tack.f64(0.1)` widens the already-rounded f32 constant. To use an exact
-    f64 constant, pass it as a Python float argument (which is f64 when an
-    f64 field is present), or compute it from integers in f64, for example
-    `tack.f64(1) / tack.f64(10)`.
+### Float literals
+
+Float literals are weakly typed, the way NumPy's
+[NEP 50](https://numpy.org/neps/nep-0050-scalar-promotion.html) treats
+Python scalars: a literal takes its precision from what it meets.
+`annotate_types` marks each node of a *literal expression* (numeric
+literals combined only by unary `+`/`-`, arithmetic, math builtins and
+conditional-expression arms) with `_literal`, and one containing a float
+literal with `_weak`. A weak expression is annotated f32 until it meets a
+non-weak floating operand (`_meet`, for arithmetic, comparisons and
+conditional arms), a math builtin whose result type comes from a non-weak
+floating argument, an explicit `tack.f32`/`tack.f64` cast, or a floating
+store, atomic or local target (`_adopt`). It then takes that type
+throughout (`_retype`): each float literal converts once from its exact
+Python value, and the expression's operations run at that precision.
+Literal-only subexpressions are not folded at compile time.
+
+So with an f64 `x`, `x * 0.1`, `x * -0.1` and `x * (1.0 / 3.0)` equal
+NumPy's f64 results, and `tack.f64(0.1)` is the f64 nearest 0.1 rather
+than a widened f32. A weak expression that meets none of these keeps the
+f32 default: alone, beside only literals or integers, or combined with an
+integer value (`i * 0.1` is f32). A local assigned only literals, as in
+`a = 0.1`, is an f32 local; write `tack.f64(0.1)`, or use the literal in
+the f64 expression, to keep full precision. An expression without f64
+operands annotates exactly as it would with f32 literals, and its
+generated code is unchanged.
+
+The generators emit an f64-annotated constant at full precision:
+`LLVMCodeGen` a `double` constant from the Python value, and the CUDA
+generator (and so HIP and OpenCL) an unsuffixed `repr`, which round-trips
+exactly. MSL has no f64. The full rule, including how integer
+subexpressions convert, is in the
+[language contract](../reference/language-contract.md#floating-point-execution-policy);
+`test_float_literals.py` pins it.
 
 ### Binary promotion
 
@@ -531,12 +559,16 @@ when no partial sum overflows or underflows and `n*u < 1`. It covers both
 the tree and the serial NumPy path; there is no compensated or
 deterministic sum mode.
 
-**Limits.** CUDA, HIP and Metal pass the element count to the native kernel
-as 32-bit unsigned bits packed with `struct.pack('I', n)`, so a field with
-2^32 or more elements fails in that packing (a `struct.error`) rather than
-reducing; the contract places such sizes outside its domain. Level Zero
-passes a 64-bit count, and falls back to the host when its device cannot
-run 256-lane groups, because the tree is written for exactly 256 lanes.
+**Limits.** CUDA, HIP and Level Zero pass the element count to the native
+kernel as a 64-bit (`long long`) argument, and the CUDA/HIP kernel forms
+its index in 64 bits, so fields of 2^32 or more elements reduce on the
+device. Each checks the count against its launch limit with
+`check_launch_size()` first, and raises `ValueError` ("Field sum(): ...")
+past it. Metal's reduction kernel holds the count, packed as 32-bit
+unsigned bits, and its thread position in 32 bits, so Metal reduces a field
+of 2^32 or more elements with NumPy over the shared buffer instead. Level
+Zero also falls back to the host when its device cannot run 256-lane
+groups, because the tree is written for exactly 256 lanes.
 
 **Block reductions** (`tack.block_sum`, `block_min`, `block_max`) require
 f32 input: `annotate_types` raises `TypeError` otherwise, and an explicit
@@ -584,6 +616,7 @@ for i in range(n):
 | `test_integer_division.py` | integer `//`/`%` at every width, exhaustive valid i8 pairs, mixed promotion, guarded zero divisors | Python integer `//` and `%` |
 | `test_division_and_power.py` | true division (f32 result, explicit f64), integer power for all 64 base/exponent type pairs | Python modular exponentiation; division with a four-ULP regression tolerance |
 | `test_float_division.py` | floating `//`/`%`: signs, boundaries, overflow, NaN/inf/signed zero, every float/int type pair | NumPy's typed `divmod` after explicit conversion; exact zeros and classes, four ULP otherwise |
+| `test_float_literals.py` | weak float literals: f64 expressions, casts, atomics, conditional arms and locals; f32 kernels unchanged; exact double literals in LLVM, CUDA, HIP and OpenCL source | NumPy f64 results for the same expressions; generated C++ compiled and run on the host |
 | `test_float_semantics.py` | safe math without `//`, exceptional classes, unsafe folds, comparisons, scalar min/max, grouping, contraction, math builtins | NumPy at the same precision; an exact `fractions.Fraction` oracle accepts either the separate or the fused multiply-add result; generated C++ run under UBSan on the host |
 | `test_reduction_semantics.py` | extrema classes and zero ties across groups and tails, exact and bounded sums, integer accumulators, empty fields, block f32 requirement | exact expected values; `math.fsum` with the `gamma_n` budget; C++/OpenCL syntax checks and UBSan-run helpers |
 | `test_integer_expression_differential.py` | compositions where an intermediate wrap, cast or promotion decides a later operation | an independent oracle written from the contract text with Python integers, sharing no code with the compiler; a deliberately naive wrap-only-at-the-end oracle is shown to disagree |

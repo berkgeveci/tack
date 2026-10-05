@@ -451,8 +451,10 @@ Each mechanism above exists because a specific failure was measured:
 ### v1 and v2
 
 `TACK_CPU_POLICY` is read once, when the backend is created. `v2` is the
-default (since 2026-08-10); any other value selects v1, since the check is an
-exact comparison with `"v2"`.
+default (since 2026-08-10), selected when the variable is unset or empty;
+`v1` selects the earlier policy. Any other value raises `ValueError` from
+the constructor, naming the accepted values (`_CPU_POLICIES`), so a
+misspelling cannot select a policy silently.
 
 | Mechanism | v1 | v2 |
 |---|---|---|
@@ -478,8 +480,8 @@ speedups not taken. The module docstring keeps that reasoning.
 
 | Variable | Effect |
 |---|---|
-| `TACK_CPU_THREADS` | Worker count, parsed as an integer; values below 1 become 1. With one thread the pool is never created and every threshold is `_NEVER`. An explicit `CPUBackend(num_threads=…)` takes precedence. |
-| `TACK_CPU_POLICY` | `v2` (default), or anything else for v1. |
+| `TACK_CPU_THREADS` | Worker count, parsed as an integer; values below 1 become 1. With one thread the pool is never created and every threshold is `_NEVER`. An explicit `num_threads`, from `tack.init(arch="cpu", num_threads=…)` or `CPUBackend(num_threads=…)`, takes precedence. |
+| `TACK_CPU_POLICY` | `v2` (default, also when unset or empty) or `v1`. Anything else raises `ValueError`. |
 | `TACK_CPU_MARGIN` | A float that replaces the margin under either policy, switching off v2's derived margin. For experiments. |
 
 The ratios, caps, intervals and priors in the module's underscore-prefixed
@@ -515,7 +517,11 @@ once. `_parallel_execute` chunks are contiguous, disjoint, and cover
 tail (plus the second opinion's head and slice), each starting where the last
 ended. Every probe that is not real work — `_measure_call_overhead`,
 `_calibrate_fan_out`, `_refresh_fan_out` — runs on an empty range, which
-executes no iterations. No range is re-run to time it.
+executes no iterations. No range is re-run to time it. Each of these calls
+does run the statements outside the parallel loop again, which is why the
+frontend accepts only effect-free statements there and gives every
+iteration fresh copies of the outer locals it assigns (see
+[Parallel Execution](parallel-execution.md#statements-outside-the-parallel-loop)).
 
 So for any program that meets the
 [execution contract](../reference/language-contract.md#execution-and-ordering)

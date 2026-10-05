@@ -17,8 +17,25 @@ def fill(data, val, n):
         data[i] = val
 ```
 
-The parallel loop must be the first (and only top-level) loop. Tack uses it
-to determine how many threads to launch.
+A kernel has exactly one parallel loop, a `for` statement directly in its
+body (not inside an `if` or `while`). Tack uses it to determine how many
+threads to launch. A kernel without one, or with a second, is rejected with
+an `UnsupportedSyntaxError` that gives the line and column.
+
+Code before or after the parallel loop may run any number of times per
+launch (once per GPU thread, once per CPU chunk), so it may only assign
+local variables, read fields, and declare `tack.shared` or
+`tack.local_array` arrays. Field stores, atomics, barriers, block
+reductions and `print` there are rejected; move them into the loop body.
+Each iteration starts from the values the code before the loop assigned:
+
+```python
+@tack.kernel
+def scale(x, out, k):
+    s = 2.0 * k                    # fine: a local, set up before the loop
+    for i in range(x.shape[0]):
+        out[i] = x[i] * s
+```
 
 The loop bound can come from:
 - A scalar argument: `range(n)`
@@ -158,11 +175,14 @@ The three modes are:
 |------|--------|
 | `"ir"` | Tack intermediate representation |
 | `"source"` | Backend source code: LLVM IR (CPU), MSL (Metal), CUDA C, HIP C, OpenCL C |
-| `"optimized"` | Post-optimization LLVM IR on CPU (loop vectorization, unrolling, etc.) |
+| `"optimized"` | Post-optimization LLVM IR (loop vectorization, unrolling, etc.). CPU only; other backends raise `ValueError` |
 
 You must pass the same arguments the kernel would receive at runtime, since
 type inference, dimension resolution, and template expansion all depend on
-them. Templates and scalar arguments work as expected:
+them. Inspection applies the same checks as a call, so arguments a call
+would reject (an `f64` field on Metal, for example) raise here too, and
+on GPUs without texture hardware the source shows the software sampling
+the call would use. Templates and scalar arguments work as expected:
 
 ```python
 @tack.data_oriented

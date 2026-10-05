@@ -191,8 +191,8 @@ data.from_numpy(next_frame.ravel())
 tex.update()   # sampling now sees next_frame
 ```
 
-The field must be `f32`, and `interp='linear'` is the only interpolation
-mode. See [Backend Implementations](../design/backend-implementations.md#textures).
+The field must be `f32` and hold `W * H * D` elements, and `interp='linear'`
+is the only interpolation mode. See [Backend Implementations](../design/backend-implementations.md#textures).
 
 `tex.sample()` also works inside `@tack.func` — texture metadata is
 propagated through inlining automatically.
