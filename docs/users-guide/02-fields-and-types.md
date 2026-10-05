@@ -91,42 +91,11 @@ separate kernels.
 
 ### Reductions
 
-Fields support GPU-accelerated reductions:
-
-```python
-total = data.sum()
-minimum = data.min()
-maximum = data.max()
-average = data.mean()
-```
-
-### Statistics and Analysis
-
-GPU-accelerated statistics are available in `tack.algorithms`:
-
-```python
-from tack.algorithms import var, std, norm, absmax, count_nonzero, dot, histogram
-
-# Variance and standard deviation (GPU kernel-based)
-v = var(data)
-s = std(data)
-
-# Norms
-l2 = norm(data, ord=2)      # Euclidean
-l1 = norm(data, ord=1)      # sum of absolute values
-linf = norm(data, ord=float('inf'))  # max absolute value
-
-# Other reductions
-mx = absmax(data)            # max |x[i]|
-nz = count_nonzero(data)    # number of non-zero elements
-d = dot(field_a, field_b)   # dot product Σa[i]*b[i]
-
-# Histogram (atomic-based GPU binning)
-counts, edges = histogram(data, bins=50, range=(-3, 3))
-```
-
-All operations run entirely on the active GPU backend using atomic
-operations for reductions — no host roundtrips.
+`data.sum()`, `data.min()`, `data.max()` and `data.mean()` reduce every
+element of a field and return a Python `float`; statistics such as `var`,
+`norm` and `histogram` are in `tack.algorithms`. See
+[Reductions and Scans](11-reductions-and-scans.md) for where each runs,
+its accumulator type and its NaN and empty-field behavior.
 
 ## Field Utilities
 

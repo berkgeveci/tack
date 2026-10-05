@@ -91,7 +91,8 @@ from tack.algorithms.compute_normals import compute_normals
 normals = compute_normals(points, conn, n_pts, n_tris)
 ```
 
-The entire computation runs on GPU via atomic operations — no host roundtrip.
+It runs as two kernels on the active backend, accumulating face normals
+with `tack.atomic_add`, and nothing is copied to the host.
 
 ## Cell to Point
 
@@ -105,17 +106,10 @@ point_data = cell_to_point(cell_data, connectivity, n_points, n_cells)
 
 ## Parallel Scan
 
-The scan primitives live in `tack-core` (they are general-purpose):
-
-```python
-from tack.algorithms import exclusive_scan, inclusive_scan
-
-# Parallel prefix sum on GPU
-exclusive_scan(input_field, output_field, n)
-total = inclusive_scan(input_field, output_field, n)
-```
-
-These are used internally by flying edges and other variable-output algorithms.
+`exclusive_scan` and `inclusive_scan` are general-purpose `tack-core`
+functions in `tack.algorithms`, useful for turning per-item output counts
+into write offsets. They are described in
+[Reductions and Scans](11-reductions-and-scans.md#prefix-scans).
 
 ## VTK Interop
 

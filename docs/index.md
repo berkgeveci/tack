@@ -85,8 +85,8 @@ scalar types each backend supports.
 -   **[User's Guide](users-guide/index.md)**
 
     Writing kernels, fields and types, control flow, device functions,
-    templates, atomics and shared memory, then the visualization and
-    rendering packages.
+    templates, atomics and shared memory, reductions and scans, then the
+    visualization and rendering packages.
 
 -   **[Developer's Guide](developers-guide/index.md)**
 

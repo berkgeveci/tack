@@ -97,6 +97,7 @@ nav:
       - Device Functions: users-guide/05-device-functions.md
       - Templates: users-guide/06-templates.md
       - Advanced Features: users-guide/07-advanced.md
+      - Reductions and Scans: users-guide/11-reductions-and-scans.md
       - Backends: users-guide/08-backends.md
       - Visualization: users-guide/09-visualization.md
       - Rendering: users-guide/10-rendering.md

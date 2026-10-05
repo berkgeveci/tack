@@ -1,7 +1,10 @@
-"""GPU-accelerated statistics and analysis on tack fields.
+"""Statistics and analysis on tack fields.
 
-All operations run entirely on the active backend — no host roundtrips
-unless noted. Uses atomic operations for reductions and histogram binning.
+Each function runs a kernel on the active backend that combines into a
+one-element f32 or i32 accumulator with atomic operations, then reads that
+accumulator back with to_numpy().  var/std call data.sum(), and histogram
+without a range calls data.min()/data.max(), which copy non-f32 fields to
+the host on GPU backends.
 """
 
 import tack
@@ -102,9 +105,9 @@ def _prefix(data, n):
 def var(data, n=None):
     """Population variance of a field: Σ(x - mean)² / n.
 
-    Runs two GPU passes: one for the mean, one for the squared differences.
-    Both cover the first n elements. An empty range gives NaN, as
-    ``Field.mean()`` does.
+    Runs two passes over the first n elements: Field.sum() for the mean,
+    then a kernel adding the squared differences into an f32 accumulator.
+    Returns a NumPy float32; an empty range gives NaN, as Field.mean() does.
     """
     n = _count(n, data)
     if n == 0:
@@ -128,6 +131,8 @@ def norm(data, ord=2, n=None):
     ord=1: L1 norm (sum of absolute values)
     ord=2: L2 norm (Euclidean)
     ord=inf: L-infinity (max absolute value)
+
+    Any other ord raises ValueError.
     """
     n = _count(n, data)
     if ord == 1:
@@ -177,12 +182,16 @@ def dot(a, b, n=None):
 
 
 def histogram(data, bins=10, range=None, n=None):
-    """Compute a histogram of field values on GPU using atomics.
+    """Compute a histogram of field values with atomic bin counts.
+
+    Values below the range are counted in the first bin and values above it
+    in the last, unlike numpy.histogram, which drops them.
 
     Args:
-        data: input field (f32)
-        bins: number of bins
-        range: (min, max) tuple. If None, uses data.min()/data.max().
+        data: input field of any dtype
+        bins: number of bins (at least 1)
+        range: (min, max) tuple. If None, uses the minimum and maximum of
+            the first n elements, and n must then be at least 1.
         n: number of elements (default: data.size)
 
     Returns:

@@ -1,7 +1,7 @@
 # Kernel language contract (draft)
 
-This is the draft contract for compiler hardening, updated for the fifth
-numerical-semantics increment on 2026-10-03.
+This is the draft contract for compiler hardening, updated for the 0.2.0
+release on 2026-10-05.
 It defines the intended portable kernel model, identifies known violations,
 and separates decisions still open for discussion. It is **not a claim that
 the current implementation satisfies every requirement below**. The baseline
@@ -46,7 +46,7 @@ all corner cases have been validated.
 | Values | Numeric literals, scalar parameters, field loads, local variables | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6) |
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins | Numerical and evaluation rules below |
 | Assignments | Local assignment, augmented assignment, field stores, supported tuple unpacking | Storage and ordering rules below |
-| Control flow | `range`, `tack.ndrange`, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals and declare arrays |
+| Control flow | `range`, `tack.ndrange`, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
 | Composition | `@tack.func` inlining and `@tack.data_oriented` templates | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
 | Storage | Scalar fields, vector fields, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
@@ -151,7 +151,9 @@ does not specialize the compiled kernel. See LC5.
 
 **Required:** every index of the interval executes, however long it is,
 or the launch is refused before anything runs. CUDA and HIP compute the
-iteration index in 64 bits from the block and thread numbers. A launch
+iteration index in 64 bits from the block and thread numbers, and Level
+Zero from the work-group number (`get_group_id`), because Intel's
+`get_global_id` wraps at 2^32. A launch
 longer than one grid of the backend can index raises `ValueError` naming
 the kernel, the count and the limit. CUDA admits its device's maximum
 `gridDim.x` times 256 iterations; HIP also at most 2^32 - 256, because
@@ -434,7 +436,8 @@ separate `noinline` i64/u64 addition helper for assignments that update a local
 using its previous value in those loop bodies. Other operations and
 additions remain inline. The dynamic-bound
 regression covers empty ranges, overflowing i32 bounds, and steps 1 and 2;
-this workaround needs performance and hardware validation on other Apple GPUs.
+the workaround was validated on an Apple M3 as well as the M1 Max: 33
+tests that emit the helper pass there. Its performance cost is unmeasured.
 
 On the tested Intel Data Center GPU Max 1100 (IGC 2.7.11), the device compiler
 widened the wrapped negation or `abs` of a signed minimum as its magnitude.
@@ -1028,7 +1031,7 @@ GPU. One stage-two case, a parameter read before and after its
 reassignment, passed on GPU only because copy propagation rewrote the read;
 it now has a twin with Tack's passes bypassed.
 
-There are **33 numerical cases per backend**, plus six host-side cases:
+There are **35 numerical cases per backend**, plus six host-side cases:
 LC4, rejection of `return` inside a loop, and one generated-source check
 per GPU generator for the top-level `continue`.
 `test_variant_cache.py` covers field/scalar calling conventions, same-named
@@ -1078,7 +1081,9 @@ Use `tack.hip` / `-k hip` or `tack.level_zero` / `-k level_zero` for those
 backends. `--no-sync` preserves the existing environment's backend extras.
 The shared-frontend LC4 test runs in the unfiltered command. Record backend,
 device, runtime/binding versions, pass/fail/xfail counts, and numerical
-differences. Do not waive numerical failures by adding expected-failure markers.
+differences. Do not waive numerical failures by adding expected-failure
+markers, except for a vendor toolchain defect under the conditions in
+[Conformance](../contracts/conformance.md).
 
 ## Subsequent stages
 
