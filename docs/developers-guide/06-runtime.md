@@ -209,7 +209,7 @@ allocation or copy. Each backend implements `wrap_ptr(ptr, dtype, shape)`:
 | CPU | numpy array or int address | `np.frombuffer` view into existing memory |
 | Metal | `MTLBuffer` object | Creates numpy view via `contents().as_buffer()` |
 | CUDA | device address (int, NumPy integer or `CUdeviceptr`) | Stores pointer, skips `cuMemAlloc` |
-| HIP | device address (anything `int()` accepts) | Stores pointer, skips `hipMalloc` |
+| HIP | device address (anything `int()` accepts) | Stores it as an `int` (hip-python reads a NumPy scalar as a buffer), skips `hipMalloc` |
 | Level Zero | device address (anything `int()` accepts) | Stores `c_void_p`, skips `zeMemAllocDevice` |
 
 On CUDA, HIP and Level Zero, `field_from_ptr()` first checks the pointer

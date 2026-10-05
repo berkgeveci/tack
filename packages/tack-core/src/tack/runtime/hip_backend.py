@@ -431,7 +431,11 @@ class HIPBackend(Backend):
         buf._numpy_dtype = np.dtype(dtype.numpy_dtype)
         buf._shape = shape
         buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
-        buf._device_ptr = ptr
+        # Store the address as an int. hip-python takes a NumPy integer
+        # through the buffer protocol, as the address of the scalar's own
+        # storage rather than the value it holds, so every copy through a
+        # wrapped np.uint64 failed with hipErrorInvalidValue.
+        buf._device_ptr = int(ptr)
         buf._owned = False
         return buf
 

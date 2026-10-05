@@ -161,6 +161,33 @@ def test_field_from_ptr_checks_every_form_of_address(backend):
     np.testing.assert_array_equal(alias.to_numpy(), np.arange(8))
 
 
+def test_numpy_integer_alias_copies_reach_the_device_memory(backend):
+    """Copies through a pointer given as a numpy integer reach that memory.
+
+    hip-python reads a numpy scalar through the buffer protocol, as the
+    address of the scalar's own storage. HIP stored the scalar as given,
+    so every copy through the alias failed with hipErrorInvalidValue.
+    Write through one handle and read through the other: equal values
+    alone cannot tell an alias from a copy.
+    """
+    import numpy as np
+
+    from tack.runtime.dispatch import get_backend
+    if not get_backend().device_memory_spaces:
+        pytest.skip(f"{get_backend().label} does not distinguish device memory")
+
+    device = tack.field(dtype=tack.f32, shape=(8,))
+    for ptr_type in (np.uint64, np.int64):
+        alias = tack.field_from_ptr(ptr_type(device._buffer.address), tack.f32, (8,),
+                                    writable=True)
+        alias.from_numpy(np.arange(8, dtype=np.float32) + 1)
+        np.testing.assert_array_equal(device.to_numpy(), np.arange(8) + 1)
+        alias.fill(3.0)
+        np.testing.assert_array_equal(device.to_numpy(), np.full(8, 3.0))
+        device.from_numpy(np.arange(8, dtype=np.float32) * 2)
+        np.testing.assert_array_equal(alias.to_numpy(), np.arange(8) * 2)
+
+
 # ── What counts as an address ────────────────────────────────────────
 #
 # D9: HIP's memory_space() answered "cpu" for every pointer it was ever
