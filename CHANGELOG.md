@@ -1,0 +1,178 @@
+# Changelog
+
+All notable changes to Tack are recorded here. Rules cited by name live in
+[`docs/reference/language-contract.md`](docs/reference/language-contract.md).
+
+## 0.2.0 — 2026-10-05
+
+The headline: Tack now has a written language contract, and the compiler
+enforces it on every backend. Most of the changes below are cases where a
+kernel used to compute a **different answer on different backends**, or
+silently did something other than what its source said. Code that relied
+on one backend's old behavior can change results or start raising.
+
+### Kernels that now compute different results
+
+Each was a correctness fix: the old result disagreed with Python, with the
+contract, or with another backend.
+
+| Change | Before | Now | Contract section |
+|---|---|---|---|
+| Integer `/` | Truncated on CUDA/HIP/Metal/OpenCL; on CPU narrowed back to the integer type | True division, f32 result: `7 / 2 == 3.5`. Use `//` for floor division, or `int(a / b)` within range for truncation | *Required: true division* |
+| Integer `//` and `%` with negative operands | Truncated toward zero on GPUs | Python floor semantics: `-7 // 3 == -3`, `-7 % 3 == 2`, `7 % -3 == -2` | *Required: integer floor division and remainder* |
+| Integer `**` and `pow` | Went through floating `pow`; large results lost precision; `pow` and `**` could disagree | Exact power modulo 2^N at the **base's** type: i8 `3 ** 5 == -13`. Cast the base to float for floating power | *Required: integer power* |
+| Floating `//` and `%` | CPU `%` took the dividend's sign; GPU `//` narrowed through an integer and overflowed | Python semantics in the promoted float type, correct near rounded boundaries; `//` returns an integer-valued float | *Required: floating floor division and remainder* |
+| Fixed-width integer overflow | Varied by backend; GPU code relied on C promotion and signed-overflow undefined behavior | Every `+`, `-`, `*`, unary `-`, `~`, `<<`, `&`, `\|` and `^` wraps at its annotated width before the next operation uses it: i8 `127 + 1 == -128` | *Required: fixed-width arithmetic and integer conversion* |
+| Mixed-signedness promotion | Inconsistent; unsigned high bits could compare as negative | Narrowest type holding both ranges: i8 with u16 → i32, i32 with u32 → i64 | same |
+| Integer casts and stores | Widening followed the destination's signedness on CPU | Reduce mod 2^N, widen by the **source** signedness: i8 `-1` → u64 is 2^64 − 1 | same |
+| Right shift of unsigned values, unsigned comparisons, `min`/`max` | Signed on CPU in places; integer `min`/`max` could go through floating point | Logical right shift for unsigned; exact integer comparison | same |
+| CUDA and Metal floating math | `--use_fast_math` on CUDA and fast math on Metal for every kernel | Safe math everywhere: NaN, infinity and signed zero preserved; `(a+b)+c` keeps its grouping; fused multiply-add still allowed. CUDA/Metal images move closer to the CPU reference | *Floating-point execution policy* |
+| `sqrt`, trig, `exp`, `log` on integer or mixed arguments | Argument precision varied; CPU libm calls could fail to compile | Arguments convert to the annotated result precision first: f32 unless an argument is f64 | same |
+| Comparisons and `and`/`or` | CPU could yield −1 for true | Normalized i32 `0`/`1`; `and`/`or` return Booleans, not an operand | *Types and numerical behavior* |
+| Field `min()`/`max()` | Device paths mishandled values beyond ±1e38, same-sign infinities and NaNs | Full normal range, infinities, NaN propagation, order-independent zero ties; empty `min`/`max` raise `ValueError`, empty `sum` is +0, empty `mean` is NaN | *Field and parallel reductions* |
+| Top-level `range(start, end)` | Ignored `start` on some paths; empty ranges could run | Runs exactly `[start, end)`; nothing when empty or reversed | *Execution and ordering* |
+| Evaluation order | Not defined | Left to right; `and`/`or` short-circuit; conditional expressions evaluate one arm; augmented assignment evaluates its index once | same |
+| Overlapping field arguments | Could read stale values on Metal and through `restrict` on other backends | Program order preserved when fields alias, including the same field twice and overlapping views | *Memory and aliasing* |
+| Raster points and wireframes | Coincident primitives could produce mixed colour channels | Depth winner and its colour selected together, deterministically: lowest primitive index at equal depth | Rendering |
+| Mixed solid and raster scenes | Wireframe and point actors were path traced as surfaces; volume plus wireframe dropped the volume | Raster actors composite over the path-traced or ray-cast image with depth | Rendering |
+| Float literals in f64 code | Always f32: `x_f64 * 0.1` multiplied by 0.10000000149…, and `tack.f64(0.1)` widened that rounded value | A literal takes the precision of the operand it meets (NumPy NEP 50 "weak" scalars), so f64 expressions use the exact double and `tack.f64(0.1)` is exact. Comparisons with a literal change for values between its f32 and f64 roundings. f32 kernels are unchanged. Edge cases: a local assigned only literals (`a = 0.1`) is still f32, so write `tack.f64(0.1)`; `i * 0.1` is f32; write `1.0 / 3.0`, not `1 / 3` | *Required: float literals are weakly typed* |
+| Textures after their field changes | CPU sampled the field live; GPU hardware paths kept the data from first use (and could serve a stale texture at a reused address) | Every backend samples a copy taken by `tack.texture3d()`; call `tex.update()` after changing the field. `render_volume()` refreshes its volume each call | *Memory and aliasing* → Textures |
+| Locals set before the parallel loop and reassigned inside it | On CPU the value carried from one iteration to the next within a worker's chunk; GPU threads each started fresh | Every iteration starts from the value set before the loop, on every backend | *Execution and ordering* |
+| CUDA/HIP/Level Zero launches of 2^32 or more iterations | The thread index wrapped silently (on Level Zero because Intel's `get_global_id` wraps at 2^32); reductions over 2^32 elements on Level Zero summed wrongly | Every iteration runs; launches beyond a backend's grid limit raise `ValueError` | *Execution and ordering* |
+| Level Zero: wrapped negation and `abs` of the signed minimum, widened | Intel's IGC 2.7.11 produced `-(-32768)` as 32768 in an i32 result, and `abs(INT_MIN)` as 2^31 in i64 | The contract's wrapped value, through a workaround in the generated code | *Required: fixed-width arithmetic and integer conversion* |
+
+### Code that is now rejected
+
+These raise a diagnostic naming the kernel or device function and its
+source line, instead of being silently dropped or miscompiled.
+
+- `assert`, `try`, `with`, generators, imports, nested definitions,
+  comprehensions, annotated assignments, keyword or starred arguments.
+- `break` out of the top-level parallel loop, and kernel `return`.
+- Reading a name the kernel never binds (`NameError`); capturing a
+  numeric value from the enclosing Python scope.
+- Binding a second name to a local or shared array (`view = tmp`).
+- A negative integer literal exponent; a literal zero or negative `range`
+  step.
+- Mixing any signed integer with `u64` without an explicit cast,
+  including in comparisons, conditional arms and joined assignments.
+- Calling an ordinary Python function, or a runtime function value, from a
+  kernel; recursive device-function calls. Device calls now resolve through
+  the defining module, so importing another module with a same-named
+  function can no longer change a kernel.
+- **On CPU:** kernels using `shared`, `shared_like`, `barrier`,
+  `thread_id`, `block_sum`, `block_min` or `block_max`. CPU does not
+  emulate workgroups; use `local_array` / `local_array_like` for private
+  scratch. `examples/09_shared_memory.py` now requires a GPU `--arch`.
+- **On GPUs:** collectives in a launch whose iteration count is not a
+  multiple of 256, and barriers or block reductions inside branches the
+  compiler cannot prove uniform.
+- Atomics outside the declared domain (for example 64-bit atomics on Metal
+  or Level Zero, 8/16-bit atomics on GPUs), atomics on private or shared
+  arrays, and unaligned imported atomic targets.
+- Block reductions on non-f32 arguments without an explicit `tack.f32(...)`.
+- Field stores, atomics, barriers, block reductions and `print` outside
+  the parallel loop, before or after it, including through inlined device
+  functions. They used to run a backend-dependent number of times (once
+  per CPU chunk or probe, once per GPU thread). Plain local assignments
+  stay allowed. A kernel with no parallel loop, two of them, or one inside
+  a branch now gets a source diagnostic too.
+- `tack.texture3d()` on an f64 field, with `interp` other than `'linear'`
+  (`'nearest'` was accepted but silently linear), or with a shape whose
+  W·H·D differs from the field's size. A `Volume` built from an f64 field
+  now fails at construction.
+- Kernels that may store to a read-only field: `field_from_ptr` without
+  `writable=True`, or a DLPack import flagged read-only.
+- DLPack import of a Metal (`kDLMetal`) tensor, which never worked, now
+  fails up front with a clear message.
+- `tack.inspect(..., mode="optimized")` on a non-CPU backend, which used to
+  return the source text. Inspection also applies dispatch's dtype check.
+- An unrecognized `TACK_CPU_POLICY` value (it silently selected v1).
+
+### Fixes with no source change needed
+
+- CUDA: a shared context can outlive the backend that created it, and a
+  field whose context is gone reports it instead of faulting.
+- CPU: floating `atomic_min`/`atomic_max` are now real atomics (they were a
+  load-compare-store race).
+- CPU: field loads and stores no longer claim four-byte alignment, which
+  was wrong for byte fields and unaligned imported buffers.
+- Level Zero: integer `min`/`max`, float ternaries and nested local arrays
+  compile on the real device compiler; signed zero survives f64
+  `floor`/`ceil` despite an Intel driver defect.
+- Python-legal names that are keywords in CUDA, OpenCL or MSL (`default`,
+  `half`, `kernel`, …) now work as parameter and local names.
+- NumPy 1.x works again with the CPU backend.
+- A process that exits while another library (VTK's DLPack support, for
+  example) still holds an unconsumed Tack DLPack capsule no longer crashes
+  at interpreter shutdown.
+- Compiled-variant caching: vector width and alias relationships are part
+  of the key; template classes release their cached code when collected.
+- GPU backends: dispatching one kernel from several threads at once is
+  serialized per compiled variant (per backend on Level Zero). It used to
+  share the scalar argument buffer, and on CUDA 603 of 1200 concurrent
+  dispatches got another thread's scalars. CUDA dispatch from a thread
+  other than the one that called `tack.init` still needs Tack's context
+  made current.
+- `field.sum()`/`min()`/`max()` over 2^32 or more f32 elements work on
+  CUDA, HIP and Level Zero, and use NumPy on Metal, instead of failing with
+  `struct.error`.
+- `from_numpy` on a reshaped view works on CPU and Metal; `field_from_ptr`
+  checks the memory space of NumPy-integer and `CUdeviceptr` pointers, and
+  on HIP a field wrapped from a NumPy-integer address now works (its copies
+  failed with `hipErrorInvalidValue`).
+- `tack.init(arch=tack.cpu, num_threads=N)` is accepted; `TACK_NO_REINIT=0`
+  (and `false`, `no`, `off`) now means off; kernel errors name the kernel
+  once; unreadable device-function source raises `RuntimeError` like a
+  kernel's; textures no longer leak a GPU texture object per compiled
+  kernel.
+
+### Performance changes users may notice
+
+Measured on the project's test machines.
+
+| Change | Effect | Why |
+|---|---|---|
+| CPU threading decisions | Large CPU dispatches no longer stall on whole-frame serial rechecks; the CPU path tracer and cheap-kernel dispatches improved on the measured hosts | Threading-policy repairs |
+| CPU disjoint-field specialization | Up to −70% on store-accumulator and −22% on stencil kernels on an older Xeon; ~3.5 µs extra per CPU dispatch | Proven non-overlapping fields compile with `noalias` |
+| Cold compile | First call of a large kernel is slower (CUDA path tracer roughly +50% on the oldest test host) | IR verification at every pass boundary; partly offset by faster IR cloning |
+| CUDA path tracer, warm | ~6–7% slower | Safe floating-point math |
+| CPU path tracer, warm | ~4% slower on the oldest test host | Wrapped i32 index arithmetic; a renderer-side fix is planned |
+| Textures | One extra full copy of the data per texture, on CPU as well | Textures copy their field |
+| `render_volume()` | One device copy of the volume per call | Keeps the ray caster and the path tracer showing the same data |
+
+### Tooling
+
+- `docs/reference/language-contract.md`: the language contract.
+- `validate_all.py --arch <backend>` checks every call and fails when the
+  requested backend is unavailable.
+- Host-side compiler checks honor `TACK_CLANG` and fail under
+  `TACK_REQUIRE_CLANG=1` instead of skipping.
+- `TACK_EXAMPLES_ARCH` selects the backend for the example sweep.
+- New diagnostic probes in `benchmarks/`: threading decisions, LLVM
+  path-tracer comparison, volume cold start, IR cloning, raster differential.
+
+### Known limitations
+
+- **ROCm 7.0.2 miscompiles some integer code on HIP.** Its device compiler
+  (AMD clang 20, inside hipRTC) can evaluate a 64-bit signed comparison
+  wrongly when it sits inside a long integer expression. The kernel then
+  returns a wrong value with no error. Tack's generated source is correct;
+  the same kernel is right on CUDA, as host C++ and under ROCm's clang 23.
+  It depends on the surrounding expression, so Tack can't avoid it. Use a
+  ROCm release newer than 7.0 where possible; on 7.0.2, check
+  integer-heavy kernels against the CPU backend.
+- **Windows has not been revalidated** for this release; the supported
+  backends were validated on Linux (CPU, CUDA, HIP, Level Zero) and macOS
+  (CPU, Metal on an M1 Max and an M3).
+- **HIP leaks one hipRTC program object per compiled variant.**
+  `hiprtcDestroyProgram` segfaults in hip-python, so Tack does not call it;
+  the variant cache keeps compilations rare.
+- **Level Zero relies on two workarounds for Intel driver defects:** f64
+  `floor`/`ceil` restore the sign of zero with `copysign`, and narrow signed
+  negation and `abs` are emitted as non-inlined helpers. Results follow the
+  contract; both defects will be reported upstream.
+- **Raster depth bias:** in mixed scenes, path-traced surfaces are pushed
+  back by a fixed 0.5% relative depth bias (not slope-scaled) so a
+  wireframe lying on its own surface is drawn. It can drop wire pixels at
+  grazing angles or let very close geometry show through.
