@@ -2,7 +2,8 @@
 
 Generates a ``__kernel`` function where:
   - Each Field parameter becomes a ``__global`` typed pointer
-  - The outermost parallel for-loop maps to ``get_global_id(0)``
+  - The outermost parallel for-loop's index is built in 64 bits from
+    ``get_group_id(0)``, ``get_local_size(0)`` and ``get_local_id(0)``
   - Sequential for-loops, while-loops, if/else map to standard C control flow
   - Math builtins map to OpenCL built-in math functions (overloaded, no 'f' suffix)
 
@@ -22,6 +23,13 @@ from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_pa
 
 # OpenCL uses 'long' for 64-bit integers (not 'long long')
 _OCL_INT = "long"
+
+# get_global_id(0) is a size_t, but Intel's driver computes it in 32 bits:
+# on a Max 1100 (compute runtime 25.05, IGC 2.7.11) item 2^32 + k of a
+# launch saw k, with or without -ze-opt-disable. The group id is not
+# affected, so the index is widened from it before the multiply.
+OCL_LAUNCH_INDEX = ("(long)get_group_id(0) * (long)get_local_size(0) "
+                    "+ (long)get_local_id(0)")
 
 _OCL_C_TYPE_MAP = {
     i8:  "char",
@@ -54,6 +62,8 @@ class OpenCLCodeGen(CUDACodeGen):
     """
 
     _integer_type_map = _OCL_C_TYPE_MAP
+    # IGC misfolds widened negation/abs of a signed minimum; see IntegerCodeGen.
+    _opaque_negation = True
 
     def generate(self) -> str:
         func = self.ir_func
@@ -198,11 +208,11 @@ class OpenCLCodeGen(CUDACodeGen):
             body = header + "\n" + body
         return body
 
-    # --- Parallel loop: get_global_id(0) ---
+    # --- Parallel loop: 64-bit index from the group id ---
 
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         idx = node.var
-        self._emit(f"{_OCL_INT} {idx} = get_global_id(0);")
+        self._emit(f"{_OCL_INT} {idx} = {OCL_LAUNCH_INDEX};")
         self._emit(f"if ({idx} >= __n__) return;")
         self._local_vars[idx] = _OCL_INT
         self._declared_vars.add(idx)

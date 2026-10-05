@@ -306,6 +306,8 @@ any signed/u64 pair requires an explicit cast. Comparisons and integer
 shares unsigned-carrier helpers across GPU generators; Metal uses `as_type`
 for signed bits and separate noinline i64/u64-add helpers for accumulator
 updates inside runtime-bound loops to avoid an M1 Max compiler crash.
+OpenCL emits signed `neg` below 32 bits and `abs` below 64 as noinline
+helpers: IGC 2.7.11 widened the wrapped minimum as its magnitude.
 LLVM tracks signedness on every
 annotated integer expression, including loads of locals and scalar arguments.
 Literals/scalars choose i32/i64/u64 by magnitude and reject unrepresentable
@@ -373,7 +375,7 @@ when the constant's dtype is f64; f32 code is unchanged. See
 
 ### 64-bit loop indices on GPU
 
-GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. CUDA/HIP widen `blockIdx.x` before multiplying by `blockDim.x`: the built-ins are 32-bit unsigned, and the product wrapped silently at 2^32 threads. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).
+GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. CUDA/HIP widen `blockIdx.x` before multiplying by `blockDim.x`: the built-ins are 32-bit unsigned, and the product wrapped silently at 2^32 threads. OpenCL builds the index from `get_group_id(0)` the same way, since Intel's `get_global_id(0)` wraps at 2^32 despite its `size_t` type; native reductions use the same index. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).
 
 Each GPU backend's `execute` and native `reduce_field` call `check_launch_size` (`runtime/kernel_utils.py`), which raises `ValueError` for more iterations than one grid can index, instead of a driver error or a wrap. `_max_launch` is queried at init: CUDA max `gridDim.x` × 256; HIP the same, capped at 2^32 − 256 (AMD's dispatch packet counts work-items in 32 bits); Level Zero `maxGroupCountX` × workgroup size (the group count is a ctypes uint32 that would truncate). Metal uses `_MAX_LAUNCH = 2**32`, and reduces fields of 2^32+ elements through NumPy because its reduction kernel's count and thread position are 32-bit. CUDA/HIP reduction kernels take the count as a `long long` argument. See `test_launch_limits.py`.
 
@@ -471,7 +473,7 @@ Then: `tack.init(arch=tack.hip)`.
 
 ## Level Zero backend notes
 
-The Level Zero codegen (`opencl_gen.py`) extends `CUDACodeGen` — OpenCL C kernel syntax mirrors CUDA with different qualifiers (`__kernel`/`__global`, `get_global_id(0)`/`blockIdx*blockDim+threadIdx`, `__local`/`__shared__`, `barrier()`/`__syncthreads()`). Math functions are overloaded (no `f` suffix). The runtime (`level_zero_backend.py`) uses ctypes bindings to `libze_loader.so` and `libocloc.so`.
+The Level Zero codegen (`opencl_gen.py`) extends `CUDACodeGen` — OpenCL C kernel syntax mirrors CUDA with different qualifiers (`__kernel`/`__global`, `get_group_id(0)*get_local_size(0)+get_local_id(0)`/`blockIdx*blockDim+threadIdx`, `__local`/`__shared__`, `barrier()`/`__syncthreads()`). Math functions are overloaded (no `f` suffix). The runtime (`level_zero_backend.py`) uses ctypes bindings to `libze_loader.so` and `libocloc.so`.
 
 Compilation pipeline: OpenCL C source → `libocloc.so` (in-process, via `oclocInvoke`) → SPIR-V → `zeModuleCreate` → `zeKernelCreate`. The ocloc library is part of the Intel compute runtime (`intel-opencl-icd` package).
 

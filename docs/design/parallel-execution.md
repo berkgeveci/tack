@@ -88,7 +88,7 @@ new array length reuses the compiled variant; see
 | | CPU | Metal | CUDA / HIP | Level Zero |
 |---|---|---|---|---|
 | Kernel shape | function over `[__loop_start__, __loop_end__)`, called per chunk | one thread per iteration | one thread per iteration | one work-item per iteration |
-| Index source | i64 loop variable | `uint [[thread_position_in_grid]]`, widened to `long` | `(long long)blockIdx.x * blockDim.x + threadIdx.x` | `get_global_id(0)` (a `size_t`) as `long` |
+| Index source | i64 loop variable | `uint [[thread_position_in_grid]]`, widened to `long` | `(long long)blockIdx.x * blockDim.x + threadIdx.x` | `(long)get_group_id(0) * (long)get_local_size(0) + (long)get_local_id(0)` |
 | Group size | n/a | `min(maxTotalThreadsPerThreadgroup, 256)` | 256 | `min(256, maxGroupSizeX, maxTotalGroupSize)` |
 | Launch | chunks on a thread pool, or serial | `dispatchThreads` with the exact count | `ceil(n / 256)` blocks | `ceil(n / group)` groups |
 | Tail handling | loop condition | exact grid; final group may be smaller | `if (idx >= __n__) return;` | `if (idx >= __n__) return;` |
@@ -103,8 +103,12 @@ casts `blockIdx.x` to `long long` *before* the multiply; a 32-bit product
 would wrap once a launch reached 2^32 threads, and those threads would
 repeat the first iterations while the tail never ran. HIP inherits the
 generator, and the native reduction kernels in `codegen/reductions.py` use
-the same expression. OpenCL's `get_global_id` already returns a 64-bit
-`size_t`.
+the same expression. OpenCL's `get_global_id` is declared `size_t`, but on
+an Intel Data Center GPU Max 1100 (compute runtime 25.05, IGC 2.7.11) work
+item 2^32 + k of a launch read k, with or without driver optimization: the
+first 2^32 indices ran twice and the rest never. `OpenCLCodeGen` and the
+OpenCL reduction kernel therefore build the index from `get_group_id(0)`,
+which is not affected, widened before the multiply.
 
 **Every iteration runs, or the launch is refused.** Each GPU backend's
 `execute` calls `check_launch_size()` (`runtime/kernel_utils.py`) with the

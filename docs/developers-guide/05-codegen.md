@@ -21,7 +21,7 @@ nearly identical:
 
 - **HIP**: Same as CUDA (`blockIdx`, `threadIdx`, `__global__`), just adds
   `#include <hip/hip_runtime.h>`.
-- **OpenCL**: Different qualifiers (`__kernel`, `get_global_id(0)`,
+- **OpenCL**: Different qualifiers (`__kernel`, `get_group_id(0)`,
   `__local`, `barrier()`), overloaded math (no `f` suffix). Also maps
   `long long` → `long` for integer types.
 
@@ -106,7 +106,8 @@ GPU backends use 64-bit integers for loop variables and index arithmetic
 to support grids with more than 2^31 elements:
 - CUDA/HIP: `long long`, with `blockIdx.x` widened before the multiply
 - MSL: `long`, initialized from the `uint` thread position
-- OpenCL: `long`, from the `size_t` `get_global_id(0)`
+- OpenCL: `long`, from `get_group_id(0)` widened before the multiply;
+  Intel's `get_global_id(0)` wraps at 2^32 despite its `size_t` type
 
 The runtime refuses a launch longer than one grid can index
 (`check_launch_size` in `runtime/kernel_utils.py`), so the index never
