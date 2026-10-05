@@ -3,6 +3,22 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## Unreleased
+
+### Added
+
+- `tack.algorithms.argsort`, `sort_by_key`, `gather`, `unique` and
+  `reduce_by_key`: a stable radix sort for `i32`/`u32`/`i64`/`u64` keys
+  and segmented reductions over runs of equal keys, built from ordinary
+  kernels and the scan so they run on every backend. See *Sorting and
+  segmented reductions* in the User's Guide.
+
+### Fixes with no source change needed
+
+- A field of zero elements can be allocated on Metal and CUDA, as it
+  already could on CPU and Level Zero. A filter that selects nothing now
+  returns an empty field instead of failing to allocate it.
+
 ## 0.2.0 — 2026-10-05
 
 The headline: Tack now has a written language contract, and the compiler
