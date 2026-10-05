@@ -384,27 +384,35 @@ SEEDS = list(range(32))
 # generated source is correct as host C++ under UBSan (clang and gcc,
 # -O0 to -O3), on CUDA, and under ROCm's clang 23. Strict, so a toolchain
 # that compiles it correctly reports XPASS and the entry can go.
-HIPRTC_MISCOMPILED_SEEDS = {31: (7, 0)}
+#
+# Keyed on the HIP runtime's (major, minor), which is the ROCm release whose
+# hipRTC and comgr Tack loads. hiprtcVersion() cannot identify it: on ROCm
+# 7.0.2 it reports 9.0, so a mark keyed on it never applied.
+ROCM_MISCOMPILED_SEEDS = {31: (7, 0)}
 
 
-def _hiprtc_version():
-    """(major, minor) of the hipRTC compiling HIP kernels, or None."""
+def _hip_runtime_version():
+    """(major, minor) of the HIP runtime, i.e. the ROCm release, or None."""
     try:
-        from hip import hiprtc
-        err, major, minor = hiprtc.hiprtcVersion()
+        from hip import hip
+        err, version = hip.hipRuntimeGetVersion()
     except Exception:
         return None
-    return (major, minor) if err == hiprtc.hiprtcResult.HIPRTC_SUCCESS else None
+    if err != hip.hipError_t.hipSuccess:
+        return None
+    # HIP_VERSION = major * 10^7 + minor * 10^5 + patch
+    return version // 10_000_000, version // 100_000 % 100
 
 
 @pytest.mark.parametrize("seed", SEEDS)
 def test_generated_integer_expression_matches_oracle(backend, tmp_path, seed, request):
-    if backend == "hip" and seed in HIPRTC_MISCOMPILED_SEEDS:
-        version = HIPRTC_MISCOMPILED_SEEDS[seed]
-        if _hiprtc_version() == version:
+    if backend == "hip" and seed in ROCM_MISCOMPILED_SEEDS:
+        version = ROCM_MISCOMPILED_SEEDS[seed]
+        if _hip_runtime_version() == version:
             request.applymarker(pytest.mark.xfail(
-                strict=True, reason=f"hipRTC {version[0]}.{version[1]} (ROCm 7.0.2) "
-                                    f"miscompiles a 64-bit compare in seed {seed}"))
+                strict=True, reason=f"ROCm {version[0]}.{version[1]}'s device compiler "
+                                    f"(hipRTC/comgr, AMD clang 20) miscompiles a "
+                                    f"64-bit compare in seed {seed}"))
     gen = Gen(seed)
     src, stores, store_types = gen.kernel()
     kernel, path = _load(tmp_path, f"int_expr_seed{seed}", src)

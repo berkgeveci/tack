@@ -146,9 +146,9 @@ wrong value with no error. Tack's own tests found one case: a generated
 expression in which `-253 < -1` evaluated false at `-O1` and above. The
 same source is correct on CUDA, as host C++, and under ROCm's clang 23.
 Whether a kernel is affected depends on the surrounding expression, so
-Tack can't rewrite around it. Use a ROCm release whose hipRTC is newer
-than 7.0 if you can. On 7.0.2, check integer-heavy kernels against the CPU
-backend.
+Tack can't rewrite around it. Use a ROCm release newer than 7.0 if you
+can. Go by the ROCm release, not `hiprtcVersion()`, which reports 9.0 on
+7.0.2. On 7.0.2, check integer-heavy kernels against the CPU backend.
 
 ## Level Zero
 
