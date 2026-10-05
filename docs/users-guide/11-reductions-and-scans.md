@@ -239,7 +239,15 @@ total = inclusive_scan(counts, offsets, n)  # offsets[i] = counts[0] + ... + cou
 
 The classic use is stream compaction: one kernel counts how many outputs
 each item produces, an exclusive scan turns the counts into write offsets,
-and the returned total sizes the output field.
+and the returned total sizes the output field. When the output can exceed
+2^31 − 1 elements, keep the counts `i32` but make the offsets `i64`: the
+scan runs in the output's dtype, so the running sums are formed in `i64`
+and the total comes back exact.
+
+```python
+offsets = tack.field(dtype=tack.i64, shape=(n,))
+total = exclusive_scan(counts, offsets, n)  # i32 counts, i64 offsets and total
+```
 
 Both functions run on every backend. They use no shared memory or
 barriers, only ordinary kernels: an up-sweep and a down-sweep with doubling
