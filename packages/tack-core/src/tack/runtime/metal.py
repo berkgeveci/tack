@@ -25,6 +25,7 @@ from tack.lang.workgroup_participation import (
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
+    check_launch_size,
     new_kernel_cache,
     resolve_variant,
 )
@@ -38,6 +39,10 @@ try:
     import Metal  # pyobjc-framework-Metal
 except ImportError:
     Metal = None
+
+# Kernels read their index from a `uint` [[thread_position_in_grid]], so one
+# dispatch can index 2^32 threads; past that the position would wrap.
+_MAX_LAUNCH = 2**32
 
 
 class MetalBuffer(DeviceBuffer):
@@ -355,6 +360,7 @@ class MetalBackend(Backend):
         if loop_end <= 0:
             # range(0) runs nothing; do not dispatch an empty grid.
             return
+        check_launch_size(f"Kernel '{kernel.name}'", loop_end, _MAX_LAUNCH, self.label)
 
         # Replace scalar args with the packed field buffers
         if pack_info:
@@ -423,9 +429,13 @@ class MetalBackend(Backend):
         if field.dtype is not f32:
             # Fall back to numpy for non-f32
             return reduce_numpy(field.to_numpy(), op)
+        n = int(np.prod(field.shape))
+        if n >= _MAX_LAUNCH:
+            # The kernel holds the count and its thread position in 32 bits.
+            # Reduce the shared buffer in place rather than copy 16 GB.
+            return reduce_numpy(field._buffer._view, op)
 
         pipeline = self._get_reduce_pipeline(op)
-        n = int(np.prod(field.shape))
 
         # Create output buffer: [result, n_as_float_bits]
         import struct

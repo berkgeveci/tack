@@ -27,6 +27,7 @@ from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     as_address,
+    check_launch_size,
     new_kernel_cache,
     resolve_variant,
 )
@@ -290,6 +291,7 @@ class HIPBackend(Backend):
         self._has_image_support = self._query_image_support()
         self._max_image_3d = (
             self._query_max_image_3d() if self._has_image_support else 0)
+        self._max_launch = self._query_max_launch()
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledHIPKernel}
 
@@ -300,6 +302,18 @@ class HIPBackend(Backend):
             self._device)
         _check_hip(err)
         return bool(val)
+
+    def _query_max_launch(self) -> int:
+        """Most iterations one one-dimensional launch can index.
+
+        gridDim.x bounds the block count. On AMD GPUs the dispatch packet
+        also stores the grid's total work-item count in 32 bits.
+        """
+        err, max_blocks = hip.hipDeviceGetAttribute(
+            hip.hipDeviceAttribute_t.hipDeviceAttributeMaxGridDimX, self._device)
+        _check_hip(err)
+        max_blocks = min(int(max_blocks), (2**32 - 1) // WORKGROUP_SIZE)
+        return max_blocks * WORKGROUP_SIZE
 
     def _query_max_image_3d(self) -> int:
         """Smallest of the three max 3D texture extents, 0 if unreported.
@@ -423,6 +437,7 @@ class HIPBackend(Backend):
         if loop_end <= 0:
             # range(0) runs nothing; do not ask the driver for an empty grid.
             return
+        check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
         # Replace scalar args with the packed field buffers
         if pack_info:
@@ -487,6 +502,8 @@ class HIPBackend(Backend):
             return empty_reduction(op)
         if field.dtype is not f32:
             return reduce_numpy(field.to_numpy(), op)
+        n = int(np.prod(field.shape))
+        check_launch_size(f"Field {op}()", n, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -494,16 +511,9 @@ class HIPBackend(Backend):
             self._reduce_cache[op] = self._compile_reduce(op)
 
         func, module = self._reduce_cache[op]
-        n = int(np.prod(field.shape))
 
-        # Output: [result, n_as_uint_bits]
-        import struct as _struct
-        init_vals = REDUCTION_IDENTITIES
-        out_np = np.array([init_vals[op],
-                           np.frombuffer(_struct.pack('I', n), dtype=np.float32)[0]],
-                          dtype=np.float32)
-        out_buf = HIPBuffer(np.float32, (2,))
-        out_buf.from_numpy(out_np)
+        out_buf = HIPBuffer(np.float32, (1,))
+        out_buf.from_numpy(np.array([REDUCTION_IDENTITIES[op]], dtype=np.float32))
 
         block_dim = 256
         grid_dim = (n + block_dim - 1) // block_dim
@@ -511,9 +521,11 @@ class HIPBackend(Backend):
         # Dispatch
         in_ptr = ctypes.c_void_p(int(field._buffer.device_ptr))
         out_ptr = ctypes.c_void_p(int(out_buf.device_ptr))
-        args = (ctypes.c_void_p * 2)()
+        n_val = ctypes.c_longlong(n)
+        args = (ctypes.c_void_p * 3)()
         args[0] = ctypes.addressof(in_ptr)
         args[1] = ctypes.addressof(out_ptr)
+        args[2] = ctypes.addressof(n_val)
 
         _check_hip(hip.hipModuleLaunchKernel(
             func, grid_dim, 1, 1, block_dim, 1, 1,

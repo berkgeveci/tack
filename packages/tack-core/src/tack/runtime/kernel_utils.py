@@ -738,6 +738,20 @@ def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     return _resolve_range_expr(parallel_for.end, name_to_arg)
 
 
+def check_launch_size(what: str, items: int, max_items: int, backend_label: str):
+    """Reject a launch larger than one grid of the backend can index.
+
+    Past the limit a driver either refuses the grid with a bare error code,
+    or a narrowed count or thread position wraps and the launch silently
+    skips or repeats work. `what` names the kernel or operation.
+    """
+    if items > max_items:
+        raise ValueError(
+            f"{what}: {items} iterations exceed the {max_items} that one "
+            f"{backend_label} launch can index; split the work across "
+            f"several launches.")
+
+
 def _create_pack_fields(pack_info, args, backend):
     """Create packed Field objects from scalar pack info.
 

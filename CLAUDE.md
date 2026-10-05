@@ -330,7 +330,9 @@ Reduction order/accuracy guarantees remain the next stage-five task.
 
 ### 64-bit loop indices on GPU
 
-GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).
+GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. CUDA/HIP widen `blockIdx.x` before multiplying by `blockDim.x`: the built-ins are 32-bit unsigned, and the product wrapped silently at 2^32 threads. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).
+
+Each GPU backend's `execute` and native `reduce_field` call `check_launch_size` (`runtime/kernel_utils.py`), which raises `ValueError` for more iterations than one grid can index, instead of a driver error or a wrap. `_max_launch` is queried at init: CUDA max `gridDim.x` × 256; HIP the same, capped at 2^32 − 256 (AMD's dispatch packet counts work-items in 32 bits); Level Zero `maxGroupCountX` × workgroup size (the group count is a ctypes uint32 that would truncate). Metal uses `_MAX_LAUNCH = 2**32`, and reduces fields of 2^32+ elements through NumPy because its reduction kernel's count and thread position are 32-bit. CUDA/HIP reduction kernels take the count as a `long long` argument. See `test_launch_limits.py`.
 
 ### Algorithms (tack.algorithms)
 

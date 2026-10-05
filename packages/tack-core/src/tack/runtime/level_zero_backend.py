@@ -34,6 +34,7 @@ from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     as_address,
+    check_launch_size,
     new_kernel_cache,
     resolve_variant,
 )
@@ -1006,6 +1007,12 @@ class LevelZeroBackend(Backend):
         _check_ze(ze.zeDeviceGetComputeProperties(
             self._device, ctypes.byref(self._compute_props)),
             "zeDeviceGetComputeProperties")
+        # The group count is a uint32 that ctypes would truncate rather than
+        # reject. Kernels use the workgroup size _compile_kernel chooses;
+        # native reductions run only where that is 256.
+        self._max_launch = self._compute_props.maxGroupCountX * min(
+            WORKGROUP_SIZE, self._compute_props.maxGroupSizeX,
+            self._compute_props.maxTotalGroupSize)
 
         # Get image properties (for max 3D texture dimensions and sampler support)
         self._image_props = ze_device_image_properties_t(
@@ -1123,6 +1130,7 @@ class LevelZeroBackend(Backend):
         if loop_end <= 0:
             # range(0) runs nothing; a negative count would wrap as uint32.
             return
+        check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
         # Replace scalar args with the packed field buffers
         if pack_info:
@@ -1257,6 +1265,7 @@ class LevelZeroBackend(Backend):
                 or self._compute_props.maxGroupSizeX < 256
                 or self._compute_props.maxTotalGroupSize < 256):
             return reduce_numpy(field.to_numpy(), op)
+        check_launch_size(f"Field {op}()", field.size, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}

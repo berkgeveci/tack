@@ -149,6 +149,16 @@ Backends launch their grids from zero, so the frontend moves a nonzero start
 into the body; the length of the interval remains a per-dispatch value and
 does not specialize the compiled kernel. See LC5.
 
+**Required:** every index of the interval executes, however long it is,
+or the launch is refused before anything runs. CUDA and HIP compute the
+iteration index in 64 bits from the block and thread numbers. A launch
+longer than one grid of the backend can index raises `ValueError` naming
+the kernel, the count and the limit. CUDA admits its device's maximum
+`gridDim.x` times 256 iterations; HIP also at most 2^32 - 256, because
+the AMD dispatch packet holds the work-item count in 32 bits; Metal 2^32,
+the range of its `uint` thread position; Level Zero its device's maximum
+group count times the workgroup size.
+
 Early exits must preserve the defined control flow. `continue` ends the
 current iteration of its nearest enclosing loop, including the top-level
 parallel one, where it skips the rest of that iteration only (LC8). This
@@ -565,9 +575,11 @@ integer and mixed arguments. No performance improvement is claimed.
 and return Python `float` values. Reshaping a field does not select an axis
 or change the set of elements. CPU uses NumPy; GPU backends reduce eligible
 f32 fields on the device and use the shared NumPy fallback for other dtypes.
-Allocation and field/backend ownership requirements still apply. Current
-CUDA/HIP/Metal field kernels require element counts fitting an unsigned
-32-bit integer; larger native reductions are outside this contract.
+Allocation and field/backend ownership requirements still apply. CUDA,
+HIP and Level Zero pass the element count to the device in 64 bits and
+reject a reduction longer than one launch can index, as for kernels
+below. Metal's reduction kernel holds the count and thread position in 32
+bits, so Metal reduces fields of 2^32 or more elements through NumPy.
 
 **Accumulation precision:** f32 sums accumulate in f32, and f64 sums in
 f64. Integer sums promote signed inputs to i64 and unsigned inputs to u64,

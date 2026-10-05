@@ -36,9 +36,11 @@ class TestCUDACodeGen:
                 out[i] = 42.0
 
         src = generate_cuda_source(_get_ir(fill, _field()))
-        assert 'blockIdx.x' in src
-        assert 'blockDim.x' in src
-        assert 'threadIdx.x' in src
+        # Widened before the multiply: blockIdx.x * blockDim.x is 32-bit
+        # unsigned and wraps once a launch reaches 2^32 threads.
+        assert ('long long tack_var_a_i = (long long)blockIdx.x * blockDim.x '
+                '+ threadIdx.x;') in src
+        assert 'long long __n__' in src
 
     def test_bounds_guard(self):
         @tack.kernel

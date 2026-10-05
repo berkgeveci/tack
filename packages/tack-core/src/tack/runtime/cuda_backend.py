@@ -27,6 +27,7 @@ from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     as_address,
+    check_launch_size,
     new_kernel_cache,
     resolve_variant,
 )
@@ -597,6 +598,12 @@ class CUDABackend(Backend):
             _CONTEXTS[int(self._context)] = self._token
             self._owns_context = True
 
+        # Every launch is one-dimensional, so gridDim.x bounds its size.
+        err, max_blocks = driver.cuDeviceGetAttribute(
+            driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X, self._device)
+        _check(err)
+        self._max_launch = int(max_blocks) * WORKGROUP_SIZE
+
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledCUDAKernel}
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
@@ -670,6 +677,7 @@ class CUDABackend(Backend):
         if loop_end <= 0:
             # range(0) runs nothing, and cuLaunchKernel rejects an empty grid.
             return
+        check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
         # Replace scalar args with the packed field buffers
         if pack_info:
@@ -734,6 +742,8 @@ class CUDABackend(Backend):
             return empty_reduction(op)
         if field.dtype is not f32:
             return reduce_numpy(field.to_numpy(), op)
+        n = int(np.prod(field.shape))
+        check_launch_size(f"Field {op}()", n, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -741,16 +751,9 @@ class CUDABackend(Backend):
             self._reduce_cache[op] = self._compile_reduce(op)
 
         func, module = self._reduce_cache[op]
-        n = int(np.prod(field.shape))
 
-        # Output: [result, n_as_uint_bits]
-        import struct as _struct
-        init_vals = REDUCTION_IDENTITIES
-        out_np = np.array([init_vals[op],
-                           np.frombuffer(_struct.pack('I', n), dtype=np.float32)[0]],
-                          dtype=np.float32)
-        out_buf = CUDABuffer(np.float32, (2,))
-        out_buf.from_numpy(out_np)
+        out_buf = CUDABuffer(np.float32, (1,))
+        out_buf.from_numpy(np.array([REDUCTION_IDENTITIES[op]], dtype=np.float32))
 
         block_dim = 256
         grid_dim = (n + block_dim - 1) // block_dim
@@ -758,9 +761,11 @@ class CUDABackend(Backend):
         # Dispatch
         in_ptr = ctypes.c_void_p(int(field._buffer.device_ptr))
         out_ptr = ctypes.c_void_p(int(out_buf.device_ptr))
-        args = (ctypes.c_void_p * 2)()
+        n_val = ctypes.c_longlong(n)
+        args = (ctypes.c_void_p * 3)()
         args[0] = ctypes.addressof(in_ptr)
         args[1] = ctypes.addressof(out_ptr)
+        args[2] = ctypes.addressof(n_val)
 
         _check(driver.cuLaunchKernel(
             func, grid_dim, 1, 1, block_dim, 1, 1,
