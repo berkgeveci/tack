@@ -1,6 +1,7 @@
 """Tests for tack.algorithms module."""
 
 import numpy as np
+import pytest
 
 import tack
 from tack import algorithms
@@ -146,7 +147,6 @@ def test_fill_value(backend):
 
 def test_scans_of_no_elements_return_zero_and_write_nothing(backend):
     """n=0 used to read index -1: garbage or a launch error on CUDA."""
-    import pytest
     for scan in (algorithms.exclusive_scan, algorithms.inclusive_scan):
         inp = tack.field(dtype=tack.i32, shape=(4,))
         out = tack.field(dtype=tack.i32, shape=(4,))
@@ -161,10 +161,64 @@ def test_scans_of_no_elements_return_zero_and_write_nothing(backend):
 
 
 def test_scans_refuse_an_output_shorter_than_n(backend):
-    import pytest
     inp = tack.field(dtype=tack.i32, shape=(8,))
     out = tack.field(dtype=tack.i32, shape=(4,))
     inp.fill(1)
     for scan in (algorithms.exclusive_scan, algorithms.inclusive_scan):
         with pytest.raises(ValueError, match="outside"):
             scan(inp, out, 8)
+
+
+# --- scans run in the output field's dtype ---
+
+def _np_scans(a):
+    inclusive = np.cumsum(a, dtype=a.dtype)
+    exclusive = np.concatenate([np.zeros(1, a.dtype), inclusive[:-1]])
+    return exclusive, inclusive
+
+
+
+@pytest.mark.parametrize("dt, values", [
+    ("u32", [4_000_000_000, 1, 2, 3, 5]),
+    ("i64", [2**40, 1, -2, 3, 2**41]),
+    ("u8", [200, 100, 7, 1, 0]),
+    ("f32", [0.5, 1.25, 2.0, 3.5, -0.75]),
+], ids=["u32", "i64", "u8", "f32"])
+def test_scans_keep_the_output_dtype(backend, dt, values):
+    """exclusive_scan used to scan in i32 (floats truncated, i64 wrapped), and
+    both returned the total through i32."""
+    a = np.array(values, dtype=getattr(np, {"u32": "uint32", "i64": "int64", "u8": "uint8",
+                                             "f32": "float32"}[dt]))
+    exclusive, inclusive = _np_scans(a)
+    for scan, expected in ((algorithms.exclusive_scan, exclusive),
+                           (algorithms.inclusive_scan, inclusive)):
+        inp = tack.field(dtype=getattr(tack, dt), shape=a.shape)
+        out = tack.field(dtype=getattr(tack, dt), shape=a.shape)
+        inp.from_numpy(a)
+        total = scan(inp, out, a.size)
+        np.testing.assert_array_equal(out.to_numpy(), expected)
+        assert total == inclusive[-1].item()
+        assert type(total) is type(inclusive[-1].item())
+
+
+def test_scans_keep_f64(f64_backend):
+    a = np.array([0.1, 0.2, 0.3, 0.4, 1e-17, 2.5], dtype=np.float64)
+    exclusive, inclusive = _np_scans(a)
+    for scan, expected in ((algorithms.exclusive_scan, exclusive),
+                           (algorithms.inclusive_scan, inclusive)):
+        inp = tack.field(dtype=tack.f64, shape=a.shape)
+        out = tack.field(dtype=tack.f64, shape=a.shape)
+        inp.from_numpy(a)
+        total = scan(inp, out, a.size)
+        # The tree adds in a different order from cumsum: equal to rounding.
+        np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-15, atol=1e-17)
+        assert total == pytest.approx(a.sum(), rel=1e-15)
+        assert isinstance(total, float)
+
+
+def test_scans_convert_the_input_to_the_output_dtype(backend):
+    inp = tack.field(dtype=tack.i32, shape=(4,))
+    out = tack.field(dtype=tack.f32, shape=(4,))
+    inp.from_numpy(np.array([1, 2, 3, 4], dtype=np.int32))
+    assert algorithms.exclusive_scan(inp, out, 4) == 10.0
+    np.testing.assert_array_equal(out.to_numpy(), [0.0, 1.0, 3.0, 6.0])
