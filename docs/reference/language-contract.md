@@ -141,8 +141,9 @@ frontend rejects `break` from the parallel loop: there is no ordered prefix
 of parallel iterations to stop. Kernel `return` is also rejected; results
 are written to fields. Positive `range` steps are supported, and literal
 zero or negative steps are rejected. A dynamic step must be positive;
-runtime validation of that caller constraint remains open. Multiple
-top-level parallel loops and cross-iteration communication require further
+runtime validation of that caller constraint remains open. A kernel has
+exactly one top-level parallel loop; the IR verifier rejects a second one
+when the kernel is lowered. Cross-iteration communication requires further
 validation before joining the portable baseline. Outer launch bounds must
 be resolvable from host arguments and field metadata.
 
@@ -621,10 +622,10 @@ because it has no workgroup execution model.
 
 User reductions combining `atomic_add` with block partials likewise have
 unspecified accumulation order. Atomic min/max are separate backend
-primitives: their NaN and signed-zero handling is outside the portable
-atomic-extrema domain, which requires finite nonzero floating operands
-and stored values. The field/block extrema guarantees do not imply those
-atomic semantics. Atomic scope and supported widths are defined below;
+primitives. Their portable floating domain is finite stored values and
+contributed operands, including numeric zero, with an unspecified result
+sign on a zero tie; NaNs and infinities are outside it. The field/block
+extrema guarantees do not imply those atomic semantics. Atomic scope and supported widths are defined below;
 workgroup participation follows its separate contract. The statistical algorithms in
 `tack.algorithms.stats` use f32 atomic accumulators for floating statistics;
 an f64 input alone does not establish f64 accuracy or determinism for them.

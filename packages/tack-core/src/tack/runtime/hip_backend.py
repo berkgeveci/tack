@@ -32,7 +32,7 @@ from tack.runtime.kernel_utils import (
 )
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
-_HIP_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+_HIP_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
 from hip import hip, hiprtc
 
 from tack.codegen.hip_gen import generate_hip_source

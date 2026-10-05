@@ -2,7 +2,7 @@
 
 These helpers handle template detection, vector field detection, texture detection,
 loop range resolution, and scalar packing — common pre-dispatch logic shared
-across CPU, GPU, and WebGPU backends.
+by every backend.
 
 Variant resolution
 ------------------
@@ -458,11 +458,12 @@ def resolve_variant(backend, kernel, args, kwargs, build,
                     specialize_disjoint=False) -> tuple:
     """Find or build the compiled variant for this call.
 
-    On a cache hit this touches no IR beyond parameter type inference. On a
-    miss it deep-copies the pristine template and runs resolve → infer →
-    check → optimize on the copy, then hands it to `build`, which does the
-    backend-specific tail (annotate, any packing, compile) and returns the
-    payload to cache.
+    On a cache hit this copies no IR: type inference runs on a stand-in
+    parameter list (`_KeyProbe`), and the per-call checks read only what
+    the variant recorded. Only on a miss is the pristine template cloned
+    (`clone_ir`), with resolve → infer → check → optimize run on the
+    clone, which is then handed to `build` for the backend-specific tail
+    (annotate, any packing, compile) that returns the payload to cache.
 
     `store_texture_shapes` overrides how Texture3D extents are recorded on
     the params — Level Zero falls back to software sampling on devices

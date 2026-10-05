@@ -40,7 +40,7 @@ from tack.runtime.kernel_utils import (
 )
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
-_L0_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+_L0_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.opencl_gen import generate_opencl_source
 
@@ -1030,9 +1030,9 @@ class LevelZeroBackend(Backend):
         # Device-dependent, so this shadows the class attribute rather than
         # replacing it. supports_f64 derives from it; there is no second flag
         # to keep in step.
-        self.supported_dtypes = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
-        if self._module_props.fp64flags != 0:
-            self.supported_dtypes.add(f64)
+        self.supported_dtypes = (
+            _L0_SUPPORTED_DTYPES if self._module_props.fp64flags != 0
+            else _L0_SUPPORTED_DTYPES - {f64})
 
         # Find compute queue group ordinal
         qg_count = ctypes.c_uint32(0)

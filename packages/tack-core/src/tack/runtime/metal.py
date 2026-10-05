@@ -30,7 +30,7 @@ from tack.runtime.kernel_utils import (
 )
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
-_METAL_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
+_METAL_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32})
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.msl_gen import generate_msl_source
 

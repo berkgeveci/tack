@@ -301,3 +301,23 @@ def test_inspection_localizes_assigned_scalar_parameters():
     assert 'value' not in assignments
     assert '__value_local__' in assignments
     np.testing.assert_array_equal(out.to_numpy(), np.full(4, 4))
+
+
+def test_a_second_top_level_loop_is_rejected():
+    """The language contract states this rule; pin the rule and its message."""
+    tack.init(arch=tack.cpu)
+
+    @tack.kernel
+    def two_loops(a, b):
+        for i in range(a.shape[0]):
+            a[i] = 1.0
+        for j in range(b.shape[0]):
+            b[j] = 2.0
+
+    a = tack.field(tack.f32, (4,))
+    b = tack.field(tack.f32, (4,))
+    with pytest.raises(RuntimeError,
+                       match='exactly one top-level parallel loop') as error:
+        two_loops(a, b)
+    assert isinstance(error.value.__cause__, IRVerificationError)
+    assert str(error.value).count("Kernel 'two_loops'") == 1

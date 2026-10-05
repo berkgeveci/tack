@@ -106,7 +106,6 @@ class Kernel:
         # Lazy IR: defer transform until first dispatch (vector fields may be needed)
         self._ir = None
         self._ir_cache = {}  # vector_fields key → IRModule
-        self._compiled = {}  # backend -> compiled kernel
 
     def get_ir(self, vector_fields=None, template_args=None, texture_fields=None):
         """Get IR, re-transforming if vector/texture field or template metadata is provided."""
