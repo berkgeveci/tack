@@ -95,6 +95,71 @@ whichever backend was active when it was allocated.
       docstring_options:
         warn_missing_types: false
 
+## Reductions, statistics and scans
+
+How these behave on each backend — dtypes, accumulators, NaN and empty
+inputs, repeatability — is in the User's Guide chapter
+[Reductions and Scans](../users-guide/11-reductions-and-scans.md). Field
+reductions are the methods `Field.sum`, `min`, `max` and `mean`, above.
+
+### Statistics
+
+Import these from `tack.algorithms`; they are defined in
+`tack.algorithms.stats`.
+
+::: tack.algorithms.stats.var
+
+::: tack.algorithms.stats.std
+
+::: tack.algorithms.stats.norm
+
+::: tack.algorithms.stats.absmax
+
+::: tack.algorithms.stats.count_nonzero
+
+::: tack.algorithms.stats.dot
+
+::: tack.algorithms.stats.histogram
+    options:
+      docstring_options:
+        warn_missing_types: false
+
+### Scans
+
+Import these from `tack.algorithms`; they are defined in
+`tack.algorithms.scan`.
+
+::: tack.algorithms.scan.exclusive_scan
+    options:
+      docstring_options:
+        warn_missing_types: false
+
+::: tack.algorithms.scan.inclusive_scan
+    options:
+      docstring_options:
+        warn_missing_types: false
+
+### Copy and fill
+
+`copy` and `fill_value` are re-exported from `tack.algorithms`;
+`copy_with_offset` is imported from `tack.algorithms.copy`.
+
+::: tack.algorithms.copy.copy
+
+::: tack.algorithms.copy.fill_value
+
+::: tack.algorithms.copy.copy_with_offset
+
+### Block reductions
+
+Usable only inside a `@tack.kernel`, on backends with workgroups (not CPU).
+
+::: tack.block_sum
+
+::: tack.block_min
+
+::: tack.block_max
+
 ## VTK interop
 
 `tack.interop.vtk` (in the `tack-vis` package) provides `vtk_to_field`,

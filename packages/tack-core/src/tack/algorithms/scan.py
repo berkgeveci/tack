@@ -96,7 +96,7 @@ def _blelloch_scan_inplace(work, n):
 
 
 def exclusive_scan(input_field, output_field, n):
-    """Compute exclusive prefix sum on the GPU.
+    """Compute exclusive prefix sum on the active backend.
 
     output[i] = sum(input[0..i-1]), output[0] = 0.
 
@@ -128,7 +128,7 @@ def exclusive_scan(input_field, output_field, n):
 
 
 def inclusive_scan(input_field, output_field, n):
-    """Compute inclusive prefix sum on the GPU.
+    """Compute inclusive prefix sum on the active backend.
 
     output[i] = sum(input[0..i]).
 

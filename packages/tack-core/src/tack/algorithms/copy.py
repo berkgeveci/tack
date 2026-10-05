@@ -1,11 +1,12 @@
-"""Field copy, cast, fill, and concat utilities — all GPU kernel-based.
+"""Field copy and fill utilities, each a kernel on the active backend.
 
 Usage:
     from tack import algorithms
+    from tack.algorithms.copy import copy_with_offset
 
     algorithms.copy(src, dst, n)
     algorithms.fill_value(field, value, n)
-    algorithms.copy_with_offset(src, dst, dst_offset, n)
+    copy_with_offset(src, dst, dst_offset, n)
 """
 
 import tack
@@ -31,15 +32,15 @@ def _copy_offset_kernel(src, dst, dst_offset, n):
 
 
 def copy(src, dst, n):
-    """Copy n elements from src field to dst field on the GPU."""
+    """Copy n elements from src field to dst field with a kernel."""
     _copy_kernel(src, dst, n)
 
 
 def copy_with_offset(src, dst, dst_offset, n):
-    """Copy n elements from src into dst starting at dst_offset on the GPU."""
+    """Copy n elements from src into dst starting at dst_offset with a kernel."""
     _copy_offset_kernel(src, dst, dst_offset, n)
 
 
 def fill_value(dst, value, n):
-    """Fill n elements of dst field with a scalar value on the GPU."""
+    """Fill n elements of dst field with a scalar value with a kernel."""
     _fill_kernel(dst, value, n)

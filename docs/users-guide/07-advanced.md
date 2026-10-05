@@ -132,6 +132,10 @@ def block_reduce(data, partial_sums, n):
             tack.atomic_add(partial_sums, 0, smem[0])
 ```
 
+For an `f32` sum, minimum or maximum over the workgroup, `tack.block_sum`,
+`tack.block_min` and `tack.block_max` do this in one call; see
+[Reductions and Scans](11-reductions-and-scans.md#block-reductions-inside-kernels).
+
 - `tack.shared(dtype, size)` — allocate threadgroup memory
 - `tack.barrier()` — synchronize threads in the workgroup
 - `tack.thread_id()` — thread index within the workgroup
