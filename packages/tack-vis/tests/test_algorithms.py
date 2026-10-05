@@ -222,3 +222,18 @@ def test_scans_convert_the_input_to_the_output_dtype(backend):
     inp.from_numpy(np.array([1, 2, 3, 4], dtype=np.int32))
     assert algorithms.exclusive_scan(inp, out, 4) == 10.0
     np.testing.assert_array_equal(out.to_numpy(), [0.0, 1.0, 3.0, 6.0])
+
+
+def test_i32_counts_scan_into_i64_offsets_past_2_31(backend):
+    """Stream compaction with i32 counts and i64 offsets: the sums overflow
+    i32, so they must be formed in the output's dtype, not the input's."""
+    a = np.array([2_000_000_000, 2_000_000_000, -5, 2_000_000_000, 7], dtype=np.int32)
+    inclusive = np.cumsum(a, dtype=np.int64)
+    exclusive = np.concatenate([np.zeros(1, np.int64), inclusive[:-1]])
+    for scan, expected in ((algorithms.exclusive_scan, exclusive),
+                           (algorithms.inclusive_scan, inclusive)):
+        inp = tack.field(dtype=tack.i32, shape=a.shape)
+        out = tack.field(dtype=tack.i64, shape=a.shape)
+        inp.from_numpy(a)
+        assert scan(inp, out, a.size) == 6_000_000_002
+        np.testing.assert_array_equal(out.to_numpy(), expected)
