@@ -166,7 +166,9 @@ class CUDABuffer(DeviceBuffer):
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
         self._token = _current_context_token()
-        err, self._device_ptr = driver.cuMemAlloc(self._nbytes)
+        # cuMemAlloc rejects a zero-byte request; an empty field gets one
+        # byte it never reads, as on Level Zero.
+        err, self._device_ptr = driver.cuMemAlloc(max(self._nbytes, 1))
         _check(err)
         # Zero-initialise
         _check(driver.cuMemsetD8(self._device_ptr, 0, self._nbytes))
