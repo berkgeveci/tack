@@ -20,6 +20,7 @@ STMTS = {
     ir.IRIf, ir.IRFieldStore, ir.IRAtomicOp, ir.IRAssign, ir.IRReturn,
     ir.IRSharedAlloc, ir.IRLocalAlloc, ir.IRBarrier, ir.IRPrint, ir.IRCall,
 }
+EFFECTS = (ir.IRFieldStore, ir.IRAtomicOp, ir.IRBlockReduce, ir.IRBarrier, ir.IRPrint)
 BINOPS = {'+', '-', '*', '/', '//', '%', '**', '&', '|', '^', '<<', '>>'}
 COMPARES = {'==', '!=', '<', '<=', '>', '>='}
 OPERATORS = {
@@ -187,6 +188,11 @@ def verify_ir(function: ir.IRFunction, stage: str):
     parallel = [s for s in function.body if isinstance(s, ir.IRParallelFor)]
     require(function, 'function.body', len(parallel) == 1,
             'kernel must contain exactly one top-level parallel loop')
+    # Statements outside the loop may run any number of times per launch.
+    loop_path = f'function.body[{function.body.index(parallel[0])}].'
+    for node, path, _ in nodes:
+        require(node, path, not isinstance(node, EFFECTS) or path.startswith(loop_path),
+                'observable effect outside the parallel loop')
 
     # Function-wide binding existence, not definite assignment. Loop-carried
     # and branch-defined variables require a separate control-flow analysis.

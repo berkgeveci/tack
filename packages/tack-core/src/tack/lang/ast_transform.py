@@ -13,6 +13,7 @@ import copy
 
 from tack.lang import ir
 from tack.lang.ir_names import fresh_name
+from tack.lang.ir_traversal import walk_ir
 from tack.lang.source_validation import UnsupportedSyntaxError, validate_source
 from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
@@ -70,6 +71,12 @@ class KernelTransformer(ast.NodeVisitor):
         self._name_reads: dict[str, tuple] = {}
         self._inline_stack: list[str] = []
         self._function_name = '<module>'
+        # Statements outside the parallel loop may run any number of times
+        # per launch (once per GPU thread, once per CPU chunk or probe), so
+        # only effect-free ones are accepted there.
+        self._kernel_body: list = []
+        self._in_parallel_loop = False
+        self._parallel_loop_seen = False
 
     def visit(self, node):
         try:
@@ -112,7 +119,13 @@ class KernelTransformer(ast.NodeVisitor):
                 name=arg.arg,
                 type_annotation=None,  # resolved during type inference
             ))
+        self._kernel_body = node.body
         body = self._visit_body(node.body)
+        if not self._parallel_loop_seen:
+            raise self._source_error(
+                node, "definition", "has no parallel loop: a kernel's work is "
+                "the body of one top-level `for` loop over `range(...)` or "
+                "`tack.ndrange(...)`")
         for stmt in body:
             if isinstance(stmt, ir.IRParallelFor):
                 _mark_outermost_continues(stmt.body)
@@ -122,6 +135,33 @@ class KernelTransformer(ast.NodeVisitor):
 
     def _fresh_name(self, preferred):
         return fresh_name(preferred, self._used_names)
+
+    def _source_error(self, node, construct, detail):
+        """An UnsupportedSyntaxError at a kernel or inlined source position."""
+        where = f"Kernel '{self._function_name}'"
+        if self._inline_stack:
+            where = (f"Device function '{self._inline_stack[-1]}' "
+                     f"(inlined into kernel '{self._function_name}')")
+        return UnsupportedSyntaxError(
+            f"{where}: {construct} at line {node.lineno}, "
+            f"column {node.col_offset + 1} {detail}")
+
+    def _check_outside_parallel_loop(self, stmt, lowered: list):
+        """Reject an observable effect lowered outside the parallel loop.
+
+        Runs on each statement's lowered IR, so effects that arrive through
+        inlined device functions, template methods, vector stores or tuple
+        unpacking are all seen. Nested and inlined bodies are checked first,
+        so the position is that of the innermost source statement.
+        """
+        for node in walk_ir([s for s in lowered if not isinstance(s, ir.IRParallelFor)]):
+            effect = _effect_name(node)
+            if effect is not None:
+                raise self._source_error(
+                    stmt, effect, "is outside the parallel loop. Statements "
+                    "there may run any number of times per launch, so they "
+                    "may only assign local variables and declare arrays; "
+                    f"move the {effect} into the loop body")
 
     def _component_name(self, name, component):
         key = (name, component)
@@ -138,8 +178,6 @@ class KernelTransformer(ast.NodeVisitor):
         as a tree path into the lowered IR; here the source position is still
         known. Existence only -- not definite assignment on every path.
         """
-        from tack.lang.ir_traversal import walk_ir
-
         bound = {p.name for p in function.params}
         used = []
         for n in walk_ir(function.body):
@@ -184,13 +222,16 @@ class KernelTransformer(ast.NodeVisitor):
             self._pre_stmts = []
             visited = self.visit(stmt)
             # Insert any hoisted inline statements before this statement
-            result.extend(self._pre_stmts)
+            lowered = self._pre_stmts
             self._pre_stmts = []
             if visited is not None:
                 if isinstance(visited, list):
-                    result.extend(visited)
+                    lowered.extend(visited)
                 else:
-                    result.append(visited)
+                    lowered.append(visited)
+            if not self._in_parallel_loop:
+                self._check_outside_parallel_loop(stmt, lowered)
+            result.extend(lowered)
         self._pre_stmts = saved_pre_stmts
         return result
 
@@ -228,6 +269,34 @@ class KernelTransformer(ast.NodeVisitor):
     # --- Loops ---
 
     def visit_For(self, node: ast.For) -> ir.IRNode:
+        if not self._in_parallel_loop:
+            return self._visit_parallel_for(node)
+        return self._visit_for(node)
+
+    def _visit_parallel_for(self, node: ast.For) -> ir.IRParallelFor:
+        """Lower the kernel's one parallel loop, a statement of its own body."""
+        if self._parallel_loop_seen or not any(node is s for s in self._kernel_body):
+            raise self._source_error(
+                node, "for loop", "is outside the parallel loop. A kernel has "
+                "one parallel loop, a `for` statement directly in its body; "
+                "sequential loops belong inside it")
+        self._parallel_loop_seen = True
+        return self._visit_for(node)
+
+    def _visit_for_body(self, stmts: list) -> list:
+        """Lower a for-loop body, which always lies inside the parallel loop.
+
+        Its range arguments were lowered before, where the loop is entered.
+        """
+        saved = self._in_parallel_loop
+        self._in_parallel_loop = True
+        self._loop_depth += 1
+        body = self._visit_body(stmts)
+        self._loop_depth -= 1
+        self._in_parallel_loop = saved
+        return body
+
+    def _visit_for(self, node: ast.For) -> ir.IRNode:
         target = node.target
 
         if node.orelse:
@@ -253,9 +322,7 @@ class KernelTransformer(ast.NodeVisitor):
             if step is not None:
                 step = self._capture_value(step, self._pre_stmts, freeze_name=True)
 
-        self._loop_depth += 1
-        body = self._visit_body(node.body)
-        self._loop_depth -= 1
+        body = self._visit_for_body(node.body)
 
         # Top-level for-range is parallel; nested for-range is sequential
         if self._loop_depth == 0:
@@ -359,9 +426,7 @@ class KernelTransformer(ast.NodeVisitor):
         # Last dimension gets the remainder
         decomp_stmts.append(ir.IRAssign(target=names[-1], value=remaining))
 
-        self._loop_depth += 1
-        body_stmts = self._visit_body(node.body)
-        self._loop_depth -= 1
+        body_stmts = self._visit_for_body(node.body)
 
         full_body = decomp_stmts + body_stmts
 
@@ -908,7 +973,8 @@ class KernelTransformer(ast.NodeVisitor):
                     self._name_reads[sub.id] = (
                         sub.lineno, sub.col_offset + 1,
                         self._inline_stack[-1] if self._inline_stack else None)
-        self._inline_stack.append(func_obj.name)
+        # Template methods are renamed; diagnostics use the source name.
+        self._inline_stack.append(func_obj.func.__name__)
         try:
             return self._inline_func_body(func_obj, call_node)
         finally:
@@ -1467,6 +1533,20 @@ class KernelTransformer(ast.NodeVisitor):
         return ops[op_type]
 
 
+def _effect_name(node) -> str | None:
+    """Name an observable effect, or None for an effect-free node."""
+    if isinstance(node, ir.IRFieldStore):
+        return "store"
+    if isinstance(node, (ir.IRAtomicOp, ir.IRBlockReduce)):
+        prefix = "atomic" if isinstance(node, ir.IRAtomicOp) else "block"
+        return f"{prefix}_{node.op}()"
+    if isinstance(node, ir.IRBarrier):
+        return "barrier()"
+    if isinstance(node, ir.IRPrint):
+        return "print()"
+    return None
+
+
 def _mark_outermost_continues(stmts: list):
     """Flag each `continue` that belongs to the parallel loop itself."""
     for stmt in stmts:
@@ -1537,21 +1617,22 @@ class _NameRenamer(ast.NodeTransformer):
             if isinstance(value, ast.Tuple):
                 stmts = []
                 for var, elt in zip(self._result_var, value.elts):
-                    stmts.append(ast.Assign(
+                    stmts.append(ast.copy_location(ast.Assign(
                         targets=[ast.Name(id=var, ctx=ast.Store())],
                         value=elt,
-                    ))
+                    ), node))
                 return stmts
             # Single expression returned but expected multi — assign to first
-            return ast.Assign(
+            return ast.copy_location(ast.Assign(
                 targets=[ast.Name(id=self._result_var[0], ctx=ast.Store())],
                 value=value,
-            )
+            ), node)
 
-        return ast.Assign(
+        # Keep the return's position for diagnostics in the inlined body.
+        return ast.copy_location(ast.Assign(
             targets=[ast.Name(id=self._result_var, ctx=ast.Store())],
             value=value,
-        )
+        ), node)
 
     def visit_FunctionDef(self, node: ast.FunctionDef) -> ast.FunctionDef:
         """Rename function parameters."""

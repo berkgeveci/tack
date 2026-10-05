@@ -490,7 +490,7 @@ def resolve_variant(backend, kernel, args, kwargs, build,
         check_dispatch_types(ir_func, effective_args,
                              supported_dtypes=backend.supported_dtypes,
                              backend_name=backend.label)
-        _localize_assigned_scalar_params(ir_func)
+        _localize_outer_scalars(ir_func)
         verify_ir(ir_func, 'localized')
         atomic_targets = check_atomic_support(
             ir_func, backend_name=backend.name,
@@ -517,8 +517,8 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     return variant, effective_args
 
 
-def _localize_assigned_scalar_params(ir_func):
-    """Give each scalar parameter the kernel assigns to a per-iteration local.
+def _localize_outer_scalars(ir_func):
+    """Give each outer scalar the loop body assigns to a per-iteration local.
 
     A scalar parameter is one value shared by every iteration, and codegen
     reads it straight from the argument — or, on GPU, from the packed scalar
@@ -528,6 +528,12 @@ def _localize_assigned_scalar_params(ir_func):
     to a local seeded from the parameter makes it an ordinary variable on
     every backend, fresh in each iteration.
 
+    A local assigned before the loop has the same problem on CPU: the
+    statements before the loop run once per chunk, so an iteration that
+    reassigned it passed its value on to the next iteration of the chunk.
+    On GPU each thread runs them for its one iteration, which is the
+    defined behavior; the same renaming gives it on every backend.
+
     Needs the `_is_field` annotations, so it runs after type inference.
     """
     from tack.lang.ir_names import fresh_name, ir_names
@@ -535,13 +541,14 @@ def _localize_assigned_scalar_params(ir_func):
     used_names = ir_names(ir_func)
     scalars = {p.name for p in ir_func.params
                if not getattr(p, '_is_field', True)}
-    if not scalars:
-        return
     for stmt in ir_func.body:
         if not isinstance(stmt, ir.IRParallelFor):
+            scalars.update(n.target for n in _walk_ir(stmt) if isinstance(n, ir.IRAssign))
             continue
-        assigned = {n.target for n in _walk_ir(stmt.body)
-                    if isinstance(n, ir.IRAssign) and n.target in scalars}
+        bound = [n.target if isinstance(n, ir.IRAssign) else n.var
+                 for n in _walk_ir(stmt.body)
+                 if isinstance(n, (ir.IRAssign, ir.IRSequentialFor))]
+        assigned = scalars.intersection(bound)
         if not assigned:
             continue
         renames = {name: fresh_name(f"__{name}_local__", used_names)
