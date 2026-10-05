@@ -66,6 +66,13 @@ def _count(n, *fields):
     return n
 
 
+def _total(field, n):
+    """field[n - 1] as a Python number, read in the field's own dtype."""
+    result = tack.field(dtype=field.dtype, shape=(1,))
+    _read_last(field, result, n - 1)
+    return result.to_numpy()[0].item()
+
+
 def _blelloch_scan_inplace(work, n):
     """Run Blelloch up-sweep + down-sweep on a work buffer (in-place).
 
@@ -93,27 +100,31 @@ def exclusive_scan(input_field, output_field, n):
 
     output[i] = sum(input[0..i-1]), output[0] = 0.
 
+    The scan runs in the output field's dtype; input values convert to it
+    on the copy, so any dtype the backend allocates works.
+
     Args:
-        input_field: tack.field(i32) with input values.
-        output_field: tack.field(i32) for output offsets.
+        input_field: field with input values.
+        output_field: field for the output offsets.
         n: number of elements.
 
     Returns:
-        int: total sum of all input elements.
+        The total of all input elements in the output's dtype, as a Python
+        int or float.
     """
     n = _count(n, input_field, output_field)
     if n == 0:
         # Nothing to scan; the empty sum is 0, as for Field.sum().
         return 0
-    work = tack.field(dtype=tack.i32, shape=(n,))
+    # Scan in the output's dtype, as the inclusive scan does: an i32 work
+    # buffer truncated float inputs and wrapped wider integers.
+    work = tack.field(dtype=output_field.dtype, shape=(n,))
     _copy_field(input_field, work, n)
     _blelloch_scan_inplace(work, n)
     _shift_right(work, output_field, n)
 
-    # Total = last element of inclusive scan
-    result = tack.field(dtype=tack.i32, shape=(1,))
-    _read_last(work, result, n - 1)
-    return int(result.to_numpy()[0])
+    # Total = last element of the inclusive scan
+    return _total(work, n)
 
 
 def inclusive_scan(input_field, output_field, n):
@@ -121,20 +132,21 @@ def inclusive_scan(input_field, output_field, n):
 
     output[i] = sum(input[0..i]).
 
+    The scan runs in the output field's dtype; input values convert to it
+    on the copy, so any dtype the backend allocates works.
+
     Args:
-        input_field: tack.field(i32) with input values.
-        output_field: tack.field(i32) for output sums.
+        input_field: field with input values.
+        output_field: field for the output sums.
         n: number of elements.
 
     Returns:
-        int: total sum of all input elements.
+        The total of all input elements in the output's dtype, as a Python
+        int or float.
     """
     n = _count(n, input_field, output_field)
     if n == 0:
         return 0
     _copy_field(input_field, output_field, n)
     _blelloch_scan_inplace(output_field, n)
-
-    result = tack.field(dtype=tack.i32, shape=(1,))
-    _read_last(output_field, result, n - 1)
-    return int(result.to_numpy()[0])
+    return _total(output_field, n)
