@@ -1,13 +1,13 @@
 """Tack kernel decorator — captures Python functions for compilation."""
 
 import ast
-import inspect
 import struct
 import textwrap
 import threading
 import weakref
 
 from tack.lang.ast_transform import transform_kernel
+from tack.lang.func import read_source
 from tack.lang.ir_verify import verify_ir
 from tack.lang.source_validation import UnsupportedSyntaxError
 
@@ -100,35 +100,13 @@ class Kernel:
     def __init__(self, func):
         self.func = func
         self.name = func.__name__
-        self._source = textwrap.dedent(self._read_source(func))
+        self._source = textwrap.dedent(read_source(func, "kernel"))
         self._ast = ast.parse(self._source)
         self._funcdef = self._ast.body[0]  # The FunctionDef node
         # Lazy IR: defer transform until first dispatch (vector fields may be needed)
         self._ir = None
         self._ir_cache = {}  # vector_fields key → IRModule
         self._compiled = {}  # backend -> compiled kernel
-
-    @staticmethod
-    def _read_source(func) -> str:
-        """Read the function's source, or explain why it could not be read.
-
-        A kernel is compiled from its source text, so Tack needs to find it.
-        `inspect.getsource` cannot when the function has no file behind it —
-        `exec()`, a bare REPL, or `python -c` before 3.13. The raw OSError
-        says only "could not get source code", which gives no hint that the
-        problem is *where the function was defined* rather than the kernel.
-        """
-        try:
-            return inspect.getsource(func)
-        except (OSError, TypeError) as e:
-            raise RuntimeError(
-                f"Cannot read the source of kernel '{func.__name__}'. Tack "
-                f"compiles kernels from their source text, so they must be "
-                f"defined somewhere Python can read back — a module, a script, "
-                f"or a Jupyter cell. Defining one with exec(), in a bare REPL, "
-                f"or via `python -c` (before Python 3.13) does not work.\n"
-                f"  original error: {e}"
-            ) from e
 
     def get_ir(self, vector_fields=None, template_args=None, texture_fields=None):
         """Get IR, re-transforming if vector/texture field or template metadata is provided."""
@@ -229,9 +207,13 @@ class Kernel:
             # only "Kernel 'x' failed" with no way to see where it came from
             # short of editing this file. The chained traceback prints above
             # the clean message, so the readable summary is still last.
-            raise TypeError(
-                f"Kernel '{self.name}': {e}"
-            ) from e
+            # Dispatch checks that already name the kernel (argument count,
+            # backend dtypes, atomic targets) keep their message, rather
+            # than reading "Kernel 'k': Kernel 'k' ...".
+            message = str(e)
+            if not message.startswith(f"Kernel '{self.name}'"):
+                message = f"Kernel '{self.name}': {message}"
+            raise TypeError(message) from e
         except UnsupportedSyntaxError:
             # Already names the kernel and the source position, and callers
             # can catch it by type. It is a RuntimeError by inheritance, so
@@ -251,8 +233,10 @@ class Kernel:
                         f"{brief}\n"
                         f"(Set TACK_DUMP_MSL=1 to inspect generated source)"
                     ) from e
+            # Verifier errors already name the kernel; say it once.
+            msg = msg.removeprefix(f"Kernel '{self.name}': ")
             raise RuntimeError(
-                f"Kernel '{self.name}' failed on {type(backend).__name__}: {e}"
+                f"Kernel '{self.name}' failed on {type(backend).__name__}: {msg}"
             ) from e
 
     def __repr__(self):
