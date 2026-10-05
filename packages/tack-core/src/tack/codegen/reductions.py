@@ -41,11 +41,12 @@ def field_reduction_source(dialect, op):
     final = ('sdata[0] + old_f' if op == 'sum' else f'tack_reduce_{op}_f32(sdata[0], old_f)')
     if dialect in ('cuda', 'hip'):
         header = '#include <hip/hip_runtime.h>\n' if dialect == 'hip' else ''
-        signature = f'extern "C" __global__ void reduce_{op}_f32(float* input, float* output)'
-        setup = f'''extern __shared__ float sdata[];
+        signature = (f'extern "C" __global__ void reduce_{op}_f32('
+                     'float* input, float* output, long long n)')
+        # Widen before multiplying: the 32-bit product wraps past 2^32 threads.
+        setup = '''extern __shared__ float sdata[];
     unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + tid;
-    unsigned int n = {to_bits}(output[1]);'''
+    long long i = (long long)blockIdx.x * blockDim.x + tid;'''
         barrier = '__syncthreads();'
         atomic = 'atomicAdd(&output[0], sdata[0]);' if op == 'sum' else f'''
         unsigned int* addr = (unsigned int*)&output[0];

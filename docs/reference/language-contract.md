@@ -46,7 +46,7 @@ all corner cases have been validated.
 | Values | Numeric literals, scalar parameters, field loads, local variables | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6) |
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins | Numerical and evaluation rules below |
 | Assignments | Local assignment, augmented assignment, field stores, supported tuple unpacking | Storage and ordering rules below |
-| Control flow | `range`, `tack.ndrange`, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel iteration space in the portable baseline |
+| Control flow | `range`, `tack.ndrange`, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals and declare arrays |
 | Composition | `@tack.func` inlining and `@tack.data_oriented` templates | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
 | Storage | Scalar fields, vector fields, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
@@ -112,6 +112,21 @@ is no defined order among different parallel iterations. Algorithms must
 avoid conflicting cross-iteration memory accesses unless they use the
 appropriate supported synchronization or atomic operation.
 
+**Required:** the parallel loop is a `for` statement directly in the
+kernel body. A kernel without one, with a second one, or with one nested
+in a branch or `while` is rejected with a source diagnostic. Statements
+outside the parallel loop, before or after it, may be evaluated any
+number of times per launch: once per GPU thread, and on CPU once per
+chunk, threading probe or timing sample. They may therefore only assign
+local variables, load fields, and declare shared or local arrays, which
+is unobservable however often it runs. Stores to fields or arrays,
+atomics, barriers, block reductions and `print` there are rejected with
+the kernel or device function and source position, including inside
+top-level branches and `while` loops and when they arrive through an
+inlined `@tack.func` or template method. Every parallel iteration starts
+from the values those statements bind; an iteration that reassigns such
+a local does not change what another iteration sees.
+
 Within one iteration, statements and nested sequential loops obey program
 order. A load observes an earlier store to the same location by that
 iteration, absent a conflicting access from another iteration. This holds
@@ -134,6 +149,16 @@ Backends launch their grids from zero, so the frontend moves a nonzero start
 into the body; the length of the interval remains a per-dispatch value and
 does not specialize the compiled kernel. See LC5.
 
+**Required:** every index of the interval executes, however long it is,
+or the launch is refused before anything runs. CUDA and HIP compute the
+iteration index in 64 bits from the block and thread numbers. A launch
+longer than one grid of the backend can index raises `ValueError` naming
+the kernel, the count and the limit. CUDA admits its device's maximum
+`gridDim.x` times 256 iterations; HIP also at most 2^32 - 256, because
+the AMD dispatch packet holds the work-item count in 32 bits; Metal 2^32,
+the range of its `uint` thread position; Level Zero its device's maximum
+group count times the workgroup size.
+
 Early exits must preserve the defined control flow. `continue` ends the
 current iteration of its nearest enclosing loop, including the top-level
 parallel one, where it skips the rest of that iteration only (LC8). This
@@ -141,11 +166,10 @@ frontend rejects `break` from the parallel loop: there is no ordered prefix
 of parallel iterations to stop. Kernel `return` is also rejected; results
 are written to fields. Positive `range` steps are supported, and literal
 zero or negative steps are rejected. A dynamic step must be positive;
-runtime validation of that caller constraint remains open. A kernel has
-exactly one top-level parallel loop; the IR verifier rejects a second one
-when the kernel is lowered. Cross-iteration communication requires further
-validation before joining the portable baseline. Outer launch bounds must
-be resolvable from host arguments and field metadata.
+runtime validation of that caller constraint remains open. Cross-iteration
+communication requires further validation before joining the portable
+baseline. Outer launch bounds must be resolvable from host arguments and
+field metadata.
 
 **Required:** optimizations preserve the observable behavior of every
 defined, race-free program, whether or not a current example uses that
@@ -627,9 +651,11 @@ integer and mixed arguments. No performance improvement is claimed.
 and return Python `float` values. Reshaping a field does not select an axis
 or change the set of elements. CPU uses NumPy; GPU backends reduce eligible
 f32 fields on the device and use the shared NumPy fallback for other dtypes.
-Allocation and field/backend ownership requirements still apply. Current
-CUDA/HIP/Metal field kernels require element counts fitting an unsigned
-32-bit integer; larger native reductions are outside this contract.
+Allocation and field/backend ownership requirements still apply. CUDA,
+HIP and Level Zero pass the element count to the device in 64 bits and
+reject a reduction longer than one launch can index, as for kernels
+below. Metal's reduction kernel holds the count and thread position in 32
+bits, so Metal reduces fields of 2^32 or more elements through NumPy.
 
 **Accumulation precision:** f32 sums accumulate in f32, and f64 sums in
 f64. Integer sums promote signed inputs to i64 and unsigned inputs to u64,

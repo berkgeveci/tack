@@ -26,7 +26,8 @@ BACKENDS = {
     "cuda": {
         "cls": "from tack.runtime.cuda_backend import CUDABackend as Backend",
         "stubs": ["cuda", "cuda.bindings"],
-        "attrs": "",
+        # The launch limit is queried in __init__ too.
+        "attrs": "backend._max_launch = (2**31 - 1) * 256",
     },
     "hip": {
         "cls": "from tack.runtime.hip_backend import HIPBackend as Backend",
@@ -36,7 +37,8 @@ BACKENDS = {
         # path under test is the hardware one.
         "attrs": (
             "backend._has_image_support = True\n"
-            "    backend._max_image_3d = 16384"
+            "    backend._max_image_3d = 16384\n"
+            "    backend._max_launch = 2**32 - 256"
         ),
     },
     "level_zero": {
@@ -47,7 +49,8 @@ BACKENDS = {
             "                            tack.lang.types.i64, tack.lang.types.f64}\n"
             "    backend._max_image_3d = 16384\n"
             "    backend._has_hw_sampler = True\n"
-            "    backend._launch_lock = threading.RLock()"
+            "    backend._launch_lock = threading.RLock()\n"
+            "    backend._max_launch = (2**32 - 1) * 256"
         ),
     },
 }
@@ -161,6 +164,19 @@ for _ in range(5):
     b.execute(elementwise, (x, out, 64), {})
 check("compiled once for 5 dispatches", len(b.compiled) == 1)
 check("five launches", len(b.compiled[0].launches) == 5)
+
+# --- a launch past the grid's limit is refused, not wrapped ---------
+b = make_backend()
+b._max_launch = 64
+x, out = field((128,)), field((128,))
+b.execute(elementwise, (x, out, 64), {})
+try:
+    b.execute(elementwise, (x, out, 128), {})
+except ValueError as error:
+    check("limit named, got %s" % error, "128 iterations exceed the 64" in str(error))
+else:
+    raise AssertionError("an over-limit launch reached the device")
+check("only the launch within the limit", [l[1] for l in b.compiled[0].launches] == [64])
 
 # --- the IR passes do not re-run ------------------------------------
 import tack.lang.ir_optimize as opt

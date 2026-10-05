@@ -49,9 +49,10 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(fill, (64,))
         src = generate_hip_source(ir_func)
-        assert 'blockIdx.x' in src
-        assert 'blockDim.x' in src
-        assert 'threadIdx.x' in src
+        # Widened before the multiply, as on CUDA.
+        assert ('long long tack_var_a_i = (long long)blockIdx.x * blockDim.x '
+                '+ threadIdx.x;') in src
+        assert 'long long __n__' in src
 
     def test_bounds_guard(self):
         @tack.kernel

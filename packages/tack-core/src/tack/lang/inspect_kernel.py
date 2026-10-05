@@ -25,7 +25,7 @@ from tack.runtime.kernel_utils import (
     _detect_vector_fields_from_args,
     _expand_template_args,
     _get_loop_range,
-    _localize_assigned_scalar_params,
+    _localize_outer_scalars,
     _store_texture_shapes,
 )
 
@@ -80,7 +80,7 @@ def _prepare_ir(kernel, args, *, backend=None):
                              supported_dtypes=backend.supported_dtypes,
                              backend_name=backend.label)
 
-    _localize_assigned_scalar_params(ir_func)
+    _localize_outer_scalars(ir_func)
     verify_ir(ir_func, 'localized')
     if backend is not None:
         targets = check_atomic_support(

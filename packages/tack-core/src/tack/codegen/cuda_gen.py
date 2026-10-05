@@ -3,8 +3,9 @@
 Generates an ``extern "C" __global__`` kernel function where:
   - Each Field parameter becomes a typed device pointer (``float*``, etc.)
   - The outermost parallel for-loop maps to the standard CUDA thread index:
-        long long __idx__ = blockIdx.x * blockDim.x + threadIdx.x;
-    with a bounds guard.
+        long long __idx__ = (long long)blockIdx.x * blockDim.x + threadIdx.x;
+    with a bounds guard. The built-ins are 32-bit unsigned, so the cast
+    must come before the multiply: a 32-bit product wraps at 2^32 threads.
   - Sequential for-loops, while-loops, if/else map to standard C control flow.
   - Math builtins map to CUDA device math functions (sqrtf, sinf, etc.).
 
@@ -154,7 +155,7 @@ class CUDACodeGen:
             else:
                 params_c.append(f"{c_type} {param.name}")
 
-        # Loop-end parameter — 32-bit is sufficient for CUDA grid sizes
+        # Loop-end parameter, 64-bit like the index it bounds
         params_c.append(f"{_INT} __n__")
 
         sig = ", ".join(params_c)
@@ -290,7 +291,8 @@ class CUDACodeGen:
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         """Emit the parallel for-loop as CUDA thread index calculation."""
         idx = node.var
-        self._emit(f"{_INT} {idx} = blockIdx.x * blockDim.x + threadIdx.x;")
+        # Widen before multiplying: the 32-bit product wraps past 2^32 threads.
+        self._emit(f"{_INT} {idx} = ({_INT})blockIdx.x * blockDim.x + threadIdx.x;")
         self._emit(f"if ({idx} >= __n__) return;")
         self._local_vars[idx] = _INT
         self._declared_vars.add(idx)

@@ -71,6 +71,9 @@ def test_cycle_is_reported_but_shared_subexpressions_are_valid():
     (lambda f: f.body.insert(0, ir.IRContinue()), 'continue must target a loop'),
     (lambda f: f.body[0].body.append(ir.IRReturn(None)), 'kernel return'),
     (lambda f: f.body[0].body.append(copy.deepcopy(f.body[0])), 'function top level'),
+    (lambda f: f.body.insert(0, copy.deepcopy(f.body[0].body[0])), 'effect outside the parallel loop'),
+    (lambda f: f.body.append(ir.IRIf(ir.IRConstant(1), [ir.IRBarrier()], [])),
+     'effect outside the parallel loop'),
     (lambda f: f.body.insert(0, ir.IRSequentialFor('j', ir.IRConstant(0), ir.IRConstant(1), [])),
      'sequential loop must be inside'),
     (lambda f: setattr(f.params[0], 'type_annotation', 'float'), 'parameter type'),
@@ -207,7 +210,7 @@ def test_verification_does_not_mutate_ir_or_metadata():
 
 @pytest.mark.parametrize('stage, module, pass_name', [
     ('resolved', 'tack.lang.ir_resolve', 'resolve_ir'),
-    ('localized', 'tack.runtime.kernel_utils', '_localize_assigned_scalar_params'),
+    ('localized', 'tack.runtime.kernel_utils', '_localize_outer_scalars'),
     ('optimized', 'tack.lang.ir_optimize', 'optimize_ir'),
     ('typed', 'tack.lang.ir_type_annotate', 'annotate_types'),
 ])
