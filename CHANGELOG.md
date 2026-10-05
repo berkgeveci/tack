@@ -111,6 +111,10 @@ source line, instead of being silently dropped or miscompiled.
   a field instead of reading, or for the scans writing, past it. A scan of
   zero elements returns 0 instead of reading index −1, and `var`/`std` of
   zero elements return NaN.
+- `exclusive_scan` scanned in `i32` whatever the field dtypes, truncating
+  floats and wrapping 64-bit integers, and both scans returned their total
+  through `i32`. Both now scan in the output field's dtype and return the
+  total in it, as a Python `int` or `float`.
 - A process that exits while another library (VTK's DLPack support, for
   example) still holds an unconsumed Tack DLPack capsule no longer crashes
   at interpreter shutdown.

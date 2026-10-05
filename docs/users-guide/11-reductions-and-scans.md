@@ -248,15 +248,19 @@ all. Each launch is synchronous, so for small arrays — up to roughly a
 million elements — copying to NumPy, calling `np.cumsum` and copying back
 can be faster.
 
-**Return value.** Both return the sum of the first `n` inputs as a Python
-`int`. It is read by a one-element kernel that copies the last inclusive
-sum into a one-element field, so only four bytes come back to the host,
-not the whole output.
+**Return value.** Both return the sum of the first `n` inputs, in the
+output field's dtype, as a Python `int` (integer outputs) or `float`
+(floating outputs). It is read by a one-element kernel that copies the last
+inclusive sum into a one-element field, so only that element comes back to
+the host, not the whole output.
 
 **Behavior.**
 
-- The supported dtype is `i32` for both fields. Sums wrap at 32 bits, and
-  so does the returned total.
+- Any dtype the backend allocates works. The scan runs in the **output**
+  field's dtype; input values convert to it on the copy, as
+  `numpy.cumsum` does with an output dtype (an `i32` input scanned into an
+  `f32` output gives `f32` sums). Integer sums wrap at the output's width,
+  and so does the returned total.
 - The input is not modified (unless it is also the output). Both functions
   work **in place**: `exclusive_scan(f, f, n)` and `inclusive_scan(f, f, n)`
   are correct.
@@ -264,17 +268,13 @@ not the whole output.
   are left alone. `n` must be at most the size of both fields; a larger or
   negative `n` raises `ValueError`. `n = 0` writes nothing and returns `0`,
   the empty sum.
-- `exclusive_scan` allocates an `n`-element `i32` work buffer per call.
+- `exclusive_scan` allocates an `n`-element work buffer of the output's
+  dtype per call.
 - Integer results are exact (modulo wrapping) and identical on every
   backend and every run.
-
-With other dtypes the two functions are not symmetrical, so keep both
-fields `i32`. `exclusive_scan` copies the input into its `i32` work buffer,
-truncating floats and wrapping wider integers, then converts the results
-on store into the output dtype. `inclusive_scan` scans in the output
-field's own dtype. In both, the returned total is read through an `i32`:
-an `inclusive_scan` of `i64` values summing to `2**40 + 1` writes the right
-output but returns `1`.
+- Floating results are deterministic for a given `n`, but the tree adds in
+  a different order from a sequential sum, so they can differ from
+  `np.cumsum` in the last bits.
 
 ### Copy and fill utilities
 
