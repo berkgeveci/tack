@@ -342,6 +342,20 @@ round-to-nearest, untrapped environment. `test_float_semantics.py` checks
 classes/signs, grouping, permitted contraction and bounded-domain math.
 Reduction order/accuracy guarantees remain the next stage-five task.
 
+Float literals are weak, as Python scalars are under NumPy's NEP 50.
+`ir_type_annotate.py` marks literal expressions (literals under unary
++/-, arithmetic, math builtins and conditional arms); one containing a
+float literal is weak and f32 until it meets a non-weak floating operand,
+an explicit floating cast, or a floating store/atomic/local target. It
+then takes that type: each literal converts once from its Python value
+and its operations run at that precision, so `x_f64 * 0.1` and
+`tack.f64(0.1)` are exact. Literal-only subtrees are not folded. Alone,
+or beside integers only, literals stay f32; `i * 0.1` is a non-weak f32.
+A local assigned only literals is f32 (`tack.f64(0.1)` is the remedy).
+LLVM emits a `double` constant and CUDA/HIP/OpenCL an unsuffixed `repr`
+when the constant's dtype is f64; f32 code is unchanged. See
+`test_float_literals.py` and the language contract.
+
 ### 64-bit loop indices on GPU
 
 GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).

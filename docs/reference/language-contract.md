@@ -225,7 +225,9 @@ offset for all ten scalar types and verifies that emitted LLVM does not
 claim stronger alignment than the storage provides.
 
 **Current behavior:** Python floating-point arguments default to f32 unless
-an f64 field argument establishes an f64 context. Integer scalar arguments
+an f64 field argument establishes an f64 context. Float literals are weakly
+typed and take the floating type of the operand they meet; the rule is
+under the floating-point execution policy below. Integer scalar arguments
 use i32, i64, or u64 based on magnitude; values outside the supported
 64-bit integer ranges are rejected. Signed integer literals are classified
 by their complete value, so `-9223372036854775808` fits i64. Locals receive one storage type
@@ -469,6 +471,64 @@ arguments to `sqrt`, trigonometric, exponential and logarithmic functions
 convert to f32 unless another argument is f64. Integer `abs`, `min`, `max`
 and power retain the integer rules above. For example, storing `sqrt(i64)`
 in an f64 field widens an f32 result; `sqrt(tack.f64(i64))` requests f64.
+
+**Required: float literals are weakly typed.** Following NumPy's
+[NEP 50](https://numpy.org/neps/nep-0050-scalar-promotion.html) treatment
+of Python scalars, a float literal takes its precision from what it meets.
+A *literal expression* is a numeric literal, or a unary `+`/`-`, binary
+arithmetic operator or math builtin applied only to literal expressions,
+or a conditional expression whose two arms are literal expressions (its
+condition may be anything). A literal expression containing a float
+literal is *weak*. A weak expression takes floating type T when it is:
+
+- an operand of binary arithmetic or a comparison whose other operand is
+  a non-weak expression of floating type T;
+- an argument of a math builtin, including `min`, `max` and `pow`, whose
+  result type T comes from a non-weak floating argument;
+- an arm of a conditional expression whose other arm has floating type T;
+- the operand of an explicit `tack.f32`/`tack.f64` cast to T; or
+- a value stored to a T field, used by a floating atomic on a T field, or
+  assigned to a local whose settled type is T.
+
+Taking T converts each float literal in the expression once, from its
+exact Python value, directly to T, and performs the expression's floating
+operations in T. Integer literals and integer subexpressions inside it keep
+the integer rules and convert at the operation that uses them. Literal-only
+subexpressions are not folded at compile time; they are evaluated in T.
+With an f64 `x`, `x * 0.1`, `x * -0.1`, `x * (0.1 + 0.2)` and
+`x * (1.0 / 3.0)` therefore equal NumPy's f64 results, `x < 0.1` compares
+with the f64 nearest 0.1, and `tack.f64(0.1)` is that double rather than a
+widened f32. `tack.f32(0.1)` rounds once to f32.
+
+A weak expression that meets none of these keeps the f32 default:
+standing alone, as a math argument beside only literals or integers, or
+combined with an integer value. Such a combination is not weak: `i * 0.1`
+is an f32 value even where it later meets f64. Integer `/` between integer
+literals contains no float literal, so `x * (1 / 3)` uses the f32 quotient
+of the division rule; write `1.0 / 3.0`. A local has one type: a local
+assigned only weak values, as in `a = 0.1`, is an f32 local, and a later
+f64 expression reads that rounded value. Write `tack.f64(0.1)` or use the
+literal in the expression instead. When another assignment makes the local
+f64, every literal assigned to it converts exactly. Class-level
+`@tack.data_oriented` constants are substituted as literals and follow the
+same rule. A conversion to an integer type, such as `int(2.5)`, still
+evaluates the literal as f32.
+
+An expression without f64 operands is unaffected: each literal still
+rounds once to f32 and the generated code is unchanged. Generators emit an
+f64 literal with full precision: LLVM a `double` constant from the Python
+value, CUDA, HIP and OpenCL an unsuffixed decimal from Python's `repr`,
+which round-trips exactly. MSL has no f64.
+
+**Behavior change:** every float literal used to be f32, including inside
+f64 expressions and under `tack.f64(...)`, which widened the rounded f32
+value. f64 kernels that use float literals now produce different low bits,
+and comparisons with a literal change for values between its f32 and f64
+roundings. `test_float_literals.py` compares f64 expressions, casts,
+atomics and the f32-default cases with NumPy on every f64 backend, checks
+that f32 results are unchanged on every backend, checks the emitted
+constants of all five generators, and executes the CUDA/HIP generators'
+f64 output on the host.
 
 The caller must leave the CPU floating-point environment at its default
 round-to-nearest, ties-to-even mode, with exceptions untrapped. Kernels do

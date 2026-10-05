@@ -13,6 +13,16 @@ type that drifted statement by statement would silently narrow every store
 after the first. That is how `total = 0.0` followed by adds from an f64
 field used to accumulate in f32.
 
+Float literals are weakly typed, like Python scalars under NumPy's NEP 50.
+A *literal expression* is built only from numeric literals with unary
+`+`/`-`, binary arithmetic, math builtins and conditional-expression arms;
+one containing a float literal is *weak*. It is annotated f32, but when it
+meets a non-weak floating operand, an explicit floating cast, or a floating
+store or assignment target, it takes that type: each float literal in it
+converts once, from its exact Python value, and its floating operations run
+at that precision. `x_f64 * 0.1` therefore uses the f64 nearest 0.1, while
+every f32 expression keeps the types it had before.
+
 Must run after type inference (needs _is_field and type_annotation on params).
 """
 
@@ -20,6 +30,8 @@ from tack.lang import ir
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.type_inference import promote_types
 from tack.lang.types import INTEGER_TYPES, ScalarType, f32, f64, i32, i64, integer_type_for_value
+
+_FLOAT_TYPES = (f32, f64)
 
 # The join is monotone (types only widen), so it settles in a couple of
 # rounds. The cap is a backstop against a pathological IR, not a budget.
@@ -94,12 +106,16 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
     Returns None for field references (pointer types).
     """
     if isinstance(node, ir.IRConstant):
+        node._literal = isinstance(node.value, (int, float))
+        node._weak = isinstance(node.value, float)
+        if node._weak:
+            # Reset on every walk: an earlier walk may have retyped it.
+            node.dtype = f32
+            return node.dtype
         if node.dtype is not None:
             # Already annotated (e.g., by AST transform)
             return node.dtype
-        if isinstance(node.value, float):
-            node.dtype = f32
-        elif isinstance(node.value, int):
+        if isinstance(node.value, int):
             node.dtype = integer_type_for_value(node.value)
         else:
             node.dtype = i32
@@ -128,6 +144,8 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         rt = _annotate_expr(node.right, env, field_params)
         if lt is None or rt is None:
             return None
+        lt, rt = _meet(node.left, lt, node.right, rt)
+        _mark_literal(node, (node.left, node.right))
         if node.op == '/' and lt in INTEGER_TYPES and rt in INTEGER_TYPES:
             node.dtype = f32
         elif node.op == '**' and lt in INTEGER_TYPES and rt in INTEGER_TYPES:
@@ -140,6 +158,10 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
     if isinstance(node, ir.IRUnaryOp):
         t = _annotate_expr(node.operand, env, field_params)
         node.dtype = i32 if node.op == 'not' else t
+        if node.op in ('+', '-'):
+            _mark_literal(node, (node.operand,))
+        else:
+            node._literal = node._weak = False
         return node.dtype
 
     if isinstance(node, ir.IRCall):
@@ -166,12 +188,18 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
                 and all(t in INTEGER_TYPES for t in arg_types):
             _check_integer_exponent(node.args[1])
             node.dtype = arg_types[0]
+        _mark_literal(node, node.args)
+        if not node._weak and node.dtype in _FLOAT_TYPES:
+            for arg in node.args:
+                _adopt(arg, node.dtype)
         return node.dtype
 
     if isinstance(node, ir.IRCast):
         _annotate_expr(node.value, env, field_params)
         # dtype is a ScalarType (i32, f32, f64, etc.)
         if isinstance(node.dtype, ScalarType):
+            # tack.f64(0.1) converts the literal directly, never via f32.
+            _adopt(node.value, node.dtype)
             return node.dtype
         # Legacy string fallback (should not happen after Layer 2)
         if node.dtype == "int":
@@ -186,12 +214,15 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         et = _annotate_expr(node.else_value, env, field_params)
         if tt is None or et is None:
             return None
+        tt, et = _meet(node.then_value, tt, node.else_value, et)
+        _mark_literal(node, (node.then_value, node.else_value))
         node.dtype = promote_types(tt, et)
         return node.dtype
 
     if isinstance(node, ir.IRCompare):
         lt = _annotate_expr(node.left, env, field_params)
         rt = _annotate_expr(node.right, env, field_params)
+        lt, rt = _meet(node.left, lt, node.right, rt)
         node._operand_type = promote_types(lt, rt)
         node.dtype = i32  # comparisons always produce int
         return i32
@@ -224,6 +255,7 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         field_name = _get_field_name(node.field)
         if field_name and field_name in env:
             node.dtype = env[field_name]
+            _adopt(node.value, node.dtype)
         else:
             node.dtype = f32
         return node.dtype
@@ -242,6 +274,58 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
 
     # Fallback
     return f32
+
+
+def _mark_literal(node, operands):
+    """Record whether node is a literal expression, and whether it is weak."""
+    node._literal = all(getattr(o, '_literal', False) for o in operands)
+    node._weak = node._literal and any(getattr(o, '_weak', False) for o in operands)
+
+
+def _meet(left, lt, right, rt):
+    """Give a weak operand the floating type of a non-weak partner.
+
+    Returns the operand types after the conversion. Two weak operands, or a
+    weak operand beside an integer, keep the f32 default.
+    """
+    left_weak = getattr(left, '_weak', False)
+    right_weak = getattr(right, '_weak', False)
+    if left_weak and not right_weak and _adopt(left, rt):
+        return rt, rt
+    if right_weak and not left_weak and _adopt(right, lt):
+        return lt, lt
+    return lt, rt
+
+
+def _adopt(node, dtype) -> bool:
+    """Convert a weak literal expression to a floating dtype; True if converted."""
+    if not getattr(node, '_weak', False) or dtype not in _FLOAT_TYPES:
+        return False
+    _retype(node, dtype)
+    return True
+
+
+def _retype(node, dtype):
+    """Move every floating node of a literal expression to dtype.
+
+    Integer subexpressions keep their own types; the enclosing operation
+    converts them, as it would any integer operand.
+    """
+    if node.dtype not in _FLOAT_TYPES:
+        return
+    node.dtype = dtype
+    if isinstance(node, ir.IRUnaryOp):
+        children = (node.operand,)
+    elif isinstance(node, ir.IRBinOp):
+        children = (node.left, node.right)
+    elif isinstance(node, ir.IRCall):
+        children = node.args
+    elif isinstance(node, ir.IRIfExp):
+        children = (node.then_value, node.else_value)
+    else:
+        children = ()
+    for child in children:
+        _retype(child, dtype)
 
 
 def _get_field_name(node) -> str | None:
@@ -282,6 +366,7 @@ def _annotate_stmt(node, env, field_params, var_types=None, collected=None):
             # One storage slot per variable — every assignment uses its type.
             node._resolved_type = declared
             env[node.target] = declared
+            _adopt(node.value, declared)
         else:
             node._resolved_type = resolved  # None means "don't override codegen"
             if resolved is not None:
@@ -321,6 +406,7 @@ def _annotate_stmt(node, env, field_params, var_types=None, collected=None):
         _annotate_expr(node.index, env, field_params)
         _annotate_expr(node.value, env, field_params)
         node.dtype = env.get(_get_field_name(node.field))
+        _adopt(node.value, node.dtype)
         return
 
     if isinstance(node, ir.IRAtomicOp):
