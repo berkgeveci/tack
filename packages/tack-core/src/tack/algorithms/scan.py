@@ -56,6 +56,16 @@ def _read_last(src, dst, idx):
         dst[0] = src[idx]
 
 
+def _count(n, *fields):
+    """Check the element count: the scan reads and writes [0, n)."""
+    n = int(n)
+    for f in fields:
+        if not 0 <= n <= f.size:
+            raise ValueError(
+                f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
+    return n
+
+
 def _blelloch_scan_inplace(work, n):
     """Run Blelloch up-sweep + down-sweep on a work buffer (in-place).
 
@@ -91,6 +101,10 @@ def exclusive_scan(input_field, output_field, n):
     Returns:
         int: total sum of all input elements.
     """
+    n = _count(n, input_field, output_field)
+    if n == 0:
+        # Nothing to scan; the empty sum is 0, as for Field.sum().
+        return 0
     work = tack.field(dtype=tack.i32, shape=(n,))
     _copy_field(input_field, work, n)
     _blelloch_scan_inplace(work, n)
@@ -115,6 +129,9 @@ def inclusive_scan(input_field, output_field, n):
     Returns:
         int: total sum of all input elements.
     """
+    n = _count(n, input_field, output_field)
+    if n == 0:
+        return 0
     _copy_field(input_field, output_field, n)
     _blelloch_scan_inplace(output_field, n)
 

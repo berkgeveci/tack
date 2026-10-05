@@ -77,14 +77,39 @@ def _histogram_kernel(data, counts, lo, inv_bin_width, n_bins, n):
 # PUBLIC API
 # ================================================================
 
+def _count(n, *fields):
+    """Resolve and check the element count: every kernel reads [0, n)."""
+    if n is None:
+        n = fields[0].size
+    n = int(n)
+    for f in fields:
+        if not 0 <= n <= f.size:
+            raise ValueError(
+                f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
+    return n
+
+
+def _prefix(data, n):
+    """The first n elements of data, as a field the host reductions accept."""
+    if n == data.size:
+        return data
+    from tack.algorithms.copy import copy
+    head = tack.field(dtype=data.dtype, shape=(n,))
+    copy(data, head, n)
+    return head
+
+
 def var(data, n=None):
     """Population variance of a field: Σ(x - mean)² / n.
 
     Runs two GPU passes: one for the mean, one for the squared differences.
+    Both cover the first n elements. An empty range gives NaN, as
+    ``Field.mean()`` does.
     """
-    if n is None:
-        n = data.size
-    mean_val = data.sum() / n
+    n = _count(n, data)
+    if n == 0:
+        return float('nan')
+    mean_val = _prefix(data, n).sum() / n
     acc = tack.field(dtype=tack.f32, shape=(1,))
     acc.fill(0.0)
     _sum_sq_diff(data, mean_val, acc, n)
@@ -104,8 +129,7 @@ def norm(data, ord=2, n=None):
     ord=2: L2 norm (Euclidean)
     ord=inf: L-infinity (max absolute value)
     """
-    if n is None:
-        n = data.size
+    n = _count(n, data)
     if ord == 1:
         acc = tack.field(dtype=tack.f32, shape=(1,))
         acc.fill(0.0)
@@ -127,8 +151,7 @@ def norm(data, ord=2, n=None):
 
 def absmax(data, n=None):
     """Maximum absolute value of a field."""
-    if n is None:
-        n = data.size
+    n = _count(n, data)
     acc = tack.field(dtype=tack.f32, shape=(1,))
     acc.fill(0.0)
     _abs_max(data, acc, n)
@@ -137,8 +160,7 @@ def absmax(data, n=None):
 
 def count_nonzero(data, n=None):
     """Count non-zero elements in a field."""
-    if n is None:
-        n = data.size
+    n = _count(n, data)
     acc = tack.field(dtype=tack.i32, shape=(1,))
     acc.fill(0)
     _count_nz(data, acc, n)
@@ -147,8 +169,7 @@ def count_nonzero(data, n=None):
 
 def dot(a, b, n=None):
     """Dot product of two fields: Σa[i]*b[i]."""
-    if n is None:
-        n = a.size
+    n = _count(n, a, b)
     acc = tack.field(dtype=tack.f32, shape=(1,))
     acc.fill(0.0)
     _dot_product(a, b, acc, n)
@@ -169,11 +190,13 @@ def histogram(data, bins=10, range=None, n=None):
         bin_edges is a numpy array of (bins + 1) float64 edges.
     """
     import numpy as np
-    if n is None:
-        n = data.size
+    n = _count(n, data)
     if range is None:
-        lo = float(data.min())
-        hi = float(data.max())
+        if n == 0:
+            raise ValueError("histogram of no elements needs an explicit range")
+        head = _prefix(data, n)
+        lo = float(head.min())
+        hi = float(head.max())
     else:
         lo, hi = float(range[0]), float(range[1])
 

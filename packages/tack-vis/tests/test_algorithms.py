@@ -142,3 +142,29 @@ def test_fill_value(backend):
     algorithms.fill_value(dst, 42.0, n)
 
     np.testing.assert_array_equal(dst.to_numpy(), np.full(n, 42.0, dtype=np.float32))
+
+
+def test_scans_of_no_elements_return_zero_and_write_nothing(backend):
+    """n=0 used to read index -1: garbage or a launch error on CUDA."""
+    import pytest
+    for scan in (algorithms.exclusive_scan, algorithms.inclusive_scan):
+        inp = tack.field(dtype=tack.i32, shape=(4,))
+        out = tack.field(dtype=tack.i32, shape=(4,))
+        inp.from_numpy(np.array([1, 2, 3, 4], dtype=np.int32))
+        out.from_numpy(np.full(4, -7, dtype=np.int32))
+        assert scan(inp, out, 0) == 0
+        np.testing.assert_array_equal(out.to_numpy(), np.full(4, -7))
+        with pytest.raises(ValueError, match="outside"):
+            scan(inp, out, 5)
+        with pytest.raises(ValueError, match="outside"):
+            scan(inp, out, -1)
+
+
+def test_scans_refuse_an_output_shorter_than_n(backend):
+    import pytest
+    inp = tack.field(dtype=tack.i32, shape=(8,))
+    out = tack.field(dtype=tack.i32, shape=(4,))
+    inp.fill(1)
+    for scan in (algorithms.exclusive_scan, algorithms.inclusive_scan):
+        with pytest.raises(ValueError, match="outside"):
+            scan(inp, out, 8)
