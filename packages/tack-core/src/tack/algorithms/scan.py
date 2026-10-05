@@ -106,7 +106,8 @@ def exclusive_scan(input_field, output_field, n):
     Args:
         input_field: field with input values.
         output_field: field for the output offsets.
-        n: number of elements.
+        n: number of elements, at most either field's size. Zero writes
+            nothing and returns 0.
 
     Returns:
         The total of all input elements in the output's dtype, as a Python
@@ -138,7 +139,8 @@ def inclusive_scan(input_field, output_field, n):
     Args:
         input_field: field with input values.
         output_field: field for the output sums.
-        n: number of elements.
+        n: number of elements, at most either field's size. Zero writes
+            nothing and returns 0.
 
     Returns:
         The total of all input elements in the output's dtype, as a Python

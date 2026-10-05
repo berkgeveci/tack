@@ -132,16 +132,16 @@ above.
 
 **`n`** is the number of elements to read, in flat (row-major) order, so
 multi-dimensional fields work. `n=None` means `data.size` (for `dot`,
-`a.size`). An `n` larger than the field — or, for `dot`, larger than `b` —
-is not checked and reads past the end of the buffer.
+`a.size`). Every function checks `n` against each field it reads and
+raises `ValueError` when `n` is negative or larger than a field, so
+`dot(a, b)` with a shorter `b` is refused rather than reading past it.
 
-!!! warning "`var` and `std` with an explicit `n`"
-    The mean is computed as `data.sum() / n`, and `data.sum()` sums the
-    **whole** field. With `n` smaller than `data.size` the mean, and so the
-    variance, is wrong: for `[1, -2, 3, -4]`, `var(x, n=2)` returns `2.5`
-    instead of `2.25`. Pass a field holding exactly the elements you want.
-    The same applies to `histogram(..., n=k)` without `range`: the range is
-    taken from the whole field.
+With an `n` smaller than the field, everything covers the first `n`
+elements only: `var` and `std` take the mean of those elements, and
+`histogram` without `range` takes its range from them. To do that they copy
+the first `n` elements into a temporary field and reduce it with
+`Field.sum()`, `min()` and `max()`, so the mean and range follow the
+[field-reduction rules](#field-reductions).
 
 ### Dtypes on each backend
 
@@ -171,11 +171,11 @@ in the input's integer type and wrap: for an `i32` field holding `100000`,
 
 | Function | NaN in input | Infinity in input | `n == 0` |
 |---|---|---|---|
-| `var`, `std` | NaN | NaN | `ZeroDivisionError` |
+| `var`, `std` | NaN | NaN | NaN, as `Field.mean()` of an empty field |
 | `norm(ord=1)`, `norm(ord=2)`, `dot` | NaN | `inf`, or NaN when opposite infinities are added or, in `dot`, an infinity meets a zero | `0.0` |
 | `norm(ord=inf)`, `absmax` | not supported (see below) | not supported (see below) | `0.0` |
 | `count_nonzero` | counted as nonzero | counted | `0` |
-| `histogram` | not supported (see below) | not supported (see below) | all-zero counts |
+| `histogram` | not supported (see below) | not supported (see below) | all-zero counts with an explicit `range`; `ValueError` without one |
 
 `absmax` and `norm(ord=inf)` use atomic maximum, whose portable domain is
 finite values: NaNs and infinities are outside it. In probes on CPU and
@@ -185,8 +185,7 @@ Use `field.max()` on `abs` values written by a kernel when NaNs must
 propagate.
 
 An empty field (`data.size == 0`) behaves like `n == 0`, where the backend
-can allocate one, except that `histogram` without `range` raises
-`ValueError` from `data.min()`.
+can allocate one.
 
 ### Histogram binning
 
@@ -197,7 +196,7 @@ into `[0, bins - 1]`:
 - values below `lo` are counted in the **first** bin and values above `hi`
   in the **last** — unlike `numpy.histogram`, which drops them;
 - a value equal to `hi` is counted in the last bin, as in NumPy;
-- `range=None` uses `data.min()` and `data.max()` of the whole field; if
+- `range=None` uses the minimum and maximum of the first `n` elements; if
   they are equal, `hi` becomes `lo + 1`;
 - a value whose offset `(x - lo) / width` does not fit a 32-bit integer, and
   a NaN, is outside the kernel language's float-to-integer domain. Its bin is
@@ -262,10 +261,9 @@ not the whole output.
   work **in place**: `exclusive_scan(f, f, n)` and `inclusive_scan(f, f, n)`
   are correct.
 - Only the first `n` elements are read and written; later output elements
-  are left alone. `n` must be at least 1 and at most the size of both
-  fields. Neither is checked: `n = 0` reads before the start of a buffer
-  (and on CUDA `exclusive_scan` raises `RuntimeError` allocating its
-  zero-element work buffer).
+  are left alone. `n` must be at most the size of both fields; a larger or
+  negative `n` raises `ValueError`. `n = 0` writes nothing and returns `0`,
+  the empty sum.
 - `exclusive_scan` allocates an `n`-element `i32` work buffer per call.
 - Integer results are exact (modulo wrapping) and identical on every
   backend and every run.

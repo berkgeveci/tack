@@ -190,8 +190,8 @@ def histogram(data, bins=10, range=None, n=None):
     Args:
         data: input field of any dtype
         bins: number of bins (at least 1)
-        range: (min, max) tuple. If None, uses data.min()/data.max() of the
-            whole field.
+        range: (min, max) tuple. If None, uses the minimum and maximum of
+            the first n elements, and n must then be at least 1.
         n: number of elements (default: data.size)
 
     Returns:

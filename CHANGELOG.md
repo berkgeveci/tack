@@ -103,6 +103,14 @@ source line, instead of being silently dropped or miscompiled.
 - Python-legal names that are keywords in CUDA, OpenCL or MSL (`default`,
   `half`, `kernel`, …) now work as parameter and local names.
 - NumPy 1.x works again with the CPU backend.
+- `tack.algorithms` statistics and scans: `var` and `std` with an explicit
+  `n` smaller than the field used the whole field's mean (`var([1, -2, 3,
+  -4], n=2)` was 2.5, not 2.25), and `histogram` without a range used the
+  whole field's range; both now cover the first `n` elements. Every
+  statistics and scan function now raises `ValueError` for an `n` outside
+  a field instead of reading, or for the scans writing, past it. A scan of
+  zero elements returns 0 instead of reading index −1, and `var`/`std` of
+  zero elements return NaN.
 - A process that exits while another library (VTK's DLPack support, for
   example) still holds an unconsumed Tack DLPack capsule no longer crashes
   at interpreter shutdown.
