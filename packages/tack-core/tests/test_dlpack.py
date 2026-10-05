@@ -12,6 +12,9 @@ dtype and shape survive, and that the exported buffer stays alive.
 
 import ctypes
 import gc
+import subprocess
+import sys
+import textwrap
 
 import numpy as np
 import pytest
@@ -537,3 +540,35 @@ def test_an_unadopted_capsule_is_released_without_module_globals(versioned):
     _without_globals(dlpack._destroy_capsule)(id(capsule))
 
     assert len(dlpack._prevent_gc) == pinned - 1
+
+
+@pytest.mark.parametrize("versioned", [False, True])
+def test_the_capsule_destructor_outlives_the_module_globals(versioned):
+    """The thunk C calls must survive the module, not just its body.
+
+    VTK keeps adopted capsules in a module-level table, cleared at exit after
+    `tack.lang.dlpack`. That freed the destructor thunk, and the capsule then
+    called freed memory: 39_vtk_interop.py segfaulted on CPU. Here the module
+    global is removed as teardown would, fresh callbacks are allocated to take
+    any freed slot, and the capsule must still reach the real destructor.
+    """
+    script = textwrap.dedent(f"""
+        import ctypes, gc
+        import tack
+        tack.init(arch=tack.cpu)
+        from tack.lang import dlpack
+        capsule = dlpack.field_to_dlpack(tack.field(dtype=tack.f32, shape=(4,)),
+                                         versioned={versioned})
+        pinned = len(dlpack._prevent_gc)
+        del dlpack._capsule_destructor
+        gc.collect()
+        decoys = [ctypes.CFUNCTYPE(None, ctypes.c_void_p)(
+                      lambda p: print("decoy called", flush=True))
+                  for _ in range(64)]
+        del capsule
+        print("released" if len(dlpack._prevent_gc) == pinned - 1 else "still pinned")
+    """)
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "decoy called" not in proc.stdout
+    assert "released" in proc.stdout.splitlines()

@@ -198,7 +198,8 @@ def _destroy_capsule(capsule_ptr, _is_valid=_PyCapsule_IsValid,
     Everything it needs is bound as a default argument. A capsule can
     outlive this module -- a consumer that failed part-way may still hold
     one when the interpreter exits -- and by then the module's globals are
-    gone, so a plain global lookup here raises NameError.
+    gone, so a plain global lookup here raises NameError. The thunk that
+    calls it is kept alive for the same reason; see below.
     """
     if not capsule_ptr:
         return
@@ -209,6 +210,16 @@ def _destroy_capsule(capsule_ptr, _is_valid=_PyCapsule_IsValid,
 
 
 _capsule_destructor = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(_destroy_capsule)
+
+# C holds these thunks only as raw pointers: the capsule its destructor, a
+# consumer the deleter. Each stays callable for as long as a capsule or tensor
+# lives, which can be past this module's teardown -- VTK keeps the capsules it
+# adopts in a module-level table that is cleared after this one. Clearing the
+# module's globals freed the thunk, and the capsule then called freed memory:
+# 39_vtk_interop.py segfaulted at exit. One reference each, never released.
+for _thunk in (_dlpack_deleter, _dlpack_deleter_versioned, _capsule_destructor):
+    ctypes.pythonapi.Py_IncRef(ctypes.py_object(_thunk))
+del _thunk
 
 
 def _get_device_info(field):
