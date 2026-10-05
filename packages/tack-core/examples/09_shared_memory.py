@@ -10,7 +10,7 @@ Key APIs:
   tack.barrier()                 -- synchronize all threads in the workgroup
 
 Usage:
-  uv run python examples/09_shared_memory.py
+  uv run python packages/tack-core/examples/09_shared_memory.py --arch metal
 """
 
 import argparse
@@ -20,7 +20,10 @@ import numpy as np
 import tack
 
 _parser = argparse.ArgumentParser()
-_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
+_parser.add_argument(
+    '--arch', required=True, choices=['metal', 'cuda', 'hip', 'level_zero'],
+    help='GPU backend with workgroup execution',
+)
 _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 

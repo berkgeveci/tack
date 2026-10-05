@@ -1,5 +1,10 @@
 # Kernels
 
+The [kernel language contract (draft)](../reference/language-contract.md)
+distinguishes intended guarantees from current limitations and numerical
+policies still being decided. Consult it when depending on ordering,
+aliasing, or Python-compatible expression semantics.
+
 ## Parallel Loops
 
 The outermost `for` loop in a kernel is the parallel loop — each iteration
@@ -12,8 +17,25 @@ def fill(data, val, n):
         data[i] = val
 ```
 
-The parallel loop must be the first (and only top-level) loop. Tack uses it
-to determine how many threads to launch.
+A kernel has exactly one parallel loop, a `for` statement directly in its
+body (not inside an `if` or `while`). Tack uses it to determine how many
+threads to launch. A kernel without one, or with a second, is rejected with
+an `UnsupportedSyntaxError` that gives the line and column.
+
+Code before or after the parallel loop may run any number of times per
+launch (once per GPU thread, once per CPU chunk), so it may only assign
+local variables, read fields, and declare `tack.shared` or
+`tack.local_array` arrays. Field stores, atomics, barriers, block
+reductions and `print` there are rejected; move them into the loop body.
+Each iteration starts from the values the code before the loop assigned:
+
+```python
+@tack.kernel
+def scale(x, out, k):
+    s = 2.0 * k                    # fine: a local, set up before the loop
+    for i in range(x.shape[0]):
+        out[i] = x[i] * s
+```
 
 The loop bound can come from:
 - A scalar argument: `range(n)`
@@ -104,10 +126,21 @@ def sum_segments(offsets, data, output, n_cells):
 
 ## Kernel Caching
 
-Kernels are compiled on first call and cached by name and argument type
-signature. Subsequent calls with the same types reuse the compiled kernel.
-Changing scalar values (e.g., passing `alpha=2.5` then `alpha=3.0`) does
-**not** trigger recompilation — only type changes do.
+Kernels are compiled on first call. A compiled *variant* is reused by later
+calls that agree on everything the generated code depends on: argument
+dtypes, which arguments are fields, scalars or textures, vector widths,
+texture extents, `@tack.data_oriented` class constants and layout, any field
+dimensions the kernel bakes in (for example `x.shape[1]` used as a row
+stride), and on CPU whether the fields overlap. Anything else is a runtime
+parameter.
+
+So changing scalar values (passing `alpha=2.5`, then `alpha=3.0`) does
+**not** recompile, and neither does changing the length of a 1-D field
+used only as the parallel loop bound. Changing a dtype, a vector width or a
+baked-in dimension does. If a kernel recompiles for every array size, pass
+the size as a scalar argument instead of reading it from `shape` inside the
+body. [Specialization and Caching](../design/specialization-and-caching.md)
+lists exactly what goes into the key, with worked examples.
 
 ## Inspecting Generated Code
 
@@ -142,11 +175,14 @@ The three modes are:
 |------|--------|
 | `"ir"` | Tack intermediate representation |
 | `"source"` | Backend source code: LLVM IR (CPU), MSL (Metal), CUDA C, HIP C, OpenCL C |
-| `"optimized"` | Post-optimization LLVM IR on CPU (loop vectorization, unrolling, etc.) |
+| `"optimized"` | Post-optimization LLVM IR (loop vectorization, unrolling, etc.). CPU only; other backends raise `ValueError` |
 
 You must pass the same arguments the kernel would receive at runtime, since
 type inference, dimension resolution, and template expansion all depend on
-them. Templates and scalar arguments work as expected:
+them. Inspection applies the same checks as a call, so arguments a call
+would reject (an `f64` field on Metal, for example) raise here too, and
+on GPUs without texture hardware the source shows the software sampling
+the call would use. Templates and scalar arguments work as expected:
 
 ```python
 @tack.data_oriented

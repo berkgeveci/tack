@@ -95,6 +95,23 @@ Multiple actors can be added to a scene. The renderer builds a unified
 BVH (bounding volume hierarchy) across all geometry for efficient ray
 traversal.
 
+Actors with `render_mode="wireframe"` draw triangle edges; `render_mode="points"`
+draws vertex discs, whose radius is set by `render(..., point_size=3.0)`.
+Rasterization selects depth first, then one primitive at that depth, then
+writes its RGB with one writer per pixel. Separate completed kernel calls
+keep the depth and color winner consistent even when workgroups overlap.
+Within an actor, equal-depth fragments choose the lowest triangle or vertex
+index. Between actors, equal-depth fragments from the later actor win in
+scene order. Selection uses f32 projected depth; NaN/infinite depths and
+depths outside the finite clear range `(-1e30, 1e30)` are discarded.
+
+This requires two geometry traversals and a pixel pass per raster actor,
+using a cached i32 winner buffer (four bytes per pixel). The framebuffer
+clear initializes it, and the color pass resets it for the next actor.
+No geometry or winner data is read back to the host. In mixed scenes, raster color is
+composited over the resolved image and the path tracer's ray-distance depth
+buffer is preserved.
+
 ### Transforms
 
 Each actor can have a 4x4 affine transformation matrix applied to its

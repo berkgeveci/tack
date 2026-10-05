@@ -149,6 +149,8 @@ jobs:
     name: tests (py${{ matrix.python-version }})
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    env:
+      TACK_REQUIRE_CLANG: "1"
     strategy:
       # Report every version. Without this, one failure cancels the others
       # and hides whether the problem is version-specific.
@@ -171,6 +173,11 @@ jobs:
 
       - name: Sync the workspace
         run: uv sync --extra cpu --extra dev
+
+      - name: Check host compiler tooling
+        run: >-
+          uv run pytest -q -s packages/tack-core/tests/test_compiler_tools.py
+          -k test_host_compiler_preflight
 
       - name: Report which backends this runner has
         run: |
@@ -284,6 +291,8 @@ jobs:
     name: metal
     runs-on: macos-latest
     timeout-minutes: 20
+    env:
+      TACK_REQUIRE_CLANG: "1"
 
     steps:
       - uses: actions/checkout@v7
@@ -297,6 +306,11 @@ jobs:
 
       - name: Sync the workspace
         run: uv sync --extra cpu --extra metal --extra dev
+
+      - name: Check host compiler tooling
+        run: >-
+          uv run pytest -q -s packages/tack-core/tests/test_compiler_tools.py
+          -k test_host_compiler_preflight
 
       - name: Report which backends this runner has
         run: |

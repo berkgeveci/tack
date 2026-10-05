@@ -2,8 +2,9 @@
 
 Generates an ``extern "C" __global__`` kernel function where:
   - Each Field parameter becomes a typed device pointer (``float*``, etc.)
-  - The outermost parallel for-loop maps to the standard HIP thread index:
-        int __idx__ = blockIdx.x * blockDim.x + threadIdx.x;
+  - The outermost parallel for-loop maps to the standard HIP thread index,
+    computed in 64 bits as in CUDA:
+        long long __idx__ = (long long)blockIdx.x * blockDim.x + threadIdx.x;
     with a bounds guard.
   - Sequential for-loops, while-loops, if/else map to standard C control flow.
   - Math builtins map to HIP device math functions (sqrtf, sinf, etc.).
@@ -28,6 +29,7 @@ class HIPCodeGen(CUDACodeGen):
     hardware-sampled texture kernel failed to compile.
     """
 
+    _atomic_backend = "hip"
     _TEXTURE_OBJECT_TYPE = "hipTextureObject_t"
 
     def generate(self) -> str:

@@ -1,8 +1,33 @@
 # Tack Performance Results
 
+!!! warning "These numbers predate current behavior (note added 2026-10-05)"
+
+    The measurements below were taken before three changes that affect
+    them:
+
+    1. **Safe floating-point math on CUDA and Metal (2026-10-03).** Kernels
+       are no longer compiled with fast math. CUDA compiles with
+       `--ftz=false --prec-div=true --prec-sqrt=true`, and Metal with fast
+       math disabled. CUDA transcendentals call the precise device math
+       functions (`sinf`, `expf`, and so on) instead of the hardware
+       special-function-unit approximations. The note below that explains
+       the `sin`/`exp` speedups with SFUs no longer applies, and those rows
+       can be expected to change. See
+       [Numerical Semantics](design/numerical-semantics.md).
+    2. **CPU threading policy repairs (2026-10-02 to 2026-10-04).** The
+       decision between a serial run and a thread fan-out was revised. See
+       [CPU Threading Policy](design/cpu-threading.md).
+    3. **CPU disjoint-field specialization (2026-10-03).** The CPU backend
+       now compiles a separate `noalias` variant for calls whose written
+       fields don't overlap other fields. See
+       [Memory and Aliasing](design/memory-and-aliasing.md).
+
+    Re-measurement is planned. Until then, read the tables below as a
+    historical record. They have not been edited.
+
 64 MB of f32 data (16,777,216 elements), median of 30 trials after warmup.
 
-Reproduce: `uv run python examples/bench_64mb.py`
+Reproduce: `uv run python packages/tack-core/examples/bench_64mb.py`
 
 ## Mac — Apple Silicon (Metal)
 

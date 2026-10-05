@@ -77,25 +77,28 @@ array indexing (field load/store) rather than a scalar subscript.
 
 ## 4. Update IR Passes
 
-Each IR pass that walks the tree needs to handle the new node. For
-`IRLocalAlloc`, the passes only need to recurse into the `size`
-expression:
+Register the node's structural children in `ir_traversal.py`. Resolution,
+packing, and copy substitution will then recurse into them automatically:
 
 ```python
-# ir_resolve.py:
-if isinstance(node, ir.IRLocalAlloc):
-    node.size = _resolve(node.size, fields)
-    return node
-
-# ir_pack_scalars.py:
-if isinstance(node, ir.IRLocalAlloc):
-    node.size = _rewrite(node.size, replace_map)
-    return node
-
-# ir_type_annotate.py:
-if isinstance(node, ir.IRLocalAlloc):
-    return  # no type to annotate
+ir.IRLocalAlloc: (('size', 'expr'),),
 ```
+
+Add the node to the appropriate statement/expression set in `ir_verify.py`,
+declare required metadata there, and enforce its stage postconditions.
+Unknown nodes fail verification and traversal until explicitly supported.
+Type annotation and control-flow-sensitive analyses still need semantic
+handling. For an allocation, annotate the size and record the element type:
+
+```python
+if isinstance(node, ir.IRLocalAlloc):
+    _annotate_expr(node.size, env, field_params)
+    env[node.name] = node.dtype
+    return
+```
+
+Test resolution, packing, copy substitution, and verification through the
+new child slots, including malformed IR and missing required annotations.
 
 ## 5. Add to Each Codegen
 
@@ -119,11 +122,12 @@ elif isinstance(node, ir.IRLocalAlloc):
 
 ### LLVM Backend
 
-Reuse the shared memory alloca pattern (both are stack allocations on CPU):
+Use private stack allocation for local arrays on CPU. Shared memory requires
+workgroup execution and is rejected by the CPU target:
 
 ```python
 elif isinstance(node, ir.IRLocalAlloc):
-    self._emit_shared_alloc(node)  # same as shared on CPU
+    self._emit_local_alloc(node)
 ```
 
 ## 6. Write Tests

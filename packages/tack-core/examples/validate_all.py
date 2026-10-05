@@ -8,13 +8,39 @@ Tests:
   5. N-body           -- multiple fields, distance calculations
   6. Jacobi iteration -- stencil pattern, read/write fields
   7. Matrix multiply  -- 2D indexing, accumulation
+
+Each test runs four times per backend, on fresh fields, and prints the
+first call and the fastest of the other three. The first call pays runtime
+compilation: on an MI300X a saxpy's first call is 146 ms and its warm call
+0.05 ms, so a single-call column reported hipRTC rather than the device,
+which is why every test used to read ~145 ms there whatever its workload.
+
+Every call is verified before its fresh fields are discarded. Setup and
+verification are outside the timed call. "Warm" is the minimum of the later
+three calls because CPU threading estimates adapt across dispatches; the
+idle curve is learned from real pauses, without sleep-based calibration.
+
+Use --arch cpu|metal|cuda|hip|level_zero to require a specific backend. With
+no selector, the suite discovers and validates all available backends.
 """
 
+import argparse
 import time
 
 import numpy as np
 
 import tack
+from tack.runtime.dispatch import get_backend
+
+_ARCHES = ('cpu', 'metal', 'cuda', 'hip', 'level_zero')
+
+
+def _init_backend(arch):
+    """Initialize and confirm the backend whose results we will report."""
+    tack.init(arch=arch)
+    selected = get_backend().name
+    if selected != arch:
+        raise RuntimeError(f"Requested '{arch}' backend but selected '{selected}'")
 
 
 def _available_backends():
@@ -28,35 +54,51 @@ def _available_backends():
     device.
     """
     backends = []
-    for arch in ("cpu", "metal", "cuda", "hip", "level_zero"):
+    for arch in _ARCHES:
         try:
-            tack.init(arch=getattr(tack, arch))
+            _init_backend(arch)
         except Exception:
             continue
         backends.append(arch)
     return backends
 
 
-BACKENDS = _available_backends()
+def _time_call(setup_fn, call_fn):
+    """Run `call_fn` over fresh fields, returning its wall time and the fields."""
+    fields = setup_fn()
+    t0 = time.perf_counter()
+    call_fn(*fields)
+    t1 = time.perf_counter()
+    return (t1 - t0) * 1000, fields
 
 
-def run_on_all(name, setup_fn, kernel_fn, verify_fn):
+def _report(name, backend, setup_fn, call_fn, verify_fn):
+    """Verify all four calls, then report first and fastest-warm times."""
+    timings = []
+    for index in range(4):
+        kind = 'cold' if index == 0 else 'warm'
+        context = f'{name} on {backend}, call {index + 1} ({kind})'
+        try:
+            elapsed, fields = _time_call(setup_fn, call_fn)
+            ok = verify_fn(*fields)
+        except Exception as exc:
+            raise RuntimeError(f'{context} raised an error') from exc
+        if not ok:
+            raise AssertionError(f'{context} failed verification')
+        timings.append(elapsed)
+    first, warm = timings[0], min(timings[1:])
+    print(f"  {backend:>5s}:  first {first:>8.2f} ms   warm {warm:>8.3f} ms  [OK]")
+
+
+def run_on_all(name, setup_fn, kernel_fn, verify_fn, backends):
     """Run a validation test on all available backends, verify correctness."""
     print(f"\n{'-' * 60}")
     print(f"  {name}")
     print(f"{'-' * 60}")
 
-    for backend in BACKENDS:
-        tack.init(arch=backend)
-        fields = setup_fn()
-        t0 = time.perf_counter()
-        kernel_fn(*fields)
-        t1 = time.perf_counter()
-        ok = verify_fn(*fields)
-        status = "OK" if ok else "FAIL"
-        print(f"  {backend:>5s}:  {(t1-t0)*1000:>8.2f} ms  [{status}]")
-        if not ok:
-            raise AssertionError(f"{name} failed on {backend}")
+    for backend in backends:
+        _init_backend(backend)
+        _report(name, backend, setup_fn, kernel_fn, verify_fn)
 
 
 # -------------------------------------------------------------
@@ -370,34 +412,38 @@ def matmul_verify(a, b, c):
 # Main
 # -------------------------------------------------------------
 
-def main():
+def main(argv=None):
+    parser = argparse.ArgumentParser(description='Validate Tack workloads on available backends.')
+    parser.add_argument('--arch', choices=_ARCHES,
+                        help='require this backend; default: discover all available backends')
+    args = parser.parse_args(argv)
+    try:
+        if args.arch is not None:
+            _init_backend(args.arch)
+            backends = [args.arch]
+        else:
+            backends = _available_backends()
+            if not backends:
+                raise RuntimeError('No available Tack backends')
+    except (ImportError, RuntimeError, OSError, AttributeError) as exc:
+        parser.error(str(exc))
+
     np.random.seed(42)
     print("Tack Validation Suite")
     print("=" * 60)
+    print(f"Backends: {', '.join(backends)}")
 
-    run_on_all("1. Vector Add", va_setup, vector_add, va_verify)
-    run_on_all("2. SAXPY", saxpy_setup, saxpy, saxpy_verify)
-    run_on_all("3. Reduction (partial sums)", reduce_setup, partial_sum, reduce_verify)
-    run_on_all("4. Mandelbrot (800x600)", mandelbrot_setup, mandelbrot, mandelbrot_verify)
-    run_on_all("5. N-body (512 bodies)", nbody_setup, nbody_forces, nbody_verify)
-
-    # Jacobi needs special handling (multi-step iteration)
-    print(f"\n{'-' * 60}")
-    print(f"  6. Jacobi Iteration (1D, {JACOBI_STEPS} steps)")
-    print(f"{'-' * 60}")
-    for backend in BACKENDS:
-        tack.init(arch=backend)
-        src, dst = jacobi_setup()
-        t0 = time.perf_counter()
-        run_jacobi(src, dst)
-        t1 = time.perf_counter()
-        ok = jacobi_verify(src, dst)
-        status = "OK" if ok else "FAIL"
-        print(f"  {backend:>5s}:  {(t1-t0)*1000:>8.2f} ms  [{status}]")
-        if not ok:
-            raise AssertionError(f"Jacobi failed on {backend}")
-
-    run_on_all("7. Matrix Multiply (64x64)", matmul_setup, matmul, matmul_verify)
+    workloads = [
+        ('1. Vector Add', va_setup, vector_add, va_verify),
+        ('2. SAXPY', saxpy_setup, saxpy, saxpy_verify),
+        ('3. Reduction (partial sums)', reduce_setup, partial_sum, reduce_verify),
+        ('4. Mandelbrot (800x600)', mandelbrot_setup, mandelbrot, mandelbrot_verify),
+        ('5. N-body (512 bodies)', nbody_setup, nbody_forces, nbody_verify),
+        (f'6. Jacobi Iteration (1D, {JACOBI_STEPS} steps)', jacobi_setup, run_jacobi, jacobi_verify),
+        ('7. Matrix Multiply (64x64)', matmul_setup, matmul, matmul_verify),
+    ]
+    for name, setup, call, verify in workloads:
+        run_on_all(name, setup, call, verify, backends)
 
     print(f"\n{'=' * 60}")
     print("  All validations passed!")

@@ -37,7 +37,7 @@ class TestMSLCodeGen:
                 out[i] = x[i] + y[i]
 
         src = generate_msl_source(_get_ir(add, _field(), _field(), _field()))
-        assert 'kernel void add(' in src
+        assert 'kernel void tack_kernel_a_add(' in src
 
     def test_buffer_bindings(self):
         @tack.kernel
@@ -47,8 +47,10 @@ class TestMSLCodeGen:
 
         src = generate_msl_source(_get_ir(add, _field(), _field(), _field()))
         assert '[[buffer(0)]]' in src
-        assert '[[buffer(1)]]' in src
-        assert '[[buffer(2)]]' in src
+        assert src.count('[[buffer(') == 1
+        assert 'device float* tack_var_a_x [[id(0)]]' in src
+        assert 'device float* tack_var_a_y [[id(1)]]' in src
+        assert 'device float* tack_var_a_out [[id(2)]]' in src
 
     def test_device_pointers(self):
         @tack.kernel
@@ -76,7 +78,7 @@ class TestMSLCodeGen:
                 out[i] = 42.0
 
         src = generate_msl_source(_get_ir(fill, _field()))
-        assert 'long i = __tid__;' in src
+        assert 'long tack_var_a_i = __tid__;' in src
 
     def test_math_functions(self):
         @tack.kernel
@@ -118,7 +120,7 @@ class TestMSLCodeGen:
                     b[i] = a[i]
 
         src = generate_msl_source(_get_ir(kern, _field(), _field()))
-        assert 'for (long j = 0; j < 10; j++)' in src
+        assert 'for (long tack_var_a_j = 0; tack_var_a_j < 10; tack_var_a_j++)' in src
 
     def test_while_loop(self):
         @tack.kernel
@@ -140,8 +142,8 @@ class TestMSLCodeGen:
 
         src = generate_msl_source(_get_ir(saxpy, _field(), _field(), _field(), 2.5))
         # Scalar passed as constant buffer reference, not device pointer
-        assert 'constant float& alpha' in src
-        assert 'device float* alpha' not in src
+        assert 'constant float& tack_var_a_alpha' in src
+        assert 'device float* tack_var_a_alpha' not in src
 
     def test_atomic_add_float(self):
         @tack.kernel
@@ -182,7 +184,7 @@ class TestMSLCodeGen:
 
         src = generate_msl_source(_get_ir(kern, _field(), _field()))
         assert 'threadgroup' in src
-        assert 'threadgroup_barrier(mem_flags::mem_threadgroup)' in src
+        assert 'threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device)' in src
 
     def test_shared_memory_adds_local_tid(self):
         @tack.kernel

@@ -14,7 +14,12 @@ from dataclasses import dataclass
 
 import numpy as np
 
-from tack.lang.types import ScalarType, f32, f64, from_numpy_dtype, i32
+try:
+    from numpy.lib.array_utils import byte_bounds
+except ImportError:  # NumPy 1.x exposes this in its top-level namespace.
+    from numpy import byte_bounds
+
+from tack.lang.types import ScalarType, f32, from_numpy_dtype, i32
 
 
 class DeviceBuffer:
@@ -37,6 +42,11 @@ class DeviceBuffer:
         raise NotImplementedError
 
     @property
+    def address(self) -> int:
+        """Address used by kernels, for validating imported atomic storage."""
+        raise NotImplementedError
+
+    @property
     def nbytes(self) -> int:
         raise NotImplementedError
 
@@ -50,7 +60,9 @@ class NumpyBuffer(DeviceBuffer):
         self._data = np.zeros(shape, dtype=numpy_dtype)
 
     def from_numpy(self, arr: np.ndarray):
-        np.copyto(self._data, arr)
+        # A reshaped field shares this buffer under another shape; the
+        # element count already matches, so copy in the buffer's own shape.
+        np.copyto(self._data, arr.reshape(self._data.shape))
 
     def to_numpy(self) -> np.ndarray:
         return self._data.copy()
@@ -61,6 +73,27 @@ class NumpyBuffer(DeviceBuffer):
     @property
     def nbytes(self) -> int:
         return self._data.nbytes
+
+    @property
+    def address(self) -> int:
+        return self._data.ctypes.data
+
+    @property
+    def span(self) -> tuple[int, int]:
+        """The half-open byte range ``[start, end)`` this buffer occupies.
+
+        Read on every CPU dispatch to decide whether the field arguments
+        overlap, so it is computed once per array rather than per call.
+        """
+        try:
+            data, span = self._span
+            if data is self._data:
+                return span
+        except AttributeError:
+            pass
+        span = byte_bounds(self._data)
+        self._span = (self._data, span)
+        return span
 
 
 @dataclass
@@ -128,25 +161,30 @@ class Field:
     def _reduce(self, op: str):
         """Reduce on the device where that is supported, else via numpy."""
         from tack.runtime.dispatch import get_backend
+        from tack.runtime.reductions import empty_reduction, reduce_numpy
+        if self.size == 0:
+            return empty_reduction(op)
         backend = get_backend()
         if backend.supports_device_reductions:
             return backend.reduce_field(self, op)
-        return float(getattr(self._buffer.to_numpy(), op)())
+        return reduce_numpy(self.to_numpy(), op)
 
     def sum(self):
-        """Return the sum of all elements."""
+        """Return a float sum; parallel floating addition order may vary."""
         return self._reduce('sum')
 
     def min(self):
-        """Return the minimum element."""
+        """Return a float minimum; propagate NaNs and prefer negative zero."""
         return self._reduce('min')
 
     def max(self):
-        """Return the maximum element."""
+        """Return a float maximum; propagate NaNs and prefer positive zero."""
         return self._reduce('max')
 
     def mean(self):
-        """Return the mean of all elements (GPU sum / size)."""
+        """Return sum / size, or NaN for an empty field."""
+        if self.size == 0:
+            return float('nan')
         return self.sum() / self.size
 
     def export_memory(self) -> ExportedMemory:
@@ -402,7 +440,8 @@ def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
     Read-only by default; pass writable=True to enable writes.
 
     Raises ValueError if the pointer's memory space does not match the
-    active backend (e.g. a CPU pointer with the CUDA backend).
+    active backend (e.g. a CPU pointer with the CUDA backend), and
+    TypeError if a CUDA, HIP or Level Zero pointer is not an address.
 
     Args:
         ptr: device pointer (integer) or backend-specific buffer object.
@@ -418,15 +457,23 @@ def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
         A Field wrapping the external memory.
     """
     from tack.runtime.dispatch import get_backend
+    from tack.runtime.kernel_utils import as_address
 
     if isinstance(shape, int):
         shape = (shape,)
     backend = get_backend()
 
-    # Validate the pointer's memory space against what this backend expects.
-    # Skipped for non-integer pointers (Metal MTLBuffer objects, numpy arrays
-    # on CPU) and for backends that do not distinguish device memory.
-    if isinstance(ptr, int) and backend.device_memory_spaces:
+    # Validate the pointer's memory space against what this backend expects,
+    # on backends that distinguish device memory; Metal MTLBuffer objects
+    # and CPU numpy arrays are not addresses and need no check. Any form a
+    # device pointer arrives in -- int, numpy integer, CUdeviceptr -- is
+    # checked, not only a Python int.
+    if backend.device_memory_spaces:
+        if as_address(ptr) is None:
+            raise TypeError(
+                f"field_from_ptr() on the {backend.label} backend takes a "
+                f"device address (an integer, or an object int() accepts), "
+                f"not {type(ptr).__name__}.")
         space = backend.memory_space(ptr)
         if space not in backend.device_memory_spaces:
             raise ValueError(
@@ -479,22 +526,64 @@ class Vector:
 
 
 class Texture3D:
-    """A 3D texture wrapping a Field, enabling hardware-accelerated sampling.
+    """A 3D texture over a snapshot of a Field, sampled trilinearly.
 
-    Created via ``tack.texture3d(field, interp='linear')``.  In kernels,
+    Created via ``tack.texture3d(field, shape=(W, H, D))``.  In kernels,
     ``tex.sample(u, v, w)`` samples at normalized [0,1] coordinates using
     trilinear interpolation.
 
-    On GPU backends this maps to native texture hardware; on CPU it emits
-    software trilinear interpolation against the raw field data.
+    The texture copies the field's data when it is created, and again on
+    ``update()``; writes to the field in between do not reach it. That
+    holds on every backend. Where the backend samples in hardware the copy
+    is a texture image (a CUDA or HIP array, an MTLTexture, a Level Zero
+    image); elsewhere it is a private field the generated code interpolates
+    in software. Either way the texture owns it, so it is released with the
+    texture and no other texture can be handed it.
     """
 
     def __init__(self, source_field: Field, shape_3d: tuple, interp: str = 'linear'):
-        if source_field.dtype not in (f32, f64):
-            raise ValueError("texture3d requires f32 or f64 dtype")
+        from tack.runtime.dispatch import get_backend
+
+        # Every hardware path builds a single-channel 32-bit float image,
+        # so f64 data would be reinterpreted rather than converted.
+        if source_field.dtype is not f32:
+            raise ValueError(
+                f"texture3d requires an f32 field, got {source_field.dtype}; "
+                f"convert it first with field.astype(tack.f32)")
+        # The generated code interpolates linearly on every backend; nothing
+        # implements another mode.
+        if interp != 'linear':
+            raise ValueError(
+                f"texture3d supports interp='linear' only, got {interp!r}")
+        shape_3d = tuple(int(s) for s in shape_3d)
+        W, H, D = shape_3d
+        if W * H * D != source_field.size:
+            raise ValueError(
+                f"texture3d shape {shape_3d} holds {W * H * D} elements, but "
+                f"the field has {source_field.size} elements")
         self.field = source_field
         self.shape_3d = shape_3d   # (W, H, D) logical 3D shape
-        self.interp = interp       # 'linear' or 'nearest'
+        self.interp = interp
+
+        backend = get_backend()
+        if backend.texture_in_hardware(shape_3d):
+            self._storage = backend.create_texture_image(shape_3d)
+        else:
+            self._storage = Field(f32, (source_field.size,),
+                                  backend.allocate_field(f32, (source_field.size,)))
+        self.update()
+
+    def update(self):
+        """Copy the field's current data into the texture.
+
+        Sampling after this sees the field as it is now, on every backend.
+        """
+        if isinstance(self._storage, Field):
+            from tack.algorithms.copy import copy as _copy
+            _copy(self.field.reshape((self.field.size,)), self._storage,
+                  self.field.size)
+        else:
+            self._storage.upload(self.field)
 
     @property
     def dtype(self):

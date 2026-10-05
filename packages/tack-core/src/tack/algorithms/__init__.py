@@ -2,8 +2,8 @@
 
 Core provides portable, backend-agnostic building blocks for common
 parallel patterns: scan, copy, fill, stats.  All operate on tack.field
-objects and run entirely on the active backend (CPU, Metal, CUDA, HIP,
-Level Zero).
+objects and run as kernels on the active backend (CPU, Metal, CUDA, HIP,
+Level Zero), reading back at most a scalar result.
 
 When tack-vis is installed, its visualization worklets join this same
 namespace — flying edges, compute normals, cell-to-point.

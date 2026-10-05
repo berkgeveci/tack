@@ -10,6 +10,8 @@ Must run after type inference (needs _is_field and type_annotation).
 
 
 from tack.lang import ir
+from tack.lang.ir_names import fresh_name, ir_names
+from tack.lang.ir_traversal import transform_ir
 
 
 def pack_scalars(ir_func: ir.IRFunction, args: tuple):
@@ -36,11 +38,13 @@ def pack_scalars(ir_func: ir.IRFunction, args: tuple):
     pack_info = []
     new_params = []
     scalar_indices = set()
+    used_names = ir_names(ir_func)
 
     for dtype, entries in groups.items():
-        pack_name = f"__pack_{dtype.name}__"
+        pack_name = fresh_name(f"__pack_{dtype.name}__", used_names)
         pack_param = ir.IRParam(name=pack_name, type_annotation=dtype)
         pack_param._is_field = True
+        pack_param._is_scalar_pack = True  # Runtime-owned immutable uniform inputs.
         new_params.append(pack_param)
 
         values = []
@@ -88,118 +92,11 @@ def split_args(args, pack_info):
 
 
 def _rewrite(node, replace_map):
-    """Recursively rewrite IRName references to packed scalar params."""
-    if node is None:
-        return None
-
-    if isinstance(node, ir.IRName):
-        if node.name in replace_map:
+    """Rewrite scalar references in every structural expression slot."""
+    def replace_name(node):
+        if isinstance(node, ir.IRName) and node.name in replace_map:
             pack_name, idx = replace_map[node.name]
             return ir.IRFieldLoad(ir.IRName(pack_name), ir.IRConstant(idx))
         return node
 
-    if isinstance(node, ir.IRBinOp):
-        node.left = _rewrite(node.left, replace_map)
-        node.right = _rewrite(node.right, replace_map)
-        return node
-
-    if isinstance(node, ir.IRUnaryOp):
-        node.operand = _rewrite(node.operand, replace_map)
-        return node
-
-    if isinstance(node, ir.IRCompare):
-        node.left = _rewrite(node.left, replace_map)
-        node.right = _rewrite(node.right, replace_map)
-        return node
-
-    if isinstance(node, ir.IRBoolOp):
-        node.values = [_rewrite(v, replace_map) for v in node.values]
-        return node
-
-    if isinstance(node, ir.IRFieldLoad):
-        node.field = _rewrite(node.field, replace_map)
-        node.index = _rewrite(node.index, replace_map)
-        return node
-
-    if isinstance(node, ir.IRFieldStore):
-        node.field = _rewrite(node.field, replace_map)
-        node.index = _rewrite(node.index, replace_map)
-        node.value = _rewrite(node.value, replace_map)
-        return node
-
-    if isinstance(node, ir.IRAtomicOp):
-        node.field = _rewrite(node.field, replace_map)
-        node.index = _rewrite(node.index, replace_map)
-        node.value = _rewrite(node.value, replace_map)
-        return node
-
-    if isinstance(node, ir.IRAssign):
-        node.value = _rewrite(node.value, replace_map)
-        return node
-
-    if isinstance(node, ir.IRParallelFor):
-        node.start = _rewrite(node.start, replace_map)
-        node.end = _rewrite(node.end, replace_map)
-        node.body = [_rewrite(s, replace_map) for s in node.body]
-        return node
-
-    if isinstance(node, ir.IRSequentialFor):
-        node.start = _rewrite(node.start, replace_map)
-        node.end = _rewrite(node.end, replace_map)
-        if node.step is not None:
-            node.step = _rewrite(node.step, replace_map)
-        node.body = [_rewrite(s, replace_map) for s in node.body]
-        return node
-
-    if isinstance(node, ir.IRWhile):
-        node.condition = _rewrite(node.condition, replace_map)
-        node.body = [_rewrite(s, replace_map) for s in node.body]
-        return node
-
-    if isinstance(node, ir.IRIf):
-        node.condition = _rewrite(node.condition, replace_map)
-        node.then_body = [_rewrite(s, replace_map) for s in node.then_body]
-        node.else_body = [_rewrite(s, replace_map) for s in node.else_body]
-        return node
-
-    if isinstance(node, ir.IRIfExp):
-        node.condition = _rewrite(node.condition, replace_map)
-        node.then_value = _rewrite(node.then_value, replace_map)
-        node.else_value = _rewrite(node.else_value, replace_map)
-        return node
-
-    if isinstance(node, ir.IRCall):
-        node.args = [_rewrite(a, replace_map) for a in node.args]
-        return node
-
-    if isinstance(node, ir.IRCast):
-        node.value = _rewrite(node.value, replace_map)
-        return node
-
-    if isinstance(node, ir.IRSharedAlloc):
-        node.size = _rewrite(node.size, replace_map)
-        return node
-
-    if isinstance(node, ir.IRLocalAlloc):
-        node.size = _rewrite(node.size, replace_map)
-        return node
-
-    if isinstance(node, ir.IRBlockReduce):
-        node.value = _rewrite(node.value, replace_map)
-        return node
-
-    if isinstance(node, ir.IRPrint):
-        node.args = [_rewrite(a, replace_map) for a in node.args]
-        return node
-
-    if isinstance(node, ir.IRReturn):
-        if node.value:
-            node.value = _rewrite(node.value, replace_map)
-        return node
-
-    if isinstance(node, ir.IRTextureSample):
-        node.coords = [_rewrite(c, replace_map) for c in node.coords]
-        return node
-
-    # Leaf nodes: IRConstant, IRAttribute, IRBreak, IRContinue, etc.
-    return node
+    return transform_ir(node, replace_name)

@@ -56,6 +56,23 @@ def _read_last(src, dst, idx):
         dst[0] = src[idx]
 
 
+def _count(n, *fields):
+    """Check the element count: the scan reads and writes [0, n)."""
+    n = int(n)
+    for f in fields:
+        if not 0 <= n <= f.size:
+            raise ValueError(
+                f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
+    return n
+
+
+def _total(field, n):
+    """field[n - 1] as a Python number, read in the field's own dtype."""
+    result = tack.field(dtype=field.dtype, shape=(1,))
+    _read_last(field, result, n - 1)
+    return result.to_numpy()[0].item()
+
+
 def _blelloch_scan_inplace(work, n):
     """Run Blelloch up-sweep + down-sweep on a work buffer (in-place).
 
@@ -79,45 +96,59 @@ def _blelloch_scan_inplace(work, n):
 
 
 def exclusive_scan(input_field, output_field, n):
-    """Compute exclusive prefix sum on the GPU.
+    """Compute exclusive prefix sum on the active backend.
 
     output[i] = sum(input[0..i-1]), output[0] = 0.
 
+    The scan runs in the output field's dtype; input values convert to it
+    on the copy, so any dtype the backend allocates works.
+
     Args:
-        input_field: tack.field(i32) with input values.
-        output_field: tack.field(i32) for output offsets.
-        n: number of elements.
+        input_field: field with input values.
+        output_field: field for the output offsets.
+        n: number of elements, at most either field's size. Zero writes
+            nothing and returns 0.
 
     Returns:
-        int: total sum of all input elements.
+        The total of all input elements in the output's dtype, as a Python
+        int or float.
     """
-    work = tack.field(dtype=tack.i32, shape=(n,))
+    n = _count(n, input_field, output_field)
+    if n == 0:
+        # Nothing to scan; the empty sum is 0, as for Field.sum().
+        return 0
+    # Scan in the output's dtype, as the inclusive scan does: an i32 work
+    # buffer truncated float inputs and wrapped wider integers.
+    work = tack.field(dtype=output_field.dtype, shape=(n,))
     _copy_field(input_field, work, n)
     _blelloch_scan_inplace(work, n)
     _shift_right(work, output_field, n)
 
-    # Total = last element of inclusive scan
-    result = tack.field(dtype=tack.i32, shape=(1,))
-    _read_last(work, result, n - 1)
-    return int(result.to_numpy()[0])
+    # Total = last element of the inclusive scan
+    return _total(work, n)
 
 
 def inclusive_scan(input_field, output_field, n):
-    """Compute inclusive prefix sum on the GPU.
+    """Compute inclusive prefix sum on the active backend.
 
     output[i] = sum(input[0..i]).
 
+    The scan runs in the output field's dtype; input values convert to it
+    on the copy, so any dtype the backend allocates works.
+
     Args:
-        input_field: tack.field(i32) with input values.
-        output_field: tack.field(i32) for output sums.
-        n: number of elements.
+        input_field: field with input values.
+        output_field: field for the output sums.
+        n: number of elements, at most either field's size. Zero writes
+            nothing and returns 0.
 
     Returns:
-        int: total sum of all input elements.
+        The total of all input elements in the output's dtype, as a Python
+        int or float.
     """
+    n = _count(n, input_field, output_field)
+    if n == 0:
+        return 0
     _copy_field(input_field, output_field, n)
     _blelloch_scan_inplace(output_field, n)
-
-    result = tack.field(dtype=tack.i32, shape=(1,))
-    _read_last(output_field, result, n - 1)
-    return int(result.to_numpy()[0])
+    return _total(output_field, n)

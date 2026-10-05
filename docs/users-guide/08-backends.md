@@ -13,6 +13,36 @@ its own compilation pipeline and memory model.
 | HIP | Linux | AMD (ROCm) | HIP C → hipRTC | `hip-python` |
 | Level Zero | Linux | Intel | OpenCL C → libocloc → SPIR-V | Level Zero runtime |
 
+## Capabilities
+
+Every backend runs the same kernel language, but within its own
+capabilities. A kernel that uses something a backend lacks is rejected with
+an error naming the kernel and the missing capability. It is never run
+with a different meaning.
+
+| | CPU | Metal | CUDA | HIP | Level Zero |
+|---|---|---|---|---|---|
+| `f64` fields | yes | no | yes | yes | depends on the device |
+| Shared memory, barriers, `thread_id`, block reductions | no | yes | yes | yes | yes |
+| Atomic field types | all ten | `i32`, `u32`, `f32` | 32- and 64-bit ints, `f32`, `f64` | 32- and 64-bit ints, `f32`, `f64` | `i32`, `u32`, `f32` |
+| `sum`/`min`/`max` on the device | no (NumPy) | `f32` | `f32` | `f32` | `f32` |
+| 3D textures | software | hardware | hardware | hardware where the device has image support | hardware where the device has samplers |
+| Iterations per launch | no limit | 2^32 | device limit (max grid × 256) | device limit, at most 2^32 − 256 | device limit (max group count × group size) |
+
+A launch past a backend's limit raises `ValueError` naming the kernel, the
+count and the limit; split the work across several calls.
+
+The [backend capability contract](../contracts/backend-capabilities.md) has
+the full matrix, what each capability rejects and when, and the subset that
+is portable to all five. In code, ask the backend rather than checking its
+name:
+
+```python
+from tack.runtime.dispatch import get_backend
+be = get_backend()
+be.supports_f64, be.supports_workgroups, be.supported_atomic_dtypes
+```
+
 ## CPU
 
 The CPU backend uses LLVM JIT (via llvmlite) to compile kernels to native
@@ -27,12 +57,23 @@ That matters because the break-even point depends on how much work the
 kernel does per element, and moves by a factor of a thousand between a
 memory-bound expression and a compute-heavy one.
 
-Set `TACK_CPU_THREADS` to override the thread count. `TACK_CPU_THREADS=1`
-runs everything on the calling thread, which is useful when profiling or
+Set `TACK_CPU_THREADS`, or pass `tack.init(arch=tack.cpu, num_threads=n)`,
+to override the thread count. A thread count of 1 runs everything on the
+calling thread, which is useful when profiling or
 when Tack is embedded in a host that manages its own threads.
 
+The CPU has no workgroup execution model, and Tack doesn't emulate one.
+Kernels that use `tack.shared`, `tack.shared_like`, `tack.barrier`,
+`tack.thread_id`, `tack.block_sum`, `tack.block_min` or `tack.block_max`
+are **rejected on CPU** before anything is compiled or run, even when the
+primitive sits in a branch that never executes. A call raises
+`RuntimeError`, and `tack.inspect` raises `NotImplementedError`. For
+per-iteration scratch storage, use
+[`tack.local_array` or `tack.local_array_like`](07-advanced.md#local-arrays),
+which work on every backend.
+
 ```bash
-pip install 'tack[cpu]'
+pip install 'tack-core[cpu]'
 ```
 
 ```python
@@ -70,6 +111,21 @@ pip install 'cuda-python>=13.2'
 tack.init(arch=tack.cuda)
 ```
 
+Tack's CUDA context is current only on the thread that called
+`tack.init()`. To call kernels from another thread, make the context
+current there first:
+
+```python
+from cuda.bindings import driver
+from tack.runtime.dispatch import get_backend
+
+driver.cuCtxSetCurrent(get_backend()._context)  # in the other thread
+```
+
+Calls of one kernel from several threads are safe on every backend: each
+call runs with its own arguments. On GPU backends calls of the same
+compiled kernel take turns.
+
 ## HIP
 
 AMD GPUs via ROCm. The codegen extends CUDA — HIP device code uses the same
@@ -83,10 +139,34 @@ uv sync --extra hip        # hip-python is on PyPI
 tack.init(arch=tack.hip)
 ```
 
+**ROCm 7.0.2 miscompiles some integer code.** Its device compiler, AMD
+clang 20 inside hipRTC, can evaluate a 64-bit signed comparison wrongly
+when it sits inside a long integer expression. The kernel then returns a
+wrong value with no error. Tack's own tests found one case: a generated
+expression in which `-253 < -1` evaluated false at `-O1` and above. The
+same source is correct on CUDA, as host C++, and under ROCm's clang 23.
+Whether a kernel is affected depends on the surrounding expression, so
+Tack can't rewrite around it. Use a ROCm release newer than 7.0 if you
+can. Go by the ROCm release, not `hiprtcVersion()`, which reports 9.0 on
+7.0.2. On 7.0.2, check integer-heavy kernels against the CPU backend.
+
 ## Level Zero
 
 Intel GPUs via the Level Zero API. OpenCL C source is compiled to SPIR-V
 in-process using `libocloc`, then loaded via `zeModuleCreate`.
+
+**`f64` depends on the device.** Some Intel GPUs implement double precision
+and some don't. The backend asks the device during `tack.init()` and adds
+`f64` to its supported types only when the device reports it. `f64` atomics
+follow the same answer. Check `get_backend().supports_f64` rather than
+assuming.
+
+**VTK device interop needs a shared context.** A Level Zero pointer is
+meaningful only inside the context it was allocated from, so Tack and VTK
+must use the same one. Start Tack with
+`tack.interop.vtk.init_level_zero()` instead of
+`tack.init(arch=tack.level_zero)`. Fields allocated before that call can't
+be shared with VTK.
 
 Hardware 3D texture sampling (`image3d_t` with `read_imagef`) is used on
 devices with texture units (Xe-HPG/Xe-LPG). Xe-HPC (Ponte Vecchio) falls
@@ -103,12 +183,16 @@ If a backend is unavailable, `tack.init()` gives a clear error:
 ```
 RuntimeError: Cannot initialize 'hip' backend: missing dependency.
   No module named 'hip'
-  Requires AMD GPU with ROCm and hip-python
+  Requires an AMD GPU with ROCm, plus hip-python:
+    pip install 'tack-core[hip]'
+  ...
 ```
 
 Kernel compilation errors show the kernel name, backend, and the relevant
-error lines without dumping the full generated source. Set `TACK_DUMP_MSL=1`
-environment variables to inspect generated code.
+error lines without dumping the full generated source. To see the generated
+code on any backend, use `tack.inspect(kernel, *args, mode="source")`. On
+Metal, `TACK_DUMP_MSL=1` also writes each compiled kernel's MSL to `/tmp`.
+Other backends ignore it.
 
 ## Type Checking
 
@@ -116,10 +200,12 @@ Tack validates field dtypes at dispatch time before compilation. If a field
 uses a dtype not supported by the target backend, you get a clear error:
 
 ```
-TypeError: Kernel 'my_kernel': parameter 'data' has dtype tack.f64,
-which is not supported on Metal.
-Supported dtypes: f32, i32, i64, u32, u64
+TypeError: Kernel 'my_kernel': parameter 'data' has dtype tack.f64, which is
+not supported on Metal. Supported dtypes: tack.f32, tack.i16, tack.i32,
+tack.i64, tack.i8, tack.u16, tack.u32, tack.u64, tack.u8
 ```
+
+`tack.inspect` applies the same check.
 
 Supported dtypes per backend:
 
@@ -129,4 +215,4 @@ Supported dtypes per backend:
 | Metal | i8, u8, i16, u16, i32, u32, i64, u64, f32 (no f64) |
 | CUDA | i8, u8, i16, u16, i32, u32, i64, u64, f32, f64 |
 | HIP | i8, u8, i16, u16, i32, u32, i64, u64, f32, f64 |
-| Level Zero | i8, u8, i16, u16, i32, u32, i64, u64, f32, f64 |
+| Level Zero | i8, u8, i16, u16, i32, u32, i64, u64, f32, plus f64 on devices that report it |

@@ -3,7 +3,8 @@
 GPU path tracing and volume rendering for [Tack](https://github.com/berkgeveci/tack).
 
 Built entirely from `@tack.kernel` functions, so it runs on every backend `tack-core`
-supports — CPU, Metal, CUDA, HIP and Level Zero — from one source.
+supports — CPU, Metal, CUDA, HIP and Level Zero — from one source, within each backend's
+capabilities.
 
 ```python
 import tack

@@ -4,7 +4,9 @@ Kernels, fields, types, IR, codegen and backends for [Tack](https://github.com/b
 a Python-first GPU compute framework.
 
 Write compute kernels as decorated Python functions; they are JIT-compiled at first call and
-dispatched to whichever backend is active. The same kernel source runs on five backends.
+dispatched to whichever backend is active. The same kernel source runs on five backends, within
+each backend's capabilities (for example, Metal has no `f64` and the CPU has no workgroup
+primitives).
 
 ```python
 import tack, numpy as np

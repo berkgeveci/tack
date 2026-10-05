@@ -93,6 +93,19 @@ def test_the_readable_summary_is_still_the_last_line():
     assert str(excinfo.value).startswith("Kernel 'dynamic_dim'")
 
 
+@pytest.mark.parametrize("decorator,kind", [
+    ("kernel", "kernel"), ("func", "device function")])
+def test_unreadable_source_is_explained_the_same_way(decorator, kind):
+    """@tack.func raised the raw OSError where @tack.kernel explained it."""
+    namespace = {}
+    exec(compile("def generated(x):\n    return x\n", "<generated>", "exec"),
+         namespace)
+    with pytest.raises(RuntimeError, match=f"source of {kind} 'generated'") \
+            as excinfo:
+        getattr(tack, decorator)(namespace["generated"])
+    assert isinstance(excinfo.value.__cause__, OSError)
+
+
 # ── Unavailable backends explain themselves ──────────────────────────
 
 def _extra_requirements(package: str, extra: str) -> list[str]:

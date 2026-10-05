@@ -96,7 +96,20 @@ Available atomics:
 ## Shared Memory
 
 Shared memory is visible to all threads within a workgroup. Use it for
-cooperative algorithms like parallel reductions:
+cooperative algorithms like parallel reductions.
+
+These kernels require a GPU backend with `supports_workgroups=True`.
+CPU rejects shared memory, barriers, `thread_id` and block reductions.
+For scratch storage private to each iteration, use `tack.local_array`
+or `tack.local_array_like`; both work on CPU and GPU.
+
+Positive iteration counts must be divisible by 256. Scalar arguments can
+control collective branches and loops; field-loaded conditions and
+lane-dependent exits are rejected. See the
+[workgroup contract](../reference/language-contract.md#workgroups-and-synchronization)
+for the conservative supported domain and unsupported collective expressions.
+
+For example, with fully participating 256-lane workgroups:
 
 ```python
 @tack.kernel
@@ -118,6 +131,10 @@ def block_reduce(data, partial_sums, n):
         if tid == 0:
             tack.atomic_add(partial_sums, 0, smem[0])
 ```
+
+For an `f32` sum, minimum or maximum over the workgroup, `tack.block_sum`,
+`tack.block_min` and `tack.block_max` do this in one call; see
+[Reductions and Scans](11-reductions-and-scans.md#block-reductions-inside-kernels).
 
 - `tack.shared(dtype, size)` — allocate threadgroup memory
 - `tack.barrier()` — synchronize threads in the workgroup
@@ -159,10 +176,27 @@ def sample_volume(tex, output, n):
         output[i] = tex.sample(u, 0.5, 0.5)  # normalized [0,1] coords
 ```
 
-On Metal, this uses hardware texture units with `texture3d<float>.sample()`.
-On other backends, Tack generates a software trilinear interpolation fallback.
-On Level Zero (Intel GPUs), hardware `image3d_t` sampling is used when the
-device supports it.
+Sampling is always trilinear. Which unit does it depends on the backend:
+
+| Backend | Sampling |
+|---|---|
+| CPU | Software trilinear interpolation, generated in the kernel |
+| Metal | Hardware texture units, `texture3d<float>.sample()` |
+| CUDA | Hardware, `tex3D` on a texture object |
+| HIP | Hardware when the device reports image support; software otherwise (for example on CDNA parts such as the MI300) |
+| Level Zero | Hardware `image3d_t` when the device has samplers; software on Xe-HPC (Ponte Vecchio) |
+
+The texture holds a copy of the field taken by `tack.texture3d()`, on every
+backend. Writes to the field afterwards are not visible to it until you call
+`tex.update()`:
+
+```python
+data.from_numpy(next_frame.ravel())
+tex.update()   # sampling now sees next_frame
+```
+
+The field must be `f32` and hold `W * H * D` elements, and `interp='linear'`
+is the only interpolation mode. See [Backend Implementations](../design/backend-implementations.md#textures).
 
 `tex.sample()` also works inside `@tack.func` — texture metadata is
 propagated through inlining automatically.

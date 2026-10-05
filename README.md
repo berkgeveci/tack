@@ -79,12 +79,12 @@ offline compiler (`intel-opencl-icd`).
 @tack.kernel Python function
     → Python AST
     → Tack IR (intermediate representation)
-    → IR passes (resolve, type inference, LICM, copy propagation, CSE)
+    → IR passes (resolve, type inference, conservative copy propagation)
     → Backend codegen:
         CPU:   LLVM IR → llvmlite JIT → native code
         Metal: MSL source → Metal compile → compute pipeline
         CUDA:  CUDA C source → NVRTC → PTX → cuLaunchKernel
-        HIP:   HIP C source → hipRTC → code object → hipLaunchKernel
+        HIP:   HIP C source → hipRTC → code object → hipModuleLaunchKernel
 ```
 
 Kernels are compiled on first call and cached by type signature. Subsequent calls with the same types skip compilation.
@@ -139,24 +139,30 @@ combined = tack.concat([part_a, part_b])
 ### Loops
 
 ```python
+# The top-level for-range is the kernel's one parallel loop.
 @tack.kernel
-def kern(x, out):
-    # Top-level for-range is parallelized across GPU threads
+def weighted(x, out):
     for i in range(x.shape[0]):
         # Nested for-range runs sequentially per thread
         for j in range(10):
             out[i] += x[i] * float(j)
 
-    # Step support
+# Step support
+@tack.kernel
+def evens(out):
     for i in range(0, 100, 2):     # i = 0, 2, 4, ..., 98
         out[i // 2] = float(i)
 
-    # Multi-dimensional parallel iteration
-    for i, j in tack.ndrange(width, height):
-        img[i, j] = compute(i, j)
+# Multi-dimensional parallel iteration
+@tack.kernel
+def fill(img):
+    for i, j in tack.ndrange(img.shape[0], img.shape[1]):
+        img[i, j] = float(i * j)
 
-    # While loops with break/continue
-    for i in range(n):
+# While loops with break/continue
+@tack.kernel
+def halve(x, out):
+    for i in range(x.shape[0]):
         val = x[i]
         while val > 1.0:
             val = val / 2.0

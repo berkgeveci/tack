@@ -26,7 +26,8 @@ BACKENDS = {
     "cuda": {
         "cls": "from tack.runtime.cuda_backend import CUDABackend as Backend",
         "stubs": ["cuda", "cuda.bindings"],
-        "attrs": "",
+        # The launch limit is queried in __init__ too.
+        "attrs": "backend._max_launch = (2**31 - 1) * 256",
     },
     "hip": {
         "cls": "from tack.runtime.hip_backend import HIPBackend as Backend",
@@ -36,7 +37,8 @@ BACKENDS = {
         # path under test is the hardware one.
         "attrs": (
             "backend._has_image_support = True\n"
-            "    backend._max_image_3d = 16384"
+            "    backend._max_image_3d = 16384\n"
+            "    backend._max_launch = 2**32 - 256"
         ),
     },
     "level_zero": {
@@ -46,13 +48,15 @@ BACKENDS = {
             "backend.supported_dtypes = {tack.lang.types.f32, tack.lang.types.i32,\n"
             "                            tack.lang.types.i64, tack.lang.types.f64}\n"
             "    backend._max_image_3d = 16384\n"
-            "    backend._has_hw_sampler = True"
+            "    backend._has_hw_sampler = True\n"
+            "    backend._launch_lock = threading.RLock()\n"
+            "    backend._max_launch = (2**32 - 1) * 256"
         ),
     },
 }
 
 _PREAMBLE = '''
-import sys, types
+import sys, threading, types
 from unittest.mock import MagicMock
 
 for name in {stubs!r}:
@@ -132,6 +136,27 @@ check("launch args present",
 check("fields reach the launch",
       any(isinstance(a, Field) for a in b.compiled[0].launches[0][0]))
 
+# --- the launch and its scalar pack are serialized ------------------
+# Pack buffers (and Level Zero's command lists) are shared launch state,
+# so another thread must not reach them mid-launch.
+def launch_lock_held(backend):
+    lock = getattr(backend, "_launch_lock", None)
+    if lock is not None:
+        return lock._is_owned()
+    return any(v.dispatch_lock.locked()
+               for slot in backend._cache.values() for v in slot.values())
+
+b = make_backend()
+held = []
+x, out = field((32,)), field((32,))
+b.execute(elementwise, (x, out, 32), {})
+real_call = type(b.compiled[0]).__call__
+type(b.compiled[0]).__call__ = (
+    lambda self, *a: (held.append(launch_lock_held(b)), real_call(self, *a))[1])
+b.execute(elementwise, (x, out, 32), {})
+type(b.compiled[0]).__call__ = real_call
+check("launch runs under the dispatch lock", held == [True])
+
 # --- repeat dispatches reuse the variant ----------------------------
 b = make_backend()
 x, out = field((64,)), field((64,))
@@ -139,6 +164,19 @@ for _ in range(5):
     b.execute(elementwise, (x, out, 64), {})
 check("compiled once for 5 dispatches", len(b.compiled) == 1)
 check("five launches", len(b.compiled[0].launches) == 5)
+
+# --- a launch past the grid's limit is refused, not wrapped ---------
+b = make_backend()
+b._max_launch = 64
+x, out = field((128,)), field((128,))
+b.execute(elementwise, (x, out, 64), {})
+try:
+    b.execute(elementwise, (x, out, 128), {})
+except ValueError as error:
+    check("limit named, got %s" % error, "128 iterations exceed the 64" in str(error))
+else:
+    raise AssertionError("an over-limit launch reached the device")
+check("only the launch within the limit", [l[1] for l in b.compiled[0].launches] == [64])
 
 # --- the IR passes do not re-run ------------------------------------
 import tack.lang.ir_optimize as opt
@@ -246,6 +284,60 @@ if b.device_memory_spaces:
             check("a driver fault is not reported as host memory", escaped)
         finally:
             setattr(api, call, original)
+
+# --- verification stays off the repeated dispatch path --------------
+import tack.lang.ir_verify as verifier
+verified = []
+real_verify = verifier.verify_ir
+def record_verify(function, stage):
+    verified.append(stage)
+    real_verify(function, stage)
+verifier.verify_ir = record_verify
+b = make_backend()
+for _ in range(5):
+    b.execute(elementwise, (x, out, 64), {})
+verifier.verify_ir = real_verify
+check("GPU boundaries verified once", verified ==
+      ["resolved", "inferred", "localized", "optimized", "packed", "typed"])
+
+# --- bad packing cannot reach device compilation or the cache -------
+import tack.lang.ir_pack_scalars as packing
+real_pack = packing.pack_scalars
+packing.pack_scalars = lambda function, args: (args, None)
+b = make_backend()
+try:
+    b.execute(elementwise, (x, out, 64), {})
+except verifier.IRVerificationError as error:
+    check("failure attributed to packing", "after packed" in str(error))
+else:
+    raise AssertionError("unpacked scalars reached GPU compilation")
+finally:
+    packing.pack_scalars = real_pack
+check("invalid packing not compiled", not b.compiled)
+check("invalid packing not cached", not b._cache.get(elementwise))
+
+# --- a texture binds its own snapshot, never its field --------------
+@tack.kernel
+def sample(out, tex, n):
+    for i in range(n):
+        out[i] = tex.sample(0.5, 0.5, 0.5)
+
+for shape in ((4, 4, 4), (4, 4, 20000)):
+    b = make_backend()
+    # Made while CPU is active, so its storage is a private field whatever
+    # this backend would build; what matters is which object reaches the
+    # launch, through the scalar-packing path the count takes.
+    data = field((shape[0] * shape[1] * shape[2],))
+    tex = tack.texture3d(data, shape=shape)
+    out = field((1,))
+    b.execute(sample, (out, tex, 1), {})
+    bound = b.compiled[0].launches[0][0]
+    check("texture snapshot reaches the launch",
+          any(a is tex._storage for a in bound))
+    check("texture's field does not", not any(a is data for a in bound))
+    param = next(p for p in b.compiled[0].ir.params if p.name == "tex")
+    check("variant and Texture3D agree on hardware sampling for %s" % (shape,),
+          param._is_texture == b.texture_in_hardware(shape))
 
 print("OK")
 '''

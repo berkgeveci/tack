@@ -2,7 +2,9 @@
 
 A Python-first GPU compute framework. Write compute kernels as decorated Python
 functions; Tack compiles them at runtime and dispatches them to whichever
-backend is active. **The same kernel source runs on five backends.**
+backend is active. **The same kernel source runs on five backends**, within
+each backend's [capabilities](contracts/backend-capabilities.md). Metal has
+no `f64`, for example, and the CPU has no workgroup primitives.
 
 ```python
 import tack, numpy as np
@@ -83,14 +85,26 @@ scalar types each backend supports.
 -   **[User's Guide](users-guide/index.md)**
 
     Writing kernels, fields and types, control flow, device functions,
-    templates, atomics and shared memory, then the visualization and
-    rendering packages.
+    templates, atomics and shared memory, reductions and scans, then the
+    visualization and rendering packages.
 
 -   **[Developer's Guide](developers-guide/index.md)**
 
     How a decorated function becomes machine code: the AST transform, the IR
     and its passes, the five code generators, and the runtime that caches and
     dispatches them.
+
+-   **[Design and Implementation](design/index.md)**
+
+    Why Tack is built the way it is: the principles, the compilation
+    pipeline, specialization and caching, numerical semantics, parallel
+    execution, memory and aliasing, and interoperability.
+
+-   **[Contracts](contracts/index.md)**
+
+    What Tack promises and what callers must ensure: the kernel language
+    contract, backend capabilities, the runtime API and its errors, and how
+    conformance is tested and validated.
 
 -   **[Backends](reference/backends.md)**
 

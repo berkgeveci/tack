@@ -14,8 +14,8 @@ def clamp(data, lo, hi, n):
         data[i] = val
 ```
 
-`if`/`elif`/`else` works as expected. Ternary expressions are not supported;
-use `if`/`else` blocks instead.
+`if`/`elif`/`else` works as expected, and so do conditional expressions
+(`a if cond else b`), which evaluate only the selected arm.
 
 ## While Loops
 
@@ -64,10 +64,14 @@ All standard math functions are available inside kernels:
 | `pow(base, exp)` | Power |
 
 These are imported automatically — no `import math` needed. They compile to
-the native GPU math intrinsics (e.g., `sinf` on CUDA, `metal::sin` on MSL).
+native math operations (e.g., `sinf` on CUDA, `metal::sin` on MSL).
+With two integer operands, `pow` and `**` compute exact fixed-width power
+and preserve the base type; the exponent must be nonnegative. With a
+floating operand they use floating-point power at the promoted precision.
+See [Fields and Types](02-fields-and-types.md) for wrapping and division rules.
 
 ```python
-from math import sqrt, sin, cos, exp, log, floor, ceil, abs, min, max, pow
+from math import sqrt, sin, cos, exp, log, floor, ceil, pow  # optional
 
 @tack.kernel
 def wave(out, t, n):

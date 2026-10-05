@@ -3,6 +3,8 @@
 import ast
 import textwrap
 
+from llvmlite import binding as llvm
+
 from tack.codegen.llvm_gen import generate_llvm_ir
 from tack.lang.ast_transform import transform_kernel
 from tack.lang.types import f32
@@ -31,7 +33,7 @@ def test_vector_add_generates():
             for i in range(10):
                 out[i] = x[i] + y[i]
     """)
-    assert "define void @\"add\"" in ll
+    assert "define void @\"tack_kernel_a_add\"" in ll
     assert "fadd float" in ll
     assert "getelementptr" in ll
     assert "load float" in ll
@@ -63,6 +65,17 @@ def test_if_else():
     assert "if.else" in ll
     assert "if.merge" in ll
     assert "fcmp ogt" in ll or "fcmp olt" in ll or "fcmp" in ll
+
+
+def test_nested_expression_control_flow_verifies_without_type_annotations():
+    # Exercise nested joins and mixed branch types through the low-level
+    # generator API, which does not require expression annotations.
+    ll = _gen("""
+        def kern(x, out):
+            for i in range(10):
+                out[i] = (x[i] if x[i] < 0 else 2) if (x[i] > -3 and x[i] < 3) else 7.0
+    """)
+    llvm.parse_assembly(ll).verify()
 
 
 def test_while_loop():
@@ -120,7 +133,7 @@ def test_negation():
             for i in range(10):
                 out[i] = -x[i]
     """)
-    assert "fsub float" in ll
+    assert "fneg float" in ll
 
 
 def test_comparison_ops():

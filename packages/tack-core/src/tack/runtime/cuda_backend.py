@@ -18,21 +18,27 @@ import sys
 
 import numpy as np
 
+from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     as_address,
+    bind_textures,
+    check_launch_size,
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
-_CUDA_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+_CUDA_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
 from cuda.bindings import driver, nvrtc
 
 from tack.codegen.cuda_gen import generate_cuda_source
+from tack.codegen.identifiers import kernel_entry_name
 
 # Shareable-handle types ExportableCUDABuffer may ask the driver for, in
 # preference order, per platform. Each entry is (name, handle type, the device
@@ -80,69 +86,9 @@ _NUMPY_DTYPE = {
 }
 
 
-_REDUCE_CUDA_SUM = """
-extern "C" __global__ void reduce_sum_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : 0.0f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        __syncthreads();
-    }
-    if (tid == 0) atomicAdd(&output[0], sdata[0]);
-}
-"""
-
-_REDUCE_CUDA_MIN = """
-extern "C" __global__ void reduce_min_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : 1e38f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fminf(sdata[tid], sdata[tid + s]);
-        __syncthreads();
-    }
-    if (tid == 0) {
-        int* addr = (int*)&output[0];
-        int old = *addr, assumed;
-        do {
-            assumed = old;
-            old = atomicCAS(addr, assumed,
-                __float_as_int(fminf(sdata[0], __int_as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_CUDA_MAX = """
-extern "C" __global__ void reduce_max_f32(float* input, float* output) {
-    extern __shared__ float sdata[];
-    unsigned int tid = threadIdx.x;
-    unsigned int i = blockIdx.x * blockDim.x + threadIdx.x;
-    unsigned int n = __float_as_uint(output[1]);
-    sdata[tid] = (i < n) ? input[i] : -1e38f;
-    __syncthreads();
-    for (unsigned int s = blockDim.x / 2; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmaxf(sdata[tid], sdata[tid + s]);
-        __syncthreads();
-    }
-    if (tid == 0) {
-        int* addr = (int*)&output[0];
-        int old = *addr, assumed;
-        do {
-            assumed = old;
-            old = atomicCAS(addr, assumed,
-                __float_as_int(fmaxf(sdata[0], __int_as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
+_REDUCE_CUDA_SUM = field_reduction_source('cuda', 'sum')
+_REDUCE_CUDA_MIN = field_reduction_source('cuda', 'min')
+_REDUCE_CUDA_MAX = field_reduction_source('cuda', 'max')
 
 
 def _check(err):
@@ -155,6 +101,55 @@ def _check(err):
     elif isinstance(err, nvrtc.nvrtcResult):
         if err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
             raise RuntimeError(f"NVRTC error: {err}")
+
+
+class _ContextToken:
+    """Liveness shared by a CUDA context and every buffer allocated in it.
+
+    Device pointers do not outlive their context. ``cuCtxDestroy`` invalidates
+    every allocation made in it, and copying through one of those pointers
+    afterwards faults inside the driver -- a SIGSEGV, not a CUresult we could
+    check and report. So a buffer cannot ask whether its own pointer is still
+    good; it has to be told. Buffers hold the token their context handed out
+    and consult it before touching device memory.
+
+    ``users`` counts the live CUDABackend objects sharing the context.
+    ``tack.init()`` builds the new backend before dropping the old one, so two
+    of them routinely overlap, and the context must survive until the last one
+    goes. ``owned`` is False for a context an embedding application created:
+    Tack adopts those but never destroys them, so their token never dies here.
+    """
+
+    __slots__ = ("alive", "handle", "owned", "users")
+
+    def __init__(self, handle, owned):
+        self.handle = handle
+        self.users = 1
+        self.alive = True
+        self.owned = owned
+
+
+# Every CUDA context Tack is currently aware of, keyed by handle. Contexts an
+# embedding application created are in here too, marked ``owned=False``, so
+# that buffers allocated in them still get a token to hold.
+_CONTEXTS: dict[int, _ContextToken] = {}
+
+
+def _current_context_token():
+    """Token for the context that is current right now, or None if untracked."""
+    err, ctx = driver.cuCtxGetCurrent()
+    if err != driver.CUresult.CUDA_SUCCESS or int(ctx) == 0:
+        return None
+    return _CONTEXTS.get(int(ctx))
+
+
+_DEAD_CONTEXT_MSG = (
+    "the CUDA context this field was allocated in has been destroyed. "
+    "Switching backends -- tack.init(arch=tack.cpu) after tack.init("
+    "arch=tack.cuda) -- tears down the CUDA context, and every device "
+    "pointer allocated in it dies with the context. Fields do not survive "
+    "that; allocate them again after switching back."
+)
 
 
 class CUDABuffer(DeviceBuffer):
@@ -170,20 +165,36 @@ class CUDABuffer(DeviceBuffer):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
+        self._token = _current_context_token()
         err, self._device_ptr = driver.cuMemAlloc(self._nbytes)
         _check(err)
         # Zero-initialise
         _check(driver.cuMemsetD8(self._device_ptr, 0, self._nbytes))
 
+    def _live(self, verb):
+        """Refuse to touch device memory whose context is gone."""
+        token = getattr(self, "_token", None)
+        if token is not None and not token.alive:
+            raise RuntimeError(f"Cannot {verb} this CUDA field: {_DEAD_CONTEXT_MSG}")
+
+    @property
+    def address(self) -> int:
+        return int(self._device_ptr)
+
     @property
     def device_ptr(self):
+        # Guarded because this is what a kernel launch reads: without the
+        # check a dispatch against a stale field faults in the driver.
+        self._live("run a kernel against")
         return self._device_ptr
 
     def from_numpy(self, arr: np.ndarray):
+        self._live("write to")
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
         _check(driver.cuMemcpyHtoD(self._device_ptr, src, self._nbytes))
 
     def to_numpy(self) -> np.ndarray:
+        self._live("read")
         out = np.empty(self._shape, dtype=self._numpy_dtype)
         _check(driver.cuMemcpyDtoH(out, self._device_ptr, self._nbytes))
         return out
@@ -198,6 +209,7 @@ class CUDABuffer(DeviceBuffer):
 
     def export_memory(self):
         """Export as ExportedMemory. Lazily copies into exportable memory."""
+        self._live("export")
         if not hasattr(self, '_export_buf'):
             self._export_buf = ExportableCUDABuffer(self._numpy_dtype, self._shape)
             _check(driver.cuMemcpyDtoD(
@@ -205,6 +217,11 @@ class CUDABuffer(DeviceBuffer):
         return self._export_buf.export_memory()
 
     def __del__(self):
+        # Freeing into a destroyed context is the same fault as copying into
+        # one, and the context took this allocation with it anyway.
+        token = getattr(self, "_token", None)
+        if token is not None and not token.alive:
+            return
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
                 driver.cuMemFree(self._device_ptr)
@@ -234,6 +251,7 @@ class ExportableCUDABuffer(DeviceBuffer):
         self._device_ptr = None
         self._exported_handle = None
         self._handle_type_name = None
+        self._token = _current_context_token()
 
         err, self._cuda_device = driver.cuCtxGetDevice()
         _check(err)
@@ -312,6 +330,10 @@ class ExportableCUDABuffer(DeviceBuffer):
         )
 
     @property
+    def address(self) -> int:
+        return int(self._device_ptr)
+
+    @property
     def device_ptr(self):
         return self._device_ptr
 
@@ -359,6 +381,11 @@ class ExportableCUDABuffer(DeviceBuffer):
             if self._exported_handle is not None and self._handle_type_name == "posix_fd":
                 os.close(self._exported_handle)
             self._exported_handle = None
+            # The fd is ours whatever happened to the context, but the
+            # mapping and the handle went down with it.
+            token = getattr(self, "_token", None)
+            if token is not None and not token.alive:
+                return
             if self._device_ptr is not None:
                 driver.cuMemUnmap(self._device_ptr, self._alloc_size)
                 driver.cuMemAddressFree(self._device_ptr, self._alloc_size)
@@ -374,9 +401,12 @@ def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     err, prog = nvrtc.nvrtcCreateProgram(src, f"{func_name}.cu".encode(), 0, None, None)
     _check(err)
 
-    opts = [b"--use_fast_math", b"--extra-device-vectorization"]
-    c_opts = (ctypes.c_char_p * len(opts))(*opts)
-    compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), c_opts)
+    # Preserve NaNs, signed zeros, and expression grouping in every kernel.
+    # Adjacent multiply/add contraction is permitted by the language contract.
+    opts = [b"--ftz=false", b"--prec-div=true", b"--prec-sqrt=true",
+            b"--fmad=true", b"--extra-device-vectorization"]
+    # cuda-python marshals a list of bytes; a ctypes array can be misread.
+    compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
@@ -401,26 +431,20 @@ _CUDA_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlo
                     u32: ctypes.c_uint, u64: ctypes.c_ulonglong}
 
 
-class CompiledCUDAKernel:
-    """A compiled CUDA kernel ready for dispatch."""
+class CUDATextureImage:
+    """A CUDA 3D array and the texture object that samples it.
 
-    def __init__(self, module, func, func_name, param_types, param_is_field,
-                 param_is_texture=None, texture_shapes=None):
-        self._module = module
-        self._func = func
-        self._func_name = func_name
-        self._param_types = param_types
-        self._param_is_field = param_is_field
-        self._param_is_texture = param_is_texture or [False] * len(param_types)
-        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
-        self._tex_cache: dict[tuple, int] = {}  # cache_key → CUtexObject
+    Owned by one `Texture3D`, which uploads its field's data at creation and
+    on ``update()``. Nothing else keeps a reference, so the array and the
+    texture object are destroyed with the texture: no later texture can be
+    served one that was made from someone else's memory.
+    """
 
-    def _create_texture_object(self, field, W, H, D):
-        """Create a CUDA texture object from a field's device buffer.
+    def __init__(self, shape_3d):
+        W, H, D = shape_3d
+        self._shape = shape_3d
+        self._token = _current_context_token()
 
-        Allocates a CUDA 3D array, copies the field data into it, then creates
-        a texture object with linear filtering and normalized coordinates.
-        """
         # Create a CUDA array descriptor for a 3D float texture
         array_desc = driver.CUDA_ARRAY3D_DESCRIPTOR()
         array_desc.Width = W
@@ -430,25 +454,8 @@ class CompiledCUDAKernel:
         array_desc.NumChannels = 1
         array_desc.Flags = 0
 
-        err, cuda_array = driver.cuArray3DCreate(array_desc)
+        err, self._array = driver.cuArray3DCreate(array_desc)
         _check(err)
-
-        # Copy field data (device linear buffer) → CUDA 3D array
-        copy_params = driver.CUDA_MEMCPY3D()
-        # Source: device pointer, pitched linear memory
-        copy_params.srcMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_DEVICE
-        copy_params.srcDevice = field._buffer.device_ptr
-        copy_params.srcPitch = W * 4   # bytes per row
-        copy_params.srcHeight = H
-        # Destination: CUDA array
-        copy_params.dstMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_ARRAY
-        copy_params.dstArray = cuda_array
-        # Extent
-        copy_params.WidthInBytes = W * 4
-        copy_params.Height = H
-        copy_params.Depth = D
-
-        _check(driver.cuMemcpy3D(copy_params))
 
         # Create texture descriptor
         tex_desc = driver.CUDA_TEXTURE_DESC()
@@ -463,7 +470,7 @@ class CompiledCUDAKernel:
         # Create resource descriptor
         res_desc = driver.CUDA_RESOURCE_DESC()
         res_desc.resType = driver.CUresourcetype.CU_RESOURCE_TYPE_ARRAY
-        res_desc.res.array.hArray = cuda_array
+        res_desc.res.array.hArray = self._array
 
         # Create resource view descriptor (default — full mip level 0)
         view_desc = driver.CUDA_RESOURCE_VIEW_DESC()
@@ -472,28 +479,74 @@ class CompiledCUDAKernel:
         view_desc.height = H
         view_desc.depth = D
 
-        err, tex_obj = driver.cuTexObjectCreate(res_desc, tex_desc, view_desc)
+        err, self._tex_obj = driver.cuTexObjectCreate(res_desc, tex_desc, view_desc)
         _check(err)
 
-        return tex_obj, cuda_array
+    @property
+    def handle(self) -> int:
+        """The texture object a kernel launch passes."""
+        return int(self._tex_obj)
+
+    def upload(self, field):
+        """Copy a field's device buffer into the array.
+
+        The texture object reads the array, so it sees the new contents
+        without being recreated.
+        """
+        W, H, D = self._shape
+        copy_params = driver.CUDA_MEMCPY3D()
+        # Source: device pointer, pitched linear memory
+        copy_params.srcMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_DEVICE
+        copy_params.srcDevice = field._buffer.device_ptr
+        copy_params.srcPitch = W * 4   # bytes per row
+        copy_params.srcHeight = H
+        # Destination: CUDA array
+        copy_params.dstMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_ARRAY
+        copy_params.dstArray = self._array
+        # Extent
+        copy_params.WidthInBytes = W * 4
+        copy_params.Height = H
+        copy_params.Depth = D
+
+        _check(driver.cuMemcpy3D(copy_params))
+
+    def __del__(self):
+        # Same rule as CUDABuffer: the context took these with it.
+        token = getattr(self, "_token", None)
+        if token is not None and not token.alive:
+            return
+        try:
+            if hasattr(self, '_tex_obj'):
+                driver.cuTexObjectDestroy(self._tex_obj)
+            if hasattr(self, '_array'):
+                driver.cuArrayDestroy(self._array)
+        except Exception:
+            pass
+
+
+class CompiledCUDAKernel:
+    """A compiled CUDA kernel ready for dispatch."""
+
+    def __init__(self, module, func, func_name, param_types, param_is_field,
+                 param_is_texture=None):
+        self._module = module
+        self._func = func
+        self._func_name = func_name
+        self._param_types = param_types
+        self._param_is_field = param_is_field
+        self._param_is_texture = param_is_texture or [False] * len(param_types)
 
     def __call__(self, kernel_args: list, loop_end: int):
         """Dispatch the CUDA kernel."""
         n_val = ctypes.c_longlong(loop_end)
 
         arg_values = []
-        for i, (arg, ptype, is_field, is_tex) in enumerate(
-                zip(kernel_args, self._param_types, self._param_is_field,
-                    self._param_is_texture)):
+        for arg, ptype, is_field, is_tex in zip(
+                kernel_args, self._param_types, self._param_is_field,
+                self._param_is_texture):
             if is_tex:
-                W, H, D = self._texture_shapes[i]
-                cache_key = (int(arg._buffer.device_ptr), W, H, D)
-                if cache_key not in self._tex_cache:
-                    tex_obj, cuda_array = self._create_texture_object(arg, W, H, D)
-                    self._tex_cache[cache_key] = (tex_obj, cuda_array)
-                tex_obj, _ = self._tex_cache[cache_key]
-                # cudaTextureObject_t is unsigned long long (64-bit handle)
-                arg_values.append(ctypes.c_ulonglong(int(tex_obj)))
+                # A CUDATextureImage; cudaTextureObject_t is unsigned long long
+                arg_values.append(ctypes.c_ulonglong(arg.handle))
             elif is_field:
                 arg_values.append(ctypes.c_void_p(int(arg._buffer.device_ptr)))
             else:
@@ -505,7 +558,7 @@ class CompiledCUDAKernel:
         for i, val in enumerate(arg_values):
             arg_ptrs[i] = ctypes.addressof(val)
 
-        block_dim = 256
+        block_dim = WORKGROUP_SIZE
         grid_dim = (loop_end + block_dim - 1) // block_dim
 
         _check(driver.cuLaunchKernel(
@@ -525,6 +578,7 @@ class CUDABackend(Backend):
     display_name = "CUDA"
     supported_dtypes = _CUDA_SUPPORTED_DTYPES
     supports_device_reductions = True
+    supports_workgroups = True
     device_memory_spaces = frozenset({"cuda", "cuda_pinned", "cuda_managed"})
 
 
@@ -536,14 +590,43 @@ class CUDABackend(Backend):
         # Reuse an existing CUDA context if one is already active (e.g. from
         # a simulation framework like AMReX).  Only create a new context when
         # no current context exists.
+        #
+        # Whether the context may be destroyed is a property of the context,
+        # not of the backend that happens to hold it: `tack.init(arch=...)`
+        # builds the new backend before dropping the old one, so two
+        # CUDABackend objects routinely share one context for a moment. When
+        # that context is ours, both must agree that the *last* one out
+        # destroys it -- an adopter that recorded `_owns_context = False`
+        # would be left holding a destroyed context as soon as its creator
+        # was collected, and every later call would fail with
+        # CUDA_ERROR_INVALID_CONTEXT. Refcounting the context gets that
+        # right while leaving a foreign context untouched, which is the
+        # whole point of adopting one.
         err, ctx = driver.cuCtxGetCurrent()
         if err == driver.CUresult.CUDA_SUCCESS and int(ctx) != 0:
             self._context = ctx
-            self._owns_context = False
+            token = _CONTEXTS.get(int(ctx))
+            if token is None:
+                # Nobody here created this one, so it belongs to the embedding
+                # application: adopt it, but never destroy it.
+                token = _ContextToken(ctx, owned=False)
+                _CONTEXTS[int(ctx)] = token
+            else:
+                token.users += 1
+            self._token = token
+            self._owns_context = token.owned
         else:
             err, self._context = driver.cuCtxCreate(None, 0, self._device)
             _check(err)
+            self._token = _ContextToken(self._context, owned=True)
+            _CONTEXTS[int(self._context)] = self._token
             self._owns_context = True
+
+        # Every launch is one-dimensional, so gridDim.x bounds its size.
+        err, max_blocks = driver.cuDeviceGetAttribute(
+            driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X, self._device)
+        _check(err)
+        self._max_launch = int(max_blocks) * WORKGROUP_SIZE
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledCUDAKernel}
 
@@ -552,6 +635,12 @@ class CUDABackend(Backend):
         if exportable:
             return ExportableCUDABuffer(dtype.numpy_dtype, shape)
         return CUDABuffer(dtype.numpy_dtype, shape)
+
+    def texture_in_hardware(self, shape_3d) -> bool:
+        return True
+
+    def create_texture_image(self, shape_3d) -> CUDATextureImage:
+        return CUDATextureImage(shape_3d)
 
     def memory_space(self, ptr) -> str:
         """Query where a pointer resides: 'cpu', 'cuda', or 'cuda_managed'.
@@ -593,6 +682,7 @@ class CUDABackend(Backend):
         buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
         buf._device_ptr = ptr  # integer or CUdeviceptr
         buf._owned = False
+        buf._token = _current_context_token()
         return buf
 
     def execute(self, kernel, args, kwargs):
@@ -614,18 +704,26 @@ class CUDABackend(Backend):
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end = _get_loop_range(variant.ir, kernel_args)
+        if loop_end <= 0:
+            # range(0) runs nothing, and cuLaunchKernel rejects an empty grid.
+            return
+        check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
-        # Replace scalar args with the packed field buffers
-        if pack_info:
-            from tack.lang.ir_pack_scalars import split_args
-            from tack.runtime.kernel_utils import _update_pack_fields
-            _update_pack_fields(pack_fields, pack_info, effective_args)
-            kept_args = split_args(effective_args, pack_info)
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in kept_args]
-            kernel_args = list(kernel_args) + pack_fields
+        # Textures bind their own snapshot, not the field they came from.
+        kernel_args = bind_textures(effective_args)
 
-        compiled(kernel_args, loop_end)
+        # Replace scalar args with the packed field buffers. The buffers
+        # belong to the variant, so writing them and the launch that reads
+        # them happen under its lock (see KernelVariant.dispatch_lock).
+        with variant.dispatch_lock:
+            if pack_info:
+                from tack.lang.ir_pack_scalars import split_args
+                from tack.runtime.kernel_utils import _update_pack_fields
+                _update_pack_fields(pack_fields, pack_info, effective_args)
+                kept_args = split_args(effective_args, pack_info)
+                kernel_args = bind_textures(kept_args) + pack_fields
+
+            compiled(kernel_args, loop_end)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.
@@ -633,17 +731,17 @@ class CUDABackend(Backend):
         Packing rewrites the parameter list, so it works on its own copy —
         the caller keeps `ir_func` for loop-range resolution.
         """
-        import copy
-
-        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
+        from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
-        packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
+        packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
+        verify_ir(packed, 'packed')
         annotate_types(packed)
+        verify_ir(packed, 'typed')
         compiled = self._compile_kernel(packed)
         pack_fields = (_create_pack_fields(pack_info, effective_args, self)
                        if pack_info else None)
@@ -651,30 +749,31 @@ class CUDABackend(Backend):
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledCUDAKernel:
         """Compile Tack IR → CUDA C → PTX → CUfunction."""
+        kernel_name = kernel_entry_name(ir_func.name)
         cuda_source = generate_cuda_source(ir_func)
-        ptx = _compile_ptx(cuda_source, ir_func.name)
+        ptx = _compile_ptx(cuda_source, kernel_name)
 
         err, module = driver.cuModuleLoadData(ptx)
         _check(err)
 
-        err, func = driver.cuModuleGetFunction(module, ir_func.name.encode())
+        err, func = driver.cuModuleGetFunction(module, kernel_name.encode())
         _check(err)
 
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        texture_shapes = {}
-        for i, p in enumerate(ir_func.params):
-            if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
-                texture_shapes[i] = p._texture_shape
-        return CompiledCUDAKernel(module, func, ir_func.name, param_types,
-                                  param_is_field, param_is_texture, texture_shapes)
+        return CompiledCUDAKernel(module, func, kernel_name, param_types,
+                                  param_is_field, param_is_texture)
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
+        if field.size == 0:
+            return empty_reduction(op)
         if field.dtype is not f32:
-            return float(getattr(field.to_numpy(), op)())
+            return reduce_numpy(field.to_numpy(), op)
+        n = int(np.prod(field.shape))
+        check_launch_size(f"Field {op}()", n, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -682,16 +781,9 @@ class CUDABackend(Backend):
             self._reduce_cache[op] = self._compile_reduce(op)
 
         func, module = self._reduce_cache[op]
-        n = int(np.prod(field.shape))
 
-        # Output: [result, n_as_uint_bits]
-        import struct as _struct
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
-        out_np = np.array([init_vals[op],
-                           np.frombuffer(_struct.pack('I', n), dtype=np.float32)[0]],
-                          dtype=np.float32)
-        out_buf = CUDABuffer(np.float32, (2,))
-        out_buf.from_numpy(out_np)
+        out_buf = CUDABuffer(np.float32, (1,))
+        out_buf.from_numpy(np.array([REDUCTION_IDENTITIES[op]], dtype=np.float32))
 
         block_dim = 256
         grid_dim = (n + block_dim - 1) // block_dim
@@ -699,9 +791,11 @@ class CUDABackend(Backend):
         # Dispatch
         in_ptr = ctypes.c_void_p(int(field._buffer.device_ptr))
         out_ptr = ctypes.c_void_p(int(out_buf.device_ptr))
-        args = (ctypes.c_void_p * 2)()
+        n_val = ctypes.c_longlong(n)
+        args = (ctypes.c_void_p * 3)()
         args[0] = ctypes.addressof(in_ptr)
         args[1] = ctypes.addressof(out_ptr)
+        args[2] = ctypes.addressof(n_val)
 
         _check(driver.cuLaunchKernel(
             func, grid_dim, 1, 1, block_dim, 1, 1,
@@ -732,8 +826,18 @@ class CUDABackend(Backend):
         return func, module
 
     def __del__(self):
-        if hasattr(self, '_context') and self._owns_context:
-            try:
-                driver.cuCtxDestroy(self._context)
-            except Exception:
-                pass
+        token = getattr(self, "_token", None)
+        if token is None:
+            return
+        try:
+            token.users -= 1
+            if token.users > 0:
+                return
+            _CONTEXTS.pop(int(token.handle), None)
+            if token.owned:
+                # Mark dead before destroying, so any buffer still holding
+                # this token reports the problem instead of faulting.
+                token.alive = False
+                driver.cuCtxDestroy(token.handle)
+        except Exception:
+            pass

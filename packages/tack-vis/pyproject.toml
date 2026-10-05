@@ -1,6 +1,6 @@
 [project]
 name = "tack-vis"
-version = "0.1.0"
+version = "0.2.0"
 description = "Tack — Scientific visualization algorithms"
 requires-python = ">=3.11"
 license = "BSD-3-Clause"
@@ -18,7 +18,7 @@ classifiers = [
     "Topic :: Software Development :: Compilers",
 ]
 dependencies = [
-    "tack-core>=0.1.0",
+    "tack-core>=0.2.0",
 ]
 
 [build-system]

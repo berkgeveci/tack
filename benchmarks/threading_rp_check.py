@@ -2,28 +2,30 @@
 
 v2's threshold is `fan_out * M / (r_s - r_p)`, so `r_p` sits in a
 denominator: bias it toward `r_s` and the threshold inflates without
-bound. `threading_decisions.py` records `r_s` but not `r_p` -- it was
-written before v2 existed -- so a v2 run that overshoots its margin
-cannot be decomposed there. This supplies the missing column.
+bound. This compares the backend's learned `r_s` and `r_p` with rates
+fitted from timing both paths directly.
 
-`r_p` is learned as a residual:
+`r_p` is now learned from the workers' own timings: the median worker's
+ns-per-element divided by the workers that ran (`_record_parallel_cost`,
+since 108d020). It used to be learned as a residual,
 
-    sample = (elapsed - fan_out_estimate) / elems     (_record_parallel_cost)
+    sample = (elapsed - fan_out_estimate) / elems
 
-which charges every error in the fan-out estimate to `r_p`, amplified by
+which charged every error in the fan-out estimate to `r_p`, amplified by
 1/elems. Near the crossover -- the only place the threshold matters --
 work and fan-out are the same size by definition, so that amplification
-is order 1 and the fan-out curve's own run-to-run spread is enough to
+was order 1 and the fan-out curve's own run-to-run spread was enough to
 ruin it.
 
-    TACK_CPU_POLICY=v2 uv run python benchmarks/threading_rp_check.py
+    uv run python benchmarks/threading_rp_check.py     # v2 is the default
 
 **What good looks like:** `bias` near 1.0x and `P_eff` above 1. A `P_eff`
 below 1 says the backend believes fanning out makes the work *slower per
 element*, which is not a thing that happens; it means `r_p` is being read
 off noise.
 
-Measured on yavin (M1 Max, 8 threads), where it fails:
+Measured on yavin (M1 Max, 8 threads) with the residual estimator, where
+it failed:
 
     kernel   r_s be  r_s fit  r_p be  r_p fit  bias    P_eff be  P_eff fit
     cheap      0.11     0.11    0.59     0.05  11.3x       0.18       2.12
@@ -34,10 +36,10 @@ reproduced at load 4.2 and 8.4, so it is not contention. The knock-on is
 that v2's thresholds land at 1.90x and 2.10x the crossover against a
 margin of 1.5, and yavin pays 220-241 us of regret where v1 paid 6-87.
 
-`_RP_MIN_WORK_RATIO` does not rescue it: raised to 3 or beyond, no
-dispatch in the scoring grid qualifies at all, `r_p` stays 0.0, and v2
-reduces exactly to v1 -- correct, but not a fix. That is not a tuning
-range, it is the absence of one.
+That estimator's `_RP_MIN_WORK_RATIO` (removed with it) did not rescue
+it: raised to 3 or beyond, no dispatch in the scoring grid qualified at
+all, `r_p` stayed 0.0, and v2 reduced exactly to v1 -- correct, but not a
+fix. That was not a tuning range, it was the absence of one.
 """
 
 import statistics
@@ -73,7 +75,8 @@ def main():
     if be.policy != "v2":
         raise SystemExit("run with TACK_CPU_POLICY=v2 -- v1 has no r_p")
 
-    print(f"policy {be.policy}  margin {be.margin}  threads {be.num_threads}\n")
+    print(f"policy {be.policy}  margin {be._margin():.2f}  "
+          f"threads {be.num_threads}\n")
     print(f"{'kernel':7s} {'r_s be':>8s} {'r_s fit':>8s} {'r_p be':>8s} "
           f"{'r_p fit':>8s} {'bias':>7s} {'P_eff be':>9s} {'P_eff fit':>10s}")
 

@@ -188,8 +188,8 @@ def bench_compilation():
         print(f"\n  Kernel: {name}")
 
         for label, arch in BENCH_BACKENDS:
+            # A fresh backend starts with an empty compiled-kernel cache.
             tack.init(arch=arch)
-            kernel_fn._compiled = {}
             fields = make_fields(n, nfields_fn(n))
             t0 = time.perf_counter()
             kernel_fn(*fields)

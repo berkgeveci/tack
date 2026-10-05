@@ -359,7 +359,21 @@ def test_kernel_output_reaches_vtk_without_a_copy():
 # fact about the pair, not about tack, so it is spelled as the mapping
 # it is rather than as a list of backend names.
 
-_VTK_SPACE_FOR = {"cuda": "CudaDeviceMemory", "hip": "HipDeviceMemory"}
+_VTK_SPACE_FOR = {"cuda": "CudaDeviceMemory", "hip": "HipDeviceMemory",
+                  "level_zero": "LevelZeroDeviceMemory"}
+
+
+def _init_device(arch):
+    """Start `arch` so that VTK can address its memory.
+
+    CUDA and HIP need nothing: one context per device serves the process.
+    Level Zero memory is only meaningful in the context that allocated it,
+    so Tack has to start inside VTK's.
+    """
+    if arch == "level_zero":
+        interop.init_level_zero()
+    else:
+        tack.init(arch=getattr(tack, arch))
 
 
 def _device_arches():
@@ -369,9 +383,9 @@ def _device_arches():
     found = []
     for arch, space in _VTK_SPACE_FOR.items():
         try:
-            tack.init(arch=getattr(tack, arch))
+            _init_device(arch)
         except (ImportError, RuntimeError, OSError, AttributeError):
-            continue  # not built, no device, or no driver
+            continue  # not built, no device, no driver, or no shared context
         if get_backend().device_memory_spaces:
             found.append(pytest.param(arch, space, id=arch))
     tack.init(arch=tack.cpu)
@@ -391,7 +405,7 @@ def test_device_memory_reaches_vtk_as_device_memory(arch, space):
     """
     from vtkmodules.vtkCommonCore import vtkDataArray
 
-    tack.init(arch=getattr(tack, arch))
+    _init_device(arch)
     field = tack.field(dtype=tack.f32, shape=(8,))
 
     array = interop.field_to_vtk(field, n_components=1, name="ondevice")
@@ -410,7 +424,7 @@ def test_a_device_round_trip_still_shares_one_allocation(arch, space):
     made anywhere along the way passes the pointer check on a stale
     address and fails this.
     """
-    tack.init(arch=getattr(tack, arch))
+    _init_device(arch)
 
     @tack.kernel
     def ramp(out, n):
@@ -434,3 +448,21 @@ def test_a_device_round_trip_still_shares_one_allocation(arch, space):
     negate(back, 8)
     np.testing.assert_array_equal(original.to_numpy().reshape(-1),
                                   -(np.arange(8, dtype=np.float32) * 2.0))
+
+
+@needs_vtk
+def test_level_zero_memory_from_a_private_context_is_refused():
+    """The mistake nothing downstream can see.
+
+    Intel's driver answers for a pointer from any context, so VTK's check
+    passes and the memory may even read correctly. Only Tack knows it
+    allocated somewhere else, so only Tack can refuse.
+    """
+    try:
+        tack.init(arch=tack.level_zero)
+    except RuntimeError as e:
+        pytest.skip(f"no Level Zero backend: {e}")
+    field = tack.field(dtype=tack.f32, shape=(8,))
+
+    with pytest.raises(RuntimeError, match="same Level Zero context"):
+        interop.field_to_vtk(field, n_components=1)

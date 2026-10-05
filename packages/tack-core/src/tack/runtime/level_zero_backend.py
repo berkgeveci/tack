@@ -18,88 +18,40 @@ No Python packages needed — uses ctypes directly.
 
 import ctypes
 import ctypes.util
+import threading
 
 import numpy as np
 
+from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_participation import (
+    WORKGROUP_SIZE,
+    check_workgroup_launch,
+    requires_full_workgroups,
+)
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
+    as_address,
+    bind_textures,
+    check_launch_size,
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
-_L0_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+_L0_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
+from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.opencl_gen import generate_opencl_source
 
 # ---------------------------------------------------------------------------
 # Reduce kernel sources (OpenCL C)
 # ---------------------------------------------------------------------------
-_REDUCE_OCL_SUM = """
-__kernel void reduce_sum_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : 0.0f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] += sdata[tid + s];
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(as_float(assumed) + sdata[0]));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_OCL_MIN = """
-__kernel void reduce_min_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : 1e38f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmin(sdata[tid], sdata[tid + s]);
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(fmin(sdata[0], as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
-_REDUCE_OCL_MAX = """
-__kernel void reduce_max_f32(__global float* input, __global float* output, long __n__) {
-    __local float sdata[256];
-    int tid = get_local_id(0);
-    long i = get_global_id(0);
-    sdata[tid] = (i < __n__) ? input[i] : -1e38f;
-    barrier(CLK_LOCAL_MEM_FENCE);
-    for (int s = 128; s > 0; s >>= 1) {
-        if (tid < s) sdata[tid] = fmax(sdata[tid], sdata[tid + s]);
-        barrier(CLK_LOCAL_MEM_FENCE);
-    }
-    if (tid == 0) {
-        volatile __global int* addr = (volatile __global int*)&output[0];
-        int old = *addr, assumed;
-        do { assumed = old;
-            old = atomic_cmpxchg(addr, assumed, as_int(fmax(sdata[0], as_float(assumed))));
-        } while (assumed != old);
-    }
-}
-"""
-
+_REDUCE_OCL_SUM = field_reduction_source('opencl', 'sum')
+_REDUCE_OCL_MIN = field_reduction_source('opencl', 'min')
+_REDUCE_OCL_MAX = field_reduction_source('opencl', 'max')
 # ---------------------------------------------------------------------------
 # Numpy dtype mapping
 # ---------------------------------------------------------------------------
@@ -122,6 +74,9 @@ ZE_STRUCTURE_TYPE_MODULE_DESC = 0x1b
 ZE_STRUCTURE_TYPE_KERNEL_DESC = 0x1d
 ZE_STRUCTURE_TYPE_DEVICE_MEM_ALLOC_DESC = 0x15
 ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC = 0x16
+ZE_STRUCTURE_TYPE_MEMORY_ALLOCATION_PROPERTIES = 0x17
+ZE_MEMORY_TYPE_DEVICE = 2
+ZE_MEMORY_TYPE_SHARED = 3
 ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES = 0x03
 ZE_STRUCTURE_TYPE_DEVICE_COMPUTE_PROPERTIES = 0x04
 ZE_STRUCTURE_TYPE_COMMAND_QUEUE_GROUP_PROPERTIES = 0x06
@@ -220,6 +175,16 @@ class ze_group_count_t(ctypes.Structure):
         ("groupCountX", ctypes.c_uint32),
         ("groupCountY", ctypes.c_uint32),
         ("groupCountZ", ctypes.c_uint32),
+    ]
+
+
+class ze_memory_allocation_properties_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("type", ctypes.c_uint32),
+        ("id", ctypes.c_uint64),
+        ("pageSize", ctypes.c_uint64),
     ]
 
 
@@ -467,6 +432,9 @@ def _setup_argtypes(ze):
     ze.zeMemFree.argtypes = [P, P]
     ze.zeMemFree.restype = ctypes.c_int32
 
+    ze.zeMemGetAllocProperties.argtypes = [P, P, P, P]
+    ze.zeMemGetAllocProperties.restype = ctypes.c_int32
+
     ze.zeModuleCreate.argtypes = [P, P, P, P, P]
     ze.zeModuleCreate.restype = ctypes.c_int32
 
@@ -703,6 +671,10 @@ class L0Buffer(DeviceBuffer):
         self._copy_to_device(zeros)
 
     @property
+    def address(self) -> int:
+        return int(self._device_ptr.value)
+
+    @property
     def device_ptr(self):
         return self._device_ptr
 
@@ -710,20 +682,22 @@ class L0Buffer(DeviceBuffer):
         """Copy numpy array → device using an immediate command list."""
         ze = _get_ze()
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        _check_ze(ze.zeCommandListAppendMemoryCopy(
-            self._backend._imm_cmd_list,
-            self._device_ptr, src.ctypes.data, self._nbytes,
-            None, 0, None),
-            "zeCommandListAppendMemoryCopy (H2D)")
+        with self._backend._launch_lock:
+            _check_ze(ze.zeCommandListAppendMemoryCopy(
+                self._backend._imm_cmd_list,
+                self._device_ptr, src.ctypes.data, self._nbytes,
+                None, 0, None),
+                "zeCommandListAppendMemoryCopy (H2D)")
 
     def _copy_from_device(self, out: np.ndarray):
         """Copy device → numpy array using an immediate command list."""
         ze = _get_ze()
-        _check_ze(ze.zeCommandListAppendMemoryCopy(
-            self._backend._imm_cmd_list,
-            out.ctypes.data, self._device_ptr, self._nbytes,
-            None, 0, None),
-            "zeCommandListAppendMemoryCopy (D2H)")
+        with self._backend._launch_lock:
+            _check_ze(ze.zeCommandListAppendMemoryCopy(
+                self._backend._imm_cmd_list,
+                out.ctypes.data, self._device_ptr, self._nbytes,
+                None, 0, None),
+                "zeCommandListAppendMemoryCopy (D2H)")
 
     def from_numpy(self, arr: np.ndarray):
         self._copy_to_device(arr)
@@ -759,24 +733,20 @@ _L0_CTYPES_MAP = {
 }
 
 
-class CompiledL0Kernel:
-    """A compiled Level Zero kernel ready for dispatch."""
+class L0TextureImage:
+    """A read-only Level Zero 3D image, sampled through a hardware sampler.
 
-    def __init__(self, module, kernel, func_name, param_types, param_is_field,
-                 workgroup_size, param_is_texture=None, texture_shapes=None):
-        self._module = module
-        self._kernel = kernel
-        self._func_name = func_name
-        self._param_types = param_types
-        self._param_is_field = param_is_field
-        self._workgroup_size = workgroup_size
-        self._param_is_texture = param_is_texture or [False] * len(param_types)
-        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
-        self._image_cache: dict[tuple, ctypes.c_void_p] = {}
+    Owned by one `Texture3D`, which uploads its field's data at creation and
+    on ``update()``. Nothing else keeps a reference, so the image is
+    destroyed with the texture: no later texture can be served one that was
+    made from someone else's memory.
+    """
 
-    def _create_image(self, field, W, H, D, backend):
-        """Create a Level Zero 3D image from a field's device buffer."""
+    def __init__(self, shape_3d, backend):
         ze = _get_ze()
+        W, H, D = shape_3d
+        self._shape = shape_3d
+        self._backend = backend
         fmt = ze_image_format_t(
             layout=ZE_IMAGE_FORMAT_LAYOUT_32,
             type=ZE_IMAGE_FORMAT_TYPE_FLOAT,
@@ -802,6 +772,13 @@ class CompiledL0Kernel:
             backend._context, backend._device,
             ctypes.byref(desc), ctypes.byref(image)),
             "zeImageCreate")
+        self.handle = image
+
+    def upload(self, field):
+        """Copy a field's device buffer into the image."""
+        ze = _get_ze()
+        backend = self._backend
+        W, H, D = self._shape
 
         # Copy data: device → host → image
         # Direct device→image copy can fail with OOM on the host staging path,
@@ -824,7 +801,7 @@ class CompiledL0Kernel:
 
         # Host staging buffer → image
         _check_ze(ze.zeCommandListAppendImageCopyFromMemory(
-            backend._imm_cmd_list, image,
+            backend._imm_cmd_list, self.handle,
             host_ptr, None,
             None, 0, None),
             "zeCommandListAppendImageCopyFromMemory")
@@ -832,29 +809,50 @@ class CompiledL0Kernel:
         # Free staging buffer
         ze.zeMemFree(backend._context, host_ptr)
 
-        return image
+    def __del__(self):
+        if getattr(self, 'handle', None):
+            try:
+                _get_ze().zeImageDestroy(self.handle)
+            except Exception:
+                pass
+
+
+class CompiledL0Kernel:
+    """A compiled Level Zero kernel ready for dispatch."""
+
+    def __init__(self, module, kernel, func_name, param_types, param_is_field,
+                 workgroup_size, param_is_texture=None, *,
+                 requires_full_workgroups=False):
+        self._requires_full_workgroups = requires_full_workgroups
+        if requires_full_workgroups:
+            check_workgroup_launch(func_name, 0, backend_label='Level Zero',
+                                   workgroup_size=workgroup_size)
+        self._module = module
+        self._kernel = kernel
+        self._func_name = func_name
+        self._param_types = param_types
+        self._param_is_field = param_is_field
+        self._workgroup_size = workgroup_size
+        self._param_is_texture = param_is_texture or [False] * len(param_types)
 
     def __call__(self, kernel_args: list, loop_end: int, backend):
         """Dispatch the Level Zero kernel."""
+        if self._requires_full_workgroups:
+            check_workgroup_launch(self._func_name, loop_end, backend_label='Level Zero',
+                                   workgroup_size=self._workgroup_size)
         ze = _get_ze()
         kernel = self._kernel
 
         # Set kernel arguments
         arg_idx = 0
-        for i, (arg, ptype, is_field, is_tex) in enumerate(
-                zip(kernel_args, self._param_types, self._param_is_field,
-                    self._param_is_texture)):
+        for arg, ptype, is_field, is_tex in zip(
+                kernel_args, self._param_types, self._param_is_field,
+                self._param_is_texture):
             if is_tex:
-                # Bind as image3d_t
-                W, H, D = self._texture_shapes[i]
-                cache_key = (arg._buffer.device_ptr.value, W, H, D)
-                if cache_key not in self._image_cache:
-                    self._image_cache[cache_key] = self._create_image(
-                        arg, W, H, D, backend)
-                img_handle = self._image_cache[cache_key]
+                # Bind an L0TextureImage as image3d_t
                 _check_ze(ze.zeKernelSetArgumentValue(
                     kernel, arg_idx, ctypes.sizeof(ctypes.c_void_p),
-                    ctypes.byref(img_handle)),
+                    ctypes.byref(arg.handle)),
                     f"zeKernelSetArgumentValue (image arg {arg_idx})")
             elif is_field:
                 ptr = arg._buffer.device_ptr
@@ -920,14 +918,80 @@ class LevelZeroBackend(Backend):
     # device reports it.
     supported_dtypes = _L0_SUPPORTED_DTYPES
     supports_device_reductions = True
+    supports_workgroups = True
+    init_options = frozenset({"external_context"})
+    device_memory_spaces = frozenset({"level_zero"})
 
-
-    def __init__(self):
+    def __init__(self, external_context=None):
         ze = _get_ze()
 
         # Initialize Level Zero
         _check_ze(ze.zeInit(0), "zeInit")
 
+        # A USM pointer means something only inside the context it was
+        # allocated from, and nothing that exchanges pointers -- DLPack, a
+        # raw address -- carries one. Sharing device memory with another
+        # library therefore means allocating in *its* context, so all three
+        # handles are taken from it: a driver or device handle obtained
+        # separately need not be the one that context was created against.
+        self._owns_context = external_context is None
+        if external_context is None:
+            self._init_own_driver_and_device(ze)
+        else:
+            missing = [k for k in ("driver", "device", "context")
+                       if not external_context.get(k)]
+            if missing:
+                raise ValueError(
+                    "external_context needs non-null 'driver', 'device' and "
+                    f"'context' handles; missing or null: {', '.join(missing)}")
+            self._driver = int(external_context["driver"])
+            self._device = int(external_context["device"])
+
+        self._query_device(ze)
+
+        if self._owns_context:
+            ctx_desc = ze_context_desc_t(
+                stype=ZE_STRUCTURE_TYPE_CONTEXT_DESC, pNext=None, flags=0)
+            self._context = ze_context_handle_t()
+            _check_ze(ze.zeContextCreate(self._driver, ctypes.byref(ctx_desc),
+                                          ctypes.byref(self._context)),
+                       "zeContextCreate")
+        else:
+            self._context = ze_context_handle_t(int(external_context["context"]))
+
+        self._create_queues(ze)
+        self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledL0Kernel}
+
+    @property
+    def shares_external_context(self) -> bool:
+        """Whether this backend allocates in a context another library owns."""
+        return not self._owns_context
+
+    def memory_space(self, ptr) -> str:
+        """Classify an address by asking the context what it allocated there.
+
+        'level_zero' for USM device or shared memory, 'cpu' otherwise. An
+        address the driver does not recognise -- ordinary host memory -- is
+        a successful query of type UNKNOWN, so a failed query is a fault and
+        raises rather than being reported as host memory (see D9 in
+        `hip_backend.memory_space`).
+
+        Intel's driver answers for pointers from any context on the device,
+        so this cannot tell whether `ptr` was allocated in *this* context.
+        """
+        addr = as_address(ptr)
+        if addr is None:
+            return "cpu"
+        props = ze_memory_allocation_properties_t(
+            stype=ZE_STRUCTURE_TYPE_MEMORY_ALLOCATION_PROPERTIES, pNext=None)
+        _check_ze(_get_ze().zeMemGetAllocProperties(
+            self._context, ctypes.c_void_p(addr), ctypes.byref(props), None),
+            "zeMemGetAllocProperties")
+        if props.type in (ZE_MEMORY_TYPE_DEVICE, ZE_MEMORY_TYPE_SHARED):
+            return "level_zero"
+        return "cpu"
+
+    def _init_own_driver_and_device(self, ze):
         # Get first driver
         count = ctypes.c_uint32(0)
         _check_ze(ze.zeDriverGet(ctypes.byref(count), None), "zeDriverGet (count)")
@@ -948,6 +1012,7 @@ class LevelZeroBackend(Backend):
                    "zeDeviceGet")
         self._device = devices[0]
 
+    def _query_device(self, ze):
         # Get device properties (for device ID and name)
         self._dev_props = ze_device_properties_t(
             stype=ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES, pNext=None)
@@ -962,6 +1027,12 @@ class LevelZeroBackend(Backend):
         _check_ze(ze.zeDeviceGetComputeProperties(
             self._device, ctypes.byref(self._compute_props)),
             "zeDeviceGetComputeProperties")
+        # The group count is a uint32 that ctypes would truncate rather than
+        # reject. Kernels use the workgroup size _compile_kernel chooses;
+        # native reductions run only where that is 256.
+        self._max_launch = self._compute_props.maxGroupCountX * min(
+            WORKGROUP_SIZE, self._compute_props.maxGroupSizeX,
+            self._compute_props.maxTotalGroupSize)
 
         # Get image properties (for max 3D texture dimensions and sampler support)
         self._image_props = ze_device_image_properties_t(
@@ -983,9 +1054,9 @@ class LevelZeroBackend(Backend):
         # Device-dependent, so this shadows the class attribute rather than
         # replacing it. supports_f64 derives from it; there is no second flag
         # to keep in step.
-        self.supported_dtypes = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
-        if self._module_props.fp64flags != 0:
-            self.supported_dtypes.add(f64)
+        self.supported_dtypes = (
+            _L0_SUPPORTED_DTYPES if self._module_props.fp64flags != 0
+            else _L0_SUPPORTED_DTYPES - {f64})
 
         # Find compute queue group ordinal
         qg_count = ctypes.c_uint32(0)
@@ -1008,14 +1079,7 @@ class LevelZeroBackend(Backend):
         if self._compute_ordinal is None:
             raise RuntimeError("No compute queue group found on Level Zero device")
 
-        # Create context
-        ctx_desc = ze_context_desc_t(
-            stype=ZE_STRUCTURE_TYPE_CONTEXT_DESC, pNext=None, flags=0)
-        self._context = ze_context_handle_t()
-        _check_ze(ze.zeContextCreate(self._driver, ctypes.byref(ctx_desc),
-                                      ctypes.byref(self._context)),
-                   "zeContextCreate")
-
+    def _create_queues(self, ze):
         # Create command queue (synchronous mode for simplicity)
         queue_desc = ze_command_queue_desc_t(
             stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
@@ -1026,6 +1090,12 @@ class LevelZeroBackend(Backend):
             self._context, self._device, ctypes.byref(queue_desc),
             ctypes.byref(self._cmd_queue)),
             "zeCommandQueueCreate")
+
+        # Level Zero command lists and kernel argument state may not be used
+        # from two threads at once, and both lists below are shared by every
+        # dispatch, reduction and copy on this backend. Reentrant because a
+        # dispatch copies its scalar pack into place while holding it.
+        self._launch_lock = threading.RLock()
 
         # Create a reusable command list for kernel dispatch
         list_desc = ze_command_list_desc_t(
@@ -1047,8 +1117,6 @@ class LevelZeroBackend(Backend):
             self._context, self._device, ctypes.byref(imm_desc),
             ctypes.byref(self._imm_cmd_list)),
             "zeCommandListCreateImmediate")
-
-        self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledL0Kernel}
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> L0Buffer:
@@ -1085,18 +1153,26 @@ class LevelZeroBackend(Backend):
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end = _get_loop_range(variant.ir, kernel_args)
+        if loop_end <= 0:
+            # range(0) runs nothing; a negative count would wrap as uint32.
+            return
+        check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
-        # Replace scalar args with the packed field buffers
-        if pack_info:
-            from tack.lang.ir_pack_scalars import split_args
-            from tack.runtime.kernel_utils import _update_pack_fields
-            _update_pack_fields(pack_fields, pack_info, effective_args)
-            kept_args = split_args(effective_args, pack_info)
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in kept_args]
-            kernel_args = list(kernel_args) + pack_fields
+        # Textures bind their own snapshot, not the field they came from.
+        kernel_args = bind_textures(effective_args)
 
-        compiled(kernel_args, loop_end, self)
+        # Replace scalar args with the packed field buffers. The pack, the
+        # kernel's argument state and the command list are shared, so the
+        # whole launch holds the backend's lock (see `_launch_lock`).
+        with self._launch_lock:
+            if pack_info:
+                from tack.lang.ir_pack_scalars import split_args
+                from tack.runtime.kernel_utils import _update_pack_fields
+                _update_pack_fields(pack_fields, pack_info, effective_args)
+                kept_args = split_args(effective_args, pack_info)
+                kernel_args = bind_textures(kept_args) + pack_fields
+
+            compiled(kernel_args, loop_end, self)
 
     def _store_texture_shapes(self, ir_func, effective_args):
         """Record Texture3D extents, falling back to software sampling.
@@ -1107,15 +1183,19 @@ class LevelZeroBackend(Backend):
         variant key is built — rather than at codegen time.
         """
         from tack.lang.field import Texture3D
-        max_dim = self._max_image_3d
         for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Texture3D):
-                W, H, D = arg.shape_3d
-                if (self._has_hw_sampler
-                        and W <= max_dim and H <= max_dim and D <= max_dim):
+                if self.texture_in_hardware(arg.shape_3d):
                     param._texture_shape = arg.shape_3d
                 else:
                     param._is_texture = False  # software fallback
+
+    def texture_in_hardware(self, shape_3d) -> bool:
+        max_dim = self._max_image_3d
+        return self._has_hw_sampler and all(s <= max_dim for s in shape_3d)
+
+    def create_texture_image(self, shape_3d) -> L0TextureImage:
+        return L0TextureImage(shape_3d, self)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.
@@ -1123,17 +1203,17 @@ class LevelZeroBackend(Backend):
         Packing rewrites the parameter list, so it works on its own copy —
         the caller keeps `ir_func` for loop-range resolution.
         """
-        import copy
-
-        from tack.codegen.cuda_gen import _safe_kernel_name
         from tack.lang.ir_pack_scalars import pack_scalars
+        from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
+        from tack.lang.ir_verify import verify_ir
         from tack.runtime.kernel_utils import _create_pack_fields
 
-        packed = copy.deepcopy(ir_func)
-        packed.name = _safe_kernel_name(packed.name)
+        packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
+        verify_ir(packed, 'packed')
         annotate_types(packed)
+        verify_ir(packed, 'typed')
         compiled = self._compile_kernel(packed)
         pack_fields = (_create_pack_fields(pack_info, effective_args, self)
                        if pack_info else None)
@@ -1141,8 +1221,14 @@ class LevelZeroBackend(Backend):
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledL0Kernel:
         """Compile Tack IR → OpenCL C → SPIR-V → ze_module → ze_kernel."""
+        kernel_name = kernel_entry_name(ir_func.name)
+        workgroup_size = min(WORKGROUP_SIZE, self._compute_props.maxGroupSizeX,
+                             self._compute_props.maxTotalGroupSize)
+        full_groups = requires_full_workgroups(ir_func)
+        if full_groups:
+            check_workgroup_launch(ir_func.name, 0, backend_label=self.label,
+                                   workgroup_size=workgroup_size)
         ze = _get_ze()
-        workgroup_size = min(256, self._compute_props.maxGroupSizeX)
 
         # Generate OpenCL C source
         opencl_source = generate_opencl_source(ir_func)
@@ -1187,7 +1273,7 @@ class LevelZeroBackend(Backend):
         # Create kernel
         kernel_desc = ze_kernel_desc_t(
             stype=ZE_STRUCTURE_TYPE_KERNEL_DESC, pNext=None,
-            flags=0, pKernelName=ir_func.name.encode())
+            flags=0, pKernelName=kernel_name.encode())
         kernel = ze_kernel_handle_t()
         _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
                                      ctypes.byref(kernel)),
@@ -1196,18 +1282,20 @@ class LevelZeroBackend(Backend):
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        texture_shapes = {}
-        for i, p in enumerate(ir_func.params):
-            if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
-                texture_shapes[i] = p._texture_shape
-        return CompiledL0Kernel(module, kernel, ir_func.name,
+        return CompiledL0Kernel(module, kernel, kernel_name,
                                 param_types, param_is_field, workgroup_size,
-                                param_is_texture, texture_shapes)
+                                param_is_texture,
+                                requires_full_workgroups=full_groups)
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
-        if field.dtype is not f32:
-            return float(getattr(field.to_numpy(), op)())
+        if field.size == 0:
+            return empty_reduction(op)
+        if (field.dtype is not f32
+                or self._compute_props.maxGroupSizeX < 256
+                or self._compute_props.maxTotalGroupSize < 256):
+            return reduce_numpy(field.to_numpy(), op)
+        check_launch_size(f"Field {op}()", field.size, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -1218,7 +1306,7 @@ class LevelZeroBackend(Backend):
         n = int(np.prod(field.shape))
 
         # Create output buffer with init value
-        init_vals = {"sum": 0.0, "min": 1e38, "max": -1e38}
+        init_vals = REDUCTION_IDENTITIES
         out_np = np.array([init_vals[op]], dtype=np.float32)
         out_buf = L0Buffer(self, np.float32, (1,))
         out_buf.from_numpy(out_np)
@@ -1228,40 +1316,42 @@ class LevelZeroBackend(Backend):
         kernel = compiled_kernel._kernel
         block_dim = compiled_kernel._workgroup_size
 
-        # Set arguments: input, output, __n__
-        in_ptr = field._buffer.device_ptr
-        out_ptr = out_buf.device_ptr
-        _check_ze(ze.zeKernelSetArgumentValue(
-            kernel, 0, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(in_ptr)),
-            "zeKernelSetArgumentValue (reduce input)")
-        _check_ze(ze.zeKernelSetArgumentValue(
-            kernel, 1, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(out_ptr)),
-            "zeKernelSetArgumentValue (reduce output)")
-        n_val = ctypes.c_longlong(n)
-        _check_ze(ze.zeKernelSetArgumentValue(
-            kernel, 2, ctypes.sizeof(n_val), ctypes.byref(n_val)),
-            "zeKernelSetArgumentValue (reduce __n__)")
+        # The reduction kernel's arguments and the command list are shared.
+        with self._launch_lock:
+            # Set arguments: input, output, __n__
+            in_ptr = field._buffer.device_ptr
+            out_ptr = out_buf.device_ptr
+            _check_ze(ze.zeKernelSetArgumentValue(
+                kernel, 0, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(in_ptr)),
+                "zeKernelSetArgumentValue (reduce input)")
+            _check_ze(ze.zeKernelSetArgumentValue(
+                kernel, 1, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(out_ptr)),
+                "zeKernelSetArgumentValue (reduce output)")
+            n_val = ctypes.c_longlong(n)
+            _check_ze(ze.zeKernelSetArgumentValue(
+                kernel, 2, ctypes.sizeof(n_val), ctypes.byref(n_val)),
+                "zeKernelSetArgumentValue (reduce __n__)")
 
-        _check_ze(ze.zeKernelSetGroupSize(kernel, block_dim, 1, 1),
-                   "zeKernelSetGroupSize")
+            _check_ze(ze.zeKernelSetGroupSize(kernel, block_dim, 1, 1),
+                       "zeKernelSetGroupSize")
 
-        group_count_x = (n + block_dim - 1) // block_dim
-        group_count = ze_group_count_t(
-            groupCountX=group_count_x, groupCountY=1, groupCountZ=1)
+            group_count_x = (n + block_dim - 1) // block_dim
+            group_count = ze_group_count_t(
+                groupCountX=group_count_x, groupCountY=1, groupCountZ=1)
 
-        cmd_list = self._cmd_list
-        _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
-        _check_ze(ze.zeCommandListAppendLaunchKernel(
-            cmd_list, kernel, ctypes.byref(group_count), None, 0, None),
-            "zeCommandListAppendLaunchKernel")
-        _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
-        cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
-        _check_ze(ze.zeCommandQueueExecuteCommandLists(
-            self._cmd_queue, 1, cmd_lists, None),
-            "zeCommandQueueExecuteCommandLists")
-        _check_ze(ze.zeCommandQueueSynchronize(
-            self._cmd_queue, 0xFFFFFFFFFFFFFFFF),
-            "zeCommandQueueSynchronize")
+            cmd_list = self._cmd_list
+            _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
+            _check_ze(ze.zeCommandListAppendLaunchKernel(
+                cmd_list, kernel, ctypes.byref(group_count), None, 0, None),
+                "zeCommandListAppendLaunchKernel")
+            _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
+            cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
+            _check_ze(ze.zeCommandQueueExecuteCommandLists(
+                self._cmd_queue, 1, cmd_lists, None),
+                "zeCommandQueueExecuteCommandLists")
+            _check_ze(ze.zeCommandQueueSynchronize(
+                self._cmd_queue, 0xFFFFFFFFFFFFFFFF),
+                "zeCommandQueueSynchronize")
 
         return float(out_buf.to_numpy()[0])
 
@@ -1300,7 +1390,7 @@ class LevelZeroBackend(Backend):
         _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
                                      ctypes.byref(kernel)), "zeKernelCreate")
 
-        workgroup_size = min(256, self._compute_props.maxGroupSizeX)
+        workgroup_size = 256
         return CompiledL0Kernel(module, kernel, func_names[op],
                                 [f32, f32, i64], [True, True, False],
                                 workgroup_size)

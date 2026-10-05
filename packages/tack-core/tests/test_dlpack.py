@@ -12,6 +12,9 @@ dtype and shape survive, and that the exported buffer stays alive.
 
 import ctypes
 import gc
+import subprocess
+import sys
+import textwrap
 
 import numpy as np
 import pytest
@@ -124,6 +127,21 @@ def test_a_read_only_field_exports_the_flag():
     tensor = _versioned_tensor(capsule)
     assert tensor.flags & dlpack.DLPACK_FLAG_BITMASK_READ_ONLY
     assert not np.from_dlpack(field).flags.writeable
+
+
+def test_kernels_do_not_write_through_a_read_only_import():
+    """The producer's read-only flag binds kernels, not only from_numpy."""
+    @tack.kernel
+    def zero(out):
+        for i in range(out.shape[0]):
+            out[i] = 0.0
+
+    source = np.arange(4, dtype=np.float32)
+    source.flags.writeable = False
+    field = tack.from_dlpack(source)
+    with pytest.raises(ValueError, match="read-only"):
+        zero(field)
+    np.testing.assert_array_equal(source, np.arange(4))
 
 
 def test_a_writable_field_exports_no_flag():
@@ -348,6 +366,24 @@ def test_round_trip_through_both_directions():
     np.testing.assert_array_equal(back.to_numpy(), original.to_numpy())
 
 
+def test_a_metal_tensor_is_refused_before_wrap_ptr(monkeypatch):
+    """kDLMetal was mapped to the Metal backend, whose wrap_ptr then
+    rejected the handle as an integer. Refused up front, on any backend,
+    and checkable without a Mac by labelling a host export as Metal."""
+    source = _field(np.arange(4, dtype=np.float32), tack.f32)
+    real = dlpack._get_device_info
+
+    def as_metal(field):
+        _, device_id, ptr = real(field)
+        return dlpack.kDLMetal, device_id, ptr
+
+    monkeypatch.setattr(dlpack, "_get_device_info", as_metal)
+    capsule = source.__dlpack__(max_version=(1, 0))
+    with pytest.raises(ValueError, match="kDLMetal"):
+        tack.from_dlpack(capsule)
+    assert dlpack.kDLMetal not in dlpack._DEVICE_BACKENDS
+
+
 def test_unsupported_dtype_is_rejected_clearly():
     """A dtype with no DLPack equivalent must say so, not produce garbage."""
     field = _field(np.zeros(4, dtype=np.float32), tack.f32)
@@ -476,3 +512,63 @@ def test_wrap_ptr_rejects_an_address_clearly(metal):
     from tack.runtime.dispatch import get_backend
     with pytest.raises(TypeError, match="MTLBuffer object"):
         get_backend().wrap_ptr(0x1234, tack.f32, (8,))
+
+
+# ---------------------------------------------------------------------------
+# Capsule teardown after the module's globals are gone
+# ---------------------------------------------------------------------------
+def _without_globals(function):
+    """`function` as it runs once its module has been torn down."""
+    import types
+    return types.FunctionType(function.__code__, {"__builtins__": {}},
+                              function.__name__, function.__defaults__)
+
+
+@pytest.mark.parametrize("versioned", [False, True])
+def test_an_unadopted_capsule_is_released_without_module_globals(versioned):
+    """A capsule can outlive `tack.lang.dlpack`.
+
+    A consumer that failed part-way through an import was seen holding one
+    until interpreter exit, where the destructor's global lookups raised
+    NameError and the pinned field was never released. The destructor must
+    work from what it captured at definition.
+    """
+    field = tack.field(dtype=tack.f32, shape=(4,))
+    capsule = dlpack.field_to_dlpack(field, versioned=versioned)
+    pinned = len(dlpack._prevent_gc)
+
+    _without_globals(dlpack._destroy_capsule)(id(capsule))
+
+    assert len(dlpack._prevent_gc) == pinned - 1
+
+
+@pytest.mark.parametrize("versioned", [False, True])
+def test_the_capsule_destructor_outlives_the_module_globals(versioned):
+    """The thunk C calls must survive the module, not just its body.
+
+    VTK keeps adopted capsules in a module-level table, cleared at exit after
+    `tack.lang.dlpack`. That freed the destructor thunk, and the capsule then
+    called freed memory: 39_vtk_interop.py segfaulted on CPU. Here the module
+    global is removed as teardown would, fresh callbacks are allocated to take
+    any freed slot, and the capsule must still reach the real destructor.
+    """
+    script = textwrap.dedent(f"""
+        import ctypes, gc
+        import tack
+        tack.init(arch=tack.cpu)
+        from tack.lang import dlpack
+        capsule = dlpack.field_to_dlpack(tack.field(dtype=tack.f32, shape=(4,)),
+                                         versioned={versioned})
+        pinned = len(dlpack._prevent_gc)
+        del dlpack._capsule_destructor
+        gc.collect()
+        decoys = [ctypes.CFUNCTYPE(None, ctypes.c_void_p)(
+                      lambda p: print("decoy called", flush=True))
+                  for _ in range(64)]
+        del capsule
+        print("released" if len(dlpack._prevent_gc) == pinned - 1 else "still pinned")
+    """)
+    proc = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True)
+    assert proc.returncode == 0, f"{proc.stdout}\n{proc.stderr}"
+    assert "decoy called" not in proc.stdout
+    assert "released" in proc.stdout.splitlines()

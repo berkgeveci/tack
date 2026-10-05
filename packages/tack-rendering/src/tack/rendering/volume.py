@@ -393,6 +393,10 @@ def render_volume(canvas, volume, camera, background=(0.05, 0.05, 0.1)):
     fb_g = canvas.get_work_buffer('vol_fb_g', tack.f32, (n_pixels,))
     fb_b = canvas.get_work_buffer('vol_fb_b', tack.f32, (n_pixels,))
 
+    # A texture samples a snapshot of its field. The path tracer reads
+    # scalar_field directly, so refresh the snapshot to render the same data.
+    volume._texture.update()
+
     _t0 = _time.perf_counter()
     _volume_render(fb_r, fb_g, fb_b,
                    volume._texture, tf_field,

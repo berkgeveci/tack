@@ -18,6 +18,18 @@ def interpolate(src, dst, alpha, n):
 
 When the kernel is compiled, `lerp` is inlined — no function call overhead.
 
+Calls use the defining kernel or device function's Python bindings. You can
+import a device function under an alias or call it through an imported
+module. Two modules may define the same function name without interfering.
+Nested calls use the callee's namespace, and closure-bound device functions
+are supported. Template methods keep their defining bindings too.
+
+Bindings are resolved when the IR specialization is first built. Cached
+kernels keep the inlined body; recreate a kernel to capture a changed
+callable binding. Runtime function parameters, ordinary Python callables,
+and recursive device calls are unsupported. This does not enable capturing
+numerical Python variables: pass those values as kernel arguments.
+
 ## Multiple Return Values
 
 `@tack.func` supports returning tuples:

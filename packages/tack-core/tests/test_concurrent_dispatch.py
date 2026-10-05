@@ -125,7 +125,8 @@ def test_concurrent_dtypes_get_their_own_variants(monkeypatch):
 
     keys = list(_slot().keys())
     assert len(keys) == 2, f"expected one variant per dtype, got {keys}"
-    type_sigs = {k[0][:2] for k in keys}
+    # Each key leads with one entry per parameter, the dtype first.
+    type_sigs = {tuple(p[0] for p in k[0][:2]) for k in keys}
     assert (tack.f32, tack.f32) in type_sigs
     assert (tack.f64, tack.f64) in type_sigs
 
@@ -204,19 +205,72 @@ def test_many_threads_one_kernel():
     assert all(results.values()), f"wrong values from {results}"
 
 
-# ── The template rewrite's shared registry ───────────────────────────
+# ── One compiled variant, dispatched from several threads ───────────
 #
-# `rewrite_templates` registers each resolved @tack.func method in the
-# module-global `_func_registry`, `transform_kernel` reads it back, and
-# `get_ir` pops it afterwards. The name is built from `id(obj)`, so two
-# threads sharing one @tack.data_oriented object build the *same* name and
-# whichever finishes first deletes the entry the other is about to read.
+# A variant's launch state is shared on the GPU backends: the buffer its
+# scalars are packed into, and on Metal the argument buffer its field
+# bindings are encoded into. Unlocked, a thread could write its scalars,
+# have another thread overwrite them, and launch with the other's -- on
+# CUDA, half the dispatches below came back computed with the wrong ones.
+
+@tack.kernel
+def _affine(x, out, scale, offset):
+    for i in range(x.shape[0]):
+        out[i] = x[i] * scale + offset
+
+
+def _bind_device_to_this_thread():
+    """CUDA's context is current only on the thread that initialized Tack.
+
+    Without this, a second thread's dispatch fails outright with
+    CUDA_ERROR_INVALID_CONTEXT, before any shared state is touched.
+    """
+    from tack.runtime.dispatch import get_backend
+    backend = get_backend()
+    if backend.name == "cuda":
+        from cuda.bindings import driver
+        (err,) = driver.cuCtxSetCurrent(backend._context)
+        assert err == driver.CUresult.CUDA_SUCCESS, err
+
+
+def test_threads_sharing_a_variant_each_get_their_own_scalars(backend):
+    threads, iterations, n = 4, 100, 1024
+    base = np.arange(n, dtype=np.float32) % 97
+    x = tack.field(dtype=tack.f32, shape=(n,))
+    x.from_numpy(base)
+    outs = [tack.field(dtype=tack.f32, shape=(n,)) for _ in range(threads)]
+    _affine(x, outs[0], 1.0, 0.0)  # one variant, compiled before the race
+    start = threading.Barrier(threads)
+    wrong, errors = [], []
+
+    def work(t):
+        try:
+            _bind_device_to_this_thread()
+            start.wait(TIMEOUT)
+            for k in range(iterations):
+                scale, offset = float(t + 1), float(1000 * t + k % 7)
+                _affine(x, outs[t], scale, offset)
+                if not np.array_equal(outs[t].to_numpy(), base * scale + offset):
+                    wrong.append((t, k))
+        except Exception as exc:                        # pragma: no cover
+            errors.append(exc)
+
+    workers = [threading.Thread(target=work, args=(t,)) for t in range(threads)]
+    for w in workers:
+        w.start()
+    for w in workers:
+        w.join(4 * TIMEOUT)
+    assert not any(w.is_alive() for w in workers), "threads did not finish"
+    assert not errors, errors
+    assert not wrong, (f"{len(wrong)} of {threads * iterations} dispatches "
+                       f"used another thread's arguments, first {wrong[:3]}")
+
+
+# ── Concurrent template construction ────────────────────────────────
 #
-# It survived on CPython only because that whole sequence fits in one GIL
-# slice. Measured before the fix: 8 threads over 25 kernels were clean at
-# the default 5 ms switch interval and at 1 ms, and 72 of 200 dispatches
-# failed at 0.1 ms. Rather than depend on that, these force a switch at the
-# exact point by making the transform yield.
+# The old process-wide method registry could be overwritten or cleared by
+# another transform. Method maps now belong to each transform; the cache
+# construction lock still protects concurrent misses for a shared kernel.
 
 
 @tack.data_oriented
@@ -238,13 +292,7 @@ def _use_template(s, x, out):
 
 
 def _yield_during_transform(monkeypatch):
-    """Make every transform give up the GIL at its start.
-
-    Deterministic where a switch interval is not: each thread is guaranteed
-    to be inside the register→transform→pop window when the next one enters
-    it. Post-fix the lock serialises them, so this yields rather than
-    deadlocks — the stalled thread is not waiting on anybody.
-    """
+    """Yield during construction to exercise shared template cache misses."""
     import tack.lang.kernel as kernel_mod
     real = kernel_mod.transform_kernel
 
@@ -286,23 +334,12 @@ def test_threads_sharing_a_template_object_all_succeed(monkeypatch):
         np.testing.assert_allclose(got, 1.0 * 3.0 + 10.0)
 
 
-def test_the_registry_is_left_clean(monkeypatch):
-    """Temporaries must not outlive the transform that made them.
-
-    The name carries `id(obj)`, which the allocator reuses, so a leaked
-    entry is a stale method body waiting for an unrelated object to be born
-    at the same address.
-
-    Unlike the two either side of it, this one **passes on the pre-fix
-    code**: distinct objects have distinct ids, so nothing collides and
-    every pop finds its own entry. It is here as a guard on the invariant,
-    not as a reproducer — worth saying, because a test that never failed is
-    evidence of nothing until something changes.
-    """
-    from tack.lang.func import _func_registry
+def test_concurrent_templates_preserve_method_source(monkeypatch):
+    """Concurrent resolution must not modify the shared class method body."""
+    import ast
 
     _yield_during_transform(monkeypatch)
-    before = set(_func_registry)
+    before = ast.dump(_Scaler._tack_func_methods['apply']._funcdef)
 
     def run(bias):
         s = _Scaler(bias)
@@ -316,15 +353,14 @@ def test_the_registry_is_left_clean(monkeypatch):
     for t in threads:
         t.join(TIMEOUT)
 
-    leaked = set(_func_registry) - before
-    assert not leaked, f"template temporaries left in the registry: {leaked}"
+    assert ast.dump(_Scaler._tack_func_methods['apply']._funcdef) == before
 
 
 @tack.data_oriented
 class _ColdScaler:
     """A distinct class-level constant, so its IR cache entry is cold.
 
-    `_make_cache_key` keys on the class name and its class-level scalars,
+    `_make_cache_key` keys on class identity and its class-level scalars,
     so reusing `_Scaler` here would hit the entry the tests above built and
     never reach the transform this one needs to fail.
     """
@@ -340,11 +376,12 @@ class _ColdScaler:
 
 
 def test_a_failed_transform_still_cleans_up(monkeypatch):
-    """The pop used to sit after the transform, so a raise skipped it."""
-    import tack.lang.kernel as kernel_mod
-    from tack.lang.func import _func_registry
+    """A failed transform must not mutate source or publish a cache entry."""
+    import ast
 
-    before = set(_func_registry)
+    import tack.lang.kernel as kernel_mod
+
+    before = ast.dump(_ColdScaler._tack_func_methods['apply']._funcdef)
 
     def boom(*args, **kwargs):
         raise ValueError("synthetic transform failure")
@@ -357,8 +394,9 @@ def test_a_failed_transform_still_cleans_up(monkeypatch):
     with pytest.raises(Exception, match="synthetic transform failure"):
         _use_template(s, x, out)
 
-    assert set(_func_registry) == before, \
-        "a failed transform left its registry temporaries behind"
+    assert ast.dump(_ColdScaler._tack_func_methods['apply']._funcdef) == before
+    assert not _use_template._ir_cache.get(
+        _use_template._make_cache_key(None, {0: ('s', s)}))
 
 
 # ── Switching backends under a live field ────────────────────────────

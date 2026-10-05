@@ -5,28 +5,8 @@ with the same dtype as the given field.
 """
 
 import numpy as np
-import pytest
 
 import tack
-
-backends = []
-try:
-    tack.init(arch=tack.cpu)
-    backends.append("cpu")
-except Exception:
-    pass
-try:
-    tack.init(arch=tack.metal)
-    backends.append("metal")
-except Exception:
-    pass
-
-
-@pytest.fixture(params=backends)
-def backend(request):
-    tack.init(arch=getattr(tack, request.param))
-    return request.param
-
 
 # --- AST transform level ---
 
@@ -56,7 +36,7 @@ def kern(data, out):
 
 # --- End-to-end: shared_like with f32 field ---
 
-def test_shared_like_f32(backend):
+def test_shared_like_f32(workgroup_backend):
     """shared_like inherits f32 from the field."""
     n = 256
     data = tack.field(dtype=tack.f32, shape=(n,))
@@ -79,7 +59,7 @@ def test_shared_like_f32(backend):
 
 # --- End-to-end: shared_like with i32 field ---
 
-def test_shared_like_i32(backend):
+def test_shared_like_i32(workgroup_backend):
     """shared_like inherits i32 from the field."""
     n = 256
     data = tack.field(dtype=tack.i32, shape=(n,))
@@ -126,7 +106,7 @@ def test_shared_like_cuda_codegen():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "__shared__ float smem[256]" in src
+    assert "__shared__ float tack_var_a_smem[256]" in src
 
 
 def test_shared_like_i32_cuda_codegen():
@@ -153,4 +133,4 @@ def test_shared_like_i32_cuda_codegen():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "__shared__ int smem[256]" in src
+    assert "__shared__ int tack_var_a_smem[256]" in src

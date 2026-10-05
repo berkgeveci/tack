@@ -49,9 +49,10 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(fill, (64,))
         src = generate_hip_source(ir_func)
-        assert 'blockIdx.x' in src
-        assert 'blockDim.x' in src
-        assert 'threadIdx.x' in src
+        # Widened before the multiply, as on CUDA.
+        assert ('long long tack_var_a_i = (long long)blockIdx.x * blockDim.x '
+                '+ threadIdx.x;') in src
+        assert 'long long __n__' in src
 
     def test_bounds_guard(self):
         @tack.kernel
@@ -61,9 +62,9 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(fill, (64,))
         src = generate_hip_source(ir_func)
-        assert 'if (i >= __n__) return;' in src
+        assert 'if (tack_var_a_i >= __n__) return;' in src
 
-    def test_restrict_pointers(self):
+    def test_field_pointers_allow_aliasing(self):
         @tack.kernel
         def add(x, y, out):
             for i in range(x.shape[0]):
@@ -71,7 +72,8 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(add, (64,), (64,), (64,))
         src = generate_hip_source(ir_func)
-        assert 'float* __restrict__' in src
+        assert 'float* tack_var_a_x' in src
+        assert '__restrict__' not in src
 
     def test_math_functions(self):
         @tack.kernel
@@ -105,8 +107,8 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(saxpy, (64,), (64,), (64,))
         src = generate_hip_source(ir_func)
-        # Should have all three field params as restrict pointers
-        assert src.count('__restrict__') == 3
+        # Field parameters do not promise disjoint storage
+        assert '__restrict__' not in src
         # Should have the n parameter
         assert 'long long __n__' in src
 

@@ -57,6 +57,16 @@ class Backend:
     #: False, `Field.sum()`/`min()`/`max()` fall back to numpy on the host.
     supports_device_reductions: bool = False
 
+    #: Native workgroup execution for shared memory, barriers, local thread
+    #: IDs and block reductions. This does not promise uniform participation,
+    #: supported atomic types/scopes, or safe partial-workgroup execution.
+    supports_workgroups: bool = False
+
+    #: Keyword options `tack.init()` forwards to this backend's constructor.
+    #: Anything else is rejected there, so a misspelt or misdirected option
+    #: cannot be silently dropped.
+    init_options: frozenset[str] = frozenset()
+
     #: Memory-space names (as returned by `memory_space()`) that a pointer
     #: must be in for `field_from_ptr()` to wrap it. Empty means this
     #: backend does not distinguish, so no check is made.
@@ -68,6 +78,12 @@ class Backend:
     #: host-addressable, so "cannot address it" is the wrong summary and
     #: would send a reader looking for the wrong problem.
     dlpack_refusal_note: str = ""
+
+    @property
+    def supported_atomic_dtypes(self) -> frozenset[ScalarType]:
+        """Global field types supporting add/min/max on this target."""
+        from tack.lang.atomic_support import ATOMIC_DTYPES
+        return ATOMIC_DTYPES.get(self.name, frozenset()) & self.supported_dtypes
 
     @property
     def supports_f64(self) -> bool:
@@ -109,8 +125,39 @@ class Backend:
         """
         return "cpu"
 
+    def _store_texture_shapes(self, ir_func, effective_args):
+        """Record Texture3D extents on the params, for codegen and the key.
+
+        HIP and Level Zero override this to fall back to software sampling
+        where the device has no texture hardware. `tack.inspect` calls it
+        too, so the source it shows is the source dispatch would compile.
+        """
+        from tack.runtime.kernel_utils import _store_texture_shapes
+        _store_texture_shapes(ir_func, effective_args)
+
     def reduce_field(self, field, op: str) -> float:
         """Reduce a field on the device. Only called when
         `supports_device_reductions` is True."""
         raise NotImplementedError(
             f"{self.label} backend does not implement device reductions")
+
+    def texture_in_hardware(self, shape_3d) -> bool:
+        """Whether a `Texture3D` of this extent is sampled by texture units.
+
+        False means the texture keeps a private field and the generated
+        code interpolates it in software, which is what CPU does. `Texture3D`
+        asks when choosing its storage, and backends whose answer varies by
+        device or extent ask again when preparing a variant, so a texture
+        always holds the storage its compiled kernel binds.
+        """
+        return False
+
+    def create_texture_image(self, shape_3d):
+        """Allocate a single-channel f32 3D texture image.
+
+        Only called when `texture_in_hardware()` is True. The result is
+        owned by one `Texture3D`: it exposes ``upload(field)``, which copies
+        the field into it, and frees the device objects when collected.
+        """
+        raise NotImplementedError(
+            f"{self.label} backend has no hardware textures")

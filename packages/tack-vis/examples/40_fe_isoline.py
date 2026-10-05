@@ -208,8 +208,8 @@ def define_kernels():
                     s0 = float(sj) * inv_n
                     s1 = float(sj + 1) * inv_n
 
-                    cr = tack.shared_like(out_x0, 4)
-                    cs = tack.shared_like(out_x0, 4)
+                    cr = tack.local_array_like(out_x0, 4)
+                    cs = tack.local_array_like(out_x0, 4)
                     nc = 0
 
                     if (v0 >= isovalue) != (v1 >= isovalue):
@@ -249,7 +249,7 @@ def define_kernels():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--arch", default=os.environ.get("Tack_ARCH", "cpu"))
+    parser.add_argument("--arch", default=os.environ.get("TACK_ARCH", "cpu"))
     parser.add_argument("--order", type=int, default=3)
     parser.add_argument("--nx", type=int, default=8)
     parser.add_argument("--isovalue", type=float, default=0.5)

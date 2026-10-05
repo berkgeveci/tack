@@ -91,7 +91,8 @@ from tack.algorithms.compute_normals import compute_normals
 normals = compute_normals(points, conn, n_pts, n_tris)
 ```
 
-The entire computation runs on GPU via atomic operations — no host roundtrip.
+It runs as two kernels on the active backend, accumulating face normals
+with `tack.atomic_add`, and nothing is copied to the host.
 
 ## Cell to Point
 
@@ -105,17 +106,10 @@ point_data = cell_to_point(cell_data, connectivity, n_points, n_cells)
 
 ## Parallel Scan
 
-The scan primitives live in `tack-core` (they are general-purpose):
-
-```python
-from tack.algorithms import exclusive_scan, inclusive_scan
-
-# Parallel prefix sum on GPU
-exclusive_scan(input_field, output_field, n)
-total = inclusive_scan(input_field, output_field, n)
-```
-
-These are used internally by flying edges and other variable-output algorithms.
+`exclusive_scan` and `inclusive_scan` are general-purpose `tack-core`
+functions in `tack.algorithms`, useful for turning per-item output counts
+into write offsets. They are described in
+[Reductions and Scans](11-reductions-and-scans.md#prefix-scans).
 
 ## VTK Interop
 
@@ -149,3 +143,28 @@ Both directions go through DLPack, which VTK speaks via
 `vtkmodules.util.dlpack_support`. This works with regular `vtkDataArray`
 (host memory) and `vtkmDataArray` (device memory from Viskores); for
 device arrays the GPU pointer is wrapped directly — no host-device copy.
+
+### Level Zero
+
+On CUDA and HIP a device pointer identifies itself, because the runtime
+keeps one context per device for the whole process. A Level Zero pointer
+means something only inside the context that allocated it, and DLPack has
+no field for a context. So on Level Zero, start Tack inside the context
+VTK's Viskores device already uses, before creating any field:
+
+```python
+from tack.interop.vtk import init_level_zero
+
+init_level_zero()   # instead of tack.init(arch=tack.level_zero)
+```
+
+This needs VTK built with Viskores on Kokkos' SYCL backend, whose
+`dlpack_support` provides `level_zero_handles()`. Fields created in a
+context of Tack's own cannot be exchanged: `field_to_vtk` and
+`vtk_to_field` refuse them, because the Intel driver cannot tell the two
+contexts apart and nothing downstream would catch the mistake.
+
+The underlying option is general: `tack.init(arch=tack.level_zero,
+external_context={"driver": ..., "device": ..., "context": ...})` adopts
+any Level Zero context another library owns. Tack never destroys an
+adopted context.

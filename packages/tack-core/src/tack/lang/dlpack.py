@@ -155,16 +155,20 @@ _PyCapsule_GetPointer.restype = ctypes.c_void_p
 _PyCapsule_GetPointer.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 
 
-def _release(managed_ptr, struct):
+def _release(managed_ptr, struct, _cast=ctypes.cast, _pointer=ctypes.POINTER,
+             _pins=_prevent_gc):
     """Unpin whatever was retained for the export at `managed_ptr`.
 
     `struct` says which layout to read, since manager_ctx sits at a
     different offset in the two.
+
+    Reached from `_capsule_destructor`, so it too takes what it needs as
+    default arguments rather than from module globals; see there.
     """
     if not managed_ptr:
         return
-    managed = ctypes.cast(managed_ptr, ctypes.POINTER(struct)).contents
-    _prevent_gc.pop(managed.manager_ctx, None)
+    managed = _cast(managed_ptr, _pointer(struct)).contents
+    _pins.pop(managed.manager_ctx, None)
 
 
 @ctypes.CFUNCTYPE(None, ctypes.c_void_p)
@@ -180,23 +184,42 @@ def _dlpack_deleter_versioned(managed_ptr):
     _release(managed_ptr, DLManagedTensorVersioned)
 
 
-@ctypes.CFUNCTYPE(None, ctypes.c_void_p)
-def _capsule_destructor(capsule_ptr):
+def _destroy_capsule(capsule_ptr, _is_valid=_PyCapsule_IsValid,
+                     _get_pointer=_PyCapsule_GetPointer, _release=_release,
+                     _legacy=DLManagedTensor,
+                     _versioned=DLManagedTensorVersioned):
     """Release an export that no consumer ever adopted.
 
     A consumer that takes the tensor renames the capsule to
     "used_dltensor" and becomes responsible for calling the deleter. If a
     capsule is collected still named "dltensor" nobody adopted it, and
     without this the pinned objects would never be freed.
+
+    Everything it needs is bound as a default argument. A capsule can
+    outlive this module -- a consumer that failed part-way may still hold
+    one when the interpreter exits -- and by then the module's globals are
+    gone, so a plain global lookup here raises NameError. The thunk that
+    calls it is kept alive for the same reason; see below.
     """
     if not capsule_ptr:
         return
-    if _PyCapsule_IsValid(capsule_ptr, b"dltensor"):
-        _release(_PyCapsule_GetPointer(capsule_ptr, b"dltensor"),
-                 DLManagedTensor)
-    elif _PyCapsule_IsValid(capsule_ptr, b"dltensor_versioned"):
-        _release(_PyCapsule_GetPointer(capsule_ptr, b"dltensor_versioned"),
-                 DLManagedTensorVersioned)
+    if _is_valid(capsule_ptr, b"dltensor"):
+        _release(_get_pointer(capsule_ptr, b"dltensor"), _legacy)
+    elif _is_valid(capsule_ptr, b"dltensor_versioned"):
+        _release(_get_pointer(capsule_ptr, b"dltensor_versioned"), _versioned)
+
+
+_capsule_destructor = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(_destroy_capsule)
+
+# C holds these thunks only as raw pointers: the capsule its destructor, a
+# consumer the deleter. Each stays callable for as long as a capsule or tensor
+# lives, which can be past this module's teardown -- VTK keeps the capsules it
+# adopts in a module-level table that is cleared after this one. Clearing the
+# module's globals freed the thunk, and the capsule then called freed memory:
+# 39_vtk_interop.py segfaulted at exit. One reference each, never released.
+for _thunk in (_dlpack_deleter, _dlpack_deleter_versioned, _capsule_destructor):
+    ctypes.pythonapi.Py_IncRef(ctypes.py_object(_thunk))
+del _thunk
 
 
 def _get_device_info(field):
@@ -320,11 +343,17 @@ _PyCapsule_SetName.argtypes = [ctypes.py_object, ctypes.c_char_p]
 # how big the array happened to be. The entry never worked in any case:
 # `dlpack_to_field` hands `wrap_ptr` an integer address and Metal's expects
 # an MTLBuffer object, so every such import raised AttributeError.
+#
+# kDLMetal is absent for a related reason. Its `data` is an opaque
+# id<MTLBuffer> handle, not an address, and `byte_offset` locates the
+# tensor inside that buffer. Wrapping one needs the handle turned back
+# into a PyObjC object and an offset carried through MetalBuffer and the
+# argument-buffer binding, neither of which exists; listing it sent the
+# handle to `wrap_ptr` as an integer, which refuses it with a TypeError.
 _DEVICE_BACKENDS = {
     kDLCPU: ("cpu",),
     kDLCUDAHost: ("cpu",),
     kDLROCMHost: ("cpu",),
-    kDLMetal: ("metal",),
     kDLCUDA: ("cuda",),
     kDLCUDAManaged: ("cuda",),
     kDLROCM: ("hip",),
@@ -454,6 +483,12 @@ def dlpack_to_field(source, writable=True):
 
     backend = get_backend()
     allowed = _DEVICE_BACKENDS.get(tensor.device.device_type)
+    if tensor.device.device_type == kDLMetal:
+        raise ValueError(
+            "Metal DLPack tensors (kDLMetal) cannot be imported: Tack has "
+            "no way yet to wrap the MTLBuffer handle they carry. Move the "
+            "tensor to host memory in the producing library, then import "
+            "it with copy=True.")
     if allowed is None:
         raise ValueError(
             f"unsupported DLPack device type {tensor.device.device_type}")

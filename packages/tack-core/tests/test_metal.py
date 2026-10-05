@@ -17,6 +17,63 @@ def metal_backend():
 
 # --- Basic correctness ---
 
+@pytest.mark.parametrize("dtype", [tack.i8, tack.u8, tack.i16, tack.u16,
+                                   tack.i32, tack.u32, tack.i64, tack.u64, tack.f32])
+def test_imported_buffer_alias_preserves_order(dtype):
+    """Distinct wrappers of an MTLBuffer preserve ordered typed accesses."""
+    a = tack.field(dtype=dtype, shape=(7,))
+    alias = tack.field_from_ptr(a._buffer.metal_buffer, dtype, (7,), writable=True)
+    assert alias._buffer is not a._buffer
+    out = tack.field(dtype=dtype, shape=(7,))
+    a.fill(19)
+
+    @tack.kernel
+    def ordered(a, b, out):
+        for i in range(out.shape[0]):
+            before = a[i]
+            # Explicit unsigned literal also works with the full u64 range.
+            b[i] = before + tack.u8(2)
+            out[i] = a[i] - before
+
+    ordered(a, alias, out)
+    np.testing.assert_array_equal(a.to_numpy(), np.full(7, 21))
+    np.testing.assert_array_equal(out.to_numpy(), np.full(7, 2))
+
+
+def test_alias_bindings_with_mixed_scalar_packs():
+    """Both scalar pack buffers stay correctly bound alongside aliases."""
+    a = tack.field(dtype=tack.f32, shape=(7,))
+    alias = a.reshape((7,))
+    out = tack.field(dtype=tack.f32, shape=(7,))
+
+    @tack.kernel
+    def ordered(a, scale, b, increment, out):
+        for i in range(out.shape[0]):
+            a[i] = scale
+            b[i] = a[i] + increment
+            out[i] = a[i]
+
+    for scale, increment in ((1.5, 2), (3.5, 4), (0.5, 1)):
+        ordered(a, scale, alias, increment, out)
+        np.testing.assert_array_equal(out.to_numpy(), np.full(7, scale + increment))
+
+
+def test_atomic_updates_through_aliases():
+    """Indirect buffer bindings keep atomic updates visible through aliases."""
+    out = tack.field(dtype=tack.i32, shape=(1,))
+    alias = out.reshape((1,))
+    out.fill(0)
+
+    @tack.kernel
+    def increment(a, b, n):
+        for i in range(n):
+            tack.atomic_add(a, 0, 1)
+            tack.atomic_add(b, 0, 1)
+
+    increment(out, alias, 257)
+    np.testing.assert_array_equal(out.to_numpy(), [514])
+
+
 def test_vector_add():
     n = 1024
     x = tack.field(dtype=tack.f32, shape=(n,))

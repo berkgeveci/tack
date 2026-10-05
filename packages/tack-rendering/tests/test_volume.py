@@ -183,3 +183,21 @@ class TestRenderVolume:
         # Center pixel: opaque volume should contribute color, not black bg
         cx, cy = 8, 8
         assert img[cy, cx, :3].max() > 0
+
+    def test_render_sees_field_written_after_construction(self, backend):
+        """The ray caster's texture is refreshed, as the path tracer reads live."""
+        tf = TransferFunction('grayscale', opacity_func=lambda t: 1.0,
+                              range=(0.0, 1.0))
+        data = tack.field(dtype=tack.f32, shape=(64,))
+        vol = Volume(data, dims=(4, 4, 4), origin=(-1, -1, -1),
+                     spacing=(2.0/3, 2.0/3, 2.0/3), transfer_function=tf,
+                     opacity_scale=50.0)
+        camera = PerspectiveCamera(
+            position=(0, 0, 4), look_at=(0, 0, 0), fov=60,
+            width=16, height=16)
+        canvas = Canvas(16, 16)
+        render_volume(canvas, vol, camera, background=(0.0, 0.0, 0.0))
+        assert canvas.to_numpy()[8, 8, :3].max() < 10
+        data.from_numpy(np.ones(64, dtype=np.float32))
+        render_volume(canvas, vol, camera, background=(0.0, 0.0, 0.0))
+        assert canvas.to_numpy()[8, 8, :3].min() > 200

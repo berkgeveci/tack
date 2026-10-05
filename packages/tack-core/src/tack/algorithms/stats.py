@@ -1,7 +1,10 @@
-"""GPU-accelerated statistics and analysis on tack fields.
+"""Statistics and analysis on tack fields.
 
-All operations run entirely on the active backend — no host roundtrips
-unless noted. Uses atomic operations for reductions and histogram binning.
+Each function runs a kernel on the active backend that combines into a
+one-element f32 or i32 accumulator with atomic operations, then reads that
+accumulator back with to_numpy().  var/std call data.sum(), and histogram
+without a range calls data.min()/data.max(), which copy non-f32 fields to
+the host on GPU backends.
 """
 
 import tack
@@ -77,14 +80,39 @@ def _histogram_kernel(data, counts, lo, inv_bin_width, n_bins, n):
 # PUBLIC API
 # ================================================================
 
+def _count(n, *fields):
+    """Resolve and check the element count: every kernel reads [0, n)."""
+    if n is None:
+        n = fields[0].size
+    n = int(n)
+    for f in fields:
+        if not 0 <= n <= f.size:
+            raise ValueError(
+                f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
+    return n
+
+
+def _prefix(data, n):
+    """The first n elements of data, as a field the host reductions accept."""
+    if n == data.size:
+        return data
+    from tack.algorithms.copy import copy
+    head = tack.field(dtype=data.dtype, shape=(n,))
+    copy(data, head, n)
+    return head
+
+
 def var(data, n=None):
     """Population variance of a field: Σ(x - mean)² / n.
 
-    Runs two GPU passes: one for the mean, one for the squared differences.
+    Runs two passes over the first n elements: Field.sum() for the mean,
+    then a kernel adding the squared differences into an f32 accumulator.
+    Returns a NumPy float32; an empty range gives NaN, as Field.mean() does.
     """
-    if n is None:
-        n = data.size
-    mean_val = data.sum() / n
+    n = _count(n, data)
+    if n == 0:
+        return float('nan')
+    mean_val = _prefix(data, n).sum() / n
     acc = tack.field(dtype=tack.f32, shape=(1,))
     acc.fill(0.0)
     _sum_sq_diff(data, mean_val, acc, n)
@@ -103,9 +131,10 @@ def norm(data, ord=2, n=None):
     ord=1: L1 norm (sum of absolute values)
     ord=2: L2 norm (Euclidean)
     ord=inf: L-infinity (max absolute value)
+
+    Any other ord raises ValueError.
     """
-    if n is None:
-        n = data.size
+    n = _count(n, data)
     if ord == 1:
         acc = tack.field(dtype=tack.f32, shape=(1,))
         acc.fill(0.0)
@@ -127,8 +156,7 @@ def norm(data, ord=2, n=None):
 
 def absmax(data, n=None):
     """Maximum absolute value of a field."""
-    if n is None:
-        n = data.size
+    n = _count(n, data)
     acc = tack.field(dtype=tack.f32, shape=(1,))
     acc.fill(0.0)
     _abs_max(data, acc, n)
@@ -137,8 +165,7 @@ def absmax(data, n=None):
 
 def count_nonzero(data, n=None):
     """Count non-zero elements in a field."""
-    if n is None:
-        n = data.size
+    n = _count(n, data)
     acc = tack.field(dtype=tack.i32, shape=(1,))
     acc.fill(0)
     _count_nz(data, acc, n)
@@ -147,8 +174,7 @@ def count_nonzero(data, n=None):
 
 def dot(a, b, n=None):
     """Dot product of two fields: Σa[i]*b[i]."""
-    if n is None:
-        n = a.size
+    n = _count(n, a, b)
     acc = tack.field(dtype=tack.f32, shape=(1,))
     acc.fill(0.0)
     _dot_product(a, b, acc, n)
@@ -156,12 +182,16 @@ def dot(a, b, n=None):
 
 
 def histogram(data, bins=10, range=None, n=None):
-    """Compute a histogram of field values on GPU using atomics.
+    """Compute a histogram of field values with atomic bin counts.
+
+    Values below the range are counted in the first bin and values above it
+    in the last, unlike numpy.histogram, which drops them.
 
     Args:
-        data: input field (f32)
-        bins: number of bins
-        range: (min, max) tuple. If None, uses data.min()/data.max().
+        data: input field of any dtype
+        bins: number of bins (at least 1)
+        range: (min, max) tuple. If None, uses the minimum and maximum of
+            the first n elements, and n must then be at least 1.
         n: number of elements (default: data.size)
 
     Returns:
@@ -169,11 +199,13 @@ def histogram(data, bins=10, range=None, n=None):
         bin_edges is a numpy array of (bins + 1) float64 edges.
     """
     import numpy as np
-    if n is None:
-        n = data.size
+    n = _count(n, data)
     if range is None:
-        lo = float(data.min())
-        hi = float(data.max())
+        if n == 0:
+            raise ValueError("histogram of no elements needs an explicit range")
+        head = _prefix(data, n)
+        lo = float(head.min())
+        hi = float(head.max())
     else:
         lo, hi = float(range[0]), float(range[1])
 

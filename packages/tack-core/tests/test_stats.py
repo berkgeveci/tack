@@ -178,3 +178,68 @@ def test_analysis_workflow(backend):
     assert int(counts.to_numpy().sum()) <= n  # some may be outside range
     assert edges[0] == pytest.approx(-3.0)
     assert edges[-1] == pytest.approx(3.0)
+
+
+# --- an explicit n covers only the first n elements ---
+
+def test_var_and_std_of_a_prefix_use_the_prefix_mean(backend):
+    """The mean came from the whole field, so var([1,-2,3,-4], n=2) was 2.5."""
+    f = tack.field(dtype=tack.f32, shape=(4,))
+    f.from_numpy(np.array([1, -2, 3, -4], dtype=np.float32))
+    assert var(f, n=2) == pytest.approx(np.var([1, -2]), rel=1e-6)
+    assert std(f, n=3) == pytest.approx(np.std([1, -2, 3]), rel=1e-6)
+
+
+def test_var_of_no_elements_is_nan(backend):
+    f = tack.field(dtype=tack.f32, shape=(4,))
+    f.from_numpy(np.arange(4, dtype=np.float32))
+    assert np.isnan(var(f, n=0))
+    assert np.isnan(std(f, n=0))
+
+
+def test_histogram_of_a_prefix_takes_its_range_from_the_prefix(backend):
+    f = tack.field(dtype=tack.f32, shape=(6,))
+    f.from_numpy(np.array([0, 1, 2, 3, 100, -100], dtype=np.float32))
+    counts, edges = histogram(f, bins=4, n=4)
+    assert edges[0] == 0.0 and edges[-1] == 3.0
+    np.testing.assert_array_equal(counts.to_numpy(), [1, 1, 1, 1])
+
+
+def test_histogram_of_no_elements_needs_a_range(backend):
+    f = tack.field(dtype=tack.f32, shape=(4,))
+    with pytest.raises(ValueError, match="explicit range"):
+        histogram(f, n=0)
+    counts, _ = histogram(f, bins=3, range=(0.0, 1.0), n=0)
+    np.testing.assert_array_equal(counts.to_numpy(), [0, 0, 0])
+
+
+@pytest.mark.parametrize("call", [
+    lambda a, b, n: var(a, n=n),
+    lambda a, b, n: std(a, n=n),
+    lambda a, b, n: norm(a, ord=1, n=n),
+    lambda a, b, n: norm(a, ord=2, n=n),
+    lambda a, b, n: absmax(a, n=n),
+    lambda a, b, n: count_nonzero(a, n=n),
+    lambda a, b, n: histogram(a, range=(0.0, 1.0), n=n),
+    lambda a, b, n: dot(a, b, n=n),
+], ids=["var", "std", "norm1", "norm2", "absmax", "count_nonzero", "histogram", "dot"])
+def test_a_count_past_any_field_is_refused(backend, call):
+    """Every kernel reads [0, n); a count past a field used to read beyond it."""
+    a = tack.field(dtype=tack.f32, shape=(8,))
+    b = tack.field(dtype=tack.f32, shape=(4,))
+    a.fill(1.0)
+    b.fill(1.0)
+    with pytest.raises(ValueError, match="outside"):
+        call(a, b, 9)
+    with pytest.raises(ValueError, match="outside"):
+        call(a, b, -1)
+
+
+def test_dot_refuses_a_shorter_second_field(backend):
+    a = tack.field(dtype=tack.f32, shape=(8,))
+    b = tack.field(dtype=tack.f32, shape=(4,))
+    a.fill(1.0)
+    b.fill(1.0)
+    with pytest.raises(ValueError, match="outside"):
+        dot(a, b)
+    assert dot(a, b, n=4) == pytest.approx(4.0)

@@ -1,6 +1,6 @@
 [project]
 name = "tack-workspace"
-version = "0.1.0"
+version = "0.2.0"
 description = "Tack monorepo workspace"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -120,6 +120,7 @@ known-first-party = ["tack"]
 addopts = "-m 'not slow'"
 markers = [
     "slow: runs every shipped example as a subprocess (see tests/test_examples.py)",
+    "timing: asserts what the CPU scheduler actually did; needs an idle host and skips itself otherwise (see test_cpu_threading.py)",
 ]
 testpaths = [
     "packages/tack-core/tests",

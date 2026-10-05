@@ -7,6 +7,12 @@ GPU kernels that project geometry to screen space and rasterize edges
 import numpy as np
 
 import tack
+from tack.rendering.pathtrace import _halton2, _halton3, _hash
+
+# Relative distance by which path-traced surfaces are pushed back before
+# rasterized geometry is depth-tested against them, so that a wireframe or
+# point cloud lying on a surface is drawn rather than z-fighting with it.
+_SURFACE_DEPTH_BIAS = 5.0e-3
 
 # ================================================================
 # PROJECTION CONFIG (template — carries the MVP matrix)
@@ -145,7 +151,7 @@ def _project_vertex(px, py, pz,
 # ================================================================
 
 @tack.kernel
-def _clear_fb(canvas_r, canvas_g, canvas_b, depth_buf,
+def _clear_fb(canvas_r, canvas_g, canvas_b, depth_buf, winners,
               bg_r, bg_g, bg_b, n_pixels):
     """Clear framebuffer with background color and reset depth."""
     for i in range(n_pixels):
@@ -153,19 +159,97 @@ def _clear_fb(canvas_r, canvas_g, canvas_b, depth_buf,
         canvas_g[i] = bg_g
         canvas_b[i] = bg_b
         depth_buf[i] = 1.0e30
+        winners[i] = 2147483647
 
 
 @tack.kernel
-def _rasterize_wireframe(canvas_r, canvas_g, canvas_b, depth_buf,
-                         points, conn, tri_colors,
-                         mvp_data,
-                         scr_w, scr_h, n_tris, max_edge_len):
-    """Rasterize triangle edges as wireframe with depth test."""
-    for t in range(n_tris):
-        cr = tri_colors[t * 3]
-        cg = tri_colors[t * 3 + 1]
-        cb = tri_colors[t * 3 + 2]
+def _surface_depth_to_raster(depth_buf, surface_depth, mvp_data,
+                             camera: tack.template(), width, bias, n_pixels):
+    """Seed the raster depth buffer from path-traced primary-ray distances.
 
+    The path tracer stores the hit distance along the first sample's
+    jittered ray (-1 for a miss); the rasterizer tests projected clip-space
+    depth.  Rebuild that ray, push the hit point back by ``bias`` (relative
+    to its distance) and project it with the rasterizer's own matrix.
+    """
+    for pid in range(n_pixels):
+        t = surface_depth[pid]
+        d = 1.0e30
+        if t > 0.0:
+            seed = _hash(pid)
+            ppx = float(pid % width) + _halton2(seed)
+            ppy = float(pid // width) + _halton3(seed)
+            rdx = camera.corner_x + camera.dx_x * ppx + camera.dy_x * ppy
+            rdy = camera.corner_y + camera.dx_y * ppx + camera.dy_y * ppy
+            rdz = camera.corner_z + camera.dx_z * ppx + camera.dy_z * ppy
+            rd_len = sqrt(rdx * rdx + rdy * rdy + rdz * rdz)
+            t = t * (1.0 + bias) / rd_len
+            hx = camera.pos_x + camera.odx_x * ppx + camera.ody_x * ppy + rdx * t
+            hy = camera.pos_y + camera.odx_y * ppx + camera.ody_y * ppy + rdy * t
+            hz = camera.pos_z + camera.odx_z * ppx + camera.ody_z * ppy + rdz * t
+            cz = mvp_data[8] * hx + mvp_data[9] * hy + mvp_data[10] * hz + mvp_data[11]
+            cw = mvp_data[12] * hx + mvp_data[13] * hy + mvp_data[14] * hz + mvp_data[15]
+            if cw >= 0.001:
+                d = cz / cw
+        depth_buf[pid] = d
+
+
+@tack.kernel
+def _composite_raster(canvas_r, canvas_g, canvas_b,
+                      raster_r, raster_g, raster_b, n_pixels):
+    """Gamma-correct the pixels the rasterizer drew and lay them over the canvas."""
+    for i in range(n_pixels):
+        if raster_r[i] >= 0.0:
+            canvas_r[i] = pow(min(raster_r[i], 1.0), 0.4545)
+            canvas_g[i] = pow(min(raster_g[i], 1.0), 0.4545)
+            canvas_b[i] = pow(min(raster_b[i], 1.0), 0.4545)
+
+
+@tack.kernel
+def _resolve_raster(canvas_r, canvas_g, canvas_b, winners, colors,
+                    has_colors, n_pixels):
+    """One writer per pixel consumes the completed primitive selection."""
+    for i in range(n_pixels):
+        winner = winners[i]
+        if winner != 2147483647:
+            cr = 0.8
+            cg = 0.8
+            cb = 0.8
+            if has_colors == 1:
+                cr = colors[winner * 3]
+                cg = colors[winner * 3 + 1]
+                cb = colors[winner * 3 + 2]
+            canvas_r[i] = cr
+            canvas_g[i] = cg
+            canvas_b[i] = cb
+        # This dispatch also prepares scratch for the next actor. Each pixel
+        # reads its selected ID before clearing it; dispatch completion orders
+        # that reset before the next actor's selection pass.
+        winners[i] = 2147483647
+
+
+@tack.func
+def _raster_fragment(depth_buf, winners, pid, depth, primitive, phase):
+    """Reduce depth, then select an ID in a separate synchronous dispatch.
+
+    Neither pass writes color. Depth is immutable during ID selection;
+    the later color resolve reads and resets only its own pixel's ID.
+    Equal depths select the lowest primitive index within this actor.
+    """
+    # Exclude NaNs/infinities and values beyond the finite clear sentinel.
+    if depth > -1.0e30 and depth < 1.0e30:
+        if phase == 0:
+            tack.atomic_min(depth_buf, pid, depth)
+        elif depth_buf[pid] == depth:
+            tack.atomic_min(winners, pid, primitive)
+
+
+@tack.kernel
+def _rasterize_wireframe(depth_buf, winners, points, conn,
+                         mvp_data,
+                         scr_w, scr_h, n_tris, max_edge_len, phase):
+    """Rasterize triangle edges for one depth/primitive-selection pass."""
+    for t in range(n_tris):
         i0 = conn[t * 3]
         i1 = conn[t * 3 + 1]
         i2 = conn[t * 3 + 2]
@@ -194,25 +278,25 @@ def _rasterize_wireframe(canvas_r, canvas_g, canvas_b, depth_buf,
 
         # Edge 0-1
         if v0 == 1 and v1 == 1:
-            _draw_edge(canvas_r, canvas_g, canvas_b, depth_buf,
+            _draw_edge(depth_buf, winners,
                        sx0, sy0, d0, sx1, sy1, d1,
-                       cr, cg, cb, scr_w, scr_h, max_edge_len)
+                       t, phase, scr_w, scr_h, max_edge_len)
         # Edge 1-2
         if v1 == 1 and v2 == 1:
-            _draw_edge(canvas_r, canvas_g, canvas_b, depth_buf,
+            _draw_edge(depth_buf, winners,
                        sx1, sy1, d1, sx2, sy2, d2,
-                       cr, cg, cb, scr_w, scr_h, max_edge_len)
+                       t, phase, scr_w, scr_h, max_edge_len)
         # Edge 2-0
         if v2 == 1 and v0 == 1:
-            _draw_edge(canvas_r, canvas_g, canvas_b, depth_buf,
+            _draw_edge(depth_buf, winners,
                        sx2, sy2, d2, sx0, sy0, d0,
-                       cr, cg, cb, scr_w, scr_h, max_edge_len)
+                       t, phase, scr_w, scr_h, max_edge_len)
 
 
 @tack.func
-def _draw_edge(canvas_r, canvas_g, canvas_b, depth_buf,
+def _draw_edge(depth_buf, winners,
                x0f, y0f, d0, x1f, y1f, d1,
-               cr, cg, cb, width, height, max_steps):
+               primitive, phase, width, height, max_steps):
     """Bresenham line with depth-interpolated depth test."""
     ix0 = int(x0f)
     iy0 = int(y0f)
@@ -252,11 +336,7 @@ def _draw_edge(canvas_r, canvas_g, canvas_b, depth_buf,
             t = float(step) / float(steps)
             d = d0 + t * (d1 - d0)
             pid = cy * width + cx
-            tack.atomic_min(depth_buf, pid, d)
-            if depth_buf[pid] >= d:
-                canvas_r[pid] = cr
-                canvas_g[pid] = cg
-                canvas_b[pid] = cb
+            _raster_fragment(depth_buf, winners, pid, d, primitive, phase)
 
         if cx == ix1 and cy == iy1:
             break
@@ -270,12 +350,11 @@ def _draw_edge(canvas_r, canvas_g, canvas_b, depth_buf,
 
 
 @tack.kernel
-def _rasterize_points(canvas_r, canvas_g, canvas_b, depth_buf,
-                      points, colors, has_colors,
+def _rasterize_points(depth_buf, winners, points,
                       mvp_data,
                       scr_w, scr_h, pt_size,
-                      n_verts, max_radius):
-    """Rasterize vertices as discs with depth test."""
+                      n_verts, max_radius, phase):
+    """Rasterize vertices for one depth/primitive-selection pass."""
     for v in range(n_verts):
         px = points[v * 3]
         py = points[v * 3 + 1]
@@ -290,14 +369,6 @@ def _rasterize_points(canvas_r, canvas_g, canvas_b, depth_buf,
             scr_w, scr_h)
 
         if visible == 1:
-            cr = 0.8
-            cg = 0.8
-            cb = 0.8
-            if has_colors == 1:
-                cr = colors[v * 3]
-                cg = colors[v * 3 + 1]
-                cb = colors[v * 3 + 2]
-
             rad = pt_size
             isx = int(sx)
             isy = int(sy)
@@ -311,11 +382,7 @@ def _rasterize_points(canvas_r, canvas_g, canvas_b, depth_buf,
                         fy = isy + oy
                         if 0 <= fx and fx < scr_w and 0 <= fy and fy < scr_h:
                             pid = fy * scr_w + fx
-                            tack.atomic_min(depth_buf, pid, depth)
-                            if depth_buf[pid] >= depth:
-                                canvas_r[pid] = cr
-                                canvas_g[pid] = cg
-                                canvas_b[pid] = cb
+                            _raster_fragment(depth_buf, winners, pid, depth, v, phase)
 
 
 @tack.kernel
@@ -332,15 +399,24 @@ def _apply_gamma(canvas_r, canvas_g, canvas_b, n_pixels):
 # ================================================================
 
 def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
-                  point_size=3.0):
+                  point_size=3.0, composite=False, surface_depth=False):
     """Rasterize wireframe and point actors into the canvas.
 
     Args:
         canvas: Canvas to render into.
         scene: Scene containing wireframe/point actors.
         camera: PerspectiveCamera or OrthographicCamera.
-        background: RGB background color in [0, 1].
+        background: RGB background color in [0, 1].  Unused when compositing.
         point_size: Radius in pixels for point rendering.
+        composite: Draw over the image already in the canvas instead of
+            clearing it.  ``canvas.depth`` is left untouched.
+        surface_depth: With ``composite``, ``canvas.depth`` holds the path
+            tracer's primary-ray hit distances for this camera; rasterized
+            geometry behind those surfaces is hidden.
+
+    Each actor reduces depth, selects the lowest primitive index at that
+    depth, then resolves color with one writer per pixel. Dispatch completion
+    separates these passes. Equal-depth actors overwrite in scene order.
     """
     import time as _time
 
@@ -352,12 +428,28 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
     mvp_flat = mvp.astype(np.float32).ravel()
     mvp_field = canvas.get_work_buffer('mvp', tack.f32, (16,))
     mvp_field.from_numpy(mvp_flat)
+    winners = canvas.get_work_buffer('raster_winners', tack.i32, (n_pixels,))
 
-    # Clear
-    _clear_fb(canvas.color_r, canvas.color_g, canvas.color_b,
-              canvas.depth,
-              float(background[0]), float(background[1]),
-              float(background[2]), n_pixels)
+    if composite:
+        # Draw into scratch buffers: the canvas already holds a resolved,
+        # gamma-corrected image, and its depth is not in raster units.
+        out_r = canvas.get_work_buffer('raster_r', tack.f32, (n_pixels,))
+        out_g = canvas.get_work_buffer('raster_g', tack.f32, (n_pixels,))
+        out_b = canvas.get_work_buffer('raster_b', tack.f32, (n_pixels,))
+        out_depth = canvas.get_work_buffer('raster_depth', tack.f32,
+                                           (n_pixels,))
+        # A negative red channel marks a pixel nothing was drawn to.
+        _clear_fb(out_r, out_g, out_b, out_depth, winners, -1.0, 0.0, 0.0, n_pixels)
+        if surface_depth:
+            _surface_depth_to_raster(out_depth, canvas.depth, mvp_field,
+                                     camera, width, _SURFACE_DEPTH_BIAS,
+                                     n_pixels)
+    else:
+        out_r, out_g, out_b = canvas.color_r, canvas.color_g, canvas.color_b
+        out_depth = canvas.depth
+        _clear_fb(out_r, out_g, out_b, out_depth, winners,
+                  float(background[0]), float(background[1]),
+                  float(background[2]), n_pixels)
 
     max_edge_len = width + height
     pt_sz = max(1, int(point_size))
@@ -371,11 +463,12 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
             _fill_color(colors_field, 0,
                         actor.color[0], actor.color[1], actor.color[2],
                         actor.n_tris)
-            _rasterize_wireframe(
-                canvas.color_r, canvas.color_g, canvas.color_b, canvas.depth,
-                actor.points, actor.connectivity, colors_field,
-                mvp_field,
-                width, height, actor.n_tris, max_edge_len)
+            for phase in (0, 1):
+                _rasterize_wireframe(
+                    out_depth, winners, actor.points, actor.connectivity,
+                    mvp_field,
+                    width, height, actor.n_tris, max_edge_len, phase)
+            _resolve_raster(out_r, out_g, out_b, winners, colors_field, 1, n_pixels)
 
         elif actor.render_mode == "points":
             has_colors = 0
@@ -398,15 +491,20 @@ def render_raster(canvas, scene, camera, background=(0.05, 0.05, 0.1),
                             actor.n_verts)
                 has_colors = 1
 
-            _rasterize_points(
-                canvas.color_r, canvas.color_g, canvas.color_b, canvas.depth,
-                actor.points, colors_field, has_colors,
-                mvp_field,
-                width, height, pt_sz, actor.n_verts, pt_sz)
+            for phase in (0, 1):
+                _rasterize_points(
+                    out_depth, winners, actor.points, mvp_field,
+                    width, height, pt_sz, actor.n_verts, pt_sz, phase)
+            _resolve_raster(out_r, out_g, out_b, winners, colors_field,
+                            has_colors, n_pixels)
 
     _t_raster = _time.perf_counter() - _t0
 
-    # Gamma correction
-    _apply_gamma(canvas.color_r, canvas.color_g, canvas.color_b, n_pixels)
+    if composite:
+        _composite_raster(canvas.color_r, canvas.color_g, canvas.color_b,
+                          out_r, out_g, out_b, n_pixels)
+    else:
+        # Gamma correction
+        _apply_gamma(canvas.color_r, canvas.color_g, canvas.color_b, n_pixels)
 
     print(f"  [rasterize] {_t_raster:.3f}s")

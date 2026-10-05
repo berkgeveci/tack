@@ -1,4 +1,6 @@
-"""Tests for type system cleanup: ScalarType on allocs, _NAME_TO_TYPE, registry leak."""
+"""Tests for type system cleanup and immutable template method sources."""
+
+import ast
 
 import numpy as np
 
@@ -142,8 +144,8 @@ def test_cuda_shared_alloc_types():
     annotate_types(func)
     src = generate_cuda_source(func)
 
-    assert "__shared__ float smem[256]" in src
-    assert "long long buf[8]" in src
+    assert "__shared__ float tack_var_a_smem[256]" in src
+    assert "long long tack_var_a_buf[8]" in src
 
 
 def test_msl_shared_alloc_types():
@@ -165,12 +167,12 @@ def test_msl_shared_alloc_types():
     annotate_types(func)
     src = generate_msl_source(func)
 
-    assert "threadgroup uchar smem[256]" in src
+    assert "threadgroup uchar tack_var_a_smem[256]" in src
 
 
 # --- End-to-end: shared and local alloc with ScalarType ---
 
-def test_shared_f32_end_to_end(backend):
+def test_shared_f32_end_to_end(workgroup_backend):
     """tack.shared(tack.f32, ...) works end-to-end."""
     n = 256
     data = tack.field(dtype=tack.f32, shape=(n,))
@@ -206,11 +208,10 @@ def test_local_array_u8_end_to_end(backend):
     np.testing.assert_array_equal(out.to_numpy(), np.full(n, 42, dtype=np.uint8))
 
 
-# --- Template func registry cleanup ---
+# --- Template transformations preserve captured method bodies ---
 
-def test_func_registry_cleanup():
-    """Template rewrite cleans up temporary _func_registry entries."""
-    from tack.lang.func import _func_registry
+def test_template_method_source_is_preserved():
+    """Resolved methods must not mutate the class's captured device source."""
 
     tack.init(arch=tack.cpu)
 
@@ -227,25 +228,20 @@ def test_func_registry_cleanup():
         for i in range(out.shape[0]):
             out[i] = obj.get_val()
 
-    # Snapshot registry before
-    keys_before = set(_func_registry.keys())
+    before = ast.dump(MyClass._tack_func_methods['get_val']._funcdef)
 
     out = tack.field(dtype=tack.i32, shape=(4,))
     obj = MyClass()
     kern(obj, out)
 
-    # Registry should not have grown (temporary keys cleaned up)
-    keys_after = set(_func_registry.keys())
-    leaked = keys_after - keys_before
-    assert len(leaked) == 0, f"Leaked registry keys: {leaked}"
+    assert ast.dump(MyClass._tack_func_methods['get_val']._funcdef) == before
 
     # Verify the kernel still works
     np.testing.assert_array_equal(out.to_numpy(), np.full(4, 10, dtype=np.int32))
 
 
-def test_func_registry_no_leak_on_repeated_calls():
-    """Repeated template calls don't accumulate registry entries."""
-    from tack.lang.func import _func_registry
+def test_repeated_templates_preserve_method_source():
+    """Instance-specific resolution must leave the reusable method intact."""
 
     tack.init(arch=tack.cpu)
 
@@ -267,14 +263,11 @@ def test_func_registry_no_leak_on_repeated_calls():
     out = tack.field(dtype=tack.f32, shape=(n,))
     data.from_numpy(np.arange(n, dtype=np.float32))
 
-    size_before = len(_func_registry)
+    before = ast.dump(Counter._tack_func_methods['apply']._funcdef)
 
     # Call multiple times with different objects
     for _ in range(10):
         c = Counter()
         kern(c, data, out)
 
-    size_after = len(_func_registry)
-    assert size_after == size_before, (
-        f"Registry grew by {size_after - size_before} entries over 10 calls"
-    )
+    assert ast.dump(Counter._tack_func_methods['apply']._funcdef) == before

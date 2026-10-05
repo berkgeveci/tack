@@ -56,7 +56,11 @@ markdown_extensions:
   - toc:
       permalink: true
   - pymdownx.details
-  - pymdownx.superfences
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.tabbed:
@@ -93,9 +97,27 @@ nav:
       - Device Functions: users-guide/05-device-functions.md
       - Templates: users-guide/06-templates.md
       - Advanced Features: users-guide/07-advanced.md
+      - Reductions and Scans: users-guide/11-reductions-and-scans.md
       - Backends: users-guide/08-backends.md
       - Visualization: users-guide/09-visualization.md
       - Rendering: users-guide/10-rendering.md
+  - Design and Implementation:
+      - design/index.md
+      - Principles: design/principles.md
+      - Compilation Pipeline: design/compilation-pipeline.md
+      - Specialization and Caching: design/specialization-and-caching.md
+      - Numerical Semantics: design/numerical-semantics.md
+      - Parallel Execution: design/parallel-execution.md
+      - Memory and Aliasing: design/memory-and-aliasing.md
+      - CPU Threading Policy: design/cpu-threading.md
+      - Backend Implementations: design/backend-implementations.md
+      - Interoperability: design/interoperability.md
+  - Contracts:
+      - contracts/index.md
+      - Kernel Language Contract: reference/language-contract.md
+      - Backend Capabilities: contracts/backend-capabilities.md
+      - Runtime API: contracts/runtime-api.md
+      - Conformance and Validation: contracts/conformance.md
   - Developer's Guide:
       - developers-guide/index.md
       - Architecture: developers-guide/01-architecture.md

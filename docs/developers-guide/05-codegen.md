@@ -21,7 +21,7 @@ nearly identical:
 
 - **HIP**: Same as CUDA (`blockIdx`, `threadIdx`, `__global__`), just adds
   `#include <hip/hip_runtime.h>`.
-- **OpenCL**: Different qualifiers (`__kernel`, `get_global_id(0)`,
+- **OpenCL**: Different qualifiers (`__kernel`, `get_group_id(0)`,
   `__local`, `barrier()`), overloaded math (no `f` suffix). Also maps
   `long long` → `long` for integer types.
 
@@ -31,6 +31,28 @@ expressions) and inherit everything else.
 ## C-Like Codegens (CUDA, MSL, OpenCL)
 
 These share common patterns:
+
+### Identifier Namespaces
+
+`codegen/identifiers.py` makes a structural copy of the prepared IR for
+GPU emission. `lang/ir_names.py` enumerates binding and reference slots:
+parameters, assignments, loops, allocations, names, dimensions and
+texture references. Intrinsic call names, attributes and type/dispatch
+metadata are not renamed. Every binding uses `tack_var_`; every kernel
+entry uses `tack_kernel_`. ASCII names use the `a_` branch, with `Z` and
+underscores escaped as `Z1` and `Z0`; Unicode names use `u_` plus UTF-8 hex.
+The encodings are injective, produce ASCII identifiers without double
+underscores, and keep user names separate from emitted helpers and
+temporaries. No vendor keyword list is needed.
+
+Runtime compilation and inspection call `kernel_entry_name` on the
+original IR name; do not encode the IR function name in place or encode
+an already emitted spelling. LLVM uses the same entry encoding because
+llvmlite's JIT lookup requires ASCII. Canonical IR and its metadata keep
+their original names, and parameter positions/resource indices are
+preserved. Before this final emission step, lowering, template expansion,
+vector scalarization, scalar localization and packing use `fresh_name`
+to avoid merging generated bindings with source bindings.
 
 ### Variable Declaration and Type Inference
 
@@ -82,9 +104,49 @@ for (long k = 0; k < 8; k++) { ... }  // re-declared, not "k = 0"
 
 GPU backends use 64-bit integers for loop variables and index arithmetic
 to support grids with more than 2^31 elements:
-- CUDA/HIP: `long long`
-- MSL: `long`
-- OpenCL: `long`
+- CUDA/HIP: `long long`, with `blockIdx.x` widened before the multiply
+- MSL: `long`, initialized from the `uint` thread position
+- OpenCL: `long`, from `get_group_id(0)` widened before the multiply;
+  Intel's `get_global_id(0)` wraps at 2^32 despite its `size_t` type
+
+The runtime refuses a launch longer than one grid can index
+(`check_launch_size` in `runtime/kernel_utils.py`), so the index never
+wraps.
+
+### Floating Floor Division and Remainder
+
+`float_division.py` shares typed GPU helpers for `//` and `%`; LLVM emits
+internal typed helpers with the same operations. Both operands convert to
+the annotated floating precision before a truncating remainder is computed.
+Sign correction makes nonzero remainders follow the divisor. Quotients
+are reconstructed and snapped to integral floating values, avoiding both
+rounded-division boundary errors and integer conversion overflow. The
+helpers explicitly preserve signed zeros and nonfinite result classes.
+Do not replace them with C `%` or an integer cast of `floor(a / b)`.
+
+All CUDA kernels omit `--use_fast_math`, explicitly selecting non-flushing,
+precise division/sqrt and permitted multiply/add contraction. Metal
+disables `fastMathEnabled` for all kernels. Runtime reduction sources use
+the same settings. No operator scan or mutable per-kernel math mode is
+needed. Inspection emits the same arithmetic helpers as dispatch.
+See the language contract for the nonzero-divisor and denormal domains.
+
+## Floating-point policy
+
+Floating math calls convert arguments to their annotated result precision
+before calling backend routines. CPU libm functions use their f32/f64
+symbols and return that precision before enclosing arithmetic; integer
+math arguments default to f32 even when the destination field is f64.
+OpenCL/Metal calls need explicit casts to avoid overload ambiguity.
+
+CPU emits no fast-math flags and HIP/OpenCL retain standard compiler
+settings without unsafe math options. Expression grouping and nonfinite
+classes/signs must survive optimization. Adjacent multiply/add contraction
+is permitted, so CPU/GPU results need not agree bitwise. Scalar floating
+min/max prefer a number to NaN; the sign of equal zero ties is unspecified.
+Denormal support and global math accuracy are not inferred from safe
+compiler settings. `test_float_semantics.py` checks execution and explicit
+regression bounds; the language contract states the supported domains.
 
 ## LLVM Codegen (`llvm_gen.py`, 1,008 lines)
 
@@ -96,8 +158,9 @@ Key differences from C-like codegens:
 - Types are LLVM types (`FloatType()`, `IntType(64)`, etc.)
 - No variable declaration needed — LLVM uses SSA
 - Uses `alloca` for mutable local variables
-- `IRSharedAlloc` and `IRLocalAlloc` both map to stack allocas (no shared
-  memory on CPU)
+- `IRLocalAlloc` maps to a private stack alloca. Shared allocations, barriers,
+  thread IDs and block reductions are rejected by `workgroup_support.py`
+  before emission; CPU has no workgroup execution model.
 
 ## MSL Codegen (`msl_gen.py`, 689 lines)
 
@@ -115,9 +178,18 @@ Generates Metal Shading Language for Apple GPUs. Notable features:
 
 Generates `extern "C" __global__` kernel functions. Thread index:
 ```c
-long long __idx__ = blockIdx.x * blockDim.x + threadIdx.x;
+long long __idx__ = (long long)blockIdx.x * blockDim.x + threadIdx.x;
 if (__idx__ >= __n__) return;
 ```
+
+The cast comes before the multiply: the built-ins are 32-bit unsigned, and
+their product would wrap at 2^32 threads.
+
+`_expr_constant` emits a float literal annotated `f64` as an unsuffixed
+`repr` (exact, since `repr` round-trips) and one annotated `f32` with an
+`f` suffix. Float literals are weakly typed, so the annotation comes from
+the operand, cast or target the literal meets; see
+`ir_type_annotate.py`.
 
 Float atomic min/max use CAS-based helper functions emitted on demand.
 
@@ -128,4 +200,5 @@ Extends CUDA with OpenCL syntax differences. Also handles:
 - Hardware texture sampling: `read_imagef(image, sampler, coords)` when
   the device supports it (checked at runtime via `maxSamplers`)
 - Software trilinear fallback: generates an inline helper function with
-  the texture dimensions baked in as constants
+  the texture dimensions baked in as constants, reading the texture's
+  private `f32` copy of its field
