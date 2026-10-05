@@ -378,9 +378,33 @@ def _run_and_check(kernel, path, stores, store_types, inputs, arrays, n, label):
 
 SEEDS = list(range(32))
 
+# ROCm 7.0.2's device compiler (AMD clang 20, inside hipRTC's comgr)
+# miscompiles seed 31 at -O1 and above: within the full expression a 64-bit
+# signed `-253 < -1` evaluates false, so out2 is 255 instead of 127. The
+# generated source is correct as host C++ under UBSan (clang and gcc,
+# -O0 to -O3), on CUDA, and under ROCm's clang 23. Strict, so a toolchain
+# that compiles it correctly reports XPASS and the entry can go.
+HIPRTC_MISCOMPILED_SEEDS = {31: (7, 0)}
+
+
+def _hiprtc_version():
+    """(major, minor) of the hipRTC compiling HIP kernels, or None."""
+    try:
+        from hip import hiprtc
+        err, major, minor = hiprtc.hiprtcVersion()
+    except Exception:
+        return None
+    return (major, minor) if err == hiprtc.hiprtcResult.HIPRTC_SUCCESS else None
+
 
 @pytest.mark.parametrize("seed", SEEDS)
-def test_generated_integer_expression_matches_oracle(backend, tmp_path, seed):
+def test_generated_integer_expression_matches_oracle(backend, tmp_path, seed, request):
+    if backend == "hip" and seed in HIPRTC_MISCOMPILED_SEEDS:
+        version = HIPRTC_MISCOMPILED_SEEDS[seed]
+        if _hiprtc_version() == version:
+            request.applymarker(pytest.mark.xfail(
+                strict=True, reason=f"hipRTC {version[0]}.{version[1]} (ROCm 7.0.2) "
+                                    f"miscompiles a 64-bit compare in seed {seed}"))
     gen = Gen(seed)
     src, stores, store_types = gen.kernel()
     kernel, path = _load(tmp_path, f"int_expr_seed{seed}", src)
