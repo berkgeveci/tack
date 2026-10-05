@@ -183,6 +183,20 @@ def _pair(n=4):
     return x, out
 
 
+@tack.func
+def _sums_then_reads_j(v):
+    total = 0.0
+    for j in range(3):
+        total = total + v
+    return total + j
+
+
+@tack.kernel
+def _func_reads_loop_variable(x, out):
+    for i in range(x.shape[0]):
+        out[i] = _sums_then_reads_j(x[i])
+
+
 def test_module_value_in_kernel_is_named_with_its_position(backend):
     with pytest.raises(NameError) as error:
         _kernel_reads_module_value(*_pair())
@@ -229,6 +243,120 @@ def good(x, out, n):
             v = v + j
         out[i] = v
 '''))
+
+
+# --- A loop variable's binding ends with its loop ---------------------------
+
+def _lower(source):
+    return transform_kernel(ast.parse(source))
+
+
+def test_reading_a_loop_variable_after_its_loop_is_rejected():
+    """CPU raised NameError at codegen and the GPU backends failed to
+    compile; the frontend now refuses it with the read's position."""
+    with pytest.raises(NameError) as error:
+        _lower('''
+def bad(x, out, n):
+    for i in range(n):
+        for d in range(4):
+            x[i] = x[i] + d
+        out[i] = d
+''')
+    message = str(error.value)
+    assert message.startswith("Kernel 'bad': name 'd' at line 6, column 18 is read after the `for` loop")
+    assert "copy it to another name inside the loop" in message
+
+
+def test_a_loop_variable_does_not_update_an_outer_binding():
+    """Python would leave `d == 3`; every Tack backend left the outer 100.
+    Neither answer is given silently."""
+    with pytest.raises(NameError, match="name 'd' at line 7, column 18 is read after"):
+        _lower('''
+def bad(x, out, n):
+    for i in range(n):
+        d = 100
+        for d in range(4):
+            x[i] = x[i] + d
+        out[i] = d
+''')
+
+
+def test_a_loop_variable_read_in_a_later_range_bound_is_rejected():
+    with pytest.raises(NameError, match="name 'd' at line 6, column 24 is read after"):
+        _lower('''
+def bad(x, out, n):
+    for i in range(n):
+        for d in range(4):
+            x[i] = x[i] + d
+        for j in range(d):
+            out[i] = out[i] + j
+''')
+
+
+def test_a_loop_variable_stale_on_one_branch_is_rejected():
+    """Merged conservatively: assigned on one branch only, it is still the
+    loop's binding on the other."""
+    with pytest.raises(NameError, match="name 'd' at line 8, column 18 is read after"):
+        _lower('''
+def bad(x, out, n):
+    for i in range(n):
+        for d in range(4):
+            x[i] = x[i] + d
+        if x[i] > 0:
+            d = 1
+        out[i] = d
+''')
+
+
+def test_a_loop_variable_rebound_before_the_read_is_allowed():
+    _lower('''
+def good(x, out, n):
+    for i in range(n):
+        acc = 0
+        for d in range(4):
+            acc = acc + d
+        d = x[i]
+        if acc > d:
+            d = d + 1
+        else:
+            d = d - 1
+        out[i] = acc + d
+        for d in range(2):
+            out[i] = out[i] + d
+''')
+
+
+def test_a_loop_variable_copied_inside_its_loop_is_allowed():
+    _lower('''
+def good(x, out, n):
+    for i in range(n):
+        last = -1
+        for d in range(x[i]):
+            last = d
+        out[i] = last
+''')
+
+
+def test_sibling_loops_may_share_a_variable():
+    _lower('''
+def good(x, out, n):
+    for i in range(n):
+        for d in range(4):
+            out[i] = out[i] + d
+        for d in range(3):
+            out[i] = out[i] + d
+        while out[i] > 100:
+            for d in range(2):
+                out[i] = out[i] - d
+''')
+
+
+def test_loop_variable_read_after_an_inlined_loop_names_the_device_function(backend):
+    with pytest.raises(NameError) as error:
+        _func_reads_loop_variable(*_pair())
+    message = str(error.value)
+    assert message.startswith("Device function '_sums_then_reads_j' (inlined into kernel "
+                              "'_func_reads_loop_variable'): name 'j' at line 6, column 20")
 
 
 def test_aliasing_a_local_array_is_rejected_with_its_position(backend):
