@@ -67,7 +67,9 @@ class MetalBuffer(DeviceBuffer):
         return self._metal_buffer
 
     def from_numpy(self, arr: np.ndarray):
-        np.copyto(self._view, arr)
+        # A reshaped field shares this buffer under another shape; the
+        # element count already matches, so copy in the buffer's own shape.
+        np.copyto(self._view, arr.reshape(self._view.shape))
 
     def to_numpy(self) -> np.ndarray:
         return self._view.copy()

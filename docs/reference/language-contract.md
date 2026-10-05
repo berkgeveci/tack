@@ -193,11 +193,14 @@ covers the analysis, partial overlaps of imported storage, the generated
 signatures, and switching between overlapping and disjoint calls.
 
 **Required caller constraints for this baseline:** access only in-bounds
-elements and initialized values; write only to writable storage. Bounds
-checking and enforcement of read-only access inside kernels are not promised
-by this draft. In particular, host-side `Field` write checks are not evidence
-that generated kernels enforce the same restriction. Negative indices are
-outside the portable baseline; Python's wraparound indexing is not promised.
+elements and initialized values; write only to writable storage. Dispatch
+refuses a read-only field (`field_from_ptr`'s default, or a DLPack import
+flagged read-only) bound to a parameter the kernel may store to or update
+atomically; when a store cannot be traced to a parameter, every field
+argument counts as written. That is a check of the binding, not of accesses:
+writable fields aliasing read-only storage are not detected, and bounds
+checking is not promised by this draft. Negative indices are outside the
+portable baseline; Python's wraparound indexing is not promised.
 
 ## Types and numerical behavior
 

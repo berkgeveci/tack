@@ -332,11 +332,17 @@ _PyCapsule_SetName.argtypes = [ctypes.py_object, ctypes.c_char_p]
 # how big the array happened to be. The entry never worked in any case:
 # `dlpack_to_field` hands `wrap_ptr` an integer address and Metal's expects
 # an MTLBuffer object, so every such import raised AttributeError.
+#
+# kDLMetal is absent for a related reason. Its `data` is an opaque
+# id<MTLBuffer> handle, not an address, and `byte_offset` locates the
+# tensor inside that buffer. Wrapping one needs the handle turned back
+# into a PyObjC object and an offset carried through MetalBuffer and the
+# argument-buffer binding, neither of which exists; listing it sent the
+# handle to `wrap_ptr` as an integer, which refuses it with a TypeError.
 _DEVICE_BACKENDS = {
     kDLCPU: ("cpu",),
     kDLCUDAHost: ("cpu",),
     kDLROCMHost: ("cpu",),
-    kDLMetal: ("metal",),
     kDLCUDA: ("cuda",),
     kDLCUDAManaged: ("cuda",),
     kDLROCM: ("hip",),
@@ -466,6 +472,12 @@ def dlpack_to_field(source, writable=True):
 
     backend = get_backend()
     allowed = _DEVICE_BACKENDS.get(tensor.device.device_type)
+    if tensor.device.device_type == kDLMetal:
+        raise ValueError(
+            "Metal DLPack tensors (kDLMetal) cannot be imported: Tack has "
+            "no way yet to wrap the MTLBuffer handle they carry. Move the "
+            "tensor to host memory in the producing library, then import "
+            "it with copy=True.")
     if allowed is None:
         raise ValueError(
             f"unsupported DLPack device type {tensor.device.device_type}")

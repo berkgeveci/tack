@@ -135,6 +135,32 @@ def test_device_memory_spaces_are_self_consistent(backend):
             f"{be.name} lists device memory spaces but inherits the default"
 
 
+def test_field_from_ptr_checks_every_form_of_address(backend):
+    """The memory-space check used to run for a Python int alone.
+
+    A host address handed over as a numpy integer, or as the driver's own
+    pointer type, skipped it and was wrapped as device memory.
+    """
+    import numpy as np
+
+    from tack.runtime.dispatch import get_backend
+    be = get_backend()
+    if not be.device_memory_spaces:
+        pytest.skip(f"{be.label} does not distinguish device memory")
+
+    host = np.zeros(8, dtype=np.float32)
+    for ptr in (host.ctypes.data, np.uint64(host.ctypes.data)):
+        with pytest.raises(ValueError, match="requires a device"):
+            tack.field_from_ptr(ptr, tack.f32, (8,))
+    with pytest.raises(TypeError, match="device address"):
+        tack.field_from_ptr("not a pointer", tack.f32, (8,))
+
+    device = tack.field(dtype=tack.f32, shape=(8,))
+    device.from_numpy(np.arange(8, dtype=np.float32))
+    alias = tack.field_from_ptr(np.uint64(device._buffer.address), tack.f32, (8,))
+    np.testing.assert_array_equal(alias.to_numpy(), np.arange(8))
+
+
 # ── What counts as an address ────────────────────────────────────────
 #
 # D9: HIP's memory_space() answered "cpu" for every pointer it was ever

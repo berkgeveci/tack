@@ -400,16 +400,46 @@ class KernelVariant:
 
     `ir` is the post-pass IR — kept so the loop range can be resolved from
     it on every dispatch without re-running the passes. `payload` is
-    whatever the backend needed to cache alongside it.
+    whatever the backend needed to cache alongside it. `written_fields`
+    lists ``(index, name)`` for each field argument the kernel may store
+    to, so a dispatch can refuse read-only storage without walking IR.
     """
 
-    __slots__ = ("atomic_targets", "ir", "payload", "requires_full_workgroups")
+    __slots__ = ("atomic_targets", "ir", "payload", "requires_full_workgroups",
+                 "written_fields")
 
-    def __init__(self, ir_func, payload, *, requires_full_workgroups=False, atomic_targets=()):
+    def __init__(self, ir_func, payload, *, requires_full_workgroups=False,
+                 atomic_targets=(), written_fields=()):
         self.ir = ir_func
         self.payload = payload
         self.requires_full_workgroups = requires_full_workgroups
         self.atomic_targets = atomic_targets
+        self.written_fields = written_fields
+
+
+def _written_field_args(template, effective_args) -> tuple:
+    """``(index, name)`` of each field argument the kernel may store to."""
+    return tuple(
+        (index, param.name)
+        for index, (param, written, arg) in enumerate(
+            zip(template.params, _written_flags(template), effective_args))
+        if written and isinstance(arg, Field))
+
+
+def check_writable_fields(kernel_name, written_fields, args):
+    """Refuse a read-only field where the kernel may store to it.
+
+    `field_from_ptr` makes read-only fields by default, and a read-only
+    DLPack tensor imports as one; `from_numpy` and `fill` already honour
+    that. A kernel store would otherwise write straight through it.
+    Runs on every dispatch, over only the fields the kernel writes.
+    """
+    for index, name in written_fields:
+        if not args[index]._writable:
+            raise ValueError(
+                f"Kernel '{kernel_name}': parameter '{name}' may be written, "
+                f"but its field is read-only. Pass writable=True to "
+                f"field_from_ptr() if the memory may be modified.")
 
 
 def resolve_variant(backend, kernel, args, kwargs, build,
@@ -507,13 +537,16 @@ def resolve_variant(backend, kernel, args, kwargs, build,
         ir_func.disjoint_fields = disjoint
         variant = KernelVariant(ir_func, build(ir_func, effective_args),
                                 requires_full_workgroups=full_groups,
-                                atomic_targets=atomic_targets)
+                                atomic_targets=atomic_targets,
+                                written_fields=_written_field_args(
+                                    template, effective_args))
         slot[key] = variant
     elif variant.requires_full_workgroups:
         check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
                                backend_label=backend.label)
 
     check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
+    check_writable_fields(variant.ir.name, variant.written_fields, effective_args)
     return variant, effective_args
 
 

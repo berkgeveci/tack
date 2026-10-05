@@ -139,7 +139,8 @@ Every dispatch:
 4. `kernel.get_ir(...)` returns the **pristine IR template** for this specialization; check required workgroup support against the backend
 5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field`
 6. Build the variant key and look it up (see below)
-7. Resolve the loop range from the variant's IR; dispatch (CPU decides serial vs threads, GPU launches a grid)
+7. Check the call's storage against what the variant recorded: atomic target alignment, and no read-only field (`field_from_ptr`'s default, a read-only DLPack import) bound where the kernel may store (`written_fields`, from `written_field_params`)
+8. Resolve the loop range from the variant's IR; dispatch (CPU decides serial vs threads, GPU launches a grid)
 
 Only on a cache miss:
 1. Deep-copy the template with `clone_ir()` — the passes below mutate IR in place and must not touch the template

@@ -60,7 +60,9 @@ class NumpyBuffer(DeviceBuffer):
         self._data = np.zeros(shape, dtype=numpy_dtype)
 
     def from_numpy(self, arr: np.ndarray):
-        np.copyto(self._data, arr)
+        # A reshaped field shares this buffer under another shape; the
+        # element count already matches, so copy in the buffer's own shape.
+        np.copyto(self._data, arr.reshape(self._data.shape))
 
     def to_numpy(self) -> np.ndarray:
         return self._data.copy()
@@ -438,7 +440,8 @@ def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
     Read-only by default; pass writable=True to enable writes.
 
     Raises ValueError if the pointer's memory space does not match the
-    active backend (e.g. a CPU pointer with the CUDA backend).
+    active backend (e.g. a CPU pointer with the CUDA backend), and
+    TypeError if a CUDA, HIP or Level Zero pointer is not an address.
 
     Args:
         ptr: device pointer (integer) or backend-specific buffer object.
@@ -454,15 +457,23 @@ def field_from_ptr(ptr, dtype: ScalarType, shape: tuple[int, ...],
         A Field wrapping the external memory.
     """
     from tack.runtime.dispatch import get_backend
+    from tack.runtime.kernel_utils import as_address
 
     if isinstance(shape, int):
         shape = (shape,)
     backend = get_backend()
 
-    # Validate the pointer's memory space against what this backend expects.
-    # Skipped for non-integer pointers (Metal MTLBuffer objects, numpy arrays
-    # on CPU) and for backends that do not distinguish device memory.
-    if isinstance(ptr, int) and backend.device_memory_spaces:
+    # Validate the pointer's memory space against what this backend expects,
+    # on backends that distinguish device memory; Metal MTLBuffer objects
+    # and CPU numpy arrays are not addresses and need no check. Any form a
+    # device pointer arrives in -- int, numpy integer, CUdeviceptr -- is
+    # checked, not only a Python int.
+    if backend.device_memory_spaces:
+        if as_address(ptr) is None:
+            raise TypeError(
+                f"field_from_ptr() on the {backend.label} backend takes a "
+                f"device address (an integer, or an object int() accepts), "
+                f"not {type(ptr).__name__}.")
         space = backend.memory_space(ptr)
         if space not in backend.device_memory_spaces:
             raise ValueError(
