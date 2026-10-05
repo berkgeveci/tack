@@ -51,7 +51,7 @@ be shared.
 
 import tack
 
-__all__ = ["field_to_vtk", "vtk_to_field", "init_level_zero"]
+__all__ = ["field_to_vtk", "init_level_zero", "vtk_to_field"]
 
 
 def _dlpack_support():
