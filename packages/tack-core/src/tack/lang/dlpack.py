@@ -155,16 +155,20 @@ _PyCapsule_GetPointer.restype = ctypes.c_void_p
 _PyCapsule_GetPointer.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
 
 
-def _release(managed_ptr, struct):
+def _release(managed_ptr, struct, _cast=ctypes.cast, _pointer=ctypes.POINTER,
+             _pins=_prevent_gc):
     """Unpin whatever was retained for the export at `managed_ptr`.
 
     `struct` says which layout to read, since manager_ctx sits at a
     different offset in the two.
+
+    Reached from `_capsule_destructor`, so it too takes what it needs as
+    default arguments rather than from module globals; see there.
     """
     if not managed_ptr:
         return
-    managed = ctypes.cast(managed_ptr, ctypes.POINTER(struct)).contents
-    _prevent_gc.pop(managed.manager_ctx, None)
+    managed = _cast(managed_ptr, _pointer(struct)).contents
+    _pins.pop(managed.manager_ctx, None)
 
 
 @ctypes.CFUNCTYPE(None, ctypes.c_void_p)
@@ -180,23 +184,31 @@ def _dlpack_deleter_versioned(managed_ptr):
     _release(managed_ptr, DLManagedTensorVersioned)
 
 
-@ctypes.CFUNCTYPE(None, ctypes.c_void_p)
-def _capsule_destructor(capsule_ptr):
+def _destroy_capsule(capsule_ptr, _is_valid=_PyCapsule_IsValid,
+                     _get_pointer=_PyCapsule_GetPointer, _release=_release,
+                     _legacy=DLManagedTensor,
+                     _versioned=DLManagedTensorVersioned):
     """Release an export that no consumer ever adopted.
 
     A consumer that takes the tensor renames the capsule to
     "used_dltensor" and becomes responsible for calling the deleter. If a
     capsule is collected still named "dltensor" nobody adopted it, and
     without this the pinned objects would never be freed.
+
+    Everything it needs is bound as a default argument. A capsule can
+    outlive this module -- a consumer that failed part-way may still hold
+    one when the interpreter exits -- and by then the module's globals are
+    gone, so a plain global lookup here raises NameError.
     """
     if not capsule_ptr:
         return
-    if _PyCapsule_IsValid(capsule_ptr, b"dltensor"):
-        _release(_PyCapsule_GetPointer(capsule_ptr, b"dltensor"),
-                 DLManagedTensor)
-    elif _PyCapsule_IsValid(capsule_ptr, b"dltensor_versioned"):
-        _release(_PyCapsule_GetPointer(capsule_ptr, b"dltensor_versioned"),
-                 DLManagedTensorVersioned)
+    if _is_valid(capsule_ptr, b"dltensor"):
+        _release(_get_pointer(capsule_ptr, b"dltensor"), _legacy)
+    elif _is_valid(capsule_ptr, b"dltensor_versioned"):
+        _release(_get_pointer(capsule_ptr, b"dltensor_versioned"), _versioned)
+
+
+_capsule_destructor = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(_destroy_capsule)
 
 
 def _get_device_info(field):

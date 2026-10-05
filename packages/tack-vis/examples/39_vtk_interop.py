@@ -27,7 +27,7 @@ device needs a device filter (vtkmContour and friends), which is a
 different pipeline than this one.
 
 Usage:
-  python examples/39_vtk_interop.py [--arch cpu|metal|cuda|hip]
+  python examples/39_vtk_interop.py [--arch cpu|metal|cuda|hip|level_zero]
 
 Needs VTK with vtkmodules.util.dlpack_support.
 """
@@ -44,7 +44,13 @@ parser = argparse.ArgumentParser()
 parser.add_argument("--arch", default="cpu",
                     choices=["cpu", "metal", "cuda", "hip", "level_zero"])
 args = parser.parse_args()
-tack.init(arch=getattr(tack, args.arch))
+if args.arch == "level_zero":
+    # A Level Zero pointer only means something in the context that
+    # allocated it, so Tack starts inside the one VTK already uses.
+    from tack.interop.vtk import init_level_zero
+    init_level_zero()
+else:
+    tack.init(arch=getattr(tack, args.arch))
 
 NX = NY = NZ = 64
 N_POINTS = NX * NY * NZ

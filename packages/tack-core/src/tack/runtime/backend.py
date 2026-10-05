@@ -62,6 +62,11 @@ class Backend:
     #: supported atomic types/scopes, or safe partial-workgroup execution.
     supports_workgroups: bool = False
 
+    #: Keyword options `tack.init()` forwards to this backend's constructor.
+    #: Anything else is rejected there, so a misspelt or misdirected option
+    #: cannot be silently dropped.
+    init_options: frozenset[str] = frozenset()
+
     #: Memory-space names (as returned by `memory_space()`) that a pointer
     #: must be in for `field_from_ptr()` to wrap it. Empty means this
     #: backend does not distinguish, so no check is made.
