@@ -169,6 +169,11 @@ def test_numpy_integer_alias_copies_reach_the_device_memory(backend):
     so every copy through the alias failed with hipErrorInvalidValue.
     Write through one handle and read through the other: equal values
     alone cannot tell an alias from a copy.
+
+    A signed integer names only the lower half of the address space, and
+    `as_address` refuses negatives, so np.int64 is tried only where the
+    address fits. Level Zero's device addresses on a Max 1100 start at
+    0xff00..., past 2^63, where np.int64 itself raises OverflowError.
     """
     import numpy as np
 
@@ -177,9 +182,10 @@ def test_numpy_integer_alias_copies_reach_the_device_memory(backend):
         pytest.skip(f"{get_backend().label} does not distinguish device memory")
 
     device = tack.field(dtype=tack.f32, shape=(8,))
-    for ptr_type in (np.uint64, np.int64):
-        alias = tack.field_from_ptr(ptr_type(device._buffer.address), tack.f32, (8,),
-                                    writable=True)
+    address = device._buffer.address
+    ptr_types = [np.uint64] + ([np.int64] if address < 1 << 63 else [])
+    for ptr_type in ptr_types:
+        alias = tack.field_from_ptr(ptr_type(address), tack.f32, (8,), writable=True)
         alias.from_numpy(np.arange(8, dtype=np.float32) + 1)
         np.testing.assert_array_equal(device.to_numpy(), np.arange(8) + 1)
         alias.fill(3.0)
