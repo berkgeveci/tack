@@ -210,3 +210,45 @@ def test_integers_too_big_or_negative_to_be_addresses_are_refused(value):
     """
     from tack.runtime.kernel_utils import as_address
     assert as_address(value) is None
+
+
+# ── Initialization options and environment ───────────────────────────
+
+def test_cpu_declares_num_threads():
+    """CPUBackend takes num_threads; tack.init used to refuse to pass it."""
+    from tack.runtime.dispatch import get_backend
+    try:
+        tack.init(arch=tack.cpu, num_threads=3)
+        assert get_backend().num_threads == 3
+    finally:
+        tack.init(arch=tack.cpu)
+
+
+@pytest.mark.parametrize("policy", ["v1", "v2"])
+def test_cpu_policy_accepts_its_values(monkeypatch, policy):
+    from tack.runtime.cpu import CPUBackend
+    monkeypatch.setenv("TACK_CPU_POLICY", policy)
+    assert CPUBackend(num_threads=2).policy == policy
+
+
+@pytest.mark.parametrize("policy", ["V2", "v3", "2"])
+def test_cpu_policy_refuses_anything_else(monkeypatch, policy):
+    """Any value but "v2" used to select v1 without a word."""
+    from tack.runtime.cpu import CPUBackend
+    monkeypatch.setenv("TACK_CPU_POLICY", policy)
+    with pytest.raises(ValueError, match="Accepted: v1, v2"):
+        CPUBackend(num_threads=2)
+
+
+@pytest.mark.parametrize("value,keeps", [
+    ("1", True), ("yes", True), ("0", False), ("false", False),
+    ("off", False), ("", False),
+])
+def test_no_reinit_reads_as_a_flag(monkeypatch, value, keeps):
+    """`TACK_NO_REINIT=0` used to count as set."""
+    from tack.runtime.dispatch import get_backend
+    tack.init(arch=tack.cpu)
+    before = get_backend()
+    monkeypatch.setenv("TACK_NO_REINIT", value)
+    tack.init(arch=tack.cpu)
+    assert (get_backend() is before) == keeps

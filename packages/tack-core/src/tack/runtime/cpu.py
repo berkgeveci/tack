@@ -203,6 +203,9 @@ from tack.runtime.kernel_utils import (  # noqa: F401
 # break-even is already P/(P-1); the rest is margin against a mis-estimate.
 _PARALLEL_BREAK_EVEN = 2.0
 
+# The values TACK_CPU_POLICY accepts.
+_CPU_POLICIES = ("v1", "v2")
+
 # --- policy v2, the default since 2026-08-10 (TACK_CPU_POLICY=v1 opts out) ---
 #
 # Two measured defects, which want fixing together because each is the only
@@ -721,6 +724,8 @@ class CPUBackend(Backend):
     supported_dtypes = _CPU_SUPPORTED_DTYPES
     # Reductions go through numpy on the host — the data is already there.
     supports_device_reductions = False
+    # `tack.init(arch="cpu", num_threads=4)`; overrides TACK_CPU_THREADS.
+    init_options = frozenset({"num_threads"})
 
 
     def __init__(self, num_threads: int | None = None):
@@ -743,7 +748,12 @@ class CPUBackend(Backend):
         # run. Measured across two machines and four background loads, v1
         # threw away up to 8.8 ms a sweep there; v2's worst case is bounded
         # speedup not taken. `TACK_CPU_POLICY=v1` restores the old policy.
-        self.policy = os.environ.get("TACK_CPU_POLICY", "v2")
+        # Anything else is refused: a misspelt value used to select v1.
+        self.policy = os.environ.get("TACK_CPU_POLICY") or "v2"
+        if self.policy not in _CPU_POLICIES:
+            raise ValueError(
+                f"TACK_CPU_POLICY={self.policy!r} is not a CPU threading "
+                f"policy. Accepted: {', '.join(_CPU_POLICIES)}.")
         # Precomputed because the dispatch path tests it on every call, and
         # v1 should not pay a string comparison for a feature it does not
         # use. The path P2 spent its effort getting to ~11.7 us.

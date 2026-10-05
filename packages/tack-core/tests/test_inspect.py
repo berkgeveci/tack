@@ -92,3 +92,72 @@ def test_inspect_scalar_args(backend):
     result = tack.inspect(scale, x, out, 2.0, mode="source")
     assert isinstance(result, str)
     assert len(result) > 50
+
+
+def test_optimized_mode_is_cpu_only(backend):
+    """There is no Tack-visible optimized form of GPU source to return.
+
+    It used to hand back the unoptimized source under the optimized name.
+    """
+    x, y, out = _make_fields()
+    if backend == "cpu":
+        assert "define" in tack.inspect(vector_add, x, y, out, mode="optimized")
+        return
+    with pytest.raises(ValueError, match="CPU only"):
+        tack.inspect(vector_add, x, y, out, mode="optimized")
+
+
+@pytest.mark.parametrize("mode", ["ir", "source"])
+def test_inspect_rejects_dtypes_dispatch_would(monkeypatch, mode):
+    """Inspection must not show code for a call dispatch would refuse."""
+    import numpy as np
+
+    from tack.runtime.dispatch import get_backend
+
+    tack.init(arch=tack.cpu)
+    backend = get_backend()
+    monkeypatch.setattr(backend, "supported_dtypes",
+                        backend.supported_dtypes - {tack.f64})
+    x = tack.field(dtype=tack.f64, shape=(4,))
+    out = tack.field(dtype=tack.f64, shape=(4,))
+    x.from_numpy(np.zeros(4))
+
+    @tack.kernel
+    def copy(x, out):
+        for i in range(x.shape[0]):
+            out[i] = x[i]
+
+    with pytest.raises(TypeError, match="not supported on"):
+        tack.inspect(copy, x, out, mode=mode)
+
+
+def test_inspect_takes_the_backends_texture_decision(monkeypatch):
+    """HIP and Level Zero sample in software on devices without texture
+    hardware, which changes the generated code. Inspection has to ask the
+    backend, as dispatch does, rather than assume hardware sampling."""
+    import numpy as np
+
+    from tack.runtime.dispatch import get_backend
+
+    tack.init(arch=tack.cpu)
+    backend = get_backend()
+    seen = []
+
+    def software_only(ir_func, effective_args):
+        for param, arg in zip(ir_func.params, effective_args):
+            if isinstance(arg, tack.Texture3D):
+                seen.append(param.name)
+                param._is_texture = False
+
+    monkeypatch.setattr(backend, "_store_texture_shapes", software_only)
+
+    @tack.kernel
+    def sample(tex, out):
+        for i in range(out.shape[0]):
+            out[i] = tex.sample(0.5, 0.5, 0.5)
+
+    data = tack.field(tack.f32, (8,))
+    data.from_numpy(np.ones(8, dtype=np.float32))
+    tex = tack.texture3d(data, shape=(2, 2, 2))
+    tack.inspect(sample, tex, tack.field(tack.f32, (3,)), mode="source")
+    assert seen == ["tex"]

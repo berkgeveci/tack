@@ -13,7 +13,7 @@ from tack.lang.ir_resolve import resolve_ir
 from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_type_annotate import annotate_types
 from tack.lang.ir_verify import verify_ir
-from tack.lang.type_inference import infer_param_types
+from tack.lang.type_inference import check_dispatch_types, infer_param_types
 from tack.lang.workgroup_participation import (
     check_workgroup_launch,
     check_workgroup_participation,
@@ -26,6 +26,7 @@ from tack.runtime.kernel_utils import (
     _expand_template_args,
     _get_loop_range,
     _localize_assigned_scalar_params,
+    _store_texture_shapes,
 )
 
 
@@ -33,8 +34,9 @@ def _prepare_ir(kernel, args, *, backend=None):
     """Run the common IR preparation pipeline: transform, resolve, infer, optimize.
 
     Returns (ir_func, effective_args) with a deep-copied, fully annotated IR.
-    Supply a backend to enforce target capabilities. Cross-target codegen
-    tools may omit it and let their selected generator check support.
+    Supply a backend to enforce target capabilities and make its dispatch
+    decisions. Cross-target codegen tools may omit it and let their
+    selected generator check support.
     """
     from tack.lang.field import Texture3D
 
@@ -64,14 +66,19 @@ def _prepare_ir(kernel, args, *, backend=None):
     resolve_ir(ir_func, name_to_field)
     verify_ir(ir_func, 'resolved')
 
-    # Type inference
+    # Type inference, and texture extents recorded the way dispatch records
+    # them: a backend without texture hardware samples in software, which
+    # is different generated code.
     infer_param_types(ir_func, effective_args)
+    if backend is not None:
+        backend._store_texture_shapes(ir_func, effective_args)
+    else:
+        _store_texture_shapes(ir_func, effective_args)
     verify_ir(ir_func, 'inferred')
-
-    # Store texture shapes on params for codegen
-    for param, arg in zip(ir_func.params, effective_args):
-        if isinstance(arg, Texture3D):
-            param._texture_shape = arg.shape_3d
+    if backend is not None:
+        check_dispatch_types(ir_func, effective_args,
+                             supported_dtypes=backend.supported_dtypes,
+                             backend_name=backend.label)
 
     _localize_assigned_scalar_params(ir_func)
     verify_ir(ir_func, 'localized')
@@ -106,7 +113,8 @@ def inspect(kernel, *args, mode="source"):
         mode: What to return:
             "ir"        — Tack intermediate representation
             "source"    — backend-specific source code (MSL, CUDA C, LLVM IR, etc.)
-            "optimized" — source after backend optimization (LLVM O3 on CPU)
+            "optimized" — LLVM IR after O3; CPU only, since the GPU backends'
+                          vendor compilers optimize past anything Tack sees
 
     Returns:
         The generated code as a string.
@@ -138,6 +146,12 @@ def _generate_source(kernel, args, optimize=False):
     backend_name = type(backend).__name__
 
     ir_func, effective_args = _prepare_ir(kernel, args, backend=backend)
+    if optimize and backend.name != "cpu":
+        # After preparation, so a kernel error is reported in every mode.
+        raise ValueError(
+            f"inspect mode 'optimized' is CPU only: the {backend.label} "
+            f"backend's optimizer runs inside its vendor compiler. Use "
+            f"mode='source' for the code Tack generates.")
 
     # GPU backends need scalar packing
     if backend_name in ("MetalBackend", "CUDABackend", "HIPBackend", "LevelZeroBackend"):

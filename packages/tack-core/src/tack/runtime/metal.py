@@ -218,8 +218,8 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
     msl_source = generate_msl_source(ir_func)
 
     # Debug: dump MSL source for analysis
-    import os
-    if os.environ.get("TACK_DUMP_MSL"):
+    from tack.runtime.dispatch import env_flag
+    if env_flag("TACK_DUMP_MSL"):
         path = f"/tmp/tack_{kernel_name}.msl"
         with open(path, "w") as f:
             f.write(msl_source)
