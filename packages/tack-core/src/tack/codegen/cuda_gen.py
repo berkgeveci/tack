@@ -619,6 +619,9 @@ class CUDACodeGen:
 
     def _expr_constant(self, node: ir.IRConstant) -> str:
         if isinstance(node.value, float):
+            # repr round-trips, so an unsuffixed double literal is exact.
+            if getattr(node, 'dtype', None) is f64:
+                return repr(node.value)
             return f"{node.value!r}f"
         if isinstance(node.value, bool):
             return "1" if node.value else "0"

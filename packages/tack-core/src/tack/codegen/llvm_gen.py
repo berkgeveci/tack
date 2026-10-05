@@ -656,7 +656,10 @@ class LLVMCodeGen:
         if isinstance(node.value, bool):
             return llvm_ir.Constant(llvm_ir.IntType(32), int(node.value))
         if isinstance(node.value, float):
-            return llvm_ir.Constant(llvm_ir.FloatType(), node.value)
+            # A weak literal in an f64 expression is the exact Python double.
+            target = llvm_ir.DoubleType() if getattr(node, 'dtype', None) is f64 \
+                else llvm_ir.FloatType()
+            return llvm_ir.Constant(target, node.value)
         if isinstance(node.value, int):
             dtype = getattr(node, 'dtype', None)
             target = _llvm_type(dtype) if dtype in INTEGER_TYPES else llvm_ir.IntType(64)
