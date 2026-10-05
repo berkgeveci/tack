@@ -205,6 +205,14 @@ counts, every skip reason, whether the `timing` tests ran, and the first
 failure if there was one. Don't waive a numerical failure with an
 expected-failure marker. Preserve its log and report it.
 
+There is one exception: a defect in a vendor toolchain, shown with a
+reproducer that doesn't use Tack, after the generated source has been
+shown to be correct. Such a marker is `strict`, applies only to the
+toolchain version that was shown to fail, names the defect, and is listed
+in the backend's documentation. The only one so far is ROCm 7.0.2's
+miscompile of generated integer seed 31 (see
+[Backend Implementations](../design/backend-implementations.md#hip)).
+
 ## Validation status at `745e01f`
 
 From the project's validation records. A result recorded at another hash
@@ -214,7 +222,7 @@ is reported at that hash, not relabeled.
 |---|---|---|
 | CPU + CUDA | **Validated clean**, 2026-10-05 | Intel Xeon E5-2650 host, NVIDIA RTX 4060 Ti, driver 615.71.09, NVRTC 13.4, Clang 14 with `TACK_REQUIRE_CLANG=1`. Full suite run at `0501c8f` with CUDA required: 3503 passed, 89 skipped, 49 deselected, no failures, and the timing tests ran. CUDA examples: 45 passed, 4 skipped. CPU examples: 44 passed, 5 skipped. `validate_all.py` 7/7 on both. `745e01f` only reorders one `__all__` list after a lint failure. At `745e01f`, lint passed and `test_vtk_interop.py`, `test_dlpack.py` and `test_level_zero_context.py` were rerun: 69 passed, 32 skipped |
 | CPU + Metal | **Validated clean**, 2026-10-05 | Apple M1 Max, macOS 26.7, pyobjc 12.1, Apple Clang 21.0.0 with `TACK_REQUIRE_CLANG=1`, at `745e01f` exactly. Full suite with Metal required: 3439 passed, 88 skipped, 49 deselected, 0 failed, and the timing tests ran. Metal examples: 45 passed, 4 skipped. CPU examples: 44 passed, 5 skipped. `validate_all.py` 7/7 on both |
-| CPU + HIP | **Pending** | Not yet run at `745e01f`. Last full validation: `b68896f`, 2026-10-04, AMD Instinct MI300X VF (gfx942), ROCm 7.0.2, hip-python 7.2.2: 3268 passed, 82 skipped, 0 failed, with examples and harness clean |
+| CPU + HIP | **One toolchain failure**, 2026-10-05 | AMD Instinct MI300X VF (gfx942), ROCm 7.0.2, hip-python 7.2.2, at `745e01f` exactly. Full suite with HIP required: 3501 passed, 90 skipped, 1 failed, and the timing tests ran. HIP examples: 45 passed, 4 skipped. CPU examples: 44 passed, 5 skipped. `validate_all.py` 7/7 on both. The failure is ROCm 7.0.2's device compiler miscompiling generated integer seed 31; the generated source is correct. `7de38d2` adds only a strict expected-failure marker for that case under hipRTC 7.0. A rerun of that module at `7de38d2` is pending |
 | CPU + Level Zero | **Pending** | Not yet run at `745e01f`, because the host is unavailable. Last clean full validation: `3decd4c`, 2026-10-04, Intel Data Center GPU Max 1100 (`supports_f64: True`): 3301 passed, 108 skipped, 0 failed, with examples and harness clean. A later full run of the Level Zero interop branch (`321a719`, 2026-10-05) had two failures, one since fixed and one NUMA-related. It predates the release candidate and doesn't count for it |
 
 All recorded skips were capabilities or absent optional dependencies. For

@@ -222,6 +222,17 @@ hipRTC rejects CUDA's `cudaTextureObject_t`.
 grid, the same guard and 64-bit locals — through `hipModuleLaunchKernel`,
 followed by `hipDeviceSynchronize()`.
 
+**Known toolchain defect.** ROCm 7.0.2's device compiler (AMD clang 20,
+embedded in hipRTC's comgr) miscompiles one generated integer expression
+at `-O1` and above: a 64-bit signed `-253 < -1` inside the full expression
+evaluates false. The generated source is free of undefined behavior (UBSan
+under clang and gcc, `-O0` to `-O3`) and is correct on CUDA and under
+ROCm's clang 23, so it's a compiler defect and not a code generation one.
+It depends on the surrounding expression, so Tack doesn't try to avoid it.
+`test_integer_expression_differential.py` marks that one case as a strict
+expected failure when hipRTC reports 7.0. A fixed toolchain reports XPASS,
+and the mark is then removed.
+
 ## Level Zero
 
 **Initialization.** `LevelZeroBackend.__init__`
