@@ -2,7 +2,7 @@
 
 These helpers handle template detection, vector field detection, texture detection,
 loop range resolution, and scalar packing — common pre-dispatch logic shared
-across CPU, GPU, and WebGPU backends.
+by every backend.
 
 Variant resolution
 ------------------
@@ -21,6 +21,7 @@ see ``shape_signature`` — and it makes the pristine IR from
 ``kernel.get_ir()`` a template that must never be mutated in place.
 """
 
+import threading
 import weakref
 
 from tack.lang import ir
@@ -410,16 +411,56 @@ class KernelVariant:
 
     `ir` is the post-pass IR — kept so the loop range can be resolved from
     it on every dispatch without re-running the passes. `payload` is
-    whatever the backend needed to cache alongside it.
+    whatever the backend needed to cache alongside it. `written_fields`
+    lists ``(index, name)`` for each field argument the kernel may store
+    to, so a dispatch can refuse read-only storage without walking IR.
+
+    `dispatch_lock` serializes dispatches of this variant on backends whose
+    payload holds per-variant launch state: the GPU scalar pack buffers,
+    and Metal's argument buffer. Two threads dispatching one variant would
+    otherwise each write their scalars and field bindings into the same
+    buffers, and a launch could read the other call's -- measured on CUDA,
+    half of the dispatches from four threads computed with another
+    thread's scalars. The lock is held across the synchronous launch;
+    different variants still dispatch concurrently.
     """
 
-    __slots__ = ("atomic_targets", "ir", "payload", "requires_full_workgroups")
+    __slots__ = ("atomic_targets", "dispatch_lock", "ir", "payload",
+                 "requires_full_workgroups", "written_fields")
 
-    def __init__(self, ir_func, payload, *, requires_full_workgroups=False, atomic_targets=()):
+    def __init__(self, ir_func, payload, *, requires_full_workgroups=False,
+                 atomic_targets=(), written_fields=()):
         self.ir = ir_func
         self.payload = payload
         self.requires_full_workgroups = requires_full_workgroups
         self.atomic_targets = atomic_targets
+        self.written_fields = written_fields
+        self.dispatch_lock = threading.Lock()
+
+
+def _written_field_args(template, effective_args) -> tuple:
+    """``(index, name)`` of each field argument the kernel may store to."""
+    return tuple(
+        (index, param.name)
+        for index, (param, written, arg) in enumerate(
+            zip(template.params, _written_flags(template), effective_args))
+        if written and isinstance(arg, Field))
+
+
+def check_writable_fields(kernel_name, written_fields, args):
+    """Refuse a read-only field where the kernel may store to it.
+
+    `field_from_ptr` makes read-only fields by default, and a read-only
+    DLPack tensor imports as one; `from_numpy` and `fill` already honour
+    that. A kernel store would otherwise write straight through it.
+    Runs on every dispatch, over only the fields the kernel writes.
+    """
+    for index, name in written_fields:
+        if not args[index]._writable:
+            raise ValueError(
+                f"Kernel '{kernel_name}': parameter '{name}' may be written, "
+                f"but its field is read-only. Pass writable=True to "
+                f"field_from_ptr() if the memory may be modified.")
 
 
 def resolve_variant(backend, kernel, args, kwargs, build,
@@ -427,11 +468,12 @@ def resolve_variant(backend, kernel, args, kwargs, build,
                     specialize_disjoint=False) -> tuple:
     """Find or build the compiled variant for this call.
 
-    On a cache hit this touches no IR beyond parameter type inference. On a
-    miss it deep-copies the pristine template and runs resolve → infer →
-    check → optimize on the copy, then hands it to `build`, which does the
-    backend-specific tail (annotate, any packing, compile) and returns the
-    payload to cache.
+    On a cache hit this copies no IR: type inference runs on a stand-in
+    parameter list (`_KeyProbe`), and the per-call checks read only what
+    the variant recorded. Only on a miss is the pristine template cloned
+    (`clone_ir`), with resolve → infer → check → optimize run on the
+    clone, which is then handed to `build` for the backend-specific tail
+    (annotate, any packing, compile) that returns the payload to cache.
 
     `store_texture_shapes` overrides how Texture3D extents are recorded on
     the params — Level Zero falls back to software sampling on devices
@@ -517,13 +559,16 @@ def resolve_variant(backend, kernel, args, kwargs, build,
         ir_func.disjoint_fields = disjoint
         variant = KernelVariant(ir_func, build(ir_func, effective_args),
                                 requires_full_workgroups=full_groups,
-                                atomic_targets=atomic_targets)
+                                atomic_targets=atomic_targets,
+                                written_fields=_written_field_args(
+                                    template, effective_args))
         slot[key] = variant
     elif variant.requires_full_workgroups:
         check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
                                backend_label=backend.label)
 
     check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
+    check_writable_fields(variant.ir.name, variant.written_fields, effective_args)
     return variant, effective_args
 
 

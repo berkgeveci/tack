@@ -60,7 +60,7 @@ from tack.lang import ir
 from tack.lang.field import NumpyBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
-_CPU_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+_CPU_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.llvm_gen import generate_llvm_ir
 
@@ -204,6 +204,9 @@ from tack.runtime.kernel_utils import (  # noqa: F401
 # break-even is already P/(P-1); the rest is margin against a mis-estimate.
 _PARALLEL_BREAK_EVEN = 2.0
 
+# The values TACK_CPU_POLICY accepts.
+_CPU_POLICIES = ("v1", "v2")
+
 # --- policy v2, the default since 2026-08-10 (TACK_CPU_POLICY=v1 opts out) ---
 #
 # Two measured defects, which want fixing together because each is the only
@@ -238,12 +241,13 @@ _FAN_OUT_GAPS_MS = (0.0, 10.0, 50.0)
 # 2.1x on a 1-socket Xeon, so 4x is above all three.
 _FAN_OUT_IDLE_PRIOR = 4.0
 
-# The curve is calibrated once at startup and refined from every fan-out
-# after that. Calibrating alone was not enough: it records whatever the
-# machine was doing at startup, and machines do not hold still. Scored
-# with `--load 8` on eight threads, the shipped policy makes 4-11
-# over-eager fan-outs of 18 -- a threshold chosen in a quiet moment,
-# surviving into a busy one.
+# The curve's hot end is measured at the first fan-out, and the curve is
+# refined after that from fan-outs that meet the condition below and from
+# a scheduled re-probe (`_FAN_OUT_REFRESH_NS`). Measuring once was not
+# enough: it records whatever the machine was doing at the time, and
+# machines do not hold still. Scored with `--load 8` on eight threads, the
+# measure-once policy made 4-11 over-eager fan-outs of 18 -- a threshold
+# chosen in a quiet moment, surviving into a busy one.
 #
 # Share of a dispatch that may be work before its fan-out sample is
 # dropped. `fan_out = elapsed - slowest_worker` is well conditioned only
@@ -256,8 +260,9 @@ _FAN_OUT_IDLE_PRIOR = 4.0
 # setting existed that both admitted samples and kept them honest. Here
 # both terms are measured, and dispatches meeting the condition arise on
 # their own for any kernel with real parallelism: at the threshold the
-# work share is `M/(P_eff - 1 + M)`, which is 0.18 for a kernel with
-# P_eff 8 and only fails to qualify for the bandwidth-bound case.
+# work share is `M/(P_eff - 1 + M)` for the margin `M` then applied
+# (`_margin()`), which is 0.18 for a kernel with P_eff 8 at M = 1.5 and
+# only fails to qualify for the bandwidth-bound case.
 _FAN_OUT_MAX_WORK_SHARE = 0.35
 
 # Weight of one fan-out sample against the running curve. Lower than the
@@ -722,6 +727,8 @@ class CPUBackend(Backend):
     supported_dtypes = _CPU_SUPPORTED_DTYPES
     # Reductions go through numpy on the host — the data is already there.
     supports_device_reductions = False
+    # `tack.init(arch="cpu", num_threads=4)`; overrides TACK_CPU_THREADS.
+    init_options = frozenset({"num_threads"})
 
 
     def __init__(self, num_threads: int | None = None):
@@ -744,7 +751,12 @@ class CPUBackend(Backend):
         # run. Measured across two machines and four background loads, v1
         # threw away up to 8.8 ms a sweep there; v2's worst case is bounded
         # speedup not taken. `TACK_CPU_POLICY=v1` restores the old policy.
-        self.policy = os.environ.get("TACK_CPU_POLICY", "v2")
+        # Anything else is refused: a misspelt value used to select v1.
+        self.policy = os.environ.get("TACK_CPU_POLICY") or "v2"
+        if self.policy not in _CPU_POLICIES:
+            raise ValueError(
+                f"TACK_CPU_POLICY={self.policy!r} is not a CPU threading "
+                f"policy. Accepted: {', '.join(_CPU_POLICIES)}.")
         # Precomputed because the dispatch path tests it on every call, and
         # v1 should not pay a string comparison for a feature it does not
         # use. The path P2 spent its effort getting to ~11.7 us.
@@ -1255,20 +1267,20 @@ class CPUBackend(Backend):
         The serial estimate comes from a slice, and a slice can be
         unrepresentative: an image kernel's first rows are background,
         which for a volume renderer meant an estimate 10-70x under the
-        frame's real average. Moving the slice (`next_sample_start`) is
-        the fix for the rechecks; this is the backstop for the first-sight
-        sample, which has to be the prefix. The parallel rate, by
-        contrast, is measured over the whole range on every fan-out. A
-        fan-out cannot make an element cheaper than it is serially (`r_p`
-        is the worker rate divided by the workers that ran), so
-        `r_s >= r_p` holds whenever `r_p` comes from spans long enough for
-        the per-worker clock to be trusted (`serial_floor_ns`, see
-        `_RP_BOUND_SPAN_RATIO`), and it catches a prefix-biased estimate
-        on the first dispatch after a fan-out rather than never. It does
-        not make the estimate right -- `r_p` is `r_s / P_eff`, so the
-        floor is still P_eff below the truth -- but it keeps the decision
-        from flipping to "too small to thread" on a range the kernel has
-        already shown to thread well.
+        frame's real average. Moving the slice (`next_sample_start`), for
+        first-sight samples and rechecks alike, is the fix; this is the
+        backstop. A fan-out cannot make an element cheaper than it is
+        serially (`r_p` is the worker rate divided by the workers that
+        ran), so `r_s >= r_p`. `serial_floor_ns` holds a parallel rate
+        trusted as that bound: the lesser of a sample from worker spans
+        long enough for the per-worker clock (`_RP_BOUND_SPAN_RATIO`) and
+        the smoothed `r_p` (P9), retired when every worker of a complete
+        dispatch finishes below that span (`_record_parallel_cost`). It
+        catches a low estimate on the first dispatch after a fan-out
+        rather than never. It does not make the estimate right -- `r_p`
+        is `r_s / P_eff`, so the floor is still P_eff below the truth --
+        but it keeps the decision from flipping to "too small to thread"
+        on a range the kernel has already shown to thread well.
         """
         ns_per_elem = max(ns_per_elem, compiled.serial_floor_ns)
         compiled.ns_per_elem = ns_per_elem

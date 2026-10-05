@@ -33,7 +33,7 @@ from tack.runtime.kernel_utils import (
 )
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
-_HIP_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+_HIP_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
 from hip import hip, hiprtc
 
 from tack.codegen.hip_gen import generate_hip_source
@@ -448,15 +448,18 @@ class HIPBackend(Backend):
         # Textures bind their own snapshot, not the field they came from.
         kernel_args = bind_textures(effective_args)
 
-        # Replace scalar args with the packed field buffers
-        if pack_info:
-            from tack.lang.ir_pack_scalars import split_args
-            from tack.runtime.kernel_utils import _update_pack_fields
-            _update_pack_fields(pack_fields, pack_info, effective_args)
-            kept_args = split_args(effective_args, pack_info)
-            kernel_args = bind_textures(kept_args) + pack_fields
+        # Replace scalar args with the packed field buffers. The buffers
+        # belong to the variant, so writing them and the launch that reads
+        # them happen under its lock (see KernelVariant.dispatch_lock).
+        with variant.dispatch_lock:
+            if pack_info:
+                from tack.lang.ir_pack_scalars import split_args
+                from tack.runtime.kernel_utils import _update_pack_fields
+                _update_pack_fields(pack_fields, pack_info, effective_args)
+                kept_args = split_args(effective_args, pack_info)
+                kernel_args = bind_textures(kept_args) + pack_fields
 
-        compiled(kernel_args, loop_end)
+            compiled(kernel_args, loop_end)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.

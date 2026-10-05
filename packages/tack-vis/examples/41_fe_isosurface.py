@@ -299,7 +299,7 @@ def define_kernels():
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--arch", default=os.environ.get("Tack_ARCH", "cpu"))
+    parser.add_argument("--arch", default=os.environ.get("TACK_ARCH", "cpu"))
     parser.add_argument("--order", type=int, default=2)
     parser.add_argument("--nx", type=int, default=4)
     parser.add_argument("--isovalue", type=float, default=0.5)

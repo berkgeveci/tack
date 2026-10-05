@@ -46,13 +46,14 @@ BACKENDS = {
             "backend.supported_dtypes = {tack.lang.types.f32, tack.lang.types.i32,\n"
             "                            tack.lang.types.i64, tack.lang.types.f64}\n"
             "    backend._max_image_3d = 16384\n"
-            "    backend._has_hw_sampler = True"
+            "    backend._has_hw_sampler = True\n"
+            "    backend._launch_lock = threading.RLock()"
         ),
     },
 }
 
 _PREAMBLE = '''
-import sys, types
+import sys, threading, types
 from unittest.mock import MagicMock
 
 for name in {stubs!r}:
@@ -131,6 +132,27 @@ check("launch args present",
       all(a is not None for a in b.compiled[0].launches[0][0]))
 check("fields reach the launch",
       any(isinstance(a, Field) for a in b.compiled[0].launches[0][0]))
+
+# --- the launch and its scalar pack are serialized ------------------
+# Pack buffers (and Level Zero's command lists) are shared launch state,
+# so another thread must not reach them mid-launch.
+def launch_lock_held(backend):
+    lock = getattr(backend, "_launch_lock", None)
+    if lock is not None:
+        return lock._is_owned()
+    return any(v.dispatch_lock.locked()
+               for slot in backend._cache.values() for v in slot.values())
+
+b = make_backend()
+held = []
+x, out = field((32,)), field((32,))
+b.execute(elementwise, (x, out, 32), {})
+real_call = type(b.compiled[0]).__call__
+type(b.compiled[0]).__call__ = (
+    lambda self, *a: (held.append(launch_lock_held(b)), real_call(self, *a))[1])
+b.execute(elementwise, (x, out, 32), {})
+type(b.compiled[0]).__call__ = real_call
+check("launch runs under the dispatch lock", held == [True])
 
 # --- repeat dispatches reuse the variant ----------------------------
 b = make_backend()

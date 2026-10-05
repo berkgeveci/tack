@@ -31,7 +31,7 @@ from tack.runtime.kernel_utils import (
 )
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
-_METAL_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
+_METAL_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32})
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.msl_gen import generate_msl_source
 
@@ -68,7 +68,9 @@ class MetalBuffer(DeviceBuffer):
         return self._metal_buffer
 
     def from_numpy(self, arr: np.ndarray):
-        np.copyto(self._view, arr)
+        # A reshaped field shares this buffer under another shape; the
+        # element count already matches, so copy in the buffer's own shape.
+        np.copyto(self._view, arr.reshape(self._view.shape))
 
     def to_numpy(self) -> np.ndarray:
         return self._view.copy()
@@ -228,8 +230,8 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
     msl_source = generate_msl_source(ir_func)
 
     # Debug: dump MSL source for analysis
-    import os
-    if os.environ.get("TACK_DUMP_MSL"):
+    from tack.runtime.dispatch import env_flag
+    if env_flag("TACK_DUMP_MSL"):
         path = f"/tmp/tack_{kernel_name}.msl"
         with open(path, "w") as f:
             f.write(msl_source)
@@ -372,15 +374,19 @@ class MetalBackend(Backend):
         # Textures bind their own snapshot, not the field they came from.
         kernel_args = bind_textures(effective_args)
 
-        # Replace scalar args with the packed field buffers
-        if pack_info:
-            from tack.lang.ir_pack_scalars import split_args
-            from tack.runtime.kernel_utils import _update_pack_fields
-            _update_pack_fields(pack_fields, pack_info, effective_args)
-            kept_args = split_args(effective_args, pack_info)
-            kernel_args = bind_textures(kept_args) + pack_fields
+        # Replace scalar args with the packed field buffers. The buffers and
+        # the argument buffer the launch encodes field bindings into belong
+        # to the variant, so both are written, and read by the launch, under
+        # its lock (see KernelVariant.dispatch_lock).
+        with variant.dispatch_lock:
+            if pack_info:
+                from tack.lang.ir_pack_scalars import split_args
+                from tack.runtime.kernel_utils import _update_pack_fields
+                _update_pack_fields(pack_fields, pack_info, effective_args)
+                kept_args = split_args(effective_args, pack_info)
+                kernel_args = bind_textures(kept_args) + pack_fields
 
-        compiled(kernel_args, loop_end)
+            compiled(kernel_args, loop_end)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.

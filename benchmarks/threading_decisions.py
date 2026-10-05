@@ -24,7 +24,8 @@ flip between runs, so treat a change of one or two as noise.
 What good looks like, on the machine this was written on (Apple silicon,
 8 performance cores): 1-4 wrong of 18, under ~250 us of regret, and the
 mistakes *under*-eager — serial chosen where parallel would have won by
-less than the 2x margin the backend demands. Over-eager mistakes are the
+less than the margin the backend demands (2.0 under v1; derived from the
+fan-out samples' spread under v2, see `_margin()`). Over-eager mistakes are the
 ones worth chasing: those are fan-outs that lost to a serial run.
 
 **A perfect score is a failure mode, not the goal.** It usually means the

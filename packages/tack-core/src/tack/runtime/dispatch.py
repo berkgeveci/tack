@@ -40,6 +40,17 @@ _BACKEND_HELP = {
 }
 
 
+def env_flag(name: str) -> bool:
+    """Whether a boolean environment variable is switched on.
+
+    Unset, empty, ``0``, ``false``, ``no`` and ``off`` all mean off, so
+    ``TACK_NO_REINIT=0`` disables the option rather than enabling it.
+    """
+    import os
+    value = os.environ.get(name, "").strip().lower()
+    return value not in ("", "0", "false", "no", "off")
+
+
 def init(arch: str = "cpu", **options):
     """Initialize Tack with a specific backend architecture.
 
@@ -54,8 +65,7 @@ def init(arch: str = "cpu", **options):
     """
     global _current_backend
 
-    import os
-    if _current_backend is not None and os.environ.get("TACK_NO_REINIT"):
+    if _current_backend is not None and env_flag("TACK_NO_REINIT"):
         return
 
     _constructors = {

@@ -33,8 +33,28 @@ def test_kernel_type_error():
             out[i] = x[i] + y[i]
 
     x = tack.field(dtype=tack.f32, shape=(4,))
-    with pytest.raises(TypeError, match="my_kernel"):
+    with pytest.raises(TypeError, match="my_kernel") as excinfo:
         my_kernel(x)  # too few args
+    assert str(excinfo.value).count("my_kernel") == 1, \
+        "the kernel is named once, not once per layer that saw the error"
+
+
+def test_kernel_type_error_names_the_kernel_once():
+    """Errors without the kernel name still gain it, exactly once."""
+    tack.init(arch=tack.cpu)
+
+    @tack.kernel
+    def fill(out, value):
+        for i in range(out.shape[0]):
+            out[i] = value
+
+    out = tack.field(dtype=tack.f32, shape=(4,))
+    with pytest.raises(TypeError) as excinfo:
+        fill(out, "one")
+    message = str(excinfo.value)
+    assert message.startswith("Kernel 'fill': ")
+    assert message.count("Kernel 'fill'") == 1
+    assert excinfo.value.__cause__ is not None
 
 
 def test_kernel_runtime_error_includes_name():

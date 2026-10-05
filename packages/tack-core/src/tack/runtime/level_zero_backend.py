@@ -18,6 +18,7 @@ No Python packages needed — uses ctypes directly.
 
 import ctypes
 import ctypes.util
+import threading
 
 import numpy as np
 
@@ -40,7 +41,7 @@ from tack.runtime.kernel_utils import (
 )
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
-_L0_SUPPORTED_DTYPES = {i8, u8, i16, u16, i32, u32, i64, u64, f32, f64}
+_L0_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.opencl_gen import generate_opencl_source
 
@@ -680,20 +681,22 @@ class L0Buffer(DeviceBuffer):
         """Copy numpy array → device using an immediate command list."""
         ze = _get_ze()
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        _check_ze(ze.zeCommandListAppendMemoryCopy(
-            self._backend._imm_cmd_list,
-            self._device_ptr, src.ctypes.data, self._nbytes,
-            None, 0, None),
-            "zeCommandListAppendMemoryCopy (H2D)")
+        with self._backend._launch_lock:
+            _check_ze(ze.zeCommandListAppendMemoryCopy(
+                self._backend._imm_cmd_list,
+                self._device_ptr, src.ctypes.data, self._nbytes,
+                None, 0, None),
+                "zeCommandListAppendMemoryCopy (H2D)")
 
     def _copy_from_device(self, out: np.ndarray):
         """Copy device → numpy array using an immediate command list."""
         ze = _get_ze()
-        _check_ze(ze.zeCommandListAppendMemoryCopy(
-            self._backend._imm_cmd_list,
-            out.ctypes.data, self._device_ptr, self._nbytes,
-            None, 0, None),
-            "zeCommandListAppendMemoryCopy (D2H)")
+        with self._backend._launch_lock:
+            _check_ze(ze.zeCommandListAppendMemoryCopy(
+                self._backend._imm_cmd_list,
+                out.ctypes.data, self._device_ptr, self._nbytes,
+                None, 0, None),
+                "zeCommandListAppendMemoryCopy (D2H)")
 
     def from_numpy(self, arr: np.ndarray):
         self._copy_to_device(arr)
@@ -1044,9 +1047,9 @@ class LevelZeroBackend(Backend):
         # Device-dependent, so this shadows the class attribute rather than
         # replacing it. supports_f64 derives from it; there is no second flag
         # to keep in step.
-        self.supported_dtypes = {i8, u8, i16, u16, i32, u32, i64, u64, f32}
-        if self._module_props.fp64flags != 0:
-            self.supported_dtypes.add(f64)
+        self.supported_dtypes = (
+            _L0_SUPPORTED_DTYPES if self._module_props.fp64flags != 0
+            else _L0_SUPPORTED_DTYPES - {f64})
 
         # Find compute queue group ordinal
         qg_count = ctypes.c_uint32(0)
@@ -1080,6 +1083,12 @@ class LevelZeroBackend(Backend):
             self._context, self._device, ctypes.byref(queue_desc),
             ctypes.byref(self._cmd_queue)),
             "zeCommandQueueCreate")
+
+        # Level Zero command lists and kernel argument state may not be used
+        # from two threads at once, and both lists below are shared by every
+        # dispatch, reduction and copy on this backend. Reentrant because a
+        # dispatch copies its scalar pack into place while holding it.
+        self._launch_lock = threading.RLock()
 
         # Create a reusable command list for kernel dispatch
         list_desc = ze_command_list_desc_t(
@@ -1144,15 +1153,18 @@ class LevelZeroBackend(Backend):
         # Textures bind their own snapshot, not the field they came from.
         kernel_args = bind_textures(effective_args)
 
-        # Replace scalar args with the packed field buffers
-        if pack_info:
-            from tack.lang.ir_pack_scalars import split_args
-            from tack.runtime.kernel_utils import _update_pack_fields
-            _update_pack_fields(pack_fields, pack_info, effective_args)
-            kept_args = split_args(effective_args, pack_info)
-            kernel_args = bind_textures(kept_args) + pack_fields
+        # Replace scalar args with the packed field buffers. The pack, the
+        # kernel's argument state and the command list are shared, so the
+        # whole launch holds the backend's lock (see `_launch_lock`).
+        with self._launch_lock:
+            if pack_info:
+                from tack.lang.ir_pack_scalars import split_args
+                from tack.runtime.kernel_utils import _update_pack_fields
+                _update_pack_fields(pack_fields, pack_info, effective_args)
+                kept_args = split_args(effective_args, pack_info)
+                kernel_args = bind_textures(kept_args) + pack_fields
 
-        compiled(kernel_args, loop_end, self)
+            compiled(kernel_args, loop_end, self)
 
     def _store_texture_shapes(self, ir_func, effective_args):
         """Record Texture3D extents, falling back to software sampling.
@@ -1295,40 +1307,42 @@ class LevelZeroBackend(Backend):
         kernel = compiled_kernel._kernel
         block_dim = compiled_kernel._workgroup_size
 
-        # Set arguments: input, output, __n__
-        in_ptr = field._buffer.device_ptr
-        out_ptr = out_buf.device_ptr
-        _check_ze(ze.zeKernelSetArgumentValue(
-            kernel, 0, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(in_ptr)),
-            "zeKernelSetArgumentValue (reduce input)")
-        _check_ze(ze.zeKernelSetArgumentValue(
-            kernel, 1, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(out_ptr)),
-            "zeKernelSetArgumentValue (reduce output)")
-        n_val = ctypes.c_longlong(n)
-        _check_ze(ze.zeKernelSetArgumentValue(
-            kernel, 2, ctypes.sizeof(n_val), ctypes.byref(n_val)),
-            "zeKernelSetArgumentValue (reduce __n__)")
+        # The reduction kernel's arguments and the command list are shared.
+        with self._launch_lock:
+            # Set arguments: input, output, __n__
+            in_ptr = field._buffer.device_ptr
+            out_ptr = out_buf.device_ptr
+            _check_ze(ze.zeKernelSetArgumentValue(
+                kernel, 0, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(in_ptr)),
+                "zeKernelSetArgumentValue (reduce input)")
+            _check_ze(ze.zeKernelSetArgumentValue(
+                kernel, 1, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(out_ptr)),
+                "zeKernelSetArgumentValue (reduce output)")
+            n_val = ctypes.c_longlong(n)
+            _check_ze(ze.zeKernelSetArgumentValue(
+                kernel, 2, ctypes.sizeof(n_val), ctypes.byref(n_val)),
+                "zeKernelSetArgumentValue (reduce __n__)")
 
-        _check_ze(ze.zeKernelSetGroupSize(kernel, block_dim, 1, 1),
-                   "zeKernelSetGroupSize")
+            _check_ze(ze.zeKernelSetGroupSize(kernel, block_dim, 1, 1),
+                       "zeKernelSetGroupSize")
 
-        group_count_x = (n + block_dim - 1) // block_dim
-        group_count = ze_group_count_t(
-            groupCountX=group_count_x, groupCountY=1, groupCountZ=1)
+            group_count_x = (n + block_dim - 1) // block_dim
+            group_count = ze_group_count_t(
+                groupCountX=group_count_x, groupCountY=1, groupCountZ=1)
 
-        cmd_list = self._cmd_list
-        _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
-        _check_ze(ze.zeCommandListAppendLaunchKernel(
-            cmd_list, kernel, ctypes.byref(group_count), None, 0, None),
-            "zeCommandListAppendLaunchKernel")
-        _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
-        cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
-        _check_ze(ze.zeCommandQueueExecuteCommandLists(
-            self._cmd_queue, 1, cmd_lists, None),
-            "zeCommandQueueExecuteCommandLists")
-        _check_ze(ze.zeCommandQueueSynchronize(
-            self._cmd_queue, 0xFFFFFFFFFFFFFFFF),
-            "zeCommandQueueSynchronize")
+            cmd_list = self._cmd_list
+            _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
+            _check_ze(ze.zeCommandListAppendLaunchKernel(
+                cmd_list, kernel, ctypes.byref(group_count), None, 0, None),
+                "zeCommandListAppendLaunchKernel")
+            _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
+            cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
+            _check_ze(ze.zeCommandQueueExecuteCommandLists(
+                self._cmd_queue, 1, cmd_lists, None),
+                "zeCommandQueueExecuteCommandLists")
+            _check_ze(ze.zeCommandQueueSynchronize(
+                self._cmd_queue, 0xFFFFFFFFFFFFFFFF),
+                "zeCommandQueueSynchronize")
 
         return float(out_buf.to_numpy()[0])
 

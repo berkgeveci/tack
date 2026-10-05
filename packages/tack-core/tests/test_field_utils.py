@@ -112,6 +112,22 @@ def test_reshape_shares_buffer(backend):
     assert g._buffer is f._buffer
 
 
+def test_reshaped_view_accepts_from_numpy(backend):
+    """A view writes through in its own shape, whatever the buffer's is.
+
+    Host-visible buffers used to copy into the allocation's array, which
+    numpy refused to broadcast (2, 6) into (3, 4).
+    """
+    f = tack.field(dtype=tack.f32, shape=(2, 6))
+    g = f.reshape((3, 4))
+    values = np.arange(12, dtype=np.float32).reshape(3, 4)
+    g.from_numpy(values)
+    np.testing.assert_array_equal(g.to_numpy(), values)
+    np.testing.assert_array_equal(f.to_numpy(), values.reshape(2, 6))
+    g.from_numpy(values.T.copy().T)  # non-contiguous input, same elements
+    np.testing.assert_array_equal(f.to_numpy(), values.reshape(2, 6))
+
+
 def test_reshape_bad_size(backend):
     f = tack.field(dtype=tack.f32, shape=(12,))
     with pytest.raises(ValueError, match="Cannot reshape"):
@@ -213,3 +229,58 @@ def test_workflow_arange_kernel_concat(backend):
     result = tack.concat([out_a, out_b])
     np.testing.assert_allclose(result.to_numpy(),
                                [0, 2, 4, 6, 0, 2, 4, 6])
+
+
+# --- Read-only imported storage ---
+
+def _alias(field, writable):
+    """`field`'s storage wrapped again through field_from_ptr."""
+    from tack.runtime.dispatch import get_backend
+    name = get_backend().name
+    if name == "cpu":
+        ptr = field._buffer._data
+    elif name == "metal":
+        ptr = field._buffer.metal_buffer
+    else:
+        ptr = field._buffer.address
+    return tack.field_from_ptr(ptr, field.dtype, field.shape, writable=writable)
+
+
+@tack.kernel
+def _scale_into(src, dst):
+    for i in range(src.shape[0]):
+        dst[i] = src[i] * 2.0
+
+
+@tack.kernel
+def _bump(dst):
+    for i in range(dst.shape[0]):
+        tack.atomic_add(dst, i, 1.0)
+
+
+def test_kernels_cannot_store_to_a_read_only_field(backend):
+    """field_from_ptr is read-only by default; kernels used to ignore that."""
+    storage = tack.field(dtype=tack.f32, shape=(8,))
+    storage.from_numpy(np.arange(8, dtype=np.float32))
+    out = tack.field(dtype=tack.f32, shape=(8,))
+    read_only = _alias(storage, writable=False)
+
+    _scale_into(read_only, out)  # reading is what read-only is for
+    np.testing.assert_array_equal(out.to_numpy(), np.arange(8) * 2.0)
+
+    with pytest.raises(ValueError, match="parameter 'dst'.*read-only"):
+        _scale_into(out, read_only)
+    with pytest.raises(ValueError, match="read-only"):
+        _bump(read_only)
+    np.testing.assert_array_equal(storage.to_numpy(), np.arange(8))
+
+    # The refused calls compiled the variants these reuse.
+    _scale_into(out, _alias(storage, writable=True))
+    np.testing.assert_array_equal(storage.to_numpy(), np.arange(8) * 4.0)
+
+
+def test_a_read_only_reshaped_view_stays_read_only(backend):
+    storage = tack.field(dtype=tack.f32, shape=(8,))
+    view = _alias(storage, writable=False).reshape((8,))
+    with pytest.raises(ValueError, match="read-only"):
+        _bump(view)

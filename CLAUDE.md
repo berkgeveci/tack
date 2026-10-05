@@ -139,7 +139,8 @@ Every dispatch:
 4. `kernel.get_ir(...)` returns the **pristine IR template** for this specialization; check required workgroup support against the backend
 5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field`
 6. Build the variant key and look it up (see below)
-7. Resolve the loop range from the variant's IR; dispatch (CPU decides serial vs threads, GPU launches a grid)
+7. Check the call's storage against what the variant recorded: atomic target alignment, and no read-only field (`field_from_ptr`'s default, a read-only DLPack import) bound where the kernel may store (`written_fields`, from `written_field_params`)
+8. Resolve the loop range from the variant's IR; dispatch (CPU decides serial vs threads, GPU launches a grid)
 
 Only on a cache miss:
 1. Deep-copy the template with `clone_ir()` — the passes below mutate IR in place and must not touch the template
@@ -169,6 +170,18 @@ the buffer references and declares indirect-resource residency with
 `useResource`. The encoder and argument buffer are reused after synchronous
 completion. This fixes the four overlap cases confirmed at `922b642` and
 `e265e7f`, without alias-based specialization or disabling vendor optimization.
+
+Dispatching one variant from several Python threads: CPU binds arguments
+per call and shares no launch state. GPU variants do — the scalar pack
+buffers, and Metal's argument buffer — so CUDA, HIP and Metal hold
+`KernelVariant.dispatch_lock` from the pack update through the synchronous
+launch. Level Zero holds one backend `_launch_lock` (reentrant) over
+launches, reductions and copies, because its command lists are
+backend-wide. Unlocked, half of the CUDA dispatches from four threads
+computed with another thread's scalars (`test_concurrent_dispatch.py`).
+CUDA's context comes from `cuCtxCreate` and is current only on the thread
+that called `tack.init`; another thread must make it current first, or
+its dispatch fails with `CUDA_ERROR_INVALID_CONTEXT`.
 
 ### Field dimensions
 
@@ -211,7 +224,7 @@ function name exactly once. Lowering/templates/vector components/scalar
 localization/packing allocate generated bindings through `fresh_name`
 (`lang/ir_names.py`) so they cannot merge with Python source names.
 
-`tack.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (Tack IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR, CPU only). Implementation in `lang/inspect_kernel.py`.
+`tack.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (Tack IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR; CPU only, other backends raise `ValueError` after the kernel's own checks). It makes dispatch's decisions too: `check_dispatch_types` and the backend's `_store_texture_shapes` (software sampling on HIP/Level Zero devices without texture hardware). Implementation in `lang/inspect_kernel.py`.
 
 ### IR structure (lang/ir.py)
 
@@ -411,7 +424,7 @@ The CPU backend fans a loop range out to its `ThreadPoolExecutor` only when the 
 
 A fixed element count cannot work here: the crossover moves ~1000× with arithmetic intensity (~4M elements for `out[i] = x[i]*2+1`, ~130K for a `sqrt`/`sin` expression, ~4K for a 20-iteration inner loop). The previous constant of 1024 sat below all of them, making mid-size dispatches of cheap kernels 3–10× slower than running them serially.
 
-`TACK_CPU_THREADS` overrides the thread count; `1` keeps everything on the calling thread.
+`TACK_CPU_THREADS` overrides the thread count, as does `tack.init(arch="cpu", num_threads=N)`; `1` keeps everything on the calling thread. `TACK_CPU_POLICY` accepts `v1` or `v2` (unset or empty means v2); anything else raises. Boolean variables such as `TACK_NO_REINIT` go through `dispatch.env_flag`: `0`, `false`, `no`, `off` and empty mean off.
 
 ## Kernel language features
 
@@ -436,7 +449,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 
 The HIP codegen (`hip_gen.py`) extends `CUDACodeGen` — HIP device code uses the same syntax as CUDA (`blockIdx`, `threadIdx`, `__global__`, `__shared__`, `__syncthreads`). The differences are `#include <hip/hip_runtime.h>` and the texture handle type, which HIP spells `hipTextureObject_t` (`_TEXTURE_OBJECT_TYPE`, overridden from CUDA's). The runtime (`hip_backend.py`) uses `hip-python` bindings for hipRTC compilation and dispatch.
 
-**Textures need a device that has them.** CDNA parts — gfx940/941/942, i.e. MI300 — have no texture/image hardware, and hipRTC refuses `tex3D` outright ("The image/texture API not supported on the device"). The backend asks `hipDeviceAttributeImageSupport` at init and falls back to software trilinear sampling where the answer is no, the same way the Level Zero backend handles Xe-HPC. The decision is `texture_in_hardware()`, which `_store_texture_shapes` consults before the variant key is built, because it changes the generated code, and which `Texture3D` consults to choose its storage.
+**Textures need a device that has them.** CDNA parts — gfx940/941/942, i.e. MI300 — have no texture/image hardware, and hipRTC refuses `tex3D` outright ("The image/texture API not supported on the device"). The backend asks `hipDeviceAttributeImageSupport` at init and falls back to software trilinear sampling where the answer is no, the same way the Level Zero backend handles Xe-HPC. The decision is `texture_in_hardware()`, which `_store_texture_shapes` consults before the variant key is built, because it changes the generated code, and which `Texture3D` consults to choose its storage; `tack.inspect` calls the same hook.
 
 `hip-python` is on PyPI now (it used to be Test-PyPI only), so the `[hip]` extra declares it:
 

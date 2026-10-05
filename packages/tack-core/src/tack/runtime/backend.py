@@ -125,6 +125,16 @@ class Backend:
         """
         return "cpu"
 
+    def _store_texture_shapes(self, ir_func, effective_args):
+        """Record Texture3D extents on the params, for codegen and the key.
+
+        HIP and Level Zero override this to fall back to software sampling
+        where the device has no texture hardware. `tack.inspect` calls it
+        too, so the source it shows is the source dispatch would compile.
+        """
+        from tack.runtime.kernel_utils import _store_texture_shapes
+        _store_texture_shapes(ir_func, effective_args)
+
     def reduce_field(self, field, op: str) -> float:
         """Reduce a field on the device. Only called when
         `supports_device_reductions` is True."""

@@ -126,6 +126,21 @@ def test_a_read_only_field_exports_the_flag():
     assert not np.from_dlpack(field).flags.writeable
 
 
+def test_kernels_do_not_write_through_a_read_only_import():
+    """The producer's read-only flag binds kernels, not only from_numpy."""
+    @tack.kernel
+    def zero(out):
+        for i in range(out.shape[0]):
+            out[i] = 0.0
+
+    source = np.arange(4, dtype=np.float32)
+    source.flags.writeable = False
+    field = tack.from_dlpack(source)
+    with pytest.raises(ValueError, match="read-only"):
+        zero(field)
+    np.testing.assert_array_equal(source, np.arange(4))
+
+
 def test_a_writable_field_exports_no_flag():
     field = _field(np.arange(4, dtype=np.float32), tack.f32)
     capsule = field.__dlpack__(max_version=(1, 0))
@@ -346,6 +361,24 @@ def test_round_trip_through_both_directions():
     assert back.dtype is original.dtype
     assert back.shape == original.shape
     np.testing.assert_array_equal(back.to_numpy(), original.to_numpy())
+
+
+def test_a_metal_tensor_is_refused_before_wrap_ptr(monkeypatch):
+    """kDLMetal was mapped to the Metal backend, whose wrap_ptr then
+    rejected the handle as an integer. Refused up front, on any backend,
+    and checkable without a Mac by labelling a host export as Metal."""
+    source = _field(np.arange(4, dtype=np.float32), tack.f32)
+    real = dlpack._get_device_info
+
+    def as_metal(field):
+        _, device_id, ptr = real(field)
+        return dlpack.kDLMetal, device_id, ptr
+
+    monkeypatch.setattr(dlpack, "_get_device_info", as_metal)
+    capsule = source.__dlpack__(max_version=(1, 0))
+    with pytest.raises(ValueError, match="kDLMetal"):
+        tack.from_dlpack(capsule)
+    assert dlpack.kDLMetal not in dlpack._DEVICE_BACKENDS
 
 
 def test_unsupported_dtype_is_rejected_clearly():
