@@ -3,9 +3,16 @@
 This guide explains Tack's internals for contributors and anyone who wants to
 understand how Python kernel source becomes GPU machine code.
 
-The [kernel language contract (draft)](../reference/language-contract.md)
-records intended semantics, known compiler violations, open design decisions,
-and the executable baseline for compiler hardening.
+This guide is task-oriented: how the pieces are laid out and how to change
+them. Two other sections go deeper:
+
+- [Design and Implementation](../design/index.md) explains *why* each part is
+  built the way it is and how it works end to end: the compilation pipeline,
+  specialization and caching, numerical semantics, parallel execution, memory
+  and aliasing, the CPU threading policy, each backend, and interoperability.
+- [Contracts](../contracts/index.md) states *what* is guaranteed: the
+  [kernel language contract (draft)](../reference/language-contract.md), the
+  backend capability and runtime API contracts, and how conformance is tested.
 
 ## Table of Contents
 

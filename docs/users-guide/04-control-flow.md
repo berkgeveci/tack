@@ -14,8 +14,8 @@ def clamp(data, lo, hi, n):
         data[i] = val
 ```
 
-`if`/`elif`/`else` works as expected. Ternary expressions are not supported;
-use `if`/`else` blocks instead.
+`if`/`elif`/`else` works as expected, and so do conditional expressions
+(`a if cond else b`), which evaluate only the selected arm.
 
 ## While Loops
 
@@ -71,7 +71,7 @@ floating operand they use floating-point power at the promoted precision.
 See [Fields and Types](02-fields-and-types.md) for wrapping and division rules.
 
 ```python
-from math import sqrt, sin, cos, exp, log, floor, ceil, abs, min, max, pow
+from math import sqrt, sin, cos, exp, log, floor, ceil, pow  # optional
 
 @tack.kernel
 def wave(out, t, n):

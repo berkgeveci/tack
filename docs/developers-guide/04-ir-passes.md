@@ -9,7 +9,7 @@ pass inspects the IR tree; transformation passes mutate a private copy.
 1. ir_resolve       — Replace compiled-in dimensions, set texture shapes, resolve array-like dtypes
 2. type_inference   — Annotate params with types from actual arguments
 3. check_dispatch_types — Validate field dtypes against backend capabilities
-4. scalar localization — Give assigned scalar params per-iteration local storage
+4. scalar localization — Give scalar params and outer locals the loop assigns per-iteration local storage
 5. workgroup participation — Prove the supported collective control-flow domain (GPU only)
 6. ir_optimize      — Conservative copy propagation
 7. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
@@ -19,7 +19,8 @@ pass inspects the IR tree; transformation passes mutate a private copy.
 `resolve_variant()` runs the common passes only for a new compiled variant.
 GPU packing works on a separate copy so launch-range resolution retains the
 original parameter names. CPU skips packing. `tack.inspect()` also performs
-scalar localization and verification; its source preparation annotates once
+the backend's texture decision, `check_dispatch_types`, scalar
+localization and verification; its source preparation annotates once
 before packing and again afterwards on GPU.
 
 ## Copying and Template Ownership (`ir_traversal.py`)
@@ -54,10 +55,10 @@ The production pipeline calls `verify_ir()` at these boundaries:
 
 | Stage | Checks added to structural and loop checks |
 |-------|--------------------------------------------|
-| `lowered` | Valid statement/expression roles, known node kinds/operators, numeric constants, unique parameters, existing bindings, exactly one normalized top-level parallel loop, and consistent `break`/`continue` targets |
+| `lowered` | Valid statement/expression roles, known node kinds/operators, numeric constants, unique parameters, existing bindings, exactly one normalized top-level parallel loop, no store, atomic, block reduction, barrier or print outside it, and consistent `break`/`continue` targets |
 | `resolved` | No dimensions or attributes in generated expressions; allocation dtypes and texture extents resolved |
 | `inferred` | Scalar parameter types and field/scalar categories present; field accesses name field parameters or allocated arrays, including inlined pointer copies |
-| `localized` | Recheck the invariants after assigned scalar parameters become locals |
+| `localized` | Recheck the invariants after assigned scalar parameters and outer locals become per-iteration locals |
 | `optimized` | Recheck the invariants after copy propagation |
 | `packed` | Recheck the invariants and ensure no scalar parameters remain on GPU |
 | `typed` | Every generated scalar expression and scalar assignment has a type; logical results have i32 dtype |
@@ -99,9 +100,9 @@ Annotates each `IRParam` with:
 
 Type rules:
 - `Field` → dtype of the field
-- `Texture3D` → dtype of the underlying field
+- `Texture3D` → dtype of the underlying field (always `f32`; `tack.texture3d()` rejects others)
 - Python `float` or `np.floating` → `f32` by default; auto-promotes to `f64` if any field argument uses `f64`
-- Python `int` or `np.integer` → `i32` (auto-promotes to `i64` if value > 2^31)
+- Python `int` or `np.integer` → `i32` if it fits, else `i64`, else `u64`
 
 ## Dispatch-Time Type Checking (`type_inference.py`)
 
@@ -164,7 +165,13 @@ duplicated `_infer_c_type` / `_infer_expr_type` logic per codegen backend.
 
 Key rules:
 
-- `IRConstant(3.14)` → `f32`, `IRConstant(42)` → `i32`, `IRConstant(2**31)` → `i64`
+- `IRConstant(42)` → `i32`, `IRConstant(2**31)` → `i64`
+- `IRConstant(3.14)` → `f32` unless it is part of a weak literal expression
+  that meets an `f64` operand, an `f64` cast, or an `f64` store, atomic or
+  local; then every float literal in that expression is retyped to `f64`
+  (`_meet`, `_adopt`, `_retype`), following NumPy's NEP 50. Nodes carry
+  `_literal` and `_weak` flags for this. Expressions without `f64` operands
+  annotate exactly as f32 literals would
 - `IRFieldLoad` → element type of the field
 - `IRBinOp` → promoted type, except integer `/` → `f32`, and shifts or
   integer `**` → the left/base type independent of the count/exponent type

@@ -57,11 +57,21 @@ find or build a specialization:
 3. Infer argument dtypes and categories on a private parameter probe, record
    texture extents, and derive resolved shape dependencies.
 4. Look up the variant in the backend's weakly keyed per-kernel cache.
-5. On a miss, deep-copy the template, resolve dimensions, infer/check types,
-   and run conservative copy propagation. The backend build callback then
-   packs scalars where needed, annotates types, generates code, and compiles.
-6. Resolve the launch range from the variant's IR for this dispatch, bind
-   arguments (updating any scalar pack buffers), and execute.
+5. On a miss, clone the template (`clone_ir` in `lang/ir_traversal.py`, not
+   `copy.deepcopy`), resolve dimensions, infer/check types, localize outer
+   scalars the loop body assigns (`_localize_outer_scalars`), check atomics
+   and workgroup participation, and run conservative copy propagation. The
+   backend build callback then packs scalars where needed, annotates types,
+   generates code, and compiles. The `KernelVariant` records the atomic
+   targets and the field arguments the kernel may write.
+6. On every call, check atomic alignment and refuse read-only fields bound
+   to written parameters (`check_writable_fields`).
+7. Resolve the launch range from the variant's IR for this dispatch; GPU
+   backends refuse a range past their launch limit (`check_launch_size`).
+   Replace each `Texture3D` with the storage it owns (`bind_textures`),
+   bind arguments (updating any scalar pack buffers), and execute. GPU
+   backends do the last two under a lock: the variant's `dispatch_lock` on
+   CUDA, HIP and Metal, the backend's `_launch_lock` on Level Zero.
 
 The compiled key includes dtypes, field/scalar/texture categories, vector
 widths, texture extents, template structure/constants, and baked-in dimension
@@ -76,11 +86,17 @@ parameters therefore carry no unconditional `noalias` or `restrict` promise.
 
 The CPU backend adds one more key element: whether this call's fields are
 disjoint. `fields_disjoint()` compares the byte ranges of the field arguments
-on every dispatch (about a microsecond) and passes when no field the kernel
-writes overlaps another field. Qualifying calls use a variant compiled with
-`noalias` on its field pointers; the rest use the variant without it. Without
-the promise LLVM must reload after every store, which costs 2-3x on x86 for
-kernels that accumulate through a field in an inner loop.
+on every dispatch and passes when no field the kernel writes overlaps another
+field. Qualifying calls use a variant compiled with `noalias` on its field
+pointers; the rest use the variant without it. Without the promise LLVM must
+reload after every store, which matters for kernels that accumulate through a
+field in an inner loop. Measured on 2026-10-03, single-threaded: on a 2012
+Xeon E5-2650 the store-accumulator kernel at 2^20 elements ran in 2465 µs
+without the promise and 736 µs with it, and a stencil in 776 µs and 604 µs;
+the check added about 3–4 µs per 16-element dispatch there and about 1–1.6 µs
+on an Apple M1 Max, where the accumulator showed no comparable gain. See
+[Specialization and Caching](../design/specialization-and-caching.md) and
+[Memory and Aliasing](../design/memory-and-aliasing.md).
 
 Template classes appear in keys as a token rather than the class object.
 When a `@tack.data_oriented` class is collected, a finalizer drops the IR and
@@ -156,21 +172,25 @@ resolution still establish that the complete dispatch was short.
 
 ### Metal
 
-Encodes a compute command: `setBuffer` for each field, `dispatchThreads`
-for the grid size. Textures use a separate binding namespace
-(`setTexture_atIndex_`). Scalar pack buffers are regular Metal buffers.
+Encodes a compute command: the field pointers go into one argument buffer
+(declared resident with `useResource`), and `dispatchThreads` covers the
+grid. Textures use a separate binding namespace (`setTexture_atIndex_`) and
+bind the `MetalTextureImage` the `Texture3D` owns. Scalar pack buffers are
+regular Metal buffers.
 
 ### CUDA / HIP
 
-Launches via `cuLaunchKernel` / `hipLaunchKernel` with a pointer array
-of arguments. Grid size = `ceil(loop_end / 256)`, block size = 256.
+Launches via `cuLaunchKernel` / `hipModuleLaunchKernel` with a pointer array
+of arguments. Grid size = `ceil(loop_end / 256)`, block size = 256. A
+texture argument passes the texture object of the `CUDATextureImage` or
+`HIPTextureImage` its `Texture3D` owns.
 
 ### Level Zero
 
 Sets kernel arguments via `zeKernelSetArgumentValue`. Dispatches via
-`zeCommandListAppendLaunchKernel` on an immediate command list.
-Textures use `zeImageCreate` + `image3d_t` on devices with sampler
-hardware.
+`zeCommandListAppendLaunchKernel` on a reusable command list. Textures
+use the `L0TextureImage` (`zeImageCreate`, bound as `image3d_t`) their
+`Texture3D` owns on devices with sampler hardware.
 
 ## Scalar Packing at Dispatch
 
@@ -188,9 +208,13 @@ allocation or copy. Each backend implements `wrap_ptr(ptr, dtype, shape)`:
 |---------|-----------|----------------|
 | CPU | numpy array or int address | `np.frombuffer` view into existing memory |
 | Metal | `MTLBuffer` object | Creates numpy view via `contents().as_buffer()` |
-| CUDA | `CUdeviceptr` (int) | Stores pointer, skips `cuMemAlloc` |
-| HIP | device pointer (int) | Stores pointer, skips `hipMalloc` |
-| Level Zero | device pointer (int) | Stores `c_void_p`, skips `zeMemAllocDevice` |
+| CUDA | device address (int, NumPy integer or `CUdeviceptr`) | Stores pointer, skips `cuMemAlloc` |
+| HIP | device address (anything `int()` accepts) | Stores pointer, skips `hipMalloc` |
+| Level Zero | device address (anything `int()` accepts) | Stores `c_void_p`, skips `zeMemAllocDevice` |
+
+On CUDA, HIP and Level Zero, `field_from_ptr()` first checks the pointer
+with `as_address()` (`TypeError` if it is not an address) and
+`memory_space()` (`ValueError` if it is not device memory).
 
 ### Ownership
 
@@ -206,14 +230,19 @@ def __del__(self):
 ### Read-Only Protection
 
 `Field._writable` defaults to `True` for allocated fields and `False` for
-`field_from_ptr()`. The `_check_writable()` method guards `from_numpy()`
-and `fill()`. Kernel-level write protection is not enforced — the user is
-responsible for not writing to read-only external memory.
+`field_from_ptr()`; a read-only DLPack import is also not writable. The
+`_check_writable()` method guards `from_numpy()` and `fill()`. For kernels,
+the variant records which field arguments the kernel may store to
+(`KernelVariant.written_fields`, from `written_field_params`, all of them
+when a store can't be traced), and `check_writable_fields()` raises
+`ValueError` on every dispatch that binds a read-only field to one of
+them.
 
 ## Error Handling
 
 `Kernel.__call__` wraps backend errors:
-- `TypeError` → includes kernel name
+- `TypeError` → includes kernel name, once (a message that already starts
+  with it is kept as is)
 - Compilation failure → extracts error lines, suppresses full source dump
 - `RuntimeError` → includes kernel name and backend class name
 

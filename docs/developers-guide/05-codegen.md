@@ -104,9 +104,13 @@ for (long k = 0; k < 8; k++) { ... }  // re-declared, not "k = 0"
 
 GPU backends use 64-bit integers for loop variables and index arithmetic
 to support grids with more than 2^31 elements:
-- CUDA/HIP: `long long`
-- MSL: `long`
-- OpenCL: `long`
+- CUDA/HIP: `long long`, with `blockIdx.x` widened before the multiply
+- MSL: `long`, initialized from the `uint` thread position
+- OpenCL: `long`, from the `size_t` `get_global_id(0)`
+
+The runtime refuses a launch longer than one grid can index
+(`check_launch_size` in `runtime/kernel_utils.py`), so the index never
+wraps.
 
 ### Floating Floor Division and Remainder
 
@@ -173,9 +177,18 @@ Generates Metal Shading Language for Apple GPUs. Notable features:
 
 Generates `extern "C" __global__` kernel functions. Thread index:
 ```c
-long long __idx__ = blockIdx.x * blockDim.x + threadIdx.x;
+long long __idx__ = (long long)blockIdx.x * blockDim.x + threadIdx.x;
 if (__idx__ >= __n__) return;
 ```
+
+The cast comes before the multiply: the built-ins are 32-bit unsigned, and
+their product would wrap at 2^32 threads.
+
+`_expr_constant` emits a float literal annotated `f64` as an unsuffixed
+`repr` (exact, since `repr` round-trips) and one annotated `f32` with an
+`f` suffix. Float literals are weakly typed, so the annotation comes from
+the operand, cast or target the literal meets; see
+`ir_type_annotate.py`.
 
 Float atomic min/max use CAS-based helper functions emitted on demand.
 
@@ -186,4 +199,5 @@ Extends CUDA with OpenCL syntax differences. Also handles:
 - Hardware texture sampling: `read_imagef(image, sampler, coords)` when
   the device supports it (checked at runtime via `maxSamplers`)
 - Software trilinear fallback: generates an inline helper function with
-  the texture dimensions baked in as constants
+  the texture dimensions baked in as constants, reading the texture's
+  private `f32` copy of its field
