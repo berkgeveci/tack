@@ -278,6 +278,29 @@ finally:
 check("invalid packing not compiled", not b.compiled)
 check("invalid packing not cached", not b._cache.get(elementwise))
 
+# --- a texture binds its own snapshot, never its field --------------
+@tack.kernel
+def sample(out, tex, n):
+    for i in range(n):
+        out[i] = tex.sample(0.5, 0.5, 0.5)
+
+for shape in ((4, 4, 4), (4, 4, 20000)):
+    b = make_backend()
+    # Made while CPU is active, so its storage is a private field whatever
+    # this backend would build; what matters is which object reaches the
+    # launch, through the scalar-packing path the count takes.
+    data = field((shape[0] * shape[1] * shape[2],))
+    tex = tack.texture3d(data, shape=shape)
+    out = field((1,))
+    b.execute(sample, (out, tex, 1), {})
+    bound = b.compiled[0].launches[0][0]
+    check("texture snapshot reaches the launch",
+          any(a is tex._storage for a in bound))
+    check("texture's field does not", not any(a is data for a in bound))
+    param = next(p for p in b.compiled[0].ir.params if p.name == "tex")
+    check("variant and Texture3D agree on hardware sampling for %s" % (shape,),
+          param._is_texture == b.texture_in_hardware(shape))
+
 print("OK")
 '''
 

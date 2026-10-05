@@ -27,6 +27,7 @@ from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     as_address,
+    bind_textures,
     new_kernel_cache,
     resolve_variant,
 )
@@ -157,54 +158,32 @@ _HIP_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlon
                    u32: ctypes.c_uint, u64: ctypes.c_ulonglong}
 
 
-class CompiledHIPKernel:
-    """A compiled HIP kernel ready for dispatch."""
+class HIPTextureImage:
+    """A HIP 3D array and the texture object that samples it.
 
-    def __init__(self, module, func, func_name, param_types, param_is_field,
-                 param_is_texture=None, texture_shapes=None):
-        self._module = module
-        self._func = func
-        self._func_name = func_name
-        self._param_types = param_types
-        self._param_is_field = param_is_field
-        self._param_is_texture = param_is_texture or [False] * len(param_types)
-        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
-        self._tex_cache: dict[tuple, int] = {}
+    Owned by one `Texture3D`, which uploads its field's data at creation and
+    on ``update()``. Nothing else keeps a reference, so the array and the
+    texture object are destroyed with the texture: no later texture can be
+    served one that was made from someone else's memory.
+    """
 
-    def _create_texture_object(self, field, W, H, D):
-        """Create a HIP texture object from a field's device buffer.
+    def __init__(self, shape_3d):
+        W, H, D = shape_3d
+        self._shape = shape_3d
 
-        Allocates a HIP 3D array, copies the field data into it, then creates
-        a texture object with linear filtering and normalized coordinates.
-        """
         # Create channel format descriptor: 1 channel, 32-bit float
         channel_desc = hip.hipCreateChannelDesc(
             32, 0, 0, 0, hip.hipChannelFormatKind.hipChannelFormatKindFloat)
 
-        # Create extent for the 3D array
-        extent = hip.make_hipExtent(W, H, D)
-
         # Allocate 3D array
-        err, hip_array = hip.hipMalloc3DArray(channel_desc, extent, 0)
+        err, self._array = hip.hipMalloc3DArray(
+            channel_desc, hip.make_hipExtent(W, H, D), 0)
         _check_hip(err)
-
-        # Copy device linear buffer → HIP 3D array
-        copy_params = hip.hipMemcpy3DParms()
-        # Source: device pointer as pitched pointer
-        copy_params.srcPtr = hip.make_hipPitchedPtr(
-            field._buffer.device_ptr, W * 4, W, H)
-        copy_params.srcPos = hip.make_hipPos(0, 0, 0)
-        # Destination: 3D array
-        copy_params.dstArray = hip_array
-        copy_params.dstPos = hip.make_hipPos(0, 0, 0)
-        copy_params.extent = extent
-        copy_params.kind = hip.hipMemcpyKind.hipMemcpyDeviceToDevice
-        _check_hip(hip.hipMemcpy3D(copy_params))
 
         # Create resource descriptor
         res_desc = hip.hipResourceDesc()
         res_desc.resType = hip.hipResourceType.hipResourceTypeArray
-        res_desc.res.array.array = hip_array
+        res_desc.res.array.array = self._array
 
         # Create texture descriptor
         tex_desc = hip.hipTextureDesc()
@@ -218,28 +197,66 @@ class CompiledHIPKernel:
         tex_desc.readMode = hip.hipTextureReadMode.hipReadModeElementType
 
         # Create texture object
-        err, tex_obj = hip.hipCreateTextureObject(res_desc, tex_desc, None)
+        err, self._tex_obj = hip.hipCreateTextureObject(res_desc, tex_desc, None)
         _check_hip(err)
 
-        return tex_obj, hip_array
+    @property
+    def handle(self):
+        """The texture object a kernel launch passes."""
+        return self._tex_obj
+
+    def upload(self, field):
+        """Copy a field's device buffer into the array.
+
+        The texture object reads the array, so it sees the new contents
+        without being recreated.
+        """
+        W, H, D = self._shape
+        copy_params = hip.hipMemcpy3DParms()
+        # Source: device pointer as pitched pointer
+        copy_params.srcPtr = hip.make_hipPitchedPtr(
+            field._buffer.device_ptr, W * 4, W, H)
+        copy_params.srcPos = hip.make_hipPos(0, 0, 0)
+        # Destination: 3D array
+        copy_params.dstArray = self._array
+        copy_params.dstPos = hip.make_hipPos(0, 0, 0)
+        copy_params.extent = hip.make_hipExtent(W, H, D)
+        copy_params.kind = hip.hipMemcpyKind.hipMemcpyDeviceToDevice
+        _check_hip(hip.hipMemcpy3D(copy_params))
+
+    def __del__(self):
+        try:
+            if hasattr(self, '_tex_obj'):
+                hip.hipDestroyTextureObject(self._tex_obj)
+            if hasattr(self, '_array'):
+                hip.hipFreeArray(self._array)
+        except Exception:
+            pass
+
+
+class CompiledHIPKernel:
+    """A compiled HIP kernel ready for dispatch."""
+
+    def __init__(self, module, func, func_name, param_types, param_is_field,
+                 param_is_texture=None):
+        self._module = module
+        self._func = func
+        self._func_name = func_name
+        self._param_types = param_types
+        self._param_is_field = param_is_field
+        self._param_is_texture = param_is_texture or [False] * len(param_types)
 
     def __call__(self, kernel_args: list, loop_end: int):
         """Dispatch the HIP kernel."""
         n_val = ctypes.c_longlong(loop_end)
 
         arg_values = []
-        for i, (arg, ptype, is_field, is_tex) in enumerate(
-                zip(kernel_args, self._param_types, self._param_is_field,
-                    self._param_is_texture)):
+        for arg, ptype, is_field, is_tex in zip(
+                kernel_args, self._param_types, self._param_is_field,
+                self._param_is_texture):
             if is_tex:
-                W, H, D = self._texture_shapes[i]
-                cache_key = (int(arg._buffer.device_ptr), W, H, D)
-                if cache_key not in self._tex_cache:
-                    tex_obj, hip_array = self._create_texture_object(arg, W, H, D)
-                    self._tex_cache[cache_key] = (tex_obj, hip_array)
-                tex_obj, _ = self._tex_cache[cache_key]
-                # hipTextureObject_t is unsigned long long (64-bit handle)
-                arg_values.append(ctypes.c_ulonglong(tex_obj))
+                # A HIPTextureImage; hipTextureObject_t is unsigned long long
+                arg_values.append(ctypes.c_ulonglong(arg.handle))
             elif is_field:
                 arg_values.append(ctypes.c_void_p(int(arg._buffer.device_ptr)))
             else:
@@ -328,16 +345,20 @@ class HIPBackend(Backend):
         here — before the variant key is built — rather than at codegen time.
         """
         from tack.lang.field import Texture3D
-        max_dim = self._max_image_3d
         for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Texture3D):
-                W, H, D = arg.shape_3d
-                if self._has_image_support and (
-                        max_dim == 0
-                        or (W <= max_dim and H <= max_dim and D <= max_dim)):
+                if self.texture_in_hardware(arg.shape_3d):
                     param._texture_shape = arg.shape_3d
                 else:
                     param._is_texture = False  # software fallback
+
+    def texture_in_hardware(self, shape_3d) -> bool:
+        max_dim = self._max_image_3d
+        return self._has_image_support and (
+            max_dim == 0 or all(s <= max_dim for s in shape_3d))
+
+    def create_texture_image(self, shape_3d) -> HIPTextureImage:
+        return HIPTextureImage(shape_3d)
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> HIPBuffer:
@@ -424,15 +445,16 @@ class HIPBackend(Backend):
             # range(0) runs nothing; do not ask the driver for an empty grid.
             return
 
+        # Textures bind their own snapshot, not the field they came from.
+        kernel_args = bind_textures(effective_args)
+
         # Replace scalar args with the packed field buffers
         if pack_info:
             from tack.lang.ir_pack_scalars import split_args
             from tack.runtime.kernel_utils import _update_pack_fields
             _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in kept_args]
-            kernel_args = list(kernel_args) + pack_fields
+            kernel_args = bind_textures(kept_args) + pack_fields
 
         compiled(kernel_args, loop_end)
 
@@ -473,12 +495,8 @@ class HIPBackend(Backend):
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        texture_shapes = {}
-        for i, p in enumerate(ir_func.params):
-            if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
-                texture_shapes[i] = p._texture_shape
         return CompiledHIPKernel(module, func, kernel_name, param_types,
-                                 param_is_field, param_is_texture, texture_shapes)
+                                 param_is_field, param_is_texture)
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""

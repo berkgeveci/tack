@@ -94,11 +94,18 @@ def local_array_like(field, size):
 def texture3d(source_field, shape=None, interp='linear'):
     """Create a 3D texture from a field for hardware-accelerated sampling.
 
+    The texture copies the field's data now. Later writes to the field --
+    kernel stores, ``from_numpy``, external or DLPack writes -- are not
+    visible to it until ``tex.update()`` copies the field again. That holds
+    on every backend, including CPU.
+
     Args:
-        source_field: A tack.field with f32 dtype.
+        source_field: A tack.field with f32 dtype holding W*H*D elements,
+               x varying fastest.
         shape: (W, H, D) tuple for the 3D dimensions.  If the field's shape
                is already 3D, this can be omitted.
-        interp: Interpolation mode — 'linear' (default) or 'nearest'.
+        interp: Interpolation mode. Only 'linear' (the default) is
+               implemented.
     """
     if shape is None:
         shape = source_field.shape

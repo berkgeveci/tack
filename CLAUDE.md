@@ -185,6 +185,22 @@ for i in range(x.shape[0]):        # one variant for all lengths
 
 To avoid that, pass the length as a scalar argument (`def reverse(x, out, n)`) — scalars are runtime parameters and don't specialize.
 
+### Textures
+
+`tack.texture3d(field, shape)` copies the field into storage the `Texture3D`
+owns, on every backend, and `tex.update()` copies it again; writes to the
+field in between do not reach the texture. `Backend.texture_in_hardware()`
+picks the storage: a hardware image from `create_texture_image()` (CUDA,
+Metal, HIP with image support, Level Zero with samplers, within the device's
+3D limit) or a private f32 field sampled in software (CPU and the fallbacks).
+Dispatch binds that storage through `bind_textures()`; the grid bound still
+reads the source field. No compiled kernel caches texture objects, and none
+is keyed by device address: images free their device objects when the
+texture is collected. Only f32 fields of exactly W*H*D elements and
+`interp='linear'` are accepted. Volume rendering calls `update()` per
+`render_volume()`, since the path tracer reads `scalar_field` directly. See
+`test_texture_snapshot.py`.
+
 ### Kernel code inspection
 
 Generated GPU variables and all backend kernel entry names use the shared,
@@ -406,7 +422,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 
 The HIP codegen (`hip_gen.py`) extends `CUDACodeGen` — HIP device code uses the same syntax as CUDA (`blockIdx`, `threadIdx`, `__global__`, `__shared__`, `__syncthreads`). The differences are `#include <hip/hip_runtime.h>` and the texture handle type, which HIP spells `hipTextureObject_t` (`_TEXTURE_OBJECT_TYPE`, overridden from CUDA's). The runtime (`hip_backend.py`) uses `hip-python` bindings for hipRTC compilation and dispatch.
 
-**Textures need a device that has them.** CDNA parts — gfx940/941/942, i.e. MI300 — have no texture/image hardware, and hipRTC refuses `tex3D` outright ("The image/texture API not supported on the device"). The backend asks `hipDeviceAttributeImageSupport` at init and falls back to software trilinear sampling where the answer is no, the same way the Level Zero backend handles Xe-HPC. The decision is made in `_store_texture_shapes`, before the variant key is built, because it changes the generated code.
+**Textures need a device that has them.** CDNA parts — gfx940/941/942, i.e. MI300 — have no texture/image hardware, and hipRTC refuses `tex3D` outright ("The image/texture API not supported on the device"). The backend asks `hipDeviceAttributeImageSupport` at init and falls back to software trilinear sampling where the answer is no, the same way the Level Zero backend handles Xe-HPC. The decision is `texture_in_hardware()`, which `_store_texture_shapes` consults before the variant key is built, because it changes the generated code, and which `Texture3D` consults to choose its storage.
 
 `hip-python` is on PyPI now (it used to be Test-PyPI only), so the `[hip]` extra declares it:
 

@@ -130,3 +130,24 @@ class Backend:
         `supports_device_reductions` is True."""
         raise NotImplementedError(
             f"{self.label} backend does not implement device reductions")
+
+    def texture_in_hardware(self, shape_3d) -> bool:
+        """Whether a `Texture3D` of this extent is sampled by texture units.
+
+        False means the texture keeps a private field and the generated
+        code interpolates it in software, which is what CPU does. `Texture3D`
+        asks when choosing its storage, and backends whose answer varies by
+        device or extent ask again when preparing a variant, so a texture
+        always holds the storage its compiled kernel binds.
+        """
+        return False
+
+    def create_texture_image(self, shape_3d):
+        """Allocate a single-channel f32 3D texture image.
+
+        Only called when `texture_in_hardware()` is True. The result is
+        owned by one `Texture3D`: it exposes ``upload(field)``, which copies
+        the field into it, and frees the device objects when collected.
+        """
+        raise NotImplementedError(
+            f"{self.label} backend has no hardware textures")

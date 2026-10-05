@@ -192,6 +192,19 @@ The qualification is part of the compiled-variant key. `test_disjoint_fields.py`
 covers the analysis, partial overlaps of imported storage, the generated
 signatures, and switching between overlapping and disjoint calls.
 
+**Textures.** `tack.texture3d(field, shape=(W, H, D))` copies the field's
+data when it is created, on every backend. Later writes to the field,
+whether kernel stores, `from_numpy`, or external and DLPack writes, are not
+visible to the texture until `tex.update()` copies the field again; sampling
+after that call sees the field's data as of the call. The copy belongs to
+the texture: a hardware image on CUDA, Metal, HIP with image support and
+Level Zero with samplers, otherwise a private field that generated code
+interpolates in software. It is released with the texture, and is never
+looked up by device address, so one texture cannot be served another's
+data. The field must be f32 with exactly W·H·D elements, x varying fastest;
+only `interp='linear'` is implemented, and other modes are rejected.
+`test_texture_snapshot.py` covers this on every available backend.
+
 **Required caller constraints for this baseline:** access only in-bounds
 elements and initialized values; write only to writable storage. Bounds
 checking and enforcement of read-only access inside kernels are not promised

@@ -195,6 +195,7 @@ from tack.runtime.kernel_utils import (  # noqa: F401
     _get_loop_range,
     _resolve_range_expr,
     _update_pack_fields,
+    bind_textures,
     new_kernel_cache,
     resolve_variant,
 )
@@ -831,12 +832,13 @@ class CPUBackend(Backend):
             specialize_disjoint=_SPECIALIZE_DISJOINT,
         )
 
-        # Unwrap Texture3D to the underlying Field for dispatch
-        kernel_args = [a.field if isinstance(a, Texture3D) else a
-                       for a in effective_args]
-        loop_end = _get_loop_range(variant.ir, kernel_args)
+        # The grid bound reads a texture's field; the kernel samples the
+        # texture's own snapshot of it.
+        loop_end = _get_loop_range(
+            variant.ir, [a.field if isinstance(a, Texture3D) else a
+                         for a in effective_args])
 
-        self._dispatch(variant.payload, kernel_args, loop_end)
+        self._dispatch(variant.payload, bind_textures(effective_args), loop_end)
 
     @staticmethod
     def _build_variant(ir_func, effective_args):

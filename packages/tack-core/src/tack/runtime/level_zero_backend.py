@@ -34,6 +34,7 @@ from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     as_address,
+    bind_textures,
     new_kernel_cache,
     resolve_variant,
 )
@@ -728,29 +729,20 @@ _L0_CTYPES_MAP = {
 }
 
 
-class CompiledL0Kernel:
-    """A compiled Level Zero kernel ready for dispatch."""
+class L0TextureImage:
+    """A read-only Level Zero 3D image, sampled through a hardware sampler.
 
-    def __init__(self, module, kernel, func_name, param_types, param_is_field,
-                 workgroup_size, param_is_texture=None, texture_shapes=None, *,
-                 requires_full_workgroups=False):
-        self._requires_full_workgroups = requires_full_workgroups
-        if requires_full_workgroups:
-            check_workgroup_launch(func_name, 0, backend_label='Level Zero',
-                                   workgroup_size=workgroup_size)
-        self._module = module
-        self._kernel = kernel
-        self._func_name = func_name
-        self._param_types = param_types
-        self._param_is_field = param_is_field
-        self._workgroup_size = workgroup_size
-        self._param_is_texture = param_is_texture or [False] * len(param_types)
-        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
-        self._image_cache: dict[tuple, ctypes.c_void_p] = {}
+    Owned by one `Texture3D`, which uploads its field's data at creation and
+    on ``update()``. Nothing else keeps a reference, so the image is
+    destroyed with the texture: no later texture can be served one that was
+    made from someone else's memory.
+    """
 
-    def _create_image(self, field, W, H, D, backend):
-        """Create a Level Zero 3D image from a field's device buffer."""
+    def __init__(self, shape_3d, backend):
         ze = _get_ze()
+        W, H, D = shape_3d
+        self._shape = shape_3d
+        self._backend = backend
         fmt = ze_image_format_t(
             layout=ZE_IMAGE_FORMAT_LAYOUT_32,
             type=ZE_IMAGE_FORMAT_TYPE_FLOAT,
@@ -776,6 +768,13 @@ class CompiledL0Kernel:
             backend._context, backend._device,
             ctypes.byref(desc), ctypes.byref(image)),
             "zeImageCreate")
+        self.handle = image
+
+    def upload(self, field):
+        """Copy a field's device buffer into the image."""
+        ze = _get_ze()
+        backend = self._backend
+        W, H, D = self._shape
 
         # Copy data: device → host → image
         # Direct device→image copy can fail with OOM on the host staging path,
@@ -798,7 +797,7 @@ class CompiledL0Kernel:
 
         # Host staging buffer → image
         _check_ze(ze.zeCommandListAppendImageCopyFromMemory(
-            backend._imm_cmd_list, image,
+            backend._imm_cmd_list, self.handle,
             host_ptr, None,
             None, 0, None),
             "zeCommandListAppendImageCopyFromMemory")
@@ -806,7 +805,31 @@ class CompiledL0Kernel:
         # Free staging buffer
         ze.zeMemFree(backend._context, host_ptr)
 
-        return image
+    def __del__(self):
+        if getattr(self, 'handle', None):
+            try:
+                _get_ze().zeImageDestroy(self.handle)
+            except Exception:
+                pass
+
+
+class CompiledL0Kernel:
+    """A compiled Level Zero kernel ready for dispatch."""
+
+    def __init__(self, module, kernel, func_name, param_types, param_is_field,
+                 workgroup_size, param_is_texture=None, *,
+                 requires_full_workgroups=False):
+        self._requires_full_workgroups = requires_full_workgroups
+        if requires_full_workgroups:
+            check_workgroup_launch(func_name, 0, backend_label='Level Zero',
+                                   workgroup_size=workgroup_size)
+        self._module = module
+        self._kernel = kernel
+        self._func_name = func_name
+        self._param_types = param_types
+        self._param_is_field = param_is_field
+        self._workgroup_size = workgroup_size
+        self._param_is_texture = param_is_texture or [False] * len(param_types)
 
     def __call__(self, kernel_args: list, loop_end: int, backend):
         """Dispatch the Level Zero kernel."""
@@ -818,20 +841,14 @@ class CompiledL0Kernel:
 
         # Set kernel arguments
         arg_idx = 0
-        for i, (arg, ptype, is_field, is_tex) in enumerate(
-                zip(kernel_args, self._param_types, self._param_is_field,
-                    self._param_is_texture)):
+        for arg, ptype, is_field, is_tex in zip(
+                kernel_args, self._param_types, self._param_is_field,
+                self._param_is_texture):
             if is_tex:
-                # Bind as image3d_t
-                W, H, D = self._texture_shapes[i]
-                cache_key = (arg._buffer.device_ptr.value, W, H, D)
-                if cache_key not in self._image_cache:
-                    self._image_cache[cache_key] = self._create_image(
-                        arg, W, H, D, backend)
-                img_handle = self._image_cache[cache_key]
+                # Bind an L0TextureImage as image3d_t
                 _check_ze(ze.zeKernelSetArgumentValue(
                     kernel, arg_idx, ctypes.sizeof(ctypes.c_void_p),
-                    ctypes.byref(img_handle)),
+                    ctypes.byref(arg.handle)),
                     f"zeKernelSetArgumentValue (image arg {arg_idx})")
             elif is_field:
                 ptr = arg._buffer.device_ptr
@@ -1124,15 +1141,16 @@ class LevelZeroBackend(Backend):
             # range(0) runs nothing; a negative count would wrap as uint32.
             return
 
+        # Textures bind their own snapshot, not the field they came from.
+        kernel_args = bind_textures(effective_args)
+
         # Replace scalar args with the packed field buffers
         if pack_info:
             from tack.lang.ir_pack_scalars import split_args
             from tack.runtime.kernel_utils import _update_pack_fields
             _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in kept_args]
-            kernel_args = list(kernel_args) + pack_fields
+            kernel_args = bind_textures(kept_args) + pack_fields
 
         compiled(kernel_args, loop_end, self)
 
@@ -1145,15 +1163,19 @@ class LevelZeroBackend(Backend):
         variant key is built — rather than at codegen time.
         """
         from tack.lang.field import Texture3D
-        max_dim = self._max_image_3d
         for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Texture3D):
-                W, H, D = arg.shape_3d
-                if (self._has_hw_sampler
-                        and W <= max_dim and H <= max_dim and D <= max_dim):
+                if self.texture_in_hardware(arg.shape_3d):
                     param._texture_shape = arg.shape_3d
                 else:
                     param._is_texture = False  # software fallback
+
+    def texture_in_hardware(self, shape_3d) -> bool:
+        max_dim = self._max_image_3d
+        return self._has_hw_sampler and all(s <= max_dim for s in shape_3d)
+
+    def create_texture_image(self, shape_3d) -> L0TextureImage:
+        return L0TextureImage(shape_3d, self)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.
@@ -1240,13 +1262,9 @@ class LevelZeroBackend(Backend):
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        texture_shapes = {}
-        for i, p in enumerate(ir_func.params):
-            if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
-                texture_shapes[i] = p._texture_shape
         return CompiledL0Kernel(module, kernel, kernel_name,
                                 param_types, param_is_field, workgroup_size,
-                                param_is_texture, texture_shapes,
+                                param_is_texture,
                                 requires_full_workgroups=full_groups)
 
     def reduce_field(self, field, op: str) -> float:

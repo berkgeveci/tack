@@ -306,7 +306,7 @@ def fields_disjoint(ir_func, effective_args) -> bool:
         if isinstance(arg, Field):
             buf = arg._buffer
         elif isinstance(arg, Texture3D):
-            buf = arg.field._buffer
+            buf = arg._storage._buffer
         else:
             continue
         try:
@@ -337,6 +337,16 @@ def dispatch_name_to_field(ir_func, effective_args) -> dict:
         if isinstance(arg, (Field, Texture3D)):
             mapping[param.name] = arg
     return mapping
+
+
+def bind_textures(args) -> list:
+    """Replace each Texture3D with the storage its compiled kernel binds.
+
+    That is the texture's own snapshot -- a private field, or a hardware
+    image -- never the field it was made from, so writes to that field do
+    not reach the kernel before ``Texture3D.update()``.
+    """
+    return [a._storage if isinstance(a, Texture3D) else a for a in args]
 
 
 def _store_texture_shapes(ir_func, effective_args):

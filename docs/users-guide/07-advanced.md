@@ -172,10 +172,21 @@ def sample_volume(tex, output, n):
         output[i] = tex.sample(u, 0.5, 0.5)  # normalized [0,1] coords
 ```
 
-On Metal, this uses hardware texture units with `texture3d<float>.sample()`.
-On other backends, Tack generates a software trilinear interpolation fallback.
-On Level Zero (Intel GPUs), hardware `image3d_t` sampling is used when the
-device supports it.
+On Metal and CUDA, this uses hardware texture units. HIP and Level Zero
+(Intel GPUs) use them when the device has them. Elsewhere, including CPU,
+Tack generates software trilinear interpolation.
+
+The texture holds a copy of the field taken by `tack.texture3d()`, on every
+backend. Writes to the field afterwards are not visible to it until you call
+`tex.update()`:
+
+```python
+data.from_numpy(next_frame.ravel())
+tex.update()   # sampling now sees next_frame
+```
+
+The field must be `f32`, and `interp='linear'` is the only interpolation
+mode.
 
 `tex.sample()` also works inside `@tack.func` — texture metadata is
 propagated through inlining automatically.

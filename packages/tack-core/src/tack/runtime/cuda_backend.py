@@ -27,6 +27,7 @@ from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_loop_range,
     as_address,
+    bind_textures,
     new_kernel_cache,
     resolve_variant,
 )
@@ -429,26 +430,20 @@ _CUDA_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlo
                     u32: ctypes.c_uint, u64: ctypes.c_ulonglong}
 
 
-class CompiledCUDAKernel:
-    """A compiled CUDA kernel ready for dispatch."""
+class CUDATextureImage:
+    """A CUDA 3D array and the texture object that samples it.
 
-    def __init__(self, module, func, func_name, param_types, param_is_field,
-                 param_is_texture=None, texture_shapes=None):
-        self._module = module
-        self._func = func
-        self._func_name = func_name
-        self._param_types = param_types
-        self._param_is_field = param_is_field
-        self._param_is_texture = param_is_texture or [False] * len(param_types)
-        self._texture_shapes = texture_shapes or {}  # param_index → (W, H, D)
-        self._tex_cache: dict[tuple, int] = {}  # cache_key → CUtexObject
+    Owned by one `Texture3D`, which uploads its field's data at creation and
+    on ``update()``. Nothing else keeps a reference, so the array and the
+    texture object are destroyed with the texture: no later texture can be
+    served one that was made from someone else's memory.
+    """
 
-    def _create_texture_object(self, field, W, H, D):
-        """Create a CUDA texture object from a field's device buffer.
+    def __init__(self, shape_3d):
+        W, H, D = shape_3d
+        self._shape = shape_3d
+        self._token = _current_context_token()
 
-        Allocates a CUDA 3D array, copies the field data into it, then creates
-        a texture object with linear filtering and normalized coordinates.
-        """
         # Create a CUDA array descriptor for a 3D float texture
         array_desc = driver.CUDA_ARRAY3D_DESCRIPTOR()
         array_desc.Width = W
@@ -458,25 +453,8 @@ class CompiledCUDAKernel:
         array_desc.NumChannels = 1
         array_desc.Flags = 0
 
-        err, cuda_array = driver.cuArray3DCreate(array_desc)
+        err, self._array = driver.cuArray3DCreate(array_desc)
         _check(err)
-
-        # Copy field data (device linear buffer) → CUDA 3D array
-        copy_params = driver.CUDA_MEMCPY3D()
-        # Source: device pointer, pitched linear memory
-        copy_params.srcMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_DEVICE
-        copy_params.srcDevice = field._buffer.device_ptr
-        copy_params.srcPitch = W * 4   # bytes per row
-        copy_params.srcHeight = H
-        # Destination: CUDA array
-        copy_params.dstMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_ARRAY
-        copy_params.dstArray = cuda_array
-        # Extent
-        copy_params.WidthInBytes = W * 4
-        copy_params.Height = H
-        copy_params.Depth = D
-
-        _check(driver.cuMemcpy3D(copy_params))
 
         # Create texture descriptor
         tex_desc = driver.CUDA_TEXTURE_DESC()
@@ -491,7 +469,7 @@ class CompiledCUDAKernel:
         # Create resource descriptor
         res_desc = driver.CUDA_RESOURCE_DESC()
         res_desc.resType = driver.CUresourcetype.CU_RESOURCE_TYPE_ARRAY
-        res_desc.res.array.hArray = cuda_array
+        res_desc.res.array.hArray = self._array
 
         # Create resource view descriptor (default — full mip level 0)
         view_desc = driver.CUDA_RESOURCE_VIEW_DESC()
@@ -500,28 +478,74 @@ class CompiledCUDAKernel:
         view_desc.height = H
         view_desc.depth = D
 
-        err, tex_obj = driver.cuTexObjectCreate(res_desc, tex_desc, view_desc)
+        err, self._tex_obj = driver.cuTexObjectCreate(res_desc, tex_desc, view_desc)
         _check(err)
 
-        return tex_obj, cuda_array
+    @property
+    def handle(self) -> int:
+        """The texture object a kernel launch passes."""
+        return int(self._tex_obj)
+
+    def upload(self, field):
+        """Copy a field's device buffer into the array.
+
+        The texture object reads the array, so it sees the new contents
+        without being recreated.
+        """
+        W, H, D = self._shape
+        copy_params = driver.CUDA_MEMCPY3D()
+        # Source: device pointer, pitched linear memory
+        copy_params.srcMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_DEVICE
+        copy_params.srcDevice = field._buffer.device_ptr
+        copy_params.srcPitch = W * 4   # bytes per row
+        copy_params.srcHeight = H
+        # Destination: CUDA array
+        copy_params.dstMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_ARRAY
+        copy_params.dstArray = self._array
+        # Extent
+        copy_params.WidthInBytes = W * 4
+        copy_params.Height = H
+        copy_params.Depth = D
+
+        _check(driver.cuMemcpy3D(copy_params))
+
+    def __del__(self):
+        # Same rule as CUDABuffer: the context took these with it.
+        token = getattr(self, "_token", None)
+        if token is not None and not token.alive:
+            return
+        try:
+            if hasattr(self, '_tex_obj'):
+                driver.cuTexObjectDestroy(self._tex_obj)
+            if hasattr(self, '_array'):
+                driver.cuArrayDestroy(self._array)
+        except Exception:
+            pass
+
+
+class CompiledCUDAKernel:
+    """A compiled CUDA kernel ready for dispatch."""
+
+    def __init__(self, module, func, func_name, param_types, param_is_field,
+                 param_is_texture=None):
+        self._module = module
+        self._func = func
+        self._func_name = func_name
+        self._param_types = param_types
+        self._param_is_field = param_is_field
+        self._param_is_texture = param_is_texture or [False] * len(param_types)
 
     def __call__(self, kernel_args: list, loop_end: int):
         """Dispatch the CUDA kernel."""
         n_val = ctypes.c_longlong(loop_end)
 
         arg_values = []
-        for i, (arg, ptype, is_field, is_tex) in enumerate(
-                zip(kernel_args, self._param_types, self._param_is_field,
-                    self._param_is_texture)):
+        for arg, ptype, is_field, is_tex in zip(
+                kernel_args, self._param_types, self._param_is_field,
+                self._param_is_texture):
             if is_tex:
-                W, H, D = self._texture_shapes[i]
-                cache_key = (int(arg._buffer.device_ptr), W, H, D)
-                if cache_key not in self._tex_cache:
-                    tex_obj, cuda_array = self._create_texture_object(arg, W, H, D)
-                    self._tex_cache[cache_key] = (tex_obj, cuda_array)
-                tex_obj, _ = self._tex_cache[cache_key]
-                # cudaTextureObject_t is unsigned long long (64-bit handle)
-                arg_values.append(ctypes.c_ulonglong(int(tex_obj)))
+                # A CUDATextureImage; cudaTextureObject_t is unsigned long long
+                arg_values.append(ctypes.c_ulonglong(arg.handle))
             elif is_field:
                 arg_values.append(ctypes.c_void_p(int(arg._buffer.device_ptr)))
             else:
@@ -605,6 +629,12 @@ class CUDABackend(Backend):
             return ExportableCUDABuffer(dtype.numpy_dtype, shape)
         return CUDABuffer(dtype.numpy_dtype, shape)
 
+    def texture_in_hardware(self, shape_3d) -> bool:
+        return True
+
+    def create_texture_image(self, shape_3d) -> CUDATextureImage:
+        return CUDATextureImage(shape_3d)
+
     def memory_space(self, ptr) -> str:
         """Query where a pointer resides: 'cpu', 'cuda', or 'cuda_managed'.
 
@@ -671,15 +701,16 @@ class CUDABackend(Backend):
             # range(0) runs nothing, and cuLaunchKernel rejects an empty grid.
             return
 
+        # Textures bind their own snapshot, not the field they came from.
+        kernel_args = bind_textures(effective_args)
+
         # Replace scalar args with the packed field buffers
         if pack_info:
             from tack.lang.ir_pack_scalars import split_args
             from tack.runtime.kernel_utils import _update_pack_fields
             _update_pack_fields(pack_fields, pack_info, effective_args)
             kept_args = split_args(effective_args, pack_info)
-            kernel_args = [a.field if isinstance(a, Texture3D) else a
-                           for a in kept_args]
-            kernel_args = list(kernel_args) + pack_fields
+            kernel_args = bind_textures(kept_args) + pack_fields
 
         compiled(kernel_args, loop_end)
 
@@ -720,12 +751,8 @@ class CUDABackend(Backend):
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        texture_shapes = {}
-        for i, p in enumerate(ir_func.params):
-            if getattr(p, '_is_texture', False) and hasattr(p, '_texture_shape'):
-                texture_shapes[i] = p._texture_shape
         return CompiledCUDAKernel(module, func, kernel_name, param_types,
-                                  param_is_field, param_is_texture, texture_shapes)
+                                  param_is_field, param_is_texture)
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
