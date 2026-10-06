@@ -1273,3 +1273,22 @@ def test_sequential_ndrange_ranges_may_use_the_outer_index(backend):
     for i in range(3):
         want[2:5, i:i + 2] += 1
     np.testing.assert_array_equal(a.to_numpy(), want)
+
+
+# --- Vector fields to and from NumPy, one row per vector ---
+
+def test_vector_field_takes_and_returns_one_row_per_vector(backend):
+    """`from_numpy` accepts (*shape, n) as well as the flat storage shape;
+    `to_numpy(vectors=True)` returns (*shape, n)."""
+    values = np.arange(24, dtype=np.float32).reshape(4, 2, 3)
+    f = tack.Vector.field(3, dtype=tack.f32, shape=(4, 2))
+    f.from_numpy(values)
+    np.testing.assert_array_equal(f.to_numpy(), values.reshape(-1))
+    np.testing.assert_array_equal(f.to_numpy(vectors=True), values)
+    f.from_numpy(values.reshape(-1) * 2)
+    np.testing.assert_array_equal(f.to_numpy(vectors=True), values * 2)
+    with pytest.raises(ValueError, match=r"\(4, 2, 3\) or flat \(24,\)"):
+        f.from_numpy(values.reshape(8, 3))
+    scalar = tack.field(dtype=tack.f32, shape=(4,))
+    scalar.fill(1.0)
+    assert scalar.to_numpy(vectors=True).shape == (4,)

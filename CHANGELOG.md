@@ -11,6 +11,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - `tack.ndrange` takes `(start, end)` pairs as well as sizes:
   `for i, j in tack.ndrange((1, n - 1), (1, m - 1))` visits the interior
   of a grid. An empty or reversed pair runs no iterations.
+- Vector fields exchange data with NumPy one row per vector:
+  `from_numpy` accepts `(*shape, n)` as well as the flat storage shape,
+  and `to_numpy(vectors=True)` returns `(*shape, n)`. Plain `to_numpy()`
+  still returns the flat array.
 - `tack.constant(value, dtype=None)`: a named constant that kernels and
   device functions may read from the scope that defines them.
   `DT = tack.constant(0.01)` at module level lets a kernel write `DT`; it

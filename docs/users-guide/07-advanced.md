@@ -270,6 +270,11 @@ def closest_hit(origin, direction):
 distance, normal, color = closest_hit(o, d)
 ```
 
+A vector field exchanges data with NumPy flat or with one row per
+vector: `v.from_numpy(a)` accepts an array of shape `(*shape, n)` or the
+flat `(prod(shape) * n,)`, and `v.to_numpy(vectors=True)` returns
+`(*shape, n)`. Plain `v.to_numpy()` returns the flat storage.
+
 Two vectors in one operation must have the same number of components.
 An assignment evaluates its whole right side before it stores anything,
 so `v = v.cross(w)` and `pos[i] = pos[i].cross(axis[i])` read the old
