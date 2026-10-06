@@ -523,3 +523,35 @@ def test_ordinary_and_floor_division_kernels_compile_in_sequence():
     np.testing.assert_array_equal(out.to_numpy(), expected)
     plain_second(x, y, out)
     np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * y.to_numpy() - 1.0, rtol=1e-6)
+
+
+def test_host_element_reads_copy_one_element():
+    """field[i] copies just the element on CUDA, from an owned buffer, a
+    wrapped pointer in each form, a view and an exportable buffer; a range
+    past the allocation is refused rather than read."""
+    from tack.runtime.cuda_backend import ExportableCUDABuffer
+
+    f = tack.field(dtype=tack.f64, shape=(4, 5))
+    f.from_numpy(np.arange(20, dtype=np.float64).reshape(4, 5))
+    f._buffer.to_numpy = None          # a whole-buffer copy would fail here
+    assert f[3, 4] == 19.0 and f[-4, 0] == 0.0
+    assert f.reshape((20,))[7] == 7.0
+
+    address = f._buffer.address
+    for ptr in (address, np.uint64(address)):
+        alias = tack.field_from_ptr(ptr, tack.f64, (20,))
+        assert alias[13] == 13.0
+
+    v = tack.Vector.field(3, dtype=tack.i32, shape=(6,))
+    v.from_numpy(np.arange(18, dtype=np.int32).reshape(6, 3))
+    v._buffer.to_numpy = None
+    np.testing.assert_array_equal(v[5], [15, 16, 17])
+
+    exportable = ExportableCUDABuffer(np.dtype(np.float32), (8,))
+    exportable.from_numpy(np.arange(8, dtype=np.float32) * 2)
+    np.testing.assert_array_equal(exportable.read_range(6, 2), [12.0, 14.0])
+
+    with pytest.raises(IndexError, match="outside a buffer of 20 elements"):
+        f._buffer.read_range(19, 2)
+    with pytest.raises(IndexError, match="outside"):
+        f._buffer.read_range(-1, 1)

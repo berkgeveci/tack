@@ -152,6 +152,25 @@ _DEAD_CONTEXT_MSG = (
 )
 
 
+def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count):
+    """Copy elements ``[start, start + count)`` of an allocation to the host.
+
+    One ``cuMemcpyDtoH`` of just those bytes, so ``field[i]`` on the host
+    moves one element rather than the whole field. The range is checked
+    here because a device copy past the allocation is not caught by NumPy.
+    """
+    itemsize = numpy_dtype.itemsize
+    if start < 0 or count < 0 or (start + count) * itemsize > nbytes:
+        raise IndexError(
+            f"elements [{start}, {start + count}) are outside a buffer of "
+            f"{nbytes // itemsize} elements")
+    out = np.empty(count, dtype=numpy_dtype)
+    if count:
+        _check(driver.cuMemcpyDtoH(out, int(device_ptr) + start * itemsize,
+                                   count * itemsize))
+    return out
+
+
 class CUDABuffer(DeviceBuffer):
     """Device-resident buffer backed by a CUDA device pointer.
 
@@ -202,6 +221,11 @@ class CUDABuffer(DeviceBuffer):
         # array as a host buffer (CUDA_ERROR_INVALID_VALUE, or a crash).
         _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
         return out
+
+    def read_range(self, start: int, count: int) -> np.ndarray:
+        self._live("read")
+        return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
+                                  start, count)
 
     def fill(self, value):
         arr = np.full(self._shape, value, dtype=self._numpy_dtype)
@@ -349,6 +373,10 @@ class ExportableCUDABuffer(DeviceBuffer):
         out = np.empty(self._shape, dtype=self._numpy_dtype)
         _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
         return out
+
+    def read_range(self, start: int, count: int) -> np.ndarray:
+        return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
+                                  start, count)
 
     def fill(self, value):
         arr = np.full(self._shape, value, dtype=self._numpy_dtype)
