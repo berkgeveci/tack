@@ -83,6 +83,9 @@ class MetalBuffer(DeviceBuffer):
     def to_numpy(self) -> np.ndarray:
         return self._view.copy()
 
+    def read_range(self, start: int, count: int) -> np.ndarray:
+        return self._view.reshape(-1)[start:start + count].copy()
+
     def fill(self, value):
         self._view.fill(value)
 

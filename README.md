@@ -119,6 +119,7 @@ result = x.to_numpy()     # device → host
 x.fill(0.0)               # fill with scalar
 pixels.from_numpy(rgb)                    # (width, height, 3), or the flat array
 rgb = pixels.to_numpy(vectors=True)       # (width, height, 3); plain to_numpy() is flat
+x[7], pixels[3, 4]                        # read one element from the host (not written this way)
 
 # Reductions (GPU-accelerated on Metal)
 total = x.sum()
