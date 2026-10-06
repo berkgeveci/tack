@@ -208,7 +208,10 @@ def step(x, v):
         x[i] += v[i] * DT
 ```
 
-`math.pi`, `math.e` and `math.tau` can be written directly.
+`math.pi`, `math.e` and `math.tau` can be written directly. `tack.random`
+draws uniform, normal and unit-vector values from an explicit `u32`
+state (`state = random.seed(i, frame)`, `u, state = random.uniform(state)`),
+reproducible on every backend and in NumPy.
 
 ### Math Builtins
 
