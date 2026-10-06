@@ -273,6 +273,12 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 `tack.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
 
+Comparisons with a vector operand lower per component to a mask
+(`_vector_compare`; chains evaluate every link), `and`/`or` over masks
+per component without short-circuiting, `any`/`all` to an `IRBoolOp` over
+the components, and `tack.select` to one `IRIfExp` per component.
+`_scalar_condition` rejects a mask as an `if`/`while` condition with the
+remedy. See `test_vector_comparisons.py`.
 A list of scalars in kernel source is a vector (`visit_List`), the same
 value as `tack.Vector([...])`; the validator rejects an empty or nested
 list, a list target and a loop over a list.
@@ -513,6 +519,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 ## Kernel language features
 
 - **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndrange(w, h)` (each argument a size or a `(start, end)` pair, whose extent is clamped at zero; the host evaluates `max`/`min` in the launch size), `while`, `break`, `continue`
+- **Masks**: comparisons of vectors give a vector of `0`/`1` per component; `any(mask)`, `all(mask)`, `tack.select(mask, a, b)`
 - **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max` (two or more values), `pow`; all apply to each component of a vector
 - **Types**: `int()`, `float()` casts, plus explicit `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`, `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`
 - **Atomics**: `tack.atomic_add(field, idx, val)`, `tack.atomic_min(...)`, `tack.atomic_max(...)`

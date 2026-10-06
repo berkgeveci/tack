@@ -39,6 +39,16 @@ def shared_like(field, size):
     """Allocate shared memory with the same dtype as a field. Only usable inside a @tack.kernel."""
     raise RuntimeError("shared_like() can only be used inside a @tack.kernel")
 
+def select(mask, a, b):
+    """``a`` where ``mask`` is true, else ``b``, component by component.
+
+    Only usable inside a kernel or device function. ``mask`` is a scalar
+    or a comparison vector such as ``v > 0.0``; ``a`` and ``b`` are scalars
+    or vectors of one shape, a scalar standing for every component.
+    """
+    raise RuntimeError("tack.select() can only be used inside a @tack.kernel")
+
+
 def barrier():
     """Threadgroup synchronization barrier. Only usable inside a @tack.kernel."""
     raise RuntimeError("barrier() can only be used inside a @tack.kernel")

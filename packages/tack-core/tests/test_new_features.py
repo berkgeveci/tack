@@ -1403,7 +1403,9 @@ def test_vector_field_element_index_is_64_bit():
 
 @tack.func
 def _truthy(x):
-    return x and 1
+    if x:
+        return 1
+    return 0
 
 
 def _vector_compared():
@@ -1457,12 +1459,12 @@ def _tuple_stored():
 
 
 @pytest.mark.parametrize("define, message", [
-    (_vector_compared, r"Kernel 'bad': statement at line 4, column \d+ uses a 3-vector"),
-    (_vector_as_a_condition, "uses a 3-vector where a single value is required"),
+    (_vector_compared, "stores a 3-vector into an element of scalar storage"),   # a mask
+    (_vector_as_a_condition, "if .* has a 3-vector as its condition; reduce it with any"),
     (_vector_as_a_loop_bound, "uses a 3-vector where a single value is required"),
     (_vector_printed, "uses a 3-vector where a single value is required"),
     (_vector_in_a_device_function,
-     r"Device function '_truthy' \(inlined into kernel 'bad'\): statement at line 3"),
+     r"Device function '_truthy' \(inlined into kernel 'bad'\): if at line 3"),
     (_tuple_stored, "stores a tuple of 2 values into an element of scalar storage"),
 ])
 def test_vector_where_one_value_is_required_is_diagnosed(define, message):

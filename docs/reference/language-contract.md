@@ -44,7 +44,7 @@ all corner cases have been validated.
 | Family | Kernel surface | Boundary |
 |---|---|---|
 | Values | Numeric literals, scalar parameters, field loads, local variables, `tack.constant` names (scalars, vectors, matrices), vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
-| Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions take scalars only |
+| Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions of vectors act per component |
 | Assignments | Local assignment, augmented assignment, field stores, tuple assignment to names, field elements and components | Storage and ordering rules below |
 | Control flow | `range`, `tack.ndrange` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
 | Composition | `@tack.func` inlining, returning one or several values; `@tack.data_oriented` templates, with inheritance, device functions held as attributes or under `@staticmethod`, and kernels as methods | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
@@ -708,9 +708,18 @@ expressions apply to each component. A scalar operand is used for every
 component. Two vector or matrix operands must have the same shape; a
 vector and a matrix with the same number of components do not. A
 conditional expression evaluates its condition once and selects whole
-values. Comparisons, Boolean operators, conditions and loop bounds take
-scalars: a vector or matrix there is rejected with the source position, as
-is one in any other position that requires a single value.
+values. A comparison with a vector or matrix operand yields a *mask*, a
+vector or matrix of i32 `0`/`1` of that shape with one comparison per
+component (a scalar operand compares with every component); a chain
+(`lo <= v < hi`) evaluates every link and combines them per component
+with `and`. `and`, `or` and `not` over masks act per component and
+evaluate every operand. `any(mask)` and `all(mask)` reduce a mask to one
+truth value; `tack.select(mask, a, b)` takes `a` where the mask's
+component is nonzero and `b` elsewhere, a scalar mask selecting whole
+values and a scalar arm standing for every component. Conditions of `if`
+and `while`, loop bounds and conditional expressions take scalars: a mask
+there is rejected with the source position and the remedy, as is a vector
+in any other position that requires a single value.
 
 `a @ b` multiplies matrices; a vector on the right is a column and on the
 left a row, giving a vector; two vectors give their dot product. The

@@ -312,6 +312,9 @@ def step(pos, vel, F, C, grid, out, dt, n):
         C[p] = v.outer_product(stress @ v)
 ```
 
+Comparing vectors gives a mask of `0`/`1` per component: `any(p > 1.0)`,
+`all(-1.0 <= p <= 1.0)`, and `tack.select(mask, a, b)` picks per component.
+
 Vector methods: `.dot(w)`, `.cross(w)`, `.norm()`, `.norm_sqr()`,
 `.normalized()`, `.sum()`, `.min()`, `.max()`, `.outer_product(w)`.
 Matrix methods: `.transpose()`, `.trace()`, and for 2x2 and 3x3
