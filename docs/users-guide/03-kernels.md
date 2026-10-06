@@ -99,6 +99,27 @@ constant after a kernel has been compiled does not change that kernel.
 For values that change between calls, pass an argument. `math.pi`,
 `math.e` and `math.tau` can be written directly.
 
+A tuple of numbers is a vector constant and a tuple of equal tuples a
+matrix constant; in a kernel they are the vector or matrix with those
+components, with the same typing rules per component:
+
+```python
+SUN = tack.constant((0.5, 0.5, 0.0))
+ROTATE = tack.constant(((0.0, -1.0), (1.0, 0.0)))
+CELL = tack.constant((2, 3), tack.i32)
+
+@tack.kernel
+def pull(pos, grid, out, n):
+    for i in range(n):
+        r = pos[i] - SUN                 # a vector operand
+        out[i] = r.norm() * SUN.y + grid[CELL] + (ROTATE @ [r.x, r.y]).x
+```
+
+On the host a vector constant indexes and iterates like a tuple of its
+rows and converts with `np.array(SUN, np.float32)`; it is not a tuple, so
+`SUN + OFFSET` is an error rather than a concatenation (use
+`np.asarray(SUN)` for host arithmetic).
+
 ## Field Dimensions
 
 `field.shape[k]` and `len(field)` work anywhere in a kernel — not only as

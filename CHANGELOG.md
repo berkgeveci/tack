@@ -7,6 +7,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Vector and matrix constants: `tack.constant((0.5, 0.5, 0.0))` is the
+  vector with those components in a kernel, `tack.constant(((1, 0), (0, 1)))`
+  the matrix with those rows, typed per component as scalar constants
+  are. On the host they index, iterate and convert to NumPy arrays.
 - A kernel can be a method of a `@tack.data_oriented` class:
   `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
   object is a template like any other argument. It failed with "expects 1
