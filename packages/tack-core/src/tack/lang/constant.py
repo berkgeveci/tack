@@ -26,9 +26,6 @@ class IntConstant(int):
         self.dtype = dtype
         return self
 
-    def __repr__(self):
-        return _describe(int(self), self.dtype)
-
 
 class FloatConstant(float):
     """A ``float`` that kernels may read by name."""
@@ -40,12 +37,10 @@ class FloatConstant(float):
         self.dtype = dtype
         return self
 
-    def __repr__(self):
-        return _describe(float(self), self.dtype)
 
-
-def _describe(value, dtype):
-    return f"tack.constant({value!r})" if dtype is None else f"tack.constant({value!r}, {dtype!r})"
+# Neither class changes how the number prints. A constant is used wherever
+# a number is, including as a field's shape, and code that formats a number
+# into generated source must get its digits.
 
 
 def constant(value, dtype=None):

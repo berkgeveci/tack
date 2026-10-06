@@ -116,6 +116,24 @@ def test_math_module_constants(backend):
     np.testing.assert_allclose(out.to_numpy(), want, rtol=1e-6)
 
 
+@tack.kernel
+def scaled_rows(grid, out, n, scale):
+    for i, j in tack.ndrange(n, n):
+        out[i, j] = grid[i, j] * scale + grid.shape[1]
+
+
+def test_constants_as_field_shapes_and_arguments(backend):
+    """A constant used as a field's shape is baked into indexing as a
+    number, and one passed as an argument is an ordinary scalar. The
+    shape once reached generated code as the text "tack.constant(8)"."""
+    grid = tack.field(dtype=tack.f32, shape=(COUNT, COUNT))
+    out = tack.field(dtype=tack.f32, shape=(COUNT, COUNT))
+    values = np.arange(64, dtype=np.float32).reshape(8, 8)
+    grid.from_numpy(values)
+    scaled_rows(grid, out, COUNT, DT)
+    np.testing.assert_array_equal(out.to_numpy(), values * 0.25 + 8)
+
+
 def test_a_local_shadows_a_constant(backend):
     out = tack.field(dtype=tack.f32, shape=(2,))
     shadowed(out, 2)
@@ -127,8 +145,9 @@ def test_constants_are_ordinary_numbers_on_the_host():
     assert isinstance(COUNT, int) and isinstance(COUNT, IntConstant)
     assert DT * 2 == 0.5 and COUNT + 1 == 9 and list(range(COUNT))[-1] == 7
     assert np.float32(DT) == np.float32(0.25)
-    assert repr(MULTIPLIER) == "tack.constant(747796405, tack.u32)"
-    assert repr(DT) == "tack.constant(0.25)"
+    # They print as the numbers they are: generated code formats them.
+    assert repr(MULTIPLIER) == "747796405" and str(DT) == "0.25"
+    assert MULTIPLIER.dtype is tack.u32 and DT.dtype is None
     # arithmetic gives plain numbers; a derived constant is declared again
     assert type(DT * 2) is float
     assert tack.constant(True) == 1 and tack.constant(np.float32(0.5)) == 0.5
