@@ -47,7 +47,7 @@ all corner cases have been validated.
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions take scalars only |
 | Assignments | Local assignment, augmented assignment, field stores, tuple assignment to names, field elements and components | Storage and ordering rules below |
 | Control flow | `range`, `tack.ndrange` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
-| Composition | `@tack.func` inlining, returning one or several values; `@tack.data_oriented` templates, with inheritance and device functions held as attributes | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
+| Composition | `@tack.func` inlining, returning one or several values; `@tack.data_oriented` templates, with inheritance, device functions held as attributes or under `@staticmethod`, and kernels as methods | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
 | Storage | Scalar fields, vector fields, matrix fields, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
 
@@ -681,8 +681,8 @@ integer and mixed arguments. No performance improvement is claimed.
 
 ### Vectors and matrices
 
-**Required:** a vector (`tack.Vector([...])`, an element of a
-`tack.Vector.field`) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
+**Required:** a vector (`tack.Vector([...])`, the same list of scalars
+written alone, an element of a `tack.Vector.field`) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
 `tack.Matrix.identity(n)`, an element of a `tack.Matrix.field`) are values
 made of scalar components, in row-major order for a matrix. Every
 operation on them is defined as the corresponding scalar operations on
@@ -703,7 +703,8 @@ left a row, giving a vector; two vectors give their dot product. The
 shapes must agree. Each entry of the result is the sum of its products in
 index order. `norm`, `norm_sqr`, `dot`, `cross`, `normalized`, `sum`,
 `min`, `max` and `outer_product` are methods of a vector, the first two
-and `sum` also of a matrix; `transpose` of any matrix, `trace` of a square
+and `sum` also of a matrix; `norm(eps)` is the square root of
+`norm_sqr() + eps`; `transpose` of any matrix, `trace` of a square
 one, `determinant` and `inverse` of 2×2 and 3×3 ones. `inverse` divides
 the adjugate by the determinant and does not test it.
 

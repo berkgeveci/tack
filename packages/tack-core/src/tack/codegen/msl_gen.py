@@ -687,14 +687,16 @@ class MSLCodeGen:
 
     def _expr_unaryop(self, node: ir.IRUnaryOp) -> str:
         operand = self._expr(node.operand)
+        if node.op == "+":
+            # Before the integer helpers, which know '+' only as addition
+            # and would emit a one-argument call to the two-argument add.
+            return operand
         op = 'neg' if node.op == '-' else node.op
         fixed = self._integers.operation(op, getattr(node, 'dtype', None), operand)
         if fixed is not None:
             return fixed
         if node.op == "-":
             return f"(-{operand})"
-        if node.op == "+":
-            return operand
         if node.op == "not":
             return f"(!{operand})"
         if node.op == "~":

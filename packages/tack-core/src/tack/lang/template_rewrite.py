@@ -78,11 +78,14 @@ def template_func_methods(cls) -> dict:
     Collected along the method resolution order, so an override replaces
     the method it overrides. Looked up when a kernel is lowered rather than
     stored by the decorator, so a subclass that is not decorated itself is
-    treated the same.
+    treated the same. A device function under ``@staticmethod`` is one of
+    them: it is called as ``self.name(...)`` and has no ``self`` to resolve.
     """
     methods = {}
     for klass in reversed(cls.__mro__):
         for name, value in vars(klass).items():
+            if isinstance(value, staticmethod):
+                value = value.__func__
             if isinstance(value, Func):
                 methods[name] = value
             else:

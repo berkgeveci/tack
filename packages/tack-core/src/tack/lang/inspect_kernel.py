@@ -120,6 +120,10 @@ def inspect(kernel, *args, mode="source"):
         The generated code as a string.
     """
     from tack.lang.kernel import Kernel
+    bound_to = getattr(kernel, '__self__', None)
+    if bound_to is not None and isinstance(getattr(kernel, '__func__', None), Kernel):
+        # A kernel method reached through its instance: model.step
+        kernel, args = kernel.__func__, (bound_to, *args)
     if not isinstance(kernel, Kernel):
         raise TypeError(f"Expected a @tack.kernel, got {type(kernel).__name__}")
 

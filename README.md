@@ -336,6 +336,8 @@ process(Grid(data_field, 0.1), output)
 A data-oriented class can derive from another and inherits its
 `@tack.func` methods and class constants. An object can also hold a
 `@tack.func` as an attribute (`self.smoothing = cubic`) and call it.
+A kernel can be a method too: `@tack.kernel def step(self, dt)` is called
+as `grid.step(0.1)` and reaches the object's fields through `self`.
 
 ## Examples
 

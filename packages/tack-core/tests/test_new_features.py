@@ -1229,10 +1229,56 @@ def ndrange_inner(a, n, m):
             a[j, k] += 1
 
 
+@tack.kernel
+def range_from_negative(a, n):
+    for i in range(-n, n + 1):
+        a[i + n] = i
+
+
+@tack.kernel
+def ndrange_from_negative(a, n, m):
+    for i, j in tack.ndrange((-n, n + 1), (-m, +m)):
+        a[i + n, j + m] = i * 10 + j
+
+
+@tack.kernel
+def unary_plus(a, out, n, k):
+    for i in range(n):
+        out[i] = +a[i] - +k + (+i)
+
+
 def _zeros_i32(shape):
     f = tack.field(dtype=tack.i32, shape=shape)
     f.fill(0)
     return f
+
+
+@pytest.mark.parametrize("dtype", [tack.i32, tack.u32, tack.i64, tack.f32])
+def test_unary_plus_is_the_operand(backend, dtype):
+    """The GPU generators passed an integer `+x` to the helper table, where
+    '+' is addition: a one-argument call to the two-argument add, which no
+    device compiler accepts."""
+    a = tack.field(dtype=dtype, shape=(6,))
+    out = tack.field(dtype=dtype, shape=(6,))
+    values = np.arange(10, 16)
+    a.from_numpy(values.astype(a.to_numpy().dtype))
+    unary_plus(a, out, 6, 3)
+    np.testing.assert_array_equal(out.to_numpy(), values - 3 + np.arange(6))
+
+
+def test_parallel_range_may_start_at_a_negated_argument(backend):
+    """The launch size is evaluated on the host, which had no case for a
+    unary minus: `range(-n, n + 1)` failed with "Cannot resolve loop range
+    expression: IRUnaryOp"."""
+    a = _zeros_i32((7,))
+    range_from_negative(a, 3)
+    np.testing.assert_array_equal(a.to_numpy(), np.arange(-3, 4))
+
+    b = _zeros_i32((5, 6))
+    b.fill(99)
+    ndrange_from_negative(b, 2, 3)
+    rows, cols = np.mgrid[-2:3, -3:3]
+    np.testing.assert_array_equal(b.to_numpy(), rows * 10 + cols)
 
 
 def test_ndrange_takes_start_end_ranges(backend):
@@ -1540,3 +1586,118 @@ def test_negative_runtime_component_index_is_out_of_range(backend):
     negative_runtime_component(vf, sel, out, n)
     np.testing.assert_array_equal(out.to_numpy(), [3 + 300, 6 + 600])
     np.testing.assert_array_equal(vf.to_numpy(), values)
+
+
+# --- A list of scalars is a vector ---
+
+@tack.func
+def _shifted(p, d):
+    return p + d
+
+
+@tack.kernel
+def list_vectors(vf, m, out, n):
+    for i in range(n):
+        vf[i] = [i * 1.0, 2.0]                     # store to a field element
+        v = [1.0, 0.5]                             # a local
+        v += [0.5, 0.5]
+        w = _shifted(vf[i], [10.0, 20.0])          # an argument
+        d = w.dot([1.0, 1.0])                      # a method's argument
+        e = (w - [1.0, 0.0]).x                     # an operand
+        r = m[i] @ [1.0, 2.0]                      # a matrix times it
+        c = [1.0, 2.0] if i % 2 == 0 else [3.0, 4.0]
+        out[i] = v.x + v.y + d + e + r.x + r.y + c.y
+
+
+def test_a_list_of_scalars_is_a_vector(backend):
+    """`pos[i] = [x, y]`, as Taichi programs write it, is
+    `pos[i] = tack.Vector([x, y])` wherever a vector is accepted. It was
+    "unsupported List"."""
+    n = 4
+    vf = tack.Vector.field(2, dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    m = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+    m.from_numpy(np.tile(np.array([[1, 2], [3, 4]], np.float32), (n, 1, 1)))
+    list_vectors(vf, m, out, n)
+    i = np.arange(n, dtype=np.float32)
+    want = 2.5 + (i + 32) + (i + 9) + 16 + np.where(i % 2 == 0, 2.0, 4.0)
+    np.testing.assert_allclose(out.to_numpy(), want)
+    np.testing.assert_array_equal(vf.to_numpy(vectors=True), np.stack([i, np.full(n, 2.0)], 1))
+
+
+def _list_into_a_scalar_element():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = [1.0, 2.0]
+    return bad
+
+
+def _list_of_the_wrong_width():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            vf[i] = [1.0, 2.0]
+    return bad
+
+
+def _list_as_a_condition():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            if [1.0, 2.0]:
+                s[i] = 1.0
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_list_into_a_scalar_element, "stores a 2-vector into an element of scalar storage"),
+    (_list_of_the_wrong_width, "stores a 2-vector into a field of 3-vectors"),
+    (_list_as_a_condition, "vector"),
+])
+def test_a_list_is_checked_as_the_vector_it_is(define, message):
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
+# --- norm(eps) ---
+
+@tack.kernel
+def norm_with_eps(vf, m, out, n, eps):
+    for i in range(n):
+        out[i] = vf[i].norm(1e-4) + (vf[i] * 2.0).norm(eps) + m[i].norm(eps)
+
+
+def test_norm_takes_an_eps_under_the_root(backend):
+    """`v.norm(eps)` is `sqrt(v.norm_sqr() + eps)`, as in Taichi, so the
+    length of a zero vector is not zero. It was "norm() takes no arguments"."""
+    n = 3
+    values = np.array([[0, 0], [3, 4], [1, 1]], np.float32)
+    vf = tack.Vector.field(2, dtype=tack.f32, shape=(n,))
+    vf.from_numpy(values)
+    m = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+    matrices = np.arange(12, dtype=np.float32).reshape(n, 2, 2)
+    m.from_numpy(matrices)
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    norm_with_eps(vf, m, out, n, 0.25)
+    sq = (values ** 2).sum(axis=1)
+    want = np.sqrt(sq + 1e-4) + np.sqrt(4 * sq + 0.25) + np.sqrt((matrices ** 2).sum(axis=(1, 2)) + 0.25)
+    np.testing.assert_allclose(out.to_numpy(), want, rtol=1e-6)
+
+
+def test_norm_rejects_a_vector_eps_and_extra_arguments():
+    @tack.kernel
+    def vector_eps(vf, out, n):
+        for i in range(n):
+            out[i] = vf[i].norm(vf[i])
+
+    @tack.kernel
+    def two_arguments(vf, out, n):
+        for i in range(n):
+            out[i] = vf[i].norm(1.0, 2.0)
+
+    for kernel, message in ((vector_eps, "eps must be a scalar"),
+                            (two_arguments, "at most one argument")):
+        with pytest.raises(Exception, match=message):
+            kernel.get_ir(vector_fields={"vf": 2})

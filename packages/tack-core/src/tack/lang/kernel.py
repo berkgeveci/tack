@@ -4,6 +4,7 @@ import ast
 import struct
 import textwrap
 import threading
+import types
 import weakref
 
 from tack.lang.ast_transform import transform_kernel
@@ -181,6 +182,17 @@ class Kernel:
                     tuple(sorted(template_func_attrs(obj).items(), key=lambda item: item[0])),
                 ))
         return tuple(parts)
+
+    def __get__(self, instance, owner=None):
+        """Bind a kernel defined in a class body to the instance it is called on.
+
+        ``model.step(dt)`` passes ``model`` as the kernel's first argument,
+        where a ``@tack.data_oriented`` object is a template like any
+        other. Reached through the class, the kernel is unbound.
+        """
+        if instance is None:
+            return self
+        return types.MethodType(self, instance)
 
     def __call__(self, *args, **kwargs):
         from tack.runtime.dispatch import get_backend

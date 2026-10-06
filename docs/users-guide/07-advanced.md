@@ -252,9 +252,15 @@ def step(pos, vel, grid, out, dt, n):
         out[i] = grid[cell] * speed         # grid[cell] is grid[cell[0], cell[1], cell[2]]
 ```
 
+A list of scalars is a vector, so `tack.Vector` can be left out wherever
+a vector is expected: `pos[i] = [x, y]`, `v = [0.0, 0.0]`,
+`w.dot([1.0, 0.0])`, `p - [1.0, 0.0]`. A matrix still needs
+`tack.Matrix([[...], [...]])`.
+
 The vector methods are `norm()`, `norm_sqr()`, `dot(w)`, `cross(w)`
 (3-vectors), `normalized()`, and the reductions over components `sum()`,
-`min()` and `max()`. `normalized(eps)` divides by `norm() + eps`, for a
+`min()` and `max()`. `norm(eps)` is `sqrt(norm_sqr() + eps)`, a length
+that is never zero. `normalized(eps)` divides by `norm() + eps`, for a
 vector that may be zero. `min` and `max` as functions take two or more
 values, as in Python: `min(a, b, c)`.
 

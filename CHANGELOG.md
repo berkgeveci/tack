@@ -7,6 +7,21 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A kernel can be a method of a `@tack.data_oriented` class:
+  `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
+  object is a template like any other argument. It failed with "expects 1
+  arguments, got 0". `tack.inspect` takes the bound form too.
+- A `@tack.func` under `@staticmethod` in a data-oriented class is called
+  through `self` like the other methods. It was not found.
+- `v.norm(eps)` is `sqrt(v.norm_sqr() + eps)`, for a length that must not
+  be zero. It was "norm() takes no arguments".
+- `fill` takes one element's value for a vector or matrix field:
+  `colors.fill([1.0, 1.0, 1.0])`. A scalar still sets every component.
+- A list of scalars in a kernel or device function is a vector:
+  `pos[i] = [x, y]` is `pos[i] = tack.Vector([x, y])`, wherever a vector
+  is accepted. It was rejected as "unsupported List". An empty list, a
+  list of lists (write `tack.Matrix`), a list as an assignment target and
+  a loop over a list are still rejected.
 - A `@tack.data_oriented` object can hold a `@tack.func` as an instance
   attribute and call it from its methods or from a kernel
   (`self.smoothing = cubic`, then `self.smoothing(r, h)`). Which function
@@ -148,6 +163,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- A parallel loop may start at a negated argument: `range(-n, n + 1)` and
+  `tack.ndrange((-n, n + 1), ...)` failed with "Cannot resolve loop range
+  expression: IRUnaryOp", because the host evaluates the launch size and
+  had no case for a unary minus.
+- Unary plus on an integer (`+n`) compiles on Metal, CUDA, HIP and Level
+  Zero. The generators emitted a one-argument call to the two-argument
+  add helper, which the device compilers rejected.
 - **Metal computed wrong results, silently, for a field element updated
   in a loop.** `for k in range(n): total[0] += x[k]; counter[0] += 1` left
   `total` at `start + x[n - 1]`: Apple's compiler read `total[0]` once,

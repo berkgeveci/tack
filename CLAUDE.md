@@ -273,6 +273,9 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 `tack.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
 
+A list of scalars in kernel source is a vector (`visit_List`), the same
+value as `tack.Vector([...])`; the validator rejects an empty or nested
+list, a list target and a loop over a list.
 In `ast_transform.py` a vector value is a `VectorValue`, a list of
 component expressions with a `shape`; a source tuple (indices, multiple
 results) is a `TupleValue`. Neither enters the IR: `_check_single_values`
@@ -345,7 +348,7 @@ The parallel loop must be a `for` directly in the kernel body, exactly once. Sta
 
 ### @tack.data_oriented templates
 
-Classes decorated with `@tack.data_oriented` can be passed as template arguments. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`.
+Classes decorated with `@tack.data_oriented` can be passed as template arguments. A kernel defined in the class body binds the instance it is called on (`Kernel.__get__` returns a bound method), so `model.step(dt)` passes `model` as the first argument; template detection is by argument type, so nothing else changes. `template_func_methods` unwraps `@staticmethod` over `@tack.func`. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`.
 
 ### Integer floor division and remainder
 
