@@ -49,6 +49,29 @@ def convert(r_field, theta_field, x_out, y_out, n):
         y_out[i] = y
 ```
 
+The values may be vectors and matrices as well as scalars, in any mix,
+and the targets may be field elements:
+
+```python
+@tack.func
+def closest_hit(origin, direction):
+    ...
+    return distance, normal, color              # a scalar and two vectors
+
+@tack.func
+def polar(F):
+    ...
+    return R, S                                 # two matrices
+
+@tack.kernel
+def shade(origins, directions, depth, normals, n):
+    for i in range(n):
+        depth[i], normals[i], color = closest_hit(origins[i], directions[i])
+```
+
+A result made of several values has to be unpacked into one target each;
+binding it to a single name is rejected.
+
 ## Nested Calls
 
 `@tack.func` functions can call other `@tack.func` functions:

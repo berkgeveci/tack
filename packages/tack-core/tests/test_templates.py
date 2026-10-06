@@ -1,6 +1,7 @@
 """Tests for @tack.data_oriented template parameters."""
 
 import numpy as np
+import pytest
 
 import tack
 
@@ -175,3 +176,126 @@ def test_template_vector_field_attribute_in_kernel_and_method(backend):
 
     _momentum_through_method(flow, out, n)
     np.testing.assert_array_equal(out.to_numpy(), np.full((n, n), 18.0, np.float32))
+
+
+# --- Inheritance, and device functions held as attributes ---
+
+@tack.func
+def _cubic_falloff(r, h):
+    return max(0.0, 1.0 - r / h) ** 3
+
+
+@tack.func
+def _linear_falloff(r, h):
+    return max(0.0, 1.0 - r / h)
+
+
+@tack.data_oriented
+class _BaseModel:
+    scale = 2.0
+
+    def __init__(self, n, h):
+        self.h = h
+        self.x = tack.field(dtype=tack.f32, shape=(n,))
+        self.x.from_numpy(np.arange(n, dtype=np.float32) * 0.5)
+        self.out = tack.field(dtype=tack.f32, shape=(n,))
+
+    @tack.func
+    def weight(self, r):
+        return _cubic_falloff(r, self.h) * self.scale
+
+    @tack.func
+    def shaped(self, r):
+        return self.weight(r)
+
+
+@tack.data_oriented
+class _DerivedModel(_BaseModel):
+    extra = 10.0
+
+    def __init__(self, n, h, gamma):
+        super().__init__(n, h)
+        self.gamma = gamma
+
+    @tack.func
+    def shaped(self, r):
+        return self.weight(r) ** self.gamma + self.extra
+
+
+class _UndecoratedModel(_BaseModel):
+    """A subclass without the decorator still gets its own methods."""
+    scale = 3.0
+
+    @tack.func
+    def shaped(self, r):
+        return self.weight(r) + 1.0
+
+
+@tack.data_oriented
+class _ModelWithKernel:
+    def __init__(self, n, falloff):
+        self.falloff = falloff          # a device function held as an attribute
+        self.h = 2.0
+        self.x = tack.field(dtype=tack.f32, shape=(n,))
+        self.x.from_numpy(np.arange(n, dtype=np.float32) * 0.5)
+        self.out = tack.field(dtype=tack.f32, shape=(n,))
+
+    @tack.func
+    def twice(self, r):
+        return 2.0 * self.falloff(r, self.h)
+
+
+@tack.kernel
+def _apply_shaped(s: tack.template(), n):
+    for i in range(n):
+        s.out[i] = s.shaped(s.x[i])
+
+
+@tack.kernel
+def _apply_falloff(s: tack.template(), n):
+    for i in range(n):
+        s.out[i] = s.falloff(s.x[i], s.h) + s.twice(s.x[i])
+
+
+def test_data_oriented_subclass_inherits_methods_and_constants(backend):
+    """A subclass sees the base's @tack.func methods and class constants,
+    and may override either. Inherited methods used to be unknown:
+    "self.weight ... is neither a class constant ... nor a @tack.func method"."""
+    n = 6
+    x = np.arange(n, dtype=np.float32) * 0.5
+    cubic = np.maximum(0, 1 - x / 2.0) ** 3
+
+    base = _BaseModel(n, 2.0)
+    _apply_shaped(base, n)
+    np.testing.assert_allclose(base.out.to_numpy(), cubic * 2.0, rtol=1e-6)
+
+    derived = _DerivedModel(n, 2.0, 2.0)
+    _apply_shaped(derived, n)
+    np.testing.assert_allclose(derived.out.to_numpy(), (cubic * 2.0) ** 2 + 10.0, rtol=1e-5)
+
+    undecorated = _UndecoratedModel(n, 2.0)
+    _apply_shaped(undecorated, n)
+    np.testing.assert_allclose(undecorated.out.to_numpy(), cubic * 3.0 + 1.0, rtol=1e-6)
+
+
+def test_device_function_held_as_an_attribute(backend):
+    """`self.falloff = cubic` lets methods and kernels call `self.falloff(...)`.
+    Which function it holds is part of the specialization: the same kernel
+    compiles again for an object holding another one."""
+    n = 6
+    x = np.arange(n, dtype=np.float32) * 0.5
+    for falloff, want in ((_cubic_falloff, np.maximum(0, 1 - x / 2.0) ** 3),
+                          (_linear_falloff, np.maximum(0, 1 - x / 2.0)),
+                          (_cubic_falloff, np.maximum(0, 1 - x / 2.0) ** 3)):
+        model = _ModelWithKernel(n, falloff)
+        _apply_falloff(model, n)
+        np.testing.assert_allclose(model.out.to_numpy(), 3.0 * want, rtol=1e-6)
+
+
+def test_unknown_template_method_is_reported():
+    @tack.kernel
+    def bad(s: tack.template(), n):
+        for i in range(n):
+            s.out[i] = s.missing(s.x[i])
+    with pytest.raises(Exception, match="no @tack.func method 'missing'"):
+        bad(_BaseModel(2, 1.0), 2)

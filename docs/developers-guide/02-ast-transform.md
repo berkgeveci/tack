@@ -51,8 +51,14 @@ The transformer tracks several pieces of state:
   are visited first, so the reported position is the innermost one.
 - **`_inline_counter`** — monotonic counter for generating unique variable
   names during `@tack.func` inlining.
-- **`_vector_vars`** — tracks which local variables are vectors (name → component count).
-- **`_vector_fields`** — tracks which parameters are vector fields (for scalarization).
+- **`_vector_vars`** — tracks which local variables are vectors or matrices
+  (name → component count). **`_matrix_vars`** holds `(rows, columns)` for
+  the ones that are matrices. `_bind_vector` sets both and
+  `_variable_value` reads them, so use those rather than the dicts.
+- **`_vector_fields`** — tracks which parameters are vector fields (for
+  scalarization), with **`_matrix_fields`** beside it. The runtime passes a
+  matrix field's entry as a `(rows, columns)` tuple; the constructor splits
+  it. `_field_shape(name)` gives an element's shape either way.
 - **`_texture_fields`** — tracks which parameters are textures (for `tex.sample()`).
 - **`_texture_origin`** — maps renamed texture names back to original parameter names
   (needed when textures pass through `@tack.func` inlining).
@@ -132,8 +138,17 @@ j = __idx__ // w
 7. **`print(...)`** → `IRPrint`
 8. **`int()`, `float()`** → `IRCast`
 9. **`tex.sample(u, v, w)`** → `IRTextureSample`
-10. **Vector methods** (`.normalized()`, `.dot()`, `.cross()`) → scalarized ops
-11. **`@tack.func` calls** → inlined via `_inline_func_call`
+10. **Vector and matrix methods** (`.normalized()`, `.dot()`, `.cross()`,
+    `.sum()`, `.transpose()`, `.inverse()`, ...) → scalarized ops, in
+    `_emit_vector_method` and `_emit_matrix_method`
+11. **`tack.Matrix([[...]])`, `tack.Matrix.identity(n)`** → a `VectorValue`
+    with a two-dimensional shape
+12. **`@tack.func` calls** → inlined via `_inline_func_call`
+
+A name that the function does not bind is resolved through `CallBindings`
+before anything else in `visit_Name` and `visit_Attribute`: one bound to a
+`tack.constant` lowers to an `IRConstant` (under an `IRCast` when the
+constant is typed), and `math.pi`/`e`/`tau` likewise.
 
 ## Assignment Handling
 
@@ -143,7 +158,13 @@ a plain `IRAssign`:
 1. **Shared/local allocation**: `smem = tack.shared(...)`, `arr = tack.local_array(...)`
 2. **Vector construction**: `v = tack.Vector([a, b, c])`
 3. **Multi-dimensional field store**: `field[i, j] = val` → linearized index
-4. **Tuple unpacking**: `a, b = func()` → multiple `IRAssign` nodes
+4. **Tuple unpacking**: `a, b = func()` → multiple `IRAssign` nodes. A
+   target that is a subscript or a component gets its value through a
+   temporary and is stored at its own position among the targets
+   (`_store_unpacked`), after the whole right side has been evaluated.
+5. **Components**: `v[c] = x`, `v.x = x`, `vf[i][c] = x`, `m[i, j] = x`
+   (`_component_target` turns the named forms into subscripts;
+   `_component_selector` and `_matrix_selector` resolve the index)
 
 ## Vector Scalarization
 
@@ -160,3 +181,28 @@ v__2 = a__2 + b__2
 
 Field loads/stores are similarly scalarized: `v = field[i]` loads
 `field[i*3]`, `field[i*3+1]`, `field[i*3+2]`.
+
+During lowering a vector or matrix is a `VectorValue`: a list of component
+expressions with a `shape`, `(n,)` or `(rows, columns)`. A source tuple
+(the indices of `f[i, j]`, several results of a device function) is a
+`TupleValue`. Both are lists so that code mapping over components stays
+plain; the classes exist to tell them apart from each other and from a
+list of statements. Three rules follow from the representation:
+
+- **Map, do not pass through.** An operation given a `VectorValue` has to
+  return one. `_elementwise` does that for anything componentwise, checks
+  that the operands' shapes agree, and keeps the shape; use `_like` when
+  building a result by hand.
+- **Neither class may reach the IR.** `_check_single_values` scans each
+  lowered statement once and raises `UnsupportedSyntaxError` at the
+  statement's position for one left in a scalar position. Without it the
+  verifier reports "expected expr node" with a tree path.
+- **Assignment is per component, but the right side is one value.**
+  `_settle_components` evaluates into a temporary any component that could
+  observe an earlier component's write: a read of an earlier target
+  component for a variable, any field load for a field element, since
+  fields may share storage.
+
+Operations that use each component several times (`@`, `determinant`,
+`inverse`, `outer_product`) capture their operands into temporaries first,
+or the expression tree grows with every product in a chain.

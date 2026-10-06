@@ -43,12 +43,12 @@ all corner cases have been validated.
 
 | Family | Kernel surface | Boundary |
 |---|---|---|
-| Values | Numeric literals, scalar parameters, field loads, local variables | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6) |
-| Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins | Numerical and evaluation rules below |
-| Assignments | Local assignment, augmented assignment, field stores, supported tuple unpacking | Storage and ordering rules below |
-| Control flow | `range`, `tack.ndrange`, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
-| Composition | `@tack.func` inlining and `@tack.data_oriented` templates | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
-| Storage | Scalar fields, vector fields, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
+| Values | Numeric literals, scalar parameters, field loads, local variables, `tack.constant` names, vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
+| Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions take scalars only |
+| Assignments | Local assignment, augmented assignment, field stores, tuple assignment to names, field elements and components | Storage and ordering rules below |
+| Control flow | `range`, `tack.ndrange` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
+| Composition | `@tack.func` inlining, returning one or several values; `@tack.data_oriented` templates, with inheritance and device functions held as attributes | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
+| Storage | Scalar fields, vector fields, matrix fields, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
 
 Python exceptions, `try`, context managers, generators, and runtime Python
@@ -211,7 +211,12 @@ safety. LLVM and the vendor compilers still perform their own optimizations.
 
 ## Memory and aliasing
 
-Fields are typed, shaped storage associated with a backend. A field view or
+Fields are typed, shaped storage associated with a backend. A subscript of
+a field gives one index per dimension, or a single flat, row-major index;
+a vector of integers stands for one index per component. Binding a field
+whose number of dimensions differs from the number of indices a kernel
+gives it raises `TypeError` at the call, naming the source position.
+Indices are not checked against the field's extents. A field view or
 an imported pointer can share storage with another field. Object identity
 does not establish that two fields have different backing allocations.
 Callers must keep external storage alive for its use and must use fields
@@ -674,7 +679,51 @@ appropriate external `tanf`/`tan`, `asinf`/`asin`, `acosf`/`acos`,
 convert to their annotated type, avoiding ambiguous OpenCL overloads for
 integer and mixed arguments. No performance improvement is claimed.
 
-### Field and parallel reductions
+### Vectors and matrices
+
+**Required:** a vector (`tack.Vector([...])`, an element of a
+`tack.Vector.field`) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
+`tack.Matrix.identity(n)`, an element of a `tack.Matrix.field`) are values
+made of scalar components, in row-major order for a matrix. Every
+operation on them is defined as the corresponding scalar operations on
+their components, each of which follows the numerical rules above. They
+have no representation of their own in generated code.
+
+Arithmetic operators, the math builtins, explicit casts and conditional
+expressions apply to each component. A scalar operand is used for every
+component. Two vector or matrix operands must have the same shape; a
+vector and a matrix with the same number of components do not. A
+conditional expression evaluates its condition once and selects whole
+values. Comparisons, Boolean operators, conditions and loop bounds take
+scalars: a vector or matrix there is rejected with the source position, as
+is one in any other position that requires a single value.
+
+`a @ b` multiplies matrices; a vector on the right is a column and on the
+left a row, giving a vector; two vectors give their dot product. The
+shapes must agree. Each entry of the result is the sum of its products in
+index order. `norm`, `norm_sqr`, `dot`, `cross`, `normalized`, `sum`,
+`min`, `max` and `outer_product` are methods of a vector, the first two
+and `sum` also of a matrix; `transpose` of any matrix, `trace` of a square
+one, `determinant` and `inverse` of 2×2 and 3×3 ones. `inverse` divides
+the adjugate by the determinant and does not test it.
+
+A component is selected by an index (`v[c]`, `m[i, j]`) or, for the first
+four components of a vector, by name (`v.x`, `v.y`, `v.z`, `v.w`), on a
+variable, on a field element (`vf[i][c]`) or on any vector-valued
+expression. A literal index is checked when the kernel is lowered and may
+count from the end. A runtime index into a vector must lie in `[0, n)`:
+outside that range a read yields the last component and a store has no
+effect. Runtime row and column indices of a matrix must be in range.
+
+An assignment of a vector or matrix evaluates every component of its
+right-hand side before it assigns any (see *Execution and ordering*). A
+store to a field element requires the element's shape, or a scalar, which
+is stored to every component. Storing a vector into scalar storage is
+rejected.
+
+Tests: `test_new_features.py` (vectors), `test_matrix.py`.
+
+## Field and parallel reductions
 
 `Field.sum()`, `min()`, `max()` and `mean()` reduce all logical elements
 and return Python `float` values. Reshaping a field does not select an axis
@@ -861,6 +910,14 @@ not validate cooperative GPU execution.
 
 `atomic_add`, `atomic_min` and `atomic_max` are statement-only operations on
 one scalar element of a global field. They do not return the previous value.
+The index is a flat, row-major index, or a tuple with one index per
+dimension, in which a vector of integers supplies one index per component.
+On a vector or matrix field, a value of the element's shape updates the
+element addressed by that index with one atomic operation per component;
+the element as a whole is not updated atomically, and the element index
+and any component that loads from a field are evaluated before the first
+of them. A scalar value on such a field addresses one component by its
+flat index.
 `Backend.supported_atomic_dtypes` declares the implemented add/min/max domain,
 independently of the ordinary field types or workgroup capability:
 
@@ -961,9 +1018,13 @@ launch length. Class-level template constants and instance-level runtime
 scalars retain their distinct roles.
 
 The current key includes argument dtypes and field/scalar/texture categories,
-vector widths, texture extents, and resolved shape dependencies. Template
-identity includes the actual class, typed constants, field metadata, and
-runtime scalar attribute names. Floating-point constants use their bit
+vector widths and matrix shapes (a 2×2 matrix field and a 4-vector field
+compile separately), texture extents, and resolved shape dependencies.
+Template identity includes the actual class, typed constants (inherited
+ones included), field metadata, runtime scalar attribute names, and the
+identity of each device function held as an attribute. A `tack.constant`
+is a literal in the lowered kernel and needs no key entry; a kernel reads
+the constant its name was bound to when it was first lowered. Floating-point constants use their bit
 patterns, distinguishing signed zeros and making NaN cache keys stable.
 Different classes with identical names can have different methods, and
 adding a runtime attribute changes the parameter
