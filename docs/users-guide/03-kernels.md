@@ -134,6 +134,19 @@ def fill_2d(grid, width, height):
 This launches `width * height` threads. Each thread gets its `(i, j)` pair
 via index decomposition.
 
+An argument can also be a `(start, end)` pair, which is how a stencil
+visits the interior of a grid and leaves the boundary alone:
+
+```python
+@tack.kernel
+def smooth(u, out, n, m):
+    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+        out[i, j] = 0.25 * (u[i - 1, j] + u[i + 1, j] + u[i, j - 1] + u[i, j + 1])
+```
+
+Sizes and pairs can be mixed. An empty or reversed pair makes the loop
+run no iterations.
+
 ## Sequential Inner Loops
 
 Loops nested inside the parallel loop run sequentially per thread:

@@ -8,6 +8,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 ### Added
 
 - `sinh`, `cosh` and `tanh` as math builtins, on every backend.
+- `tack.ndrange` takes `(start, end)` pairs as well as sizes:
+  `for i, j in tack.ndrange((1, n - 1), (1, m - 1))` visits the interior
+  of a grid. An empty or reversed pair runs no iterations.
 - `tack.constant(value, dtype=None)`: a named constant that kernels and
   device functions may read from the scope that defines them.
   `DT = tack.constant(0.01)` at module level lets a kernel write `DT`; it

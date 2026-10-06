@@ -434,7 +434,12 @@ class KernelTransformer(ast.NodeVisitor):
                                   body=body, step=step)
 
     def _visit_ndrange_for(self, node: ast.For):
-        """Handle: for i, j in ndrange(w, h) or for i, j in tack.ndrange(w, h)."""
+        """Handle: for i, j in ndrange(w, h) or for i, j in tack.ndrange(w, h).
+
+        Each argument is a size, counting from zero, or a ``(start, end)``
+        pair: ``ndrange((1, n - 1), (1, m - 1))`` visits the interior. An
+        empty or reversed pair makes the whole loop empty.
+        """
         target = node.target
         if not isinstance(target, ast.Tuple):
             raise NotImplementedError("ndrange requires tuple target")
@@ -460,7 +465,22 @@ class KernelTransformer(ast.NodeVisitor):
                 f"target count ({len(names)})"
             )
 
-        dim_exprs = [self.visit(a) for a in call.args]
+        starts = []
+        dim_exprs = []
+        for arg in call.args:
+            if isinstance(arg, ast.Tuple):
+                if len(arg.elts) != 2:
+                    raise NotImplementedError(
+                        "an ndrange() range is a (start, end) pair")
+                start, end = self._visit_ordered(arg.elts)
+                starts.append(start)
+                # Clamp at zero: a reversed pair must not turn into a count
+                # that another reversed pair makes positive again.
+                dim_exprs.append(ir.IRCall(func_name="max", args=[
+                    ir.IRBinOp(op="-", left=end, right=start), ir.IRConstant(0)]))
+            else:
+                starts.append(None)
+                dim_exprs.append(self.visit(arg))
 
         # Compute total = dim0 * dim1 * ...
         total = dim_exprs[0]
@@ -484,14 +504,13 @@ class KernelTransformer(ast.NodeVisitor):
             for d in dim_exprs[k + 2:]:
                 tail_product = ir.IRBinOp(op="*", left=tail_product, right=d)
 
-            decomp_stmts.append(
-                ir.IRAssign(target=names[k],
-                            value=ir.IRBinOp(op="//", left=remaining, right=tail_product))
-            )
+            decomp_stmts.append(ir.IRAssign(target=names[k], value=self._offset_index(
+                starts[k], ir.IRBinOp(op="//", left=remaining, right=tail_product))))
             remaining = ir.IRBinOp(op="%", left=remaining, right=tail_product)
 
         # Last dimension gets the remainder
-        decomp_stmts.append(ir.IRAssign(target=names[-1], value=remaining))
+        decomp_stmts.append(ir.IRAssign(
+            target=names[-1], value=self._offset_index(starts[-1], remaining)))
 
         body_stmts = self._visit_for_body(node.body)
 
@@ -502,6 +521,11 @@ class KernelTransformer(ast.NodeVisitor):
                 var=idx_name, start=ir.IRConstant(0), end=total, body=full_body)
         return ir.IRSequentialFor(
             var=idx_name, start=ir.IRConstant(0), end=total, body=full_body)
+
+    @staticmethod
+    def _offset_index(start, index):
+        """An ndrange index counted from its range's start, if it has one."""
+        return index if start is None else ir.IRBinOp(op="+", left=start, right=index)
 
     def visit_While(self, node: ast.While) -> ir.IRWhile:
         if node.orelse:

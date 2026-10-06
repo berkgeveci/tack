@@ -1200,3 +1200,76 @@ def test_misused_results_and_reductions_are_rejected(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
         define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
+# --- ndrange with (start, end) ranges ---
+
+@tack.kernel
+def ndrange_interior(a, n, m):
+    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+        a[i, j] = i * 10 + j
+
+
+@tack.kernel
+def ndrange_mixed(a, n, lo, hi, d):
+    for i, j, k in tack.ndrange(n, (lo, hi), d):
+        a[i, j, k] += 1
+
+
+@tack.kernel
+def ndrange_two_reversed(a, n):
+    for i, j in tack.ndrange((3, 1), (4, 2)):
+        a[i, j] += 1
+
+
+@tack.kernel
+def ndrange_inner(a, n, m):
+    for i in range(n):
+        for j, k in tack.ndrange((2, m), (i, i + 2)):
+            a[j, k] += 1
+
+
+def _zeros_i32(shape):
+    f = tack.field(dtype=tack.i32, shape=shape)
+    f.fill(0)
+    return f
+
+
+def test_ndrange_takes_start_end_ranges(backend):
+    """`ndrange((1, n - 1), (1, m - 1))` visits the interior; a size and a
+    range can be mixed."""
+    a = _zeros_i32((5, 7))
+    ndrange_interior(a, 5, 7)
+    want = np.zeros((5, 7), np.int32)
+    rows, cols = np.mgrid[1:4, 1:6]
+    want[1:4, 1:6] = rows * 10 + cols
+    np.testing.assert_array_equal(a.to_numpy(), want)
+
+    b = _zeros_i32((3, 6, 2))
+    ndrange_mixed(b, 3, 2, 5, 2)
+    want = np.zeros((3, 6, 2), np.int32)
+    want[:, 2:5, :] = 1
+    np.testing.assert_array_equal(b.to_numpy(), want)
+
+
+@pytest.mark.parametrize("lo, hi", [(4, 4), (5, 2)])
+def test_empty_or_reversed_ndrange_range_runs_nothing(backend, lo, hi):
+    b = _zeros_i32((3, 6, 2))
+    ndrange_mixed(b, 3, lo, hi, 2)
+    assert not b.to_numpy().any()
+
+
+def test_two_reversed_ndrange_ranges_run_nothing(backend):
+    """Two negative extents must not multiply into a positive count."""
+    a = _zeros_i32((5, 5))
+    ndrange_two_reversed(a, 5)
+    assert not a.to_numpy().any()
+
+
+def test_sequential_ndrange_ranges_may_use_the_outer_index(backend):
+    a = _zeros_i32((5, 8))
+    ndrange_inner(a, 3, 5)
+    want = np.zeros((5, 8), np.int32)
+    for i in range(3):
+        want[2:5, i:i + 2] += 1
+    np.testing.assert_array_equal(a.to_numpy(), want)

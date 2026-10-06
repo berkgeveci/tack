@@ -773,6 +773,13 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
         if arg is not None:
             return int(arg)
 
+    # The extent of an ndrange (start, end) pair: max(end - start, 0)
+    if (isinstance(node, ir.IRCall) and node.func_name in ("min", "max")
+            and len(node.args) == 2):
+        left = _resolve_range_expr(node.args[0], name_to_arg)
+        right = _resolve_range_expr(node.args[1], name_to_arg)
+        return max(left, right) if node.func_name == "max" else min(left, right)
+
     # A typed tack.constant: an integer literal under a cast to its type.
     # The constant was checked to fit that type, so the cast changes nothing.
     if (isinstance(node, ir.IRCast) and isinstance(node.value, ir.IRConstant)
