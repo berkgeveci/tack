@@ -72,7 +72,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 - **HIP**: `HIPBuffer` holds a device pointer (`hipMalloc`). Explicit host↔device copies.
 - **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Explicit host↔device copies via immediate command list.
 
-`tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type.
+`tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type. `Field.__getitem__` reads one element on the host through `DeviceBuffer.read_range(start, count)`: CPU and Metal slice their views, the others fall back to a whole-buffer `to_numpy()` (correct, slow; narrow it where it can be tested). `__setitem__` and `__iter__` raise.
 
 ### Backend contract
 
@@ -328,7 +328,11 @@ function does not bind through the same `CallBindings`; one bound to a
 constant lowers to an `IRConstant`, under an `IRCast` when typed, so it is
 baked into the cached IR like a literal and needs no variant-key entry.
 Nothing else is captured: other names still raise `NameError`.
-`math.pi`/`e`/`tau` lower the same way. See `test_constant.py`.
+`math.pi`/`e`/`tau` lower the same way. A tuple (or tuple of tuples)
+makes an `ArrayConstant`, lowered by `_named_constant` to a `VectorValue`
+of per-component constants; `visit_Subscript` selects its components.
+`tack.math` (`src/tack/math.py`) is plain `@tack.func` definitions with
+GLSL semantics. See `test_constant.py`, `test_math_helpers.py`.
 
 `tack.random` (`src/tack/random.py`) is PCG RXS-M-XS over an LCG in u32
 with explicit state; draws return `(value, next_state)` and have `np_`

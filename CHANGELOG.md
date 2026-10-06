@@ -7,6 +7,19 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Vector and matrix constants: `tack.constant((0.5, 0.5, 0.0))` is the
+  vector with those components in a kernel, `tack.constant(((1, 0), (0, 1)))`
+  the matrix with those rows, typed per component as scalar constants
+  are. On the host they index, iterate and convert to NumPy arrays.
+- `tack.math`: `fract`, `mix`, `clamp`, `saturate`, `smoothstep`,
+  `length`, `distance` and `normalize` as device functions with GLSL's
+  definitions, on scalars and vectors alike.
+- One element of a field can be read from host code: `f[i]`, `f[i, j]`,
+  `f[None]`, giving a Python number or, for a vector or matrix field, a
+  NumPy array. Writing an element, slicing and iterating are refused with
+  a message pointing at `from_numpy`, `fill` and `to_numpy`. On CPU and
+  Metal the read is a slice of unified memory; on CUDA, HIP and Level
+  Zero it is a copy of the whole field for now.
 - `tack.random`: random numbers in kernels from a counter-based generator
   with explicit state. `seed(index, stream)`, then `u, state =
   uniform(state)`, `normal`, `direction2`, `direction3`; NumPy mirrors

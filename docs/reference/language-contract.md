@@ -43,7 +43,7 @@ all corner cases have been validated.
 
 | Family | Kernel surface | Boundary |
 |---|---|---|
-| Values | Numeric literals, scalar parameters, field loads, local variables, `tack.constant` names, vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
+| Values | Numeric literals, scalar parameters, field loads, local variables, `tack.constant` names (scalars, vectors, matrices), vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions take scalars only |
 | Assignments | Local assignment, augmented assignment, field stores, tuple assignment to names, field elements and components | Storage and ordering rules below |
 | Control flow | `range`, `tack.ndrange` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
@@ -217,7 +217,11 @@ a vector of integers stands for one index per component. Binding a field
 whose number of dimensions differs from the number of indices a kernel
 gives it raises `TypeError` at the call, naming the source position.
 Indices are not checked against the field's extents. A field view or
-an imported pointer can share storage with another field. Object identity
+an imported pointer can share storage with another field. Host code reads
+one element with `f[i, j]` (a Python number, or a NumPy array of a vector
+or matrix element) and may not write one; `DeviceBuffer.read_range`
+defines the copy, which is a slice of host-visible memory on CPU and
+Metal and a whole-buffer copy elsewhere until a backend narrows it. Object identity
 does not establish that two fields have different backing allocations.
 Callers must keep external storage alive for its use and must use fields
 compatible with the active backend.

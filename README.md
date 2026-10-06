@@ -119,6 +119,7 @@ result = x.to_numpy()     # device → host
 x.fill(0.0)               # fill with scalar
 pixels.from_numpy(rgb)                    # (width, height, 3), or the flat array
 rgb = pixels.to_numpy(vectors=True)       # (width, height, 3); plain to_numpy() is flat
+x[7], pixels[3, 4]                        # read one element from the host (not written this way)
 
 # Reductions (GPU-accelerated on Metal)
 total = x.sum()
@@ -208,7 +209,11 @@ def step(x, v):
         x[i] += v[i] * DT
 ```
 
-`math.pi`, `math.e` and `math.tau` can be written directly. `tack.random`
+`math.pi`, `math.e` and `math.tau` can be written directly. A tuple
+makes a vector constant (`SUN = tack.constant((0.5, 0.5, 0.0))`), a tuple
+of tuples a matrix. `tack.math` adds `fract`, `mix`, `clamp`, `saturate`,
+`smoothstep`, `length`, `distance` and `normalize` as device functions
+that work on scalars and vectors alike. `tack.random`
 draws uniform, normal and unit-vector values from an explicit `u32`
 state (`state = random.seed(i, frame)`, `u, state = random.uniform(state)`),
 reproducible on every backend and in NumPy.

@@ -88,6 +88,12 @@ whichever backend was active when it was allocated.
 
 ::: tack.lang.constant.constant
 
+::: tack.lang.constant.ArrayConstant
+
+## Shader-style helpers
+
+::: tack.math
+
 ## Random numbers
 
 ::: tack.random
