@@ -338,6 +338,21 @@ _RP_MIN_WORKER_NS = 1_000.0
 # milliseconds and clear it by orders of magnitude.
 _RP_BOUND_SPAN_RATIO = 20.0
 
+
+def _worker_median(ordered: list) -> float:
+    """The median of per-worker measurements, sorted ascending.
+
+    The lower of the two middle values when their number is even. A worker
+    the scheduler took off its core reports a long span and a high rate,
+    and the median exists to keep one such worker from standing for the
+    kernel. `ordered[len // 2]` does that for three workers or more but
+    picks the slower of two: with two threads, stalling one worker for
+    2 ms raised the serial estimate of a 0.3 ns/element kernel 1900 times
+    through the floor, with no serial sample taken. The lower median
+    needs at least half the workers to be slow before it believes them.
+    """
+    return ordered[(len(ordered) - 1) // 2]
+
 # v2's margin, and lower than v1's 2.0 deliberately. Under v1 the margin
 # was absorbing *systematic* error -- an understated probe and, on a
 # 2-socket box, an overstated serial rate -- which is why 2.0 was still
@@ -1678,6 +1693,12 @@ class CPUBackend(Backend):
         descheduled, which measures the scheduler rather than the kernel.
         Probed on a loaded yavin, max read 10-134x the fitted rate where
         the median read 0.5-6.3x.
+
+        For an even number of workers it is the **lower** median
+        (`_worker_median`). The upper one of two workers is the slower
+        worker, which is the max again: on a two-thread machine one
+        descheduled worker then set `r_p`, and through `bounds_serial`
+        the serial floor.
         """
         if workers <= 0:
             return
@@ -1688,7 +1709,7 @@ class CPUBackend(Backend):
         rates = sorted(worker_rates)
         if not rates:
             return
-        median_rate = rates[len(rates) // 2]
+        median_rate = _worker_median(rates)
         sample = max(median_rate / workers, _MIN_NS_PER_ELEM)
         prev = compiled.ns_per_elem_parallel
         compiled.ns_per_elem_parallel = (
@@ -1771,7 +1792,7 @@ class CPUBackend(Backend):
         measured = sorted(spans[t] for t in range(workers) if rates[t] > 0.0)
         trusted_span = _RP_BOUND_SPAN_RATIO * workers * compiled.call_overhead_ns
         bounds_serial = bool(measured) and (
-            measured[len(measured) // 2] >= trusted_span)
+            _worker_median(measured) >= trusted_span)
         # A short median could still hide expensive image regions. Only
         # retire the floor when the entire range has no long worker span,
         # including spans below the rate measurement's clock threshold.

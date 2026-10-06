@@ -298,6 +298,16 @@ counting only workers whose span reached `_RP_MIN_WORKER_NS` (1 µs).
   CPU time were tried on a 1-socket Xeon (October 2026) and scored worse;
   workers returning from ctypes together queue for the GIL, a real cost the
   median tracks.
+  For an even number of workers it is the lower of the two middle values
+  (`_worker_median`). The upper one of two workers is the slower worker,
+  the max again: on a two-thread machine, stalling one worker for 2 ms
+  raised the serial estimate of a 0.3 ns/element kernel 1900 times through
+  the floor below, with no serial sample taken (October 2026). With two
+  workers the lower median is the minimum, the statistic that scored worse
+  on the Xeon across many workers; with two there is no third value, and
+  the choice is between a statistic one preempted thread controls and one
+  that misses the second worker's wait for the GIL. It has not been scored
+  on a two-thread machine.
 
 **The serial floor.** A fan-out cannot make an element cheaper than it is
 serially, so `r_s ≥ r_p` — if `r_p` is trustworthy. Short spans are not: a
