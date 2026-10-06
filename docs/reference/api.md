@@ -86,6 +86,10 @@ whichever backend was active when it was allocated.
 
 ::: tack.lang.types.template
 
+::: tack.lang.constant.constant
+
+::: tack.lang.field.Matrix
+
 ::: tack.lang.source_validation.UnsupportedSyntaxError
 
 ## Inspection

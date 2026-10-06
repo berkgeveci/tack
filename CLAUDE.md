@@ -259,9 +259,12 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 `tack.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
 
-In `ast_transform.py` a vector value is a Python list of component
-expressions, and a list that reaches a scalar position fails IR
-verification with "expected expr node". Arithmetic, math builtins, casts
+In `ast_transform.py` a vector value is a `VectorValue`, a list of
+component expressions with a `shape`; a source tuple (indices, multiple
+results) is a `TupleValue`. Neither enters the IR: `_check_single_values`
+scans each lowered statement once and raises `UnsupportedSyntaxError` at
+the statement's position for one left in a scalar position, instead of
+the verifier's "expected expr node". Arithmetic, math builtins, casts
 and conditional expressions map over components (`_componentwise`
 repeats scalars and rejects mixed widths). An assignment lowers to one
 assignment per component, so `_settle_components` first evaluates any
@@ -280,14 +283,35 @@ right side). `_linearize_index` tags each `IRDimSize` with the number of
 indices given, and `ir_resolve` raises `TypeError` when that differs from
 the field's dimension count; a single index is a flat index and is not
 checked. A device
-function returning several values yields a list whose vector elements are
-nested lists; only tuple unpacking consumes that. `v.min()`/`v.max()`/
+function returning several values yields a `TupleValue` whose vector
+elements are `VectorValue`s; only tuple unpacking consumes that. `v.min()`/`v.max()`/
 `v.sum()` are intercepted before the same-named builtins, which need
 arguments. See the vector tests in `test_new_features.py`.
+
+A matrix (`tack.Matrix`, `Matrix.field(n, m, ...)`) is a `VectorValue`
+with a two-dimensional shape and row-major components, so everything
+componentwise applies unchanged. A matrix field is a vector field of
+`n * m` components with `_matrix_shape`; the runtime reports it to
+lowering as the tuple `(n, m)` in the `vector_fields` dict, which also
+keeps a 2x2 matrix field and a 4-vector field in different IR cache
+entries. `_matrix_vars`/`_matrix_fields` hold shapes beside the component
+counts; `_bind_vector` and `_variable_value` keep them in step. `@` is
+`_matmul` (operands captured first, since every entry is used several
+times); `transpose`/`trace`/`determinant`/`inverse` are in
+`_emit_matrix_method`; `m[i, j]` goes through `_matrix_selector`. Limit
+4x4 (`MAX_MATRIX_EXTENT`). See `test_matrix.py`.
 
 ### @tack.func inlining
 
 Functions decorated with `@tack.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.
+
+`tack.constant(value, dtype=None)` (`lang/constant.py`) returns an `int` or
+`float` subclass. `visit_Name`/`visit_Attribute` resolve a name the
+function does not bind through the same `CallBindings`; one bound to a
+constant lowers to an `IRConstant`, under an `IRCast` when typed, so it is
+baked into the cached IR like a literal and needs no variant-key entry.
+Nothing else is captured: other names still raise `NameError`.
+`math.pi`/`e`/`tau` lower the same way. See `test_constant.py`.
 
 Device calls resolve by object identity from the defining callable's globals
 and closure bindings (`call_bindings.py`), including aliases and module-qualified
@@ -462,8 +486,8 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 
 ## Kernel language features
 
-- **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndrange(w, h)`, `while`, `break`, `continue`
-- **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max` (two or more values), `pow`; all apply to each component of a vector
+- **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndrange(w, h)` (each argument a size or a `(start, end)` pair, whose extent is clamped at zero; the host evaluates `max`/`min` in the launch size), `while`, `break`, `continue`
+- **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max` (two or more values), `pow`; all apply to each component of a vector
 - **Types**: `int()`, `float()` casts, plus explicit `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`, `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`
 - **Atomics**: `tack.atomic_add(field, idx, val)`, `tack.atomic_min(...)`, `tack.atomic_max(...)`
 - **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(field, size)`, `tack.barrier()`, `tack.thread_id()`

@@ -42,6 +42,50 @@ The loop bound can come from:
 - A field shape: `range(data.shape[0])`
 - `len(data)`
 
+## Constants
+
+A kernel is compiled from its own source and does not see Python variables
+around it: a module-level `dt = 0.01` could change after the kernel was
+compiled, and the kernel would silently keep the old value. Reading such a
+name raises `NameError`. Declare the value with `tack.constant` instead:
+
+```python
+DT = tack.constant(0.01)
+GRID = tack.constant(128)
+
+@tack.func
+def decay(v):
+    return v * (1.0 - DT)
+
+@tack.kernel
+def step(x, v):
+    for i in range(GRID):
+        v[i] = decay(v[i])
+        x[i] += v[i] * DT
+```
+
+The kernel reads `DT` as the literal `0.01`. The constant is still an
+ordinary Python number, so host code uses the same name: `range(GRID)`,
+`np.float32(DT)`, `tack.field(dtype=tack.f32, shape=(GRID,))`. Constants
+work from another module too (`from params import DT`, or `params.DT`),
+and inside device functions.
+
+A second argument gives the constant a type, which matters in two places:
+
+```python
+MULTIPLIER = tack.constant(747796405, tack.u32)   # x * MULTIPLIER wraps at 32 bits
+TENTH = tack.constant(0.1, tack.f64)              # the exact double, not a widened f32
+```
+
+Without it, a `u32` value times an integer literal is computed in `i64`.
+
+The value is fixed where the constant is declared. Arithmetic on constants
+gives plain numbers, so a derived value is declared again:
+`H = tack.constant(1.0 / (GRID - 2))`. Binding the name to a different
+constant after a kernel has been compiled does not change that kernel.
+For values that change between calls, pass an argument. `math.pi`,
+`math.e` and `math.tau` can be written directly.
+
 ## Field Dimensions
 
 `field.shape[k]` and `len(field)` work anywhere in a kernel — not only as
@@ -89,6 +133,19 @@ def fill_2d(grid, width, height):
 
 This launches `width * height` threads. Each thread gets its `(i, j)` pair
 via index decomposition.
+
+An argument can also be a `(start, end)` pair, which is how a stencil
+visits the interior of a grid and leaves the boundary alone:
+
+```python
+@tack.kernel
+def smooth(u, out, n, m):
+    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+        out[i, j] = 0.25 * (u[i - 1, j] + u[i + 1, j] + u[i, j - 1] + u[i, j + 1])
+```
+
+Sizes and pairs can be mixed. An empty or reversed pair makes the loop
+run no iterations.
 
 ## Sequential Inner Loops
 

@@ -14,7 +14,8 @@ from tack.lang.func import Func
 
 _UNBOUND = object()
 _DYNAMIC = object()
-_METHODS = {'dot', 'cross', 'norm', 'norm_sqr', 'normalized', 'sum', 'min', 'max', 'sample'}
+_METHODS = {'dot', 'cross', 'norm', 'norm_sqr', 'normalized', 'sum', 'min', 'max', 'sample',
+            'transpose', 'trace', 'determinant', 'inverse', 'outer_product', 'identity'}
 
 
 class CallBindings:
@@ -44,6 +45,17 @@ class CallBindings:
             if isinstance(parent, ModuleType):
                 return vars(parent).get(node.attr, _UNBOUND)
         return _DYNAMIC
+
+    def math_constant(self, node):
+        """The value of ``math.pi``, ``math.e`` or ``math.tau``, else None."""
+        if not (isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                and node.attr in ('pi', 'e', 'tau')):
+            return None
+        parent = self.resolve(node.value)
+        # AST-only callers have no Python namespace; accept the usual name.
+        if parent is math or (parent is _UNBOUND and node.value.id == 'math'):
+            return getattr(math, node.attr)
+        return None
 
     def device_func(self, node):
         value = self.resolve(node)

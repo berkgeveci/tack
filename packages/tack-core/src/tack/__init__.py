@@ -5,9 +5,11 @@ __path__ = extend_path(__path__, __name__)
 
 """Tack — GPU compute framework framework."""
 
+from tack.lang.constant import constant
 from tack.lang.data_oriented import data_oriented
 from tack.lang.field import (
     ExportedMemory,
+    Matrix,
     Texture3D,
     Vector,
     arange,

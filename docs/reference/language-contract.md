@@ -59,7 +59,15 @@ are explicit no-ops. Parameter annotations and decorators remain host
 metadata; ordinary positional parameters without defaults are supported.
 Kernels do not capture numerical values from the enclosing Python scope: reading a name
 that is not a parameter and is never assigned raises `NameError` with the
-kernel (or inlined device function) and source position. A `for` loop's
+kernel (or inlined device function) and source position. The exception is
+explicit: a name bound to a `tack.constant` in the function's globals or
+closure, or reached as an attribute of a module, reads as that constant's
+value, a literal fixed where the constant was declared. Untyped, it
+follows the literal rules; declared with a dtype, it is that literal under
+the corresponding cast. A parameter or local of the same name shadows it.
+A kernel reads the constant its name was bound to when the kernel was
+first lowered. `math.pi`, `math.e` and `math.tau` read as literals in the
+same way. A `for` loop's
 variable is a binding that ends with its loop: reading the name after the
 loop, before it is assigned again, raises `NameError` with the read's
 position (Python would give the last value iterated; copy it to another

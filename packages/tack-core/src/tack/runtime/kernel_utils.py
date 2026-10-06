@@ -679,8 +679,14 @@ def _detect_vector_fields(kernel, args) -> dict[str, int] | None:
     vector_fields = {}
     for param_name, arg in zip(params, args):
         if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
-            vector_fields[param_name] = arg._vector_n
+            vector_fields[param_name] = _element_shape(arg)
     return vector_fields if vector_fields else None
+
+
+def _element_shape(field):
+    """What lowering needs to know about a vector or matrix field's elements:
+    the component count, or ``(rows, columns)`` for a matrix field."""
+    return getattr(field, '_matrix_shape', None) or field._vector_n
 
 
 def _detect_vector_fields_from_args(kernel, args, template_args) -> dict[str, int] | None:
@@ -705,10 +711,11 @@ def _detect_vector_fields_from_args(kernel, args, template_args) -> dict[str, in
             _, fields, _ = classify_template_attrs(arg)
             for attr_name, field in fields.items():
                 if hasattr(field, '_vector_n'):
-                    vector_fields[template_field_param_name(param_name, attr_name)] = field._vector_n
+                    vector_fields[template_field_param_name(param_name, attr_name)] = \
+                        _element_shape(field)
             continue
         if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
-            vector_fields[param_name] = arg._vector_n
+            vector_fields[param_name] = _element_shape(arg)
     return vector_fields if vector_fields else None
 
 
@@ -772,6 +779,19 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
         arg = name_to_arg.get(node.name)
         if arg is not None:
             return int(arg)
+
+    # The extent of an ndrange (start, end) pair: max(end - start, 0)
+    if (isinstance(node, ir.IRCall) and node.func_name in ("min", "max")
+            and len(node.args) == 2):
+        left = _resolve_range_expr(node.args[0], name_to_arg)
+        right = _resolve_range_expr(node.args[1], name_to_arg)
+        return max(left, right) if node.func_name == "max" else min(left, right)
+
+    # A typed tack.constant: an integer literal under a cast to its type.
+    # The constant was checked to fit that type, so the cast changes nothing.
+    if (isinstance(node, ir.IRCast) and isinstance(node.value, ir.IRConstant)
+            and isinstance(node.value.value, int)):
+        return node.value.value
 
     raise RuntimeError(f"Cannot resolve loop range expression: {type(node).__name__}")
 

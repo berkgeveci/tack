@@ -1100,7 +1100,7 @@ class LLVMCodeGen:
             return self.builder.call(powf, [a, b], name="pow")
 
         # Trig functions not in llvm intrinsics — use libm
-        libm_funcs = {"tan", "asin", "acos", "atan", "atan2"}
+        libm_funcs = {"tan", "asin", "acos", "atan", "atan2", "sinh", "cosh", "tanh"}
         if node.func_name in libm_funcs:
             return self._emit_libm_call(node.func_name, args)
 

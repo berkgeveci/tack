@@ -270,6 +270,11 @@ def closest_hit(origin, direction):
 distance, normal, color = closest_hit(o, d)
 ```
 
+A vector field exchanges data with NumPy flat or with one row per
+vector: `v.from_numpy(a)` accepts an array of shape `(*shape, n)` or the
+flat `(prod(shape) * n,)`, and `v.to_numpy(vectors=True)` returns
+`(*shape, n)`. Plain `v.to_numpy()` returns the flat storage.
+
 Two vectors in one operation must have the same number of components.
 An assignment evaluates its whole right side before it stores anything,
 so `v = v.cross(w)` and `pos[i] = pos[i].cross(axis[i])` read the old
@@ -285,6 +290,50 @@ branch. A runtime index must be in `[0, n)`: outside it, on either side,
 a read gives the last component and a write does nothing, since a kernel
 cannot raise. Only a literal index counts from the end (`vec[-1]`), and a
 literal out of range is rejected at lowering.
+
+## Matrices
+
+`tack.Matrix` gives small fixed-size matrices, up to 4×4. Like vectors
+they are scalarized: a matrix is its entries, and every operation expands
+to scalar arithmetic at lowering.
+
+```python
+F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))    # a 2x2 matrix per particle
+C = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+
+@tack.kernel
+def update(F, C, x, dt, n):
+    for p in range(n):
+        F[p] = (tack.Matrix.identity(2) + dt * C[p]) @ F[p]   # '@' multiplies
+        J = F[p].determinant()
+        stress = (F[p] - F[p].inverse().transpose()) * J      # '*' is entry by entry
+        x[p] += stress @ tack.Vector([0.0, -1.0]) * dt        # matrix @ vector
+```
+
+- **Building one.** `tack.Matrix([[a, b], [c, d]])` from rows of scalars,
+  `tack.Matrix([u, v])` from vectors as rows, `tack.Matrix.identity(n)`,
+  or `u.outer_product(v)`.
+- **Products.** `A @ B` for matrices; `A @ v` and `v @ A` take a vector as
+  a column and as a row and give a vector; `u @ v` is the dot product.
+  Shapes must agree. `+`, `-`, `*`, `/`, the math builtins and scalar
+  operands work entry by entry, as for vectors.
+- **Methods.** `transpose()`; for square matrices `trace()`; for 2×2 and
+  3×3 `determinant()` and `inverse()`. `inverse()` divides by the
+  determinant without checking it. `norm()` and `sum()` run over all
+  entries.
+- **Entries.** `A[i, j]` reads one and `A[i, j] = x` or `A[i, j] += x`
+  writes one, on a matrix variable or directly on a field element
+  (`F[p][0, 1]`). The indices may be runtime values, which must then be
+  in range.
+- **Fields.** A matrix field stores each matrix in row-major order.
+  `from_numpy` takes `(*shape, n, m)` and `to_numpy(vectors=True)` returns
+  it. `F[p] = A`, `F[p] += A`, `F[p] *= s` and
+  `tack.atomic_add(F, p, A)` work as they do for vector fields.
+- **Device functions** take and return matrices, alone or among several
+  values.
+
+A matrix and a vector with the same number of entries are different
+things: storing one where the other belongs, or adding them, is rejected.
 
 The statistics in `tack.algorithms` (`dot`, `norm`, `var`, ...) accept a
 vector field and reduce over all its components in storage order.

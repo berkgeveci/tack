@@ -1202,6 +1202,232 @@ def test_misused_results_and_reductions_are_rejected(define, message):
         define().get_ir(vector_fields={"vf": 3, "out": 3})
 
 
+# --- ndrange with (start, end) ranges ---
+
+@tack.kernel
+def ndrange_interior(a, n, m):
+    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+        a[i, j] = i * 10 + j
+
+
+@tack.kernel
+def ndrange_mixed(a, n, lo, hi, d):
+    for i, j, k in tack.ndrange(n, (lo, hi), d):
+        a[i, j, k] += 1
+
+
+@tack.kernel
+def ndrange_two_reversed(a, n):
+    for i, j in tack.ndrange((3, 1), (4, 2)):
+        a[i, j] += 1
+
+
+@tack.kernel
+def ndrange_inner(a, n, m):
+    for i in range(n):
+        for j, k in tack.ndrange((2, m), (i, i + 2)):
+            a[j, k] += 1
+
+
+def _zeros_i32(shape):
+    f = tack.field(dtype=tack.i32, shape=shape)
+    f.fill(0)
+    return f
+
+
+def test_ndrange_takes_start_end_ranges(backend):
+    """`ndrange((1, n - 1), (1, m - 1))` visits the interior; a size and a
+    range can be mixed."""
+    a = _zeros_i32((5, 7))
+    ndrange_interior(a, 5, 7)
+    want = np.zeros((5, 7), np.int32)
+    rows, cols = np.mgrid[1:4, 1:6]
+    want[1:4, 1:6] = rows * 10 + cols
+    np.testing.assert_array_equal(a.to_numpy(), want)
+
+    b = _zeros_i32((3, 6, 2))
+    ndrange_mixed(b, 3, 2, 5, 2)
+    want = np.zeros((3, 6, 2), np.int32)
+    want[:, 2:5, :] = 1
+    np.testing.assert_array_equal(b.to_numpy(), want)
+
+
+@pytest.mark.parametrize("lo, hi", [(4, 4), (5, 2)])
+def test_empty_or_reversed_ndrange_range_runs_nothing(backend, lo, hi):
+    b = _zeros_i32((3, 6, 2))
+    ndrange_mixed(b, 3, lo, hi, 2)
+    assert not b.to_numpy().any()
+
+
+def test_two_reversed_ndrange_ranges_run_nothing(backend):
+    """Two negative extents must not multiply into a positive count."""
+    a = _zeros_i32((5, 5))
+    ndrange_two_reversed(a, 5)
+    assert not a.to_numpy().any()
+
+
+def test_sequential_ndrange_ranges_may_use_the_outer_index(backend):
+    a = _zeros_i32((5, 8))
+    ndrange_inner(a, 3, 5)
+    want = np.zeros((5, 8), np.int32)
+    for i in range(3):
+        want[2:5, i:i + 2] += 1
+    np.testing.assert_array_equal(a.to_numpy(), want)
+
+
+# --- Vector fields to and from NumPy, one row per vector ---
+
+def test_vector_field_takes_and_returns_one_row_per_vector(backend):
+    """`from_numpy` accepts (*shape, n) as well as the flat storage shape;
+    `to_numpy(vectors=True)` returns (*shape, n)."""
+    values = np.arange(24, dtype=np.float32).reshape(4, 2, 3)
+    f = tack.Vector.field(3, dtype=tack.f32, shape=(4, 2))
+    f.from_numpy(values)
+    np.testing.assert_array_equal(f.to_numpy(), values.reshape(-1))
+    np.testing.assert_array_equal(f.to_numpy(vectors=True), values)
+    f.from_numpy(values.reshape(-1) * 2)
+    np.testing.assert_array_equal(f.to_numpy(vectors=True), values * 2)
+    with pytest.raises(ValueError, match=r"\(4, 2, 3\) or flat \(24,\)"):
+        f.from_numpy(values.reshape(8, 3))
+    scalar = tack.field(dtype=tack.f32, shape=(4,))
+    scalar.fill(1.0)
+    assert scalar.to_numpy(vectors=True).shape == (4,)
+
+
+# --- What a subscript of a vector field accepts ---
+
+@tack.kernel
+def vec_field_scalar_store(a, n):
+    for i in range(n):
+        a[i] = float(i) + 0.5
+
+
+def test_scalar_stored_to_a_vector_field_element_sets_every_component(backend):
+    """`vf[i] = s` names element i, as a load of `vf[i]` does. It used to
+    write the single component at flat index i."""
+    n = 4
+    a = _vec3_field(_VEC_M)
+    vec_field_scalar_store(a, n)
+    want = np.repeat(np.arange(n, dtype=np.float32) + 0.5, 3).reshape(n, 3)
+    np.testing.assert_array_equal(a.to_numpy(vectors=True), want)
+
+
+def _vector_into_scalar_storage():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = vf[i]
+    return bad
+
+
+def _vector_into_another_width():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            vf[i] = tack.Vector([1.0, 2.0])
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_vector_into_scalar_storage, "stores a 3-vector into an element of scalar storage"),
+    (_vector_into_another_width, "stores a 2-vector into a field of 3-vectors"),
+])
+def test_vector_stores_must_match_their_field(define, message):
+    """Both used to write components at offsets computed from the value's
+    width, into whatever was there."""
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
+def test_vector_field_element_index_is_64_bit():
+    """The element index is scaled by the width in i64: an i32 product
+    wraps for a field of more than 2**31 components."""
+    @tack.kernel
+    def load(vf, out, where):
+        for i in range(1):
+            out[i] = vf[where][1]
+    vf = tack.Vector.field(2, dtype=tack.i8, shape=(4,))
+    out = tack.field(dtype=tack.i8, shape=(1,))
+    text = tack.inspect(load, vf, out, 3, mode="ir")
+    assert "Cast(where, i64)" in text and "i32" not in text
+
+
+# --- A vector or tuple where one value is required ---
+
+@tack.func
+def _truthy(x):
+    return x and 1
+
+
+def _vector_compared():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = vf[i] < 1.0
+    return bad
+
+
+def _vector_as_a_condition():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            if vf[i]:
+                s[i] = 1.0
+    return bad
+
+
+def _vector_as_a_loop_bound():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            for k in range(vf[i]):
+                s[i] += 1.0
+    return bad
+
+
+def _vector_printed():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            print("v", vf[i])
+    return bad
+
+
+def _vector_in_a_device_function():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = _truthy(vf[i])
+    return bad
+
+
+def _tuple_stored():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = (1.0, 2.0)
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_vector_compared, r"Kernel 'bad': statement at line 4, column \d+ uses a 3-vector"),
+    (_vector_as_a_condition, "uses a 3-vector where a single value is required"),
+    (_vector_as_a_loop_bound, "uses a 3-vector where a single value is required"),
+    (_vector_printed, "uses a 3-vector where a single value is required"),
+    (_vector_in_a_device_function,
+     r"Device function '_truthy' \(inlined into kernel 'bad'\): statement at line 3"),
+    (_tuple_stored, "stores a tuple of 2 values into an element of scalar storage"),
+])
+def test_vector_where_one_value_is_required_is_diagnosed(define, message):
+    """Operations that do not map over a vector's components used to leave
+    the vector in the IR, where the verifier reported "expected expr node"
+    with a tree path. Any such statement now gets its source position."""
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
 # --- Tuple assignment assigns its targets from left to right ---
 
 @tack.func

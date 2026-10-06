@@ -56,11 +56,12 @@ All standard math functions are available inside kernels:
 | `sin(x)`, `cos(x)`, `tan(x)` | Trigonometric |
 | `asin(x)`, `acos(x)`, `atan(x)` | Inverse trig |
 | `atan2(y, x)` | Two-argument arctangent |
+| `sinh(x)`, `cosh(x)`, `tanh(x)` | Hyperbolic |
 | `exp(x)`, `exp2(x)` | Exponential |
 | `log(x)`, `log2(x)`, `log10(x)` | Logarithmic |
 | `floor(x)`, `ceil(x)` | Rounding |
 | `abs(x)` | Absolute value |
-| `min(a, b)`, `max(a, b)` | Min/max |
+| `min(a, b, ...)`, `max(a, b, ...)` | Min/max of two or more values |
 | `pow(base, exp)` | Power |
 
 These are imported automatically — no `import math` needed. They compile to

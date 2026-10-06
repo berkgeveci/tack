@@ -19,7 +19,7 @@ class _SourceValidator(ast.NodeVisitor):
         ast.Assign, ast.AugAssign, ast.If, ast.Name, ast.Attribute,
         ast.Tuple, ast.BinOp, ast.UnaryOp, ast.BoolOp, ast.Compare,
         ast.Load, ast.Store,
-        ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow,
+        ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod, ast.Pow, ast.MatMult,
         ast.LShift, ast.RShift, ast.BitAnd, ast.BitOr, ast.BitXor,
         ast.UAdd, ast.USub, ast.Not, ast.Invert, ast.And, ast.Or,
         ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE,
@@ -115,6 +115,13 @@ class _SourceValidator(ast.NodeVisitor):
                     self.reject(arg, "Vector() requires at least one component")
                 for element in arg.elts:
                     self.visit(element)
+            elif intrinsic and name == 'Matrix' and isinstance(arg, ast.List):
+                # Rows are lists of scalars, or expressions that are vectors.
+                if not arg.elts:
+                    self.reject(arg, "Matrix() requires at least one row")
+                for row in arg.elts:
+                    for element in (row.elts if isinstance(row, ast.List) else [row]):
+                        self.visit(element)
             else:
                 self.visit(arg)
 

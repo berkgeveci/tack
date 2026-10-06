@@ -7,6 +7,35 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tack.Matrix`: small fixed-size matrices, up to 4×4, scalarized like
+  vectors. `tack.Matrix.field(n, m, dtype, shape)` allocates a field of
+  them. In kernels, `tack.Matrix([[a, b], [c, d]])`, rows given as
+  vectors, and `tack.Matrix.identity(n)` build one; `@` multiplies
+  matrices and vectors, with `+`, `-`, `*`, `/` entry by entry;
+  `transpose()`, `trace()`, and for 2×2 and 3×3 `determinant()` and
+  `inverse()`; `A[i, j]` reads and writes entries; `u.outer_product(v)`
+  makes one from two vectors. Matrices pass through device functions,
+  tuple assignment, conditional expressions, field stores and atomics as
+  vectors do. See *Matrices* in the User's Guide.
+- `sinh`, `cosh` and `tanh` as math builtins, on every backend.
+- `tack.ndrange` takes `(start, end)` pairs as well as sizes:
+  `for i, j in tack.ndrange((1, n - 1), (1, m - 1))` visits the interior
+  of a grid. An empty or reversed pair runs no iterations.
+- Vector fields exchange data with NumPy one row per vector:
+  `from_numpy` accepts `(*shape, n)` as well as the flat storage shape,
+  and `to_numpy(vectors=True)` returns `(*shape, n)`. Plain `to_numpy()`
+  still returns the flat array.
+- `tack.constant(value, dtype=None)`: a named constant that kernels and
+  device functions may read from the scope that defines them.
+  `DT = tack.constant(0.01)` at module level lets a kernel write `DT`; it
+  reads as the literal, and stays an ordinary Python number for host
+  code. Kernels still capture nothing else: a plain module-level value
+  raises `NameError` as before, and the message now names
+  `tack.constant`. With a dtype the constant is typed, so
+  `tack.constant(747796405, tack.u32)` multiplies in wrapping u32
+  arithmetic (a plain literal there promotes to i64) and
+  `tack.constant(0.1, tack.f64)` is the exact double. `math.pi`, `math.e`
+  and `math.tau` can be written in kernels.
 - `tack.algorithms.argsort`, `sort_by_key`, `gather`, `unique` and
   `reduce_by_key`: a stable radix sort for `i32`/`u32`/`i64`/`u64` keys
   and segmented reductions over runs of equal keys, built from ordinary
@@ -78,6 +107,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   only read their own component (`v = v * 2.0`, `a[i] = a[i] + b[i]`)
   computed the right result before and still do.
 
+- A scalar stored to a vector field element sets every component:
+  `vf[i] = 0.0` names element `i`, as a load of `vf[i]` does, and as
+  `vf[i] *= 2.0` does. It wrote the single component at flat index `i`.
+- A vector field's element index is computed in 64 bits. It was narrowed
+  to i32 before being scaled by the vector width, so a field of more than
+  2^31 components was indexed wrongly.
+
 ### Code that is now rejected
 
 - A multi-dimensional field indexed with the wrong number of indices.
@@ -86,6 +122,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the wrong width and an atomic's index. The dispatch that binds such a
   field now raises `TypeError` with the source position. A single index
   is still a flat, row-major index.
+- A vector or tuple anywhere one value is required, such as a comparison
+  (`vf[i] < 1.0`), a condition, a loop bound or `print`. Operations that
+  do not map over a vector's components used to fail IR verification
+  with "expected expr node" and a path into the lowered tree; every such
+  statement now raises `UnsupportedSyntaxError` naming the kernel or
+  device function and the source position.
+- A vector stored where it does not fit: `s[i] = vec` into a field of
+  scalars or a local array, and `vf[i] = vec` into a field of vectors of
+  another width. Both wrote components at offsets computed from the
+  value's width, over whatever was there.
 - Reading a `for` loop's variable after its loop, before the name is
   assigned again, raises `NameError` at lowering with the read's position,
   on every backend. CPU raised a `NameError` from codegen and the GPU

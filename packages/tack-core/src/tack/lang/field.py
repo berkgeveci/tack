@@ -130,20 +130,44 @@ class Field:
                 "Field is read-only (created from an external pointer). "
                 "Use writable=True in field_from_ptr() to enable writes.")
 
+    def _vector_shape(self):
+        """``(*shape, n)`` for a vector field, ``(*shape, rows, columns)`` for a
+        matrix field, and None for any other."""
+        n = getattr(self, '_vector_n', None)
+        if n is None:
+            return None
+        element = getattr(self, '_matrix_shape', None) or (n,)
+        return (*self._logical_shape, *element)
+
     def from_numpy(self, arr: np.ndarray):
-        """Copy data from a numpy array to the device."""
+        """Copy data from a numpy array to the device.
+
+        The array has the field's shape. A vector field also takes one row
+        per vector, ``(*shape, n)``, besides its flat storage shape.
+        """
         self._check_writable()
         expected = self.dtype.numpy_dtype
         if arr.dtype != expected:
             arr = arr.astype(expected)
+        vector_shape = self._vector_shape()
+        if vector_shape is not None and arr.shape == vector_shape:
+            # Components are stored together, in row-major order.
+            arr = arr.reshape(self.shape)
         if arr.shape != self.shape:
+            accepted = f"{self.shape}" if vector_shape is None \
+                else f"{vector_shape} or flat {self.shape}"
             raise ValueError(
-                f"Shape mismatch: field is {self.shape}, got {arr.shape}"
+                f"Shape mismatch: field is {accepted}, got {arr.shape}"
             )
         self._buffer.from_numpy(arr)
 
-    def to_numpy(self) -> np.ndarray:
-        """Copy data from the device to a new numpy array."""
+    def to_numpy(self, vectors: bool = False) -> np.ndarray:
+        """Copy data from the device to a new numpy array.
+
+        A vector field comes back in its flat storage shape,
+        ``(prod(shape) * n,)``; with ``vectors=True`` it has one row per
+        vector, ``(*shape, n)``. Other fields ignore the argument.
+        """
         arr = self._buffer.to_numpy()
         # The buffer keeps the shape it was allocated with, so a reshaped
         # view has to impose its own -- otherwise field.shape and
@@ -151,6 +175,9 @@ class Field:
         # field.shape. Same data either way; only the view differs.
         if arr.shape != self.shape:
             arr = arr.reshape(self.shape)
+        vector_shape = self._vector_shape() if vectors else None
+        if vector_shape is not None:
+            arr = arr.reshape(vector_shape)
         return arr
 
     def fill(self, value):
@@ -522,6 +549,35 @@ class Vector:
         # Mark as vector field so kernel dispatch can handle it
         f._vector_n = n
         f._logical_shape = shape
+        return f
+
+
+class Matrix:
+    """Small fixed-size matrices: fields of them, and matrix values in kernels.
+
+    Usage:
+        F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+
+        # In kernels a matrix is scalarized, like a vector:
+        #   A = tack.Matrix([[a, b], [c, d]])      rows of scalars, or of vectors
+        #   I = tack.Matrix.identity(2)
+        #   F[p] = (I + dt * C) @ F[p]             '@' multiplies; '*' is elementwise
+        #   A[i, j], A.transpose(), A.trace(), A.determinant(), A.inverse()
+    """
+
+    @staticmethod
+    def field(n: int, m: int, dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
+        """Create a field of n-by-m matrices.
+
+        The storage is that of ``Vector.field(n * m, dtype, shape)``, each
+        matrix in row-major order. ``from_numpy`` takes ``(*shape, n, m)``
+        or the flat array, and ``to_numpy(vectors=True)`` returns
+        ``(*shape, n, m)``.
+        """
+        if not (1 <= n <= 4 and 1 <= m <= 4):
+            raise ValueError(f"Matrix.field({n}, {m}): matrices are at most 4x4")
+        f = Vector.field(n * m, dtype, shape)
+        f._matrix_shape = (n, m)
         return f
 
 
