@@ -13,8 +13,79 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   kernels and the scan so they run on every backend. See *Sorting and
   segmented reductions* in the User's Guide.
 
+- Vector components by runtime index: `vec[k]` reads and `vec[k] = x` /
+  `vec[k] += x` write the component a loop variable or field value
+  selects, through a chain of selects; past the last component a read
+  gives the last component and a write does nothing. `vf[i][c]` and
+  `f(x)[c]` index a vector-valued expression without naming it first.
+  These used to fail IR verification with "expected expr node". A literal
+  index out of range, and a subscript of a scalar value, are rejected at
+  lowering with the source position.
+- The `tack.algorithms` statistics (`var`, `std`, `norm`, `absmax`,
+  `count_nonzero`, `dot`, `histogram`) accept vector fields and reduce
+  over all components in storage order; they used to fail IR
+  verification.
+- Vectors in the places a scalar works. The math builtins (`min`, `max`,
+  `abs`, `floor`, `sqrt`, `pow`, ...) and the casts (`int`, `float`,
+  `tack.f32`, ...) apply to each component, with a scalar argument
+  repeated: `min(max(v, -1.0), 1.0)`, `int(floor(p))`. A conditional
+  expression selects whole vectors on one condition. `x`, `y`, `z` and
+  `w` name the first four components, to read (`v.x`, `vf[i].y`) and to
+  assign (`v.x = a`, `v.y += a`). A component of a vector field element
+  can be stored directly: `vf[i][c] = a`, `vf[i][c] += a`, `vf[i].y = a`.
+  `vf[i] += vec` and `vf[i] *= scalar` update an element in place. A
+  vector indexes a field one dimension per component: `grid[cell]` is
+  `grid[cell[0], cell[1]]`. All of these used to fail IR verification
+  with "expected expr node", or with an `AttributeError` for the
+  augmented store. Vectors of different widths in one operation, a
+  component name past the width, and a vector combined into a scalar
+  target are rejected at lowering with the source position.
+- A device function can return vectors among several values:
+  `return distance, normal, color`, unpacked with
+  `d, n, c = closest_hit(...)`. Only scalars could be returned together;
+  a vector slot was never bound and lowering failed on its name.
+- `min` and `max` take two or more values, as in Python
+  (`min(a, b, c)`), and vectors have the reductions `v.sum()`, `v.min()`
+  and `v.max()` over their components. `v.normalized(eps)` divides by
+  `norm() + eps`.
+- Tuple assignment to field elements and vector components:
+  `x[i], v[i] = p, q` (whole vectors included), a swap such as
+  `a[i], b[i] = b[i], a[i]`, and `lo[i], hi[i] = f(...)` for a device
+  function that returns two values. The whole right side is evaluated
+  first and the targets are then assigned from left to right, so
+  `a[i], i = x, j` stores at the old `i`. Only plain names were accepted
+  as targets.
+- Atomics take an index per dimension: `tack.atomic_add(grid, (i, j), v)`,
+  where a vector supplies one index per component
+  (`tack.atomic_add(grid, cell, v)`). On a vector field a vector value
+  updates every component of the element. Multi-dimensional and vector
+  targets previously needed hand-linearized indices, and a tuple index
+  failed IR verification.
+
+### Kernels that now compute different results
+
+- A vector assignment whose right side reads its own target now reads
+  the old components. Vectors are assigned one component at a time, and
+  the right side was evaluated in between, so later components saw
+  earlier ones already overwritten: `v = v.normalized()` (the result
+  was not a unit vector), `v = v.cross(w)`,
+  `v = tack.Vector([v[1], v[2], v[0]])`, `v += v.cross(w)` and
+  `a[i] = a[i].cross(b[i])` all computed wrong vectors, on every backend
+  and without an error. Components that could observe an earlier
+  component's assignment are now evaluated first, as Python does. For a
+  store to a field element that means any component that loads from a
+  field, since fields may share storage. Assignments whose components
+  only read their own component (`v = v * 2.0`, `a[i] = a[i] + b[i]`)
+  computed the right result before and still do.
+
 ### Code that is now rejected
 
+- A multi-dimensional field indexed with the wrong number of indices.
+  `grid[i, j]` on a three-dimensional field linearized with the sizes it
+  had and silently addressed another element; so did a vector index of
+  the wrong width and an atomic's index. The dispatch that binds such a
+  field now raises `TypeError` with the source position. A single index
+  is still a flat, row-major index.
 - Reading a `for` loop's variable after its loop, before the name is
   assigned again, raises `NameError` at lowering with the read's position,
   on every backend. CPU raised a `NameError` from codegen and the GPU
@@ -36,6 +107,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   identifier; CPU accepted it. The C-family generators now treat the loop
   header's declaration as ending with its block, so the later assignment
   declares a new local, as on CPU.
+- A field can be passed down through any number of nested device
+  functions. Three or more levels failed to compile on every backend
+  ("Cannot coerce float* to i32" on CPU, a pointer-to-integer error from
+  the GPU compilers): copy propagation resolved one link of the chain of
+  parameter copies per pass and left a local holding the field.
 - A `@tack.data_oriented` template's vector field attributes are now
   detected as vector fields: `self.vel[i, j]` in a template method, or
   `obj.vel[i, j]` in the kernel, lowered as a scalar field access and

@@ -93,6 +93,23 @@ Available atomics:
 - `tack.atomic_min(field, index, value)` — atomic minimum
 - `tack.atomic_max(field, index, value)` — atomic maximum
 
+For a multi-dimensional field the index is a tuple with one index per
+dimension, and a vector may supply several of them. On a vector field a
+vector value updates every component of the element, one atomic per
+component:
+
+```python
+@tack.kernel
+def scatter(pos, vel, mass, grid_m, grid_v, inv_dx, n):
+    for p in range(n):
+        cell = int(pos[p] * inv_dx)                     # a 2-vector of cell indices
+        tack.atomic_add(grid_m, cell, mass[p])          # grid_m[cell[0], cell[1]] += ...
+        tack.atomic_add(grid_v, (cell[0], cell[1]), mass[p] * vel[p])
+```
+
+A plain integer index is the flat, row-major index. On a vector field
+with a scalar value it is the flat index of one component.
+
 ## Shared Memory
 
 Shared memory is visible to all threads within a workgroup. Use it for
@@ -216,6 +233,61 @@ def normalize_vectors(v, n):
         length = sqrt(vec[0]**2 + vec[1]**2 + vec[2]**2)
         v[i] = vec / length          # stores 3 components
 ```
+
+Arithmetic works on whole vectors, component by component, and a scalar
+operand is applied to every component. So do the math builtins, the casts
+and conditional expressions:
+
+```python
+@tack.kernel
+def step(pos, vel, grid, out, dt, n):
+    for i in range(n):
+        v = vel[i]
+        v = min(max(v, -10.0), 10.0)        # clamp each component
+        cell = int(floor(pos[i] / 0.25))    # a vector of i32 cell indices
+        v = v if pos[i].y > 0.0 else -v     # one condition, whole vectors
+        speed = v.norm()                    # methods are listed below
+        vel[i] = v
+        pos[i] += v * dt                    # augmented store to a field element
+        out[i] = grid[cell] * speed         # grid[cell] is grid[cell[0], cell[1], cell[2]]
+```
+
+The vector methods are `norm()`, `norm_sqr()`, `dot(w)`, `cross(w)`
+(3-vectors), `normalized()`, and the reductions over components `sum()`,
+`min()` and `max()`. `normalized(eps)` divides by `norm() + eps`, for a
+vector that may be zero. `min` and `max` as functions take two or more
+values, as in Python: `min(a, b, c)`.
+
+A device function can return several values, vectors among them, to be
+unpacked at the call:
+
+```python
+@tack.func
+def closest_hit(origin, direction):
+    ...
+    return distance, normal, color        # a scalar and two vectors
+
+distance, normal, color = closest_hit(o, d)
+```
+
+Two vectors in one operation must have the same number of components.
+An assignment evaluates its whole right side before it stores anything,
+so `v = v.cross(w)` and `pos[i] = pos[i].cross(axis[i])` read the old
+components.
+
+Components are scalars. `vec[0]` and `vec.x` read one (`x`, `y`, `z`, `w`
+name the first four); `vec[1] = x`, `vec.y = x` and `vec[1] += x` write
+one. The same forms work on a field element without naming the vector
+first: `v[i][2]` and `v[i].z` read a component, `v[i][2] = x` and
+`v[i].z += x` store one. The index may be a runtime value (`vec[k]` for a
+loop variable `k`), which lowers to a chain of selects rather than a
+branch. A runtime index must be in `[0, n)`: outside it, on either side,
+a read gives the last component and a write does nothing, since a kernel
+cannot raise. Only a literal index counts from the end (`vec[-1]`), and a
+literal out of range is rejected at lowering.
+
+The statistics in `tack.algorithms` (`dot`, `norm`, `var`, ...) accept a
+vector field and reduce over all its components in storage order.
 
 ## Printing (Debug)
 

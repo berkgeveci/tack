@@ -245,7 +245,7 @@ The IR is a simple tree of nodes:
 ### IR passes
 
 - **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from field shapes, resolves `IRAtomicOp` sub-expressions, and resolves `shared_like` dtypes from fields
-- **ir_optimize.py**: Conservative copy propagation for inlined arguments. Assignment counts are computed once per kernel and reused in nested blocks: the copy target must have one binding and its source must have no assignments, loop bindings, or allocations anywhere in the kernel. This leaves some block-local copies to LLVM/vendor optimization and avoids repeated subtree counting during cold compilation. Custom LICM and CSE remain disabled because they lack memory/control-flow safety analysis.
+- **ir_optimize.py**: Conservative copy propagation for inlined arguments. Assignment counts are computed once per kernel and reused in nested blocks: the copy target must have one binding and its source must have no assignments, loop bindings, or allocations anywhere in the kernel. Each statement is tested after earlier copies are applied, so a chain resolves to its root in one walk; nested device functions pass a field down as such a chain, and an unresolved link is a local holding a field. This leaves some block-local copies to LLVM/vendor optimization and avoids repeated subtree counting during cold compilation. Custom LICM and CSE remain disabled because they lack memory/control-flow safety analysis.
 - **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars auto-promote to `f64` when any field arg uses `f64`; otherwise default to `f32`. Int scalars exceeding i32 range auto-promote to `i64`. `check_dispatch_types()` validates field dtypes against backend capabilities.
 - **ir_type_annotate.py**: Sets `dtype` (a `ScalarType`) on every expression IR node. Codegens read `node.dtype` directly instead of reimplementing type inference heuristics.
 - **ir_traversal.py**: Explicit structural child schema, preorder `walk_ir`, and postorder `transform_ir`. Resolution, scalar packing, copy substitution, and shape-dependency queries share it. Metadata is not traversed; unregistered node kinds fail loudly. `clone_ir` specializes deep copying for registered plain IR nodes and list/dict containers, copying every attribute (including metadata) with one identity memo. It preserves shared references, cycles and ScalarType identity; other metadata retains Python's deepcopy protocol. Variant preparation, scalar localization, GPU packing and inspection use it; cache hits do not clone IR. Keep all verifier boundaries. Compare copying costs with `uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json`; this is a CPU component benchmark, not an end-to-end latency measurement.
@@ -258,6 +258,32 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 ### Vector scalarization
 
 `tack.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
+
+In `ast_transform.py` a vector value is a Python list of component
+expressions, and a list that reaches a scalar position fails IR
+verification with "expected expr node". Arithmetic, math builtins, casts
+and conditional expressions map over components (`_componentwise`
+repeats scalars and rejects mixed widths). An assignment lowers to one
+assignment per component, so `_settle_components` first evaluates any
+component that could observe an earlier one's write: a read of an earlier
+target component for a variable, any field load for a field element
+(fields may alias). Components are `v[c]`/`v.x`, on variables and on field
+elements (`vf[i][c] = x` stores one component); a runtime index selects
+through a chain and stores through per-component guards. A vector index
+supplies one dimension per component, in subscripts and in atomics, whose
+index may be a tuple with one entry per dimension; a vector value given
+to an atomic on a vector field lowers to one atomic per component, while
+a scalar value keeps the index a flat component index. Tuple assignment
+accepts subscript and component targets through temporaries, stored at
+their own position among the targets (left to right, after the whole
+right side). `_linearize_index` tags each `IRDimSize` with the number of
+indices given, and `ir_resolve` raises `TypeError` when that differs from
+the field's dimension count; a single index is a flat index and is not
+checked. A device
+function returning several values yields a list whose vector elements are
+nested lists; only tuple unpacking consumes that. `v.min()`/`v.max()`/
+`v.sum()` are intercepted before the same-named builtins, which need
+arguments. See the vector tests in `test_new_features.py`.
 
 ### @tack.func inlining
 
@@ -437,7 +463,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 ## Kernel language features
 
 - **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndrange(w, h)`, `while`, `break`, `continue`
-- **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max`, `pow`
+- **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max` (two or more values), `pow`; all apply to each component of a vector
 - **Types**: `int()`, `float()` casts, plus explicit `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`, `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`
 - **Atomics**: `tack.atomic_add(field, idx, val)`, `tack.atomic_min(...)`, `tack.atomic_max(...)`
 - **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(field, size)`, `tack.barrier()`, `tack.thread_id()`

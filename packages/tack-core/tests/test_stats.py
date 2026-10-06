@@ -243,3 +243,17 @@ def test_dot_refuses_a_shorter_second_field(backend):
     with pytest.raises(ValueError, match="outside"):
         dot(a, b)
     assert dot(a, b, n=4) == pytest.approx(4.0)
+
+
+def test_statistics_reduce_vector_fields_over_all_components(backend):
+    """A vector field is reduced over its components in storage order; the
+    kernels used to receive vector elements and fail IR verification."""
+    v = tack.Vector.field(2, dtype=tack.f32, shape=(4,))
+    v.from_numpy(np.arange(8, dtype=np.float32))
+    assert dot(v, v) == 140.0
+    assert norm(v, ord=2) == pytest.approx(np.sqrt(140.0))
+    assert var(v) == pytest.approx(5.25)
+    assert absmax(v) == 7.0
+    assert count_nonzero(v) == 7
+    counts, _ = histogram(v, bins=2, range=(0.0, 8.0))
+    np.testing.assert_array_equal(counts.to_numpy(), [4, 4])
