@@ -3,6 +3,16 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## Unreleased
+
+### Fixes with no source change needed
+
+- A `@tack.func` given a vector field now loads whole vectors from it:
+  `return vf[i]` inside the function lowered to a single scalar load, so
+  a kernel doing `out[i] = f(vf, i)` wrote one component and left the
+  rest. The inliner propagated vector-variable and texture metadata to a
+  function's parameters but not vector-field metadata.
+
 ## 0.2.0 — 2026-10-05
 
 The headline: Tack now has a written language contract, and the compiler

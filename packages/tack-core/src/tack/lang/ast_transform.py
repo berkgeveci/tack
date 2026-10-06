@@ -1062,6 +1062,10 @@ class KernelTransformer(ast.NodeVisitor):
                 arg_name = call_node.args[callee_params.index(param_name)].id
                 if arg_name in self._vector_vars:
                     self._vector_vars[renamed] = self._vector_vars[arg_name]
+                if arg_name in self._vector_fields:
+                    # A vector field passed in: `fld[i]` in the body must
+                    # expand to its components, as it does in the caller.
+                    self._vector_fields[renamed] = self._vector_fields[arg_name]
                 if arg_name in self._texture_fields:
                     self._texture_fields[renamed] = self._texture_fields[arg_name]
                     self._texture_origin[renamed] = self._texture_origin.get(arg_name, arg_name)
