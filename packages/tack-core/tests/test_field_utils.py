@@ -325,3 +325,40 @@ def test_fill_rejects_a_value_of_the_wrong_shape(backend):
     scalars = tack.field(dtype=tack.f32, shape=(4,))
     with pytest.raises(TypeError, match="takes a scalar for a field of scalars"):
         scalars.fill([1.0, 2.0])
+
+
+# --- Zero-dimensional scalar fields ---
+
+@tack.kernel
+def _add_offset(offset, x, out, n):
+    for i in range(n):
+        out[i] = x[i] + offset[None]
+
+
+@tack.kernel
+def _bump_scalar(offset):
+    for _ in range(1):
+        offset[None] = offset[None] + 7
+
+
+@pytest.mark.parametrize("dtype", [tack.i32, tack.f32])
+def test_zero_dimensional_scalar_field(backend, dtype):
+    """`tack.field(dtype, shape=())` is one value, read and written as
+    `f[None]`. Metal could not allocate it: its buffer zeroed the view
+    with `[:]`, which a zero-dimensional array rejects. A zero-dimensional
+    vector field has a flat shape of `(n,)` and was not affected."""
+    f = tack.field(dtype=dtype, shape=())
+    assert f.shape == () and f.to_numpy().shape == ()
+    assert f.to_numpy() == 0
+    f.fill(3)
+    assert f.to_numpy() == 3
+    f.from_numpy(np.array(5, f.to_numpy().dtype))
+    assert f.to_numpy() == 5
+
+    x = tack.field(dtype=dtype, shape=(6,))
+    out = tack.field(dtype=dtype, shape=(6,))
+    x.from_numpy(np.arange(6).astype(x.to_numpy().dtype))
+    _bump_scalar(f)
+    assert f.to_numpy() == 12
+    _add_offset(f, x, out, 6)
+    np.testing.assert_array_equal(out.to_numpy(), np.arange(6) + 12)

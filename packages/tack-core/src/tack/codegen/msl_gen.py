@@ -71,6 +71,22 @@ _CMP_MAP = {
 }
 
 
+# The function a kernel's body moves to when it has a loop that stores to a
+# field. Generated variables carry the `tack_var_` prefix, so it cannot
+# collide with one.
+_BODY_FUNCTION = "__tack_body__"
+
+
+def _stores_inside_sequential_loop(body) -> bool:
+    """Whether a sequential loop of the kernel contains a store or an atomic."""
+    for node in walk_ir(body):
+        if isinstance(node, (ir.IRSequentialFor, ir.IRWhile)):
+            if any(isinstance(inner, (ir.IRFieldStore, ir.IRAtomicOp))
+                   for inner in walk_ir(node)):
+                return True
+    return False
+
+
 class MSLCodeGen:
     """Generates MSL source from a Tack IR function."""
 
@@ -141,33 +157,59 @@ class MSLCodeGen:
         # Textures keep their separate binding namespace. Unpacked scalars
         # remain constant references; normal dispatch packs them into fields.
         self._scalar_buffer_params: set[str] = set()
-        params_msl = []
+        # Each parameter as (declaration, binding attribute, name): the
+        # kernel entry declares them with their attributes, and a separate
+        # body function (below) takes the same ones without.
+        params = []
         buf_idx = 0
         if buffer_params:
-            params_msl.append("constant __tack_buffer_args__& __tack_buffers__ [[buffer(0)]]")
+            params.append(("constant __tack_buffer_args__& __tack_buffers__",
+                           "[[buffer(0)]]", "__tack_buffers__"))
             buf_idx = 1
         tex_idx = 0
         for param in func.params:
             msl_type = _MSL_TYPE_MAP[param.type_annotation]
             if param.name in self._texture_params:
-                params_msl.append(
-                    f"texture3d<float, access::sample> {param.name} [[texture({tex_idx})]]")
+                params.append((f"texture3d<float, access::sample> {param.name}",
+                               f"[[texture({tex_idx})]]", param.name))
                 tex_idx += 1
             elif param.name in self._field_params:
                 continue
             else:
-                params_msl.append(f"constant {msl_type}& {param.name} [[buffer({buf_idx})]]")
+                params.append((f"constant {msl_type}& {param.name}",
+                               f"[[buffer({buf_idx})]]", param.name))
                 buf_idx += 1
         self._has_textures = tex_idx > 0
 
-        params_msl.append("uint __tid__ [[thread_position_in_grid]]")
+        params.append(("uint __tid__", "[[thread_position_in_grid]]", "__tid__"))
         if self._needs_local_tid:
-            params_msl.append("uint __local_tid__ [[thread_position_in_threadgroup]]")
+            params.append(("uint __local_tid__", "[[thread_position_in_threadgroup]]",
+                           "__local_tid__"))
 
-        sig = ",\n    ".join(params_msl)
+        # A loop that stores to a field is compiled in a function of its
+        # own. In the kernel entry function, Apple's compiler (M1 Max,
+        # macOS 26) reads a field element once before such a loop and never
+        # again when the element's address does not depend on the thread
+        # and the loop also stores to another field of the same type:
+        #     for k in range(n): total[0] += x[k]; counter[0] += 1
+        # left total at start + x[n - 1]. It began when field pointers
+        # became members of one argument buffer. The same loop in a
+        # function the entry calls is compiled correctly, provided the
+        # function is not inlined; hiding the pointers or the thread index
+        # behind opaque calls is not enough, nor is `restrict`. Loop-free
+        # kernels were never affected and keep the single function, which
+        # is 7-15% faster for the smallest of them.
+        self._body_function = _stores_inside_sequential_loop(func.body)
+        self._workgroup_arrays: list[tuple[str, str, str]] = []
+
+        sig = ",\n    ".join(f"{decl} {attr}" for decl, attr, _ in params)
         safe_name = kernel_entry_name(func.name)
-        self._emit(f"kernel void {safe_name}(")
-        self._emit(f"    {sig})")
+        if self._body_function:
+            body_signature = len(self._lines)
+            self._emit("")        # written once the body's workgroup arrays are known
+        else:
+            self._emit(f"kernel void {safe_name}(")
+            self._emit(f"    {sig})")
         self._emit("{")
         self._indent += 1
 
@@ -186,6 +228,25 @@ class MSLCodeGen:
         self._indent -= 1
         self._emit("}")
 
+        if self._body_function:
+            # Workgroup arrays can only be declared in the kernel function,
+            # so the entry declares them and the body takes pointers.
+            body_params = [decl for decl, _, _ in params] + [
+                f"threadgroup {msl_type}* {name}" for msl_type, name, _ in self._workgroup_arrays]
+            arguments = [name for _, _, name in params] + [
+                name for _, name, _ in self._workgroup_arrays]
+            self._lines[body_signature] = (
+                f"__attribute__((noinline)) static void {_BODY_FUNCTION}("
+                f"{', '.join(body_params)})")
+            self._emit("")
+            self._emit(f"kernel void {safe_name}(")
+            self._emit(f"    {sig})")
+            self._emit("{")
+            for msl_type, name, size in self._workgroup_arrays:
+                self._emit(f"    threadgroup {msl_type} {name}[{size}];")
+            self._emit(f"    {_BODY_FUNCTION}({', '.join(arguments)});")
+            self._emit("}")
+
         helpers = (
             float_division_helpers(
                 self._float_division_helpers, _MSL_TYPE_MAP, 'inline')
@@ -199,6 +260,13 @@ class MSLCodeGen:
 
     def _emit(self, line: str):
         self._lines.append("    " * self._indent + line)
+
+    def _declare_workgroup_array(self, msl_type: str, name: str, size: str):
+        """Declare a threadgroup array where MSL allows it: in the kernel function."""
+        if self._body_function:
+            self._workgroup_arrays.append((msl_type, name, size))
+        else:
+            self._emit(f"threadgroup {msl_type} {name}[{size}];")
 
     def _emit_body(self, stmts: list):
         for stmt in stmts:
@@ -230,8 +298,8 @@ class MSLCodeGen:
         elif isinstance(node, ir.IRPrint):
             self._emit("/* print not supported on Metal */")
         elif isinstance(node, ir.IRSharedAlloc):
-            msl_type = _MSL_TYPE_MAP[node.dtype]
-            self._emit(f"threadgroup {msl_type} {node.name}[{self._expr(node.size)}];")
+            self._declare_workgroup_array(
+                _MSL_TYPE_MAP[node.dtype], node.name, self._expr(node.size))
         elif isinstance(node, ir.IRLocalAlloc):
             msl_type = _MSL_TYPE_MAP[node.dtype]
             self._emit(f"{msl_type} {node.name}[{self._expr(node.size)}];")
@@ -545,7 +613,7 @@ class MSLCodeGen:
             "min": lambda a, b: f"tack_reduce_min_f32({a}, {b})",
         }[node.op]
 
-        self._emit(f"threadgroup float {smem}[{WORKGROUP_SIZE}];")
+        self._declare_workgroup_array("float", smem, str(WORKGROUP_SIZE))
         self._emit(f"int {tid} = __local_tid__;")
         self._emit(f"{smem}[{tid}] = (float)({val_expr});")
         self._emit("threadgroup_barrier(mem_flags::mem_threadgroup);")

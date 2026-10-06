@@ -370,6 +370,72 @@ reused across dispatches, which is safe because dispatch waits for
 completion before returning. No GPU backend specializes on alias
 relationships: one variant serves every combination.
 
+#### Loops that store to a field get a function of their own
+
+The argument buffer brought a miscompilation with it, found on an M1 Max
+in October 2026. In the kernel entry function, Apple's compiler reads a
+field element once before a loop and never again when the element's
+address does not depend on the thread, the loop also stores to another
+field of the same type, and the trip count is a runtime value:
+
+```python
+for t in range(1):
+    for k in range(n):
+        total[0] += x[k]        # left at start + x[n - 1]
+        counter[0] += 1         # correct
+```
+
+The generated MSL was correct and one thread ran it. Every case was right
+on the commit before the argument buffer, when each field was its own
+buffer argument. With `total[t]` (an address that depends on the thread),
+with a literal trip count, with one field, with fields of different
+types, or with the statements written out instead of looped, the result
+was right.
+
+What does and does not avoid it, each tried on thirty variations of the
+loop (`test_field_updates_in_loops.py`):
+
+| Change to the generated source | Wrong results |
+|---|---|
+| none | 20 of 30 |
+| the kernel body in a `noinline` function called by the entry | 0 |
+| the same function without `noinline` | 20 |
+| `volatile` on the pointers of the fields the kernel writes | 0 |
+| `__restrict` on the field pointers | 20 |
+| field pointers, the thread index, or both passed through opaque `noinline` identity functions | 20 |
+| the struct by `device` reference, no local pointer copies, `const` pointers | wrong (tried on the first case only) |
+| size optimization, language versions 2.4 to 3.2 | 10 of the 15 i32 cases, as with none |
+
+So `msl_gen` emits the body of a kernel as `__tack_body__`, a `noinline`
+function taking the entry's parameters, whenever a sequential loop of the
+kernel contains a store or an atomic (`_stores_inside_sequential_loop`);
+the entry declares any workgroup arrays, which MSL allows only there, and
+calls it. Kernels without such a loop keep the single function: applied to
+them, a body function cost 7-15% for a kernel that does one memory
+operation per thread (16M-element `a * x + y`, 0.83 to 0.95 ms). For the
+kernels that get one it cost 2.6% (an all-pairs force accumulated into
+`force[i]`) and 0.2% (a per-row histogram).
+`volatile` was the alternative; it also has to be carried through every
+pointer copy and atomic cast the generator emits.
+
+Where in Apple's compiler it happens is known; why is not. The offline
+`metal` front end (version 32023.921) compiles the shader to correct
+LLVM IR: inside the loop it loads `total[0]`, stores it, loads
+`counter[0]` and stores it, in both forms. Compiled to a library offline
+and loaded with `newLibraryWithURL`, that IR gives the same wrong result,
+so the fault is in the back end that turns the IR into GPU code when the
+pipeline is created, which no tool shows. The IR of the two forms differs
+in one thing: in the kernel entry the struct parameter carries
+`"air-buffer-no-alias"` and the pointers loaded from it carry an
+`air-alias-scope-arg(0)` alias scope, and in the separate function they
+carry neither. Removing the scope, the attribute, the parameter's
+`readonly`, or all of them from the IR before building the library
+changes nothing, so that is not the cause either. The rule is therefore
+wider than the observed trigger (any store in any sequential loop), and
+it rests on `noinline` being honored, as the 64-bit accumulator helpers
+already do. A standalone report to Apple would be the shader in
+`test_field_updates_in_loops.py` and the thirty-case table above.
+
 ### The CPU disjoint-fields specialization
 
 Dropping `noalias` is not free on the CPU. Without it LLVM must reload a

@@ -65,7 +65,7 @@ class MetalBuffer(DeviceBuffer):
         self._metal_buffer = device.newBufferWithLength_options_(max(nbytes, 1), 0)
         raw = self._metal_buffer.contents().as_buffer(nbytes)
         self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
-        self._view[:] = 0
+        self._view[...] = 0      # not [:], which a zero-dimensional view rejects
 
     @property
     def address(self) -> int:

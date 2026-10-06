@@ -170,6 +170,20 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - Unary plus on an integer (`+n`) compiles on Metal, CUDA, HIP and Level
   Zero. The generators emitted a one-argument call to the two-argument
   add helper, which the device compilers rejected.
+- **Metal computed wrong results, silently, for a field element updated
+  in a loop.** `for k in range(n): total[0] += x[k]; counter[0] += 1` left
+  `total` at `start + x[n - 1]`: Apple's compiler read `total[0]` once,
+  before the loop. It happened when the element's address did not depend
+  on the thread, the loop also stored to another field of the same type,
+  and the trip count was a runtime value; `while` loops and f32 fields
+  were affected alike. Present since field pointers moved into one
+  argument buffer, so in 0.2.0. A loop that stores to a field is now
+  compiled in a function of its own, which costs under 3% for the kernels
+  that have one and nothing for the others.
+- A zero-dimensional scalar field, `tack.field(dtype, shape=())`, can be
+  allocated on Metal. Its buffer zeroed the new storage with `[:]`, which
+  a zero-dimensional array rejects with "too many indices". CPU was not
+  affected, nor zero-dimensional vector fields.
 - A subclass of a `@tack.data_oriented` class inherits its bases'
   `@tack.func` methods and class constants and may override them. Only
   the class's own were found, so a method calling an inherited one failed
