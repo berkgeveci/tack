@@ -176,3 +176,100 @@ def test_plain_python_values_are_still_not_captured():
             out[i] = plain_python_value
     with pytest.raises(NameError, match=r"plain_python_value = tack\.constant\(\.\.\.\)"):
         bad.get_ir()
+
+
+# --- Vector and matrix constants ---
+
+SUN = tack.constant((0.5, 0.25, 0.0))
+ROT = tack.constant(((0.0, -1.0), (1.0, 0.0)))
+CELL = tack.constant((2, 3), tack.i32)
+HASH = tack.constant((747796405, 2891336453), tack.u32)
+
+
+@tack.func
+def _toward_sun(p):
+    return (SUN - p).norm()
+
+
+@tack.kernel
+def vector_constants(pos, grid, out, n):
+    for i in range(n):
+        p = pos[i]
+        r = p - SUN                                 # an operand
+        q = ROT @ [p.x, p.y]                        # a matrix constant
+        out[i] = (r.norm() + SUN.y + SUN[2] + ROT[1, 0] + q.x + q.y
+                  + grid[CELL] + _toward_sun(p) + SUN.sum())
+
+
+@tack.kernel
+def wrapping_vector_constant(out, n):
+    for i in range(n):
+        h = HASH * tack.u32(3)                       # u32 arithmetic, component by component
+        out[i] = h[0] + h[1]
+
+
+def test_vector_and_matrix_constants_in_kernels(backend):
+    """`tack.constant((0.5, 0.25, 0.0))` is `tack.Vector([0.5, 0.25, 0.0])`
+    in a kernel and a matrix constant the matrix with those rows: as
+    operands, by component (`SUN.y`, `SUN[2]`, `ROT[1, 0]`), as a field
+    index, and inside device functions."""
+    n = 3
+    points = np.array([[0.1, 0.2, 0.3], [0.5, 0.25, 0.0], [1.0, -1.0, 2.0]], np.float32)
+    pos = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    pos.from_numpy(points)
+    grid = tack.field(dtype=tack.f32, shape=(4, 4))
+    grid.fill(7.0)
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    vector_constants(pos, grid, out, n)
+    sun, rot = np.array(SUN, np.float32), np.array(ROT, np.float32)
+    want = [np.linalg.norm(p - sun) + 0.25 + 0.0 + 1.0 + (rot @ p[:2]).sum() + 7.0
+            + np.linalg.norm(sun - p) + 0.75 for p in points]
+    np.testing.assert_allclose(out.to_numpy(), want, rtol=1e-6)
+
+
+def test_typed_vector_constant_keeps_its_width(backend):
+    out = tack.field(dtype=tack.u32, shape=(1,))
+    wrapping_vector_constant(out, 1)
+    h = (np.array([747796405, 2891336453], np.uint32) * np.uint32(3))
+    assert out.to_numpy()[0] == np.uint32(h[0] + h[1])
+
+
+def test_vector_constants_on_the_host():
+    assert len(SUN) == 3 and SUN[1] == 0.25 and tuple(SUN) == (0.5, 0.25, 0.0)
+    assert ROT[1][0] == 1.0 and ROT[0, 1] == -1.0 and len(ROT) == 2
+    assert SUN.shape == (3,) and ROT.shape == (2, 2) and CELL.dtype is tack.i32
+    np.testing.assert_array_equal(np.array(SUN, np.float32), [0.5, 0.25, 0.0])
+    assert np.asarray(CELL).dtype == np.int32          # a typed constant converts to its type
+    assert np.asarray(SUN).dtype == np.float64         # an untyped one to Python's float
+    assert SUN == (0.5, 0.25, 0.0) and ROT == np.array([[0, -1], [1, 0]])
+    assert repr(CELL) == "tack.constant((2, 3), tack.i32)"
+    assert repr(ROT) == "tack.constant(((0.0, -1.0), (1.0, 0.0)))"
+    assert isinstance(SUN[0], FloatConstant) and isinstance(CELL[1], IntConstant)
+    with pytest.raises(TypeError):
+        SUN + SUN                                     # not a tuple: no silent concatenation
+
+
+@pytest.mark.parametrize("value, dtype, error, message", [
+    ((), None, ValueError, "no components"),
+    (((1, 2), (3,)), None, ValueError, "same, nonzero length"),
+    ((1, (2, 3)), None, TypeError, "mix of numbers and rows"),
+    ((((1,),),), None, TypeError, "two levels"),
+    ((0.5, 1.5), tack.i32, TypeError, "integer type needs an integer"),
+    ((2**40, 1), tack.i32, ValueError, "does not fit"),
+])
+def test_malformed_vector_constants_are_rejected(value, dtype, error, message):
+    with pytest.raises(error, match=message):
+        tack.constant(value, dtype)
+
+
+BIG = tack.constant(tuple(tuple(float(i * 5 + j) for j in range(5)) for i in range(5)))
+
+
+def test_a_matrix_constant_larger_than_4x4_is_rejected_where_it_is_read():
+    @tack.kernel
+    def bad(out, n):
+        for i in range(n):
+            out[i] = BIG.trace()
+
+    with pytest.raises(Exception, match="5x5 matrix, larger than 4x4"):
+        bad.get_ir()

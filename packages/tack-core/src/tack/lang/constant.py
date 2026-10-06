@@ -13,6 +13,8 @@ The result is still an ordinary Python ``int`` or ``float``, so host code
 
 import numbers
 
+import numpy as np
+
 from tack.lang.types import INTEGER_TYPES, UNSIGNED_TYPES, ScalarType
 
 
@@ -38,7 +40,59 @@ class FloatConstant(float):
         return self
 
 
-# Neither class changes how the number prints. A constant is used wherever
+class ArrayConstant:
+    """A vector or matrix that kernels may read by name.
+
+    ``SUN = tack.constant((0.5, 0.5, 0.0))`` is the vector
+    ``tack.Vector([0.5, 0.5, 0.0])`` in a kernel, and
+    ``tack.constant(((1, 0), (0, 1)))`` the matrix with those rows, each
+    component a constant with the rules of ``tack.constant``. On the host
+    it indexes and iterates like a tuple of its rows and converts to a
+    NumPy array: ``np.array(SUN, np.float32)``, ``SUN[1]``, ``len(SUN)``.
+    It is not a tuple, so ``+`` does not concatenate it by mistake; do
+    host arithmetic on ``np.asarray(SUN)``.
+    """
+
+    def __init__(self, components, shape, dtype):
+        self.components = tuple(components)      # flat, row-major
+        self.shape = tuple(shape)
+        self.dtype = dtype
+
+    def _rows(self):
+        if len(self.shape) == 1:
+            return self.components
+        n = self.shape[1]
+        return tuple(self.components[i * n:(i + 1) * n] for i in range(self.shape[0]))
+
+    def __len__(self):
+        return self.shape[0]
+
+    def __iter__(self):
+        return iter(self._rows())
+
+    def __getitem__(self, index):
+        if isinstance(index, tuple) and len(self.shape) == 2 and len(index) == 2:
+            return self._rows()[index[0]][index[1]]
+        return self._rows()[index]
+
+    def __array__(self, dtype=None, copy=None):
+        if dtype is None and self.dtype is not None:
+            dtype = self.dtype.numpy_dtype
+        return np.array(self._rows(), dtype=dtype)
+
+    def __eq__(self, other):
+        return np.array_equal(np.asarray(self), np.asarray(other))
+
+    def __hash__(self):
+        return hash((self.components, self.shape))
+
+    def __repr__(self):
+        rows = self._rows()
+        body = repr(tuple(rows)) if len(self.shape) == 1 else repr(tuple(tuple(r) for r in rows))
+        return f"tack.constant({body}" + (f", {self.dtype})" if self.dtype is not None else ")")
+
+
+# Neither scalar class changes how the number prints. A constant is used wherever
 # a number is, including as a field's shape, and code that formats a number
 # into generated source must get its digits.
 
@@ -63,6 +117,8 @@ def constant(value, dtype=None):
     """
     if dtype is not None and not isinstance(dtype, ScalarType):
         raise TypeError(f"tack.constant dtype must be a Tack scalar type, not {dtype!r}")
+    if isinstance(value, (tuple, list, np.ndarray)):
+        return _array_constant(value, dtype)
     if isinstance(value, (bool, numbers.Integral)):
         value = int(value)
         if dtype is None or dtype in INTEGER_TYPES:
@@ -76,8 +132,37 @@ def constant(value, dtype=None):
                 f"value; convert it explicitly with int() if truncation is intended")
         return FloatConstant(float(value), dtype)
     raise TypeError(
-        f"tack.constant takes an int or a float, not {type(value).__name__}; "
-        f"fields and other objects are passed to kernels as arguments")
+        f"tack.constant takes an int, a float, or a tuple of them (a vector) or of "
+        f"tuples (a matrix), not {type(value).__name__}; fields and other objects are "
+        f"passed to kernels as arguments")
+
+
+def _array_constant(value, dtype):
+    """A vector from a flat sequence of numbers, a matrix from equal rows of them."""
+    rows = [list(row) if isinstance(row, (tuple, list, np.ndarray)) else row for row in value]
+    if not rows:
+        raise ValueError("tack.constant(()) has no components")
+    if all(isinstance(row, list) for row in rows):
+        widths = {len(row) for row in rows}
+        if len(widths) != 1 or not rows[0]:
+            raise ValueError("tack.constant: the rows of a matrix must have the same, "
+                             "nonzero length")
+        shape = (len(rows), widths.pop())
+        flat = [entry for row in rows for entry in row]
+    elif any(isinstance(row, list) for row in rows):
+        raise TypeError("tack.constant: mix of numbers and rows; a vector is a tuple of "
+                        "numbers and a matrix a tuple of equal tuples")
+    else:
+        shape = (len(rows),)
+        flat = rows
+    components = []
+    for entry in flat:
+        if isinstance(entry, np.generic):
+            entry = entry.item()
+        if isinstance(entry, (tuple, list)):
+            raise TypeError("tack.constant: a matrix has two levels of tuples, not more")
+        components.append(constant(entry, dtype))
+    return ArrayConstant(components, shape, dtype)
 
 
 def _check_representable(value, dtype):
@@ -92,8 +177,15 @@ def _check_representable(value, dtype):
         raise ValueError(f"tack.constant({value}) does not fit {kind}")
 
 
+def constant_components(value):
+    """The per-component IR of a vector or matrix constant and its shape, or None."""
+    if not isinstance(value, ArrayConstant):
+        return None
+    return [constant_ir(component) for component in value.components], value.shape
+
+
 def constant_ir(value):
-    """The IR for reading ``value``, or None when it is not a tack.constant."""
+    """The IR for reading a scalar ``value``, or None when it is not a tack.constant."""
     from tack.lang import ir
     if isinstance(value, IntConstant):
         literal = ir.IRConstant(int(value))

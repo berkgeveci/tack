@@ -99,6 +99,49 @@ constant after a kernel has been compiled does not change that kernel.
 For values that change between calls, pass an argument. `math.pi`,
 `math.e` and `math.tau` can be written directly.
 
+A tuple of numbers is a vector constant and a tuple of equal tuples a
+matrix constant; in a kernel they are the vector or matrix with those
+components, with the same typing rules per component:
+
+```python
+SUN = tack.constant((0.5, 0.5, 0.0))
+ROTATE = tack.constant(((0.0, -1.0), (1.0, 0.0)))
+CELL = tack.constant((2, 3), tack.i32)
+
+@tack.kernel
+def pull(pos, grid, out, n):
+    for i in range(n):
+        r = pos[i] - SUN                 # a vector operand
+        out[i] = r.norm() * SUN.y + grid[CELL] + (ROTATE @ [r.x, r.y]).x
+```
+
+On the host a vector constant indexes and iterates like a tuple of its
+rows and converts with `np.array(SUN, np.float32)`; it is not a tuple, so
+`SUN + OFFSET` is an error rather than a concatenation (use
+`np.asarray(SUN)` for host arithmetic).
+
+## Shader-style helpers
+
+`tack.math` holds the small vocabulary GLSL and Taichi programs lean on,
+as device functions that work on scalars and vectors alike: `fract`,
+`mix`, `clamp`, `saturate`, `smoothstep`, `length`, `distance`,
+`normalize`.
+
+```python
+from tack import math as tm
+
+@tack.kernel
+def grid_lines(uv, out, n):
+    for i in range(n):
+        st = tm.fract(uv[i] * 8.0) - 0.5                  # a 2-vector
+        edge = tm.smoothstep(0.0, 0.05, 0.5 - abs(st).min())
+        out[i] = tm.mix(0.2, 1.0, edge)
+```
+
+The definitions are GLSL's (`mix(x, y, a)` is `x * (1 - a) + y * a`, and
+`smoothstep` with its edges reversed reverses the step). They are only
+callable from kernels and device functions.
+
 ## Field Dimensions
 
 `field.shape[k]` and `len(field)` work anywhere in a kernel — not only as

@@ -43,7 +43,7 @@ all corner cases have been validated.
 
 | Family | Kernel surface | Boundary |
 |---|---|---|
-| Values | Numeric literals, scalar parameters, field loads, local variables, `tack.constant` names, vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
+| Values | Numeric literals, scalar parameters, field loads, local variables, `tack.constant` names (scalars, vectors, matrices), vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions take scalars only |
 | Assignments | Local assignment, augmented assignment, field stores, tuple assignment to names, field elements and components | Storage and ordering rules below |
 | Control flow | `range`, `tack.ndrange` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
