@@ -121,3 +121,57 @@ def test_different_scalar_values(backend):
     # 5x4 grid: point0 of cells
     expected_b = np.array([0, 1, 2, 3, 5, 6, 7, 8, 10, 11, 12, 13], dtype=np.int32)
     np.testing.assert_array_equal(output_b.to_numpy(), expected_b)
+
+
+# --- Vector field attributes ---------------------------------------------------
+
+@tack.data_oriented
+class _Flow:
+    """A template whose state includes a vector field its methods read."""
+
+    def __init__(self, n):
+        self.rho = tack.field(dtype=tack.f32, shape=(n, n))
+        self.vel = tack.Vector.field(2, dtype=tack.f32, shape=(n, n))
+
+    @tack.func
+    def momentum_x(self, i, j, k):
+        u = self.vel[i, j]
+        return self.rho[i, j] * u[0] * float(k)
+
+
+@tack.kernel
+def _momentum_direct(flow: tack.template(), out, n):
+    for i, j in tack.ndrange(n, n):
+        u = flow.vel[i, j]
+        out[i, j] = flow.rho[i, j] * u[1]
+
+
+@tack.kernel
+def _momentum_through_method(flow: tack.template(), out, n):
+    for i, j in tack.ndrange(n, n):
+        acc = 0.0
+        for k in range(3):
+            acc = acc + flow.momentum_x(i, j, k)
+        out[i, j] = acc
+
+
+def test_template_vector_field_attribute_in_kernel_and_method(backend):
+    """A template's vector field attribute loads whole vectors, whether the
+    kernel reads it directly or a method does. The runtime detected vector
+    widths only for direct kernel arguments, so the synthetic parameter the
+    attribute became was a scalar field and the method's load failed IR
+    verification."""
+    n = 4
+    flow = _Flow(n)
+    flow.rho.from_numpy(np.full((n, n), 2.0, np.float32))
+    vel = np.zeros((n, n, 2), np.float32)
+    vel[..., 0] = 3.0
+    vel[..., 1] = 5.0
+    flow.vel.from_numpy(vel.reshape(-1))
+    out = tack.field(dtype=tack.f32, shape=(n, n))
+
+    _momentum_direct(flow, out, n)
+    np.testing.assert_array_equal(out.to_numpy(), np.full((n, n), 10.0, np.float32))
+
+    _momentum_through_method(flow, out, n)
+    np.testing.assert_array_equal(out.to_numpy(), np.full((n, n), 18.0, np.float32))
