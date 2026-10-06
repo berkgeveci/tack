@@ -125,9 +125,23 @@ class _SourceValidator(ast.NodeVisitor):
             else:
                 self.visit(arg)
 
+    def visit_List(self, node):
+        """A list of scalars is a vector, as in ``pos[i] = [x, y]``."""
+        if not isinstance(node.ctx, ast.Load):
+            self.reject(node, "a list cannot be assigned to; unpack into a tuple of targets")
+        if not node.elts:
+            self.reject(node, "a vector needs at least one component")
+        for element in node.elts:
+            if isinstance(element, ast.List):
+                self.reject(element, "a list of lists is not a matrix here; "
+                                     "write tack.Matrix([[...], [...]])")
+            self.visit(element)
+
     def visit_For(self, node):
         if node.orelse:
             self.reject(node, "for-else is not supported")
+        if isinstance(node.iter, ast.List):
+            self.reject(node.iter, "a loop iterates over range() or tack.ndrange(), not a list")
         self.visit(node.target)
         self.visit(node.iter)
         if isinstance(node.iter, ast.Call) and isinstance(node.iter.func, ast.Name) \

@@ -259,6 +259,9 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 `tack.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
 
+A list of scalars in kernel source is a vector (`visit_List`), the same
+value as `tack.Vector([...])`; the validator rejects an empty or nested
+list, a list target and a loop over a list.
 In `ast_transform.py` a vector value is a `VectorValue`, a list of
 component expressions with a `shape`; a source tuple (indices, multiple
 results) is a `TupleValue`. Neither enters the IR: `_check_single_values`

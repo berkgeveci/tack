@@ -7,6 +7,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A list of scalars in a kernel or device function is a vector:
+  `pos[i] = [x, y]` is `pos[i] = tack.Vector([x, y])`, wherever a vector
+  is accepted. It was rejected as "unsupported List". An empty list, a
+  list of lists (write `tack.Matrix`), a list as an assignment target and
+  a loop over a list are still rejected.
 - A `@tack.data_oriented` object can hold a `@tack.func` as an instance
   attribute and call it from its methods or from a kernel
   (`self.smoothing = cubic`, then `self.smoothing(r, h)`). Which function
@@ -148,11 +153,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
-- A subclass of a `@tack.data_oriented` class inherits its bases'
-  `@tack.func` methods and class constants and may override them. Only
-  the class's own were found, so a method calling an inherited one failed
-  with "self.weight ... is neither a class constant ... nor a @tack.func
-  method". A subclass without the decorator is handled the same way.
 - A parallel loop may start at a negated argument: `range(-n, n + 1)` and
   `tack.ndrange((-n, n + 1), ...)` failed with "Cannot resolve loop range
   expression: IRUnaryOp", because the host evaluates the launch size and
@@ -160,6 +160,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - Unary plus on an integer (`+n`) compiles on Metal, CUDA, HIP and Level
   Zero. The generators emitted a one-argument call to the two-argument
   add helper, which the device compilers rejected.
+- A subclass of a `@tack.data_oriented` class inherits its bases'
+  `@tack.func` methods and class constants and may override them. Only
+  the class's own were found, so a method calling an inherited one failed
+  with "self.weight ... is neither a class constant ... nor a @tack.func
+  method". A subclass without the decorator is handled the same way.
 - CPU threading on two-thread machines: one worker the scheduler took
   off its core could make a cheap kernel look expensive. The fan-out's
   per-worker median picked the slower of two workers, so a single stalled

@@ -1586,3 +1586,76 @@ def test_negative_runtime_component_index_is_out_of_range(backend):
     negative_runtime_component(vf, sel, out, n)
     np.testing.assert_array_equal(out.to_numpy(), [3 + 300, 6 + 600])
     np.testing.assert_array_equal(vf.to_numpy(), values)
+
+
+# --- A list of scalars is a vector ---
+
+@tack.func
+def _shifted(p, d):
+    return p + d
+
+
+@tack.kernel
+def list_vectors(vf, m, out, n):
+    for i in range(n):
+        vf[i] = [i * 1.0, 2.0]                     # store to a field element
+        v = [1.0, 0.5]                             # a local
+        v += [0.5, 0.5]
+        w = _shifted(vf[i], [10.0, 20.0])          # an argument
+        d = w.dot([1.0, 1.0])                      # a method's argument
+        e = (w - [1.0, 0.0]).x                     # an operand
+        r = m[i] @ [1.0, 2.0]                      # a matrix times it
+        c = [1.0, 2.0] if i % 2 == 0 else [3.0, 4.0]
+        out[i] = v.x + v.y + d + e + r.x + r.y + c.y
+
+
+def test_a_list_of_scalars_is_a_vector(backend):
+    """`pos[i] = [x, y]`, as Taichi programs write it, is
+    `pos[i] = tack.Vector([x, y])` wherever a vector is accepted. It was
+    "unsupported List"."""
+    n = 4
+    vf = tack.Vector.field(2, dtype=tack.f32, shape=(n,))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    m = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+    m.from_numpy(np.tile(np.array([[1, 2], [3, 4]], np.float32), (n, 1, 1)))
+    list_vectors(vf, m, out, n)
+    i = np.arange(n, dtype=np.float32)
+    want = 2.5 + (i + 32) + (i + 9) + 16 + np.where(i % 2 == 0, 2.0, 4.0)
+    np.testing.assert_allclose(out.to_numpy(), want)
+    np.testing.assert_array_equal(vf.to_numpy(vectors=True), np.stack([i, np.full(n, 2.0)], 1))
+
+
+def _list_into_a_scalar_element():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = [1.0, 2.0]
+    return bad
+
+
+def _list_of_the_wrong_width():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            vf[i] = [1.0, 2.0]
+    return bad
+
+
+def _list_as_a_condition():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            if [1.0, 2.0]:
+                s[i] = 1.0
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_list_into_a_scalar_element, "stores a 2-vector into an element of scalar storage"),
+    (_list_of_the_wrong_width, "stores a 2-vector into a field of 3-vectors"),
+    (_list_as_a_condition, "vector"),
+])
+def test_a_list_is_checked_as_the_vector_it_is(define, message):
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})

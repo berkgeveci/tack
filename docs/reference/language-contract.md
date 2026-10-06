@@ -681,8 +681,8 @@ integer and mixed arguments. No performance improvement is claimed.
 
 ### Vectors and matrices
 
-**Required:** a vector (`tack.Vector([...])`, an element of a
-`tack.Vector.field`) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
+**Required:** a vector (`tack.Vector([...])`, the same list of scalars
+written alone, an element of a `tack.Vector.field`) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
 `tack.Matrix.identity(n)`, an element of a `tack.Matrix.field`) are values
 made of scalar components, in row-major order for a matrix. Every
 operation on them is defined as the corresponding scalar operations on

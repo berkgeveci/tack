@@ -1198,6 +1198,10 @@ class KernelTransformer(ast.NodeVisitor):
         """Visit tuple — used for multi-dimensional indexing like field[i, j]."""
         return TupleValue(self._visit_ordered(node.elts))
 
+    def visit_List(self, node: ast.List) -> VectorValue:
+        """A list of scalars is a vector: ``[x, y]`` is ``tack.Vector([x, y])``."""
+        return VectorValue(self._visit_ordered(node.elts))
+
     def _variable_value(self, name: str) -> VectorValue:
         """The components of the vector or matrix variable ``name``."""
         return VectorValue((ir.IRName(self._component_name(name, c))
