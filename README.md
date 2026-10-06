@@ -109,13 +109,16 @@ x = tack.field(dtype=tack.f32, shape=(1024,))         # 1D
 img = tack.field(dtype=tack.f32, shape=(512, 512))     # 2D
 vol = tack.field(dtype=tack.f32, shape=(64, 64, 64))   # 3D
 
-# Vector fields (3-component per element)
-pixels = tack.Vector.field(3, dtype=tack.f32, shape=(width, height))
+# Vector and matrix fields
+pixels = tack.Vector.field(3, dtype=tack.f32, shape=(width, height))   # a 3-vector per element
+F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))                # a 2x2 matrix per element
 
 # Data transfer
 x.from_numpy(np_array)    # host → device
 result = x.to_numpy()     # device → host
 x.fill(0.0)               # fill with scalar
+pixels.from_numpy(rgb)                    # (width, height, 3), or the flat array
+rgb = pixels.to_numpy(vectors=True)       # (width, height, 3); plain to_numpy() is flat
 
 # Reductions (GPU-accelerated on Metal)
 total = x.sum()
@@ -159,6 +162,12 @@ def fill(img):
     for i, j in tack.ndrange(img.shape[0], img.shape[1]):
         img[i, j] = float(i * j)
 
+# A (start, end) pair instead of a size: the interior of a grid
+@tack.kernel
+def smooth(u, out, n, m):
+    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+        out[i, j] = 0.25 * (u[i - 1, j] + u[i + 1, j] + u[i, j - 1] + u[i, j + 1])
+
 # While loops with break/continue
 @tack.kernel
 def halve(x, out):
@@ -182,9 +191,31 @@ def saxpy(x, y, out, alpha, n):
 saxpy(x, y, out, 2.5, 1000)  # alpha=2.5, n=1000 passed as scalars
 ```
 
+### Constants
+
+A kernel does not see Python variables around it; reading one raises
+`NameError`. Declare a value with `tack.constant` and kernels and device
+functions can use the name. It is still an ordinary number in host code.
+
+```python
+DT = tack.constant(0.01)
+GRID = tack.constant(128)
+MULTIPLIER = tack.constant(747796405, tack.u32)   # typed: u32 arithmetic that wraps
+
+@tack.kernel
+def step(x, v):
+    for i in range(GRID):
+        x[i] += v[i] * DT
+```
+
+`math.pi`, `math.e` and `math.tau` can be written directly.
+
 ### Math Builtins
 
-`sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max`, `pow`
+`sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max`, `pow`
+
+`min` and `max` take two or more values. All of them apply to each
+component of a vector or matrix.
 
 ### Atomic Operations
 
@@ -200,6 +231,14 @@ def find_minmax(x, min_out, max_out):
     for i in range(x.shape[0]):
         tack.atomic_min(min_out, 0, x[i])
         tack.atomic_max(max_out, 0, x[i])
+
+# One index per dimension, and a whole vector into a vector field
+@tack.kernel
+def scatter(pos, vel, mass, grid_m, grid_v, inv_dx, n):
+    for p in range(n):
+        cell = int(pos[p] * inv_dx)                    # a vector of cell indices
+        tack.atomic_add(grid_m, cell, mass[p])
+        tack.atomic_add(grid_v, (cell[0], cell[1]), mass[p] * vel[p])
 ```
 
 ### Shared Memory & Synchronization
@@ -239,27 +278,48 @@ def interpolate(x, y, out, t):
         out[i] = lerp(x[i], y[i], t)  # inlined at compile time
 ```
 
-### Vector Operations
+A device function can return several values, vectors and matrices among
+them: `distance, normal, color = closest_hit(origin, direction)`.
+
+### Vectors and Matrices
+
+Vectors and small matrices (up to 4x4) are values in kernels. They are
+scalarized at compile time, so they cost what the scalar code would.
 
 ```python
 @tack.kernel
-def normalize_field(positions, normals):
-    for i in range(positions.shape[0]):
-        v = tack.Vector([positions[i][0], positions[i][1], positions[i][2]])
-        n = v.normalized()
-        normals[i] = n
+def step(pos, vel, F, C, grid, out, dt, n):
+    for p in range(n):
+        v = vel[p]                              # a whole vector from a vector field
+        v = min(max(v, -10.0), 10.0)            # builtins apply to each component
+        v.y -= 9.8 * dt                         # components: v.x, v[1], pos[p].z, pos[p][0]
+        cell = int(floor(pos[p] / 0.25))        # a vector of integers
+        out[p] = grid[cell] * v.norm()          # a vector indexes a field, one dimension each
+        pos[p] += v * dt                        # update a field element in place
+        vel[p], out[p] = v, v.dot(v)            # tuple assignment to field elements
 
-# Vector methods: .dot(w), .cross(w), .normalized(), .norm(), .norm_sqr()
+        F[p] = (tack.Matrix.identity(2) + dt * C[p]) @ F[p]     # '@' multiplies
+        J = F[p].determinant()
+        stress = (F[p] - F[p].inverse().transpose()) * J        # '*' is entry by entry
+        C[p] = v.outer_product(stress @ v)
 ```
+
+Vector methods: `.dot(w)`, `.cross(w)`, `.norm()`, `.norm_sqr()`,
+`.normalized()`, `.sum()`, `.min()`, `.max()`, `.outer_product(w)`.
+Matrix methods: `.transpose()`, `.trace()`, and for 2x2 and 3x3
+`.determinant()` and `.inverse()`; entries are `A[i, j]`. See the
+[User's Guide](docs/users-guide/07-advanced.md) for the rules.
 
 ### Template Classes
 
 ```python
 @tack.data_oriented
 class Grid:
+    scale = 2.0            # class-level scalar → compile-time constant
+
     def __init__(self, data, dx):
         self.data = data   # field → becomes kernel parameter
-        self.dx = dx       # scalar → compile-time constant
+        self.dx = dx       # instance scalar → runtime parameter, no recompilation
 
     @tack.func
     def sample(self, i):
@@ -272,6 +332,10 @@ def process(grid: tack.template(), out):
 
 process(Grid(data_field, 0.1), output)
 ```
+
+A data-oriented class can derive from another and inherits its
+`@tack.func` methods and class constants. An object can also hold a
+`@tack.func` as an attribute (`self.smoothing = cubic`) and call it.
 
 ## Examples
 
