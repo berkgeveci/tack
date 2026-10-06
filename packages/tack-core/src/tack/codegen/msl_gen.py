@@ -177,6 +177,7 @@ class MSLCodeGen:
             self._emit("constexpr sampler __samp__(coord::normalized, "
                        "filter::linear, address::clamp_to_edge);")
 
+        self._declare_locals_at_kernel_scope(func.body)
         self._emit_body(func.body)
 
         self._indent -= 1
@@ -237,6 +238,21 @@ class MSLCodeGen:
             self._emit(f"{self._expr(node)};")
         else:
             raise NotImplementedError(f"MSL codegen: cannot emit {type(node).__name__}")
+
+    def _declare_locals_at_kernel_scope(self, body):
+        """Declare every typed local once, at kernel scope; see CUDACodeGen."""
+        for node in walk_ir(body):
+            if not isinstance(node, ir.IRAssign) or node.target in self._declared_vars:
+                continue
+            resolved = getattr(node, '_resolved_type', None)
+            if resolved is None:
+                continue
+            msl_type = _MSL_TYPE_MAP.get(resolved)
+            if msl_type is None:
+                continue
+            self._emit(f"{msl_type} {node.target};")
+            self._local_vars[node.target] = msl_type
+            self._declared_vars.add(node.target)
 
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         idx = node.var

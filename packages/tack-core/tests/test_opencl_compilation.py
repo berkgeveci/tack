@@ -82,6 +82,9 @@ class _PreRebindingFixOpenCLCodeGen(OpenCLCodeGen):
     def _leave_loop_scope(self, var, outer):
         pass
 
+    def _declare_locals_at_kernel_scope(self, body):
+        pass                              # locals declared at first assignment
+
 
 def _source(kernel_fn, *args):
     """Generate OpenCL C the way the backend does, annotation included."""
@@ -176,6 +179,30 @@ def _loop_variable_rebound_in_branch(x, out):
 
 
 @tack.kernel
+def _assigned_in_a_branch_inside_a_loop(x, out):
+    for i in range(x.shape[0]):
+        acc = 0
+        k = 0
+        while k < 4:
+            if x[i] > k:
+                hit = k           # first assigned here: declared inside the while
+            else:
+                hit = -1
+            acc = acc + hit
+            k = k + 1
+        hit = acc                 # and assigned again outside it
+        out[i] = hit
+
+
+@tack.kernel
+def _assigned_in_a_loop_read_after(x, out):
+    for i in range(x.shape[0]):
+        for j in range(1, x[i]):
+            last = j              # first assigned inside the loop body
+        out[i] = last             # read after it: legal Python, was undeclared C
+
+
+@tack.kernel
 def _float_math(a, out):
     for i in range(a.shape[0]):
         out[i] = sqrt(abs(a[i])) + exp(a[i]) + floor(a[i]) + ceil(a[i])
@@ -253,6 +280,33 @@ def test_pre_fix_rebound_loop_variable_is_rejected(clang, tmp_path, kernel):
     src = _PreRebindingFixOpenCLCodeGen(function).generate()
     code, err = _compile(clang, src, tmp_path)
     assert code != 0, f"Clang accepted an undeclared rebound loop variable:\n{src}"
+    assert "undeclared identifier" in err, err
+
+
+# ── Locals declared where they were first assigned, inside a block ────
+
+@pytest.mark.parametrize("kernel", [_assigned_in_a_branch_inside_a_loop,
+                                    _assigned_in_a_loop_read_after],
+                         ids=["branch_in_while", "loop_then_read"])
+def test_block_scoped_first_assignment_compiles(clang, tmp_path, kernel):
+    """A local's declaration must not depend on where it is first assigned.
+
+    Declaring at the first assignment put the declaration inside the loop
+    or branch holding it, and a later use at the kernel's level was an
+    undeclared identifier. Locals are declared once at kernel scope now."""
+    src = _source(kernel, _field(dtype=tack.i32), _field(dtype=tack.i32))
+    _assert_compiles(clang, src, tmp_path)
+
+
+@pytest.mark.parametrize("kernel", [_assigned_in_a_branch_inside_a_loop,
+                                    _assigned_in_a_loop_read_after],
+                         ids=["branch_in_while", "loop_then_read"])
+def test_pre_fix_block_scoped_first_assignment_is_rejected(clang, tmp_path, kernel):
+    tack.init(arch=tack.cpu)
+    function, _ = _prepare_ir(kernel, (_field(dtype=tack.i32), _field(dtype=tack.i32)))
+    src = _PreRebindingFixOpenCLCodeGen(function).generate()
+    code, err = _compile(clang, src, tmp_path)
+    assert code != 0, f"Clang accepted a block-scoped local used outside its block:\n{src}"
     assert "undeclared identifier" in err, err
 
 
