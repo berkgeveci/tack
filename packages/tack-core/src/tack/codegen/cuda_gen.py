@@ -21,6 +21,7 @@ from tack.codegen.integer_ops import IntegerCodeGen
 from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
 from tack.lang.atomic_support import check_atomic_support
+from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
 
@@ -167,6 +168,7 @@ class CUDACodeGen:
         self._emit(f'extern "C" __global__ void {safe_name}({sig}) {{')
         self._indent += 1
 
+        self._declare_locals_at_kernel_scope(func.body)
         self._emit_body(func.body)
 
         self._indent -= 1
@@ -291,6 +293,29 @@ class CUDACodeGen:
             self._emit(f"{self._expr(node)};")
         else:
             raise NotImplementedError(f"CUDA codegen: cannot emit {type(node).__name__}")
+
+    def _declare_locals_at_kernel_scope(self, body):
+        """Declare every typed local once, at kernel scope.
+
+        The type annotator settles one type per local, so one declaration
+        serves every assignment. Declaring at the first assignment instead
+        put the declaration in whatever C block that assignment sat in --
+        a loop body, or a hoist in front of an `if` inside a loop -- and a
+        later assignment or read outside that block was an undeclared
+        identifier. Loop variables keep their for-header declarations;
+        they shadow a kernel-scope local of the same name, which is the
+        intended scoping.
+        """
+        for node in walk_ir(body):
+            if not isinstance(node, ir.IRAssign) or node.target in self._declared_vars:
+                continue
+            resolved = getattr(node, '_resolved_type', None)
+            if resolved is None:
+                continue  # untyped (a field alias): declared where it is assigned
+            c_type = self._resolved_type_to_c(resolved)
+            self._emit(f"{c_type} {node.target};")
+            self._local_vars[node.target] = c_type
+            self._declared_vars.add(node.target)
 
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         """Emit the parallel for-loop as CUDA thread index calculation."""

@@ -114,6 +114,7 @@ class OpenCLCodeGen(CUDACodeGen):
                        "| CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;")
 
         hoist_at = len(self._lines)
+        self._declare_locals_at_kernel_scope(func.body)
         self._emit_body(func.body)
         self._lines[hoist_at:hoist_at] = [
             "    " + decl for decl in self._hoisted_locals.values()
