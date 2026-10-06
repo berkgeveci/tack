@@ -9,6 +9,7 @@ survive being run in pieces.
 """
 
 import os
+import time
 
 import numpy as np
 import pytest
@@ -1010,15 +1011,97 @@ def test_a_sample_after_a_fan_out_cannot_raise_the_estimate(cpu, monkeypatch):
     n = 4096
     compiled, args = _measured(backend, _scale, n)
     prefix = compiled.bind(args)
-    settled = compiled.ns_per_elem
 
     backend._parallel_execute(compiled, prefix, 0, n)
+    # The estimate as the fan-out left it. The fan-out is a real one and
+    # may move the estimate itself, through the floor its workers' spans
+    # set; this test is about the serial sample that follows. Comparing
+    # against the value from before the fan-out blamed the sample for a
+    # worker the scheduler had stalled.
+    settled = compiled.ns_per_elem
     _fixed_timing(monkeypatch, compiled, settled * n * 3)
     backend._run_serial(compiled, prefix, 0, n)
 
     assert compiled.ns_per_elem <= settled, (
         f"a sample taken after a fan-out raised the estimate "
         f"{settled:.3f} -> {compiled.ns_per_elem:.3f} ns/elem")
+
+
+def _stall_one_worker(compiled, seconds):
+    """Make the first chunk to start sleep, as a descheduled worker would."""
+    real = compiled.call_range
+    stalled = []
+
+    def call_range(*args, **kwargs):
+        if not stalled:
+            stalled.append(True)
+            time.sleep(seconds)
+        return real(*args, **kwargs)
+
+    compiled.call_range = call_range
+
+
+def test_the_worker_median_is_the_lower_one_for_an_even_count():
+    """Of two workers, the faster: the upper median of two is the max."""
+    assert cpu_mod._worker_median([3.0]) == 3.0
+    assert cpu_mod._worker_median([1.0, 900.0]) == 1.0
+    assert cpu_mod._worker_median([1.0, 2.0, 900.0]) == 2.0
+    assert cpu_mod._worker_median([1.0, 2.0, 3.0, 900.0]) == 2.0
+    assert cpu_mod._worker_median([1.0, 2.0, 800.0, 900.0]) == 2.0
+
+
+@pytest.mark.parametrize("threads", [2, 3, 4, 8])
+def test_one_stalled_worker_does_not_set_the_serial_floor(cpu, threads):
+    """One worker taken off its core must not stand for the kernel.
+
+    The spans' median guards the floor, and for two workers the upper
+    median is the slower one. With two threads, a 2 ms stall of one worker
+    raised the serial estimate of this 0.3 ns/element kernel 1900 times,
+    and its threshold with it, on a fan-out alone. That is a busy
+    two-core machine's ordinary condition, and it is how a test that only
+    ran a fan-out came to fail on CI runners.
+
+    The span that qualifies as a bound is a few microseconds for this
+    kernel, which a second worker reaches on its own once in some hundreds
+    of fan-outs; then two are slow and the floor is rightly set. So the
+    per-call cost is raised until that span is half a millisecond, and
+    the stalled worker sleeps ten times as long: only it can cross."""
+    backend = CPUBackend(num_threads=threads)
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    prefix = compiled.bind(args)
+    settled = compiled.ns_per_elem
+    compiled.call_overhead_ns = 500_000.0 / (cpu_mod._RP_BOUND_SPAN_RATIO * threads)
+    _stall_one_worker(compiled, 0.005)
+
+    backend._parallel_execute(compiled, prefix, 0, n)
+
+    assert compiled.serial_floor_ns == 0.0, (
+        f"one stalled worker of {threads} set a floor of "
+        f"{compiled.serial_floor_ns:.1f} ns/elem")
+    assert compiled.ns_per_elem == pytest.approx(settled), (
+        f"one stalled worker of {threads} moved the estimate "
+        f"{settled:.3f} -> {compiled.ns_per_elem:.3f} ns/elem")
+
+
+def test_two_slow_workers_still_set_the_serial_floor(cpu):
+    """The lower median still believes a kernel that is slow on every
+    worker: with both of two workers taking long, the floor is set."""
+    backend = CPUBackend(num_threads=2)
+    n = 4096
+    compiled, args = _measured(backend, _scale, n)
+    prefix = compiled.bind(args)
+    real = compiled.call_range
+
+    def slow(*call_args, **kwargs):
+        time.sleep(0.002)
+        return real(*call_args, **kwargs)
+
+    compiled.call_range = slow
+    backend._parallel_execute(compiled, prefix, 0, n)
+
+    assert compiled.serial_floor_ns > 0.0
+    assert compiled.ns_per_elem >= compiled.serial_floor_ns
 
 
 def test_the_first_clean_sample_is_believed(cpu, monkeypatch):

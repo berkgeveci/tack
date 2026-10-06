@@ -144,6 +144,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- CPU threading on two-thread machines: one worker the scheduler took
+  off its core could make a cheap kernel look expensive. The fan-out's
+  per-worker median picked the slower of two workers, so a single stalled
+  worker set a floor under the serial cost estimate and raised the
+  kernel's threading threshold with it, until a later recheck corrected
+  it. The median over an even number of workers is now the lower middle
+  value. Machines with three or more threads were not affected.
 - A field of zero elements can be allocated on Metal and CUDA, as it
   already could on CPU and Level Zero. A filter that selects nothing now
   returns an empty field instead of failing to allocate it.
