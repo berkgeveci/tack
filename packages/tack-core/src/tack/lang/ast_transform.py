@@ -12,6 +12,7 @@ import ast
 import copy
 
 from tack.lang import ir
+from tack.lang.constant import constant_ir
 from tack.lang.ir_names import fresh_name
 from tack.lang.ir_traversal import walk_ir
 from tack.lang.source_validation import UnsupportedSyntaxError, validate_source
@@ -210,8 +211,9 @@ class KernelTransformer(ast.NodeVisitor):
             raise NameError(
                 f"{where}: name '{name}'{at} is not a parameter and is never "
                 f"assigned. Kernels do not capture Python variables from the "
-                f"enclosing scope: pass the value as an argument, or make it "
-                f"a class-level constant of a @tack.data_oriented template.")
+                f"enclosing scope: define it as {name} = tack.constant(...), "
+                f"pass the value as an argument, or make it a class-level "
+                f"constant of a @tack.data_oriented template.")
 
     def _check_loop_variables_stay_in_their_loops(self, function: ir.IRFunction):
         """Reject a read of a loop variable after its loop.
@@ -972,6 +974,14 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRDimSize(field_name=value.value.id, dim=index.value)
 
     def visit_Attribute(self, node: ast.Attribute) -> ir.IRAttribute:
+        # module.NAME bound to a tack.constant reads as its value
+        named = constant_ir(self._call_bindings.resolve(node))
+        if named is not None:
+            return named
+        # math.pi, math.e and math.tau are literals too
+        value = self._call_bindings.math_constant(node)
+        if value is not None:
+            return ir.IRConstant(value)
         obj = self.visit(node.value)
         if isinstance(obj, list):
             # v.x on a vector variable or a vector-valued expression
@@ -1004,6 +1014,13 @@ class KernelTransformer(ast.NodeVisitor):
         return ast.copy_location(ast.Subscript(value=vector, slice=index, ctx=target.ctx), target)
 
     def visit_Name(self, node: ast.Name) -> ir.IRNode:
+        # A name the function does not bind, bound to a tack.constant in the
+        # scope that defines it, reads as that value. Locals and parameters
+        # resolve as themselves, so they shadow a constant of the same name.
+        if isinstance(node.ctx, ast.Load):
+            named = constant_ir(self._call_bindings.resolve(node))
+            if named is not None:
+                return named
         source = None
         if hasattr(node, 'lineno'):
             source = (node.lineno, node.col_offset + 1,

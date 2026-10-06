@@ -284,6 +284,14 @@ arguments. See the vector tests in `test_new_features.py`.
 
 Functions decorated with `@tack.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.
 
+`tack.constant(value, dtype=None)` (`lang/constant.py`) returns an `int` or
+`float` subclass. `visit_Name`/`visit_Attribute` resolve a name the
+function does not bind through the same `CallBindings`; one bound to a
+constant lowers to an `IRConstant`, under an `IRCast` when typed, so it is
+baked into the cached IR like a literal and needs no variant-key entry.
+Nothing else is captured: other names still raise `NameError`.
+`math.pi`/`e`/`tau` lower the same way. See `test_constant.py`.
+
 Device calls resolve by object identity from the defining callable's globals
 and closure bindings (`call_bindings.py`), including aliases and module-qualified
 calls. Arguments use caller bindings; nested bodies use callee bindings.

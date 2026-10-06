@@ -7,6 +7,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tack.constant(value, dtype=None)`: a named constant that kernels and
+  device functions may read from the scope that defines them.
+  `DT = tack.constant(0.01)` at module level lets a kernel write `DT`; it
+  reads as the literal, and stays an ordinary Python number for host
+  code. Kernels still capture nothing else: a plain module-level value
+  raises `NameError` as before, and the message now names
+  `tack.constant`. With a dtype the constant is typed, so
+  `tack.constant(747796405, tack.u32)` multiplies in wrapping u32
+  arithmetic (a plain literal there promotes to i64) and
+  `tack.constant(0.1, tack.f64)` is the exact double. `math.pi`, `math.e`
+  and `math.tau` can be written in kernels.
 - `tack.algorithms.argsort`, `sort_by_key`, `gather`, `unique` and
   `reduce_by_key`: a stable radix sort for `i32`/`u32`/`i64`/`u64` keys
   and segmented reductions over runs of equal keys, built from ordinary

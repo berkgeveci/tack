@@ -773,6 +773,12 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
         if arg is not None:
             return int(arg)
 
+    # A typed tack.constant: an integer literal under a cast to its type.
+    # The constant was checked to fit that type, so the cast changes nothing.
+    if (isinstance(node, ir.IRCast) and isinstance(node.value, ir.IRConstant)
+            and isinstance(node.value.value, int)):
+        return node.value.value
+
     raise RuntimeError(f"Cannot resolve loop range expression: {type(node).__name__}")
 
 
