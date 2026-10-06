@@ -20,6 +20,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   a message pointing at `from_numpy`, `fill` and `to_numpy`. On CPU and
   Metal the read is a slice of unified memory; on CUDA, HIP and Level
   Zero it is a copy of the whole field for now.
+- `tack.random`: random numbers in kernels from a counter-based generator
+  with explicit state. `seed(index, stream)`, then `u, state =
+  uniform(state)`, `normal`, `direction2`, `direction3`; NumPy mirrors
+  (`np_uniform`, ...) draw exactly the same values, and `uniform` and the
+  states are bit-identical on every backend. The example ports' `rng`
+  module, adopted.
 - A kernel can be a method of a `@tack.data_oriented` class:
   `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
   object is a template like any other argument. It failed with "expects 1

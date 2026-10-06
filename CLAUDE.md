@@ -334,6 +334,11 @@ of per-component constants; `visit_Subscript` selects its components.
 `tack.math` (`src/tack/math.py`) is plain `@tack.func` definitions with
 GLSL semantics. See `test_constant.py`, `test_math_helpers.py`.
 
+`tack.random` (`src/tack/random.py`) is PCG RXS-M-XS over an LCG in u32
+with explicit state; draws return `(value, next_state)` and have `np_`
+mirrors. Keep `uniform` as the top 24 bits times 2^-24 so it stays
+bit-exact everywhere.
+
 Device calls resolve by object identity from the defining callable's globals
 and closure bindings (`call_bindings.py`), including aliases and module-qualified
 calls. Arguments use caller bindings; nested bodies use callee bindings.

@@ -213,7 +213,10 @@ def step(x, v):
 makes a vector constant (`SUN = tack.constant((0.5, 0.5, 0.0))`), a tuple
 of tuples a matrix. `tack.math` adds `fract`, `mix`, `clamp`, `saturate`,
 `smoothstep`, `length`, `distance` and `normalize` as device functions
-that work on scalars and vectors alike.
+that work on scalars and vectors alike. `tack.random`
+draws uniform, normal and unit-vector values from an explicit `u32`
+state (`state = random.seed(i, frame)`, `u, state = random.uniform(state)`),
+reproducible on every backend and in NumPy.
 
 ### Math Builtins
 

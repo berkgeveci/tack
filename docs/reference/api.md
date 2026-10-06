@@ -94,6 +94,10 @@ whichever backend was active when it was allocated.
 
 ::: tack.math
 
+## Random numbers
+
+::: tack.random
+
 ::: tack.lang.field.Matrix
 
 ::: tack.lang.source_validation.UnsupportedSyntaxError

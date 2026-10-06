@@ -683,7 +683,17 @@ appropriate external `tanf`/`tan`, `asinf`/`asin`, `acosf`/`acos`,
 convert to their annotated type, avoiding ambiguous OpenCL overloads for
 integer and mixed arguments. No performance improvement is claimed.
 
-### Vectors and matrices
+### Random numbers
+
+**Required:** `tack.random.seed(index, stream)` is a pure function of its
+two integers, `advance` of its state, and `uniform` of its state, in
+wrapping u32 arithmetic with the result's top 24 bits scaled by 2^-24:
+their values are identical on every backend and equal to the module's
+NumPy mirrors. `normal`, `direction2` and `direction3` apply `log`,
+`sqrt`, `cos` and `sin` to such values and inherit those functions'
+rounding. No hidden state exists; two kernels that seed alike draw alike.
+
+## Vectors and matrices
 
 **Required:** a vector (`tack.Vector([...])`, the same list of scalars
 written alone, an element of a `tack.Vector.field`) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
