@@ -1200,3 +1200,42 @@ def test_misused_results_and_reductions_are_rejected(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
         define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
+# --- Tuple assignment assigns its targets from left to right ---
+
+@tack.func
+def _doubled_and_next(x):
+    return x * 2.0, int(x) + 1
+
+
+@tack.kernel
+def tuple_targets_in_order(a, b, c, d, t, n):
+    for k in range(n):
+        i = k
+        a[i], i = 7.0, t[k] + 1          # stores at the old i, then rebinds it
+        a[i] += 100.0
+        j = k
+        b[j], j = _doubled_and_next(float(t[k]))
+        m = k
+        m, c[m] = t[k] + 1, 7.0          # rebinds first, so stores at the new m
+        d[k], y = tack.Vector([d[k] + 1.0, d[k]])
+        d[k + 4] = y                     # the value read before the store to d[k]
+
+
+def test_tuple_assignment_targets_are_assigned_left_to_right(backend):
+    """`a[i], i = x, j` stores with the old `i`; `i, a[i] = j, x` with the
+    new one. Subscript targets used to be stored after every name had
+    been rebound, whatever their position."""
+    n = 2
+    a, b, c, d = (tack.field(dtype=tack.f32, shape=(8,)) for _ in range(4))
+    for f in (a, b, c):
+        f.fill(0.0)
+    d.from_numpy(np.array([10, 20, 0, 0, 0, 0, 0, 0], np.float32))
+    t = tack.field(dtype=tack.i32, shape=(n,))
+    t.from_numpy(np.array([3, 5], np.int32))
+    tuple_targets_in_order(a, b, c, d, t, n)
+    np.testing.assert_array_equal(a.to_numpy(), [7, 7, 0, 0, 100, 0, 100, 0])
+    np.testing.assert_array_equal(b.to_numpy(), [6, 10, 0, 0, 0, 0, 0, 0])
+    np.testing.assert_array_equal(c.to_numpy(), [0, 0, 0, 0, 7, 0, 7, 0])
+    np.testing.assert_array_equal(d.to_numpy(), [11, 21, 0, 0, 10, 20, 0, 0])

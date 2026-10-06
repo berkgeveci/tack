@@ -52,7 +52,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `x[i], v[i] = p, q` (whole vectors included), a swap such as
   `a[i], b[i] = b[i], a[i]`, and `lo[i], hi[i] = f(...)` for a device
   function that returns two values. The whole right side is evaluated
-  first. Only plain names were accepted as targets.
+  first and the targets are then assigned from left to right, so
+  `a[i], i = x, j` stores at the old `i`. Only plain names were accepted
+  as targets.
 - Atomics take an index per dimension: `tack.atomic_add(grid, (i, j), v)`,
   where a vector supplies one index per component
   (`tack.atomic_add(grid, cell, v)`). On a vector field a vector value
