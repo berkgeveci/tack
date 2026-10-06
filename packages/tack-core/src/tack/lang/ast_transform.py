@@ -531,6 +531,11 @@ class KernelTransformer(ast.NodeVisitor):
 
         visited_value = self.visit(value)
 
+        # v[c] = expr for a vector variable: assign the component
+        if (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name)
+                and target.value.id in self._vector_vars):
+            return self._store_vector_component(target, visited_value)
+
         # Check if RHS is a vector variable → propagate vector-ness
         if isinstance(visited_value, list):
             # Vector expression result (list of IR nodes)
@@ -567,6 +572,15 @@ class KernelTransformer(ast.NodeVisitor):
                 rhs = ir.IRBinOp(op=op, left=lhs, right=rhs_components[c])
                 stmts.append(ir.IRAssign(target=self._component_name(target.id, c), value=rhs))
             return stmts
+
+        # v[c] += expr for a vector variable: read the component, store it back
+        if (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name)
+                and target.value.id in self._vector_vars):
+            read = self.visit(target)
+            right, statements = self._visit_expression(node.value)
+            self._pre_stmts.extend(statements)
+            return self._store_vector_component(
+                target, ir.IRBinOp(op=op, left=read, right=right))
 
         left = self.visit(target)
         # Evaluate a subscript once, reusing its address for the store.
@@ -744,11 +758,21 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRBoolOp(op=op, values=values)
 
     def visit_Subscript(self, node: ast.Subscript) -> ir.IRNode:
-        # Check for vector component access: v[0], v[1], v[2]
+        # Vector component access: v[0], or v[k] for a runtime k
         if isinstance(node.value, ast.Name) and node.value.id in self._vector_vars:
-            if isinstance(node.slice, ast.Constant) and isinstance(node.slice.value, int):
-                comp = node.slice.value
-                return ir.IRName(self._component_name(node.value.id, comp))
+            ndim = self._vector_vars[node.value.id]
+            components = [ir.IRName(self._component_name(node.value.id, c)) for c in range(ndim)]
+            return self._vector_component(node, components)
+
+        # A component of a vector-valued expression: vf[i][c], f(x)[c]
+        if isinstance(node.value, (ast.Subscript, ast.Call)):
+            inner, statements = self._visit_expression(node.value)
+            self._pre_stmts.extend(statements)
+            if isinstance(inner, list):
+                return self._vector_component(node, inner)
+            raise self._source_error(
+                node, "subscript", "indexes a scalar value; only fields, local and "
+                "shared arrays, and vectors can be indexed")
 
         # field.shape[k] — a dimension query, not a load from a field
         dim_size = self._as_dim_size(node)
@@ -1412,6 +1436,67 @@ class KernelTransformer(ast.NodeVisitor):
         raise NotImplementedError(f"Vector method '{method_name}' not supported")
 
     # --- Helpers ---
+
+    def _vector_component(self, node: ast.Subscript, components: list):
+        """``components[index]`` as one scalar expression.
+
+        A literal index picks the component at lowering. A runtime index
+        selects through a chain of conditional expressions, so the result is
+        a scalar wherever a scalar is expected and no local array is needed;
+        an index past the last component yields the last component (Python
+        would raise, and a kernel cannot). The index is evaluated once.
+        """
+        n = len(components)
+        index = node.slice
+        if isinstance(index, ast.Constant) and isinstance(index.value, int):
+            c = index.value
+            if not -n <= c < n:
+                raise self._source_error(
+                    node, "subscript", f"component {c} of a {n}-vector is out of range")
+            return components[c % n]
+        if n == 1:
+            return components[0]
+        idx, statements = self._visit_expression(index)
+        self._pre_stmts.extend(statements)
+        if isinstance(idx, list):
+            raise self._source_error(node, "subscript", "a vector cannot index a vector")
+        idx = self._capture_value(idx, self._pre_stmts)
+        result = components[n - 1]
+        for c in range(n - 2, -1, -1):
+            result = ir.IRIfExp(
+                ir.IRCompare(op="==", left=idx, right=ir.IRConstant(c)), components[c], result)
+        return result
+
+    def _store_vector_component(self, target: ast.Subscript, value):
+        """``v[index] = value`` for a vector variable ``v``.
+
+        A literal index assigns one component. A runtime index guards an
+        assignment to each component with a comparison, so exactly the
+        selected component changes; out of range changes nothing.
+        """
+        name = target.value.id
+        n = self._vector_vars[name]
+        if isinstance(value, list):
+            raise self._source_error(
+                target, "assignment", "a component of a vector must be a scalar")
+        index = target.slice
+        if isinstance(index, ast.Constant) and isinstance(index.value, int):
+            c = index.value
+            if not -n <= c < n:
+                raise self._source_error(
+                    target, "subscript", f"component {c} of a {n}-vector is out of range")
+            return ir.IRAssign(target=self._component_name(name, c % n), value=value)
+        idx, statements = self._visit_expression(index)
+        self._pre_stmts.extend(statements)
+        if isinstance(idx, list):
+            raise self._source_error(target, "subscript", "a vector cannot index a vector")
+        idx = self._capture_value(idx, self._pre_stmts)
+        value = self._capture_value(value, self._pre_stmts)
+        return [
+            ir.IRIf(ir.IRCompare(op="==", left=idx, right=ir.IRConstant(c)),
+                    [ir.IRAssign(target=self._component_name(name, c), value=value)], [])
+            for c in range(n)
+        ]
 
     def _visit_store_location(self, target, value):
         """Evaluate an assignment RHS before side effects in its target."""

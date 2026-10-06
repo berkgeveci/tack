@@ -217,6 +217,17 @@ def normalize_vectors(v, n):
         v[i] = vec / length          # stores 3 components
 ```
 
+Components are scalars: `vec[0]` reads one, `vec[1] = x` and `vec[1] += x`
+write one, and `v[i][2]` reads a component of a field element without
+naming the vector first. The index may be a runtime value (`vec[k]` for a
+loop variable `k`), which lowers to a chain of selects rather than a
+branch; an index past the last component reads the last component and
+writes nothing, since a kernel cannot raise. A literal index out of range
+is rejected at lowering.
+
+The statistics in `tack.algorithms` (`dot`, `norm`, `var`, ...) accept a
+vector field and reduce over all its components in storage order.
+
 ## Printing (Debug)
 
 `print()` works inside kernels on CPU, CUDA, and HIP for debugging:
