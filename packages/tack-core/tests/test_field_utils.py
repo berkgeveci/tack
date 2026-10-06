@@ -362,3 +362,45 @@ def test_zero_dimensional_scalar_field(backend, dtype):
     assert f.to_numpy() == 12
     _add_offset(f, x, out, 6)
     np.testing.assert_array_equal(out.to_numpy(), np.arange(6) + 12)
+
+
+# --- Reading one element from the host ---
+
+def test_host_reads_one_element(backend):
+    """`f[i]`, `f[i, j]`, `f[None]` read an element from the host: a Python
+    number from a field of scalars, a NumPy array from a vector or matrix
+    field. Negative indices count from the end."""
+    f = tack.field(dtype=tack.f32, shape=(3, 4))
+    f.from_numpy(np.arange(12, dtype=np.float32).reshape(3, 4))
+    assert f[1, 2] == 6.0 and isinstance(f[1, 2], float)
+    assert f[-1, -1] == 11.0
+    assert f.reshape((12,))[5] == 5.0                  # a view reads through its own shape
+
+    v = tack.Vector.field(2, dtype=tack.i32, shape=(5,))
+    v.from_numpy(np.arange(10, dtype=np.int32).reshape(5, 2))
+    np.testing.assert_array_equal(v[3], [6, 7])
+    np.testing.assert_array_equal(v[-1], [8, 9])
+
+    m = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(2, 3))
+    m.from_numpy(np.arange(24, dtype=np.float32).reshape(2, 3, 2, 2))
+    np.testing.assert_array_equal(m[1, 2], [[20, 21], [22, 23]])
+
+    z = tack.field(dtype=tack.i32, shape=())
+    z.fill(9)
+    assert z[None] == 9 and isinstance(z[None], int)
+
+
+def test_host_reads_are_checked_and_writes_refused(backend):
+    f = tack.field(dtype=tack.f32, shape=(3, 4))
+    with pytest.raises(TypeError, match="takes 2 integer indices"):
+        f[1]
+    with pytest.raises(TypeError, match="takes 2 integer indices"):
+        f[0:2, 0]
+    with pytest.raises(IndexError, match="out of range"):
+        f[0, 4]
+    with pytest.raises(TypeError, match="zero-dimensional"):
+        f[None]
+    with pytest.raises(TypeError, match="not written by element"):
+        f[0, 0] = 1.0
+    with pytest.raises(TypeError, match="not iterated"):
+        list(f)

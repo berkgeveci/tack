@@ -38,6 +38,15 @@ class DeviceBuffer:
     def to_numpy(self) -> np.ndarray:
         raise NotImplementedError
 
+    def read_range(self, start: int, count: int) -> np.ndarray:
+        """Elements ``[start, start + count)`` of the flat storage, as a copy.
+
+        Serves ``field[i]`` on the host. Buffers with a host-visible view
+        slice it; the others copy the whole buffer, which is correct and
+        slow, so reading many elements goes through ``to_numpy()``.
+        """
+        return self.to_numpy().reshape(-1)[start:start + count].copy()
+
     def fill(self, value):
         raise NotImplementedError
 
@@ -66,6 +75,9 @@ class NumpyBuffer(DeviceBuffer):
 
     def to_numpy(self) -> np.ndarray:
         return self._data.copy()
+
+    def read_range(self, start: int, count: int) -> np.ndarray:
+        return self._data.reshape(-1)[start:start + count].copy()
 
     def fill(self, value):
         self._data.fill(value)
@@ -281,6 +293,53 @@ class Field:
     def __len__(self) -> int:
         """Number of elements along the first dimension."""
         return self.shape[0] if self.shape else 0
+
+    def __getitem__(self, index):
+        """Read one element from the host: ``f[i]``, ``f[i, j]``, ``f[None]``.
+
+        A field of scalars gives a Python number; a vector or matrix field
+        gives a NumPy array of the element. Negative indices count from
+        the end, as in Python. This is for inspection and for host-side
+        decisions: on backends without host-visible memory each read is a
+        transfer (and, for now, a copy of the whole field), so many
+        elements are read with ``to_numpy()``. Fields are not written this
+        way; see ``from_numpy`` and ``fill``.
+        """
+        shape = tuple(getattr(self, '_logical_shape', None) or self.shape)
+        if index is None:
+            if shape != ():
+                raise TypeError(
+                    f"field[None] reads a zero-dimensional field; this one has shape {shape}")
+            indices = ()
+        else:
+            indices = index if isinstance(index, tuple) else (index,)
+            if len(indices) != len(shape) or not all(
+                    isinstance(i, (int, np.integer)) and not isinstance(i, bool) for i in indices):
+                plural = "one integer index" if len(shape) == 1 else f"{len(shape)} integer indices"
+                raise TypeError(
+                    f"a field of shape {shape} takes {plural} on the host, not {index!r}; "
+                    f"to read many elements use to_numpy()")
+        flat = 0
+        for i, extent in zip(indices, shape, strict=True):
+            i = int(i)
+            if not -extent <= i < extent:
+                raise IndexError(f"index {index!r} is out of range for a field of shape {shape}")
+            flat = flat * extent + (i + extent if i < 0 else i)
+        vector_shape = self._vector_shape()
+        if vector_shape is None:
+            return self._buffer.read_range(flat, 1)[0].item()
+        element_shape = vector_shape[len(shape):]
+        count = int(np.prod(element_shape))
+        return self._buffer.read_range(flat * count, count).reshape(element_shape)
+
+    def __setitem__(self, index, value):
+        raise TypeError(
+            "fields are not written by element from the host; build the values in a NumPy "
+            "array and call from_numpy(), use fill(), or write them in a kernel")
+
+    def __iter__(self):
+        raise TypeError(
+            "a field is not iterated by element from the host; iterate over to_numpy()")
 
     def copy(self) -> 'Field':
         """Return a new field with a copy of this field's data (GPU kernel, no host roundtrip)."""

@@ -12,7 +12,7 @@ import ast
 import copy
 
 from tack.lang import ir
-from tack.lang.constant import constant_ir
+from tack.lang.constant import constant_components, constant_ir
 from tack.lang.ir_names import fresh_name
 from tack.lang.ir_traversal import LIST_ROLES, child_fields, walk_ir
 from tack.lang.source_validation import UnsupportedSyntaxError, validate_source
@@ -1104,6 +1104,11 @@ class KernelTransformer(ast.NodeVisitor):
         # Vector component access: v[0], or v[k] for a runtime k
         if isinstance(node.value, ast.Name) and node.value.id in self._vector_vars:
             return self._vector_component(node, self._variable_value(node.value.id))
+        # A component of a vector or matrix constant: SUN[2], ROT[1, 0]
+        if isinstance(node.value, (ast.Name, ast.Attribute)):
+            named = self._named_constant(node.value)      # None for a local or a field
+            if isinstance(named, VectorValue):
+                return self._vector_component(node, named)
 
         # A component of a vector-valued expression: vf[i][c], f(x)[c], (a @ b)[0, 1]
         if isinstance(node.value, (ast.Subscript, ast.Call, ast.BinOp)):
@@ -1165,7 +1170,7 @@ class KernelTransformer(ast.NodeVisitor):
 
     def visit_Attribute(self, node: ast.Attribute) -> ir.IRAttribute:
         # module.NAME bound to a tack.constant reads as its value
-        named = constant_ir(self._call_bindings.resolve(node))
+        named = self._named_constant(node)
         if named is not None:
             return named
         # math.pi, math.e and math.tau are literals too
@@ -1213,12 +1218,29 @@ class KernelTransformer(ast.NodeVisitor):
         index = ast.copy_location(ast.Constant(self._named_component(target, n)), target)
         return ast.copy_location(ast.Subscript(value=vector, slice=index, ctx=target.ctx), target)
 
+    def _named_constant(self, node):
+        """The value of a name bound to a tack.constant: a scalar's IR, or a
+        vector or matrix constant's components as a VectorValue."""
+        bound = self._call_bindings.resolve(node)
+        scalar = constant_ir(bound)
+        if scalar is not None:
+            return scalar
+        components = constant_components(bound)
+        if components is None:
+            return None
+        values, shape = components
+        if len(shape) == 2 and max(shape) > MAX_MATRIX_EXTENT:
+            raise self._source_error(
+                node, "constant", f"is a {shape[0]}x{shape[1]} matrix, larger than "
+                f"{MAX_MATRIX_EXTENT}x{MAX_MATRIX_EXTENT}")
+        return VectorValue(values, shape)
+
     def visit_Name(self, node: ast.Name) -> ir.IRNode:
         # A name the function does not bind, bound to a tack.constant in the
         # scope that defines it, reads as that value. Locals and parameters
         # resolve as themselves, so they shadow a constant of the same name.
         if isinstance(node.ctx, ast.Load):
-            named = constant_ir(self._call_bindings.resolve(node))
+            named = self._named_constant(node)
             if named is not None:
                 return named
         source = None

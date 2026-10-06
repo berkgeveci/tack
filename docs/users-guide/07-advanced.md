@@ -76,6 +76,37 @@ def cell_average(cs: tack.template(), data, out, n_cells):
 The inliner aliases the local array name directly — no copy, no pointer
 assignment. The `@tack.func` body accesses the caller's array in place.
 
+## Random Numbers
+
+`tack.random` draws random numbers in kernels from a counter-based
+generator with explicit state: a kernel seeds a state from the element it
+works on and a stream number, and every draw returns the value and the
+next state.
+
+```python
+from tack import random
+
+@tack.kernel
+def init_particles(pos, vel, n, frame):
+    for i in range(n):
+        state = random.seed(i, frame)          # element i of this frame
+        u, state = random.uniform(state)       # f32 in [0, 1)
+        z, state = random.normal(state)        # standard normal
+        d, state = random.direction3(state)    # a unit 3-vector; direction2 for 2-D
+        pos[i] = d * (0.4 + 0.6 * u)
+        vel[i] = d * z
+```
+
+The sequence is a pure function of the integers it was seeded with, so a
+kernel draws the same numbers on every backend and for any thread order,
+and a reference written with the module's NumPy mirrors (`np_seed`,
+`np_uniform`, `np_normal`, ...) over an array of indices draws exactly
+the same ones; `uniform` and the states match to the bit, `normal` and
+the directions to the rounding of `log`, `sqrt`, `cos` and `sin`. Unlike
+Taichi's `ti.random()`, there is no hidden per-thread state: a different
+stream number (a frame counter, a pass, a purpose) gives a different
+sequence, and reusing one repeats it.
+
 ## Atomic Operations
 
 Atomic operations are safe for concurrent writes from multiple threads:
