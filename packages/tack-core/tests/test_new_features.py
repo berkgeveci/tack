@@ -1292,3 +1292,62 @@ def test_vector_field_takes_and_returns_one_row_per_vector(backend):
     scalar = tack.field(dtype=tack.f32, shape=(4,))
     scalar.fill(1.0)
     assert scalar.to_numpy(vectors=True).shape == (4,)
+
+
+# --- What a subscript of a vector field accepts ---
+
+@tack.kernel
+def vec_field_scalar_store(a, n):
+    for i in range(n):
+        a[i] = float(i) + 0.5
+
+
+def test_scalar_stored_to_a_vector_field_element_sets_every_component(backend):
+    """`vf[i] = s` names element i, as a load of `vf[i]` does. It used to
+    write the single component at flat index i."""
+    n = 4
+    a = _vec3_field(_VEC_M)
+    vec_field_scalar_store(a, n)
+    want = np.repeat(np.arange(n, dtype=np.float32) + 0.5, 3).reshape(n, 3)
+    np.testing.assert_array_equal(a.to_numpy(vectors=True), want)
+
+
+def _vector_into_scalar_storage():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = vf[i]
+    return bad
+
+
+def _vector_into_another_width():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            vf[i] = tack.Vector([1.0, 2.0])
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_vector_into_scalar_storage, "stores a 3-vector into an element of scalar storage"),
+    (_vector_into_another_width, "stores a 2-vector into a field of 3-vectors"),
+])
+def test_vector_stores_must_match_their_field(define, message):
+    """Both used to write components at offsets computed from the value's
+    width, into whatever was there."""
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
+def test_vector_field_element_index_is_64_bit():
+    """The element index is scaled by the width in i64: an i32 product
+    wraps for a field of more than 2**31 components."""
+    @tack.kernel
+    def load(vf, out, where):
+        for i in range(1):
+            out[i] = vf[where][1]
+    vf = tack.Vector.field(2, dtype=tack.i8, shape=(4,))
+    out = tack.field(dtype=tack.i8, shape=(1,))
+    text = tack.inspect(load, vf, out, 3, mode="ir")
+    assert "Cast(where, i64)" in text and "i32" not in text

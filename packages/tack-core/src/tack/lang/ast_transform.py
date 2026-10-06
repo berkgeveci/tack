@@ -672,6 +672,13 @@ class KernelTransformer(ast.NodeVisitor):
 
         # field[i] = expr  →  IRFieldStore
         if isinstance(target, ast.Subscript):
+            if isinstance(target.value, ast.Name) and target.value.id in self._vector_fields:
+                # A scalar sets every component of the element, as it does
+                # in vf[i] *= 2.0; the subscript names an element here just
+                # as it does in a load.
+                value = self._capture_value(visited_value, self._pre_stmts)
+                width = self._vector_fields[target.value.id]
+                return self._store_vector_field(target, [value] * width)
             field, index, visited_value = self._visit_store_location(target, visited_value)
             return ir.IRFieldStore(field=field, index=index, value=visited_value)
 
@@ -970,7 +977,7 @@ class KernelTransformer(ast.NodeVisitor):
             # Cast index to int before computing component offsets so that
             # a float index like 127.7 maps to element 127, not a fractional
             # position that shifts the component access.
-            int_index = ir.IRCast(value=index, dtype=i32)
+            int_index = self._element_index(index)
             return [ir.IRFieldLoad(field=field_ir, index=self._component_index(int_index, ndim, c))
                     for c in range(ndim)]
 
@@ -1251,7 +1258,7 @@ class KernelTransformer(ast.NodeVisitor):
                 node, f"{func_name}()", f"gives a {len(value)}-vector to a field of {ndim}-vectors")
         # One atomic per component. They are statements, so they go where an
         # inlined call's statements go, and the expression has no value.
-        element = ir.IRCast(value=self._capture_value(index, self._pre_stmts), dtype=i32)
+        element = self._element_index(self._capture_value(index, self._pre_stmts))
         value = self._settle_components(value, self._pre_stmts)
         for c, component in enumerate(value):
             self._pre_stmts.append(ir.IRAtomicOp(
@@ -1654,20 +1661,40 @@ class KernelTransformer(ast.NodeVisitor):
 
     def _store_vector_field(self, target: ast.Subscript, components: list) -> list:
         """Store a vector into a vector field: field[i] = vec."""
-        field_node, index_node, components = self._visit_store_location(target, components)
         ndim = len(components)
+        name = target.value.id if isinstance(target.value, ast.Name) else None
+        width = self._vector_fields.get(name)
+        if width is None:
+            raise self._source_error(
+                target, "assignment", f"stores a {ndim}-vector into an element of "
+                f"scalar storage; '{name}' is not a vector field")
+        if width != ndim:
+            raise self._source_error(
+                target, "assignment", f"stores a {ndim}-vector into a field of {width}-vectors")
+        field_node, index_node, components = self._visit_store_location(target, components)
         stmts = []
         # Each component store repeats the index, so one that loads from a
         # field is read before the first store can change it.
         if any(isinstance(n, ir.IRFieldLoad) for n in walk_ir(index_node)):
             index_node = self._capture_value(index_node, stmts)
-        int_index = ir.IRCast(value=index_node, dtype=i32)
+        int_index = self._element_index(index_node)
         components = self._settle_components(components, stmts)
         for c in range(ndim):
             stmts.append(ir.IRFieldStore(
                 field=field_node, index=self._component_index(int_index, ndim, c),
                 value=components[c]))
         return stmts
+
+    @staticmethod
+    def _element_index(index):
+        """A vector field element's index as an integer.
+
+        The cast makes a float index name an element (127.7 is element
+        127) before it is scaled by the width. It is 64-bit: a narrower
+        one would wrap the index, or its product with the width, for a
+        field of more than 2**31 components.
+        """
+        return ir.IRCast(value=index, dtype=i64)
 
     def _component_index(self, element, ndim: int, c: int):
         """Where component ``c`` of element ``element`` is stored: element * ndim + c."""
@@ -1706,7 +1733,7 @@ class KernelTransformer(ast.NodeVisitor):
         ndim = self._vector_fields[node.value.id]
         index = self._capture_value(self._visit_subscript_index(node), self._pre_stmts)
         field = self.visit(node.value)
-        element = ir.IRCast(value=index, dtype=i32)
+        element = self._element_index(index)
         return field, [self._component_index(element, ndim, c) for c in range(ndim)]
 
     def _component_stores(self, field, indices: list, selector, value):

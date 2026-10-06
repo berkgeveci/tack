@@ -95,8 +95,19 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   only read their own component (`v = v * 2.0`, `a[i] = a[i] + b[i]`)
   computed the right result before and still do.
 
+- A scalar stored to a vector field element sets every component:
+  `vf[i] = 0.0` names element `i`, as a load of `vf[i]` does, and as
+  `vf[i] *= 2.0` does. It wrote the single component at flat index `i`.
+- A vector field's element index is computed in 64 bits. It was narrowed
+  to i32 before being scaled by the vector width, so a field of more than
+  2^31 components was indexed wrongly.
+
 ### Code that is now rejected
 
+- A vector stored where it does not fit: `s[i] = vec` into a field of
+  scalars or a local array, and `vf[i] = vec` into a field of vectors of
+  another width. Both wrote components at offsets computed from the
+  value's width, over whatever was there.
 - Reading a `for` loop's variable after its loop, before the name is
   assigned again, raises `NameError` at lowering with the read's position,
   on every backend. CPU raised a `NameError` from codegen and the GPU
