@@ -51,31 +51,29 @@ def _copy_prop_body(body: list, assign_counts: dict[str, int] | None = None) -> 
     if assign_counts is None:
         assign_counts = _count_assignments(body)
 
-    # Collect simple copies: x = y where x is assigned exactly once
-    # AND y is never assigned in the kernel (normally a parameter).
-    # This avoids breaking tuple swaps or following a modified source.
-    copies = {}  # target -> source name
+    # A simple copy is x = y where x is assigned exactly once and y is
+    # never assigned in the kernel (normally a parameter). That avoids
+    # breaking tuple swaps or following a modified source.
+    #
+    # A copy only describes uses after its assignment. Precomputing the
+    # replacement map for the whole block changes earlier reads of a
+    # parameter that is later reassigned (or a loop-carried local).
+    #
+    # Each statement is tested after the copies before it are applied, so
+    # a chain resolves to its root in one walk: with a = p, the later
+    # b = a reads b = p and is itself a copy of p. Nested device functions
+    # pass a field down as exactly such a chain, and a link left behind is
+    # a local holding a field, which no backend can compile.
+    resolved = {}
+    result = []
     for stmt in body:
+        stmt = _replace_names(stmt, resolved)
+        result.append(stmt)
         if (isinstance(stmt, ir.IRAssign) and
                 isinstance(stmt.value, ir.IRName) and
                 assign_counts.get(stmt.target, 0) == 1 and
                 assign_counts.get(stmt.value.name, 0) == 0):
-            copies[stmt.target] = stmt.value.name
-
-    if not copies:
-        # Still recurse into sub-blocks
-        return _copy_prop_recurse(body, assign_counts)
-
-    # A copy only describes uses after its assignment. Precomputing the
-    # replacement map for the whole block changes earlier reads of a
-    # parameter that is later reassigned (or a loop-carried local).
-    resolved = {}
-    result = []
-    for stmt in body:
-        result.append(_replace_names(stmt, resolved))
-        if isinstance(stmt, ir.IRAssign) and stmt.target in copies:
-            source = copies[stmt.target]
-            resolved[stmt.target] = resolved.get(source, source)
+            resolved[stmt.target] = stmt.value.name
 
     return _copy_prop_recurse(result, assign_counts)
 

@@ -64,6 +64,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   identifier; CPU accepted it. The C-family generators now treat the loop
   header's declaration as ending with its block, so the later assignment
   declares a new local, as on CPU.
+- A field can be passed down through any number of nested device
+  functions. Three or more levels failed to compile on every backend
+  ("Cannot coerce float* to i32" on CPU, a pointer-to-integer error from
+  the GPU compilers): copy propagation resolved one link of the chain of
+  parameter copies per pass and left a local holding the field.
 - A `@tack.data_oriented` template's vector field attributes are now
   detected as vector fields: `self.vel[i, j]` in a template method, or
   `obj.vel[i, j]` in the kernel, lowered as a scalar field access and
