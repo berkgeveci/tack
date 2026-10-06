@@ -58,8 +58,11 @@ class MetalBuffer(DeviceBuffer):
 
     def __init__(self, device, numpy_dtype, shape):
         nbytes = int(np.prod(shape)) * np.dtype(numpy_dtype).itemsize
-        # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory)
-        self._metal_buffer = device.newBufferWithLength_options_(nbytes, 0)
+        # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory). A
+        # zero-length request returns no buffer, so an empty field (the
+        # result of a filter that selected nothing) gets one byte it never
+        # reads; the view below still has zero elements.
+        self._metal_buffer = device.newBufferWithLength_options_(max(nbytes, 1), 0)
         raw = self._metal_buffer.contents().as_buffer(nbytes)
         self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
         self._view[:] = 0

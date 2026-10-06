@@ -177,6 +177,7 @@ class MSLCodeGen:
             self._emit("constexpr sampler __samp__(coord::normalized, "
                        "filter::linear, address::clamp_to_edge);")
 
+        self._declare_locals_at_kernel_scope(func.body)
         self._emit_body(func.body)
 
         self._indent -= 1
@@ -238,6 +239,21 @@ class MSLCodeGen:
         else:
             raise NotImplementedError(f"MSL codegen: cannot emit {type(node).__name__}")
 
+    def _declare_locals_at_kernel_scope(self, body):
+        """Declare every typed local once, at kernel scope; see CUDACodeGen."""
+        for node in walk_ir(body):
+            if not isinstance(node, ir.IRAssign) or node.target in self._declared_vars:
+                continue
+            resolved = getattr(node, '_resolved_type', None)
+            if resolved is None:
+                continue
+            msl_type = _MSL_TYPE_MAP.get(resolved)
+            if msl_type is None:
+                continue
+            self._emit(f"{msl_type} {node.target};")
+            self._local_vars[node.target] = msl_type
+            self._declared_vars.add(node.target)
+
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         idx = node.var
         self._emit(f"{_INT} {idx} = __tid__;")
@@ -254,6 +270,10 @@ class MSLCodeGen:
         # Always declare the loop variable in the for-header to handle
         # re-use of the same variable name in sibling loops (C block scoping).
         self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {incr}) {{")
+        # The header's declaration ends with the loop, so a later plain
+        # assignment to the same name must declare it again: restore the
+        # bookkeeping on exit rather than leaving the name marked declared.
+        outer = (var in self._declared_vars, self._local_vars.get(var))
         self._local_vars[var] = _INT
         self._declared_vars.add(var)
         self._indent += 1
@@ -263,6 +283,16 @@ class MSLCodeGen:
         self._dynamic_range_depth -= int(dynamic)
         self._indent -= 1
         self._emit("}")
+        self._leave_loop_scope(var, outer)
+
+    def _leave_loop_scope(self, var, outer):
+        """Forget a for-header declaration once its block closes."""
+        was_declared, outer_type = outer
+        if was_declared:
+            self._local_vars[var] = outer_type
+        else:
+            self._declared_vars.discard(var)
+            self._local_vars.pop(var, None)
 
     def _emit_while(self, node: ir.IRWhile):
         cond = self._expr(node.condition)

@@ -131,6 +131,7 @@ class KernelTransformer(ast.NodeVisitor):
                 _mark_outermost_continues(stmt.body)
         function = ir.IRFunction(name=node.name, params=params, body=body)
         self._check_names_bound(function)
+        self._check_loop_variables_stay_in_their_loops(function)
         return function
 
     def _fresh_name(self, preferred):
@@ -208,6 +209,66 @@ class KernelTransformer(ast.NodeVisitor):
                 f"assigned. Kernels do not capture Python variables from the "
                 f"enclosing scope: pass the value as an argument, or make it "
                 f"a class-level constant of a @tack.data_oriented template.")
+
+    def _check_loop_variables_stay_in_their_loops(self, function: ir.IRFunction):
+        """Reject a read of a loop variable after its loop.
+
+        A `for` loop's variable is a binding of its own that ends with the
+        loop, on every backend: afterwards the name means whatever it meant
+        before the loop, or nothing. Python would give the last value
+        iterated. Rather than compute either silently -- CPU raised a
+        NameError at codegen while the GPU backends failed to compile --
+        refuse the read here, with its source position. A name whose most
+        recent binding in program order is a loop header may not be read
+        until it is assigned again. Branches and loops that may not run are
+        merged conservatively: the name stays stale if it is stale on any
+        path, so `assign it before the loop` is always a valid fix.
+        """
+        def read(expr, stale):
+            for n in walk_ir(expr):
+                if isinstance(n, ir.IRName) and n.name in stale:
+                    raise self._loop_variable_error(function, n)
+
+        def block(stmts, stale):
+            stale = set(stale)
+            for s in stmts:
+                if isinstance(s, ir.IRAssign):
+                    read(s.value, stale)
+                    stale.discard(s.target)
+                elif isinstance(s, (ir.IRSequentialFor, ir.IRParallelFor)):
+                    for bound in (s.start, s.end, getattr(s, "step", None)):
+                        if bound is not None:
+                            read(bound, stale)
+                    inner = block(s.body, stale - {s.var})
+                    stale = (stale | inner) | {s.var}
+                elif isinstance(s, ir.IRWhile):
+                    read(s.condition, stale)
+                    stale = stale | block(s.body, stale)
+                elif isinstance(s, ir.IRIf):
+                    read(s.condition, stale)
+                    stale = block(s.then_body, stale) | block(s.else_body or [], stale)
+                else:
+                    read(s, stale)
+            return stale
+
+        block(function.body, set())
+
+    def _loop_variable_error(self, function, name_node):
+        where = f"Kernel '{function.name}'"
+        at = ""
+        read = getattr(name_node, "_source", None) or self._name_reads.get(name_node.name)
+        if read is not None:
+            line, column, inlined_from = read
+            at = f" at line {line}, column {column}"
+            if inlined_from is not None:
+                where = (f"Device function '{inlined_from}' "
+                         f"(inlined into kernel '{function.name}')")
+        spelled = getattr(name_node, "_source_id", name_node.name)
+        return NameError(
+            f"{where}: name '{spelled}'{at} is read after the `for` loop "
+            f"that bound it. A loop variable's binding ends with its loop; "
+            f"to use the value afterwards, copy it to another name inside the "
+            f"loop, or assign the name again before reading it.")
 
     def _visit_body(self, stmts: list) -> list:
         """Visit a list of statements, filtering out None results.
@@ -811,15 +872,20 @@ class KernelTransformer(ast.NodeVisitor):
         )
 
     def visit_Name(self, node: ast.Name) -> ir.IRNode:
-        if node.id not in self._name_reads and hasattr(node, 'lineno'):
-            self._name_reads[node.id] = (
-                node.lineno, node.col_offset + 1,
-                self._inline_stack[-1] if self._inline_stack else None)
+        source = None
+        if hasattr(node, 'lineno'):
+            source = (node.lineno, node.col_offset + 1,
+                      self._inline_stack[-1] if self._inline_stack else None)
+            self._name_reads.setdefault(node.id, source)
         # If this name is a vector variable, return its components as a list
         if node.id in self._vector_vars:
             ndim = self._vector_vars[node.id]
             return [ir.IRName(self._component_name(node.id, c)) for c in range(ndim)]
-        return ir.IRName(name=node.id)
+        name = ir.IRName(name=node.id)
+        # This read's position and source spelling, for scope errors.
+        name._source = source
+        name._source_id = getattr(node, '_source_id', node.id)
+        return name
 
     def visit_Constant(self, node: ast.Constant) -> ir.IRConstant:
         return ir.IRConstant(value=node.value)
@@ -1062,6 +1128,10 @@ class KernelTransformer(ast.NodeVisitor):
                 arg_name = call_node.args[callee_params.index(param_name)].id
                 if arg_name in self._vector_vars:
                     self._vector_vars[renamed] = self._vector_vars[arg_name]
+                if arg_name in self._vector_fields:
+                    # A vector field passed in: `fld[i]` in the body must
+                    # expand to its components, as it does in the caller.
+                    self._vector_fields[renamed] = self._vector_fields[arg_name]
                 if arg_name in self._texture_fields:
                     self._texture_fields[renamed] = self._texture_fields[arg_name]
                     self._texture_origin[renamed] = self._texture_origin.get(arg_name, arg_name)
@@ -1124,20 +1194,31 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRName(result_var)
 
     def _collect_assigned_names(self, stmts) -> set[str]:
-        """Collect all variable names assigned in a list of AST statements."""
+        """Collect all variable names assigned in a list of AST statements.
+
+        Every binding counts, including the names inside a tuple target
+        (`t, u = f()`, `for i, j in ndrange(...)`): a callee local that is
+        not collected is not renamed, and the inlined body then writes
+        the caller's variable of the same name.
+        """
         names = set()
+
+        def targets(node):
+            if isinstance(node, ast.Name):
+                names.add(node.id)
+            elif isinstance(node, (ast.Tuple, ast.List)):
+                for elt in node.elts:
+                    targets(elt)
+
         for stmt in stmts:
             for node in ast.walk(stmt):
                 if isinstance(node, ast.Assign):
                     for t in node.targets:
-                        if isinstance(t, ast.Name):
-                            names.add(t.id)
+                        targets(t)
                 elif isinstance(node, ast.AugAssign):
-                    if isinstance(node.target, ast.Name):
-                        names.add(node.target.id)
+                    targets(node.target)
                 elif isinstance(node, ast.For):
-                    if isinstance(node.target, ast.Name):
-                        names.add(node.target.id)
+                    targets(node.target)
         return names
 
     def _detect_return_count(self, funcdef) -> int:
@@ -1601,7 +1682,10 @@ class _NameRenamer(ast.NodeTransformer):
 
     def visit_Name(self, node: ast.Name) -> ast.Name:
         if node.id in self._rename_map:
-            return ast.Name(id=self._rename_map[node.id], ctx=node.ctx)
+            # Keep the position and the source spelling for diagnostics.
+            renamed = ast.copy_location(ast.Name(id=self._rename_map[node.id], ctx=node.ctx), node)
+            renamed._source_id = node.id
+            return renamed
         return node
 
     def visit_Return(self, node: ast.Return):

@@ -21,6 +21,7 @@ from tack.codegen.integer_ops import IntegerCodeGen
 from tack.codegen.reductions import f32_reduction_helpers
 from tack.lang import ir
 from tack.lang.atomic_support import check_atomic_support
+from tack.lang.ir_traversal import walk_ir
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE, check_workgroup_participation
 
@@ -97,6 +98,8 @@ class CUDACodeGen:
     # Spelling of the opaque texture handle in the generated source. HIP
     # reuses this whole class and calls the type something else, so it is
     # named here rather than inlined into the signature below.
+    # The C type of a sequential loop's variable; OpenCL spells 64 bits `long`.
+    _LOOP_INDEX = _INT
     _TEXTURE_OBJECT_TYPE = "cudaTextureObject_t"
 
     _atomic_backend = 'cuda'
@@ -165,6 +168,7 @@ class CUDACodeGen:
         self._emit(f'extern "C" __global__ void {safe_name}({sig}) {{')
         self._indent += 1
 
+        self._declare_locals_at_kernel_scope(func.body)
         self._emit_body(func.body)
 
         self._indent -= 1
@@ -290,6 +294,29 @@ class CUDACodeGen:
         else:
             raise NotImplementedError(f"CUDA codegen: cannot emit {type(node).__name__}")
 
+    def _declare_locals_at_kernel_scope(self, body):
+        """Declare every typed local once, at kernel scope.
+
+        The type annotator settles one type per local, so one declaration
+        serves every assignment. Declaring at the first assignment instead
+        put the declaration in whatever C block that assignment sat in --
+        a loop body, or a hoist in front of an `if` inside a loop -- and a
+        later assignment or read outside that block was an undeclared
+        identifier. Loop variables keep their for-header declarations;
+        they shadow a kernel-scope local of the same name, which is the
+        intended scoping.
+        """
+        for node in walk_ir(body):
+            if not isinstance(node, ir.IRAssign) or node.target in self._declared_vars:
+                continue
+            resolved = getattr(node, '_resolved_type', None)
+            if resolved is None:
+                continue  # untyped (a field alias): declared where it is assigned
+            c_type = self._resolved_type_to_c(resolved)
+            self._emit(f"{c_type} {node.target};")
+            self._local_vars[node.target] = c_type
+            self._declared_vars.add(node.target)
+
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         """Emit the parallel for-loop as CUDA thread index calculation."""
         idx = node.var
@@ -308,13 +335,27 @@ class CUDACodeGen:
         var = node.var
         # Always declare the loop variable in the for-header to handle
         # re-use of the same variable name in sibling loops (C block scoping).
-        self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {incr}) {{")
-        self._local_vars[var] = _INT
+        self._emit(f"for ({self._LOOP_INDEX} {var} = {start}; {var} < {end}; {incr}) {{")
+        # The header's declaration ends with the loop, so a later plain
+        # assignment to the same name must declare it again: restore the
+        # bookkeeping on exit rather than leaving the name marked declared.
+        outer = (var in self._declared_vars, self._local_vars.get(var))
+        self._local_vars[var] = self._LOOP_INDEX
         self._declared_vars.add(var)
         self._indent += 1
         self._emit_body(node.body)
         self._indent -= 1
         self._emit("}")
+        self._leave_loop_scope(var, outer)
+
+    def _leave_loop_scope(self, var, outer):
+        """Forget a for-header declaration once its block closes."""
+        was_declared, outer_type = outer
+        if was_declared:
+            self._local_vars[var] = outer_type
+        else:
+            self._declared_vars.discard(var)
+            self._local_vars.pop(var, None)
 
     def _emit_while(self, node: ir.IRWhile):
         cond = self._expr(node.condition)

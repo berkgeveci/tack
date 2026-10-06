@@ -1,12 +1,13 @@
 # Reductions and Scans
 
-Tack has four ways to combine many values into a few:
+Tack has five ways to combine many values into a few:
 
 | Family | Entry points | Where it runs |
 |---|---|---|
 | [Field reductions](#field-reductions) | `field.sum()`, `.min()`, `.max()`, `.mean()` | Called from Python; the device or NumPy, depending on backend and dtype |
 | [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; kernels with atomic accumulators on the active backend |
 | [Prefix scans](#prefix-scans) | `exclusive_scan`, `inclusive_scan` (plus `copy`, `fill_value`) in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
+| [Sorting and segmented reductions](#sorting-and-segmented-reductions) | `argsort`, `sort_by_key`, `gather`, `unique`, `reduce_by_key` in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
 | [Block reductions](#block-reductions-inside-kernels) | `tack.block_sum`, `block_min`, `block_max` | Inside a kernel; GPU backends only |
 
 Every family runs on all five backends except block reductions, which need
@@ -312,6 +313,69 @@ field.
   `tack.algorithms`; write `from tack.algorithms.copy import copy_with_offset`.
   (The attribute `tack.algorithms.copy` is the `copy` function, not the
   submodule, so `tack.algorithms.copy.copy_with_offset` does not work.)
+
+## Sorting and segmented reductions
+
+```python
+from tack.algorithms import argsort, gather, reduce_by_key, sort_by_key, unique
+
+perm = argsort(keys)                           # i32 field: keys[perm] ascending, stable
+skeys, svals = sort_by_key(keys, values)       # new fields, values carried along
+ukeys, counts = unique(skeys)                  # each distinct key once, and its run length
+ukeys, sums = reduce_by_key(skeys, svals)      # one value per distinct key; op="sum"|"min"|"max"
+picked = gather(values, perm)                  # picked[i] = values[perm[i]]
+```
+
+These are the building blocks for everything on unstructured data that is
+free on a structured grid: inverting a connectivity array into the cells
+around each point, finding the external faces of a mesh (sort the faces,
+keep the ones that appear once), merging duplicate points. The pattern is
+always *make a key per item, sort, then walk the runs of equal keys*:
+
+```python
+# The cells around each point, as a CSR structure. conn holds the point
+# ids of each cell's corners; cell_of holds the cell id of each entry.
+points, cells = sort_by_key(conn, cell_of)     # entries grouped by point
+upoints, counts = unique(points)               # each point and its cell count
+offsets = tack.field(dtype=tack.i32, shape=(upoints.size,))
+exclusive_scan(counts, offsets, upoints.size)  # cells[offsets[p]:offsets[p]+counts[p]]
+```
+
+All five functions allocate and return new fields rather than writing into
+the caller's, and take an optional `n` (default: the whole field) with the
+same bounds check as the scans: `n` past any field involved raises
+`ValueError`, and `n = 0` returns empty fields.
+
+**Sorting** (`argsort`, `sort_by_key`). Keys are `i32`, `u32`, `i64` or
+`u64` fields; any other key dtype raises `TypeError`. The sort is
+**stable**, so equal keys keep their original order, and `sort_by_key`'s
+values keep theirs. Values can be any dtype; they are gathered once by the
+final permutation, so `sort_by_key(keys, values)` costs an `argsort` plus
+two gathers. The permutation is `i32`, so at most 2^31 − 1 elements can be
+sorted at once.
+
+The implementation is a least-significant-digit radix sort over 8-bit
+digits, built from ordinary kernels and the exclusive scan: one thread per
+chunk of 256 elements counts digits into a private histogram, a scan turns
+the counts into output slots, and a second kernel scatters each chunk in
+order. No shared memory or barriers, so it runs on every backend. The
+number of passes follows the **spread** of the keys, not their width:
+the smallest key is subtracted on the fly, so point ids below 2^16 take
+two passes whatever the key dtype, and all-equal keys take none. Results
+are identical on every backend and every run.
+
+**Runs of equal keys** (`unique`, `reduce_by_key`). Both take keys that
+are already grouped — sorted, or merely with equal keys adjacent — and
+work on any key dtype that supports `!=`, floats included. They return the
+first key of each run in order of appearance, so an unsorted input such as
+`[7, 7, 2, 2, 7]` gives `[7, 2, 7]`; sort first for a true set of distinct
+keys. `unique` returns the run lengths as an `i32` field. `reduce_by_key`
+reduces each run's values with `"sum"`, `"min"` or `"max"` into a field of
+the values' dtype, running one thread per run **serially in element
+order**: integer sums are exact modulo the values' width, and floating
+results are reproducible and equal to a sequential sum of the run. The
+cost is load imbalance when a few runs are very long; that is the price of
+not using atomics, whose floating sums would vary between runs.
 
 ## Block reductions inside kernels
 

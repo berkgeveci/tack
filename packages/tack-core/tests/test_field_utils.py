@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 import tack
+from tack import algorithms
 
 # --- Field.size and len() ---
 
@@ -15,6 +16,18 @@ def test_field_size(backend):
 def test_field_size_1d(backend):
     f = tack.field(dtype=tack.f32, shape=(100,))
     assert f.size == 100
+
+
+def test_empty_field(backend):
+    """A filter that selects nothing returns a field of no elements; it
+    allocates, round-trips an empty array and is a valid kernel argument."""
+    f = tack.field(dtype=tack.f32, shape=(0,))
+    assert f.size == 0
+    assert f.to_numpy().shape == (0,)
+    f.from_numpy(np.zeros(0, dtype=np.float32))
+    out = tack.field(dtype=tack.f32, shape=(0,))
+    algorithms.copy(f, out, 0)
+    assert out.to_numpy().shape == (0,)
 
 
 def test_field_len(backend):

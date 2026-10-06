@@ -139,6 +139,21 @@ Import these from `tack.algorithms`; they are defined in
       docstring_options:
         warn_missing_types: false
 
+### Sorting and segmented reductions
+
+Import these from `tack.algorithms`; they are defined in
+`tack.algorithms.sort`.
+
+::: tack.algorithms.sort.argsort
+
+::: tack.algorithms.sort.sort_by_key
+
+::: tack.algorithms.sort.gather
+
+::: tack.algorithms.sort.unique
+
+::: tack.algorithms.sort.reduce_by_key
+
 ### Copy and fill
 
 `copy` and `fill_value` are re-exported from `tack.algorithms`;

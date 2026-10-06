@@ -61,6 +61,8 @@ class OpenCLCodeGen(CUDACodeGen):
     atomics, shared memory, and barriers.
     """
 
+    _LOOP_INDEX = _OCL_INT
+
     _integer_type_map = _OCL_C_TYPE_MAP
     # IGC misfolds widened negation/abs of a signed minimum; see IntegerCodeGen.
     _opaque_negation = True
@@ -112,6 +114,7 @@ class OpenCLCodeGen(CUDACodeGen):
                        "| CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_LINEAR;")
 
         hoist_at = len(self._lines)
+        self._declare_locals_at_kernel_scope(func.body)
         self._emit_body(func.body)
         self._lines[hoist_at:hoist_at] = [
             "    " + decl for decl in self._hoisted_locals.values()
@@ -217,22 +220,6 @@ class OpenCLCodeGen(CUDACodeGen):
         self._local_vars[idx] = _OCL_INT
         self._declared_vars.add(idx)
         self._emit_body(node.body)
-
-    def _emit_sequential_for(self, node: ir.IRSequentialFor):
-        start = self._expr(node.start)
-        end = self._expr(node.end)
-        step = self._expr(node.step) if node.step else None
-        incr = f"{node.var} += {step}" if step else f"{node.var}++"
-        var = node.var
-        # Always declare the loop variable in the for-header to handle
-        # re-use of the same variable name in sibling loops (C block scoping).
-        self._emit(f"for ({_OCL_INT} {var} = {start}; {var} < {end}; {incr}) {{")
-        self._local_vars[var] = _OCL_INT
-        self._declared_vars.add(var)
-        self._indent += 1
-        self._emit_body(node.body)
-        self._indent -= 1
-        self._emit("}")
 
     # --- Shared memory, barrier, thread ID ---
 
