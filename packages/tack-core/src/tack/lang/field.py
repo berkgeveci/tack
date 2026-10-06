@@ -181,9 +181,27 @@ class Field:
         return arr
 
     def fill(self, value):
-        """Fill the field with a scalar value."""
+        """Fill the field with a scalar value.
+
+        A vector or matrix field also takes one element's value, a sequence
+        of its components: ``colors.fill([1.0, 1.0, 1.0])``.
+        """
         self._check_writable()
-        self._buffer.fill(value)
+        if np.ndim(value) == 0:
+            self._buffer.fill(value)
+            return
+        vector_shape = self._vector_shape()
+        element = np.asarray(value)
+        if vector_shape is None:
+            raise TypeError(
+                f"fill() takes a scalar for a field of scalars, "
+                f"got a value of shape {element.shape}")
+        element_shape = vector_shape[len(self._logical_shape):]
+        if element.shape != element_shape:
+            raise ValueError(
+                f"fill() value has shape {element.shape}; "
+                f"the elements of this field have shape {element_shape}")
+        self.from_numpy(np.broadcast_to(element, vector_shape))
 
     def _reduce(self, op: str):
         """Reduce on the device where that is supported, else via numpy."""

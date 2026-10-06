@@ -297,3 +297,31 @@ def test_a_read_only_reshaped_view_stays_read_only(backend):
     view = _alias(storage, writable=False).reshape((8,))
     with pytest.raises(ValueError, match="read-only"):
         _bump(view)
+
+
+# --- fill() with one element's value ---
+
+def test_fill_takes_an_element_of_a_vector_or_matrix_field(backend):
+    """`colors.fill([1.0, 0.5, 0.0])` sets every element to that vector. A
+    sequence was passed to the buffer's scalar fill and failed inside
+    NumPy with "setting an array element with a sequence"."""
+    colors = tack.Vector.field(3, dtype=tack.f32, shape=(4, 2))
+    colors.fill([1.0, 0.5, 0.0])
+    np.testing.assert_array_equal(colors.to_numpy(vectors=True),
+                                  np.broadcast_to(np.array([1.0, 0.5, 0.0], np.float32), (4, 2, 3)))
+    colors.fill(2.0)                    # a scalar still sets every component
+    assert (colors.to_numpy() == 2.0).all()
+
+    frames = tack.Matrix.field(2, 2, dtype=tack.i32, shape=(3,))
+    frames.fill(np.array([[1, 2], [3, 4]]))
+    np.testing.assert_array_equal(frames.to_numpy(vectors=True),
+                                  np.broadcast_to(np.array([[1, 2], [3, 4]], np.int32), (3, 2, 2)))
+
+
+def test_fill_rejects_a_value_of_the_wrong_shape(backend):
+    colors = tack.Vector.field(3, dtype=tack.f32, shape=(4,))
+    with pytest.raises(ValueError, match=r"shape \(2,\); the elements of this field have shape \(3,\)"):
+        colors.fill([1.0, 2.0])
+    scalars = tack.field(dtype=tack.f32, shape=(4,))
+    with pytest.raises(TypeError, match="takes a scalar for a field of scalars"):
+        scalars.fill([1.0, 2.0])

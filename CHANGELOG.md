@@ -13,6 +13,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   arguments, got 0". `tack.inspect` takes the bound form too.
 - A `@tack.func` under `@staticmethod` in a data-oriented class is called
   through `self` like the other methods. It was not found.
+- `v.norm(eps)` is `sqrt(v.norm_sqr() + eps)`, for a length that must not
+  be zero. It was "norm() takes no arguments".
+- `fill` takes one element's value for a vector or matrix field:
+  `colors.fill([1.0, 1.0, 1.0])`. A scalar still sets every component.
 - A list of scalars in a kernel or device function is a vector:
   `pos[i] = [x, y]` is `pos[i] = tack.Vector([x, y])`, wherever a vector
   is accepted. It was rejected as "unsupported List". An empty list, a

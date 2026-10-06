@@ -1659,3 +1659,45 @@ def test_a_list_is_checked_as_the_vector_it_is(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
         define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
+# --- norm(eps) ---
+
+@tack.kernel
+def norm_with_eps(vf, m, out, n, eps):
+    for i in range(n):
+        out[i] = vf[i].norm(1e-4) + (vf[i] * 2.0).norm(eps) + m[i].norm(eps)
+
+
+def test_norm_takes_an_eps_under_the_root(backend):
+    """`v.norm(eps)` is `sqrt(v.norm_sqr() + eps)`, as in Taichi, so the
+    length of a zero vector is not zero. It was "norm() takes no arguments"."""
+    n = 3
+    values = np.array([[0, 0], [3, 4], [1, 1]], np.float32)
+    vf = tack.Vector.field(2, dtype=tack.f32, shape=(n,))
+    vf.from_numpy(values)
+    m = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+    matrices = np.arange(12, dtype=np.float32).reshape(n, 2, 2)
+    m.from_numpy(matrices)
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    norm_with_eps(vf, m, out, n, 0.25)
+    sq = (values ** 2).sum(axis=1)
+    want = np.sqrt(sq + 1e-4) + np.sqrt(4 * sq + 0.25) + np.sqrt((matrices ** 2).sum(axis=(1, 2)) + 0.25)
+    np.testing.assert_allclose(out.to_numpy(), want, rtol=1e-6)
+
+
+def test_norm_rejects_a_vector_eps_and_extra_arguments():
+    @tack.kernel
+    def vector_eps(vf, out, n):
+        for i in range(n):
+            out[i] = vf[i].norm(vf[i])
+
+    @tack.kernel
+    def two_arguments(vf, out, n):
+        for i in range(n):
+            out[i] = vf[i].norm(1.0, 2.0)
+
+    for kernel, message in ((vector_eps, "eps must be a scalar"),
+                            (two_arguments, "at most one argument")):
+        with pytest.raises(Exception, match=message):
+            kernel.get_ir(vector_fields={"vf": 2})

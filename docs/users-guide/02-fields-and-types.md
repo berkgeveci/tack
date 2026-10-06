@@ -122,6 +122,8 @@ points = pos.to_numpy(vectors=True)      # (n, 3)
 flat = pos.to_numpy()                    # (n * 3,): the storage as it is
 F.from_numpy(gradients)                  # (n, 2, 2), or flat
 gradients = F.to_numpy(vectors=True)     # (n, 2, 2)
+pos.fill([0.0, 1.0, 0.0])                # every element to this vector
+pos.fill(0.0)                            # every component to this scalar
 ```
 
 ### Reductions

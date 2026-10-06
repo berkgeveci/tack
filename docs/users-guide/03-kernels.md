@@ -22,6 +22,19 @@ body (not inside an `if` or `while`). Tack uses it to determine how many
 threads to launch. A kernel without one, or with a second, is rejected with
 an `UnsupportedSyntaxError` that gives the line and column.
 
+Work that has to run in order, such as a recurrence in which each value
+needs the one before it, goes in a parallel loop of one iteration, with
+ordinary loops inside:
+
+```python
+@tack.kernel
+def integrate(rho, e, n, dx):
+    for _ in range(1):                 # one thread; the loops below run in order
+        e[0] = rho[0] * dx * 0.5
+        for i in range(1, n):
+            e[i] = e[i - 1] + (rho[i - 1] + rho[i]) * dx * 0.5
+```
+
 Code before or after the parallel loop may run any number of times per
 launch (once per GPU thread, once per CPU chunk), so it may only assign
 local variables, read fields, and declare `tack.shared` or

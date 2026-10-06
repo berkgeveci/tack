@@ -703,7 +703,8 @@ left a row, giving a vector; two vectors give their dot product. The
 shapes must agree. Each entry of the result is the sum of its products in
 index order. `norm`, `norm_sqr`, `dot`, `cross`, `normalized`, `sum`,
 `min`, `max` and `outer_product` are methods of a vector, the first two
-and `sum` also of a matrix; `transpose` of any matrix, `trace` of a square
+and `sum` also of a matrix; `norm(eps)` is the square root of
+`norm_sqr() + eps`; `transpose` of any matrix, `trace` of a square
 one, `determinant` and `inverse` of 2×2 and 3×3 ones. `inverse` divides
 the adjugate by the determinant and does not test it.
 

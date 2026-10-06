@@ -259,7 +259,8 @@ a vector is expected: `pos[i] = [x, y]`, `v = [0.0, 0.0]`,
 
 The vector methods are `norm()`, `norm_sqr()`, `dot(w)`, `cross(w)`
 (3-vectors), `normalized()`, and the reductions over components `sum()`,
-`min()` and `max()`. `normalized(eps)` divides by `norm() + eps`, for a
+`min()` and `max()`. `norm(eps)` is `sqrt(norm_sqr() + eps)`, a length
+that is never zero. `normalized(eps)` divides by `norm() + eps`, for a
 vector that may be zero. `min` and `max` as functions take two or more
 values, as in Python: `min(a, b, c)`.
 

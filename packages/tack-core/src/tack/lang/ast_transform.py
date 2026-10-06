@@ -2168,7 +2168,7 @@ class KernelTransformer(ast.NodeVisitor):
             other = self._capture_value(other, self._pre_stmts)
             return VectorValue([ir.IRBinOp(op="*", left=a, right=b) for a in left for b in other],
                                (ndim, len(other)))
-        if method_name in ('norm', 'norm_sqr', 'sum', 'min', 'max') and arg_nodes:
+        if method_name in ('norm_sqr', 'sum', 'min', 'max') and arg_nodes:
             raise NotImplementedError(f"{method_name}() takes no arguments")
         if method_name == "normalized":
             # length = sqrt(sum(c*c for c in components)), plus an optional
@@ -2201,10 +2201,19 @@ class KernelTransformer(ast.NodeVisitor):
             return extreme
 
         if method_name == "norm":
+            # norm(eps) is sqrt(norm_sqr() + eps): the eps goes under the
+            # root, where it keeps a zero vector's length from being zero.
+            if len(arg_nodes) > 1:
+                raise NotImplementedError("norm() takes at most one argument (eps)")
             sum_sq = ir.IRBinOp(op="*", left=components[0], right=components[0])
             for c in range(1, ndim):
                 sum_sq = ir.IRBinOp(op="+", left=sum_sq,
                                     right=ir.IRBinOp(op="*", left=components[c], right=components[c]))
+            if arg_nodes:
+                eps = self.visit(arg_nodes[0])
+                if isinstance(eps, list):
+                    raise TypeError("norm() eps must be a scalar")
+                sum_sq = ir.IRBinOp(op="+", left=sum_sq, right=eps)
             return ir.IRCall(func_name="sqrt", args=[sum_sq])
 
         if method_name == "norm_sqr":
