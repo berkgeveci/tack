@@ -1987,9 +1987,16 @@ class KernelTransformer(ast.NodeVisitor):
         flat = []
         for index in indices:
             flat.extend(index if isinstance(index, list) else [index])
+        # The field's shape is known only at dispatch, where its dimension
+        # sizes are resolved; each size carries what that check needs. One
+        # index alone has no size to resolve: it is a flat index.
+        source = (getattr(node, 'lineno', None), getattr(node, 'col_offset', 0) + 1,
+                  self._inline_stack[-1] if self._inline_stack else None)
         result = flat[0]
         for d in range(1, len(flat)):
             dim_size = ir.IRDimSize(field_name=field_name, dim=d)
+            dim_size.index_count = len(flat)
+            dim_size.index_source = source
             result = ir.IRBinOp(
                 op="+",
                 left=ir.IRBinOp(op="*", left=result, right=dim_size),

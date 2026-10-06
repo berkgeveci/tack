@@ -80,6 +80,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Code that is now rejected
 
+- A multi-dimensional field indexed with the wrong number of indices.
+  `grid[i, j]` on a three-dimensional field linearized with the sizes it
+  had and silently addressed another element; so did a vector index of
+  the wrong width and an atomic's index. The dispatch that binds such a
+  field now raises `TypeError` with the source position. A single index
+  is still a flat, row-major index.
 - Reading a `for` loop's variable after its loop, before the name is
   assigned again, raises `NameError` at lowering with the read's position,
   on every backend. CPU raised a `NameError` from codegen and the GPU

@@ -274,7 +274,12 @@ supplies one dimension per component, in subscripts and in atomics, whose
 index may be a tuple with one entry per dimension; a vector value given
 to an atomic on a vector field lowers to one atomic per component, while
 a scalar value keeps the index a flat component index. Tuple assignment
-accepts subscript and component targets through temporaries. A device
+accepts subscript and component targets through temporaries, stored at
+their own position among the targets (left to right, after the whole
+right side). `_linearize_index` tags each `IRDimSize` with the number of
+indices given, and `ir_resolve` raises `TypeError` when that differs from
+the field's dimension count; a single index is a flat index and is not
+checked. A device
 function returning several values yields a list whose vector elements are
 nested lists; only tuple unpacking consumes that. `v.min()`/`v.max()`/
 `v.sum()` are intercepted before the same-named builtins, which need

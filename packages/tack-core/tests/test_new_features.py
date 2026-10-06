@@ -1239,3 +1239,78 @@ def test_tuple_assignment_targets_are_assigned_left_to_right(backend):
     np.testing.assert_array_equal(b.to_numpy(), [6, 10, 0, 0, 0, 0, 0, 0])
     np.testing.assert_array_equal(c.to_numpy(), [0, 0, 0, 0, 7, 0, 7, 0])
     np.testing.assert_array_equal(d.to_numpy(), [11, 21, 0, 0, 10, 20, 0, 0])
+
+
+# --- One index per dimension ---
+
+@tack.kernel
+def two_indices(grid, out, n):
+    for k in range(n):
+        out[k] = grid[1, 2]
+
+
+@tack.kernel
+def vector_index_and_atomic(grid, out, n):
+    for k in range(n):
+        cell = tack.Vector([1, 2])
+        out[k] = grid[cell]
+        tack.atomic_add(grid, cell, 1.0)
+
+
+@tack.kernel
+def flat_index(grid, out, n):
+    for k in range(n):
+        out[k] = grid[7]
+
+
+@pytest.mark.parametrize("kernel", [two_indices, vector_index_and_atomic])
+def test_index_count_must_match_the_field(backend, kernel):
+    """`grid[1, 2]` on a three-dimensional field linearized with the sizes
+    it had and read flat element 7. A vector index and an atomic's index
+    take the same path."""
+    values = np.arange(120, dtype=np.float32)
+    grid3 = tack.field(dtype=tack.f32, shape=(4, 5, 6))
+    grid3.from_numpy(values.reshape(4, 5, 6))
+    out = tack.field(dtype=tack.f32, shape=(1,))
+    with pytest.raises(TypeError, match=r"field of 3 dimensions \(4, 5, 6\) is indexed "
+                                        r"with 2 indices at line \d+, column \d+"):
+        kernel(grid3, out, 1)
+    grid2 = tack.field(dtype=tack.f32, shape=(4, 30))
+    grid2.from_numpy(values.reshape(4, 30))
+    kernel(grid2, out, 1)
+    assert out.to_numpy()[0] == 32.0
+
+
+def test_a_single_index_is_still_a_flat_index(backend):
+    grid3 = tack.field(dtype=tack.f32, shape=(4, 5, 6))
+    grid3.from_numpy(np.arange(120, dtype=np.float32).reshape(4, 5, 6))
+    out = tack.field(dtype=tack.f32, shape=(1,))
+    flat_index(grid3, out, 1)
+    assert out.to_numpy()[0] == 7.0
+
+
+# --- A runtime component index is not wrapped ---
+
+@tack.kernel
+def negative_runtime_component(vf, sel, out, n):
+    for i in range(n):
+        v = vf[i]
+        out[i] = v[sel[i]] + v[-1] * 100.0
+        v[sel[i]] = 99.0
+        vf[i] = v
+
+
+def test_negative_runtime_component_index_is_out_of_range(backend):
+    """A literal `v[-1]` is the last component, as in Python. A runtime
+    index is not wrapped: a negative one is out of range, so it reads the
+    last component and stores nothing, as one past the end does."""
+    n = 2
+    values = np.arange(6, dtype=np.float32) + 1
+    vf = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    vf.from_numpy(values)
+    sel = tack.field(dtype=tack.i32, shape=(n,))
+    sel.from_numpy(np.array([-1, -2], np.int32))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    negative_runtime_component(vf, sel, out, n)
+    np.testing.assert_array_equal(out.to_numpy(), [3 + 300, 6 + 600])
+    np.testing.assert_array_equal(vf.to_numpy(), values)

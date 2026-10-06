@@ -55,6 +55,19 @@ def _resolve(node, fields):
             if field is None:
                 raise RuntimeError(f"Cannot resolve dimension size: unknown field '{node.field_name}'")
             shape = getattr(field, '_logical_shape', None) or field.shape
+            count = getattr(node, 'index_count', None)
+            if count is not None and count != len(shape):
+                # field[i, j] linearizes with the sizes of dimensions 1..,
+                # so with too few indices it would address some other
+                # element without any error.
+                line, column, inlined_from = node.index_source
+                where = f" at line {line}, column {column}" if line is not None else ""
+                if inlined_from is not None:
+                    where += f" of device function '{inlined_from}'"
+                raise TypeError(
+                    f"a field of {len(shape)} dimension{'s' if len(shape) != 1 else ''} "
+                    f"{shape} is indexed with {count} indices{where}; give one index per "
+                    f"dimension, or a single flat index")
             return ir.IRConstant(shape[node.dim])
         if isinstance(node, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
             if node.dtype is None and node.field_name is not None:
