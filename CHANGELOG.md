@@ -3,6 +3,15 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## Unreleased
+
+### Fixes with no source change needed
+
+- A device function's locals bound by tuple unpacking (`t, u = f()`, or
+  `for i, j in ...`) are now renamed when the function is inlined. They
+  escaped renaming before, so the inlined body overwrote the caller's
+  variables of the same names.
+
 ## 0.2.0 — 2026-10-05
 
 The headline: Tack now has a written language contract, and the compiler

@@ -231,3 +231,35 @@ def test_device_functions_are_not_retained_by_a_global_registry():
     del function
     gc.collect()
     assert reference() is None
+
+
+# --- A callee's tuple-unpacked locals are its own -----------------------------
+
+@tack.func
+def _pair(x):
+    return x * 2.0, x * 3.0
+
+
+@tack.func
+def _sum_of_pair(x):
+    t, u = _pair(x)        # tuple targets are callee locals too
+    return t + u
+
+
+@tack.kernel
+def _caller_keeps_its_t(x, out):
+    for i in range(x.shape[0]):
+        t = 100.0
+        u = 200.0
+        s = _sum_of_pair(x[i])
+        out[i] = s + t + u   # t and u must still be the caller's
+
+
+def test_tuple_unpacked_callee_locals_do_not_clobber_the_caller(backend):
+    """`t, u = ...` inside a device function used to escape renaming, so the
+    inlined body overwrote the caller's `t` and `u`."""
+    x = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.field(dtype=tack.f32, shape=(4,))
+    x.from_numpy(np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
+    _caller_keeps_its_t(x, out)
+    np.testing.assert_array_equal(out.to_numpy(), np.array([305.0, 310.0, 315.0, 320.0], np.float32))
