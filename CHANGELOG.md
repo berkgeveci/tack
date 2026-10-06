@@ -13,6 +13,19 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   kernels and the scan so they run on every backend. See *Sorting and
   segmented reductions* in the User's Guide.
 
+- Vector components by runtime index: `vec[k]` reads and `vec[k] = x` /
+  `vec[k] += x` write the component a loop variable or field value
+  selects, through a chain of selects; past the last component a read
+  gives the last component and a write does nothing. `vf[i][c]` and
+  `f(x)[c]` index a vector-valued expression without naming it first.
+  These used to fail IR verification with "expected expr node". A literal
+  index out of range, and a subscript of a scalar value, are rejected at
+  lowering with the source position.
+- The `tack.algorithms` statistics (`var`, `std`, `norm`, `absmax`,
+  `count_nonzero`, `dot`, `histogram`) accept vector fields and reduce
+  over all components in storage order; they used to fail IR
+  verification.
+
 ### Code that is now rejected
 
 - Reading a `for` loop's variable after its loop, before the name is

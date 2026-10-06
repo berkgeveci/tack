@@ -2,6 +2,7 @@
 field[None], Vector types, and vector methods."""
 
 import numpy as np
+import pytest
 
 import tack
 
@@ -563,3 +564,100 @@ def test_tuple_swap(backend):
 
     assert np.allclose(x.to_numpy(), np.minimum(xn, yn))
     assert np.allclose(y.to_numpy(), np.maximum(xn, yn))
+
+
+# --- Vector components by runtime index, chained subscripts, component stores ---
+
+@tack.kernel
+def vec_component_by_runtime_index(vf, sel, out, n):
+    for i in range(n):
+        v = vf[i]
+        out[i] = v[sel[i]]
+
+
+@tack.kernel
+def vec_chained_subscripts(vf, sel, out, n):
+    for i in range(n):
+        out[i] = vf[i][1] * 10.0 + vf[i][sel[i]]
+
+
+@tack.func
+def _pair(x):
+    return tack.Vector([x, x * 2.0])
+
+
+@tack.kernel
+def vec_call_component(out, n):
+    for i in range(n):
+        out[i] = _pair(float(i))[1]
+
+
+@tack.kernel
+def vec_component_stores(vf, sel, out, n):
+    for i in range(n):
+        v = vf[i]
+        v[1] = -1.0
+        v[sel[i]] = 100.0
+        v[0] += 0.5
+        out[i] = v
+
+
+def test_vector_component_by_runtime_index(backend):
+    """`v[k]` with a runtime k selects the component; past the last, the last.
+    Used to fail IR verification with "expected expr node"."""
+    n = 4
+    vf = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    vf.from_numpy(np.arange(12, dtype=np.float32))
+    sel = tack.field(dtype=tack.i32, shape=(n,))
+    sel.from_numpy(np.array([0, 1, 2, 7], np.int32))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    vec_component_by_runtime_index(vf, sel, out, n)
+    np.testing.assert_array_equal(out.to_numpy(), [0.0, 4.0, 8.0, 11.0])
+
+
+def test_vector_chained_subscripts(backend):
+    """`vf[i][c]` without naming the vector, with a literal or runtime c."""
+    n = 4
+    vf = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    vf.from_numpy(np.arange(12, dtype=np.float32))
+    sel = tack.field(dtype=tack.i32, shape=(n,))
+    sel.from_numpy(np.array([0, 1, 2, 7], np.int32))
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    vec_chained_subscripts(vf, sel, out, n)
+    np.testing.assert_array_equal(out.to_numpy(), [10.0, 44.0, 78.0, 111.0])
+    vec_call_component(out, n)
+    np.testing.assert_array_equal(out.to_numpy(), [0.0, 2.0, 4.0, 6.0])
+
+
+def test_vector_component_stores(backend):
+    """`v[c] = x`, `v[k] = x` and `v[c] += x` on a vector variable; a store
+    past the last component changes nothing."""
+    n = 4
+    vf = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    vf.from_numpy(np.arange(12, dtype=np.float32))
+    sel = tack.field(dtype=tack.i32, shape=(n,))
+    sel.from_numpy(np.array([0, 1, 2, 7], np.int32))
+    out = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    vec_component_stores(vf, sel, out, n)
+    np.testing.assert_array_equal(out.to_numpy().reshape(n, 3), [
+        [100.5, -1.0, 2.0], [3.5, 100.0, 5.0], [6.5, -1.0, 100.0], [9.5, -1.0, 11.0]])
+
+
+def test_vector_component_out_of_range_literal_is_rejected():
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match="component 3 of a 3-vector is out of range"):
+        @tack.kernel
+        def bad(vf, out, n):
+            for i in range(n):
+                out[i] = vf[i][3]
+        bad.get_ir(vector_fields={"vf": 3})
+
+
+def test_subscript_of_a_scalar_value_is_rejected():
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match="indexes a scalar value"):
+        @tack.kernel
+        def bad(x, out, n):
+            for i in range(n):
+                out[i] = x[i][0]
+        bad.get_ir()
