@@ -259,9 +259,12 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 `tack.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
 
-In `ast_transform.py` a vector value is a Python list of component
-expressions, and a list that reaches a scalar position fails IR
-verification with "expected expr node". Arithmetic, math builtins, casts
+In `ast_transform.py` a vector value is a `VectorValue`, a list of
+component expressions with a `shape`; a source tuple (indices, multiple
+results) is a `TupleValue`. Neither enters the IR: `_check_single_values`
+scans each lowered statement once and raises `UnsupportedSyntaxError` at
+the statement's position for one left in a scalar position, instead of
+the verifier's "expected expr node". Arithmetic, math builtins, casts
 and conditional expressions map over components (`_componentwise`
 repeats scalars and rejects mixed widths). An assignment lowers to one
 assignment per component, so `_settle_components` first evaluates any
@@ -275,8 +278,8 @@ index may be a tuple with one entry per dimension; a vector value given
 to an atomic on a vector field lowers to one atomic per component, while
 a scalar value keeps the index a flat component index. Tuple assignment
 accepts subscript and component targets through temporaries. A device
-function returning several values yields a list whose vector elements are
-nested lists; only tuple unpacking consumes that. `v.min()`/`v.max()`/
+function returning several values yields a `TupleValue` whose vector
+elements are `VectorValue`s; only tuple unpacking consumes that. `v.min()`/`v.max()`/
 `v.sum()` are intercepted before the same-named builtins, which need
 arguments. See the vector tests in `test_new_features.py`.
 

@@ -1351,3 +1351,78 @@ def test_vector_field_element_index_is_64_bit():
     out = tack.field(dtype=tack.i8, shape=(1,))
     text = tack.inspect(load, vf, out, 3, mode="ir")
     assert "Cast(where, i64)" in text and "i32" not in text
+
+
+# --- A vector or tuple where one value is required ---
+
+@tack.func
+def _truthy(x):
+    return x and 1
+
+
+def _vector_compared():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = vf[i] < 1.0
+    return bad
+
+
+def _vector_as_a_condition():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            if vf[i]:
+                s[i] = 1.0
+    return bad
+
+
+def _vector_as_a_loop_bound():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            for k in range(vf[i]):
+                s[i] += 1.0
+    return bad
+
+
+def _vector_printed():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            print("v", vf[i])
+    return bad
+
+
+def _vector_in_a_device_function():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = _truthy(vf[i])
+    return bad
+
+
+def _tuple_stored():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = (1.0, 2.0)
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_vector_compared, r"Kernel 'bad': statement at line 4, column \d+ uses a 3-vector"),
+    (_vector_as_a_condition, "uses a 3-vector where a single value is required"),
+    (_vector_as_a_loop_bound, "uses a 3-vector where a single value is required"),
+    (_vector_printed, "uses a 3-vector where a single value is required"),
+    (_vector_in_a_device_function,
+     r"Device function '_truthy' \(inlined into kernel 'bad'\): statement at line 3"),
+    (_tuple_stored, "stores a tuple of 2 values into an element of scalar storage"),
+])
+def test_vector_where_one_value_is_required_is_diagnosed(define, message):
+    """Operations that do not map over a vector's components used to leave
+    the vector in the IR, where the verifier reported "expected expr node"
+    with a tree path. Any such statement now gets its source position."""
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})

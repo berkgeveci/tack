@@ -104,6 +104,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Code that is now rejected
 
+- A vector or tuple anywhere one value is required, such as a comparison
+  (`vf[i] < 1.0`), a condition, a loop bound or `print`. Operations that
+  do not map over a vector's components used to fail IR verification
+  with "expected expr node" and a path into the lowered tree; every such
+  statement now raises `UnsupportedSyntaxError` naming the kernel or
+  device function and the source position.
 - A vector stored where it does not fit: `s[i] = vec` into a field of
   scalars or a local array, and `vf[i] = vec` into a field of vectors of
   another width. Both wrote components at offsets computed from the
