@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Elementwise comparison: `v > 0.0`, `lo <= v <= hi`, `a == b` on vectors
+  and matrices give a mask, a vector of `0`/`1` per component; `and`,
+  `or` and `not` act per component on masks; `any(mask)` and `all(mask)`
+  reduce one; `tack.select(mask, a, b)` picks per component, with scalar
+  masks and scalar arms broadcast. A mask as an `if` or `while` condition
+  is rejected with the hint to reduce it.
 - A kernel can be a method of a `@tack.data_oriented` class:
   `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
   object is a template like any other argument. It failed with "expects 1

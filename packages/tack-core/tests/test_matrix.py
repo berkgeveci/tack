@@ -280,7 +280,7 @@ def _matrix_as_a_condition():
     (_inverse_of_a_rectangle, r"inverse\(\) needs a square matrix, not a 2x3 matrix"),
     (_named_component, r"'x' names a component of a vector; a matrix entry is m\[i, j\]"),
     (_ragged_rows, "has rows of different lengths"),
-    (_matrix_as_a_condition, "uses a 2x2 matrix where a single value is required"),
+    (_matrix_as_a_condition, "has a 2x2 matrix as its condition"),
 ])
 def test_mismatched_matrix_forms_are_rejected(define, message):
     with pytest.raises(UnsupportedSyntaxError, match=message):

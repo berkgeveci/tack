@@ -628,6 +628,7 @@ class KernelTransformer(ast.NodeVisitor):
         if node.orelse:
             raise NotImplementedError("'else' clause on while-loop not supported in kernels")
         condition, condition_stmts = self._visit_expression(node.test)
+        condition = self._scalar_condition(node, "while", condition)
         self._loop_depth += 1
         body = self._visit_body(node.body)
         self._loop_depth -= 1
@@ -648,8 +649,16 @@ class KernelTransformer(ast.NodeVisitor):
 
     # --- Control flow ---
 
+    def _scalar_condition(self, node, construct: str, condition):
+        if isinstance(condition, list):
+            raise self._source_error(
+                node, construct, f"has {_describe_value(condition)} as its condition; "
+                f"reduce it with any(...) or all(...), or select per component with "
+                f"tack.select(mask, a, b)")
+        return condition
+
     def visit_If(self, node: ast.If) -> ir.IRIf:
-        condition = self.visit(node.test)
+        condition = self._scalar_condition(node, "if", self.visit(node.test))
         then_body = self._visit_body(node.body)
         else_body = self._visit_body(node.orelse)
         return ir.IRIf(condition=condition, then_body=then_body, else_body=else_body)
@@ -999,9 +1008,19 @@ class KernelTransformer(ast.NodeVisitor):
     def visit_Compare(self, node: ast.Compare) -> ir.IRNode:
         if len(node.ops) == 1:
             left, right = self._visit_ordered([node.left, node.comparators[0]])
+            if isinstance(left, list) or isinstance(right, list):
+                return self._vector_compare(node, [self._cmpop_str(node.ops[0])], [left, right])
             return ir.IRCompare(self._cmpop_str(node.ops[0]), left, right)
 
         operands = [self._visit_expression(n) for n in [node.left, *node.comparators]]
+        if any(isinstance(value, list) for value, _ in operands):
+            # Every link is evaluated, component by component; nothing
+            # short-circuits, since each component has its own answer.
+            values = []
+            for value, before in operands:
+                self._pre_stmts.extend(before)
+                values.append(self._capture_value(value, self._pre_stmts))
+            return self._vector_compare(node, [self._cmpop_str(op) for op in node.ops], values)
         if any(stmts for _, stmts in operands):
             name = self._fresh_name(f"__comparison_{self._inline_counter}__")
             self._inline_counter += 1
@@ -1034,10 +1053,35 @@ class KernelTransformer(ast.NodeVisitor):
             return comparisons[0]
         return ir.IRBoolOp(op="and", values=comparisons)
 
+    def _vector_compare(self, node, ops: list, values: list) -> VectorValue:
+        """``v < w``, ``lo <= v < hi``: a vector of 0/1, one comparison per component.
+
+        A scalar operand is compared with every component. Each link of a
+        chain is a comparison vector of its own and the links are combined
+        with ``and`` per component.
+        """
+        links = [self._elementwise(node, "comparison", [left, right],
+                                   lambda row, op=op: ir.IRCompare(op, row[0], row[1]))
+                 for op, left, right in zip(ops, values[:-1], values[1:], strict=True)]
+        if len(links) == 1:
+            return links[0]
+        return self._elementwise(node, "comparison", links,
+                                 lambda row: ir.IRBoolOp(op="and", values=list(row)))
+
     def visit_BoolOp(self, node: ast.BoolOp) -> ir.IRBoolOp:
         op = "and" if isinstance(node.op, ast.And) else "or"
         operands = [self._visit_expression(n) for n in node.values]
         values = [value for value, _ in operands]
+        if any(isinstance(value, list) for value in values):
+            # Over comparison vectors `and`/`or` act per component, and every
+            # operand is evaluated: a component cannot short-circuit for the
+            # others.
+            captured = []
+            for value, before in operands:
+                self._pre_stmts.extend(before)
+                captured.append(self._capture_value(value, self._pre_stmts))
+            return self._elementwise(node, "boolean operator", captured,
+                                     lambda row: ir.IRBoolOp(op=op, values=list(row)))
         if any(stmts for _, stmts in operands):
             name = self._fresh_name(f"__boolean_{self._inline_counter}__")
             self._inline_counter += 1
@@ -1264,6 +1308,27 @@ class KernelTransformer(ast.NodeVisitor):
             if len(node.args) != arity:
                 raise NotImplementedError(f"{func_name}() takes exactly {arity} arguments")
             return self._math_call(node, func_name, self._visit_ordered(node.args))
+
+        # any(v), all(v): a comparison vector reduced to one truth value
+        if func_name in ("any", "all"):
+            if len(node.args) != 1:
+                raise NotImplementedError(f"{func_name}() takes exactly one argument")
+            mask = self.visit(node.args[0])
+            if not isinstance(mask, VectorValue):
+                raise self._source_error(
+                    node, f"{func_name}()", "reduces a vector or matrix of comparisons; "
+                    "a scalar is already a truth value")
+            return ir.IRBoolOp(op="or" if func_name == "any" else "and", values=list(mask))
+
+        # tack.select(mask, a, b): per component, a where mask is true, else b
+        if func_name == "select":
+            if len(node.args) != 3:
+                raise NotImplementedError("select() takes exactly 3 arguments (mask, a, b)")
+            mask, a, b = self._visit_ordered(node.args)
+            if not any(isinstance(v, list) for v in (mask, a, b)):
+                return ir.IRIfExp(mask, a, b)
+            return self._elementwise(node, "select()", [mask, a, b],
+                                     lambda row: ir.IRIfExp(row[0], row[1], row[2]))
 
         # len(field) → the field's first dimension
         if func_name == "len":

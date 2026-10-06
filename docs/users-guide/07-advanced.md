@@ -264,6 +264,29 @@ that is never zero. `normalized(eps)` divides by `norm() + eps`, for a
 vector that may be zero. `min` and `max` as functions take two or more
 values, as in Python: `min(a, b, c)`.
 
+Comparing vectors compares component by component and gives a *mask*, a
+vector of `0`/`1`. `any` and `all` reduce a mask to one truth value, and
+`tack.select(mask, a, b)` picks per component:
+
+```python
+@tack.kernel
+def confine(pos, vel, alive, n):
+    for i in range(n):
+        p = pos[i]
+        inside = -1.0 <= p <= 1.0                  # a mask, every link evaluated
+        if not all(inside):
+            alive[i] = 0
+        vel[i] = tack.select(inside, vel[i], -vel[i])    # reflect the components outside
+        pos[i] = tack.select(p > 1.0, 1.0, p)             # a scalar arm fills every component
+        hits = (p > 0.9) and (vel[i] > 0.0)              # and/or act per component on masks
+        if any(hits):
+            alive[i] += hits.sum()
+```
+
+A mask is an ordinary integer vector, so `mask.sum()` counts. `if` and
+`while` take a scalar condition: a mask there is rejected with the hint
+to reduce it with `any` or `all`.
+
 A device function can return several values, vectors among them, to be
 unpacked at the call:
 

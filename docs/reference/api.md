@@ -46,6 +46,8 @@ whichever backend was active when it was allocated.
 
 ::: tack.lang.field.Vector
 
+::: tack.select
+
 ::: tack.texture3d
     options:
       docstring_options:
