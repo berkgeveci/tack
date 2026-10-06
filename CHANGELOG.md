@@ -188,6 +188,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- Reading a zero-dimensional field to the host (`f.to_numpy()` for
+  `shape=()`) crashed the process on CUDA: cuda-python does not take a
+  zero-dimensional NumPy array as a host buffer. The copy now goes through
+  a flat view.
 - A parallel loop may start at a negated argument: `range(-n, n + 1)` and
   `tack.ndrange((-n, n + 1), ...)` failed with "Cannot resolve loop range
   expression: IRUnaryOp", because the host evaluates the launch size and

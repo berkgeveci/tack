@@ -198,7 +198,9 @@ class CUDABuffer(DeviceBuffer):
     def to_numpy(self) -> np.ndarray:
         self._live("read")
         out = np.empty(self._shape, dtype=self._numpy_dtype)
-        _check(driver.cuMemcpyDtoH(out, self._device_ptr, self._nbytes))
+        # Through a flat view: cuda-python does not take a zero-dimensional
+        # array as a host buffer (CUDA_ERROR_INVALID_VALUE, or a crash).
+        _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
         return out
 
     def fill(self, value):
@@ -345,7 +347,7 @@ class ExportableCUDABuffer(DeviceBuffer):
 
     def to_numpy(self) -> np.ndarray:
         out = np.empty(self._shape, dtype=self._numpy_dtype)
-        _check(driver.cuMemcpyDtoH(out, self._device_ptr, self._nbytes))
+        _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
         return out
 
     def fill(self, value):
