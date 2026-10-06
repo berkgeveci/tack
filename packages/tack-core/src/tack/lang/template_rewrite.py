@@ -71,6 +71,17 @@ def classify_template_attrs(obj):
     return scalars, fields, runtime_scalars
 
 
+def template_field_param_name(param_name, attr_name):
+    """The kernel parameter a template's field attribute becomes.
+
+    The runtime predicts this name before lowering to tell the transform
+    which of those parameters are vector fields, so both sides must agree;
+    `fresh_name` only departs from it when the kernel's own source already
+    uses the name.
+    """
+    return f"__tmpl_{param_name}_{attr_name}__"
+
+
 def rewrite_templates(kernel_ast, template_args):
     """Rewrite a kernel AST to resolve template parameters.
 
@@ -107,7 +118,7 @@ def rewrite_templates(kernel_ast, template_args):
         field_param_map = {}
         for attr_name in sorted(fields.keys()):
             field_param_map[attr_name] = fresh_name(
-                f"__tmpl_{param_name}_{attr_name}__", used_names)
+                template_field_param_name(param_name, attr_name), used_names)
 
         # Build mapping from runtime scalar attr name to synthetic parameter name
         runtime_scalar_param_map = {}

@@ -36,6 +36,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   identifier; CPU accepted it. The C-family generators now treat the loop
   header's declaration as ending with its block, so the later assignment
   declares a new local, as on CPU.
+- A `@tack.data_oriented` template's vector field attributes are now
+  detected as vector fields: `self.vel[i, j]` in a template method, or
+  `obj.vel[i, j]` in the kernel, lowered as a scalar field access and
+  failed IR verification.
 - A `@tack.func` given a vector field now loads whole vectors from it:
   `return vf[i]` inside the function lowered to a single scalar load, so
   a kernel doing `out[i] = f(vf, i)` wrote one component and left the

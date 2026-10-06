@@ -692,11 +692,20 @@ def _detect_vector_fields_from_args(kernel, args, template_args) -> dict[str, in
     if not template_args:
         return _detect_vector_fields(kernel, args)
 
+    from tack.lang.template_rewrite import classify_template_attrs, template_field_param_name
+
     funcdef = kernel._funcdef
     params = [a.arg for a in funcdef.args.args]
     vector_fields = {}
     for i, (param_name, arg) in enumerate(zip(params, args)):
         if i in template_args:
+            # A template's vector field attributes become kernel parameters
+            # too, under the rewrite's synthetic names; without this a
+            # `self.vel[i, j]` in a template method lowered as a scalar load.
+            _, fields, _ = classify_template_attrs(arg)
+            for attr_name, field in fields.items():
+                if hasattr(field, '_vector_n'):
+                    vector_fields[template_field_param_name(param_name, attr_name)] = field._vector_n
             continue
         if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
             vector_fields[param_name] = arg._vector_n
