@@ -144,7 +144,11 @@ right. Inlined calls retain their original execution position. `and` and
 arm. Chained comparisons stop at the first false comparison and evaluate
 the middle operands' effects once. Ordinary assignment evaluates its value
 before its store index. Augmented assignment evaluates its index once and
-reads the old value before evaluating the right-hand side. Sequential
+reads the old value before evaluating the right-hand side. A vector
+assignment evaluates every component of its right-hand side before it
+assigns any: `v = v.cross(w)` and `a[i] = a[i].cross(b[i])` read the old
+components, including when the fields read and written share storage.
+Sequential
 `range` arguments are evaluated once before entering the loop, including
 when its body changes a bound or step variable.
 

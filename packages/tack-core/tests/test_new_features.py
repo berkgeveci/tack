@@ -661,3 +661,93 @@ def test_subscript_of_a_scalar_value_is_rejected():
             for i in range(n):
                 out[i] = x[i][0]
         bad.get_ir()
+
+
+# --- A vector assignment evaluates its whole right side first ---
+
+@tack.kernel
+def vec_assign_from_itself(a, b, crossed, rotated, augmented, n):
+    for i in range(n):
+        v = a[i]
+        v = v.cross(b[i])
+        crossed[i] = v
+        r = a[i]
+        r = tack.Vector([r[1], r[2], r[0]])
+        rotated[i] = r
+        g = a[i]
+        g += g.cross(b[i])
+        augmented[i] = g
+
+
+@tack.kernel
+def vec_field_store_from_itself(a, b, c, n):
+    for i in range(n):
+        a[i] = a[i].cross(b[i])
+        c[i] = tack.Vector([c[i][1], c[i][2], c[i][0]])
+
+
+@tack.kernel
+def vec_field_store_through_alias(src, dst, n):
+    for i in range(n):
+        v = src[i]
+        dst[i] = tack.Vector([v[2], src[i][0], src[i][1]])
+
+
+@tack.kernel
+def vec_unpack_from_itself(a, out, n):
+    for i in range(n):
+        p = a[i]
+        x = p[0]
+        y = p[1]
+        x, y = tack.Vector([x, y]) * 2.0 + tack.Vector([y, x])
+        out[i] = x * 10.0 + y
+
+
+def _vec3_field(values):
+    f = tack.Vector.field(3, dtype=tack.f32, shape=(len(values),))
+    f.from_numpy(np.ascontiguousarray(values, np.float32).reshape(-1))
+    return f
+
+
+_VEC_A = np.array([[1, 2, 3], [-4, 5, 6], [7, -8, 9], [0.5, 0.25, -2]], np.float32)
+_VEC_B = np.array([[2, -1, 4], [3, 3, -5], [-6, 1, 2], [8, -3, 0.5]], np.float32)
+
+
+def test_vector_variable_assigned_from_itself(backend):
+    """`v = v.cross(w)`, a component rotation and `v += v.cross(w)` read the
+    old components. They were assigned one at a time, so later components
+    read the earlier ones already overwritten."""
+    n = len(_VEC_A)
+    outs = [tack.Vector.field(3, dtype=tack.f32, shape=(n,)) for _ in range(3)]
+    vec_assign_from_itself(_vec3_field(_VEC_A), _vec3_field(_VEC_B), *outs, n)
+    crossed, rotated, augmented = (o.to_numpy().reshape(n, 3) for o in outs)
+    np.testing.assert_array_equal(crossed, np.cross(_VEC_A, _VEC_B))
+    np.testing.assert_array_equal(rotated, _VEC_A[:, [1, 2, 0]])
+    np.testing.assert_array_equal(augmented, _VEC_A + np.cross(_VEC_A, _VEC_B))
+
+
+def test_vector_field_element_stored_from_itself(backend):
+    """A store to a vector field element loads its right side before the
+    first component is written."""
+    n = len(_VEC_A)
+    a, c = _vec3_field(_VEC_A), _vec3_field(_VEC_B)
+    vec_field_store_from_itself(a, _vec3_field(_VEC_B), c, n)
+    np.testing.assert_array_equal(a.to_numpy().reshape(n, 3), np.cross(_VEC_A, _VEC_B))
+    np.testing.assert_array_equal(c.to_numpy().reshape(n, 3), _VEC_B[:, [1, 2, 0]])
+
+
+def test_vector_field_store_through_an_alias(backend):
+    """The same holds when source and destination are one field passed
+    twice: the kernel cannot see that the names share storage."""
+    n = len(_VEC_A)
+    f = _vec3_field(_VEC_A)
+    vec_field_store_through_alias(f, f, n)
+    np.testing.assert_array_equal(f.to_numpy().reshape(n, 3), _VEC_A[:, [2, 0, 1]])
+
+
+def test_tuple_unpacking_a_vector_built_from_its_targets(backend):
+    n = len(_VEC_A)
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    vec_unpack_from_itself(_vec3_field(_VEC_A), out, n)
+    x, y = _VEC_A[:, 0], _VEC_A[:, 1]
+    np.testing.assert_array_equal(out.to_numpy(), (2 * x + y) * 10 + (2 * y + x))

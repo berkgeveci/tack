@@ -26,6 +26,21 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   over all components in storage order; they used to fail IR
   verification.
 
+### Kernels that now compute different results
+
+- A vector assignment whose right side reads its own target now reads
+  the old components. Vectors are assigned one component at a time, and
+  the right side was evaluated in between, so later components saw
+  earlier ones already overwritten: `v = v.cross(w)`,
+  `v = tack.Vector([v[1], v[2], v[0]])`, `v += v.cross(w)` and
+  `a[i] = a[i].cross(b[i])` all computed wrong vectors, on every backend
+  and without an error. Components that could observe an earlier
+  component's assignment are now evaluated first, as Python does. For a
+  store to a field element that means any component that loads from a
+  field, since fields may share storage. Assignments whose components
+  only read their own component (`v = v * 2.0`, `a[i] = a[i] + b[i]`)
+  computed the right result before and still do.
+
 ### Code that is now rejected
 
 - Reading a `for` loop's variable after its loop, before the name is

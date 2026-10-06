@@ -627,11 +627,13 @@ class KernelTransformer(ast.NodeVisitor):
         if isinstance(target, ast.Name) and target.id in self._vector_vars:
             ndim = self._vector_vars[target.id]
             rhs_components = self._visit_as_vector(node.value, ndim)
+            names = [self._component_name(target.id, c) for c in range(ndim)]
             stmts = []
-            for c in range(ndim):
-                lhs = ir.IRName(self._component_name(target.id, c))
-                rhs = ir.IRBinOp(op=op, left=lhs, right=rhs_components[c])
-                stmts.append(ir.IRAssign(target=self._component_name(target.id, c), value=rhs))
+            updated = self._settle_components(
+                [ir.IRBinOp(op=op, left=ir.IRName(name), right=rhs)
+                 for name, rhs in zip(names, rhs_components)], stmts, names)
+            for name, value in zip(names, updated):
+                stmts.append(ir.IRAssign(target=name, value=value))
             return stmts
 
         # v[c] += expr for a vector variable: read the component, store it back
@@ -716,6 +718,7 @@ class KernelTransformer(ast.NodeVisitor):
                 raise TypeError(
                     f"Tuple unpacking: expected {n} values, got {len(visited_value)}")
             stmts = []
+            visited_value = self._settle_components(visited_value, stmts, names)
             for name, val in zip(names, visited_value):
                 self._vector_vars.pop(name, None)
                 stmts.append(ir.IRAssign(target=name, value=val))
@@ -1398,17 +1401,49 @@ class KernelTransformer(ast.NodeVisitor):
         """Assign a vector expression result to a variable."""
         ndim = len(components)
         self._vector_vars[name] = ndim
+        names = [self._component_name(name, c) for c in range(ndim)]
         stmts = []
-        for c, comp in enumerate(components):
-            stmts.append(ir.IRAssign(target=self._component_name(name, c), value=comp))
+        components = self._settle_components(components, stmts, names)
+        for target, comp in zip(names, components):
+            stmts.append(ir.IRAssign(target=target, value=comp))
         return stmts
+
+    def _settle_components(self, components: list, statements: list, targets=None) -> list:
+        """Components that can be assigned one at a time, in order.
+
+        A vector assignment lowers to one assignment per component, but its
+        right side is a single value that Python evaluates completely before
+        binding anything. A component that reads what an earlier component's
+        assignment has already written would see the new value, so it is
+        evaluated into a temporary first: for a vector variable, a read of
+        an earlier target component (``v = v.cross(w)``); for a field
+        element, any field load, since fields may share storage
+        (``a[i] = a[i].cross(b[i])``). ``targets`` names the variable's
+        components, or is None for a store to a field.
+        """
+        settled = list(components)
+        for c in range(1, len(settled)):
+            if targets is None:
+                hazard = any(isinstance(n, ir.IRFieldLoad) for n in walk_ir(settled[c]))
+            else:
+                written = set(targets[:c])
+                hazard = any(isinstance(n, ir.IRName) and n.name in written
+                             for n in walk_ir(settled[c]))
+            if hazard:
+                settled[c] = self._capture_value(settled[c], statements, freeze_name=True)
+        return settled
 
     def _store_vector_field(self, target: ast.Subscript, components: list) -> list:
         """Store a vector into a vector field: field[i] = vec."""
         field_node, index_node, components = self._visit_store_location(target, components)
-        int_index = ir.IRCast(value=index_node, dtype=i32)
         ndim = len(components)
         stmts = []
+        # Each component store repeats the index, so one that loads from a
+        # field is read before the first store can change it.
+        if any(isinstance(n, ir.IRFieldLoad) for n in walk_ir(index_node)):
+            index_node = self._capture_value(index_node, stmts)
+        int_index = ir.IRCast(value=index_node, dtype=i32)
+        components = self._settle_components(components, stmts)
         for c in range(ndim):
             # field[int(i) * ndim + c]
             actual_index = ir.IRBinOp(
