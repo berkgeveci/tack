@@ -41,6 +41,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   a kernel doing `out[i] = f(vf, i)` wrote one component and left the
   rest. The inliner propagated vector-variable and texture metadata to a
   function's parameters but not vector-field metadata.
+- A device function's locals bound by tuple unpacking (`t, u = f()`, or
+  `for i, j in ...`) are now renamed when the function is inlined. They
+  escaped renaming before, so the inlined body overwrote the caller's
+  variables of the same names.
 
 ## 0.2.0 — 2026-10-05
 

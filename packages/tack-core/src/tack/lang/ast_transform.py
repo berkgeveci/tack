@@ -1194,20 +1194,31 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRName(result_var)
 
     def _collect_assigned_names(self, stmts) -> set[str]:
-        """Collect all variable names assigned in a list of AST statements."""
+        """Collect all variable names assigned in a list of AST statements.
+
+        Every binding counts, including the names inside a tuple target
+        (`t, u = f()`, `for i, j in ndrange(...)`): a callee local that is
+        not collected is not renamed, and the inlined body then writes
+        the caller's variable of the same name.
+        """
         names = set()
+
+        def targets(node):
+            if isinstance(node, ast.Name):
+                names.add(node.id)
+            elif isinstance(node, (ast.Tuple, ast.List)):
+                for elt in node.elts:
+                    targets(elt)
+
         for stmt in stmts:
             for node in ast.walk(stmt):
                 if isinstance(node, ast.Assign):
                     for t in node.targets:
-                        if isinstance(t, ast.Name):
-                            names.add(t.id)
+                        targets(t)
                 elif isinstance(node, ast.AugAssign):
-                    if isinstance(node.target, ast.Name):
-                        names.add(node.target.id)
+                    targets(node.target)
                 elif isinstance(node, ast.For):
-                    if isinstance(node.target, ast.Name):
-                        names.add(node.target.id)
+                    targets(node.target)
         return names
 
     def _detect_return_count(self, funcdef) -> int:
