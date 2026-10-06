@@ -147,6 +147,51 @@ constant: a kernel given `Model(cubic)` and then `Model(spiky)` compiles
 once for each. Assigning another function to the attribute of an existing
 object takes effect at the next call.
 
+## Kernels as Methods
+
+A kernel can be a method of the class. Called on an object, it receives
+that object as `self`, a template like any other argument, so the
+object's fields, scalars, constants and methods are reached through it
+and nothing has to be passed in:
+
+```python
+@tack.data_oriented
+class Rasterizer:
+    def __init__(self, n, width, height):
+        self.n = n
+        self.width, self.height = width, height
+        self.vertices = tack.Vector.field(2, dtype=tack.f32, shape=(n, 3))
+        self.pixels = tack.Vector.field(3, dtype=tack.f32, shape=(width, height))
+
+    @staticmethod
+    @tack.func
+    def edge(p, a, b):                     # needs nothing from the object
+        return (p.x - a.x) * (b.y - a.y) - (p.y - a.y) * (b.x - a.x)
+
+    @tack.func
+    def inside(self, p, t):
+        a, b, c = self.vertices[t, 0], self.vertices[t, 1], self.vertices[t, 2]
+        return self.edge(p, a, b) >= 0.0 and self.edge(p, b, c) >= 0.0 \
+            and self.edge(p, c, a) >= 0.0
+
+    @tack.kernel
+    def draw(self, shade):
+        for i, j in tack.ndrange(self.width, self.height):
+            for t in range(self.n):
+                if self.inside([i + 0.5, j + 0.5], t):
+                    self.pixels[i, j] = [shade, shade, shade]
+
+raster = Rasterizer(60, 640, 480)
+raster.draw(0.8)
+```
+
+The kernel compiles once per class and is shared by its objects, as a
+kernel taking the object as an argument would be; `Rasterizer.draw(raster,
+0.8)` is the same call. A device function that uses nothing of the object
+can be a `@staticmethod` (the decorator goes above `@tack.func`) and is
+still called through `self`. The class must be decorated with
+`@tack.data_oriented`.
+
 ## Cell Set Example
 
 Templates are ideal for topology abstractions where the same algorithm

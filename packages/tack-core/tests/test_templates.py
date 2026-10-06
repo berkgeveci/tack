@@ -299,3 +299,107 @@ def test_unknown_template_method_is_reported():
             s.out[i] = s.missing(s.x[i])
     with pytest.raises(Exception, match="no @tack.func method 'missing'"):
         bad(_BaseModel(2, 1.0), 2)
+
+
+@tack.data_oriented
+class _WithStatic:
+    scale = 2.0
+
+    def __init__(self, n):
+        self.x = tack.field(dtype=tack.f32, shape=(n,))
+        self.out = tack.field(dtype=tack.f32, shape=(n,))
+        self.x.from_numpy(np.arange(n, dtype=np.float32))
+
+    @staticmethod
+    @tack.func
+    def between(value, lo, hi):
+        return value >= lo and value <= hi, value - lo
+
+    @tack.func
+    def clipped(self, i):
+        inside, offset = self.between(self.x[i], 1.0, 3.0)
+        return offset * self.scale if inside else -1.0
+
+
+@tack.kernel
+def _use_static(s: tack.template(), n):
+    for i in range(n):
+        inside, _offset = s.between(s.x[i], 0.0, 0.5)
+        s.out[i] = s.clipped(i) + (100.0 if inside else 0.0)
+
+
+def test_static_device_function_of_a_template_class(backend):
+    """`@staticmethod` over `@tack.func`, called as `self.name(...)` from a
+    method and from a kernel. It was not found: "self.between ... is
+    neither a class constant ... nor a @tack.func method"."""
+    n = 5
+    s = _WithStatic(n)
+    _use_static(s, n)
+    np.testing.assert_array_equal(s.out.to_numpy(), [99.0, 0.0, 2.0, 4.0, -1.0])
+
+
+@tack.data_oriented
+class _WithKernels:
+    gain = 3.0
+
+    def __init__(self, n, bias):
+        self.n = n
+        self.bias = bias
+        self.x = tack.field(dtype=tack.f32, shape=(n,))
+        self.out = tack.field(dtype=tack.f32, shape=(n,))
+
+    @tack.func
+    def scaled(self, i):
+        return self.x[i] * self.gain + self.bias
+
+    @tack.kernel
+    def ramp(self):
+        for i in range(self.n):
+            self.x[i] = i * 1.0
+
+    @tack.kernel
+    def apply(self, extra, other):
+        for i in range(self.n):
+            self.out[i] = self.scaled(i) + extra + other[i]
+
+
+class _WithKernelsSub(_WithKernels):
+    gain = 10.0
+
+
+def test_kernel_defined_as_a_method(backend):
+    """`model.apply(...)` passes the model as the kernel's first argument,
+    a template like any other: its fields, scalars, constants and methods
+    are reached through `self`. It failed with "expects 1 arguments, got
+    0", so every Taichi class with `@ti.kernel` methods had to be taken
+    apart."""
+    n = 4
+    other = tack.field(dtype=tack.f32, shape=(n,))
+    other.fill(0.5)
+    for cls, bias in ((_WithKernels, 1.0), (_WithKernels, 2.0), (_WithKernelsSub, 1.0)):
+        model = cls(n, bias)
+        model.ramp()
+        model.apply(100.0, other)
+        np.testing.assert_allclose(model.out.to_numpy(),
+                                   np.arange(n) * cls.gain + bias + 100.5)
+
+    model = _WithKernels(n, 0.0)
+    _WithKernels.ramp(model)                         # unbound, through the class
+    np.testing.assert_array_equal(model.x.to_numpy(), np.arange(n))
+    assert model.apply.name == "apply"
+    bound = tack.inspect(model.apply, 1.0, other, mode="ir")
+    assert bound == tack.inspect(_WithKernels.apply, model, 1.0, other, mode="ir")
+
+
+def test_kernel_method_of_an_undecorated_class_says_what_is_missing():
+    class Plain:
+        def __init__(self):
+            self.n = 3
+
+        @tack.kernel
+        def run(self):
+            for i in range(self.n):
+                pass
+
+    with pytest.raises(Exception, match="must be decorated with @tack.data_oriented"):
+        Plain().run()

@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A kernel can be a method of a `@tack.data_oriented` class:
+  `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
+  object is a template like any other argument. It failed with "expects 1
+  arguments, got 0". `tack.inspect` takes the bound form too.
+- A `@tack.func` under `@staticmethod` in a data-oriented class is called
+  through `self` like the other methods. It was not found.
 - A list of scalars in a kernel or device function is a vector:
   `pos[i] = [x, y]` is `pos[i] = tack.Vector([x, y])`, wherever a vector
   is accepted. It was rejected as "unsupported List". An empty list, a
