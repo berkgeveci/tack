@@ -217,7 +217,11 @@ a vector of integers stands for one index per component. Binding a field
 whose number of dimensions differs from the number of indices a kernel
 gives it raises `TypeError` at the call, naming the source position.
 Indices are not checked against the field's extents. A field view or
-an imported pointer can share storage with another field. Object identity
+an imported pointer can share storage with another field. Host code reads
+one element with `f[i, j]` (a Python number, or a NumPy array of a vector
+or matrix element) and may not write one; `DeviceBuffer.read_range`
+defines the copy, which is a slice of host-visible memory on CPU and
+Metal and a whole-buffer copy elsewhere until a backend narrows it. Object identity
 does not establish that two fields have different backing allocations.
 Callers must keep external storage alive for its use and must use fields
 compatible with the active backend.

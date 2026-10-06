@@ -72,7 +72,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 - **HIP**: `HIPBuffer` holds a device pointer (`hipMalloc`). Explicit host↔device copies.
 - **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Explicit host↔device copies via immediate command list.
 
-`tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type.
+`tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type. `Field.__getitem__` reads one element on the host through `DeviceBuffer.read_range(start, count)`: CPU and Metal slice their views, the others fall back to a whole-buffer `to_numpy()` (correct, slow; narrow it where it can be tested). `__setitem__` and `__iter__` raise.
 
 ### Backend contract
 

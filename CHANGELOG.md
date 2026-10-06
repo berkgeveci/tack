@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- One element of a field can be read from host code: `f[i]`, `f[i, j]`,
+  `f[None]`, giving a Python number or, for a vector or matrix field, a
+  NumPy array. Writing an element, slicing and iterating are refused with
+  a message pointing at `from_numpy`, `fill` and `to_numpy`. On CPU and
+  Metal the read is a slice of unified memory; on CUDA, HIP and Level
+  Zero it is a copy of the whole field for now.
 - A kernel can be a method of a `@tack.data_oriented` class:
   `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
   object is a template like any other argument. It failed with "expects 1

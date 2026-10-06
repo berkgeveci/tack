@@ -126,6 +126,26 @@ pos.fill([0.0, 1.0, 0.0])                # every element to this vector
 pos.fill(0.0)                            # every component to this scalar
 ```
 
+### Reading One Element from the Host
+
+`f[i]`, `f[i, j]` and `f[None]` (for a zero-dimensional field) read one
+element in host code: a Python number from a field of scalars, a NumPy
+array from a vector or matrix field. Negative indices count from the end.
+
+```python
+head = queue[None]                 # a counter a kernel maintains
+comet = pos[0]                     # a 3-vector, as a NumPy array
+if temperature[i, j] > melting:    # a host-side decision on one value
+    ...
+```
+
+This is for inspection and for decisions on single values. On CPU and
+Metal it reads unified memory directly; on the other backends every read
+is a transfer, so many elements are read at once with `to_numpy()`. Fields
+are not written by element from the host: build the values in a NumPy
+array and `from_numpy` it, `fill` the field, or write them in a kernel.
+Iterating a field raises for the same reason.
+
 ### Reductions
 
 `data.sum()`, `data.min()`, `data.max()` and `data.mean()` reduce every
