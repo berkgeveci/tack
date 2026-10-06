@@ -372,6 +372,77 @@ def test_vector_field_load(backend):
     assert np.allclose(out_z.to_numpy(), np.arange(n, dtype=np.float32) * 100)
 
 
+@tack.func
+def _element(vf, i):
+    return vf[i]
+
+
+@tack.func
+def _element_2d(vf, i, j):
+    return vf[i, j]
+
+
+@tack.func
+def _guarded_element(vf, i, n):
+    # Two returns, one a literal vector: both must carry the width.
+    if i < 0 or i >= n:
+        return tack.Vector([0.0, 0.0, 0.0])
+    return vf[i]
+
+
+@tack.func
+def _blend(vf, i, n):
+    a = _guarded_element(vf, i, n)
+    b = _guarded_element(vf, i + 1, n)
+    return a + (b - a) * 0.5
+
+
+@tack.kernel
+def vec_field_through_func(vf, out, blended, n):
+    for i in range(n):
+        out[i] = _element(vf, i)
+        blended[i] = _blend(vf, i, n)
+
+
+@tack.kernel
+def vec_field_2d_through_func(vf, out, w, h):
+    for i, j in tack.ndrange(w, h):
+        out[i, j] = _element_2d(vf, i, j)
+
+
+def test_vector_field_element_returned_from_func(backend):
+    """A device function given a vector field loads whole vectors from it.
+
+    The inliner propagated vector-variable and texture metadata to renamed
+    parameters but not vector-field metadata, so `return vf[i]` lowered to
+    one scalar load and the store wrote one component."""
+    n = 6
+    data = np.arange(n * 3, dtype=np.float32) + 1
+    vf = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    vf.from_numpy(data)
+    out = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    blended = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+
+    vec_field_through_func(vf, out, blended, n)
+
+    v = data.reshape(n, 3)
+    np.testing.assert_array_equal(out.to_numpy().reshape(n, 3), v)
+    nxt = np.vstack([v[1:], np.zeros((1, 3), np.float32)])
+    np.testing.assert_array_equal(blended.to_numpy().reshape(n, 3), v + (nxt - v) * 0.5)
+
+
+def test_vector_field_2d_element_returned_from_func(backend):
+    w, h = 4, 3
+    data = np.arange(w * h * 2, dtype=np.float32) + 1
+    vf = tack.Vector.field(2, dtype=tack.f32, shape=(w, h))
+    vf.from_numpy(data)
+    out = tack.Vector.field(2, dtype=tack.f32, shape=(w, h))
+
+    vec_field_2d_through_func(vf, out, w, h)
+
+    np.testing.assert_array_equal(out.to_numpy(), data)
+
+
 @tack.kernel
 def vec_field_store(in_x, in_y, in_z, vf):
     for i in range(in_x.shape[0]):

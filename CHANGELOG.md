@@ -36,6 +36,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   identifier; CPU accepted it. The C-family generators now treat the loop
   header's declaration as ending with its block, so the later assignment
   declares a new local, as on CPU.
+- A `@tack.func` given a vector field now loads whole vectors from it:
+  `return vf[i]` inside the function lowered to a single scalar load, so
+  a kernel doing `out[i] = f(vf, i)` wrote one component and left the
+  rest. The inliner propagated vector-variable and texture metadata to a
+  function's parameters but not vector-field metadata.
 
 ## 0.2.0 — 2026-10-05
 
