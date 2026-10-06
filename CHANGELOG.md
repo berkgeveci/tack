@@ -11,6 +11,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   vector with those components in a kernel, `tack.constant(((1, 0), (0, 1)))`
   the matrix with those rows, typed per component as scalar constants
   are. On the host they index, iterate and convert to NumPy arrays.
+- `tack.math`: `fract`, `mix`, `clamp`, `saturate`, `smoothstep`,
+  `length`, `distance` and `normalize` as device functions with GLSL's
+  definitions, on scalars and vectors alike.
 - A kernel can be a method of a `@tack.data_oriented` class:
   `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
   object is a template like any other argument. It failed with "expects 1

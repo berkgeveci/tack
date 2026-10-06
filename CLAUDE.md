@@ -328,7 +328,11 @@ function does not bind through the same `CallBindings`; one bound to a
 constant lowers to an `IRConstant`, under an `IRCast` when typed, so it is
 baked into the cached IR like a literal and needs no variant-key entry.
 Nothing else is captured: other names still raise `NameError`.
-`math.pi`/`e`/`tau` lower the same way. See `test_constant.py`.
+`math.pi`/`e`/`tau` lower the same way. A tuple (or tuple of tuples)
+makes an `ArrayConstant`, lowered by `_named_constant` to a `VectorValue`
+of per-component constants; `visit_Subscript` selects its components.
+`tack.math` (`src/tack/math.py`) is plain `@tack.func` definitions with
+GLSL semantics. See `test_constant.py`, `test_math_helpers.py`.
 
 Device calls resolve by object identity from the defining callable's globals
 and closure bindings (`call_bindings.py`), including aliases and module-qualified

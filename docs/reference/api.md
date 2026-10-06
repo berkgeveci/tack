@@ -90,6 +90,10 @@ whichever backend was active when it was allocated.
 
 ::: tack.lang.constant.ArrayConstant
 
+## Shader-style helpers
+
+::: tack.math
+
 ::: tack.lang.field.Matrix
 
 ::: tack.lang.source_validation.UnsupportedSyntaxError
