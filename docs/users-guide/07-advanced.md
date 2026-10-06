@@ -246,10 +246,28 @@ def step(pos, vel, grid, out, dt, n):
         v = min(max(v, -10.0), 10.0)        # clamp each component
         cell = int(floor(pos[i] / 0.25))    # a vector of i32 cell indices
         v = v if pos[i].y > 0.0 else -v     # one condition, whole vectors
-        speed = v.norm()                    # also norm_sqr(), dot(w), cross(w), normalized()
+        speed = v.norm()                    # methods are listed below
         vel[i] = v
         pos[i] += v * dt                    # augmented store to a field element
         out[i] = grid[cell] * speed         # grid[cell] is grid[cell[0], cell[1], cell[2]]
+```
+
+The vector methods are `norm()`, `norm_sqr()`, `dot(w)`, `cross(w)`
+(3-vectors), `normalized()`, and the reductions over components `sum()`,
+`min()` and `max()`. `normalized(eps)` divides by `norm() + eps`, for a
+vector that may be zero. `min` and `max` as functions take two or more
+values, as in Python: `min(a, b, c)`.
+
+A device function can return several values, vectors among them, to be
+unpacked at the call:
+
+```python
+@tack.func
+def closest_hit(origin, direction):
+    ...
+    return distance, normal, color        # a scalar and two vectors
+
+distance, normal, color = closest_hit(o, d)
 ```
 
 Two vectors in one operation must have the same number of components.

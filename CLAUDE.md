@@ -274,8 +274,11 @@ supplies one dimension per component, in subscripts and in atomics, whose
 index may be a tuple with one entry per dimension; a vector value given
 to an atomic on a vector field lowers to one atomic per component, while
 a scalar value keeps the index a flat component index. Tuple assignment
-accepts subscript and component targets through temporaries. See the
-vector tests in `test_new_features.py`.
+accepts subscript and component targets through temporaries. A device
+function returning several values yields a list whose vector elements are
+nested lists; only tuple unpacking consumes that. `v.min()`/`v.max()`/
+`v.sum()` are intercepted before the same-named builtins, which need
+arguments. See the vector tests in `test_new_features.py`.
 
 ### @tack.func inlining
 
@@ -455,7 +458,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 ## Kernel language features
 
 - **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndrange(w, h)`, `while`, `break`, `continue`
-- **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max`, `pow`
+- **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max` (two or more values), `pow`; all apply to each component of a vector
 - **Types**: `int()`, `float()` casts, plus explicit `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`, `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`
 - **Atomics**: `tack.atomic_add(field, idx, val)`, `tack.atomic_min(...)`, `tack.atomic_max(...)`
 - **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(field, size)`, `tack.barrier()`, `tack.thread_id()`

@@ -632,6 +632,10 @@ class KernelTransformer(ast.NodeVisitor):
 
         # Check if RHS is a vector variable → propagate vector-ness
         if isinstance(visited_value, list):
+            if any(isinstance(component, list) for component in visited_value):
+                raise self._source_error(
+                    node, "assignment", "binds one target to several values, some of "
+                    "them vectors; unpack them into one target each")
             # Vector expression result (list of IR nodes)
             if isinstance(target, ast.Name):
                 return self._assign_vector_from_ir(target.id, visited_value)
@@ -774,6 +778,16 @@ class KernelTransformer(ast.NodeVisitor):
                 raise TypeError(
                     f"Tuple unpacking: expected {n} values, got {len(visited_value)}")
             stmts = []
+            if any(isinstance(val, list) for val in visited_value):
+                # Several values with vectors among them, as a device
+                # function returns: each is already a result of its own.
+                for name, val in zip(names, visited_value):
+                    if isinstance(val, list):
+                        stmts.extend(self._assign_vector_from_ir(name, val))
+                    else:
+                        self._vector_vars.pop(name, None)
+                        stmts.append(ir.IRAssign(target=name, value=val))
+                return stmts + self._assign_unpacked(deferred)
             visited_value = self._settle_components(visited_value, stmts, names)
             for name, val in zip(names, visited_value):
                 self._vector_vars.pop(name, None)
@@ -1023,16 +1037,32 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name == "Vector":
             return self._visit_vector_construct(node)
 
+        # v.min(), v.max(), v.sum(): a vector's own reduction, which shares
+        # its name with a builtin of two or more arguments
+        if (isinstance(node.func, ast.Attribute) and not node.args
+                and func_name in ('min', 'max', 'sum')):
+            reduced = self._try_visit_vector_method(node)
+            if reduced is not None:
+                return reduced
+            raise NotImplementedError(
+                f"{func_name}() without arguments reduces a vector's components; "
+                f"a field is reduced from Python, with field.{func_name}()")
+
         # Math builtins from the math module or bare names
         if func_name in MATH_BUILTINS:
-            arity = 2 if func_name in ('atan2', 'pow', 'min', 'max') else 1
+            if func_name in ('min', 'max'):
+                # Python's min and max take any number of values
+                if len(node.args) < 2:
+                    raise NotImplementedError(f"{func_name}() takes at least 2 arguments")
+                args = self._visit_ordered(node.args)
+                result = args[0]
+                for arg in args[1:]:
+                    result = self._math_call(node, func_name, [result, arg])
+                return result
+            arity = 2 if func_name in ('atan2', 'pow') else 1
             if len(node.args) != arity:
                 raise NotImplementedError(f"{func_name}() takes exactly {arity} arguments")
-            args = self._visit_ordered(node.args)
-            if any(isinstance(a, list) for a in args):
-                return [ir.IRCall(func_name=func_name, args=row)
-                        for row in self._componentwise(node, f"{func_name}()", args)]
-            return ir.IRCall(func_name=func_name, args=args)
+            return self._math_call(node, func_name, self._visit_ordered(node.args))
 
         # len(field) → the field's first dimension
         if func_name == "len":
@@ -1137,6 +1167,13 @@ class KernelTransformer(ast.NodeVisitor):
                 return obj_result
 
         raise NotImplementedError(f"Function call '{func_name}' not supported in kernels")
+
+    def _math_call(self, node, func_name: str, args: list):
+        """A math builtin on scalars, or on each component when given a vector."""
+        if any(isinstance(a, list) for a in args):
+            return [ir.IRCall(func_name=func_name, args=row)
+                    for row in self._componentwise(node, f"{func_name}()", args)]
+        return ir.IRCall(func_name=func_name, args=args)
 
     def _visit_atomic(self, node: ast.Call, func_name: str):
         """``tack.atomic_<op>(field, index, value)``.
@@ -1346,15 +1383,18 @@ class KernelTransformer(ast.NodeVisitor):
         if result_var is None:
             return None
 
-        # Multi-return: return list of IRNames (treated as tuple)
+        # Multi-return: one value per element, a vector element as its
+        # components (a nested list)
         if isinstance(result_var, list):
-            return [ir.IRName(v) for v in result_var]
+            return [self._result_value(v) for v in result_var]
 
-        # Check if result is a vector
+        return self._result_value(result_var)
+
+    def _result_value(self, result_var: str):
+        """An inlined call's result: a name, or a vector's component names."""
         if result_var in self._vector_vars:
             ndim = self._vector_vars[result_var]
             return [ir.IRName(self._component_name(result_var, c)) for c in range(ndim)]
-
         return ir.IRName(result_var)
 
     def _collect_assigned_names(self, stmts) -> set[str]:
@@ -1730,17 +1770,37 @@ class KernelTransformer(ast.NodeVisitor):
 
     def _emit_vector_method(self, method_name: str, components: list, ndim: int, arg_nodes: list):
         """Emit IR for a vector method call."""
-        if method_name in ('normalized', 'norm', 'norm_sqr') and arg_nodes:
+        if method_name in ('norm', 'norm_sqr', 'sum', 'min', 'max') and arg_nodes:
             raise NotImplementedError(f"{method_name}() takes no arguments")
         if method_name == "normalized":
-            # length = sqrt(sum(c*c for c in components))
+            # length = sqrt(sum(c*c for c in components)), plus an optional
+            # eps that keeps a zero vector from dividing by zero
+            if len(arg_nodes) > 1:
+                raise NotImplementedError("normalized() takes at most one argument (eps)")
             sum_sq = components[0]
             sum_sq = ir.IRBinOp(op="*", left=components[0], right=components[0])
             for c in range(1, ndim):
                 sum_sq = ir.IRBinOp(op="+", left=sum_sq,
                                     right=ir.IRBinOp(op="*", left=components[c], right=components[c]))
             length = ir.IRCall(func_name="sqrt", args=[sum_sq])
+            if arg_nodes:
+                eps = self.visit(arg_nodes[0])
+                if isinstance(eps, list):
+                    raise TypeError("normalized() eps must be a scalar")
+                length = ir.IRBinOp(op="+", left=length, right=eps)
             return [ir.IRBinOp(op="/", left=c, right=length) for c in components]
+
+        if method_name == "sum":
+            total = components[0]
+            for c in components[1:]:
+                total = ir.IRBinOp(op="+", left=total, right=c)
+            return total
+
+        if method_name in ("min", "max"):
+            extreme = components[0]
+            for c in components[1:]:
+                extreme = ir.IRCall(func_name=method_name, args=[extreme, c])
+            return extreme
 
         if method_name == "norm":
             sum_sq = ir.IRBinOp(op="*", left=components[0], right=components[0])

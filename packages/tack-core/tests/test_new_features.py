@@ -1115,3 +1115,88 @@ def test_mismatched_atomics_are_rejected(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
         define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
+# --- Several return values with vectors among them; min/max of several; vector reductions ---
+
+@tack.func
+def _closest_hit(v, scale):
+    closest = v.norm() * scale
+    normal = tack.Vector([0.0, 0.0, 0.0])
+    color = tack.Vector([0.0, 0.0, 0.0])
+    if closest > 2.0:
+        normal = v.normalized()
+        color = abs(v) * 0.5
+    return closest, normal, color
+
+
+@tack.kernel
+def tuple_return_with_vectors(a, shaded, normals, n):
+    for i in range(n):
+        closest, normal, color = _closest_hit(a[i], 1.5)
+        shaded[i] = normal * closest + color
+        closest, normals[i], color = _closest_hit(a[i], 1.5)
+
+
+@tack.kernel
+def vec_reductions(a, out, safe, n):
+    for i in range(n):
+        v = a[i]
+        out[i] = tack.Vector([min(v[0], v[1], v[2]), max(v[0], 0.5, v[2], v[1]),
+                              v.max() + v.min() + v.sum()])
+        safe[i] = v.normalized(1e-3) + (v * 0.0).normalized(1e-3) + max(v, 0.0, -v) * 0.0
+
+
+def test_device_function_returns_vectors_among_several_values(backend):
+    """`return closest, normal, color` with vector elements. The vector
+    slots were never bound, and lowering failed on the unbound name."""
+    n = len(_VEC_M)
+    shaded, normals = (tack.Vector.field(3, dtype=tack.f32, shape=(n,)) for _ in range(2))
+    tuple_return_with_vectors(_vec3_field(_VEC_M), shaded, normals, n)
+    m = _VEC_M.astype(np.float64)
+    length = np.linalg.norm(m, axis=1, keepdims=True)
+    far = length * 1.5 > 2.0
+    normal = np.where(far, m / length, 0.0)
+    want = normal * length * 1.5 + np.where(far, np.abs(m) * 0.5, 0.0)
+    np.testing.assert_allclose(shaded.to_numpy().reshape(n, 3), want, rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(normals.to_numpy().reshape(n, 3), normal, rtol=1e-6, atol=1e-7)
+
+
+def test_min_max_of_several_values_and_vector_reductions(backend):
+    """`min(a, b, c)` as in Python; `v.min()`, `v.max()` and `v.sum()` over a
+    vector's components; `normalized(eps)` for a vector that may be zero."""
+    n = len(_VEC_M)
+    out, safe = (tack.Vector.field(3, dtype=tack.f32, shape=(n,)) for _ in range(2))
+    vec_reductions(_vec3_field(_VEC_M), out, safe, n)
+    m = _VEC_M
+    want = np.stack([m.min(1), np.maximum(m.max(1), 0.5), m.max(1) + m.min(1) + m.sum(1)], 1)
+    np.testing.assert_allclose(out.to_numpy().reshape(n, 3), want, rtol=1e-6)
+    length = np.linalg.norm(m.astype(np.float64), axis=1, keepdims=True)
+    np.testing.assert_allclose(safe.to_numpy().reshape(n, 3), m / (length + 1e-3), rtol=1e-6)
+
+
+def _several_values_bound_to_one_name():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            hit = _closest_hit(vf[i], 1.0)
+            out[i] = vf[i]
+    return bad
+
+
+def _field_reduced_inside_a_kernel():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] = s.max()
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_several_values_bound_to_one_name, "binds one target to several values"),
+    (_field_reduced_inside_a_kernel, "a field is reduced from Python"),
+])
+def test_misused_results_and_reductions_are_rejected(define, message):
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})

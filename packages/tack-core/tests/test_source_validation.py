@@ -61,7 +61,8 @@ def test_unsupported_source_has_function_and_location(statement, construct):
     assert re.search(r'line [1-9][0-9]*, column [1-9][0-9]*', message)
 
 
-@pytest.mark.parametrize("call", ['sqrt(1, 2)', 'sqrt()', 'min(1, 2, 3)', 'tack.barrier(1)', 'tack.thread_id(1)'])
+@pytest.mark.parametrize("call", ['sqrt(1, 2)', 'sqrt()', 'min(1)', 'pow(1, 2, 3)', 'tack.barrier(1)',
+                                  'tack.thread_id(1)'])
 def test_extra_or_missing_builtin_arguments_are_rejected(call):
     source = f'def bad(out):\n    for i in range(4):\n        {call}'
     with pytest.raises(UnsupportedSyntaxError, match="Kernel 'bad'.*takes.*arguments.*line|Kernel 'bad'.*line.*takes.*arguments"):

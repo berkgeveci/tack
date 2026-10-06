@@ -40,6 +40,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   augmented store. Vectors of different widths in one operation, a
   component name past the width, and a vector combined into a scalar
   target are rejected at lowering with the source position.
+- A device function can return vectors among several values:
+  `return distance, normal, color`, unpacked with
+  `d, n, c = closest_hit(...)`. Only scalars could be returned together;
+  a vector slot was never bound and lowering failed on its name.
+- `min` and `max` take two or more values, as in Python
+  (`min(a, b, c)`), and vectors have the reductions `v.sum()`, `v.min()`
+  and `v.max()` over their components. `v.normalized(eps)` divides by
+  `norm() + eps`.
 - Tuple assignment to field elements and vector components:
   `x[i], v[i] = p, q` (whole vectors included), a swap such as
   `a[i], b[i] = b[i], a[i]`, and `lo[i], hi[i] = f(...)` for a device
@@ -57,7 +65,8 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - A vector assignment whose right side reads its own target now reads
   the old components. Vectors are assigned one component at a time, and
   the right side was evaluated in between, so later components saw
-  earlier ones already overwritten: `v = v.cross(w)`,
+  earlier ones already overwritten: `v = v.normalized()` (the result
+  was not a unit vector), `v = v.cross(w)`,
   `v = tack.Vector([v[1], v[2], v[0]])`, `v += v.cross(w)` and
   `a[i] = a[i].cross(b[i])` all computed wrong vectors, on every backend
   and without an error. Components that could observe an earlier
