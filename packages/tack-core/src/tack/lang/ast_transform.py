@@ -22,6 +22,7 @@ from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 MATH_BUILTINS = {
     "sqrt", "sin", "cos", "tan",
     "asin", "acos", "atan", "atan2",
+    "sinh", "cosh", "tanh",
     "exp", "log", "log2", "log10",
     "floor", "ceil",
     "abs", "min", "max", "pow",

@@ -221,18 +221,22 @@ def _math(a, b, out):
         out[i, 12] = log10(y)
         out[i, 13] = pow(y, x)
         out[i, 14] = y ** x
+        out[i, 15] = sinh(x)
+        out[i, 16] = cosh(x)
+        out[i, 17] = tanh(x)
 
 
 def _check_math(dtype):
     a = np.asarray([-0.875, -0.5, -0.125, 0.125, 0.5, 0.875], dtype=dtype.numpy_dtype)
     b = np.asarray([0.25, 0.5, 0.75, 1.25, 2.0, 4.0], dtype=dtype.numpy_dtype)
-    out = tack.field(dtype, (len(a), 15))
+    out = tack.field(dtype, (len(a), 18))
     _math(_field(a, dtype), _field(b, dtype), out)
     expected = np.column_stack([np.sqrt(b), np.sin(a), np.cos(a), np.tan(a),
                                 np.arcsin(a), np.arccos(a), np.arctan(a),
                                 np.arctan2(a, b), np.exp(a), np.exp2(a),
                                 np.log(b), np.log2(b), np.log10(b),
-                                np.power(b, a), np.power(b, a)])
+                                np.power(b, a), np.power(b, a),
+                                np.sinh(a), np.cosh(a), np.tanh(a)])
     # A bounded-domain smoke test, not a global transcendental ULP contract.
     _assert_float(out.to_numpy(), expected, maxulp=8)
 

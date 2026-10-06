@@ -47,6 +47,7 @@ _OCL_C_TYPE_MAP = {
 _OCL_MATH_FUNCS = {
     "sqrt": "sqrt", "sin": "sin", "cos": "cos", "tan": "tan",
     "asin": "asin", "acos": "acos", "atan": "atan", "atan2": "atan2",
+    "sinh": "sinh", "cosh": "cosh", "tanh": "tanh",
     "exp": "exp", "exp2": "exp2", "log": "log", "log2": "log2", "log10": "log10",
     "floor": "floor", "ceil": "ceil", "fabs": "fabs", "abs": "fabs",
     "pow": "pow",
