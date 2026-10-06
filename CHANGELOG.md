@@ -148,6 +148,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- A zero-dimensional scalar field, `tack.field(dtype, shape=())`, can be
+  allocated on Metal. Its buffer zeroed the new storage with `[:]`, which
+  a zero-dimensional array rejects with "too many indices". CPU was not
+  affected, nor zero-dimensional vector fields.
 - A subclass of a `@tack.data_oriented` class inherits its bases'
   `@tack.func` methods and class constants and may override them. Only
   the class's own were found, so a method calling an inherited one failed
