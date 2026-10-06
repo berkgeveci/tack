@@ -39,20 +39,21 @@ def classify_template_attrs(obj):
     that are scalars are passed as runtime parameters — changing them does
     not trigger recompilation.
     """
-    cls = type(obj)
-    class_vars = set(vars(cls)) - {'_data_oriented', '_tack_func_methods'}
-
     scalars = {}
     fields = {}
     runtime_scalars = {}
 
-    # Scan class-level variables first (compile-time constants)
-    for name in class_vars:
-        if name.startswith('_'):
-            continue
-        val = getattr(cls, name)
-        if isinstance(val, (int, float)):
-            scalars[name] = val
+    # Scan class-level variables first (compile-time constants), base
+    # classes before the classes derived from them, so a subclass inherits
+    # its bases' constants and may override them.
+    for klass in reversed(type(obj).__mro__):
+        for name, val in vars(klass).items():
+            if name.startswith('_'):
+                continue
+            if isinstance(val, (int, float)):
+                scalars[name] = val
+            else:
+                scalars.pop(name, None)   # replaced by something that is not a constant
 
     # Scan instance variables (runtime parameters)
     for name in vars(obj):
@@ -69,6 +70,36 @@ def classify_template_attrs(obj):
         elif isinstance(val, Field):
             fields[name] = val
     return scalars, fields, runtime_scalars
+
+
+def template_func_methods(cls) -> dict:
+    """The ``@tack.func`` methods of a data-oriented class, inherited ones included.
+
+    Collected along the method resolution order, so an override replaces
+    the method it overrides. Looked up when a kernel is lowered rather than
+    stored by the decorator, so a subclass that is not decorated itself is
+    treated the same.
+    """
+    methods = {}
+    for klass in reversed(cls.__mro__):
+        for name, value in vars(klass).items():
+            if isinstance(value, Func):
+                methods[name] = value
+            else:
+                methods.pop(name, None)
+    return methods
+
+
+def template_func_attrs(obj) -> dict:
+    """Device functions a template object holds as instance attributes.
+
+    ``self.kernel = cubic_kernel`` lets the object's methods, and kernels
+    it is passed to, call ``self.kernel(r, h)``. The function is resolved
+    when the kernel is lowered, so which function it is belongs to the
+    kernel's specialization, like a class-level constant.
+    """
+    return {name: value for name, value in vars(obj).items()
+            if not name.startswith('_') and isinstance(value, Func)}
 
 
 def template_field_param_name(param_name, attr_name):
@@ -103,7 +134,7 @@ def rewrite_templates(kernel_ast, template_args):
     sources = [funcdef]
     for _, obj in template_args.values():
         sources.extend(method._funcdef for method in
-                       getattr(type(obj), '_tack_func_methods', {}).values())
+                       template_func_methods(type(obj)).values())
     used_names = {n.id for source in sources for n in ast.walk(source)
                   if isinstance(n, ast.Name)}
     used_names.update(n.arg for source in sources for n in ast.walk(source)
@@ -127,25 +158,33 @@ def rewrite_templates(kernel_ast, template_args):
                 f"__tmpl_{param_name}_{attr_name}__", used_names)
 
         # Resolve the template object's methods in this transformation's map.
-        cls = type(obj)
+        methods = template_func_methods(type(obj))
         method_name_map = {}  # original method name -> resolved func name
-        if hasattr(cls, '_tack_func_methods'):
-            # First pass: build the name map so methods can reference siblings
-            for method_name, func_obj in cls._tack_func_methods.items():
-                resolved_name = fresh_name(f"__tmpl_{param_name}_{method_name}__", used_names)
-                method_name_map[method_name] = resolved_name
-            # Second pass: resolve methods with the full sibling name map.
-            for method_name, func_obj in cls._tack_func_methods.items():
-                resolved_name = method_name_map[method_name]
-                resolved_funcs[resolved_name] = _resolve_method(
-                    func_obj, resolved_name, scalars, field_param_map,
-                    method_name_map, runtime_scalar_param_map,
-                )
+        # Device functions held as attributes are called as they are: they
+        # take no self and no synthetic parameters. An attribute shadows a
+        # method of the same name, as it does in Python.
+        func_attr_map = {}
+        for attr_name, func_obj in sorted(template_func_attrs(obj).items()):
+            resolved_name = fresh_name(f"__tmpl_{param_name}_{attr_name}__", used_names)
+            func_attr_map[attr_name] = resolved_name
+            resolved_funcs[resolved_name] = func_obj
+            methods.pop(attr_name, None)
+        # First pass: build the name map so methods can reference siblings
+        for method_name in methods:
+            method_name_map[method_name] = fresh_name(
+                f"__tmpl_{param_name}_{method_name}__", used_names)
+        # Second pass: resolve methods with the full sibling name map.
+        for method_name, func_obj in methods.items():
+            resolved_name = method_name_map[method_name]
+            resolved_funcs[resolved_name] = _resolve_method(
+                func_obj, resolved_name, scalars, field_param_map,
+                method_name_map, runtime_scalar_param_map, func_attr_map,
+            )
 
         # Rewrite the kernel function definition
         rewriter = _KernelTemplateRewriter(
             param_name, idx, scalars, field_param_map, method_name_map,
-            runtime_scalar_param_map,
+            runtime_scalar_param_map, func_attr_map,
         )
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
@@ -154,7 +193,7 @@ def rewrite_templates(kernel_ast, template_args):
 
 
 def _resolve_method(func_obj, resolved_name, scalars, field_param_map,
-                    method_name_map=None, runtime_scalar_param_map=None):
+                    method_name_map=None, runtime_scalar_param_map=None, func_attr_map=None):
     """Resolve a template method while retaining its defining Python callable.
 
     The resolved copy has:
@@ -180,7 +219,7 @@ def _resolve_method(func_obj, resolved_name, scalars, field_param_map,
 
     # Resolve self.attr and self.method(args) references in the body
     resolver = _SelfResolver(scalars, field_param_map, method_name_map,
-                             runtime_scalar_param_map)
+                             runtime_scalar_param_map, func_attr_map)
     for i, stmt in enumerate(funcdef.body):
         funcdef.body[i] = resolver.visit(stmt)
 
@@ -203,11 +242,12 @@ class _SelfResolver(ast.NodeTransformer):
     """Replaces self.attr with constants, synthetic parameter names, or method calls."""
 
     def __init__(self, scalars, field_param_map, method_name_map=None,
-                 runtime_scalar_param_map=None):
+                 runtime_scalar_param_map=None, func_attr_map=None):
         self.scalars = scalars
         self.field_param_map = field_param_map
         self.method_name_map = method_name_map or {}
         self.runtime_scalar_param_map = runtime_scalar_param_map or {}
+        self.func_attr_map = func_attr_map or {}
 
     def _synth_extra_args(self):
         """Build the list of synthetic extra arguments for method calls."""
@@ -223,6 +263,14 @@ class _SelfResolver(ast.NodeTransformer):
 
     def visit_Call(self, node):
         node = self.generic_visit(node)
+        # Rewrite self.kernel(args), a device function held as an
+        # attribute → that function(args)
+        if (isinstance(node.func, ast.Attribute) and
+                isinstance(node.func.value, ast.Name) and
+                node.func.value.id == 'self' and
+                node.func.attr in self.func_attr_map):
+            return ast.Call(func=_method_call_name(self.func_attr_map[node.func.attr]),
+                            args=node.args, keywords=[])
         # Rewrite self.method(args) → resolved_method(args, *synth_params)
         if (isinstance(node.func, ast.Attribute) and
                 isinstance(node.func.value, ast.Name) and
@@ -252,11 +300,11 @@ class _SelfResolver(ast.NodeTransformer):
             # Method references used without calling (e.g., passing as arg)
             # are handled by visit_Call; bare attribute access on a method
             # that isn't in scalars/fields is an error
-            if node.attr not in self.method_name_map:
+            if node.attr not in self.method_name_map and node.attr not in self.func_attr_map:
                 raise ValueError(
                     f"Template method references self.{node.attr} which is "
                     f"neither a class constant, an instance scalar, a tack.Field, "
-                    f"nor a @tack.func method"
+                    f"a @tack.func method, nor a @tack.func held as an attribute"
                 )
         return node
 
@@ -265,13 +313,14 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
     """Rewrites a kernel function to resolve one template parameter."""
 
     def __init__(self, param_name, param_idx, scalars, field_param_map,
-                 method_name_map, runtime_scalar_param_map=None):
+                 method_name_map, runtime_scalar_param_map=None, func_attr_map=None):
         self.param_name = param_name
         self.param_idx = param_idx
         self.scalars = scalars
         self.field_param_map = field_param_map
         self.method_name_map = method_name_map
         self.runtime_scalar_param_map = runtime_scalar_param_map or {}
+        self.func_attr_map = func_attr_map or {}
 
     def _synth_extra_args(self):
         """Build the list of synthetic extra arguments for method calls."""
@@ -308,6 +357,9 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
                 isinstance(node.func.value, ast.Name) and
                 node.func.value.id == self.param_name):
             method_name = node.func.attr
+            if method_name in self.func_attr_map:
+                return ast.Call(func=_method_call_name(self.func_attr_map[method_name]),
+                                args=node.args, keywords=[])
             if method_name in self.method_name_map:
                 resolved_name = self.method_name_map[method_name]
                 return ast.Call(
@@ -316,8 +368,8 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
                     keywords=[],
                 )
             raise ValueError(
-                f"Template object method '{method_name}' is not decorated "
-                f"with @tack.func"
+                f"Template object has no @tack.func method '{method_name}', "
+                f"and no @tack.func held as an attribute of that name"
             )
         return node
 

@@ -156,7 +156,10 @@ class Kernel:
         if template_args:
             for idx in sorted(template_args.keys()):
                 param_name, obj = template_args[idx]
-                from tack.lang.template_rewrite import classify_template_attrs
+                from tack.lang.template_rewrite import (
+                    classify_template_attrs,
+                    template_func_attrs,
+                )
                 scalars, fields, runtime = classify_template_attrs(obj)
                 cls = _class_token(type(obj))
                 # Only class-level scalars (constants) are part of the cache key.
@@ -173,6 +176,9 @@ class Kernel:
                            getattr(f, '_matrix_shape', None))
                           for k, f in sorted(fields.items())),
                     tuple(sorted(runtime)),
+                    # Which device function each function-valued attribute
+                    # holds is compiled in, so it identifies the IR.
+                    tuple(sorted(template_func_attrs(obj).items(), key=lambda item: item[0])),
                 ))
         return tuple(parts)
 
