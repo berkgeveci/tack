@@ -853,12 +853,15 @@ class KernelTransformer(ast.NodeVisitor):
     def _visit_tuple_unpack(self, target: ast.Tuple, value_node: ast.expr) -> list:
         """Handle tuple unpacking: a, b = expr.
 
-        A target that is not a plain name (``x[i], v[i] = p, q``) receives
-        its value through a temporary, assigned after the whole right side
-        has been evaluated and in target order, as Python does.
+        The whole right side is evaluated first, and then the targets are
+        assigned from left to right, as Python does: in ``a[i], i = x, j``
+        the store uses the old ``i``, and in ``i, a[i] = j, x`` the new one.
+        A target that is not a plain name (``x[i]``, ``v.x``) receives its
+        value through a temporary and is stored at its own position in
+        that order.
         """
         names = []
-        deferred = []
+        stores = {}     # temporary → the subscript or component target it is for
         for elt in target.elts:
             if isinstance(elt, ast.Name):
                 names.append(elt.id)
@@ -866,7 +869,7 @@ class KernelTransformer(ast.NodeVisitor):
                 temp = self._fresh_name(f"__unpack_target_{self._inline_counter}__")
                 self._inline_counter += 1
                 names.append(temp)
-                deferred.append((elt, temp))
+                stores[temp] = elt
             else:
                 raise NotImplementedError(
                     "Only names, subscripts and vector components in tuple unpacking")
@@ -902,7 +905,8 @@ class KernelTransformer(ast.NodeVisitor):
                 else:
                     self._vector_vars.pop(name, None)
                     stmts.append(ir.IRAssign(target=name, value=ir.IRName(tmp)))
-            return stmts + self._assign_unpacked(deferred)
+                stmts.extend(self._store_unpacked(name, stores))
+            return stmts
 
         # Expression RHS (e.g., multi-return from @tack.func)
         visited_value = self.visit(value_node)
@@ -912,6 +916,14 @@ class KernelTransformer(ast.NodeVisitor):
                 raise TypeError(
                     f"Tuple unpacking: expected {n} values, got {len(visited_value)}")
             stmts = []
+            if stores:
+                # A store among the targets can change what a later value
+                # reads, so every value is evaluated before the first one.
+                visited_value = _like(visited_value, [
+                    _like(val, [self._capture_value(c, stmts, freeze_name=True) for c in val])
+                    if isinstance(val, list)
+                    else self._capture_value(val, stmts, freeze_name=True)
+                    for val in visited_value])
             if any(isinstance(val, list) for val in visited_value):
                 # Several values with vectors among them, as a device
                 # function returns: each is already a result of its own.
@@ -921,29 +933,36 @@ class KernelTransformer(ast.NodeVisitor):
                     else:
                         self._vector_vars.pop(name, None)
                         stmts.append(ir.IRAssign(target=name, value=val))
-                return stmts + self._assign_unpacked(deferred)
+                    stmts.extend(self._store_unpacked(name, stores))
+                return stmts
             visited_value = self._settle_components(visited_value, stmts, names)
             for name, val in zip(names, visited_value):
                 self._vector_vars.pop(name, None)
                 stmts.append(ir.IRAssign(target=name, value=val))
-            return stmts + self._assign_unpacked(deferred)
+                stmts.extend(self._store_unpacked(name, stores))
+            return stmts
 
         raise NotImplementedError("Cannot unpack non-tuple value")
 
-    def _assign_unpacked(self, deferred: list) -> list:
-        """Assign unpacked temporaries to their subscript or component targets."""
-        stmts = []
-        for target, temp in deferred:
-            value = ast.copy_location(ast.Name(id=temp, ctx=ast.Load()), target)
-            assign = ast.copy_location(ast.Assign(targets=[target], value=value), target)
-            # Statements the target's own indices need stay after the
-            # right side and the earlier targets.
-            saved = self._pre_stmts
-            self._pre_stmts = []
-            lowered = self.visit_Assign(assign)
-            stmts.extend(self._pre_stmts)
-            self._pre_stmts = saved
-            stmts.extend(lowered if isinstance(lowered, list) else [lowered])
+    def _store_unpacked(self, temp: str, stores: dict) -> list:
+        """Store an unpacked temporary to the subscript or component it is for.
+
+        Called at the target's position among the targets, so its indices
+        see the names assigned before it and not the ones after.
+        """
+        target = stores.get(temp)
+        if target is None:
+            return []
+        value = ast.copy_location(ast.Name(id=temp, ctx=ast.Load()), target)
+        assign = ast.copy_location(ast.Assign(targets=[target], value=value), target)
+        # Statements the target's own indices need stay after the right
+        # side and the earlier targets.
+        saved = self._pre_stmts
+        self._pre_stmts = []
+        lowered = self.visit_Assign(assign)
+        stmts = self._pre_stmts
+        self._pre_stmts = saved
+        stmts.extend(lowered if isinstance(lowered, list) else [lowered])
         return stmts
 
     # --- Expressions ---
@@ -2372,9 +2391,16 @@ class KernelTransformer(ast.NodeVisitor):
         flat = []
         for index in indices:
             flat.extend(index if isinstance(index, list) else [index])
+        # The field's shape is known only at dispatch, where its dimension
+        # sizes are resolved; each size carries what that check needs. One
+        # index alone has no size to resolve: it is a flat index.
+        source = (getattr(node, 'lineno', None), getattr(node, 'col_offset', 0) + 1,
+                  self._inline_stack[-1] if self._inline_stack else None)
         result = flat[0]
         for d in range(1, len(flat)):
             dim_size = ir.IRDimSize(field_name=field_name, dim=d)
+            dim_size.index_count = len(flat)
+            dim_size.index_source = source
             result = ir.IRBinOp(
                 op="+",
                 left=ir.IRBinOp(op="*", left=result, right=dim_size),

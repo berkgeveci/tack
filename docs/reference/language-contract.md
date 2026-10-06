@@ -152,7 +152,10 @@ right. Inlined calls retain their original execution position. `and` and
 arm. Chained comparisons stop at the first false comparison and evaluate
 the middle operands' effects once. Ordinary assignment evaluates its value
 before its store index. Augmented assignment evaluates its index once and
-reads the old value before evaluating the right-hand side. A vector
+reads the old value before evaluating the right-hand side. A tuple
+assignment evaluates its whole right-hand side and then assigns its
+targets from left to right, so a subscript target's index sees the names
+assigned before it and not those after. A vector
 assignment evaluates every component of its right-hand side before it
 assigns any: `v = v.cross(w)` and `a[i] = a[i].cross(b[i])` read the old
 components, including when the fields read and written share storage.

@@ -285,3 +285,27 @@ def _matrix_as_a_condition():
 def test_mismatched_matrix_forms_are_rejected(define, message):
     with pytest.raises(UnsupportedSyntaxError, match=message):
         define().get_ir(vector_fields={"m": (2, 2), "v": 2, "out": 2})
+
+
+@tack.func
+def _stretch_and_volume(F, dt):
+    grown = F * (1.0 + dt)
+    return grown, grown.determinant()
+
+
+@tack.kernel
+def unpack_matrix_into_fields(F, J, n):
+    for p in range(n):
+        F[p], J[p] = _stretch_and_volume(F[p], 0.5)
+
+
+def test_matrix_unpacked_into_a_field_element_keeps_its_shape(backend):
+    """A matrix among several results, unpacked straight into a matrix
+    field: the values are evaluated into temporaries before the first
+    store, and must still be a matrix afterwards."""
+    F = _matrices(A2)
+    J = _scalars()
+    unpack_matrix_into_fields(F, J, N)
+    grown = A2 * np.float32(1.5)
+    np.testing.assert_allclose(F.to_numpy(vectors=True), grown, rtol=1e-6)
+    np.testing.assert_allclose(J.to_numpy(), np.linalg.det(grown.astype(np.float64)), rtol=1e-5)
