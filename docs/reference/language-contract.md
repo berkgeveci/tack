@@ -59,7 +59,12 @@ are explicit no-ops. Parameter annotations and decorators remain host
 metadata; ordinary positional parameters without defaults are supported.
 Kernels do not capture numerical values from the enclosing Python scope: reading a name
 that is not a parameter and is never assigned raises `NameError` with the
-kernel (or inlined device function) and source position. Local and shared
+kernel (or inlined device function) and source position. A `for` loop's
+variable is a binding that ends with its loop: reading the name after the
+loop, before it is assigned again, raises `NameError` with the read's
+position (Python would give the last value iterated; copy it to another
+name inside the loop instead). Sibling loops may share a variable, and the
+name may be assigned as an ordinary local afterwards. Local and shared
 arrays are storage, not values: binding another name to one (`view = tmp`)
 is rejected, while indexing it or passing it to a device function is
 supported.

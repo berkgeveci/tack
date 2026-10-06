@@ -13,11 +13,29 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   kernels and the scan so they run on every backend. See *Sorting and
   segmented reductions* in the User's Guide.
 
+### Code that is now rejected
+
+- Reading a `for` loop's variable after its loop, before the name is
+  assigned again, raises `NameError` at lowering with the read's position,
+  on every backend. CPU raised a `NameError` from codegen and the GPU
+  backends failed to compile when the name had no other binding; when it
+  did (`d = 100` before `for d in range(4)`), every backend silently read
+  the outer value where Python gives the last value iterated. Copy the
+  value to another name inside the loop. Sibling loops may still share a
+  variable, and a loop variable may still be assigned as an ordinary local
+  afterwards.
+
 ### Fixes with no source change needed
 
 - A field of zero elements can be allocated on Metal and CUDA, as it
   already could on CPU and Level Zero. A filter that selects nothing now
   returns an empty field instead of failing to allocate it.
+- A kernel that used a name as a sequential loop's variable and later
+  assigned it as a plain local (`for d in range(4): ...` then `d = ...`)
+  failed to compile on Metal, CUDA, HIP and Level Zero with an undeclared
+  identifier; CPU accepted it. The C-family generators now treat the loop
+  header's declaration as ending with its block, so the later assignment
+  declares a new local, as on CPU.
 
 ## 0.2.0 — 2026-10-05
 

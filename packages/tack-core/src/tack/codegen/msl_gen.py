@@ -254,6 +254,10 @@ class MSLCodeGen:
         # Always declare the loop variable in the for-header to handle
         # re-use of the same variable name in sibling loops (C block scoping).
         self._emit(f"for ({_INT} {var} = {start}; {var} < {end}; {incr}) {{")
+        # The header's declaration ends with the loop, so a later plain
+        # assignment to the same name must declare it again: restore the
+        # bookkeeping on exit rather than leaving the name marked declared.
+        outer = (var in self._declared_vars, self._local_vars.get(var))
         self._local_vars[var] = _INT
         self._declared_vars.add(var)
         self._indent += 1
@@ -263,6 +267,16 @@ class MSLCodeGen:
         self._dynamic_range_depth -= int(dynamic)
         self._indent -= 1
         self._emit("}")
+        self._leave_loop_scope(var, outer)
+
+    def _leave_loop_scope(self, var, outer):
+        """Forget a for-header declaration once its block closes."""
+        was_declared, outer_type = outer
+        if was_declared:
+            self._local_vars[var] = outer_type
+        else:
+            self._declared_vars.discard(var)
+            self._local_vars.pop(var, None)
 
     def _emit_while(self, node: ir.IRWhile):
         cond = self._expr(node.condition)

@@ -69,6 +69,20 @@ class _PreFixOpenCLCodeGen(OpenCLCodeGen):
         self._emit(decl)                  # at the point of use, not kernel scope
 
 
+class _PreRebindingFixOpenCLCodeGen(OpenCLCodeGen):
+    """The generator before loop variables left scope with their loop.
+
+    A sequential loop declares its variable in the `for` header, a block
+    scope, but recorded it as declared for the rest of the kernel; a later
+    plain assignment to the same name was then emitted without a declaration
+    and the device compiler rejected the undeclared identifier. CPU accepted
+    the kernel, so the difference only showed on a GPU.
+    """
+
+    def _leave_loop_scope(self, var, outer):
+        pass
+
+
 def _source(kernel_fn, *args):
     """Generate OpenCL C the way the backend does, annotation included."""
     tack.init(arch=tack.cpu)
@@ -140,6 +154,28 @@ def _reduce_in_loop(data, out):
 
 
 @tack.kernel
+def _loop_variable_rebound(x, out):
+    for i in range(x.shape[0]):
+        acc = 0
+        for d in range(4):
+            acc = acc + d
+        d = tack.i32(x[i])          # a plain local, after the loop that owned `d`
+        out[i] = acc + d
+
+
+@tack.kernel
+def _loop_variable_rebound_in_branch(x, out):
+    for i in range(x.shape[0]):
+        for d in range(4):
+            x[i] = x[i] + d
+        if x[i] > 10:
+            d = 1                   # rebound under a condition: needs a hoisted declaration
+        else:
+            d = 2
+        out[i] = d
+
+
+@tack.kernel
 def _float_math(a, out):
     for i in range(a.shape[0]):
         out[i] = sqrt(abs(a[i])) + exp(a[i]) + floor(a[i]) + ceil(a[i])
@@ -197,6 +233,27 @@ def test_pre_fix_block_reduction_scratch_is_rejected(clang, tmp_path):
     code, err = _compile(clang, src, tmp_path)
     assert code != 0, f"Clang accepted nested reduction scratch:\n{src}"
     assert "outermost scope" in err, err
+
+
+# ── A loop variable rebound as a plain local ─────────────────────────
+
+@pytest.mark.parametrize("kernel", [_loop_variable_rebound, _loop_variable_rebound_in_branch],
+                         ids=["after_loop", "in_branch"])
+def test_rebound_loop_variable_compiles(clang, tmp_path, kernel):
+    """`for d in range(...)` then `d = ...`: the second binding is a new local."""
+    src = _source(kernel, _field(dtype=tack.i32), _field(dtype=tack.i32))
+    _assert_compiles(clang, src, tmp_path)
+
+
+@pytest.mark.parametrize("kernel", [_loop_variable_rebound, _loop_variable_rebound_in_branch],
+                         ids=["after_loop", "in_branch"])
+def test_pre_fix_rebound_loop_variable_is_rejected(clang, tmp_path, kernel):
+    tack.init(arch=tack.cpu)
+    function, _ = _prepare_ir(kernel, (_field(dtype=tack.i32), _field(dtype=tack.i32)))
+    src = _PreRebindingFixOpenCLCodeGen(function).generate()
+    code, err = _compile(clang, src, tmp_path)
+    assert code != 0, f"Clang accepted an undeclared rebound loop variable:\n{src}"
+    assert "undeclared identifier" in err, err
 
 
 # ── Controls: shapes that were always fine and must stay cheap ────────
