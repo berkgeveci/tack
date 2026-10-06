@@ -1229,10 +1229,56 @@ def ndrange_inner(a, n, m):
             a[j, k] += 1
 
 
+@tack.kernel
+def range_from_negative(a, n):
+    for i in range(-n, n + 1):
+        a[i + n] = i
+
+
+@tack.kernel
+def ndrange_from_negative(a, n, m):
+    for i, j in tack.ndrange((-n, n + 1), (-m, +m)):
+        a[i + n, j + m] = i * 10 + j
+
+
+@tack.kernel
+def unary_plus(a, out, n, k):
+    for i in range(n):
+        out[i] = +a[i] - +k + (+i)
+
+
 def _zeros_i32(shape):
     f = tack.field(dtype=tack.i32, shape=shape)
     f.fill(0)
     return f
+
+
+@pytest.mark.parametrize("dtype", [tack.i32, tack.u32, tack.i64, tack.f32])
+def test_unary_plus_is_the_operand(backend, dtype):
+    """The GPU generators passed an integer `+x` to the helper table, where
+    '+' is addition: a one-argument call to the two-argument add, which no
+    device compiler accepts."""
+    a = tack.field(dtype=dtype, shape=(6,))
+    out = tack.field(dtype=dtype, shape=(6,))
+    values = np.arange(10, 16)
+    a.from_numpy(values.astype(a.to_numpy().dtype))
+    unary_plus(a, out, 6, 3)
+    np.testing.assert_array_equal(out.to_numpy(), values - 3 + np.arange(6))
+
+
+def test_parallel_range_may_start_at_a_negated_argument(backend):
+    """The launch size is evaluated on the host, which had no case for a
+    unary minus: `range(-n, n + 1)` failed with "Cannot resolve loop range
+    expression: IRUnaryOp"."""
+    a = _zeros_i32((7,))
+    range_from_negative(a, 3)
+    np.testing.assert_array_equal(a.to_numpy(), np.arange(-3, 4))
+
+    b = _zeros_i32((5, 6))
+    b.fill(99)
+    ndrange_from_negative(b, 2, 3)
+    rows, cols = np.mgrid[-2:3, -3:3]
+    np.testing.assert_array_equal(b.to_numpy(), rows * 10 + cols)
 
 
 def test_ndrange_takes_start_end_ranges(backend):

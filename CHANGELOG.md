@@ -153,6 +153,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the class's own were found, so a method calling an inherited one failed
   with "self.weight ... is neither a class constant ... nor a @tack.func
   method". A subclass without the decorator is handled the same way.
+- A parallel loop may start at a negated argument: `range(-n, n + 1)` and
+  `tack.ndrange((-n, n + 1), ...)` failed with "Cannot resolve loop range
+  expression: IRUnaryOp", because the host evaluates the launch size and
+  had no case for a unary minus.
+- Unary plus on an integer (`+n`) compiles on Metal, CUDA, HIP and Level
+  Zero. The generators emitted a one-argument call to the two-argument
+  add helper, which the device compilers rejected.
 - CPU threading on two-thread machines: one worker the scheduler took
   off its core could make a cheap kernel look expensive. The fan-out's
   per-worker median picked the slower of two workers, so a single stalled

@@ -774,6 +774,11 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
         if node.op in ops:
             return ops[node.op](left, right)
 
+    # A negated bound: range(-n, n + 1), ndrange((-n, n + 1), ...)
+    if isinstance(node, ir.IRUnaryOp) and node.op in ("-", "+"):
+        value = _resolve_range_expr(node.operand, name_to_arg)
+        return -value if node.op == "-" else value
+
     # Plain name reference (e.g., `n` passed as scalar)
     if isinstance(node, ir.IRName):
         arg = name_to_arg.get(node.name)
