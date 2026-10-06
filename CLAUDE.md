@@ -171,6 +171,20 @@ the buffer references and declares indirect-resource residency with
 completion. This fixes the four overlap cases confirmed at `922b642` and
 `e265e7f`, without alias-based specialization or disabling vendor optimization.
 
+A Metal kernel with a sequential loop that stores to a field (or runs an
+atomic) has its body in `__tack_body__`, a `noinline` function the entry
+calls (`_stores_inside_sequential_loop` in `msl_gen.py`); workgroup arrays
+are declared in the entry and passed as pointers. Compiled inside the
+entry function, such a loop gave wrong results: Apple's compiler read a
+field element once before the loop when its address did not depend on the
+thread and the loop stored to another same-typed field
+(`total[0] += x[k]; counter[0] += 1`). The front end's LLVM IR is correct
+and the fault is in the GPU back end at pipeline creation; alias metadata
+is not the cause. Do not merge the two functions or drop `noinline`;
+`restrict`, opaque pointers and compile options do not avoid it. Loop-free kernels keep one function (the call costs 7-15% on the
+smallest). See `test_field_updates_in_loops.py` and
+`docs/design/memory-and-aliasing.md`.
+
 Dispatching one variant from several Python threads: CPU binds arguments
 per call and shares no launch state. GPU variants do — the scalar pack
 buffers, and Metal's argument buffer — so CUDA, HIP and Metal hold
