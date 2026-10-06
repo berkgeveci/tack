@@ -40,6 +40,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   augmented store. Vectors of different widths in one operation, a
   component name past the width, and a vector combined into a scalar
   target are rejected at lowering with the source position.
+- Tuple assignment to field elements and vector components:
+  `x[i], v[i] = p, q` (whole vectors included), a swap such as
+  `a[i], b[i] = b[i], a[i]`, and `lo[i], hi[i] = f(...)` for a device
+  function that returns two values. The whole right side is evaluated
+  first. Only plain names were accepted as targets.
+- Atomics take an index per dimension: `tack.atomic_add(grid, (i, j), v)`,
+  where a vector supplies one index per component
+  (`tack.atomic_add(grid, cell, v)`). On a vector field a vector value
+  updates every component of the element. Multi-dimensional and vector
+  targets previously needed hand-linearized indices, and a tuple index
+  failed IR verification.
 
 ### Kernels that now compute different results
 

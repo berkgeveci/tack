@@ -270,8 +270,12 @@ target component for a variable, any field load for a field element
 (fields may alias). Components are `v[c]`/`v.x`, on variables and on field
 elements (`vf[i][c] = x` stores one component); a runtime index selects
 through a chain and stores through per-component guards. A vector index
-supplies one dimension per component. See the vector tests in
-`test_new_features.py`.
+supplies one dimension per component, in subscripts and in atomics, whose
+index may be a tuple with one entry per dimension; a vector value given
+to an atomic on a vector field lowers to one atomic per component, while
+a scalar value keeps the index a flat component index. Tuple assignment
+accepts subscript and component targets through temporaries. See the
+vector tests in `test_new_features.py`.
 
 ### @tack.func inlining
 

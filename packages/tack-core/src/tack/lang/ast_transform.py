@@ -713,12 +713,25 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRReturn(value=value)
 
     def _visit_tuple_unpack(self, target: ast.Tuple, value_node: ast.expr) -> list:
-        """Handle tuple unpacking: a, b = expr."""
+        """Handle tuple unpacking: a, b = expr.
+
+        A target that is not a plain name (``x[i], v[i] = p, q``) receives
+        its value through a temporary, assigned after the whole right side
+        has been evaluated and in target order, as Python does.
+        """
         names = []
+        deferred = []
         for elt in target.elts:
-            if not isinstance(elt, ast.Name):
-                raise NotImplementedError("Only simple names in tuple unpacking")
-            names.append(elt.id)
+            if isinstance(elt, ast.Name):
+                names.append(elt.id)
+            elif isinstance(elt, (ast.Subscript, ast.Attribute)):
+                temp = self._fresh_name(f"__unpack_target_{self._inline_counter}__")
+                self._inline_counter += 1
+                names.append(temp)
+                deferred.append((elt, temp))
+            else:
+                raise NotImplementedError(
+                    "Only names, subscripts and vector components in tuple unpacking")
         n = len(names)
 
         # Tuple literal RHS: a, b = b, a (need temps for correct swap)
@@ -751,7 +764,7 @@ class KernelTransformer(ast.NodeVisitor):
                 else:
                     self._vector_vars.pop(name, None)
                     stmts.append(ir.IRAssign(target=name, value=ir.IRName(tmp)))
-            return stmts
+            return stmts + self._assign_unpacked(deferred)
 
         # Expression RHS (e.g., multi-return from @tack.func)
         visited_value = self.visit(value_node)
@@ -765,9 +778,25 @@ class KernelTransformer(ast.NodeVisitor):
             for name, val in zip(names, visited_value):
                 self._vector_vars.pop(name, None)
                 stmts.append(ir.IRAssign(target=name, value=val))
-            return stmts
+            return stmts + self._assign_unpacked(deferred)
 
         raise NotImplementedError("Cannot unpack non-tuple value")
+
+    def _assign_unpacked(self, deferred: list) -> list:
+        """Assign unpacked temporaries to their subscript or component targets."""
+        stmts = []
+        for target, temp in deferred:
+            value = ast.copy_location(ast.Name(id=temp, ctx=ast.Load()), target)
+            assign = ast.copy_location(ast.Assign(targets=[target], value=value), target)
+            # Statements the target's own indices need stay after the
+            # right side and the earlier targets.
+            saved = self._pre_stmts
+            self._pre_stmts = []
+            lowered = self.visit_Assign(assign)
+            stmts.extend(self._pre_stmts)
+            self._pre_stmts = saved
+            stmts.extend(lowered if isinstance(lowered, list) else [lowered])
+        return stmts
 
     # --- Expressions ---
 
@@ -1058,9 +1087,7 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name in ("atomic_add", "atomic_min", "atomic_max"):
             if len(node.args) != 3:
                 raise NotImplementedError(f"{func_name}() takes exactly 3 arguments (field, index, value)")
-            field, index, value = self._visit_ordered(node.args)
-            op = func_name.replace("atomic_", "")  # "add", "min", "max"
-            return ir.IRAtomicOp(op=op, field=field, index=index, value=value)
+            return self._visit_atomic(node, func_name)
 
         # print() for kernel debugging
         if func_name == "print":
@@ -1110,6 +1137,48 @@ class KernelTransformer(ast.NodeVisitor):
                 return obj_result
 
         raise NotImplementedError(f"Function call '{func_name}' not supported in kernels")
+
+    def _visit_atomic(self, node: ast.Call, func_name: str):
+        """``tack.atomic_<op>(field, index, value)``.
+
+        The index is a flat index, or a tuple with one index per dimension,
+        where a vector supplies one per component. On a vector field a
+        vector value updates each component of the element the index
+        names, one atomic per component. A scalar value there keeps the
+        older meaning: the index is the flat index of one component.
+        """
+        op = func_name.replace("atomic_", "")  # "add", "min", "max"
+        field_node = node.args[0]
+        field_name = field_node.id if isinstance(field_node, ast.Name) else None
+        field, index, value = self._visit_ordered(node.args)
+        by_dimension = isinstance(index, list)
+        if by_dimension:
+            if field_name is None:
+                raise self._source_error(
+                    node, f"{func_name}()", "needs a named field for an index per dimension")
+            index = self._linearize_index(node, field_name, index)
+        ndim = self._vector_fields.get(field_name)
+        if not isinstance(value, list):
+            if by_dimension and ndim is not None:
+                raise self._source_error(
+                    node, f"{func_name}()", f"names an element of a field of {ndim}-vectors; "
+                    f"give it a {ndim}-vector, or the flat index of one component")
+            return ir.IRAtomicOp(op=op, field=field, index=index, value=value)
+        if ndim is None:
+            raise self._source_error(
+                node, f"{func_name}()", "gives a vector to a field of scalars")
+        if len(value) != ndim:
+            raise self._source_error(
+                node, f"{func_name}()", f"gives a {len(value)}-vector to a field of {ndim}-vectors")
+        # One atomic per component. They are statements, so they go where an
+        # inlined call's statements go, and the expression has no value.
+        element = ir.IRCast(value=self._capture_value(index, self._pre_stmts), dtype=i32)
+        value = self._settle_components(value, self._pre_stmts)
+        for c, component in enumerate(value):
+            self._pre_stmts.append(ir.IRAtomicOp(
+                op=op, field=field, index=self._component_index(element, ndim, c),
+                value=component))
+        return []
 
     def visit_Expr(self, node: ast.Expr) -> ir.IRNode:
         """Expression statement (e.g., standalone function call)."""

@@ -93,6 +93,23 @@ Available atomics:
 - `tack.atomic_min(field, index, value)` — atomic minimum
 - `tack.atomic_max(field, index, value)` — atomic maximum
 
+For a multi-dimensional field the index is a tuple with one index per
+dimension, and a vector may supply several of them. On a vector field a
+vector value updates every component of the element, one atomic per
+component:
+
+```python
+@tack.kernel
+def scatter(pos, vel, mass, grid_m, grid_v, inv_dx, n):
+    for p in range(n):
+        cell = int(pos[p] * inv_dx)                     # a 2-vector of cell indices
+        tack.atomic_add(grid_m, cell, mass[p])          # grid_m[cell[0], cell[1]] += ...
+        tack.atomic_add(grid_v, (cell[0], cell[1]), mass[p] * vel[p])
+```
+
+A plain integer index is the flat, row-major index. On a vector field
+with a scalar value it is the flat index of one component.
+
 ## Shared Memory
 
 Shared memory is visible to all threads within a workgroup. Use it for

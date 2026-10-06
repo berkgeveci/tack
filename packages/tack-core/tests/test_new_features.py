@@ -980,3 +980,138 @@ def test_mismatched_vector_forms_are_rejected(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
         define().get_ir(vector_fields={"vf": 3, "out": 3})
+
+
+# --- Tuple assignment to subscripts and components ---
+
+@tack.func
+def _sum_and_difference(a, b):
+    return a + b, a - b
+
+
+@tack.kernel
+def tuple_assign_to_subscripts(pos, heading, lo, hi, n):
+    for i in range(n):
+        p, h = pos[i], heading[i]
+        p += tack.Vector([h, -h, 1.0])
+        pos[i], heading[i] = p, h * 2.0
+        lo[i], hi[i] = hi[i], lo[i]
+        lo[i], hi[i] = _sum_and_difference(lo[i], hi[i])
+
+
+@tack.kernel
+def tuple_assign_to_components(a, n):
+    for i in range(n):
+        v = a[i]
+        v.x, v[1] = v.y, v.x
+        a[i][2], a[i].x = v.x, v.y
+        a[i].y = v.z
+
+
+def test_tuple_assignment_to_subscripts(backend):
+    """`x[i], v[i] = p, q` assigns field elements, whole vectors included,
+    after evaluating the whole right side; a swap of two elements works.
+    Only plain names were accepted as targets."""
+    n = len(_VEC_M)
+    pos = _vec3_field(_VEC_M)
+    heading, lo, hi = (tack.field(dtype=tack.f32, shape=(n,)) for _ in range(3))
+    h = np.arange(n, dtype=np.float32) + 1
+    low, high = h * 3, h * 5
+    heading.from_numpy(h)
+    lo.from_numpy(low)
+    hi.from_numpy(high)
+    tuple_assign_to_subscripts(pos, heading, lo, hi, n)
+    np.testing.assert_array_equal(
+        pos.to_numpy().reshape(n, 3), _VEC_M + np.stack([h, -h, np.ones(n, np.float32)], 1))
+    np.testing.assert_array_equal(heading.to_numpy(), h * 2)
+    np.testing.assert_array_equal(lo.to_numpy(), high + low)
+    np.testing.assert_array_equal(hi.to_numpy(), high - low)
+
+
+def test_tuple_assignment_to_components(backend):
+    n = len(_VEC_M)
+    a = _vec3_field(_VEC_M)
+    tuple_assign_to_components(a, n)
+    m = _VEC_M
+    # v becomes (y, x, z); then a[i] = (v.y, v.z, v.x) = (x, z, y)
+    np.testing.assert_array_equal(a.to_numpy().reshape(n, 3), m[:, [0, 2, 1]])
+
+
+# --- Atomics with an index per dimension, and vector values ---
+
+@tack.kernel
+def atomic_scatter(cells, grid, layers, momentum, bias, n):
+    for i in range(n):
+        cell = cells[i]
+        tack.atomic_add(grid, (cell[0], cell[1]), 1.0)
+        tack.atomic_add(layers, (1, cell), 2.0)
+        tack.atomic_max(layers, (0, cell[0], cell[1]), float(i))
+        tack.atomic_add(momentum, cell, tack.Vector([1.0, float(i)]))
+        tack.atomic_add(momentum, (cell[0], 0), tack.Vector([0.0, 1.0]) + bias[0])
+
+
+def test_atomics_take_an_index_per_dimension(backend):
+    """A tuple index, with a vector supplying several dimensions, replaces
+    hand-linearized indices; a vector value updates every component of a
+    vector field element. A tuple index failed IR verification."""
+    n, g = 4000, 4
+    rng = np.random.default_rng(3)
+    where = rng.integers(0, g, size=(n, 2)).astype(np.int32)
+    where[:, 1] = np.maximum(where[:, 1], 1)       # keep column 0 for the last atomic
+    bias = tack.Vector.field(2, dtype=tack.f32, shape=(1,))
+    bias.from_numpy(np.array([0.5, 0.25], np.float32))
+    cells = tack.Vector.field(2, dtype=tack.i32, shape=(n,))
+    cells.from_numpy(where.reshape(-1))
+    grid = tack.field(dtype=tack.f32, shape=(g, g))
+    layers = tack.field(dtype=tack.f32, shape=(2, g, g))
+    momentum = tack.Vector.field(2, dtype=tack.f32, shape=(g, g))
+    for f in (grid, layers, momentum):
+        f.fill(0.0)
+    atomic_scatter(cells, grid, layers, momentum, bias, n)
+
+    counts = np.zeros((g, g), np.float32)
+    np.add.at(counts, (where[:, 0], where[:, 1]), 1)
+    latest = np.zeros((g, g), np.float32)
+    np.maximum.at(latest, (where[:, 0], where[:, 1]), np.arange(n, dtype=np.float32))
+    sums = np.zeros((g, g, 2), np.float32)
+    np.add.at(sums, (where[:, 0], where[:, 1]), np.stack([np.ones(n), np.arange(n)], 1))
+    np.add.at(sums, (where[:, 0], 0), np.array([0.5, 1.25]))
+    np.testing.assert_array_equal(grid.to_numpy(), counts)
+    np.testing.assert_array_equal(layers.to_numpy()[1], counts * 2)
+    np.testing.assert_array_equal(layers.to_numpy()[0], latest)
+    np.testing.assert_array_equal(momentum.to_numpy().reshape(g, g, 2), sums)
+
+
+def _atomic_vector_to_scalars():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            tack.atomic_add(s, i, vf[i])
+    return bad
+
+
+def _atomic_scalar_to_vector_element():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            tack.atomic_add(vf, (i, 0), 1.0)
+    return bad
+
+
+def _atomic_width_mismatch():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            tack.atomic_add(vf, i, tack.Vector([1.0, 2.0]))
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_atomic_vector_to_scalars, "gives a vector to a field of scalars"),
+    (_atomic_scalar_to_vector_element, "names an element of a field of 3-vectors"),
+    (_atomic_width_mismatch, "gives a 2-vector to a field of 3-vectors"),
+])
+def test_mismatched_atomics_are_rejected(define, message):
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})
