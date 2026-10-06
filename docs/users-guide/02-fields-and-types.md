@@ -89,6 +89,41 @@ def clear(grid):
 A kernel has exactly one parallel loop, so independent loops go in
 separate kernels.
 
+### Indexing
+
+A field takes one index per dimension, `img[i, j]`, or a single flat,
+row-major index, `img[k]`. A kernel given a field whose number of
+dimensions does not match the number of indices raises `TypeError` at the
+call, with the source position: `grid[i, j]` on a three-dimensional field
+would otherwise address some other element silently. A vector of integers
+supplies one index per component, so `grid[cell]` is
+`grid[cell[0], cell[1]]`.
+
+### Vector and Matrix Fields
+
+A field can hold a small vector or matrix in each element:
+
+```python
+pos = tack.Vector.field(3, dtype=tack.f32, shape=(n,))        # a 3-vector per element
+vel = tack.Vector.field(2, dtype=tack.f32, shape=(nx, ny))    # on a 2-D grid
+F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))       # a 2x2 matrix per element
+```
+
+In a kernel `pos[i]` is the whole vector and `F[i]` the whole matrix; see
+[Vectors](07-advanced.md#vectors) and [Matrices](07-advanced.md#matrices)
+for what can be done with them. The storage is one flat array with the
+components of each element together (a matrix in row-major order).
+
+Data moves to and from NumPy either flat or one row per element:
+
+```python
+pos.from_numpy(points)                   # (n, 3), or the flat (n * 3,)
+points = pos.to_numpy(vectors=True)      # (n, 3)
+flat = pos.to_numpy()                    # (n * 3,): the storage as it is
+F.from_numpy(gradients)                  # (n, 2, 2), or flat
+gradients = F.to_numpy(vectors=True)     # (n, 2, 2)
+```
+
 ### Reductions
 
 `data.sum()`, `data.min()`, `data.max()` and `data.mean()` reduce every

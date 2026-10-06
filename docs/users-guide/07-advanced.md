@@ -278,7 +278,14 @@ flat `(prod(shape) * n,)`, and `v.to_numpy(vectors=True)` returns
 Two vectors in one operation must have the same number of components.
 An assignment evaluates its whole right side before it stores anything,
 so `v = v.cross(w)` and `pos[i] = pos[i].cross(axis[i])` read the old
-components.
+components. A tuple assignment does the same and then assigns its targets
+from left to right, and its targets may be field elements:
+`pos[i], vel[i] = p, v`, or `a[i], b[i] = b[i], a[i]` to swap two.
+
+A store to a field element must match the field: a vector of the field's
+width, or a scalar, which sets every component (`vel[i] = 0.0`). A vector
+of another width, or a vector stored into a field of scalars, is
+rejected.
 
 Components are scalars. `vec[0]` and `vec.x` read one (`x`, `y`, `z`, `w`
 name the first four); `vec[1] = x`, `vec.y = x` and `vec[1] += x` write

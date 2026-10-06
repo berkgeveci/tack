@@ -7,6 +7,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A `@tack.data_oriented` object can hold a `@tack.func` as an instance
+  attribute and call it from its methods or from a kernel
+  (`self.smoothing = cubic`, then `self.smoothing(r, h)`). Which function
+  the attribute holds is part of the kernel's specialization.
 - `tack.Matrix`: small fixed-size matrices, up to 4×4, scalarized like
   vectors. `tack.Matrix.field(n, m, dtype, shape)` allocates a field of
   them. In kernels, `tack.Matrix([[a, b], [c, d]])`, rows given as
@@ -144,6 +148,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- A subclass of a `@tack.data_oriented` class inherits its bases'
+  `@tack.func` methods and class constants and may override them. Only
+  the class's own were found, so a method calling an inherited one failed
+  with "self.weight ... is neither a class constant ... nor a @tack.func
+  method". A subclass without the decorator is handled the same way.
 - CPU threading on two-thread machines: one worker the scheduler took
   off its core could make a cheap kernel look expensive. The fan-out's
   per-worker median picked the slower of two workers, so a single stalled

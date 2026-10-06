@@ -97,6 +97,56 @@ process(filt_small, out1)   # compiles once
 process(filt_large, out2)   # reuses compiled kernel — no JIT
 ```
 
+## Inheritance and Function Attributes
+
+A data-oriented class can derive from another. The subclass has its
+bases' `@tack.func` methods and class constants and may override either;
+a method may call an inherited one through `self`:
+
+```python
+@tack.data_oriented
+class Fluid:
+    rho_0 = 1000.0
+
+    @tack.func
+    def pressure(self, rho):
+        return self.stiffness * (rho / self.rho_0 - 1.0)
+
+@tack.data_oriented
+class WeaklyCompressible(Fluid):
+    gamma = 7.0
+
+    @tack.func
+    def pressure(self, rho):                       # overrides Fluid.pressure
+        return self.stiffness * ((rho / self.rho_0) ** self.gamma - 1.0)
+```
+
+An object can also hold a device function as an attribute and call it,
+which is how one class works with several interchangeable functions:
+
+```python
+@tack.func
+def cubic(r, h): ...
+
+@tack.func
+def spiky(r, h): ...
+
+@tack.data_oriented
+class Model:
+    def __init__(self, smoothing):
+        self.smoothing = smoothing                 # cubic or spiky
+
+    @tack.func
+    def density(self, r):
+        return self.mass * self.smoothing(r, self.h)
+```
+
+The function is resolved when the kernel is compiled, so which function
+an attribute holds is part of the kernel's specialization, like a class
+constant: a kernel given `Model(cubic)` and then `Model(spiky)` compiles
+once for each. Assigning another function to the attribute of an existing
+object takes effect at the next call.
+
 ## Cell Set Example
 
 Templates are ideal for topology abstractions where the same algorithm
