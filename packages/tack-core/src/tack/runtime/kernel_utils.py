@@ -679,8 +679,14 @@ def _detect_vector_fields(kernel, args) -> dict[str, int] | None:
     vector_fields = {}
     for param_name, arg in zip(params, args):
         if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
-            vector_fields[param_name] = arg._vector_n
+            vector_fields[param_name] = _element_shape(arg)
     return vector_fields if vector_fields else None
+
+
+def _element_shape(field):
+    """What lowering needs to know about a vector or matrix field's elements:
+    the component count, or ``(rows, columns)`` for a matrix field."""
+    return getattr(field, '_matrix_shape', None) or field._vector_n
 
 
 def _detect_vector_fields_from_args(kernel, args, template_args) -> dict[str, int] | None:
@@ -705,10 +711,11 @@ def _detect_vector_fields_from_args(kernel, args, template_args) -> dict[str, in
             _, fields, _ = classify_template_attrs(arg)
             for attr_name, field in fields.items():
                 if hasattr(field, '_vector_n'):
-                    vector_fields[template_field_param_name(param_name, attr_name)] = field._vector_n
+                    vector_fields[template_field_param_name(param_name, attr_name)] = \
+                        _element_shape(field)
             continue
         if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
-            vector_fields[param_name] = arg._vector_n
+            vector_fields[param_name] = _element_shape(arg)
     return vector_fields if vector_fields else None
 
 

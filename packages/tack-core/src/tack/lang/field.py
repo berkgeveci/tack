@@ -131,9 +131,13 @@ class Field:
                 "Use writable=True in field_from_ptr() to enable writes.")
 
     def _vector_shape(self):
-        """``(*shape, n)`` for a vector field made by ``Vector.field``, else None."""
+        """``(*shape, n)`` for a vector field, ``(*shape, rows, columns)`` for a
+        matrix field, and None for any other."""
         n = getattr(self, '_vector_n', None)
-        return None if n is None else (*self._logical_shape, n)
+        if n is None:
+            return None
+        element = getattr(self, '_matrix_shape', None) or (n,)
+        return (*self._logical_shape, *element)
 
     def from_numpy(self, arr: np.ndarray):
         """Copy data from a numpy array to the device.
@@ -545,6 +549,35 @@ class Vector:
         # Mark as vector field so kernel dispatch can handle it
         f._vector_n = n
         f._logical_shape = shape
+        return f
+
+
+class Matrix:
+    """Small fixed-size matrices: fields of them, and matrix values in kernels.
+
+    Usage:
+        F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+
+        # In kernels a matrix is scalarized, like a vector:
+        #   A = tack.Matrix([[a, b], [c, d]])      rows of scalars, or of vectors
+        #   I = tack.Matrix.identity(2)
+        #   F[p] = (I + dt * C) @ F[p]             '@' multiplies; '*' is elementwise
+        #   A[i, j], A.transpose(), A.trace(), A.determinant(), A.inverse()
+    """
+
+    @staticmethod
+    def field(n: int, m: int, dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
+        """Create a field of n-by-m matrices.
+
+        The storage is that of ``Vector.field(n * m, dtype, shape)``, each
+        matrix in row-major order. ``from_numpy`` takes ``(*shape, n, m)``
+        or the flat array, and ``to_numpy(vectors=True)`` returns
+        ``(*shape, n, m)``.
+        """
+        if not (1 <= n <= 4 and 1 <= m <= 4):
+            raise ValueError(f"Matrix.field({n}, {m}): matrices are at most 4x4")
+        f = Vector.field(n * m, dtype, shape)
+        f._matrix_shape = (n, m)
         return f
 
 

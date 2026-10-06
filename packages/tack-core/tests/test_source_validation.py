@@ -35,7 +35,7 @@ from tack.lang.source_validation import UnsupportedSyntaxError
     ('yield out[i]', 'Yield'),
     ('value = f"value={i}"', 'JoinedStr'),
     ('value = b"bytes"', 'Constant'),
-    ('value = out @ out', 'MatMult'),
+    ('value = out @ out', "'@'"),
     ('value = out is None', 'Is'),
     ('match i:\n    case 0:\n        pass', 'Match'),
     ('print(i, end="")', 'Call'),

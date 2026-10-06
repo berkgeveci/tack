@@ -7,6 +7,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tack.Matrix`: small fixed-size matrices, up to 4×4, scalarized like
+  vectors. `tack.Matrix.field(n, m, dtype, shape)` allocates a field of
+  them. In kernels, `tack.Matrix([[a, b], [c, d]])`, rows given as
+  vectors, and `tack.Matrix.identity(n)` build one; `@` multiplies
+  matrices and vectors, with `+`, `-`, `*`, `/` entry by entry;
+  `transpose()`, `trace()`, and for 2×2 and 3×3 `determinant()` and
+  `inverse()`; `A[i, j]` reads and writes entries; `u.outer_product(v)`
+  makes one from two vectors. Matrices pass through device functions,
+  tuple assignment, conditional expressions, field stores and atomics as
+  vectors do. See *Matrices* in the User's Guide.
 - `sinh`, `cosh` and `tanh` as math builtins, on every backend.
 - `tack.ndrange` takes `(start, end)` pairs as well as sizes:
   `for i, j in tack.ndrange((1, n - 1), (1, m - 1))` visits the interior

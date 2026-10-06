@@ -169,7 +169,8 @@ class Kernel:
                     # NaN constants a stable key despite NaN != NaN.
                     tuple((k, type(v), struct.pack('!d', v) if isinstance(v, float) else v)
                           for k, v in sorted(scalars.items())),
-                    tuple((k, f.dtype, f.shape, getattr(f, '_vector_n', None))
+                    tuple((k, f.dtype, f.shape, getattr(f, '_vector_n', None),
+                           getattr(f, '_matrix_shape', None))
                           for k, f in sorted(fields.items())),
                     tuple(sorted(runtime)),
                 ))

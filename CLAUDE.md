@@ -283,6 +283,19 @@ elements are `VectorValue`s; only tuple unpacking consumes that. `v.min()`/`v.ma
 `v.sum()` are intercepted before the same-named builtins, which need
 arguments. See the vector tests in `test_new_features.py`.
 
+A matrix (`tack.Matrix`, `Matrix.field(n, m, ...)`) is a `VectorValue`
+with a two-dimensional shape and row-major components, so everything
+componentwise applies unchanged. A matrix field is a vector field of
+`n * m` components with `_matrix_shape`; the runtime reports it to
+lowering as the tuple `(n, m)` in the `vector_fields` dict, which also
+keeps a 2x2 matrix field and a 4-vector field in different IR cache
+entries. `_matrix_vars`/`_matrix_fields` hold shapes beside the component
+counts; `_bind_vector` and `_variable_value` keep them in step. `@` is
+`_matmul` (operands captured first, since every entry is used several
+times); `transpose`/`trace`/`determinant`/`inverse` are in
+`_emit_matrix_method`; `m[i, j]` goes through `_matrix_selector`. Limit
+4x4 (`MAX_MATRIX_EXTENT`). See `test_matrix.py`.
+
 ### @tack.func inlining
 
 Functions decorated with `@tack.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.

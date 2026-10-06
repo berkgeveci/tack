@@ -14,7 +14,8 @@ from tack.lang.func import Func
 
 _UNBOUND = object()
 _DYNAMIC = object()
-_METHODS = {'dot', 'cross', 'norm', 'norm_sqr', 'normalized', 'sum', 'min', 'max', 'sample'}
+_METHODS = {'dot', 'cross', 'norm', 'norm_sqr', 'normalized', 'sum', 'min', 'max', 'sample',
+            'transpose', 'trace', 'determinant', 'inverse', 'outer_product', 'identity'}
 
 
 class CallBindings:
