@@ -217,9 +217,34 @@ def normalize_vectors(v, n):
         v[i] = vec / length          # stores 3 components
 ```
 
-Components are scalars: `vec[0]` reads one, `vec[1] = x` and `vec[1] += x`
-write one, and `v[i][2]` reads a component of a field element without
-naming the vector first. The index may be a runtime value (`vec[k]` for a
+Arithmetic works on whole vectors, component by component, and a scalar
+operand is applied to every component. So do the math builtins, the casts
+and conditional expressions:
+
+```python
+@tack.kernel
+def step(pos, vel, grid, out, dt, n):
+    for i in range(n):
+        v = vel[i]
+        v = min(max(v, -10.0), 10.0)        # clamp each component
+        cell = int(floor(pos[i] / 0.25))    # a vector of i32 cell indices
+        v = v if pos[i].y > 0.0 else -v     # one condition, whole vectors
+        speed = v.norm()                    # also norm_sqr(), dot(w), cross(w), normalized()
+        vel[i] = v
+        pos[i] += v * dt                    # augmented store to a field element
+        out[i] = grid[cell] * speed         # grid[cell] is grid[cell[0], cell[1], cell[2]]
+```
+
+Two vectors in one operation must have the same number of components.
+An assignment evaluates its whole right side before it stores anything,
+so `v = v.cross(w)` and `pos[i] = pos[i].cross(axis[i])` read the old
+components.
+
+Components are scalars. `vec[0]` and `vec.x` read one (`x`, `y`, `z`, `w`
+name the first four); `vec[1] = x`, `vec.y = x` and `vec[1] += x` write
+one. The same forms work on a field element without naming the vector
+first: `v[i][2]` and `v[i].z` read a component, `v[i][2] = x` and
+`v[i].z += x` store one. The index may be a runtime value (`vec[k]` for a
 loop variable `k`), which lowers to a chain of selects rather than a
 branch; an index past the last component reads the last component and
 writes nothing, since a kernel cannot raise. A literal index out of range

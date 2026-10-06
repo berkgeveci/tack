@@ -259,6 +259,20 @@ Kernels accept both fields and Python scalars (int, float) directly. The `_is_fi
 
 `tack.Vector.field(n, dtype, shape)` creates a flat scalar field of size `prod(shape) * n`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
 
+In `ast_transform.py` a vector value is a Python list of component
+expressions, and a list that reaches a scalar position fails IR
+verification with "expected expr node". Arithmetic, math builtins, casts
+and conditional expressions map over components (`_componentwise`
+repeats scalars and rejects mixed widths). An assignment lowers to one
+assignment per component, so `_settle_components` first evaluates any
+component that could observe an earlier one's write: a read of an earlier
+target component for a variable, any field load for a field element
+(fields may alias). Components are `v[c]`/`v.x`, on variables and on field
+elements (`vf[i][c] = x` stores one component); a runtime index selects
+through a chain and stores through per-component guards. A vector index
+supplies one dimension per component. See the vector tests in
+`test_new_features.py`.
+
 ### @tack.func inlining
 
 Functions decorated with `@tack.func` are inlined at the AST level into kernels. Supports return values, multi-return (tuple), nested inlining, and vector propagation. Variables are renamed with unique suffixes to avoid collisions.

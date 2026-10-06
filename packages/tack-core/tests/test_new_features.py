@@ -751,3 +751,232 @@ def test_tuple_unpacking_a_vector_built_from_its_targets(backend):
     vec_unpack_from_itself(_vec3_field(_VEC_A), out, n)
     x, y = _VEC_A[:, 0], _VEC_A[:, 1]
     np.testing.assert_array_equal(out.to_numpy(), (2 * x + y) * 10 + (2 * y + x))
+
+
+# --- Math builtins, casts and conditionals apply to each component ---
+
+@tack.kernel
+def vec_math_builtins(a, rounded, clamped, powered, n):
+    for i in range(n):
+        v = a[i]
+        rounded[i] = floor(v) + sqrt(abs(v)) + ceil(v)
+        clamped[i] = min(max(v, -1.0), tack.Vector([0.5, 1.5, 2.5])) + max(0, v)
+        powered[i] = pow(abs(v), 2.0) + atan2(v, 1.0)
+
+
+@tack.kernel
+def vec_casts(a, out, n):
+    for i in range(n):
+        whole = int(a[i])
+        out[i] = float(whole) * 0.5 + tack.f32(whole)
+
+
+@tack.func
+def _twice(v):
+    return v * 2.0
+
+
+@tack.kernel
+def vec_conditionals(a, plain, inlined, mixed, n):
+    for i in range(n):
+        v = a[i]
+        plain[i] = v if v[0] > 0.0 else -v
+        inlined[i] = _twice(v) if v[1] > 0.0 else v
+        mixed[i] = v if v[2] > 0.0 else 0.0
+
+
+_VEC_M = (np.arange(12, dtype=np.float32).reshape(4, 3) - 4.5) * np.float32(0.75)
+
+
+def test_math_builtins_apply_to_each_component(backend):
+    """`min`, `max`, `abs`, `floor`, `sqrt`, ... on a vector, with a scalar
+    repeated for every component. They used to fail IR verification."""
+    n = len(_VEC_M)
+    outs = [tack.Vector.field(3, dtype=tack.f32, shape=(n,)) for _ in range(3)]
+    vec_math_builtins(_vec3_field(_VEC_M), *outs, n)
+    rounded, clamped, powered = (o.to_numpy().reshape(n, 3) for o in outs)
+    m = _VEC_M
+    np.testing.assert_allclose(
+        rounded, np.floor(m) + np.sqrt(np.abs(m)) + np.ceil(m), rtol=1e-6)
+    np.testing.assert_array_equal(
+        clamped, np.minimum(np.maximum(m, -1), np.float32([0.5, 1.5, 2.5])) + np.maximum(0, m))
+    np.testing.assert_allclose(powered, m * m + np.arctan2(m, 1.0), rtol=1e-5, atol=1e-6)
+
+
+def test_casts_apply_to_each_component(backend):
+    n = len(_VEC_M)
+    out = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    vec_casts(_vec3_field(_VEC_M), out, n)
+    np.testing.assert_array_equal(out.to_numpy().reshape(n, 3), np.trunc(_VEC_M) * 1.5)
+
+
+def test_conditional_expression_with_vector_arms(backend):
+    """One condition selects whole vectors; an arm that is an inlined call
+    runs only when selected; a scalar arm is repeated."""
+    n = len(_VEC_M)
+    outs = [tack.Vector.field(3, dtype=tack.f32, shape=(n,)) for _ in range(3)]
+    vec_conditionals(_vec3_field(_VEC_M), *outs, n)
+    plain, inlined, mixed = (o.to_numpy().reshape(n, 3) for o in outs)
+    m = _VEC_M
+    np.testing.assert_array_equal(plain, np.where(m[:, :1] > 0, m, -m))
+    np.testing.assert_array_equal(inlined, np.where(m[:, 1:2] > 0, 2 * m, m))
+    np.testing.assert_array_equal(mixed, np.where(m[:, 2:] > 0, m, 0))
+
+
+# --- Components by name, components of field elements, augmented element stores ---
+
+@tack.kernel
+def vec_named_components(a, out, n):
+    for i in range(n):
+        v = a[i]
+        v.x = -v.y
+        v.z += a[i].x
+        out[i] = v
+
+
+@tack.kernel
+def vec_field_element_components(a, b, sel, n):
+    for i in range(n):
+        a[i][1] = 7.0
+        a[i][2] += a[i][0]
+        a[i].x = float(i)
+        b[i].y -= 1.0
+        b[i][sel[i]] = 50.0
+        b[i][sel[i]] += float(i)
+
+
+@tack.kernel
+def vec_field_augmented(a, b, n):
+    for i in range(n):
+        a[i] -= 0.5 * tack.Vector([a[i][1], a[i][2], a[i][0]])
+        b[i] *= 2.0
+        b[i] += a[i]
+
+
+@tack.kernel
+def field_indexed_by_vector(grid, out, n):
+    for i in range(n):
+        cell = tack.Vector([i, 2 - i % 3])
+        out[i] = grid[cell] + grid[cell + 1]
+
+
+def test_vector_components_by_name(backend):
+    """`v.x` is `v[0]`, readable on any vector value and assignable on a
+    vector variable. Reads used to fail IR verification."""
+    n = len(_VEC_M)
+    out = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    vec_named_components(_vec3_field(_VEC_M), out, n)
+    want = _VEC_M.copy()
+    want[:, 0] = -_VEC_M[:, 1]
+    want[:, 2] += _VEC_M[:, 0]
+    np.testing.assert_array_equal(out.to_numpy().reshape(n, 3), want)
+
+
+def test_components_of_a_vector_field_element(backend):
+    """`vf[i][c] = x`, `vf[i][c] += x` and `vf[i].y = x` store one component;
+    a runtime component past the last stores nothing."""
+    n = len(_VEC_M)
+    a, b = _vec3_field(_VEC_M), _vec3_field(_VEC_M)
+    sel = tack.field(dtype=tack.i32, shape=(n,))
+    sel.from_numpy(np.array([0, 1, 2, 7], np.int32))
+    vec_field_element_components(a, b, sel, n)
+    want_a = _VEC_M.copy()
+    want_a[:, 1] = 7
+    want_a[:, 2] += _VEC_M[:, 0]
+    want_a[:, 0] = np.arange(n)
+    want_b = _VEC_M.copy()
+    want_b[:, 1] -= 1
+    for i, c in enumerate([0, 1, 2]):
+        want_b[i, c] = 50.0 + i
+    np.testing.assert_array_equal(a.to_numpy().reshape(n, 3), want_a)
+    np.testing.assert_array_equal(b.to_numpy().reshape(n, 3), want_b)
+
+
+def test_augmented_store_to_a_vector_field_element(backend):
+    """`vf[i] -= vec` and `vf[i] *= scalar`; the first reads the element it
+    updates. Used to raise AttributeError during lowering."""
+    n = len(_VEC_M)
+    a, b = _vec3_field(_VEC_M), _vec3_field(_VEC_A)
+    vec_field_augmented(a, b, n)
+    want_a = _VEC_M - np.float32(0.5) * _VEC_M[:, [1, 2, 0]]
+    np.testing.assert_array_equal(a.to_numpy().reshape(n, 3), want_a)
+    np.testing.assert_array_equal(b.to_numpy().reshape(n, 3), _VEC_A * 2 + want_a)
+
+
+def test_field_indexed_by_a_vector(backend):
+    """A vector index supplies one dimension per component: g[I] is g[I[0], I[1]]."""
+    n = 3
+    values = np.arange(20, dtype=np.float32).reshape(4, 5)
+    grid = tack.field(dtype=tack.f32, shape=values.shape)
+    grid.from_numpy(values)
+    out = tack.field(dtype=tack.f32, shape=(n,))
+    field_indexed_by_vector(grid, out, n)
+    rows, cols = np.arange(n), 2 - np.arange(n) % 3
+    np.testing.assert_array_equal(out.to_numpy(), values[rows, cols] + values[rows + 1, cols + 1])
+
+
+def _vector_width_mismatch():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            out[i] = max(vf[i], tack.Vector([1.0, 2.0]))
+    return bad
+
+
+def _component_name_past_the_width():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            v = vf[i]
+            out[i] = v * v.w
+    return bad
+
+
+def _swizzle_store():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            v = vf[i]
+            v.xy = 1.0
+            out[i] = v
+    return bad
+
+
+def _vector_into_a_component():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            vf[i][0] = vf[i]
+    return bad
+
+
+def _vector_into_a_scalar_element():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            s[i] += vf[i]
+    return bad
+
+
+def _augmented_width_mismatch():
+    @tack.kernel
+    def bad(vf, s, out, n):
+        for i in range(n):
+            vf[i] += tack.Vector([1.0, 2.0])
+    return bad
+
+
+@pytest.mark.parametrize("define, message", [
+    (_vector_width_mismatch, "combines a 2-vector and 3-vector"),
+    (_component_name_past_the_width, "'w' is not a component of a 3-vector"),
+    (_swizzle_store, "'xy' is not a component of a 3-vector"),
+    (_vector_into_a_component, "a component of a vector must be a scalar"),
+    (_vector_into_a_scalar_element, "combines a scalar target with a vector"),
+    (_augmented_width_mismatch, "combines a 2-vector and 3-vector"),
+])
+def test_mismatched_vector_forms_are_rejected(define, message):
+    """Each names the kernel and source position instead of failing IR
+    verification with "expected expr node"."""
+    from tack.lang.source_validation import UnsupportedSyntaxError
+    with pytest.raises(UnsupportedSyntaxError, match=message):
+        define().get_ir(vector_fields={"vf": 3, "out": 3})

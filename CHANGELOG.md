@@ -25,6 +25,21 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `count_nonzero`, `dot`, `histogram`) accept vector fields and reduce
   over all components in storage order; they used to fail IR
   verification.
+- Vectors in the places a scalar works. The math builtins (`min`, `max`,
+  `abs`, `floor`, `sqrt`, `pow`, ...) and the casts (`int`, `float`,
+  `tack.f32`, ...) apply to each component, with a scalar argument
+  repeated: `min(max(v, -1.0), 1.0)`, `int(floor(p))`. A conditional
+  expression selects whole vectors on one condition. `x`, `y`, `z` and
+  `w` name the first four components, to read (`v.x`, `vf[i].y`) and to
+  assign (`v.x = a`, `v.y += a`). A component of a vector field element
+  can be stored directly: `vf[i][c] = a`, `vf[i][c] += a`, `vf[i].y = a`.
+  `vf[i] += vec` and `vf[i] *= scalar` update an element in place. A
+  vector indexes a field one dimension per component: `grid[cell]` is
+  `grid[cell[0], cell[1]]`. All of these used to fail IR verification
+  with "expected expr node", or with an `AttributeError` for the
+  augmented store. Vectors of different widths in one operation, a
+  component name past the width, and a vector combined into a scalar
+  target are rejected at lowering with the source position.
 
 ### Kernels that now compute different results
 

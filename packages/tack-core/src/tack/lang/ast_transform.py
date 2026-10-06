@@ -28,6 +28,9 @@ MATH_BUILTINS = {
     "exp2",
 }
 
+# Names for the first four components of a vector: v.x is v[0].
+COMPONENT_NAMES = "xyzw"
+
 
 class KernelTransformer(ast.NodeVisitor):
     """Transforms a Python AST (from a @kernel function) into Tack IR.
@@ -532,6 +535,9 @@ class KernelTransformer(ast.NodeVisitor):
         then_value, then_stmts = self._visit_expression(node.body)
         else_value, else_stmts = self._visit_expression(node.orelse)
         self._pre_stmts.extend(before)
+        if isinstance(then_value, list) or isinstance(else_value, list):
+            return self._vector_conditional(
+                node, condition, then_value, then_stmts, else_value, else_stmts)
         if then_stmts or else_stmts:
             name = self._fresh_name(f"__conditional_{self._inline_counter}__")
             self._inline_counter += 1
@@ -543,13 +549,36 @@ class KernelTransformer(ast.NodeVisitor):
             return ir.IRName(name)
         return ir.IRIfExp(condition, then_value, else_value)
 
+    def _vector_conditional(self, node, condition, then_value, then_stmts,
+                            else_value, else_stmts):
+        """``a if c else b`` with a vector arm: one selection per component.
+
+        The condition is evaluated once. An arm that needs statements of
+        its own (an inlined call) runs them only when it is selected.
+        """
+        then_value, else_value = zip(*self._componentwise(
+            node, "conditional expression", [then_value, else_value]), strict=True)
+        if then_stmts or else_stmts:
+            names = []
+            for _ in then_value:
+                names.append(self._fresh_name(f"__conditional_{self._inline_counter}__"))
+                self._inline_counter += 1
+            self._pre_stmts.append(ir.IRIf(
+                condition,
+                [*then_stmts, *(ir.IRAssign(n, v) for n, v in zip(names, then_value))],
+                [*else_stmts, *(ir.IRAssign(n, v) for n, v in zip(names, else_value))],
+            ))
+            return [ir.IRName(n) for n in names]
+        condition = self._capture_value(condition, self._pre_stmts)
+        return [ir.IRIfExp(condition, t, e) for t, e in zip(then_value, else_value)]
+
     # --- Assignments ---
 
     def visit_Assign(self, node: ast.Assign) -> ir.IRNode:
         if len(node.targets) != 1:
             raise NotImplementedError("Multiple assignment targets not supported")
 
-        target = node.targets[0]
+        target = self._component_target(node.targets[0])
         value = node.value
 
         # Tuple unpacking: a, b = expr
@@ -597,6 +626,10 @@ class KernelTransformer(ast.NodeVisitor):
                 and target.value.id in self._vector_vars):
             return self._store_vector_component(target, visited_value)
 
+        # vf[i][c] = expr for a vector field: store the component
+        if self._is_field_component(target):
+            return self._assign_field_component(target, visited_value)
+
         # Check if RHS is a vector variable → propagate vector-ness
         if isinstance(visited_value, list):
             # Vector expression result (list of IR nodes)
@@ -620,7 +653,7 @@ class KernelTransformer(ast.NodeVisitor):
         raise NotImplementedError(f"Unsupported assignment target: {type(target).__name__}")
 
     def visit_AugAssign(self, node: ast.AugAssign) -> ir.IRNode:
-        target = node.target
+        target = self._component_target(node.target)
         op = self._binop_str(node.op)
 
         # Check for vector augmented assignment: v += w
@@ -645,6 +678,13 @@ class KernelTransformer(ast.NodeVisitor):
             return self._store_vector_component(
                 target, ir.IRBinOp(op=op, left=read, right=right))
 
+        # vf[i][c] += expr, and vf[i] += vec, for a vector field
+        if self._is_field_component(target):
+            return self._augment_field_component(target, op, node.value)
+        if (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name)
+                and target.value.id in self._vector_fields):
+            return self._augment_vector_field(target, op, node.value)
+
         left = self.visit(target)
         # Evaluate a subscript once, reusing its address for the store.
         if isinstance(left, ir.IRFieldLoad):
@@ -655,6 +695,9 @@ class KernelTransformer(ast.NodeVisitor):
             self._pre_stmts.extend(statements)
         else:
             read = left
+        if isinstance(right, list):
+            raise self._source_error(
+                node, "augmented assignment", "combines a scalar target with a vector")
         rhs = ir.IRBinOp(op=op, left=read, right=right)
 
         if isinstance(target, ast.Subscript):
@@ -858,15 +901,8 @@ class KernelTransformer(ast.NodeVisitor):
             # a float index like 127.7 maps to element 127, not a fractional
             # position that shifts the component access.
             int_index = ir.IRCast(value=index, dtype=i32)
-            result = []
-            for c in range(ndim):
-                comp_idx = ir.IRBinOp(
-                    op="+",
-                    left=ir.IRBinOp(op="*", left=int_index, right=ir.IRConstant(ndim)),
-                    right=ir.IRConstant(c),
-                )
-                result.append(ir.IRFieldLoad(field=field_ir, index=comp_idx))
-            return result
+            return [ir.IRFieldLoad(field=field_ir, index=self._component_index(int_index, ndim, c))
+                    for c in range(ndim)]
 
         return ir.IRFieldLoad(field=field_ir, index=index)
 
@@ -893,10 +929,36 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRDimSize(field_name=value.value.id, dim=index.value)
 
     def visit_Attribute(self, node: ast.Attribute) -> ir.IRAttribute:
-        return ir.IRAttribute(
-            obj=self.visit(node.value),
-            attr=node.attr,
-        )
+        obj = self.visit(node.value)
+        if isinstance(obj, list):
+            # v.x on a vector variable or a vector-valued expression
+            return obj[self._named_component(node, len(obj))]
+        return ir.IRAttribute(obj=obj, attr=node.attr)
+
+    def _named_component(self, node: ast.Attribute, n: int) -> int:
+        """The index that ``x``, ``y``, ``z`` or ``w`` names in an n-vector."""
+        c = COMPONENT_NAMES.find(node.attr) if len(node.attr) == 1 else -1
+        if not 0 <= c < n:
+            names = ", ".join(COMPONENT_NAMES[:n])
+            raise self._source_error(
+                node, "attribute", f"'{node.attr}' is not a component of a {n}-vector; "
+                f"use {names} or an index")
+        return c
+
+    def _component_target(self, target):
+        """An assignment target ``v.x`` or ``vf[i].x`` as the subscript it names."""
+        if not isinstance(target, ast.Attribute):
+            return target
+        vector = target.value
+        if isinstance(vector, ast.Name) and vector.id in self._vector_vars:
+            n = self._vector_vars[vector.id]
+        elif (isinstance(vector, ast.Subscript) and isinstance(vector.value, ast.Name)
+                and vector.value.id in self._vector_fields):
+            n = self._vector_fields[vector.value.id]
+        else:
+            return target
+        index = ast.copy_location(ast.Constant(self._named_component(target, n)), target)
+        return ast.copy_location(ast.Subscript(value=vector, slice=index, ctx=target.ctx), target)
 
     def visit_Name(self, node: ast.Name) -> ir.IRNode:
         source = None
@@ -938,6 +1000,9 @@ class KernelTransformer(ast.NodeVisitor):
             if len(node.args) != arity:
                 raise NotImplementedError(f"{func_name}() takes exactly {arity} arguments")
             args = self._visit_ordered(node.args)
+            if any(isinstance(a, list) for a in args):
+                return [ir.IRCall(func_name=func_name, args=row)
+                        for row in self._componentwise(node, f"{func_name}()", args)]
             return ir.IRCall(func_name=func_name, args=args)
 
         # len(field) → the field's first dimension
@@ -1021,7 +1086,10 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name in _CAST_MAP:
             if len(node.args) != 1:
                 raise NotImplementedError(f"{func_name}() takes exactly one argument")
-            return ir.IRCast(value=self.visit(node.args[0]), dtype=_CAST_MAP[func_name])
+            value = self.visit(node.args[0])
+            if isinstance(value, list):
+                return [ir.IRCast(value=c, dtype=_CAST_MAP[func_name]) for c in value]
+            return ir.IRCast(value=value, dtype=_CAST_MAP[func_name])
 
         # Check for texture3d.sample(u, v, w)
         if isinstance(node.func, ast.Attribute) and node.func.attr == "sample":
@@ -1445,13 +1513,117 @@ class KernelTransformer(ast.NodeVisitor):
         int_index = ir.IRCast(value=index_node, dtype=i32)
         components = self._settle_components(components, stmts)
         for c in range(ndim):
-            # field[int(i) * ndim + c]
-            actual_index = ir.IRBinOp(
-                op="+",
-                left=ir.IRBinOp(op="*", left=int_index, right=ir.IRConstant(ndim)),
-                right=ir.IRConstant(c),
-            )
-            stmts.append(ir.IRFieldStore(field=field_node, index=actual_index, value=components[c]))
+            stmts.append(ir.IRFieldStore(
+                field=field_node, index=self._component_index(int_index, ndim, c),
+                value=components[c]))
+        return stmts
+
+    def _component_index(self, element, ndim: int, c: int):
+        """Where component ``c`` of element ``element`` is stored: element * ndim + c."""
+        return ir.IRBinOp(
+            op="+",
+            left=ir.IRBinOp(op="*", left=element, right=ir.IRConstant(ndim)),
+            right=ir.IRConstant(c),
+        )
+
+    def _componentwise(self, node, construct: str, args: list) -> list:
+        """Per-component argument lists for a scalar operation given vectors.
+
+        Vector arguments must have one width; scalar arguments are repeated
+        for every component.
+        """
+        widths = sorted({len(a) for a in args if isinstance(a, list)})
+        if len(widths) != 1:
+            sizes = " and ".join(f"{w}-vector" for w in widths)
+            raise self._source_error(node, construct, f"combines a {sizes}")
+        return [[a[c] if isinstance(a, list) else a for a in args] for c in range(widths[0])]
+
+    # --- Vector field elements: vf[i] op= vec, vf[i][c] = x, vf[i][c] op= x ---
+
+    def _is_field_component(self, target) -> bool:
+        """``vf[i][c]``: one component of an element of a vector field."""
+        return (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Subscript)
+                and isinstance(target.value.value, ast.Name)
+                and target.value.value.id in self._vector_fields)
+
+    def _field_element(self, node: ast.Subscript):
+        """The field and the component indices of the vector field element ``vf[i]``.
+
+        The element index is evaluated once, so a load and a store of the
+        element can share it.
+        """
+        ndim = self._vector_fields[node.value.id]
+        index = self._capture_value(self._visit_subscript_index(node), self._pre_stmts)
+        field = self.visit(node.value)
+        element = ir.IRCast(value=index, dtype=i32)
+        return field, [self._component_index(element, ndim, c) for c in range(ndim)]
+
+    def _component_stores(self, field, indices: list, selector, value):
+        """Store ``value`` to the component of a field element ``selector`` picks."""
+        if isinstance(selector, int):
+            return ir.IRFieldStore(field=field, index=indices[selector], value=value)
+        value = self._capture_value(value, self._pre_stmts)
+        return [
+            ir.IRIf(ir.IRCompare(op="==", left=selector, right=ir.IRConstant(c)),
+                    [ir.IRFieldStore(field=field, index=index, value=value)], [])
+            for c, index in enumerate(indices)
+        ]
+
+    def _assign_field_component(self, target: ast.Subscript, value):
+        """``vf[i][c] = value``.
+
+        A literal component is one store. A runtime one guards a store to
+        each component, as for a vector variable: out of range stores
+        nothing.
+        """
+        if isinstance(value, list):
+            raise self._source_error(
+                target, "assignment", "a component of a vector must be a scalar")
+        # The value is evaluated before the target's indices.
+        saved = self._pre_stmts
+        self._pre_stmts = []
+        field, indices = self._field_element(target.value)
+        selector = self._component_selector(target, len(indices))
+        statements = self._pre_stmts
+        self._pre_stmts = saved
+        if statements:
+            value = self._capture_value(value, self._pre_stmts)
+            self._pre_stmts.extend(statements)
+        return self._component_stores(field, indices, selector, value)
+
+    def _augment_field_component(self, target: ast.Subscript, op: str, value_node):
+        """``vf[i][c] op= value``: indices once, the old value read first."""
+        field, indices = self._field_element(target.value)
+        selector = self._component_selector(target, len(indices))
+        loads = [ir.IRFieldLoad(field=field, index=index) for index in indices]
+        if isinstance(selector, int):
+            read = loads[selector]
+        else:
+            read = self._select_component(selector, loads)
+        right, statements = self._visit_expression(value_node)
+        if isinstance(right, list):
+            raise self._source_error(
+                target, "augmented assignment", "combines a component of a vector with a vector")
+        if statements:
+            read = self._capture_value(read, self._pre_stmts)
+            self._pre_stmts.extend(statements)
+        return self._component_stores(
+            field, indices, selector, ir.IRBinOp(op=op, left=read, right=right))
+
+    def _augment_vector_field(self, target: ast.Subscript, op: str, value_node):
+        """``vf[i] op= value`` for a vector or a scalar ``value``."""
+        field, indices = self._field_element(target)
+        loads = [ir.IRFieldLoad(field=field, index=index) for index in indices]
+        right, statements = self._visit_expression(value_node)
+        if statements:
+            loads = self._capture_value(loads, self._pre_stmts)
+            self._pre_stmts.extend(statements)
+        rows = self._componentwise(target, "augmented assignment", [loads, right])
+        stmts = []
+        values = self._settle_components(
+            [ir.IRBinOp(op=op, left=old, right=new) for old, new in rows], stmts)
+        stmts.extend(ir.IRFieldStore(field=field, index=index, value=value)
+                     for index, value in zip(indices, values))
         return stmts
 
     def _visit_as_vector(self, value_node, ndim: int) -> list:
@@ -1562,25 +1734,37 @@ class KernelTransformer(ast.NodeVisitor):
         an index past the last component yields the last component (Python
         would raise, and a kernel cannot). The index is evaluated once.
         """
-        n = len(components)
+        selector = self._component_selector(node, len(components))
+        if isinstance(selector, int):
+            return components[selector]
+        return self._select_component(selector, components)
+
+    def _component_selector(self, node: ast.Subscript, n: int):
+        """The component a subscript of an n-vector names.
+
+        An ``int`` for a literal index, checked against the width;
+        otherwise the index as an IR value, evaluated once.
+        """
         index = node.slice
         if isinstance(index, ast.Constant) and isinstance(index.value, int):
             c = index.value
             if not -n <= c < n:
                 raise self._source_error(
                     node, "subscript", f"component {c} of a {n}-vector is out of range")
-            return components[c % n]
-        if n == 1:
-            return components[0]
+            return c % n
         idx, statements = self._visit_expression(index)
         self._pre_stmts.extend(statements)
         if isinstance(idx, list):
             raise self._source_error(node, "subscript", "a vector cannot index a vector")
-        idx = self._capture_value(idx, self._pre_stmts)
-        result = components[n - 1]
-        for c in range(n - 2, -1, -1):
+        return self._capture_value(idx, self._pre_stmts)
+
+    def _select_component(self, selector, components: list):
+        """The component a runtime ``selector`` picks; past the last, the last."""
+        result = components[-1]
+        for c in range(len(components) - 2, -1, -1):
             result = ir.IRIfExp(
-                ir.IRCompare(op="==", left=idx, right=ir.IRConstant(c)), components[c], result)
+                ir.IRCompare(op="==", left=selector, right=ir.IRConstant(c)),
+                components[c], result)
         return result
 
     def _store_vector_component(self, target: ast.Subscript, value):
@@ -1595,18 +1779,9 @@ class KernelTransformer(ast.NodeVisitor):
         if isinstance(value, list):
             raise self._source_error(
                 target, "assignment", "a component of a vector must be a scalar")
-        index = target.slice
-        if isinstance(index, ast.Constant) and isinstance(index.value, int):
-            c = index.value
-            if not -n <= c < n:
-                raise self._source_error(
-                    target, "subscript", f"component {c} of a {n}-vector is out of range")
-            return ir.IRAssign(target=self._component_name(name, c % n), value=value)
-        idx, statements = self._visit_expression(index)
-        self._pre_stmts.extend(statements)
-        if isinstance(idx, list):
-            raise self._source_error(target, "subscript", "a vector cannot index a vector")
-        idx = self._capture_value(idx, self._pre_stmts)
+        idx = self._component_selector(target, n)
+        if isinstance(idx, int):
+            return ir.IRAssign(target=self._component_name(name, idx), value=value)
         value = self._capture_value(value, self._pre_stmts)
         return [
             ir.IRIf(ir.IRCompare(op="==", left=idx, right=ir.IRConstant(c)),
@@ -1646,20 +1821,33 @@ class KernelTransformer(ast.NodeVisitor):
             if field_name is None:
                 raise NotImplementedError("Multi-dim indexing requires a named field")
 
-            indices = self._visit_ordered(node.slice.elts)
+            return self._linearize_index(node, field_name, self._visit_ordered(node.slice.elts))
 
-            # Linearize: (i * dim1 + j) * dim2 + k
-            result = indices[0]
-            for d in range(1, len(indices)):
-                dim_size = ir.IRDimSize(field_name=field_name, dim=d)
-                result = ir.IRBinOp(
-                    op="+",
-                    left=ir.IRBinOp(op="*", left=result, right=dim_size),
-                    right=indices[d],
-                )
-            return result
+        index = self.visit(node.slice)
+        if isinstance(index, list):
+            # A vector indexes one dimension per component: g[I] is g[I[0], I[1]]
+            if not isinstance(node.value, ast.Name):
+                raise self._source_error(node, "subscript", "indexes an unnamed field with a vector")
+            return self._linearize_index(node, node.value.id, [index])
+        return index
 
-        return self.visit(node.slice)
+    def _linearize_index(self, node, field_name: str, indices: list):
+        """Row-major index from one index per dimension: (i * dim1 + j) * dim2 + k.
+
+        A vector among the indices supplies one dimension per component.
+        """
+        flat = []
+        for index in indices:
+            flat.extend(index if isinstance(index, list) else [index])
+        result = flat[0]
+        for d in range(1, len(flat)):
+            dim_size = ir.IRDimSize(field_name=field_name, dim=d)
+            result = ir.IRBinOp(
+                op="+",
+                left=ir.IRBinOp(op="*", left=result, right=dim_size),
+                right=flat[d],
+            )
+        return result
 
     def _is_range_call(self, node: ast.expr) -> bool:
         """Check if an AST node is a call to range()."""
