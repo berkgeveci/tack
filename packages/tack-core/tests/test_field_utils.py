@@ -413,6 +413,26 @@ def test_read_range_copies_the_requested_elements(backend, dt):
     assert f[36] == data[36]
 
 
+def test_device_read_range_refuses_a_range_past_the_allocation(backend):
+    """CUDA, HIP and Level Zero copy at a byte offset into device memory,
+    where a range past the end would read beyond the allocation; they
+    refuse it. CPU and Metal slice a host-visible array instead."""
+    from tack.runtime.dispatch import get_backend
+
+    if get_backend().name not in ("cuda", "hip", "level_zero"):
+        pytest.skip("host-visible memory: a slice, not a device copy")
+    f = tack.field(dtype=tack.f64 if get_backend().supports_f64 else tack.f32, shape=(20,))
+    f.from_numpy(np.arange(20).astype(f.to_numpy().dtype))
+    buf = f._buffer
+    np.testing.assert_array_equal(buf.read_range(18, 2), [18, 19])
+    with pytest.raises(IndexError, match="outside a buffer of 20 elements"):
+        buf.read_range(19, 2)
+    with pytest.raises(IndexError, match="outside"):
+        buf.read_range(-1, 1)
+    alias = tack.field_from_ptr(buf.address, f.dtype, (20,))      # a wrapped pointer reads too
+    assert alias[13] == 13
+
+
 def test_host_reads_are_checked_and_writes_refused(backend):
     f = tack.field(dtype=tack.f32, shape=(3, 4))
     with pytest.raises(TypeError, match="takes 2 integer indices"):

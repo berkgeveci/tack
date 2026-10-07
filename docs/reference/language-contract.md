@@ -227,8 +227,7 @@ an imported pointer can share storage with another field. Host code reads
 one element with `f[i, j]` (a Python number, or a NumPy array of a vector
 or matrix element) and may not write one; `DeviceBuffer.read_range`
 defines the copy, which is a slice of host-visible memory on CPU and
-Metal, a copy of just the element on CUDA, and a whole-buffer copy on HIP
-and Level Zero until those backends narrow it. Object identity
+Metal and a copy of just the element on CUDA, HIP and Level Zero. Object identity
 does not establish that two fields have different backing allocations.
 Callers must keep external storage alive for its use and must use fields
 compatible with the active backend.

@@ -109,6 +109,18 @@ class HIPBuffer(DeviceBuffer):
         ))
         return out
 
+    def read_range(self, start: int, count: int) -> np.ndarray:
+        """One hipMemcpy of just the requested elements, for ``field[i]`` on the host."""
+        itemsize = self._numpy_dtype.itemsize
+        self._check_range(start, count, self._nbytes, itemsize)
+        out = np.empty(count, dtype=self._numpy_dtype)
+        if count:
+            _check_hip(hip.hipMemcpy(
+                out, int(self._device_ptr) + start * itemsize, count * itemsize,
+                hip.hipMemcpyKind.hipMemcpyDeviceToHost,
+            ))
+        return out
+
     def fill(self, value):
         arr = np.full(self._shape, value, dtype=self._numpy_dtype)
         self.from_numpy(arr)

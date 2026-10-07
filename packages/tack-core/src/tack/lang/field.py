@@ -41,12 +41,20 @@ class DeviceBuffer:
     def read_range(self, start: int, count: int) -> np.ndarray:
         """Elements ``[start, start + count)`` of the flat storage, as a copy.
 
-        Serves ``field[i]`` on the host. Buffers with a host-visible view
-        slice it and CUDA copies just the range; this default, which HIP
-        and Level Zero use, copies the whole buffer, which is correct and
-        slow, so reading many elements goes through ``to_numpy()``.
+        Serves ``field[i]`` on the host. Every shipped buffer overrides it:
+        CPU and Metal slice their host-visible views, and CUDA, HIP and
+        Level Zero copy just the range. This default, for a buffer that
+        does not, copies the whole buffer, which is correct and slow.
         """
         return self.to_numpy().reshape(-1)[start:start + count].copy()
+
+    @staticmethod
+    def _check_range(start: int, count: int, nbytes: int, itemsize: int):
+        """Refuse a range past the allocation: a device copy there is not caught by NumPy."""
+        if start < 0 or count < 0 or (start + count) * itemsize > nbytes:
+            raise IndexError(
+                f"elements [{start}, {start + count}) are outside a buffer of "
+                f"{nbytes // itemsize} elements")
 
     def fill(self, value):
         raise NotImplementedError
@@ -302,9 +310,9 @@ class Field:
         gives a NumPy array of the element. Negative indices count from
         the end, as in Python. This is for inspection and for host-side
         decisions: on backends without host-visible memory each read is a
-        transfer (on HIP and Level Zero, for now, a copy of the whole
-        field), so many elements are read with ``to_numpy()``. Fields are not written this
-        way; see ``from_numpy`` and ``fill``.
+        transfer of that element, so many elements are read with
+        ``to_numpy()``. Fields are not written this way; see ``from_numpy``
+        and ``fill``.
         """
         shape = tuple(getattr(self, '_logical_shape', None) or self.shape)
         if index is None:

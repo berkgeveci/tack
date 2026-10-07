@@ -689,15 +689,25 @@ class L0Buffer(DeviceBuffer):
                 None, 0, None),
                 "zeCommandListAppendMemoryCopy (H2D)")
 
-    def _copy_from_device(self, out: np.ndarray):
-        """Copy device → numpy array using an immediate command list."""
+    def _copy_from_device(self, out: np.ndarray, offset: int = 0):
+        """Copy ``out.nbytes`` bytes from ``offset`` into the allocation to ``out``."""
         ze = _get_ze()
+        source = ctypes.c_void_p(int(self._device_ptr.value or 0) + offset)
         with self._backend._launch_lock:
             _check_ze(ze.zeCommandListAppendMemoryCopy(
                 self._backend._imm_cmd_list,
-                out.ctypes.data, self._device_ptr, self._nbytes,
+                out.ctypes.data, source, out.nbytes,
                 None, 0, None),
                 "zeCommandListAppendMemoryCopy (D2H)")
+
+    def read_range(self, start: int, count: int) -> np.ndarray:
+        """One copy of just the requested elements, for ``field[i]`` on the host."""
+        itemsize = self._numpy_dtype.itemsize
+        self._check_range(start, count, self._nbytes, itemsize)
+        out = np.empty(count, dtype=self._numpy_dtype)
+        if count:
+            self._copy_from_device(out, start * itemsize)
+        return out
 
     def from_numpy(self, arr: np.ndarray):
         self._copy_to_device(arr)
