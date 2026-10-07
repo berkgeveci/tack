@@ -13,17 +13,31 @@ Each test runs once per shape class, passing an instance to the kernel as
 its template argument, as user code does.
 """
 
+import types
+
 import numpy as np
 import pytest
 
 import tack
 from tack.data import shapes as sh
+from tack.runtime.dispatch import env_flag
 
+# Only VTK's data model: plain `import vtk` also loads its rendering
+# libraries, which a headless runner may not have.
 try:
-    import vtk
+    from vtkmodules import vtkCommonCore, vtkCommonDataModel
 except ImportError:
+    if env_flag("TACK_REQUIRE_VTK"):
+        raise
     vtk = None
+else:
+    vtk = types.SimpleNamespace(reference=vtkCommonCore.reference,
+                                **{name: getattr(vtkCommonDataModel, name)
+                                   for name in dir(vtkCommonDataModel)
+                                   if name.startswith("vtk")})
 
+# CI sets TACK_REQUIRE_VTK on the job that installs VTK, so a missing or
+# broken VTK fails there instead of skipping the comparisons.
 needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
 
 # VTK 9.7.1's tables: GetParametricCoords, GetParametricCenter, GetEdge and

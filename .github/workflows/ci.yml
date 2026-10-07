@@ -176,6 +176,16 @@ jobs:
       - name: Sync the workspace
         run: uv sync --extra cpu --extra dev
 
+      # VTK is the reference for tack.data.shapes. One job is enough, and
+      # the wheel is large; TACK_REQUIRE_VTK makes that job fail rather than
+      # skip if VTK is missing or will not import. `uv run` does not remove
+      # it: only `uv sync` makes the environment exact.
+      - name: Install VTK, the reference for the cell-shape tests
+        if: matrix.python-version == '3.13'
+        run: |
+          uv pip install vtk
+          echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
+
       - name: Check host compiler tooling
         run: >-
           uv run pytest -q -s packages/tack-core/tests/test_compiler_tools.py
