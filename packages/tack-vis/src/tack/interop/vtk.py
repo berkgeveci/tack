@@ -51,7 +51,8 @@ be shared.
 
 import tack
 
-__all__ = ["field_to_vtk", "init_level_zero", "vtk_to_field"]
+__all__ = ["dataset_to_vtk", "field_to_vtk", "init_level_zero", "vtk_to_dataset",
+           "vtk_to_field"]
 
 
 def _dlpack_support():
@@ -197,3 +198,133 @@ def field_to_vtk(field, n_components=None, name=None):
         shaped = field.reshape((field.size // n_components, n_components))
 
     return dlpack_support.dlpack_to_vtk(shaped, name=name)
+
+
+# ── Datasets ────────────────────────────────────────────────────────
+#
+# Unlike the arrays above, datasets are copied through NumPy, so these work
+# with any VTK, with or without the DLPack module.
+
+def _structured_dims(grid):
+    dims = [0, 0, 0]
+    grid.GetDimensions(dims)
+    while len(dims) > 1 and dims[-1] == 1:
+        dims.pop()
+    if 1 in dims:
+        raise ValueError(f"a structured grid of dimensions {tuple(dims)} is not supported: "
+                         "only trailing dimensions may be 1")
+    return tuple(dims)
+
+
+def _array_to_field(array, float_dtype):
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    from tack.lang.types import from_numpy_dtype
+
+    values = vtk_to_numpy(array)
+    dtype = float_dtype if values.dtype.kind == "f" else from_numpy_dtype(values.dtype)
+    n = array.GetNumberOfComponents()
+    if n == 1:
+        field = tack.field(dtype, shape=(values.shape[0],))
+    else:
+        field = tack.Vector.field(n, dtype, shape=(values.shape[0],))
+    if values.size:
+        field.from_numpy(np.ascontiguousarray(values).astype(dtype.numpy_dtype))
+    return field
+
+
+def _attributes_to_fields(attributes, float_dtype):
+    fields = {}
+    for i in range(attributes.GetNumberOfArrays()):
+        array = attributes.GetArray(i)
+        if array is not None and array.GetName():
+            fields[array.GetName()] = _array_to_field(array, float_dtype)
+    return fields
+
+
+def vtk_to_dataset(grid, dtype=tack.f32):
+    """Copy a ``vtkUnstructuredGrid`` or ``vtkStructuredGrid`` into a ``tack.data.DataSet``.
+
+    Points and floating-point data arrays become fields of ``dtype``;
+    integer arrays keep their type. Named point and cell data arrays are
+    copied into ``point_data`` and ``cell_data``. An unstructured grid gives
+    an ``ExplicitCellSet``, whose cells must all be linear shapes; a
+    structured grid gives a ``StructuredCellSet``.
+    """
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    from tack.data import DataSet, ExplicitCellSet, StructuredCellSet
+
+    if grid.IsA("vtkUnstructuredGrid"):
+        cell_array = grid.GetCells()
+        cells = ExplicitCellSet(vtk_to_numpy(grid.GetCellTypesArray()),
+                                vtk_to_numpy(cell_array.GetOffsetsArray()),
+                                vtk_to_numpy(cell_array.GetConnectivityArray()))
+    elif grid.IsA("vtkStructuredGrid"):
+        cells = StructuredCellSet(_structured_dims(grid))
+    else:
+        raise TypeError(f"expected a vtkUnstructuredGrid or vtkStructuredGrid, "
+                        f"not {grid.GetClassName()}")
+    points = vtk_to_numpy(grid.GetPoints().GetData())
+    return DataSet(points, cells,
+                   point_data=_attributes_to_fields(grid.GetPointData(), dtype),
+                   cell_data=_attributes_to_fields(grid.GetCellData(), dtype),
+                   dtype=dtype)
+
+
+def _field_to_array(name, field):
+    from vtkmodules.util.numpy_support import numpy_to_vtk
+
+    values = field.to_numpy(vectors=True) if getattr(field, "_vector_n", None) else field.to_numpy()
+    array = numpy_to_vtk(values, deep=1)
+    array.SetName(name)
+    return array
+
+
+def dataset_to_vtk(data):
+    """Copy a ``tack.data.DataSet`` into a new ``vtkUnstructuredGrid`` or ``vtkStructuredGrid``.
+
+    A structured cell set gives a ``vtkStructuredGrid``; the others give a
+    ``vtkUnstructuredGrid``. Point and cell data are copied as named arrays.
+    """
+    import numpy as np
+    from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonDataModel import (
+        vtkCellArray,
+        vtkStructuredGrid,
+        vtkUnstructuredGrid,
+    )
+
+    from tack.data import ExplicitCellSet, SingleTypeCellSet, StructuredCellSet
+
+    cells = data.cells
+    points = vtkPoints()
+    points.SetData(numpy_to_vtk(data.points.to_numpy(vectors=True), deep=1))
+    if isinstance(cells, StructuredCellSet):
+        grid = vtkStructuredGrid()
+        grid.SetDimensions(*(cells.point_dims + (1,) * (3 - len(cells.point_dims))))
+    elif isinstance(cells, (ExplicitCellSet, SingleTypeCellSet)):
+        if isinstance(cells, ExplicitCellSet):
+            types = cells.types.to_numpy()
+            offsets = cells.offsets.to_numpy()
+            connectivity = cells.connectivity.to_numpy()
+        else:
+            n, k = cells.num_cells, cells.shape.NUM_POINTS
+            types = np.full(n, cells.shape.ID, np.uint8)
+            offsets = np.arange(n + 1) * k
+            connectivity = cells.connectivity.to_numpy().reshape(-1)
+        cell_array = vtkCellArray()
+        cell_array.SetData(numpy_to_vtkIdTypeArray(offsets.astype(np.int64), deep=1),
+                           numpy_to_vtkIdTypeArray(connectivity.astype(np.int64), deep=1))
+        grid = vtkUnstructuredGrid()
+        grid.SetCells(numpy_to_vtk(types.astype(np.uint8), deep=1), cell_array)
+    else:
+        raise TypeError(f"unsupported cell set {type(cells).__name__}")
+    grid.SetPoints(points)
+    for name, field in data.point_data.items():
+        grid.GetPointData().AddArray(_field_to_array(name, field))
+    for name, field in data.cell_data.items():
+        grid.GetCellData().AddArray(_field_to_array(name, field))
+    return grid

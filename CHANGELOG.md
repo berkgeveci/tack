@@ -18,6 +18,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   VTK's, and the tests compare them with VTK's. Each compiled kernel is
   specialized to one shape; a mesh of several shapes runs a kernel once
   per shape present. See *Cell shapes* in the visualization chapter.
+- `tack.data` cell sets and datasets (tack-vis, prototype):
+  `ExplicitCellSet(types, offsets, connectivity)` in
+  `vtkUnstructuredGrid`'s layout, `SingleTypeCellSet`, `StructuredCellSet`,
+  and `DataSet(points, cells, point_data, cell_data)`.
+  `tack.data.for_each_shape(kernel, data, *args)` groups the cells by
+  shape on the device (once, kept on the cell set) and runs the kernel
+  once per shape present, passing a view that is both the shape and that
+  shape's cells: `num_cells`, `point_id(c, j)`, `cell_id(c)`, and for a
+  dataset `point(c, j)` and `gather_points(c, pts)`.
+  `tack.interop.vtk.vtk_to_dataset` and `dataset_to_vtk` copy unstructured
+  and structured grids, with their named point and cell data.
 
 ## 0.3.0 — 2026-10-07
 
