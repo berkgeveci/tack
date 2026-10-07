@@ -16,8 +16,9 @@ to each component of a vector, each one works on scalars and on vectors
             edge = tm.smoothstep(0.0, 0.05, st.x)     # a scalar
             out[i] = tm.mix(DARK, LIGHT, edge)        # 3-vectors
 
-The definitions are GLSL's, so ``mix(x, y, a)`` is ``x * (1 - a) + y * a``
-and ``smoothstep`` is the Hermite polynomial on the clamped ratio. They are
+The definitions are GLSL's, so ``mix(x, y, a)`` is ``x * (1 - a) + y * a``,
+``smoothstep`` is the Hermite polynomial on the clamped ratio, and ``step``
+and ``sign`` select per component through ``tack.select``. They are
 only callable from kernels and device functions; a NumPy reference writes
 the same one-liners with ``np.floor``, ``np.clip`` and friends.
 """
@@ -57,6 +58,18 @@ def smoothstep(edge0, edge1, x):
     """
     t = min(max((x - edge0) / (edge1 - edge0), 0.0), 1.0)
     return t * t * (3.0 - 2.0 * t)
+
+
+@tack.func
+def step(edge, x):
+    """0.0 where ``x < edge``, else 1.0, component by component."""
+    return tack.select(x < edge, 0.0, 1.0)
+
+
+@tack.func
+def sign(x):
+    """-1.0, 0.0 or 1.0 by the sign of ``x``, component by component."""
+    return tack.select(x > 0.0, 1.0, tack.select(x < 0.0, -1.0, 0.0))
 
 
 @tack.func
