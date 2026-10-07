@@ -11,9 +11,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   vector with those components in a kernel, `tack.constant(((1, 0), (0, 1)))`
   the matrix with those rows, typed per component as scalar constants
   are. On the host they index, iterate and convert to NumPy arrays.
-- `tack.math`: `fract`, `mix`, `clamp`, `saturate`, `smoothstep`,
-  `length`, `distance` and `normalize` as device functions with GLSL's
-  definitions, on scalars and vectors alike.
+- `tack.math`: `fract`, `mix`, `clamp`, `saturate`, `smoothstep`, `step`,
+  `sign`, `length`, `distance` and `normalize` as device functions with
+  GLSL's definitions, on scalars and vectors alike.
 - One element of a field can be read from host code: `f[i]`, `f[i, j]`,
   `f[None]`, giving a Python number or, for a vector or matrix field, a
   NumPy array. Writing an element, slicing and iterating are refused with

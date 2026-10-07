@@ -124,8 +124,8 @@ rows and converts with `np.array(SUN, np.float32)`; it is not a tuple, so
 
 `tack.math` holds the small vocabulary GLSL and Taichi programs lean on,
 as device functions that work on scalars and vectors alike: `fract`,
-`mix`, `clamp`, `saturate`, `smoothstep`, `length`, `distance`,
-`normalize`.
+`mix`, `clamp`, `saturate`, `smoothstep`, `step`, `sign`, `length`,
+`distance`, `normalize`.
 
 ```python
 from tack import math as tm
