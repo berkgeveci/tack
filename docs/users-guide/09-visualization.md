@@ -137,6 +137,75 @@ show complete setups. They are good next steps after understanding grid layout,
 templates and local-array scratch storage. Tack does not yet offer every cell
 and filter of a general VTK-like dataset API.
 
+## Cell shapes
+
+`tack.data.shapes` defines VTK's ten linear cells (`Vertex`, `Line`,
+`Triangle`, `Pixel`, `Quad`, `Tetra`, `Voxel`, `Hexahedron`, `Wedge` and
+`Pyramid`) as `@tack.data_oriented` classes. They follow VTK exactly: the cell type
+id (`Hexahedron.ID` is 12), the point order, the parametric coordinates, the
+edges and faces, and the shape functions. A kernel takes a shape object as a
+template argument and calls its methods, so each compiled variant is
+specialized to one shape and does no dispatch on it.
+
+The methods give a shape's parametric points and center, its shape
+functions and their gradients, its edges and faces as indices into the
+cell's points, and an inside test. On a cell whose points the kernel has
+gathered into a local array, they also interpolate values and positions,
+form the Jacobian, and invert a world point to parametric coordinates
+with Newton's method. See the [API reference](../reference/api.md#cell-shapes)
+for the list.
+
+A mesh with several kinds of cell runs a kernel once per shape present. Here
+the input is a VTK unstructured grid's arrays (`types`, `offsets`,
+`connectivity`), and the result is each cell's position at its parametric
+center:
+
+```python
+import numpy as np
+import tack
+from tack.data import shapes
+
+
+@tack.kernel
+def centers(cell, conn, xyz, out):
+    for c in range(out.shape[0]):
+        pc = cell.parametric_center()
+        x = tack.Vector([0.0, 0.0, 0.0])
+        for j in range(cell.NUM_POINTS):
+            x += cell.shape_function(j, pc) * xyz[conn[c, j]]
+        out[c] = x
+
+
+def cell_centers(types, offsets, connectivity, points):
+    """Parametric centers of a VTK unstructured grid's cells, one launch per shape."""
+    xyz = tack.Vector.field(3, tack.f32, shape=(len(points),))
+    xyz.from_numpy(points)
+    result = np.empty((len(types), 3), np.float32)
+    for type_id in np.unique(types):
+        cell = shapes.shape_class(type_id)()
+        ids = np.flatnonzero(types == type_id)
+        conn = tack.field(tack.i32, shape=(len(ids), cell.NUM_POINTS))
+        conn.from_numpy(np.stack([connectivity[offsets[c]:offsets[c + 1]] for c in ids]))
+        out = tack.Vector.field(3, tack.f32, shape=(len(ids),))
+        centers(cell, conn, xyz, out)
+        result[ids] = out.to_numpy(vectors=True)
+    return result
+
+
+# A unit cube and the tetrahedron on its top face.
+points = np.array([(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0),
+                   (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1), (0, 0, 2)], np.float32)
+types = np.array([shapes.HEXAHEDRON, shapes.TETRA])
+offsets = np.array([0, 8, 12])
+connectivity = np.array([0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 7, 8], np.int32)
+print(cell_centers(types, offsets, connectivity, points))
+# [[0.5  0.5  0.5 ]
+#  [0.25 0.25 1.25]]
+```
+
+Grouping the cells by shape happens on the host here; the variants it
+selects are compiled once per shape and reused.
+
 ## VTK interop
 
 `tack.interop.vtk` exchanges compatible VTK arrays and fields through DLPack:

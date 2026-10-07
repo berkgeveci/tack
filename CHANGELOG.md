@@ -3,6 +3,22 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## Unreleased
+
+### Added
+
+- `tack.data.shapes` (tack-vis): VTK's ten linear cells -- vertex, line,
+  triangle, pixel, quad, tetrahedron, voxel, hexahedron, wedge and
+  pyramid -- as `@tack.data_oriented` classes. A kernel takes one as a
+  template argument (`cell`) and calls its methods: parametric points and
+  center, shape functions and their gradients, edges and faces, an inside
+  test, and, on a cell's gathered points, interpolation, the Jacobian and
+  Newton inversion of a world point (`world_to_parametric`). Ids, point
+  order, parametric coordinates, edges, faces and shape functions are
+  VTK's, and the tests compare them with VTK's. Each compiled kernel is
+  specialized to one shape; a mesh of several shapes runs a kernel once
+  per shape present. See *Cell shapes* in the visualization chapter.
+
 ## 0.3.0 — 2026-10-07
 
 The headline: the kernel language grew the vocabulary that simulation and

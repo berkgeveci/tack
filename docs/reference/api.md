@@ -198,6 +198,28 @@ Usable only inside a `@tack.kernel`, on backends with workgroups (not CPU).
 [Runtime API: VTK](../contracts/runtime-api.md#vtk), and their docstrings
 are in `packages/tack-vis/src/tack/interop/vtk.py`.
 
+## Cell shapes
+
+`tack.data.shapes` (in the `tack-vis` package) defines VTK's linear cells as
+template classes: `Vertex`, `Line`, `Triangle`, `Pixel`, `Quad`, `Tetra`,
+`Voxel`, `Hexahedron`, `Wedge` and `Pyramid`, with the cell type ids as
+module constants (`HEXAHEDRON`, ...) and `shape_class(type_id)` to look a
+class up from a VTK type id. Pass an instance to a kernel and call its
+methods there:
+
+- class constants `ID`, `NUM_POINTS`, `DIMENSION`, `NUM_EDGES`, `NUM_FACES`;
+- `parametric_point(j)`, `parametric_center()`, `shape_function(j, pc)`,
+  `shape_gradient(j, pc)`, `is_inside(pc, tol)`;
+- `edge_point(e, k)`, `face_point(f, k)`, `face_shape(f)`, `face_num_points(f)`;
+- `interpolate(values, pc)`, `interpolate_point(pts, pc)`, `jacobian(pts, pc)`,
+  `world_to_parametric(pts, x)` on a cell whose points are in a local array.
+
+The definitions, with VTK's conventions and the Newton iteration's
+tolerances, are in the docstrings of
+`packages/tack-vis/src/tack/data/shapes.py`; the
+[visualization chapter](../users-guide/09-visualization.md#cell-shapes)
+shows a kernel using them.
+
 ## The backend contract
 
 Every backend subclasses this. It exists so callers can *ask* what a backend
