@@ -211,10 +211,10 @@ expected-failure marker. Preserve its log and report it.
 There is one exception: a defect in a vendor toolchain, shown with a
 reproducer that doesn't use Tack, after the generated source has been
 shown to be correct. Such a marker is `strict`, applies only to the
-toolchain release that was shown to fail (ROCm 7.0, by the HIP runtime's
-major and minor version, for the case below), names the defect, and is listed
-in the backend's documentation. The only one so far is ROCm 7.0.2's
-miscompile of generated integer seed 31 (see
+toolchain releases that were shown to fail (ROCm 7.0 and 7.1, by the HIP
+runtime's major and minor version, for the case below), names the defect, and
+is listed in the backend's documentation. The only one so far is the ROCm 7.0.2
+and 7.1.1 miscompile of generated integer seed 31 (see
 [Backend Implementations](../design/backend-implementations.md#hip)).
 
 ## Validation status at `745e01f`

@@ -241,8 +241,11 @@ evaluates false. The generated source is free of undefined behavior (UBSan
 under clang and gcc, `-O0` to `-O3`) and is correct on CUDA and under
 ROCm's clang 23, so it's a compiler defect and not a code generation one.
 It depends on the surrounding expression, so Tack doesn't try to avoid it.
-`test_integer_expression_differential.py` marks that one case as a strict
-expected failure when the HIP runtime reports ROCm 7.0
+ROCm 7.1.1, still AMD clang 20, does the same: on an MI210 (gfx90a) the
+generated kernel, built by `hipcc` into a host program with no Tack
+involved, gives the right answer at `-O0` and the wrong one at `-O1` to
+`-O3`. `test_integer_expression_differential.py` marks that one case as a
+strict expected failure when the HIP runtime reports ROCm 7.0 or 7.1
 (`hipRuntimeGetVersion()`). `hiprtcVersion()` can't identify the release:
 it reports 9.0 on ROCm 7.0.2. A fixed toolchain reports XPASS, and the
 mark is then removed.
