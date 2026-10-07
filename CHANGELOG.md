@@ -3,113 +3,28 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
-## Unreleased
+## 0.3.0 — 2026-10-07
+
+The headline: the kernel language grew the vocabulary that simulation and
+graphics code reaches for, found by porting 50 Taichi, Warp and
+awesome-taichi programs and checking each against a NumPy reference on
+every backend. Vectors work wherever scalars do, small matrices and
+masks are values, kernels can be methods and return a value, atomics
+return the old value, and constants, `tack.math` and `tack.random` cover
+what the ports carried themselves. The same work found and fixed wrong
+results that 0.2.0 shipped with, most importantly a Metal compiler fault
+that dropped field updates inside loops, and a vector assignment that
+read its own partly overwritten target on every backend; see *Kernels
+that now compute different results* and *Fixes*.
+
+Validated on Linux (CPU, CUDA on an RTX 4060 Ti, HIP on an MI210 and an
+MI300X, Level Zero on an Intel Max 1100) and macOS (CPU and Metal on an
+M1 Max), together with the 57 example checks in tack-examples.
 
 ### Added
 
-- A kernel may end in `return expr`, with a return annotation naming the
-  type (`-> tack.f32`, `-> float`, `-> int`); the call returns that value
-  as a Python number. It is computed after the launch by a one-thread
-  epilogue kernel that stores it into a hidden field, so it may read
-  fields, arguments, constants and locals bound outside the loop, not a
-  local the loop assigns. A return anywhere else is still rejected.
-- An atomic is an expression as well as a statement: `slot =
-  tack.atomic_add(counter, 0, 1)` is the element's value just before the
-  update, on every backend and for every supported type, which is how
-  threads claim unique slots and append to a shared list. On a vector
-  field with a vector value it is the vector of the components' old
-  values. Barriers remain statement-only.
-- Vector and matrix constants: `tack.constant((0.5, 0.5, 0.0))` is the
-  vector with those components in a kernel, `tack.constant(((1, 0), (0, 1)))`
-  the matrix with those rows, typed per component as scalar constants
-  are. On the host they index, iterate and convert to NumPy arrays.
-- `tack.math`: `fract`, `mix`, `clamp`, `saturate`, `smoothstep`, `step`,
-  `sign`, `length`, `distance` and `normalize` as device functions with
-  GLSL's definitions, on scalars and vectors alike.
-- One element of a field can be read from host code: `f[i]`, `f[i, j]`,
-  `f[None]`, giving a Python number or, for a vector or matrix field, a
-  NumPy array. Writing an element, slicing and iterating are refused with
-  a message pointing at `from_numpy`, `fill` and `to_numpy`. On CPU and
-  Metal the read is a slice of unified memory; on CUDA, HIP and Level
-  Zero it is a copy of just the element.
-- `tack.random`: random numbers in kernels from a counter-based generator
-  with explicit state. `seed(index, stream)`, then `u, state =
-  uniform(state)`, `normal`, `direction2`, `direction3`; NumPy mirrors
-  (`np_uniform`, ...) draw exactly the same values, and `uniform` and the
-  states are bit-identical on every backend. The example ports' `rng`
-  module, adopted.
-- Elementwise comparison: `v > 0.0`, `lo <= v <= hi`, `a == b` on vectors
-  and matrices give a mask, a vector of `0`/`1` per component; `and`,
-  `or` and `not` act per component on masks; `any(mask)` and `all(mask)`
-  reduce one; `tack.select(mask, a, b)` picks per component, with scalar
-  masks and scalar arms broadcast. A mask as an `if` or `while` condition
-  is rejected with the hint to reduce it.
-- A kernel can be a method of a `@tack.data_oriented` class:
-  `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
-  object is a template like any other argument. It failed with "expects 1
-  arguments, got 0". `tack.inspect` takes the bound form too.
-- A `@tack.func` under `@staticmethod` in a data-oriented class is called
-  through `self` like the other methods. It was not found.
-- `v.norm(eps)` is `sqrt(v.norm_sqr() + eps)`, for a length that must not
-  be zero. It was "norm() takes no arguments".
-- `fill` takes one element's value for a vector or matrix field:
-  `colors.fill([1.0, 1.0, 1.0])`. A scalar still sets every component.
-- A list of scalars in a kernel or device function is a vector:
-  `pos[i] = [x, y]` is `pos[i] = tack.Vector([x, y])`, wherever a vector
-  is accepted. It was rejected as "unsupported List". An empty list, a
-  list of lists (write `tack.Matrix`), a list as an assignment target and
-  a loop over a list are still rejected.
-- A `@tack.data_oriented` object can hold a `@tack.func` as an instance
-  attribute and call it from its methods or from a kernel
-  (`self.smoothing = cubic`, then `self.smoothing(r, h)`). Which function
-  the attribute holds is part of the kernel's specialization.
-- `tack.Matrix`: small fixed-size matrices, up to 4×4, scalarized like
-  vectors. `tack.Matrix.field(n, m, dtype, shape)` allocates a field of
-  them. In kernels, `tack.Matrix([[a, b], [c, d]])`, rows given as
-  vectors, and `tack.Matrix.identity(n)` build one; `@` multiplies
-  matrices and vectors, with `+`, `-`, `*`, `/` entry by entry;
-  `transpose()`, `trace()`, and for 2×2 and 3×3 `determinant()` and
-  `inverse()`; `A[i, j]` reads and writes entries; `u.outer_product(v)`
-  makes one from two vectors. Matrices pass through device functions,
-  tuple assignment, conditional expressions, field stores and atomics as
-  vectors do. See *Matrices* in the User's Guide.
-- `sinh`, `cosh` and `tanh` as math builtins, on every backend.
-- `tack.ndrange` takes `(start, end)` pairs as well as sizes:
-  `for i, j in tack.ndrange((1, n - 1), (1, m - 1))` visits the interior
-  of a grid. An empty or reversed pair runs no iterations.
-- Vector fields exchange data with NumPy one row per vector:
-  `from_numpy` accepts `(*shape, n)` as well as the flat storage shape,
-  and `to_numpy(vectors=True)` returns `(*shape, n)`. Plain `to_numpy()`
-  still returns the flat array.
-- `tack.constant(value, dtype=None)`: a named constant that kernels and
-  device functions may read from the scope that defines them.
-  `DT = tack.constant(0.01)` at module level lets a kernel write `DT`; it
-  reads as the literal, and stays an ordinary Python number for host
-  code. Kernels still capture nothing else: a plain module-level value
-  raises `NameError` as before, and the message now names
-  `tack.constant`. With a dtype the constant is typed, so
-  `tack.constant(747796405, tack.u32)` multiplies in wrapping u32
-  arithmetic (a plain literal there promotes to i64) and
-  `tack.constant(0.1, tack.f64)` is the exact double. `math.pi`, `math.e`
-  and `math.tau` can be written in kernels.
-- `tack.algorithms.argsort`, `sort_by_key`, `gather`, `unique` and
-  `reduce_by_key`: a stable radix sort for `i32`/`u32`/`i64`/`u64` keys
-  and segmented reductions over runs of equal keys, built from ordinary
-  kernels and the scan so they run on every backend. See *Sorting and
-  segmented reductions* in the User's Guide.
+#### Vectors and matrices
 
-- Vector components by runtime index: `vec[k]` reads and `vec[k] = x` /
-  `vec[k] += x` write the component a loop variable or field value
-  selects, through a chain of selects; past the last component a read
-  gives the last component and a write does nothing. `vf[i][c]` and
-  `f(x)[c]` index a vector-valued expression without naming it first.
-  These used to fail IR verification with "expected expr node". A literal
-  index out of range, and a subscript of a scalar value, are rejected at
-  lowering with the source position.
-- The `tack.algorithms` statistics (`var`, `std`, `norm`, `absmax`,
-  `count_nonzero`, `dot`, `histogram`) accept vector fields and reduce
-  over all components in storage order; they used to fail IR
-  verification.
 - Vectors in the places a scalar works. The math builtins (`min`, `max`,
   `abs`, `floor`, `sqrt`, `pow`, ...) and the casts (`int`, `float`,
   `tack.f32`, ...) apply to each component, with a scalar argument
@@ -125,14 +40,45 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   augmented store. Vectors of different widths in one operation, a
   component name past the width, and a vector combined into a scalar
   target are rejected at lowering with the source position.
-- A device function can return vectors among several values:
-  `return distance, normal, color`, unpacked with
-  `d, n, c = closest_hit(...)`. Only scalars could be returned together;
-  a vector slot was never bound and lowering failed on its name.
+- `tack.Matrix`: small fixed-size matrices, up to 4×4, scalarized like
+  vectors. `tack.Matrix.field(n, m, dtype, shape)` allocates a field of
+  them. In kernels, `tack.Matrix([[a, b], [c, d]])`, rows given as
+  vectors, and `tack.Matrix.identity(n)` build one; `@` multiplies
+  matrices and vectors, with `+`, `-`, `*`, `/` entry by entry;
+  `transpose()`, `trace()`, and for 2×2 and 3×3 `determinant()` and
+  `inverse()`; `A[i, j]` reads and writes entries; `u.outer_product(v)`
+  makes one from two vectors. Matrices pass through device functions,
+  tuple assignment, conditional expressions, field stores and atomics as
+  vectors do. See *Matrices* in the User's Guide.
+- A list of scalars in a kernel or device function is a vector:
+  `pos[i] = [x, y]` is `pos[i] = tack.Vector([x, y])`, wherever a vector
+  is accepted. It was rejected as "unsupported List". An empty list, a
+  list of lists (write `tack.Matrix`), a list as an assignment target and
+  a loop over a list are still rejected.
+- Vector components by runtime index: `vec[k]` reads and `vec[k] = x` /
+  `vec[k] += x` write the component a loop variable or field value
+  selects, through a chain of selects; past the last component a read
+  gives the last component and a write does nothing. `vf[i][c]` and
+  `f(x)[c]` index a vector-valued expression without naming it first.
+  These used to fail IR verification with "expected expr node". A literal
+  index out of range, and a subscript of a scalar value, are rejected at
+  lowering with the source position.
+- Elementwise comparison: `v > 0.0`, `lo <= v <= hi`, `a == b` on vectors
+  and matrices give a mask, a vector of `0`/`1` per component; `and`,
+  `or` and `not` act per component on masks; `any(mask)` and `all(mask)`
+  reduce one; `tack.select(mask, a, b)` picks per component, with scalar
+  masks and scalar arms broadcast. A mask as an `if` or `while` condition
+  is rejected with the hint to reduce it.
 - `min` and `max` take two or more values, as in Python
   (`min(a, b, c)`), and vectors have the reductions `v.sum()`, `v.min()`
   and `v.max()` over their components. `v.normalized(eps)` divides by
   `norm() + eps`.
+- `v.norm(eps)` is `sqrt(v.norm_sqr() + eps)`, for a length that must not
+  be zero. It was "norm() takes no arguments".
+- A device function can return vectors among several values:
+  `return distance, normal, color`, unpacked with
+  `d, n, c = closest_hit(...)`. Only scalars could be returned together;
+  a vector slot was never bound and lowering failed on its name.
 - Tuple assignment to field elements and vector components:
   `x[i], v[i] = p, q` (whole vectors included), a swap such as
   `a[i], b[i] = b[i], a[i]`, and `lo[i], hi[i] = f(...)` for a device
@@ -140,12 +86,95 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   first and the targets are then assigned from left to right, so
   `a[i], i = x, j` stores at the old `i`. Only plain names were accepted
   as targets.
+- Vector fields exchange data with NumPy one row per vector:
+  `from_numpy` accepts `(*shape, n)` as well as the flat storage shape,
+  and `to_numpy(vectors=True)` returns `(*shape, n)`. Plain `to_numpy()`
+  still returns the flat array.
+- `fill` takes one element's value for a vector or matrix field:
+  `colors.fill([1.0, 1.0, 1.0])`. A scalar still sets every component.
+
+#### Constants, math and random numbers
+
+- `tack.constant(value, dtype=None)`: a named constant that kernels and
+  device functions may read from the scope that defines them.
+  `DT = tack.constant(0.01)` at module level lets a kernel write `DT`; it
+  reads as the literal, and stays an ordinary Python number for host
+  code. Kernels still capture nothing else: a plain module-level value
+  raises `NameError` as before, and the message now names
+  `tack.constant`. With a dtype the constant is typed, so
+  `tack.constant(747796405, tack.u32)` multiplies in wrapping u32
+  arithmetic (a plain literal there promotes to i64) and
+  `tack.constant(0.1, tack.f64)` is the exact double. `math.pi`, `math.e`
+  and `math.tau` can be written in kernels.
+- Vector and matrix constants: `tack.constant((0.5, 0.5, 0.0))` is the
+  vector with those components in a kernel, `tack.constant(((1, 0), (0, 1)))`
+  the matrix with those rows, typed per component as scalar constants
+  are. On the host they index, iterate and convert to NumPy arrays.
+- `sinh`, `cosh` and `tanh` as math builtins, on every backend.
+- `tack.math`: `fract`, `mix`, `clamp`, `saturate`, `smoothstep`, `step`,
+  `sign`, `length`, `distance` and `normalize` as device functions with
+  GLSL's definitions, on scalars and vectors alike.
+- `tack.random`: random numbers in kernels from a counter-based generator
+  with explicit state. `seed(index, stream)`, then `u, state =
+  uniform(state)`, `normal`, `direction2`, `direction3`; NumPy mirrors
+  (`np_uniform`, ...) draw exactly the same values, and `uniform` and the
+  states are bit-identical on every backend. The example ports' `rng`
+  module, adopted.
+
+#### Kernels, loops and atomics
+
+- A kernel may end in `return expr`, with a return annotation naming the
+  type (`-> tack.f32`, `-> float`, `-> int`); the call returns that value
+  as a Python number. It is computed after the launch by a one-thread
+  epilogue kernel that stores it into a hidden field, so it may read
+  fields, arguments, constants and locals bound outside the loop, not a
+  local the loop assigns. A return anywhere else is still rejected.
+- An atomic is an expression as well as a statement: `slot =
+  tack.atomic_add(counter, 0, 1)` is the element's value just before the
+  update, on every backend and for every supported type, which is how
+  threads claim unique slots and append to a shared list. On a vector
+  field with a vector value it is the vector of the components' old
+  values. Barriers remain statement-only.
 - Atomics take an index per dimension: `tack.atomic_add(grid, (i, j), v)`,
   where a vector supplies one index per component
   (`tack.atomic_add(grid, cell, v)`). On a vector field a vector value
   updates every component of the element. Multi-dimensional and vector
   targets previously needed hand-linearized indices, and a tuple index
   failed IR verification.
+- `tack.ndrange` takes `(start, end)` pairs as well as sizes:
+  `for i, j in tack.ndrange((1, n - 1), (1, m - 1))` visits the interior
+  of a grid. An empty or reversed pair runs no iterations.
+- One element of a field can be read from host code: `f[i]`, `f[i, j]`,
+  `f[None]`, giving a Python number or, for a vector or matrix field, a
+  NumPy array. Writing an element, slicing and iterating are refused with
+  a message pointing at `from_numpy`, `fill` and `to_numpy`. On CPU and
+  Metal the read is a slice of unified memory; on CUDA, HIP and Level
+  Zero it is a copy of just the element.
+
+#### Data-oriented classes
+
+- A kernel can be a method of a `@tack.data_oriented` class:
+  `@tack.kernel def step(self, dt)` is called as `grid.step(0.1)`, and the
+  object is a template like any other argument. It failed with "expects 1
+  arguments, got 0". `tack.inspect` takes the bound form too.
+- A `@tack.func` under `@staticmethod` in a data-oriented class is called
+  through `self` like the other methods. It was not found.
+- A `@tack.data_oriented` object can hold a `@tack.func` as an instance
+  attribute and call it from its methods or from a kernel
+  (`self.smoothing = cubic`, then `self.smoothing(r, h)`). Which function
+  the attribute holds is part of the kernel's specialization.
+
+#### Algorithms
+
+- `tack.algorithms.argsort`, `sort_by_key`, `gather`, `unique` and
+  `reduce_by_key`: a stable radix sort for `i32`/`u32`/`i64`/`u64` keys
+  and segmented reductions over runs of equal keys, built from ordinary
+  kernels and the scan so they run on every backend. See *Sorting and
+  segmented reductions* in the User's Guide.
+- The `tack.algorithms` statistics (`var`, `std`, `norm`, `absmax`,
+  `count_nonzero`, `dot`, `histogram`) accept vector fields and reduce
+  over all components in storage order; they used to fail IR
+  verification.
 
 ### Kernels that now compute different results
 
@@ -200,11 +229,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
-- `test_a_stale_parallel_rate_gets_re_measured` failed about one run in
-  thirteen on two-thread machines and once on a CI runner: it asserted
-  that two threads beat one on a bandwidth-bound kernel, which they need
-  not. The scenario now uses a compute-bound kernel, so the assertion
-  tests the recovery path it was written for.
 - The size of a local or shared array may be arithmetic on constants and
   dimensions: `tack.local_array(tack.f32, MAX_HITS * 4)` is folded to one
   constant when dimensions are resolved. Only a literal was, and Metal
@@ -273,6 +297,48 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `for i, j in ...`) are now renamed when the function is inlined. They
   escaped renaming before, so the inlined body overwrote the caller's
   variables of the same names.
+
+### Tooling
+
+- `test_a_stale_parallel_rate_gets_re_measured` failed about one run in
+  thirteen on two-thread machines and once on a CI runner: it asserted
+  that two threads beat one on a bandwidth-bound kernel, which they need
+  not. The scenario now uses a compute-bound kernel, so the assertion
+  tests the recovery path it was written for.
+- The CPU threading tests no longer fail on two-thread machines: the
+  per-worker median above was the cause, and a test that compared against
+  the estimate before its own fan-out now compares against the one after.
+
+### Known limitations
+
+- **ROCm 7.0 and 7.1 miscompile some integer code on HIP.** Their device
+  compiler (AMD clang 20, inside hipRTC) can evaluate a 64-bit signed
+  comparison wrongly when it sits inside a long integer expression; the
+  kernel returns a wrong value with no error. Tack's generated source is
+  correct, and right on CUDA, as host C++ and under ROCm's clang 23. Use
+  a newer ROCm where possible; on 7.0 and 7.1, check integer-heavy kernels
+  against the CPU backend.
+- **HIP on gfx90a (MI200) samples 3D textures in software.** The device
+  reports image support but refuses linear 3D filtering, which is all
+  `Texture3D` offers; Tack detects this at init and falls back. MI300
+  parts have no texture hardware and always sample in software.
+- **Metal compiles a kernel whose sequential loop stores to a field in a
+  function of its own**, to avoid an Apple GPU compiler fault (see
+  *Fixes*). The fault's mechanism is not known, so the rule is wider than
+  the trigger; it costs under 3% on the kernels that take it.
+- **Not in this release:** struct types (use one field per member), a
+  3×3 SVD (2×2 only, in the examples), swizzles such as `v.xy` or `v.yzw`
+  (write `tack.Vector([v.y, v.z, v.w])`), and automatic differentiation.
+- **Windows has not been revalidated.**
+- **HIP leaks one hipRTC program object per compiled variant.**
+  `hiprtcDestroyProgram` segfaults in hip-python, so Tack does not call it;
+  the variant cache keeps compilations rare.
+- **Level Zero relies on two workarounds for Intel driver defects:** f64
+  `floor`/`ceil` restore the sign of zero with `copysign`, and narrow signed
+  negation and `abs` are emitted as non-inlined helpers.
+- **Raster depth bias:** in mixed scenes, path-traced surfaces are pushed
+  back by a fixed 0.5% relative depth bias so a wireframe lying on its own
+  surface is drawn; it can drop wire pixels at grazing angles.
 
 ## 0.2.0 — 2026-10-05
 
