@@ -342,14 +342,19 @@ def _compute_parents(node_children, parent, n_inner):
 
 
 @tack.kernel
-def _propagate_pass(node_aabb, node_children, ready, n_inner, remaining):
+def _propagate_pass(node_aabb, node_children, ready, ready_next, n_inner, remaining):
     """One pass of bottom-up AABB propagation.
 
-    Processes inner nodes whose both children are ready.  Sets ready[node]=1
-    and decrements remaining[0] for each newly completed node.
+    Completes each inner node whose children were both ready before this
+    pass, and decrements remaining[0] once per node completed. Flags are
+    read from ``ready`` and written to ``ready_next``: a child completed
+    in the same launch is another iteration's store, with nothing ordering
+    its box before its flag. Reading it raced: on an MI210 most builds
+    gave some parent a stale box.
     """
     for i in range(n_inner):
-        if ready[i] == 0:
+        done = ready[i]
+        if done == 0:
             l = node_children[i * 2]
             r = node_children[i * 2 + 1]
             if ready[l] == 1 and ready[r] == 1:
@@ -371,8 +376,9 @@ def _propagate_pass(node_aabb, node_children, ready, n_inner, remaining):
                 node_aabb[i * 6 + 3] = max(lx1, rx1)
                 node_aabb[i * 6 + 4] = max(ly1, ry1)
                 node_aabb[i * 6 + 5] = max(lz1, rz1)
-                ready[i] = 1
+                done = 1
                 tack.atomic_add(remaining, 0, -1)
+        ready_next[i] = done
 
 
 # ================================================================
@@ -483,8 +489,11 @@ class BVH:
         _t4 = _time.perf_counter()
 
         # --- Step 5: Propagate AABBs bottom-up (GPU, iterative) ---
+        # One pass per tree level, alternating which flag array is read.
         ready = tack.field(dtype=tack.i32, shape=(n_nodes,))
+        ready_next = tack.field(dtype=tack.i32, shape=(n_nodes,))
         _init_ready(ready, n_inner, n_nodes)
+        _init_ready(ready_next, n_inner, n_nodes)
 
         remaining = tack.field(dtype=tack.i32, shape=(1,))
         remaining.from_numpy(np.array([n_inner], dtype=np.int32))
@@ -492,7 +501,8 @@ class BVH:
         # Iterate until all inner nodes are done
         while int(remaining.to_numpy()[0]) > 0:
             _propagate_pass(self.node_aabb, self.node_children, ready,
-                            n_inner, remaining)
+                            ready_next, n_inner, remaining)
+            ready, ready_next = ready_next, ready
         _t5 = _time.perf_counter()
 
         print(f"    [bvh] centroids={_t1-_t0:.3f}s  morton+radix={_t2-_t1:.3f}s  "
