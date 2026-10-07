@@ -51,8 +51,9 @@ When a `@tack.data_oriented` object is passed as a `tack.template()` argument:
 - **`@tack.func` methods** → inlined at the call site
 
 Each unique combination of template types and **class-level constants** produces
-a separately compiled kernel. Instance scalars and fields can change freely
-between calls without recompilation.
+a separately compiled kernel. Instance scalar values can change without recompilation. Replacing a field
+with one whose dtype, vector width or baked-in dimensions differ can create
+another variant; field metadata still matters.
 
 ## Class Constants vs Instance Scalars
 
@@ -297,3 +298,16 @@ def interpolate_to_center(cs: tack.template(), ct: tack.template(),
 ```
 
 This single kernel works with any cell set + cell type combination.
+
+## Organize an application around state
+
+Use a data-oriented class when several kernels share the same fields and model
+parameters. The [Physarum tutorial](tutorials/physarum.md) gathers positions and
+headings into `Agents`, uses an initialization kernel as a method, and passes the
+object to three simulation stages. Class constants describe the sensing model;
+instance dimensions and fields describe this particular simulation.
+
+The cell-set sketches above show a more generic use: pass different topology
+implementations to one kernel. They illustrate a protocol rather than a complete
+built-in mesh API. The [data model in Tack's visualization package](09-visualization.md)
+is currently narrower than those sketches.

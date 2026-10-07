@@ -26,7 +26,11 @@ def cached_interp(cs: tack.template(), ct: tack.template(),
         out2[c] = v2
 ```
 
-The size can be a literal or a template parameter (compile-time constant).
+The size must be known at compilation: a literal, a class constant, a
+`tack.constant`, or an expression involving resolved field dimensions and
+constants, such as `CAPACITY * 4`. An instance scalar is a runtime parameter
+and is unsuitable for a portable GPU allocation. Initialize each element
+before reading it; local scratch storage is not implicitly cleared.
 
 ### `local_array_like`
 
@@ -44,6 +48,27 @@ def generic_process(data, out):
 
 This works with both `f32` and `i32` fields without separate kernels.
 
+### Derive a scratch size from a field
+
+Size expressions can combine declared constants and resolved field dimensions.
+This example reserves two scalars per column, then sums the populated scratch:
+
+```python
+--8<-- "docs/examples/array_sizes.py:scratch"
+```
+
+For a four-column input, `PAIR * data.shape[1]` resolves to eight elements.
+A seven-column input creates a specialization with fourteen. A changing row
+width changes this allocation size; a scalar argument holding that width would
+remain a runtime value and would not supply a portable GPU array size.
+
+The scratch is deliberately simple to make the allocation visible; this row
+calculation could accumulate directly without an array. [Download the complete
+example](../examples/array_sizes.py) and check both widths with
+`uv run python docs/examples/array_sizes.py --arch metal --check`.
+The [N-body tutorial](tutorials/nbody.md) uses the same constant-expression
+support for a shared array containing three coordinates per tile entry.
+
 ### Passing Local Arrays to @tack.func
 
 Local arrays can be passed to `@tack.func` functions, enabling methods that
@@ -53,9 +78,10 @@ where `get_cell_points` populates a buffer in one call:
 ```python
 @tack.data_oriented
 class CellSetExplicit:
-    def __init__(self, connectivity, points_per_cell):
+    points_per_cell = 4  # fixed topology; compile-time allocation size
+
+    def __init__(self, connectivity):
         self.connectivity = connectivity
-        self.points_per_cell = points_per_cell
 
     @tack.func
     def get_cell_points(self, cell_id, pts):
@@ -109,7 +135,10 @@ sequence, and reusing one repeats it.
 
 ## Atomic Operations
 
-Atomic operations are safe for concurrent writes from multiple threads:
+Atomic operations make a single field update indivisible when several iterations
+contribute to it. Initialize the accumulator before the launch. Atomics do not
+order arbitrary reads/stores or make a vector update indivisible as a whole; see
+[Gather and scatter](13-memory-and-parallelism.md#gather-and-scatter).
 
 ```python
 @tack.kernel
@@ -136,6 +165,10 @@ def compact(values, out, count, n):
             slot = tack.atomic_add(count, 0, 1)    # the old count: this thread's slot
             out[slot] = values[i]
 ```
+
+Reset `count` before each call, allocate enough output capacity, and read it
+only after the call completes. Slot order depends on execution order. For ordered
+output and exact allocation, use the [count/scan/write tutorial](tutorials/contours.md).
 
 For a multi-dimensional field the index is a tuple with one index per
 dimension, and a vector may supply several of them. On a vector field a
@@ -264,159 +297,13 @@ propagated through inlining automatically.
 
 ## Vectors
 
-Tack provides a `Vector` type for multi-component fields. Vector operations
-are scalarized at the IR level:
-
-```python
-v = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
-
-@tack.kernel
-def normalize_vectors(v, n):
-    for i in range(n):
-        vec = v[i]                   # loads 3 components
-        length = sqrt(vec[0]**2 + vec[1]**2 + vec[2]**2)
-        v[i] = vec / length          # stores 3 components
-```
-
-Arithmetic works on whole vectors, component by component, and a scalar
-operand is applied to every component. So do the math builtins, the casts
-and conditional expressions:
-
-```python
-@tack.kernel
-def step(pos, vel, grid, out, dt, n):
-    for i in range(n):
-        v = vel[i]
-        v = min(max(v, -10.0), 10.0)        # clamp each component
-        cell = int(floor(pos[i] / 0.25))    # a vector of i32 cell indices
-        v = v if pos[i].y > 0.0 else -v     # one condition, whole vectors
-        speed = v.norm()                    # methods are listed below
-        vel[i] = v
-        pos[i] += v * dt                    # augmented store to a field element
-        out[i] = grid[cell] * speed         # grid[cell] is grid[cell[0], cell[1], cell[2]]
-```
-
-A list of scalars is a vector, so `tack.Vector` can be left out wherever
-a vector is expected: `pos[i] = [x, y]`, `v = [0.0, 0.0]`,
-`w.dot([1.0, 0.0])`, `p - [1.0, 0.0]`. A matrix still needs
-`tack.Matrix([[...], [...]])`.
-
-The vector methods are `norm()`, `norm_sqr()`, `dot(w)`, `cross(w)`
-(3-vectors), `normalized()`, and the reductions over components `sum()`,
-`min()` and `max()`. `norm(eps)` is `sqrt(norm_sqr() + eps)`, a length
-that is never zero. `normalized(eps)` divides by `norm() + eps`, for a
-vector that may be zero. `min` and `max` as functions take two or more
-values, as in Python: `min(a, b, c)`.
-
-Comparing vectors compares component by component and gives a *mask*, a
-vector of `0`/`1`. `any` and `all` reduce a mask to one truth value, and
-`tack.select(mask, a, b)` picks per component:
-
-```python
-@tack.kernel
-def confine(pos, vel, alive, n):
-    for i in range(n):
-        p = pos[i]
-        inside = -1.0 <= p <= 1.0                  # a mask, every link evaluated
-        if not all(inside):
-            alive[i] = 0
-        vel[i] = tack.select(inside, vel[i], -vel[i])    # reflect the components outside
-        pos[i] = tack.select(p > 1.0, 1.0, p)             # a scalar arm fills every component
-        hits = (p > 0.9) and (vel[i] > 0.0)              # and/or act per component on masks
-        if any(hits):
-            alive[i] += hits.sum()
-```
-
-A mask is an ordinary integer vector, so `mask.sum()` counts. `if` and
-`while` take a scalar condition: a mask there is rejected with the hint
-to reduce it with `any` or `all`.
-
-A device function can return several values, vectors among them, to be
-unpacked at the call:
-
-```python
-@tack.func
-def closest_hit(origin, direction):
-    ...
-    return distance, normal, color        # a scalar and two vectors
-
-distance, normal, color = closest_hit(o, d)
-```
-
-A vector field exchanges data with NumPy flat or with one row per
-vector: `v.from_numpy(a)` accepts an array of shape `(*shape, n)` or the
-flat `(prod(shape) * n,)`, and `v.to_numpy(vectors=True)` returns
-`(*shape, n)`. Plain `v.to_numpy()` returns the flat storage.
-
-Two vectors in one operation must have the same number of components.
-An assignment evaluates its whole right side before it stores anything,
-so `v = v.cross(w)` and `pos[i] = pos[i].cross(axis[i])` read the old
-components. A tuple assignment does the same and then assigns its targets
-from left to right, and its targets may be field elements:
-`pos[i], vel[i] = p, v`, or `a[i], b[i] = b[i], a[i]` to swap two.
-
-A store to a field element must match the field: a vector of the field's
-width, or a scalar, which sets every component (`vel[i] = 0.0`). A vector
-of another width, or a vector stored into a field of scalars, is
-rejected.
-
-Components are scalars. `vec[0]` and `vec.x` read one (`x`, `y`, `z`, `w`
-name the first four); `vec[1] = x`, `vec.y = x` and `vec[1] += x` write
-one. The same forms work on a field element without naming the vector
-first: `v[i][2]` and `v[i].z` read a component, `v[i][2] = x` and
-`v[i].z += x` store one. The index may be a runtime value (`vec[k]` for a
-loop variable `k`), which lowers to a chain of selects rather than a
-branch. A runtime index must be in `[0, n)`: outside it, on either side,
-a read gives the last component and a write does nothing, since a kernel
-cannot raise. Only a literal index counts from the end (`vec[-1]`), and a
-literal out of range is rejected at lowering.
+Vectors are part of the everyday kernel language. See [Vectors and matrices](14-vectors-and-matrices.md#vectors)
+for arithmetic, components, field layouts, masks and `tack.select`.
 
 ## Matrices
 
-`tack.Matrix` gives small fixed-size matrices, up to 4×4. Like vectors
-they are scalarized: a matrix is its entries, and every operation expands
-to scalar arithmetic at lowering.
-
-```python
-F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))    # a 2x2 matrix per particle
-C = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
-
-@tack.kernel
-def update(F, C, x, dt, n):
-    for p in range(n):
-        F[p] = (tack.Matrix.identity(2) + dt * C[p]) @ F[p]   # '@' multiplies
-        J = F[p].determinant()
-        stress = (F[p] - F[p].inverse().transpose()) * J      # '*' is entry by entry
-        x[p] += stress @ tack.Vector([0.0, -1.0]) * dt        # matrix @ vector
-```
-
-- **Building one.** `tack.Matrix([[a, b], [c, d]])` from rows of scalars,
-  `tack.Matrix([u, v])` from vectors as rows, `tack.Matrix.identity(n)`,
-  or `u.outer_product(v)`.
-- **Products.** `A @ B` for matrices; `A @ v` and `v @ A` take a vector as
-  a column and as a row and give a vector; `u @ v` is the dot product.
-  Shapes must agree. `+`, `-`, `*`, `/`, the math builtins and scalar
-  operands work entry by entry, as for vectors.
-- **Methods.** `transpose()`; for square matrices `trace()`; for 2×2 and
-  3×3 `determinant()` and `inverse()`. `inverse()` divides by the
-  determinant without checking it. `norm()` and `sum()` run over all
-  entries.
-- **Entries.** `A[i, j]` reads one and `A[i, j] = x` or `A[i, j] += x`
-  writes one, on a matrix variable or directly on a field element
-  (`F[p][0, 1]`). The indices may be runtime values, which must then be
-  in range.
-- **Fields.** A matrix field stores each matrix in row-major order.
-  `from_numpy` takes `(*shape, n, m)` and `to_numpy(vectors=True)` returns
-  it. `F[p] = A`, `F[p] += A`, `F[p] *= s` and
-  `tack.atomic_add(F, p, A)` work as they do for vector fields.
-- **Device functions** take and return matrices, alone or among several
-  values.
-
-A matrix and a vector with the same number of entries are different
-things: storing one where the other belongs, or adding them, is rejected.
-
-The statistics in `tack.algorithms` (`dot`, `norm`, `var`, ...) accept a
-vector field and reduce over all its components in storage order.
+See [Matrices](14-vectors-and-matrices.md#matrices) for fixed-size matrix values,
+products, methods and fields, and [MPM](tutorials/mpm.md) for a worked application.
 
 ## Printing (Debug)
 

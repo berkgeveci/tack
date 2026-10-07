@@ -251,6 +251,7 @@ def count_live(cells, count, n) -> int:
             tack.atomic_add(count, 0, 1)
     return count[0]
 
+count.fill(0)                            # reset before counting each board
 live = count_live(cells, count, n)        # a Python int
 ```
 
@@ -261,6 +262,34 @@ loop, but not a local the loop assigns, which has a value per thread.
 This replaces writing a one-element field and reading it with
 `to_numpy()` or `f[0]`; the cost is one extra, tiny launch and one
 element's transfer.
+
+### Return the length of an atomic append
+
+An atomic's result and a kernel's result have different roles. Inside the loop,
+`atomic_add` returns the counter's **old** value, giving that iteration a unique
+output slot. After the loop, the kernel returns the completed counter to Python:
+
+```python
+--8<-- "docs/examples/kernel_results.py:compact"
+```
+
+Allocate enough capacity and reset the counter before each call:
+
+```python
+--8<-- "docs/examples/kernel_results.py:run"
+```
+
+The returned length is deterministic; the order of the appended values is not.
+Only the first `length` output elements are valid. A scalar return does not
+turn the loop's per-iteration locals into a global reduction. For ordered
+output, use [count → scan → write](tutorials/contours.md).
+
+[Download the complete program](../examples/kernel_results.py), or run:
+
+```bash
+uv run python docs/examples/kernel_results.py --arch cpu --check
+uv run python docs/examples/kernel_results.py --arch metal --check
+```
 
 ## Kernel Caching
 
@@ -345,3 +374,6 @@ def update(sim):
 sim = Sim(1024)
 print(tack.inspect(update, sim))  # shows template expansion + inlined methods
 ```
+
+For complete applications that combine these constructs, see [Heat diffusion](tutorials/heat.md),
+[Physarum](tutorials/physarum.md) and the [tutorial gallery](tutorials/index.md).

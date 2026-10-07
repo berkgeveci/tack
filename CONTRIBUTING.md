@@ -27,17 +27,34 @@ README for the install line.
 
 The site is [MkDocs Material](https://squidfunk.github.io/mkdocs-material/) with
 [mkdocstrings](https://mkdocstrings.github.io/) for the API pages, published to
-Read the Docs from `.readthedocs.yaml`.
+GitHub Pages by the CI workflow on `main`. `.readthedocs.yaml` is also retained
+for compatible Read the Docs builds.
 
 ```bash
 uv run mkdocs serve            # live reload on http://127.0.0.1:8000
 uv run mkdocs build --strict   # what CI runs
+uv run python docs/examples/validate.py --arch cpu  # tutorial numerical checks
 ```
 
 `--strict` turns a broken internal link or a page missing from the nav into a
 failed build, and CI runs it on every pull request. That is deliberate: the
 audit's H2 finding was documentation drift — a README claiming four backends
 when there were five — and drift is only cheap to fix while it is small.
+
+Tutorial scripts live in `docs/examples/`. Pages include complete scripts and
+selected regions with `pymdownx.snippets`; edit the script rather than maintaining
+a second copy of its code. Each tutorial provides `--check` with a NumPy reference
+or an independent numerical/geometric property. CI runs those checks on CPU;
+run the same validator with `--arch metal|cuda|hip|level_zero` on a hardware host.
+Figures are generated from actual script outputs by `docs/examples/figures.py`.
+Keep upstream source credits and the applicable license beside adapted examples.
+
+Generate the figures with `uv run --with vtk python docs/examples/figures.py`.
+For a local VTK build, put its matching Python site-packages directory on
+`PYTHONPATH` and omit `--with vtk`. VTK is imported only when writing figures;
+the ordinary numerical checks do not depend on it. To also check the VTK/Tack
+CPU exchange, use `uv run python docs/examples/validate.py --arch cpu --vtk`
+with a build that provides `vtkmodules.util.dlpack_support`.
 
 The guides under `docs/` are plain markdown and were written before the site
 existed. Keep them that way where you can: the Material-specific syntax is

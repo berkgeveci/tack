@@ -74,9 +74,8 @@ jobs:
   # there were five, and "40+ examples" against 49 on disk -- and drift is
   # only cheap to fix while it is small.
   #
-  # Read the Docs builds the published site from .readthedocs.yaml. This
-  # job exists so a pull request that breaks the docs fails here rather
-  # than on the RTD dashboard after merge.
+  # This job checks links and runnable guide examples on pull requests,
+  # and packages the site for the GitHub Pages deployment below.
 
   docs:
     name: docs
@@ -94,6 +93,9 @@ jobs:
 
       - name: Sync the docs extra
         run: uv sync --extra docs
+
+      - name: Check tutorial results on CPU
+        run: uv run python docs/examples/validate.py --arch cpu
 
       - name: Build the site
         run: uv run mkdocs build --strict
