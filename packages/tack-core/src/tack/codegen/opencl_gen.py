@@ -132,6 +132,18 @@ class OpenCLCodeGen(CUDACodeGen):
             + self._integers.definitions('static inline')
             + f32_reduction_helpers('opencl', self._block_extrema)
         )
+        if self._needs_float_atomic_add:
+            # The contributed value is evaluated once, outside the retries.
+            prefix_lines.extend([
+                "float atomicAddFloat(volatile __global float* addr, float val) {",
+                "    volatile __global atomic_uint* bits = (volatile __global atomic_uint*)addr;",
+                "    uint old = atomic_load_explicit(bits, memory_order_relaxed, memory_scope_device);",
+                "    while (!atomic_compare_exchange_weak_explicit(bits, &old, as_uint(as_float(old) + val),",
+                "            memory_order_relaxed, memory_order_relaxed, memory_scope_device)) {}",
+                "    return as_float(old);",
+                "}",
+                "",
+            ])
         if self._needs_float_atomic_min:
             prefix_lines.extend([
                 "float atomicMinFloat(volatile __global float* addr, float val) {",
@@ -415,6 +427,11 @@ class OpenCLCodeGen(CUDACodeGen):
     # --- Atomics (OpenCL syntax) ---
 
     def _emit_atomic_op(self, node: ir.IRAtomicOp):
+        """Emit an OpenCL atomic as a statement; its old value is dropped."""
+        self._emit(f"{self._expr_atomic(node)};")
+
+    def _expr_atomic(self, node: ir.IRAtomicOp) -> str:
+        """The atomic as an expression whose value is the element's old value."""
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
@@ -427,31 +444,17 @@ class OpenCLCodeGen(CUDACodeGen):
         value = f"(({_OCL_C_TYPE_MAP[dtype]})({value}))"
         if node.op == "min" and dtype is f32:
             self._needs_float_atomic_min = True
-            self._emit(f"atomicMinFloat(&{field}[{index}], {value});")
-        elif node.op == "max" and dtype is f32:
+            return f"atomicMinFloat(&{field}[{index}], {value})"
+        if node.op == "max" and dtype is f32:
             self._needs_float_atomic_max = True
-            self._emit(f"atomicMaxFloat(&{field}[{index}], {value});")
-        elif dtype is f32:
-            # Evaluate the contributed value once, outside retries.
-            self._emit("{")
-            self._indent += 1
-            self._emit(f"float __val = {value};")
-            self._emit(f"volatile __global atomic_uint* __addr = (volatile __global atomic_uint*)&{field}[{index}];")
-            self._emit("uint __old = atomic_load_explicit(__addr, memory_order_relaxed, memory_scope_device);")
-            self._emit("while (true) {")
-            self._indent += 1
-            self._emit("uint __next = as_uint(as_float(__old) + __val);")
-            self._emit("if (atomic_compare_exchange_weak_explicit(__addr, &__old, __next, "
-                       "memory_order_relaxed, memory_order_relaxed, memory_scope_device)) break;")
-            self._indent -= 1
-            self._emit("}")
-            self._indent -= 1
-            self._emit("}")
-        else:
-            atomic_type = 'atomic_uint' if dtype is u32 else 'atomic_int'
-            self._emit(f"atomic_fetch_{node.op}_explicit("
-                       f"(volatile __global {atomic_type}*)&{field}[{index}], {value}, "
-                       "memory_order_relaxed, memory_scope_device);")
+            return f"atomicMaxFloat(&{field}[{index}], {value})"
+        if dtype is f32:
+            self._needs_float_atomic_add = True
+            return f"atomicAddFloat(&{field}[{index}], {value})"
+        atomic_type = 'atomic_uint' if dtype is u32 else 'atomic_int'
+        return (f"atomic_fetch_{node.op}_explicit("
+                f"(volatile __global {atomic_type}*)&{field}[{index}], {value}, "
+                "memory_order_relaxed, memory_scope_device)")
 
     # --- Field store/load (use 'long' for index casts) ---
 

@@ -71,6 +71,28 @@ _CMP_MAP = {
 }
 
 
+def _float_atomic_extrema_helpers(ops) -> list:
+    """Float atomic min/max for Metal, which has neither: compare-and-swap
+    loops over the bits, returning the value the successful exchange
+    replaced (or the one that was already extreme)."""
+    lines = []
+    for op in sorted(ops):
+        cmp = "<=" if op == "min" else ">="
+        lines += [
+            f"inline float __tack_atomic_f{op}__(volatile device atomic_uint* p, float value) {{",
+            "    uint old = atomic_load_explicit(p, memory_order_relaxed);",
+            "    while (true) {",
+            f"        if (as_type<float>(old) {cmp} value) break;",
+            ("        if (atomic_compare_exchange_weak_explicit(p, &old, as_type<uint>(value), "
+             "memory_order_relaxed, memory_order_relaxed)) break;"),
+            "    }",
+            "    return as_type<float>(old);",
+            "}",
+            "",
+        ]
+    return lines
+
+
 # The function a kernel's body moves to when it has a loop that stores to a
 # field. Generated variables carry the `tack_var_` prefix, so it cannot
 # collide with one.
@@ -103,6 +125,7 @@ class MSLCodeGen:
         self._integer_division_helpers = set()
         self._float_division_helpers = set()
         self._block_extrema = set()
+        self._float_atomic_extrema: set[str] = set()
         self._integers = IntegerCodeGen(self._integer_type_map, bitcast=True)
         self._dynamic_range_depth = 0
         self._opaque_integer_add = False
@@ -254,6 +277,7 @@ class MSLCodeGen:
                 self._integer_division_helpers, _MSL_TYPE_MAP, 'inline')
             + self._integers.definitions('inline')
             + f32_reduction_helpers('metal', self._block_extrema)
+            + _float_atomic_extrema_helpers(self._float_atomic_extrema)
         )
         return "\n".join(self._lines[:preamble_end] + helpers
                          + self._lines[preamble_end:]) + "\n"
@@ -437,11 +461,15 @@ class MSLCodeGen:
         return None
 
     def _emit_atomic_op(self, node: ir.IRAtomicOp):
-        """Emit a Metal atomic operation.
+        """Emit a Metal atomic as a statement; its old value is dropped."""
+        self._emit(f"{self._expr_atomic(node)};")
 
-        Metal uses atomic_fetch_* on device atomic pointers.  For float atomics
-        (atomic_add), Metal 3.0+ supports atomic_fetch_add_explicit on float.
-        For min/max on floats, we use a compare-and-swap loop.
+    def _expr_atomic(self, node: ir.IRAtomicOp) -> str:
+        """The atomic as an expression whose value is the element's old value.
+
+        Metal's atomic_fetch_* return it. Float min and max, which Metal
+        lacks, are compare-and-swap loops in helper functions that return
+        the value the successful exchange replaced.
         """
         field = self._expr(node.field)
         index = self._expr(node.index)
@@ -457,46 +485,20 @@ class MSLCodeGen:
         value = f"(({_MSL_TYPE_MAP[dtype]})({value}))"
 
         if node.op == "add":
+            pointer_type = 'atomic_float' if is_float else atomic_type
+            return (f"atomic_fetch_add_explicit("
+                    f"(volatile device {pointer_type}*)&{field}[{index}], "
+                    f"{value}, memory_order_relaxed)")
+        if node.op in ("min", "max"):
             if is_float:
-                # Use atomic_fetch_add_explicit on float (Metal 3.0+)
-                self._emit(
-                    f"atomic_fetch_add_explicit("
-                    f"(volatile device atomic_float*)&{field}[{index}], "
-                    f"{value}, memory_order_relaxed);")
-            else:
-                self._emit(
-                    f"atomic_fetch_add_explicit("
+                self._float_atomic_extrema.add(node.op)
+                return (f"__tack_atomic_f{node.op}__("
+                        f"(volatile device atomic_uint*)&{field}[{index}], {value})")
+            func = "atomic_fetch_min_explicit" if node.op == "min" else "atomic_fetch_max_explicit"
+            return (f"{func}("
                     f"(volatile device {atomic_type}*)&{field}[{index}], "
-                    f"{value}, memory_order_relaxed);")
-        elif node.op in ("min", "max"):
-            if is_float:
-                # Float atomic min/max via compare-and-swap loop
-                self._emit("{")
-                self._indent += 1
-                self._emit(f"float __val__ = {value};")
-                self._emit(f"volatile device atomic_uint* __p__ = "
-                           f"(volatile device atomic_uint*)&{field}[{index}];")
-                self._emit("uint __old__ = atomic_load_explicit(__p__, memory_order_relaxed);")
-                self._emit("while (true) {")
-                self._indent += 1
-                self._emit("float __old_f__ = as_type<float>(__old__);")
-                cmp = "<=" if node.op == "min" else ">="
-                self._emit(f"if (__old_f__ {cmp} __val__) break;")
-                self._emit("uint __new__ = as_type<uint>(__val__);")
-                self._emit("if (atomic_compare_exchange_weak_explicit(__p__, &__old__, __new__, "
-                           "memory_order_relaxed, memory_order_relaxed)) break;")
-                self._indent -= 1
-                self._emit("}")
-                self._indent -= 1
-                self._emit("}")
-            else:
-                func = "atomic_fetch_min_explicit" if node.op == "min" else "atomic_fetch_max_explicit"
-                self._emit(
-                    f"{func}("
-                    f"(volatile device {atomic_type}*)&{field}[{index}], "
-                    f"{value}, memory_order_relaxed);")
-        else:
-            raise NotImplementedError(f"MSL atomic op: {node.op}")
+                    f"{value}, memory_order_relaxed)")
+        raise NotImplementedError(f"MSL atomic op: {node.op}")
 
     def _emit_field_store(self, node: ir.IRFieldStore):
         field = self._expr(node.field)
@@ -588,6 +590,8 @@ class MSLCodeGen:
             return "__local_tid__"
         if isinstance(node, ir.IRBlockReduce):
             return self._expr_block_reduce(node)
+        if isinstance(node, ir.IRAtomicOp):
+            return self._expr_atomic(node)
         raise NotImplementedError(f"MSL expr: {type(node).__name__}")
 
     def _expr_block_reduce(self, node: ir.IRBlockReduce) -> str:

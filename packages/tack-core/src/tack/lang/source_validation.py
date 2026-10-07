@@ -102,8 +102,7 @@ class _SourceValidator(ast.NodeVisitor):
             name = self.call_bindings.call_name(node.func) if intrinsic else ''
         except NotImplementedError as error:
             self.reject(node, str(error))
-        if intrinsic and name in ('atomic_add', 'atomic_min', 'atomic_max', 'barrier') \
-                and node is not self.statement_call:
+        if intrinsic and name == 'barrier' and node is not self.statement_call:
             self.reject(node, f"{name}() is only supported as a statement")
         if intrinsic and name in ('barrier', 'thread_id') and node.args:
             self.reject(node, f"{name}() takes no arguments")
@@ -179,7 +178,8 @@ class _SourceValidator(ast.NodeVisitor):
 
     def visit_Return(self, node):
         if self.kind == 'Kernel':
-            self.reject(node, "kernels write results to fields; return is only supported in @tack.func")
+            self.reject(node, "a kernel returns only as its last statement, after the parallel "
+                              "loop, with a return annotation; elsewhere results go to fields")
         if self.loops:
             self.reject(node, "return inside a loop is not supported")
         if node.value is not None:

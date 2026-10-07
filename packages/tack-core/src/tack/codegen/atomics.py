@@ -1,4 +1,7 @@
-"""CUDA/HIP 64-bit CAS operations without optional native add overloads."""
+"""CUDA/HIP 64-bit CAS operations without optional native add overloads.
+
+Each helper returns the element's value before the update, as the native
+atomics do, so an atomic can be an expression."""
 
 from tack.lang.types import f64, i64
 
@@ -18,8 +21,9 @@ def cuda_atomic64_helpers(operations):
             comparison = '<' if op == 'min' else '>'
             selected = f'(val {comparison} current ? val : current)'
             update = f'__double_as_longlong({selected})' if dtype is f64 else selected
+        # On exit old == assumed: the value the successful exchange replaced.
         lines.extend([
-            f'__device__ inline void tack_atomic_{op}_{dtype.name}({ctype}* addr, {ctype} val) {{',
+            f'__device__ inline {ctype} tack_atomic_{op}_{dtype.name}({ctype}* addr, {ctype} val) {{',
             '    unsigned long long* bits = (unsigned long long*)addr;',
             '    unsigned long long old = atomicCAS(bits, 0ull, 0ull), assumed;',
             '    do {',
@@ -27,6 +31,7 @@ def cuda_atomic64_helpers(operations):
             f'        {ctype} current = {old};',
             f'        old = atomicCAS(bits, assumed, (unsigned long long)({update}));',
             '    } while (old != assumed);',
+            f'    return {old};',
             '}', '',
         ])
     return lines
