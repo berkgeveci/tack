@@ -491,6 +491,51 @@ def test_dlpack_refuses_host_tensor():
         tack.from_dlpack(np.arange(8, dtype=np.float32))
 
 
+# --- Texture capability ---
+
+def test_unfilterable_3d_textures_fall_back_to_software(monkeypatch):
+    """A device that refuses linear 3D filtering samples in software.
+
+    gfx90a reports image support yet returns hipErrorNotSupported from
+    hipCreateTextureObject for a linearly filtered 3D texture; any other
+    error is a real failure and propagates.
+    """
+    from hip import hip
+
+    from tack.runtime import hip_backend
+
+    def refuse(code):
+        def image(shape_3d):
+            raise hip_backend.HIPError(code)
+        return image
+
+    monkeypatch.setattr(hip_backend, "HIPTextureImage",
+                        refuse(hip.hipError_t.hipErrorNotSupported))
+    assert not hip_backend.HIPBackend._linear_3d_textures_work()
+
+    monkeypatch.setattr(hip_backend, "HIPTextureImage",
+                        refuse(hip.hipError_t.hipErrorOutOfMemory))
+    with pytest.raises(hip_backend.HIPError):
+        hip_backend.HIPBackend._linear_3d_textures_work()
+
+
+def test_hardware_texture_decision_matches_the_device():
+    """Hardware storage is chosen only where a linear 3D texture can be made."""
+    from tack.runtime import hip_backend
+    from tack.runtime.dispatch import get_backend
+
+    backend = get_backend()
+    if not backend._query_image_support():
+        assert not backend.texture_in_hardware((4, 4, 4))
+        return
+    try:
+        hip_backend.HIPTextureImage((4, 4, 4))
+        makeable = True
+    except hip_backend.HIPError:
+        makeable = False
+    assert backend.texture_in_hardware((4, 4, 4)) == makeable
+
+
 def test_host_element_reads_copy_one_element():
     """field[i] copies just the element on HIP, from an owned buffer, a
     wrapped pointer in each form, a view and a vector field; a range past

@@ -382,13 +382,15 @@ SEEDS = list(range(32))
 # miscompiles seed 31 at -O1 and above: within the full expression a 64-bit
 # signed `-253 < -1` evaluates false, so out2 is 255 instead of 127. The
 # generated source is correct as host C++ under UBSan (clang and gcc,
-# -O0 to -O3), on CUDA, and under ROCm's clang 23. Strict, so a toolchain
-# that compiles it correctly reports XPASS and the entry can go.
+# -O0 to -O3), on CUDA, and under ROCm's clang 23. ROCm 7.1.1 (still AMD
+# clang 20) does the same on an MI210: wrong at -O1, right at -O0.
+# Strict, so a toolchain that compiles it correctly reports XPASS and the
+# entry can go.
 #
 # Keyed on the HIP runtime's (major, minor), which is the ROCm release whose
 # hipRTC and comgr Tack loads. hiprtcVersion() cannot identify it: on ROCm
 # 7.0.2 it reports 9.0, so a mark keyed on it never applied.
-ROCM_MISCOMPILED_SEEDS = {31: (7, 0)}
+ROCM_MISCOMPILED_SEEDS = {31: {(7, 0), (7, 1)}}
 
 
 def _hip_runtime_version():
@@ -407,8 +409,8 @@ def _hip_runtime_version():
 @pytest.mark.parametrize("seed", SEEDS)
 def test_generated_integer_expression_matches_oracle(backend, tmp_path, seed, request):
     if backend == "hip" and seed in ROCM_MISCOMPILED_SEEDS:
-        version = ROCM_MISCOMPILED_SEEDS[seed]
-        if _hip_runtime_version() == version:
+        version = _hip_runtime_version()
+        if version in ROCM_MISCOMPILED_SEEDS[seed]:
             request.applymarker(pytest.mark.xfail(
                 strict=True, reason=f"ROCm {version[0]}.{version[1]}'s device compiler "
                                     f"(hipRTC/comgr, AMD clang 20) miscompiles a "

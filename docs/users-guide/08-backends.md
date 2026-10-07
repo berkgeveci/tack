@@ -139,16 +139,16 @@ uv sync --extra hip        # hip-python is on PyPI
 tack.init(arch=tack.hip)
 ```
 
-**ROCm 7.0.2 miscompiles some integer code.** Its device compiler, AMD
-clang 20 inside hipRTC, can evaluate a 64-bit signed comparison wrongly
+**ROCm 7.0.2 and 7.1.1 miscompile some integer code.** Their device
+compiler, AMD clang 20 inside hipRTC, can evaluate a 64-bit signed comparison wrongly
 when it sits inside a long integer expression. The kernel then returns a
 wrong value with no error. Tack's own tests found one case: a generated
 expression in which `-253 < -1` evaluated false at `-O1` and above. The
 same source is correct on CUDA, as host C++, and under ROCm's clang 23.
 Whether a kernel is affected depends on the surrounding expression, so
-Tack can't rewrite around it. Use a ROCm release newer than 7.0 if you
+Tack can't rewrite around it. Use a ROCm release newer than 7.1 if you
 can. Go by the ROCm release, not `hiprtcVersion()`, which reports 9.0 on
-7.0.2. On 7.0.2, check integer-heavy kernels against the CPU backend.
+7.0.2. On 7.0 and 7.1, check integer-heavy kernels against the CPU backend.
 
 ## Level Zero
 

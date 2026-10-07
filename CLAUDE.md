@@ -540,7 +540,7 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 
 The HIP codegen (`hip_gen.py`) extends `CUDACodeGen` — HIP device code uses the same syntax as CUDA (`blockIdx`, `threadIdx`, `__global__`, `__shared__`, `__syncthreads`). The differences are `#include <hip/hip_runtime.h>` and the texture handle type, which HIP spells `hipTextureObject_t` (`_TEXTURE_OBJECT_TYPE`, overridden from CUDA's). The runtime (`hip_backend.py`) uses `hip-python` bindings for hipRTC compilation and dispatch.
 
-**Textures need a device that has them.** CDNA parts — gfx940/941/942, i.e. MI300 — have no texture/image hardware, and hipRTC refuses `tex3D` outright ("The image/texture API not supported on the device"). The backend asks `hipDeviceAttributeImageSupport` at init and falls back to software trilinear sampling where the answer is no, the same way the Level Zero backend handles Xe-HPC. The decision is `texture_in_hardware()`, which `_store_texture_shapes` consults before the variant key is built, because it changes the generated code, and which `Texture3D` consults to choose its storage; `tack.inspect` calls the same hook.
+**Textures need a device that has them.** CDNA parts — gfx940/941/942, i.e. MI300 — have no texture/image hardware, and hipRTC refuses `tex3D` outright ("The image/texture API not supported on the device"). The backend asks `hipDeviceAttributeImageSupport` at init and falls back to software trilinear sampling where the answer is no, the same way the Level Zero backend handles Xe-HPC. gfx90a (MI200) says yes but refuses a linearly filtered 3D texture (`hipErrorNotSupported` from `hipCreateTextureObject`; point sampling works), so init also makes one 2×2×2 texture and falls back when that is refused. The decision is `texture_in_hardware()`, which `_store_texture_shapes` consults before the variant key is built, because it changes the generated code, and which `Texture3D` consults to choose its storage; `tack.inspect` calls the same hook.
 
 `hip-python` is on PyPI now (it used to be Test-PyPI only), so the `[hip]` extra declares it:
 
@@ -555,6 +555,8 @@ That mismatch is not always fatal, which is worth knowing before pinning on prin
 Then: `tack.init(arch=tack.hip)`.
 
 **Known issue**: `hiprtcDestroyProgram` segfaults in hip-python. The backend skips the call (minor leak, mitigated by kernel caching). Recorded against **7.1**; **checked on 2026-08-11 against hip-python 7.2.2 / ROCm 7.0.2 on an MI300X and it still segfaults** — SIGSEGV on the first call, after a successful compile. The documented calling convention is the one that crashes: `hiprtcDestroyProgram(prog)` takes the program directly, and passing a pointer to it is rejected by the binding as a type error. The workaround stays.
+
+**hip-python 7.x struct wrappers are incomplete.** `make_hipExtent`/`make_hipPos`/`make_hipPitchedPtr` are gone (construct `hipExtent(width=...)` etc.), `hipCreateChannelDesc` returns `(err, desc)`, nested struct members are read-only attributes that are views into the parent (set their fields in place), and array handles (`res.array.array`, `hipMemcpy3DParms.dstArray`) and fixed-size arrays (`hipTextureDesc.addressMode`) are not exposed at all. `HIPTextureImage` writes those through ctypes, locating them from neighbouring views. MI300X has no texture hardware, so this path went untested until an MI210 (gfx90a), 2026-10-07; there it can only be run with point filtering.
 
 ## Level Zero backend notes
 

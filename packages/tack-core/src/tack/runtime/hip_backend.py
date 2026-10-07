@@ -54,11 +54,19 @@ _NUMPY_DTYPE = {
 }
 
 
+class HIPError(RuntimeError):
+    """A failed HIP runtime call; ``code`` is the `hipError_t`."""
+
+    def __init__(self, code):
+        super().__init__(f"HIP error: {code}")
+        self.code = code
+
+
 def _check_hip(result):
     """Check a HIP runtime result, raise on error (handles tuple returns)."""
     err = result[0] if isinstance(result, tuple) else result
     if isinstance(err, hip.hipError_t) and err != hip.hipError_t.hipSuccess:
-        raise RuntimeError(f"HIP error: {err}")
+        raise HIPError(err)
 
 
 def _check_hiprtc(result):
@@ -179,6 +187,11 @@ _HIP_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlon
                    u32: ctypes.c_uint, u64: ctypes.c_ulonglong}
 
 
+def _set_handle(address, handle):
+    """Store a hip-python handle object's pointer at `address`."""
+    ctypes.c_void_p.from_address(address).value = handle.as_c_void_p().value
+
+
 class HIPTextureImage:
     """A HIP 3D array and the texture object that samples it.
 
@@ -193,26 +206,28 @@ class HIPTextureImage:
         self._shape = shape_3d
 
         # Create channel format descriptor: 1 channel, 32-bit float
-        channel_desc = hip.hipCreateChannelDesc(
+        err, channel_desc = hip.hipCreateChannelDesc(
             32, 0, 0, 0, hip.hipChannelFormatKind.hipChannelFormatKindFloat)
+        _check_hip(err)
 
         # Allocate 3D array
         err, self._array = hip.hipMalloc3DArray(
-            channel_desc, hip.make_hipExtent(W, H, D), 0)
+            channel_desc, hip.hipExtent(width=W, height=H, depth=D), 0)
         _check_hip(err)
 
-        # Create resource descriptor
+        # hip-python 7.x leaves array handles and fixed-size arrays out of
+        # its struct wrappers, so those are written through ctypes. Nested
+        # structs are views into their parent, which locates them: the
+        # `res.array` member holds only the handle, and addressMode[3] is
+        # the texture descriptor's first member.
         res_desc = hip.hipResourceDesc()
         res_desc.resType = hip.hipResourceType.hipResourceTypeArray
-        res_desc.res.array.array = self._array
+        _set_handle(res_desc.res.array.as_c_void_p().value, self._array)
 
-        # Create texture descriptor
         tex_desc = hip.hipTextureDesc()
-        tex_desc.addressMode = (
-            hip.hipTextureAddressMode.hipAddressModeClamp,
-            hip.hipTextureAddressMode.hipAddressModeClamp,
-            hip.hipTextureAddressMode.hipAddressModeClamp,
-        )
+        address_mode = (ctypes.c_int * 3).from_address(
+            tex_desc.as_c_void_p().value)
+        address_mode[:] = [int(hip.hipTextureAddressMode.hipAddressModeClamp)] * 3
         tex_desc.filterMode = hip.hipTextureFilterMode.hipFilterModeLinear
         tex_desc.normalizedCoords = 1
         tex_desc.readMode = hip.hipTextureReadMode.hipReadModeElementType
@@ -223,8 +238,11 @@ class HIPTextureImage:
 
     @property
     def handle(self):
-        """The texture object a kernel launch passes."""
-        return self._tex_obj
+        """The texture object a kernel launch passes, as an address.
+
+        `hipTextureObject_t` is a pointer, and the launch packs it as one.
+        """
+        return self._tex_obj.as_c_void_p().value
 
     def upload(self, field):
         """Copy a field's device buffer into the array.
@@ -233,15 +251,18 @@ class HIPTextureImage:
         without being recreated.
         """
         W, H, D = self._shape
+        # Zero-initialized, so both positions start at the origin. Nested
+        # structs are set in place (hip-python makes them read-only
+        # attributes), and dstArray, which it leaves out, is the handle
+        # just before dstPos.
         copy_params = hip.hipMemcpy3DParms()
-        # Source: device pointer as pitched pointer
-        copy_params.srcPtr = hip.make_hipPitchedPtr(
-            field._buffer.device_ptr, W * 4, W, H)
-        copy_params.srcPos = hip.make_hipPos(0, 0, 0)
-        # Destination: 3D array
-        copy_params.dstArray = self._array
-        copy_params.dstPos = hip.make_hipPos(0, 0, 0)
-        copy_params.extent = hip.make_hipExtent(W, H, D)
+        src = copy_params.srcPtr
+        src.ptr = field._buffer.device_ptr
+        src.pitch, src.xsize, src.ysize = W * 4, W, H
+        _set_handle(copy_params.dstPos.as_c_void_p().value
+                    - ctypes.sizeof(ctypes.c_void_p), self._array)
+        ext = copy_params.extent
+        ext.width, ext.height, ext.depth = W, H, D
         copy_params.kind = hip.hipMemcpyKind.hipMemcpyDeviceToDevice
         _check_hip(hip.hipMemcpy3D(copy_params))
 
@@ -325,7 +346,13 @@ class HIPBackend(Backend):
         # device" and refuses to compile. The runtime answers honestly via
         # hipDeviceAttributeImageSupport, so ask rather than assume, and
         # sample in software where the answer is no.
-        self._has_image_support = self._query_image_support()
+        #
+        # gfx90a (MI200) answers yes but cannot filter a 3D texture
+        # linearly: hipCreateTextureObject returns hipErrorNotSupported.
+        # Point sampling works there, but Texture3D only offers trilinear,
+        # so make one small texture and fall back if the device refuses it.
+        self._has_image_support = (
+            self._query_image_support() and self._linear_3d_textures_work())
         self._max_image_3d = (
             self._query_max_image_3d() if self._has_image_support else 0)
         self._max_launch = self._query_max_launch()
@@ -339,6 +366,17 @@ class HIPBackend(Backend):
             self._device)
         _check_hip(err)
         return bool(val)
+
+    @staticmethod
+    def _linear_3d_textures_work() -> bool:
+        """True when a linearly filtered 3D texture object can be made."""
+        try:
+            HIPTextureImage((2, 2, 2))
+        except HIPError as e:
+            if e.code == hip.hipError_t.hipErrorNotSupported:
+                return False
+            raise
+        return True
 
     def _query_max_launch(self) -> int:
         """Most iterations one one-dimensional launch can index.
