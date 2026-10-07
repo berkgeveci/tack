@@ -41,10 +41,10 @@ class DeviceBuffer:
     def read_range(self, start: int, count: int) -> np.ndarray:
         """Elements ``[start, start + count)`` of the flat storage, as a copy.
 
-        Serves ``field[i]`` on the host. Buffers with a host-visible view
-        slice it and CUDA and Level Zero copy just the range; this default,
-        which HIP uses, copies the whole buffer, which is correct and
-        slow, so reading many elements goes through ``to_numpy()``.
+        Serves ``field[i]`` on the host. Every shipped buffer overrides it:
+        CPU and Metal slice their host-visible views, and CUDA, HIP and
+        Level Zero copy just the range. This default, for a buffer that
+        does not, copies the whole buffer, which is correct and slow.
         """
         return self.to_numpy().reshape(-1)[start:start + count].copy()
 
@@ -302,9 +302,9 @@ class Field:
         gives a NumPy array of the element. Negative indices count from
         the end, as in Python. This is for inspection and for host-side
         decisions: on backends without host-visible memory each read is a
-        transfer (on HIP, for now, a copy of the whole field), so many
-        elements are read with ``to_numpy()``. Fields are not written this
-        way; see ``from_numpy`` and ``fill``.
+        transfer of that element, so many elements are read with
+        ``to_numpy()``. Fields are not written this way; see ``from_numpy``
+        and ``fill``.
         """
         shape = tuple(getattr(self, '_logical_shape', None) or self.shape)
         if index is None:
