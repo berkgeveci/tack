@@ -30,8 +30,8 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `f[None]`, giving a Python number or, for a vector or matrix field, a
   NumPy array. Writing an element, slicing and iterating are refused with
   a message pointing at `from_numpy`, `fill` and `to_numpy`. On CPU and
-  Metal the read is a slice of unified memory, and on CUDA a copy of just
-  the element; on HIP and Level Zero it is a copy of the whole field for
+  Metal the read is a slice of unified memory, and on CUDA and Level Zero
+  a copy of just the element; on HIP it is a copy of the whole field for
   now.
 - `tack.random`: random numbers in kernels from a counter-based generator
   with explicit state. `seed(index, stream)`, then `u, state =

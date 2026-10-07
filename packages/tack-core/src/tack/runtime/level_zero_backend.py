@@ -707,6 +707,29 @@ class L0Buffer(DeviceBuffer):
         self._copy_from_device(out)
         return out
 
+    def read_range(self, start: int, count: int) -> np.ndarray:
+        """Copy elements ``[start, start + count)`` to the host.
+
+        One copy of just those bytes, so ``field[i]`` on the host moves one
+        element rather than the whole field. The range is checked here
+        because a device copy past the allocation is not caught by NumPy.
+        """
+        itemsize = self._numpy_dtype.itemsize
+        if start < 0 or count < 0 or (start + count) * itemsize > self._nbytes:
+            raise IndexError(
+                f"elements [{start}, {start + count}) are outside a buffer of "
+                f"{self._nbytes // itemsize} elements")
+        out = np.empty(count, dtype=self._numpy_dtype)
+        if count:
+            ze = _get_ze()
+            with self._backend._launch_lock:
+                _check_ze(ze.zeCommandListAppendMemoryCopy(
+                    self._backend._imm_cmd_list,
+                    out.ctypes.data, self.address + start * itemsize,
+                    count * itemsize, None, 0, None),
+                    "zeCommandListAppendMemoryCopy (D2H range)")
+        return out
+
     def fill(self, value):
         arr = np.full(self._shape, value, dtype=self._numpy_dtype)
         self.from_numpy(arr)
