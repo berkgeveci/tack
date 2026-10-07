@@ -189,6 +189,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- `test_a_stale_parallel_rate_gets_re_measured` failed about one run in
+  thirteen on two-thread machines and once on a CI runner: it asserted
+  that two threads beat one on a bandwidth-bound kernel, which they need
+  not. The scenario now uses a compute-bound kernel, so the assertion
+  tests the recovery path it was written for.
 - Reading a zero-dimensional field to the host (`f.to_numpy()` for
   `shape=()`) crashed the process on CUDA: cuda-python does not take a
   zero-dimensional NumPy array as a host buffer. The copy now goes through

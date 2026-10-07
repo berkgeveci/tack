@@ -1142,9 +1142,16 @@ def _stale_parallel_rate_setup(backend, monkeypatch):
     hair below it, which makes the threshold formula credit fanning out
     with no gain and hold a range serial that is worth 2.5 fan-outs. The
     two setup assertions check both halves of that state.
+
+    The kernel is compute-bound (`_expensive`, 24 sin/cos per element).
+    With `_scale`, which is bandwidth-bound, two threads on a two-core or
+    shared-bandwidth machine can be no faster than one, so the honest
+    re-measured r_p was legitimately not under the stale value, and the
+    test failed on a two-thread run (3 in 30 here, once on a CI runner)
+    while testing nothing about the recovery path.
     """
-    n = 1 << 22
-    compiled, args = _measured(backend, _scale, n)
+    n = 1 << 18
+    compiled, args = _measured(backend, _expensive, n)
     rate = compiled.ns_per_elem
     # Pin the fan-out cost *relative* to the measured rate: the range is
     # then worth 3.3 fan-outs serially on every host, and with r_p at
@@ -1195,8 +1202,9 @@ def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
     assert fanned, "a parallel rate that holds the range serial was never re-measured"
     assert min(seen) < rate * 0.95, (
         f"re-measured r_p never got under the stale {rate * 0.95:.3f}: {seen}")
-    x, out = args[0].to_numpy(), args[1].to_numpy()
-    np.testing.assert_allclose(out, x * 2.0 + 1.0, rtol=1e-6)
+    x, out = args[0].to_numpy().astype(np.float64), args[1].to_numpy()
+    want = sum(np.sin(x + j) * np.cos(x - j) for j in range(24))
+    np.testing.assert_allclose(out, want, rtol=1e-4, atol=1e-4)
 
 
 def test_negative_control_stale_rate_without_recovery_stays_serial(
