@@ -206,6 +206,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   that two threads beat one on a bandwidth-bound kernel, which they need
   not. The scenario now uses a compute-bound kernel, so the assertion
   tests the recovery path it was written for.
+- The size of a local or shared array may be arithmetic on constants and
+  dimensions: `tack.local_array(tack.f32, MAX_HITS * 4)` is folded to one
+  constant when dimensions are resolved. Only a literal was, and Metal
+  refused the kernel with "array size is not a constant expression".
 - Reading a zero-dimensional field to the host (`f.to_numpy()` for
   `shape=()`) crashed the process on CUDA: cuda-python does not take a
   zero-dimensional NumPy array as a host buffer. The copy now goes through
