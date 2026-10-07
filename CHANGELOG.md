@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A kernel may end in `return expr`, with a return annotation naming the
+  type (`-> tack.f32`, `-> float`, `-> int`); the call returns that value
+  as a Python number. It is computed after the launch by a one-thread
+  epilogue kernel that stores it into a hidden field, so it may read
+  fields, arguments, constants and locals bound outside the loop, not a
+  local the loop assigns. A return anywhere else is still rejected.
 - An atomic is an expression as well as a statement: `slot =
   tack.atomic_add(counter, 0, 1)` is the element's value just before the
   update, on every backend and for every supported type, which is how

@@ -47,7 +47,7 @@ all corner cases have been validated.
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions of vectors act per component |
 | Assignments | Local assignment, augmented assignment, field stores, tuple assignment to names, field elements and components | Storage and ordering rules below |
 | Control flow | `range`, `tack.ndrange` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
-| Composition | `@tack.func` inlining, returning one or several values; `@tack.data_oriented` templates, with inheritance, device functions held as attributes or under `@staticmethod`, and kernels as methods | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
+| Composition | `@tack.func` inlining, returning one or several values; a kernel's trailing `return`; `@tack.data_oriented` templates, with inheritance, device functions held as attributes or under `@staticmethod`, and kernels as methods | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
 | Storage | Scalar fields, vector fields, matrix fields, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
 
@@ -113,9 +113,15 @@ argument order and resource binding indices stay unchanged.
 
 **Current behavior:** kernels are compiled from inspectable source; a bare
 REPL or dynamically generated function may not provide that source. Kernel
-arguments are positional. Kernel return values are not a host result API;
-results are written to fields. Device functions can return supported scalar
-or tuple values for inlining.
+arguments are positional. A kernel whose last statement is `return expr`,
+with a return annotation naming the type (`-> tack.f32`, `-> float` for
+f32, `-> int` for i32), gives the host that value: after the launch, a
+one-thread epilogue kernel runs the statements outside the parallel loop
+and stores the expression into a hidden one-element field of that type,
+which the call reads and returns as a Python number. The expression may
+read fields, arguments, constants and locals bound outside the loop, not
+a local the loop assigns. A kernel without one returns None. Device
+functions can return supported scalar, vector or tuple values for inlining.
 
 ## Execution and ordering
 
@@ -185,8 +191,8 @@ Early exits must preserve the defined control flow. `continue` ends the
 current iteration of its nearest enclosing loop, including the top-level
 parallel one, where it skips the rest of that iteration only (LC8). This
 frontend rejects `break` from the parallel loop: there is no ordered prefix
-of parallel iterations to stop. Kernel `return` is also rejected; results
-are written to fields. Positive `range` steps are supported, and literal
+of parallel iterations to stop. A kernel `return` anywhere but as the last
+statement is rejected. Positive `range` steps are supported, and literal
 zero or negative steps are rejected. A dynamic step must be positive;
 runtime validation of that caller constraint remains open. Cross-iteration
 communication requires further validation before joining the portable

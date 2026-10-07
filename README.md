@@ -192,6 +192,10 @@ def saxpy(x, y, out, alpha, n):
 saxpy(x, y, out, 2.5, 1000)  # alpha=2.5, n=1000 passed as scalars
 ```
 
+A kernel whose last statement is `return expr` (with a return annotation,
+`-> int` or `-> tack.f32`) gives the caller that value, computed after
+the launch: `live = count_live(cells, count, n)`.
+
 ### Constants
 
 A kernel does not see Python variables around it; reading one raises

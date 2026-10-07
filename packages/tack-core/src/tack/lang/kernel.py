@@ -11,6 +11,7 @@ from tack.lang.ast_transform import transform_kernel
 from tack.lang.func import read_source
 from tack.lang.ir_verify import verify_ir
 from tack.lang.source_validation import UnsupportedSyntaxError
+from tack.lang.types import ScalarType, f32, i32
 
 
 def _verified_transform(*args, **kwargs):
@@ -98,15 +99,25 @@ def _retire_class(token):
 class Kernel:
     """A captured kernel function, ready for AST transformation and compilation."""
 
-    def __init__(self, func):
+    def __init__(self, func, funcdef=None):
         self.func = func
-        self.name = func.__name__
-        self._source = textwrap.dedent(read_source(func, "kernel"))
-        self._ast = ast.parse(self._source)
-        self._funcdef = self._ast.body[0]  # The FunctionDef node
+        if funcdef is None:
+            self._source = textwrap.dedent(read_source(func, "kernel"))
+            self._ast = ast.parse(self._source)
+            self._funcdef = self._ast.body[0]  # The FunctionDef node
+        else:
+            # A kernel derived from another's AST: the result epilogue below.
+            self._source = ast.unparse(funcdef)
+            self._ast = ast.Module(body=[funcdef], type_ignores=[])
+            self._funcdef = funcdef
+        self.name = self._funcdef.name
         # Lazy IR: defer transform until first dispatch (vector fields may be needed)
         self._ir = None
         self._ir_cache = {}  # vector_fields key → IRModule
+        # A kernel ending in `return expr` has the expression computed by a
+        # one-thread epilogue kernel into a hidden field; see _split_result.
+        self._result = None if funcdef is not None else _split_result(self, func)
+        self._result_field = None
 
     def get_ir(self, vector_fields=None, template_args=None, texture_fields=None):
         """Get IR, re-transforming if vector/texture field or template metadata is provided."""
@@ -183,6 +194,17 @@ class Kernel:
                 ))
         return tuple(parts)
 
+    def _run_result(self, backend, args, kwargs):
+        """Run the epilogue kernel and read the result it stored."""
+        from tack.lang.field import field as make_field
+        dtype, epilogue = self._result
+        result = self._result_field
+        if result is None or result._buffer.backend_name != backend.name:
+            result = make_field(dtype=dtype, shape=(1,))
+            self._result_field = result
+        backend.execute(epilogue, (*args, result), kwargs)
+        return result[0]
+
     def __get__(self, instance, owner=None):
         """Bind a kernel defined in a class body to the instance it is called on.
 
@@ -198,7 +220,10 @@ class Kernel:
         from tack.runtime.dispatch import get_backend
         backend = get_backend()
         try:
-            return backend.execute(self, args, kwargs)
+            backend.execute(self, args, kwargs)
+            if self._result is None:
+                return None
+            return self._run_result(backend, args, kwargs)
         except AttributeError as e:
             # Almost always one thing: a field allocated before `tack.init()`
             # switched backends, so its buffer is the old backend's type and
@@ -264,3 +289,86 @@ class Kernel:
 def kernel(func):
     """Decorator that marks a Python function as a GPU kernel."""
     return Kernel(func)
+
+
+_RESULT_PARAM = "__tack_result__"
+_RESULT_TYPES = {"float": f32, "int": i32}
+
+
+def _split_result(kernel, func):
+    """Take a trailing ``return expr`` off a kernel and build its epilogue.
+
+    A kernel's statements outside the parallel loop run once per thread,
+    so a value returned there has no single meaning on the device. The
+    return is instead computed after the launch by an epilogue kernel of
+    one thread: the statements before and after the loop (which may only
+    bind locals, load fields and declare arrays) followed by a store of
+    the expression into a hidden one-element field, which the host reads.
+    So a returned expression may read fields and the kernel's arguments
+    and constants, but not a local the loop assigns. The type comes from
+    the return annotation: ``-> tack.f32``, ``-> float`` (f32) or ``-> int``
+    (i32), which the hidden field is allocated with.
+
+    Returns ``(dtype, epilogue Kernel)``, or None for a kernel without one.
+    Other returns are left for the validator to reject.
+    """
+    funcdef = kernel._funcdef
+    body = funcdef.body
+    if not body or not isinstance(body[-1], ast.Return) or body[-1].value is None:
+        return None
+    returned = body[-1]
+    dtype = _result_dtype(func, funcdef, returned)
+    funcdef.body = body[:-1]
+    loops = [s for s in funcdef.body if isinstance(s, ast.For)]
+    if len(loops) != 1:
+        return None       # the validator reports the missing or extra loop
+    around = [s for s in funcdef.body if s is not loops[0]]
+    bound_outside = {n.id for s in around for n in ast.walk(s)
+                     if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+    bound_inside = {n.id for n in ast.walk(loops[0])
+                    if isinstance(n, ast.Name) and isinstance(n.ctx, ast.Store)}
+    params = {a.arg for a in funcdef.args.args}
+    for n in ast.walk(returned.value):
+        if (isinstance(n, ast.Name) and isinstance(n.ctx, ast.Load)
+                and n.id in bound_inside and n.id not in bound_outside | params):
+            raise UnsupportedSyntaxError(
+                f"Kernel '{funcdef.name}': return at line {returned.lineno} reads '{n.id}', "
+                f"which the parallel loop assigns and so has a value per thread; a returned "
+                f"expression may read fields, arguments, constants and locals assigned "
+                f"outside the loop")
+    once = ast.For(
+        target=ast.Name(id="__tack_once__", ctx=ast.Store()),
+        iter=ast.Call(func=ast.Name(id="range", ctx=ast.Load()),
+                      args=[ast.Constant(1)], keywords=[]),
+        body=[*around, ast.Assign(
+            targets=[ast.Subscript(value=ast.Name(id=_RESULT_PARAM, ctx=ast.Load()),
+                                   slice=ast.Constant(0), ctx=ast.Store())],
+            value=returned.value)],
+        orelse=[])
+    epilogue = ast.FunctionDef(
+        name=f"{funcdef.name}__result",
+        args=ast.arguments(
+            posonlyargs=[], args=[*funcdef.args.args, ast.arg(arg=_RESULT_PARAM)],
+            vararg=None, kwonlyargs=[], kw_defaults=[], kwarg=None, defaults=[]),
+        body=[once], decorator_list=[], returns=None, type_params=[])
+    for node in ast.walk(epilogue):
+        if not hasattr(node, "lineno"):
+            ast.copy_location(node, returned)
+    ast.fix_missing_locations(epilogue)
+    return dtype, Kernel(func, funcdef=epilogue)
+
+
+def _result_dtype(func, funcdef, returned):
+    annotation = getattr(func, "__annotations__", {}).get("return")
+    if isinstance(annotation, str):
+        annotation = _RESULT_TYPES.get(annotation.rsplit(".", 1)[-1], annotation)
+    if annotation is float:
+        annotation = f32
+    elif annotation is int:
+        annotation = i32
+    if isinstance(annotation, ScalarType):
+        return annotation
+    raise UnsupportedSyntaxError(
+        f"Kernel '{funcdef.name}': return at line {returned.lineno} needs a return "
+        f"annotation naming the result's type (-> tack.f32, -> float, -> int, ...); "
+        f"the hidden field it is written to is allocated with that type")
