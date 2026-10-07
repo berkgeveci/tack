@@ -212,3 +212,37 @@ def test_local_array_like_in_func(backend):
 
     kern(data, out)
     np.testing.assert_allclose(out.to_numpy(), np.arange(n, dtype=np.float32) * 3.0)
+
+
+# --- Sizes written as arithmetic on constants ---
+
+CAP = tack.constant(8)
+WIDE = tack.constant(4, tack.i32)
+
+
+@tack.kernel
+def arithmetic_sizes(x, out, n):
+    for i in range(n):
+        a = tack.local_array(tack.f32, CAP * 4)                      # a constant times a literal
+        b = tack.local_array(tack.i32, (CAP + 2) // 2 * WIDE - 3)    # several, one typed
+        c = tack.local_array(tack.f32, x.shape[0] + 1)               # a dimension plus one
+        for j in range(CAP * 4):
+            a[j] = x[i] * j
+        for j in range(17):
+            b[j] = j
+        for j in range(x.shape[0] + 1):
+            c[j] = 1.0
+        out[i] = a[31] + b[16] + c[x.shape[0]]
+
+
+def test_array_sizes_fold_to_constants(backend):
+    """`tack.local_array(f32, MAX * 4)` is an array of a constant size. Only
+    a literal was: the size stayed an expression, and Metal refused the
+    kernel with "array size is not a constant expression"."""
+    x = tack.field(dtype=tack.f32, shape=(5,))
+    x.fill(2.0)
+    out = tack.field(dtype=tack.f32, shape=(5,))
+    arithmetic_sizes(x, out, 5)
+    np.testing.assert_array_equal(out.to_numpy(), np.full(5, 2.0 * 31 + 16 + 1))
+    ir_text = tack.inspect(arithmetic_sizes, x, out, 5, mode="ir")
+    assert "32" in ir_text and "17" in ir_text and "6" in ir_text

@@ -7,6 +7,7 @@ Runs after AST transform, before codegen. Replaces:
 
 from tack.lang import ir
 from tack.lang.ir_traversal import transform_ir, walk_ir
+from tack.lang.types import INTEGER_TYPES
 
 
 def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
@@ -32,6 +33,39 @@ def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
             ir_func.body[i] = stmt
         else:
             ir_func.body[i] = _resolve(stmt, extended)
+
+
+_FOLDABLE = {
+    "+": lambda a, b: a + b, "-": lambda a, b: a - b, "*": lambda a, b: a * b,
+    "//": lambda a, b: a // b, "%": lambda a, b: a % b, "**": lambda a, b: a ** b,
+    "<<": lambda a, b: a << b, ">>": lambda a, b: a >> b,
+}
+
+
+def fold_integer_constant(node):
+    """The integer value of an expression made only of integer constants, else None.
+
+    Casts to integer types are transparent, since a constant was checked to
+    fit its type where it was declared; anything else (a name, a load, a
+    float) leaves the expression as it is.
+    """
+    if isinstance(node, ir.IRConstant):
+        return node.value if isinstance(node.value, int) and not isinstance(node.value, bool) else None
+    if isinstance(node, ir.IRCast):
+        return fold_integer_constant(node.value) if node.dtype in INTEGER_TYPES else None
+    if isinstance(node, ir.IRUnaryOp) and node.op in ("-", "+"):
+        inner = fold_integer_constant(node.operand)
+        return None if inner is None else (-inner if node.op == "-" else inner)
+    if isinstance(node, ir.IRBinOp) and node.op in _FOLDABLE:
+        left, right = fold_integer_constant(node.left), fold_integer_constant(node.right)
+        if left is None or right is None:
+            return None
+        if node.op in ("//", "%") and right == 0:
+            return None
+        if node.op in ("**", "<<", ">>") and right < 0:
+            return None
+        return _FOLDABLE[node.op](left, right)
+    return None
 
 
 def _collect_field_aliases(stmts, known_fields):
@@ -76,6 +110,13 @@ def _resolve(node, fields):
                     kind = 'shared_like' if isinstance(node, ir.IRSharedAlloc) else 'local_array_like'
                     raise RuntimeError(f"Cannot resolve {kind}: unknown field '{node.field_name}'")
                 node.dtype = field.dtype
+            # A size written as arithmetic on constants (MAX_HITS * 4, a
+            # resolved dimension + 2) is one constant: the GPU generators
+            # need a constant expression for an array size, and this
+            # pass is where every dimension in it has become a literal.
+            folded = fold_integer_constant(node.size)
+            if folded is not None:
+                node.size = ir.IRConstant(folded)
         if isinstance(node, ir.IRTextureSample):
             field = fields.get(node.field_name)
             if field is not None:

@@ -189,6 +189,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- The size of a local or shared array may be arithmetic on constants and
+  dimensions: `tack.local_array(tack.f32, MAX_HITS * 4)` is folded to one
+  constant when dimensions are resolved. Only a literal was, and Metal
+  refused the kernel with "array size is not a constant expression".
 - Reading a zero-dimensional field to the host (`f.to_numpy()` for
   `shape=()`) crashed the process on CUDA: cuda-python does not take a
   zero-dimensional NumPy array as a host buffer. The copy now goes through
