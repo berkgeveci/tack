@@ -94,6 +94,28 @@ def test_parent_boxes_contain_their_children(backend):
                 f"node {parent} does not contain child {idx}"
 
 
+
+def test_parent_boxes_are_exactly_their_childrens_union(backend):
+    """Propagation reads only boxes finished in an earlier launch.
+
+    A pass once read a child completed in the same launch: another
+    thread's store, with nothing ordering its box before its ready flag.
+    On an MI210 most builds of a few thousand triangles gave some parent
+    a stale box, usually the previous build's, since the device memory is
+    reused, so builds of different meshes run back to back. Containment
+    with a tolerance cannot see a stale box that happens to be larger;
+    min/max are exact, so the union must match bit for bit.
+    """
+    for seed in range(12):
+        bvh = _build(*_random_mesh(8192, seed=seed, scale=10.0 + seed))
+        lo, hi = _boxes(bvh)
+        children = bvh.node_children.to_numpy().reshape(-1, 2)
+        n = bvh.n_inner
+        want_lo = np.minimum(lo[children[:, 0]], lo[children[:, 1]])
+        want_hi = np.maximum(hi[children[:, 0]], hi[children[:, 1]])
+        wrong = np.flatnonzero((lo[:n] != want_lo).any(1) | (hi[:n] != want_hi).any(1))
+        assert len(wrong) == 0, f"seed {seed}: {len(wrong)} inner nodes, first {wrong[:5]}"
+
 def test_leaf_boxes_contain_their_triangles(backend):
     """The bottom of the tree has to be right too, not just the shape of it."""
     n_tris = 48
