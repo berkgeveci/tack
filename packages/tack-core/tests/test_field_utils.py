@@ -390,6 +390,29 @@ def test_host_reads_one_element(backend):
     assert z[None] == 9 and isinstance(z[None], int)
 
 
+@pytest.mark.parametrize("dt", ["i8", "u16", "i32", "i64", "f32"])
+def test_read_range_copies_the_requested_elements(backend, dt):
+    """A backend that defines its own read_range copies just the elements asked
+    for: element offsets scale by the dtype's size, and the whole buffer is
+    never copied to read one. The others use DeviceBuffer's whole-buffer copy."""
+    from tack.lang.field import DeviceBuffer
+
+    np_dtype = getattr(tack, dt).numpy_dtype
+    data = np.arange(37).astype(np_dtype)
+    f = tack.field(dtype=getattr(tack, dt), shape=(37,))
+    f.from_numpy(data)
+    buf = f._buffer
+    if type(buf).read_range is not DeviceBuffer.read_range:
+        def no_whole_copy():
+            raise AssertionError("read_range copied the whole buffer")
+        buf.to_numpy = no_whole_copy
+    for start, count in ((0, 1), (5, 3), (36, 1), (0, 37), (20, 0)):
+        got = buf.read_range(start, count)
+        assert got.dtype == np.dtype(np_dtype)
+        np.testing.assert_array_equal(got, data[start:start + count])
+    assert f[36] == data[36]
+
+
 def test_host_reads_are_checked_and_writes_refused(backend):
     f = tack.field(dtype=tack.f32, shape=(3, 4))
     with pytest.raises(TypeError, match="takes 2 integer indices"):
