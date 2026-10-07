@@ -157,8 +157,8 @@ set of fields when changing the backend.
 
 `from_numpy` and `to_numpy` transfer complete arrays. On CPU and Metal storage is
 host-addressable, but these methods still copy values. A host read `field[i]`
-reads one logical element; CUDA and Level Zero copy just that range, while HIP
-currently copies the whole field. Avoid making it the inner loop of an application.
+reads one logical element; CUDA, HIP and Level Zero copy just that range, one
+transfer per read. Avoid making it the inner loop of an application.
 
 For shared storage, `field_from_ptr` and DLPack have distinct lifetime and
 writability rules. Keep an external pointer's owner alive for as long as its
