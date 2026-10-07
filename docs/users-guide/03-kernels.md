@@ -251,6 +251,7 @@ def count_live(cells, count, n) -> int:
             tack.atomic_add(count, 0, 1)
     return count[0]
 
+count.fill(0)                            # reset before counting each board
 live = count_live(cells, count, n)        # a Python int
 ```
 
@@ -345,3 +346,6 @@ def update(sim):
 sim = Sim(1024)
 print(tack.inspect(update, sim))  # shows template expansion + inlined methods
 ```
+
+For complete applications that combine these constructs, see [Heat diffusion](tutorials/heat.md),
+[Physarum](tutorials/physarum.md) and the [tutorial gallery](tutorials/index.md).

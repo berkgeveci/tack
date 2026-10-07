@@ -1,24 +1,61 @@
 # Tack User's Guide
 
-Tack (Portable GPU Compute) is a Python-first GPU compute framework. You write
-kernels as decorated Python functions and Tack compiles them at runtime to run
-on CPUs and GPUs across multiple backends.
+Learn how to turn a numerical calculation into a Tack application: allocate
+fields, write a kernel, organize its stages, and check the result. Tack compiles
+one supported kernel source for CPU, Metal, CUDA, HIP and Level Zero, within
+[each backend's capabilities](08-backends.md#capabilities).
 
-Tack is split into three packages:
-- **tack-core** — the compute framework (chapters 1-9)
-- **tack-vis** — scientific visualization algorithms (chapter 10)
-- **tack-rendering** — GPU path tracing renderer (chapter 11)
+`tack-core` provides the language, fields and algorithms; `tack-vis` adds
+scientific visualization; `tack-rendering` adds surface and volume rendering.
+The guide describes the current checkout. See [Getting Started](01-getting-started.md)
+for installation and the relationship to released APIs.
 
-## Table of Contents
+## A first reading path
 
-1. [Getting Started](01-getting-started.md) — Installation, first kernel, choosing a backend
-2. [Fields and Types](02-fields-and-types.md) — Data containers, scalar types, numpy interop
-3. [Kernels](03-kernels.md) — Writing kernels, parallel loops, scalar arguments
-4. [Control Flow and Math](04-control-flow.md) — Loops, conditionals, math builtins
-5. [Device Functions](05-device-functions.md) — `@tack.func` for reusable device-side code
-6. [Templates](06-templates.md) — `@tack.data_oriented` classes for zero-cost abstraction
-7. [Advanced Features](07-advanced.md) — Atomics, shared memory, local arrays, textures, vectors
-8. [Reductions and Scans](11-reductions-and-scans.md) — Field reductions, statistics, prefix scans, block reductions
-9. [Backends](08-backends.md) — CPU, Metal, CUDA, HIP, Level Zero
-10. [Visualization](09-visualization.md) — Flying edges, normals, cell to point, VTK interop (tack-vis)
-11. [Rendering](10-rendering.md) — Path tracing, BVH, camera, scene (tack-rendering)
+Read [Getting Started](01-getting-started.md),
+[From Python to a Tack program](12-execution-model.md), and
+[Fields and Types](02-fields-and-types.md). Then run
+[Heat diffusion](tutorials/heat.md): it is a complete program with a small
+independent numerical check and a figure showing its output.
+
+If you already write GPU kernels, focus on [Kernels](03-kernels.md),
+[Memory and parallel correctness](13-memory-and-parallelism.md), and
+[Backend capabilities](08-backends.md#capabilities).
+
+## Language and program structure
+
+| Chapter | What it explains |
+|---|---|
+| [Getting Started](01-getting-started.md) | Install and run the first kernel |
+| [From Python to a Tack program](12-execution-model.md) | Host/device boundary, stages and compilation |
+| [Fields and Types](02-fields-and-types.md) | Storage, NumPy exchange, scalar types and precision |
+| [Vectors and matrices](14-vectors-and-matrices.md) | Component values, masks, products and fields |
+| [Kernels](03-kernels.md) | Parallel ranges, constants, returns and specialization |
+| [Control Flow and Math](04-control-flow.md) | Conditions, sequential loops, casts and numerical helpers |
+| [Device Functions](05-device-functions.md) | Reusable compiled helpers |
+| [Templates](06-templates.md) | Data-oriented objects and generic kernels |
+| [Memory and parallel correctness](13-memory-and-parallelism.md) | Layout, buffers, aliases, gathering and scattering |
+
+## Algorithms and applications
+
+| Chapter | What it explains |
+|---|---|
+| [Advanced Features](07-advanced.md) | Private arrays, random state, atomics, shared memory and textures |
+| [Reductions and Scans](11-reductions-and-scans.md) | Statistics, output offsets, sorting and block reductions |
+| [Backends](08-backends.md) | Setup, capabilities and device differences |
+| [Sharing arrays](16-interoperability.md) | NumPy copies, external pointers, DLPack and VTK |
+| [Visualization](09-visualization.md) | Uniform grids, surfaces, normals and cell-to-point averaging |
+| [Rendering](10-rendering.md) | Mesh scenes, cameras, materials, volumes and output |
+| [Debugging and timing](15-debugging-and-timing.md) | Independent checks, numerical tolerance and warm measurements |
+
+## Worked examples
+
+The [tutorial gallery](tutorials/index.md) includes seven complete programs:
+heat diffusion, coloured dye, trail-following agents, marching squares, MPM,
+tiled N-body forces and isosurface rendering. Each page explains its data and
+kernels, includes the complete script, shows output generated from that script,
+and credits its origin. All sources are included in this documentation.
+
+Use the [Contracts](../contracts/index.md) when you need precise guarantees,
+and the [Design and Implementation](../design/index.md) pages when you need to
+understand compilation or runtime internals.

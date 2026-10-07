@@ -62,7 +62,8 @@ markdown_extensions:
           class: mermaid
           format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      check_paths: true
   - pymdownx.tabbed:
       alternate_style: true
       slugify: !!python/object/apply:pymdownx.slugs.slugify {kwds: {case: lower}}
@@ -91,16 +92,30 @@ nav:
   - User's Guide:
       - users-guide/index.md
       - Getting Started: users-guide/01-getting-started.md
+      - From Python to a Tack program: users-guide/12-execution-model.md
       - Fields and Types: users-guide/02-fields-and-types.md
+      - Vectors and Matrices: users-guide/14-vectors-and-matrices.md
       - Kernels: users-guide/03-kernels.md
       - Control Flow and Math: users-guide/04-control-flow.md
       - Device Functions: users-guide/05-device-functions.md
       - Templates: users-guide/06-templates.md
+      - Memory and Parallel Correctness: users-guide/13-memory-and-parallelism.md
       - Advanced Features: users-guide/07-advanced.md
       - Reductions and Scans: users-guide/11-reductions-and-scans.md
       - Backends: users-guide/08-backends.md
+      - Sharing Arrays: users-guide/16-interoperability.md
       - Visualization: users-guide/09-visualization.md
       - Rendering: users-guide/10-rendering.md
+      - Debugging and Timing: users-guide/15-debugging-and-timing.md
+      - Worked Examples:
+          - Gallery: users-guide/tutorials/index.md
+          - Heat Diffusion: users-guide/tutorials/heat.md
+          - Advecting Dye: users-guide/tutorials/dye.md
+          - Trail-following Agents: users-guide/tutorials/physarum.md
+          - Marching Squares: users-guide/tutorials/contours.md
+          - Particle-to-grid Simulation: users-guide/tutorials/mpm.md
+          - Tiled N-body Forces: users-guide/tutorials/nbody.md
+          - Isosurface to Image: users-guide/tutorials/isosurface.md
   - Design and Implementation:
       - design/index.md
       - Principles: design/principles.md

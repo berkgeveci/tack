@@ -94,7 +94,7 @@ Fields can be passed to `@tack.func` — they work just like in kernels:
 @tack.func
 def safe_load(data, i, default_val):
     result = default_val
-    if i >= 0:
+    if 0 <= i < data.shape[0]:
         result = data[i]
     return result
 ```
@@ -136,3 +136,25 @@ def interp(ct: tack.template(), data, out, n):
 
 This also works with `@tack.data_oriented` methods — see
 [Advanced Features](07-advanced.md) for the cell set pattern.
+
+## Reuse a numerical operation across element types
+
+A device function is specialized on the values or fields it receives. The same
+linear interpolation expression works for scalars and vectors:
+
+```python
+@tack.func
+def mix_values(a, b, t):
+    return a * (1.0 - t) + b * t
+```
+
+The [dye tutorial](tutorials/dye.md) builds a bilinear sampler from four field
+loads and applies it to RGB vectors. The [MPM tutorial](tutorials/mpm.md) uses
+matrix-valued arithmetic, and [N-body](tutorials/nbody.md) shares one interaction
+function between the plain and tiled kernels.
+
+Keep all return paths compatible in shape and type. Early returns in a
+sequential loop of a device function remain unsupported; use a result local
+and `break`, then return after the loop. Recursion is unsupported. Local arrays
+passed to a function are scratch storage shared with that caller iteration,
+whereas vector and matrix arguments behave as values.

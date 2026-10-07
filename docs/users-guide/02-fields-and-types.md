@@ -110,7 +110,7 @@ F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))       # a 2x2 matrix per
 ```
 
 In a kernel `pos[i]` is the whole vector and `F[i]` the whole matrix; see
-[Vectors](07-advanced.md#vectors) and [Matrices](07-advanced.md#matrices)
+[Vectors](14-vectors-and-matrices.md#vectors) and [Matrices](14-vectors-and-matrices.md#matrices)
 for what can be done with them. The storage is one flat array with the
 components of each element together (a matrix in row-major order).
 
@@ -147,6 +147,25 @@ now, of the whole field), so many elements are read at once with
 are not written by element from the host: build the values in a NumPy
 array and `from_numpy` it, `fill` the field, or write them in a kernel.
 Iterating a field raises for the same reason.
+
+### A scalar shared between launches
+
+A zero-dimensional field holds one logical element, accessed as `f[None]`:
+
+```python
+strength = tack.field(dtype=tack.f32, shape=())
+strength.fill(2.0)
+
+@tack.kernel
+def add_strength(data, strength):
+    for i in range(data.shape[0]):
+        data[i] += strength[None]
+```
+
+Use a scalar argument for a host-supplied value that simply changes per call.
+A scalar field is useful when kernels also compute or retain that value. A
+zero-dimensional vector field works similarly: `gravity = tack.Vector.field(2,
+dtype=tack.f32, shape=())` and `gravity.fill([0.0, -9.8])`.
 
 ### Reductions
 
@@ -301,3 +320,6 @@ or a `CUdeviceptr` works too); a host address is rejected with `ValueError`.
 Read-only fields raise an error on `from_numpy()` and `fill()`, and a kernel
 call that passes one where the kernel may store to it raises `ValueError`
 before the kernel runs. Kernel reads work normally.
+
+For layout, views and simultaneous accesses, see [Memory and parallel correctness](13-memory-and-parallelism.md).
+For DLPack and borrowed allocations, see [Sharing arrays with other libraries](16-interoperability.md).

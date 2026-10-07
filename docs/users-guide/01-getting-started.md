@@ -11,16 +11,26 @@ It is split into three packages:
 
 ```bash
 # Install everything from source with uv
-git clone <repo-url>
+git clone https://github.com/berkgeveci/tack.git
 cd tack
-uv sync
+uv sync --extra cpu
 
 # Or install individual packages
 pip install tack-core          # core only
-pip install tack-core[cpu]     # core + CPU backend (LLVM JIT)
+pip install 'tack-core[cpu]'     # core + CPU backend (LLVM JIT)
 pip install tack-rendering     # rendering (pulls in tack-core)
 pip install tack-vis           # visualization (pulls in tack-core)
 ```
+
+Python 3.11 or newer is required. A bare `tack-core` install has the numerical
+API but no CPU JIT dependency; choose the backend extra you intend to run.
+`tack-vis` and `tack-rendering` also need a working backend. See
+[Backends](08-backends.md) for system runtimes required by GPU extras.
+
+The guide describes the current checkout, including additions recorded under
+[Unreleased in the changelog](https://github.com/berkgeveci/tack/blob/main/CHANGELOG.md).
+If an installed release lacks an API used here, run the source checkout or check
+its release notes. The tutorial scripts below are included in this checkout.
 
 ## Your First Kernel
 
@@ -50,6 +60,14 @@ result = out.to_numpy()
 print(result[:5])  # [2. 3. 4. 5. 6.]
 ```
 
+Save this example as `first_kernel.py` and run `python first_kernel.py` in your
+installed environment, or `uv run python first_kernel.py` from the checkout.
+The result assertion you can add is:
+
+```python
+np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32) + 2.0)
+```
+
 A kernel is a Python function decorated with `@tack.kernel`. The outermost
 `for i in range(...)` becomes a parallel loop — each iteration runs as a
 separate thread on the GPU (or is split across CPU cores).
@@ -70,8 +88,10 @@ All examples accept `--arch` on the command line:
 uv run python packages/tack-core/examples/01_hello_tack.py --arch metal
 ```
 
-The same kernel code runs on all backends — Tack handles the compilation
-pipeline for each target.
+This kernel uses the portable numerical subset and runs on all five backends.
+Backend capabilities still matter: Metal has no `f64`, and CPU has no shared
+workgroup memory. Initialize before allocating fields; a later backend switch
+does not migrate them.
 
 ## How It Works
 
@@ -86,3 +106,19 @@ When you call a kernel for the first time, Tack:
 LLVM and vendor compilers optimize the generated code. Subsequent calls
 with the same specialization reuse the compiled kernel; dtypes, vector
 widths, baked-in shapes, and template structure can require another variant.
+
+## A useful next step
+
+Read [From Python to a Tack program](12-execution-model.md) to understand the
+host/kernel boundary, then work through [Heat diffusion](tutorials/heat.md).
+The [tutorial gallery](tutorials/index.md) offers seven complete programs with
+figures, downloadable source, and checks of their results.
+
+The numerical tutorials need NumPy and the selected Tack backend. To save their
+optional plots, also install Matplotlib:
+
+```bash
+pip install matplotlib
+# From a uv checkout, without changing project dependencies:
+uv run --with matplotlib python docs/examples/heat.py --output heat.png
+```

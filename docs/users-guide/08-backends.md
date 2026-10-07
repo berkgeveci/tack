@@ -157,8 +157,8 @@ in-process using `libocloc`, then loaded via `zeModuleCreate`.
 
 **`f64` depends on the device.** Some Intel GPUs implement double precision
 and some don't. The backend asks the device during `tack.init()` and adds
-`f64` to its supported types only when the device reports it. `f64` atomics
-follow the same answer. Check `get_backend().supports_f64` rather than
+`f64` to its supported types only when the device reports it. Level Zero field atomics remain limited to `i32`, `u32` and `f32`, even
+on a device with `f64` storage. Check `get_backend().supports_f64` rather than
 assuming.
 
 **VTK device interop needs a shared context.** A Level Zero pointer is
