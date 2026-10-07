@@ -60,19 +60,29 @@ def run(arch="cpu", check=False):
     return image
 
 
-def plot(image, output):
-    import matplotlib.pyplot as plt
+def save_figure(image, output):
+    from vtkmodules.util.numpy_support import numpy_to_vtk
+    from vtkmodules.vtkCommonDataModel import vtkImageData
+    from vtkmodules.vtkIOImage import vtkPNGWriter
 
-    plt.imsave(output, image)
+    # The Tack canvas has top-first rows; VTK image data has bottom-first rows.
+    pixels = np.ascontiguousarray(image[::-1]).reshape(-1, 4)
+    data = vtkImageData()
+    data.SetDimensions(image.shape[1], image.shape[0], 1)
+    data.GetPointData().SetScalars(numpy_to_vtk(pixels, deep=True))
+    writer = vtkPNGWriter()
+    writer.SetFileName(str(output))
+    writer.SetInputData(data)
+    writer.Write()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", help="Save the rendered image (requires matplotlib)")
+    parser.add_argument("--output", help="Save the rendered image (requires VTK)")
     args = parser.parse_args()
     image = run(args.arch, args.check)
     if args.output:
-        plot(image, args.output)
+        save_figure(image, args.output)
     print("Isosurface: check passed" if args.check else "Isosurface: render complete")

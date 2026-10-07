@@ -9,7 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody", "isosurface")
+EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody", "isosurface",
+            "kernel_results", "array_sizes")
 QUICKSTARTS = (
     "01-getting-started", "12-execution-model", "14-vectors-and-matrices",
     "09-visualization", "10-rendering", "15-debugging-and-timing", "16-interoperability",
@@ -41,6 +42,8 @@ def check_quickstarts():
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
+    parser.add_argument("--vtk", action="store_true",
+                        help="Also check CPU interop with a DLPack-enabled VTK build")
     args = parser.parse_args()
     for name in EXAMPLES:
         path = Path(__file__).with_name(f"{name}.py")
@@ -51,6 +54,10 @@ def main():
     if args.arch == "cpu":
         check_quickstarts()
         print(f"All {len(QUICKSTARTS)} Markdown quick starts passed on cpu.")
+    if args.vtk:
+        print("Checking VTK interop on cpu", flush=True)
+        subprocess.run([sys.executable, str(Path(__file__).with_name("vtk_interop.py"))],
+                       check=True, timeout=120)
 
 
 if __name__ == "__main__":

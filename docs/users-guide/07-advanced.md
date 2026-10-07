@@ -48,6 +48,27 @@ def generic_process(data, out):
 
 This works with both `f32` and `i32` fields without separate kernels.
 
+### Derive a scratch size from a field
+
+Size expressions can combine declared constants and resolved field dimensions.
+This example reserves two scalars per column, then sums the populated scratch:
+
+```python
+--8<-- "docs/examples/array_sizes.py:scratch"
+```
+
+For a four-column input, `PAIR * data.shape[1]` resolves to eight elements.
+A seven-column input creates a specialization with fourteen. A changing row
+width changes this allocation size; a scalar argument holding that width would
+remain a runtime value and would not supply a portable GPU array size.
+
+The scratch is deliberately simple to make the allocation visible; this row
+calculation could accumulate directly without an array. [Download the complete
+example](../examples/array_sizes.py) and check both widths with
+`uv run python docs/examples/array_sizes.py --arch metal --check`.
+The [N-body tutorial](tutorials/nbody.md) uses the same constant-expression
+support for a shared array containing three coordinates per tile entry.
+
 ### Passing Local Arrays to @tack.func
 
 Local arrays can be passed to `@tack.func` functions, enabling methods that

@@ -59,7 +59,7 @@ plausible image as evidence of a conservative transport method.
 
 ```bash
 uv run python docs/examples/dye.py --arch cpu --check
-uv run --with matplotlib python docs/examples/dye.py --output dye.png
+uv run --with vtk python docs/examples/dye.py --output dye.png
 ```
 
 The check compares several steps with a separate NumPy bilinear implementation

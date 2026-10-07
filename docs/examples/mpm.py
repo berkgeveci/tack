@@ -124,29 +124,88 @@ def run(arch="cpu", check=False):
     return snapshots
 
 
-def plot(snapshots, output):
-    import matplotlib.pyplot as plt
+def save_figure(snapshots, output):
+    import vtkmodules.vtkRenderingFreeType
+    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+    from vtkmodules.util.numpy_support import numpy_to_vtk
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonDataModel import vtkPolyData
+    from vtkmodules.vtkFiltersGeneral import vtkVertexGlyphFilter
+    from vtkmodules.vtkFiltersSources import vtkOutlineSource
+    from vtkmodules.vtkIOImage import vtkPNGWriter
+    from vtkmodules.vtkRenderingCore import (
+        vtkActor,
+        vtkPolyDataMapper,
+        vtkRenderer,
+        vtkRenderWindow,
+        vtkTextActor,
+        vtkWindowToImageFilter,
+    )
 
-    fig, axes = plt.subplots(1, 4, figsize=(12, 3))
-    for ax, x, step in zip(axes, snapshots, (0, 300, 600, 900), strict=True):
-        ax.scatter(x[:, 0], x[:, 1], s=1, color="#2563eb")
-        ax.set(xlim=(0, 1), ylim=(0, 1), aspect="equal", title=f"Step {step}")
-        ax.set_xticks([])
-        ax.set_yticks([])
-    fig.tight_layout()
-    fig.savefig(output, dpi=140)
-    plt.close(fig)
+    window = vtkRenderWindow()
+    window.SetOffScreenRendering(True)
+    window.SetMultiSamples(0)
+    window.SetSize(1600, 440)
+    for index, (xy, step) in enumerate(zip(snapshots, (0, 300, 600, 900), strict=True)):
+        points = vtkPoints()
+        points.SetData(numpy_to_vtk(np.column_stack((xy, np.zeros(len(xy)))), deep=True))
+        particles = vtkPolyData()
+        particles.SetPoints(points)
+        vertices = vtkVertexGlyphFilter()
+        vertices.SetInputData(particles)
+        mapper = vtkPolyDataMapper()
+        mapper.SetInputConnection(vertices.GetOutputPort())
+        actor = vtkActor()
+        actor.SetMapper(mapper)
+        actor.GetProperty().SetColor(0.15, 0.39, 0.92)
+        actor.GetProperty().SetPointSize(2)
+        outline = vtkOutlineSource()
+        outline.SetBounds(0, 1, 0, 1, 0, 0)
+        border_mapper = vtkPolyDataMapper()
+        border_mapper.SetInputConnection(outline.GetOutputPort())
+        border = vtkActor()
+        border.SetMapper(border_mapper)
+        border.GetProperty().SetColor(0.2, 0.2, 0.2)
+        renderer = vtkRenderer()
+        renderer.SetBackground(1, 1, 1)
+        renderer.SetViewport(index / 4, 0, (index + 1) / 4, 1)
+        renderer.AddActor(actor)
+        renderer.AddActor(border)
+        title = vtkTextActor()
+        title.SetInput(f"Step {step}")
+        title.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+        title.SetPosition(0.5, 0.98)
+        title.GetTextProperty().SetJustificationToCentered()
+        title.GetTextProperty().SetVerticalJustificationToTop()
+        title.GetTextProperty().SetFontSize(20)
+        title.GetTextProperty().SetColor(0, 0, 0)
+        renderer.AddViewProp(title)
+        camera = renderer.GetActiveCamera()
+        camera.SetPosition(0.5, 0.5, 1)
+        camera.SetFocalPoint(0.5, 0.5, 0)
+        camera.ParallelProjectionOn()
+        camera.SetParallelScale(0.6)
+        window.AddRenderer(renderer)
+    window.Render()
+    capture = vtkWindowToImageFilter()
+    capture.SetInput(window)
+    capture.ReadFrontBufferOff()
+    writer = vtkPNGWriter()
+    writer.SetFileName(str(output))
+    writer.SetInputConnection(capture.GetOutputPort())
+    writer.Write()
+    window.Finalize()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", help="Save a figure (requires matplotlib; use without --check)")
+    parser.add_argument("--output", help="Save a figure (requires VTK; use without --check)")
     args = parser.parse_args()
     snapshots = run(args.arch, args.check)
     if args.output:
         if args.check:
             parser.error("use --output without --check")
-        plot(snapshots, args.output)
+        save_figure(snapshots, args.output)
     print("MPM: check passed" if args.check else "MPM: simulation complete")

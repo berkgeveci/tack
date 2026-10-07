@@ -40,8 +40,11 @@ second ensures every lane has finished reading before the next tile overwrites
 it. Both are outside lane-dependent conditions. Keep every lane participating;
 an early exit around either barrier violates the collective contract.
 
-The three shared arrays use fixed sizes. They are workgroup storage, unlike a
-`local_array`, which would give each lane a private array and no reuse.
+The shared array packs three coordinates per position. `TILE * 3` is a constant
+expression, so Tack resolves it to 768 scalars before generating GPU code. It
+is workgroup storage, unlike a `local_array`, which would give each lane a
+private array and no reuse. `TILE = 256` matches Tack's default 256-lane
+workgroup; changing the constant alone does not change that launch configuration.
 
 ## Choose a capability, not a backend name
 
@@ -60,12 +63,12 @@ bodies zero physical contribution.
 ```bash
 uv run python docs/examples/nbody.py --arch cpu --check
 uv run python docs/examples/nbody.py --arch metal --check
-uv run --with matplotlib python docs/examples/nbody.py --output nbody.png
+uv run --with vtk python docs/examples/nbody.py --output nbody.png
 ```
 
 The check compares the acceleration with a vectorized NumPy `float64` reference.
 On a GPU it also compares the tiled result with the plain kernel. A CPU check
-alone does not execute shared memory or barriers. The plot shows an XY projection
+alone does not execute shared memory or barriers. The VTK view shows an XY projection
 of 3-D positions and a subset of projected acceleration arrows.
 
 For performance work, compile both kernels first, reuse their fields, time warm

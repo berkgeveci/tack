@@ -58,7 +58,7 @@ backend and returns an `(height, width, 4)` `uint8` RGBA array.
 
 ```bash
 uv run python docs/examples/isosurface.py --check
-uv run --with matplotlib python docs/examples/isosurface.py --output sphere.png
+uv run --with vtk python docs/examples/isosurface.py --output sphere.png
 ```
 
 The small check verifies the vertex/triangle shapes, valid indices and a sphere

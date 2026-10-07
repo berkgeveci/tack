@@ -54,7 +54,7 @@ checkpoints; remove them when timing the timestep loop.
 
 ```bash
 uv run python docs/examples/heat.py --arch cpu --check
-uv run --with matplotlib python docs/examples/heat.py --arch metal --output heat.png
+uv run --with vtk python docs/examples/heat.py --arch metal --output heat.png
 ```
 
 The first command compares forty small-grid timesteps against a NumPy slice

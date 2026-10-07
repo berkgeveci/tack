@@ -35,20 +35,21 @@ def acceleration_plain(pos, acceleration, n):
 
 
 # --8<-- [start:tiled]
+TILE = tack.constant(256)
+
+
 @tack.kernel
 def acceleration_tiled(pos, acceleration, n):
     for i in range(n):
-        tx = tack.shared(tack.f32, 256)
-        ty = tack.shared(tack.f32, 256)
-        tz = tack.shared(tack.f32, 256)
+        xyz = tack.shared(tack.f32, TILE * 3)  # folded to 768 scalar components
         lane = tack.thread_id()
         a = tack.Vector([0.0, 0.0, 0.0])
-        for tile in range(n // 256):
-            q = pos[tile * 256 + lane]
-            tx[lane], ty[lane], tz[lane] = q.x, q.y, q.z
+        for tile in range(n // TILE):
+            q = pos[tile * TILE + lane]
+            xyz[3 * lane], xyz[3 * lane + 1], xyz[3 * lane + 2] = q.x, q.y, q.z
             tack.barrier()                    # finish filling before reading
-            for j in range(256):
-                a += interaction(pos[i], [tx[j], ty[j], tz[j]])
+            for j in range(TILE):
+                a += interaction(pos[i], [xyz[3 * j], xyz[3 * j + 1], xyz[3 * j + 2]])
             tack.barrier()                    # finish reading before reusing
         acceleration[i] = a
 # --8<-- [end:tiled]
@@ -63,7 +64,7 @@ def run(arch="cpu", check=False):
     pos.from_numpy(xyz)
     # --8<-- [start:choose]
     if get_backend().supports_workgroups:
-        if n % 256:
+        if n % TILE:
             raise ValueError("the tiled example needs a multiple of 256 bodies")
         acceleration_tiled(pos, acceleration, n)
     else:
@@ -82,27 +83,107 @@ def run(arch="cpu", check=False):
     return xyz, result
 
 
-def plot(result, output):
-    import matplotlib.pyplot as plt
+def save_figure(result, output):
+    import vtkmodules.vtkRenderingFreeType
+    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+    from vtkmodules.util.numpy_support import numpy_to_vtk
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonDataModel import vtkPolyData
+    from vtkmodules.vtkFiltersCore import vtkGlyph3D
+    from vtkmodules.vtkFiltersGeneral import vtkVertexGlyphFilter
+    from vtkmodules.vtkFiltersSources import vtkArrowSource
+    from vtkmodules.vtkIOImage import vtkPNGWriter
+    from vtkmodules.vtkRenderingCore import (
+        vtkActor,
+        vtkPolyDataMapper,
+        vtkRenderer,
+        vtkRenderWindow,
+        vtkTextActor,
+        vtkWindowToImageFilter,
+    )
 
     pos, acceleration = result
-    fig, ax = plt.subplots(figsize=(5, 5))
-    ax.scatter(pos[:, 0], pos[:, 1], s=4, color="#2563eb")
+    # Project both positions and forces into the x-y plane.
+    xyz = pos.copy()
+    xyz[:, 2] = 0
+    points = vtkPoints()
+    points.SetData(numpy_to_vtk(xyz, deep=True))
+    bodies = vtkPolyData()
+    bodies.SetPoints(points)
+    vertices = vtkVertexGlyphFilter()
+    vertices.SetInputData(bodies)
+    mapper = vtkPolyDataMapper()
+    mapper.SetInputConnection(vertices.GetOutputPort())
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    actor.GetProperty().SetColor(0.15, 0.39, 0.92)
+    actor.GetProperty().SetPointSize(4)
+    actor.GetProperty().RenderPointsAsSpheresOn()
+    samples = vtkPolyData()
+    origins = vtkPoints()
+    origins.SetData(numpy_to_vtk(np.ascontiguousarray(xyz[::8]), deep=True))
+    samples.SetPoints(origins)
     scaled = acceleration / (np.linalg.norm(acceleration, axis=1).max() + 1e-12)
-    ax.quiver(pos[::8, 0], pos[::8, 1], scaled[::8, 0], scaled[::8, 1], color="#ea580c")
-    ax.set(aspect="equal", xlabel="x", ylabel="y", title="Bodies and gravitational acceleration")
-    fig.tight_layout()
-    fig.savefig(output, dpi=140)
-    plt.close(fig)
+    scaled[:, 2] = 0
+    samples.GetPointData().SetVectors(numpy_to_vtk(np.ascontiguousarray(scaled[::8]), deep=True))
+    arrow = vtkArrowSource()
+    arrow.SetShaftRadius(0.04)
+    arrow.SetTipRadius(0.15)
+    glyphs = vtkGlyph3D()
+    glyphs.SetInputData(samples)
+    glyphs.SetSourceConnection(arrow.GetOutputPort())
+    glyphs.SetVectorModeToUseVector()
+    glyphs.SetScaleModeToScaleByVector()
+    glyphs.SetScaleFactor(0.8)
+    glyphs.OrientOn()
+    arrow_mapper = vtkPolyDataMapper()
+    arrow_mapper.SetInputConnection(glyphs.GetOutputPort())
+    arrow_mapper.ScalarVisibilityOff()
+    arrows = vtkActor()
+    arrows.SetMapper(arrow_mapper)
+    arrows.GetProperty().SetColor(0.92, 0.35, 0.05)
+    arrows.GetProperty().LightingOff()
+    renderer = vtkRenderer()
+    renderer.SetBackground(1, 1, 1)
+    renderer.AddActor(actor)
+    renderer.AddActor(arrows)
+    camera = renderer.GetActiveCamera()
+    camera.SetPosition(0, 0, 1)
+    camera.SetFocalPoint(0, 0, 0)
+    camera.ParallelProjectionOn()
+    camera.SetParallelScale(float(np.abs(xyz).max()) * 1.15)
+    title = vtkTextActor()
+    title.SetInput("Bodies and gravitational acceleration (x-y)")
+    title.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+    title.SetPosition(0.5, 0.98)
+    title.GetTextProperty().SetJustificationToCentered()
+    title.GetTextProperty().SetVerticalJustificationToTop()
+    title.GetTextProperty().SetFontSize(20)
+    title.GetTextProperty().SetColor(0, 0, 0)
+    renderer.AddViewProp(title)
+    window = vtkRenderWindow()
+    window.SetOffScreenRendering(True)
+    window.SetMultiSamples(0)
+    window.SetSize(640, 640)
+    window.AddRenderer(renderer)
+    window.Render()
+    capture = vtkWindowToImageFilter()
+    capture.SetInput(window)
+    capture.ReadFrontBufferOff()
+    writer = vtkPNGWriter()
+    writer.SetFileName(str(output))
+    writer.SetInputConnection(capture.GetOutputPort())
+    writer.Write()
+    window.Finalize()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", help="Save a figure (requires matplotlib)")
+    parser.add_argument("--output", help="Save a figure (requires VTK)")
     args = parser.parse_args()
     result = run(args.arch, args.check)
     if args.output:
-        plot(result, args.output)
+        save_figure(result, args.output)
     print("N-body: check passed" if args.check else "N-body: force calculation complete")

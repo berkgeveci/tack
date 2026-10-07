@@ -115,10 +115,10 @@ The [tutorial gallery](tutorials/index.md) offers seven complete programs with
 figures, downloadable source, and checks of their results.
 
 The numerical tutorials need NumPy and the selected Tack backend. To save their
-optional plots, also install Matplotlib:
+optional plots, also install VTK:
 
 ```bash
-pip install matplotlib
+pip install vtk
 # From a uv checkout, without changing project dependencies:
-uv run --with matplotlib python docs/examples/heat.py --output heat.png
+uv run --with vtk python docs/examples/heat.py --output heat.png
 ```

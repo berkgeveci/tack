@@ -72,7 +72,7 @@ operation with a count known per input item.
 
 ```bash
 uv run python docs/examples/contours.py --check
-uv run --with matplotlib python docs/examples/contours.py --output contours.png
+uv run --with vtk python docs/examples/contours.py --output contours.png
 ```
 
 The check verifies scan offsets against NumPy cumulative sums, valid nonzero

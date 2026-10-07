@@ -112,29 +112,85 @@ def run(arch="cpu", check=False):
     return snapshots
 
 
-def plot(snapshots, output):
-    import matplotlib.pyplot as plt
-
-    fig, axes = plt.subplots(1, 3, figsize=(9, 3))
-    scale = max(np.log1p(x).max() for x in snapshots)
-    for ax, trail, frame in zip(axes, snapshots, (100, 200, 300), strict=True):
-        ax.imshow(np.log1p(trail.T), origin="lower", cmap="magma", vmin=0, vmax=scale)
-        ax.set_title(f"Frame {frame}")
-        ax.set_axis_off()
-    fig.tight_layout()
-    fig.savefig(output, dpi=140)
-    plt.close(fig)
+def save_figure(snapshots, output):
+    import vtkmodules.vtkRenderingFreeType  # register text rendering
+    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401  # register the rendering backend
+    from vtkmodules.util.numpy_support import numpy_to_vtk
+    from vtkmodules.vtkCommonDataModel import vtkImageData
+    from vtkmodules.vtkImagingCore import vtkImageMapToColors
+    from vtkmodules.vtkIOImage import vtkPNGWriter
+    from vtkmodules.vtkRenderingCore import (
+        vtkColorTransferFunction,
+        vtkImageActor,
+        vtkRenderer,
+        vtkRenderWindow,
+        vtkTextActor,
+        vtkWindowToImageFilter,
+    )
+    scale = max(float(np.log1p(x).max()) for x in snapshots)
+    # One shared colour range makes changes across panels comparable.
+    colour = vtkColorTransferFunction()
+    for fraction, rgb in ((0.0, (0.0, 0.0, 0.0)), (0.25, (0.2, 0.04, 0.35)),
+                          (0.5, (0.6, 0.1, 0.35)), (0.75, (0.95, 0.4, 0.1)),
+                          (1.0, (1.0, 0.95, 0.5))):
+        colour.AddRGBPoint(fraction * scale, *rgb)
+    window = vtkRenderWindow()
+    window.SetOffScreenRendering(True)
+    window.SetMultiSamples(0)
+    window.SetSize(400 * len(snapshots), 440)
+    for index, (snapshot, label) in enumerate(zip(snapshots, ("Frame 100", "Frame 200", "Frame 300"), strict=True)):
+        data = np.ascontiguousarray(np.log1p(snapshot.T))
+        image = vtkImageData()
+        image.SetDimensions(data.shape[1], data.shape[0], 1)
+        image.GetPointData().SetScalars(numpy_to_vtk(data.ravel(), deep=True))
+        mapped = vtkImageMapToColors()
+        mapped.SetInputData(image)
+        mapped.SetLookupTable(colour)
+        mapped.SetOutputFormatToRGB()
+        mapped.Update()
+        actor = vtkImageActor()
+        actor.GetMapper().SetInputData(mapped.GetOutput())
+        actor.InterpolateOff()
+        renderer = vtkRenderer()
+        renderer.SetBackground(1, 1, 1)
+        renderer.SetViewport(index / len(snapshots), 0, (index + 1) / len(snapshots), 1)
+        renderer.AddActor(actor)
+        title = vtkTextActor()
+        title.SetInput(label)
+        title.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+        title.SetPosition(0.5, 0.98)
+        title.GetTextProperty().SetJustificationToCentered()
+        title.GetTextProperty().SetVerticalJustificationToTop()
+        title.GetTextProperty().SetFontSize(20)
+        title.GetTextProperty().SetColor(0, 0, 0)
+        renderer.AddViewProp(title)
+        camera = renderer.GetActiveCamera()
+        cx, cy = (data.shape[1] - 1) / 2, (data.shape[0] - 1) / 2
+        camera.SetPosition(cx, cy, 1)
+        camera.SetFocalPoint(cx, cy, 0)
+        camera.ParallelProjectionOn()
+        camera.SetParallelScale(data.shape[0] * 0.6)
+        window.AddRenderer(renderer)
+    window.Render()
+    capture = vtkWindowToImageFilter()
+    capture.SetInput(window)
+    capture.ReadFrontBufferOff()
+    writer = vtkPNGWriter()
+    writer.SetFileName(str(output))
+    writer.SetInputConnection(capture.GetOutputPort())
+    writer.Write()
+    window.Finalize()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", help="Save a figure (requires matplotlib; use without --check)")
+    parser.add_argument("--output", help="Save a figure (requires VTK; use without --check)")
     args = parser.parse_args()
     images = run(args.arch, args.check)
     if args.output:
         if args.check:
             parser.error("use --output without --check")
-        plot(images, args.output)
+        save_figure(images, args.output)
     print("Physarum: check passed" if args.check else "Physarum: simulation complete")

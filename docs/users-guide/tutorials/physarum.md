@@ -58,7 +58,7 @@ adding one deposit per agent and multiplying by the evaporation factor.
 
 ```bash
 uv run python docs/examples/physarum.py --check
-uv run --with matplotlib python docs/examples/physarum.py --output physarum.png
+uv run --with vtk python docs/examples/physarum.py --output physarum.png
 ```
 
 The check verifies that positions remain in the periodic domain, values remain

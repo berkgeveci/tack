@@ -3,15 +3,11 @@
 """Regenerate the tutorial figures from actual CPU computations.
 
 From the checkout:
-uv run --with matplotlib python docs/examples/figures.py
+uv run --with vtk python docs/examples/figures.py
 """
 
 import argparse
 from pathlib import Path
-
-import matplotlib
-
-matplotlib.use("Agg")
 
 import contours
 import dye
@@ -31,7 +27,7 @@ def main():
     for module in (heat, dye, physarum, contours, mpm, nbody, isosurface):
         print(f"Generating {module.__name__} on cpu", flush=True)
         result = module.run("cpu")
-        module.plot(result, args.output / f"{module.__name__}.png")
+        module.save_figure(result, args.output / f"{module.__name__}.png")
 
 
 if __name__ == "__main__":

@@ -76,7 +76,7 @@ parallel loop, with nested stencil loops sequential within an iteration.
 
 ```bash
 uv run python docs/examples/mpm.py --check
-uv run --with matplotlib python docs/examples/mpm.py --output mpm.png
+uv run --with vtk python docs/examples/mpm.py --output mpm.png
 ```
 
 The small check verifies total scattered mass and finite, in-domain positions.

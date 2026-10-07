@@ -90,31 +90,91 @@ def run(arch="cpu", check=False):
     return points, n
 
 
-def plot(result, output):
-    import matplotlib.pyplot as plt
-    from matplotlib.collections import LineCollection
+def save_figure(result, output):
+    import vtkmodules.vtkRenderingFreeType
+    import vtkmodules.vtkRenderingOpenGL2  # noqa: F401
+    from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkPolyData
+    from vtkmodules.vtkIOImage import vtkPNGWriter
+    from vtkmodules.vtkRenderingAnnotation import vtkCubeAxesActor2D
+    from vtkmodules.vtkRenderingCore import (
+        vtkActor,
+        vtkPolyDataMapper,
+        vtkRenderer,
+        vtkRenderWindow,
+        vtkTextActor,
+        vtkWindowToImageFilter,
+    )
 
-    lines, n = result
-    fig, ax = plt.subplots(figsize=(5, 5))
-    ax.add_collection(LineCollection(lines, colors="#2563eb", linewidths=2))
-    ax.set(xlim=(-1, 1), ylim=(-1, 1), aspect="equal", xlabel="x", ylabel="y")
-    grid = np.linspace(-1, 1, n + 1)
-    ax.set_xticks(grid[::4], minor=True)
-    ax.set_yticks(grid[::4], minor=True)
-    ax.grid(which="minor", alpha=0.25)
-    ax.set_title(f"{len(lines)} segments from {n} × {n} cells")
-    fig.tight_layout()
-    fig.savefig(output, dpi=140)
-    plt.close(fig)
+    segments, n = result
+    xy = segments.reshape(-1, 2)
+    points = vtkPoints()
+    points.SetData(numpy_to_vtk(np.column_stack((xy, np.zeros(len(xy)))), deep=True))
+    cells = vtkCellArray()
+    cells.SetData(numpy_to_vtkIdTypeArray(np.arange(len(segments) + 1, dtype=np.int64) * 2,
+                                        deep=True),
+                  numpy_to_vtkIdTypeArray(np.arange(len(xy), dtype=np.int64), deep=True))
+    lines = vtkPolyData()
+    lines.SetPoints(points)
+    lines.SetLines(cells)
+    mapper = vtkPolyDataMapper()
+    mapper.SetInputData(lines)
+    actor = vtkActor()
+    actor.SetMapper(mapper)
+    actor.GetProperty().SetColor(0.15, 0.39, 0.92)
+    actor.GetProperty().SetLineWidth(3)
+    renderer = vtkRenderer()
+    renderer.SetBackground(1, 1, 1)
+    renderer.AddActor(actor)
+    camera = renderer.GetActiveCamera()
+    camera.SetPosition(0, 0, 1)
+    camera.SetFocalPoint(0, 0, 0)
+    camera.ParallelProjectionOn()
+    camera.SetParallelScale(1.3)
+    axes = vtkCubeAxesActor2D()
+    axes.SetBounds(-1, 1, -1, 1, 0, 0)
+    axes.SetCamera(camera)
+    axes.SetXLabel("x")
+    axes.SetYLabel("y")
+    axes.SetNumberOfLabels(5)
+    axes.SetZAxisVisibility(False)
+    axes.GetAxisTitleTextProperty().SetColor(0, 0, 0)
+    axes.GetAxisLabelTextProperty().SetColor(0, 0, 0)
+    axes.GetProperty().SetColor(0.2, 0.2, 0.2)
+    renderer.AddViewProp(axes)
+    title = vtkTextActor()
+    title.SetInput(f"{len(segments)} segments from {n} x {n} cells")
+    title.GetPositionCoordinate().SetCoordinateSystemToNormalizedViewport()
+    title.SetPosition(0.5, 0.98)
+    title.GetTextProperty().SetJustificationToCentered()
+    title.GetTextProperty().SetVerticalJustificationToTop()
+    title.GetTextProperty().SetFontSize(20)
+    title.GetTextProperty().SetColor(0, 0, 0)
+    renderer.AddViewProp(title)
+    window = vtkRenderWindow()
+    window.SetOffScreenRendering(True)
+    window.SetMultiSamples(0)
+    window.SetSize(640, 640)
+    window.AddRenderer(renderer)
+    window.Render()
+    capture = vtkWindowToImageFilter()
+    capture.SetInput(window)
+    capture.ReadFrontBufferOff()
+    writer = vtkPNGWriter()
+    writer.SetFileName(str(output))
+    writer.SetInputConnection(capture.GetOutputPort())
+    writer.Write()
+    window.Finalize()
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", help="Save a figure (requires matplotlib)")
+    parser.add_argument("--output", help="Save a figure (requires VTK)")
     args = parser.parse_args()
     result = run(args.arch, args.check)
     if args.output:
-        plot(result, args.output)
+        save_figure(result, args.output)
     print("Contours: check passed" if args.check else f"Contours: {len(result[0])} segments")

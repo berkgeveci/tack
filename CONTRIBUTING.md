@@ -49,6 +49,13 @@ run the same validator with `--arch metal|cuda|hip|level_zero` on a hardware hos
 Figures are generated from actual script outputs by `docs/examples/figures.py`.
 Keep upstream source credits and the applicable license beside adapted examples.
 
+Generate the figures with `uv run --with vtk python docs/examples/figures.py`.
+For a local VTK build, put its matching Python site-packages directory on
+`PYTHONPATH` and omit `--with vtk`. VTK is imported only when writing figures;
+the ordinary numerical checks do not depend on it. To also check the VTK/Tack
+CPU exchange, use `uv run python docs/examples/validate.py --arch cpu --vtk`
+with a build that provides `vtkmodules.util.dlpack_support`.
+
 The guides under `docs/` are plain markdown and were written before the site
 existed. Keep them that way where you can: the Material-specific syntax is
 confined to a few places on purpose (content tabs on the landing page,

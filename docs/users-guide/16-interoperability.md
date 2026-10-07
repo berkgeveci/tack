@@ -107,3 +107,42 @@ Level Zero sharing with VTK needs a shared context. Call
 that exposes the necessary handles. The [Visualization](09-visualization.md#vtk-interop)
 chapter describes that setup; a system VTK wheel does not necessarily offer
 every device-interoperability path.
+
+### A complete CPU exchange
+
+The [VTK image example](../examples/vtk_interop.py) creates a `vtkImageData`,
+wraps its scalar array with Tack, fills it in a kernel, and exports the field
+back to VTK. Each image point stores its squared distance from the centre.
+VTK image indices are x-fast, so the kernel decomposes the flat index accordingly:
+
+```python
+--8<-- "docs/examples/vtk_interop.py:kernel"
+```
+
+The two conversions below share the allocation and retain its owners:
+
+```python
+--8<-- "docs/examples/vtk_interop.py:share"
+```
+
+The script compares VTK's values against a NumPy reference and checks that a
+write through Tack appears in both VTK arrays. It uses the CPU backend;
+Metal cannot import this VTK host allocation without copying. A GPU exchange
+needs compatible device arrays and the context rules described above.
+
+Use a VTK build exposing `vtkmodules.util.dlpack_support`. Its Python version
+must match the interpreter running Tack. Add the build's Python site-packages
+directory to `PYTHONPATH` if it is not installed in that environment. A VTK
+wheel sufficient for the tutorial figures may lack this DLPack module.
+
+```bash
+uv run python docs/examples/vtk_interop.py --output radius.vti
+uv run python docs/examples/validate.py --arch cpu --vtk
+```
+
+`radius.vti` can be read by VTK or ParaView. The validator's VTK option is
+explicit because the usual CPU and GPU numerical checks do not need VTK.
+
+```python
+--8<-- "docs/examples/vtk_interop.py"
+```
