@@ -237,6 +237,31 @@ def sum_segments(offsets, data, output, n_cells):
         output[c] = total
 ```
 
+## Returning a Value
+
+A kernel whose last statement is `return expr`, after the parallel loop,
+hands that value back to the caller. The return annotation names the
+type: `-> tack.f32`, `-> float` (f32) or `-> int` (i32).
+
+```python
+@tack.kernel
+def count_live(cells, count, n) -> int:
+    for i in range(n):
+        if cells[i] > 0:
+            tack.atomic_add(count, 0, 1)
+    return count[0]
+
+live = count_live(cells, count, n)        # a Python int
+```
+
+The expression is evaluated once, after the launch, by a one-thread
+epilogue kernel that stores it into a hidden field the call reads back.
+So it may use fields, arguments, constants and locals bound before the
+loop, but not a local the loop assigns, which has a value per thread.
+This replaces writing a one-element field and reading it with
+`to_numpy()` or `f[0]`; the cost is one extra, tiny launch and one
+element's transfer.
+
 ## Kernel Caching
 
 Kernels are compiled on first call. A compiled *variant* is reused by later

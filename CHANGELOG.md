@@ -7,6 +7,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- A kernel may end in `return expr`, with a return annotation naming the
+  type (`-> tack.f32`, `-> float`, `-> int`); the call returns that value
+  as a Python number. It is computed after the launch by a one-thread
+  epilogue kernel that stores it into a hidden field, so it may read
+  fields, arguments, constants and locals bound outside the loop, not a
+  local the loop assigns. A return anywhere else is still rejected.
+- An atomic is an expression as well as a statement: `slot =
+  tack.atomic_add(counter, 0, 1)` is the element's value just before the
+  update, on every backend and for every supported type, which is how
+  threads claim unique slots and append to a shared list. On a vector
+  field with a vector value it is the vector of the components' old
+  values. Barriers remain statement-only.
 - Vector and matrix constants: `tack.constant((0.5, 0.5, 0.0))` is the
   vector with those components in a kernel, `tack.constant(((1, 0), (0, 1)))`
   the matrix with those rows, typed per component as scalar constants
@@ -189,6 +201,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- `test_a_stale_parallel_rate_gets_re_measured` failed about one run in
+  thirteen on two-thread machines and once on a CI runner: it asserted
+  that two threads beat one on a bandwidth-bound kernel, which they need
+  not. The scenario now uses a compute-bound kernel, so the assertion
+  tests the recovery path it was written for.
 - The size of a local or shared array may be arithmetic on constants and
   dimensions: `tack.local_array(tack.f32, MAX_HITS * 4)` is folded to one
   constant when dimensions are resolved. Only a literal was, and Metal

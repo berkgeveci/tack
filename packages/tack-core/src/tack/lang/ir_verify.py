@@ -14,6 +14,7 @@ EXPRS = {
     ir.IRIfExp, ir.IRBinOp, ir.IRUnaryOp, ir.IRCompare, ir.IRBoolOp,
     ir.IRFieldLoad, ir.IRConstant, ir.IRName, ir.IRAttribute, ir.IRCall,
     ir.IRCast, ir.IRBlockReduce, ir.IRThreadId, ir.IRDimSize, ir.IRTextureSample,
+    ir.IRAtomicOp,     # as the value of an assignment: the element's old value
 }
 STMTS = {
     ir.IRParallelFor, ir.IRSequentialFor, ir.IRWhile, ir.IRBreak, ir.IRContinue,

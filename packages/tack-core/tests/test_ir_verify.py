@@ -32,8 +32,8 @@ class UnknownNode(ir.IRNode):
     (UnknownNode(), 'expected expr node'),
     (None, 'expected expr node'),
     (ir.IRBarrier(), 'expected expr node'),
-    (ir.IRAtomicOp('add', ir.IRName('out'), ir.IRConstant(0), ir.IRConstant(1)),
-     'expected expr node'),
+    (ir.IRAtomicOp('swap', ir.IRName('out'), ir.IRConstant(0), ir.IRConstant(1)),
+     'op'),   # an atomic may be an expression now; an unknown operation may not
     (ir.IRBinOp('unsupported', ir.IRConstant(1), ir.IRConstant(2)), 'unsupported operator'),
     (ir.IRBoolOp('and', [ir.IRConstant(1)]), 'needs two values'),
     (ir.IRName('missing'), 'unbound name'),

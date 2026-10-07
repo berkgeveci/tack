@@ -216,6 +216,8 @@ class LLVMCodeGen:
             return self._emit_cast(node)
         if isinstance(node, ir.IRIfExp):
             return self._emit_ifexp(node)
+        if isinstance(node, ir.IRAtomicOp):
+            return self._emit_atomic_op(node)
         if isinstance(node, ir.IRTextureSample):
             return self._emit_texture_sample(node)
         raise NotImplementedError(f"Cannot emit expression: {type(node).__name__}")
@@ -517,8 +519,8 @@ class LLVMCodeGen:
             self._emit_expr(node.value)
         self.builder.ret_void()
 
-    def _emit_atomic_op(self, node: ir.IRAtomicOp):
-        """Emit an atomic operation on a field element."""
+    def _emit_atomic_op(self, node: ir.IRAtomicOp) -> llvm_ir.Value:
+        """Emit an atomic operation on a field element; the value is the old element."""
         base_ptr = self._emit_expr(node.field)
         index = self._to_i64(self._emit_expr(node.index))
         value = self._emit_expr(node.value)
@@ -528,28 +530,23 @@ class LLVMCodeGen:
         value = self._coerce_to(value, elem_type, node.dtype in UNSIGNED_TYPES)
 
         if node.op == "add":
+            op = "fadd" if _is_float_type(elem_type) else "add"
+            old = self.builder.atomic_rmw(op, elem_ptr, value, "monotonic", name="atomic.old")
+        elif node.op in ("min", "max"):
             if _is_float_type(elem_type):
-                self.builder.atomic_rmw("fadd", elem_ptr, value, "monotonic")
+                # Float atomic min/max via compare-and-swap loop
+                old = self._emit_atomic_float_minmax(elem_ptr, value, node.op)
             else:
-                self.builder.atomic_rmw("add", elem_ptr, value, "monotonic")
-        elif node.op == "min":
-            if _is_float_type(elem_type):
-                # Float atomic min via compare-and-swap loop
-                self._emit_atomic_float_minmax(elem_ptr, value, "min")
-            else:
-                self.builder.atomic_rmw("umin" if node.dtype in UNSIGNED_TYPES else "min",
-                                        elem_ptr, value, "monotonic")
-        elif node.op == "max":
-            if _is_float_type(elem_type):
-                self._emit_atomic_float_minmax(elem_ptr, value, "max")
-            else:
-                self.builder.atomic_rmw("umax" if node.dtype in UNSIGNED_TYPES else "max",
-                                        elem_ptr, value, "monotonic")
+                op = ("u" if node.dtype in UNSIGNED_TYPES else "") + node.op
+                old = self.builder.atomic_rmw(op, elem_ptr, value, "monotonic", name="atomic.old")
         else:
             raise NotImplementedError(f"Atomic op: {node.op}")
+        if node.dtype in UNSIGNED_TYPES:
+            self._unsigned_vals.add(id(old))
+        return old
 
-    def _emit_atomic_float_minmax(self, ptr, value, op: str):
-        """Emit a float atomic min/max via compare-and-swap loop."""
+    def _emit_atomic_float_minmax(self, ptr, value, op: str) -> llvm_ir.Value:
+        """Emit a float atomic min/max via compare-and-swap loop; returns the old value."""
         bits_type = llvm_ir.IntType(32 if isinstance(value.type, llvm_ir.FloatType) else 64)
         bits_ptr = self.builder.bitcast(ptr, bits_type.as_pointer())
         initial = self.builder.load_atomic(bits_ptr, 'monotonic', bits_type.width // 8)
@@ -570,6 +567,9 @@ class LLVMCodeGen:
         old.add_incoming(observed, loop)
         self.builder.cbranch(success, done, loop)
         self.builder.position_at_end(done)
+        # The exchange succeeded with `old` as the expected value, which the
+        # final `observed` equals; it is the element's value before the update.
+        return self.builder.bitcast(observed, value.type, name="atomic.old")
 
     def _emit_local_alloc(self, node: ir.IRLocalAlloc):
         """Emit private scratch storage as a stack alloca."""

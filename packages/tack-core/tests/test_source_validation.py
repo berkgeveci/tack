@@ -44,7 +44,7 @@ from tack.lang.source_validation import UnsupportedSyntaxError
     ('print(i, end="")', 'Call'),
     ('out[i] = sqrt(value=1)', 'Call'),
     ('out[i] = sqrt(*values)', 'Starred'),
-    ('out[i] = tack.atomic_add(out, i, 1)', 'Call'),
+    ('out[i] = tack.barrier()', 'Call'),
     ('out[i] = tack.barrier()', 'Call'),
     ('for j in range(3, ignored=1):\n    out[i] = j', 'Call'),
     ('break', 'Break'),

@@ -192,6 +192,10 @@ def saxpy(x, y, out, alpha, n):
 saxpy(x, y, out, 2.5, 1000)  # alpha=2.5, n=1000 passed as scalars
 ```
 
+A kernel whose last statement is `return expr` (with a return annotation,
+`-> int` or `-> tack.f32`) gives the caller that value, computed after
+the launch: `live = count_live(cells, count, n)`.
+
 ### Constants
 
 A kernel does not see Python variables around it; reading one raises
@@ -239,6 +243,13 @@ def find_minmax(x, min_out, max_out):
     for i in range(x.shape[0]):
         tack.atomic_min(min_out, 0, x[i])
         tack.atomic_max(max_out, 0, x[i])
+
+# The old value: how a thread claims a unique slot
+@tack.kernel
+def compact(values, out, count, n):
+    for i in range(n):
+        if values[i] > 0.0:
+            out[tack.atomic_add(count, 0, 1)] = values[i]
 
 # One index per dimension, and a whole vector into a vector field
 @tack.kernel

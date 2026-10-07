@@ -1405,7 +1405,7 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name in ("atomic_add", "atomic_min", "atomic_max"):
             if len(node.args) != 3:
                 raise NotImplementedError(f"{func_name}() takes exactly 3 arguments (field, index, value)")
-            return self._visit_atomic(node, func_name)
+            return self._visit_atomic(node, func_name, as_statement=False)
 
         # print() for kernel debugging
         if func_name == "print":
@@ -1463,7 +1463,7 @@ class KernelTransformer(ast.NodeVisitor):
                                      lambda row: ir.IRCall(func_name=func_name, args=row))
         return ir.IRCall(func_name=func_name, args=args)
 
-    def _visit_atomic(self, node: ast.Call, func_name: str):
+    def _visit_atomic(self, node: ast.Call, func_name: str, *, as_statement: bool):
         """``tack.atomic_<op>(field, index, value)``.
 
         The index is a flat index, or a tuple with one index per dimension,
@@ -1471,6 +1471,12 @@ class KernelTransformer(ast.NodeVisitor):
         vector value updates each component of the element the index
         names, one atomic per component. A scalar value there keeps the
         older meaning: the index is the flat index of one component.
+
+        As a statement the atomic is its own IR node. Anywhere else its
+        value is the element's value before the update, assigned to a
+        temporary among the pre-statements so that it takes effect in
+        source order relative to the other operands (C leaves the order of
+        operands unspecified); the expression then reads the temporary.
         """
         op = func_name.replace("atomic_", "")  # "add", "min", "max"
         field_node = node.args[0]
@@ -1488,32 +1494,63 @@ class KernelTransformer(ast.NodeVisitor):
                 raise self._source_error(
                     node, f"{func_name}()", f"names an element of a field of {ndim}-vectors; "
                     f"give it a {ndim}-vector, or the flat index of one component")
-            return ir.IRAtomicOp(op=op, field=field, index=index, value=value)
+            atomic = ir.IRAtomicOp(op=op, field=field, index=index, value=value)
+            if as_statement:
+                return atomic
+            return self._capture_atomic(atomic)
         if ndim is None:
             raise self._source_error(
                 node, f"{func_name}()", "gives a vector to a field of scalars")
         if len(value) != ndim:
             raise self._source_error(
                 node, f"{func_name}()", f"gives a {len(value)}-vector to a field of {ndim}-vectors")
-        # One atomic per component. They are statements, so they go where an
-        # inlined call's statements go, and the expression has no value.
+        # One atomic per component, each a statement among the
+        # pre-statements; as an expression the value is the vector of the
+        # components' old values.
         element = self._element_index(self._capture_value(index, self._pre_stmts))
         value = self._settle_components(value, self._pre_stmts)
+        olds = []
         for c, component in enumerate(value):
-            self._pre_stmts.append(ir.IRAtomicOp(
+            atomic = ir.IRAtomicOp(
                 op=op, field=field, index=self._component_index(element, ndim, c),
-                value=component))
-        return []
+                value=component)
+            if as_statement:
+                self._pre_stmts.append(atomic)
+            else:
+                olds.append(self._capture_atomic(atomic))
+        return VectorValue(olds, (ndim,)) if not as_statement else []
+
+    def _capture_atomic(self, atomic: ir.IRAtomicOp) -> ir.IRName:
+        """Perform the atomic now, in a pre-statement, and read its old value."""
+        name = self._fresh_name(f"__atomic_{self._inline_counter}__")
+        self._inline_counter += 1
+        self._pre_stmts.append(ir.IRAssign(name, atomic))
+        return ir.IRName(name)
 
     def visit_Expr(self, node: ast.Expr) -> ir.IRNode:
         """Expression statement (e.g., standalone function call)."""
         # Skip docstrings and other standalone string constants
         if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
             return None
+        atomic = self._atomic_call_name(node.value)
+        if atomic is not None:
+            # A statement of its own: the old value is not wanted.
+            value = self._visit_atomic(node.value, atomic, as_statement=True)
+            return None if isinstance(value, list) else value
         value = self.visit(node.value)
         # A function/atomic expression can have generated all its effects
         # in pre-statements. Its scalar result is unused here.
         return None if isinstance(value, (ir.IRName, list)) else value
+
+    def _atomic_call_name(self, node):
+        """``'atomic_add'`` etc. when ``node`` is a call of a Tack atomic, else None."""
+        if not isinstance(node, ast.Call) or self._call_bindings.device_func(node.func):
+            return None
+        try:
+            name = self._call_bindings.call_name(node.func)
+        except NotImplementedError:
+            return None
+        return name if name in ('atomic_add', 'atomic_min', 'atomic_max') else None
 
     # --- @tack.func inlining ---
 
