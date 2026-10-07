@@ -77,8 +77,8 @@ arrays are storage, not values: binding another name to one (`view = tmp`)
 is rejected, while indexing it or passing it to a device function is
 supported.
 Supporting device assertions later would require changing this contract
-and its rejection test together. Atomics and barriers are currently
-statement-only operations; their return values are not supported.
+and its rejection test together. Barriers are statement-only; an atomic
+is a statement or an expression whose value is the element's old value.
 
 **Required: device-function binding.** A static `@tack.func` call resolves
 to the function object bound in the defining kernel or device function's
@@ -933,8 +933,15 @@ not validate cooperative GPU execution.
 
 ## Atomic field updates
 
-`atomic_add`, `atomic_min` and `atomic_max` are statement-only operations on
-one scalar element of a global field. They do not return the previous value.
+`atomic_add`, `atomic_min` and `atomic_max` act on one scalar element of a
+global field. As a statement the old value is dropped; as an expression
+(`slot = tack.atomic_add(counter, 0, 1)`) the value is the element's value
+immediately before this update, as the hardware atomic returns it, and
+the atomic takes effect in source order among the expression's operands:
+it is performed before the expression that contains it is evaluated and
+after the operands to its left. On a vector field with a vector value the
+expression's value is the vector of the components' old values, each from
+its own atomic.
 The index is a flat, row-major index, or a tuple with one index per
 dimension, in which a vector of integers supplies one index per component.
 On a vector or matrix field, a value of the element's shape updates the

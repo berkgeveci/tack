@@ -102,8 +102,7 @@ class _SourceValidator(ast.NodeVisitor):
             name = self.call_bindings.call_name(node.func) if intrinsic else ''
         except NotImplementedError as error:
             self.reject(node, str(error))
-        if intrinsic and name in ('atomic_add', 'atomic_min', 'atomic_max', 'barrier') \
-                and node is not self.statement_call:
+        if intrinsic and name == 'barrier' and node is not self.statement_call:
             self.reject(node, f"{name}() is only supported as a statement")
         if intrinsic and name in ('barrier', 'thread_id') and node.args:
             self.reject(node, f"{name}() takes no arguments")

@@ -7,6 +7,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- An atomic is an expression as well as a statement: `slot =
+  tack.atomic_add(counter, 0, 1)` is the element's value just before the
+  update, on every backend and for every supported type, which is how
+  threads claim unique slots and append to a shared list. On a vector
+  field with a vector value it is the vector of the components' old
+  values. Barriers remain statement-only.
 - Vector and matrix constants: `tack.constant((0.5, 0.5, 0.0))` is the
   vector with those components in a kernel, `tack.constant(((1, 0), (0, 1)))`
   the matrix with those rows, typed per component as scalar constants

@@ -123,6 +123,7 @@ class CUDACodeGen:
         self._loop_end_name: str | None = None
         self._atomic64 = set()
         self._needs_float_atomic_min = False
+        self._needs_float_atomic_add = False      # OpenCL's f32 add helper
         self._needs_float_atomic_max = False
         self._integer_division_helpers = set()
         self._float_division_helpers = set()
@@ -479,7 +480,11 @@ class CUDACodeGen:
             self._emit(f'printf("{fmt_str}");')
 
     def _emit_atomic_op(self, node: ir.IRAtomicOp):
-        """Emit a CUDA atomic operation."""
+        """Emit a CUDA atomic operation as a statement; its old value is dropped."""
+        self._emit(f"{self._expr_atomic(node)};")
+
+    def _expr_atomic(self, node: ir.IRAtomicOp) -> str:
+        """The atomic as an expression whose value is the element's old value."""
         field = self._expr(node.field)
         index = self._expr(node.index)
         value = self._expr(node.value)
@@ -492,19 +497,18 @@ class CUDACodeGen:
         value = f"(({_C_TYPE_MAP[dtype]})({value}))"
         if dtype in (i64, u64, f64):
             self._atomic64.add((node.op, dtype))
-            self._emit(f"tack_atomic_{node.op}_{dtype.name}(&{field}[{index}], {value});")
-        elif node.op == "min" and dtype is f32:
+            return f"tack_atomic_{node.op}_{dtype.name}(&{field}[{index}], {value})"
+        if node.op == "min" and dtype is f32:
             self._needs_float_atomic_min = True
-            self._emit(f"atomicMinFloat(&{field}[{index}], {value});")
-        elif node.op == "max" and dtype is f32:
+            return f"atomicMinFloat(&{field}[{index}], {value})"
+        if node.op == "max" and dtype is f32:
             self._needs_float_atomic_max = True
-            self._emit(f"atomicMaxFloat(&{field}[{index}], {value});")
-        else:
-            _ATOMIC_FUNCS = {"add": "atomicAdd", "min": "atomicMin", "max": "atomicMax"}
-            func = _ATOMIC_FUNCS.get(node.op)
-            if func is None:
-                raise NotImplementedError(f"CUDA atomic op: {node.op}")
-            self._emit(f"{func}(&{field}[{index}], {value});")
+            return f"atomicMaxFloat(&{field}[{index}], {value})"
+        _ATOMIC_FUNCS = {"add": "atomicAdd", "min": "atomicMin", "max": "atomicMax"}
+        func = _ATOMIC_FUNCS.get(node.op)
+        if func is None:
+            raise NotImplementedError(f"CUDA atomic op: {node.op}")
+        return f"{func}(&{field}[{index}], {value})"
 
     def _emit_field_store(self, node: ir.IRFieldStore):
         field = self._expr(node.field)
@@ -598,6 +602,8 @@ class CUDACodeGen:
             return "threadIdx.x"
         if isinstance(node, ir.IRBlockReduce):
             return self._expr_block_reduce(node)
+        if isinstance(node, ir.IRAtomicOp):
+            return self._expr_atomic(node)
         raise NotImplementedError(f"CUDA expr: {type(node).__name__}")
 
     def _expr_block_reduce(self, node: ir.IRBlockReduce) -> str:

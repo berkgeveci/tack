@@ -240,6 +240,13 @@ def find_minmax(x, min_out, max_out):
         tack.atomic_min(min_out, 0, x[i])
         tack.atomic_max(max_out, 0, x[i])
 
+# The old value: how a thread claims a unique slot
+@tack.kernel
+def compact(values, out, count, n):
+    for i in range(n):
+        if values[i] > 0.0:
+            out[tack.atomic_add(count, 0, 1)] = values[i]
+
 # One index per dimension, and a whole vector into a vector field
 @tack.kernel
 def scatter(pos, vel, mass, grid_m, grid_v, inv_dx, n):

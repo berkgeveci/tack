@@ -124,10 +124,23 @@ Available atomics:
 - `tack.atomic_min(field, index, value)` — atomic minimum
 - `tack.atomic_max(field, index, value)` — atomic maximum
 
+Each one is also an expression whose value is the element's value just
+before the update, which is how threads claim unique slots and append to
+a shared list:
+
+```python
+@tack.kernel
+def compact(values, out, count, n):
+    for i in range(n):
+        if values[i] > 0.0:
+            slot = tack.atomic_add(count, 0, 1)    # the old count: this thread's slot
+            out[slot] = values[i]
+```
+
 For a multi-dimensional field the index is a tuple with one index per
 dimension, and a vector may supply several of them. On a vector field a
 vector value updates every component of the element, one atomic per
-component:
+component (and, as an expression, gives the vector of their old values):
 
 ```python
 @tack.kernel
