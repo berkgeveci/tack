@@ -141,7 +141,7 @@ if temperature[i, j] > melting:    # a host-side decision on one value
 
 This is for inspection and for decisions on single values. On CPU and
 Metal it reads unified memory directly; on the other backends every read
-is a transfer (on CUDA of just that element; on HIP and Level Zero, for
+is a transfer (on CUDA and Level Zero of just that element; on HIP, for
 now, of the whole field), so many elements are read at once with
 `to_numpy()`. Fields
 are not written by element from the host: build the values in a NumPy
