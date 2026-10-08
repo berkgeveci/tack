@@ -130,13 +130,23 @@ each dimension owns, and what basis turns them into a function:
 
 ```python
 Space(
+    topology,    # the mesh it lives on: a space owns the layout derived from it
     family,      # Constant, H1, L2, HCurl, HDiv, Trace(H1|L2|HCurl|HDiv), Values
     order,       # polynomial order; 0 for Constant
-    nodes,       # node placement: GaussLobatto, GaussLegendre, Equispaced, Positive
-    vdim,        # components per DOF (a 3-vector H1 field has vdim 3; HCurl/HDiv have 1)
+    variant,     # full tensor or serendipity (27 or 20 nodes on a quadratic hexahedron)
+    nodes,       # node placement: GaussLobatto, GaussLegendre, Equispaced, Bernstein
     layout,      # Shared (one value per global DOF) or PerCell (one tuple per cell)
 )
 ```
+
+A space is constructed on its topology, as MFEM's `FiniteElementSpace` is
+on a mesh, and owns the layout that follows: offsets for a PerCell
+layout, and for a Shared one of order above 1 the (cell, local DOF) ->
+DOF map built from the derived edges and faces, one per shape group.
+Equal spaces on one topology are one object, so fields on the same space
+share that layout. Components per value are the field's, not the
+space's: a 3-vector field and a scalar one in H1 order 2 share one DOF
+map (MFEM's `vdim`).
 
 The DOF counts per (shape, entity dimension) follow from the family and
 order, as in MFEM. That one rule expresses everything this proposal set
@@ -334,7 +344,8 @@ shapes and a rectilinear grid:
 | `topology.py` | `UnstructuredTopology`, `StructuredTopology`; cells as one `DomainGroup` per shape; `faces()` and `edges()` derived by sorting and cached |
 | `views.py` | the template mixins: entity kinds (cells, structured cells, faces, edges), geometry (`position`, `geometry_jacobian`, read from the geometry field), cell incidence, one per space, one per storage (`get(k)`), and how a point's value is addressed |
 | `arrays.py` | implicit arrays a field's values may be: `CartesianProduct` (a rectilinear grid's points), `ConstantArray`, `CountingArray`; helpers for any array |
-| `dataset.py` | spaces (`H1`, `Constant`, `L2`, `Values(on)`), `Field`, `DataSet` (geometry is its `"shape"` field), `for_each` |
+| `spaces.py` | spaces on a topology, each owning its layout: `H1(data)`, `L2(data)` (holds its offsets), `Constant(data)`, `Values(data, on)`; one object per (kind, parameters, topology) |
+| `dataset.py` | `Field` (a space and its values), `DataSet` (geometry is its `"shape"` field), `for_each` |
 | `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `jump`, `divergence`, `to_points` |
 | `interop/vtk.py` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant` |
 
@@ -410,6 +421,17 @@ What building it showed:
   corner by (i, j, k), so no flat point id is ever split; elsewhere
   (faces, edges, an unstructured topology over the same points) the flat
   id is split as before.
+- **Spaces own their layout.** A space is built on a topology --
+  `H1(data)`, `L2(data, order=1)`, `Values(data, "faces")` -- and is
+  interned there: equal spaces are one object, so fields on it share its
+  layout, and a field is just a space and its values. `L2` holds its
+  offsets (for an unstructured topology, the connectivity's own); every
+  space knows its size, so a field of the wrong length is refused, and
+  `for_each` refuses a field on another topology. An unstructured
+  topology takes `num_points`, since a dataset may have points no cell
+  uses, and `H1`'s size follows it. Order above 1 is accepted as a
+  parameter and refused as not yet built; it is where a space's own DOF
+  map will go.
 - **The mixins share one namespace.** A `ConstantArray` kept its number in
   `value`, which hid the spaces' `value(i, pc)` method; the kernel failed
   to compile with a message far from the cause. Building a view now

@@ -83,7 +83,7 @@ def test_faces_of_a_mixed_mesh(backend):
     assert shared == {(0, 1, 1, 0), (0, 5, 2, 0)}   # hex 0's +x and top faces
     assert alg.boundary_faces(data).shape[0] == 13
 
-    jumps = alg.jump(data, td.Field(td.Constant(), _scalars([1.0, 2.0, 5.0])))
+    jumps = alg.jump(data, td.Field(td.Constant(data), _scalars([1.0, 2.0, 5.0])))
     by_sides = dict(zip(map(tuple, sides), jumps.values.to_numpy()))
     assert by_sides[(0, 1, 1, 0)] == 1.0 and by_sides[(0, 5, 2, 0)] == 4.0
     assert np.count_nonzero(jumps.values.to_numpy()) == 2
@@ -100,7 +100,7 @@ def _closed_cells_check(data):
     side 0, and each cell knows which side it is."""
     normals, areas = alg.face_geometry(data)
     area_vectors = normals.values.to_numpy(vectors=True) * areas.values.to_numpy()[:, None]
-    flux = td.Field(td.Values("faces"), _vectors(area_vectors))
+    flux = td.Field(td.Values(data, "faces"), _vectors(area_vectors))
     sums = alg.divergence(data, flux).values.to_numpy(vectors=True)
     np.testing.assert_allclose(sums, 0, atol=1e-5)
     return areas.values.to_numpy()
@@ -257,16 +257,16 @@ def test_cell_to_point_matches_vtk(backend):
     to_points.Update()
     expected = vtk_to_numpy(to_points.GetOutput().GetPointData().GetArray("v"))
     data = vtk_to_dataset(grid)
-    assert data.fields["v"].space == td.Constant()
+    assert data.fields["v"].space is td.Constant(data)
     got = alg.to_points(data, data.fields["v"])
-    assert got.space == td.H1()
+    assert got.space is td.H1(data)
     np.testing.assert_allclose(got.values.to_numpy(), expected, rtol=1e-5)
 
 
 def _height(data):
     """An H1 field, linear in position: every linear cell interpolates it exactly."""
     x = data.positions()
-    return td.Field(td.H1(), _scalars(x[:, 0] + 2 * x[:, 1] - x[:, 2]))
+    return td.Field(td.H1(data), _scalars(x[:, 0] + 2 * x[:, 1] - x[:, 2]))
 
 
 @pytest.mark.parametrize("make", ["mixed", "rectilinear"])
@@ -275,7 +275,7 @@ def test_continuous_field_in_dg_layout(backend, make):
             else td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1]))
     u = _height(data)
     dg = alg.discontinuous(data, u)
-    assert dg.space == td.L2()
+    assert dg.space is td.L2(data)
     corners = sum(g.count * g.shape.NUM_POINTS for g in data.topology.groups())
     assert dg.values.shape == (corners,)
     # The same function: the same values at the centers, and back on the points.
@@ -294,11 +294,11 @@ def test_dg_values_can_disagree(backend):
     data = _two_hexes_and_a_pyramid()
     u = _height(data)
     dg = alg.discontinuous(data, u)
-    offsets = data.l2_offsets().to_numpy()
+    offsets = td.L2(data).offsets.to_numpy()
     values = dg.values.to_numpy()
     for c in range(data.num_cells):
         values[offsets[c]:offsets[c + 1]] += 10 * c
-    dg = td.Field(td.L2(), _scalars(values), dg.offsets)
+    dg = td.Field(td.L2(data), _scalars(values))
     connectivity = data.topology.connectivity.to_numpy()
     expected = u.values.to_numpy().copy()
     for p in range(data.num_points):
@@ -321,7 +321,7 @@ def test_surface_of_a_side_set(backend):
     data.fields["area"] = areas
     alg.boundary_faces(data)
     surface = alg.extract_surface(data)
-    assert surface.fields["area"].space == td.Values("cells")
+    assert surface.fields["area"].space is td.Values(surface, "cells")
     reference = vtkGeometryFilter()
     reference.SetInputData(grid)
     reference.Update()
@@ -351,7 +351,7 @@ def test_for_each_over_a_side_set(backend):
 
 def test_a_field_must_live_where_the_loop_is(backend):
     data = td.rectilinear_grid([0, 1, 2], [0, 1], [0, 1])
-    on_faces = td.Field(td.Values("faces"), _scalars(np.zeros(data.topology.faces().num_faces)))
+    on_faces = td.Field(td.Values(data, "faces"), _scalars(np.zeros(data.topology.faces().num_faces)))
     with pytest.raises(TypeError, match="cannot be viewed while iterating cells"):
         alg.values_at_centers(data, on_faces)
 
@@ -360,12 +360,12 @@ def test_a_field_must_live_where_the_loop_is(backend):
 def test_rectilinear_round_trip(backend):
     data = td.rectilinear_grid([0, 1, 3], [0, 2], [0, 1, 1.5])
     data.fields["h"] = _height(data)
-    data.fields["c"] = td.Field(td.Constant(), _scalars(np.arange(data.num_cells)))
+    data.fields["c"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
     grid = dataset_to_vtk(data)
     assert grid.IsA("vtkRectilinearGrid")
     assert grid.GetPointData().GetArray("shape") is None      # the geometry is the grid's
     back = vtk_to_dataset(grid)
-    assert back.fields["h"].space == td.H1() and back.fields["c"].space == td.Constant()
+    assert back.fields["h"].space is td.H1(back) and back.fields["c"].space is td.Constant(back)
     np.testing.assert_allclose(back.positions(), data.positions())
     np.testing.assert_allclose(back.fields["h"].values.to_numpy(),
                                data.fields["h"].values.to_numpy())
@@ -376,14 +376,14 @@ def test_rectilinear_round_trip(backend):
 def test_geometry_is_the_shape_field(backend):
     data = _two_hexes_and_a_pyramid()
     assert data.geometry is data.fields["shape"]
-    assert data.geometry.space == td.H1()
+    assert data.geometry.space is td.H1(data)
     grid = td.rectilinear_grid([0, 1, 2], [0, 1], [0, 1])
-    assert grid.geometry.space == td.H1()
+    assert grid.geometry.space is td.H1(grid)
     assert isinstance(grid.geometry.values, td.CartesianProduct)
     with pytest.raises(ValueError, match="is the geometry"):
         td.DataSet(data.topology, data.positions(), fields={"shape": data.geometry})
     with pytest.raises(TypeError, match="H1 or L2"):
-        td.DataSet(data.topology, td.Field(td.Constant(), data.geometry.values))
+        td.DataSet(data.topology, td.Field(td.Values(data, "points"), data.geometry.values))
 
 
 @tack.kernel
@@ -409,7 +409,7 @@ def test_gradients_of_a_linear_field(backend, make):
     for field in (u, alg.discontinuous(data, u)):
         got = alg.gradients(data, field).values.to_numpy(vectors=True)
         np.testing.assert_allclose(got, np.tile([1, 2, -1], (data.num_cells, 1)), atol=1e-4)
-    constant = td.Field(td.Constant(), _scalars(np.arange(data.num_cells)))
+    constant = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
     np.testing.assert_array_equal(alg.gradients(data, constant).values.to_numpy(), 0)
 
 
@@ -424,7 +424,7 @@ def test_gradients_on_every_solid(backend, kind):
 def _shrunk(data, s):
     """``data`` with an L2 geometry: each cell's corners pulled toward its center by
     ``s``. The topology, and so the faces, are unchanged."""
-    offsets = data.l2_offsets().to_numpy()
+    offsets = td.L2(data).offsets.to_numpy()
     connectivity = data.topology.connectivity.to_numpy()
     centers = alg.cell_centers(data).values.to_numpy(vectors=True)
     positions = data.positions()
@@ -432,14 +432,14 @@ def _shrunk(data, s):
     for c in range(data.num_cells):
         rows = slice(offsets[c], offsets[c + 1])
         corners[rows] = centers[c] + s * (positions[connectivity[rows]] - centers[c])
-    geometry = td.Field(td.L2(), _vectors(corners), data.l2_offsets())
+    geometry = td.Field(td.L2(data), _vectors(corners))
     return td.DataSet(data.topology, geometry, fields={"u": _height(data)})
 
 
 def test_discontinuous_geometry(backend):
     data = _two_hexes_and_a_pyramid()
     shrunk = _shrunk(data, 0.5)
-    assert shrunk.geometry.space == td.L2()
+    assert shrunk.geometry.space is td.L2(shrunk)
     # A cell's center is where its corners were pulled toward: unchanged.
     np.testing.assert_allclose(alg.cell_centers(shrunk).values.to_numpy(vectors=True),
                                alg.cell_centers(data).values.to_numpy(vectors=True), atol=1e-6)
@@ -476,7 +476,7 @@ def test_structured_cells_read_cartesian_values_by_ijk(backend):
     faces = data.topology.faces().groups()[1]
     assert views._StructuredPointAddress in type(data.geometry.view(cells)).__mro__
     assert views._PointAddress in type(data.geometry.view(faces)).__mro__
-    explicit = td.Field(td.H1(), _vectors(data.positions()))
+    explicit = td.Field(td.H1(data), _vectors(data.positions()))
     assert views._PointAddress in type(explicit.view(cells)).__mro__
     if backend == "cpu":
         # No signed division: the structured path never splits a flat point id.
@@ -494,23 +494,86 @@ def test_implicit_values_match_explicit(backend, make):
             else td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1, 1.5]))
     n, m = data.num_points, data.num_cells
     pairs = [
-        (td.Field(td.H1(), td.ConstantArray(3.0, n)), td.Field(td.H1(), _scalars(np.full(n, 3.0)))),
-        (td.Field(td.H1(), td.CountingArray(n, 0.0, 0.5)),
-         td.Field(td.H1(), _scalars(0.5 * np.arange(n)))),
+        (td.Field(td.H1(data), td.ConstantArray(3.0, n)), td.Field(td.H1(data), _scalars(np.full(n, 3.0)))),
+        (td.Field(td.H1(data), td.CountingArray(n, 0.0, 0.5)),
+         td.Field(td.H1(data), _scalars(0.5 * np.arange(n)))),
     ]
     for implicit, explicit in pairs:
         for algorithm in (alg.values_at_centers, alg.gradients):
             np.testing.assert_allclose(algorithm(data, implicit).values.to_numpy(),
                                        algorithm(data, explicit).values.to_numpy(), atol=1e-5)
-    ids = td.Field(td.Constant(), td.CountingArray(m, 0.0, 1.0))
+    ids = td.Field(td.Constant(data), td.CountingArray(m, 0.0, 1.0))
     np.testing.assert_allclose(alg.jump(data, ids).values.to_numpy(),
-                               alg.jump(data, td.Field(td.Constant(), _scalars(np.arange(m))))
+                               alg.jump(data, td.Field(td.Constant(data), _scalars(np.arange(m))))
                                .values.to_numpy())
     np.testing.assert_allclose(alg.to_points(data, ids).values.to_numpy(),
-                               alg.to_points(data, td.Field(td.Constant(), _scalars(np.arange(m))))
+                               alg.to_points(data, td.Field(td.Constant(data), _scalars(np.arange(m))))
                                .values.to_numpy(), rtol=1e-6)
 
 
 def test_field_values_must_be_an_array(backend):
+    data = td.rectilinear_grid([0, 1], [0, 1])
     with pytest.raises(TypeError, match="implicit array"):
-        td.Field(td.H1(), np.zeros(4))
+        td.Field(td.H1(data), np.zeros(4))
+
+
+# ── Spaces ──────────────────────────────────────────────────────────
+
+def test_spaces_are_one_object_per_topology_and_parameters(backend):
+    data = _two_hexes_and_a_pyramid()
+    other = _two_hexes_and_a_pyramid()
+    assert td.H1(data) is td.H1(data.topology) is td.H1(data, order=1)
+    assert td.H1(data) is not td.H1(other)
+    assert td.Values(data, "faces") is not td.Values(data, "edges")
+    assert td.L2(data) is not td.Constant(data)
+    with pytest.raises(NotImplementedError, match="order 2"):
+        td.H1(data, order=2)
+    with pytest.raises(ValueError, match="points, edges, faces or cells"):
+        td.Values(data, "corners")
+
+
+def test_spaces_own_their_layout(backend):
+    data = _two_hexes_and_a_pyramid()
+    # L2 on an unstructured topology: the connectivity's offsets, shared, not copied.
+    assert td.L2(data).offsets is data.topology.offsets
+    assert td.L2(data).size == 8 + 8 + 5
+    grid = td.rectilinear_grid([0, 1, 2], [0, 1, 2], [0, 1])
+    np.testing.assert_array_equal(td.L2(grid).offsets.to_numpy(), 8 * np.arange(5))
+    assert td.L2(grid).size == 32
+    # Sizes follow the entities the values live on.
+    assert td.H1(data).size == 13 and td.Constant(data).size == 3
+    assert td.Values(data, "faces").size == 15 and td.Values(data, "edges").size == 24
+    # Two fields on one space share it, and its layout, entirely.
+    a = td.Field(td.L2(data), _scalars(np.zeros(21)))
+    b = td.Field(td.L2(data), td.ConstantArray(1.0, 21))
+    assert a.space is b.space
+
+
+def test_a_field_holds_its_space_size(backend):
+    data = _two_hexes_and_a_pyramid()
+    with pytest.raises(ValueError, match="holds 13 values, not 12"):
+        td.Field(td.H1(data), _scalars(np.zeros(12)))
+    with pytest.raises(TypeError, match="a Space on a topology"):
+        td.Field("H1", _scalars(np.zeros(13)))
+
+
+def test_points_no_cell_uses_still_count(backend):
+    """VTK lets a dataset have points no cell uses; the topology is told how many."""
+    data = _two_hexes_and_a_pyramid()
+    t = data.topology
+    wider = td.UnstructuredTopology(t.types, t.offsets, t.connectivity, num_points=15)
+    positions = np.vstack([data.positions(), [[9, 9, 9], [8, 8, 8]]])
+    wide = td.DataSet(wider, positions)
+    assert wide.num_points == td.H1(wide).size == 15
+    np.testing.assert_allclose(alg.cell_centers(wide).values.to_numpy(vectors=True),
+                               alg.cell_centers(data).values.to_numpy(vectors=True))
+
+
+def test_fields_stay_on_their_topology(backend):
+    data = _two_hexes_and_a_pyramid()
+    other = _two_hexes_and_a_pyramid()
+    u = _height(other)
+    with pytest.raises(ValueError, match="another topology"):
+        alg.values_at_centers(data, u)
+    with pytest.raises(ValueError, match="another topology"):
+        td.DataSet(data.topology, data.geometry.values, fields={"u": u})

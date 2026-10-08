@@ -99,9 +99,11 @@ class _Topology:
 
 class UnstructuredTopology(_Topology):
     """Cells of any of the linear shapes: a VTK type per cell (``u8``), and each
-    cell's point ids at ``connectivity[offsets[c]:offsets[c + 1]]``."""
+    cell's point ids at ``connectivity[offsets[c]:offsets[c + 1]]``, over
+    ``num_points`` points -- by default one past the highest id used, but a
+    dataset may have points no cell uses, as VTK's may."""
 
-    def __init__(self, types, offsets, connectivity):
+    def __init__(self, types, offsets, connectivity, num_points=None):
         self.types = _as_field(types, tack.u8)
         self.offsets = _as_field(offsets, tack.i32)
         self.connectivity = _as_field(connectivity, tack.i32)
@@ -109,6 +111,10 @@ class UnstructuredTopology(_Topology):
         if self.offsets.shape != (self.num_cells + 1,):
             raise ValueError(f"offsets must have num_cells + 1 = {self.num_cells + 1} "
                              f"entries, not {self.offsets.shape[0]}")
+        if num_points is None:
+            used = self.connectivity.to_numpy()
+            num_points = int(used.max()) + 1 if used.size else 0
+        self.num_points = int(num_points)
         self._groups = None
 
     def groups(self):
@@ -142,11 +148,6 @@ class UnstructuredTopology(_Topology):
                                  "match their type")
         self._groups = groups
         return groups
-
-    @property
-    def num_points(self):
-        connectivity = self.connectivity.to_numpy()
-        return int(connectivity.max()) + 1 if connectivity.size else 0
 
 
 class StructuredTopology(_Topology):

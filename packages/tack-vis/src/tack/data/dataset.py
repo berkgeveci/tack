@@ -2,11 +2,12 @@
 
 ``docs/design/dataset-api.md`` §3 in prototype form:
 
-- *spaces* say where a field's values live: ``H1()`` one per point,
-  interpolated linearly (point data); ``Constant()`` one per cell (cell
-  data); ``L2()`` each cell's own corner values (a linear discontinuous
-  Galerkin field); ``Values(on)`` one value per point, edge, face or cell,
-  with no basis -- data *about* the entity;
+- *spaces* (``tack.data.spaces``) say where a field's values live, on one
+  topology, and own the layout that follows: ``H1(data)`` one per point,
+  interpolated linearly (point data); ``Constant(data)`` one per cell (cell
+  data); ``L2(data)`` each cell's own corner values (a linear discontinuous
+  Galerkin field); ``Values(data, on)`` one value per point, edge, face or
+  cell, with no basis -- data *about* the entity;
 - a *field* is a space and its values, which are any array: a device
   field, or an implicit array from ``tack.data.arrays`` (a
   ``CartesianProduct`` of three axes, a ``ConstantArray``, a
@@ -27,73 +28,25 @@ import numpy as np
 import tack
 from tack.data import arrays, views
 from tack.data.arrays import CartesianProduct
+from tack.data.spaces import H1, L2, Space
 
-__all__ = ["H1", "L2", "Constant", "DataSet", "Field", "Values", "for_each",
-           "rectilinear_grid"]
-
-
-# ── Spaces ──────────────────────────────────────────────────────────
-
-class Space:
-    """Where a field's values live. ``on`` names the entity kind they belong to."""
-
-    on = "cells"
-    mixin = None
-
-    def __eq__(self, other):
-        return type(self) is type(other) and vars(self) == vars(other)
-
-    def __hash__(self):
-        return hash((type(self), tuple(sorted(vars(self).items()))))
-
-    def __repr__(self):
-        args = ", ".join(f"{k}={v!r}" for k, v in vars(self).items())
-        return f"{type(self).__name__}({args})"
-
-
-class H1(Space):
-    """Continuous, linear: one value per point (``Shared`` layout), interpolated by the
-    cell's shape functions. Today's point data."""
-
-    on = "points"
-    mixin = views._H1Field
-
-
-class Constant(Space):
-    """One value per cell (L2, order 0). Today's cell data."""
-
-    mixin = views._ConstantField
-
-
-class L2(Space):
-    """Discontinuous, linear: each cell's own value at each of its corners (``PerCell``
-    layout), at ``offsets[cell]`` in the field's values. A linear DG field."""
-
-    mixin = views._L2Field
-
-
-class Values(Space):
-    """One value per entity of kind ``on`` (points, edges, faces or cells), no basis."""
-
-    mixin = views._ValuesField
-
-    def __init__(self, on):
-        if on not in ("points", "edges", "faces", "cells"):
-            raise ValueError(f"values live on points, edges, faces or cells, not {on!r}")
-        self.on = on
+__all__ = ["DataSet", "Field", "for_each", "rectilinear_grid"]
 
 
 class Field:
-    """A space and its values -- any array, explicit or implicit, of scalars or
-    vectors -- and for ``L2`` the per-cell ``offsets`` into them."""
+    """A space and its values: any array, explicit or implicit, of scalars or vectors,
+    with one value per degree of freedom of the space. Everything else a kernel needs
+    to find them belongs to the space."""
 
-    def __init__(self, space, values, offsets=None):
+    def __init__(self, space, values):
+        if not isinstance(space, Space):
+            raise TypeError(f"a field's space is a Space on a topology, not {space!r}")
         arrays.storage(values)                       # refuses what is not an array
+        if arrays.size_of(values) != space.size:
+            raise ValueError(f"{space!r} holds {space.size} values, not "
+                             f"{arrays.size_of(values)}")
         self.space = space
         self.values = values
-        self.offsets = offsets
-        if isinstance(space, L2) and offsets is None:
-            raise ValueError("an L2 field needs the offset of each cell's values")
 
     def view(self, group):
         """This field's view for ``group``: the group's kind and shape, the space, and
@@ -116,17 +69,17 @@ def _space_parts(field, group, space_mixin=None):
     if isinstance(field.space, H1):
         mixins.append(views.point_address(group.kind, storage))
     mixins.append(storage)
-    if field.offsets is not None:
-        attributes["point_offsets" if space_mixin else "offsets"] = field.offsets
+    for name, value in field.space.attributes().items():
+        attributes[f"point_{name}" if space_mixin else name] = value
     return mixins, attributes
 
 
 # ── Geometry ────────────────────────────────────────────────────────
 
-def _as_geometry(geometry, dtype):
+def _as_geometry(geometry, topology, dtype):
     """``geometry`` as a ``Field``: positions per point (a host array, or any array of
-    3-vectors, such as a ``CartesianProduct``) become an ``H1`` field; a ``Field``
-    is checked."""
+    3-vectors, such as a ``CartesianProduct``) become an ``H1`` field on ``topology``;
+    a ``Field`` is checked."""
     if not isinstance(geometry, Field):
         try:
             arrays.storage(geometry)
@@ -134,7 +87,9 @@ def _as_geometry(geometry, dtype):
             positions = np.ascontiguousarray(geometry)
             geometry = tack.Vector.field(3, dtype, shape=(positions.shape[0],))
             geometry.from_numpy(positions.astype(dtype.numpy_dtype))
-        geometry = Field(H1(), geometry)
+        geometry = Field(H1(topology), geometry)
+    if geometry.space.topology is not topology:
+        raise ValueError("the geometry's space is on another topology")
     if not isinstance(geometry.space, (H1, L2)):
         raise TypeError(f"geometry lives in H1 or L2, not {geometry.space!r}")
     if arrays.width_of(geometry.values) != 3:
@@ -168,7 +123,10 @@ class DataSet:
         self.fields = dict(fields or {})
         if "shape" in self.fields:
             raise ValueError('"shape" is the geometry; pass it as geometry')
-        self.fields["shape"] = _as_geometry(geometry, dtype)
+        self.fields["shape"] = _as_geometry(geometry, topology, dtype)
+        for name, field in self.fields.items():
+            if field.space.topology is not topology:
+                raise ValueError(f"field {name!r} is on another topology")
         self.sets = dict(sets or {})
 
     @property
@@ -183,9 +141,7 @@ class DataSet:
 
     @property
     def num_points(self):
-        if isinstance(self.geometry.space, L2):
-            return self.topology.num_points
-        return arrays.size_of(self.geometry.values)
+        return self.topology.num_points
 
     @property
     def num_cells(self):
@@ -197,18 +153,6 @@ class DataSet:
         if isinstance(self.geometry.space, L2):
             raise ValueError("an L2 geometry has positions per cell corner, not per point")
         return arrays.to_host(self.geometry.values)
-
-    def l2_offsets(self):
-        """Where each cell's values start in an ``L2`` field: cell ``c``'s corner ``j``
-        is at ``offsets[c] + j``, and ``offsets[num_cells]`` is the field's size.
-        An unstructured topology's are its connectivity offsets."""
-        topology = self.topology
-        if hasattr(topology, "offsets"):
-            return topology.offsets
-        k = topology.groups()[0].shape.NUM_POINTS
-        offsets = tack.field(tack.i32, shape=(topology.num_cells + 1,))
-        offsets.from_numpy(np.arange(topology.num_cells + 1, dtype=np.int32) * k)
-        return offsets
 
     def domain_groups(self, domain):
         """The ``DomainGroup``s of ``domain``: ``"cells"``, ``"faces"``, ``"edges"``, or
@@ -256,6 +200,8 @@ def for_each(kernel, data, domain, *args):
     kind = domain if domain in ("cells", "faces", "edges") else "faces"
     for arg in args:
         if isinstance(arg, Field):
+            if arg.space.topology is not data.topology:
+                raise ValueError(f"a field on {arg.space!r} of another topology")
             _check_domain(arg.space, kind)
     for group in data.domain_groups(domain):
         if not group.count:
@@ -268,9 +214,7 @@ def _check_domain(space, kind):
     """A field's view must make sense where the loop is."""
     if isinstance(space, H1):
         return                                   # points belong to every entity
-    if isinstance(space, (Constant, L2)) and kind == "cells":
-        return
-    if isinstance(space, Values) and space.on == kind:
+    if space.on == kind:
         return
     raise TypeError(f"a field on {space!r} cannot be viewed while iterating {kind}")
 

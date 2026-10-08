@@ -88,9 +88,9 @@ def show(name, data):
 
     # Geometry is evaluated through the cells' shape functions; an H1 field too.
     x = data.positions()
-    data.fields["height"] = td.Field(td.H1(), _scalars(x[:, 2] + 0.25 * x[:, 0]))
+    data.fields["height"] = td.Field(td.H1(data), _scalars(x[:, 2] + 0.25 * x[:, 0]))
     centers = alg.cell_centers(data).values.to_numpy(vectors=True)
-    data.fields["cell id"] = td.Field(td.Constant(),
+    data.fields["cell id"] = td.Field(td.Constant(data),
                                       _scalars(np.arange(data.num_cells, dtype=float)))
     at_centers = alg.values_at_centers(data, data.fields["height"]).values.to_numpy()
     print(f"  H1 'height' at the cell centers matches the centers' own height: "
@@ -111,7 +111,7 @@ def show(name, data):
     print(f"  'cell id' jumps across {np.count_nonzero(jump.values.to_numpy())} "
           f"interior faces")
     area_vectors = normals.values.to_numpy(vectors=True) * areas.values.to_numpy()[:, None]
-    closed = alg.divergence(data, td.Field(td.Values("faces"), _vectors(area_vectors)))
+    closed = alg.divergence(data, td.Field(td.Values(data, "faces"), _vectors(area_vectors)))
     print(f"  every cell's outward area vectors sum to zero: "
           f"{np.allclose(closed.values.to_numpy(vectors=True), 0, atol=1e-5)}")
 
@@ -151,7 +151,7 @@ def explode(data, dg):
     connectivity = topology.connectivity.to_numpy()
     grid = vtkUnstructuredGrid()
     points = vtkPoints()
-    if data.geometry.space == td.L2():
+    if isinstance(data.geometry.space, td.L2):
         corners = td.arrays.to_host(data.geometry.values)
     else:
         corners = data.positions()[connectivity]
@@ -198,12 +198,12 @@ dg = show("mixed", mixed)
 
 # Make the DG field discontinuous: each cell tilts its own values, so cells
 # disagree where they meet, and averaging onto points no longer recovers them.
-offsets = mixed.l2_offsets().to_numpy()
+offsets = td.L2(mixed).offsets.to_numpy()
 values = dg.values.to_numpy()
 rng = np.random.default_rng(0)
 for c in range(mixed.num_cells):
     values[offsets[c]:offsets[c + 1]] += rng.uniform(-0.3, 0.3)
-dg = td.Field(td.L2(), _scalars(values), dg.offsets)
+dg = td.Field(td.L2(mixed), _scalars(values))
 spread = alg.to_points(mixed, dg).values.to_numpy() - mixed.fields["height"].values.to_numpy()
 print(f"  each cell shifted by up to 0.3: the point averages now differ by up to "
       f"{np.abs(spread).max():.3f}")
@@ -220,7 +220,7 @@ corners = mixed.positions()[connectivity]
 for c in range(mixed.num_cells):
     rows = slice(offsets[c], offsets[c + 1])
     corners[rows] = centers[c] + 0.7 * (corners[rows] - centers[c])
-shrunk = td.DataSet(mixed.topology, td.Field(td.L2(), _vectors(corners), mixed.l2_offsets()),
+shrunk = td.DataSet(mixed.topology, td.Field(td.L2(mixed), _vectors(corners)),
                     fields={"height": mixed.fields["height"]})
 gradient = alg.gradients(shrunk, shrunk.fields["height"]).values.to_numpy(vectors=True)
 print(f"\nshrunk: the mixed grid with an L2 geometry, cells at 70%: "

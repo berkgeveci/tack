@@ -25,7 +25,8 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, sort_by_key
 from tack.data.arrays import materialize, width_of
-from tack.data.dataset import H1, L2, Constant, DataSet, Field, Values, for_each
+from tack.data.dataset import DataSet, Field, for_each
+from tack.data.spaces import H1, L2, Constant, Values
 from tack.data.topology import UnstructuredTopology
 
 __all__ = [
@@ -59,7 +60,7 @@ def cell_centers(data):
     """Each cell's center, where the geometry maps its parametric center: a field on cells."""
     out = _vectors(data.num_cells, data.dtype)
     for_each(_centers, data, "cells", out)
-    return Field(Values("cells"), out)
+    return Field(Values(data, "cells"), out)
 
 
 @tack.kernel
@@ -72,7 +73,7 @@ def values_at_centers(data, field):
     """``field`` evaluated at each cell's parametric center, through its basis."""
     out = _like(field.values, data.num_cells)
     for_each(_at_centers, data, "cells", field, out)
-    return Field(Values("cells"), out)
+    return Field(Values(data, "cells"), out)
 
 
 @tack.kernel
@@ -97,7 +98,7 @@ def gradients(data, field):
         raise TypeError("gradients takes a scalar field")
     out = _vectors(data.num_cells, data.dtype)
     for_each(_gradients, data, "cells", field, out)
-    return Field(Values("cells"), out)
+    return Field(Values(data, "cells"), out)
 
 
 @tack.kernel
@@ -112,11 +113,10 @@ def discontinuous(data, field):
     """``field`` (``H1`` or ``Constant``) as an ``L2`` field: each cell's value at each
     of its corners, stored per cell. The same function, in the DG layout; edit the
     values and cells disagree where they meet."""
-    offsets = data.l2_offsets()
-    size = int(offsets[offsets.shape[0] - 1])
-    out = _like(field.values, size)
-    for_each(_corner_values, data, "cells", field, offsets, out)
-    return Field(L2(), out, offsets)
+    space = L2(data)
+    out = _like(field.values, space.size)
+    for_each(_corner_values, data, "cells", field, space.offsets, out)
+    return Field(space, out)
 
 
 # ── Faces and edges ─────────────────────────────────────────────────
@@ -140,7 +140,7 @@ def face_geometry(data):
     normals = _vectors(faces.num_faces, dtype)
     areas = tack.field(dtype, shape=(faces.num_faces,))
     for_each(_face_geometry, data, "faces", normals, areas)
-    return Field(Values("faces"), normals), Field(Values("faces"), areas)
+    return Field(Values(data, "faces"), normals), Field(Values(data, "faces"), areas)
 
 
 @tack.kernel
@@ -153,7 +153,7 @@ def edge_lengths(data):
     """Each edge's length: a field on edges."""
     out = tack.field(data.dtype, shape=(data.topology.edges().num_edges,))
     for_each(_edge_lengths, data, "edges", out)
-    return Field(Values("edges"), out)
+    return Field(Values(data, "edges"), out)
 
 
 def boundary_faces(data, name="boundary"):
@@ -199,10 +199,12 @@ def extract_surface(data, name="boundary"):
     if n:
         _surface_cells(ids, faces.kinds, faces.rows, starts, types, offsets, connectivity,
                        length)
-    fields = {key: Field(Values("cells"), _take(f.values, ids))
-              for key, f in data.fields.items() if f.space == Values("faces")}
-    return DataSet(UnstructuredTopology(types, offsets, connectivity), data.geometry,
-                   fields=fields)
+    surface = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
+    on_faces = Values(data, "faces")
+    fields = {key: Field(Values(surface, "cells"), _take(f.values, ids))
+              for key, f in data.fields.items() if f.space is on_faces}
+    # The same points: the geometry's values, on the surface's H1 space.
+    return DataSet(surface, Field(H1(surface), data.geometry.values), fields=fields)
 
 
 # ── Two-sided faces and incidence ───────────────────────────────────
@@ -222,7 +224,7 @@ def jump(data, field):
         raise TypeError("jump takes a field of one value per cell")
     out = _like(field.values, data.topology.faces().num_faces)
     for_each(_jump, data, "faces", materialize(field.values), out)
-    return Field(Values("faces"), out)
+    return Field(Values(data, "faces"), out)
 
 
 @tack.kernel
@@ -238,12 +240,12 @@ def _outward_sums(cells, flux, out):
 def divergence(data, flux):
     """Each cell's outward sum of ``flux``, a field on faces oriented out of side 0:
     a face's value counts plus for its side-0 cell and minus for its side-1 cell."""
-    if flux.space != Values("faces"):
+    if flux.space is not Values(data, "faces"):
         raise TypeError("divergence sums a field on faces")
     data.topology.faces()                          # the incidence the cell views need
     out = _like(flux.values, data.num_cells)
     for_each(_outward_sums, data, "cells", materialize(flux.values), out)
-    return Field(Values("cells"), out)
+    return Field(Values(data, "cells"), out)
 
 
 @tack.kernel
@@ -287,7 +289,7 @@ def to_points(data, field):
         keys, values = sort_by_key(points, contributions)
         offsets, count = _run_offsets(keys, total)
         _average_runs(keys, values, offsets, out, count)
-    return Field(H1(), out)
+    return Field(H1(data), out)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────
