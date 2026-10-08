@@ -313,7 +313,13 @@ component that could observe an earlier one's write: a read of an earlier
 target component for a variable, any field load for a field element
 (fields may alias). Components are `v[c]`/`v.x`, on variables and on field
 elements (`vf[i][c] = x` stores one component); a runtime index selects
-through a chain and stores through per-component guards. A vector index
+through a chain and stores through per-component guards. A named typed or
+integer `ArrayConstant` read at a runtime index is instead an `IRTableLoad`
+(`constant_table` tags the `VectorValue`; `codegen/tables.py`, an LLVM
+internal global): one constant array, clamped to the last entry as the
+chain is. Untyped float constants keep the chain (weak literals). Chains
+in a storing loop crashed Metal's compiler service; see
+`test_constant_tables.py`. A vector index
 supplies one dimension per component, in subscripts and in atomics, whose
 index may be a tuple with one entry per dimension; a vector value given
 to an atomic on a vector field lowers to one atomic per component, while
@@ -468,7 +474,12 @@ then takes that type: each literal converts once from its Python value
 and its operations run at that precision, so `x_f64 * 0.1` and
 `tack.f64(0.1)` are exact. Literal-only subtrees are not folded. Alone,
 or beside integers only, literals stay f32; `i * 0.1` is a non-weak f32.
-A local assigned only literals is f32 (`tack.f64(0.1)` is the remedy).
+A local assigned exactly once, to a weak literal expression, is replaced
+by that expression at each read (`_inline_weak_literal_locals` in
+`ir_optimize.py`, before copy propagation), so it stays weak; a device
+function's literal results reach the caller that way. A conditional counts
+only with a constant condition. A local assigned more than once is the
+join of its assignments, f32 if they are all weak.
 LLVM emits a `double` constant and CUDA/HIP/OpenCL an unsuffixed `repr`
 when the constant's dtype is f64; f32 code is unchanged. See
 `test_float_literals.py` and the language contract.

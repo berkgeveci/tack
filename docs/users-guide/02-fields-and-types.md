@@ -24,9 +24,10 @@ silent precision loss. Otherwise, float scalars default to `f32`.
 Float literals in a kernel take the precision of what they meet, the way
 NumPy treats Python scalars. With an `f64` field `x`, `x[i] * 0.1` computes
 in `f64` with the `f64` nearest 0.1, and `tack.f64(0.1)` is that value
-exactly. A literal on its own or beside only integers is `f32`, and so is a
-local assigned only literals (`a = 0.1`); write `a = tack.f64(0.1)` to keep
-full precision. The
+exactly. A literal on its own or beside only integers is `f32`. A local
+assigned once, to literals (`a = 0.1`), behaves like the literal wherever
+it is read, so `x[i] * a` is exact too; a local assigned more than once
+has one type. The
 [language contract](../reference/language-contract.md#floating-point-execution-policy)
 has the full rule.
 

@@ -19,6 +19,7 @@ from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
 from tack.codegen.reductions import f32_reduction_helpers
+from tack.codegen.tables import Tables
 from tack.lang import ir
 from tack.lang.atomic_support import check_atomic_support
 from tack.lang.ir_traversal import walk_ir
@@ -109,6 +110,7 @@ class CUDACodeGen:
     _TEXTURE_OBJECT_TYPE = "cudaTextureObject_t"
 
     _atomic_backend = 'cuda'
+    _table_dialect = 'cuda'
     _integer_type_map = _C_TYPE_MAP
     _opaque_negation = False
 
@@ -128,6 +130,7 @@ class CUDACodeGen:
         self._integer_division_helpers = set()
         self._float_division_helpers = set()
         self._block_extrema = set()
+        self._tables = Tables(self._table_dialect)
         self._integers = IntegerCodeGen(
             self._integer_type_map, opaque_negation=self._opaque_negation)
 
@@ -183,7 +186,8 @@ class CUDACodeGen:
         self._emit("}")
 
         prefix_lines = (
-            float_division_helpers(
+            self._tables.declarations('__device__ __constant__', _C_TYPE_MAP)
+            + float_division_helpers(
                 self._float_division_helpers, _C_TYPE_MAP, '__device__ inline', cuda_math=True)
             + integer_division_helpers(
                 self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline')
@@ -656,6 +660,8 @@ class CUDACodeGen:
             return self._expr_block_reduce(node)
         if isinstance(node, ir.IRAtomicOp):
             return self._expr_atomic(node)
+        if isinstance(node, ir.IRTableLoad):
+            return self._tables.load(node, self._expr(node.index))
         raise NotImplementedError(f"CUDA expr: {type(node).__name__}")
 
     def _expr_block_reduce(self, node: ir.IRBlockReduce) -> str:

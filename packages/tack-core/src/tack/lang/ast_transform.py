@@ -12,7 +12,7 @@ import ast
 import copy
 
 from tack.lang import ir, parallel_dims
-from tack.lang.constant import constant_components, constant_ir
+from tack.lang.constant import constant_components, constant_ir, constant_table
 from tack.lang.ir_names import fresh_name
 from tack.lang.ir_traversal import LIST_ROLES, child_fields, walk_ir
 from tack.lang.source_validation import UnsupportedSyntaxError, validate_source
@@ -1252,7 +1252,11 @@ class KernelTransformer(ast.NodeVisitor):
             raise self._source_error(
                 node, "constant", f"is a {shape[0]}x{shape[1]} matrix, larger than "
                 f"{MAX_MATRIX_EXTENT}x{MAX_MATRIX_EXTENT}")
-        return VectorValue(values, shape)
+        value = VectorValue(values, shape)
+        # Read at a runtime index, the constant is one table load
+        # (_vector_component); derived vectors carry no table.
+        value.table = constant_table(bound)
+        return value
 
     def visit_Name(self, node: ast.Name) -> ir.IRNode:
         # A name the function does not bind, bound to a tack.constant in the
@@ -2417,6 +2421,9 @@ class KernelTransformer(ast.NodeVisitor):
             node, len(components), getattr(components, 'shape', None))
         if isinstance(selector, int):
             return components[selector]
+        table = getattr(components, 'table', None)
+        if table is not None:
+            return ir.IRTableLoad(*table, selector)
         return self._select_component(selector, components)
 
     def _component_selector(self, node: ast.Subscript, n: int, shape=None):

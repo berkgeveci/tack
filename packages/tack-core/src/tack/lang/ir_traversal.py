@@ -45,6 +45,7 @@ CHILD_FIELDS = {
     ir.IRPrint: (('args', 'exprs'),),
     ir.IRDimSize: (),
     ir.IRTextureSample: (('coords', 'exprs'),),
+    ir.IRTableLoad: (('index', 'expr'),),
 }
 
 LIST_ROLES = {'functions', 'params', 'stmts', 'exprs'}

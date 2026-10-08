@@ -15,6 +15,7 @@ EXPRS = {
     ir.IRFieldLoad, ir.IRConstant, ir.IRName, ir.IRAttribute, ir.IRCall,
     ir.IRCast, ir.IRBlockReduce, ir.IRThreadId, ir.IRDimSize, ir.IRTextureSample,
     ir.IRAtomicOp,     # as the value of an assignment: the element's old value
+    ir.IRTableLoad,
 }
 STMTS = {
     ir.IRParallelFor, ir.IRSequentialFor, ir.IRWhile, ir.IRBreak, ir.IRContinue,
@@ -35,7 +36,7 @@ ATTRIBUTES = {
     ir.IRBinOp: ('op',), ir.IRUnaryOp: ('op',), ir.IRCompare: ('op',),
     ir.IRBoolOp: ('op',), ir.IRAtomicOp: ('op',), ir.IRBlockReduce: ('op',),
     ir.IRConstant: ('value',), ir.IRName: ('name',), ir.IRAttribute: ('attr',),
-    ir.IRCall: ('func_name',), ir.IRAssign: ('target',), ir.IRCast: ('dtype',),
+    ir.IRCall: ('func_name',), ir.IRAssign: ('target',), ir.IRCast: ('dtype',), ir.IRTableLoad: ('values', 'dtype'),
     ir.IRSharedAlloc: ('name', 'dtype', 'field_name'),
     ir.IRLocalAlloc: ('name', 'dtype', 'field_name'),
     ir.IRDimSize: ('field_name', 'dim'), ir.IRTextureSample: ('field_name', 'shape'),
@@ -159,6 +160,12 @@ def verify_ir(function: ir.IRFunction, stage: str):
         if kind is ir.IRCast:
             require(node, path, isinstance(node.dtype, ScalarType),
                     'cast target must be a ScalarType')
+        if kind is ir.IRTableLoad:
+            require(node, path, isinstance(node.dtype, ScalarType),
+                    'table type must be a ScalarType')
+            require(node, path, isinstance(node.values, tuple) and node.values
+                    and all(type(v) in (int, float) for v in node.values),
+                    'table values must be a non-empty tuple of numbers')
         if kind is ir.IRTextureSample:
             name(node, path, 'field_name')
             if resolved:

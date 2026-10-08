@@ -130,10 +130,9 @@ def test_literals_without_a_floating_partner_keep_f32(f64_backend):
     a = np.asarray([1.0, 3.0, 0.5])
     out = tack.field(tack.f64, (3, 5))
     partners(_field(a, tack.f64), out)
-    tenth = np.float64(np.float32(0.1))
     expected = np.column_stack([
-        # A local assigned only literals is an f32 local.
-        a * tenth,
+        # A local assigned once, to literals, is the literal where it is read.
+        a * 0.1,
         # Integer operands do not supply a floating type.
         (np.arange(3, dtype=np.float32) * np.float32(0.1)).astype(np.float64),
         # Integer `/` of integer literals is f32 by the division rule.
@@ -244,3 +243,86 @@ int main(int argc, char** argv) {{
     assert result.returncode == 0, result.stderr.decode()
     actual = np.frombuffer(result.stdout, dtype=np.float64).reshape(-1, _COLUMNS)
     np.testing.assert_array_equal(actual, _expected(a, np.float64))
+
+
+# ── Locals holding literals ─────────────────────────────────────────
+
+@tack.func
+def _center():
+    return tack.Vector([1.0 / 3.0, 0.1, 0.5])
+
+
+@tack.func
+def _pair():
+    return 0.1, 0.2
+
+
+@tack.kernel
+def _weak_locals(a, out64, out32, flag):
+    for i in range(a.shape[0]):
+        pc = _center()                    # a vector of literals, through a device function
+        p, q = _pair()                    # several literals, through tuple unpacking
+        tenth = 0.1
+        chained = tenth                   # a copy of one is one too
+        picked = 0.3 if 1 > 0 else 0.7    # a condition of constants
+        guarded = 0.3 if flag > 0 else 0.7   # a runtime condition: an f32 local, as before
+        total = 0.1                       # assigned twice: its type is its assignments' join
+        total = total + a[i]
+        out64[i, 0] = a[i] * pc[0]
+        out64[i, 1] = a[i] * pc[1] + p - q
+        out64[i, 2] = a[i] * chained
+        out64[i, 3] = a[i] * picked
+        out64[i, 4] = a[i] * guarded
+        out64[i, 5] = total
+        out32[i] = tack.f32(a[i]) * tenth   # the same local, read in f32
+
+
+def test_locals_holding_literals_take_the_precision_they_meet(f64_backend):
+    a = np.asarray([1.0, 3.0, 0.7])
+    out64 = tack.field(tack.f64, (3, 6))
+    out32 = tack.field(tack.f32, (3,))
+    _weak_locals(_field(a, tack.f64), out64, out32, 1)
+    f32 = np.float32
+    expected = np.column_stack([
+        a * (1.0 / 3.0),
+        a * 0.1 + 0.1 - 0.2,
+        a * 0.1,
+        a * 0.3,
+        a * np.float64(f32(0.3)),
+        0.1 + a,
+    ])
+    np.testing.assert_array_equal(out64.to_numpy(), expected)
+    np.testing.assert_array_equal(out32.to_numpy(), a.astype(f32) * f32(0.1))
+
+
+@tack.kernel
+def _f32_locals(a, out):
+    for i in range(a.shape[0]):
+        pc = _center()
+        scale = 0.1
+        out[i] = a[i] * pc[0] + a[i] * scale
+
+
+def test_f32_kernels_are_unchanged(backend):
+    a = np.asarray([1.0, 3.0, 0.7], np.float32)
+    out = tack.field(tack.f32, (3,))
+    _f32_locals(_field(a, tack.f32), out)
+    f32 = np.float32
+    np.testing.assert_allclose(out.to_numpy(), a * f32(1.0 / 3.0) + a * f32(0.1), rtol=1e-6)
+
+
+def test_which_locals_are_replaced():
+    from tack.lang.ir_optimize import _literal
+    tack.init(arch=tack.cpu)
+    text = tack.inspect(_weak_locals, _field([1.0], tack.f64), tack.field(tack.f64, (1, 6)),
+                        tack.field(tack.f32, (1,)), 1, mode="ir")
+    assigned = {line.split("=")[0].strip() for line in text.splitlines() if " = " in line
+                and "[" not in line.split("=")[0]}
+    assert not {"tenth", "chained", "picked", "p", "q"} & assigned
+    assert {"guarded", "total"} <= assigned
+    ir = tack.lang.ir
+    assert _literal(ir.IRBinOp("*", ir.IRConstant(2), ir.IRConstant(0.5))) == (True, True)
+    assert _literal(ir.IRBinOp("*", ir.IRConstant(2), ir.IRConstant(3))) == (True, False)
+    assert _literal(ir.IRBinOp("*", ir.IRName("x"), ir.IRConstant(0.5)))[0] is False
+    assert _literal(ir.IRCast(ir.IRConstant(0.5), tack.f64))[0] is False
+
