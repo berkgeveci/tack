@@ -827,6 +827,35 @@ def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
     return _resolve_range_expr(parallel_for.end, name_to_arg)
 
 
+def _get_loop_extents(ir_func: ir.IRFunction, args: tuple) -> tuple:
+    """A multi-dimensional parallel loop's extents for these arguments, slowest first.
+
+    ``()`` for a flat loop. Dispatch passes them to the launch (see
+    ``tack.lang.parallel_dims``); a dimension of size zero or less makes the
+    whole launch empty, as its product would.
+    """
+    for stmt in ir_func.body:
+        if isinstance(stmt, ir.IRParallelFor):
+            if not stmt.dims:
+                return ()
+            name_to_arg = dict(zip((p.name for p in ir_func.params), args))
+            return tuple(_resolve_range_expr(e, name_to_arg) for e in stmt.extents)
+    raise RuntimeError("Kernel has no parallel for-loop")
+
+
+def _get_launch(ir_func: ir.IRFunction, args: tuple) -> tuple:
+    """``(items, extents)``: the parallel loop's iteration count and its extents.
+
+    ``items`` is 0 when any extent is, so an empty launch is skipped even
+    where the product of two negative sizes would be positive.
+    """
+    items = _get_loop_range(ir_func, args)
+    extents = _get_loop_extents(ir_func, args)
+    if extents and min(extents) <= 0:
+        items = 0
+    return items, extents
+
+
 def check_launch_size(what: str, items: int, max_items: int, backend_label: str):
     """Reject a launch larger than one grid of the backend can index.
 

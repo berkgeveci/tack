@@ -29,6 +29,31 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   dataset `point(c, j)` and `gather_points(c, pts)`.
   `tack.interop.vtk.vtk_to_dataset` and `dataset_to_vtk` copy unstructured
   and structured grids, with their named point and cell data.
+- A kernel can loop over a `@tack.data_oriented` object: `for c in cells:`.
+  The class declares the attributes the loop runs through as
+  `__tack_iterate__`, one to three names, fastest first. One makes `c` an
+  integer over `range`; two or three make `c` the vector of indices over
+  an `ndrange`, which as the parallel loop launches in its own shape. The
+  object's methods take `c` as it comes, so one kernel runs over objects
+  that iterate differently. See *Iterating an Object* in the User's Guide.
+
+### Performance changes users may notice
+
+- A kernel's parallel loop over a two- or three-dimensional
+  `tack.ndrange` no longer divides to recover its indices. GPUs launch a
+  2D or 3D grid of the loop's shape, and CPU workers walk their chunk row
+  by row. On an M1 Max a 200³ stencil went from 4.7 to 0.9 ms on Metal and
+  from 6.5 to 1.7 ms on CPU, and a 4000×2000 elementwise kernel from 3.3
+  to 0.4 ms on Metal. Results are unchanged. Kernels using workgroup
+  primitives, and `ndrange` over four or more dimensions, keep the old
+  lowering; so does a GPU launch with an extent past the device's grid
+  limits, decided per dispatch with no recompile.
+
+### Fixes with no source change needed
+
+- An `ndrange` whose sizes are both negative (`ndrange(-3, -4)`) runs no
+  iterations. Their product is positive, and the loop ran 12 iterations
+  with negative indices.
 
 ## 0.3.0 — 2026-10-07
 

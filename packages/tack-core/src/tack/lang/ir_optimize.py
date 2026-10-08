@@ -30,6 +30,8 @@ def _count_assignments(body: list) -> dict[str, int]:
             name = node.name
         elif isinstance(node, (ir.IRParallelFor, ir.IRSequentialFor)):
             name = node.var
+            for dim in getattr(node, 'dims', None) or ():
+                counts[dim] = counts.get(dim, 0) + 1
         else:
             continue
         counts[name] = counts.get(name, 0) + 1

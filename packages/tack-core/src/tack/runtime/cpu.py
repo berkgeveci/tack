@@ -192,6 +192,7 @@ from tack.runtime.kernel_utils import (  # noqa: F401
     _detect_vector_fields,
     _detect_vector_fields_from_args,
     _expand_template_args,
+    _get_launch,
     _get_loop_range,
     _resolve_range_expr,
     _update_pack_fields,
@@ -439,7 +440,8 @@ _NEVER = 1 << 62
 class CompiledKernel:
     """A JIT-compiled kernel ready for execution."""
 
-    def __init__(self, engine, func_ptr, param_types, param_is_field, func_name):
+    def __init__(self, engine, func_ptr, param_types, param_is_field, func_name,
+                 num_dims=0):
         self._engine = engine  # prevent GC
         self._func_ptr = func_ptr
         self._param_types = param_types
@@ -454,7 +456,8 @@ class CompiledKernel:
                 ctypes_params.append(ctypes.POINTER(ct))
             else:
                 ctypes_params.append(ct)
-        ctypes_params.extend([ctypes.c_int64, ctypes.c_int64])
+        # A multi-dimensional loop's extents, then the chunk's start and end.
+        ctypes_params.extend([ctypes.c_int64] * (num_dims + 2))
 
         self._cfunc_type = ctypes.CFUNCTYPE(None, *ctypes_params)
         self._cfunc = self._cfunc_type(func_ptr)
@@ -546,7 +549,7 @@ class CompiledKernel:
             return 0
         return int(room * ((self.sample_phase * 0.6180339887498949) % 1.0))
 
-    def bind(self, kernel_args: list) -> tuple:
+    def bind(self, kernel_args: list, extents=()) -> tuple:
         """Marshal the field pointers and scalars once for a dispatch.
 
         Only loop_start/loop_end differ between the chunks of one dispatch,
@@ -562,6 +565,7 @@ class CompiledKernel:
                 prefix.append(arg._buffer._data.ctypes.data_as(ctypes.POINTER(ct)))
             else:
                 prefix.append(ct(arg))
+        prefix.extend(ctypes.c_int64(e) for e in extents)
         return tuple(prefix)
 
     def call_range(self, prefix: tuple, loop_start: int, loop_end: int):
@@ -630,7 +634,9 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
 
     param_types = [p.type_annotation for p in ir_func.params]
     param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
-    return CompiledKernel(engine, func_ptr, param_types, param_is_field, ir_func.name)
+    loop = next(s for s in ir_func.body if isinstance(s, ir.IRParallelFor))
+    return CompiledKernel(engine, func_ptr, param_types, param_is_field, ir_func.name,
+                          num_dims=len(loop.dims or ()))
 
 
 def _linux_core_count() -> int | None:
@@ -861,11 +867,11 @@ class CPUBackend(Backend):
 
         # The grid bound reads a texture's field; the kernel samples the
         # texture's own snapshot of it.
-        loop_end = _get_loop_range(
+        loop_end, extents = _get_launch(
             variant.ir, [a.field if isinstance(a, Texture3D) else a
                          for a in effective_args])
 
-        self._dispatch(variant.payload, bind_textures(effective_args), loop_end)
+        self._dispatch(variant.payload, bind_textures(effective_args), loop_end, extents)
 
     @staticmethod
     def _build_variant(ir_func, effective_args):
@@ -879,9 +885,9 @@ class CPUBackend(Backend):
     # ── Dispatch: serial or fan-out ──────────────────────────────────
 
     def _dispatch(self, compiled: CompiledKernel, kernel_args: list,
-                  loop_end: int):
+                  loop_end: int, extents=()):
         """Run the loop range, threading it only when that is faster."""
-        prefix = compiled.bind(kernel_args)
+        prefix = compiled.bind(kernel_args, extents)
         try:
             self._run(compiled, prefix, loop_end)
         finally:

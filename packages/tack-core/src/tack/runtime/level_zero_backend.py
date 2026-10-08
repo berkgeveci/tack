@@ -25,6 +25,7 @@ import numpy as np
 from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
+from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import (
     WORKGROUP_SIZE,
@@ -33,7 +34,7 @@ from tack.lang.workgroup_participation import (
 )
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
-    _get_loop_range,
+    _get_launch,
     as_address,
     bind_textures,
     check_launch_size,
@@ -858,8 +859,13 @@ class CompiledL0Kernel:
         self._workgroup_size = workgroup_size
         self._param_is_texture = param_is_texture or [False] * len(param_types)
 
-    def __call__(self, kernel_args: list, loop_end: int, backend):
-        """Dispatch the Level Zero kernel."""
+    def __call__(self, kernel_args: list, loop_end: int, backend, extents=()):
+        """Dispatch the Level Zero kernel.
+
+        A multi-dimensional loop (``extents``, slowest first) launches groups
+        in its shape, or flat ones with ``__flat__`` set when an extent is
+        past the device's group-count limits (see launch_geometry).
+        """
         if self._requires_full_workgroups:
             check_workgroup_launch(self._func_name, loop_end, backend_label='Level Zero',
                                    workgroup_size=self._workgroup_size)
@@ -899,17 +905,30 @@ class CompiledL0Kernel:
             ctypes.byref(n_val)),
             "zeKernelSetArgumentValue (__n__)")
 
-        # Set workgroup size
         wg = self._workgroup_size
-        _check_ze(ze.zeKernelSetGroupSize(kernel, wg, 1, 1),
+        if extents:
+            props = backend._compute_props
+            grid, block, flat = launch_geometry(
+                extents, block_size=wg,
+                max_grid=(props.maxGroupCountX, props.maxGroupCountY, props.maxGroupCountZ),
+                max_block=(props.maxGroupSizeX, props.maxGroupSizeY, props.maxGroupSizeZ))
+            values = [ctypes.c_int(int(flat))] + [ctypes.c_longlong(e) for e in extents]
+            for k, value in enumerate(values, start=arg_idx + 1):
+                _check_ze(ze.zeKernelSetArgumentValue(
+                    kernel, k, ctypes.sizeof(value), ctypes.byref(value)),
+                    f"zeKernelSetArgumentValue (launch arg {k})")
+        else:
+            block = (wg, 1, 1)
+            grid = ((loop_end + wg - 1) // wg, 1, 1)
+
+        # Set workgroup size
+        _check_ze(ze.zeKernelSetGroupSize(kernel, *block),
                    "zeKernelSetGroupSize")
 
-        # Calculate group count
-        group_count_x = (loop_end + wg - 1) // wg
         group_count = ze_group_count_t(
-            groupCountX=group_count_x,
-            groupCountY=1,
-            groupCountZ=1)
+            groupCountX=grid[0],
+            groupCountY=grid[1],
+            groupCountZ=grid[2])
 
         # Append launch to command list, close, execute, sync, reset
         cmd_list = backend._cmd_list
@@ -1175,7 +1194,7 @@ class LevelZeroBackend(Backend):
         # parameter list, and the range expression names the original args.
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
-        loop_end = _get_loop_range(variant.ir, kernel_args)
+        loop_end, extents = _get_launch(variant.ir, kernel_args)
         if loop_end <= 0:
             # range(0) runs nothing; a negative count would wrap as uint32.
             return
@@ -1195,7 +1214,7 @@ class LevelZeroBackend(Backend):
                 kept_args = split_args(effective_args, pack_info)
                 kernel_args = bind_textures(kept_args) + pack_fields
 
-            compiled(kernel_args, loop_end, self)
+            compiled(kernel_args, loop_end, self, extents)
 
     def _store_texture_shapes(self, ir_func, effective_args):
         """Record Texture3D extents, falling back to software sampling.

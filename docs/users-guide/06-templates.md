@@ -193,6 +193,41 @@ can be a `@staticmethod` (the decorator goes above `@tack.func`) and is
 still called through `self`. The class must be decorated with
 `@tack.data_oriented`.
 
+## Iterating an Object
+
+A class can say what a loop over it runs through, and a kernel then loops
+over the object itself. `__tack_iterate__` names one to three of its scalar
+attributes, fastest first:
+
+```python
+@tack.data_oriented
+class Grid:
+    __tack_iterate__ = ("nx", "ny")
+
+    def __init__(self, nx, ny):
+        self.nx = nx
+        self.ny = ny
+
+    @tack.func
+    def flat(self, c):
+        return c[0] + self.nx * c[1]
+
+
+@tack.kernel
+def label(cells, out):
+    for c in cells:
+        out[cells.flat(c)] = cells.flat(c) + 1
+```
+
+With one name, `for c in cells` is `for c in range(cells.n)` and `c` is an
+integer. With two or three, it is a `tack.ndrange` over them, slowest
+first, and `c` is the vector of indices with `c[0]` running fastest; as the
+kernel's parallel loop it launches in that shape, so recovering the
+indices costs no division. The object's methods receive `c` as it comes,
+so the same kernel runs over a class that iterates one-dimensionally and
+one that iterates over a grid. Instance attributes are runtime extents,
+as any instance scalar is: a new grid size does not recompile.
+
 ## Cell Set Example
 
 Templates are ideal for topology abstractions where the same algorithm
