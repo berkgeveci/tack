@@ -7,7 +7,8 @@ and one rectilinear grid, each run through the same algorithms:
   cells on its two sides, each cell its faces and edges;
 - spaces: point data (H1), cell data (Constant), a linear DG field (L2),
   and values on faces and edges, all as Fields -- the geometry among them,
-  the field named "shape";
+  the field named "shape", whose values on the rectilinear grid are an
+  implicit array (three axes, nothing per point);
 - iteration domains: kernels over cells, faces, edges, or a set of faces,
   once per shape, reading fields through views built for that shape.
 
@@ -83,6 +84,7 @@ def show(name, data):
     print(f"\n{name}: {data.num_points} points, {data.num_cells} cells ({groups})")
     face_groups = ", ".join(f"{g.count} {g.shape.__name__}" for g in faces.groups())
     print(f"  derived: {faces.num_faces} faces ({face_groups}), {edges.num_edges} edges")
+    print(f"  geometry: {data.geometry}")
 
     # Geometry is evaluated through the cells' shape functions; an H1 field too.
     x = data.positions()
@@ -150,7 +152,7 @@ def explode(data, dg):
     grid = vtkUnstructuredGrid()
     points = vtkPoints()
     if data.geometry.space == td.L2():
-        corners = data.geometry.values.to_numpy(vectors=True)
+        corners = td.arrays.to_host(data.geometry.values)
     else:
         corners = data.positions()[connectivity]
     points.SetData(numpy_to_vtk(corners, deep=1))

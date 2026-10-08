@@ -24,6 +24,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, sort_by_key
+from tack.data.arrays import materialize, width_of
 from tack.data.dataset import H1, L2, Constant, DataSet, Field, Values, for_each
 from tack.data.topology import UnstructuredTopology
 
@@ -92,7 +93,7 @@ def gradients(data, field):
     its derivative in parametric coordinates, and the geometry field's Jacobian
     turns that into a world gradient, so the two need not share a space. Cells
     below three dimensions get zero."""
-    if getattr(field.values, "_vector_n", None):
+    if width_of(field.values):
         raise TypeError("gradients takes a scalar field")
     out = _vectors(data.num_cells, data.dtype)
     for_each(_gradients, data, "cells", field, out)
@@ -220,7 +221,7 @@ def jump(data, field):
     if not isinstance(field.space, Constant):
         raise TypeError("jump takes a field of one value per cell")
     out = _like(field.values, data.topology.faces().num_faces)
-    for_each(_jump, data, "faces", field.values, out)
+    for_each(_jump, data, "faces", materialize(field.values), out)
     return Field(Values("faces"), out)
 
 
@@ -241,7 +242,7 @@ def divergence(data, flux):
         raise TypeError("divergence sums a field on faces")
     data.topology.faces()                          # the incidence the cell views need
     out = _like(flux.values, data.num_cells)
-    for_each(_outward_sums, data, "cells", flux.values, out)
+    for_each(_outward_sums, data, "cells", materialize(flux.values), out)
     return Field(Values("cells"), out)
 
 
@@ -292,7 +293,7 @@ def to_points(data, field):
 # ── Helpers ─────────────────────────────────────────────────────────
 
 def _like(values, n):
-    width = getattr(values, "_vector_n", None)
+    width = width_of(values)
     if width:
         return tack.Vector.field(width, values.dtype, shape=(n,))
     return tack.field(values.dtype, shape=(n,))
@@ -307,5 +308,5 @@ def _take_rows(values, ids, out):
 def _take(values, ids):
     out = _like(values, ids.shape[0])
     if ids.shape[0]:
-        _take_rows(values, ids, out)
+        _take_rows(materialize(values), ids, out)
     return out

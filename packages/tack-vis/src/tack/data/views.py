@@ -18,6 +18,13 @@ every compiled kernel is specialized to it (``docs/design/dataset-api.md``
 - or, for a field view, a *space*: ``dof(i, j)`` and ``value(i, pc)`` for
   spaces with a basis, ``at(i)`` for values on entities.
 
+Geometry and spaces read values through a *storage* mixin, ``get(k)``, so
+a field's values may be a device field or an implicit array
+(``tack.data.arrays``). Values shared by points are read through
+``point_value(i, j)``, which an *addressing* mixin defines: by the flat
+point id, or -- for a structured grid's cells over a storage that has
+``get_ijk`` -- by the corner's (i, j, k), with no division.
+
 A field is a separate kernel argument: its view is built for the same
 group as the domain's, so ``u.value(c, pc)`` in ``for c in cells`` reads
 the cell ``c`` the loop is at.
@@ -228,11 +235,11 @@ class _Geometry:
 
 
 class _H1Geometry(_Geometry):
-    """H1 geometry: one position per point id, shared by the cells around it."""
+    """H1 geometry: one position per point, shared by the cells around it."""
 
     @tack.func
     def point(self, i, j):
-        return self.points[self.point_id(i, j)]
+        return self.point_value(i, j)
 
 
 class _L2Geometry(_Geometry):
@@ -241,26 +248,7 @@ class _L2Geometry(_Geometry):
 
     @tack.func
     def point(self, c, j):
-        return self.points[self.point_offsets[self.entity_id(c)] + j]
-
-
-class _RectilinearPoints(_Geometry):
-    """Rectilinear coordinates, for any entity: the flat point id is split into (i, j, k)."""
-
-    @tack.func
-    def point(self, i, j):
-        p = self.point_id(i, j)
-        rest = p // self.px
-        return [self.xs[p - rest * self.px], self.ys[rest % self.py], self.zs[rest // self.py]]
-
-
-class _RectilinearStructured(_Geometry):
-    """Rectilinear coordinates for structured cells: (i, j, k) comes from the cell's own."""
-
-    @tack.func
-    def point(self, c, j):
-        at = self.point_index(c, j)
-        return [self.xs[at[0]], self.ys[at[1]], self.zs[at[2]]]
+        return self.get(self.point_offsets[self.entity_id(c)] + j)
 
 
 # ── Incidence (cells) ───────────────────────────────────────────────
@@ -292,15 +280,79 @@ class _EdgeIncidence:
         return self.side_sign[self.edge_start + self.index(c) * self.NUM_EDGES + e]
 
 
+# ── Storage: what get(k) reads ──────────────────────────────────────
+
+
+class _ExplicitStorage:
+    """A device field: value ``k`` is stored at ``values[k]``."""
+
+    @tack.func
+    def get(self, k):
+        return self.values[k]
+
+
+class _CartesianStorage:
+    """``(xs[i], ys[j], zs[k])`` at ``i + px * (j + py * k)``: three axes, nothing per point."""
+
+    @tack.func
+    def get(self, p):
+        rest = p // self.px
+        return [self.xs[p - rest * self.px], self.ys[rest % self.py], self.zs[rest // self.py]]
+
+    @tack.func
+    def get_ijk(self, at):
+        return [self.xs[at[0]], self.ys[at[1]], self.zs[at[2]]]
+
+
+class _ConstantStorage:
+    """The same ``constant`` at every index. (Not ``value``: that is a space's method,
+    and the mixins share one namespace.)"""
+
+    @tack.func
+    def get(self, k):
+        return self.constant
+
+
+class _CountingStorage:
+    """``start + step * k``."""
+
+    @tack.func
+    def get(self, k):
+        return self.start + self.step * k
+
+
+# ── Addressing: which value a point is ──────────────────────────────
+
+
+class _PointAddress:
+    """Point ``j`` of entity ``i`` is value ``point_id(i, j)``."""
+
+    @tack.func
+    def point_value(self, i, j):
+        return self.get(self.point_id(i, j))
+
+
+class _StructuredPointAddress:
+    """For a structured grid's cells: the storage reads the corner's (i, j, k) directly."""
+
+    @tack.func
+    def point_value(self, c, j):
+        return self.get_ijk(self.point_index(c, j))
+
+
+def point_address(kind, storage):
+    """The addressing mixin for entities of ``kind`` over ``storage``."""
+    if issubclass(kind, _StructuredCells) and hasattr(storage, "get_ijk"):
+        return _StructuredPointAddress
+    return _PointAddress
+
+
 # ── Spaces (field views) ────────────────────────────────────────────
 
 
-class _H1Field:
-    """H1, order 1, Shared: one value per point, interpolated by the shape functions."""
-
-    @tack.func
-    def dof(self, i, j):
-        return self.values[self.point_id(i, j)]
+class _Interpolated:
+    """What the spaces with a basis share: ``value`` and ``parametric_gradient`` from
+    ``dof(i, j)``, which each space defines, and the shape's functions."""
 
     @tack.func
     def value(self, i, pc):
@@ -318,42 +370,36 @@ class _H1Field:
         return g
 
 
+class _H1Field(_Interpolated):
+    """H1, order 1, Shared: one value per point, interpolated by the shape functions."""
+
+    @tack.func
+    def dof(self, i, j):
+        return self.point_value(i, j)
+
+
+class _L2Field(_Interpolated):
+    """L2, order 1, PerCell: each cell's own corner values, at ``offsets[cell]``."""
+
+    @tack.func
+    def dof(self, i, j):
+        return self.get(self.offsets[self.entity_id(i)] + j)
+
+
 class _ConstantField:
     """Constant (L2, order 0): one value per cell."""
 
     @tack.func
     def dof(self, i, j):
-        return self.values[self.entity_id(i)]
+        return self.get(self.entity_id(i))
 
     @tack.func
     def value(self, i, pc):
-        return self.values[self.entity_id(i)]
+        return self.get(self.entity_id(i))
 
     @tack.func
     def parametric_gradient(self, i, pc):
         return tack.Vector([0.0, 0.0, 0.0])
-
-
-class _L2Field:
-    """L2, order 1, PerCell: each cell's own corner values, at ``offsets[cell]``."""
-
-    @tack.func
-    def dof(self, i, j):
-        return self.values[self.offsets[self.entity_id(i)] + j]
-
-    @tack.func
-    def value(self, i, pc):
-        total = self.dof(i, 0) * self.shape_function(0, pc)
-        for j in range(1, self.NUM_POINTS):
-            total += self.dof(i, j) * self.shape_function(j, pc)
-        return total
-
-    @tack.func
-    def parametric_gradient(self, i, pc):
-        g = tack.Vector([0.0, 0.0, 0.0])
-        for j in range(self.NUM_POINTS):
-            g += self.dof(i, j) * self.shape_gradient(j, pc)
-        return g
 
 
 class _ValuesField:
@@ -361,7 +407,7 @@ class _ValuesField:
 
     @tack.func
     def at(self, i):
-        return self.values[self.entity_id(i)]
+        return self.get(self.entity_id(i))
 
 
 # ── Groups and view classes ─────────────────────────────────────────
@@ -391,7 +437,13 @@ class DomainGroup:
 
     def view(self, *mixins, **attributes):
         """An instance of the view class with ``mixins``, holding ``attributes``."""
-        view = view_class(self.kind, self.shape, *mixins)(*self.args)
+        cls = view_class(self.kind, self.shape, *mixins)
+        view = cls(*self.args)
         for name, value in attributes.items():
+            # The mixins share one namespace: an attribute named like a method
+            # would hide it, and the kernel would fail far from here.
+            if hasattr(cls, name):
+                raise AttributeError(f"{cls.__name__}.{name} is already defined; "
+                                     "an attribute of that name would hide it")
             setattr(view, name, value)
         return view

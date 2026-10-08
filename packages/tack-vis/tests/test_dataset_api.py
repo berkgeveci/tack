@@ -379,7 +379,7 @@ def test_geometry_is_the_shape_field(backend):
     assert data.geometry.space == td.H1()
     grid = td.rectilinear_grid([0, 1, 2], [0, 1], [0, 1])
     assert grid.geometry.space == td.H1()
-    assert isinstance(grid.geometry.values, td.RectilinearCoordinates)
+    assert isinstance(grid.geometry.values, td.CartesianProduct)
     with pytest.raises(ValueError, match="is the geometry"):
         td.DataSet(data.topology, data.positions(), fields={"shape": data.geometry})
     with pytest.raises(TypeError, match="H1 or L2"):
@@ -453,3 +453,64 @@ def test_discontinuous_geometry(backend):
         alg.face_geometry(shrunk)
     with pytest.raises(ValueError, match="per cell corner"):
         shrunk.positions()
+
+
+# ── Implicit arrays ─────────────────────────────────────────────────
+
+def test_rectilinear_geometry_is_an_ordinary_field(backend):
+    """The geometry's values are a CartesianProduct, an implicit array; any algorithm
+    takes it as a field like any other."""
+    data = td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1, 1.5])
+    np.testing.assert_allclose(
+        alg.values_at_centers(data, data.geometry).values.to_numpy(vectors=True),
+        alg.cell_centers(data).values.to_numpy(vectors=True), rtol=1e-6)
+    np.testing.assert_allclose(data.positions()[:4], [[0, 0, 0], [1, 0, 0], [3, 0, 0],
+                                                      [0, 2, 0]])
+
+
+def test_structured_cells_read_cartesian_values_by_ijk(backend):
+    from tack.data import views
+
+    data = td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1])
+    cells = data.topology.groups()[0]
+    faces = data.topology.faces().groups()[1]
+    assert views._StructuredPointAddress in type(data.geometry.view(cells)).__mro__
+    assert views._PointAddress in type(data.geometry.view(faces)).__mro__
+    explicit = td.Field(td.H1(), _vectors(data.positions()))
+    assert views._PointAddress in type(explicit.view(cells)).__mro__
+    if backend == "cpu":
+        # No signed division: the structured path never splits a flat point id.
+        import re
+
+        out = tack.Vector.field(3, tack.f32, shape=(data.num_cells,))
+        src = tack.inspect(alg._at_centers, data.domain_view("cells", cells),
+                           data.geometry.view(cells), out, mode="source")
+        assert not re.search(r"\bs(?:div|rem)\b", src)
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_implicit_values_match_explicit(backend, make):
+    data = (_two_hexes_and_a_pyramid() if make == "mixed"
+            else td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1, 1.5]))
+    n, m = data.num_points, data.num_cells
+    pairs = [
+        (td.Field(td.H1(), td.ConstantArray(3.0, n)), td.Field(td.H1(), _scalars(np.full(n, 3.0)))),
+        (td.Field(td.H1(), td.CountingArray(n, 0.0, 0.5)),
+         td.Field(td.H1(), _scalars(0.5 * np.arange(n)))),
+    ]
+    for implicit, explicit in pairs:
+        for algorithm in (alg.values_at_centers, alg.gradients):
+            np.testing.assert_allclose(algorithm(data, implicit).values.to_numpy(),
+                                       algorithm(data, explicit).values.to_numpy(), atol=1e-5)
+    ids = td.Field(td.Constant(), td.CountingArray(m, 0.0, 1.0))
+    np.testing.assert_allclose(alg.jump(data, ids).values.to_numpy(),
+                               alg.jump(data, td.Field(td.Constant(), _scalars(np.arange(m))))
+                               .values.to_numpy())
+    np.testing.assert_allclose(alg.to_points(data, ids).values.to_numpy(),
+                               alg.to_points(data, td.Field(td.Constant(), _scalars(np.arange(m))))
+                               .values.to_numpy(), rtol=1e-6)
+
+
+def test_field_values_must_be_an_array(backend):
+    with pytest.raises(TypeError, match="implicit array"):
+        td.Field(td.H1(), np.zeros(4))

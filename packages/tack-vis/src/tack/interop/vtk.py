@@ -247,9 +247,9 @@ def vtk_to_dataset(grid, dtype=tack.f32):
 
     from tack.data import (
         H1,
+        CartesianProduct,
         Constant,
         DataSet,
-        RectilinearCoordinates,
         StructuredTopology,
         UnstructuredTopology,
     )
@@ -267,7 +267,7 @@ def vtk_to_dataset(grid, dtype=tack.f32):
                                         vtk_to_numpy(cell_array.GetConnectivityArray()))
         geometry = vtk_to_numpy(grid.GetPoints().GetData())
     elif grid.IsA("vtkRectilinearGrid"):
-        geometry = RectilinearCoordinates(vtk_to_numpy(grid.GetXCoordinates()),
+        geometry = CartesianProduct(vtk_to_numpy(grid.GetXCoordinates()),
                                           vtk_to_numpy(grid.GetYCoordinates()),
                                           vtk_to_numpy(grid.GetZCoordinates()), dtype=dtype)
         dims = [0, 0, 0]
@@ -289,7 +289,9 @@ def vtk_to_dataset(grid, dtype=tack.f32):
 def _field_to_array(name, field):
     from vtkmodules.util.numpy_support import numpy_to_vtk
 
-    values = field.to_numpy(vectors=True) if getattr(field, "_vector_n", None) else field.to_numpy()
+    from tack.data.arrays import to_host
+
+    values = to_host(field)
     array = numpy_to_vtk(values, deep=1)
     array.SetName(name)
     return array
@@ -317,8 +319,8 @@ def dataset_to_vtk(data):
 
     from tack.data import (
         H1,
+        CartesianProduct,
         Constant,
-        RectilinearCoordinates,
         StructuredTopology,
         UnstructuredTopology,
         Values,
@@ -327,7 +329,7 @@ def dataset_to_vtk(data):
     topology = data.topology
     coordinates = data.geometry.values
     if isinstance(topology, StructuredTopology) and isinstance(coordinates,
-                                                               RectilinearCoordinates):
+                                                               CartesianProduct):
         grid = vtkRectilinearGrid()
         grid.SetDimensions(*coordinates.dims)
         grid.SetXCoordinates(numpy_to_vtk(coordinates.x.to_numpy(), deep=1))

@@ -7,10 +7,13 @@
   data); ``L2()`` each cell's own corner values (a linear discontinuous
   Galerkin field); ``Values(on)`` one value per point, edge, face or cell,
   with no basis -- data *about* the entity;
-- a *field* is a space and its values;
+- a *field* is a space and its values, which are any array: a device
+  field, or an implicit array from ``tack.data.arrays`` (a
+  ``CartesianProduct`` of three axes, a ``ConstantArray``, a
+  ``CountingArray``);
 - the *geometry* is a field too, named ``"shape"``: ``H1`` positions, one
-  per point (or ``RectilinearCoordinates``, an ``H1`` field that stores only
-  the axes), or ``L2`` positions, each cell's own corners;
+  per point (a rectilinear grid's are a ``CartesianProduct``), or ``L2``
+  positions, each cell's own corners;
 - *sets* are named arrays of entity ids, such as the boundary faces.
 
 ``for_each(kernel, data, domain, *args)`` runs ``kernel`` once per shape in
@@ -22,11 +25,11 @@ field's view for the same group.
 import numpy as np
 
 import tack
-from tack.data import views
-from tack.lang.field import Field as _DeviceField
+from tack.data import arrays, views
+from tack.data.arrays import CartesianProduct
 
-__all__ = ["H1", "L2", "Constant", "DataSet", "Field", "RectilinearCoordinates", "Values",
-           "for_each", "rectilinear_grid"]
+__all__ = ["H1", "L2", "Constant", "DataSet", "Field", "Values", "for_each",
+           "rectilinear_grid"]
 
 
 # ── Spaces ──────────────────────────────────────────────────────────
@@ -81,10 +84,11 @@ class Values(Space):
 
 
 class Field:
-    """A space and its values: a field of scalars or vectors, and for ``L2`` the
-    per-cell ``offsets`` into them."""
+    """A space and its values -- any array, explicit or implicit, of scalars or
+    vectors -- and for ``L2`` the per-cell ``offsets`` into them."""
 
     def __init__(self, space, values, offsets=None):
+        arrays.storage(values)                       # refuses what is not an array
         self.space = space
         self.values = values
         self.offsets = offsets
@@ -92,86 +96,63 @@ class Field:
             raise ValueError("an L2 field needs the offset of each cell's values")
 
     def view(self, group):
-        """This field's view for ``group``: the group's kind and shape, and the space."""
-        attributes = {"values": self.values}
-        if self.offsets is not None:
-            attributes["offsets"] = self.offsets
-        return group.view(self.space.mixin, **attributes)
+        """This field's view for ``group``: the group's kind and shape, the space, and
+        the storage its values are read through."""
+        mixins, attributes = _space_parts(self, group)
+        return group.view(*mixins, **attributes)
 
     def __repr__(self):
-        return f"Field({self.space!r}, {self.values.shape[0]} values)"
+        values = self.values
+        stored = repr(values) if isinstance(values, arrays._Implicit) else "stored"
+        return f"Field({self.space!r}, {arrays.size_of(values)} values, {stored})"
+
+
+def _space_parts(field, group, space_mixin=None):
+    """The mixins and attributes that read ``field`` for ``group``: its space's (or
+    ``space_mixin``, for the geometry), an addressing mixin for values shared by
+    points, and its storage's."""
+    storage, attributes = arrays.storage(field.values)
+    mixins = [space_mixin or field.space.mixin]
+    if isinstance(field.space, H1):
+        mixins.append(views.point_address(group.kind, storage))
+    mixins.append(storage)
+    if field.offsets is not None:
+        attributes["point_offsets" if space_mixin else "offsets"] = field.offsets
+    return mixins, attributes
 
 
 # ── Geometry ────────────────────────────────────────────────────────
 
-class RectilinearCoordinates:
-    """The points of a grid whose lines run along the axes: (x[i], y[j], z[k]),
-    numbered x fastest. Only the three axes are stored."""
-
-    def __init__(self, x, y=(0.0,), z=(0.0,), dtype=tack.f32):
-        self.dtype = dtype
-        self.x, self.y, self.z = (self._axis(a) for a in (x, y, z))
-        self.dims = (self.x.shape[0], self.y.shape[0], self.z.shape[0])
-
-    def _axis(self, values):
-        values = np.ascontiguousarray(values, dtype=self.dtype.numpy_dtype).reshape(-1)
-        field = tack.field(self.dtype, shape=values.shape)
-        field.from_numpy(values)
-        return field
-
-    @property
-    def num_points(self):
-        return int(np.prod(self.dims))
-
-    @property
-    def point_dims(self):
-        dims = list(self.dims)
-        while len(dims) > 1 and dims[-1] == 1:
-            dims.pop()
-        return tuple(dims)
-
-    def to_numpy(self):
-        z, y, x = np.meshgrid(self.z.to_numpy(), self.y.to_numpy(), self.x.to_numpy(),
-                              indexing="ij")
-        return np.stack([x, y, z], axis=-1).reshape(-1, 3)
-
-
 def _as_geometry(geometry, dtype):
-    """``geometry`` as a ``Field``: positions per point, ``RectilinearCoordinates`` or a
-    device field of 3-vectors become ``H1`` fields; a ``Field`` is checked."""
+    """``geometry`` as a ``Field``: positions per point (a host array, or any array of
+    3-vectors, such as a ``CartesianProduct``) become an ``H1`` field; a ``Field``
+    is checked."""
     if not isinstance(geometry, Field):
-        if not isinstance(geometry, (RectilinearCoordinates, _DeviceField)):
+        try:
+            arrays.storage(geometry)
+        except TypeError:
             positions = np.ascontiguousarray(geometry)
             geometry = tack.Vector.field(3, dtype, shape=(positions.shape[0],))
             geometry.from_numpy(positions.astype(dtype.numpy_dtype))
         geometry = Field(H1(), geometry)
     if not isinstance(geometry.space, (H1, L2)):
         raise TypeError(f"geometry lives in H1 or L2, not {geometry.space!r}")
-    if isinstance(geometry.values, RectilinearCoordinates):
-        if not isinstance(geometry.space, H1):
-            raise TypeError("rectilinear coordinates are an H1 geometry")
-    elif getattr(geometry.values, "_vector_n", None) != 3:
+    if arrays.width_of(geometry.values) != 3:
         raise TypeError("geometry values must be 3-vectors")
     return geometry
 
 
-def _geometry_mixin(geometry, group, kind):
-    """The mixin and attributes that give ``group``'s view, an entity of ``kind``, the
+def _geometry_parts(geometry, group, kind):
+    """The mixins and attributes that give ``group``'s view, an entity of ``kind``, the
     geometry field ``geometry``."""
-    values = geometry.values
-    if isinstance(values, RectilinearCoordinates):
-        structured = issubclass(group.kind, views._StructuredCells)
-        mixin = views._RectilinearStructured if structured else views._RectilinearPoints
-        return mixin, {"xs": values.x, "ys": values.y, "zs": values.z,
-                       "px": values.dims[0], "py": values.dims[1]}
     if isinstance(geometry.space, L2):
         if kind != "cells":
             raise NotImplementedError(
                 f"the {kind} of an L2 geometry have no positions of their own: each side's "
                 "cell has its own corners there, which needs per-side traces "
                 "(docs/design/dataset-api.md, section 9)")
-        return views._L2Geometry, {"points": values, "point_offsets": geometry.offsets}
-    return views._H1Geometry, {"points": values}
+        return _space_parts(geometry, group, views._L2Geometry)
+    return _space_parts(geometry, group, views._H1Geometry)
 
 
 # ── Datasets ────────────────────────────────────────────────────────
@@ -179,8 +160,8 @@ def _geometry_mixin(geometry, group, kind):
 class DataSet:
     """A topology, named fields and named sets. The geometry is the field named
     ``"shape"``, given as ``geometry``: a ``Field`` in ``H1`` or ``L2``, or positions
-    per point (an array, a device field of 3-vectors, or ``RectilinearCoordinates``),
-    which become an ``H1`` field."""
+    per point (a host array, or any array of 3-vectors, such as a device field or
+    a ``CartesianProduct``), which become an ``H1`` field."""
 
     def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32):
         self.topology = topology
@@ -202,12 +183,9 @@ class DataSet:
 
     @property
     def num_points(self):
-        values = self.geometry.values
-        if isinstance(values, RectilinearCoordinates):
-            return values.num_points
         if isinstance(self.geometry.space, L2):
             return self.topology.num_points
-        return values.shape[0] // 3
+        return arrays.size_of(self.geometry.values)
 
     @property
     def num_cells(self):
@@ -216,12 +194,9 @@ class DataSet:
     def positions(self):
         """Every point's position as a host array, ``(num_points, 3)``: an ``H1``
         geometry's values. An ``L2`` geometry has none per point."""
-        values = self.geometry.values
-        if isinstance(values, RectilinearCoordinates):
-            return values.to_numpy()
         if isinstance(self.geometry.space, L2):
             raise ValueError("an L2 geometry has positions per cell corner, not per point")
-        return values.to_numpy(vectors=True)
+        return arrays.to_host(self.geometry.values)
 
     def l2_offsets(self):
         """Where each cell's values start in an ``L2`` field: cell ``c``'s corner ``j``
@@ -254,8 +229,8 @@ class DataSet:
         faces and edges have been derived."""
         mixins = []
         kind = domain if domain in ("cells", "faces", "edges") else "faces"
-        geometry, attributes = _geometry_mixin(self.geometry, group, kind)
-        mixins.append(geometry)
+        geometry, attributes = _geometry_parts(self.geometry, group, kind)
+        mixins.extend(geometry)
         if domain == "cells":
             faces = self.topology._faces
             if faces is not None and group.shape.NUM_FACES:
@@ -304,5 +279,5 @@ def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32):
     """A dataset of the grid whose lines run through ``x``, ``y`` and ``z``."""
     from tack.data.topology import StructuredTopology
 
-    coordinates = RectilinearCoordinates(x, y, z, dtype=dtype)
+    coordinates = CartesianProduct(x, y, z, dtype=dtype)
     return DataSet(StructuredTopology(coordinates.point_dims), coordinates)

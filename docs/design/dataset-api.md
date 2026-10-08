@@ -332,8 +332,9 @@ shapes and a rectilinear grid:
 | Module | What it holds |
 |---|---|
 | `topology.py` | `UnstructuredTopology`, `StructuredTopology`; cells as one `DomainGroup` per shape; `faces()` and `edges()` derived by sorting and cached |
-| `views.py` | the template mixins: entity kinds (cells, structured cells, faces, edges), geometry (`position`, `geometry_jacobian`, read from the geometry field), cell incidence, and one per space |
-| `dataset.py` | spaces (`H1`, `Constant`, `L2`, `Values(on)`), `Field`, `RectilinearCoordinates`, `DataSet` (geometry is its `"shape"` field), `for_each` |
+| `views.py` | the template mixins: entity kinds (cells, structured cells, faces, edges), geometry (`position`, `geometry_jacobian`, read from the geometry field), cell incidence, one per space, one per storage (`get(k)`), and how a point's value is addressed |
+| `arrays.py` | implicit arrays a field's values may be: `CartesianProduct` (a rectilinear grid's points), `ConstantArray`, `CountingArray`; helpers for any array |
+| `dataset.py` | spaces (`H1`, `Constant`, `L2`, `Values(on)`), `Field`, `DataSet` (geometry is its `"shape"` field), `for_each` |
 | `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `jump`, `divergence`, `to_points` |
 | `interop/vtk.py` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant` |
 
@@ -398,6 +399,21 @@ What building it showed:
   adds its own basis behind the same two methods. Faces and edges of an
   `L2` geometry are refused: each side's cell has its own corners there,
   the per-side traces again.
+- **A field's values are any array**, explicit or implicit, as Viskores'
+  `ArrayHandle` storages are. A view is (space + storage): the space's
+  methods read through the storage's `get(k)`, so a field can be a
+  `CartesianProduct` of three axes, a `ConstantArray` or a
+  `CountingArray` and every algorithm takes it unchanged. The rectilinear
+  grid's geometry is just an `H1` field over a `CartesianProduct`; it lost
+  its special-case mixins. For a structured grid's cells over a storage
+  with `get_ijk`, the host picks an addressing mixin that reads each
+  corner by (i, j, k), so no flat point id is ever split; elsewhere
+  (faces, edges, an unstructured topology over the same points) the flat
+  id is split as before.
+- **The mixins share one namespace.** A `ConstantArray` kept its number in
+  `value`, which hid the spaces' `value(i, pc)` method; the kernel failed
+  to compile with a message far from the cause. Building a view now
+  refuses any attribute named like something the view class defines.
 - Not yet: face orientation indices (only which side a cell is; enough at
   linear order), PerSide fields, quadrature spaces, sets other than face
   ids, faces of 2D cells (a 2D mesh's "faces" are its edges), and order
