@@ -441,7 +441,91 @@ What building it showed:
   ids, faces of 2D cells (a 2D mesh's "faces" are its edges), and order
   above one.
 
-## 10. Questions to settle
+## 10. Polyhedra: a separate path
+
+Decided in principle (2026-10-08); not built. Build it when there is a
+concrete polyhedral dataset and algorithm to aim at.
+
+Everything the shape-based design rests on -- compile-time counts
+(`NUM_POINTS`, `NUM_FACES`, edge and face tables), reference elements,
+parametric coordinates, shape-function bases, DOF counts per entity of a
+reference element -- is absent for polyhedra. Folding them into the same
+views would leak a "no reference element" branch into every space and
+every algorithm that touches a basis. MFEM and vtkCellGrid leave polyhedra
+out, as Viskores does as far as we know (it has polygons only); VTK
+supports them as a separate, slower path behind its common cell API. And
+the use is narrower and different in kind: mostly finite-volume CFD
+(OpenFOAM, Fluent, STAR-CCM+), with cell-centered and face data, whose
+natural operations are face-based or work on sub-tetrahedra.
+
+So polyhedra get **their own topology and their own algorithms**, and the
+shape-based views keep their compile-time constants. Turning those
+constants into methods so one kernel source could serve both is not
+needed.
+
+**The topology.** Unlike VTK, where only the polyhedra of a mixed mesh
+carry cell -> face data (`SetPolyhedralCells`), a polyhedral topology gives
+*every* cell, hexahedra included, by its faces; it is not mixed with
+shape-based cells.
+
+| | Stored | Derived on demand |
+|---|---|---|
+| faces | polygons: face -> points (CSR), ordered so the order defines the normal | |
+| cells | cell -> faces (CSR), with a bit per entry: does the face's normal point out of this cell | |
+| face -> cells | | by inverting cell -> face: the two-sided face record of section 3.1 |
+| edges | | from the faces' point pairs, by the usual sort |
+| cell -> points | | the unique points of a cell's faces, for point data |
+
+This is the data the shape-based path's derived faces already hold
+(`side_face` and `side_slot`), with offsets instead of a fixed stride, and
+faces given rather than derived. It is also what polyhedral formats store:
+Exodus NFACED/NSIDED, and OpenFOAM, whose owner and neighbour are side 0
+and side 1, the normal pointing out of the owner.
+
+**Shared with the shape-based path:** arrays and `Field`; the spaces with
+no basis (`Constant`, `Values` on points, edges, faces and cells -- nearly
+all finite-volume data); sets; `DataSet`; VTK interop; the `for_each`
+machinery; and the face conventions. A cell or face field means the same
+on either kind of mesh.
+
+**Separate:**
+
+- *Spaces with a basis*, if ever needed. H1 point data has no natural
+  interpolant inside a polyhedron: generalized barycentric coordinates
+  (mean value, as `vtkPolyhedron` uses; Wachspress for convex cells) are
+  costly and need all of a cell's faces; piecewise linear on a
+  sub-tetrahedralization is cheap. DG on polyhedra (and HHO, VEM) uses
+  polynomials in physical coordinates about the cell center, whose DOF
+  count depends only on the order, so those kernels stay fixed-size.
+- *Geometry* is H1 order 1, point positions. Centers and volumes come from
+  the face decomposition, gradients from the divergence theorem over faces
+  (Green-Gauss) rather than a Jacobian.
+- *Algorithms.* Some exist twice -- external faces, threshold,
+  cell-to-point, contour -- since the polyhedral versions work
+  differently. Those needing a reference element (contour, slice, probe,
+  point location) iterate each cell's sub-tetrahedra in the kernel (cell
+  center, face centers, each face triangulated about its center) without
+  storing them, reusing the `Tetra` shape's tables.
+- *Runtime counts.* Loops over a cell's faces and a face's points take
+  runtime bounds. Algorithms stream rather than gather a cell into a local
+  array; where they must gather, the host picks a padded cap (8, 16, 32,
+  64) from the largest cell, and cells are grouped by size bucket as the
+  shape-based path groups them by shape, which also keeps GPU threads from
+  waiting on the largest cell in a warp.
+
+**Bridges.** A shape-based mesh always converts to the polyhedral form,
+every cell becoming its faces, so the polyhedral algorithms are a slow
+fallback for any mesh. The reverse goes by tetrahedralizing, or by
+recognising cells that are really hexahedra, tetrahedra, wedges or
+pyramids. Polygons in 2D are the same story one dimension down, with edges
+in the faces' role.
+
+Open: which algorithms matter on polyhedra (visualization only, or solver
+data too); whether cell -> faces (Exodus, VTK) or face -> owner/neighbour
+(OpenFOAM) is primary -- leaning cell -> faces; and where the first
+polyhedral dataset comes from.
+
+## 11. Questions to settle
 
 1. **Truth for continuity.** This proposal follows MFEM -- continuity
    follows from which entities own DOFs -- and treats vtkCellGrid's
