@@ -188,9 +188,21 @@ def _surface_cells(ids, kinds, rows, starts, types, offsets, connectivity, lengt
             offsets[ids.shape[0]] = length
 
 
+@tack.kernel
+def _face_cells(ids, sides, out):
+    for i in range(ids.shape[0]):
+        out[i] = sides[ids[i]][0]
+
+
 def extract_surface(data, name="boundary"):
     """The faces of set ``name`` as a surface dataset: triangles and quads on the same
-    points, each in its side 0's outward order. Face fields become cell fields."""
+    points, each in its side 0's outward order. Fields on faces become the surface's
+    cell fields, and so do cell fields (``Constant``, values on cells), each face
+    taking its side 0 cell's value; point fields (``H1``, values on points) stay on
+    the same points. The geometry must be ``H1``: an ``L2`` one has no shared
+    points for the faces to stand on."""
+    if not isinstance(data.geometry.space, H1):
+        raise TypeError("extract_surface keeps the points, so needs an H1 geometry")
     faces = data.topology.faces()
     ids = data.sets[name]
     n = ids.shape[0]
@@ -206,9 +218,22 @@ def extract_surface(data, name="boundary"):
         _surface_cells(ids, faces.kinds, faces.rows, starts, types, offsets, connectivity,
                        length)
     surface = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
-    on_faces = Values(data, "faces")
-    fields = {key: Field(Values(surface, "cells"), _take(f.values, ids))
-              for key, f in data.fields.items() if f.space is on_faces}
+    cells = tack.field(tack.i32, shape=(n,))
+    if n:
+        _face_cells(ids, faces.sides, cells)
+    fields = {}
+    for key, f in data.fields.items():
+        space = f.space
+        if key == "shape":
+            continue
+        if space is Values(data, "faces"):
+            fields[key] = Field(Values(surface, "cells"), _take(f.values, ids))
+        elif isinstance(space, Constant) or space is Values(data, "cells"):
+            fields[key] = Field(Values(surface, "cells"), _take(f.values, cells))
+        elif isinstance(space, H1):
+            fields[key] = Field(H1(surface), f.values)
+        elif space is Values(data, "points"):
+            fields[key] = Field(Values(surface, "points"), f.values)
     # The same points: the geometry's values, on the surface's H1 space.
     return DataSet(surface, Field(H1(surface), data.geometry.values), fields=fields)
 

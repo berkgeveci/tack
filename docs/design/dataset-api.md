@@ -291,9 +291,10 @@ Every filter becomes "per shape, per domain, with field views":
   <-> H1 1 is today's pair; L2 p -> H1 1 at vertices is how DG data is
   shown with continuous coloring.
 - **Contour** evaluates the field at the cell's vertices for linear
-  spaces; for order > 1 or PerCell fields it subdivides each cell (or uses
-  Bézier hulls, as vtkCellGrid's ChangeBasis prepares for) and contours
-  the pieces. DG jumps are kept: each cell contours its own polynomial.
+  spaces; for order > 1 it subdivides each cell (or uses Bézier hulls, as
+  vtkCellGrid's ChangeBasis prepares for) and contours the pieces. DG
+  jumps are kept: each cell contours its own polynomial, and points merge
+  only within a cell (built at order 1; section 9).
 - **External faces** become "the faces with one side" from the derived
   face topology, as a side set over the input.
 - **Threshold** becomes a cell set over the input, or a new dataset.
@@ -346,7 +347,8 @@ shapes and a rectilinear grid:
 | `arrays.py` | implicit arrays a field's values may be: `CartesianProduct` (a rectilinear grid's points), `ConstantArray`, `CountingArray`; helpers for any array |
 | `spaces.py` | spaces on a topology, each owning its layout: `H1(data)`, `L2(data)` (holds its offsets), `Constant(data)`, `Values(data, on)`; one object per (kind, parameters, topology) |
 | `dataset.py` | `Field` (a space and its values), `DataSet` (geometry is its `"shape"` field), `for_each` |
-| `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `jump`, `divergence`, `to_points` |
+| `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `traces`, `jump`, `upwind_flux`, `divergence`, `to_points` |
+| `filters.py` | `contour`, `slice_plane`, `threshold`, `external_faces`, ported from `vis/data-model` onto fields and spaces |
 | `interop/vtk.py` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant` |
 
 `packages/tack-vis/examples/42_dataset_api_tour.py` runs every algorithm
@@ -467,6 +469,25 @@ What building it showed:
   applies; they are cached on the topology. Algorithms that lay out one
   entry per (cell, corner), such as `to_points`, place a subgroup's cells
   by that position.
+- **The filters port cleanly, and gain from the spaces.** `contour`,
+  `slice_plane`, `threshold` and `external_faces` from `vis/data-model`
+  read fields through their views, and match VTK as before
+  (vtkContourGrid for every case of every 3D shape and for real meshes,
+  vtkCutter, vtkThreshold, vtkGeometryFilter). What is new: `contour`
+  takes any field with a basis, evaluated at each cell's corners
+  (`corner_value`, so the filters do not assume values sit at corners).
+  A continuous field on a continuous geometry merges points by global
+  edge, watertight; a DG field, or any field on an L2 geometry, merges
+  them only within each cell, so the surface keeps the data's jumps.
+  `slice_plane` computes its distance in the geometry's own space, so an
+  L2 geometry's cells each slice their own corners. `threshold` tests
+  corner or cell values through the field's view (an order per cell
+  included) and carries every field it can -- points and cells gathered,
+  L2 fields and an L2 geometry block by block with their orders.
+  `external_faces` is the boundary face set through `extract_surface`,
+  which now carries cell and point fields too. With these, `vis/data-model`
+  has nothing this branch lacks except its own point/cell averaging pair,
+  which `to_points` covers one way.
 - **The mixins share one namespace.** A `ConstantArray` kept its number in
   `value`, which hid the spaces' `value(i, pc)` method; the kernel failed
   to compile with a message far from the cause. Building a view now

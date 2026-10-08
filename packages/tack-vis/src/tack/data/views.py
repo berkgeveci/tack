@@ -436,6 +436,12 @@ class _Interpolated:
             g += self.dof(i, j) * self.shape_gradient(j, pc)
         return g
 
+    @tack.func
+    def corner_value(self, i, j):
+        """The value at the cell's corner ``j``: at order 1 the values are the
+        corners', so it is value ``j`` itself."""
+        return self.dof(i, j)
+
 
 class _H1Field(_Interpolated):
     """H1, order 1, Shared: one value per point, interpolated by the shape functions."""
@@ -473,6 +479,10 @@ class _L2Order0Field:
     def parametric_gradient(self, i, pc):
         return tack.Vector([0.0, 0.0, 0.0])
 
+    @tack.func
+    def corner_value(self, i, j):
+        return self.get(self.offsets[self.entity_id(i)])
+
 
 class _ConstantField:
     """Constant (L2, order 0): one value per cell."""
@@ -488,6 +498,10 @@ class _ConstantField:
     @tack.func
     def parametric_gradient(self, i, pc):
         return tack.Vector([0.0, 0.0, 0.0])
+
+    @tack.func
+    def corner_value(self, i, j):
+        return self.get(self.entity_id(i))
 
 
 class _SideTracesField:

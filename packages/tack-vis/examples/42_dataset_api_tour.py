@@ -19,6 +19,8 @@ With --output DIR it writes, for ParaView:
   mixed_dg.vtu           the DG field, one copy of each point per cell, the
                          way MFEM's Catalyst "mesh" channel writes DG data:
                          colour by "dg" to see the jumps between cells
+  <grid>_contour.vtu     a contour of the 'height' field, and
+  <grid>_slice.vtu       a slice through the middle
   mixed_shrunk.vtu       the same grid with an L2 geometry: each cell's
                          corners pulled toward its center, over the same
                          topology
@@ -131,10 +133,25 @@ def show(name, data):
           f"averaged back onto the points it is unchanged: "
           f"{np.allclose(back, data.fields['height'].values.to_numpy(), atol=1e-5)}")
 
+    # Filters, reading fields through their spaces.
+    iso = td.contour(data, "height", 1.0)
+    dg_iso = td.contour(data, dg, 1.0)
+    cut = td.slice_plane(data, data.positions().mean(axis=0), (1.0, 0.2, 0.1))
+    kept = td.threshold(data, "cell id", 0, data.num_cells // 2)
+    outside = td.external_faces(data)
+    print(f"  contour of 'height' at 1: {iso.num_cells} triangles on {iso.num_points} points; "
+          f"as a DG field the same triangles on {dg_iso.num_points} points, merged only "
+          f"within cells")
+    print(f"  slice: {cut.num_cells} triangles; threshold of the first half of the cells: "
+          f"{kept.num_cells} cells on {kept.num_points} points; external faces: "
+          f"{outside.num_cells}")
+
     if args.output:
         os.makedirs(args.output, exist_ok=True)
         _write(dataset_to_vtk(data), os.path.join(args.output, name))
         _write(dataset_to_vtk(surface), os.path.join(args.output, f"{name}_boundary"))
+        _write(dataset_to_vtk(iso), os.path.join(args.output, f"{name}_contour"))
+        _write(dataset_to_vtk(cut), os.path.join(args.output, f"{name}_slice"))
     return dg
 
 
