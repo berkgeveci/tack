@@ -334,7 +334,7 @@ def test_f32_kernels_are_unchanged(backend):
 def test_which_locals_are_replaced():
     from tack.lang.ir_optimize import _literal
     tack.init(arch=tack.cpu)
-    text = tack.inspect(_weak_locals, _field([1.0], tack.f64), tack.field(tack.f64, (1, 8)),
+    text = tack.inspect(_weak_locals, _field([1.0], tack.f64), tack.field(tack.f64, (1, 9)),
                         tack.field(tack.f32, (1,)), 1, mode="ir")
     assigned = {line.split("=")[0].strip() for line in text.splitlines() if " = " in line
                 and "[" not in line.split("=")[0]}
