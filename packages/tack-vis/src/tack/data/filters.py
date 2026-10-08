@@ -13,6 +13,11 @@
   (``vtkGeometryFilter`` on 3D cells). Each face is keyed by its sorted
   point ids, two stable sorts bring a face's copies together, and the
   faces occurring once are counted, scanned and scattered.
+- ``contour``: the triangles where point data crosses an isovalue in the
+  3D cells, by VTK's case tables (``vtkContourFilter``). Each cell counts
+  its triangles, a scan places them, and each writes its points,
+  interpolated along the edges they lie on; the points are then merged by
+  edge, so the surface is connected, and point data interpolated onto them.
 
 Each runs a kernel per shape present (``for_each_shape``), written once
 against the cell views' methods. Data arrays must be floating point; a
@@ -28,7 +33,7 @@ from tack.data import shapes
 from tack.data.cell_set import ExplicitCellSet, SingleTypeCellSet
 from tack.data.dataset import DataSet, for_each_shape
 
-__all__ = ["cell_centers", "cell_data_to_point_data", "external_faces",
+__all__ = ["cell_centers", "cell_data_to_point_data", "contour", "external_faces",
            "point_data_to_cell_data", "point_links"]
 
 
@@ -199,22 +204,20 @@ def _order(a, b):
 
 
 @tack.kernel
-def _faces(cells, start, f, rows, kinds, owners):
-    # Face f of every cell, one launch per face. A loop over the faces in
-    # one kernel crashed Apple's GPU compiler (M1 Max, macOS 26): a loop
-    # that stores puts the body in a noinline function on Metal (see
-    # msl_gen), and that function with this many constant-table lookups
-    # killed the compiler service at pipeline creation.
+def _faces(cells, start, rows, kinds, owners):
     for c in cells:
-        k = start + cells.index(c) * cells.NUM_FACES + f
-        quad = cells.face_num_points(f) == 4
-        p0 = cells.point_id(c, cells.face_point(f, 0))
-        p1 = cells.point_id(c, cells.face_point(f, 1))
-        p2 = cells.point_id(c, cells.face_point(f, 2))
-        p3 = cells.point_id(c, cells.face_point(f, 3)) if quad else _NO_POINT
-        rows[k] = [p0, p1, p2, p3]
-        kinds[k] = cells.face_shape(f)
-        owners[k] = cells.cell_id(c)
+        cell = cells.cell_id(c)
+        first = start + cells.index(c) * cells.NUM_FACES
+        for f in range(cells.NUM_FACES):
+            k = first + f
+            quad = cells.face_num_points(f) == 4
+            p0 = cells.point_id(c, cells.face_point(f, 0))
+            p1 = cells.point_id(c, cells.face_point(f, 1))
+            p2 = cells.point_id(c, cells.face_point(f, 2))
+            p3 = cells.point_id(c, cells.face_point(f, 3)) if quad else _NO_POINT
+            rows[k] = [p0, p1, p2, p3]
+            kinds[k] = cells.face_shape(f)
+            owners[k] = cell
 
 
 @tack.kernel
@@ -290,8 +293,8 @@ def external_faces(data):
     owners = tack.field(tack.i32, shape=(total,))
     first = 0
     for view, _ in groups:
-        for f in range(view.NUM_FACES if view.num_cells else 0):
-            _faces(view, first, f, rows, kinds, owners)
+        if view.num_cells:
+            _faces(view, first, rows, kinds, owners)
         first += view.num_cells * view.NUM_FACES
 
     if total:
@@ -340,3 +343,151 @@ def _take(values, ids, count):
     if count:
         _gather_rows(values, ids, out)
     return out
+
+
+# ── Contour ─────────────────────────────────────────────────────────
+
+# A cell's contour case: bit j is 1 when point j is at or above the isovalue.
+# Computed in each kernel: a cell view cannot be passed to a device function.
+
+@tack.kernel
+def _contour_counts(cells, values, isovalue, counts):
+    for c in cells:
+        case = 0
+        for j in range(cells.NUM_POINTS):
+            if values[cells.point_id(c, j)] >= isovalue:
+                case |= 1 << j
+        counts[cells.cell_id(c)] = cells.contour_count(case)
+
+
+@tack.kernel
+def _contour_points(cells, values, isovalue, starts, points, edges, weights):
+    for c in cells:
+        case = 0
+        for j in range(cells.NUM_POINTS):
+            if values[cells.point_id(c, j)] >= isovalue:
+                case |= 1 << j
+        first = 3 * starts[cells.cell_id(c)]
+        for k in range(3 * cells.contour_count(case)):
+            e = cells.contour_edge(case, k)
+            ja = cells.edge_point(e, 0)
+            jb = cells.edge_point(e, 1)
+            # Always from the lower point id, so the cells sharing an edge
+            # compute the same point, bit for bit.
+            if cells.point_id(c, jb) < cells.point_id(c, ja):
+                ja, jb = jb, ja
+            a = cells.point_id(c, ja)
+            b = cells.point_id(c, jb)
+            w = (isovalue - values[a]) / (values[b] - values[a])
+            xa = cells.point(c, ja)
+            points[first + k] = xa + w * (cells.point(c, jb) - xa)
+            edges[first + k] = [a, b]
+            weights[first + k] = w
+
+
+@tack.kernel
+def _edge_keys(edges, keys):
+    for i in range(keys.shape[0]):
+        ab = edges[i]
+        keys[i] = (tack.u64(ab[0]) << tack.u64(32)) | tack.u64(ab[1])
+
+
+@tack.kernel
+def _first_of_runs(order, offsets, points, edges, weights, merged, merged_edges,
+                   merged_weights, count):
+    for r in range(count):
+        first = order[offsets[r]]
+        merged[r] = points[first]
+        merged_edges[r] = edges[first]
+        merged_weights[r] = weights[first]
+
+
+@tack.kernel
+def _run_of_each(order, offsets, run_of, count):
+    for r in range(count):
+        for i in range(offsets[r], offsets[r + 1]):
+            run_of[order[i]] = r
+
+
+@tack.kernel
+def _interpolate_edges(values, edges, weights, out):
+    for i in range(out.shape[0]):
+        ab = edges[i]
+        va = values[ab[0]]
+        out[i] = va + weights[i] * (values[ab[1]] - va)
+
+
+def contour(data, values, isovalue, merge_points=True):
+    """The surface where point data ``values`` crosses ``isovalue``, as triangles.
+
+    ``values`` names a point data array, or is a scalar field with one value
+    per point. Each 3D cell contributes the triangles of VTK's case tables
+    for it (``vtkContourFilter``): a point's bit is 1 when its value is at
+    least the isovalue, and the triangles face away from the larger values.
+    Cells of lower dimension contribute nothing.
+
+    Points are interpolated along cell edges and, with ``merge_points``,
+    merged by edge, so triangles sharing an edge share its point; otherwise
+    every triangle has its own three. The result's point data is the
+    input's, interpolated onto the new points.
+    """
+    if isinstance(values, str):
+        values = data.point_data[values]
+    _check_floating("values", values)
+    if getattr(values, "_vector_n", None):
+        raise TypeError("contour needs one value per point, not a vector field")
+    groups = [(view, start) for view, start in _views(data) if view.CONTOUR_TRIANGLES]
+    counts = tack.zeros(tack.i32, (data.num_cells,))
+    for view, _ in groups:
+        if view.num_cells:
+            _contour_counts(view, values, isovalue, counts)
+    starts = tack.field(tack.i32, shape=(data.num_cells,))
+    triangles = exclusive_scan(counts, starts, data.num_cells) if data.num_cells else 0
+
+    n = 3 * triangles
+    dtype = data.points.dtype
+    points = tack.Vector.field(3, dtype, shape=(n,))
+    edges = tack.Vector.field(2, tack.i32, shape=(n,))
+    weights = tack.field(values.dtype, shape=(n,))
+    for view, _ in groups:
+        if view.num_cells:
+            _contour_points(view, values, isovalue, starts, points, edges, weights)
+
+    if merge_points and n:
+        keys = tack.field(tack.u64, shape=(n,))
+        _edge_keys(edges, keys)
+        order = argsort(keys)
+        offsets, count = _run_offsets(gather(keys, order), n)
+        merged = tack.Vector.field(3, dtype, shape=(count,))
+        merged_edges = tack.Vector.field(2, tack.i32, shape=(count,))
+        merged_weights = tack.field(values.dtype, shape=(count,))
+        _first_of_runs(order, offsets, points, edges, weights, merged, merged_edges,
+                       merged_weights, count)
+        run_of = tack.field(tack.i32, shape=(n,))
+        _run_of_each(order, offsets, run_of, count)
+        rows = run_of
+        points, edges, weights = merged, merged_edges, merged_weights
+    else:
+        rows = tack.arange(n, tack.i32)
+
+    connectivity = tack.field(tack.i32, shape=(triangles, 3))
+    if triangles:
+        _copy_rows(rows, connectivity)
+    point_data = {}
+    for name, array in data.point_data.items():
+        if array.dtype in (tack.f32, tack.f64):
+            out = _like(array, points.shape[0] // 3)
+            if out.shape[0]:
+                _interpolate_edges(array, edges, weights, out)
+            point_data[name] = out
+    return DataSet(points, SingleTypeCellSet(shapes.Triangle, connectivity),
+                   point_data=point_data)
+
+
+@tack.kernel
+def _copy_rows(flat, rows):
+    for t in range(rows.shape[0]):
+        rows[t, 0] = flat[3 * t]
+        rows[t, 1] = flat[3 * t + 1]
+        rows[t, 2] = flat[3 * t + 2]
+

@@ -13,6 +13,7 @@ from tack.data.dataset import DataSet, for_each_shape, rectilinear_grid
 from tack.data.filters import (
     cell_centers,
     cell_data_to_point_data,
+    contour,
     external_faces,
     point_data_to_cell_data,
     point_links,
@@ -26,6 +27,7 @@ __all__ = [
     "StructuredCellSet",
     "cell_centers",
     "cell_data_to_point_data",
+    "contour",
     "external_faces",
     "for_each_shape",
     "point_data_to_cell_data",

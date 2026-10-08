@@ -260,8 +260,9 @@ def vtk_to_dataset(grid, dtype=tack.f32):
 
     if grid.IsA("vtkUnstructuredGrid"):
         cell_array = grid.GetCells()
-        # The per-cell types are GetCellTypes() from VTK 9.4 on, where
-        # GetCellTypesArray() was deprecated; VTK 9.7 removed the old name.
+        # The per-cell types are GetCellTypes() from VTK 9.6 on, where
+        # GetCellTypesArray() was deprecated; VTK master removed the old name
+        # after 9.7.1. Through 9.5, GetCellTypes() takes an argument instead.
         types = (grid.GetCellTypesArray() if hasattr(grid, "GetCellTypesArray")
                  else grid.GetCellTypes())
         cells = ExplicitCellSet(vtk_to_numpy(types),

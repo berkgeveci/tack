@@ -274,8 +274,8 @@ def test_cell_centers_are_vtks(f64_backend):
     others = [s for s in sh.SHAPES if s not in (sh.Pixel, sh.Voxel)]
     data = _mixed_dataset(np.random.default_rng(4), shapes=others)
     want = vtk_to_numpy(_run(vtk.vtkCellCenters(), _to_vtk(data)).GetPoints().GetData())
-    # The parametric centers are literals, so the weights are f32 even for
-    # f64 points (a local holding only literals is f32).
+    # shape_function returns its literals through branches: a local assigned
+    # more than once, only literals, is f32, so the weights are f32 on f64 points.
     np.testing.assert_allclose(td.cell_centers(data).points.to_numpy(vectors=True), want,
                                atol=1e-6)
 

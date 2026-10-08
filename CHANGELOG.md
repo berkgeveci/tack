@@ -44,6 +44,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   from their own (i, j, k), without division; other cells over the same
   coordinates work too. `vtk_to_dataset` and `dataset_to_vtk` convert
   `vtkRectilinearGrid`, and the filters work on these grids.
+- `tack.data.contour(data, values, isovalue)` (tack-vis, prototype): the
+  isosurface of point data in a dataset's 3D cells, as triangles, for
+  unstructured, structured and rectilinear data alike. The case tables are
+  VTK's, generated from VTK's cells by `tools/make_contour_tables.py`, and
+  the result matches `vtkContourGrid` triangle for triangle, orientation
+  included. Points are merged by edge, so the surface is connected, and
+  point data is interpolated onto them. Cells below three dimensions
+  contribute nothing yet.
 - A kernel can loop over a `@tack.data_oriented` object: `for c in cells:`.
   The class declares the attributes the loop runs through as
   `__tack_iterate__`, one to three names, fastest first. One makes `c` an

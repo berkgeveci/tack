@@ -75,6 +75,7 @@ another::
 """
 
 import tack
+from tack.data import _contour_tables as _ct
 
 VERTEX = tack.constant(1, tack.i32)
 LINE = tack.constant(3, tack.i32)
@@ -154,6 +155,20 @@ class Shape:
 
     NUM_EDGES = 0
     NUM_FACES = 0
+    #: The most triangles one cell of the shape contours to; 0 for shapes
+    #: below three dimensions, which contour to nothing here.
+    CONTOUR_TRIANGLES = 0
+
+    @tack.func
+    def contour_count(self, case):
+        """How many triangles case ``case`` makes: bit ``j`` is 1 when point ``j``
+        is at or above the isovalue (VTK's tables)."""
+        return 0
+
+    @tack.func
+    def contour_edge(self, case, k):
+        """The edge that point ``k % 3`` of triangle ``k // 3`` of case ``case`` lies on."""
+        return -1
 
     @tack.func
     def edge_point(self, e, k):
@@ -462,6 +477,16 @@ class Tetra(_Solid):
     NUM_EDGES = 6
     NUM_FACES = 4
 
+    CONTOUR_TRIANGLES = _ct.TETRA_MAX_TRIANGLES
+
+    @tack.func
+    def contour_count(self, case):
+        return _ct.TETRA_CASES[case]
+
+    @tack.func
+    def contour_edge(self, case, k):
+        return _ct.TETRA_EDGES[case * (3 * self.CONTOUR_TRIANGLES) + k]
+
     @tack.func
     def parametric_point(self, j):
         return tack.Vector([1.0 if j == 1 else 0.0, 1.0 if j == 2 else 0.0,
@@ -546,6 +571,16 @@ class Voxel(_Box):
 
     ID = VOXEL
 
+    CONTOUR_TRIANGLES = _ct.VOXEL_MAX_TRIANGLES
+
+    @tack.func
+    def contour_count(self, case):
+        return _ct.VOXEL_CASES[case]
+
+    @tack.func
+    def contour_edge(self, case, k):
+        return _ct.VOXEL_EDGES[case * (3 * self.CONTOUR_TRIANGLES) + k]
+
     @tack.func
     def _corner(self, j):
         return j & 1, (j >> 1) & 1, (j >> 2) & 1
@@ -568,6 +603,16 @@ class Hexahedron(_Box):
     """VTK_HEXAHEDRON: the bottom face counterclockwise, then the top above it."""
 
     ID = HEXAHEDRON
+
+    CONTOUR_TRIANGLES = _ct.HEXAHEDRON_MAX_TRIANGLES
+
+    @tack.func
+    def contour_count(self, case):
+        return _ct.HEXAHEDRON_CASES[case]
+
+    @tack.func
+    def contour_edge(self, case, k):
+        return _ct.HEXAHEDRON_EDGES[case * (3 * self.CONTOUR_TRIANGLES) + k]
 
     @tack.func
     def _corner(self, j):
@@ -594,6 +639,16 @@ class Wedge(_Solid):
     NUM_POINTS = 6
     NUM_EDGES = 9
     NUM_FACES = 5
+
+    CONTOUR_TRIANGLES = _ct.WEDGE_MAX_TRIANGLES
+
+    @tack.func
+    def contour_count(self, case):
+        return _ct.WEDGE_CASES[case]
+
+    @tack.func
+    def contour_edge(self, case, k):
+        return _ct.WEDGE_EDGES[case * (3 * self.CONTOUR_TRIANGLES) + k]
 
     @tack.func
     def parametric_point(self, j):
@@ -652,6 +707,16 @@ class Pyramid(_Solid):
     NUM_POINTS = 5
     NUM_EDGES = 8
     NUM_FACES = 5
+
+    CONTOUR_TRIANGLES = _ct.PYRAMID_MAX_TRIANGLES
+
+    @tack.func
+    def contour_count(self, case):
+        return _ct.PYRAMID_CASES[case]
+
+    @tack.func
+    def contour_edge(self, case, k):
+        return _ct.PYRAMID_EDGES[case * (3 * self.CONTOUR_TRIANGLES) + k]
 
     @tack.func
     def _corner(self, j):
