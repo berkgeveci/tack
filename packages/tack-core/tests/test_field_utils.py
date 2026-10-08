@@ -30,6 +30,21 @@ def test_empty_field(backend):
     assert out.to_numpy().shape == (0,)
 
 
+def test_empty_field_in_a_launch(backend):
+    """An empty field passed beside a non-empty one still binds when the
+    kernel launches. HIP once handed it a null pointer it could not bind."""
+    x = tack.arange(8, dtype=tack.f32)
+    empty = tack.field(dtype=tack.f32, shape=(0,))
+
+    @tack.kernel
+    def double(x, empty):
+        for i in range(x.shape[0]):
+            x[i] = x[i] * 2.0
+
+    double(x, empty)
+    np.testing.assert_array_equal(x.to_numpy(), np.arange(8, dtype=np.float32) * 2)
+
+
 def test_field_len(backend):
     f = tack.field(dtype=tack.f32, shape=(10,))
     assert len(f) == 10
