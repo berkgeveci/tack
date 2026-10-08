@@ -176,6 +176,23 @@ jobs:
       - name: Sync the workspace
         run: uv sync --extra cpu --extra dev
 
+      # VTK and MFEM (PyMFEM) are the references for tack.data: VTK for the
+      # cell shapes, faces and filters, MFEM for the derived topology, the
+      # spaces and order 2. One job is enough, and the wheels are large;
+      # TACK_REQUIRE_VTK and TACK_REQUIRE_MFEM make that job fail rather than
+      # skip if either is missing or will not import. `uv run` does not
+      # remove them: only `uv sync` makes the environment exact. PyMFEM pulls
+      # in numba, whose newest wants a newer llvmlite than the lock's, so
+      # llvmlite is pinned to the version the sync installed: Tack's CPU
+      # backend compiles with it.
+      - name: Install VTK and MFEM, the references for the dataset tests
+        if: matrix.python-version == '3.13'
+        run: |
+          llvmlite=$(uv run python -c "import importlib.metadata as m; print(m.version('llvmlite'))")
+          uv pip install vtk mfem "llvmlite==$llvmlite"
+          echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
+          echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
+
       - name: Check host compiler tooling
         run: >-
           uv run pytest -q -s packages/tack-core/tests/test_compiler_tools.py
