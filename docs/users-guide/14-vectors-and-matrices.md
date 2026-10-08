@@ -140,7 +140,8 @@ one. The same forms work on a field element without naming the vector
 first: `v[i][2]` and `v[i].z` read a component, `v[i][2] = x` and
 `v[i].z += x` store one. The index may be a runtime value (`vec[k]` for a
 loop variable `k`), which lowers to a chain of selects rather than a
-branch. A runtime index must be in `[0, n)`: outside it, on either side,
+branch; a typed or integer `tack.constant` read that way is instead one
+load from a constant array. A runtime index must be in `[0, n)`: outside it, on either side,
 a read gives the last component and a write does nothing, since a kernel
 cannot raise. Only a literal index counts from the end (`vec[-1]`), and a
 literal out of range is rejected at lowering.

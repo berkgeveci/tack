@@ -184,6 +184,34 @@ def constant_components(value):
     return [constant_ir(component) for component in value.components], value.shape
 
 
+def constant_table(value):
+    """``(values, dtype)`` for an array constant read at a runtime index, or None.
+
+    Typed constants and untyped integer ones become a table of that type
+    (i32, or i64 when a value needs it). Untyped float components stay
+    weak literals that take the precision of what they meet, which a table
+    of one type cannot do; they keep the chain of conditional expressions.
+    """
+    import math
+
+    from tack.lang.types import i32, i64
+    if not isinstance(value, ArrayConstant):
+        return None
+    components = value.components
+    if value.dtype is not None:
+        dtype = value.dtype
+    elif all(isinstance(c, IntConstant) for c in components):
+        dtype = i32 if all(-2**31 <= c < 2**31 for c in components) else i64
+        if not all(-2**63 <= c < 2**63 for c in components):
+            return None
+    else:
+        return None
+    if dtype in INTEGER_TYPES:
+        return tuple(int(c) for c in components), dtype
+    values = tuple(float(c) for c in components)
+    return (values, dtype) if all(math.isfinite(v) for v in values) else None
+
+
 def constant_ir(value):
     """The IR for reading a scalar ``value``, or None when it is not a tack.constant."""
     from tack.lang import ir

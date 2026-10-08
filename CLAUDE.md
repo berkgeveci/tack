@@ -313,7 +313,13 @@ component that could observe an earlier one's write: a read of an earlier
 target component for a variable, any field load for a field element
 (fields may alias). Components are `v[c]`/`v.x`, on variables and on field
 elements (`vf[i][c] = x` stores one component); a runtime index selects
-through a chain and stores through per-component guards. A vector index
+through a chain and stores through per-component guards. A named typed or
+integer `ArrayConstant` read at a runtime index is instead an `IRTableLoad`
+(`constant_table` tags the `VectorValue`; `codegen/tables.py`, an LLVM
+internal global): one constant array, clamped to the last entry as the
+chain is. Untyped float constants keep the chain (weak literals). Chains
+in a storing loop crashed Metal's compiler service; see
+`test_constant_tables.py`. A vector index
 supplies one dimension per component, in subscripts and in atomics, whose
 index may be a tuple with one entry per dimension; a vector value given
 to an atomic on a vector field lowers to one atomic per component, while

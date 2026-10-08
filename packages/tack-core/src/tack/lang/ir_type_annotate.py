@@ -234,6 +234,10 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         node.dtype = i32  # boolean ops always produce int
         return i32
 
+    if isinstance(node, ir.IRTableLoad):
+        _annotate_expr(node.index, env, field_params)
+        return node.dtype
+
     if isinstance(node, ir.IRTextureSample):
         for c in node.coords:
             _annotate_expr(c, env, field_params)

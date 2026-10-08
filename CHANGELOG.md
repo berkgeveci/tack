@@ -29,6 +29,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- A vector or matrix `tack.constant` with a type, or of integers, read at
+  a runtime index (`FACES[4 * f + k]`) is one load from a constant array
+  instead of a chain of conditional expressions, a comparison per entry
+  at every lookup. On Metal a loop that stores to a field and does many
+  such lookups crashed the compiler service at pipeline creation (M1
+  Max, macOS 26): "Compilation failed due to an interrupted connection".
+  The result is unchanged, including an index outside the table giving
+  the last value. Untyped float constants keep the chain, since their
+  components take the precision of what they meet.
 - An `ndrange` whose sizes are both negative (`ndrange(-3, -4)`) runs no
   iterations. Their product is positive, and the loop ran 12 iterations
   with negative indices.

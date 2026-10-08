@@ -11,7 +11,7 @@ import tack
 from tack.lang import ir
 from tack.lang.ir_traversal import CHILD_FIELDS, clone_ir
 from tack.lang.ir_verify import IRVerificationError, verify_ir
-from tack.lang.types import f32, f64
+from tack.lang.types import f32, f64, i32
 
 
 def _nodes():
@@ -32,6 +32,7 @@ def _nodes():
         ir.IRBlockReduce('sum', leaf), ir.IRBarrier(), ir.IRThreadId(),
         ir.IRPrint([leaf], [('expr', 0)]), ir.IRDimSize('a', 0),
         ir.IRTextureSample('texture', [leaf, leaf, leaf], (2, 3, 4)),
+        ir.IRTableLoad((3, 1, 4), i32, leaf),
     ]
 
 
