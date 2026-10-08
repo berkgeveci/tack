@@ -20,12 +20,16 @@
 ``for_each(kernel, data, domain, *args)`` runs ``kernel`` once per shape in
 the domain -- ``"cells"``, ``"faces"``, ``"edges"``, or a face set --
 passing the domain's view and, for every ``Field`` among ``args``, the
-field's view for the same group.
+field's view for the same group. When a field's space varies from cell to
+cell (an order per cell), each shape group is split by the keys of every
+such space among ``args``, and the kernel runs once per subgroup, each
+launch specialized to its keys.
 """
 
 import numpy as np
 
 import tack
+from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.data import arrays, views
 from tack.data.arrays import CartesianProduct
 from tack.data.spaces import H1, L2, Space
@@ -50,7 +54,8 @@ class Field:
 
     def view(self, group):
         """This field's view for ``group``: the group's kind and shape, the space, and
-        the storage its values are read through."""
+        the storage its values are read through. A space that varies reads its key
+        for the group from ``group.keys``: launch it through ``for_each``."""
         mixins, attributes = _space_parts(self, group)
         return group.view(*mixins, **attributes)
 
@@ -65,7 +70,11 @@ def _space_parts(field, group, space_mixin=None):
     ``space_mixin``, for the geometry), an addressing mixin for values shared by
     points, and its storage's."""
     storage, attributes = arrays.storage(field.values)
-    mixins = [space_mixin or field.space.mixin]
+    space = field.space
+    if space.varies and space not in group.keys:
+        raise ValueError(f"{space!r} varies from cell to cell: its views come from the "
+                         "subgroups for_each makes")
+    mixins = [space_mixin or space.mixin_for(group.keys.get(space))]
     if isinstance(field.space, H1):
         mixins.append(views.point_address(group.kind, storage))
     mixins.append(storage)
@@ -176,17 +185,33 @@ class DataSet:
         geometry, attributes = _geometry_parts(self.geometry, group, kind)
         mixins.extend(geometry)
         if domain == "cells":
+            # A subgroup's index(c) is its position in the topology's group, so
+            # it shares that group's incidence.
             faces = self.topology._faces
             if faces is not None and group.shape.NUM_FACES:
                 mixins.append(views._FaceIncidence)
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
-                                  face_start=faces.group_starts[id(group)])
+                                  face_start=faces.group_starts[id(group.root)])
             edges = self.topology._edges
             if edges is not None and group.shape.NUM_EDGES:
                 mixins.append(views._EdgeIncidence)
                 attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
-                                  edge_start=edges.group_starts[id(group)])
+                                  edge_start=edges.group_starts[id(group.root)])
         return group.view(*mixins, **attributes)
+
+    def launch_groups(self, domain, fields=()):
+        """The groups a kernel over ``domain`` launches once each, given the ``Field``s
+        it reads: the domain's groups, each split by the keys of the spaces among
+        ``fields`` that vary from cell to cell."""
+        groups = self.domain_groups(domain)
+        spaces = []
+        for field in fields:
+            if field.space.varies and field.space not in spaces:
+                spaces.append(field.space)
+        if domain != "cells" or not spaces:
+            return groups
+        return [sub for group in groups if group.count
+                for sub in _subgroups(group, tuple(spaces))]
 
 
 def for_each(kernel, data, domain, *args):
@@ -203,11 +228,95 @@ def for_each(kernel, data, domain, *args):
             if arg.space.topology is not data.topology:
                 raise ValueError(f"a field on {arg.space!r} of another topology")
             _check_domain(arg.space, kind)
-    for group in data.domain_groups(domain):
+    for group in data.launch_groups(domain, [a for a in args if isinstance(a, Field)]):
         if not group.count:
             continue
         view = data.domain_view(domain, group)
         kernel(view, *(a.view(group) if isinstance(a, Field) else a for a in args))
+
+
+# ── Subgroups ───────────────────────────────────────────────────────
+
+_KEY_BASE = 16           # keys (orders) below 16; up to 7 varying spaces in an i32
+
+
+@tack.kernel
+def _clear_keys(keys):
+    for i in range(keys.shape[0]):
+        keys[i] = 0
+
+
+@tack.kernel
+def _add_key(cells, cell_keys, keys, bad):
+    for c in cells:
+        k = cell_keys[cells.entity_id(c)]
+        if k < 0 or k >= 16:
+            tack.atomic_add(bad, 0, 1)
+        keys[cells.index(c)] = keys[cells.index(c)] * 16 + k
+
+
+@tack.kernel
+def _invert(perm, rank):
+    for i in range(perm.shape[0]):
+        rank[perm[i]] = i
+
+
+@tack.kernel
+def _gather_selected(cells, rank, rows, ids, positions):
+    for c in cells:
+        p = cells.index(c)
+        i = rank[p]
+        for j in range(cells.NUM_POINTS):
+            rows[i, j] = cells.point_id(c, j)
+        ids[i] = cells.entity_id(c)
+        positions[i] = p
+
+
+def _subgroups(group, spaces):
+    """``group`` split by the keys ``spaces`` give its cells: one subgroup per
+    combination present, made on the device (key per cell, a stable sort, runs)
+    and kept on the topology, since the spaces' keys are fixed when they are made.
+    A subgroup's cells are gathered into rows, ids and positions sorted by key,
+    shared by all the subgroups; each is a slice of them."""
+    cache = spaces[0].topology.__dict__.setdefault("_subgroups", {})
+    cache_key = (id(group), spaces)
+    if cache_key in cache:
+        return cache[cache_key]
+    if len(spaces) > 7:
+        raise NotImplementedError("at most 7 spaces that vary per cell in one launch")
+    n = group.count
+    cells = group.view()
+    keys = tack.field(tack.i32, shape=(n,))
+    bad = tack.zeros(tack.i32, (1,))
+    _clear_keys(keys)
+    for space in spaces:
+        _add_key(cells, space.cell_keys(), keys, bad)
+    if bad[0]:
+        raise ValueError(f"{bad[0]} cells have a key outside [0, {_KEY_BASE})")
+    perm = argsort(keys)
+    sorted_keys = gather(keys, perm)
+    offsets, runs = _run_offsets(sorted_keys, n)
+    rank = tack.field(tack.i32, shape=(n,))
+    _invert(perm, rank)
+    rows = tack.field(tack.i32, shape=(n, group.shape.NUM_POINTS))
+    ids = tack.field(tack.i32, shape=(n,))
+    positions = tack.field(tack.i32, shape=(n,))
+    _gather_selected(cells, rank, rows, ids, positions)
+    bounds = offsets.to_numpy()
+    subgroups = []
+    for r in range(runs):
+        first, count = int(bounds[r]), int(bounds[r + 1] - bounds[r])
+        combined = int(sorted_keys[first])
+        digits = []
+        for _ in spaces:
+            digits.append(combined % _KEY_BASE)
+            combined //= _KEY_BASE
+        keyed = dict(zip(spaces, reversed(digits)))
+        subgroups.append(views.DomainGroup(views._SelectedCells, group.shape,
+                                           (rows, ids, count, positions, first), count,
+                                           group.start, parent=group, keys=keyed))
+    cache[cache_key] = subgroups
+    return subgroups
 
 
 def _check_domain(space, kind):

@@ -62,6 +62,37 @@ class _Cells:
         return c
 
 
+class _SelectedCells(_Cells):
+    """Some of a group's cells: those a field's spaces put in one subgroup.
+
+    The rows, ids and positions of every subgroup of a group lie in one set
+    of arrays, sorted by subgroup; this one is ``num_cells`` of them from
+    ``first``. ``index(c)`` is the cell's position in the whole group, so
+    the group's incidence still applies.
+    """
+
+    def __init__(self, connectivity, ids, num_cells, positions, first):
+        super().__init__(connectivity, ids, num_cells)
+        self.positions = positions            # (all subgroups,) i32: index in the group
+        self.first = first
+
+    @tack.func
+    def point_id(self, c, j):
+        return self.connectivity[self.first + c, j]
+
+    @tack.func
+    def cell_id(self, c):
+        return self.ids[self.first + c]
+
+    @tack.func
+    def entity_id(self, c):
+        return self.ids[self.first + c]
+
+    @tack.func
+    def index(self, c):
+        return self.positions[self.first + c]
+
+
 class _StructuredCells:
     """The cells of a structured grid of ``nx * ny * nz`` points, x fastest."""
 
@@ -381,9 +412,30 @@ class _H1Field(_Interpolated):
 class _L2Field(_Interpolated):
     """L2, order 1, PerCell: each cell's own corner values, at ``offsets[cell]``."""
 
+    ORDER = 1
+
     @tack.func
     def dof(self, i, j):
         return self.get(self.offsets[self.entity_id(i)] + j)
+
+
+class _L2Order0Field:
+    """L2, order 0, PerCell: one value per cell, at ``offsets[cell]`` -- the
+    cells of order 0 in a variable-order L2 field."""
+
+    ORDER = 0
+
+    @tack.func
+    def dof(self, i, j):
+        return self.get(self.offsets[self.entity_id(i)])
+
+    @tack.func
+    def value(self, i, pc):
+        return self.get(self.offsets[self.entity_id(i)])
+
+    @tack.func
+    def parametric_gradient(self, i, pc):
+        return tack.Vector([0.0, 0.0, 0.0])
 
 
 class _ConstantField:
@@ -426,14 +478,27 @@ def view_class(kind, shape, *mixins):
 
 class DomainGroup:
     """One shape's entities of one kind: ``kind(*args)`` with ``count`` of them,
-    starting at ``start`` in the topology's per-group layout."""
+    starting at ``start`` in the topology's per-group layout.
 
-    def __init__(self, kind, shape, args, count, start):
+    A *subgroup* -- the cells of a group that the spaces of a launch's fields
+    put together -- has ``parent``, the topology's group it came from (whose
+    incidence it shares), and ``keys``, each varying space's key for its
+    cells (for a variable-order space, the order).
+    """
+
+    def __init__(self, kind, shape, args, count, start, parent=None, keys=None):
         self.kind = kind
         self.shape = shape
         self.args = args
         self.count = count
         self.start = start
+        self.parent = parent
+        self.keys = keys or {}
+
+    @property
+    def root(self):
+        """The topology's group: this one, or the one this subgroup came from."""
+        return self.parent or self
 
     def view(self, *mixins, **attributes):
         """An instance of the view class with ``mixins``, holding ``attributes``."""

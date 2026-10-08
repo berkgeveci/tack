@@ -210,6 +210,16 @@ print(f"  each cell shifted by up to 0.3: the point averages now differ by up to
 if args.output:
     _write(explode(mixed, dg), os.path.join(args.output, "mixed_dg"))
 
+# p-adaptivity: an order per cell, here 0 (one value) or 1 (corner values).
+# Launches split each shape group by order, each specialized to its order.
+orders = np.arange(mixed.num_cells) % 2
+adaptive = td.L2(mixed, order=orders)
+values = rng.uniform(0, 1, adaptive.size)
+launches = mixed.launch_groups("cells", [td.Field(adaptive, _scalars(values))])
+print(f"  an order per cell (0 or 1): {adaptive.size} values; "
+      f"{len(launches)} launches, one per (shape, order): "
+      + ", ".join(f"{g.count} {g.shape.__name__} at {g.keys[adaptive]}" for g in launches))
+
 # The geometry is a field, so it can be discontinuous too: each cell's own
 # corners, pulled toward its center. The topology is the same, so the cells
 # still know their faces and neighbours; the faces just have no single

@@ -432,6 +432,20 @@ What building it showed:
   uses, and `H1`'s size follows it. Order above 1 is accepted as a
   parameter and refused as not yet built; it is where a space's own DOF
   map will go.
+- **Launch groups come from the fields' spaces** (section 11).
+  `L2(data, order=orders)` takes an order per cell, 0 or 1 here, which is
+  enough for a real p-adaptive DG field; its offsets come from a scan of
+  per-cell value counts. A space that varies gives each cell a key, and
+  `for_each` (through `DataSet.launch_groups`) splits each shape group by
+  the combined keys of all such spaces among its arguments, on the device:
+  a key per cell, a stable sort, runs. Each subgroup is launched with the
+  field-view mixin for its keys (`L2` order 0 or 1), so the kernel is
+  specialized as for a uniform space. Subgroups are slices of one gathered
+  copy of the group's rows and ids, sorted by key, and keep each cell's
+  position in its group, so the group's face and edge incidence still
+  applies; they are cached on the topology. Algorithms that lay out one
+  entry per (cell, corner), such as `to_points`, place a subgroup's cells
+  by that position.
 - **The mixins share one namespace.** A `ConstantArray` kept its number in
   `value`, which hid the spaces' `value(i, pc)` method; the kernel failed
   to compile with a message far from the cause. Building a view now
@@ -558,7 +572,9 @@ polyhedral dataset comes from.
 
 ## 11. Variable order (p-adaptivity)
 
-Decided in principle (2026-10-08); not built. A p-adaptive field has a
+Decided 2026-10-08. The grouping is built, with `L2` of orders 0 and 1
+per cell (section 9); higher orders wait for their bases. A p-adaptive
+field has a
 polynomial order per cell (and possibly per direction). Unlike a
 polyhedron, every cell still has a reference element and a fixed DOF count
 *for its order*, so order is a second grouping key after shape.

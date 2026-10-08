@@ -274,16 +274,20 @@ def to_points(data, field):
     a DG field the cell's own value at that corner. The sums run in a fixed order."""
     if not isinstance(field.space, (Constant, L2)):
         raise TypeError("to_points projects a cell or L2 field")
+    # One entry per (cell, corner), laid out by the topology's groups; a
+    # subgroup's cells sit at their positions in their group (index(c)).
     groups = data.topology.groups()
     starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_POINTS
                                              for g in groups])]).astype(int)
+    start_of = {id(g): int(s) for g, s in zip(groups, starts[:-1])}
     total = int(starts[-1])
     points = tack.field(tack.i32, shape=(total,))
     contributions = tack.field(field.values.dtype, shape=(total,))
-    for group, start in zip(groups, starts[:-1]):
+    for group in data.launch_groups("cells", [field]):
         if group.count:
             view = data.domain_view("cells", group)
-            _incidences(view, field.view(group), int(start), points, contributions)
+            _incidences(view, field.view(group), start_of[id(group.root)], points,
+                        contributions)
     out = tack.zeros(field.values.dtype, (data.num_points,))
     if total:
         keys, values = sort_by_key(points, contributions)

@@ -577,3 +577,139 @@ def test_fields_stay_on_their_topology(backend):
         alg.values_at_centers(data, u)
     with pytest.raises(ValueError, match="another topology"):
         td.DataSet(data.topology, data.geometry.values, fields={"u": u})
+
+
+# ── Variable order: groups from the fields' spaces ──────────────────
+
+def _cell_points(data):
+    """Each cell's point ids, host lists: the connectivity, or a hexahedral grid's."""
+    t = data.topology
+    if hasattr(t, "connectivity"):
+        conn, offs = t.connectivity.to_numpy(), t.offsets.to_numpy()
+        return [conn[offs[c]:offs[c + 1]] for c in range(t.num_cells)]
+    nx, ny, nz = t.point_dims
+    rows = []
+    for k in range(nz - 1):
+        for j in range(ny - 1):
+            for i in range(nx - 1):
+                b = i + nx * (j + ny * k)
+                bottom = [b, b + 1, b + 1 + nx, b + nx]
+                rows.append(np.array(bottom + [p + nx * ny for p in bottom]))
+    return rows
+
+
+def _grids():
+    return {"mixed": _two_hexes_and_a_pyramid(),
+            "rectilinear": td.rectilinear_grid([0, 1, 3, 4], [0, 2, 3], [0, 1, 1.5])}
+
+
+def _variable_height(data, orders):
+    """The linear height in an L2 space of an order per cell: order-1 cells hold
+    it at their corners, order-0 cells its value at their center."""
+    space = td.L2(data, order=orders)
+    height = _height(data).values.to_numpy()
+    centers = alg.cell_centers(data).values.to_numpy(vectors=True) @ [1, 2, -1]
+    offsets = space.offsets.to_numpy()
+    values = np.empty(space.size)
+    for c, points in enumerate(_cell_points(data)):
+        if orders[c] == 1:
+            values[offsets[c]:offsets[c + 1]] = height[points]
+        else:
+            values[offsets[c]] = centers[c]
+    return td.Field(space, _scalars(values)), centers
+
+
+@tack.kernel
+def _orders_seen(cells, u, v, out):
+    for c in cells:
+        out[cells.entity_id(c)] = u.ORDER * 10 + v.ORDER
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_each_cell_launches_with_its_own_order(backend, make):
+    data = _grids()[make]
+    n = data.num_cells
+    rng = np.random.default_rng(1)
+    a, b = rng.integers(0, 2, n), rng.integers(0, 2, n)
+    a[0], a[-1] = 0, 1                                  # both orders present
+    u = td.Field(td.L2(data, order=a), _scalars(np.zeros(td.L2(data, order=a).size)))
+    v = td.Field(td.L2(data, order=b), _scalars(np.zeros(td.L2(data, order=b).size)))
+    out = tack.zeros(tack.i32, (n,))
+    td.for_each(_orders_seen, data, "cells", u, v, out)
+    np.testing.assert_array_equal(out.to_numpy(), 10 * a + b)
+    # One launch per (shape, order of u, order of v) present.
+    groups = data.launch_groups("cells", [u, v])
+    expected = {(g.shape.__name__, int(x), int(y))
+                for g in data.topology.groups()
+                for x, y in zip(a[_group_ids(g)], b[_group_ids(g)])}
+    assert {(g.shape.__name__, g.keys[u.space], g.keys[v.space]) for g in groups} == expected
+    assert sum(g.count for g in groups) == n
+
+
+def _group_ids(group):
+    if hasattr(group.args[1], "to_numpy"):
+        return group.args[1].to_numpy()                 # an explicit group's cell ids
+    return np.arange(group.count)                       # a structured group's
+
+
+@tack.kernel
+def _face_ids_seen(cells, u, out):
+    for c in cells:
+        total = 0
+        for f in range(cells.NUM_FACES):
+            total += cells.face_id(c, f) * (f + 1)
+        out[cells.entity_id(c)] = total + 0 * u.ORDER
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_subgroups_keep_their_cells_incidence(backend, make):
+    data = _grids()[make]
+    data.topology.faces()
+    n = data.num_cells
+    orders = np.arange(n) % 2
+    varying = td.Field(td.L2(data, order=orders), td.ConstantArray(0.0, td.L2(data, order=orders).size))
+    uniform = td.Field(td.L2(data), td.ConstantArray(0.0, td.L2(data).size))
+    got, expected = tack.zeros(tack.i32, (n,)), tack.zeros(tack.i32, (n,))
+    td.for_each(_face_ids_seen, data, "cells", varying, got)
+    td.for_each(_face_ids_seen, data, "cells", uniform, expected)
+    np.testing.assert_array_equal(got.to_numpy(), expected.to_numpy())
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_variable_order_values(backend, make):
+    data = _grids()[make]
+    n = data.num_cells
+    orders = np.zeros(n, int)
+    orders[::2] = 1
+    u, centers = _variable_height(data, orders)
+    assert u.space.size == sum(len(p) if o else 1 for p, o in zip(_cell_points(data), orders))
+    np.testing.assert_allclose(alg.values_at_centers(data, u).values.to_numpy(), centers,
+                               atol=1e-5)
+    gradient = alg.gradients(data, u).values.to_numpy(vectors=True)
+    np.testing.assert_allclose(gradient, np.outer(orders, [1, 2, -1]), atol=1e-4)
+    # Each point averages what its cells give it: the height from order-1 cells,
+    # the cell's one value from order-0 cells.
+    height = _height(data).values.to_numpy()
+    given = [[] for _ in range(data.num_points)]
+    for c, points in enumerate(_cell_points(data)):
+        for p in points:
+            given[p].append(height[p] if orders[c] else centers[c])
+    np.testing.assert_allclose(alg.to_points(data, u).values.to_numpy(),
+                               [np.mean(g) for g in given], atol=1e-5)
+
+
+def test_variable_order_spaces(backend):
+    data = _two_hexes_and_a_pyramid()
+    orders = np.array([1, 0, 1])
+    assert td.L2(data, order=orders) is td.L2(data, order=orders)
+    assert td.L2(data, order=orders) is not td.L2(data, order=orders.copy())
+    assert td.L2(data, order=orders).varies and not td.L2(data).varies
+    np.testing.assert_array_equal(td.L2(data, order=orders).offsets.to_numpy(), [0, 8, 9, 14])
+    np.testing.assert_array_equal(td.L2(data, order=0).offsets.to_numpy(), [0, 1, 2, 3])
+    with pytest.raises(NotImplementedError, match=r"orders \[2\]"):
+        td.L2(data, order=np.array([1, 2, 1])).cell_keys()
+    with pytest.raises(ValueError, match="3 orders, not 2"):
+        td.L2(data, order=np.array([1, 0])).cell_keys()
+    u = td.Field(td.L2(data, order=orders), _scalars(np.zeros(14)))
+    with pytest.raises(ValueError, match="for_each makes"):
+        u.view(data.topology.groups()[0])
