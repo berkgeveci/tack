@@ -90,7 +90,10 @@ class HIPBuffer(DeviceBuffer):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
-        err, self._device_ptr = hip.hipMalloc(self._nbytes)
+        # hip-python returns None for a zero-byte request, which a launch
+        # cannot pass as a pointer; an empty field gets one byte it never
+        # reads, as on CUDA and Level Zero.
+        err, self._device_ptr = hip.hipMalloc(max(self._nbytes, 1))
         _check_hip(err)
         # Zero-initialise
         _check_hip(hip.hipMemset(self._device_ptr, 0, self._nbytes))
