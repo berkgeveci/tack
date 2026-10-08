@@ -556,7 +556,74 @@ data too); whether cell -> faces (Exodus, VTK) or face -> owner/neighbour
 (OpenFOAM) is primary -- leaning cell -> faces; and where the first
 polyhedral dataset comes from.
 
-## 11. Questions to settle
+## 11. Variable order (p-adaptivity)
+
+Decided in principle (2026-10-08); not built. A p-adaptive field has a
+polynomial order per cell (and possibly per direction). Unlike a
+polyhedron, every cell still has a reference element and a fixed DOF count
+*for its order*, so order is a second grouping key after shape.
+
+**Grouping.** Launches are specialized per (shape, order): `NUM_DOFS` and
+the basis are compile-time constants again, and kernel source does not
+change. The cost is a variant per (shape, order) present, a handful for
+orders 1-8. The consequence for the API: groups depend on the fields as
+well as the topology. `for_each` iterates each shape group split by the
+orders of the spaces among its arguments -- with one variable-order field,
+that field's partition; with several whose orders differ, their common
+refinement. Subgroups are not contiguous, so their views run over a list
+of cell ids, as face sets do (or cells are renumbered so each subgroup is
+contiguous).
+
+**Storage: per cell, as DG is.** Each cell holds its own coefficients for
+its own order, from `offsets[c]`, which a scan of DOF counts per (shape,
+order) makes -- the CSR layout `L2` already has. Evaluation never needs
+anything else. A continuous variable-order field from a solver is gathered
+into this form once on the way in (MFEM's E-vector).
+
+**The space keeps its family.** "H1, stored per cell" and "L2, stored per
+cell" use the same evaluation kernels but are different data: a
+continuous field's cells agree across shared faces (exactly, under MFEM's
+minimum rule). Algorithms check the family where it matters:
+
+- contour and slice output from a continuous field can be stitched
+  watertight by merging points on shared edges and faces; a DG field's
+  cut is genuinely discontinuous there;
+- projecting a continuous field to points is exact at shared nodes; for DG
+  it is a real smoothing;
+- a continuous field exports to VTK's shared-point Lagrange cells or to an
+  MFEM continuous grid function; a DG field needs points duplicated per
+  cell.
+
+**The space** carries the per-cell orders: `L2(data, order=orders)` or
+`H1(data, order=orders)`, `orders` a per-cell integer array (VTK's
+`HigherOrderDegrees` maps onto it, a tuple per cell for anisotropic
+orders). It owns the offsets and the partition of each shape group by
+order. A space with per-cell orders is interned by the identity of that
+array, since an array is not a hashable parameter.
+
+**Deferred: a shared variable-order layout.** Storing values on shared
+entities once needs a rule for an entity between cells of different
+orders. MFEM's (`FiniteElementSpace::SetElementOrder`) is the minimum
+rule: an edge or face represents every order its cells need
+(`CalcEdgeFaceVarOrders`), and the higher-order DOFs are constrained to
+interpolate the lowest order's (`VariableOrderMinimumRule`), with the
+constraint machinery of non-conforming refinement. VTK's per-cell-degree
+Lagrange cells share points instead, so where orders differ the nodes on a
+shared edge do not line up and cells are evaluated on their own. The
+shared layout matters for solving or for memory: per-cell storage repeats
+shared values in every cell, about 8 times the point data at order 1 on
+hexahedra but about twice at order 4, where interiors dominate. Add it if
+memory demands, starting from a mostly linear mesh with a few high-order
+cells.
+
+**Fallback: runtime order.** Compiling once for the highest order present,
+with loops to each cell's own DOF count and local arrays of the maximum
+size, avoids regrouping but wastes work on low-order cells and makes GPU
+threads in a warp wait on the highest. Tensor-product bases make a runtime
+order practical (a 1D Lagrange basis is loops). Keep it for orders spread
+widely (say 1 to 12); group by order otherwise.
+
+## 12. Questions to settle
 
 1. **Truth for continuity.** This proposal follows MFEM -- continuity
    follows from which entities own DOFs -- and treats vtkCellGrid's
