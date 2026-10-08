@@ -1,7 +1,7 @@
 # Polyhedral meshes: design proposal
 
-Status: proposal for discussion, 2026-10-08, on branch `vis/polyhedra`.
-Nothing here is implemented. It refines section 10 of
+Status: proposal, 2026-10-08, on branch `vis/polyhedra`. Questions in
+section 7 decided as recommended; phase 1 is built (section 9). It refines section 10 of
 [the dataset API design](dataset-api.md) -- polyhedra get their own
 topology and algorithms, sharing everything above that -- with what three
 studies found:
@@ -374,3 +374,67 @@ reference element.
    data, saddles included.
 4. **Threshold**, then readers for the real formats (CGNS NFACE and NGON,
    OpenFOAM, MPAS) as the data calls for them.
+
+## 9. Phase 1 as built
+
+`packages/tack-vis/src/tack/data/polyhedra.py`, with views in `views.py`
+and VTK conversion in `interop/vtk.py`:
+
+- **`PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces,
+  cell_face_sides, num_points=None)`.** Everything derived is computed on
+  the device and cached:
+  - `faces()` (`PolygonFaces`): the shape path's `sides` record and
+    `boundary()`, by scattering each cell -> face entry to its (face,
+    side). It refuses a side used twice, which covers more than two cells
+    on a face, and a face wound into its only cell.
+  - `cell_points()`: (cell, point) pairs as u64 keys, sorted once.
+  - `edges()` (`PolygonEdges`): face edges as `(low, high)` keys, sorted
+    into runs. This gives the same numbering the shape path gives the same
+    edges, and per face-point entry an edge id and sign.
+- **Kernels.** Cell views are `_PolyhedralCells`: `num_faces(c)`,
+  `face_id(c, k)`, `face_side(c, k)`, `face_size(f)`,
+  `side_point(c, k, j)`, and `point_id(c, j)` over the derived points.
+  Face views are `_PolygonFaces`, with the shape path's side methods.
+  `Polyhedron` and `Polygon` are deliberately not `Shape`s, whose methods
+  assume fixed points and shape functions; geometry on them is
+  `_PointGeometry`, positions only.
+- **Winding.** `check_winding` sorts every cell's directed face edges by
+  (cell, edge): a run must be two walks, one each way. `orient` turns
+  around faces wound into their only cell. Repairing mixed winding inside
+  a cell is not attempted.
+- **Conversions.** `as_polyhedra` reuses the shape path's derived faces
+  unchanged: face ids, face fields and edge numbering all carry over, and
+  sides match exactly. VTK import matches duplicated faces by point set
+  and refuses copies wound the same way; it reads on the host, cell by
+  cell. VTK export writes a copy per cell, reversed on side 1.
+- **Tests (`test_polyhedra.py`).**
+  - Every shape mesh and VTK solid converts with identical sides, boundary
+    and edges.
+  - Cells walk their faces as the shape's own tables do.
+  - `check_winding` finds a turned face; `orient` mends inward boundary
+    faces.
+  - Refusals.
+  - Extruded Voronoi columns: thin, with polygonal faces of up to eight
+    points; Euler's V − E + F − C = 1 holds.
+  - VTK round trips with positive volumes (1, 1, 1/3 for the mixed mesh)
+    and `vtkGeometryFilter`'s boundary.
+  - Six VTK data files.
+  - Mutations caught: ignoring the side in `side_point`, in the side
+    scatter or in the winding check; non-unique cell points; exporting
+    side-1 copies unreversed.
+
+**Findings:**
+
+- VTK's own `polyhedron_mesh.vtu` is wound inconsistently. In each cell
+  the faces point both ways, and the face the two cells share runs the
+  same way in both, so VTK reports a volume of 14.5 million for a
+  41 × 41 × 20 box. The import refuses it rather than guess.
+- `nonWatertightPolyhedron.vtu` is closed cell by cell; its "non-watertight"
+  is between cells.
+- A shape-based mesh's derived faces are already a polyhedral topology.
+  The conversion is a reindexing, which confirms that the two paths share
+  their face conventions exactly.
+
+**Still to do:** the shared entity methods on the shape path's views and
+the face-based algorithms (phase 2); size buckets and López (phase 3);
+an import that is not a host loop; `orient` beyond inward boundary faces.

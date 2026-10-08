@@ -30,7 +30,7 @@ import numpy as np
 
 import tack
 from tack.algorithms.sort import _run_offsets, argsort, gather
-from tack.data import arrays, views
+from tack.data import arrays, shapes, views
 from tack.data.arrays import CartesianProduct
 from tack.data.spaces import H1, L2, SideTraces, Space
 
@@ -135,6 +135,9 @@ def _geometry_parts(data, group, kind):
                 f"the {kind} of an L2 geometry have no positions of their own: each cell "
                 "around an edge has its own, and edges have no sides to choose from")
         return _space_parts(geometry, group, views._L2Geometry)
+    if group.shape in (shapes.Polyhedron, shapes.Polygon):
+        # No reference element: the points' positions, nothing to map.
+        return _space_parts(geometry, group, views._PointGeometry)
     if geometry.space.order == 2 and kind == "cells":
         # Curved: the domain view's incidence gives the quadratic nodes' ids.
         data.topology.edges()

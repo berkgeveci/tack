@@ -208,6 +208,118 @@ class _Faces:
         return self.sides[f][2 * k + 1]
 
 
+class _PolyhedralCells:
+    """The cells of a polyhedral topology, each a list of faces, every count at run time.
+
+    ``cell_faces[cell_offsets[c] + k]`` is cell ``c``'s face ``k``, and
+    ``cell_face_sides`` the same entry's side: 0 when the face's stored winding
+    points out of ``c``, 1 when into it. ``point_offsets``/``point_ids`` are the
+    cell's points (derived: each cell's face points, sorted and unique).
+    """
+
+    __tack_iterate__ = "num_cells"
+
+    def __init__(self, cell_offsets, cell_faces, cell_face_sides, face_offsets, face_points,
+                 point_offsets, point_ids, num_cells):
+        self.cell_offsets = cell_offsets
+        self.cell_faces = cell_faces
+        self.cell_face_sides = cell_face_sides
+        self.face_offsets = face_offsets
+        self.face_points = face_points
+        self.point_offsets = point_offsets
+        self.point_ids = point_ids
+        self.num_cells = num_cells
+
+    @tack.func
+    def entity_id(self, c):
+        return c
+
+    @tack.func
+    def cell_id(self, c):
+        return c
+
+    @tack.func
+    def index(self, c):
+        return c
+
+    @tack.func
+    def num_faces(self, c):
+        return self.cell_offsets[c + 1] - self.cell_offsets[c]
+
+    @tack.func
+    def face_id(self, c, k):
+        return self.cell_faces[self.cell_offsets[c] + k]
+
+    @tack.func
+    def face_side(self, c, k):
+        """0 if the cell's face ``k`` is wound out of it (its side 0), 1 if into it."""
+        return tack.i32(self.cell_face_sides[self.cell_offsets[c] + k])
+
+    @tack.func
+    def face_size(self, f):
+        return self.face_offsets[f + 1] - self.face_offsets[f]
+
+    @tack.func
+    def side_point(self, c, k, j):
+        """Point ``j`` of the cell's face ``k``, going round it outward for this cell:
+        the stored order on side 0, the reverse (from the same first point) on side 1."""
+        f = self.face_id(c, k)
+        n = self.face_size(f)
+        at = j if self.face_side(c, k) == 0 else (n - j) % n
+        return self.face_points[self.face_offsets[f] + at]
+
+    @tack.func
+    def num_points(self, c):
+        return self.point_offsets[c + 1] - self.point_offsets[c]
+
+    @tack.func
+    def point_id(self, c, j):
+        return self.point_ids[self.point_offsets[c] + j]
+
+
+class _PolygonFaces:
+    """A polyhedral topology's faces: each a polygon of ``face_size(f)`` points, in its
+    stored order (wound out of its side 0), with the shape path's two-sided record."""
+
+    __tack_iterate__ = "num_faces"
+
+    def __init__(self, face_offsets, face_points, ids, sides, num_faces):
+        self.face_offsets = face_offsets
+        self.face_points = face_points
+        self.ids = ids                        # (n,) global face ids
+        self.sides = sides                    # (all faces,) [cell0, local0, cell1, local1]
+        self.num_faces = num_faces
+
+    @tack.func
+    def entity_id(self, f):
+        return self.ids[f]
+
+    @tack.func
+    def face_id(self, f):
+        return self.ids[f]
+
+    @tack.func
+    def face_size(self, f):
+        g = self.ids[f]
+        return self.face_offsets[g + 1] - self.face_offsets[g]
+
+    @tack.func
+    def point_id(self, f, j):
+        return self.face_points[self.face_offsets[self.ids[f]] + j]
+
+    @tack.func
+    def num_sides(self, f):
+        return 2 if self.sides[self.ids[f]][2] >= 0 else 1
+
+    @tack.func
+    def side_cell(self, f, k):
+        return self.sides[self.ids[f]][2 * k]
+
+    @tack.func
+    def side_local(self, f, k):
+        return self.sides[self.ids[f]][2 * k + 1]
+
+
 class _Edges:
     """Derived edges: their (low, high) point ids."""
 
@@ -287,6 +399,16 @@ class _Geometry:
         for j in range(self.NUM_POINTS):
             m += self.point(i, j).outer_product(self.shape_gradient(j, pc))
         return m
+
+
+class _PointGeometry:
+    """Positions of a cell or face with no reference element -- a polyhedron, a
+    polygon: ``point(i, j)`` only, the positions of its points. Nothing maps
+    parametric coordinates, so there is no ``position`` or ``geometry_jacobian``."""
+
+    @tack.func
+    def point(self, i, j):
+        return self.point_value(i, j)
 
 
 class _H1Geometry(_Geometry):

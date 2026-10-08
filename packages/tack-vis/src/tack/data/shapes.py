@@ -904,6 +904,40 @@ SHAPES = (Vertex, Line, Triangle, Pixel, Quad, Tetra, Voxel, Hexahedron, Wedge, 
 
 _BY_ID = {int(cls.ID): cls for cls in SHAPES}
 
+POLYGON = tack.constant(7, tack.i32)
+POLYHEDRON = tack.constant(42, tack.i32)
+
+
+class _NoReference:
+    """A cell or face without a reference element: an id and a dimension, and the
+    counts host-side code reads (none fixed). Not a ``Shape``, whose methods all
+    assume fixed points and shape functions."""
+
+    NUM_EDGES = 0
+    NUM_FACES = 0
+    CONTOUR_TRIANGLES = 0
+    NUM_QUADRATIC = 0
+
+
+@tack.data_oriented
+class Polygon(_NoReference):
+    """VTK_POLYGON: a face of a polyhedral topology, of any number of points. It has no
+    fixed counts and no shape functions; a face view gives its size at run time
+    (``face_size``). Not in ``SHAPES``: no shape-based topology holds polygons."""
+
+    ID = POLYGON
+    DIMENSION = 2
+
+
+@tack.data_oriented
+class Polyhedron(_NoReference):
+    """VTK_POLYHEDRON: a cell of a polyhedral topology, given by its faces. No fixed
+    counts, no reference element, no shape functions: a cell view gives its faces,
+    and their points in its outward order, at run time."""
+
+    ID = POLYHEDRON
+    DIMENSION = 3
+
 
 def shape_class(type_id):
     """The shape class for a VTK cell type id; raises ``ValueError`` for any other id."""

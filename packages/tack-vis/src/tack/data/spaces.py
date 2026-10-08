@@ -106,6 +106,12 @@ class Space:
         return f"{type(self).__name__}({args})"
 
 
+def _needs_reference_cells(space, family):
+    if not getattr(space.topology, "reference_cells", True):
+        raise NotImplementedError(f"{family} needs a reference element, which a polyhedral "
+                                  "topology's cells do not have")
+
+
 def _is_array(value):
     return isinstance(value, np.ndarray) or hasattr(value, "to_numpy")
 
@@ -158,6 +164,7 @@ class H1(Space):
     def _layout(self):
         """Order 2: ``(face_dofs, cell_dofs, size)``, made on first use and kept."""
         if "_order2" not in self.__dict__:
+            _needs_reference_cells(self, "H1 of order 2")
             topology = self.topology
             for group in topology.groups():
                 if group.count and not group.shape.NUM_QUADRATIC:
@@ -278,6 +285,7 @@ class L2(Space):
     def _layout(self):
         """``(offsets, size)``, made on first use and kept."""
         if "_offsets" not in self.__dict__:
+            _needs_reference_cells(self, "L2")
             topology = self.topology
             n = topology.num_cells
             if self.varies:

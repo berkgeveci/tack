@@ -234,14 +234,94 @@ def _attributes_to_fields(attributes, space, float_dtype):
     return fields
 
 
-def vtk_to_dataset(grid, dtype=tack.f32):
+def _opposite(stored, walked):
+    """Whether ``walked`` goes round the same polygon as ``stored`` the other way."""
+    n = len(stored)
+    walked = list(walked)
+    if n != len(walked) or stored[0] not in walked:
+        return False
+    i = walked.index(stored[0])
+    return [walked[(i - k) % n] for k in range(n)] == list(stored)
+
+
+def _polyhedral_topology(grid):
+    """A ``vtkUnstructuredGrid`` as a ``PolyhedralTopology``, every cell a polyhedron.
+
+    A polyhedron's faces are its own (``GetPolyhedronFaces``/``FaceLocations``);
+    any other cell's are its cell class's, outward as VTK winds them (a voxel's
+    pixels as quads). VTK keeps a face once per cell, each copy outward for its
+    cell, so copies are matched by their point sets: the first found is the face,
+    its cell side 0, and a second copy -- which must go round the other way -- is
+    side 1. Read on the host, cell by cell.
+    """
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    from tack.data import PolyhedralTopology
+
+    try:
+        types = vtk_to_numpy(grid.GetCellTypes())
+    except TypeError:
+        types = vtk_to_numpy(grid.GetCellTypesArray())
+    locations, faces = grid.GetPolyhedronFaceLocations(), grid.GetPolyhedronFaces()
+    if locations is not None and faces is not None:
+        loc_offsets = vtk_to_numpy(locations.GetOffsetsArray())
+        loc_faces = vtk_to_numpy(locations.GetConnectivityArray())
+        face_offsets = vtk_to_numpy(faces.GetOffsetsArray())
+        face_conn = vtk_to_numpy(faces.GetConnectivityArray())
+    known, face_points, face_offsets_out = {}, [], [0]
+    cell_offsets, cell_faces, cell_sides = [0], [], []
+    same_way = 0
+    for c in range(grid.GetNumberOfCells()):
+        if types[c] == 42:
+            listed = [face_conn[face_offsets[f]:face_offsets[f + 1]]
+                      for f in loc_faces[loc_offsets[c]:loc_offsets[c + 1]]]
+        else:
+            cell = grid.GetCell(c)
+            if cell.GetCellDimension() != 3:
+                raise ValueError(f"cell {c} is not 3D: a polyhedral topology is of 3D cells")
+            listed = []
+            for k in range(cell.GetNumberOfFaces()):
+                face = cell.GetFace(k)
+                ids = [face.GetPointId(i) for i in range(face.GetNumberOfPoints())]
+                if face.GetCellType() == 8:                     # a pixel, as a quad
+                    ids = [ids[0], ids[1], ids[3], ids[2]]
+                listed.append(ids)
+        for points in listed:
+            points = [int(p) for p in points]
+            key = tuple(sorted(points))
+            f = known.get(key)
+            if f is None:
+                f = known[key] = len(face_offsets_out) - 1
+                face_points.extend(points)
+                face_offsets_out.append(len(face_points))
+                side = 0
+            else:
+                stored = face_points[face_offsets_out[f]:face_offsets_out[f + 1]]
+                if not _opposite(stored, points):
+                    same_way += 1
+                side = 1
+            cell_faces.append(f)
+            cell_sides.append(side)
+        cell_offsets.append(len(cell_faces))
+    if same_way:
+        raise ValueError(f"{same_way} shared faces are wound the same way by both their "
+                         "cells; VTK winds every polyhedron face outward for its cell")
+    return PolyhedralTopology(np.array(face_offsets_out, np.int32),
+                              np.array(face_points, np.int32), np.array(cell_offsets, np.int32),
+                              np.array(cell_faces, np.int32), np.array(cell_sides, np.uint8),
+                              num_points=grid.GetNumberOfPoints())
+
+
+def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None):
     """Copy a ``vtkUnstructuredGrid`` or ``vtkRectilinearGrid`` into a
     ``tack.data.DataSet``.
 
     Points and floating-point arrays become fields of ``dtype``; integer
     arrays keep their type. Named point data become ``H1`` fields and named
     cell data ``Constant`` fields. An unstructured grid's cells must all be
-    linear shapes.
+    linear shapes -- unless it holds polyhedra (or ``polyhedral`` is true), when
+    it becomes a ``PolyhedralTopology``, every cell a polyhedron of its faces.
     """
     from vtkmodules.util.numpy_support import vtk_to_numpy
 
@@ -254,7 +334,16 @@ def vtk_to_dataset(grid, dtype=tack.f32):
         UnstructuredTopology,
     )
 
-    if grid.IsA("vtkUnstructuredGrid"):
+    if grid.IsA("vtkUnstructuredGrid") and polyhedral is None:
+        try:
+            all_types = vtk_to_numpy(grid.GetCellTypes())
+        except TypeError:
+            all_types = vtk_to_numpy(grid.GetCellTypesArray())
+        polyhedral = bool((all_types == 42).any())
+    if grid.IsA("vtkUnstructuredGrid") and polyhedral:
+        topology = _polyhedral_topology(grid)
+        geometry = vtk_to_numpy(grid.GetPoints().GetData())
+    elif grid.IsA("vtkUnstructuredGrid"):
         cell_array = grid.GetCells()
         # The per-cell types are GetCellTypes() from VTK 9.6 on; through 9.5 that
         # takes an argument and the array is GetCellTypesArray() (removed on master).
@@ -302,7 +391,10 @@ def dataset_to_vtk(data):
     """Copy a ``tack.data.DataSet`` into a new VTK dataset.
 
     A structured topology over rectilinear coordinates gives a
-    ``vtkRectilinearGrid``; an unstructured one a ``vtkUnstructuredGrid``.
+    ``vtkRectilinearGrid``; an unstructured one a ``vtkUnstructuredGrid``, and a
+    polyhedral one a ``vtkUnstructuredGrid`` of ``VTK_POLYHEDRON`` cells, each
+    keeping its own copy of its faces, outward for it (VTK's layout has no
+    orientation bit, so a shared face cannot be stored once).
     ``H1`` fields and values on points become point data, ``Constant`` fields
     and values on cells cell data. ``L2`` fields have no VTK array to go
     to without duplicating points, and fields on faces or edges none at
@@ -322,6 +414,7 @@ def dataset_to_vtk(data):
         H1,
         CartesianProduct,
         Constant,
+        PolyhedralTopology,
         StructuredTopology,
         UnstructuredTopology,
         Values,
@@ -347,6 +440,32 @@ def dataset_to_vtk(data):
         points = vtkPoints()
         points.SetData(numpy_to_vtk(data.positions(), deep=1))
         grid.SetPoints(points)
+    elif isinstance(topology, PolyhedralTopology):
+        # VTK keeps a face per cell, outward for that cell: side 1's copy is
+        # the face walked backwards from the same first point.
+        face_offsets, face_points, cell_offsets, cell_faces, sides = topology.arrays()
+        point_offsets, point_ids = (a.to_numpy() for a in topology.cell_points())
+        copies, copy_offsets = [], [0]
+        for f, side in zip(cell_faces, sides):
+            ring = face_points[face_offsets[f]:face_offsets[f + 1]]
+            copies.extend(ring if side == 0 else np.roll(ring[::-1], 1))
+            copy_offsets.append(len(copies))
+
+        def cell_array(offsets, connectivity):
+            out = vtkCellArray()
+            out.SetData(numpy_to_vtkIdTypeArray(np.asarray(offsets, np.int64), deep=1),
+                        numpy_to_vtkIdTypeArray(np.asarray(connectivity, np.int64), deep=1))
+            return out
+
+        grid = vtkUnstructuredGrid()
+        points = vtkPoints()
+        points.SetData(numpy_to_vtk(data.positions(), deep=1))
+        grid.SetPoints(points)
+        grid.SetPolyhedralCells(
+            numpy_to_vtk(np.full(topology.num_cells, 42, np.uint8), deep=1),
+            cell_array(point_offsets, point_ids),
+            cell_array(cell_offsets, np.arange(len(cell_faces))),
+            cell_array(copy_offsets, copies))
     else:
         raise TypeError(f"unsupported topology {type(topology).__name__} with "
                         f"{type(coordinates).__name__}")
