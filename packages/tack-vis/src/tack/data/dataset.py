@@ -213,6 +213,8 @@ class DataSet:
         kind = domain if domain in ("cells", "faces", "edges") else "faces"
         geometry, attributes = _geometry_parts(self, group, kind)
         mixins.extend(geometry)
+        if domain == "cells" and issubclass(group.kind, views._PolyhedralCells):
+            mixins.append(views._PolyhedralWalk)
         if domain == "cells":
             # A subgroup's index(c) is its position in the topology's group, so
             # it shares that group's incidence.
@@ -227,6 +229,10 @@ class DataSet:
                 mixins.append(views._EdgeIncidence)
                 attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
                                   edge_start=edges.group_starts[id(group.root)])
+        # A key that shapes the kernel -- a size bucket's cap -- brings its mixin.
+        for key, value in group.keys.items():
+            if hasattr(key, "domain_mixin"):
+                mixins.append(key.domain_mixin(value))
         return group.view(*mixins, **attributes)
 
     def _side_zero_points(self):
@@ -238,15 +244,17 @@ class DataSet:
             self._side_zero = kept
         return kept[1]
 
-    def launch_groups(self, domain, fields=()):
+    def launch_groups(self, domain, fields=(), keys=()):
         """The groups a kernel over ``domain`` launches once each, given the ``Field``s
         it reads: the domain's groups, each split by the keys of the spaces among
-        ``fields`` that vary from cell to cell."""
+        ``fields`` that vary from cell to cell, and by any other ``keys`` -- objects
+        that give each cell a key, as ``polyhedra.SizeBuckets`` does."""
         groups = self.domain_groups(domain)
         spaces = []
         for field in fields:
             if field.space.varies and field.space not in spaces:
                 spaces.append(field.space)
+        spaces.extend(k for k in keys if k not in spaces)
         if domain != "cells" or not spaces:
             return groups
         return [sub for group in groups if group.count
@@ -371,27 +379,42 @@ def _subgroups(group, spaces):
     perm = argsort(keys)
     sorted_keys = gather(keys, perm)
     offsets, runs = _run_offsets(sorted_keys, n)
+    bounds = offsets.to_numpy()
+    if issubclass(group.kind, views._PolyhedralCells):
+        # A polyhedral cell is its id: subgroups select ids, sorted by key.
+        subgroups = []
+        for r in range(runs):
+            first, count = int(bounds[r]), int(bounds[r + 1] - bounds[r])
+            subgroups.append(views.DomainGroup(
+                views._SelectedPolyhedra, group.shape, (*group.args[:7], count, perm, first),
+                count, group.start, parent=group,
+                keys=_decode(int(sorted_keys[first]), spaces)))
+        cache[cache_key] = subgroups
+        return subgroups
     rank = tack.field(tack.i32, shape=(n,))
     _invert(perm, rank)
     rows = tack.field(tack.i32, shape=(n, group.shape.NUM_POINTS))
     ids = tack.field(tack.i32, shape=(n,))
     positions = tack.field(tack.i32, shape=(n,))
     _gather_selected(cells, rank, rows, ids, positions)
-    bounds = offsets.to_numpy()
     subgroups = []
     for r in range(runs):
         first, count = int(bounds[r]), int(bounds[r + 1] - bounds[r])
-        combined = int(sorted_keys[first])
-        digits = []
-        for _ in spaces:
-            digits.append(combined % _KEY_BASE)
-            combined //= _KEY_BASE
-        keyed = dict(zip(spaces, reversed(digits)))
         subgroups.append(views.DomainGroup(views._SelectedCells, group.shape,
                                            (rows, ids, count, positions, first), count,
-                                           group.start, parent=group, keys=keyed))
+                                           group.start, parent=group,
+                                           keys=_decode(int(sorted_keys[first]), spaces)))
     cache[cache_key] = subgroups
     return subgroups
+
+
+def _decode(combined, spaces):
+    """A combined key back into each space's key, in ``spaces`` order."""
+    digits = []
+    for _ in spaces:
+        digits.append(combined % _KEY_BASE)
+        combined //= _KEY_BASE
+    return dict(zip(spaces, reversed(digits)))
 
 
 def _check_domain(space, kind):

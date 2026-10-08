@@ -261,6 +261,12 @@ class _PolyhedralCells:
         return self.cell_offsets[g + 1] - self.cell_offsets[g]
 
     @tack.func
+    def entry(self, c, k):
+        """The index of the cell's facet ``k`` among all cell -> facet entries: where
+        per-(cell, facet) data -- a count, a side -- lives."""
+        return self.cell_offsets[self.cell(c)] + k
+
+    @tack.func
     def face_id(self, c, k):
         return self.cell_faces[self.cell_offsets[self.cell(c)] + k]
 
@@ -289,11 +295,6 @@ class _PolyhedralCells:
         return self.face_size(self.face_id(c, k))
 
     @tack.func
-    def side_position(self, c, k, j):
-        """The position of ``side_point(c, k, j)``, from the geometry."""
-        return self.point_position(self.side_point(c, k, j))
-
-    @tack.func
     def num_points(self, c):
         g = self.cell(c)
         return self.point_offsets[g + 1] - self.point_offsets[g]
@@ -301,6 +302,34 @@ class _PolyhedralCells:
     @tack.func
     def point_id(self, c, j):
         return self.point_ids[self.point_offsets[self.cell(c)] + j]
+
+
+class _PolyhedralWalk:
+    """A polyhedral cell's facet points' positions, from the geometry: the walk's
+    other half, in a mixin of its own because it needs the geometry, which only
+    domain views have (a bare view, such as the one subgroups key by, does not)."""
+
+    @tack.func
+    def side_position(self, c, k, j):
+        """The position of ``side_point(c, k, j)``."""
+        return self.point_position(self.side_point(c, k, j))
+
+
+class _SelectedPolyhedra(_PolyhedralCells):
+    """Some of a polyhedral topology's cells: a subgroup's, ``num_cells`` of the
+    ``selected`` cell ids from ``first``. No rows to gather -- a polyhedral cell is
+    its id -- so ``cell(c)`` just looks it up."""
+
+    def __init__(self, cell_offsets, cell_faces, cell_face_sides, face_offsets, face_points,
+                 point_offsets, point_ids, num_cells, selected, first):
+        super().__init__(cell_offsets, cell_faces, cell_face_sides, face_offsets, face_points,
+                         point_offsets, point_ids, num_cells)
+        self.selected = selected
+        self.first = first
+
+    @tack.func
+    def cell(self, c):
+        return self.selected[self.first + c]
 
 
 class _PolygonFaces:

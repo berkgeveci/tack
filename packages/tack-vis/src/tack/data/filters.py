@@ -169,6 +169,8 @@ def contour(data, field, isovalue, merge_points=True):
     field = _field(data, field)
     space = field.space
     _scalar_floating("contour", field)
+    if not getattr(data.topology, "reference_cells", True):
+        return _polyhedral_contour(data, field, isovalue)
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"contour needs a field with a basis on the cells, not {space!r}")
     per_cell = 0 if isinstance(space, H1) and isinstance(data.geometry.space, H1) else 1
@@ -231,6 +233,219 @@ def contour(data, field, isovalue, merge_points=True):
         elif on_cells:
             fields[name] = Field(Values(surface, "cells"), _take(f.values, triangle_cells))
     return DataSet(surface, Field(H1(surface), points), fields=fields)
+
+
+# ── Contour of polyhedra: López's polygon tracing, face by face ─────
+#
+# docs/design/polyhedra.md, section 4, after VTK's vtkPolyhedronContour and
+# the face-based form its design note proposes. Inside means at or above the
+# isovalue. Walking a face outward for its cell, a step from outside to
+# inside is a *key* crossing; each is paired with the next crossing round
+# that face. With consistent winding, every crossing of a cell is a key
+# crossing on exactly one of its faces and the next of another, so a cell's
+# pairs form cycles: its iso-polygons. Crossings are named by their global
+# edge, so cells and faces agree on them, and an iso-vertex is one per edge.
+
+@tack.kernel
+def _lopez_counts(cells, values, iso, counts):
+    for c in cells:
+        for k in range(cells.num_faces(c)):
+            n = cells.side_size(c, k)
+            keyed = 0
+            for j in range(n):
+                va = values[cells.side_point(c, k, j)]
+                vb = values[cells.side_point(c, k, j + 1 if j + 1 < n else 0)]
+                if va < iso and vb >= iso:
+                    keyed += 1
+            counts[cells.entry(c, k)] = keyed
+
+
+@tack.kernel
+def _lopez_pairs(cells, values, iso, face_edge, starts, pair_from, pair_to):
+    for c in cells:
+        for k in range(cells.num_faces(c)):
+            f = cells.face_id(c, k)
+            n = cells.side_size(c, k)
+            side = cells.face_side(c, k)
+            base = cells.face_offsets[f]
+            at = starts[cells.entry(c, k)]
+            for j in range(n):
+                va = values[cells.side_point(c, k, j)]
+                vb = values[cells.side_point(c, k, j + 1 if j + 1 < n else 0)]
+                if va < iso and vb >= iso:
+                    nxt = j
+                    for m in range(1, n):
+                        j2 = j + m if j + m < n else j + m - n
+                        wa = values[cells.side_point(c, k, j2)]
+                        wb = values[cells.side_point(c, k, j2 + 1 if j2 + 1 < n else 0)]
+                        if (1 if wa >= iso else 0) != (1 if wb >= iso else 0):
+                            nxt = j2
+                            break
+                    # Walk edge j joins walk points j and j + 1: on side 1, stored
+                    # points n - 1 - j and n - 2 - j, so stored edge n - 2 - j.
+                    pair_from[at] = face_edge[base + (j if side == 0 else (2 * n - 2 - j) % n)]
+                    pair_to[at] = face_edge[base + (nxt if side == 0
+                                                     else (2 * n - 2 - nxt) % n)]
+                    at += 1
+
+
+@tack.kernel
+def _lopez_trace(cells, pair_offsets, pair_from, pair_to, emit, poly_counts, poly_offsets,
+                 poly_starts, poly_cells, vertices, bad):
+    for c in cells:
+        e = cells.entity_id(c)
+        first = pair_offsets[cells.entry(c, 0)]
+        m = pair_offsets[cells.entry(c, cells.num_faces(c))] - first
+        used = tack.local_array(tack.i32, cells.MAX_SCRATCH)
+        for i in range(m):
+            used[i] = 0
+        polys = 0
+        out = first
+        for s in range(m):
+            if used[s] == 0:
+                if emit == 1:
+                    poly_starts[poly_offsets[e] + polys] = out
+                    poly_cells[poly_offsets[e] + polys] = e
+                cur = s
+                for step in range(m):
+                    used[cur] = 1
+                    if emit == 1:
+                        vertices[out] = pair_from[first + cur]
+                    out += 1
+                    target = pair_to[first + cur]
+                    nxt = -1
+                    for i in range(m):
+                        if pair_from[first + i] == target:
+                            nxt = i
+                    if nxt == s:
+                        break
+                    if nxt < 0 or used[nxt] == 1:
+                        tack.atomic_add(bad, 0, 1)
+                        break
+                    cur = nxt
+                polys += 1
+        if emit == 0:
+            poly_counts[e] = polys
+
+
+@tack.kernel
+def _crossing_edges(rows, values, iso, flags):
+    for e in range(flags.shape[0]):
+        ab = rows[e]
+        flags[e] = 1 if (1 if values[ab[0]] >= iso else 0) != (
+            1 if values[ab[1]] >= iso else 0) else 0
+
+
+@tack.kernel
+def _iso_vertices(rows, values, iso, flags, slots, positions, weights, out, ends):
+    # From the lower point id, as the shape path's contour interpolates, so the
+    # two agree on every point.
+    for e in range(flags.shape[0]):
+        if flags[e] == 1:
+            ab = rows[e]
+            va = values[ab[0]]
+            w = (iso - va) / (values[ab[1]] - va)
+            xa = positions[ab[0]]
+            v = slots[e]
+            out[v] = xa + w * (positions[ab[1]] - xa)
+            ends[v] = ab
+            weights[v] = w
+
+
+@tack.kernel
+def _renumber_vertices(vertices, slots):
+    for i in range(vertices.shape[0]):
+        vertices[i] = slots[vertices[i]]
+
+
+@tack.kernel
+def _close_starts(starts, count, total):
+    for i in range(1):
+        starts[count] = total
+
+
+def _polyhedral_contour(data, field, isovalue):
+    """``contour`` of a polyhedral topology: iso-polygons by López's tracing, as a
+    ``PolygonalTopology`` -- polygons, not triangles."""
+    from tack.data.polyhedra import PolygonalTopology, SizeBuckets
+
+    t = data.topology
+    if t.dimension != 3:
+        raise NotImplementedError("contour lines of polygons are not built yet")
+    if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
+        raise TypeError("a polyhedral topology contours point data")
+    values = arrays.materialize(field.values)
+    edges = t.edges()
+    faces = t.faces()                                # validates the sides
+    del faces
+    entries = int(t.cell_faces.shape[0])
+    counts = tack.zeros(tack.i32, (entries,))
+    for group in data.launch_groups("cells", []):
+        if group.count:
+            _lopez_counts(data.domain_view("cells", group), values, isovalue, counts)
+    pair_offsets = tack.field(tack.i32, shape=(entries + 1,))
+    pairs = exclusive_scan(counts, pair_offsets, entries) if entries else 0
+    _close_starts(pair_offsets, entries, pairs)
+    pair_from = tack.field(tack.i32, shape=(pairs,))
+    pair_to = tack.field(tack.i32, shape=(pairs,))
+    if pairs:
+        for group in data.launch_groups("cells", []):
+            if group.count:
+                _lopez_pairs(data.domain_view("cells", group), values, isovalue,
+                             edges.face_edge, pair_offsets, pair_from, pair_to)
+    n = data.num_cells
+    poly_counts = tack.zeros(tack.i32, (n,))
+    poly_offsets = tack.field(tack.i32, shape=(n + 1,))
+    bad = tack.zeros(tack.i32, (1,))
+    buckets = SizeBuckets(t)
+    traced = [g for g in data.launch_groups("cells", [], keys=[buckets]) if g.count]
+    dummy = tack.field(tack.i32, shape=(1,))
+    if pairs:
+        for group in traced:
+            _lopez_trace(data.domain_view("cells", group), pair_offsets, pair_from, pair_to,
+                         0, poly_counts, poly_offsets, dummy, dummy, dummy, bad)
+    polygons = exclusive_scan(poly_counts, poly_offsets, n) if n and pairs else 0
+    _close_starts(poly_offsets, n, polygons)
+    poly_starts = tack.field(tack.i32, shape=(polygons + 1,))
+    poly_cells = tack.field(tack.i32, shape=(polygons,))
+    vertices = tack.field(tack.i32, shape=(pairs,))
+    if polygons:
+        for group in traced:
+            _lopez_trace(data.domain_view("cells", group), pair_offsets, pair_from, pair_to,
+                         1, poly_counts, poly_offsets, poly_starts, poly_cells, vertices, bad)
+    _close_starts(poly_starts, polygons, pairs)
+    if bad[0]:
+        raise ValueError(f"{bad[0]} iso-polygons do not close: the cells' faces are not "
+                         "wound consistently (check_winding)")
+
+    ne = edges.num_edges
+    flags = tack.field(tack.i32, shape=(ne,))
+    slots = tack.field(tack.i32, shape=(ne,))
+    if ne:
+        _crossing_edges(edges.rows, values, isovalue, flags)
+    count = exclusive_scan(flags, slots, ne) if ne else 0
+    positions = tack.Vector.field(3, data.dtype, shape=(count,))
+    ends = tack.Vector.field(2, tack.i32, shape=(count,))
+    weights = tack.field(arrays.dtype_of(field.values), shape=(count,))
+    if count:
+        _iso_vertices(edges.rows, values, isovalue, flags, slots,
+                      arrays.materialize(data.geometry.values), weights, positions, ends)
+    if pairs:
+        _renumber_vertices(vertices, slots)
+    surface = PolygonalTopology(poly_starts, vertices, num_points=count)
+    fields = {}
+    for name, f in data.fields.items():
+        if name == "shape" or arrays.dtype_of(f.values) not in (tack.f32, tack.f64):
+            continue
+        if isinstance(f.space, H1) or f.space is Values(data, "points"):
+            out = _like(f.values, count)
+            if count:
+                _interpolate_edges(arrays.materialize(f.values), ends, weights, out, count)
+            fields[name] = Field(H1(surface) if isinstance(f.space, H1)
+                                 else Values(surface, "points"), out)
+        elif isinstance(f.space, Constant) or f.space is Values(data, "cells"):
+            fields[name] = Field(Values(surface, "cells"), _take(f.values, poly_cells))
+    return DataSet(surface, Field(H1(surface), positions), fields=fields)
 
 
 # ── Slice ───────────────────────────────────────────────────────────

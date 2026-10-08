@@ -17,6 +17,7 @@ from tack.data.filters import contour, external_faces, slice_plane, threshold
 from tack.data.polyhedra import (
     PolygonalTopology,
     PolyhedralTopology,
+    SizeBuckets,
     as_polygons,
     as_polyhedra,
     check_winding,
@@ -37,6 +38,7 @@ __all__ = [
     "PolygonalTopology",
     "PolyhedralTopology",
     "SideTraces",
+    "SizeBuckets",
     "Space",
     "StructuredTopology",
     "UnstructuredTopology",

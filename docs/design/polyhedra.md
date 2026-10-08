@@ -1,8 +1,8 @@
 # Polyhedral meshes: design proposal
 
 Status: proposal, 2026-10-08, on branch `vis/polyhedra`. Questions in
-section 7 decided as recommended; phases 1 and 2 are built (sections 9
-and 10). It refines section 10 of
+section 7 decided as recommended; phases 1 to 3 are built (sections 9
+to 11). It refines section 10 of
 [the dataset API design](dataset-api.md) -- polyhedra get their own
 topology and algorithms, sharing everything above that -- with what three
 studies found:
@@ -495,3 +495,82 @@ includes.
   dimension down -- would). It refuses, pointing to `boundary_faces`.
 - Traces of point data on polygon faces. `SideTraces` is four points a
   face.
+
+## 11. Phase 3 as built
+
+**Polygons are the same topology, one dimension down.**
+`PolygonalTopology(loop_offsets, loop_points)` is a `PolyhedralTopology`
+whose cells are polygons and whose facets are edges.
+
+- It is built from point loops, as producers and isosurfaces give them.
+  Edges are matched by sorting: the first polygon to use an edge is its
+  side 0, and a second must walk it the other way. Inconsistent winding,
+  or a non-orientable surface, is refused, as is an edge of three polygons.
+- Sides, boundary, the shared entity methods and the face-based algorithms
+  all carry over. `check_winding` checks that loops close; `cell_geometry`
+  gives areas and centroids.
+- `as_polygons` converts triangle, quad and pixel meshes.
+- `extract_surface` of a polyhedral mesh is now its polygonal surface.
+  The tests check it is closed: no boundary, Euler number 2.
+- This also answers the dataset design's question 7: a 2D mesh's facets
+  are its codimension-1 entities, its edges.
+- One fix it forced: side 1 walks a facet `n - 1 - j`. Reversing "from the
+  same first point" is no reversal at all for a 2-point edge.
+
+**Size buckets** (`SizeBuckets(topology, caps)`) group cells by size
+through the same subgroup machinery that splits launches by order.
+
+- A bucket is any object that gives each cell a key. `launch_groups`
+  takes such keys beside fields.
+- A polyhedral subgroup selects cell ids (`_SelectedPolyhedra`, through
+  `cell(c)`) instead of gathering fixed rows.
+- The key's `domain_mixin` gives each launch's view `MAX_SCRATCH`, so
+  `tack.local_array(..., cells.MAX_SCRATCH)` has a compile-time size.
+- Grouping by shape, by order and by size is now one mechanism.
+
+**Contour (and slice) of polyhedra**, face-based López, in four passes,
+each count → scan → emit:
+
+1. Per side, count the key crossings: an outward walk stepping from below
+   the isovalue to at or above it.
+2. Per side, pair each with the next crossing round that face, both named
+   by global edge id. On side 1, walk edge `j` is stored edge `n - 2 - j`.
+3. Per cell, in its size bucket, follow the pairs round their cycles into
+   polygons, with a `used` array of `MAX_SCRATCH`.
+4. One iso-vertex per crossing edge, interpolated from the lower point
+   id, as the shape path's contour does.
+
+The output is a `PolygonalTopology`, and its constructor is a free
+watertightness check: two polygons walking a shared edge the same way are
+refused. Point fields are interpolated onto the surface; cell fields come
+per polygon from the cell it lies in. `slice_plane` gets this through
+`contour` unchanged.
+
+**Tests:**
+
+- Contours of polyhedra converted from every shape mesh (mixed,
+  tetrahedra, hexahedra, wedges, pyramids, voxels) have exactly the shape
+  path's points. For a linear field, whose iso-polygons are planar, the
+  polygons' area equals the triangles'.
+- VTK's López (`vtkContour3DLinearGrid` with `GenerateTrianglesOff`) on the
+  same polyhedra gives the same polygons, wound the same way: on every
+  solid, the Voronoi columns, and two cubes sharing a saddle face.
+- Cells land in the bucket their size needs, and a cell too large is
+  refused.
+- Slice points lie on the plane, with fields carried.
+- Mutations:
+  - mapping side-1 edges wrongly fails 15 tests;
+  - pairing with the *previous* crossing -- the design note's wording,
+    question 5 -- fails exactly the saddle comparison, confirming VTK's
+    code uses *next*;
+  - counting inside → outside crossings instead changes nothing, rightly:
+    round a closed face they are equal in number.
+
+**Not yet:**
+
+- Triangulating output polygons (on request).
+- Contour lines of polygonal topologies.
+- Threshold and clip (phase 4).
+- Iso-polygons are left as polygons. They come out of the trace in a
+  per-cell order, so their numbering differs from VTK's though the
+  polygons are the same.

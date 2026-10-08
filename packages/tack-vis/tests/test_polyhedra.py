@@ -623,3 +623,170 @@ def test_polygons_through_vtk(backend):
     theirs = vtk_to_numpy(sizes.GetOutput().GetCellData().GetArray("Area"))
     np.testing.assert_allclose(td.algorithms.cell_geometry(surface)[0].values.to_numpy(),
                                theirs, rtol=1e-5)
+
+
+# ── Phase 3b: contour of polyhedra, López face by face ──────────────
+
+def _cycles(points, offsets, loops, decimals=5):
+    """Polygons by coordinates, each rotated to start at its smallest point: the same
+    polygon, wound the same way, compares equal however it is numbered."""
+    out = set()
+    for c in range(len(offsets) - 1):
+        ring = [tuple(np.round(points[p], decimals) + 0.0)
+                for p in loops[offsets[c]:offsets[c + 1]]]
+        s = ring.index(min(ring))
+        out.add(tuple(ring[s:] + ring[:s]))
+    return out
+
+
+def _radius(data, center=(0.3, 0.2, 0.1)):
+    return td.Field(td.H1(data), _scalars(np.linalg.norm(data.positions() - center, axis=1)))
+
+
+def _solid_meshes():
+    meshes = {"mixed": _two_hexes_and_a_pyramid()}
+    if vtk is not None:
+        for kind in ("tetra", "hexahedron", "wedge", "pyramid", "voxel"):
+            source = vtk.vtkCellTypeSource()
+            source.SetCellType(SOLID_TYPES[kind])
+            source.SetBlocksDimensions(3, 3, 2)
+            source.Update()
+            meshes[kind] = vtk_to_dataset(source.GetOutput())
+    return meshes
+
+
+@pytest.mark.parametrize("name", ["mixed", "tetra", "hexahedron", "wedge", "pyramid", "voxel"])
+def test_contour_of_polyhedra_is_the_shape_paths(backend, name):
+    meshes = _solid_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    poly = td.as_polyhedra(data)
+    for field, iso in ((_radius, 0.9), (_height, 0.7)):
+        data.fields["s"] = field(data)
+        poly.fields["s"] = td.Field(td.H1(poly), data.fields["s"].values)
+        theirs = td.contour(data, "s", iso)
+        ours = td.contour(poly, "s", iso)
+        assert isinstance(ours.topology, td.PolygonalTopology)
+        np.testing.assert_allclose(np.unique(ours.positions().round(6), axis=0),
+                                   np.unique(theirs.positions().round(6), axis=0), atol=1e-6)
+        np.testing.assert_allclose(ours.fields["s"].values.to_numpy(), iso, atol=1e-5)
+        assert td.check_winding(ours).size == 0
+        if field is _height:
+            # A linear field's iso-polygons are planar: the same area as triangles.
+            area = td.algorithms.cell_geometry(ours)[0].values.to_numpy().sum()
+            points = theirs.positions()
+            tri = theirs.topology.connectivity.to_numpy().reshape(-1, 3)
+            theirs_area = 0.5 * np.linalg.norm(np.cross(points[tri[:, 1]] - points[tri[:, 0]],
+                                                        points[tri[:, 2]] - points[tri[:, 0]]),
+                                               axis=1).sum()
+            np.testing.assert_allclose(area, theirs_area, rtol=1e-5)
+
+
+def _vtk_lopez(data, name, iso):
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+    from vtkmodules.vtkFiltersCore import vtkContour3DLinearGrid
+
+    grid = dataset_to_vtk(data)
+    grid.GetPointData().SetActiveScalars(name)
+    contour = vtkContour3DLinearGrid()
+    contour.SetInputData(grid)
+    contour.SetValue(0, iso)
+    contour.GenerateTrianglesOff()
+    contour.Update()
+    out = contour.GetOutput()
+    polys = out.GetPolys()
+    return (vtk_to_numpy(out.GetPoints().GetData()) if out.GetNumberOfPoints()
+            else np.zeros((0, 3)),
+            vtk_to_numpy(polys.GetOffsetsArray()), vtk_to_numpy(polys.GetConnectivityArray()))
+
+
+def _saddle_pair():
+    """Two unit cubes sharing the face x = 1, whose corners alternate high and low:
+    a saddle, four crossings on one face."""
+    poly = td.as_polyhedra(td.rectilinear_grid([0, 1, 2], [0, 1], [0, 1]))
+    p = poly.positions()
+    values = np.where(np.isclose(p[:, 0], 1), np.where((p[:, 1] + p[:, 2]) % 2 == 0, 1.0, 0.0),
+                      0.3 + 0.1 * p[:, 1] + 0.05 * p[:, 2])
+    poly.fields["s"] = td.Field(td.H1(poly), _scalars(values))
+    return poly
+
+
+@needs_vtk
+@pytest.mark.parametrize("name", ["mixed", "tetra", "hexahedron", "wedge", "pyramid", "voxel",
+                                  "voronoi", "saddle"])
+def test_contour_of_polyhedra_is_vtks_lopez(backend, name):
+    """VTK's López (vtkPolyhedronContour, through vtkContour3DLinearGrid) on the same
+    polyhedra gives the same polygons, wound the same way -- saddle faces included."""
+    if name == "voronoi":
+        points, cells, _ = _voronoi_columns()
+        poly = td.DataSet(_from_cell_faces(cells, len(points)), points)
+        poly.fields["s"] = _radius(poly, (0.5, 0.5, 0.0))
+        isos = (0.2, 0.35)
+    elif name == "saddle":
+        poly = _saddle_pair()
+        isos = (0.5,)
+    else:
+        poly = td.as_polyhedra(_solid_meshes()[name])
+        poly.fields["s"] = _radius(poly)
+        isos = (0.9, 1.4)
+    for iso in isos:
+        ours = td.contour(poly, "s", iso)
+        o, loops = (a.to_numpy() for a in ours.topology.loops())
+        theirs = _vtk_lopez(poly, "s", iso)
+        mine = _cycles(ours.positions(), o, loops)
+        assert len(mine) == len(theirs[1]) - 1 and mine == _cycles(*theirs)
+
+
+def test_saddle_faces_stay_watertight(backend):
+    surface = td.contour(_saddle_pair(), "s", 0.5)
+    sizes = np.diff(surface.topology.loops()[0].to_numpy())
+    assert surface.num_cells >= 2 and td.check_winding(surface).size == 0
+    # The saddle face's four crossings pair up alike in both cells: every edge of
+    # the surface on that face is shared, wound oppositely.
+    assert surface.topology.faces().boundary().shape[0] < sizes.sum()
+
+
+@tack.kernel
+def _caps(cells, out):
+    for c in cells:
+        out[cells.entity_id(c)] = cells.MAX_SCRATCH
+
+
+def test_size_buckets(backend):
+    points, cells, _ = _voronoi_columns(n=60)
+    data = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    t = data.topology
+    buckets = td.SizeBuckets(t, caps=(16, 32))
+    assert buckets is td.SizeBuckets(t, caps=(16, 32))
+    groups = data.launch_groups("cells", [], keys=[buckets])
+    assert len(groups) == 2 and sum(g.count for g in groups) == t.num_cells
+    out = tack.zeros(tack.i32, (t.num_cells,))
+    for group in groups:
+        _caps(data.domain_view("cells", group), out)
+    face_sizes = np.diff(t.arrays()[0])
+    cell_offsets, cell_faces = t.arrays()[2], t.arrays()[3]
+    need = [(face_sizes[cell_faces[cell_offsets[c]:cell_offsets[c + 1]]].sum() + 1) // 2
+            for c in range(t.num_cells)]
+    np.testing.assert_array_equal(out.to_numpy(), np.where(np.array(need) <= 16, 16, 32))
+    with pytest.raises(ValueError, match="largest bucket"):
+        td.SizeBuckets(t, caps=(4,)).cell_keys()
+
+
+def test_slice_and_fields_on_polyhedra(backend):
+    data = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    data.fields["cell"] = td.Field(td.Constant(data), _scalars([1.0, 2.0, 5.0]))
+    data.fields["u"] = _height(data)
+    origin, normal = np.array([0.7, 0.4, 0.6]), np.array([1.0, 0.3, 0.5])
+    cut = td.slice_plane(data, origin, normal)
+    assert isinstance(cut.topology, td.PolygonalTopology)
+    np.testing.assert_allclose((cut.positions() - origin) @ normal, 0, atol=1e-5)
+    p = cut.positions()
+    np.testing.assert_allclose(cut.fields["u"].values.to_numpy(), p[:, 0] + 2 * p[:, 1] - p[:, 2],
+                               atol=1e-5)
+    # Each polygon carries the cell it lies in.
+    centroids = td.algorithms.cell_geometry(cut)[1].values.to_numpy(vectors=True)
+    cells = cut.fields["cell"].values.to_numpy()
+    inside_first = centroids[:, 0] < 1.0
+    assert set(cells[inside_first & (centroids[:, 2] < 1)]) <= {1.0}
+    assert set(cells[~inside_first]) <= {2.0}

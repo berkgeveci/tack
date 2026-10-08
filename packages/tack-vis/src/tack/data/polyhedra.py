@@ -35,8 +35,8 @@ from tack.data import shapes
 from tack.data.topology import _as_field, _Topology
 from tack.data.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells
 
-__all__ = ["PolygonalTopology", "PolyhedralTopology", "as_polygons", "as_polyhedra",
-           "check_winding", "orient"]
+__all__ = ["PolygonalTopology", "PolyhedralTopology", "SizeBuckets", "as_polygons",
+           "as_polyhedra", "check_winding", "orient"]
 
 
 # ── Sides ───────────────────────────────────────────────────────────
@@ -366,6 +366,63 @@ class PolyhedralTopology(_Topology):
         return (self.face_offsets.to_numpy(), self.face_points.to_numpy(),
                 self.cell_offsets.to_numpy(), self.cell_faces.to_numpy(),
                 self.cell_face_sides.to_numpy())
+
+
+# ── Size buckets ────────────────────────────────────────────────────
+
+class SizeBuckets:
+    """Groups a polyhedral topology's cells by size, for kernels that keep per-cell
+    scratch: a cell's key is the first cap in ``caps`` at least half its facet
+    points (an upper bound on its edges, so on its crossings of any isovalue).
+    ``for_each``/``launch_groups`` given the buckets split the cells by them, and
+    each launch's view carries its cap as the class constant ``MAX_SCRATCH``, so
+    ``tack.local_array(dtype, cells.MAX_SCRATCH)`` has a compile-time size --
+    as launches split by shape and order. One per topology and caps.
+    """
+
+    varies = True
+
+    def __new__(cls, topology, caps=(16, 32, 64, 128, 256)):
+        caps = tuple(int(c) for c in caps)
+        kept = topology.__dict__.setdefault("_size_buckets", {})
+        if caps not in kept:
+            buckets = super().__new__(cls)
+            buckets.topology = topology
+            buckets.caps = caps
+            kept[caps] = buckets
+        return kept[caps]
+
+    def cell_keys(self):
+        """Each cell's bucket, an i32 field."""
+        if "_keys" not in self.__dict__:
+            t = self.topology
+            n = t.num_cells
+            sizes = tack.field(tack.i32, shape=(n,))
+            if n:
+                _cell_sizes(t.cell_offsets, t.cell_faces, t.face_offsets, sizes, n)
+            need = (sizes.to_numpy() + 1) // 2
+            keys = np.searchsorted(np.asarray(self.caps), need)
+            if n and keys.max() >= len(self.caps):
+                raise ValueError(f"a cell needs scratch for {need.max()} entries, more than "
+                                 f"the largest bucket, {self.caps[-1]}")
+            field = tack.field(tack.i32, shape=(n,))
+            if n:
+                field.from_numpy(keys.astype(np.int32))
+            self._keys = field
+        return self._keys
+
+    def domain_mixin(self, key):
+        """The mixin that gives a launch of bucket ``key`` its ``MAX_SCRATCH``."""
+        return _bucket_mixin(self.caps[key])
+
+
+_bucket_mixins = {}
+
+
+def _bucket_mixin(cap):
+    if cap not in _bucket_mixins:
+        _bucket_mixins[cap] = type(f"_Scratch{cap}", (), {"MAX_SCRATCH": cap})
+    return _bucket_mixins[cap]
 
 
 # ── Polygons: the same, one dimension down ──────────────────────────
