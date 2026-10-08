@@ -68,8 +68,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   local, so f64 kernels computed with the f32 rounding of the literal.
   This includes literals a device function returns, such as a cell's
   parametric center returned as a vector of literals, which made shape
-  weights f32 on f64 data. f32 kernels are unchanged. A local assigned
-  more than once keeps one type, as before.
+  weights f32 on f64 data. A local assigned only literals more than once,
+  such as the result of a device function returning literals from
+  several branches, takes the kernel's float precision, as a float scalar
+  argument does: f64 when a field is f64. f32 kernels are unchanged.
 
 ### Performance changes users may notice
 

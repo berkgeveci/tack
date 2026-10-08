@@ -586,7 +586,10 @@ parametric center returned as a vector of literals. A conditional
 expression counts only when its condition reads nothing but constants. A
 local with more than one assignment has one type, the join of its
 assignments: when another assignment makes it f64, every literal assigned
-to it converts exactly, and otherwise it is f32. Class-level
+to it converts exactly. A local every one of whose assignments is a weak
+expression -- a device function returning literals from several
+branches, say -- takes the kernel's float precision, as a float scalar
+argument does: f64 when any field argument is f64, otherwise f32. Class-level
 `@tack.data_oriented` constants are substituted as literals and follow the
 same rule. A conversion to an integer type, such as `int(2.5)`, still
 evaluates the literal as f32.

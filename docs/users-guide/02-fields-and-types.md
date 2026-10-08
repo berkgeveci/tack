@@ -26,8 +26,9 @@ NumPy treats Python scalars. With an `f64` field `x`, `x[i] * 0.1` computes
 in `f64` with the `f64` nearest 0.1, and `tack.f64(0.1)` is that value
 exactly. A literal on its own or beside only integers is `f32`. A local
 assigned once, to literals (`a = 0.1`), behaves like the literal wherever
-it is read, so `x[i] * a` is exact too; a local assigned more than once
-has one type. The
+it is read, so `x[i] * a` is exact too. A local assigned only literals more
+than once is `f64` in a kernel with an `f64` field, as float scalar
+arguments are. The
 [language contract](../reference/language-contract.md#floating-point-execution-policy)
 has the full rule.
 
