@@ -347,7 +347,7 @@ shapes and a rectilinear grid:
 | `arrays.py` | implicit arrays a field's values may be: `CartesianProduct` (a rectilinear grid's points), `ConstantArray`, `CountingArray`; helpers for any array |
 | `spaces.py` | spaces on a topology, each owning its layout: `H1(data)`, `L2(data)` (holds its offsets), `Constant(data)`, `Values(data, on)`; one object per (kind, parameters, topology) |
 | `dataset.py` | `Field` (a space and its values), `DataSet` (geometry is its `"shape"` field), `for_each` |
-| `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `traces`, `jump`, `upwind_flux`, `divergence`, `to_points` |
+| `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `traces`, `jump`, `upwind_flux`, `divergence`, `to_points`, `to_cells` |
 | `filters.py` | `contour`, `slice_plane`, `threshold`, `external_faces`, ported from `vis/data-model` onto fields and spaces |
 | `interop/mfem.py` | `mfem_to_dataset`, `mfem_field`: MFEM meshes (curved of order 2 too) and grid functions (H1 orders 1 and 2, L2 orders 0 and 1, vectors), through PyMFEM |
 | `interop/vtk.py` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant` |
@@ -520,9 +520,10 @@ What building it showed:
   included) and carries every field it can -- points and cells gathered,
   L2 fields and an L2 geometry block by block with their orders.
   `external_faces` is the boundary face set through `extract_surface`,
-  which now carries cell and point fields too. With these, `vis/data-model`
-  has nothing this branch lacks except its own point/cell averaging pair,
-  which `to_points` covers one way.
+  which now carries cell and point fields too. With `to_cells` -- any field
+  with a basis averaged over each cell's corners, point data as
+  vtkPointDataToCellData -- beside `to_points`, `vis/data-model` has
+  nothing this branch lacks.
 - **The mixins share one namespace.** A `ConstantArray` kept its number in
   `value`, which hid the spaces' `value(i, pc)` method; the kernel failed
   to compile with a message far from the cause. Building a view now

@@ -16,6 +16,8 @@
   -> face incidence and which side of each face the cell is.
 - ``to_points``: a cell or DG field averaged onto points (projection to
   H1), reading both through ``u.dof(c, j)``.
+- ``to_cells``: any field with a basis averaged over each cell's corners
+  (projection to Constant), point data as VTK's vtkPointDataToCellData.
 - ``values_at_centers``: any field with a basis evaluated at cell centers.
 - ``gradients``: a field's gradient at cell centers, from its own basis and
   the geometry field's Jacobian -- two fields, each through its own space.
@@ -43,6 +45,7 @@ __all__ = [
     "face_geometry",
     "gradients",
     "jump",
+    "to_cells",
     "to_points",
     "traces",
     "upwind_flux",
@@ -364,6 +367,38 @@ def to_points(data, field):
         offsets, count = _run_offsets(keys, total)
         _average_runs(keys, values, offsets, out, count)
     return Field(H1(data), out)
+
+
+@tack.kernel
+def _corner_averages(cells, u, out):
+    for c in cells:
+        total = u.corner_value(c, 0)
+        for j in range(1, cells.NUM_POINTS):
+            total += u.corner_value(c, j)
+        out[cells.entity_id(c)] = total / cells.NUM_POINTS
+
+
+def to_cells(data, field):
+    """``field`` averaged over each cell's corners: a ``Constant`` field.
+
+    For point data -- ``H1`` of order 1, or values on points -- each cell gets
+    the mean of its points' values, as VTK's vtkPointDataToCellData does. Any
+    field with a basis goes through its view's corner values: a DG field
+    averages each cell's own, an order-2 field its values at the corners (as
+    the filters read it), and a cell constant comes back as itself. Scalars or
+    vectors; the values must be floating point.
+    """
+    space = field.space
+    if isinstance(space, Values) and space.on == "points":
+        field = Field(H1(data), field.values)
+        space = field.space
+    if not space.interpolated or space.on not in ("cells", "points"):
+        raise TypeError(f"to_cells averages a field on the points or cells, not {space!r}")
+    if field.values.dtype not in (tack.f32, tack.f64):
+        raise TypeError(f"to_cells needs floating-point values, not {field.values.dtype.name}")
+    out = _like(field.values, data.num_cells)
+    for_each(_corner_averages, data, "cells", field, out)
+    return Field(Constant(data), out)
 
 
 # ── Helpers ─────────────────────────────────────────────────────────

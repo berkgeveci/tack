@@ -894,3 +894,74 @@ def test_quadratic_bases(backend, name):
         up, _ = evaluate(points + h * np.eye(3)[d])
         down, _ = evaluate(points - h * np.eye(3)[d])
         np.testing.assert_allclose((up - down) / (2 * h), gradients[:, :, d], atol=1e-3)
+
+
+# ── Point to cell averaging ─────────────────────────────────────────
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_to_cells_averages_each_cells_points(backend, make):
+    data = _grids()[make]
+    rng = np.random.default_rng(1)
+    scalar = rng.uniform(-1, 1, data.num_points)
+    vector = rng.uniform(-1, 1, (data.num_points, 3))
+    rows = _cell_points(data)
+    out = alg.to_cells(data, td.Field(td.H1(data), _scalars(scalar)))
+    assert out.space is td.Constant(data)
+    np.testing.assert_allclose(out.values.to_numpy(), [scalar[r].mean() for r in rows],
+                               atol=1e-6)
+    out = alg.to_cells(data, td.Field(td.Values(data, "points"), _vectors(vector)))
+    np.testing.assert_allclose(out.values.to_numpy(vectors=True),
+                               [vector[r].mean(axis=0) for r in rows], atol=1e-6)
+
+
+def test_to_cells_of_every_space(backend):
+    """A DG field averages its own corners; a cell constant is itself; an
+    order-2 field averages its corner values; an order per cell is followed."""
+    data = _two_hexes_and_a_pyramid()
+    u = _height(data)
+    expected = alg.to_cells(data, u).values.to_numpy()
+    np.testing.assert_allclose(alg.to_cells(data, alg.discontinuous(data, u)).values.to_numpy(),
+                               expected, atol=1e-6)
+    dg = _with_cell_offsets(data, u, 10.0)
+    np.testing.assert_allclose(alg.to_cells(data, dg).values.to_numpy(),
+                               expected + 10.0 * np.arange(3), atol=1e-5)
+    constant = td.Field(td.Constant(data), _scalars([1.0, 2.0, 5.0]))
+    np.testing.assert_allclose(alg.to_cells(data, constant).values.to_numpy(), [1, 2, 5])
+    orders = np.array([1, 0, 1])
+    varying, centers = _variable_height(data, orders)
+    np.testing.assert_allclose(alg.to_cells(data, varying).values.to_numpy(),
+                               np.where(orders == 1, expected, centers), atol=1e-5)
+    grid = td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1])
+    quadratic = td.H1(grid, order=2)
+    values = np.zeros(quadratic.size)
+    values[:grid.num_points] = _height(grid).values.to_numpy()       # the points' values
+    values[grid.num_points:] = 100.0                                 # the rest: not read
+    np.testing.assert_allclose(
+        alg.to_cells(grid, td.Field(quadratic, _scalars(values))).values.to_numpy(),
+        alg.to_cells(grid, _height(grid)).values.to_numpy(), atol=1e-5)
+
+
+def test_to_cells_refuses(backend):
+    data = _two_hexes_and_a_pyramid()
+    with pytest.raises(TypeError, match="floating-point"):
+        alg.to_cells(data, td.Field(td.H1(data), tack.arange(data.num_points, tack.i32)))
+    on_faces = td.Field(td.Values(data, "faces"), _scalars(np.zeros(15)))
+    with pytest.raises(TypeError, match="on the points or cells"):
+        alg.to_cells(data, on_faces)
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
+def test_to_cells_is_vtks(f64_backend, kind):
+    grid = _vtk_cells(kind, (2, 2, 2))
+    values = np.random.default_rng(5).uniform(-1, 1, grid.GetNumberOfPoints())
+    array = numpy_to_vtk(values, deep=1)
+    array.SetName("p")
+    grid.GetPointData().AddArray(array)
+    to_cells = vtk.vtkPointDataToCellData()
+    to_cells.SetInputData(grid)
+    to_cells.Update()
+    want = vtk_to_numpy(to_cells.GetOutput().GetCellData().GetArray("p"))
+    data = vtk_to_dataset(grid, dtype=tack.f64)
+    np.testing.assert_allclose(alg.to_cells(data, data.fields["p"]).values.to_numpy(), want,
+                               atol=1e-12)
