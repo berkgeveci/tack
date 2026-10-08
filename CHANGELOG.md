@@ -29,6 +29,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   dataset `point(c, j)` and `gather_points(c, pts)`.
   `tack.interop.vtk.vtk_to_dataset` and `dataset_to_vtk` copy unstructured
   and structured grids, with their named point and cell data.
+- `tack.data` filters (tack-vis, prototype), each taking a `DataSet` and
+  returning one: `cell_centers`, `point_data_to_cell_data`,
+  `cell_data_to_point_data` (through `point_links`, the cells using each
+  point, built by sorting and kept on the cell set, so the averages are
+  reproducible) and `external_faces` (faces of 3D cells that only one cell
+  has, found by sorting keyed faces, in each cell's outward order). The
+  tests compare them with vtkCellCenters, vtkPointDataToCellData,
+  vtkCellDataToPointData and vtkGeometryFilter.
 - A kernel can loop over a `@tack.data_oriented` object: `for c in cells:`.
   The class declares the attributes the loop runs through as
   `__tack_iterate__`, one to three names, fastest first. One makes `c` an

@@ -25,6 +25,8 @@ their grid's shape and never divide to find their indices. A view has
 - ``cell_id(c)``: cell ``c``'s index in the whole cell set, where its
   cell data and results belong;
 - ``num_cells``: how many cells this launch covers;
+- ``index(c)``: cell ``c``'s position among them, ``0`` to ``num_cells - 1``,
+  for output laid out per view;
 
 and, when made from a ``DataSet``, its point coordinates:
 
@@ -80,6 +82,10 @@ class _Cells:
     def cell_id(self, c):
         return self.ids[c]
 
+    @tack.func
+    def index(self, c):
+        return c
+
 
 class _StructuredCells:
     """The cells of a structured grid of ``nx * ny * nz`` points, x fastest."""
@@ -91,6 +97,10 @@ class _StructuredCells:
         self.cy = max(ny - 1, 1)
         self.cz = max(nz - 1, 1)
         self.num_cells = num_cells
+
+    @tack.func
+    def index(self, c):
+        return self.cell_id(c)
 
 
 class _StructuredLines(_StructuredCells):
