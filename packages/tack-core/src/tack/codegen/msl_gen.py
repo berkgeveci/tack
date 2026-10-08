@@ -204,7 +204,10 @@ class MSLCodeGen:
                 buf_idx += 1
         self._has_textures = tex_idx > 0
 
-        params.append(("uint __tid__", "[[thread_position_in_grid]]", "__tid__"))
+        # A multi-dimensional loop is dispatched as a grid of its own shape.
+        loop = next(s for s in self.ir_func.body if isinstance(s, ir.IRParallelFor))
+        position = "uint3" if loop.dims else "uint"
+        params.append((f"{position} __tid__", "[[thread_position_in_grid]]", "__tid__"))
         if self._needs_local_tid:
             params.append(("uint __local_tid__", "[[thread_position_in_threadgroup]]",
                            "__local_tid__"))
@@ -351,6 +354,14 @@ class MSLCodeGen:
 
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         idx = node.var
+        if node.dims:
+            # x is the fastest dimension, the last of dims.
+            for dim, axis in zip(node.dims[::-1], "xyz"):
+                self._emit(f"{_INT} {dim} = __tid__.{axis};")
+                self._local_vars[dim] = _INT
+                self._declared_vars.add(dim)
+            self._emit_body(node.body)
+            return
         self._emit(f"{_INT} {idx} = __tid__;")
         self._local_vars[idx] = _INT
         self._declared_vars.add(idx)

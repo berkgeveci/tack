@@ -32,13 +32,25 @@ class IRParam(IRNode):
 # --- Loops ---
 
 class IRParallelFor(IRNode):
-    """A parallel for-loop over a range (top-level for in range())."""
+    """A parallel for-loop over a range (top-level for in range()).
 
-    def __init__(self, var: str, start, end, body: list):
+    ``var`` runs over ``[start, end)``. A loop over ``tack.ndrange`` of two
+    or three dimensions also has ``dims``, one index variable per
+    dimension (slowest first), and ``extents``, their sizes as expressions
+    the host evaluates at dispatch like ``end``, whose product they are.
+    Backends bind ``dims`` from a multi-dimensional launch instead of
+    dividing ``var``, and ``var`` is then not bound at all;
+    ``parallel_dims.flatten`` turns the loop back into one that divides.
+    ``extents`` is not a traversed child: no pass may fold it into code.
+    """
+
+    def __init__(self, var: str, start, end, body: list, dims=None, extents=None):
         self.var = var
         self.start = start
         self.end = end
         self.body = body
+        self.dims = dims
+        self.extents = extents
 
 
 class IRSequentialFor(IRNode):
@@ -317,7 +329,11 @@ def dump(node, indent=0) -> str:
             lines.append(dump(stmt, indent + 1))
         return "\n".join(lines)
     if isinstance(node, IRParallelFor):
-        lines = [f"{prefix}ParallelFor {node.var} in [{dump(node.start)}, {dump(node.end)}):"]
+        if node.dims:
+            shape = " x ".join(f"{d} < {dump(e)}" for d, e in zip(node.dims, node.extents))
+            lines = [f"{prefix}ParallelFor ({shape}):"]
+        else:
+            lines = [f"{prefix}ParallelFor {node.var} in [{dump(node.start)}, {dump(node.end)}):"]
         for stmt in node.body:
             lines.append(dump(stmt, indent + 1))
         return "\n".join(lines)

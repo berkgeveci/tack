@@ -212,6 +212,24 @@ for i in range(x.shape[0]):        # one variant for all lengths
 
 To avoid that, pass the length as a scalar argument (`def reverse(x, out, n)`) — scalars are runtime parameters and don't specialize.
 
+### Multi-dimensional parallel loops
+
+A top-level `tack.ndrange` of two or three dimensions lowers to one
+`IRParallelFor` with `dims` (one index variable per dimension, slowest
+first) and `extents` (host-evaluated sizes, like `end`, their product;
+not a traversed child, so no pass folds them). Nothing divides: CPU
+passes the extents as i64 parameters before `loop_start`/`loop_end`, and
+`_emit_parallel_dims` decomposes a chunk's first index once and walks
+rows with a carry; Metal dispatches a grid of that shape with a `uint3`
+position; CUDA/HIP/OpenCL take `__flat__` and `__ext_k__` after `__n__`
+and launch the grid `launch_geometry` picks (block up to 256 along x,
+then y, then z), or a flat one with `__flat__` set when the device's
+grid limits are exceeded. `ast_transform` flattens workgroup kernels
+(`parallel_dims.flatten`); 4+ dimensions and nested `ndrange` keep the
+flat form. `_get_launch` returns `(items, extents)` and treats any
+non-positive extent as empty. Every pass that knows `var` knows `dims`.
+See `test_parallel_dims.py`.
+
 ### Textures
 
 `tack.texture3d(field, shape)` copies the field into storage the `Texture3D`
@@ -363,7 +381,7 @@ The parallel loop must be a `for` directly in the kernel body, exactly once. Sta
 
 ### @tack.data_oriented templates
 
-Classes decorated with `@tack.data_oriented` can be passed as template arguments. A kernel defined in the class body binds the instance it is called on (`Kernel.__get__` returns a bound method), so `model.step(dt)` passes `model` as the first argument; template detection is by argument type, so nothing else changes. `template_func_methods` unwraps `@staticmethod` over `@tack.func`. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`.
+Classes decorated with `@tack.data_oriented` can be passed as template arguments. A kernel defined in the class body binds the instance it is called on (`Kernel.__get__` returns a bound method), so `model.step(dt)` passes `model` as the first argument; template detection is by argument type, so nothing else changes. `template_func_methods` unwraps `@staticmethod` over `@tack.func`. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`. `for c in obj:` over a template is rewritten in `_KernelTemplateRewriter.visit_For` to `range` (one name in the class's `__tack_iterate__`) or to an `ndrange` over its names reversed, binding `c` to the index vector fastest first (`iteration_space`, `test_template_iteration.py`).
 
 ### Integer floor division and remainder
 

@@ -105,8 +105,13 @@ class LLVMCodeGen:
                 self._field_params.add(param.name)
             param_names.append(param.name)
 
-        # Add loop_start and loop_end parameters (i64)
+        # A multi-dimensional parallel loop's extents (i64 each), then
+        # loop_start and loop_end (i64), the flat chunk this call runs.
         i64_type = llvm_ir.IntType(64)
+        loop = next((s for s in func.body if isinstance(s, ir.IRParallelFor)), None)
+        for k in range(len(loop.dims) if loop is not None and loop.dims else 0):
+            llvm_param_types.append(i64_type)
+            param_names.append(f"__loop_ext_{k}__")
         llvm_param_types.extend([i64_type, i64_type])
         param_names.extend(["__loop_start__", "__loop_end__"])
 
@@ -224,8 +229,113 @@ class LLVMCodeGen:
 
     # --- Loops ---
 
+    def _emit_parallel_dims(self, node: ir.IRParallelFor):
+        """Emit a multi-dimensional parallel loop over the flat chunk, row by row.
+
+        The chunk's first index is split into one index per dimension once,
+        by division; after that each row runs an inner loop along the
+        fastest dimension, and the end of a row carries into the outer
+        indices. Nothing divides per element, and the inner loop is the
+        plain counted loop LLVM vectorizes.
+        """
+        i64 = llvm_ir.IntType(64)
+        zero, one = llvm_ir.Constant(i64, 0), llvm_ir.Constant(i64, 1)
+        start = self._params["__loop_start__"]
+        end = self._params["__loop_end__"]
+        n = len(node.dims)
+        ext = [self._params[f"__loop_ext_{k}__"] for k in range(n)]
+        tag = node.dims[-1]
+
+        # An empty chunk (the dispatcher's probes) must not divide: an
+        # empty range may have a zero extent.
+        split = self._func.append_basic_block(f"rows.{tag}.split")
+        exit_bb = self._func.append_basic_block(f"rows.{tag}.exit")
+        self.builder.cbranch(self.builder.icmp_signed("<", start, end), split, exit_bb)
+        self.builder = llvm_ir.IRBuilder(split)
+
+        # Indices are non-negative, so unsigned division is exact.
+        first = [None] * n
+        rest = start
+        for k in range(n - 1, 0, -1):
+            first[k] = self.builder.urem(rest, ext[k])
+            rest = self.builder.udiv(rest, ext[k])
+        first[0] = rest
+        slots = [self._create_entry_alloca(i64, f"{d}.slot") for d in node.dims]
+        flat = self._create_entry_alloca(i64, f"{tag}.flat")
+        for slot, value in zip(slots, first):
+            self.builder.store(value, slot)
+        self.builder.store(start, flat)
+
+        header = self._func.append_basic_block(f"rows.{tag}.header")
+        row = self._func.append_basic_block(f"rows.{tag}.row")
+        inner_header = self._func.append_basic_block(f"for.{tag}.header")
+        inner_body = self._func.append_basic_block(f"for.{tag}.body")
+        latch = self._func.append_basic_block(f"for.{tag}.latch")
+        row_done = self._func.append_basic_block(f"rows.{tag}.done")
+        self.builder.branch(header)
+
+        self.builder = llvm_ir.IRBuilder(header)
+        at = self.builder.load(flat)
+        self.builder.cbranch(self.builder.icmp_signed("<", at, end), row, exit_bb)
+
+        # One row: the outer indices are fixed, the fastest one runs from
+        # its first column to the row's end or the chunk's, whichever is first.
+        self.builder = llvm_ir.IRBuilder(row)
+        outer = [self.builder.load(slot) for slot in slots[:-1]]
+        col = self.builder.load(slots[-1])
+        width = self.builder.sub(ext[-1], col)
+        left = self.builder.sub(end, at)
+        length = self.builder.select(self.builder.icmp_signed("<", width, left), width, left)
+        stop = self.builder.add(col, length)
+        self.builder.branch(inner_header)
+
+        self.builder = llvm_ir.IRBuilder(inner_header)
+        phi = self.builder.phi(i64, name=tag)
+        phi.add_incoming(col, row)
+        self.builder.cbranch(self.builder.icmp_signed("<", phi, stop), inner_body, row_done)
+
+        self.builder = llvm_ir.IRBuilder(inner_body)
+        saved = {d: self._locals.get(d) for d in node.dims}
+        for d, value in zip(node.dims, [*outer, phi]):
+            self._locals[d] = value
+        old_break, old_continue = self._break_target, self._continue_target
+        self._break_target, self._continue_target = exit_bb, latch
+        self._emit_body(node.body)
+        self._break_target, self._continue_target = old_break, old_continue
+        if not self.builder.block.is_terminated:
+            self.builder.branch(latch)
+
+        self.builder = llvm_ir.IRBuilder(latch)
+        following = self.builder.add(phi, one, name=f"{tag}.next")
+        phi.add_incoming(following, latch)
+        self.builder.branch(inner_header)
+
+        # Next row: flat index on, fastest index back to zero, and carry.
+        self.builder = llvm_ir.IRBuilder(row_done)
+        self.builder.store(self.builder.add(at, length), flat)
+        self.builder.store(zero, slots[-1])
+        carry = one
+        for k in range(n - 2, -1, -1):
+            bumped = self.builder.add(outer[k], carry)
+            if k == 0:
+                self.builder.store(bumped, slots[k])
+                break
+            wrap = self.builder.icmp_signed("==", bumped, ext[k])
+            self.builder.store(self.builder.select(wrap, zero, bumped), slots[k])
+            carry = self.builder.zext(wrap, i64)
+        self.builder.branch(header)
+
+        for d, value in saved.items():
+            if value is None:
+                self._locals.pop(d, None)
+            else:
+                self._locals[d] = value
+        self.builder = llvm_ir.IRBuilder(exit_bb)
+
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         """Emit the parallel for-loop using __loop_start__ and __loop_end__."""
+        if node.dims:
+            return self._emit_parallel_dims(node)
         i64_type = llvm_ir.IntType(64)
         start = self._params["__loop_start__"]
         end = self._params["__loop_end__"]
@@ -279,6 +389,7 @@ class LLVMCodeGen:
             self._locals.pop(node.var, None)
 
         self.builder = llvm_ir.IRBuilder(exit_bb)
+        return None
 
     def _emit_sequential_for(self, node: ir.IRSequentialFor):
         """Emit a sequential (nested) for-loop."""

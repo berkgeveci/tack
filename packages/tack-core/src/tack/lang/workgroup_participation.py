@@ -121,6 +121,8 @@ class _Uniformity:
                 uniform = uniform and not exits
             elif isinstance(node, ir.IRParallelFor):
                 env[node.var] = False
+                for dim in node.dims or ():
+                    env[dim] = False
                 previous = self.in_parallel
                 self.in_parallel = True
                 try:

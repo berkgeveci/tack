@@ -85,6 +85,7 @@ def _collect_pinned(stmts):
     for node in walk_ir(stmts):
         if isinstance(node, (ir.IRParallelFor, ir.IRSequentialFor)):
             out.add(node.var)
+            out.update(getattr(node, 'dims', None) or ())
         elif isinstance(node, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
             out.add(node.name)
     return out
@@ -376,6 +377,8 @@ def _annotate_stmt(node, env, field_params, var_types=None, collected=None):
     if isinstance(node, ir.IRParallelFor):
         # Loop variable is always integer (i64 on GPU for large ranges)
         env[node.var] = i64
+        for dim in node.dims or ():
+            env[dim] = i64
         _annotate_expr(node.start, env, field_params)
         _annotate_expr(node.end, env, field_params)
         _annotate_body(node.body, env, field_params, var_types, collected)

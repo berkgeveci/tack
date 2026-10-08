@@ -59,7 +59,23 @@ other range into that form before code generation:
 | `for i in range(n)` | `ParallelFor i in [0, n)` |
 | `for i in range(3, 7)` | `ParallelFor t in [0, 7 - 3)`; body starts with `i = 3 + t` |
 | `for i in range(1, 8, 3)` | `ParallelFor t in [0, ((8 - 1) + (3 - 1)) // 3)`; body starts with `i = 1 + t * 3` |
-| `for i, j in tack.ndrange(w, h)` | `ParallelFor t in [0, w * h)`; `i = t // h`, `j = t % h` |
+| `for i, j in tack.ndrange(w, h)` | `ParallelFor (d0 < w x d1 < h)`; body starts with `i = d0`, `j = d1` |
+| the same in a workgroup kernel, or over 4+ dimensions | `ParallelFor t in [0, w * h)`; `i = t // h`, `j = t % h` |
+
+A two- or three-dimensional `ndrange` keeps its dimensions, and each
+backend launches in that shape instead of dividing a flat index: CPU
+workers split the flat range into chunks as before, decompose a chunk's
+first index once, and walk the rest row by row with a carry; CUDA, HIP and
+Level Zero launch a 2D/3D grid whose block takes up to 256 threads along
+the fastest dimension, then the next; Metal dispatches a grid of the loop's
+shape. GPUs have no integer divide instruction, and recovering three
+indices from a flat one by a runtime divisor cost a 200³ kernel 4.7 ms on
+an M1 Max against 0.9 ms launched in 3D. An extent past the device's grid
+limits (65535 blocks in y or z on NVIDIA, which with 256-thread blocks
+means about 16.8M along one dimension) makes dispatch launch flat and set
+`__flat__`, and the kernel then divides as before; one compiled variant
+covers both. Workgroup kernels keep the flat loop, because their
+collectives assume one-dimensional 256-thread groups.
 
 The fresh index name comes from `fresh_name`, so it cannot collide with
 user names. Moving the start into the body fixed LC5, where every backend

@@ -11,12 +11,13 @@ Inspired by Taichi's AST transformer (Apache 2.0), simplified for Tack's needs.
 import ast
 import copy
 
-from tack.lang import ir
+from tack.lang import ir, parallel_dims
 from tack.lang.constant import constant_components, constant_ir
 from tack.lang.ir_names import fresh_name
 from tack.lang.ir_traversal import LIST_ROLES, child_fields, walk_ir
 from tack.lang.source_validation import UnsupportedSyntaxError, validate_source
 from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
+from tack.lang.workgroup_support import workgroup_features
 
 # Math builtins that map to LLVM intrinsics / libm calls
 MATH_BUILTINS = {
@@ -204,6 +205,9 @@ class KernelTransformer(ast.NodeVisitor):
             if isinstance(stmt, ir.IRParallelFor):
                 _mark_outermost_continues(stmt.body)
         function = ir.IRFunction(name=node.name, params=params, body=body)
+        if workgroup_features(function):
+            # Workgroup collectives assume one-dimensional groups.
+            parallel_dims.flatten(parallel_dims.parallel_loop(function))
         self._check_names_bound(function)
         self._check_loop_variables_stay_in_their_loops(function)
         return function
@@ -287,6 +291,7 @@ class KernelTransformer(ast.NodeVisitor):
                 bound.add(n.target)
             elif isinstance(n, (ir.IRParallelFor, ir.IRSequentialFor)):
                 bound.add(n.var)
+                bound.update(getattr(n, 'dims', None) or ())
             elif isinstance(n, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
                 bound.add(n.name)
             elif isinstance(n, ir.IRName):
@@ -583,6 +588,20 @@ class KernelTransformer(ast.NodeVisitor):
         total = dim_exprs[0]
         for d in dim_exprs[1:]:
             total = ir.IRBinOp(op="*", left=total, right=d)
+
+        if self._loop_depth == 0 and len(names) in (2, 3):
+            # The backend binds one index per dimension from a launch of
+            # the same shape (see parallel_dims); nothing divides.
+            idx_name = self._fresh_name(f"__nd_idx_{self._inline_counter}__")
+            dims = [self._fresh_name(f"__nd_{self._inline_counter}_{k}__")
+                    for k in range(len(names))]
+            self._inline_counter += 1
+            offsets = [ir.IRAssign(target=name, value=self._offset_index(start, ir.IRName(dim)))
+                       for name, start, dim in zip(names, starts, dims)]
+            body_stmts = self._visit_for_body(node.body)
+            return ir.IRParallelFor(var=idx_name, start=ir.IRConstant(0), end=total,
+                                    body=offsets + body_stmts, dims=dims,
+                                    extents=list(dim_exprs))
 
         # Build body: decompose linear index into multi-dim indices
         # for __nd_idx__ in range(total):

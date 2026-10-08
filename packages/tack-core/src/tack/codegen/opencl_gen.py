@@ -103,6 +103,7 @@ class OpenCLCodeGen(CUDACodeGen):
             else:
                 params_c.append(f"{c_type} {param.name}")
         params_c.append(f"{_OCL_INT} __n__")
+        params_c.extend(self._dims_params(func, _OCL_INT))
 
         sig = ", ".join(params_c)
         safe_name = kernel_entry_name(func.name)
@@ -226,13 +227,25 @@ class OpenCLCodeGen(CUDACodeGen):
 
     # --- Parallel loop: 64-bit index from the group id ---
 
+    def _axis_index(self, axis: str) -> str:
+        # From the group id, like OCL_LAUNCH_INDEX: get_global_id wraps at 2^32.
+        k = "xyz".index(axis)
+        return (f"({_OCL_INT})get_group_id({k}) * ({_OCL_INT})get_local_size({k}) "
+                f"+ ({_OCL_INT})get_local_id({k})")
+
+    def _flat_index(self) -> str:
+        return OCL_LAUNCH_INDEX
+
     def _emit_parallel_for(self, node: ir.IRParallelFor):
+        if node.dims:
+            return self._emit_parallel_dims(node, _OCL_INT)
         idx = node.var
         self._emit(f"{_OCL_INT} {idx} = {OCL_LAUNCH_INDEX};")
         self._emit(f"if ({idx} >= __n__) return;")
         self._local_vars[idx] = _OCL_INT
         self._declared_vars.add(idx)
         self._emit_body(node.body)
+        return None
 
     # --- Shared memory, barrier, thread ID ---
 

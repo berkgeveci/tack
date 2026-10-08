@@ -36,6 +36,8 @@ def check_atomic_support(func, *, backend_name, supported_dtypes=None):
             sources.setdefault(node.name, set()).add(None)
         elif isinstance(node, (ir.IRParallelFor, ir.IRSequentialFor)):
             sources.setdefault(node.var, set()).add(None)
+            for dim in getattr(node, 'dims', None) or ():
+                sources.setdefault(dim, set()).add(None)
         elif isinstance(node, ir.IRAtomicOp):
             atoms.append(node)
     if not atoms:

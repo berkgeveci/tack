@@ -21,11 +21,12 @@ import numpy as np
 from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer
+from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
-    _get_loop_range,
+    _get_launch,
     as_address,
     bind_textures,
     check_launch_size,
@@ -568,8 +569,13 @@ class CompiledCUDAKernel:
         self._param_is_field = param_is_field
         self._param_is_texture = param_is_texture or [False] * len(param_types)
 
-    def __call__(self, kernel_args: list, loop_end: int):
-        """Dispatch the CUDA kernel."""
+    def __call__(self, kernel_args: list, loop_end: int, extents=(), limits=None):
+        """Dispatch the CUDA kernel.
+
+        A multi-dimensional loop (``extents``, slowest first) launches a grid
+        of its shape, or a flat one with ``__flat__`` set when an extent is
+        past the device's grid limits (``limits``; see launch_geometry).
+        """
         n_val = ctypes.c_longlong(loop_end)
 
         arg_values = []
@@ -585,18 +591,22 @@ class CompiledCUDAKernel:
                 ct = _CUDA_CTYPES_MAP[ptype]
                 arg_values.append(ct(arg))
         arg_values.append(n_val)
+        if extents:
+            grid, block, flat = launch_geometry(extents, block_size=WORKGROUP_SIZE, **limits)
+            arg_values.append(ctypes.c_int(int(flat)))
+            arg_values.extend(ctypes.c_longlong(e) for e in extents)
+        else:
+            block = (WORKGROUP_SIZE, 1, 1)
+            grid = ((loop_end + WORKGROUP_SIZE - 1) // WORKGROUP_SIZE, 1, 1)
 
         arg_ptrs = (ctypes.c_void_p * len(arg_values))()
         for i, val in enumerate(arg_values):
             arg_ptrs[i] = ctypes.addressof(val)
 
-        block_dim = WORKGROUP_SIZE
-        grid_dim = (loop_end + block_dim - 1) // block_dim
-
         _check(driver.cuLaunchKernel(
             self._func,
-            grid_dim, 1, 1,
-            block_dim, 1, 1,
+            *grid,
+            *block,
             0, 0,
             arg_ptrs, 0,
         ))
@@ -654,11 +664,21 @@ class CUDABackend(Backend):
             _CONTEXTS[int(self._context)] = self._token
             self._owns_context = True
 
-        # Every launch is one-dimensional, so gridDim.x bounds its size.
-        err, max_blocks = driver.cuDeviceGetAttribute(
-            driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X, self._device)
-        _check(err)
-        self._max_launch = int(max_blocks) * WORKGROUP_SIZE
+        # A flat launch is one-dimensional, so gridDim.x bounds its size.
+        # A multi-dimensional loop also needs the y/z grid limits (65535 on
+        # NVIDIA parts) and the block limits (z is 64).
+        def attribute(name):
+            err, value = driver.cuDeviceGetAttribute(
+                getattr(driver.CUdevice_attribute, f"CU_DEVICE_ATTRIBUTE_{name}"), self._device)
+            _check(err)
+            return int(value)
+        max_blocks = attribute("MAX_GRID_DIM_X")
+        self._max_launch = max_blocks * WORKGROUP_SIZE
+        self._launch_limits = {
+            "max_grid": (max_blocks, attribute("MAX_GRID_DIM_Y"), attribute("MAX_GRID_DIM_Z")),
+            "max_block": (attribute("MAX_BLOCK_DIM_X"), attribute("MAX_BLOCK_DIM_Y"),
+                          attribute("MAX_BLOCK_DIM_Z")),
+        }
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledCUDAKernel}
 
@@ -735,7 +755,7 @@ class CUDABackend(Backend):
         # parameter list, and the range expression names the original args.
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
-        loop_end = _get_loop_range(variant.ir, kernel_args)
+        loop_end, extents = _get_launch(variant.ir, kernel_args)
         if loop_end <= 0:
             # range(0) runs nothing, and cuLaunchKernel rejects an empty grid.
             return
@@ -755,7 +775,7 @@ class CUDABackend(Backend):
                 kept_args = split_args(effective_args, pack_info)
                 kernel_args = bind_textures(kept_args) + pack_fields
 
-            compiled(kernel_args, loop_end)
+            compiled(kernel_args, loop_end, extents, self._launch_limits)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.

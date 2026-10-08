@@ -9,6 +9,8 @@ rewrites the kernel AST before IR transformation:
 4. Resolves self.attr references in method bodies:
    - scalar (int/float) → ast.Constant
    - Field → ast.Name referencing synthetic parameter
+5. Rewrites ``for c in obj:`` over the object's iteration space (see
+   ``iteration_space``)
 """
 
 import ast
@@ -105,6 +107,31 @@ def template_func_attrs(obj) -> dict:
             if not name.startswith('_') and isinstance(value, Func)}
 
 
+def iteration_space(cls) -> tuple:
+    """The attributes a ``for c in obj`` loop runs over, fastest first.
+
+    A data-oriented class declares them as ``__tack_iterate__``: one to
+    three names of its scalar attributes, class constants or instance
+    values. One name makes ``for c in obj`` the loop ``for c in
+    range(obj.name)``, with ``c`` an integer. Two or three make it an
+    ``ndrange`` over them, with ``c`` the vector of indices, ``c[0]``
+    running fastest; at the top of a kernel that loop is launched in its
+    own shape, so nothing divides to recover the indices. The object's
+    methods take ``c`` as it comes, so a kernel written ``for c in obj:``
+    runs unchanged over objects that iterate differently.
+    """
+    names = getattr(cls, '__tack_iterate__', None)
+    if names is None:
+        raise TypeError(
+            f"a {cls.__name__} cannot be iterated in a kernel: its class declares no "
+            "__tack_iterate__, the attributes a loop over it runs through")
+    names = (names,) if isinstance(names, str) else tuple(names)
+    if not 1 <= len(names) <= 3 or not all(isinstance(n, str) for n in names):
+        raise TypeError(f"{cls.__name__}.__tack_iterate__ must name one to three "
+                        f"attributes, not {names!r}")
+    return names
+
+
 def template_field_param_name(param_name, attr_name):
     """The kernel parameter a template's field attribute becomes.
 
@@ -188,6 +215,7 @@ def rewrite_templates(kernel_ast, template_args):
         rewriter = _KernelTemplateRewriter(
             param_name, idx, scalars, field_param_map, method_name_map,
             runtime_scalar_param_map, func_attr_map,
+            template=obj, used_names=used_names,
         )
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
@@ -316,7 +344,10 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
     """Rewrites a kernel function to resolve one template parameter."""
 
     def __init__(self, param_name, param_idx, scalars, field_param_map,
-                 method_name_map, runtime_scalar_param_map=None, func_attr_map=None):
+                 method_name_map, runtime_scalar_param_map=None, func_attr_map=None,
+                 template=None, used_names=None):
+        self.template = template
+        self.used_names = used_names if used_names is not None else set()
         self.param_name = param_name
         self.param_idx = param_idx
         self.scalars = scalars
@@ -352,6 +383,47 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
         # Visit the body
         self.generic_visit(node)
         return node
+
+    def visit_For(self, node):
+        # for c in obj: becomes a range or ndrange loop over its iteration
+        # space; generic_visit then resolves the obj.attr extents.
+        if isinstance(node.iter, ast.Name) and node.iter.id == self.param_name:
+            node = self._iteration_loop(node)
+        return self.generic_visit(node)
+
+    def _iteration_loop(self, node):
+        cls = type(self.template)
+        names = iteration_space(cls)
+        for name in names:
+            if name not in self.scalars and name not in self.runtime_scalar_param_map:
+                raise TypeError(f"{cls.__name__}.__tack_iterate__ names {name!r}, which is "
+                                "not a scalar attribute of the object")
+        if not isinstance(node.target, ast.Name):
+            raise TypeError(f"a loop over a {cls.__name__} binds one name, the index; "
+                            f"not {ast.unparse(node.target)}")
+
+        def extent(name):
+            return ast.Attribute(value=ast.Name(id=self.param_name, ctx=ast.Load()),
+                                 attr=name, ctx=ast.Load())
+
+        if len(names) == 1:
+            node.iter = ast.Call(func=ast.Name(id='range', ctx=ast.Load()),
+                                 args=[extent(names[0])], keywords=[])
+            return node
+        index = node.target.id
+        dims = [fresh_name(f"__{index}_{k}__", self.used_names) for k in range(len(names))]
+        # ndrange runs slowest first; the index vector is fastest first.
+        loop = ast.For(
+            target=ast.Tuple(elts=[ast.Name(id=d, ctx=ast.Store()) for d in reversed(dims)],
+                             ctx=ast.Store()),
+            iter=ast.Call(func=ast.Name(id='ndrange', ctx=ast.Load()),
+                          args=[extent(n) for n in reversed(names)], keywords=[]),
+            body=[ast.Assign(targets=[ast.Name(id=index, ctx=ast.Store())],
+                             value=ast.List(elts=[ast.Name(id=d, ctx=ast.Load())
+                                                  for d in dims], ctx=ast.Load())),
+                  *node.body],
+            orelse=[])
+        return ast.copy_location(loop, node)
 
     def visit_Call(self, node):
         node = self.generic_visit(node)

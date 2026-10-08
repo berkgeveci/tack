@@ -117,12 +117,22 @@ while nested sequential `break` and both forms of `continue` are supported.
 
 ### ndrange
 
-`for i, j in tack.ndrange(w, h)` is decomposed into a 1D parallel loop
-with index arithmetic:
+A top-level `for i, j in tack.ndrange(w, h)` (or three dimensions) becomes
+one `IRParallelFor` that keeps its dimensions: `dims` names one index
+variable per dimension, slowest first, and `extents` holds their sizes as
+host-evaluated expressions, like the loop's `end` (their product). The body
+starts with `i = __nd_0__` and `j = __nd_1__` (plus a range's start, for a
+`(start, end)` pair), and nothing divides: each backend binds the
+dimension variables from a launch of the same shape (see
+`lang/parallel_dims.py`).
+
+A kernel that uses workgroup primitives, a loop of four or more dimensions,
+and an `ndrange` nested inside the parallel loop keep the flat form, a loop
+over the product whose body recovers the indices:
 
 ```
-i = __idx__ % w
-j = __idx__ // w
+j = __idx__ % h
+i = __idx__ // h
 ```
 
 ## Function Call Dispatch

@@ -26,8 +26,12 @@ BACKENDS = {
     "cuda": {
         "cls": "from tack.runtime.cuda_backend import CUDABackend as Backend",
         "stubs": ["cuda", "cuda.bindings"],
-        # The launch limit is queried in __init__ too.
-        "attrs": "backend._max_launch = (2**31 - 1) * 256",
+        # The launch limits are queried in __init__ too.
+        "attrs": (
+            "backend._max_launch = (2**31 - 1) * 256\n"
+            "    backend._launch_limits = {'max_grid': (2**31 - 1, 65535, 65535),\n"
+            "                              'max_block': (1024, 1024, 64)}"
+        ),
     },
     "hip": {
         "cls": "from tack.runtime.hip_backend import HIPBackend as Backend",
@@ -38,7 +42,9 @@ BACKENDS = {
         "attrs": (
             "backend._has_image_support = True\n"
             "    backend._max_image_3d = 16384\n"
-            "    backend._max_launch = 2**32 - 256"
+            "    backend._max_launch = 2**32 - 256\n"
+            "    backend._launch_limits = {'max_grid': (2**31 - 1, 65535, 65535),\n"
+            "                              'max_block': (1024, 1024, 1024)}"
         ),
     },
     "level_zero": {
@@ -82,7 +88,9 @@ class Recorder:
         self.launches = []
 
     def __call__(self, kernel_args, loop_end, *extra):
-        self.launches.append((list(kernel_args), loop_end))
+        # Multi-dimensional loops pass their extents among the extras.
+        extents = next((e for e in extra if isinstance(e, tuple)), ())
+        self.launches.append((list(kernel_args), loop_end, extents))
 
 
 def make_backend():
@@ -106,6 +114,14 @@ def make_backend():
 def elementwise(x, out, n):
     for i in range(n):
         out[i] = x[i] * 2.0 + 1.0
+
+
+@tack.kernel
+def grid2d(a, rows, cols):
+    # Scalar extents and a flat field: `a[i, j]` would compile the row
+    # stride in, a variant per column count, by design.
+    for i, j in tack.ndrange(rows, cols):
+        a[i * cols + j] = 1.0
 
 
 @tack.kernel
@@ -197,6 +213,17 @@ for n in (16, 32, 64, 128, 256):
     b.execute(elementwise, (x, out, n), {})
 check("one variant across lengths, got %d" % len(b.compiled), len(b.compiled) == 1)
 check("ranges", [l[1] for l in b.compiled[0].launches] == [16, 32, 64, 128, 256])
+
+# --- a 2-D ndrange launches its extents, one variant for every shape --
+b = make_backend()
+for rows, cols in ((3, 5), (7, 11), (1, 300)):
+    b.execute(grid2d, (field((rows * cols,)), rows, cols), {})
+check("one variant across 2-D shapes, got %d" % len(b.compiled), len(b.compiled) == 1)
+check("extents reach the launch, got %s" % [l[2] for l in b.compiled[0].launches],
+      [l[2] for l in b.compiled[0].launches] == [(3, 5), (7, 11), (1, 300)])
+check("items are the product", [l[1] for l in b.compiled[0].launches] == [15, 77, 300])
+b.execute(grid2d, (field((4,)), 0, 4), {})
+check("an empty extent launches nothing", len(b.compiled[0].launches) == 3)
 
 # --- but a changed row stride must ----------------------------------
 b = make_backend()

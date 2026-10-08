@@ -16,6 +16,7 @@ import numpy as np
 from tack.codegen.reductions import field_reduction_source
 from tack.lang import ir
 from tack.lang.field import DeviceBuffer, ExportedMemory
+from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import (
     WORKGROUP_SIZE,
@@ -24,7 +25,7 @@ from tack.lang.workgroup_participation import (
 )
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
-    _get_loop_range,
+    _get_launch,
     bind_textures,
     check_launch_size,
     new_kernel_cache,
@@ -174,8 +175,13 @@ class CompiledMetalKernel:
             argument_encoder.setArgumentBuffer_offset_(self._argument_buffer, 0)
         self._thread_execution_width = pipeline.threadExecutionWidth()
 
-    def __call__(self, kernel_args: list, loop_end: int):
-        """Dispatch the compute kernel on the GPU."""
+    def __call__(self, kernel_args: list, loop_end: int, extents=()):
+        """Dispatch the compute kernel on the GPU.
+
+        A multi-dimensional loop (``extents``, slowest first) is dispatched
+        as a grid of its own shape; dispatchThreads runs exactly that many
+        threads, so the kernel needs no bounds guard.
+        """
         if self._requires_full_workgroups:
             check_workgroup_launch(self._func_name, loop_end, backend_label='Metal',
                                    workgroup_size=self._workgroup_size)
@@ -221,8 +227,16 @@ class CompiledMetalKernel:
 
         # Dispatch threads
         threads_per_group = self._workgroup_size
-        grid_size = Metal.MTLSizeMake(loop_end, 1, 1)
-        group_size = Metal.MTLSizeMake(threads_per_group, 1, 1)
+        if extents:
+            _, block, _ = launch_geometry(extents, max_grid=(2**32 - 1,) * 3,
+                                          max_block=(1024, 1024, 1024),
+                                          block_size=threads_per_group)
+            sizes = list(extents[::-1]) + [1] * (3 - len(extents))
+            grid_size = Metal.MTLSizeMake(*sizes)
+            group_size = Metal.MTLSizeMake(*block)
+        else:
+            grid_size = Metal.MTLSizeMake(loop_end, 1, 1)
+            group_size = Metal.MTLSizeMake(threads_per_group, 1, 1)
 
         encoder.dispatchThreads_threadsPerThreadgroup_(grid_size, group_size)
         encoder.endEncoding()
@@ -377,7 +391,7 @@ class MetalBackend(Backend):
         # parameter list, and the range expression names the original args.
         kernel_args = [a.field if isinstance(a, Texture3D) else a
                        for a in effective_args]
-        loop_end = _get_loop_range(variant.ir, kernel_args)
+        loop_end, extents = _get_launch(variant.ir, kernel_args)
         if loop_end <= 0:
             # range(0) runs nothing; do not dispatch an empty grid.
             return
@@ -398,7 +412,7 @@ class MetalBackend(Backend):
                 kept_args = split_args(effective_args, pack_info)
                 kernel_args = bind_textures(kept_args) + pack_fields
 
-            compiled(kernel_args, loop_end)
+            compiled(kernel_args, loop_end, extents)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.
