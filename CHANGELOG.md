@@ -15,6 +15,19 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   object's methods take `c` as it comes, so one kernel runs over objects
   that iterate differently. See *Iterating an Object* in the User's Guide.
 
+### Kernels that now compute different results
+
+- A local assigned once, to float literals, takes the precision of what
+  it meets where it is read, as the literal written there would: with an
+  f64 `x`, `a = 0.1; y = x * a` uses the f64 nearest 0.1. It was an f32
+  local, so f64 kernels computed with the f32 rounding of the literal.
+  This includes literals a device function returns, such as a cell's
+  parametric center returned as a vector of literals, which made shape
+  weights f32 on f64 data. A local assigned only literals more than once,
+  such as the result of a device function returning literals from
+  several branches, takes the kernel's float precision, as a float scalar
+  argument does: f64 when a field is f64. f32 kernels are unchanged.
+
 ### Performance changes users may notice
 
 - A kernel's parallel loop over a two- or three-dimensional
