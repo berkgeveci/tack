@@ -9,15 +9,99 @@ so hoisting and CSE are left to LLVM and the vendor compilers.
 Copy propagation keeps assignments and replaces only subsequent uses of a
 single-assignment copy whose source is not modified anywhere in the kernel.
 Assignment counts are computed once and shared by all nested blocks.
+
+Before it, a local assigned exactly once, to a weak literal expression
+(``a = 0.1``, ``c = 1.0 / 3.0``), is replaced by that expression wherever
+it is read, so it stays weak there and takes the precision of what it
+meets, as the literal written in place would. A device function returning
+literals binds its result through such locals; without this, a local
+holding only literals was an f32 local, and f64 data computed with its
+rounded value.
 """
 
 from tack.lang import ir
-from tack.lang.ir_traversal import transform_ir, walk_ir
+from tack.lang.ir_traversal import clone_ir, transform_ir, walk_ir
+
+_ARITHMETIC = {'+', '-', '*', '/', '//', '%', '**'}
+_CONSTANT_ONLY = (ir.IRConstant, ir.IRBinOp, ir.IRUnaryOp, ir.IRCompare, ir.IRBoolOp,
+                  ir.IRCall, ir.IRIfExp)
 
 
 def optimize_ir(ir_func: ir.IRFunction):
     """Canonicalize copies without moving or eliminating computations."""
+    _inline_weak_literal_locals(ir_func)
     _copy_prop_function(ir_func)
+
+
+def _literal(node) -> tuple[bool, bool]:
+    """Whether ``node`` is a literal expression, and whether it contains a float literal.
+
+    The type annotation's notion (``ir_type_annotate``), less a conditional
+    expression whose condition reads a value: moved to where the local is
+    read, it could read a different one. A condition built only from
+    constants is fine.
+    """
+    if isinstance(node, ir.IRConstant):
+        literal = type(node.value) in (int, float)
+        return literal, literal and isinstance(node.value, float)
+    if isinstance(node, ir.IRUnaryOp) and node.op in ('+', '-'):
+        return _literal(node.operand)
+    if isinstance(node, ir.IRBinOp) and node.op in _ARITHMETIC:
+        parts = (_literal(node.left), _literal(node.right))
+    elif isinstance(node, ir.IRCall):
+        parts = tuple(_literal(arg) for arg in node.args)
+        if not parts:
+            return False, False
+    elif isinstance(node, ir.IRIfExp):
+        if not all(isinstance(n, _CONSTANT_ONLY) for n in walk_ir(node.condition)):
+            return False, False
+        parts = (_literal(node.then_value), _literal(node.else_value))
+    else:
+        return False, False
+    return all(p[0] for p in parts), any(p[1] for p in parts)
+
+
+def _inline_weak_literal_locals(ir_func: ir.IRFunction):
+    """Replace each single-assignment local holding a weak literal expression by it.
+
+    Each read gets its own copy, so each meets its own context; the
+    assignment goes. Repeated until none is left, because a local copied
+    from such a local (a device function's result, bound in turn by the
+    caller) becomes one once its source is replaced.
+    """
+    while True:
+        counts = _count_assignments(ir_func.body)
+        values = {}
+        for node in walk_ir(ir_func.body):
+            if isinstance(node, ir.IRAssign) and counts.get(node.target) == 1:
+                literal, weak = _literal(node.value)
+                if literal and weak:
+                    values[node.target] = node.value
+        if not values:
+            return
+        ir_func.body = _replace_locals(ir_func.body, values)
+
+
+def _replace_locals(body: list, values: dict) -> list:
+    """``body`` with each read of a name in ``values`` replaced by its own copy, and the
+    names' assignments removed."""
+    def substitute(node):
+        if isinstance(node, ir.IRName) and node.name in values:
+            return clone_ir(values[node.name])
+        return node
+
+    def keep(stmts):
+        kept = []
+        for stmt in stmts:
+            if isinstance(stmt, ir.IRAssign) and stmt.target in values:
+                continue
+            for attr in ('body', 'then_body', 'else_body'):
+                if isinstance(getattr(stmt, attr, None), list):
+                    setattr(stmt, attr, keep(getattr(stmt, attr)))
+            kept.append(stmt)
+        return kept
+
+    return keep(transform_ir(body, substitute, copy_nodes=True))
 
 
 def _count_assignments(body: list) -> dict[str, int]:

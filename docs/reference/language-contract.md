@@ -577,11 +577,16 @@ standing alone, as a math argument beside only literals or integers, or
 combined with an integer value. Such a combination is not weak: `i * 0.1`
 is an f32 value even where it later meets f64. Integer `/` between integer
 literals contains no float literal, so `x * (1 / 3)` uses the f32 quotient
-of the division rule; write `1.0 / 3.0`. A local has one type: a local
-assigned only weak values, as in `a = 0.1`, is an f32 local, and a later
-f64 expression reads that rounded value. Write `tack.f64(0.1)` or use the
-literal in the expression instead. When another assignment makes the local
-f64, every literal assigned to it converts exactly. Class-level
+of the division rule; write `1.0 / 3.0`. A local assigned exactly
+once, to a weak expression, as in `a = 0.1`, is that expression wherever
+it is read, so each read takes the precision of what it meets: with an
+f64 `x`, `a = 0.1; y = x * a` is `x * 0.1`. That includes a device
+function's literal results bound to the caller's names, such as a
+parametric center returned as a vector of literals. A conditional
+expression counts only when its condition reads nothing but constants. A
+local with more than one assignment has one type, the join of its
+assignments: when another assignment makes it f64, every literal assigned
+to it converts exactly, and otherwise it is f32. Class-level
 `@tack.data_oriented` constants are substituted as literals and follow the
 same rule. A conversion to an integer type, such as `int(2.5)`, still
 evaluates the literal as f32.
