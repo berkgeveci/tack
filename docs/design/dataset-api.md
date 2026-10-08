@@ -436,10 +436,41 @@ What building it showed:
   `value`, which hid the spaces' `value(i, pc)` method; the kernel failed
   to compile with a message far from the cause. Building a view now
   refuses any attribute named like something the view class defines.
-- Not yet: face orientation indices (only which side a cell is; enough at
-  linear order), PerSide fields, quadrature spaces, sets other than face
-  ids, faces of 2D cells (a 2D mesh's "faces" are its edges), and order
-  above one.
+- **Not yet.** Faces and edges:
+  - *No face orientation index.* Each (cell, local face) records only
+    which side of the face the cell is (`side_slot`), not the rotation
+    between the cell's local order of the face's points and the face's
+    own (side 0's) order. Linear fields need nothing more, and neither do
+    order-2 faces, whose one interior value per face has no orientation.
+    Faces carrying several values (a quad at order 3, H(div) above order
+    0) need it: an index into the face shape's permutations, as MFEM's
+    `Elem2Inf % 64`, found from where side 1's first point sits in side
+    0's row.
+  - *Faces of 3D cells only.* A 2D mesh's `faces()` is empty, though its
+    cells' sides -- the entities DG fluxes and external boundaries need --
+    are its edges. Whether `faces()` should mean the codimension-1
+    entities (edges in 2D) or stay dimensional, with sides offered
+    separately, is open.
+  - *Face rows hold at most 4 points* (triangles and quads), enough for the
+    linear shapes; polygon faces belong to the polyhedral path
+    (section 10).
+  - *No edge -> cells.* A face has at most two cells, so its record is
+    fixed-size; an edge has any number, so that direction would be a CSR
+    list. Nothing needs it yet.
+  - *Structured faces and edges are derived by the general sort.* Section
+    3.1 says a structured topology implies them arithmetically (face and
+    edge ids from (i, j, k) and a direction); the prototype sorts keys as
+    for an unstructured mesh, which is correct but stores and sorts what
+    could be computed.
+  - *A face set is re-gathered on every `for_each`*: `Faces.groups(subset)`
+    splits the set by shape each call, where the full face list is
+    cached.
+  - *Boundary entities in the input* (Exodus side sets, MFEM's boundary
+    elements) are not mapped onto derived faces; sets come only from
+    algorithms such as `boundary_faces`.
+
+  Beyond faces and edges: PerSide fields (per-side traces), quadrature
+  spaces, sets of anything but face ids, and order above one.
 
 ## 10. Polyhedra: a separate path
 
