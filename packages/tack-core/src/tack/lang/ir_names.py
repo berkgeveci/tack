@@ -16,13 +16,21 @@ NAME_FIELDS = {
     ir.IRDimSize: ('field_name',),
     ir.IRTextureSample: ('field_name',),
 }
+# Slots holding a list of names: a multi-dimensional parallel loop's indices.
+NAME_LIST_FIELDS = {
+    ir.IRParallelFor: ('dims',),
+}
 
 
 def ir_names(root):
     """Return all variable spellings, including allocation/texture references."""
-    return {name for node in walk_ir(root)
-            for attr in NAME_FIELDS.get(type(node), ())
-            if (name := getattr(node, attr)) is not None}
+    names = {name for node in walk_ir(root)
+             for attr in NAME_FIELDS.get(type(node), ())
+             if (name := getattr(node, attr)) is not None}
+    names.update(name for node in walk_ir(root)
+                 for attr in NAME_LIST_FIELDS.get(type(node), ())
+                 for name in getattr(node, attr) or ())
+    return names
 
 
 def fresh_name(preferred, used_names):

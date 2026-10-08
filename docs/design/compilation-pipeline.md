@@ -184,8 +184,11 @@ rest of the pipeline are these:
   launches its grid over `[0, n)` and never sees the start (regression
   **LC5**). Nested loops become `IRSequentialFor`, and their `range`
   arguments are captured into temporaries so they are evaluated once, on
-  entry. `tack.ndrange(a, b, …)` becomes one parallel loop over the
-  product, with the indices recovered by `//` and `%` in the body.
+  entry. `tack.ndrange(a, b)` or `(a, b, c)` becomes one parallel loop
+  that keeps its dimensions (`dims`, `extents`), which each backend binds
+  from a launch of that shape; workgroup kernels and four or more
+  dimensions use a loop over the product with the indices recovered by
+  `//` and `%` in the body (`lang/parallel_dims.py`).
 - **Field indexing.** `f[i, j]` linearizes to `i * IRDimSize(f, 1) + j`.
   `f.shape[k]` and `len(f)` lower to `IRDimSize`. A dimension index that is
   not a literal is rejected.
@@ -480,8 +483,8 @@ the same result as a deep copy, faster for this kind of data:
   graph.
 - One identity memo spans the whole graph, so shared nodes stay shared and
   cycles are preserved rather than duplicated. The sharing is real: an
-  `ndrange` dimension node can appear both in the loop's end and in the
-  body's index decomposition.
+  `ndrange` dimension node appears both in the loop's end and in its
+  `extents`, and a range's start both in an extent and in the body.
 - `ScalarType` instances keep their identity, because type maps compare by
   identity. This matches `ScalarType.__deepcopy__`. Other metadata falls
   back to `copy.deepcopy` with the same memo, and a keep-alive list stops

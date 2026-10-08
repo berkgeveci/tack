@@ -169,6 +169,7 @@ class CUDACodeGen:
 
         # Loop-end parameter, 64-bit like the index it bounds
         params_c.append(f"{_INT} __n__")
+        params_c.extend(self._dims_params(func, _INT))
 
         sig = ", ".join(params_c)
         safe_name = kernel_entry_name(func.name)
@@ -324,8 +325,58 @@ class CUDACodeGen:
             self._local_vars[node.target] = c_type
             self._declared_vars.add(node.target)
 
+    @staticmethod
+    def _dims_params(func, int_type):
+        """A multi-dimensional loop's launch parameters: the fallback flag and the extents."""
+        loop = next(s for s in func.body if isinstance(s, ir.IRParallelFor))
+        if not loop.dims:
+            return []
+        return ["int __flat__"] + [f"{int_type} __ext_{k}__" for k in range(len(loop.dims))]
+
+    def _axis_index(self, axis: str) -> str:
+        """The global thread index along ``axis`` (x, y or z), widened before multiplying."""
+        return f"({_INT})blockIdx.{axis} * blockDim.{axis} + threadIdx.{axis}"
+
+    def _flat_index(self) -> str:
+        return self._axis_index("x")
+
+    def _emit_parallel_dims(self, node: ir.IRParallelFor, int_type: str):
+        """Bind each dimension's index from a 2D/3D launch (x the fastest).
+
+        The grid rounds up to whole blocks, hence the guard. When an extent
+        is past the device's grid limit, dispatch sets ``__flat__`` and
+        launches one-dimensionally over the product instead; the indices
+        are then recovered by division, as a flat loop's would be.
+        """
+        dims = node.dims
+        n = len(dims)
+        for dim in dims:
+            self._emit(f"{int_type} {dim};")
+            self._local_vars[dim] = int_type
+            self._declared_vars.add(dim)
+        self._emit("if (__flat__) {")
+        self._indent += 1
+        self._emit(f"{int_type} __rest__ = {self._flat_index()};")
+        self._emit("if (__rest__ >= __n__) return;")
+        for k in range(n - 1, 0, -1):
+            self._emit(f"{dims[k]} = __rest__ % __ext_{k}__;")
+            self._emit(f"__rest__ /= __ext_{k}__;")
+        self._emit(f"{dims[0]} = __rest__;")
+        self._indent -= 1
+        self._emit("} else {")
+        self._indent += 1
+        for k, axis in zip(range(n - 1, -1, -1), "xyz"):
+            self._emit(f"{dims[k]} = {self._axis_index(axis)};")
+        guard = " || ".join(f"{dims[k]} >= __ext_{k}__" for k in range(n))
+        self._emit(f"if ({guard}) return;")
+        self._indent -= 1
+        self._emit("}")
+        self._emit_body(node.body)
+
     def _emit_parallel_for(self, node: ir.IRParallelFor):
         """Emit the parallel for-loop as CUDA thread index calculation."""
+        if node.dims:
+            return self._emit_parallel_dims(node, _INT)
         idx = node.var
         # Widen before multiplying: the 32-bit product wraps past 2^32 threads.
         self._emit(f"{_INT} {idx} = ({_INT})blockIdx.x * blockDim.x + threadIdx.x;")
@@ -333,6 +384,7 @@ class CUDACodeGen:
         self._local_vars[idx] = _INT
         self._declared_vars.add(idx)
         self._emit_body(node.body)
+        return None
 
     def _emit_sequential_for(self, node: ir.IRSequentialFor):
         start = self._expr(node.start)

@@ -212,6 +212,24 @@ for i in range(x.shape[0]):        # one variant for all lengths
 
 To avoid that, pass the length as a scalar argument (`def reverse(x, out, n)`) — scalars are runtime parameters and don't specialize.
 
+### Multi-dimensional parallel loops
+
+A top-level `tack.ndrange` of two or three dimensions lowers to one
+`IRParallelFor` with `dims` (one index variable per dimension, slowest
+first) and `extents` (host-evaluated sizes, like `end`, their product;
+not a traversed child, so no pass folds them). Nothing divides: CPU
+passes the extents as i64 parameters before `loop_start`/`loop_end`, and
+`_emit_parallel_dims` decomposes a chunk's first index once and walks
+rows with a carry; Metal dispatches a grid of that shape with a `uint3`
+position; CUDA/HIP/OpenCL take `__flat__` and `__ext_k__` after `__n__`
+and launch the grid `launch_geometry` picks (block up to 256 along x,
+then y, then z), or a flat one with `__flat__` set when the device's
+grid limits are exceeded. `ast_transform` flattens workgroup kernels
+(`parallel_dims.flatten`); 4+ dimensions and nested `ndrange` keep the
+flat form. `_get_launch` returns `(items, extents)` and treats any
+non-positive extent as empty. Every pass that knows `var` knows `dims`.
+See `test_parallel_dims.py`.
+
 ### Textures
 
 `tack.texture3d(field, shape)` copies the field into storage the `Texture3D`

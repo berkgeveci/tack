@@ -109,6 +109,17 @@ def verify_ir(function: ir.IRFunction, stage: str):
             require(node, path, isinstance(node.start, ir.IRConstant)
                     and type(node.start.value) is int and node.start.value == 0,
                     'parallel range must be normalized to start at zero')
+            dims, extents = getattr(node, 'dims', None), getattr(node, 'extents', None)
+            require(node, path, (dims is None) == (extents is None),
+                    'parallel dimensions and extents must come together')
+            if dims is not None:
+                require(node, path, isinstance(dims, list) and len(dims) in (2, 3)
+                        and all(isinstance(d, str) and d.isidentifier() for d in dims)
+                        and len(set(dims)) == len(dims),
+                        'parallel dimensions must be two or three distinct names')
+                require(node, path, isinstance(extents, list) and len(extents) == len(dims)
+                        and all(isinstance(e, ir.IRNode) for e in extents),
+                        'parallel extents must be one expression per dimension')
         if kind is ir.IRSequentialFor:
             require(node, path, ir.IRParallelFor in loops,
                     'sequential loop must be inside the parallel loop')
@@ -204,6 +215,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
             bound.add(node.target)
         elif isinstance(node, (ir.IRParallelFor, ir.IRSequentialFor)):
             bound.add(node.var)
+            bound.update(getattr(node, 'dims', None) or ())
         elif isinstance(node, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
             bound.add(node.name)
             buffers.add(node.name)
