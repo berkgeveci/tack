@@ -15,6 +15,7 @@ from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
 from tack.codegen.integer_ops import IntegerCodeGen
 from tack.codegen.reductions import f32_reduction_helpers
+from tack.codegen.tables import Tables
 from tack.lang import ir
 from tack.lang.atomic_support import check_atomic_support
 from tack.lang.ir_traversal import walk_ir
@@ -116,6 +117,7 @@ class MSLCodeGen:
 
     def __init__(self, ir_func: ir.IRFunction):
         self.ir_func = rename_gpu_bindings(ir_func)
+        self._tables = Tables('metal')
         self._indent = 0
         self._lines: list[str] = []
         self._param_types: dict[str, ScalarType] = {}
@@ -274,7 +276,8 @@ class MSLCodeGen:
             self._emit("}")
 
         helpers = (
-            float_division_helpers(
+            self._tables.declarations('constant', _MSL_TYPE_MAP)
+            + float_division_helpers(
                 self._float_division_helpers, _MSL_TYPE_MAP, 'inline')
             + integer_division_helpers(
                 self._integer_division_helpers, _MSL_TYPE_MAP, 'inline')
@@ -572,6 +575,8 @@ class MSLCodeGen:
     # --- Expression codegen ---
 
     def _expr(self, node) -> str:
+        if isinstance(node, ir.IRTableLoad):
+            return self._tables.load(node, self._expr(node.index))
         if isinstance(node, ir.IRConstant):
             return self._expr_constant(node)
         if isinstance(node, ir.IRName):

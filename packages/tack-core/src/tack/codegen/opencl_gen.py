@@ -62,6 +62,8 @@ class OpenCLCodeGen(CUDACodeGen):
     atomics, shared memory, and barriers.
     """
 
+    _table_dialect = 'opencl'
+
     _LOOP_INDEX = _OCL_INT
 
     _integer_type_map = _OCL_C_TYPE_MAP
@@ -126,7 +128,8 @@ class OpenCLCodeGen(CUDACodeGen):
 
         # Prepend atomic helpers if needed
         prefix_lines = (
-            float_division_helpers(
+            self._tables.declarations('__constant', _OCL_C_TYPE_MAP)
+            + float_division_helpers(
                 self._float_division_helpers, _OCL_C_TYPE_MAP, 'static inline')
             + integer_division_helpers(
                 self._integer_division_helpers, _OCL_C_TYPE_MAP, 'static inline')

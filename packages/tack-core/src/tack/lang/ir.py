@@ -297,6 +297,22 @@ class IRDimSize(IRNode):
         self.dim = dim
 
 
+class IRTableLoad(IRNode):
+    """``values[index]`` for a constant table, an expression of type ``dtype``.
+
+    A vector or matrix constant indexed at run time. ``values`` is the
+    table, flat; an index outside it gives the last value, as the chain of
+    conditional expressions it replaces did. Generators emit the table once,
+    as a constant array, and one load; the chain was a comparison per
+    entry, inlined at every lookup.
+    """
+
+    def __init__(self, values: tuple, dtype, index):
+        self.values = tuple(values)
+        self.dtype = dtype
+        self.index = index
+
+
 class IRTextureSample(IRNode):
     """Sample a 3D texture at normalized coordinates (u, v, w) in [0, 1].
 
@@ -409,6 +425,9 @@ def dump(node, indent=0) -> str:
         return f"{prefix}Print({args})"
     if isinstance(node, IRDimSize):
         return f"{prefix}DimSize({node.field_name}, {node.dim})"
+    if isinstance(node, IRTableLoad):
+        values = ", ".join(str(v) for v in node.values)
+        return f"{prefix}Table[{node.dtype.name}]({values})[{dump(node.index)}]"
     if isinstance(node, IRTextureSample):
         coords = ", ".join(dump(c) for c in node.coords)
         return f"{prefix}TexSample({node.field_name}, [{coords}], shape={node.shape})"

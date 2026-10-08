@@ -59,6 +59,8 @@ class LLVMCodeGen:
         self.ir_func = ir_func
         self.module = llvm_ir.Module(name=ir_func.name)
         self.builder: llvm_ir.IRBuilder | None = None
+        # Constant tables (IRTableLoad), one internal global each.
+        self._tables: dict = {}
 
         # Maps Tack parameter names to LLVM values
         self._params: dict[str, llvm_ir.Value] = {}
@@ -199,6 +201,8 @@ class LLVMCodeGen:
 
     def _emit_expr_value(self, node: ir.IRNode) -> llvm_ir.Value:
         """Emit an expression and return its LLVM value."""
+        if isinstance(node, ir.IRTableLoad):
+            return self._emit_table_load(node)
         if isinstance(node, ir.IRConstant):
             return self._emit_constant(node)
         if isinstance(node, ir.IRName):
@@ -1305,6 +1309,32 @@ class LLVMCodeGen:
         raise NotImplementedError(f"Cast to {node.dtype}")
 
     # --- Type coercion helpers ---
+
+    def _emit_table_load(self, node: ir.IRTableLoad) -> llvm_ir.Value:
+        """One load from the table's internal constant global; past either end, the last value."""
+        elem = _llvm_type(node.dtype)
+        n = len(node.values)
+        key = (node.dtype.name, node.values)
+        table = self._tables.get(key)
+        if table is None:
+            array = llvm_ir.ArrayType(elem, n)
+            table = llvm_ir.GlobalVariable(self.module, array, name=f"__tack_table_{len(self._tables)}")
+            table.global_constant = True
+            table.linkage = "internal"
+            table.initializer = llvm_ir.Constant(
+                array, [llvm_ir.Constant(elem, v) for v in node.values])
+            self._tables[key] = table
+        i64 = llvm_ir.IntType(64)
+        index = self._to_i64(self._emit_expr(node.index))
+        inside = self.builder.and_(
+            self.builder.icmp_signed(">=", index, llvm_ir.Constant(i64, 0)),
+            self.builder.icmp_signed("<", index, llvm_ir.Constant(i64, n)))
+        at = self.builder.select(inside, index, llvm_ir.Constant(i64, n - 1))
+        pointer = self.builder.gep(table, [llvm_ir.Constant(i64, 0), at], inbounds=True)
+        value = self.builder.load(pointer, name="table")
+        if node.dtype in UNSIGNED_TYPES:
+            self._unsigned_vals.add(id(value))
+        return value
 
     def _to_i64(self, val: llvm_ir.Value) -> llvm_ir.Value:
         """Convert a value to i64 (for indexing)."""
