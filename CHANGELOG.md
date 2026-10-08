@@ -5,6 +5,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ## Unreleased
 
+### Added
+
+- A kernel can loop over a `@tack.data_oriented` object: `for c in cells:`.
+  The class declares the attributes the loop runs through as
+  `__tack_iterate__`, one to three names, fastest first. One makes `c` an
+  integer over `range`; two or three make `c` the vector of indices over
+  an `ndrange`, which as the parallel loop launches in its own shape. The
+  object's methods take `c` as it comes, so one kernel runs over objects
+  that iterate differently. See *Iterating an Object* in the User's Guide.
+
 ### Performance changes users may notice
 
 - A kernel's parallel loop over a two- or three-dimensional
