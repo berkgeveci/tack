@@ -1,0 +1,340 @@
+# A common dataset API: design proposal
+
+Status: proposal for discussion, 2026-10-08. Nothing here is implemented.
+It builds on the prototype on `vis/data-model` (cell shapes, cell sets,
+`for_each_shape`, six filters) and on two studies of prior art: MFEM 4.9's
+mesh and finite-element spaces, and VTK's `vtkCellGrid` (master,
+2026-09-25). The goal is the *shape* of the API every dataset presents --
+so that discontinuous Galerkin fields, data on faces and edges, and
+high-order fields fit without special cases -- not high-order cells
+themselves.
+
+## 1. What the prototype gets right, and what it cannot express
+
+The prototype separates a dataset into *topology* (a cell set), *geometry*
+(point coordinates) and *data* (`point_data`, `cell_data`). Kernels
+iterate one cell shape at a time (`for c in cells`) through a template
+view that is both the shape and that shape's cells, so every compiled
+kernel is specialized to one shape and structured cells iterate by
+(i, j, k) without division. Six filters on that model match VTK.
+
+What it cannot express:
+
+1. **Data anywhere but points and cells.** No edges or faces as entities,
+   so no edge data (fluxes, circulation), face data (normal fluxes,
+   face-centered values), or data on the two sides of a face.
+2. **Discontinuous fields.** A point-data field has one value per point.
+   A DG field has one value per (cell, local node); today that requires
+   exploding points, which is what MFEM's Catalyst "mesh" channel does
+   (`num_vertices = NE x corners`).
+3. **Fields with a basis.** Point data is implicitly linear and cell data
+   implicitly constant. Neither order, nor node placement, nor H(curl) /
+   H(div) mappings can be stated.
+4. **Geometry as data.** Positions are a separate concept from fields, so
+   curved geometry, or geometry discontinuous across cells (periodic
+   meshes), has no place.
+5. **Iteration over anything but cells.** Face kernels (DG fluxes,
+   boundary integrals, external surfaces), edge kernels and
+   quadrature-point kernels have no entry point.
+
+## 2. What MFEM and vtkCellGrid teach
+
+**MFEM** makes *where degrees of freedom live* the single source of truth.
+A finite-element collection states how many DOFs each entity of each
+geometry owns (`DofForGeometry`): H1 puts them on vertices, edges, faces
+and interiors; L2 (DG) only in interiors; Nédélec (H(curl)) on edges and
+interiors; Raviart-Thomas (H(div)) on faces and interiors; trace spaces
+only on faces. Continuity is a *consequence*: DOFs on a shared entity are
+shared. Edges and faces are numbered entities with CSR incidence tables
+(`el_to_edge`, `el_to_face`, `face_info` with two sides, local face id and
+orientation), built from vertex keys. Fields are coefficient vectors on a
+space; geometry is itself a field (`Nodes`). For devices, MFEM's
+vocabulary is the right one: L-vectors (one value per global DOF),
+E-vectors (per-cell gathered DOFs, `ND x VDIM x NE`), face E-vectors
+(`face_dofs x VDIM x {1|2} x NF`), Q-vectors (values at quadrature
+points), and restriction operators that gather between them through
+signed index maps.
+
+**vtkCellGrid** makes the *cell type* the unit of dispatch. One metadata
+object per cell type holds static, GPU-uploadable tables (reference
+points, side connectivity, side offsets and shapes). A face or edge is a
+*side*: a lightweight `(cell id, side index)` pair, so subsets (boundary
+faces, external surfaces) never rewrite the parent arrays. Each attribute
+states, per cell type, its function space (HGRAD, HCURL, HDIV, constant),
+basis, order, and whether its DOFs are *shared* (gathered through a
+connectivity) or *discontinuous* (one coefficient tuple per cell).
+Algorithms are multi-pass queries -- count, prefix-sum, write by index --
+dispatched to per-cell-type responders, and the GPU renderer compiles one
+shader per (cell type, attribute) combination. What it lacks: data that
+lives only on edges or faces with its own numbering. H(curl)/H(div)
+coefficients are stored per cell, discontinuously, and an attribute
+cannot be defined on a side set alone.
+
+**For Tack:** take MFEM's model of *DOFs on entities* as the truth, which
+covers H1, DG, edge, face and trace data uniformly; take vtkCellGrid's
+*sides as (cell, side) pairs* and per-shape tables, which are already how
+the prototype works; and take both systems' GPU idioms (gather maps,
+E-vectors, count/scan/scatter, one specialization per shape and space),
+expressed as Tack templates rather than runtime registries.
+
+## 3. The model
+
+A dataset is four layers, each of which can be absent or implicit:
+
+```
+DataSet
+  topology   entities of each dimension, and their incidence
+  spaces     where values live: DOF layout over the topology, plus a basis
+  fields     a space and a coefficient array (geometry is one of them)
+  sets       named subsets of entities (boundary faces, material blocks)
+```
+
+### 3.1 Topology: entities and incidence
+
+Entities are the vertices (dimension 0), edges (1), faces (2) and cells
+(3, or 2 for a surface mesh), each with its own index space. A cell has a
+shape from `tack.data.shapes`, and its sides -- the faces, edges and
+vertices of its reference element, in a fixed local order -- come from the
+shape's tables.
+
+| Incidence | Meaning | Source |
+|---|---|---|
+| cell -> vertex | connectivity | given (explicit) or implied (structured) |
+| cell -> edge, cell -> face | global id of each local side, with orientation | derived by sorting side keys |
+| face -> cells | the cells on each side of a face, with their local face index and orientation | derived with cell -> face |
+| edge -> vertex, face -> vertex | the entity's own vertices | derived |
+
+Only cell -> vertex is required. The rest is derived on demand by the
+sort-based pattern `external_faces` already uses (key each local side by
+its sorted vertex ids, sort, find runs) and cached on the topology, as
+`point_links` is. Structured topology implies all of it arithmetically.
+
+**Orientation** is stored where MFEM stores it: an edge's direction is
+from its lower to its higher global vertex id, so each (cell, local edge)
+carries a sign; a face's canonical vertex order is that of the first cell
+that lists it, so each (cell, local face) carries an orientation index
+into the face shape's permutation table. Fields with DOFs on edges and
+faces need these to put coefficients in the right place.
+
+**Sides.** A side is a `(cell, local side)` pair, as in vtkCellGrid. A
+*face* is a global entity; a *side* is one cell's view of it. An interior
+face has two sides, a boundary face one. Side sets (boundary conditions,
+an external surface, a slice of selected faces) are arrays of sides, so
+selecting faces never copies the volume.
+
+### 3.2 Spaces: where values live
+
+A space describes, for each cell shape, how many values each entity of
+each dimension owns, and what basis turns them into a function:
+
+```python
+Space(
+    family,      # Constant, H1, L2, HCurl, HDiv, Trace(H1|L2|HCurl|HDiv), Values
+    order,       # polynomial order; 0 for Constant
+    nodes,       # node placement: GaussLobatto, GaussLegendre, Equispaced, Positive
+    vdim,        # components per DOF (a 3-vector H1 field has vdim 3; HCurl/HDiv have 1)
+    layout,      # Shared (one value per global DOF) or PerCell (one tuple per cell)
+)
+```
+
+The DOF counts per (shape, entity dimension) follow from the family and
+order, as in MFEM. That one rule expresses everything this proposal set
+out to carry:
+
+| Today's term | Space |
+|---|---|
+| point data | H1, order 1, Shared: one DOF per vertex |
+| cell data | Constant (L2 order 0): one DOF per cell |
+| linear DG field | L2, order 1, PerCell: one tuple of corner values per cell |
+| high-order CG / DG | H1 or L2, order p |
+| edge data, one value per edge | `Values` on edges (no basis), or HCurl order 1 (with one) |
+| face data, one value per face | `Values` on faces, or HDiv order 0/1 |
+| data on both sides of each face | PerSide layout of a face space (DG fluxes) |
+| quadrature-point data | a `QuadratureSpace`: a rule per shape, no basis |
+
+`Values` spaces carry one value per entity with no basis: data that is
+*about* an edge or face (a flux, an ID, an error indicator), not a
+function to interpolate. Interpolating spaces add a basis per shape: a
+`@tack.func` that evaluates basis functions and gradients at parametric
+coordinates, written once and compiled per shape and order, the way
+vtkCellGrid's basis snippets are compiled for C++ and GLSL.
+
+**Layouts** are MFEM's vectors, named for what kernels index:
+
+- *Shared*: one array of global DOF values, plus a gather map per shape
+  (cell, local DOF) -> signed global DOF, derived from the topology and
+  the space's DOF counts. Continuous fields.
+- *PerCell*: one array of shape `(cells of this shape, local DOFs, vdim)`
+  per shape. DG fields, and any field after a gather (MFEM's E-vector).
+- *PerSide*: per face, one tuple per side (MFEM's double-valued face
+  E-vector). Face fluxes and jumps.
+
+A space's layout is part of the kernel's specialization, as the cell
+shape is; its DOF count per shape is a class constant, so local arrays
+for coefficients have compile-time sizes.
+
+### 3.3 Fields, and geometry as a field
+
+A field is a space plus a coefficient array, with a name. Geometry is the
+field named `"shape"` (vtkCellGrid's term): a vector field, H1 order 1 for
+straight-sided cells, higher for curved ones, PerCell when geometry is
+discontinuous. Rectilinear and uniform grids keep their coordinates
+implicit (three axis arrays, or origin and spacing): their geometry field
+evaluates procedurally and stores nothing per point, as
+`RectilinearCoordinates` does in the prototype.
+
+### 3.4 Sets
+
+Named subsets of entities -- arrays of cell ids, face ids, or sides --
+carry boundary conditions, material regions and filter outputs.
+Threshold's output and external faces become sets over the input instead
+of new datasets, where a consumer wants that.
+
+## 4. Kernels: what a kernel sees
+
+Kernels stay what they are in the prototype: specialized per shape,
+iterating a view. What generalizes is *what* is iterated and *how fields
+are read*.
+
+**Iteration domains.** `tack.data.for_each(kernel, data, domain, *args)`
+launches once per shape present in the domain:
+
+| Domain | One iteration is | Launches |
+|---|---|---|
+| `cells` | a cell | per cell shape |
+| `faces` | a face, with its one or two sides | per face shape (triangle, quad) |
+| `edges` | an edge | one |
+| `vertices` | a vertex | one |
+| a side set | a side: (cell, local face) | per (cell shape, face shape) |
+| `quadrature` | a (cell, point) pair | per cell shape |
+
+The view for each domain is a template class combining, as now, the
+shape with the entity kind's accessors. A face view offers `side(f, k)`
+-> (cell, local face, orientation) for k = 0, 1 and `has_second_side(f)`;
+a cell view adds `edge_id(c, e)`, `edge_sign(c, e)`, `face_id(c, f)`,
+`face_orientation(c, f)` next to the existing `point_id(c, j)`.
+
+**Field views.** A field is passed as its own template argument, built
+per launch for the shape being iterated, so its methods compile to that
+shape's basis and that space's layout:
+
+```python
+@tack.kernel
+def flux(faces, u, out):
+    for f in faces:
+        c0, s0, o0 = faces.side(f, 0)
+        u0 = u.value_on_side(c0, s0, o0, faces.center())   # the face's center, from side 0
+        ...
+```
+
+- `u.dofs(c, local)` reads coefficients (gathering through the signed
+  map for Shared, directly for PerCell),
+- `u.value(c, pc)` and `u.gradient(c, pc)` evaluate at parametric
+  coordinates through the basis,
+- `u.value_on_side(c, side, orientation, face_pc)` maps a face point into
+  the cell first.
+
+H(curl)/H(div) values apply the Piola maps with the geometry field's
+Jacobian, which the field view reaches through the cell view.
+
+**One gap in the language.** A template cannot hold another template or
+be passed to a device function, so a dataset cannot be one kernel
+argument carrying its topology, geometry and fields. Fields are separate
+arguments, which reads well and specializes cleanly. If bundling turns
+out to matter -- `data.fields.u` inside a kernel -- nested templates are
+a language feature to add first; nothing below depends on it.
+
+## 5. Host API
+
+```python
+data = tack.data.DataSet(topology, geometry=positions_or_field)
+data.fields["T"] = tack.data.Field(H1(order=2), coefficients)
+data.fields["flux"] = tack.data.Field(Values(on="faces"), per_face)
+data.sets["inlet"] = tack.data.SideSet(cells, local_faces)
+
+data.topology.faces()        # derive faces and face -> cells, cached
+data.fields["T"].at_vertices()   # resample to a linear point field
+```
+
+`point_data` and `cell_data` remain as views over fields in the two
+classic spaces, so existing filters keep working while they are moved to
+the general form. Interop maps each source onto the model directly:
+
+| Source | Topology | Fields |
+|---|---|---|
+| vtkUnstructuredGrid | explicit cells | point data -> H1 1 Shared; cell data -> Constant |
+| vtkRectilinearGrid, vtkImageData | structured, implicit | as above; geometry implicit |
+| vtkCellGrid | per cell type | each attribute's CellTypeInfo -> a space per shape (shared -> Shared, discontinuous -> PerCell) |
+| MFEM Mesh + GridFunction | entities and tables as given | FE collection + order + basis type -> family, order, nodes; GridFunction -> Shared coefficients with MFEM's signed element -> DOF table, or an E-vector as PerCell |
+
+MFEM data arrives most faithfully as Shared coefficients plus MFEM's own
+gather map: Tack does not need to rederive MFEM's DOF numbering, only to
+accept a (cell, local DOF) -> signed global DOF table per shape.
+
+## 6. Filters in the general form
+
+Every filter becomes "per shape, per domain, with field views":
+
+- **Cell centers** evaluate the geometry field at the parametric center.
+- **Point/cell averaging** become *projections between spaces*: Constant
+  <-> H1 1 is today's pair; L2 p -> H1 1 at vertices is how DG data is
+  shown with continuous coloring.
+- **Contour** evaluates the field at the cell's vertices for linear
+  spaces; for order > 1 or PerCell fields it subdivides each cell (or uses
+  Bézier hulls, as vtkCellGrid's ChangeBasis prepares for) and contours
+  the pieces. DG jumps are kept: each cell contours its own polynomial.
+- **External faces** become "the faces with one side" from the derived
+  face topology, as a side set over the input.
+- **Threshold** becomes a cell set over the input, or a new dataset.
+
+## 7. GPU considerations that shape the design
+
+- **Closed enums, compile-time widths.** Shape, family, layout, node type
+  and order are class constants of the views: the specialization key. DOF
+  counts per shape are constants, so coefficient scratch is a fixed-size
+  local array. vtkCellGrid's free-form tokens and runtime `std::function`
+  registries become host-side choice of a specialized kernel.
+- **Per-shape launches** throughout, as now; mixed meshes cost a launch
+  per shape, never a per-cell branch.
+- **Incidence by sorting**, not hashing: side keys, `argsort`,
+  `unique`/run offsets -- the pattern `external_faces`, `point_links` and
+  `contour`'s point merging already use.
+- **Count, scan, scatter** for every variable-size output.
+- **Coefficient layout.** MFEM's E-vector puts a cell's DOFs together
+  (`ND x VDIM x NE`, DOF fastest), so one thread reads one contiguous
+  run; a cell-fastest layout coalesces across threads instead. This is a
+  measured decision per backend, and the field view hides it.
+
+## 8. A phased path
+
+1. **Entities.** Derive edges and faces (ids, orientations, face -> cells)
+   from any cell set, cache them, and add `for_each` over faces, edges and
+   side sets. Re-express `external_faces` on it. *No new data types.*
+2. **Data on entities.** `Values` spaces on vertices, edges, faces, cells
+   and sides; `point_data`/`cell_data` as views over them. Face and edge
+   data round-trip from MFEM and through vtkCellGrid.
+3. **Spaces with bases, low order.** Constant, H1 1, L2 1 (linear DG), with
+   field views evaluating through `tack.data.shapes`' existing shape
+   functions. Geometry becomes the `"shape"` field. Contour and the
+   averaging filters move to field views; DG fields contour with their
+   jumps intact.
+4. **High order, H(curl), H(div),** quadrature spaces: new bases per shape
+   and order, Piola maps, subdivision for contouring. This is where
+   high-order cells start; the API should not change.
+
+## 9. Questions to settle
+
+1. **Truth for continuity.** This proposal follows MFEM -- continuity
+   follows from which entities own DOFs -- and treats vtkCellGrid's
+   shared/discontinuous as a layout choice. Agreed?
+2. **Global edge and face ids**: always derived, or only when a field needs
+   them? Deriving costs two sorts per entity kind; caching makes it once.
+3. **`Values` spaces** (data about entities, no basis) as a family of their
+   own, or as Constant on that entity dimension?
+4. **Coefficient layout**: DOF-fastest like MFEM's E-vectors, or
+   cell-fastest for coalescing -- or per backend behind the view?
+5. **Nested templates**: worth adding to the language, so a dataset can be
+   one kernel argument, or are separate field arguments the API we want?
+6. **Face orientation conventions**: MFEM's (first cell's local order) or
+   VTK's? They matter for face and edge DOFs and for interop in both
+   directions.

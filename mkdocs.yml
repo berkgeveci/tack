@@ -127,6 +127,7 @@ nav:
       - CPU Threading Policy: design/cpu-threading.md
       - Backend Implementations: design/backend-implementations.md
       - Interoperability: design/interoperability.md
+      - Dataset API (proposal): design/dataset-api.md
   - Contracts:
       - contracts/index.md
       - Kernel Language Contract: reference/language-contract.md
