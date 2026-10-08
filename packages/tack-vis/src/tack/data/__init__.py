@@ -17,6 +17,8 @@ from tack.data.filters import (
     external_faces,
     point_data_to_cell_data,
     point_links,
+    slice_plane,
+    threshold,
 )
 
 __all__ = [
@@ -34,4 +36,6 @@ __all__ = [
     "point_links",
     "rectilinear_grid",
     "shapes",
+    "slice_plane",
+    "threshold",
 ]

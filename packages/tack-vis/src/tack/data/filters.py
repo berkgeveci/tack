@@ -18,6 +18,12 @@
   its triangles, a scan places them, and each writes its points,
   interpolated along the edges they lie on; the points are then merged by
   edge, so the surface is connected, and point data interpolated onto them.
+- ``slice_plane``: the contour, at zero, of each point's signed distance
+  to a plane (``vtkCutter`` with a ``vtkPlane``).
+- ``threshold``: the cells whose value lies in a range, and only the points
+  they use (``vtkThreshold``). The kept cells are counted, scanned and
+  scattered into a new explicit cell set; the used points are marked,
+  scanned and renumbered.
 
 Each runs a kernel per shape present (``for_each_shape``), written once
 against the cell views' methods. Data arrays must be floating point; a
@@ -31,10 +37,11 @@ from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, argsort, gather, sort_by_key
 from tack.data import shapes
 from tack.data.cell_set import ExplicitCellSet, SingleTypeCellSet
+from tack.data.coordinates import RectilinearCoordinates
 from tack.data.dataset import DataSet, for_each_shape
 
 __all__ = ["cell_centers", "cell_data_to_point_data", "contour", "external_faces",
-           "point_data_to_cell_data", "point_links"]
+           "point_data_to_cell_data", "point_links", "slice_plane", "threshold"]
 
 
 def _like(values, n):
@@ -490,4 +497,194 @@ def _copy_rows(flat, rows):
         rows[t, 0] = flat[3 * t]
         rows[t, 1] = flat[3 * t + 1]
         rows[t, 2] = flat[3 * t + 2]
+
+
+# ── Positions ───────────────────────────────────────────────────────
+
+@tack.kernel
+def _rectilinear_positions(x, y, z, out, nx, ny):
+    for k, j, i in tack.ndrange(z.shape[0], ny, nx):
+        out[i + nx * (j + ny * k)] = [x[i], y[j], z[k]]
+
+
+def _positions(data):
+    """Every point's position, a field of 3-vectors, whatever the coordinates."""
+    if not isinstance(data.points, RectilinearCoordinates):
+        return data.points
+    coordinates = data.points
+    out = tack.Vector.field(3, coordinates.dtype, shape=(coordinates.num_points,))
+    nx, ny, _ = coordinates.dims
+    _rectilinear_positions(coordinates.x, coordinates.y, coordinates.z, out, nx, ny)
+    return out
+
+
+# ── Slice ───────────────────────────────────────────────────────────
+
+@tack.kernel
+def _plane_distances(points, origin, normal, out):
+    for p in range(out.shape[0]):
+        out[p] = (points[p] - origin[0]).dot(normal[0])
+
+
+def slice_plane(data, origin, normal, merge_points=True):
+    """The cut of the 3D cells by the plane through ``origin`` with ``normal``, as triangles.
+
+    The contour, at zero, of each point's signed distance to the plane
+    along ``normal`` (which need not be unit length), so it is
+    ``contour``'s surface: VTK's case tables, points merged by edge, point
+    data interpolated.
+    """
+    dtype = data.points.dtype
+    vectors = {}
+    for name, value in (("origin", origin), ("normal", normal)):
+        field = tack.Vector.field(3, dtype, shape=(1,))
+        field.from_numpy(np.asarray(value, dtype.numpy_dtype).reshape(1, 3))
+        vectors[name] = field
+    distance = tack.field(dtype, shape=(data.num_points,))
+    if data.num_points:
+        _plane_distances(_positions(data), vectors["origin"], vectors["normal"], distance)
+    return contour(data, distance, 0.0, merge_points=merge_points)
+
+
+# ── Threshold ───────────────────────────────────────────────────────
+
+@tack.kernel
+def _keep_by_cell(cells, values, lower, upper, keep, sizes):
+    for c in cells:
+        cell = cells.cell_id(c)
+        v = values[cell]
+        ok = 1 if lower <= v and v <= upper else 0
+        keep[cell] = ok
+        sizes[cell] = ok * cells.NUM_POINTS
+
+
+@tack.kernel
+def _keep_by_points(cells, values, lower, upper, keep, sizes):
+    for c in cells:
+        ok = 1
+        for j in range(cells.NUM_POINTS):
+            v = values[cells.point_id(c, j)]
+            if not (lower <= v and v <= upper):
+                ok = 0
+        cell = cells.cell_id(c)
+        keep[cell] = ok
+        sizes[cell] = ok * cells.NUM_POINTS
+
+
+@tack.kernel
+def _kept_cells(cells, keep, slots, starts, types, offsets, connectivity, sources, used):
+    for c in cells:
+        cell = cells.cell_id(c)
+        if keep[cell] == 1:
+            slot = slots[cell]
+            at = starts[cell]
+            types[slot] = tack.u8(cells.ID)
+            offsets[slot] = at
+            sources[slot] = cell
+            for j in range(cells.NUM_POINTS):
+                p = cells.point_id(c, j)
+                connectivity[at + j] = p
+                tack.atomic_max(used, p, 1)
+
+
+@tack.kernel
+def _close_offsets(offsets, count, length):
+    for i in range(1):
+        offsets[count] = length
+
+
+@tack.kernel
+def _renumber(connectivity, new_ids):
+    for k in range(connectivity.shape[0]):
+        connectivity[k] = new_ids[connectivity[k]]
+
+
+@tack.kernel
+def _keep_rows(values, used, new_ids, out):
+    for p in range(used.shape[0]):
+        if used[p] == 1:
+            out[new_ids[p]] = values[p]
+
+
+def threshold(data, values, lower, upper, all_points=True):
+    """The cells whose value lies in ``[lower, upper]``, with only the points they use.
+
+    ``values`` names a cell or point data array, or is a scalar field of one
+    value per cell or per point. With point data a cell is kept when all its
+    points are in range, or with ``all_points=False`` any of them (VTK's
+    ``AllScalars``). The result has an ``ExplicitCellSet`` of the kept cells,
+    each keeping its shape, in their original order; its points are the
+    used ones, renumbered in their original order, with their point data,
+    and each kept cell carries its cell data.
+    """
+    if isinstance(values, str):
+        by_cells = values in data.cell_data
+        values = data.cell_data[values] if by_cells else data.point_data[values]
+    else:
+        # A field is cell data when it has one value per cell.
+        by_cells = values.shape[0] == data.num_cells
+        if not by_cells and values.shape[0] != data.num_points:
+            raise ValueError(f"values have {values.shape[0]} entries; the dataset has "
+                             f"{data.num_cells} cells and {data.num_points} points")
+    if getattr(values, "_vector_n", None):
+        raise TypeError("threshold needs one value per cell or point, not a vector field")
+
+    n = data.num_cells
+    keep = tack.zeros(tack.i32, (n,))
+    sizes = tack.zeros(tack.i32, (n,))
+    views = data.cells.views(data.points)
+    for view in views:
+        if not view.num_cells:
+            continue
+        if by_cells:
+            _keep_by_cell(view, values, lower, upper, keep, sizes)
+        elif all_points:
+            _keep_by_points(view, values, lower, upper, keep, sizes)
+        else:
+            _keep_by_any_point(view, values, lower, upper, keep, sizes)
+    slots = tack.field(tack.i32, shape=(n,))
+    starts = tack.field(tack.i32, shape=(n,))
+    count = exclusive_scan(keep, slots, n) if n else 0
+    length = exclusive_scan(sizes, starts, n) if n else 0
+
+    types = tack.field(tack.u8, shape=(count,))
+    offsets = tack.zeros(tack.i32, (count + 1,))
+    connectivity = tack.field(tack.i32, shape=(length,))
+    sources = tack.field(tack.i32, shape=(count,))
+    used = tack.zeros(tack.i32, (data.num_points,))
+    for view in views:
+        if view.num_cells:
+            _kept_cells(view, keep, slots, starts, types, offsets, connectivity, sources, used)
+    _close_offsets(offsets, count, length)
+
+    new_ids = tack.field(tack.i32, shape=(data.num_points,))
+    kept_points = exclusive_scan(used, new_ids, data.num_points) if data.num_points else 0
+    if length:
+        _renumber(connectivity, new_ids)
+    positions = _positions(data)
+    points = _like(positions, kept_points)
+    point_data = {}
+    if kept_points:
+        _keep_rows(positions, used, new_ids, points)
+    for name, array in data.point_data.items():
+        out = _like(array, kept_points)
+        if kept_points:
+            _keep_rows(array, used, new_ids, out)
+        point_data[name] = out
+    cell_data = {name: _take(array, sources, count) for name, array in data.cell_data.items()}
+    return DataSet(points, ExplicitCellSet(types, offsets, connectivity),
+                   point_data=point_data, cell_data=cell_data)
+
+
+@tack.kernel
+def _keep_by_any_point(cells, values, lower, upper, keep, sizes):
+    for c in cells:
+        ok = 0
+        for j in range(cells.NUM_POINTS):
+            v = values[cells.point_id(c, j)]
+            if lower <= v and v <= upper:
+                ok = 1
+        cell = cells.cell_id(c)
+        keep[cell] = ok
+        sizes[cell] = ok * cells.NUM_POINTS
 

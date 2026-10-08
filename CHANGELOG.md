@@ -52,6 +52,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   included. Points are merged by edge, so the surface is connected, and
   point data is interpolated onto them. Cells below three dimensions
   contribute nothing yet.
+- `tack.data.slice_plane(data, origin, normal)` and
+  `tack.data.threshold(data, values, lower, upper)` (tack-vis, prototype).
+  A slice is the contour, at zero, of each point's signed distance to the
+  plane, and matches `vtkCutter`. Threshold keeps the cells whose cell
+  data, or all (or any) of whose points' data, lies in range: an explicit
+  cell set of the kept cells in order, each keeping its shape, and only
+  the points they use, renumbered, with their data; it matches
+  `vtkThreshold`. Both work on rectilinear grids, whose positions are
+  expanded on the device where needed.
 - A kernel can loop over a `@tack.data_oriented` object: `for c in cells:`.
   The class declares the attributes the loop runs through as
   `__tack_iterate__`, one to three names, fastest first. One makes `c` an
