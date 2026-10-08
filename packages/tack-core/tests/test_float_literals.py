@@ -281,31 +281,35 @@ def _weak_locals(a, out64, out32, flag):
         if flag > 5:
             mixed = a[i]
         out64[i, 0] = a[i] * pc[0]
-        out64[i, 1] = a[i] * pc[1] + p - q
+        out64[i, 1] = a[i] * pc[1]
         out64[i, 2] = a[i] * chained
         out64[i, 3] = a[i] * picked
         out64[i, 4] = a[i] * guarded
         out64[i, 5] = total
         out64[i, 6] = a[i] * step
         out64[i, 7] = a[i] * mixed
+        # No multiply beside the adds: a GPU may fuse a * b + c, which the
+        # contract permits, and this compares bit for bit with NumPy.
+        out64[i, 8] = a[i] + p - q
         out32[i] = tack.f32(a[i]) * tenth   # the same local, read in f32
 
 
 def test_locals_holding_literals_take_the_precision_they_meet(f64_backend):
     a = np.asarray([1.0, 3.0, 0.7])
-    out64 = tack.field(tack.f64, (3, 8))
+    out64 = tack.field(tack.f64, (3, 9))
     out32 = tack.field(tack.f32, (3,))
     _weak_locals(_field(a, tack.f64), out64, out32, 1)
     f32 = np.float32
     expected = np.column_stack([
         a * (1.0 / 3.0),
-        a * 0.1 + 0.1 - 0.2,
+        a * 0.1,
         a * 0.1,
         a * 0.3,
         a * 0.3,
         0.1 + a,
         a * 0.1,
         a * 0.1,
+        a + 0.1 - 0.2,
     ])
     np.testing.assert_array_equal(out64.to_numpy(), expected)
     np.testing.assert_array_equal(out32.to_numpy(), a.astype(f32) * f32(0.1))
