@@ -244,13 +244,15 @@ def _attributes_to_fields(attributes, float_dtype):
 
 
 def vtk_to_dataset(grid, dtype=tack.f32):
-    """Copy a ``vtkUnstructuredGrid`` or ``vtkStructuredGrid`` into a ``tack.data.DataSet``.
+    """Copy a ``vtkUnstructuredGrid``, ``vtkStructuredGrid`` or ``vtkRectilinearGrid``
+    into a ``tack.data.DataSet``.
 
     Points and floating-point data arrays become fields of ``dtype``;
     integer arrays keep their type. Named point and cell data arrays are
     copied into ``point_data`` and ``cell_data``. An unstructured grid gives
     an ``ExplicitCellSet``, whose cells must all be linear shapes; a
-    structured grid gives a ``StructuredCellSet``.
+    structured grid gives a ``StructuredCellSet``, and a rectilinear grid
+    one over ``RectilinearCoordinates``.
     """
     from vtkmodules.util.numpy_support import vtk_to_numpy
 
@@ -263,9 +265,20 @@ def vtk_to_dataset(grid, dtype=tack.f32):
                                 vtk_to_numpy(cell_array.GetConnectivityArray()))
     elif grid.IsA("vtkStructuredGrid"):
         cells = StructuredCellSet(_structured_dims(grid))
+    elif grid.IsA("vtkRectilinearGrid"):
+        from tack.data import RectilinearCoordinates
+
+        cells = StructuredCellSet(_structured_dims(grid))
+        points = RectilinearCoordinates(vtk_to_numpy(grid.GetXCoordinates()),
+                                        vtk_to_numpy(grid.GetYCoordinates()),
+                                        vtk_to_numpy(grid.GetZCoordinates()), dtype=dtype)
+        return DataSet(points, cells,
+                       point_data=_attributes_to_fields(grid.GetPointData(), dtype),
+                       cell_data=_attributes_to_fields(grid.GetCellData(), dtype),
+                       dtype=dtype)
     else:
-        raise TypeError(f"expected a vtkUnstructuredGrid or vtkStructuredGrid, "
-                        f"not {grid.GetClassName()}")
+        raise TypeError(f"expected a vtkUnstructuredGrid, vtkStructuredGrid or "
+                        f"vtkRectilinearGrid, not {grid.GetClassName()}")
     points = vtk_to_numpy(grid.GetPoints().GetData())
     return DataSet(points, cells,
                    point_data=_attributes_to_fields(grid.GetPointData(), dtype),
@@ -283,10 +296,13 @@ def _field_to_array(name, field):
 
 
 def dataset_to_vtk(data):
-    """Copy a ``tack.data.DataSet`` into a new ``vtkUnstructuredGrid`` or ``vtkStructuredGrid``.
+    """Copy a ``tack.data.DataSet`` into a new VTK dataset.
 
-    A structured cell set gives a ``vtkStructuredGrid``; the others give a
-    ``vtkUnstructuredGrid``. Point and cell data are copied as named arrays.
+    A structured cell set gives a ``vtkRectilinearGrid`` over rectilinear
+    coordinates and a ``vtkStructuredGrid`` otherwise; the other cell sets
+    give a ``vtkUnstructuredGrid``, with rectilinear coordinates expanded
+    to one position per point. Point and cell data are copied as named
+    arrays.
     """
     import numpy as np
     from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
@@ -297,9 +313,27 @@ def dataset_to_vtk(data):
         vtkUnstructuredGrid,
     )
 
-    from tack.data import ExplicitCellSet, SingleTypeCellSet, StructuredCellSet
+    from tack.data import (
+        ExplicitCellSet,
+        RectilinearCoordinates,
+        SingleTypeCellSet,
+        StructuredCellSet,
+    )
 
     cells = data.cells
+    if isinstance(cells, StructuredCellSet) and isinstance(data.points, RectilinearCoordinates):
+        from vtkmodules.vtkCommonDataModel import vtkRectilinearGrid
+
+        grid = vtkRectilinearGrid()
+        grid.SetDimensions(*data.points.dims)
+        grid.SetXCoordinates(numpy_to_vtk(data.points.x.to_numpy(), deep=1))
+        grid.SetYCoordinates(numpy_to_vtk(data.points.y.to_numpy(), deep=1))
+        grid.SetZCoordinates(numpy_to_vtk(data.points.z.to_numpy(), deep=1))
+        for name, field in data.point_data.items():
+            grid.GetPointData().AddArray(_field_to_array(name, field))
+        for name, field in data.cell_data.items():
+            grid.GetCellData().AddArray(_field_to_array(name, field))
+        return grid
     points = vtkPoints()
     points.SetData(numpy_to_vtk(data.points.to_numpy(vectors=True), deep=1))
     if isinstance(cells, StructuredCellSet):

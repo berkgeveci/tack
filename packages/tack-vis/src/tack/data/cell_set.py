@@ -111,6 +111,10 @@ class _StructuredLines(_StructuredCells):
         return c + j
 
     @tack.func
+    def point_index(self, c, j):
+        return [c + j, 0, 0]
+
+    @tack.func
     def cell_id(self, c):
         return c
 
@@ -124,6 +128,11 @@ class _StructuredQuads(_StructuredCells):
     def point_id(self, c, j):
         a, b = self._corner(j)
         return (c[0] + a) + (c[1] + b) * self.nx
+
+    @tack.func
+    def point_index(self, c, j):
+        a, b = self._corner(j)
+        return [c[0] + a, c[1] + b, 0]
 
     @tack.func
     def cell_id(self, c):
@@ -141,16 +150,17 @@ class _StructuredHexahedra(_StructuredCells):
         return (c[0] + a) + ((c[1] + b) + (c[2] + d) * self.ny) * self.nx
 
     @tack.func
+    def point_index(self, c, j):
+        a, b, d = self._corner(j)
+        return [c[0] + a, c[1] + b, c[2] + d]
+
+    @tack.func
     def cell_id(self, c):
         return c[0] + self.cx * (c[1] + self.cy * c[2])
 
 
-class _WithPoints:
-    """A view that also holds the dataset's point coordinates."""
-
-    @tack.func
-    def point(self, c, j):
-        return self.points[self.point_id(c, j)]
+class _Points:
+    """Positions for a view: ``point(c, j)``, which a coordinates mixin defines."""
 
     @tack.func
     def gather_points(self, c, pts):
@@ -161,27 +171,67 @@ class _WithPoints:
             pts[3 * j + 2] = x[2]
 
 
+class _ExplicitPoints(_Points):
+    """A field of positions, one per point id."""
+
+    @tack.func
+    def point(self, c, j):
+        return self.points[self.point_id(c, j)]
+
+
+class _RectilinearPoints(_Points):
+    """Rectilinear coordinates, for any cells: the flat point id is split into (i, j, k)."""
+
+    @tack.func
+    def point(self, c, j):
+        p = self.point_id(c, j)
+        rest = p // self.px
+        return [self.xs[p - rest * self.px], self.ys[rest % self.py], self.zs[rest // self.py]]
+
+
+class _RectilinearStructured(_Points):
+    """Rectilinear coordinates for structured cells: (i, j, k) comes from the cell's own."""
+
+    @tack.func
+    def point(self, c, j):
+        at = self.point_index(c, j)
+        return [self.xs[at[0]], self.ys[at[1]], self.zs[at[2]]]
+
+
 _view_classes = {}
 
 
-def _view_class(cells, shape, with_points):
+def _view_class(cells, shape, coordinates):
     """The template class for ``shape``'s cells, made once and reused.
 
     Templates are keyed by class, so making it once per combination is what
     lets every launch for that shape reuse one compiled variant.
+    ``coordinates`` is the positions mixin, or None for a cell set alone.
     """
-    key = (cells, shape, with_points)
+    key = (cells, shape, coordinates)
     if key not in _view_classes:
-        bases = ((_WithPoints,) if with_points else ()) + (cells, shape)
-        name = f"{shape.__name__}{'Points' if with_points else ''}{cells.__name__}"
+        bases = ((coordinates,) if coordinates else ()) + (cells, shape)
+        name = (f"{shape.__name__}{coordinates.__name__ if coordinates else ''}"
+                f"{cells.__name__}")
         _view_classes[key] = tack.data_oriented(type(name, bases, {}))
     return _view_classes[key]
 
 
 def _make_view(cells, shape, points, *args):
-    view = _view_class(cells, shape, points is not None)(*args)
-    if points is not None:
-        view.points = points
+    """A view of ``cells``, with ``points`` -- a field or coordinates object -- if given."""
+    from tack.data.coordinates import RectilinearCoordinates
+
+    if points is None:
+        return _view_class(cells, shape, None)(*args)
+    if isinstance(points, RectilinearCoordinates):
+        structured = issubclass(cells, _StructuredCells)
+        view = _view_class(cells, shape,
+                           _RectilinearStructured if structured else _RectilinearPoints)(*args)
+        view.xs, view.ys, view.zs = points.x, points.y, points.z
+        view.px, view.py = points.dims[0], points.dims[1]
+        return view
+    view = _view_class(cells, shape, _ExplicitPoints)(*args)
+    view.points = points
     return view
 
 

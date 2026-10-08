@@ -37,6 +37,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   has, found by sorting keyed faces, in each cell's outward order). The
   tests compare them with vtkCellCenters, vtkPointDataToCellData,
   vtkCellDataToPointData and vtkGeometryFilter.
+- Rectilinear grids in `tack.data` (tack-vis, prototype):
+  `RectilinearCoordinates(x, y, z)` stores only the three coordinate
+  arrays, and `rectilinear_grid(x, y, z)` makes a dataset of them with a
+  `StructuredCellSet`. Structured cells read their points' coordinates
+  from their own (i, j, k), without division; other cells over the same
+  coordinates work too. `vtk_to_dataset` and `dataset_to_vtk` convert
+  `vtkRectilinearGrid`, and the filters work on these grids.
 - A kernel can loop over a `@tack.data_oriented` object: `for c in cells:`.
   The class declares the attributes the loop runs through as
   `__tack_iterate__`, one to three names, fastest first. One makes `c` an

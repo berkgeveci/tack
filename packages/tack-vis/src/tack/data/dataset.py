@@ -28,12 +28,15 @@ cell data by ``cells.cell_id(c)``.
 import numpy as np
 
 import tack
+from tack.data.coordinates import RectilinearCoordinates
 from tack.lang.field import Field
 
-__all__ = ["DataSet", "for_each_shape"]
+__all__ = ["DataSet", "for_each_shape", "rectilinear_grid"]
 
 
 def _point_field(points, dtype):
+    if isinstance(points, RectilinearCoordinates):
+        return points
     if isinstance(points, Field):
         if getattr(points, "_vector_n", None) != 3 or len(points._vector_shape()) != 2:
             raise ValueError("points must be a one-dimensional field of 3-vectors")
@@ -51,7 +54,8 @@ class DataSet:
     """Point coordinates, a cell set, and named point and cell data.
 
     ``points`` is a ``(num_points, 3)`` NumPy array, copied to a field of
-    ``dtype`` (f32 unless given), or a field of 3-vectors. ``cells`` is an
+    ``dtype`` (f32 unless given), a field of 3-vectors, or a
+    ``RectilinearCoordinates``. ``cells`` is an
     ``ExplicitCellSet``, ``SingleTypeCellSet`` or ``StructuredCellSet``.
     ``point_data`` and ``cell_data`` map names to fields.
     """
@@ -59,11 +63,17 @@ class DataSet:
     def __init__(self, points, cells, point_data=None, cell_data=None, dtype=tack.f32):
         self.points = _point_field(points, dtype)
         self.cells = cells
+        dims = getattr(self.points, "point_dims", None)
+        if dims is not None and hasattr(cells, "point_dims") and cells.point_dims != dims:
+            raise ValueError(f"the coordinates are a {dims} grid, the cells a "
+                             f"{cells.point_dims} one")
         self.point_data = dict(point_data or {})
         self.cell_data = dict(cell_data or {})
 
     @property
     def num_points(self):
+        if isinstance(self.points, RectilinearCoordinates):
+            return self.points.num_points
         return self.points.shape[0] // 3
 
     @property
@@ -87,3 +97,17 @@ def for_each_shape(kernel, data, *args):
         views = data.views()
     for view in views:
         kernel(view, *args)
+
+
+def rectilinear_grid(x, y=(0.0,), z=(0.0,), point_data=None, cell_data=None, dtype=tack.f32):
+    """A dataset of the grid whose lines run through ``x``, ``y`` and ``z``.
+
+    Its points are ``RectilinearCoordinates`` and its cells a
+    ``StructuredCellSet``: lines, quads or hexahedra as ``y`` and ``z``
+    have more than one value.
+    """
+    from tack.data.cell_set import StructuredCellSet
+
+    coordinates = RectilinearCoordinates(x, y, z, dtype=dtype)
+    return DataSet(coordinates, StructuredCellSet(coordinates.point_dims),
+                   point_data=point_data, cell_data=cell_data)
