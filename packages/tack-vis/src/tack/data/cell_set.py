@@ -15,12 +15,16 @@ Three kinds, each a host object holding device fields:
 Kernels never see a cell set. ``tack.data.for_each_shape`` hands a kernel
 the cells of one shape at a time, as a *cell view*: one template object
 that is both the shape (its methods and constants from
-``tack.data.shapes``) and that shape's cells. A view has
+``tack.data.shapes``) and that shape's cells. A kernel loops over it,
+``for c in cells:``, and treats ``c`` as a handle the view's methods
+interpret: a cell number for explicit cells, the vector ``(i, j)`` or
+``(i, j, k)`` for structured quads and hexahedra, which then launch in
+their grid's shape and never divide to find their indices. A view has
 
-- ``num_cells``: how many cells this launch covers;
 - ``point_id(c, j)``: point ``j`` of cell ``c``;
 - ``cell_id(c)``: cell ``c``'s index in the whole cell set, where its
   cell data and results belong;
+- ``num_cells``: how many cells this launch covers;
 
 and, when made from a ``DataSet``, its point coordinates:
 
@@ -61,6 +65,8 @@ def _as_field(values, dtype):
 class _Cells:
     """The cells of one shape, by an explicit row of point ids each."""
 
+    __tack_iterate__ = "num_cells"
+
     def __init__(self, connectivity, ids, num_cells):
         self.connectivity = connectivity      # (num_cells, NUM_POINTS) i32
         self.ids = ids                        # (num_cells,) i32
@@ -76,40 +82,57 @@ class _Cells:
 
 
 class _StructuredCells:
-    """The cells of a structured grid; ``nx`` and ``ny`` count its points."""
+    """The cells of a structured grid of ``nx * ny * nz`` points, x fastest."""
 
-    def __init__(self, nx, ny, num_cells):
+    def __init__(self, nx, ny, nz, num_cells):
         self.nx = nx
         self.ny = ny
+        self.cx = nx - 1
+        self.cy = max(ny - 1, 1)
+        self.cz = max(nz - 1, 1)
         self.num_cells = num_cells
+
+
+class _StructuredLines(_StructuredCells):
+    __tack_iterate__ = "num_cells"
+
+    @tack.func
+    def point_id(self, c, j):
+        return c + j
 
     @tack.func
     def cell_id(self, c):
         return c
 
 
-class _StructuredLines(_StructuredCells):
-    @tack.func
-    def point_id(self, c, j):
-        return c + j
-
-
 class _StructuredQuads(_StructuredCells):
+    """Cells by ``c = (i, j)``."""
+
+    __tack_iterate__ = ("cx", "cy")
+
     @tack.func
     def point_id(self, c, j):
         a, b = self._corner(j)
-        cx = self.nx - 1
-        return (c % cx + a) + (c // cx + b) * self.nx
+        return (c[0] + a) + (c[1] + b) * self.nx
+
+    @tack.func
+    def cell_id(self, c):
+        return c[0] + self.cx * c[1]
 
 
 class _StructuredHexahedra(_StructuredCells):
+    """Cells by ``c = (i, j, k)``."""
+
+    __tack_iterate__ = ("cx", "cy", "cz")
+
     @tack.func
     def point_id(self, c, j):
         a, b, d = self._corner(j)
-        cx = self.nx - 1
-        cy = self.ny - 1
-        return ((c % cx + a) + ((c // cx) % cy + b) * self.nx
-                + (c // (cx * cy) + d) * self.nx * self.ny)
+        return (c[0] + a) + ((c[1] + b) + (c[2] + d) * self.ny) * self.nx
+
+    @tack.func
+    def cell_id(self, c):
+        return c[0] + self.cx * (c[1] + self.cy * c[2])
 
 
 class _WithPoints:
@@ -292,4 +315,4 @@ class StructuredCellSet:
     def views(self, points=None):
         cells, shape = self._CELLS[len(self.point_dims)]
         dims = self.point_dims + (1,) * (3 - len(self.point_dims))
-        return [_make_view(cells, shape, points, dims[0], dims[1], self.num_cells)]
+        return [_make_view(cells, shape, points, *dims, self.num_cells)]

@@ -52,7 +52,7 @@ def _mixed_cells(rng, num_cells, num_points, shapes=SHAPES):
 
 @tack.kernel
 def _record(cells, ids, signatures, visits):
-    for c in range(cells.num_cells):
+    for c in cells:
         cell = cells.cell_id(c)
         ids[cell] = cells.ID
         signature = 0
@@ -122,6 +122,17 @@ def test_structured_cells_reach_the_kernel(backend, point_dims):
     assert signatures.tolist() == _signatures(rows)
 
 
+@pytest.mark.parametrize("point_dims", [(5, 4), (4, 3, 5)], ids=["2d", "3d"])
+def test_structured_cells_launch_in_the_grids_shape(point_dims):
+    """`for c in cells` iterates structured quads and hexahedra by (i, j[, k]): no division."""
+    tack.init(arch=tack.cpu)
+    view = td.StructuredCellSet(point_dims).views()[0]
+    ir_text = tack.inspect(_record, view, *[tack.zeros(tack.i32, (64,))] * 3, mode="ir")
+    loop = next(line for line in ir_text.splitlines() if "ParallelFor" in line)
+    assert loop.count(" < ") == len(point_dims)
+    assert "//" not in ir_text and "%" not in ir_text
+
+
 @needs_vtk
 @pytest.mark.parametrize("point_dims", [(7,), (5, 4), (4, 3, 5)], ids=["1d", "2d", "3d"])
 def test_structured_point_order_is_vtks(point_dims):
@@ -141,7 +152,7 @@ def test_structured_point_order_is_vtks(point_dims):
 
 @tack.kernel
 def _centroids(cells, by_point, by_gather):
-    for c in range(cells.num_cells):
+    for c in cells:
         total = tack.Vector([0.0, 0.0, 0.0])
         for j in range(cells.NUM_POINTS):
             total += cells.point(c, j)
@@ -216,7 +227,7 @@ def test_malformed_inputs_are_rejected(backend):
 
 @tack.kernel
 def _cell_centers(cells, out):
-    for c in range(cells.num_cells):
+    for c in cells:
         pc = cells.parametric_center()
         x = tack.Vector([0.0, 0.0, 0.0])
         for j in range(cells.NUM_POINTS):

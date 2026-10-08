@@ -8,7 +8,7 @@ arguments::
 
     @tack.kernel
     def cell_centers(cells, out):
-        for c in range(cells.num_cells):
+        for c in cells:
             pc = cells.parametric_center()
             x = tack.Vector([0.0, 0.0, 0.0])
             for j in range(cells.NUM_POINTS):
@@ -18,8 +18,11 @@ arguments::
     out = tack.Vector.field(3, tack.f32, shape=(data.cells.num_cells,))
     tack.data.for_each_shape(cell_centers, data, out)
 
-Point and cell data are passed as ordinary arguments; index point data by
-``cells.point_id(c, j)`` and cell data by ``cells.cell_id(c)``.
+``c`` is whatever the view iterates by -- a cell number, or for
+structured cells their (i, j[, k]) -- so the kernel passes it to the view's
+methods rather than doing arithmetic on it. Point and cell data are passed
+as ordinary arguments; index point data by ``cells.point_id(c, j)`` and
+cell data by ``cells.cell_id(c)``.
 """
 
 import numpy as np
@@ -71,11 +74,12 @@ class DataSet:
 def for_each_shape(kernel, data, *args):
     """Run ``kernel(cells, *args)`` once per shape present in ``data``.
 
-    ``data`` is a ``DataSet`` or a cell set. ``cells`` is a cell view: the
-    shape's methods and constants, ``num_cells``, ``point_id(c, j)`` and
-    ``cell_id(c)``, and for a ``DataSet`` also ``point(c, j)`` and
-    ``gather_points(c, pts)``. Each shape compiles its own variant of the
-    kernel once; a later call with a set of the same shape reuses it.
+    ``data`` is a ``DataSet`` or a cell set. ``cells`` is a cell view, which
+    the kernel loops over (``for c in cells:``): the shape's methods and
+    constants, ``point_id(c, j)``, ``cell_id(c)`` and ``num_cells``, and for
+    a ``DataSet`` also ``point(c, j)`` and ``gather_points(c, pts)``. Each
+    shape compiles its own variant of the kernel once; a later call with a
+    set of the same shape reuses it.
     """
     if isinstance(data, DataSet):
         views = data.cells.views(data.points)
