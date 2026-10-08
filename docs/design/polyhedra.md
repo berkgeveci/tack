@@ -1,8 +1,8 @@
 # Polyhedral meshes: design proposal
 
 Status: proposal, 2026-10-08, on branch `vis/polyhedra`. Questions in
-section 7 decided as recommended; phases 1 to 3 are built (sections 9
-to 11). It refines section 10 of
+section 7 decided as recommended; phases 1 to 4 are built (sections 9
+to 12). It refines section 10 of
 [the dataset API design](dataset-api.md) -- polyhedra get their own
 topology and algorithms, sharing everything above that -- with what three
 studies found:
@@ -574,3 +574,84 @@ per polygon from the cell it lies in. `slice_plane` gets this through
 - Iso-polygons are left as polygons. They come out of the trace in a
   per-cell order, so their numbering differs from VTK's though the
   polygons are the same.
+
+## 12. Phase 4 as built
+
+**Oriented face values.** Threshold forced the question. It keeps whole
+cells, so a face whose side-0 cell is dropped must be turned around for
+its remaining cell. Turning a face negates a quantity measured along its
+normal -- a normal flux, MPAS's `normalVelocity`, `upwind_flux`'s output
+-- but not its area or an id. `Values(data, "faces", oriented=True)` says
+which:
+
+- it is a space of its own, interned apart from plain face values, and
+  only faces may be oriented;
+- `upwind_flux` produces it; `divergence` and `perot` read either kind;
+- conversions carry the flag.
+
+**Threshold of polyhedral and polygonal topologies.** Whole cells are kept
+by cell values, or by point values (all or any), each step a count, scan
+and compaction on the device:
+
+- faces used by kept cells, stored once and numbered in their old order,
+  so face values come along;
+- a face whose side-0 cell is gone is turned around and its references
+  made side 0, with its oriented values negated;
+- points compacted.
+
+A polygonal topology keeps its polygons' loops; its edge values, whose
+numbering is derived afresh, are left behind.
+
+**Repairing the winding of real data.**
+`PolyhedralTopology.from_cell_faces(cells, num_points, positions=None,
+orient=False)` is now public: per-cell face lists, as VTK and readers
+give them, with copies matched by point set. VTK import goes through it.
+With `orient`, on the host:
+
+1. Within each cell, faces walk shared edges oppositely: breadth-first
+   from face to face, reversing as needed.
+2. Across cells, a shared face's two copies run opposite ways: whole
+   cells reversed as needed.
+3. Each connected component is turned outward by the sign of its total
+   volume. This is the one geometric test, made once on a sum over many
+   cells, which thin cells cannot fool the way they fool per-cell tests.
+
+`vtk_to_dataset(grid, orient=True)` uses it. Without it, inconsistent
+input is refused, and the message names the option.
+
+**Readers through VTK.** VTK's CGNS reader brings the two polyhedral
+conventions:
+
+- `Example_nface_n.cgns`: NFACE_n, a sign per reference;
+- `Example_ngon_pe.cgns`: NGON_n with ParentElements, owner and
+  neighbour.
+
+They give the same mesh, consistently wound. `EngineSector.cgns`, a real
+CFD mesh of 1956 polyhedra, arrives wound inward in 1891 cells and
+inconsistently within 65. It is refused as is; with `orient` it imports
+in under a second, every cell positive, VTK's own volumes agreeing to
+5e-7, and the boundary matching `vtkGeometryFilter`'s 6209 faces. Whether
+the file or VTK's reader is at fault is worth a look in VTK.
+
+**Tests.**
+
+- Threshold of polyhedra converted from every shape mesh, by cells and by
+  points (all, any), keeps exactly the shape path's cells and points, with
+  the same volumes and faces.
+- `vtkThreshold` agrees.
+- Keeping the Voronoi columns' upper layers turns the faces between
+  layers. A uniform flow's oriented flux, negated with them, still gives
+  Perot's exact answer; the same numbers as plain face values do not.
+- Threshold of polygons.
+- `orient` undoes random face and cell reversals.
+- Both CGNS conventions agree, and EngineSector is refused, then repaired.
+- Mutations caught: oriented values left un-negated, faces left unturned,
+  turned faces keeping their side, `orient` skipping the volume sign.
+
+**Not yet:**
+
+- clip, whose cut faces are new per cell;
+- readers beyond VTK's: OpenFOAM's owner/neighbour and MPAS's
+  `edgeSignOnCell` map onto `from_cell_faces` or the constructor
+  directly, when there is data;
+- carrying edge values through threshold.

@@ -342,7 +342,7 @@ def extract_surface(data, name="boundary"):
         space = f.space
         if key == "shape":
             continue
-        if space is Values(data, "faces"):
+        if _on_faces(data, f):
             fields[key] = Field(Values(surface, "cells"), _take(f.values, ids))
         elif isinstance(space, Constant) or space is Values(data, "cells"):
             fields[key] = Field(Values(surface, "cells"), _take(f.values, cells))
@@ -404,7 +404,7 @@ def _polygon_surface(data, name):
         space = f.space
         if key == "shape":
             continue
-        if space is Values(data, "faces"):
+        if _on_faces(data, f):
             fields[key] = Field(Values(surface, "cells"), _take(f.values, ids))
         elif isinstance(space, Constant) or space is Values(data, "cells"):
             fields[key] = Field(Values(surface, "cells"), _take(f.values, cells))
@@ -442,6 +442,13 @@ def _cell_jump(faces, values, out):
         inside = values[faces.side_cell(f, 0)]
         out[faces.entity_id(f)] = (values[faces.side_cell(f, 1)] - inside
                                    if faces.num_sides(f) == 2 else inside * 0.0)
+
+
+def _on_faces(data, field):
+    """Whether ``field`` is values on ``data``'s faces, oriented or not."""
+    space = field.space
+    return (isinstance(space, Values) and space.on == "faces"
+            and space.topology is data.topology)
 
 
 def _on_cells(data, field):
@@ -491,7 +498,7 @@ def upwind_flux(data, field, velocity):
     else:
         for_each(_upwind, data, "faces", traces(data, field), normals.values, areas.values,
                  vx, vy, vz, out)
-    return Field(Values(data, "faces"), out)
+    return Field(Values(data, "faces", oriented=True), out)
 
 
 @tack.kernel
@@ -528,7 +535,7 @@ def perot(data, flux):
     and cell centroids and volumes are this module's, so a uniform field's normal
     components give it back exactly on cells with planar faces. First order, as
     Perot's method is."""
-    if flux.space is not Values(data, "faces"):
+    if not _on_faces(data, flux):
         raise TypeError("perot reconstructs from a field on faces")
     _, areas = face_geometry(data)
     centers = face_centers(data)
@@ -552,9 +559,10 @@ def _outward_sums(cells, flux, out):
 
 
 def divergence(data, flux):
-    """Each cell's outward sum of ``flux``, a field on faces oriented out of side 0:
-    a face's value counts plus for its side-0 cell and minus for its side-1 cell."""
-    if flux.space is not Values(data, "faces"):
+    """Each cell's outward sum of ``flux``, values on faces measured out of side 0
+    (``Values(data, "faces", oriented=True)``, or plain face values taken so): a
+    face's value counts plus for its side-0 cell and minus for its side-1 cell."""
+    if not _on_faces(data, flux):
         raise TypeError("divergence sums a field on faces")
     data.topology.faces()                          # the incidence the cell views need
     out = _like(flux.values, data.num_cells)

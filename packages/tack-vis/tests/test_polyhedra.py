@@ -234,24 +234,7 @@ def _voronoi_columns(n=40, layers=3, thickness=0.01, seed=7):
 
 
 def _from_cell_faces(cells, num_points):
-    """A polyhedral topology from each cell's outward faces: copies matched by point set,
-    the first copy's cell side 0, the other side 1."""
-    known, face_points, face_offsets = {}, [], [0]
-    cell_offsets, cell_faces, sides = [0], [], []
-    for faces in cells:
-        for ring in faces:
-            key = tuple(sorted(ring))
-            if key not in known:
-                known[key] = len(face_offsets) - 1
-                face_points.extend(ring)
-                face_offsets.append(len(face_points))
-                sides.append(0)
-            else:
-                sides.append(1)
-            cell_faces.append(known[key])
-        cell_offsets.append(len(cell_faces))
-    return td.PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces,
-                                 np.array(sides, np.uint8), num_points=num_points)
+    return td.PolyhedralTopology.from_cell_faces(cells, num_points)
 
 
 def test_voronoi_columns(backend):
@@ -790,3 +773,176 @@ def test_slice_and_fields_on_polyhedra(backend):
     inside_first = centroids[:, 0] < 1.0
     assert set(cells[inside_first & (centroids[:, 2] < 1)]) <= {1.0}
     assert set(cells[~inside_first]) <= {2.0}
+
+
+# ── Phase 4: oriented face values, threshold, readers ───────────────
+
+def test_oriented_face_values(backend):
+    data = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    assert td.Values(data, "faces") is td.Values(data, "faces", oriented=False)
+    assert td.Values(data, "faces", oriented=True) is not td.Values(data, "faces")
+    with pytest.raises(ValueError, match="only values on faces"):
+        td.Values(data, "cells", oriented=True)
+    flux = td.algorithms.upwind_flux(data, td.Field(td.Constant(data), _scalars([1.0, 2, 3])),
+                                     (1.0, 0.0, 0.0))
+    assert flux.space is td.Values(data, "faces", oriented=True)
+
+
+def _threshold_meshes():
+    meshes = _solid_meshes()
+    for data in meshes.values():
+        centers = td.algorithms.cell_geometry(td.as_polyhedra(data))[1].values.to_numpy(
+            vectors=True)
+        data.fields["c"] = td.Field(td.Constant(data), _scalars(centers[:, 0]))
+        data.fields["p"] = td.Field(td.H1(data), _scalars(data.positions()[:, 0]
+                                                          + 0.5 * data.positions()[:, 2]))
+    return meshes
+
+
+@pytest.mark.parametrize("name", ["mixed", "tetra", "hexahedron", "wedge", "pyramid", "voxel"])
+@pytest.mark.parametrize("how", ["cells", "all points", "any point"])
+def test_threshold_of_polyhedra_is_the_shape_paths(backend, name, how):
+    meshes = _threshold_meshes()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    poly = td.as_polyhedra(data)
+    key, lo, hi = ("c", 0.3, 1.2) if how == "cells" else ("p", 0.2, 1.4)
+    theirs = td.threshold(data, key, lo, hi, all_points=how != "any point")
+    ours = td.threshold(poly, key, lo, hi, all_points=how != "any point")
+    assert (ours.num_cells, ours.num_points) == (theirs.num_cells, theirs.num_points)
+    if not ours.num_cells:
+        return
+    np.testing.assert_allclose(ours.positions(), theirs.positions(), atol=1e-6)
+    assert td.check_winding(ours).size == 0
+    reference = td.as_polyhedra(theirs)
+    np.testing.assert_allclose(td.algorithms.cell_geometry(ours)[0].values.to_numpy(),
+                               td.algorithms.cell_geometry(reference)[0].values.to_numpy(),
+                               rtol=1e-5)
+    assert _faces_by_points(ours.topology) == _faces_by_points(reference.topology)
+    np.testing.assert_allclose(ours.fields["c"].values.to_numpy(),
+                               theirs.fields["c"].values.to_numpy())
+
+
+def test_threshold_turns_faces_and_their_oriented_values(backend):
+    """Keep the upper two layers of the Voronoi columns: the faces between layers 0
+    and 1 belonged to the dropped cells (their side 0), so they turn for the cells
+    kept. A uniform flow's oriented flux is negated with them, and Perot still gives
+    the flow back; the same numbers as plain face values are not, and it does not."""
+    points, cells, columns = _voronoi_columns(layers=3)
+    data = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    velocity = (0.4, -0.3, 0.9)
+    values = _uniform_flux(data, velocity)
+    data.fields["flux"] = td.Field(td.Values(data, "faces", oriented=True), values)
+    data.fields["plain"] = td.Field(td.Values(data, "faces"), values)
+    layer = td.algorithms.cell_geometry(data)[1].values.to_numpy(vectors=True)[:, 2]
+    data.fields["layer"] = td.Field(td.Constant(data), _scalars(layer))
+    upper = td.threshold(data, "layer", 0.01, 1.0)
+    assert upper.num_cells == 2 * columns
+    assert td.check_winding(upper).size == 0
+    np.testing.assert_allclose(
+        td.algorithms.perot(upper, upper.fields["flux"]).values.to_numpy(vectors=True),
+        np.tile(velocity, (upper.num_cells, 1)), atol=2e-4)
+    plain = td.algorithms.perot(upper, upper.fields["plain"]).values.to_numpy(vectors=True)
+    assert not np.allclose(plain[:columns], velocity, atol=1e-2)      # the bottom kept layer
+
+
+def test_threshold_of_polygons(backend):
+    data = td.as_polygons(_plane_mesh())
+    data.fields["id"] = td.Field(td.Constant(data), _scalars([0.0, 1.0, 2.0, 3.0]))
+    kept = td.threshold(data, "id", 0.5, 2.5)
+    assert isinstance(kept.topology, td.PolygonalTopology)
+    assert kept.num_cells == 2 and td.check_winding(kept).size == 0
+    np.testing.assert_allclose(kept.fields["id"].values.to_numpy(), [1, 2])
+    np.testing.assert_allclose(td.algorithms.cell_geometry(kept)[0].values.to_numpy(),
+                               [1.0, 0.5], rtol=1e-6)
+
+
+@needs_vtk
+def test_threshold_of_polyhedra_is_vtks(backend):
+    from vtkmodules.vtkFiltersCore import vtkThreshold
+
+    poly = td.as_polyhedra(_threshold_meshes()["wedge"])
+    grid = dataset_to_vtk(poly)
+    threshold = vtkThreshold()
+    threshold.SetInputData(grid)
+    threshold.SetInputArrayToProcess(0, 0, 0, 1, "c")
+    threshold.SetLowerThreshold(0.3)
+    threshold.SetUpperThreshold(1.2)
+    threshold.SetThresholdFunction(vtkThreshold.THRESHOLD_BETWEEN)
+    threshold.Update()
+    theirs = threshold.GetOutput()
+    ours = td.threshold(poly, "c", 0.3, 1.2)
+    assert (ours.num_cells, ours.num_points) == (theirs.GetNumberOfCells(),
+                                                 theirs.GetNumberOfPoints())
+    np.testing.assert_allclose(sorted(td.algorithms.cell_geometry(ours)[0].values.to_numpy()),
+                               sorted(theirs.GetCell(c).ComputeVolume()
+                                      for c in range(theirs.GetNumberOfCells())), rtol=1e-5)
+
+
+def test_orient_repairs_reversed_faces_and_cells(backend):
+    points, cells, _ = _voronoi_columns()
+    reference = _from_cell_faces(cells, len(points))
+    rng = np.random.default_rng(8)
+    scrambled = []
+    for faces in cells:
+        faces = [ring[::-1] if rng.uniform() < 0.3 else ring for ring in faces]
+        scrambled.append([r[::-1] for r in faces] if rng.uniform() < 0.5 else faces)
+    with pytest.raises(ValueError, match="orient=True"):
+        td.PolyhedralTopology.from_cell_faces(scrambled, len(points))
+    mended = td.PolyhedralTopology.from_cell_faces(scrambled, len(points), positions=points,
+                                                   orient=True)
+    assert td.check_winding(mended).size == 0
+    data = td.DataSet(mended, points)
+    assert (td.algorithms.cell_geometry(data)[0].values.to_numpy() > 0).all()
+    ours, theirs = _faces_by_points(mended), _faces_by_points(reference)
+    assert ours.keys() == theirs.keys()
+    assert all(set(ours[k]) == set(theirs[k]) for k in ours)
+
+
+def _cgns(name):
+    path = os.path.join(_VTK_DATA, name)
+    if not os.path.exists(path):
+        pytest.skip(f"{path} is not here")
+    from vtkmodules.vtkIOCGNSReader import vtkCGNSReader
+
+    reader = vtkCGNSReader()
+    reader.SetFileName(path)
+    reader.Update()
+    blocks = reader.GetOutput().NewIterator()
+    blocks.InitTraversal()
+    return blocks.GetCurrentDataObject()
+
+
+@needs_vtk
+def test_cgns_in_both_polyhedral_conventions(backend):
+    """NFACE_n (a sign per cell -> face reference) and NGON_n with ParentElements
+    (owner and neighbour): the same mesh, consistently wound either way."""
+    nface = vtk_to_dataset(_cgns("Example_nface_n.cgns"))
+    ngon = vtk_to_dataset(_cgns("Example_ngon_pe.cgns"))
+    for data in (nface, ngon):
+        assert isinstance(data.topology, td.PolyhedralTopology)
+        assert td.check_winding(data).size == 0
+        assert (td.algorithms.cell_geometry(data)[0].values.to_numpy() > 0).all()
+
+    def by_position(data):
+        p = np.round(data.positions(), 6)
+        return {frozenset(map(tuple, p[list(k)])) for k in _faces_by_points(data.topology)}
+
+    assert by_position(nface) == by_position(ngon)
+
+
+@needs_vtk
+def test_a_real_cfd_mesh_needs_orienting(backend):
+    """EngineSector.cgns, as VTK's reader gives it, is wound inward almost everywhere
+    and inconsistently in 65 cells: refused, then repaired by orient."""
+    grid = _cgns("EngineSector.cgns")
+    with pytest.raises(ValueError, match="orient=True"):
+        vtk_to_dataset(grid)
+    data = vtk_to_dataset(grid, orient=True)
+    assert data.num_cells == 1956 and td.check_winding(data).size == 0
+    assert (td.algorithms.cell_geometry(data)[0].values.to_numpy() > 0).all()
+    surface = vtk.vtkGeometryFilter()
+    surface.SetInputData(dataset_to_vtk(data))
+    surface.Update()
+    assert data.topology.faces().boundary().shape[0] == surface.GetOutput().GetNumberOfCells()

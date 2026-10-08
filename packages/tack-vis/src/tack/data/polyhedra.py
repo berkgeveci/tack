@@ -361,6 +361,54 @@ class PolyhedralTopology(_Topology):
                 self.num_cells, 0)]
         return self._groups
 
+    @classmethod
+    def from_cell_faces(cls, cells, num_points, positions=None, orient=False):
+        """A topology from each cell's own list of faces (point-id rings), as VTK and many
+        readers give them: copies of a face are matched by point set, the first copy
+        found is the face -- its cell side 0 -- and a second copy, run the other way,
+        is side 1. Two copies run the same way are refused.
+
+        With ``orient``, the copies are made consistent first, on the host:
+        within each cell, faces walk each shared edge in opposite directions;
+        across cells, the two copies of a shared face run opposite ways (whole
+        cells are reversed to make it so); then each connected component is
+        turned outward as a whole, by the sign of its total volume -- the one
+        geometric test, made once per component on a sum over many cells, which
+        thin cells cannot fool as they fool a per-cell test. ``positions`` (one
+        row per point) are needed for that last step.
+        """
+        cells = [[[int(p) for p in ring] for ring in faces] for faces in cells]
+        if orient:
+            if positions is None:
+                raise ValueError("orient needs the points' positions, for the sign of each "
+                                 "component's volume")
+            cells = _orient_cells(cells, np.asarray(positions, float))
+        known, face_points, face_offsets = {}, [], [0]
+        cell_offsets, cell_faces, sides = [0], [], []
+        same_way = 0
+        for faces in cells:
+            for ring in faces:
+                key = tuple(sorted(ring))
+                f = known.get(key)
+                if f is None:
+                    f = known[key] = len(face_offsets) - 1
+                    face_points.extend(ring)
+                    face_offsets.append(len(face_points))
+                    side = 0
+                else:
+                    if not _opposite(face_points[face_offsets[f]:face_offsets[f + 1]], ring):
+                        same_way += 1
+                    side = 1
+                cell_faces.append(f)
+                sides.append(side)
+            cell_offsets.append(len(cell_faces))
+        if same_way:
+            raise ValueError(f"{same_way} shared faces are wound the same way by both their "
+                             "cells; from_cell_faces(..., orient=True) makes them consistent")
+        return cls(np.array(face_offsets, np.int32), np.array(face_points, np.int32),
+                   np.array(cell_offsets, np.int32), np.array(cell_faces, np.int32),
+                   np.array(sides, np.uint8), num_points=num_points)
+
     def arrays(self):
         """The five defining arrays as host arrays, in constructor order."""
         return (self.face_offsets.to_numpy(), self.face_points.to_numpy(),
@@ -520,6 +568,95 @@ class PolygonalTopology(PolyhedralTopology):
     def loops(self):
         """Each polygon's points in order: ``(loop_offsets, loop_points)``."""
         return self.loop_offsets, self.loop_points
+
+
+# ── Orienting face lists ────────────────────────────────────────────
+
+def _opposite(stored, walked):
+    """Whether ``walked`` goes round the same polygon as ``stored`` the other way."""
+    n = len(stored)
+    walked = list(walked)
+    if n != len(walked) or stored[0] not in walked:
+        return False
+    i = walked.index(stored[0])
+    return [walked[(i - k) % n] for k in range(n)] == list(stored)
+
+
+def _ring_edges(ring):
+    return list(zip(ring, ring[1:] + ring[:1]))
+
+
+def _orient_cells(cells, positions):
+    """Each cell's faces made consistent with each other, the cells with their
+    neighbours, and each connected component turned outward by its total volume."""
+    from collections import deque
+
+    for c, faces in enumerate(cells):
+        # Within the cell: neighbouring faces walk their shared edge oppositely.
+        by_edge = {}
+        for k, ring in enumerate(faces):
+            for a, b in _ring_edges(ring):
+                by_edge.setdefault((min(a, b), max(a, b)), []).append(k)
+        done = [False] * len(faces)
+        for start in range(len(faces)):
+            if done[start]:
+                continue
+            done[start] = True
+            queue = deque([start])
+            while queue:
+                k = queue.popleft()
+                for a, b in _ring_edges(faces[k]):
+                    for other in by_edge[(min(a, b), max(a, b))]:
+                        if other == k:
+                            continue
+                        walks_same = (a, b) in _ring_edges(faces[other])
+                        if not done[other]:
+                            if walks_same:
+                                faces[other] = faces[other][::-1]
+                            done[other] = True
+                            queue.append(other)
+                        elif walks_same:
+                            raise ValueError(f"cell {c}'s faces cannot all be wound one way: "
+                                             "it is not a closed, orientable polyhedron")
+    # Across cells: the two copies of a shared face run opposite ways.
+    by_face = {}
+    for c, faces in enumerate(cells):
+        for k, ring in enumerate(faces):
+            by_face.setdefault(tuple(sorted(ring)), []).append((c, k))
+    done = [False] * len(cells)
+    for start in range(len(cells)):
+        if done[start]:
+            continue
+        done[start] = True
+        component, queue = [start], deque([start])
+        while queue:
+            c = queue.popleft()
+            for ring in cells[c]:
+                for d, k in by_face[tuple(sorted(ring))]:
+                    if d == c:
+                        continue
+                    agree = _opposite(ring, cells[d][k])
+                    if not done[d]:
+                        if not agree:
+                            cells[d] = [r[::-1] for r in cells[d]]
+                        done[d] = True
+                        component.append(d)
+                        queue.append(d)
+                    elif not agree:
+                        raise ValueError("the cells cannot all be wound consistently: the "
+                                         "mesh is not orientable")
+        # The whole component outward, by the sign of its total volume.
+        origin = positions[cells[start][0][0]]
+        six = 0.0
+        for c in component:
+            for ring in cells[c]:
+                p = positions[ring] - origin
+                for j in range(1, len(ring) - 1):
+                    six += p[0].dot(np.cross(p[j], p[j + 1]))
+        if six < 0:
+            for c in component:
+                cells[c] = [r[::-1] for r in cells[c]]
+    return cells
 
 
 # ── Winding ─────────────────────────────────────────────────────────
@@ -773,7 +910,7 @@ def as_polyhedra(data):
         if isinstance(space, Constant):
             return Field(Constant(out), field.values)
         if isinstance(space, Values):
-            return Field(Values(out, space.on), field.values)
+            return Field(Values(out, space.on, oriented=space.oriented), field.values)
         return None
 
     fields = {}

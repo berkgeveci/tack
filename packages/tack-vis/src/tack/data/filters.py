@@ -551,6 +551,13 @@ def threshold(data, field, lower, upper, all_points=True):
     cells, ``L2`` fields (and an ``L2`` geometry) block by block, keeping each
     cell's order. Fields on faces and edges, which the new topology derives
     afresh, are left behind.
+
+    On a polyhedral topology the kept cells keep their faces, stored once and
+    numbered in their old order, so values on faces come along. A face whose
+    side-0 cell is dropped is turned around for its remaining cell, and its
+    oriented values (``Values(..., "faces", oriented=True)``) are negated. A
+    polygonal topology's kept polygons keep their loops; its edge values, whose
+    numbering is derived afresh, are left behind.
     """
     field = _field(data, field)
     if arrays.width_of(field.values):
@@ -561,6 +568,8 @@ def threshold(data, field, lower, upper, all_points=True):
         space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"threshold needs a field on the points or cells, not {space!r}")
+    if not getattr(data.topology, "reference_cells", True):
+        return _polyhedral_threshold(data, field, lower, upper, all_points)
 
     n = data.num_cells
     keep = tack.zeros(tack.i32, (n,))
@@ -624,6 +633,237 @@ def threshold(data, field, lower, upper, all_points=True):
             if out is not None:
                 fields[name] = out
     return DataSet(kept, geometry, fields=fields)
+
+
+# ── Threshold of polyhedra and polygons ─────────────────────────────
+
+@tack.kernel
+def _polyhedral_keep(cells, values, lower, upper, by_cells, all_points, keep):
+    for c in cells:
+        e = cells.entity_id(c)
+        ok = 0
+        if by_cells == 1:
+            v = values[e]
+            if lower <= v and v <= upper:
+                ok = 1
+        else:
+            inside = 0
+            n = cells.num_points(c)
+            for j in range(n):
+                v = values[cells.point_id(c, j)]
+                if lower <= v and v <= upper:
+                    inside += 1
+            if all_points == 1:
+                if inside == n:
+                    ok = 1
+            elif inside > 0:
+                ok = 1
+        keep[e] = ok
+
+
+@tack.kernel
+def _kept_faces(cell_offsets, cell_faces, cell_face_sides, keep, used, owned, n_cells):
+    for c in range(n_cells):
+        if keep[c] == 1:
+            for e in range(cell_offsets[c], cell_offsets[c + 1]):
+                f = cell_faces[e]
+                tack.atomic_max(used, f, 1)
+                if tack.i32(cell_face_sides[e]) == 0:
+                    owned[f] = 1
+
+
+@tack.kernel
+def _kept_face_sizes(face_offsets, used, sizes):
+    for f in range(used.shape[0]):
+        sizes[f] = face_offsets[f + 1] - face_offsets[f] if used[f] == 1 else 0
+
+
+@tack.kernel
+def _copy_faces(face_offsets, face_points, used, owned, new_face, starts, out_points,
+                flipped, point_used):
+    # A kept face whose side-0 cell is gone is turned around: its only cell is
+    # now its side 0, and its winding must point out of it.
+    for f in range(used.shape[0]):
+        if used[f] == 1:
+            at = starts[f]
+            n = face_offsets[f + 1] - face_offsets[f]
+            turn = 1 if owned[f] == 0 else 0
+            flipped[new_face[f]] = turn
+            for j in range(n):
+                p = face_points[face_offsets[f] + (n - 1 - j if turn == 1 else j)]
+                out_points[at + j] = p
+                tack.atomic_max(point_used, p, 1)
+
+
+@tack.kernel
+def _kept_entry_counts(cell_offsets, keep, counts, n_cells):
+    for c in range(n_cells):
+        counts[c] = cell_offsets[c + 1] - cell_offsets[c] if keep[c] == 1 else 0
+
+
+@tack.kernel
+def _copy_entries(cell_offsets, cell_faces, cell_face_sides, keep, new_face, flipped, starts,
+                  out_faces, out_sides, n_cells):
+    for c in range(n_cells):
+        if keep[c] == 1:
+            at = starts[c]
+            for e in range(cell_offsets[c], cell_offsets[c + 1]):
+                g = new_face[cell_faces[e]]
+                out_faces[at] = g
+                out_sides[at] = tack.u8(0 if flipped[g] == 1 else tack.i32(cell_face_sides[e]))
+                at += 1
+
+
+@tack.kernel
+def _renumber_points(points, new_ids):
+    for i in range(points.shape[0]):
+        points[i] = new_ids[points[i]]
+
+
+@tack.kernel
+def _negate_flipped(values, flipped):
+    for f in range(flipped.shape[0]):
+        if flipped[f] == 1:
+            values[f] = -values[f]
+
+
+@tack.kernel
+def _kept_ids(flags, slots, out):
+    for i in range(flags.shape[0]):
+        if flags[i] == 1:
+            out[slots[i]] = i
+
+
+def _compact(flags):
+    """``(new ids, kept ids, count)`` of a 0/1 field: each kept index's new number,
+    and the kept indices in order."""
+    n = flags.shape[0]
+    slots = tack.field(tack.i32, shape=(n,))
+    count = exclusive_scan(flags, slots, n) if n else 0
+    kept = tack.field(tack.i32, shape=(count,))
+    if count:
+        _kept_ids(flags, slots, kept)
+    return slots, kept, count
+
+
+def _polyhedral_threshold(data, field, lower, upper, all_points):
+    """``threshold`` of a polyhedral or polygonal topology: whole cells, their faces
+    kept once and numbered in their old order, points compacted."""
+    from tack.data.polyhedra import PolygonalTopology, PolyhedralTopology
+
+    t = data.topology
+    by_cells = isinstance(field.space, Constant)
+    values = arrays.materialize(field.values)
+    n = data.num_cells
+    keep = tack.zeros(tack.i32, (n,))
+    for group in data.launch_groups("cells", []):
+        if group.count:
+            _polyhedral_keep(data.domain_view("cells", group), values, lower, upper,
+                             1 if by_cells else 0, 1 if all_points else 0, keep)
+    _, kept_cells, kept_n = _compact(keep)
+    point_used = tack.zeros(tack.i32, (data.num_points,))
+
+    if t.dimension == 2:
+        loop_offsets, loop_points = t.loops()
+        sizes = tack.zeros(tack.i32, (n,))
+        if n:
+            _kept_entry_counts(loop_offsets, keep, sizes, n)
+        starts = tack.field(tack.i32, shape=(n + 1,))
+        total = exclusive_scan(sizes, starts, n) if n else 0
+        out_loops = tack.field(tack.i32, shape=(total,))
+        if total:
+            _copy_loops(loop_offsets, loop_points, keep, starts, out_loops, point_used, n)
+        point_new, kept_points, kept_np = _compact(point_used)
+        if total:
+            _renumber_points(out_loops, point_new)
+        offsets = _gather_offsets(starts, kept_cells, total)
+        out = PolygonalTopology(offsets, out_loops, num_points=kept_np)
+        flipped = None
+    else:
+        nf = t.num_faces
+        used = tack.zeros(tack.i32, (nf,))
+        owned = tack.zeros(tack.i32, (nf,))
+        if n:
+            _kept_faces(t.cell_offsets, t.cell_faces, t.cell_face_sides, keep, used, owned, n)
+        new_face, kept_faces, kept_nf = _compact(used)
+        sizes = tack.field(tack.i32, shape=(nf,))
+        if nf:
+            _kept_face_sizes(t.face_offsets, used, sizes)
+        starts = tack.field(tack.i32, shape=(nf + 1,))
+        total = exclusive_scan(sizes, starts, nf) if nf else 0
+        face_points = tack.field(tack.i32, shape=(total,))
+        flipped = tack.zeros(tack.i32, (kept_nf,))
+        if nf:
+            _copy_faces(t.face_offsets, t.face_points, used, owned, new_face, starts,
+                        face_points, flipped, point_used)
+        face_offsets = _gather_offsets(starts, kept_faces, total)
+        counts = tack.zeros(tack.i32, (n,))
+        if n:
+            _kept_entry_counts(t.cell_offsets, keep, counts, n)
+        entry_starts = tack.field(tack.i32, shape=(n + 1,))
+        entries = exclusive_scan(counts, entry_starts, n) if n else 0
+        cell_faces = tack.field(tack.i32, shape=(entries,))
+        cell_sides = tack.field(tack.u8, shape=(entries,))
+        if entries:
+            _copy_entries(t.cell_offsets, t.cell_faces, t.cell_face_sides, keep, new_face,
+                          flipped, entry_starts, cell_faces, cell_sides, n)
+        cell_offsets = _gather_offsets(entry_starts, kept_cells, entries)
+        point_new, kept_points, kept_np = _compact(point_used)
+        if total:
+            _renumber_points(face_points, point_new)
+        out = PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, cell_sides,
+                                 num_points=kept_np)
+
+    def carry(f):
+        space = f.space
+        if (isinstance(space, H1) and space.order == 1) or space is Values(data, "points"):
+            values = _take(f.values, kept_points)
+            return Field(H1(out) if isinstance(space, H1) else Values(out, "points"), values)
+        if isinstance(space, Constant) or space is Values(data, "cells"):
+            return Field(Constant(out) if isinstance(space, Constant) else Values(out, "cells"),
+                         _take(f.values, kept_cells))
+        if isinstance(space, Values) and space.on == "faces" and flipped is not None:
+            values = _take(f.values, kept_faces)
+            if space.oriented and kept_nf:
+                _negate_flipped(values, flipped)
+            return Field(Values(out, "faces", oriented=space.oriented), values)
+        return None
+
+    fields = {}
+    for name, f in data.fields.items():
+        if name != "shape" and carry(f) is not None:
+            fields[name] = carry(f)
+    return DataSet(out, carry(data.geometry), fields=fields)
+
+
+@tack.kernel
+def _copy_loops(loop_offsets, loop_points, keep, starts, out, point_used, n_cells):
+    for c in range(n_cells):
+        if keep[c] == 1:
+            at = starts[c]
+            for j in range(loop_offsets[c], loop_offsets[c + 1]):
+                out[at] = loop_points[j]
+                tack.atomic_max(point_used, loop_points[j], 1)
+                at += 1
+
+
+@tack.kernel
+def _offsets_of(starts, kept, out, total):
+    for i in range(kept.shape[0]):
+        out[i] = starts[kept[i]]
+        if i == 0:
+            out[kept.shape[0]] = total
+
+
+def _gather_offsets(starts, kept, total):
+    """CSR offsets of the kept rows: each kept row's start in the compacted array, and
+    ``total`` at the end."""
+    out = tack.field(tack.i32, shape=(kept.shape[0] + 1,))
+    if kept.shape[0]:
+        _offsets_of(starts, kept, out, total)
+    else:
+        out.from_numpy(np.zeros(1, np.int32))
+    return out
 
 
 # ── External faces ──────────────────────────────────────────────────

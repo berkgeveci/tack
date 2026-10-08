@@ -345,15 +345,24 @@ class Constant(Space):
 
 class Values(Space):
     """One value per entity of kind ``on`` -- points, edges, faces or cells -- with no
-    basis: data about the entity, not a function to interpolate."""
+    basis: data about the entity, not a function to interpolate.
+
+    On faces, ``oriented=True`` says the value is measured along the face's stored
+    normal (out of its side 0): a normal flux or velocity component, as MPAS's
+    ``normalVelocity`` or ``upwind_flux``'s output. Turning a face around -- as
+    ``threshold`` must when it keeps only a face's side-1 cell -- negates it. A
+    plain face value (an area, an id, a quality) is left alone.
+    """
 
     mixin = views._ValuesField
 
     @classmethod
-    def _params(cls, on):
+    def _params(cls, on, oriented=False):
         if on not in ("points", "edges", "faces", "cells"):
             raise ValueError(f"values live on points, edges, faces or cells, not {on!r}")
-        return {"on": on}
+        if oriented and on != "faces":
+            raise ValueError("only values on faces are oriented, along the face's normal")
+        return {"on": on, "oriented": bool(oriented)}
 
     @property
     def size(self):
