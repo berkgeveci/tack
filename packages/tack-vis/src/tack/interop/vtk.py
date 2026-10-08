@@ -414,6 +414,7 @@ def dataset_to_vtk(data):
         H1,
         CartesianProduct,
         Constant,
+        PolygonalTopology,
         PolyhedralTopology,
         StructuredTopology,
         UnstructuredTopology,
@@ -437,6 +438,16 @@ def dataset_to_vtk(data):
         grid = vtkUnstructuredGrid()
         grid.SetCells(numpy_to_vtk(topology.types.to_numpy().astype(np.uint8), deep=1),
                       cell_array)
+        points = vtkPoints()
+        points.SetData(numpy_to_vtk(data.positions(), deep=1))
+        grid.SetPoints(points)
+    elif isinstance(topology, PolygonalTopology):
+        offsets, loops = (a.to_numpy() for a in topology.loops())
+        cells = vtkCellArray()
+        cells.SetData(numpy_to_vtkIdTypeArray(offsets.astype(np.int64), deep=1),
+                      numpy_to_vtkIdTypeArray(loops.astype(np.int64), deep=1))
+        grid = vtkUnstructuredGrid()
+        grid.SetCells(numpy_to_vtk(np.full(topology.num_cells, 7, np.uint8), deep=1), cells)
         points = vtkPoints()
         points.SetData(numpy_to_vtk(data.positions(), deep=1))
         grid.SetPoints(points)

@@ -14,7 +14,14 @@ from tack.data import algorithms, arrays, filters, polyhedra, shapes, spaces
 from tack.data.arrays import CartesianProduct, ConstantArray, CountingArray
 from tack.data.dataset import DataSet, Field, for_each, rectilinear_grid, traces
 from tack.data.filters import contour, external_faces, slice_plane, threshold
-from tack.data.polyhedra import PolyhedralTopology, as_polyhedra, check_winding, orient
+from tack.data.polyhedra import (
+    PolygonalTopology,
+    PolyhedralTopology,
+    as_polygons,
+    as_polyhedra,
+    check_winding,
+    orient,
+)
 from tack.data.spaces import H1, L2, Constant, SideTraces, Space, Values
 from tack.data.topology import StructuredTopology, UnstructuredTopology
 
@@ -27,6 +34,7 @@ __all__ = [
     "CountingArray",
     "DataSet",
     "Field",
+    "PolygonalTopology",
     "PolyhedralTopology",
     "SideTraces",
     "Space",
@@ -35,6 +43,7 @@ __all__ = [
     "Values",
     "algorithms",
     "arrays",
+    "as_polygons",
     "as_polyhedra",
     "check_winding",
     "contour",

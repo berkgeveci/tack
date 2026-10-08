@@ -38,6 +38,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, sort_by_key
+from tack.data import shapes
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import DataSet, Field, for_each, traces
 from tack.data.spaces import H1, L2, Constant, Values
@@ -219,12 +220,36 @@ def _cell_geometry(cells, volumes, centroids):
         centroids[cells.entity_id(c)] = origin + weighted / (4.0 * six)
 
 
+@tack.kernel
+def _polygon_geometry(cells, areas, centroids):
+    for c in cells:
+        # Newell's area vector over the polygon's edges, walked its way, then a fan
+        # from its first point weighted by each triangle's area along the normal.
+        origin = cells.side_position(c, 0, 0)
+        n = tack.Vector([0.0, 0.0, 0.0])
+        for k in range(cells.num_faces(c)):
+            n += (cells.side_position(c, k, 0) - origin).cross(
+                cells.side_position(c, k, 1) - origin)
+        unit = n / n.norm()
+        twice = 0.0
+        weighted = tack.Vector([0.0, 0.0, 0.0])
+        for k in range(cells.num_faces(c)):
+            a = cells.side_position(c, k, 0) - origin
+            b = cells.side_position(c, k, 1) - origin
+            t = a.cross(b).dot(unit)
+            twice += t
+            weighted += t * (a + b)
+        areas[cells.entity_id(c)] = 0.5 * twice
+        centroids[cells.entity_id(c)] = origin + weighted / (3.0 * twice)
+
+
 def cell_geometry(data):
-    """``(volume, centroid)`` of each 3D cell: fields on cells, by the divergence theorem
-    over its faces -- any cell, polyhedral or of a shape. Faces are taken as fans
-    from their points' means, so a cell with non-planar faces is measured as that
-    polyhedron (a hexahedron with warped faces is not quite its trilinear volume).
-    A cell's faces must be wound out of it."""
+    """``(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the
+    divergence theorem over its faces -- polyhedral or of a shape -- with faces
+    taken as fans from their points' means, so a cell with non-planar faces is
+    measured as that polyhedron (a hexahedron with warped faces is not quite its
+    trilinear volume); its faces must be wound out of it. A polygon's area, along
+    its own normal (Newell's), for a polygonal topology."""
     data.topology.faces()                          # the incidence the cell views need
     n = data.num_cells
     volumes = tack.field(data.dtype, shape=(n,))
@@ -232,6 +257,8 @@ def cell_geometry(data):
     for group in data.launch_groups("cells", []):
         if group.count and group.shape.DIMENSION == 3:
             _cell_geometry(data.domain_view("cells", group), volumes, centroids)
+        elif group.count and group.shape is shapes.Polygon:
+            _polygon_geometry(data.domain_view("cells", group), volumes, centroids)
     return Field(Values(data, "cells"), volumes), Field(Values(data, "cells"), centroids)
 
 
@@ -291,9 +318,7 @@ def extract_surface(data, name="boundary"):
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_surface keeps the points, so needs an H1 geometry")
     if not getattr(data.topology, "reference_cells", True):
-        raise NotImplementedError(
-            "a polyhedral topology's surface is polygons, which no surface topology holds "
-            "yet; boundary_faces gives the face set")
+        return _polygon_surface(data, name)
     faces = data.topology.faces()
     ids = data.sets[name]
     n = ids.shape[0]
@@ -326,6 +351,67 @@ def extract_surface(data, name="boundary"):
         elif space is Values(data, "points"):
             fields[key] = Field(Values(surface, "points"), f.values)
     # The same points: the geometry's values, on the surface's H1 space.
+    return DataSet(surface, Field(H1(surface), _point_values(data.geometry.values,
+                                                             data.num_points)),
+                   fields=fields)
+
+
+@tack.kernel
+def _surface_loop_sizes(ids, face_offsets, sizes):
+    for i in range(ids.shape[0]):
+        f = ids[i]
+        sizes[i] = face_offsets[f + 1] - face_offsets[f]
+
+
+@tack.kernel
+def _surface_loops(ids, face_offsets, face_points, starts, loops):
+    for i in range(ids.shape[0]):
+        f = ids[i]
+        for j in range(face_offsets[f + 1] - face_offsets[f]):
+            loops[starts[i] + j] = face_points[face_offsets[f] + j]
+
+
+@tack.kernel
+def _close_last(offsets, n, total):
+    for i in range(1):
+        offsets[n] = total
+
+
+def _polygon_surface(data, name):
+    """``extract_surface`` of a polyhedral topology: the set's faces, each a polygon in
+    its side 0's outward order, as a ``PolygonalTopology`` on the same points."""
+    from tack.data.polyhedra import PolygonalTopology
+
+    topology = data.topology
+    faces = topology.faces()
+    ids = data.sets[name]
+    n = ids.shape[0]
+    sizes = tack.field(tack.i32, shape=(n,))
+    offsets = tack.field(tack.i32, shape=(n + 1,))
+    if n:
+        _surface_loop_sizes(ids, topology.face_offsets, sizes)
+    total = exclusive_scan(sizes, offsets, n) if n else 0
+    _close_last(offsets, n, total)
+    loops = tack.field(tack.i32, shape=(total,))
+    if n:
+        _surface_loops(ids, topology.face_offsets, topology.face_points, offsets, loops)
+    surface = PolygonalTopology(offsets, loops, num_points=data.num_points)
+    cells = tack.field(tack.i32, shape=(n,))
+    if n:
+        _face_cells(ids, faces.sides, cells)
+    fields = {}
+    for key, f in data.fields.items():
+        space = f.space
+        if key == "shape":
+            continue
+        if space is Values(data, "faces"):
+            fields[key] = Field(Values(surface, "cells"), _take(f.values, ids))
+        elif isinstance(space, Constant) or space is Values(data, "cells"):
+            fields[key] = Field(Values(surface, "cells"), _take(f.values, cells))
+        elif isinstance(space, H1):
+            fields[key] = Field(H1(surface), _point_values(f.values, data.num_points))
+        elif space is Values(data, "points"):
+            fields[key] = Field(Values(surface, "points"), f.values)
     return DataSet(surface, Field(H1(surface), _point_values(data.geometry.values,
                                                              data.num_points)),
                    fields=fields)

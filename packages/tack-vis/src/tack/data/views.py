@@ -214,12 +214,15 @@ class _Faces:
 
 
 class _PolyhedralCells:
-    """The cells of a polyhedral topology, each a list of faces, every count at run time.
+    """The cells of a polyhedral (or polygonal) topology, each a list of facets -- faces
+    of a polyhedron, edges of a polygon -- every count at run time.
 
-    ``cell_faces[cell_offsets[c] + k]`` is cell ``c``'s face ``k``, and
-    ``cell_face_sides`` the same entry's side: 0 when the face's stored winding
-    points out of ``c``, 1 when into it. ``point_offsets``/``point_ids`` are the
-    cell's points (derived: each cell's face points, sorted and unique).
+    ``cell_faces[cell_offsets[c] + k]`` is cell ``c``'s facet ``k``, and
+    ``cell_face_sides`` the same entry's side: 0 when the facet's stored
+    direction (a face's winding, an edge's direction) points out of ``c``, 1
+    when into it. ``point_offsets``/``point_ids`` are the cell's points
+    (derived: its facets' points, sorted and unique). Every method reaches the
+    arrays through ``cell(c)``, so a subgroup can renumber its cells.
     """
 
     __tack_iterate__ = "num_cells"
@@ -236,29 +239,35 @@ class _PolyhedralCells:
         self.num_cells = num_cells
 
     @tack.func
-    def entity_id(self, c):
+    def cell(self, c):
+        """The topology's cell for loop index ``c``: itself, here."""
         return c
+
+    @tack.func
+    def entity_id(self, c):
+        return self.cell(c)
 
     @tack.func
     def cell_id(self, c):
-        return c
+        return self.cell(c)
 
     @tack.func
     def index(self, c):
-        return c
+        return self.cell(c)
 
     @tack.func
     def num_faces(self, c):
-        return self.cell_offsets[c + 1] - self.cell_offsets[c]
+        g = self.cell(c)
+        return self.cell_offsets[g + 1] - self.cell_offsets[g]
 
     @tack.func
     def face_id(self, c, k):
-        return self.cell_faces[self.cell_offsets[c] + k]
+        return self.cell_faces[self.cell_offsets[self.cell(c)] + k]
 
     @tack.func
     def face_side(self, c, k):
-        """0 if the cell's face ``k`` is wound out of it (its side 0), 1 if into it."""
-        return tack.i32(self.cell_face_sides[self.cell_offsets[c] + k])
+        """0 if the cell's facet ``k`` points out of it (its side 0), 1 if into it."""
+        return tack.i32(self.cell_face_sides[self.cell_offsets[self.cell(c)] + k])
 
     @tack.func
     def face_size(self, f):
@@ -266,16 +275,17 @@ class _PolyhedralCells:
 
     @tack.func
     def side_point(self, c, k, j):
-        """Point ``j`` of the cell's face ``k``, going round it outward for this cell:
-        the stored order on side 0, the reverse (from the same first point) on side 1."""
+        """Point ``j`` of the cell's facet ``k``, going round it outward for this cell:
+        the stored order on side 0, the reverse on side 1 -- which for an edge swaps
+        its ends, and for a face starts the reversed cycle at its last point."""
         f = self.face_id(c, k)
         n = self.face_size(f)
-        at = j if self.face_side(c, k) == 0 else (n - j) % n
+        at = j if self.face_side(c, k) == 0 else n - 1 - j
         return self.face_points[self.face_offsets[f] + at]
 
     @tack.func
     def side_size(self, c, k):
-        """The number of points of the cell's face ``k``."""
+        """The number of points of the cell's facet ``k``."""
         return self.face_size(self.face_id(c, k))
 
     @tack.func
@@ -285,11 +295,12 @@ class _PolyhedralCells:
 
     @tack.func
     def num_points(self, c):
-        return self.point_offsets[c + 1] - self.point_offsets[c]
+        g = self.cell(c)
+        return self.point_offsets[g + 1] - self.point_offsets[g]
 
     @tack.func
     def point_id(self, c, j):
-        return self.point_ids[self.point_offsets[c] + j]
+        return self.point_ids[self.point_offsets[self.cell(c)] + j]
 
 
 class _PolygonFaces:

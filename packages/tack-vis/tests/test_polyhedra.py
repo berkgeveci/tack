@@ -507,8 +507,119 @@ def test_volumes_agree_with_vtk(backend):
         np.testing.assert_allclose(ours, theirs, rtol=1e-4)
 
 
-def test_polyhedral_surfaces_are_not_extracted_yet(backend):
-    poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
-    alg.boundary_faces(poly)
-    with pytest.raises(NotImplementedError, match="polygons"):
-        alg.extract_surface(poly)
+# ── Phase 3a: polygons, the same topology one dimension down ────────
+
+def _plane_mesh():
+    """Triangles and quads in the plane z = 0: two quads and two triangles."""
+    points = np.array([[0, 0, 0], [1, 0, 0], [2, 0, 0], [0, 1, 0], [1, 1, 0], [2, 1, 0],
+                       [1, 2, 0]], float)
+    loops = [[0, 1, 4, 3], [1, 2, 5, 4], [3, 4, 6], [4, 5, 6]]
+    types = np.array([9, 9, 5, 5], np.uint8)
+    offsets = np.concatenate([[0], np.cumsum([len(r) for r in loops])])
+    return td.DataSet(td.UnstructuredTopology(types, offsets, np.concatenate(loops)), points)
+
+
+def _shoelace(points, loops):
+    out = []
+    for loop in loops:
+        p = points[loop]
+        out.append(0.5 * np.linalg.norm(np.cross(p - p[0], np.roll(p, -1, axis=0) - p[0]).sum(
+            axis=0)))
+    return np.array(out)
+
+
+@pytest.mark.parametrize("make", ["plane", "pixels"])
+def test_polygons_from_2d_meshes(backend, make):
+    data = (_plane_mesh() if make == "plane"
+            else vtk_to_dataset(_pixel_grid()) if vtk is not None else None)
+    if data is None:
+        pytest.skip("needs VTK for this mesh")
+    poly = td.as_polygons(data)
+    t = poly.topology
+    assert isinstance(t, td.PolygonalTopology) and t.dimension == 2
+    # Facets are the edges, numbered as the shape path numbers them.
+    np.testing.assert_array_equal(
+        np.sort(t.arrays()[1].reshape(-1, 2), axis=1),
+        data.topology.edges().rows.to_numpy(vectors=True))
+    sides = t.faces().sides.to_numpy(vectors=True)
+    assert ((sides[:, 2] >= 0).sum() + t.faces().boundary().shape[0]) == t.num_faces
+    assert td.check_winding(poly).size == 0
+    offsets, loops = (a.to_numpy() for a in t.loops())
+    rings = [loops[offsets[c]:offsets[c + 1]] for c in range(t.num_cells)]
+    areas, centroids = td.algorithms.cell_geometry(poly)
+    np.testing.assert_allclose(areas.values.to_numpy(), _shoelace(poly.positions(), rings),
+                               rtol=1e-6)
+    np.testing.assert_allclose(centroids.values.to_numpy(vectors=True)[:, 2], 0, atol=1e-6)
+
+
+def _pixel_grid():
+    from vtkmodules.vtkCommonDataModel import vtkImageData
+    from vtkmodules.vtkFiltersCore import vtkAppendFilter
+
+    image = vtkImageData()
+    image.SetDimensions(4, 3, 1)
+    append = vtkAppendFilter()
+    append.AddInputData(image)
+    append.Update()
+    return append.GetOutput()                         # pixels, as an unstructured grid
+
+
+def test_polygon_windings_must_agree(backend):
+    loops = [[0, 1, 4, 3], [1, 2, 5, 4], [3, 6, 4]]   # the triangle walks 3->4 like its quad
+    offsets = np.concatenate([[0], np.cumsum([len(r) for r in loops])])
+    with pytest.raises(ValueError, match="walked the same way"):
+        td.PolygonalTopology(offsets, np.concatenate(loops))
+    with pytest.raises(ValueError, match="not 2D"):
+        td.as_polygons(_two_hexes_and_a_pyramid())
+
+
+def _check_closed_surface(data, surface):
+    t = surface.topology
+    assert isinstance(t, td.PolygonalTopology)
+    assert t.num_cells == data.topology.faces().boundary().shape[0]
+    assert t.faces().boundary().shape[0] == 0                 # closed: every edge twice
+    assert td.check_winding(surface).size == 0
+    used = np.unique(t.loops()[1].to_numpy())
+    assert used.size - t.num_faces + t.num_cells == 2         # a sphere's Euler number
+    _, areas = td.algorithms.face_geometry(data)
+    boundary = data.topology.faces().boundary().to_numpy()
+    np.testing.assert_allclose(td.algorithms.cell_geometry(surface)[0].values.to_numpy(),
+                               areas.values.to_numpy()[boundary], rtol=1e-5)
+
+
+def test_a_polyhedral_mesh_has_a_polygonal_surface(backend):
+    data = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    data.fields["cell"] = td.Field(td.Constant(data), _scalars([1.0, 2.0, 5.0]))
+    nf = data.topology.num_faces
+    data.fields["flux"] = td.Field(td.Values(data, "faces"), _scalars(np.arange(nf)))
+    td.algorithms.boundary_faces(data)
+    surface = td.algorithms.extract_surface(data)
+    _check_closed_surface(data, surface)
+    boundary = data.sets["boundary"].to_numpy()
+    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    np.testing.assert_array_equal(surface.fields["flux"].values.to_numpy(), boundary)
+    np.testing.assert_array_equal(surface.fields["cell"].values.to_numpy(),
+                                  np.array([1.0, 2.0, 5.0])[sides[boundary, 0]])
+    points, cells, _ = _voronoi_columns()
+    columns = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    td.algorithms.boundary_faces(columns)
+    _check_closed_surface(columns, td.algorithms.extract_surface(columns))
+
+
+@needs_vtk
+def test_polygons_through_vtk(backend):
+    data = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    td.algorithms.boundary_faces(data)
+    surface = td.algorithms.extract_surface(data)
+    grid = dataset_to_vtk(surface)
+    assert grid.GetNumberOfCells() == surface.num_cells
+    assert {grid.GetCellType(c) for c in range(grid.GetNumberOfCells())} == {7}
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+    from vtkmodules.vtkFiltersVerdict import vtkCellSizeFilter
+
+    sizes = vtkCellSizeFilter()
+    sizes.SetInputData(grid)
+    sizes.Update()
+    theirs = vtk_to_numpy(sizes.GetOutput().GetCellData().GetArray("Area"))
+    np.testing.assert_allclose(td.algorithms.cell_geometry(surface)[0].values.to_numpy(),
+                               theirs, rtol=1e-5)
