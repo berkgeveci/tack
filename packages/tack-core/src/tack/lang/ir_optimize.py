@@ -33,29 +33,32 @@ def optimize_ir(ir_func: ir.IRFunction):
     _copy_prop_function(ir_func)
 
 
-def _literal(node) -> tuple[bool, bool]:
+def _literal(node, any_condition=False) -> tuple[bool, bool]:
     """Whether ``node`` is a literal expression, and whether it contains a float literal.
 
     The type annotation's notion (``ir_type_annotate``), less a conditional
     expression whose condition reads a value: moved to where the local is
     read, it could read a different one. A condition built only from
-    constants is fine.
+    constants is fine; ``any_condition`` accepts every condition, as the
+    annotation does when nothing is moved.
     """
     if isinstance(node, ir.IRConstant):
         literal = type(node.value) in (int, float)
         return literal, literal and isinstance(node.value, float)
     if isinstance(node, ir.IRUnaryOp) and node.op in ('+', '-'):
-        return _literal(node.operand)
+        return _literal(node.operand, any_condition)
     if isinstance(node, ir.IRBinOp) and node.op in _ARITHMETIC:
-        parts = (_literal(node.left), _literal(node.right))
+        parts = (_literal(node.left, any_condition), _literal(node.right, any_condition))
     elif isinstance(node, ir.IRCall):
-        parts = tuple(_literal(arg) for arg in node.args)
+        parts = tuple(_literal(arg, any_condition) for arg in node.args)
         if not parts:
             return False, False
     elif isinstance(node, ir.IRIfExp):
-        if not all(isinstance(n, _CONSTANT_ONLY) for n in walk_ir(node.condition)):
+        if not any_condition and not all(isinstance(n, _CONSTANT_ONLY)
+                                         for n in walk_ir(node.condition)):
             return False, False
-        parts = (_literal(node.then_value), _literal(node.else_value))
+        parts = (_literal(node.then_value, any_condition),
+                 _literal(node.else_value, any_condition))
     else:
         return False, False
     return all(p[0] for p in parts), any(p[1] for p in parts)
