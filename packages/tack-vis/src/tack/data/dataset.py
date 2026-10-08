@@ -8,8 +8,9 @@
   Galerkin field); ``Values(on)`` one value per point, edge, face or cell,
   with no basis -- data *about* the entity;
 - a *field* is a space and its values;
-- the *geometry* is a field too: positions per point (an explicit H1
-  vector field), or ``RectilinearCoordinates``, which store only the axes;
+- the *geometry* is a field too, named ``"shape"``: ``H1`` positions, one
+  per point (or ``RectilinearCoordinates``, an ``H1`` field that stores only
+  the axes), or ``L2`` positions, each cell's own corners;
 - *sets* are named arrays of entity ids, such as the boundary faces.
 
 ``for_each(kernel, data, domain, *args)`` runs ``kernel`` once per shape in
@@ -135,49 +136,92 @@ class RectilinearCoordinates:
         return np.stack([x, y, z], axis=-1).reshape(-1, 3)
 
 
-def _geometry_mixin(geometry, group):
-    """The mixin and attributes that give ``group``'s view its positions."""
-    if isinstance(geometry, RectilinearCoordinates):
+def _as_geometry(geometry, dtype):
+    """``geometry`` as a ``Field``: positions per point, ``RectilinearCoordinates`` or a
+    device field of 3-vectors become ``H1`` fields; a ``Field`` is checked."""
+    if not isinstance(geometry, Field):
+        if not isinstance(geometry, (RectilinearCoordinates, _DeviceField)):
+            positions = np.ascontiguousarray(geometry)
+            geometry = tack.Vector.field(3, dtype, shape=(positions.shape[0],))
+            geometry.from_numpy(positions.astype(dtype.numpy_dtype))
+        geometry = Field(H1(), geometry)
+    if not isinstance(geometry.space, (H1, L2)):
+        raise TypeError(f"geometry lives in H1 or L2, not {geometry.space!r}")
+    if isinstance(geometry.values, RectilinearCoordinates):
+        if not isinstance(geometry.space, H1):
+            raise TypeError("rectilinear coordinates are an H1 geometry")
+    elif getattr(geometry.values, "_vector_n", None) != 3:
+        raise TypeError("geometry values must be 3-vectors")
+    return geometry
+
+
+def _geometry_mixin(geometry, group, kind):
+    """The mixin and attributes that give ``group``'s view, an entity of ``kind``, the
+    geometry field ``geometry``."""
+    values = geometry.values
+    if isinstance(values, RectilinearCoordinates):
         structured = issubclass(group.kind, views._StructuredCells)
         mixin = views._RectilinearStructured if structured else views._RectilinearPoints
-        return mixin, {"xs": geometry.x, "ys": geometry.y, "zs": geometry.z,
-                       "px": geometry.dims[0], "py": geometry.dims[1]}
-    return views._ExplicitPoints, {"points": geometry}
+        return mixin, {"xs": values.x, "ys": values.y, "zs": values.z,
+                       "px": values.dims[0], "py": values.dims[1]}
+    if isinstance(geometry.space, L2):
+        if kind != "cells":
+            raise NotImplementedError(
+                f"the {kind} of an L2 geometry have no positions of their own: each side's "
+                "cell has its own corners there, which needs per-side traces "
+                "(docs/design/dataset-api.md, section 9)")
+        return views._L2Geometry, {"points": values, "point_offsets": geometry.offsets}
+    return views._H1Geometry, {"points": values}
 
 
 # ── Datasets ────────────────────────────────────────────────────────
 
 class DataSet:
-    """A topology, a geometry (positions per point, or ``RectilinearCoordinates``),
-    named fields and named sets."""
+    """A topology, named fields and named sets. The geometry is the field named
+    ``"shape"``, given as ``geometry``: a ``Field`` in ``H1`` or ``L2``, or positions
+    per point (an array, a device field of 3-vectors, or ``RectilinearCoordinates``),
+    which become an ``H1`` field."""
 
     def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32):
         self.topology = topology
-        if isinstance(geometry, (RectilinearCoordinates, _DeviceField)):
-            self.geometry = geometry
-        else:
-            geometry = np.ascontiguousarray(geometry)
-            field = tack.Vector.field(3, dtype, shape=(geometry.shape[0],))
-            field.from_numpy(geometry.astype(dtype.numpy_dtype))
-            self.geometry = field
         self.fields = dict(fields or {})
+        if "shape" in self.fields:
+            raise ValueError('"shape" is the geometry; pass it as geometry')
+        self.fields["shape"] = _as_geometry(geometry, dtype)
         self.sets = dict(sets or {})
 
     @property
+    def geometry(self):
+        """The geometry: the field named ``"shape"``."""
+        return self.fields["shape"]
+
+    @property
+    def dtype(self):
+        """The geometry's floating-point type."""
+        return self.geometry.values.dtype
+
+    @property
     def num_points(self):
-        if isinstance(self.geometry, RectilinearCoordinates):
-            return self.geometry.num_points
-        return self.geometry.shape[0] // 3
+        values = self.geometry.values
+        if isinstance(values, RectilinearCoordinates):
+            return values.num_points
+        if isinstance(self.geometry.space, L2):
+            return self.topology.num_points
+        return values.shape[0] // 3
 
     @property
     def num_cells(self):
         return self.topology.num_cells
 
     def positions(self):
-        """Every point's position as a host array, ``(num_points, 3)``."""
-        if isinstance(self.geometry, RectilinearCoordinates):
-            return self.geometry.to_numpy()
-        return self.geometry.to_numpy(vectors=True)
+        """Every point's position as a host array, ``(num_points, 3)``: an ``H1``
+        geometry's values. An ``L2`` geometry has none per point."""
+        values = self.geometry.values
+        if isinstance(values, RectilinearCoordinates):
+            return values.to_numpy()
+        if isinstance(self.geometry.space, L2):
+            raise ValueError("an L2 geometry has positions per cell corner, not per point")
+        return values.to_numpy(vectors=True)
 
     def l2_offsets(self):
         """Where each cell's values start in an ``L2`` field: cell ``c``'s corner ``j``
@@ -209,7 +253,8 @@ class DataSet:
         """``group``'s view: kind, shape, geometry, and for cells their incidence when
         faces and edges have been derived."""
         mixins = []
-        geometry, attributes = _geometry_mixin(self.geometry, group)
+        kind = domain if domain in ("cells", "faces", "edges") else "faces"
+        geometry, attributes = _geometry_mixin(self.geometry, group, kind)
         mixins.append(geometry)
         if domain == "cells":
             faces = self.topology._faces

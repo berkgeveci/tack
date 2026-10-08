@@ -1,13 +1,13 @@
 """42 -- A tour of the dataset API prototype (docs/design/dataset-api.md).
 
 One mixed unstructured grid (hexahedra, wedges, pyramids and tetrahedra)
-and one rectilinear grid, each run through the same
-algorithms:
+and one rectilinear grid, each run through the same algorithms:
 
 - topology: faces and edges derived from the cells, each face knowing the
   cells on its two sides, each cell its faces and edges;
 - spaces: point data (H1), cell data (Constant), a linear DG field (L2),
-  and values on faces and edges, all as Fields;
+  and values on faces and edges, all as Fields -- the geometry among them,
+  the field named "shape";
 - iteration domains: kernels over cells, faces, edges, or a set of faces,
   once per shape, reading fields through views built for that shape.
 
@@ -18,6 +18,9 @@ With --output DIR it writes, for ParaView:
   mixed_dg.vtu           the DG field, one copy of each point per cell, the
                          way MFEM's Catalyst "mesh" channel writes DG data:
                          colour by "dg" to see the jumps between cells
+  mixed_shrunk.vtu       the same grid with an L2 geometry: each cell's
+                         corners pulled toward its center, over the same
+                         topology
 
 Usage:
   python examples/42_dataset_api_tour.py [--arch cpu|metal|cuda|hip|level_zero]
@@ -90,6 +93,10 @@ def show(name, data):
     at_centers = alg.values_at_centers(data, data.fields["height"]).values.to_numpy()
     print(f"  H1 'height' at the cell centers matches the centers' own height: "
           f"{np.allclose(at_centers, centers[:, 2] + 0.25 * centers[:, 0], atol=1e-5)}")
+    # Its gradient: its own basis, and the geometry field's Jacobian.
+    gradient = alg.gradients(data, data.fields["height"]).values.to_numpy(vectors=True)
+    print(f"  its gradient is (0.25, 0, 1) in every cell: "
+          f"{np.allclose(gradient, [0.25, 0, 1], atol=1e-5)}")
 
     # Fields on faces and edges.
     normals, areas = alg.face_geometry(data)
@@ -129,10 +136,11 @@ def show(name, data):
     return dg
 
 
-def explode_dg(data, dg):
-    """An L2 field as VTK can show it: a copy of each cell's points, so each cell
-    carries its own values at its corners. An unstructured topology's L2 values
-    are laid out like its connectivity, so this is a gather."""
+def explode(data, dg):
+    """L2 data as VTK can show it: a copy of each cell's points, so each cell carries
+    its own values at its corners. An unstructured topology's L2 values are laid out
+    like its connectivity, so this is a gather -- or, for an L2 geometry, nothing:
+    its values are already one position per cell corner."""
     from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
     from vtkmodules.vtkCommonCore import vtkPoints
     from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
@@ -141,7 +149,11 @@ def explode_dg(data, dg):
     connectivity = topology.connectivity.to_numpy()
     grid = vtkUnstructuredGrid()
     points = vtkPoints()
-    points.SetData(numpy_to_vtk(data.positions()[connectivity], deep=1))
+    if data.geometry.space == td.L2():
+        corners = data.geometry.values.to_numpy(vectors=True)
+    else:
+        corners = data.positions()[connectivity]
+    points.SetData(numpy_to_vtk(corners, deep=1))
     grid.SetPoints(points)
     cells = vtkCellArray()
     cells.SetData(numpy_to_vtkIdTypeArray(topology.offsets.to_numpy().astype(np.int64), deep=1),
@@ -194,6 +206,27 @@ spread = alg.to_points(mixed, dg).values.to_numpy() - mixed.fields["height"].val
 print(f"  each cell shifted by up to 0.3: the point averages now differ by up to "
       f"{np.abs(spread).max():.3f}")
 if args.output:
-    _write(explode_dg(mixed, dg), os.path.join(args.output, "mixed_dg"))
+    _write(explode(mixed, dg), os.path.join(args.output, "mixed_dg"))
+
+# The geometry is a field, so it can be discontinuous too: each cell's own
+# corners, pulled toward its center. The topology is the same, so the cells
+# still know their faces and neighbours; the faces just have no single
+# position any more, which is what per-side traces will be for.
+centers = alg.cell_centers(mixed).values.to_numpy(vectors=True)
+connectivity = mixed.topology.connectivity.to_numpy()
+corners = mixed.positions()[connectivity]
+for c in range(mixed.num_cells):
+    rows = slice(offsets[c], offsets[c + 1])
+    corners[rows] = centers[c] + 0.7 * (corners[rows] - centers[c])
+shrunk = td.DataSet(mixed.topology, td.Field(td.L2(), _vectors(corners), mixed.l2_offsets()),
+                    fields={"height": mixed.fields["height"]})
+gradient = alg.gradients(shrunk, shrunk.fields["height"]).values.to_numpy(vectors=True)
+print(f"\nshrunk: the mixed grid with an L2 geometry, cells at 70%: "
+      f"{shrunk.topology.faces().num_faces} faces, the same; 'height' over the "
+      f"smaller cells has gradient (0.25, 0, 1) / 0.7 in every cell: "
+      f"{np.allclose(gradient, np.array([0.25, 0, 1]) / 0.7, atol=1e-4)}")
+if args.output:
+    _write(explode(shrunk, alg.discontinuous(shrunk, shrunk.fields["height"])),
+           os.path.join(args.output, "mixed_shrunk"))
 
 show("rectilinear", td.rectilinear_grid(np.linspace(0, 3, 7), [0, 0.5, 1.5, 3], [0, 1, 2]))

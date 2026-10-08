@@ -10,7 +10,9 @@ every compiled kernel is specialized to it (``docs/design/dataset-api.md``
   the entity's global id, where its data lives;
 - a *shape* from ``tack.data.shapes``: the cell's, or the face's
   (``Triangle``/``Quad``), or ``Line`` for edges, with their shape functions;
-- optionally *geometry*: ``point(i, j)``, a position;
+- optionally *geometry*, from the dataset's geometry field: ``point(i, j)``,
+  corner ``j``'s position, and ``position(i, pc)`` and
+  ``geometry_jacobian(i, pc)`` through the shape's functions;
 - optionally, for cells, *incidence*: ``face_id(c, f)``, ``face_side(c, f)``,
   ``edge_id(c, e)``, ``edge_sign(c, e)``;
 - or, for a field view, a *space*: ``dof(i, j)`` and ``value(i, pc)`` for
@@ -189,8 +191,15 @@ class _Edges:
 # ── Geometry ────────────────────────────────────────────────────────
 
 
-class _Points:
-    """Positions: ``point(i, j)``, which a coordinates mixin defines."""
+class _Geometry:
+    """The geometry field, read through an entity: ``point(i, j)``, which a storage
+    mixin below defines, and what follows from it at parametric coordinates.
+
+    At order 1 the geometry's values are the corners' positions, so the shape's
+    own functions interpolate them. A higher-order geometry would supply its
+    own basis here; nothing that calls ``position`` or ``geometry_jacobian``
+    would change.
+    """
 
     @tack.func
     def gather_points(self, i, pts):
@@ -200,16 +209,42 @@ class _Points:
             pts[3 * j + 1] = x[1]
             pts[3 * j + 2] = x[2]
 
+    @tack.func
+    def position(self, i, pc):
+        """The world position at parametric coordinates ``pc``."""
+        x = tack.Vector([0.0, 0.0, 0.0])
+        for j in range(self.NUM_POINTS):
+            x += self.shape_function(j, pc) * self.point(i, j)
+        return x
 
-class _ExplicitPoints(_Points):
-    """A field of positions, one per point id."""
+    @tack.func
+    def geometry_jacobian(self, i, pc):
+        """The 3x3 derivative of world position by parametric coordinates at ``pc``:
+        column ``k`` is ``dx/d(pc[k])``, zero past the shape's dimension."""
+        m = tack.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        for j in range(self.NUM_POINTS):
+            m += self.point(i, j).outer_product(self.shape_gradient(j, pc))
+        return m
+
+
+class _H1Geometry(_Geometry):
+    """H1 geometry: one position per point id, shared by the cells around it."""
 
     @tack.func
     def point(self, i, j):
         return self.points[self.point_id(i, j)]
 
 
-class _RectilinearPoints(_Points):
+class _L2Geometry(_Geometry):
+    """L2 geometry: each cell's own corner positions, at ``point_offsets[cell]``. Cells
+    may pull apart while the topology still has them share points."""
+
+    @tack.func
+    def point(self, c, j):
+        return self.points[self.point_offsets[self.entity_id(c)] + j]
+
+
+class _RectilinearPoints(_Geometry):
     """Rectilinear coordinates, for any entity: the flat point id is split into (i, j, k)."""
 
     @tack.func
@@ -219,7 +254,7 @@ class _RectilinearPoints(_Points):
         return [self.xs[p - rest * self.px], self.ys[rest % self.py], self.zs[rest // self.py]]
 
 
-class _RectilinearStructured(_Points):
+class _RectilinearStructured(_Geometry):
     """Rectilinear coordinates for structured cells: (i, j, k) comes from the cell's own."""
 
     @tack.func
@@ -274,6 +309,14 @@ class _H1Field:
             total += self.dof(i, j) * self.shape_function(j, pc)
         return total
 
+    @tack.func
+    def parametric_gradient(self, i, pc):
+        """The derivative by parametric coordinates at ``pc``, a 3-vector."""
+        g = tack.Vector([0.0, 0.0, 0.0])
+        for j in range(self.NUM_POINTS):
+            g += self.dof(i, j) * self.shape_gradient(j, pc)
+        return g
+
 
 class _ConstantField:
     """Constant (L2, order 0): one value per cell."""
@@ -285,6 +328,10 @@ class _ConstantField:
     @tack.func
     def value(self, i, pc):
         return self.values[self.entity_id(i)]
+
+    @tack.func
+    def parametric_gradient(self, i, pc):
+        return tack.Vector([0.0, 0.0, 0.0])
 
 
 class _L2Field:
@@ -300,6 +347,13 @@ class _L2Field:
         for j in range(1, self.NUM_POINTS):
             total += self.dof(i, j) * self.shape_function(j, pc)
         return total
+
+    @tack.func
+    def parametric_gradient(self, i, pc):
+        g = tack.Vector([0.0, 0.0, 0.0])
+        for j in range(self.NUM_POINTS):
+            g += self.dof(i, j) * self.shape_gradient(j, pc)
+        return g
 
 
 class _ValuesField:

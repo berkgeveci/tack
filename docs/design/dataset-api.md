@@ -332,9 +332,9 @@ shapes and a rectilinear grid:
 | Module | What it holds |
 |---|---|
 | `topology.py` | `UnstructuredTopology`, `StructuredTopology`; cells as one `DomainGroup` per shape; `faces()` and `edges()` derived by sorting and cached |
-| `views.py` | the template mixins: entity kinds (cells, structured cells, faces, edges), geometry, cell incidence, and one per space |
-| `dataset.py` | spaces (`H1`, `Constant`, `L2`, `Values(on)`), `Field`, `RectilinearCoordinates`, `DataSet`, `for_each` |
-| `algorithms.py` | `cell_centers`, `values_at_centers`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `jump`, `divergence`, `to_points` |
+| `views.py` | the template mixins: entity kinds (cells, structured cells, faces, edges), geometry (`position`, `geometry_jacobian`, read from the geometry field), cell incidence, and one per space |
+| `dataset.py` | spaces (`H1`, `Constant`, `L2`, `Values(on)`), `Field`, `RectilinearCoordinates`, `DataSet` (geometry is its `"shape"` field), `for_each` |
+| `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `jump`, `divergence`, `to_points` |
 | `interop/vtk.py` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant` |
 
 `packages/tack-vis/examples/42_dataset_api_tour.py` runs every algorithm
@@ -386,6 +386,18 @@ What building it showed:
   and the face loop reads that. The prototype's `jump` reads constant
   cell values directly, which needs no basis; the PerSide layout is the
   next thing to build.
+- **Geometry is a field**, `fields["shape"]`: `H1` positions per point
+  (explicit, or `RectilinearCoordinates`, which store only the axes), or
+  `L2` positions per cell corner. Topology stays the corners, so an `L2`
+  geometry -- cells pulled apart -- still has every face and neighbour.
+  Cell views read the geometry through `position(c, pc)` and
+  `geometry_jacobian(c, pc)`; `gradients` combines that Jacobian with a
+  field's own `parametric_gradient`, so geometry and field each go
+  through their own space. At order 1 the geometry's values are the
+  corners, interpolated by the shape's functions; a higher-order geometry
+  adds its own basis behind the same two methods. Faces and edges of an
+  `L2` geometry are refused: each side's cell has its own corners there,
+  the per-side traces again.
 - Not yet: face orientation indices (only which side a cell is; enough at
   linear order), PerSide fields, quadrature spaces, sets other than face
   ids, faces of 2D cells (a 2D mesh's "faces" are its edges), and order

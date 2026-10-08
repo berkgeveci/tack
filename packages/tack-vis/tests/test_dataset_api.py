@@ -363,8 +363,93 @@ def test_rectilinear_round_trip(backend):
     data.fields["c"] = td.Field(td.Constant(), _scalars(np.arange(data.num_cells)))
     grid = dataset_to_vtk(data)
     assert grid.IsA("vtkRectilinearGrid")
+    assert grid.GetPointData().GetArray("shape") is None      # the geometry is the grid's
     back = vtk_to_dataset(grid)
     assert back.fields["h"].space == td.H1() and back.fields["c"].space == td.Constant()
     np.testing.assert_allclose(back.positions(), data.positions())
     np.testing.assert_allclose(back.fields["h"].values.to_numpy(),
                                data.fields["h"].values.to_numpy())
+
+
+# ── Geometry is a field ─────────────────────────────────────────────
+
+def test_geometry_is_the_shape_field(backend):
+    data = _two_hexes_and_a_pyramid()
+    assert data.geometry is data.fields["shape"]
+    assert data.geometry.space == td.H1()
+    grid = td.rectilinear_grid([0, 1, 2], [0, 1], [0, 1])
+    assert grid.geometry.space == td.H1()
+    assert isinstance(grid.geometry.values, td.RectilinearCoordinates)
+    with pytest.raises(ValueError, match="is the geometry"):
+        td.DataSet(data.topology, data.positions(), fields={"shape": data.geometry})
+    with pytest.raises(TypeError, match="H1 or L2"):
+        td.DataSet(data.topology, td.Field(td.Constant(), data.geometry.values))
+
+
+@tack.kernel
+def _jacobian_determinants(cells, out):
+    for c in cells:
+        out[cells.entity_id(c)] = cells.geometry_jacobian(c, cells.parametric_center()).determinant()
+
+
+def test_geometry_jacobian(backend):
+    x, y, z = [0, 1, 3], [0, 0.5, 2], [0, 4]
+    data = td.rectilinear_grid(x, y, z)
+    out = tack.field(tack.f32, shape=(data.num_cells,))
+    td.for_each(_jacobian_determinants, data, "cells", out)
+    volumes = np.multiply.outer(np.multiply.outer(np.diff(z), np.diff(y)), np.diff(x))
+    np.testing.assert_allclose(out.to_numpy(), volumes.reshape(-1), rtol=1e-6)
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_gradients_of_a_linear_field(backend, make):
+    data = (_two_hexes_and_a_pyramid() if make == "mixed"
+            else td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1, 1.5]))
+    u = _height(data)
+    for field in (u, alg.discontinuous(data, u)):
+        got = alg.gradients(data, field).values.to_numpy(vectors=True)
+        np.testing.assert_allclose(got, np.tile([1, 2, -1], (data.num_cells, 1)), atol=1e-4)
+    constant = td.Field(td.Constant(), _scalars(np.arange(data.num_cells)))
+    np.testing.assert_array_equal(alg.gradients(data, constant).values.to_numpy(), 0)
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
+def test_gradients_on_every_solid(backend, kind):
+    data = vtk_to_dataset(_vtk_cells(kind, (2, 2, 2)))
+    got = alg.gradients(data, _height(data)).values.to_numpy(vectors=True)
+    np.testing.assert_allclose(got, np.tile([1, 2, -1], (data.num_cells, 1)), atol=1e-4)
+
+
+def _shrunk(data, s):
+    """``data`` with an L2 geometry: each cell's corners pulled toward its center by
+    ``s``. The topology, and so the faces, are unchanged."""
+    offsets = data.l2_offsets().to_numpy()
+    connectivity = data.topology.connectivity.to_numpy()
+    centers = alg.cell_centers(data).values.to_numpy(vectors=True)
+    positions = data.positions()
+    corners = np.empty((offsets[-1], 3))
+    for c in range(data.num_cells):
+        rows = slice(offsets[c], offsets[c + 1])
+        corners[rows] = centers[c] + s * (positions[connectivity[rows]] - centers[c])
+    geometry = td.Field(td.L2(), _vectors(corners), data.l2_offsets())
+    return td.DataSet(data.topology, geometry, fields={"u": _height(data)})
+
+
+def test_discontinuous_geometry(backend):
+    data = _two_hexes_and_a_pyramid()
+    shrunk = _shrunk(data, 0.5)
+    assert shrunk.geometry.space == td.L2()
+    # A cell's center is where its corners were pulled toward: unchanged.
+    np.testing.assert_allclose(alg.cell_centers(shrunk).values.to_numpy(vectors=True),
+                               alg.cell_centers(data).values.to_numpy(vectors=True), atol=1e-6)
+    # The same point values over cells half the size: twice the gradient.
+    got = alg.gradients(shrunk, shrunk.fields["u"]).values.to_numpy(vectors=True)
+    np.testing.assert_allclose(got, np.tile([2, 4, -2], (3, 1)), atol=1e-4)
+    # Faces come from the topology, which still has the cells share points ...
+    assert shrunk.topology.faces().num_faces == 15
+    # ... but have no positions of their own: each side's cell has its own.
+    with pytest.raises(NotImplementedError, match="per-side traces"):
+        alg.face_geometry(shrunk)
+    with pytest.raises(ValueError, match="per cell corner"):
+        shrunk.positions()

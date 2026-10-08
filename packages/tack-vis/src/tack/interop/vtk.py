@@ -303,7 +303,8 @@ def dataset_to_vtk(data):
     ``H1`` fields and ``Values("points")`` become point data, ``Constant``
     and ``Values("cells")`` cell data. ``L2`` fields have no VTK array to go
     to without duplicating points, and fields on faces or edges none at
-    all; they are left out.
+    all; they are left out. The geometry (the ``"shape"`` field) becomes the
+    points, so it must be ``H1``.
     """
     import numpy as np
     from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
@@ -324,13 +325,14 @@ def dataset_to_vtk(data):
     )
 
     topology = data.topology
-    if isinstance(topology, StructuredTopology) and isinstance(data.geometry,
+    coordinates = data.geometry.values
+    if isinstance(topology, StructuredTopology) and isinstance(coordinates,
                                                                RectilinearCoordinates):
         grid = vtkRectilinearGrid()
-        grid.SetDimensions(*data.geometry.dims)
-        grid.SetXCoordinates(numpy_to_vtk(data.geometry.x.to_numpy(), deep=1))
-        grid.SetYCoordinates(numpy_to_vtk(data.geometry.y.to_numpy(), deep=1))
-        grid.SetZCoordinates(numpy_to_vtk(data.geometry.z.to_numpy(), deep=1))
+        grid.SetDimensions(*coordinates.dims)
+        grid.SetXCoordinates(numpy_to_vtk(coordinates.x.to_numpy(), deep=1))
+        grid.SetYCoordinates(numpy_to_vtk(coordinates.y.to_numpy(), deep=1))
+        grid.SetZCoordinates(numpy_to_vtk(coordinates.z.to_numpy(), deep=1))
     elif isinstance(topology, UnstructuredTopology):
         cell_array = vtkCellArray()
         cell_array.SetData(
@@ -344,8 +346,10 @@ def dataset_to_vtk(data):
         grid.SetPoints(points)
     else:
         raise TypeError(f"unsupported topology {type(topology).__name__} with "
-                        f"{type(data.geometry).__name__}")
+                        f"{type(coordinates).__name__}")
     for name, field in data.fields.items():
+        if name == "shape":
+            continue                                  # the geometry: the points above
         if field.space in (H1(), Values("points")):
             grid.GetPointData().AddArray(_field_to_array(name, field.values))
         elif field.space in (Constant(), Values("cells")):

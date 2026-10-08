@@ -13,6 +13,8 @@
 - ``to_points``: a cell or DG field averaged onto points (projection to
   H1), reading both through ``u.dof(c, j)``.
 - ``values_at_centers``: any field with a basis evaluated at cell centers.
+- ``gradients``: a field's gradient at cell centers, from its own basis and
+  the geometry field's Jacobian -- two fields, each through its own space.
 - ``discontinuous``: an ``L2`` field from a function per cell -- each cell
   evaluates it at its own corners, so values at shared points can differ.
 """
@@ -25,8 +27,19 @@ from tack.algorithms.sort import _run_offsets, sort_by_key
 from tack.data.dataset import H1, L2, Constant, DataSet, Field, Values, for_each
 from tack.data.topology import UnstructuredTopology
 
-__all__ = ["boundary_faces", "cell_centers", "discontinuous", "divergence", "edge_lengths", "extract_surface",
-           "face_geometry", "jump", "to_points", "values_at_centers"]
+__all__ = [
+    "boundary_faces",
+    "cell_centers",
+    "discontinuous",
+    "divergence",
+    "edge_lengths",
+    "extract_surface",
+    "face_geometry",
+    "gradients",
+    "jump",
+    "to_points",
+    "values_at_centers",
+]
 
 
 def _vectors(n, dtype):
@@ -38,16 +51,12 @@ def _vectors(n, dtype):
 @tack.kernel
 def _centers(cells, out):
     for c in cells:
-        pc = cells.parametric_center()
-        x = tack.Vector([0.0, 0.0, 0.0])
-        for j in range(cells.NUM_POINTS):
-            x += cells.shape_function(j, pc) * cells.point(c, j)
-        out[cells.entity_id(c)] = x
+        out[cells.entity_id(c)] = cells.position(c, cells.parametric_center())
 
 
 def cell_centers(data):
     """Each cell's center, where the geometry maps its parametric center: a field on cells."""
-    out = _vectors(data.num_cells, data.geometry.dtype)
+    out = _vectors(data.num_cells, data.dtype)
     for_each(_centers, data, "cells", out)
     return Field(Values("cells"), out)
 
@@ -62,6 +71,31 @@ def values_at_centers(data, field):
     """``field`` evaluated at each cell's parametric center, through its basis."""
     out = _like(field.values, data.num_cells)
     for_each(_at_centers, data, "cells", field, out)
+    return Field(Values("cells"), out)
+
+
+@tack.kernel
+def _gradients(cells, u, out):
+    for c in cells:
+        pc = cells.parametric_center()
+        if cells.DIMENSION == 3:
+            # d(u)/d(x) = J^-T d(u)/d(pc), J from the geometry, d(u)/d(pc) from u.
+            out[cells.entity_id(c)] = (cells.geometry_jacobian(c, pc).inverse().transpose()
+                                       @ u.parametric_gradient(c, pc))
+        else:
+            out[cells.entity_id(c)] = [0.0, 0.0, 0.0]
+
+
+def gradients(data, field):
+    """The gradient of ``field`` (a scalar ``H1``, ``L2`` or ``Constant`` field) at each
+    cell's parametric center: a field of 3-vectors on cells. The field's basis gives
+    its derivative in parametric coordinates, and the geometry field's Jacobian
+    turns that into a world gradient, so the two need not share a space. Cells
+    below three dimensions get zero."""
+    if getattr(field.values, "_vector_n", None):
+        raise TypeError("gradients takes a scalar field")
+    out = _vectors(data.num_cells, data.dtype)
+    for_each(_gradients, data, "cells", field, out)
     return Field(Values("cells"), out)
 
 
@@ -101,7 +135,7 @@ def _face_geometry(faces, normals, areas):
 def face_geometry(data):
     """``(normal, area)``: fields on faces. A face's normal points out of its side 0."""
     faces = data.topology.faces()
-    dtype = data.geometry.dtype
+    dtype = data.dtype
     normals = _vectors(faces.num_faces, dtype)
     areas = tack.field(dtype, shape=(faces.num_faces,))
     for_each(_face_geometry, data, "faces", normals, areas)
@@ -116,7 +150,7 @@ def _edge_lengths(edges, out):
 
 def edge_lengths(data):
     """Each edge's length: a field on edges."""
-    out = tack.field(data.geometry.dtype, shape=(data.topology.edges().num_edges,))
+    out = tack.field(data.dtype, shape=(data.topology.edges().num_edges,))
     for_each(_edge_lengths, data, "edges", out)
     return Field(Values("edges"), out)
 
