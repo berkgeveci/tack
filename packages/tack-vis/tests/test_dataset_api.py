@@ -1,0 +1,370 @@
+"""Tests for the dataset API prototype (``docs/design/dataset-api.md``).
+
+Derived faces and edges are checked against a hand-built mixed mesh and,
+where VTK is installed, against VTK's own cells: every face once, with the
+cells on its sides, in side 0's outward order, and every edge once, with
+the direction each cell's local edge runs. Fields on spaces are checked by
+what must hold whatever the layout -- a continuous field converted to the
+DG layout and back is unchanged -- and against vtkCellCenters,
+vtkCellDataToPointData and vtkGeometryFilter.
+"""
+
+import types
+
+import numpy as np
+import pytest
+
+import tack
+import tack.data as td
+from tack.data import algorithms as alg
+from tack.runtime.dispatch import env_flag
+
+try:
+    from vtkmodules import vtkCommonCore, vtkCommonDataModel, vtkFiltersCore
+    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+    from vtkmodules.vtkFiltersCore import vtkExtractEdges
+    from vtkmodules.vtkFiltersGeometry import vtkGeometryFilter
+    from vtkmodules.vtkFiltersSources import vtkCellTypeSource
+
+    from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+except ImportError:
+    if env_flag("TACK_REQUIRE_VTK"):
+        raise
+    vtk = None
+else:
+    vtk = types.SimpleNamespace(**{name: getattr(module, name)
+                                   for module in (vtkCommonCore, vtkCommonDataModel,
+                                                  vtkFiltersCore)
+                                   for name in dir(module) if name.startswith("vtk")})
+
+needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
+
+SOLID_TYPES = {"tetra": 10, "voxel": 11, "hexahedron": 12, "wedge": 13, "pyramid": 14}
+
+
+def _scalars(values, dtype=tack.f32):
+    values = np.asarray(values)
+    f = tack.field(dtype, shape=values.shape)
+    f.from_numpy(values.astype(dtype.numpy_dtype))
+    return f
+
+
+def _vectors(values, dtype=tack.f32):
+    values = np.asarray(values)
+    f = tack.Vector.field(values.shape[1], dtype, shape=(values.shape[0],))
+    f.from_numpy(values.astype(dtype.numpy_dtype))
+    return f
+
+
+def _two_hexes_and_a_pyramid():
+    """Two unit hexahedra side by side, and a pyramid on the first one's top face."""
+    def pid(x, y, z):
+        return x + 3 * y + 6 * z
+
+    pts = np.array([[x, y, z] for z in (0, 1) for y in (0, 1) for x in (0, 1, 2)], float)
+    pts = np.vstack([pts, [[0.5, 0.5, 2.0]]])
+    hexes = [[pid(i, 0, 0), pid(i + 1, 0, 0), pid(i + 1, 1, 0), pid(i, 1, 0),
+              pid(i, 0, 1), pid(i + 1, 0, 1), pid(i + 1, 1, 1), pid(i, 1, 1)] for i in (0, 1)]
+    pyramid = [pid(0, 0, 1), pid(1, 0, 1), pid(1, 1, 1), pid(0, 1, 1), 12]
+    topology = td.UnstructuredTopology(np.array([12, 12, 14], np.uint8), [0, 8, 16, 21],
+                                       hexes[0] + hexes[1] + pyramid)
+    return td.DataSet(topology, pts)
+
+
+# ── Faces and edges, by hand ────────────────────────────────────────
+
+def test_faces_of_a_mixed_mesh(backend):
+    data = _two_hexes_and_a_pyramid()
+    faces = data.topology.faces()
+    assert faces.num_faces == 6 + 5 + 4             # 16 sides, one shared face of each pair
+    assert data.topology.edges().num_edges == 12 + 8 + 4
+    sides = faces.sides.to_numpy(vectors=True)
+    shared = {tuple(s) for s in sides if s[2] >= 0}
+    assert shared == {(0, 1, 1, 0), (0, 5, 2, 0)}   # hex 0's +x and top faces
+    assert alg.boundary_faces(data).shape[0] == 13
+
+    jumps = alg.jump(data, td.Field(td.Constant(), _scalars([1.0, 2.0, 5.0])))
+    by_sides = dict(zip(map(tuple, sides), jumps.values.to_numpy()))
+    assert by_sides[(0, 1, 1, 0)] == 1.0 and by_sides[(0, 5, 2, 0)] == 4.0
+    assert np.count_nonzero(jumps.values.to_numpy()) == 2
+
+    # A face counts plus for its side-0 cell and minus for its side-1 cell.
+    _, areas = alg.face_geometry(data)
+    slant = np.sqrt(0.5 ** 2 + 1.0 ** 2) / 2         # each pyramid side triangle
+    np.testing.assert_allclose(alg.divergence(data, areas).values.to_numpy(),
+                               [6, 5 - 1, 4 * slant - 1], rtol=1e-6)
+
+
+def _closed_cells_check(data):
+    """Every cell's outward area vectors sum to zero: the faces' normals point out of
+    side 0, and each cell knows which side it is."""
+    normals, areas = alg.face_geometry(data)
+    area_vectors = normals.values.to_numpy(vectors=True) * areas.values.to_numpy()[:, None]
+    flux = td.Field(td.Values("faces"), _vectors(area_vectors))
+    sums = alg.divergence(data, flux).values.to_numpy(vectors=True)
+    np.testing.assert_allclose(sums, 0, atol=1e-5)
+    return areas.values.to_numpy()
+
+
+def test_faces_point_out_of_side_zero(backend):
+    _closed_cells_check(_two_hexes_and_a_pyramid())
+
+
+def test_rectilinear_faces_and_edges(backend):
+    x, y, z = [0, 1, 3, 4], [0, 2, 2.5], [0, 1]
+    data = td.rectilinear_grid(x, y, z)
+    nx, ny, nz = 4, 3, 2
+    assert data.topology.faces().num_faces == (
+        nx * (ny - 1) * (nz - 1) + (nx - 1) * ny * (nz - 1) + (nx - 1) * (ny - 1) * nz)
+    assert data.topology.edges().num_edges == (
+        (nx - 1) * ny * nz + nx * (ny - 1) * nz + nx * ny * (nz - 1))
+    areas = _closed_cells_check(data)
+    # Each cell's faces' areas: two of each pair of opposite faces.
+    dx, dy, dz = np.diff(x), np.diff(y), np.diff(z)
+    expected = 2 * sum(a * b for a, b in ((dx.sum(), dy.sum()), (dy.sum(), dz.sum()),
+                                          (dx.sum(), dz.sum())))
+    boundary = alg.boundary_faces(data).to_numpy()
+    np.testing.assert_allclose(areas[boundary].sum(), expected, rtol=1e-6)
+    lengths = alg.edge_lengths(data).values.to_numpy()
+    total = (dx.sum() * ny * nz + dy.sum() * nx * nz + dz.sum() * nx * ny)
+    np.testing.assert_allclose(lengths.sum(), total, rtol=1e-6)
+
+
+@tack.kernel
+def _edge_incidence(cells, ids, signs):
+    for c in cells:
+        for e in range(cells.NUM_EDGES):
+            ids[cells.entity_id(c) * cells.NUM_EDGES + e] = cells.edge_id(c, e)
+            signs[cells.entity_id(c) * cells.NUM_EDGES + e] = cells.edge_sign(c, e)
+
+
+def test_cells_know_their_edges(backend):
+    data = td.rectilinear_grid([0, 1, 2], [0, 1, 2, 3], [0, 1])
+    edges = data.topology.edges()
+    n = data.num_cells * 12
+    ids, signs = tack.field(tack.i32, shape=(n,)), tack.field(tack.i32, shape=(n,))
+    td.for_each(_edge_incidence, data, "cells", ids, signs)
+    rows = edges.rows.to_numpy(vectors=True)
+    assert (rows[:, 0] < rows[:, 1]).all()
+    # VTK's hexahedron edges, and the cells' point ids in x-fastest order.
+    hex_edges = [(0, 1), (1, 2), (3, 2), (0, 3), (4, 5), (5, 6), (7, 6), (4, 7),
+                 (0, 4), (1, 5), (3, 7), (2, 6)]
+    nx, ny = 3, 4
+    ids, signs = ids.to_numpy().reshape(-1, 12), signs.to_numpy().reshape(-1, 12)
+    for c in range(data.num_cells):
+        i, j, k = c % 2, (c // 2) % 3, c // 6
+        b = i + nx * (j + ny * k)
+        corners = [b, b + 1, b + 1 + nx, b + nx]
+        corners += [p + nx * ny for p in corners]
+        for e, (a, d) in enumerate(hex_edges):
+            pa, pd = corners[a], corners[d]
+            assert tuple(rows[ids[c, e]]) == (min(pa, pd), max(pa, pd))
+            assert signs[c, e] == (1 if pa < pd else -1)
+
+
+# ── Faces and edges, against VTK ────────────────────────────────────
+
+def _vtk_cells(kind, blocks=(3, 2, 2)):
+    source = vtkCellTypeSource()
+    source.SetCellType(SOLID_TYPES[kind])
+    source.SetBlocksDimensions(*blocks)
+    source.Update()
+    return source.GetOutput()
+
+
+def _vtk_faces(grid):
+    """Every face of every cell: {sorted ids: [(cell, local face, outward ids)]}."""
+    faces = {}
+    for c in range(grid.GetNumberOfCells()):
+        cell = grid.GetCell(c)
+        for f in range(cell.GetNumberOfFaces()):
+            face = cell.GetFace(f)
+            ids = [face.GetPointId(k) for k in range(face.GetNumberOfPoints())]
+            if face.GetCellType() == 8:                  # a pixel, as a quad
+                ids = [ids[0], ids[1], ids[3], ids[2]]
+            faces.setdefault(tuple(sorted(ids)), []).append((c, f, ids))
+    return faces
+
+
+def _same_cycle(a, b):
+    return any(list(a) == list(b[k:]) + list(b[:k]) for k in range(len(b)))
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
+def test_faces_match_vtk(backend, kind):
+    grid = _vtk_cells(kind)
+    data = vtk_to_dataset(grid)
+    faces = data.topology.faces()
+    expected = _vtk_faces(grid)
+    assert faces.num_faces == len(expected)
+    rows = faces.rows.to_numpy(vectors=True)
+    sides = faces.sides.to_numpy(vectors=True)
+    kinds = faces.kinds.to_numpy()
+    for row, side, k in zip(rows, sides, kinds):
+        ids = row[:3] if k == 5 else row
+        owners = expected[tuple(sorted(ids))]
+        assert len(owners) == (2 if side[2] >= 0 else 1)
+        assert {(c, f) for c, f, _ in owners} == {(side[0], side[1]), (side[2], side[3])} - {(-1, -1)}
+        outward = next(o for c, f, o in owners if (c, f) == (side[0], side[1]))
+        assert _same_cycle(ids, outward)
+    surface = vtkGeometryFilter()
+    surface.SetInputData(grid)
+    surface.Update()
+    assert alg.boundary_faces(data).shape[0] == surface.GetOutput().GetNumberOfCells()
+    _closed_cells_check(data)
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
+def test_edges_match_vtk(backend, kind):
+    grid = _vtk_cells(kind)
+    data = vtk_to_dataset(grid)
+    edges = vtkExtractEdges()
+    edges.SetInputData(grid)
+    edges.Update()
+    lines = edges.GetOutput()
+    expected = {tuple(sorted(lines.GetCell(i).GetPointIds().GetId(k) for k in range(2)))
+                for i in range(lines.GetNumberOfCells())}
+    rows = data.topology.edges().rows.to_numpy(vectors=True)
+    assert {tuple(r) for r in rows} == expected
+    assert len(rows) == len(expected)
+
+
+# ── Fields on spaces ────────────────────────────────────────────────
+
+@needs_vtk
+@pytest.mark.parametrize("kind", ["tetra", "hexahedron", "wedge", "pyramid"])
+def test_cell_centers_match_vtk(backend, kind):
+    grid = _vtk_cells(kind, (2, 2, 1))
+    centers = vtk.vtkCellCenters()
+    centers.SetInputData(grid)
+    centers.Update()
+    expected = vtk_to_numpy(centers.GetOutput().GetPoints().GetData())
+    got = alg.cell_centers(vtk_to_dataset(grid)).values.to_numpy(vectors=True)
+    np.testing.assert_allclose(got, expected, atol=1e-5 if kind == "wedge" else 1e-6)
+
+
+@needs_vtk
+def test_cell_to_point_matches_vtk(backend):
+    grid = _vtk_cells("tetra", (2, 2, 2))
+    values = np.random.default_rng(3).random(grid.GetNumberOfCells())
+    array = numpy_to_vtk(values, deep=1)
+    array.SetName("v")
+    grid.GetCellData().AddArray(array)
+    to_points = vtk.vtkCellDataToPointData()
+    to_points.SetInputData(grid)
+    to_points.Update()
+    expected = vtk_to_numpy(to_points.GetOutput().GetPointData().GetArray("v"))
+    data = vtk_to_dataset(grid)
+    assert data.fields["v"].space == td.Constant()
+    got = alg.to_points(data, data.fields["v"])
+    assert got.space == td.H1()
+    np.testing.assert_allclose(got.values.to_numpy(), expected, rtol=1e-5)
+
+
+def _height(data):
+    """An H1 field, linear in position: every linear cell interpolates it exactly."""
+    x = data.positions()
+    return td.Field(td.H1(), _scalars(x[:, 0] + 2 * x[:, 1] - x[:, 2]))
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_continuous_field_in_dg_layout(backend, make):
+    data = (_two_hexes_and_a_pyramid() if make == "mixed"
+            else td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1]))
+    u = _height(data)
+    dg = alg.discontinuous(data, u)
+    assert dg.space == td.L2()
+    corners = sum(g.count * g.shape.NUM_POINTS for g in data.topology.groups())
+    assert dg.values.shape == (corners,)
+    # The same function: the same values at the centers, and back on the points.
+    np.testing.assert_allclose(alg.values_at_centers(data, dg).values.to_numpy(),
+                               alg.values_at_centers(data, u).values.to_numpy(), atol=1e-5)
+    np.testing.assert_allclose(alg.to_points(data, dg).values.to_numpy(),
+                               u.values.to_numpy(), atol=1e-5)
+    centers = alg.cell_centers(data).values.to_numpy(vectors=True)
+    np.testing.assert_allclose(alg.values_at_centers(data, u).values.to_numpy(),
+                               centers @ [1, 2, -1], atol=1e-5)
+
+
+def test_dg_values_can_disagree(backend):
+    """Each cell owns its corner values: add the cell id to cell c's, and every point
+    averages its cells' ids on top of the continuous value."""
+    data = _two_hexes_and_a_pyramid()
+    u = _height(data)
+    dg = alg.discontinuous(data, u)
+    offsets = data.l2_offsets().to_numpy()
+    values = dg.values.to_numpy()
+    for c in range(data.num_cells):
+        values[offsets[c]:offsets[c + 1]] += 10 * c
+    dg = td.Field(td.L2(), _scalars(values), dg.offsets)
+    connectivity = data.topology.connectivity.to_numpy()
+    expected = u.values.to_numpy().copy()
+    for p in range(data.num_points):
+        cells = [c for c in range(data.num_cells)
+                 if p in connectivity[offsets[c]:offsets[c + 1]]]
+        expected[p] += 10 * np.mean(cells)
+    np.testing.assert_allclose(alg.to_points(data, dg).values.to_numpy(), expected,
+                               rtol=1e-6)
+    # At a center each cell sees only its own values.
+    np.testing.assert_allclose(alg.values_at_centers(data, dg).values.to_numpy(),
+                               alg.values_at_centers(data, u).values.to_numpy()
+                               + 10 * np.arange(3), rtol=1e-6)
+
+
+@needs_vtk
+def test_surface_of_a_side_set(backend):
+    grid = _vtk_cells("wedge")
+    data = vtk_to_dataset(grid)
+    _, areas = alg.face_geometry(data)
+    data.fields["area"] = areas
+    alg.boundary_faces(data)
+    surface = alg.extract_surface(data)
+    assert surface.fields["area"].space == td.Values("cells")
+    reference = vtkGeometryFilter()
+    reference.SetInputData(grid)
+    reference.Update()
+    assert surface.num_cells == reference.GetOutput().GetNumberOfCells()
+    # The surface's own faces, as cells of a 2D mesh, cover the same area.
+    total = areas.values.to_numpy()[data.sets["boundary"].to_numpy()].sum()
+    np.testing.assert_allclose(surface.fields["area"].values.to_numpy().sum(), total)
+    out = dataset_to_vtk(surface)
+    assert out.GetCellData().GetArray("area").GetNumberOfTuples() == surface.num_cells
+
+
+@tack.kernel
+def _set_areas(faces, out):
+    for f in faces:
+        out[faces.entity_id(f)] = faces.num_sides(f)
+
+
+def test_for_each_over_a_side_set(backend):
+    data = td.rectilinear_grid([0, 1, 2, 3], [0, 1, 2], [0, 1])
+    boundary = alg.boundary_faces(data)
+    out = tack.zeros(tack.i32, (data.topology.faces().num_faces,))
+    td.for_each(_set_areas, data, "boundary", out)
+    out = out.to_numpy()
+    np.testing.assert_array_equal(out[boundary.to_numpy()], 1)
+    assert np.count_nonzero(out) == boundary.shape[0]
+
+
+def test_a_field_must_live_where_the_loop_is(backend):
+    data = td.rectilinear_grid([0, 1, 2], [0, 1], [0, 1])
+    on_faces = td.Field(td.Values("faces"), _scalars(np.zeros(data.topology.faces().num_faces)))
+    with pytest.raises(TypeError, match="cannot be viewed while iterating cells"):
+        alg.values_at_centers(data, on_faces)
+
+
+@needs_vtk
+def test_rectilinear_round_trip(backend):
+    data = td.rectilinear_grid([0, 1, 3], [0, 2], [0, 1, 1.5])
+    data.fields["h"] = _height(data)
+    data.fields["c"] = td.Field(td.Constant(), _scalars(np.arange(data.num_cells)))
+    grid = dataset_to_vtk(data)
+    assert grid.IsA("vtkRectilinearGrid")
+    back = vtk_to_dataset(grid)
+    assert back.fields["h"].space == td.H1() and back.fields["c"].space == td.Constant()
+    np.testing.assert_allclose(back.positions(), data.positions())
+    np.testing.assert_allclose(back.fields["h"].values.to_numpy(),
+                               data.fields["h"].values.to_numpy())

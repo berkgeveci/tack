@@ -1,6 +1,7 @@
 # A common dataset API: design proposal
 
-Status: proposal for discussion, 2026-10-08. Nothing here is implemented.
+Status: proposal for discussion, 2026-10-08. A prototype of phases 1-3 at
+linear order is in `tack.data` (section 9).
 It builds on the prototype on `vis/data-model` (cell shapes, cell sets,
 `for_each_shape`, six filters) and on two studies of prior art: MFEM 4.9's
 mesh and finite-element spaces, and VTK's `vtkCellGrid` (master,
@@ -9,7 +10,7 @@ so that discontinuous Galerkin fields, data on faces and edges, and
 high-order fields fit without special cases -- not high-order cells
 themselves.
 
-## 1. What the prototype gets right, and what it cannot express
+## 1. What the first prototype (`vis/data-model`) gets right, and what it cannot express
 
 The prototype separates a dataset into *topology* (a cell set), *geometry*
 (point coordinates) and *data* (`point_data`, `cell_data`). Kernels
@@ -322,7 +323,75 @@ Every filter becomes "per shape, per domain, with field views":
    and order, Piola maps, subdivision for contouring. This is where
    high-order cells start; the API should not change.
 
-## 9. Questions to settle
+## 9. The prototype
+
+`packages/tack-vis/src/tack/data/` implements phases 1 and 2 and the
+linear part of phase 3, for an unstructured grid of any of the linear
+shapes and a rectilinear grid:
+
+| Module | What it holds |
+|---|---|
+| `topology.py` | `UnstructuredTopology`, `StructuredTopology`; cells as one `DomainGroup` per shape; `faces()` and `edges()` derived by sorting and cached |
+| `views.py` | the template mixins: entity kinds (cells, structured cells, faces, edges), geometry, cell incidence, and one per space |
+| `dataset.py` | spaces (`H1`, `Constant`, `L2`, `Values(on)`), `Field`, `RectilinearCoordinates`, `DataSet`, `for_each` |
+| `algorithms.py` | `cell_centers`, `values_at_centers`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `jump`, `divergence`, `to_points` |
+| `interop/vtk.py` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant` |
+
+`packages/tack-vis/examples/42_dataset_api_tour.py` runs every algorithm
+on both grids and writes VTK files, including the DG field with one copy
+of each point per cell. `tests/test_dataset_api.py` checks faces, edges,
+sides and orientations against VTK's cells for all five solid shapes, and
+the algorithms against vtkCellCenters, vtkCellDataToPointData and
+vtkGeometryFilter.
+
+A kernel over faces, with a field on cells and one on faces:
+
+```python
+@tack.kernel
+def _jump(faces, values, out):
+    for f in faces:                                   # one launch per face shape
+        c0 = faces.side_cell(f, 0)
+        c1 = faces.side_cell(f, 1)                    # -1 on the boundary
+        out[faces.entity_id(f)] = values[c1] - values[c0] if c1 >= 0 else values[c0] * 0.0
+
+for_each(_jump, data, "faces", cell_values, out)      # or a face set: "boundary"
+```
+
+and over cells, through their faces:
+
+```python
+for c in cells:
+    for f in range(cells.NUM_FACES):
+        sign = 1.0 if cells.face_side(c, f) == 0 else -1.0
+        total += sign * flux[cells.face_id(c, f)]
+```
+
+What building it showed:
+
+- **Field views as separate arguments work.** `for_each` turns each
+  `Field` into its view for the group being launched, so `u.value(c, pc)`
+  compiles to that shape's basis and that space's layout, with no
+  nested templates. A field whose values do not live where the loop is
+  (a face field in a cell loop) is refused on the host.
+- **The groups are the layout.** Cell -> face and cell -> edge incidence is
+  stored per (cell, local side) in group order, so a topology must keep
+  its groups, and every view of the same cells must come from them.
+- **An unstructured topology's L2 layout is its connectivity layout**:
+  cell `c`'s corner values start at `offsets[c]`. Showing a DG field in
+  VTK is then a gather (the tour's `explode_dg`).
+- **A face loop cannot evaluate a cell's basis** when the two sides have
+  different shapes (a hexahedron against a pyramid): one kernel cannot be
+  specialized to both. The way through is MFEM's: a *cell* loop over
+  (cell, local face) evaluates each side's trace into a PerSide field,
+  and the face loop reads that. The prototype's `jump` reads constant
+  cell values directly, which needs no basis; the PerSide layout is the
+  next thing to build.
+- Not yet: face orientation indices (only which side a cell is; enough at
+  linear order), PerSide fields, quadrature spaces, sets other than face
+  ids, faces of 2D cells (a 2D mesh's "faces" are its edges), and order
+  above one.
+
+## 10. Questions to settle
 
 1. **Truth for continuity.** This proposal follows MFEM -- continuity
    follows from which entities own DOFs -- and treats vtkCellGrid's
