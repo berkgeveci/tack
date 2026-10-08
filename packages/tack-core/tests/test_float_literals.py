@@ -257,6 +257,14 @@ def _pair():
     return 0.1, 0.2
 
 
+@tack.func
+def _branchy(k):
+    """Literals returned from two branches: a result local assigned twice."""
+    if k > 0:
+        return 0.1
+    return 0.3
+
+
 @tack.kernel
 def _weak_locals(a, out64, out32, flag):
     for i in range(a.shape[0]):
@@ -265,21 +273,27 @@ def _weak_locals(a, out64, out32, flag):
         tenth = 0.1
         chained = tenth                   # a copy of one is one too
         picked = 0.3 if 1 > 0 else 0.7    # a condition of constants
-        guarded = 0.3 if flag > 0 else 0.7   # a runtime condition: an f32 local, as before
+        guarded = 0.3 if flag > 0 else 0.7   # a runtime condition: not replaced, but f64 here
+        step = _branchy(flag)             # assigned in two branches: f64 in an f64 kernel
+        mixed = 0.1                       # a literal, then not: the join, as before
         total = 0.1                       # assigned twice: its type is its assignments' join
         total = total + a[i]
+        if flag > 5:
+            mixed = a[i]
         out64[i, 0] = a[i] * pc[0]
         out64[i, 1] = a[i] * pc[1] + p - q
         out64[i, 2] = a[i] * chained
         out64[i, 3] = a[i] * picked
         out64[i, 4] = a[i] * guarded
         out64[i, 5] = total
+        out64[i, 6] = a[i] * step
+        out64[i, 7] = a[i] * mixed
         out32[i] = tack.f32(a[i]) * tenth   # the same local, read in f32
 
 
 def test_locals_holding_literals_take_the_precision_they_meet(f64_backend):
     a = np.asarray([1.0, 3.0, 0.7])
-    out64 = tack.field(tack.f64, (3, 6))
+    out64 = tack.field(tack.f64, (3, 8))
     out32 = tack.field(tack.f32, (3,))
     _weak_locals(_field(a, tack.f64), out64, out32, 1)
     f32 = np.float32
@@ -288,8 +302,10 @@ def test_locals_holding_literals_take_the_precision_they_meet(f64_backend):
         a * 0.1 + 0.1 - 0.2,
         a * 0.1,
         a * 0.3,
-        a * np.float64(f32(0.3)),
+        a * 0.3,
         0.1 + a,
+        a * 0.1,
+        a * 0.1,
     ])
     np.testing.assert_array_equal(out64.to_numpy(), expected)
     np.testing.assert_array_equal(out32.to_numpy(), a.astype(f32) * f32(0.1))
@@ -314,7 +330,7 @@ def test_f32_kernels_are_unchanged(backend):
 def test_which_locals_are_replaced():
     from tack.lang.ir_optimize import _literal
     tack.init(arch=tack.cpu)
-    text = tack.inspect(_weak_locals, _field([1.0], tack.f64), tack.field(tack.f64, (1, 6)),
+    text = tack.inspect(_weak_locals, _field([1.0], tack.f64), tack.field(tack.f64, (1, 8)),
                         tack.field(tack.f32, (1,)), 1, mode="ir")
     assigned = {line.split("=")[0].strip() for line in text.splitlines() if " = " in line
                 and "[" not in line.split("=")[0]}

@@ -57,6 +57,14 @@ def annotate_types(ir_func: ir.IRFunction):
     # parameters, loop variables, and shared/local allocations.
     pinned = set(base_env) | _collect_pinned(ir_func.body)
 
+    # A local assigned only float literals, more than once (a device
+    # function returning literals from several branches; once is already
+    # the literal, see ir_optimize), takes the kernel's float precision:
+    # f64 when a field is f64, as float scalar arguments do.
+    float_context = f64 if any(base_env[p] is f64 for p in field_params) else f32
+    literal_only = (_literal_only_locals(ir_func.body) - pinned
+                    if float_context is f64 else set())
+
     # Fixpoint over the assignments: a variable's type is the promotion of
     # every type assigned to it. Assignments can read other locals, so this
     # iterates until nothing widens.
@@ -68,6 +76,8 @@ def annotate_types(ir_func: ir.IRFunction):
         _annotate_body(ir_func.body, env, field_params, var_types, collected)
         for name in pinned:
             collected.pop(name, None)
+        for name in literal_only:
+            collected[name] = float_context
         if collected == var_types:
             break
         var_types = collected
@@ -77,6 +87,17 @@ def annotate_types(ir_func: ir.IRFunction):
     env = dict(base_env)
     env.update(var_types)
     _annotate_body(ir_func.body, env, field_params, var_types, None)
+
+
+def _literal_only_locals(stmts):
+    """Locals every one of whose assignments is a weak literal expression."""
+    from tack.lang.ir_optimize import _literal
+    weak = {}
+    for node in walk_ir(stmts):
+        if isinstance(node, ir.IRAssign):
+            literal, has_float = _literal(node.value, any_condition=True)
+            weak[node.target] = weak.get(node.target, True) and literal and has_float
+    return {name for name, only in weak.items() if only}
 
 
 def _collect_pinned(stmts):

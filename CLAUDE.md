@@ -473,7 +473,10 @@ by that expression at each read (`_inline_weak_literal_locals` in
 `ir_optimize.py`, before copy propagation), so it stays weak; a device
 function's literal results reach the caller that way. A conditional counts
 only with a constant condition. A local assigned more than once is the
-join of its assignments, f32 if they are all weak.
+join of its assignments; if they are all weak literal expressions
+(`_literal_only_locals`, any condition), it takes the kernel's float
+context instead, f64 when a field parameter is f64, as scalar arguments
+do (`annotate_types`).
 LLVM emits a `double` constant and CUDA/HIP/OpenCL an unsuffixed `repr`
 when the constant's dtype is f64; f32 code is unchanged. See
 `test_float_literals.py` and the language contract.
