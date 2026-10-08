@@ -533,8 +533,9 @@ def test_spaces_are_one_object_per_topology_and_parameters(backend):
     assert td.H1(data) is not td.H1(other)
     assert td.Values(data, "faces") is not td.Values(data, "edges")
     assert td.L2(data) is not td.Constant(data)
-    with pytest.raises(NotImplementedError, match="order 2"):
-        td.H1(data, order=2)
+    assert td.H1(data, order=2) is not td.H1(data)
+    with pytest.raises(NotImplementedError, match="order 3"):
+        td.H1(data, order=3)
     with pytest.raises(ValueError, match="points, edges, faces or cells"):
         td.Values(data, "corners")
 
@@ -848,3 +849,48 @@ def test_upwind_flux(backend, make):
     np.testing.assert_allclose(flux.values.to_numpy(),
                                vn * areas.values.to_numpy() * values[upwind], rtol=1e-5,
                                atol=1e-6)
+
+
+# ── Quadratic bases ─────────────────────────────────────────────────
+
+@tack.kernel
+def _quadratic_at(shape: tack.template(), pcs, values, gradients, nodes, n):
+    for i in range(n):
+        for k in range(shape.NUM_QUADRATIC):
+            values[i * 27 + k] = shape.quadratic_function(k, pcs[i])
+            gradients[i * 27 + k] = shape.quadratic_gradient(k, pcs[i])
+            if i == 0:
+                nodes[k] = shape.quadratic_node(k)
+
+
+@pytest.mark.parametrize("name", ["Tetra", "Hexahedron", "Voxel", "Wedge"])
+def test_quadratic_bases(backend, name):
+    """Each shape's quadratic Lagrange functions: one at their own node and zero at
+    the others, summing to one, with gradients their finite differences."""
+    from tack.data import shapes
+
+    cls = getattr(shapes, name)
+    n = cls.NUM_QUADRATIC
+    nodes = tack.Vector.field(3, tack.f32, shape=(27,))
+
+    def evaluate(points):
+        pcs = _vectors(points)
+        values = tack.field(tack.f32, shape=(27 * len(points),))
+        gradients = tack.Vector.field(3, tack.f32, shape=(27 * len(points),))
+        _quadratic_at(cls(), pcs, values, gradients, nodes, len(points))
+        return (values.to_numpy().reshape(-1, 27)[:, :n],
+                gradients.to_numpy(vectors=True).reshape(-1, 27, 3)[:, :n])
+
+    evaluate(np.zeros((1, 3)))
+    at_nodes = nodes.to_numpy(vectors=True)[:n]
+    assert len(np.unique(at_nodes.round(5), axis=0)) == n
+    values, _ = evaluate(at_nodes)
+    np.testing.assert_allclose(values, np.eye(n), atol=1e-6)
+    points = np.random.default_rng(3).uniform(0.05, 0.3, (6, 3))
+    values, gradients = evaluate(points)
+    np.testing.assert_allclose(values.sum(axis=1), 1, atol=1e-5)
+    h = 1e-2
+    for d in range(3):
+        up, _ = evaluate(points + h * np.eye(3)[d])
+        down, _ = evaluate(points - h * np.eye(3)[d])
+        np.testing.assert_allclose((up - down) / (2 * h), gradients[:, :, d], atol=1e-3)

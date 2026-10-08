@@ -227,6 +227,29 @@ class _Edges:
         return self.ids[e]
 
 
+# ── Quadratic DOFs ──────────────────────────────────────────────────
+
+
+class _QuadraticDofs:
+    """Where an order-2 H1 space keeps cell ``c``'s value ``k``, in the shape's
+    quadratic node order (``shapes.Shape.quadratic_node``): the corners' at
+    their point ids; an edge's at ``edge_base`` plus its edge id; a quad face's
+    at ``face_dofs[face]``; the interior's at ``cell_dofs[cell]``. Edge and face
+    ids come from the cell's incidence, so a view of these needs it."""
+
+    @tack.func
+    def dof_index(self, c, k):
+        if k < self.NUM_POINTS:
+            return self.point_id(c, k)
+        e = k - self.NUM_POINTS
+        if e < self.NUM_EDGES:
+            return self.edge_base + self.edge_id(c, e)
+        i = e - self.NUM_EDGES
+        if i < self.QUADRATIC_FACES:
+            return self.face_dofs[self.face_id(c, self.NUM_FACES - self.QUADRATIC_FACES + i)]
+        return self.cell_dofs[self.entity_id(c)]
+
+
 # ── Geometry ────────────────────────────────────────────────────────
 
 
@@ -281,6 +304,30 @@ class _L2Geometry(_Geometry):
     @tack.func
     def point(self, c, j):
         return self.get(self.point_offsets[self.entity_id(c)] + j)
+
+
+class _H1Order2Geometry(_QuadraticDofs, _Geometry):
+    """Curved geometry: an order-2 H1 field of positions. ``point(c, j)`` is still
+    corner ``j``'s; positions and Jacobians inside go through the quadratic
+    functions. Its edge and face ids come from the domain view's incidence."""
+
+    @tack.func
+    def point(self, c, j):
+        return self.get(self.point_id(c, j))
+
+    @tack.func
+    def position(self, c, pc):
+        x = tack.Vector([0.0, 0.0, 0.0])
+        for k in range(self.NUM_QUADRATIC):
+            x += self.quadratic_function(k, pc) * self.get(self.dof_index(c, k))
+        return x
+
+    @tack.func
+    def geometry_jacobian(self, c, pc):
+        m = tack.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        for k in range(self.NUM_QUADRATIC):
+            m += self.get(self.dof_index(c, k)).outer_product(self.quadratic_gradient(k, pc))
+        return m
 
 
 class _SideZeroGeometry(_Geometry):
@@ -449,6 +496,32 @@ class _H1Field(_Interpolated):
     @tack.func
     def dof(self, i, j):
         return self.point_value(i, j)
+
+
+class _H1Order2Field(_QuadraticDofs, _Interpolated):
+    """H1, order 2, Shared: values at the corners, the middles of edges and quad
+    faces, and a hexahedron's center, interpolated by the shape's quadratic
+    Lagrange functions."""
+
+    ORDER = 2
+
+    @tack.func
+    def dof(self, c, k):
+        return self.get(self.dof_index(c, k))
+
+    @tack.func
+    def value(self, c, pc):
+        total = self.dof(c, 0) * self.quadratic_function(0, pc)
+        for k in range(1, self.NUM_QUADRATIC):
+            total += self.dof(c, k) * self.quadratic_function(k, pc)
+        return total
+
+    @tack.func
+    def parametric_gradient(self, c, pc):
+        g = tack.Vector([0.0, 0.0, 0.0])
+        for k in range(self.NUM_QUADRATIC):
+            g += self.dof(c, k) * self.quadratic_gradient(k, pc)
+        return g
 
 
 class _L2Field(_Interpolated):

@@ -28,7 +28,7 @@ import numpy as np
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, sort_by_key
-from tack.data.arrays import materialize, width_of
+from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import DataSet, Field, for_each, traces
 from tack.data.spaces import H1, L2, Constant, Values
 from tack.data.topology import UnstructuredTopology
@@ -199,8 +199,9 @@ def extract_surface(data, name="boundary"):
     points, each in its side 0's outward order. Fields on faces become the surface's
     cell fields, and so do cell fields (``Constant``, values on cells), each face
     taking its side 0 cell's value; point fields (``H1``, values on points) stay on
-    the same points. The geometry must be ``H1``: an ``L2`` one has no shared
-    points for the faces to stand on."""
+    the same points -- an order-2 field's or geometry's values at the points,
+    the surface being made of linear faces. The geometry must be ``H1``: an
+    ``L2`` one has no shared points for the faces to stand on."""
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_surface keeps the points, so needs an H1 geometry")
     faces = data.topology.faces()
@@ -231,11 +232,21 @@ def extract_surface(data, name="boundary"):
         elif isinstance(space, Constant) or space is Values(data, "cells"):
             fields[key] = Field(Values(surface, "cells"), _take(f.values, cells))
         elif isinstance(space, H1):
-            fields[key] = Field(H1(surface), f.values)
+            fields[key] = Field(H1(surface), _point_values(f.values, data.num_points))
         elif space is Values(data, "points"):
             fields[key] = Field(Values(surface, "points"), f.values)
     # The same points: the geometry's values, on the surface's H1 space.
-    return DataSet(surface, Field(H1(surface), data.geometry.values), fields=fields)
+    return DataSet(surface, Field(H1(surface), _point_values(data.geometry.values,
+                                                             data.num_points)),
+                   fields=fields)
+
+
+def _point_values(values, n):
+    """An H1 field's values at the points: all of an order-1 field's, the first ``n``
+    of an order-2 field's (which go on to its edges, faces and cells)."""
+    if size_of(values) == n:
+        return values
+    return _take(values, tack.arange(n, tack.i32))
 
 
 # ── Two-sided faces and incidence ───────────────────────────────────

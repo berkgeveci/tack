@@ -20,11 +20,16 @@ Each grid function becomes a field in the space its collection matches:
   where MFEM evaluates its own basis (its DOFs sit at interior Gauss points,
   not corners). On tetrahedra, hexahedra and prisms the two spaces are the
   same, so this is exact; on pyramids MFEM's order-1 L2 space is not the
-  collapsed trilinear one, and the corners interpolate it.
+  collapsed trilinear one, and the corners interpolate it;
+- ``H1`` order 2: an ``H1`` order-2 field, MFEM's function evaluated at each
+  element's quadratic nodes (corners, edge middles, quad-face middles, a
+  hexahedron's center). MFEM's order-2 nodes are these same points, so it
+  is exact; pyramids, whose MFEM basis is another, are refused.
 
+A curved mesh -- nodes of order 2 -- gets an order-2 geometry the same way.
 Vector grid functions (``vdim > 1``) become fields of vectors, in either
-ordering. Higher orders and curved meshes are refused until their bases
-exist. PyMFEM (``pip install mfem``) is imported on first use.
+ordering. Higher orders are refused until their bases exist. PyMFEM
+(``pip install mfem``) is imported on first use.
 """
 
 import numpy as np
@@ -122,6 +127,54 @@ def _corner_values(mesh, gf):
     return np.array(out, dtype=float).reshape(-1, vdim)
 
 
+@tack.kernel
+def _quadratic_layout(cells, u, indices, nodes, width):
+    for c in cells:
+        e = cells.entity_id(c)
+        for k in range(cells.NUM_QUADRATIC):
+            indices[e * width + k] = u.dof_index(c, k)
+            nodes[e * width + k] = cells.quadratic_node(k)
+
+
+def _quadratic_values(data, mesh, gf):
+    """``gf`` at every value of ``data``'s H1 order-2 space: each element evaluates it
+    at its quadratic nodes, whose parametric coordinates are MFEM's reference
+    coordinates too (the corners agree, and so the references)."""
+    from tack.data import H1, ConstantArray, Field, for_each
+
+    m = _mfem()
+    space = H1(data, order=2)
+    width = 27
+    n = data.num_cells
+    indices = tack.field(tack.i32, shape=(n * width,))
+    indices.from_numpy(np.full(n * width, -1, np.int32))
+    nodes = tack.Vector.field(3, tack.f64 if tack.f64 in _supported() else tack.f32,
+                              shape=(n * width,))
+    for_each(_quadratic_layout, data, "cells", Field(space, ConstantArray(0.0, space.size)),
+             indices, nodes, width)
+    indices = indices.to_numpy().reshape(n, width)
+    nodes = nodes.to_numpy(vectors=True).reshape(n, width, 3)
+    vdim = gf.FESpace().GetVDim()
+    out = np.zeros((space.size, vdim))
+    vector = m.Vector(vdim)
+    ip = m.IntegrationPoint()
+    for e in range(n):
+        for k in np.flatnonzero(indices[e] >= 0):
+            ip.Set3(*(float(x) for x in nodes[e, k]))
+            if vdim == 1:
+                out[indices[e, k], 0] = gf.GetValue(e, ip)
+            else:
+                gf.GetVectorValue(e, ip, vector)
+                out[indices[e, k]] = vector.GetDataArray()
+    return space, out
+
+
+def _supported():
+    from tack.runtime.dispatch import get_backend
+
+    return get_backend().supported_dtypes
+
+
 def mfem_field(data, mesh, gf, dtype=tack.f32):
     """``gf``, an MFEM grid function on ``mesh``, as a field of ``data`` (the dataset
     ``mfem_to_dataset`` made from ``mesh``)."""
@@ -137,24 +190,30 @@ def mfem_field(data, mesh, gf, dtype=tack.f32):
         return Field(Constant(data), _field_values(_by_dof(fes, gf.GetDataArray()), dtype))
     if family == "L2" and order == 1:
         return Field(L2(data), _field_values(_corner_values(mesh, gf), dtype))
+    if family == "H1" and order == 2:
+        space, values = _quadratic_values(data, mesh, gf)
+        return Field(space, _field_values(values, dtype))
     raise NotImplementedError(f"MFEM {family} order {order} has no space here yet")
 
 
 def mfem_to_dataset(mesh, fields=None, dtype=tack.f32):
     """A ``tack.data.DataSet`` of an MFEM mesh and named grid functions on it.
 
-    The geometry is the vertex positions (z = 0 for a 2D mesh); a mesh with
-    curved nodes of order above one is refused. Element attributes become
-    ``fields["attribute"]``.
+    The geometry is the vertex positions (z = 0 for a 2D mesh), or for a curved
+    mesh -- nodes of order 2 -- an H1 order-2 field of positions; nodes of
+    higher order are refused. Element attributes become ``fields["attribute"]``.
     """
     from tack.data import Constant, DataSet, Field
 
     nodes = mesh.GetNodes()
-    if nodes is not None and _collection(nodes.FESpace())[1] > 1:
-        raise NotImplementedError("curved MFEM meshes (nodes of order above 1) are not "
-                                  "supported yet")
+    curved = nodes is not None and _collection(nodes.FESpace())[1] > 1
+    if curved and _collection(nodes.FESpace())[1] > 2:
+        raise NotImplementedError("curved MFEM meshes of order above 2 are not supported "
+                                  "yet")
     topology = _topology(mesh)
-    if nodes is not None:
+    if curved:
+        positions = np.asarray(mesh.GetVertexArray(), dtype=float).reshape(mesh.GetNV(), -1)
+    elif nodes is not None:
         # Order-1 nodes are the vertices' positions, and may have moved since
         # the vertex array was set (Mesh.Transform moves the nodes).
         positions = _by_dof(nodes.FESpace(), nodes.GetDataArray())
@@ -164,6 +223,11 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32):
         positions = np.hstack([positions, np.zeros((positions.shape[0],
                                                     3 - positions.shape[1]))])
     data = DataSet(topology, positions, dtype=dtype)
+    if curved:
+        # The corners first, to have a dataset to number the quadratic nodes on;
+        # then the curved geometry, MFEM's nodes at those nodes.
+        space, values = _quadratic_values(data, mesh, nodes)
+        data.fields["shape"] = Field(space, _field_values(values, dtype))
     attributes = np.array([mesh.GetAttribute(e) for e in range(mesh.GetNE())], np.int32)
     data.fields["attribute"] = Field(Constant(data), _field_values(attributes, tack.i32))
     for name, gf in (fields or {}).items():

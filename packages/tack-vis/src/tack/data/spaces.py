@@ -4,7 +4,7 @@ A space is constructed on a topology (or a dataset, for its topology) and
 parameters, as MFEM's ``FiniteElementSpace`` is on a mesh::
 
     td.H1(data)                 # one value per point, interpolated linearly
-    td.H1(data, order=2)        # (not in the prototype: needs a DOF map)
+    td.H1(data, order=2)        # quadratic: values on points, edges, quad faces, cells
     td.L2(data)                 # each cell's own corner values: linear DG
     td.L2(data, order=orders)   # an order per cell (0 or 1 here): p-adaptive DG
     td.Constant(data)           # one value per cell
@@ -17,8 +17,11 @@ layout -- and equality is identity. The layout is what a kernel needs
 beyond a field's values to find them:
 
 - ``H1``, order 1: nothing of its own. Its values are the points', found
-  through the topology's connectivity. (Order ``p`` would own a cell -> DOF
-  map built from the derived edges and faces, one per shape group.)
+  through the topology's connectivity.
+- ``H1``, order 2: its numbering of values -- the points', then one per
+  edge (``edge_base + edge``), one per quad face (``face_dofs``) and one per
+  hexahedron (``cell_dofs``) -- built from the derived edges and faces. Its
+  views read a cell's through the cell's edge and face ids.
 - ``L2``, order 1: ``offsets``, where each cell's values start. An
   unstructured topology's are its connectivity offsets, so they are shared,
   not copied. With an order per cell, the offsets come from a scan of each
@@ -38,7 +41,7 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.data import views
+from tack.data import shapes, views
 
 __all__ = ["H1", "L2", "Constant", "SideTraces", "Space", "Values"]
 
@@ -78,9 +81,13 @@ class Space:
     def _params(cls):
         return {}
 
-    def attributes(self):
-        """The layout a view of this space reads, beside the field's values."""
+    def attributes(self, group=None):
+        """The layout a view of this space reads for ``group``, beside the values."""
         return {}
+
+    def extra_mixins(self):
+        """Mixins a field view of this space needs beyond its own and the storage."""
+        return ()
 
     def mixin_for(self, key):
         """The field-view mixin for cells of ``key`` (``None`` for a uniform space)."""
@@ -111,21 +118,103 @@ def _only_order_one(family, order):
     return {"order": order}
 
 
+@tack.kernel
+def _quad_face_dofs(kinds, flags):
+    for f in range(kinds.shape[0]):
+        flags[f] = 1 if kinds[f] == shapes.QUAD else 0
+
+
+@tack.kernel
+def _place(flags, slots, base, out):
+    for i in range(flags.shape[0]):
+        out[i] = base + slots[i] if flags[i] == 1 else -1
+
+
+@tack.kernel
+def _interiors(cells, flags):
+    for c in cells:
+        flags[cells.entity_id(c)] = cells.QUADRATIC_INTERIOR
+
+
 class H1(Space):
-    """Continuous: one value per point, shared by the cells around it, interpolated by
-    the shape's functions. Order 1 is today's point data."""
+    """Continuous: values shared by the cells around them, interpolated by the shape's
+    functions. Order 1 holds one value per point -- today's point data; order 2
+    adds one per edge, per quad face and per hexahedron, for the shape's
+    quadratic Lagrange functions (tetrahedra, hexahedra, wedges)."""
 
     on = "points"
-    mixin = views._H1Field
     interpolated = True
 
     @classmethod
     def _params(cls, order=1):
-        return _only_order_one("H1", order)
+        if order not in (1, 2):
+            _only_order_one("H1", order)
+        return {"order": int(order)}
+
+    @property
+    def mixin(self):
+        return views._H1Field if self.order == 1 else views._H1Order2Field
+
+    def _layout(self):
+        """Order 2: ``(face_dofs, cell_dofs, size)``, made on first use and kept."""
+        if "_order2" not in self.__dict__:
+            topology = self.topology
+            for group in topology.groups():
+                if group.count and not group.shape.NUM_QUADRATIC:
+                    raise NotImplementedError(
+                        f"H1 order 2 on {group.shape.__name__} cells is not in the "
+                        "prototype: tetrahedra, hexahedra, voxels and wedges")
+            edges, faces = topology.edges(), topology.faces()
+            base = topology.num_points + edges.num_edges
+            nf = faces.num_faces
+            flags = tack.field(tack.i32, shape=(nf,))
+            slots = tack.field(tack.i32, shape=(nf,))
+            face_dofs = tack.field(tack.i32, shape=(nf,))
+            quads = 0
+            if nf:
+                _quad_face_dofs(faces.kinds, flags)
+                quads = exclusive_scan(flags, slots, nf)
+                _place(flags, slots, base, face_dofs)
+            n = topology.num_cells
+            flags = tack.zeros(tack.i32, (n,))
+            for group in topology.groups():
+                if group.count:
+                    _interiors(group.view(), flags)
+            slots = tack.field(tack.i32, shape=(n,))
+            cell_dofs = tack.field(tack.i32, shape=(n,))
+            inside = exclusive_scan(flags, slots, n) if n else 0
+            if n:
+                _place(flags, slots, base + quads, cell_dofs)
+            self._order2 = (face_dofs, cell_dofs, base + quads + inside)
+        return self._order2
 
     @property
     def size(self):
-        return self.topology.num_points
+        if self.order == 1:
+            return self.topology.num_points
+        return self._layout()[2]
+
+    def attributes(self, group=None):
+        if self.order == 1:
+            return {}
+        face_dofs, cell_dofs, _ = self._layout()
+        topology = self.topology
+        edges, faces = topology.edges(), topology.faces()
+        attributes = {"edge_base": topology.num_points, "face_dofs": face_dofs,
+                      "cell_dofs": cell_dofs}
+        if group is not None:
+            root = group.root
+            attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
+                              edge_start=edges.group_starts[id(root)],
+                              side_face=faces.side_face, side_slot=faces.side_slot,
+                              side_orientation=faces.side_orientation,
+                              face_start=faces.group_starts[id(root)])
+        return attributes
+
+    def extra_mixins(self):
+        if self.order == 1:
+            return ()
+        return (views._EdgeIncidence, views._FaceIncidence)
 
 
 @tack.kernel
@@ -226,7 +315,7 @@ class L2(Space):
     def size(self):
         return self._layout()[1]
 
-    def attributes(self):
+    def attributes(self, group=None):
         return {"offsets": self.offsets}
 
     def __repr__(self):

@@ -349,6 +349,7 @@ shapes and a rectilinear grid:
 | `dataset.py` | `Field` (a space and its values), `DataSet` (geometry is its `"shape"` field), `for_each` |
 | `algorithms.py` | `cell_centers`, `values_at_centers`, `gradients`, `discontinuous`, `face_geometry`, `edge_lengths`, `boundary_faces`, `extract_surface`, `traces`, `jump`, `upwind_flux`, `divergence`, `to_points` |
 | `filters.py` | `contour`, `slice_plane`, `threshold`, `external_faces`, ported from `vis/data-model` onto fields and spaces |
+| `interop/mfem.py` | `mfem_to_dataset`, `mfem_field`: MFEM meshes (curved of order 2 too) and grid functions (H1 orders 1 and 2, L2 orders 0 and 1, vectors), through PyMFEM |
 | `interop/vtk.py` | `vtk_to_dataset` / `dataset_to_vtk`: point data as `H1`, cell data as `Constant` |
 
 `packages/tack-vis/examples/42_dataset_api_tour.py` runs every algorithm
@@ -469,6 +470,40 @@ What building it showed:
   applies; they are cached on the topology. Algorithms that lay out one
   entry per (cell, corner), such as `to_points`, place a subgroup's cells
   by that position.
+- **MFEM is the reference for real data and for order 2.** PyMFEM (`pip
+  install mfem`) brings MFEM into the test process: meshes are built in it
+  (Cartesian meshes of every element type, a mixed one, curved ones by
+  `SetCurvature` and `Transform`), and its own counts, face -> element
+  records, Jacobians, `GetValue` and `GetGradient` check the derived
+  topology, orientation and every mapped space. `examples/43_mfem_poisson.py`
+  solves MFEM's first example in H1 of order 2 on a curved mesh -- MFEM's
+  `fichera-q2.mesh`, refined, has 4401 DOFs, the same count here -- and
+  matches MFEM's values and gradients to float32 rounding before running
+  the filters on it.
+  - *Order 2 is built*: quadratic Lagrange bases on tetrahedra (10 nodes),
+    hexahedra and voxels (27) and wedges (18), each node's function a
+    product of 1D quadratic factors on its coordinates (barycentric ones
+    on simplices), its nodes from the shape's own corner, edge and face
+    tables. `H1(data, order=2)` owns the numbering -- points, then one per
+    edge, one per quad face, one per hexahedron -- built from the derived
+    edges and faces, and its views read a cell's values through its edge
+    and face ids; no orientation is needed at order 2, each edge and face
+    holding one value. A curved geometry is an order-2 H1 field whose
+    positions and Jacobians go through the quadratic functions, so fields
+    of either order sit on geometry of either order. MFEM's order-2 H1
+    nodes are these same points, so its fields and curved meshes come in
+    exactly, evaluated at the nodes. Pyramids, whose MFEM basis is a
+    different (rational) one, are refused.
+  - *The filters linearize*: they read each cell's corners, so contour and
+    slice cut a curved, quadratic cell by its corner values and positions,
+    and threshold and external faces keep an order-2 field's values at the
+    points. An order-2 field is read cell by cell; a face loop takes its
+    traces.
+  - *MFEM's prisms are VTK's wedges, corner for corner.* MFEM's VTK writer
+    swaps a prism's corners 1 and 2, and 4 and 5 (`PrismMap` in
+    mesh/vtk.cpp); taken here, that turned every MFEM-positive prism
+    inside out, against vtkWedge.h's convention and VTK's own wedges.
+    Worth raising with MFEM.
 - **The filters port cleanly, and gain from the spaces.** `contour`,
   `slice_plane`, `threshold` and `external_faces` from `vis/data-model`
   read fields through their views, and match VTK as before
@@ -521,7 +556,9 @@ What building it showed:
     algorithms such as `boundary_faces`.
 
   Beyond faces and edges: quadrature spaces, sets of anything but face
-  ids, and order above one.
+  ids, order above two (and L2 or quadratic face traces above one),
+  H(curl) and H(div), and filters that cut curved cells by their
+  quadratic functions.
 
 ## 10. Polyhedra: a separate path
 

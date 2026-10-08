@@ -131,6 +131,46 @@ _PYRAMID_FACES = tack.constant(
 
 
 @tack.func
+def _q1d(a, x):
+    """The 1D quadratic Lagrange function of the node at ``a`` (0, 0.5 or 1), at ``x``."""
+    if a < 0.25:
+        return 2.0 * (x - 0.5) * (x - 1.0)
+    if a > 0.75:
+        return 2.0 * x * (x - 0.5)
+    return 4.0 * x * (1.0 - x)
+
+
+@tack.func
+def _q1d_derivative(a, x):
+    if a < 0.25:
+        return 4.0 * x - 3.0
+    if a > 0.75:
+        return 4.0 * x - 1.0
+    return 4.0 - 8.0 * x
+
+
+@tack.func
+def _p2(m, x):
+    """One barycentric coordinate's factor of a simplex's quadratic Lagrange function:
+    the node's coordinate is ``m`` (0, 0.5 or 1) and the point's ``x``. Their
+    product is ``x (2x - 1)`` at a corner and ``4 x_i x_j`` at an edge's middle."""
+    if m > 0.75:
+        return x * (2.0 * x - 1.0)
+    if m > 0.25:
+        return 2.0 * x
+    return 1.0 + 0.0 * x
+
+
+@tack.func
+def _p2_derivative(m, x):
+    if m > 0.75:
+        return 4.0 * x - 1.0
+    if m > 0.25:
+        return 2.0 + 0.0 * x
+    return 0.0 * x
+
+
+@tack.func
 def _linear(a, x):
     """The 1D linear shape function of the end at ``a`` (0 or 1), at ``x``."""
     return x if a == 1 else 1.0 - x
@@ -158,6 +198,31 @@ class Shape:
     #: The most triangles one cell of the shape contours to; 0 for shapes
     #: below three dimensions, which contour to nothing here.
     CONTOUR_TRIANGLES = 0
+    #: Nodes of the quadratic (order-2) Lagrange element: the corners, then a
+    #: node in the middle of each edge (in edge order), of each of the last
+    #: QUADRATIC_FACES faces, and QUADRATIC_INTERIOR in the cell. 0 for a
+    #: shape with no quadratic element here.
+    NUM_QUADRATIC = 0
+    QUADRATIC_FACES = 0
+    QUADRATIC_INTERIOR = 0
+
+    @tack.func
+    def quadratic_node(self, k):
+        """The parametric coordinates of quadratic node ``k``."""
+        if k < self.NUM_POINTS:
+            return self.parametric_point(k)
+        e = k - self.NUM_POINTS
+        if e < self.NUM_EDGES:
+            return 0.5 * (self.parametric_point(self.edge_point(e, 0))
+                          + self.parametric_point(self.edge_point(e, 1)))
+        i = e - self.NUM_EDGES
+        if i < self.QUADRATIC_FACES:
+            f = self.NUM_FACES - self.QUADRATIC_FACES + i
+            return 0.25 * (self.parametric_point(self.face_point(f, 0))
+                           + self.parametric_point(self.face_point(f, 1))
+                           + self.parametric_point(self.face_point(f, 2))
+                           + self.parametric_point(self.face_point(f, 3)))
+        return self.parametric_center()
 
     @tack.func
     def contour_count(self, case):
@@ -508,6 +573,28 @@ class Tetra(_Solid):
             return tack.Vector([-1.0, -1.0, -1.0])
         return self.parametric_point(j)
 
+    NUM_QUADRATIC = 10
+
+    @tack.func
+    def quadratic_function(self, k, pc):
+        n = self.quadratic_node(k)
+        return (_p2(1.0 - n[0] - n[1] - n[2], 1.0 - pc[0] - pc[1] - pc[2])
+                * _p2(n[0], pc[0]) * _p2(n[1], pc[1]) * _p2(n[2], pc[2]))
+
+    @tack.func
+    def quadratic_gradient(self, k, pc):
+        n = self.quadratic_node(k)
+        m0 = 1.0 - n[0] - n[1] - n[2]
+        x0 = 1.0 - pc[0] - pc[1] - pc[2]
+        f0 = _p2(m0, x0)
+        f1 = _p2(n[0], pc[0])
+        f2 = _p2(n[1], pc[1])
+        f3 = _p2(n[2], pc[2])
+        d0 = _p2_derivative(m0, x0) * f1 * f2 * f3          # by x0, which falls with r, s, t
+        return tack.Vector([f0 * _p2_derivative(n[0], pc[0]) * f2 * f3 - d0,
+                            f0 * f1 * _p2_derivative(n[1], pc[1]) * f3 - d0,
+                            f0 * f1 * f2 * _p2_derivative(n[2], pc[2]) - d0])
+
     @tack.func
     def is_inside(self, pc, tol):
         return (-tol <= pc[0] and -tol <= pc[1] and -tol <= pc[2]
@@ -556,6 +643,25 @@ class _Box(_Solid):
         fc = _linear(c, pc[2])
         return tack.Vector([(2.0 * a - 1.0) * fb * fc, fa * (2.0 * b - 1.0) * fc,
                             fa * fb * (2.0 * c - 1.0)])
+
+    NUM_QUADRATIC = 27
+    QUADRATIC_FACES = 6
+    QUADRATIC_INTERIOR = 1
+
+    @tack.func
+    def quadratic_function(self, k, pc):
+        n = self.quadratic_node(k)
+        return _q1d(n[0], pc[0]) * _q1d(n[1], pc[1]) * _q1d(n[2], pc[2])
+
+    @tack.func
+    def quadratic_gradient(self, k, pc):
+        n = self.quadratic_node(k)
+        fa = _q1d(n[0], pc[0])
+        fb = _q1d(n[1], pc[1])
+        fc = _q1d(n[2], pc[2])
+        return tack.Vector([_q1d_derivative(n[0], pc[0]) * fb * fc,
+                            fa * _q1d_derivative(n[1], pc[1]) * fc,
+                            fa * fb * _q1d_derivative(n[2], pc[2])])
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -680,6 +786,29 @@ class Wedge(_Solid):
         c = j // 3
         fc = _linear(c, pc[2])
         return tack.Vector([wr * fc, ws * fc, w * (2.0 * c - 1.0)])
+
+    NUM_QUADRATIC = 18
+    QUADRATIC_FACES = 3
+
+    @tack.func
+    def quadratic_function(self, k, pc):
+        n = self.quadratic_node(k)
+        return (_p2(1.0 - n[0] - n[1], 1.0 - pc[0] - pc[1]) * _p2(n[0], pc[0])
+                * _p2(n[1], pc[1]) * _q1d(n[2], pc[2]))
+
+    @tack.func
+    def quadratic_gradient(self, k, pc):
+        n = self.quadratic_node(k)
+        m0 = 1.0 - n[0] - n[1]
+        x0 = 1.0 - pc[0] - pc[1]
+        f0 = _p2(m0, x0)
+        f1 = _p2(n[0], pc[0])
+        f2 = _p2(n[1], pc[1])
+        ft = _q1d(n[2], pc[2])
+        d0 = _p2_derivative(m0, x0) * f1 * f2
+        return tack.Vector([(f0 * _p2_derivative(n[0], pc[0]) * f2 - d0) * ft,
+                            (f0 * f1 * _p2_derivative(n[1], pc[1]) - d0) * ft,
+                            f0 * f1 * f2 * _q1d_derivative(n[2], pc[2])])
 
     @tack.func
     def is_inside(self, pc, tol):

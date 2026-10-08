@@ -237,10 +237,111 @@ def test_cell_constants_vectors_and_attributes(backend):
 
 def test_what_is_not_mapped_yet(backend):
     mesh = _cartesian("HEXAHEDRON")
-    quadratic = _projected(mesh, mfem.H1_FECollection(2, 3), _f)
-    with pytest.raises(NotImplementedError, match="H1 order 2"):
-        mfem_to_dataset(mesh, {"u": quadratic})
+    cubic = _projected(mesh, mfem.H1_FECollection(3, 3), _f)
+    with pytest.raises(NotImplementedError, match="H1 order 3"):
+        mfem_to_dataset(mesh, {"u": cubic})
     curved = _cartesian("HEXAHEDRON")
-    curved.SetCurvature(2)
-    with pytest.raises(NotImplementedError, match="curved"):
+    curved.SetCurvature(3)
+    with pytest.raises(NotImplementedError, match="order above 2"):
         mfem_to_dataset(curved)
+    pyramids = _cartesian("PYRAMID")
+    with pytest.raises(NotImplementedError, match="Pyramid"):
+        mfem_to_dataset(pyramids, {"u": _projected(pyramids, mfem.H1_FECollection(2, 3), _f)})
+
+
+# ── Order 2: quadratic fields and curved meshes ─────────────────────
+
+ORDER2 = ["TETRAHEDRON", "HEXAHEDRON", "WEDGE"]
+
+
+class _Bend(mfem.VectorPyCoefficient if mfem else object):
+    """A smooth, curved map: the cells' faces bend."""
+
+    def EvalValue(self, x):
+        return [x[0] + 0.15 * np.sin(1.3 * x[1]), x[1] + 0.1 * x[0] * x[2],
+                x[2] + 0.12 * np.cos(x[0])]
+
+
+def _curved(kind):
+    mesh = mfem.Mesh.MakeCartesian3D(3, 2, 2, getattr(mfem.Element, kind), 3.0, 1.5, 2.0)
+    mesh.SetCurvature(2)
+    mesh.Transform(_Bend(3))
+    return mesh
+
+
+def _inside(geometry, rng):
+    """A random point inside MFEM's (and tack's) reference element of ``geometry``."""
+    if geometry == 4:                                   # tetrahedron
+        b = rng.dirichlet(np.ones(4))
+        return b[1:]
+    if geometry == 6:                                   # prism
+        b = rng.dirichlet(np.ones(3))
+        return np.array([b[1], b[2], rng.uniform()])
+    return rng.uniform(size=3)
+
+
+@tack.kernel
+def _evaluate(cells, u, pcs, values, positions, gradients):
+    for c in cells:
+        e = cells.entity_id(c)
+        pc = pcs[e]
+        values[e] = u.value(c, pc)
+        positions[e] = cells.position(c, pc)
+        gradients[e] = (cells.geometry_jacobian(c, pc).inverse().transpose()
+                        @ u.parametric_gradient(c, pc))
+
+
+def _compare(mesh, data, field, gf, rng, tolerance):
+    """``field`` and the geometry at a random point of every element against MFEM."""
+    n = mesh.GetNE()
+    points = np.array([_inside(mesh.GetElementBaseGeometry(e), rng) for e in range(n)])
+    pcs = tack.Vector.field(3, tack.f32, shape=(n,))
+    pcs.from_numpy(points.astype(np.float32))
+    values = tack.field(tack.f32, shape=(n,))
+    positions = tack.Vector.field(3, tack.f32, shape=(n,))
+    gradients = tack.Vector.field(3, tack.f32, shape=(n,))
+    td.for_each(_evaluate, data, "cells", field, pcs, values, positions, gradients)
+    values, positions = values.to_numpy(), positions.to_numpy(vectors=True)
+    gradients = gradients.to_numpy(vectors=True)
+    gradient = mfem.Vector(3)
+    for e in range(n):
+        ip = mfem.IntegrationPoint()
+        ip.Set3(*(float(x) for x in points[e].astype(np.float32)))
+        T = mesh.GetElementTransformation(e)
+        T.SetIntPoint(ip)
+        np.testing.assert_allclose(positions[e], T.Transform(ip), atol=tolerance)
+        np.testing.assert_allclose(values[e], gf.GetValue(e, ip), rtol=tolerance,
+                                   atol=tolerance)
+        gf.GetGradient(T, gradient)
+        np.testing.assert_allclose(gradients[e], gradient.GetDataArray(), rtol=10 * tolerance,
+                                   atol=10 * tolerance)
+
+
+def _quadratic(x):
+    return x[0] * x[1] - 0.5 * x[2] ** 2 + 2.0 * x[0] + np.sin(x[1])
+
+
+@pytest.mark.parametrize("kind", ORDER2)
+def test_quadratic_fields_on_straight_meshes(backend, kind):
+    mesh = _cartesian(kind)
+    gf = _projected(mesh, mfem.H1_FECollection(2, 3), _quadratic)
+    data = mfem_to_dataset(mesh, {"u": gf})
+    u = data.fields["u"]
+    assert u.space is td.H1(data, order=2)
+    assert u.space.size == gf.FESpace().GetNDofs()
+    _compare(mesh, data, u, gf, np.random.default_rng(1), 2e-5)
+
+
+@pytest.mark.parametrize("kind", ORDER2)
+@pytest.mark.parametrize("order", [1, 2])
+def test_fields_on_curved_meshes(backend, kind, order):
+    """A curved geometry (order 2) under a field of order 1 or 2: positions, values
+    and gradients -- the Jacobian now varies within each cell -- are MFEM's."""
+    mesh = _curved(kind)
+    gf = _projected(mesh, mfem.H1_FECollection(order, 3), _quadratic)
+    data = mfem_to_dataset(mesh, {"u": gf})
+    assert data.geometry.space is td.H1(data, order=2)
+    _compare(mesh, data, data.fields["u"], gf, np.random.default_rng(order), 3e-5)
+    out = tack.field(tack.f32, shape=(data.num_cells,))
+    td.for_each(_determinants, data, "cells", out)
+    np.testing.assert_allclose(out.to_numpy(), _mfem_determinants(mesh), rtol=1e-4)

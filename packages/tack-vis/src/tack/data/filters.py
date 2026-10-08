@@ -22,6 +22,12 @@ grows with the spaces:
 
 Outputs are new datasets on ``UnstructuredTopology``, with ``H1`` geometry
 except where ``threshold`` keeps an ``L2`` one.
+
+All four work on a cell's corners, so a quadratic field or a curved geometry
+is linearized: contour and slice cut each cell by its corner values and
+positions, and threshold and external faces keep an order-2 field's (or
+geometry's) values at the points. Cutting curved cells by their quadratic
+functions -- subdividing them -- is still to come.
 """
 
 import numpy as np

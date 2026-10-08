@@ -65,7 +65,11 @@ class Field:
         return f"Field({self.space!r}, {arrays.size_of(values)} values, {stored})"
 
 
-def _space_parts(field, group, space_mixin=None):
+def _is_cells(group):
+    return issubclass(group.kind, (views._Cells, views._StructuredCells))
+
+
+def _space_parts(field, group, space_mixin=None, corners_only=False):
     """The mixins and attributes that read ``field`` for ``group``: its space's (or
     ``space_mixin``, for the geometry), an addressing mixin for values shared by
     points, and its storage's."""
@@ -74,12 +78,23 @@ def _space_parts(field, group, space_mixin=None):
     if space.varies and space not in group.keys:
         raise ValueError(f"{space!r} varies from cell to cell: its views come from the "
                          "subgroups for_each makes")
+    if (isinstance(space, H1) and space.order == 2 and not corners_only
+            and not _is_cells(group)):
+        raise TypeError(f"{space!r} is read cell by cell: on faces, take its traces "
+                        "(tack.data.traces)")
     mixins = [space_mixin or space.mixin_for(group.keys.get(space))]
-    if isinstance(field.space, H1):
+    if isinstance(space, H1):
         mixins.append(views.point_address(group.kind, storage))
+    if not space_mixin:
+        # A geometry's incidence is the domain view's own.
+        mixins.extend(space.extra_mixins())
     mixins.append(storage)
-    for name, value in field.space.attributes().items():
-        attributes[f"point_{name}" if space_mixin else name] = value
+    # Reading only the points' values -- an order-2 geometry on faces and edges
+    # -- needs none of the space's own layout.
+    layout = {} if corners_only else space.attributes(group)
+    for name, value in layout.items():
+        # The geometry's L2 offsets sit beside the domain view's own names.
+        attributes["point_offsets" if space_mixin and name == "offsets" else name] = value
     return mixins, attributes
 
 
@@ -120,7 +135,13 @@ def _geometry_parts(data, group, kind):
                 f"the {kind} of an L2 geometry have no positions of their own: each cell "
                 "around an edge has its own, and edges have no sides to choose from")
         return _space_parts(geometry, group, views._L2Geometry)
-    return _space_parts(geometry, group, views._H1Geometry)
+    if geometry.space.order == 2 and kind == "cells":
+        # Curved: the domain view's incidence gives the quadratic nodes' ids.
+        data.topology.edges()
+        data.topology.faces()
+        return _space_parts(geometry, group, views._H1Order2Geometry)
+    # Faces and edges of a curved geometry see its corners.
+    return _space_parts(geometry, group, views._H1Geometry, corners_only=True)
 
 
 # ── Datasets ────────────────────────────────────────────────────────
@@ -165,7 +186,8 @@ class DataSet:
         geometry's values. An ``L2`` geometry has none per point."""
         if isinstance(self.geometry.space, L2):
             raise ValueError("an L2 geometry has positions per cell corner, not per point")
-        return arrays.to_host(self.geometry.values)
+        # An order-2 geometry's first values are the points'.
+        return arrays.to_host(self.geometry.values)[:self.num_points]
 
     def domain_groups(self, domain):
         """The ``DomainGroup``s of ``domain``: ``"cells"``, ``"faces"``, ``"edges"``, or
