@@ -563,6 +563,8 @@ What building it showed:
 
 ## 10. Polyhedra: a separate path
 
+Refined into a full proposal in [Polyhedral meshes](polyhedra.md).
+
 Decided in principle (2026-10-08); not built. Build it when there is a
 concrete polyhedral dataset and algorithm to aim at.
 
