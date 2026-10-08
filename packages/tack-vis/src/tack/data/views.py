@@ -194,6 +194,11 @@ class _Faces:
         return self.ids[f]
 
     @tack.func
+    def face_size(self, f):
+        """The face's number of points: the shape's, a constant."""
+        return self.NUM_POINTS
+
+    @tack.func
     def num_sides(self, f):
         return 2 if self.sides[f][2] >= 0 else 1
 
@@ -267,6 +272,16 @@ class _PolyhedralCells:
         n = self.face_size(f)
         at = j if self.face_side(c, k) == 0 else (n - j) % n
         return self.face_points[self.face_offsets[f] + at]
+
+    @tack.func
+    def side_size(self, c, k):
+        """The number of points of the cell's face ``k``."""
+        return self.face_size(self.face_id(c, k))
+
+    @tack.func
+    def side_position(self, c, k, j):
+        """The position of ``side_point(c, k, j)``, from the geometry."""
+        return self.point_position(self.side_point(c, k, j))
 
     @tack.func
     def num_points(self, c):
@@ -410,6 +425,11 @@ class _PointGeometry:
     def point(self, i, j):
         return self.point_value(i, j)
 
+    @tack.func
+    def point_position(self, p):
+        """The position of point ``p``, by its global id."""
+        return self.get(p)
+
 
 class _H1Geometry(_Geometry):
     """H1 geometry: one position per point, shared by the cells around it."""
@@ -501,6 +521,33 @@ class _FaceIncidence:
         n = self.face_num_points(f)
         r = o >> 1
         return (r + k) % n if (o & 1) == 0 else (r - k + n) % n
+
+
+class _FaceWalk:
+    """A shape-based cell's faces as a polyhedral cell's are walked -- the entity
+    methods both paths share, so face-based algorithms run on either: the counts
+    are the shape's constants, the points its face tables'. Needs the cell's face
+    incidence and geometry, so only domain views have it."""
+
+    @tack.func
+    def num_faces(self, c):
+        """The cell's number of faces: the shape's, a constant."""
+        return self.NUM_FACES
+
+    @tack.func
+    def side_size(self, c, k):
+        """The number of points of the cell's face ``k``."""
+        return self.face_num_points(k)
+
+    @tack.func
+    def side_point(self, c, k, j):
+        """Point ``j`` of the cell's face ``k``, going round it outward for this cell."""
+        return self.point_id(c, self.face_corner(k, j))
+
+    @tack.func
+    def side_position(self, c, k, j):
+        """The position of ``side_point(c, k, j)``."""
+        return self.point(c, self.face_corner(k, j))
 
 
 class _EdgeIncidence:

@@ -12,6 +12,14 @@
   from its traces, so a DG field's own jumps.
 - ``upwind_flux``: a DG-style advective flux through each face, from the
   upwind side's trace.
+- ``face_centers``, ``cell_geometry``: face area centroids, and cell volumes
+  and centroids by the divergence theorem, for shapes and polyhedra alike.
+- ``perot``: a cell vector from face-normal components (C-grid models).
+
+The face-based ones -- face geometry, divergence, jump and upwind flux of
+cell data, cell geometry, Perot -- read only the entity methods both paths'
+views share (``face_size``, ``num_faces``, ``side_position``...), so they
+run on shape-based and polyhedral topologies from one source.
 - ``divergence``: each cell's outward sum of a face field, through the cell
   -> face incidence and which side of each face the cell is.
 - ``to_points``: a cell or DG field averaged onto points (projection to
@@ -38,13 +46,16 @@ from tack.data.topology import UnstructuredTopology
 __all__ = [
     "boundary_faces",
     "cell_centers",
+    "cell_geometry",
     "discontinuous",
     "divergence",
     "edge_lengths",
     "extract_surface",
+    "face_centers",
     "face_geometry",
     "gradients",
     "jump",
+    "perot",
     "to_cells",
     "to_points",
     "traces",
@@ -133,23 +144,95 @@ def discontinuous(data, field):
 @tack.kernel
 def _face_geometry(faces, normals, areas):
     for f in faces:
+        size = faces.face_size(f)                # the shape's constant, or a polygon's
+        origin = faces.point(f, 0)
         n = tack.Vector([0.0, 0.0, 0.0])
-        for j in range(faces.NUM_POINTS):
-            k = j + 1 if j + 1 < faces.NUM_POINTS else 0
-            n += faces.point(f, j).cross(faces.point(f, k))      # Newell's normal
+        for j in range(1, size - 1):
+            # Newell's normal, from the face's first point: a fan of triangles.
+            n += (faces.point(f, j) - origin).cross(faces.point(f, j + 1) - origin)
         length = n.norm()
         normals[faces.entity_id(f)] = n / length
         areas[faces.entity_id(f)] = 0.5 * length
 
 
 def face_geometry(data):
-    """``(normal, area)``: fields on faces. A face's normal points out of its side 0."""
+    """``(normal, area)``: fields on faces, of any size of polygon. A face's normal
+    points out of its side 0; on a non-planar face it is the mean normal."""
     faces = data.topology.faces()
     dtype = data.dtype
     normals = _vectors(faces.num_faces, dtype)
     areas = tack.field(dtype, shape=(faces.num_faces,))
     for_each(_face_geometry, data, "faces", normals, areas)
     return Field(Values(data, "faces"), normals), Field(Values(data, "faces"), areas)
+
+
+@tack.kernel
+def _face_centers(faces, out):
+    for f in faces:
+        size = faces.face_size(f)
+        origin = faces.point(f, 0)
+        apex = tack.Vector([0.0, 0.0, 0.0])
+        for j in range(size):
+            apex += faces.point(f, j) - origin
+        apex = apex / size
+        total = 0.0
+        weighted = tack.Vector([0.0, 0.0, 0.0])
+        for j in range(size):
+            a = faces.point(f, j) - origin
+            b = faces.point(f, j + 1 if j + 1 < size else 0) - origin
+            area = (a - apex).cross(b - apex).norm()
+            total += area
+            weighted += area * (a + b + apex)
+        out[faces.entity_id(f)] = origin + weighted / (3.0 * total)
+
+
+def face_centers(data):
+    """Each face's area centroid: a field on faces. The face is fanned from its
+    points' mean, so both its cells -- which store it once -- see the same fan."""
+    out = _vectors(data.topology.faces().num_faces, data.dtype)
+    for_each(_face_centers, data, "faces", out)
+    return Field(Values(data, "faces"), out)
+
+
+@tack.kernel
+def _cell_geometry(cells, volumes, centroids):
+    for c in cells:
+        # The divergence theorem over the cell's faces, each walked outward and
+        # fanned from its points' mean, taken from the cell's first point so
+        # cells far from the origin keep their precision.
+        origin = cells.side_position(c, 0, 0)
+        six = 0.0
+        weighted = tack.Vector([0.0, 0.0, 0.0])
+        for k in range(cells.num_faces(c)):
+            size = cells.side_size(c, k)
+            apex = tack.Vector([0.0, 0.0, 0.0])
+            for j in range(size):
+                apex += cells.side_position(c, k, j) - origin
+            apex = apex / size
+            for j in range(size):
+                a = cells.side_position(c, k, j) - origin
+                b = cells.side_position(c, k, j + 1 if j + 1 < size else 0) - origin
+                t = a.dot(b.cross(apex))
+                six += t
+                weighted += t * (a + b + apex)
+        volumes[cells.entity_id(c)] = six / 6.0
+        centroids[cells.entity_id(c)] = origin + weighted / (4.0 * six)
+
+
+def cell_geometry(data):
+    """``(volume, centroid)`` of each 3D cell: fields on cells, by the divergence theorem
+    over its faces -- any cell, polyhedral or of a shape. Faces are taken as fans
+    from their points' means, so a cell with non-planar faces is measured as that
+    polyhedron (a hexahedron with warped faces is not quite its trilinear volume).
+    A cell's faces must be wound out of it."""
+    data.topology.faces()                          # the incidence the cell views need
+    n = data.num_cells
+    volumes = tack.field(data.dtype, shape=(n,))
+    centroids = _vectors(n, data.dtype)
+    for group in data.launch_groups("cells", []):
+        if group.count and group.shape.DIMENSION == 3:
+            _cell_geometry(data.domain_view("cells", group), volumes, centroids)
+    return Field(Values(data, "cells"), volumes), Field(Values(data, "cells"), centroids)
 
 
 @tack.kernel
@@ -207,6 +290,10 @@ def extract_surface(data, name="boundary"):
     ``L2`` one has no shared points for the faces to stand on."""
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_surface keeps the points, so needs an H1 geometry")
+    if not getattr(data.topology, "reference_cells", True):
+        raise NotImplementedError(
+            "a polyhedral topology's surface is polygons, which no surface topology holds "
+            "yet; boundary_faces gives the face set")
     faces = data.topology.faces()
     ids = data.sets[name]
     n = ids.shape[0]
@@ -263,14 +350,31 @@ def _jump(faces, t, out):
                                    else inside * 0.0)
 
 
+@tack.kernel
+def _cell_jump(faces, values, out):
+    for f in faces:
+        inside = values[faces.side_cell(f, 0)]
+        out[faces.entity_id(f)] = (values[faces.side_cell(f, 1)] - inside
+                                   if faces.num_sides(f) == 2 else inside * 0.0)
+
+
+def _on_cells(data, field):
+    space = field.space
+    return isinstance(space, Constant) or space is Values(data, "cells")
+
+
 def jump(data, field):
     """A field's difference across each face at the face's center, side 1 minus side
     0 (zero on the boundary): a field on faces. Each side is the field as its own
     cell has it -- ``traces`` -- so a DG field's jumps are its own, not its cells'
-    averages; a continuous field's are zero."""
-    t = traces(data, field)
+    averages; a continuous field's are zero. Cell data (``Constant``, values on
+    cells) is read from each side's cell directly, on any topology, polyhedral
+    included."""
     out = _like(field.values, data.topology.faces().num_faces)
-    for_each(_jump, data, "faces", t, out)
+    if _on_cells(data, field):
+        for_each(_cell_jump, data, "faces", materialize(field.values), out)
+    else:
+        for_each(_jump, data, "faces", traces(data, field), out)
     return Field(Values(data, "faces"), out)
 
 
@@ -293,18 +397,69 @@ def upwind_flux(data, field, velocity):
     face takes its one side's value whichever way the flow goes. ``divergence`` of
     the result is each cell's net outflow."""
     normals, areas = face_geometry(data)
-    t = traces(data, field)
     out = _like(field.values, data.topology.faces().num_faces)
     vx, vy, vz = (float(v) for v in velocity)
-    for_each(_upwind, data, "faces", t, normals.values, areas.values, vx, vy, vz, out)
+    if _on_cells(data, field):
+        for_each(_cell_upwind, data, "faces", materialize(field.values), normals.values,
+                 areas.values, vx, vy, vz, out)
+    else:
+        for_each(_upwind, data, "faces", traces(data, field), normals.values, areas.values,
+                 vx, vy, vz, out)
     return Field(Values(data, "faces"), out)
+
+
+@tack.kernel
+def _cell_upwind(faces, values, normals, areas, vx, vy, vz, out):
+    for f in faces:
+        e = faces.entity_id(f)
+        vn = normals[e].dot(tack.Vector([vx, vy, vz]))
+        cell = faces.side_cell(f, 0)
+        if vn < 0.0 and faces.num_sides(f) == 2:
+            cell = faces.side_cell(f, 1)
+        out[e] = vn * areas[e] * values[cell]
+
+
+@tack.kernel
+def _perot(cells, flux, areas, centers, centroids, volumes, out):
+    for c in cells:
+        e = cells.entity_id(c)
+        r = centroids[e]
+        u = tack.Vector([0.0, 0.0, 0.0])
+        for k in range(cells.num_faces(c)):
+            f = cells.face_id(c, k)
+            outward = 1.0 - 2.0 * cells.face_side(c, k)
+            u += (outward * areas[f] * flux[f]) * (centers[f] - r)
+        out[e] = u / volumes[e]
+
+
+def perot(data, flux):
+    """A vector per cell from each face's normal component -- Perot's reconstruction,
+    ``u_c = (1/V) sum_f A_f u_f (r_f - r_c)``, as C-grid models (MPAS, ICON) need to
+    show their face-normal velocity at cells.
+
+    ``flux`` is a scalar field on faces, the component along each face's normal out
+    of its side 0; the side each cell is on gives the sign. Face centers, areas
+    and cell centroids and volumes are this module's, so a uniform field's normal
+    components give it back exactly on cells with planar faces. First order, as
+    Perot's method is."""
+    if flux.space is not Values(data, "faces"):
+        raise TypeError("perot reconstructs from a field on faces")
+    _, areas = face_geometry(data)
+    centers = face_centers(data)
+    volumes, centroids = cell_geometry(data)
+    out = _vectors(data.num_cells, data.dtype)
+    for group in data.launch_groups("cells", []):
+        if group.count and group.shape.DIMENSION == 3:
+            _perot(data.domain_view("cells", group), materialize(flux.values), areas.values,
+                   centers.values, centroids.values, volumes.values, out)
+    return Field(Values(data, "cells"), out)
 
 
 @tack.kernel
 def _outward_sums(cells, flux, out):
     for c in cells:
         total = flux[0] * 0.0
-        for f in range(cells.NUM_FACES):
+        for f in range(cells.num_faces(c)):     # the shape's count, or a polyhedron's
             sign = 1.0 if cells.face_side(c, f) == 0 else -1.0
             total += sign * flux[cells.face_id(c, f)]
         out[cells.entity_id(c)] = total

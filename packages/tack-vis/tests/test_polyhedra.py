@@ -370,3 +370,145 @@ def test_polyhedra_from_vtk_data(backend, name):
     surface.Update()
     assert data.topology.faces().boundary().shape[0] == surface.GetOutput().GetNumberOfCells()
     assert td.check_winding(data).size == 0
+
+
+# ── Phase 2: face-based algorithms on both paths ────────────────────
+
+alg = td.algorithms
+
+
+def _meshes_for_fv():
+    meshes = dict(_grids())
+    if vtk is not None:
+        for kind in ("tetra", "wedge", "pyramid", "hexahedron", "voxel"):
+            source = vtk.vtkCellTypeSource()
+            source.SetCellType(SOLID_TYPES[kind])
+            source.SetBlocksDimensions(2, 2, 2)
+            source.Update()
+            meshes[kind] = vtk_to_dataset(source.GetOutput())
+    return meshes
+
+
+def _fv_results(data, flux, cell_values, velocity=(1.0, 0.5, -0.25)):
+    normals, areas = alg.face_geometry(data)
+    volumes, centroids = alg.cell_geometry(data)
+    return {
+        "normals": normals.values.to_numpy(vectors=True),
+        "areas": areas.values.to_numpy(),
+        "centers": alg.face_centers(data).values.to_numpy(vectors=True),
+        "volumes": volumes.values.to_numpy(),
+        "centroids": centroids.values.to_numpy(vectors=True),
+        "divergence": alg.divergence(data, td.Field(td.Values(data, "faces"),
+                                                    flux)).values.to_numpy(),
+        "jump": alg.jump(data, td.Field(td.Constant(data), cell_values)).values.to_numpy(),
+        "upwind": alg.upwind_flux(data, td.Field(td.Constant(data), cell_values),
+                                  velocity).values.to_numpy(),
+        "perot": alg.perot(data, td.Field(td.Values(data, "faces"),
+                                          flux)).values.to_numpy(vectors=True),
+        "boundary": alg.boundary_faces(data).to_numpy(),
+    }
+
+
+@pytest.mark.parametrize("name", ["mixed", "rectilinear", "tetra", "wedge", "pyramid",
+                                  "hexahedron", "voxel"])
+def test_face_based_algorithms_run_on_both_paths(backend, name):
+    """The same algorithms, from one source, on a mesh and the same mesh as polyhedra:
+    the same answers."""
+    meshes = _meshes_for_fv()
+    if name not in meshes:
+        pytest.skip("needs VTK for this mesh")
+    data = meshes[name]
+    poly = td.as_polyhedra(data)
+    rng = np.random.default_rng(4)
+    nf = data.topology.faces().num_faces
+    flux = rng.uniform(-1, 1, nf)
+    cells = rng.uniform(-1, 1, data.num_cells)
+    ours = _fv_results(poly, _scalars(flux), _scalars(cells))
+    shape = _fv_results(data, _scalars(flux), _scalars(cells))
+    for key in shape:
+        np.testing.assert_allclose(ours[key], shape[key], rtol=1e-5, atol=1e-5, err_msg=key)
+
+
+def test_cell_geometry_of_known_cells(backend):
+    poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    volumes, centroids = alg.cell_geometry(poly)
+    np.testing.assert_allclose(volumes.values.to_numpy(), [1, 1, 1 / 3], rtol=1e-6)
+    # A pyramid's centroid is a quarter of the way from base to apex.
+    np.testing.assert_allclose(centroids.values.to_numpy(vectors=True),
+                               [[0.5, 0.5, 0.5], [1.5, 0.5, 0.5], [0.5, 0.5, 1.25]],
+                               atol=1e-6)
+    grid = td.rectilinear_grid([0, 1, 3, 4], [0, 2, 3], [0, 1, 1.5])
+    volumes, _ = alg.cell_geometry(td.as_polyhedra(grid))
+    dx, dy, dz = np.diff([0, 1, 3, 4]), np.diff([0, 2, 3]), np.diff([0, 1, 1.5])
+    np.testing.assert_allclose(volumes.values.to_numpy(),
+                               np.einsum("k,j,i->kji", dz, dy, dx).reshape(-1), rtol=1e-6)
+
+
+def _uniform_flux(data, velocity):
+    normals, _ = alg.face_geometry(data)
+    return _scalars(normals.values.to_numpy(vectors=True) @ np.asarray(velocity))
+
+
+@pytest.mark.parametrize("name", ["mixed", "rectilinear", "tetra", "wedge", "pyramid",
+                                  "hexahedron", "voxel", "voronoi"])
+def test_perot_gives_back_a_uniform_field(backend, name):
+    """A uniform velocity's normal components reconstruct to it exactly on cells
+    with planar faces -- including thin Voronoi columns, through the stored sides."""
+    if name == "voronoi":
+        points, cells, _ = _voronoi_columns()
+        data = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    else:
+        meshes = _meshes_for_fv()
+        if name not in meshes:
+            pytest.skip("needs VTK for this mesh")
+        data = meshes[name]
+    velocity = (0.3, -1.2, 0.7)
+    for mesh in ((data, td.as_polyhedra(data)) if name != "voronoi" else (data,)):
+        flux = td.Field(td.Values(mesh, "faces"), _uniform_flux(mesh, velocity))
+        got = alg.perot(mesh, flux).values.to_numpy(vectors=True)
+        np.testing.assert_allclose(got, np.tile(velocity, (mesh.num_cells, 1)), atol=2e-4)
+        # Each closed cell lets as much of a uniform flow out as in.
+        _, areas = alg.face_geometry(mesh)
+        carried = td.Field(td.Values(mesh, "faces"),
+                           _scalars(flux.values.to_numpy() * areas.values.to_numpy()))
+        np.testing.assert_allclose(alg.divergence(mesh, carried).values.to_numpy(), 0,
+                                   atol=1e-5)
+
+
+def test_voronoi_columns_measure_up(backend):
+    from scipy.spatial import Voronoi  # noqa: F401  (the columns need it)
+
+    points, cells, columns = _voronoi_columns(layers=3, thickness=0.01)
+    data = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    volumes, centroids = alg.cell_geometry(data)
+    assert (volumes.values.to_numpy() > 0).all()
+    # Each column's three layers have one footprint, so one volume, stacked.
+    v = volumes.values.to_numpy()
+    for c in range(0, len(cells), 3):
+        np.testing.assert_allclose(v[c:c + 3], v[c], rtol=1e-4)
+    z = centroids.values.to_numpy(vectors=True)[:, 2]
+    np.testing.assert_allclose(z, np.tile([0.005, 0.015, 0.025], columns), atol=1e-6)
+    # Interior faces, by cell values: jumps are differences of the two sides' values.
+    values = np.arange(data.num_cells, dtype=float)
+    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    jumps = alg.jump(data, td.Field(td.Constant(data), _scalars(values))).values.to_numpy()
+    expected = np.where(sides[:, 2] >= 0, values[sides[:, 2]] - values[sides[:, 0]], 0)
+    np.testing.assert_allclose(jumps, expected)
+
+
+@needs_vtk
+def test_volumes_agree_with_vtk(backend):
+    points, cells, _ = _voronoi_columns()
+    for data in (td.as_polyhedra(_two_hexes_and_a_pyramid()),
+                 td.DataSet(_from_cell_faces(cells, len(points)), points)):
+        grid = dataset_to_vtk(data)
+        theirs = [grid.GetCell(c).ComputeVolume() for c in range(grid.GetNumberOfCells())]
+        ours = alg.cell_geometry(data)[0].values.to_numpy()
+        np.testing.assert_allclose(ours, theirs, rtol=1e-4)
+
+
+def test_polyhedral_surfaces_are_not_extracted_yet(backend):
+    poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
+    alg.boundary_faces(poly)
+    with pytest.raises(NotImplementedError, match="polygons"):
+        alg.extract_surface(poly)

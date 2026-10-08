@@ -1,7 +1,8 @@
 # Polyhedral meshes: design proposal
 
 Status: proposal, 2026-10-08, on branch `vis/polyhedra`. Questions in
-section 7 decided as recommended; phase 1 is built (section 9). It refines section 10 of
+section 7 decided as recommended; phases 1 and 2 are built (sections 9
+and 10). It refines section 10 of
 [the dataset API design](dataset-api.md) -- polyhedra get their own
 topology and algorithms, sharing everything above that -- with what three
 studies found:
@@ -435,6 +436,62 @@ and VTK conversion in `interop/vtk.py`:
   The conversion is a reindexing, which confirms that the two paths share
   their face conventions exactly.
 
-**Still to do:** the shared entity methods on the shape path's views and
-the face-based algorithms (phase 2); size buckets and López (phase 3);
-an import that is not a host loop; `orient` beyond inward boundary faces.
+**Still to do:** size buckets and López (phase 3); an import that is not
+a host loop; `orient` beyond inward boundary faces.
+
+## 10. Phase 2 as built
+
+**Shared entity methods.** Both paths' cell views offer the same methods:
+
+| Method | Shape-based cell (`_FaceWalk`) | Polyhedral cell |
+|---|---|---|
+| `num_faces(c)` | `NUM_FACES`, a constant | from the CSR offsets |
+| `face_id(c, k)`, `face_side(c, k)` | the face incidence | the stored entries |
+| `side_size(c, k)` | the face table's count | `face_size(face_id(c, k))` |
+| `side_point(c, k, j)`, `side_position(c, k, j)` | `face_corner` (a voxel's pixels as quads) | the stored order, reversed on side 1 |
+
+Face views on both paths offer `face_size(f)`. On the shape path every
+count is a compile-time constant, so a shape kernel compiles as before.
+
+`_FaceWalk` is a mixin of its own, added only to domain views. An order-2
+field view also carries the face incidence (for its DOF numbering), and
+template classification checks every method of a view, so a
+`side_position` that needs geometry cannot sit in a mixin a field view
+includes.
+
+**Algorithms written once** (`algorithms.py`):
+
+- `face_geometry`: Newell's normal and area, fanned from the face's first
+  point, for polygons of any size.
+- `face_centers`: area centroids, fanned from the points' mean, so both
+  sides of a face stored once see one fan.
+- `cell_geometry`: volume and centroid by the divergence theorem over the
+  outward-walked faces, taken from the cell's first point.
+- `divergence`.
+- `jump` and `upwind_flux` of cell data, read from each side's cell (data
+  with a basis still goes through `traces`, on the shape path).
+- `boundary_faces`.
+- `perot`: Perot's reconstruction from face-normal components, signed by
+  each cell's side of each face.
+
+**Tests:**
+
+- On the mixed mesh, a rectilinear grid and VTK's tetrahedra, wedges,
+  pyramids, hexahedra and voxels, every one of these gives the same
+  answers on the shape path and on the same mesh as polyhedra.
+- Known volumes and centroids: the pyramid's is a quarter of the way up.
+- Volumes agree with VTK's `vtkPolyhedron::ComputeVolume`.
+- Perot gives back a uniform velocity to 2e-4 (float32) on every mesh,
+  thin Voronoi columns included, and a uniform flow leaves every closed
+  cell with no net outflow.
+- Mutations caught: Perot ignoring the side; the shape walk skipping the
+  voxel's reordering; polygon faces sized 4 (this one crashes, reading
+  past the face); polyhedra missing a face.
+
+**Not yet:**
+
+- `extract_surface` of a polyhedral topology. Its surface is polygons, and
+  no surface topology holds them (a 2D polygonal topology -- this one, one
+  dimension down -- would). It refuses, pointing to `boundary_faces`.
+- Traces of point data on polygon faces. `SideTraces` is four points a
+  face.

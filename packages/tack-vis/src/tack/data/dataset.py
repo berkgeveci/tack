@@ -218,7 +218,7 @@ class DataSet:
             # it shares that group's incidence.
             faces = self.topology._faces
             if faces is not None and group.shape.NUM_FACES:
-                mixins.append(views._FaceIncidence)
+                mixins.extend((views._FaceIncidence, views._FaceWalk))
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,
                                   face_start=faces.group_starts[id(group.root)])
