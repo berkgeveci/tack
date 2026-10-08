@@ -324,7 +324,9 @@ def test_gpu_flat_fallback(backend, shape, monkeypatch):
         monkeypatch.setattr(be, '_launch_limits', {"max_grid": (2**31 - 1, 1, 1),
                                                    "max_block": (1024, 1024, 64)})
     else:
-        props = copy.copy(be._compute_props)
+        # A ctypes structure with a pointer field (pNext) refuses copy.copy;
+        # from_buffer_copy duplicates its bytes.
+        props = type(be._compute_props).from_buffer_copy(be._compute_props)
         props.maxGroupCountY = props.maxGroupCountZ = 1
         monkeypatch.setattr(be, '_compute_props', props)
     a = _i32(shape)
