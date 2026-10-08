@@ -393,11 +393,30 @@ What building it showed:
   VTK is then a gather (the tour's `explode_dg`).
 - **A face loop cannot evaluate a cell's basis** when the two sides have
   different shapes (a hexahedron against a pyramid): one kernel cannot be
-  specialized to both. The way through is MFEM's: a *cell* loop over
-  (cell, local face) evaluates each side's trace into a PerSide field,
-  and the face loop reads that. The prototype's `jump` reads constant
-  cell values directly, which needs no basis; the PerSide layout is the
-  next thing to build.
+  specialized to both. The way through is MFEM's, and it is built: a
+  *cell* loop over (cell, local face) evaluates each side's trace into a
+  PerSide field, and the face loop reads that.
+  - *Face orientation* is derived with the faces: per (cell, local face),
+    `side_orientation = 2 * r + reflected`, where the cell's first point of
+    the face is point `r` of the face's row and `reflected` is 1 when the
+    cell goes round the face the other way. On a consistently oriented
+    mesh that is exactly side 1. Cell views offer `face_orientation(c,
+    f)`, `face_position(c, f, k)` (where the cell's point `k` of the face
+    is in the face's row) and `face_corner(f, k)` (which corner it is; a
+    voxel's pixel faces go round as quads). This is the index higher-order
+    face DOFs will need, as MFEM's `Elem2Inf % 64`.
+  - *`SideTraces(data)`* is the PerSide space: per (face, side, point),
+    `(face * 2 + side) * 4 + point`, MFEM's double-valued face E-vector at
+    order 1. `traces(data, field)` fills one from any field with a basis
+    -- `H1`, `L2` (an order per cell too), `Constant` -- each cell writing
+    its own side at the face's points in the face's order, so the sides
+    line up point by point. A face view reads it with `trace(f, s, j)` and
+    `value(f, s, pc)`, through the face shape's functions.
+  - *Uses:* `jump` now takes any such field, from its traces at the face
+    center, so a DG field's jumps are its own and a continuous field's are
+    zero; `upwind_flux` is a DG advection flux, `(v . n) * area * u` with
+    `u` from the side the flow leaves, whose `divergence` is each cell's
+    net outflow.
 - **Geometry is a field**, `fields["shape"]`: `H1` positions per point
   (explicit, or `RectilinearCoordinates`, which store only the axes), or
   `L2` positions per cell corner. Topology stays the corners, so an `L2`
@@ -407,9 +426,11 @@ What building it showed:
   field's own `parametric_gradient`, so geometry and field each go
   through their own space. At order 1 the geometry's values are the
   corners, interpolated by the shape's functions; a higher-order geometry
-  adds its own basis behind the same two methods. Faces and edges of an
-  `L2` geometry are refused: each side's cell has its own corners there,
-  the per-side traces again.
+  adds its own basis behind the same two methods. An `L2` geometry's faces
+  are where their side 0 puts them: its traces, kept on the dataset, give
+  face views their positions, so `face_geometry` works on it. Its edges
+  are refused: the cells around an edge each have their own corners, and
+  an edge has no sides to choose from.
 - **A field's values are any array**, explicit or implicit, as Viskores'
   `ArrayHandle` storages are. A view is (space + storage): the space's
   methods read through the storage's `get(k)`, so a field can be a
@@ -451,15 +472,10 @@ What building it showed:
   to compile with a message far from the cause. Building a view now
   refuses any attribute named like something the view class defines.
 - **Not yet.** Faces and edges:
-  - *No face orientation index.* Each (cell, local face) records only
-    which side of the face the cell is (`side_slot`), not the rotation
-    between the cell's local order of the face's points and the face's
-    own (side 0's) order. Linear fields need nothing more, and neither do
-    order-2 faces, whose one interior value per face has no orientation.
-    Faces carrying several values (a quad at order 3, H(div) above order
-    0) need it: an index into the face shape's permutations, as MFEM's
-    `Elem2Inf % 64`, found from where side 1's first point sits in side
-    0's row.
+  - *Traces at order 1 only.* `SideTraces` holds a value per face point
+    (at most four). Higher order needs more points per face -- a face
+    quadrature rule or the face's own DOFs, ordered through
+    `face_position` -- and the space would grow a per-face count.
   - *Faces of 3D cells only.* A 2D mesh's `faces()` is empty, though its
     cells' sides -- the entities DG fluxes and external boundaries need --
     are its edges. Whether `faces()` should mean the codimension-1
@@ -483,8 +499,8 @@ What building it showed:
     elements) are not mapped onto derived faces; sets come only from
     algorithms such as `boundary_faces`.
 
-  Beyond faces and edges: PerSide fields (per-side traces), quadrature
-  spaces, sets of anything but face ids, and order above one.
+  Beyond faces and edges: quadrature spaces, sets of anything but face
+  ids, and order above one.
 
 ## 10. Polyhedra: a separate path
 

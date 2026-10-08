@@ -31,6 +31,7 @@ the cell ``c`` the loop is at.
 """
 
 import tack
+from tack.data import shapes
 
 # ── Entity kinds ────────────────────────────────────────────────────
 
@@ -282,6 +283,17 @@ class _L2Geometry(_Geometry):
         return self.get(self.point_offsets[self.entity_id(c)] + j)
 
 
+class _SideZeroGeometry(_Geometry):
+    """A face's positions from its side 0's cell: the face as that cell sees it.
+    For an L2 geometry, whose cells have their own corners, a face has no
+    positions of its own; ``face_points`` holds each side's, per (face, side,
+    point), as a ``SideTraces`` space lays them out."""
+
+    @tack.func
+    def point(self, f, j):
+        return self.face_points[self.entity_id(f) * 8 + j]
+
+
 # ── Incidence (cells) ───────────────────────────────────────────────
 
 
@@ -296,6 +308,30 @@ class _FaceIncidence:
     def face_side(self, c, f):
         """0 if this cell is the face's side 0 (the face's normal points out of it), else 1."""
         return self.side_slot[self.face_start + self.index(c) * self.NUM_FACES + f]
+
+    @tack.func
+    def face_orientation(self, c, f):
+        """``2 * r + reflected``: the cell's first point of local face ``f`` is point
+        ``r`` of the face's own row, going round it the same way or (``reflected``)
+        the other way."""
+        return self.side_orientation[self.face_start + self.index(c) * self.NUM_FACES + f]
+
+    @tack.func
+    def face_corner(self, f, k):
+        """The cell's corner that is point ``k`` of local face ``f``, in the order faces
+        are stored: a voxel's pixel faces (x-fastest) go round as quads, 0 1 3 2."""
+        kk = k
+        if self.face_shape(f) == shapes.PIXEL:
+            kk = k ^ (k >> 1)
+        return self.face_point(f, kk)
+
+    @tack.func
+    def face_position(self, c, f, k):
+        """Where point ``k`` of the cell's local face ``f`` is in the face's own row."""
+        o = self.face_orientation(c, f)
+        n = self.face_num_points(f)
+        r = o >> 1
+        return (r + k) % n if (o & 1) == 0 else (r - k + n) % n
 
 
 class _EdgeIncidence:
@@ -452,6 +488,24 @@ class _ConstantField:
     @tack.func
     def parametric_gradient(self, i, pc):
         return tack.Vector([0.0, 0.0, 0.0])
+
+
+class _SideTracesField:
+    """Values on each side of each face: for face ``f``, side ``s`` (0 or 1) and the
+    face's point ``j`` (in the face's own row), value ``(f * 2 + s) * 4 + j``.
+    ``value(f, s, pc)`` interpolates them with the face shape's functions, so
+    each side's trace is evaluated where the other's is."""
+
+    @tack.func
+    def trace(self, f, s, j):
+        return self.get((self.entity_id(f) * 2 + s) * 4 + j)
+
+    @tack.func
+    def value(self, f, s, pc):
+        total = self.trace(f, s, 0) * self.shape_function(0, pc)
+        for j in range(1, self.NUM_POINTS):
+            total += self.trace(f, s, j) * self.shape_function(j, pc)
+        return total
 
 
 class _ValuesField:

@@ -237,6 +237,29 @@ def _faces_from_runs(order, offsets, rows, kinds, owners, face_rows, face_kinds,
 
 
 @tack.kernel
+def _side_orientations(rows, side_face, face_rows, orientation, bad):
+    # Where this side's first face point sits in the face's row (side 0's
+    # order), and whether the side lists the points the other way round.
+    for s in range(side_face.shape[0]):
+        mine = rows[s]
+        face = face_rows[side_face[s]]
+        n = 3 if mine[3] == _NO_POINT else 4
+        r = 0
+        for j in range(n):
+            if face[j] == mine[0]:
+                r = j
+        after = r + 1 if r + 1 < n else 0
+        before = r - 1 if r > 0 else n - 1
+        if face[after] == mine[1]:
+            orientation[s] = 2 * r
+        elif face[before] == mine[1]:
+            orientation[s] = 2 * r + 1
+        else:
+            orientation[s] = 0
+            tack.atomic_add(bad, 0, 1)
+
+
+@tack.kernel
 def _select_kind(face_kinds, kind, flags):
     for f in range(face_kinds.shape[0]):
         flags[f] = 1 if face_kinds[f] == kind else 0
@@ -266,8 +289,11 @@ class Faces:
     ``rows`` (its point ids in side 0's outward order, a 4-vector padded with
     ``0x7FFFFFFF``), ``sides`` (``[cell0, local0, cell1, local1]``, the second
     pair ``-1`` on the boundary). Per (cell, local face), in the topology's
-    group layout: ``side_face`` (the face id) and ``side_slot`` (0 if the
-    cell is the face's side 0, else 1). ``groups()`` are the faces by shape,
+    group layout: ``side_face`` (the face id), ``side_slot`` (0 if the cell
+    is the face's side 0, else 1) and ``side_orientation``, ``2 * r +
+    reflected``: the cell's first point of the face is point ``r`` of the
+    face's row, and ``reflected`` is 1 when the cell goes round the face the
+    other way (as side 1 does, its outward normal being opposite). ``groups()`` are the faces by shape,
     for ``for_each``; ``boundary()`` the faces with one side.
     """
 
@@ -288,6 +314,7 @@ class Faces:
 
         self.side_face = tack.field(tack.i32, shape=(total,))
         self.side_slot = tack.field(tack.i32, shape=(total,))
+        self.side_orientation = tack.field(tack.i32, shape=(total,))
         if total:
             hi = tack.field(tack.u64, shape=(total,))
             lo = tack.field(tack.u64, shape=(total,))
@@ -306,6 +333,11 @@ class Faces:
                              self.sides, self.side_face, self.side_slot, too_many, count)
             if too_many[0]:
                 raise ValueError(f"{too_many[0]} faces are shared by more than two cells")
+            bad = tack.zeros(tack.i32, (1,))
+            _side_orientations(rows, self.side_face, self.rows, self.side_orientation, bad)
+            if bad[0]:
+                raise ValueError(f"{bad[0]} cell faces do not go round their face's points "
+                                 "in either direction")
         self._groups = None
         self._boundary = None
         return self

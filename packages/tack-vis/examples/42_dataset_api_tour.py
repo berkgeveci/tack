@@ -207,6 +207,16 @@ dg = td.Field(td.L2(mixed), _scalars(values))
 spread = alg.to_points(mixed, dg).values.to_numpy() - mixed.fields["height"].values.to_numpy()
 print(f"  each cell shifted by up to 0.3: the point averages now differ by up to "
       f"{np.abs(spread).max():.3f}")
+# Each side of each face as its own cell has it: the DG field's own jumps,
+# and an upwind flux through every face, from the side the flow leaves.
+dg_jump = alg.jump(mixed, dg).values.to_numpy()
+height_jump = alg.jump(mixed, mixed.fields["height"]).values.to_numpy()
+net = alg.divergence(mixed, alg.upwind_flux(mixed, td.Field(td.Constant(mixed),
+                     td.ConstantArray(1.0, mixed.num_cells)), (1.0, 0.5, 0.0)))
+print(f"  traces: the DG field jumps by up to {np.abs(dg_jump).max():.3f} across faces, "
+      f"the continuous one by {np.abs(height_jump).max():.1e}; an upwind flux of a "
+      f"constant leaves every cell with no net outflow: "
+      f"{np.allclose(net.values.to_numpy(), 0, atol=1e-4)}")
 if args.output:
     _write(explode(mixed, dg), os.path.join(args.output, "mixed_dg"))
 

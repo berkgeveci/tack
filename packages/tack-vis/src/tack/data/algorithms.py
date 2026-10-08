@@ -6,8 +6,12 @@
 - ``edge_lengths``: a field on edges.
 - ``boundary_faces`` / ``extract_surface``: a side set, and a surface
   dataset made of it.
-- ``jump``: a cell field's difference across each face, from side 0 to side
-  1 -- data on the two sides of a face.
+- ``traces``: any field with a basis, as each cell has it on each of its
+  faces -- values on the two sides of a face, point by point.
+- ``jump``: a field's difference across each face, from side 0 to side 1,
+  from its traces, so a DG field's own jumps.
+- ``upwind_flux``: a DG-style advective flux through each face, from the
+  upwind side's trace.
 - ``divergence``: each cell's outward sum of a face field, through the cell
   -> face incidence and which side of each face the cell is.
 - ``to_points``: a cell or DG field averaged onto points (projection to
@@ -25,7 +29,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, sort_by_key
 from tack.data.arrays import materialize, width_of
-from tack.data.dataset import DataSet, Field, for_each
+from tack.data.dataset import DataSet, Field, for_each, traces
 from tack.data.spaces import H1, L2, Constant, Values
 from tack.data.topology import UnstructuredTopology
 
@@ -40,6 +44,8 @@ __all__ = [
     "gradients",
     "jump",
     "to_points",
+    "traces",
+    "upwind_flux",
     "values_at_centers",
 ]
 
@@ -210,20 +216,48 @@ def extract_surface(data, name="boundary"):
 # ── Two-sided faces and incidence ───────────────────────────────────
 
 @tack.kernel
-def _jump(faces, values, out):
+def _jump(faces, t, out):
     for f in faces:
-        c0 = faces.side_cell(f, 0)
-        c1 = faces.side_cell(f, 1)
-        out[faces.entity_id(f)] = values[c1] - values[c0] if c1 >= 0 else values[c0] * 0.0
+        pc = faces.parametric_center()
+        inside = t.value(f, 0, pc)
+        out[faces.entity_id(f)] = (t.value(f, 1, pc) - inside if faces.num_sides(f) == 2
+                                   else inside * 0.0)
 
 
 def jump(data, field):
-    """A cell field's difference across each face, side 1 minus side 0 (zero on the
-    boundary): a field on faces."""
-    if not isinstance(field.space, Constant):
-        raise TypeError("jump takes a field of one value per cell")
+    """A field's difference across each face at the face's center, side 1 minus side
+    0 (zero on the boundary): a field on faces. Each side is the field as its own
+    cell has it -- ``traces`` -- so a DG field's jumps are its own, not its cells'
+    averages; a continuous field's are zero."""
+    t = traces(data, field)
     out = _like(field.values, data.topology.faces().num_faces)
-    for_each(_jump, data, "faces", materialize(field.values), out)
+    for_each(_jump, data, "faces", t, out)
+    return Field(Values(data, "faces"), out)
+
+
+@tack.kernel
+def _upwind(faces, t, normals, areas, vx, vy, vz, out):
+    for f in faces:
+        e = faces.entity_id(f)
+        pc = faces.parametric_center()
+        vn = normals[e].dot(tack.Vector([vx, vy, vz]))
+        upwind = t.value(f, 0, pc)
+        if vn < 0.0 and faces.num_sides(f) == 2:
+            upwind = t.value(f, 1, pc)
+        out[e] = vn * areas[e] * upwind
+
+
+def upwind_flux(data, field, velocity):
+    """The flux of ``field`` carried by a constant ``velocity`` through each face, out
+    of side 0: ``(v . n) * area * u``, ``u`` taken from the upwind side at the face's
+    center -- the side the flow leaves -- as a DG advection scheme does. A boundary
+    face takes its one side's value whichever way the flow goes. ``divergence`` of
+    the result is each cell's net outflow."""
+    normals, areas = face_geometry(data)
+    t = traces(data, field)
+    out = _like(field.values, data.topology.faces().num_faces)
+    vx, vy, vz = (float(v) for v in velocity)
+    for_each(_upwind, data, "faces", t, normals.values, areas.values, vx, vy, vz, out)
     return Field(Values(data, "faces"), out)
 
 

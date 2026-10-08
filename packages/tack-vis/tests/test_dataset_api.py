@@ -446,11 +446,18 @@ def test_discontinuous_geometry(backend):
     # The same point values over cells half the size: twice the gradient.
     got = alg.gradients(shrunk, shrunk.fields["u"]).values.to_numpy(vectors=True)
     np.testing.assert_allclose(got, np.tile([2, 4, -2], (3, 1)), atol=1e-4)
-    # Faces come from the topology, which still has the cells share points ...
+    # Faces come from the topology, which still has the cells share points; a face
+    # is where its side 0 puts it: half the size each way, facing the same way.
     assert shrunk.topology.faces().num_faces == 15
-    # ... but have no positions of their own: each side's cell has its own.
-    with pytest.raises(NotImplementedError, match="per-side traces"):
-        alg.face_geometry(shrunk)
+    normals, areas = alg.face_geometry(shrunk)
+    original_normals, original_areas = alg.face_geometry(data)
+    np.testing.assert_allclose(areas.values.to_numpy(), 0.25 * original_areas.values.to_numpy(),
+                               rtol=1e-5)
+    np.testing.assert_allclose(normals.values.to_numpy(vectors=True),
+                               original_normals.values.to_numpy(vectors=True), atol=1e-5)
+    # Edges have no sides to choose a cell from.
+    with pytest.raises(NotImplementedError, match="edges"):
+        alg.edge_lengths(shrunk)
     with pytest.raises(ValueError, match="per cell corner"):
         shrunk.positions()
 
@@ -713,3 +720,131 @@ def test_variable_order_spaces(backend):
     u = td.Field(td.L2(data, order=orders), _scalars(np.zeros(14)))
     with pytest.raises(ValueError, match="for_each makes"):
         u.view(data.topology.groups()[0])
+
+
+# ── Face orientation and per-side traces ────────────────────────────
+
+@tack.kernel
+def _face_positions(cells, points, slots, reflected):
+    for c in cells:
+        for f in range(cells.NUM_FACES):
+            face = cells.face_id(c, f)
+            for k in range(cells.face_num_points(f)):
+                at = (cells.entity_id(c) * 6 + f) * 4 + k
+                points[at] = cells.point_id(c, cells.face_corner(f, k))
+                slots[at] = face * 4 + cells.face_position(c, f, k)
+            reflected[cells.entity_id(c) * 6 + f] = (cells.face_orientation(c, f) & 1) \
+                - cells.face_side(c, f)
+
+
+def _check_orientation(data):
+    """Every cell's face points land, through its orientation, on the same points of
+    the face's own row; and a cell goes round its face backwards exactly when it is
+    side 1, its outward normal being the other way."""
+    faces = data.topology.faces()
+    n = data.num_cells * 6 * 4
+    points = _scalars(np.full(n, -1), tack.i32)
+    slots = _scalars(np.full(n, -1), tack.i32)
+    reflected = _scalars(np.zeros(data.num_cells * 6), tack.i32)
+    td.for_each(_face_positions, data, "cells", points, slots, reflected)
+    points, slots = points.to_numpy(), slots.to_numpy()
+    used = slots >= 0
+    rows = faces.rows.to_numpy()
+    np.testing.assert_array_equal(rows[slots[used]], points[used])
+    assert used.sum() == sum(4 if k == 9 else 3 for k in faces.kinds.to_numpy()
+                             for _ in range(2)) - sum(
+        4 if k == 9 else 3 for k, s in zip(faces.kinds.to_numpy(),
+                                           faces.sides.to_numpy(vectors=True)) if s[2] < 0)
+    np.testing.assert_array_equal(reflected.to_numpy(), 0)
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_face_orientation(backend, make):
+    _check_orientation(_grids()[make])
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
+def test_face_orientation_on_every_solid(backend, kind):
+    _check_orientation(vtk_to_dataset(_vtk_cells(kind)))
+
+
+def _with_cell_offsets(data, field, step):
+    """``field`` in the DG layout with ``step`` times each cell's id added to its
+    own values: cells disagree by known amounts wherever they meet."""
+    dg = alg.discontinuous(data, field)
+    offsets = td.L2(data).offsets.to_numpy()
+    values = dg.values.to_numpy()
+    for c in range(data.num_cells):
+        values[offsets[c]:offsets[c + 1]] += step * c
+    return td.Field(dg.space, _scalars(values))
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_traces_line_up(backend, make):
+    data = _grids()[make]
+    faces = data.topology.faces()
+    u = _height(data)
+    t = alg.traces(data, u)
+    assert t.space is td.SideTraces(data)
+    values = t.values.to_numpy().reshape(-1, 2, 4)
+    rows = faces.rows.to_numpy(vectors=True)
+    sides = faces.sides.to_numpy(vectors=True)
+    height = u.values.to_numpy()
+    for f, (row, side) in enumerate(zip(rows, sides)):
+        n = 3 if faces.kinds[f] == 5 else 4
+        np.testing.assert_allclose(values[f, 0, :n], height[row[:n]], atol=1e-5)
+        if side[2] >= 0:
+            np.testing.assert_allclose(values[f, 1, :n], height[row[:n]], atol=1e-5)
+    # A continuous field has no jumps; a DG one has its own.
+    np.testing.assert_allclose(alg.jump(data, u).values.to_numpy(), 0, atol=1e-5)
+    dg = _with_cell_offsets(data, u, 10.0)
+    expected = np.where(sides[:, 2] >= 0, 10.0 * (sides[:, 2] - sides[:, 0]), 0.0)
+    np.testing.assert_allclose(alg.jump(data, dg).values.to_numpy(), expected, atol=1e-4)
+
+
+@needs_vtk
+@pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
+def test_jumps_on_every_solid(backend, kind):
+    data = vtk_to_dataset(_vtk_cells(kind, (2, 2, 2)))
+    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    dg = _with_cell_offsets(data, _height(data), 10.0)
+    expected = np.where(sides[:, 2] >= 0, 10.0 * (sides[:, 2] - sides[:, 0]), 0.0)
+    # Values reach 10 * cells (about 500 here): a difference of two f32 traces
+    # that size is good to a few units in their last place.
+    np.testing.assert_allclose(alg.jump(data, dg).values.to_numpy(), expected,
+                               atol=1e-6 * 10.0 * data.num_cells * 8)
+
+
+def test_traces_of_a_variable_order_field(backend):
+    data = _two_hexes_and_a_pyramid()
+    orders = np.array([1, 0, 1])
+    u, centers = _variable_height(data, orders)
+    values = alg.traces(data, u).values.to_numpy().reshape(-1, 2, 4)
+    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    kinds = data.topology.faces().kinds.to_numpy()
+    for f, side in enumerate(sides):
+        n = 3 if kinds[f] == 5 else 4
+        for s in range(2 if side[2] >= 0 else 1):
+            if orders[side[2 * s]] == 0:            # an order-0 cell: its one value
+                np.testing.assert_allclose(values[f, s, :n], centers[side[2 * s]], atol=1e-5)
+
+
+@pytest.mark.parametrize("make", ["mixed", "rectilinear"])
+def test_upwind_flux(backend, make):
+    data = _grids()[make]
+    velocity = (1.0, 0.5, -0.25)
+    # A constant is carried through every closed cell unchanged: no net outflow.
+    constant = td.Field(td.Constant(data), td.ConstantArray(2.0, data.num_cells))
+    net = alg.divergence(data, alg.upwind_flux(data, constant, velocity))
+    np.testing.assert_allclose(net.values.to_numpy(), 0, atol=1e-4)
+    # Each face carries the value of the cell the flow leaves.
+    values = np.arange(data.num_cells, dtype=float) + 1
+    flux = alg.upwind_flux(data, td.Field(td.Constant(data), _scalars(values)), velocity)
+    normals, areas = alg.face_geometry(data)
+    vn = normals.values.to_numpy(vectors=True) @ velocity
+    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    upwind = np.where((vn < 0) & (sides[:, 2] >= 0), sides[:, 2], sides[:, 0])
+    np.testing.assert_allclose(flux.values.to_numpy(),
+                               vn * areas.values.to_numpy() * values[upwind], rtol=1e-5,
+                               atol=1e-6)

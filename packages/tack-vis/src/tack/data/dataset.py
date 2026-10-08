@@ -32,9 +32,9 @@ import tack
 from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.data import arrays, views
 from tack.data.arrays import CartesianProduct
-from tack.data.spaces import H1, L2, Space
+from tack.data.spaces import H1, L2, SideTraces, Space
 
-__all__ = ["DataSet", "Field", "for_each", "rectilinear_grid"]
+__all__ = ["DataSet", "Field", "for_each", "rectilinear_grid", "traces"]
 
 
 class Field:
@@ -106,15 +106,19 @@ def _as_geometry(geometry, topology, dtype):
     return geometry
 
 
-def _geometry_parts(geometry, group, kind):
-    """The mixins and attributes that give ``group``'s view, an entity of ``kind``, the
-    geometry field ``geometry``."""
+def _geometry_parts(data, group, kind):
+    """The mixins and attributes that give ``group``'s view, an entity of ``kind``,
+    ``data``'s geometry field."""
+    geometry = data.geometry
     if isinstance(geometry.space, L2):
+        if kind == "faces":
+            # Each side's cell has its own corners: a face is where its side 0
+            # puts it.
+            return [views._SideZeroGeometry], {"face_points": data._side_zero_points()}
         if kind != "cells":
             raise NotImplementedError(
-                f"the {kind} of an L2 geometry have no positions of their own: each side's "
-                "cell has its own corners there, which needs per-side traces "
-                "(docs/design/dataset-api.md, section 9)")
+                f"the {kind} of an L2 geometry have no positions of their own: each cell "
+                "around an edge has its own, and edges have no sides to choose from")
         return _space_parts(geometry, group, views._L2Geometry)
     return _space_parts(geometry, group, views._H1Geometry)
 
@@ -182,7 +186,7 @@ class DataSet:
         faces and edges have been derived."""
         mixins = []
         kind = domain if domain in ("cells", "faces", "edges") else "faces"
-        geometry, attributes = _geometry_parts(self.geometry, group, kind)
+        geometry, attributes = _geometry_parts(self, group, kind)
         mixins.extend(geometry)
         if domain == "cells":
             # A subgroup's index(c) is its position in the topology's group, so
@@ -191,6 +195,7 @@ class DataSet:
             if faces is not None and group.shape.NUM_FACES:
                 mixins.append(views._FaceIncidence)
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
+                                  side_orientation=faces.side_orientation,
                                   face_start=faces.group_starts[id(group.root)])
             edges = self.topology._edges
             if edges is not None and group.shape.NUM_EDGES:
@@ -198,6 +203,15 @@ class DataSet:
                 attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
                                   edge_start=edges.group_starts[id(group.root)])
         return group.view(*mixins, **attributes)
+
+    def _side_zero_points(self):
+        """An L2 geometry's corners per (face, side, point): its traces, kept while the
+        geometry is the same field."""
+        kept = self.__dict__.get("_side_zero")
+        if kept is None or kept[0] is not self.geometry:
+            kept = (self.geometry, traces(self, self.geometry).values)
+            self._side_zero = kept
+        return kept[1]
 
     def launch_groups(self, domain, fields=()):
         """The groups a kernel over ``domain`` launches once each, given the ``Field``s
@@ -233,6 +247,42 @@ def for_each(kernel, data, domain, *args):
             continue
         view = data.domain_view(domain, group)
         kernel(view, *(a.view(group) if isinstance(a, Field) else a for a in args))
+
+
+# ── Per-side traces ─────────────────────────────────────────────────
+
+@tack.kernel
+def _traces(cells, u, out):
+    for c in cells:
+        for f in range(cells.NUM_FACES):
+            first = (cells.face_id(c, f) * 2 + cells.face_side(c, f)) * 4
+            for k in range(cells.face_num_points(f)):
+                pc = cells.parametric_point(cells.face_corner(f, k))
+                out[first + cells.face_position(c, f, k)] = u.value(c, pc)
+
+
+def traces(data, field):
+    """``field`` -- any field with a basis on the cells: ``H1``, ``L2`` (an order per
+    cell too), ``Constant`` -- evaluated by each 3D cell at each of its faces'
+    points: a ``SideTraces`` field. Each cell writes its own side, at the face's
+    points in the face's own order (``face_position``), so the two sides of a
+    face line up point by point. Boundary faces leave side 1 zero."""
+    space = field.space
+    if not space.interpolated or space.on not in ("cells", "points"):
+        raise TypeError(f"traces are taken from a field with a basis on the cells, "
+                        f"not {space!r}")
+    data.topology.faces()
+    out_space = SideTraces(data)
+    width = arrays.width_of(field.values)
+    shape = (out_space.size, width) if width else (out_space.size,)
+    out = (tack.Vector.field(width, arrays.dtype_of(field.values), shape=(out_space.size,))
+           if width else tack.field(arrays.dtype_of(field.values), shape=(out_space.size,)))
+    if out_space.size:
+        out.from_numpy(np.zeros(shape, dtype=arrays.dtype_of(field.values).numpy_dtype))
+    for group in data.launch_groups("cells", [field]):
+        if group.count and group.shape.NUM_FACES:
+            _traces(data.domain_view("cells", group), field.view(group), out)
+    return Field(out_space, out)
 
 
 # ── Subgroups ───────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ parameters, as MFEM's ``FiniteElementSpace`` is on a mesh::
     td.L2(data, order=orders)   # an order per cell (0 or 1 here): p-adaptive DG
     td.Constant(data)           # one value per cell
     td.Values(data, "faces")    # one value per face, no basis
+    td.SideTraces(data)         # values on each side of each face, at its points
 
 Spaces are interned on their topology: the same kind and parameters on the
 same topology is the same object, so fields that share a space share its
@@ -39,7 +40,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import views
 
-__all__ = ["H1", "L2", "Constant", "Space", "Values"]
+__all__ = ["H1", "L2", "Constant", "SideTraces", "Space", "Values"]
 
 
 class Space:
@@ -264,3 +265,21 @@ class Values(Space):
                 "cells": lambda: topology.num_cells,
                 "faces": lambda: topology.faces().num_faces,
                 "edges": lambda: topology.edges().num_edges}[self.on]()
+
+
+class SideTraces(Space):
+    """Per side: each face holds, for each of its sides, a value at each of its
+    points (in the face's own row) -- a field's trace from each cell onto the
+    face, MFEM's double-valued face E-vector. Laid out ``(face * 2 + side) * 4 +
+    point``, triangles leaving the fourth slot unused and boundary faces side 1.
+    ``tack.data.algorithms.traces`` fills one from any field with a basis."""
+
+    on = "faces"
+    mixin = views._SideTracesField
+    interpolated = True
+    #: Values per face: two sides of at most four points.
+    PER_FACE = 8
+
+    @property
+    def size(self):
+        return self.topology.faces().num_faces * self.PER_FACE
