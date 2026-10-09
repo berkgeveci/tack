@@ -169,7 +169,7 @@ def test_fields_carried_onto_the_surface(backend):
     surface = td.contour(data, "r", 0.7)
     points = surface.positions()
     np.testing.assert_allclose(surface.fields["x"].values.to_numpy(), points[:, 0], atol=1e-5)
-    assert surface.fields["cell"].space is td.Values(surface, "cells")
+    assert surface.fields["cell"].space is td.Constant(surface)    # it keeps its kind
     # Each triangle lies in the cell it says it came from.
     _, triangles = _triangles(surface)
     cells = surface.fields["cell"].values.to_numpy().astype(int)

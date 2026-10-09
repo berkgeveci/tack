@@ -33,6 +33,7 @@ from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, gather
 from tack.data import shapes
 from tack.data.buckets import bucket_order
+from tack.data.carry import Same, carry
 from tack.data.topology import _as_field, _Topology
 from tack.data.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells
 
@@ -824,13 +825,11 @@ def _polygon_loops(cells, offsets, loops):
             loops[at + k] = cells.point_id(c, kk)
 
 
-def as_polygons(data):
+def as_polygons(data, fields=None):
     """A shape-based dataset of 2D cells -- triangles, quads, pixels -- as a polygonal
     one: each cell's points in order become its loop. Fields carry as
     ``as_polyhedra``'s do, but values on faces and edges, whose numbering the
     polygonal topology derives afresh, are dropped."""
-    from tack.data.dataset import DataSet, Field
-    from tack.data.spaces import H1, Constant, Values
 
     topology = data.topology
     for group in topology.groups():
@@ -849,18 +848,8 @@ def as_polygons(data):
         if group.count:
             _polygon_loops(group.view(), offsets, loops)
     out = PolygonalTopology(offsets, loops, num_points=data.num_points)
-    fields = {}
-    for name, field in data.fields.items():
-        space = field.space
-        if name == "shape":
-            continue
-        if isinstance(space, H1) and space.order == 1:
-            fields[name] = Field(H1(out), field.values)
-        elif isinstance(space, Constant):
-            fields[name] = Field(Constant(out), field.values)
-        elif isinstance(space, Values) and space.on in ("points", "cells"):
-            fields[name] = Field(Values(out, space.on), field.values)
-    return DataSet(out, Field(H1(out), data.geometry.values), fields=fields)
+    # The same points and cells; edge numbering is derived afresh.
+    return carry(data, out, points=Same(), cells=Same(), fields=fields)
 
 @tack.kernel
 def _face_sizes(kinds, sizes):
@@ -891,7 +880,7 @@ def _cell_face_entries(cells, offsets, cell_faces, cell_face_sides):
             cell_face_sides[at + f] = tack.u8(cells.face_side(c, f))
 
 
-def as_polyhedra(data):
+def as_polyhedra(data, fields=None):
     """A shape-based dataset as a polyhedral one, every cell a polyhedron.
 
     Its derived faces already hold every face once, in side 0's outward order
@@ -901,8 +890,7 @@ def as_polyhedra(data):
     ``Constant`` and ``H1`` order-1 fields, values on points, cells, faces and
     edges, and sets carry over; fields needing a reference element are dropped.
     """
-    from tack.data.dataset import DataSet, Field
-    from tack.data.spaces import H1, Constant, Values
+    from tack.data.spaces import H1
 
     if not isinstance(data.geometry.space, H1) or data.geometry.space.order != 1:
         raise TypeError("as_polyhedra needs an order-1 H1 geometry: positions per point")
@@ -940,19 +928,8 @@ def as_polyhedra(data):
     out = PolyhedralTopology(starts, face_points, cell_offsets, cell_faces, cell_face_sides,
                              num_points=data.num_points)
 
-    def carry(field):
-        space = field.space
-        if isinstance(space, H1) and space.order == 1:
-            return Field(H1(out), field.values)
-        if isinstance(space, Constant):
-            return Field(Constant(out), field.values)
-        if isinstance(space, Values):
-            return Field(Values(out, space.on, oriented=space.oriented), field.values)
-        return None
-
-    fields = {}
-    for name, field in data.fields.items():
-        if name != "shape" and carry(field) is not None:
-            fields[name] = carry(field)
-    return DataSet(out, Field(H1(out), data.geometry.values), fields=fields,
-                   sets=dict(data.sets))
+    # The same points, cells and faces (in the shape path's numbering), so the
+    # face sets still apply; edges too, both paths numbering them by (low, high)
+    # point ids.
+    return carry(data, out, points=Same(), cells=Same(), faces=Same(), edges=Same(),
+                 fields=fields, sets=dict(data.sets))

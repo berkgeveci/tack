@@ -241,18 +241,37 @@ Results are `Field`s, or `DataSet`s for filters. In the table,
 Where the table says "no", the algorithm needs a reference element and
 raises `NotImplementedError` saying so.
 
-**How fields carry through filters.**
+**How fields carry through filters.** Every filter that makes a new dataset
+(contour, slice, threshold, external faces and `extract_surface`,
+`as_polyhedra`, `as_polygons`) carries fields the same way, through
+`tack.data.carry`. The filter states how its output's entities come from the
+input's -- the same entity (`Same`), input entity `ids[i]` (`Take`), a piece
+of input cell `ids[i]` (`Pieces`), or a point between two input points
+(`Interpolate`) -- and one set of rules applies to every field:
 
-- `threshold`: point fields go to the kept points and cell fields to the
-  kept cells, with `L2` fields copied block by block.
-  - On polyhedra, face values come along as well. A face that loses its
-    side-0 cell is turned around, and its oriented values are negated.
-  - Fields on derived faces and edges of shape-based meshes, whose
-    numbering is derived afresh, are dropped.
-- `extract_surface`: face values become the surface's cell values.
-- `contour`, `slice_plane`: these produce triangles (shape-based) or
-  polygons (polyhedral). They linearize higher-order data at the cell
-  corners.
+| Input field | On the output |
+|---|---|
+| point data (`H1`, values on points) | through the point map; an order-2 field brings its corner values; interpolated only if floating point |
+| cell data (`Constant`, values on cells) | through the cell map, keeping its kind |
+| `L2` (DG) data | copied cell by cell, each cell keeping its order, when whole cells are kept (not pieces) and the output has reference cells |
+| values on faces | through the face map, oriented values negated where a face is turned; or onto the output's cells when they are input faces (a surface) |
+| values on edges | through the edge map, given only where the edges are the input's (`as_polyhedra`) |
+| traces, anything without a map | left behind |
+
+What each filter gives:
+
+| Filter | points | cells | faces | edges |
+|---|---|---|---|---|
+| `threshold` | kept points | kept cells | kept faces, turned where needed (polyhedra) | — |
+| `contour`, `slice_plane` | interpolated along edges | pieces of the cut cells | — | — |
+| `external_faces`, `extract_surface` | the same points | pieces (each face's cell); face values become cell values | — | — |
+| `as_polyhedra` | same | same | same | same |
+| `as_polygons` | same | same | — | — |
+
+Every one of them takes `fields=`: all fields by default, a name or a list
+of names, or `[]` for none; a name the input lacks raises `KeyError`. A new
+filter states its maps and calls `carry(data, out, points=..., cells=...,
+fields=fields)`.
 
 ## Interoperability
 

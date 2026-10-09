@@ -37,8 +37,9 @@ run on shape-based and polyhedral topologies from one source.
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import shapes
-from tack.data.arrays import materialize, size_of, width_of
-from tack.data.dataset import DataSet, Field, for_each, traces
+from tack.data.arrays import materialize, width_of
+from tack.data.carry import Pieces, Same, Take, _like, _take, carry
+from tack.data.dataset import Field, for_each, traces
 from tack.data.spaces import H1, L2, Constant, Values, reference_cells
 from tack.data.topology import UnstructuredTopology, corner_layout
 
@@ -308,7 +309,7 @@ def _face_cells(ids, sides, out):
         out[i] = sides[ids[i]][0]
 
 
-def extract_surface(data, name="boundary"):
+def extract_surface(data, name="boundary", fields=None):
     """The faces of set ``name`` as a surface dataset: triangles and quads on the same
     points, each in its side 0's outward order. Fields on faces become the surface's
     cell fields, and so do cell fields (``Constant``, values on cells), each face
@@ -319,7 +320,7 @@ def extract_surface(data, name="boundary"):
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_surface keeps the points, so needs an H1 geometry")
     if not getattr(data.topology, "reference_cells", True):
-        return _polygon_surface(data, name)
+        return _polygon_surface(data, name, fields)
     faces = data.topology.faces()
     ids = data.sets[name]
     n = ids.shape[0]
@@ -338,23 +339,8 @@ def extract_surface(data, name="boundary"):
     cells = tack.field(tack.i32, shape=(n,))
     if n:
         _face_cells(ids, faces.sides, cells)
-    fields = {}
-    for key, f in data.fields.items():
-        space = f.space
-        if key == "shape":
-            continue
-        if _on_faces(data, f):
-            fields[key] = Field(Values(surface, "cells"), _take(f.values, ids))
-        elif isinstance(space, Constant) or space is Values(data, "cells"):
-            fields[key] = Field(Values(surface, "cells"), _take(f.values, cells))
-        elif isinstance(space, H1):
-            fields[key] = Field(H1(surface), _point_values(f.values, data.num_points))
-        elif space is Values(data, "points"):
-            fields[key] = Field(Values(surface, "points"), f.values)
-    # The same points: the geometry's values, on the surface's H1 space.
-    return DataSet(surface, Field(H1(surface), _point_values(data.geometry.values,
-                                                             data.num_points)),
-                   fields=fields)
+    return carry(data, surface, points=Same(), cells=Pieces(cells), faces_to_cells=Take(ids),
+                 fields=fields)
 
 
 @tack.kernel
@@ -378,7 +364,7 @@ def _close_last(offsets, n, total):
         offsets[n] = total
 
 
-def _polygon_surface(data, name):
+def _polygon_surface(data, name, fields=None):
     """``extract_surface`` of a polyhedral topology: the set's faces, each a polygon in
     its side 0's outward order, as a ``PolygonalTopology`` on the same points."""
     from tack.data.polyhedra import PolygonalTopology
@@ -400,30 +386,8 @@ def _polygon_surface(data, name):
     cells = tack.field(tack.i32, shape=(n,))
     if n:
         _face_cells(ids, faces.sides, cells)
-    fields = {}
-    for key, f in data.fields.items():
-        space = f.space
-        if key == "shape":
-            continue
-        if _on_faces(data, f):
-            fields[key] = Field(Values(surface, "cells"), _take(f.values, ids))
-        elif isinstance(space, Constant) or space is Values(data, "cells"):
-            fields[key] = Field(Values(surface, "cells"), _take(f.values, cells))
-        elif isinstance(space, H1):
-            fields[key] = Field(H1(surface), _point_values(f.values, data.num_points))
-        elif space is Values(data, "points"):
-            fields[key] = Field(Values(surface, "points"), f.values)
-    return DataSet(surface, Field(H1(surface), _point_values(data.geometry.values,
-                                                             data.num_points)),
-                   fields=fields)
-
-
-def _point_values(values, n):
-    """An H1 field's values at the points: all of an order-1 field's, the first ``n``
-    of an order-2 field's (which go on to its edges, faces and cells)."""
-    if size_of(values) == n:
-        return values
-    return _take(values, tack.arange(n, tack.i32))
+    return carry(data, surface, points=Same(), cells=Pieces(cells), faces_to_cells=Take(ids),
+                 fields=fields)
 
 
 # ── Two-sided faces and incidence ───────────────────────────────────
@@ -705,25 +669,3 @@ def _all(n):
     if n:
         _counting(ids)
     return ids
-
-
-# ── Helpers ─────────────────────────────────────────────────────────
-
-def _like(values, n):
-    width = width_of(values)
-    if width:
-        return tack.Vector.field(width, values.dtype, shape=(n,))
-    return tack.field(values.dtype, shape=(n,))
-
-
-@tack.kernel
-def _take_rows(values, ids, out):
-    for i in range(ids.shape[0]):
-        out[i] = values[ids[i]]
-
-
-def _take(values, ids):
-    out = _like(values, ids.shape[0])
-    if ids.shape[0]:
-        _take_rows(materialize(values), ids, out)
-    return out

@@ -36,10 +36,11 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, gather
 from tack.data import arrays, shapes
-from tack.data.algorithms import _like, _take, boundary_faces, extract_surface
+from tack.data.algorithms import boundary_faces, extract_surface
 from tack.data.buckets import bucket_order
-from tack.data.dataset import DataSet, Field
-from tack.data.spaces import H1, L2, Constant, Values
+from tack.data.carry import Interpolate, Pieces, Take, carry
+from tack.data.dataset import Field
+from tack.data.spaces import H1, Constant, Values
 from tack.data.topology import UnstructuredTopology
 
 __all__ = ["contour", "external_faces", "slice_plane", "threshold"]
@@ -132,14 +133,6 @@ def _triangle_cells(sources, out):
 
 
 @tack.kernel
-def _interpolate_edges(values, edges, weights, out, n):
-    for i in range(n):
-        ab = edges[i]
-        va = values[ab[0]]
-        out[i] = va + weights[i] * (values[ab[1]] - va)
-
-
-@tack.kernel
 def _triangles(rows, types, offsets, connectivity, count):
     for t in range(count):
         types[t] = tack.u8(shapes.TRIANGLE)
@@ -150,7 +143,7 @@ def _triangles(rows, types, offsets, connectivity, count):
             offsets[count] = 3 * count
 
 
-def contour(data, field, isovalue, merge_points=True):
+def contour(data, field, isovalue, merge_points=True, fields=None):
     """The surface where ``field`` crosses ``isovalue``, as triangles.
 
     ``field`` is a scalar field with a basis, or its name: ``H1`` (point
@@ -171,7 +164,7 @@ def contour(data, field, isovalue, merge_points=True):
     space = field.space
     _scalar_floating("contour", field)
     if not getattr(data.topology, "reference_cells", True):
-        return _polyhedral_contour(data, field, isovalue)
+        return _polyhedral_contour(data, field, isovalue, fields)
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"contour needs a field with a basis on the cells, not {space!r}")
     per_cell = 0 if isinstance(space, H1) and isinstance(data.geometry.space, H1) else 1
@@ -219,23 +212,9 @@ def contour(data, field, isovalue, merge_points=True):
     if triangles:
         _triangles(rows, types, tri_offsets, connectivity, triangles)
     surface = UnstructuredTopology(types, tri_offsets, connectivity, num_points=count)
-    fields = {}
-    for name, f in data.fields.items():
-        if name == "shape" or arrays.dtype_of(f.values) not in (tack.f32, tack.f64):
-            continue
-        on_points = isinstance(f.space, H1) or (isinstance(f.space, Values)
-                                                and f.space.on == "points")
-        on_cells = isinstance(f.space, Constant) or (isinstance(f.space, Values)
-                                                     and f.space.on == "cells")
-        if on_points:
-            out = _like(f.values, count)
-            if count:
-                _interpolate_edges(arrays.materialize(f.values), edges, weights, out, count)
-            fields[name] = Field(H1(surface) if isinstance(f.space, H1)
-                                 else Values(surface, "points"), out)
-        elif on_cells:
-            fields[name] = Field(Values(surface, "cells"), _take(f.values, triangle_cells))
-    return DataSet(surface, Field(H1(surface), points), fields=fields)
+    return carry(data, surface, points=Interpolate(edges, weights),
+                 cells=Pieces(triangle_cells), geometry=Field(H1(surface), points),
+                 fields=fields)
 
 
 # ── Contour of polyhedra: López's polygon tracing, face by face ─────
@@ -387,7 +366,7 @@ def _close_starts(starts, count, total):
         starts[count] = total
 
 
-def _polyhedral_contour(data, field, isovalue):
+def _polyhedral_contour(data, field, isovalue, fields=None):
     """``contour`` of a polyhedral topology: iso-polygons by López's tracing, as a
     ``PolygonalTopology`` -- polygons, not triangles."""
     from tack.data.polyhedra import PolygonalTopology, SizeBuckets
@@ -453,19 +432,8 @@ def _polyhedral_contour(data, field, isovalue):
     if pairs:
         _renumber_vertices(vertices, vertex_of_pair)
     surface = PolygonalTopology(poly_starts, vertices, num_points=count)
-    fields = {}
-    for name, f in data.fields.items():
-        if name == "shape" or arrays.dtype_of(f.values) not in (tack.f32, tack.f64):
-            continue
-        if isinstance(f.space, H1) or f.space is Values(data, "points"):
-            out = _like(f.values, count)
-            if count:
-                _interpolate_edges(arrays.materialize(f.values), ends, weights, out, count)
-            fields[name] = Field(H1(surface) if isinstance(f.space, H1)
-                                 else Values(surface, "points"), out)
-        elif isinstance(f.space, Constant) or f.space is Values(data, "cells"):
-            fields[name] = Field(Values(surface, "cells"), _take(f.values, poly_cells))
-    return DataSet(surface, Field(H1(surface), positions), fields=fields)
+    return carry(data, surface, points=Interpolate(ends, weights), cells=Pieces(poly_cells),
+                 geometry=Field(H1(surface), positions), fields=fields)
 
 
 # ── Slice ───────────────────────────────────────────────────────────
@@ -476,7 +444,7 @@ def _plane_distances(points, ox, oy, oz, nx, ny, nz, out, n):
         out[p] = (points[p] - tack.Vector([ox, oy, oz])).dot(tack.Vector([nx, ny, nz]))
 
 
-def slice_plane(data, origin, normal, merge_points=True):
+def slice_plane(data, origin, normal, merge_points=True, fields=None):
     """The cut of the 3D cells by the plane through ``origin`` with ``normal`` (any
     length), as triangles: ``contour`` at zero of each position's signed distance
     to the plane along ``normal``. The distance is computed in the geometry's own
@@ -490,7 +458,8 @@ def slice_plane(data, origin, normal, merge_points=True):
         nx, ny, nz = (float(v) for v in normal)
         _plane_distances(arrays.materialize(geometry.values), ox, oy, oz, nx, ny, nz,
                          distance, n)
-    return contour(data, Field(geometry.space, distance), 0.0, merge_points=merge_points)
+    return contour(data, Field(geometry.space, distance), 0.0, merge_points=merge_points,
+                   fields=fields)
 
 
 # ── Threshold ───────────────────────────────────────────────────────
@@ -542,23 +511,7 @@ def _renumber(connectivity, new_ids):
         connectivity[k] = new_ids[connectivity[k]]
 
 
-@tack.kernel
-def _keep_rows(values, used, new_ids, out, n):
-    for p in range(n):
-        if used[p] == 1:
-            out[new_ids[p]] = values[p]
-
-
-@tack.kernel
-def _copy_blocks(values, src_offsets, sources, dst_offsets, out, count):
-    for i in range(count):
-        a = src_offsets[sources[i]]
-        b = dst_offsets[i]
-        for k in range(dst_offsets[i + 1] - b):
-            out[b + k] = values[a + k]
-
-
-def threshold(data, field, lower, upper, all_points=True):
+def threshold(data, field, lower, upper, all_points=True, fields=None):
     """The cells whose ``field`` lies in ``[lower, upper]``, with only the points they use.
 
     ``field`` is a scalar field or its name. A cell field (``Constant``, values
@@ -589,7 +542,7 @@ def threshold(data, field, lower, upper, all_points=True):
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"threshold needs a field on the points or cells, not {space!r}")
     if not getattr(data.topology, "reference_cells", True):
-        return _polyhedral_threshold(data, field, lower, upper, all_points)
+        return _polyhedral_threshold(data, field, lower, upper, all_points, fields)
 
     n = data.num_cells
     keep = tack.zeros(tack.i32, (n,))
@@ -619,40 +572,10 @@ def threshold(data, field, lower, upper, all_points=True):
     if length:
         _renumber(connectivity, new_ids)
     kept = UnstructuredTopology(types, offsets, connectivity, num_points=kept_points)
-
-    def carry(f):
-        values = f.values
-        if isinstance(f.space, H1) or (isinstance(f.space, Values) and f.space.on == "points"):
-            out = _like(values, kept_points)
-            if kept_points:
-                _keep_rows(arrays.materialize(values), used, new_ids, out, num_points)
-            return Field(H1(kept) if isinstance(f.space, H1) else Values(kept, "points"), out)
-        if isinstance(f.space, Constant) or (isinstance(f.space, Values)
-                                             and f.space.on == "cells"):
-            return Field(type(f.space)(kept) if isinstance(f.space, Constant)
-                         else Values(kept, "cells"), _take(values, sources))
-        if isinstance(f.space, L2):
-            if f.space.varies:
-                orders = np.asarray(arrays.to_host(f.space.cell_keys()))
-                out_space = L2(kept, order=orders[sources.to_numpy()] if count
-                               else np.zeros(0, int))
-            else:
-                out_space = L2(kept, order=f.space.order)
-            out = _like(values, out_space.size)
-            if count:
-                _copy_blocks(arrays.materialize(values), f.space.offsets, sources,
-                             out_space.offsets, out, count)
-            return Field(out_space, out)
-        return None
-
-    geometry = carry(data.geometry)
-    fields = {}
-    for name, f in data.fields.items():
-        if name != "shape":
-            out = carry(f)
-            if out is not None:
-                fields[name] = out
-    return DataSet(kept, geometry, fields=fields)
+    point_ids = tack.field(tack.i32, shape=(kept_points,))
+    if kept_points:
+        _kept_ids(used, new_ids, point_ids)
+    return carry(data, kept, points=Take(point_ids), cells=Take(sources), fields=fields)
 
 
 # ── Threshold of polyhedra and polygons ─────────────────────────────
@@ -741,13 +664,6 @@ def _renumber_points(points, new_ids):
 
 
 @tack.kernel
-def _negate_flipped(values, flipped):
-    for f in range(flipped.shape[0]):
-        if flipped[f] == 1:
-            values[f] = -values[f]
-
-
-@tack.kernel
 def _kept_ids(flags, slots, out):
     for i in range(flags.shape[0]):
         if flags[i] == 1:
@@ -766,7 +682,7 @@ def _compact(flags):
     return slots, kept, count
 
 
-def _polyhedral_threshold(data, field, lower, upper, all_points):
+def _polyhedral_threshold(data, field, lower, upper, all_points, fields=None):
     """``threshold`` of a polyhedral or polygonal topology: whole cells, their faces
     kept once and numbered in their old order, points compacted."""
     from tack.data.polyhedra import PolygonalTopology, PolyhedralTopology
@@ -834,26 +750,9 @@ def _polyhedral_threshold(data, field, lower, upper, all_points):
         out = PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, cell_sides,
                                  num_points=kept_np)
 
-    def carry(f):
-        space = f.space
-        if (isinstance(space, H1) and space.order == 1) or space is Values(data, "points"):
-            values = _take(f.values, kept_points)
-            return Field(H1(out) if isinstance(space, H1) else Values(out, "points"), values)
-        if isinstance(space, Constant) or space is Values(data, "cells"):
-            return Field(Constant(out) if isinstance(space, Constant) else Values(out, "cells"),
-                         _take(f.values, kept_cells))
-        if isinstance(space, Values) and space.on == "faces" and flipped is not None:
-            values = _take(f.values, kept_faces)
-            if space.oriented and kept_nf:
-                _negate_flipped(values, flipped)
-            return Field(Values(out, "faces", oriented=space.oriented), values)
-        return None
-
-    fields = {}
-    for name, f in data.fields.items():
-        if name != "shape" and carry(f) is not None:
-            fields[name] = carry(f)
-    return DataSet(out, carry(data.geometry), fields=fields)
+    faces = Take(kept_faces, turned=flipped) if flipped is not None else None
+    return carry(data, out, points=Take(kept_points), cells=Take(kept_cells), faces=faces,
+                 fields=fields)
 
 
 @tack.kernel
@@ -888,10 +787,10 @@ def _gather_offsets(starts, kept, total):
 
 # ── External faces ──────────────────────────────────────────────────
 
-def external_faces(data, name="boundary"):
+def external_faces(data, name="boundary", fields=None):
     """The faces of the 3D cells that only one cell has, as a surface dataset: the
     boundary face set (kept in ``data.sets[name]``) through ``extract_surface``.
     Each face faces out of its cell and carries that cell's cell fields; point
     fields stay on the same points."""
     boundary_faces(data, name)
-    return extract_surface(data, name)
+    return extract_surface(data, name, fields=fields)
