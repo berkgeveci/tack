@@ -1,10 +1,10 @@
 """Sorting and segmented reductions on tack fields.
 
 A stable least-significant-digit radix sort, with ``unique`` and
-``reduce_by_key`` on top of it.  Like the scans, everything here is a
-sequence of ordinary kernels on the active backend: no shared memory,
-barriers or workgroup collectives, so it runs on the CPU as well as on the
-GPU backends.
+``reduce_by_key`` on top of it. On the CPU, everything here is a sequence of
+ordinary kernels. On backends with workgroups, each radix pass sorts tiles
+of keys in shared memory instead (see "one radix pass, shaped for GPUs"
+below); the result is the same permutation.
 
 Usage:
     from tack import algorithms
@@ -22,7 +22,7 @@ flipped.  The smallest mapped key is subtracted on the fly, so the number
 of 8-bit digit passes depends on the key *range*, not the key width: cell
 ids below 2^16 take two passes, not four.
 
-Each pass splits the range into chunks of ``_CHUNK`` elements.  One
+On the CPU, each pass splits the range into chunks of ``_CHUNK`` elements.  One
 thread per chunk counts its digits into a private 256-entry histogram and
 writes the counts bucket-major (``counts[digit * nchunks + chunk]``), so
 one exclusive scan over that array gives every (digit, chunk) pair its
@@ -155,6 +155,117 @@ def _scatter_digits(mapped_in, perm_in, mapped_out, perm_out, offsets,
             slot[d] = pos + 1
             mapped_out[pos] = mapped_in[i]
             perm_out[pos] = perm_in[i]
+
+
+# --- one radix pass, shaped for GPUs ---------------------------------------
+#
+# The chunk kernels above give one thread 256 keys and a private 256-entry
+# table: right for CPU threads, slow on a GPU, which then runs few threads
+# whose tables spill to slow memory. On backends with workgroups a pass
+# takes tiles of _TILE keys, one workgroup each, and sorts every tile by its
+# digit in shared memory first: eight stable one-bit splits, each placing a
+# key by a workgroup prefix sum of the zeros before it. Tack has no atomics
+# on shared memory, and needs none here. In the sorted tile each digit is
+# one run, whose first and last positions give the tile's count for it --
+# laid out digit-major like the chunk counts, then scanned into offsets --
+# and the tile is written back in that order. A plain kernel then moves
+# each key to its digit's offset plus its place in the run, so keys leave
+# in runs rather than one by one. Every split is stable and the tiles keep
+# their order, so the pass is stable.
+
+# Keys per tile and per lane of the workgroup's 256. Digits are kept as u8 and
+# tile positions as u16 so two copies of each fit Metal's 32 KB of
+# threadgroup memory; longer tiles mean longer runs per digit to scatter and
+# a shorter table of counts to scan.
+_TILE = tack.constant(4096)
+_PER_LANE = tack.constant(16)
+
+
+@tack.kernel
+def _sort_tiles(mapped, perm, tile_keys, tile_perm, counts, starts, base, shift, n, ntiles):
+    digit = tack.shared(tack.u8, _TILE)
+    local = tack.shared(tack.u16, _TILE)
+    digit_b = tack.shared(tack.u8, _TILE)
+    local_b = tack.shared(tack.u16, _TILE)
+    zeros = tack.shared(tack.i32, 256)
+    first = tack.shared(tack.i32, 256)
+    last = tack.shared(tack.i32, 256)
+    for i in range(ntiles * 256):
+        t = tack.thread_id()
+        tile = i // 256
+        valid = min(_TILE, n - tile * _TILE)     # keys in this tile; the rest pad it
+        for k in range(_PER_LANE):
+            q = t * _PER_LANE + k
+            # Padding sorts last: digit 255, after the real 255s by stability.
+            d = 255
+            if q < valid:
+                d = tack.i32(((mapped[tile * _TILE + q] - tack.u64(base)) >> shift)
+                             & tack.u64(255))
+            digit[q] = d
+            local[q] = q
+        first[t] = -1
+        last[t] = -1
+        tack.barrier()
+        for bit in range(8):
+            mine = 0
+            for k in range(_PER_LANE):
+                if (tack.i32(digit[t * _PER_LANE + k]) >> bit) & 1 == 0:
+                    mine += 1
+            zeros[t] = mine
+            tack.barrier()
+            step = 1
+            while step < 256:
+                below = zeros[t - step] if t >= step else 0
+                tack.barrier()
+                zeros[t] = zeros[t] + below
+                tack.barrier()
+                step = step * 2
+            total = zeros[255]
+            z = zeros[t] - mine                  # zeros before this lane's keys
+            o = t * _PER_LANE - z                # ones before them
+            for k in range(_PER_LANE):
+                q = t * _PER_LANE + k
+                d = tack.i32(digit[q])
+                to = 0
+                if (d >> bit) & 1 == 0:
+                    to = z
+                    z += 1
+                else:
+                    to = total + o
+                    o += 1
+                digit_b[to] = d
+                local_b[to] = local[q]
+            tack.barrier()
+            for k in range(_PER_LANE):
+                q = t * _PER_LANE + k
+                digit[q] = digit_b[q]
+                local[q] = local_b[q]
+            tack.barrier()
+        for k in range(_PER_LANE):
+            q = t * _PER_LANE + k
+            if q < valid:
+                d = tack.i32(digit[q])
+                if q == 0 or tack.i32(digit[q - 1]) != d:
+                    first[d] = q
+                if q == valid - 1 or tack.i32(digit[q + 1]) != d:
+                    last[d] = q
+                src = tile * _TILE + tack.i32(local[q])
+                tile_keys[tile * _TILE + q] = mapped[src]
+                tile_perm[tile * _TILE + q] = perm[src]
+        tack.barrier()
+        counts[t * ntiles + tile] = last[t] - first[t] + 1 if first[t] >= 0 else 0
+        starts[tile * 256 + t] = first[t]
+
+
+@tack.kernel
+def _scatter_tiles(tile_keys, tile_perm, mapped_out, perm_out, offsets, starts,
+                   base, shift, n, ntiles):
+    for i in range(n):
+        tile = i // _TILE
+        d = tack.i32(((tile_keys[i] - tack.u64(base)) >> shift) & tack.u64(255))
+        pos = offsets[d * ntiles + tile] + (i - tile * _TILE - starts[tile * 256 + d])
+        mapped_out[pos] = tile_keys[i]
+        perm_out[pos] = tile_perm[i]
 
 
 @tack.kernel
@@ -302,11 +413,28 @@ def argsort(keys, n=None):
     if passes == 0:
         return perm  # every key is equal: the identity is the stable order
 
+    from tack.runtime.dispatch import get_backend
+
+    mapped_b = tack.field(dtype=tack.u64, shape=(n,))
+    perm_b = tack.field(dtype=tack.i32, shape=(n,))
+    if get_backend().supports_workgroups:
+        # Tiles sorted into the second buffers, then scattered back: the
+        # pass's result is where its input was.
+        ntiles = (n + _TILE - 1) // _TILE
+        counts = tack.field(dtype=tack.i32, shape=(_RADIX * ntiles,))
+        offsets = tack.field(dtype=tack.i32, shape=(_RADIX * ntiles,))
+        starts = tack.field(dtype=tack.i32, shape=(_RADIX * ntiles,))
+        for p in range(passes):
+            shift = p * _RADIX_BITS
+            _sort_tiles(mapped, perm, mapped_b, perm_b, counts, starts, base, shift, n,
+                        ntiles)
+            exclusive_scan(counts, offsets, _RADIX * ntiles)
+            _scatter_tiles(mapped_b, perm_b, mapped, perm, offsets, starts, base, shift, n,
+                           ntiles)
+        return perm
     nchunks = (n + _CHUNK - 1) // _CHUNK
     counts = tack.field(dtype=tack.i32, shape=(_RADIX * nchunks,))
     offsets = tack.field(dtype=tack.i32, shape=(_RADIX * nchunks,))
-    mapped_b = tack.field(dtype=tack.u64, shape=(n,))
-    perm_b = tack.field(dtype=tack.i32, shape=(n,))
     src_keys, src_perm, dst_keys, dst_perm = mapped, perm, mapped_b, perm_b
     for p in range(passes):
         shift = p * _RADIX_BITS
