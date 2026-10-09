@@ -39,6 +39,7 @@ class Mesh:
     cells: np.ndarray             # (m, k) int64, VTK's corner order
     p: np.ndarray = None          # on the points, float32
     c: np.ndarray = None          # on the cells, float32
+    slice_origin: np.ndarray = None   # pairs._center's, computed once
 
     @property
     def num_cells(self):

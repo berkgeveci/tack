@@ -40,8 +40,10 @@ def _center(mesh):
     grids the center is a mesh point, which the plane would pass through exactly;
     VTK and Tack resolve such a point differently (both validly), and the
     outputs then differ by a few degenerate triangles."""
-    lo, hi = mesh.points.min(axis=0), mesh.points.max(axis=0)
-    return 0.5 * (lo + hi) + np.array([0.0123457, 0.0071, 0.0041]) * (hi - lo)
+    if getattr(mesh, "slice_origin", None) is None:     # once, outside any timing
+        lo, hi = mesh.points.min(axis=0), mesh.points.max(axis=0)
+        mesh.slice_origin = 0.5 * (lo + hi) + np.array([0.0123457, 0.0071, 0.0041]) * (hi - lo)
+    return mesh.slice_origin
 
 
 # ── VTK filters ─────────────────────────────────────────────────────
