@@ -115,6 +115,15 @@ class Backend:
 
     # ── Optional, with honest defaults ───────────────────────────────
 
+    def synchronize(self):
+        """Wait until every kernel launched so far has finished.
+
+        Backends whose launches complete before ``execute`` returns need not
+        override it. Metal queues launches and waits only when the host
+        touches field memory, so ``tack.sync()`` is how a caller timing
+        kernels, or handing memory to a library Tack cannot see, waits.
+        """
+
     def memory_space(self, ptr) -> str:
         """Classify where an integer pointer lives.
 

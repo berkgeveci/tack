@@ -27,7 +27,7 @@ from tack.lang.func import func
 from tack.lang.inspect_kernel import inspect
 from tack.lang.kernel import kernel
 from tack.lang.types import f32, f64, i8, i16, i32, i64, template, u8, u16, u32, u64
-from tack.runtime.dispatch import init
+from tack.runtime.dispatch import init, sync
 
 
 # Shared memory, barrier, thread_id — only usable inside @tack.kernel

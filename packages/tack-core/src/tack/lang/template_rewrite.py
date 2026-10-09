@@ -15,6 +15,7 @@ rewrites the kernel AST before IR transformation:
 
 import ast
 import copy
+import weakref
 
 from tack.lang.field import Field
 from tack.lang.func import Func
@@ -28,6 +29,36 @@ def _method_call_name(name):
     return node
 
 
+# The names of each data-oriented class's numeric class attributes, found once
+# per class: scanning the method resolution order on every launch was most of
+# a small dataset filter's time, its views being composed of many mixins.
+_CONSTANT_NAMES = weakref.WeakKeyDictionary()
+
+
+def _class_constants(cls):
+    """A class's compile-time constants, by name, with their current values."""
+    names = _CONSTANT_NAMES.get(cls)
+    if names is None:
+        found = {}
+        # Base classes before the classes derived from them, so a subclass
+        # inherits its bases' constants and may override them.
+        for klass in reversed(cls.__mro__):
+            for name, val in vars(klass).items():
+                if name.startswith('_'):
+                    continue
+                if isinstance(val, (int, float)):
+                    found[name] = val
+                else:
+                    found.pop(name, None)   # replaced by something that is not a constant
+        names = _CONSTANT_NAMES[cls] = tuple(found)
+    constants = {}
+    for name in names:
+        val = getattr(cls, name)
+        if isinstance(val, (int, float)):
+            constants[name] = val
+    return constants
+
+
 def classify_template_attrs(obj):
     """Classify a template object's attributes into constants, runtime scalars, and fields.
 
@@ -39,23 +70,13 @@ def classify_template_attrs(obj):
     Class variables (defined on the class, not in __init__) are treated as
     compile-time constants and baked into generated code. Instance variables
     that are scalars are passed as runtime parameters — changing them does
-    not trigger recompilation.
+    not trigger recompilation. Which class attributes are constants is found
+    once per class; a changed value is seen, a numeric attribute added to the
+    class after its first launch is not.
     """
-    scalars = {}
+    scalars = _class_constants(type(obj))
     fields = {}
     runtime_scalars = {}
-
-    # Scan class-level variables first (compile-time constants), base
-    # classes before the classes derived from them, so a subclass inherits
-    # its bases' constants and may override them.
-    for klass in reversed(type(obj).__mro__):
-        for name, val in vars(klass).items():
-            if name.startswith('_'):
-                continue
-            if isinstance(val, (int, float)):
-                scalars[name] = val
-            else:
-                scalars.pop(name, None)   # replaced by something that is not a constant
 
     # Scan instance variables (runtime parameters)
     for name in vars(obj):

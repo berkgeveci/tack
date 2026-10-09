@@ -9,7 +9,20 @@ The parallel loop range is dispatched as a 1D grid of threads.
 On Apple Silicon, Metal shared buffers live in unified memory accessible by both
 CPU and GPU.  Fields are backed directly by Metal buffer memory — no per-dispatch
 copies are needed.
+
+Launches are queued, not waited for: each is encoded into the backend's open
+command buffer, committed every ``_BATCH`` launches, with at most
+``_IN_FLIGHT`` committed ones outstanding. The host waits
+(``MetalBackend.synchronize``) only when it touches field memory -- every
+``MetalBuffer`` method that reads or writes it, DLPack export, reductions,
+texture uploads -- or when ``tack.sync()`` asks. Waiting after every launch
+cost about 0.3 ms each, most of a small filter's time. Each queued launch
+therefore owns what it reads: its own argument buffer and its own copy of
+its packed scalars, and references to its fields until it completes.
 """
+
+import threading
+from collections import deque
 
 import numpy as np
 
@@ -89,16 +102,37 @@ class MetalBuffer(DeviceBuffer):
 
     backend_name = "metal"
 
-    def __init__(self, device, numpy_dtype, shape):
+    _sync = staticmethod(lambda: None)    # the backend's synchronize, once allocated
+    # Memory handed outside Tack -- exported (DLPack, export_memory) or wrapped
+    # from another library's MTLBuffer -- may be read with no Tack call between:
+    # a launch that uses it completes before returning, as every launch once did.
+    _shared = False
+
+    def __init__(self, device, numpy_dtype, shape, sync=None):
         nbytes = int(np.prod(shape)) * np.dtype(numpy_dtype).itemsize
         # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory). A
         # zero-length request returns no buffer, so an empty field (the
         # result of a filter that selected nothing) gets one byte it never
         # reads; the view below still has zero elements.
+        # Metal clears a new buffer (newBufferWithLength:options:), so a field
+        # starts zeroed without the CPU pass over every byte that clearing it
+        # here once made -- most of a large filter's time on Metal, for the
+        # temporaries it allocates. test_new_fields_are_zero holds Metal to it.
         self._metal_buffer = device.newBufferWithLength_options_(max(nbytes, 1), 0)
         raw = self._metal_buffer.contents().as_buffer(nbytes)
         self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
-        self._view[...] = 0      # not [:], which a zero-dimensional view rejects
+        if sync is not None:
+            self._sync = sync
+
+    def synchronize(self):
+        """Wait for queued kernels: they may be reading or writing this memory."""
+        self._sync()
+
+    def share(self):
+        """Hand this memory outside Tack: wait for queued kernels now, and have
+        every later launch that uses it complete before returning."""
+        self._shared = True
+        self._sync()
 
     @property
     def address(self) -> int:
@@ -111,15 +145,19 @@ class MetalBuffer(DeviceBuffer):
     def from_numpy(self, arr: np.ndarray):
         # A reshaped field shares this buffer under another shape; the
         # element count already matches, so copy in the buffer's own shape.
+        self._sync()
         np.copyto(self._view, arr.reshape(self._view.shape))
 
     def to_numpy(self) -> np.ndarray:
+        self._sync()
         return self._view.copy()
 
     def read_range(self, start: int, count: int) -> np.ndarray:
+        self._sync()
         return self._view.reshape(-1)[start:start + count].copy()
 
     def fill(self, value):
+        self._sync()
         self._view.fill(value)
 
     @property
@@ -129,6 +167,7 @@ class MetalBuffer(DeviceBuffer):
     def export_memory(self):
         """Export as ExportedMemory with the MTLBuffer pointer."""
         import objc
+        self.share()
         return ExportedMemory(
             backend="metal",
             size=self._view.nbytes,
@@ -147,9 +186,10 @@ class MetalTextureImage:
     someone else's buffer.
     """
 
-    def __init__(self, device, command_queue, shape_3d):
+    def __init__(self, device, command_queue, shape_3d, sync=None):
         W, H, D = shape_3d
         self._command_queue = command_queue
+        self._sync = sync or (lambda: None)
         self._shape = shape_3d
         desc = Metal.MTLTextureDescriptor.alloc().init()
         desc.setTextureType_(7)  # MTLTextureType3D
@@ -164,6 +204,7 @@ class MetalTextureImage:
     def upload(self, field):
         """Copy a field's buffer into the texture via blit."""
         W, H, D = self._shape
+        self._sync()          # kernels may still be writing the field
         blit_buf = self._command_queue.commandBuffer()
         blit_enc = blit_buf.blitCommandEncoder()
         bytes_per_row = W * 4
@@ -177,6 +218,19 @@ class MetalTextureImage:
         blit_buf.waitUntilCompleted()
 
 
+class _Uniforms:
+    """One launch's packed scalars: a buffer of their values, standing where the
+    launch binds a field (``arg._buffer.metal_buffer``)."""
+
+    def __init__(self, device, dtype, entries, args):
+        values = np.zeros(len(entries), dtype=dtype.numpy_dtype)
+        for _, arg_index, index_in_pack in entries:
+            values[index_in_pack] = args[arg_index]
+        self.metal_buffer = device.newBufferWithBytes_length_options_(
+            values.tobytes(), values.nbytes, 0)
+        self._buffer = self
+
+
 class CompiledMetalKernel:
     """A compiled Metal compute pipeline ready for dispatch."""
 
@@ -185,7 +239,7 @@ class CompiledMetalKernel:
     def __init__(self, device, command_queue, pipeline, func_name,
                  param_types, param_is_field, param_is_texture=None,
                  argument_encoder=None, *,
-                 requires_full_workgroups=False):
+                 requires_full_workgroups=False, backend=None):
         self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
         self._workgroup_size = min(self._max_threads_per_group, WORKGROUP_SIZE)
         self._requires_full_workgroups = requires_full_workgroups
@@ -200,11 +254,7 @@ class CompiledMetalKernel:
         self._param_is_field = param_is_field
         self._param_is_texture = param_is_texture or [False] * len(param_types)
         self._argument_encoder = argument_encoder
-        self._argument_buffer = None
-        if argument_encoder is not None:
-            self._argument_buffer = device.newBufferWithLength_options_(
-                argument_encoder.encodedLength(), Metal.MTLResourceStorageModeShared)
-            argument_encoder.setArgumentBuffer_offset_(self._argument_buffer, 0)
+        self._backend = backend
         self._thread_execution_width = pipeline.threadExecutionWidth()
 
     def __call__(self, kernel_args: list, loop_end: int, extents=()):
@@ -217,47 +267,29 @@ class CompiledMetalKernel:
         if self._requires_full_workgroups:
             check_workgroup_launch(self._func_name, loop_end, backend_label='Metal',
                                    workgroup_size=self._workgroup_size)
-        command_buffer = self._command_queue.commandBuffer()
-        encoder = command_buffer.computeCommandEncoderWithDescriptor_(
-            Metal.MTLComputePassDescriptor.computePassDescriptor()
-        )
-        encoder.setComputePipelineState_(self._pipeline)
+        with self._backend._batch_lock:
+            self._encode(kernel_args, loop_end, extents)
 
-        # Bind buffers and textures.
-        # Textures use a separate binding namespace (texture indices).
-        temp_buffers = []
-        buf_idx = 0
-        if self._argument_encoder is not None:
-            encoder.setBuffer_offset_atIndex_(self._argument_buffer, 0, 0)
-            buf_idx = 1
-        tex_idx = 0
+    def _encode(self, kernel_args, loop_end, extents):
+        """Encode one launch into the backend's open command buffer. It runs after
+        the launches before it (a compute pass per launch, buffers hazard-tracked)
+        and owns what it reads, since the host may move on before it runs."""
+        # Everything that can fail on an argument (a field from another backend
+        # has no metal_buffer) fails here, before an encoder is open: a command
+        # buffer committed with an encoder still open aborts the process.
+        bindings = []
+        shared = False
         for i, (arg, ptype, is_field, is_tex) in enumerate(
                 zip(kernel_args, self._param_types, self._param_is_field,
                     self._param_is_texture)):
             if is_tex:
-                # A MetalTextureImage, in the texture binding namespace
-                encoder.setTexture_atIndex_(arg.texture, tex_idx)
-                tex_idx += 1
+                bindings.append(("texture", arg, arg.texture))
             elif is_field:
-                # Update every dispatch: a cached variant can receive new
-                # buffers or a different alias relationship. The indirect
-                # resources also require explicit residency declarations.
-                buffer = arg._buffer.metal_buffer
-                self._argument_encoder.setBuffer_offset_atIndex_(buffer, 0, i)
-                encoder.useResource_usage_(
-                    buffer, Metal.MTLResourceUsageRead | Metal.MTLResourceUsageWrite)
+                bindings.append(("field", arg._buffer, arg._buffer.metal_buffer))
+                shared = shared or getattr(arg._buffer, "_shared", False)
             else:
-                # Scalar: create a tiny shared buffer with the value
-                ndt = self._NUMPY_MAP[ptype]
-                arr = np.array([arg], dtype=ndt)
-                nbytes = arr.nbytes
-                buf = self._device.newBufferWithBytes_length_options_(
-                    arr.tobytes(), nbytes, 0)
-                encoder.setBuffer_offset_atIndex_(buf, 0, buf_idx)
-                temp_buffers.append(buf)  # prevent GC
-                buf_idx += 1
-
-        # Dispatch threads
+                bindings.append(("scalar", None,
+                                 np.array([arg], dtype=self._NUMPY_MAP[ptype]).tobytes()))
         threads_per_group = self._workgroup_size
         if extents:
             _, block, _ = launch_geometry(extents, max_grid=(2**32 - 1,) * 3,
@@ -270,18 +302,54 @@ class CompiledMetalKernel:
             grid_size = Metal.MTLSizeMake(loop_end, 1, 1)
             group_size = Metal.MTLSizeMake(threads_per_group, 1, 1)
 
-        encoder.dispatchThreads_threadsPerThreadgroup_(grid_size, group_size)
-        encoder.endEncoding()
+        backend = self._backend
+        command_buffer, keep = backend._open_batch()
+        argument_buffer = None
+        if self._argument_encoder is not None:
+            argument_buffer = self._device.newBufferWithLength_options_(
+                self._argument_encoder.encodedLength(), Metal.MTLResourceStorageModeShared)
+            self._argument_encoder.setArgumentBuffer_offset_(argument_buffer, 0)
+            keep.append(argument_buffer)
+        encoder = command_buffer.computeCommandEncoderWithDescriptor_(
+            Metal.MTLComputePassDescriptor.computePassDescriptor()
+        )
+        try:
+            encoder.setComputePipelineState_(self._pipeline)
+            # Field pointers go in the argument buffer (buffer 0); scalars and
+            # textures bind after it, textures in their own namespace.
+            buf_idx = 0
+            if argument_buffer is not None:
+                encoder.setBuffer_offset_atIndex_(argument_buffer, 0, 0)
+                buf_idx = 1
+            tex_idx = 0
+            for i, (kind, owner, value) in enumerate(bindings):
+                if kind == "texture":
+                    encoder.setTexture_atIndex_(value, tex_idx)
+                    keep.append(owner)
+                    tex_idx += 1
+                elif kind == "field":
+                    # Encoded per launch: a cached variant can receive new
+                    # buffers or a different alias relationship. The indirect
+                    # resources also need residency declarations, which also
+                    # let Metal track hazards between launches.
+                    self._argument_encoder.setBuffer_offset_atIndex_(value, 0, i)
+                    encoder.useResource_usage_(
+                        value, Metal.MTLResourceUsageRead | Metal.MTLResourceUsageWrite)
+                    keep.append(owner)
+                else:
+                    # Scalar: copied into the command buffer with the launch
+                    encoder.setBytes_length_atIndex_(value, len(value), buf_idx)
+                    buf_idx += 1
+            encoder.dispatchThreads_threadsPerThreadgroup_(grid_size, group_size)
+        finally:
+            encoder.endEncoding()
+        backend._launched()
+        if shared:
+            backend.synchronize()
 
-        command_buffer.commit()
-        command_buffer.waitUntilCompleted()
 
-        error = command_buffer.error()
-        if error is not None:
-            raise RuntimeError(f"Metal compute error: {error}")
-
-
-def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMetalKernel:
+def _compile_kernel(device, command_queue, ir_func: ir.IRFunction,
+                    backend=None) -> CompiledMetalKernel:
     """Compile a Tack IR function to a Metal compute pipeline."""
     kernel_name = kernel_entry_name(ir_func.name)
     msl_source = generate_msl_source(ir_func)
@@ -322,7 +390,8 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction) -> CompiledMe
     return CompiledMetalKernel(device, command_queue, pipeline, kernel_name,
                                param_types, param_is_field, param_is_texture,
                                argument_encoder,
-                               requires_full_workgroups=requires_full_workgroups(ir_func))
+                               requires_full_workgroups=requires_full_workgroups(ir_func),
+                               backend=backend)
 
 
 _REDUCE_MSL_SUM = field_reduction_source('metal', 'sum')
@@ -373,16 +442,65 @@ class MetalBackend(Backend):
         self._command_queue = self._device.newCommandQueue()
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledMetalKernel}
         self._reduce_pipelines: dict[str, object] = {}
+        # Queued launches: the open command buffer and what its launches read
+        # (kept alive until it completes), and the committed ones not yet
+        # waited for, oldest first. One lock: launches from several threads
+        # encode one at a time, as they launched one at a time before.
+        self._batch_lock = threading.RLock()
+        self._open = None              # [command buffer, keep list, launches]
+        self._committed = deque()      # (command buffer, keep list)
+        import atexit
+        atexit.register(self.synchronize)
+
+    _BATCH = 64          # launches per command buffer before it is committed
+    _IN_FLIGHT = 4       # committed command buffers before the oldest is waited for
+
+    def _open_batch(self):
+        """The open command buffer and its keep list (under ``_batch_lock``)."""
+        if self._open is None:
+            self._open = [self._command_queue.commandBuffer(), [], 0]
+        return self._open[0], self._open[1]
+
+    def _launched(self):
+        """Count a launch; commit the batch when full, and bound what is in flight."""
+        self._open[2] += 1
+        if self._open[2] >= self._BATCH:
+            self._commit_open()
+            while len(self._committed) > self._IN_FLIGHT:
+                self._wait_oldest()
+
+    def _commit_open(self):
+        command_buffer, keep, _ = self._open
+        self._open = None
+        command_buffer.commit()
+        self._committed.append((command_buffer, keep))
+
+    def _wait_oldest(self):
+        command_buffer, _keep = self._committed.popleft()
+        command_buffer.waitUntilCompleted()
+        error = command_buffer.error()
+        if error is not None:
+            raise RuntimeError(f"Metal compute error: {error}")
+
+    def synchronize(self):
+        """Commit the open batch and wait for every queued launch. A launch's
+        error surfaces here, at the next host access, rather than at its call."""
+        with self._batch_lock:
+            if self._open is not None:
+                self._commit_open()
+            while self._committed:
+                self._wait_oldest()
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> MetalBuffer:
-        return MetalBuffer(self._device, dtype.numpy_dtype, shape)
+        return MetalBuffer(self._device, dtype.numpy_dtype, shape, sync=self.synchronize)
 
     def texture_in_hardware(self, shape_3d) -> bool:
         return True
 
     def create_texture_image(self, shape_3d) -> MetalTextureImage:
-        return MetalTextureImage(self._device, self._command_queue, shape_3d)
+        return MetalTextureImage(self._device, self._command_queue, shape_3d,
+                                 sync=self.synchronize)
 
     def wrap_ptr(self, ptr, dtype, shape):
         """Wrap an existing MTLBuffer as a MetalBuffer without copying.
@@ -399,6 +517,8 @@ class MetalBackend(Backend):
                 f"into an MTLBuffer; allocate with tack.field() and copy "
                 f"into it with from_numpy().")
         buf = MetalBuffer.__new__(MetalBuffer)
+        buf._sync = self.synchronize
+        buf._shared = True       # another library's buffer, read without Tack
         buf._metal_buffer = ptr  # expects an MTLBuffer object
         nbytes = int(np.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize
         raw = ptr.contents().as_buffer(nbytes)
@@ -432,19 +552,16 @@ class MetalBackend(Backend):
         # Textures bind their own snapshot, not the field they came from.
         kernel_args = bind_textures(effective_args)
 
-        # Replace scalar args with the packed field buffers. The buffers and
-        # the argument buffer the launch encodes field bindings into belong
-        # to the variant, so both are written, and read by the launch, under
-        # its lock (see KernelVariant.dispatch_lock).
-        with variant.dispatch_lock:
-            if pack_info:
-                from tack.lang.ir_pack_scalars import split_args
-                from tack.runtime.kernel_utils import _update_pack_fields
-                _update_pack_fields(pack_fields, pack_info, effective_args)
-                kept_args = split_args(effective_args, pack_info)
-                kernel_args = bind_textures(kept_args) + pack_fields
-
-            compiled(kernel_args, loop_end, extents)
+        # Replace scalar args with packed buffers of their values. Launches are
+        # queued, so each gets its own: a variant's shared pack, rewritten for
+        # the next call, could change under a launch that has not run yet.
+        if pack_info:
+            from tack.lang.ir_pack_scalars import split_args
+            kept_args = split_args(effective_args, pack_info)
+            kernel_args = bind_textures(kept_args) + [
+                _Uniforms(self._device, dtype, entries, effective_args)
+                for _, dtype, entries in pack_info]
+        compiled(kernel_args, loop_end, extents)
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.
@@ -456,17 +573,14 @@ class MetalBackend(Backend):
         from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
-        from tack.runtime.kernel_utils import _create_pack_fields
 
         packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
         verify_ir(packed, 'packed')
         annotate_types(packed)
         verify_ir(packed, 'typed')
-        compiled = _compile_kernel(self._device, self._command_queue, packed)
-        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
-                       if pack_info else None)
-        return compiled, pack_info, pack_fields
+        compiled = _compile_kernel(self._device, self._command_queue, packed, backend=self)
+        return compiled, pack_info, None
 
     def _get_reduce_pipeline(self, op: str):
         """Get or compile a Metal reduction pipeline."""
@@ -496,6 +610,7 @@ class MetalBackend(Backend):
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
+        self.synchronize()
         if field.size == 0:
             return empty_reduction(op)
         if field.dtype is not f32:
