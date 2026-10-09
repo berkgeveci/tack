@@ -301,6 +301,24 @@ Without a function: `extract_cells(data, ids)` (cells keep their order),
 `mask(data, stride)`, `threshold_points(data, field, lower, upper)` and
 `mask_points(data, stride)`, the last two as vertex cells.
 
+## Field and geometry transforms
+
+`tack.data.transforms`, in Viskores' conventions:
+
+| Function | Result |
+|---|---|
+| `magnitude(f)`, `dot(a, b)`, `cross(a, b)` | a field in the same space |
+| `composite(f, g, ...)` | scalar fields of one space as one vector field |
+| `log_values(f, base, min_value)` | the logarithm, values below `min_value` (default the smallest normal float) taken as it |
+| `point_elevation(data, low, high, range)` | position along a line, clamped and mapped to `range` (VTK's elevation filter) |
+| `point_ids(data)`, `cell_ids(data)` | ids as implicit counting arrays: nothing stored |
+| `warp(data, direction, scale, scale_by)` | the geometry moved along a vector field or a constant vector, optionally scaled by a scalar field |
+| `transform(data, matrix)` | the geometry under an affine 4x4 or 3x4 matrix |
+| `cylindrical(data, inverse)`, `spherical(data, inverse)` | the geometry in cylindrical `(r, theta, z)` or spherical `(r, theta, phi)` coordinates, or back |
+
+Those that move the geometry return a dataset on the same topology with
+every field and set kept; on an `L2` geometry each cell's own corners move.
+
 ## Interoperability
 
 | Function | |

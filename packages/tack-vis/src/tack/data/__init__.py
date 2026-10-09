@@ -12,7 +12,16 @@ faces and the extractions and masks; ``carry`` how filters carry fields;
 once.
 """
 
-from tack.data import algorithms, arrays, filters, implicit, polyhedra, shapes, spaces
+from tack.data import (
+    algorithms,
+    arrays,
+    filters,
+    implicit,
+    polyhedra,
+    shapes,
+    spaces,
+    transforms,
+)
 from tack.data.arrays import CartesianProduct, ConstantArray, CountingArray
 from tack.data.dataset import DataSet, Field, for_each, rectilinear_grid, traces
 from tack.data.filters import (
@@ -88,4 +97,5 @@ __all__ = [
     "threshold",
     "threshold_points",
     "traces",
+    "transforms",
 ]
