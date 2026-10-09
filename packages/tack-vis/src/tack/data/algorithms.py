@@ -36,8 +36,8 @@ run on shape-based and polyhedral topologies from one source.
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.data import shapes
-from tack.data.arrays import materialize, width_of
+from tack.data import arrays, shapes
+from tack.data.arrays import materialize, size_of, width_of
 from tack.data.carry import Pieces, Same, Take, _like, _take, carry
 from tack.data.dataset import Field, for_each, traces
 from tack.data.spaces import H1, L2, Constant, Values, reference_cells
@@ -575,6 +575,24 @@ def _polyhedral_to_points(data, field):
         link_offsets, entries = data.topology.point_links()
         _average_links(link_offsets, entries, contributions, out)
     return Field(H1(data), out)
+
+
+@tack.kernel
+def _implicit_values(positions, function: tack.template(), out):
+    for i in range(out.shape[0]):
+        out[i] = function.value(positions[i])
+
+
+def implicit_values(data, function):
+    """An implicit function (``tack.data.implicit``) at the geometry's values: a field
+    in the geometry's space, negative inside the function's region. On an ``H1``
+    geometry that is one value per point."""
+    positions = materialize(data.geometry.values)
+    n = size_of(data.geometry.values)
+    out = tack.field(arrays.dtype_of(data.geometry.values), shape=(n,))
+    if n:
+        _implicit_values(positions, function, out)
+    return Field(data.geometry.space, out)
 
 
 def to_points(data, field):

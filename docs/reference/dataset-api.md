@@ -230,8 +230,10 @@ Results are `Field`s, or `DataSet`s for filters. In the table,
 | `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume or area, centroid), `edge_lengths` | yes | yes | yes |
 | `boundary_faces`, `extract_surface` | yes | yes (the surface is polygonal) | yes |
 | `jump` and `upwind_flux` of cell data; `divergence`, `perot` of face values | yes | yes | yes |
-| `threshold` | yes | yes | yes |
-| `contour`, `slice_plane` | yes | yes (López, face-based) | not yet |
+| `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes |
+| `contour`, `slice`, `slice_plane` | yes | yes (López, face-based) | not yet |
+| `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes |
+| `implicit_values` | yes | yes | yes |
 | `cell_centers`, `values_at_centers`, `gradients` | yes | no | no |
 | `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes |
 | `discontinuous`, `to_points` of `L2` data | yes | no | no |
@@ -262,8 +264,9 @@ What each filter gives:
 
 | Filter | points | cells | faces | edges |
 |---|---|---|---|---|
-| `threshold` | kept points | kept cells | kept faces, turned where needed (polyhedra) | — |
-| `contour`, `slice_plane` | interpolated along edges | pieces of the cut cells | — | — |
+| `threshold`, `extract_geometry`, `extract_cells`, `mask` | kept points | kept cells | kept faces, turned where needed (polyhedra) | — |
+| `contour`, `slice`, `slice_plane` | interpolated along edges | pieces of the cut cells | — | — |
+| `extract_points`, `threshold_points`, `mask_points` | kept points, each a vertex cell | — | — | — |
 | `external_faces`, `extract_surface` | the same points | pieces (each face's cell); face values become cell values | — | — |
 | `as_polyhedra` | same | same | same | same |
 | `as_polygons` | same | same | — | — |
@@ -272,6 +275,31 @@ Every one of them takes `fields=`: all fields by default, a name or a list
 of names, or `[]` for none; a name the input lacks raises `KeyError`. A new
 filter states its maps and calls `carry(data, out, points=..., cells=...,
 fields=fields)`.
+
+## Implicit functions
+
+`tack.data.Plane(origin, normal)`, `Sphere(center, radius)`,
+`Cylinder(center, axis, radius)` (infinite), `Box(lower, upper)`
+(axis-aligned) and `Planes(origins, normals)` (the convex region below every
+plane: a frustum, a box at any angle). `value(p)` is negative inside, zero on
+the surface, positive outside, in VTK's and Viskores' forms -- quadrics for
+the sphere and cylinder, signed distances for the plane, planes and box -- so
+a slice by one lands on the same points as theirs.
+
+Each is a `@tack.data_oriented` object whose parameters are instance values,
+so moving or resizing one compiles nothing anew; a kernel takes it as a
+template and calls `f.value(p)`. Taking one:
+
+| | |
+|---|---|
+| `algorithms.implicit_values(data, f)` | `f` at the geometry's values, a field in the geometry's space |
+| `slice(data, f)` | where `f` is zero: a contour of those values |
+| `extract_geometry(data, f, inside=True, boundary=False)` | whole cells inside (every point at or below zero) or outside, plus with `boundary` those `f` cuts |
+| `extract_points(data, f, inside=True)` | the points inside or outside, as vertex cells |
+
+Without a function: `extract_cells(data, ids)` (cells keep their order),
+`mask(data, stride)`, `threshold_points(data, field, lower, upper)` and
+`mask_points(data, stride)`, the last two as vertex cells.
 
 ## Interoperability
 

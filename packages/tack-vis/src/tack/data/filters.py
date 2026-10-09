@@ -38,10 +38,11 @@ from tack.algorithms.sort import _run_offsets, gather
 from tack.data import arrays, shapes
 from tack.data.algorithms import boundary_faces, extract_surface
 from tack.data.buckets import bucket_order
-from tack.data.carry import Interpolate, Pieces, Take, carry
+from tack.data.carry import Interpolate, Pieces, Take, _point_values, carry
 from tack.data.dataset import Field
+from tack.data.implicit import Plane
 from tack.data.spaces import H1, Constant, Values
-from tack.data.topology import UnstructuredTopology
+from tack.data.topology import UnstructuredTopology, _as_field
 
 __all__ = ["contour", "external_faces", "slice_plane", "threshold"]
 
@@ -438,34 +439,159 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
 
 # ── Slice ───────────────────────────────────────────────────────────
 
-@tack.kernel
-def _plane_distances(points, ox, oy, oz, nx, ny, nz, out, n):
-    for p in range(n):
-        out[p] = (points[p] - tack.Vector([ox, oy, oz])).dot(tack.Vector([nx, ny, nz]))
-
-
 def slice_plane(data, origin, normal, merge_points=True, fields=None):
     """The cut of the 3D cells by the plane through ``origin`` with ``normal`` (any
     length), as triangles: ``contour`` at zero of each position's signed distance
     to the plane along ``normal``. The distance is computed in the geometry's own
     space -- per point, or per cell corner for an ``L2`` geometry -- so the cut is
-    the cells' own."""
-    geometry = data.geometry
-    n = arrays.size_of(geometry.values)
-    distance = tack.field(data.dtype, shape=(n,))
-    if n:
-        ox, oy, oz = (float(v) for v in origin)
-        nx, ny, nz = (float(v) for v in normal)
-        _plane_distances(arrays.materialize(geometry.values), ox, oy, oz, nx, ny, nz,
-                         distance, n)
-    return contour(data, Field(geometry.space, distance), 0.0, merge_points=merge_points,
+    the cells' own. ``slice`` with a ``Plane``."""
+    return slice(data, Plane(origin, normal), merge_points=merge_points, fields=fields)
+
+
+# ── Implicit functions, extraction and masks ────────────────────────
+
+def slice(data, function, merge_points=True, fields=None):
+    """Where ``function`` (``tack.data.implicit``) is zero: a contour of its values on
+    the geometry, carrying fields as ``contour`` does. ``slice_plane`` is this
+    with a ``Plane``."""
+    from tack.data.algorithms import implicit_values
+
+    return contour(data, implicit_values(data, function), 0.0, merge_points=merge_points,
                    fields=fields)
+
+
+def extract_geometry(data, function, inside=True, boundary=False, fields=None):
+    """The whole cells inside ``function``'s region (all their points at or below zero),
+    or, with ``inside=False``, outside it (all above); with ``boundary``, also the
+    cells it cuts (some point on the kept side). Cells are not split -- that is
+    clip. Points are compacted and fields carried, as by ``threshold``."""
+    from tack.data.algorithms import implicit_values
+
+    values = implicit_values(data, function)
+    lower, upper = (-np.inf, 0.0) if inside else (np.nextafter(0.0, 1.0), np.inf)
+    return threshold(data, values, lower, upper, all_points=not boundary, fields=fields)
+
+
+@tack.kernel
+def _flag_ids(ids, flags):
+    for i in range(ids.shape[0]):
+        flags[ids[i]] = 1
+
+
+def extract_cells(data, cells, fields=None):
+    """The cells with the given ids (a host array or an integer field), with only the
+    points they use; cells keep their order, not the order given."""
+    if not hasattr(cells, "to_numpy"):
+        values = np.asarray(cells).reshape(-1)
+        if values.size and not np.issubdtype(values.dtype, np.integer):
+            raise TypeError("cell ids must be integers")
+        cells = values.astype(np.int32)
+    ids = _as_field(cells, tack.i32)
+    keep = tack.zeros(tack.i32, (data.num_cells,))
+    if ids.shape[0]:
+        bad = ids.to_numpy()
+        if bad.min() < 0 or bad.max() >= data.num_cells:
+            raise IndexError(f"cell ids must lie in [0, {data.num_cells})")
+        _flag_ids(ids, keep)
+    return _keep_cells(data, keep, fields)
+
+
+@tack.kernel
+def _every(flags, stride):
+    for i in range(flags.shape[0]):
+        flags[i] = 1 if i % stride == 0 else 0
+
+
+def mask(data, stride, fields=None):
+    """Every ``stride``-th cell (0, stride, 2 * stride, ...), as Viskores' ``Mask``."""
+    if int(stride) < 1:
+        raise ValueError(f"stride must be at least 1, not {stride!r}")
+    keep = tack.field(tack.i32, shape=(data.num_cells,))
+    if data.num_cells:
+        _every(keep, int(stride))
+    return _keep_cells(data, keep, fields)
+
+
+# Points as vertex cells: what extract_points, threshold_points and
+# mask_points make, as Viskores' do.
+
+@tack.kernel
+def _vertex_cells(types, offsets, connectivity):
+    for i in range(connectivity.shape[0]):
+        types[i] = tack.u8(shapes.VERTEX)
+        offsets[i] = i
+        connectivity[i] = i
+        if i == 0:
+            offsets[connectivity.shape[0]] = connectivity.shape[0]
+
+
+def _keep_points(data, flags, fields):
+    """The points whose ``flags`` (i32, one per point) is 1, each a vertex cell; point
+    fields come along, cell fields do not."""
+    _, kept, count = _compact(flags)
+    types = tack.field(tack.u8, shape=(count,))
+    offsets = tack.zeros(tack.i32, (count + 1,))
+    connectivity = tack.field(tack.i32, shape=(count,))
+    if count:
+        _vertex_cells(types, offsets, connectivity)
+    vertices = UnstructuredTopology(types, offsets, connectivity, num_points=count)
+    return carry(data, vertices, points=Take(kept), fields=fields)
+
+
+@tack.kernel
+def _flag_range(values, lower, upper, flags):
+    for i in range(flags.shape[0]):
+        v = values[i]
+        flags[i] = 1 if lower <= v and v <= upper else 0
+
+
+def _point_flags(data, values, lower, upper):
+    flags = tack.field(tack.i32, shape=(data.num_points,))
+    if data.num_points:
+        _flag_range(arrays.materialize(values), lower, upper, flags)
+    return flags
+
+
+def extract_points(data, function, inside=True, fields=None):
+    """The points inside ``function``'s region (at or below zero), or outside it
+    (above), as vertex cells. Needs an ``H1`` geometry: one position per point."""
+    from tack.data.algorithms import implicit_values
+
+    if not isinstance(data.geometry.space, H1):
+        raise TypeError("extract_points needs an H1 geometry: one position per point")
+    values = _point_values(implicit_values(data, function).values, data.num_points)
+    lower, upper = (-np.inf, 0.0) if inside else (np.nextafter(0.0, 1.0), np.inf)
+    return _keep_points(data, _point_flags(data, values, lower, upper), fields)
+
+
+def threshold_points(data, field, lower, upper, fields=None):
+    """The points whose ``field`` (point data: ``H1``, values on points) lies in
+    ``[lower, upper]``, as vertex cells."""
+    field = _field(data, field)
+    space = field.space
+    if not (isinstance(space, H1) or (isinstance(space, Values) and space.on == "points")):
+        raise TypeError(f"threshold_points needs point data, not {space!r}")
+    if arrays.width_of(field.values):
+        raise TypeError("threshold_points needs a scalar field")
+    values = _point_values(field.values, data.num_points)
+    return _keep_points(data, _point_flags(data, values, lower, upper), fields)
+
+
+def mask_points(data, stride, fields=None):
+    """Every ``stride``-th point (0, stride, 2 * stride, ...) as vertex cells, as
+    Viskores' ``MaskPoints``."""
+    if int(stride) < 1:
+        raise ValueError(f"stride must be at least 1, not {stride!r}")
+    flags = tack.field(tack.i32, shape=(data.num_points,))
+    if data.num_points:
+        _every(flags, int(stride))
+    return _keep_points(data, flags, fields)
 
 
 # ── Threshold ───────────────────────────────────────────────────────
 
 @tack.kernel
-def _keep_by_corners(cells, u, lower, upper, all_points, keep, sizes):
+def _keep_by_corners(cells, u, lower, upper, all_points, keep):
     for c in cells:
         inside = 0
         for j in range(cells.NUM_POINTS):
@@ -478,9 +604,7 @@ def _keep_by_corners(cells, u, lower, upper, all_points, keep, sizes):
                 ok = 1
         elif inside > 0:
             ok = 1
-        e = cells.entity_id(c)
-        keep[e] = ok
-        sizes[e] = ok * cells.NUM_POINTS
+        keep[cells.entity_id(c)] = ok
 
 
 @tack.kernel
@@ -544,13 +668,32 @@ def threshold(data, field, lower, upper, all_points=True, fields=None):
     if not getattr(data.topology, "reference_cells", True):
         return _polyhedral_threshold(data, field, lower, upper, all_points, fields)
 
-    n = data.num_cells
-    keep = tack.zeros(tack.i32, (n,))
-    sizes = tack.zeros(tack.i32, (n,))
+    keep = tack.zeros(tack.i32, (data.num_cells,))
     for group in data.launch_groups("cells", [field]):
         if group.count:
             _keep_by_corners(data.domain_view("cells", group), field.view(group), lower,
-                             upper, 1 if all_points else 0, keep, sizes)
+                             upper, 1 if all_points else 0, keep)
+    return _keep_cells(data, keep, fields)
+
+
+@tack.kernel
+def _kept_sizes(cells, keep, sizes):
+    for c in cells:
+        e = cells.entity_id(c)
+        sizes[e] = keep[e] * cells.NUM_POINTS
+
+
+def _keep_cells(data, keep, fields=None):
+    """The cells whose ``keep`` flag (i32, one per cell) is 1, with only the points
+    they use, renumbered in order; fields carried by ``carry``. Polyhedral and
+    polygonal topologies keep their cells' faces too."""
+    if not getattr(data.topology, "reference_cells", True):
+        return _polyhedral_keep_cells(data, keep, fields)
+    n = data.num_cells
+    sizes = tack.zeros(tack.i32, (n,))
+    for group in data.topology.groups():
+        if group.count:
+            _kept_sizes(group.view(), keep, sizes)
     slots = tack.field(tack.i32, shape=(n,))
     starts = tack.field(tack.i32, shape=(n,))
     count = exclusive_scan(keep, slots, n) if n else 0
@@ -685,7 +828,6 @@ def _compact(flags):
 def _polyhedral_threshold(data, field, lower, upper, all_points, fields=None):
     """``threshold`` of a polyhedral or polygonal topology: whole cells, their faces
     kept once and numbered in their old order, points compacted."""
-    from tack.data.polyhedra import PolygonalTopology, PolyhedralTopology
 
     t = data.topology
     by_cells = isinstance(field.space, Constant)
@@ -696,6 +838,16 @@ def _polyhedral_threshold(data, field, lower, upper, all_points, fields=None):
         if group.count:
             _polyhedral_keep(data.domain_view("cells", group), values, lower, upper,
                              1 if by_cells else 0, 1 if all_points else 0, keep)
+    return _keep_cells(data, keep, fields)
+
+
+def _polyhedral_keep_cells(data, keep, fields=None):
+    """``_keep_cells`` of a polyhedral or polygonal topology: whole cells, their faces
+    kept once and numbered in their old order, points compacted."""
+    from tack.data.polyhedra import PolygonalTopology, PolyhedralTopology
+
+    t = data.topology
+    n = data.num_cells
     _, kept_cells, kept_n = _compact(keep)
     point_used = tack.zeros(tack.i32, (data.num_points,))
 
