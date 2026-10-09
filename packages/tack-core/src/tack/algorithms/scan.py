@@ -1,8 +1,12 @@
 """Parallel prefix sum (scan) on tack fields.
 
-Implements a Blelloch-style work-efficient scan using a series of
-kernel launches with doubling/halving strides.  No shared memory or
-barriers required — works on all backends.
+Reduce, then scan, by chunks: one thread per chunk of ``_CHUNK``
+elements totals it, the chunk totals are scanned the same way, and each
+chunk then writes its running sums from its offset. That is a few launches
+per factor of ``_CHUNK`` -- three levels for a million elements -- where
+the Blelloch scan this replaced made two per factor of two, 44 for a
+million, and most of a filter's time went to them. No shared memory or
+barriers -- works on all backends.
 
 Usage:
     import tack
@@ -14,39 +18,43 @@ Usage:
 
 import tack
 
-
-@tack.kernel
-def _copy_field(src, dst, n):
-    for i in range(n):
-        dst[i] = src[i]
+_CHUNK = 256  # elements one thread scans in turn
 
 
 @tack.kernel
-def _upsweep(data, stride, n, count):
-    """Up-sweep (reduce) phase: accumulate at stride boundaries."""
-    for i in range(count):
-        k = (i + 1) * stride * 2 - 1
-        if k < n:
-            data[k] = data[k] + data[k - stride]
+def _chunk_sums(src, dst, sums, n, chunk, nchunks):
+    """Copy each chunk into ``dst`` -- converting to its dtype on the store --
+    and total it in that dtype."""
+    for c in range(nchunks):
+        start = c * chunk
+        end = min(start + chunk, n)
+        dst[start] = src[start]
+        total = dst[start]
+        for i in range(start + 1, end):
+            dst[i] = src[i]
+            total += dst[i]
+        sums[c] = total
 
 
 @tack.kernel
-def _downsweep(data, stride, n, count):
-    """Down-sweep phase: propagate partial sums back down."""
-    for i in range(count):
-        k = (i + 1) * stride * 2 - 1 + stride
-        if k < n:
-            data[k] = data[k] + data[k - stride]
+def _chunk_scan(data, offsets, n, chunk, nchunks, inclusive):
+    """Each chunk's running sums, in place, starting from its offset."""
+    for c in range(nchunks):
+        running = offsets[c]
+        for i in range(c * chunk, min(c * chunk + chunk, n)):
+            value = data[i]
+            if inclusive == 1:
+                running += value
+                data[i] = running
+            else:
+                data[i] = running
+                running += value
 
 
 @tack.kernel
-def _shift_right(src, dst, n):
-    """Convert inclusive scan to exclusive by shifting right, inserting 0."""
-    for i in range(n):
-        if i == 0:
-            dst[i] = 0
-        else:
-            dst[i] = src[i - 1]
+def _zero_first(field):
+    for i in range(1):
+        field[0] = 0
 
 
 @tack.kernel
@@ -73,26 +81,22 @@ def _total(field, n):
     return result.to_numpy()[0].item()
 
 
-def _blelloch_scan_inplace(work, n):
-    """Run Blelloch up-sweep + down-sweep on a work buffer (in-place).
-
-    After this, work contains an inclusive prefix sum.
-    """
-    # Up-sweep (reduce) phase
-    stride = 1
-    while stride < n:
-        count = n // (stride * 2)
-        if count > 0:
-            _upsweep(work, stride, n, count)
-        stride *= 2
-
-    # Down-sweep phase
-    stride //= 4
-    while stride >= 1:
-        count = n // (stride * 2)
-        if count > 0:
-            _downsweep(work, stride, n, count)
-        stride //= 2
+def _scan(src, dst, n, inclusive):
+    """Scan ``src`` into ``dst`` (which may be ``src``) in ``dst``'s dtype and return
+    the total: chunk sums, then -- recursively -- their exclusive scan as the
+    chunks' offsets, then each chunk's own running sums. A few launches per
+    level, and a level per factor of ``_CHUNK``."""
+    nchunks = (n + _CHUNK - 1) // _CHUNK
+    sums = tack.field(dtype=dst.dtype, shape=(nchunks,))
+    _chunk_sums(src, dst, sums, n, _CHUNK, nchunks)
+    offsets = tack.field(dtype=dst.dtype, shape=(nchunks,))
+    if nchunks == 1:
+        _zero_first(offsets)
+        total = _total(sums, 1)
+    else:
+        total = _scan(sums, offsets, nchunks, inclusive=False)
+    _chunk_scan(dst, offsets, n, _CHUNK, nchunks, 1 if inclusive else 0)
+    return total
 
 
 def exclusive_scan(input_field, output_field, n):
@@ -119,13 +123,7 @@ def exclusive_scan(input_field, output_field, n):
         return 0
     # Scan in the output's dtype, as the inclusive scan does: an i32 work
     # buffer truncated float inputs and wrapped wider integers.
-    work = tack.field(dtype=output_field.dtype, shape=(n,))
-    _copy_field(input_field, work, n)
-    _blelloch_scan_inplace(work, n)
-    _shift_right(work, output_field, n)
-
-    # Total = last element of the inclusive scan
-    return _total(work, n)
+    return _scan(input_field, output_field, n, inclusive=False)
 
 
 def inclusive_scan(input_field, output_field, n):
@@ -149,6 +147,4 @@ def inclusive_scan(input_field, output_field, n):
     n = _count(n, input_field, output_field)
     if n == 0:
         return 0
-    _copy_field(input_field, output_field, n)
-    _blelloch_scan_inplace(output_field, n)
-    return _total(output_field, n)
+    return _scan(input_field, output_field, n, inclusive=True)

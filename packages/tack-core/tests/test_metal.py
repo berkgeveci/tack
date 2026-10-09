@@ -334,3 +334,28 @@ def test_gpu_reductions():
     np.testing.assert_allclose(x.sum(), data.sum(), rtol=1e-5)
     np.testing.assert_allclose(x.min(), data.min())
     np.testing.assert_allclose(x.max(), data.max())
+
+
+# --- Ownership ---
+
+def test_fields_own_their_buffers_alone():
+    """A field's MTLBuffer is held by the field alone -- retained once -- so it is
+    freed with the field. pyobjc-framework-Metal 12.1 describes Metal's new...
+    methods without "already_retained"; unpatched, every buffer kept one
+    retain too many and was never freed."""
+
+    @tack.kernel
+    def fill(a: tack.template()):
+        for i in range(a.shape[0]):
+            a[i] = i * 0.5
+
+    a = tack.field(tack.f32, shape=(1000,))
+    assert a._buffer.metal_buffer.retainCount() == 1
+    fill(a)
+    assert a._buffer.metal_buffer.retainCount() == 1
+    assert a.sum() == pytest.approx(0.5 * 999 * 1000 / 2)
+    assert a._buffer.metal_buffer.retainCount() == 1
+    from tack.runtime.dispatch import get_backend
+
+    scratch = get_backend()._device.newBufferWithBytes_length_options_(b"\0" * 64, 64, 0)
+    assert scratch.retainCount() == 1

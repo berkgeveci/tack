@@ -171,6 +171,14 @@ the buffer references and declares indirect-resource residency with
 completion. This fixes the four overlap cases confirmed at `922b642` and
 `e265e7f`, without alias-based specialization or disabling vendor optimization.
 
+Metal objects from `new...` methods (buffers, textures, libraries,
+pipelines, argument encoders, the command queue) are owned by the caller,
+but pyobjc-framework-Metal 12.1's metadata omits `already_retained`, so
+PyObjC retained each once more and they were never freed (a benchmark's
+temporaries reached 150 GB). `metal.py` registers the ownership for every
+`new...` selector it calls (`_OWNED_RESULTS`), before any is called; add
+any new one there. `test_fields_own_their_buffers_alone` checks retain counts.
+
 A Metal kernel with a sequential loop that stores to a field (or runs an
 atomic) has its body in `__tack_body__`, a `noinline` function the entry
 calls (`_stores_inside_sequential_loop` in `msl_gen.py`); workgroup arrays
@@ -495,9 +503,9 @@ Each GPU backend's `execute` and native `reduce_field` call `check_launch_size` 
 
 ### Algorithms (tack.algorithms)
 
-`exclusive_scan` and `inclusive_scan` implement Blelloch-style parallel prefix sums. They use a `_read_last` kernel to return the total sum without copying the entire buffer to numpy. The Blelloch scan uses O(log n) kernel launches, so for small arrays (< ~1M elements) a numpy CPU roundtrip may be faster due to kernel launch overhead.
+`exclusive_scan` and `inclusive_scan` (`algorithms/scan.py`) reduce, then scan, by chunks of `_CHUNK` (256): one thread per chunk copies it into the output (converting to the output's dtype on the store, so sums form in that dtype) and totals it, the chunk totals are scanned recursively the same way, and each chunk then writes its running sums from its offset. A few launches per factor of 256, so three levels for a million elements; the Blelloch scan it replaced made two launches per factor of two and dominated every compaction and sort (most of a contour's time). In place (`input is output`) works; the total comes back through `_read_last` without copying the buffer.
 
-`argsort`/`sort_by_key` (`algorithms/sort.py`) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. The pass count follows the key spread (min subtracted on the fly), found with u32 atomics on the low/high words. `unique`/`reduce_by_key` flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty fields (`shape=(0,)`) are valid outputs and allocate on every backend.
+`argsort`/`sort_by_key` (`algorithms/sort.py`) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. The pass count follows the key spread (min subtracted on the fly), found by a chunked min/max reduction over the full u64 keys (`_key_range`). Not with atomics: four per key on one address made the sort four times slower on eight CPU threads than on one. `unique`/`reduce_by_key` flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty fields (`shape=(0,)`) are valid outputs and allocate on every backend.
 
 ### ColorTable (tack.rendering)
 

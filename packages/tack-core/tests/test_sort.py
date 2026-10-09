@@ -105,7 +105,23 @@ def test_argsort_passes_depend_on_the_key_spread(backend, monkeypatch):
     passes.clear()
     keys = np.array([2**39, 2**39 + 1, 5, 2**39 - 1], dtype=np.int64)  # high words 0 to 128
     _check_argsort(tack.i64, keys)
-    assert len(passes) == 5  # four low-word passes plus one for the high word
+    assert len(passes) == 5  # a spread of 40 bits
+
+    passes.clear()
+    keys = np.array([2**32 + 2, 2**32 - 2, 2**32, 2**32 - 1, 2**32 + 1], dtype=np.int64)
+    _check_argsort(tack.i64, keys)
+    assert passes == [0]  # across a 32-bit word boundary, the spread is still 4
+
+
+def test_argsort_finds_the_key_range_over_many_chunks(backend):
+    """The key range is reduced chunk by chunk, then over the chunks' ranges:
+    70,000 keys take three levels, and the extremes sit late in the last
+    chunks, where a level that dropped a partial chunk would miss them."""
+    rng = np.random.default_rng(11)
+    keys = rng.integers(-2**40, 2**40, size=70_000, dtype=np.int64)
+    keys[-3] = -2**62
+    keys[-1] = 2**62
+    _check_argsort(tack.i64, keys)
 
 
 def test_argsort_refuses_other_key_dtypes(backend):
