@@ -19,6 +19,7 @@ from tack.data import (
     implicit,
     polyhedra,
     shapes,
+    sources,
     spaces,
     transforms,
 )
@@ -32,10 +33,14 @@ from tack.data.filters import (
     extract_points,
     mask,
     mask_points,
+    point_cloud,
+    shrink,
     slice,
     slice_plane,
+    tetrahedralize,
     threshold,
     threshold_points,
+    triangulate,
 )
 from tack.data.implicit import Box, Cylinder, Plane, Planes, Sphere
 from tack.data.polyhedra import (
@@ -88,14 +93,19 @@ __all__ = [
     "mask",
     "mask_points",
     "orient",
+    "point_cloud",
     "polyhedra",
     "rectilinear_grid",
     "shapes",
+    "shrink",
     "slice",
     "slice_plane",
+    "sources",
     "spaces",
+    "tetrahedralize",
     "threshold",
     "threshold_points",
     "traces",
     "transforms",
+    "triangulate",
 ]

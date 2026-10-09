@@ -38,8 +38,8 @@ from tack.algorithms.sort import _run_offsets, gather
 from tack.data import arrays, shapes
 from tack.data.algorithms import boundary_faces, extract_surface
 from tack.data.buckets import bucket_order
-from tack.data.carry import Interpolate, Pieces, Take, _point_values, carry
-from tack.data.dataset import Field
+from tack.data.carry import Interpolate, Pieces, Same, Take, _point_values, carry
+from tack.data.dataset import DataSet, Field
 from tack.data.implicit import Plane
 from tack.data.spaces import H1, Constant, Values
 from tack.data.topology import UnstructuredTopology, _as_field
@@ -585,6 +585,187 @@ def mask_points(data, stride, fields=None):
     flags = tack.field(tack.i32, shape=(data.num_points,))
     if data.num_points:
         _every(flags, int(stride))
+    return _keep_points(data, flags, fields)
+
+
+# ── Refinement: tetrahedra, triangles, shrink, point cloud ───────────
+#
+# Viskores' tables (worklet/internal/TriangulateTables.h): a hexahedron in 5
+# tetrahedra, a wedge in 3, a pyramid in 2; a quad in 2 triangles. A voxel's
+# and a pixel's corners run x-fastest, so they take the hexahedron's and the
+# quad's tables through their corner order. The 5-tetrahedron split does not
+# meet a neighbour's on every shared face, as in Viskores. One of Viskores'
+# wedge tetrahedra is inside out under the VTK corner order both use; it is
+# turned here, the split otherwise the same.
+
+_HEX_TETS = [[0, 1, 3, 4], [1, 4, 5, 6], [1, 4, 6, 3], [1, 3, 6, 2], [3, 6, 7, 4]]
+_VOXEL_ORDER = [0, 1, 3, 2, 4, 5, 7, 6]
+_PIECES = {
+    "tetrahedra": {
+        int(shapes.TETRA): [[0, 1, 2, 3]],
+        int(shapes.HEXAHEDRON): _HEX_TETS,
+        int(shapes.VOXEL): [[_VOXEL_ORDER[k] for k in tet] for tet in _HEX_TETS],
+        # Viskores' (3, 4, 5, 2) is inside out: the same tetrahedron, turned.
+        int(shapes.WEDGE): [[0, 1, 2, 4], [3, 5, 4, 2], [0, 2, 3, 4]],
+        int(shapes.PYRAMID): [[0, 1, 2, 4], [0, 2, 3, 4]],
+    },
+    "triangles": {
+        int(shapes.TRIANGLE): [[0, 1, 2]],
+        int(shapes.QUAD): [[0, 1, 2], [0, 2, 3]],
+        int(shapes.PIXEL): [[0, 1, 3], [0, 3, 2]],
+    },
+}
+
+
+@tack.kernel
+def _piece_counts(cells, pieces, counts):
+    for c in cells:
+        counts[cells.entity_id(c)] = pieces
+
+
+@tack.kernel
+def _split_cells(cells, table, pieces, width, starts, connectivity, sources):
+    for c in cells:
+        e = cells.entity_id(c)
+        at = starts[e]
+        for t in range(pieces):
+            for v in range(width):
+                connectivity[(at + t) * width + v] = cells.point_id(c, table[t * width + v])
+            sources[at + t] = e
+
+
+@tack.kernel
+def _fan_counts(loop_offsets, counts):
+    for c in range(counts.shape[0]):
+        counts[c] = max(loop_offsets[c + 1] - loop_offsets[c] - 2, 0)
+
+
+@tack.kernel
+def _fans(loop_offsets, loop_points, starts, connectivity, sources):
+    for c in range(loop_offsets.shape[0] - 1):
+        first = loop_offsets[c]
+        at = starts[c]
+        for k in range(loop_offsets[c + 1] - first - 2):
+            connectivity[3 * (at + k)] = loop_points[first]
+            connectivity[3 * (at + k) + 1] = loop_points[first + k + 1]
+            connectivity[3 * (at + k) + 2] = loop_points[first + k + 2]
+            sources[at + k] = c
+
+
+@tack.kernel
+def _uniform_cells(types, offsets, shape, width):
+    for i in range(types.shape[0]):
+        types[i] = tack.u8(shape)
+        offsets[i] = i * width
+        if i == 0:
+            offsets[types.shape[0]] = types.shape[0] * width
+
+
+def _pieces_topology(data, connectivity, sources, count, shape, width, fields):
+    types = tack.field(tack.u8, shape=(count,))
+    offsets = tack.zeros(tack.i32, (count + 1,))
+    if count:
+        _uniform_cells(types, offsets, int(shape), width)
+    out = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
+    return carry(data, out, points=Same(), cells=Pieces(sources), fields=fields)
+
+
+def _split(data, kind, fields):
+    tables = _PIECES[kind]
+    width, shape = (4, shapes.TETRA) if kind == "tetrahedra" else (3, shapes.TRIANGLE)
+    n = data.num_cells
+    groups = [g for g in data.topology.groups() if g.count and int(g.shape.ID) in tables]
+    counts = tack.zeros(tack.i32, (n,))
+    for group in groups:
+        _piece_counts(group.view(), len(tables[int(group.shape.ID)]), counts)
+    starts = tack.field(tack.i32, shape=(n,))
+    count = exclusive_scan(counts, starts, n) if n else 0
+    connectivity = tack.field(tack.i32, shape=(count * width,))
+    sources = tack.field(tack.i32, shape=(count,))
+    for group in groups:
+        table = np.asarray(tables[int(group.shape.ID)], np.int32)
+        _split_cells(group.view(), _as_field(table.reshape(-1), tack.i32), len(table), width,
+                     starts, connectivity, sources)
+    return _pieces_topology(data, connectivity, sources, count, shape, width, fields)
+
+
+def tetrahedralize(data, fields=None):
+    """Every 3D cell as tetrahedra, by Viskores' tables (a hexahedron or voxel in 5,
+    a wedge in 3, a pyramid in 2); other cells are left out. The points are the
+    same; cell fields go to each cell's tetrahedra."""
+    if not getattr(data.topology, "reference_cells", True):
+        raise NotImplementedError("tetrahedralize takes cells of the linear shapes")
+    return _split(data, "tetrahedra", fields)
+
+
+def triangulate(data, fields=None):
+    """Every 2D cell as triangles: a quad or pixel in 2, a polygon in a fan from its
+    first point; other cells are left out. The points are the same; cell fields
+    go to each cell's triangles."""
+    t = data.topology
+    if getattr(t, "reference_cells", True):
+        return _split(data, "triangles", fields)
+    if t.dimension != 2:
+        raise NotImplementedError("triangulate takes 2D cells: polygons, not polyhedra")
+    loop_offsets, loop_points = t.loops()
+    n = data.num_cells
+    counts = tack.field(tack.i32, shape=(n,))
+    starts = tack.field(tack.i32, shape=(n,))
+    if n:
+        _fan_counts(loop_offsets, counts)
+    count = exclusive_scan(counts, starts, n) if n else 0
+    connectivity = tack.field(tack.i32, shape=(3 * count,))
+    sources = tack.field(tack.i32, shape=(count,))
+    if count:
+        _fans(loop_offsets, loop_points, starts, connectivity, sources)
+    return _pieces_topology(data, connectivity, sources, count, shapes.TRIANGLE, 3, fields)
+
+
+@tack.kernel
+def _shrink_corners(positions, offsets, factor, n_cells):
+    for c in range(n_cells):
+        first = offsets[c]
+        end = offsets[c + 1]
+        center = positions[first]
+        for k in range(first + 1, end):
+            center += positions[k]
+        center = center / (end - first)
+        for k in range(first, end):
+            positions[k] = center + factor * (positions[k] - center)
+
+
+def shrink(data, factor=0.5, fields=None):
+    """Every cell shrunk toward its centroid (the mean of its corners) by ``factor``,
+    as Viskores' Shrink and VTK's vtkShrinkFilter. Viskores gives each cell its
+    own copies of its points; here that is an ``L2`` geometry on the same
+    topology, and point data becomes ``L2`` the same way (each cell's own copy
+    of its corners' values). Everything else is kept, the topology's faces and
+    edges with it."""
+    from tack.data.algorithms import discontinuous
+
+    if not 0 <= factor <= 1:
+        raise ValueError(f"factor must lie in [0, 1], not {factor!r}")
+    corners = discontinuous(data, Field(H1(data), data.geometry.values)
+                            if isinstance(data.geometry.space, H1) else data.geometry)
+    if data.num_cells:
+        _shrink_corners(corners.values, corners.space.offsets, float(factor), data.num_cells)
+    from tack.data.carry import selected
+
+    out = {}
+    for name in selected(data, fields):
+        f = data.fields[name]
+        space = f.space
+        if isinstance(space, Values) and space.on == "points":
+            f, space = Field(H1(data), f.values), H1(data)
+        out[name] = discontinuous(data, f) if isinstance(space, H1) else f
+    return DataSet(data.topology, corners, fields=out, sets=dict(data.sets))
+
+
+def point_cloud(data, fields=None):
+    """Every point as a vertex cell, with the point data (Viskores'
+    ConvertToPointCloud); cell data is left behind."""
+    flags = tack.full(tack.i32, (data.num_points,), 1) if data.num_points else \
+        tack.field(tack.i32, shape=(0,))
     return _keep_points(data, flags, fields)
 
 

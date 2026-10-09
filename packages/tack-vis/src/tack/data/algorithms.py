@@ -34,6 +34,8 @@ run on shape-based and polyhedral topologies from one source.
 """
 
 
+import math
+
 import numpy as np
 
 import tack
@@ -704,6 +706,60 @@ def implicit_values(data, function):
     if n:
         _implicit_values(positions, function, out)
     return Field(data.geometry.space, out)
+
+
+@tack.kernel
+def _central_powers(values, mean, p2, p3, p4):
+    for i in range(p2.shape[0]):
+        d = values[i] - mean
+        d2 = d * d
+        p2[i] = d2
+        p3[i] = d2 * d
+        p4[i] = d2 * d2
+
+
+def statistics(field):
+    """Descriptive statistics of a scalar field's values, as Viskores' Statistics
+    filter gives them: a dict of ``n``, ``min``, ``max``, ``sum``, ``mean``, the
+    central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance``
+    (``m2 / (n - 1)``), ``population_variance`` (``m2 / n``), their standard
+    deviations, ``skewness`` (``sqrt(n) m3 / m2^1.5``) and ``kurtosis``
+    (``n m4 / m2^2``, not the excess), the last two 0 for a constant field.
+    Moments are taken about the mean, in a second pass."""
+    if width_of(field.values):
+        raise TypeError("statistics takes a scalar field")
+    values = materialize(field.values)
+    n = size_of(field.values)
+    if n == 0:
+        raise ValueError("statistics of no values")
+    total = values.sum()
+    mean = total / n
+    p2, p3, p4 = (tack.field(values.dtype, shape=(n,)) for _ in range(3))
+    _central_powers(values, mean, p2, p3, p4)
+    m2, m3, m4 = p2.sum(), p3.sum(), p4.sum()
+    skewness = math.sqrt(n) * m3 / m2 ** 1.5 if m2 else 0.0
+    kurtosis = n * m4 / (m2 * m2) if m2 else 0.0
+    return {"n": n, "min": values.min(), "max": values.max(), "sum": total, "mean": mean,
+            "m2": m2, "m3": m3, "m4": m4,
+            "sample_variance": m2 / (n - 1) if n > 1 else 0.0,
+            "population_variance": m2 / n,
+            "sample_stddev": math.sqrt(m2 / (n - 1)) if n > 1 else 0.0,
+            "population_stddev": math.sqrt(m2 / n),
+            "skewness": skewness, "kurtosis": kurtosis}
+
+
+def entropy(field, bins=10):
+    """The Shannon entropy, in bits, of a scalar field's values in ``bins`` equal bins
+    over their range: ``-sum(p log2 p)`` over the bins' shares, as Viskores'
+    Entropy filter."""
+    from tack.algorithms import histogram
+
+    if width_of(field.values):
+        raise TypeError("entropy takes a scalar field")
+    counts, _ = histogram(materialize(field.values), bins=bins)
+    p = np.asarray(counts.to_numpy() if hasattr(counts, "to_numpy") else counts, float)
+    p = p[p > 0] / p.sum()
+    return float(-(p * np.log2(p)).sum())
 
 
 def to_points(data, field):

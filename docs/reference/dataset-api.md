@@ -328,6 +328,22 @@ Without a function: `extract_cells(data, ids)` (cells keep their order),
 Those that move the geometry return a dataset on the same topology with
 every field and set kept; on an `L2` geometry each cell's own corners move.
 
+## Refinement, statistics and sources
+
+| | |
+|---|---|
+| `tetrahedralize(data)` | 3D cells as tetrahedra by Viskores' tables (hexahedron or voxel 5, wedge 3, pyramid 2), one wedge tetrahedron turned the right way out |
+| `triangulate(data)` | 2D cells as triangles: quads and pixels in two, polygons in fans |
+| `shrink(data, factor)` | each cell toward its centroid: an `L2` geometry on the same topology, point data as `L2` (Viskores and VTK give each cell its own points) |
+| `point_cloud(data)` | every point as a vertex cell, with the point data |
+| `algorithms.statistics(f)` | Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis |
+| `algorithms.entropy(f, bins)` | Shannon entropy in bits of a `bins`-bin histogram |
+| `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
+| `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
+
+Tetrahedra and triangles are pieces of their cells (`carry`'s `Pieces`): cell
+data goes to each, the points stay the same.
+
 ## Interoperability
 
 | Function | |
