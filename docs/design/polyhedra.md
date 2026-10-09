@@ -335,11 +335,16 @@ reference element.
   - `vtkPolyhedron`'s volume, centroid and `IsInside`;
   - `vtkContour3DLinearGrid` (López) on the same cells, saddles included;
   - `vtkGeometryFilter` for external faces;
-  - the data in `~/Data/VTK/Data`: `polyhedron.vtu`,
-    `concavePolyhedron.vtu`, `largePolyhedral/`, `polyhedron.vtkhdf`;
+  - VTK's own test meshes, copied with VTK's license into
+    `packages/tack-vis/tests/data/vtk/`: `onePolyhedron.vtu`,
+    `polyhedron2pieces.vtu`, `polyhedron_mesh.vtu` (wound inconsistently,
+    and refused), `concavePolyhedron.vtu`, `sliceOfPolyhedron.vtu`,
+    `vtkHDF/polyhedron.vtu` and `nonWatertightPolyhedron.vtu`;
+    `largePolyhedral/` and `polyhedron.vtkhdf` are not used yet;
   - CGNS `Example_nface_n.cgns` (cell → faces with signs) and
     `Example_ngon_pe.cgns` (faces with owner and neighbour), the two
-    orientation conventions.
+    orientation conventions, and `EngineSector.cgns`, from the same
+    folder; these need a VTK built with its CGNS reader.
 - **MPAS-like columns.** Voronoi cells of random points (SciPy's
   `Voronoi`) extruded into prisms with polygonal bases, thin vertically as
   ocean cells are. Exactly the case where geometric orientation failed.
