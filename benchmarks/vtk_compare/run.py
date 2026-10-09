@@ -14,7 +14,7 @@ For every mesh, size, form (shape-based or polyhedral) and filter pair:
    marked as not comparable;
 2. Tack's first call in the process is timed as ``cold`` (it compiles);
 3. VTK is timed as ``Modified(); Update()``, repeated;
-4. Tack is timed two ways: ``warm`` -- the same dataset each run, so what it
+4. Tack is timed -- through ``tack.sync()``, since Metal queues launches -- two ways: ``warm`` -- the same dataset each run, so what it
    derived on earlier runs (faces, edges, launch groups) is kept, as in a
    pipeline -- and ``fresh`` -- a new topology each run, built from the same
    arrays outside the timing, holding only what VTK's grid holds.
@@ -141,6 +141,7 @@ def run_config(config, sizes, mesh_names, filters, budget):
     import meshes as m
     import pairs as p
 
+    import tack
     from tack.interop.vtk import vtk_to_dataset
 
     time_vtk = config != "metal"
@@ -156,7 +157,8 @@ def run_config(config, sizes, mesh_names, filters, budget):
                 times=_measure(lambda _: vtk_to_dataset(grids["shape"]), budget=budget))
         _record(records, **common, form="polyhedral", filter="import", impl="tack",
                 mode="warm",
-                times=_measure(lambda _: m.TackMesh(mesh, "polyhedral"), budget=budget))
+                times=_measure(lambda _: (m.TackMesh(mesh, "polyhedral"), tack.sync()),
+                               budget=budget))
         tack_meshes = {"shape": shape, "polyhedral": m.TackMesh(mesh, "polyhedral")}
         for form in ("shape", "polyhedral"):
             for pair in p.PAIRS:
@@ -170,8 +172,14 @@ def run_config(config, sizes, mesh_names, filters, budget):
                 vtk_filter.Update()
                 # Tack's first call in this process compiles: timed as cold.
                 data = source.dataset(fields)
+
+                def run_tack(d, pair=pair):
+                    # Metal queues launches: the timing ends when they have run.
+                    result = pair.tack(d, mesh)
+                    tack.sync()
+                    return result
                 start = time.perf_counter()
-                result = pair.tack(data, mesh)
+                result = run_tack(data)
                 first = time.perf_counter() - start
                 if (form, pair.name) not in seen:
                     seen.add((form, pair.name))
@@ -194,9 +202,9 @@ def run_config(config, sizes, mesh_names, filters, budget):
                         _record(records, **key, impl=impl, mode="warm", comparable=ok,
                                 times=_measure(update, budget=budget))
                 _record(records, **key, impl="tack", mode="warm", comparable=ok,
-                        times=_measure(lambda _: pair.tack(data, mesh), budget=budget))
+                        times=_measure(lambda _: run_tack(data), budget=budget))
                 _record(records, **key, impl="tack", mode="fresh", comparable=ok,
-                        times=_measure(lambda d: pair.tack(d, mesh),
+                        times=_measure(run_tack,
                                        setup=lambda: source.dataset(fields, fresh=True),
                                        budget=budget))
                 del vtk_filter, grid, data
