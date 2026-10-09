@@ -352,6 +352,7 @@ def test_fields_own_their_buffers_alone():
     a = tack.field(tack.f32, shape=(1000,))
     assert a._buffer.metal_buffer.retainCount() == 1
     fill(a)
+    tack.sync()     # a queued launch's command buffer holds the buffer until it runs
     assert a._buffer.metal_buffer.retainCount() == 1
     assert a.sum() == pytest.approx(0.5 * 999 * 1000 / 2)
     assert a._buffer.metal_buffer.retainCount() == 1
@@ -359,3 +360,53 @@ def test_fields_own_their_buffers_alone():
 
     scratch = get_backend()._device.newBufferWithBytes_length_options_(b"\0" * 64, 64, 0)
     assert scratch.retainCount() == 1
+
+
+# --- Queued launches ---
+
+@tack.kernel
+def _add_into(acc: tack.template(), k: tack.i32):
+    for i in range(acc.shape[0]):
+        acc[i] = acc[i] + k + i
+
+
+def test_queued_launches_run_in_order_across_batches():
+    """Launches are queued, committed 64 at a time with a few batches in flight:
+    400 of them, each reading what the one before wrote, still add up in order."""
+    from tack.runtime.metal import MetalBackend
+
+    assert 400 > MetalBackend._BATCH * (MetalBackend._IN_FLIGHT + 1)
+    acc = tack.zeros(tack.i32, (1000,))
+    for k in range(400):
+        _add_into(acc, k)
+    expected = sum(range(400)) + 400 * np.arange(1000)
+    np.testing.assert_array_equal(acc.to_numpy(), expected)
+
+
+def test_each_queued_launch_keeps_its_own_scalars():
+    """A variant's scalars were packed into one buffer, rewritten per call; with
+    launches queued, a rewrite would reach launches that have not run yet."""
+    outs = [tack.zeros(tack.i32, (16,)) for _ in range(40)]
+    for k, out in enumerate(outs):
+        _add_into(out, k)
+    for k, out in enumerate(outs):
+        np.testing.assert_array_equal(out.to_numpy(), k + np.arange(16))
+
+
+def test_host_writes_wait_for_the_launches_before_them():
+    acc = tack.zeros(tack.i32, (64,))
+    _add_into(acc, 1)
+    acc.from_numpy(np.full(64, 100, np.int32))     # after the launch, not under it
+    _add_into(acc, 2)
+    np.testing.assert_array_equal(acc.to_numpy(), 102 + np.arange(64))
+
+
+def test_sync_waits_for_queued_launches():
+    acc = tack.zeros(tack.i32, (64,))
+    _add_into(acc, 5)
+    tack.sync()
+    from tack.runtime.dispatch import get_backend
+
+    backend = get_backend()
+    assert backend._open is None and not backend._committed
+    np.testing.assert_array_equal(acc._buffer._view, 5 + np.arange(64))

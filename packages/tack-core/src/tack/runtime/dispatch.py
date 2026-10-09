@@ -80,6 +80,9 @@ def init(arch: str = "cpu", **options):
         available = ", ".join(sorted(_constructors.keys()))
         raise ValueError(f"Unknown architecture: '{arch}'. Available: {available}")
 
+    if _current_backend is not None:
+        _current_backend.synchronize()     # the old backend's queued kernels
+
     module_name, class_name = _constructors[arch]
     help_msg = _BACKEND_HELP[arch]
 
@@ -106,6 +109,18 @@ def init(arch: str = "cpu", **options):
             f"  {e}\n"
             f"  {help_msg}"
         ) from e
+
+
+def sync():
+    """Wait until every kernel launched so far has finished.
+
+    Reading or writing a field from the host (``to_numpy``, ``from_numpy``,
+    indexing, reductions, DLPack export) already waits for the kernels
+    before it, so most code never needs this. It is for timing kernels, and
+    for memory shared with another library that reads it without Tack.
+    """
+    if _current_backend is not None:
+        _current_backend.synchronize()
 
 
 def get_backend():

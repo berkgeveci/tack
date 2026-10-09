@@ -167,8 +167,18 @@ device-buffer kernel arguments (which implicitly promise disjoint storage in
 MSL). Members use the packed parameter positions as `[[id(N)]]` indices;
 textures retain their separate binding namespace. Each cached dispatch refreshes
 the buffer references and declares indirect-resource residency with
-`useResource`. The encoder and argument buffer are reused after synchronous
-completion. This fixes the four overlap cases confirmed at `922b642` and
+`useResource`. Launches are queued, not waited for (`MetalBackend`
+`_open_batch`/`_launched`/`synchronize`): each encodes a compute pass into
+the open command buffer, committed every 64 launches with at most 4 in
+flight, and owns what it reads -- a fresh argument buffer, its packed
+scalars as `_Uniforms`, references to its fields until it completes. The
+host waits only when it touches field memory (every `MetalBuffer` method,
+reductions, texture uploads) or calls `tack.sync()`; bindings are resolved
+before an encoder opens, since committing an open encoder aborts. Memory
+handed outside Tack (DLPack, `export_memory`, `wrap_ptr`) is `_shared`: a
+launch using it completes before returning. Waiting after every launch cost
+about 0.3 ms each. `test_metal.py` covers order across batches, per-launch
+scalars and host writes. This fixes the four overlap cases confirmed at `922b642` and
 `e265e7f`, without alias-based specialization or disabling vendor optimization.
 
 Metal objects from `new...` methods (buffers, textures, libraries,
@@ -194,10 +204,11 @@ smallest). See `test_field_updates_in_loops.py` and
 `docs/design/memory-and-aliasing.md`.
 
 Dispatching one variant from several Python threads: CPU binds arguments
-per call and shares no launch state. GPU variants do — the scalar pack
-buffers, and Metal's argument buffer — so CUDA, HIP and Metal hold
-`KernelVariant.dispatch_lock` from the pack update through the synchronous
-launch. Level Zero holds one backend `_launch_lock` (reentrant) over
+per call and shares no launch state. CUDA and HIP variants share their
+scalar pack buffers, so they hold `KernelVariant.dispatch_lock` from the
+pack update through the synchronous launch. Metal launches own their
+argument buffer and scalars, and encode under the backend's batch lock.
+Level Zero holds one backend `_launch_lock` (reentrant) over
 launches, reductions and copies, because its command lists are
 backend-wide. Unlocked, half of the CUDA dispatches from four threads
 computed with another thread's scalars (`test_concurrent_dispatch.py`).
