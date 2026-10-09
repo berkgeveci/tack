@@ -235,6 +235,7 @@ Results are `Field`s, or `DataSet`s for filters. In the table,
 | `clip` | yes | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes |
 | `implicit_values` | yes | yes | yes |
+| `CellLocator`, `probe` | yes | not yet | not yet |
 | `cell_centers`, `values_at_centers` | yes | no | no |
 | `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no |
 | `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes |
@@ -357,6 +358,38 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 Tetrahedra and triangles are pieces of their cells (`carry`'s `Pieces`): cell
 data goes to each, the points stay the same.
 
+## Locating points and probing
+
+`CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
+uniform grid over the dataset, about `density` bins per cell.
+`locator.find(points)` takes an `(n, 3)` array or a field of 3-vectors and
+gives each point's cell (an i32 field, -1 where none holds it) and its
+parametric coordinates there. Where cells share the point, the smallest
+cell id wins. A point counts as in a cell within 0.1% of the cell's
+bounding-box diagonal, as `vtkProbeFilter`'s computed tolerance has it.
+The search runs from the cells: each cell tests the points in the bins its
+box overlaps, so a cell is reached through its own view, never looked up by
+id. The bins follow the geometry when the locator is built; build it again
+after moving the points.
+
+`probe(data, where, fields=None, locator=None)` evaluates `data`'s fields
+at the points of `where`, as Viskores' Probe and VTK's `vtkProbeFilter` do.
+`where` is a dataset, which keeps its topology and fields, or an
+`(n, 3)` array, which becomes vertex cells. Each field becomes point data
+on `where`, alongside `valid` (1 where a cell holds the point, else 0 and
+the values are 0):
+
+- a field with a basis (`H1`, `L2`, `Constant`, values on points) is
+  evaluated through it in the cell holding the point;
+- values on cells come from that cell;
+- anything else is left behind.
+
+`locator=` reuses a locator built once for several probes.
+
+Each shape's `nearest_point(pts, x, pc)` gives the point of a cell nearest
+`x`, as VTK's `EvaluatePosition` does: exactly for triangles and
+tetrahedra, by clamping the parametric coordinates for the others.
+
 ## Interoperability
 
 | Function | |
@@ -392,5 +425,7 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 - `"shape"` as a named field or a separate attribute;
 - filters on higher-order data (subdivide, rather than linearize);
 - clip on polyhedra;
+- locating points in polyhedra (no parametric coordinates; a containment
+  test against the faces instead);
 - a topology of lines, for a 2D mesh's boundary and for contour lines of
   polygons.

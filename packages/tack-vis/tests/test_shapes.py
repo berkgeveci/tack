@@ -463,6 +463,44 @@ def test_world_to_parametric_is_vtks(f64_backend, shape):
 
 
 @tack.kernel
+def _nearest(cell, cells, pcs, offsets, positions, nearest):
+    for i in range(pcs.shape[0]):
+        pts = tack.local_array(tack.f64, 3 * cell.NUM_POINTS)
+        for j in range(cell.NUM_POINTS):
+            pts[3 * j], pts[3 * j + 1], pts[3 * j + 2] = cells[i, j]
+        x = cell.interpolate_point(pts, pcs[i]) + offsets[i]
+        positions[i] = x
+        pc, ok = cell.world_to_parametric(pts, x)
+        nearest[i] = cell.nearest_point(pts, x, pc)
+
+
+@needs_vtk
+@pytest.mark.parametrize("shape", [s for s in SHAPES if s not in (sh.Vertex, sh.Quad, sh.Wedge)],
+                         ids=lambda s: s.__name__)
+@pytest.mark.parametrize("outside", [False, True])
+def test_nearest_point_is_vtks(f64_backend, shape, outside):
+    """VTK's EvaluatePosition closest point, inside the cell and out. Not a quad's:
+    VTK measures to its edges, where the clamped position is close but not exact.
+    Nor a wedge's: VTK clamps r and s each to [0, 1], which can leave the
+    triangle (r + s > 1), where Tack scales them back onto it."""
+    cells, pcs, offsets = _make_cases(shape, seed=6, count=12, outside=outside)
+    n = len(pcs)
+    positions = tack.Vector.field(3, tack.f64, shape=(n,))
+    nearest = tack.Vector.field(3, tack.f64, shape=(n,))
+    _nearest(shape(), _vectors(cells, tack.f64), _vectors(pcs, tack.f64),
+             _vectors(offsets, tack.f64), positions, nearest)
+    positions, nearest = positions.to_numpy(vectors=True), nearest.to_numpy(vectors=True)
+    for i in range(n):
+        cell = _vtk_cell(shape)
+        for j in range(cell.GetNumberOfPoints()):
+            cell.GetPoints().SetPoint(j, cells[i, j])
+        closest = [0.0, 0.0, 0.0]
+        cell.EvaluatePosition(positions[i], closest, vtk.reference(0), [0.0] * 3,
+                              vtk.reference(0.0), [0.0] * cell.GetNumberOfPoints())
+        np.testing.assert_allclose(nearest[i], closest, atol=1e-8)
+
+
+@tack.kernel
 def _geometry(cell, cells, pcs, values, interpolated, positions, jacobians):
     for i in range(pcs.shape[0]):
         pts = tack.local_array(tack.f64, 3 * cell.NUM_POINTS)

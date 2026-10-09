@@ -55,8 +55,9 @@ Methods, all callable only from kernels and device functions:
   ``face_num_points(f)``: VTK's ``GetEdge``/``GetFace`` as indices into the
   cell's points, and the face's shape id.
 - ``interpolate(values, pc)``, ``interpolate_point(pts, pc)``,
-  ``jacobian(pts, pc)``, ``world_to_parametric(pts, x)``: the geometry of
-  a cell whose points are given, defined once for every shape.
+  ``jacobian(pts, pc)``, ``world_to_parametric(pts, x)``,
+  ``nearest_point(pts, x, pc)``: the geometry of a cell whose points are
+  given, defined once for every shape.
 
 Coordinates a shape does not use are ignored: a quad's functions do not
 read ``t``. A point index must satisfy ``0 <= j < NUM_POINTS``, and edge
@@ -177,6 +178,40 @@ def _linear(a, x):
 
 
 @tack.func
+def _nearest_on_triangle(a, b, c, p):
+    """The point of triangle ``abc`` nearest ``p``, by the region of the triangle's
+    plane that ``p`` projects into (Ericson, Real-Time Collision Detection, 5.1.5)."""
+    ab = b - a
+    ac = c - a
+    d1 = ab.dot(p - a)
+    d2 = ac.dot(p - a)
+    d3 = ab.dot(p - b)
+    d4 = ac.dot(p - b)
+    d5 = ab.dot(p - c)
+    d6 = ac.dot(p - c)
+    va = d3 * d6 - d5 * d4
+    vb = d5 * d2 - d1 * d6
+    vc = d1 * d4 - d3 * d2
+    out = a
+    if d1 <= 0.0 and d2 <= 0.0:
+        out = a
+    elif d3 >= 0.0 and d4 <= d3:
+        out = b
+    elif d6 >= 0.0 and d5 <= d6:
+        out = c
+    elif vc <= 0.0 and d1 >= 0.0 and d3 <= 0.0:
+        out = a + (d1 / (d1 - d3)) * ab
+    elif vb <= 0.0 and d2 >= 0.0 and d6 <= 0.0:
+        out = a + (d2 / (d2 - d6)) * ac
+    elif va <= 0.0 and d4 >= d3 and d5 >= d6:
+        out = b + ((d4 - d3) / ((d4 - d3) + (d5 - d6))) * (c - b)
+    else:
+        total = va + vb + vc
+        out = a + (vb / total) * ab + (vc / total) * ac
+    return out
+
+
+@tack.func
 def _point(pts, j):
     """Point ``j`` of a local array of x, y, z triples, as a 3-vector."""
     return tack.Vector([pts[3 * j], pts[3 * j + 1], pts[3 * j + 2]])
@@ -293,6 +328,18 @@ class Shape:
         return m
 
     @tack.func
+    def nearest_point(self, pts, x, pc):
+        """The point of the cell nearest world point ``x``, given ``pc`` from
+        ``world_to_parametric(pts, x)``: ``x`` itself inside a solid cell, and
+        otherwise the position at ``pc`` clamped into the parametric domain, as
+        VTK's ``EvaluatePosition`` has it for a hexahedron, voxel, pyramid, pixel
+        and line -- for a triangle or tetrahedron, as there, the exact nearest
+        point. A quad's clamped position is near its nearest point but, unless
+        it is a parallelogram, not exactly it; a wedge's clamp scales ``(r, s)``
+        back onto its triangle, where VTK clamps each to [0, 1] and can leave it."""
+        return self.interpolate_point(pts, self._clamp(pc))
+
+    @tack.func
     def world_to_parametric(self, pts, x):
         """The parametric coordinates of world point ``x`` in the cell whose points are ``pts``.
 
@@ -393,6 +440,10 @@ class Vertex(Shape):
         return 1
 
     @tack.func
+    def _clamp(self, pc):
+        return pc
+
+    @tack.func
     def world_to_parametric(self, pts, x):
         return tack.Vector([0.0, 0.0, 0.0]), 1
 
@@ -424,6 +475,10 @@ class Line(Shape):
     @tack.func
     def is_inside(self, pc, tol):
         return -tol <= pc[0] and pc[0] <= 1.0 + tol
+
+    @tack.func
+    def _clamp(self, pc):
+        return tack.Vector([min(max(pc[0], 0.0), 1.0), pc[1], pc[2]])
 
     @tack.func
     def _newton_step(self, m, residual):
@@ -464,6 +519,17 @@ class Triangle(_Surface):
         return -tol <= pc[0] and -tol <= pc[1] and pc[0] + pc[1] <= 1.0 + tol
 
     @tack.func
+    def _clamp(self, pc):
+        r = max(pc[0], 0.0)
+        s = max(pc[1], 0.0)
+        scale = 1.0 / max(r + s, 1.0)
+        return tack.Vector([r * scale, s * scale, pc[2]])
+
+    @tack.func
+    def nearest_point(self, pts, x, pc):
+        return _nearest_on_triangle(_point(pts, 0), _point(pts, 1), _point(pts, 2), x)
+
+    @tack.func
     def edge_point(self, e, k):
         return _TRIANGLE_EDGES[2 * e + k]
 
@@ -501,6 +567,10 @@ class _Quadrilateral(_Surface):
         lo = -tol
         hi = 1.0 + tol
         return lo <= pc[0] and pc[0] <= hi and lo <= pc[1] and pc[1] <= hi
+
+    @tack.func
+    def _clamp(self, pc):
+        return tack.Vector([min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0), pc[2]])
 
 
 @tack.data_oriented
@@ -601,6 +671,32 @@ class Tetra(_Solid):
                 and pc[0] + pc[1] + pc[2] <= 1.0 + tol)
 
     @tack.func
+    def _clamp(self, pc):
+        r = max(pc[0], 0.0)
+        s = max(pc[1], 0.0)
+        t = max(pc[2], 0.0)
+        scale = 1.0 / max(r + s + t, 1.0)
+        return tack.Vector([r * scale, s * scale, t * scale])
+
+    @tack.func
+    def nearest_point(self, pts, x, pc):
+        out = x
+        if self.is_inside(pc, 0.0) == 1:
+            out = self.interpolate_point(pts, pc)
+        else:
+            # The nearest point of the nearest face.
+            nearest = -1.0
+            for f in range(4):
+                q = _nearest_on_triangle(_point(pts, self.face_point(f, 0)),
+                                         _point(pts, self.face_point(f, 1)),
+                                         _point(pts, self.face_point(f, 2)), x)
+                d = (q - x).dot(q - x)
+                if nearest < 0.0 or d < nearest:
+                    nearest = d
+                    out = q
+        return out
+
+    @tack.func
     def edge_point(self, e, k):
         return _TETRA_EDGES[2 * e + k]
 
@@ -669,6 +765,11 @@ class _Box(_Solid):
         hi = 1.0 + tol
         return (lo <= pc[0] and pc[0] <= hi and lo <= pc[1] and pc[1] <= hi
                 and lo <= pc[2] and pc[2] <= hi)
+
+    @tack.func
+    def _clamp(self, pc):
+        return tack.Vector([min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0),
+                            min(max(pc[2], 0.0), 1.0)])
 
 
 @tack.data_oriented
@@ -816,6 +917,13 @@ class Wedge(_Solid):
                 and -tol <= pc[2] and pc[2] <= 1.0 + tol)
 
     @tack.func
+    def _clamp(self, pc):
+        r = max(pc[0], 0.0)
+        s = max(pc[1], 0.0)
+        scale = 1.0 / max(r + s, 1.0)
+        return tack.Vector([r * scale, s * scale, min(max(pc[2], 0.0), 1.0)])
+
+    @tack.func
     def edge_point(self, e, k):
         return _WEDGE_EDGES[2 * e + k]
 
@@ -885,6 +993,11 @@ class Pyramid(_Solid):
         hi = 1.0 + tol
         return (lo <= pc[0] and pc[0] <= hi and lo <= pc[1] and pc[1] <= hi
                 and lo <= pc[2] and pc[2] <= hi)
+
+    @tack.func
+    def _clamp(self, pc):
+        return tack.Vector([min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0),
+                            min(max(pc[2], 0.0), 1.0)])
 
     @tack.func
     def edge_point(self, e, k):

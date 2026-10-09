@@ -44,6 +44,7 @@ from tack.data.filters import (
     triangulate,
 )
 from tack.data.implicit import Box, Cylinder, Plane, Planes, Sphere
+from tack.data.locator import CellLocator, probe
 from tack.data.polyhedra import (
     PolygonalTopology,
     PolyhedralTopology,
@@ -61,6 +62,7 @@ __all__ = [
     "L2",
     "Box",
     "CartesianProduct",
+    "CellLocator",
     "Constant",
     "ConstantArray",
     "CountingArray",
@@ -97,6 +99,7 @@ __all__ = [
     "orient",
     "point_cloud",
     "polyhedra",
+    "probe",
     "rectilinear_grid",
     "shapes",
     "shrink",
