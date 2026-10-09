@@ -33,16 +33,14 @@ run on shape-based and polyhedral topologies from one source.
   evaluates it at its own corners, so values at shared points can differ.
 """
 
-import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.algorithms.sort import _run_offsets, sort_by_key
 from tack.data import shapes
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import DataSet, Field, for_each, traces
 from tack.data.spaces import H1, L2, Constant, Values, reference_cells
-from tack.data.topology import UnstructuredTopology
+from tack.data.topology import UnstructuredTopology, corner_layout
 
 __all__ = [
     "boundary_faces",
@@ -574,23 +572,11 @@ def divergence(data, flux):
 
 
 @tack.kernel
-def _incidences(cells, u, start, points, contributions):
+def _incidences(cells, u, start, contributions):
     for c in cells:
         first = start + cells.index(c) * cells.NUM_POINTS
         for j in range(cells.NUM_POINTS):
-            points[first + j] = cells.point_id(c, j)
             contributions[first + j] = u.dof(c, j)
-
-
-@tack.kernel
-def _average_runs(points, values, offsets, out, count):
-    for r in range(count):
-        begin = offsets[r]
-        end = offsets[r + 1]
-        total = values[begin]
-        for i in range(begin + 1, end):
-            total += values[i]
-        out[points[begin]] = total / (end - begin)
 
 
 @tack.kernel
@@ -600,20 +586,30 @@ def _polyhedral_incidences(point_offsets, values, contributions, n_cells):
             contributions[e] = values[c]
 
 
+@tack.kernel
+def _average_links(offsets, entries, contributions, out):
+    for p in range(out.shape[0]):
+        begin = offsets[p]
+        end = offsets[p + 1]
+        if end > begin:
+            total = contributions[entries[begin]]
+            for i in range(begin + 1, end):
+                total += contributions[entries[i]]
+            out[p] = total / (end - begin)
+
+
 def _polyhedral_to_points(data, field):
-    """Cell values averaged onto the points of a polyhedral or polygonal topology:
-    one entry per (cell, distinct point), from the topology's derived cell points,
-    sorted by point and averaged in cell order -- the shape path's method."""
+    """Cell values averaged onto the points of a polyhedral or polygonal topology,
+    through its point links: each point's cells in cell order."""
     offsets, point_ids = data.topology.cell_points()
-    total = point_ids.shape[0]
+    total = int(point_ids.shape[0])
     values = materialize(field.values)
     contributions = tack.field(values.dtype, shape=(total,))
     out = tack.zeros(values.dtype, (data.num_points,))
     if total:
         _polyhedral_incidences(offsets, values, contributions, data.num_cells)
-        keys, sums = sort_by_key(point_ids, contributions)
-        runs, count = _run_offsets(keys, total)
-        _average_runs(keys, sums, runs, out, count)
+        link_offsets, entries = data.topology.point_links()
+        _average_links(link_offsets, entries, contributions, out)
     return Field(H1(data), out)
 
 
@@ -633,25 +629,20 @@ def to_points(data, field):
         return _polyhedral_to_points(data, field)
     if not isinstance(field.space, (Constant, L2)):
         raise TypeError("to_points projects a cell or L2 field")
-    # One entry per (cell, corner), laid out by the topology's groups; a
-    # subgroup's cells sit at their positions in their group (index(c)).
-    groups = data.topology.groups()
-    starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_POINTS
-                                             for g in groups])]).astype(int)
-    start_of = {id(g): int(s) for g, s in zip(groups, starts[:-1])}
-    total = int(starts[-1])
-    points = tack.field(tack.i32, shape=(total,))
+    # One contribution per (cell, corner), laid out by the topology's groups; a
+    # subgroup's cells sit at their positions in their group (index(c)). Each
+    # point then averages its corners through the topology's point links, in
+    # layout order.
+    start_of, total = corner_layout(data.topology)
     contributions = tack.field(field.values.dtype, shape=(total,))
     for group in data.launch_groups("cells", [field]):
         if group.count:
             view = data.domain_view("cells", group)
-            _incidences(view, field.view(group), start_of[id(group.root)], points,
-                        contributions)
+            _incidences(view, field.view(group), start_of[id(group.root)], contributions)
     out = tack.zeros(field.values.dtype, (data.num_points,))
     if total:
-        keys, values = sort_by_key(points, contributions)
-        offsets, count = _run_offsets(keys, total)
-        _average_runs(keys, values, offsets, out, count)
+        offsets, entries = data.topology.point_links()
+        _average_links(offsets, entries, contributions, out)
     return Field(H1(data), out)
 
 

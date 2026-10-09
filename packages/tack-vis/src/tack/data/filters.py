@@ -34,9 +34,10 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.algorithms.sort import _run_offsets, argsort, gather
+from tack.algorithms.sort import _run_offsets, gather
 from tack.data import arrays, shapes
 from tack.data.algorithms import _like, _take, boundary_faces, extract_surface
+from tack.data.buckets import bucket_order
 from tack.data.dataset import DataSet, Field
 from tack.data.spaces import H1, L2, Constant, Values
 from tack.data.topology import UnstructuredTopology
@@ -197,7 +198,9 @@ def contour(data, field, isovalue, merge_points=True):
         _triangle_cells(sources, triangle_cells)
 
     if merge_points and n:
-        order = argsort(keys)
+        # A key leads with the edge's low point, or (within cells) is cell * 16 + edge.
+        order, _ = (bucket_order(keys, n_cells, shift=4) if per_cell
+                    else bucket_order(keys, data.num_points))
         offsets, count = _run_offsets(gather(keys, order), n)
         merged = tack.Vector.field(3, data.dtype, shape=(count,))
         merged_edges = tack.Vector.field(2, tack.i32, shape=(count,))
@@ -243,12 +246,26 @@ def contour(data, field, isovalue, merge_points=True):
 # inside is a *key* crossing; each is paired with the next crossing round
 # that face. With consistent winding, every crossing of a cell is a key
 # crossing on exactly one of its faces and the next of another, so a cell's
-# pairs form cycles: its iso-polygons. Crossings are named by their global
-# edge, so cells and faces agree on them, and an iso-vertex is one per edge.
+# pairs form cycles: its iso-polygons. Crossings are named by their edge's
+# (low, high) point ids, so a cell's faces agree on them without deriving the
+# mesh's edges; the crossings are then merged across cells into one
+# iso-vertex per edge, numbered in (low, high) order -- the order of the
+# mesh's edge ids, had they been derived.
 
 @tack.kernel
 def _lopez_counts(cells, values, iso, counts):
+    # Most cells lie on one side of the isovalue and need not walk their faces;
+    # their counts stay zero.
     for c in cells:
+        below = 0
+        above = 0
+        for j in range(cells.num_points(c)):
+            if values[cells.point_id(c, j)] >= iso:
+                above = 1
+            else:
+                below = 1
+        if below == 0 or above == 0:
+            continue
         for k in range(cells.num_faces(c)):
             n = cells.side_size(c, k)
             keyed = 0
@@ -260,14 +277,25 @@ def _lopez_counts(cells, values, iso, counts):
             counts[cells.entry(c, k)] = keyed
 
 
+@tack.func
+def _edge_key(a, b):
+    return (tack.u64(min(a, b)) << tack.u64(32)) | tack.u64(max(a, b))
+
+
 @tack.kernel
-def _lopez_pairs(cells, values, iso, face_edge, starts, pair_from, pair_to):
+def _lopez_pairs(cells, values, iso, starts, pair_from, pair_to):
     for c in cells:
+        below = 0
+        above = 0
+        for j in range(cells.num_points(c)):
+            if values[cells.point_id(c, j)] >= iso:
+                above = 1
+            else:
+                below = 1
+        if below == 0 or above == 0:
+            continue
         for k in range(cells.num_faces(c)):
-            f = cells.face_id(c, k)
             n = cells.side_size(c, k)
-            side = cells.face_side(c, k)
-            base = cells.face_offsets[f]
             at = starts[cells.entry(c, k)]
             for j in range(n):
                 va = values[cells.side_point(c, k, j)]
@@ -281,11 +309,11 @@ def _lopez_pairs(cells, values, iso, face_edge, starts, pair_from, pair_to):
                         if (1 if wa >= iso else 0) != (1 if wb >= iso else 0):
                             nxt = j2
                             break
-                    # Walk edge j joins walk points j and j + 1: on side 1, stored
-                    # points n - 1 - j and n - 2 - j, so stored edge n - 2 - j.
-                    pair_from[at] = face_edge[base + (j if side == 0 else (2 * n - 2 - j) % n)]
-                    pair_to[at] = face_edge[base + (nxt if side == 0
-                                                     else (2 * n - 2 - nxt) % n)]
+                    pair_from[at] = _edge_key(
+                        cells.side_point(c, k, j), cells.side_point(c, k, j + 1 if j + 1 < n else 0))
+                    pair_to[at] = _edge_key(
+                        cells.side_point(c, k, nxt),
+                        cells.side_point(c, k, nxt + 1 if nxt + 1 < n else 0))
                     at += 1
 
 
@@ -310,7 +338,7 @@ def _lopez_trace(cells, pair_offsets, pair_from, pair_to, emit, poly_counts, pol
                 for step in range(m):
                     used[cur] = 1
                     if emit == 1:
-                        vertices[out] = pair_from[first + cur]
+                        vertices[out] = first + cur          # the crossing, by its pair
                     out += 1
                     target = pair_to[first + cur]
                     nxt = -1
@@ -329,33 +357,28 @@ def _lopez_trace(cells, pair_offsets, pair_from, pair_to, emit, poly_counts, pol
 
 
 @tack.kernel
-def _crossing_edges(rows, values, iso, flags):
-    for e in range(flags.shape[0]):
-        ab = rows[e]
-        flags[e] = 1 if (1 if values[ab[0]] >= iso else 0) != (
-            1 if values[ab[1]] >= iso else 0) else 0
+def _iso_vertices(pair_from, order, offsets, values, iso, positions, weights, out, ends,
+                  vertex_of_pair, count):
+    # One per run of equal crossing keys, interpolated from the lower point id, as
+    # the shape path's contour interpolates, so the two agree on every point.
+    for r in range(count):
+        key = pair_from[order[offsets[r]]]
+        a = tack.i32(key >> tack.u64(32))
+        b = tack.i32(key & tack.u64(0xFFFFFFFF))
+        va = values[a]
+        w = (iso - va) / (values[b] - va)
+        xa = positions[a]
+        out[r] = xa + w * (positions[b] - xa)
+        ends[r] = [a, b]
+        weights[r] = w
+        for i in range(offsets[r], offsets[r + 1]):
+            vertex_of_pair[order[i]] = r
 
 
 @tack.kernel
-def _iso_vertices(rows, values, iso, flags, slots, positions, weights, out, ends):
-    # From the lower point id, as the shape path's contour interpolates, so the
-    # two agree on every point.
-    for e in range(flags.shape[0]):
-        if flags[e] == 1:
-            ab = rows[e]
-            va = values[ab[0]]
-            w = (iso - va) / (values[ab[1]] - va)
-            xa = positions[ab[0]]
-            v = slots[e]
-            out[v] = xa + w * (positions[ab[1]] - xa)
-            ends[v] = ab
-            weights[v] = w
-
-
-@tack.kernel
-def _renumber_vertices(vertices, slots):
+def _renumber_vertices(vertices, vertex_of_pair):
     for i in range(vertices.shape[0]):
-        vertices[i] = slots[vertices[i]]
+        vertices[i] = vertex_of_pair[vertices[i]]
 
 
 @tack.kernel
@@ -375,9 +398,6 @@ def _polyhedral_contour(data, field, isovalue):
     if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
         raise TypeError("a polyhedral topology contours point data")
     values = arrays.materialize(field.values)
-    edges = t.edges()
-    faces = t.faces()                                # validates the sides
-    del faces
     entries = int(t.cell_faces.shape[0])
     counts = tack.zeros(tack.i32, (entries,))
     for group in data.launch_groups("cells", []):
@@ -386,13 +406,13 @@ def _polyhedral_contour(data, field, isovalue):
     pair_offsets = tack.field(tack.i32, shape=(entries + 1,))
     pairs = exclusive_scan(counts, pair_offsets, entries) if entries else 0
     _close_starts(pair_offsets, entries, pairs)
-    pair_from = tack.field(tack.i32, shape=(pairs,))
-    pair_to = tack.field(tack.i32, shape=(pairs,))
+    pair_from = tack.field(tack.u64, shape=(pairs,))
+    pair_to = tack.field(tack.u64, shape=(pairs,))
     if pairs:
         for group in data.launch_groups("cells", []):
             if group.count:
                 _lopez_pairs(data.domain_view("cells", group), values, isovalue,
-                             edges.face_edge, pair_offsets, pair_from, pair_to)
+                             pair_offsets, pair_from, pair_to)
     n = data.num_cells
     poly_counts = tack.zeros(tack.i32, (n,))
     poly_offsets = tack.field(tack.i32, shape=(n + 1,))
@@ -418,20 +438,20 @@ def _polyhedral_contour(data, field, isovalue):
         raise ValueError(f"{bad[0]} iso-polygons do not close: the cells' faces are not "
                          "wound consistently (check_winding)")
 
-    ne = edges.num_edges
-    flags = tack.field(tack.i32, shape=(ne,))
-    slots = tack.field(tack.i32, shape=(ne,))
-    if ne:
-        _crossing_edges(edges.rows, values, isovalue, flags)
-    count = exclusive_scan(flags, slots, ne) if ne else 0
+    # Each crossing is named by its edge in every cell around that edge: one
+    # iso-vertex per run of equal names.
+    order, _ = bucket_order(pair_from, data.num_points)
+    offsets, count = _run_offsets(gather(pair_from, order), pairs) if pairs else (None, 0)
     positions = tack.Vector.field(3, data.dtype, shape=(count,))
     ends = tack.Vector.field(2, tack.i32, shape=(count,))
     weights = tack.field(arrays.dtype_of(field.values), shape=(count,))
+    vertex_of_pair = tack.field(tack.i32, shape=(pairs,))
     if count:
-        _iso_vertices(edges.rows, values, isovalue, flags, slots,
-                      arrays.materialize(data.geometry.values), weights, positions, ends)
+        _iso_vertices(pair_from, order, offsets, values, isovalue,
+                      arrays.materialize(data.geometry.values), weights, positions, ends,
+                      vertex_of_pair, count)
     if pairs:
-        _renumber_vertices(vertices, slots)
+        _renumber_vertices(vertices, vertex_of_pair)
     surface = PolygonalTopology(poly_starts, vertices, num_points=count)
     fields = {}
     for name, f in data.fields.items():

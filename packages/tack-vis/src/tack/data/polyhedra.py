@@ -30,8 +30,9 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.algorithms.sort import _run_offsets, argsort, gather, sort_by_key
+from tack.algorithms.sort import _run_offsets, gather
 from tack.data import shapes
+from tack.data.buckets import bucket_order
 from tack.data.topology import _as_field, _Topology
 from tack.data.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells
 
@@ -206,6 +207,12 @@ def _close(offsets, n, total):
         offsets[n] = total
 
 
+@tack.kernel
+def _entry_keys(point_ids, keys):
+    for e in range(point_ids.shape[0]):
+        keys[e] = (tack.u64(point_ids[e]) << tack.u64(32)) | tack.u64(e)
+
+
 def _derive_cell_points(t):
     """Each cell's points, sorted and unique: ``(offsets, point_ids)``. The pairs
     ``(cell, point)`` of every cell's face points, as u64 keys, sorted once: runs
@@ -220,7 +227,7 @@ def _derive_cell_points(t):
     if total:
         _cell_point_keys(t.cell_offsets, t.cell_faces, t.face_offsets, t.face_points, starts,
                          keys, n)
-        keys, _ = sort_by_key(keys)
+        keys = gather(keys, bucket_order(keys, n)[0])
     run_offsets, runs = _run_offsets(keys, total)
     cells = tack.field(tack.i32, shape=(runs,))
     points = tack.field(tack.i32, shape=(runs,))
@@ -275,7 +282,7 @@ class PolygonEdges:
         if total:
             _face_edge_keys(t.face_offsets, t.face_points, keys, self.face_edge_sign,
                             t.num_faces)
-            order = argsort(keys)
+            order, _ = bucket_order(keys, t.num_points)
             offsets, count = _run_offsets(gather(keys, order), total)
         else:
             count = 0
@@ -343,6 +350,19 @@ class PolyhedralTopology(_Topology):
         if self._edges is None:
             self._edges = PolygonEdges(self)
         return self._edges
+
+    def point_links(self):
+        """Each point's entries in ``cell_points()``, derived on first use and kept:
+        ``(offsets, entries)``, i32 CSR by point, entries in increasing order (so in
+        cell order)."""
+        if self._point_links is None:
+            _, point_ids = self.cell_points()
+            keys = tack.field(tack.u64, shape=(point_ids.shape[0],))
+            if point_ids.shape[0]:
+                _entry_keys(point_ids, keys)
+            order, offsets = bucket_order(keys, self.num_points)
+            self._point_links = (offsets, order)
+        return self._point_links
 
     def cell_points(self):
         """Each cell's points, sorted and unique: ``(offsets, point_ids)``, i32 CSR."""
@@ -418,6 +438,21 @@ class PolyhedralTopology(_Topology):
 
 # ── Size buckets ────────────────────────────────────────────────────
 
+@tack.kernel
+def _bucket_keys(sizes, caps, keys, largest, n):
+    # The first cap at least half the cell's facet points; past the last, the
+    # need is recorded (atomically, but only when something is wrong).
+    for c in range(n):
+        need = (sizes[c] + 1) // 2
+        key = caps.shape[0]
+        for i in range(caps.shape[0]):
+            if key == caps.shape[0] and caps[i] >= need:
+                key = i
+        keys[c] = key
+        if key == caps.shape[0]:
+            tack.atomic_max(largest, 0, need)
+
+
 class SizeBuckets:
     """Groups a polyhedral topology's cells by size, for kernels that keep per-cell
     scratch: a cell's key is the first cap in ``caps`` at least half its facet
@@ -445,17 +480,16 @@ class SizeBuckets:
         if "_keys" not in self.__dict__:
             t = self.topology
             n = t.num_cells
-            sizes = tack.field(tack.i32, shape=(n,))
-            if n:
-                _cell_sizes(t.cell_offsets, t.cell_faces, t.face_offsets, sizes, n)
-            need = (sizes.to_numpy() + 1) // 2
-            keys = np.searchsorted(np.asarray(self.caps), need)
-            if n and keys.max() >= len(self.caps):
-                raise ValueError(f"a cell needs scratch for {need.max()} entries, more than "
-                                 f"the largest bucket, {self.caps[-1]}")
             field = tack.field(tack.i32, shape=(n,))
             if n:
-                field.from_numpy(keys.astype(np.int32))
+                sizes = tack.field(tack.i32, shape=(n,))
+                _cell_sizes(t.cell_offsets, t.cell_faces, t.face_offsets, sizes, n)
+                caps = _as_field(np.asarray(self.caps, np.int32), tack.i32)
+                largest = tack.zeros(tack.i32, (1,))
+                _bucket_keys(sizes, caps, field, largest, n)
+                if largest[0]:
+                    raise ValueError(f"a cell needs scratch for {largest[0]} entries, more "
+                                     f"than the largest bucket, {self.caps[-1]}")
             self._keys = field
         return self._keys
 
@@ -538,6 +572,8 @@ class PolygonalTopology(PolyhedralTopology):
         loop_points = _as_field(loop_points, tack.i32)
         n = loop_offsets.shape[0] - 1
         total = int(loop_points.shape[0])
+        if num_points is None:
+            num_points = int(loop_points.to_numpy().max()) + 1 if total else 0
         keys = tack.field(tack.u64, shape=(total,))
         directions = tack.field(tack.i32, shape=(total,))
         cell_faces = tack.field(tack.i32, shape=(total,))
@@ -545,7 +581,7 @@ class PolygonalTopology(PolyhedralTopology):
         count = 0
         if total:
             _loop_edge_keys(loop_offsets, loop_points, keys, directions, n)
-            order = argsort(keys)
+            order, _ = bucket_order(keys, num_points)
             offsets, count = _run_offsets(gather(keys, order), total)
         face_points = tack.field(tack.i32, shape=(2 * count,))
         if count:
@@ -560,8 +596,7 @@ class PolygonalTopology(PolyhedralTopology):
                                  "not orientable")
         face_offsets = np.arange(0, 2 * count + 1, 2, dtype=np.int32)
         super().__init__(face_offsets, face_points, loop_offsets, cell_faces, sides,
-                         num_points=num_points if num_points is not None else (
-                             int(loop_points.to_numpy().max()) + 1 if total else 0))
+                         num_points=num_points)
         self.loop_offsets = loop_offsets
         self.loop_points = loop_points
 
@@ -713,7 +748,8 @@ def _check_loops(t):
         ends = tack.field(tack.i32, shape=(2 * total,))
         _loop_ends(t.cell_offsets, t.cell_faces, t.cell_face_sides, t.face_points, keys, ends,
                    t.num_cells)
-        keys, ends = sort_by_key(keys, ends)
+        order, _ = bucket_order(keys, t.num_cells)
+        keys, ends = gather(keys, order), gather(ends, order)
         run_offsets, runs = _run_offsets(keys, 2 * total)
         _unbalanced(keys, ends, run_offsets, bad, runs)
     return np.flatnonzero(bad.to_numpy())
@@ -744,7 +780,8 @@ def check_winding(data):
         directions = tack.field(tack.i32, shape=(total,))
         _directed_edges(t.cell_offsets, t.cell_faces, t.cell_face_sides, t.face_offsets,
                         edges.face_edge, edges.face_edge_sign, starts, keys, directions, n)
-        keys, directions = sort_by_key(keys, directions)
+        order, _ = bucket_order(keys, n)
+        keys, directions = gather(keys, order), gather(directions, order)
         run_offsets, runs = _run_offsets(keys, total)
         _unbalanced(keys, directions, run_offsets, bad, runs)
     return np.flatnonzero(bad.to_numpy())

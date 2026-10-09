@@ -24,6 +24,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.data import shapes
+from tack.data.buckets import bucket_order
 from tack.data.views import (
     DomainGroup,
     _Cells,
@@ -73,11 +74,45 @@ def _gather_shape(order, start, offsets, connectivity, ids, rows, bad):
             rows[c, j] = connectivity[begin + min(j, count - 1)] if count > 0 else 0
 
 
+@tack.kernel
+def _corner_keys(cells, start, keys):
+    for c in cells:
+        first = start + cells.index(c) * cells.NUM_POINTS
+        for j in range(cells.NUM_POINTS):
+            keys[first + j] = (tack.u64(cells.point_id(c, j)) << tack.u64(32)) | \
+                tack.u64(first + j)
+
+
+def corner_layout(topology):
+    """Where each group's (cell, corner) entries start in the layout of all of them,
+    group by group, a cell's corners together (``index(c)`` within the group)."""
+    groups = topology.groups()
+    starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_POINTS
+                                             for g in groups])]).astype(int)
+    return {id(g): int(s) for g, s in zip(groups, starts[:-1])}, int(starts[-1])
+
+
 class _Topology:
     """What both kinds share: the derived faces and edges, made once and kept."""
 
     _faces = None
     _edges = None
+    _point_links = None
+
+    def point_links(self):
+        """Each point's cell corners, derived on first use and kept: ``(offsets,
+        entries)``, i32 CSR by point, ``entries`` indexing the (cell, corner) layout
+        of ``corner_layout`` in increasing order. Bucketed by point, as VTK builds
+        its cell links, rather than sorted."""
+        if self._point_links is None:
+            start_of, total = corner_layout(self)
+            keys = tack.field(tack.u64, shape=(total,))
+            for group in self.groups():
+                if group.count:
+                    _corner_keys(group.view(), start_of[id(group)], keys)
+            order, offsets = bucket_order(keys, self.num_points)
+            self._point_links = (offsets, order)
+        return self._point_links
 
     def faces(self):
         """The faces of the 3D cells (``Faces``), derived on first use and kept."""
@@ -275,13 +310,6 @@ def _gather_kind(flags, slots, face_rows, face_sides, ids, rows, sides):
             sides[s] = face_sides[f]
 
 
-def _lexicographic_order(hi, lo):
-    """The permutation sorting (hi, lo) pairs, stable: two stable sorts, low key first."""
-    by_lo = argsort(lo)
-    by_hi = argsort(gather(hi, by_lo))
-    return gather(by_lo, by_hi)
-
-
 class Faces:
     """The faces of a topology's 3D cells, as global entities.
 
@@ -319,8 +347,8 @@ class Faces:
             hi = tack.field(tack.u64, shape=(total,))
             lo = tack.field(tack.u64, shape=(total,))
             _face_keys(rows, hi, lo)
-            order = _lexicographic_order(hi, lo)
-            offsets, count = _pair_run_offsets(gather(hi, order), gather(lo, order), total)
+            order, _ = bucket_order(hi, topology.num_points, lo=lo)
+            offsets, count = _pair_run_offsets(hi, lo, order, total)
         else:
             count = 0
         self.num_faces = count
@@ -388,9 +416,11 @@ class Faces:
 
 
 @tack.kernel
-def _flag_pair_runs(hi, lo, flags):
+def _flag_pair_runs(hi, lo, order, flags):
+    # Runs of equal keys in sorted order, read through the permutation rather
+    # than from sorted copies of the keys.
     for i in range(flags.shape[0]):
-        same = i > 0 and hi[i] == hi[i - 1] and lo[i] == lo[i - 1]
+        same = i > 0 and hi[order[i]] == hi[order[i - 1]] and lo[order[i]] == lo[order[i - 1]]
         flags[i] = 0 if same else 1
 
 
@@ -403,11 +433,12 @@ def _scatter_run_starts(flags, run_ids, offsets, n, nruns):
             offsets[nruns] = n
 
 
-def _pair_run_offsets(hi, lo, n):
-    """Offsets of the runs of equal adjacent (hi, lo) pairs: ``nruns + 1`` entries."""
+def _pair_run_offsets(hi, lo, order, n):
+    """Offsets of the runs of equal (hi, lo) pairs taken in ``order``: ``nruns + 1``
+    entries."""
     flags = tack.field(tack.i32, shape=(n,))
     run_ids = tack.field(tack.i32, shape=(n,))
-    _flag_pair_runs(hi, lo, flags)
+    _flag_pair_runs(hi, lo, order, flags)
     nruns = exclusive_scan(flags, run_ids, n)
     offsets = tack.field(tack.i32, shape=(nruns + 1,))
     _scatter_run_starts(flags, run_ids, offsets, n, nruns)
@@ -495,7 +526,7 @@ class Edges:
                 _emit_edges(group.view(), int(start), keys, self.side_sign)
         self.side_edge = tack.field(tack.i32, shape=(total,))
         if total:
-            order = argsort(keys)
+            order, _ = bucket_order(keys, topology.num_points)
             offsets, count = _run_offsets(gather(keys, order), total)
         else:
             count = 0
