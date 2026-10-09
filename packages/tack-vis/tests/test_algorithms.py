@@ -237,3 +237,32 @@ def test_i32_counts_scan_into_i64_offsets_past_2_31(backend):
         inp.from_numpy(a)
         assert scan(inp, out, a.size) == 6_000_000_002
         np.testing.assert_array_equal(out.to_numpy(), expected)
+
+
+@pytest.mark.parametrize("n", [255, 256, 257, 65_536, 131_089], ids=lambda n: f"n{n}")
+def test_scans_across_chunks_and_levels(backend, n):
+    """The scan totals chunks of 256, scans those totals the same way, and
+    so on: these sizes end exactly on a chunk, just past one, and need two
+    and three levels. In place, as compaction scans its flags, and over a
+    prefix of a longer field."""
+    rng = np.random.default_rng(n)
+    values = rng.integers(-1000, 1000, size=n + 9).astype(np.int32)
+    for scan, expected in ((algorithms.exclusive_scan,
+                            np.concatenate([[0], np.cumsum(values[:n])[:-1]])),
+                           (algorithms.inclusive_scan, np.cumsum(values[:n]))):
+        data = tack.field(dtype=tack.i32, shape=values.shape)
+        data.from_numpy(values)
+        assert scan(data, data, n) == values[:n].sum()
+        np.testing.assert_array_equal(data.to_numpy()[:n], expected)
+        np.testing.assert_array_equal(data.to_numpy()[n:], values[n:])
+
+
+def test_chunk_totals_form_in_the_output_dtype(backend):
+    """Every chunk of these i32 counts totals past 2^31: the chunk sums must be
+    formed in the i64 output's dtype, at every level."""
+    counts = np.full(1000, 20_000_000, dtype=np.int32)
+    inp = tack.field(dtype=tack.i32, shape=counts.shape)
+    out = tack.field(dtype=tack.i64, shape=counts.shape)
+    inp.from_numpy(counts)
+    assert algorithms.exclusive_scan(inp, out, counts.size) == 20_000_000_000
+    np.testing.assert_array_equal(out.to_numpy(), np.arange(1000, dtype=np.int64) * 20_000_000)
