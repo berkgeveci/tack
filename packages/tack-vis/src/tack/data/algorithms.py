@@ -34,6 +34,8 @@ run on shape-based and polyhedral topologies from one source.
 """
 
 
+import numpy as np
+
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import arrays, shapes
@@ -110,18 +112,127 @@ def _gradients(cells, u, out):
             out[cells.entity_id(c)] = [0.0, 0.0, 0.0]
 
 
-def gradients(data, field):
-    """The gradient of ``field`` (a scalar ``H1``, ``L2`` or ``Constant`` field) at each
-    cell's parametric center: a field of 3-vectors on cells. The field's basis gives
-    its derivative in parametric coordinates, and the geometry field's Jacobian
-    turns that into a world gradient, so the two need not share a space. Cells
-    below three dimensions get zero."""
+@tack.kernel
+def _corner_gradients(cells, u, start, out):
+    for c in cells:
+        first = start + cells.index(c) * cells.NUM_POINTS
+        for j in range(cells.NUM_POINTS):
+            if cells.DIMENSION != 3:
+                out[first + j] = [0.0, 0.0, 0.0]
+            elif cells.ID == shapes.PYRAMID and j == 4:
+                # The Jacobian is singular at a pyramid's apex. Extrapolate from
+                # two points just below it on the axis, as vtkPyramid does.
+                a = tack.Vector([0.5, 0.5, 0.998])
+                b = tack.Vector([0.5, 0.5, 0.996])
+                ga = (cells.geometry_jacobian(c, a).inverse().transpose()
+                      @ u.parametric_gradient(c, a))
+                gb = (cells.geometry_jacobian(c, b).inverse().transpose()
+                      @ u.parametric_gradient(c, b))
+                out[first + j] = 2.0 * ga - gb
+            else:
+                pc = cells.parametric_point(j)
+                out[first + j] = (cells.geometry_jacobian(c, pc).inverse().transpose()
+                                  @ u.parametric_gradient(c, pc))
+
+
+@tack.kernel
+def _component(values, k, out):
+    for i in range(out.shape[0]):
+        out[i] = values[i][k]
+
+
+@tack.kernel
+def _place_rows(rows, k, out):
+    for i in range(out.shape[0]):
+        g = rows[i]
+        out[i][3 * k] = g[0]
+        out[i][3 * k + 1] = g[1]
+        out[i][3 * k + 2] = g[2]
+
+
+def _scalar_gradients(data, field, at):
+    if at == "cells":
+        out = _vectors(data.num_cells, data.dtype)
+        for_each(_gradients, data, "cells", field, out)
+        return out
+    # At the points: each cell's gradient at each of its corners, averaged over
+    # the cells around each point, in layout order (VTK's and Viskores' point
+    # gradients). Lower-dimensional cells contribute zero.
+    start_of, total = corner_layout(data.topology)
+    corners = _vectors(total, data.dtype)
+    for group in data.launch_groups("cells", [field]):
+        if group.count:
+            _corner_gradients(data.domain_view("cells", group), field.view(group),
+                              start_of[id(group.root)], corners)
+    out = tack.Vector.field(3, data.dtype, shape=(data.num_points,))
+    out.from_numpy(np.zeros((data.num_points, 3), data.dtype.numpy_dtype))
+    if total:
+        offsets, entries = data.topology.point_links()
+        _average_links(offsets, entries, corners, out)
+    return out
+
+
+def gradients(data, field, at="cells"):
+    """The gradient of ``field`` -- ``H1``, ``L2`` or ``Constant``, scalar or vector --
+    at each cell's parametric center (``at="cells"``) or at the points
+    (``at="points"``: each cell's gradient at the point, averaged over the cells
+    around it, as VTK's vtkGradientFilter and Viskores' point gradients do).
+
+    A scalar gives a 3-vector per entity; a vector of ``k`` components ``3k``
+    values, row by row -- ``d(u_i)/d(x_j)`` at ``3 * i + j``, the layout of
+    VTK's and Viskores' gradient tensors. The field's basis gives its
+    derivative in parametric coordinates and the geometry's Jacobian turns that
+    into a world gradient, so the two need not share a space. Cells below three
+    dimensions get zero. ``flow_quantities`` derives divergence, vorticity and
+    the Q-criterion from a vector field's gradient."""
     reference_cells(data.topology, "gradients")
-    if width_of(field.values):
-        raise TypeError("gradients takes a scalar field")
-    out = _vectors(data.num_cells, data.dtype)
-    for_each(_gradients, data, "cells", field, out)
-    return Field(Values(data, "cells"), out)
+    if at not in ("cells", "points"):
+        raise ValueError(f"gradients are at 'cells' or 'points', not {at!r}")
+    space = Values(data, at)
+    width = width_of(field.values)
+    if not width:
+        return Field(space, _scalar_gradients(data, field, at))
+    n = data.num_cells if at == "cells" else data.num_points
+    out = tack.Vector.field(3 * width, data.dtype, shape=(n,))
+    values = materialize(field.values)
+    for k in range(width):
+        part = tack.field(arrays.dtype_of(field.values), shape=(size_of(field.values),))
+        if part.shape[0]:
+            _component(values, k, part)
+        rows = _scalar_gradients(data, Field(field.space, part), at)
+        if n:
+            _place_rows(rows, k, out)
+    return Field(space, out)
+
+
+@tack.kernel
+def _flow_quantities(g, divergence, vorticity, q):
+    for i in range(divergence.shape[0]):
+        J = g[i]
+        divergence[i] = J[0] + J[4] + J[8]
+        vorticity[i] = [J[7] - J[5], J[2] - J[6], J[3] - J[1]]
+        # Q = (|rotation|^2 - |strain|^2) / 2 = -tr(J J) / 2, as VTK computes it.
+        q[i] = (-0.5 * (J[0] * J[0] + J[4] * J[4] + J[8] * J[8])
+                - (J[1] * J[3] + J[2] * J[6] + J[5] * J[7]))
+
+
+def flow_quantities(gradient):
+    """Divergence, vorticity and the Q-criterion from the gradient of a 3-vector field
+    (``gradients`` of it: 9 values per entity), in the gradient's space, as VTK's
+    vtkGradientFilter and Viskores' Gradient compute them: a dict of the three
+    fields."""
+    if width_of(gradient.values) != 9:
+        raise TypeError("flow_quantities takes the gradient of a 3-vector field (9 values)")
+    n = size_of(gradient.values)
+    dtype = arrays.dtype_of(gradient.values)
+    divergence = tack.field(dtype, shape=(n,))
+    vorticity = tack.Vector.field(3, dtype, shape=(n,))
+    q = tack.field(dtype, shape=(n,))
+    if n:
+        _flow_quantities(materialize(gradient.values), divergence, vorticity, q)
+    return {"divergence": Field(gradient.space, divergence),
+            "vorticity": Field(gradient.space, vorticity),
+            "q_criterion": Field(gradient.space, q)}
 
 
 @tack.kernel

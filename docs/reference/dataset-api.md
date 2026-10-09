@@ -234,7 +234,8 @@ Results are `Field`s, or `DataSet`s for filters. In the table,
 | `contour`, `slice`, `slice_plane` | yes | yes (López, face-based) | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes |
 | `implicit_values` | yes | yes | yes |
-| `cell_centers`, `values_at_centers`, `gradients` | yes | no | no |
+| `cell_centers`, `values_at_centers` | yes | no | no |
+| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no |
 | `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes |
 | `discontinuous`, `to_points` of `L2` data | yes | no | no |
 | `traces`, and `jump`/`upwind_flux` of point data | yes | no | no |
@@ -275,6 +276,14 @@ Every one of them takes `fields=`: all fields by default, a name or a list
 of names, or `[]` for none; a name the input lacks raises `KeyError`. A new
 filter states its maps and calls `carry(data, out, points=..., cells=...,
 fields=fields)`.
+
+**Gradients.** `algorithms.gradients(data, field, at="cells")` gives each
+cell's gradient at its parametric center; `at="points"` evaluates each cell's
+gradient at the point and averages over the cells around it, as VTK's
+vtkGradientFilter does (a pyramid's apex extrapolated from just below it, as
+vtkPyramid does). A vector field's gradient is `3k` values per entity, row by
+row (`d(u_i)/d(x_j)` at `3i + j`). `algorithms.flow_quantities(gradient)`
+gives divergence, vorticity and the Q-criterion from a 3-vector field's.
 
 ## Implicit functions
 
