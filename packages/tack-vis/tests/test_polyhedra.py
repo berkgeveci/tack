@@ -946,3 +946,24 @@ def test_a_real_cfd_mesh_needs_orienting(backend):
     surface.SetInputData(dataset_to_vtk(data))
     surface.Update()
     assert data.topology.faces().boundary().shape[0] == surface.GetOutput().GetNumberOfCells()
+
+
+@pytest.mark.parametrize("make", [td.as_polyhedra, "polygons"])
+def test_reference_element_algorithms_are_refused(backend, make):
+    """Algorithms that evaluate a basis refuse polyhedra and polygons outright. traces
+    used to launch over no cells there (their shape has no faces of its own) and
+    return zeros."""
+    data = td.as_polygons(_plane_mesh()) if make == "polygons" else make(
+        _two_hexes_and_a_pyramid())
+    point_data = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
+    cell_data = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells, dtype=float)))
+    for call in (lambda: td.algorithms.cell_centers(data),
+                 lambda: td.algorithms.values_at_centers(data, point_data),
+                 lambda: td.algorithms.gradients(data, point_data),
+                 lambda: td.algorithms.to_points(data, cell_data),
+                 lambda: td.algorithms.to_cells(data, point_data),
+                 lambda: td.traces(data, point_data),
+                 lambda: td.algorithms.jump(data, point_data)):
+        with pytest.raises(NotImplementedError, match="needs a reference element"):
+            call()
+    td.algorithms.jump(data, cell_data)                 # cell data needs none

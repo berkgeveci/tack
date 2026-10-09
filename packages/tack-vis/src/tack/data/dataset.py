@@ -32,7 +32,7 @@ import tack
 from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.data import arrays, shapes, views
 from tack.data.arrays import CartesianProduct
-from tack.data.spaces import H1, L2, SideTraces, Space
+from tack.data.spaces import H1, L2, SideTraces, Space, reference_cells
 
 __all__ = ["DataSet", "Field", "for_each", "rectilinear_grid", "traces"]
 
@@ -304,6 +304,7 @@ def traces(data, field):
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"traces are taken from a field with a basis on the cells, "
                         f"not {space!r}")
+    reference_cells(data.topology, "traces")
     data.topology.faces()
     out_space = SideTraces(data)
     width = arrays.width_of(field.values)

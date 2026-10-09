@@ -1,5 +1,9 @@
 # Polyhedral meshes: design proposal
 
+> The API as it currently stands is described in
+> [Dataset API (prototype)](../reference/dataset-api.md). This proposal
+> records how it was reasoned out and built, phase by phase.
+
 Status: proposal, 2026-10-08, on branch `vis/polyhedra`. Questions in
 section 7 decided as recommended; phases 1 to 4 are built (sections 9
 to 12). It refines section 10 of

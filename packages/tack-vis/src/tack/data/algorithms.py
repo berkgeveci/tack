@@ -41,7 +41,7 @@ from tack.algorithms.sort import _run_offsets, sort_by_key
 from tack.data import shapes
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import DataSet, Field, for_each, traces
-from tack.data.spaces import H1, L2, Constant, Values
+from tack.data.spaces import H1, L2, Constant, Values, reference_cells
 from tack.data.topology import UnstructuredTopology
 
 __all__ = [
@@ -79,6 +79,7 @@ def _centers(cells, out):
 
 def cell_centers(data):
     """Each cell's center, where the geometry maps its parametric center: a field on cells."""
+    reference_cells(data.topology, "cell_centers")
     out = _vectors(data.num_cells, data.dtype)
     for_each(_centers, data, "cells", out)
     return Field(Values(data, "cells"), out)
@@ -92,6 +93,7 @@ def _at_centers(cells, u, out):
 
 def values_at_centers(data, field):
     """``field`` evaluated at each cell's parametric center, through its basis."""
+    reference_cells(data.topology, "values_at_centers")
     out = _like(field.values, data.num_cells)
     for_each(_at_centers, data, "cells", field, out)
     return Field(Values(data, "cells"), out)
@@ -115,6 +117,7 @@ def gradients(data, field):
     its derivative in parametric coordinates, and the geometry field's Jacobian
     turns that into a world gradient, so the two need not share a space. Cells
     below three dimensions get zero."""
+    reference_cells(data.topology, "gradients")
     if width_of(field.values):
         raise TypeError("gradients takes a scalar field")
     out = _vectors(data.num_cells, data.dtype)
@@ -594,6 +597,7 @@ def to_points(data, field):
     """A ``Constant`` or ``L2`` field averaged onto the points: an ``H1`` field. Each
     point averages the values the cells around it give it -- a cell's value, or for
     a DG field the cell's own value at that corner. The sums run in a fixed order."""
+    reference_cells(data.topology, "to_points")
     if not isinstance(field.space, (Constant, L2)):
         raise TypeError("to_points projects a cell or L2 field")
     # One entry per (cell, corner), laid out by the topology's groups; a
@@ -637,6 +641,7 @@ def to_cells(data, field):
     the filters read it), and a cell constant comes back as itself. Scalars or
     vectors; the values must be floating point.
     """
+    reference_cells(data.topology, "to_cells")
     space = field.space
     if isinstance(space, Values) and space.on == "points":
         field = Field(H1(data), field.values)

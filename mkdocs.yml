@@ -148,6 +148,7 @@ nav:
   - Reference:
       - Backends: reference/backends.md
       - API: reference/api.md
+      - Dataset API (prototype): reference/dataset-api.md
       - Performance: performance.md
 
 extra:

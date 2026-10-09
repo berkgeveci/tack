@@ -1,5 +1,9 @@
 # A common dataset API: design proposal
 
+> The API as it currently stands is described in
+> [Dataset API (prototype)](../reference/dataset-api.md). This proposal
+> records how it was reasoned out and built, phase by phase.
+
 Status: proposal for discussion, 2026-10-08. A prototype of phases 1-3 at
 linear order is in `tack.data` (section 9).
 It builds on the prototype on `vis/data-model` (cell shapes, cell sets,

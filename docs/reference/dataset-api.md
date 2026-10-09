@@ -1,0 +1,292 @@
+# Dataset API (prototype)
+
+`tack.data`, in the `tack-vis` package, on the `vis/dataset-api` branch.
+This page describes the API as it stands. For why it is shaped this way and
+how it got here, see the proposals:
+[Dataset API](../design/dataset-api.md) and
+[Polyhedra](../design/polyhedra.md). They are history; this page is the
+current state. It is a prototype, built to get the API right rather than to
+be complete: what is missing is listed with each part.
+
+```python
+import tack.data as td
+from tack.data import algorithms as alg
+```
+
+## The model
+
+- A **`DataSet`** is a topology, named fields and named sets.
+- A **topology** is cells and the entities derived from them: faces, edges
+  and points, and which cells lie on each side of a face.
+- A **`Field`** is a space and its values.
+- A **space** says where values live and how they are interpolated, if at
+  all. It is built on a topology and owns its layout.
+- The **geometry** is the field named `"shape"`, so point positions are
+  data like any other.
+- **Kernels** run over an iteration domain (cells, faces, edges or a face
+  set) through `for_each`. That makes one launch per group of like entities,
+  and each field argument becomes a view specialized to the group.
+
+```python
+data = td.rectilinear_grid(np.linspace(0, 1, 11), np.linspace(0, 1, 11), [0.0, 1.0])
+x = data.positions()
+data.fields["height"] = td.Field(td.H1(data), scalars(x[:, 2] + 0.25 * x[:, 0]))
+gradient = alg.gradients(data, data.fields["height"])     # a field on the cells
+```
+
+Here `scalars` stands for any function that puts a host array in a
+`tack.field`.
+
+## Topologies
+
+There are two kinds. **Shape-based** topologies have cells of fixed shapes,
+each with a reference element: counts, tables and shape functions are
+compile-time constants. **Polyhedral** topologies have cells that are lists
+of faces of any size, with no reference element. They are separate paths
+that share everything else: spaces without a basis, fields, sets,
+`for_each`, the face conventions, and a common set of methods on cell views.
+`topology.reference_cells` says which kind a topology is.
+
+| Topology | Built from | Kind |
+|---|---|---|
+| `UnstructuredTopology(types, offsets, connectivity, num_points=None)` | VTK cell types and point rows, of the linear shapes (vertex to pyramid) | shape-based |
+| `StructuredTopology(point_dims)`, usually through `rectilinear_grid(x, y, z)` | grid dimensions; cells addressed by (i, j, k) | shape-based |
+| `PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, cell_face_sides, num_points=None)` | faces stored once, as point rings wound out of side 0; each cell a list of faces, with the side (u8, 0 or 1) it is on | polyhedral, 3D |
+| `PolyhedralTopology.from_cell_faces(cells, num_points, positions=None, orient=False)` | each cell's own face rings, as VTK and most readers give them; copies of a face matched by point set | polyhedral, 3D |
+| `PolygonalTopology(loop_offsets, loop_points, num_points=None)` | each polygon's loop of points | polyhedral, 2D |
+
+`num_points` exists because a dataset may have points that no cell uses.
+
+### Derived entities
+
+- `topology.faces()` and `topology.edges()` are derived on the device by
+  sorting, the first time they are asked for, and then kept.
+- A face's points are wound out of its **side 0**. **Side 1** is the cell on
+  the other side, or none (`-1`) on the boundary.
+- Each cell knows, per local face, the face's id and which side of it the
+  cell is on.
+- On a polyhedral topology the faces are given, not derived, and keep their
+  given numbering. A polygonal topology's faces are its edges.
+- A polyhedral topology also derives each cell's distinct points
+  (`cell_points()`), for point data.
+
+**Open:** on a 2D shape-based mesh, `faces()` is empty. The polygonal
+topology already treats a 2D mesh's faces as its edges, which is the
+intended answer, but the shape path does not yet.
+
+### Converting and checking
+
+| Function | What it does |
+|---|---|
+| `as_polyhedra(data)` | a 3D shape-based dataset as polyhedra, carrying its fields |
+| `as_polygons(data)` | a 2D shape-based dataset as polygons |
+| `check_winding(data)` | the ids of the cells whose faces do not wind consistently; empty when all is well |
+| `orient(topology)` | turns around faces wound into their only cell |
+| `from_cell_faces(..., orient=True)` | repairs input whose faces or cells are inconsistently wound, then turns each connected piece outward by the sign of its total volume |
+
+Winding comes from the input, not from geometry. Inconsistent input is
+refused unless the caller asks for the repair.
+
+## Spaces
+
+| Space | Values | Interpolated | Topologies |
+|---|---|---|---|
+| `H1(data, order=1)` | one per point, shared by the cells around it; order 2 adds one per edge and quad face | yes, continuous | order 1 on all; order 2 on tetrahedra, hexahedra, voxels and wedges |
+| `L2(data, order=1)` | each cell's own copies: order 1 one per corner, order 0 one per cell; `order` may be an array, one order per cell | yes, discontinuous | shape-based |
+| `Constant(data)` | one per cell | yes, constant in the cell | all |
+| `Values(data, on, oriented=False)` | one per point, edge, face or cell: data about the entity, with no basis | no | all |
+| `SideTraces(data)` | per face, per side, per face point; made by `traces` | through the face's shape | shape-based, 3D |
+
+- **Identity.** A space is interned on its topology: `H1(data)` is the same
+  object every time, so fields on it share its layout. Two spaces with
+  different parameters are different objects.
+- **Size.** Every space knows its `size`. A field of the wrong length, or a
+  field from another topology, is refused.
+- **Continuity** follows from where the values live (MFEM's model): values
+  on shared entities are continuous, and values owned per cell are not.
+- **Oriented face values.** `oriented=True` is for a quantity measured along
+  the face's normal, such as a normal flux. Anything that turns a face
+  around (threshold, `orient`) negates such values. Plain face values (an
+  area, an id) are left alone.
+
+Attributes: `topology`, `size`, `on` (the entity kind the values are
+indexed by), `interpolated`, and `order` where it applies.
+
+## Fields and arrays
+
+`Field(space, values)`: the values are a `tack.field` (scalars) or a
+`tack.Vector.field` (vectors), or an implicit array:
+
+| Array | Value `k` |
+|---|---|
+| `CartesianProduct(x, y=(0.0,), z=(0.0,))` | the point of a rectilinear grid, from three axes; nothing stored per point |
+| `ConstantArray(value, size)` | `value` |
+| `CountingArray(size, start=0, step=1)` | `start + step * k` |
+
+Every algorithm takes an implicit array unchanged; kernels read it through
+the field's view. A NumPy array is refused: put it in a `tack.field` first.
+
+**Geometry.** `DataSet(topology, geometry, fields=None, sets=None,
+dtype=tack.f32)` takes the geometry as an `H1` or `L2` field of 3-vectors,
+or as positions per point (any array of 3-vectors), which become an `H1`
+field. It is kept as `fields["shape"]`. `data.geometry` returns it and
+`data.positions()` gives the positions on the host. An `L2` geometry pulls
+cells apart without changing the topology. A geometry of order 2 is curved.
+
+## Sets
+
+`data.sets` maps a name to an array of face ids. `alg.boundary_faces(data,
+name="boundary")` makes the boundary set. Any set's name is an iteration
+domain.
+
+**Open:** cell sets, side sets given as (cell, local face), and boundary
+entities from readers (Exodus side sets, MFEM boundary attributes).
+
+## Kernels
+
+```python
+@tack.kernel
+def _jump(faces, values, out):
+    for f in faces:
+        c0 = faces.side_cell(f, 0)
+        c1 = faces.side_cell(f, 1)                 # -1 on the boundary
+        out[faces.entity_id(f)] = values[c1] - values[c0] if c1 >= 0 else 0.0
+
+td.for_each(_jump, data, "faces", cell_values, out)
+```
+
+`for_each(kernel, data, domain, *args)`:
+
+- `domain` is `"cells"`, `"faces"`, `"edges"` or the name of a face set.
+- It makes one launch per group. The kernel's first argument is the view of
+  that group (`for i in view`). Each `Field` among `args` becomes its view
+  for the same group, so `u.value(i, pc)` reads entity `i`. Other arguments
+  are passed through unchanged.
+
+**What makes a group.** On a shape-based topology, each shape is a group. A
+group is split further, on the device, by:
+
+- the spaces among the arguments that vary from cell to cell (an `L2` with
+  an order per cell), so each launch is specialized to one order;
+- any `keys`, such as `SizeBuckets(topology, caps=(16, 32, 64, 128, 256))`
+  on a polyhedral topology. That gives each launch a class constant
+  `MAX_SCRATCH`, so that `tack.local_array(dtype, cells.MAX_SCRATCH)` has a
+  size known at compile time.
+
+Shape, order and size all go through this one mechanism. An algorithm that
+needs the groups itself uses `data.launch_groups(domain, fields=(),
+keys=())`, `data.domain_view(domain, group)` and `field.view(group)`.
+
+**Fields are separate arguments.** Views are not nested in a dataset
+object: each field is its own argument, viewed for the group being
+launched. A view is put together from mixins (entity kind, shape, geometry,
+incidence, space, storage), which share one namespace. A view refuses to
+build if two of them define the same name.
+
+### What views offer
+
+Every view supports `for i in view` and `entity_id(i)`.
+
+**Cells.** These methods work on both kinds of topology, so face-based
+algorithms are written once:
+
+| Method | |
+|---|---|
+| `num_faces(c)` | the cell's faces (codimension-1 entities) |
+| `face_id(c, k)`, `face_side(c, k)` | local face `k`'s global id, and the side the cell is on |
+| `side_size(c, k)`, `side_point(c, k, j)` | local face `k`'s points, walked outward from this cell |
+| `side_position(c, k, j)` | that point's position |
+
+- Shape-based cells add: the class constants `NUM_POINTS`, `NUM_FACES`,
+  `NUM_EDGES` and `DIMENSION`; `point_id(c, j)`; the geometry through
+  `position(c, pc)`, `geometry_jacobian(c, pc)` and `point(c, j)`; face
+  incidence (`face_orientation`, `face_corner`, `face_position`); and edges
+  (`edge_id`, `edge_sign`).
+- Polyhedral cells add `num_points(c)` and `point_id(c, j)` over the cell's
+  distinct points, and `face_size(f)`.
+
+**Faces.** `face_size(f)`, `point_id(f, j)`, `num_sides(f)`, and
+`side_cell(f, s)` / `side_local(f, s)` give the cell on side `s` and its
+local face number.
+
+**Edges.** `point_id(e, j)`, with the lower point id first.
+
+**Fields.**
+
+| Field view | Methods |
+|---|---|
+| `H1`, `L2`, `Constant` | `value(c, pc)`, `parametric_gradient(c, pc)` at parametric coordinates; `dof(c, k)` |
+| `Values` | `at(i)` |
+| `SideTraces` | `trace(f, s, j)`, `value(f, s, pc)` |
+
+## Algorithms and filters
+
+Results are `Field`s, or `DataSet`s for filters. In the table,
+"polyhedral" means `PolyhedralTopology` and "polygonal" means
+`PolygonalTopology`.
+
+| | Shape-based | Polyhedral | Polygonal |
+|---|---|---|---|
+| `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume or area, centroid), `edge_lengths` | yes | yes | yes |
+| `boundary_faces`, `extract_surface` | yes | yes (the surface is polygonal) | yes |
+| `jump` and `upwind_flux` of cell data; `divergence`, `perot` of face values | yes | yes | yes |
+| `threshold` | yes | yes | yes |
+| `contour`, `slice_plane` | yes | yes (López, face-based) | not yet |
+| `cell_centers`, `values_at_centers`, `gradients` | yes | no | no |
+| `to_points`, `to_cells`, `discontinuous` | yes | no | no |
+| `traces`, and `jump`/`upwind_flux` of point data | yes | no | no |
+| `external_faces` | yes | yes (polygonal) | the boundary edges, as two-point polygons: there is no line topology yet |
+
+Where the table says "no", the algorithm needs a reference element and
+raises `NotImplementedError` saying so.
+
+**How fields carry through filters.**
+
+- `threshold`: point fields go to the kept points and cell fields to the
+  kept cells, with `L2` fields copied block by block.
+  - On polyhedra, face values come along as well. A face that loses its
+    side-0 cell is turned around, and its oriented values are negated.
+  - Fields on derived faces and edges of shape-based meshes, whose
+    numbering is derived afresh, are dropped.
+- `extract_surface`: face values become the surface's cell values.
+- `contour`, `slice_plane`: these produce triangles (shape-based) or
+  polygons (polyhedral). They linearize higher-order data at the cell
+  corners.
+
+## Interoperability
+
+| Function | |
+|---|---|
+| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False)` | a `vtkUnstructuredGrid` or rectilinear grid. Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
+| `tack.interop.vtk.dataset_to_vtk(data)` | back to VTK, polyhedra and polygons included |
+| `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32)` | an MFEM mesh, curved at order 2 too, with its grid functions |
+| `tack.interop.mfem.mfem_field(data, mesh, gf, dtype=tack.f32)` | one grid function: H1 orders 1 and 2, L2 orders 0 and 1, scalars and vectors |
+
+Polyhedral formats such as CGNS arrive through VTK's readers. The CGNS
+reader's polyhedra can be inconsistently wound, so pass `orient=True`.
+
+## Settled, and open
+
+**Settled by the prototype:**
+
+- continuity follows from where values live;
+- fields are separate kernel arguments, so no nested templates;
+- shape, order and size groups are one mechanism;
+- geometry is a field;
+- a field's values may be any array, explicit or implicit;
+- polyhedra are a separate path that shares the data model;
+- face values have an orientation where it matters.
+
+**Open:**
+
+- 2D faces on the shape path (above);
+- sets beyond faces;
+- coefficient layout (DOF-fastest or cell-fastest);
+- a general `project(field, space)`, of which `to_points`, `to_cells` and
+  `discontinuous` are special cases;
+- whether views should keep one shared namespace;
+- `"shape"` as a named field or a separate attribute;
+- filters on higher-order data (subdivide, rather than linearize);
+- clip on polyhedra;
+- a topology of lines, for a 2D mesh's boundary and for contour lines of
+  polygons.
