@@ -51,6 +51,82 @@ def _chunk_scan(data, offsets, n, chunk, nchunks, inclusive):
                 running += value
 
 
+# On backends with workgroups the chunk kernels above run few threads with
+# long serial loops; there a tile of _TILE elements, _PER_LANE to each of a
+# workgroup's 256 lanes, is scanned by the workgroup: each lane totals its
+# elements in order, the lane totals are scanned in shared memory, and each
+# lane then writes running sums from its offset. Same levels and dtype rules
+# as the chunks; between lanes the additions run in tree order.
+
+_TILE = tack.constant(2048)
+_PER_LANE = tack.constant(8)
+
+
+@tack.kernel
+def _tile_sums(src, dst, sums, n, ntiles):
+    """Copy each tile into ``dst``, converting on the store, and total it there."""
+    lanes = tack.shared_like(dst, 256)
+    for i in range(ntiles * 256):
+        t = tack.thread_id()
+        start = (i // 256) * _TILE + t * _PER_LANE
+        lanes[t] = 0
+        if start < n:
+            dst[start] = src[start]
+            total = dst[start]
+            for g in range(start + 1, min(start + _PER_LANE, n)):
+                dst[g] = src[g]
+                total += dst[g]
+            lanes[t] = total
+        tack.barrier()
+        step = 1
+        while step < 256:
+            below = lanes[t - step] if t >= step else lanes[t] * 0
+            tack.barrier()
+            if t >= step:
+                lanes[t] = lanes[t] + below
+            tack.barrier()
+            step = step * 2
+        if t == 0:
+            sums[i // 256] = lanes[255]
+
+
+@tack.kernel
+def _tile_apply(data, offsets, n, ntiles, inclusive):
+    """Each tile's running sums, in place, from its offset."""
+    lanes = tack.shared_like(data, 256)
+    for i in range(ntiles * 256):
+        t = tack.thread_id()
+        start = (i // 256) * _TILE + t * _PER_LANE
+        lanes[t] = 0
+        if start < n:
+            total = data[start]
+            for g in range(start + 1, min(start + _PER_LANE, n)):
+                total += data[g]
+            lanes[t] = total
+        tack.barrier()
+        step = 1
+        while step < 256:
+            below = lanes[t - step] if t >= step else lanes[t] * 0
+            tack.barrier()
+            if t >= step:
+                lanes[t] = lanes[t] + below
+            tack.barrier()
+            step = step * 2
+        # The lanes before this one, read from its neighbour rather than
+        # subtracted, so floating sums are not rounded twice.
+        running = offsets[i // 256]
+        if t > 0:
+            running = running + lanes[t - 1]
+        for g in range(start, min(start + _PER_LANE, n)):
+            value = data[g]
+            if inclusive == 1:
+                running += value
+                data[g] = running
+            else:
+                data[g] = running
+                running += value
+
+
 @tack.kernel
 def _zero_first(field):
     for i in range(1):
@@ -86,16 +162,26 @@ def _scan(src, dst, n, inclusive):
     the total: chunk sums, then -- recursively -- their exclusive scan as the
     chunks' offsets, then each chunk's own running sums. A few launches per
     level, and a level per factor of ``_CHUNK``."""
-    nchunks = (n + _CHUNK - 1) // _CHUNK
+    from tack.runtime.dispatch import get_backend
+
+    tiles = get_backend().supports_workgroups
+    size = int(_TILE) if tiles else _CHUNK
+    nchunks = (n + size - 1) // size
     sums = tack.field(dtype=dst.dtype, shape=(nchunks,))
-    _chunk_sums(src, dst, sums, n, _CHUNK, nchunks)
+    if tiles:
+        _tile_sums(src, dst, sums, n, nchunks)
+    else:
+        _chunk_sums(src, dst, sums, n, _CHUNK, nchunks)
     offsets = tack.field(dtype=dst.dtype, shape=(nchunks,))
     if nchunks == 1:
         _zero_first(offsets)
         total = _total(sums, 1)
     else:
         total = _scan(sums, offsets, nchunks, inclusive=False)
-    _chunk_scan(dst, offsets, n, _CHUNK, nchunks, 1 if inclusive else 0)
+    if tiles:
+        _tile_apply(dst, offsets, n, nchunks, 1 if inclusive else 0)
+    else:
+        _chunk_scan(dst, offsets, n, _CHUNK, nchunks, 1 if inclusive else 0)
     return total
 
 

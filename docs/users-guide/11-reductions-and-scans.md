@@ -250,12 +250,17 @@ offsets = tack.field(dtype=tack.i64, shape=(n,))
 total = exclusive_scan(counts, offsets, n)  # i32 counts, i64 offsets and total
 ```
 
-Both functions run on every backend. They use no shared memory or
-barriers, only ordinary kernels: an up-sweep and a down-sweep with doubling
-and halving strides (a Blelloch-style scan), about 2·log₂ n launches in
-all. Each launch is synchronous, so for small arrays — up to roughly a
-million elements — copying to NumPy, calling `np.cumsum` and copying back
-can be faster.
+Both functions run on every backend, by chunks: each chunk is copied into
+the output and totalled, the chunk totals are scanned the same way,
+recursively, and each chunk then writes its running sums from its offset.
+That is two launches per level. On the CPU a chunk is 256 elements, one
+thread each: three levels, eight launches, for a million elements. On GPU
+backends a chunk is a tile of 2048 elements scanned by one workgroup --
+eight elements to each of its 256 lanes, the lane totals scanned in shared
+memory -- so a million elements take two levels. Launches on the CPU, CUDA,
+HIP and Level Zero complete before returning; Metal queues them and waits
+when the host next reads a field. For small arrays, copying to NumPy,
+calling `np.cumsum` and copying back can still be faster.
 
 **Return value.** Both return the sum of the first `n` inputs, in the
 output field's dtype, as a Python `int` (integer outputs) or `float`
@@ -277,13 +282,18 @@ the host, not the whole output.
   are left alone. `n` must be at most the size of both fields; a larger or
   negative `n` raises `ValueError`. `n = 0` writes nothing and returns `0`,
   the empty sum.
-- `exclusive_scan` allocates an `n`-element work buffer of the output's
-  dtype per call.
+- Each call allocates two fields of the output's dtype per level, the
+  chunk totals and their offsets, one element per chunk: about `n / 128`
+  elements in all on the CPU, `n / 1024` on GPUs, not a copy of the input.
 - Integer results are exact (modulo wrapping) and identical on every
   backend and every run.
-- Floating results are deterministic for a given `n`, but the tree adds in
-  a different order from a sequential sum, so they can differ from
-  `np.cumsum` in the last bits.
+- Floating results are deterministic for a given `n` and backend. On the
+  CPU, through 512 elements (two chunks) they are added in `np.cumsum`'s
+  order and match it bit for bit; from the third chunk on, a chunk starts
+  from the sum of the earlier chunks' totals rather than from the previous
+  element's running sum, so results can differ from `np.cumsum` in the last
+  bits. On GPUs that happens from the ninth element: a tile's lanes start
+  from their predecessors' totals, combined in tree order.
 
 ### Copy and fill utilities
 
@@ -355,10 +365,14 @@ two gathers. The permutation is `i32`, so at most 2^31 − 1 elements can be
 sorted at once.
 
 The implementation is a least-significant-digit radix sort over 8-bit
-digits, built from ordinary kernels and the exclusive scan: one thread per
-chunk of 256 elements counts digits into a private histogram, a scan turns
-the counts into output slots, and a second kernel scatters each chunk in
-order. No shared memory or barriers, so it runs on every backend. The
+digits, built from kernels and the exclusive scan. On the CPU, one thread
+per chunk of 256 elements counts digits into a private histogram, a scan
+turns the counts into output slots, and a second kernel scatters each chunk
+in order. On GPU backends, which have workgroups, each pass instead sorts
+tiles of 4096 keys in shared memory by their digit (eight stable one-bit
+splits), scans the tiles' digit counts, and scatters each digit's run; a
+private histogram per thread is slow on a GPU. Both give the same
+permutation. The
 number of passes follows the **spread** of the keys, not their width:
 the smallest key is subtracted on the fly, so point ids below 2^16 take
 two passes whatever the key dtype, and all-equal keys take none. Results
