@@ -275,7 +275,7 @@ def clip(data, by, value=0.0, invert=False, fields=None):
             groups.append((group, t))
     counts = tack.Vector.field(_KINDS, tack.i32, shape=(n,))
     if n:
-        counts.from_numpy(np.zeros((n, _KINDS), np.int32))
+        counts.fill(0)
     for group, (table, cases, _, remap, _, _) in groups:
         _clip_counts(group.view(), values, float(value), invert, table, cases, remap, counts)
     totals, parts = [], []

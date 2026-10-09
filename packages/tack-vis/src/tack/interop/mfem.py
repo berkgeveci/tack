@@ -147,7 +147,7 @@ def _quadratic_values(data, mesh, gf):
     width = 27
     n = data.num_cells
     indices = tack.field(tack.i32, shape=(n * width,))
-    indices.from_numpy(np.full(n * width, -1, np.int32))
+    indices.fill(-1)
     nodes = tack.Vector.field(3, tack.f64 if tack.f64 in _supported() else tack.f32,
                               shape=(n * width,))
     for_each(_quadratic_layout, data, "cells", Field(space, ConstantArray(0.0, space.size)),

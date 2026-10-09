@@ -130,7 +130,7 @@ class PolygonFaces:
                              "no side 0); tack.data.polyhedra.orient turns them around")
         self.sides = tack.Vector.field(4, tack.i32, shape=(nf,))
         if nf:
-            self.sides.from_numpy(np.full((nf, 4), -1, np.int32))
+            self.sides.fill(-1)
             _scatter_sides(topology.cell_offsets, topology.cell_faces, topology.cell_face_sides,
                            self.sides, topology.num_cells)
         self.side_face = topology.cell_faces

@@ -167,7 +167,7 @@ def _scalar_gradients(data, field, at):
             _corner_gradients(data.domain_view("cells", group), field.view(group),
                               start_of[id(group.root)], corners)
     out = tack.Vector.field(3, data.dtype, shape=(data.num_points,))
-    out.from_numpy(np.zeros((data.num_points, 3), data.dtype.numpy_dtype))
+    out.fill(0)
     if total:
         offsets, entries = data.topology.point_links()
         _average_links(offsets, entries, corners, out)

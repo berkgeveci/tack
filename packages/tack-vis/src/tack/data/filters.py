@@ -1114,7 +1114,7 @@ def _gather_offsets(starts, kept, total):
     if kept.shape[0]:
         _offsets_of(starts, kept, out, total)
     else:
-        out.from_numpy(np.zeros(1, np.int32))
+        out.fill(0)
     return out
 
 
