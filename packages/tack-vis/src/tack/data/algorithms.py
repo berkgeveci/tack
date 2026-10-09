@@ -593,11 +593,44 @@ def _average_runs(points, values, offsets, out, count):
         out[points[begin]] = total / (end - begin)
 
 
+@tack.kernel
+def _polyhedral_incidences(point_offsets, values, contributions, n_cells):
+    for c in range(n_cells):
+        for e in range(point_offsets[c], point_offsets[c + 1]):
+            contributions[e] = values[c]
+
+
+def _polyhedral_to_points(data, field):
+    """Cell values averaged onto the points of a polyhedral or polygonal topology:
+    one entry per (cell, distinct point), from the topology's derived cell points,
+    sorted by point and averaged in cell order -- the shape path's method."""
+    offsets, point_ids = data.topology.cell_points()
+    total = point_ids.shape[0]
+    values = materialize(field.values)
+    contributions = tack.field(values.dtype, shape=(total,))
+    out = tack.zeros(values.dtype, (data.num_points,))
+    if total:
+        _polyhedral_incidences(offsets, values, contributions, data.num_cells)
+        keys, sums = sort_by_key(point_ids, contributions)
+        runs, count = _run_offsets(keys, total)
+        _average_runs(keys, sums, runs, out, count)
+    return Field(H1(data), out)
+
+
 def to_points(data, field):
     """A ``Constant`` or ``L2`` field averaged onto the points: an ``H1`` field. Each
     point averages the values the cells around it give it -- a cell's value, or for
-    a DG field the cell's own value at that corner. The sums run in a fixed order."""
-    reference_cells(data.topology, "to_points")
+    a DG field the cell's own value at that corner. The sums run in a fixed order.
+    On polyhedra and polygons, cell values (``Constant``, values on cells) average
+    over the cells around each point, as vtkCellDataToPointData does."""
+    if isinstance(field.space, Values) and field.space.on == "cells":
+        field = Field(Constant(data), field.values)
+    if not getattr(data.topology, "reference_cells", True):
+        if not isinstance(field.space, Constant):
+            raise TypeError("to_points on polyhedra averages cell values")
+        if width_of(field.values):
+            raise TypeError("to_points averages scalars")
+        return _polyhedral_to_points(data, field)
     if not isinstance(field.space, (Constant, L2)):
         raise TypeError("to_points projects a cell or L2 field")
     # One entry per (cell, corner), laid out by the topology's groups; a
@@ -639,9 +672,9 @@ def to_cells(data, field):
     field with a basis goes through its view's corner values: a DG field
     averages each cell's own, an order-2 field its values at the corners (as
     the filters read it), and a cell constant comes back as itself. Scalars or
-    vectors; the values must be floating point.
+    vectors; the values must be floating point. On polyhedra and polygons, each
+    cell averages its distinct points' values.
     """
-    reference_cells(data.topology, "to_cells")
     space = field.space
     if isinstance(space, Values) and space.on == "points":
         field = Field(H1(data), field.values)
@@ -651,8 +684,36 @@ def to_cells(data, field):
     if field.values.dtype not in (tack.f32, tack.f64):
         raise TypeError(f"to_cells needs floating-point values, not {field.values.dtype.name}")
     out = _like(field.values, data.num_cells)
+    if not getattr(data.topology, "reference_cells", True):
+        if space.on != "points":
+            return Field(Constant(data), _take(field.values, _all(data.num_cells)))
+        for_each(_point_averages, data, "cells", materialize(field.values), out)
+        return Field(Constant(data), out)
     for_each(_corner_averages, data, "cells", field, out)
     return Field(Constant(data), out)
+
+
+@tack.kernel
+def _point_averages(cells, values, out):
+    for c in cells:
+        n = cells.num_points(c)
+        total = values[cells.point_id(c, 0)]
+        for j in range(1, n):
+            total += values[cells.point_id(c, j)]
+        out[cells.entity_id(c)] = total / n
+
+
+@tack.kernel
+def _counting(out):
+    for i in range(out.shape[0]):
+        out[i] = i
+
+
+def _all(n):
+    ids = tack.field(tack.i32, shape=(n,))
+    if n:
+        _counting(ids)
+    return ids
 
 
 # ── Helpers ─────────────────────────────────────────────────────────

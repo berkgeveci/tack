@@ -958,10 +958,70 @@ def test_reference_element_algorithms_are_refused(backend, make):
     for call in (lambda: td.algorithms.cell_centers(data),
                  lambda: td.algorithms.values_at_centers(data, point_data),
                  lambda: td.algorithms.gradients(data, point_data),
-                 lambda: td.algorithms.to_points(data, cell_data),
-                 lambda: td.algorithms.to_cells(data, point_data),
                  lambda: td.traces(data, point_data),
                  lambda: td.algorithms.jump(data, point_data)):
         with pytest.raises(NotImplementedError, match="needs a reference element"):
             call()
     td.algorithms.jump(data, cell_data)                 # cell data needs none
+
+
+# ── Point and cell averages ─────────────────────────────────────────
+
+@pytest.mark.parametrize("name", ["mixed", "tetra", "hexahedron", "wedge", "pyramid", "voxel",
+                                  "polygons"])
+def test_averages_are_the_shape_paths(backend, name):
+    if name == "polygons":
+        data = _plane_mesh()
+        poly = td.as_polygons(data)
+    else:
+        meshes = _solid_meshes()
+        if name not in meshes:
+            pytest.skip("needs VTK for this mesh")
+        data = meshes[name]
+        poly = td.as_polyhedra(data)
+    x = data.positions()
+    point_values = _scalars(x[:, 0] + 2.0 * x[:, 1] - x[:, 2] ** 2)
+    cell_values = _scalars(np.sin(np.arange(data.num_cells, dtype=float)))
+    for d in (data, poly):
+        d.fields["p"] = td.Field(td.H1(d), point_values)
+        d.fields["c"] = td.Field(td.Constant(d), cell_values)
+    np.testing.assert_allclose(td.algorithms.to_cells(poly, poly.fields["p"]).values.to_numpy(),
+                               td.algorithms.to_cells(data, data.fields["p"]).values.to_numpy(),
+                               rtol=1e-6, atol=1e-6)
+    np.testing.assert_allclose(td.algorithms.to_points(poly, poly.fields["c"]).values.to_numpy(),
+                               td.algorithms.to_points(data, data.fields["c"]).values.to_numpy(),
+                               rtol=1e-6, atol=1e-6)
+    same = td.algorithms.to_cells(poly, poly.fields["c"])
+    np.testing.assert_array_equal(same.values.to_numpy(), cell_values.to_numpy())
+
+
+@needs_vtk
+def test_averages_on_voronoi_columns_are_vtks(backend):
+    from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
+    from vtkmodules.vtkFiltersCore import vtkCellDataToPointData, vtkPointDataToCellData
+
+    points, cells, _ = _voronoi_columns()
+    data = td.DataSet(_from_cell_faces(cells, len(points)), points)
+    p = np.cos(3 * points[:, 0]) + points[:, 1] * points[:, 2]
+    c = np.sin(np.arange(data.num_cells, dtype=float))
+    grid = dataset_to_vtk(data)
+    array = numpy_to_vtk(p.astype(np.float32), deep=True)
+    array.SetName("p")
+    grid.GetPointData().AddArray(array)
+    array = numpy_to_vtk(c.astype(np.float32), deep=True)
+    array.SetName("c")
+    grid.GetCellData().AddArray(array)
+    to_cells = vtkPointDataToCellData()
+    to_cells.SetInputData(grid)
+    to_cells.Update()
+    to_points = vtkCellDataToPointData()
+    to_points.SetInputData(grid)
+    to_points.Update()
+    ours = td.algorithms.to_cells(data, td.Field(td.H1(data), _scalars(p)))
+    np.testing.assert_allclose(ours.values.to_numpy(),
+                               vtk_to_numpy(to_cells.GetOutput().GetCellData().GetArray("p")),
+                               rtol=1e-5, atol=1e-6)
+    ours = td.algorithms.to_points(data, td.Field(td.Values(data, "cells"), _scalars(c)))
+    np.testing.assert_allclose(ours.values.to_numpy(),
+                               vtk_to_numpy(to_points.GetOutput().GetPointData().GetArray("c")),
+                               rtol=1e-5, atol=1e-6)

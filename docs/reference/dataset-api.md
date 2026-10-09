@@ -233,7 +233,8 @@ Results are `Field`s, or `DataSet`s for filters. In the table,
 | `threshold` | yes | yes | yes |
 | `contour`, `slice_plane` | yes | yes (López, face-based) | not yet |
 | `cell_centers`, `values_at_centers`, `gradients` | yes | no | no |
-| `to_points`, `to_cells`, `discontinuous` | yes | no | no |
+| `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes |
+| `discontinuous`, `to_points` of `L2` data | yes | no | no |
 | `traces`, and `jump`/`upwind_flux` of point data | yes | no | no |
 | `external_faces` | yes | yes (polygonal) | the boundary edges, as two-point polygons: there is no line topology yet |
 
