@@ -86,17 +86,37 @@ def _map_keys_64(keys, mapped, flip, n):
 
 
 @tack.kernel
-def _mapped_lo_hi_range(mapped, lo_min, lo_max, hi_min, hi_max, n):
-    """Min and max of the low and high 32-bit words of the mapped keys,
-    with the 32-bit atomics every backend has."""
-    for i in range(n):
-        k = mapped[i]
-        lo = tack.u32(k & tack.u64(4294967295))
-        hi = tack.u32(k >> 32)
-        tack.atomic_min(lo_min, 0, lo)
-        tack.atomic_max(lo_max, 0, lo)
-        tack.atomic_min(hi_min, 0, hi)
-        tack.atomic_max(hi_max, 0, hi)
+def _chunk_range(mins_in, maxs_in, mins, maxs, n, chunk, nchunks):
+    """Each chunk's smallest and largest key, one thread per chunk.
+
+    No atomics: on a CPU, atomics on one address from every thread take
+    turns on its cache line, and the four per key this replaced made the
+    sort four times slower on eight threads than on one.
+    """
+    for c in range(nchunks):
+        start = c * chunk
+        end = min(start + chunk, n)
+        lo = mins_in[start]
+        hi = maxs_in[start]
+        for i in range(start + 1, end):
+            lo = min(lo, mins_in[i])
+            hi = max(hi, maxs_in[i])
+        mins[c] = lo
+        maxs[c] = hi
+
+
+def _key_range(mapped, n):
+    """The smallest and largest of the first ``n`` (at least one) mapped keys:
+    chunk ranges, then ranges of those, until one remains."""
+    mins = maxs = mapped
+    while True:
+        nchunks = (n + _CHUNK - 1) // _CHUNK
+        out_mins = tack.field(dtype=tack.u64, shape=(nchunks,))
+        out_maxs = tack.field(dtype=tack.u64, shape=(nchunks,))
+        _chunk_range(mins, maxs, out_mins, out_maxs, n, _CHUNK, nchunks)
+        if nchunks == 1:
+            return _read(out_mins), _read(out_maxs)
+        mins, maxs, n = out_mins, out_maxs, nchunks
 
 
 # --- one radix pass ---------------------------------------------------------
@@ -276,26 +296,8 @@ def argsort(keys, n=None):
     # The passes needed depend on the spread of the keys, not their width.
     # The base is the smallest mapped key, so digits above the spread are
     # all zero and those passes can be skipped.
-    lo_min = tack.field(dtype=tack.u32, shape=(1,))
-    lo_max = tack.field(dtype=tack.u32, shape=(1,))
-    hi_min = tack.field(dtype=tack.u32, shape=(1,))
-    hi_max = tack.field(dtype=tack.u32, shape=(1,))
-    lo_min.fill(0xFFFFFFFF)
-    lo_max.fill(0)
-    hi_min.fill(0xFFFFFFFF)
-    hi_max.fill(0)
-    _mapped_lo_hi_range(mapped, lo_min, lo_max, hi_min, hi_max, n)
-    lo_lo, lo_hi = _read(lo_min), _read(lo_max)
-    hi_lo, hi_hi = _read(hi_min), _read(hi_max)
-    if hi_lo == hi_hi:
-        # One high word: the low word alone orders the keys.
-        base = (hi_lo << 32) | lo_lo
-        spread = lo_hi - lo_lo
-    else:
-        # The low words of different high words do not compare, so only the
-        # high word's spread can be subtracted; the low word takes 4 passes.
-        base = hi_lo << 32
-        spread = ((hi_hi - hi_lo) << 32) | 0xFFFFFFFF
+    base, largest = _key_range(mapped, n)
+    spread = largest - base
     passes = (spread.bit_length() + _RADIX_BITS - 1) // _RADIX_BITS
     if passes == 0:
         return perm  # every key is equal: the identity is the stable order
