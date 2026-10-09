@@ -4,8 +4,14 @@ Each configuration runs in its own process, because both systems fix their
 threading (and Tack its backend) at start-up:
 
   cpu1    VTK Sequential,            Tack CPU, 1 thread
-  cpu8    VTK STDThread, 8 threads,  Tack CPU, 8 threads
-  metal   Tack Metal; VTK runs only to check Tack's outputs (compare with cpu8)
+  cpuN    VTK STDThread, N threads,  Tack CPU, N threads (any N)
+  cuda, hip, level_zero, metal
+          Tack on that GPU; VTK runs only to check Tack's outputs, on
+          --vtk-threads threads -- compare with the cpuN run of as many
+
+``--config`` takes a comma-separated list, each run in a process of its own;
+the default is cpu1,cpu8,metal on macOS and cpu1,cpu<logical cores>,cuda
+elsewhere. ``report.py`` prints the comparison from the output directory.
 
 For every mesh, size, form (shape-based or polyhedral) and filter pair:
 
@@ -24,9 +30,14 @@ runs) and records every time; reports use the median. Converting a VTK grid
 to Tack, and shape cells to polyhedra, are timed as ``import``.
 
 Usage:
-  python benchmarks/vtk_compare/run.py --config cpu1|cpu8|metal|all
+  python benchmarks/vtk_compare/run.py [--config cpu1,cpu16,cuda]
          [--sizes 10k,100k,1M,5M] [--meshes hex,tet,squareBend]
          [--filters contour,slice,...] [--budget 1.0] [--output DIR]
+         [--square-bend PATH/squareBend.foam] [--vtk-threads N]
+
+squareBend is OpenFOAM's tutorial case, as in VTK's test data
+(Data/OpenFOAM/squareBend); give its .foam file with --square-bend or
+TACK_SQUARE_BEND, or leave it out of --meshes.
 """
 
 import argparse
@@ -41,9 +52,24 @@ import time
 import numpy as np
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-SQUARE_BEND = os.path.expanduser(
+SQUARE_BEND = os.environ.get("TACK_SQUARE_BEND") or os.path.expanduser(
     "~/Data/VTK/Data/OpenFOAM/squareBend/squareBend.foam")
-CONFIGS = {"cpu1": ("cpu", 1), "cpu8": ("cpu", 8), "metal": ("metal", None)}
+GPUS = ("cuda", "hip", "level_zero", "metal")
+
+
+def _config(name):
+    """``(arch, threads)`` of a configuration name: cpu<N>, or a GPU arch."""
+    if name.startswith("cpu") and name[3:].isdigit() and int(name[3:]) > 0:
+        return "cpu", int(name[3:])
+    if name in GPUS:
+        return name, None
+    raise ValueError(f"unknown configuration {name!r}: cpu<N> or one of {', '.join(GPUS)}")
+
+
+def _default_configs():
+    if sys.platform == "darwin":
+        return "cpu1,cpu8,metal"
+    return f"cpu1,cpu{os.cpu_count()},cuda"
 
 
 def _measure(run, setup=None, budget=1.0, least=3, most=30):
@@ -74,45 +100,65 @@ def _record(records, **fields):
         print(f"  {label}: {fields.get('note', '')}", flush=True)
 
 
-def _meta(config):
+def _meta(config, vtk_threads):
     from vtkmodules.vtkCommonCore import vtkSMPTools, vtkVersion
 
-    import tack
 
     sha = subprocess.run(["git", "rev-parse", "--short", "HEAD"], cwd=HERE,
                          capture_output=True, text=True).stdout.strip()
     dirty = subprocess.run(["git", "status", "--porcelain", "--", "packages"], cwd=HERE,
                            capture_output=True, text=True).stdout.strip()
     smp = vtkSMPTools()
+    arch, threads = _config(config)
+    from tack.runtime.dispatch import get_backend
+
     return {"config": config, "date": time.strftime("%Y-%m-%d %H:%M"),
             "machine": platform.platform(), "processor": _processor(),
+            "gpu": _gpu() if arch != "cpu" else None,
             "python": platform.python_version(), "numpy": np.__version__,
             "vtk": vtkVersion.GetVTKVersionFull(), "vtk smp": smp.GetBackend(),
             "vtk threads": smp.GetEstimatedNumberOfThreads(),
-            "tack": sha + ("+changes" if dirty else ""), "tack backend": tack.current_arch()
-            if hasattr(tack, "current_arch") else CONFIGS[config][0],
-            "tack threads": CONFIGS[config][1]}
+            "tack": sha + ("+changes" if dirty else ""), "tack backend": get_backend().label,
+            "tack threads": threads, "vtk threads for checks": vtk_threads}
+
+
+def _run(command):
+    try:
+        return subprocess.run(command, capture_output=True, text=True,
+                              timeout=20).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
 
 def _processor():
+    if sys.platform == "darwin":
+        return _run(["sysctl", "-n", "machdep.cpu.brand_string"]) or platform.processor()
     try:
-        return subprocess.run(["sysctl", "-n", "machdep.cpu.brand_string"],
-                              capture_output=True, text=True).stdout.strip()
+        with open("/proc/cpuinfo") as info:
+            for line in info:
+                if line.startswith("model name"):
+                    return line.split(":", 1)[1].strip()
     except OSError:
-        return platform.processor()
+        pass
+    return platform.processor()
 
 
-def _start(config):
+def _gpu():
+    return (_run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"])
+            or _run(["rocm-smi", "--showproductname"]) or "")
+
+
+def _start(config, vtk_threads):
     """Fix both systems' threading and Tack's backend for this process."""
     from vtkmodules.vtkCommonCore import vtkSMPTools
 
-    arch, threads = CONFIGS[config]
+    arch, threads = _config(config)
     smp = vtkSMPTools()
     if threads == 1:
         smp.SetBackend("Sequential")
     else:
         smp.SetBackend("STDThread")
-        smp.Initialize(threads or 8)
+        smp.Initialize(threads or vtk_threads)
     import tack
 
     if arch == "cpu":
@@ -121,32 +167,33 @@ def _start(config):
         tack.init(arch=getattr(tack, arch))
 
 
-def _meshes(names, sizes):
+def _meshes(names, sizes, square_bend):
     import meshes as m
 
     for name in names:
         if name == "squareBend":
-            if os.path.exists(SQUARE_BEND):
-                yield "112k", m.square_bend(SQUARE_BEND)
+            if os.path.exists(square_bend):
+                yield "112k", m.square_bend(square_bend)
             else:
-                print(f"skipping squareBend: {SQUARE_BEND} is not here")
+                print(f"skipping squareBend: {square_bend} is not here (--square-bend)")
             continue
         build = {"hex": m.hexahedra, "tet": m.tetrahedra}[name]
         for size in sizes:
             yield size, build(m.SIZES[size])
 
 
-def run_config(config, sizes, mesh_names, filters, budget):
-    _start(config)
+def run_config(config, sizes, mesh_names, filters, budget, vtk_threads,
+               square_bend=SQUARE_BEND):
+    _start(config, vtk_threads)
     import meshes as m
     import pairs as p
 
     import tack
     from tack.interop.vtk import vtk_to_dataset
 
-    time_vtk = config != "metal"
+    time_vtk = _config(config)[0] == "cpu"
     records, seen = [], set()
-    for size, mesh in _meshes(mesh_names, sizes):
+    for size, mesh in _meshes(mesh_names, sizes, square_bend):
         print(f"\n{mesh.name} {size}: {mesh.num_cells} cells, {mesh.num_points} points",
               flush=True)
         common = {"mesh": mesh.name, "size": size, "cells": mesh.num_cells}
@@ -215,29 +262,41 @@ def run_config(config, sizes, mesh_names, filters, budget):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    parser.add_argument("--config", default="all", choices=[*CONFIGS, "all"])
+    parser.add_argument("--config", default=_default_configs(),
+                        help="comma-separated: cpu<N> and GPU archs (cuda, hip, level_zero, "
+                             f"metal); default {_default_configs()}")
     parser.add_argument("--sizes", default="10k,100k,1M,5M")
     parser.add_argument("--meshes", default="hex,tet,squareBend")
     parser.add_argument("--filters", default="", help="comma-separated pair names")
     parser.add_argument("--budget", type=float, default=1.0,
                         help="seconds of repeated runs per measurement")
     parser.add_argument("--output", default=".", help="directory for <config>.json")
+    parser.add_argument("--square-bend", default=SQUARE_BEND,
+                        help="squareBend.foam (or set TACK_SQUARE_BEND)")
+    parser.add_argument("--vtk-threads", type=int, default=os.cpu_count(),
+                        help="VTK's threads when it only checks a GPU run's outputs")
     args = parser.parse_args()
     os.makedirs(args.output, exist_ok=True)
-    if args.config == "all":
-        for config in CONFIGS:
+    configs = [c.strip() for c in args.config.split(",") if c.strip()]
+    for config in configs:
+        _config(config)                       # refuse a bad name before anything runs
+    if len(configs) > 1:
+        for config in configs:
             command = [sys.executable, __file__, "--config", config, "--sizes", args.sizes,
                        "--meshes", args.meshes, "--filters", args.filters,
-                       "--budget", str(args.budget), "--output", args.output]
+                       "--budget", str(args.budget), "--output", args.output,
+                       "--square-bend", args.square_bend,
+                       "--vtk-threads", str(args.vtk_threads)]
             subprocess.run(command, check=True)
         return
     sys.path.insert(0, HERE)
     filters = [f.strip() for f in args.filters.split(",") if f.strip()]
-    records = run_config(args.config, args.sizes.split(","), args.meshes.split(","), filters,
-                         args.budget)
-    path = os.path.join(args.output, f"{args.config}.json")
+    records = run_config(configs[0], args.sizes.split(","), args.meshes.split(","), filters,
+                         args.budget, args.vtk_threads, args.square_bend)
+    path = os.path.join(args.output, f"{configs[0]}.json")
     with open(path, "w") as out:
-        json.dump({"meta": _meta(args.config), "records": records}, out, indent=1)
+        json.dump({"meta": _meta(configs[0], args.vtk_threads), "records": records}, out,
+                  indent=1)
     print(f"\nwrote {path}")
 
 
