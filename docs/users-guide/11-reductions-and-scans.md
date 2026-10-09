@@ -329,7 +329,7 @@ field.
 ```python
 from tack.algorithms import argsort, gather, reduce_by_key, sort_by_key, unique
 
-perm = argsort(keys)                           # i32 field: keys[perm] ascending, stable
+perm = argsort(keys)                           # index field: keys[perm] ascending, stable
 skeys, svals = sort_by_key(keys, values)       # new fields, values carried along
 ukeys, counts = unique(skeys)                  # each distinct key once, and its run length
 ukeys, sums = reduce_by_key(skeys, svals)      # one value per distinct key; op="sum"|"min"|"max"
@@ -361,8 +361,9 @@ same bounds check as the scans: `n` past any field involved raises
 **stable**, so equal keys keep their original order, and `sort_by_key`'s
 values keep theirs. Values can be any dtype; they are gathered once by the
 final permutation, so `sort_by_key(keys, values)` costs an `argsort` plus
-two gathers. The permutation is `i32`, so at most 2^31 − 1 elements can be
-sorted at once.
+two gathers. The permutation is `i32` up to 2^31 − 1 elements and `i64`
+beyond; `argsort(keys, index_dtype=tack.i64)` asks for `i64` at any size,
+as a mesh with 64-bit ids does. `unique`'s counts follow the same rule.
 
 The implementation is a least-significant-digit radix sort over 8-bit
 digits, built from kernels and the exclusive scan. On the CPU, one thread

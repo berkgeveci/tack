@@ -127,6 +127,31 @@ def test_argsort_finds_the_key_range_over_many_chunks(backend):
     _check_argsort(tack.i64, keys)
 
 
+@pytest.mark.parametrize("n", [1, 300, 5000], ids=lambda n: f"n{n}")
+def test_argsort_gives_i64_indices_on_request(backend, n):
+    """A mesh with 64-bit ids asks for i64 permutations at any size; the chunk
+    and tile offsets follow, so both passes' paths run in i64."""
+    keys = _random_keys(np.random.default_rng(n), np.int64, n, -2**40, 2**40)
+    perm = algorithms.argsort(_field(tack.i64, keys), index_dtype=tack.i64).to_numpy()
+    assert perm.dtype == np.int64
+    np.testing.assert_array_equal(perm, np.argsort(keys, kind="stable"))
+    sorted_keys = _field(tack.i64, np.sort(keys % 7))
+    offsets, nruns = sort_module._run_offsets(sorted_keys, n, tack.i64)
+    assert offsets.dtype == tack.i64
+    np.testing.assert_array_equal(offsets.to_numpy()[:nruns + 1],
+                                  np.r_[np.flatnonzero(np.diff(np.r_[-1, np.sort(keys % 7)])), n])
+
+
+def test_index_types_follow_the_count():
+    assert sort_module._index_dtype(2**31 - 1) == tack.i32
+    assert sort_module._index_dtype(2**31) == tack.i64
+    assert sort_module._index_dtype(10, tack.i64) == tack.i64
+    with pytest.raises(ValueError, match="i32 index limit"):
+        sort_module._index_dtype(2**31, tack.i32)
+    with pytest.raises(TypeError):
+        sort_module._index_dtype(10, tack.u32)
+
+
 def test_argsort_refuses_other_key_dtypes(backend):
     for dtype in (tack.f32, tack.i16, tack.u8):
         with pytest.raises(TypeError, match="sort keys must be one of"):

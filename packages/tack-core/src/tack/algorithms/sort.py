@@ -42,6 +42,12 @@ an offsets array with the usual sentinel at the end.  Reductions then run
 one thread per run, serially over its elements, which keeps them exact and
 reproducible for every dtype at the price of load imbalance when a few
 runs are very long.
+
+Indices
+-------
+Permutations and offsets are ``i32`` up to ``2**31 - 1`` elements and
+``i64`` beyond (``index_dtype``); a caller may ask for either, as a mesh
+whose ids are 64-bit asks for ``i64`` whatever its size.
 """
 
 import tack
@@ -64,6 +70,18 @@ _KEY_DTYPES = {
 }
 
 _INDEX_LIMIT = 2**31 - 1
+
+
+def _index_dtype(n, dtype=None):
+    """The integer type that indexes ``n`` elements: ``dtype`` if given (``i32`` or
+    ``i64``, and ``i32`` only up to ``2**31 - 1``), else the narrowest of the two."""
+    if dtype is None:
+        return tack.i32 if n <= _INDEX_LIMIT else tack.i64
+    if dtype not in (tack.i32, tack.i64):
+        raise TypeError(f"indices are i32 or i64, not {dtype.name}")
+    if dtype == tack.i32 and n > _INDEX_LIMIT:
+        raise ValueError(f"{n} elements exceed the i32 index limit {_INDEX_LIMIT}")
+    return dtype
 
 
 # --- key mapping and range -------------------------------------------------
@@ -187,7 +205,7 @@ def _scatter_digits(mapped_in, perm_in, mapped_out, perm_out, offsets,
     """Move every element of chunk c to the slots the scanned counts gave
     its digit, in chunk order, so the pass is stable."""
     for c in range(nchunks):
-        slot = tack.local_array(tack.i32, 256)
+        slot = tack.local_array_like(offsets, 256)
         for b in range(256):
             slot[b] = offsets[b * nchunks + c]
         start = c * chunk
@@ -406,9 +424,6 @@ def _count(n, *fields):
         if not 0 <= n <= f.size:
             raise ValueError(
                 f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
-    if n > _INDEX_LIMIT:
-        raise ValueError(
-            f"n={n} exceeds the i32 index limit {_INDEX_LIMIT} of the sort")
     return n
 
 
@@ -425,17 +440,19 @@ def _read(field):
     return field.to_numpy()[0].item()
 
 
-def argsort(keys, n=None):
+def argsort(keys, n=None, index_dtype=None):
     """Stable permutation that sorts the first ``n`` keys ascending.
 
     ``keys`` is an ``i32``, ``u32``, ``i64`` or ``u64`` field.  Returns a
-    new ``i32`` field ``perm`` of ``n`` elements with ``keys[perm[0]] <=
+    new field ``perm`` of ``n`` elements with ``keys[perm[0]] <=
     keys[perm[1]] <= ...``; equal keys keep their original order.  ``n``
-    defaults to the whole field and may be zero.
+    defaults to the whole field and may be zero.  ``perm`` is ``i32``, or
+    ``i64`` past ``2**31 - 1`` elements or when ``index_dtype`` asks.
     """
     _key_width(keys)
     n = _count(n, keys)
-    perm = tack.field(dtype=tack.i32, shape=(n,))
+    indices = _index_dtype(n, index_dtype)
+    perm = tack.field(dtype=indices, shape=(n,))
     if n == 0:
         return perm
     _iota(perm, n)
@@ -459,13 +476,13 @@ def argsort(keys, n=None):
     from tack.runtime.dispatch import get_backend
 
     mapped_b = tack.field(dtype=tack.u64, shape=(n,))
-    perm_b = tack.field(dtype=tack.i32, shape=(n,))
+    perm_b = tack.field(dtype=indices, shape=(n,))
     if get_backend().supports_workgroups:
         # Tiles sorted into the second buffers, then scattered back: the
         # pass's result is where its input was.
         ntiles = (n + _TILE - 1) // _TILE
         counts = tack.field(dtype=tack.i32, shape=(_RADIX * ntiles,))
-        offsets = tack.field(dtype=tack.i32, shape=(_RADIX * ntiles,))
+        offsets = tack.field(dtype=indices, shape=(_RADIX * ntiles,))
         starts = tack.field(dtype=tack.i32, shape=(_RADIX * ntiles,))
         for p in range(passes):
             shift = p * _RADIX_BITS
@@ -477,7 +494,7 @@ def argsort(keys, n=None):
         return perm
     nchunks = (n + _CHUNK - 1) // _CHUNK
     counts = tack.field(dtype=tack.i32, shape=(_RADIX * nchunks,))
-    offsets = tack.field(dtype=tack.i32, shape=(_RADIX * nchunks,))
+    offsets = tack.field(dtype=indices, shape=(_RADIX * nchunks,))
     src_keys, src_perm, dst_keys, dst_perm = mapped, perm, mapped_b, perm_b
     for p in range(passes):
         shift = p * _RADIX_BITS
@@ -521,17 +538,18 @@ def sort_by_key(keys, values=None, n=None):
     return sorted_keys, sorted_values
 
 
-def _run_offsets(sorted_keys, n):
-    """Offsets of the runs of equal adjacent keys: an ``i32`` field of
-    ``nruns + 1`` entries with ``offsets[nruns] == n``.  Returns
-    ``(offsets, nruns)``; an empty input has no runs."""
+def _run_offsets(sorted_keys, n, index_dtype=None):
+    """Offsets of the runs of equal adjacent keys: an index field (see
+    ``argsort``) of ``nruns + 1`` entries with ``offsets[nruns] == n``.
+    Returns ``(offsets, nruns)``; an empty input has no runs."""
+    indices = _index_dtype(n, index_dtype)
     if n == 0:
-        return tack.field(dtype=tack.i32, shape=(1,)), 0
+        return tack.field(dtype=indices, shape=(1,)), 0
     flags = tack.field(dtype=tack.i32, shape=(n,))
-    run_ids = tack.field(dtype=tack.i32, shape=(n,))
+    run_ids = tack.field(dtype=indices, shape=(n,))
     _flag_run_starts(sorted_keys, flags, n)
     nruns = exclusive_scan(flags, run_ids, n)
-    offsets = tack.field(dtype=tack.i32, shape=(nruns + 1,))
+    offsets = tack.field(dtype=indices, shape=(nruns + 1,))
     _scatter_run_starts(flags, run_ids, offsets, n, nruns)
     return offsets, nruns
 
@@ -542,13 +560,13 @@ def unique(sorted_keys, n=None):
     ``sorted_keys`` must have equal keys adjacent (sorted, or grouped).
     Returns ``(keys, counts)``: ``keys`` is a new field of the same dtype
     holding each distinct key once, in order of first appearance, and
-    ``counts`` is an ``i32`` field of the run lengths.  Works for any
+    ``counts`` the run lengths, an index field (see ``argsort``).  Works for any
     dtype that supports ``!=``.
     """
     n = _count(n, sorted_keys)
     offsets, nruns = _run_offsets(sorted_keys, n)
     keys = tack.field(dtype=sorted_keys.dtype, shape=(nruns,))
-    counts = tack.field(dtype=tack.i32, shape=(nruns,))
+    counts = tack.field(dtype=offsets.dtype, shape=(nruns,))
     if nruns:
         _gather(sorted_keys, offsets, keys, nruns)
         _run_lengths(offsets, counts, nruns)
