@@ -410,3 +410,27 @@ def test_sync_waits_for_queued_launches():
     backend = get_backend()
     assert backend._open is None and not backend._committed
     np.testing.assert_array_equal(acc._buffer._view, 5 + np.arange(64))
+
+
+def test_new_fields_are_zero():
+    """Fields are not cleared on the CPU: Metal clears new buffers. Hold it to that
+    where reuse would show -- the same sizes again, after buffers the CPU and the
+    GPU dirtied were freed."""
+    import gc
+
+    @tack.kernel
+    def dirty(a: tack.template()):
+        for i in range(a.shape[0]):
+            a[i] = 7
+
+    for n in (1, 1000, 1 << 20):
+        for _ in range(5):
+            a = tack.field(tack.i32, shape=(n,))
+            assert not a.to_numpy().any()
+            a.from_numpy(np.full(n, -1, np.int32))
+            b = tack.field(tack.i32, shape=(n,))
+            assert not b.to_numpy().any()
+            dirty(b)
+            tack.sync()
+            del a, b
+            gc.collect()
