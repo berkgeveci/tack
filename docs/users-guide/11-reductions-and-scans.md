@@ -251,11 +251,13 @@ total = exclusive_scan(counts, offsets, n)  # i32 counts, i64 offsets and total
 ```
 
 Both functions run on every backend. They use no shared memory or
-barriers, only ordinary kernels: an up-sweep and a down-sweep with doubling
-and halving strides (a Blelloch-style scan), about 2·log₂ n launches in
-all. Each launch is synchronous, so for small arrays — up to roughly a
-million elements — copying to NumPy, calling `np.cumsum` and copying back
-can be faster.
+barriers, only ordinary kernels, by chunks of 256 elements: one thread per
+chunk copies it into the output and totals it, the chunk totals are
+scanned the same way, recursively, and each chunk then writes its running
+sums from its offset. That is two launches per level and a level per
+factor of 256: three levels, eight launches, for a million elements. Each
+launch is synchronous, so for small arrays copying to NumPy, calling
+`np.cumsum` and copying back can still be faster.
 
 **Return value.** Both return the sum of the first `n` inputs, in the
 output field's dtype, as a Python `int` (integer outputs) or `float`
@@ -277,13 +279,16 @@ the host, not the whole output.
   are left alone. `n` must be at most the size of both fields; a larger or
   negative `n` raises `ValueError`. `n = 0` writes nothing and returns `0`,
   the empty sum.
-- `exclusive_scan` allocates an `n`-element work buffer of the output's
-  dtype per call.
+- Each call allocates two fields of the output's dtype per level, the
+  chunk totals and their offsets, one element per chunk: about `n / 128`
+  elements in all, not a copy of the input.
 - Integer results are exact (modulo wrapping) and identical on every
   backend and every run.
-- Floating results are deterministic for a given `n`, but the tree adds in
-  a different order from a sequential sum, so they can differ from
-  `np.cumsum` in the last bits.
+- Floating results are deterministic for a given `n`. Through 512
+  elements (two chunks) they are added in `np.cumsum`'s order and match it
+  bit for bit; from the third chunk on, a chunk starts from the sum of the
+  earlier chunks' totals rather than from the previous element's running
+  sum, so results can differ from `np.cumsum` in the last bits.
 
 ### Copy and fill utilities
 
