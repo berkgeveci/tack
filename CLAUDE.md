@@ -171,6 +171,14 @@ the buffer references and declares indirect-resource residency with
 completion. This fixes the four overlap cases confirmed at `922b642` and
 `e265e7f`, without alias-based specialization or disabling vendor optimization.
 
+Metal objects from `new...` methods (buffers, textures, libraries,
+pipelines, argument encoders, the command queue) are owned by the caller,
+but pyobjc-framework-Metal 12.1's metadata omits `already_retained`, so
+PyObjC retained each once more and they were never freed (a benchmark's
+temporaries reached 150 GB). `metal.py` registers the ownership for every
+`new...` selector it calls (`_OWNED_RESULTS`), before any is called; add
+any new one there. `test_fields_own_their_buffers_alone` checks retain counts.
+
 A Metal kernel with a sequential loop that stores to a field (or runs an
 atomic) has its body in `__tack_body__`, a `noinline` function the entry
 calls (`_stores_inside_sequential_loop` in `msl_gen.py`); workgroup arrays

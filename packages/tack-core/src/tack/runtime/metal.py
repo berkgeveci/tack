@@ -42,6 +42,38 @@ try:
 except ImportError:
     Metal = None
 
+# The Metal protocol methods named new... return an object the caller owns,
+# but pyobjc-framework-Metal (checked at 12.1) describes them without
+# "already_retained", so PyObjC retains the result once more and releases
+# only that retain when the Python object dies. Every buffer, texture,
+# library and pipeline Tack made was never freed: a filter's temporaries
+# reached 150 GB over a benchmark run. These are pyobjc's own entries with
+# the ownership added; registering them before the first call is correct
+# whether or not a later pyobjc fixes its metadata.
+_OWNED_RESULTS = {
+    b"newCommandQueue": {},
+    b"newBufferWithLength:options:": {2: {"type": b"Q"}, 3: {"type": b"Q"}},
+    b"newBufferWithBytes:length:options:": {
+        2: {"type": b"^v", "type_modifier": b"n", "c_array_length_in_arg": 3},
+        3: {"type": b"Q"}, 4: {"type": b"Q"}},
+    b"newTextureWithDescriptor:": {2: {"type": b"@"}},
+    b"newLibraryWithSource:options:error:": {
+        2: {"type": b"@"}, 3: {"type": b"@"}, 4: {"type": b"^@", "type_modifier": b"o"}},
+    b"newFunctionWithName:": {2: {"type": b"@"}},
+    b"newComputePipelineStateWithFunction:error:": {
+        2: {"type": b"@"}, 3: {"type": b"^@", "type_modifier": b"o"}},
+    b"newArgumentEncoderWithBufferIndex:": {2: {"type": b"Q"}},
+}
+
+if Metal is not None:
+    import objc
+
+    for _selector, _arguments in _OWNED_RESULTS.items():
+        _metadata = {"required": True, "retval": {"type": b"@", "already_retained": True}}
+        if _arguments:
+            _metadata["arguments"] = _arguments
+        objc.registerMetaDataForSelector(b"NSObject", _selector, _metadata)
+
 # Kernels read their index from a `uint` [[thread_position_in_grid]], so one
 # dispatch can index 2^32 threads; past that the position would wrap.
 _MAX_LAUNCH = 2**32
