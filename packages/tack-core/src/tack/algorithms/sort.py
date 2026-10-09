@@ -105,14 +105,57 @@ def _chunk_range(mins_in, maxs_in, mins, maxs, n, chunk, nchunks):
         maxs[c] = hi
 
 
+@tack.kernel
+def _tile_range(mins_in, maxs_in, mins, maxs, n, ntiles):
+    """Each 2048-key tile's smallest and largest key: eight per lane, then a tree
+    over the workgroup's lanes in shared memory."""
+    lo = tack.shared(tack.u64, 256)
+    hi = tack.shared(tack.u64, 256)
+    for i in range(ntiles * 256):
+        t = tack.thread_id()
+        tile = i // 256
+        start = tile * 2048 + t * 8
+        # A lane past the end takes the tile's first key, which leaves the tile's
+        # range unchanged.
+        first = tile * 2048
+        a = mins_in[start] if start < n else mins_in[first]
+        b = maxs_in[start] if start < n else maxs_in[first]
+        for g in range(start + 1, min(start + 8, n)):
+            a = min(a, mins_in[g])
+            b = max(b, maxs_in[g])
+        lo[t] = a
+        hi[t] = b
+        tack.barrier()
+        step = 128
+        while step > 0:
+            if t < step:
+                lo[t] = min(lo[t], lo[t + step])
+                hi[t] = max(hi[t], hi[t + step])
+            tack.barrier()
+            step = step // 2
+        if t == 0:
+            mins[tile] = lo[0]
+            maxs[tile] = hi[0]
+
+
 def _key_range(mapped, n):
     """The smallest and largest of the first ``n`` (at least one) mapped keys:
-    chunk ranges, then ranges of those, until one remains."""
+    chunk (or, with workgroups, tile) ranges, then ranges of those, until one
+    remains."""
+    from tack.runtime.dispatch import get_backend
+
+    tiles = get_backend().supports_workgroups
     mins = maxs = mapped
     while True:
-        nchunks = (n + _CHUNK - 1) // _CHUNK
+        nchunks = (n + (2048 if tiles else _CHUNK) - 1) // (2048 if tiles else _CHUNK)
         out_mins = tack.field(dtype=tack.u64, shape=(nchunks,))
         out_maxs = tack.field(dtype=tack.u64, shape=(nchunks,))
+        if tiles:
+            _tile_range(mins, maxs, out_mins, out_maxs, n, nchunks)
+            if nchunks == 1:
+                return _read(out_mins), _read(out_maxs)
+            mins, maxs, n = out_mins, out_maxs, nchunks
+            continue
         _chunk_range(mins, maxs, out_mins, out_maxs, n, _CHUNK, nchunks)
         if nchunks == 1:
             return _read(out_mins), _read(out_maxs)
