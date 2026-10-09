@@ -6,7 +6,7 @@ and wind consistently. VTK checks the export (each cell's own outward copy
 of its faces: positive volumes, the same external faces) and the import
 (duplicated faces matched). MPAS-like columns -- Voronoi polygons extruded
 into thin layers -- give polygonal faces of any size. Polyhedra from VTK's
-data, where present, are read and checked.
+own test meshes, copied into data/vtk/, are read and checked.
 """
 
 import os
@@ -321,7 +321,8 @@ def test_vtk_refuses_faces_wound_the_same_way(backend):
         vtk_to_dataset(grid)
 
 
-_VTK_DATA = os.path.expanduser("~/Data/VTK/Data")
+# Copies of VTK test meshes, with VTK's license; see data/vtk/README.md.
+_VTK_DATA = os.path.join(os.path.dirname(__file__), "data", "vtk")
 
 
 @needs_vtk
@@ -331,8 +332,6 @@ _VTK_DATA = os.path.expanduser("~/Data/VTK/Data")
                                   "nonWatertightPolyhedron.vtu"])
 def test_polyhedra_from_vtk_data(backend, name):
     path = os.path.join(_VTK_DATA, name)
-    if not os.path.exists(path):
-        pytest.skip(f"{path} is not here")
     from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridReader
 
     reader = vtkXMLUnstructuredGridReader()
@@ -902,9 +901,8 @@ def test_orient_repairs_reversed_faces_and_cells(backend):
 
 def _cgns(name):
     path = os.path.join(_VTK_DATA, name)
-    if not os.path.exists(path):
-        pytest.skip(f"{path} is not here")
-    from vtkmodules.vtkIOCGNSReader import vtkCGNSReader
+    # Not every VTK build has the CGNS reader; the data is always here.
+    vtkCGNSReader = pytest.importorskip("vtkmodules.vtkIOCGNSReader").vtkCGNSReader
 
     reader = vtkCGNSReader()
     reader.SetFileName(path)
