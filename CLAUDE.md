@@ -167,8 +167,18 @@ device-buffer kernel arguments (which implicitly promise disjoint storage in
 MSL). Members use the packed parameter positions as `[[id(N)]]` indices;
 textures retain their separate binding namespace. Each cached dispatch refreshes
 the buffer references and declares indirect-resource residency with
-`useResource`. The encoder and argument buffer are reused after synchronous
-completion. This fixes the four overlap cases confirmed at `922b642` and
+`useResource`. Launches are queued, not waited for (`MetalBackend`
+`_open_batch`/`_launched`/`synchronize`): each encodes a compute pass into
+the open command buffer, committed every 64 launches with at most 4 in
+flight, and owns what it reads -- a fresh argument buffer, its packed
+scalars as `_Uniforms`, references to its fields until it completes. The
+host waits only when it touches field memory (every `MetalBuffer` method,
+reductions, texture uploads) or calls `tack.sync()`; bindings are resolved
+before an encoder opens, since committing an open encoder aborts. Memory
+handed outside Tack (DLPack, `export_memory`, `wrap_ptr`) is `_shared`: a
+launch using it completes before returning. Waiting after every launch cost
+about 0.3 ms each. `test_metal.py` covers order across batches, per-launch
+scalars and host writes. This fixes the four overlap cases confirmed at `922b642` and
 `e265e7f`, without alias-based specialization or disabling vendor optimization.
 
 Metal objects from `new...` methods (buffers, textures, libraries,
@@ -194,10 +204,11 @@ smallest). See `test_field_updates_in_loops.py` and
 `docs/design/memory-and-aliasing.md`.
 
 Dispatching one variant from several Python threads: CPU binds arguments
-per call and shares no launch state. GPU variants do — the scalar pack
-buffers, and Metal's argument buffer — so CUDA, HIP and Metal hold
-`KernelVariant.dispatch_lock` from the pack update through the synchronous
-launch. Level Zero holds one backend `_launch_lock` (reentrant) over
+per call and shares no launch state. CUDA and HIP variants share their
+scalar pack buffers, so they hold `KernelVariant.dispatch_lock` from the
+pack update through the synchronous launch. Metal launches own their
+argument buffer and scalars, and encode under the backend's batch lock.
+Level Zero holds one backend `_launch_lock` (reentrant) over
 launches, reductions and copies, because its command lists are
 backend-wide. Unlocked, half of the CUDA dispatches from four threads
 computed with another thread's scalars (`test_concurrent_dispatch.py`).
@@ -503,9 +514,9 @@ Each GPU backend's `execute` and native `reduce_field` call `check_launch_size` 
 
 ### Algorithms (tack.algorithms)
 
-`exclusive_scan` and `inclusive_scan` (`algorithms/scan.py`) reduce, then scan, by chunks of `_CHUNK` (256): one thread per chunk copies it into the output (converting to the output's dtype on the store, so sums form in that dtype) and totals it, the chunk totals are scanned recursively the same way, and each chunk then writes its running sums from its offset. A few launches per factor of 256, so three levels for a million elements; the Blelloch scan it replaced made two launches per factor of two and dominated every compaction and sort (most of a contour's time). In place (`input is output`) works; the total comes back through `_read_last` without copying the buffer.
+`exclusive_scan` and `inclusive_scan` (`algorithms/scan.py`) reduce, then scan, by chunks of `_CHUNK` (256): one thread per chunk copies it into the output (converting to the output's dtype on the store, so sums form in that dtype) and totals it, the chunk totals are scanned recursively the same way, and each chunk then writes its running sums from its offset. A few launches per factor of 256, so three levels for a million elements; the Blelloch scan it replaced made two launches per factor of two and dominated every compaction and sort (most of a contour's time). In place (`input is output`) works; the total comes back through `_read_last` without copying the buffer. On backends with workgroups the chunk is a 2048-element tile scanned by a workgroup (`_tile_sums`/`_tile_apply`: eight per lane, lane totals Hillis-Steele in shared memory, a lane's exclusive prefix read from its neighbour rather than subtracted), since one thread per chunk is slow on GPUs (Metal, 1M elements: 4.6 -> 1.1 ms); floating sums then combine lanes in tree order.
 
-`argsort`/`sort_by_key` (`algorithms/sort.py`) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. The pass count follows the key spread (min subtracted on the fly), found by a chunked min/max reduction over the full u64 keys (`_key_range`). Not with atomics: four per key on one address made the sort four times slower on eight CPU threads than on one. `unique`/`reduce_by_key` flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty fields (`shape=(0,)`) are valid outputs and allocate on every backend.
+`argsort`/`sort_by_key` (`algorithms/sort.py`) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped. On the CPU, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. On backends with workgroups (`supports_workgroups`) a pass instead sorts 4096-key tiles in shared memory (`_sort_tiles`: eight stable one-bit splits by workgroup prefix sums, no shared atomics, u8 digits and u16 positions to fit Metal's 32 KB), takes each tile's digit counts from the runs, scans them and scatters runs (`_scatter_tiles`); per-lane private tables spilled on GPUs, which made Metal's sort 3.5x slower than 8 CPU threads. The pass count follows the key spread (min subtracted on the fly), found by a chunked min/max reduction over the full u64 keys (`_key_range`). Not with atomics: four per key on one address made the sort four times slower on eight CPU threads than on one. `unique`/`reduce_by_key` flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty fields (`shape=(0,)`) are valid outputs and allocate on every backend.
 
 ### ColorTable (tack.rendering)
 

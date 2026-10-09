@@ -84,13 +84,16 @@ def test_argsort_passes_depend_on_the_key_spread(backend, monkeypatch):
     """Keys spanning one byte take one digit pass, wherever they sit in the
     key range; the pass count follows the spread, not the key width."""
     passes = []
-    counted = sort_module._count_digits
+    # One kernel per pass reads the digits: the chunk counter on the CPU, the
+    # tile sorter on backends with workgroups. Each takes the shift.
+    def counting(kernel, at):
+        def run(*args):
+            passes.append(args[at])
+            kernel(*args)
+        return run
 
-    def counting(*args):
-        passes.append(args[3])  # the shift
-        counted(*args)
-
-    monkeypatch.setattr(sort_module, "_count_digits", counting)
+    for name, at in (("_count_digits", 3), ("_sort_tiles", 7)):
+        monkeypatch.setattr(sort_module, name, counting(getattr(sort_module, name), at))
     rng = np.random.default_rng(3)
 
     keys = rng.integers(10**9, 10**9 + 200, size=600, dtype=np.int64)
@@ -325,3 +328,23 @@ def test_point_to_cell_links_from_a_sorted_connectivity(backend):
     np.testing.assert_array_equal(offsets.to_numpy(), [0, 2, 4, 7])
     links = cells.to_numpy()
     assert sorted(links[4:7]) == [0, 1, 2]  # point 2 touches every triangle
+
+
+@pytest.mark.parametrize("n", [4095, 4096, 4097, 3 * 4096 + 5, 70_000],
+                         ids=lambda n: f"n{n}")
+def test_argsort_across_tiles(backend, n):
+    """On GPUs a pass sorts tiles of 4096 keys in shared memory, then scatters
+    each digit's run: sizes on, just past and well past a tile edge, keys
+    spanning every digit."""
+    rng = np.random.default_rng(n)
+    keys = rng.integers(-2**31, 2**31 - 1, size=n, dtype=np.int64).astype(np.int32)
+    _check_argsort(tack.i32, keys)
+
+
+def test_argsort_keeps_many_equal_keys_in_order(backend):
+    """Stability under heavy ties: 70,000 keys of only five values, so every tile
+    holds long runs of each, which the tile sort and the scatter must keep in
+    their original order."""
+    rng = np.random.default_rng(5)
+    keys = rng.integers(0, 5, size=70_000).astype(np.int64) * (1 << 40)
+    _check_argsort(tack.i64, keys)
