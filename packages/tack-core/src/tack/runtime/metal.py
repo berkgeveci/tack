@@ -114,10 +114,13 @@ class MetalBuffer(DeviceBuffer):
         # zero-length request returns no buffer, so an empty field (the
         # result of a filter that selected nothing) gets one byte it never
         # reads; the view below still has zero elements.
+        # Metal clears a new buffer (newBufferWithLength:options:), so a field
+        # starts zeroed without the CPU pass over every byte that clearing it
+        # here once made -- most of a large filter's time on Metal, for the
+        # temporaries it allocates. test_new_fields_are_zero holds Metal to it.
         self._metal_buffer = device.newBufferWithLength_options_(max(nbytes, 1), 0)
         raw = self._metal_buffer.contents().as_buffer(nbytes)
         self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
-        self._view[...] = 0      # not [:], which a zero-dimensional view rejects
         if sync is not None:
             self._sync = sync
 
