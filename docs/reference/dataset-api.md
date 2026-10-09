@@ -232,6 +232,7 @@ Results are `Field`s, or `DataSet`s for filters. In the table,
 | `jump` and `upwind_flux` of cell data; `divergence`, `perot` of face values | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes |
 | `contour`, `slice`, `slice_plane` | yes | yes (López, face-based) | not yet |
+| `clip` | yes | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes |
 | `implicit_values` | yes | yes | yes |
 | `cell_centers`, `values_at_centers` | yes | no | no |
@@ -267,6 +268,7 @@ What each filter gives:
 |---|---|---|---|---|
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | kept points | kept cells | kept faces, turned where needed (polyhedra) | — |
 | `contour`, `slice`, `slice_plane` | interpolated along edges | pieces of the cut cells | — | — |
+| `clip` | kept points, edge crossings and centroids | pieces of the cut cells, whole kept ones | — | — |
 | `extract_points`, `threshold_points`, `mask_points` | kept points, each a vertex cell | — | — | — |
 | `external_faces`, `extract_surface` | the same points | pieces (each face's cell); face values become cell values | — | — |
 | `as_polyhedra` | same | same | same | same |
@@ -305,6 +307,17 @@ template and calls `f.value(p)`. Taking one:
 | `slice(data, f)` | where `f` is zero: a contour of those values |
 | `extract_geometry(data, f, inside=True, boundary=False)` | whole cells inside (every point at or below zero) or outside, plus with `boundary` those `f` cuts |
 | `extract_points(data, f, inside=True)` | the points inside or outside, as vertex cells |
+
+`clip(data, by, value=0.0, invert=False)` keeps the part of every cell where
+`by` -- point data or an implicit function -- is at or above `value` (below,
+with `invert`), cutting cells by Viskores' case tables (VisIt's): whole cells
+keep their shape (pixels and voxels become quads and hexahedra, as in VTK),
+cut cells become tetrahedra, pyramids, wedges and hexahedra (triangles and
+quads in 2D). The tables number a wedge's corners as VisIt does, mirrored
+from VTK's; Tack reads wedges through that order and writes wedge pieces back
+in VTK's, which taken directly would be inside out. Edge points are shared
+between cells; point data is interpolated onto them and onto the centroid
+points some cases add.
 
 Without a function: `extract_cells(data, ids)` (cells keep their order),
 `mask(data, stride)`, `threshold_points(data, field, lower, upper)` and

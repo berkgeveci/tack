@@ -65,11 +65,14 @@ class Pieces(Take):
 
 class Interpolate:
     """Output point ``i`` lies between input points ``ends[i]`` (a 2-vector of ids)
-    at ``weights[i]`` from the first."""
+    at ``weights[i]`` from the first. ``averages``, ``(offsets, members)``: further
+    output points after those, each the average of earlier output points
+    ``members[offsets[k]:offsets[k + 1]]`` (clip's centroid points)."""
 
-    def __init__(self, ends, weights):
+    def __init__(self, ends, weights, averages=None):
         self.ends = ends
         self.weights = weights
+        self.averages = averages
 
 
 # ── Values ──────────────────────────────────────────────────────────
@@ -104,10 +107,20 @@ def _point_values(values, n):
 
 @tack.kernel
 def _interpolate_rows(values, ends, weights, out):
-    for i in range(out.shape[0]):
+    for i in range(weights.shape[0]):
         ab = ends[i]
         va = values[ab[0]]
         out[i] = va + weights[i] * (values[ab[1]] - va)
+
+
+@tack.kernel
+def _average_rows(out, offsets, members, first):
+    for k in range(offsets.shape[0] - 1):
+        begin = offsets[k]
+        total = out[members[begin]]
+        for i in range(begin + 1, offsets[k + 1]):
+            total += out[members[i]]
+        out[first + k] = total / (offsets[k + 1] - begin)
 
 
 @tack.kernel
@@ -139,9 +152,12 @@ def _apply(values, how, oriented=False):
         if arrays.dtype_of(values) not in (tack.f32, tack.f64):
             return None
         n = how.weights.shape[0]
-        out = _like(values, n)
+        extra = how.averages[0].shape[0] - 1 if how.averages is not None else 0
+        out = _like(values, n + extra)
         if n:
             _interpolate_rows(materialize(values), how.ends, how.weights, out)
+        if extra:
+            _average_rows(out, how.averages[0], how.averages[1], n)
         return out
     raise TypeError(f"not a map: {how!r}")
 

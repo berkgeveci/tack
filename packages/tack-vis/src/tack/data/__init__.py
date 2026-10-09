@@ -24,6 +24,7 @@ from tack.data import (
     transforms,
 )
 from tack.data.arrays import CartesianProduct, ConstantArray, CountingArray
+from tack.data.clip import clip
 from tack.data.dataset import DataSet, Field, for_each, rectilinear_grid, traces
 from tack.data.filters import (
     contour,
@@ -82,6 +83,7 @@ __all__ = [
     "as_polygons",
     "as_polyhedra",
     "check_winding",
+    "clip",
     "contour",
     "external_faces",
     "extract_cells",
