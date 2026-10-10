@@ -203,8 +203,9 @@ def test_what_a_polyhedral_topology_refuses(backend):
 
 def _voronoi_columns(n=40, layers=3, thickness=0.01, seed=7):
     """Voronoi cells of random points, kept where bounded, extruded into ``layers``
-    thin layers: prisms with polygonal tops and bottoms, quads around."""
-    from scipy.spatial import Voronoi
+    thin layers: prisms with polygonal tops and bottoms, quads around. Skips the
+    test without SciPy (in the dev extra)."""
+    Voronoi = pytest.importorskip("scipy.spatial").Voronoi
 
     rng = np.random.default_rng(seed)
     vor = Voronoi(rng.uniform(0, 1, (n, 2)))
@@ -458,8 +459,6 @@ def test_perot_gives_back_a_uniform_field(backend, name):
 
 
 def test_voronoi_columns_measure_up(backend):
-    from scipy.spatial import Voronoi  # noqa: F401  (the columns need it)
-
     points, cells, columns = _voronoi_columns(layers=3, thickness=0.01)
     data = td.DataSet(_from_cell_faces(cells, len(points)), points)
     volumes, centroids = alg.cell_geometry(data)

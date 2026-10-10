@@ -16,7 +16,11 @@ cuda = ["tack-core[cuda]"]
 metal = ["tack-core[metal]"]
 hip = ["tack-core[hip]"]
 level_zero = ["tack-core[level_zero]"]
-dev = ["pytest"]
+dev = [
+    "pytest",
+    # Voronoi columns in the polyhedra tests (scipy.spatial).
+    "scipy",
+]
 docs = [
     "mkdocs-material",
     "mkdocstrings[python]",
