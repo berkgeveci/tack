@@ -20,6 +20,8 @@ at its own points through the fields' bases.
 import numpy as np
 
 import tack
+from tack.algorithms.scan import exclusive_scan
+from tack.algorithms.sort import gather
 from tack.data import arrays, ids
 from tack.data.buckets import bucket_order
 from tack.data.dataset import DataSet, Field, for_each
@@ -121,6 +123,43 @@ def _test_points(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz, ix,
 
 
 @tack.kernel
+def _bins_per_cell(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, tolerance, counts):
+    # The bins each cell's box, widened by its tolerance, overlaps.
+    for e in range(counts.shape[0]):
+        a = lo[e]
+        b = hi[e]
+        slack = tolerance * (b - a).norm()
+        i0 = max(tack.i64(floor((a[0] - slack - ox) * ix)), 0)
+        j0 = max(tack.i64(floor((a[1] - slack - oy) * iy)), 0)
+        k0 = max(tack.i64(floor((a[2] - slack - oz) * iz)), 0)
+        i1 = min(tack.i64(floor((b[0] + slack - ox) * ix)), nx - 1)
+        j1 = min(tack.i64(floor((b[1] + slack - oy) * iy)), ny - 1)
+        k1 = min(tack.i64(floor((b[2] + slack - oz) * iz)), nz - 1)
+        counts[e] = max(i1 - i0 + 1, 0) * max(j1 - j0 + 1, 0) * max(k1 - k0 + 1, 0)
+
+
+@tack.kernel
+def _bin_entries(lo, hi, ox, oy, oz, ix, iy, iz, nx, ny, nz, tolerance, starts, keys, cells):
+    for e in range(starts.shape[0]):
+        a = lo[e]
+        b = hi[e]
+        slack = tolerance * (b - a).norm()
+        i0 = max(tack.i64(floor((a[0] - slack - ox) * ix)), 0)
+        j0 = max(tack.i64(floor((a[1] - slack - oy) * iy)), 0)
+        k0 = max(tack.i64(floor((a[2] - slack - oz) * iz)), 0)
+        i1 = min(tack.i64(floor((b[0] + slack - ox) * ix)), nx - 1)
+        j1 = min(tack.i64(floor((b[1] + slack - oy) * iy)), ny - 1)
+        k1 = min(tack.i64(floor((b[2] + slack - oz) * iz)), nz - 1)
+        at = starts[e]
+        for k in range(k0, k1 + 1):
+            for j in range(j0, j1 + 1):
+                for i in range(i0, i1 + 1):
+                    keys[at] = i + nx * (j + ny * k)
+                    cells[at] = e
+                    at += 1
+
+
+@tack.kernel
 def _unfound(found, none):
     for q in range(found.shape[0]):
         if found[q] == none:
@@ -160,6 +199,30 @@ class CellLocator:
 
     def _grid(self):
         return (*map(float, self.origin), *map(float, self.inverse), *map(int, self.dims))
+
+    def cell_bins(self):
+        """The cells each bin may hold, for queries that run from the points (a
+        particle asking for its cell): ``(offsets, cells)``, CSR by bin, the
+        cells whose boxes, widened by their tolerance, overlap the bin. Made on
+        first use and kept."""
+        if "_cell_bins" not in self.__dict__:
+            data = self.data
+            n = data.num_cells
+            nbins = int(np.prod(self.dims))
+            counts = tack.field(tack.i32, shape=(n,))
+            starts = tack.field(tack.i64, shape=(n,))
+            total = 0
+            if n:
+                _bins_per_cell(self.lo, self.hi, *self._grid(), _TOLERANCE, counts)
+                total = exclusive_scan(counts, starts, n)
+            index = ids.at_least(data.id_dtype, total)
+            keys = tack.field(tack.i32, shape=(total,))
+            cells = tack.field(data.id_dtype, shape=(total,))
+            if total:
+                _bin_entries(self.lo, self.hi, *self._grid(), _TOLERANCE, starts, keys, cells)
+            order, offsets = bucket_order(keys, nbins, index)
+            self._cell_bins = (offsets, gather(cells, order) if total else cells)
+        return self._cell_bins
 
     def find(self, points):
         """``(cells, pcs)`` for ``points`` (an ``(n, 3)`` host array or a field of

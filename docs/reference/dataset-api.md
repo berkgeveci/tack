@@ -265,6 +265,7 @@ Results are `Field`s, or `DataSet`s for filters. In the table,
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes |
 | `implicit_values` | yes | yes | yes |
 | `CellLocator`, `probe` | yes | not yet | not yet |
+| `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no |
 | `cell_centers`, `values_at_centers` | yes | no | no |
 | `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no |
 | `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes |
@@ -387,7 +388,7 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 Tetrahedra and triangles are pieces of their cells (`carry`'s `Pieces`): cell
 data goes to each, the points stay the same.
 
-## Locating points and probing
+## Locating points, probing and advection
 
 `CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
 uniform grid over the dataset, about `density` bins per cell.
@@ -419,6 +420,36 @@ the values are 0):
 Each shape's `nearest_point(pts, x, pc)` gives the point of a cell nearest
 `x`, as VTK's `EvaluatePosition` does: exactly for triangles and
 tetrahedra, by clamping the parametric coordinates for the others.
+
+`advect(data, field, seeds, step_size, steps, integrator="rk4",
+locator=None)` moves each seed through a steady velocity field -- point
+data, interpolated in the cell holding the particle, or cell data -- by
+fixed RK4 (or Euler) steps, as Viskores' ParticleAdvection does. It returns
+the particles where they stopped, one vertex cell each, with `steps`, `time`
+and `status`. `status` holds Viskores' bits, `tack.data.flow.SUCCESS`,
+`TERMINATE`, `SPATIAL_BOUNDS`, `TOOK_ANY_STEPS` and `ZERO_VELOCITY`.
+`streamlines(...)` returns the paths, the seed first: a polyline per seed
+in Viskores, here one line cell per step until Tack has a line topology,
+with `seed` on the cells and `time` on the points.
+
+The rules are Viskores':
+
+- a step is taken whole when every stage of it lies in the mesh;
+- a step that would leave the mesh is bisected to the boundary, and the
+  particle is then pushed out by the step still left, ending just outside
+  with `SPATIAL_BOUNDS`;
+- a particle stops after `steps` steps, outside the mesh, or at zero
+  velocity;
+- a seed outside the mesh does not move and loses `SUCCESS`.
+
+Each particle's whole path is one thread of one launch. Its stages locate
+it from the particle's side (`CellLocator.cell_bins()`, each bin's
+candidate cells) and reach the cell by id through the topology's flat
+arrays, the cell's type choosing its shape's inversion and interpolation.
+The kernel compiles only the shapes the mesh has. At 1M cells, 10,000
+seeds and 200 steps it takes 0.27 s on 8 CPU threads and 0.33 s on Metal
+for hexahedra (0.34 s and 0.59 s for tetrahedra), against 2.1 s (1.6 s)
+for VTK's `vtkStreamTracer` on 8 threads.
 
 ## Interoperability
 

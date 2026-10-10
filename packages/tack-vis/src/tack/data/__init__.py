@@ -43,6 +43,7 @@ from tack.data.filters import (
     threshold_points,
     triangulate,
 )
+from tack.data.flow import advect, streamlines
 from tack.data.implicit import Box, Cylinder, Plane, Planes, Sphere
 from tack.data.locator import CellLocator, probe
 from tack.data.polyhedra import (
@@ -80,6 +81,7 @@ __all__ = [
     "StructuredTopology",
     "UnstructuredTopology",
     "Values",
+    "advect",
     "algorithms",
     "arrays",
     "as_polygons",
@@ -107,6 +109,7 @@ __all__ = [
     "slice_plane",
     "sources",
     "spaces",
+    "streamlines",
     "tetrahedralize",
     "threshold",
     "threshold_points",
