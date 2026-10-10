@@ -468,6 +468,9 @@ def resolve_variant(backend, kernel, args, kwargs, build,
                     specialize_disjoint=False) -> tuple:
     """Find or build the compiled variant for this call.
 
+    Template arguments are read once per call (``template_scope``): their
+    cache key, expansion and vector fields share one walk of each tree.
+
     On a cache hit this copies no IR: type inference runs on a stand-in
     parameter list (`_KeyProbe`), and the per-call checks read only what
     the variant recorded. Only on a miss is the pristine template cloned
@@ -487,6 +490,15 @@ def resolve_variant(backend, kernel, args, kwargs, build,
 
     Returns ``(variant, effective_args)``.
     """
+    from tack.lang.template_rewrite import template_scope
+
+    with template_scope():
+        return _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
+                                specialize_disjoint)
+
+
+def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
+                     specialize_disjoint):
     if store_texture_shapes is None:
         store_texture_shapes = _store_texture_shapes
     if kwargs:

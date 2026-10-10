@@ -148,6 +148,53 @@ constant: a kernel given `Model(cubic)` and then `Model(spiky)` compiles
 once for each. Assigning another function to the attribute of an existing
 object takes effect at the next call.
 
+## Objects Holding Objects
+
+A data-oriented object may hold others as attributes, to any depth, and
+reach their methods and attributes through them:
+
+```python
+@tack.data_oriented
+class Counting:
+    def __init__(self, start, step):
+        self.start, self.step = start, step
+
+    @tack.func
+    def get(self, k):
+        return self.start + self.step * k
+
+@tack.data_oriented
+class Permuted:
+    def __init__(self, ids, base):
+        self.ids = ids                             # a field of indices
+        self.base = base                           # any object with get(k)
+
+    @tack.func
+    def get(self, k):
+        return self.base.get(self.ids[k])
+
+@tack.kernel
+def read(arr: tack.template(), out):
+    for i in range(out.shape[0]):
+        out[i] = arr.get(i)
+
+read(Permuted(ids, Counting(10, 5)), out)          # out[i] = 10 + 5 * ids[i]
+read(Permuted(ids, Permuted(more, Counting(0, 1))), out)
+```
+
+The tree is one template: every object's fields and scalars become kernel
+parameters, its constants are compiled in, and its methods are inlined, so
+`Permuted(ids, Counting(10, 5))` compiles to `10 + 5 * ids[i]`, the code
+you would write by hand. A kernel can reach in too (`arr.base.step`). Which
+classes the tree holds, and where, is part of the specialization: new
+values reuse the compiled kernel, another nesting compiles anew. An object
+may not hold itself, directly or not.
+
+Each level costs a few microseconds per call on the host, where the tree is
+walked once to gather its arguments: about 9 us per level on the CPU
+backend and 7 us on Metal, against 27 and 39 us for a one-level template.
+The compiled code pays nothing.
+
 ## Kernels as Methods
 
 A kernel can be a method of the class. Called on an object, it receives

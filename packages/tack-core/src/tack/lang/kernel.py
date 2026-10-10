@@ -76,10 +76,45 @@ def _class_token(cls) -> _ClassToken:
     return token
 
 
+def _template_key(obj):
+    """What of a template object a kernel's IR depends on (after the slot's name)."""
+    from tack.lang.template_rewrite import (
+        classify_template_attrs,
+        template_func_attrs,
+        template_structure,
+    )
+    scalars, fields, runtime = classify_template_attrs(obj)
+    # Only class-level scalars (constants) are part of the cache key.
+    # Instance scalars are runtime parameters — changing them does
+    # not trigger recompilation.
+    return (
+        _class_token(type(obj)),
+        # Float bit patterns distinguish signed zero and give
+        # NaN constants a stable key despite NaN != NaN.
+        tuple((k, type(v), struct.pack('!d', v) if isinstance(v, float) else v)
+              for k, v in sorted(scalars.items())),
+        tuple((k, f.dtype, f.shape, getattr(f, '_vector_n', None),
+               getattr(f, '_matrix_shape', None))
+              for k, f in sorted(fields.items())),
+        tuple(sorted(runtime)),
+        # Which device function each function-valued attribute
+        # holds is compiled in, so it identifies the IR.
+        tuple(sorted(template_func_attrs(obj).items(), key=lambda item: item[0])),
+        # Templates it holds, by path and class: a different nesting is
+        # different code.
+        tuple((path, _class_token(cls)) for path, cls in template_structure(obj)),
+    )
+
+
 def _key_tokens(key):
-    """The class tokens named by a `_make_cache_key` result."""
-    return [part[1] for part in key
-            if len(part) > 1 and isinstance(part[1], _ClassToken)]
+    """The class tokens named by a `_make_cache_key` result: each template's class
+    and the classes of the templates it holds."""
+    tokens = []
+    for part in key:
+        if len(part) > 1 and isinstance(part[1], _ClassToken):
+            tokens.append(part[1])
+            tokens.extend(token for _, token in part[-1])
+    return tokens
 
 
 def _retire_class(token):
@@ -166,32 +201,12 @@ class Kernel:
         if texture_fields:
             parts.append(("tex", tuple(sorted(texture_fields.items()))))
         if template_args:
+            from tack.lang.template_rewrite import memoized
+
             for idx in sorted(template_args.keys()):
-                param_name, obj = template_args[idx]
-                from tack.lang.template_rewrite import (
-                    classify_template_attrs,
-                    template_func_attrs,
-                )
-                scalars, fields, runtime = classify_template_attrs(obj)
-                cls = _class_token(type(obj))
-                # Only class-level scalars (constants) are part of the cache key.
-                # Instance scalars are runtime parameters — changing them does
-                # not trigger recompilation.
-                parts.append((
-                    f"tmpl_{idx}",
-                    cls,
-                    # Float bit patterns distinguish signed zero and give
-                    # NaN constants a stable key despite NaN != NaN.
-                    tuple((k, type(v), struct.pack('!d', v) if isinstance(v, float) else v)
-                          for k, v in sorted(scalars.items())),
-                    tuple((k, f.dtype, f.shape, getattr(f, '_vector_n', None),
-                           getattr(f, '_matrix_shape', None))
-                          for k, f in sorted(fields.items())),
-                    tuple(sorted(runtime)),
-                    # Which device function each function-valued attribute
-                    # holds is compiled in, so it identifies the IR.
-                    tuple(sorted(template_func_attrs(obj).items(), key=lambda item: item[0])),
-                ))
+                _, obj = template_args[idx]
+                parts.append((f"tmpl_{idx}",
+                              *memoized("key", obj, lambda obj=obj: _template_key(obj))))
         return tuple(parts)
 
     def _run_result(self, backend, args, kwargs):

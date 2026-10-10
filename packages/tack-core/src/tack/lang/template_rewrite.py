@@ -11,10 +11,21 @@ rewrites the kernel AST before IR transformation:
    - Field → ast.Name referencing synthetic parameter
 5. Rewrites ``for c in obj:`` over the object's iteration space (see
    ``iteration_space``)
+
+A template may hold other templates as instance attributes, to any depth:
+``self.base.get(k)`` calls the held object's method, ``self.base.step``
+reads its attribute, in methods and (as ``obj.base...``) in kernels. The
+whole tree is one template: ``classify_template_attrs`` flattens it, a
+nested object's attributes named by their path (``base__step``), so the
+runtime expands, detects and keys nested fields and scalars as it does its
+own, and every method of the tree takes the same synthetic parameters.
+Each nested class is part of the cache key, as the outer one is.
 """
 
 import ast
+import contextlib
 import copy
+import threading
 import weakref
 
 from tack.lang.field import Field
@@ -59,21 +70,86 @@ def _class_constants(cls):
     return constants
 
 
-def classify_template_attrs(obj):
-    """Classify a template object's attributes into constants, runtime scalars, and fields.
+# Joins a nested template's path to its attribute names when the tree is
+# flattened: ``self.base.step`` is the tree's ``base__step``.
+_NESTED = "__"
 
-    Returns (scalars, fields, runtime_scalars) where:
-    - scalars: dict[str, int|float] — class-level variables, become compile-time constants
-    - fields: dict[str, Field] — instance fields, become extra kernel parameters
-    - runtime_scalars: dict[str, int|float] — instance scalars, become kernel scalar parameters
+# One dispatch reads a template's tree several times -- its cache key, its
+# expanded arguments, its vector fields -- and each pass walked and
+# classified the whole tree again, 20 us a level. Within `template_scope`
+# each object's answers are found once. The objects are the call's
+# arguments, alive throughout, so their ids cannot be reused within it.
+_scope = threading.local()
 
-    Class variables (defined on the class, not in __init__) are treated as
-    compile-time constants and baked into generated code. Instance variables
-    that are scalars are passed as runtime parameters — changing them does
-    not trigger recompilation. Which class attributes are constants is found
-    once per class; a changed value is seen, a numeric attribute added to the
-    class after its first launch is not.
-    """
+
+@contextlib.contextmanager
+def template_scope():
+    """Find each template object's tree and attributes once until this exits."""
+    depth = getattr(_scope, "depth", 0)
+    if depth == 0:
+        _scope.memo = {}
+    _scope.depth = depth + 1
+    try:
+        yield
+    finally:
+        _scope.depth = depth
+        if depth == 0:
+            _scope.memo = None
+
+
+def memoized(kind, obj, compute):
+    """``compute()``, found once per template object within ``template_scope``."""
+    return _memo(kind, obj, compute)
+
+
+def _memo(kind, obj, compute):
+    memo = getattr(_scope, "memo", None)
+    if memo is None:
+        return compute()
+    key = (kind, id(obj))
+    found = memo.get(key)
+    if found is None:
+        found = memo[key] = compute()
+    return found
+
+
+def _is_template(value):
+    return getattr(type(value), "_data_oriented", False) is True
+
+
+def template_children(obj) -> dict:
+    """The templates an object holds as instance attributes, by name."""
+    return {name: value for name, value in sorted(vars(obj).items())
+            if not name.startswith('_') and _is_template(value)}
+
+
+def template_tree(obj, path=(), _seen=None) -> list:
+    """``(path, object)`` for ``obj`` and every template nested in it, depth first,
+    children by name: the order every flattened list follows."""
+    if not path and _seen is None:
+        return _memo("tree", obj, lambda: _template_tree(obj, (), set()))
+    return _template_tree(obj, path, _seen)
+
+
+def _template_tree(obj, path, _seen):
+    seen = set() if _seen is None else _seen
+    if id(obj) in seen:
+        raise TypeError(f"a {type(obj).__name__} holds itself, through "
+                        f"{'.'.join(path) or 'itself'}: a template is a tree")
+    seen.add(id(obj))
+    nodes = [(path, obj)]
+    for name, child in template_children(obj).items():
+        nodes.extend(_template_tree(child, (*path, name), seen))
+    seen.discard(id(obj))
+    return nodes
+
+
+def _prefix(path):
+    return _NESTED.join(path) + _NESTED if path else ""
+
+
+def _classify_own(obj):
+    """One object's own constants, fields and runtime scalars (not its children's)."""
     scalars = _class_constants(type(obj))
     fields = {}
     runtime_scalars = {}
@@ -93,6 +169,39 @@ def classify_template_attrs(obj):
         elif isinstance(val, Field):
             fields[name] = val
     return scalars, fields, runtime_scalars
+
+
+def classify_template_attrs(obj):
+    """Classify a template object's attributes into constants, runtime scalars, and fields.
+
+    Returns (scalars, fields, runtime_scalars) where:
+    - scalars: dict[str, int|float] — class-level variables, become compile-time constants
+    - fields: dict[str, Field] — instance fields, become extra kernel parameters
+    - runtime_scalars: dict[str, int|float] — instance scalars, become kernel scalar parameters
+
+    Class variables (defined on the class, not in __init__) are treated as
+    compile-time constants and baked into generated code. Instance variables
+    that are scalars are passed as runtime parameters — changing them does
+    not trigger recompilation. Which class attributes are constants is found
+    once per class; a changed value is seen, a numeric attribute added to the
+    class after its first launch is not. Templates held as attributes are
+    included, their attributes named by their path (``base__step``).
+    """
+    return _memo("classes", obj, lambda: _classify_tree(obj))
+
+
+def _classify_tree(obj):
+    flat = ({}, {}, {})
+    for path, node in template_tree(obj):
+        prefix = _prefix(path)
+        for out, own in zip(flat, _classify_own(node)):
+            for name, value in own.items():
+                key = prefix + name
+                if any(key in d for d in flat):
+                    raise TypeError(f"{type(obj).__name__}: the attribute {key!r} and a "
+                                    "nested template's attribute flatten to the same name")
+                out[key] = value
+    return flat
 
 
 def template_func_methods(cls) -> dict:
@@ -116,16 +225,29 @@ def template_func_methods(cls) -> dict:
     return methods
 
 
+def _own_func_attrs(obj) -> dict:
+    return {name: value for name, value in vars(obj).items()
+            if not name.startswith('_') and isinstance(value, Func)}
+
+
 def template_func_attrs(obj) -> dict:
     """Device functions a template object holds as instance attributes.
 
     ``self.kernel = cubic_kernel`` lets the object's methods, and kernels
     it is passed to, call ``self.kernel(r, h)``. The function is resolved
     when the kernel is lowered, so which function it is belongs to the
-    kernel's specialization, like a class-level constant.
+    kernel's specialization, like a class-level constant. Nested templates'
+    are included under their path.
     """
-    return {name: value for name, value in vars(obj).items()
-            if not name.startswith('_') and isinstance(value, Func)}
+    return _memo("funcs", obj, lambda: {
+        _prefix(path) + name: value for path, node in template_tree(obj)
+        for name, value in _own_func_attrs(node).items()})
+
+
+def template_structure(obj) -> tuple:
+    """The nested templates' paths and classes: part of a kernel's specialization."""
+    return _memo("structure", obj, lambda: tuple(
+        (path, type(node)) for path, node in template_tree(obj)[1:]))
 
 
 def iteration_space(cls) -> tuple:
@@ -184,8 +306,9 @@ def rewrite_templates(kernel_ast, template_args):
     # user's binding with a field/scalar reference in the rewritten AST.
     sources = [funcdef]
     for _, obj in template_args.values():
-        sources.extend(method._funcdef for method in
-                       template_func_methods(type(obj)).values())
+        for _, node in template_tree(obj):
+            sources.extend(method._funcdef for method in
+                           template_func_methods(type(node)).values())
     used_names = {n.id for source in sources for n in ast.walk(source)
                   if isinstance(n, ast.Name)}
     used_names.update(n.arg for source in sources for n in ast.walk(source)
@@ -194,84 +317,168 @@ def rewrite_templates(kernel_ast, template_args):
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
         param_name, obj = template_args[idx]
-        scalars, fields, runtime_scalars = classify_template_attrs(obj)
-
-        # Build mapping from field attr name to synthetic parameter name
-        field_param_map = {}
-        for attr_name in sorted(fields.keys()):
-            field_param_map[attr_name] = fresh_name(
-                template_field_param_name(param_name, attr_name), used_names)
-
-        # Build mapping from runtime scalar attr name to synthetic parameter name
-        runtime_scalar_param_map = {}
-        for attr_name in sorted(runtime_scalars.keys()):
-            runtime_scalar_param_map[attr_name] = fresh_name(
-                f"__tmpl_{param_name}_{attr_name}__", used_names)
-
-        # Resolve the template object's methods in this transformation's map.
-        methods = template_func_methods(type(obj))
-        method_name_map = {}  # original method name -> resolved func name
-        # Device functions held as attributes are called as they are: they
-        # take no self and no synthetic parameters. An attribute shadows a
-        # method of the same name, as it does in Python.
-        func_attr_map = {}
-        for attr_name, func_obj in sorted(template_func_attrs(obj).items()):
-            resolved_name = fresh_name(f"__tmpl_{param_name}_{attr_name}__", used_names)
-            func_attr_map[attr_name] = resolved_name
-            resolved_funcs[resolved_name] = func_obj
-            methods.pop(attr_name, None)
-        # First pass: build the name map so methods can reference siblings
-        for method_name in methods:
-            method_name_map[method_name] = fresh_name(
-                f"__tmpl_{param_name}_{method_name}__", used_names)
-        # Second pass: resolve methods with the full sibling name map.
-        for method_name, func_obj in methods.items():
-            resolved_name = method_name_map[method_name]
-            resolved_funcs[resolved_name] = _resolve_method(
-                func_obj, resolved_name, scalars, field_param_map,
-                method_name_map, runtime_scalar_param_map, func_attr_map,
-            )
+        root, extra = _template_nodes(param_name, obj, used_names, resolved_funcs)
 
         # Rewrite the kernel function definition
-        rewriter = _KernelTemplateRewriter(
-            param_name, idx, scalars, field_param_map, method_name_map,
-            runtime_scalar_param_map, func_attr_map,
-            template=obj, used_names=used_names,
-        )
+        rewriter = _KernelTemplateRewriter(param_name, idx, root, extra, template=obj,
+                                           used_names=used_names)
         rewriter.visit(funcdef)
         ast.fix_missing_locations(funcdef)
 
     return rewritten, resolved_funcs
 
 
-def _resolve_method(func_obj, resolved_name, scalars, field_param_map,
-                    method_name_map=None, runtime_scalar_param_map=None, func_attr_map=None):
+class _Node:
+    """One object of a template tree, as its methods see it: its own constants, the
+    synthetic names of its fields and runtime scalars, its resolved methods and
+    device-function attributes, and its child nodes."""
+
+    def __init__(self, obj, path):
+        self.obj = obj
+        self.path = path
+        self.scalars = {}
+        self.fields = {}
+        self.runtime = {}
+        self.methods = {}
+        self.funcs = {}
+        self.children = {}
+
+
+def _template_nodes(param_name, obj, used_names, resolved_funcs):
+    """The resolved tree of one template argument: ``(root, extra)``, ``extra`` the
+    synthetic parameters every resolved method takes, in the runtime's order --
+    the flattened fields by name, then the flattened runtime scalars by name."""
+    _, fields, runtime = classify_template_attrs(obj)
+    field_names = {key: fresh_name(template_field_param_name(param_name, key), used_names)
+                   for key in sorted(fields)}
+    runtime_names = {key: fresh_name(f"__tmpl_{param_name}_{key}__", used_names)
+                     for key in sorted(runtime)}
+    extra = [field_names[k] for k in sorted(field_names)] + \
+        [runtime_names[k] for k in sorted(runtime_names)]
+
+    nodes = {}
+    for path, node_obj in template_tree(obj):
+        node = nodes[path] = _Node(node_obj, path)
+        if path:
+            nodes[path[:-1]].children[path[-1]] = node
+        prefix = _prefix(path)
+        scalars, own_fields, own_runtime = _classify_own(node_obj)
+        node.scalars = scalars
+        node.fields = {name: field_names[prefix + name] for name in own_fields}
+        node.runtime = {name: runtime_names[prefix + name] for name in own_runtime}
+        # Device functions held as attributes are called as they are: they
+        # take no self and no synthetic parameters. An attribute shadows a
+        # method of the same name, as it does in Python.
+        methods = template_func_methods(type(node_obj))
+        for attr_name, func_obj in sorted(_own_func_attrs(node_obj).items()):
+            resolved_name = fresh_name(f"__tmpl_{param_name}_{prefix}{attr_name}__",
+                                       used_names)
+            node.funcs[attr_name] = resolved_name
+            resolved_funcs[resolved_name] = func_obj
+            methods.pop(attr_name, None)
+        # Names first, so methods can call siblings and nested objects' methods.
+        node.methods = {name: fresh_name(f"__tmpl_{param_name}_{prefix}{name}__", used_names)
+                        for name in methods}
+    for node in nodes.values():
+        for method_name, func_obj in template_func_methods(type(node.obj)).items():
+            if method_name in node.methods:
+                resolved_name = node.methods[method_name]
+                resolved_funcs[resolved_name] = _resolve_method(func_obj, resolved_name,
+                                                                node, extra)
+    return nodes[()], extra
+
+
+def _chain(expr, root):
+    """The attribute names of ``root.a.b.c``, or None if ``expr`` is not one."""
+    names = []
+    while isinstance(expr, ast.Attribute):
+        names.append(expr.attr)
+        expr = expr.value
+    if isinstance(expr, ast.Name) and expr.id == root and names:
+        return names[::-1]
+    return None
+
+
+def _walk(node, names, root):
+    """The node reached through the child names ``names``."""
+    for k, name in enumerate(names):
+        if name not in node.children:
+            raise ValueError(f"{'.'.join([root, *names[:k + 1]])} is not a template the "
+                             f"{type(node.obj).__name__} holds")
+        node = node.children[name]
+    return node
+
+
+def _resolve_call(node, call, names, root, extra):
+    """``root.a.b.method(args)`` as a call of the resolved method, or None."""
+    owner = _walk(node, names[:-1], root)
+    last = names[-1]
+    if last in owner.funcs:
+        return ast.Call(func=_method_call_name(owner.funcs[last]), args=call.args,
+                        keywords=[])
+    if last in owner.methods:
+        return ast.Call(func=_method_call_name(owner.methods[last]),
+                        args=call.args + [ast.Name(id=n, ctx=ast.Load()) for n in extra],
+                        keywords=[])
+    return None
+
+
+def _own_attribute(owner, name):
+    """An object's own constant, field or runtime scalar as an expression, or None."""
+    if name in owner.scalars:
+        return ast.Constant(value=owner.scalars[name])
+    if name in owner.fields:
+        return ast.Name(id=owner.fields[name], ctx=ast.Load())
+    if name in owner.runtime:
+        return ast.Name(id=owner.runtime[name], ctx=ast.Load())
+    return None
+
+
+def _resolve_attribute(node, names, root, strict=True):
+    """``root.a.b.attr...``: through the held templates ``a`` and ``b``, ``attr`` as a
+    constant or a synthetic name, with any further attributes (a field's
+    ``.shape``) read from it. None for a method or a template, which only a call
+    or a longer chain may use; an unknown name raises when ``strict``."""
+    owner = node
+    for k, name in enumerate(names):
+        if name in owner.children and k < len(names) - 1:
+            owner = owner.children[name]
+            continue
+        base = _own_attribute(owner, name)
+        if base is None:
+            if name in owner.methods or name in owner.funcs or name in owner.children \
+                    or not strict:
+                return None
+            raise ValueError(
+                f"Template method references {'.'.join([root, *names[:k + 1]])} which is "
+                f"neither a class constant, an instance scalar, a tack.Field, "
+                f"a @tack.func method, a @tack.func held as an attribute, nor a template")
+        for rest in names[k + 1:]:
+            base = ast.Attribute(value=base, attr=rest, ctx=ast.Load())
+        return base
+    return None
+
+
+def _resolve_method(func_obj, resolved_name, node, extra):
     """Resolve a template method while retaining its defining Python callable.
 
     The resolved copy has:
     - 'self' parameter removed
+    - the tree's synthetic parameters appended
     - self.class_scalar replaced with constants
-    - self.field_attr replaced with synthetic parameter names
-    - self.instance_scalar replaced with synthetic parameter names
+    - self.field_attr and self.instance_scalar replaced with synthetic parameter names
     - self.method(args) calls replaced with resolved function calls
+    - and the same through templates held as attributes (self.base.get(k))
     """
     funcdef = copy.deepcopy(func_obj._funcdef)
 
     # Remove 'self' parameter
     funcdef.args.args = [a for a in funcdef.args.args if a.arg != 'self']
-
-    # Add synthetic field parameters
-    for attr_name, synth_name in sorted(field_param_map.items()):
+    for synth_name in extra:
         funcdef.args.args.append(ast.arg(arg=synth_name))
 
-    # Add synthetic runtime scalar parameters
-    if runtime_scalar_param_map:
-        for attr_name, synth_name in sorted(runtime_scalar_param_map.items()):
-            funcdef.args.args.append(ast.arg(arg=synth_name))
-
     # Resolve self.attr and self.method(args) references in the body
-    resolver = _SelfResolver(scalars, field_param_map, method_name_map,
-                             runtime_scalar_param_map, func_attr_map)
+    resolver = _SelfResolver(node, extra)
     for i, stmt in enumerate(funcdef.body):
         funcdef.body[i] = resolver.visit(stmt)
 
@@ -291,114 +498,50 @@ class _ResolvedFunc(Func):
 
 
 class _SelfResolver(ast.NodeTransformer):
-    """Replaces self.attr with constants, synthetic parameter names, or method calls."""
+    """Replaces self.attr with constants, synthetic parameter names, or method calls,
+    through any templates the object holds."""
 
-    def __init__(self, scalars, field_param_map, method_name_map=None,
-                 runtime_scalar_param_map=None, func_attr_map=None):
-        self.scalars = scalars
-        self.field_param_map = field_param_map
-        self.method_name_map = method_name_map or {}
-        self.runtime_scalar_param_map = runtime_scalar_param_map or {}
-        self.func_attr_map = func_attr_map or {}
-
-    def _synth_extra_args(self):
-        """Build the list of synthetic extra arguments for method calls."""
-        extra = [
-            ast.Name(id=synth_name, ctx=ast.Load())
-            for _, synth_name in sorted(self.field_param_map.items())
-        ]
-        extra += [
-            ast.Name(id=synth_name, ctx=ast.Load())
-            for _, synth_name in sorted(self.runtime_scalar_param_map.items())
-        ]
-        return extra
+    def __init__(self, node, extra):
+        self.node = node
+        self.extra = extra
 
     def visit_Call(self, node):
         node = self.generic_visit(node)
-        # Rewrite self.kernel(args), a device function held as an
-        # attribute → that function(args)
-        if (isinstance(node.func, ast.Attribute) and
-                isinstance(node.func.value, ast.Name) and
-                node.func.value.id == 'self' and
-                node.func.attr in self.func_attr_map):
-            return ast.Call(func=_method_call_name(self.func_attr_map[node.func.attr]),
-                            args=node.args, keywords=[])
-        # Rewrite self.method(args) → resolved_method(args, *synth_params)
-        if (isinstance(node.func, ast.Attribute) and
-                isinstance(node.func.value, ast.Name) and
-                node.func.value.id == 'self' and
-                node.func.attr in self.method_name_map):
-            resolved_name = self.method_name_map[node.func.attr]
-            return ast.Call(
-                func=_method_call_name(resolved_name),
-                args=node.args + self._synth_extra_args(),
-                keywords=[],
-            )
+        names = _chain(node.func, 'self')
+        if names:
+            call = _resolve_call(self.node, node, names, 'self', self.extra)
+            if call is not None:
+                return call
         return node
 
     def visit_Attribute(self, node):
-        node = self.generic_visit(node)
-        if isinstance(node.value, ast.Name) and node.value.id == 'self':
-            if node.attr in self.scalars:
-                return ast.Constant(value=self.scalars[node.attr])
-            if node.attr in self.field_param_map:
-                return ast.Name(
-                    id=self.field_param_map[node.attr], ctx=ast.Load()
-                )
-            if node.attr in self.runtime_scalar_param_map:
-                return ast.Name(
-                    id=self.runtime_scalar_param_map[node.attr], ctx=ast.Load()
-                )
-            # Method references used without calling (e.g., passing as arg)
-            # are handled by visit_Call; bare attribute access on a method
-            # that isn't in scalars/fields is an error
-            if node.attr not in self.method_name_map and node.attr not in self.func_attr_map:
-                raise ValueError(
-                    f"Template method references self.{node.attr} which is "
-                    f"neither a class constant, an instance scalar, a tack.Field, "
-                    f"a @tack.func method, nor a @tack.func held as an attribute"
-                )
-        return node
+        names = _chain(node, 'self')
+        if names is None:
+            return self.generic_visit(node)
+        resolved = _resolve_attribute(self.node, names, 'self')
+        return node if resolved is None else resolved
 
 
 class _KernelTemplateRewriter(ast.NodeTransformer):
     """Rewrites a kernel function to resolve one template parameter."""
 
-    def __init__(self, param_name, param_idx, scalars, field_param_map,
-                 method_name_map, runtime_scalar_param_map=None, func_attr_map=None,
-                 template=None, used_names=None):
+    def __init__(self, param_name, param_idx, root, extra, template=None, used_names=None):
         self.template = template
         self.used_names = used_names if used_names is not None else set()
         self.param_name = param_name
         self.param_idx = param_idx
-        self.scalars = scalars
-        self.field_param_map = field_param_map
-        self.method_name_map = method_name_map
-        self.runtime_scalar_param_map = runtime_scalar_param_map or {}
-        self.func_attr_map = func_attr_map or {}
-
-    def _synth_extra_args(self):
-        """Build the list of synthetic extra arguments for method calls."""
-        extra = [
-            ast.Name(id=synth_name, ctx=ast.Load())
-            for _, synth_name in sorted(self.field_param_map.items())
-        ]
-        extra += [
-            ast.Name(id=synth_name, ctx=ast.Load())
-            for _, synth_name in sorted(self.runtime_scalar_param_map.items())
-        ]
-        return extra
+        self.root = root
+        self.extra = extra
+        self.scalars = root.scalars
+        self.runtime_scalar_param_map = root.runtime
 
     def visit_FunctionDef(self, node):
         # Remove the template parameter
         node.args.args = [
             a for i, a in enumerate(node.args.args) if i != self.param_idx
         ]
-        # Add synthetic field parameters at the end
-        for attr_name, synth_name in sorted(self.field_param_map.items()):
-            node.args.args.append(ast.arg(arg=synth_name))
-        # Add synthetic runtime scalar parameters
-        for attr_name, synth_name in sorted(self.runtime_scalar_param_map.items()):
+        # The tree's synthetic parameters at the end
+        for synth_name in self.extra:
             node.args.args.append(ast.arg(arg=synth_name))
 
         # Visit the body
@@ -449,40 +592,22 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
     def visit_Call(self, node):
         node = self.generic_visit(node)
         # Rewrite template_obj.method(args) → resolved_func_name(args, *synth_params)
-        if (isinstance(node.func, ast.Attribute) and
-                isinstance(node.func.value, ast.Name) and
-                node.func.value.id == self.param_name):
-            method_name = node.func.attr
-            if method_name in self.func_attr_map:
-                return ast.Call(func=_method_call_name(self.func_attr_map[method_name]),
-                                args=node.args, keywords=[])
-            if method_name in self.method_name_map:
-                resolved_name = self.method_name_map[method_name]
-                return ast.Call(
-                    func=_method_call_name(resolved_name),
-                    args=node.args + self._synth_extra_args(),
-                    keywords=[],
-                )
+        names = _chain(node.func, self.param_name)
+        if names:
+            call = _resolve_call(self.root, node, names, self.param_name, self.extra)
+            if call is not None:
+                return call
             raise ValueError(
-                f"Template object has no @tack.func method '{method_name}', "
+                f"Template object has no @tack.func method '{'.'.join(names)}', "
                 f"and no @tack.func held as an attribute of that name"
             )
         return node
 
     def visit_Attribute(self, node):
-        node = self.generic_visit(node)
         # Resolve direct attribute access on the template param
-        if (isinstance(node.value, ast.Name) and
-                node.value.id == self.param_name):
-            if node.attr in self.scalars:
-                return ast.Constant(value=self.scalars[node.attr])
-            if node.attr in self.field_param_map:
-                return ast.Name(
-                    id=self.field_param_map[node.attr], ctx=ast.Load()
-                )
-            if node.attr in self.runtime_scalar_param_map:
-                return ast.Name(
-                    id=self.runtime_scalar_param_map[node.attr], ctx=ast.Load()
-                )
-            # Could be a property or method name used without calling — skip
-        return node
+        names = _chain(node, self.param_name)
+        if names is None:
+            return self.generic_visit(node)
+        resolved = _resolve_attribute(self.root, names, self.param_name, strict=False)
+        # Could be a property or method name used without calling — skip
+        return node if resolved is None else resolved
