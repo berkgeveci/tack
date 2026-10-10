@@ -1,75 +1,97 @@
 """bucket_order: the stable order of keys that lead with a bounded id, found by
 bucketing instead of sorting -- what face, edge, cell-point and point-link
-derivation and contour point merging use."""
+derivation and contour point merging use. Keys are ids, or tuples of 2 or 4
+ids, in i32 or i64."""
 
 import numpy as np
 import pytest
 
 import tack
 from tack.data import buckets
-from tack.data.buckets import bucket_order
+from tack.data.buckets import bucket_order, run_offsets
+
+ID_TYPES = [tack.i32, tack.i64]
 
 
-def _u64(values):
-    field = tack.field(tack.u64, shape=(len(values),))
+def _keys(values, dtype):
+    values = np.asarray(values)
+    width = values.shape[1] if values.ndim == 2 else 0
+    field = (tack.Vector.field(width, dtype, shape=(len(values),)) if width
+             else tack.field(dtype, shape=(len(values),)))
     if len(values):
-        field.from_numpy(np.asarray(values, np.uint64))
+        field.from_numpy(values.astype(dtype.numpy_dtype))
     return field
 
 
-def _keys(rng, n, nbuckets):
-    first = rng.integers(0, nbuckets, n).astype(np.uint64)
-    second = rng.integers(0, 50, n).astype(np.uint64)       # many equal keys
-    return (first << np.uint64(32)) | second
+def _stable(columns):
+    """np.lexsort's order of rows of ``columns`` (first column most significant),
+    ties by index."""
+    columns = np.asarray(columns).reshape(len(columns), -1)
+    return np.lexsort((np.arange(columns.shape[0]), *columns.T[::-1]))
 
 
-def test_one_key_is_the_stable_order(backend):
+@pytest.mark.parametrize("dtype", ID_TYPES, ids=lambda t: t.name)
+def test_one_key_is_the_stable_order(backend, dtype):
     rng = np.random.default_rng(1)
-    keys = _keys(rng, 20_000, 3000)
-    order, starts = bucket_order(_u64(keys), 3000)
+    keys = rng.integers(0, 3000, 20_000)
+    order, starts = bucket_order(_keys(keys, dtype), 3000)
     np.testing.assert_array_equal(order.to_numpy(), np.argsort(keys, kind="stable"))
-    counts = np.bincount((keys >> np.uint64(32)).astype(np.int64), minlength=3000)
+    counts = np.bincount(keys, minlength=3000)
     np.testing.assert_array_equal(starts.to_numpy(), np.concatenate([[0], np.cumsum(counts)]))
 
 
-def test_two_keys_are_the_stable_lexicographic_order(backend):
-    rng = np.random.default_rng(2)
-    hi = _keys(rng, 20_000, 3000)
-    lo = rng.integers(0, 4, 20_000).astype(np.uint64)
-    order, _ = bucket_order(_u64(hi), 3000, lo=_u64(lo))
-    np.testing.assert_array_equal(order.to_numpy(),
-                                  np.lexsort((np.arange(20_000), lo, hi)))
+@pytest.mark.parametrize("width", [2, 4])
+@pytest.mark.parametrize("dtype", ID_TYPES, ids=lambda t: t.name)
+def test_tuples_are_the_stable_lexicographic_order(backend, dtype, width):
+    rng = np.random.default_rng(width)
+    keys = np.c_[rng.integers(0, 3000, 20_000), rng.integers(0, 4, (20_000, width - 1))]
+    order, _ = bucket_order(_keys(keys, dtype), 3000)
+    np.testing.assert_array_equal(order.to_numpy(), _stable(keys))
+    offsets, runs = run_offsets(_keys(keys, dtype), order)
+    distinct = np.unique(keys, axis=0)
+    assert runs == len(distinct)
+    np.testing.assert_array_equal(np.diff(offsets.to_numpy()),
+                                  np.unique(keys, axis=0, return_counts=True)[1])
 
 
-def test_buckets_from_other_bits(backend):
-    """Contour within cells keys a crossing as cell * 16 + edge: the bucket is the
-    cell, from bit 4 up."""
-    rng = np.random.default_rng(3)
-    keys = (rng.integers(0, 500, 5000) * 16 + rng.integers(0, 12, 5000)).astype(np.uint64)
-    order, _ = bucket_order(_u64(keys), 500, shift=4)
-    np.testing.assert_array_equal(order.to_numpy(), np.argsort(keys, kind="stable"))
+def test_ids_past_32_bits(backend):
+    """Second components past 2**32 compare in full: nothing is packed."""
+    keys = np.array([[1, 2**40 + 5], [1, 2**40 + 1], [0, 2**33], [1, 7]])
+    order, _ = bucket_order(_keys(keys, tack.i64), 2)
+    np.testing.assert_array_equal(order.to_numpy(), [2, 3, 1, 0])
 
 
-def test_a_huge_bucket_falls_back_to_the_radix_sort(backend, monkeypatch):
+def test_indices_take_the_type_asked_for(backend):
+    order, starts = bucket_order(_keys([2, 0, 1], tack.i32), 3, tack.i64)
+    assert order.dtype == starts.dtype == tack.i64
+    np.testing.assert_array_equal(order.to_numpy(), [1, 2, 0])
+
+
+@pytest.mark.parametrize("width", [1, 2])
+def test_a_huge_bucket_falls_back_to_the_radix_sort(backend, monkeypatch, width):
     """Buckets are sorted by insertion, so one with thousands of entries -- a
-    point every face shares -- would be quadratic: the radix sort takes over."""
-    keys = np.concatenate([np.full(2000, 7 << 32, np.uint64) | np.arange(2000)[::-1].astype(
-        np.uint64), np.arange(100, dtype=np.uint64) << np.uint64(32)])
+    point every face shares -- would be quadratic: the radix sort takes over,
+    one component at a time."""
+    first = np.r_[np.full(2000, 7), np.arange(100)]
+    keys = first if width == 1 else np.c_[first, np.r_[np.arange(2000)[::-1], np.zeros(100)]]
     sorted_by = []
     original = buckets.argsort
-    monkeypatch.setattr(buckets, "argsort", lambda k: sorted_by.append(1) or original(k))
-    order, starts = bucket_order(_u64(keys), 100)
-    assert sorted_by, "the radix sort was not used"
-    np.testing.assert_array_equal(order.to_numpy(), np.argsort(keys, kind="stable"))
-    assert starts.to_numpy()[-1] == keys.size
+    monkeypatch.setattr(buckets, "argsort",
+                        lambda k, **kw: sorted_by.append(1) or original(k, **kw))
+    order, starts = bucket_order(_keys(keys, tack.i32), 100)
+    assert len(sorted_by) == width, "the radix sort was not used for each component"
+    np.testing.assert_array_equal(order.to_numpy(), _stable(keys if width == 2 else keys[:, None]))
+    assert starts.to_numpy()[-1] == len(first)
 
 
 def test_no_keys(backend):
-    order, starts = bucket_order(_u64([]), 5)
+    order, starts = bucket_order(_keys(np.zeros(0, int), tack.i32), 5)
     assert order.shape == (0,)
     np.testing.assert_array_equal(starts.to_numpy(), np.zeros(6))
 
 
-def test_a_key_past_the_last_bucket_is_refused(backend):
-    with pytest.raises(ValueError, match="past the last"):
-        bucket_order(_u64([(9 << 32) | 1]), 5)
+def test_a_key_outside_the_buckets_is_refused(backend):
+    with pytest.raises(ValueError, match="outside"):
+        bucket_order(_keys([[9, 1]], tack.i32), 5)
+    with pytest.raises(ValueError, match="outside"):
+        bucket_order(_keys([-1], tack.i64), 5)

@@ -110,16 +110,20 @@ class ConstantArray(_Implicit):
 
 
 class CountingArray(_Implicit):
-    """``start + step * index`` for ``index < size``; integers stay i32."""
+    """``start + step * index`` for ``index < size``: integers are ``dtype``, by default
+    i32 unless a value needs i64 (ids past ``2**31 - 1``), else f32."""
 
     mixin = views._CountingStorage
 
-    def __init__(self, size, start=0, step=1):
+    def __init__(self, size, start=0, step=1, dtype=None):
         self.size = int(size)
         self.start = start
         self.step = step
         integral = all(isinstance(v, (int, np.integer)) for v in (start, step))
-        self.dtype = tack.i32 if integral else tack.f32
+        if dtype is None and integral:
+            reach = max(abs(start), abs(start + step * max(self.size - 1, 0)))
+            dtype = tack.i64 if reach > 2**31 - 1 else tack.i32
+        self.dtype = dtype or tack.f32
 
     def attributes(self):
         return {"start": self.start, "step": self.step}

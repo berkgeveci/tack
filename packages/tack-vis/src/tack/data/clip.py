@@ -26,10 +26,9 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.algorithms.sort import _run_offsets, gather
 from tack.data import _clip_tables as tables
-from tack.data import arrays, shapes
-from tack.data.buckets import bucket_order
+from tack.data import arrays, ids, shapes
+from tack.data.buckets import bucket_order, run_offsets
 from tack.data.carry import Interpolate, Pieces, _point_values, carry
 from tack.data.dataset import Field
 from tack.data.spaces import H1, Values
@@ -44,6 +43,8 @@ _TABLE_OF = {int(shapes.PIXEL): (9, [0, 1, 3, 2]),
              int(shapes.VOXEL): (12, [0, 1, 3, 2, 4, 5, 7, 6]),
              int(shapes.WEDGE): (13, [0, 2, 1, 3, 5, 4])}
 _KINDS = 5            # cells, connectivity, records, centroids, centroid members
+# Entries of any kind one cell can make, at most: a bound for the output's ids.
+_MOST = 64
 
 
 def _shape_tables(shape_id, invert):
@@ -131,7 +132,7 @@ def _clip_emit(cells, values, value, invert, data, cases, edges, remap, whole_ty
             sources[cell] = e
             for k in range(cells.NUM_POINTS):
                 p = cells.point_id(c, whole_order[k])
-                keys[record] = (tack.u64(p) << tack.u64(32)) | tack.u64(p)
+                keys[record] = [p, p]
                 slots[record] = conn
                 record += 1
                 conn += 1
@@ -155,8 +156,7 @@ def _clip_emit(cells, values, value, invert, data, cases, edges, remap, whole_ty
                         else:
                             pa = cells.point_id(c, remap[edges[2 * (entry - 8)]])
                             pb = cells.point_id(c, remap[edges[2 * (entry - 8) + 1]])
-                        key = (tack.u64(min(pa, pb)) << tack.u64(32)) | tack.u64(max(pa, pb))
-                        keys[record] = key
+                        keys[record] = [min(pa, pb), max(pa, pb)]
                         slots[record] = -(member + 1)
                         record += 1
                         member += 1
@@ -183,8 +183,7 @@ def _clip_emit(cells, values, value, invert, data, cases, edges, remap, whole_ty
                             else:
                                 pa = cells.point_id(c, remap[edges[2 * (entry - 8)]])
                                 pb = cells.point_id(c, remap[edges[2 * (entry - 8) + 1]])
-                            key = (tack.u64(min(pa, pb)) << tack.u64(32)) | tack.u64(max(pa, pb))
-                            keys[record] = key
+                            keys[record] = [min(pa, pb), max(pa, pb)]
                             slots[record] = conn
                             record += 1
                         conn += 1
@@ -198,9 +197,9 @@ def _resolve_points(keys, order, run_offsets, slots, values, value, connectivity
     # interpolated from its lower point id.
     for r in range(count):
         key = keys[order[run_offsets[r]]]
-        a = tack.i32(key >> tack.u64(32))
-        b = tack.i32(key & tack.u64(0xFFFFFFFF))
-        ends[r] = [a, b]
+        a = key[0]
+        b = key[1]
+        ends[r] = key
         weights[r] = 0.0
         if a != b:
             weights[r] = (value - values[a]) / (values[b] - values[a])
@@ -278,26 +277,28 @@ def clip(data, by, value=0.0, invert=False, fields=None):
         counts.from_numpy(np.zeros((n, _KINDS), np.int32))
     for group, (table, cases, _, remap, _, _) in groups:
         _clip_counts(group.view(), values, float(value), invert, table, cases, remap, counts)
+    idt = data.id_dtype
+    odt = ids.for_output(data, _MOST * n)
     totals, parts = [], []
     for kind in range(_KINDS):
         part = tack.field(tack.i32, shape=(n,))
-        starts = tack.field(tack.i32, shape=(n,))
+        starts = tack.field(odt, shape=(n,))
         if n:
             _split_counts(counts, kind, part)
         totals.append(exclusive_scan(part, starts, n) if n else 0)
         parts.append(starts)
     n_cells, n_conn, n_records, n_centroids, n_members = totals
-    starts = tack.Vector.field(_KINDS, tack.i32, shape=(n,))
+    starts = tack.Vector.field(_KINDS, odt, shape=(n,))
     if n:
         _join_starts(*parts, starts)
 
     types = tack.field(tack.u8, shape=(n_cells,))
-    offsets = tack.zeros(tack.i32, (n_cells + 1,))
-    connectivity = tack.field(tack.i32, shape=(n_conn,))
-    sources = tack.field(tack.i32, shape=(n_cells,))
-    keys = tack.field(tack.u64, shape=(n_records,))
-    slots = tack.field(tack.i32, shape=(n_records,))
-    centroid_offsets = tack.field(tack.i32, shape=(n_centroids + 1,))
+    offsets = tack.zeros(odt, (n_cells + 1,))
+    connectivity = tack.field(odt, shape=(n_conn,))
+    sources = tack.field(idt, shape=(n_cells,))
+    keys = tack.Vector.field(2, idt, shape=(n_records,))
+    slots = tack.field(odt, shape=(n_records,))
+    centroid_offsets = tack.field(odt, shape=(n_centroids + 1,))
     for group, (table, cases, edges, remap, whole_type, whole_order) in groups:
         _clip_emit(group.view(), values, float(value), invert, table, cases, edges, remap,
                    whole_type, whole_order, starts, types, offsets, connectivity, sources,
@@ -305,14 +306,13 @@ def clip(data, by, value=0.0, invert=False, fields=None):
     _close(offsets, n_cells, n_conn)
     _close(centroid_offsets, n_centroids, n_members)
 
-    order, _ = bucket_order(keys, data.num_points)
-    run_offsets, count = (_run_offsets(gather(keys, order), n_records) if n_records
-                          else (None, 0))
-    members = tack.field(tack.i32, shape=(n_members,))
-    ends = tack.Vector.field(2, tack.i32, shape=(count,))
+    order, _ = bucket_order(keys, data.num_points, odt)
+    point_runs, count = run_offsets(keys, order)
+    members = tack.field(odt, shape=(n_members,))
+    ends = tack.Vector.field(2, idt, shape=(count,))
     weights = tack.field(arrays.dtype_of(field.values), shape=(count,))
     if count:
-        _resolve_points(keys, order, run_offsets, slots, values, float(value), connectivity,
+        _resolve_points(keys, order, point_runs, slots, values, float(value), connectivity,
                         members, ends, weights, count)
     if n_conn:
         _centroid_entries(connectivity, count)

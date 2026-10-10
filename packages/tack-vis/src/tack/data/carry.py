@@ -33,7 +33,7 @@ raises ``KeyError``.
 import numpy as np
 
 import tack
-from tack.data import arrays
+from tack.data import arrays, ids
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import DataSet, Field
 from tack.data.spaces import H1, L2, Constant, Values
@@ -102,7 +102,7 @@ def _point_values(values, n):
     of an order-2 field's (which go on to its edges, faces and cells)."""
     if size_of(values) == n:
         return values
-    return _take(values, tack.arange(n, tack.i32))
+    return _take(values, tack.arange(n, ids.at_least(tack.i32, n)))
 
 
 @tack.kernel
@@ -174,7 +174,8 @@ def _carry_l2(field, out, cells):
     if not getattr(out, "reference_cells", True):
         return None
     if isinstance(cells, Same):
-        sources = tack.arange(field.space.topology.num_cells, tack.i32)
+        topology = field.space.topology
+        sources = tack.arange(topology.num_cells, topology.id_dtype)
     elif isinstance(cells, Take) and not isinstance(cells, Pieces):
         sources = cells.ids
     else:

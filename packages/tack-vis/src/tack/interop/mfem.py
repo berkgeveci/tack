@@ -57,7 +57,7 @@ def _corners(geometry, n):
     return _CORNERS.get(geometry, tuple(range(n)))
 
 
-def _topology(mesh):
+def _topology(mesh, id_dtype=None):
     from tack.data import UnstructuredTopology
 
     types, rows = [], []
@@ -68,10 +68,10 @@ def _topology(mesh):
         vertices = mesh.GetElementVertices(e)
         types.append(_VTK_TYPE[geometry])
         rows.append([vertices[k] for k in _corners(geometry, len(vertices))])
-    offsets = np.concatenate([[0], np.cumsum([len(r) for r in rows])]).astype(np.int32)
-    connectivity = (np.concatenate(rows) if rows else np.zeros(0)).astype(np.int32)
+    offsets = np.concatenate([[0], np.cumsum([len(r) for r in rows])]).astype(np.int64)
+    connectivity = (np.concatenate(rows) if rows else np.zeros(0)).astype(np.int64)
     return UnstructuredTopology(np.array(types, np.uint8), offsets, connectivity,
-                                num_points=mesh.GetNV())
+                                num_points=mesh.GetNV(), id_dtype=id_dtype)
 
 
 def _collection(fes):
@@ -146,8 +146,11 @@ def _quadratic_values(data, mesh, gf):
     space = H1(data, order=2)
     width = 27
     n = data.num_cells
-    indices = tack.field(tack.i32, shape=(n * width,))
-    indices.from_numpy(np.full(n * width, -1, np.int32))
+    from tack.data.ids import at_least
+
+    index = at_least(data.id_dtype, space.size)
+    indices = tack.field(index, shape=(n * width,))
+    indices.from_numpy(np.full(n * width, -1, index.numpy_dtype))
     nodes = tack.Vector.field(3, tack.f64 if tack.f64 in _supported() else tack.f32,
                               shape=(n * width,))
     for_each(_quadratic_layout, data, "cells", Field(space, ConstantArray(0.0, space.size)),
@@ -196,12 +199,13 @@ def mfem_field(data, mesh, gf, dtype=tack.f32):
     raise NotImplementedError(f"MFEM {family} order {order} has no space here yet")
 
 
-def mfem_to_dataset(mesh, fields=None, dtype=tack.f32):
+def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
     """A ``tack.data.DataSet`` of an MFEM mesh and named grid functions on it.
 
     The geometry is the vertex positions (z = 0 for a 2D mesh), or for a curved
     mesh -- nodes of order 2 -- an H1 order-2 field of positions; nodes of
     higher order are refused. Element attributes become ``fields["attribute"]``.
+    ``id_dtype`` is the topology's (``tack.data.ids``).
     """
     from tack.data import Constant, DataSet, Field
 
@@ -210,7 +214,7 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32):
     if curved and _collection(nodes.FESpace())[1] > 2:
         raise NotImplementedError("curved MFEM meshes of order above 2 are not supported "
                                   "yet")
-    topology = _topology(mesh)
+    topology = _topology(mesh, id_dtype)
     if curved:
         positions = np.asarray(mesh.GetVertexArray(), dtype=float).reshape(mesh.GetNV(), -1)
     elif nodes is not None:

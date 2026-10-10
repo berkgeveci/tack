@@ -20,6 +20,8 @@ Everything else is derived on demand by sorting, and kept:
 - ``edges()``: the faces' consecutive point pairs as ``(low, high)`` keys, sorted
   into runs -- the same numbering the shape path gives the same edges.
 
+Ids are the topology's ``id_dtype`` (``tack.data.ids``), as on the shape path.
+
 Orientation comes from the input, never from geometry. ``check_winding`` lists
 the cells that do not walk each of their edges once in each direction;
 ``orient`` turns a face wound into its only cell around. ``as_polyhedra``
@@ -30,12 +32,12 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.algorithms.sort import _run_offsets, gather
-from tack.data import shapes
-from tack.data.buckets import bucket_order
+from tack.data import ids, shapes
+from tack.data.buckets import bucket_order, run_offsets
 from tack.data.carry import Same, carry
 from tack.data.topology import _as_field, _Topology
 from tack.data.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells
+from tack.lang.field import Field
 
 __all__ = ["PolygonalTopology", "PolyhedralTopology", "SizeBuckets", "as_polygons",
            "as_polyhedra", "check_winding", "orient"]
@@ -128,9 +130,10 @@ class PolygonFaces:
         if inward:
             raise ValueError(f"{inward} faces are wound into their only cell (side 1 with "
                              "no side 0); tack.data.polyhedra.orient turns them around")
-        self.sides = tack.Vector.field(4, tack.i32, shape=(nf,))
+        self.id_dtype = topology.id_dtype
+        self.sides = tack.Vector.field(4, self.id_dtype, shape=(nf,))
         if nf:
-            self.sides.from_numpy(np.full((nf, 4), -1, np.int32))
+            self.sides.from_numpy(np.full((nf, 4), -1, self.id_dtype.numpy_dtype))
             _scatter_sides(topology.cell_offsets, topology.cell_faces, topology.cell_face_sides,
                            self.sides, topology.num_cells)
         self.side_face = topology.cell_faces
@@ -139,32 +142,33 @@ class PolygonFaces:
         self._boundary = None
 
     def groups(self, subset=None):
-        """The faces (or those in ``subset``, an i32 field of face ids) as one
+        """The faces (or those in ``subset``, a field of face ids) as one
         ``Polygon`` group."""
         if subset is None and self._groups is not None:
             return self._groups
-        ids = subset if subset is not None else tack.arange(self.num_faces, tack.i32)
+        face_ids = (ids.as_ids(subset, self.id_dtype) if subset is not None
+                    else tack.arange(self.num_faces, self.id_dtype))
         t = self.topology
+        n = face_ids.shape[0]
         groups = [DomainGroup(_PolygonFaces, t.facet_shape,
-                              (t.face_offsets, t.face_points, ids, self.sides, ids.shape[0]),
-                              ids.shape[0], 0)]
+                              (t.face_offsets, t.face_points, face_ids, self.sides, n), n, 0)]
         if subset is None:
             self._groups = groups
         return groups
 
     def boundary(self):
-        """The ids of the faces with one side, an i32 field."""
+        """The ids of the faces with one side, a field of ``id_dtype``."""
         if self._boundary is None:
             nf = self.num_faces
             flags = tack.field(tack.i32, shape=(nf,))
-            slots = tack.field(tack.i32, shape=(nf,))
+            slots = tack.field(self.id_dtype, shape=(nf,))
             if nf:
                 _one_sided(self.sides, flags)
             count = exclusive_scan(flags, slots, nf) if nf else 0
-            ids = tack.field(tack.i32, shape=(count,))
+            boundary = tack.field(self.id_dtype, shape=(count,))
             if count:
-                _compact(flags, slots, ids)
-            self._boundary = ids
+                _compact(flags, slots, boundary)
+            self._boundary = boundary
         return self._boundary
 
 
@@ -188,18 +192,16 @@ def _cell_point_keys(cell_offsets, cell_faces, face_offsets, face_points, starts
         for e in range(cell_offsets[c], cell_offsets[c + 1]):
             f = cell_faces[e]
             for j in range(face_offsets[f], face_offsets[f + 1]):
-                keys[at] = (tack.u64(c) << tack.u64(32)) | tack.u64(face_points[j])
+                keys[at] = [c, face_points[j]]
                 at += 1
 
 
 @tack.kernel
-def _split_keys(keys, run_offsets, cells, points, counts, n_runs):
+def _split_keys(keys, order, offsets, points, counts, n_runs):
     for r in range(n_runs):
-        key = keys[run_offsets[r]]
-        c = tack.i32(key >> tack.u64(32))
-        cells[r] = c
-        points[r] = tack.i32(key & tack.u64(0xFFFFFFFF))
-        tack.atomic_add(counts, c, 1)
+        key = keys[order[offsets[r]]]
+        points[r] = key[1]
+        tack.atomic_add(counts, key[0], 1)
 
 
 @tack.kernel
@@ -208,34 +210,28 @@ def _close(offsets, n, total):
         offsets[n] = total
 
 
-@tack.kernel
-def _entry_keys(point_ids, keys):
-    for e in range(point_ids.shape[0]):
-        keys[e] = (tack.u64(point_ids[e]) << tack.u64(32)) | tack.u64(e)
-
-
 def _derive_cell_points(t):
     """Each cell's points, sorted and unique: ``(offsets, point_ids)``. The pairs
-    ``(cell, point)`` of every cell's face points, as u64 keys, sorted once: runs
-    are the distinct pairs, in cell order and point order within a cell."""
+    ``(cell, point)`` of every cell's face points, sorted once: runs are the
+    distinct pairs, in cell order and point order within a cell."""
     n = t.num_cells
+    idt = t.id_dtype
     sizes = tack.field(tack.i32, shape=(n,))
-    starts = tack.field(tack.i32, shape=(n,))
+    starts = tack.field(idt, shape=(n,))
     if n:
         _cell_sizes(t.cell_offsets, t.cell_faces, t.face_offsets, sizes, n)
     total = exclusive_scan(sizes, starts, n) if n else 0
-    keys = tack.field(tack.u64, shape=(total,))
+    keys = tack.Vector.field(2, idt, shape=(total,))
     if total:
         _cell_point_keys(t.cell_offsets, t.cell_faces, t.face_offsets, t.face_points, starts,
                          keys, n)
-        keys = gather(keys, bucket_order(keys, n)[0])
-    run_offsets, runs = _run_offsets(keys, total)
-    cells = tack.field(tack.i32, shape=(runs,))
-    points = tack.field(tack.i32, shape=(runs,))
+    order, _ = bucket_order(keys, n, idt)
+    offsets_of_runs, runs = run_offsets(keys, order)
+    points = tack.field(idt, shape=(runs,))
     counts = tack.zeros(tack.i32, (n,))
     if runs:
-        _split_keys(keys, run_offsets, cells, points, counts, runs)
-    offsets = tack.field(tack.i32, shape=(n + 1,))
+        _split_keys(keys, order, offsets_of_runs, points, counts, runs)
+    offsets = tack.field(idt, shape=(n + 1,))
     if n:
         exclusive_scan(counts, offsets, n)
     _close(offsets, n, runs)
@@ -252,17 +248,14 @@ def _face_edge_keys(face_offsets, face_points, keys, signs, n_faces):
         for j in range(n):
             a = face_points[first + j]
             b = face_points[first + (j + 1 if j + 1 < n else 0)]
-            lo = min(a, b)
-            hi = max(a, b)
-            keys[first + j] = (tack.u64(lo) << tack.u64(32)) | tack.u64(hi)
+            keys[first + j] = [min(a, b), max(a, b)]
             signs[first + j] = 1 if a < b else -1
 
 
 @tack.kernel
 def _edges_from_runs(order, offsets, keys, rows, face_edge, count):
     for r in range(count):
-        key = keys[order[offsets[r]]]
-        rows[r] = [tack.i32(key >> tack.u64(32)), tack.i32(key & tack.u64(0xFFFFFFFF))]
+        rows[r] = keys[order[offsets[r]]]
         for i in range(offsets[r], offsets[r + 1]):
             face_edge[order[i]] = r
 
@@ -276,25 +269,26 @@ class PolygonEdges:
 
     def __init__(self, topology):
         t = topology
+        self.id_dtype = idt = t.id_dtype
         total = int(t.face_points.shape[0])
-        keys = tack.field(tack.u64, shape=(total,))
+        keys = tack.Vector.field(2, idt, shape=(total,))
         self.face_edge_sign = tack.field(tack.i32, shape=(total,))
-        self.face_edge = tack.field(tack.i32, shape=(total,))
+        self.face_edge = tack.field(idt, shape=(total,))
         if total:
             _face_edge_keys(t.face_offsets, t.face_points, keys, self.face_edge_sign,
                             t.num_faces)
-            order, _ = bucket_order(keys, t.num_points)
-            offsets, count = _run_offsets(gather(keys, order), total)
+            order, _ = bucket_order(keys, t.num_points, idt)
+            offsets, count = run_offsets(keys, order)
         else:
             count = 0
         self.num_edges = count
-        self.rows = tack.Vector.field(2, tack.i32, shape=(count,))
+        self.rows = tack.Vector.field(2, idt, shape=(count,))
         if count:
             _edges_from_runs(order, offsets, keys, self.rows, self.face_edge, count)
 
     def groups(self):
-        ids = tack.arange(self.num_edges, tack.i32)
-        return [DomainGroup(_Edges, shapes.Line, (self.rows, ids, self.num_edges),
+        edge_ids = tack.arange(self.num_edges, self.id_dtype)
+        return [DomainGroup(_Edges, shapes.Line, (self.rows, edge_ids, self.num_edges),
                             self.num_edges, 0)]
 
 
@@ -303,11 +297,12 @@ class PolygonEdges:
 class PolyhedralTopology(_Topology):
     """Cells given by their faces, faces stored once (``docs/design/polyhedra.md``).
 
-    ``face_offsets``/``face_points`` (CSR, i32) are each face's points, in the order
-    that winds it out of its side 0; ``cell_offsets``/``cell_faces`` (CSR, i32) each
-    cell's faces; ``cell_face_sides`` (u8, one per ``cell_faces`` entry) 0 where the
-    face is wound out of that cell and 1 where into it. ``num_points`` defaults to one
-    past the highest point id used.
+    ``face_offsets``/``face_points`` (CSR) are each face's points, in the order that
+    winds it out of its side 0; ``cell_offsets``/``cell_faces`` (CSR) each cell's
+    faces; ``cell_face_sides`` (u8, one per ``cell_faces`` entry) 0 where the face
+    is wound out of that cell and 1 where into it. ``num_points`` defaults to one
+    past the highest point id used. Ids are kept in ``id_dtype``, as
+    ``UnstructuredTopology`` keeps them.
 
     Every cell is a ``Polyhedron``: no reference element, so no spaces with a basis
     (``L2``, ``H1`` above order 1) and no parametric coordinates.
@@ -321,11 +316,21 @@ class PolyhedralTopology(_Topology):
     facet_shape = shapes.Polygon
 
     def __init__(self, face_offsets, face_points, cell_offsets, cell_faces, cell_face_sides,
-                 num_points=None):
-        self.face_offsets = _as_field(face_offsets, tack.i32)
-        self.face_points = _as_field(face_points, tack.i32)
-        self.cell_offsets = _as_field(cell_offsets, tack.i32)
-        self.cell_faces = _as_field(cell_faces, tack.i32)
+                 num_points=None, id_dtype=None):
+        face_offsets, face_points, cell_offsets, cell_faces = (
+            ids.host_or_field(a) for a in (face_offsets, face_points, cell_offsets, cell_faces))
+        if num_points is None:
+            used = face_points.to_numpy() if isinstance(face_points, Field) else face_points
+            num_points = int(used.max()) + 1 if used.size else 0
+        # Cell points and directed edges hold each face's points once per side.
+        extent = max(int(num_points), 2 * int(face_points.shape[0]),
+                     2 * int(face_offsets.shape[0]), int(cell_faces.shape[0]))
+        given = (face_offsets, face_points, cell_offsets, cell_faces)
+        self.id_dtype = idt = ids.choose(id_dtype, extent, given)
+        self.face_offsets = ids.as_ids(face_offsets, idt, check=False)
+        self.face_points = ids.as_ids(face_points, idt, check=False)
+        self.cell_offsets = ids.as_ids(cell_offsets, idt, check=False)
+        self.cell_faces = ids.as_ids(cell_faces, idt, check=False)
         self.cell_face_sides = _as_field(cell_face_sides, tack.u8)
         self.num_faces = self.face_offsets.shape[0] - 1
         self.num_cells = self.cell_offsets.shape[0] - 1
@@ -333,9 +338,6 @@ class PolyhedralTopology(_Topology):
             raise ValueError("offsets have one entry more than there are faces or cells")
         if self.cell_face_sides.shape != self.cell_faces.shape:
             raise ValueError("cell_face_sides needs one entry per cell_faces entry")
-        if num_points is None:
-            used = self.face_points.to_numpy()
-            num_points = int(used.max()) + 1 if used.size else 0
         self.num_points = int(num_points)
         self._cell_points = None
         self._groups = None
@@ -354,19 +356,16 @@ class PolyhedralTopology(_Topology):
 
     def point_links(self):
         """Each point's entries in ``cell_points()``, derived on first use and kept:
-        ``(offsets, entries)``, i32 CSR by point, entries in increasing order (so in
+        ``(offsets, entries)``, CSR by point, entries in increasing order (so in
         cell order)."""
         if self._point_links is None:
             _, point_ids = self.cell_points()
-            keys = tack.field(tack.u64, shape=(point_ids.shape[0],))
-            if point_ids.shape[0]:
-                _entry_keys(point_ids, keys)
-            order, offsets = bucket_order(keys, self.num_points)
+            order, offsets = bucket_order(point_ids, self.num_points, self.id_dtype)
             self._point_links = (offsets, order)
         return self._point_links
 
     def cell_points(self):
-        """Each cell's points, sorted and unique: ``(offsets, point_ids)``, i32 CSR."""
+        """Each cell's points, sorted and unique: ``(offsets, point_ids)``, CSR."""
         if self._cell_points is None:
             self._cell_points = _derive_cell_points(self)
         return self._cell_points
@@ -383,7 +382,7 @@ class PolyhedralTopology(_Topology):
         return self._groups
 
     @classmethod
-    def from_cell_faces(cls, cells, num_points, positions=None, orient=False):
+    def from_cell_faces(cls, cells, num_points, positions=None, orient=False, id_dtype=None):
         """A topology from each cell's own list of faces (point-id rings), as VTK and many
         readers give them: copies of a face are matched by point set, the first copy
         found is the face -- its cell side 0 -- and a second copy, run the other way,
@@ -426,9 +425,9 @@ class PolyhedralTopology(_Topology):
         if same_way:
             raise ValueError(f"{same_way} shared faces are wound the same way by both their "
                              "cells; from_cell_faces(..., orient=True) makes them consistent")
-        return cls(np.array(face_offsets, np.int32), np.array(face_points, np.int32),
-                   np.array(cell_offsets, np.int32), np.array(cell_faces, np.int32),
-                   np.array(sides, np.uint8), num_points=num_points)
+        return cls(np.array(face_offsets, np.int64), np.array(face_points, np.int64),
+                   np.array(cell_offsets, np.int64), np.array(cell_faces, np.int64),
+                   np.array(sides, np.uint8), num_points=num_points, id_dtype=id_dtype)
 
     def arrays(self):
         """The five defining arrays as host arrays, in constructor order."""
@@ -518,8 +517,7 @@ def _loop_edge_keys(loop_offsets, loop_points, keys, directions, n_cells):
         for j in range(n):
             a = loop_points[first + j]
             b = loop_points[first + (j + 1 if j + 1 < n else 0)]
-            keys[first + j] = ((tack.u64(min(a, b)) << tack.u64(32))
-                               | tack.u64(max(a, b)))
+            keys[first + j] = [min(a, b), max(a, b)]
             directions[first + j] = 1 if a < b else -1
 
 
@@ -533,8 +531,8 @@ def _facets_from_runs(order, offsets, keys, directions, face_points, cell_faces,
         end = offsets[r + 1]
         first = order[begin]
         key = keys[first]
-        lo = tack.i32(key >> tack.u64(32))
-        hi = tack.i32(key & tack.u64(0xFFFFFFFF))
+        lo = key[0]
+        hi = key[1]
         # The facet runs the way its first polygon walks it: out of side 0.
         if directions[first] > 0:
             face_points[2 * r] = lo
@@ -549,6 +547,12 @@ def _facets_from_runs(order, offsets, keys, directions, face_points, cell_faces,
         for i in range(begin, end):
             cell_faces[order[i]] = r
             sides[order[i]] = tack.u8(0 if i == begin else 1)
+
+
+@tack.kernel
+def _every_other(offsets):
+    for i in range(offsets.shape[0]):
+        offsets[i] = 2 * i
 
 
 class PolygonalTopology(PolyhedralTopology):
@@ -568,23 +572,28 @@ class PolygonalTopology(PolyhedralTopology):
     cell_shape = shapes.Polygon
     facet_shape = shapes.Line
 
-    def __init__(self, loop_offsets, loop_points, num_points=None):
-        loop_offsets = _as_field(loop_offsets, tack.i32)
-        loop_points = _as_field(loop_points, tack.i32)
-        n = loop_offsets.shape[0] - 1
+    def __init__(self, loop_offsets, loop_points, num_points=None, id_dtype=None):
+        loop_offsets, loop_points = ids.host_or_field(loop_offsets), ids.host_or_field(loop_points)
         total = int(loop_points.shape[0])
         if num_points is None:
-            num_points = int(loop_points.to_numpy().max()) + 1 if total else 0
-        keys = tack.field(tack.u64, shape=(total,))
+            used = loop_points.to_numpy() if isinstance(loop_points, Field) else loop_points
+            num_points = int(used.max()) + 1 if total else 0
+        # Its facets' points are two per edge, and there are as many edges as loop points.
+        idt = ids.choose(id_dtype, max(int(num_points), 4 * total + 2),
+                         given=(loop_offsets, loop_points))
+        loop_offsets = ids.as_ids(loop_offsets, idt, check=False)
+        loop_points = ids.as_ids(loop_points, idt, check=False)
+        n = loop_offsets.shape[0] - 1
+        keys = tack.Vector.field(2, idt, shape=(total,))
         directions = tack.field(tack.i32, shape=(total,))
-        cell_faces = tack.field(tack.i32, shape=(total,))
+        cell_faces = tack.field(idt, shape=(total,))
         sides = tack.field(tack.u8, shape=(total,))
         count = 0
         if total:
             _loop_edge_keys(loop_offsets, loop_points, keys, directions, n)
-            order, _ = bucket_order(keys, num_points)
-            offsets, count = _run_offsets(gather(keys, order), total)
-        face_points = tack.field(tack.i32, shape=(2 * count,))
+            order, _ = bucket_order(keys, num_points, idt)
+            offsets, count = run_offsets(keys, order)
+        face_points = tack.field(idt, shape=(2 * count,))
         if count:
             problems = tack.zeros(tack.i32, (2,))
             _facets_from_runs(order, offsets, keys, directions, face_points, cell_faces,
@@ -595,9 +604,10 @@ class PolygonalTopology(PolyhedralTopology):
                 raise ValueError(f"{problems[1]} edges are walked the same way by both their "
                                  "polygons: the winding is inconsistent, or the surface is "
                                  "not orientable")
-        face_offsets = np.arange(0, 2 * count + 1, 2, dtype=np.int32)
+        face_offsets = tack.field(idt, shape=(count + 1,))
+        _every_other(face_offsets)
         super().__init__(face_offsets, face_points, loop_offsets, cell_faces, sides,
-                         num_points=num_points)
+                         num_points=num_points, id_dtype=idt)
         self.loop_offsets = loop_offsets
         self.loop_points = loop_points
 
@@ -708,21 +718,22 @@ def _directed_edges(cell_offsets, cell_faces, cell_face_sides, face_offsets, fac
             f = cell_faces[e]
             flip = 1 - 2 * tack.i32(cell_face_sides[e])
             for j in range(face_offsets[f], face_offsets[f + 1]):
-                keys[at] = (tack.u64(c) << tack.u64(32)) | tack.u64(face_edge[j])
+                keys[at] = [c, face_edge[j]]
                 directions[at] = flip * face_edge_sign[j]
                 at += 1
 
 
 @tack.kernel
-def _unbalanced(keys, directions, run_offsets, bad_cells, n_runs):
+def _unbalanced(keys, directions, order, offsets, bad_cells, n_runs):
+    # Each run, (cell, edge) or (cell, point), read through the sorted order.
     for r in range(n_runs):
-        begin = run_offsets[r]
-        end = run_offsets[r + 1]
+        begin = offsets[r]
+        end = offsets[r + 1]
         total = 0
         for i in range(begin, end):
-            total += directions[i]
+            total += directions[order[i]]
         if end - begin != 2 or total != 0:
-            bad_cells[tack.i32(keys[begin] >> tack.u64(32))] = 1
+            bad_cells[keys[order[begin]][0]] = 1
 
 
 @tack.kernel
@@ -735,9 +746,9 @@ def _loop_ends(cell_offsets, cell_faces, cell_face_sides, face_points, keys, end
             s = tack.i32(cell_face_sides[e])
             tail = face_points[2 * f + s]
             head = face_points[2 * f + 1 - s]
-            keys[2 * e] = (tack.u64(c) << tack.u64(32)) | tack.u64(tail)
+            keys[2 * e] = [c, tail]
             ends[2 * e] = 1
-            keys[2 * e + 1] = (tack.u64(c) << tack.u64(32)) | tack.u64(head)
+            keys[2 * e + 1] = [c, head]
             ends[2 * e + 1] = -1
 
 
@@ -745,14 +756,13 @@ def _check_loops(t):
     total = int(t.cell_faces.shape[0])
     bad = tack.zeros(tack.i32, (t.num_cells,))
     if total:
-        keys = tack.field(tack.u64, shape=(2 * total,))
+        keys = tack.Vector.field(2, t.id_dtype, shape=(2 * total,))
         ends = tack.field(tack.i32, shape=(2 * total,))
         _loop_ends(t.cell_offsets, t.cell_faces, t.cell_face_sides, t.face_points, keys, ends,
                    t.num_cells)
-        order, _ = bucket_order(keys, t.num_cells)
-        keys, ends = gather(keys, order), gather(ends, order)
-        run_offsets, runs = _run_offsets(keys, 2 * total)
-        _unbalanced(keys, ends, run_offsets, bad, runs)
+        order, _ = bucket_order(keys, t.num_cells, t.id_dtype)
+        offsets, runs = run_offsets(keys, order)
+        _unbalanced(keys, ends, order, offsets, bad, runs)
     return np.flatnonzero(bad.to_numpy())
 
 
@@ -771,20 +781,19 @@ def check_winding(data):
     edges = t.edges()
     n = t.num_cells
     sizes = tack.field(tack.i32, shape=(n,))
-    starts = tack.field(tack.i32, shape=(n,))
+    starts = tack.field(t.id_dtype, shape=(n,))
     if n:
         _cell_sizes(t.cell_offsets, t.cell_faces, t.face_offsets, sizes, n)
     total = exclusive_scan(sizes, starts, n) if n else 0
     bad = tack.zeros(tack.i32, (n,))
     if total:
-        keys = tack.field(tack.u64, shape=(total,))
+        keys = tack.Vector.field(2, t.id_dtype, shape=(total,))
         directions = tack.field(tack.i32, shape=(total,))
         _directed_edges(t.cell_offsets, t.cell_faces, t.cell_face_sides, t.face_offsets,
                         edges.face_edge, edges.face_edge_sign, starts, keys, directions, n)
-        order, _ = bucket_order(keys, n)
-        keys, directions = gather(keys, order), gather(directions, order)
-        run_offsets, runs = _run_offsets(keys, total)
-        _unbalanced(keys, directions, run_offsets, bad, runs)
+        order, _ = bucket_order(keys, n, t.id_dtype)
+        offsets, runs = run_offsets(keys, order)
+        _unbalanced(keys, directions, order, offsets, bad, runs)
     return np.flatnonzero(bad.to_numpy())
 
 
@@ -804,7 +813,7 @@ def orient(topology):
         face_points[a:b] = face_points[a:b][::-1]
     sides = np.where(inward[cell_faces], 0, sides).astype(np.uint8)
     return PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, sides,
-                              num_points=topology.num_points)
+                              num_points=topology.num_points, id_dtype=topology.id_dtype)
 
 
 # ── From a shape-based dataset ──────────────────────────────────────
@@ -836,14 +845,15 @@ def as_polygons(data, fields=None):
         if group.count and group.shape.DIMENSION != 2:
             raise ValueError(f"{group.shape.__name__} cells are not 2D")
     n = data.num_cells
+    idt = topology.id_dtype
     sizes = tack.zeros(tack.i32, (n,))
     for group in topology.groups():
         if group.count:
             _polygon_sizes(group.view(), sizes)
-    offsets = tack.field(tack.i32, shape=(n + 1,))
+    offsets = tack.field(idt, shape=(n + 1,))
     total = exclusive_scan(sizes, offsets, n) if n else 0
     _close(offsets, n, total)
-    loops = tack.field(tack.i32, shape=(total,))
+    loops = tack.field(idt, shape=(total,))
     for group in topology.groups():
         if group.count:
             _polygon_loops(group.view(), offsets, loops)
@@ -901,13 +911,14 @@ def as_polyhedra(data, fields=None):
                              "topology is of 3D cells")
     faces = topology.faces()
     nf = faces.num_faces
+    idt = topology.id_dtype
     sizes = tack.field(tack.i32, shape=(nf,))
-    starts = tack.field(tack.i32, shape=(nf + 1,))
+    starts = tack.field(idt, shape=(nf + 1,))
     if nf:
         _face_sizes(faces.kinds, sizes)
     total = exclusive_scan(sizes, starts, nf) if nf else 0
     _close(starts, nf, total)
-    face_points = tack.field(tack.i32, shape=(total,))
+    face_points = tack.field(idt, shape=(total,))
     if nf:
         _face_rows(faces.rows, starts, sizes, face_points)
 
@@ -916,10 +927,10 @@ def as_polyhedra(data, fields=None):
     for group in topology.groups():
         if group.count:
             _cell_face_counts(group.view(), counts)
-    cell_offsets = tack.field(tack.i32, shape=(n + 1,))
+    cell_offsets = tack.field(idt, shape=(n + 1,))
     entries = exclusive_scan(counts, cell_offsets, n) if n else 0
     _close(cell_offsets, n, entries)
-    cell_faces = tack.field(tack.i32, shape=(entries,))
+    cell_faces = tack.field(idt, shape=(entries,))
     cell_face_sides = tack.field(tack.u8, shape=(entries,))
     for group in topology.groups():
         if group.count:

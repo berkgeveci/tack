@@ -167,12 +167,12 @@ def point_elevation(data, low_point=(0, 0, 0), high_point=(0, 0, 1), range=(0.0,
 
 def point_ids(data):
     """Each point's id, as values on points: an implicit array, nothing stored."""
-    return Field(Values(data, "points"), CountingArray(data.num_points))
+    return Field(Values(data, "points"), CountingArray(data.num_points, dtype=data.id_dtype))
 
 
 def cell_ids(data):
     """Each cell's id, as values on cells: an implicit array, nothing stored."""
-    return Field(Values(data, "cells"), CountingArray(data.num_cells))
+    return Field(Values(data, "cells"), CountingArray(data.num_cells, dtype=data.id_dtype))
 
 
 # ── Moving the geometry ─────────────────────────────────────────────

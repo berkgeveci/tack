@@ -20,7 +20,7 @@ at its own points through the fields' bases.
 import numpy as np
 
 import tack
-from tack.data import arrays
+from tack.data import arrays, ids
 from tack.data.buckets import bucket_order
 from tack.data.dataset import DataSet, Field, for_each
 from tack.data.spaces import H1, Constant, Values
@@ -30,7 +30,6 @@ __all__ = ["CellLocator", "probe"]
 # A point just outside a cell counts as in it within this share of the cell's
 # diagonal, as vtkProbeFilter's computed tolerance has it (0.1%).
 _TOLERANCE = 1e-3
-_NONE = 2**31 - 1
 
 
 @tack.kernel
@@ -70,7 +69,7 @@ def _point_bins(points, ox, oy, oz, ix, iy, iz, nx, ny, nz, slack, keys):
         b = tack.i64(nx * ny * nz)
         if i >= 0 and j >= 0 and k >= 0:
             b = i + nx * (j + ny * k)
-        keys[q] = (tack.u64(b) << tack.u64(32)) | tack.u64(q)
+        keys[q] = b
 
 
 @tack.kernel
@@ -164,8 +163,8 @@ class CellLocator:
 
     def find(self, points):
         """``(cells, pcs)`` for ``points`` (an ``(n, 3)`` host array or a field of
-        3-vectors): an i32 field of the cell holding each point (-1 for none) and
-        a field of its parametric coordinates there."""
+        3-vectors): a field of the cell holding each point (-1 for none), in the
+        dataset's ``id_dtype``, and a field of its parametric coordinates there."""
         data = self.data
         dtype = data.dtype
         if not hasattr(points, "to_numpy"):
@@ -174,22 +173,34 @@ class CellLocator:
             if len(host):
                 points.from_numpy(host)
         m = arrays.size_of(points)
-        found = tack.full(tack.i32, (m,), _NONE) if m else tack.field(tack.i32, shape=(0,))
+        # The smallest cell holding a point wins by an atomic minimum: in i32 below
+        # 2**31 cells, as every backend has those atomics; in i64 past that.
+        scratch = ids.at_least(tack.i32, data.num_cells)
+        none = ids.LIMIT if scratch == tack.i32 else 2**63 - 1
+        if scratch == tack.i64:
+            from tack.runtime.dispatch import get_backend
+
+            if tack.i64 not in get_backend().supported_atomic_dtypes:
+                raise NotImplementedError(
+                    f"locating points among {data.num_cells} cells needs 64-bit atomics, "
+                    f"which the {get_backend().name} backend does not have")
+        found = tack.full(scratch, (m,), none) if m else tack.field(scratch, shape=(0,))
         pcs = tack.Vector.field(3, dtype, shape=(m,))
         if m:
             pcs.from_numpy(np.zeros((m, 3), dtype.numpy_dtype))
         if m and data.num_cells:
             nbins = int(np.prod(self.dims))
-            keys = tack.field(tack.u64, shape=(m,))
+            keys = tack.field(tack.i32, shape=(m,))
             _point_bins(points, *self._grid(), float(self.slack), keys)
-            order, starts = bucket_order(keys, nbins + 1)       # the extra bin: outside
+            # The extra bin: outside the grid.
+            order, starts = bucket_order(keys, nbins + 1, ids.at_least(data.id_dtype, m))
             for write in (0, 1):
                 for_each(_test_points, data, "cells", points, self.lo, self.hi, starts, order,
                          *self._grid(), _TOLERANCE, write, found, pcs)
-            _unfound(found, _NONE)
+            _unfound(found, none)
         elif m:
             found.fill(-1)
-        return found, pcs
+        return ids.as_ids(found, data.id_dtype), pcs
 
 
 @tack.kernel
@@ -204,8 +215,7 @@ def _evaluate(cells, u, links, link_points, pcs, out):
 @tack.kernel
 def _found_keys(found, ncells, keys):
     for q in range(found.shape[0]):
-        cell = found[q] if found[q] >= 0 else ncells
-        keys[q] = (tack.u64(cell) << tack.u64(32)) | tack.u64(q)
+        keys[q] = found[q] if found[q] >= 0 else ncells
 
 
 @tack.kernel
@@ -219,9 +229,10 @@ def _vertices(points):
     from tack.data.topology import UnstructuredTopology
 
     n = len(points)
+    idt = ids.choose(None, n)
     types = tack.field(tack.u8, shape=(n,))
-    offsets = tack.zeros(tack.i32, (n + 1,))
-    connectivity = tack.field(tack.i32, shape=(n,))
+    offsets = tack.zeros(idt, (n + 1,))
+    connectivity = tack.field(idt, shape=(n,))
     if n:
         _vertex_cells(types, offsets, connectivity)
     return DataSet(UnstructuredTopology(types, offsets, connectivity, num_points=n), points)
@@ -245,10 +256,11 @@ def probe(data, where, fields=None, locator=None):
     points = arrays.materialize(where.geometry.values)
     found, pcs = locator.find(points)
     m = found.shape[0]
-    keys = tack.field(tack.u64, shape=(m,))
+    keys = tack.field(found.dtype, shape=(m,))
     if m:
         _found_keys(found, data.num_cells, keys)
-    order, links = bucket_order(keys, data.num_cells + 1)    # the extra cell: not found
+    # The extra cell: not found.
+    order, links = bucket_order(keys, data.num_cells + 1, ids.at_least(data.id_dtype, m))
 
     out = {}
     for name in selected(data, fields):

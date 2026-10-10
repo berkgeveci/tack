@@ -44,6 +44,7 @@ from tack.data import arrays, shapes
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.carry import Pieces, Same, Take, _like, _take, carry
 from tack.data.dataset import Field, for_each, traces
+from tack.data.ids import at_least
 from tack.data.spaces import H1, L2, Constant, Values, reference_cells
 from tack.data.topology import UnstructuredTopology, corner_layout
 
@@ -436,20 +437,21 @@ def extract_surface(data, name="boundary", fields=None):
         return _polygon_surface(data, name, fields)
     faces = data.topology.faces()
     ids = data.sets[name]
+    idt = data.id_dtype
     n = ids.shape[0]
     sizes = tack.field(tack.i32, shape=(n,))
-    starts = tack.field(tack.i32, shape=(n,))
+    starts = tack.field(idt, shape=(n,))
     if n:
         _surface_sizes(ids, faces.kinds, sizes)
     length = exclusive_scan(sizes, starts, n) if n else 0
     types = tack.field(tack.u8, shape=(n,))
-    offsets = tack.zeros(tack.i32, (n + 1,))
-    connectivity = tack.field(tack.i32, shape=(length,))
+    offsets = tack.zeros(idt, (n + 1,))
+    connectivity = tack.field(idt, shape=(length,))
     if n:
         _surface_cells(ids, faces.kinds, faces.rows, starts, types, offsets, connectivity,
                        length)
     surface = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
-    cells = tack.field(tack.i32, shape=(n,))
+    cells = tack.field(idt, shape=(n,))
     if n:
         _face_cells(ids, faces.sides, cells)
     return carry(data, surface, points=Same(), cells=Pieces(cells), faces_to_cells=Take(ids),
@@ -485,18 +487,19 @@ def _polygon_surface(data, name, fields=None):
     topology = data.topology
     faces = topology.faces()
     ids = data.sets[name]
+    idt = data.id_dtype
     n = ids.shape[0]
     sizes = tack.field(tack.i32, shape=(n,))
-    offsets = tack.field(tack.i32, shape=(n + 1,))
+    offsets = tack.field(idt, shape=(n + 1,))
     if n:
         _surface_loop_sizes(ids, topology.face_offsets, sizes)
     total = exclusive_scan(sizes, offsets, n) if n else 0
     _close_last(offsets, n, total)
-    loops = tack.field(tack.i32, shape=(total,))
+    loops = tack.field(idt, shape=(total,))
     if n:
         _surface_loops(ids, topology.face_offsets, topology.face_points, offsets, loops)
     surface = PolygonalTopology(offsets, loops, num_points=data.num_points)
-    cells = tack.field(tack.i32, shape=(n,))
+    cells = tack.field(idt, shape=(n,))
     if n:
         _face_cells(ids, faces.sides, cells)
     return carry(data, surface, points=Same(), cells=Pieces(cells), faces_to_cells=Take(ids),
@@ -843,14 +846,5 @@ def _point_averages(cells, values, out):
         out[cells.entity_id(c)] = total / n
 
 
-@tack.kernel
-def _counting(out):
-    for i in range(out.shape[0]):
-        out[i] = i
-
-
 def _all(n):
-    ids = tack.field(tack.i32, shape=(n,))
-    if n:
-        _counting(ids)
-    return ids
+    return tack.arange(n, at_least(tack.i32, n))

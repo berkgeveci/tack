@@ -49,13 +49,42 @@ that share everything else: spaces without a basis, fields, sets,
 
 | Topology | Built from | Kind |
 |---|---|---|
-| `UnstructuredTopology(types, offsets, connectivity, num_points=None)` | VTK cell types and point rows, of the linear shapes (vertex to pyramid) | shape-based |
-| `StructuredTopology(point_dims)`, usually through `rectilinear_grid(x, y, z)` | grid dimensions; cells addressed by (i, j, k) | shape-based |
-| `PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, cell_face_sides, num_points=None)` | faces stored once, as point rings wound out of side 0; each cell a list of faces, with the side (u8, 0 or 1) it is on | polyhedral, 3D |
-| `PolyhedralTopology.from_cell_faces(cells, num_points, positions=None, orient=False)` | each cell's own face rings, as VTK and most readers give them; copies of a face matched by point set | polyhedral, 3D |
-| `PolygonalTopology(loop_offsets, loop_points, num_points=None)` | each polygon's loop of points | polyhedral, 2D |
+| `UnstructuredTopology(types, offsets, connectivity, num_points=None, id_dtype=None)` | VTK cell types and point rows, of the linear shapes (vertex to pyramid) | shape-based |
+| `StructuredTopology(point_dims, id_dtype=None)`, usually through `rectilinear_grid(x, y, z)` | grid dimensions; cells addressed by (i, j, k) | shape-based |
+| `PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, cell_face_sides, num_points=None, id_dtype=None)` | faces stored once, as point rings wound out of side 0; each cell a list of faces, with the side (u8, 0 or 1) it is on | polyhedral, 3D |
+| `PolyhedralTopology.from_cell_faces(cells, num_points, positions=None, orient=False, id_dtype=None)` | each cell's own face rings, as VTK and most readers give them; copies of a face matched by point set | polyhedral, 3D |
+| `PolygonalTopology(loop_offsets, loop_points, num_points=None, id_dtype=None)` | each polygon's loop of points | polyhedral, 2D |
 
 `num_points` exists because a dataset may have points that no cell uses.
+
+### Ids
+
+Every id a topology stores or derives has one integer type,
+`topology.id_dtype` (also `data.id_dtype`): point and cell ids, offsets,
+faces, edges, point links, and the orders and keys that sort them. It is
+`i32` unless the topology:
+
+- is asked for `i64` (`id_dtype=tack.i64`);
+- is built from `i64` fields;
+- or is too large for `i32`: an id, an offset or a derived array
+  past 2^31 − 1 entries (a mesh's edges number up to twelve per cell).
+
+Asked for `i32`, a topology too large for it raises, so a valid mesh's ids
+(each below `num_points`) are never wrapped.
+Arrays from NumPy or VTK (whose ids are 64-bit) take the narrowest type that
+holds them. Kernels specialize on their fields' types, so the same kernels
+serve both, and an `i32` mesh pays nothing for the `i64` path.
+
+A filter's output keeps its input's type, or takes `i64` when the output
+can be too large for `i32` (a hexahedron tetrahedralizes into 20
+connectivity entries), so a pipeline that starts in `i64` stays there.
+Sort keys are tuples of ids, never ids packed into one integer, so 64-bit
+ids sort as 32-bit ones do.
+
+On GPUs without 64-bit atomics (Metal, Level Zero), `CellLocator` refuses a
+dataset of more than 2^31 − 1 cells; everything else works there.
+
+`pytest --ids=i64` runs the dataset tests with every topology in `i64`.
 
 ### Derived entities
 
@@ -363,7 +392,8 @@ data goes to each, the points stay the same.
 `CellLocator(data, density=1.0)` bins the cells' bounding boxes on a
 uniform grid over the dataset, about `density` bins per cell.
 `locator.find(points)` takes an `(n, 3)` array or a field of 3-vectors and
-gives each point's cell (an i32 field, -1 where none holds it) and its
+gives each point's cell (a field of the dataset's `id_dtype`, -1 where
+none holds it) and its
 parametric coordinates there. Where cells share the point, the smallest
 cell id wins. A point counts as in a cell within 0.1% of the cell's
 bounding-box diagonal, as `vtkProbeFilter`'s computed tolerance has it.
@@ -394,9 +424,9 @@ tetrahedra, by clamping the parametric coordinates for the others.
 
 | Function | |
 |---|---|
-| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False)` | a `vtkUnstructuredGrid` or rectilinear grid. Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
+| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid` or rectilinear grid. Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
 | `tack.interop.vtk.dataset_to_vtk(data)` | back to VTK, polyhedra and polygons included |
-| `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32)` | an MFEM mesh, curved at order 2 too, with its grid functions |
+| `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None)` | an MFEM mesh, curved at order 2 too, with its grid functions |
 | `tack.interop.mfem.mfem_field(data, mesh, gf, dtype=tack.f32)` | one grid function: H1 orders 1 and 2, L2 orders 0 and 1, scalars and vectors |
 
 Polyhedral formats such as CGNS arrive through VTK's readers. The CGNS

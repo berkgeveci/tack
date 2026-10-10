@@ -177,6 +177,11 @@ class DataSet:
         return self.geometry.values.dtype
 
     @property
+    def id_dtype(self):
+        """The topology's integer type for ids: ``tack.i32`` or ``tack.i64``."""
+        return self.topology.id_dtype
+
+    @property
     def num_points(self):
         return self.topology.num_points
 
@@ -377,9 +382,10 @@ def _subgroups(group, spaces):
         _add_key(cells, space.cell_keys(), keys, bad)
     if bad[0]:
         raise ValueError(f"{bad[0]} cells have a key outside [0, {_KEY_BASE})")
-    perm = argsort(keys)
+    idt = spaces[0].topology.id_dtype
+    perm = argsort(keys, index_dtype=idt)
     sorted_keys = gather(keys, perm)
-    offsets, runs = _run_offsets(sorted_keys, n)
+    offsets, runs = _run_offsets(sorted_keys, n, idt)
     bounds = offsets.to_numpy()
     if issubclass(group.kind, views._PolyhedralCells):
         # A polyhedral cell is its id: subgroups select ids, sorted by key.
@@ -392,17 +398,17 @@ def _subgroups(group, spaces):
                 keys=_decode(int(sorted_keys[first]), spaces)))
         cache[cache_key] = subgroups
         return subgroups
-    rank = tack.field(tack.i32, shape=(n,))
+    rank = tack.field(idt, shape=(n,))
     _invert(perm, rank)
-    rows = tack.field(tack.i32, shape=(n, group.shape.NUM_POINTS))
-    ids = tack.field(tack.i32, shape=(n,))
-    positions = tack.field(tack.i32, shape=(n,))
-    _gather_selected(cells, rank, rows, ids, positions)
+    rows = tack.field(idt, shape=(n, group.shape.NUM_POINTS))
+    cell_ids = tack.field(idt, shape=(n,))
+    positions = tack.field(idt, shape=(n,))
+    _gather_selected(cells, rank, rows, cell_ids, positions)
     subgroups = []
     for r in range(runs):
         first, count = int(bounds[r]), int(bounds[r + 1] - bounds[r])
         subgroups.append(views.DomainGroup(views._SelectedCells, group.shape,
-                                           (rows, ids, count, positions, first), count,
+                                           (rows, cell_ids, count, positions, first), count,
                                            group.start, parent=group,
                                            keys=_decode(int(sorted_keys[first]), spaces)))
     cache[cache_key] = subgroups

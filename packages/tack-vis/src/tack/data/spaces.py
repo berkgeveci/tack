@@ -41,7 +41,7 @@ import numpy as np
 
 import tack
 from tack.algorithms.scan import exclusive_scan
-from tack.data import shapes, views
+from tack.data import ids, shapes, views
 
 __all__ = ["H1", "L2", "Constant", "SideTraces", "Space", "Values"]
 
@@ -181,21 +181,22 @@ class H1(Space):
             edges, faces = topology.edges(), topology.faces()
             base = topology.num_points + edges.num_edges
             nf = faces.num_faces
+            n = topology.num_cells
+            idt = ids.at_least(topology.id_dtype, base + nf + n)
             flags = tack.field(tack.i32, shape=(nf,))
-            slots = tack.field(tack.i32, shape=(nf,))
-            face_dofs = tack.field(tack.i32, shape=(nf,))
+            slots = tack.field(idt, shape=(nf,))
+            face_dofs = tack.field(idt, shape=(nf,))
             quads = 0
             if nf:
                 _quad_face_dofs(faces.kinds, flags)
                 quads = exclusive_scan(flags, slots, nf)
                 _place(flags, slots, base, face_dofs)
-            n = topology.num_cells
             flags = tack.zeros(tack.i32, (n,))
             for group in topology.groups():
                 if group.count:
                     _interiors(group.view(), flags)
-            slots = tack.field(tack.i32, shape=(n,))
-            cell_dofs = tack.field(tack.i32, shape=(n,))
+            slots = tack.field(idt, shape=(n,))
+            cell_dofs = tack.field(idt, shape=(n,))
             inside = exclusive_scan(flags, slots, n) if n else 0
             if n:
                 _place(flags, slots, base + quads, cell_dofs)
@@ -301,21 +302,21 @@ class L2(Space):
                 for group in topology.groups():
                     if group.count:
                         _l2_counts(group.view(), orders, counts)
-                offsets = tack.field(tack.i32, shape=(n + 1,))
+                offsets = tack.field(ids.at_least(topology.id_dtype, 8 * n), shape=(n + 1,))
                 size = exclusive_scan(counts, offsets, n) if n else 0
                 _set_last(offsets, n, size)
                 self._offsets, self._size = offsets, int(size)
             elif self.order == 0:
-                offsets = tack.field(tack.i32, shape=(n + 1,))
-                offsets.from_numpy(np.arange(n + 1, dtype=np.int32))
+                offsets = tack.arange(n + 1, topology.id_dtype)
                 self._offsets, self._size = offsets, n
             elif hasattr(topology, "offsets"):
                 self._offsets = topology.offsets          # the connectivity's: shared
                 self._size = int(topology.connectivity.shape[0])
             else:
                 k = topology.groups()[0].shape.NUM_POINTS
-                offsets = tack.field(tack.i32, shape=(n + 1,))
-                offsets.from_numpy(np.arange(n + 1, dtype=np.int32) * k)
+                dtype = ids.at_least(topology.id_dtype, n * k)
+                offsets = tack.field(dtype, shape=(n + 1,))
+                offsets.from_numpy(np.arange(n + 1, dtype=dtype.numpy_dtype) * k)
                 self._offsets = offsets
                 self._size = n * k
         return self._offsets, self._size
