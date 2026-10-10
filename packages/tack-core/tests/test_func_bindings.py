@@ -34,7 +34,7 @@ def cross(x):
 def cross_apply(out):
     for i in range(out.shape[0]):
         out[i] = cross(i)
-@tack.data_oriented
+@tack.device_class
 class Model:
     def __init__(self, bias):
         self.bias = bias

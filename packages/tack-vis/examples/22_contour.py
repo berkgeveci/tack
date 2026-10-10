@@ -1,7 +1,7 @@
 """22 -- Marching squares contour with GPU prefix sum.
 
 Port of the Tack contour example demonstrating:
-- Cell set abstraction via @tack.data_oriented templates
+- Cell set abstraction via @tack.device_class templates
 - Topology-aware cell iteration with point field access
 - Multi-pass algorithm with scatter for variable output
 - GPU-accelerated exclusive prefix sum (scan) replacing host-side numpy
@@ -47,7 +47,7 @@ tack.init(arch=_arch)
 #
 # Case ID = 4-bit mask: bit i set if point i is above isovalue.
 
-@tack.data_oriented
+@tack.device_class
 class MarchingSquaresTables:
     """Lookup tables for marching squares, passed as a template parameter."""
 
@@ -102,10 +102,10 @@ ms_tables = MarchingSquaresTables()
 # CELL SET ABSTRACTIONS
 # ================================================================
 # Follows Viskores: cell sets provide get_cell_points(cell_id)
-# resolved at JIT time per type via @tack.data_oriented templates.
+# resolved at JIT time per type via @tack.device_class templates.
 
 
-@tack.data_oriented
+@tack.device_class
 class CellSetStructured2D:
     """2D structured quad grid. Connectivity from dimensions (zero storage)."""
 
@@ -129,7 +129,7 @@ class CellSetStructured2D:
         return result
 
 
-@tack.data_oriented
+@tack.device_class
 class CellSetExplicitQuads:
     """Unstructured quad grid. Connectivity stored in arrays."""
 

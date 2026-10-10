@@ -102,14 +102,14 @@ There are three common ways to give device code a numerical value:
 |---|---|---|
 | A coefficient changing each call | Scalar argument | `advance(pos, vel, dt, n)` |
 | A fixed model parameter | `tack.constant` | `GRAVITY = tack.constant(9.8)` |
-| An array of state | Field argument or data-oriented attribute | Particle positions, a grid, a counter |
+| An array of state | Field argument or device-class attribute | Particle positions, a grid, a counter |
 
 An ordinary Python global such as `gravity = 9.8` is not captured in device code.
 Declare a constant or pass it. Changing a runtime argument changes the next call
 without changing the kernel source. Constants are fixed when the specialization
 is first lowered; rebinding a Python name later does not update cached code.
 
-`@tack.data_oriented` gathers fields and parameters into an object. Its instance
+`@tack.device_class` gathers fields and parameters into an object. Its instance
 scalars are runtime arguments; its class constants and method structure help
 define the compiled specialization. The [Templates](06-templates.md) chapter
 shows how to use this to organize a solver.

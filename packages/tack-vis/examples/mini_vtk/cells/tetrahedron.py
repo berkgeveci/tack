@@ -3,7 +3,7 @@
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class Tetrahedron:
     """4-node tetrahedron with linear (barycentric) shape functions.
 

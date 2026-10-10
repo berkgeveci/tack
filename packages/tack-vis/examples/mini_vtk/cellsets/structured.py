@@ -3,7 +3,7 @@
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class CellSetStructured3D:
     """Structured hex mesh: zero connectivity storage.
 

@@ -76,7 +76,7 @@ fill an array for the caller. This is useful for cell set abstractions
 where `get_cell_points` populates a buffer in one call:
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class CellSetExplicit:
     points_per_cell = 4  # fixed topology; compile-time allocation size
 

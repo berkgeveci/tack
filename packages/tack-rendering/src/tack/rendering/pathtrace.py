@@ -14,7 +14,7 @@ from tack.rendering.bvh import BVH, STACK_DEPTH
 # RENDER CONFIGURATION (template)
 # ================================================================
 
-@tack.data_oriented
+@tack.device_class
 class _RenderConfig:
     """Compile-time rendering parameters."""
 

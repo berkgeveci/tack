@@ -3,7 +3,7 @@
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class CellSetExplicit:
     """Explicit cell set with fixed points-per-cell.
 

@@ -158,7 +158,7 @@ def test_same_named_template_classes_keep_their_own_methods(backend):
         return value + 2
 
     def make_class(method):
-        @tack.data_oriented
+        @tack.device_class
         class Mapper:
             apply = method
         return Mapper
@@ -182,7 +182,7 @@ def test_same_named_template_classes_keep_their_own_methods(backend):
 
 
 def test_template_runtime_attribute_layout_is_part_of_ir_identity(backend):
-    @tack.data_oriented
+    @tack.device_class
     class Config:
         def __init__(self, value, extra=None):
             self.value = value
@@ -202,7 +202,7 @@ def test_template_runtime_attribute_layout_is_part_of_ir_identity(backend):
 
 
 def test_template_constant_types_specialize_independently(backend):
-    @tack.data_oriented
+    @tack.device_class
     class Config:
         value = 1
 
@@ -225,7 +225,7 @@ def test_template_constant_types_specialize_independently(backend):
 
 @pytest.mark.parametrize("values", [(0.0, -0.0, 0.0), (-0.0, 0.0, -0.0)])
 def test_template_float_constants_preserve_signed_zero(backend, values):
-    @tack.data_oriented
+    @tack.device_class
     class Config:
         value = 0.0
 
@@ -251,7 +251,7 @@ def _scale_by_template(x, out, cfg: tack.template()):
 
 
 def _per_call_class(factor):
-    @tack.data_oriented
+    @tack.device_class
     class Scale:
         FACTOR = factor
 

@@ -1,4 +1,4 @@
-"""``for c in obj``: a data-oriented object supplies the loop's iteration space.
+"""``for c in obj``: a device-class object supplies the loop's iteration space.
 
 The class declares ``__tack_iterate__``, one to three of its scalar
 attributes, fastest first. One makes ``c`` an integer index over
@@ -15,7 +15,7 @@ import pytest
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class Line:
     __tack_iterate__ = "n"
 
@@ -27,7 +27,7 @@ class Line:
         return c
 
 
-@tack.data_oriented
+@tack.device_class
 class Grid:
     __tack_iterate__ = ("nx", "ny")
 
@@ -40,7 +40,7 @@ class Grid:
         return c[0] + self.nx * c[1]
 
 
-@tack.data_oriented
+@tack.device_class
 class Volume:
     __tack_iterate__ = ("nx", "ny", "nz")
 
@@ -54,7 +54,7 @@ class Volume:
         return c[0] + self.nx * (c[1] + self.ny * c[2])
 
 
-@tack.data_oriented
+@tack.device_class
 class FixedGrid:
     """Class constants: the extents are compiled in."""
     __tack_iterate__ = ("NX", "NY")
@@ -117,7 +117,7 @@ def test_iterating_inside_the_parallel_loop(backend):
     np.testing.assert_array_equal(out.to_numpy(), np.repeat(np.arange(3), 12))
 
 
-@tack.data_oriented
+@tack.device_class
 class Particles:
     __tack_iterate__ = "count"
 
@@ -140,19 +140,19 @@ def test_a_kernel_method_iterates_its_own_object(backend):
 
 # ── Errors ──────────────────────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class Undeclared:
     def __init__(self):
         self.n = 3
 
 
-@tack.data_oriented
+@tack.device_class
 class TooMany:
     __tack_iterate__ = ("a", "b", "c", "d")
     a = b = c = d = 2
 
 
-@tack.data_oriented
+@tack.device_class
 class NotAScalar:
     __tack_iterate__ = "values"
 

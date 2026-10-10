@@ -321,9 +321,9 @@ rejection are **Required** items of the language contract. See
 | Source isn't readable | `RuntimeError` at decoration, the same explanation as for kernels, naming the device function. The `OSError` is chained |
 | Calling the function from Python | `RuntimeError`: "@tack.func '`f`' cannot be called from Python. ..." |
 
-### `@tack.data_oriented` and `tack.template()`
+### `@tack.device_class` and `tack.template()`
 
-`@tack.data_oriented` (`lang/data_oriented.py`) marks a class so that its
+`@tack.device_class` (`lang/device_class.py`) marks a class so that its
 instances can be passed as kernel arguments, and it collects the class's
 `@tack.func` methods. When an instance is passed:
 
@@ -343,7 +343,7 @@ collected, its variants are dropped.
 
 `tack.template()` returns a marker for use as a parameter annotation. It is
 documentation only. Instances are recognized by the class's
-`_data_oriented` flag, not by the annotation.
+`_device_class` flag, not by the annotation.
 
 ## Calling a kernel
 
@@ -358,7 +358,7 @@ and returns only after the kernel completes.
 | `Texture3D` | A sampled texture parameter. The kernel samples the texture's own copy, not its field |
 | `int`, `bool` or NumPy integer | A scalar: `i32` if it fits, else `i64`, else `u64`. Outside the `u64` range raises `TypeError` |
 | `float` or NumPy floating | A scalar: `f64` if any field argument is `f64`, otherwise `f32`. Textures are always `f32`. A NumPy `float64` with only `f32` fields becomes `f32` |
-| `@tack.data_oriented` instance | Expanded as described above |
+| `@tack.device_class` instance | Expanded as described above |
 | Anything else | `TypeError`: "Unsupported argument type for parameter '`a`': <class 'str'>" |
 
 **Current behavior:**

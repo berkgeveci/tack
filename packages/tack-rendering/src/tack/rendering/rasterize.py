@@ -18,7 +18,7 @@ _SURFACE_DEPTH_BIAS = 5.0e-3
 # PROJECTION CONFIG (template — carries the MVP matrix)
 # ================================================================
 
-@tack.data_oriented
+@tack.device_class
 class _ProjConfig:
     """View-projection matrix + screen params as scalar attributes."""
 

@@ -328,7 +328,7 @@ for _case in range(256):
 # TEMPLATES
 # ================================================================
 
-@tack.data_oriented
+@tack.device_class
 class UniformGrid:
     """Uniform grid -- coordinates computed from origin + index * spacing."""
 
@@ -359,7 +359,7 @@ class UniformGrid:
         return self.z0 + float(k) * self.dz
 
 
-@tack.data_oriented
+@tack.device_class
 class RectilinearGrid:
     """Rectilinear grid -- separable 1D coordinate arrays."""
 
@@ -387,7 +387,7 @@ class RectilinearGrid:
         return self.zcoords[k]
 
 
-@tack.data_oriented
+@tack.device_class
 class StructuredGrid:
     """Structured (curvilinear) grid -- full per-point coordinate arrays."""
 
@@ -415,7 +415,7 @@ class StructuredGrid:
         return self.pz[k * self.nxy_p1 + j * self.nx_p1 + i]
 
 
-@tack.data_oriented
+@tack.device_class
 class MCTables:
     """Marching cubes lookup tables as tack fields."""
 

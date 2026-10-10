@@ -7,20 +7,20 @@ compiles to different GPU code depending on the concrete types passed.
 
 Three pieces work together:
 
-1. **`@tack.data_oriented`** (`data_oriented.py`, 29 lines) — marks a class
+1. **`@tack.device_class`** (`device_class.py`) — marks a class
    as passable to kernels. Collects `@tack.func` methods into
    `cls._tack_func_methods`.
 
 2. **`@tack.func`** (`func.py`) — captures a function's AST and original
    Python callable for inlining and static binding resolution.
-   Class methods are stored on the class by `@tack.data_oriented`.
+   Class methods are stored on the class by `@tack.device_class`.
 
 3. **Template rewrite** (`template_rewrite.py`) — AST pre-pass
    that resolves template parameters before IR transformation.
 
 ## Template Rewrite Flow
 
-When `backend.execute()` detects a `@tack.data_oriented` argument:
+When `backend.execute()` detects a `@tack.device_class` argument:
 
 ```python
 # In cpu.py / metal.py / etc.:

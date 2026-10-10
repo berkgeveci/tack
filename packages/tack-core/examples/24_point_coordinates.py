@@ -40,7 +40,7 @@ tack.init(arch=_arch)
 # POINT COORDINATE TYPES
 # ================================================================
 
-@tack.data_oriented
+@tack.device_class
 class AOSPoints:
     """Interleaved: [x0,y0,z0, x1,y1,z1, ...]."""
 
@@ -61,7 +61,7 @@ class AOSPoints:
         return self.data[id * 3 + 2]
 
 
-@tack.data_oriented
+@tack.device_class
 class SOAPoints:
     """Separate arrays: x=[...], y=[...], z=[...]."""
 
@@ -83,7 +83,7 @@ class SOAPoints:
         return self.z[id]
 
 
-@tack.data_oriented
+@tack.device_class
 class ProductPoints:
     """Rectilinear cross product of 3 arrays. Storage: O(nx+ny+nz)."""
 
@@ -195,7 +195,7 @@ yc.from_numpy(y1d)
 zc.from_numpy(z1d)
 tmp_product = ProductPoints(xc, yc, zc)
 
-@tack.data_oriented
+@tack.device_class
 class _WritableSOA:
     def __init__(self, x, y, z):
         self.x = x
@@ -268,7 +268,7 @@ yc.from_numpy(y1d)
 zc.from_numpy(z1d)
 tmp_product = ProductPoints(xc, yc, zc)
 
-@tack.data_oriented
+@tack.device_class
 class _WritableAOS:
     def __init__(self, data, num_points):
         self.data = data

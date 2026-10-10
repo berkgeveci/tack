@@ -48,7 +48,7 @@ def _fields_from_another_backend(args, backend) -> set:
 class _ClassToken:
     """Stands in for a template class in cache keys.
 
-    Specializations are keyed on the identity of the `@tack.data_oriented`
+    Specializations are keyed on the identity of the `@tack.device_class`
     class, because two classes with the same name can carry different
     methods. Keying on the class object itself would keep it alive for as
     long as the kernel lives, so a class created per call -- defined inside
@@ -224,7 +224,7 @@ class Kernel:
         """Bind a kernel defined in a class body to the instance it is called on.
 
         ``model.step(dt)`` passes ``model`` as the kernel's first argument,
-        where a ``@tack.data_oriented`` object is a template like any
+        where a ``@tack.device_class`` object is a template like any
         other. Reached through the class, the kernel is unbound.
         """
         if instance is None:

@@ -330,10 +330,10 @@ for _case in range(256):
 
 
 # ================================================================
-# GRID + TABLES AS @tack.data_oriented
+# GRID + TABLES AS @tack.device_class
 # ================================================================
 
-@tack.data_oriented
+@tack.device_class
 class UniformGrid3D:
     """Structured hex grid with cell bounds computation."""
 
@@ -379,7 +379,7 @@ class UniformGrid3D:
         return x_lo, x_lo + self.dx, y_lo, y_lo + self.dy, z_lo, z_lo + self.dz
 
 
-@tack.data_oriented
+@tack.device_class
 class MCTables:
     """Marching cubes lookup tables stored as tack fields."""
 

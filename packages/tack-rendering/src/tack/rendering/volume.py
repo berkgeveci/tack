@@ -168,7 +168,7 @@ class Volume:
 # VOLUME RENDER CONFIGURATION (template)
 # ================================================================
 
-@tack.data_oriented
+@tack.device_class
 class _VolumeConfig:
     """Compile-time parameters for volume ray casting."""
 

@@ -1,6 +1,6 @@
-"""11 -- Template classes with @tack.data_oriented.
+"""11 -- Template classes with @tack.device_class.
 
-Use @tack.data_oriented to bundle fields and scalar parameters into a
+Use @tack.device_class to bundle fields and scalar parameters into a
 class that can be passed to kernels.  Field attributes become kernel
 buffer parameters, scalar attributes become compile-time constants,
 and methods marked with @tack.func are inlined.
@@ -25,7 +25,7 @@ tack.init(arch=_arch)
 n = 100
 
 
-@tack.data_oriented
+@tack.device_class
 class Grid:
     """A 1D grid with uniform spacing and stored values."""
 

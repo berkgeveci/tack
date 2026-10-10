@@ -8,7 +8,7 @@ When a `@tack.kernel` is called, every backend's `execute()` goes through
 ```
 @tack.kernel Python function
   Once per IR template (vector widths, texture extents, template structure):
-    → Template rewrite (if @tack.data_oriented args)     [template_rewrite.py]
+    → Template rewrite (if @tack.device_class args)     [template_rewrite.py]
     → Source validation (reject unsupported syntax)      [source_validation.py]
     → AST transform → Tack IR, @tack.func inlining       [ast_transform.py, call_bindings.py]
     → Verify 'lowered', cache the template on the Kernel [ir_verify.py, kernel.py]
@@ -51,7 +51,7 @@ packages/
             lang/                # Frontend: AST → IR
                 kernel.py        # @tack.kernel decorator, Kernel class, IR template cache
                 func.py          # @tack.func decorator, Func class
-                data_oriented.py # @tack.data_oriented decorator
+                device_class.py  # @tack.device_class decorator (data_oriented: alias)
                 source_validation.py # Reject unsupported syntax before lowering
                 call_bindings.py # Static resolution of device-function calls
                 ast_transform.py # Python AST → Tack IR
@@ -155,7 +155,7 @@ copy-and-rename at the AST level: during IR transformation, each call site
 lowers a renamed copy of the callee's validated AST. This avoids needing
 function call support in the IR or any backend.
 
-**Template expansion at AST level.** `@tack.data_oriented` objects are
+**Template expansion at AST level.** `@tack.device_class` objects are
 resolved by rewriting the kernel AST before IR transformation. Class-level
 scalar attributes become constants, instance scalar attributes and field
 attributes become parameters, and method calls become inlined function

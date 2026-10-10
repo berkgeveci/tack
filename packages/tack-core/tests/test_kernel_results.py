@@ -52,7 +52,7 @@ def test_kernels_return_a_value(backend):
     assert count_live(cells, count, n) == 668        # the count field accumulates; the kernel is reusable
 
 
-@tack.data_oriented
+@tack.device_class
 class _Sim:
     def __init__(self, n):
         self.n = n

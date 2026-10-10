@@ -1,13 +1,14 @@
 # Templates
 
-## @tack.data_oriented
+## @tack.device_class
 
 The template system lets you write generic kernels that work with different
-data structures. Classes decorated with `@tack.data_oriented` can be passed
-as kernel arguments with `tack.template()` type hints:
+data structures. Classes decorated with `@tack.device_class` can be passed
+as kernel arguments with `tack.template()` type hints. (`@tack.data_oriented`,
+Taichi's name for it, still works and means the same.)
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class AOSArray:
     def __init__(self, data):
         self.data = data       # tack.field → becomes a buffer parameter
@@ -16,7 +17,7 @@ class AOSArray:
     def get_value(self, i):
         return self.data[i]
 
-@tack.data_oriented
+@tack.device_class
 class ConstantArray:
     def __init__(self, value):
         self.value = value     # instance scalar → runtime parameter
@@ -41,7 +42,7 @@ add_arrays(AOSArray(field1), ConstantArray(3.14), out, n)
 
 ## How It Works
 
-When a `@tack.data_oriented` object is passed as a `tack.template()` argument:
+When a `@tack.device_class` object is passed as a `tack.template()` argument:
 
 - **Class-level scalars** (defined on the class, not in `__init__`) → compile-time
   constants baked into generated code. Changing them triggers recompilation.
@@ -62,7 +63,7 @@ Use **class variables** for structural constants that the compiler needs
 runtime values (dimensions, coefficients, thresholds):
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class ImageFilter:
     block_size = 16          # class variable → compile-time constant
     num_channels = 3         # class variable → compile-time constant
@@ -100,12 +101,12 @@ process(filt_large, out2)   # reuses compiled kernel — no JIT
 
 ## Inheritance and Function Attributes
 
-A data-oriented class can derive from another. The subclass has its
+A device class can derive from another. The subclass has its
 bases' `@tack.func` methods and class constants and may override either;
 a method may call an inherited one through `self`:
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class Fluid:
     rho_0 = 1000.0
 
@@ -113,7 +114,7 @@ class Fluid:
     def pressure(self, rho):
         return self.stiffness * (rho / self.rho_0 - 1.0)
 
-@tack.data_oriented
+@tack.device_class
 class WeaklyCompressible(Fluid):
     gamma = 7.0
 
@@ -132,7 +133,7 @@ def cubic(r, h): ...
 @tack.func
 def spiky(r, h): ...
 
-@tack.data_oriented
+@tack.device_class
 class Model:
     def __init__(self, smoothing):
         self.smoothing = smoothing                 # cubic or spiky
@@ -203,7 +204,7 @@ object's fields, scalars, constants and methods are reached through it
 and nothing has to be passed in:
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class Rasterizer:
     def __init__(self, n, width, height):
         self.n = n
@@ -238,7 +239,7 @@ kernel taking the object as an argument would be; `Rasterizer.draw(raster,
 0.8)` is the same call. A device function that uses nothing of the object
 can be a `@staticmethod` (the decorator goes above `@tack.func`) and is
 still called through `self`. The class must be decorated with
-`@tack.data_oriented`.
+`@tack.device_class`.
 
 ## Iterating an Object
 
@@ -247,7 +248,7 @@ over the object itself. `__tack_iterate__` names one to three of its scalar
 attributes, fastest first:
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class Grid:
     __tack_iterate__ = ("nx", "ny")
 
@@ -281,7 +282,7 @@ Templates are ideal for topology abstractions where the same algorithm
 should work with different mesh representations:
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class CellSetStructured3D:
     points_per_cell = 8  # class constant — used for local_array sizes
 
@@ -305,7 +306,7 @@ class CellSetStructured3D:
         # ... (7 more vertices)
         return result
 
-@tack.data_oriented
+@tack.device_class
 class CellSetExplicit:
     points_per_cell = 4  # class constant — used for local_array sizes
 
@@ -339,7 +340,7 @@ different generated GPU code.
 You can separate topology (cell set) from geometry (cell type):
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class Hexahedron:
     num_points = 8  # class constant
 
@@ -383,7 +384,7 @@ This single kernel works with any cell set + cell type combination.
 
 ## Organize an application around state
 
-Use a data-oriented class when several kernels share the same fields and model
+Use a device class when several kernels share the same fields and model
 parameters. The [Physarum tutorial](tutorials/physarum.md) gathers positions and
 headings into `Agents`, uses an initialization kernel as a method, and passes the
 object to three simulation stages. Class constants describe the sensing model;

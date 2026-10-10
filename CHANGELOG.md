@@ -5,9 +5,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ## Unreleased
 
+### Changed
+
+- `@tack.data_oriented` is now `@tack.device_class`, a name for what it
+  does: its objects can be kernel arguments, and kernels specialize on
+  their class. `@tack.data_oriented` remains as an alias, so existing
+  code (and code written for Taichi) runs unchanged.
+
 ### Added
 
-- A kernel can loop over a `@tack.data_oriented` object: `for c in cells:`.
+- A kernel can loop over a `@tack.device_class` object: `for c in cells:`.
   The class declares the attributes the loop runs through as
   `__tack_iterate__`, one to three names, fastest first. One makes `c` an
   integer over `range`; two or three make `c` the vector of indices over

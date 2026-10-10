@@ -3,7 +3,7 @@
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class Hexahedron:
     """8-node hexahedron with trilinear shape functions.
 

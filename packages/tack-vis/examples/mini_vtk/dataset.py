@@ -11,9 +11,9 @@ from .cellsets import CellSetStructured3D
 class Dataset:
     """Container for a mesh with associated data arrays.
 
-    Not @tack.data_oriented -- this is a Python-side container.
+    Not @tack.device_class -- this is a Python-side container.
     The individual components (coordinates, cell_set, arrays) are
-    @tack.data_oriented and can be passed into kernels as templates.
+    @tack.device_class and can be passed into kernels as templates.
     """
 
     def __init__(self, coordinates, cell_set, num_points, num_cells):
