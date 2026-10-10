@@ -10,7 +10,7 @@ point field ``tangle``.
 import numpy as np
 
 import tack
-from tack.data.dataset import Field, rectilinear_grid
+from tack.data.dataset import Field, uniform_grid
 from tack.data.spaces import H1
 
 __all__ = ["tangle", "wavelet"]
@@ -53,8 +53,8 @@ def wavelet(extent=10, spacing=1.0, center=(0.0, 0.0, 0.0), maximum=255.0,
     point, each axis divided by its extent's length."""
     lo, hi = _extent(extent)
     s = np.broadcast_to(np.asarray(spacing, float), (3,))
-    axes = [(np.arange(lo[d], hi[d] + 1) * s[d]).astype(dtype.numpy_dtype) for d in range(3)]
-    data = rectilinear_grid(*axes, dtype=dtype)
+    data = uniform_grid([int(hi[d] - lo[d] + 1) for d in range(3)],
+                        [lo[d] * s[d] for d in range(3)], s, dtype=dtype)
     n = data.num_points
     out = tack.field(dtype, shape=(n,))
     scale = [1.0 / (hi[d] - lo[d]) if hi[d] > lo[d] else 1.0 for d in range(3)]
@@ -87,8 +87,7 @@ def tangle(dims=(16, 16, 16), dtype=tack.f32):
     if (dims < 2).any():
         raise ValueError("tangle needs at least two points per axis")
     cells = dims - 1
-    axes = [(np.arange(dims[d]) / cells[d]).astype(dtype.numpy_dtype) for d in range(3)]
-    data = rectilinear_grid(*axes, dtype=dtype)
+    data = uniform_grid(dims, (0.0, 0.0, 0.0), 1.0 / cells, dtype=dtype)
     out = tack.field(dtype, shape=(data.num_points,))
     _tangle(out, int(dims[0]), int(dims[1]), *map(float, cells))
     data.fields["tangle"] = Field(H1(data), out)

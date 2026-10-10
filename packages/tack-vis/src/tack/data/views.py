@@ -20,7 +20,7 @@ every compiled kernel is specialized to it (``docs/design/dataset-api.md``
 
 Geometry and spaces read values through a *storage* mixin, ``get(k)``, so
 a field's values may be a device field or an implicit array
-(``tack.data.arrays``). Values shared by points are read through
+(``tack.data.arrays``), which the view holds as a nested template. Values shared by points are read through
 ``point_value(i, j)``, which an *addressing* mixin defines: by the flat
 point id, or -- for a structured grid's cells over a storage that has
 ``get_ijk`` -- by the corner's (i, j, k), with no division.
@@ -614,34 +614,21 @@ class _ExplicitStorage:
         return self.values[k]
 
 
-class _CartesianStorage:
-    """``(xs[i], ys[j], zs[k])`` at ``i + px * (j + py * k)``: three axes, nothing per point."""
+class _ArrayStorage:
+    """An implicit array (``tack.data.arrays``), a template the view holds: value ``k``
+    is ``array.get(k)``, however the array is composed."""
 
     @tack.func
-    def get(self, p):
-        rest = p // self.px
-        return [self.xs[p - rest * self.px], self.ys[rest % self.py], self.zs[rest // self.py]]
+    def get(self, k):
+        return self.array.get(k)
+
+
+class _ArrayIJKStorage(_ArrayStorage):
+    """An implicit array of grid points, which also reads the point at ``(i, j, k)``."""
 
     @tack.func
     def get_ijk(self, at):
-        return [self.xs[at[0]], self.ys[at[1]], self.zs[at[2]]]
-
-
-class _ConstantStorage:
-    """The same ``constant`` at every index. (Not ``value``: that is a space's method,
-    and the mixins share one namespace.)"""
-
-    @tack.func
-    def get(self, k):
-        return self.constant
-
-
-class _CountingStorage:
-    """``start + step * k``."""
-
-    @tack.func
-    def get(self, k):
-        return self.start + self.step * k
+        return self.array.get_ijk(at)
 
 
 # ── Addressing: which value a point is ──────────────────────────────

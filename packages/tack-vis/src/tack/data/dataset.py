@@ -31,7 +31,7 @@ import numpy as np
 import tack
 from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.data import arrays, shapes, views
-from tack.data.arrays import CartesianProduct
+from tack.data.arrays import CartesianProduct, UniformCoordinates
 from tack.data.spaces import H1, L2, SideTraces, Space, reference_cells
 
 __all__ = ["DataSet", "Field", "for_each", "rectilinear_grid", "traces"]
@@ -438,4 +438,15 @@ def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32):
     from tack.data.topology import StructuredTopology
 
     coordinates = CartesianProduct(x, y, z, dtype=dtype)
+    return DataSet(StructuredTopology(coordinates.point_dims), coordinates)
+
+
+def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), direction=None,
+                 dtype=tack.f32):
+    """A dataset of ``dims`` points (one to three sizes) at ``origin + direction @
+    (ijk * spacing)``: VTK's image data, Viskores' uniform data set. Nothing per
+    point is stored (``UniformCoordinates``)."""
+    from tack.data.topology import StructuredTopology
+
+    coordinates = UniformCoordinates(dims, origin, spacing, direction, dtype=dtype)
     return DataSet(StructuredTopology(coordinates.point_dims), coordinates)

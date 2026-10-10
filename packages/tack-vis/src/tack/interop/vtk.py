@@ -288,8 +288,9 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None):
 
 
 def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None):
-    """Copy a ``vtkUnstructuredGrid`` or ``vtkRectilinearGrid`` into a
-    ``tack.data.DataSet``.
+    """Copy a ``vtkUnstructuredGrid``, ``vtkRectilinearGrid`` or ``vtkImageData`` into a
+    ``tack.data.DataSet``: an image's points as ``UniformCoordinates`` (with its
+    direction matrix), a rectilinear grid's as a ``CartesianProduct``.
 
     Points and floating-point arrays become fields of ``dtype``; integer
     arrays keep their type. Named point data become ``H1`` fields and named
@@ -301,6 +302,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
     ``i32`` unless the grid is too large for it (``tack.data.ids``).
     """
+    import numpy as np
     from vtkmodules.util.numpy_support import vtk_to_numpy
 
     from tack.data import (
@@ -309,6 +311,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         Constant,
         DataSet,
         StructuredTopology,
+        UniformCoordinates,
         UnstructuredTopology,
     )
 
@@ -334,6 +337,20 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
                                         vtk_to_numpy(cell_array.GetConnectivityArray()),
                                         num_points=grid.GetNumberOfPoints(), id_dtype=id_dtype)
         geometry = vtk_to_numpy(grid.GetPoints().GetData())
+    elif grid.IsA("vtkImageData"):
+        dims = [0, 0, 0]
+        grid.GetDimensions(dims)
+        matrix = grid.GetDirectionMatrix()
+        direction = np.array([[matrix.GetElement(r, c) for c in range(3)] for r in range(3)])
+        spacing = np.asarray(grid.GetSpacing())
+        # Points are origin + direction @ (ijk * spacing), ijk from the extent's start.
+        origin = np.asarray(grid.GetOrigin()) + direction @ (
+            np.asarray(grid.GetExtent()[0::2]) * spacing)
+        geometry = UniformCoordinates(dims, origin, spacing, direction, dtype=dtype)
+        if 1 in geometry.point_dims:
+            raise ValueError(f"an image of dimensions {tuple(dims)} is not supported: "
+                             "only trailing dimensions may be 1")
+        topology = StructuredTopology(geometry.point_dims, id_dtype=id_dtype)
     elif grid.IsA("vtkRectilinearGrid"):
         geometry = CartesianProduct(vtk_to_numpy(grid.GetXCoordinates()),
                                           vtk_to_numpy(grid.GetYCoordinates()),
@@ -347,7 +364,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
                              "only trailing dimensions may be 1")
         topology = StructuredTopology(geometry.point_dims, id_dtype=id_dtype)
     else:
-        raise TypeError(f"expected a vtkUnstructuredGrid or vtkRectilinearGrid, "
+        raise TypeError(f"expected a vtkUnstructuredGrid, vtkRectilinearGrid or vtkImageData, "
                         f"not {grid.GetClassName()}")
     fields = _attributes_to_fields(grid.GetPointData(), H1(topology), dtype)
     fields.update(_attributes_to_fields(grid.GetCellData(), Constant(topology), dtype))
@@ -368,8 +385,9 @@ def _field_to_array(name, field):
 def dataset_to_vtk(data):
     """Copy a ``tack.data.DataSet`` into a new VTK dataset.
 
-    A structured topology over rectilinear coordinates gives a
-    ``vtkRectilinearGrid``; an unstructured one a ``vtkUnstructuredGrid``, and a
+    A structured topology over uniform coordinates gives a ``vtkImageData`` (with
+    the direction matrix), over rectilinear ones a ``vtkRectilinearGrid``; an
+    unstructured one a ``vtkUnstructuredGrid``, and a
     polyhedral one a ``vtkUnstructuredGrid`` of ``VTK_POLYHEDRON`` cells, each
     keeping its own copy of its faces, outward for it (VTK's layout has no
     orientation bit, so a shared face cannot be stored once).
@@ -384,6 +402,7 @@ def dataset_to_vtk(data):
     from vtkmodules.vtkCommonCore import vtkPoints
     from vtkmodules.vtkCommonDataModel import (
         vtkCellArray,
+        vtkImageData,
         vtkRectilinearGrid,
         vtkUnstructuredGrid,
     )
@@ -395,6 +414,7 @@ def dataset_to_vtk(data):
         PolygonalTopology,
         PolyhedralTopology,
         StructuredTopology,
+        UniformCoordinates,
         UnstructuredTopology,
         Values,
     )
@@ -402,7 +422,14 @@ def dataset_to_vtk(data):
     topology = data.topology
     coordinates = data.geometry.values
     if isinstance(topology, StructuredTopology) and isinstance(coordinates,
-                                                               CartesianProduct):
+                                                               UniformCoordinates):
+        grid = vtkImageData()
+        grid.SetDimensions(*coordinates.dims)
+        grid.SetOrigin(*coordinates._origin)
+        grid.SetSpacing(*coordinates._spacing)
+        grid.SetDirectionMatrix(*coordinates._matrix.reshape(-1))
+    elif isinstance(topology, StructuredTopology) and isinstance(coordinates,
+                                                                 CartesianProduct):
         grid = vtkRectilinearGrid()
         grid.SetDimensions(*coordinates.dims)
         grid.SetXCoordinates(numpy_to_vtk(coordinates.x.to_numpy(), deep=1))

@@ -146,14 +146,40 @@ indexed by), `interpolated`, and `order` where it applies.
 `Field(space, values)`: the values are a `tack.field` (scalars) or a
 `tack.Vector.field` (vectors), or an implicit array:
 
-| Array | Value `k` |
-|---|---|
-| `CartesianProduct(x, y=(0.0,), z=(0.0,))` | the point of a rectilinear grid, from three axes; nothing stored per point |
-| `ConstantArray(value, size)` | `value` |
-| `CountingArray(size, start=0, step=1)` | `start + step * k` |
+| Array | Value `k` | VTK | Viskores |
+|---|---|---|---|
+| `ConstantArray(value, size, dtype=None)` | `value`, a scalar or a vector | `vtkConstantArray` | `ArrayHandleConstant` |
+| `CountingArray(size, start=0, step=1, dtype=None)` | `start + step * k` | `vtkAffineArray` | `ArrayHandleCounting` |
+| `CartesianProduct(x, y=(0.0,), z=(0.0,))` | a rectilinear grid's point, from three axes | `vtkStructuredPointArray` | `ArrayHandleCartesianProduct` |
+| `UniformCoordinates(dims, origin, spacing, direction=None)` | an image's point, `origin + direction @ (ijk * spacing)` | `vtkStructuredPointArray` | `ArrayHandleUniformPointCoordinates` |
+| `Permutation(ids, base)` | `base[ids[k]]` | `vtkIndexedArray` | `ArrayHandlePermutation` |
+| `Concatenate(a, b, ...)` | the arrays end to end | `vtkCompositeArray` | `ArrayHandleConcatenate` |
+| `Strided(values, stride, offset=0, size=None)` | `values[offset + stride * k]` of a scalar field | `vtkStridedArray` | `ArrayHandleStride` |
+| `View(base, start, size)` | `base[start + k]` | -- | `ArrayHandleView` |
+| `ExtractComponent(base, c)` | component `c` of `base[k]` | -- | `ArrayHandleExtractComponent` |
+| `Components(a, b, ...)` | two to four scalar arrays as a vector | -- | `ArrayHandleCompositeVector` |
+| `Function(func, size, dtype=tack.f32, width=None)` | `func(k)`, a `@tack.func` | `vtkStdFunctionArray` | `ArrayHandleImplicit` |
+| `Transform(func, base, dtype=None, width=None)` | `func(base[k])` | -- | `ArrayHandleTransform` |
+| `Cast(base, dtype)` | `base[k]` converted | -- | `ArrayHandleCast` |
+| `RandomUniform(size, seed, low, high)`, `RandomNormal(size, seed, mean, stddev)` | draws from `tack.random`, a pure function of `k` and `seed` | -- | `ArrayHandleRandomUniformReal`, `...StandardNormal` |
 
-Every algorithm takes an implicit array unchanged; kernels read it through
-the field's view. A NumPy array is refused: put it in a `tack.field` first.
+An array's operands are any arrays -- implicit, or device fields -- so they
+compose to any depth: `Permutation(ids, Concatenate(field, CountingArray(...)))`
+is an array. Every algorithm takes one unchanged: a field's view holds it as
+a nested template (`tack.data_oriented` objects may hold others) and reads
+`array.get(k)`, which inlines to the expression one would write by hand.
+A composed array therefore costs nothing per value beyond what it computes;
+each level of nesting costs about 8 us per kernel launch on the host. VTK's
+`vtkStdFunctionArray` runs a C++ function on the CPU; a `Function` or
+`Transform` is a `@tack.func`, so it runs in the kernel on every backend.
+`materialize(array)` stores one, by a kernel; `to_host` reads one back. A
+NumPy array is refused as values: put it in a `tack.field` first.
+
+`uniform_grid(dims, origin, spacing, direction=None)` is a dataset on
+`UniformCoordinates`, as `rectilinear_grid(x, y, z)` is on a
+`CartesianProduct`; `sources.wavelet` and `sources.tangle` are uniform
+grids. The VTK interop reads and writes `vtkImageData` as uniform grids,
+direction matrix included.
 
 **Geometry.** `DataSet(topology, geometry, fields=None, sets=None,
 dtype=tack.f32)` takes the geometry as an `H1` or `L2` field of 3-vectors,
@@ -455,7 +481,7 @@ for VTK's `vtkStreamTracer` on 8 threads.
 
 | Function | |
 |---|---|
-| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid` or rectilinear grid. Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
+| `tack.interop.vtk.vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None)` | a `vtkUnstructuredGrid`, rectilinear grid or image (`vtkImageData`, as `UniformCoordinates`). Point data becomes `H1`, cell data `Constant`. A grid with polyhedra becomes polyhedral (`polyhedral=True` forces it); `orient` repairs inconsistent winding |
 | `tack.interop.vtk.dataset_to_vtk(data)` | back to VTK, polyhedra and polygons included |
 | `tack.interop.mfem.mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None)` | an MFEM mesh, curved at order 2 too, with its grid functions |
 | `tack.interop.mfem.mfem_field(data, mesh, gf, dtype=tack.f32)` | one grid function: H1 orders 1 and 2, L2 orders 0 and 1, scalars and vectors |
