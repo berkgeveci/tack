@@ -48,7 +48,7 @@ class Func:
         self._funcdef = self._ast.body[0]
         if not isinstance(self._funcdef, ast.FunctionDef):
             raise TypeError(f"@tack.func must decorate a function, got {type(self._funcdef)}")
-        # Class methods are collected by @tack.data_oriented and resolved
+        # Class methods are collected by @tack.device_class and resolved
         # per template transformation. Ordinary functions need no registry.
         self._is_method = (
             len(self._funcdef.args.args) > 0 and

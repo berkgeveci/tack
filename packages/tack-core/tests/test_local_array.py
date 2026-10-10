@@ -71,7 +71,7 @@ def test_local_array_with_template_size(backend):
     n = 16
     out = tack.field(dtype=tack.f32, shape=(n,))
 
-    @tack.data_oriented
+    @tack.device_class
     class Config:
         size = 5  # class variable → compile-time constant (needed for local_array size)
 
@@ -114,11 +114,11 @@ def test_local_array_passed_to_func(backend):
 
 
 def test_local_array_in_template_method(backend):
-    """Pass a local array to a @tack.data_oriented method."""
+    """Pass a local array to a @tack.device_class method."""
     n = 2
     out = tack.field(dtype=tack.f32, shape=(n,))
 
-    @tack.data_oriented
+    @tack.device_class
     class CellSet:
         points_per_cell = 4  # class variable → compile-time constant (needed for local_array size)
 

@@ -84,7 +84,7 @@ whichever backend was active when it was allocated.
 
 ::: tack.lang.func.Func
 
-::: tack.lang.data_oriented.data_oriented
+::: tack.lang.device_class.device_class
 
 ::: tack.lang.types.template
 

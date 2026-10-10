@@ -335,7 +335,7 @@ Matrix methods: `.transpose()`, `.trace()`, and for 2x2 and 3x3
 ### Template Classes
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class Grid:
     scale = 2.0            # class-level scalar → compile-time constant
 
@@ -355,7 +355,7 @@ def process(grid: tack.template(), out):
 process(Grid(data_field, 0.1), output)
 ```
 
-A data-oriented class can derive from another and inherits its
+A device class can derive from another and inherits its
 `@tack.func` methods and class constants. An object can also hold a
 `@tack.func` as an attribute (`self.smoothing = cubic`) and call it.
 A kernel can be a method too: `@tack.kernel def step(self, dt)` is called

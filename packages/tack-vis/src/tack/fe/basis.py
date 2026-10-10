@@ -1,6 +1,6 @@
 """ElementBasis — evaluate FE basis functions at parametric coordinates.
 
-Each basis class is @tack.data_oriented and provides:
+Each basis class is @tack.device_class and provides:
 - evaluate(j, r, s, ...): value of basis function j
 - evaluate_dr(j, r, s, ...): derivative w.r.t. r
 - evaluate_ds(j, r, s, ...): derivative w.r.t. s
@@ -119,7 +119,7 @@ def precompute_basis_matrix_3d(basis, n_sub):
 
 # ── Quad basis ──────────────────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class QuadBasis:
     """Tensor-product Lagrange basis on [0,1]^2.
 
@@ -189,7 +189,7 @@ class QuadBasis:
 
 # ── Hex basis ───────────────────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class HexBasis:
     """Tensor-product Lagrange basis on [0,1]^3.
 

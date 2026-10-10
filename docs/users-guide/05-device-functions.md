@@ -134,7 +134,7 @@ def interp(ct: tack.template(), data, out, n):
         # ... use w[v] ...
 ```
 
-This also works with `@tack.data_oriented` methods — see
+This also works with `@tack.device_class` methods — see
 [Advanced Features](07-advanced.md) for the cell set pattern.
 
 ## Reuse a numerical operation across element types

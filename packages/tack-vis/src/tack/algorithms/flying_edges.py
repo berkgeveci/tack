@@ -14,7 +14,7 @@ flying_edges_multiblock(blocks, isovalue)
     Isosurface a list of uniform grid blocks into unified output.
 
 UniformGrid
-    Data-oriented grid descriptor (origin + spacing).
+    Device-class grid descriptor (origin + spacing).
 
 MCTables
     Marching-cubes lookup tables as tack fields.
@@ -310,7 +310,7 @@ for _case in range(256):
 # TEMPLATES
 # ================================================================
 
-@tack.data_oriented
+@tack.device_class
 class UniformGrid:
     """Uniform grid descriptor: origin + spacing."""
 
@@ -341,7 +341,7 @@ class UniformGrid:
         return self.z0 + float(k) * self.dz
 
 
-@tack.data_oriented
+@tack.device_class
 class MCTables:
     """Marching cubes lookup tables as tack fields."""
 

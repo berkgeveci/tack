@@ -624,7 +624,7 @@ def _localize_outer_scalars(ir_func):
 
 
 def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:
-    """Detect which arguments are @tack.data_oriented template objects.
+    """Detect which arguments are @tack.device_class template objects.
 
     Returns dict: param_index -> (param_name, template_object)
     """
@@ -632,7 +632,7 @@ def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:
     params = [a.arg for a in funcdef.args.args]
     templates = {}
     for i, (param_name, arg) in enumerate(zip(params, args)):
-        if hasattr(arg, '_data_oriented') and arg._data_oriented:
+        if hasattr(arg, '_device_class') and arg._device_class:
             templates[i] = (param_name, arg)
     return templates
 

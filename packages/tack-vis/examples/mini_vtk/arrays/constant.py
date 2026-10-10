@@ -3,7 +3,7 @@
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class ConstantArray:
     """Single-component constant: every element returns the same value."""
 
@@ -15,7 +15,7 @@ class ConstantArray:
         return self.value
 
 
-@tack.data_oriented
+@tack.device_class
 class ConstantTupleArray3:
     """3-component constant: every element returns (v0, v1, v2)."""
 

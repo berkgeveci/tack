@@ -97,7 +97,7 @@ contract regression **LC3**.
 
 ### `tmpl_key`: template structure and constants
 
-For calls with `@tack.data_oriented` arguments, `Kernel._make_cache_key`
+For calls with `@tack.device_class` arguments, `Kernel._make_cache_key`
 contributes one part per template parameter:
 
 ```python
@@ -378,7 +378,7 @@ def scale(x, out, a):
 | `range(1, x.shape[0] - 1)` stencil | lengths 8, 16, 32 | 1 |
 | `out[i] = v[i].dot(v[i])` with `tack.Vector.field` | widths 2, then 3 | 2 (and 2 IR templates) |
 
-For a `@tack.data_oriented` class with a class constant `factor`, an
+For a `@tack.device_class` class with a class constant `factor`, an
 instance scalar `offset` and an instance field `data`:
 
 | Call | Variants | IR templates | Why |
@@ -412,7 +412,7 @@ To keep the number of variants down:
 - **Use instance attributes for values that change, class attributes for
   true constants.** Class constants are baked in, and each new value
   compiles a new variant.
-- **Define `@tack.data_oriented` classes once, at module level.** A class
+- **Define `@tack.device_class` classes once, at module level.** A class
   defined per call is a new identity each time. Its variants are released
   when it is collected, but each call still pays a cold compile.
 - **Expect re-specialization when a template's field changes shape.** Its

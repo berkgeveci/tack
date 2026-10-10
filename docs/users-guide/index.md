@@ -33,7 +33,7 @@ If you already write GPU kernels, focus on [Kernels](03-kernels.md),
 | [Kernels](03-kernels.md) | Parallel ranges, constants, returns and specialization |
 | [Control Flow and Math](04-control-flow.md) | Conditions, sequential loops, casts and numerical helpers |
 | [Device Functions](05-device-functions.md) | Reusable compiled helpers |
-| [Templates](06-templates.md) | Data-oriented objects and generic kernels |
+| [Templates](06-templates.md) | Device-class objects and generic kernels |
 | [Memory and parallel correctness](13-memory-and-parallelism.md) | Layout, buffers, aliases, gathering and scattering |
 
 ## Algorithms and applications

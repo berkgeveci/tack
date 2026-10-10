@@ -45,7 +45,7 @@ if mesh is not None:
     print(mesh["total_points"], "vertices,", mesh["total_tris"], "triangles")
 ```
 
-`UniformGrid` is a data-oriented descriptor. Its dimensions, origin and spacing
+`UniformGrid` is a device-class descriptor. Its dimensions, origin and spacing
 are instance attributes supplied to kernels as runtime parameters; field shapes
 used for indexing can still specialize the generated code.
 

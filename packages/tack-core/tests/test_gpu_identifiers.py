@@ -190,7 +190,7 @@ def test_vector_components_cannot_overwrite_scalar_bindings(backend):
     np.testing.assert_array_equal(out.to_numpy(), 311 + np.arange(7))
 
 
-@tack.data_oriented
+@tack.device_class
 class _IdentifierModel:
     def __init__(self, field):
         self.default = field

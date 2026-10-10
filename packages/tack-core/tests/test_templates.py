@@ -1,4 +1,4 @@
-"""Tests for @tack.data_oriented template parameters."""
+"""Tests for @tack.device_class template parameters."""
 
 import numpy as np
 import pytest
@@ -10,7 +10,7 @@ import tack
 
 # --- Structured cell set (scalar attrs only, no field attrs) ---
 
-@tack.data_oriented
+@tack.device_class
 class CellSetStructured:
     def __init__(self, nx, ny):
         self.nx = nx
@@ -25,7 +25,7 @@ class CellSetStructured:
 
 # --- Explicit cell set (field attrs) ---
 
-@tack.data_oriented
+@tack.device_class
 class CellSetExplicit:
     def __init__(self, conn_np):
         self.connectivity = tack.field(dtype=tack.i32, shape=(len(conn_np),))
@@ -126,7 +126,7 @@ def test_different_scalar_values(backend):
 
 # --- Vector field attributes ---------------------------------------------------
 
-@tack.data_oriented
+@tack.device_class
 class _Flow:
     """A template whose state includes a vector field its methods read."""
 
@@ -190,7 +190,7 @@ def _linear_falloff(r, h):
     return max(0.0, 1.0 - r / h)
 
 
-@tack.data_oriented
+@tack.device_class
 class _BaseModel:
     scale = 2.0
 
@@ -209,7 +209,7 @@ class _BaseModel:
         return self.weight(r)
 
 
-@tack.data_oriented
+@tack.device_class
 class _DerivedModel(_BaseModel):
     extra = 10.0
 
@@ -231,7 +231,7 @@ class _UndecoratedModel(_BaseModel):
         return self.weight(r) + 1.0
 
 
-@tack.data_oriented
+@tack.device_class
 class _ModelWithKernel:
     def __init__(self, n, falloff):
         self.falloff = falloff          # a device function held as an attribute
@@ -257,7 +257,7 @@ def _apply_falloff(s: tack.template(), n):
         s.out[i] = s.falloff(s.x[i], s.h) + s.twice(s.x[i])
 
 
-def test_data_oriented_subclass_inherits_methods_and_constants(backend):
+def test_device_class_subclass_inherits_methods_and_constants(backend):
     """A subclass sees the base's @tack.func methods and class constants,
     and may override either. Inherited methods used to be unknown:
     "self.weight ... is neither a class constant ... nor a @tack.func method"."""
@@ -301,7 +301,7 @@ def test_unknown_template_method_is_reported():
         bad(_BaseModel(2, 1.0), 2)
 
 
-@tack.data_oriented
+@tack.device_class
 class _WithStatic:
     scale = 2.0
 
@@ -338,7 +338,7 @@ def test_static_device_function_of_a_template_class(backend):
     np.testing.assert_array_equal(s.out.to_numpy(), [99.0, 0.0, 2.0, 4.0, -1.0])
 
 
-@tack.data_oriented
+@tack.device_class
 class _WithKernels:
     gain = 3.0
 
@@ -401,5 +401,28 @@ def test_kernel_method_of_an_undecorated_class_says_what_is_missing():
             for i in range(self.n):
                 pass
 
-    with pytest.raises(Exception, match="must be decorated with @tack.data_oriented"):
+    with pytest.raises(Exception, match="must be decorated with @tack.device_class"):
         Plain().run()
+
+
+def test_data_oriented_is_device_class_under_taichis_name(backend):
+    """The old name still decorates a class that kernels take."""
+    assert tack.data_oriented is tack.device_class
+
+    @tack.data_oriented
+    class Offset:
+        def __init__(self, by):
+            self.by = by
+
+        @tack.func
+        def apply(self, x):
+            return x + self.by
+
+    @tack.kernel
+    def shift(offset, out):
+        for i in range(out.shape[0]):
+            out[i] = offset.apply(i)
+
+    out = tack.field(tack.i32, shape=(3,))
+    shift(Offset(10), out)
+    assert out.to_numpy().tolist() == [10, 11, 12]

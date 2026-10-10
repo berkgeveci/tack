@@ -99,7 +99,7 @@ on an Apple M1 Max, where the accumulator showed no comparable gain. See
 [Memory and Aliasing](../design/memory-and-aliasing.md).
 
 Template classes appear in keys as a token rather than the class object.
-When a `@tack.data_oriented` class is collected, a finalizer drops the IR and
+When a `@tack.device_class` class is collected, a finalizer drops the IR and
 the compiled variants specialized on it from every backend's cache.
 
 Public inspection checks the selected backend's workgroup capability before

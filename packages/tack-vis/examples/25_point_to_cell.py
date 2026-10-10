@@ -41,7 +41,7 @@ tack.init(arch=_arch)
 # CELL SET TYPES
 # ================================================================
 
-@tack.data_oriented
+@tack.device_class
 class CellSetStructured3D:
     """Structured hex mesh: connectivity from grid dimensions, zero storage.
 
@@ -76,7 +76,7 @@ class CellSetStructured3D:
         return p0, p1, p2, p3, p4, p5, p6, p7
 
 
-@tack.data_oriented
+@tack.device_class
 class CellSetExplicitHex:
     """Explicit hex mesh: connectivity stored as flat field [c0p0..c0p7, c1p0..c1p7, ...]."""
 
@@ -327,7 +327,7 @@ print()
 
 # --- Tuple array types (from example 23) ---
 
-@tack.data_oriented
+@tack.device_class
 class AOSTupleArray:
     """AOS layout: [x0,y0,z0, x1,y1,z1, ...]."""
 
@@ -345,7 +345,7 @@ class AOSTupleArray:
         self.data[i * self.num_components + c] = val
 
 
-@tack.data_oriented
+@tack.device_class
 class SOATupleArray3:
     """SOA layout for 3 components: separate fields c0, c1, c2."""
 

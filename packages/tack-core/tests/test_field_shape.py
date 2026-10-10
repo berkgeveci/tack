@@ -299,7 +299,7 @@ def test_len_inside_an_inlined_func(backend):
     np.testing.assert_allclose(got, np.full(N, src.mean()), rtol=1e-6)
 
 
-@tack.data_oriented
+@tack.device_class
 class _Holder:
     def __init__(self, data):
         self.data = data

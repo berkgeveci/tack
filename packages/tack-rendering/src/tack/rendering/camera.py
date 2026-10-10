@@ -41,13 +41,13 @@ def _set_camera_attrs(obj, pos, corner, dx, dy, odx, ody, width, height,
     obj.ody_z = float(ody[2])
     obj.width = width
     obj.height = height
-    # CPU-side basis vectors (prefixed with _ to hide from @tack.data_oriented)
+    # CPU-side basis vectors (prefixed with _ to hide from @tack.device_class)
     obj._right = right.copy()
     obj._up = up.copy()
     obj._forward = forward.copy()
 
 
-@tack.data_oriented
+@tack.device_class
 class PerspectiveCamera:
     """Perspective camera.
 
@@ -83,7 +83,7 @@ class PerspectiveCamera:
                           width, height, right, true_up, forward)
 
 
-@tack.data_oriented
+@tack.device_class
 class OrthographicCamera:
     """Orthographic (parallel projection) camera.
 

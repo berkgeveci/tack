@@ -87,7 +87,7 @@ def _inlined_store_before_loop(x, out):
         out[i] = x[i] * scale
 
 
-@tack.data_oriented
+@tack.device_class
 class _Counter:
     def __init__(self, n):
         self.counts = tack.field(dtype=tack.i32, shape=(n,))

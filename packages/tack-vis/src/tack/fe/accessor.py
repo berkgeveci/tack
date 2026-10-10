@@ -13,7 +13,7 @@ import numpy as np
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class ContiguousDofs:
     """DG-style contiguous DOF access.
 
@@ -43,7 +43,7 @@ class ContiguousDofs:
         return self.elem_offsets[elem + 1] - self.elem_offsets[elem]
 
 
-@tack.data_oriented
+@tack.device_class
 class GatheredDofs:
     """H1-style gathered DOF access.
 

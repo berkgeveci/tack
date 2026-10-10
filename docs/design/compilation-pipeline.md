@@ -29,7 +29,7 @@ flowchart TD
     exec --> rv["resolve_variant()<br/>(runtime/kernel_utils.py)"]
     rv --> args["classify arguments:<br/>templates, vectors, textures"]
     args --> getir{"Kernel.get_ir():<br/>IR template cached?"}
-    getir -- no --> tr["template_rewrite<br/>(data_oriented args only)"]
+    getir -- no --> tr["template_rewrite<br/>(device-class args only)"]
     tr --> val["source_validation<br/>validate_source()"]
     val --> ast["ast_transform<br/>transform_kernel()"]
     ast --> vlow["verify_ir('lowered')"]
@@ -83,8 +83,8 @@ translates them by exception type:
 `NotImplementedError`, which `Kernel.__call__` reports as a `RuntimeError`.
 It then classifies the positional arguments. This runs on every dispatch:
 
-- `_detect_template_args` finds `@tack.data_oriented` objects (anything
-  with a true `_data_oriented` attribute) and records their parameter
+- `_detect_template_args` finds `@tack.device_class` objects (anything
+  with a true `_device_class` attribute) and records their parameter
   indices.
 - `_expand_template_args` removes them and appends each template's field
   attributes and then its runtime (instance) scalars, each group sorted by
@@ -115,7 +115,7 @@ verification raises before it is stored, so it is never cached.
 
 ### 3a. Template rewrite
 
-For `@tack.data_oriented` arguments, `rewrite_templates` in
+For `@tack.device_class` arguments, `rewrite_templates` in
 `packages/tack-core/src/tack/lang/template_rewrite.py` works on a deep copy
 of the kernel's Python AST, before any IR exists. `classify_template_attrs`
 sorts the object's public attributes three ways:
