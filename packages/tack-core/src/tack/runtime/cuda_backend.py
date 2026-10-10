@@ -24,6 +24,7 @@ from tack.lang.field import DeviceBuffer
 from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
+from tack.runtime import device_fill
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_launch,
@@ -229,8 +230,32 @@ class CUDABuffer(DeviceBuffer):
                                   start, count)
 
     def fill(self, value):
-        arr = np.full(self._shape, value, dtype=self._numpy_dtype)
-        self.from_numpy(arr)
+        self.fill_bytes(device_fill.scalar_pattern(value, self._numpy_dtype))
+
+    def fill_bytes(self, pattern):
+        self._live("write to")
+        base = int(self._device_ptr)
+
+        def native(pattern):
+            byte = device_fill.uniform_byte(pattern)
+            if byte is not None:
+                _check(driver.cuMemsetD8(self._device_ptr, byte, self._nbytes))
+            elif len(pattern) == 2:
+                _check(driver.cuMemsetD16(self._device_ptr, device_fill.as_unsigned(pattern),
+                                          self._nbytes // 2))
+            elif len(pattern) == 4:
+                _check(driver.cuMemsetD32(self._device_ptr, device_fill.as_unsigned(pattern),
+                                          self._nbytes // 4))
+            else:
+                return False
+            return True
+
+        device_fill.fill(
+            self._nbytes, pattern, native,
+            lambda offset, data: _check(driver.cuMemcpyHtoD(
+                base + offset, np.frombuffer(data, np.uint8), len(data))),
+            lambda dst, src, size: _check(driver.cuMemcpyDtoD(base + dst, base + src, size)))
+        return True
 
     @property
     def nbytes(self) -> int:
