@@ -40,7 +40,7 @@ def _method_call_name(name):
     return node
 
 
-# The names of each data-oriented class's numeric class attributes, found once
+# The names of each device class's numeric class attributes, found once
 # per class: scanning the method resolution order on every launch was most of
 # a small dataset filter's time, its views being composed of many mixins.
 _CONSTANT_NAMES = weakref.WeakKeyDictionary()
@@ -114,7 +114,7 @@ def _memo(kind, obj, compute):
 
 
 def _is_template(value):
-    return getattr(type(value), "_data_oriented", False) is True
+    return getattr(type(value), "_device_class", False) is True
 
 
 def template_children(obj) -> dict:

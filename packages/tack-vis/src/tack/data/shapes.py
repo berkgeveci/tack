@@ -1,6 +1,6 @@
 """Cell shapes: VTK's linear cells as template classes.
 
-Each shape is a ``@tack.data_oriented`` class whose ``@tack.func`` methods
+Each shape is a ``@tack.device_class`` class whose ``@tack.func`` methods
 are its parametric functions. A kernel takes a shape object as a template
 argument and calls its methods directly, so every compiled variant is
 specialized to one shape and contains no dispatch on the shape::
@@ -219,7 +219,7 @@ def _point(pts, j):
 
 # ── The algorithms every shape shares ───────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class Shape:
     """What every shape has in common: the geometry of a cell given its points.
 
@@ -382,7 +382,7 @@ class Shape:
         return pc, converged
 
 
-@tack.data_oriented
+@tack.device_class
 class _Solid(Shape):
     DIMENSION = 3
 
@@ -391,7 +391,7 @@ class _Solid(Shape):
         return m.inverse() @ residual
 
 
-@tack.data_oriented
+@tack.device_class
 class _Surface(Shape):
     DIMENSION = 2
 
@@ -411,7 +411,7 @@ class _Surface(Shape):
 
 # ── Shapes ──────────────────────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class Vertex(Shape):
     """VTK_VERTEX: one point. Every ``pc`` is inside; nearness is a matter of distance."""
 
@@ -448,7 +448,7 @@ class Vertex(Shape):
         return tack.Vector([0.0, 0.0, 0.0]), 1
 
 
-@tack.data_oriented
+@tack.device_class
 class Line(Shape):
     """VTK_LINE: two points, ``r`` from point 0 to point 1."""
 
@@ -486,7 +486,7 @@ class Line(Shape):
         return tack.Vector([a.dot(residual) / a.dot(a), 0.0, 0.0])
 
 
-@tack.data_oriented
+@tack.device_class
 class Triangle(_Surface):
     """VTK_TRIANGLE: shape functions ``1 - r - s``, ``r`` and ``s``."""
 
@@ -534,7 +534,7 @@ class Triangle(_Surface):
         return _TRIANGLE_EDGES[2 * e + k]
 
 
-@tack.data_oriented
+@tack.device_class
 class _Quadrilateral(_Surface):
     """Bilinear shape functions over the unit square; ``_corner`` orders the points."""
 
@@ -573,7 +573,7 @@ class _Quadrilateral(_Surface):
         return tack.Vector([min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0), pc[2]])
 
 
-@tack.data_oriented
+@tack.device_class
 class Pixel(_Quadrilateral):
     """VTK_PIXEL: an axis-aligned quad, points in x-fastest order."""
 
@@ -588,7 +588,7 @@ class Pixel(_Quadrilateral):
         return _PIXEL_EDGES[2 * e + k]
 
 
-@tack.data_oriented
+@tack.device_class
 class Quad(_Quadrilateral):
     """VTK_QUAD: four points counterclockwise."""
 
@@ -603,7 +603,7 @@ class Quad(_Quadrilateral):
         return _QUAD_EDGES[2 * e + k]
 
 
-@tack.data_oriented
+@tack.device_class
 class Tetra(_Solid):
     """VTK_TETRA: shape functions ``1 - r - s - t``, ``r``, ``s`` and ``t``."""
 
@@ -709,7 +709,7 @@ class Tetra(_Solid):
         return TRIANGLE
 
 
-@tack.data_oriented
+@tack.device_class
 class _Box(_Solid):
     """Trilinear shape functions over the unit cube; ``_corner`` orders the points."""
 
@@ -772,7 +772,7 @@ class _Box(_Solid):
                             min(max(pc[2], 0.0), 1.0)])
 
 
-@tack.data_oriented
+@tack.device_class
 class Voxel(_Box):
     """VTK_VOXEL: an axis-aligned hexahedron, points in x-fastest order."""
 
@@ -805,7 +805,7 @@ class Voxel(_Box):
         return PIXEL
 
 
-@tack.data_oriented
+@tack.device_class
 class Hexahedron(_Box):
     """VTK_HEXAHEDRON: the bottom face counterclockwise, then the top above it."""
 
@@ -838,7 +838,7 @@ class Hexahedron(_Box):
         return QUAD
 
 
-@tack.data_oriented
+@tack.device_class
 class Wedge(_Solid):
     """VTK_WEDGE: a triangle's shape functions in (r, s) times ``1 - t`` or ``t``."""
 
@@ -936,7 +936,7 @@ class Wedge(_Solid):
         return TRIANGLE if f < 2 else QUAD
 
 
-@tack.data_oriented
+@tack.device_class
 class Pyramid(_Solid):
     """VTK_PYRAMID: the quad's shape functions times ``1 - t`` at the base, ``t`` at the apex."""
 
@@ -1032,7 +1032,7 @@ class _NoReference:
     NUM_QUADRATIC = 0
 
 
-@tack.data_oriented
+@tack.device_class
 class Polygon(_NoReference):
     """VTK_POLYGON: a face of a polyhedral topology, of any number of points. It has no
     fixed counts and no shape functions; a face view gives its size at run time
@@ -1042,7 +1042,7 @@ class Polygon(_NoReference):
     DIMENSION = 2
 
 
-@tack.data_oriented
+@tack.device_class
 class Polyhedron(_NoReference):
     """VTK_POLYHEDRON: a cell of a polyhedral topology, given by its faces. No fixed
     counts, no reference element, no shape functions: a cell view gives its faces,

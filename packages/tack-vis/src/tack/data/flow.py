@@ -56,7 +56,7 @@ _OUT = tack.constant(5, tack.i32)        # where the push out ends
 
 # ── Cells by id ─────────────────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class _FlatCells:
     """An unstructured topology's cells by id: type and points from its arrays."""
 
@@ -78,7 +78,7 @@ class _FlatCells:
         return self.connectivity[self.offsets[e] + j]
 
 
-@tack.data_oriented
+@tack.device_class
 class _GridCells:
     """A structured grid's cells by id: hexahedra (quads in 2D), x fastest, corners
     in VTK's order."""
@@ -356,7 +356,7 @@ def _kinds(present):
     """A template whose class constant ``PRESENT`` has a bit for each of ``_SHAPES``
     the mesh has, so the kernel compiles only those shapes' code."""
     if present not in _kinds_classes:
-        _kinds_classes[present] = tack.data_oriented(
+        _kinds_classes[present] = tack.device_class(
             type(f"_Kinds{present}", (), {"PRESENT": present}))
     return _kinds_classes[present]()
 

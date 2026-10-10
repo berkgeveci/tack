@@ -809,7 +809,7 @@ def view_class(kind, shape, *mixins):
     key = (kind, shape, mixins)
     if key not in _view_classes:
         name = "".join(m.__name__.strip("_") for m in mixins) + kind.__name__ + shape.__name__
-        _view_classes[key] = tack.data_oriented(type(name, (*mixins, kind, shape), {}))
+        _view_classes[key] = tack.device_class(type(name, (*mixins, kind, shape), {}))
     return _view_classes[key]
 
 

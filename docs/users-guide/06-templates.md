@@ -151,11 +151,11 @@ object takes effect at the next call.
 
 ## Objects Holding Objects
 
-A data-oriented object may hold others as attributes, to any depth, and
+A device-class object may hold others as attributes, to any depth, and
 reach their methods and attributes through them:
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class Counting:
     def __init__(self, start, step):
         self.start, self.step = start, step
@@ -164,7 +164,7 @@ class Counting:
     def get(self, k):
         return self.start + self.step * k
 
-@tack.data_oriented
+@tack.device_class
 class Permuted:
     def __init__(self, ids, base):
         self.ids = ids                             # a field of indices

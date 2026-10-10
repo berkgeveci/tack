@@ -166,7 +166,7 @@ indexed by), `interpolated`, and `order` where it applies.
 An array's operands are any arrays -- implicit, or device fields -- so they
 compose to any depth: `Permutation(ids, Concatenate(field, CountingArray(...)))`
 is an array. Every algorithm takes one unchanged: a field's view holds it as
-a nested template (`tack.data_oriented` objects may hold others) and reads
+a nested template (`tack.device_class` objects may hold others) and reads
 `array.get(k)`, which inlines to the expression one would write by hand.
 A composed array therefore costs nothing per value beyond what it computes;
 each level of nesting costs about 8 us per kernel launch on the host. VTK's
@@ -354,7 +354,7 @@ the surface, positive outside, in VTK's and Viskores' forms -- quadrics for
 the sphere and cylinder, signed distances for the plane, planes and box -- so
 a slice by one lands on the same points as theirs.
 
-Each is a `@tack.data_oriented` object whose parameters are instance values,
+Each is a `@tack.device_class` object whose parameters are instance values,
 so moving or resizing one compiles nothing anew; a kernel takes it as a
 template and calls `f.value(p)`. Taking one:
 

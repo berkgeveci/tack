@@ -35,7 +35,7 @@ _CHUNK = 1024           # buckets one thread looks through for the largest
 # i's bucket, whether entry i's key comes before entry j's (by key, then by
 # index, which makes the order stable), and whether two keys are equal.
 
-@tack.data_oriented
+@tack.device_class
 class _Keys1:
     def __init__(self, values):
         self.values = values
@@ -55,7 +55,7 @@ class _Keys1:
         return self.values[i] == self.values[j]
 
 
-@tack.data_oriented
+@tack.device_class
 class _Keys2:
     def __init__(self, values):
         self.values = values
@@ -77,7 +77,7 @@ class _Keys2:
         return a[0] == b[0] and a[1] == b[1]
 
 
-@tack.data_oriented
+@tack.device_class
 class _Keys4:
     def __init__(self, values):
         self.values = values

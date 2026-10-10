@@ -7,7 +7,7 @@ points as theirs: a sphere and a cylinder are quadrics (squared distance
 minus squared radius), a plane and a set of planes signed distances (a set's
 the largest of its planes'), a box the signed distance to it.
 
-Each is a ``@tack.data_oriented`` object whose parameters are instance
+Each is a ``@tack.device_class`` object whose parameters are instance
 values: a kernel takes it as a template and calls ``f.value(p)`` on a
 3-vector, and moving a sphere or resizing a box does not compile anything
 anew. ``algorithms.implicit_values`` evaluates one on a dataset's geometry;
@@ -36,7 +36,7 @@ def _unit(value, name):
     return v / length
 
 
-@tack.data_oriented
+@tack.device_class
 class Plane:
     """The half-space below a plane: ``n . (p - origin)``, ``n`` the unit normal."""
 
@@ -50,7 +50,7 @@ class Plane:
                 + (p[2] - self.oz) * self.nz)
 
 
-@tack.data_oriented
+@tack.device_class
 class Sphere:
     """A ball: ``|p - center|^2 - radius^2``."""
 
@@ -68,7 +68,7 @@ class Sphere:
         return dx * dx + dy * dy + dz * dz - self.r2
 
 
-@tack.data_oriented
+@tack.device_class
 class Cylinder:
     """An infinite cylinder about the line through ``center`` along ``axis``: the
     squared distance from that line minus ``radius^2``."""
@@ -92,7 +92,7 @@ class Cylinder:
         return rx * rx + ry * ry + rz * rz - self.r2
 
 
-@tack.data_oriented
+@tack.device_class
 class Box:
     """An axis-aligned box from ``lower`` to ``upper``: the signed distance to it
     (negative inside, by the distance to the nearest face)."""
@@ -115,7 +115,7 @@ class Box:
         return sqrt(ox * ox + oy * oy + oz * oz) + min(max(qx, max(qy, qz)), 0.0)
 
 
-@tack.data_oriented
+@tack.device_class
 class Planes:
     """The convex region below every one of several planes (a frustum, a clipping
     box at any angle): the largest of their signed distances."""

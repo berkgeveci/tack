@@ -1,6 +1,6 @@
 """Templates holding templates: ``self.base.get(k)`` through any depth.
 
-A data-oriented object may hold others as instance attributes. Their methods,
+A device-class object may hold others as instance attributes. Their methods,
 fields, runtime scalars and constants resolve as the outer object's do, and
 the whole tree is one specialization: values change without recompiling,
 a different nesting compiles anew.
@@ -12,7 +12,7 @@ import pytest
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class Counting:
     def __init__(self, start, step):
         self.start = start
@@ -23,7 +23,7 @@ class Counting:
         return self.start + self.step * k
 
 
-@tack.data_oriented
+@tack.device_class
 class Explicit:
     def __init__(self, values):
         self.values = values
@@ -33,7 +33,7 @@ class Explicit:
         return self.values[k]
 
 
-@tack.data_oriented
+@tack.device_class
 class Permuted:
     def __init__(self, ids, base):
         self.ids = ids
@@ -44,7 +44,7 @@ class Permuted:
         return self.base.get(self.ids[k])
 
 
-@tack.data_oriented
+@tack.device_class
 class Scaled:
     FACTOR = 3                       # a nested class's constant
 

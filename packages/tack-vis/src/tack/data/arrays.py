@@ -27,7 +27,7 @@ spacing, direction)``                    (image data)
                                                                    ``ArrayHandleRandomStandardNormal``
 =======================================  ========================  ====================================
 
-An implicit array is a ``@tack.data_oriented`` template with ``get(k)``,
+An implicit array is a ``@tack.device_class`` template with ``get(k)``,
 value ``k``, and grid points also with ``get_ijk(ijk)``, the point at
 ``(i, j, k)``, which a structured grid's cells use to skip splitting a flat
 index. An array holding arrays reaches them as ``self.base.get(k)``; the
@@ -88,7 +88,7 @@ def _metadata(array, size, width, dtype):
     array._size, array._width, array._dtype = int(size), width, dtype
 
 
-@tack.data_oriented
+@tack.device_class
 class _Explicit(_Implicit):
     """A device field, where an array holds an array: value ``k`` is ``values[k]``."""
 
@@ -127,7 +127,7 @@ def _store(host, dtype):
 
 # ── Constants and sequences ─────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class ConstantArray(_Implicit):
     """``size`` copies of ``value``: a scalar, or a vector (a sequence of components),
     as VTK's constant arrays of several components. ``dtype`` defaults to i32 for
@@ -146,7 +146,7 @@ class ConstantArray(_Implicit):
         return self.value[0]
 
 
-@tack.data_oriented
+@tack.device_class
 class CountingArray(_Implicit):
     """``start + step * index`` for ``index < size`` (VTK's affine array): integers are
     ``dtype``, by default i32 unless a value needs i64 (ids past ``2**31 - 1``),
@@ -171,7 +171,7 @@ class CountingArray(_Implicit):
 
 # ── Grid points ─────────────────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class CartesianProduct(_Implicit):
     """The points of a grid whose lines run along the axes: ``(x[i], y[j], z[k])`` at
     index ``i + nx * (j + ny * k)``. Only the three axes are stored."""
@@ -222,7 +222,7 @@ def _point_dims(dims):
     return tuple(dims)
 
 
-@tack.data_oriented
+@tack.device_class
 class UniformCoordinates(_Implicit):
     """The points of an image: ``origin + direction @ ((i, j, k) * spacing)`` at index
     ``i + nx * (j + ny * k)``, as VTK's image data (with its direction matrix) and
@@ -276,7 +276,7 @@ class UniformCoordinates(_Implicit):
 
 # ── Arrays of arrays ────────────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class Permutation(_Implicit):
     """``base[ids[k]]``: ``base``'s values in the order ``ids`` (integers, explicit or
     not) gives, as VTK's indexed array."""
@@ -291,7 +291,7 @@ class Permutation(_Implicit):
         return self.base.get(self.ids.get(k))
 
 
-@tack.data_oriented
+@tack.device_class
 class _Concatenation(_Implicit):
     def __init__(self, first, second):
         self.first, self.second = first, second
@@ -317,7 +317,7 @@ def Concatenate(*arrays):
     return joined
 
 
-@tack.data_oriented
+@tack.device_class
 class Strided(_Implicit):
     """``values[offset + stride * k]`` of a scalar device field, as VTK's strided array:
     one column of interleaved data, or every n-th value."""
@@ -335,7 +335,7 @@ class Strided(_Implicit):
         return self.values[self.offset + self.stride * k]
 
 
-@tack.data_oriented
+@tack.device_class
 class View(_Implicit):
     """``base[start + k]`` for ``k < size``: a stretch of another array."""
 
@@ -349,7 +349,7 @@ class View(_Implicit):
         return self.base.get(self.start + k)
 
 
-@tack.data_oriented
+@tack.device_class
 class ExtractComponent(_Implicit):
     """Component ``c`` of a vector array's values."""
 
@@ -368,21 +368,21 @@ class ExtractComponent(_Implicit):
         return self.base.get(k)[self.COMPONENT]
 
 
-@tack.data_oriented
+@tack.device_class
 class _Components2(_Implicit):
     @tack.func
     def get(self, k):
         return [self.c0.get(k), self.c1.get(k)]
 
 
-@tack.data_oriented
+@tack.device_class
 class _Components3(_Implicit):
     @tack.func
     def get(self, k):
         return [self.c0.get(k), self.c1.get(k), self.c2.get(k)]
 
 
-@tack.data_oriented
+@tack.device_class
 class _Components4(_Implicit):
     @tack.func
     def get(self, k):
@@ -412,7 +412,7 @@ def _device_function(func):
     return func
 
 
-@tack.data_oriented
+@tack.device_class
 class Function(_Implicit):
     """``func(k)`` for ``k < size``: any ``@tack.func`` of the index, as VTK's
     ``vtkStdFunctionArray`` -- but evaluated in the kernel, on every backend. Its
@@ -427,7 +427,7 @@ class Function(_Implicit):
         return self.func(k)
 
 
-@tack.data_oriented
+@tack.device_class
 class Transform(_Implicit):
     """``func(base[k])``: another array's values through a ``@tack.func``. ``dtype``
     and ``width`` are the function's results, by default ``base``'s."""
@@ -479,7 +479,7 @@ def Cast(base, dtype):
     return Transform(_CASTS[dtype], base, dtype=dtype)
 
 
-@tack.data_oriented
+@tack.device_class
 class RandomUniform(_Implicit):
     """``size`` uniform draws in ``[low, high)``, value ``k`` a pure function of ``k``
     and ``seed`` (``tack.random``: the same on every backend, and from
@@ -496,7 +496,7 @@ class RandomUniform(_Implicit):
         return self.low + self.span * u
 
 
-@tack.data_oriented
+@tack.device_class
 class RandomNormal(_Implicit):
     """``size`` normal draws of ``mean`` and ``stddev``, as ``RandomUniform``."""
 
