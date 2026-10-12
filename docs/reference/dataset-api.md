@@ -1,12 +1,12 @@
-# Dataset API (prototype)
+# Dataset API
 
-`tack.data`, in the `tack-vis` package, on the `vis/dataset-api` branch.
-This page describes the API as it stands. For why it is shaped this way and
-how it got here, see the proposals:
-[Dataset API](../design/dataset-api.md) and
+`tack.data`, in the `tack-vis` package. This page describes the API as it
+stands; the [User's Guide chapter](../users-guide/09-visualization.md) is a
+tour of it. For why it is shaped this way and how it got here, see the
+design records: [Dataset API](../design/dataset-api.md) and
 [Polyhedra](../design/polyhedra.md). They are history; this page is the
-current state. It is a prototype, built to get the API right rather than to
-be complete: what is missing is listed with each part.
+current state. What is missing is listed with each part, and under
+[Settled, and open](#settled-and-open).
 
 ```python
 import tack.data as td

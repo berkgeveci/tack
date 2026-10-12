@@ -113,6 +113,7 @@ from tack.data.polyhedra import (
     orient,
 )
 from tack.data.sets import Set
+from tack.data.sources import tangle, wavelet
 from tack.data.spaces import H1, L2, Constant, SideTraces, Space, Values
 from tack.data.topology import StructuredTopology, UnstructuredTopology
 
@@ -209,6 +210,7 @@ __all__ = [
     "spherical",
     "statistics",
     "streamlines",
+    "tangle",
     "tetrahedralize",
     "threshold",
     "threshold_points",
@@ -221,4 +223,5 @@ __all__ = [
     "upwind_flux",
     "values_at_centers",
     "warp",
+    "wavelet",
 ]

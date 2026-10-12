@@ -69,7 +69,8 @@ returns without an exception.
 Try replacing the sphere expression with the gyroid
 `sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)` on a larger domain. Keep an explicit
 `None` check for thresholds outside the scalar range. See
-[Visualization](../09-visualization.md) for multiblock inputs and
+[Datasets and visualization](../09-visualization.md) for `tack.data`, which
+supersedes flying edges, and
 [Rendering](../10-rendering.md) for materials, volumes and scalar colouring.
 
 ## Complete program

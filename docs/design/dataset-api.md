@@ -1,11 +1,28 @@
-# A common dataset API: design proposal
+# A common dataset API: design record
 
-> The API as it currently stands is described in
-> [Dataset API (prototype)](../reference/dataset-api.md). This proposal
-> records how it was reasoned out and built, phase by phase.
+> **Status: built.** This is the design record of `tack.data`: how the API
+> was reasoned out, 2026-10-08 to 10-12. The API as it stands is the
+> [Dataset API reference](../reference/dataset-api.md), and where the two
+> differ the reference is right. The build departed from this proposal in
+> these ways:
+>
+> - The geometry is `data.geometry`, kept apart from the named fields, not
+>   a field named `"shape"` (question 11).
+> - A 2D mesh's faces are its edges on every path (question 7), and there
+>   is a polyline topology (question 15).
+> - Sets are typed `Set`s of points, cells or faces, which filters carry
+>   and which are iteration domains (question 12).
+> - `project(data, field, space)` is the one projection; `to_points`,
+>   `to_cells` and `discontinuous` are shortcuts for it (question 13).
+> - View methods were renamed by one rule per kind of answer (`_id`,
+>   `_position`, `_corner`, `num_`): `side_point` is `side_point_id`,
+>   `point(c, j)` is `corner_position(c, j)`, `face_size` is
+>   `num_points`. Views stay flat, not nested templates (questions 8 and 9).
+> - Algorithms live one per module in `tack.data.algorithms`, take the
+>   dataset first, and never change their input.
+> - `@tack.data_oriented` is now `@tack.device_class` (the old name remains
+>   an alias), and templates may hold templates.
 
-Status: proposal for discussion, 2026-10-08. A prototype of phases 1-3 at
-linear order is in `tack.data` (section 9).
 It builds on the prototype on `vis/data-model` (cell shapes, cell sets,
 `for_each_shape`, six filters) and on two studies of prior art: MFEM 4.9's
 mesh and finite-element spaces, and VTK's `vtkCellGrid` (master,

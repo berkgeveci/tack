@@ -11,9 +11,54 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   does: its objects can be kernel arguments, and kernels specialize on
   their class. `@tack.data_oriented` remains as an alias, so existing
   code (and code written for Taichi) runs unchanged.
+- The first visualization worklets moved to `tack.deprecated`, superseded
+  by `tack.data` (below):
+  - `flying_edges`, `compute_normals`, `cell_to_point` and `amr_blanking`
+    are now under `tack.deprecated.algorithms`;
+  - the finite-element helpers in `tack.fe` are now `tack.deprecated.fe`.
+
+  They still import from their new places. `tack.algorithms` no longer
+  re-exports them and now holds the compute primitives alone (scans,
+  sorts, copies). Change `from tack.algorithms.flying_edges import ...` to
+  `from tack.deprecated.algorithms.flying_edges import ...`, or move to
+  `tack.data.contour`.
+- Metal launches are queued instead of waited for one by one. The host
+  waits when it touches field memory, reduces a field, or calls the new
+  `tack.sync()`; an error in a launch surfaces at that wait rather than
+  at the call. Results are unchanged. To time a Metal kernel, call
+  `tack.sync()` before reading the clock.
 
 ### Added
 
+- **`tack.data`, the dataset API** (in `tack-vis`): meshes, the fields on
+  them, and the algorithms that work on both. It is described in the
+  User's Guide chapter *Datasets and visualization* and the
+  *Dataset API* reference.
+  - **Topologies:** structured grids; unstructured meshes of the linear
+    cells, vertex to pyramid; and polyhedra, polygons and polylines.
+  - **Fields:** a field is a space (`H1` of order 1 or 2, `L2`, `Constant`,
+    `Values`) and its values. The values may be an implicit array that
+    stores nothing, such as a grid's coordinates.
+  - **Sets:** named sets of points, cells or faces, carried through
+    filters.
+  - **64-bit ids** wherever a mesh needs them.
+  - **Algorithms:** over fifty, among them contour (and López's on
+    polyhedra), slice, clip, threshold, external faces, gradients,
+    `project` between spaces, the cell locator and probe, advection and
+    streamlines. All run on every backend.
+  - **Your own kernels** see a mesh as the built-in ones do, through
+    `for_each` and per-shape views.
+  - **Interop:** `tack.interop.vtk` converts whole datasets with VTK, and
+    `tack.interop.mfem` reads MFEM meshes and grid functions.
+- A `@tack.device_class` object may hold others as attributes, to any
+  depth: `self.base.get(k)` in a method, `obj.base.step` in a kernel. The
+  tree is one template argument. Composed objects inline to the code one
+  would write by hand, and a class holding itself is refused.
+- `tack.sync()` waits for every launch queued on the current backend. It
+  is a no-op where launches complete before returning.
+- `argsort` and `sort_by_key` take more than 2^31 - 1 keys, with i64
+  indices beyond that count; `argsort(..., index_dtype=tack.i64)` asks
+  for them at any size.
 - A kernel can loop over a `@tack.device_class` object: `for c in cells:`.
   The class declares the attributes the loop runs through as
   `__tack_iterate__`, one to three names, fastest first. One makes `c` an
@@ -23,6 +68,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   that iterate differently. See *Iterating an Object* in the User's Guide.
 
 ### Kernels that now compute different results
+
+- On GPUs, a floating-point `exclusive_scan` or `inclusive_scan` combines
+  lanes in tree order, so it can differ from `np.cumsum` in the last bits
+  from the ninth element on. CPU results are unchanged.
 
 - A local assigned once, to float literals, takes the precision of what
   it meets where it is read, as the literal written there would: with an
@@ -37,6 +86,24 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Performance changes users may notice
 
+- Metal no longer waits about 0.3 ms after every launch: a contour of 100k
+  cells, some 76 launches, spent 26 ms waiting. It also lets Metal clear
+  new buffers instead of clearing them on the CPU, which was 252 of
+  399 ms when deriving the faces of 5M hexahedra.
+- Scans reduce, then scan, by chunks instead of by Blelloch's tree: a few
+  launches per factor of 256 rather than two per factor of two. On GPUs a
+  chunk is a 2048-element tile scanned by a workgroup. Exclusive scan of
+  1M i32: CPU on 8 threads 3.95 -> 0.86 ms, Metal 12.5 -> 1.1 ms.
+- The radix sort sorts 4096-key tiles in shared memory on GPUs, and finds
+  its key range without contended atomics. 10M u32 keys on Metal:
+  153 -> 39 ms. 6M u64 keys on 8 CPU threads: 838 -> 89 ms; eight
+  threads had been four times slower than one.
+- `Field.fill`, and so `tack.zeros`, `ones` and `full`, stays on the
+  device on CUDA, HIP and Level Zero instead of uploading a host array.
+  In a 5M-cell contour on CUDA, filling had taken 24 of 40 ms.
+- A `@tack.device_class` argument's class constants are found once per
+  class instead of on every launch.
+
 - A kernel's parallel loop over a two- or three-dimensional
   `tack.ndrange` no longer divides to recover its indices. GPUs launch a
   2D or 3D grid of the loop's shape, and CPU workers walk their chunk row
@@ -48,6 +115,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   limits, decided per dispatch with no recompile.
 
 ### Fixes with no source change needed
+
+- Metal buffers, textures, libraries and pipelines are freed.
+  pyobjc-framework-Metal 12.1 describes Metal's `new...` methods without
+  their ownership, so nothing Tack created was ever released.
+  Twenty dropped 64 MB fields had left 1.25 GB resident; they now leave
+  32 MB.
+- A zero-element field on HIP can be passed to a kernel. hip-python gave
+  it no device pointer, and the launch failed.
 
 - A vector or matrix `tack.constant` with a type, or of integers, read at
   a runtime index (`FACES[4 * f + k]`) is one load from a constant array

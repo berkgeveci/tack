@@ -30,7 +30,7 @@ result = out.to_numpy()
 
 ## Installation
 
-Tack is split into three packages: **tack-core** (compute framework), **tack-rendering** (path tracer), and **tack-vis** (visualization algorithms).
+Tack is split into three packages: **tack-core** (compute framework), **tack-rendering** (path tracer), and **tack-vis** (datasets and visualization: `tack.data`).
 
 ```bash
 # Install everything from source with uv
@@ -46,7 +46,7 @@ pip install tack-core[cuda]        # core + CUDA backend
 pip install tack-core[hip]         # core + HIP backend (see note below)
 pip install tack-core[level_zero]  # core + Level Zero backend (Intel)
 pip install tack-rendering         # path tracer (pulls in tack-core)
-pip install tack-vis               # visualization (pulls in tack-core)
+pip install tack-vis               # datasets and visualization (pulls in tack-core)
 ```
 
 ## Backends
@@ -361,6 +361,28 @@ A device class can derive from another and inherits its
 A kernel can be a method too: `@tack.kernel def step(self, dt)` is called
 as `grid.step(0.1)` and reaches the object's fields through `self`.
 
+## Datasets and Visualization
+
+`tack.data` (in tack-vis) holds meshes and the fields on them -- structured
+grids, unstructured meshes of the linear cells, polyhedra, polygons and
+polylines -- and the algorithms that work on them: contour, slice, clip,
+threshold, external faces, gradients, projections between spaces,
+streamlines and more. They are Tack kernels, so they run on every backend,
+and your own kernels see a mesh the same way through `for_each`.
+
+```python
+import tack
+import tack.data as td
+
+tack.init(arch=tack.cpu)
+data = td.wavelet(extent=10)                    # VTK's wavelet: 21^3 points
+surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
+print(surface.num_cells, "triangles")
+```
+
+See [Datasets and visualization](docs/users-guide/09-visualization.md) in the
+User's Guide and the [Dataset API reference](docs/reference/dataset-api.md).
+
 ## Examples
 
 49 progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip|level_zero`.
@@ -390,7 +412,7 @@ uv run pytest                                                # all tests
 uv run pytest packages/tack-core/tests/test_cpu_jit.py        # CPU backend
 uv run pytest packages/tack-core/tests/test_metal.py          # Metal backend
 uv run pytest packages/tack-core/tests/test_hip.py            # HIP backend
-uv run pytest packages/tack-vis/tests/test_algorithms.py      # vis algorithms
+uv run pytest packages/tack-vis/tests                         # datasets and vis algorithms
 ```
 
 ## ROCm / HIP Setup
@@ -426,13 +448,14 @@ packages/
     src/tack/rendering/      # Camera, BVH, scene, pathtrace kernels
     examples/               # Rendering examples
 
-  tack-vis/                  # Scientific visualization
+  tack-vis/                  # Datasets and visualization
     src/tack/
-      algorithms/           # Flying edges, normals, cell-to-point
-      data/                 # Data abstractions
-      interop/              # VTK interop
-    tests/                  # Vis algorithm tests
-    examples/               # Vis algorithm examples
+      data/                 # tack.data: topologies, spaces, fields, sets, views
+        algorithms/         # Every algorithm, one module each
+      interop/              # VTK and MFEM interop
+      deprecated/           # The first vis worklets and tack.fe, for reference
+    tests/                  # Dataset and algorithm tests
+    examples/               # Vis examples
 
 examples/                   # Cross-package examples (need vis + rendering)
 benchmarks/                 # Performance benchmarks

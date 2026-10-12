@@ -1,12 +1,16 @@
-# Polyhedral meshes: design proposal
+# Polyhedral meshes: design record
 
-> The API as it currently stands is described in
-> [Dataset API (prototype)](../reference/dataset-api.md). This proposal
-> records how it was reasoned out and built, phase by phase.
+> **Status: built**, in `tack.data`. This records how the polyhedral path
+> was reasoned out (2026-10-08); the API as it stands is the
+> [Dataset API reference](../reference/dataset-api.md), which is right where
+> the two differ. Since this was written, the polygonal path gained a
+> sibling one dimension further down, `PolylineTopology`. View methods
+> were renamed: `side_point` is `side_point_id`, `side_size` is
+> `side_num_points`, a face view's `face_size` is `num_points` and its
+> `point(f, j)` is `corner_position(f, j)`.
 
-Status: proposal, 2026-10-08, on branch `vis/polyhedra`. Questions in
-section 7 decided as recommended; phases 1 to 4 are built (sections 9
-to 12). It refines section 10 of
+Questions in section 7 were decided as recommended; phases 1 to 4 were
+built (sections 9 to 12). It refines section 10 of
 [the dataset API design](dataset-api.md) -- polyhedra get their own
 topology and algorithms, sharing everything above that -- with what three
 studies found:

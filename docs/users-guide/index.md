@@ -44,7 +44,7 @@ If you already write GPU kernels, focus on [Kernels](03-kernels.md),
 | [Reductions and Scans](11-reductions-and-scans.md) | Statistics, output offsets, sorting and block reductions |
 | [Backends](08-backends.md) | Setup, capabilities and device differences |
 | [Sharing arrays](16-interoperability.md) | NumPy copies, external pointers, DLPack and VTK |
-| [Visualization](09-visualization.md) | Uniform grids, surfaces, normals and cell-to-point averaging |
+| [Datasets and visualization](09-visualization.md) | Meshes, fields and sets; contour, threshold, projections, streamlines; your own mesh kernels |
 | [Rendering](10-rendering.md) | Mesh scenes, cameras, materials, volumes and output |
 | [Debugging and timing](15-debugging-and-timing.md) | Independent checks, numerical tolerance and warm measurements |
 
