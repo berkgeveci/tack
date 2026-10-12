@@ -221,11 +221,13 @@ def _copy_loops(loop_offsets, loop_points, keep, starts, out, point_used, n_cell
 
 
 @tack.kernel
-def _offsets_of(starts, kept, out, total):
-    for i in range(kept.shape[0]):
+def _offsets_of(starts, kept, out, total, n):
+    # The count comes as a scalar: a field's length used inside the loop would
+    # be compiled in, and every output size would compile anew.
+    for i in range(n):
         out[i] = starts[kept[i]]
         if i == 0:
-            out[kept.shape[0]] = total
+            out[n] = total
 
 
 def _gather_offsets(starts, kept, total):
@@ -233,20 +235,20 @@ def _gather_offsets(starts, kept, total):
     ``total`` at the end."""
     out = tack.field(starts.dtype, shape=(kept.shape[0] + 1,))
     if kept.shape[0]:
-        _offsets_of(starts, kept, out, total)
+        _offsets_of(starts, kept, out, total, int(kept.shape[0]))
     else:
         out.fill(0)
     return out
 
 
 @tack.kernel
-def _vertex_cells(types, offsets, connectivity):
-    for i in range(connectivity.shape[0]):
+def _vertex_cells(types, offsets, connectivity, n):
+    for i in range(n):
         types[i] = tack.u8(shapes.VERTEX)
         offsets[i] = i
         connectivity[i] = i
         if i == 0:
-            offsets[connectivity.shape[0]] = connectivity.shape[0]
+            offsets[n] = n
 
 
 def _keep_points(data, flags, fields):
@@ -257,7 +259,7 @@ def _keep_points(data, flags, fields):
     offsets = tack.zeros(data.id_dtype, (count + 1,))
     connectivity = tack.field(data.id_dtype, shape=(count,))
     if count:
-        _vertex_cells(types, offsets, connectivity)
+        _vertex_cells(types, offsets, connectivity, int(connectivity.shape[0]))
     vertices = UnstructuredTopology(types, offsets, connectivity, num_points=count)
     return carry(data, vertices, points=Take(kept), fields=fields)
 
@@ -291,5 +293,5 @@ def _vertices(points):
     offsets = tack.zeros(idt, (n + 1,))
     connectivity = tack.field(idt, shape=(n,))
     if n:
-        _vertex_cells(types, offsets, connectivity)
+        _vertex_cells(types, offsets, connectivity, int(connectivity.shape[0]))
     return DataSet(UnstructuredTopology(types, offsets, connectivity, num_points=n), points)

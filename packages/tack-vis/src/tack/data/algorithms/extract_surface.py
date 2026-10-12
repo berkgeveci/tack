@@ -21,8 +21,8 @@ def _surface_sizes(ids, kinds, sizes):
 
 
 @tack.kernel
-def _surface_cells(ids, kinds, rows, starts, types, offsets, connectivity, length):
-    for i in range(ids.shape[0]):
+def _surface_cells(ids, kinds, rows, starts, types, offsets, connectivity, length, n):
+    for i in range(n):
         f = ids[i]
         at = starts[i]
         types[i] = tack.u8(kinds[f])
@@ -31,7 +31,7 @@ def _surface_cells(ids, kinds, rows, starts, types, offsets, connectivity, lengt
         for j in range(2 if kinds[f] == 3 else (3 if kinds[f] == 5 else 4)):
             connectivity[at + j] = row[j]
         if i == 0:
-            offsets[ids.shape[0]] = length
+            offsets[n] = length
 
 
 @tack.kernel
@@ -69,7 +69,7 @@ def extract_surface(data, faces, fields=None):
     connectivity = tack.field(idt, shape=(length,))
     if n:
         _surface_cells(ids, faces.kinds, faces.rows, starts, types, offsets, connectivity,
-                       length)
+                       length, n)
     surface = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
     cells = tack.field(idt, shape=(n,))
     if n:

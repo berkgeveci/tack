@@ -68,19 +68,19 @@ def _fans(loop_offsets, loop_points, starts, connectivity, sources):
 
 
 @tack.kernel
-def _uniform_cells(types, offsets, shape, width):
-    for i in range(types.shape[0]):
+def _uniform_cells(types, offsets, shape, width, n):
+    for i in range(n):
         types[i] = tack.u8(shape)
         offsets[i] = i * width
         if i == 0:
-            offsets[types.shape[0]] = types.shape[0] * width
+            offsets[n] = n * width
 
 
 def _pieces_topology(data, connectivity, sources, count, shape, width, fields):
     types = tack.field(tack.u8, shape=(count,))
     offsets = tack.zeros(connectivity.dtype, (count + 1,))
     if count:
-        _uniform_cells(types, offsets, int(shape), width)
+        _uniform_cells(types, offsets, int(shape), width, int(types.shape[0]))
     out = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
     return carry(data, out, points=Same(), cells=Pieces(sources), fields=fields)
 

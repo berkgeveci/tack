@@ -449,14 +449,14 @@ def _iso_points(kept, ends, weights, positions, out_ends, out_weights, out_posit
 
 
 @tack.kernel
-def _line_cells(line_faces, point_of_face, types, offsets, connectivity):
-    for i in range(line_faces.shape[0]):
+def _line_cells(line_faces, point_of_face, types, offsets, connectivity, n):
+    for i in range(n):
         pair = line_faces[i]
         types[i] = tack.u8(shapes.LINE)
         offsets[i] = 2 * i
         connectivity[2 * i] = point_of_face[pair[0]]
         connectivity[2 * i + 1] = point_of_face[pair[1]]
-        if i == line_faces.shape[0] - 1:
+        if i == n - 1:
             offsets[i + 1] = 2 * (i + 1)
 
 
@@ -499,7 +499,7 @@ def _contour_lines(data, field, isovalue, fields=None):
     offsets = tack.zeros(odt, (lines + 1,))
     connectivity = tack.field(odt, shape=(2 * lines,))
     if lines:
-        _line_cells(line_faces, point_of_face, types, offsets, connectivity)
+        _line_cells(line_faces, point_of_face, types, offsets, connectivity, lines)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=count)
     return carry(data, out, points=Interpolate(out_ends, out_weights), cells=Pieces(line_cells),
                  geometry=Field(H1(out), out_positions), fields=fields)

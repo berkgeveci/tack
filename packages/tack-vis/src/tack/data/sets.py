@@ -18,10 +18,10 @@ DOMAINS = ("points", "cells", "faces", "edges")
 
 
 @tack.kernel
-def _mark(ids, flags, bad):
+def _mark(ids, flags, bad, n):
     for i in range(ids.shape[0]):
         k = ids[i]
-        if k < 0 or k >= flags.shape[0]:
+        if k < 0 or k >= n:
             tack.atomic_add(bad, 0, 1)
         else:
             tack.atomic_max(flags, k, 1)
@@ -79,7 +79,7 @@ class Set:
         flags = tack.zeros(tack.i32, (n,))
         if given.shape[0]:
             bad = tack.zeros(tack.i32, (1,))
-            _mark(given, flags, bad)
+            _mark(given, flags, bad, n)
             if bad[0]:
                 raise ValueError(f"{bad[0]} ids are outside the topology's {n} {on}")
         self._adopt(flags)
