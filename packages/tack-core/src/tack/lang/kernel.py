@@ -93,8 +93,13 @@ def _template_key(obj):
         # NaN constants a stable key despite NaN != NaN.
         tuple((k, type(v), struct.pack('!d', v) if isinstance(v, float) else v)
               for k, v in sorted(scalars.items())),
-        tuple((k, f.dtype, f.shape, getattr(f, '_vector_n', None),
-               getattr(f, '_matrix_shape', None))
+        # A field's rank, not its size: the sizes the code bakes in (a row
+        # stride, a dimension used in arithmetic) are in the variant key's
+        # shape signature, which covers a template's fields as it covers
+        # plain ones. Keying on the size compiled a template kernel anew for
+        # every length of every field it held.
+        tuple((k, f.dtype, len(getattr(f, '_logical_shape', None) or f.shape),
+               getattr(f, '_vector_n', None), getattr(f, '_matrix_shape', None))
               for k, f in sorted(fields.items())),
         tuple(sorted(runtime)),
         # Which device function each function-valued attribute
