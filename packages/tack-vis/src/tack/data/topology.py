@@ -306,7 +306,9 @@ def _side_orientations(rows, side_face, face_rows, orientation, bad):
                 r = j
         after = r + 1 if r + 1 < n else 0
         before = r - 1 if r > 0 else n - 1
-        if face[after] == mine[1]:
+        # A line's points are the same forwards and back from its second: the
+        # side that starts there is reflected, as side 1 of a 3D face is.
+        if face[after] == mine[1] and (n > 2 or r == 0):
             orientation[s] = 2 * r
         elif face[before] == mine[1]:
             orientation[s] = 2 * r + 1

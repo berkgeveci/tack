@@ -124,3 +124,17 @@ def test_shape_and_polygonal_paths_agree(backend):
                                td.cell_geometry(polygons).measure.values.to_numpy(), rtol=1e-6)
     with pytest.raises(ValueError, match="not 3D"):
         td.as_polyhedra(shape)
+
+
+@pytest.mark.parametrize("mesh", sorted(MESHES))
+def test_side_1_of_an_edge_is_reflected(backend, mesh):
+    """As on a 3D face, a cell goes round its edge backwards exactly when it is the
+    edge's side 1. An edge's two points read the same forwards and back from its
+    second, so this is the bit that says so (``2 * r + reflected``)."""
+    faces = MESHES[mesh]().topology.faces()
+    if not hasattr(faces, "side_orientation"):
+        pytest.skip("the polygonal path records sides per cell face, not orientations")
+    slots = faces.side_slot.to_numpy()
+    orientation = faces.side_orientation.to_numpy()
+    np.testing.assert_array_equal(orientation & 1, slots)
+    np.testing.assert_array_equal(orientation, 3 * slots)
