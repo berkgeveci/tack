@@ -89,7 +89,7 @@ def test_clip_by_a_field_carries_fields(backend, kind):
     data.fields["s"] = td.Field(td.H1(data), _scalars(np.sin(x[:, 0]) + x[:, 1] * x[:, 2]))
     linear = lambda p: 2.0 * p[:, 0] - 0.5 * p[:, 1] + 0.25 * p[:, 2]
     data.fields["lin"] = td.Field(td.H1(data), _scalars(linear(x)))
-    data.fields["id"] = td.transforms.cell_ids(data)
+    data.fields["id"] = td.cell_ids(data)
     out = td.clip(data, "s", 1.1)
     reference = _vtk_clip(grid, data.fields["s"].values.to_numpy(), 1.1, False)
     _check_like_vtk(out, reference, "Volume")

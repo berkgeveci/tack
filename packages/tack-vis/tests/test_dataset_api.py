@@ -17,6 +17,7 @@ import pytest
 import tack
 import tack.data as td
 from tack.data import algorithms as alg
+from tack.data.algorithms.values_at_centers import _at_centers
 from tack.runtime.dispatch import env_flag
 
 try:
@@ -490,7 +491,7 @@ def test_structured_cells_read_cartesian_values_by_ijk(backend):
         import re
 
         out = tack.Vector.field(3, tack.f32, shape=(data.num_cells,))
-        src = tack.inspect(alg._at_centers, data.domain_view("cells", cells),
+        src = tack.inspect(_at_centers, data.domain_view("cells", cells),
                            data.geometry.view(cells), out, mode="source")
         assert not re.search(r"\bs(?:div|rem)\b", src)
 

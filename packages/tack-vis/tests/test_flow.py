@@ -13,7 +13,6 @@ from test_dataset_api import _two_hexes_and_a_pyramid
 
 import tack
 import tack.data as td
-from tack.data import flow
 
 try:
     import vtkmodules.all as vtk
@@ -83,7 +82,7 @@ def test_rk4_through_a_linear_field_is_exact(backend, mesh):
                                    atol=2e-4)
     np.testing.assert_array_equal(out.fields["steps"].values.to_numpy(), [120, 120])
     np.testing.assert_array_equal(out.fields["status"].values.to_numpy(),
-                                  flow.SUCCESS | flow.TERMINATE | flow.TOOK_ANY_STEPS)
+                                  td.ParticleStatus.SUCCESS | td.ParticleStatus.TERMINATE | td.ParticleStatus.TOOK_ANY_STEPS)
     np.testing.assert_allclose(out.fields["time"].values.to_numpy(), 2.4, rtol=1e-5)
 
 
@@ -110,7 +109,7 @@ def test_leaving_the_mesh_bisects_then_pushes_out(backend):
     assert 2.0 < x[0] < 2.0 + 0.051 and x[1] == pytest.approx(1.0)
     assert out.fields["steps"].values.to_numpy()[0] == 5
     assert out.fields["status"].values.to_numpy()[0] == (
-        flow.SUCCESS | flow.SPATIAL_BOUNDS | flow.TOOK_ANY_STEPS)
+        td.ParticleStatus.SUCCESS | td.ParticleStatus.SPATIAL_BOUNDS | td.ParticleStatus.TOOK_ANY_STEPS)
     assert out.fields["time"].values.to_numpy()[0] == pytest.approx(0.45, abs=1e-3)
 
 
@@ -118,13 +117,13 @@ def test_seeds_outside_and_still_fields(backend):
     data = _uniform()
     out = td.advect(data, "v", [[5.0, 1.0, 1.0]], 0.1, 10)
     assert out.fields["steps"].values.to_numpy()[0] == 0
-    assert out.fields["status"].values.to_numpy()[0] == flow.SPATIAL_BOUNDS
+    assert out.fields["status"].values.to_numpy()[0] == td.ParticleStatus.SPATIAL_BOUNDS
     np.testing.assert_array_equal(out.positions()[0], [5.0, 1.0, 1.0])
     still = _uniform((0.0, 0.0, 0.0))
     out = td.advect(still, "v", [[1.0, 1.0, 1.0]], 0.1, 10)
     assert out.fields["steps"].values.to_numpy()[0] == 1
     assert out.fields["status"].values.to_numpy()[0] == (
-        flow.SUCCESS | flow.TERMINATE | flow.ZERO_VELOCITY | flow.TOOK_ANY_STEPS)
+        td.ParticleStatus.SUCCESS | td.ParticleStatus.TERMINATE | td.ParticleStatus.ZERO_VELOCITY | td.ParticleStatus.TOOK_ANY_STEPS)
 
 
 def test_cell_velocity_and_euler(backend):
@@ -136,7 +135,7 @@ def test_cell_velocity_and_euler(backend):
     out = td.advect(data, "c", [[1.0, 1.0, 0.5]], 0.25, 100, integrator="euler")
     np.testing.assert_allclose(out.positions()[0], [1.0, 1.0, 2.25], atol=1e-5)
     assert out.fields["steps"].values.to_numpy()[0] == 7
-    assert out.fields["status"].values.to_numpy()[0] == flow.SPATIAL_BOUNDS | flow.TOOK_ANY_STEPS
+    assert out.fields["status"].values.to_numpy()[0] == td.ParticleStatus.SPATIAL_BOUNDS | td.ParticleStatus.TOOK_ANY_STEPS
 
 
 def test_streamlines_are_the_paths(backend):

@@ -1,0 +1,87 @@
+"""``probe``: ``data``'s fields at the points of ``where`` -- a dataset, or an ``(n, 3)`` array of points, which becomes vertex cells -- as Viskores' Probe and VTK's vtkProbeFilter: the result is ``where`` with each field as point data, a field with a basis (``H1``, ``L2``, ``Constant``, values on points) evaluated through it in the cell holding the point, values on cells taken from that cell, and ``valid`` (1, or 0 where no cell holds the point and the values are 0). ``locator`` reuses a ``CellLocator`` of ``data``."""
+
+import numpy as np
+
+import tack
+from tack.data import arrays, ids
+from tack.data.algorithms._extract import _vertices
+from tack.data.buckets import bucket_order
+from tack.data.dataset import DataSet, Field
+from tack.data.locator import CellLocator
+from tack.data.spaces import H1, Constant, Values
+
+__all__ = ['probe']
+
+
+@tack.kernel
+def _evaluate(cells, u, links, link_points, pcs, out):
+    for c in cells:
+        e = cells.entity_id(c)
+        for n in range(links[e], links[e + 1]):
+            q = link_points[n]
+            out[q] = u.value(c, pcs[q])
+
+
+@tack.kernel
+def _found_keys(found, ncells, keys):
+    for q in range(found.shape[0]):
+        keys[q] = found[q] if found[q] >= 0 else ncells
+
+
+@tack.kernel
+def _valid(found, out):
+    for q in range(found.shape[0]):
+        out[q] = 1 if found[q] >= 0 else 0
+
+
+def probe(data, where, fields=None, locator=None):
+    """``data``'s fields at the points of ``where`` -- a dataset, or an ``(n, 3)``
+    array of points, which becomes vertex cells -- as Viskores' Probe and VTK's
+    vtkProbeFilter: the result is ``where`` with each field as point data, a
+    field with a basis (``H1``, ``L2``, ``Constant``, values on points)
+    evaluated through it in the cell holding the point, values on cells taken
+    from that cell, and ``valid`` (1, or 0 where no cell holds the point and the
+    values are 0). ``locator`` reuses a ``CellLocator`` of ``data``."""
+    from tack.data.carry import selected
+
+    if not isinstance(where, DataSet):
+        where = _vertices(np.asarray(where, float).reshape(-1, 3))
+    if not isinstance(where.geometry.space, H1):
+        raise TypeError("probe needs the probed points: an H1 geometry")
+    locator = locator or CellLocator(data)
+    points = arrays.materialize(where.geometry.values)
+    found, pcs = locator.find(points)
+    m = found.shape[0]
+    keys = tack.field(found.dtype, shape=(m,))
+    if m:
+        _found_keys(found, data.num_cells, keys)
+    # The extra cell: not found.
+    order, links = bucket_order(keys, data.num_cells + 1, ids.at_least(data.id_dtype, m))
+
+    out = {}
+    for name in selected(data, fields):
+        f = data.fields[name]
+        space = f.space
+        if isinstance(space, Values) and space.on in ("points", "cells"):
+            f = Field((H1 if space.on == "points" else Constant)(data), f.values)
+            space = f.space
+        if not getattr(space, "interpolated", False) or space.on not in ("points", "cells"):
+            continue
+        width = arrays.width_of(f.values)
+        dtype = arrays.dtype_of(f.values)
+        values = (tack.Vector.field(width, dtype, shape=(m,)) if width
+                  else tack.field(dtype, shape=(m,)))
+        if m:
+            values.fill(0)
+            for group in data.launch_groups("cells", [f]):
+                if group.count:
+                    _evaluate(data.domain_view("cells", group), f.view(group), links, order,
+                              pcs, values)
+        out[name] = Field(H1(where), values)
+    valid = tack.field(tack.i32, shape=(m,))
+    if m:
+        _valid(found, valid)
+    out["valid"] = Field(Values(where, "points"), valid)
+    kept = {name: f for name, f in where.fields.items() if name != "shape"}
+    kept.update(out)
+    return DataSet(where.topology, where.geometry, fields=kept, sets=dict(where.sets))

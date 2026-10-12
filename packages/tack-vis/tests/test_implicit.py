@@ -8,6 +8,7 @@ import pytest
 from test_dataset_api import _two_hexes_and_a_pyramid
 
 import tack.data as td
+from tack.data.algorithms.implicit_values import _implicit_values
 
 try:
     import vtkmodules.all as vtk
@@ -251,7 +252,7 @@ def test_moving_a_function_compiles_nothing_new(backend):
     from tack.runtime.dispatch import get_backend
 
     data = _two_hexes_and_a_pyramid()
-    kernel = td.algorithms._implicit_values
+    kernel = _implicit_values
     td.algorithms.implicit_values(data, td.Sphere((0, 0, 0), 1.0))
     variants = len(get_backend()._cache[kernel])
     for r in (0.5, 2.0, 3.0):

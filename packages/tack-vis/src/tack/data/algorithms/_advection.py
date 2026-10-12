@@ -1,60 +1,61 @@
-"""Particle advection and streamlines through a steady vector field, as Viskores'.
+"""The advection kernel ``advect`` and ``streamlines`` share, by Viskores' rules:
+RK4 or Euler steps; a step leaving the mesh bisected to the boundary and the
+particle pushed out; a stop after its steps, outside, or at zero velocity.
+Each particle's whole path is one thread of one launch, its stages located
+from the particle's side (``CellLocator.cell_bins``), its cells reached by id
+through the topology's flat arrays, each shape's code compiled in only when
+the mesh has that shape."""
 
-``advect(data, field, seeds, step_size, steps)`` moves each seed through the
-velocity ``field`` -- point data, interpolated in the cell holding the
-particle, or cell data, constant in it -- by fixed steps of RK4 (or Euler),
-as Viskores' ParticleAdvection does, and returns the particles where they
-stopped. ``streamlines`` returns the paths, as Viskores' Streamline does.
-
-The rules are Viskores' (``filter/flow/worklet``):
-
-- a step is taken whole when every stage of it lies in the mesh;
-- a step that leaves the mesh is bisected to the boundary (until the
-  remaining step is shorter than ten machine epsilons), and the particle is
-  then pushed out with one Euler step of the length still left, so it ends
-  just outside; its status gets ``SPATIAL_BOUNDS``;
-- a particle stops after ``steps`` steps (``TERMINATE``), outside the mesh,
-  or when its velocity's squared length falls to machine epsilon
-  (``ZERO_VELOCITY``); a seed outside the mesh does not move and loses
-  ``SUCCESS``.
-
-Every particle advances in one thread, its whole path in one launch: the
-point location of each stage runs from the particle (``CellLocator.cell_bins``)
-and reaches its cell by id through the topology's flat arrays, with each
-linear shape's own inversion and interpolation chosen by the cell's type. The
-kernel is a loop with one point location per iteration, whatever it is for
--- a stage, a bisection, the push out -- so the shapes' code appears in it
-once.
-"""
+import enum
 
 import numpy as np
 
 import tack
 from tack.data import arrays, shapes
-from tack.data.dataset import DataSet, Field
-from tack.data.locator import _TOLERANCE, CellLocator, _bin, _vertices
+from tack.data.algorithms._common import _field
+from tack.data.locator import _TOLERANCE, CellLocator, _bin
 from tack.data.spaces import H1, Constant, Values
 
-__all__ = ["SPATIAL_BOUNDS", "SUCCESS", "TERMINATE", "TOOK_ANY_STEPS", "ZERO_VELOCITY",
-           "advect", "streamlines"]
-
-# A particle's status bits, Viskores' ParticleStatus.
+# A particle's status bits, Viskores' ParticleStatus: the kernel's constants,
+# and the flag users compare against.
 SUCCESS = tack.constant(1, tack.i32)
 TERMINATE = tack.constant(2, tack.i32)
 SPATIAL_BOUNDS = tack.constant(4, tack.i32)
 TOOK_ANY_STEPS = tack.constant(16, tack.i32)
 ZERO_VELOCITY = tack.constant(64, tack.i32)
 
+
+class ParticleStatus(enum.IntFlag):
+    """The bits of ``advect``'s ``status`` field, Viskores' ParticleStatus:
+    ``SUCCESS`` (cleared when the seed was outside the mesh), ``TERMINATE`` (it
+    stopped after its steps or at zero velocity), ``SPATIAL_BOUNDS`` (it left
+    the mesh), ``TOOK_ANY_STEPS``, ``ZERO_VELOCITY``."""
+
+    SUCCESS = 1
+    TERMINATE = 2
+    SPATIAL_BOUNDS = 4
+    TOOK_ANY_STEPS = 16
+    ZERO_VELOCITY = 64
+
+
 # What the next point location is for.
 _STEP = tack.constant(0, tack.i32)       # a stage of a whole step
+
+
 _START = tack.constant(1, tack.i32)      # the particle itself, starting the bisection
+
+
 _CHECK = tack.constant(2, tack.i32)      # a stage of a bisection's trial step
+
+
 _TRIAL = tack.constant(3, tack.i32)      # where the trial step ends
+
+
 _LAST = tack.constant(4, tack.i32)       # the last point inside, for the push out
+
+
 _OUT = tack.constant(5, tack.i32)        # where the push out ends
 
-
-# ── Cells by id ─────────────────────────────────────────────────────
 
 @tack.device_class
 class _FlatCells:
@@ -105,8 +106,6 @@ class _GridCells:
         return (i + ((j ^ (j >> 1)) & 1)) + ((rest - k * self.cy + ((j >> 1) & 1))
                                              + (k + (j >> 2)) * self.ny) * self.nx
 
-
-# ── The kernel ──────────────────────────────────────────────────────
 
 @tack.kernel
 def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pixel,
@@ -347,8 +346,6 @@ def _advect(mesh, kinds, tetra, hexa, wedge, pyramid, voxel, triangle, quad, pix
         lengths[q] = length
 
 
-# ── Python side ─────────────────────────────────────────────────────
-
 _kinds_classes = {}
 
 
@@ -360,13 +357,13 @@ def _kinds(present):
             type(f"_Kinds{present}", (), {"PRESENT": present}))
     return _kinds_classes[present]()
 
+
 _SHAPES = (shapes.Tetra, shapes.Hexahedron, shapes.Wedge, shapes.Pyramid, shapes.Voxel,
            shapes.Triangle, shapes.Quad, shapes.Pixel)
 
 
 def _velocity(data, field):
     """The velocity's values and whether they are on the cells."""
-    from tack.data.filters import _field
 
     field = _field(data, field)
     space = field.space
@@ -447,81 +444,3 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
                 1 if integrator == "rk4" else 0, eps, xs, times, taken, status, trace,
                 trace_times, lengths, capacity, 1 if record else 0)
     return xs, times, taken, status, (trace, trace_times), lengths, capacity
-
-
-def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None):
-    """Seeds moved through the velocity ``field`` (a 3-vector field or its name: point
-    data, or cell data) by up to ``steps`` fixed steps of ``step_size``, as
-    Viskores' ParticleAdvection: a dataset of the particles where they stopped,
-    one vertex cell each, with ``steps`` (taken), ``time`` and ``status`` (the
-    bits ``SUCCESS``, ``TERMINATE``, ``SPATIAL_BOUNDS``, ``TOOK_ANY_STEPS``,
-    ``ZERO_VELOCITY``). ``seeds`` is an ``(n, 3)`` array or a field of
-    3-vectors; ``integrator`` ``"rk4"`` or ``"euler"``; ``locator`` reuses a
-    ``CellLocator`` of ``data``."""
-    xs, times, taken, status, _, _, _ = _run(data, field, seeds, step_size, steps,
-                                             integrator, locator, record=False)
-    out = _vertices(xs.to_numpy(vectors=True) if xs.size else np.zeros((0, 3)))
-    points = Values(out, "points")
-    for name, values in (("steps", taken), ("time", times), ("status", status)):
-        out.fields[name] = Field(points, values)
-    return out
-
-
-@tack.kernel
-def _segments(trace, trace_times, lengths, starts, capacity, points, times, types, offsets,
-              connectivity, seed_of, segment_starts):
-    # Each path's points in order, and a line from each to the next.
-    for q in range(lengths.shape[0]):
-        first = starts[q]
-        count = lengths[q]
-        lines = segment_starts[q]
-        for k in range(count):
-            points[first + k] = trace[q * capacity + k]
-            times[first + k] = trace_times[q * capacity + k]
-        for k in range(count - 1):
-            types[lines + k] = tack.u8(shapes.LINE)
-            offsets[lines + k] = 2 * (lines + k)
-            connectivity[2 * (lines + k)] = first + k
-            connectivity[2 * (lines + k) + 1] = first + k + 1
-            seed_of[lines + k] = q
-        if q == lengths.shape[0] - 1:
-            offsets[lines + max(count - 1, 0)] = 2 * (lines + max(count - 1, 0))
-
-
-def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=None):
-    """The paths of ``advect``'s particles, as Viskores' Streamline: each seed's
-    positions after every step, the seed first, as consecutive line cells (one
-    per step; a polyline per seed in Viskores, until Tack has a line topology),
-    with ``seed`` (which seed's path) on the cells and ``time`` on the points.
-    A seed that takes no step has a point and no line."""
-    from tack.algorithms.scan import exclusive_scan
-    from tack.data.topology import UnstructuredTopology
-
-    _, _, _, _, (trace, trace_times), lengths, capacity = _run(
-        data, field, seeds, step_size, steps, integrator, locator, record=True)
-    m = int(lengths.shape[0])
-    host_lengths = lengths.to_numpy() if m else np.zeros(0, np.int32)
-    total = int(host_lengths.sum())
-    nlines = int(np.maximum(host_lengths - 1, 0).sum())
-    idt = tack.i64 if max(total, 2 * nlines) > 2**31 - 1 else tack.i32
-    starts = tack.field(idt, shape=(m,))
-    segment_starts = tack.field(idt, shape=(m,))
-    if m:
-        exclusive_scan(lengths, starts, m)
-        segment_starts.from_numpy(np.concatenate(
-            [[0], np.cumsum(np.maximum(host_lengths - 1, 0))[:-1]]).astype(idt.numpy_dtype))
-    points = tack.Vector.field(3, data.dtype, shape=(total,))
-    point_times = tack.field(data.dtype, shape=(total,))
-    types = tack.field(tack.u8, shape=(nlines,))
-    offsets = tack.field(idt, shape=(nlines + 1,))
-    connectivity = tack.field(idt, shape=(2 * nlines,))
-    seed_of = tack.field(tack.i32, shape=(nlines,))
-    offsets.fill(0)
-    if m:
-        _segments(trace, trace_times, lengths, starts, capacity, points, point_times, types,
-                  offsets, connectivity, seed_of, segment_starts)
-    topology = UnstructuredTopology(types, offsets, connectivity, num_points=total)
-    out = DataSet(topology, points)
-    out.fields["seed"] = Field(Values(out, "cells"), seed_of)
-    out.fields["time"] = Field(Values(out, "points"), point_times)
-    return out

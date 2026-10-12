@@ -1,4 +1,4 @@
-"""Field and geometry transforms and vector analysis (tack.data.transforms), in
+"""Field and geometry transforms and vector analysis (now in tack.data.algorithms), in
 Viskores' conventions, against VTK where VTK has the filter."""
 
 import numpy as np
@@ -7,7 +7,6 @@ from test_dataset_api import _scalars, _two_hexes_and_a_pyramid
 
 import tack
 import tack.data as td
-from tack.data import transforms as tf
 
 try:
     import vtkmodules.all as vtk
@@ -44,37 +43,37 @@ def test_vector_analysis(backend):
     rng = np.random.default_rng(1)
     a, b = rng.normal(size=(2, data.num_points, 3)).astype(np.float32)
     fa, fb = td.Field(td.H1(data), _vectors(a)), td.Field(td.H1(data), _vectors(b))
-    np.testing.assert_allclose(tf.magnitude(fa).values.to_numpy(), np.linalg.norm(a, axis=1),
+    np.testing.assert_allclose(td.magnitude(fa).values.to_numpy(), np.linalg.norm(a, axis=1),
                                rtol=1e-5)
-    np.testing.assert_allclose(tf.dot(fa, fb).values.to_numpy(), (a * b).sum(1), rtol=1e-4,
+    np.testing.assert_allclose(td.dot(fa, fb).values.to_numpy(), (a * b).sum(1), rtol=1e-4,
                                atol=1e-5)
-    np.testing.assert_allclose(tf.cross(fa, fb).values.to_numpy(vectors=True), np.cross(a, b),
+    np.testing.assert_allclose(td.cross(fa, fb).values.to_numpy(vectors=True), np.cross(a, b),
                                rtol=1e-4, atol=1e-5)
-    both = tf.composite(td.Field(td.H1(data), _scalars(a[:, 0])),
+    both = td.composite(td.Field(td.H1(data), _scalars(a[:, 0])),
                         td.Field(td.H1(data), _scalars(b[:, 1])))
     np.testing.assert_array_equal(both.values.to_numpy(vectors=True), np.c_[a[:, 0], b[:, 1]])
-    assert tf.magnitude(fa).space is td.H1(data)
+    assert td.magnitude(fa).space is td.H1(data)
     with pytest.raises(ValueError, match="one space"):
-        tf.dot(fa, td.Field(td.L2(data), _vectors(np.zeros((td.L2(data).size, 3)))))
+        td.dot(fa, td.Field(td.L2(data), _vectors(np.zeros((td.L2(data).size, 3)))))
 
 
 @pytest.mark.parametrize("base", [np.e, 2, 10])
 def test_log_values_clamp_below_the_minimum(backend, base):
     data = _two_hexes_and_a_pyramid()
     values = np.linspace(-1.0, 5.0, data.num_points).astype(np.float32)
-    out = tf.log_values(td.Field(td.H1(data), _scalars(values)), base).values.to_numpy()
+    out = td.log_values(td.Field(td.H1(data), _scalars(values)), base).values.to_numpy()
     tiny = np.finfo(np.float32).tiny
     np.testing.assert_allclose(out, np.log(np.maximum(values, tiny)) / np.log(base), rtol=1e-5)
-    out = tf.log_values(td.Field(td.H1(data), _scalars(values)), base, min_value=0.5)
+    out = td.log_values(td.Field(td.H1(data), _scalars(values)), base, min_value=0.5)
     np.testing.assert_allclose(out.values.to_numpy(),
                                np.log(np.maximum(values, 0.5)) / np.log(base), rtol=1e-5)
 
 
 def test_ids_are_implicit(backend):
     data = _two_hexes_and_a_pyramid()
-    assert isinstance(tf.point_ids(data).values, td.CountingArray)
-    np.testing.assert_array_equal(td.arrays.to_host(tf.cell_ids(data).values), [0, 1, 2])
-    assert tf.cell_ids(data).space is td.Values(data, "cells")
+    assert isinstance(td.point_ids(data).values, td.CountingArray)
+    np.testing.assert_array_equal(td.arrays.to_host(td.cell_ids(data).values), [0, 1, 2])
+    assert td.cell_ids(data).space is td.Values(data, "cells")
 
 
 @needs_vtk
@@ -87,7 +86,7 @@ def test_point_elevation_is_vtks(backend):
     elevation.SetInputData(grid)
     elevation.Update()
     expected = vtk_to_numpy(elevation.GetOutput().GetPointData().GetArray("Elevation"))
-    out = tf.point_elevation(vtk_to_dataset(grid), (-1.0, -0.5, 0.2), (1.5, 0.7, -0.4),
+    out = td.point_elevation(vtk_to_dataset(grid), (-1.0, -0.5, 0.2), (1.5, 0.7, -0.4),
                              (3.0, 7.0))
     np.testing.assert_allclose(out.values.to_numpy(), expected, rtol=1e-5, atol=1e-5)
     assert expected.min() == pytest.approx(3.0) and expected.max() == pytest.approx(7.0)
@@ -110,7 +109,7 @@ def test_warp_is_vtks(backend):
     warp.SetScaleFactor(0.3)
     warp.SetInputData(grid)
     warp.Update()
-    np.testing.assert_allclose(tf.warp(data, "d", 0.3).positions(),
+    np.testing.assert_allclose(td.warp(data, "d", 0.3).positions(),
                                vtk_to_numpy(warp.GetOutput().GetPoints().GetData()), rtol=1e-5,
                                atol=1e-6)
     scalar = vtk.vtkWarpScalar()
@@ -119,7 +118,7 @@ def test_warp_is_vtks(backend):
     scalar.SetNormal(0.0, 0.6, 0.8)
     scalar.SetInputData(grid)
     scalar.Update()
-    out = tf.warp(data, (0.0, 0.6, 0.8), 0.5, scale_by="s")
+    out = td.warp(data, (0.0, 0.6, 0.8), 0.5, scale_by="s")
     np.testing.assert_allclose(out.positions(),
                                vtk_to_numpy(scalar.GetOutput().GetPoints().GetData()), rtol=1e-5,
                                atol=1e-6)
@@ -138,12 +137,12 @@ def test_transform_is_vtks(backend):
     move.SetInputData(grid)
     move.Update()
     matrix = np.array([[t.GetMatrix().GetElement(i, j) for j in range(4)] for i in range(4)])
-    out = tf.transform(vtk_to_dataset(grid), matrix)
+    out = td.transform(vtk_to_dataset(grid), matrix)
     np.testing.assert_allclose(out.positions(),
                                vtk_to_numpy(move.GetOutput().GetPoints().GetData()), rtol=1e-5,
                                atol=1e-5)
     with pytest.raises(ValueError, match="affine"):
-        tf.transform(vtk_to_dataset(grid), np.ones((4, 4)))
+        td.transform(vtk_to_dataset(grid), np.ones((4, 4)))
 
 
 def _viskores_cylindrical(p):
@@ -167,8 +166,8 @@ def test_coordinate_transforms_are_viskores(backend, which):
     data = vtk_to_dataset(_grid())
     x = data.positions()
     assert (x[:, 0] < 0).any() and (np.linalg.norm(x, axis=1) == 0).any()   # both cases
-    transform, reference = {"cylindrical": (tf.cylindrical, _viskores_cylindrical),
-                            "spherical": (tf.spherical, _viskores_spherical)}[which]
+    transform, reference = {"cylindrical": (td.cylindrical, _viskores_cylindrical),
+                            "spherical": (td.spherical, _viskores_spherical)}[which]
     out = transform(data)
     np.testing.assert_allclose(out.positions(), reference(x.astype(np.float64)), rtol=1e-5,
                                atol=1e-5)
@@ -179,7 +178,7 @@ def test_an_l2_geometry_moves_every_corner(backend):
     data = _two_hexes_and_a_pyramid()
     corners = td.algorithms.discontinuous(data, data.geometry)
     pulled = td.DataSet(data.topology, corners)
-    moved = tf.transform(pulled, [[1, 0, 0, 5], [0, 1, 0, 0], [0, 0, 1, 0]])
+    moved = td.transform(pulled, [[1, 0, 0, 5], [0, 1, 0, 0], [0, 0, 1, 0]])
     assert isinstance(moved.geometry.space, td.L2)
     np.testing.assert_allclose(moved.geometry.values.to_numpy(vectors=True),
                                corners.values.to_numpy(vectors=True) + np.array([5.0, 0.0, 0.0]))

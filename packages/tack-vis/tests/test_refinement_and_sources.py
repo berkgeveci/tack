@@ -101,7 +101,7 @@ def test_tangle_is_viskores(backend):
 def test_tetrahedralize_keeps_the_volume(backend, cell_type, per_cell):
     grid = _blocks(cell_type)
     data = vtk_to_dataset(grid)
-    data.fields["id"] = td.transforms.cell_ids(data)
+    data.fields["id"] = td.cell_ids(data)
     out = td.tetrahedralize(data)
     assert out.num_cells == per_cell * data.num_cells and out.num_points == data.num_points
     assert {int(t) for t in out.topology.types.to_numpy()} == {10}
@@ -156,7 +156,7 @@ def test_shrink_is_vtks(backend, cell_type):
     data = vtk_to_dataset(grid)
     x = data.positions()
     data.fields["x"] = td.Field(td.H1(data), _scalars(x[:, 0]))
-    data.fields["id"] = td.transforms.cell_ids(data)
+    data.fields["id"] = td.cell_ids(data)
     out = td.shrink(data, 0.7)
     assert isinstance(out.geometry.space, td.L2) and out.topology is data.topology
     # VTK gives each cell its own points, in the cell's corner order: the L2 layout.

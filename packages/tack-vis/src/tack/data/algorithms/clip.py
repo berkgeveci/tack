@@ -1,26 +1,4 @@
-"""Clip: the part of each cell on one side of a value, cells cut along the way.
-
-Viskores' ClipWithField and ClipWithImplicitFunction, by Viskores' case tables
-(``_clip_tables``, VisIt's): a cell whose corners are all kept is kept whole,
-one with none is dropped, and any other is replaced by the pieces its case
-lists -- tetrahedra, pyramids, wedges, hexahedra (triangles and quads for 2D
-cells, lines and vertices below) -- on its kept corners, on points where its
-edges cross the value, and on a centroid point some cases add. A corner is
-kept when its value is at or above the clip value, or with ``invert`` below
-it, as in Viskores. A pixel or voxel kept whole becomes a quad or hexahedron,
-as in VTK's clip.
-
-The tables (VisIt's, as Viskores has them) number a wedge's corners as VisIt
-does, VTK's order mirrored: a wedge being cut is read through that order, and
-every wedge piece is written back in VTK's. Taken as VTK wedges, as Viskores
-takes them, the pieces came out inside out.
-
-Count, scan, emit: every corner or edge point a piece uses is recorded under a
-key -- a corner ``p`` as ``(p, p)``, an edge as its ``(low, high)`` point ids
--- and the records are merged by bucketing, so a shared edge's point is one
-point, interpolated from its lower id as every cell sees it. Centroid points
-follow, one per case that has one, the average of the points it lists.
-"""
+"""``clip``: the part of ``data`` where ``by`` -- point data (a field or its name) or an implicit function (``tack.data.implicit``) -- is at or above ``value``, or with ``invert`` below it: Viskores' ClipWithField and (``value`` 0) ClipWithImplicitFunction, by its case tables. Cells wholly kept keep their shape; cut cells become the pieces their case lists. Points are the kept corners, the crossings on cut edges (merged across cells) and centroid points; point data is interpolated onto them, cell data goes to each piece."""
 
 import numpy as np
 
@@ -28,13 +6,16 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import _clip_tables as tables
 from tack.data import arrays, ids, shapes
+from tack.data.algorithms._common import _close, _field
+from tack.data.algorithms.implicit_values import implicit_values
 from tack.data.buckets import bucket_order, run_offsets
 from tack.data.carry import Interpolate, Pieces, _point_values, carry
 from tack.data.dataset import Field
 from tack.data.spaces import H1, Values
 from tack.data.topology import UnstructuredTopology, _as_field
 
-__all__ = ["clip"]
+__all__ = ['clip']
+
 
 # A table read through a corner order: a pixel's and a voxel's corners run
 # x-fastest; and the tables' wedge is VisIt's, VTK's mirrored (each triangle the
@@ -42,7 +23,11 @@ __all__ = ["clip"]
 _TABLE_OF = {int(shapes.PIXEL): (9, [0, 1, 3, 2]),
              int(shapes.VOXEL): (12, [0, 1, 3, 2, 4, 5, 7, 6]),
              int(shapes.WEDGE): (13, [0, 2, 1, 3, 5, 4])}
+
+
 _KINDS = 5            # cells, connectivity, records, centroids, centroid members
+
+
 # Entries of any kind one cell can make, at most: a bound for the output's ids.
 _MOST = 64
 
@@ -219,12 +204,6 @@ def _centroid_entries(connectivity, first_centroid):
 
 
 @tack.kernel
-def _close(offsets, n, total):
-    for i in range(1):
-        offsets[n] = total
-
-
-@tack.kernel
 def _split_counts(counts, kind, out):
     for i in range(out.shape[0]):
         out[i] = counts[i][kind]
@@ -245,8 +224,6 @@ def clip(data, by, value=0.0, invert=False, fields=None):
     corners, the crossings on cut edges (merged across cells) and centroid
     points; point data is interpolated onto them, cell data goes to each piece.
     """
-    from tack.data.algorithms import implicit_values
-    from tack.data.filters import _field
 
     if not getattr(data.topology, "reference_cells", True):
         raise NotImplementedError("clip takes cells of the linear shapes, not polyhedra")

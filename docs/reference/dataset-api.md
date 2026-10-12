@@ -382,7 +382,7 @@ Without a function: `extract_cells(data, ids)` (cells keep their order),
 
 ## Field and geometry transforms
 
-`tack.data.transforms`, in Viskores' conventions:
+In `tack.data.algorithms` (and `tack.data`), in Viskores' conventions:
 
 | Function | Result |
 |---|---|
@@ -452,7 +452,7 @@ locator=None)` moves each seed through a steady velocity field -- point
 data, interpolated in the cell holding the particle, or cell data -- by
 fixed RK4 (or Euler) steps, as Viskores' ParticleAdvection does. It returns
 the particles where they stopped, one vertex cell each, with `steps`, `time`
-and `status`. `status` holds Viskores' bits, `tack.data.flow.SUCCESS`,
+and `status`. `status` holds Viskores' bits, `ParticleStatus.SUCCESS`,
 `TERMINATE`, `SPATIAL_BOUNDS`, `TOOK_ANY_STEPS` and `ZERO_VELOCITY`.
 `streamlines(...)` returns the paths, the seed first: a polyline per seed
 in Viskores, here one line cell per step until Tack has a line topology,

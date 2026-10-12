@@ -446,22 +446,22 @@ PAIRS = [
          tack_values=lambda r: _host(r, vectors=True), point_fields=("p",)),
     Pair("point elevation", viskores=_elevation, vtk=_vtk_elevation,
          viskores_values=_point_array("elevation"),
-         tack=lambda d, m: _tack()[0].transforms.point_elevation(
+         tack=lambda d, m: _tack()[0].point_elevation(
              d, *_elevation_line(m), ELEVATION_RANGE),
          tack_values=_host),
     Pair("warp", viskores=_warp, vtk=_vtk_warp, output="points",
          viskores_values=_points_of,
-         tack=lambda d, m: _tack()[0].transforms.warp(d, (0.0, 0.0, 1.0), WARP_SCALE, "p"),
+         tack=lambda d, m: _tack()[0].warp(d, (0.0, 0.0, 1.0), WARP_SCALE, "p"),
          tack_values=_geometry, point_fields=("p",)),
     Pair("cylindrical", viskores=_coordinates("Cylindrical"), output="points",
          viskores_values=_points_of,
-         tack=lambda d, m: _tack()[0].transforms.cylindrical(d), tack_values=_geometry),
+         tack=lambda d, m: _tack()[0].cylindrical(d), tack_values=_geometry),
     Pair("spherical", viskores=_coordinates("Spherical"), output="points",
          viskores_values=_points_of,
-         tack=lambda d, m: _tack()[0].transforms.spherical(d), tack_values=_geometry),
+         tack=lambda d, m: _tack()[0].spherical(d), tack_values=_geometry),
     Pair("point transform", viskores=_point_transform, vtk=_vtk_point_transform,
          output="points", viskores_values=_points_of,
-         tack=lambda d, m: _tack()[0].transforms.transform(d, _matrix()),
+         tack=lambda d, m: _tack()[0].transform(d, _matrix()),
          tack_values=_geometry),
 ]
 

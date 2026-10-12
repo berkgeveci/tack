@@ -1,27 +1,82 @@
-"""Tack's dataset API, prototype: see ``docs/design/dataset-api.md``.
+"""Tack's dataset API: see ``docs/reference/dataset-api.md``.
 
 ``shapes`` holds the linear cells as template classes; ``arrays`` the
-implicit arrays a field's values may be; ``topology`` the unstructured and
-structured topologies and the faces and edges derived from them; ``spaces``
-where a field's values live on a topology, and the layout each owns;
-``dataset`` fields, geometry, ``DataSet`` and ``for_each``; ``algorithms``
-a few algorithms over them; ``filters`` contour, slice, threshold, external
-faces and the extractions and masks; ``carry`` how filters carry fields;
-``implicit`` the implicit functions (plane, sphere, cylinder, box, planes);
-``polyhedra`` the polyhedral topology, every cell a list of faces stored
-once.
+arrays a field's values may be, explicit or implicit; ``topology`` the
+unstructured and structured topologies and the faces and edges derived from
+them; ``polyhedra`` the polyhedral and polygonal ones; ``spaces`` where a
+field's values live on a topology; ``dataset`` fields, ``DataSet`` and
+``for_each``; ``carry`` how algorithms carry fields; ``implicit`` the
+implicit functions; ``locator`` the cell locator; ``sources`` the wavelet and
+tangle; ``algorithms`` every algorithm, one module each, all re-exported
+here.
 """
 
 from tack.data import (
     algorithms,
     arrays,
-    filters,
     implicit,
     polyhedra,
     shapes,
     sources,
     spaces,
-    transforms,
+)
+from tack.data.algorithms import (
+    ParticleStatus,
+    advect,
+    as_polygons,
+    as_polyhedra,
+    boundary_faces,
+    cell_centers,
+    cell_geometry,
+    cell_ids,
+    check_winding,
+    clip,
+    composite,
+    contour,
+    cross,
+    cylindrical,
+    discontinuous,
+    divergence,
+    dot,
+    edge_lengths,
+    entropy,
+    external_faces,
+    extract_cells,
+    extract_geometry,
+    extract_points,
+    extract_surface,
+    face_centers,
+    face_geometry,
+    flow_quantities,
+    gradients,
+    implicit_values,
+    jump,
+    log_values,
+    magnitude,
+    mask,
+    mask_points,
+    perot,
+    point_cloud,
+    point_elevation,
+    point_ids,
+    probe,
+    shrink,
+    slice,
+    slice_plane,
+    spherical,
+    statistics,
+    streamlines,
+    tetrahedralize,
+    threshold,
+    threshold_points,
+    to_cells,
+    to_points,
+    traces,
+    transform,
+    triangulate,
+    upwind_flux,
+    values_at_centers,
+    warp,
 )
 from tack.data.arrays import (
     CartesianProduct,
@@ -40,42 +95,19 @@ from tack.data.arrays import (
     UniformCoordinates,
     View,
 )
-from tack.data.clip import clip
 from tack.data.dataset import (
     DataSet,
     Field,
     for_each,
     rectilinear_grid,
-    traces,
     uniform_grid,
 )
-from tack.data.filters import (
-    contour,
-    external_faces,
-    extract_cells,
-    extract_geometry,
-    extract_points,
-    mask,
-    mask_points,
-    point_cloud,
-    shrink,
-    slice,
-    slice_plane,
-    tetrahedralize,
-    threshold,
-    threshold_points,
-    triangulate,
-)
-from tack.data.flow import advect, streamlines
 from tack.data.implicit import Box, Cylinder, Plane, Planes, Sphere
-from tack.data.locator import CellLocator, probe
+from tack.data.locator import CellLocator
 from tack.data.polyhedra import (
     PolygonalTopology,
     PolyhedralTopology,
     SizeBuckets,
-    as_polygons,
-    as_polyhedra,
-    check_winding,
     orient,
 )
 from tack.data.spaces import H1, L2, Constant, SideTraces, Space, Values
@@ -98,6 +130,7 @@ __all__ = [
     "ExtractComponent",
     "Field",
     "Function",
+    "ParticleStatus",
     "Permutation",
     "Plane",
     "Planes",
@@ -121,20 +154,43 @@ __all__ = [
     "arrays",
     "as_polygons",
     "as_polyhedra",
+    "boundary_faces",
+    "cell_centers",
+    "cell_geometry",
+    "cell_ids",
     "check_winding",
     "clip",
+    "composite",
     "contour",
+    "cross",
+    "cylindrical",
+    "discontinuous",
+    "divergence",
+    "dot",
+    "edge_lengths",
+    "entropy",
     "external_faces",
     "extract_cells",
     "extract_geometry",
     "extract_points",
-    "filters",
+    "extract_surface",
+    "face_centers",
+    "face_geometry",
+    "flow_quantities",
     "for_each",
+    "gradients",
     "implicit",
+    "implicit_values",
+    "jump",
+    "log_values",
+    "magnitude",
     "mask",
     "mask_points",
     "orient",
+    "perot",
     "point_cloud",
+    "point_elevation",
+    "point_ids",
     "polyhedra",
     "probe",
     "rectilinear_grid",
@@ -144,12 +200,19 @@ __all__ = [
     "slice_plane",
     "sources",
     "spaces",
+    "spherical",
+    "statistics",
     "streamlines",
     "tetrahedralize",
     "threshold",
     "threshold_points",
+    "to_cells",
+    "to_points",
     "traces",
-    "transforms",
+    "transform",
     "triangulate",
     "uniform_grid",
+    "upwind_flux",
+    "values_at_centers",
+    "warp",
 ]
