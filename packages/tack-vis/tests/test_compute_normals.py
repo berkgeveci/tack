@@ -1,4 +1,4 @@
-"""Tests for tack.algorithms.compute_normals.
+"""Tests for tack.deprecated.algorithms.compute_normals.
 
 Vertex normals are accumulated with atomics from area-weighted face
 normals, so the checks that matter are: unit length, correct direction,
@@ -9,8 +9,8 @@ import numpy as np
 from vis_helpers import make_grid, sphere_field, upload
 
 import tack
-from tack.algorithms.compute_normals import compute_normals
-from tack.algorithms.flying_edges import flying_edges
+from tack.deprecated.algorithms.compute_normals import compute_normals
+from tack.deprecated.algorithms.flying_edges import flying_edges
 
 
 def _normals(points_np, conn_np):

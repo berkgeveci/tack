@@ -1,4 +1,4 @@
-"""Tests for tack.algorithms.cell_to_point.
+"""Tests for tack.deprecated.algorithms.cell_to_point.
 
 Node values are the average of the adjacent cells — up to 8 in the
 interior, 4 on a face, 2 on an edge, 1 at a corner.  The boundary
@@ -11,7 +11,7 @@ import pytest
 from vis_helpers import upload
 
 import tack
-from tack.algorithms.cell_to_point import cell_to_point
+from tack.deprecated.algorithms.cell_to_point import cell_to_point
 
 
 def _run(cell_np, nx, ny, nz, dtype=tack.f32, np_dtype=np.float32):

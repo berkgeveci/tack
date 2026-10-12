@@ -2,7 +2,7 @@
 
 Runs the Flying Edges algorithm independently on each block (FAB) of a
 multi-block dataset, producing unified output arrays for points and
-connectivity.  Uses tack.algorithms.flying_edges module.
+connectivity.  Uses tack.deprecated.algorithms.flying_edges module.
 
 Usage:
   uv run python examples/31_multiblock_flying_edges.py
@@ -16,7 +16,7 @@ import time
 import numpy as np
 
 import tack
-from tack.algorithms.flying_edges import UniformGrid, flying_edges_multiblock
+from tack.deprecated.algorithms.flying_edges import UniformGrid, flying_edges_multiblock
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',

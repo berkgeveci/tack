@@ -1,4 +1,4 @@
-"""Extract isosurfaces from a high-order DG field on hexes using tack.fe.
+"""Extract isosurfaces from a high-order DG field on hexes using tack.deprecated.fe.
 
 Demonstrates 3D FE abstractions:
 - HexBasis: tensor-product Lagrange on [0,1]^3
@@ -21,9 +21,9 @@ import sys
 import numpy as np
 
 import tack
-from tack.fe.accessor import contiguous_from_numpy
-from tack.fe.basis import HexBasis, precompute_basis_matrix_3d
-from tack.fe.geometry import linear_hex_map_from_numpy
+from tack.deprecated.fe.accessor import contiguous_from_numpy
+from tack.deprecated.fe.basis import HexBasis, precompute_basis_matrix_3d
+from tack.deprecated.fe.geometry import linear_hex_map_from_numpy
 
 # MC tables
 sys.path.insert(0, os.path.dirname(__file__))
@@ -329,7 +329,7 @@ def main():
     print(f"  {n_elems} elements, {len(dof_values)} DOFs, "
           f"field range [{dof_values.min():.4f}, {dof_values.max():.4f}]")
 
-    # Create tack.fe objects
+    # Create tack.deprecated.fe objects
     basis = HexBasis(gl_1d, np_fp=np_fp)
     accessor = contiguous_from_numpy(dof_values, dof_offsets, np_fp=np_fp)
     geom = linear_hex_map_from_numpy(vx, vy, vz, conn, conn_off, np_fp=np_fp)

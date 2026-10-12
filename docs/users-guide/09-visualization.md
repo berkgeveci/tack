@@ -1,5 +1,13 @@
 # Scientific visualization
 
+!!! warning "Superseded"
+    The algorithms on this page -- flying edges, normals, cell-to-point and
+    the finite-element helpers -- are the first vis worklets. They now live
+    in `tack.deprecated`, kept for reference, and are superseded by
+    `tack.data` (see the [Dataset API reference](../reference/dataset-api.md)):
+    one dataset model with contour, clip, threshold, gradients and the rest on
+    every topology. This page will be rewritten around `tack.data`.
+
 `tack-vis` turns fields into geometric data and provides finite-element helpers
 and VTK array interoperability. Its algorithms are ordinary Tack kernels with
 Python orchestration; use the same backend initialization as for your own kernels.
@@ -23,7 +31,7 @@ This complete example generates a gyroid on a small grid:
 
 ```python
 import tack
-from tack.algorithms.flying_edges import UniformGrid, flying_edges
+from tack.deprecated.algorithms.flying_edges import UniformGrid, flying_edges
 
 tack.init(arch=tack.cpu)
 n = 16
@@ -75,7 +83,7 @@ extraction is not a pipeline without host transfers.
 `flying_edges_multiblock` takes a list of dictionaries:
 
 ```python
-from tack.algorithms.flying_edges import flying_edges_multiblock
+from tack.deprecated.algorithms.flying_edges import flying_edges_multiblock
 
 blocks = [
     {"scalar": scalar_a, "grid": grid_a},
@@ -95,7 +103,7 @@ coarse/refined regions. See Tack's [multiblock example](https://github.com/berkg
 For a nonempty result:
 
 ```python
-from tack.algorithms.compute_normals import compute_normals
+from tack.deprecated.algorithms.compute_normals import compute_normals
 
 normals = compute_normals(mesh["points_field"], mesh["conn_field"],
                           mesh["total_points"], mesh["total_tris"])
@@ -112,7 +120,7 @@ compute these normals when created with `smooth=True`.
 it does not take an arbitrary connectivity array:
 
 ```python
-from tack.algorithms.cell_to_point import cell_to_point
+from tack.deprecated.algorithms.cell_to_point import cell_to_point
 
 # cell_data is flat, x-fast, with nx * ny * nz values.
 point_data = cell_to_point(cell_data, nx, ny, nz)
@@ -126,7 +134,7 @@ see the [point-to-cell example](https://github.com/berkgeveci/tack/blob/main/pac
 
 ## Finite-element fields
 
-The `tack.fe` module supplies Lagrange bases, geometry maps and accessors for
+The `tack.deprecated.fe` module supplies Lagrange bases, geometry maps and accessors for
 contiguous or gathered degrees of freedom. Finite-element sampling is distinct
 from interpolating values on a uniform Cartesian grid: basis functions map
 parametric cell coordinates to the field and geometry.

@@ -10,7 +10,7 @@ from collections import Counter
 import numpy as np
 
 import tack
-from tack.algorithms.flying_edges import UniformGrid
+from tack.deprecated.algorithms.flying_edges import UniformGrid
 
 
 def make_grid(n, lo=-1.5, hi=1.5, nz=None):

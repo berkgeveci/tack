@@ -16,7 +16,7 @@ import time
 import numpy as np
 
 import tack
-from tack.algorithms.flying_edges import UniformGrid, flying_edges
+from tack.deprecated.algorithms.flying_edges import UniformGrid, flying_edges
 from tack.rendering import (
     Actor,
     Canvas,

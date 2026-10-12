@@ -9,9 +9,9 @@ Three layers:
 - GeometryMap: physical ↔ parametric coordinate mapping
 """
 
-from tack.fe.accessor import ContiguousDofs, GatheredDofs
-from tack.fe.basis import HexBasis, QuadBasis, lagrange_1d, lagrange_1d_deriv
-from tack.fe.geometry import LinearHexMap, LinearQuadMap
+from tack.deprecated.fe.accessor import ContiguousDofs, GatheredDofs
+from tack.deprecated.fe.basis import HexBasis, QuadBasis, lagrange_1d, lagrange_1d_deriv
+from tack.deprecated.fe.geometry import LinearHexMap, LinearQuadMap
 
 __all__ = [
     "ContiguousDofs",

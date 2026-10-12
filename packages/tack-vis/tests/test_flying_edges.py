@@ -29,7 +29,7 @@ from vis_helpers import (
 )
 
 import tack
-from tack.algorithms.flying_edges import (
+from tack.deprecated.algorithms.flying_edges import (
     _NUM_TRIS,
     _TRI_TABLE,
     MCTables,

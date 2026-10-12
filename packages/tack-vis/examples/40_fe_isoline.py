@@ -1,4 +1,4 @@
-"""Extract isolines from a high-order DG field using tack.fe.
+"""Extract isolines from a high-order DG field using tack.deprecated.fe.
 
 Demonstrates the three-layer FE abstraction:
 - QuadBasis: evaluate Lagrange basis at subdivision points
@@ -19,9 +19,9 @@ import os
 import numpy as np
 
 import tack
-from tack.fe.accessor import contiguous_from_numpy
-from tack.fe.basis import QuadBasis, precompute_basis_matrix_2d
-from tack.fe.geometry import linear_quad_map_from_numpy
+from tack.deprecated.fe.accessor import contiguous_from_numpy
+from tack.deprecated.fe.basis import QuadBasis, precompute_basis_matrix_2d
+from tack.deprecated.fe.geometry import linear_quad_map_from_numpy
 
 
 def make_quad_mesh(nx, ny):
@@ -134,7 +134,7 @@ def write_vtu_lines(filename, x0, y0, x1, y1):
         f.write('</Piece>\n</UnstructuredGrid>\n</VTKFile>\n')
 
 
-# ── Tack kernels using tack.fe ───────────────────────────────────────
+# ── Tack kernels using tack.deprecated.fe ───────────────────────────────────────
 
 def define_kernels():
 
@@ -277,7 +277,7 @@ def main():
     print(f"  {n_elems} elements, {len(dof_values)} DOFs, "
           f"field range [{dof_values.min():.4f}, {dof_values.max():.4f}]")
 
-    # Create tack.fe objects
+    # Create tack.deprecated.fe objects
     basis = QuadBasis(gl_1d, np_fp=np_fp)
     accessor = contiguous_from_numpy(dof_values, dof_offsets, np_fp=np_fp)
     geom = linear_quad_map_from_numpy(vx, vy, conn, conn_off, np_fp=np_fp)

@@ -8,7 +8,7 @@ backend's capabilities (for example, `f64` inputs need a backend with `f64`).
 
 ```python
 import tack
-from tack.algorithms.flying_edges import flying_edges, UniformGrid
+from tack.deprecated.algorithms.flying_edges import flying_edges, UniformGrid
 
 tack.init(arch=tack.cpu)
 
