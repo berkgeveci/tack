@@ -234,7 +234,9 @@ def _get_device_info(field):
 
     if cls_name == "MetalBuffer":
         # Metal: shared memory — expose as CPU since it's unified memory
-        # and the numpy view points into the same physical memory
+        # and the numpy view points into the same physical memory. The consumer
+        # reads it at once, and may keep reading it after later launches.
+        buf.share()
         data_ptr = buf._view.ctypes.data
         return kDLCPU, 0, data_ptr
 
