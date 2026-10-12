@@ -216,13 +216,15 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
                                   "yet")
     topology = _topology(mesh, id_dtype)
     if curved:
-        positions = np.asarray(mesh.GetVertexArray(), dtype=float).reshape(mesh.GetNV(), -1)
+        positions = np.asarray(mesh.GetVertexArray(), dtype=float).reshape(
+            mesh.GetNV(), mesh.SpaceDimension())
     elif nodes is not None:
         # Order-1 nodes are the vertices' positions, and may have moved since
         # the vertex array was set (Mesh.Transform moves the nodes).
         positions = _by_dof(nodes.FESpace(), nodes.GetDataArray())
     else:
-        positions = np.asarray(mesh.GetVertexArray(), dtype=float).reshape(mesh.GetNV(), -1)
+        positions = np.asarray(mesh.GetVertexArray(), dtype=float).reshape(
+            mesh.GetNV(), mesh.SpaceDimension())
     if positions.shape[1] < 3:
         positions = np.hstack([positions, np.zeros((positions.shape[0],
                                                     3 - positions.shape[1]))])

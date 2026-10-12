@@ -973,3 +973,23 @@ def test_to_cells_is_vtks(f64_backend, kind):
     data = vtk_to_dataset(grid, dtype=tack.f64)
     np.testing.assert_allclose(alg.to_cells(data, data.fields["p"]).values.to_numpy(), want,
                                atol=1e-12)
+
+
+@needs_vtk
+def test_vtk_edge_cases(backend):
+    """From the outside review (1-b, 1-c): a vtkUnstructuredGrid as VTK makes it
+    empty, with no vtkPoints at all, imports as an empty dataset; and an order-2
+    field exports its values at the points, one tuple per point of the linear
+    grid, so the export imports again."""
+    empty = vtk_to_dataset(vtk.vtkUnstructuredGrid())
+    assert (empty.num_cells, empty.num_points) == (0, 0)
+    data = td.uniform_grid((3, 3, 3))
+    space = td.H1(data, order=2)
+    nodes = td.project(data, data.geometry, space).values.to_numpy(vectors=True)
+    data.fields["u"] = td.Field(space, _scalars(nodes[:, 0] + 2.0 * nodes[:, 1]))
+    grid = dataset_to_vtk(data)
+    assert grid.GetPointData().GetArray("u").GetNumberOfTuples() == data.num_points
+    back = vtk_to_dataset(grid)
+    x = back.positions()
+    np.testing.assert_allclose(back.fields["u"].values.to_numpy(), x[:, 0] + 2.0 * x[:, 1],
+                               rtol=1e-6)

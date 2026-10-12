@@ -326,7 +326,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         polyhedral = bool((all_types == 42).any())
     if grid.IsA("vtkUnstructuredGrid") and polyhedral:
         topology = _polyhedral_topology(grid, orient=orient, id_dtype=id_dtype)
-        geometry = vtk_to_numpy(grid.GetPoints().GetData())
+        geometry = _vtk_points(grid)
     elif grid.IsA("vtkUnstructuredGrid"):
         cell_array = grid.GetCells()
         # The per-cell types are GetCellTypes() from VTK 9.6 on; through 9.5 that
@@ -348,7 +348,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
             topology = UnstructuredTopology(types, offsets, connectivity,
                                             num_points=grid.GetNumberOfPoints(),
                                             id_dtype=id_dtype)
-        geometry = vtk_to_numpy(grid.GetPoints().GetData())
+        geometry = _vtk_points(grid)
     elif grid.IsA("vtkImageData"):
         dims = [0, 0, 0]
         grid.GetDimensions(dims)
@@ -383,6 +383,16 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     return DataSet(topology, geometry, fields=fields, dtype=dtype)
 
 
+def _vtk_points(grid):
+    """A point set's positions; a grid with no vtkPoints at all (an empty one, as
+    VTK makes it) has none."""
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    points = grid.GetPoints()
+    return np.zeros((0, 3)) if points is None else vtk_to_numpy(points.GetData())
+
+
 def _field_to_array(name, field):
     from vtkmodules.util.numpy_support import numpy_to_vtk
 
@@ -404,7 +414,8 @@ def dataset_to_vtk(data):
     polyhedral one a ``vtkUnstructuredGrid`` of ``VTK_POLYHEDRON`` cells, each
     keeping its own copy of its faces, outward for it (VTK's layout has no
     orientation bit, so a shared face cannot be stored once).
-    ``H1`` fields and values on points become point data, ``Constant`` fields
+    ``H1`` fields and values on points become point data -- an order-2 field
+    its values at the points, the grid being linear -- and ``Constant`` fields
     and values on cells cell data. ``L2`` fields have no VTK array to go
     to without duplicating points, and fields on faces or edges none at
     all; they are left out. The geometry (``data.geometry``) becomes the
@@ -502,10 +513,15 @@ def dataset_to_vtk(data):
     else:
         raise TypeError(f"unsupported topology {type(topology).__name__} with "
                         f"{type(coordinates).__name__}")
+    from tack.data.carry import _point_values
+
     for name, field in data.fields.items():
         space = field.space
         if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
-            grid.GetPointData().AddArray(_field_to_array(name, field.values))
+            # An order-2 field's values at the points, its first ones: the grid
+            # is linear, as the filters read order-2 data.
+            values = _point_values(field.values, data.num_points)
+            grid.GetPointData().AddArray(_field_to_array(name, values))
         elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
             grid.GetCellData().AddArray(_field_to_array(name, field.values))
     return grid

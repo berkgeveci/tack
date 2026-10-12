@@ -345,3 +345,10 @@ def test_fields_on_curved_meshes(backend, kind, order):
     out = tack.field(tack.f32, shape=(data.num_cells,))
     td.for_each(_determinants, data, "cells", out)
     np.testing.assert_allclose(out.to_numpy(), _mfem_determinants(mesh), rtol=1e-4)
+
+
+def test_an_empty_mesh(backend):
+    """From the outside review (1-d): a mesh of no elements and no vertices
+    imports as an empty dataset; its vertex array could not be reshaped."""
+    data = mfem_to_dataset(mfem.Mesh(3, 0, 0, 0, 3))
+    assert (data.num_cells, data.num_points) == (0, 0)
