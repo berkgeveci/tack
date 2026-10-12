@@ -257,3 +257,59 @@ def test_statistics_reduce_vector_fields_over_all_components(backend):
     assert count_nonzero(v) == 7
     counts, _ = histogram(v, bins=2, range=(0.0, 8.0))
     np.testing.assert_array_equal(counts.to_numpy(), [4, 4])
+
+
+# --- precision, exceptional values and empty ranges ---
+
+def _f64(values):
+    f = tack.field(tack.f64, shape=(len(values),))
+    f.from_numpy(np.asarray(values, np.float64))
+    return f
+
+
+def test_f64_statistics_accumulate_in_f64(f64_backend):
+    """An f64 input is summed in f64: f32 accumulation lost these outright."""
+    big = 1e8 + np.arange(1000.0)
+    assert var(_f64(big)) == pytest.approx((1000 ** 2 - 1) / 12, rel=1e-12)
+    tiny = np.r_[1.0, np.full(4000, 1e-9)]
+    assert norm(_f64(tiny), ord=1) == pytest.approx(1.0 + 4e-6, rel=1e-13)
+    assert dot(_f64(big), _f64(np.ones(1000))) == pytest.approx(big.sum(), rel=1e-15)
+    assert norm(_f64(big)) == pytest.approx(np.linalg.norm(big), rel=1e-14)
+
+
+def test_integer_inputs_convert_before_multiplying(backend):
+    """i32 products past 2^31 do not wrap: each value converts to the
+    floating precision first."""
+    a = tack.field(tack.i32, shape=(3,))
+    a.from_numpy(np.full(3, 100_000, np.int32))
+    assert dot(a, a) == pytest.approx(3e10, rel=1e-6)
+    assert norm(a) == pytest.approx(np.sqrt(3e10), rel=1e-6)
+
+
+def test_count_nonzero_counts_nan_and_not_negative_zero(backend):
+    f = tack.field(tack.f32, shape=(5,))
+    f.from_numpy(np.array([0.0, -0.0, np.nan, 1.0, -2.0], np.float32))
+    assert count_nonzero(f) == 3
+
+
+def test_count_nonzero_counts_in_i64(backend, monkeypatch):
+    """The count is a scan of the 0/1 flags into i64, not an i32 atomic: the
+    scan's own tests carry i32 counts past 2^31."""
+    from tack.algorithms import scan
+
+    seen = []
+    real = scan.exclusive_scan
+    monkeypatch.setattr(scan, "exclusive_scan",
+                        lambda a, out, n, **k: seen.append(out.dtype) or real(a, out, n, **k))
+    f = tack.field(tack.f32, shape=(4,))
+    f.from_numpy(np.array([1, 0, 2, 3], np.float32))
+    assert count_nonzero(f) == 3 and seen == [tack.i64]
+
+
+def test_statistics_of_no_elements(backend):
+    f = tack.field(tack.f32, shape=(4,))
+    f.from_numpy(np.ones(4, np.float32))
+    assert norm(f, n=0) == 0.0 and norm(f, ord=1, n=0) == 0.0
+    assert absmax(f, n=0) == 0.0 and dot(f, f, n=0) == 0.0 and count_nonzero(f, n=0) == 0
+    with pytest.raises(ValueError, match="Unsupported norm order"):
+        norm(f, ord=3, n=0)

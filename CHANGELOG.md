@@ -41,6 +41,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `exclusive_scan` and `inclusive_scan` take `total=False` to skip the
+  total: nothing is read back to the host, so on Metal the scan stays
+  queued with whatever follows. The radix sort's passes and the dataset
+  algorithms that only need offsets use it; a 1M-key sort went from 10.7
+  to 9.4 ms on CPU and from 7.7 to 6.3 ms on Metal.
+
 - **`tack.data`, the dataset API** (in `tack-vis`): meshes, the fields on
   them, and the algorithms that work on both. It is described in the
   User's Guide chapter *Datasets and visualization* and the
@@ -79,6 +85,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   that iterate differently. See *Iterating an Object* in the User's Guide.
 
 ### Kernels that now compute different results
+
+- `var`, `std`, `norm`, `absmax`, `count_nonzero` and `dot` in
+  `tack.algorithms` no longer combine into a one-element f32 (or i32)
+  atomic accumulator. Each forms its terms in the inputs' precision --
+  f64 if any input is f64, otherwise f32, an integer input converted
+  first -- and reduces them as `Field.sum()` and `Field.max()` do, so the
+  field-reduction contract applies. f64 data is now summed in f64:
+  `var` of 1e8 + 0..999 is exact where f32 gave nonsense. `count_nonzero`
+  counts in i64 and no longer wraps past 2^31. Integer products no longer
+  wrap before converting. `var` returns a Python float, not NumPy's
+  float32, and `absmax` propagates a NaN.
 
 - On GPUs, a floating-point `exclusive_scan` or `inclusive_scan` combines
   lanes in tree order, so it can differ from `np.cumsum` in the last bits

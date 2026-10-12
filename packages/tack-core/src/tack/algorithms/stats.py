@@ -1,10 +1,15 @@
 """Statistics and analysis on tack fields.
 
-Each function runs a kernel on the active backend that combines into a
-one-element f32 or i32 accumulator with atomic operations, then reads that
-accumulator back with to_numpy().  var/std call data.sum(), and histogram
-without a range calls data.min()/data.max(), which copy non-f32 fields to
-the host on GPU backends.
+Each statistic forms its terms -- |x|, x², (x - mean)², a·b, x ≠ 0 -- in a
+temporary field, in the precision of its inputs (f64 if any is f64,
+otherwise f32), and reduces that field with ``Field.sum()`` or
+``Field.max()``. They therefore follow the field-reduction contract: f64
+inputs accumulate in f64, and the error budget and repeatability are those
+of field reductions. ``count_nonzero`` scans its 0/1 flags into i64. (They used to combine into a
+one-element f32 or i32 accumulator with atomics: f64 data was summed in
+f32, counts wrapped past 2^31, and the order of the additions was
+whatever order the launches arrived in.) ``histogram`` still bins with
+atomics: each bin's count is an exact integer whatever the order.
 """
 
 import tack
@@ -12,55 +17,45 @@ import tack
 # ================================================================
 # KERNELS
 # ================================================================
+# ``one`` is 1.0 in the accumulation precision: a float scalar takes f64
+# when a field argument is f64, so ``x * one`` converts an f32 or integer
+# input once, before any arithmetic, to the precision of ``out``.
 
 @tack.kernel
-def _sum_sq_diff(data, mean_val, out, n):
-    """Sum of squared differences from mean: Σ(x[i] - mean)²."""
+def _squared_diffs(data, mean_val, one, out, n):
+    """(x[i] - mean)²."""
     for i in range(n):
-        diff = data[i] - mean_val
-        tack.atomic_add(out, 0, diff * diff)
-
-
-@tack.kernel
-def _abs_sum(data, out, n):
-    """Sum of absolute values: Σ|x[i]|."""
-    for i in range(n):
-        val = data[i]
-        if val < 0.0:
-            val = 0.0 - val
-        tack.atomic_add(out, 0, val)
+        diff = data[i] * one - mean_val
+        out[i] = diff * diff
 
 
 @tack.kernel
-def _sq_sum(data, out, n):
-    """Sum of squares: Σx[i]²."""
+def _abs_values(data, one, out, n):
+    """|x[i]|."""
     for i in range(n):
-        tack.atomic_add(out, 0, data[i] * data[i])
+        out[i] = abs(data[i] * one)
 
 
 @tack.kernel
-def _abs_max(data, out, n):
-    """Max absolute value."""
+def _squares(data, one, out, n):
+    """x[i]²."""
     for i in range(n):
-        val = data[i]
-        if val < 0.0:
-            val = 0.0 - val
-        tack.atomic_max(out, 0, val)
+        x = data[i] * one
+        out[i] = x * x
 
 
 @tack.kernel
-def _count_nz(data, out, n):
-    """Count non-zero elements."""
+def _nonzero(data, out, n):
+    """1 where x[i] != 0 (a NaN is nonzero; -0.0 is zero), else 0."""
     for i in range(n):
-        if data[i] != 0.0:
-            tack.atomic_add(out, 0, 1)
+        out[i] = 1 if data[i] != 0.0 else 0
 
 
 @tack.kernel
-def _dot_product(a, b, out, n):
-    """Dot product: Σa[i]*b[i]."""
+def _products(a, b, one, out, n):
+    """a[i]·b[i]."""
     for i in range(n):
-        tack.atomic_add(out, 0, a[i] * b[i])
+        out[i] = (a[i] * one) * (b[i] * one)
 
 
 @tack.kernel
@@ -110,21 +105,26 @@ def _prefix(data, n):
     return head
 
 
+def _precision(*fields):
+    """The accumulation precision of a statistic of ``fields``: f64 if any is f64."""
+    return tack.f64 if any(f.dtype is tack.f64 for f in fields) else tack.f32
+
+
 def var(data, n=None):
     """Population variance of a field: Σ(x - mean)² / n.
 
-    Runs two passes over the first n elements: Field.sum() for the mean,
-    then a kernel adding the squared differences into an f32 accumulator.
-    Returns a NumPy float32; an empty range gives NaN, as Field.mean() does.
+    Two passes over the first n elements: the mean by ``Field.sum()``, then
+    the squared differences, formed in the data's precision (f64 for f64
+    data, otherwise f32) and summed by ``Field.sum()``. Returns a Python
+    float; an empty range gives NaN, as ``Field.mean()`` does.
     """
     n, data = _count(n, data)
     if n == 0:
         return float('nan')
     mean_val = _prefix(data, n).sum() / n
-    acc = tack.field(dtype=tack.f32, shape=(1,))
-    acc.fill(0.0)
-    _sum_sq_diff(data, mean_val, acc, n)
-    return acc.to_numpy()[0] / n
+    terms = tack.field(dtype=_precision(data), shape=(n,))
+    _squared_diffs(data, mean_val, 1.0, terms, n)
+    return terms.sum() / n
 
 
 def std(data, n=None):
@@ -133,60 +133,62 @@ def std(data, n=None):
     return sqrt(var(data, n))
 
 
+def _terms(kernel, n, *fields):
+    """``kernel``'s terms over the first n elements, in the fields' precision."""
+    terms = tack.field(dtype=_precision(*fields), shape=(n,))
+    kernel(*fields, 1.0, terms, n)
+    return terms
+
+
 def norm(data, ord=2, n=None):
-    """Vector norm of a field.
+    """Vector norm of a field, in the data's precision (f64 for f64 data,
+    otherwise f32), as a Python float.
 
     ord=1: L1 norm (sum of absolute values)
     ord=2: L2 norm (Euclidean)
     ord=inf: L-infinity (max absolute value)
 
-    Any other ord raises ValueError.
+    Any other ord raises ValueError. An empty range gives 0.0.
     """
+    if ord not in (1, 2, float('inf')):
+        raise ValueError(f"Unsupported norm order: {ord}")
     n, data = _count(n, data)
+    if n == 0:
+        return 0.0
     if ord == 1:
-        acc = tack.field(dtype=tack.f32, shape=(1,))
-        acc.fill(0.0)
-        _abs_sum(data, acc, n)
-        return float(acc.to_numpy()[0])
+        return _terms(_abs_values, n, data).sum()
     if ord == 2:
         from math import sqrt
-        acc = tack.field(dtype=tack.f32, shape=(1,))
-        acc.fill(0.0)
-        _sq_sum(data, acc, n)
-        return sqrt(float(acc.to_numpy()[0]))
-    if ord == float('inf'):
-        acc = tack.field(dtype=tack.f32, shape=(1,))
-        acc.fill(0.0)
-        _abs_max(data, acc, n)
-        return float(acc.to_numpy()[0])
-    raise ValueError(f"Unsupported norm order: {ord}")
+        return sqrt(_terms(_squares, n, data).sum())
+    return _terms(_abs_values, n, data).max()
 
 
 def absmax(data, n=None):
-    """Maximum absolute value of a field."""
-    n, data = _count(n, data)
-    acc = tack.field(dtype=tack.f32, shape=(1,))
-    acc.fill(0.0)
-    _abs_max(data, acc, n)
-    return float(acc.to_numpy()[0])
+    """Maximum absolute value of a field, as a Python float; 0.0 when empty."""
+    return norm(data, float('inf'), n)
 
 
 def count_nonzero(data, n=None):
-    """Count non-zero elements in a field."""
+    """The number of nonzero elements of a field, as a Python int: its 0/1 flags
+    scanned into i64 on the device, so the count is exact past 2^31 and only
+    the total comes back to the host."""
+    from tack.algorithms.scan import exclusive_scan
+
     n, data = _count(n, data)
-    acc = tack.field(dtype=tack.i32, shape=(1,))
-    acc.fill(0)
-    _count_nz(data, acc, n)
-    return int(acc.to_numpy()[0])
+    if n == 0:
+        return 0
+    flags = tack.field(dtype=tack.i32, shape=(n,))
+    _nonzero(data, flags, n)
+    return int(exclusive_scan(flags, tack.field(dtype=tack.i64, shape=(n,)), n))
 
 
 def dot(a, b, n=None):
-    """Dot product of two fields: Σa[i]*b[i]."""
+    """Dot product of two fields, Σa[i]·b[i], in their precision (f64 if either
+    is f64, otherwise f32), as a Python float; 0.0 when empty."""
     n, a, b = _count(n, a, b)
-    acc = tack.field(dtype=tack.f32, shape=(1,))
-    acc.fill(0.0)
-    _dot_product(a, b, acc, n)
-    return float(acc.to_numpy()[0])
+    if n == 0:
+        return 0.0
+    return _terms(_products, n, a, b).sum()
 
 
 def histogram(data, bins=10, range=None, n=None):

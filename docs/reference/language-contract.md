@@ -842,8 +842,9 @@ contributed operands, including numeric zero, with an unspecified result
 sign on a zero tie; NaNs and infinities are outside it. The field/block
 extrema guarantees do not imply those atomic semantics. Atomic scope and supported widths are defined below;
 workgroup participation follows its separate contract. The statistical algorithms in
-`tack.algorithms.stats` use f32 atomic accumulators for floating statistics;
-an f64 input alone does not establish f64 accuracy or determinism for them.
+`tack.algorithms.stats` form their terms in the inputs' precision (f64 if any
+input is f64) and reduce them as fields, so field reductions' accuracy and
+repeatability rules apply to them; `histogram` counts bins with atomics.
 
 `test_reduction_semantics.py` covers full-range extrema, NaNs and zero ties
 across groups and tails, exact and bounded-error sums, allowed cancellation
