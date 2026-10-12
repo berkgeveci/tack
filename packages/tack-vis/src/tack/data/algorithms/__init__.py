@@ -39,6 +39,7 @@ from tack.data.algorithms.point_cloud import point_cloud
 from tack.data.algorithms.point_elevation import point_elevation
 from tack.data.algorithms.point_ids import point_ids
 from tack.data.algorithms.probe import probe
+from tack.data.algorithms.project import project
 from tack.data.algorithms.shrink import shrink
 from tack.data.algorithms.slice import slice, slice_plane
 from tack.data.algorithms.spherical import spherical
@@ -96,6 +97,7 @@ __all__ = [
     "point_elevation",
     "point_ids",
     "probe",
+    "project",
     "shrink",
     "slice",
     "slice_plane",

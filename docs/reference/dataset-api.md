@@ -154,6 +154,29 @@ refused unless the caller asks for the repair.
 Attributes: `topology`, `size`, `on` (the entity kind the values are
 indexed by), `interpolated`, and `order` where it applies.
 
+### Moving a field between spaces
+
+`project(data, field, space)` gives `field` in another space of the same
+topology, as a new field. Values on points or cells count as order-1 `H1`
+and `Constant`, as source and as target.
+
+| Into | Each value is | Exact when |
+|---|---|---|
+| `H1` (order 1 or 2) | the mean, over the cells around the node, of the source evaluated there | the source is continuous: a lower order comes across exactly |
+| `Constant`, order-0 `L2` | the mean of the cell's corner values (vtkPointDataToCellData) | the source is constant in the cell |
+| order-1 `L2` (or an order per cell) | the source's value at each corner (the corner mean at order 0) | the source's order is at most 1 |
+| `SideTraces` | each side's value from its cell (`traces`) | always |
+
+Where cells disagree -- cell data, DG data -- the `H1` mean is VTK's
+averaging (vtkCellDataToPointData). Sums run in a fixed order. Scalars or
+vectors; floating point. Values on faces or edges have no basis and are
+refused. On polyhedra, polygons and polylines only cell and point values
+project, each into the other.
+
+The shortcuts are projections: `to_points(data, f)` is
+`project(data, f, H1(data))`, `to_cells` projects into `Constant(data)`,
+and `discontinuous` into `L2(data)`.
+
 ## Fields and arrays
 
 `Field(space, values)`: the values are a `tack.field` (scalars) or a
@@ -323,8 +346,8 @@ and "polyline" `PolylineTopology`.
 | `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no | no |
 | `cell_centers`, `values_at_centers` | yes | no | no | no |
 | `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no | no |
-| `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes | yes |
-| `discontinuous`, `to_points` of `L2` data | yes | no | no | no |
+| `project` (and `to_points`, `to_cells`) between cell and point values | yes | yes (over each cell's distinct points) | yes | yes |
+| `project` into or from `L2`, order-2 `H1`, `SideTraces` (and `discontinuous`) | yes | no | no | no |
 | `traces`, and `jump`/`upwind_flux` of point data | yes | no | no | no |
 
 Where the table says "no", the algorithm needs a reference element and
@@ -536,8 +559,6 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 
 - sets beyond faces;
 - coefficient layout (DOF-fastest or cell-fastest);
-- a general `project(field, space)`, of which `to_points`, `to_cells` and
-  `discontinuous` are special cases;
 - whether views should keep one shared namespace;
 - filters on higher-order data (subdivide, rather than linearize);
 - clip on polyhedra, polygons and polylines;
