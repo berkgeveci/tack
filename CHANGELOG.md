@@ -130,6 +130,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   cells, some 76 launches, spent 26 ms waiting. It also lets Metal clear
   new buffers instead of clearing them on the CPU, which was 252 of
   399 ms when deriving the faces of 5M hexahedra.
+- `tack.zeros` on Metal takes the new buffer as Metal cleared it. It used
+  to fill it on the CPU, and to wait for every queued launch first, a
+  round trip of about 0.26 ms, though no launch can use a buffer that
+  new. Contour and threshold of hexahedra on an M1 Max: 10k cells
+  4.5 -> 4.1 ms and 3.6 -> 3.0 ms, 1M cells 7.7 -> 6.1 ms and 6.9 -> 5.4 ms.
 - Scans reduce, then scan, by chunks instead of by Blelloch's tree: a few
   launches per factor of 256 rather than two per factor of two. On GPUs a
   chunk is a 2048-element tile scanned by a workgroup. Exclusive scan of

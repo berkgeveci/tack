@@ -126,6 +126,10 @@ class MetalBuffer(DeviceBuffer):
     # from another library's MTLBuffer -- may be read with no Tack call between:
     # a launch that uses it completes before returning, as every launch once did.
     _shared = False
+    # Metal clears new buffers (see __init__), so `tack.zeros` takes one as it
+    # is. A fill would wait for every queued launch first, though none can use
+    # a buffer this new: about 0.26 ms each, ten times a launch.
+    starts_zeroed = True
 
     def __init__(self, device, numpy_dtype, shape, sync=None):
         nbytes = int(np.prod(shape)) * np.dtype(numpy_dtype).itemsize

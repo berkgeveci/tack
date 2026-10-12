@@ -173,8 +173,9 @@ the open command buffer, committed every 64 launches with at most 4 in
 flight, and owns what it reads -- a fresh argument buffer, its packed
 scalars as `_Uniforms`, references to its fields until it completes. The
 host waits only when it touches field memory (every `MetalBuffer` method,
-reductions, texture uploads) or calls `tack.sync()`; bindings are resolved
-before an encoder opens, since committing an open encoder aborts. A
+reductions, texture uploads) or calls `tack.sync()`; `tack.zeros` takes a
+new buffer as Metal cleared it (`starts_zeroed`), without waiting. Bindings
+are resolved before an encoder opens, since committing an open encoder aborts. A
 buffer's host access waits for every live Metal backend (`_backends`,
 `_synchronize_all`), not the one it was made on: `tack.init` makes a new
 backend each call and earlier fields keep working on it. Memory
