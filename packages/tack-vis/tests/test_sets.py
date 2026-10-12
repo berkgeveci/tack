@@ -46,6 +46,15 @@ def test_data_sets_are_checked(backend):
         data.sets["other"] = td.Set(_grid(), "cells", [0])
     with pytest.raises(TypeError, match="not a tack.data.Set"):
         td.DataSet(data.topology, data.geometry, sets={"raw": [0, 1]})
+    # Every way in is checked, and a refused one leaves the sets as they were.
+    sets = data.sets
+    for put in (lambda: sets.update(raw=[0]), lambda: sets.setdefault("raw", [0]),
+                lambda: sets.__ior__({"good": td.Set(data, "cells", [1]), "raw": [0]})):
+        with pytest.raises(TypeError, match="not a tack.data.Set"):
+            put()
+    with pytest.raises(TypeError, match="not a tack.data.Set"):
+        data.sets |= {"raw": [0]}
+    assert list(data.sets) == ["left"]
 
 
 def test_for_each_over_a_cell_set(backend):

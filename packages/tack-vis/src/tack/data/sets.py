@@ -179,8 +179,18 @@ class Sets(dict):
         super().__setitem__(name, check(name, value, self._topology))
 
     def update(self, *args, **kwargs):
-        for name, value in dict(*args, **kwargs).items():
-            self[name] = value
+        # Every entry checked before any goes in: a refused update leaves the
+        # sets as they were.
+        new = dict(*args, **kwargs)
+        for name, value in new.items():
+            check(name, value, self._topology)
+        for name, value in new.items():
+            super().__setitem__(name, value)
+
+    def __ior__(self, other):
+        # dict's |= merges in C, past __setitem__ and update.
+        self.update(other)
+        return self
 
     def setdefault(self, name, value=None):
         if name not in self:
