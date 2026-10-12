@@ -112,11 +112,11 @@ def _needs_reference_cells(space, family):
 
 def reference_cells(topology, what):
     """Refuse ``what`` on a topology whose cells have no reference element --
-    polyhedra and polygons -- rather than let it compile against a shape that
-    has no shape functions, or launch over cells it would skip."""
+    polyhedra, polygons and polylines -- rather than let it compile against a
+    shape that has no shape functions, or launch over cells it would skip."""
     if not getattr(topology, "reference_cells", True):
-        raise NotImplementedError(f"{what} needs a reference element, which polyhedral and "
-                                  "polygonal cells do not have")
+        raise NotImplementedError(f"{what} needs a reference element, which polyhedral, "
+                                  "polygonal and polyline cells do not have")
 
 
 def _is_array(value):

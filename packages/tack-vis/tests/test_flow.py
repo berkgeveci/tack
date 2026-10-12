@@ -142,15 +142,25 @@ def test_streamlines_are_the_paths(backend):
     data = _rotation(_grid())
     seeds = np.array([[1.0, 0.0, 0.0], [0.0, 0.5, 0.0], [5.0, 5.0, 5.0]])
     lines = td.streamlines(data, "v", seeds, 0.05, 30)
-    assert lines.num_points == 31 + 31 + 1 and lines.num_cells == 60
-    np.testing.assert_array_equal(np.bincount(lines.fields["seed"].values.to_numpy()), [30, 30])
+    # One polyline per seed that moved; the third, outside, keeps its point.
+    assert isinstance(lines.topology, td.PolylineTopology)
+    assert lines.num_points == 31 + 31 + 1 and lines.num_cells == 2
+    np.testing.assert_array_equal(lines.fields["seed"].values.to_numpy(), [0, 1])
     x = lines.positions()
     np.testing.assert_array_equal(x[0], seeds[0])
     np.testing.assert_allclose(x[30], _numpy_rk4(seeds[0], 0.05, 30), atol=2e-4)
     np.testing.assert_allclose(lines.fields["time"].values.to_numpy()[:31],
                                0.05 * np.arange(31), atol=1e-5)
-    connectivity = lines.topology.connectivity.to_numpy().reshape(-1, 2)
-    np.testing.assert_array_equal(connectivity[:30], np.c_[np.arange(30), np.arange(1, 31)])
+    line_offsets, line_points = (a.to_numpy() for a in lines.topology.lines())
+    np.testing.assert_array_equal(line_offsets, [0, 31, 62])
+    np.testing.assert_array_equal(line_points, np.arange(62))
+    # Each path's length is its steps', and its loose ends are its first and last.
+    lengths = td.cell_geometry(lines).measure.values.to_numpy()
+    np.testing.assert_allclose(lengths, [np.linalg.norm(np.diff(x[:31], axis=0), axis=1).sum(),
+                                         np.linalg.norm(np.diff(x[31:62], axis=0), axis=1).sum()],
+                               rtol=1e-5)
+    ends = td.external_faces(lines)
+    np.testing.assert_array_equal(np.sort(ends.topology.connectivity.to_numpy()), [0, 30, 31, 61])
     advected = td.advect(data, "v", seeds, 0.05, 30)
     np.testing.assert_allclose(x[[30, 61]], advected.positions()[:2], atol=1e-6)
 

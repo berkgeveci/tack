@@ -54,6 +54,7 @@ that share everything else: spaces without a basis, fields, sets,
 | `PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, cell_face_sides, num_points=None, id_dtype=None)` | faces stored once, as point rings wound out of side 0; each cell a list of faces, with the side (u8, 0 or 1) it is on | polyhedral, 3D |
 | `PolyhedralTopology.from_cell_faces(cells, num_points, positions=None, orient=False, id_dtype=None)` | each cell's own face rings, as VTK and most readers give them; copies of a face matched by point set | polyhedral, 3D |
 | `PolygonalTopology(loop_offsets, loop_points, num_points=None, id_dtype=None)` | each polygon's loop of points | polyhedral, 2D |
+| `PolylineTopology(line_offsets, line_points, num_points=None, id_dtype=None)` | each polyline's chain of points, two or more; a chain may close | polyhedral, 1D |
 
 `num_points` exists because a dataset may have points that no cell uses.
 
@@ -99,6 +100,13 @@ dataset of more than 2^31 − 1 cells; everything else works there.
   side 0's cell, pointing out of it, and its length as its "area";
   `face_centers` its midpoint. `divergence`, `perot`, `jump` and
   `upwind_flux` then work on 2D meshes as on 3D ones.
+- A polyline topology's faces are the chains' ends, one per point that
+  chains end at: side 0 is the first chain ending there (in cell order),
+  side 1 the second, and the normal runs along side 0's chain, out of it, with
+  an "area" of 1. A vertex has no winding, so any two chains meeting end to
+  end are consistent. Three or more ending at one point (a branch) have no
+  faces: `faces()` refuses them, as an edge of three polygons is refused,
+  while everything that does not need faces still works.
 - A face's points are wound out of its **side 0**. **Side 1** is the cell on
   the other side, or none (`-1`) on the boundary.
 - Each cell knows, per local face, the face's id and which side of it the
@@ -297,27 +305,27 @@ Every algorithm is in `tack.data.algorithms`, one module each, and
   storing what `boundary_faces` returns.
 
 In the table,
-"polyhedral" means `PolyhedralTopology` and "polygonal" means
-`PolygonalTopology`.
+"polyhedral" means `PolyhedralTopology`, "polygonal" `PolygonalTopology`
+and "polyline" `PolylineTopology`.
 
-| | Shape-based | Polyhedral | Polygonal |
-|---|---|---|---|
-| `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume or area, centroid), `edge_lengths` | yes | yes | yes |
-| `boundary_faces`, `extract_surface` | yes | yes (the surface is polygonal) | yes |
-| `jump` and `upwind_flux` of cell data; `divergence`, `perot` of face values | yes | yes | yes |
-| `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes |
-| `contour`, `slice`, `slice_plane` | yes | yes (López, face-based) | not yet |
-| `clip` | yes | not yet | not yet |
-| `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes |
-| `implicit_values` | yes | yes | yes |
-| `CellLocator`, `probe` | yes | not yet | not yet |
-| `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no |
-| `cell_centers`, `values_at_centers` | yes | no | no |
-| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no |
-| `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes |
-| `discontinuous`, `to_points` of `L2` data | yes | no | no |
-| `traces`, and `jump`/`upwind_flux` of point data | yes | no | no |
-| `external_faces` | yes (a 2D mesh's: line cells) | yes (polygonal) | the boundary edges, as two-point polygons: there is no line topology yet |
+| | Shape-based | Polyhedral | Polygonal | Polyline |
+|---|---|---|---|---|
+| `face_geometry` (normals, areas), `face_centers`, `cell_geometry` (volume, area or length; centroid) | yes | yes | yes | yes |
+| `edge_lengths` | yes | yes | yes | no (no derived edges) |
+| `boundary_faces`, `extract_surface`, `external_faces` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
+| `jump` and `upwind_flux` of cell data; `divergence`, `perot` of face values | yes | yes | yes | yes |
+| `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
+| `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells) | yes (López, face-based) | yes (line cells) | no (would give points) |
+| `clip` | yes | not yet | not yet | not yet |
+| `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
+| `implicit_values` | yes | yes | yes | yes |
+| `CellLocator`, `probe` | yes | not yet | not yet | not yet |
+| `advect`, `streamlines` | yes (2D and 3D cells) | no (no parametric coordinates) | no | no |
+| `cell_centers`, `values_at_centers` | yes | no | no | no |
+| `gradients(at="cells" | "points")` of scalars or vectors, `flow_quantities` | yes | no | no | no |
+| `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes | yes |
+| `discontinuous`, `to_points` of `L2` data | yes | no | no | no |
+| `traces`, and `jump`/`upwind_flux` of point data | yes | no | no | no |
 
 Where the table says "no", the algorithm needs a reference element and
 raises `NotImplementedError` saying so.
@@ -475,9 +483,10 @@ fixed RK4 (or Euler) steps, as Viskores' ParticleAdvection does. It returns
 the particles where they stopped, one vertex cell each, with `steps`, `time`
 and `status`. `status` holds Viskores' bits, `ParticleStatus.SUCCESS`,
 `TERMINATE`, `SPATIAL_BOUNDS`, `TOOK_ANY_STEPS` and `ZERO_VELOCITY`.
-`streamlines(...)` returns the paths, the seed first: a polyline per seed
-in Viskores, here one line cell per step until Tack has a line topology,
-with `seed` on the cells and `time` on the points.
+`streamlines(...)` returns the paths, the seed first, as Viskores does: a
+polyline per seed that moved (a `PolylineTopology`), with `seed` on the
+cells and `time` on the points. A seed that took no step keeps its point
+and has no line.
 
 The rules are Viskores':
 
@@ -531,8 +540,8 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
   `discontinuous` are special cases;
 - whether views should keep one shared namespace;
 - filters on higher-order data (subdivide, rather than linearize);
-- clip on polyhedra;
+- clip on polyhedra, polygons and polylines;
 - locating points in polyhedra (no parametric coordinates; a containment
   test against the faces instead);
-- a topology of lines, for a 2D mesh's boundary and for contour lines of
-  polygons.
+- a polyline topology's edges (its segments as global entities), and
+  stitching contour lines into polylines.

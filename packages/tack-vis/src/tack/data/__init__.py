@@ -107,6 +107,7 @@ from tack.data.locator import CellLocator
 from tack.data.polyhedra import (
     PolygonalTopology,
     PolyhedralTopology,
+    PolylineTopology,
     SizeBuckets,
     orient,
 )
@@ -136,6 +137,7 @@ __all__ = [
     "Planes",
     "PolygonalTopology",
     "PolyhedralTopology",
+    "PolylineTopology",
     "RandomNormal",
     "RandomUniform",
     "SideTraces",

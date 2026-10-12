@@ -402,8 +402,8 @@ def _mesh(data):
     if isinstance(t, StructuredTopology) and len(t.point_dims) >= 2:
         return _GridCells(t.point_dims), present
     raise NotImplementedError("advection takes unstructured and 2D or 3D structured "
-                              "topologies; not polyhedra, whose cells have no parametric "
-                              "coordinates, nor lines")
+                              "topologies; not polyhedra, polygons or polylines, whose "
+                              "cells have no parametric coordinates, nor lines")
 
 
 def _run(data, field, seeds, step_size, steps, integrator, locator, record):

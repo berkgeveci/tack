@@ -1,9 +1,8 @@
-"""``streamlines``: the paths of ``advect``'s particles, as Viskores' Streamline: each seed's positions after every step, the seed first, as consecutive line cells (one per step; a polyline per seed in Viskores, until Tack has a line topology), with ``seed`` (which seed's path) on the cells and ``time`` on the points. A seed that takes no step has a point and no line."""
+"""``streamlines``: the paths of ``advect``'s particles, as Viskores' Streamline: one polyline per seed."""
 
 import numpy as np
 
 import tack
-from tack.data import shapes
 from tack.data.algorithms._advection import _run
 from tack.data.dataset import DataSet, Field
 from tack.data.spaces import Values
@@ -12,59 +11,58 @@ __all__ = ['streamlines']
 
 
 @tack.kernel
-def _segments(trace, trace_times, lengths, starts, capacity, points, times, types, offsets,
-              connectivity, seed_of, segment_starts):
-    # Each path's points in order, and a line from each to the next.
+def _paths(trace, trace_times, lengths, starts, capacity, points, times):
+    # Each path's points in order.
     for q in range(lengths.shape[0]):
         first = starts[q]
-        count = lengths[q]
-        lines = segment_starts[q]
-        for k in range(count):
+        for k in range(lengths[q]):
             points[first + k] = trace[q * capacity + k]
             times[first + k] = trace_times[q * capacity + k]
-        for k in range(count - 1):
-            types[lines + k] = tack.u8(shapes.LINE)
-            offsets[lines + k] = 2 * (lines + k)
-            connectivity[2 * (lines + k)] = first + k
-            connectivity[2 * (lines + k) + 1] = first + k + 1
-            seed_of[lines + k] = q
-        if q == lengths.shape[0] - 1:
-            offsets[lines + max(count - 1, 0)] = 2 * (lines + max(count - 1, 0))
+
+
+@tack.kernel
+def _chains(kept, starts, lengths, line_offsets, line_points):
+    # A polyline per path that moved, through its points in order.
+    for i in range(kept.shape[0]):
+        q = kept[i]
+        for k in range(lengths[q]):
+            line_points[line_offsets[i] + k] = starts[q] + k
 
 
 def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=None):
     """The paths of ``advect``'s particles, as Viskores' Streamline: each seed's
-    positions after every step, the seed first, as consecutive line cells (one
-    per step; a polyline per seed in Viskores, until Tack has a line topology),
-    with ``seed`` (which seed's path) on the cells and ``time`` on the points.
-    A seed that takes no step has a point and no line."""
+    positions after every step, the seed first, as one polyline per seed
+    (a ``PolylineTopology``), with ``seed`` (which seed's path) on the cells and
+    ``time`` on the points. A seed that takes no step has a point and no line."""
     from tack.algorithms.scan import exclusive_scan
-    from tack.data.topology import UnstructuredTopology
+    from tack.data.polyhedra import PolylineTopology
 
     _, _, _, _, (trace, trace_times), lengths, capacity = _run(
         data, field, seeds, step_size, steps, integrator, locator, record=True)
     m = int(lengths.shape[0])
     host_lengths = lengths.to_numpy() if m else np.zeros(0, np.int32)
     total = int(host_lengths.sum())
-    nlines = int(np.maximum(host_lengths - 1, 0).sum())
-    idt = tack.i64 if max(total, 2 * nlines) > 2**31 - 1 else tack.i32
+    moved = np.flatnonzero(host_lengths > 1)
+    idt = tack.i64 if total > 2**31 - 1 else tack.i32
     starts = tack.field(idt, shape=(m,))
-    segment_starts = tack.field(idt, shape=(m,))
     if m:
         exclusive_scan(lengths, starts, m)
-        segment_starts.from_numpy(np.concatenate(
-            [[0], np.cumsum(np.maximum(host_lengths - 1, 0))[:-1]]).astype(idt.numpy_dtype))
     points = tack.Vector.field(3, data.dtype, shape=(total,))
     point_times = tack.field(data.dtype, shape=(total,))
-    types = tack.field(tack.u8, shape=(nlines,))
-    offsets = tack.field(idt, shape=(nlines + 1,))
-    connectivity = tack.field(idt, shape=(2 * nlines,))
-    seed_of = tack.field(tack.i32, shape=(nlines,))
-    offsets.fill(0)
     if m:
-        _segments(trace, trace_times, lengths, starts, capacity, points, point_times, types,
-                  offsets, connectivity, seed_of, segment_starts)
-    topology = UnstructuredTopology(types, offsets, connectivity, num_points=total)
+        _paths(trace, trace_times, lengths, starts, capacity, points, point_times)
+    # The paths that moved, their points numbered as they are, make the chains.
+    kept = tack.field(idt, shape=(len(moved),))
+    line_offsets = tack.field(idt, shape=(len(moved) + 1,))
+    line_points = tack.field(idt, shape=(int(host_lengths[moved].sum()),))
+    seed_of = tack.field(tack.i32, shape=(len(moved),))
+    line_offsets.from_numpy(np.concatenate([[0], np.cumsum(host_lengths[moved])])
+                            .astype(idt.numpy_dtype))
+    if len(moved):
+        kept.from_numpy(moved.astype(idt.numpy_dtype))
+        seed_of.from_numpy(moved.astype(np.int32))
+        _chains(kept, starts, lengths, line_offsets, line_points)
+    topology = PolylineTopology(line_offsets, line_points, num_points=total, id_dtype=idt)
     out = DataSet(topology, points)
     out.fields["seed"] = Field(Values(out, "cells"), seed_of)
     out.fields["time"] = Field(Values(out, "points"), point_times)

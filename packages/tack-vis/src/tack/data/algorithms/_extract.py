@@ -43,8 +43,9 @@ def _renumber(connectivity, new_ids):
 
 def _keep_cells(data, keep, fields=None):
     """The cells whose ``keep`` flag (i32, one per cell) is 1, with only the points
-    they use, renumbered in order; fields carried by ``carry``. Polyhedral and
-    polygonal topologies keep their cells' faces too."""
+    they use, renumbered in order; fields carried by ``carry``. Polyhedral
+    topologies keep their cells' faces too; polygonal and polyline ones their
+    loops and chains."""
     if not getattr(data.topology, "reference_cells", True):
         return _polyhedral_keep_cells(data, keep, fields)
     n = data.num_cells
@@ -83,7 +84,7 @@ def _keep_cells(data, keep, fields=None):
 def _polyhedral_keep_cells(data, keep, fields=None):
     """``_keep_cells`` of a polyhedral or polygonal topology: whole cells, their faces
     kept once and numbered in their old order, points compacted."""
-    from tack.data.polyhedra import PolygonalTopology, PolyhedralTopology
+    from tack.data.polyhedra import PolygonalTopology, PolyhedralTopology, PolylineTopology
 
     t = data.topology
     n = data.num_cells
@@ -91,8 +92,9 @@ def _polyhedral_keep_cells(data, keep, fields=None):
     _, kept_cells, kept_n = _compact(keep, idt)
     point_used = tack.zeros(tack.i32, (data.num_points,))
 
-    if t.dimension == 2:
-        loop_offsets, loop_points = t.loops()
+    if t.dimension < 3:
+        # Polygons' loops or polylines' chains, copied whole.
+        loop_offsets, loop_points = t.loops() if t.dimension == 2 else t.lines()
         sizes = tack.zeros(tack.i32, (n,))
         if n:
             _kept_entry_counts(loop_offsets, keep, sizes, n)
@@ -105,7 +107,8 @@ def _polyhedral_keep_cells(data, keep, fields=None):
         if total:
             _renumber_points(out_loops, point_new)
         offsets = _gather_offsets(starts, kept_cells, total)
-        out = PolygonalTopology(offsets, out_loops, num_points=kept_np)
+        kind = PolygonalTopology if t.dimension == 2 else PolylineTopology
+        out = kind(offsets, out_loops, num_points=kept_np)
         flipped = None
     else:
         nf = t.num_faces

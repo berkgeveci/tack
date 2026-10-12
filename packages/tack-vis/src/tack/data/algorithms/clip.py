@@ -226,7 +226,8 @@ def clip(data, by, value=0.0, invert=False, fields=None):
     """
 
     if not getattr(data.topology, "reference_cells", True):
-        raise NotImplementedError("clip takes cells of the linear shapes, not polyhedra")
+        raise NotImplementedError("clip takes cells of the linear shapes, not polyhedra, "
+                                  "polygons or polylines")
     if hasattr(by, "value") and not isinstance(by, (str, Field)):
         if not isinstance(data.geometry.space, H1):
             raise TypeError("clip by a function needs an H1 geometry: one position per point")

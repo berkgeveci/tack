@@ -1038,6 +1038,7 @@ SHAPES = (Vertex, Line, Triangle, Pixel, Quad, Tetra, Voxel, Hexahedron, Wedge, 
 
 _BY_ID = {int(cls.ID): cls for cls in SHAPES}
 
+POLY_LINE = tack.constant(4, tack.i32)
 POLYGON = tack.constant(7, tack.i32)
 POLYHEDRON = tack.constant(42, tack.i32)
 
@@ -1051,6 +1052,16 @@ class _NoReference:
     NUM_FACES = 0
     CONTOUR_TRIANGLES = 0
     NUM_QUADRATIC = 0
+
+
+@tack.device_class
+class PolyLine(_NoReference):
+    """VTK_POLY_LINE: a cell of a polyline topology, a chain of any number of points
+    (two or more). No fixed counts and no shape functions; its facets are its two
+    end points, and a cell view gives its chain at run time."""
+
+    ID = POLY_LINE
+    DIMENSION = 1
 
 
 @tack.device_class

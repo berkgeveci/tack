@@ -45,8 +45,9 @@ def threshold(data, field, lower, upper, all_points=True, fields=None):
     numbered in their old order, so values on faces come along. A face whose
     side-0 cell is dropped is turned around for its remaining cell, and its
     oriented values (``Values(..., "faces", oriented=True)``) are negated. A
-    polygonal topology's kept polygons keep their loops; its edge values, whose
-    numbering is derived afresh, are left behind.
+    polygonal topology's kept polygons keep their loops, and a polyline
+    topology's polylines their chains; their facets' values, whose numbering is
+    derived afresh, are left behind.
     """
     field = _field(data, field)
     if arrays.width_of(field.values):

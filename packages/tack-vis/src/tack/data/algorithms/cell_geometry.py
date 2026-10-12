@@ -3,6 +3,7 @@
 from typing import NamedTuple
 
 import tack
+from tack.data import shapes
 from tack.data.algorithms._common import _vectors
 from tack.data.dataset import Field
 from tack.data.spaces import Values
@@ -58,6 +59,24 @@ def _polygon_geometry(cells, areas, centroids):
         centroids[cells.entity_id(c)] = origin + weighted / (3.0 * twice)
 
 
+@tack.kernel
+def _line_geometry(cells, lengths, centroids):
+    for c in cells:
+        # Each segment's length, and its midpoint weighted by it, from the chain's
+        # first point.
+        origin = cells.point_position(cells.line_point(c, 0))
+        total = 0.0
+        weighted = origin - origin
+        for j in range(cells.line_size(c) - 1):
+            a = cells.point_position(cells.line_point(c, j)) - origin
+            b = cells.point_position(cells.line_point(c, j + 1)) - origin
+            length = (b - a).norm()
+            total += length
+            weighted += length * (a + b)
+        lengths[cells.entity_id(c)] = total
+        centroids[cells.entity_id(c)] = origin + weighted / (2.0 * total)
+
+
 class CellGeometry(NamedTuple):
     """``cell_geometry``'s fields, on the cells."""
 
@@ -72,8 +91,10 @@ def cell_geometry(data):
     measured as that polyhedron (a hexahedron with warped faces is not quite its
     trilinear volume); its faces must be wound out of it. A 2D cell's area --
     triangle, quad, pixel or polygon -- along its own normal (Newell's), from
-    its edges going round it."""
-    data.topology.faces()                          # the incidence the cell views need
+    its edges going round it. A polyline's length, and the centroid of its
+    segments."""
+    if data.topology.dimension > 1:
+        data.topology.faces()                      # the incidence the cell views need
     n = data.num_cells
     volumes = tack.field(data.dtype, shape=(n,))
     centroids = _vectors(n, data.dtype)
@@ -82,4 +103,6 @@ def cell_geometry(data):
             _cell_geometry(data.domain_view("cells", group), volumes, centroids)
         elif group.count and group.shape.DIMENSION == 2:
             _polygon_geometry(data.domain_view("cells", group), volumes, centroids)
+        elif group.count and group.shape is shapes.PolyLine:
+            _line_geometry(data.domain_view("cells", group), volumes, centroids)
     return CellGeometry(Field(Values(data, "cells"), volumes), Field(Values(data, "cells"), centroids))

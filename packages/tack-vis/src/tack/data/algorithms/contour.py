@@ -3,7 +3,7 @@
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import arrays, ids, shapes
-from tack.data.algorithms._common import _close, _field, _scalar_floating
+from tack.data.algorithms._common import _close, _compact, _field, _scalar_floating
 from tack.data.buckets import bucket_order, run_offsets
 from tack.data.carry import Interpolate, Pieces, carry
 from tack.data.dataset import Field
@@ -91,13 +91,20 @@ def _triangles(rows, types, offsets, connectivity, count):
 
 
 def contour(data, field, isovalue, merge_points=True, fields=None):
-    """The surface where ``field`` crosses ``isovalue``, as triangles.
+    """Where ``field`` crosses ``isovalue``: a surface of a 3D mesh, as triangles
+    (as polygons on polyhedra); lines of a 2D mesh.
 
     ``field`` is a scalar field with a basis, or its name: ``H1`` (point
     data), or ``L2`` (DG, an order per cell too). Each 3D cell contributes the
     triangles of VTK's case tables for its corner values, interpolated along
-    its edges; cells of lower dimension contribute nothing, and a cell
-    constant has no level set inside its cells.
+    its edges; in a mesh with 3D cells, cells of lower dimension contribute
+    nothing, and a cell constant has no level set inside its cells.
+
+    A 2D mesh -- triangles, quads, pixels or polygons -- gives line cells from
+    its point values: each cell's crossings, found going round its edges, are
+    joined in pairs, each line with the higher values on its right as the
+    cell winds. Lines share their points through the mesh's faces (its edges),
+    whatever ``merge_points`` says. A polyline mesh is refused.
 
     With ``merge_points``, triangles share their points: by global edge when
     the field and the geometry are both continuous, so the surface is
@@ -110,6 +117,11 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
     field = _field(data, field)
     space = field.space
     _scalar_floating("contour", field)
+    dimension = data.topology.dimension
+    if dimension == 2:
+        return _contour_lines(data, field, isovalue, fields)
+    if dimension < 2:
+        raise NotImplementedError("contour of lines (which would give points) is not built")
     if not getattr(data.topology, "reference_cells", True):
         return _polyhedral_contour(data, field, isovalue, fields)
     if not space.interpolated or space.on not in ("cells", "points"):
@@ -301,8 +313,6 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
     from tack.data.polyhedra import PolygonalTopology, SizeBuckets
 
     t = data.topology
-    if t.dimension != 3:
-        raise NotImplementedError("contour lines of polygons are not built yet")
     if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
         raise TypeError("a polyhedral topology contours point data")
     values = arrays.materialize(field.values)
@@ -366,3 +376,130 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
     surface = PolygonalTopology(poly_starts, vertices, num_points=count)
     return carry(data, surface, points=Interpolate(ends, weights), cells=Pieces(poly_cells),
                  geometry=Field(H1(surface), positions), fields=fields)
+
+
+# ── Lines of 2D meshes ──────────────────────────────────────────────
+
+@tack.kernel
+def _line_counts(cells, values, iso, counts):
+    # A 2D cell's crossings, going round its edges: half as many lines.
+    for c in cells:
+        crossings = 0
+        for k in range(cells.num_faces(c)):
+            above_a = values[cells.side_point(c, k, 0)] >= iso
+            above_b = values[cells.side_point(c, k, 1)] >= iso
+            if above_a != above_b:
+                crossings += 1
+        counts[cells.entity_id(c)] = crossings // 2
+
+
+@tack.kernel
+def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, ends, weights,
+                 positions):
+    for c in cells:
+        n = cells.num_faces(c)
+        # Going round the cell from its first rising crossing, each rising crossing
+        # (below to above) pairs with the next falling one: a line cutting off a run
+        # of points above the isovalue, which lies on its right.
+        first = -1
+        for k in range(n):
+            if first < 0:
+                if (values[cells.side_point(c, k, 0)] < iso
+                        and values[cells.side_point(c, k, 1)] >= iso):
+                    first = k
+        if first < 0:
+            continue
+        at = starts[cells.entity_id(c)]
+        rising = 0
+        for i in range(n):
+            k = (first + i) % n
+            a = cells.side_point(c, k, 0)
+            b = cells.side_point(c, k, 1)
+            above_a = values[a] >= iso
+            above_b = values[b] >= iso
+            if above_a != above_b:
+                f = cells.face_id(c, k)
+                if not above_a:
+                    rising = f
+                else:
+                    line_faces[at] = [rising, f]
+                    line_cells[at] = cells.cell_id(c)
+                    at += 1
+                if cells.face_side(c, k) == 0:
+                    # The face's side 0 records its iso-point, from its lower point
+                    # id, as every contour interpolates.
+                    lo = 0 if a < b else 1
+                    p = cells.side_point(c, k, lo)
+                    q = cells.side_point(c, k, 1 - lo)
+                    w = (iso - values[p]) / (values[q] - values[p])
+                    xp = cells.side_position(c, k, lo)
+                    crossed[f] = 1
+                    ends[f] = [p, q]
+                    weights[f] = w
+                    positions[f] = xp + w * (cells.side_position(c, k, 1 - lo) - xp)
+
+
+@tack.kernel
+def _iso_points(kept, ends, weights, positions, out_ends, out_weights, out_positions):
+    for v in range(kept.shape[0]):
+        f = kept[v]
+        out_ends[v] = ends[f]
+        out_weights[v] = weights[f]
+        out_positions[v] = positions[f]
+
+
+@tack.kernel
+def _line_cells(line_faces, point_of_face, types, offsets, connectivity):
+    for i in range(line_faces.shape[0]):
+        pair = line_faces[i]
+        types[i] = tack.u8(shapes.LINE)
+        offsets[i] = 2 * i
+        connectivity[2 * i] = point_of_face[pair[0]]
+        connectivity[2 * i + 1] = point_of_face[pair[1]]
+        if i == line_faces.shape[0] - 1:
+            offsets[i + 1] = 2 * (i + 1)
+
+
+def _contour_lines(data, field, isovalue, fields=None):
+    """``contour`` of a 2D mesh -- shapes or polygons -- as line cells: each cell's
+    crossings found going round its edges, which are the mesh's faces, so lines
+    share their points through them."""
+    if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
+        raise TypeError("contour of a 2D mesh takes a field on the points")
+    values = arrays.materialize(field.values)
+    faces = data.topology.faces()
+    nf = faces.num_faces
+    idt = data.id_dtype
+    n = data.num_cells
+    groups = [g for g in data.launch_groups("cells", [])
+              if g.count and g.shape.DIMENSION == 2]
+    counts = tack.zeros(tack.i32, (n,))
+    for group in groups:
+        _line_counts(data.domain_view("cells", group), values, isovalue, counts)
+    odt = ids.for_output(data, 2 * nf)
+    starts = tack.field(odt, shape=(n,))
+    lines = exclusive_scan(counts, starts, n) if n else 0
+    line_faces = tack.Vector.field(2, idt, shape=(lines,))
+    line_cells = tack.field(idt, shape=(lines,))
+    crossed = tack.zeros(tack.i32, (nf,))
+    ends = tack.Vector.field(2, idt, shape=(nf,))
+    weights = tack.field(values.dtype, shape=(nf,))
+    positions = tack.Vector.field(3, data.dtype, shape=(nf,))
+    if lines:
+        for group in groups:
+            _line_pieces(data.domain_view("cells", group), values, isovalue, starts, line_faces,
+                         line_cells, crossed, ends, weights, positions)
+    point_of_face, kept, count = _compact(crossed, odt)
+    out_ends = tack.Vector.field(2, idt, shape=(count,))
+    out_weights = tack.field(values.dtype, shape=(count,))
+    out_positions = tack.Vector.field(3, data.dtype, shape=(count,))
+    if count:
+        _iso_points(kept, ends, weights, positions, out_ends, out_weights, out_positions)
+    types = tack.field(tack.u8, shape=(lines,))
+    offsets = tack.zeros(odt, (lines + 1,))
+    connectivity = tack.field(odt, shape=(2 * lines,))
+    if lines:
+        _line_cells(line_faces, point_of_face, types, offsets, connectivity)
+    out = UnstructuredTopology(types, offsets, connectivity, num_points=count)
+    return carry(data, out, points=Interpolate(out_ends, out_weights), cells=Pieces(line_cells),
+                 geometry=Field(H1(out), out_positions), fields=fields)

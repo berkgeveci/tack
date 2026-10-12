@@ -76,9 +76,11 @@ def check_winding(data):
     walks each of its edges exactly twice, once each way. A cell that does not --
     a face with the wrong side, an open cell, an edge of three faces -- is listed.
     Combinatorial: geometry plays no part. For polygons: the cells whose edges,
-    walked their way, do not close into a loop.
+    walked their way, do not close into a loop. Polylines have no winding.
     """
     t = getattr(data, "topology", data)
+    if t.dimension == 1:
+        raise ValueError("polylines have no winding to check")
     if t.dimension == 2:
         return _check_loops(t)
     edges = t.edges()

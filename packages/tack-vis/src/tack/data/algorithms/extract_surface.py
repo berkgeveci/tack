@@ -3,6 +3,7 @@
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import ids as id_types
+from tack.data import shapes
 from tack.data.algorithms._common import _close
 from tack.data.carry import Pieces, Same, Take, carry
 from tack.data.spaces import H1
@@ -40,8 +41,10 @@ def _face_cells(ids, sides, out):
 
 def extract_surface(data, faces, fields=None):
     """The ``faces`` -- a set's name in ``data.sets``, or face ids (a field or an
-    array, as ``boundary_faces`` returns) -- as a surface dataset: triangles and quads on the same
-    points, each in its side 0's outward order. Fields on faces become the surface's
+    array, as ``boundary_faces`` returns) -- as a dataset on the same points: a 3D
+    mesh's faces as triangles, quads or polygons, each in its side 0's outward
+    order; a 2D mesh's edges as line cells; a polyline mesh's ends as vertex
+    cells. Fields on faces become the surface's
     cell fields, and so do cell fields (``Constant``, values on cells), each face
     taking its side 0 cell's value; point fields (``H1``, values on points) stay on
     the same points -- an order-2 field's or geometry's values at the points,
@@ -96,9 +99,17 @@ def _face_ids(data, faces):
     return id_types.as_ids(faces, data.id_dtype)
 
 
+@tack.kernel
+def _facet_types(offsets, types):
+    # A polygonal mesh's facets are lines, a polyline mesh's vertices.
+    for i in range(types.shape[0]):
+        types[i] = tack.u8(shapes.LINE if offsets[i + 1] - offsets[i] == 2 else shapes.VERTEX)
+
+
 def _polygon_surface(data, ids, fields=None):
     """``extract_surface`` of a polyhedral topology: the set's faces, each a polygon in
-    its side 0's outward order, as a ``PolygonalTopology`` on the same points."""
+    its side 0's outward order, as a ``PolygonalTopology`` on the same points; of a
+    polygonal or polyline one, its edges or ends as line or vertex cells."""
     from tack.data.polyhedra import PolygonalTopology
 
     topology = data.topology
@@ -114,7 +125,13 @@ def _polygon_surface(data, ids, fields=None):
     loops = tack.field(idt, shape=(total,))
     if n:
         _surface_loops(ids, topology.face_offsets, topology.face_points, offsets, loops)
-    surface = PolygonalTopology(offsets, loops, num_points=data.num_points)
+    if topology.dimension == 3:
+        surface = PolygonalTopology(offsets, loops, num_points=data.num_points)
+    else:
+        types = tack.field(tack.u8, shape=(n,))
+        if n:
+            _facet_types(offsets, types)
+        surface = UnstructuredTopology(types, offsets, loops, num_points=data.num_points)
     cells = tack.field(idt, shape=(n,))
     if n:
         _face_cells(ids, faces.sides, cells)

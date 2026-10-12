@@ -35,10 +35,11 @@ from tack.algorithms.scan import exclusive_scan
 from tack.data import ids, shapes
 from tack.data.buckets import bucket_order, run_offsets
 from tack.data.topology import _as_field, _Topology
-from tack.data.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells
+from tack.data.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells, _PolylineCells
 from tack.lang.field import Field
 
-__all__ = ["PolygonalTopology", "PolyhedralTopology", "SizeBuckets", "orient"]
+__all__ = ["PolygonalTopology", "PolyhedralTopology", "PolylineTopology", "SizeBuckets",
+           "orient"]
 
 
 # ── Sides ───────────────────────────────────────────────────────────
@@ -208,20 +209,26 @@ def _close(offsets, n, total):
         offsets[n] = total
 
 
-def _derive_cell_points(t):
+def _derive_cell_points(t, cell_offsets=None, cell_faces=None, face_offsets=None,
+                        face_points=None):
     """Each cell's points, sorted and unique: ``(offsets, point_ids)``. The pairs
     ``(cell, point)`` of every cell's face points, sorted once: runs are the
-    distinct pairs, in cell order and point order within a cell."""
+    distinct pairs, in cell order and point order within a cell. The CSR arrays
+    default to the topology's own."""
     n = t.num_cells
     idt = t.id_dtype
+    cell_offsets = t.cell_offsets if cell_offsets is None else cell_offsets
+    cell_faces = t.cell_faces if cell_faces is None else cell_faces
+    face_offsets = t.face_offsets if face_offsets is None else face_offsets
+    face_points = t.face_points if face_points is None else face_points
     sizes = tack.field(tack.i32, shape=(n,))
     starts = tack.field(idt, shape=(n,))
     if n:
-        _cell_sizes(t.cell_offsets, t.cell_faces, t.face_offsets, sizes, n)
+        _cell_sizes(cell_offsets, cell_faces, face_offsets, sizes, n)
     total = exclusive_scan(sizes, starts, n) if n else 0
     keys = tack.Vector.field(2, idt, shape=(total,))
     if total:
-        _cell_point_keys(t.cell_offsets, t.cell_faces, t.face_offsets, t.face_points, starts,
+        _cell_point_keys(cell_offsets, cell_faces, face_offsets, face_points, starts,
                          keys, n)
     order, _ = bucket_order(keys, n, idt)
     offsets_of_runs, runs = run_offsets(keys, order)
@@ -612,6 +619,153 @@ class PolygonalTopology(PolyhedralTopology):
     def loops(self):
         """Each polygon's points in order: ``(loop_offsets, loop_points)``."""
         return self.loop_offsets, self.loop_points
+
+
+# ── Polylines ───────────────────────────────────────────────────────
+
+@tack.kernel
+def _line_ends(line_offsets, line_points, ends, short, n_cells):
+    # Each chain's first point, then its last; and how many have under two points.
+    for c in range(n_cells):
+        first = line_offsets[c]
+        last = line_offsets[c + 1] - 1
+        if last <= first:
+            tack.atomic_add(short, 0, 1)
+        ends[2 * c] = line_points[first]
+        ends[2 * c + 1] = line_points[max(last, first)]
+
+
+@tack.kernel
+def _ends_from_runs(order, offsets, ends, face_points, cell_faces, sides, crowded, count):
+    # A facet per point that chains end at: side 0 the first end there (in cell
+    # order), side 1 the second; a third is a branch the faces cannot hold.
+    for r in range(count):
+        begin = offsets[r]
+        end = offsets[r + 1]
+        face_points[r] = ends[order[begin]]
+        if end - begin > 2:
+            tack.atomic_add(crowded, 0, 1)
+        for i in range(min(end - begin, 2)):
+            e = order[begin + i]
+            cell_faces[e] = r
+            sides[e] = tack.u8(i)
+
+
+@tack.kernel
+def _counting(values):
+    for i in range(values.shape[0]):
+        values[i] = i
+
+
+class PolylineTopology(_Topology):
+    """Polylines of any number of points, the polyhedral topology two dimensions
+    down: each cell a chain of points, ``line_points[line_offsets[c]:line_offsets[c
+    + 1]]``, two or more, as streamlines and VTK's ``VTK_POLY_LINE`` give them.
+
+    Its facets (``faces()``, codimension 1) are the chains' ends: a facet per point
+    where chains end, its normal along the chain out of its side 0 -- the first
+    chain ending there, in cell order -- and into its side 1, the second. A vertex
+    has no winding, so any two chains meeting end to end are consistent. Three or
+    more ending at one point (a branch) the faces cannot hold, and ``faces()``
+    refuses them, as an edge of three polygons is refused; the topology itself,
+    and everything that does not need its faces, works. A chain may close (its
+    last point its first): its two ends are then one interior facet. ``lines()``
+    gives the chains back; a cell's points (``cell_points()``) are its chain's,
+    sorted and unique.
+    """
+
+    #: No reference element: spaces needing one refuse a polyline topology.
+    reference_cells = False
+    dimension = 1
+    cell_shape = shapes.PolyLine
+    facet_shape = shapes.Vertex
+
+    def __init__(self, line_offsets, line_points, num_points=None, id_dtype=None):
+        line_offsets, line_points = ids.host_or_field(line_offsets), ids.host_or_field(line_points)
+        total = int(line_points.shape[0])
+        if num_points is None:
+            used = line_points.to_numpy() if isinstance(line_points, Field) else line_points
+            num_points = int(used.max()) + 1 if total else 0
+        n = int(line_offsets.shape[0]) - 1
+        if n < 0:
+            raise ValueError("line_offsets has one entry more than there are polylines")
+        self.id_dtype = idt = ids.choose(id_dtype, max(int(num_points), total, 2 * n + 1),
+                                         given=(line_offsets, line_points))
+        self.line_offsets = ids.as_ids(line_offsets, idt, check=False)
+        self.line_points = ids.as_ids(line_points, idt, check=False)
+        self.num_cells = n
+        self.num_points = int(num_points)
+        self._ends = tack.field(idt, shape=(2 * n,))
+        if n:
+            short = tack.zeros(tack.i32, (1,))
+            _line_ends(self.line_offsets, self.line_points, self._ends, short, n)
+            if short[0]:
+                raise ValueError(f"{short[0]} polylines have fewer than two points")
+        self._cell_points = None
+        self._groups = None
+
+    def lines(self):
+        """Each polyline's points in order: ``(line_offsets, line_points)``."""
+        return self.line_offsets, self.line_points
+
+    def cell_points(self):
+        """Each cell's points, sorted and unique: ``(offsets, point_ids)``, CSR."""
+        if self._cell_points is None:
+            # Each chain as its cell's one "face".
+            identity = tack.field(self.id_dtype, shape=(self.num_cells + 1,))
+            _counting(identity)
+            self._cell_points = _derive_cell_points(self, identity, identity, self.line_offsets,
+                                                    self.line_points)
+        return self._cell_points
+
+    point_links = PolyhedralTopology.point_links
+
+    def groups(self):
+        """The cells as one ``PolyLine`` group."""
+        if self._groups is None:
+            point_offsets, point_ids = self.cell_points()
+            self._groups = [DomainGroup(
+                _PolylineCells, self.cell_shape,
+                (self.line_offsets, self.line_points, point_offsets, point_ids, self.num_cells),
+                self.num_cells, 0)]
+        return self._groups
+
+    def faces(self):
+        """The chains' ends as faces (``PolygonFaces`` of one-point faces), derived on
+        first use and kept; refuses a point where more than two chains end."""
+        if self._faces is None:
+            n, idt = self.num_cells, self.id_dtype
+            cell_faces = tack.field(idt, shape=(2 * n,))
+            sides = tack.field(tack.u8, shape=(2 * n,))
+            count = 0
+            if n:
+                order, _ = bucket_order(self._ends, self.num_points, idt)
+                offsets, count = run_offsets(self._ends, order)
+            face_points = tack.field(idt, shape=(count,))
+            if count:
+                crowded = tack.zeros(tack.i32, (1,))
+                _ends_from_runs(order, offsets, self._ends, face_points, cell_faces, sides,
+                                crowded, count)
+                if crowded[0]:
+                    raise ValueError(
+                        f"more than two polylines end at {crowded[0]} points: the faces of a "
+                        "branching network are not defined (split it at the branches)")
+            self.face_offsets = tack.field(idt, shape=(count + 1,))
+            _counting(self.face_offsets)
+            self.face_points = face_points
+            self.cell_offsets = tack.field(idt, shape=(n + 1,))
+            _every_other(self.cell_offsets)
+            self.cell_faces = cell_faces
+            self.cell_face_sides = sides
+            self.num_faces = count
+            self._faces = PolygonFaces(self)
+        return self._faces
+
+    def edges(self):
+        """Not derived: a polyline's segments are parts of its cells, and nothing
+        needs them as global entities yet."""
+        raise NotImplementedError("a polyline topology's edges (its segments) are not "
+                                  "derived")
 
 
 # ── Orienting face lists ────────────────────────────────────────────

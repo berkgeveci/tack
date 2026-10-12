@@ -172,7 +172,8 @@ class CellLocator:
 
     def __init__(self, data, density=1.0):
         if not getattr(data.topology, "reference_cells", True):
-            raise NotImplementedError("locating points in polyhedra is not built yet")
+            raise NotImplementedError("locating points in polyhedra, polygons or polylines is "
+                                      "not built yet")
         self.data = data
         n = data.num_cells
         dtype = data.dtype

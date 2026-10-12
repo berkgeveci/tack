@@ -135,7 +135,7 @@ def _geometry_parts(data, group, kind):
                 f"the {kind} of an L2 geometry have no positions of their own: each cell "
                 "around an edge has its own, and edges have no sides to choose from")
         return _space_parts(geometry, group, views._L2Geometry)
-    if group.shape in (shapes.Polyhedron, shapes.Polygon):
+    if group.shape in (shapes.Polyhedron, shapes.Polygon, shapes.PolyLine):
         # No reference element: the points' positions, nothing to map.
         return _space_parts(geometry, group, views._PointGeometry)
     if geometry.space.order == 2 and kind == "cells":
@@ -222,8 +222,13 @@ class DataSet:
         kind = domain if domain in ("cells", "faces", "edges") else "faces"
         geometry, attributes = _geometry_parts(self, group, kind)
         mixins.extend(geometry)
-        if domain == "cells" and issubclass(group.kind, views._PolyhedralCells):
+        if domain == "cells" and issubclass(group.kind, views._CellsById):
             mixins.append(views._PolyhedralWalk)
+        if (domain == "cells" and issubclass(group.kind, views._PolylineCells)
+                and self.topology._faces is not None):
+            mixins.append(views._PolylineIncidence)
+            attributes.update(cell_faces=self.topology.cell_faces,
+                              cell_face_sides=self.topology.cell_face_sides)
         if domain == "cells":
             # A subgroup's index(c) is its position in the topology's group, so
             # it shares that group's incidence.
@@ -360,13 +365,14 @@ def _subgroups(group, spaces):
     sorted_keys = gather(keys, perm)
     offsets, runs = _run_offsets(sorted_keys, n, idt)
     bounds = offsets.to_numpy()
-    if issubclass(group.kind, views._PolyhedralCells):
-        # A polyhedral cell is its id: subgroups select ids, sorted by key.
+    if issubclass(group.kind, views._CellsById):
+        # A polyhedral or polyline cell is its id: subgroups select ids, sorted by
+        # key (the group's arguments, the count last, then the selection).
         subgroups = []
         for r in range(runs):
             first, count = int(bounds[r]), int(bounds[r + 1] - bounds[r])
             subgroups.append(views.DomainGroup(
-                views._SelectedPolyhedra, group.shape, (*group.args[:7], count, perm, first),
+                group.kind._selected, group.shape, (*group.args[:-1], count, perm, first),
                 count, group.start, parent=group,
                 keys=_decode(int(sorted_keys[first]), spaces)))
         cache[cache_key] = subgroups

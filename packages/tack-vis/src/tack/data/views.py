@@ -213,7 +213,13 @@ class _Faces:
         return self.sides[f][2 * k + 1]
 
 
-class _PolyhedralCells:
+class _CellsById:
+    """Cells that are their ids, with no rows to gather: a polyhedral, polygonal or
+    polyline topology's. A subgroup selects their ids (``_selected``, the view
+    class that does)."""
+
+
+class _PolyhedralCells(_CellsById):
     """The cells of a polyhedral (or polygonal) topology, each a list of facets -- faces
     of a polyhedron, edges of a polygon -- every count at run time.
 
@@ -330,6 +336,111 @@ class _SelectedPolyhedra(_PolyhedralCells):
     @tack.func
     def cell(self, c):
         return self.selected[self.first + c]
+
+
+_PolyhedralCells._selected = _SelectedPolyhedra
+
+
+class _PolylineCells(_CellsById):
+    """The cells of a polyline topology: each a chain of points,
+    ``line_points[line_offsets[c]:line_offsets[c + 1]]``, at least two. Its facets
+    are its two ends -- facet 0 its first point, facet 1 its last -- whose ids
+    and sides come with the face incidence (``_PolylineIncidence``) once the
+    faces are derived. ``point_offsets``/``point_ids`` are the cell's points,
+    sorted and unique, as a polyhedral cell's are; ``line_point`` walks the
+    chain in order."""
+
+    __tack_iterate__ = "num_cells"
+
+    def __init__(self, line_offsets, line_points, point_offsets, point_ids, num_cells):
+        self.line_offsets = line_offsets
+        self.line_points = line_points
+        self.point_offsets = point_offsets
+        self.point_ids = point_ids
+        self.num_cells = num_cells
+
+    @tack.func
+    def cell(self, c):
+        """The topology's cell for loop index ``c``: itself, here."""
+        return c
+
+    @tack.func
+    def entity_id(self, c):
+        return self.cell(c)
+
+    @tack.func
+    def cell_id(self, c):
+        return self.cell(c)
+
+    @tack.func
+    def index(self, c):
+        return self.cell(c)
+
+    @tack.func
+    def line_size(self, c):
+        """The number of points in the cell's chain."""
+        g = self.cell(c)
+        return self.line_offsets[g + 1] - self.line_offsets[g]
+
+    @tack.func
+    def line_point(self, c, j):
+        """Point ``j`` of the cell's chain, in order."""
+        return self.line_points[self.line_offsets[self.cell(c)] + j]
+
+    @tack.func
+    def num_faces(self, c):
+        """Two facets: the chain's first point and its last."""
+        return 2
+
+    @tack.func
+    def side_size(self, c, k):
+        return 1
+
+    @tack.func
+    def side_point(self, c, k, j):
+        """Facet ``k``'s point: the chain's first (``k == 0``) or last."""
+        g = self.cell(c)
+        return self.line_points[self.line_offsets[g] if k == 0 else self.line_offsets[g + 1] - 1]
+
+    @tack.func
+    def num_points(self, c):
+        g = self.cell(c)
+        return self.point_offsets[g + 1] - self.point_offsets[g]
+
+    @tack.func
+    def point_id(self, c, j):
+        return self.point_ids[self.point_offsets[self.cell(c)] + j]
+
+
+class _SelectedPolylines(_PolylineCells):
+    """Some of a polyline topology's cells, as ``_SelectedPolyhedra`` selects polyhedra."""
+
+    def __init__(self, line_offsets, line_points, point_offsets, point_ids, num_cells, selected,
+                 first):
+        super().__init__(line_offsets, line_points, point_offsets, point_ids, num_cells)
+        self.selected = selected
+        self.first = first
+
+    @tack.func
+    def cell(self, c):
+        return self.selected[self.first + c]
+
+
+_PolylineCells._selected = _SelectedPolylines
+
+
+class _PolylineIncidence:
+    """A polyline's two facets as global faces: ``cell_faces``/``cell_face_sides``,
+    two entries per cell (its first point, then its last)."""
+
+    @tack.func
+    def face_id(self, c, k):
+        return self.cell_faces[2 * self.cell(c) + k]
+
+    @tack.func
+    def face_side(self, c, k):
+        """0 if the facet's normal points out of this cell (its side 0), else 1."""
+        return tack.i32(self.cell_face_sides[2 * self.cell(c) + k])
 
 
 class _PolygonFaces:

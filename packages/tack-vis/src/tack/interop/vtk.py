@@ -296,7 +296,9 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     arrays keep their type. Named point data become ``H1`` fields and named
     cell data ``Constant`` fields. An unstructured grid's cells must all be
     linear shapes -- unless it holds polyhedra (or ``polyhedral`` is true), when
-    it becomes a ``PolyhedralTopology``, every cell a polyhedron of its faces.
+    it becomes a ``PolyhedralTopology``, every cell a polyhedron of its faces, or
+    polylines, when it becomes a ``PolylineTopology`` (its lines two-point
+    polylines, and no other cells allowed).
     With ``orient``, inconsistently wound polyhedra are repaired first
     (``PolyhedralTopology.from_cell_faces``); without it they are refused.
     VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
@@ -310,6 +312,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         CartesianProduct,
         Constant,
         DataSet,
+        PolylineTopology,
         StructuredTopology,
         UniformCoordinates,
         UnstructuredTopology,
@@ -329,13 +332,22 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         # The per-cell types are GetCellTypes() from VTK 9.6 on; through 9.5 that
         # takes an argument and the array is GetCellTypesArray() (removed on master).
         try:
-            types = grid.GetCellTypes()
+            types = vtk_to_numpy(grid.GetCellTypes())
         except TypeError:
-            types = grid.GetCellTypesArray()
-        topology = UnstructuredTopology(vtk_to_numpy(types),
-                                        vtk_to_numpy(cell_array.GetOffsetsArray()),
-                                        vtk_to_numpy(cell_array.GetConnectivityArray()),
+            types = vtk_to_numpy(grid.GetCellTypesArray())
+        offsets = vtk_to_numpy(cell_array.GetOffsetsArray())
+        connectivity = vtk_to_numpy(cell_array.GetConnectivityArray())
+        if (types == 4).any():
+            # Polylines: their lines are two-point chains; nothing else mixes in.
+            if not np.isin(types, (3, 4)).all():
+                raise ValueError("a grid with polylines (VTK_POLY_LINE) may hold only lines "
+                                 "and polylines")
+            topology = PolylineTopology(offsets, connectivity,
                                         num_points=grid.GetNumberOfPoints(), id_dtype=id_dtype)
+        else:
+            topology = UnstructuredTopology(types, offsets, connectivity,
+                                            num_points=grid.GetNumberOfPoints(),
+                                            id_dtype=id_dtype)
         geometry = vtk_to_numpy(grid.GetPoints().GetData())
     elif grid.IsA("vtkImageData"):
         dims = [0, 0, 0]
@@ -387,7 +399,8 @@ def dataset_to_vtk(data):
 
     A structured topology over uniform coordinates gives a ``vtkImageData`` (with
     the direction matrix), over rectilinear ones a ``vtkRectilinearGrid``; an
-    unstructured one a ``vtkUnstructuredGrid``, and a
+    unstructured one a ``vtkUnstructuredGrid``, a polygonal or polyline one a
+    ``vtkUnstructuredGrid`` of ``VTK_POLYGON`` or ``VTK_POLY_LINE`` cells, and a
     polyhedral one a ``vtkUnstructuredGrid`` of ``VTK_POLYHEDRON`` cells, each
     keeping its own copy of its faces, outward for it (VTK's layout has no
     orientation bit, so a shared face cannot be stored once).
@@ -413,6 +426,7 @@ def dataset_to_vtk(data):
         Constant,
         PolygonalTopology,
         PolyhedralTopology,
+        PolylineTopology,
         StructuredTopology,
         UniformCoordinates,
         UnstructuredTopology,
@@ -446,13 +460,16 @@ def dataset_to_vtk(data):
         points = vtkPoints()
         points.SetData(numpy_to_vtk(data.positions(), deep=1))
         grid.SetPoints(points)
-    elif isinstance(topology, PolygonalTopology):
-        offsets, loops = (a.to_numpy() for a in topology.loops())
+    elif isinstance(topology, (PolygonalTopology, PolylineTopology)):
+        polygons = isinstance(topology, PolygonalTopology)
+        offsets, loops = (a.to_numpy() for a in (topology.loops() if polygons
+                                                  else topology.lines()))
         cells = vtkCellArray()
         cells.SetData(numpy_to_vtkIdTypeArray(offsets.astype(np.int64), deep=1),
                       numpy_to_vtkIdTypeArray(loops.astype(np.int64), deep=1))
         grid = vtkUnstructuredGrid()
-        grid.SetCells(numpy_to_vtk(np.full(topology.num_cells, 7, np.uint8), deep=1), cells)
+        grid.SetCells(numpy_to_vtk(np.full(topology.num_cells, 7 if polygons else 4, np.uint8),
+                                   deep=1), cells)
         points = vtkPoints()
         points.SetData(numpy_to_vtk(data.positions(), deep=1))
         grid.SetPoints(points)

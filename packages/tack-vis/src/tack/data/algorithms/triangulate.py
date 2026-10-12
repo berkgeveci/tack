@@ -16,7 +16,7 @@ def triangulate(data, fields=None):
     if getattr(t, "reference_cells", True):
         return _split(data, "triangles", fields)
     if t.dimension != 2:
-        raise NotImplementedError("triangulate takes 2D cells: polygons, not polyhedra")
+        raise NotImplementedError(f"triangulate takes 2D cells, not {t.dimension}D ones")
     loop_offsets, loop_points = t.loops()
     n = data.num_cells
     odt = ids.for_output(data, 3 * int(loop_points.shape[0]))

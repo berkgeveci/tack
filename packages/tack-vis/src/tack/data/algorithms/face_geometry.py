@@ -44,6 +44,23 @@ def _edge_geometry(cells, normals, areas):
                 areas[f] = d.norm()
 
 
+@tack.kernel
+def _end_geometry(cells, normals, areas):
+    # A polyline's facets are its ends: each one's normal is the chain's direction
+    # there, pointing out of it, and its "area" 1. Side 0's cell measures it.
+    for c in cells:
+        last = cells.line_size(c) - 1
+        for k in range(2):
+            if cells.face_side(c, k) == 0:
+                at = 0 if k == 0 else last
+                inside = 1 if k == 0 else last - 1
+                d = (cells.point_position(cells.line_point(c, at))
+                     - cells.point_position(cells.line_point(c, inside)))
+                f = cells.face_id(c, k)
+                normals[f] = d / d.norm()
+                areas[f] = 1.0
+
+
 class FaceGeometry(NamedTuple):
     """``face_geometry``'s fields, on the faces."""
 
@@ -55,13 +72,17 @@ def face_geometry(data):
     """``FaceGeometry(normal, area)``: fields on faces. A face's normal points out of
     its side 0. A 3D mesh's faces are polygons of any size, the normal the mean
     one on a non-planar face; a 2D mesh's faces are edges, the normal in the
-    plane of side 0's cell and the "area" the edge's length."""
+    plane of side 0's cell and the "area" the edge's length; a polyline mesh's
+    faces are the polylines' ends, the normal along the line out of side 0 and
+    the "area" 1."""
     faces = data.topology.faces()
     dtype = data.dtype
     normals = _vectors(faces.num_faces, dtype)
     areas = tack.field(dtype, shape=(faces.num_faces,))
     if data.topology.dimension == 2:
         for_each(_edge_geometry, data, "cells", normals, areas)
+    elif data.topology.dimension == 1:
+        for_each(_end_geometry, data, "cells", normals, areas)
     else:
         for_each(_face_geometry, data, "faces", normals, areas)
     return FaceGeometry(Field(Values(data, "faces"), normals), Field(Values(data, "faces"), areas))
