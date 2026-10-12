@@ -19,7 +19,7 @@ def _affine(positions, m00, m01, m02, m03, m10, m11, m12, m13, m20, m21, m22, m2
                   m20 * p[0] + m21 * p[1] + m22 * p[2] + m23]
 
 
-def transform(data, matrix):
+def transform(data, matrix, fields=None):
     """The geometry under an affine map: a 4x4 matrix (its last row 0 0 0 1) or 3x4,
     applied to each position as a column (Viskores' PointTransform, VTK's
     vtkTransformFilter)."""
@@ -34,4 +34,4 @@ def transform(data, matrix):
     out = _vectors(n, data.dtype)
     if n:
         _affine(materialize(data.geometry.values), *map(float, m.reshape(-1)), out)
-    return _moved(data, out)
+    return _moved(data, out, fields)

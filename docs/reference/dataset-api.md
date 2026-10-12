@@ -190,9 +190,9 @@ cells apart without changing the topology. A geometry of order 2 is curved.
 
 ## Sets
 
-`data.sets` maps a name to an array of face ids. `alg.boundary_faces(data,
-name="boundary")` makes the boundary set. Any set's name is an iteration
-domain.
+`data.sets` maps a name to an array of face ids. `boundary_faces(data)`
+returns the boundary's face ids; `data.sets["boundary"] = boundary_faces(data)`
+keeps it under a name. Any set's name is an iteration domain.
 
 **Open:** cell sets, side sets given as (cell, local face), and boundary
 entities from readers (Exodus side sets, MFEM boundary attributes).
@@ -276,7 +276,20 @@ local face number.
 
 ## Algorithms and filters
 
-Results are `Field`s, or `DataSet`s for filters. In the table,
+Every algorithm is in `tack.data.algorithms`, one module each, and
+`tack.data` re-exports them all. They share one set of conventions:
+
+- the dataset comes first: `f(data, ...)`;
+- a field argument is a `Field` or the name of one of `data`'s fields;
+- an algorithm that makes a new dataset takes `fields=` (all by default, a
+  name, a list of names, or `[]` for none) and returns a `DataSet`;
+- an algorithm that computes a field returns a `Field`, and several fields a
+  named tuple of them (`cell_geometry`, `face_geometry`, `flow_quantities`);
+- summaries (`statistics`, `entropy`) return Python values;
+- nothing changes its input: a new dataset is new, and sets are kept by
+  storing what `boundary_faces` returns.
+
+In the table,
 "polyhedral" means `PolyhedralTopology` and "polygonal" means
 `PolygonalTopology`.
 
@@ -341,8 +354,9 @@ cell's gradient at its parametric center; `at="points"` evaluates each cell's
 gradient at the point and averages over the cells around it, as VTK's
 vtkGradientFilter does (a pyramid's apex extrapolated from just below it, as
 vtkPyramid does). A vector field's gradient is `3k` values per entity, row by
-row (`d(u_i)/d(x_j)` at `3i + j`). `algorithms.flow_quantities(gradient)`
-gives divergence, vorticity and the Q-criterion from a 3-vector field's.
+row (`d(u_i)/d(x_j)` at `3i + j`). `flow_quantities(data, gradient)`
+gives divergence, vorticity and the Q-criterion from a 3-vector field's, as a
+`FlowQuantities` named tuple.
 
 ## Implicit functions
 
@@ -386,9 +400,9 @@ In `tack.data.algorithms` (and `tack.data`), in Viskores' conventions:
 
 | Function | Result |
 |---|---|
-| `magnitude(f)`, `dot(a, b)`, `cross(a, b)` | a field in the same space |
-| `composite(f, g, ...)` | scalar fields of one space as one vector field |
-| `log_values(f, base, min_value)` | the logarithm, values below `min_value` (default the smallest normal float) taken as it |
+| `magnitude(data, f)`, `dot(data, a, b)`, `cross(data, a, b)` | a field in the same space |
+| `composite(data, f, g, ...)` | scalar fields of one space as one vector field |
+| `log_values(data, f, base, min_value)` | the logarithm, values below `min_value` (default the smallest normal float) taken as it |
 | `point_elevation(data, low, high, range)` | position along a line, clamped and mapped to `range` (VTK's elevation filter) |
 | `point_ids(data)`, `cell_ids(data)` | ids as implicit counting arrays: nothing stored |
 | `warp(data, direction, scale, scale_by)` | the geometry moved along a vector field or a constant vector, optionally scaled by a scalar field |
@@ -406,8 +420,8 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `triangulate(data)` | 2D cells as triangles: quads and pixels in two, polygons in fans |
 | `shrink(data, factor)` | each cell toward its centroid: an `L2` geometry on the same topology, point data as `L2` (Viskores and VTK give each cell its own points) |
 | `point_cloud(data)` | every point as a vertex cell, with the point data |
-| `algorithms.statistics(f)` | Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis |
-| `algorithms.entropy(f, bins)` | Shannon entropy in bits of a `bins`-bin histogram |
+| `statistics(data, f)` | Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis |
+| `entropy(data, f, bins)` | Shannon entropy in bits of a `bins`-bin histogram |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
 

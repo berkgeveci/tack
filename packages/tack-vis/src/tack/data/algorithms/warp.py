@@ -25,7 +25,7 @@ def _warp_constant(positions, dx, dy, dz, factors, scale, out):
         out[i] = [p[0] + dx * f, p[1] + dy * f, p[2] + dz * f]
 
 
-def warp(data, direction, scale=1.0, scale_by=None):
+def warp(data, direction, scale=1.0, scale_by=None, fields=None):
     """The geometry moved along ``direction`` -- a 3-vector field in the geometry's
     space (or its name), or one 3-vector for every point -- times ``scale``
     and, if given, a scalar field ``scale_by`` in the same space (Viskores'
@@ -55,4 +55,4 @@ def warp(data, direction, scale=1.0, scale_by=None):
         if n:
             _warp_constant(materialize(geometry.values), *map(float, d), factors,
                            float(scale), out)
-    return _moved(data, out)
+    return _moved(data, out, fields)

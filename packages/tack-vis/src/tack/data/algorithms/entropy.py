@@ -2,15 +2,17 @@
 
 import numpy as np
 
+from tack.data.algorithms._common import _field
 from tack.data.arrays import materialize, width_of
 
 __all__ = ['entropy']
 
 
-def entropy(field, bins=10):
+def entropy(data, field, bins=10):
     """The Shannon entropy, in bits, of a scalar field's values in ``bins`` equal bins
     over their range: ``-sum(p log2 p)`` over the bins' shares, as Viskores'
     Entropy filter."""
+    field = _field(data, field)
     from tack.algorithms import histogram
 
     if width_of(field.values):

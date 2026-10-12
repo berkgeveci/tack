@@ -4,12 +4,14 @@
 import tack
 from tack.data.algorithms._common import _vectors
 from tack.data.arrays import materialize, size_of
+from tack.data.carry import selected
 from tack.data.dataset import DataSet, Field
 
 
-def _moved(data, positions):
-    """``data`` with the geometry's values replaced: same topology, sets and fields."""
-    fields = {name: f for name, f in data.fields.items() if name != "shape"}
+def _moved(data, positions, fields=None):
+    """``data`` with the geometry's values replaced: same topology and sets, and the
+    fields ``fields`` selects (all by default)."""
+    fields = {name: data.fields[name] for name in selected(data, fields)}
     return DataSet(data.topology, Field(data.geometry.space, positions), fields=fields,
                    sets=dict(data.sets))
 
@@ -56,9 +58,9 @@ def _from_spherical(positions, out):
         out[i] = [p[0] * s * cos(p[2]), p[0] * s * sin(p[2]), p[0] * cos(p[1])]
 
 
-def _recoordinate(data, kernel):
+def _recoordinate(data, kernel, fields=None):
     n = size_of(data.geometry.values)
     out = _vectors(n, data.dtype)
     if n:
         kernel(materialize(data.geometry.values), out)
-    return _moved(data, out)
+    return _moved(data, out, fields)

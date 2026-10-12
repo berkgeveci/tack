@@ -88,7 +88,7 @@ def test_shape_meshes_as_polyhedra(backend, make):
     nf, ne = data.topology.faces().num_faces, data.topology.edges().num_edges
     data.fields["flux"] = td.Field(td.Values(data, "faces"), _scalars(np.arange(nf)))
     data.fields["circulation"] = td.Field(td.Values(data, "edges"), _scalars(np.arange(ne)))
-    td.algorithms.boundary_faces(data)
+    data.sets["boundary"] = td.algorithms.boundary_faces(data)
     poly = _check_same_as_shape_path(data)
     t = poly.topology
     assert poly.fields["u"].space is td.H1(poly) and poly.fields["c"].space is td.Constant(poly)
@@ -573,8 +573,8 @@ def test_a_polyhedral_mesh_has_a_polygonal_surface(backend):
     data.fields["cell"] = td.Field(td.Constant(data), _scalars([1.0, 2.0, 5.0]))
     nf = data.topology.num_faces
     data.fields["flux"] = td.Field(td.Values(data, "faces"), _scalars(np.arange(nf)))
-    td.algorithms.boundary_faces(data)
-    surface = td.algorithms.extract_surface(data)
+    data.sets["boundary"] = td.algorithms.boundary_faces(data)
+    surface = td.algorithms.extract_surface(data, "boundary")
     _check_closed_surface(data, surface)
     boundary = data.sets["boundary"].to_numpy()
     sides = data.topology.faces().sides.to_numpy(vectors=True)
@@ -583,15 +583,15 @@ def test_a_polyhedral_mesh_has_a_polygonal_surface(backend):
                                   np.array([1.0, 2.0, 5.0])[sides[boundary, 0]])
     points, cells, _ = _voronoi_columns()
     columns = td.DataSet(_from_cell_faces(cells, len(points)), points)
-    td.algorithms.boundary_faces(columns)
-    _check_closed_surface(columns, td.algorithms.extract_surface(columns))
+    columns.sets["boundary"] = td.algorithms.boundary_faces(columns)
+    _check_closed_surface(columns, td.algorithms.extract_surface(columns, "boundary"))
 
 
 @needs_vtk
 def test_polygons_through_vtk(backend):
     data = td.as_polyhedra(_two_hexes_and_a_pyramid())
-    td.algorithms.boundary_faces(data)
-    surface = td.algorithms.extract_surface(data)
+    data.sets["boundary"] = td.algorithms.boundary_faces(data)
+    surface = td.algorithms.extract_surface(data, "boundary")
     grid = dataset_to_vtk(surface)
     assert grid.GetNumberOfCells() == surface.num_cells
     assert {grid.GetCellType(c) for c in range(grid.GetNumberOfCells())} == {7}

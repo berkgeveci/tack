@@ -6,7 +6,7 @@ import numpy as np
 
 import tack
 from tack.data import arrays
-from tack.data.algorithms._common import _scalars
+from tack.data.algorithms._common import _field, _scalars
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import Field
 
@@ -19,10 +19,11 @@ def _logs(values, scale, smallest, out):
         out[i] = log(max(values[i], smallest)) * scale
 
 
-def log_values(field, base=math.e, min_value=None):
+def log_values(data, field, base=math.e, min_value=None):
     """The logarithm of a scalar field in ``base`` (e, 2, 10, or any), values below
     ``min_value`` -- by default the smallest positive normal float, as in
     Viskores' LogValues -- taken as ``min_value``."""
+    field = _field(data, field)
     if width_of(field.values):
         raise TypeError("log_values takes a scalar field")
     if not base > 0 or base == 1:

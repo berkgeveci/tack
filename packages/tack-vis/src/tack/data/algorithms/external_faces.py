@@ -6,10 +6,8 @@ from tack.data.algorithms.extract_surface import extract_surface
 __all__ = ['external_faces']
 
 
-def external_faces(data, name="boundary", fields=None):
-    """The faces of the 3D cells that only one cell has, as a surface dataset: the
-    boundary face set (kept in ``data.sets[name]``) through ``extract_surface``.
-    Each face faces out of its cell and carries that cell's cell fields; point
-    fields stay on the same points."""
-    boundary_faces(data, name)
-    return extract_surface(data, name, fields=fields)
+def external_faces(data, fields=None):
+    """The faces of the 3D cells that only one cell has, as a surface dataset:
+    ``extract_surface`` of ``boundary_faces``. Each face faces out of its cell and
+    carries that cell's cell fields; point fields stay on the same points."""
+    return extract_surface(data, boundary_faces(data), fields=fields)

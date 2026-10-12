@@ -2,7 +2,7 @@
 
 import tack
 from tack.data import arrays
-from tack.data.algorithms._common import _same_space, _scalars
+from tack.data.algorithms._common import _field, _same_space, _scalars
 from tack.data.arrays import materialize, width_of
 from tack.data.dataset import Field
 
@@ -15,8 +15,9 @@ def _dots(a, b, out):
         out[i] = a[i].dot(b[i])
 
 
-def dot(a, b):
+def dot(data, a, b):
     """``a . b`` at every value of two vector fields of one width and space."""
+    a, b = _field(data, a), _field(data, b)
     space, n = _same_space(a, b)
     if not width_of(a.values) or width_of(a.values) != width_of(b.values):
         raise TypeError("dot takes two vector fields of one width")

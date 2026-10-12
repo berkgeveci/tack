@@ -1,6 +1,7 @@
 """``jump``: a field's difference across each face at the face's center, side 1 minus side 0 (zero on the boundary): a field on faces. Each side is the field as its own cell has it -- ``traces`` -- so a DG field's jumps are its own, not its cells' averages; a continuous field's are zero. Cell data (``Constant``, values on cells) is read from each side's cell directly, on any topology, polyhedral included."""
 
 import tack
+from tack.data.algorithms._common import _field
 from tack.data.algorithms._faces import _on_cells
 from tack.data.algorithms.traces import traces
 from tack.data.arrays import materialize
@@ -35,6 +36,7 @@ def jump(data, field):
     averages; a continuous field's are zero. Cell data (``Constant``, values on
     cells) is read from each side's cell directly, on any topology, polyhedral
     included."""
+    field = _field(data, field)
     out = _like(field.values, data.topology.faces().num_faces)
     if _on_cells(data, field):
         for_each(_cell_jump, data, "faces", materialize(field.values), out)

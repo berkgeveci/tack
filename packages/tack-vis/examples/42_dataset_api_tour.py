@@ -123,7 +123,7 @@ def show(name, data):
           f"{areas.values.to_numpy()[boundary.to_numpy()].sum():.4g}")
     data.fields["area"] = areas
     data.fields["jump"] = jump
-    surface = alg.extract_surface(data)
+    surface = alg.extract_surface(data, boundary)
 
     # Cell data to points, and the same function in the DG layout.
     data.fields["cell id at points"] = alg.to_points(data, data.fields["cell id"])

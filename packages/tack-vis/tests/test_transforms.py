@@ -43,28 +43,28 @@ def test_vector_analysis(backend):
     rng = np.random.default_rng(1)
     a, b = rng.normal(size=(2, data.num_points, 3)).astype(np.float32)
     fa, fb = td.Field(td.H1(data), _vectors(a)), td.Field(td.H1(data), _vectors(b))
-    np.testing.assert_allclose(td.magnitude(fa).values.to_numpy(), np.linalg.norm(a, axis=1),
+    np.testing.assert_allclose(td.magnitude(data, fa).values.to_numpy(), np.linalg.norm(a, axis=1),
                                rtol=1e-5)
-    np.testing.assert_allclose(td.dot(fa, fb).values.to_numpy(), (a * b).sum(1), rtol=1e-4,
+    np.testing.assert_allclose(td.dot(data, fa, fb).values.to_numpy(), (a * b).sum(1), rtol=1e-4,
                                atol=1e-5)
-    np.testing.assert_allclose(td.cross(fa, fb).values.to_numpy(vectors=True), np.cross(a, b),
+    np.testing.assert_allclose(td.cross(data, fa, fb).values.to_numpy(vectors=True), np.cross(a, b),
                                rtol=1e-4, atol=1e-5)
-    both = td.composite(td.Field(td.H1(data), _scalars(a[:, 0])),
+    both = td.composite(data, td.Field(td.H1(data), _scalars(a[:, 0])),
                         td.Field(td.H1(data), _scalars(b[:, 1])))
     np.testing.assert_array_equal(both.values.to_numpy(vectors=True), np.c_[a[:, 0], b[:, 1]])
-    assert td.magnitude(fa).space is td.H1(data)
+    assert td.magnitude(data, fa).space is td.H1(data)
     with pytest.raises(ValueError, match="one space"):
-        td.dot(fa, td.Field(td.L2(data), _vectors(np.zeros((td.L2(data).size, 3)))))
+        td.dot(data, fa, td.Field(td.L2(data), _vectors(np.zeros((td.L2(data).size, 3)))))
 
 
 @pytest.mark.parametrize("base", [np.e, 2, 10])
 def test_log_values_clamp_below_the_minimum(backend, base):
     data = _two_hexes_and_a_pyramid()
     values = np.linspace(-1.0, 5.0, data.num_points).astype(np.float32)
-    out = td.log_values(td.Field(td.H1(data), _scalars(values)), base).values.to_numpy()
+    out = td.log_values(data, td.Field(td.H1(data), _scalars(values)), base).values.to_numpy()
     tiny = np.finfo(np.float32).tiny
     np.testing.assert_allclose(out, np.log(np.maximum(values, tiny)) / np.log(base), rtol=1e-5)
-    out = td.log_values(td.Field(td.H1(data), _scalars(values)), base, min_value=0.5)
+    out = td.log_values(data, td.Field(td.H1(data), _scalars(values)), base, min_value=0.5)
     np.testing.assert_allclose(out.values.to_numpy(),
                                np.log(np.maximum(values, 0.5)) / np.log(base), rtol=1e-5)
 

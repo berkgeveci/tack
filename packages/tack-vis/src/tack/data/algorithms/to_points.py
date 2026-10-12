@@ -1,6 +1,7 @@
 """``to_points``: a ``Constant`` or ``L2`` field averaged onto the points: an ``H1`` field. Each point averages the values the cells around it give it -- a cell's value, or for a DG field the cell's own value at that corner. The sums run in a fixed order. On polyhedra and polygons, cell values (``Constant``, values on cells) average over the cells around each point, as vtkCellDataToPointData does."""
 
 import tack
+from tack.data.algorithms._common import _field
 from tack.data.algorithms._links import _average_links
 from tack.data.arrays import materialize, width_of
 from tack.data.dataset import Field
@@ -46,6 +47,7 @@ def to_points(data, field):
     a DG field the cell's own value at that corner. The sums run in a fixed order.
     On polyhedra and polygons, cell values (``Constant``, values on cells) average
     over the cells around each point, as vtkCellDataToPointData does."""
+    field = _field(data, field)
     if isinstance(field.space, Values) and field.space.on == "cells":
         field = Field(Constant(data), field.values)
     if not getattr(data.topology, "reference_cells", True):

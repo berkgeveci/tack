@@ -39,7 +39,7 @@ def _blocks(cell_type, dims=(3, 2, 2)):
 def test_statistics_are_viskores(backend):
     data = td.sources.wavelet(5)
     values = data.fields["RTData"].values.to_numpy().astype(np.float64)
-    s = td.algorithms.statistics(data.fields["RTData"])
+    s = td.algorithms.statistics(data, data.fields["RTData"])
     n, mean = values.size, values.mean()
     d = values - mean
     m2, m3, m4 = (d ** 2).sum(), (d ** 3).sum(), (d ** 4).sum()
@@ -49,7 +49,7 @@ def test_statistics_are_viskores(backend):
                 "skewness": np.sqrt(n) * m3 / m2 ** 1.5, "kurtosis": n * m4 / m2 ** 2}
     for key, value in expected.items():
         assert s[key] == pytest.approx(value, rel=2e-4), key
-    constant = td.algorithms.statistics(td.Field(data.fields["RTData"].space,
+    constant = td.algorithms.statistics(data, td.Field(data.fields["RTData"].space,
                                                  _scalars(np.full(n, 3.0))))
     assert constant["skewness"] == constant["kurtosis"] == 0.0
 
@@ -60,7 +60,7 @@ def test_entropy_is_viskores(backend):
     for bins in (10, 37):
         counts, _ = np.histogram(values, bins=bins)
         p = counts[counts > 0] / counts.sum()
-        assert td.algorithms.entropy(data.fields["RTData"], bins) == pytest.approx(
+        assert td.algorithms.entropy(data, data.fields["RTData"], bins) == pytest.approx(
             -(p * np.log2(p)).sum(), rel=1e-6)
 
 

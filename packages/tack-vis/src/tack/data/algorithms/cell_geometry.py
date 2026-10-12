@@ -1,12 +1,14 @@
 """``cell_geometry``: ``(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the divergence theorem over its faces -- polyhedral or of a shape -- with faces taken as fans from their points' means, so a cell with non-planar faces is measured as that polyhedron (a hexahedron with warped faces is not quite its trilinear volume); its faces must be wound out of it. A polygon's area, along its own normal (Newell's), for a polygonal topology."""
 
+from typing import NamedTuple
+
 import tack
 from tack.data import shapes
 from tack.data.algorithms._common import _vectors
 from tack.data.dataset import Field
 from tack.data.spaces import Values
 
-__all__ = ['cell_geometry']
+__all__ = ['CellGeometry', 'cell_geometry']
 
 
 @tack.kernel
@@ -57,8 +59,15 @@ def _polygon_geometry(cells, areas, centroids):
         centroids[cells.entity_id(c)] = origin + weighted / (3.0 * twice)
 
 
+class CellGeometry(NamedTuple):
+    """``cell_geometry``'s fields, on the cells."""
+
+    measure: Field
+    centroid: Field
+
+
 def cell_geometry(data):
-    """``(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the
+    """``CellGeometry(measure, centroid)`` of each cell: fields on cells. A 3D cell's volume, by the
     divergence theorem over its faces -- polyhedral or of a shape -- with faces
     taken as fans from their points' means, so a cell with non-planar faces is
     measured as that polyhedron (a hexahedron with warped faces is not quite its
@@ -73,4 +82,4 @@ def cell_geometry(data):
             _cell_geometry(data.domain_view("cells", group), volumes, centroids)
         elif group.count and group.shape is shapes.Polygon:
             _polygon_geometry(data.domain_view("cells", group), volumes, centroids)
-    return Field(Values(data, "cells"), volumes), Field(Values(data, "cells"), centroids)
+    return CellGeometry(Field(Values(data, "cells"), volumes), Field(Values(data, "cells"), centroids))

@@ -72,10 +72,10 @@ def test_point_gradients_are_vtks(backend, kind):
     reference = _vtk_gradients(grid, "v")
     np.testing.assert_allclose(vector.values.to_numpy(vectors=True), reference["gradient"],
                                rtol=1e-4, atol=1e-4)
-    derived = td.algorithms.flow_quantities(vector)
+    derived = td.algorithms.flow_quantities(data, vector)
     for key in ("divergence", "vorticity", "q_criterion"):
         np.testing.assert_allclose(
-            derived[key].values.to_numpy(**({"vectors": True} if key == "vorticity" else {})),
+            getattr(derived, key).values.to_numpy(**({"vectors": True} if key == "vorticity" else {})),
             reference[key], rtol=1e-4, atol=1e-4, err_msg=key)
 
 
@@ -108,12 +108,12 @@ def test_a_linear_field_has_its_gradient_everywhere(backend):
         np.testing.assert_allclose(g.values.to_numpy(vectors=True),
                                    np.tile(J.reshape(-1), (len(g.values.to_numpy(
                                        vectors=True)), 1)), atol=1e-5)
-        quantities = td.algorithms.flow_quantities(g)
-        np.testing.assert_allclose(quantities["divergence"].values.to_numpy(), 6.0, atol=1e-5)
-        np.testing.assert_allclose(quantities["vorticity"].values.to_numpy(vectors=True),
-                                   [[1, -2, 0]] * len(quantities["divergence"].values.to_numpy()),
+        quantities = td.algorithms.flow_quantities(data, g)
+        np.testing.assert_allclose(quantities.divergence.values.to_numpy(), 6.0, atol=1e-5)
+        np.testing.assert_allclose(quantities.vorticity.values.to_numpy(vectors=True),
+                                   [[1, -2, 0]] * len(quantities.divergence.values.to_numpy()),
                                    atol=1e-5)
-        np.testing.assert_allclose(quantities["q_criterion"].values.to_numpy(),
+        np.testing.assert_allclose(quantities.q_criterion.values.to_numpy(),
                                    -0.5 * np.trace(J @ J), atol=1e-5)
     with pytest.raises(ValueError, match="'cells' or 'points'"):
         td.algorithms.gradients(data, td.Field(td.H1(data), v), at="faces")

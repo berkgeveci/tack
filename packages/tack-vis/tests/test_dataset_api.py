@@ -320,8 +320,8 @@ def test_surface_of_a_side_set(backend):
     data = vtk_to_dataset(grid)
     _, areas = alg.face_geometry(data)
     data.fields["area"] = areas
-    alg.boundary_faces(data)
-    surface = alg.extract_surface(data)
+    data.sets["boundary"] = alg.boundary_faces(data)
+    surface = alg.extract_surface(data, "boundary")
     assert surface.fields["area"].space is td.Values(surface, "cells")
     reference = vtkGeometryFilter()
     reference.SetInputData(grid)
@@ -342,7 +342,7 @@ def _set_areas(faces, out):
 
 def test_for_each_over_a_side_set(backend):
     data = td.rectilinear_grid([0, 1, 2, 3], [0, 1, 2], [0, 1])
-    boundary = alg.boundary_faces(data)
+    boundary = data.sets["boundary"] = alg.boundary_faces(data)
     out = tack.zeros(tack.i32, (data.topology.faces().num_faces,))
     td.for_each(_set_areas, data, "boundary", out)
     out = out.to_numpy()

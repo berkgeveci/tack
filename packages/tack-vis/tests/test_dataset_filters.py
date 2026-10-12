@@ -459,7 +459,7 @@ def test_external_faces_of_a_grid(backend, form):
     cells = surface.fields["cell"].values.to_numpy().astype(int)
     faces = data.topology.faces()
     np.testing.assert_array_equal(
-        cells, faces.sides.to_numpy(vectors=True)[data.sets["boundary"].to_numpy(), 0])
+        cells, faces.sides.to_numpy(vectors=True)[td.algorithms.boundary_faces(data).to_numpy(), 0])
     face_rows = surface.topology.connectivity.to_numpy().reshape(-1, 4)
     cell_points = [set(alg_cell) for alg_cell in _cell_point_ids(data)]
     assert all(set(row) <= cell_points[c] for row, c in zip(face_rows, cells))

@@ -2,7 +2,7 @@
 
 import tack
 from tack.data import arrays
-from tack.data.algorithms._common import _same_space, _vectors
+from tack.data.algorithms._common import _field, _same_space, _vectors
 from tack.data.arrays import materialize, width_of
 from tack.data.dataset import Field
 
@@ -15,9 +15,10 @@ def _set_component(values, component, out):
         out[i][component] = values[i]
 
 
-def composite(*fields):
+def composite(data, *fields):
     """Scalar fields of one space as the components of one vector field (Viskores'
     CompositeVectors), in the order given."""
+    fields = [_field(data, f) for f in fields]
     if len(fields) < 2:
         raise ValueError("composite takes at least two scalar fields")
     space, n = _same_space(*fields)

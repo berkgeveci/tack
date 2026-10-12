@@ -1,11 +1,13 @@
 """``face_geometry``: ``(normal, area)``: fields on faces, of any size of polygon. A face's normal points out of its side 0; on a non-planar face it is the mean normal."""
 
+from typing import NamedTuple
+
 import tack
 from tack.data.algorithms._common import _vectors
 from tack.data.dataset import Field, for_each
 from tack.data.spaces import Values
 
-__all__ = ['face_geometry']
+__all__ = ['FaceGeometry', 'face_geometry']
 
 
 @tack.kernel
@@ -22,12 +24,19 @@ def _face_geometry(faces, normals, areas):
         areas[faces.entity_id(f)] = 0.5 * length
 
 
+class FaceGeometry(NamedTuple):
+    """``face_geometry``'s fields, on the faces."""
+
+    normal: Field
+    area: Field
+
+
 def face_geometry(data):
-    """``(normal, area)``: fields on faces, of any size of polygon. A face's normal
+    """``FaceGeometry(normal, area)``: fields on faces, of any size of polygon. A face's normal
     points out of its side 0; on a non-planar face it is the mean normal."""
     faces = data.topology.faces()
     dtype = data.dtype
     normals = _vectors(faces.num_faces, dtype)
     areas = tack.field(dtype, shape=(faces.num_faces,))
     for_each(_face_geometry, data, "faces", normals, areas)
-    return Field(Values(data, "faces"), normals), Field(Values(data, "faces"), areas)
+    return FaceGeometry(Field(Values(data, "faces"), normals), Field(Values(data, "faces"), areas))

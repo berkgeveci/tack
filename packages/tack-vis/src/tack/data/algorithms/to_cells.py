@@ -1,7 +1,7 @@
 """``to_cells``: ``field`` averaged over each cell's corners: a ``Constant`` field."""
 
 import tack
-from tack.data.algorithms._common import _all
+from tack.data.algorithms._common import _all, _field
 from tack.data.arrays import materialize
 from tack.data.carry import _like, _take
 from tack.data.dataset import Field, for_each
@@ -40,6 +40,7 @@ def to_cells(data, field):
     vectors; the values must be floating point. On polyhedra and polygons, each
     cell averages its distinct points' values.
     """
+    field = _field(data, field)
     space = field.space
     if isinstance(space, Values) and space.on == "points":
         field = Field(H1(data), field.values)

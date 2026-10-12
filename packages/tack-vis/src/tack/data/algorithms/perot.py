@@ -1,7 +1,7 @@
 """``perot``: a vector per cell from each face's normal component -- Perot's reconstruction, ``u_c = (1/V) sum_f A_f u_f (r_f - r_c)``, as C-grid models (MPAS, ICON) need to show their face-normal velocity at cells."""
 
 import tack
-from tack.data.algorithms._common import _vectors
+from tack.data.algorithms._common import _field, _vectors
 from tack.data.algorithms._faces import _on_faces
 from tack.data.algorithms.cell_geometry import cell_geometry
 from tack.data.algorithms.face_centers import face_centers
@@ -36,6 +36,7 @@ def perot(data, flux):
     and cell centroids and volumes are this module's, so a uniform field's normal
     components give it back exactly on cells with planar faces. First order, as
     Perot's method is."""
+    flux = _field(data, flux)
     if not _on_faces(data, flux):
         raise TypeError("perot reconstructs from a field on faces")
     _, areas = face_geometry(data)

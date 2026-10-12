@@ -2,6 +2,7 @@
 
 import tack
 from tack.data import arrays
+from tack.data.algorithms._common import _field
 from tack.data.dataset import Field
 from tack.data.spaces import SideTraces, reference_cells
 
@@ -24,6 +25,7 @@ def traces(data, field):
     points: a ``SideTraces`` field. Each cell writes its own side, at the face's
     points in the face's own order (``face_position``), so the two sides of a
     face line up point by point. Boundary faces leave side 1 zero."""
+    field = _field(data, field)
     space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"traces are taken from a field with a basis on the cells, "

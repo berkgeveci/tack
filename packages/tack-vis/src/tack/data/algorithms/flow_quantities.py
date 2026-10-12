@@ -1,11 +1,14 @@
 """``flow_quantities``: divergence, vorticity and the Q-criterion from the gradient of a 3-vector field (``gradients`` of it: 9 values per entity), in the gradient's space, as VTK's vtkGradientFilter and Viskores' Gradient compute them: a dict of the three fields."""
 
+from typing import NamedTuple
+
 import tack
 from tack.data import arrays
+from tack.data.algorithms._common import _field
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import Field
 
-__all__ = ['flow_quantities']
+__all__ = ['FlowQuantities', 'flow_quantities']
 
 
 @tack.kernel
@@ -19,11 +22,20 @@ def _flow_quantities(g, divergence, vorticity, q):
                 - (J[1] * J[3] + J[2] * J[6] + J[5] * J[7]))
 
 
-def flow_quantities(gradient):
+class FlowQuantities(NamedTuple):
+    """``flow_quantities``' fields, each in the gradient's space."""
+
+    divergence: Field
+    vorticity: Field
+    q_criterion: Field
+
+
+def flow_quantities(data, gradient):
     """Divergence, vorticity and the Q-criterion from the gradient of a 3-vector field
     (``gradients`` of it: 9 values per entity), in the gradient's space, as VTK's
-    vtkGradientFilter and Viskores' Gradient compute them: a dict of the three
-    fields."""
+    vtkGradientFilter and Viskores' Gradient compute them, as ``FlowQuantities``:
+    ``divergence``, ``vorticity`` and ``q_criterion``."""
+    gradient = _field(data, gradient)
     if width_of(gradient.values) != 9:
         raise TypeError("flow_quantities takes the gradient of a 3-vector field (9 values)")
     n = size_of(gradient.values)
@@ -33,6 +45,5 @@ def flow_quantities(gradient):
     q = tack.field(dtype, shape=(n,))
     if n:
         _flow_quantities(materialize(gradient.values), divergence, vorticity, q)
-    return {"divergence": Field(gradient.space, divergence),
-            "vorticity": Field(gradient.space, vorticity),
-            "q_criterion": Field(gradient.space, q)}
+    return FlowQuantities(Field(gradient.space, divergence), Field(gradient.space, vorticity),
+                          Field(gradient.space, q))

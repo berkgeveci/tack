@@ -1,6 +1,7 @@
 """``divergence``: each cell's outward sum of ``flux``, values on faces measured out of side 0 (``Values(data, "faces", oriented=True)``, or plain face values taken so): a face's value counts plus for its side-0 cell and minus for its side-1 cell."""
 
 import tack
+from tack.data.algorithms._common import _field
 from tack.data.algorithms._faces import _on_faces
 from tack.data.arrays import materialize
 from tack.data.carry import _like
@@ -24,6 +25,7 @@ def divergence(data, flux):
     """Each cell's outward sum of ``flux``, values on faces measured out of side 0
     (``Values(data, "faces", oriented=True)``, or plain face values taken so): a
     face's value counts plus for its side-0 cell and minus for its side-1 cell."""
+    flux = _field(data, flux)
     if not _on_faces(data, flux):
         raise TypeError("divergence sums a field on faces")
     data.topology.faces()                          # the incidence the cell views need

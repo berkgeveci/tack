@@ -3,6 +3,7 @@
 import math
 
 import tack
+from tack.data.algorithms._common import _field
 from tack.data.arrays import materialize, size_of, width_of
 
 __all__ = ['statistics']
@@ -18,7 +19,7 @@ def _central_powers(values, mean, p2, p3, p4):
         p4[i] = d2 * d2
 
 
-def statistics(field):
+def statistics(data, field):
     """Descriptive statistics of a scalar field's values, as Viskores' Statistics
     filter gives them: a dict of ``n``, ``min``, ``max``, ``sum``, ``mean``, the
     central moment sums ``m2``, ``m3``, ``m4``, ``sample_variance``
@@ -26,6 +27,7 @@ def statistics(field):
     deviations, ``skewness`` (``sqrt(n) m3 / m2^1.5``) and ``kurtosis``
     (``n m4 / m2^2``, not the excess), the last two 0 for a constant field.
     Moments are taken about the mean, in a second pass."""
+    field = _field(data, field)
     if width_of(field.values):
         raise TypeError("statistics takes a scalar field")
     values = materialize(field.values)

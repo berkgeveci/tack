@@ -2,7 +2,7 @@
 
 import tack
 from tack.data import arrays
-from tack.data.algorithms._common import _scalars
+from tack.data.algorithms._common import _field, _scalars
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import Field
 
@@ -15,8 +15,9 @@ def _magnitudes(values, out):
         out[i] = values[i].norm()
 
 
-def magnitude(field):
+def magnitude(data, field):
     """Each vector's length (Viskores' VectorMagnitude)."""
+    field = _field(data, field)
     if not width_of(field.values):
         raise TypeError("magnitude takes a vector field")
     n = size_of(field.values)

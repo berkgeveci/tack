@@ -1,6 +1,7 @@
 """``upwind_flux``: the flux of ``field`` carried by a constant ``velocity`` through each face, out of side 0: ``(v . n) * area * u``, ``u`` taken from the upwind side at the face's center -- the side the flow leaves -- as a DG advection scheme does. A boundary face takes its one side's value whichever way the flow goes. ``divergence`` of the result is each cell's net outflow."""
 
 import tack
+from tack.data.algorithms._common import _field
 from tack.data.algorithms._faces import _on_cells
 from tack.data.algorithms.face_geometry import face_geometry
 from tack.data.algorithms.traces import traces
@@ -41,6 +42,7 @@ def upwind_flux(data, field, velocity):
     center -- the side the flow leaves -- as a DG advection scheme does. A boundary
     face takes its one side's value whichever way the flow goes. ``divergence`` of
     the result is each cell's net outflow."""
+    field = _field(data, field)
     normals, areas = face_geometry(data)
     out = _like(field.values, data.topology.faces().num_faces)
     vx, vy, vz = (float(v) for v in velocity)
