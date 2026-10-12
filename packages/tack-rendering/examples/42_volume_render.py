@@ -1,6 +1,7 @@
 """42 -- Volume rendering of a gyroid scalar field on a uniform grid."""
 
 import argparse
+import os
 
 import numpy as np
 
@@ -63,7 +64,8 @@ render_volume(canvas, vol, camera)
 img = canvas.to_numpy()
 try:
     from PIL import Image
-    Image.fromarray(img).save("pathtrace_gyroid_vol.png")
-    print("Saved: pathtrace_gyroid_vol.png")
+    os.makedirs("results", exist_ok=True)
+    Image.fromarray(img).save("results/pathtrace_gyroid_vol.png")
+    print("Saved: results/pathtrace_gyroid_vol.png")
 except ImportError:
     print("Install Pillow to save images: pip install Pillow")

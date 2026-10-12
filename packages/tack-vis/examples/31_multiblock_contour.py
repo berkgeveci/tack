@@ -1,13 +1,13 @@
-"""31 -- Multi-block Flying Edges: isosurface extraction across AMR patches.
+"""31 -- Multi-block contour: isosurface extraction across AMR patches.
 
-Runs the Flying Edges algorithm independently on each block (FAB) of a
-multi-block dataset, producing unified output arrays for points and
-connectivity.  Uses tack.deprecated.algorithms.flying_edges module.
+Each block (an AMR patch, a FAB) is a uniform grid of its own, a
+tack.data dataset; the isosurface is one contour per block. Blocks share
+their boundary points with their neighbours, so the pieces meet.
 
 Usage:
-  uv run python examples/31_multiblock_flying_edges.py
-  uv run python examples/31_multiblock_flying_edges.py --arch metal
-  uv run python examples/31_multiblock_flying_edges.py --nblocks 100
+  uv run python packages/tack-vis/examples/31_multiblock_contour.py
+  uv run python packages/tack-vis/examples/31_multiblock_contour.py --arch metal
+  uv run python packages/tack-vis/examples/31_multiblock_contour.py --nblocks 100
 """
 
 import argparse
@@ -16,7 +16,7 @@ import time
 import numpy as np
 
 import tack
-from tack.deprecated.algorithms.flying_edges import UniformGrid, flying_edges_multiblock
+import tack.data as td
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
@@ -35,16 +35,11 @@ tack.init(arch=_arch)
 # ================================================================
 
 @tack.kernel
-def compute_gyroid(scalar, grid: tack.template(), n_points):
+def compute_gyroid(xyz, scalar):
     """Gyroid: sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)."""
-    for i in range(n_points):
-        ix = i % grid.nx_p1
-        iy = (i // grid.nx_p1) % grid.ny_p1
-        iz = i // grid.nxy_p1
-        x = grid.get_x(ix, iy, iz)
-        y = grid.get_y(ix, iy, iz)
-        z = grid.get_z(ix, iy, iz)
-        scalar[i] = sin(x) * cos(y) + sin(y) * cos(z) + sin(z) * cos(x)
+    for p in range(scalar.shape[0]):
+        x = xyz.get(p)                      # the block computes point p's position
+        scalar[p] = sin(x[0]) * cos(x[1]) + sin(x[1]) * cos(x[2]) + sin(x[2]) * cos(x[0])
 
 
 def make_blocks(nblocks, block_size):
@@ -69,15 +64,15 @@ def make_blocks(nblocks, block_size):
             for bi in range(nbx):
                 if len(blocks) >= nb:
                     break
-                nx = ny = nz = block_size
-                x0 = domain_lo + bi * nx * dx
-                y0 = domain_lo + bj * ny * dy
-                z0 = domain_lo + bk * nz * dz
-                grid = UniformGrid(nx, ny, nz, x0, y0, z0, dx, dy, dz)
-                n_points = (nx + 1) * (ny + 1) * (nz + 1)
-                scalar = tack.field(dtype=tack.f32, shape=(n_points,))
-                compute_gyroid(scalar, grid, n_points)
-                blocks.append({'scalar': scalar, 'grid': grid})
+                n = block_size
+                origin = (domain_lo + bi * n * dx, domain_lo + bj * n * dy,
+                          domain_lo + bk * n * dz)
+                block = td.uniform_grid((n + 1, n + 1, n + 1), origin=origin,
+                                        spacing=(dx, dy, dz))
+                scalar = tack.field(dtype=tack.f32, shape=(block.num_points,))
+                compute_gyroid(block.geometry.values, scalar)
+                block.fields["gyroid"] = td.Field(td.H1(block), scalar)
+                blocks.append(block)
 
     return blocks, (nbx, nby, nbz), (dx, dy, dz)
 
@@ -90,7 +85,7 @@ nblocks = _args.nblocks
 block_size = _args.block_size
 isovalue = 0.0
 
-print("Multi-block Flying Edges")
+print("Multi-block contour")
 print(f"  Backend:    {_args.arch}")
 print(f"  Blocks:     {nblocks} x {block_size}^3 cells each")
 print(f"  Isovalue:   {isovalue}")
@@ -106,29 +101,33 @@ print(f"  Setup time: {t_setup:.4f}s")
 print()
 
 # Warmup
-flying_edges_multiblock(blocks, isovalue)
+[td.contour(block, "gyroid", isovalue) for block in blocks]
 
 # Timed run
 t0 = time.perf_counter()
-result = flying_edges_multiblock(blocks, isovalue)
-t_fe = time.perf_counter() - t0
+pieces = [td.contour(block, "gyroid", isovalue) for block in blocks]
+tack.sync()
+t_contour = time.perf_counter() - t0
 
-if result is None:
+total_points = sum(piece.num_points for piece in pieces)
+total_triangles = sum(piece.num_cells for piece in pieces)
+if total_triangles == 0:
     print("  No isosurface produced.")
 else:
-    print(f"  Points:     {result['total_points']:,}")
-    print(f"  Triangles:  {result['total_tris']:,}")
-    print(f"  Time:       {t_fe:.4f}s")
+    print(f"  Points:     {total_points:,}")
+    print(f"  Triangles:  {total_triangles:,}")
+    print(f"  Time:       {t_contour:.4f}s")
 
     # Verify connectivity
-    conn = result['conn']  # shape (m, 3)
-    assert np.all(conn >= 0) and np.all(conn < result['total_points'])
+    for piece in pieces:
+        conn = piece.topology.connectivity.to_numpy()
+        assert np.all(conn >= 0) and np.all(conn < piece.num_points)
     print("  Connectivity: OK (all indices in range)")
 
     # Verify points on isosurface
-    pts = result['points']  # shape (n, 3)
-    n_sample = min(100, result['total_points'])
-    idxs = np.random.choice(result['total_points'], n_sample, replace=False)
+    pts = np.concatenate([piece.positions() for piece in pieces if piece.num_points])
+    n_sample = min(100, len(pts))
+    idxs = np.random.choice(len(pts), n_sample, replace=False)
     sx = pts[idxs, 0].astype(np.float64)
     sy = pts[idxs, 1].astype(np.float64)
     sz = pts[idxs, 2].astype(np.float64)

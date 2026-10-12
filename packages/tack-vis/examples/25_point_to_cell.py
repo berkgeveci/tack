@@ -13,10 +13,13 @@ via multi-return @tack.func.  The structured version computes the 8 corner
 point IDs from (ci, cj, ck) decomposition; the explicit version reads
 them from a flat connectivity field.
 
+This shows how such an algorithm is built from scratch. The library's
+version, for any mesh, is ``tack.data.to_cells``.
+
 Usage:
-  uv run python examples/25_point_to_cell.py
-  uv run python examples/25_point_to_cell.py --arch metal
-  uv run python examples/25_point_to_cell.py --arch metal --size 200
+  uv run python packages/tack-vis/examples/25_point_to_cell.py
+  uv run python packages/tack-vis/examples/25_point_to_cell.py --arch metal
+  uv run python packages/tack-vis/examples/25_point_to_cell.py --arch metal --size 200
 """
 
 import argparse

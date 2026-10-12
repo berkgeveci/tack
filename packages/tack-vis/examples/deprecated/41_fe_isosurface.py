@@ -10,7 +10,7 @@ Creates a 4×4×4 hex mesh with a synthetic order-2 DG field
 adaptive marching cubes, and writes VTU.
 
 Usage:
-    uv run python examples/41_fe_isosurface.py [--arch cpu|metal]
+    uv run python packages/tack-vis/examples/deprecated/41_fe_isosurface.py [--arch cpu|metal]
 """
 
 import argparse
@@ -25,15 +25,9 @@ from tack.deprecated.fe.accessor import contiguous_from_numpy
 from tack.deprecated.fe.basis import HexBasis, precompute_basis_matrix_3d
 from tack.deprecated.fe.geometry import linear_hex_map_from_numpy
 
-# MC tables
-sys.path.insert(0, os.path.dirname(__file__))
-try:
-    from mc_tables import EDGE_VERTS, NUM_TRIS, TRI_TABLE
-except ImportError:
-    # Fall back to the MFEM examples copy
-    sys.path.insert(
-        0, os.path.expanduser("~/Work/mfem/mfem/examples"))
-    from mc_tables import EDGE_VERTS, NUM_TRIS, TRI_TABLE
+# MC tables, beside the other vis examples
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from mc_tables import EDGE_VERTS, NUM_TRIS, TRI_TABLE
 
 
 def make_hex_mesh(nx, ny, nz):

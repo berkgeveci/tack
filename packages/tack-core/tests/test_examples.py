@@ -31,6 +31,7 @@ import pytest
 REPO = pathlib.Path(__file__).resolve().parents[3]
 
 EXAMPLES = (sorted(REPO.glob("packages/*/examples/[0-9]*.py"))
+            + sorted(REPO.glob("packages/*/examples/deprecated/[0-9]*.py"))
             + sorted(REPO.glob("examples/[0-9]*.py")))
 
 # CI has no GPU, so the sweep runs on CPU unless told otherwise. On a machine
@@ -43,8 +44,11 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _example_id(path: pathlib.Path) -> str:
-    package = path.parent.parent.name
-    return f"{package}/{path.name}" if package != "tack" else path.name
+    folder = path.parent
+    deprecated = folder.name == "deprecated"
+    package = (folder.parent if deprecated else folder).parent.name
+    name = f"deprecated/{path.name}" if deprecated else path.name
+    return f"{package}/{name}" if package != "tack" else name
 
 
 def test_examples_were_found():

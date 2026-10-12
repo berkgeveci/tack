@@ -22,6 +22,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   sorts, copies). Change `from tack.algorithms.flying_edges import ...` to
   `from tack.deprecated.algorithms.flying_edges import ...`, or move to
   `tack.data.contour`.
+- The examples that used the deprecated worklets now use `tack.data`:
+  - the isosurface tutorial, `examples/32_pathtrace.py` and
+    `examples/37_insitu_pipeline.py` pass the contour's own device fields
+    to the renderer;
+  - `tack-vis/31_multiblock_flying_edges.py` is now
+    `31_multiblock_contour.py`, one contour per block;
+  - the `tack.fe` examples moved to `tack-vis/examples/deprecated/` and
+    still run in the examples sweep.
+
+  Examples that save an image write it under `results/`, as the others
+  already did, instead of into the working directory.
 - Metal launches are queued instead of waited for one by one. The host
   waits when it touches field memory, reduces a field, or calls the new
   `tack.sync()`; an error in a launch surfaces at that wait rather than
@@ -85,6 +96,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   argument does: f64 when a field is f64. f32 kernels are unchanged.
 
 ### Performance changes users may notice
+
+- A kernel taking a `@tack.device_class` object no longer compiles anew
+  for every length of a field the object holds. The object's fields were
+  keyed by their full shape; they are now keyed by rank, and the
+  dimensions the code actually bakes in (a row stride, a length used in
+  arithmetic) still specialize, as they do for plain field arguments. A
+  contour of a 64^3 grid on Metal at an output size not seen before went
+  from 36 to 9 ms. The bucket sort's key template recompiled for every
+  size of contour, slice and clip; the dataset views likewise hold
+  fields of every mesh's size.
 
 - Metal no longer waits about 0.3 ms after every launch: a contour of 100k
   cells, some 76 launches, spent 26 ms waiting. It also lets Metal clear

@@ -11,7 +11,7 @@ hexahedra bent by a smooth map. Pyramids have no order-2 space here.
 
 Usage:
   pip install mfem "llvmlite==0.46.0"     # numba's newest wants a newer llvmlite
-  python examples/43_mfem_poisson.py [--arch cpu|metal|cuda|hip|level_zero]
+  python packages/tack-vis/examples/43_mfem_poisson.py [--arch cpu|metal|cuda|hip|level_zero]
                                      [--mesh FILE] [--refine N] [--output DIR]
 
 With --output DIR it writes the solution's contour, a slice and the boundary

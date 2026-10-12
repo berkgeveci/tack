@@ -176,7 +176,9 @@ that holds them.
 
 ## Rendering a result
 
-`tack.rendering` draws triangles from flat point and connectivity fields:
+`tack.rendering` draws triangles from flat point and connectivity fields. A
+field of 3-vectors is stored interleaved, so `reshape` gives that flat view
+without a copy:
 
 ```python
 --8<-- "docs/examples/datasets.py:render"

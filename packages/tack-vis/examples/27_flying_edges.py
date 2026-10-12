@@ -15,10 +15,13 @@ Produces ~6x fewer output points than unmerged marching cubes.
 
 Scalar field: gyroid -- sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
 
+This shows how such an algorithm is built from scratch. The library's
+version, for any mesh, is ``tack.data.contour``.
+
 Usage:
-  uv run python examples/27_flying_edges.py
-  uv run python examples/27_flying_edges.py --arch metal
-  uv run python examples/27_flying_edges.py --arch metal --size 200
+  uv run python packages/tack-vis/examples/27_flying_edges.py
+  uv run python packages/tack-vis/examples/27_flying_edges.py --arch metal
+  uv run python packages/tack-vis/examples/27_flying_edges.py --arch metal --size 200
 """
 
 import argparse

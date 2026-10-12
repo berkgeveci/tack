@@ -9,7 +9,7 @@ Creates a 4×4 quad mesh with a synthetic order-3 DG field
 (f(x,y) = sin(π·x)·sin(π·y)), extracts an isoline, and writes VTU.
 
 Usage:
-    uv run python examples/40_fe_isoline.py [--arch cpu|metal]
+    uv run python packages/tack-vis/examples/deprecated/40_fe_isoline.py [--arch cpu|metal]
 """
 
 import argparse

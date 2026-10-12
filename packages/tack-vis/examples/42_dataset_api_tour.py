@@ -1,4 +1,4 @@
-"""42 -- A tour of the dataset API prototype (docs/design/dataset-api.md).
+"""42 -- A tour of tack.data, the dataset API (docs/reference/dataset-api.md).
 
 One mixed unstructured grid (hexahedra, wedges, pyramids and tetrahedra)
 and one rectilinear grid, each run through the same algorithms:
@@ -6,11 +6,12 @@ and one rectilinear grid, each run through the same algorithms:
 - topology: faces and edges derived from the cells, each face knowing the
   cells on its two sides, each cell its faces and edges;
 - spaces: point data (H1), cell data (Constant), a linear DG field (L2),
-  and values on faces and edges, all as Fields -- the geometry among them,
-  the field named "shape", whose values on the rectilinear grid are an
-  implicit array (three axes, nothing per point);
-- iteration domains: kernels over cells, faces, edges, or a set of faces,
-  once per shape, reading fields through views built for that shape.
+  and values on faces and edges, all as Fields -- and the geometry, a field
+  too (data.geometry), whose values on the rectilinear grid are an implicit
+  array (three axes, nothing per point);
+- sets: the boundary faces, a face Set;
+- iteration domains: kernels over cells, faces, edges, or a set, once per
+  shape, reading fields through views built for that shape.
 
 With --output DIR it writes, for ParaView:
   <grid>.vt[ur]          the grid, with H1 and Constant fields
@@ -26,8 +27,8 @@ With --output DIR it writes, for ParaView:
                          topology
 
 Usage:
-  python examples/42_dataset_api_tour.py [--arch cpu|metal|cuda|hip|level_zero]
-                                         [--output DIR]
+  python packages/tack-vis/examples/42_dataset_api_tour.py
+      [--arch cpu|metal|cuda|hip|level_zero] [--output DIR]
 """
 
 import argparse
@@ -117,9 +118,9 @@ def show(name, data):
     print(f"  every cell's outward area vectors sum to zero: "
           f"{np.allclose(closed.values.to_numpy(vectors=True), 0, atol=1e-5)}")
 
-    # A side set, and a kernel run over it alone.
+    # The boundary, a face set (a side set).
     boundary = alg.boundary_faces(data)
-    print(f"  boundary: {boundary.shape[0]} faces, area "
+    print(f"  boundary: {len(boundary)} faces, area "
           f"{areas.values.to_numpy()[boundary.to_numpy()].sum():.4g}")
     data.fields["area"] = areas
     data.fields["jump"] = jump

@@ -13,10 +13,13 @@ cubes lookup tables are stored as tack fields (read-only data on GPU).
 Scalar field: a gyroid -- sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
 This produces a beautiful triply-periodic minimal surface at isovalue 0.
 
+This shows how such an algorithm is built from scratch. The library's
+version, for any mesh and with points merged, is ``tack.data.contour``.
+
 Usage:
-  uv run python examples/26_marching_cubes.py
-  uv run python examples/26_marching_cubes.py --arch metal
-  uv run python examples/26_marching_cubes.py --arch metal --size 200
+  uv run python packages/tack-vis/examples/26_marching_cubes.py
+  uv run python packages/tack-vis/examples/26_marching_cubes.py --arch metal
+  uv run python packages/tack-vis/examples/26_marching_cubes.py --arch metal --size 200
 """
 
 import argparse

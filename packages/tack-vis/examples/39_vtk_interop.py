@@ -27,7 +27,7 @@ device needs a device filter (vtkmContour and friends), which is a
 different pipeline than this one.
 
 Usage:
-  python examples/39_vtk_interop.py [--arch cpu|metal|cuda|hip|level_zero]
+  python packages/tack-vis/examples/39_vtk_interop.py [--arch cpu|metal|cuda|hip|level_zero]
 
 Needs VTK with vtkmodules.util.dlpack_support.
 """
@@ -35,6 +35,10 @@ Needs VTK with vtkmodules.util.dlpack_support.
 import argparse
 
 import numpy as np
+
+# Not every VTK build has DLPack support; without it this stops here, as a
+# missing module, which the examples sweep reports as a skip.
+import vtkmodules.util.dlpack_support  # noqa: F401
 
 import tack
 from tack.interop.vtk import field_to_vtk, vtk_to_field

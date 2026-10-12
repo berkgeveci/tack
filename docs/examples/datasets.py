@@ -108,20 +108,23 @@ def run(arch="cpu", check=False):
     # --8<-- [end:lines]
 
     # --8<-- [start:render]
-    from tack.rendering import (Actor, Canvas, ColorTable, PerspectiveCamera, PointLight,
-                                Scene, render)
+    from tack.rendering import (
+        Actor,
+        Canvas,
+        ColorTable,
+        PerspectiveCamera,
+        PointLight,
+        Scene,
+        render,
+    )
 
-    def flat(array, dtype):
-        """A host array as the flat field the renderer reads."""
-        out = tack.field(dtype, shape=(array.size,))
-        out.from_numpy(np.ascontiguousarray(array, dtype=dtype.numpy_dtype).ravel())
-        return out
-
-    xyz = surface.positions()
+    positions = surface.geometry.values              # 3-vectors, stored interleaved
+    points = positions.reshape(positions.size)       # a flat view: nothing copied
+    heights = tack.field(tack.f32, shape=(surface.num_points,))
+    heights.from_numpy(surface.positions()[:, 2].copy())
     scene = Scene()
-    scene.add(Actor(flat(xyz, tack.f32), flat(surface.topology.connectivity.to_numpy(), tack.i32),
-                    scalars=flat(xyz[:, 2], tack.f32), color_table=ColorTable("viridis"),
-                    smooth=True))
+    scene.add(Actor(points, surface.topology.connectivity, scalars=heights,
+                    color_table=ColorTable("viridis"), smooth=True))
     scene.add(PointLight(position=(30, 40, 50), intensity=6000.0))
     size = 64 if check else 400
     camera = PerspectiveCamera((25, 20, 30), (0, 0, 0), width=size, height=size)

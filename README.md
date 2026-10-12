@@ -390,19 +390,19 @@ User's Guide and the [Dataset API reference](docs/reference/dataset-api.md).
 ```bash
 uv run python packages/tack-core/examples/01_hello_tack.py              # simplest kernel
 uv run python packages/tack-core/examples/12_mandelbrot.py --arch metal # fractal on GPU
-uv run python packages/tack-vis/examples/27_flying_edges.py --arch cuda # isosurface
+uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # tack.data
 uv run python examples/32_pathtrace.py --arch metal                    # path tracing
 ```
 
 | Location | Count | Covers |
 |----------|------:|--------|
 | `packages/tack-core/examples/` | 28 | Kernels, fields, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
-| `packages/tack-vis/examples/` | 9 | Contour, marching cubes, flying edges (single- and multi-block), cell↔point, FE isolines and isosurfaces, VTK interop |
+| `packages/tack-vis/examples/` | 9 | A tour of `tack.data`, an MFEM solution through it, multi-block contour, VTK interop; and contour, marching cubes, flying edges and point-to-cell written from scratch. `deprecated/` holds the `tack.fe` isolines and isosurfaces |
 | `packages/tack-rendering/examples/` | 10 | GPU BVH, path tracing, denoising, materials, multiple lights, scalar colouring, volume rendering, annotations |
 | `examples/` | 2 | Cross-package pipelines that need both tack-vis and tack-rendering |
 
-Numbers are unique within a package but repeat across packages — `tack-vis/41_fe_isosurface.py`
-and `tack-rendering/41_interactive.py` both exist. The cross-package examples live at the
+Numbers are unique within a package but repeat across packages — `tack-vis/31_multiblock_contour.py`
+and `tack-core/31_dawn_interop.py` both exist. The cross-package examples live at the
 repository root because neither package depends on the other, so neither can own them.
 
 ## Testing

@@ -12,16 +12,17 @@ an analytic sphere and adds geometric and rendered-depth checks.
 
 ## Sample an analytic field
 
-The level set `x² + y² + z² - 0.7² = 0` is a sphere of radius 0.7. A grid with
-`n` cells per axis has `(n + 1)³` node samples:
+The level set `x² + y² + z² - 0.7² = 0` is a sphere of radius 0.7. The kernel
+evaluates it at every point of a grid:
 
 ```python
 --8<-- "docs/examples/isosurface.py:scalar"
 ```
 
-The input is flat, with x varying fastest. The index decomposition matches
-`UniformGrid`'s point dimensions. This explicit layout also matches the
-visualization algorithms' scalar input; it is not an arbitrary 3-D array stride.
+`xyz` is the grid's geometry: a `UniformCoordinates` array, which stores
+nothing per point and computes point `p`'s position in `get(p)`. A kernel
+takes it like a field, and the call inlines to the arithmetic of origin
+plus index times spacing.
 
 ## Extract the level set
 
@@ -29,15 +30,15 @@ visualization algorithms' scalar input; it is not an arbitrary 3-D array stride.
 --8<-- "docs/examples/isosurface.py:extract"
 ```
 
-`UniformGrid` takes cell dimensions, origin and spacing. `flying_edges` returns
-a dictionary or `None` when no surface is produced. Its `points` and `conn` are
-NumPy arrays, while `points_field` and `conn_field` retain the flat Tack geometry.
+`uniform_grid` takes point dimensions, origin and spacing, and the field of
+sphere values goes into the dataset as point data (`H1`). `contour` returns a
+new dataset of triangles, with `s` interpolated onto its points. If the
+isovalue misses the field, the surface is empty rather than `None`, so check
+`num_cells`.
 
-The current implementation reads counts to the host, forms offsets with NumPy,
-uploads them, and also produces the NumPy geometry copies. This pipeline
-therefore includes host traffic even when the next stage uses retained fields.
-Passing those fields to `Actor` avoids downloading and re-uploading geometry
-for scene setup; it does not remove earlier extraction transfers.
+The contour runs on the device. It reads only counts on the host (how many
+triangles and points to allocate); the triangles and points stay in device
+fields.
 
 ## Build a scene and render
 
@@ -45,7 +46,11 @@ for scene setup; it does not remove earlier extraction transfers.
 --8<-- "docs/examples/isosurface.py:render"
 ```
 
-`Actor` expects interleaved `f32` positions and `i32` triangle indices. A scene
+`Actor` expects interleaved `f32` positions and `i32` triangle indices. The
+surface's positions are a field of 3-vectors, whose storage is already
+interleaved: `reshape` makes a flat view of the same memory, so nothing is
+copied between extraction and rendering. A topology this small keeps its ids
+in `i32`; a very large one would need `connectivity.astype(tack.i32)`. A scene
 combines geometry and lighting; the camera defines rays; the canvas holds the
 image and depth. `smooth=True` computes vertex normals for a smoother appearance.
 
@@ -61,16 +66,16 @@ uv run python docs/examples/isosurface.py --check
 uv run --with vtk python docs/examples/isosurface.py --output sphere.png
 ```
 
-The small check verifies the vertex/triangle shapes, valid indices and a sphere
-residual bounded by the grid's interpolation error. It also requires a substantial
+The small check verifies that the output is triangles with valid indices, and
+a sphere residual bounded by the grid's interpolation error. It also requires a substantial
 number of visible depth hits. That catches a blank scene even when rendering
 returns without an exception.
 
 Try replacing the sphere expression with the gyroid
-`sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)` on a larger domain. Keep an explicit
-`None` check for thresholds outside the scalar range. See
-[Datasets and visualization](../09-visualization.md) for `tack.data`, which
-supersedes flying edges, and
+`sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)` on a larger domain. Keep the
+check for an empty surface for isovalues outside the scalar range. See
+[Datasets and visualization](../09-visualization.md) for the rest of
+`tack.data`, and
 [Rendering](../10-rendering.md) for materials, volumes and scalar colouring.
 
 ## Complete program
