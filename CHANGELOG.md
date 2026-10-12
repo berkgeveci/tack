@@ -154,6 +154,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
+- On Metal, a field made before `tack.init` was called again could be
+  written by the host while launches that read it were still queued:
+  its host access waited for the backend it was made on, whose queue was
+  empty, not for the new one where its launches now queue. A program
+  that set a parameter field between launches computed with later values
+  (tack-examples' mpm128 drifted from its reference from the first
+  steps). Every Metal field's host access now waits for every live
+  Metal backend. This came with queued Metal launches, unreleased.
+
 - Metal buffers, textures, libraries and pipelines are freed.
   pyobjc-framework-Metal 12.1 describes Metal's `new...` methods without
   their ownership, so nothing Tack created was ever released.

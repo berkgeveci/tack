@@ -21,7 +21,9 @@ therefore owns what it reads: its own argument buffer and its own copy of
 its packed scalars, and references to its fields until it completes.
 """
 
+import atexit
 import threading
+import weakref
 from collections import deque
 
 import numpy as np
@@ -91,6 +93,23 @@ if Metal is not None:
 # dispatch can index 2^32 threads; past that the position would wrap.
 _MAX_LAUNCH = 2**32
 
+# Every live Metal backend. tack.init makes a new backend each time it is
+# called, but fields made before it remain usable, and their launches now
+# queue on the new one: a buffer's host access has to wait for whichever
+# backend may be using it, not for the one it was made with. Holding the
+# buffer to its first backend's queue let mpm128's host write gravity while
+# launches queued on the second still had to read the old value.
+_backends = weakref.WeakSet()
+
+
+def _synchronize_all():
+    """Wait for the launches queued on every live Metal backend."""
+    for backend in list(_backends):
+        backend.synchronize()
+
+
+atexit.register(_synchronize_all)
+
 
 class MetalBuffer(DeviceBuffer):
     """Metal shared buffer — zero-copy on Apple Silicon unified memory.
@@ -102,7 +121,7 @@ class MetalBuffer(DeviceBuffer):
 
     backend_name = "metal"
 
-    _sync = staticmethod(lambda: None)    # the backend's synchronize, once allocated
+    _sync = staticmethod(_synchronize_all)    # waits for every Metal backend's launches
     # Memory handed outside Tack -- exported (DLPack, export_memory) or wrapped
     # from another library's MTLBuffer -- may be read with no Tack call between:
     # a launch that uses it completes before returning, as every launch once did.
@@ -449,8 +468,7 @@ class MetalBackend(Backend):
         self._batch_lock = threading.RLock()
         self._open = None              # [command buffer, keep list, launches]
         self._committed = deque()      # (command buffer, keep list)
-        import atexit
-        atexit.register(self.synchronize)
+        _backends.add(self)
 
     _BATCH = 64          # launches per command buffer before it is committed
     _IN_FLIGHT = 4       # committed command buffers before the oldest is waited for
@@ -493,14 +511,14 @@ class MetalBackend(Backend):
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> MetalBuffer:
-        return MetalBuffer(self._device, dtype.numpy_dtype, shape, sync=self.synchronize)
+        return MetalBuffer(self._device, dtype.numpy_dtype, shape, sync=_synchronize_all)
 
     def texture_in_hardware(self, shape_3d) -> bool:
         return True
 
     def create_texture_image(self, shape_3d) -> MetalTextureImage:
         return MetalTextureImage(self._device, self._command_queue, shape_3d,
-                                 sync=self.synchronize)
+                                 sync=_synchronize_all)
 
     def wrap_ptr(self, ptr, dtype, shape):
         """Wrap an existing MTLBuffer as a MetalBuffer without copying.
@@ -517,7 +535,7 @@ class MetalBackend(Backend):
                 f"into an MTLBuffer; allocate with tack.field() and copy "
                 f"into it with from_numpy().")
         buf = MetalBuffer.__new__(MetalBuffer)
-        buf._sync = self.synchronize
+        buf._sync = _synchronize_all
         buf._shared = True       # another library's buffer, read without Tack
         buf._metal_buffer = ptr  # expects an MTLBuffer object
         nbytes = int(np.prod(shape)) * np.dtype(dtype.numpy_dtype).itemsize

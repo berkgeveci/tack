@@ -174,7 +174,10 @@ flight, and owns what it reads -- a fresh argument buffer, its packed
 scalars as `_Uniforms`, references to its fields until it completes. The
 host waits only when it touches field memory (every `MetalBuffer` method,
 reductions, texture uploads) or calls `tack.sync()`; bindings are resolved
-before an encoder opens, since committing an open encoder aborts. Memory
+before an encoder opens, since committing an open encoder aborts. A
+buffer's host access waits for every live Metal backend (`_backends`,
+`_synchronize_all`), not the one it was made on: `tack.init` makes a new
+backend each call and earlier fields keep working on it. Memory
 handed outside Tack (DLPack, `export_memory`, `wrap_ptr`) is `_shared`: a
 launch using it completes before returning. Waiting after every launch cost
 about 0.3 ms each. `test_metal.py` covers order across batches, per-launch

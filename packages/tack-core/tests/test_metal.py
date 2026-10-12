@@ -401,6 +401,28 @@ def test_host_writes_wait_for_the_launches_before_them():
     np.testing.assert_array_equal(acc.to_numpy(), 102 + np.arange(64))
 
 
+@tack.kernel
+def _record_value(value: tack.template(), out: tack.template(), k: int, n: int):
+    for i in range(n):
+        out[k * n + i] = value[None] + 0.0 * float(i)
+
+
+def test_host_writes_wait_after_tack_init_runs_again():
+    """A field made before another tack.init is still written by the host and
+    read by launches, which now queue on the new backend: the host's write has
+    to wait for those, not for its first backend's (empty) queue. mpm128 in
+    tack-examples rewrote its gravity under queued launches that way, 299 of
+    300 launches here reading a later value."""
+    value = tack.field(tack.f32, shape=())
+    tack.init(arch=tack.metal)
+    n, steps = 4096, 300
+    out = tack.field(tack.f32, shape=(steps * n,))
+    for k in range(steps):
+        value.fill(float(k))
+        _record_value(value, out, k, n)
+    np.testing.assert_array_equal(out.to_numpy().reshape(steps, n)[:, 0], np.arange(steps))
+
+
 def test_sync_waits_for_queued_launches():
     acc = tack.zeros(tack.i32, (64,))
     _add_into(acc, 5)
