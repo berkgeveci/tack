@@ -219,7 +219,7 @@ def bucket_order(values, nbuckets, index_dtype=None):
     _bucket_counts(keys, counts, bad, n, nbuckets)
     if bad[0]:
         raise ValueError(f"{bad[0]} keys lie outside the {nbuckets} buckets")
-    exclusive_scan(counts, starts, nbuckets)
+    exclusive_scan(counts, starts, nbuckets, total=False)
     _close(starts, nbuckets, n)
     nchunks = (nbuckets + _CHUNK - 1) // _CHUNK
     largest = tack.field(tack.i32, shape=(nchunks,))

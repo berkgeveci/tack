@@ -488,7 +488,7 @@ def argsort(keys, n=None, index_dtype=None):
             shift = p * _RADIX_BITS
             _sort_tiles(mapped, perm, mapped_b, perm_b, counts, starts, base, shift, n,
                         ntiles)
-            exclusive_scan(counts, offsets, _RADIX * ntiles)
+            exclusive_scan(counts, offsets, _RADIX * ntiles, total=False)
             _scatter_tiles(mapped_b, perm_b, mapped, perm, offsets, starts, base, shift, n,
                            ntiles)
         return perm
@@ -499,7 +499,7 @@ def argsort(keys, n=None, index_dtype=None):
     for p in range(passes):
         shift = p * _RADIX_BITS
         _count_digits(src_keys, counts, base, shift, n, _CHUNK, nchunks)
-        exclusive_scan(counts, offsets, _RADIX * nchunks)
+        exclusive_scan(counts, offsets, _RADIX * nchunks, total=False)
         _scatter_digits(src_keys, src_perm, dst_keys, dst_perm, offsets,
                         base, shift, n, _CHUNK, nchunks)
         src_keys, dst_keys = dst_keys, src_keys

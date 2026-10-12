@@ -238,7 +238,7 @@ def _derive_cell_points(t, cell_offsets=None, cell_faces=None, face_offsets=None
         _split_keys(keys, order, offsets_of_runs, points, counts, runs)
     offsets = tack.field(idt, shape=(n + 1,))
     if n:
-        exclusive_scan(counts, offsets, n)
+        exclusive_scan(counts, offsets, n, total=False)
     _close(offsets, n, runs)
     return offsets, points
 

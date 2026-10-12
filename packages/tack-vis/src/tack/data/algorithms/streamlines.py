@@ -46,7 +46,7 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     idt = tack.i64 if total > 2**31 - 1 else tack.i32
     starts = tack.field(idt, shape=(m,))
     if m:
-        exclusive_scan(lengths, starts, m)
+        exclusive_scan(lengths, starts, m, total=False)
     points = tack.Vector.field(3, data.dtype, shape=(total,))
     point_times = tack.field(data.dtype, shape=(total,))
     if m:

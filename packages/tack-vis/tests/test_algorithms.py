@@ -266,3 +266,26 @@ def test_chunk_totals_form_in_the_output_dtype(backend):
     inp.from_numpy(counts)
     assert algorithms.exclusive_scan(inp, out, counts.size) == 20_000_000_000
     np.testing.assert_array_equal(out.to_numpy(), np.arange(1000, dtype=np.int64) * 20_000_000)
+
+
+@pytest.mark.parametrize("n", [0, 1, 256, 3000, 131_089], ids=lambda n: f"n{n}")
+def test_scans_without_a_total_never_read_the_host(backend, monkeypatch, n):
+    """total=False gives the same prefixes and no host read: nothing waits for the
+    device, so a caller needing only offsets keeps its launches queued."""
+    from tack.algorithms import scan
+
+    def refuse(field, count):
+        raise AssertionError("total=False read the total")
+
+    values = np.random.default_rng(n).integers(0, 50, max(n, 1)).astype(np.int32)[:n]
+    for which, inclusive in ((algorithms.exclusive_scan, False),
+                             (algorithms.inclusive_scan, True)):
+        a = tack.field(tack.i32, shape=(max(n, 1),))
+        if n:
+            a.from_numpy(np.concatenate([values, np.zeros(max(n, 1) - n, np.int32)]))
+        out = tack.field(tack.i64, shape=(max(n, 1),))
+        with monkeypatch.context() as m:
+            m.setattr(scan, "_total", refuse)
+            assert which(a, out, n, total=False) is None
+        want = np.cumsum(values) if inclusive else np.concatenate([[0], np.cumsum(values)[:-1]])
+        np.testing.assert_array_equal(out.to_numpy()[:n], want[:n])
