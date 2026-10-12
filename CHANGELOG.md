@@ -94,8 +94,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   field-reduction contract applies. f64 data is now summed in f64:
   `var` of 1e8 + 0..999 is exact where f32 gave nonsense. `count_nonzero`
   counts in i64 and no longer wraps past 2^31. Integer products no longer
-  wrap before converting. `var` returns a Python float, not NumPy's
-  float32, and `absmax` propagates a NaN.
+  wrap before converting, and neither does the mean `var` takes of
+  integer data (four equal i64 values of 2^62 had a variance of 2e37).
+  `var` returns a Python float, not NumPy's float32, and `absmax`
+  propagates a NaN.
 
 - On GPUs, a floating-point `exclusive_scan` or `inclusive_scan` combines
   lanes in tree order, so it can differ from `np.cumsum` in the last bits
@@ -153,6 +155,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   limits, decided per dispatch with no recompile.
 
 ### Fixes with no source change needed
+
+- `tack.interop.vtk.dataset_to_vtk` writes an order-2 `H1` field's values
+  at the points, one tuple per point of the linear grid; it attached all
+  of the field's nodes, which VTK then could not read back.
+  `vtk_to_dataset` reads an empty `vtkUnstructuredGrid` that has no
+  `vtkPoints`, and `mfem_to_dataset` an MFEM mesh with no vertices; both
+  raised.
 
 - On Metal, a field made before `tack.init` was called again could be
   written by the host while launches that read it were still queued:

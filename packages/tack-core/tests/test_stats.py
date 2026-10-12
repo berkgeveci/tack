@@ -313,3 +313,13 @@ def test_statistics_of_no_elements(backend):
     assert absmax(f, n=0) == 0.0 and dot(f, f, n=0) == 0.0 and count_nonzero(f, n=0) == 0
     with pytest.raises(ValueError, match="Unsupported norm order"):
         norm(f, ord=3, n=0)
+
+
+@pytest.mark.parametrize("dtype, value", [(tack.i64, 2**62), (tack.u64, 2**63),
+                                          (tack.i32, 2**30)], ids=["i64", "u64", "i32"])
+def test_var_of_integers_does_not_wrap_the_mean(backend, dtype, value):
+    """The mean of integers summed in their own width wrapped to 0 (the outside
+    review's 1-e): var of four equal 2^62 gave 2e37, of 2^63 infinity."""
+    f = tack.field(dtype, shape=(4,))
+    f.from_numpy(np.full(4, value, dtype.numpy_dtype))
+    assert var(f) == 0.0

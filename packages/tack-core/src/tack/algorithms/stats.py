@@ -22,6 +22,13 @@ import tack
 # input once, before any arithmetic, to the precision of ``out``.
 
 @tack.kernel
+def _converted(data, one, out, n):
+    """x[i] in the accumulation precision."""
+    for i in range(n):
+        out[i] = data[i] * one
+
+
+@tack.kernel
 def _squared_diffs(data, mean_val, one, out, n):
     """(x[i] - mean)²."""
     for i in range(n):
@@ -121,7 +128,12 @@ def var(data, n=None):
     n, data = _count(n, data)
     if n == 0:
         return float('nan')
-    mean_val = _prefix(data, n).sum() / n
+    if data.dtype in (tack.f32, tack.f64):
+        mean_val = _prefix(data, n).sum() / n
+    else:
+        # An integer sum wraps (2^62 four times is 0): the values convert
+        # first, as every other term does.
+        mean_val = _terms(_converted, n, data).sum() / n
     terms = tack.field(dtype=_precision(data), shape=(n,))
     _squared_diffs(data, mean_val, 1.0, terms, n)
     return terms.sum() / n
