@@ -51,6 +51,16 @@ class DeviceBuffer:
     def fill(self, value):
         raise NotImplementedError
 
+    def fill_bytes(self, pattern: bytes) -> bool:
+        """Fill the storage with ``pattern``, one element's bytes, repeated.
+
+        Returns false when this buffer cannot, and the caller uploads the
+        field instead: right for host-visible storage, which this default
+        serves. CUDA, HIP and Level Zero override it to fill on the device
+        (``runtime/device_fill.py``).
+        """
+        return False
+
     @property
     def address(self) -> int:
         """Address used by kernels, for validating imported atomic storage."""
@@ -214,7 +224,9 @@ class Field:
             raise ValueError(
                 f"fill() value has shape {element.shape}; "
                 f"the elements of this field have shape {element_shape}")
-        self.from_numpy(np.broadcast_to(element, vector_shape))
+        from tack.runtime.device_fill import element_pattern
+        if not self._buffer.fill_bytes(element_pattern(element, self.dtype.numpy_dtype)):
+            self.from_numpy(np.broadcast_to(element, vector_shape))
 
     def _reduce(self, op: str):
         """Reduce on the device where that is supported, else via numpy."""

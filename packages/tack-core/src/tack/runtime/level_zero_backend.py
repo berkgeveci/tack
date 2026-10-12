@@ -32,6 +32,7 @@ from tack.lang.workgroup_participation import (
     check_workgroup_launch,
     requires_full_workgroups,
 )
+from tack.runtime import device_fill
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_launch,
@@ -418,6 +419,10 @@ def _setup_argtypes(ze):
     ze.zeCommandListAppendMemoryCopy.argtypes = [P, P, P, ctypes.c_size_t, P, U32, P]
     ze.zeCommandListAppendMemoryCopy.restype = ctypes.c_int32
 
+    ze.zeCommandListAppendMemoryFill.argtypes = [P, P, P, ctypes.c_size_t, ctypes.c_size_t, P,
+                                                 U32, P]
+    ze.zeCommandListAppendMemoryFill.restype = ctypes.c_int32
+
     ze.zeCommandListAppendLaunchKernel.argtypes = [P, P, P, P, U32, P]
     ze.zeCommandListAppendLaunchKernel.restype = ctypes.c_int32
 
@@ -667,9 +672,8 @@ class L0Buffer(DeviceBuffer):
             ctypes.byref(self._device_ptr)),
             "zeMemAllocDevice")
 
-        # Zero-initialize via host staging buffer
-        zeros = np.zeros(shape, dtype=self._numpy_dtype)
-        self._copy_to_device(zeros)
+        # Zero-initialize, on the device
+        self.fill_bytes(b"\0")
 
     @property
     def address(self) -> int:
@@ -732,8 +736,41 @@ class L0Buffer(DeviceBuffer):
         return out
 
     def fill(self, value):
-        arr = np.full(self._shape, value, dtype=self._numpy_dtype)
-        self.from_numpy(arr)
+        self.fill_bytes(device_fill.scalar_pattern(value, self._numpy_dtype))
+
+    def fill_bytes(self, pattern):
+        ze = _get_ze()
+        backend, base = self._backend, self.address
+
+        def native(pattern):
+            # The compute group's fill takes a power-of-two pattern up to its
+            # maximum; the list is synchronous, so the pattern outlives it.
+            size = len(pattern)
+            if size & (size - 1) or size > backend._max_fill_pattern:
+                return False
+            buffer = ctypes.create_string_buffer(pattern, size)
+            with backend._launch_lock:
+                _check_ze(ze.zeCommandListAppendMemoryFill(
+                    backend._imm_cmd_list, self._device_ptr, buffer, size, self._nbytes,
+                    None, 0, None),
+                    "zeCommandListAppendMemoryFill")
+            return True
+
+        def write(offset, data):
+            source = ctypes.create_string_buffer(data, len(data))
+            with backend._launch_lock:
+                _check_ze(ze.zeCommandListAppendMemoryCopy(
+                    backend._imm_cmd_list, base + offset, source, len(data), None, 0, None),
+                    "zeCommandListAppendMemoryCopy (H2D pattern)")
+
+        def copy(dst, src, size):
+            with backend._launch_lock:
+                _check_ze(ze.zeCommandListAppendMemoryCopy(
+                    backend._imm_cmd_list, base + dst, base + src, size, None, 0, None),
+                    "zeCommandListAppendMemoryCopy (D2D)")
+
+        device_fill.fill(self._nbytes, pattern, native, write, copy)
+        return True
 
     @property
     def nbytes(self) -> int:
@@ -1120,6 +1157,7 @@ class LevelZeroBackend(Backend):
                 break
         if self._compute_ordinal is None:
             raise RuntimeError("No compute queue group found on Level Zero device")
+        self._max_fill_pattern = qg_props[self._compute_ordinal].maxMemoryFillPatternSize
 
     def _create_queues(self, ze):
         # Create command queue (synchronous mode for simplicity)

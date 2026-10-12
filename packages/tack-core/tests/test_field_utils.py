@@ -342,6 +342,56 @@ def test_fill_rejects_a_value_of_the_wrong_shape(backend):
         scalars.fill([1.0, 2.0])
 
 
+_FILL_DTYPES = [tack.i8, tack.u8, tack.i16, tack.u16, tack.i32, tack.u32, tack.i64, tack.u64,
+                tack.f32, tack.f64]
+
+
+@pytest.mark.parametrize("dtype", _FILL_DTYPES, ids=str)
+def test_fill_matches_numpy_full(backend, dtype):
+    """GPU fills run on the device: a byte memset when every byte of the
+    value is the same (0, -1, 255), 16- and 32-bit memsets, and otherwise
+    one element doubled by device copies (8-byte values). Each must store
+    what `np.full` stores, at sizes that end a doubling early and at none."""
+    from tack.runtime.dispatch import get_backend
+    if dtype not in get_backend().supported_dtypes:
+        pytest.skip(f"{dtype} is not supported on this backend")
+    kind = dtype.numpy_dtype.kind
+    values = [0, 1, 7, 100] + ([255] if kind == "u" else [-1]) + \
+        ([2.5, -0.0, 1e10] if kind == "f" else [])
+    for value in values:
+        for n in (0, 1, 3, 1000, 4097):
+            f = tack.field(dtype=dtype, shape=(n,))
+            f.fill(value)
+            np.testing.assert_array_equal(f.to_numpy(), np.full(n, value, dtype.numpy_dtype),
+                                          err_msg=f"{dtype} fill({value}) of {n}")
+    np.testing.assert_array_equal(tack.zeros(dtype, (5, 3)).to_numpy(),
+                                  np.zeros((5, 3), dtype.numpy_dtype))
+    np.testing.assert_array_equal(tack.ones(dtype, (7,)).to_numpy(), np.ones(7, dtype.numpy_dtype))
+
+
+def test_fill_stays_on_the_device(backend):
+    """A fill on CUDA, HIP or Level Zero does not build the field on the host
+    and upload it: that was most of a 5M-cell contour's time."""
+    from tack.runtime.dispatch import get_backend
+    if get_backend().name not in ("cuda", "hip", "level_zero"):
+        pytest.skip("host-visible storage fills in place")
+    cases = ((tack.field(dtype=tack.f32, shape=(1000,)), 2.5),
+             (tack.field(dtype=tack.i64, shape=(1000,)), -7),
+             (tack.Vector.field(3, dtype=tack.f32, shape=(1000,)), [1.0, 2.0, 3.0]))
+    for f, value in cases:
+        def refuse(arr):
+            raise AssertionError(f"fill uploaded {np.asarray(arr).nbytes} bytes")
+        f._buffer.from_numpy = refuse
+        f.fill(value)
+        del f._buffer.from_numpy
+        if np.ndim(value):
+            np.testing.assert_array_equal(
+                f.to_numpy(vectors=True),
+                np.broadcast_to(np.asarray(value, np.float32), (1000, 3)))
+        else:
+            np.testing.assert_array_equal(f.to_numpy(), np.full(1000, value, f.dtype.numpy_dtype))
+
+
 # --- Zero-dimensional scalar fields ---
 
 @tack.kernel
