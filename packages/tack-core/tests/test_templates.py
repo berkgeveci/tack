@@ -405,6 +405,30 @@ def test_kernel_method_of_an_undecorated_class_says_what_is_missing():
         Plain().run()
 
 
+def test_a_changed_class_constant_is_seen(backend):
+    """Which class attributes are constants is found once per class; their
+    values are read on every launch, so changing one specializes anew."""
+
+    @tack.device_class
+    class Scaled:
+        FACTOR = 2
+
+        def __init__(self, n):
+            self.values = tack.field(dtype=tack.f32, shape=(n,))
+
+    @tack.kernel
+    def fill(obj: tack.template()):
+        for i in range(obj.values.shape[0]):
+            obj.values[i] = obj.FACTOR * i
+
+    obj = Scaled(4)
+    fill(obj)
+    np.testing.assert_array_equal(obj.values.to_numpy(), [0, 2, 4, 6])
+    Scaled.FACTOR = 3
+    fill(obj)
+    np.testing.assert_array_equal(obj.values.to_numpy(), [0, 3, 6, 9])
+
+
 def test_data_oriented_is_device_class_under_taichis_name(backend):
     """The old name still decorates a class that kernels take."""
     assert tack.data_oriented is tack.device_class
