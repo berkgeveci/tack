@@ -24,6 +24,7 @@ from tack.lang.field import DeviceBuffer
 from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
+from tack.runtime import device_fill
 from tack.runtime.backend import Backend
 from tack.runtime.kernel_utils import (
     _get_launch,
@@ -142,8 +143,33 @@ class HIPBuffer(DeviceBuffer):
         return out
 
     def fill(self, value):
-        arr = np.full(self._shape, value, dtype=self._numpy_dtype)
-        self.from_numpy(arr)
+        self.fill_bytes(device_fill.scalar_pattern(value, self._numpy_dtype))
+
+    def fill_bytes(self, pattern):
+        base = self.address
+
+        def native(pattern):
+            byte = device_fill.uniform_byte(pattern)
+            if byte is not None:
+                _check_hip(hip.hipMemsetD8(self._device_ptr, byte, self._nbytes))
+            elif len(pattern) == 2:
+                _check_hip(hip.hipMemsetD16(self._device_ptr, device_fill.as_unsigned(pattern),
+                                            self._nbytes // 2))
+            elif len(pattern) == 4:
+                _check_hip(hip.hipMemsetD32(self._device_ptr, device_fill.as_unsigned(pattern),
+                                            self._nbytes // 4))
+            else:
+                return False
+            return True
+
+        device_fill.fill(
+            self._nbytes, pattern, native,
+            lambda offset, data: _check_hip(hip.hipMemcpy(
+                base + offset, np.frombuffer(bytearray(data), np.uint8), len(data),
+                hip.hipMemcpyKind.hipMemcpyHostToDevice)),
+            lambda dst, src, size: _check_hip(hip.hipMemcpy(
+                base + dst, base + src, size, hip.hipMemcpyKind.hipMemcpyDeviceToDevice)))
+        return True
 
     @property
     def nbytes(self) -> int:
