@@ -82,6 +82,6 @@ def probe(data, where, fields=None, locator=None):
     if m:
         _valid(found, valid)
     out["valid"] = Field(Values(where, "points"), valid)
-    kept = {name: f for name, f in where.fields.items() if name != "shape"}
+    kept = dict(where.fields)
     kept.update(out)
     return DataSet(where.topology, where.geometry, fields=kept, sets=dict(where.sets))

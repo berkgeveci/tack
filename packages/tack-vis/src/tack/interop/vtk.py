@@ -394,7 +394,7 @@ def dataset_to_vtk(data):
     ``H1`` fields and values on points become point data, ``Constant`` fields
     and values on cells cell data. ``L2`` fields have no VTK array to go
     to without duplicating points, and fields on faces or edges none at
-    all; they are left out. The geometry (the ``"shape"`` field) becomes the
+    all; they are left out. The geometry (``data.geometry``) becomes the
     points, so it must be ``H1``.
     """
     import numpy as np
@@ -486,8 +486,6 @@ def dataset_to_vtk(data):
         raise TypeError(f"unsupported topology {type(topology).__name__} with "
                         f"{type(coordinates).__name__}")
     for name, field in data.fields.items():
-        if name == "shape":
-            continue                                  # the geometry: the points above
         space = field.space
         if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
             grid.GetPointData().AddArray(_field_to_array(name, field.values))

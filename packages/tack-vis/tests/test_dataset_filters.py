@@ -414,7 +414,7 @@ def test_threshold_carries_l2_blocks(backend):
     corners = (centers[:, None, :] + 0.9 * (data.positions()[connectivity]
                                             - centers[:, None, :])).reshape(-1, 3)
     shrunk = td.DataSet(data.topology, td.Field(td.L2(data), _vectors(corners)),
-                        fields={k: v for k, v in data.fields.items() if k != "shape"})
+                        fields=dict(data.fields))
     c = data.fields["c"].values.to_numpy()
     kept = np.flatnonzero((c >= -0.2) & (c <= 0.4))
     out = td.threshold(shrunk, "c", -0.2, 0.4)

@@ -226,8 +226,8 @@ def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=N
 
 
 def selected(data, fields):
-    """The names of ``data``'s fields (the geometry aside) that ``fields`` selects."""
-    names = [name for name in data.fields if name != "shape"]
+    """The names of ``data``'s fields that ``fields`` selects."""
+    names = list(data.fields)
     if fields is None:
         return names
     fields = [fields] if isinstance(fields, str) else list(fields)

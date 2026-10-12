@@ -372,17 +372,24 @@ def test_rectilinear_round_trip(backend):
                                data.fields["h"].values.to_numpy())
 
 
-# ── Geometry is a field ─────────────────────────────────────────────
+# ── Geometry is a field, kept apart ─────────────────────────────────
 
-def test_geometry_is_the_shape_field(backend):
+def test_geometry_is_a_field_kept_apart(backend):
     data = _two_hexes_and_a_pyramid()
-    assert data.geometry is data.fields["shape"]
     assert data.geometry.space is td.H1(data)
+    assert not any(f is data.geometry for f in data.fields.values())
     grid = td.rectilinear_grid([0, 1, 2], [0, 1], [0, 1])
     assert grid.geometry.space is td.H1(grid)
     assert isinstance(grid.geometry.values, td.CartesianProduct)
-    with pytest.raises(ValueError, match="is the geometry"):
-        td.DataSet(data.topology, data.positions(), fields={"shape": data.geometry})
+    # "shape" is an ordinary name now, and the geometry can be replaced in place.
+    named = td.DataSet(data.topology, data.positions(),
+                       fields={"shape": td.Field(td.Constant(data), td.ConstantArray(1.0, 3))})
+    assert named.fields["shape"].space is td.Constant(data)
+    moved = data.positions() + 1.0
+    named.geometry = moved
+    np.testing.assert_allclose(named.positions(), moved)
+    with pytest.raises(TypeError, match="H1 or L2"):
+        named.geometry = td.Field(td.Values(data, "points"), data.geometry.values)
     with pytest.raises(TypeError, match="H1 or L2"):
         td.DataSet(data.topology, td.Field(td.Values(data, "points"), data.geometry.values))
 

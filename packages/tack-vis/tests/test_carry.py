@@ -34,11 +34,11 @@ def _every_kind():
 
 def _kinds(out):
     return {name: (type(f.space).__name__, getattr(f.space, "on", None))
-            for name, f in out.fields.items() if name != "shape"}
+            for name, f in out.fields.items()}
 
 
 def _names(out):
-    return set(out.fields) - {"shape"}          # the geometry is always there
+    return set(out.fields)
 
 
 def test_threshold_keeps_whole_cells_and_all_their_data(backend):

@@ -21,8 +21,8 @@ from tack.data import algorithms as alg
 - A **`Field`** is a space and its values.
 - A **space** says where values live and how they are interpolated, if at
   all. It is built on a topology and owns its layout.
-- The **geometry** is the field named `"shape"`, so point positions are
-  data like any other.
+- The **geometry** is a field, so point positions are data like any other.
+  It is kept apart from the named fields, as `data.geometry`.
 - **Kernels** run over an iteration domain (cells, faces, edges or a face
   set) through `for_each`. That makes one launch per group of like entities,
   and each field argument becomes a view specialized to the group.
@@ -184,8 +184,10 @@ direction matrix included.
 **Geometry.** `DataSet(topology, geometry, fields=None, sets=None,
 dtype=tack.f32)` takes the geometry as an `H1` or `L2` field of 3-vectors,
 or as positions per point (any array of 3-vectors), which become an `H1`
-field. It is kept as `fields["shape"]`. `data.geometry` returns it and
-`data.positions()` gives the positions on the host. An `L2` geometry pulls
+field. It is kept apart from `fields`: `data.geometry` returns it, assigning
+`data.geometry` replaces it (checked as the constructor checks it), and
+`data.positions()` gives the positions on the host. Algorithms move it with
+the cells; it is never among the fields they carry or select. An `L2` geometry pulls
 cells apart without changing the topology. A geometry of order 2 is curved.
 
 ## Sets
@@ -508,9 +510,10 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 **Settled by the prototype:**
 
 - continuity follows from where values live;
-- fields are separate kernel arguments, so no nested templates;
+- fields are separate kernel arguments (templates may now hold templates,
+  which the implicit arrays use; whether views should is open);
 - shape, order and size groups are one mechanism;
-- geometry is a field;
+- geometry is a field, kept apart from the named fields;
 - a field's values may be any array, explicit or implicit;
 - polyhedra are a separate path that shares the data model;
 - face values have an orientation where it matters.
@@ -523,7 +526,6 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 - a general `project(field, space)`, of which `to_points`, `to_cells` and
   `discontinuous` are special cases;
 - whether views should keep one shared namespace;
-- `"shape"` as a named field or a separate attribute;
 - filters on higher-order data (subdivide, rather than linearize);
 - clip on polyhedra;
 - locating points in polyhedra (no parametric coordinates; a containment

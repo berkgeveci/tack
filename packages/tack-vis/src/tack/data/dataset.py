@@ -12,9 +12,9 @@
   field, or an implicit array from ``tack.data.arrays`` (a
   ``CartesianProduct`` of three axes, a ``ConstantArray``, a
   ``CountingArray``);
-- the *geometry* is a field too, named ``"shape"``: ``H1`` positions, one
-  per point (a rectilinear grid's are a ``CartesianProduct``), or ``L2``
-  positions, each cell's own corners;
+- the *geometry* is a field too, kept apart from the named fields
+  (``data.geometry``): ``H1`` positions, one per point (a rectilinear grid's
+  are a ``CartesianProduct``), or ``L2`` positions, each cell's own corners;
 - *sets* are named arrays of entity ids, such as the boundary faces.
 
 ``for_each(kernel, data, domain, *args)`` runs ``kernel`` once per shape in
@@ -150,17 +150,17 @@ def _geometry_parts(data, group, kind):
 # ── Datasets ────────────────────────────────────────────────────────
 
 class DataSet:
-    """A topology, named fields and named sets. The geometry is the field named
-    ``"shape"``, given as ``geometry``: a ``Field`` in ``H1`` or ``L2``, or positions
-    per point (a host array, or any array of 3-vectors, such as a device field or
-    a ``CartesianProduct``), which become an ``H1`` field."""
+    """A topology, a geometry, named fields and named sets. The geometry is a
+    ``Field`` in ``H1`` or ``L2`` of 3-vectors -- or positions per point (a host
+    array, or any array of 3-vectors, such as a device field or a
+    ``CartesianProduct``), which become an ``H1`` field -- kept apart from
+    ``fields`` as ``data.geometry``: algorithms move it with the cells, never as
+    one of the fields they carry or select."""
 
     def __init__(self, topology, geometry, fields=None, sets=None, dtype=tack.f32):
         self.topology = topology
+        self._geometry = _as_geometry(geometry, topology, dtype)
         self.fields = dict(fields or {})
-        if "shape" in self.fields:
-            raise ValueError('"shape" is the geometry; pass it as geometry')
-        self.fields["shape"] = _as_geometry(geometry, topology, dtype)
         for name, field in self.fields.items():
             if field.space.topology is not topology:
                 raise ValueError(f"field {name!r} is on another topology")
@@ -168,8 +168,12 @@ class DataSet:
 
     @property
     def geometry(self):
-        """The geometry: the field named ``"shape"``."""
-        return self.fields["shape"]
+        """The geometry, a field of positions in ``H1`` or ``L2``."""
+        return self._geometry
+
+    @geometry.setter
+    def geometry(self, geometry):
+        self._geometry = _as_geometry(geometry, self.topology, self.dtype)
 
     @property
     def dtype(self):

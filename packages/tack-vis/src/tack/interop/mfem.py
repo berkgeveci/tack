@@ -231,7 +231,7 @@ def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
         # The corners first, to have a dataset to number the quadratic nodes on;
         # then the curved geometry, MFEM's nodes at those nodes.
         space, values = _quadratic_values(data, mesh, nodes)
-        data.fields["shape"] = Field(space, _field_values(values, dtype))
+        data.geometry = Field(space, _field_values(values, dtype))
     attributes = np.array([mesh.GetAttribute(e) for e in range(mesh.GetNE())], np.int32)
     data.fields["attribute"] = Field(Constant(data), _field_values(attributes, tack.i32))
     for name, gf in (fields or {}).items():
