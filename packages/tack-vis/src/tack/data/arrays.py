@@ -397,6 +397,8 @@ def Components(*arrays):
         raise TypeError("Components takes two to four scalar arrays")
     if len({size_of(p) for p in parts}) != 1:
         raise ValueError("the component arrays differ in size")
+    if len({dtype_of(p) for p in parts}) != 1:
+        raise TypeError("the component arrays differ in type: Cast them to one")
     out = {2: _Components2, 3: _Components3, 4: _Components4}[len(parts)]()
     for c, part in enumerate(parts):
         setattr(out, f"c{c}", part)

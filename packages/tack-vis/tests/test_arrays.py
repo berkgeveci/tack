@@ -145,6 +145,11 @@ def test_refusals():
         td.Function(lambda k: k, 3)
     with pytest.raises(ValueError, match="component"):
         td.ExtractComponent(td.CountingArray(3), 0)
+    # One type for all components, as Concatenate has one: i32 then f32 cut 1.75 to 1.
+    with pytest.raises(TypeError, match="differ in type"):
+        td.Components(td.CountingArray(3), td.CountingArray(3, 0.25, 1.5))
+    assert td.Components(td.Cast(td.CountingArray(3), tack.f32),
+                         td.CountingArray(3, 0.25, 1.5)).dtype == tack.f32
 
 
 @pytest.mark.skipif(vtk is None, reason="needs VTK")
