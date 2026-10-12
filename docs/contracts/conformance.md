@@ -80,7 +80,8 @@ named.
 | Per-backend runtime behavior | `test_metal.py`, `test_cuda.py`, `test_hip.py` |
 | CPU threading and NUMA | `test_cpu_threading.py`, `test_threading_benchmark.py`, `test_numa.py` |
 | Rendering correctness | `tack-rendering/tests/test_raster_differential.py`, `test_raster_winners.py`, `test_rasterize.py`, `test_mixed_render.py`, `test_bvh.py`, and the remaining rendering modules |
-| Visualization algorithms | `tack-vis/tests/test_flying_edges.py`, `test_compute_normals.py`, `test_cell_to_point.py`, `test_amr_blanking.py`, `test_fe.py`, `test_algorithms.py` |
+| Datasets (`tack.data`) | `tack-vis/tests/test_dataset_api.py`, `test_dataset_filters.py`, `test_shapes.py`, `test_polyhedra.py`, `test_faces_2d.py`, `test_polylines.py`, `test_project.py`, `test_sets.py`, `test_carry.py`, `test_arrays.py`, `test_ids.py`, `test_buckets.py`, `test_clip.py`, `test_gradients.py`, `test_transforms.py`, `test_implicit.py`, `test_probe.py`, `test_flow.py`, `test_refinement_and_sources.py`, `test_vtk_interop.py`, `test_mfem_interop.py`; most compare with VTK where it is installed, and `pytest --ids=i64` reruns them with 64-bit ids |
+| Deprecated visualization worklets | `tack-vis/tests/test_flying_edges.py`, `test_compute_normals.py`, `test_cell_to_point.py`, `test_amr_blanking.py`, `test_fe.py`, `test_algorithms.py` |
 | Package namespace | `tack-vis/tests/test_namespace.py` |
 | Validation tooling | `test_examples.py`, `test_validation_harness.py`, `test_compiler_tools.py` |
 
