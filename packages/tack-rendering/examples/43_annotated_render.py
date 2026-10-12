@@ -1,6 +1,7 @@
 """43 -- Annotated render: color bar, axis indicator, and text overlay."""
 
 import argparse
+import os
 
 import numpy as np
 
@@ -99,7 +100,8 @@ image = annotate(image, [
 
 try:
     from PIL import Image
-    Image.fromarray(image).save("pathtrace_annotated.png")
+    os.makedirs("results", exist_ok=True)
+    Image.fromarray(image).save("results/pathtrace_annotated.png")
     print("Saved: pathtrace_annotated.png")
 except ImportError:
     print("Install Pillow to save images")

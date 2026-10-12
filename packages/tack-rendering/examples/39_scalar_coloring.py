@@ -1,6 +1,7 @@
 """39 -- Scalar field coloring: sphere colored by height using ColorTable."""
 
 import argparse
+import os
 
 import numpy as np
 
@@ -93,7 +94,8 @@ render(canvas, scene, camera, samples=4, max_bounces=1)
 img = canvas.to_numpy()
 try:
     from PIL import Image
-    fname = f"pathtrace_scalar_{_args.preset}.png"
+    fname = f"results/pathtrace_scalar_{_args.preset}.png"
+    os.makedirs("results", exist_ok=True)
     Image.fromarray(img).save(fname)
     print(f"Saved: {fname}")
 except ImportError:

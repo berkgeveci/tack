@@ -1,6 +1,7 @@
 """33 -- Path trace a cube and a sphere."""
 
 import argparse
+import os
 import time
 
 import numpy as np
@@ -150,8 +151,9 @@ print(f"Render: {t_render:.4f}s")
 img = canvas.to_numpy()
 try:
     from PIL import Image
-    Image.fromarray(img).save("pathtrace_primitives.png")
+    os.makedirs("results", exist_ok=True)
+    Image.fromarray(img).save("results/pathtrace_primitives.png")
     print("Saved: pathtrace_primitives.png")
 except ImportError:
-    np.save("pathtrace_primitives.npy", img)
+    np.save("results/pathtrace_primitives.npy", img)
     print("Saved: pathtrace_primitives.npy (install Pillow for PNG)")

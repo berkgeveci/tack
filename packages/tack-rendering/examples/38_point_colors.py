@@ -1,6 +1,7 @@
 """38 -- Per-vertex coloring: sphere colored by height."""
 
 import argparse
+import os
 
 import numpy as np
 
@@ -90,7 +91,8 @@ render(canvas, scene, camera, samples=4, max_bounces=1)
 img = canvas.to_numpy()
 try:
     from PIL import Image
-    Image.fromarray(img).save("pathtrace_pointcolors.png")
+    os.makedirs("results", exist_ok=True)
+    Image.fromarray(img).save("results/pathtrace_pointcolors.png")
     print("Saved: pathtrace_pointcolors.png")
 except ImportError:
     pass
