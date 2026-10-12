@@ -6,6 +6,7 @@ from tack.data import ids as id_types
 from tack.data import shapes
 from tack.data.algorithms._common import _close
 from tack.data.carry import Pieces, Same, Take, carry
+from tack.data.sets import Set
 from tack.data.spaces import H1
 from tack.data.topology import UnstructuredTopology
 
@@ -40,8 +41,8 @@ def _face_cells(ids, sides, out):
 
 
 def extract_surface(data, faces, fields=None):
-    """The ``faces`` -- a set's name in ``data.sets``, or face ids (a field or an
-    array, as ``boundary_faces`` returns) -- as a dataset on the same points: a 3D
+    """The ``faces`` -- a face ``Set`` (as ``boundary_faces`` returns), a set's name
+    in ``data.sets``, or face ids (a field or an array) -- as a dataset on the same points: a 3D
     mesh's faces as triangles, quads or polygons, each in its side 0's outward
     order; a 2D mesh's edges as line cells; a polyline mesh's ends as vertex
     cells. Fields on faces become the surface's
@@ -93,9 +94,14 @@ def _surface_loops(ids, face_offsets, face_points, starts, loops):
 
 
 def _face_ids(data, faces):
-    """``faces``, a set's name or face ids, as a field of the topology's ids."""
+    """``faces`` -- a face set, its name, or face ids -- as a field of the topology's
+    ids."""
     if isinstance(faces, str):
-        return data.sets[faces]
+        faces = data.sets[faces]
+    if isinstance(faces, Set):
+        if faces.on != "faces":
+            raise ValueError(f"extract_surface takes faces, not a set of {faces.on}")
+        return faces.ids
     return id_types.as_ids(faces, data.id_dtype)
 
 

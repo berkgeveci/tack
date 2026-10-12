@@ -228,12 +228,35 @@ cells apart without changing the topology. A geometry of order 2 is curved.
 
 ## Sets
 
-`data.sets` maps a name to an array of face ids. `boundary_faces(data)`
-returns the boundary's face ids; `data.sets["boundary"] = boundary_faces(data)`
-keeps it under a name. Any set's name is an iteration domain.
+A `Set(data, on, ids)` selects some of a topology's points, cells or faces
+(`on` is `"points"`, `"cells"` or `"faces"`). Its `ids` are kept sorted and
+unique, in the topology's `id_dtype`; an id outside the topology is refused
+when the set is made. `flags()` gives membership, 1 or 0 per entity.
 
-**Open:** cell sets, side sets given as (cell, local face), and boundary
-entities from readers (Exodus side sets, MFEM boundary attributes).
+- **Naming.** `data.sets` maps names to sets of the dataset's own topology.
+  Anything else is refused when it is put in: an array (wrap it in a `Set`),
+  a set of another topology, or a name that is a domain's (`"cells"`).
+- **Builders return the set.** `boundary_faces(data)` is a face set; name
+  it to keep it: `data.sets["boundary"] = boundary_faces(data)`.
+- **Side sets.** A face set is a side set: a boundary face has one side.
+  `Set.from_sides(data, cells, local_faces)` takes (cell, local face) pairs,
+  as Exodus side sets give them; local faces are numbered as the cell view
+  numbers them. Which side was named is not kept.
+- **Iteration.** A cell or face set's name is an iteration domain:
+  `for_each(kernel, data, "inlet", ...)`. A cell set runs over the cell
+  groups' subgroups of its members, so field views and varying spaces work
+  as on all cells. A point set is not a domain (points have no view): loop
+  over its `ids`.
+- **Carried through filters**, by the maps that carry fields: an output
+  entity is in a set when the input entity it came from is. Kept cells keep
+  their sets (`threshold`, `extract_cells`), pieces of cells their cells'
+  (`contour`, `clip`), and a face set becomes a cell set where faces become
+  cells (`external_faces`, `extract_surface`). A set of entities the filter
+  makes anew -- interpolated points, faces derived afresh -- is left
+  behind. Filters that keep the topology keep every set.
+
+**Open:** boundary entities from readers mapped onto sets (Exodus side and
+node sets, MFEM boundary attributes).
 
 ## Kernels
 
@@ -250,7 +273,7 @@ td.for_each(_jump, data, "faces", cell_values, out)
 
 `for_each(kernel, data, domain, *args)`:
 
-- `domain` is `"cells"`, `"faces"`, `"edges"` or the name of a face set.
+- `domain` is `"cells"`, `"faces"`, `"edges"` or the name of a cell or face set.
 - It makes one launch per group. The kernel's first argument is the view of
   that group (`for i in view`). Each `Field` among `args` becomes its view
   for the same group, so `u.value(i, pc)` reads entity `i`. Other arguments
@@ -557,7 +580,6 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 
 **Open:**
 
-- sets beyond faces;
 - coefficient layout (DOF-fastest or cell-fastest);
 - whether views should keep one shared namespace;
 - filters on higher-order data (subdivide, rather than linearize);

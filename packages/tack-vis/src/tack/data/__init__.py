@@ -112,6 +112,7 @@ from tack.data.polyhedra import (
     SizeBuckets,
     orient,
 )
+from tack.data.sets import Set
 from tack.data.spaces import H1, L2, Constant, SideTraces, Space, Values
 from tack.data.topology import StructuredTopology, UnstructuredTopology
 
@@ -141,6 +142,7 @@ __all__ = [
     "PolylineTopology",
     "RandomNormal",
     "RandomUniform",
+    "Set",
     "SideTraces",
     "SizeBuckets",
     "Space",

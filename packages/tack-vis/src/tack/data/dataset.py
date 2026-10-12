@@ -15,10 +15,11 @@
 - the *geometry* is a field too, kept apart from the named fields
   (``data.geometry``): ``H1`` positions, one per point (a rectilinear grid's
   are a ``CartesianProduct``), or ``L2`` positions, each cell's own corners;
-- *sets* are named arrays of entity ids, such as the boundary faces.
+- *sets* (``tack.data.sets``) are named selections of points, cells or faces,
+  such as the boundary faces.
 
 ``for_each(kernel, data, domain, *args)`` runs ``kernel`` once per shape in
-the domain -- ``"cells"``, ``"faces"``, ``"edges"``, or a face set --
+the domain -- ``"cells"``, ``"faces"``, ``"edges"``, or a cell or face set --
 passing the domain's view and, for every ``Field`` among ``args``, the
 field's view for the same group. When a field's space varies from cell to
 cell (an order per cell), each shape group is split by the keys of every
@@ -32,6 +33,7 @@ import tack
 from tack.algorithms.sort import _run_offsets, argsort, gather
 from tack.data import arrays, shapes, views
 from tack.data.arrays import CartesianProduct, UniformCoordinates
+from tack.data.sets import Sets
 from tack.data.spaces import H1, L2, Space
 
 __all__ = ["DataSet", "Field", "for_each", "rectilinear_grid"]
@@ -164,7 +166,30 @@ class DataSet:
         for name, field in self.fields.items():
             if field.space.topology is not topology:
                 raise ValueError(f"field {name!r} is on another topology")
-        self.sets = dict(sets or {})
+        self.sets = sets
+
+    @property
+    def sets(self):
+        """Named ``Set``s of this dataset's points, cells or faces, checked as they are
+        put in: a set of another topology, or named for a domain, is refused."""
+        return self._sets
+
+    @sets.setter
+    def sets(self, sets):
+        self._sets = Sets(self.topology, sets)
+
+    def _kind(self, domain):
+        """The entities ``domain`` -- a domain or a set's name -- iterates over."""
+        if domain in ("cells", "faces", "edges"):
+            return domain
+        if domain in self.sets:
+            kind = self.sets[domain].on
+            if kind == "points":
+                raise ValueError(f"set {domain!r} selects points, which are not an "
+                                 "iteration domain: loop over its ids")
+            return kind
+        raise ValueError(f"no domain {domain!r}: cells, faces, edges, or a cell or face set "
+                         f"({', '.join(self.sets) or 'none'})")
 
     @property
     def geometry(self):
@@ -203,33 +228,34 @@ class DataSet:
 
     def domain_groups(self, domain):
         """The ``DomainGroup``s of ``domain``: ``"cells"``, ``"faces"``, ``"edges"``, or
-        the name of a face set in ``sets``."""
+        the name of a cell or face set in ``sets`` -- a cell set's as the cell
+        groups' subgroups of its members."""
+        kind = self._kind(domain)
         if domain == "cells":
             return self.topology.groups()
         if domain == "faces":
             return self.topology.faces().groups()
         if domain == "edges":
             return self.topology.edges().groups()
-        if domain in self.sets:
-            return self.topology.faces().groups(self.sets[domain])
-        raise ValueError(f"no domain {domain!r}: cells, faces, edges, or a set "
-                         f"({', '.join(self.sets) or 'none'})")
+        if kind == "faces":
+            return self.topology.faces().groups(self.sets[domain].ids)
+        return self.launch_groups(domain)
 
     def domain_view(self, domain, group):
         """``group``'s view: kind, shape, geometry, and for cells their incidence when
         faces and edges have been derived."""
         mixins = []
-        kind = domain if domain in ("cells", "faces", "edges") else "faces"
+        kind = self._kind(domain)
         geometry, attributes = _geometry_parts(self, group, kind)
         mixins.extend(geometry)
-        if domain == "cells" and issubclass(group.kind, views._CellsById):
+        if kind == "cells" and issubclass(group.kind, views._CellsById):
             mixins.append(views._PolyhedralWalk)
-        if (domain == "cells" and issubclass(group.kind, views._PolylineCells)
+        if (kind == "cells" and issubclass(group.kind, views._PolylineCells)
                 and self.topology._faces is not None):
             mixins.append(views._PolylineIncidence)
             attributes.update(cell_faces=self.topology.cell_faces,
                               cell_face_sides=self.topology.cell_face_sides)
-        if domain == "cells":
+        if kind == "cells":
             # A subgroup's index(c) is its position in the topology's group, so
             # it shares that group's incidence.
             faces = self.topology._faces
@@ -266,16 +292,20 @@ class DataSet:
         it reads: the domain's groups, each split by the keys of the spaces among
         ``fields`` that vary from cell to cell, and by any other ``keys`` -- objects
         that give each cell a key, as ``polyhedra.SizeBuckets`` does."""
-        groups = self.domain_groups(domain)
-        spaces = []
+        kind = self._kind(domain)
+        members = self.sets[domain] if kind == "cells" and domain != "cells" else None
+        groups = self.topology.groups() if members is not None else self.domain_groups(domain)
+        spaces = [members] if members is not None else []
         for field in fields:
             if field.space.varies and field.space not in spaces:
                 spaces.append(field.space)
         spaces.extend(k for k in keys if k not in spaces)
-        if domain != "cells" or not spaces:
+        if kind != "cells" or not spaces:
             return groups
+        # A cell set splits the groups by membership, and keeps its members.
         return [sub for group in groups if group.count
-                for sub in _subgroups(group, tuple(spaces))]
+                for sub in _subgroups(group, tuple(spaces))
+                if members is None or sub.keys[members] == 1]
 
 
 def for_each(kernel, data, domain, *args):
@@ -286,7 +316,7 @@ def for_each(kernel, data, domain, *args):
     ``u.value(i, pc)`` and ``u.at(i)`` read the entity ``i`` the loop is at.
     Other arguments pass through.
     """
-    kind = domain if domain in ("cells", "faces", "edges") else "faces"
+    kind = data._kind(domain)
     for arg in args:
         if isinstance(arg, Field):
             if arg.space.topology is not data.topology:

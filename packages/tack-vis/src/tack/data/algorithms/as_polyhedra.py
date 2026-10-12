@@ -89,7 +89,7 @@ def as_polyhedra(data, fields=None):
                              num_points=data.num_points)
 
     # The same points, cells and faces (in the shape path's numbering), so the
-    # face sets still apply; edges too, both paths numbering them by (low, high)
+    # sets still apply; edges too, both paths numbering them by (low, high)
     # point ids.
     return carry(data, out, points=Same(), cells=Same(), faces=Same(), edges=Same(),
-                 fields=fields, sets=dict(data.sets))
+                 fields=fields)

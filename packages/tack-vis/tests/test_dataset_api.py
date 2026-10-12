@@ -82,7 +82,7 @@ def test_faces_of_a_mixed_mesh(backend):
     sides = faces.sides.to_numpy(vectors=True)
     shared = {tuple(s) for s in sides if s[2] >= 0}
     assert shared == {(0, 1, 1, 0), (0, 5, 2, 0)}   # hex 0's +x and top faces
-    assert alg.boundary_faces(data).shape[0] == 13
+    assert len(alg.boundary_faces(data)) == 13
 
     jumps = alg.jump(data, td.Field(td.Constant(data), _scalars([1.0, 2.0, 5.0])))
     by_sides = dict(zip(map(tuple, sides), jumps.values.to_numpy()))
@@ -212,7 +212,7 @@ def test_faces_match_vtk(backend, kind):
     surface = vtkGeometryFilter()
     surface.SetInputData(grid)
     surface.Update()
-    assert alg.boundary_faces(data).shape[0] == surface.GetOutput().GetNumberOfCells()
+    assert len(alg.boundary_faces(data)) == surface.GetOutput().GetNumberOfCells()
     _closed_cells_check(data)
 
 
@@ -347,7 +347,7 @@ def test_for_each_over_a_side_set(backend):
     td.for_each(_set_areas, data, "boundary", out)
     out = out.to_numpy()
     np.testing.assert_array_equal(out[boundary.to_numpy()], 1)
-    assert np.count_nonzero(out) == boundary.shape[0]
+    assert np.count_nonzero(out) == len(boundary)
 
 
 def test_a_field_must_live_where_the_loop_is(backend):

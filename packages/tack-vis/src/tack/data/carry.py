@@ -225,6 +225,32 @@ def _carry_field(field, data, out, points, cells, faces, faces_to_cells, edges=N
     return None
 
 
+@tack.kernel
+def _member_of_source(flags, sources, out):
+    for i in range(sources.shape[0]):
+        out[i] = flags[sources[i]]
+
+
+def _carry_set(member, out, points, cells, faces, faces_to_cells):
+    """``member`` on ``out``: the output entities that come from its members, or
+    ``None`` when no map takes its kind there (or a map makes new entities)."""
+    from tack.data.sets import Set
+
+    kind = member.on
+    target = kind
+    mapping = {"points": points, "cells": cells, "faces": faces}[kind]
+    if kind == "faces" and faces_to_cells is not None:
+        mapping, target = faces_to_cells, "cells"
+    if isinstance(mapping, Same):
+        return Set._from_flags(out, target, member.flags())
+    if not isinstance(mapping, Take):
+        return None
+    flags = tack.field(tack.i32, shape=(mapping.ids.shape[0],))
+    if mapping.ids.shape[0]:
+        _member_of_source(member.flags(), mapping.ids, flags)
+    return Set._from_flags(out, target, flags)
+
+
 def selected(data, fields):
     """The names of ``data``'s fields that ``fields`` selects."""
     names = list(data.fields)
@@ -247,7 +273,13 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
     points); ``faces_to_cells`` that ``out``'s cells are ``data``'s faces. A
     kind of entity with no map takes no fields. ``geometry`` is the output's
     geometry field when the filter computed it, otherwise the input's is
-    carried like any point (or L2) field. ``sets`` are the output's sets.
+    carried like any point (or L2) field.
+
+    Sets go by the same maps: an output entity is in a set when the input entity
+    it comes from is, and a face set becomes a cell set where faces become cells
+    (``faces_to_cells``). A set whose kind has no map, or one that makes new
+    entities (``Interpolate``), is left behind; ``sets``, if given, replaces
+    them.
     """
     if geometry is None:
         geometry = _carry_field(data.geometry, data, out, points, cells, faces,
@@ -260,4 +292,10 @@ def carry(data, out, *, points=None, cells=None, faces=None, faces_to_cells=None
                              faces_to_cells, edges)
         if field is not None:
             carried[name] = field
+    if sets is None:
+        sets = {}
+        for name, member in data.sets.items():
+            moved = _carry_set(member, out, points, cells, faces, faces_to_cells)
+            if moved is not None:
+                sets[name] = moved
     return DataSet(out, geometry, fields=carried, sets=sets)
