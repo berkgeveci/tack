@@ -564,3 +564,20 @@ def test_jacobian_of_a_well_formed_solid_has_positive_determinant(f64_backend, s
     cells, pcs, _ = _make_cases(shape, seed=8, count=10)
     _, _, jacobians = _run_geometry(shape, cells, pcs, np.zeros(cells.shape[:2]))
     assert (np.linalg.det(jacobians) > 0).all()
+
+
+@needs_vtk
+def test_the_contour_tables_are_the_generators():
+    """_contour_tables.py is make_contour_tables.py's output, but for the VTK version
+    its header names."""
+    import pathlib
+    import re
+    import subprocess
+    import sys
+
+    package = pathlib.Path(__file__).resolve().parents[1]
+    made = subprocess.run([sys.executable, str(package / "tools" / "make_contour_tables.py")],
+                          capture_output=True, text=True, check=True).stdout
+    kept = (package / "src" / "tack" / "data" / "_contour_tables.py").read_text()
+    version = re.compile(r"VTK \d+(\.\d+)*")
+    assert version.sub("VTK", made) == version.sub("VTK", kept)
