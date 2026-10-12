@@ -885,9 +885,27 @@ def view_class(kind, shape, *mixins):
     """The template class combining ``mixins``, ``kind`` and ``shape``, made once."""
     key = (kind, shape, mixins)
     if key not in _view_classes:
+        _check_names(*mixins, kind, shape)
         name = "".join(m.__name__.strip("_") for m in mixins) + kind.__name__ + shape.__name__
         _view_classes[key] = tack.device_class(type(name, (*mixins, kind, shape), {}))
     return _view_classes[key]
+
+
+def _check_names(*bases):
+    """Refuse a name two of ``bases`` define differently: stacked, one would hide
+    the other unseen. A name both inherit from one class is the same name."""
+    seen = {}
+    for base in bases:
+        names = {}
+        for klass in reversed(base.__mro__[:-1]):
+            names.update(vars(klass))
+        for name, value in names.items():
+            if name.startswith("__") and name.endswith("__"):
+                continue
+            first = seen.setdefault(name, (base, value))
+            if first[1] is not value:
+                raise TypeError(f"{first[0].__name__} and {base.__name__} both define "
+                                f"{name!r}: one would hide the other in a view")
 
 
 class DomainGroup:

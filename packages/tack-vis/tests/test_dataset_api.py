@@ -993,3 +993,26 @@ def test_vtk_edge_cases(backend):
     x = back.positions()
     np.testing.assert_allclose(back.fields["u"].values.to_numpy(), x[:, 0] + 2.0 * x[:, 1],
                                rtol=1e-6)
+
+
+def test_view_mixins_may_not_share_a_name():
+    """Stacked into one view, a name two mixins define would hide one of them."""
+    from tack.data import shapes, views
+
+    class First:
+        @tack.func
+        def value(self, c):
+            return 1
+
+    class Second:
+        @tack.func
+        def value(self, c):
+            return 2
+
+    class Third(First):
+        pass
+
+    with pytest.raises(TypeError, match="First and Second both define 'value'"):
+        views.view_class(views._Cells, shapes.Tetra, First, Second)
+    # The same definition reached twice is one name, not two.
+    assert views.view_class(views._Cells, shapes.Tetra, Third, First)
