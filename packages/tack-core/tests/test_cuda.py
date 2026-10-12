@@ -491,6 +491,23 @@ def test_nvrtc_accepts_safe_option_set():
     assert _compile_ptx(src, "k")
 
 
+def test_nvrtc_leaves_the_thread_locale_alone():
+    """Compiling a kernel must not change Python's default text encoding.
+
+    NVRTC 12.0 left the compiling thread in the C locale, so after the
+    first CUDA kernel every ``read_text()`` without an encoding was ASCII
+    and failed on non-ASCII text. NVRTC 13.2 does not, so on a newer
+    toolkit this only checks that restoring the locale does no harm.
+    """
+    import locale
+
+    from tack.runtime.cuda_backend import _compile_ptx
+    before = locale.getencoding()
+    src = 'extern "C" __global__ void k(float* a) { a[0] = 2.0f; }'
+    assert _compile_ptx(src, "k")
+    assert locale.getencoding() == before
+
+
 def test_ordinary_and_floor_division_kernels_compile_in_sequence():
     """Ordinary and floating floor-division kernels compile and run in
     one process with the same safe settings, preserving the CX7 coverage."""
