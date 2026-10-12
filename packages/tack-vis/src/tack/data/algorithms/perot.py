@@ -44,7 +44,7 @@ def perot(data, flux):
     volumes, centroids = cell_geometry(data)
     out = _vectors(data.num_cells, data.dtype)
     for group in data.launch_groups("cells", []):
-        if group.count and group.shape.DIMENSION == 3:
+        if group.count and group.shape.DIMENSION == data.topology.dimension:
             _perot(data.domain_view("cells", group), materialize(flux.values), areas.values,
                    centers.values, centroids.values, volumes.values, out)
     return Field(Values(data, "cells"), out)

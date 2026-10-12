@@ -38,7 +38,8 @@ def traces(data, field):
            if width else tack.field(arrays.dtype_of(field.values), shape=(out_space.size,)))
     if out_space.size:
         out.fill(0)
+    starts = data.topology.faces().group_starts
     for group in data.launch_groups("cells", [field]):
-        if group.count and group.shape.NUM_FACES:
+        if group.count and id(group.root) in starts:
             _traces(data.domain_view("cells", group), field.view(group), out)
     return Field(out_space, out)

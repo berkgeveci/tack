@@ -55,9 +55,9 @@ def as_polyhedra(data, fields=None):
         raise TypeError("as_polyhedra needs an order-1 H1 geometry: positions per point")
     topology = data.topology
     for group in topology.groups():
-        if group.count and not group.shape.NUM_FACES:
-            raise ValueError(f"{group.shape.__name__} cells have no faces: a polyhedral "
-                             "topology is of 3D cells")
+        if group.count and group.shape.DIMENSION != 3:
+            raise ValueError(f"{group.shape.__name__} cells are not 3D: a polyhedral "
+                             "topology is of 3D cells (as_polygons takes 2D ones)")
     faces = topology.faces()
     nf = faces.num_faces
     idt = topology.id_dtype

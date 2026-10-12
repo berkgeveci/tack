@@ -39,8 +39,10 @@ Pyramid     14   5      3   r, s, t in [0, 1]; the apex is (0, 0, 1)
 =========== ==== ====== === ==============================================
 
 Class constants: ``ID``, ``NUM_POINTS``, ``DIMENSION``, ``NUM_EDGES`` and
-``NUM_FACES`` (as VTK counts them: a line has no edges and a 2D shape no
-faces).
+``NUM_FACES``. Faces are codimension-1: a 3D shape's faces are polygons, a 2D
+shape's are its edges (lines, in the order going round the cell), and a line
+has none. VTK counts a 2D cell's faces as 0; Tack does not, so a 2D mesh has
+faces, as a polygonal one does.
 
 Methods, all callable only from kernels and device functions:
 
@@ -105,6 +107,8 @@ NEWTON_DIVERGED = tack.constant(1e6)
 _TRIANGLE_EDGES = tack.constant((0, 1, 1, 2, 2, 0), tack.i32)
 _PIXEL_EDGES = tack.constant((0, 1, 1, 3, 2, 3, 0, 2), tack.i32)
 _QUAD_EDGES = tack.constant((0, 1, 1, 2, 2, 3, 3, 0), tack.i32)
+# A pixel's edges as faces, going round it (its points are x-fastest).
+_PIXEL_FACES = tack.constant((0, 1, 1, 3, 3, 2, 2, 0), tack.i32)
 _TETRA_EDGES = tack.constant((0, 1, 1, 2, 2, 0, 0, 3, 1, 3, 2, 3), tack.i32)
 _VOXEL_EDGES = tack.constant(
     (0, 1, 1, 3, 2, 3, 0, 2, 4, 5, 5, 7, 6, 7, 4, 6, 0, 4, 1, 5, 2, 6, 3, 7),
@@ -287,13 +291,15 @@ class Shape:
 
     @tack.func
     def face_shape(self, f):
-        """The shape id of face ``f``: ``TRIANGLE``, ``QUAD`` or, for a voxel, ``PIXEL``."""
+        """The shape id of face ``f``: ``TRIANGLE``, ``QUAD`` or, for a voxel, ``PIXEL``;
+        ``LINE`` for a 2D shape's."""
         return 0
 
     @tack.func
     def face_num_points(self, f):
-        """The number of points of face ``f``: 3 or 4."""
-        return 3 if self.face_shape(f) == TRIANGLE else 4
+        """The number of points of face ``f``: 2, 3 or 4."""
+        shape = self.face_shape(f)
+        return 2 if shape == LINE else (3 if shape == TRIANGLE else 4)
 
     @tack.func
     def interpolate(self, values, pc):
@@ -396,6 +402,15 @@ class _Surface(Shape):
     DIMENSION = 2
 
     @tack.func
+    def face_shape(self, f):
+        return LINE
+
+    @tack.func
+    def face_point(self, f, k):
+        """Point ``k`` of the cell's edge ``f``, going round the cell: its faces."""
+        return self.edge_point(f, k)
+
+    @tack.func
     def _newton_step(self, m, residual):
         # Complete the frame with the unit normal; the step along it is the
         # distance off the surface, and is dropped.
@@ -493,6 +508,7 @@ class Triangle(_Surface):
     ID = TRIANGLE
     NUM_POINTS = 3
     NUM_EDGES = 3
+    NUM_FACES = 3
 
     @tack.func
     def parametric_point(self, j):
@@ -540,6 +556,7 @@ class _Quadrilateral(_Surface):
 
     NUM_POINTS = 4
     NUM_EDGES = 4
+    NUM_FACES = 4
 
     @tack.func
     def parametric_point(self, j):
@@ -586,6 +603,10 @@ class Pixel(_Quadrilateral):
     @tack.func
     def edge_point(self, e, k):
         return _PIXEL_EDGES[2 * e + k]
+
+    @tack.func
+    def face_point(self, f, k):
+        return _PIXEL_FACES[2 * f + k]
 
 
 @tack.device_class

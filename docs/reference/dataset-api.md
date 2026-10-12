@@ -90,18 +90,23 @@ dataset of more than 2^31 − 1 cells; everything else works there.
 
 - `topology.faces()` and `topology.edges()` are derived on the device by
   sorting, the first time they are asked for, and then kept.
+- Faces are **codimension 1** of the cells of the highest dimension
+  (`topology.dimension`): a 3D mesh's faces are polygons, a 2D mesh's are its
+  edges, on the shape path as on the polygonal one. A 2D cell's faces go round
+  it (VTK counts none). A mesh mixing dimensions takes its faces from its
+  top-dimensional cells alone.
+- On a 2D mesh `face_geometry` gives each edge's normal in the plane of its
+  side 0's cell, pointing out of it, and its length as its "area";
+  `face_centers` its midpoint. `divergence`, `perot`, `jump` and
+  `upwind_flux` then work on 2D meshes as on 3D ones.
 - A face's points are wound out of its **side 0**. **Side 1** is the cell on
   the other side, or none (`-1`) on the boundary.
 - Each cell knows, per local face, the face's id and which side of it the
   cell is on.
 - On a polyhedral topology the faces are given, not derived, and keep their
-  given numbering. A polygonal topology's faces are its edges.
+  given numbering.
 - A polyhedral topology also derives each cell's distinct points
   (`cell_points()`), for point data.
-
-**Open:** on a 2D shape-based mesh, `faces()` is empty. The polygonal
-topology already treats a 2D mesh's faces as its edges, which is the
-intended answer, but the shape path does not yet.
 
 ### Converting and checking
 
@@ -312,7 +317,7 @@ In the table,
 | `to_points` of cell data, `to_cells` of point data | yes | yes (over each cell's distinct points) | yes |
 | `discontinuous`, `to_points` of `L2` data | yes | no | no |
 | `traces`, and `jump`/`upwind_flux` of point data | yes | no | no |
-| `external_faces` | yes | yes (polygonal) | the boundary edges, as two-point polygons: there is no line topology yet |
+| `external_faces` | yes (a 2D mesh's: line cells) | yes (polygonal) | the boundary edges, as two-point polygons: there is no line topology yet |
 
 Where the table says "no", the algorithm needs a reference element and
 raises `NotImplementedError` saying so.
@@ -520,7 +525,6 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 
 **Open:**
 
-- 2D faces on the shape path (above);
 - sets beyond faces;
 - coefficient layout (DOF-fastest or cell-fastest);
 - a general `project(field, space)`, of which `to_points`, `to_cells` and

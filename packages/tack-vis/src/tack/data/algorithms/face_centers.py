@@ -25,12 +25,17 @@ def _face_centers(faces, out):
             area = (a - apex).cross(b - apex).norm()
             total += area
             weighted += area * (a + b + apex)
-        out[faces.entity_id(f)] = origin + weighted / (3.0 * total)
+        if size == 2:
+            # An edge, a 2D mesh's face: its midpoint.
+            out[faces.entity_id(f)] = origin + 0.5 * (faces.point(f, 1) - origin)
+        else:
+            out[faces.entity_id(f)] = origin + weighted / (3.0 * total)
 
 
 def face_centers(data):
     """Each face's area centroid: a field on faces. The face is fanned from its
-    points' mean, so both its cells -- which store it once -- see the same fan."""
+    points' mean, so both its cells -- which store it once -- see the same fan. A
+    2D mesh's face, an edge, has its midpoint."""
     out = _vectors(data.topology.faces().num_faces, data.dtype)
     for_each(_face_centers, data, "faces", out)
     return Field(Values(data, "faces"), out)

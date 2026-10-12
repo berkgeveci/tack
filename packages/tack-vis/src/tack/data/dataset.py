@@ -228,7 +228,8 @@ class DataSet:
             # A subgroup's index(c) is its position in the topology's group, so
             # it shares that group's incidence.
             faces = self.topology._faces
-            if faces is not None and group.shape.NUM_FACES:
+            # The cells the faces were derived from: those of the top dimension.
+            if faces is not None and id(group.root) in getattr(faces, "group_starts", {}):
                 mixins.extend((views._FaceIncidence, views._FaceWalk))
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,

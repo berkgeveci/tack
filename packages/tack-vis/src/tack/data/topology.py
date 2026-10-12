@@ -116,8 +116,15 @@ class _Topology:
             self._point_links = (offsets, order)
         return self._point_links
 
+    @property
+    def dimension(self):
+        """The cells' highest dimension: 3 for a mesh with solids, 2 for a surface."""
+        return max((g.shape.DIMENSION for g in self.groups() if g.count), default=0)
+
     def faces(self):
-        """The faces of the 3D cells (``Faces``), derived on first use and kept."""
+        """The faces (``Faces``): codimension 1 of the cells of the highest
+        dimension -- polygons of a 3D mesh, edges of a 2D one. Derived on first
+        use and kept."""
         if self._faces is None:
             self._faces = Faces._derive(self)
         return self._faces
@@ -235,11 +242,11 @@ def _emit_faces(cells, start, rows, kinds, owners):
     for c in cells:
         first = start + cells.index(c) * cells.NUM_FACES
         for f in range(cells.NUM_FACES):
-            quad = cells.face_num_points(f) == 4
+            n = cells.face_num_points(f)
             p0 = cells.point_id(c, cells.face_point(f, 0))
             p1 = cells.point_id(c, cells.face_point(f, 1))
-            p2 = cells.point_id(c, cells.face_point(f, 2))
-            p3 = cells.point_id(c, cells.face_point(f, 3)) if quad else _NO_POINT
+            p2 = cells.point_id(c, cells.face_point(f, 2)) if n >= 3 else _NO_POINT
+            p3 = cells.point_id(c, cells.face_point(f, 3)) if n == 4 else _NO_POINT
             kind = cells.face_shape(f)
             if kind == shapes.PIXEL:
                 # A voxel's faces are pixels, x-fastest: as a quad, 0 1 3 2.
@@ -253,11 +260,14 @@ def _emit_faces(cells, start, rows, kinds, owners):
 
 @tack.kernel
 def _face_keys(rows, keys):
-    # The face's points in increasing order, a triangle's pad (-1) kept last.
+    # The face's points in increasing order, the pads (-1) of a triangle or a
+    # line kept last.
     for k in range(keys.shape[0]):
         row = rows[k]
         a, b = _order(row[0], row[1])
-        if row[3] == _NO_POINT:
+        if row[2] == _NO_POINT:
+            keys[k] = [a, b, row[2], row[3]]
+        elif row[3] == _NO_POINT:
             b, c = _order(b, row[2])
             a, b = _order(a, b)
             keys[k] = [a, b, c, row[3]]
@@ -295,7 +305,7 @@ def _side_orientations(rows, side_face, face_rows, orientation, bad):
     for s in range(side_face.shape[0]):
         mine = rows[s]
         face = face_rows[side_face[s]]
-        n = 3 if mine[3] == _NO_POINT else 4
+        n = 2 if mine[2] == _NO_POINT else (3 if mine[3] == _NO_POINT else 4)
         r = 0
         for j in range(n):
             if face[j] == mine[0]:
@@ -328,11 +338,12 @@ def _gather_kind(flags, slots, face_rows, face_sides, ids, rows, sides):
 
 
 class Faces:
-    """The faces of a topology's 3D cells, as global entities.
+    """The faces of a topology's cells of the highest dimension, as global entities:
+    a 3D mesh's polygons, a 2D mesh's edges.
 
-    ``num_faces``; per face (by face id): ``kinds`` (``TRIANGLE`` or ``QUAD``),
-    ``rows`` (its point ids in side 0's outward order, a 4-vector padded with
-    -1), ``sides`` (``[cell0, local0, cell1, local1]``, the second
+    ``num_faces``; per face (by face id): ``kinds`` (``TRIANGLE``, ``QUAD`` or
+    ``LINE``), ``rows`` (its point ids in side 0's outward order, a 4-vector
+    padded with -1), ``sides`` (``[cell0, local0, cell1, local1]``, the second
     pair ``-1`` on the boundary). Per (cell, local face), in the topology's
     group layout: ``side_face`` (the face id), ``side_slot`` (0 if the cell
     is the face's side 0, else 1) and ``side_orientation``, ``2 * r +
@@ -345,7 +356,11 @@ class Faces:
     @classmethod
     def _derive(cls, topology):
         self = cls()
-        cell_groups = [g for g in topology.groups() if g.shape.NUM_FACES]
+        # Codimension 1 of the top dimension: a surface's edges, not also the
+        # edges of its polygons' lines; a solid mesh's faces, not its triangles'.
+        top = topology.dimension
+        cell_groups = [g for g in topology.groups()
+                       if g.shape.NUM_FACES and g.shape.DIMENSION == top]
         starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_FACES
                                                  for g in cell_groups])]).astype(int)
         total = int(starts[-1])
@@ -400,7 +415,7 @@ class Faces:
         rows = _take_vector(self.rows, ids_in) if subset is not None else self.rows
         sides = _take_vector(self.sides, ids_in) if subset is not None else self.sides
         groups = []
-        for shape in (shapes.Triangle, shapes.Quad):
+        for shape in (shapes.Line, shapes.Triangle, shapes.Quad):
             flags = tack.field(tack.i32, shape=(n,))
             slots = tack.field(idt, shape=(n,))
             if n:

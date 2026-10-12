@@ -14,7 +14,8 @@ __all__ = ['extract_surface']
 @tack.kernel
 def _surface_sizes(ids, kinds, sizes):
     for i in range(ids.shape[0]):
-        sizes[i] = 3 if kinds[ids[i]] == 5 else 4
+        kind = kinds[ids[i]]
+        sizes[i] = 2 if kind == 3 else (3 if kind == 5 else 4)
 
 
 @tack.kernel
@@ -25,7 +26,7 @@ def _surface_cells(ids, kinds, rows, starts, types, offsets, connectivity, lengt
         types[i] = tack.u8(kinds[f])
         offsets[i] = at
         row = rows[f]
-        for j in range(3 if kinds[f] == 5 else 4):
+        for j in range(2 if kinds[f] == 3 else (3 if kinds[f] == 5 else 4)):
             connectivity[at + j] = row[j]
         if i == 0:
             offsets[ids.shape[0]] = length

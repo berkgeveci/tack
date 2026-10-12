@@ -48,14 +48,14 @@ EXPECTED = {
     sh.Line: {"dim": 1, "points": [(0, 0, 0), (1, 0, 0)], "center": (0.5, 0, 0), "edges": [],
               "faces": [], "face_shapes": []},
     sh.Triangle: {"dim": 2, "points": [(0, 0, 0), (1, 0, 0), (0, 1, 0)],
-                  "center": (1 / 3, 1 / 3, 0), "edges": [(0, 1), (1, 2), (2, 0)], "faces": [],
-                  "face_shapes": []},
+                  "center": (1 / 3, 1 / 3, 0), "edges": [(0, 1), (1, 2), (2, 0)],
+                  "faces": [(0, 1), (1, 2), (2, 0)], "face_shapes": [3, 3, 3]},
     sh.Pixel: {"dim": 2, "points": [(0, 0, 0), (1, 0, 0), (0, 1, 0), (1, 1, 0)],
-               "center": (0.5, 0.5, 0), "edges": [(0, 1), (1, 3), (2, 3), (0, 2)], "faces": [],
-               "face_shapes": []},
+               "center": (0.5, 0.5, 0), "edges": [(0, 1), (1, 3), (2, 3), (0, 2)],
+               "faces": [(0, 1), (1, 3), (3, 2), (2, 0)], "face_shapes": [3, 3, 3, 3]},
     sh.Quad: {"dim": 2, "points": [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0)],
-              "center": (0.5, 0.5, 0), "edges": [(0, 1), (1, 2), (2, 3), (3, 0)], "faces": [],
-              "face_shapes": []},
+              "center": (0.5, 0.5, 0), "edges": [(0, 1), (1, 2), (2, 3), (3, 0)],
+              "faces": [(0, 1), (1, 2), (2, 3), (3, 0)], "face_shapes": [3, 3, 3, 3]},
     sh.Tetra: {"dim": 3, "points": [(0, 0, 0), (1, 0, 0), (0, 1, 0), (0, 0, 1)],
                "center": (0.25, 0.25, 0.25),
                "edges": [(0, 1), (1, 2), (2, 0), (0, 3), (1, 3), (2, 3)],
@@ -163,6 +163,10 @@ def test_the_recorded_tables_are_vtks(shape):
     np.testing.assert_allclose(center, want["center"], atol=1e-6)   # VTK's wedge: 0.333333
     assert [tuple(cell.GetEdge(e).GetPointIds().GetId(k) for k in range(2))
             for e in range(cell.GetNumberOfEdges())] == want["edges"]
+    if want["dim"] == 2:
+        # VTK counts no faces on a 2D cell; Tack's are its edges, going round it.
+        assert cell.GetNumberOfFaces() == 0
+        return
     got = []
     for f in range(cell.GetNumberOfFaces()):
         ids = cell.GetFace(f).GetPointIds()

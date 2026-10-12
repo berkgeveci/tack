@@ -3,7 +3,6 @@
 from typing import NamedTuple
 
 import tack
-from tack.data import shapes
 from tack.data.algorithms._common import _vectors
 from tack.data.dataset import Field
 from tack.data.spaces import Values
@@ -71,8 +70,9 @@ def cell_geometry(data):
     divergence theorem over its faces -- polyhedral or of a shape -- with faces
     taken as fans from their points' means, so a cell with non-planar faces is
     measured as that polyhedron (a hexahedron with warped faces is not quite its
-    trilinear volume); its faces must be wound out of it. A polygon's area, along
-    its own normal (Newell's), for a polygonal topology."""
+    trilinear volume); its faces must be wound out of it. A 2D cell's area --
+    triangle, quad, pixel or polygon -- along its own normal (Newell's), from
+    its edges going round it."""
     data.topology.faces()                          # the incidence the cell views need
     n = data.num_cells
     volumes = tack.field(data.dtype, shape=(n,))
@@ -80,6 +80,6 @@ def cell_geometry(data):
     for group in data.launch_groups("cells", []):
         if group.count and group.shape.DIMENSION == 3:
             _cell_geometry(data.domain_view("cells", group), volumes, centroids)
-        elif group.count and group.shape is shapes.Polygon:
+        elif group.count and group.shape.DIMENSION == 2:
             _polygon_geometry(data.domain_view("cells", group), volumes, centroids)
     return CellGeometry(Field(Values(data, "cells"), volumes), Field(Values(data, "cells"), centroids))
