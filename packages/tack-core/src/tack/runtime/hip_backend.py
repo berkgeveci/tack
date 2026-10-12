@@ -156,7 +156,7 @@ class HIPBuffer(DeviceBuffer):
                 _check_hip(hip.hipMemsetD16(self._device_ptr, device_fill.as_unsigned(pattern),
                                             self._nbytes // 2))
             elif len(pattern) == 4:
-                _check_hip(hip.hipMemsetD32(self._device_ptr, device_fill.as_unsigned(pattern),
+                _check_hip(hip.hipMemsetD32(self._device_ptr, device_fill.as_signed(pattern),
                                             self._nbytes // 4))
             else:
                 return False
