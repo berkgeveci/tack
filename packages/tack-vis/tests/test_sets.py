@@ -95,6 +95,49 @@ def test_side_sets_from_cells_and_local_faces(backend):
         td.Set.from_sides(data, [0], [6])
 
 
+def _prism(m):
+    """One polyhedron: a prism over an m-gon, so m + 2 faces (caps first)."""
+    angle = np.linspace(0, 2 * np.pi, m, endpoint=False)
+    ring = np.c_[np.cos(angle), np.sin(angle)]
+    points = np.r_[np.c_[ring, np.zeros(m)], np.c_[ring, np.ones(m)]].astype(np.float32)
+    faces = [list(range(m))[::-1], list(range(m, 2 * m))] + [
+        [i, (i + 1) % m, m + (i + 1) % m, m + i] for i in range(m)]
+    topology = td.PolyhedralTopology(np.cumsum([0] + [len(f) for f in faces]),
+                                     np.concatenate(faces), [0, len(faces)],
+                                     np.arange(len(faces)), np.zeros(len(faces), np.uint8))
+    return td.DataSet(topology, points)
+
+
+def test_side_sets_of_cells_with_many_faces(backend):
+    """A polyhedron may have more faces than a 64-bit mask has bits: each (cell,
+    local face) pair names its own face, and only that one. A mask selected face
+    64 with face 0, and refused local faces past 62."""
+    data = _prism(64)
+    for local in (0, 1, 63, 65):
+        np.testing.assert_array_equal(td.Set.from_sides(data, [0], [local]).to_numpy(), [local])
+    with pytest.raises(ValueError, match="a local face they do not have"):
+        td.Set.from_sides(data, [0], [66])
+
+
+@pytest.mark.parametrize("make", [td.as_polyhedra, lambda d: td.as_polygons(td.external_faces(d))])
+def test_side_sets_where_cells_list_their_faces(backend, make):
+    data = make(_grid())
+    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    boundary = td.boundary_faces(data)
+    named = sides[boundary.to_numpy()]
+    s = td.Set.from_sides(data, named[:, 0], named[:, 1])
+    np.testing.assert_array_equal(s.to_numpy(), boundary.to_numpy())
+
+
+def test_sets_are_made_from_pairs_too(backend):
+    data = _grid()
+    left = td.Set(data, "cells", [0, 3])
+    built = td.DataSet(data.topology, data.geometry, sets=[("left", left)])
+    assert built.sets["left"] is left
+    with pytest.raises(TypeError, match="not a tack.data.Set"):
+        td.DataSet(data.topology, data.geometry, sets=[("left", left), ("raw", [0])])
+
+
 def test_the_boundary_set_is_taken_as_the_faces_hold_it(backend, monkeypatch):
     """boundary_faces wraps the boundary the faces already hold, sorted and
     unique: it is not checked again over every face, which made external

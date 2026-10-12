@@ -48,6 +48,17 @@ def _side_faces(cells, masks, flags, bad):
                     tack.atomic_max(flags, cells.face_id(c, k), 1)
 
 
+@tack.kernel
+def _listed_faces(cells, local, cell_offsets, cell_faces, flags, bad):
+    # The faces named by (cell, local face) pairs, where each cell lists its faces.
+    for i in range(cells.shape[0]):
+        first = cell_offsets[cells[i]]
+        if local[i] >= cell_offsets[cells[i] + 1] - first:
+            tack.atomic_add(bad, 0, 1)
+        else:
+            tack.atomic_max(flags, cell_faces[first + local[i]], 1)
+
+
 def _count(topology, on):
     if on == "points":
         return topology.num_points
@@ -129,18 +140,29 @@ class Set:
         n = data.num_cells
         if cells.size and (cells.min() < 0 or cells.max() >= n):
             raise ValueError(f"cells outside the topology's {n}")
-        if local.size and (local.min() < 0 or local.max() >= 63):
-            raise ValueError("local faces are numbered from 0, under 63")
-        host = np.zeros(n, np.int64)
-        np.bitwise_or.at(host, cells, np.left_shift(np.int64(1), local))
-        masks = tack.field(tack.i64, shape=(n,))
-        if n:
-            masks.from_numpy(host)
-        faces = data.topology.faces()
+        if local.size and local.min() < 0:
+            raise ValueError("local faces are numbered from 0")
+        topology = data.topology
+        faces = topology.faces()
         flags = tack.zeros(tack.i32, (faces.num_faces,))
         bad = tack.zeros(tack.i32, (1,))
-        if cells.size:
-            for_each(_side_faces, data, "cells", masks, flags, bad)
+        if hasattr(topology, "cell_faces"):
+            # Cells list their faces, as many as they like: look each pair up.
+            if cells.size:
+                _listed_faces(tack.field_like(cells), tack.field_like(local),
+                              topology.cell_offsets, topology.cell_faces, flags, bad)
+        else:
+            # Shapes have at most six faces: a bit per local face, a mask per cell.
+            if local.size and local.max() >= 63:
+                bad = tack.full(tack.i32, (1,), int((local >= 63).sum()))
+            else:
+                host = np.zeros(n, np.int64)
+                np.bitwise_or.at(host, cells, np.left_shift(np.int64(1), local))
+                masks = tack.field(tack.i64, shape=(n,))
+                if n:
+                    masks.from_numpy(host)
+                if cells.size:
+                    for_each(_side_faces, data, "cells", masks, flags, bad)
         if bad[0]:
             raise ValueError(f"{bad[0]} cells are given a local face they do not have")
         return cls._from_flags(data.topology, "faces", flags)
@@ -189,8 +211,7 @@ class Sets(dict):
     def __init__(self, topology, sets=None):
         super().__init__()
         self._topology = topology
-        for name, value in (sets or {}).items():
-            self[name] = value
+        self.update(sets or {})
 
     def __setitem__(self, name, value):
         super().__setitem__(name, check(name, value, self._topology))
