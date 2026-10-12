@@ -301,31 +301,46 @@ build if two of them define the same name.
 
 ### What views offer
 
-Every view supports `for i in view` and `entity_id(i)`.
+Every view supports `for i in view` and `entity_id(i)`, the global id of
+the entity the loop is at. Names follow one rule per kind of answer:
 
-**Cells.** These methods work on both kinds of topology, so face-based
+- a global id ends in `_id`: `point_id(c, j)`, `face_id(c, k)`,
+  `side_point_id(c, k, j)`;
+- a position ends in `_position`: `corner_position(i, j)`,
+  `side_position(c, k, j)`, `point_position(p)` (by global id), and
+  `position(c, pc)` at parametric coordinates;
+- a shape's local corner number ends in `_corner`: `edge_corner(e, k)`,
+  `face_corner(f, k)`;
+- a count starts with `num_`: `num_points`, `num_faces`, `side_num_points`.
+
+**Cells.** These methods work on every kind of topology, so face-based
 algorithms are written once:
 
 | Method | |
 |---|---|
 | `num_faces(c)` | the cell's faces (codimension-1 entities) |
 | `face_id(c, k)`, `face_side(c, k)` | local face `k`'s global id, and the side the cell is on |
-| `side_size(c, k)`, `side_point(c, k, j)` | local face `k`'s points, walked outward from this cell |
+| `side_num_points(c, k)`, `side_point_id(c, k, j)` | local face `k`'s points, walked outward from this cell |
 | `side_position(c, k, j)` | that point's position |
 
 - Shape-based cells add: the class constants `NUM_POINTS`, `NUM_FACES`,
   `NUM_EDGES` and `DIMENSION`; `point_id(c, j)`; the geometry through
-  `position(c, pc)`, `geometry_jacobian(c, pc)` and `point(c, j)`; face
-  incidence (`face_orientation`, `face_corner`, `face_position`); and edges
-  (`edge_id`, `edge_sign`).
-- Polyhedral cells add `num_points(c)` and `point_id(c, j)` over the cell's
-  distinct points, and `face_size(f)`.
+  `corner_position(c, j)`, `position(c, pc)` and `geometry_jacobian(c, pc)`;
+  the shape's tables (`parametric_point(j)`, `edge_corner(e, k)`,
+  `face_corner(f, k)`, `face_num_points(f)`, `face_shape(f)`, shape
+  functions); face incidence (`face_orientation`, `face_position`); and edges
+  (`edge_id`, `edge_sign`). A face's corners go round it, a voxel's too.
+- Polyhedral, polygonal and polyline cells add `num_points(c)` and
+  `point_id(c, j)` over the cell's distinct points, and `point_position(p)`.
+  Polyline cells add their chain in order: `line_num_points(c)`,
+  `line_point_id(c, j)`.
 
-**Faces.** `face_size(f)`, `point_id(f, j)`, `num_sides(f)`, and
-`side_cell(f, s)` / `side_local(f, s)` give the cell on side `s` and its
-local face number.
+**Faces.** `num_points(f)`, `point_id(f, j)`, `corner_position(f, j)`,
+`num_sides(f)`, and `side_cell(f, s)` / `side_local(f, s)` give the cell on
+side `s` and its local face number.
 
-**Edges.** `point_id(e, j)`, with the lower point id first.
+**Edges.** `point_id(e, j)`, with the lower point id first, and
+`corner_position(e, j)`.
 
 **Fields.**
 
@@ -570,8 +585,14 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 **Settled by the prototype:**
 
 - continuity follows from where values live;
-- fields are separate kernel arguments (templates may now hold templates,
-  which the implicit arrays use; whether views should is open);
+- fields are separate kernel arguments, and a domain view is flat: geometry
+  and incidence are mixins, not nested templates, since geometry needs the
+  cell's connectivity (templates may hold templates, which the implicit
+  arrays use, but not refer back to their holder);
+- view methods follow one naming rule per kind of answer (ids, positions,
+  corners, counts);
+- moving a field between spaces is one function, `project`;
+- sets know what they select, and filters carry them;
 - shape, order and size groups are one mechanism;
 - geometry is a field, kept apart from the named fields;
 - a field's values may be any array, explicit or implicit;
@@ -581,7 +602,6 @@ reader's polyhedra can be inconsistently wound, so pass `orient=True`.
 **Open:**
 
 - coefficient layout (DOF-fastest or cell-fastest);
-- whether views should keep one shared namespace;
 - filters on higher-order data (subdivide, rather than linearize);
 - clip on polyhedra, polygons and polylines;
 - locating points in polyhedra (no parametric coordinates; a containment

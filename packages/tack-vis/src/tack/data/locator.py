@@ -37,10 +37,10 @@ _TOLERANCE = 1e-3
 def _cell_boxes(cells, lo, hi):
     for c in cells:
         e = cells.entity_id(c)
-        a = cells.point(c, 0)
+        a = cells.corner_position(c, 0)
         b = a
         for j in range(1, cells.NUM_POINTS):
-            p = cells.point(c, j)
+            p = cells.corner_position(c, j)
             a = [min(a[0], p[0]), min(a[1], p[1]), min(a[2], p[2])]
             b = [max(b[0], p[0]), max(b[1], p[1]), max(b[2], p[2])]
         lo[e] = a
@@ -80,7 +80,7 @@ def _test_points(cells, points, lo, hi, bin_offsets, bin_points, ox, oy, oz, ix,
         e = cells.entity_id(c)
         pts = tack.local_array_like(lo, 3 * cells.NUM_POINTS)
         for j in range(cells.NUM_POINTS):
-            p = cells.point(c, j)
+            p = cells.corner_position(c, j)
             pts[3 * j] = p[0]
             pts[3 * j + 1] = p[1]
             pts[3 * j + 2] = p[2]

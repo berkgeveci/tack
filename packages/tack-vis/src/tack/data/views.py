@@ -10,7 +10,7 @@ every compiled kernel is specialized to it (``docs/design/dataset-api.md``
   the entity's global id, where its data lives;
 - a *shape* from ``tack.data.shapes``: the cell's, or the face's
   (``Triangle``/``Quad``), or ``Line`` for edges, with their shape functions;
-- optionally *geometry*, from the dataset's geometry field: ``point(i, j)``,
+- optionally *geometry*, from the dataset's geometry field: ``corner_position(i, j)``,
   corner ``j``'s position, and ``position(i, pc)`` and
   ``geometry_jacobian(i, pc)`` through the shape's functions;
 - optionally, for cells, *incidence*: ``face_id(c, f)``, ``face_side(c, f)``,
@@ -31,7 +31,6 @@ the cell ``c`` the loop is at.
 """
 
 import tack
-from tack.data import shapes
 
 # ── Entity kinds ────────────────────────────────────────────────────
 
@@ -50,9 +49,6 @@ class _Cells:
     def point_id(self, c, j):
         return self.connectivity[c, j]
 
-    @tack.func
-    def cell_id(self, c):
-        return self.ids[c]
 
     @tack.func
     def entity_id(self, c):
@@ -81,9 +77,6 @@ class _SelectedCells(_Cells):
     def point_id(self, c, j):
         return self.connectivity[self.first + c, j]
 
-    @tack.func
-    def cell_id(self, c):
-        return self.ids[self.first + c]
 
     @tack.func
     def entity_id(self, c):
@@ -107,11 +100,7 @@ class _StructuredCells:
 
     @tack.func
     def index(self, c):
-        return self.cell_id(c)
-
-    @tack.func
-    def entity_id(self, c):
-        return self.cell_id(c)
+        return self.entity_id(c)
 
 
 class _StructuredLines(_StructuredCells):
@@ -126,7 +115,7 @@ class _StructuredLines(_StructuredCells):
         return [c + j, 0, 0]
 
     @tack.func
-    def cell_id(self, c):
+    def entity_id(self, c):
         return c
 
 
@@ -146,7 +135,7 @@ class _StructuredQuads(_StructuredCells):
         return [c[0] + a, c[1] + b, 0]
 
     @tack.func
-    def cell_id(self, c):
+    def entity_id(self, c):
         return c[0] + self.cx * c[1]
 
 
@@ -166,7 +155,7 @@ class _StructuredHexahedra(_StructuredCells):
         return [c[0] + a, c[1] + b, c[2] + d]
 
     @tack.func
-    def cell_id(self, c):
+    def entity_id(self, c):
         return c[0] + self.cx * (c[1] + self.cy * c[2])
 
 
@@ -189,12 +178,9 @@ class _Faces:
     def entity_id(self, f):
         return self.ids[f]
 
-    @tack.func
-    def face_id(self, f):
-        return self.ids[f]
 
     @tack.func
-    def face_size(self, f):
+    def num_points(self, f):
         """The face's number of points: the shape's, a constant."""
         return self.NUM_POINTS
 
@@ -253,9 +239,6 @@ class _PolyhedralCells(_CellsById):
     def entity_id(self, c):
         return self.cell(c)
 
-    @tack.func
-    def cell_id(self, c):
-        return self.cell(c)
 
     @tack.func
     def index(self, c):
@@ -282,23 +265,20 @@ class _PolyhedralCells(_CellsById):
         return tack.i32(self.cell_face_sides[self.cell_offsets[self.cell(c)] + k])
 
     @tack.func
-    def face_size(self, f):
-        return self.face_offsets[f + 1] - self.face_offsets[f]
-
-    @tack.func
-    def side_point(self, c, k, j):
+    def side_point_id(self, c, k, j):
         """Point ``j`` of the cell's facet ``k``, going round it outward for this cell:
         the stored order on side 0, the reverse on side 1 -- which for an edge swaps
         its ends, and for a face starts the reversed cycle at its last point."""
         f = self.face_id(c, k)
-        n = self.face_size(f)
+        n = self.face_offsets[f + 1] - self.face_offsets[f]
         at = j if self.face_side(c, k) == 0 else n - 1 - j
         return self.face_points[self.face_offsets[f] + at]
 
     @tack.func
-    def side_size(self, c, k):
+    def side_num_points(self, c, k):
         """The number of points of the cell's facet ``k``."""
-        return self.face_size(self.face_id(c, k))
+        f = self.face_id(c, k)
+        return self.face_offsets[f + 1] - self.face_offsets[f]
 
     @tack.func
     def num_points(self, c):
@@ -317,8 +297,8 @@ class _PolyhedralWalk:
 
     @tack.func
     def side_position(self, c, k, j):
-        """The position of ``side_point(c, k, j)``."""
-        return self.point_position(self.side_point(c, k, j))
+        """The position of ``side_point_id(c, k, j)``."""
+        return self.point_position(self.side_point_id(c, k, j))
 
 
 class _SelectedPolyhedra(_PolyhedralCells):
@@ -368,22 +348,19 @@ class _PolylineCells(_CellsById):
     def entity_id(self, c):
         return self.cell(c)
 
-    @tack.func
-    def cell_id(self, c):
-        return self.cell(c)
 
     @tack.func
     def index(self, c):
         return self.cell(c)
 
     @tack.func
-    def line_size(self, c):
+    def line_num_points(self, c):
         """The number of points in the cell's chain."""
         g = self.cell(c)
         return self.line_offsets[g + 1] - self.line_offsets[g]
 
     @tack.func
-    def line_point(self, c, j):
+    def line_point_id(self, c, j):
         """Point ``j`` of the cell's chain, in order."""
         return self.line_points[self.line_offsets[self.cell(c)] + j]
 
@@ -393,11 +370,11 @@ class _PolylineCells(_CellsById):
         return 2
 
     @tack.func
-    def side_size(self, c, k):
+    def side_num_points(self, c, k):
         return 1
 
     @tack.func
-    def side_point(self, c, k, j):
+    def side_point_id(self, c, k, j):
         """Facet ``k``'s point: the chain's first (``k == 0``) or last."""
         g = self.cell(c)
         return self.line_points[self.line_offsets[g] if k == 0 else self.line_offsets[g + 1] - 1]
@@ -444,7 +421,7 @@ class _PolylineIncidence:
 
 
 class _PolygonFaces:
-    """A polyhedral topology's faces: each a polygon of ``face_size(f)`` points, in its
+    """A polyhedral topology's faces: each a polygon of ``num_points(f)`` points, in its
     stored order (wound out of its side 0), with the shape path's two-sided record."""
 
     __tack_iterate__ = "num_faces"
@@ -460,12 +437,9 @@ class _PolygonFaces:
     def entity_id(self, f):
         return self.ids[f]
 
-    @tack.func
-    def face_id(self, f):
-        return self.ids[f]
 
     @tack.func
-    def face_size(self, f):
+    def num_points(self, f):
         g = self.ids[f]
         return self.face_offsets[g + 1] - self.face_offsets[g]
 
@@ -532,7 +506,7 @@ class _QuadraticDofs:
 
 
 class _Geometry:
-    """The geometry field, read through an entity: ``point(i, j)``, which a storage
+    """The geometry field, read through an entity: ``corner_position(i, j)``, which a storage
     mixin below defines, and what follows from it at parametric coordinates.
 
     At order 1 the geometry's values are the corners' positions, so the shape's
@@ -544,7 +518,7 @@ class _Geometry:
     @tack.func
     def gather_points(self, i, pts):
         for j in range(self.NUM_POINTS):
-            x = self.point(i, j)
+            x = self.corner_position(i, j)
             pts[3 * j] = x[0]
             pts[3 * j + 1] = x[1]
             pts[3 * j + 2] = x[2]
@@ -554,7 +528,7 @@ class _Geometry:
         """The world position at parametric coordinates ``pc``."""
         x = tack.Vector([0.0, 0.0, 0.0])
         for j in range(self.NUM_POINTS):
-            x += self.shape_function(j, pc) * self.point(i, j)
+            x += self.shape_function(j, pc) * self.corner_position(i, j)
         return x
 
     @tack.func
@@ -563,17 +537,17 @@ class _Geometry:
         column ``k`` is ``dx/d(pc[k])``, zero past the shape's dimension."""
         m = tack.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
         for j in range(self.NUM_POINTS):
-            m += self.point(i, j).outer_product(self.shape_gradient(j, pc))
+            m += self.corner_position(i, j).outer_product(self.shape_gradient(j, pc))
         return m
 
 
 class _PointGeometry:
     """Positions of a cell or face with no reference element -- a polyhedron, a
-    polygon: ``point(i, j)`` only, the positions of its points. Nothing maps
+    polygon: ``corner_position(i, j)`` only, the positions of its points. Nothing maps
     parametric coordinates, so there is no ``position`` or ``geometry_jacobian``."""
 
     @tack.func
-    def point(self, i, j):
+    def corner_position(self, i, j):
         return self.point_value(i, j)
 
     @tack.func
@@ -586,7 +560,7 @@ class _H1Geometry(_Geometry):
     """H1 geometry: one position per point, shared by the cells around it."""
 
     @tack.func
-    def point(self, i, j):
+    def corner_position(self, i, j):
         return self.point_value(i, j)
 
 
@@ -595,17 +569,17 @@ class _L2Geometry(_Geometry):
     may pull apart while the topology still has them share points."""
 
     @tack.func
-    def point(self, c, j):
+    def corner_position(self, c, j):
         return self.get(self.point_offsets[self.entity_id(c)] + j)
 
 
 class _H1Order2Geometry(_QuadraticDofs, _Geometry):
-    """Curved geometry: an order-2 H1 field of positions. ``point(c, j)`` is still
+    """Curved geometry: an order-2 H1 field of positions. ``corner_position(c, j)`` is still
     corner ``j``'s; positions and Jacobians inside go through the quadratic
     functions. Its edge and face ids come from the domain view's incidence."""
 
     @tack.func
-    def point(self, c, j):
+    def corner_position(self, c, j):
         return self.get(self.point_id(c, j))
 
     @tack.func
@@ -630,7 +604,7 @@ class _SideZeroGeometry(_Geometry):
     point), as a ``SideTraces`` space lays them out."""
 
     @tack.func
-    def point(self, f, j):
+    def corner_position(self, f, j):
         return self.face_points[self.entity_id(f) * 8 + j]
 
 
@@ -656,14 +630,6 @@ class _FaceIncidence:
         the other way."""
         return self.side_orientation[self.face_start + self.index(c) * self.NUM_FACES + f]
 
-    @tack.func
-    def face_corner(self, f, k):
-        """The cell's corner that is point ``k`` of local face ``f``, in the order faces
-        are stored: a voxel's pixel faces (x-fastest) go round as quads, 0 1 3 2."""
-        kk = k
-        if self.face_shape(f) == shapes.PIXEL:
-            kk = k ^ (k >> 1)
-        return self.face_point(f, kk)
 
     @tack.func
     def face_position(self, c, f, k):
@@ -686,19 +652,19 @@ class _FaceWalk:
         return self.NUM_FACES
 
     @tack.func
-    def side_size(self, c, k):
+    def side_num_points(self, c, k):
         """The number of points of the cell's face ``k``."""
         return self.face_num_points(k)
 
     @tack.func
-    def side_point(self, c, k, j):
+    def side_point_id(self, c, k, j):
         """Point ``j`` of the cell's face ``k``, going round it outward for this cell."""
         return self.point_id(c, self.face_corner(k, j))
 
     @tack.func
     def side_position(self, c, k, j):
-        """The position of ``side_point(c, k, j)``."""
-        return self.point(c, self.face_corner(k, j))
+        """The position of ``side_point_id(c, k, j)``."""
+        return self.corner_position(c, self.face_corner(k, j))
 
 
 class _EdgeIncidence:

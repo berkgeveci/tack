@@ -11,17 +11,17 @@ __all__ = ['face_centers']
 @tack.kernel
 def _face_centers(faces, out):
     for f in faces:
-        size = faces.face_size(f)
-        origin = faces.point(f, 0)
+        size = faces.num_points(f)
+        origin = faces.corner_position(f, 0)
         apex = tack.Vector([0.0, 0.0, 0.0])
         for j in range(size):
-            apex += faces.point(f, j) - origin
+            apex += faces.corner_position(f, j) - origin
         apex = apex / size
         total = 0.0
         weighted = tack.Vector([0.0, 0.0, 0.0])
         for j in range(size):
-            a = faces.point(f, j) - origin
-            b = faces.point(f, j + 1 if j + 1 < size else 0) - origin
+            a = faces.corner_position(f, j) - origin
+            b = faces.corner_position(f, j + 1 if j + 1 < size else 0) - origin
             area = (a - apex).cross(b - apex).norm()
             total += area
             weighted += area * (a + b + apex)

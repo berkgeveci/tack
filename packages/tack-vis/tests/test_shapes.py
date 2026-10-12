@@ -66,9 +66,10 @@ EXPECTED = {
                "center": (0.5, 0.5, 0.5),
                "edges": [(0, 1), (1, 3), (2, 3), (0, 2), (4, 5), (5, 7), (6, 7), (4, 6),
                          (0, 4), (1, 5), (2, 6), (3, 7)],
-               "faces": [(2, 0, 6, 4), (1, 3, 5, 7), (0, 1, 4, 5), (3, 2, 7, 6), (1, 0, 3, 2),
-                         (4, 5, 6, 7)],
-               "face_shapes": [8] * 6},
+               # VTK's pixel faces, going round (their last two corners swapped).
+               "faces": [(2, 0, 4, 6), (1, 3, 7, 5), (0, 1, 5, 4), (3, 2, 6, 7), (1, 0, 2, 3),
+                         (4, 5, 7, 6)],
+               "face_shapes": [9] * 6},
     sh.Hexahedron: {"dim": 3, "points": [(0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0),
                                          (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1)],
                     "center": (0.5, 0.5, 0.5),
@@ -119,12 +120,12 @@ def _describe(cell, counts, center, points, edges, faces, face_shapes):
         for j in range(cell.NUM_POINTS):
             points[j] = cell.parametric_point(j)
         for e in range(cell.NUM_EDGES):
-            edges[e, 0] = cell.edge_point(e, 0)
-            edges[e, 1] = cell.edge_point(e, 1)
+            edges[e, 0] = cell.edge_corner(e, 0)
+            edges[e, 1] = cell.edge_corner(e, 1)
         for f in range(cell.NUM_FACES):
             face_shapes[f] = cell.face_shape(f)
             for k in range(cell.face_num_points(f)):
-                faces[f, k] = cell.face_point(f, k)
+                faces[f, k] = cell.face_corner(f, k)
 
 
 @each_shape
@@ -167,13 +168,18 @@ def test_the_recorded_tables_are_vtks(shape):
         # VTK counts no faces on a 2D cell; Tack's are its edges, going round it.
         assert cell.GetNumberOfFaces() == 0
         return
-    got = []
+    got, kinds = [], []
     for f in range(cell.GetNumberOfFaces()):
         ids = cell.GetFace(f).GetPointIds()
-        got.append(tuple(ids.GetId(k) for k in range(ids.GetNumberOfIds())))
+        face = tuple(ids.GetId(k) for k in range(ids.GetNumberOfIds()))
+        kind = cell.GetFace(f).GetCellType()
+        if kind == 8:                                    # VTK_PIXEL
+            # Tack's faces go round: a pixel's last two corners swapped, a quad.
+            face, kind = face[:2] + face[3:1:-1], 9           # VTK_QUAD
+        got.append(face)
+        kinds.append(kind)
     assert got == want["faces"]
-    assert [cell.GetFace(f).GetCellType() for f in range(cell.GetNumberOfFaces())] \
-        == want["face_shapes"]
+    assert kinds == want["face_shapes"]
 
 
 def test_shape_class_looks_up_vtk_ids():

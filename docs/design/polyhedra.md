@@ -186,12 +186,12 @@ for c in cells:                               # one launch per size bucket (belo
     for k in range(cells.num_faces(c)):
         f = cells.face_id(c, k)
         side = cells.face_side(c, k)          # 0: wound out of c; 1: into c
-        for j in range(cells.face_size(f)):
-            p = cells.side_point(c, k, j)     # point j of face k in c's outward order:
+        for j in range(cells.side_num_points(c, k)):
+            p = cells.side_point_id(c, k, j)  # point j of face k in c's outward order:
                                               #   forward on side 0, reversed on side 1
 ```
 
-`side_point` is the one abstraction every polyhedral kernel stands on.
+`side_point_id` is the one abstraction every polyhedral kernel stands on.
 However a face is stored, a cell walks it outward. That is the property
 López, volumes and solid angles all need, and the one the face-based
 formulation exploits by walking a face once per side.
@@ -200,12 +200,12 @@ formulation exploits by walking a face once per side.
 the shape path's face view does:
 
 - `entity_id(f)`, `num_sides(f)`, `side_cell(f, k)`, `side_local(f, k)`;
-- `point_id(f, j)` and `point(f, j)`;
-- `face_size(f)` -- constant for a triangle or quad face, runtime for a
+- `point_id(f, j)` and `corner_position(f, j)`;
+- `num_points(f)` -- constant for a triangle or quad face, runtime for a
   polygon.
 
 **Recommendation (section 7, question 1): give the shape path's views the
-same entity methods** -- `face_size(f)` on face views, `num_faces(c)` on
+same entity methods** -- `num_points(f)` on face views, `num_faces(c)` on
 cell views, each returning the shape's constant. Section 10 withdrew
 "counts as methods" for the shape kernels themselves, and that stands:
 shape kernels keep their compile-time constants. The point here is
@@ -351,7 +351,7 @@ reference element.
 
 ## 7. Questions to settle
 
-1. **Shared entity methods** (`face_size(f)`, `num_faces(c)`) on both
+1. **Shared entity methods** (`num_points(f)`, `num_faces(c)`) on both
    paths' views, so face-based finite-volume algorithms are written once?
    Recommended: yes, for faces and sides. The shape path's own kernels
    keep their constants.
@@ -402,8 +402,8 @@ and VTK conversion in `interop/vtk.py`:
     into runs. This gives the same numbering the shape path gives the same
     edges, and per face-point entry an edge id and sign.
 - **Kernels.** Cell views are `_PolyhedralCells`: `num_faces(c)`,
-  `face_id(c, k)`, `face_side(c, k)`, `face_size(f)`,
-  `side_point(c, k, j)`, and `point_id(c, j)` over the derived points.
+  `face_id(c, k)`, `face_side(c, k)`, `side_num_points(c, k)`,
+  `side_point_id(c, k, j)`, and `point_id(c, j)` over the derived points.
   Face views are `_PolygonFaces`, with the shape path's side methods.
   `Polyhedron` and `Polygon` are deliberately not `Shape`s, whose methods
   assume fixed points and shape functions; geometry on them is
@@ -456,10 +456,10 @@ a host loop; `orient` beyond inward boundary faces.
 |---|---|---|
 | `num_faces(c)` | `NUM_FACES`, a constant | from the CSR offsets |
 | `face_id(c, k)`, `face_side(c, k)` | the face incidence | the stored entries |
-| `side_size(c, k)` | the face table's count | `face_size(face_id(c, k))` |
-| `side_point(c, k, j)`, `side_position(c, k, j)` | `face_corner` (a voxel's pixels as quads) | the stored order, reversed on side 1 |
+| `side_num_points(c, k)` | the face table's count | `num_points(face_id(c, k))` |
+| `side_point_id(c, k, j)`, `side_position(c, k, j)` | `face_corner` (a voxel's pixels as quads) | the stored order, reversed on side 1 |
 
-Face views on both paths offer `face_size(f)`. On the shape path every
+Face views on both paths offer `num_points(f)`. On the shape path every
 count is a compile-time constant, so a shape kernel compiles as before.
 
 `_FaceWalk` is a mixin of its own, added only to domain views. An order-2

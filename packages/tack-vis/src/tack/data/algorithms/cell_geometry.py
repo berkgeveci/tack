@@ -21,7 +21,7 @@ def _cell_geometry(cells, volumes, centroids):
         six = 0.0
         weighted = tack.Vector([0.0, 0.0, 0.0])
         for k in range(cells.num_faces(c)):
-            size = cells.side_size(c, k)
+            size = cells.side_num_points(c, k)
             apex = tack.Vector([0.0, 0.0, 0.0])
             for j in range(size):
                 apex += cells.side_position(c, k, j) - origin
@@ -64,12 +64,12 @@ def _line_geometry(cells, lengths, centroids):
     for c in cells:
         # Each segment's length, and its midpoint weighted by it, from the chain's
         # first point.
-        origin = cells.point_position(cells.line_point(c, 0))
+        origin = cells.point_position(cells.line_point_id(c, 0))
         total = 0.0
         weighted = origin - origin
-        for j in range(cells.line_size(c) - 1):
-            a = cells.point_position(cells.line_point(c, j)) - origin
-            b = cells.point_position(cells.line_point(c, j + 1)) - origin
+        for j in range(cells.line_num_points(c) - 1):
+            a = cells.point_position(cells.line_point_id(c, j)) - origin
+            b = cells.point_position(cells.line_point_id(c, j + 1)) - origin
             length = (b - a).norm()
             total += length
             weighted += length * (a + b)

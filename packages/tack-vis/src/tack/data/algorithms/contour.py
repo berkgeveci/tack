@@ -35,16 +35,16 @@ def _contour_points(cells, u, isovalue, per_cell, starts, points, edges, weights
         first = 3 * starts[cell]
         for k in range(3 * cells.contour_count(case)):
             e = cells.contour_edge(case, k)
-            ja = cells.edge_point(e, 0)
-            jb = cells.edge_point(e, 1)
+            ja = cells.edge_corner(e, 0)
+            jb = cells.edge_corner(e, 1)
             # Always from the lower point id, so cells sharing an edge compute
             # the same point, bit for bit, when their values agree there.
             if cells.point_id(c, jb) < cells.point_id(c, ja):
                 ja, jb = jb, ja
             va = u.corner_value(c, ja)
             w = (isovalue - va) / (u.corner_value(c, jb) - va)
-            xa = cells.point(c, ja)
-            points[first + k] = xa + w * (cells.point(c, jb) - xa)
+            xa = cells.corner_position(c, ja)
+            points[first + k] = xa + w * (cells.corner_position(c, jb) - xa)
             a = cells.point_id(c, ja)
             b = cells.point_id(c, jb)
             edges[first + k] = [a, b]
@@ -192,11 +192,11 @@ def _lopez_counts(cells, values, iso, counts):
         if below == 0 or above == 0:
             continue
         for k in range(cells.num_faces(c)):
-            n = cells.side_size(c, k)
+            n = cells.side_num_points(c, k)
             keyed = 0
             for j in range(n):
-                va = values[cells.side_point(c, k, j)]
-                vb = values[cells.side_point(c, k, j + 1 if j + 1 < n else 0)]
+                va = values[cells.side_point_id(c, k, j)]
+                vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
                 if va < iso and vb >= iso:
                     keyed += 1
             counts[cells.entry(c, k)] = keyed
@@ -220,25 +220,25 @@ def _lopez_pairs(cells, values, iso, starts, pair_from, pair_to):
         if below == 0 or above == 0:
             continue
         for k in range(cells.num_faces(c)):
-            n = cells.side_size(c, k)
+            n = cells.side_num_points(c, k)
             at = starts[cells.entry(c, k)]
             for j in range(n):
-                va = values[cells.side_point(c, k, j)]
-                vb = values[cells.side_point(c, k, j + 1 if j + 1 < n else 0)]
+                va = values[cells.side_point_id(c, k, j)]
+                vb = values[cells.side_point_id(c, k, j + 1 if j + 1 < n else 0)]
                 if va < iso and vb >= iso:
                     nxt = j
                     for m in range(1, n):
                         j2 = j + m if j + m < n else j + m - n
-                        wa = values[cells.side_point(c, k, j2)]
-                        wb = values[cells.side_point(c, k, j2 + 1 if j2 + 1 < n else 0)]
+                        wa = values[cells.side_point_id(c, k, j2)]
+                        wb = values[cells.side_point_id(c, k, j2 + 1 if j2 + 1 < n else 0)]
                         if (1 if wa >= iso else 0) != (1 if wb >= iso else 0):
                             nxt = j2
                             break
                     pair_from[at] = _edge_key(
-                        cells.side_point(c, k, j), cells.side_point(c, k, j + 1 if j + 1 < n else 0))
+                        cells.side_point_id(c, k, j), cells.side_point_id(c, k, j + 1 if j + 1 < n else 0))
                     pair_to[at] = _edge_key(
-                        cells.side_point(c, k, nxt),
-                        cells.side_point(c, k, nxt + 1 if nxt + 1 < n else 0))
+                        cells.side_point_id(c, k, nxt),
+                        cells.side_point_id(c, k, nxt + 1 if nxt + 1 < n else 0))
                     at += 1
 
 
@@ -386,8 +386,8 @@ def _line_counts(cells, values, iso, counts):
     for c in cells:
         crossings = 0
         for k in range(cells.num_faces(c)):
-            above_a = values[cells.side_point(c, k, 0)] >= iso
-            above_b = values[cells.side_point(c, k, 1)] >= iso
+            above_a = values[cells.side_point_id(c, k, 0)] >= iso
+            above_b = values[cells.side_point_id(c, k, 1)] >= iso
             if above_a != above_b:
                 crossings += 1
         counts[cells.entity_id(c)] = crossings // 2
@@ -404,8 +404,8 @@ def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, en
         first = -1
         for k in range(n):
             if first < 0:
-                if (values[cells.side_point(c, k, 0)] < iso
-                        and values[cells.side_point(c, k, 1)] >= iso):
+                if (values[cells.side_point_id(c, k, 0)] < iso
+                        and values[cells.side_point_id(c, k, 1)] >= iso):
                     first = k
         if first < 0:
             continue
@@ -413,8 +413,8 @@ def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, en
         rising = 0
         for i in range(n):
             k = (first + i) % n
-            a = cells.side_point(c, k, 0)
-            b = cells.side_point(c, k, 1)
+            a = cells.side_point_id(c, k, 0)
+            b = cells.side_point_id(c, k, 1)
             above_a = values[a] >= iso
             above_b = values[b] >= iso
             if above_a != above_b:
@@ -423,14 +423,14 @@ def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, en
                     rising = f
                 else:
                     line_faces[at] = [rising, f]
-                    line_cells[at] = cells.cell_id(c)
+                    line_cells[at] = cells.entity_id(c)
                     at += 1
                 if cells.face_side(c, k) == 0:
                     # The face's side 0 records its iso-point, from its lower point
                     # id, as every contour interpolates.
                     lo = 0 if a < b else 1
-                    p = cells.side_point(c, k, lo)
-                    q = cells.side_point(c, k, 1 - lo)
+                    p = cells.side_point_id(c, k, lo)
+                    q = cells.side_point_id(c, k, 1 - lo)
                     w = (iso - values[p]) / (values[q] - values[p])
                     xp = cells.side_position(c, k, lo)
                     crossed[f] = 1

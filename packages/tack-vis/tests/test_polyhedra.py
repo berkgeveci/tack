@@ -115,8 +115,8 @@ def _walks(cells, out, width):
     for c in cells:
         at = c * width
         for k in range(cells.num_faces(c)):
-            for j in range(cells.face_size(cells.face_id(c, k))):
-                out[at] = cells.side_point(c, k, j)
+            for j in range(cells.side_num_points(c, k)):
+                out[at] = cells.side_point_id(c, k, j)
                 at += 1
 
 

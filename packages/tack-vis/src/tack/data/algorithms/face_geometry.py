@@ -13,12 +13,12 @@ __all__ = ['FaceGeometry', 'face_geometry']
 @tack.kernel
 def _face_geometry(faces, normals, areas):
     for f in faces:
-        size = faces.face_size(f)                # the shape's constant, or a polygon's
-        origin = faces.point(f, 0)
+        size = faces.num_points(f)                # the shape's constant, or a polygon's
+        origin = faces.corner_position(f, 0)
         n = tack.Vector([0.0, 0.0, 0.0])
         for j in range(1, size - 1):
             # Newell's normal, from the face's first point: a fan of triangles.
-            n += (faces.point(f, j) - origin).cross(faces.point(f, j + 1) - origin)
+            n += (faces.corner_position(f, j) - origin).cross(faces.corner_position(f, j + 1) - origin)
         length = n.norm()
         normals[faces.entity_id(f)] = n / length
         areas[faces.entity_id(f)] = 0.5 * length
@@ -49,13 +49,13 @@ def _end_geometry(cells, normals, areas):
     # A polyline's facets are its ends: each one's normal is the chain's direction
     # there, pointing out of it, and its "area" 1. Side 0's cell measures it.
     for c in cells:
-        last = cells.line_size(c) - 1
+        last = cells.line_num_points(c) - 1
         for k in range(2):
             if cells.face_side(c, k) == 0:
                 at = 0 if k == 0 else last
                 inside = 1 if k == 0 else last - 1
-                d = (cells.point_position(cells.line_point(c, at))
-                     - cells.point_position(cells.line_point(c, inside)))
+                d = (cells.point_position(cells.line_point_id(c, at))
+                     - cells.point_position(cells.line_point_id(c, inside)))
                 f = cells.face_id(c, k)
                 normals[f] = d / d.norm()
                 areas[f] = 1.0

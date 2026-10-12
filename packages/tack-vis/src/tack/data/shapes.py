@@ -53,7 +53,7 @@ Methods, all callable only from kernels and device functions:
   ``(d/dr, d/ds, d/dt)``.
 - ``is_inside(pc, tol)``: 1 if ``pc`` is in the parametric domain widened
   by ``tol``, else 0.
-- ``edge_point(e, k)``, ``face_point(f, k)``, ``face_shape(f)``,
+- ``edge_corner(e, k)``, ``face_corner(f, k)``, ``face_shape(f)``,
   ``face_num_points(f)``: VTK's ``GetEdge``/``GetFace`` as indices into the
   cell's points, and the face's shape id.
 - ``interpolate(values, pc)``, ``interpolate_point(pts, pc)``,
@@ -123,8 +123,10 @@ _PYRAMID_EDGES = tack.constant(
 
 _TETRA_FACES = tack.constant(
     (0, 1, 3, -1, 1, 2, 3, -1, 2, 0, 3, -1, 0, 2, 1, -1), tack.i32)
+# A voxel's faces as VTK's pixels, each with its last two corners swapped so it
+# goes round: as quads.
 _VOXEL_FACES = tack.constant(
-    (2, 0, 6, 4, 1, 3, 5, 7, 0, 1, 4, 5, 3, 2, 7, 6, 1, 0, 3, 2, 4, 5, 6, 7),
+    (2, 0, 4, 6, 1, 3, 7, 5, 0, 1, 5, 4, 3, 2, 6, 7, 1, 0, 2, 3, 4, 5, 7, 6),
     tack.i32)
 _HEXAHEDRON_FACES = tack.constant(
     (0, 4, 7, 3, 1, 2, 6, 5, 0, 1, 5, 4, 3, 7, 6, 2, 0, 3, 2, 1, 4, 5, 6, 7),
@@ -252,15 +254,15 @@ class Shape:
             return self.parametric_point(k)
         e = k - self.NUM_POINTS
         if e < self.NUM_EDGES:
-            return 0.5 * (self.parametric_point(self.edge_point(e, 0))
-                          + self.parametric_point(self.edge_point(e, 1)))
+            return 0.5 * (self.parametric_point(self.edge_corner(e, 0))
+                          + self.parametric_point(self.edge_corner(e, 1)))
         i = e - self.NUM_EDGES
         if i < self.QUADRATIC_FACES:
             f = self.NUM_FACES - self.QUADRATIC_FACES + i
-            return 0.25 * (self.parametric_point(self.face_point(f, 0))
-                           + self.parametric_point(self.face_point(f, 1))
-                           + self.parametric_point(self.face_point(f, 2))
-                           + self.parametric_point(self.face_point(f, 3)))
+            return 0.25 * (self.parametric_point(self.face_corner(f, 0))
+                           + self.parametric_point(self.face_corner(f, 1))
+                           + self.parametric_point(self.face_corner(f, 2))
+                           + self.parametric_point(self.face_corner(f, 3)))
         return self.parametric_center()
 
     @tack.func
@@ -275,12 +277,12 @@ class Shape:
         return -1
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         """Point ``k`` (0 or 1) of edge ``e``, as an index into the cell's points."""
         return -1
 
     @tack.func
-    def face_point(self, f, k):
+    def face_corner(self, f, k):
         """Point ``k`` of face ``f``, as an index into the cell's points.
 
         A face's points are in VTK's order, which orients its normal out of
@@ -291,8 +293,8 @@ class Shape:
 
     @tack.func
     def face_shape(self, f):
-        """The shape id of face ``f``: ``TRIANGLE``, ``QUAD`` or, for a voxel, ``PIXEL``;
-        ``LINE`` for a 2D shape's."""
+        """The shape id of face ``f``: ``TRIANGLE`` or ``QUAD`` (a voxel's faces too, going
+        round); ``LINE`` for a 2D shape's."""
         return 0
 
     @tack.func
@@ -406,9 +408,9 @@ class _Surface(Shape):
         return LINE
 
     @tack.func
-    def face_point(self, f, k):
+    def face_corner(self, f, k):
         """Point ``k`` of the cell's edge ``f``, going round the cell: its faces."""
-        return self.edge_point(f, k)
+        return self.edge_corner(f, k)
 
     @tack.func
     def _newton_step(self, m, residual):
@@ -546,7 +548,7 @@ class Triangle(_Surface):
         return _nearest_on_triangle(_point(pts, 0), _point(pts, 1), _point(pts, 2), x)
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         return _TRIANGLE_EDGES[2 * e + k]
 
 
@@ -601,11 +603,11 @@ class Pixel(_Quadrilateral):
         return j & 1, (j >> 1) & 1
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         return _PIXEL_EDGES[2 * e + k]
 
     @tack.func
-    def face_point(self, f, k):
+    def face_corner(self, f, k):
         return _PIXEL_FACES[2 * f + k]
 
 
@@ -620,7 +622,7 @@ class Quad(_Quadrilateral):
         return (j ^ (j >> 1)) & 1, (j >> 1) & 1
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         return _QUAD_EDGES[2 * e + k]
 
 
@@ -708,9 +710,9 @@ class Tetra(_Solid):
             # The nearest point of the nearest face.
             nearest = -1.0
             for f in range(4):
-                q = _nearest_on_triangle(_point(pts, self.face_point(f, 0)),
-                                         _point(pts, self.face_point(f, 1)),
-                                         _point(pts, self.face_point(f, 2)), x)
+                q = _nearest_on_triangle(_point(pts, self.face_corner(f, 0)),
+                                         _point(pts, self.face_corner(f, 1)),
+                                         _point(pts, self.face_corner(f, 2)), x)
                 d = (q - x).dot(q - x)
                 if nearest < 0.0 or d < nearest:
                     nearest = d
@@ -718,11 +720,11 @@ class Tetra(_Solid):
         return out
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         return _TETRA_EDGES[2 * e + k]
 
     @tack.func
-    def face_point(self, f, k):
+    def face_corner(self, f, k):
         return _TETRA_FACES[4 * f + k]
 
     @tack.func
@@ -814,16 +816,16 @@ class Voxel(_Box):
         return j & 1, (j >> 1) & 1, (j >> 2) & 1
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         return _VOXEL_EDGES[2 * e + k]
 
     @tack.func
-    def face_point(self, f, k):
+    def face_corner(self, f, k):
         return _VOXEL_FACES[4 * f + k]
 
     @tack.func
     def face_shape(self, f):
-        return PIXEL
+        return QUAD
 
 
 @tack.device_class
@@ -847,11 +849,11 @@ class Hexahedron(_Box):
         return (j ^ (j >> 1)) & 1, (j >> 1) & 1, (j >> 2) & 1
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         return _HEXAHEDRON_EDGES[2 * e + k]
 
     @tack.func
-    def face_point(self, f, k):
+    def face_corner(self, f, k):
         return _HEXAHEDRON_FACES[4 * f + k]
 
     @tack.func
@@ -945,11 +947,11 @@ class Wedge(_Solid):
         return tack.Vector([r * scale, s * scale, min(max(pc[2], 0.0), 1.0)])
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         return _WEDGE_EDGES[2 * e + k]
 
     @tack.func
-    def face_point(self, f, k):
+    def face_corner(self, f, k):
         return _WEDGE_FACES[4 * f + k]
 
     @tack.func
@@ -1021,11 +1023,11 @@ class Pyramid(_Solid):
                             min(max(pc[2], 0.0), 1.0)])
 
     @tack.func
-    def edge_point(self, e, k):
+    def edge_corner(self, e, k):
         return _PYRAMID_EDGES[2 * e + k]
 
     @tack.func
-    def face_point(self, f, k):
+    def face_corner(self, f, k):
         return _PYRAMID_FACES[4 * f + k]
 
     @tack.func

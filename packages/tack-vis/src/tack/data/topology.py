@@ -243,19 +243,13 @@ def _emit_faces(cells, start, rows, kinds, owners):
         first = start + cells.index(c) * cells.NUM_FACES
         for f in range(cells.NUM_FACES):
             n = cells.face_num_points(f)
-            p0 = cells.point_id(c, cells.face_point(f, 0))
-            p1 = cells.point_id(c, cells.face_point(f, 1))
-            p2 = cells.point_id(c, cells.face_point(f, 2)) if n >= 3 else _NO_POINT
-            p3 = cells.point_id(c, cells.face_point(f, 3)) if n == 4 else _NO_POINT
-            kind = cells.face_shape(f)
-            if kind == shapes.PIXEL:
-                # A voxel's faces are pixels, x-fastest: as a quad, 0 1 3 2.
-                rows[first + f] = [p0, p1, p3, p2]
-                kinds[first + f] = shapes.QUAD
-            else:
-                rows[first + f] = [p0, p1, p2, p3]
-                kinds[first + f] = kind
-            owners[first + f] = [cells.cell_id(c), f]
+            p0 = cells.point_id(c, cells.face_corner(f, 0))
+            p1 = cells.point_id(c, cells.face_corner(f, 1))
+            p2 = cells.point_id(c, cells.face_corner(f, 2)) if n >= 3 else _NO_POINT
+            p3 = cells.point_id(c, cells.face_corner(f, 3)) if n == 4 else _NO_POINT
+            rows[first + f] = [p0, p1, p2, p3]
+            kinds[first + f] = cells.face_shape(f)
+            owners[first + f] = [cells.entity_id(c), f]
 
 
 @tack.kernel
@@ -490,8 +484,8 @@ def _emit_edges(cells, start, keys, signs):
     for c in cells:
         first = start + cells.index(c) * cells.NUM_EDGES
         for e in range(cells.NUM_EDGES):
-            a = cells.point_id(c, cells.edge_point(e, 0))
-            b = cells.point_id(c, cells.edge_point(e, 1))
+            a = cells.point_id(c, cells.edge_corner(e, 0))
+            b = cells.point_id(c, cells.edge_corner(e, 1))
             lo, hi = _order(a, b)
             keys[first + e] = [lo, hi]
             signs[first + e] = 1 if a < b else -1

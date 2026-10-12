@@ -10,7 +10,7 @@ __all__ = ['edge_lengths']
 @tack.kernel
 def _edge_lengths(edges, out):
     for e in edges:
-        out[edges.entity_id(e)] = (edges.point(e, 1) - edges.point(e, 0)).norm()
+        out[edges.entity_id(e)] = (edges.corner_position(e, 1) - edges.corner_position(e, 0)).norm()
 
 
 def edge_lengths(data):
