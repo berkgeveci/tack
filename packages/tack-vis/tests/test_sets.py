@@ -95,6 +95,28 @@ def test_side_sets_from_cells_and_local_faces(backend):
         td.Set.from_sides(data, [0], [6])
 
 
+def test_the_boundary_set_is_taken_as_the_faces_hold_it(backend, monkeypatch):
+    """boundary_faces wraps the boundary the faces already hold, sorted and
+    unique: it is not checked again over every face, which made external
+    faces three times slower on 5M cells. Its flags are made when asked for."""
+    from tack.data import sets
+
+    data = _grid()
+    faces = data.topology.faces()
+    checked = []
+    adopt = sets.Set._adopt
+    monkeypatch.setattr(sets.Set, "_adopt", lambda s, flags: (checked.append(s), adopt(s, flags)))
+    boundary = td.boundary_faces(data)
+    assert not checked
+    assert boundary.ids is faces.boundary()
+    expected = np.zeros(faces.num_faces, np.int32)
+    expected[faces.boundary().to_numpy()] = 1
+    np.testing.assert_array_equal(boundary.flags().to_numpy(), expected)
+    data.sets["boundary"] = boundary
+    surface = td.external_faces(data)
+    assert surface.num_cells == len(boundary)
+
+
 def test_filters_carry_sets(backend):
     data = _grid()
     data.fields["c"] = td.Field(td.Constant(data), _scalars(np.arange(6.0)))

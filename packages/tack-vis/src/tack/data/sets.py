@@ -85,6 +85,17 @@ class Set:
         self._adopt(flags)
 
     @classmethod
+    def _from_sorted_ids(cls, topology, on, ids):
+        """A set of ids already sorted, unique and in range (as ``boundary()``
+        gives them): taken as they are, its flags made only when asked for."""
+        out = cls.__new__(cls)
+        out.topology = topology
+        out.on = on
+        out.ids = ids
+        out._flags = None
+        return out
+
+    @classmethod
     def _from_flags(cls, topology, on, flags):
         """A set from a 0/1 i32 field over the entities."""
         out = cls.__new__(cls)
@@ -136,11 +147,17 @@ class Set:
 
     def flags(self):
         """Membership: an i32 field, 1 for each entity in the set, else 0."""
+        if self._flags is None:
+            n = _count(self.topology, self.on)
+            flags = tack.zeros(tack.i32, (n,))
+            if self.ids.shape[0]:
+                _mark(self.ids, flags, tack.zeros(tack.i32, (1,)), n)
+            self._flags = flags
         return self._flags
 
     def cell_keys(self):
         """Each cell's key, for splitting the cells' groups: its membership."""
-        return self._flags
+        return self.flags()
 
     def __len__(self):
         return int(self.ids.shape[0])
