@@ -436,9 +436,9 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
     trace_times = tack.field(dtype, shape=(m * capacity,))
     if m:
         xs.from_numpy(host)
-        times.from_numpy(np.zeros(m, dtype.numpy_dtype))
-        taken.from_numpy(np.zeros(m, np.int32))
-        status.from_numpy(np.full(m, SUCCESS, np.int32))
+        times.fill(0)
+        taken.fill(0)
+        status.fill(int(SUCCESS))
         positions = _as_vectors(arrays.materialize(geometry.values), dtype)
         eps = float(np.finfo(dtype.numpy_dtype).eps)
         _advect(mesh, _kinds(present), *(shape() for shape in _SHAPES), positions, velocity, on_cells,

@@ -250,7 +250,7 @@ class CellLocator:
         found = tack.full(scratch, (m,), none) if m else tack.field(scratch, shape=(0,))
         pcs = tack.Vector.field(3, dtype, shape=(m,))
         if m:
-            pcs.from_numpy(np.zeros((m, 3), dtype.numpy_dtype))
+            pcs.fill(0)
         if m and data.num_cells:
             nbins = int(np.prod(self.dims))
             keys = tack.field(tack.i32, shape=(m,))
@@ -339,7 +339,7 @@ def probe(data, where, fields=None, locator=None):
         values = (tack.Vector.field(width, dtype, shape=(m,)) if width
                   else tack.field(dtype, shape=(m,)))
         if m:
-            values.from_numpy(np.zeros((m, width) if width else (m,), dtype.numpy_dtype))
+            values.fill(0)
             for group in data.launch_groups("cells", [f]):
                 if group.count:
                     _evaluate(data.domain_view("cells", group), f.view(group), links, order,
