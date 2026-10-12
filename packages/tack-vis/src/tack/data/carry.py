@@ -37,8 +37,17 @@ from tack.data import arrays, ids
 from tack.data.arrays import materialize, size_of, width_of
 from tack.data.dataset import DataSet, Field
 from tack.data.spaces import H1, L2, Constant, Values
+from tack.lang.field import Field as _DeviceField
 
 __all__ = ["Interpolate", "Pieces", "Same", "Take", "carry"]
+
+
+def _id_field(values):
+    """Ids as a field: a field as it is, a list or an array copied to one."""
+    if values is None or isinstance(values, _DeviceField):
+        return values
+    host = np.asarray(values)
+    return ids.as_ids(host, ids.at_least(tack.i32, int(host.max()) + 1 if host.size else 0))
 
 
 class Same:
@@ -51,8 +60,9 @@ class Take:
     its oriented values change sign."""
 
     def __init__(self, ids, turned=None):
-        self.ids = ids
-        self.turned = turned
+        self.ids = _id_field(ids)
+        self.turned = turned if turned is None or isinstance(turned, _DeviceField) \
+            else tack.field_like(np.asarray(turned, np.int32))
 
 
 class Pieces(Take):

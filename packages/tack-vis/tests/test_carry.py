@@ -91,3 +91,17 @@ def test_fields_selects_what_comes(backend, filter_):
     assert _names(run([])) == set()
     with pytest.raises(KeyError, match="no field 'hieght'"):
         run(["hieght"])
+
+
+def test_maps_take_ids_as_lists_or_arrays(backend):
+    """``Take`` and ``Pieces`` hold their ids as fields, whatever they are given."""
+    data = _every_kind()
+    t = data.topology
+    by_field = td.carry.carry(data, t, points=td.carry.Same(),
+                              cells=td.carry.Take(_ints([2, 0, 1])), fields=["cell"])
+    for ids in ([2, 0, 1], np.array([2, 0, 1])):
+        for kind in (td.carry.Take, td.carry.Pieces):
+            out = td.carry.carry(data, t, points=td.carry.Same(), cells=kind(ids),
+                                 fields=["cell"])
+            np.testing.assert_array_equal(out.fields["cell"].values.to_numpy(),
+                                          by_field.fields["cell"].values.to_numpy())
