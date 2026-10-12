@@ -20,7 +20,7 @@ at the repository root rather than under `packages/`.
 | 08 | Reductions | `field.sum()`, `field.min()`, `field.max()` |
 | 09 | Shared Memory | `tack.shared`, `tack.shared_like`, `tack.thread_id`, `tack.barrier` |
 | 10 | Vectors | `tack.Vector`, `.dot()`, `.cross()`, `.normalized()` |
-| 11 | Templates | `@tack.data_oriented` classes with `tack.template()` |
+| 11 | Templates | `@tack.device_class` classes with `tack.template()` |
 | 12-20 | Applications | Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, image processing |
 | 21 | Array Abstraction | VTK-style array abstraction with compile-time dispatch |
 

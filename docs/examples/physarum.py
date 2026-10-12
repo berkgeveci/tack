@@ -16,7 +16,7 @@ from tack import random
 
 
 # --8<-- [start:model]
-@tack.data_oriented
+@tack.device_class
 class Agents:
     sense_angle = 0.6
     sense_distance = 4.0

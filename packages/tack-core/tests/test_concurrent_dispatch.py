@@ -273,7 +273,7 @@ def test_threads_sharing_a_variant_each_get_their_own_scalars(backend):
 # construction lock still protects concurrent misses for a shared kernel.
 
 
-@tack.data_oriented
+@tack.device_class
 class _Scaler:
     factor = 3.0
 
@@ -356,7 +356,7 @@ def test_concurrent_templates_preserve_method_source(monkeypatch):
     assert ast.dump(_Scaler._tack_func_methods['apply']._funcdef) == before
 
 
-@tack.data_oriented
+@tack.device_class
 class _ColdScaler:
     """A distinct class-level constant, so its IR cache entry is cold.
 

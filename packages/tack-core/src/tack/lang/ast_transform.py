@@ -315,7 +315,7 @@ class KernelTransformer(ast.NodeVisitor):
                 f"assigned. Kernels do not capture Python variables from the "
                 f"enclosing scope: define it as {name} = tack.constant(...), "
                 f"pass the value as an argument, or make it a class-level "
-                f"constant of a @tack.data_oriented template.")
+                f"constant of a @tack.device_class template.")
 
     def _check_loop_variables_stay_in_their_loops(self, function: ir.IRFunction):
         """Reject a read of a loop variable after its loop.

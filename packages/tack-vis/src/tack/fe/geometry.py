@@ -11,7 +11,7 @@ import tack
 
 # ── Linear (order 1) maps ──────────────────────────────────────────
 
-@tack.data_oriented
+@tack.device_class
 class LinearQuadMap:
     """Bilinear mapping for order-1 quadrilateral elements.
 
@@ -79,7 +79,7 @@ class LinearQuadMap:
         return -(1.0 - r) * p0 - r * p1 + r * p2 + (1.0 - r) * p3
 
 
-@tack.data_oriented
+@tack.device_class
 class LinearHexMap:
     """Trilinear mapping for order-1 hexahedral elements.
 

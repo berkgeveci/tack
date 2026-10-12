@@ -296,7 +296,7 @@ uv run python docs/examples/kernel_results.py --arch metal --check
 Kernels are compiled on first call. A compiled *variant* is reused by later
 calls that agree on everything the generated code depends on: argument
 dtypes, which arguments are fields, scalars or textures, vector widths,
-texture extents, `@tack.data_oriented` class constants and layout, any field
+texture extents, `@tack.device_class` class constants and layout, any field
 dimensions the kernel bakes in (for example `x.shape[1]` used as a row
 stride), and on CPU whether the fields overlap. Anything else is a runtime
 parameter.
@@ -352,7 +352,7 @@ on GPUs without texture hardware the source shows the software sampling
 the call would use. Templates and scalar arguments work as expected:
 
 ```python
-@tack.data_oriented
+@tack.device_class
 class Sim:
     GRAVITY = -9.81
 

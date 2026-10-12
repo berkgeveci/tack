@@ -3,7 +3,7 @@
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class Wedge:
     """6-node wedge with linear-triangular x linear shape functions.
 

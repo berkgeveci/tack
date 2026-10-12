@@ -5,7 +5,7 @@ import numpy as np
 import tack
 
 
-@tack.data_oriented
+@tack.device_class
 class AOSArray:
     """Single-component array backed by a tack.field."""
 
@@ -21,7 +21,7 @@ class AOSArray:
         self.data[i] = val
 
 
-@tack.data_oriented
+@tack.device_class
 class AOSTupleArray:
     """Multi-component AOS: [x0,y0,z0, x1,y1,z1, ...].
 

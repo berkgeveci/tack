@@ -215,7 +215,7 @@ def test_template_method_source_is_preserved():
 
     tack.init(arch=tack.cpu)
 
-    @tack.data_oriented
+    @tack.device_class
     class MyClass:
         val = 10
 
@@ -245,7 +245,7 @@ def test_repeated_templates_preserve_method_source():
 
     tack.init(arch=tack.cpu)
 
-    @tack.data_oriented
+    @tack.device_class
     class Counter:
         step = 1
 

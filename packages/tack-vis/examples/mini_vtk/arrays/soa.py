@@ -8,7 +8,7 @@ _soa_cache = {}
 
 
 def make_soa_type(nc):
-    """Generate a @tack.data_oriented SOA class with nc component fields.
+    """Generate a @tack.device_class SOA class with nc component fields.
 
     Each component is a separate tack.field (c0, c1, ...).
     The get_value/set_value interface dispatches to the right component
@@ -33,7 +33,7 @@ def make_soa_type(nc):
         set_lines.append(f"            self.c{i}[i] = val")
     set_body = "\n".join(set_lines)
 
-    source = f"""@tack.data_oriented
+    source = f"""@tack.device_class
 class SOATupleArray{nc}:
     def __init__(self, {params}):
 {init_body}

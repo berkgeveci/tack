@@ -69,7 +69,7 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
             raise TypeError(
                 f"Unsupported argument type for parameter '{param.name}': {type(arg)}"
                 + (". A kernel defined in a class is called on an instance of it, "
-                   "and the class must be decorated with @tack.data_oriented."
+                   "and the class must be decorated with @tack.device_class."
                    if param.name == "self" else "")
             )
     return types

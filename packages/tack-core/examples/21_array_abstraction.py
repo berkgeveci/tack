@@ -1,6 +1,6 @@
 """21 -- VTK-style array abstraction with compile-time dispatch.
 
-Demonstrates using @tack.data_oriented templates to build a generic
+Demonstrates using @tack.device_class templates to build a generic
 array interface where different array types (AOS, constant, affine)
 all expose the same get_value/set_value API.  The template system
 inlines the correct implementation at compile time -- a ConstantArray
@@ -31,7 +31,7 @@ tack.init(arch=_arch)
 # Array types -- all share the same get_value / set_value interface
 # ---------------------------------------------------------------------------
 
-@tack.data_oriented
+@tack.device_class
 class AOSArray:
     """Backed by a tack.field -- standard memory-resident array."""
 
@@ -47,7 +47,7 @@ class AOSArray:
         self.data[i] = val
 
 
-@tack.data_oriented
+@tack.device_class
 class ConstantArray:
     """O(1) memory -- every element has the same value."""
 
@@ -59,7 +59,7 @@ class ConstantArray:
         return self.value
 
 
-@tack.data_oriented
+@tack.device_class
 class AffineArray:
     """O(1) memory -- value[i] = slope * i + intercept."""
 

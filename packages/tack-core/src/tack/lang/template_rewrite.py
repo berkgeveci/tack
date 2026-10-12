@@ -1,6 +1,6 @@
 """Tack template rewrite — AST pre-pass that resolves template parameters.
 
-When a @tack.kernel is called with a @tack.data_oriented object, this pass
+When a @tack.kernel is called with a @tack.device_class object, this pass
 rewrites the kernel AST before IR transformation:
 
 1. Removes template parameters from the function signature
@@ -29,7 +29,7 @@ def _method_call_name(name):
     return node
 
 
-# The names of each data-oriented class's numeric class attributes, found once
+# The names of each device class's numeric class attributes, found once
 # per class: scanning the method resolution order on every launch was most of
 # a small dataset filter's time, its views being composed of many mixins.
 _CONSTANT_NAMES = weakref.WeakKeyDictionary()
@@ -96,7 +96,7 @@ def classify_template_attrs(obj):
 
 
 def template_func_methods(cls) -> dict:
-    """The ``@tack.func`` methods of a data-oriented class, inherited ones included.
+    """The ``@tack.func`` methods of a device class, inherited ones included.
 
     Collected along the method resolution order, so an override replaces
     the method it overrides. Looked up when a kernel is lowered rather than
@@ -131,7 +131,7 @@ def template_func_attrs(obj) -> dict:
 def iteration_space(cls) -> tuple:
     """The attributes a ``for c in obj`` loop runs over, fastest first.
 
-    A data-oriented class declares them as ``__tack_iterate__``: one to
+    A device class declares them as ``__tack_iterate__``: one to
     three names of its scalar attributes, class constants or instance
     values. One name makes ``for c in obj`` the loop ``for c in
     range(obj.name)``, with ``c`` an integer. Two or three make it an

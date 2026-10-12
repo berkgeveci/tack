@@ -37,8 +37,8 @@ print(f"\n=== {args.arch.upper()} source ===")
 print(tack.inspect(saxpy, x, y, out, 2.0, mode="source"))
 
 
-# Data-oriented template example
-@tack.data_oriented
+# Device-class example
+@tack.device_class
 class Particles:
     GRAVITY = -9.81  # class-level constant (baked into code)
 

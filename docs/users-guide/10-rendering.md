@@ -58,7 +58,7 @@ camera = OrthographicCamera((0, 0, 3), (0, 0, 0), view_height=2.0,
                             width=128, height=128)
 ```
 
-Both are data-oriented classes with precomputed ray parameters as instance
+Both are device classes with precomputed ray parameters as instance
 scalars. Those are runtime kernel parameters, rather than class constants that
 require a new specialization whenever the view changes. Pixel `(0, 0)` is at
 the image's top left, with image y increasing downward.
