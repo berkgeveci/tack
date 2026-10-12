@@ -162,9 +162,9 @@ denoised = denoise(canvas)
 t_denoise = time.perf_counter() - t0
 print(f"Denoise: {t_denoise:.4f}s")
 
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
-    os.makedirs("results", exist_ok=True)
     Image.fromarray(noisy).save("results/pathtrace_noisy.png")
     Image.fromarray(denoised).save("results/pathtrace_denoised.png")
     print("Saved: pathtrace_noisy.png, pathtrace_denoised.png")

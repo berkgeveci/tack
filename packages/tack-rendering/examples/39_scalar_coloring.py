@@ -92,10 +92,10 @@ render(canvas, scene, camera, samples=1, max_bounces=0)  # warmup
 render(canvas, scene, camera, samples=4, max_bounces=1)
 
 img = canvas.to_numpy()
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
     fname = f"results/pathtrace_scalar_{_args.preset}.png"
-    os.makedirs("results", exist_ok=True)
     Image.fromarray(img).save(fname)
     print(f"Saved: {fname}")
 except ImportError:

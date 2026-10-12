@@ -98,9 +98,9 @@ image = annotate(image, [
     TextOverlay("Tack Renderer", position=(10, 10), font_size=18),
 ])
 
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
-    os.makedirs("results", exist_ok=True)
     Image.fromarray(image).save("results/pathtrace_annotated.png")
     print("Saved: pathtrace_annotated.png")
 except ImportError:

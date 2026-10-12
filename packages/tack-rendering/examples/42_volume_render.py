@@ -62,9 +62,9 @@ render_volume(canvas, vol, camera)  # warmup
 render_volume(canvas, vol, camera)
 
 img = canvas.to_numpy()
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
-    os.makedirs("results", exist_ok=True)
     Image.fromarray(img).save("results/pathtrace_gyroid_vol.png")
     print("Saved: results/pathtrace_gyroid_vol.png")
 except ImportError:

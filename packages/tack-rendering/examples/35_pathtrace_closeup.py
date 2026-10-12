@@ -103,9 +103,9 @@ t = time.perf_counter() - t0
 print(f"Render: {t:.4f}s  (1024x1024, {_args.samples}spp, {_args.bounces} bounces)")
 
 img = canvas.to_numpy()
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
-    os.makedirs("results", exist_ok=True)
     Image.fromarray(img).save("results/pathtrace_closeup.png")
     print("Saved: pathtrace_closeup.png")
 except ImportError:

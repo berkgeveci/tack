@@ -110,9 +110,9 @@ for target in targets:
 
     img = canvas.to_numpy()
     fname = f"results/pathtrace_{actual_tris // 1000}k.png"
+    os.makedirs("results", exist_ok=True)
     try:
         from PIL import Image
-        os.makedirs("results", exist_ok=True)
         Image.fromarray(img).save(fname)
         print(f"Saved: {fname}")
     except ImportError:
