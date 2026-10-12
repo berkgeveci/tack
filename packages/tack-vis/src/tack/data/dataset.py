@@ -313,11 +313,10 @@ def traces(data, field):
     data.topology.faces()
     out_space = SideTraces(data)
     width = arrays.width_of(field.values)
-    shape = (out_space.size, width) if width else (out_space.size,)
     out = (tack.Vector.field(width, arrays.dtype_of(field.values), shape=(out_space.size,))
            if width else tack.field(arrays.dtype_of(field.values), shape=(out_space.size,)))
     if out_space.size:
-        out.from_numpy(np.zeros(shape, dtype=arrays.dtype_of(field.values).numpy_dtype))
+        out.fill(0)
     for group in data.launch_groups("cells", [field]):
         if group.count and group.shape.NUM_FACES:
             _traces(data.domain_view("cells", group), field.view(group), out)
