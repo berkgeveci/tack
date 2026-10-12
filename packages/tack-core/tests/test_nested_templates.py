@@ -136,3 +136,44 @@ def test_a_template_holding_itself_is_refused(backend):
     loop.base = loop
     with pytest.raises(TypeError, match="holds itself"):
         _run(loop, 1)
+
+
+@tack.func
+def _one(k):
+    return 1
+
+
+@tack.func
+def _two(k):
+    return 2
+
+
+@tack.device_class
+class _Leaf:
+    def __init__(self, f):
+        self.get = f
+
+
+@tack.device_class
+class _Clash:
+    """``base__get`` and the nested ``base.get`` flatten to one name."""
+
+    def __init__(self, name, value):
+        self.base = _Leaf(_one)
+        setattr(self, name, value)
+
+
+@tack.kernel
+def _read_both(obj, out):
+    for i in range(1):
+        out[i] = obj.base__get(i) + obj.base.get(i)
+
+
+@pytest.mark.parametrize("value", [_two, 2.0], ids=["function", "scalar"])
+def test_flattened_names_may_not_collide(backend, value):
+    """A function attribute that flattened onto a nested one's name dropped the
+    other from the cache key, so replacing it ran stale code (the outside
+    review's 1-a). Every kind of attribute is refused on such a collision."""
+    out = tack.field(tack.i32, shape=(1,))
+    with pytest.raises(Exception, match="flatten to the same name"):
+        _read_both(_Clash("base__get", value), out)

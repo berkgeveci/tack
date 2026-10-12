@@ -239,9 +239,23 @@ def template_func_attrs(obj) -> dict:
     kernel's specialization, like a class-level constant. Nested templates'
     are included under their path.
     """
-    return _memo("funcs", obj, lambda: {
-        _prefix(path) + name: value for path, node in template_tree(obj)
-        for name, value in _own_func_attrs(node).items()})
+    return _memo("funcs", obj, lambda: _func_tree(obj))
+
+
+def _func_tree(obj):
+    # Flattened as the other attributes are, and refused on the same collision:
+    # a nested function overwriting another under one name kept the second out
+    # of the cache key, so replacing it ran stale code.
+    taken = set().union(*classify_template_attrs(obj))
+    flat = {}
+    for path, node in template_tree(obj):
+        for name, value in _own_func_attrs(node).items():
+            key = _prefix(path) + name
+            if key in flat or key in taken:
+                raise TypeError(f"{type(obj).__name__}: the attribute {key!r} and a "
+                                "nested template's attribute flatten to the same name")
+            flat[key] = value
+    return flat
 
 
 def template_structure(obj) -> tuple:
