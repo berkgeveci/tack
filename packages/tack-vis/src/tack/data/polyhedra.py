@@ -877,9 +877,3 @@ def orient(topology):
     sides = np.where(inward[cell_faces], 0, sides).astype(np.uint8)
     return PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces, sides,
                               num_points=topology.num_points, id_dtype=topology.id_dtype)
-
-
-# ── From a shape-based dataset ──────────────────────────────────────
-
-
-
