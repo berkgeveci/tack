@@ -70,7 +70,8 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   shared file system, `python -m tack.cache pack` gathers a warm-up run's
   entries into one bundle, which each rank reads once (or rank 0 reads and
   broadcasts, `tack.cache.load_bundle(comm=...)`); under MPI nothing is
-  looked up or written per kernel. CPU and Metal store compiled code; CUDA,
+  looked up or written per kernel. The entries take at most
+  `TACK_CACHE_SIZE` (1 GiB by default); the least recently used go first. CPU and Metal store compiled code; CUDA,
   HIP and Level Zero store the lowered kernels. See *The Kernel Cache* in
   the User's Guide.
 - `exclusive_scan` and `inclusive_scan` take `total=False` to skip the

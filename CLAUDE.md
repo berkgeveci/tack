@@ -236,7 +236,9 @@ stale entry runs. Backends opt into `.variant` with `cache_target()`,
 `variant_artifact()` and `load_variant()` (CPU: MCJIT object code; Metal:
 MSL). Atomic rename writes, checksummed entries, owner-only directories;
 under MPI the default mode reads one bundle and writes nothing (a Slurm
-batch script is not MPI: Slurm's size is `SLURM_STEP_NUM_TASKS`). The test
+batch script is not MPI: Slurm's size is `SLURM_STEP_NUM_TASKS`). Entries
+of every version share `TACK_CACHE_SIZE` (1 GiB): a writer prunes by mtime
+at most hourly (`.pruned` mark), and write-mode hits refresh mtime. The test
 suite runs with `TACK_CACHE=off` (`conftest.py`); `test_disk_cache.py` uses
 subprocesses. `TACK_CACHE=write pytest`, run twice, is the end-to-end check.
 

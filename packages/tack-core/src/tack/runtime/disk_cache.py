@@ -32,9 +32,14 @@ of ranks:
 - The directory must belong to the user and be writable by nobody else:
   entries hold code, so a directory others can write to is refused.
 
-Settings: ``TACK_CACHE_DIR`` (or ``tack.cache.configure(directory=...)``)
-and ``TACK_CACHE`` = ``off`` | ``bundle`` | ``read`` | ``write``; the default
-is ``write``, or ``bundle`` under MPI.
+- Entries of every Tack version share a size limit (1 GiB by default). A
+  writing process deletes the least recently used past it, scanning the
+  directory at most once an hour across processes (the ``.pruned`` mark),
+  never per kernel; a hit refreshes its entry's time at most once an hour.
+
+Settings: ``TACK_CACHE_DIR`` (or ``tack.cache.configure(directory=...)``),
+``TACK_CACHE`` = ``off`` | ``bundle`` | ``read`` | ``write`` (the default is
+``write``, or ``bundle`` under MPI) and ``TACK_CACHE_SIZE`` (``max_size``).
 """
 
 import contextlib
@@ -47,6 +52,7 @@ import secrets
 import struct
 import sys
 import threading
+import time
 import warnings
 import weakref
 from pathlib import Path
@@ -71,6 +77,16 @@ _LAUNCHERS = (("OMPI_COMM_WORLD_RANK", "OMPI_COMM_WORLD_SIZE"), ("PMI_RANK", "PM
               ("ALPS_APP_PE", None))
 _RANK_VARS = tuple(rank for rank, _ in _LAUNCHERS)
 _SIZE_VARS = tuple(size for _, size in _LAUNCHERS if size)
+
+# The size limit, and how pruning keeps to it: a writing process scans the
+# directory at most once an interval (across processes, by the mark's time)
+# and deletes the least recently used entries until 90% of the limit is left.
+# A hit refreshes its entry's time at most once an interval.
+_DEFAULT_SIZE_LIMIT = 1 << 30
+_PRUNE_INTERVAL = 3600.0
+_PRUNE_TO = 0.9
+_PRUNED_MARK = ".pruned"
+_SIZE_UNITS = {"": 1, "K": 1 << 10, "M": 1 << 20, "G": 1 << 30, "T": 1 << 40}
 
 _lock = threading.RLock()
 _overrides = {}
@@ -126,18 +142,51 @@ def default_directory() -> Path:
     return Path(base) / "tack"
 
 
-def configure(directory=None, mode=None):
-    """Set the cache directory and mode for this process, over the environment.
+def configure(directory=None, mode=None, max_size=None):
+    """Set the cache directory, mode and size limit for this process, over the
+    environment.
 
     Takes effect at the next kernel compiled. ``None`` leaves a setting to
-    ``TACK_CACHE_DIR`` / ``TACK_CACHE`` (or their defaults)."""
+    ``TACK_CACHE_DIR`` / ``TACK_CACHE`` / ``TACK_CACHE_SIZE`` (or their
+    defaults). ``max_size`` is bytes, a size such as ``"500M"`` or ``"2G"``,
+    or ``"unlimited"``."""
     global _state
     if mode is not None and mode not in MODES:
         raise ValueError(f"cache mode must be one of {', '.join(MODES)}, not {mode!r}")
+    if max_size is not None:
+        parse_size(max_size)
     with _lock:
         _overrides["directory"] = None if directory is None else Path(directory)
         _overrides["mode"] = mode
+        _overrides["max_size"] = max_size
         _state = None
+
+
+def parse_size(size):
+    """Bytes from an int or a size such as ``"500M"``, ``"2GB"`` or ``"1.5G"``
+    (binary units); None for ``"unlimited"``."""
+    if isinstance(size, int) and not isinstance(size, bool):
+        value = size
+    else:
+        text = str(size).strip().upper().replace(" ", "")
+        if text in ("UNLIMITED", "NONE"):
+            return None
+        match = re.fullmatch(r"(\d+(?:\.\d*)?)([KMGT]?)(?:I?B)?", text)
+        if match is None:
+            raise ValueError(f"a cache size is bytes, a size such as 500M or 2G, or "
+                             f"unlimited, not {size!r}")
+        value = int(float(match[1]) * _SIZE_UNITS[match[2]])
+    if value <= 0:
+        raise ValueError(f"a cache size must be positive, not {size!r}")
+    return value
+
+
+def size_limit():
+    """The size limit in bytes as it applies now, or None for no limit."""
+    size = _overrides.get("max_size")
+    if size is None:
+        size = os.environ.get("TACK_CACHE_SIZE", "").strip() or _DEFAULT_SIZE_LIMIT
+    return parse_size(size)
 
 
 def settings() -> tuple:
@@ -168,7 +217,7 @@ def _cache():
     if state is None:
         with _lock:
             if _state is None:
-                _state = _Cache(*settings())
+                _state = _Cache(*settings(), max_size=size_limit())
             state = _state
     return state if state.mode != "off" else None
 
@@ -589,11 +638,12 @@ def _write_atomically(path, data):
 class _Cache:
     """One directory, one mode, one optional bundle, for this process."""
 
-    def __init__(self, directory, mode, rank):
+    def __init__(self, directory, mode, rank, max_size=None):
         self.directory = Path(directory)
         self.mode = mode
         self.rank = rank
-        self.version = f"v{FORMAT}-{tack_fingerprint()[:16]}"
+        self.max_size = max_size
+        self.version = _version()
         self.root = self.directory / self.version
         self.bundle_path = self.directory / f"bundle-{self.version}.tack"
         self.bundle = None          # key -> entry bytes, once read
@@ -601,6 +651,7 @@ class _Cache:
         self.writes = mode == "write" and rank in (None, 0)
         self._checked = False
         self._warned = False
+        self._next_prune = 0.0      # time.monotonic() of the next look at the mark
 
     def _warn(self, message):
         if not self._warned:
@@ -651,10 +702,17 @@ class _Cache:
     def get(self, key, kind):
         data = self._bundle().get(f"{key}.{kind}")
         if data is None and self.files and self._usable():
+            path = self.root / key[:2] / f"{key}.{kind}"
             try:
-                data = (self.root / key[:2] / f"{key}.{kind}").read_bytes()
+                with open(path, "rb") as f:
+                    data = f.read()
+                    used = os.fstat(f.fileno()).st_mtime
             except OSError:
                 return None
+            if self.writes and time.time() - used > _PRUNE_INTERVAL:
+                # Pruning goes by modification time: a hit is a use.
+                with contextlib.suppress(OSError):
+                    os.utime(path)
         if data is None:
             return None
         try:
@@ -671,15 +729,46 @@ class _Cache:
         self._usable()
         if not self.writes:
             return
+        folder = self.root / key[:2]
+        data = _encode(entry)
         try:
-            folder = self.root / key[:2]
-            folder.mkdir(exist_ok=True, mode=0o700)
-            _write_atomically(folder / f"{key}.{kind}", _encode(entry))
+            try:
+                folder.mkdir(exist_ok=True, mode=0o700)
+                _write_atomically(folder / f"{key}.{kind}", data)
+            except FileNotFoundError:
+                # Another process's prune removed the emptied folder.
+                self.root.mkdir(exist_ok=True, mode=0o700)
+                folder.mkdir(exist_ok=True, mode=0o700)
+                _write_atomically(folder / f"{key}.{kind}", data)
             _count(f"{kind}_write")
         except OSError as e:
             self.writes = False
             self._warn(f"cannot write to {self.root} ({e}); no more entries are stored "
                        f"by this process.")
+            return
+        self._keep_to_size()
+
+    def _keep_to_size(self):
+        """Prune to the size limit if no process has in the last interval."""
+        now = time.monotonic()
+        if self.max_size is None or now < self._next_prune:
+            return
+        self._next_prune = now + _PRUNE_INTERVAL
+        mark = self.directory / _PRUNED_MARK
+        try:
+            if time.time() - mark.stat().st_mtime < _PRUNE_INTERVAL:
+                return
+        except FileNotFoundError:
+            pass
+        except OSError:
+            return
+        try:
+            # Marked first, so processes starting meanwhile do not scan too.
+            mark.touch(mode=0o600)
+            _count("prunes")
+            _count("pruned", prune(self.directory, self.max_size)[0])
+        except OSError as e:
+            self._warn(f"cannot prune {self.directory} ({e}).")
 
 
 # ── Bundles ─────────────────────────────────────────────────────────────
@@ -745,6 +834,87 @@ def load_bundle(path=None, comm=None) -> int:
     return len(entries)
 
 
+def _version():
+    """The name of this Tack's directory under the cache directory."""
+    return f"v{FORMAT}-{tack_fingerprint()[:16]}"
+
+
+def _version_dirs(directory) -> list:
+    """Every Tack version's directory: only names this module makes, since
+    the directory may be shared with other files (a scratch directory), and
+    a "v..." name may be a venv."""
+    return [p for p in directory.iterdir()
+            if p.is_dir() and not p.is_symlink() and _VERSION_DIR.fullmatch(p.name)]
+
+
+def _scan(path) -> list:
+    """A directory's entries, or none if another process's prune removed it."""
+    try:
+        with os.scandir(path) as found:
+            return list(found)
+    except FileNotFoundError:
+        return []
+
+
+def prune(directory=None, max_size=None) -> tuple:
+    """Delete the least recently used entries, of every Tack version, until
+    they take at most 90% of ``max_size`` (by default the size limit in
+    effect), and temporary files writers left an interval ago or more.
+    Bundles are kept. Returns ``(files removed, bytes of entries left)``."""
+    directory = Path(directory) if directory is not None else settings()[0]
+    limit = parse_size(max_size) if max_size is not None else size_limit()
+    if not directory.exists():
+        return 0, 0
+    if not _trusted(directory):
+        raise PermissionError(f"{directory} belongs to another user or others can write to it")
+    now = time.time()
+    removed = 0
+    entries = []
+    versions = _version_dirs(directory)
+    for version in versions:
+        for folder in _scan(version):
+            if not folder.is_dir(follow_symlinks=False):
+                continue
+            for item in _scan(folder.path):
+                try:
+                    if not item.is_file(follow_symlinks=False):
+                        continue
+                    st = item.stat(follow_symlinks=False)
+                except FileNotFoundError:
+                    continue
+                if item.name.startswith(".") and item.name.endswith(".tmp"):
+                    if now - st.st_mtime > _PRUNE_INTERVAL:
+                        with contextlib.suppress(FileNotFoundError):
+                            os.unlink(item.path)
+                            removed += 1
+                elif item.name.endswith((".ir", ".variant")):
+                    entries.append((st.st_mtime, st.st_size, item.path))
+    total = sum(size for _, size, _ in entries)
+    if limit is not None and total > limit:
+        goal = int(limit * _PRUNE_TO)
+        for _, size, path in sorted(entries):
+            if total <= goal:
+                break
+            try:
+                os.unlink(path)
+                removed += 1
+            except FileNotFoundError:
+                pass
+            except OSError:
+                continue
+            total -= size
+    # Folders pruning emptied, and the versions left with none. Another
+    # process's write recreates what it needs; rmdir refuses a folder in use.
+    for version in versions:
+        for folder in _scan(version):
+            with contextlib.suppress(OSError):
+                os.rmdir(folder.path)
+        if version.name != _version():
+            with contextlib.suppress(OSError):
+                version.rmdir()
+    return removed, total
+
+
 def clear(directory=None, all_versions=False) -> int:
     """Delete this Tack version's entries and bundle (every version's with
     ``all_versions``). Returns the number of files removed."""
@@ -756,11 +926,9 @@ def clear(directory=None, all_versions=False) -> int:
     if not directory.exists():
         return 0
     if all_versions:
-        # Only names this module makes: the directory may be shared with
-        # other files (a scratch directory), and "v..." is a venv, too.
-        targets = [p for p in directory.iterdir()
-                   if (p.is_dir() and _VERSION_DIR.fullmatch(p.name))
-                   or (p.is_file() and _VERSION_BUNDLE.fullmatch(p.name))]
+        targets = _version_dirs(directory) + [
+            p for p in directory.iterdir() if p.is_file()
+            and (_VERSION_BUNDLE.fullmatch(p.name) or p.name == _PRUNED_MARK)]
     else:
         targets = [cache.root, cache.bundle_path]
     for target in targets:
@@ -779,6 +947,8 @@ def describe(directory=None) -> dict:
     directory = Path(directory) if directory is not None else found_dir
     cache = _Cache(directory, mode, rank)
     files = [p for p in cache.root.rglob("*") if p.is_file()] if cache.root.exists() else []
+    every = ([p for v in _version_dirs(directory) for p in v.rglob("*") if p.is_file()]
+             if directory.exists() else [])
     return {
         "directory": str(directory),
         "mode": mode,
@@ -786,5 +956,7 @@ def describe(directory=None) -> dict:
         "tack version key": cache.version,
         "entries": sum(1 for p in files if p.suffix in (".ir", ".variant")),
         "bytes": sum(p.stat().st_size for p in files),
+        "bytes, every version": sum(p.stat().st_size for p in every),
+        "size limit": size_limit(),
         "bundle": str(cache.bundle_path) if cache.bundle_path.exists() else None,
     }

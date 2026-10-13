@@ -13,12 +13,13 @@ system.
 
 ## Settings
 
-Two environment variables, read when the first kernel compiles:
+Three environment variables, read when the first kernel compiles:
 
 | Variable | Meaning |
 |---|---|
 | `TACK_CACHE_DIR` | Where entries are kept. Default: `~/Library/Caches/tack` on macOS, `$XDG_CACHE_HOME/tack` or `~/.cache/tack` on Linux, `%LOCALAPPDATA%\tack\Cache` on Windows. |
 | `TACK_CACHE` | `write`: look up and store (the default). `read`: look up, never store. `bundle`: only the directory's bundle file (the default under MPI, below). `off`: no cache. |
+| `TACK_CACHE_SIZE` | The most the entries may take, such as `500M` or `2G` (binary units), or `unlimited`. Default: `1G`. See below. |
 
 The same from Python, before the first kernel compiles:
 
@@ -26,6 +27,7 @@ The same from Python, before the first kernel compiles:
 import tack.cache
 
 tack.cache.configure(directory="/scratch/me/tack-cache", mode="write")
+tack.cache.configure(max_size="4G")
 tack.cache.configure(mode="off")
 ```
 
@@ -51,14 +53,30 @@ Two things are stored for each kernel:
 So editing a kernel, a device function it calls, a constant it reads or a
 template class it is given makes the next process compile again, as does
 upgrading Tack or moving to another machine. A damaged or partly written
-entry is ignored and the kernel compiled. Old entries are never deleted
-automatically:
+entry is ignored and the kernel compiled.
+
+## Size
+
+The entries of every Tack version share one limit, `TACK_CACHE_SIZE` (1 GiB
+by default): each Tack version, and each edit of a Tack checkout, keeps its
+own entries, and those of a version no longer run would otherwise stay
+forever. Past the limit, a process that stores entries deletes the least
+recently used, until 90% of the limit is left. Loading an entry marks it
+used (to the hour), so the kernels you run stay. The directory is checked
+at most once an hour by all processes together, never per kernel, so the
+cache can briefly exceed the limit. Bundles are neither counted nor
+deleted: they are made, and removed, by hand.
 
 ```bash
-python -m tack.cache info          # settings, entries and size
-python -m tack.cache clear         # this Tack version's entries
-python -m tack.cache clear --all   # every version's
+python -m tack.cache info                  # settings, entries and size
+python -m tack.cache prune                 # keep to the limit now
+python -m tack.cache prune --max-size 200M # ...or to another one
+python -m tack.cache clear                 # this Tack version's entries
+python -m tack.cache clear --all           # every version's
 ```
+
+`clear --all` deletes only what the cache made (version directories,
+bundles), so the directory may hold other files.
 
 ## MPI jobs on a shared file system
 

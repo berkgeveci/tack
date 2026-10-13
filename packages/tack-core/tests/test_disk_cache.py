@@ -14,6 +14,7 @@ import stat
 import subprocess
 import sys
 import textwrap
+import time
 
 import pytest
 
@@ -374,10 +375,110 @@ def test_clearing_every_version_leaves_other_files(tmp_path):
     for path in files:
         path.write_bytes(b"keep")
     entries = len(_entries(tmp_path))   # this version's and the old .ir
-    assert disk_cache.clear(cache, all_versions=True) == entries + 1   # and the old bundle
+    assert (cache / ".pruned").exists()
+    # ...and the old bundle and the pruning mark.
+    assert disk_cache.clear(cache, all_versions=True) == entries + 2
     assert sorted(p.name for p in cache.iterdir()) == [
         "bundle-notes.txt", "venv", "video.mp4", "vtk-data"]
     assert all(path.exists() for path in neighbours + files)
+
+
+def _old_version(cache, size, age):
+    """An entry of another Tack version, ``size`` bytes, last used ``age`` s ago."""
+    path = cache / "v1-0123456789abcdef" / "ab" / "ab12.variant"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"x" * size)
+    when = time.time() - age
+    os.utime(path, (when, when))
+    return path
+
+
+def test_pruning_deletes_the_least_recently_used_of_every_version(tmp_path):
+    cache = _cache_dir(tmp_path)
+    _run(tmp_path)
+    current = _entries(tmp_path)
+    total = sum(p.stat().st_size for p in current)
+    # Ages: the old version's entry the oldest, then the current ones in turn.
+    old = _old_version(cache, total, age=10_000)
+    for age, path in enumerate(current):
+        os.utime(path, (time.time() - 5000 + age, time.time() - 5000 + age))
+    bundle = cache / "bundle-v1-0123456789abcdef.tack"
+    bundle.write_bytes(b"x" * 10_000)
+    stale = old.parent / ".ab12.variant.1.0.tmp"
+    stale.write_bytes(b"x")
+    os.utime(stale, (time.time() - 7200, time.time() - 7200))
+    fresh = current[0].parent / f".{current[0].name}.2.0.tmp"
+    fresh.write_bytes(b"x")
+
+    # Within the limit: only the stale temporary file goes.
+    assert disk_cache.prune(cache, 2 * total) == (1, 2 * total)
+    assert old.exists() and not stale.exists() and fresh.exists()
+    # Past it: the least recently used first, to 90% of the limit, the old
+    # version's (and its emptied directory) before any of this version's.
+    keep = total - current[0].stat().st_size
+    removed, left = disk_cache.prune(cache, int(keep / 0.9) + 1)
+    assert (removed, left) == (2, keep)
+    assert not (cache / "v1-0123456789abcdef").exists()
+    assert not current[0].exists() and all(p.exists() for p in current[1:])
+    assert bundle.exists() and fresh.exists()
+
+
+def test_a_writing_process_keeps_the_cache_to_its_size(tmp_path):
+    cache = _cache_dir(tmp_path)
+    old = _old_version(cache, 2 << 20, age=10_000)
+    first = _run(tmp_path, env={"TACK_CACHE_SIZE": "1M"})
+    assert first["stats"]["prunes"] == 1 and first["stats"]["pruned"] == 1
+    assert not old.exists() and _entries(tmp_path)
+    assert (cache / ".pruned").exists()
+    # Within the hour another writer does not scan again.
+    old = _old_version(cache, 2 << 20, age=10_000)
+    (tmp_path / "src" / "kernels.py").write_text(
+        (tmp_path / "src" / "kernels.py").read_text().replace("2.0", "3.0"))
+    second = _run(tmp_path, env={"TACK_CACHE_SIZE": "1M"})
+    assert second["stats"].get("ir_write", 0) > 0
+    assert "prunes" not in second["stats"] and old.exists()
+
+
+def test_a_hit_counts_as_a_use(tmp_path):
+    _cache_dir(tmp_path)
+    _run(tmp_path)
+    entries = _entries(tmp_path)
+    long_ago = time.time() - 10_000
+    for path in entries:
+        os.utime(path, (long_ago, long_ago))
+    second = _run(tmp_path)
+    assert second["stats"]["variant_hit"] > 0
+    assert all(p.stat().st_mtime > long_ago + 5000 for p in entries)
+    # Nothing is refreshed by a process that only reads.
+    for path in entries:
+        os.utime(path, (long_ago, long_ago))
+    _run(tmp_path, env={"TACK_CACHE": "read"})
+    assert all(abs(p.stat().st_mtime - long_ago) < 1 for p in entries)
+
+
+def test_sizes():
+    assert disk_cache.parse_size("1G") == disk_cache.parse_size("1GB") == 1 << 30
+    assert disk_cache.parse_size("1.5 GiB") == 3 << 29
+    assert disk_cache.parse_size("500m") == 500 << 20
+    assert disk_cache.parse_size("4096") == disk_cache.parse_size(4096) == 4096
+    assert disk_cache.parse_size("unlimited") is None
+    for bad in ("0", "-1G", "1X", "lots", True):
+        with pytest.raises(ValueError, match="cache size"):
+            disk_cache.parse_size(bad)
+    with pytest.raises(ValueError, match="cache size"):
+        disk_cache.configure(max_size="lots")
+
+
+def test_the_size_limit_from_the_environment(monkeypatch):
+    monkeypatch.delenv("TACK_CACHE_SIZE", raising=False)
+    try:
+        assert disk_cache.size_limit() == 1 << 30
+        monkeypatch.setenv("TACK_CACHE_SIZE", "250M")
+        assert disk_cache.size_limit() == 250 << 20
+        disk_cache.configure(max_size="unlimited")
+        assert disk_cache.size_limit() is None
+    finally:
+        disk_cache.configure()
 
 
 def test_concurrent_writers_leave_whole_entries(tmp_path):
@@ -437,7 +538,9 @@ def test_the_command_line(tmp_path):
     def cli(*args):
         proc = subprocess.run([sys.executable, "-m", "tack.cache", "--dir",
                                str(tmp_path / "cache"), *args],
-                              capture_output=True, text=True, timeout=120)
+                              capture_output=True, text=True, timeout=120,
+                              env={k: v for k, v in os.environ.items()
+                                   if k != "TACK_CACHE_SIZE"})
         assert proc.returncode == 0, proc.stderr
         return proc.stdout
 
@@ -445,6 +548,8 @@ def test_the_command_line(tmp_path):
     assert info["entries"] == len(_entries(tmp_path)) > 0
     assert f"{info['entries']} entries" in cli("pack")
     assert json.loads(cli("info"))["bundle"]
+    assert "removed 0 files" in cli("prune", "--max-size", "1G")
+    assert info["size limit"] == 1 << 30
     assert "removed" in cli("clear")
     assert _entries(tmp_path) == []
 
