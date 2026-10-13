@@ -3,7 +3,8 @@
 import numpy as np
 
 from tack.data.algorithms.implicit_values import implicit_values
-from tack.data.algorithms.threshold import threshold
+from tack.data.algorithms._extract import _complement, _keep_cells
+from tack.data.algorithms.threshold import _threshold_flags, threshold
 
 __all__ = ['extract_geometry']
 
@@ -15,5 +16,10 @@ def extract_geometry(data, function, inside=True, boundary=False, fields=None):
     clip. Points are compacted and fields carried, as by ``threshold``."""
 
     values = implicit_values(data, function)
-    lower, upper = (-np.inf, 0.0) if inside else (np.nextafter(0.0, 1.0), np.inf)
-    return threshold(data, values, lower, upper, all_points=not boundary, fields=fields)
+    if inside:
+        return threshold(data, values, -np.inf, 0.0, all_points=not boundary, fields=fields)
+    # Outside is what is not inside, exactly: all points above zero is no point at
+    # or below it, and some point above is not all at or below.
+    keep = _threshold_flags(data, values, -np.inf, 0.0, all_points=boundary)
+    _complement(keep)
+    return _keep_cells(data, keep, fields)

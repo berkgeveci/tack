@@ -58,15 +58,20 @@ def threshold(data, field, lower, upper, all_points=True, fields=None):
         space = field.space
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"threshold needs a field on the points or cells, not {space!r}")
-    if not getattr(data.topology, "reference_cells", True):
-        return _polyhedral_threshold(data, field, lower, upper, all_points, fields)
+    return _keep_cells(data, _threshold_flags(data, field, lower, upper, all_points), fields)
 
+
+def _threshold_flags(data, field, lower, upper, all_points):
+    """Each cell's 1 or 0: whether ``threshold`` keeps it."""
+    field = _field(data, field)
+    if not getattr(data.topology, "reference_cells", True):
+        return _polyhedral_flags(data, field, lower, upper, all_points)
     keep = tack.zeros(tack.i32, (data.num_cells,))
     for group in data.launch_groups("cells", [field]):
         if group.count:
             _keep_by_corners(data.domain_view("cells", group), field.view(group), lower,
                              upper, 1 if all_points else 0, keep)
-    return _keep_cells(data, keep, fields)
+    return keep
 
 
 @tack.kernel
@@ -93,11 +98,10 @@ def _polyhedral_keep(cells, values, lower, upper, by_cells, all_points, keep):
         keep[e] = ok
 
 
-def _polyhedral_threshold(data, field, lower, upper, all_points, fields=None):
-    """``threshold`` of a polyhedral or polygonal topology: whole cells, their faces
-    kept once and numbered in their old order, points compacted."""
+def _polyhedral_flags(data, field, lower, upper, all_points):
+    """``threshold``'s cells of a polyhedral or polygonal topology (whole cells; their
+    faces are kept once and numbered in their old order, points compacted)."""
 
-    t = data.topology
     by_cells = isinstance(field.space, Constant)
     values = arrays.materialize(field.values)
     n = data.num_cells
@@ -106,4 +110,4 @@ def _polyhedral_threshold(data, field, lower, upper, all_points, fields=None):
         if group.count:
             _polyhedral_keep(data.domain_view("cells", group), values, lower, upper,
                              1 if by_cells else 0, 1 if all_points else 0, keep)
-    return _keep_cells(data, keep, fields)
+    return keep

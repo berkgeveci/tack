@@ -271,3 +271,18 @@ def test_no_point_is_near_a_zero(kind):
         f = theirs()
         nearest = min(abs(f.EvaluateFunction(*p)) for p in points)
         assert nearest > 1e-3, f"{name} is {nearest} from a point of the {kind} grid"
+
+
+def test_outside_is_strictly_above_zero(backend):
+    """Outside a region is above zero, strictly: points on the plane are not
+    outside, and a cell with corners on it is not wholly outside. (The bound was
+    the f64 number after zero, which is zero in an f32 kernel.)"""
+    data = td.rectilinear_grid([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
+    plane = td.Plane((0, 0, 0), (1, 0, 0))
+    outside = td.extract_points(data, plane, inside=False)
+    np.testing.assert_array_equal(outside.positions()[:, 0], 1.0)
+    assert td.extract_points(data, plane).num_points == 4
+    assert td.extract_geometry(data, plane, inside=False).num_cells == 0
+    assert td.extract_geometry(data, plane, inside=False, boundary=True).num_cells == 1
+    moved = td.Plane((-0.5, 0, 0), (1, 0, 0))
+    assert td.extract_geometry(data, moved, inside=False).num_cells == 1

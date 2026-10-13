@@ -41,6 +41,18 @@ def _renumber(connectivity, new_ids):
         connectivity[k] = new_ids[connectivity[k]]
 
 
+@tack.kernel
+def _flip(flags):
+    for i in range(flags.shape[0]):
+        flags[i] = 1 - flags[i]
+
+
+def _complement(flags):
+    """Turn a 0/1 field's selection inside out, in place."""
+    if flags.shape[0]:
+        _flip(flags)
+
+
 def _keep_cells(data, keep, fields=None):
     """The cells whose ``keep`` flag (i32, one per cell) is 1, with only the points
     they use, renumbered in order; fields carried by ``carry``. Polyhedral

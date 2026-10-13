@@ -2,7 +2,7 @@
 
 import numpy as np
 
-from tack.data.algorithms._extract import _keep_points, _point_flags
+from tack.data.algorithms._extract import _complement, _keep_points, _point_flags
 from tack.data.algorithms.implicit_values import implicit_values
 from tack.data.carry import _point_values
 from tack.data.spaces import H1
@@ -17,5 +17,10 @@ def extract_points(data, function, inside=True, fields=None):
     if not isinstance(data.geometry.space, H1):
         raise TypeError("extract_points needs an H1 geometry: one position per point")
     values = _point_values(implicit_values(data, function).values, data.num_points)
-    lower, upper = (-np.inf, 0.0) if inside else (np.nextafter(0.0, 1.0), np.inf)
-    return _keep_points(data, _point_flags(data, values, lower, upper), fields)
+    # Outside is what is not inside: "above zero" as a range would need a bound
+    # between zero and the smallest positive value, which f32 kernels (and GPUs
+    # that flush denormals) do not keep.
+    flags = _point_flags(data, values, -np.inf, 0.0)
+    if not inside:
+        _complement(flags)
+    return _keep_points(data, flags, fields)
