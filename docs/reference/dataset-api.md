@@ -173,6 +173,9 @@ vectors; floating point. Values on faces or edges have no basis and are
 refused. On polyhedra, polygons and polylines only cell and point values
 project, each into the other.
 
+Unused points retain their values when the source is H1 (or values on points).
+Cell or DG sources give unused points zero, since no cell contributes there.
+
 The shortcuts are projections: `to_points(data, f)` is
 `project(data, f, H1(data))`, `to_cells` projects into `Constant(data)`,
 and `discontinuous` into `L2(data)`.
@@ -365,6 +368,25 @@ Every algorithm is in `tack.data.algorithms`, one module each, and
 - nothing changes its input: a new dataset is new, and sets are kept by
   storing what `boundary_faces` returns.
 
+Field arguments are checked against the input topology, including on empty
+datasets. A raw device array needs a `Field(space, values)` wrapper. A
+`locator=` must have been built for that same dataset; rebuild it after changing
+the geometry, as described under locating points below.
+
+**Numerical types.** `composite`, `dot` and `cross` require matching input
+dtypes and retain that dtype. Use `Cast(values, dtype)` to convert explicitly.
+Algorithms that need fractional arithmetic (`clip` weights, `statistics`,
+`magnitude` and `log_values`) compute in f64 for f64 input, otherwise f32,
+converting integer values before arithmetic. Statistics sums use that floating
+precision; its extrema still come from the original values. Converting wide
+integers may round values beyond the exact integer range of f32 (2^24) or
+f64 (2^53); use f64 input for greater precision on a backend that supports it.
+Integer `magnitude` and `log_values` therefore return floating point fields.
+
+Empty supported filters return valid empty topologies and carry selected fields
+and sets by the same maps as nonempty filters; missing `fields=` names still
+raise `KeyError`. Empty polyline contouring retains the documented refusal.
+
 In the table,
 "polyhedral" means `PolyhedralTopology`, "polygonal" `PolygonalTopology`
 and "polyline" `PolylineTopology`.
@@ -532,6 +554,11 @@ the values are 0):
 - anything else is left behind.
 
 `locator=` reuses a locator built once for several probes.
+
+Probing a dataset keeps its topology, geometry and id type, and samples its
+point positions (the corner values of an order-2 geometry). Host point input
+becomes vertex cells using the source's geometry precision and id width.
+Advection likewise preserves that geometry precision and id width.
 
 Each shape's `nearest_point(pts, x, pc)` gives the point of a cell nearest
 `x`, as VTK's `EvaluatePosition` does: exactly for triangles and

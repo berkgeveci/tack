@@ -126,6 +126,8 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
         # No cells (a threshold that kept none) has no dimension, and no surface.
         raise NotImplementedError("contour of lines (which would give points) is not built")
     if not getattr(data.topology, "reference_cells", True):
+        if data.topology.dimension == 1:
+            raise NotImplementedError("contour of polylines (which would give points) is not built")
         return _polyhedral_contour(data, field, isovalue, fields)
     if not space.interpolated or space.on not in ("cells", "points"):
         raise TypeError(f"contour needs a field with a basis on the cells, not {space!r}")
@@ -570,7 +572,13 @@ def _contour_lines(data, field, isovalue, fields=None):
     on_points = isinstance(field.space, H1) or field.space is Values(data, "points")
     if not on_points or not isinstance(data.geometry.space, H1):
         if isinstance(field.space, Values):
-            field = Field(H1(data), field.values)
+            if field.space.on not in ("points", "cells"):
+                raise TypeError("contour needs a field with a basis on the cells")
+            from tack.data.spaces import Constant
+
+            field = Field((H1 if field.space.on == "points" else Constant)(data), field.values)
+        if not getattr(data.topology, "reference_cells", True):
+            raise TypeError("contour of polygons takes point data")
         return _contour_cell_lines(data, field, isovalue, fields)
     values = arrays.materialize(field.values)
     faces = data.topology.faces()

@@ -417,6 +417,8 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
     mesh, present = _mesh(data)
     velocity, on_cells = _velocity(data, field)
     locator = locator or CellLocator(data)
+    if locator.data is not data:
+        raise ValueError("the locator was built for another dataset")
     bin_offsets, bin_cells = locator.cell_bins()
     dtype = data.dtype
     host = np.ascontiguousarray(np.asarray(

@@ -2,7 +2,7 @@
 
 import tack
 from tack.data import arrays
-from tack.data.algorithms._common import _field, _same_space, _vectors
+from tack.data.algorithms._common import _field, _same_dtype, _same_space, _vectors
 from tack.data.arrays import materialize, width_of
 from tack.data.dataset import Field
 
@@ -16,11 +16,12 @@ def _crosses(a, b, out):
 
 
 def cross(data, a, b):
-    """``a x b`` at every value of two 3-vector fields in one space."""
+    """``a x b`` at every value of two 3-vector fields of one dtype and space."""
     a, b = _field(data, a), _field(data, b)
     space, n = _same_space(a, b)
     if width_of(a.values) != 3 or width_of(b.values) != 3:
         raise TypeError("cross takes two 3-vector fields")
+    _same_dtype("cross", a, b)
     out = _vectors(n, arrays.dtype_of(a.values))
     if n:
         _crosses(materialize(a.values), materialize(b.values), out)

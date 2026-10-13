@@ -5,9 +5,8 @@ import math
 import numpy as np
 
 import tack
-from tack.data import arrays
-from tack.data.algorithms._common import _field, _scalars
-from tack.data.arrays import materialize, size_of, width_of
+from tack.data.algorithms._common import _converted, _field, _floating_dtype, _scalars
+from tack.data.arrays import size_of, width_of
 from tack.data.dataset import Field
 
 __all__ = ['log_values']
@@ -28,11 +27,11 @@ def log_values(data, field, base=math.e, min_value=None):
         raise TypeError("log_values takes a scalar field")
     if not base > 0 or base == 1:
         raise ValueError(f"no logarithm in base {base}")
-    dtype = arrays.dtype_of(field.values)
+    dtype = _floating_dtype(field.values)
     if min_value is None:
         min_value = float(np.finfo(dtype.numpy_dtype).tiny)
     n = size_of(field.values)
     out = _scalars(n, dtype)
     if n:
-        _logs(materialize(field.values), 1.0 / math.log(base), float(min_value), out)
+        _logs(_converted(field.values, dtype), 1.0 / math.log(base), float(min_value), out)
     return Field(field.space, out)

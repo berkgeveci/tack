@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 from test_dataset_api import _scalars, _two_hexes_and_a_pyramid
 
+import tack
 import tack.data as td
 
 try:
@@ -138,3 +139,32 @@ def test_points_outside_every_cell(backend):
     np.testing.assert_array_equal(out.fields["valid"].values.to_numpy(), [0, 0])
     with pytest.raises(NotImplementedError):
         td.CellLocator(td.as_polyhedra(data))
+
+
+def test_probe_keeps_target_topology_ids_and_quadratic_geometry(backend):
+    source = td.uniform_grid((2, 2, 2))
+    source.fields["x"] = td.Field(td.H1(source), _scalars(source.positions()[:, 0]))
+    top = td.StructuredTopology((2, 2, 2), id_dtype=tack.i64)
+    target = td.DataSet(top, td.UniformCoordinates((2, 2, 2)))
+    target.geometry = td.project(target, target.geometry, td.H1(target, order=2))
+    out = td.probe(source, target)
+    assert out.topology is target.topology
+    assert out.geometry is target.geometry
+    assert out.id_dtype is tack.i64
+    np.testing.assert_allclose(out.fields["x"].values.to_numpy(), target.positions()[:, 0])
+    np.testing.assert_array_equal(out.fields["valid"].values.to_numpy(), 1)
+
+
+def test_probe_refuses_a_locator_for_another_geometry(backend):
+    source = td.uniform_grid((2, 2, 2))
+    moved = td.transform(source, [[1, 0, 0, 10], [0, 1, 0, 0], [0, 0, 1, 0]])
+    with pytest.raises(ValueError, match="another dataset"):
+        td.probe(source, [[0.5, 0.5, 0.5]], locator=td.CellLocator(moved))
+
+
+def test_probe_preserves_f64_point_coordinates(f64_backend):
+    source = td.uniform_grid((2, 2, 2), dtype=tack.f64)
+    points = np.array([[0.5 + 1e-9, 0.5, 0.5]], np.float64)
+    out = td.probe(source, points)
+    assert out.dtype is tack.f64
+    np.testing.assert_array_equal(out.positions(), points)

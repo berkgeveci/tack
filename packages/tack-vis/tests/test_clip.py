@@ -146,3 +146,17 @@ def test_clip_refuses_an_l2_geometry(backend):
     data.geometry = td.discontinuous(data, data.geometry)
     with pytest.raises(TypeError, match="H1 geometry"):
         td.clip(data, field, 0.5)
+
+
+def test_integer_clip_converts_before_subtracting(backend):
+    data = td.uniform_grid((3, 2, 2))
+    data.fields["cell"] = td.cell_ids(data)
+    values = np.where(data.positions()[:, 1] == 0, -2**31, 2**31 - 1).astype(np.int32)
+    field = td.Field(td.H1(data), _scalars(values, tack.i32))
+    out = td.clip(data, field)
+    np.testing.assert_allclose(np.unique(out.positions()[:, 1]), [0.5, 1.0], atol=1e-6)
+    assert np.isclose(td.cell_geometry(out).measure.values.to_numpy().sum(), 1.0)
+    # The two cells meet at x=1: each edge crossing is one shared point.
+    positions = out.positions()
+    assert sum(np.all(np.isclose(positions, [1, 0.5, 0]), axis=1)) == 1
+    np.testing.assert_array_equal(field.values.to_numpy(), values)

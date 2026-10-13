@@ -2,7 +2,7 @@
 
 import tack
 from tack.data import arrays
-from tack.data.algorithms._common import _field, _same_space, _vectors
+from tack.data.algorithms._common import _field, _same_dtype, _same_space, _vectors
 from tack.data.arrays import materialize, width_of
 from tack.data.dataset import Field
 
@@ -24,8 +24,7 @@ def composite(data, *fields):
     space, n = _same_space(*fields)
     if any(width_of(f.values) for f in fields):
         raise TypeError("composite takes scalar fields")
-    if len({arrays.dtype_of(f.values) for f in fields}) != 1:
-        raise TypeError("composite's fields differ in type: convert them to one")
+    _same_dtype("composite", *fields)
     out = _vectors(n, arrays.dtype_of(fields[0].values), len(fields))
     for k, f in enumerate(fields):
         if n:

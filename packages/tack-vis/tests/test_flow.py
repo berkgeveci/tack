@@ -186,3 +186,20 @@ def test_advection_keeps_the_input_id_type(backend):
     for algorithm in (td.advect, td.streamlines):
         assert algorithm(data, "v", [[0.2, 0.5, 0.5]], 0.1, 1).id_dtype is tack.i64
     assert td.probe(data, [[0.5, 0.5, 0.5]]).id_dtype is tack.i64
+
+
+def test_advection_preserves_f64_positions(f64_backend):
+    data = td.uniform_grid((2, 2, 2), dtype=tack.f64)
+    data.fields["v"] = td.Field(td.H1(data),
+                                 td.ConstantArray([0., 0., 0.], data.num_points, dtype=tack.f64))
+    seed = np.array([[0.5 + 1e-9, 0.5, 0.5]], np.float64)
+    out = td.advect(data, "v", seed, 0.1, 1)
+    assert out.dtype is tack.f64
+    np.testing.assert_array_equal(out.positions(), seed)
+
+
+def test_advection_refuses_a_foreign_locator(backend):
+    data = _uniform()
+    locator = td.CellLocator(_uniform())
+    with pytest.raises(ValueError, match="another dataset"):
+        td.advect(data, "v", [[1., 1., 1.]], 0.1, 1, locator=locator)

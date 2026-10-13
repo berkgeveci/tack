@@ -190,3 +190,54 @@ def test_composite_refuses_mixed_types(backend):
     floats = td.Field(td.H1(data), _scalars([1.75, 2.75]))
     with pytest.raises(TypeError, match="differ in type"):
         td.composite(data, ints, floats)
+
+
+@pytest.mark.parametrize("algorithm", [td.dot, td.cross])
+def test_binary_vector_operations_refuse_mixed_types(backend, algorithm):
+    data = td.uniform_grid((2,))
+    a = td.Field(td.H1(data), td.ConstantArray([1, 2, 3], 2, dtype=tack.i32))
+    b = td.Field(td.H1(data), td.ConstantArray([0.5, 0.25, 0.75], 2))
+    for left, right in ((a, b), (b, a)):
+        with pytest.raises(TypeError, match="differ in type"):
+            algorithm(data, left, right)
+    converted = td.Field(a.space, td.Cast(a.values, tack.f32))
+    result = algorithm(data, converted, b).values.to_numpy(vectors=True)
+    expected = [3.25, 3.25] if algorithm is td.dot else [[0.75, 0.75, -0.75]] * 2
+    np.testing.assert_allclose(result, expected, rtol=1e-6)
+
+
+def test_integer_nonlinear_transforms_compute_floating_results(backend):
+    data = td.uniform_grid((2,))
+    vector = td.Field(td.H1(data), td.ConstantArray([1, 1, 0], 2, dtype=tack.i32))
+    norm = td.magnitude(data, vector)
+    assert norm.values.dtype is tack.f32
+    np.testing.assert_allclose(norm.values.to_numpy(), np.sqrt(2), rtol=1e-6)
+    scalar = td.Field(td.H1(data), _scalars([1, 2], tack.i32))
+    logarithm = td.log_values(data, scalar)
+    assert logarithm.values.dtype is tack.f32
+    np.testing.assert_allclose(logarithm.values.to_numpy(), [0, np.log(2)], atol=1e-6)
+
+
+def test_l2_face_positions_follow_mutable_geometry(backend):
+    data = td.uniform_grid((2, 2, 2))
+    data.geometry = td.discontinuous(data, data.geometry)
+    points = data.geometry.values.to_numpy(vectors=True)
+    before = td.face_centers(data).values.to_numpy(vectors=True)
+    shift = np.array([10, -3, 2], np.float32)
+    data.geometry.values.from_numpy(points + shift)
+    after = td.face_centers(data).values.to_numpy(vectors=True)
+    np.testing.assert_allclose(after, before + shift, atol=1e-6)
+    np.testing.assert_allclose(td.face_geometry(data).area.values.to_numpy(), 1, atol=1e-6)
+
+
+def test_shrink_linearizes_quadratic_geometry_without_mutating_input(backend):
+    data = td.uniform_grid((2, 2, 2))
+    data.geometry = td.project(data, data.geometry, td.H1(data, order=2))
+    original = data.geometry.values.to_numpy(vectors=True).copy()
+    out = td.shrink(data, factor=0.5)
+    assert isinstance(out.geometry.space, td.L2)
+    corners = out.geometry.values.to_numpy(vectors=True)
+    assert corners.shape == (8, 3)
+    np.testing.assert_allclose(corners.min(axis=0), [0.25] * 3)
+    np.testing.assert_allclose(corners.max(axis=0), [0.75] * 3)
+    np.testing.assert_array_equal(data.geometry.values.to_numpy(vectors=True), original)

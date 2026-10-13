@@ -68,7 +68,9 @@ def test_example_runs(path):
     # so every skip below stops matching and an absent optional dependency
     # reads as a broken example.  Ask for plain text, and strip anything
     # that arrives coloured anyway.
-    env = {**os.environ, "PYTHON_COLORS": "0", "NO_COLOR": "1"}
+    # Plotting examples must render without waiting for a GUI window to close.
+    env = {**os.environ, "PYTHON_COLORS": "0", "NO_COLOR": "1",
+           "MPLBACKEND": "Agg"}
     env.pop("FORCE_COLOR", None)
 
     proc = subprocess.run(

@@ -2,8 +2,8 @@
 
 import numpy as np
 
-from tack.data.algorithms.implicit_values import implicit_values
 from tack.data.algorithms._extract import _complement, _keep_cells
+from tack.data.algorithms.implicit_values import implicit_values
 from tack.data.algorithms.threshold import _threshold_flags, threshold
 
 __all__ = ['extract_geometry']

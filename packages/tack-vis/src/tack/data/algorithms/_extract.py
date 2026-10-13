@@ -307,4 +307,5 @@ def _vertices(points, like=None):
     connectivity = tack.field(idt, shape=(n,))
     if n:
         _vertex_cells(types, offsets, connectivity, int(connectivity.shape[0]))
-    return DataSet(UnstructuredTopology(types, offsets, connectivity, num_points=n), points)
+    return DataSet(UnstructuredTopology(types, offsets, connectivity, num_points=n), points,
+                   dtype=like.dtype if like is not None else tack.f32)

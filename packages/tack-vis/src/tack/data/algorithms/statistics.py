@@ -3,7 +3,7 @@
 import math
 
 import tack
-from tack.data.algorithms._common import _field
+from tack.data.algorithms._common import _converted, _field, _floating_dtype
 from tack.data.arrays import materialize, size_of, width_of
 
 __all__ = ['statistics']
@@ -30,20 +30,20 @@ def statistics(data, field):
     field = _field(data, field)
     if width_of(field.values):
         raise TypeError("statistics takes a scalar field")
-    values = materialize(field.values)
+    source = materialize(field.values)
+    values = _converted(source, _floating_dtype(source))
     n = size_of(field.values)
     if n == 0:
         raise ValueError("statistics of no values")
     total = values.sum()
     mean = total / n
     # The powers of differences from a mean are fractions, whatever the values are.
-    precision = tack.f64 if values.dtype == tack.f64 else tack.f32
-    p2, p3, p4 = (tack.field(precision, shape=(n,)) for _ in range(3))
+    p2, p3, p4 = (tack.field(values.dtype, shape=(n,)) for _ in range(3))
     _central_powers(values, mean, p2, p3, p4)
     m2, m3, m4 = p2.sum(), p3.sum(), p4.sum()
     skewness = math.sqrt(n) * m3 / m2 ** 1.5 if m2 else 0.0
     kurtosis = n * m4 / (m2 * m2) if m2 else 0.0
-    return {"n": n, "min": values.min(), "max": values.max(), "sum": total, "mean": mean,
+    return {"n": n, "min": source.min(), "max": source.max(), "sum": total, "mean": mean,
             "m2": m2, "m3": m3, "m4": m4,
             "sample_variance": m2 / (n - 1) if n > 1 else 0.0,
             "population_variance": m2 / n,

@@ -187,3 +187,13 @@ def test_statistics_of_integers(backend):
         out = td.statistics(data, td.Field(td.H1(data), _scalars([0, 1], dtype)))
         assert (out["mean"], out["m2"], out["m4"]) == (0.5, 0.5, 0.125)
         assert (out["sample_variance"], out["population_variance"]) == (0.5, 0.25)
+
+
+def test_integer_statistics_sum_in_the_computation_type(backend):
+    data = td.uniform_grid((2,))
+    values = _scalars([2**63, 2**63], tack.u64)
+    result = td.statistics(data, td.Field(td.H1(data), values))
+    assert result["sum"] == float(2**64)
+    assert result["mean"] == float(2**63)
+    assert result["population_variance"] == 0.0
+    np.testing.assert_array_equal(values.to_numpy(), np.array([2**63] * 2, np.uint64))

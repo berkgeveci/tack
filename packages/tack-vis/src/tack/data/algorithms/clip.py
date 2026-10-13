@@ -6,7 +6,7 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import _clip_tables as tables
 from tack.data import arrays, ids, shapes
-from tack.data.algorithms._common import _close, _field
+from tack.data.algorithms._common import _close, _converted, _field, _floating_dtype
 from tack.data.algorithms.implicit_values import implicit_values
 from tack.data.buckets import bucket_order, run_offsets
 from tack.data.carry import Interpolate, Pieces, _point_values, carry
@@ -240,7 +240,8 @@ def clip(data, by, value=0.0, invert=False, fields=None):
             raise TypeError(f"clip takes point data or an implicit function, not {space!r}")
     if arrays.width_of(field.values):
         raise TypeError("clip needs a scalar field")
-    values = arrays.materialize(_point_values(field.values, data.num_points))
+    precision = _floating_dtype(field.values)
+    values = _converted(_point_values(field.values, data.num_points), precision)
     invert = 1 if invert else 0
     n = data.num_cells
 
@@ -291,8 +292,7 @@ def clip(data, by, value=0.0, invert=False, fields=None):
     ends = tack.Vector.field(2, idt, shape=(count,))
     # Weights are fractions even when the values are integers (Viskores interpolates
     # an integer field's crossings the same way).
-    weights = tack.field(tack.f64 if arrays.dtype_of(field.values) == tack.f64 else tack.f32,
-                         shape=(count,))
+    weights = tack.field(precision, shape=(count,))
     if count:
         _resolve_points(keys, order, point_runs, slots, values, float(value), connectivity,
                         members, ends, weights, count)

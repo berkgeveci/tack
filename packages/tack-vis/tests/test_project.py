@@ -6,6 +6,7 @@ to 1 into order-1 L2), averaged as VTK averages otherwise; the shortcuts
 import numpy as np
 import pytest
 from test_dataset_api import _scalars
+from test_shapes import EXPECTED
 
 import tack
 import tack.data as td
@@ -154,3 +155,34 @@ def test_changing_h1_order_keeps_unused_points(backend):
     down = td.project(data, up, td.H1(data))
     np.testing.assert_allclose(up.values.to_numpy()[:9], np.arange(9) + 1.0)
     np.testing.assert_allclose(down.values.to_numpy(), np.arange(9) + 1.0)
+
+
+@pytest.mark.parametrize("shape", [td.shapes.Tetra, td.shapes.Hexahedron,
+                                   td.shapes.Voxel, td.shapes.Wedge])
+@pytest.mark.parametrize("vector", [False, True])
+def test_exact_quadratic_projection_at_independent_nodes(backend, shape, vector):
+    # The shape fixture is a reference table of points/faces/edges, independent
+    # of the device methods and of the geometry's own projection.
+    reference = EXPECTED[shape]
+    corners = np.asarray(reference["points"], np.float32)
+    positions = np.vstack([corners, [[2., 3., 4.]]]).astype(np.float32)
+    top = td.UnstructuredTopology([int(shape.ID)], [0, len(corners)],
+                                   np.arange(len(corners)), num_points=len(positions))
+    data = td.DataSet(top, positions)
+    edges = sorted(tuple(sorted(pair)) for pair in reference["edges"])
+    faces = sorted(tuple(sorted(face)) for face in reference["faces"] if len(face) == 4)
+    nodes = [*positions, *(corners[list(e)].mean(0) for e in edges),
+             *(corners[list(f)].mean(0) for f in faces)]
+    if shape in (td.shapes.Hexahedron, td.shapes.Voxel):
+        nodes.append(corners.mean(0))
+    nodes = np.asarray(nodes)
+    evaluate = (lambda x: np.c_[_linear(x), 2 * _linear(x) + 1, -_linear(x)]
+                if vector else _linear(x))
+    values = _vectors(evaluate(positions)) if vector else _scalars(evaluate(positions))
+    field = td.Field(td.H1(data), values)
+    out = td.project(data, field, td.H1(data, order=2))
+    np.testing.assert_allclose(out.values.to_numpy(vectors=True), evaluate(nodes),
+                               rtol=1e-6, atol=1e-6)
+    back = td.project(data, out, td.H1(data))
+    np.testing.assert_allclose(back.values.to_numpy(vectors=True), evaluate(positions),
+                               rtol=1e-6, atol=1e-6)

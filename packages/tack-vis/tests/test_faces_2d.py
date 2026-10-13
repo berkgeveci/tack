@@ -56,8 +56,8 @@ def test_a_2d_meshs_faces_are_its_edges(backend, mesh):
     rows, sides = _edges_of(data)
     edges = data.topology.edges()
     assert data.topology.faces().num_faces == edges.num_edges
-    np.testing.assert_array_equal(np.sort(np.sort(rows, axis=1), axis=0),
-                                  np.sort(edges.rows.to_numpy(vectors=True), axis=0))
+    np.testing.assert_array_equal(sorted(map(tuple, np.sort(rows, axis=1))),
+                                  sorted(map(tuple, edges.rows.to_numpy(vectors=True))))
     boundary = td.boundary_faces(data).to_numpy()
     assert ((sides[:, 2] < 0) == np.isin(np.arange(len(sides)), boundary)).all()
     # Every cell's edges: each interior one shared by two cells.
@@ -172,3 +172,29 @@ def test_contour_of_no_cells(backend):
     empty = td.threshold(data, "s", 2.0, 3.0)
     out = td.contour(empty, "s", 0.5)
     assert (out.num_cells, out.num_points, list(out.fields)) == (0, 0, ["s"])
+
+
+def test_contour_of_varying_l2_orders_on_mixed_2d_shapes(backend):
+    positions = np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0],
+                          [2, 0, 0], [3, 0, 0], [3, 1, 0], [2, 1, 0],
+                          [4, 0, 0], [5, 0, 0], [4, 1, 0], [5, 1, 0]], np.float32)
+    top = td.UnstructuredTopology([5, 9, 8], [0, 3, 7, 11], np.arange(11))
+    data = td.DataSet(top, positions)
+    data.fields["cell"] = td.cell_ids(data)
+    space = td.L2(data, order=np.array([1, 0, 1]))
+    field = td.Field(space, _scalars([0., 1., 0., 1., 0., 1., 0., 1.]))
+    out = td.contour(data, field, 0.5)
+    segments = out.positions()[out.topology.connectivity.to_numpy()].reshape(-1, 2, 3)
+    np.testing.assert_allclose(segments, [[[0.5, 0, 0], [0.5, 0.5, 0]],
+                                        [[4.5, 0, 0], [4.5, 1, 0]]], atol=1e-6)
+    np.testing.assert_array_equal(td.arrays.to_host(out.fields["cell"].values), [0, 2])
+    assert np.all(segments[:, 1, 1] > segments[:, 0, 1])  # higher x on the right
+
+
+def test_contour_cell_values_have_no_2d_level_set(backend):
+    data = td.uniform_grid((2, 2))
+    field = td.Field(td.Values(data, "cells"), td.ConstantArray(1., data.num_cells))
+    assert td.contour(data, field, 0.5).num_cells == 0
+    face_field = td.Field(td.Values(data, "faces"), td.ConstantArray(1., 4))
+    with pytest.raises(TypeError, match="basis"):
+        td.contour(data, face_field, 0.5)

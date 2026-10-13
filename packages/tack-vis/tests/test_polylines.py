@@ -212,7 +212,7 @@ def test_contour_lines_agree_across_paths(backend):
     meshes = _circle_meshes()
     a = td.contour(meshes["quads"], "r2", 1.1).positions()
     b = td.contour(meshes["polygons"], "r2", 1.1).positions()
-    np.testing.assert_allclose(np.sort(a, axis=0), np.sort(b, axis=0), atol=1e-6)
+    np.testing.assert_allclose(sorted(map(tuple, a)), sorted(map(tuple, b)), atol=1e-6)
 
 
 def test_a_plane_slices_a_2d_mesh_into_a_line(backend):

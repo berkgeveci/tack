@@ -4,6 +4,7 @@ import numpy as np
 
 import tack
 from tack.data import arrays, ids
+from tack.data.algorithms._common import _field
 from tack.data.algorithms._extract import _vertices
 from tack.data.buckets import bucket_order
 from tack.data.dataset import DataSet, Field
@@ -42,14 +43,16 @@ def probe(data, where, fields=None, locator=None):
     evaluated through it in the cell holding the point, values on cells taken
     from that cell, and ``valid`` (1, or 0 where no cell holds the point and the
     values are 0). ``locator`` reuses a ``CellLocator`` of ``data``."""
-    from tack.data.carry import selected
+    from tack.data.carry import _point_values, selected
 
     if not isinstance(where, DataSet):
         where = _vertices(np.asarray(where, float).reshape(-1, 3), data)
     if not isinstance(where.geometry.space, H1):
         raise TypeError("probe needs the probed points: an H1 geometry")
     locator = locator or CellLocator(data)
-    points = arrays.materialize(where.geometry.values)
+    if locator.data is not data:
+        raise ValueError("the locator was built for another dataset")
+    points = arrays.materialize(_point_values(where.geometry.values, where.num_points))
     found, pcs = locator.find(points)
     m = found.shape[0]
     keys = tack.field(found.dtype, shape=(m,))
@@ -60,7 +63,7 @@ def probe(data, where, fields=None, locator=None):
 
     out = {}
     for name in selected(data, fields):
-        f = data.fields[name]
+        f = _field(data, name)
         space = f.space
         if isinstance(space, Values) and space.on in ("points", "cells"):
             f = Field((H1 if space.on == "points" else Constant)(data), f.values)

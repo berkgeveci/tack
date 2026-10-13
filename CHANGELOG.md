@@ -7,6 +7,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- Dataset algorithms check field ownership before dispatch, including empty
+  inputs, and reject locators built for another dataset. `dot` and `cross`
+  require matching dtypes, as `composite` does; use `Cast` for conversion.
+- Fractional dataset computations convert integer storage before arithmetic,
+  avoiding overflow in clipping differences and wrapping statistics sums.
+  Integer magnitude and logarithms return floating point fields. Computation
+  uses f64 for f64 input, otherwise f32, with the corresponding precision limits.
+- Face positions refresh after editing L2 geometry. Shrink accepts quadratic
+  geometry through its corner values, and probe samples a quadratic target's
+  points while keeping its geometry. Advection and host-point probing preserve
+  the source's coordinate precision.
+
 - `@tack.data_oriented` is now `@tack.device_class`, a name for what it
   does: its objects can be kernel arguments, and kernels specialize on
   their class. `@tack.data_oriented` remains as an alias, so existing

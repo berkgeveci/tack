@@ -25,8 +25,36 @@ def _same_space(*fields):
 
 
 def _field(data, field):
-    """``field``, or the field of that name."""
-    return data.fields[field] if isinstance(field, str) else field
+    """A field by name or object, checked against the dataset before launch."""
+    from tack.data.dataset import Field
+
+    field = data.fields[field] if isinstance(field, str) else field
+    if not isinstance(field, Field):
+        raise TypeError("a field argument is a tack.data.Field or its name")
+    if field.space.topology is not data.topology:
+        raise ValueError("a field argument belongs to another topology")
+    return field
+
+
+def _floating_dtype(*values):
+    """Fractional arithmetic: f64 for an f64 operand, otherwise f32.
+
+    Integer storage is converted before arithmetic; large integers therefore
+    follow the chosen floating precision, rather than integer overflow rules.
+    """
+    return tack.f64 if any(arrays.dtype_of(v) is tack.f64 for v in values) else tack.f32
+
+
+def _converted(values, dtype):
+    """Materialize in the computation's type before doing arithmetic."""
+    return arrays.materialize(values if arrays.dtype_of(values) is dtype
+                              else arrays.Cast(values, dtype))
+
+
+def _same_dtype(name, *fields):
+    """Same-type vector operations preserve storage; conversions are explicit."""
+    if len({arrays.dtype_of(f.values) for f in fields}) != 1:
+        raise TypeError(f"{name}'s fields differ in type: convert them to one with Cast")
 
 
 def _scalar_floating(name, field):

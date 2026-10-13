@@ -277,15 +277,13 @@ class DataSet:
         return group.view(*mixins, **attributes)
 
     def _side_zero_points(self):
-        """An L2 geometry's corners per (face, side, point): its traces, kept while the
-        geometry is the same field."""
+        """An L2 geometry's current corners per (face, side, point).
+
+        Geometry values are mutable, so field identity cannot cache positions.
+        """
         from tack.data.algorithms.traces import traces
 
-        kept = self.__dict__.get("_side_zero")
-        if kept is None or kept[0] is not self.geometry:
-            kept = (self.geometry, traces(self, self.geometry).values)
-            self._side_zero = kept
-        return kept[1]
+        return traces(self, self.geometry).values
 
     def launch_groups(self, domain, fields=(), keys=()):
         """The groups a kernel over ``domain`` launches once each, given the ``Field``s

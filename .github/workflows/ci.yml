@@ -339,9 +339,8 @@ jobs:
   # exactly. So this is a real gate, not an experiment — it is the only
   # job that exercises a GPU backend end to end.
   #
-  # If Metal ever becomes unavailable on the runners the tests skip
-  # themselves and this still passes, so a red here means a genuine Metal
-  # regression. The "backends available" line says which case you are in.
+  # Metal is required: an unavailable GPU must fail the job before pytest can
+  # quietly omit the hardware cases.
   metal:
     name: metal
     runs-on: macos-latest
@@ -382,5 +381,16 @@ jobs:
           print("backends available:", ", ".join(found) or "none")
           EOF
 
-      - name: Run the suite
-        run: uv run pytest -q
+      - name: Run the suite with Metal required
+        run: |
+          uv run python - <<'EOF'
+          import os
+          import pytest
+          import tack
+          from tack.runtime.dispatch import get_backend
+          os.environ.pop("TACK_NO_REINIT", None)
+          tack.init(arch=tack.metal)
+          assert get_backend().name == "metal"
+          print("Required hardware backend: metal", flush=True)
+          raise SystemExit(pytest.main(["-q", "-rs"]))
+          EOF

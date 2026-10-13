@@ -31,8 +31,7 @@ def shrink(data, factor=0.5, fields=None):
 
     if not 0 <= factor <= 1:
         raise ValueError(f"factor must lie in [0, 1], not {factor!r}")
-    corners = discontinuous(data, Field(H1(data), data.geometry.values)
-                            if isinstance(data.geometry.space, H1) else data.geometry)
+    corners = discontinuous(data, data.geometry)
     if data.num_cells:
         _shrink_corners(corners.values, corners.space.offsets, float(factor), data.num_cells)
     from tack.data.carry import selected

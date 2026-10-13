@@ -32,6 +32,11 @@ print(td.statistics(data, "RTData")["mean"])
 Every algorithm takes the dataset first and returns something new: a
 dataset, a field, or Python values. Nothing changes its input.
 
+Fields passed to an algorithm belong to that dataset's topology. `dot`,
+`cross` and `composite` require matching value types; an explicit
+`td.Cast(field.values, tack.f32)` converts values when needed. Integer
+inputs to magnitude, logarithms and statistics compute in floating point.
+
 ## The model
 
 A `DataSet` is four things:
@@ -50,6 +55,10 @@ discontinuous field. `Values(data, on)` is data about points, edges, faces or
 cells with no interpolation. A field's values are a `tack.field`, a
 `tack.Vector.field`, or an implicit array that computes them on demand: a
 grid's coordinates take no memory.
+
+Geometry may also live in L2, giving each cell its own positions. Contour and
+slice preserve the resulting gaps; clipping requires shared H1 geometry.
+Changing an L2 geometry's values refreshes subsequent face-geometry results.
 
 ## Building a dataset
 
