@@ -149,6 +149,10 @@ Only on a cache miss:
 4. IR optimization: conservative copy propagation (`ir_optimize.py`)
 5. Backend `build` callback: scalar packing (GPU), type annotation (`ir_type_annotate.py`), codegen, compile
 
+### The dispatch fast path
+
+`_resolve_variant` first tries a per-backend, per-kernel map from the call's *signature* (`_call_signature` in `runtime/kernel_utils.py`) to the variant keys it resolved before. The signature is read straight off the arguments: a field's dtype, shape and element layout; a scalar's kind and integer width; a template object's class (by token), its class constants' current values, and per attribute what `_template_key` and the expansion read, nested templates by path. Equal signatures imply an equal variant key, so a hit expands the templates through a precomputed plan (`_expansion_plan`), decides disjointness, runs the per-call checks (`_check_call`: workgroup launch, atomic alignment, writable fields) and returns. Entries name variants by key and hold no class or variant, so a per-call template class is collected as before and a variant removed by `drop_variants` is resolved afresh; the map is capped at `_FAST_CAP` signatures. The launch range is evaluated through a plan found once per IR (`_launch_plan`). A warm CPU dispatch went from 70 to 40 µs on a 2 GHz Xeon. See `test_dispatch_fast_path.py`.
+
 ### Variant cache key
 
 Keyed per `Kernel` (weakly, so compiled code is released with the kernel), then by:

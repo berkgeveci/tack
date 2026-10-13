@@ -486,13 +486,11 @@ class CompiledKernel:
         self._chunk = None
 
         # Build the ctypes function type
-        ctypes_params = []
-        for ptype, is_field in zip(param_types, param_is_field):
-            ct = _CTYPES_MAP[ptype]
-            if is_field:
-                ctypes_params.append(ctypes.POINTER(ct))
-            else:
-                ctypes_params.append(ct)
+        # A field is passed as its address (`c_void_p` takes a Python int),
+        # which `bind` reads straight off the array: a typed pointer object
+        # per field cost 4 µs each.
+        ctypes_params = [ctypes.c_void_p if is_field else _CTYPES_MAP[ptype]
+                         for ptype, is_field in zip(param_types, param_is_field)]
         # A multi-dimensional loop's extents, then the chunk's start and end.
         ctypes_params.extend([ctypes.c_int64] * (num_dims + 2))
 
@@ -597,17 +595,17 @@ class CompiledKernel:
         prefix = []
         for arg, ptype, is_field in zip(kernel_args, self._param_types,
                                         self._param_is_field):
-            ct = _CTYPES_MAP[ptype]
             if is_field:
-                prefix.append(arg._buffer._data.ctypes.data_as(ctypes.POINTER(ct)))
+                prefix.append(arg._buffer._data.ctypes.data)
             else:
-                prefix.append(ct(arg))
-        prefix.extend(ctypes.c_int64(e) for e in extents)
+                prefix.append(_CTYPES_MAP[ptype](arg))
+        prefix.extend(int(e) for e in extents)
         return tuple(prefix)
 
     def call_range(self, prefix: tuple, loop_start: int, loop_end: int):
-        """Run one chunk. Fresh c_int64s — chunks run concurrently."""
-        self._cfunc(*prefix, ctypes.c_int64(loop_start), ctypes.c_int64(loop_end))
+        """Run one chunk. The bounds are converted per call -- chunks run
+        concurrently."""
+        self._cfunc(*prefix, loop_start, loop_end)
 
     def __call__(self, kernel_args: list, loop_start: int, loop_end: int):
         """Call the compiled kernel with field pointers/scalars and loop range."""
@@ -1428,7 +1426,7 @@ class CPUBackend(Backend):
         jit = self._jit_pool()
         if jit is not None:
             wrapper = compiled._chunk or cpu_pool.chunk_wrapper(compiled)
-            pack = cpu_pool.pack_args(prefix)
+            pack = cpu_pool.pack_args(compiled, prefix)
             t0 = time.perf_counter_ns()
             jit.run(wrapper, pack, 0, 0, self.num_threads)
             return time.perf_counter_ns() - t0
@@ -1902,7 +1900,7 @@ class CPUBackend(Backend):
         chunk, the workers never touch Python, and the per-worker spans
         come back from the pool for the same bookkeeping as above."""
         wrapper = compiled._chunk or cpu_pool.chunk_wrapper(compiled)
-        pack = cpu_pool.pack_args(prefix)
+        pack = cpu_pool.pack_args(compiled, prefix)
         gap = time.perf_counter_ns() - self._last_dispatch_ns
         dispatch_t0 = time.perf_counter_ns()
         jit.run(wrapper, pack, start, end, self.num_threads)

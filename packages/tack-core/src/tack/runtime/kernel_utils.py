@@ -21,8 +21,11 @@ see ``shape_signature`` — and it makes the pristine IR from
 ``kernel.get_ir()`` a template that must never be mutated in place.
 """
 
+import struct
 import threading
 import weakref
+
+import numpy as np
 
 from tack.lang import ir
 from tack.lang.atomic_support import check_atomic_alignment, check_atomic_support
@@ -30,6 +33,7 @@ from tack.lang.field import Field, Texture3D
 from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_traversal import walk_ir as _walk_ir
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
+from tack.lang.types import integer_type_for_value
 from tack.lang.workgroup_participation import (
     check_workgroup_launch,
     check_workgroup_participation,
@@ -504,6 +508,28 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
     if kwargs:
         raise NotImplementedError("Keyword arguments not supported in kernels")
 
+    # The fast path: a call whose signature was seen before reuses what that
+    # call resolved -- its variant and the plan for expanding its template
+    # arguments -- and runs only the per-call checks. See `_call_signature`
+    # for what the signature covers, and why a hit implies the same key.
+    fast = _fast_slot(backend, kernel)
+    sig = _call_signature(args)
+    if sig is not None:
+        hit = fast.get(sig)
+        if hit is not None:
+            # The entry names variants by key only: the slot owns them, and
+            # one it has dropped since is resolved afresh below.
+            plan, keys = hit
+            slot = kernel_cache_slot(backend._cache, kernel)
+            known = slot.get(next(iter(keys.values())))
+            if known is not None:
+                effective_args = _expand_with_plan(args, plan) if plan else args
+                disjoint = specialize_disjoint and fields_disjoint(known.ir, effective_args)
+                variant = slot.get(keys.get(disjoint))
+                if variant is not None:
+                    _check_call(backend, variant, effective_args)
+                    return variant, effective_args
+
     template_args = _detect_template_args(kernel, args)
     effective_args = _expand_template_args(args, template_args)
     vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
@@ -579,9 +605,173 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
         check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
                                backend_label=backend.label)
 
+    if sig is not None:
+        entry = fast.get(sig)
+        if entry is None:
+            if len(fast) >= _FAST_CAP:
+                fast.clear()
+            entry = fast[sig] = (_expansion_plan(template_args), {})
+        entry[1][disjoint] = key
+
     check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
     check_writable_fields(variant.ir.name, variant.written_fields, effective_args)
     return variant, effective_args
+
+
+def _check_call(backend, variant, effective_args):
+    """What every dispatch checks against its actual arguments, hit or miss."""
+    if variant.requires_full_workgroups:
+        check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
+                               backend_label=backend.label)
+    check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
+    check_writable_fields(variant.ir.name, variant.written_fields, effective_args)
+
+
+# ── The dispatch fast path ──────────────────────────────────────────
+#
+# Resolving a variant from scratch walks the arguments half a dozen times:
+# template detection and expansion, vector and texture detection, the IR
+# lookup, type inference on a probe, the shape signature, the variant key.
+# Each is a few microseconds; together they were the largest part of a
+# dispatch's host time (90 of ~270 µs per launch of a contour's kernels on
+# a 2 GHz Xeon, where the kernels themselves ran 0.1-14 ms). A filter is
+# dozens of such launches, and on a GPU the host side is most of the call.
+#
+# The signature below is what the variant key is a function of, read
+# straight off the arguments: for a field its dtype, shape and element
+# layout; for a scalar its kind and integer width; for a template object
+# its class, its class constants' current values, and for each attribute
+# the kind, dtype, shape or function that `_template_key` and the
+# expansion read -- nested templates included, by path. Equal signatures
+# therefore mean an equal key (the full shape is more than the key needs,
+# so distinct lengths miss, harmlessly, and find the same variant). What a
+# hit must still do per call -- expand the templates, decide disjointness,
+# check atomic alignment, writable fields and the workgroup launch -- it
+# does. An entry names its variants by key and holds no class or variant
+# itself, so a template class defined per call is collected as before and
+# a variant dropped by `drop_variants` is resolved afresh.
+
+_fast_caches = weakref.WeakKeyDictionary()     # backend -> kernel -> {sig: entry}
+_FAST_CAP = 256                                # signatures kept per kernel and backend
+
+
+def _fast_slot(backend, kernel) -> dict:
+    per_backend = _fast_caches.get(backend)
+    if per_backend is None:
+        per_backend = _fast_caches.setdefault(backend, weakref.WeakKeyDictionary())
+    slot = per_backend.get(kernel)
+    if slot is None:
+        slot = per_backend.setdefault(kernel, {})
+    return slot
+
+
+def _call_signature(args):
+    """The call's signature, or None for an argument the fast path does
+    not describe (the slow path then reports it)."""
+    sig = []
+    for arg in args:
+        if isinstance(arg, Field):
+            sig.append((0, arg.dtype, arg.shape, getattr(arg, '_logical_shape', None),
+                        getattr(arg, '_vector_n', None), getattr(arg, '_matrix_shape', None)))
+        elif isinstance(arg, Texture3D):
+            sig.append((1, arg.dtype, arg.shape_3d))
+        elif isinstance(arg, float):
+            sig.append(2)
+        elif isinstance(arg, int):
+            sig.append((3, integer_type_for_value(arg)))
+        elif isinstance(arg, np.floating):
+            sig.append(2)
+        elif isinstance(arg, np.integer):
+            sig.append((3, integer_type_for_value(int(arg))))
+        elif getattr(type(arg), '_device_class', False) is True:
+            tmpl = _template_signature(arg, (), set())
+            if tmpl is None:
+                return None
+            sig.append((4, tuple(tmpl)))
+        else:
+            return None
+    return tuple(sig)
+
+
+def _scalar_bits(value):
+    return struct.pack('!d', value) if isinstance(value, float) else value
+
+
+def _template_signature(obj, path, seen):
+    """What of a template object the IR and the expansion depend on, for it
+    and every template it holds; None on a cycle (the slow path explains)."""
+    from tack.lang.func import Func
+    from tack.lang.kernel import _class_token
+    from tack.lang.template_rewrite import _class_constants
+
+    if id(obj) in seen:
+        return None
+    seen.add(id(obj))
+    cls = type(obj)
+    constants = _class_constants(cls)
+    own = []
+    children = []
+    for name, value in vars(obj).items():
+        if name.startswith('_'):
+            continue
+        if name in constants:
+            own.append((name, type(value), _scalar_bits(value)))
+        elif isinstance(value, Field):
+            own.append((name, 0, value.dtype, value.shape, getattr(value, '_logical_shape', None),
+                        getattr(value, '_vector_n', None), getattr(value, '_matrix_shape', None)))
+        elif isinstance(value, int):
+            own.append((name, 3, integer_type_for_value(value)))
+        elif isinstance(value, float):
+            own.append((name, 2))
+        elif isinstance(value, Func):
+            own.append((name, 5, value))
+        elif getattr(type(value), '_device_class', False) is True:
+            children.append((name, value))
+    parts = [(path, _class_token(cls),
+              tuple((n, type(v), _scalar_bits(v)) for n, v in constants.items()),
+              tuple(own))]
+    for name, child in sorted(children):
+        below = _template_signature(child, (*path, name), seen)
+        if below is None:
+            return None
+        parts.extend(below)
+    seen.discard(id(obj))
+    return parts
+
+
+def _expansion_plan(template_args) -> tuple:
+    """How `_expand_template_args` turns these template arguments into
+    arguments: for each template, highest index first, the attribute paths
+    it appends, fields then runtime scalars, each sorted by flattened name."""
+    from tack.lang.template_rewrite import _classify_own, _prefix, template_tree
+
+    plan = []
+    for idx in sorted(template_args, reverse=True):
+        _, obj = template_args[idx]
+        fields, scalars = [], []
+        for path, node in template_tree(obj):
+            _, own_fields, own_scalars = _classify_own(node)
+            for name in own_fields:
+                fields.append((_prefix(path) + name, (*path, name)))
+            for name in own_scalars:
+                scalars.append((_prefix(path) + name, (*path, name)))
+        fields.sort()
+        scalars.sort()
+        plan.append((idx, tuple(p for _, p in fields) + tuple(p for _, p in scalars)))
+    return tuple(plan)
+
+
+def _expand_with_plan(args, plan) -> tuple:
+    templates = {idx for idx, _ in plan}
+    new_args = [arg for i, arg in enumerate(args) if i not in templates]
+    for idx, paths in plan:
+        obj = args[idx]
+        for path in paths:
+            value = obj
+            for name in path:
+                value = getattr(value, name)
+            new_args.append(value)
+    return tuple(new_args)
 
 
 def _localize_outer_scalars(ir_func):
@@ -855,14 +1045,54 @@ def _get_loop_extents(ir_func: ir.IRFunction, args: tuple) -> tuple:
     raise RuntimeError("Kernel has no parallel for-loop")
 
 
+def _launch_plan(ir_func: ir.IRFunction) -> tuple:
+    """How to evaluate the parallel loop's end and extents from the
+    arguments, found once per IR: a constant, a dimension of one argument,
+    a scalar argument, or (anything else) the expression to resolve."""
+    plan = ir_func.__dict__.get('_launch_plan')
+    if plan is None:
+        loop = next((s for s in ir_func.body if isinstance(s, ir.IRParallelFor)), None)
+        if loop is None:
+            raise RuntimeError("Kernel has no parallel for-loop")
+        index = {p.name: i for i, p in enumerate(ir_func.params)}
+
+        def step(node):
+            if isinstance(node, ir.IRConstant):
+                return (0, int(node.value))
+            if isinstance(node, ir.IRDimSize) and node.field_name in index:
+                return (1, index[node.field_name], node.dim)
+            if isinstance(node, ir.IRName) and node.name in index:
+                return (2, index[node.name])
+            return (3, node)
+
+        plan = ir_func._launch_plan = (
+            step(loop.end), tuple(step(e) for e in loop.extents) if loop.dims else ())
+    return plan
+
+
+def _launch_value(step, ir_func, args) -> int:
+    kind = step[0]
+    if kind == 0:
+        return step[1]
+    if kind == 1:
+        arg = args[step[1]]
+        shape = getattr(arg, 'shape_3d', None) \
+            or getattr(arg, '_logical_shape', None) or arg.shape
+        return shape[step[2]]
+    if kind == 2:
+        return int(args[step[1]])
+    return _resolve_range_expr(step[1], dict(zip((p.name for p in ir_func.params), args)))
+
+
 def _get_launch(ir_func: ir.IRFunction, args: tuple) -> tuple:
     """``(items, extents)``: the parallel loop's iteration count and its extents.
 
     ``items`` is 0 when any extent is, so an empty launch is skipped even
     where the product of two negative sizes would be positive.
     """
-    items = _get_loop_range(ir_func, args)
-    extents = _get_loop_extents(ir_func, args)
+    end, extent_steps = _launch_plan(ir_func)
+    items = _launch_value(end, ir_func, args)
+    extents = tuple(_launch_value(e, ir_func, args) for e in extent_steps)
     if extents and min(extents) <= 0:
         items = 0
     return items, extents

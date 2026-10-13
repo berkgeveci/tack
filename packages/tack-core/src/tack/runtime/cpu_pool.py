@@ -427,14 +427,16 @@ def chunk_wrapper(compiled) -> int:
     return compiled._chunk
 
 
-def pack_args(prefix: tuple):
-    """The ``bind()`` prefix as 8-byte slots: pointers as addresses, scalars
-    stored with their own ctypes type at the slot's start."""
+def pack_args(compiled, prefix: tuple):
+    """The ``bind()`` prefix as 8-byte slots: a field's address, a scalar
+    stored with its own ctypes type at the slot's start, an extent as i64."""
     pack = (ctypes.c_uint64 * max(1, len(prefix)))()
+    fields = compiled._param_is_field
     for i, a in enumerate(prefix):
-        if isinstance(a, ctypes._Pointer):
-            ctypes.c_void_p.from_buffer(pack, 8 * i).value = \
-                ctypes.cast(a, ctypes.c_void_p).value or 0
+        if i >= len(fields):
+            ctypes.c_int64.from_buffer(pack, 8 * i).value = a
+        elif fields[i]:
+            ctypes.c_void_p.from_buffer(pack, 8 * i).value = a
         else:
             type(a).from_buffer(pack, 8 * i).value = a.value
     return pack
