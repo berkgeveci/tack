@@ -137,3 +137,51 @@ def test_a_mesh_of_lines_still_has_cells(backend):
                                [0.25, 0.75, 1.25])
     np.testing.assert_allclose(td.to_cells(data, "p").values.to_numpy(), [0.5, 2.5, 6.5])
     assert td.threshold(data, "p", 0.5, 5.0).num_cells == 1     # the line from 1 to 4
+
+
+# ── Cells of no volume, faces of no area ────────────────────────────
+
+
+def _collapsed(kind):
+    """One hexahedron whose points coincide, or a grid of spacing 0."""
+    if kind == "hexahedron":
+        top = td.UnstructuredTopology([12], [0, 8], list(range(8)))
+        return td.DataSet(top, np.full((8, 3), 2.0, np.float32))
+    return td.uniform_grid((3, 3, 3), origin=(2, 2, 2), spacing=(0.0, 0.0, 0.0))
+
+
+@pytest.mark.parametrize("kind", ["hexahedron", "grid"])
+def test_geometry_of_cells_of_no_volume_is_finite(backend, kind):
+    data = _collapsed(kind)
+    data.fields["c"] = td.Field(td.Constant(data), td.ConstantArray(1.0, data.num_cells))
+    measure, centroid = td.cell_geometry(data)
+    np.testing.assert_array_equal(measure.values.to_numpy(), 0)
+    np.testing.assert_allclose(centroid.values.to_numpy(vectors=True), 2.0)
+    np.testing.assert_allclose(td.face_centers(data).values.to_numpy(vectors=True), 2.0)
+    normals, areas = td.face_geometry(data)
+    np.testing.assert_array_equal(normals.values.to_numpy(), 0)
+    np.testing.assert_array_equal(areas.values.to_numpy(), 0)
+    flux = td.upwind_flux(data, "c", (1.0, 0.0, 0.0))
+    np.testing.assert_array_equal(flux.values.to_numpy(), 0)
+    np.testing.assert_array_equal(td.divergence(data, flux).values.to_numpy(), 0)
+
+
+@pytest.mark.parametrize("kind", ["hexahedron", "grid"])
+def test_derivatives_on_cells_of_no_volume_are_nan(backend, kind):
+    data = _collapsed(kind)
+    data.fields["p"] = td.Field(td.H1(data), td.ConstantArray(1.0, data.num_points))
+    data.fields["c"] = td.Field(td.Constant(data), td.ConstantArray(1.0, data.num_cells))
+    assert np.isnan(td.gradients(data, "p").values.to_numpy()).all()
+    assert np.isnan(td.perot(data, td.upwind_flux(data, "c", (1, 0, 0))).values.to_numpy()).all()
+
+
+def test_polygons_and_polylines_of_no_extent(backend):
+    flat = td.DataSet(td.PolygonalTopology([0, 3], [0, 1, 2]), np.ones((3, 3), np.float32))
+    area, centroid = td.cell_geometry(flat)
+    assert area.values.to_numpy()[0] == 0
+    np.testing.assert_allclose(centroid.values.to_numpy(vectors=True), [[1, 1, 1]])
+    line = td.DataSet(td.PolylineTopology([0, 3], [0, 1, 2]), np.ones((3, 3), np.float32))
+    length, centroid = td.cell_geometry(line)
+    assert length.values.to_numpy()[0] == 0
+    np.testing.assert_allclose(centroid.values.to_numpy(vectors=True), [[1, 1, 1]])
+    np.testing.assert_array_equal(td.face_geometry(line).normal.values.to_numpy(), 0)

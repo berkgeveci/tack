@@ -20,7 +20,7 @@ def _face_geometry(faces, normals, areas):
             # Newell's normal, from the face's first point: a fan of triangles.
             n += (faces.corner_position(f, j) - origin).cross(faces.corner_position(f, j + 1) - origin)
         length = n.norm()
-        normals[faces.entity_id(f)] = n / length
+        normals[faces.entity_id(f)] = n / length if length > 0.0 else n   # none: no area
         areas[faces.entity_id(f)] = 0.5 * length
 
 
@@ -39,8 +39,9 @@ def _edge_geometry(cells, normals, areas):
             if cells.face_side(c, k) == 0:
                 d = cells.side_position(c, k, 1) - cells.side_position(c, k, 0)
                 out = d.cross(n)
+                length = out.norm()
                 f = cells.face_id(c, k)
-                normals[f] = out / out.norm()
+                normals[f] = out / length if length > 0.0 else out
                 areas[f] = d.norm()
 
 
@@ -56,8 +57,9 @@ def _end_geometry(cells, normals, areas):
                 inside = 1 if k == 0 else last - 1
                 d = (cells.point_position(cells.line_point_id(c, at))
                      - cells.point_position(cells.line_point_id(c, inside)))
+                length = d.norm()
                 f = cells.face_id(c, k)
-                normals[f] = d / d.norm()
+                normals[f] = d / length if length > 0.0 else d
                 areas[f] = 1.0
 
 
