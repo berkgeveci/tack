@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from test_dataset_api import _scalars
 
+import tack
 import tack.data as td
 
 try:
@@ -176,3 +177,13 @@ def test_point_cloud_keeps_every_point(backend):
     assert out.num_points == out.num_cells == data.num_points
     np.testing.assert_array_equal(out.fields["tangle"].values.to_numpy(),
                                   data.fields["tangle"].values.to_numpy())
+
+
+def test_statistics_of_integers(backend):
+    """The central moments of integer values are fractions: they were stored in the
+    values' type, so [0, 1] had no variance."""
+    data = td.uniform_grid((2,))
+    for dtype in (tack.i32, tack.f32):
+        out = td.statistics(data, td.Field(td.H1(data), _scalars([0, 1], dtype)))
+        assert (out["mean"], out["m2"], out["m4"]) == (0.5, 0.5, 0.125)
+        assert (out["sample_variance"], out["population_variance"]) == (0.5, 0.25)

@@ -36,7 +36,9 @@ def statistics(data, field):
         raise ValueError("statistics of no values")
     total = values.sum()
     mean = total / n
-    p2, p3, p4 = (tack.field(values.dtype, shape=(n,)) for _ in range(3))
+    # The powers of differences from a mean are fractions, whatever the values are.
+    precision = tack.f64 if values.dtype == tack.f64 else tack.f32
+    p2, p3, p4 = (tack.field(precision, shape=(n,)) for _ in range(3))
     _central_powers(values, mean, p2, p3, p4)
     m2, m3, m4 = p2.sum(), p3.sum(), p4.sum()
     skewness = math.sqrt(n) * m3 / m2 ** 1.5 if m2 else 0.0
