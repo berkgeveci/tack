@@ -222,14 +222,24 @@ def histogram(data, bins=10, range=None, n=None):
     """
     import numpy as np
     n, data = _count(n, data)
+    if int(bins) < 1:
+        raise ValueError(f"histogram needs at least 1 bin, not {bins}")
     if range is None:
         if n == 0:
             raise ValueError("histogram of no elements needs an explicit range")
         head = _prefix(data, n)
         lo = float(head.min())
         hi = float(head.max())
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            # As numpy.histogram: bins cannot divide a range that is not finite.
+            raise ValueError(f"autodetected range of [{lo}, {hi}] is not finite; "
+                             "pass a finite range")
     else:
         lo, hi = float(range[0]), float(range[1])
+        if not (np.isfinite(lo) and np.isfinite(hi)):
+            raise ValueError(f"histogram range [{lo}, {hi}] is not finite")
+        if lo > hi:
+            raise ValueError(f"histogram range [{lo}, {hi}] has its minimum above its maximum")
 
     # Avoid division by zero for constant fields
     if hi == lo:

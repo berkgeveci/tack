@@ -185,3 +185,57 @@ def test_polygons_and_polylines_of_no_extent(backend):
     assert length.values.to_numpy()[0] == 0
     np.testing.assert_allclose(centroid.values.to_numpy(vectors=True), [[1, 1, 1]])
     np.testing.assert_array_equal(td.face_geometry(line).normal.values.to_numpy(), 0)
+
+
+# ── Values that are not finite ──────────────────────────────────────
+
+
+def _ramp_with(value):
+    data = td.uniform_grid((3, 3, 3))
+    values = np.linspace(0, 1, 27).astype(np.float32)
+    values[0] = value
+    data.fields["p"] = td.Field(td.H1(data), tack.field_like(values))
+    data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([1.0, 2.0, 3.0], 27))
+    return data
+
+
+@pytest.mark.parametrize("value", [np.inf, -np.inf, np.nan])
+def test_a_crossing_beside_a_value_that_is_not_finite_lies_at_the_other_end(backend, value):
+    """The edge weight (iso - a) / (b - a) was NaN with an infinite end, and with
+    it the crossing's position and every field carried to it."""
+    data = _ramp_with(value)
+    surface = td.contour(data, "p", 0.5)
+    assert surface.num_cells and np.isfinite(surface.positions()).all()
+    np.testing.assert_allclose(surface.fields["v"].values.to_numpy(vectors=True), [[1, 2, 3]] * surface.num_points)
+    clipped = td.clip(data, "p", 0.03)
+    assert np.isfinite(clipped.positions()).all()
+    assert np.isfinite(clipped.fields["v"].values.to_numpy()).all()
+
+
+def test_histograms_refuse_ranges_that_are_not_finite(backend):
+    from tack.algorithms import histogram
+    for value in (np.inf, np.nan):
+        data = tack.field_like(np.array([0.0, 1.0, value], np.float32))
+        with pytest.raises(ValueError, match="range of .* is not finite"):
+            histogram(data)
+        with pytest.raises(ValueError, match="is not finite"):
+            td.entropy(_ramp_with(value), "p")
+    finite = tack.field_like(np.array([0.0, 1.0], np.float32))
+    with pytest.raises(ValueError, match="is not finite"):
+        histogram(finite, range=(0.0, np.inf))
+    with pytest.raises(ValueError, match="minimum above its maximum"):
+        histogram(finite, range=(1.0, 0.0))
+    with pytest.raises(ValueError, match="at least 1 bin"):
+        histogram(finite, bins=0)
+
+
+def test_entropy_of_one_value_and_of_none(backend):
+    data = td.uniform_grid((3, 3))
+    data.fields["one"] = td.Field(td.H1(data), td.ConstantArray(2.0, 9))
+    assert str(td.entropy(data, "one")) == "0.0"
+    with pytest.raises(ValueError, match="at least 1 bin"):
+        td.entropy(data, "one", bins=0)
+    empty = td.DataSet(td.UnstructuredTopology([], [0], [], num_points=0), np.empty((0, 3)))
+    empty.fields["p"] = td.Field(td.H1(empty), td.ConstantArray(0.0, 0))
+    with pytest.raises(ValueError, match="entropy of no values"):
+        td.entropy(empty, "p")
