@@ -24,6 +24,8 @@ def composite(data, *fields):
     space, n = _same_space(*fields)
     if any(width_of(f.values) for f in fields):
         raise TypeError("composite takes scalar fields")
+    if len({arrays.dtype_of(f.values) for f in fields}) != 1:
+        raise TypeError("composite's fields differ in type: convert them to one")
     out = _vectors(n, arrays.dtype_of(fields[0].values), len(fields))
     for k, f in enumerate(fields):
         if n:

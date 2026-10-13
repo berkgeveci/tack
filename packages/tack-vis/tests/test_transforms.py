@@ -182,3 +182,11 @@ def test_an_l2_geometry_moves_every_corner(backend):
     assert isinstance(moved.geometry.space, td.L2)
     np.testing.assert_allclose(moved.geometry.values.to_numpy(vectors=True),
                                corners.values.to_numpy(vectors=True) + np.array([5.0, 0.0, 0.0]))
+
+
+def test_composite_refuses_mixed_types(backend):
+    data = td.uniform_grid((2,))
+    ints = td.Field(td.H1(data), _scalars([1, 2], tack.i32))
+    floats = td.Field(td.H1(data), _scalars([1.75, 2.75]))
+    with pytest.raises(TypeError, match="differ in type"):
+        td.composite(data, ints, floats)
