@@ -141,3 +141,16 @@ def test_refusals(backend):
     traces = td.traces(data, "f")
     with pytest.raises(TypeError, match="two values on each face"):
         td.project(data, traces, td.Constant(data))
+
+
+def test_changing_h1_order_keeps_unused_points(backend):
+    """A point no cell uses keeps its value through H1 orders: no cell gives it one,
+    and the field's own value there is exact. It was zeroed."""
+    corners = np.array([[x, y, z] for z in (0, 1) for y in (0, 1) for x in (0, 1)], float)
+    topology = td.UnstructuredTopology([12], [0, 8], [0, 1, 3, 2, 4, 5, 7, 6], num_points=9)
+    data = td.DataSet(topology, np.vstack([corners, [2.0, 2.0, 2.0]]))
+    field = td.Field(td.H1(data), _scalars(np.arange(9) + 1.0))
+    up = td.project(data, field, td.H1(data, order=2))
+    down = td.project(data, up, td.H1(data))
+    np.testing.assert_allclose(up.values.to_numpy()[:9], np.arange(9) + 1.0)
+    np.testing.assert_allclose(down.values.to_numpy(), np.arange(9) + 1.0)

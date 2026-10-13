@@ -82,6 +82,20 @@ def _cell_contributions(point_offsets, values, contributions, n_cells):
             contributions[e] = values[c]
 
 
+@tack.kernel
+def _first_values(source, out, n):
+    for i in range(n):
+        out[i] = source[i]
+
+
+def _start(data, field, out):
+    """``out`` zeroed, but where the source is continuous its point values first:
+    a point no cell uses keeps its value, which no cell can give it."""
+    out.fill(0)
+    if isinstance(field.space, H1) and data.num_points:
+        _first_values(materialize(field.values), out, data.num_points)
+
+
 def _onto_points(data, field, values):
     """Order-1 H1: each point the mean of what the cells around it give it -- their
     corner values -- summed in a fixed order through the point links."""
@@ -101,7 +115,7 @@ def _onto_points(data, field, values):
                 _corner_contributions(data.domain_view("cells", group), field.view(group),
                                       start_of[id(group.root)], contributions)
     out = _like(values, data.num_points)
-    out.fill(0)
+    _start(data, field, out)
     if total:
         link_offsets, entries = topology.point_links()
         _average_links(link_offsets, entries, contributions, out)
@@ -125,7 +139,7 @@ def _onto_nodes(data, field, space, values):
                                 target.view(group), starts[id(group.root)], keys,
                                 contributions)
     out = target.values
-    out.fill(0)
+    _start(data, field, out)              # an order-2 field's points come first
     if total:
         order, offsets = bucket_order(keys, space.size, idt)
         _average_links(offsets, order, contributions, out)
