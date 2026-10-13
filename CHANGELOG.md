@@ -3,6 +3,32 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## Unreleased
+
+### Fixed
+
+- Grids with a size of 1 before another axis -- `uniform_grid((1, 3))`, a
+  VTK image of dimensions `(1, m, n)` -- were refused; so were grids of one
+  point or none (`(1, 1, 1)`, `(0,)`, `wavelet(extent=0)`). A size of 1 now
+  adds no cells in any position, and a grid with no axis of two points has
+  none.
+- Cells of no volume and faces of no area (coincident points, a grid of
+  spacing 0) have finite geometry: measure 0, the centroid at their points'
+  mean and zero normals, so the flux through them is 0. Their gradients,
+  flow quantities and Perot reconstruction are NaN, as before, and now
+  documented.
+- A contour or clip crossing beside an infinite or NaN value lies at the
+  finite end, where the crossing and the fields carried to it were NaN.
+- `algorithms.histogram` and `entropy` refuse a range that is not finite
+  (as `numpy.histogram` does), a reversed range and fewer than one bin;
+  `entropy` of no values says so, and of one value is `0.0`, not `-0.0`.
+- A mesh of line cells (a 1D grid, VTK lines) derived no faces, so its
+  `external_faces` were empty and `face_geometry`, `upwind_flux`,
+  `divergence` and `perot` failed with an internal error. Faces of lines
+  are not derived yet, and asking now raises `NotImplementedError`.
+- `extract_cells` takes a cell `Set`, or its name in `data.sets`.
+- `dataset_to_vtk` writes a grid of one point or none as a grid.
+
 ## 0.4.0 — 2026-10-13
 
 The headline: `tack.data`, a dataset API in `tack-vis`. Meshes, the

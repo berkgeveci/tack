@@ -228,7 +228,12 @@ NumPy array is refused as values: put it in a `tack.field` first.
 `UniformCoordinates`, as `rectilinear_grid(x, y, z)` is on a
 `CartesianProduct`; `sources.wavelet` and `sources.tangle` are uniform
 grids. The VTK interop reads and writes `vtkImageData` as uniform grids,
-direction matrix included.
+direction matrix included. A size of 1 adds no cells, in any position:
+`(1, 3)` is a line of three points along y, as `(3, 1)` is along x. A grid
+with no axis of two or more points has no cells: `(1, 1, 1)` is one point,
+and a size of 0 makes it empty. Their topology is then an
+`UnstructuredTopology` without cells, and the VTK interop still writes them
+as `vtkImageData` (or `vtkRectilinearGrid`).
 
 **Geometry.** `DataSet(topology, geometry, fields=None, sets=None,
 dtype=tack.f32)` takes the geometry as an `H1` or `L2` field of 3-vectors,
