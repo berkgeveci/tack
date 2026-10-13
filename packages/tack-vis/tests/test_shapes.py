@@ -492,7 +492,12 @@ def test_nearest_point_is_vtks(f64_backend, shape, outside):
     """VTK's EvaluatePosition closest point, inside the cell and out. Not a quad's:
     VTK measures to its edges, where the clamped position is close but not exact.
     Nor a wedge's: VTK clamps r and s each to [0, 1], which can leave the
-    triangle (r + s > 1), where Tack scales them back onto it."""
+    triangle (r + s > 1), where Tack scales them back onto it.
+
+    Outside a hexahedron, Tack keeps the position at the clamped parametric
+    coordinates, as VTK 9.7 does; VTK since 45f0f69a7e (2026-07) takes the
+    nearest of its faces' closest points instead (TA-39). That case is checked
+    against VTK's clamped position, the same in either version."""
     cells, pcs, offsets = _make_cases(shape, seed=6, count=12, outside=outside)
     n = len(pcs)
     positions = tack.Vector.field(3, tack.f64, shape=(n,))
@@ -504,9 +509,13 @@ def test_nearest_point_is_vtks(f64_backend, shape, outside):
         cell = _vtk_cell(shape)
         for j in range(cell.GetNumberOfPoints()):
             cell.GetPoints().SetPoint(j, cells[i, j])
-        closest = [0.0, 0.0, 0.0]
-        cell.EvaluatePosition(positions[i], closest, vtk.reference(0), [0.0] * 3,
-                              vtk.reference(0.0), [0.0] * cell.GetNumberOfPoints())
+        closest, pc = [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]
+        weights = [0.0] * cell.GetNumberOfPoints()
+        inside = cell.EvaluatePosition(positions[i], closest, vtk.reference(0), pc,
+                                       vtk.reference(0.0), weights)
+        if shape is sh.Hexahedron and inside != 1:
+            cell.EvaluateLocation(vtk.reference(0), list(np.clip(pc, 0.0, 1.0)), closest,
+                                  weights)
         np.testing.assert_allclose(nearest[i], closest, atol=1e-8)
 
 
