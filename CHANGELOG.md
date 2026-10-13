@@ -3,6 +3,19 @@
 All notable changes to Tack are recorded here. Rules cited by name live in
 [`docs/reference/language-contract.md`](docs/reference/language-contract.md).
 
+## Unreleased
+
+### Changed
+
+- CUDA launches are queued on a stream and return at once; the host
+  waits where it reads a field (`to_numpy`, indexing, reductions, DLPack
+  export) or calls `tack.sync()`. Fills and host writes queue in order
+  with the launches, and a field dropped while a queued launch still uses
+  it is freed after that launch (stream-ordered memory). A contour of a
+  million cells on an RTX 4060 Ti went from 9.6 to 7.1 ms, now the cost
+  of its 31 launches' host side alone. Errors of a launch surface at the
+  next wait rather than at its call, as on Metal.
+
 ## 0.4.0 — 2026-10-13
 
 The headline: `tack.data`, a dataset API in `tack-vis`. Meshes, the
