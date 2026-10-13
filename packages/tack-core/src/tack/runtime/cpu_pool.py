@@ -542,11 +542,23 @@ class CPool:
 
 # ── Per-kernel wrappers and argument packs ──────────────────────────
 
+_wrapper_lock = threading.Lock()
+
+
 def chunk_wrapper(compiled) -> int:
     """Address of ``void __tack_chunk(pack, start, end)`` for this kernel,
     JIT'd once and kept with it."""
     if compiled._chunk:
         return compiled._chunk
+    with _wrapper_lock:
+        # Two threads dispatching the same kernel must not each build one:
+        # the engine the loser dropped could still be running a launch.
+        if compiled._chunk:
+            return compiled._chunk
+        return _build_chunk_wrapper(compiled)
+
+
+def _build_chunk_wrapper(compiled) -> int:
     from tack.codegen.llvm_gen import _llvm_type
 
     ptypes = []
