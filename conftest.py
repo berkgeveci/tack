@@ -95,6 +95,16 @@ def backend(request):
     return request.param
 
 
+@pytest.fixture
+def no_disk_cache():
+    """For a test that counts compile work in this process, which a disk-cache
+    hit would skip when the suite runs with the cache on."""
+    from tack import cache
+    cache.configure(mode="off")
+    yield
+    cache.configure()
+
+
 @pytest.fixture(params=f64_backends)
 def f64_backend(request):
     """Run a test once per backend that supports f64."""

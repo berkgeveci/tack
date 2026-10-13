@@ -134,7 +134,7 @@ def test_external_metadata_keeps_its_deepcopy_protocol():
     np.testing.assert_array_equal(node.extra.data, [1, 2, 3])
 
 
-def test_cloning_runs_only_for_new_variants(backend, monkeypatch):
+def test_cloning_runs_only_for_new_variants(backend, monkeypatch, no_disk_cache):
     import tack.lang.ir_traversal as traversal
     import tack.runtime.kernel_utils as utils
 
