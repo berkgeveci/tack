@@ -213,6 +213,7 @@ _CTYPES_MAP = {
 }
 
 
+from tack.runtime import cpu_pool
 from tack.runtime.backend import Backend
 
 # Re-export shared utilities so existing `from tack.runtime.cpu import ...` works.
@@ -480,6 +481,9 @@ class CompiledKernel:
         self._param_types = param_types
         self._param_is_field = param_is_field  # list[bool]
         self._func_name = func_name
+        self._num_dims = num_dims
+        # cpu_pool's chunk wrapper for this kernel, once one is built.
+        self._chunk = None
 
         # Build the ctypes function type
         ctypes_params = []
@@ -616,6 +620,10 @@ class CompiledKernel:
 # and cannot vectorize a loop that accumulates through a field, which costs
 # 2-3x on such kernels. Overlapping calls get the variant without it.
 _SPECIALIZE_DISJOINT = True
+
+# A new buffer at least this big is zeroed through the JIT'd pool, one
+# chunk per worker, rather than filled on the calling thread.
+_POOL_ZERO_MIN_BYTES = 256 << 10
 
 
 def _create_target_machine():
@@ -792,6 +800,12 @@ class CPUBackend(Backend):
         self.num_threads = max(1, num_threads)
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledKernel}
         self._pool: ThreadPoolExecutor | None = None
+        # How a range is fanned out: "jit", the pool in `cpu_pool` reached
+        # with one ctypes call, or "python", one ThreadPoolExecutor task per
+        # worker (`TACK_CPU_POOL=python`, Windows, or a pool that could not
+        # be made). A backend that cannot make the pool falls back for good.
+        self.pool_kind = "jit" if cpu_pool.enabled() else "python"
+        self._cpool = None
         # Cost of a fan-out on this machine, measured on first use.
         self._fan_out_ns: float | None = None
         # policy v2: the fan-out cost as a function of how long the workers
@@ -849,6 +863,19 @@ class CPUBackend(Backend):
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> NumpyBuffer:
+        jit = self._cpool if self.pool_kind == "jit" else None
+        if jit is not None:
+            # First touch by every worker, one chunk each, instead of a
+            # serial fill here: the fill of a buffer the workers just wrote
+            # was the slowest thing between launches, and the workers carry
+            # the policy the pool was made under (see `_jit_pool`).
+            buf = NumpyBuffer.__new__(NumpyBuffer)
+            buf._data = np.empty(shape, dtype=dtype.numpy_dtype)
+            if buf._data.nbytes >= _POOL_ZERO_MIN_BYTES:
+                jit.zero(buf._data.ctypes.data, buf._data.nbytes, self.num_threads)
+            else:
+                buf._data.fill(0)
+            return buf
         if _numa_available:
             # Use np.empty (no page faults) under interleave policy,
             # so the first write spreads pages across NUMA nodes.
@@ -1378,6 +1405,41 @@ class CPUBackend(Backend):
             self._pool = ThreadPoolExecutor(max_workers=self.num_threads)
         return self._pool
 
+    def _jit_pool(self):
+        """The JIT'd pool (`cpu_pool.CPool`) if this backend fans out through
+        one, made on first use; None for the Python path.
+
+        It is made under the interleave policy, which its threads inherit,
+        so a buffer they first-touch is spread across the nodes the way a
+        buffer filled here is -- or keeps a bound task's binding.
+        """
+        if self.pool_kind != "jit" or self.num_threads <= 1:
+            return None
+        if self._cpool is None:
+            with _NumaInterleave():
+                self._cpool = cpu_pool.CPool.get(self.num_threads)
+            if self._cpool is None:
+                self.pool_kind = "python"
+        return self._cpool
+
+    def _empty_fan_out_ns(self, compiled: CompiledKernel, prefix: tuple) -> int:
+        """One fan-out of an empty range through whichever pool dispatches
+        use: the cost of a fan-out and nothing else."""
+        jit = self._jit_pool()
+        if jit is not None:
+            wrapper = compiled._chunk or cpu_pool.chunk_wrapper(compiled)
+            pack = cpu_pool.pack_args(prefix)
+            t0 = time.perf_counter_ns()
+            jit.run(wrapper, pack, 0, 0, self.num_threads)
+            return time.perf_counter_ns() - t0
+        pool = self._get_pool()
+        run = compiled.call_range
+        t0 = time.perf_counter_ns()
+        futures = [pool.submit(run, prefix, 0, 0) for _ in range(self.num_threads)]
+        for f in futures:
+            f.result()
+        return time.perf_counter_ns() - t0
+
     def _calibrate_fan_out(self, compiled: CompiledKernel, prefix: tuple):
         """Measure what a parallel dispatch costs before any work happens.
 
@@ -1391,16 +1453,8 @@ class CPUBackend(Backend):
         223 µs, actual 235 µs. A pure-Python no-op probe reads 122 µs, which
         would have understated the cost by nearly half.
         """
-        pool = self._get_pool()
-        run = compiled.call_range
-
         def once() -> int:
-            t0 = time.perf_counter_ns()
-            futures = [pool.submit(run, prefix, 0, 0)
-                       for _ in range(self.num_threads)]
-            for f in futures:
-                f.result()
-            return time.perf_counter_ns() - t0
+            return self._empty_fan_out_ns(compiled, prefix)
 
         self._fan_out_ns = float(min(once() for _ in range(_CALIBRATION_REPS)))
         if self.policy == "v2":
@@ -1500,16 +1554,8 @@ class CPUBackend(Backend):
         if (now - self._fan_out_measured_ns < _FAN_OUT_REFRESH_NS
                 and not self._prior_knot_near(gap)):
             return
-        pool = self._get_pool()
-        run = compiled.call_range
-
         def once() -> float:
-            t0 = time.perf_counter_ns()
-            futures = [pool.submit(run, prefix, 0, 0)
-                       for _ in range(self.num_threads)]
-            for f in futures:
-                f.result()
-            return float(time.perf_counter_ns() - t0)
+            return float(self._empty_fan_out_ns(compiled, prefix))
 
         self._update_fan_out_knot(once(), gap)
 
@@ -1779,10 +1825,16 @@ class CPUBackend(Backend):
         compiled.scattered = True
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
+        measure = self._v2
+
+        jit = self._jit_pool()
+        if jit is not None:
+            self._pool_execute(jit, compiled, prefix, start, end, chunk, measure,
+                               whole_range)
+            return
 
         pool = self._get_pool()
         run = compiled.call_range
-        measure = self._v2
 
         if not measure:
             # v1's path, untouched: no clock read, no per-worker wrapper.
@@ -1842,5 +1894,39 @@ class CPUBackend(Backend):
         # phase -- and here the max is the right statistic rather than the
         # wrong one it is for `r_p`, because this is the quantity the
         # dispatch actually spent, not a rate being generalised from.
+        self._record_fan_out(float(dispatch_ns), max(spans), float(gap))
+
+    def _pool_execute(self, jit, compiled: CompiledKernel, prefix: tuple, start: int,
+                      end: int, chunk: int, measure: bool, whole_range: bool):
+        """The fan-out through the JIT'd pool: one ctypes call runs every
+        chunk, the workers never touch Python, and the per-worker spans
+        come back from the pool for the same bookkeeping as above."""
+        wrapper = compiled._chunk or cpu_pool.chunk_wrapper(compiled)
+        pack = cpu_pool.pack_args(prefix)
+        gap = time.perf_counter_ns() - self._last_dispatch_ns
+        dispatch_t0 = time.perf_counter_ns()
+        jit.run(wrapper, pack, start, end, self.num_threads)
+        dispatch_ns = time.perf_counter_ns() - dispatch_t0
+        if not measure:
+            return
+        raw = jit.spans()
+        rates: list = [0.0] * self.num_threads
+        spans: list = [0.0] * self.num_threads
+        workers = 0
+        for t in range(self.num_threads):
+            t_start = start + t * chunk
+            if t_start >= end:
+                break
+            workers += 1
+            elems = min(chunk, end - t_start)
+            spans[t] = float(raw[t])
+            if elems > 0 and raw[t] >= _RP_MIN_WORKER_NS:
+                rates[t] = raw[t] / elems
+        measured = sorted(spans[t] for t in range(workers) if rates[t] > 0.0)
+        trusted_span = _RP_BOUND_SPAN_RATIO * workers * compiled.call_overhead_ns
+        bounds_serial = bool(measured) and (_worker_median(measured) >= trusted_span)
+        retire_floor = whole_range and workers > 0 and max(spans) < trusted_span
+        self._record_parallel_cost(compiled, [r for r in rates if r > 0.0],
+                                   workers, bounds_serial, retire_floor)
         self._record_fan_out(float(dispatch_ns), max(spans), float(gap))
         self._last_dispatch_ns = time.perf_counter_ns()

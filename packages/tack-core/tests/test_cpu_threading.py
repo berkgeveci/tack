@@ -21,6 +21,16 @@ from tack.runtime.dispatch import get_backend
 
 
 @pytest.fixture(autouse=True)
+def _python_pool(monkeypatch):
+    """These tests drive the policy through the Python path's seams -- a
+    patched `call_range`, an inline pool, a fake clock -- so every backend
+    they make fans out through `ThreadPoolExecutor`. The JIT'd pool has
+    its own tests in test_cpu_pool.py."""
+    monkeypatch.setenv("TACK_CPU_POOL", "python")
+
+
+
+@pytest.fixture(autouse=True)
 def cpu():
     tack.init(arch=tack.cpu)
     return get_backend()
@@ -1478,7 +1488,7 @@ def test_timing_expensive_kernel_does_fan_out(cpu):
     for _ in range(2):
         backend._dispatch(compiled, [x, out, n], n)
 
-    assert backend._pool is not None
+    assert backend._pool is not None or backend._cpool is not None, 'no pool was made'
     assert backend._fan_out_ns > 0
     assert compiled.parallel_min_elems <= n, (
         f"threshold {compiled.parallel_min_elems} above {n}: estimate "

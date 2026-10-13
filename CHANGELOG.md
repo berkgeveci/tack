@@ -7,6 +7,19 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- The CPU backend fans a range out through a thread pool JIT-compiled from
+  LLVM IR, with one ctypes call per launch and no Python on the workers'
+  path, instead of one `ThreadPoolExecutor` task per worker. A fan-out that
+  cost 60 µs per worker on a 2 GHz Xeon (1.2 ms for eight after an idle
+  gap) costs a few microseconds, so short launches thread too: the dataset
+  filters at a million cells went from 1.05× to 1.9× on eight threads
+  there. New fields of 256 KiB or more are zeroed through the pool, so
+  their pages are first touched in parallel. `TACK_CPU_POOL=python` keeps
+  the executor, which remains the fallback on Windows.
+- NUMA interleave no longer replaces a bound thread's memory policy: a
+  process started under `numactl --membind` keeps its binding, and the
+  probe at `tack.init` puts back the policy it found instead of the
+  default.
 - Dataset algorithms check field ownership before dispatch, including empty
   inputs, and reject locators built for another dataset. `dot` and `cross`
   require matching dtypes, as `composite` does; use `Cast` for conversion.

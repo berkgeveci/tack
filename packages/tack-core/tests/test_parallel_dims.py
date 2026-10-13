@@ -265,6 +265,7 @@ def test_cpu_fan_out_across_workers():
     """The dispatcher's own fan-out, on worker chunks that end mid-row."""
     tack.init(arch=tack.cpu, num_threads=7)
     backend = tack.runtime.dispatch.get_backend()
+    backend.pool_kind = "python"            # the chunks are recorded through call_range
     shape = (300, 257)                      # 77100 elements: 7 chunks of 11015
     a = _i32(shape)
     _fill2(a)                               # compile the variant

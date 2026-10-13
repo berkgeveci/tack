@@ -1,0 +1,440 @@
+"""A persistent thread pool for CPU fan-outs, JIT-compiled with llvmlite.
+
+A fan-out through ``ThreadPoolExecutor`` costs about 60 µs per worker on a
+2 GHz Xeon (490 µs for eight, 1.2 ms after an idle gap): every worker
+wakes, takes the GIL to reach its ctypes call, and takes it again to
+return, and the handoffs serialize. Tack's launches are short -- a contour
+at a million cells is 37 of them, 0.1 to 14 ms each -- so the policy
+rightly kept most of them serial and the rest gained little.
+
+Here the fan-out is one ctypes call. The pool is a small program in LLVM
+IR, built with ``llvmlite.ir`` (no C compiler, no binary wheel) and JIT'd
+beside the kernels: ``N - 1`` detached pthreads wait for a generation
+counter to change, spinning for a while and then sleeping -- on a futex
+on Linux, woken by ``pool_run`` only when one of them sleeps; elsewhere in
+``nanosleep`` polls that back off to a millisecond; ``pool_run`` splits
+``[start, end)`` into ``N`` chunks
+exactly as the Python path does, bumps the counter, runs the last chunk on
+the calling thread, and waits for the others. The workers never touch
+Python. Measured on the Xeon: 4 µs hot, about 100 µs after an idle gap.
+
+A kernel is called through a wrapper JIT'd once per compiled kernel
+(``chunk_wrapper``): ``void __tack_chunk(pack, start, end)`` loads the
+kernel's arguments from 8-byte slots in ``pack`` (``pack_args`` fills them
+from the ``bind()`` prefix) and calls the kernel at its address, so the
+pool needs one calling convention for every kernel.
+
+``TACK_CPU_POOL=python`` keeps the ThreadPoolExecutor path. The pool is
+also left alone where it cannot be built (Windows, or a JIT failure), so
+the Python path is the fallback everywhere.
+"""
+import ctypes
+import ctypes.util
+import os
+import platform
+import threading
+import time
+
+import llvmlite.binding as llvm
+import llvmlite.ir as ir
+
+MAX_WORKERS = 256
+# How long a worker spins (in pause iterations) before it sleeps between
+# polls, and how long each sleep is. Spinning keeps back-to-back launches
+# at a few microseconds; a worker left idle polls every SLEEP_NS.
+SPIN_ITERATIONS = 20_000
+SLEEP_NS = 50_000
+# ...doubling each poll up to this, so a pool idle for seconds costs a
+# thousand wake-ups a second per worker, not twenty thousand.
+SLEEP_MAX_NS = 1_000_000
+
+# Linux's futex syscall, where the pool can block without polling. The
+# number is the architecture's; elsewhere the workers poll.
+_SYS_FUTEX = {"x86_64": 202, "amd64": 202, "aarch64": 98, "arm64": 98}
+_FUTEX_WAIT_PRIVATE, _FUTEX_WAKE_PRIVATE = 128, 129
+
+_i8, _i32, _i64 = ir.IntType(8), ir.IntType(32), ir.IntType(64)
+_ptr = _i8.as_pointer()
+_chunk_fn_type = ir.FunctionType(ir.VoidType(), [_ptr, _i64, _i64])
+
+
+def enabled() -> bool:
+    """Whether dispatches should try the pool at all."""
+    choice = os.environ.get("TACK_CPU_POOL", "").strip().lower()
+    if choice in ("python", "0", "off", "no", "false"):
+        return False
+    return platform.system() != "Windows"
+
+
+# ── The pool program ───────────────────────────────────────────────
+
+def _pause(builder, module):
+    machine = platform.machine().lower()
+    if machine in ("x86_64", "amd64"):
+        fn = module.globals.get("llvm.x86.sse2.pause")
+        if fn is None:
+            fn = ir.Function(module, ir.FunctionType(ir.VoidType(), []), "llvm.x86.sse2.pause")
+        builder.call(fn, [])
+    elif machine in ("aarch64", "arm64"):
+        builder.asm(ir.FunctionType(ir.VoidType(), []), "yield", "~{memory}", [], True)
+
+
+def _pool_module() -> ir.Module:
+    m = ir.Module(name="tack_cpu_pool")
+    m.triple = llvm.get_default_triple()
+
+    def glob(name, typ, init=None):
+        g = ir.GlobalVariable(m, typ, name)
+        g.initializer = ir.Constant(typ, init if init is not None else None)
+        g.linkage = "internal"
+        return g
+
+    n = glob("n", _i32, 0)
+    active = glob("active", _i32, 0)       # workers this run uses, <= n
+    spin = glob("spin", _i32, 0)
+    sleep_ns = glob("sleep_ns", _i64, 0)
+    sleep_max = glob("sleep_max", _i64, 0)
+    clock_id = glob("clock_id", _i32, 0)
+    gen = glob("gen", _i32, 0)
+    done = glob("done", _i32, 0)
+    futex_nr = glob("futex_nr", _i64, 0)       # 0: poll instead
+    sleepers = glob("sleepers", _i32, 0)
+    cur_fn = glob("cur_fn", _ptr)
+    cur_pack = glob("cur_pack", _ptr)
+    cur_start = glob("cur_start", _i64, 0)
+    cur_end = glob("cur_end", _i64, 0)
+    cur_chunk = glob("cur_chunk", _i64, 0)
+    spans = glob("spans", ir.ArrayType(_i64, MAX_WORKERS))
+    timespec = ir.LiteralStructType([_i64, _i64])
+
+    pthread_create = ir.Function(m, ir.FunctionType(_i32, [_ptr, _ptr, _ptr, _ptr]), "pthread_create")
+    pthread_detach = ir.Function(m, ir.FunctionType(_i32, [_i64]), "pthread_detach")
+    nanosleep = ir.Function(m, ir.FunctionType(_i32, [_ptr, _ptr]), "nanosleep")
+    clock_gettime = ir.Function(m, ir.FunctionType(_i32, [_i32, _ptr]), "clock_gettime")
+    syscall = ir.Function(m, ir.FunctionType(_i64, [_i64], var_arg=True), "syscall")
+    memset = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr, _i8, _i64, ir.IntType(1)]),
+                         "llvm.memset.p0.i64")
+
+    # now_ns(): CLOCK_MONOTONIC in nanoseconds.
+    now = ir.Function(m, ir.FunctionType(_i64, []), "now_ns")
+    now.linkage = "internal"
+    b = ir.IRBuilder(now.append_basic_block("entry"))
+    ts = b.alloca(timespec)
+    b.call(clock_gettime, [b.load(clock_id), b.bitcast(ts, _ptr)])
+    sec = b.load(b.gep(ts, [_i32(0), _i32(0)]))
+    nsec = b.load(b.gep(ts, [_i32(0), _i32(1)]))
+    b.ret(b.add(b.mul(sec, _i64(1_000_000_000)), nsec))
+
+    # run_chunk(id): worker id's chunk of the current range, timed.
+    run_chunk = ir.Function(m, ir.FunctionType(ir.VoidType(), [_i32]), "run_chunk")
+    run_chunk.linkage = "internal"
+    b = ir.IRBuilder(run_chunk.append_basic_block("entry"))
+    wid = run_chunk.args[0]
+    wid64 = b.sext(wid, _i64)
+    chunk = b.load(cur_chunk)
+    a = b.add(b.load(cur_start), b.mul(wid64, chunk))
+    end = b.load(cur_end)
+    bb = b.add(a, chunk)
+    bb = b.select(b.icmp_signed(">", bb, end), end, bb)
+    slot = b.gep(spans, [_i32(0), wid])
+    with b.if_else(b.icmp_signed("<", a, bb)) as (then, otherwise):
+        with then:
+            t0 = b.call(now, [])
+            fn = b.bitcast(b.load(cur_fn), _chunk_fn_type.as_pointer())
+            b.call(fn, [b.load(cur_pack), a, bb])
+            b.store(b.sub(b.call(now, []), t0), slot)
+        with otherwise:
+            b.store(_i64(0), slot)
+    b.ret_void()
+
+    # worker(arg): wait for the generation to change, run the chunk, count in.
+    worker = ir.Function(m, ir.FunctionType(_ptr, [_ptr]), "tack_pool_worker")
+    worker.linkage = "internal"
+    entry = worker.append_basic_block("entry")
+    wait = worker.append_basic_block("wait")
+    idle = worker.append_basic_block("idle")
+    sleep = worker.append_basic_block("sleep")
+    spin_bb = worker.append_basic_block("spin")
+    work = worker.append_basic_block("work")
+    b = ir.IRBuilder(entry)
+    wid = b.trunc(b.ptrtoint(worker.args[0], _i64), _i32)
+    seen = b.alloca(_i32)
+    b.store(_i32(0), seen)
+    count = b.alloca(_i32)
+    ts = b.alloca(timespec)
+    b.store(_i64(0), b.gep(ts, [_i32(0), _i32(0)]))
+    b.branch(wait)
+    b = ir.IRBuilder(wait)
+    b.store(_i32(0), count)
+    b.store(b.load(sleep_ns), b.gep(ts, [_i32(0), _i32(1)]))
+    b.branch(idle)
+    b = ir.IRBuilder(idle)
+    current = b.load_atomic(gen, "acquire", 4)
+    b.cbranch(b.icmp_signed("!=", current, b.load(seen)), work, sleep)
+    b = ir.IRBuilder(sleep)
+    c = b.add(b.load(count), _i32(1))
+    b.store(c, count)
+    with b.if_then(b.icmp_signed(">", c, b.load(spin))):
+        b.store(b.load(spin), count)        # keep sleeping until woken
+        nr = b.load(futex_nr)
+        with b.if_else(b.icmp_signed("!=", nr, _i64(0))) as (futex, poll):
+            with futex:
+                # Count in as a sleeper, then re-check the generation under
+                # a full fence before blocking: pool_run bumps it, fences,
+                # and wakes only if it sees a sleeper, so no wake is lost.
+                b.atomic_rmw("add", sleepers, _i32(1), "seq_cst")
+                b.fence("seq_cst")
+                last = b.load(seen)
+                with b.if_then(b.icmp_signed("==", b.load_atomic(gen, "seq_cst", 4), last)):
+                    b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAIT_PRIVATE),
+                                     b.sext(last, _i64), _i64(0), _i64(0), _i64(0)])
+                b.atomic_rmw("sub", sleepers, _i32(1), "seq_cst")
+            with poll:
+                b.call(nanosleep, [b.bitcast(ts, _ptr), ir.Constant(_ptr, None)])
+                nsec = b.gep(ts, [_i32(0), _i32(1)])
+                longer = b.mul(b.load(nsec), _i64(2))
+                cap = b.load(sleep_max)
+                b.store(b.select(b.icmp_signed(">", longer, cap), cap, longer), nsec)
+        b.branch(idle)
+    b.branch(spin_bb)
+    b = ir.IRBuilder(spin_bb)
+    _pause(b, m)
+    b.branch(idle)
+    b = ir.IRBuilder(work)
+    b.store(b.load_atomic(gen, "acquire", 4), seen)
+    # Chunk `id` is this worker's when the run uses it; the caller takes
+    # chunk active - 1, so a worker past that has nothing to do.
+    with b.if_else(b.icmp_signed("<", wid, b.sub(b.load(active), _i32(1)))) as (mine, idle_run):
+        with mine:
+            b.call(run_chunk, [wid])
+        with idle_run:
+            # Slot active - 1 is the caller's chunk; the slots past it are
+            # this run's unused workers', cleared so nothing stale is read.
+            with b.if_then(b.icmp_signed(">=", wid, b.load(active))):
+                b.store(_i64(0), b.gep(spans, [_i32(0), wid]))
+    b.atomic_rmw("add", done, _i32(1), "release")
+    b.branch(wait)
+
+    # pool_start(n, spin, clock_id, sleep_ns): 0, or -1 if it cannot start.
+    start = ir.Function(m, ir.FunctionType(_i32, [_i32, _i32, _i32, _i64, _i64, _i64]),
+                        "tack_pool_start")
+    b = ir.IRBuilder(start.append_basic_block("entry"))
+    want, spin_arg, clock_arg, sleep_arg, sleep_max_arg, futex_arg = start.args
+    have = b.load(n)
+    with b.if_then(b.icmp_signed("!=", have, _i32(0))):
+        b.ret(b.select(b.icmp_signed("==", have, want), _i32(0), _i32(-1)))
+    bad = b.or_(b.icmp_signed("<", want, _i32(1)), b.icmp_signed(">", want, _i32(MAX_WORKERS)))
+    with b.if_then(bad):
+        b.ret(_i32(-1))
+    b.store(spin_arg, spin)
+    b.store(clock_arg, clock_id)
+    b.store(sleep_arg, sleep_ns)
+    b.store(sleep_max_arg, sleep_max)
+    b.store(futex_arg, futex_nr)
+    b.store(want, n)
+    i = b.alloca(_i32)
+    b.store(_i32(0), i)
+    loop = start.append_basic_block("loop")
+    body = start.append_basic_block("body")
+    out = start.append_basic_block("out")
+    b.branch(loop)
+    b = ir.IRBuilder(loop)
+    b.cbranch(b.icmp_signed("<", b.load(i), b.sub(want, _i32(1))), body, out)
+    b = ir.IRBuilder(body)
+    tid = b.alloca(_i64)
+    arg = b.inttoptr(b.sext(b.load(i), _i64), _ptr)
+    rc = b.call(pthread_create, [b.bitcast(tid, _ptr), ir.Constant(_ptr, None),
+                                 b.bitcast(worker, _ptr), arg])
+    with b.if_then(b.icmp_signed("!=", rc, _i32(0))):
+        b.ret(_i32(-1))
+    b.call(pthread_detach, [b.load(tid)])
+    b.store(b.add(b.load(i), _i32(1)), i)
+    b.branch(loop)
+    b = ir.IRBuilder(out)
+    b.ret(_i32(0))
+
+    # pool_run(fn, pack, start, end): every chunk, this thread's included.
+    run = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr, _ptr, _i64, _i64, _i32]),
+                      "tack_pool_run")
+    b = ir.IRBuilder(run.append_basic_block("entry"))
+    fn_arg, pack_arg, s_arg, e_arg, k_arg = run.args
+    b.store(fn_arg, cur_fn)
+    b.store(pack_arg, cur_pack)
+    b.store(s_arg, cur_start)
+    b.store(e_arg, cur_end)
+    b.store(k_arg, active)
+    k64 = b.sext(k_arg, _i64)
+    total = b.sub(e_arg, s_arg)
+    b.store(b.sdiv(b.add(total, b.sub(k64, _i64(1))), k64), cur_chunk)
+    b.store_atomic(_i32(0), done, "monotonic", 4)
+    b.atomic_rmw("add", gen, _i32(1), "seq_cst")
+    b.fence("seq_cst")
+    nr = b.load(futex_nr)
+    asleep = b.icmp_signed(">", b.load_atomic(sleepers, "seq_cst", 4), _i32(0))
+    with b.if_then(b.and_(b.icmp_signed("!=", nr, _i64(0)), asleep)):
+        b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAKE_PRIVATE),
+                         _i64(0x7fffffff), _i64(0), _i64(0), _i64(0)])
+    b.call(run_chunk, [b.sub(k_arg, _i32(1))])
+    wait = run.append_basic_block("wait")
+    spin_bb = run.append_basic_block("spin")
+    out = run.append_basic_block("out")
+    b.branch(wait)
+    b = ir.IRBuilder(wait)
+    finished = b.load_atomic(done, "acquire", 4)
+    b.cbranch(b.icmp_signed("<", finished, b.sub(b.load(n), _i32(1))), spin_bb, out)
+    b = ir.IRBuilder(spin_bb)
+    _pause(b, m)
+    b.branch(wait)
+    b = ir.IRBuilder(out)
+    b.ret_void()
+
+    # pool_spans(out): the workers' spans of the last run, n of them.
+    get_spans = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr]), "tack_pool_spans")
+    b = ir.IRBuilder(get_spans.append_basic_block("entry"))
+    memcpy = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr, _ptr, _i64, ir.IntType(1)]),
+                         "llvm.memcpy.p0.p0.i64")
+    b.call(memcpy, [get_spans.args[0], b.bitcast(spans, _ptr),
+                    b.mul(b.sext(b.load(n), _i64), _i64(8)), ir.Constant(ir.IntType(1), 0)])
+    b.ret_void()
+
+    # zero_chunk(base, a, b): a chunk function that zeroes bytes [a, b).
+    zero = ir.Function(m, _chunk_fn_type, "tack_pool_zero_chunk")
+    b = ir.IRBuilder(zero.append_basic_block("entry"))
+    base, a, bb = zero.args
+    b.call(memset, [b.gep(base, [a]), _i8(0), b.sub(bb, a), ir.Constant(ir.IntType(1), 0)])
+    b.ret_void()
+    return m
+
+
+def _target_machine():
+    llvm.initialize_native_target()      # idempotent; cpu.py does it too
+    llvm.initialize_native_asmprinter()
+    target = llvm.Target.from_default_triple()
+    return target.create_target_machine(cpu=llvm.get_host_cpu_name(),
+                                        features=llvm.get_host_cpu_features().flatten(), opt=2)
+
+
+def _available_cpus() -> int:
+    try:
+        return len(os.sched_getaffinity(0))
+    except AttributeError:                 # not Linux
+        return os.cpu_count() or 1
+
+
+def _register_libc_symbols():
+    """MCJIT resolves the pool's libc calls through these, so it does not
+    depend on how the process exports them."""
+    libc = ctypes.CDLL(None)
+    for name in ("pthread_create", "pthread_detach", "nanosleep", "clock_gettime", "syscall"):
+        llvm.add_symbol(name, ctypes.cast(getattr(libc, name), ctypes.c_void_p).value)
+
+
+class CPool:
+    """``threads`` workers, the calling thread one of them. One per process:
+    its threads are detached and its state is a set of JIT'd globals."""
+
+    _instance = None
+    _lock = threading.Lock()
+
+    def __init__(self, threads: int):
+        _register_libc_symbols()
+        module = llvm.parse_assembly(str(_pool_module()))
+        module.verify()
+        self._engine = llvm.create_mcjit_compiler(module, _target_machine())
+        self._engine.finalize_object()
+        addr = self._engine.get_function_address
+        self._start = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
+                                       ctypes.c_int64, ctypes.c_int64,
+                                       ctypes.c_int64)(addr("tack_pool_start"))
+        self._run = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64,
+                                     ctypes.c_int64, ctypes.c_int)(addr("tack_pool_run"))
+        self._get_spans = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_spans"))
+        self.zero_chunk = addr("tack_pool_zero_chunk")
+        spin = int(os.environ.get("TACK_CPU_POOL_SPIN", SPIN_ITERATIONS))
+        futex = _SYS_FUTEX.get(platform.machine().lower(), 0) \
+            if platform.system() == "Linux" else 0
+        if self._start(threads, spin, time.CLOCK_MONOTONIC, SLEEP_NS, SLEEP_MAX_NS,
+                       futex) != 0:
+            raise RuntimeError(f"could not start a pool of {threads} threads")
+        self.threads = threads
+        self._spans = (ctypes.c_int64 * threads)()
+
+    @classmethod
+    def get(cls, threads: int):
+        """The process's pool, made on first use with a thread for every
+        CPU this process may run on (or `threads`, if more); None if it
+        cannot be made or has fewer threads than asked for. A run uses as
+        many of its threads as the caller's backend has, so backends with
+        different thread counts share it."""
+        with cls._lock:
+            if cls._instance is None:
+                try:
+                    cls._instance = cls(min(MAX_WORKERS, max(threads, _available_cpus())))
+                except Exception:          # no pool: the Python path stays
+                    cls._instance = False
+            pool = cls._instance
+        return pool if pool and threads <= pool.threads else None
+
+    def run(self, wrapper: int, pack, start: int, end: int, threads: int):
+        """Every chunk of [start, end) over `threads` workers, this thread
+        one of them."""
+        self._run(wrapper, ctypes.addressof(pack), start, end, threads)
+
+    def spans(self) -> list:
+        """The last run's chunk spans in ns, chunk by chunk."""
+        self._get_spans(ctypes.addressof(self._spans))
+        return list(self._spans)
+
+    def zero(self, address: int, nbytes: int, threads: int):
+        """memset(address, 0, nbytes), one chunk per worker: a new buffer's
+        pages are first touched by the workers, not the calling thread."""
+        self._run(self.zero_chunk, address, 0, nbytes, threads)
+
+
+# ── Per-kernel wrappers and argument packs ──────────────────────────
+
+def chunk_wrapper(compiled) -> int:
+    """Address of ``void __tack_chunk(pack, start, end)`` for this kernel,
+    JIT'd once and kept with it."""
+    if compiled._chunk:
+        return compiled._chunk
+    from tack.codegen.llvm_gen import _llvm_type
+
+    ptypes = []
+    for ptype, is_field in zip(compiled._param_types, compiled._param_is_field):
+        t = _llvm_type(ptype)
+        ptypes.append(t.as_pointer() if is_field else t)
+    ptypes.extend([_i64] * compiled._num_dims)
+    kernel_type = ir.FunctionType(ir.VoidType(), ptypes + [_i64, _i64])
+    module = ir.Module(name=f"chunk_{compiled._func_name}")
+    module.triple = llvm.get_default_triple()
+    wrapper = ir.Function(module, _chunk_fn_type, name="__tack_chunk")
+    b = ir.IRBuilder(wrapper.append_basic_block("entry"))
+    pack, start, end = wrapper.args
+    args = []
+    for i, t in enumerate(ptypes):
+        slot = b.gep(pack, [_i64(8 * i)])
+        args.append(b.load(b.bitcast(slot, t.as_pointer())))
+    kernel = b.inttoptr(_i64(compiled._func_ptr), kernel_type.as_pointer())
+    b.call(kernel, args + [start, end])
+    b.ret_void()
+    mod = llvm.parse_assembly(str(module))
+    mod.verify()
+    engine = llvm.create_mcjit_compiler(mod, _target_machine())
+    engine.finalize_object()
+    compiled._chunk_engine = engine
+    compiled._chunk = engine.get_function_address("__tack_chunk")
+    return compiled._chunk
+
+
+def pack_args(prefix: tuple):
+    """The ``bind()`` prefix as 8-byte slots: pointers as addresses, scalars
+    stored with their own ctypes type at the slot's start."""
+    pack = (ctypes.c_uint64 * max(1, len(prefix)))()
+    for i, a in enumerate(prefix):
+        if isinstance(a, ctypes._Pointer):
+            ctypes.c_void_p.from_buffer(pack, 8 * i).value = \
+                ctypes.cast(a, ctypes.c_void_p).value or 0
+        else:
+            type(a).from_buffer(pack, 8 * i).value = a.value
+    return pack
