@@ -332,9 +332,9 @@ def test_a_one_task_launch_is_not_mpi(monkeypatch):
     for name in disk_cache._RANK_VARS + disk_cache._SIZE_VARS:
         monkeypatch.delenv(name, raising=False)
     monkeypatch.setenv("SLURM_PROCID", "0")
-    monkeypatch.setenv("SLURM_NTASKS", "1")
+    monkeypatch.setenv("SLURM_STEP_NUM_TASKS", "1")
     assert disk_cache.mpi_rank() is None
-    monkeypatch.setenv("SLURM_NTASKS", "2")
+    monkeypatch.setenv("SLURM_STEP_NUM_TASKS", "2")
     assert disk_cache.mpi_rank() == 0
 
 
@@ -462,6 +462,14 @@ def test_settings_from_the_environment(monkeypatch, tmp_path):
     assert disk_cache.settings() == (tmp_path, "read", None)
     monkeypatch.setenv("TACK_CACHE", "")
     assert disk_cache.settings()[1] == "write"
+    # A Slurm batch script is no parallel launch; its srun steps are.
+    monkeypatch.setenv("SLURM_PROCID", "0")
+    monkeypatch.setenv("SLURM_NTASKS", "4")
+    assert disk_cache.settings()[1:] == ("write", None)
+    monkeypatch.setenv("SLURM_STEP_NUM_TASKS", "1")
+    assert disk_cache.settings()[1:] == ("write", None)
+    monkeypatch.setenv("SLURM_STEP_NUM_TASKS", "4")
+    assert disk_cache.settings()[1:] == ("bundle", 0)
     monkeypatch.setenv("OMPI_COMM_WORLD_RANK", "3")
     monkeypatch.setenv("OMPI_COMM_WORLD_SIZE", "4")
     assert disk_cache.settings()[1:] == ("bundle", 3)

@@ -60,12 +60,17 @@ _BUNDLE_MAGIC = b"TACK-BUNDLE-1\n"
 _VERSION_DIR = re.compile(r"v\d+-[0-9a-f]{16}")
 _VERSION_BUNDLE = re.compile(r"bundle-v\d+-[0-9a-f]{16}\.tack")
 
-# Rank variables set by MPI launchers (Open MPI, MPICH/Intel MPI/PMI, PMIx,
-# MVAPICH2, Cray PALS, Slurm, Cray ALPS), and the world sizes beside them.
-_RANK_VARS = ("OMPI_COMM_WORLD_RANK", "PMI_RANK", "PMIX_RANK", "MV2_COMM_WORLD_RANK",
-              "PALS_RANKID", "SLURM_PROCID", "ALPS_APP_PE")
-_SIZE_VARS = ("OMPI_COMM_WORLD_SIZE", "PMI_SIZE", "MV2_COMM_WORLD_SIZE", "SLURM_NTASKS",
-              "PALS_NRANKS")
+# The rank variable each MPI launcher sets (Open MPI, MPICH/Intel MPI/PMI,
+# PMIx, MVAPICH2, Cray PALS, Slurm, Cray ALPS), with its world size where
+# it has one. Slurm's is the job step's: a batch script also has
+# SLURM_PROCID=0 and SLURM_NTASKS, but runs once, and only srun sets
+# SLURM_STEP_NUM_TASKS.
+_LAUNCHERS = (("OMPI_COMM_WORLD_RANK", "OMPI_COMM_WORLD_SIZE"), ("PMI_RANK", "PMI_SIZE"),
+              ("PMIX_RANK", None), ("MV2_COMM_WORLD_RANK", "MV2_COMM_WORLD_SIZE"),
+              ("PALS_RANKID", "PALS_NRANKS"), ("SLURM_PROCID", "SLURM_STEP_NUM_TASKS"),
+              ("ALPS_APP_PE", None))
+_RANK_VARS = tuple(rank for rank, _ in _LAUNCHERS)
+_SIZE_VARS = tuple(size for _, size in _LAUNCHERS if size)
 
 _lock = threading.RLock()
 _overrides = {}
@@ -93,17 +98,21 @@ def mpi_rank():
     """This process's rank in a parallel launch, or None outside one.
 
     A launcher's rank variable with a world size of one (``srun -n 1``) is
-    not a parallel job."""
-    rank = next((os.environ[v] for v in _RANK_VARS if os.environ.get(v, "") != ""), None)
-    if rank is None:
-        return None
-    size = next((os.environ[v] for v in _SIZE_VARS if os.environ.get(v, "") != ""), None)
-    try:
-        if size is not None and int(size) <= 1:
-            return None
-        return int(rank)
-    except ValueError:
-        return 0
+    not a parallel job, and neither is a Slurm batch script outside srun."""
+    for rank_var, size_var in _LAUNCHERS:
+        rank = os.environ.get(rank_var, "")
+        if rank == "":
+            continue
+        size = os.environ.get(size_var, "") if size_var else ""
+        try:
+            if size == "" and rank_var == "SLURM_PROCID":
+                return None
+            if size != "" and int(size) <= 1:
+                return None
+            return int(rank)
+        except ValueError:
+            return 0
+    return None
 
 
 def default_directory() -> Path:

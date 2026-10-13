@@ -82,7 +82,9 @@ with a bundle: one file that holds every entry, which each rank reads once.
 
 Tack recognizes MPI from the launcher's rank variables (Open MPI, MPICH,
 Intel MPI, MVAPICH2, Cray PALS and ALPS, Slurm's `srun`). A launch of one
-task counts as no MPI.
+task counts as no MPI, and so does a Slurm batch script itself: a warm-up
+run on the script's own line, without `srun`, stores entries as it would
+on a workstation.
 
 To have only rank 0 read the bundle, and broadcast it to the others, call
 this on every rank before the first kernel (with mpi4py's communicator):
