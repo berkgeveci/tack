@@ -42,6 +42,7 @@ import hashlib
 import importlib.metadata
 import os
 import pickle
+import re
 import secrets
 import struct
 import sys
@@ -55,6 +56,9 @@ FORMAT = 1
 MODES = ("off", "bundle", "read", "write")
 _MAGIC = b"TACK-CACHE-1\n"
 _BUNDLE_MAGIC = b"TACK-BUNDLE-1\n"
+# What _Cache names a version's directory and bundle (see _Cache.version).
+_VERSION_DIR = re.compile(r"v\d+-[0-9a-f]{16}")
+_VERSION_BUNDLE = re.compile(r"bundle-v\d+-[0-9a-f]{16}\.tack")
 
 # Rank variables set by MPI launchers (Open MPI, MPICH/Intel MPI/PMI, PMIx,
 # MVAPICH2, Cray PALS, Slurm, Cray ALPS), and the world sizes beside them.
@@ -601,7 +605,11 @@ class _Cache:
         self._checked = True
         try:
             if self.writes:
-                self.root.mkdir(parents=True, exist_ok=True, mode=0o700)
+                # The directory too, not just the version under it: made by
+                # parents=True it would take the umask's mode, which is
+                # group-writable under the common 002, and be refused below.
+                self.directory.mkdir(parents=True, exist_ok=True, mode=0o700)
+                self.root.mkdir(exist_ok=True, mode=0o700)
             if not self.directory.exists():
                 self.files = False
                 return False
@@ -739,8 +747,11 @@ def clear(directory=None, all_versions=False) -> int:
     if not directory.exists():
         return 0
     if all_versions:
+        # Only names this module makes: the directory may be shared with
+        # other files (a scratch directory), and "v..." is a venv, too.
         targets = [p for p in directory.iterdir()
-                   if p.name.startswith("v") or p.name.startswith("bundle-v")]
+                   if (p.is_dir() and _VERSION_DIR.fullmatch(p.name))
+                   or (p.is_file() and _VERSION_BUNDLE.fullmatch(p.name))]
     else:
         targets = [cache.root, cache.bundle_path]
     for target in targets:

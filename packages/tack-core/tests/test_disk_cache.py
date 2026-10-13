@@ -349,6 +349,37 @@ def test_a_directory_others_can_write_is_refused(tmp_path):
     assert stat.S_IMODE(cache.stat().st_mode) == 0o777
 
 
+@pytest.mark.skipif(not hasattr(os, "getuid"), reason="POSIX permissions")
+def test_a_directory_the_cache_makes_is_its_own_under_umask_002(tmp_path):
+    """A group-writable umask must not leave the directory the cache creates
+    group-writable, which the cache would then refuse."""
+    first = _run(tmp_path, setup="import os; os.umask(0o002)")
+    assert "others can write to it" not in first["stderr"]
+    assert first["stats"].get("ir_write", 0) > 0
+    assert stat.S_IMODE((tmp_path / "cache").stat().st_mode) == 0o700
+
+
+def test_clearing_every_version_leaves_other_files(tmp_path):
+    """The directory may be shared: only the cache's own names are removed."""
+    cache = _cache_dir(tmp_path)
+    _run(tmp_path)
+    old = cache / "v1-0123456789abcdef"
+    (old / "ab").mkdir(parents=True)
+    (old / "ab" / "ab12.ir").write_bytes(b"old")
+    (cache / "bundle-v1-0123456789abcdef.tack").write_bytes(b"old")
+    neighbours = [cache / "venv" / "bin", cache / "vtk-data"]
+    for path in neighbours:
+        path.mkdir(parents=True)
+    files = [cache / "video.mp4", cache / "bundle-notes.txt", cache / "vtk-data" / "a.vti"]
+    for path in files:
+        path.write_bytes(b"keep")
+    entries = len(_entries(tmp_path))   # this version's and the old .ir
+    assert disk_cache.clear(cache, all_versions=True) == entries + 1   # and the old bundle
+    assert sorted(p.name for p in cache.iterdir()) == [
+        "bundle-notes.txt", "venv", "video.mp4", "vtk-data"]
+    assert all(path.exists() for path in neighbours + files)
+
+
 def test_concurrent_writers_leave_whole_entries(tmp_path):
     _cache_dir(tmp_path)
     moddir = tmp_path / "src"
