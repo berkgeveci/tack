@@ -385,6 +385,18 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction,
             f.write(msl_source)
         print(f"[Tack] Dumped MSL to {path}")
 
+    param_types = [p.type_annotation for p in ir_func.params]
+    param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+    param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+    return _load_kernel(device, command_queue, msl_source, kernel_name, param_types,
+                        param_is_field, param_is_texture, requires_full_workgroups(ir_func),
+                        backend)
+
+
+def _load_kernel(device, command_queue, msl_source, kernel_name, param_types,
+                 param_is_field, param_is_texture, full_workgroups,
+                 backend=None) -> CompiledMetalKernel:
+    """Compile MSL source into a pipeline for the kernel's entry point."""
     options = Metal.MTLCompileOptions.alloc().init()
     options.setFastMathEnabled_(False)
     library, error = device.newLibraryWithSource_options_error_(
@@ -401,20 +413,19 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction,
     if pipeline is None:
         raise RuntimeError(f"Metal pipeline creation failed: {error}")
 
-    param_types = [p.type_annotation for p in ir_func.params]
-    param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
-    param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
     argument_encoder = None
     if any(is_field and not is_texture for is_field, is_texture
            in zip(param_is_field, param_is_texture)):
         argument_encoder = func.newArgumentEncoderWithBufferIndex_(0)
         if argument_encoder is None:
             raise RuntimeError(f"Could not create argument encoder for '{kernel_name}'")
-    return CompiledMetalKernel(device, command_queue, pipeline, kernel_name,
-                               param_types, param_is_field, param_is_texture,
-                               argument_encoder,
-                               requires_full_workgroups=requires_full_workgroups(ir_func),
-                               backend=backend)
+    compiled = CompiledMetalKernel(device, command_queue, pipeline, kernel_name,
+                                   param_types, param_is_field, param_is_texture,
+                                   argument_encoder,
+                                   requires_full_workgroups=full_workgroups,
+                                   backend=backend)
+    compiled.msl_source = msl_source   # kept for the disk cache
+    return compiled
 
 
 _REDUCE_MSL_SUM = field_reduction_source('metal', 'sum')
@@ -603,6 +614,28 @@ class MetalBackend(Backend):
         verify_ir(packed, 'typed')
         compiled = _compile_kernel(self._device, self._command_queue, packed, backend=self)
         return compiled, pack_info, None
+
+    def cache_target(self):
+        # The stored artifact is MSL source, which does not depend on the
+        # device; the device and system are named for a later binary archive.
+        import platform
+        return f"{self._device.name()}; macOS {platform.mac_ver()[0]}"
+
+    def variant_artifact(self, payload):
+        compiled, pack_info, _ = payload
+        return {"msl": compiled.msl_source, "name": compiled._func_name,
+                "param_types": compiled._param_types,
+                "param_is_field": compiled._param_is_field,
+                "param_is_texture": compiled._param_is_texture,
+                "full_workgroups": compiled._requires_full_workgroups,
+                "pack_info": pack_info}
+
+    def load_variant(self, ir_func, artifact):
+        compiled = _load_kernel(self._device, self._command_queue, artifact["msl"],
+                                artifact["name"], artifact["param_types"],
+                                artifact["param_is_field"], artifact["param_is_texture"],
+                                artifact["full_workgroups"], backend=self)
+        return compiled, artifact["pack_info"], None
 
     def _get_reduce_pipeline(self, op: str):
         """Get or compile a Metal reduction pipeline."""

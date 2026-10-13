@@ -59,6 +59,20 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Compiled kernels are kept on disk, so a later process starts warm: the
+  first contour of a 21³ grid in a new process went from 445 ms (CPU) and
+  1.1 s (Metal) to 31 ms on an M1 Max. The lowered kernel and each
+  compiled variant are stored, keyed by content; an edited kernel, device
+  function, constant or template class, another Tack or another machine
+  compiles again. `TACK_CACHE_DIR` chooses the directory (by default the
+  platform's per-user cache directory) and `TACK_CACHE=off` turns it off;
+  `tack.cache.configure()` does either from Python. For MPI jobs on a
+  shared file system, `python -m tack.cache pack` gathers a warm-up run's
+  entries into one bundle, which each rank reads once (or rank 0 reads and
+  broadcasts, `tack.cache.load_bundle(comm=...)`); under MPI nothing is
+  looked up or written per kernel. CPU and Metal store compiled code; CUDA,
+  HIP and Level Zero store the lowered kernels. See *The Kernel Cache* in
+  the User's Guide.
 - `exclusive_scan` and `inclusive_scan` take `total=False` to skip the
   total: nothing is read back to the host, so on Metal the scan stays
   queued with whatever follows. The radix sort's passes and the dataset

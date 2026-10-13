@@ -220,6 +220,25 @@ CUDA's context comes from `cuCtxCreate` and is current only on the thread
 that called `tack.init`; another thread must make it current first, or
 its dispatch fails with `CUDA_ERROR_INVALID_CONTEXT`.
 
+### Disk cache
+
+`runtime/disk_cache.py` (public `tack.cache`, `python -m tack.cache`)
+stores lowered IR (`.ir`, in `Kernel._lower`) and compiled variants
+(`.variant`, in `_resolve_variant` on an in-memory miss) under
+`TACK_CACHE_DIR/v1-<tack fingerprint>/`. Keys are by content, never
+identity: kernel source, closure fingerprints, specialization, template
+content (MRO names, `@tack.func` sources, constants), Tack's fingerprint
+(installed `RECORD`s or the source tree). `CallBindings.resolve` reports
+each resolution to the thread's `_Recorder`; an `.ir` entry is used only if
+every recorded name re-resolves to the same fingerprint. Anything lowering
+reads from Python must go through `CallBindings` or into the key, or a
+stale entry runs. Backends opt into `.variant` with `cache_target()`,
+`variant_artifact()` and `load_variant()` (CPU: MCJIT object code; Metal:
+MSL). Atomic rename writes, checksummed entries, owner-only directories;
+under MPI the default mode reads one bundle and writes nothing. The test
+suite runs with `TACK_CACHE=off` (`conftest.py`); `test_disk_cache.py` uses
+subprocesses. `TACK_CACHE=write pytest`, run twice, is the end-to-end check.
+
 ### Field dimensions
 
 `field.shape[k]` and `len(field)` both lower to `IRDimSize` in `ast_transform.py`, which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).

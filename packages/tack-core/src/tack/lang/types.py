@@ -19,6 +19,10 @@ class ScalarType:
         # ScalarTypes are singletons — preserve identity through deepcopy
         return self
 
+    def __reduce__(self):
+        # ...and through pickle (the disk cache's IR): by module-level name.
+        return self.name
+
 
 # Scalar types
 i8  = ScalarType("i8",  np.dtype(np.int8),    "i8",  8)

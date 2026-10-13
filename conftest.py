@@ -37,7 +37,14 @@ wrong twice over: it named one backend for a property several share, and it
 went stale the moment another arrived.
 """
 
+import os
+
 import pytest
+
+# Tests compile from scratch: entries a previous run stored on disk would
+# hide a test that patches the compiler. test_disk_cache.py turns the cache
+# on for itself; `TACK_CACHE=write pytest` runs the suite through it.
+os.environ.setdefault("TACK_CACHE", "off")
 
 import tack
 

@@ -447,6 +447,7 @@ class CompiledKernel:
         self._param_types = param_types
         self._param_is_field = param_is_field  # list[bool]
         self._func_name = func_name
+        self.object_code = None  # what MCJIT made, kept for the disk cache
 
         # Build the ctypes function type
         ctypes_params = []
@@ -626,8 +627,17 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
     # Create execution engine with a fresh target machine
     tm_jit = _create_target_machine()
     engine = llvm.create_mcjit_compiler(mod, tm_jit)
+    # Keep the object code MCJIT makes, for the disk cache.
+    emitted = []
+    engine.set_object_cache(lambda _module, buffer: emitted.append(bytes(buffer)), None)
 
-    # Get function pointer
+    compiled = _load_kernel(engine, ir_func)
+    compiled.object_code = emitted[0] if len(emitted) == 1 else None
+    return compiled
+
+
+def _load_kernel(engine, ir_func: ir.IRFunction) -> CompiledKernel:
+    """The kernel's entry point in a JIT engine that holds its code."""
     func_ptr = engine.get_function_address(kernel_entry_name(ir_func.name))
     if func_ptr == 0:
         raise RuntimeError(f"Failed to JIT compile kernel '{ir_func.name}'")
@@ -637,6 +647,14 @@ def _compile_kernel(ir_func: ir.IRFunction) -> CompiledKernel:
     loop = next(s for s in ir_func.body if isinstance(s, ir.IRParallelFor))
     return CompiledKernel(engine, func_ptr, param_types, param_is_field, ir_func.name,
                           num_dims=len(loop.dims or ()))
+
+
+def _cache_target() -> str:
+    """What the object code depends on: LLVM, the target and the host CPU."""
+    import llvmlite
+    return (f"llvmlite {llvmlite.__version__}; llvm {llvm.llvm_version_info}; "
+            f"{llvm.get_process_triple()}; {llvm.get_host_cpu_name()}; "
+            f"{llvm.get_host_cpu_features().flatten()}")
 
 
 def _linux_core_count() -> int | None:
@@ -872,6 +890,26 @@ class CPUBackend(Backend):
                          for a in effective_args])
 
         self._dispatch(variant.payload, bind_textures(effective_args), loop_end, extents)
+
+    _target = None
+
+    def cache_target(self):
+        if CPUBackend._target is None:
+            CPUBackend._target = _cache_target()
+        return CPUBackend._target
+
+    def variant_artifact(self, compiled):
+        if compiled.object_code is None:
+            raise ValueError("no object code was kept for this kernel")
+        return compiled.object_code
+
+    def load_variant(self, ir_func, object_code):
+        engine = llvm.create_mcjit_compiler(llvm.parse_assembly(""), _create_target_machine())
+        engine.add_object_file(llvm.ObjectFileRef.from_data(object_code))
+        engine.finalize_object()
+        compiled = _load_kernel(engine, ir_func)
+        compiled.object_code = object_code
+        return compiled
 
     @staticmethod
     def _build_variant(ir_func, effective_args):

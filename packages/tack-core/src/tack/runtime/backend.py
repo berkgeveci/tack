@@ -144,6 +144,20 @@ class Backend:
         from tack.runtime.kernel_utils import _store_texture_shapes
         _store_texture_shapes(ir_func, effective_args)
 
+    def cache_target(self):
+        """What compiled code for this backend depends on besides the kernel, as a
+        string (the device, the compiler's version), or None if this backend
+        does not store compiled variants on disk. See ``disk_cache``."""
+
+    def variant_artifact(self, payload):
+        """What of a compiled variant's payload to store on disk: picklable data
+        from which ``load_variant`` rebuilds it in another process."""
+        raise NotImplementedError
+
+    def load_variant(self, ir_func, artifact):
+        """The payload of a variant, from what ``variant_artifact`` stored."""
+        raise NotImplementedError
+
     def reduce_field(self, field, op: str) -> float:
         """Reduce a field on the device. Only called when
         `supports_device_reductions` is True."""
