@@ -491,6 +491,32 @@ def test_nvrtc_accepts_safe_option_set():
     assert _compile_ptx(src, "k")
 
 
+@pytest.mark.parametrize("dtype", [tack.i8, tack.i16])
+def test_narrow_negation_avoids_ptx_neg_s16(dtype):
+    """ptxas 12.0-13.2, the JIT of drivers before CUDA 13.3, widen PTX
+    neg.s16/abs.s16 without sign-extending from bit 15: i16 -(-32768)
+    widened read 32768 on an H100 with driver 595. Correct drivers pass
+    test_wrapped_negation_and_abs_survive_widening either way, so check the
+    PTX itself."""
+    from tack.codegen.cuda_gen import generate_cuda_source
+    from tack.lang.inspect_kernel import _prepare_ir
+    from tack.runtime.cuda_backend import _compile_ptx
+
+    @tack.kernel
+    def negate(x, out):
+        for i in range(x.shape[0]):
+            out[i, 0] = -x[i]
+            out[i, 1] = abs(x[i])
+            n = -x[i]
+            out[i, 2] = tack.i64(n)
+
+    x = tack.field(dtype, (4,))
+    out = tack.field(tack.i64, (4, 3))
+    function, _ = _prepare_ir(negate, (x, out))
+    ptx = _compile_ptx(generate_cuda_source(function), "negate").decode()
+    assert "neg.s16" not in ptx and "abs.s16" not in ptx
+
+
 def test_ordinary_and_floor_division_kernels_compile_in_sequence():
     """Ordinary and floating floor-division kernels compile and run in
     one process with the same safe settings, preserving the CX7 coverage."""

@@ -466,6 +466,22 @@ emits `neg` below 32 bits and `abs` below 64 bits as
 other operation stay inline. `test_wrapped_negation_and_abs_survive_widening`
 covers the widened results on each backend.
 
+**CUDA: signed negation and `abs` below 32 bits as inline PTX.** On an
+H100 with driver 595.58 (CUDA 13.2), the same symptom: i16 `-(-32768)` and
+`abs(-32768)` widened as `32768`. Tack's C and NVRTC's PTX are correct
+(`neg.s16`, then `cvt.s64.s16`); the driver's JIT is not. ptxas 12.0
+through 13.2 sign-extend the input, negate in 32 bits and widen that
+without re-extending from bit 15; ptxas 13.3 does not, and the architecture
+does not matter (sm_80, sm_89 and sm_90 alike). Only `neg.s16` and
+`abs.s16` are affected. NVVM narrows every C spelling of the negation to
+those instructions, so `CUDACodeGen` sets `_ptx_negation` and
+`IntegerCodeGen` negates i8 and i16 (for `neg` and `abs`) with
+`__tack_ptx_neg_u32__`, an inline-PTX `sub.u32` on the 32-bit carrier,
+then narrows as before. A noinline helper also gave the right answer, but
+only because its caller re-extended the returned `short`. HIP and OpenCL
+inherit `CUDACodeGen` and turn the option off. `test_narrow_negation_avoids_ptx_neg_s16`
+checks the PTX, since drivers from 13.3 pass the widening test either way.
+
 **Level Zero: `f64` `floor` and `ceil` lose the sign of zero.** On an Intel
 Data Center GPU Max 1100 (intel-opencl-icd 25.05.32567.17), the double
 overloads returned `+0.0` for `ceil(-0.1)` and `floor(-0.0)`, where IEEE 754

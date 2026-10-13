@@ -479,6 +479,10 @@ widened the wrapped negation or `abs` of a signed minimum as its magnitude.
 Level Zero emits signed negation below 32 bits and signed `abs` below 64 bits
 as separate `noinline` helpers, so the result keeps the wrapping policy above
 when it is later converted to a wider type. Other operations remain inline.
+The CUDA JIT of drivers before CUDA 13.3 (ptxas 12.0 to 13.2) has the same
+fault for i16 negation and `abs`; CUDA negates i8 and i16 values with a
+32-bit inline-PTX subtraction, so the device compiler never sees a 16-bit
+negation.
 
 **Required: true division.** Integer `a / b` converts each operand to f32
 and produces an f32 quotient, including signed/u64 pairs. It does not

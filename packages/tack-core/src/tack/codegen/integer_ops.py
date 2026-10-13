@@ -17,7 +17,7 @@ _OPERATIONS = {'+': 'add', '-': 'sub', '*': 'mul', '&': 'and',
 
 
 class IntegerCodeGen:
-    def __init__(self, type_map, bitcast=False, opaque_negation=False):
+    def __init__(self, type_map, bitcast=False, opaque_negation=False, ptx_negation=False):
         self.type_map = type_map
         self.bitcast = bitcast
         # Emit signed negation and abs as noinline helpers wherever their
@@ -26,8 +26,19 @@ class IntegerCodeGen:
         # abs(INT_MIN) as 2^31 once it could see the helper body; no inlined
         # form tried survived its folding. Same-width results were correct.
         self.opaque_negation = opaque_negation
+        # Negate signed values below 32 bits (neg and abs) with inline PTX
+        # on the 32-bit carrier. NVVM narrows the C form to PTX neg.s16 /
+        # abs.s16, and ptxas 12.0-13.2 (the JIT of drivers before CUDA
+        # 13.3) widen that result without sign-extending it from bit 15, so
+        # i16 -(-32768) widened as 32768. A noinline helper was correct only
+        # because its caller re-extended the returned short.
+        self.ptx_negation = ptx_negation
         self.wraps = set()
         self.operations = set()
+
+    def _negates_in_ptx(self, op, dtype):
+        return (self.ptx_negation and op in ('neg', 'abs')
+                and dtype not in UNSIGNED_TYPES and dtype.bits < 32)
 
     @staticmethod
     def _wrap_name(dtype):
@@ -58,6 +69,12 @@ class IntegerCodeGen:
 
     def definitions(self, qualifier):
         lines = []
+        if any(self._negates_in_ptx(op, dtype) for op, dtype, _ in self.operations):
+            lines += [f'{qualifier} unsigned int __tack_ptx_neg_u32__(unsigned int a) {{',
+                      '    unsigned int r;',
+                      '    asm("sub.u32 %0, 0, %1;" : "=r"(r) : "r"(a));',
+                      '    return r;',
+                      '}', '']
         for dtype in sorted(self.wraps, key=lambda t: t.name):
             t, u = self.type_map[dtype], self.type_map[_UNSIGNED[dtype.bits]]
             limit = (1 << (dtype.bits - 1)) - 1
@@ -96,7 +113,9 @@ class IntegerCodeGen:
             if op in ('min', 'max'):
                 expr = f'a {"<" if op == "min" else ">"} b ? a : b'
             else:
-                if op == 'neg' or op == 'abs':
+                if self._negates_in_ptx(op, dtype):
+                    raw = f'__tack_ptx_neg_u32__({a})'
+                elif op == 'neg' or op == 'abs':
                     raw = f'(({carrier})0 - {a})'
                 elif op == '~':
                     raw = f'~{a}'

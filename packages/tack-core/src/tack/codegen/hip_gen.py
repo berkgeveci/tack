@@ -31,6 +31,8 @@ class HIPCodeGen(CUDACodeGen):
 
     _atomic_backend = "hip"
     _TEXTURE_OBJECT_TYPE = "hipTextureObject_t"
+    # Inline PTX is NVIDIA-only; hipRTC compiles the plain C negation.
+    _ptx_negation = False
 
     def generate(self) -> str:
         """Generate HIP C source for the kernel."""
