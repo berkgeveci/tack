@@ -11,6 +11,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   does: its objects can be kernel arguments, and kernels specialize on
   their class. `@tack.data_oriented` remains as an alias, so existing
   code (and code written for Taichi) runs unchanged.
+- The CUDA backend warns, at its first compile, when NVRTC is older than
+  13. NVRTC 12.0 miscompiled one of the ported examples (lattice
+  Boltzmann on an H100: density off by up to 1.6e-2, against 2.3e-6 with
+  NVRTC 13.2). The warning names the remedy: the `nvidia-cuda-nvrtc`
+  wheel for a CUDA version no newer than the driver's, which cuda-python
+  finds before a system toolkit.
 
 ### Added
 

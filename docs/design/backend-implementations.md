@@ -185,6 +185,15 @@ JIT-compiles that PTX in `cuModuleLoadData`. A compile failure raises
 `RuntimeError` with the NVRTC log and the source; the program is destroyed
 on both paths.
 
+The first compile in a process checks `nvrtcVersion` and warns if NVRTC is
+older than 13 (`runtime/nvrtc_version.py`). NVRTC 12.0 miscompiled
+tack-examples' lattice Boltzmann example on an H100 (density off by up to
+1.6e-2; 2.3e-6 with 13.2), and was not reduced to a kernel, so there is no
+workaround to apply. It also left the compiling thread in the C locale,
+which `_compile_keeping_thread_locale` undoes. The check runs at the first
+compile rather than at `tack.init`, so a machine without NVRTC fails where
+it did before.
+
 **Launch.** Block size is `WORKGROUP_SIZE` (256, from
 `lang/workgroup_participation.py`) and the grid is
 `(loop_end + 255) // 256` blocks. The kernel receives the loop end as a

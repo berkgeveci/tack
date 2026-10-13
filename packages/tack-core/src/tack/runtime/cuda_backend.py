@@ -13,8 +13,10 @@ No per-dispatch copies — data stays on the GPU between kernel calls.
 """
 
 import ctypes
+import functools
 import os
 import sys
+import warnings
 
 import numpy as np
 
@@ -34,6 +36,7 @@ from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.nvrtc_version import old_nvrtc_message
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _CUDA_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
@@ -485,8 +488,19 @@ def _compile_keeping_thread_locale(prog, opts):
             _uselocale(saved)
 
 
+@functools.cache
+def _warn_if_old_nvrtc():
+    """Warn once per process, at the first compile, about an untested NVRTC."""
+    err, major, minor = nvrtc.nvrtcVersion()
+    _check(err)
+    message = old_nvrtc_message(major, minor)
+    if message:
+        warnings.warn(message, stacklevel=3)
+
+
 def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     """Compile CUDA C source to PTX via NVRTC."""
+    _warn_if_old_nvrtc()
     src = cuda_source.encode("utf-8")
     err, prog = nvrtc.nvrtcCreateProgram(src, f"{func_name}.cu".encode(), 0, None, None)
     _check(err)

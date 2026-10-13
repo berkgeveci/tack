@@ -534,6 +534,30 @@ def test_nvrtc_leaves_the_thread_locale_alone():
     assert locale.getencoding() == before
 
 
+def test_old_nvrtc_warns_at_the_first_compile(monkeypatch):
+    """NVRTC 12.0 miscompiled tack-examples' lbm on an H100, so compiling
+    with NVRTC 12 says so, once per process."""
+    import warnings
+
+    from tack.runtime import cuda_backend
+
+    def nvrtc_12():
+        return cuda_backend.nvrtc.nvrtcResult.NVRTC_SUCCESS, 12, 0
+
+    src = 'extern "C" __global__ void k(float* a) { a[0] = 2.0f; }'
+    monkeypatch.setattr(cuda_backend.nvrtc, "nvrtcVersion", nvrtc_12)
+    cuda_backend._warn_if_old_nvrtc.cache_clear()
+    try:
+        with pytest.warns(UserWarning, match="NVRTC 12.0 is older"):
+            cuda_backend._compile_ptx(src, "k")
+        with warnings.catch_warnings(record=True) as again:
+            warnings.simplefilter("always")
+            cuda_backend._compile_ptx(src, "k")
+        assert not [w for w in again if "NVRTC" in str(w.message)]
+    finally:
+        cuda_backend._warn_if_old_nvrtc.cache_clear()
+
+
 def test_ordinary_and_floor_division_kernels_compile_in_sequence():
     """Ordinary and floating floor-division kernels compile and run in
     one process with the same safe settings, preserving the CX7 coverage."""

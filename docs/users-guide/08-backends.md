@@ -9,7 +9,7 @@ its own compilation pipeline and memory model.
 |---------|----------|-----|-------------|-------------|
 | CPU | All | None (uses CPU cores) | LLVM JIT via llvmlite | `llvmlite` |
 | Metal | macOS | Apple Silicon | MSL source → Metal API | `pyobjc-framework-Metal` |
-| CUDA | Linux/Windows | NVIDIA | CUDA C → NVRTC → PTX | `cuda-python>=13.2` |
+| CUDA | Linux/Windows | NVIDIA | CUDA C → NVRTC → PTX | `cuda-python>=13.2`, NVRTC 13 |
 | HIP | Linux | AMD (ROCm) | HIP C → hipRTC | `hip-python` |
 | Level Zero | Linux | Intel | OpenCL C → libocloc → SPIR-V | Level Zero runtime |
 
