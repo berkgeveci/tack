@@ -376,8 +376,8 @@ and "polyline" `PolylineTopology`.
 | `boundary_faces`, `extract_surface`, `external_faces` | yes (a 2D mesh's: line cells) | yes (the surface is polygonal) | yes (line cells) | yes (vertex cells) |
 | `jump` and `upwind_flux` of cell data; `divergence`, `perot` of face values | yes | yes | yes | yes |
 | `threshold`, `extract_geometry`, `extract_cells`, `mask` | yes | yes | yes | yes |
-| `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells) | yes (López, face-based) | yes (line cells) | no (would give points) |
-| `clip` | yes | not yet | not yet | not yet |
+| `contour`, `slice`, `slice_plane` | yes (a 2D mesh's: line cells; an `L2` field or geometry gives each cell its own points) | yes (López, face-based) | yes (line cells) | no (would give points) |
+| `clip` | yes (with an `H1` geometry) | not yet | not yet | not yet |
 | `extract_points`, `threshold_points`, `mask_points` | yes | yes | yes | yes |
 | `implicit_values` | yes | yes | yes | yes |
 | `CellLocator`, `probe` | yes | not yet | not yet | not yet |

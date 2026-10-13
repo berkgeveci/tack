@@ -104,7 +104,9 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
     its point values: each cell's crossings, found going round its edges, are
     joined in pairs, each line with the higher values on its right as the
     cell winds. Lines share their points through the mesh's faces (its edges),
-    whatever ``merge_points`` says. A polyline mesh is refused.
+    whatever ``merge_points`` says -- unless the field or the geometry is
+    ``L2``: then each cell's lines have their own points, from its own values
+    and corners. A polyline mesh is refused, and no cells give no lines.
 
     With ``merge_points``, triangles share their points: by global edge when
     the field and the geometry are both continuous, so the surface is
@@ -120,7 +122,8 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
     dimension = data.topology.dimension
     if dimension == 2:
         return _contour_lines(data, field, isovalue, fields)
-    if dimension < 2:
+    if dimension < 2 and data.num_cells:
+        # No cells (a threshold that kept none) has no dimension, and no surface.
         raise NotImplementedError("contour of lines (which would give points) is not built")
     if not getattr(data.topology, "reference_cells", True):
         return _polyhedral_contour(data, field, isovalue, fields)
@@ -460,12 +463,115 @@ def _line_cells(line_faces, point_of_face, types, offsets, connectivity, n):
             offsets[i + 1] = 2 * (i + 1)
 
 
+@tack.kernel
+def _cell_line_counts(cells, u, iso, counts):
+    # As _line_counts, from the cell's own corner values.
+    for c in cells:
+        crossings = 0
+        for k in range(cells.NUM_FACES):
+            above_a = u.corner_value(c, cells.face_corner(k, 0)) >= iso
+            above_b = u.corner_value(c, cells.face_corner(k, 1)) >= iso
+            if above_a != above_b:
+                crossings += 1
+        counts[cells.entity_id(c)] = crossings // 2
+
+
+@tack.kernel
+def _cell_line_points(cells, u, iso, starts, line_cells, ends, weights, positions):
+    # As _line_pieces, but each line has its own two points, from its cell's own
+    # values and corners: line i's are points 2i (rising) and 2i + 1 (falling).
+    for c in cells:
+        n = cells.NUM_FACES
+        first = -1
+        for k in range(n):
+            if first < 0:
+                if (u.corner_value(c, cells.face_corner(k, 0)) < iso
+                        and u.corner_value(c, cells.face_corner(k, 1)) >= iso):
+                    first = k
+        if first < 0:
+            continue
+        at = starts[cells.entity_id(c)]
+        for i in range(n):
+            k = (first + i) % n
+            ja = cells.face_corner(k, 0)
+            jb = cells.face_corner(k, 1)
+            above_a = u.corner_value(c, ja) >= iso
+            if above_a != (u.corner_value(c, jb) >= iso):
+                # From the lower point id, as every contour interpolates.
+                lo = ja
+                hi = jb
+                if cells.point_id(c, jb) < cells.point_id(c, ja):
+                    lo = jb
+                    hi = ja
+                v = u.corner_value(c, lo)
+                w = (iso - v) / (u.corner_value(c, hi) - v)
+                x = cells.corner_position(c, lo)
+                slot = 2 * at + (1 if above_a else 0)
+                ends[slot] = [cells.point_id(c, lo), cells.point_id(c, hi)]
+                weights[slot] = w
+                positions[slot] = x + w * (cells.corner_position(c, hi) - x)
+                if above_a:
+                    line_cells[at] = cells.entity_id(c)
+                    at += 1
+
+
+@tack.kernel
+def _paired_lines(types, offsets, connectivity, n):
+    for i in range(n):
+        types[i] = tack.u8(shapes.LINE)
+        offsets[i] = 2 * i
+        connectivity[2 * i] = 2 * i
+        connectivity[2 * i + 1] = 2 * i + 1
+        if i == n - 1:
+            offsets[i + 1] = 2 * (i + 1)
+
+
+def _contour_cell_lines(data, field, isovalue, fields=None):
+    """``contour`` of a 2D shape mesh whose field or geometry is per cell (``L2``):
+    each cell's lines from its own values and corners, their points not shared,
+    so a DG field keeps its jumps and an ``L2`` geometry its gaps."""
+    if not field.space.interpolated or field.space.on not in ("cells", "points"):
+        raise TypeError(f"contour needs a field with a basis on the cells, not "
+                        f"{field.space!r}")
+    groups = [g for g in data.launch_groups("cells", [field])
+              if g.count and g.shape.DIMENSION == 2]
+    n = data.num_cells
+    idt = data.id_dtype
+    counts = tack.zeros(tack.i32, (n,))
+    for group in groups:
+        _cell_line_counts(data.domain_view("cells", group), field.view(group), isovalue,
+                          counts)
+    odt = ids.for_output(data, 4 * n)        # at most two lines, four points, a cell
+    starts = tack.field(odt, shape=(n,))
+    lines = exclusive_scan(counts, starts, n) if n else 0
+    line_cells = tack.field(idt, shape=(lines,))
+    ends = tack.Vector.field(2, idt, shape=(2 * lines,))
+    weights = tack.field(arrays.dtype_of(field.values), shape=(2 * lines,))
+    positions = tack.Vector.field(3, data.dtype, shape=(2 * lines,))
+    if lines:
+        for group in groups:
+            _cell_line_points(data.domain_view("cells", group), field.view(group), isovalue,
+                              starts, line_cells, ends, weights, positions)
+    types = tack.field(tack.u8, shape=(lines,))
+    offsets = tack.zeros(odt, (lines + 1,))
+    connectivity = tack.field(odt, shape=(2 * lines,))
+    if lines:
+        _paired_lines(types, offsets, connectivity, lines)
+    out = UnstructuredTopology(types, offsets, connectivity, num_points=2 * lines)
+    return carry(data, out, points=Interpolate(ends, weights), cells=Pieces(line_cells),
+                 geometry=Field(H1(out), positions), fields=fields)
+
+
 def _contour_lines(data, field, isovalue, fields=None):
     """``contour`` of a 2D mesh -- shapes or polygons -- as line cells: each cell's
     crossings found going round its edges, which are the mesh's faces, so lines
-    share their points through them."""
-    if not (isinstance(field.space, H1) or field.space is Values(data, "points")):
-        raise TypeError("contour of a 2D mesh takes a field on the points")
+    share their points through them. A field or geometry per cell (``L2``) gives
+    each cell its own lines' points instead."""
+    on_points = isinstance(field.space, H1) or field.space is Values(data, "points")
+    if not on_points or not isinstance(data.geometry.space, H1):
+        if isinstance(field.space, Values):
+            field = Field(H1(data), field.values)
+        return _contour_cell_lines(data, field, isovalue, fields)
     values = arrays.materialize(field.values)
     faces = data.topology.faces()
     nf = faces.num_faces

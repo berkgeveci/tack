@@ -138,3 +138,37 @@ def test_side_1_of_an_edge_is_reflected(backend, mesh):
     orientation = faces.side_orientation.to_numpy()
     np.testing.assert_array_equal(orientation & 1, slots)
     np.testing.assert_array_equal(orientation, 3 * slots)
+
+
+def test_contour_of_l2_data_on_a_2d_mesh(backend):
+    """An L2 field or geometry gives each cell its own lines' points: the same line
+    as point data where they agree, and gaps kept where the geometry has them.
+    (The 2D path took point values only, and merged crossings by face.)"""
+    data = td.rectilinear_grid([0.0, 1.0], [0.0, 1.0, 2.0])
+    x = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
+    shared = td.contour(data, x, 0.5)
+    own = td.contour(data, td.discontinuous(data, x), 0.5)
+    assert (shared.num_cells, shared.num_points, own.num_cells, own.num_points) == (2, 3, 2, 4)
+    lines = own.positions()[own.topology.connectivity.to_numpy()].reshape(-1, 2, 3)
+    np.testing.assert_allclose(lines, [[[0.5, 0, 0], [0.5, 1, 0]], [[0.5, 1, 0], [0.5, 2, 0]]])
+    # The second cell lifted to z = 10: its line stays on it.
+    geometry = td.discontinuous(data, data.geometry)
+    corners = geometry.values.to_numpy(vectors=True)
+    corners[4:, 2] += 10.0
+    geometry.values.from_numpy(corners)
+    data.geometry = geometry
+    cut = td.contour(data, x, 0.5)
+    lines = cut.positions()[cut.topology.connectivity.to_numpy()].reshape(-1, 2, 3)
+    np.testing.assert_allclose(lines[:, :, 2], [[0, 0], [10, 10]])
+    sliced = td.slice_plane(data, (0.5, 0.0, 0.0), (1.0, 0.0, 0.0))
+    assert sliced.num_cells == 2
+
+
+def test_contour_of_no_cells(backend):
+    """A dataset with no cells (a threshold that kept none) contours to nothing,
+    its fields carried; it was refused as a mesh of lines."""
+    data = td.rectilinear_grid([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
+    data.fields["s"] = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
+    empty = td.threshold(data, "s", 2.0, 3.0)
+    out = td.contour(empty, "s", 0.5)
+    assert (out.num_cells, out.num_points, list(out.fields)) == (0, 0, ["s"])
