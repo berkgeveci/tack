@@ -84,6 +84,24 @@ _MPOL_DEFAULT = 0
 _MPOL_INTERLEAVE = 3
 
 
+def _read_mempolicy():
+    """The calling thread's memory policy as ``(mode, nodemask)``, or None."""
+    mode = ctypes.c_int(-1)
+    mask = (ctypes.c_ulong * 1)()
+    rc = _libc.syscall(_SYS_GET_MEMPOLICY, ctypes.byref(mode), mask,
+                       ctypes.c_ulong(_numa_max_node + 2), None, 0)
+    return (mode.value, mask[0]) if rc == 0 else None
+
+
+def _write_mempolicy(policy) -> int:
+    """Install a policy read by `_read_mempolicy`; 0 on success."""
+    mode, nodes = policy
+    if mode == _MPOL_DEFAULT:
+        return _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
+    mask = (ctypes.c_ulong * 1)(nodes)
+    return _libc.syscall(_SYS_SET_MEMPOLICY, mode, mask, _numa_max_node + 2)
+
+
 def _mempolicy_interleaves() -> bool:
     """Ask the kernel to interleave, then ask it what it actually stored.
 
@@ -92,16 +110,19 @@ def _mempolicy_interleaves() -> bool:
     that exists but means something else installs cleanly and then never
     interleaves.  Both were true of this code before, and both are invisible
     without reading the policy back, so it is read back.
+
+    The policy the thread had is put back afterwards, whatever it was: under
+    ``numactl --membind`` this probe used to leave the process with the
+    default policy, so the binding was gone after ``tack.init``.
     """
+    saved = _read_mempolicy()
     mask = (ctypes.c_ulong * 1)(_numa_node_mask)
     if _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_INTERLEAVE, mask,
                      _numa_max_node + 2) != 0:
         return False
-    mode = ctypes.c_int(-1)
-    rc = _libc.syscall(_SYS_GET_MEMPOLICY, ctypes.byref(mode), None,
-                       ctypes.c_ulong(0), None, 0)
-    _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
-    return rc == 0 and mode.value == _MPOL_INTERLEAVE
+    after = _read_mempolicy()
+    _write_mempolicy(saved if saved is not None else (_MPOL_DEFAULT, 0))
+    return after is not None and after[0] == _MPOL_INTERLEAVE
 
 
 def _init_numa():
@@ -145,20 +166,32 @@ _init_numa()
 
 
 class _NumaInterleave:
-    """Context manager: set MPOL_INTERLEAVE for allocations, restore on exit."""
+    """Context manager: MPOL_INTERLEAVE for allocations, the default policy
+    put back on exit.
+
+    Only a thread with the default policy is changed. One that was bound
+    to nodes -- by ``numactl --membind``, ``--cpunodebind`` with a memory
+    policy, or libnuma -- keeps its policy: interleaving a bound task's
+    pages across every node would put half of them where its threads are
+    not, and restoring the *default* afterwards would drop the binding for
+    the rest of the process.
+    """
 
     def __enter__(self):
+        self._active = False
         if not _numa_available:
             return self
+        policy = _read_mempolicy()
+        if policy is None or policy[0] != _MPOL_DEFAULT:
+            return self
         mask = (ctypes.c_ulong * 1)(_numa_node_mask)
-        _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_INTERLEAVE, mask,
-                      _numa_max_node + 2)
+        self._active = _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_INTERLEAVE, mask,
+                                     _numa_max_node + 2) == 0
         return self
 
     def __exit__(self, *exc):
-        if not _numa_available:
-            return
-        _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
+        if self._active:
+            _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
 
 # Initialize LLVM native target (required before JIT compilation)
 llvm.initialize_native_target()

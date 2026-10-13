@@ -121,3 +121,48 @@ def test_policy_is_restored_after_the_context():
                       ctypes.c_ulong(0), None, 0)
     assert rc == 0
     assert mode.value == cpu._MPOL_DEFAULT, f"policy leaked: mode {mode.value}"
+
+
+_MPOL_BIND = 2
+
+
+def _set_policy(mode, nodes):
+    libc = ctypes.CDLL(ctypes.util.find_library("c"), use_errno=True)
+    if mode == cpu._MPOL_DEFAULT:
+        rc = libc.syscall(cpu._SYS_SET_MEMPOLICY, mode, None, 0)
+    else:
+        mask = (ctypes.c_ulong * 1)(nodes)
+        rc = libc.syscall(cpu._SYS_SET_MEMPOLICY, mode, mask, cpu._numa_max_node + 2)
+    assert rc == 0, f"set_mempolicy failed: errno {ctypes.get_errno()}"
+
+
+@requires_numa
+def test_a_bound_thread_keeps_its_policy_and_its_node():
+    """Under ``numactl --membind=0`` (here: the same policy set by hand) a
+    field's pages stay on node 0, and the policy is still the binding
+    afterwards -- not the default, which is what restoring the default
+    unconditionally left behind."""
+    _set_policy(_MPOL_BIND, 1)
+    try:
+        tack.init(arch=tack.cpu)
+        n = (64 << 20) // 4
+        field = tack.field(tack.f32, (n,))
+        hist = pages_per_node(field._buffer._data.ctypes.data, 64 << 20)
+        assert set(hist) == {0}, f"pages left the bound node: {dict(hist)}"
+        assert cpu._read_mempolicy()[0] == _MPOL_BIND, "the binding was dropped"
+        with cpu._NumaInterleave():
+            assert cpu._read_mempolicy()[0] == _MPOL_BIND
+    finally:
+        _set_policy(cpu._MPOL_DEFAULT, 0)
+
+
+@requires_numa
+def test_the_init_probe_restores_the_policy():
+    """`_mempolicy_interleaves` is the first thing `tack.init` runs that
+    touches the policy; it must hand back what it found."""
+    _set_policy(_MPOL_BIND, 1)
+    try:
+        assert cpu._mempolicy_interleaves()
+        assert cpu._read_mempolicy() == (_MPOL_BIND, 1)
+    finally:
+        _set_policy(cpu._MPOL_DEFAULT, 0)
