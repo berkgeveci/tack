@@ -91,6 +91,30 @@ runtime_scalars = {"width": 512, "height": 512}  # instance scalars → runtime 
 This distinction avoids unnecessary JIT recompilation when only runtime
 values (like image dimensions) change between calls.
 
+### Nested Templates
+
+A template may hold templates as instance attributes. `template_tree(obj)`
+lists `(path, object)` for the object and everything nested in it, depth
+first, children by name, and refuses a cycle. `classify_template_attrs`
+flattens the tree: a nested object's constants, fields and runtime scalars
+are named by their path joined with `__` (`base__step`), so the runtime's
+argument expansion and vector-field detection, which read the flattened
+dicts, need nothing new, and the synthetic parameters follow one order.
+`rewrite_templates` builds a `_Node` per object (its own constants, the
+synthetic names of its own fields and scalars, its resolved methods and
+function attributes, its children); every resolved method of the tree takes
+the whole tree's synthetic parameters, and `self.a.b.method()` and
+`self.a.b.attr` resolve by walking the children (`_resolve_call`,
+`_resolve_attribute`). A chain stops at the first attribute that is not a
+template, so `self.data.shape[0]` still reads a field's shape.
+
+A dispatch reads a template several times -- its key, its expanded
+arguments, its vector fields -- so `resolve_variant` opens a
+`template_scope`, in which each object's tree, classification, function
+attributes, structure and cache-key part are found once (`memoized`). The
+objects are the call's arguments, alive throughout, so their ids cannot be
+reused within the scope.
+
 ## @tack.func Inlining
 
 When the AST transformer encounters a `@tack.func` call, it runs
@@ -167,6 +191,8 @@ kernel. The cache key includes:
 - Type signature and field/scalar/texture category of all params
 - Actual template class identity, typed compile-time constants, field
   metadata, and runtime scalar attribute names
+- The paths and classes of the templates it holds (`template_structure`),
+  whose tokens also retire the variants when a nested class is collected
 - Vector field widths
 - Texture shapes
 - Dimension sizes baked into code by shape resolution

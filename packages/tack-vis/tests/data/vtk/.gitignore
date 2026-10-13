@@ -1,0 +1,2 @@
+# The root .gitignore drops *.vtu (example output); these are test inputs.
+!*.vtu

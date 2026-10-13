@@ -12,9 +12,12 @@ Pipeline (same 4 passes, passes 2-3 trimmed):
 3. Emit unique interpolated points (only within xmin..xmax per row)
 4. Emit triangle connectivity (only within cell trim range)
 
+This shows how such an algorithm is built from scratch. The library's
+version, for any mesh, is ``tack.data.contour``.
+
 Usage:
-  uv run python examples/28_flying_edges_trimmed.py
-  uv run python examples/28_flying_edges_trimmed.py --arch metal --size 200
+  uv run python packages/tack-vis/examples/28_flying_edges_trimmed.py
+  uv run python packages/tack-vis/examples/28_flying_edges_trimmed.py --arch metal --size 200
 """
 
 import argparse
@@ -25,7 +28,7 @@ import numpy as np
 import tack
 
 _parser = argparse.ArgumentParser()
-_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip'])
+_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
 _parser.add_argument('--size', type=int, default=100,
                      help='Grid cells per dimension (default 100)')
 _parser.add_argument('--warmup', type=int, default=2)

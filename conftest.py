@@ -18,6 +18,12 @@ reduction_backend
 workgroup_backend
     Those with native workgroup execution for cooperative kernels.
 
+Options
+-------
+--ids=i64
+    Every ``tack.data`` topology takes 64-bit ids, however small, so the
+    dataset tests run each path in i64 as well as (by default) i32.
+
 A test that names one of these runs once per matching backend, so which
 backends exist is a property of the machine and never of the test file.
 Files used to pin their own list, and eleven of them had settled on
@@ -59,6 +65,20 @@ for _arch in _ALL_ARCHES:
         reduction_backends.append(_arch)
     if _be.supports_workgroups:
         workgroup_backends.append(_arch)
+
+
+def pytest_addoption(parser):
+    parser.addoption("--ids", choices=("i32", "i64"), default="i32",
+                     help="the narrowest id type tack.data topologies take")
+
+
+def pytest_configure(config):
+    if config.getoption("--ids") == "i64":
+        try:
+            from tack.data import ids
+        except ImportError:                    # tack-vis is not installed
+            return
+        ids._minimum = tack.i64
 
 
 @pytest.fixture(params=available_backends)

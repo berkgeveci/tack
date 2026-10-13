@@ -32,6 +32,11 @@ class DeviceBuffer:
     #: uses it to explain the AttributeError a backend switch produces.
     backend_name: str = ""
 
+    #: Whether a newly allocated buffer of this kind already holds zeros, so
+    #: `tack.zeros` need not fill it. Metal's does (`MetalBuffer`); filling
+    #: it anyway waited for every queued launch, a round trip per `zeros`.
+    starts_zeroed: bool = False
+
     def from_numpy(self, arr: np.ndarray):
         raise NotImplementedError
 
@@ -453,7 +458,8 @@ def field_like(arr: np.ndarray, dtype: ScalarType = None) -> Field:
 def zeros(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
     """Create a field filled with zeros."""
     f = field(dtype=dtype, shape=shape)
-    f.fill(0)
+    if not f._buffer.starts_zeroed:
+        f.fill(0)
     return f
 
 

@@ -1,0 +1,3 @@
+# VTK test data: keep byte for byte, never normalize line endings.
+*.vtu -text
+*.cgns -text

@@ -1,6 +1,7 @@
 """36 -- Path trace + OIDN denoising: 1 spp → clean image."""
 
 import argparse
+import os
 import time
 
 import numpy as np
@@ -161,11 +162,12 @@ denoised = denoise(canvas)
 t_denoise = time.perf_counter() - t0
 print(f"Denoise: {t_denoise:.4f}s")
 
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
-    Image.fromarray(noisy).save("pathtrace_noisy.png")
-    Image.fromarray(denoised).save("pathtrace_denoised.png")
+    Image.fromarray(noisy).save("results/pathtrace_noisy.png")
+    Image.fromarray(denoised).save("results/pathtrace_denoised.png")
     print("Saved: pathtrace_noisy.png, pathtrace_denoised.png")
 except ImportError:
-    np.save("pathtrace_noisy.npy", noisy)
-    np.save("pathtrace_denoised.npy", denoised)
+    np.save("results/pathtrace_noisy.npy", noisy)
+    np.save("results/pathtrace_denoised.npy", denoised)

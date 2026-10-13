@@ -51,7 +51,7 @@ be shared.
 
 import tack
 
-__all__ = ["field_to_vtk", "init_level_zero", "vtk_to_field"]
+__all__ = ["dataset_to_vtk", "field_to_vtk", "init_level_zero", "vtk_to_dataset", "vtk_to_field"]
 
 
 def _dlpack_support():
@@ -197,3 +197,331 @@ def field_to_vtk(field, n_components=None, name=None):
         shaped = field.reshape((field.size // n_components, n_components))
 
     return dlpack_support.dlpack_to_vtk(shaped, name=name)
+
+
+# ── Datasets ────────────────────────────────────────────────────────
+#
+# Copied through NumPy, so these work with any VTK, with or without the
+# DLPack module. Point data becomes ``H1`` fields and cell data
+# ``Constant`` fields (``docs/design/dataset-api.md`` §5).
+
+def _array_to_field(array, float_dtype):
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    from tack.lang.types import from_numpy_dtype
+
+    values = vtk_to_numpy(array)
+    dtype = float_dtype if values.dtype.kind == "f" else from_numpy_dtype(values.dtype)
+    n = array.GetNumberOfComponents()
+    if n == 1:
+        field = tack.field(dtype, shape=(values.shape[0],))
+    else:
+        field = tack.Vector.field(n, dtype, shape=(values.shape[0],))
+    if values.size:
+        field.from_numpy(np.ascontiguousarray(values).astype(dtype.numpy_dtype))
+    return field
+
+
+def _attributes_to_fields(attributes, space, float_dtype):
+    from tack.data import Field
+
+    fields = {}
+    for i in range(attributes.GetNumberOfArrays()):
+        array = attributes.GetArray(i)
+        if array is not None and array.GetName():
+            fields[array.GetName()] = Field(space, _array_to_field(array, float_dtype))
+    return fields
+
+
+def _polyhedral_topology(grid, orient=False, id_dtype=None):
+    """A ``vtkUnstructuredGrid`` as a ``PolyhedralTopology``, every cell a polyhedron.
+
+    A polyhedron's faces are its own (``GetPolyhedronFaces``/``FaceLocations``);
+    any other cell's are its cell class's, outward as VTK winds them (a voxel's
+    pixels as quads). VTK keeps a face once per cell, each copy outward for its
+    cell, so copies are matched by their point sets: the first found is the face,
+    its cell side 0, and a second copy -- which must go round the other way -- is
+    side 1. Read on the host, cell by cell.
+    """
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    from tack.data import PolyhedralTopology
+
+    try:
+        types = vtk_to_numpy(grid.GetCellTypes())
+    except TypeError:
+        types = vtk_to_numpy(grid.GetCellTypesArray())
+    locations, faces = grid.GetPolyhedronFaceLocations(), grid.GetPolyhedronFaces()
+    if locations is not None and faces is not None:
+        loc_offsets = vtk_to_numpy(locations.GetOffsetsArray())
+        loc_faces = vtk_to_numpy(locations.GetConnectivityArray())
+        face_offsets = vtk_to_numpy(faces.GetOffsetsArray())
+        face_conn = vtk_to_numpy(faces.GetConnectivityArray())
+    cells = []
+    for c in range(grid.GetNumberOfCells()):
+        if types[c] == 42:
+            listed = [face_conn[face_offsets[f]:face_offsets[f + 1]]
+                      for f in loc_faces[loc_offsets[c]:loc_offsets[c + 1]]]
+        else:
+            cell = grid.GetCell(c)
+            if cell.GetCellDimension() != 3:
+                raise ValueError(f"cell {c} is not 3D: a polyhedral topology is of 3D cells")
+            listed = []
+            for k in range(cell.GetNumberOfFaces()):
+                face = cell.GetFace(k)
+                ids = [face.GetPointId(i) for i in range(face.GetNumberOfPoints())]
+                if face.GetCellType() == 8:                     # a pixel, as a quad
+                    ids = [ids[0], ids[1], ids[3], ids[2]]
+                listed.append(ids)
+        cells.append(listed)
+    positions = vtk_to_numpy(grid.GetPoints().GetData()) if orient else None
+    try:
+        return PolyhedralTopology.from_cell_faces(cells, grid.GetNumberOfPoints(),
+                                                  positions=positions, orient=orient,
+                                                  id_dtype=id_dtype)
+    except ValueError as error:
+        if "wound the same way" in str(error) and not orient:
+            raise ValueError(f"{error}. VTK winds every polyhedron face outward for its "
+                             "cell; vtk_to_dataset(..., orient=True) repairs the input") from None
+        raise
+
+
+def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None):
+    """Copy a ``vtkUnstructuredGrid``, ``vtkRectilinearGrid`` or ``vtkImageData`` into a
+    ``tack.data.DataSet``: an image's points as ``UniformCoordinates`` (with its
+    direction matrix), a rectilinear grid's as a ``CartesianProduct``.
+
+    Points and floating-point arrays become fields of ``dtype``; integer
+    arrays keep their type. Named point data become ``H1`` fields and named
+    cell data ``Constant`` fields. An unstructured grid's cells must all be
+    linear shapes -- unless it holds polyhedra (or ``polyhedral`` is true), when
+    it becomes a ``PolyhedralTopology``, every cell a polyhedron of its faces, or
+    polylines, when it becomes a ``PolylineTopology`` (its lines two-point
+    polylines, and no other cells allowed).
+    With ``orient``, inconsistently wound polyhedra are repaired first
+    (``PolyhedralTopology.from_cell_faces``); without it they are refused.
+    VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
+    ``i32`` unless the grid is too large for it (``tack.data.ids``).
+    """
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    from tack.data import (
+        H1,
+        CartesianProduct,
+        Constant,
+        DataSet,
+        PolylineTopology,
+        StructuredTopology,
+        UniformCoordinates,
+        UnstructuredTopology,
+    )
+
+    if grid.IsA("vtkUnstructuredGrid") and polyhedral is None:
+        try:
+            all_types = vtk_to_numpy(grid.GetCellTypes())
+        except TypeError:
+            all_types = vtk_to_numpy(grid.GetCellTypesArray())
+        polyhedral = bool((all_types == 42).any())
+    if grid.IsA("vtkUnstructuredGrid") and polyhedral:
+        topology = _polyhedral_topology(grid, orient=orient, id_dtype=id_dtype)
+        geometry = _vtk_points(grid)
+    elif grid.IsA("vtkUnstructuredGrid"):
+        cell_array = grid.GetCells()
+        # The per-cell types are GetCellTypes() from VTK 9.6 on; through 9.5 that
+        # takes an argument and the array is GetCellTypesArray() (removed on master).
+        try:
+            types = vtk_to_numpy(grid.GetCellTypes())
+        except TypeError:
+            types = vtk_to_numpy(grid.GetCellTypesArray())
+        offsets = vtk_to_numpy(cell_array.GetOffsetsArray())
+        connectivity = vtk_to_numpy(cell_array.GetConnectivityArray())
+        if (types == 4).any():
+            # Polylines: their lines are two-point chains; nothing else mixes in.
+            if not np.isin(types, (3, 4)).all():
+                raise ValueError("a grid with polylines (VTK_POLY_LINE) may hold only lines "
+                                 "and polylines")
+            topology = PolylineTopology(offsets, connectivity,
+                                        num_points=grid.GetNumberOfPoints(), id_dtype=id_dtype)
+        else:
+            topology = UnstructuredTopology(types, offsets, connectivity,
+                                            num_points=grid.GetNumberOfPoints(),
+                                            id_dtype=id_dtype)
+        geometry = _vtk_points(grid)
+    elif grid.IsA("vtkImageData"):
+        dims = [0, 0, 0]
+        grid.GetDimensions(dims)
+        matrix = grid.GetDirectionMatrix()
+        direction = np.array([[matrix.GetElement(r, c) for c in range(3)] for r in range(3)])
+        spacing = np.asarray(grid.GetSpacing())
+        # Points are origin + direction @ (ijk * spacing), ijk from the extent's start.
+        origin = np.asarray(grid.GetOrigin()) + direction @ (
+            np.asarray(grid.GetExtent()[0::2]) * spacing)
+        geometry = UniformCoordinates(dims, origin, spacing, direction, dtype=dtype)
+        if 1 in geometry.point_dims:
+            raise ValueError(f"an image of dimensions {tuple(dims)} is not supported: "
+                             "only trailing dimensions may be 1")
+        topology = StructuredTopology(geometry.point_dims, id_dtype=id_dtype)
+    elif grid.IsA("vtkRectilinearGrid"):
+        geometry = CartesianProduct(vtk_to_numpy(grid.GetXCoordinates()),
+                                          vtk_to_numpy(grid.GetYCoordinates()),
+                                          vtk_to_numpy(grid.GetZCoordinates()), dtype=dtype)
+        dims = [0, 0, 0]
+        grid.GetDimensions(dims)
+        if dims != list(geometry.dims):
+            raise ValueError(f"grid dimensions {dims} do not match its coordinates")
+        if 1 in geometry.point_dims:
+            raise ValueError(f"a grid of dimensions {tuple(dims)} is not supported: "
+                             "only trailing dimensions may be 1")
+        topology = StructuredTopology(geometry.point_dims, id_dtype=id_dtype)
+    else:
+        raise TypeError(f"expected a vtkUnstructuredGrid, vtkRectilinearGrid or vtkImageData, "
+                        f"not {grid.GetClassName()}")
+    fields = _attributes_to_fields(grid.GetPointData(), H1(topology), dtype)
+    fields.update(_attributes_to_fields(grid.GetCellData(), Constant(topology), dtype))
+    return DataSet(topology, geometry, fields=fields, dtype=dtype)
+
+
+def _vtk_points(grid):
+    """A point set's positions; a grid with no vtkPoints at all (an empty one, as
+    VTK makes it) has none."""
+    import numpy as np
+    from vtkmodules.util.numpy_support import vtk_to_numpy
+
+    points = grid.GetPoints()
+    return np.zeros((0, 3)) if points is None else vtk_to_numpy(points.GetData())
+
+
+def _field_to_array(name, field):
+    from vtkmodules.util.numpy_support import numpy_to_vtk
+
+    from tack.data.arrays import to_host
+
+    values = to_host(field)
+    array = numpy_to_vtk(values, deep=1)
+    array.SetName(name)
+    return array
+
+
+def dataset_to_vtk(data):
+    """Copy a ``tack.data.DataSet`` into a new VTK dataset.
+
+    A structured topology over uniform coordinates gives a ``vtkImageData`` (with
+    the direction matrix), over rectilinear ones a ``vtkRectilinearGrid``; an
+    unstructured one a ``vtkUnstructuredGrid``, a polygonal or polyline one a
+    ``vtkUnstructuredGrid`` of ``VTK_POLYGON`` or ``VTK_POLY_LINE`` cells, and a
+    polyhedral one a ``vtkUnstructuredGrid`` of ``VTK_POLYHEDRON`` cells, each
+    keeping its own copy of its faces, outward for it (VTK's layout has no
+    orientation bit, so a shared face cannot be stored once).
+    ``H1`` fields and values on points become point data -- an order-2 field
+    its values at the points, the grid being linear -- and ``Constant`` fields
+    and values on cells cell data. ``L2`` fields have no VTK array to go
+    to without duplicating points, and fields on faces or edges none at
+    all; they are left out. The geometry (``data.geometry``) becomes the
+    points, so it must be ``H1``.
+    """
+    import numpy as np
+    from vtkmodules.util.numpy_support import numpy_to_vtk, numpy_to_vtkIdTypeArray
+    from vtkmodules.vtkCommonCore import vtkPoints
+    from vtkmodules.vtkCommonDataModel import (
+        vtkCellArray,
+        vtkImageData,
+        vtkRectilinearGrid,
+        vtkUnstructuredGrid,
+    )
+
+    from tack.data import (
+        H1,
+        CartesianProduct,
+        Constant,
+        PolygonalTopology,
+        PolyhedralTopology,
+        PolylineTopology,
+        StructuredTopology,
+        UniformCoordinates,
+        UnstructuredTopology,
+        Values,
+    )
+
+    topology = data.topology
+    coordinates = data.geometry.values
+    if isinstance(topology, StructuredTopology) and isinstance(coordinates,
+                                                               UniformCoordinates):
+        grid = vtkImageData()
+        grid.SetDimensions(*coordinates.dims)
+        grid.SetOrigin(*coordinates._origin)
+        grid.SetSpacing(*coordinates._spacing)
+        grid.SetDirectionMatrix(*coordinates._matrix.reshape(-1))
+    elif isinstance(topology, StructuredTopology) and isinstance(coordinates,
+                                                                 CartesianProduct):
+        grid = vtkRectilinearGrid()
+        grid.SetDimensions(*coordinates.dims)
+        grid.SetXCoordinates(numpy_to_vtk(coordinates.x.to_numpy(), deep=1))
+        grid.SetYCoordinates(numpy_to_vtk(coordinates.y.to_numpy(), deep=1))
+        grid.SetZCoordinates(numpy_to_vtk(coordinates.z.to_numpy(), deep=1))
+    elif isinstance(topology, UnstructuredTopology):
+        cell_array = vtkCellArray()
+        cell_array.SetData(
+            numpy_to_vtkIdTypeArray(topology.offsets.to_numpy().astype(np.int64), deep=1),
+            numpy_to_vtkIdTypeArray(topology.connectivity.to_numpy().astype(np.int64), deep=1))
+        grid = vtkUnstructuredGrid()
+        grid.SetCells(numpy_to_vtk(topology.types.to_numpy().astype(np.uint8), deep=1),
+                      cell_array)
+        points = vtkPoints()
+        points.SetData(numpy_to_vtk(data.positions(), deep=1))
+        grid.SetPoints(points)
+    elif isinstance(topology, (PolygonalTopology, PolylineTopology)):
+        polygons = isinstance(topology, PolygonalTopology)
+        offsets, loops = (a.to_numpy() for a in (topology.loops() if polygons
+                                                  else topology.lines()))
+        cells = vtkCellArray()
+        cells.SetData(numpy_to_vtkIdTypeArray(offsets.astype(np.int64), deep=1),
+                      numpy_to_vtkIdTypeArray(loops.astype(np.int64), deep=1))
+        grid = vtkUnstructuredGrid()
+        grid.SetCells(numpy_to_vtk(np.full(topology.num_cells, 7 if polygons else 4, np.uint8),
+                                   deep=1), cells)
+        points = vtkPoints()
+        points.SetData(numpy_to_vtk(data.positions(), deep=1))
+        grid.SetPoints(points)
+    elif isinstance(topology, PolyhedralTopology):
+        # VTK keeps a face per cell, outward for that cell: side 1's copy is
+        # the face walked backwards from the same first point.
+        face_offsets, face_points, cell_offsets, cell_faces, sides = topology.arrays()
+        point_offsets, point_ids = (a.to_numpy() for a in topology.cell_points())
+        copies, copy_offsets = [], [0]
+        for f, side in zip(cell_faces, sides):
+            ring = face_points[face_offsets[f]:face_offsets[f + 1]]
+            copies.extend(ring if side == 0 else np.roll(ring[::-1], 1))
+            copy_offsets.append(len(copies))
+
+        def cell_array(offsets, connectivity):
+            out = vtkCellArray()
+            out.SetData(numpy_to_vtkIdTypeArray(np.asarray(offsets, np.int64), deep=1),
+                        numpy_to_vtkIdTypeArray(np.asarray(connectivity, np.int64), deep=1))
+            return out
+
+        grid = vtkUnstructuredGrid()
+        points = vtkPoints()
+        points.SetData(numpy_to_vtk(data.positions(), deep=1))
+        grid.SetPoints(points)
+        grid.SetPolyhedralCells(
+            numpy_to_vtk(np.full(topology.num_cells, 42, np.uint8), deep=1),
+            cell_array(point_offsets, point_ids),
+            cell_array(cell_offsets, np.arange(len(cell_faces))),
+            cell_array(copy_offsets, copies))
+    else:
+        raise TypeError(f"unsupported topology {type(topology).__name__} with "
+                        f"{type(coordinates).__name__}")
+    from tack.data.carry import _point_values
+
+    for name, field in data.fields.items():
+        space = field.space
+        if isinstance(space, H1) or (isinstance(space, Values) and space.on == "points"):
+            # An order-2 field's values at the points, its first ones: the grid
+            # is linear, as the filters read order-2 data.
+            values = _point_values(field.values, data.num_points)
+            grid.GetPointData().AddArray(_field_to_array(name, values))
+        elif isinstance(space, Constant) or (isinstance(space, Values) and space.on == "cells"):
+            grid.GetCellData().AddArray(_field_to_array(name, field.values))
+    return grid

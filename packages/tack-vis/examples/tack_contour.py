@@ -12,6 +12,9 @@ Runs contour on two representations of the same curvilinear mesh:
 2. CellSetExplicitQuads — connectivity stored in arrays
 
 Both produce identical results, validating the abstraction.
+
+This shows how such an algorithm is built from scratch. The library's
+version, for any 2D mesh, is ``tack.data.contour``.
 """
 
 import sys

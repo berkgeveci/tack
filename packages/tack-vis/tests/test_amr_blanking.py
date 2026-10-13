@@ -1,4 +1,4 @@
-"""Tests for tack.algorithms.amr_blanking.
+"""Tests for tack.deprecated.algorithms.amr_blanking.
 
 build_masks marks two independent things in one i32 per cell: ghost cells
 (bit 0) copied from an AMReX ghost array, and coarse cells covered by a
@@ -9,7 +9,7 @@ goes wrong, so the tests drive both directly.
 
 import numpy as np
 
-from tack.algorithms.amr_blanking import (
+from tack.deprecated.algorithms.amr_blanking import (
     DUPLICATECELL,
     REFINEDCELL,
     build_masks,

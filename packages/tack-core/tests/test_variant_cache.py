@@ -311,3 +311,55 @@ def test_a_live_template_class_keeps_its_variant(backend):
     _scale_by_template(x, out, kept())
     np.testing.assert_array_equal(out.to_numpy(), np.full(4, 10.0, np.float32))
     assert len(slot) == 1
+
+
+# ── A template's fields: rank, not size ───────────────────────────────
+
+@tack.device_class
+class _Holds:
+    def __init__(self, values):
+        self.values = values
+
+    @tack.func
+    def get(self, i):
+        return self.values[i]
+
+    @tack.func
+    def at(self, i, j):
+        return self.values[i, j]
+
+
+@tack.kernel
+def _through_holder(h, out):
+    for i in range(out.shape[0]):
+        out[i] = h.get(i)
+
+
+@tack.kernel
+def _rows_through_holder(h, out):
+    for i in range(out.shape[0]):
+        out[i] = h.at(i, 1)
+
+
+def test_a_templates_field_length_does_not_specialize():
+    """A template holding a field compiled once per length of that field, every
+    time a filter's output changed size; only what the code bakes in counts."""
+    tack.init(arch=tack.cpu)
+    for n in (10, 20, 30):
+        out = tack.field(tack.i32, shape=(n,))
+        _through_holder(_Holds(tack.arange(n, tack.i32)), out)
+        np.testing.assert_array_equal(out.to_numpy(), np.arange(n))
+    assert _variant_count(_through_holder) == 1
+
+
+def test_a_dimension_a_template_bakes_in_still_specializes():
+    """values[i, j] bakes the row length in: each length is its own variant, and
+    each computes with its own."""
+    tack.init(arch=tack.cpu)
+    for cols in (3, 5):
+        values = tack.field(tack.i32, shape=(4, cols))
+        values.from_numpy(np.arange(4 * cols, dtype=np.int32).reshape(4, cols))
+        out = tack.field(tack.i32, shape=(4,))
+        _rows_through_holder(_Holds(values), out)
+        np.testing.assert_array_equal(out.to_numpy(), np.arange(4) * cols + 1)
+    assert _variant_count(_rows_through_holder) == 2

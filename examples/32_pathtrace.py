@@ -1,7 +1,8 @@
 """32 -- Path tracing: render an isosurface with global illumination.
 
-Extracts a gyroid isosurface using Flying Edges, then path traces it
-with the tack.rendering module.
+Extracts a gyroid isosurface with tack.data's contour, then path traces
+it with the tack.rendering module. The surface goes from one to the other
+on the device: the renderer reads the contour's own fields.
 
 Usage:
   uv run python examples/32_pathtrace.py
@@ -11,12 +12,13 @@ Usage:
 """
 
 import argparse
+import os
 import time
 
 import numpy as np
 
 import tack
-from tack.algorithms.flying_edges import UniformGrid, flying_edges
+import tack.data as td
 from tack.rendering import (
     Actor,
     Canvas,
@@ -43,37 +45,32 @@ tack.init(arch=_arch)
 # ================================================================
 
 @tack.kernel
-def compute_gyroid(scalar, grid: tack.template(), n_points):
-    for i in range(n_points):
-        ix = i % grid.nx_p1
-        iy = (i // grid.nx_p1) % grid.ny_p1
-        iz = i // grid.nxy_p1
-        x = grid.get_x(ix, iy, iz)
-        y = grid.get_y(ix, iy, iz)
-        z = grid.get_z(ix, iy, iz)
-        scalar[i] = sin(x) * cos(y) + sin(y) * cos(z) + sin(z) * cos(x)
+def compute_gyroid(xyz, scalar):
+    for p in range(scalar.shape[0]):
+        x = xyz.get(p)                      # the grid computes point p's position
+        scalar[p] = sin(x[0]) * cos(x[1]) + sin(x[1]) * cos(x[2]) + sin(x[2]) * cos(x[0])
 
 
 n = _args.grid_size
 domain = np.pi
-grid = UniformGrid(n, n, n,
-                   -domain, -domain, -domain,
-                   2 * domain / n, 2 * domain / n, 2 * domain / n)
-n_points = (n + 1) ** 3
-scalar = tack.field(dtype=tack.f32, shape=(n_points,))
-compute_gyroid(scalar, grid, n_points)
+grid = td.uniform_grid((n + 1, n + 1, n + 1), origin=(-domain, -domain, -domain),
+                       spacing=(2 * domain / n,) * 3)
+scalar = tack.field(dtype=tack.f32, shape=(grid.num_points,))
+compute_gyroid(grid.geometry.values, scalar)
+grid.fields["gyroid"] = td.Field(td.H1(grid), scalar)
 
 print(f"Extracting isosurface ({n}^3 grid)...")
 t0 = time.perf_counter()
-result = flying_edges(scalar, grid, 0.0)
-t_fe = time.perf_counter() - t0
+surface = td.contour(grid, "gyroid", 0.0)
+tack.sync()
+t_contour = time.perf_counter() - t0
 
-if result is None:
+if surface.num_cells == 0:
     print("No isosurface produced.")
     exit(1)
 
-print(f"  {result['total_points']:,} points, {result['total_tris']:,} triangles")
-print(f"  Flying Edges: {t_fe:.4f}s")
+print(f"  {surface.num_points:,} points, {surface.num_cells:,} triangles")
+print(f"  Contour: {t_contour:.4f}s")
 
 
 # ================================================================
@@ -83,7 +80,11 @@ print(f"  Flying Edges: {t_fe:.4f}s")
 w = h = _args.resolution
 
 scene = Scene()
-scene.add(Actor(result['points_field'], result['conn_field'],
+positions = surface.geometry.values              # 3-vectors, stored interleaved
+triangles = surface.topology.connectivity
+if triangles.dtype != tack.i32:                  # a very large surface keeps i64 ids
+    triangles = triangles.astype(tack.i32)
+scene.add(Actor(positions.reshape(positions.size), triangles,
                 color=(0.7, 0.85, 0.95), smooth=True))
 scene.add(PointLight(position=(8, 10, 6), intensity=200.0))
 
@@ -106,10 +107,11 @@ print(f"  Render: {t_render:.4f}s")
 
 # Save image
 img = canvas.to_numpy()
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
-    Image.fromarray(img).save("pathtrace_gyroid.png")
-    print("  Saved: pathtrace_gyroid.png")
+    Image.fromarray(img).save("results/pathtrace_gyroid.png")
+    print("  Saved: results/pathtrace_gyroid.png")
 except ImportError:
-    np.save("pathtrace_gyroid.npy", img)
-    print("  Saved: pathtrace_gyroid.npy (install Pillow for PNG)")
+    np.save("results/pathtrace_gyroid.npy", img)
+    print("  Saved: results/pathtrace_gyroid.npy (install Pillow for PNG)")

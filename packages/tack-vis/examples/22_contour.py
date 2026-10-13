@@ -16,9 +16,12 @@ Runs contour on two representations of the same curvilinear mesh:
 
 Both produce identical results, validating the abstraction.
 
+This shows how such an algorithm is built from scratch. The library's
+version, for any 2D mesh, is ``tack.data.contour``.
+
 Usage:
-  uv run python examples/22_contour.py
-  uv run python examples/22_contour.py --arch metal
+  uv run python packages/tack-vis/examples/22_contour.py
+  uv run python packages/tack-vis/examples/22_contour.py --arch metal
 """
 
 import argparse
@@ -430,7 +433,9 @@ if __name__ == "__main__":
                      fontsize=13, fontweight="bold")
         fig.subplots_adjust(top=0.88)
         import os
-        plt.savefig(os.path.join(os.path.dirname(__file__), "..", "results", "contour_result.png"), dpi=150, bbox_inches="tight")
+        results = os.path.join(os.path.dirname(__file__), "..", "results")
+        os.makedirs(results, exist_ok=True)
+        plt.savefig(os.path.join(results, "contour_result.png"), dpi=150, bbox_inches="tight")
         print("Saved contour_result.png")
         plt.show()
     except ImportError:

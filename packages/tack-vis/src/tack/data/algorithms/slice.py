@@ -1,0 +1,25 @@
+"""``slice``: where ``function`` (``tack.data.implicit``) is zero: a contour of its values on the geometry, carrying fields as ``contour`` does. ``slice_plane`` is this with a ``Plane``."""
+
+from tack.data.algorithms.contour import contour
+from tack.data.algorithms.implicit_values import implicit_values
+from tack.data.implicit import Plane
+
+__all__ = ['slice', 'slice_plane']
+
+
+def slice(data, function, merge_points=True, fields=None):
+    """Where ``function`` (``tack.data.implicit``) is zero: a contour of its values on
+    the geometry, carrying fields as ``contour`` does. ``slice_plane`` is this
+    with a ``Plane``."""
+
+    return contour(data, implicit_values(data, function), 0.0, merge_points=merge_points,
+                   fields=fields)
+
+
+def slice_plane(data, origin, normal, merge_points=True, fields=None):
+    """The cut of the 3D cells by the plane through ``origin`` with ``normal`` (any
+    length), as triangles: ``contour`` at zero of each position's signed distance
+    to the plane along ``normal``. The distance is computed in the geometry's own
+    space -- per point, or per cell corner for an ``L2`` geometry -- so the cut is
+    the cells' own. ``slice`` with a ``Plane``."""
+    return slice(data, Plane(origin, normal), merge_points=merge_points, fields=fields)

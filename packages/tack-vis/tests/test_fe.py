@@ -1,16 +1,16 @@
-"""Tests for tack.fe — finite element basis, accessor, geometry."""
+"""Tests for tack.deprecated.fe — finite element basis, accessor, geometry."""
 
 import numpy as np
 import pytest
 
 import tack
-from tack.fe.accessor import contiguous_from_numpy
-from tack.fe.basis import (
+from tack.deprecated.fe.accessor import contiguous_from_numpy
+from tack.deprecated.fe.basis import (
     QuadBasis,
     extract_gl_nodes_1d,
     precompute_basis_matrix_2d,
 )
-from tack.fe.geometry import linear_quad_map_from_numpy
+from tack.deprecated.fe.geometry import linear_quad_map_from_numpy
 
 np_fp = np.float64
 
@@ -33,7 +33,7 @@ def test_lagrange_1d_cardinal():
         for i in range(n):
             for j in range(n):
                 r = b.gl_nodes_1d[j]
-                val = tack.fe.basis.lagrange_1d(b.gl_nodes_1d, i, r, n)
+                val = tack.deprecated.fe.basis.lagrange_1d(b.gl_nodes_1d, i, r, n)
                 out[i * n + j] = val
 
     # Can't call tack.func from kernel with module path.
@@ -205,7 +205,7 @@ def test_dof_reordering():
 
 
 if __name__ == "__main__":
-    print("Testing tack.fe...")
+    print("Testing tack.deprecated.fe...")
     test_lagrange_1d_cardinal()
     test_quad_partition_of_unity()
     test_contiguous_accessor()

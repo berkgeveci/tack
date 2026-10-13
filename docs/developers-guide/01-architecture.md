@@ -103,14 +103,11 @@ packages/
 
     tack-vis/                     # Scientific visualization algorithms
         src/tack/
-            algorithms/          # Vis-specific algorithms
-                flying_edges.py  # FlyingEdges isosurface
-                compute_normals.py
-                cell_to_point.py
-                amr_blanking.py
-            data/                # Data abstractions (placeholder)
-                array_handle.py
-                cell_set.py
+            data/                # Datasets, spaces, views and their algorithms
+                algorithms/      # contour, clip, threshold, gradients, ... (one per file)
+            deprecated/          # Superseded by tack.data, kept for reference
+                algorithms/      # flying_edges, compute_normals, cell_to_point, amr_blanking
+                fe/              # Lagrange bases, geometry maps, accessors
             interop/             # External framework interop
                 vtk.py           # VTK ↔ Tack zero-copy exchange
 ```

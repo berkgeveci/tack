@@ -5,7 +5,7 @@ Tack has five ways to combine many values into a few:
 | Family | Entry points | Where it runs |
 |---|---|---|
 | [Field reductions](#field-reductions) | `field.sum()`, `.min()`, `.max()`, `.mean()` | Called from Python; the device or NumPy, depending on backend and dtype |
-| [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; kernels with atomic accumulators on the active backend |
+| [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; terms formed on the active backend and reduced as fields are |
 | [Prefix scans](#prefix-scans) | `exclusive_scan`, `inclusive_scan` (plus `copy`, `fill_value`) in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
 | [Sorting and segmented reductions](#sorting-and-segmented-reductions) | `argsort`, `sort_by_key`, `gather`, `unique`, `reduce_by_key` in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
 | [Block reductions](#block-reductions-inside-kernels) | `tack.block_sum`, `block_min`, `block_max` | Inside a kernel; GPU backends only |
@@ -112,23 +112,26 @@ These functions live in the `tack.algorithms` package, which `import tack`
 does not load. Import them as above, or `import tack.algorithms` before
 writing `tack.algorithms.var(...)`.
 
-Each one allocates a one-element accumulator, launches a kernel whose
-iterations combine into it with `tack.atomic_add` or `tack.atomic_max`, and
-reads the accumulator back with `to_numpy()`. `var` and `std` also call
-`data.sum()`, and `histogram` without `range` calls `data.min()` and
-`data.max()`, so they inherit the field-reduction host traffic described
-above.
+Each statistic forms its terms -- |x|, x², (x − mean)², a·b -- in a
+temporary field of the inputs' precision, f64 if any input is f64 and
+otherwise f32 (an integer input converts before any arithmetic), and
+reduces that field with `Field.sum()` or `Field.max()`. So the
+[field-reduction rules](#field-reductions) apply to them: their accuracy,
+repeatability and host traffic are those of field reductions.
+`count_nonzero` scans its 0/1 flags into `i64` on the device and reads only
+the total. `histogram` bins with `tack.atomic_add`, which gives exact
+counts in any order.
 
 ### What each function computes
 
 | Function | Accumulator | Returns | Notes |
 |---|---|---|---|
-| `var(data, n=None)` | `f32`, `atomic_add` | NumPy `float32` scalar | Mean is `data.sum() / n`, then Σ(x − mean)² / n |
+| `var(data, n=None)` | the data's precision, `Field.sum()` | Python `float` | Mean is `data.sum() / n`, then Σ(x − mean)² / n; NaN when empty |
 | `std(data, n=None)` | as `var` | Python `float` | `math.sqrt(var(data, n))` |
-| `norm(data, ord=2, n=None)` | `f32`; `atomic_add` for `ord` 1 and 2, `atomic_max` for infinity | Python `float` | `ord` must equal `1`, `2` or `float("inf")`; anything else raises `ValueError: Unsupported norm order` before any launch |
-| `absmax(data, n=None)` | `f32`, `atomic_max`, starting at `0.0` | Python `float` | |
-| `count_nonzero(data, n=None)` | `i32`, `atomic_add` | Python `int` | Tests `x != 0.0`: `-0.0` counts as zero, NaN as nonzero. Wraps past 2^31 − 1 |
-| `dot(a, b, n=None)` | `f32`, `atomic_add` | Python `float` | Σ a[i]·b[i] |
+| `norm(data, ord=2, n=None)` | the data's precision; `Field.sum()` for `ord` 1 and 2, `Field.max()` for infinity | Python `float` | `ord` must equal `1`, `2` or `float("inf")`; anything else raises `ValueError: Unsupported norm order` before any launch. `0.0` when empty |
+| `absmax(data, n=None)` | as `norm(data, float("inf"))` | Python `float` | `0.0` when empty; a NaN propagates, as in `Field.max()` |
+| `count_nonzero(data, n=None)` | `i64`, a scan of 0/1 flags | Python `int` | Tests `x != 0.0`: `-0.0` counts as zero, NaN as nonzero. Exact past 2^31 |
+| `dot(a, b, n=None)` | f64 if either input is f64, otherwise f32; `Field.sum()` | Python `float` | Σ a[i]·b[i]; `0.0` when empty |
 | `histogram(data, bins=10, range=None, n=None)` | `i32` per bin, `atomic_add` | `(counts, edges)`: an `i32` **field** of `bins` counts, still on the device, and a NumPy `float64` array of `bins + 1` edges | See below |
 
 **`n`** is the number of elements to read, in flat (row-major) order, so
@@ -282,6 +285,10 @@ the host, not the whole output.
   are left alone. `n` must be at most the size of both fields; a larger or
   negative `n` raises `ValueError`. `n = 0` writes nothing and returns `0`,
   the empty sum.
+- Returning the total means reading it to the host, which waits for the
+  device (on Metal, for every launch queued so far). A caller that needs
+  only the offsets passes `total=False`: the scan returns `None`, reads
+  nothing, and stays queued with whatever follows.
 - Each call allocates two fields of the output's dtype per level, the
   chunk totals and their offsets, one element per chunk: about `n / 128`
   elements in all on the CPU, `n / 1024` on GPUs, not a copy of the input.
@@ -329,7 +336,7 @@ field.
 ```python
 from tack.algorithms import argsort, gather, reduce_by_key, sort_by_key, unique
 
-perm = argsort(keys)                           # i32 field: keys[perm] ascending, stable
+perm = argsort(keys)                           # index field: keys[perm] ascending, stable
 skeys, svals = sort_by_key(keys, values)       # new fields, values carried along
 ukeys, counts = unique(skeys)                  # each distinct key once, and its run length
 ukeys, sums = reduce_by_key(skeys, svals)      # one value per distinct key; op="sum"|"min"|"max"
@@ -361,8 +368,9 @@ same bounds check as the scans: `n` past any field involved raises
 **stable**, so equal keys keep their original order, and `sort_by_key`'s
 values keep theirs. Values can be any dtype; they are gathered once by the
 final permutation, so `sort_by_key(keys, values)` costs an `argsort` plus
-two gathers. The permutation is `i32`, so at most 2^31 − 1 elements can be
-sorted at once.
+two gathers. The permutation is `i32` up to 2^31 − 1 elements and `i64`
+beyond; `argsort(keys, index_dtype=tack.i64)` asks for `i64` at any size,
+as a mesh with 64-bit ids does. `unique`'s counts follow the same rule.
 
 The implementation is a least-significant-digit radix sort over 8-bit
 digits, built from kernels and the exclusive scan. On the CPU, one thread

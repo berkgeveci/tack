@@ -10,7 +10,7 @@ import tempfile
 from pathlib import Path
 
 EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody", "isosurface",
-            "kernel_results", "array_sizes")
+            "kernel_results", "array_sizes", "datasets")
 QUICKSTARTS = (
     "01-getting-started", "12-execution-model", "14-vectors-and-matrices",
     "09-visualization", "10-rendering", "15-debugging-and-timing", "16-interoperability",
@@ -30,7 +30,7 @@ def check_quickstarts():
             if "import tack" not in code or "tack.init" not in code:
                 raise RuntimeError(f"The first Python example in {page.name} is not standalone")
             if name == "09-visualization":
-                code += '\nassert mesh is not None and mesh["total_tris"] > 0\n'
+                code += '\nassert surface.num_cells > 0 and surface.num_points > 0\n'
             if name == "01-getting-started":
                 code += '\nnp.testing.assert_array_equal(result, np.arange(n, dtype=np.float32) + 2)\n'
             script = Path(temporary) / f"{name}.py"

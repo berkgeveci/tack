@@ -14,7 +14,7 @@ Tack is split into 3 packages under `packages/`:
 
 All share the `tack` namespace via `pkgutil.extend_path`.
 
-**One catch worth knowing.** `extend_path` merges the *contents* of same-named directories, but only one `__init__.py` runs — the first found on the path. Both tack-core and tack-vis have a `tack/algorithms/` directory, so tack-core's `__init__.py` wins and is where the vis worklets are re-exported (guarded, so tack-core still works alone). Adding a second `algorithms/__init__.py` makes it dead code; `packages/tack-vis/tests/test_namespace.py` guards against that.
+**One catch worth knowing.** `extend_path` merges the *contents* of same-named directories, but only one `__init__.py` runs — the first found on the path. So only one package may ship a given `tack/<name>/` subpackage: `tack/algorithms/` is tack-core's alone (scan, sort, stats, copy). tack-vis's visualization algorithms are `tack.data.algorithms`; its first worklets (flying edges, normals, cell-to-point, AMR blanking) and `tack.fe` live in `tack.deprecated`, superseded by `tack.data` and kept for reference. `packages/tack-vis/tests/test_namespace.py` checks tack-vis ships no `tack/algorithms/`.
 
 ## Build & Test Commands
 
@@ -173,8 +173,12 @@ the open command buffer, committed every 64 launches with at most 4 in
 flight, and owns what it reads -- a fresh argument buffer, its packed
 scalars as `_Uniforms`, references to its fields until it completes. The
 host waits only when it touches field memory (every `MetalBuffer` method,
-reductions, texture uploads) or calls `tack.sync()`; bindings are resolved
-before an encoder opens, since committing an open encoder aborts. Memory
+reductions, texture uploads) or calls `tack.sync()`; `tack.zeros` takes a
+new buffer as Metal cleared it (`starts_zeroed`), without waiting. Bindings
+are resolved before an encoder opens, since committing an open encoder aborts. A
+buffer's host access waits for every live Metal backend (`_backends`,
+`_synchronize_all`), not the one it was made on: `tack.init` makes a new
+backend each call and earlier fields keep working on it. Memory
 handed outside Tack (DLPack, `export_memory`, `wrap_ptr`) is `_shared`: a
 launch using it completes before returning. Waiting after every launch cost
 about 0.3 ms each. `test_metal.py` covers order across batches, per-launch
@@ -407,6 +411,8 @@ The parallel loop must be a `for` directly in the kernel body, exactly once. Sta
 ### @tack.device_class templates
 
 Classes decorated with `@tack.device_class` can be passed as template arguments. A kernel defined in the class body binds the instance it is called on (`Kernel.__get__` returns a bound method), so `model.step(dt)` passes `model` as the first argument; template detection is by argument type, so nothing else changes. `template_func_methods` unwraps `@staticmethod` over `@tack.func`. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`. `for c in obj:` over a template is rewritten in `_KernelTemplateRewriter.visit_For` to `range` (one name in the class's `__tack_iterate__`) or to an `ndrange` over its names reversed, binding `c` to the index vector fastest first (`iteration_space`, `test_template_iteration.py`).
+
+A template may hold templates as attributes, to any depth (`self.base.get(k)`, `obj.base.step` in a kernel). `template_tree` lists the tree (cycles refused); `classify_template_attrs` flattens it, nested names joined by `__` (`base__step`), so expansion and vector detection are unchanged; `rewrite_templates` resolves chains through `_Node`s, every method of the tree taking the tree's synthetic parameters; a chain stops at the first non-template attribute (`self.data.shape[0]`). Nested paths and classes are in the cache key (`template_structure`) and their class tokens retire variants. `resolve_variant` runs in a `template_scope` that memoizes each object's tree, classification and key part for the call: walking a tree per use cost 20 us a level per dispatch, now about 8. Composed code inlines to what one would write by hand (identical optimized LLVM IR). See `test_nested_templates.py`.
 
 ### Integer floor division and remainder
 

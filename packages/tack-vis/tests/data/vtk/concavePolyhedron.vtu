@@ -1,0 +1,43 @@
+<?xml version="1.0"?>
+<VTKFile type="UnstructuredGrid" version="2.3" byte_order="LittleEndian">
+  <UnstructuredGrid>
+    <Piece NumberOfPoints="12" NumberOfCells="1">
+      <Points>
+        <DataArray type="Float64" Name="Points" NumberOfComponents="3" format="ascii">
+          0 0 0   5 0 0   5 1 0   1 1 0   1 7 0   0 7 0
+          0 0 1   5 0 1   5 1 1   1 1 1   1 7 1   0 7 1
+        </DataArray>
+      </Points>
+      <Cells>
+        <DataArray type="Int32" Name="connectivity" format="ascii">
+          0  1  2  3  4  5  6  7  8  9 10 11
+        </DataArray>
+        <DataArray type="Int32" Name="offsets" format="ascii">
+          12
+        </DataArray>
+        <DataArray type="UInt8" Name="types" format="ascii">
+          42
+        </DataArray>
+        <DataArray type="Int64" Name="face_connectivity" format="ascii">
+           0  1  2  3  4  5
+          11 10  9  8  7  6
+           1  0  6  7
+           0  5 11  6
+           2  1  7  8
+           3  2  8  9
+           4  3  9 10
+           5  4 10 11
+        </DataArray>
+        <DataArray type="Int64" Name="face_offsets" format="ascii">
+         6 12 16 20 24 28 32 36
+        </DataArray>
+        <DataArray type="Int64" Name="polyhedron_to_faces" format="ascii">
+          0 1 2 3 4 5 6 7
+        </DataArray>
+        <DataArray type="Int64" Name="polyhedron_offsets" format="ascii">
+          8
+        </DataArray>
+      </Cells>
+    </Piece>
+  </UnstructuredGrid>
+</VTKFile>

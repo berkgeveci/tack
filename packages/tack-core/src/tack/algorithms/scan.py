@@ -157,11 +157,13 @@ def _total(field, n):
     return result.to_numpy()[0].item()
 
 
-def _scan(src, dst, n, inclusive):
+def _scan(src, dst, n, inclusive, want_total=True):
     """Scan ``src`` into ``dst`` (which may be ``src``) in ``dst``'s dtype and return
     the total: chunk sums, then -- recursively -- their exclusive scan as the
     chunks' offsets, then each chunk's own running sums. A few launches per
-    level, and a level per factor of ``_CHUNK``."""
+    level, and a level per factor of ``_CHUNK``. Without ``want_total`` the
+    total is never read to the host, so nothing waits for the device; the
+    result is ``None``."""
     from tack.runtime.dispatch import get_backend
 
     tiles = get_backend().supports_workgroups
@@ -175,9 +177,9 @@ def _scan(src, dst, n, inclusive):
     offsets = tack.field(dtype=dst.dtype, shape=(nchunks,))
     if nchunks == 1:
         _zero_first(offsets)
-        total = _total(sums, 1)
+        total = _total(sums, 1) if want_total else None
     else:
-        total = _scan(sums, offsets, nchunks, inclusive=False)
+        total = _scan(sums, offsets, nchunks, inclusive=False, want_total=want_total)
     if tiles:
         _tile_apply(dst, offsets, n, nchunks, 1 if inclusive else 0)
     else:
@@ -185,7 +187,7 @@ def _scan(src, dst, n, inclusive):
     return total
 
 
-def exclusive_scan(input_field, output_field, n):
+def exclusive_scan(input_field, output_field, n, total=True):
     """Compute exclusive prefix sum on the active backend.
 
     output[i] = sum(input[0..i-1]), output[0] = 0.
@@ -198,21 +200,25 @@ def exclusive_scan(input_field, output_field, n):
         output_field: field for the output offsets.
         n: number of elements, at most either field's size. Zero writes
             nothing and returns 0.
+        total: whether to return the total. Reading it waits for the
+            device (on Metal, for every launch queued so far); a caller
+            that needs only the offsets passes ``total=False`` and gets
+            ``None``, and the scan stays queued.
 
     Returns:
         The total of all input elements in the output's dtype, as a Python
-        int or float.
+        int or float; ``None`` with ``total=False``.
     """
     n = _count(n, input_field, output_field)
     if n == 0:
         # Nothing to scan; the empty sum is 0, as for Field.sum().
-        return 0
+        return 0 if total else None
     # Scan in the output's dtype, as the inclusive scan does: an i32 work
     # buffer truncated float inputs and wrapped wider integers.
-    return _scan(input_field, output_field, n, inclusive=False)
+    return _scan(input_field, output_field, n, inclusive=False, want_total=total)
 
 
-def inclusive_scan(input_field, output_field, n):
+def inclusive_scan(input_field, output_field, n, total=True):
     """Compute inclusive prefix sum on the active backend.
 
     output[i] = sum(input[0..i]).
@@ -225,12 +231,13 @@ def inclusive_scan(input_field, output_field, n):
         output_field: field for the output sums.
         n: number of elements, at most either field's size. Zero writes
             nothing and returns 0.
+        total: whether to return the total; see ``exclusive_scan``.
 
     Returns:
         The total of all input elements in the output's dtype, as a Python
-        int or float.
+        int or float; ``None`` with ``total=False``.
     """
     n = _count(n, input_field, output_field)
     if n == 0:
-        return 0
-    return _scan(input_field, output_field, n, inclusive=True)
+        return 0 if total else None
+    return _scan(input_field, output_field, n, inclusive=True, want_total=total)

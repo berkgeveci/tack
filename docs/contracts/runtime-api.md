@@ -408,9 +408,9 @@ and returns only after the kernel completes.
 
 The CPU threading variables are tuning controls, not part of the language
 contract. They change scheduling and never change results of race-free
-programs. See [CPU Threading Policy](../design/cpu-threading.md). Two vis
-examples (`40_fe_isoline.py`, `41_fe_isosurface.py`) read a default
-`--arch` from `TACK_ARCH`.
+programs. See [CPU Threading Policy](../design/cpu-threading.md). Two
+deprecated vis examples (`deprecated/40_fe_isoline.py`,
+`deprecated/41_fe_isosurface.py`) read a default `--arch` from `TACK_ARCH`.
 
 ## Exceptions
 

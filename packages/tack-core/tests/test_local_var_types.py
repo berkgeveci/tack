@@ -53,7 +53,7 @@ def test_local_seeded_from_a_field_keeps_f64(f64_backend):
 def test_accumulator_seeded_from_a_literal_keeps_f64(f64_backend):
     """``total = 0.0`` widens to f64 once an f64 value is added.
 
-    This is the pattern in tack.algorithms.cell_to_point and in any
+    This is the pattern in tack.deprecated.algorithms.cell_to_point and in any
     hand-written reduction, so the precision loss was easy to hit and
     invisible — the output field was f64 and the values merely wrong in
     the low bits.

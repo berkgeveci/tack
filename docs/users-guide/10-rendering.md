@@ -148,9 +148,9 @@ scene = Scene()
 scene.add(Actor(mesh["points_field"], mesh["conn_field"], smooth=True))
 ```
 
-This avoids uploading the already-retained geometry fields. Flying edges still
-reads counts and downloads its NumPy results, as described in
-[Visualization](09-visualization.md#result-layout-and-empty-output).
+This avoids uploading the already-retained geometry fields. Flying edges, one of the
+[earlier algorithms](09-visualization.md#earlier-algorithms), still reads
+counts and downloads its NumPy results.
 Scene preparation and BVH construction operate on fields, while small material
 and light tables are prepared on the host. Final image readback is another
 explicit boundary. Describe these costs when measuring an end-to-end pipeline.

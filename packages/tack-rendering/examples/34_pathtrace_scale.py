@@ -2,6 +2,7 @@
 
 import argparse
 import math
+import os
 import time
 
 import numpy as np
@@ -108,7 +109,8 @@ for target in targets:
     print(f"Render: {t:.4f}s  (512x512, 4spp, 1 bounce)")
 
     img = canvas.to_numpy()
-    fname = f"pathtrace_{actual_tris // 1000}k.png"
+    fname = f"results/pathtrace_{actual_tris // 1000}k.png"
+    os.makedirs("results", exist_ok=True)
     try:
         from PIL import Image
         Image.fromarray(img).save(fname)

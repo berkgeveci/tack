@@ -1,6 +1,7 @@
 """40 -- Multiple colored lights illuminating a scene."""
 
 import argparse
+import os
 
 import numpy as np
 
@@ -89,9 +90,10 @@ render(canvas, scene, camera, samples=1, max_bounces=0)  # warmup
 render(canvas, scene, camera, samples=4, max_bounces=1)
 
 img = canvas.to_numpy()
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
-    Image.fromarray(img).save("pathtrace_multilights.png")
+    Image.fromarray(img).save("results/pathtrace_multilights.png")
     print("Saved: pathtrace_multilights.png")
 except ImportError:
     print("Install Pillow to save images: pip install Pillow")

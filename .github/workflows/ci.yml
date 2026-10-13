@@ -4,8 +4,9 @@
 #
 #   docs       — builds the site strictly; publishes it from main
 #   tests      — the suite on Python 3.11/3.12/3.13 (Linux, CPU backend)
+#   ids-i64    — the dataset tests again, every topology with 64-bit ids
 #   packaging  — proves a GPU install works without llvmlite
-#   examples   — runs all 49 shipped examples (deselected from the suite)
+#   examples   — runs all 51 shipped examples (deselected from the suite)
 #   metal      — the suite on an Apple Silicon runner, with a real GPU
 #
 # The runners have no NVIDIA or AMD GPU. That is less limiting than it
@@ -176,6 +177,23 @@ jobs:
       - name: Sync the workspace
         run: uv sync --extra cpu --extra dev
 
+      # VTK and MFEM (PyMFEM) are the references for tack.data: VTK for the
+      # cell shapes, faces and filters, MFEM for the derived topology, the
+      # spaces and order 2. One job is enough, and the wheels are large;
+      # TACK_REQUIRE_VTK and TACK_REQUIRE_MFEM make that job fail rather than
+      # skip if either is missing or will not import. `uv run` does not
+      # remove them: only `uv sync` makes the environment exact. PyMFEM pulls
+      # in numba, whose newest wants a newer llvmlite than the lock's, so
+      # llvmlite is pinned to the version the sync installed: Tack's CPU
+      # backend compiles with it.
+      - name: Install VTK and MFEM, the references for the dataset tests
+        if: matrix.python-version == '3.13'
+        run: |
+          llvmlite=$(uv run python -c "import importlib.metadata as m; print(m.version('llvmlite'))")
+          uv pip install vtk mfem "llvmlite==$llvmlite"
+          echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
+          echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
+
       - name: Check host compiler tooling
         run: >-
           uv run pytest -q -s packages/tack-core/tests/test_compiler_tools.py
@@ -197,6 +215,41 @@ jobs:
 
       - name: Run the suite
         run: uv run pytest -q
+
+  # ── 64-bit ids ─────────────────────────────────────────────────────
+  # tack.data keeps a topology's ids in i32 unless it is too large or asked
+  # for i64, and its kernels specialize on the id type -- so the i64 path is
+  # a second set of compiled kernels that only a huge mesh would reach.
+  # `--ids=i64` reruns the dataset tests with every topology built in i64,
+  # with VTK and MFEM present so the comparisons run too. Its own job: it
+  # repeats the whole dataset suite, which would crowd the main gate.
+  ids-i64:
+    name: dataset tests with 64-bit ids
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          enable-cache: true
+          cache-dependency-glob: "**/uv.lock"
+          python-version: "3.13"
+
+      - name: Sync the workspace
+        run: uv sync --extra cpu --extra dev
+
+      - name: Install VTK and MFEM, the references for the dataset tests
+        run: |
+          llvmlite=$(uv run python -c "import importlib.metadata as m; print(m.version('llvmlite'))")
+          uv pip install vtk mfem "llvmlite==$llvmlite"
+          echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
+          echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
+
+      - name: Run the dataset tests with i64 ids
+        run: uv run pytest -q --ids=i64 packages/tack-vis/tests
 
   # ── Packaging gate ─────────────────────────────────────────────────
   # tack-core's [cuda]/[metal]/[hip]/[level_zero] extras deliberately do not
@@ -249,9 +302,9 @@ jobs:
             packages/tack-core/tests/test_backend_isolation.py
 
   # ── Examples ───────────────────────────────────────────────────────
-  # The 49 shipped examples are the code new users copy, and they exercise
+  # The 51 shipped examples are the code new users copy, and they exercise
   # combinations the unit tests do not — templates feeding a path tracer,
-  # flying edges into a renderer. They are deselected from the default
+  # a contour into a renderer. They are deselected from the default
   # suite because the sweep takes about a minute against an 18-second
   # suite, so this is where they actually get run.
   #
@@ -286,9 +339,8 @@ jobs:
   # exactly. So this is a real gate, not an experiment — it is the only
   # job that exercises a GPU backend end to end.
   #
-  # If Metal ever becomes unavailable on the runners the tests skip
-  # themselves and this still passes, so a red here means a genuine Metal
-  # regression. The "backends available" line says which case you are in.
+  # Metal is required: an unavailable GPU must fail the job before pytest can
+  # quietly omit the hardware cases.
   metal:
     name: metal
     runs-on: macos-latest
@@ -329,5 +381,16 @@ jobs:
           print("backends available:", ", ".join(found) or "none")
           EOF
 
-      - name: Run the suite
-        run: uv run pytest -q
+      - name: Run the suite with Metal required
+        run: |
+          uv run python - <<'EOF'
+          import os
+          import pytest
+          import tack
+          from tack.runtime.dispatch import get_backend
+          os.environ.pop("TACK_NO_REINIT", None)
+          tack.init(arch=tack.metal)
+          assert get_backend().name == "metal"
+          print("Required hardware backend: metal", flush=True)
+          raise SystemExit(pytest.main(["-q", "-rs"]))
+          EOF

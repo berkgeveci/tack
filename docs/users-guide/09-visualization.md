@@ -1,167 +1,233 @@
-# Scientific visualization
+# Datasets and visualization
 
-`tack-vis` turns fields into geometric data and provides finite-element helpers
-and VTK array interoperability. Its algorithms are ordinary Tack kernels with
-Python orchestration; use the same backend initialization as for your own kernels.
+`tack.data` holds meshes and the fields on them, and the algorithms that work
+on both: contour, slice, clip, threshold, external faces, gradients,
+projections between spaces, streamlines and the rest. Like VTK and Viskores,
+it works on structured grids, unstructured meshes of the linear cells,
+polyhedra, polygons and polylines. Unlike them, the algorithms are ordinary
+Tack kernels, so they run on every backend, and the kernels you write
+yourself see a mesh the way the built-in ones do.
 
 ```bash
 pip install 'tack-core[cpu]' tack-vis
 ```
 
-For an illustrated complete pipeline, start with [Isosurface to image](tutorials/isosurface.md).
-The examples here explain the input layouts and return values you need when
-building your own pipeline.
+This chapter is a tour. The [Dataset API reference](../reference/dataset-api.md)
+has every class and algorithm, and what each topology supports.
 
-## Flying edges: a uniform-grid level set
-
-`flying_edges` extracts a triangle surface where node scalars cross an isovalue.
-`UniformGrid(nx, ny, nz, x0, y0, z0, dx, dy, dz)` describes **cell** dimensions,
-origin and spacing; the scalar input has `(nx + 1) * (ny + 1) * (nz + 1)` nodes.
-Store scalars flat with x varying fastest.
-
-This complete example generates a gyroid on a small grid:
+## Quick start
 
 ```python
 import tack
-from tack.algorithms.flying_edges import UniformGrid, flying_edges
+import tack.data as td
 
 tack.init(arch=tack.cpu)
-n = 16
-grid = UniformGrid(n, n, n, -3.14, -3.14, -3.14, 6.28 / n, 6.28 / n, 6.28 / n)
-scalar = tack.field(dtype=tack.f32, shape=((n + 1) ** 3,))
 
-@tack.kernel
-def gyroid(scalar, grid: tack.template(), count):
-    for idx in range(count):
-        i = idx % grid.nx_p1
-        j = (idx // grid.nx_p1) % grid.ny_p1
-        k = idx // grid.nxy_p1
-        x, y, z = grid.get_x(i, j, k), grid.get_y(i, j, k), grid.get_z(i, j, k)
-        scalar[idx] = sin(x) * cos(y) + sin(y) * cos(z) + sin(z) * cos(x)
-
-gyroid(scalar, grid, scalar.size)
-mesh = flying_edges(scalar, grid, isovalue=0.0)
-if mesh is not None:
-    print(mesh["total_points"], "vertices,", mesh["total_tris"], "triangles")
+data = td.wavelet(extent=10)                    # VTK's wavelet: 21^3 points
+surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
+print(surface.num_cells, "triangles,", surface.num_points, "points")
+print(td.statistics(data, "RTData")["mean"])
 ```
 
-`UniformGrid` is a device-class descriptor. Its dimensions, origin and spacing
-are instance attributes supplied to kernels as runtime parameters; field shapes
-used for indexing can still specialize the generated code.
+Every algorithm takes the dataset first and returns something new: a
+dataset, a field, or Python values. Nothing changes its input.
 
-### Result layout and empty output
+Fields passed to an algorithm belong to that dataset's topology. `dot`,
+`cross` and `composite` require matching value types; an explicit
+`td.Cast(field.values, tack.f32)` converts values when needed. Integer
+inputs to magnitude, logarithms and statistics compute in floating point.
 
-The result is a dictionary, or `None` when no surface is produced:
+## The model
 
-| Key | Value |
-|---|---|
-| `points` | NumPy `float32` coordinates, `(number_of_points, 3)` |
-| `conn` | NumPy `int32` triangles, `(number_of_triangles, 3)` |
-| `points_field` | Retained Tack `f32` field, flat interleaved XYZ |
-| `conn_field` | Retained Tack `i32` field, flat triangle vertex indices |
-| `total_points`, `total_tris` | Python counts |
-| `block_point_counts`, `block_tri_counts` | Counts for each input block |
+A `DataSet` is four things:
 
-Use the NumPy arrays for export to a CPU library. Use the retained fields for
-Tack normal calculation or rendering. Always handle `None` before accessing keys.
+| Part | What it is | Example |
+|---|---|---|
+| `topology` | the cells and how they connect | `UnstructuredTopology`, `StructuredTopology`, `PolyhedralTopology` |
+| `geometry` | where the points are: a field of 3-vectors | positions per point, or the implicit coordinates of a grid |
+| `fields` | named fields, each a *space* and its values | `Field(H1(data), values)` |
+| `sets` | named selections of points, cells or faces | the boundary faces |
 
-The current algorithm reads per-row counts to the host and constructs prefix
-sums with NumPy. It also downloads the output geometry for the NumPy result keys.
-Retained fields avoid another geometry upload at the next Tack stage, but
-extraction is not a pipeline without host transfers.
+A *space* says where a field's values live and how they are read between
+them. `H1` is point data, continuous and interpolated in each cell;
+`Constant` is cell data; `L2` holds each cell's own corner values, a
+discontinuous field. `Values(data, on)` is data about points, edges, faces or
+cells with no interpolation. A field's values are a `tack.field`, a
+`tack.Vector.field`, or an implicit array that computes them on demand: a
+grid's coordinates take no memory.
 
-### Multiple blocks
+Geometry may also live in L2, giving each cell its own positions. Contour and
+slice preserve the resulting gaps; clipping requires shared H1 geometry.
+Changing an L2 geometry's values refreshes subsequent face-geometry results.
 
-`flying_edges_multiblock` takes a list of dictionaries:
+## Building a dataset
+
+Grids come from `uniform_grid` and `rectilinear_grid`, and the test sources
+from `wavelet` and `tangle`. An unstructured mesh takes VTK's cell types,
+offsets and connectivity:
 
 ```python
-from tack.algorithms.flying_edges import flying_edges_multiblock
-
-blocks = [
-    {"scalar": scalar_a, "grid": grid_a},
-    {"scalar": scalar_b, "grid": grid_b},
-]
-mesh = flying_edges_multiblock(blocks, isovalue=0.0)
+--8<-- "docs/examples/datasets.py:build"
 ```
 
-Each block may also provide an `i32` cell `mask`, with nonzero entries suppressing
-cells. An omitted mask is filled with zeros. Outputs occupy unified fields with
-per-block offsets; vertices are not welded between independently processed blocks.
-For AMR data, appropriate cell blanking is needed to avoid extracting overlapping
-coarse/refined regions. See Tack's [multiblock example](https://github.com/berkgeveci/tack/blob/main/packages/tack-vis/examples/31_multiblock_flying_edges.py).
+The other topologies are built from their own arrays:
+- `PolyhedralTopology.from_cell_faces` takes each cell's faces as VTK and
+  most readers give them;
+- `PolygonalTopology` takes each polygon's loop of points;
+- `PolylineTopology` takes each polyline's chain.
 
-## Vertex normals
+`vtk_to_dataset` and `tack.interop.mfem` bring datasets in from VTK and MFEM.
 
-For a nonempty result:
+## Algorithms
+
+Every algorithm is in `tack.data.algorithms`, re-exported from `tack.data`,
+and they share one set of conventions:
+
+- the dataset comes first;
+- a field argument is a `Field` or the name of one of the dataset's fields;
+- an algorithm that makes a dataset takes `fields=` (all by default, a name,
+  a list, or `[]`) and carries those fields onto its output;
+- one that computes a field returns a `Field`, or a named tuple of them;
+- summaries (`statistics`, `entropy`) return Python values.
 
 ```python
-from tack.algorithms.compute_normals import compute_normals
-
-normals = compute_normals(mesh["points_field"], mesh["conn_field"],
-                          mesh["total_points"], mesh["total_tris"])
+--8<-- "docs/examples/datasets.py:pipeline"
 ```
 
-This returns flat interleaved `f32` normal components in a Tack field. One kernel
-atomically accumulates area-weighted face normals at their vertices; another
-normalizes them. The output stays in a field. For convenience, an `Actor` can
-compute these normals when created with `smooth=True`.
+Fields come along by how the output's entities come from the input's. Point
+data is interpolated onto a contour's points, and cell data goes to the
+pieces each cell was cut into. A kept cell keeps its values.
 
-## Cell-centred values to grid nodes
+## Moving fields between spaces
 
-`cell_to_point` averages adjacent cell values on a **uniform structured grid**;
-it does not take an arbitrary connectivity array:
+`project(data, field, space)` gives a field in another space of the same
+mesh. `to_points`, `to_cells` and `discontinuous` are shortcuts for it.
 
 ```python
-from tack.algorithms.cell_to_point import cell_to_point
-
-# cell_data is flat, x-fast, with nx * ny * nz values.
-point_data = cell_to_point(cell_data, nx, ny, nz)
+--8<-- "docs/examples/datasets.py:spaces"
 ```
 
-The output has `(nx + 1) * (ny + 1) * (nz + 1)` values and preserves the input's
-`f32` or `f64` dtype, within backend support. Interior nodes average eight cells;
-faces, edges and corners use fewer. This is a common preparation step before
-contouring cell-centred simulation output. For the reverse averaging direction,
-see the [point-to-cell example](https://github.com/berkgeveci/tack/blob/main/packages/tack-vis/examples/25_point_to_cell.py).
+Projecting into a space that can hold the field exactly gives it back
+exactly: a linear point field into `L2`, or into order-2 `H1`. Otherwise
+`project` averages the way VTK does: a point takes the mean of the cells
+around it, and a cell the mean of its corners.
 
-## Finite-element fields
+## Sets
 
-The `tack.fe` module supplies Lagrange bases, geometry maps and accessors for
-contiguous or gathered degrees of freedom. Finite-element sampling is distinct
-from interpolating values on a uniform Cartesian grid: basis functions map
-parametric cell coordinates to the field and geometry.
+A `Set` selects points, cells or faces. Builders such as `boundary_faces`
+return one; name it in `data.sets` to keep it. Filters carry sets the way
+they carry fields:
 
-The [FE isoline example](https://github.com/berkgeveci/tack/blob/main/packages/tack-vis/examples/40_fe_isoline.py)
-and [FE isosurface example](https://github.com/berkgeveci/tack/blob/main/packages/tack-vis/examples/41_fe_isosurface.py)
-show complete setups. They are good next steps after understanding grid layout,
-templates and local-array scratch storage. Tack does not yet offer every cell
-and filter of a general VTK-like dataset API.
+```python
+--8<-- "docs/examples/datasets.py:sets"
+```
+
+The name of a cell or face set is also a place to run a kernel, as the next
+section shows.
+
+## Writing your own algorithm
+
+`for_each(kernel, data, domain, *args)` runs a kernel over `"cells"`,
+`"faces"`, `"edges"` or a named set. A mesh may mix shapes, so it runs the
+kernel once per shape. Each launch gets that shape's *view* of the cells,
+and every `Field` argument becomes its view for the same cells. The kernel
+is compiled for each shape, so a hexahedron's loop knows it has eight
+corners.
+
+```python
+--8<-- "docs/examples/datasets.py:kernel"
+```
+
+A view's methods follow one naming rule per kind of answer, so a name says
+what comes back:
+
+| Ends in | Gives | Examples |
+|---|---|---|
+| `_id` | a global id | `entity_id(c)`, `point_id(c, j)`, `face_id(c, k)`, `side_point_id(c, k, j)` |
+| `_position` | a position | `position(c, pc)`, `corner_position(c, j)`, `side_position(c, k, j)` |
+| `_corner` | a shape's local corner number | `edge_corner(e, k)`, `face_corner(f, k)` |
+| `num_` (prefix) | a count | `num_points`, `num_faces(c)`, `side_num_points(c, k)` |
+
+A field view gives `value(c, pc)` at parametric coordinates,
+`parametric_gradient(c, pc)` and `corner_value(c, j)`.
+
+Face-based kernels walk each cell's faces outward, and the same code serves
+every kind of cell. They need the faces, which are derived on first use, so
+ask for them before the launch:
+
+```python
+--8<-- "docs/examples/datasets.py:faces"
+```
+
+## Polyhedra, polygons and lines
+
+A polyhedral cell has no reference element: no shape functions and no
+parametric coordinates. Algorithms that need one (gradients, probing,
+advection) refuse a polyhedral mesh and say so. The ones that work from
+points and faces run on both kinds: contour (by López's face walk), slice,
+threshold, external faces, cell and face geometry, divergence, and moving
+data between points and cells. A 2D mesh contours into lines, and
+streamlines are polylines, one per seed:
+
+```python
+--8<-- "docs/examples/datasets.py:lines"
+```
+
+The [reference](../reference/dataset-api.md#algorithms-and-filters) has a
+table of which algorithm runs on which topology.
+
+## 64-bit ids
+
+A topology keeps its ids in `i32` unless it is too large or asked for `i64`
+(`id_dtype=tack.i64`). Kernels specialize on the id type, so a small mesh
+pays nothing for large ones. VTK's 64-bit ids come in as the narrowest type
+that holds them.
+
+## Rendering a result
+
+`tack.rendering` draws triangles from flat point and connectivity fields. A
+field of 3-vectors is stored interleaved, so `reshape` gives that flat view
+without a copy:
+
+```python
+--8<-- "docs/examples/datasets.py:render"
+```
+
+![The wavelet's isosurface at 157, colored by height](../assets/datasets-contour.png)
+
+The whole example is [`docs/examples/datasets.py`](../examples/datasets.py).
+`--check` runs its assertions, and `--output image.png` saves the picture.
 
 ## VTK interop
 
-`tack.interop.vtk` exchanges compatible VTK arrays and fields through DLPack:
+`tack.interop.vtk` converts whole datasets:
+- `vtk_to_dataset` reads a `vtkUnstructuredGrid`, `vtkRectilinearGrid` or
+  `vtkImageData`, including polyhedra and polylines;
+- `dataset_to_vtk` writes the matching VTK type back.
 
 ```python
-from tack.interop.vtk import vtk_to_field, field_to_vtk
+from tack.interop.vtk import dataset_to_vtk, vtk_to_dataset
+
+data = vtk_to_dataset(grid)               # point data -> H1, cell data -> Constant
+grid = dataset_to_vtk(td.contour(data, "pressure", 0.5))
+```
+
+Arrays exchange through DLPack, sharing storage where the device allows:
+
+```python
+from tack.interop.vtk import field_to_vtk, vtk_to_field
 
 field = vtk_to_field(vtk_array)
 vtk_array = field_to_vtk(field)
 ```
 
 VTK's tuples and components become a field shape: a `(1000, 3)` scalar field
-represents 1000 tuples with three components. Flying edges and normal calculation
-instead use flat interleaved fields; specify that representation explicitly:
-
-```python
-points = vtk_to_field(vtk_points_array, flatten=True)
-vtk_array = field_to_vtk(points, n_components=3)
-```
-
-This requires a VTK build exposing `vtkmodules.util.dlpack_support`. Compatible
-host/device arrays can share storage; device/context support still matters, and
-not every VTK installation provides device arrays. See
-[Sharing arrays with other libraries](16-interoperability.md) for lifetime and
-read-only rules.
+represents 1000 tuples of three components. `vtk_to_field(array,
+flatten=True)` and `field_to_vtk(field, n_components=3)` use the flat
+interleaved layout instead. This requires a VTK build exposing
+`vtkmodules.util.dlpack_support`. Not every VTK installation provides device
+arrays. See [Sharing arrays with other libraries](16-interoperability.md) for
+lifetime and read-only rules.
 
 ### Level Zero
 
@@ -178,3 +244,14 @@ The VTK DLPack support must provide `level_zero_handles()`. Fields created in a
 separate Tack context cannot be exchanged through this path. For another library,
 `tack.init(arch=tack.level_zero, external_context={"driver": ..., "device": ...,
 "context": ...})` adopts its context; Tack never destroys an adopted context.
+
+## Earlier algorithms
+
+The first vis worklets, `flying_edges`, `compute_normals`, `cell_to_point`
+and `amr_blanking`, and the finite-element helpers in `tack.fe` are kept
+for reference in `tack.deprecated`. `tack.data` supersedes them:
+- `contour` replaces `flying_edges`;
+- `to_points` replaces `cell_to_point`;
+- `gradients` and `project` replace the finite-element helpers.
+
+Some examples still use the old modules until they are ported.

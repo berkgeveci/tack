@@ -401,6 +401,28 @@ def test_host_writes_wait_for_the_launches_before_them():
     np.testing.assert_array_equal(acc.to_numpy(), 102 + np.arange(64))
 
 
+@tack.kernel
+def _record_value(value: tack.template(), out: tack.template(), k: int, n: int):
+    for i in range(n):
+        out[k * n + i] = value[None] + 0.0 * float(i)
+
+
+def test_host_writes_wait_after_tack_init_runs_again():
+    """A field made before another tack.init is still written by the host and
+    read by launches, which now queue on the new backend: the host's write has
+    to wait for those, not for its first backend's (empty) queue. mpm128 in
+    tack-examples rewrote its gravity under queued launches that way, 299 of
+    300 launches here reading a later value."""
+    value = tack.field(tack.f32, shape=())
+    tack.init(arch=tack.metal)
+    n, steps = 4096, 300
+    out = tack.field(tack.f32, shape=(steps * n,))
+    for k in range(steps):
+        value.fill(float(k))
+        _record_value(value, out, k, n)
+    np.testing.assert_array_equal(out.to_numpy().reshape(steps, n)[:, 0], np.arange(steps))
+
+
 def test_sync_waits_for_queued_launches():
     acc = tack.zeros(tack.i32, (64,))
     _add_into(acc, 5)
@@ -410,6 +432,34 @@ def test_sync_waits_for_queued_launches():
     backend = get_backend()
     assert backend._open is None and not backend._committed
     np.testing.assert_array_equal(acc._buffer._view, 5 + np.arange(64))
+
+
+def test_zeros_do_not_wait_for_queued_launches(monkeypatch):
+    """A new buffer is already zero and no queued launch can use it, so
+    ``tack.zeros`` neither fills it nor waits: waiting cost a GPU round trip
+    per call, most of a small filter's time on Metal."""
+    from tack.runtime import metal
+
+    @tack.kernel
+    def dirty(a: tack.template()):
+        for i in range(a.shape[0]):
+            a[i] = 7
+
+    a = tack.field(tack.i32, shape=(1000,))
+    dirty(a)
+    waits = []
+    monkeypatch.setattr(metal.MetalBackend, "synchronize",
+                        lambda self, _real=metal.MetalBackend.synchronize:
+                        (waits.append(self), _real(self)))
+    z = tack.zeros(tack.i32, (1000,))
+    assert not waits
+    monkeypatch.undo()
+    assert not z.to_numpy().any()
+    np.testing.assert_array_equal(a.to_numpy(), np.full(1000, 7))
+    # Other fills still wait, since the field may be in use.
+    dirty(a)
+    a.fill(3)
+    np.testing.assert_array_equal(a.to_numpy(), np.full(1000, 3))
 
 
 def test_new_fields_are_zero():

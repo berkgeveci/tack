@@ -104,7 +104,7 @@ nav:
       - Reductions and Scans: users-guide/11-reductions-and-scans.md
       - Backends: users-guide/08-backends.md
       - Sharing Arrays: users-guide/16-interoperability.md
-      - Visualization: users-guide/09-visualization.md
+      - Datasets and Visualization: users-guide/09-visualization.md
       - Rendering: users-guide/10-rendering.md
       - Debugging and Timing: users-guide/15-debugging-and-timing.md
       - Worked Examples:
@@ -127,6 +127,8 @@ nav:
       - CPU Threading Policy: design/cpu-threading.md
       - Backend Implementations: design/backend-implementations.md
       - Interoperability: design/interoperability.md
+      - Dataset API: design/dataset-api.md
+      - Polyhedra: design/polyhedra.md
   - Contracts:
       - contracts/index.md
       - Kernel Language Contract: reference/language-contract.md
@@ -146,6 +148,7 @@ nav:
   - Reference:
       - Backends: reference/backends.md
       - API: reference/api.md
+      - Dataset API: reference/dataset-api.md
       - Performance: performance.md
 
 extra:

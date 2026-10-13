@@ -1,6 +1,7 @@
 """35 -- Close-up of 1M triangle sphere to inspect sampling patterns."""
 
 import argparse
+import os
 import time
 
 import numpy as np
@@ -102,9 +103,10 @@ t = time.perf_counter() - t0
 print(f"Render: {t:.4f}s  (1024x1024, {_args.samples}spp, {_args.bounces} bounces)")
 
 img = canvas.to_numpy()
+os.makedirs("results", exist_ok=True)
 try:
     from PIL import Image
-    Image.fromarray(img).save("pathtrace_closeup.png")
+    Image.fromarray(img).save("results/pathtrace_closeup.png")
     print("Saved: pathtrace_closeup.png")
 except ImportError:
     pass
