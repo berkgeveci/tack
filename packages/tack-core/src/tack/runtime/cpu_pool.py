@@ -11,8 +11,9 @@ Here the fan-out is one ctypes call. The pool is a small program in LLVM
 IR, built with ``llvmlite.ir`` (no C compiler, no binary wheel) and JIT'd
 beside the kernels: ``N - 1`` detached pthreads wait for a generation
 counter to change, spinning for a while and then sleeping -- on a futex
-on Linux, woken by ``pool_run`` only when one of them sleeps; elsewhere in
-``nanosleep`` polls that back off to a millisecond; ``pool_run`` splits
+on Linux and on ``os_sync_wait_on_address`` on macOS 14.4+, woken by
+``pool_run`` only when one of them sleeps; elsewhere in ``nanosleep``
+polls that back off to a millisecond; ``pool_run`` splits
 ``[start, end)`` into ``N`` chunks
 exactly as the Python path does, bumps the counter, runs the last chunk on
 the calling thread, and waits for the others. The workers never touch
@@ -64,6 +65,16 @@ SLEEP_MAX_NS = 1_000_000
 # number is the architecture's; elsewhere the workers poll.
 _SYS_FUTEX = {"x86_64": 202, "amd64": 202, "aarch64": 98, "arm64": 98}
 _FUTEX_WAIT_PRIVATE, _FUTEX_WAKE_PRIVATE = 128, 129
+# macOS has no futex; since 14.4 it has the equivalent, public
+# `os_sync_wait_on_address` / `os_sync_wake_by_address_all`. Polling
+# instead cost up to a millisecond per launch on an M1 Max: an idle
+# worker's `nanosleep` had backed off to 1 ms, every launch waited for
+# the slowest sleeper, and the policy, measuring a 1 ms fan-out, kept
+# mid-size launches serial. The pool program calls one or the other
+# (it is built per process); `futex_nr` nonzero selects blocking at run
+# time, zero the polling fallback.
+_DARWIN = platform.system() == "Darwin"
+_WAIT_ON_ADDRESS_NONE = 0
 
 _i8, _i32, _i64 = ir.IntType(8), ir.IntType(32), ir.IntType(64)
 _ptr = _i8.as_pointer()
@@ -128,6 +139,30 @@ def _pool_module() -> ir.Module:
     nanosleep = ir.Function(m, ir.FunctionType(_i32, [_ptr, _ptr]), "nanosleep")
     clock_gettime = ir.Function(m, ir.FunctionType(_i32, [_i32, _ptr]), "clock_gettime")
     syscall = ir.Function(m, ir.FunctionType(_i64, [_i64], var_arg=True), "syscall")
+    if _DARWIN:
+        # int os_sync_wait_on_address(void *addr, uint64_t value, size_t size, flags)
+        # int os_sync_wake_by_address_all(void *addr, size_t size, flags)
+        wait_on_address = ir.Function(m, ir.FunctionType(_i32, [_ptr, _i64, _i64, _i32]),
+                                      "os_sync_wait_on_address")
+        wake_by_address = ir.Function(m, ir.FunctionType(_i32, [_ptr, _i64, _i32]),
+                                      "os_sync_wake_by_address_all")
+
+    def block_on(b, nr, last):
+        """Block until `gen` changes from `last` (the caller has checked it
+        still equals `last` under a fence)."""
+        if _DARWIN:
+            b.call(wait_on_address, [b.bitcast(gen, _ptr), b.zext(last, _i64), _i64(4),
+                                     _i32(_WAIT_ON_ADDRESS_NONE)])
+        else:
+            b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAIT_PRIVATE),
+                             b.sext(last, _i64), _i64(0), _i64(0), _i64(0)])
+
+    def wake_all(b, nr):
+        if _DARWIN:
+            b.call(wake_by_address, [b.bitcast(gen, _ptr), _i64(4), _i32(_WAIT_ON_ADDRESS_NONE)])
+        else:
+            b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAKE_PRIVATE),
+                             _i64(0x7fffffff), _i64(0), _i64(0), _i64(0)])
     memset = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr, _i8, _i64, ir.IntType(1)]),
                          "llvm.memset.p0.i64")
 
@@ -215,8 +250,7 @@ def _pool_module() -> ir.Module:
                 b.fence("seq_cst")
                 last = b.load(seen)
                 with b.if_then(b.icmp_signed("==", b.load_atomic(gen, "seq_cst", 4), last)):
-                    b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAIT_PRIVATE),
-                                     b.sext(last, _i64), _i64(0), _i64(0), _i64(0)])
+                    block_on(b, nr, last)
                 b.atomic_rmw("sub", sleepers, _i32(1), "seq_cst")
             with poll:
                 b.call(nanosleep, [b.bitcast(ts, _ptr), ir.Constant(_ptr, None)])
@@ -305,6 +339,12 @@ def _pool_module() -> ir.Module:
     chunk = b.select(b.icmp_signed("<", chunk, _i64(1)), _i64(1), chunk)
     b.store(chunk, cur_chunk)
     b.store(b.trunc(b.sdiv(b.add(total, b.sub(chunk, _i64(1))), chunk), _i32), n_chunks)
+    # Workers past `active` clear their own slots; slot n - 1 belongs to the
+    # caller only when every thread is active, so clear it here otherwise.
+    last = b.sub(b.load(n), _i32(1))
+    with b.if_then(b.icmp_signed("<", k_arg, b.load(n))):
+        b.store(_i64(0), b.gep(spans, [_i32(0), last]))
+        b.store(_i64(0), b.gep(elems, [_i32(0), last]))
     b.store_atomic(_i32(0), next_chunk, "monotonic", 4)
     b.store_atomic(_i32(0), done, "monotonic", 4)
     b.atomic_rmw("add", gen, _i32(1), "seq_cst")
@@ -312,8 +352,7 @@ def _pool_module() -> ir.Module:
     nr = b.load(futex_nr)
     asleep = b.icmp_signed(">", b.load_atomic(sleepers, "seq_cst", 4), _i32(0))
     with b.if_then(b.and_(b.icmp_signed("!=", nr, _i64(0)), asleep)):
-        b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAKE_PRIVATE),
-                         _i64(0x7fffffff), _i64(0), _i64(0), _i64(0)])
+        wake_all(b, nr)
     b.call(run_chunk, [b.sub(k_arg, _i32(1))])
     wait = run.append_basic_block("wait")
     spin_bb = run.append_basic_block("spin")
@@ -367,15 +406,56 @@ def _available_cpus() -> int:
     try:
         return len(os.sched_getaffinity(0))
     except AttributeError:                 # not Linux
-        return os.cpu_count() or 1
+        return _performance_cores() or os.cpu_count() or 1
+
+
+def _performance_cores() -> int | None:
+    """Apple silicon's performance cores (`hw.perflevel0.physicalcpu`), the
+    count the CPU backend defaults to; None elsewhere. A pool of
+    `os.cpu_count()` on an 8+2 machine had two workers more than any launch
+    used, which every launch still woke and waited for."""
+    if not _DARWIN:
+        return None
+    try:
+        libc = ctypes.CDLL(None)
+        value = ctypes.c_int(0)
+        length = ctypes.c_size_t(ctypes.sizeof(value))
+        if libc.sysctlbyname(b"hw.perflevel0.physicalcpu", ctypes.byref(value),
+                             ctypes.byref(length), None, ctypes.c_size_t(0)) == 0:
+            return value.value or None
+    except (OSError, AttributeError):
+        pass
+    return None
+
+
+def _blocking_available() -> bool:
+    """Whether the pool can block rather than poll on this host."""
+    if platform.system() == "Linux":
+        return platform.machine().lower() in _SYS_FUTEX
+    if _DARWIN:
+        try:
+            libc = ctypes.CDLL(None)
+            return bool(libc.os_sync_wait_on_address and libc.os_sync_wake_by_address_all)
+        except (OSError, AttributeError):
+            return False
+    return False
 
 
 def _register_libc_symbols():
     """MCJIT resolves the pool's libc calls through these, so it does not
     depend on how the process exports them."""
     libc = ctypes.CDLL(None)
-    for name in ("pthread_create", "pthread_detach", "nanosleep", "clock_gettime", "syscall"):
-        llvm.add_symbol(name, ctypes.cast(getattr(libc, name), ctypes.c_void_p).value)
+    names = ["pthread_create", "pthread_detach", "nanosleep", "clock_gettime", "syscall"]
+    if _DARWIN:
+        names += ["os_sync_wait_on_address", "os_sync_wake_by_address_all"]
+    for name in names:
+        try:
+            address = ctypes.cast(getattr(libc, name), ctypes.c_void_p).value
+        except AttributeError:
+            # macOS before 14.4: the pool program still names them, so give
+            # the JIT an address; `futex_nr` stays 0 and they are never called.
+            address = ctypes.cast(libc.getpid, ctypes.c_void_p).value
+        llvm.add_symbol(name, address)
 
 
 class CPool:
@@ -401,8 +481,12 @@ class CPool:
         self._get_elems = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_elems"))
         self.zero_chunk = addr("tack_pool_zero_chunk")
         spin = int(os.environ.get("TACK_CPU_POOL_SPIN", SPIN_ITERATIONS))
-        futex = _SYS_FUTEX.get(platform.machine().lower(), 0) \
-            if platform.system() == "Linux" else 0
+        if not _blocking_available():
+            futex, self.waiter = 0, "poll"
+        elif _DARWIN:
+            futex, self.waiter = 1, "wait_on_address"   # any nonzero: block
+        else:
+            futex, self.waiter = _SYS_FUTEX[platform.machine().lower()], "futex"
         if self._start(threads, spin, time.CLOCK_MONOTONIC, SLEEP_NS, SLEEP_MAX_NS,
                        futex, GRAIN) != 0:
             raise RuntimeError(f"could not start a pool of {threads} threads")

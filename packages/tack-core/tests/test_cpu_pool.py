@@ -9,6 +9,7 @@ import os
 import platform
 import subprocess
 import sys
+import time
 
 import numpy as np
 import pytest
@@ -221,6 +222,28 @@ def test_the_pool_builds_in_a_fresh_process():
                          text=True, env=env, timeout=120)
     assert run.returncode == 0, run.stderr
     assert run.stdout.strip() == "jit", run.stderr
+
+
+def test_idle_workers_block_rather_than_poll(monkeypatch):
+    """On Linux (futex) and macOS 14.4+ (os_sync_wait_on_address) a sleeping
+    worker is woken by the launch, not by its own poll timer: polling cost
+    up to 1 ms per launch on an M1 Max and made the policy under-thread."""
+    backend = _fresh_backend(2, monkeypatch)
+    pool = backend._jit_pool()
+    assert pool is not None
+    if platform.system() == "Linux":
+        assert pool.waiter == "futex"
+    elif platform.system() == "Darwin" and tuple(map(int, platform.mac_ver()[0].split(".")[:2])) >= (14, 4):
+        assert pool.waiter == "wait_on_address"
+    else:
+        assert pool.waiter == "poll"
+    # And it still runs every element once after the workers have slept.
+    time.sleep(0.05)
+    n = 100_000
+    out = tack.zeros(tack.i64, (n,))
+    compiled, prefix, _ = _compiled(backend, _number, [out])
+    backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
+    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
 
 
 def test_a_pool_that_cannot_be_made_falls_back(monkeypatch):
