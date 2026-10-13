@@ -41,6 +41,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   several branches, takes the kernel's float precision, as a float scalar
   argument does: f64 when a field is f64. f32 kernels are unchanged.
 
+- On CUDA, negating an i8 or i16 value (`-x`, `abs(x)`) and then widening
+  it keeps the wrapped result: `-(-32768)` in i16 widens to −32768. On
+  drivers before CUDA 13.3 it widened to 32768. NVIDIA's PTX assembler,
+  which those drivers run on Tack's PTX, drops the sign extension after a
+  16-bit `neg` or `abs`, on every architecture; ptxas 13.3 fixed it. The
+  CUDA generator now negates i8 and i16 values with a 32-bit inline-PTX
+  subtraction, so no 16-bit negation reaches the driver.
+
 ### Performance changes users may notice
 
 - A kernel's parallel loop over a two- or three-dimensional
@@ -67,6 +75,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - An `ndrange` whose sizes are both negative (`ndrange(-3, -4)`) runs no
   iterations. Their product is positive, and the loop ran 12 iterations
   with negative indices.
+- On CUDA with NVRTC 12.0, compiling a kernel no longer changes the
+  calling thread's locale. NVRTC 12.0 left the thread in the C locale, so
+  from the first compile on Python's default text encoding was ASCII, and
+  `open`, `read_text` or `write_text` without an encoding failed on any
+  non-ASCII character. The compile now restores the thread's locale.
 
 ## 0.3.0 — 2026-10-07
 
