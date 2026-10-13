@@ -53,3 +53,13 @@ def uniform_byte(pattern):
 def as_unsigned(pattern):
     """A 2- or 4-byte pattern as the unsigned integer memset16/32 writes."""
     return int(np.frombuffer(pattern, dtype=np.uint16 if len(pattern) == 2 else np.uint32)[0])
+
+
+def as_signed(pattern):
+    """A 4-byte pattern as the signed integer HIP's memset32 takes.
+
+    ``hipMemsetD32`` declares its value an ``int``, and hip-python refuses
+    anything past 2**31 - 1 instead of wrapping it, so -1.0 (0xBF800000) or a
+    -1 fill would not convert as an unsigned value.
+    """
+    return int(np.frombuffer(pattern, dtype=np.int32)[0])
