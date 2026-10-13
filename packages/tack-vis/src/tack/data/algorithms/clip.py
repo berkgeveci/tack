@@ -228,9 +228,10 @@ def clip(data, by, value=0.0, invert=False, fields=None):
     if not getattr(data.topology, "reference_cells", True):
         raise NotImplementedError("clip takes cells of the linear shapes, not polyhedra, "
                                   "polygons or polylines")
+    if not isinstance(data.geometry.space, H1):
+        # Clip's points are merged across cells, so each needs one position.
+        raise TypeError("clip needs an H1 geometry: one position per point")
     if hasattr(by, "value") and not isinstance(by, (str, Field)):
-        if not isinstance(data.geometry.space, H1):
-            raise TypeError("clip by a function needs an H1 geometry: one position per point")
         field = implicit_values(data, by)
     else:
         field = _field(data, by)
@@ -288,7 +289,10 @@ def clip(data, by, value=0.0, invert=False, fields=None):
     point_runs, count = run_offsets(keys, order)
     members = tack.field(odt, shape=(n_members,))
     ends = tack.Vector.field(2, idt, shape=(count,))
-    weights = tack.field(arrays.dtype_of(field.values), shape=(count,))
+    # Weights are fractions even when the values are integers (Viskores interpolates
+    # an integer field's crossings the same way).
+    weights = tack.field(tack.f64 if arrays.dtype_of(field.values) == tack.f64 else tack.f32,
+                         shape=(count,))
     if count:
         _resolve_points(keys, order, point_runs, slots, values, float(value), connectivity,
                         members, ends, weights, count)

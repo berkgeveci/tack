@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 from test_dataset_api import _scalars, _two_hexes_and_a_pyramid
 
+import tack
 import tack.data as td
 
 try:
@@ -124,3 +125,24 @@ def test_clip_refuses_what_it_cannot_cut(backend):
     data.fields["c"] = td.Field(td.Constant(data), _scalars([1.0, 2.0, 3.0]))
     with pytest.raises(TypeError, match="point data"):
         td.clip(data, "c", 1.5)
+
+
+def test_clip_by_integer_point_data(backend):
+    """Integer values cross a value between points like floating ones: the crossing
+    weights are fractions (they were stored as integers, so cut at the corners)."""
+    data = td.rectilinear_grid([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
+    x = data.positions()[:, 0]
+    for values in (_scalars(2 * x, tack.i32), _scalars(2 * x)):
+        out = td.clip(data, td.Field(td.H1(data), values), 1.0)
+        np.testing.assert_allclose(np.unique(out.positions()[:, 0]), [0.5, 1.0])
+        assert np.isclose(td.cell_geometry(out).measure.values.to_numpy().sum(), 0.5)
+
+
+def test_clip_refuses_an_l2_geometry(backend):
+    """Clip merges its points across cells, one position each: an L2 geometry is
+    refused up front, as for a clip by a function."""
+    data = td.rectilinear_grid([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
+    field = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
+    data.geometry = td.discontinuous(data, data.geometry)
+    with pytest.raises(TypeError, match="H1 geometry"):
+        td.clip(data, field, 0.5)
