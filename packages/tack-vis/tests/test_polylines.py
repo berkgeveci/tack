@@ -222,3 +222,14 @@ def test_a_plane_slices_a_2d_mesh_into_a_line(backend):
     x = cut.positions()
     np.testing.assert_allclose(x[:, 0], 0.1, atol=1e-6)
     np.testing.assert_allclose([x[:, 1].min(), x[:, 1].max()], [-2, 2], atol=1e-6)
+
+
+def test_cell_geometry_of_lines_and_vertices(backend):
+    """A shape-based line's length and midpoint, and a vertex's point: neither was
+    written, only polylines and 2D and 3D cells."""
+    data = td.DataSet(td.UnstructuredTopology([3, 1], [0, 2, 3], [0, 1, 1]),
+                      [[0.0, 0.0, 0.0], [3.0, 4.0, 0.0]])
+    out = td.cell_geometry(data)
+    np.testing.assert_allclose(out.measure.values.to_numpy(), [5.0, 0.0])
+    np.testing.assert_allclose(out.centroid.values.to_numpy(vectors=True),
+                               [[1.5, 2.0, 0.0], [3.0, 4.0, 0.0]])

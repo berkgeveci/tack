@@ -77,6 +77,16 @@ def _line_geometry(cells, lengths, centroids):
         centroids[cells.entity_id(c)] = origin + weighted / (2.0 * total)
 
 
+@tack.kernel
+def _corner_geometry(cells, lengths, centroids):
+    # A line's length and midpoint; a vertex's point, measuring nothing.
+    for c in cells:
+        a = cells.corner_position(c, 0)
+        b = cells.corner_position(c, cells.NUM_POINTS - 1)
+        lengths[cells.entity_id(c)] = (b - a).norm()
+        centroids[cells.entity_id(c)] = 0.5 * (a + b)
+
+
 class CellGeometry(NamedTuple):
     """``cell_geometry``'s fields, on the cells."""
 
@@ -91,8 +101,8 @@ def cell_geometry(data):
     measured as that polyhedron (a hexahedron with warped faces is not quite its
     trilinear volume); its faces must be wound out of it. A 2D cell's area --
     triangle, quad, pixel or polygon -- along its own normal (Newell's), from
-    its edges going round it. A polyline's length, and the centroid of its
-    segments."""
+    its edges going round it. A line's or a polyline's length, and the
+    centroid of its segments; a vertex's point, with measure 0."""
     if data.topology.dimension > 1:
         data.topology.faces()                      # the incidence the cell views need
     n = data.num_cells
@@ -105,4 +115,6 @@ def cell_geometry(data):
             _polygon_geometry(data.domain_view("cells", group), volumes, centroids)
         elif group.count and group.shape is shapes.PolyLine:
             _line_geometry(data.domain_view("cells", group), volumes, centroids)
+        elif group.count:
+            _corner_geometry(data.domain_view("cells", group), volumes, centroids)
     return CellGeometry(Field(Values(data, "cells"), volumes), Field(Values(data, "cells"), centroids))
