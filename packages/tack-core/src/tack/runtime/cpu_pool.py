@@ -18,6 +18,15 @@ exactly as the Python path does, bumps the counter, runs the last chunk on
 the calling thread, and waits for the others. The workers never touch
 Python. Measured on the Xeon: 4 µs hot, about 100 µs after an idle gap.
 
+Chunks are claimed, not assigned: a run is cut into several chunks per
+worker (`GRAIN`, each at least `MIN_CHUNK` elements) and every worker takes
+the next one from a counter until none is left. A worker that runs slow --
+on the sibling hyperthread of a busy core, or over the dear part of an
+uneven range -- simply takes fewer. With one equal chunk per worker the
+dispatch waited for the slowest: a compute-bound kernel over a million
+cells took 29 ms on a worker with a core to itself and 50 on one sharing
+its core, run to run, as the scheduler placed them.
+
 A kernel is called through a wrapper JIT'd once per compiled kernel
 (``chunk_wrapper``): ``void __tack_chunk(pack, start, end)`` loads the
 kernel's arguments from 8-byte slots in ``pack`` (``pack_args`` fills them
@@ -43,6 +52,9 @@ MAX_WORKERS = 256
 # polls, and how long each sleep is. Spinning keeps back-to-back launches
 # at a few microseconds; a worker left idle polls every SLEEP_NS.
 SPIN_ITERATIONS = 20_000
+# Chunks per worker, and the smallest chunk worth claiming.
+GRAIN = 4
+MIN_CHUNK = 256
 SLEEP_NS = 50_000
 # ...doubling each poll up to this, so a pool idle for seconds costs a
 # thousand wake-ups a second per worker, not twenty thousand.
@@ -105,6 +117,10 @@ def _pool_module() -> ir.Module:
     cur_end = glob("cur_end", _i64, 0)
     cur_chunk = glob("cur_chunk", _i64, 0)
     spans = glob("spans", ir.ArrayType(_i64, MAX_WORKERS))
+    elems = glob("elems", ir.ArrayType(_i64, MAX_WORKERS))
+    n_chunks = glob("n_chunks", _i32, 0)
+    next_chunk = glob("next_chunk", _i32, 0)
+    grain = glob("grain", _i32, 0)
     timespec = ir.LiteralStructType([_i64, _i64])
 
     pthread_create = ir.Function(m, ir.FunctionType(_i32, [_ptr, _ptr, _ptr, _ptr]), "pthread_create")
@@ -125,26 +141,39 @@ def _pool_module() -> ir.Module:
     nsec = b.load(b.gep(ts, [_i32(0), _i32(1)]))
     b.ret(b.add(b.mul(sec, _i64(1_000_000_000)), nsec))
 
-    # run_chunk(id): worker id's chunk of the current range, timed.
-    run_chunk = ir.Function(m, ir.FunctionType(ir.VoidType(), [_i32]), "run_chunk")
+    # run_chunks(id): claim chunks of the current range until none is left;
+    # worker id's time and elements over them are recorded.
+    run_chunk = ir.Function(m, ir.FunctionType(ir.VoidType(), [_i32]), "run_chunks")
     run_chunk.linkage = "internal"
-    b = ir.IRBuilder(run_chunk.append_basic_block("entry"))
+    entry = run_chunk.append_basic_block("entry")
+    claim = run_chunk.append_basic_block("claim")
+    body = run_chunk.append_basic_block("body")
+    finish = run_chunk.append_basic_block("finish")
+    b = ir.IRBuilder(entry)
     wid = run_chunk.args[0]
-    wid64 = b.sext(wid, _i64)
+    span = b.alloca(_i64)
+    count = b.alloca(_i64)
+    b.store(_i64(0), span)
+    b.store(_i64(0), count)
+    b.branch(claim)
+    b = ir.IRBuilder(claim)
+    c = b.atomic_rmw("add", next_chunk, _i32(1), "acq_rel")
+    b.cbranch(b.icmp_signed("<", c, b.load(n_chunks)), body, finish)
+    b = ir.IRBuilder(body)
     chunk = b.load(cur_chunk)
-    a = b.add(b.load(cur_start), b.mul(wid64, chunk))
+    a = b.add(b.load(cur_start), b.mul(b.sext(c, _i64), chunk))
     end = b.load(cur_end)
     bb = b.add(a, chunk)
     bb = b.select(b.icmp_signed(">", bb, end), end, bb)
-    slot = b.gep(spans, [_i32(0), wid])
-    with b.if_else(b.icmp_signed("<", a, bb)) as (then, otherwise):
-        with then:
-            t0 = b.call(now, [])
-            fn = b.bitcast(b.load(cur_fn), _chunk_fn_type.as_pointer())
-            b.call(fn, [b.load(cur_pack), a, bb])
-            b.store(b.sub(b.call(now, []), t0), slot)
-        with otherwise:
-            b.store(_i64(0), slot)
+    t0 = b.call(now, [])
+    fn = b.bitcast(b.load(cur_fn), _chunk_fn_type.as_pointer())
+    b.call(fn, [b.load(cur_pack), a, bb])
+    b.store(b.add(b.load(span), b.sub(b.call(now, []), t0)), span)
+    b.store(b.add(b.load(count), b.sub(bb, a)), count)
+    b.branch(claim)
+    b = ir.IRBuilder(finish)
+    b.store(b.load(span), b.gep(spans, [_i32(0), wid]))
+    b.store(b.load(count), b.gep(elems, [_i32(0), wid]))
     b.ret_void()
 
     # worker(arg): wait for the generation to change, run the chunk, count in.
@@ -202,24 +231,24 @@ def _pool_module() -> ir.Module:
     b.branch(idle)
     b = ir.IRBuilder(work)
     b.store(b.load_atomic(gen, "acquire", 4), seen)
-    # Chunk `id` is this worker's when the run uses it; the caller takes
-    # chunk active - 1, so a worker past that has nothing to do.
+    # Workers 0 .. active - 2 claim chunks; the caller is worker active - 1.
+    # A worker past that sits the run out, its slots cleared so nothing
+    # stale is read.
     with b.if_else(b.icmp_signed("<", wid, b.sub(b.load(active), _i32(1)))) as (mine, idle_run):
         with mine:
             b.call(run_chunk, [wid])
         with idle_run:
-            # Slot active - 1 is the caller's chunk; the slots past it are
-            # this run's unused workers', cleared so nothing stale is read.
             with b.if_then(b.icmp_signed(">=", wid, b.load(active))):
                 b.store(_i64(0), b.gep(spans, [_i32(0), wid]))
+                b.store(_i64(0), b.gep(elems, [_i32(0), wid]))
     b.atomic_rmw("add", done, _i32(1), "release")
     b.branch(wait)
 
     # pool_start(n, spin, clock_id, sleep_ns): 0, or -1 if it cannot start.
-    start = ir.Function(m, ir.FunctionType(_i32, [_i32, _i32, _i32, _i64, _i64, _i64]),
+    start = ir.Function(m, ir.FunctionType(_i32, [_i32, _i32, _i32, _i64, _i64, _i64, _i32]),
                         "tack_pool_start")
     b = ir.IRBuilder(start.append_basic_block("entry"))
-    want, spin_arg, clock_arg, sleep_arg, sleep_max_arg, futex_arg = start.args
+    want, spin_arg, clock_arg, sleep_arg, sleep_max_arg, futex_arg, grain_arg = start.args
     have = b.load(n)
     with b.if_then(b.icmp_signed("!=", have, _i32(0))):
         b.ret(b.select(b.icmp_signed("==", have, want), _i32(0), _i32(-1)))
@@ -231,6 +260,7 @@ def _pool_module() -> ir.Module:
     b.store(sleep_arg, sleep_ns)
     b.store(sleep_max_arg, sleep_max)
     b.store(futex_arg, futex_nr)
+    b.store(grain_arg, grain)
     b.store(want, n)
     i = b.alloca(_i32)
     b.store(_i32(0), i)
@@ -265,7 +295,17 @@ def _pool_module() -> ir.Module:
     b.store(k_arg, active)
     k64 = b.sext(k_arg, _i64)
     total = b.sub(e_arg, s_arg)
-    b.store(b.sdiv(b.add(total, b.sub(k64, _i64(1))), k64), cur_chunk)
+    # GRAIN chunks per worker, each at least MIN_CHUNK elements unless the
+    # range is too short even for one such chunk per worker.
+    parts = b.mul(k64, b.sext(b.load(grain), _i64))
+    fine = b.sdiv(b.add(total, b.sub(parts, _i64(1))), parts)
+    per_worker = b.sdiv(b.add(total, b.sub(k64, _i64(1))), k64)
+    floor = b.select(b.icmp_signed("<", per_worker, _i64(MIN_CHUNK)), per_worker, _i64(MIN_CHUNK))
+    chunk = b.select(b.icmp_signed("<", fine, floor), floor, fine)
+    chunk = b.select(b.icmp_signed("<", chunk, _i64(1)), _i64(1), chunk)
+    b.store(chunk, cur_chunk)
+    b.store(b.trunc(b.sdiv(b.add(total, b.sub(chunk, _i64(1))), chunk), _i32), n_chunks)
+    b.store_atomic(_i32(0), next_chunk, "monotonic", 4)
     b.store_atomic(_i32(0), done, "monotonic", 4)
     b.atomic_rmw("add", gen, _i32(1), "seq_cst")
     b.fence("seq_cst")
@@ -294,6 +334,11 @@ def _pool_module() -> ir.Module:
     memcpy = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr, _ptr, _i64, ir.IntType(1)]),
                          "llvm.memcpy.p0.p0.i64")
     b.call(memcpy, [get_spans.args[0], b.bitcast(spans, _ptr),
+                    b.mul(b.sext(b.load(n), _i64), _i64(8)), ir.Constant(ir.IntType(1), 0)])
+    b.ret_void()
+    get_elems = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr]), "tack_pool_elems")
+    b = ir.IRBuilder(get_elems.append_basic_block("entry"))
+    b.call(memcpy, [get_elems.args[0], b.bitcast(elems, _ptr),
                     b.mul(b.sext(b.load(n), _i64), _i64(8)), ir.Constant(ir.IntType(1), 0)])
     b.ret_void()
 
@@ -345,19 +390,21 @@ class CPool:
         addr = self._engine.get_function_address
         self._start = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_int, ctypes.c_int, ctypes.c_int,
                                        ctypes.c_int64, ctypes.c_int64,
-                                       ctypes.c_int64)(addr("tack_pool_start"))
+                                       ctypes.c_int64, ctypes.c_int)(addr("tack_pool_start"))
         self._run = ctypes.CFUNCTYPE(None, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int64,
                                      ctypes.c_int64, ctypes.c_int)(addr("tack_pool_run"))
         self._get_spans = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_spans"))
+        self._get_elems = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_elems"))
         self.zero_chunk = addr("tack_pool_zero_chunk")
         spin = int(os.environ.get("TACK_CPU_POOL_SPIN", SPIN_ITERATIONS))
         futex = _SYS_FUTEX.get(platform.machine().lower(), 0) \
             if platform.system() == "Linux" else 0
         if self._start(threads, spin, time.CLOCK_MONOTONIC, SLEEP_NS, SLEEP_MAX_NS,
-                       futex) != 0:
+                       futex, GRAIN) != 0:
             raise RuntimeError(f"could not start a pool of {threads} threads")
         self.threads = threads
         self._spans = (ctypes.c_int64 * threads)()
+        self._elems = (ctypes.c_int64 * threads)()
 
     @classmethod
     def get(cls, threads: int):
@@ -376,14 +423,28 @@ class CPool:
         return pool if pool and threads <= pool.threads else None
 
     def run(self, wrapper: int, pack, start: int, end: int, threads: int):
-        """Every chunk of [start, end) over `threads` workers, this thread
+        """[start, end) in chunks claimed by `threads` workers, this thread
         one of them."""
         self._run(wrapper, ctypes.addressof(pack), start, end, threads)
 
     def spans(self) -> list:
-        """The last run's chunk spans in ns, chunk by chunk."""
+        """Per worker, the ns it spent in the last run's chunks."""
         self._get_spans(ctypes.addressof(self._spans))
         return list(self._spans)
+
+    @staticmethod
+    def chunk_size(total: int, threads: int) -> int:
+        """The chunk a run of `total` elements over `threads` workers uses:
+        GRAIN per worker, at least MIN_CHUNK unless the range is shorter."""
+        parts = threads * GRAIN
+        fine = (total + parts - 1) // parts
+        per_worker = (total + threads - 1) // threads
+        return max(1, max(fine, min(per_worker, MIN_CHUNK)))
+
+    def elems(self) -> list:
+        """Per worker, the elements it ran in the last run."""
+        self._get_elems(ctypes.addressof(self._elems))
+        return list(self._elems)
 
     def zero(self, address: int, nbytes: int, threads: int):
         """memset(address, 0, nbytes), one chunk per worker: a new buffer's

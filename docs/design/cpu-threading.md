@@ -35,9 +35,17 @@ The chunks run through one of two pools. The default is the pool in
 JIT'd beside the kernels, whose `N - 1` detached pthreads wait on a
 generation counter (spinning for a while, then a futex on Linux or
 `nanosleep` polls elsewhere). A fan-out is one ctypes call: `pool_run`
-bumps the counter, each worker calls its chunk through a wrapper JIT'd
-once per kernel that loads the arguments from 8-byte slots, the caller
-runs the last chunk, and the workers never touch Python. The pool is one
+bumps the counter, the workers and the caller claim chunks from a shared
+counter (`GRAIN` per worker, each at least `MIN_CHUNK` elements) and run
+them through a wrapper JIT'd once per kernel that loads the arguments
+from 8-byte slots, and the workers never touch Python. Claimed rather
+than assigned because the dispatch waits for its slowest worker: with
+one equal chunk each, a worker the scheduler put on the sibling
+hyperthread of a busy core ran 1.7× slower and a compute-bound kernel
+over a million cells took 29 or 50 ms from run to run; claiming, it
+takes fewer chunks and the run takes 38 ms every time. Each worker
+reports the time and the elements it ran, which is what the rate and
+floor bookkeeping below reads. The pool is one
 per process, sized by the CPUs the process may run on; a dispatch uses as
 many of its threads as its backend has. `TACK_CPU_POOL=python` selects the
 other pool, a `ThreadPoolExecutor` with one `call_range` task per chunk,

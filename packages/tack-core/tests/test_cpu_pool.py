@@ -21,6 +21,13 @@ pytestmark = pytest.mark.skipif(platform.system() == "Windows",
                                 reason="the pool is pthreads")
 
 
+@pytest.fixture(autouse=True)
+def _on_the_cpu():
+    """The fields these tests make must be CPU fields whatever backend the
+    session last initialized."""
+    tack.init(arch=tack.cpu)
+
+
 @tack.kernel
 def _mixed(x, y, out, a: tack.f32, b: tack.f64, k: tack.i32, m: tack.i64):
     for i in range(out.shape[0]):
@@ -83,10 +90,10 @@ def test_a_fan_out_runs_every_element_once_with_every_argument_kind(monkeypatch)
     assert backend._cpool is not None, "the fan-out did not go through the pool"
     expected = np.arange(n, dtype=np.float32).astype(np.float64) * 2.0 + 2.0 + 7 + (1 << 40)
     np.testing.assert_array_equal(out.to_numpy(), expected)
-    # Every chunk ran, timed, and none twice: the spans say four chunks ran
-    # and the result says each element was touched exactly once.
-    spans = backend._cpool.spans()
-    assert sum(1 for s in spans[:4] if s > 0) == 4
+    # Every element ran once: the workers' counts add up to the range and
+    # the result says each element was touched exactly once.
+    assert sum(backend._cpool.elems()[:4]) == n
+    assert any(s > 0 for s in backend._cpool.spans()[:4])
 
 
 def test_each_element_is_visited_exactly_once(monkeypatch):
@@ -116,9 +123,9 @@ def test_backends_with_different_thread_counts_share_the_pool(monkeypatch):
     for backend, chunks in ((two, 2), (three, 3)):
         compiled, prefix, _ = _compiled(backend, _number, [out])
         backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
-        spans = backend._cpool.spans()
-        assert sum(1 for s in spans[:chunks] if s > 0) == chunks
-        assert all(s == 0 for s in spans[chunks:])
+        counts = backend._cpool.elems()
+        assert sum(counts[:chunks]) == n
+        assert all(c == 0 for c in counts[chunks:])
     assert two._cpool is three._cpool
     np.testing.assert_array_equal(out.to_numpy(), 2 * np.arange(n, dtype=np.int64))
 
@@ -155,6 +162,21 @@ def test_a_large_field_is_zeroed_through_the_pool(monkeypatch):
     assert not big._data.any()
     small = backend.allocate_field(tack.u8, (16,))
     assert not small._data.any()
+
+
+def test_a_slow_worker_takes_fewer_chunks(monkeypatch):
+    """Chunks are claimed: over a range long enough for several per worker,
+    no worker is left idle and none has to take a fixed share."""
+    backend = _fresh_backend(4, monkeypatch)
+    n = 1_000_000
+    out = tack.zeros(tack.i64, (n,))
+    compiled, prefix, _ = _compiled(backend, _number, [out])
+    backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
+    counts = backend._cpool.elems()[:4]
+    assert sum(counts) == n and all(c > 0 for c in counts)
+    chunk = backend._cpool.chunk_size(n, 4)
+    assert chunk < n // 4, "one chunk per worker"
+    assert all(c % chunk == 0 or c % chunk == n % chunk for c in counts)
 
 
 def test_zero_stops_at_the_end_of_the_buffer(monkeypatch):

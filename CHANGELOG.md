@@ -13,9 +13,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   cost 60 µs per worker on a 2 GHz Xeon (1.2 ms for eight after an idle
   gap) costs a few microseconds, so short launches thread too: the dataset
   filters at a million cells went from 1.05× to 1.9× on eight threads
-  there. New fields of 256 KiB or more are zeroed through the pool, so
-  their pages are first touched in parallel. `TACK_CPU_POOL=python` keeps
-  the executor, which remains the fallback on Windows.
+  there. Workers claim chunks from a counter rather than taking one equal
+  share each, so one slowed by a sibling hyperthread or an uneven range
+  takes fewer. New fields of 256 KiB or more are zeroed through the pool,
+  so their pages are first touched in parallel. `TACK_CPU_POOL=python`
+  keeps the executor, which remains the fallback on Windows.
 - A dispatch whose argument signature was seen before resolves its
   variant from that signature instead of rebuilding the key, and the
   CPU backend passes field addresses rather than typed pointer objects:

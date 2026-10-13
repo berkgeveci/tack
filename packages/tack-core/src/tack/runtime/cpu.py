@@ -1907,20 +1907,20 @@ class CPUBackend(Backend):
         dispatch_ns = time.perf_counter_ns() - dispatch_t0
         if not measure:
             return
+        # The pool's workers claim chunks, so each reports what it ran.
         raw = jit.spans()
+        counts = jit.elems()
         rates: list = [0.0] * self.num_threads
         spans: list = [0.0] * self.num_threads
         workers = 0
         for t in range(self.num_threads):
-            t_start = start + t * chunk
-            if t_start >= end:
-                break
+            if counts[t] <= 0:
+                continue
             workers += 1
-            elems = min(chunk, end - t_start)
             spans[t] = float(raw[t])
-            if elems > 0 and raw[t] >= _RP_MIN_WORKER_NS:
-                rates[t] = raw[t] / elems
-        measured = sorted(spans[t] for t in range(workers) if rates[t] > 0.0)
+            if raw[t] >= _RP_MIN_WORKER_NS:
+                rates[t] = raw[t] / counts[t]
+        measured = sorted(spans[t] for t in range(self.num_threads) if rates[t] > 0.0)
         trusted_span = _RP_BOUND_SPAN_RATIO * workers * compiled.call_overhead_ns
         bounds_serial = bool(measured) and (_worker_median(measured) >= trusted_span)
         retire_floor = whole_range and workers > 0 and max(spans) < trusted_span
