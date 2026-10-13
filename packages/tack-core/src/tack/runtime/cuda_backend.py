@@ -805,7 +805,6 @@ class CUDABackend(Backend):
         }
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledCUDAKernel}
-        self._stream = self._token.queue()
         # Keep freed memory in the driver's pool rather than returning it to
         # the device at every synchronization: a filter allocates and drops
         # dozens of temporaries, and the pool hands them back out at once.
@@ -818,11 +817,21 @@ class CUDABackend(Backend):
         except Exception:
             pass                            # the pool releases at syncs; still correct
 
+    @property
+    def _stream(self):
+        """The context's queue; None for a backend built without a context
+        (the dispatch-path tests make one with ``__new__``), which launches
+        on the legacy stream."""
+        token = getattr(self, "_token", None)
+        return token.queue() if token is not None else None
+
     def synchronize(self):
         """Wait for every launch, fill and copy queued in this context. A
         launch's error surfaces here, at the next host access, rather than
         at its call."""
-        _check(driver.cuStreamSynchronize(self._stream))
+        stream = self._stream
+        if stream is not None:
+            _check(driver.cuStreamSynchronize(stream))
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> CUDABuffer:
