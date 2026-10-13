@@ -1,7 +1,12 @@
 """Tests for CUDA C code generation — no GPU required."""
 
+import pytest
+
 import tack
 from tack.codegen.cuda_gen import generate_cuda_source
+from tack.codegen.hip_gen import generate_hip_source
+from tack.codegen.opencl_gen import generate_opencl_source
+from tack.lang.inspect_kernel import _prepare_ir
 from tack.lang.type_inference import infer_param_types
 
 
@@ -249,3 +254,32 @@ class TestCUDACodeGen:
         src = generate_cuda_source(_get_ir(kern, _field(), _field(), _field()))
         assert 'fminf(' in src
         assert 'fmaxf(' in src
+
+
+@tack.kernel
+def _negate(x, neg, mag):
+    for i in range(x.shape[0]):
+        neg[i] = -x[i]
+        mag[i] = abs(x[i])
+
+
+@pytest.mark.parametrize("dtype,in_ptx", [
+    (tack.i8, True), (tack.i16, True), (tack.i32, False), (tack.i64, False),
+])
+def test_narrow_signed_negation_is_inline_ptx(dtype, in_ptx):
+    """ptxas 12.0-13.2 widen PTX neg.s16/abs.s16 without sign-extending
+    from bit 15, so i16 -(-32768) read 32768 once widened (driver 595 on an
+    H100). NVVM narrows any C spelling to those instructions; an inline-PTX
+    32-bit subtract keeps them out. HIP and OpenCL keep their own forms."""
+    tack.init(arch=tack.cpu)
+    fields = [_field(dtype=dtype) for _ in range(3)]
+    function, _ = _prepare_ir(_negate, tuple(fields))
+    src = generate_cuda_source(function)
+    for op in ("neg", "abs"):
+        body = src.split(f"__tack_{op}_{dtype.name}__(")[1].split("}")[0]
+        assert ("__tack_ptx_neg_u32__(" in body) == in_ptx
+    assert ('asm("sub.u32 %0, 0, %1;"' in src) == in_ptx
+    for generate in (generate_hip_source, generate_opencl_source):
+        function, _ = _prepare_ir(_negate, tuple(fields))
+        other = generate(function)
+        assert "asm(" not in other and "__tack_ptx_neg_u32__" not in other

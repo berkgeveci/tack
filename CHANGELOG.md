@@ -50,6 +50,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `tack.sync()`; an error in a launch surfaces at that wait rather than
   at the call. Results are unchanged. To time a Metal kernel, call
   `tack.sync()` before reading the clock.
+- The CUDA backend warns, at its first compile, when NVRTC is older than
+  13. NVRTC 12.0 miscompiled one of the ported examples (lattice
+  Boltzmann on an H100: density off by up to 1.6e-2, against 2.3e-6 with
+  NVRTC 13.2). The warning names the remedy: the `nvidia-cuda-nvrtc`
+  wheel for a CUDA version no newer than the driver's, which cuda-python
+  finds before a system toolkit.
 
 ### Added
 
@@ -125,6 +131,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   such as the result of a device function returning literals from
   several branches, takes the kernel's float precision, as a float scalar
   argument does: f64 when a field is f64. f32 kernels are unchanged.
+
+- On CUDA, negating an i8 or i16 value (`-x`, `abs(x)`) and then widening
+  it keeps the wrapped result: `-(-32768)` in i16 widens to −32768. On
+  drivers before CUDA 13.3 it widened to 32768. NVIDIA's PTX assembler,
+  which those drivers run on Tack's PTX, drops the sign extension after a
+  16-bit `neg` or `abs`, on every architecture; ptxas 13.3 fixed it. The
+  CUDA generator now negates i8 and i16 values with a 32-bit inline-PTX
+  subtraction, so no 16-bit negation reaches the driver.
 
 ### Performance changes users may notice
 
@@ -209,6 +223,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - An `ndrange` whose sizes are both negative (`ndrange(-3, -4)`) runs no
   iterations. Their product is positive, and the loop ran 12 iterations
   with negative indices.
+- On CUDA with NVRTC 12.0, compiling a kernel no longer changes the
+  calling thread's locale. NVRTC 12.0 left the thread in the C locale, so
+  from the first compile on Python's default text encoding was ASCII, and
+  `open`, `read_text` or `write_text` without an encoding failed on any
+  non-ASCII character. The compile now restores the thread's locale.
 
 ## 0.3.0 — 2026-10-07
 

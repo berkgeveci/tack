@@ -13,8 +13,10 @@ No per-dispatch copies — data stays on the GPU between kernel calls.
 """
 
 import ctypes
+import functools
 import os
 import sys
+import warnings
 
 import numpy as np
 
@@ -34,6 +36,7 @@ from tack.runtime.kernel_utils import (
     new_kernel_cache,
     resolve_variant,
 )
+from tack.runtime.nvrtc_version import old_nvrtc_message
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _CUDA_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
@@ -453,8 +456,51 @@ class ExportableCUDABuffer(DeviceBuffer):
             pass
 
 
+def _libc_uselocale():
+    """glibc's ``uselocale``, or None where there is none (Windows)."""
+    try:
+        uselocale = ctypes.CDLL(None).uselocale
+    except (OSError, TypeError, AttributeError):
+        return None
+    uselocale.restype = ctypes.c_void_p
+    uselocale.argtypes = [ctypes.c_void_p]
+    return uselocale
+
+
+_uselocale = _libc_uselocale()
+
+
+def _compile_keeping_thread_locale(prog, opts):
+    """``nvrtcCompileProgram``, with the calling thread's locale restored.
+
+    NVRTC 12.0 switches the calling thread to the C locale with
+    ``uselocale`` and leaves it there. ``setlocale`` still reports the
+    process's locale, but Python's default text encoding follows the
+    thread's, so every ``open``/``read_text``/``write_text`` without an
+    encoding became ASCII after the first CUDA kernel compiled, and failed
+    on any non-ASCII character. NVRTC 13.2 leaves the locale alone.
+    """
+    saved = _uselocale(None) if _uselocale is not None else None
+    try:
+        return nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
+    finally:
+        if saved is not None:
+            _uselocale(saved)
+
+
+@functools.cache
+def _warn_if_old_nvrtc():
+    """Warn once per process, at the first compile, about an untested NVRTC."""
+    err, major, minor = nvrtc.nvrtcVersion()
+    _check(err)
+    message = old_nvrtc_message(major, minor)
+    if message:
+        warnings.warn(message, stacklevel=3)
+
+
 def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     """Compile CUDA C source to PTX via NVRTC."""
+    _warn_if_old_nvrtc()
     src = cuda_source.encode("utf-8")
     err, prog = nvrtc.nvrtcCreateProgram(src, f"{func_name}.cu".encode(), 0, None, None)
     _check(err)
@@ -464,7 +510,7 @@ def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     opts = [b"--ftz=false", b"--prec-div=true", b"--prec-sqrt=true",
             b"--fmad=true", b"--extra-device-vectorization"]
     # cuda-python marshals a list of bytes; a ctypes array can be misread.
-    compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
+    compile_result = _compile_keeping_thread_locale(prog, opts)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != nvrtc.nvrtcResult.NVRTC_SUCCESS:

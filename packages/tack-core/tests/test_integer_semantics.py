@@ -105,7 +105,8 @@ def _negate_widened(a, out):
 def test_wrapped_negation_and_abs_survive_widening(backend, dtype):
     # The minimum negates to itself, and must still be the minimum once
     # sign-extended. Intel's IGC 2.7.11 widened i16 -(-32768) as 32768,
-    # and abs of the i8/i16/i32 minimum as its magnitude.
+    # and abs of the i8/i16/i32 minimum as its magnitude; so did NVIDIA's
+    # ptxas 12.0-13.2 for i16 (the JIT of drivers before CUDA 13.3).
     values = _values(dtype)
     out = tack.field(tack.i64, (len(values), 3))
     _negate_widened(_field(values, dtype), out)

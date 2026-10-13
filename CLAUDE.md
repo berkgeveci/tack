@@ -439,6 +439,9 @@ for signed bits and separate noinline i64/u64-add helpers for accumulator
 updates inside runtime-bound loops to avoid an M1 Max compiler crash.
 OpenCL emits signed `neg` below 32 bits and `abs` below 64 as noinline
 helpers: IGC 2.7.11 widened the wrapped minimum as its magnitude.
+CUDA negates i8/i16 (`neg` and `abs`) with an inline-PTX `sub.u32`
+(`__tack_ptx_neg_u32__`, `_ptx_negation`): ptxas 12.0-13.2, the JIT of
+drivers before 13.3, widen PTX `neg.s16`/`abs.s16` without re-extending.
 LLVM tracks signedness on every
 annotated integer expression, including loads of locals and scalar arguments.
 Literals/scalars choose i32/i64/u64 by magnitude and reject unrepresentable

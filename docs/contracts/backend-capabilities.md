@@ -87,7 +87,7 @@ Read from the backend classes at `23d6e1d`. "All ten" means `i8`, `u8`,
 | DLPack zero-copy import | `kDLCPU`, `kDLCUDAHost`, `kDLROCMHost` | none in practice (see [DLPack](runtime-api.md#dlpack)) | `kDLCUDA`, `kDLCUDAManaged` | `kDLROCM` | `kDLOneAPI` |
 | Device chosen | host | `MTLCreateSystemDefaultDevice()` | the current CUDA context if one exists, else device 0 | `hipGetDevice()` | the first device of the first driver, or the one in `external_context` |
 | Python requirements | `llvmlite` (`[cpu]` extra) | `pyobjc-framework-Metal` (`[metal]`) | `cuda-python>=13.2.0` (`[cuda]`) | `hip-python>=7.0`, Linux x86_64 only (`[hip]`) | none. The `[level_zero]` extra is empty |
-| System requirements | none | macOS with a Metal GPU | NVIDIA driver and NVRTC | ROCm with hipRTC | `libze_loader.so` and `libocloc.so` (Intel compute runtime) |
+| System requirements | none | macOS with a Metal GPU | NVIDIA driver and NVRTC (13 or newer; older warns at the first compile) | ROCm with hipRTC | `libze_loader.so` and `libocloc.so` (Intel compute runtime) |
 
 ### Level Zero and `f64`
 
