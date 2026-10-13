@@ -113,6 +113,8 @@ class CUDACodeGen:
     _table_dialect = 'cuda'
     _integer_type_map = _C_TYPE_MAP
     _opaque_negation = False
+    # ptxas before 13.3 mis-widens PTX neg.s16/abs.s16; see IntegerCodeGen.
+    _ptx_negation = True
 
     def __init__(self, ir_func: ir.IRFunction):
         self.ir_func = rename_gpu_bindings(ir_func)
@@ -132,7 +134,8 @@ class CUDACodeGen:
         self._block_extrema = set()
         self._tables = Tables(self._table_dialect)
         self._integers = IntegerCodeGen(
-            self._integer_type_map, opaque_negation=self._opaque_negation)
+            self._integer_type_map, opaque_negation=self._opaque_negation,
+            ptx_negation=self._ptx_negation)
 
     def generate(self) -> str:
         """Generate CUDA C source for the kernel."""
