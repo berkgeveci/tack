@@ -1024,3 +1024,10 @@ def test_averages_on_voronoi_columns_are_vtks(backend):
     np.testing.assert_allclose(ours.values.to_numpy(),
                                vtk_to_numpy(to_points.GetOutput().GetPointData().GetArray("c")),
                                rtol=1e-5, atol=1e-6)
+
+
+def test_check_winding_takes_cells_that_list_their_faces(backend):
+    data = td.rectilinear_grid([0.0, 1.0], [0.0, 1.0], [0.0, 1.0])
+    assert td.check_winding(td.as_polyhedra(data)).size == 0
+    with pytest.raises(TypeError, match="list their faces"):
+        td.check_winding(data)

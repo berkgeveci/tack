@@ -122,7 +122,7 @@ dataset of more than 2^31 − 1 cells; everything else works there.
 |---|---|
 | `as_polyhedra(data)` | a 3D shape-based dataset as polyhedra, carrying its fields |
 | `as_polygons(data)` | a 2D shape-based dataset as polygons |
-| `check_winding(data)` | the ids of the cells whose faces do not wind consistently; empty when all is well |
+| `check_winding(data)` | of polyhedra or polygons, the ids of the cells whose faces do not wind consistently; empty when all is well (a shape's faces come from its table) |
 | `orient(topology)` | turns around faces wound into their only cell |
 | `from_cell_faces(..., orient=True)` | repairs input whose faces or cells are inconsistently wound, then turns each connected piece outward by the sign of its total volume |
 
