@@ -103,3 +103,37 @@ def test_a_vtk_image_with_a_size_of_one_first(backend):
     np.testing.assert_allclose(data.positions(), expected)
     back = dataset_to_vtk(data)
     assert back.IsA("vtkImageData") and back.GetDimensions() == (1, 4, 3)
+
+
+# ── Meshes of lines ─────────────────────────────────────────────────
+
+
+FACE_ALGORITHMS = {
+    "face_geometry": td.face_geometry,
+    "face_centers": td.face_centers,
+    "boundary_faces": td.boundary_faces,
+    "external_faces": td.external_faces,
+    "traces": lambda d: td.traces(d, "p"),
+    "jump": lambda d: td.jump(d, "c"),
+    "upwind_flux": lambda d: td.upwind_flux(d, "c", (1.0, 0.0, 0.0)),
+}
+
+
+@pytest.mark.parametrize("name", FACE_ALGORITHMS)
+def test_a_mesh_of_lines_has_no_faces_and_says_so(backend, name):
+    """A line's faces would be its end points, which are not derived; asking
+    gave no faces, so a line's boundary was empty, or an internal error."""
+    data = td.uniform_grid((4,))
+    data.fields["p"] = td.Field(td.H1(data), td.ConstantArray(1.0, 4))
+    data.fields["c"] = td.Field(td.Constant(data), td.ConstantArray(1.0, 3))
+    with pytest.raises(NotImplementedError, match="faces of a mesh of lines"):
+        FACE_ALGORITHMS[name](data)
+
+
+def test_a_mesh_of_lines_still_has_cells(backend):
+    data = td.uniform_grid((4,), spacing=(0.5, 1.0, 1.0))
+    data.fields["p"] = td.Field(td.H1(data), tack.field_like(np.array([0, 1, 4, 9], np.float32)))
+    np.testing.assert_allclose(td.cell_centers(data).values.to_numpy(vectors=True)[:, 0],
+                               [0.25, 0.75, 1.25])
+    np.testing.assert_allclose(td.to_cells(data, "p").values.to_numpy(), [0.5, 2.5, 6.5])
+    assert td.threshold(data, "p", 0.5, 5.0).num_cells == 1     # the line from 1 to 4
