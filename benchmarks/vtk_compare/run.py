@@ -32,7 +32,8 @@ to Tack, and shape cells to polyhedra, are timed as ``import``.
 Usage:
   python benchmarks/vtk_compare/run.py [--config cpu1,cpu16,cuda]
          [--sizes 10k,100k,1M,5M] [--meshes hex,tet,squareBend]
-         [--filters contour,slice,...] [--budget 1.0] [--output DIR]
+         [--forms shape,polyhedral] [--filters contour,slice,...]
+         [--budget 1.0] [--output DIR]
          [--square-bend PATH/squareBend.foam] [--vtk-threads N]
 
 squareBend is OpenFOAM's tutorial case, as in VTK's test data
@@ -183,7 +184,7 @@ def _meshes(names, sizes, square_bend):
 
 
 def run_config(config, sizes, mesh_names, filters, budget, vtk_threads,
-               square_bend=SQUARE_BEND):
+               square_bend=SQUARE_BEND, forms=("shape", "polyhedral")):
     _start(config, vtk_threads)
     import meshes as m
     import pairs as p
@@ -197,17 +198,20 @@ def run_config(config, sizes, mesh_names, filters, budget, vtk_threads,
         print(f"\n{mesh.name} {size}: {mesh.num_cells} cells, {mesh.num_points} points",
               flush=True)
         common = {"mesh": mesh.name, "size": size, "cells": mesh.num_cells}
-        grids = {"shape": m.vtk_shape_grid(mesh), "polyhedral": m.vtk_polyhedral_grid(mesh)}
-        shape = m.TackMesh(mesh, "shape")
+        builders = {"shape": m.vtk_shape_grid, "polyhedral": m.vtk_polyhedral_grid}
+        grids = {form: builders[form](mesh) for form in forms}
+        tack_meshes = {form: m.TackMesh(mesh, form) for form in forms}
         # What it costs to bring VTK's grid into Tack, and shape cells to polyhedra.
-        _record(records, **common, form="shape", filter="import", impl="tack", mode="warm",
-                times=_measure(lambda _: vtk_to_dataset(grids["shape"]), budget=budget))
-        _record(records, **common, form="polyhedral", filter="import", impl="tack",
-                mode="warm",
-                times=_measure(lambda _: (m.TackMesh(mesh, "polyhedral"), tack.sync()),
-                               budget=budget))
-        tack_meshes = {"shape": shape, "polyhedral": m.TackMesh(mesh, "polyhedral")}
-        for form in ("shape", "polyhedral"):
+        if "shape" in forms:
+            _record(records, **common, form="shape", filter="import", impl="tack",
+                    mode="warm",
+                    times=_measure(lambda _: vtk_to_dataset(grids["shape"]), budget=budget))
+        if "polyhedral" in forms:
+            _record(records, **common, form="polyhedral", filter="import", impl="tack",
+                    mode="warm",
+                    times=_measure(lambda _: (m.TackMesh(mesh, "polyhedral"), tack.sync()),
+                                   budget=budget))
+        for form in forms:
             for pair in p.PAIRS:
                 if form not in pair.forms or (filters and pair.name not in filters):
                     continue
@@ -255,7 +259,7 @@ def run_config(config, sizes, mesh_names, filters, budget, vtk_threads,
                                        setup=lambda: source.dataset(fields, fresh=True),
                                        budget=budget))
                 del vtk_filter, grid, data
-        del grids, tack_meshes, shape
+        del grids, tack_meshes
         gc.collect()
     return records
 
@@ -267,6 +271,9 @@ def main():
                              f"metal); default {_default_configs()}")
     parser.add_argument("--sizes", default="10k,100k,1M,5M")
     parser.add_argument("--meshes", default="hex,tet,squareBend")
+    parser.add_argument("--forms", default="shape,polyhedral",
+                        help="shape, polyhedral or both; polyhedral includes VTK's serial "
+                             "cell volume, 20 s a run at 1M")
     parser.add_argument("--filters", default="", help="comma-separated pair names")
     parser.add_argument("--budget", type=float, default=1.0,
                         help="seconds of repeated runs per measurement")
@@ -283,7 +290,8 @@ def main():
     if len(configs) > 1:
         for config in configs:
             command = [sys.executable, __file__, "--config", config, "--sizes", args.sizes,
-                       "--meshes", args.meshes, "--filters", args.filters,
+                       "--meshes", args.meshes, "--forms", args.forms,
+                       "--filters", args.filters,
                        "--budget", str(args.budget), "--output", args.output,
                        "--square-bend", args.square_bend,
                        "--vtk-threads", str(args.vtk_threads)]
@@ -291,8 +299,12 @@ def main():
         return
     sys.path.insert(0, HERE)
     filters = [f.strip() for f in args.filters.split(",") if f.strip()]
+    forms = tuple(f.strip() for f in args.forms.split(",") if f.strip())
+    for form in forms:
+        if form not in ("shape", "polyhedral"):
+            parser.error(f"unknown form {form!r}: shape or polyhedral")
     records = run_config(configs[0], args.sizes.split(","), args.meshes.split(","), filters,
-                         args.budget, args.vtk_threads, args.square_bend)
+                         args.budget, args.vtk_threads, args.square_bend, forms)
     path = os.path.join(args.output, f"{configs[0]}.json")
     with open(path, "w") as out:
         json.dump({"meta": _meta(configs[0], args.vtk_threads), "records": records}, out,
