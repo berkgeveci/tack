@@ -4,7 +4,7 @@ Runs after AST transform, before codegen. Replaces:
 - IRDimSize(field_name, dim) → IRConstant(shape[dim])
   Uses _logical_shape for vector fields, shape for regular fields.
 - IRFieldExtent(field_name, kind) → a load from debug mode's extents field,
-  at the slot of the first parameter bound to that field.
+  at its parameter's slot (an alias's root parameter, by name).
 """
 
 from tack.lang import ir, ir_bounds
@@ -22,14 +22,16 @@ def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
     # so shared_like/DimSize can resolve the mangled name to the actual field.
     aliases = _collect_field_aliases(ir_func.body, name_to_field)
     extended = {**name_to_field, **aliases}
-    # Debug mode's extents are kept per parameter; a name (or alias) reads
-    # those of the first parameter bound to its field, which are the same.
-    first = {}
-    for position, param in enumerate(ir_func.params):
-        field = name_to_field.get(param.name)
-        if field is not None:
-            first.setdefault(id(field), position)
-    slots = {name: first[id(field)] for name, field in extended.items() if id(field) in first}
+    # Debug mode's extents are kept per parameter: a name reads its own
+    # parameter's, and an alias (an inlined function's) its root parameter's,
+    # by name. Never by which field object a call passed: two parameters bound
+    # to one field in the call that compiles the variant are two parameters
+    # in every later call that reuses it.
+    slots = {param.name: position for position, param in enumerate(ir_func.params)}
+    for node in walk_ir(ir_func.body):
+        if (isinstance(node, ir.IRAssign) and isinstance(node.value, ir.IRName)
+                and node.value.name in slots and node.target not in slots):
+            slots[node.target] = slots[node.value.name]
 
     for i, stmt in enumerate(ir_func.body):
         if isinstance(stmt, ir.IRParallelFor):

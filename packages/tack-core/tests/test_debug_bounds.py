@@ -317,3 +317,24 @@ def test_threads_report_their_own_launches(debug):
         t.join()
     assert set(errors) == {3}
     assert "is outside [0, 8)" in errors[3]
+
+
+@tack.kernel
+def _fill_second(a, b):
+    for i in range(b.shape[0]):
+        b[i] = a[0]
+
+
+def test_each_parameter_has_its_own_extent_when_a_variant_is_reused(debug, monkeypatch):
+    """A variant compiled for a call passing one field as both arguments checked
+    the second against the first's extent ever after: the extents slot came
+    from the field object, which only that call had in common. The CPU compiles
+    such a call separately (``_SPECIALIZE_DISJOINT``), so it is turned off here,
+    as GPU backends never had it; Metal's polyhedral contour found it."""
+    import tack.runtime.cpu as cpu
+    monkeypatch.setattr(cpu, "_SPECIALIZE_DISJOINT", False)
+    shared = _field(np.full(2, 3.0))
+    _fill_second(shared, shared)
+    small, large = _field(np.full(2, 5.0)), _field(np.zeros(8))
+    _fill_second(small, large)
+    np.testing.assert_array_equal(large.to_numpy(), np.full(8, 5.0))
