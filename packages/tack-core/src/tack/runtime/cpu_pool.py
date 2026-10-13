@@ -354,6 +354,10 @@ def _pool_module() -> ir.Module:
 def _target_machine():
     llvm.initialize_native_target()      # idempotent; cpu.py does it too
     llvm.initialize_native_asmprinter()
+    # The arm64 pause (`_pause`) is inline asm, which the JIT parses at
+    # code generation: without the parser LLVM aborts the process (not an
+    # exception) on Apple silicon.
+    llvm.initialize_native_asmparser()
     target = llvm.Target.from_default_triple()
     return target.create_target_machine(cpu=llvm.get_host_cpu_name(),
                                         features=llvm.get_host_cpu_features().flatten(), opt=2)

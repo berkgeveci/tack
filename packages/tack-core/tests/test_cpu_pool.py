@@ -7,6 +7,8 @@ and that it can be switched off."""
 import ctypes
 import os
 import platform
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -199,6 +201,26 @@ def test_the_python_path_still_works(monkeypatch):
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
     assert backend._cpool is None and backend._pool is not None
     np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
+
+
+def test_the_pool_builds_in_a_fresh_process():
+    """Building the pool must not abort the interpreter. It did on Apple
+    silicon: the arm64 `yield` pause is inline asm and the asm parser was
+    never initialized, and LLVM aborts rather than raising, so the Python
+    fallback never ran. A fresh process, since an abort would take pytest
+    with it."""
+    program = (
+        "import tack\n"
+        "from tack.runtime.dispatch import get_backend\n"
+        "tack.init(arch=tack.cpu, num_threads=2)\n"
+        "pool = get_backend()._jit_pool()\n"
+        "print('jit' if pool is not None else 'python')\n"
+    )
+    env = {k: v for k, v in os.environ.items() if k != "TACK_CPU_POOL"}
+    run = subprocess.run([sys.executable, "-c", program], capture_output=True,
+                         text=True, env=env, timeout=120)
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.strip() == "jit", run.stderr
 
 
 def test_a_pool_that_cannot_be_made_falls_back(monkeypatch):
