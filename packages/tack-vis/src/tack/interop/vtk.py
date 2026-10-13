@@ -313,10 +313,10 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         Constant,
         DataSet,
         PolylineTopology,
-        StructuredTopology,
         UniformCoordinates,
         UnstructuredTopology,
     )
+    from tack.data.dataset import grid_topology
 
     if grid.IsA("vtkUnstructuredGrid") and polyhedral is None:
         try:
@@ -359,10 +359,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         origin = np.asarray(grid.GetOrigin()) + direction @ (
             np.asarray(grid.GetExtent()[0::2]) * spacing)
         geometry = UniformCoordinates(dims, origin, spacing, direction, dtype=dtype)
-        if 1 in geometry.point_dims:
-            raise ValueError(f"an image of dimensions {tuple(dims)} is not supported: "
-                             "only trailing dimensions may be 1")
-        topology = StructuredTopology(geometry.point_dims, id_dtype=id_dtype)
+        topology = grid_topology(dims, id_dtype=id_dtype)
     elif grid.IsA("vtkRectilinearGrid"):
         geometry = CartesianProduct(vtk_to_numpy(grid.GetXCoordinates()),
                                           vtk_to_numpy(grid.GetYCoordinates()),
@@ -371,10 +368,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         grid.GetDimensions(dims)
         if dims != list(geometry.dims):
             raise ValueError(f"grid dimensions {dims} do not match its coordinates")
-        if 1 in geometry.point_dims:
-            raise ValueError(f"a grid of dimensions {tuple(dims)} is not supported: "
-                             "only trailing dimensions may be 1")
-        topology = StructuredTopology(geometry.point_dims, id_dtype=id_dtype)
+        topology = grid_topology(dims, id_dtype=id_dtype)
     else:
         raise TypeError(f"expected a vtkUnstructuredGrid, vtkRectilinearGrid or vtkImageData, "
                         f"not {grid.GetClassName()}")
