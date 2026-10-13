@@ -239,3 +239,32 @@ def test_entropy_of_one_value_and_of_none(backend):
     empty.fields["p"] = td.Field(td.H1(empty), td.ConstantArray(0.0, 0))
     with pytest.raises(ValueError, match="entropy of no values"):
         td.entropy(empty, "p")
+
+
+# ── Sets ────────────────────────────────────────────────────────────
+
+
+def test_extract_cells_takes_a_cell_set_empty_or_not(backend):
+    data = td.uniform_grid((3, 3, 3))
+    data.sets["none"] = td.Set(data, "cells", [])
+    data.sets["two"] = td.Set(data, "cells", [1, 5])
+    assert td.extract_cells(data, data.sets["none"]).num_cells == 0
+    assert td.extract_cells(data, "none").num_cells == 0
+    assert td.extract_cells(data, "two").num_cells == 2
+    data.sets["corners"] = td.Set(data, "points", [0])
+    with pytest.raises(ValueError, match="set of this dataset's cells, not a set of points"):
+        td.extract_cells(data, "corners")
+    other = td.uniform_grid((3, 3, 3))
+    with pytest.raises(ValueError, match="of another topology"):
+        td.extract_cells(data, td.Set(other, "cells", [0]))
+
+
+@pytest.mark.skipif(vtk is None, reason="needs VTK")
+@pytest.mark.parametrize("dims", [(1, 1, 1), (0, 0, 0), (1, 5, 4)])
+def test_vtk_images_of_one_point_or_none_go_both_ways(backend, dims):
+    image = vtk.vtkImageData()
+    image.SetDimensions(*dims)
+    data = vtk_to_dataset(image)
+    assert data.num_points == int(np.prod(dims))
+    back = dataset_to_vtk(data)
+    assert back.IsA("vtkImageData") and back.GetDimensions() == dims

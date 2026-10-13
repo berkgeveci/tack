@@ -440,15 +440,18 @@ def dataset_to_vtk(data):
 
     topology = data.topology
     coordinates = data.geometry.values
-    if isinstance(topology, StructuredTopology) and isinstance(coordinates,
-                                                               UniformCoordinates):
+    # A grid of one point or none has a topology without cells (grid_topology),
+    # but is still the image or rectilinear grid its coordinates describe.
+    grid = isinstance(topology, StructuredTopology) or (
+        topology.num_cells == 0 and isinstance(coordinates, (UniformCoordinates,
+                                                             CartesianProduct)))
+    if grid and isinstance(coordinates, UniformCoordinates):
         grid = vtkImageData()
         grid.SetDimensions(*coordinates.dims)
         grid.SetOrigin(*coordinates._origin)
         grid.SetSpacing(*coordinates._spacing)
         grid.SetDirectionMatrix(*coordinates._matrix.reshape(-1))
-    elif isinstance(topology, StructuredTopology) and isinstance(coordinates,
-                                                                 CartesianProduct):
+    elif grid and isinstance(coordinates, CartesianProduct):
         grid = vtkRectilinearGrid()
         grid.SetDimensions(*coordinates.dims)
         grid.SetXCoordinates(numpy_to_vtk(coordinates.x.to_numpy(), deep=1))

@@ -1,4 +1,4 @@
-"""``extract_cells``: the cells with the given ids (a host array or an integer field), with only the points they use; cells keep their order, not the order given."""
+"""``extract_cells``: the cells with the given ids (a host array, an integer field, or a cell set), with only the points they use; cells keep their order, not the order given."""
 
 import numpy as np
 
@@ -16,8 +16,19 @@ def _flag_ids(ids, flags):
 
 
 def extract_cells(data, cells, fields=None):
-    """The cells with the given ids (a host array or an integer field), with only the
-    points they use; cells keep their order, not the order given."""
+    """The cells with the given ids (a host array, an integer field, or a cell
+    ``Set`` or its name in ``data.sets``), with only the points they use; cells
+    keep their order, not the order given."""
+    from tack.data.sets import Set
+
+    if isinstance(cells, str):
+        cells = data.sets[cells]
+    if isinstance(cells, Set):
+        if cells.on != "cells" or cells.topology is not data.topology:
+            raise ValueError(f"extract_cells takes a set of this dataset's cells, not a "
+                             f"set of {cells.on}" + ("" if cells.topology is data.topology
+                                                    else " of another topology"))
+        cells = cells.ids
     if not hasattr(cells, "to_numpy"):
         values = np.asarray(cells).reshape(-1)
         if values.size and not np.issubdtype(values.dtype, np.integer):
