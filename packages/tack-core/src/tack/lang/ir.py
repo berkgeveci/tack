@@ -297,6 +297,44 @@ class IRDimSize(IRNode):
         self.dim = dim
 
 
+class IRFieldExtent(IRNode):
+    """A field parameter's extent read at run time, in debug mode's bounds checks.
+
+    ``kind`` is ``LEADING`` (dimension 0, logical), ``ELEMENTS`` (logical
+    elements, a flat index's bound) or ``STORAGE`` (scalar components, the
+    bound of a vector field's component index). Unlike ``IRDimSize`` it is
+    never compiled in: ``ir_resolve`` turns it into a load from the hidden
+    extents field, so checking does not specialize a kernel on lengths.
+    """
+
+    LEADING, ELEMENTS, STORAGE = range(3)
+
+    def __init__(self, field_name: str, kind: int):
+        self.field_name = field_name
+        self.kind = kind
+
+
+class IRBoundsCheck(IRNode):
+    """An access's flat index in debug mode, or -1 if an index is out of bounds.
+
+    Each of ``indices`` is checked against the extent beside it, in order;
+    the first one outside ``[0, extent)`` is recorded in the ``errors``
+    field (unless another violation was recorded first), with ``site``,
+    which names the access in the kernel's ``bounds_sites``. The value is
+    ``flat`` as i64 when every index is in bounds. An access whose index is
+    negative is skipped (``ir_bounds.guard_accesses``), so -1 also covers
+    arithmetic on it, such as a vector field's ``element * width + c``.
+    """
+
+    def __init__(self, indices: list, extents: list, flat, site: int, errors):
+        self.indices = indices
+        self.extents = extents
+        self.flat = flat
+        self.site = site
+        self.errors = errors
+        self.dtype = None
+
+
 class IRTableLoad(IRNode):
     """``values[index]`` for a constant table, an expression of type ``dtype``.
 

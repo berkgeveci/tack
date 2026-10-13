@@ -44,6 +44,9 @@ CHILD_FIELDS = {
     ir.IRThreadId: (),
     ir.IRPrint: (('args', 'exprs'),),
     ir.IRDimSize: (),
+    ir.IRFieldExtent: (),
+    ir.IRBoundsCheck: (('indices', 'exprs'), ('extents', 'exprs'), ('flat', 'expr'),
+                       ('errors', 'expr')),
     ir.IRTextureSample: (('coords', 'exprs'),),
     ir.IRTableLoad: (('index', 'expr'),),
 }

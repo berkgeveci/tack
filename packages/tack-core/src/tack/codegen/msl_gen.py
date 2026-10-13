@@ -10,6 +10,7 @@ All integer locals and loop indices use 64-bit ``long`` to support grids
 with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
+from tack.codegen.bounds import bounds_check_expr, bounds_helpers
 from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
@@ -101,10 +102,13 @@ _BODY_FUNCTION = "__tack_body__"
 
 
 def _stores_inside_sequential_loop(body) -> bool:
-    """Whether a sequential loop of the kernel contains a store or an atomic."""
+    """Whether a sequential loop of the kernel contains a store or an atomic.
+
+    A debug mode bounds check counts: it can store its record.
+    """
     for node in walk_ir(body):
         if isinstance(node, (ir.IRSequentialFor, ir.IRWhile)):
-            if any(isinstance(inner, (ir.IRFieldStore, ir.IRAtomicOp))
+            if any(isinstance(inner, (ir.IRFieldStore, ir.IRAtomicOp, ir.IRBoundsCheck))
                    for inner in walk_ir(node)):
                 return True
     return False
@@ -131,6 +135,7 @@ class MSLCodeGen:
         self._integers = IntegerCodeGen(self._integer_type_map, bitcast=True)
         self._dynamic_range_depth = 0
         self._opaque_integer_add = False
+        self._needs_bounds = False
 
     def generate(self) -> str:
         """Generate MSL source for the kernel."""
@@ -284,6 +289,7 @@ class MSLCodeGen:
             + self._integers.definitions('inline')
             + f32_reduction_helpers('metal', self._block_extrema)
             + _float_atomic_extrema_helpers(self._float_atomic_extrema)
+            + bounds_helpers('metal', self._needs_bounds)
         )
         return "\n".join(self._lines[:preamble_end] + helpers
                          + self._lines[preamble_end:]) + "\n"
@@ -608,6 +614,9 @@ class MSLCodeGen:
             return self._expr_block_reduce(node)
         if isinstance(node, ir.IRAtomicOp):
             return self._expr_atomic(node)
+        if isinstance(node, ir.IRBoundsCheck):
+            self._needs_bounds = True
+            return bounds_check_expr('metal', node, self._expr)
         raise NotImplementedError(f"MSL expr: {type(node).__name__}")
 
     def _expr_block_reduce(self, node: ir.IRBlockReduce) -> str:

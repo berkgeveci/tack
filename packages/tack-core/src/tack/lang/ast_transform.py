@@ -11,7 +11,7 @@ Inspired by Taichi's AST transformer (Apache 2.0), simplified for Tack's needs.
 import ast
 import copy
 
-from tack.lang import ir, parallel_dims
+from tack.lang import ir, ir_bounds, parallel_dims
 from tack.lang.constant import constant_components, constant_ir, constant_table
 from tack.lang.ir_names import fresh_name
 from tack.lang.ir_traversal import LIST_ROLES, child_fields, walk_ir
@@ -107,8 +107,14 @@ class KernelTransformer(ast.NodeVisitor):
     """
 
     def __init__(self, vector_fields=None, texture_fields=None, python_func=None,
-                 bindings=None, template_funcs=None):
+                 bindings=None, template_funcs=None, debug=False):
         self._python_func = python_func
+        # Debug mode: every field and array index is checked (IRBoundsCheck),
+        # and each checked access is described in _bounds_sites.
+        self._debug = debug
+        self._bounds_sites: list = []
+        self._array_sizes: dict = {}   # local/shared array name -> its size expression
+        self._sources: dict = {}       # Python function -> its source, for _source_text
         self._bindings = bindings
         self._template_funcs = template_funcs
         self._call_bindings = None
@@ -204,7 +210,11 @@ class KernelTransformer(ast.NodeVisitor):
         for stmt in body:
             if isinstance(stmt, ir.IRParallelFor):
                 _mark_outermost_continues(stmt.body)
+        if self._debug:
+            params.extend(ir.IRParam(name=name) for name in ir_bounds.HIDDEN_PARAMS)
         function = ir.IRFunction(name=node.name, params=params, body=body)
+        if self._debug:
+            function.bounds_sites = tuple(self._bounds_sites)
         if workgroup_features(function):
             # Workgroup collectives assume one-dimensional groups.
             parallel_dims.flatten(parallel_dims.parallel_loop(function))
@@ -1512,6 +1522,11 @@ class KernelTransformer(ast.NodeVisitor):
                     node, f"{func_name}()", "needs a named field for an index per dimension")
             index = self._linearize_index(node, field_name, index)
         ndim = self._vector_fields.get(field_name)
+        if not by_dimension:
+            # A scalar value on a vector field takes a component's flat index.
+            kind = (ir.IRFieldExtent.STORAGE if ndim is not None and not isinstance(value, list)
+                    else ir.IRFieldExtent.ELEMENTS)
+            index = self._checked(node, field_name, [index], index, kind)
         if not isinstance(value, list):
             if by_dimension and ndim is not None:
                 raise self._source_error(
@@ -1815,6 +1830,7 @@ class KernelTransformer(ast.NodeVisitor):
 
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)
+        self._array_sizes[target_name] = size
         return ir.IRSharedAlloc(name=target_name, dtype=scalar_type, size=size)
 
     def _try_parse_shared_like(self, target_name: str, value_node: ast.Call):
@@ -1839,6 +1855,7 @@ class KernelTransformer(ast.NodeVisitor):
 
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)
+        self._array_sizes[target_name] = size
         return ir.IRSharedAlloc(name=target_name, dtype=None, size=size, field_name=field_name)
 
     def _try_parse_local_alloc(self, target_name: str, value_node: ast.Call):
@@ -1867,6 +1884,7 @@ class KernelTransformer(ast.NodeVisitor):
 
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)  # treat as array for indexing purposes
+        self._array_sizes[target_name] = size
         return ir.IRLocalAlloc(name=target_name, dtype=scalar_type, size=size)
 
     def _try_parse_local_array_like(self, target_name: str, value_node: ast.Call):
@@ -1891,6 +1909,7 @@ class KernelTransformer(ast.NodeVisitor):
 
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)  # treat as array for indexing purposes
+        self._array_sizes[target_name] = size
         return ir.IRLocalAlloc(name=target_name, dtype=None, size=size, field_name=field_name)
 
     def _try_parse_vector_construct(self, value_node: ast.expr) -> list | None:
@@ -2544,7 +2563,8 @@ class KernelTransformer(ast.NodeVisitor):
             if not isinstance(node.value, ast.Name):
                 raise self._source_error(node, "subscript", "indexes an unnamed field with a vector")
             return self._linearize_index(node, node.value.id, [index])
-        return index
+        name = node.value.id if isinstance(node.value, ast.Name) else None
+        return self._checked(node, name, [index], index)
 
     def _linearize_index(self, node, field_name: str, indices: list):
         """Row-major index from one index per dimension: (i * dim1 + j) * dim2 + k.
@@ -2569,7 +2589,81 @@ class KernelTransformer(ast.NodeVisitor):
                 left=ir.IRBinOp(op="*", left=result, right=dim_size),
                 right=flat[d],
             )
-        return result
+        return self._checked(node, field_name, flat, result, source=source)
+
+    # --- Debug mode: bounds checks ---
+
+    def _source_text(self, python, node) -> str:
+        """``node`` as written in ``python``'s source, before inlining renamed it."""
+        if python is not None and getattr(node, 'end_col_offset', None) is not None:
+            source = self._sources.get(python)
+            if source is None:
+                import textwrap
+
+                from tack.lang.func import read_source
+                try:
+                    source = textwrap.dedent(read_source(python, "kernel"))
+                except Exception:   # no source to read: the AST's text below
+                    source = ""
+                self._sources[python] = source
+            try:
+                text = ast.get_source_segment(source, node)
+            except (IndexError, ValueError):     # positions from elsewhere
+                text = None
+            if text:
+                return text
+        return ast.unparse(node)
+
+    def _checked(self, node, name, indices, flat, kind=ir.IRFieldExtent.ELEMENTS,
+                 source=None):
+        """``flat``, the index of an access to ``name``, as debug mode checks it.
+
+        Several ``indices`` are checked against one dimension of the field
+        each; one is a flat index, checked against the ``kind`` of extent.
+        An array is checked against its size. Out of debug mode, or for an
+        array this function cannot size, ``flat`` is returned unchecked.
+        """
+        if not self._debug or name is None:
+            return flat
+        if name in self._shared_vars:
+            size = self._array_sizes.get(name)
+            if size is None or len(indices) != 1:
+                return flat
+            extents = [copy.deepcopy(size)]
+        elif len(indices) == 1:
+            extents = [ir.IRFieldExtent(name, kind)]
+        else:
+            extents = [ir.IRFieldExtent(name, ir.IRFieldExtent.LEADING)]
+            for d in range(1, len(indices)):
+                # Tagged as linearization's are, so too many indices is
+                # the same TypeError whichever node resolve meets first.
+                dim_size = ir.IRDimSize(field_name=name, dim=d)
+                dim_size.index_count = len(indices)
+                dim_size.index_source = source
+                extents.append(dim_size)
+        site = len(self._bounds_sites)
+        # Whose source the access is in (func.tag_origin): a call's
+        # arguments are the caller's although they are lowered while the
+        # callee is inlined. The line in the file is where the function's
+        # source, parsed alone, starts at line 1 with the decorator.
+        origin = getattr(node, '_tack_origin', None)
+        python = origin() if origin is not None else None
+        if python is not None:
+            function = None if python is self._python_func else python.__name__
+        else:   # a node lowering made: where the other diagnostics say
+            function = self._inline_stack[-1] if self._inline_stack else None
+        code = getattr(python, '__code__', None)
+        line = getattr(node, 'lineno', None)
+        self._bounds_sites.append(ir_bounds.BoundsSite(
+            kernel=self._function_name, function=function,
+            file=code.co_filename if code is not None and line is not None else None,
+            line=code.co_firstlineno + line - 1 if code is not None and line is not None
+            else line,
+            column=getattr(node, 'col_offset', 0) + 1,
+            text=self._source_text(python, node), dimensions=len(indices)))
+        # The check evaluates its own copy of the indices: IR is a tree.
+        return ir.IRBoundsCheck(indices=[copy.deepcopy(i) for i in indices], extents=extents,
+                                flat=flat, site=site, errors=ir.IRName(ir_bounds.ERRORS_PARAM))
 
     def _is_range_call(self, node: ast.expr) -> bool:
         """Check if an AST node is a call to range()."""
@@ -2759,7 +2853,7 @@ class _NameRenamer(ast.NodeTransformer):
 
 def transform_kernel(kernel_ast: ast.Module, vector_fields=None,
                      texture_fields=None, python_func=None, bindings=None,
-                     template_funcs=None) -> ir.IRModule:
+                     template_funcs=None, debug=False) -> ir.IRModule:
     """Transform a kernel's Python AST into Tack IR.
 
     Args:
@@ -2771,8 +2865,10 @@ def transform_kernel(kernel_ast: ast.Module, vector_fields=None,
         python_func: Defining Python callable for globals/closure bindings.
         bindings: Explicit namespace for AST-only callers without a callable.
         template_funcs: Transformation-local map of resolved template methods.
+        debug: Check every field and array index (see ``ir_bounds``).
     """
     transformer = KernelTransformer(vector_fields=vector_fields,
                                     texture_fields=texture_fields, python_func=python_func,
-                                    bindings=bindings, template_funcs=template_funcs)
+                                    bindings=bindings, template_funcs=template_funcs,
+                                    debug=debug)
     return transformer.visit(kernel_ast)
