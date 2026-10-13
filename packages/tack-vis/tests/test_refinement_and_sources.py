@@ -189,6 +189,21 @@ def test_statistics_of_integers(backend):
         assert (out["sample_variance"], out["population_variance"]) == (0.5, 0.25)
 
 
+def test_integer_statistics_sum_exactly(backend):
+    """Integer sums stay exact past f32's 2**24: converted to f32 first, these
+    summed to 2**24 and 1001000064."""
+    data = td.uniform_grid((2,))
+    result = td.statistics(data, td.Field(td.H1(data), _scalars([2**24 + 1, 0], tack.i32)))
+    assert (result["sum"], result["mean"]) == (2**24 + 1, (2**24 + 1) / 2)
+    n = 1_000_001
+    data = td.uniform_grid((n,))
+    values = np.full(n, 1001, np.int32)
+    values[-1] = 7
+    result = td.statistics(data, td.Field(td.H1(data), _scalars(values, tack.i32)))
+    assert result["sum"] == 1001 * (n - 1) + 7
+    assert (result["min"], result["max"]) == (7, 1001)
+
+
 def test_integer_statistics_sum_in_the_computation_type(backend):
     data = td.uniform_grid((2,))
     values = _scalars([2**63, 2**63], tack.u64)

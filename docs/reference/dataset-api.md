@@ -377,8 +377,9 @@ the geometry, as described under locating points below.
 dtypes and retain that dtype. Use `Cast(values, dtype)` to convert explicitly.
 Algorithms that need fractional arithmetic (`clip` weights, `statistics`,
 `magnitude` and `log_values`) compute in f64 for f64 input, otherwise f32,
-converting integer values before arithmetic. Statistics sums use that floating
-precision; its extrema still come from the original values. Converting wide
+converting integer values before arithmetic. `statistics` sums integer
+values exactly in f64 (to 2^53, without wrapping) and takes its moments in
+that floating precision; its extrema come from the original values. Converting wide
 integers may round values beyond the exact integer range of f32 (2^24) or
 f64 (2^53); use f64 input for greater precision on a backend that supports it.
 Integer `magnitude` and `log_values` therefore return floating point fields.

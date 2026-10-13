@@ -2,6 +2,8 @@
 
 import math
 
+import numpy as np
+
 import tack
 from tack.data.algorithms._common import _converted, _field, _floating_dtype
 from tack.data.arrays import materialize, size_of, width_of
@@ -35,7 +37,11 @@ def statistics(data, field):
     n = size_of(field.values)
     if n == 0:
         raise ValueError("statistics of no values")
-    total = values.sum()
+    # Integer sums are exact in f64 up to 2**53 and cannot wrap; summing the
+    # converted f32 values was off by 57 for a million i32 values of 1001.
+    # NumPy reduces integer fields on the host anyway.
+    total = values.sum() if values is source else float(
+        np.sum(source.to_numpy(), dtype=np.float64))
     mean = total / n
     # The powers of differences from a mean are fractions, whatever the values are.
     p2, p3, p4 = (tack.field(values.dtype, shape=(n,)) for _ in range(3))
