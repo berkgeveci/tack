@@ -3,6 +3,7 @@
 import numpy as np
 
 import tack
+from tack.data import ids
 from tack.data.algorithms._advection import _run
 from tack.data.dataset import DataSet, Field
 from tack.data.spaces import Values
@@ -43,7 +44,7 @@ def streamlines(data, field, seeds, step_size, steps, integrator="rk4", locator=
     host_lengths = lengths.to_numpy() if m else np.zeros(0, np.int32)
     total = int(host_lengths.sum())
     moved = np.flatnonzero(host_lengths > 1)
-    idt = tack.i64 if total > 2**31 - 1 else tack.i32
+    idt = ids.for_output(data, total)
     starts = tack.field(idt, shape=(m,))
     if m:
         exclusive_scan(lengths, starts, m, total=False)

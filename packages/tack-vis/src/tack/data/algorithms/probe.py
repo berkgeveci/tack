@@ -45,7 +45,7 @@ def probe(data, where, fields=None, locator=None):
     from tack.data.carry import selected
 
     if not isinstance(where, DataSet):
-        where = _vertices(np.asarray(where, float).reshape(-1, 3))
+        where = _vertices(np.asarray(where, float).reshape(-1, 3), data)
     if not isinstance(where.geometry.space, H1):
         raise TypeError("probe needs the probed points: an H1 geometry")
     locator = locator or CellLocator(data)

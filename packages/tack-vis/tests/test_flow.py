@@ -175,3 +175,14 @@ def test_refusals(backend):
     polyhedra = _rotation(td.as_polyhedra(_two_hexes_and_a_pyramid()), center=(1.0, 0.5))
     with pytest.raises(NotImplementedError, match="polyhedra"):
         td.advect(polyhedra, "v", [[1.0, 0.5, 0.5]], 0.1, 3)
+
+
+def test_advection_keeps_the_input_id_type(backend):
+    """A pipeline that starts in i64 stays there: advect's and streamlines' outputs
+    chose their id type from their own sizes alone."""
+    topology = td.StructuredTopology((2, 2, 2), id_dtype=tack.i64)
+    data = td.DataSet(topology, td.UniformCoordinates((2, 2, 2)))
+    data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([1.0, 0.0, 0.0], data.num_points))
+    for algorithm in (td.advect, td.streamlines):
+        assert algorithm(data, "v", [[0.2, 0.5, 0.5]], 0.1, 1).id_dtype is tack.i64
+    assert td.probe(data, [[0.5, 0.5, 0.5]]).id_dtype is tack.i64

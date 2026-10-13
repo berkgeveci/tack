@@ -296,11 +296,12 @@ def _every(flags, stride):
         flags[i] = 1 if i % stride == 0 else 0
 
 
-def _vertices(points):
+def _vertices(points, like=None):
+    """Vertex cells at ``points``, with ``like``'s id type (or wider if needed)."""
     from tack.data.topology import UnstructuredTopology
 
     n = len(points)
-    idt = ids.choose(None, n)
+    idt = ids.for_output(like, n) if like is not None else ids.choose(None, n)
     types = tack.field(tack.u8, shape=(n,))
     offsets = tack.zeros(idt, (n + 1,))
     connectivity = tack.field(idt, shape=(n,))
