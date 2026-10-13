@@ -453,6 +453,38 @@ class ExportableCUDABuffer(DeviceBuffer):
             pass
 
 
+def _libc_uselocale():
+    """glibc's ``uselocale``, or None where there is none (Windows)."""
+    try:
+        uselocale = ctypes.CDLL(None).uselocale
+    except (OSError, TypeError, AttributeError):
+        return None
+    uselocale.restype = ctypes.c_void_p
+    uselocale.argtypes = [ctypes.c_void_p]
+    return uselocale
+
+
+_uselocale = _libc_uselocale()
+
+
+def _compile_keeping_thread_locale(prog, opts):
+    """``nvrtcCompileProgram``, with the calling thread's locale restored.
+
+    NVRTC 12.0 switches the calling thread to the C locale with
+    ``uselocale`` and leaves it there. ``setlocale`` still reports the
+    process's locale, but Python's default text encoding follows the
+    thread's, so every ``open``/``read_text``/``write_text`` without an
+    encoding became ASCII after the first CUDA kernel compiled, and failed
+    on any non-ASCII character. NVRTC 13.2 leaves the locale alone.
+    """
+    saved = _uselocale(None) if _uselocale is not None else None
+    try:
+        return nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
+    finally:
+        if saved is not None:
+            _uselocale(saved)
+
+
 def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     """Compile CUDA C source to PTX via NVRTC."""
     src = cuda_source.encode("utf-8")
@@ -464,7 +496,7 @@ def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     opts = [b"--ftz=false", b"--prec-div=true", b"--prec-sqrt=true",
             b"--fmad=true", b"--extra-device-vectorization"]
     # cuda-python marshals a list of bytes; a ctypes array can be misread.
-    compile_result = nvrtc.nvrtcCompileProgram(prog, len(opts), opts)
+    compile_result = _compile_keeping_thread_locale(prog, opts)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
