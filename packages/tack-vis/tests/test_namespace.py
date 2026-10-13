@@ -34,6 +34,7 @@ def test_tack_algorithms_is_core_alone():
 
 def test_tack_vis_ships_no_algorithms_directory():
     """A second ``tack/algorithms/__init__.py`` would be dead code: only the
-    first one found on the path runs."""
+    first one found on the path runs. A directory left holding only
+    ``__pycache__`` (a checkout from before the worklets moved) ships nothing."""
     src = pathlib.Path(__file__).resolve().parents[1] / "src" / "tack"
-    assert not (src / "algorithms").exists()
+    assert not list((src / "algorithms").glob("**/*.py"))
