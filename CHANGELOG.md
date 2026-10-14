@@ -53,6 +53,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   million cells on an RTX 4060 Ti went from 9.6 to 7.1 ms, now the cost
   of its 31 launches' host side alone. Errors of a launch surface at the
   next wait rather than at its call, as on Metal.
+- Level Zero launches are queued the same way, on one asynchronous
+  immediate command list with a barrier after each command; fills and
+  host writes queue in order with them (from a private copy of the host
+  array, so it may change at once), and a dropped field is freed after the
+  work queued before it (the driver's deferred free). On an Intel Max
+  1100, 100 small launches went from 8.7 to 2.6 ms, and a contour of a
+  million hexahedra from about 24 to 18 ms. Ordering by barriers rather
+  than an in-order list: Intel's in-order lists cost about 100 µs of device
+  time per kernel on driver 25.05.
 
 ### Fixed
 

@@ -90,8 +90,14 @@ ZE_STRUCTURE_TYPE_DEVICE_IP_VERSION_EXT = 0x1000f
 ZE_MODULE_FORMAT_IL_SPIRV = 0
 ZE_MODULE_FORMAT_NATIVE = 1
 
-# Command queue mode
+# Command queue mode and flags
 ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS = 1
+ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS = 2
+ZE_RESULT_ERROR_UNSUPPORTED_FEATURE = 0x78000003
+
+# Freeing memory after the work queued so far (ZE_extension_memory_free_policies)
+ZE_STRUCTURE_TYPE_MEMORY_FREE_EXT_DESC = 0x1000a
+ZE_DRIVER_MEMORY_FREE_POLICY_EXT_FLAG_DEFER_FREE = 0x2
 
 # Command queue group property flags
 ZE_COMMAND_QUEUE_GROUP_PROPERTY_FLAG_COMPUTE = 0x1
@@ -163,6 +169,21 @@ class ze_module_desc_t(ctypes.Structure):
         ("pInputModule", ctypes.c_void_p),
         ("pBuildFlags", ctypes.c_char_p),
         ("pConstants", ctypes.c_void_p),
+    ]
+
+
+class ze_memory_free_ext_desc_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("freePolicy", ctypes.c_uint32),
+    ]
+
+
+class ze_driver_extension_properties_t(ctypes.Structure):
+    _fields_ = [
+        ("name", ctypes.c_char * 256),
+        ("version", ctypes.c_uint32),
     ]
 
 
@@ -391,6 +412,9 @@ def _setup_argtypes(ze):
     ze.zeDriverGet.argtypes = [ctypes.POINTER(U32), P]
     ze.zeDriverGet.restype = ctypes.c_int32
 
+    ze.zeDriverGetExtensionProperties.argtypes = [P, ctypes.POINTER(U32), P]
+    ze.zeDriverGetExtensionProperties.restype = ctypes.c_int32
+
     ze.zeDriverGetProperties.argtypes = [P, P]
     ze.zeDriverGetProperties.restype = ctypes.c_int32
 
@@ -463,6 +487,15 @@ def _setup_argtypes(ze):
 
     ze.zeMemGetAllocProperties.argtypes = [P, P, P, P]
     ze.zeMemGetAllocProperties.restype = ctypes.c_int32
+
+    ze.zeCommandListAppendBarrier.argtypes = [P, P, U32, P]
+    ze.zeCommandListAppendBarrier.restype = ctypes.c_int32
+
+    ze.zeCommandListHostSynchronize.argtypes = [P, ctypes.c_uint64]
+    ze.zeCommandListHostSynchronize.restype = ctypes.c_int32
+
+    ze.zeMemFreeExt.argtypes = [P, P, P]
+    ze.zeMemFreeExt.restype = ctypes.c_int32
 
     ze.zeModuleCreate.argtypes = [P, P, P, P, P]
     ze.zeModuleCreate.restype = ctypes.c_int32
@@ -537,6 +570,17 @@ def _get_ocloc():
         _ocloc = _load_ocloc()
         _setup_ocloc_argtypes(_ocloc)
     return _ocloc
+
+
+def _extensions(ze, driver) -> set:
+    """The names of the extensions a driver supports."""
+    count = ctypes.c_uint32(0)
+    if ze.zeDriverGetExtensionProperties(driver, ctypes.byref(count), None) != ZE_RESULT_SUCCESS:
+        return set()
+    props = (ze_driver_extension_properties_t * count.value)()
+    if ze.zeDriverGetExtensionProperties(driver, ctypes.byref(count), props) != ZE_RESULT_SUCCESS:
+        return set()
+    return {p.name.decode(errors="replace") for p in props}
 
 
 def _check_ze(result, msg="Level Zero"):
@@ -789,11 +833,19 @@ def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_
 class L0Buffer(DeviceBuffer):
     """Device-resident buffer backed by a Level Zero device allocation.
 
-    Data lives on the GPU.  ``from_numpy`` copies host→device,
-    ``to_numpy`` copies device→host.
+    Data lives on the GPU. Everything that touches it goes through the
+    backend's queue, in order with the launches: ``from_numpy`` and ``fill``
+    are queued and return at once, ``to_numpy`` and ``read_range`` are
+    queued and waited for. Freeing is deferred by the driver until the work
+    queued so far is done, so a field Python drops while a queued launch
+    still uses it outlives that launch.
     """
 
     backend_name = "level_zero"
+    # Memory handed outside Tack (DLPack, a wrapped pointer) may be read
+    # with no Tack call between: a launch that uses it completes before
+    # returning, as on Metal and CUDA.
+    _shared = False
 
     def __init__(self, backend, numpy_dtype, shape):
         self._backend = backend
@@ -826,26 +878,43 @@ class L0Buffer(DeviceBuffer):
     def device_ptr(self):
         return self._device_ptr
 
+    def synchronize(self):
+        """Wait for every launch, fill and copy queued on the backend."""
+        self._backend.synchronize()
+
+    def share(self):
+        """Hand this memory outside Tack: wait for the queued work now, and
+        have every later launch that uses it complete before returning."""
+        self._shared = True
+        self.synchronize()
+
     def _copy_to_device(self, arr: np.ndarray):
-        """Copy numpy array → device using an immediate command list."""
+        """Queue a copy of a numpy array to the device.
+
+        The copy runs later, so it reads a private copy of ``arr``, which
+        the caller may change or drop at once; the backend holds it until
+        the queue has passed it.
+        """
         ze = _get_ze()
-        src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        with self._backend._launch_lock:
-            _check_ze(ze.zeCommandListAppendMemoryCopy(
-                self._backend._imm_cmd_list,
+        src = np.array(arr, dtype=self._numpy_dtype, order="C", copy=True)
+        backend = self._backend
+        with backend._launch_lock:
+            backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                backend._queue,
                 self._device_ptr, src.ctypes.data, self._nbytes,
-                None, 0, None),
-                "zeCommandListAppendMemoryCopy (H2D)")
+                None, 0, None), "zeCommandListAppendMemoryCopy (H2D)")
+            backend._hold(src, self._nbytes)
 
     def _copy_from_device(self, out: np.ndarray):
-        """Copy device → numpy array using an immediate command list."""
+        """Copy device → numpy array, after the work queued before it."""
         ze = _get_ze()
-        with self._backend._launch_lock:
-            _check_ze(ze.zeCommandListAppendMemoryCopy(
-                self._backend._imm_cmd_list,
+        backend = self._backend
+        with backend._launch_lock:
+            backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                backend._queue,
                 out.ctypes.data, self._device_ptr, self._nbytes,
-                None, 0, None),
-                "zeCommandListAppendMemoryCopy (D2H)")
+                None, 0, None), "zeCommandListAppendMemoryCopy (D2H)")
+            backend.synchronize()
 
     def from_numpy(self, arr: np.ndarray):
         self._copy_to_device(arr)
@@ -870,12 +939,13 @@ class L0Buffer(DeviceBuffer):
         out = np.empty(count, dtype=self._numpy_dtype)
         if count:
             ze = _get_ze()
-            with self._backend._launch_lock:
-                _check_ze(ze.zeCommandListAppendMemoryCopy(
-                    self._backend._imm_cmd_list,
+            backend = self._backend
+            with backend._launch_lock:
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue,
                     out.ctypes.data, self.address + start * itemsize,
-                    count * itemsize, None, 0, None),
-                    "zeCommandListAppendMemoryCopy (D2H range)")
+                    count * itemsize, None, 0, None), "zeCommandListAppendMemoryCopy (D2H range)")
+                backend.synchronize()
         return out
 
     def fill(self, value):
@@ -887,29 +957,30 @@ class L0Buffer(DeviceBuffer):
 
         def native(pattern):
             # The compute group's fill takes a power-of-two pattern up to its
-            # maximum; the list is synchronous, so the pattern outlives it.
+            # maximum. The fill runs later: the backend holds the pattern.
             size = len(pattern)
             if size & (size - 1) or size > backend._max_fill_pattern:
                 return False
             buffer = ctypes.create_string_buffer(pattern, size)
             with backend._launch_lock:
-                _check_ze(ze.zeCommandListAppendMemoryFill(
-                    backend._imm_cmd_list, self._device_ptr, buffer, size, self._nbytes,
-                    None, 0, None),
-                    "zeCommandListAppendMemoryFill")
+                backend._ordered(ze.zeCommandListAppendMemoryFill(
+                    backend._queue, self._device_ptr, buffer, size, self._nbytes,
+                    None, 0, None), "zeCommandListAppendMemoryFill")
+                backend._hold(buffer, size)
             return True
 
         def write(offset, data):
             source = ctypes.create_string_buffer(data, len(data))
             with backend._launch_lock:
-                _check_ze(ze.zeCommandListAppendMemoryCopy(
-                    backend._imm_cmd_list, base + offset, source, len(data), None, 0, None),
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue, base + offset, source, len(data), None, 0, None),
                     "zeCommandListAppendMemoryCopy (H2D pattern)")
+                backend._hold(source, len(data))
 
         def copy(dst, src, size):
             with backend._launch_lock:
-                _check_ze(ze.zeCommandListAppendMemoryCopy(
-                    backend._imm_cmd_list, base + dst, base + src, size, None, 0, None),
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue, base + dst, base + src, size, None, 0, None),
                     "zeCommandListAppendMemoryCopy (D2D)")
 
         device_fill.fill(self._nbytes, pattern, native, write, copy)
@@ -922,8 +993,8 @@ class L0Buffer(DeviceBuffer):
     def __del__(self):
         if hasattr(self, '_device_ptr') and self._device_ptr and getattr(self, '_owned', True):
             try:
-                ze = _get_ze()
-                ze.zeMemFree(self._backend._context, self._device_ptr)
+                # After every launch queued so far, which may still use it.
+                self._backend._free(self._device_ptr)
             except Exception:
                 pass
 
@@ -996,21 +1067,19 @@ class L0TextureImage:
             nbytes, 0, ctypes.byref(host_ptr)),
             "zeMemAllocHost (image staging)")
 
-        # Device → host staging buffer
-        _check_ze(ze.zeCommandListAppendMemoryCopy(
-            backend._imm_cmd_list, host_ptr,
-            field._buffer.device_ptr, nbytes,
-            None, 0, None),
-            "zeCommandListAppendMemoryCopy (D2H staging)")
-
-        # Host staging buffer → image
-        _check_ze(ze.zeCommandListAppendImageCopyFromMemory(
-            backend._imm_cmd_list, self.handle,
-            host_ptr, None,
-            None, 0, None),
-            "zeCommandListAppendImageCopyFromMemory")
-
-        # Free staging buffer
+        # Device → host staging buffer → image, then wait for both before
+        # freeing the staging memory they use. Uploads are rare; launches
+        # are not. The queue is shared, so the appends hold its lock.
+        with backend._launch_lock:
+            backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                backend._queue, host_ptr,
+                field._buffer.device_ptr, nbytes,
+                None, 0, None), "zeCommandListAppendMemoryCopy (D2H staging)")
+            backend._ordered(ze.zeCommandListAppendImageCopyFromMemory(
+                backend._queue, self.handle,
+                host_ptr, None,
+                None, 0, None), "zeCommandListAppendImageCopyFromMemory")
+            backend.synchronize()
         ze.zeMemFree(backend._context, host_ptr)
 
     def __del__(self):
@@ -1111,22 +1180,12 @@ class CompiledL0Kernel:
             groupCountY=grid[1],
             groupCountZ=grid[2])
 
-        # Append launch to command list, close, execute, sync, reset
-        cmd_list = backend._cmd_list
-        _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
-        _check_ze(ze.zeCommandListAppendLaunchKernel(
-            cmd_list, kernel, ctypes.byref(group_count),
-            None, 0, None),
-            "zeCommandListAppendLaunchKernel")
-        _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
-
-        cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
-        _check_ze(ze.zeCommandQueueExecuteCommandLists(
-            backend._cmd_queue, 1, cmd_lists, None),
-            "zeCommandQueueExecuteCommandLists")
-        _check_ze(ze.zeCommandQueueSynchronize(
-            backend._cmd_queue, 0xFFFFFFFFFFFFFFFF),
-            "zeCommandQueueSynchronize")
+        # Queue the launch and return. The kernel's arguments and group size
+        # are captured as it is appended, so the next launch of this kernel
+        # may set its own at once.
+        backend._ordered(ze.zeCommandListAppendLaunchKernel(
+            backend._queue, kernel, ctypes.byref(group_count),
+            None, 0, None), "zeCommandListAppendLaunchKernel")
 
 
 # ---------------------------------------------------------------------------
@@ -1304,43 +1363,100 @@ class LevelZeroBackend(Backend):
         self._max_fill_pattern = qg_props[self._compute_ordinal].maxMemoryFillPatternSize
 
     def _create_queues(self, ze):
-        # Create command queue (synchronous mode for simplicity)
-        queue_desc = ze_command_queue_desc_t(
-            stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
-            ordinal=self._compute_ordinal, index=0, flags=0,
-            mode=ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS, priority=0)
-        self._cmd_queue = ze_command_queue_handle_t()
-        _check_ze(ze.zeCommandQueueCreate(
-            self._context, self._device, ctypes.byref(queue_desc),
-            ctypes.byref(self._cmd_queue)),
-            "zeCommandQueueCreate")
-
         # Level Zero command lists and kernel argument state may not be used
-        # from two threads at once, and both lists below are shared by every
+        # from two threads at once, and the queue below is shared by every
         # dispatch, reduction and copy on this backend. Reentrant because a
         # dispatch copies its scalar pack into place while holding it.
         self._launch_lock = threading.RLock()
 
-        # Create a reusable command list for kernel dispatch
-        list_desc = ze_command_list_desc_t(
-            stype=ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC, pNext=None,
-            commandQueueGroupOrdinal=self._compute_ordinal, flags=0)
-        self._cmd_list = ze_command_list_handle_t()
-        _check_ze(ze.zeCommandListCreate(
-            self._context, self._device, ctypes.byref(list_desc),
-            ctypes.byref(self._cmd_list)),
-            "zeCommandListCreate")
+        # The backend's queue: one asynchronous immediate command list. Every
+        # launch, fill and copy is appended to it, followed by a barrier, and
+        # returns once queued; the host waits (`synchronize`) where it reads
+        # a field. The barriers keep the commands in program order. Not the
+        # in-order flag (ZE_COMMAND_QUEUE_FLAG_IN_ORDER): on driver
+        # 25.05.32567 it cost about 100 us of device time per kernel, a
+        # barrier about 5. Asynchronous where the driver has
+        # zeCommandListHostSynchronize (API 1.6); otherwise synchronous,
+        # every append completing at once.
+        self._queue = ze_command_list_handle_t()
+        result = ZE_RESULT_ERROR_UNSUPPORTED_FEATURE
+        if hasattr(ze, "zeCommandListHostSynchronize"):
+            desc = ze_command_queue_desc_t(
+                stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
+                ordinal=self._compute_ordinal, index=0, flags=0,
+                mode=ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS, priority=0)
+            result = ze.zeCommandListCreateImmediate(
+                self._context, self._device, ctypes.byref(desc),
+                ctypes.byref(self._queue))
+        self._queued = result == ZE_RESULT_SUCCESS
+        if not self._queued:
+            desc = ze_command_queue_desc_t(
+                stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
+                ordinal=self._compute_ordinal, index=0, flags=0,
+                mode=ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS, priority=0)
+            _check_ze(ze.zeCommandListCreateImmediate(
+                self._context, self._device, ctypes.byref(desc),
+                ctypes.byref(self._queue)),
+                "zeCommandListCreateImmediate")
 
-        # Create an immediate command list for memory copies
-        imm_desc = ze_command_queue_desc_t(
-            stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
-            ordinal=self._compute_ordinal, index=0, flags=0,
-            mode=ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS, priority=0)
-        self._imm_cmd_list = ze_command_list_handle_t()
-        _check_ze(ze.zeCommandListCreateImmediate(
-            self._context, self._device, ctypes.byref(imm_desc),
-            ctypes.byref(self._imm_cmd_list)),
-            "zeCommandListCreateImmediate")
+        # Host memory queued copies and fills read, held until the queue has
+        # passed them. Waiting releases it all; past these limits a hold
+        # waits first, so a loop that never reads holds a bounded amount.
+        self._held = []
+        self._held_bytes = 0
+
+        # A freed field may still be read by a queued launch. With the
+        # driver's deferred free, it frees the memory once the work queued
+        # so far is done; without it, freeing waits for the queue.
+        self._deferred_free = "ZE_extension_memory_free_policies" in _extensions(
+            ze, self._driver)
+
+    _HOLD_COUNT = 1024
+    _HOLD_BYTES = 256 << 20
+
+    def _ordered(self, result, what):
+        """Check an append to the queue, then put a barrier after it, so
+        nothing appended later starts before it completes. Called under
+        `_launch_lock`."""
+        _check_ze(result, what)
+        if self._queued:
+            _check_ze(_get_ze().zeCommandListAppendBarrier(self._queue, None, 0, None),
+                       "zeCommandListAppendBarrier")
+
+    def _hold(self, obj, nbytes):
+        """Keep host memory a queued copy or fill reads until it has run.
+        Called under `_launch_lock`, after the append."""
+        if not self._queued:
+            return
+        self._held.append(obj)
+        self._held_bytes += nbytes
+        if len(self._held) > self._HOLD_COUNT or self._held_bytes > self._HOLD_BYTES:
+            self.synchronize()
+
+    def synchronize(self):
+        """Wait for every launch, fill and copy queued on this backend. A
+        launch's error surfaces here, at the next host access, rather than
+        at its call."""
+        with self._launch_lock:
+            if self._queued:
+                _check_ze(_get_ze().zeCommandListHostSynchronize(
+                    self._queue, 0xFFFFFFFFFFFFFFFF),
+                    "zeCommandListHostSynchronize")
+            self._held.clear()
+            self._held_bytes = 0
+
+    def _free(self, ptr):
+        """Free device memory after the work queued so far, which may use it."""
+        ze = _get_ze()
+        if self._deferred_free:
+            desc = ze_memory_free_ext_desc_t(
+                stype=ZE_STRUCTURE_TYPE_MEMORY_FREE_EXT_DESC, pNext=None,
+                freePolicy=ZE_DRIVER_MEMORY_FREE_POLICY_EXT_FLAG_DEFER_FREE)
+            _check_ze(ze.zeMemFreeExt(self._context, ctypes.byref(desc), ptr),
+                       "zeMemFreeExt")
+        else:
+            self.synchronize()
+            ze.zeMemFree(self._context, ptr)
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> L0Buffer:
@@ -1355,6 +1471,7 @@ class LevelZeroBackend(Backend):
         buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
         buf._device_ptr = ctypes.c_void_p(int(ptr))
         buf._owned = False
+        buf._shared = True      # someone else's memory: launches on it complete
         return buf
 
     def execute(self, kernel, args, kwargs):
@@ -1397,6 +1514,12 @@ class LevelZeroBackend(Backend):
                 kernel_args = bind_textures(kept_args) + pack_fields
 
             compiled(kernel_args, loop_end, self, extents)
+            # Memory that can be read with no Tack call between -- a wrapped
+            # pointer, an exported field -- and a texture, whose image could
+            # be destroyed before a queued launch has read it: complete now.
+            if any(getattr(getattr(a, '_buffer', None), '_shared', False)
+                   or isinstance(a, L0TextureImage) for a in kernel_args):
+                self.synchronize()
 
     def _store_texture_shapes(self, ir_func, effective_args):
         """Record Texture3D extents, falling back to software sampling.
@@ -1579,21 +1702,11 @@ class LevelZeroBackend(Backend):
             group_count = ze_group_count_t(
                 groupCountX=group_count_x, groupCountY=1, groupCountZ=1)
 
-            cmd_list = self._cmd_list
-            _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
-            _check_ze(ze.zeCommandListAppendLaunchKernel(
-                cmd_list, kernel, ctypes.byref(group_count), None, 0, None),
+            self._ordered(ze.zeCommandListAppendLaunchKernel(
+                self._queue, kernel, ctypes.byref(group_count), None, 0, None),
                 "zeCommandListAppendLaunchKernel")
-            _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
-            cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
-            _check_ze(ze.zeCommandQueueExecuteCommandLists(
-                self._cmd_queue, 1, cmd_lists, None),
-                "zeCommandQueueExecuteCommandLists")
-            _check_ze(ze.zeCommandQueueSynchronize(
-                self._cmd_queue, 0xFFFFFFFFFFFFFFFF),
-                "zeCommandQueueSynchronize")
 
-        return float(out_buf.to_numpy()[0])
+        return float(out_buf.to_numpy()[0])     # queued after the launch, and waited for
 
     def _compile_reduce(self, op: str) -> CompiledL0Kernel:
         """Compile a reduction kernel for the given op."""
