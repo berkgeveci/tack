@@ -400,6 +400,10 @@ and returns only after the kernel completes.
 | `TACK_CPU_THREADS` | `CPUBackend.__init__` | CPU worker count. Read each time a CPU backend is constructed, unless `tack.init(arch="cpu", num_threads=...)` gives one. Values below 1 become 1. `1` runs everything on the calling thread. A non-integer raises `ValueError` from `tack.init` |
 | `TACK_CPU_POLICY` | `CPUBackend.__init__` | Threading policy: `v1` or `v2`. Unset or empty means `v2`, the default. Any other value raises `ValueError` from `tack.init`, listing the accepted values |
 | `TACK_CPU_MARGIN` | `CPUBackend.__init__` | Float override of the threading decision's safety margin |
+| `TACK_CPU_POOL` | `CPUBackend.__init__` | `python` (or `0`, `off`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool, which is the default wherever it can be made |
+| `TACK_CPU_POOL_PIN` | pool creation (`cpu_pool.CPool`) | **Linux.** `0`, `off`, `no` or `false` leaves the pool's workers to the scheduler instead of pinning worker *i* to the *i*-th CPU in core order (the caller's node first) |
+| `TACK_CPU_SUBSETS` | `CPUBackend.__init__` | When on (anything but `0`, `false`, `no`, `off` or empty), a fan-out may use the first *k* of the threads when a smaller prefix is expected to finish just as soon (`_threads_for`). Off by default |
+| `TACK_CPU_MALLOC` | `CPUBackend.__init__` | **Linux.** `0`, `off`, `no` or `false` leaves glibc's `malloc` thresholds alone; by default the first CPU backend sets them so freed blocks keep their pages (`cpu._tune_malloc`), process-wide |
 | `TACK_NO_REINIT` | `tack.init` | A boolean flag (`dispatch.env_flag`): when on, `init` is a no-op while a backend is active. `0`, `false`, `no`, `off` and empty mean off. See above |
 | `TACK_DUMP_MSL` | Metal kernel compilation | **Metal only.** A boolean flag read like `TACK_NO_REINIT`. When on, writes each compiled kernel's MSL to `/tmp/tack_<entry>.msl` and prints the path. Other backends ignore it. Use `tack.inspect` instead |
 | `TACK_REQUIRE_CLANG` | Test suite (`tests/compiler_tools.py`) | Any value other than empty or `0` turns missing or unusable Clang tooling into a test failure instead of a skip |
