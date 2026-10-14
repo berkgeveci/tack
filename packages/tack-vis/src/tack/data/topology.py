@@ -126,6 +126,12 @@ class _Topology:
         dimension -- polygons of a 3D mesh, edges of a 2D one. Derived on first
         use and kept."""
         if self._faces is None:
+            if self.dimension == 1:
+                # Lines declare no faces (a line's would be its end points),
+                # and deriving none made a line mesh's boundary empty.
+                raise NotImplementedError(
+                    "the faces of a mesh of lines (a 1D grid's, say) are not derived: "
+                    "their faces would be points. A PolylineTopology's are its chains' ends")
             self._faces = Faces._derive(self)
         return self._faces
 
