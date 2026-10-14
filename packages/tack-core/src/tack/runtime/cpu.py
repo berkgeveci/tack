@@ -48,7 +48,6 @@ steady to within a few percent.
 import ctypes
 import ctypes.util
 import itertools
-import math
 import os
 import platform
 import threading
@@ -488,24 +487,6 @@ _CONFIRM_BAND = 4.0
 # one serial run per cap.
 _RECHECK_CAP = 1024
 
-# --- a thread count per launch (TACK_CPU_SUBSETS=1) ---
-# Rule 1, size: each worker's chunk should run at least this many times the
-# share of the hot fan-out it is charged (the hot cost over the thread
-# count: a launch's cost grows little with its thread count through the
-# pool, 3 + 0.3k us hot on a 2 GHz Xeon, so the idle-gap price the
-# estimate adds is not per worker), so a short launch does not wake every
-# core for a few microseconds of work each.
-_SUBSET_WORK_RATIO = 10.0
-# Rule 2, saturation: a kernel whose fan-out at N threads achieves a
-# speedup S below N / this is bandwidth-bound, and ceil(this * S) threads
-# reach the same throughput. 2, not 1.5: on a hyperthreaded host a
-# compute-bound kernel's S is about N / 1.6 (the second thread of a core
-# adds a fifth), and 1.5 S then trimmed a thread for a 2-6% loss.
-_SUBSET_SATURATION = 2.0
-# A subset whose aggregate rate comes out worse than the full fan-out's by
-# more than this factor is retired until the next full run re-measures.
-_SUBSET_TOLERANCE = 1.15
-
 # Per-element cost assumed when deciding whether an *unmeasured* kernel is
 # worth probing. It cannot be measured yet — that is what the probe is for —
 # so the threshold answers "could a kernel this expensive repay a fan-out
@@ -596,14 +577,6 @@ class CompiledKernel:
         # The latest serial sample as measured, before smoothing or any
         # bound -- what `_second_opinion` compares two slices by.
         self.last_sample = 0.0
-        # A thread count per launch (`_threads_for`): subset runs since the
-        # last run at every thread, when the next full run is due (1, 2, 4,
-        # ... `_RECHECK_CAP`, so r_p at N stays current), and whether a
-        # subset ran slower than the full fan-out's rate allows, which
-        # holds the kernel at every thread until that full run.
-        self.subset_runs = 0
-        self.subset_recheck_after = 1
-        self.subset_failed = False
 
         # Only serial runs measure, so the decision to thread rests on an
         # estimate that threading itself stops refreshing. Left alone that
@@ -904,9 +877,6 @@ class CPUBackend(Backend):
         # v1 should not pay a string comparison for a feature it does not
         # use. The path P2 spent its effort getting to ~11.7 us.
         self._v2 = self.policy == "v2"
-        # A thread count per launch, off until scored (benchmarks/thread_subsets.py).
-        self._subsets = (os.environ.get("TACK_CPU_SUBSETS", "").strip().lower()
-                         not in ("", "0", "false", "no", "off"))
         # The margin is insurance against a mis-estimate, so how much is
         # wanted depends on how good the estimates are -- and under v1 the
         # 2.0 written here was never the margin applied: P6 discounts it to
@@ -1848,15 +1818,8 @@ class CPUBackend(Backend):
     def _record_parallel_cost(self, compiled: CompiledKernel,
                               worker_rates: list, workers: int,
                               bounds_serial: bool = False,
-                              retire_serial_floor: bool = False,
-                              subset: bool = False):
+                              retire_serial_floor: bool = False):
         """Learn `r_p` from what the workers themselves reported.
-
-        A `subset` run (fewer than every thread, `_threads_for`) teaches
-        the model nothing: its aggregate rate is the rate at `k`, not at
-        `N`, and folding it in would shrink the measured speedup and with
-        it the next subset, all the way down. It is only checked against
-        the full rate, and retires the subset if it falls short.
 
         `bounds_serial` says the spans were long enough (see
         `_RP_BOUND_SPAN_RATIO`) for the aggregate rate to also serve as a
@@ -1897,13 +1860,6 @@ class CPUBackend(Backend):
         """
         if workers <= 0:
             return
-        if subset:
-            rates = sorted(worker_rates)
-            if rates and compiled.ns_per_elem_parallel > 0.0:
-                sample = _worker_median(rates) / workers
-                if sample > _SUBSET_TOLERANCE * compiled.ns_per_elem_parallel:
-                    compiled.subset_failed = True
-            return
         if retire_serial_floor and compiled.serial_floor_ns > 0.0:
             compiled.serial_floor_ns = 0.0
             compiled.parallel_since_measure = 0
@@ -1938,18 +1894,15 @@ class CPUBackend(Backend):
 
     def _parallel_execute(self, compiled: CompiledKernel, prefix: tuple,
                           start: int, end: int, *, whole_range: bool = False):
-        """Split the loop range across threads -- the first `k` of them,
-        where `_threads_for` picks `k`."""
+        """Split the loop range across threads."""
         compiled.scattered = True
         total = end - start
-        k = self._threads_for(compiled, total)
-        subset = k < self.num_threads
-        chunk = (total + k - 1) // k
+        chunk = (total + self.num_threads - 1) // self.num_threads
         measure = self._v2
 
         jit = self._jit_pool()
         if jit is not None:
-            self._pool_execute(jit, compiled, prefix, start, end, k, measure,
+            self._pool_execute(jit, compiled, prefix, start, end, measure,
                                whole_range)
             return
 
@@ -1959,7 +1912,7 @@ class CPUBackend(Backend):
         if not measure:
             # v1's path, untouched: no clock read, no per-worker wrapper.
             futures = []
-            for t in range(k):
+            for t in range(self.num_threads):
                 t_start = start + t * chunk
                 t_end = min(t_start + chunk, end)
                 if t_start >= end:
@@ -1989,7 +1942,7 @@ class CPUBackend(Backend):
 
         futures = []
         workers = 0
-        for t in range(k):
+        for t in range(self.num_threads):
             t_start = start + t * chunk
             t_end = min(t_start + chunk, end)
             if t_start >= end:
@@ -2009,9 +1962,7 @@ class CPUBackend(Backend):
         # including spans below the rate measurement's clock threshold.
         retire_floor = whole_range and workers > 0 and max(spans) < trusted_span
         self._record_parallel_cost(compiled, [r for r in rates if r > 0.0],
-                                   workers, bounds_serial, retire_floor, subset)
-        if subset:
-            return
+                                   workers, bounds_serial, retire_floor)
         # The dispatch waits for its slowest worker, so that is the work
         # phase -- and here the max is the right statistic rather than the
         # wrong one it is for `r_p`, because this is the quantity the
@@ -2019,11 +1970,10 @@ class CPUBackend(Backend):
         self._record_fan_out(float(dispatch_ns), max(spans), float(gap))
 
     def _pool_execute(self, jit, compiled: CompiledKernel, prefix: tuple, start: int,
-                      end: int, k: int, measure: bool, whole_range: bool):
+                      end: int, measure: bool, whole_range: bool):
         """The fan-out through the JIT'd pool: one ctypes call runs every
-        chunk on `k` of its threads, the workers never touch Python, and
-        the per-worker spans come back from the pool for the same
-        bookkeeping as above."""
+        chunk, the workers never touch Python, and the per-worker spans
+        come back from the pool for the same bookkeeping as above."""
         wrapper = compiled._chunk or cpu_pool.chunk_wrapper(compiled)
         pack = cpu_pool.pack_args(compiled, prefix)
         gap = time.perf_counter_ns() - self._last_dispatch_ns
@@ -2031,11 +1981,10 @@ class CPUBackend(Backend):
         # The pool's workers claim chunks, so each reports what it ran; the
         # report is read in the run's own transaction, before another
         # thread's run can overwrite it.
-        report = jit.run(wrapper, pack, start, end, k, measure=measure)
+        report = jit.run(wrapper, pack, start, end, self.num_threads, measure=measure)
         dispatch_ns = time.perf_counter_ns() - dispatch_t0
         if not measure:
             return
-        subset = k < self.num_threads
         raw, counts = report
         rates: list = [0.0] * self.num_threads
         spans: list = [0.0] * self.num_threads
@@ -2052,66 +2001,6 @@ class CPUBackend(Backend):
         bounds_serial = bool(measured) and (_worker_median(measured) >= trusted_span)
         retire_floor = whole_range and workers > 0 and max(spans) < trusted_span
         self._record_parallel_cost(compiled, [r for r in rates if r > 0.0],
-                                   workers, bounds_serial, retire_floor, subset)
-        if not subset:
-            self._record_fan_out(float(dispatch_ns), max(spans), float(gap))
+                                   workers, bounds_serial, retire_floor)
+        self._record_fan_out(float(dispatch_ns), max(spans), float(gap))
         self._last_dispatch_ns = time.perf_counter_ns()
-
-    def _threads_for(self, compiled: CompiledKernel, total: int) -> int:
-        """How many threads this fan-out uses: every one, unless
-        `TACK_CPU_SUBSETS` is on and a smaller prefix of the pool's workers
-        is expected to finish just as soon.
-
-        Rule 1, size: `k` such that each worker's chunk costs at least
-        `_SUBSET_WORK_RATIO` times its share of the hot fan-out, so a
-        launch of a few dozen microseconds does not wake every core of a
-        large host for a few microseconds of work each.
-
-        Rule 2, saturation: the speedup the full fan-out achieves,
-        `S = r_s / r_p`, says how much of the machine the kernel can use;
-        at most half of it, it is bandwidth-bound, and `ceil(2 S)` threads
-        reach the same throughput. Only full runs measure `r_p`, so one is
-        taken on the serial rechecks' back-off schedule
-        (`_subset_full_due`), and a subset whose rate falls short of it by
-        `_SUBSET_TOLERANCE` is retired until that run.
-
-        Subsets nest: the pool's first `k - 1` workers plus the caller,
-        pinned to the same cores in the same order on Linux, so consecutive
-        launches of different `k` share cores and the fan-out measured at
-        `N` bounds every prefix's.
-        """
-        n = self.num_threads
-        if not self._subsets or n <= 1 or compiled.ns_per_elem <= 0.0:
-            return n
-        if self._subset_full_due(compiled):
-            return n
-        work = total * compiled.ns_per_elem
-        k = n
-        hot = self._fan_out_ns
-        if hot is not None and hot > 0.0:
-            k = min(k, int(work / (_SUBSET_WORK_RATIO * hot / n)))
-        r_p = compiled.ns_per_elem_parallel
-        if r_p > 0.0 and not compiled.subset_failed:
-            # Only a clear saturation, at most half the threads' worth: a
-            # kernel at S = 7.5 of 16 still gained 8% from the sixteenth
-            # thread, and trimming it to 15 lost that.
-            saturated = math.ceil(compiled.ns_per_elem / r_p * _SUBSET_SATURATION)
-            if saturated <= n // 2:
-                k = min(k, saturated)
-        k = max(2, min(n, k))
-        if k < n or compiled.subset_failed:
-            # A run held at every thread by a retired subset counts too,
-            # or the schedule that retries it would never advance.
-            compiled.subset_runs += 1
-        return k
-
-    def _subset_full_due(self, compiled: CompiledKernel) -> bool:
-        """Whether this fan-out runs at every thread to re-measure `r_p`
-        (and retry a retired subset): after 1, 2, 4, ... `_RECHECK_CAP`
-        subset runs, then every `_RECHECK_CAP`."""
-        if compiled.subset_runs < compiled.subset_recheck_after:
-            return False
-        compiled.subset_runs = 0
-        compiled.subset_recheck_after = min(compiled.subset_recheck_after * 2, _RECHECK_CAP)
-        compiled.subset_failed = False
-        return True

@@ -25,9 +25,9 @@ per-kernel state on `CompiledKernel`, decision and measurement code on
 
 ### What a fan-out costs
 
-`CPUBackend._parallel_execute` divides `[start, end)` among `k` threads,
-every one of the backend's `num_threads` unless `TACK_CPU_SUBSETS=1` lets
-`_threads_for` pick fewer (see "A thread count per launch" below).
+`CPUBackend._parallel_execute` divides `[start, end)` among the backend's
+`num_threads` threads (see "A thread count per launch" below for the
+alternative that was tried).
 Arguments are marshalled once per dispatch (`CompiledKernel.bind`); only
 the loop bounds differ between chunks.
 
@@ -686,36 +686,16 @@ checked only by running `benchmarks/threading_decisions.py` on it.
 
 ## A thread count per launch
 
-With `TACK_CPU_SUBSETS=1` a fan-out uses the first `k` of the `N` threads
-when a smaller prefix is expected to finish just as soon
-(`CPUBackend._threads_for`). Two rules, each a cap on `k`:
-
-- *Size.* Each worker's chunk must cost at least `_SUBSET_WORK_RATIO`
-  (10) shares of the hot fan-out, the hot cost over `N`. The hot cost is
-  what grows with the thread count (3 + 0.3k µs on the Xeon); the price
-  the estimate adds after an idle gap is paid once per launch whatever
-  `k` is, so it is not charged per worker.
-- *Saturation.* The full fan-out's speedup `S = r_s / r_p` says how much
-  of the machine the kernel can use. When `ceil(2 S)` is at most `N / 2`
-  the kernel is bandwidth-bound and that many threads reach the same
-  throughput. The factor is 2 and the bound half because a compute-bound
-  kernel on a hyperthreaded host has `S` about `N / 1.6` -- the second
-  thread of a core adds a fifth -- and `ceil(1.5 S)` trimmed it a thread
-  for a 2-6% loss, as did any trim short of half.
-
-Only full runs teach the model `r_p`: a subset's aggregate rate is the
-rate at `k`, and folding it in would shrink `S`, and with it the next
-subset, all the way down. So after 1, 2, 4, ... 1024 subset runs one
-launch uses every thread again, and a subset whose rate falls short of
-the full one's by `_SUBSET_TOLERANCE` (15%) is retired until that run.
-Fan-out samples come from full runs only, so the calibration describes
-`N`, which bounds every prefix.
-
-`benchmarks/thread_subsets.py` scores the choice as
-`threading_decisions.py` scores the serial-or-parallel one: the fan-out is
-timed at every `k` directly, the backend's `k` is read off the pool after
-a dozen dispatches, and its regret is the sweep's time at that `k` minus
-the best. On 16 threads of the Xeon (8 cores, hyperthreaded) no row loses
-over 5% to always-`N`, and bandwidth-bound launches of 8M+ elements gain
-2-5% at `k = 4`. The gain the rules are for is a 28-core host's launches
-not being slower than an 8-core one's; that score is still to be taken.
+Tried and dropped (2026-10-14). `TACK_CPU_SUBSETS=1` let a fan-out use
+the first `k` of the `N` threads: each worker's chunk had to cost ten
+shares of the hot fan-out, and a kernel whose full fan-out reached a
+speedup `S` of at most `N / 4` got `ceil(2 S)` threads, with full runs
+on a back-off schedule to keep `r_p` at `N` current. On 16 threads of a
+hyperthreaded Xeon it lost nothing to always-`N`. On jura's 28 cores it
+lost: the dataset filters ran 12% slower with it, its own score (every
+`k` timed directly) had rows losing over 5% to always-`N` and 2.4-3.2 ms
+of regret, it kept 28 threads for bandwidth-bound launches that run
+10-16% faster on 4-6, and through the rates it fed back it turned the
+serial-or-parallel decision under-eager (14 of 18 rows wrong at
+`threading_decisions.py --scale 1`). The per-worker mailboxes it came
+with stayed: a launch still wakes only the workers it uses.

@@ -429,7 +429,6 @@ and returns only after the kernel completes.
 | `TACK_CPU_MARGIN` | `CPUBackend.__init__` | Float override of the threading decision's safety margin |
 | `TACK_CPU_POOL` | `CPUBackend.__init__` | `python` (or `0`, `off`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool, which is the default wherever it can be made |
 | `TACK_CPU_POOL_PIN` | pool creation (`cpu_pool.CPool`) | **Linux.** `1`, `on`, `yes` or `true` pins one pool worker per core, in core order with the caller's node first and its own core left out. Off by default: measured, it did not pay |
-| `TACK_CPU_SUBSETS` | `CPUBackend.__init__` | When on (anything but `0`, `false`, `no`, `off` or empty), a fan-out may use the first *k* of the threads when a smaller prefix is expected to finish just as soon (`_threads_for`). Off by default |
 | `TACK_CPU_MALLOC` | `CPUBackend.__init__` | **Linux.** `0`, `off`, `no` or `false` leaves glibc's `malloc` thresholds alone; by default the first CPU backend sets them so freed blocks keep their pages (`cpu._tune_malloc`), process-wide |
 | `TACK_DEBUG` | `tack.init` | A boolean flag read like `TACK_NO_REINIT`: debug mode's bounds checks when `init`'s `debug` is `None` (above) |
 | `TACK_NO_REINIT` | `tack.init` | A boolean flag (`dispatch.env_flag`): when on, `init` is a no-op while a backend is active. `0`, `false`, `no`, `off` and empty mean off. See above |
