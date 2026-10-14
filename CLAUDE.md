@@ -583,8 +583,13 @@ See `test_float_division.py` and the language contract.
 
 The floating-point baseline requires annotated precision, exceptional
 classes/signs and expression grouping. Adjacent multiply/add contraction
-is permitted; general reassociation is not. CPU emits no fast-math flags;
-HIP/OpenCL retain default settings without unsafe options. Floating math
+is permitted, inside one expression only: a named value is rounded once
+and every read agrees (`x - x` is 0). General reassociation is not
+permitted. CPU emits no fast-math flags; HIP/OpenCL retain default settings
+without unsafe options, except that HIP passes `-ffp-contract=on`
+(`_HIPRTC_OPTIONS`): hipRTC's default `fast` fused a product into one read
+of a variable while another read it rounded, which made `_crossing`'s
+`a - a != 0.0` finiteness test fire on finite values. Floating math
 calls convert arguments to the result precision first; integer arguments
 default to f32, irrespective of the destination field. CPU libm calls use
 the matching f32/f64 symbols and return that precision before nested

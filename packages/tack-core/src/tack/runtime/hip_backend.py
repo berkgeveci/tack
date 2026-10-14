@@ -184,10 +184,14 @@ class HIPBuffer(DeviceBuffer):
                 pass
 
 
-# hipRTC's options; none, so it compiles for the current device's
-# architecture with its defaults. Part of the disk cache's target, so that
-# adding an option here misses the code objects compiled without it.
-_HIPRTC_OPTIONS = []
+# hipRTC's options. It compiles for the current device's architecture.
+# Contraction stays inside one expression, as the language contract permits:
+# hipRTC's default (-ffp-contract=fast) fused a product into a later
+# statement while another read of the same variable kept it rounded, so on
+# AMD GPUs `p - p` was the product's rounding error, not zero. Part of the
+# disk cache's target, so that changing an option misses the code objects
+# compiled without it.
+_HIPRTC_OPTIONS = [b"-ffp-contract=on"]
 
 
 def _compile_code_object(hip_source: str, func_name: str) -> bytes:

@@ -66,6 +66,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   are not derived yet, and asking now raises `NotImplementedError`.
 - `extract_cells` takes a cell `Set`, or its name in `data.sets`.
 - `dataset_to_vtk` writes a grid of one point or none as a grid.
+- On HIP, a variable could hold two values: hipRTC fused a product into one
+  read of it while another read it rounded, so `x - x` was the product's
+  rounding error rather than zero. A contour of a computed field (such as
+  `Function(ramp, n)`) then put some crossings at an edge's end. HIP now
+  fuses multiply and add only inside one expression, as the language
+  contract says.
 
 ## 0.4.0 — 2026-10-13
 
