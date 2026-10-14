@@ -156,3 +156,71 @@ def test_reductions_see_the_queued_launches():
     acc.fill(2.0)
     _copy_scaled(acc, acc, 3.0)
     assert acc.sum() == 6000.0
+
+
+@tack.kernel
+def _spin(out, iters: tack.i32):
+    for i in range(out.shape[0]):
+        acc = 0.0
+        for k in range(iters):
+            acc = acc * 0.999 + 1.0
+        out[i] = acc
+
+
+def _long_launch(out, seconds=0.3):
+    """Iterations for a launch of about ``seconds`` on this device."""
+    iters = 1000
+    while iters < 1 << 28:
+        _spin(out, iters)
+        tack.sync()
+        t0 = time.perf_counter()
+        _spin(out, iters)
+        tack.sync()
+        if time.perf_counter() - t0 >= seconds:
+            return iters
+        iters *= 4
+    pytest.skip("no launch long enough to measure here")
+
+
+@pytest.mark.parametrize("wait", ["sync", "to_numpy", "index", "sum", "marker", "exported"])
+def test_a_wait_does_not_hold_the_context(wait):
+    """While one thread waits for a long launch, another thread keeps
+    launching on the same stream. A copy to pageable host memory waits
+    inside the driver with the context held, so a read that copied first
+    let the launcher make one launch per 910 ms wait (H100, driver 595);
+    waiting for the stream first, it launches every millisecond."""
+    import threading
+    out = tack.field(tack.f32, (1 << 18,))
+    exported = tack.field(tack.f32, (16,), exportable=True)
+    short = tack.zeros(tack.i32, (16,))
+    iters = _long_launch(out)
+    _add_into(short, 1)                      # compiled before the timing,
+    out.sum()                                # as is the reduction kernel
+    tack.sync()
+    waits = {
+        "sync": tack.sync,
+        "to_numpy": out.to_numpy,
+        "index": lambda: out[3],
+        "sum": out.sum,
+        "marker": lambda: get_backend().async_marker().wait(),
+        "exported": lambda: (exported.to_numpy(), exported[2]),
+    }
+    _spin(out, iters)
+
+    def waiter_main():
+        with out._buffer.thread_binding():   # the context, on this thread
+            waits[wait]()
+
+    waiter = threading.Thread(target=waiter_main)
+    waiter.start()
+    time.sleep(0.01)
+    launched = 0
+    t0 = time.perf_counter()
+    while waiter.is_alive():
+        _add_into(short, 1)
+        launched += 1
+        time.sleep(0.001)
+    elapsed = time.perf_counter() - t0
+    waiter.join()
+    assert launched >= elapsed * 1000 * 0.1, (launched, elapsed)
+    assert short.to_numpy()[0] == 1 + launched

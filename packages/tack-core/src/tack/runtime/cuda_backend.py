@@ -211,6 +211,21 @@ _DEAD_CONTEXT_MSG = (
 )
 
 
+def _drain(stream):
+    """Wait for the stream before a copy to pageable host memory.
+
+    Such a copy waits for the stream inside the driver with the context
+    held, so no other thread can launch meanwhile: on an H100 (driver 595)
+    a launch from another thread took the whole 910 ms wait, with the copy
+    queued (`cuMemcpyDtoHAsync`) or not. A thread in `cuStreamSynchronize`
+    holds nothing a launch needs (511 launches at 43 us during the same
+    wait), and an idle one costs 2 us, so a read waits here first. `None`
+    is the legacy stream, which a synchronous copy waits for itself.
+    """
+    if stream is not None:
+        _check(driver.cuStreamSynchronize(stream))
+
+
 def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count, stream=None):
     """Copy elements ``[start, start + count)`` of an allocation to the host.
 
@@ -230,6 +245,7 @@ def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count, stream=Non
             _check(driver.cuMemcpyDtoH(out, int(device_ptr) + start * itemsize,
                                        count * itemsize))
         else:
+            _drain(stream)
             _check(driver.cuMemcpyDtoHAsync(out, int(device_ptr) + start * itemsize,
                                             count * itemsize, stream))
             _check(driver.cuStreamSynchronize(stream))
@@ -323,6 +339,7 @@ class CUDABuffer(DeviceBuffer):
         # Through a flat view: cuda-python does not take a zero-dimensional
         # array as a host buffer (CUDA_ERROR_INVALID_VALUE, or a crash).
         stream = self._stream
+        _drain(stream)
         _check(driver.cuMemcpyDtoHAsync(out.reshape(-1), self._device_ptr, self._nbytes,
                                         stream))
         _check(driver.cuStreamSynchronize(stream))
@@ -508,6 +525,7 @@ class ExportableCUDABuffer(DeviceBuffer):
 
     def to_numpy(self) -> np.ndarray:
         out = np.empty(self._shape, dtype=self._numpy_dtype)
+        _drain(self._queued_stream)
         _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
         return out
 
@@ -515,11 +533,19 @@ class ExportableCUDABuffer(DeviceBuffer):
     # made blocking: `Field.to_numpy_async` reads it in a worker thread.
     waits_off_thread = True
 
+    @property
+    def _queued_stream(self):
+        """The context's stream, whose queued work a legacy-stream copy
+        waits for; None when the context is untracked."""
+        token = getattr(self, "_token", None)
+        return token.queue() if token is not None and token.alive else None
+
     def thread_binding(self):
         token = getattr(self, "_token", None)
         return super().thread_binding() if token is None else _BoundContext(token.handle)
 
     def read_range(self, start: int, count: int) -> np.ndarray:
+        _drain(self._queued_stream)
         return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
                                   start, count)
 

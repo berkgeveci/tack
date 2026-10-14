@@ -26,7 +26,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   while the runtime waits, which stopped every other Python thread for
   the length of the kernel, and ROCm's `hipStreamSynchronize` holds the
   stream, so a launch from another thread took the whole wait (350 ms)
-  and now takes 60 µs.
+  and now takes 60 µs. CUDA reads wait for the stream before they copy,
+  for the same reason: a copy to pageable host memory waited with the
+  context held, and a launch from another thread took the whole wait
+  (910 ms on an H100), now 43 µs.
 - Compiled kernels are kept on disk, so a later process starts warm: the
   first contour of a 21³ grid in a new process went from 445 ms (CPU) and
   1.1 s (Metal) to 31 ms on an M1 Max. The lowered kernel and each
