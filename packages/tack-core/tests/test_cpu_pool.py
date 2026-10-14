@@ -351,19 +351,24 @@ def test_a_run_uses_only_the_first_k_workers(monkeypatch):
     """A run of k threads posts to workers 0 .. k - 2 and runs as worker
     k - 1 itself; the other workers are not woken and their slots read
     zero. Every element is still claimed exactly once."""
-    backend = _fresh_backend(6, monkeypatch)
+    # Six threads where the host has them; the pool is sized by the CPUs
+    # the process may run on, and a CI runner has four or fewer.
+    threads = min(6, max(2, cpu_pool._available_cpus()))
+    backend = _fresh_backend(threads, monkeypatch)
     n = 200_000
     out = tack.zeros(tack.i64, (n,))
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)   # makes the pool
     pool = backend._cpool
+    assert pool is not None, backend.pool_kind
     wrapper = cpu_pool.chunk_wrapper(compiled)
     pack = cpu_pool.pack_args(compiled, prefix)
     out.fill(0)
-    for k in (1, 2, 3, 6):
+    ks = [k for k in (1, 2, 3, 6) if k <= threads]
+    for k in ks:
         spans, elems = pool.run(wrapper, pack, 0, n, k, measure=True)
         assert sum(elems) == n, (k, elems)
         assert all(e == 0 and s == 0 for e, s in zip(elems[k:], spans[k:])), (k, elems)
         # Which of the k claim is the scheduler's (a posted worker that is
         # descheduled, as under a loaded test run, may claim nothing).
-    np.testing.assert_array_equal(out.to_numpy(), 4 * np.arange(n))
+    np.testing.assert_array_equal(out.to_numpy(), len(ks) * np.arange(n))
