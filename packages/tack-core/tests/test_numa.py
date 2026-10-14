@@ -150,7 +150,10 @@ backend = CPUBackend(num_threads=4)
 n = (64 << 20) // 4
 buf = backend.allocate_field(tack.f32, (n,))
 addr = buf._data.ctypes.data
-untouched = pages_per_node(addr, 64 << 20)[-14]
+# A page not present reads -EFAULT (-14) on older kernels and -ENOENT
+# (-2) on newer ones (Linux 7.0).
+hist = pages_per_node(addr, 64 << 20)
+untouched = hist[-14] + hist[-2]
 assert untouched >= (64 << 20) // 4096 - 1, f"a new field's pages were touched: {{untouched}}"
 _fan_out(backend, _number, Field(tack.f32, (n,), buf), n)
 hist = pages_per_node(addr, 64 << 20)
