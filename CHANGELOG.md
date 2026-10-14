@@ -75,7 +75,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   1100, 100 small launches went from 8.7 to 2.6 ms, and a contour of a
   million hexahedra from about 24 to 18 ms. Ordering by barriers rather
   than an in-order list: Intel's in-order lists cost about 100 µs of device
-  time per kernel on driver 25.05.
+  time per kernel on driver 25.05. Copies to the device up to 16 MiB and
+  from it up to 64 KiB go through pooled USM host memory: from pageable
+  memory the driver does not return from appending such a copy until the
+  queue has drained, so a launch whose scalars were uploaded behind a
+  680 ms kernel waited 682 ms, now under 1 ms, and 100 small launches with
+  a changing scalar take 5.4 ms rather than 8.7.
 
 ### Fixed
 

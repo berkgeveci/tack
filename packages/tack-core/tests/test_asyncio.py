@@ -78,6 +78,21 @@ def _long_launch(out):
     return None
 
 
+def _long_enough(run, iters, attempts=4):
+    """``run(iters)``, which returns a result and the waits it measured,
+    with iterations doubled until every wait lasts 100 ms. Other processes
+    on the device (pytest-xdist workers) can slow the calibration far more
+    than the run: on Level Zero with four workers a launch calibrated at
+    300 ms later ran in 44. They only ever lengthen a wait, so a retry
+    settles it."""
+    for _ in range(attempts):
+        result, waits = run(iters)
+        if min(waits) >= 0.1:
+            return result
+        iters *= 2
+    pytest.fail(f"waits under 100 ms after {attempts} doublings: {waits}")
+
+
 @pytest.mark.parametrize("wait", ["sync_async", "to_numpy_async"])
 def test_the_loop_runs_while_the_device_works(backend, wait):
     """Another task keeps running during the wait -- and, as a control, does
@@ -89,7 +104,7 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
     if iters is None:
         pytest.skip("no launch long enough to measure here")
 
-    async def measure(block):
+    async def measure(block, iters):
         ticks = 0
         stop = asyncio.Event()
 
@@ -116,14 +131,59 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
         await task
         return ticks - before, elapsed
 
-    blocked_ticks, blocked_s = asyncio.run(measure(block=True))
-    free_ticks, free_s = asyncio.run(measure(block=False))
-    assert blocked_s >= 0.1 and free_s >= 0.1, (blocked_s, free_s)
+    def both(iters):
+        blocked = asyncio.run(measure(True, iters))
+        free = asyncio.run(measure(False, iters))
+        return (blocked, free), (blocked[1], free[1])
+
+    (blocked_ticks, blocked_s), (free_ticks, free_s) = _long_enough(both, iters)
     # Ticks are 1 ms sleeps; the free wait should see many of them, the
     # blocked one almost none. On a loaded host a 1 ms sleep takes 2-4 ms
     # (Level Zero, load 115, four workers: 50 ticks in 207 ms).
     assert blocked_ticks <= 2, blocked_ticks
     assert free_ticks >= free_s * 1000 * 0.1, (free_ticks, free_s)
+
+
+def test_the_loop_launches_while_a_read_waits(backend):
+    """A task that launches keeps launching while another awaits a read:
+    the worker's wait holds no lock a launch needs (Level Zero's reads wait
+    on an event outside the backend's lock)."""
+    if not _queues(backend):
+        pytest.skip(f"{backend} launches complete before returning")
+    out = tack.field(tack.f32, (1 << 18,))
+    short = tack.field(tack.f32, (16,))
+    iters = _long_launch(out)
+    if iters is None:
+        pytest.skip("no launch long enough to measure here")
+    _ramp(short, 1.0)                        # compiled before, not on the loop
+    tack.sync()
+
+    async def main(iters):
+        launched = 0
+        stop = asyncio.Event()
+
+        async def launcher():
+            nonlocal launched
+            while not stop.is_set():
+                _ramp(short, 1.0)
+                launched += 1
+                await asyncio.sleep(0.001)
+
+        _spin(out, iters)
+        task = asyncio.create_task(launcher())
+        t0 = time.perf_counter()
+        await out.to_numpy_async()
+        elapsed = time.perf_counter() - t0
+        stop.set()
+        await task
+        return launched, elapsed
+
+    def once(iters):
+        launched, elapsed = asyncio.run(main(iters))
+        return (launched, elapsed), (elapsed,)
+
+    launched, elapsed = _long_enough(once, iters)
+    assert launched >= elapsed * 1000 * 0.1, (launched, elapsed)
 
 
 def test_sync_async_does_not_wait_for_later_launches(backend):

@@ -868,6 +868,87 @@ def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_
 # ---------------------------------------------------------------------------
 # L0Buffer
 # ---------------------------------------------------------------------------
+def _release(obj):
+    """Give back a held object that came from a pool (a `_StagingBlock`);
+    anything else is simply dropped."""
+    release = getattr(obj, "release", None)
+    if release is not None:
+        release()
+
+
+class _StagingBlock:
+    """A block of USM host memory from `_HostStaging`, given back with
+    `release` once the queue has passed the copy that uses it."""
+
+    __slots__ = ("ptr", "capacity", "_staging")
+
+    def __init__(self, ptr, capacity, staging):
+        self.ptr = ptr
+        self.capacity = capacity
+        self._staging = staging
+
+    def array(self, dtype, count):
+        """The first ``count`` elements of the block as a NumPy array."""
+        return np.frombuffer((ctypes.c_char * self.capacity).from_address(self.ptr),
+                             dtype=dtype, count=count)
+
+    def release(self):
+        self._staging.give(self)
+
+
+class _HostStaging:
+    """USM host memory for copies between the host and the device.
+
+    Intel's driver (25.05, Max 1100) does not return from appending a small
+    copy to or from pageable memory until the queue has drained -- to the
+    device up to 4 MiB, from it up to 1 KiB -- so a launch whose scalar pack
+    was uploaded behind a long kernel waited for that kernel. From USM host
+    memory the append returns at once. Copies up to `WRITE_LIMIT` and
+    `READ_LIMIT`, a margin above those sizes, go through a block here; larger
+    ones use pageable memory directly, saving a host copy. Blocks are powers
+    of two from 256 bytes, kept for reuse up to `_KEEP_BYTES` in all.
+
+    The free lists are guarded by the backend's `_launch_lock`, not a lock
+    of their own: a field collected while a thread held a second lock would
+    wait for the launch lock in `_free`, and a thread holding the launch
+    lock while releasing blocks would wait for the second.
+    """
+
+    WRITE_LIMIT = 16 << 20
+    READ_LIMIT = 64 << 10
+    _MIN = 256
+    _KEEP_BYTES = 64 << 20
+
+    def __init__(self, context, lock):
+        self._context = context
+        self._free = {}
+        self._kept = 0
+        self._lock = lock
+
+    def take(self, nbytes) -> _StagingBlock:
+        capacity = max(self._MIN, 1 << (max(nbytes, 1) - 1).bit_length())
+        with self._lock:
+            blocks = self._free.get(capacity)
+            if blocks:
+                self._kept -= capacity
+                return blocks.pop()
+        desc = ze_host_mem_alloc_desc_t(
+            stype=ZE_STRUCTURE_TYPE_HOST_MEM_ALLOC_DESC, pNext=None, flags=0)
+        ptr = ctypes.c_void_p()
+        _check_ze(_get_ze().zeMemAllocHost(self._context, ctypes.byref(desc),
+                                           capacity, 64, ctypes.byref(ptr)),
+                   "zeMemAllocHost (staging)")
+        return _StagingBlock(ptr.value, capacity, self)
+
+    def give(self, block):
+        with self._lock:
+            if self._kept + block.capacity <= self._KEEP_BYTES:
+                self._free.setdefault(block.capacity, []).append(block)
+                self._kept += block.capacity
+                return
+        _get_ze().zeMemFree(self._context, block.ptr)
+
+
 class L0Buffer(DeviceBuffer):
     """Device-resident buffer backed by a Level Zero device allocation.
 
@@ -939,30 +1020,70 @@ class L0Buffer(DeviceBuffer):
 
         The copy runs later, so it reads a private copy of ``arr``, which
         the caller may change or drop at once; the backend holds it until
-        the queue has passed it.
+        the queue has passed it. Up to `_HostStaging.WRITE_LIMIT` the copy
+        is in USM host memory, so appending does not wait for the queue.
         """
         ze = _get_ze()
-        src = np.array(arr, dtype=self._numpy_dtype, order="C", copy=True)
         backend = self._backend
+        if self._nbytes > _HostStaging.WRITE_LIMIT:
+            src = np.array(arr, dtype=self._numpy_dtype, order="C", copy=True)
+            with backend._launch_lock:
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue,
+                    self._device_ptr, src.ctypes.data, self._nbytes,
+                    None, 0, None), "zeCommandListAppendMemoryCopy (H2D)")
+                backend._hold(src, self._nbytes)
+            return
+        count = self._nbytes // self._numpy_dtype.itemsize
+        block = backend._staging.take(self._nbytes)
+        try:
+            block.array(self._numpy_dtype, count)[...] = np.asarray(arr).reshape(-1)
+        except BaseException:
+            block.release()
+            raise
         with backend._launch_lock:
-            backend._ordered(ze.zeCommandListAppendMemoryCopy(
-                backend._queue,
-                self._device_ptr, src.ctypes.data, self._nbytes,
-                None, 0, None), "zeCommandListAppendMemoryCopy (H2D)")
-            backend._hold(src, self._nbytes)
+            try:
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue,
+                    self._device_ptr, block.ptr, self._nbytes,
+                    None, 0, None), "zeCommandListAppendMemoryCopy (H2D)")
+            except BaseException:
+                block.release()
+                raise
+            backend._hold(block, self._nbytes)
+
+    def _read_into(self, out_ptr, device_ptr, nbytes, what):
+        """Copy ``nbytes`` from the device to host memory at ``out_ptr``,
+        after the work queued before it, waiting on a marker outside the
+        backend's lock: through a staging block up to
+        `_HostStaging.READ_LIMIT`, directly above it."""
+        ze = _get_ze()
+        backend = self._backend
+        if nbytes > _HostStaging.READ_LIMIT:
+            with backend._launch_lock:
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue, out_ptr, device_ptr, nbytes, None, 0, None), what)
+                marker = backend._mark()
+            if marker is not None:
+                marker.wait()
+            return
+        block = backend._staging.take(nbytes)
+        try:
+            with backend._launch_lock:
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue, block.ptr, device_ptr, nbytes,
+                    None, 0, None), what)
+                marker = backend._mark()
+            if marker is not None:
+                marker.wait()
+            ctypes.memmove(out_ptr, block.ptr, nbytes)
+        finally:
+            block.release()
 
     def _copy_from_device(self, out: np.ndarray):
         """Copy device → numpy array, after the work queued before it."""
-        ze = _get_ze()
-        backend = self._backend
-        with backend._launch_lock:
-            backend._ordered(ze.zeCommandListAppendMemoryCopy(
-                backend._queue,
-                out.ctypes.data, self._device_ptr, self._nbytes,
-                None, 0, None), "zeCommandListAppendMemoryCopy (D2H)")
-            marker = backend.async_marker()
-        if marker is not None:
-            marker.wait()
+        self._read_into(out.ctypes.data, self._device_ptr, self._nbytes,
+                        "zeCommandListAppendMemoryCopy (D2H)")
 
     def from_numpy(self, arr: np.ndarray):
         self._copy_to_device(arr)
@@ -986,16 +1107,8 @@ class L0Buffer(DeviceBuffer):
                 f"{self._nbytes // itemsize} elements")
         out = np.empty(count, dtype=self._numpy_dtype)
         if count:
-            ze = _get_ze()
-            backend = self._backend
-            with backend._launch_lock:
-                backend._ordered(ze.zeCommandListAppendMemoryCopy(
-                    backend._queue,
-                    out.ctypes.data, self.address + start * itemsize,
-                    count * itemsize, None, 0, None), "zeCommandListAppendMemoryCopy (D2H range)")
-                marker = backend.async_marker()
-            if marker is not None:
-                marker.wait()
+            self._read_into(out.ctypes.data, self.address + start * itemsize,
+                            count * itemsize, "zeCommandListAppendMemoryCopy (D2H range)")
         return out
 
     def fill(self, value):
@@ -1020,11 +1133,16 @@ class L0Buffer(DeviceBuffer):
             return True
 
         def write(offset, data):
-            source = ctypes.create_string_buffer(data, len(data))
+            source = backend._staging.take(len(data))
+            ctypes.memmove(source.ptr, data, len(data))
             with backend._launch_lock:
-                backend._ordered(ze.zeCommandListAppendMemoryCopy(
-                    backend._queue, base + offset, source, len(data), None, 0, None),
-                    "zeCommandListAppendMemoryCopy (H2D pattern)")
+                try:
+                    backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                        backend._queue, base + offset, source.ptr, len(data), None, 0, None),
+                        "zeCommandListAppendMemoryCopy (H2D pattern)")
+                except BaseException:
+                    source.release()
+                    raise
                 backend._hold(source, len(data))
 
         def copy(dst, src, size):
@@ -1496,6 +1614,9 @@ class LevelZeroBackend(Backend):
         self._held_bytes = 0
         self._held_released = 0
 
+        # USM host memory for copies between the host and the device.
+        self._staging = _HostStaging(self._context, self._launch_lock)
+
         # Host-visible events for markers (`_ListMarker`), reused once
         # waited for; a pool of `_EVENT_POOL_SIZE` more when they run out.
         self._events = []
@@ -1523,7 +1644,8 @@ class LevelZeroBackend(Backend):
     def _hold(self, obj, nbytes):
         """Keep host memory a queued copy or fill reads until it has run.
         Called under `_launch_lock`, after the append."""
-        if not self._queued:
+        if not self._queued:                    # the copy is done
+            _release(obj)
             return
         self._held.append((obj, nbytes))
         self._held_bytes += nbytes
@@ -1536,9 +1658,12 @@ class LevelZeroBackend(Backend):
         count = upto - self._held_released
         if count <= 0:
             return
-        self._held_bytes -= sum(nbytes for _, nbytes in self._held[:count])
+        released = self._held[:count]
         del self._held[:count]
         self._held_released = upto
+        self._held_bytes -= sum(nbytes for _, nbytes in released)
+        for obj, _ in released:
+            _release(obj)
 
     def synchronize(self):
         """Wait for every launch, fill and copy queued on this backend. A
@@ -1553,8 +1678,13 @@ class LevelZeroBackend(Backend):
 
     def async_marker(self):
         """A mark after the work queued so far, for `tack.sync_async` to
-        wait on in a worker thread and for reads to wait on outside the
-        lock; None on a synchronous list, whose work is already done."""
+        wait on in a worker thread; None on a synchronous list, whose work
+        is already done."""
+        return self._mark()
+
+    def _mark(self):
+        """`async_marker`, which reads wait on outside the lock; theirs, so
+        that replacing the public hook cannot leave a read unwaited."""
         if not self._queued:
             return None
         with self._launch_lock:

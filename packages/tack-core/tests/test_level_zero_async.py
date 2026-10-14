@@ -207,21 +207,30 @@ def _heavy(x, out):
         out[i] = s
 
 
+def _heavy_queue(seconds):
+    """Queue about ``seconds`` of `_heavy` (timed by its fastest of three
+    runs, as other processes may share the device) and return the fields."""
+    x = tack.field(tack.f32, (1 << 20,))
+    out = tack.zeros(tack.f32, (1 << 20,))
+    _heavy(x, out)
+    tack.sync()
+    one = float("inf")
+    for _ in range(3):
+        t0 = time.perf_counter()
+        _heavy(x, out)
+        tack.sync()
+        one = min(one, time.perf_counter() - t0)
+    for _ in range(max(1, int(seconds / one))):
+        _heavy(x, out)
+    return x, out
+
+
 def test_a_read_waits_outside_the_launch_lock():
     """A read queues its copy and an event under the backend's lock and
     waits on the event without it, so another thread may launch while a
     read waits for long work."""
     backend = get_backend()
-    x = tack.field(tack.f32, (1 << 20,))
-    out = tack.zeros(tack.f32, (1 << 20,))
-    _heavy(x, out)
-    tack.sync()
-    t0 = time.perf_counter()
-    _heavy(x, out)
-    tack.sync()
-    runs = max(1, int(0.5 / (time.perf_counter() - t0)))
-    for _ in range(runs):                          # about half a second queued
-        _heavy(x, out)
+    x, out = _heavy_queue(0.5)
     reader = threading.Thread(target=out.to_numpy)
     reader.start()
     time.sleep(0.05)
@@ -259,6 +268,56 @@ def test_markers_reuse_their_events():
         assert acc[0] == k + 1
     assert len(backend._event_pools) == pools
     assert len(backend._events) == pools * backend._EVENT_POOL_SIZE
+
+
+def test_small_host_copies_do_not_wait_for_the_queue():
+    """Appending a copy from pageable memory waited for the queue to drain
+    (to the device up to 4 MiB, from it up to 1 KiB, driver 25.05): a
+    launch's scalar pack, a small from_numpy and a pattern fill waited for
+    the long kernel queued before them. They are staged in USM host memory."""
+    acc = tack.zeros(tack.i32, (64,))
+    big = tack.zeros(tack.f32, (1 << 20,))
+    _add_into(acc, 0)
+    big.fill(1.0)
+    tack.sync()
+    _heavy_queue(0.3)
+    t0 = time.perf_counter()
+    _add_into(acc, 5)                              # its scalar is uploaded
+    acc.from_numpy(np.arange(64, dtype=np.int32))
+    big.from_numpy(np.full(1 << 20, 2.0, np.float32))
+    queued = time.perf_counter() - t0
+    tack.sync()
+    whole = time.perf_counter() - t0
+    assert queued < 0.25 * whole, (queued, whole)
+    np.testing.assert_array_equal(acc.to_numpy(), np.arange(64))
+    assert big[7] == 2.0
+
+
+@pytest.mark.parametrize("nbytes", [4, 1 << 10, (64 << 10) + 4, (16 << 20) + 4])
+def test_copies_either_side_of_the_staging_limits(nbytes):
+    """Up to `_HostStaging.READ_LIMIT`/`WRITE_LIMIT` copies are staged,
+    above them direct; both ways round trip."""
+    n = nbytes // 4
+    values = np.arange(n, dtype=np.int32) * 3 - 7
+    f = tack.zeros(tack.i32, (n,))
+    f.from_numpy(values)
+    _add_into(f, 1)
+    np.testing.assert_array_equal(f.to_numpy(), values + 1 + np.arange(n))
+    assert f[n - 1] == values[-1] + n
+
+
+def test_staging_blocks_go_back_to_the_pool():
+    backend = get_backend()
+    staging = backend._staging
+    acc = tack.zeros(tack.i32, (256,))
+    for k in range(200):
+        acc.from_numpy(np.full(256, k, np.int32))
+        acc[k % 256]
+    tack.sync()
+    assert not backend._held
+    kept = sum(len(blocks) * size for size, blocks in staging._free.items())
+    assert kept == staging._kept <= staging._KEEP_BYTES
+    assert len(staging._free[1024]) <= 2               # reused, not one per copy
 
 
 def test_threads_launch_and_free_at_once():
