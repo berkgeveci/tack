@@ -429,7 +429,10 @@ and returns only after the kernel completes.
 | `TACK_CPU_MARGIN` | `CPUBackend.__init__` | Float override of the threading decision's safety margin |
 | `TACK_DEBUG` | `tack.init` | A boolean flag read like `TACK_NO_REINIT`: debug mode's bounds checks when `init`'s `debug` is `None` (above) |
 | `TACK_NO_REINIT` | `tack.init` | A boolean flag (`dispatch.env_flag`): when on, `init` is a no-op while a backend is active. `0`, `false`, `no`, `off` and empty mean off. See above |
-| `TACK_DUMP_MSL` | Metal kernel compilation | **Metal only.** A boolean flag read like `TACK_NO_REINIT`. When on, writes each compiled kernel's MSL to `/tmp/tack_<entry>.msl` and prints the path. Other backends ignore it. Use `tack.inspect` instead |
+| `TACK_CACHE` | The disk cache, at the first kernel compiled | `write` (default), `read`, `bundle` (default under MPI) or `off`; also `0`, `false`, `no`, `none` for off. Any other value raises `ValueError`. See [The Kernel Cache](../users-guide/17-kernel-cache.md) |
+| `TACK_CACHE_SIZE` | The disk cache, at the first kernel compiled | The most the entries of every Tack version may take: bytes, a size such as `500M` or `2G` (binary units), or `unlimited`; default `1G`. Past it, a process that stores entries deletes the least recently used, at most once an hour. Any other value raises `ValueError` |
+| `TACK_CACHE_DIR` | The disk cache, at the first kernel compiled | The cache directory. Default: the platform's per-user cache directory. It must belong to the user and be writable by nobody else, or it is not used (with a `RuntimeWarning`) |
+| `TACK_DUMP_MSL` | Metal kernel compilation | **Metal only.** A boolean flag read like `TACK_NO_REINIT`. When on, writes each compiled kernel's MSL to `/tmp/tack_<entry>.msl` and prints the path. A variant loaded from the disk cache is not generated, so not dumped. Other backends ignore it. Use `tack.inspect` instead |
 | `TACK_REQUIRE_CLANG` | Test suite (`tests/compiler_tools.py`) | Any value other than empty or `0` turns missing or unusable Clang tooling into a test failure instead of a skip |
 | `TACK_CLANG`, `TACK_CLANGXX` | Test suite | An explicit Clang driver for OpenCL/C and C++ host checks. An explicit choice that fails its preflight is a failure, and there is no fallback to `PATH` |
 | `TACK_EXAMPLES_ARCH` | Test suite (`tests/test_examples.py`) | Backend for the slow example sweep. The default is `cpu` |
@@ -439,6 +442,22 @@ contract. They change scheduling and never change results of race-free
 programs. See [CPU Threading Policy](../design/cpu-threading.md). Two
 deprecated vis examples (`deprecated/40_fe_isoline.py`,
 `deprecated/41_fe_isosurface.py`) read a default `--arch` from `TACK_ARCH`.
+
+### `tack.cache`
+
+| Function | Effect |
+|---|---|
+| `configure(directory=None, mode=None, max_size=None)` | Sets the directory, mode and size limit for this process over `TACK_CACHE_DIR`, `TACK_CACHE` and `TACK_CACHE_SIZE`; `None` leaves one to the environment. Takes effect at the next kernel compiled |
+| `settings()` | `(directory, mode, MPI rank or None)` as they apply now |
+| `size_limit()` | The size limit in bytes as it applies now, or `None` for no limit |
+| `load_bundle(path=None, comm=None)` | Reads a bundle (by default the directory's, for this Tack version) into the process. With an mpi4py communicator it is collective: rank 0 reads and broadcasts. Returns the number of entries |
+| `pack(directory=None)` | Writes this Tack version's entries into one bundle file; returns `(path, count)` |
+| `prune(directory=None, max_size=None)` | Deletes the least recently used entries of every Tack version until they take at most 90% of `max_size` (default: the size limit), and abandoned temporary files; keeps bundles. Returns `(files removed, bytes left)` |
+| `clear(directory=None, all_versions=False)` | Deletes this Tack version's entries and bundle, or every version's (only the names the cache makes); returns the number of files removed |
+| `describe(directory=None)` | The settings, entry count, size and bundle, as a dict |
+| `stats()`, `reset_stats()` | Hit, miss and write counters for this process |
+
+`python -m tack.cache info | pack | prune [--max-size SIZE] | clear [--all]` runs the same from a shell.
 
 ## Exceptions
 

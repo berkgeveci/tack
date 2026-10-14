@@ -105,7 +105,7 @@ def test_dtype_still_separates_variants(backend):
     assert _variant_count(_flat) == 2
 
 
-def test_ir_passes_run_once_per_variant(backend, monkeypatch):
+def test_ir_passes_run_once_per_variant(backend, monkeypatch, no_disk_cache):
     """The dispatch path must not re-derive the IR it already has."""
     import tack.lang.ir_optimize as opt
     from tack.runtime.dispatch import get_backend

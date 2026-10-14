@@ -130,7 +130,9 @@ shows optimized LLVM IR on CPU only. See [Inspecting Generated Code](03-kernels.
 ## Measure first-call and warm time separately
 
 Tack launches synchronously, so elapsed time around a completed call includes its
-execution. The first call also includes compilation. Record these separately:
+execution. The first call also includes compilation, unless an earlier process
+left the kernel in the [disk cache](17-kernel-cache.md); run with
+`TACK_CACHE=off` to time a cold compile. Record these separately:
 
 ```python
 from time import perf_counter

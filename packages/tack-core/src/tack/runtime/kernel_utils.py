@@ -541,12 +541,18 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
     store_texture_shapes(probe, effective_args)
 
     disjoint = specialize_disjoint and fields_disjoint(template, effective_args)
-    key = kernel_variant_key(probe, kernel, vector_fields, template_args,
-                             shape_signature(template, name_to_field),
-                             disjoint)
+    shape_sig = shape_signature(template, name_to_field)
+    key = kernel_variant_key(probe, kernel, vector_fields, template_args, shape_sig, disjoint)
 
     slot = kernel_cache_slot(backend._cache, kernel)
     variant = slot.get(key)
+    if variant is None:
+        from tack.runtime import disk_cache
+        disk_key = disk_cache.variant_key(backend, template, probe, vector_fields,
+                                          shape_sig, disjoint)
+        variant = _stored_variant(backend, disk_key, template, effective_args)
+        if variant is not None:
+            slot[key] = variant
     if variant is None:
         from tack.lang.ir_optimize import optimize_ir
         from tack.lang.ir_resolve import resolve_ir
@@ -582,6 +588,7 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
                                 written_fields=_written_field_args(
                                     template, effective_args))
         slot[key] = variant
+        _store_variant(backend, disk_key, variant)
     elif variant.requires_full_workgroups:
         check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
                                backend_label=backend.label)
@@ -591,6 +598,54 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
     if debug:
         debug_bounds.launched(effective_args, template)
     return variant, effective_args
+
+
+def _stored_variant(backend, disk_key, template, effective_args):
+    """The variant a previous process compiled for this call, or None.
+
+    The entry holds the IR after the passes and the backend's artifact;
+    loading it skips the passes, code generation and, as far as the backend
+    can, compilation. The per-call checks below the caller still run. A
+    damaged or unloadable entry is ignored, and the variant compiled anew.
+    """
+    from tack.runtime import disk_cache
+    if disk_key is None:
+        return None
+    entry = disk_cache.load_variant(disk_key)
+    if entry is None:
+        return None
+    import pickle
+    try:
+        ir_func = pickle.loads(entry["ir"])
+        payload = backend.load_variant(ir_func, entry["artifact"], effective_args)
+    except Exception:
+        disk_cache._count("bad")
+        return None
+    variant = KernelVariant(ir_func, payload,
+                            requires_full_workgroups=entry["full_groups"],
+                            atomic_targets=entry["atomic_targets"],
+                            written_fields=_written_field_args(template, effective_args))
+    if variant.requires_full_workgroups:
+        check_workgroup_launch(ir_func.name, _get_loop_range(ir_func, effective_args),
+                               backend_label=backend.label)
+    return variant
+
+
+def _store_variant(backend, disk_key, variant):
+    """Keep a newly compiled variant for later processes, if it can be kept."""
+    from tack.runtime import disk_cache
+    if disk_key is None:
+        return
+    import pickle
+    try:
+        entry = {"ir": pickle.dumps(variant.ir, protocol=5),
+                 "artifact": backend.variant_artifact(variant.payload),
+                 "full_groups": variant.requires_full_workgroups,
+                 "atomic_targets": variant.atomic_targets}
+    except Exception:
+        disk_cache._count("variant_unpicklable")
+        return
+    disk_cache.store_variant(disk_key, entry)
 
 
 def _localize_outer_scalars(ir_func):
