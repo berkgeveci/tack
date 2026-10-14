@@ -13,11 +13,11 @@ from tack.lang import ir_bounds
 _DIALECTS = {
     'cuda': ('__device__ inline', 'long long', 'int*', 'atomicAdd(errors, 1)'),
     'opencl': ('static inline', 'long', '__global int*',
-               'atomic_fetch_add_explicit((volatile __global atomic_int*)errors, 1, '
-               'memory_order_relaxed, memory_scope_device)'),
+               ('atomic_fetch_add_explicit((volatile __global atomic_int*)errors, 1, '
+                'memory_order_relaxed, memory_scope_device)')),
     'metal': ('inline', 'long', 'device int*',
-              'atomic_fetch_add_explicit((volatile device atomic_int*)errors, 1, '
-              'memory_order_relaxed)'),
+              ('atomic_fetch_add_explicit((volatile device atomic_int*)errors, 1, '
+               'memory_order_relaxed)')),
 }
 
 
@@ -28,8 +28,8 @@ def bounds_helpers(dialect: str, needed: bool) -> list:
     qualifiers, int64, pointer, add = _DIALECTS[dialect]
     b = ir_bounds
     return [
-        f"{qualifiers} int __tack_in_bounds__({int64} index, {int64} extent, int site, "
-        f"int dim, {pointer} errors) {{",
+        (f"{qualifiers} int __tack_in_bounds__({int64} index, {int64} extent, int site, "
+         f"int dim, {pointer} errors) {{"),
         "    if (index >= 0 && index < extent) return 1;",
         f"    if ({add} == 0) {{",
         f"        errors[{b.SITE}] = site;",
