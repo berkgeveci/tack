@@ -106,7 +106,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 - **Metal**: `MetalBuffer` — Metal shared buffer (zero-copy unified memory on Apple Silicon). The numpy array view points directly into Metal buffer memory.
 - **CUDA**: `CUDABuffer` holds a stream-ordered device pointer (`cuMemAllocAsync` on the context's stream, freed with `cuMemFreeAsync`, so a temporary dropped while a queued launch still uses it is freed after that launch, and the driver's pool, with its release threshold raised, hands memory back out without a round trip). Every launch, fill and copy goes through that one stream (`_ContextToken.queue()`) in order and returns once queued; `to_numpy`, `read_range` and reductions queue a copy and wait for it; `from_numpy` and `fill` queue and return; `tack.sync()` is a stream synchronize, and a launch's error surfaces at the next wait. A buffer handed outside Tack (`wrap_ptr`, DLPack export, `share()`) completes every launch that uses it before the launch returns, and so does a texture launch, since its image could be destroyed before a queued launch read it. See `test_cuda_async.py`.
 - **HIP**: `HIPBuffer` holds a device pointer (`hipMalloc`). Explicit host↔device copies.
-- **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Explicit host↔device copies via immediate command list.
+- **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Every launch, fill and copy is appended to the backend's one asynchronous immediate command list (`_queue`) and returns once queued, each followed by a barrier (`_ordered`), which keeps program order: Intel's in-order lists (`ZE_COMMAND_QUEUE_FLAG_IN_ORDER`) cost about 100 µs of device time per kernel on driver 25.05, a barrier about 5. `to_numpy`, `read_range` and reductions queue a copy and wait (`zeCommandListHostSynchronize`); `from_numpy` copies the array privately and queues; host memory a queued copy or fill reads is held (`_hold`) until the next wait, which comes early past 1024 objects or 256 MiB. Fields are freed with `zeMemFreeExt(DEFER_FREE)`, after the work queued so far (`_free`; without the extension, wait then free). `share()`, `wrap_ptr`, DLPack export and textures complete their launches before returning, as on CUDA. A driver without `zeCommandListHostSynchronize` gets a synchronous list. See `test_level_zero_async.py`.
 
 `tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type. `Field.__getitem__` reads one element on the host through `DeviceBuffer.read_range(start, count)`: CPU and Metal slice their views, and CUDA, HIP and Level Zero copy just the range with one `cuMemcpyDtoH`, `hipMemcpy` or `zeCommandListAppendMemoryCopy` (on the immediate list) at the element's byte offset, each checking the range against the allocation first. `__setitem__` and `__iter__` raise.
 
@@ -251,8 +251,9 @@ that order, so a later call's pack update cannot reach an earlier queued
 launch). Metal launches own their
 argument buffer and scalars, and encode under the backend's batch lock.
 Level Zero holds one backend `_launch_lock` (reentrant) over
-launches, reductions and copies, because its command lists are
-backend-wide. Unlocked, half of the CUDA dispatches from four threads
+launches, reductions, copies and waits, because its queue and its kernels'
+argument state are backend-wide; a kernel's arguments are captured when
+its launch is appended, so the next call may set them at once. Unlocked, half of the CUDA dispatches from four threads
 computed with another thread's scalars (`test_concurrent_dispatch.py`).
 CUDA's context comes from `cuCtxCreate` and is current only on the thread
 that called `tack.init`; another thread must make it current first, or
