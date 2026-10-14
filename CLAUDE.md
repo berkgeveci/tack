@@ -155,6 +155,8 @@ Only on a cache miss:
 
 ### Variant cache key
 
+The dispatch fast path (`_fast_resolve` in `kernel_utils.py`) is what a warm call pays: the call's signature (`_call_signature`, cached per `Field` as `_sig`; per template class the attribute layout `_template_layouts`, relearned when an instance's attribute names or types differ), one weak lookup for the kernel's entry, the disjointness check over the entry's precomputed field slots (`_disjoint_by_slots`, one sorted walk), and the per-call checks. The entry holds the variants themselves; `drop_variants` drops the entries too. It runs outside `template_scope`, which the slow path enters. `NumpyBuffer.address` and `span` are computed once per array. Measured: a serial dispatch with eight field arguments 66 → 34 µs on a 2 GHz Xeon; inside a filter, where launches follow cache-trashing kernels and a third are template views, 149 → 130 µs per launch. Leaving the caller out of the chunks (k workers, caller waits) was tried for its warm caches and lost (161 µs), so the caller still runs chunks.
+
 Keyed per `Kernel` (weakly, so compiled code is released with the kernel), then by:
 argument type signature + field/scalar/texture categories + vector widths + texture extents + template structure/constants + **`shape_signature`** + (CPU only) whether the call's fields are disjoint. Template keys preserve actual class identity through a `_ClassToken` rather than the class object, so a `@tack.device_class` class that is garbage-collected takes its IR and compiled variants with it on every backend (a class defined per call still compiles per call, but no longer accumulates). Template keys also preserve typed constants, field metadata, and runtime scalar attribute names; runtime scalar values do not specialize.
 

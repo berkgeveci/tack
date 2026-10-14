@@ -547,6 +547,8 @@ class CompiledKernel:
         self._num_dims = num_dims
         # cpu_pool's chunk wrapper for this kernel, once one is built.
         self._chunk = None
+        # `cpu_pool.pack_args`'s struct format per prefix length, built once.
+        self._pack_formats = {}
 
         # Build the ctypes function type
         # A field is passed as its address (`c_void_p` takes a Python int),
@@ -667,7 +669,7 @@ class CompiledKernel:
         for arg, ptype, is_field in zip(kernel_args, self._param_types,
                                         self._param_is_field):
             if is_field:
-                prefix.append(arg._buffer._data.ctypes.data)
+                prefix.append(arg._buffer.address)
             else:
                 prefix.append(_CTYPES_MAP[ptype](arg))
         prefix.extend(int(e) for e in extents)
@@ -1008,13 +1010,16 @@ class CPUBackend(Backend):
             specialize_disjoint=_SPECIALIZE_DISJOINT,
         )
 
-        # The grid bound reads a texture's field; the kernel samples the
-        # texture's own snapshot of it.
-        loop_end, extents = _get_launch(
-            variant.ir, [a.field if isinstance(a, Texture3D) else a
-                         for a in effective_args])
-
-        self._dispatch(variant.payload, bind_textures(effective_args), loop_end, extents)
+        if variant.has_textures:
+            # The grid bound reads a texture's field; the kernel samples the
+            # texture's own snapshot of it.
+            loop_end, extents = _get_launch(
+                variant.ir, [a.field if isinstance(a, Texture3D) else a
+                             for a in effective_args])
+            self._dispatch(variant.payload, bind_textures(effective_args), loop_end, extents)
+            return
+        loop_end, extents = _get_launch(variant.ir, effective_args)
+        self._dispatch(variant.payload, effective_args, loop_end, extents)
 
     @staticmethod
     def _build_variant(ir_func, effective_args):

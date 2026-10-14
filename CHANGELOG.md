@@ -7,6 +7,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- A warm dispatch costs less host time: the fast path keeps each
+  field's signature and each buffer's address and byte range once
+  computed, holds the variants it resolved instead of looking them up,
+  learns each template class's attribute layout once, checks field
+  overlap in one walk of the ranges, packs the pool's arguments with one
+  `struct.pack_into`, and skips the template scope and the texture
+  walks when a call has none. A serial dispatch of a kernel with eight
+  field arguments went from 66 to 34 µs on a 2 GHz Xeon, and inside a
+  dataset filter the host time per launch from 149 to 130 µs.
 - A CPU launch wakes only the pool workers it uses: each worker waits on
   its own mailbox, a launch of `k` threads posts to `k - 1` of them, and
   the rest sleep on, so the `k` of every launch are the same `k`.

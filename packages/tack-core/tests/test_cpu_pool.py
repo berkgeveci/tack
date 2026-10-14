@@ -364,7 +364,8 @@ def test_a_run_uses_only_the_first_k_workers(monkeypatch):
         spans, elems = pool.run(wrapper, pack, 0, n, k, measure=True)
         assert sum(elems) == n, (k, elems)
         assert all(e == 0 and s == 0 for e, s in zip(elems[k:], spans[k:])), (k, elems)
-        assert k == 1 or any(e > 0 for e in elems[:k - 1]), (k, elems)
+        # Which of the k claim is the scheduler's (a posted worker that is
+        # descheduled, as under a loaded test run, may claim nothing).
     np.testing.assert_array_equal(out.to_numpy(), 4 * np.arange(n))
 
 

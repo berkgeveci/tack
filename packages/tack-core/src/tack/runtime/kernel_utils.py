@@ -97,6 +97,9 @@ def drop_variants(kernel, is_stale):
             continue
         for key in [k for k in list(slot) if is_stale(k)]:
             slot.pop(key, None)
+    # The dispatch fast path holds the variants it resolved; forget them too.
+    for per_backend in list(_fast_caches.values()):
+        per_backend.pop(kernel, None)
 
 
 def kernel_cache_slot(cache, kernel) -> dict:
@@ -292,6 +295,51 @@ def _written_flags(ir_func) -> tuple:
     return flags
 
 
+def _field_slots(ir_func, effective_args) -> tuple:
+    """``(index, written, through_texture)`` of each field argument, for
+    `_disjoint_by_slots`: what `fields_disjoint` works out per call."""
+    slots = []
+    for i, (is_written, arg) in enumerate(zip(_written_flags(ir_func), effective_args)):
+        if isinstance(arg, Field):
+            slots.append((i, bool(is_written), False))
+        elif isinstance(arg, Texture3D):
+            slots.append((i, bool(is_written), True))
+    return tuple(slots)
+
+
+def _disjoint_by_slots(effective_args, field_slots) -> bool:
+    """`fields_disjoint` for a call whose argument kinds are known.
+
+    One walk of the ranges in start order, instead of every written range
+    against every other: a dataset view expands to twenty fields, and
+    that was 20 µs a launch. Walking, a range overlaps an earlier one iff
+    it starts before the furthest end so far; it overlaps an earlier
+    *written* one iff it starts before the furthest written end so far.
+    """
+    spans = []
+    for i, is_written, through_texture in field_slots:
+        arg = effective_args[i]
+        buf = arg._storage._buffer if through_texture else arg._buffer
+        try:
+            start, end = buf.span
+        except AttributeError:
+            return False
+        if end > start:
+            spans.append((start, end, is_written))
+    if len(spans) < 2:
+        return True
+    spans.sort()
+    furthest = furthest_written = 0
+    for start, end, is_written in spans:
+        if start < furthest_written or (is_written and start < furthest):
+            return False
+        if end > furthest:
+            furthest = end
+        if is_written and end > furthest_written:
+            furthest_written = end
+    return True
+
+
 def fields_disjoint(ir_func, effective_args) -> bool:
     """Whether this call's field storage satisfies a no-overlap promise.
 
@@ -429,16 +477,19 @@ class KernelVariant:
     different variants still dispatch concurrently.
     """
 
-    __slots__ = ("atomic_targets", "dispatch_lock", "ir", "payload",
+    __slots__ = ("atomic_targets", "dispatch_lock", "has_textures", "ir", "payload",
                  "requires_full_workgroups", "written_fields")
 
     def __init__(self, ir_func, payload, *, requires_full_workgroups=False,
-                 atomic_targets=(), written_fields=()):
+                 atomic_targets=(), written_fields=(), has_textures=False):
         self.ir = ir_func
         self.payload = payload
         self.requires_full_workgroups = requires_full_workgroups
         self.atomic_targets = atomic_targets
         self.written_fields = written_fields
+        # Whether any argument is a Texture3D, so a dispatch without one
+        # skips the two walks that rebind textures.
+        self.has_textures = has_textures
         self.dispatch_lock = threading.Lock()
 
 
@@ -496,9 +547,40 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     """
     from tack.lang.template_rewrite import template_scope
 
+    # The fast path reads no template trees, so it runs outside the scope:
+    # entering one cost 2-3 µs of a 45 µs warm dispatch.
+    if not kwargs:
+        hit = _fast_resolve(backend, kernel, args, specialize_disjoint)
+        if hit is not None:
+            return hit
     with template_scope():
         return _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
                                 specialize_disjoint)
+
+
+def _fast_resolve(backend, kernel, args, specialize_disjoint):
+    """A call whose signature was seen before reuses what that call resolved
+    -- its variants and the plan for expanding its template arguments --
+    and runs only the per-call checks. See `_call_signature` for what the
+    signature covers, and why a hit implies the same key. None otherwise."""
+    sig = _call_signature(args)
+    if sig is None:
+        return None
+    hit = _fast_slot(backend, kernel).get(sig)
+    if hit is None:
+        return None
+    # The entry holds the variants it resolved (dropped with the slot's by
+    # `drop_variants`) and, for the disjointness check, which arguments are
+    # fields and which of those the kernel writes: fixed by the signature,
+    # so no type test per call.
+    plan, variants, field_slots = hit
+    effective_args = _expand_with_plan(args, plan) if plan else args
+    disjoint = specialize_disjoint and _disjoint_by_slots(effective_args, field_slots)
+    variant = variants.get(disjoint)
+    if variant is None:
+        return None
+    _check_call(backend, variant, effective_args)
+    return variant, effective_args
 
 
 def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
@@ -508,27 +590,10 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
     if kwargs:
         raise NotImplementedError("Keyword arguments not supported in kernels")
 
-    # The fast path: a call whose signature was seen before reuses what that
-    # call resolved -- its variant and the plan for expanding its template
-    # arguments -- and runs only the per-call checks. See `_call_signature`
-    # for what the signature covers, and why a hit implies the same key.
+    # The fast path (`_fast_resolve`) ran before this, outside the template
+    # scope; this is the slow path, which records what it resolves for it.
     fast = _fast_slot(backend, kernel)
     sig = _call_signature(args)
-    if sig is not None:
-        hit = fast.get(sig)
-        if hit is not None:
-            # The entry names variants by key only: the slot owns them, and
-            # one it has dropped since is resolved afresh below.
-            plan, keys = hit
-            slot = kernel_cache_slot(backend._cache, kernel)
-            known = slot.get(next(iter(keys.values())))
-            if known is not None:
-                effective_args = _expand_with_plan(args, plan) if plan else args
-                disjoint = specialize_disjoint and fields_disjoint(known.ir, effective_args)
-                variant = slot.get(keys.get(disjoint))
-                if variant is not None:
-                    _check_call(backend, variant, effective_args)
-                    return variant, effective_args
 
     template_args = _detect_template_args(kernel, args)
     effective_args = _expand_template_args(args, template_args)
@@ -599,7 +664,9 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
                                 requires_full_workgroups=full_groups,
                                 atomic_targets=atomic_targets,
                                 written_fields=_written_field_args(
-                                    template, effective_args))
+                                    template, effective_args),
+                                has_textures=any(isinstance(a, Texture3D)
+                                                 for a in effective_args))
         slot[key] = variant
     elif variant.requires_full_workgroups:
         check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
@@ -610,8 +677,9 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
         if entry is None:
             if len(fast) >= _FAST_CAP:
                 fast.clear()
-            entry = fast[sig] = (_expansion_plan(template_args), {})
-        entry[1][disjoint] = key
+            entry = fast[sig] = (_expansion_plan(template_args), {},
+                                 _field_slots(template, effective_args))
+        entry[1][disjoint] = variant
 
     check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
     check_writable_fields(variant.ir.name, variant.written_fields, effective_args)
@@ -656,9 +724,13 @@ _FAST_CAP = 256                                # signatures kept per kernel and 
 
 
 def _fast_slot(backend, kernel) -> dict:
-    per_backend = _fast_caches.get(backend)
-    if per_backend is None:
-        per_backend = _fast_caches.setdefault(backend, weakref.WeakKeyDictionary())
+    try:
+        per_backend = backend._fast_slots        # the registry's dict, kept on the backend
+    except AttributeError:
+        per_backend = _fast_caches.get(backend)
+        if per_backend is None:
+            per_backend = _fast_caches.setdefault(backend, weakref.WeakKeyDictionary())
+        backend._fast_slots = per_backend
     slot = per_backend.get(kernel)
     if slot is None:
         slot = per_backend.setdefault(kernel, {})
@@ -671,8 +743,15 @@ def _call_signature(args):
     sig = []
     for arg in args:
         if isinstance(arg, Field):
-            sig.append((0, arg.dtype, arg.shape, getattr(arg, '_logical_shape', None),
-                        getattr(arg, '_vector_n', None), getattr(arg, '_matrix_shape', None)))
+            try:
+                sig.append(arg._sig)
+            except AttributeError:
+                # Computed once per field: its dtype, shape and element layout
+                # are set when it is made and never change (a reshape is a
+                # new Field over the same buffer).
+                arg._sig = (0, arg.dtype, arg.shape, getattr(arg, '_logical_shape', None),
+                            getattr(arg, '_vector_n', None), getattr(arg, '_matrix_shape', None))
+                sig.append(arg._sig)
         elif isinstance(arg, Texture3D):
             sig.append((1, arg.dtype, arg.shape_3d))
         elif isinstance(arg, float):
@@ -697,36 +776,94 @@ def _scalar_bits(value):
     return struct.pack('!d', value) if isinstance(value, float) else value
 
 
+# Per template class, how `_template_signature` last read an instance: the
+# attribute names in order, each one's kind (constant, field, int, float,
+# function, child template) and its value's type. An instance with the same
+# names and types is read by kind, one attribute access each, instead of
+# the type tests per attribute that cost 25 µs a dataset view on a 2 GHz
+# Xeon; one that differs is walked in full and the layout replaced.
+_template_layouts = weakref.WeakKeyDictionary()
+_LAYOUT_CONSTANT, _LAYOUT_FIELD, _LAYOUT_INT, _LAYOUT_FLOAT, _LAYOUT_FUNC, _LAYOUT_CHILD, \
+    _LAYOUT_SKIP = range(7)
+
+
 def _template_signature(obj, path, seen):
     """What of a template object the IR and the expansion depend on, for it
     and every template it holds; None on a cycle (the slow path explains)."""
-    from tack.lang.func import Func
-    from tack.lang.kernel import _class_token
-    from tack.lang.template_rewrite import _class_constants
-
     if id(obj) in seen:
         return None
     seen.add(id(obj))
     cls = type(obj)
-    constants = _class_constants(cls)
-    own = []
-    children = []
-    for name, value in vars(obj).items():
-        if name.startswith('_'):
-            continue
-        if name in constants:
-            own.append((name, type(value), _scalar_bits(value)))
-        elif isinstance(value, Field):
-            own.append((name, 0, value.dtype, value.shape, getattr(value, '_logical_shape', None),
-                        getattr(value, '_vector_n', None), getattr(value, '_matrix_shape', None)))
-        elif isinstance(value, int):
-            own.append((name, 3, integer_type_for_value(value)))
-        elif isinstance(value, float):
-            own.append((name, 2))
-        elif isinstance(value, Func):
-            own.append((name, 5, value))
-        elif getattr(type(value), '_device_class', False) is True:
-            children.append((name, value))
+    attributes = vars(obj)
+    layout = _template_layouts.get(cls)
+    if layout is not None and layout[0] != tuple(attributes):
+        layout = None                         # another attribute set: walk and relearn
+    if layout is not None:
+        from tack.lang.template_rewrite import _class_constants
+        constants = _class_constants(cls)     # current values: a class constant can change
+        _names, kinds, types = layout
+        own = []
+        children = []
+        for (name, value), kind, typ in zip(attributes.items(), kinds, types):
+            if type(value) is not typ:
+                layout = None
+                break
+            if kind == _LAYOUT_FIELD:
+                try:
+                    own.append((name, *value._sig))
+                except AttributeError:
+                    own.append((name, 0, value.dtype, value.shape,
+                                getattr(value, '_logical_shape', None),
+                                getattr(value, '_vector_n', None),
+                                getattr(value, '_matrix_shape', None)))
+            elif kind == _LAYOUT_CONSTANT:
+                own.append((name, typ, _scalar_bits(value)))
+            elif kind == _LAYOUT_INT:
+                own.append((name, 3, integer_type_for_value(value)))
+            elif kind == _LAYOUT_FLOAT:
+                own.append((name, 2))
+            elif kind == _LAYOUT_FUNC:
+                own.append((name, 5, value))
+            elif kind == _LAYOUT_CHILD:
+                children.append((name, value))
+    if layout is None:
+        from tack.lang.func import Func
+        from tack.lang.template_rewrite import _class_constants
+        constants = _class_constants(cls)
+        own = []
+        children = []
+        kinds = []
+        for name, value in attributes.items():
+            if name.startswith('_'):
+                kinds.append(_LAYOUT_SKIP)
+            elif name in constants:
+                kinds.append(_LAYOUT_CONSTANT)
+                own.append((name, type(value), _scalar_bits(value)))
+            elif isinstance(value, Field):
+                kinds.append(_LAYOUT_FIELD)
+                own.append((name, 0, value.dtype, value.shape,
+                            getattr(value, '_logical_shape', None),
+                            getattr(value, '_vector_n', None),
+                            getattr(value, '_matrix_shape', None)))
+            elif isinstance(value, int):
+                kinds.append(_LAYOUT_INT)
+                own.append((name, 3, integer_type_for_value(value)))
+            elif isinstance(value, float):
+                kinds.append(_LAYOUT_FLOAT)
+                own.append((name, 2))
+            elif isinstance(value, Func):
+                kinds.append(_LAYOUT_FUNC)
+                own.append((name, 5, value))
+            elif getattr(type(value), '_device_class', False) is True:
+                kinds.append(_LAYOUT_CHILD)
+                children.append((name, value))
+            else:
+                kinds.append(_LAYOUT_SKIP)
+        # `isinstance` admitted subclasses above; the layout holds the exact
+        # types and is used only for an instance whose types match.
+        _template_layouts[cls] = (tuple(attributes), tuple(kinds),
+                                  tuple(type(v) for v in attributes.values()))
+    from tack.lang.kernel import _class_token
     parts = [(path, _class_token(cls),
               tuple((n, type(v), _scalar_bits(v)) for n, v in constants.items()),
               tuple(own))]

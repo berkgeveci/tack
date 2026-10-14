@@ -104,7 +104,18 @@ class NumpyBuffer(DeviceBuffer):
 
     @property
     def address(self) -> int:
-        return self._data.ctypes.data
+        """The data pointer, computed once per array: NumPy's ``.ctypes``
+        builds an object per access, 1.6 µs each, and every CPU dispatch
+        binds every field argument."""
+        try:
+            data, address = self._address
+            if data is self._data:
+                return address
+        except AttributeError:
+            pass
+        address = self._data.ctypes.data
+        self._address = (self._data, address)
+        return address
 
     @property
     def span(self) -> tuple[int, int]:
@@ -119,8 +130,15 @@ class NumpyBuffer(DeviceBuffer):
                 return span
         except AttributeError:
             pass
-        span = byte_bounds(self._data)
-        self._span = (self._data, span)
+        data = self._data
+        if data.flags.c_contiguous:
+            # `byte_bounds` costs 3 µs; a contiguous array's bounds are its
+            # pointer and its size, and the filters make dozens a call.
+            start = self.address
+            span = (start, start + data.nbytes)
+        else:
+            span = byte_bounds(data)
+        self._span = (data, span)
         return span
 
 
