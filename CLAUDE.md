@@ -20,6 +20,7 @@ All share the `tack` namespace via `pkgutil.extend_path`.
 
 ```bash
 uv sync --extra cpu --extra dev                             # install everything the tests need
+uv sync --extra cpu --extra dev --extra interop             # ...and VTK and MFEM, which the dataset tests compare against
 uv run pytest packages/tack-core/tests/test_cpu_jit.py        # the files your change touches
 uv run pytest -m quick -n 4                                   # the inner-loop set, 80 s on 4 workers
 uv run pytest -n auto                                         # the whole suite across processes
