@@ -20,9 +20,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   broadcasts, `tack.cache.load_bundle(comm=...)`); under MPI nothing is
   looked up or written per kernel. The entries take at most
   `TACK_CACHE_SIZE` (1 GiB by default); the least recently used go first.
-  CPU, Metal, CUDA and Level Zero store compiled code (CUDA its PTX, Level
-  Zero its native binary, with the SPIR-V to fall back on); HIP stores the
-  lowered kernels. Debug mode's kernels are stored apart from the others.
+  Every backend stores compiled code: CUDA its PTX, HIP its code objects,
+  Level Zero its native binary, with the SPIR-V to fall back on. Debug
+  mode's kernels are stored apart from the others.
   See *The Kernel Cache* in the User's Guide.
 - Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
   field and array index in every kernel, one dimension at a time. An

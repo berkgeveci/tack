@@ -9,7 +9,9 @@ warm, 31 ms on both. On an RTX 6000 Ada it took 1.15 s on CUDA, 0.88 s
 with only the lowered kernels stored, and 72 ms with their PTX stored too.
 On an Intel Max 1100 it took 5.1 s on Level Zero, nearly all of it Intel's
 offline compiler, so storing only the lowered kernels saved little; with
-their compiled code stored too, 145-190 ms.
+their compiled code stored too, 145-190 ms. On an MI210 (HIP), where hipRTC
+is likewise nearly all of a first call, it took 6.9 s, 6.8 s with only the
+lowered kernels stored, and 37 ms with their code objects stored too.
 
 The cache is on by default and needs no code. This page covers where it
 lives, how to turn it off, and how to use it in MPI jobs on a shared file
@@ -136,9 +138,9 @@ first call in a process may be a disk hit rather than a compile. See
 
 ## Backends
 
-The CPU, Metal, CUDA and Level Zero backends store both levels. CUDA
-stores PTX, which the driver compiles for the device at load. Level Zero
-stores the device's native code, which loads without compiling, and the
-SPIR-V it was made from, compiled at load if a driver update or another
-stepping of the device refuses the native code. On HIP, lowered kernels are stored, and the variants are compiled
-in each process; storing their compiled code is planned.
+Every backend stores both levels. CUDA stores PTX, which the driver
+compiles for the device at load. HIP stores the code object, machine code
+for the device's architecture. Level Zero stores the device's native code,
+which loads without compiling, and the SPIR-V it was made from, compiled at
+load if a driver update or another stepping of the device refuses the
+native code.
