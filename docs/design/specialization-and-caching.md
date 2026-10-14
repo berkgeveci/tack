@@ -440,8 +440,8 @@ reads them.
 
 **Artifacts.** `Backend.cache_target()`, `variant_artifact(payload)` and
 `load_variant(ir_func, artifact, effective_args)`; a backend whose
-`cache_target()` is None (HIP, for now) stores only the
-`.ir` level. `effective_args` are the call's arguments: a GPU variant's
+`cache_target()` is None stores only the `.ir` level; every backend
+stores variants now. `effective_args` are the call's arguments: a GPU variant's
 scalar pack buffers are device memory of the process, so a load makes them
 anew from the call's scalars, as `_build_variant` does.
 
@@ -450,6 +450,7 @@ anew from the call's scalars, as `_build_variant` does.
 | CPU | the object code MCJIT emitted (`set_object_cache`) | `add_object_file` into a new engine: about 0.4 ms, no LLVM optimization or code generation |
 | Metal | MSL source, entry name, parameter layout, scalar pack layout | `newLibraryWithSource`, which macOS's own shader cache makes fast for source it has compiled before |
 | CUDA | PTX from NVRTC, entry name, parameter layout, scalar pack layout | `cuModuleLoadData`: the driver compiles the PTX for the device, so the target names the device and compute capability, the driver version, NVRTC's version and its options |
+| HIP | the code object from hipRTC, entry name, parameter layout, scalar pack layout | `hipModuleLoadData`: machine code for one architecture, so the target names the device and `gcnArchName` with its feature flags (which also separates devices with and without texture hardware), the ROCm runtime and driver, hipRTC, hip-python and the hipRTC options |
 | Level Zero | the native binary IGC made (`zeModuleGetNativeBinary`), the SPIR-V from ocloc, entry name, parameter layout, workgroup size, scalar pack layout | `zeModuleCreate` in the backend's context (its own or the adopted one) as `ZE_MODULE_FORMAT_NATIVE`: about 0.2 ms a kernel. A binary the driver refuses loads from the SPIR-V, which IGC finalizes, about 50 ms a kernel without the driver's own cache. The target names the device and its IP version (stepping), the driver version, ocloc's version, the ocloc and module options, and f64 support |
 
 **File-system rules.** Entries are written to a temporary file in the same

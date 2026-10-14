@@ -37,6 +37,7 @@ from tack.runtime.kernel_utils import (
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _HIP_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
+from hip import LONG_VERSION as _HIP_PYTHON_VERSION
 from hip import hip, hiprtc
 
 from tack.codegen.hip_gen import generate_hip_source
@@ -183,6 +184,16 @@ class HIPBuffer(DeviceBuffer):
                 pass
 
 
+# hipRTC's options. It compiles for the current device's architecture.
+# Contraction stays inside one expression, as the language contract permits:
+# hipRTC's default (-ffp-contract=fast) fused a product into a later
+# statement while another read of the same variable kept it rounded, so on
+# AMD GPUs `p - p` was the product's rounding error, not zero. Part of the
+# disk cache's target, so that changing an option misses the code objects
+# compiled without it.
+_HIPRTC_OPTIONS = [b"-ffp-contract=on"]
+
+
 def _compile_code_object(hip_source: str, func_name: str) -> bytes:
     """Compile HIP C source to a code object via hipRTC."""
     src = hip_source.encode("utf-8")
@@ -192,7 +203,8 @@ def _compile_code_object(hip_source: str, func_name: str) -> bytes:
     _check_hiprtc(err)
 
     # Compile for the current device architecture
-    compile_result = hiprtc.hiprtcCompileProgram(prog, 0, [])
+    compile_result = hiprtc.hiprtcCompileProgram(prog, len(_HIPRTC_OPTIONS),
+                                                 _HIPRTC_OPTIONS)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != hiprtc.hiprtcResult.HIPRTC_SUCCESS:
@@ -210,7 +222,20 @@ def _compile_code_object(hip_source: str, func_name: str) -> bytes:
     code = bytearray(code_size)
     _check_hiprtc(hiprtc.hiprtcGetCode(prog, code))
     # NOTE: skip hiprtcDestroyProgram — segfaults in hip-python 7.1
-    return code
+    return bytes(code)
+
+
+def _load_kernel(code: bytes, kernel_name: str, param_types, param_is_field,
+                 param_is_texture) -> "CompiledHIPKernel":
+    """A kernel from its code object, loaded on the current device."""
+    err, module = hip.hipModuleLoadData(code)
+    _check_hip(err)
+    err, func = hip.hipModuleGetFunction(module, kernel_name.encode())
+    _check_hip(err)
+    compiled = CompiledHIPKernel(module, func, kernel_name, param_types,
+                                 param_is_field, param_is_texture)
+    compiled.code_object = code
+    return compiled
 
 
 _HIP_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlong,
@@ -317,6 +342,7 @@ class CompiledHIPKernel:
         self._param_types = param_types
         self._param_is_field = param_is_field
         self._param_is_texture = param_is_texture or [False] * len(param_types)
+        self.code_object = None     # what hipRTC made, kept for the disk cache
 
     def __call__(self, kernel_args: list, loop_end: int, extents=(), limits=None):
         """Dispatch the HIP kernel.
@@ -623,18 +649,60 @@ class HIPBackend(Backend):
         kernel_name = kernel_entry_name(ir_func.name)
         hip_source = generate_hip_source(ir_func)
         code = _compile_code_object(hip_source, kernel_name)
-
-        err, module = hip.hipModuleLoadData(code)
-        _check_hip(err)
-
-        err, func = hip.hipModuleGetFunction(module, kernel_name.encode())
-        _check_hip(err)
-
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        return CompiledHIPKernel(module, func, kernel_name, param_types,
-                                 param_is_field, param_is_texture)
+        return _load_kernel(code, kernel_name, param_types, param_is_field, param_is_texture)
+
+    # ── The disk cache: code objects, loaded as they are ──────────────
+    # A code object is machine code for one architecture and its feature
+    # flags (gcnArchName, e.g. gfx90a:sramecc+:xnack-), so the target names
+    # them, with the device, the ROCm runtime that loads the code, and the
+    # hipRTC, hip-python and options that made it. The device also covers
+    # the texture fallback, which changes the generated source: an MI300X
+    # (gfx942, no texture hardware) and an MI210 have different targets.
+
+    _target = None
+
+    def cache_target(self):
+        if self._target is None:
+            props = hip.hipDeviceProp_t()
+            _check_hip(hip.hipGetDeviceProperties(props, self._device))
+            device_name = props.name.decode(errors="replace")
+            arch = props.gcnArchName.decode(errors="replace")
+            err, runtime_version = hip.hipRuntimeGetVersion()
+            _check_hip(err)
+            err, driver_version = hip.hipDriverGetVersion()
+            _check_hip(err)
+            err, rtc_major, rtc_minor = hiprtc.hiprtcVersion()
+            _check_hiprtc(err)
+            options = " ".join(o.decode() for o in _HIPRTC_OPTIONS)
+            self._target = (f"{device_name} {arch}; runtime {runtime_version}; "
+                            f"driver {driver_version}; hiprtc {rtc_major}.{rtc_minor}; "
+                            f"hip-python {_HIP_PYTHON_VERSION}; options [{options}]")
+        return self._target
+
+    def variant_artifact(self, payload):
+        compiled, pack_info, _ = payload
+        if compiled.code_object is None:
+            raise ValueError("no code object was kept for this kernel")
+        return {"code_object": compiled.code_object, "name": compiled._func_name,
+                "param_types": compiled._param_types,
+                "param_is_field": compiled._param_is_field,
+                "param_is_texture": compiled._param_is_texture,
+                "pack_info": pack_info}
+
+    def load_variant(self, ir_func, artifact, effective_args):
+        from tack.runtime.kernel_utils import _create_pack_fields
+        compiled = _load_kernel(artifact["code_object"], artifact["name"],
+                                artifact["param_types"], artifact["param_is_field"],
+                                artifact["param_is_texture"])
+        pack_info = artifact["pack_info"]
+        # The scalar pack buffers are device memory of this process, made
+        # from this call's scalars as _build_variant makes them.
+        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+                       if pack_info else None)
+        return compiled, pack_info, pack_fields
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""

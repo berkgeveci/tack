@@ -275,7 +275,10 @@ stale entry runs. Backends opt into `.variant` with `cache_target()`,
 `variant_artifact()` and `load_variant(ir_func, artifact, effective_args)`
 (CPU: MCJIT object code; Metal: MSL; CUDA: PTX, loaded with
 `cuModuleLoadData`, its target naming the device and compute capability,
-the driver that compiles the PTX, NVRTC and its options; Level Zero: the
+the driver that compiles the PTX, NVRTC and its options; HIP: the code
+object, loaded with `hipModuleLoadData`, its target naming the device and
+`gcnArchName` with its feature flags, the ROCm runtime and driver, hipRTC,
+hip-python and the hipRTC options; Level Zero: the
 native binary (`zeModuleGetNativeBinary`) and the SPIR-V, loaded with
 `zeModuleCreate` as `ZE_MODULE_FORMAT_NATIVE`, from the SPIR-V if the
 driver refuses the binary (`native_refused` in the stats), its target
@@ -284,8 +287,8 @@ ocloc and module options, and f64 support. From SPIR-V, IGC's
 finalization is about 50 ms a kernel unless the driver's own
 `neo_compiler_cache` has it). A GPU payload's
 scalar pack buffers are device memory, so `load_variant` recreates them
-from the call's `effective_args`; CPU and Metal ignore that argument. HIP
-still returns `None` from `cache_target()`. Atomic rename writes, checksummed entries, owner-only directories;
+from the call's `effective_args`; CPU and Metal ignore that argument. Every
+backend now stores variants. Atomic rename writes, checksummed entries, owner-only directories;
 under MPI the default mode reads one bundle and writes nothing (a Slurm
 batch script is not MPI: Slurm's size is `SLURM_STEP_NUM_TASKS`). Entries
 of every version share `TACK_CACHE_SIZE` (1 GiB): a writer prunes by mtime
@@ -583,8 +586,13 @@ See `test_float_division.py` and the language contract.
 
 The floating-point baseline requires annotated precision, exceptional
 classes/signs and expression grouping. Adjacent multiply/add contraction
-is permitted; general reassociation is not. CPU emits no fast-math flags;
-HIP/OpenCL retain default settings without unsafe options. Floating math
+is permitted, inside one expression only: a named value is rounded once
+and every read agrees (`x - x` is 0). General reassociation is not
+permitted. CPU emits no fast-math flags; HIP/OpenCL retain default settings
+without unsafe options, except that HIP passes `-ffp-contract=on`
+(`_HIPRTC_OPTIONS`): hipRTC's default `fast` fused a product into one read
+of a variable while another read it rounded, which made `_crossing`'s
+`a - a != 0.0` finiteness test fire on finite values. Floating math
 calls convert arguments to the result precision first; integer arguments
 default to f32, irrespective of the destination field. CPU libm calls use
 the matching f32/f64 symbols and return that precision before nested
