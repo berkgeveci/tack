@@ -23,6 +23,16 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 
 @pytest.fixture(autouse=True)
+def _python_pool(monkeypatch):
+    """These tests drive the policy through the Python path's seams -- a
+    patched `call_range`, an inline pool, a fake clock -- so every backend
+    they make fans out through `ThreadPoolExecutor`. The JIT'd pool has
+    its own tests in test_cpu_pool.py."""
+    monkeypatch.setenv("TACK_CPU_POOL", "python")
+
+
+
+@pytest.fixture(autouse=True)
 def cpu():
     tack.init(arch=tack.cpu)
     return get_backend()
@@ -716,7 +726,7 @@ def test_first_sight_samples_inside_the_range_not_its_prefix(cpu):
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
     n = 1 << 20
-    visits = tack.field(dtype=tack.i32, shape=(n,))
+    visits = tack.zeros(dtype=tack.i32, shape=(n,))
     args = [visits, n]
     compiled = _compile_for(backend, _count_visits, args)
     assert n >= backend._probe_min_range()
@@ -849,7 +859,7 @@ def _fixed_timing(monkeypatch, compiled, work_ns):
 
 
 def _measured(backend, kernel, n):
-    x = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.zeros(dtype=tack.f32, shape=(n,))
     out = tack.field(dtype=tack.f32, shape=(n,))
     compiled = _compile_for(backend, kernel, [x, out, n])
     backend._dispatch(compiled, [x, out, n], n)
@@ -1480,7 +1490,7 @@ def test_timing_expensive_kernel_does_fan_out(cpu):
     for _ in range(2):
         backend._dispatch(compiled, [x, out, n], n)
 
-    assert backend._pool is not None
+    assert backend._pool is not None or backend._cpool is not None, 'no pool was made'
     assert backend._fan_out_ns > 0
     assert compiled.parallel_min_elems <= n, (
         f"threshold {compiled.parallel_min_elems} above {n}: estimate "

@@ -149,7 +149,7 @@ def _effects(state, q, r):
 
 
 def test_operands_execute_once(backend):
-    state = tack.field(tack.i32, (9,))
+    state = tack.zeros(tack.i32, (9,))
     q, r = tack.field(tack.i32, (9,)), tack.field(tack.i32, (9,))
     _effects(state, q, r)
     np.testing.assert_array_equal(state.to_numpy(), np.full(9, 4))

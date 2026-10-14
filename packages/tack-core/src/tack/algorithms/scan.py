@@ -19,6 +19,11 @@ Usage:
 import tack
 
 _CHUNK = 256  # elements one thread scans in turn
+# A level of at most this many elements is scanned by one thread in one
+# launch: below it the recursion's launches cost more than the work (the
+# chunk totals of a million elements, 3907 of them, took two more levels
+# and five launches of a few microseconds' work each).
+_SERIAL_MAX = 4096
 
 
 @tack.kernel
@@ -128,16 +133,23 @@ def _tile_apply(data, offsets, n, ntiles, inclusive):
 
 
 @tack.kernel
-def _zero_first(field):
+def _scan_serial(src, dst, total, n, inclusive):
+    """One thread scans ``[0, n)`` into ``dst`` and leaves the sum in
+    ``total[0]``, every value converted to ``dst``'s dtype on the copy so
+    the sums form in it, as the chunk kernels' do."""
     for i in range(1):
-        field[0] = 0
-
-
-@tack.kernel
-def _read_last(src, dst, idx):
-    """Copy a single element src[idx] into dst[0]."""
-    for i in range(1):
-        dst[0] = src[idx]
+        dst[0] = src[0]
+        running = dst[0] * 0
+        for k in range(n):
+            dst[k] = src[k]
+            value = dst[k]
+            if inclusive == 1:
+                running += value
+                dst[k] = running
+            else:
+                dst[k] = running
+                running += value
+        total[0] = running
 
 
 def _count(n, *fields):
@@ -151,10 +163,9 @@ def _count(n, *fields):
 
 
 def _total(field, n):
-    """field[n - 1] as a Python number, read in the field's own dtype."""
-    result = tack.field(dtype=field.dtype, shape=(1,))
-    _read_last(field, result, n - 1)
-    return result.to_numpy()[0].item()
+    """field[n - 1] as a Python number: one element read on the host, which
+    on every backend is a copy of just that element and no launch."""
+    return field[n - 1]
 
 
 def _scan(src, dst, n, inclusive, want_total=True):
@@ -168,6 +179,14 @@ def _scan(src, dst, n, inclusive, want_total=True):
 
     tiles = get_backend().supports_workgroups
     size = int(_TILE) if tiles else _CHUNK
+    if n == 0:
+        return 0 if want_total else None
+    if n <= (size if tiles else _SERIAL_MAX):
+        # One launch; with workgroups a level of one tile is one thread's
+        # worth anyway. The total is read as one element, not a launch.
+        total = tack.field(dtype=dst.dtype, shape=(1,))
+        _scan_serial(src, dst, total, n, 1 if inclusive else 0)
+        return total[0] if want_total else None
     nchunks = (n + size - 1) // size
     sums = tack.field(dtype=dst.dtype, shape=(nchunks,))
     if tiles:
@@ -175,11 +194,7 @@ def _scan(src, dst, n, inclusive, want_total=True):
     else:
         _chunk_sums(src, dst, sums, n, _CHUNK, nchunks)
     offsets = tack.field(dtype=dst.dtype, shape=(nchunks,))
-    if nchunks == 1:
-        _zero_first(offsets)
-        total = _total(sums, 1) if want_total else None
-    else:
-        total = _scan(sums, offsets, nchunks, inclusive=False, want_total=want_total)
+    total = _scan(sums, offsets, nchunks, inclusive=False, want_total=want_total)
     if tiles:
         _tile_apply(dst, offsets, n, nchunks, 1 if inclusive else 0)
     else:

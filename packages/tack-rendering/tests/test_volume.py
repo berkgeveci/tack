@@ -188,7 +188,7 @@ class TestRenderVolume:
         """The ray caster's texture is refreshed, as the path tracer reads live."""
         tf = TransferFunction('grayscale', opacity_func=lambda t: 1.0,
                               range=(0.0, 1.0))
-        data = tack.field(dtype=tack.f32, shape=(64,))
+        data = tack.zeros(dtype=tack.f32, shape=(64,))
         vol = Volume(data, dims=(4, 4, 4), origin=(-1, -1, -1),
                      spacing=(2.0/3, 2.0/3, 2.0/3), transfer_function=tf,
                      opacity_scale=50.0)

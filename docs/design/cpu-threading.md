@@ -25,20 +25,56 @@ per-kernel state on `CompiledKernel`, decision and measurement code on
 
 ### What a fan-out costs
 
-`CPUBackend._parallel_execute` divides `[start, end)` into `num_threads`
-contiguous chunks of `ceil(total / num_threads)` elements and submits one
-`call_range` per chunk to a `ThreadPoolExecutor`. The compiled kernel is
-called through ctypes, which releases the GIL for the call, so chunks run
-concurrently while the calling thread waits on the futures. Arguments are
-marshalled once per dispatch (`CompiledKernel.bind`); only the loop bounds
-differ between chunks.
+`CPUBackend._parallel_execute` divides `[start, end)` among the backend's
+`num_threads` threads (see "A thread count per launch" below for the
+alternative that was tried).
+Arguments are marshalled once per dispatch (`CompiledKernel.bind`); only
+the loop bounds differ between chunks.
 
-Creating futures, waking threads, re-acquiring the GIL and joining costs on
-the order of a hundred microseconds or more. `_calibrate_fan_out`'s
-docstring records an empty probe at 223 µs against a real 1024-element
-fan-out at 235 µs, on the 10-core Apple silicon machine the policy was first
-written on (August 2026). A fan-out pays only when the serial run it
-replaces takes meaningfully longer.
+The chunks run through one of two pools. The default is the pool in
+`cpu_pool.py`: a small program in LLVM IR, built with `llvmlite.ir` and
+JIT'd beside the kernels, whose `N - 1` detached pthreads each wait on
+their own mailbox, a launch count (spinning for a while, then a futex on
+Linux or `nanosleep` polls elsewhere). A fan-out is one ctypes call:
+`pool_run` posts to workers `0 .. k - 2`, wakes those of them that sleep,
+runs as worker `k - 1` itself and leaves the rest asleep, so a launch of
+two on a pool of sixteen costs two wake-ups (4.4 µs hot on a 2 GHz Xeon,
+against 11 when every worker was woken) and the `k` threads of every
+launch are the same `k`. Workers are not pinned to cores. Pinning was
+tried and dropped (2026-10-14): on a two-socket Xeon it was parity on 8
+threads of 8 cores and a loss on 16 (every worker pinned: a 1M contour
+33 ms against 19; one per core: still behind unpinned on most filters),
+and on a 28-core EPYC it lost 5-9% on the dataset filters, because a
+pinned worker cannot move off a busy core. The workers and the
+caller claim chunks from a shared
+counter (`GRAIN` per worker, each at least `MIN_CHUNK` elements) and run
+them through a wrapper JIT'd once per kernel that loads the arguments
+from 8-byte slots, and the workers never touch Python. Claimed rather
+than assigned because the dispatch waits for its slowest worker: with
+one equal chunk each, a worker the scheduler put on the sibling
+hyperthread of a busy core ran 1.7× slower and a compute-bound kernel
+over a million cells took 29 or 50 ms from run to run; claiming, it
+takes fewer chunks and the run takes 38 ms every time. Each worker
+reports the time and the elements it ran, which is what the rate and
+floor bookkeeping below reads. The pool is one
+per process, sized by the CPUs the process may run on; a dispatch uses as
+many of its threads as its backend has. `TACK_CPU_POOL=python` selects the
+other pool, a `ThreadPoolExecutor` with one `call_range` task per chunk,
+which is also the fallback on Windows or when the JIT'd pool cannot be
+made.
+
+What a fan-out costs differs by an order of magnitude between the two.
+Through the executor every worker wakes, takes the GIL to reach its ctypes
+call and takes it again to return, and the handoffs serialize: about 60 µs
+per worker on a 2 GHz Xeon (490 µs for eight, 1.2 ms after an idle gap of
+2 ms or more, when the cores have entered C6); `_calibrate_fan_out`'s
+docstring records 223 µs on the 10-core Apple silicon machine the policy
+was first written on (August 2026). Through the JIT'd pool it is 3–5 µs
+hot and about 100 µs after an idle gap (the C-state exit). Either way the
+policy measures the pool it uses and a fan-out pays only when the serial
+run it replaces takes meaningfully longer; with the JIT'd pool that is far
+more often. Measured on the Xeon, the dataset filters at a million cells
+went from a median 1.05× to 1.9× on eight threads.
 
 ### Why no fixed threshold works
 
@@ -493,6 +529,8 @@ speedups not taken. The module docstring keeps that reasoning.
 | `TACK_CPU_THREADS` | Worker count, parsed as an integer; values below 1 become 1. With one thread the pool is never created and every threshold is `_NEVER`. An explicit `num_threads`, from `tack.init(arch="cpu", num_threads=…)` or `CPUBackend(num_threads=…)`, takes precedence. |
 | `TACK_CPU_POLICY` | `v2` (default, also when unset or empty) or `v1`. Anything else raises `ValueError`. |
 | `TACK_CPU_MARGIN` | A float that replaces the margin under either policy, switching off v2's derived margin. For experiments. |
+| `TACK_CPU_POOL` | `python` (also `0`, `off`, `no`, `false`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool. Anything else, or unset, uses the pool where it can be made. |
+| `TACK_CPU_POOL_SPIN` | How many pause iterations a pool worker spins before sleeping (default 20000). For experiments. |
 
 The ratios, caps, intervals and priors in the module's underscore-prefixed
 constants are private, with no supported override. Each carries a comment on
@@ -514,8 +552,13 @@ On x86-64 Linux with libnuma and two or more memory nodes, `allocate_field`
 allocates under an interleave policy and touches every page, so pages spread
 across nodes. `_init_numa` reads the policy back with `get_mempolicy` and
 stays off unless the kernel confirms it; wrapped external memory is not
-affected. The threading policy has no NUMA term — remote-memory effects show
-up in the measured rates — and workers are not pinned.
+affected. Only a thread whose policy is the default is changed, and the
+policy found is put back: a process started under `numactl --membind` (or
+bound through libnuma) keeps its binding and its fields stay on its nodes.
+The JIT'd pool is made under the same context, so its threads inherit
+that policy and a field they zero is placed the same way. The threading
+policy has no NUMA term — remote-memory effects show up in the measured
+rates — and workers are not pinned.
 
 ## The contract
 
@@ -640,3 +683,19 @@ and on the scheduler's wake-up behavior; neither has been measured on Windows.
 **CI checks the logic, not the tuning.** The controlled tests pin the decision
 for given measurements. Whether the measurements and ratios suit a machine is
 checked only by running `benchmarks/threading_decisions.py` on it.
+
+## A thread count per launch
+
+Tried and dropped (2026-10-14). `TACK_CPU_SUBSETS=1` let a fan-out use
+the first `k` of the `N` threads: each worker's chunk had to cost ten
+shares of the hot fan-out, and a kernel whose full fan-out reached a
+speedup `S` of at most `N / 4` got `ceil(2 S)` threads, with full runs
+on a back-off schedule to keep `r_p` at `N` current. On 16 threads of a
+hyperthreaded Xeon it lost nothing to always-`N`. On jura's 28 cores it
+lost: the dataset filters ran 12% slower with it, its own score (every
+`k` timed directly) had rows losing over 5% to always-`N` and 2.4-3.2 ms
+of regret, it kept 28 threads for bandwidth-bound launches that run
+10-16% faster on 4-6, and through the rates it fed back it turned the
+serial-or-parallel decision under-eager (14 of 18 rows wrong at
+`threading_decisions.py --scale 1`). The per-worker mailboxes it came
+with stayed: a launch still wakes only the workers it uses.

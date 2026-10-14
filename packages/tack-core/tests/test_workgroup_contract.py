@@ -184,7 +184,7 @@ def test_workgroups_exchange_across_lanes_and_reject_cpu(workgroup_backend, dtyp
     # even after a successful GPU compilation and cached dispatch.
     tack.init(arch=tack.cpu)
     cpu_data = tack.field(dtype, (512,))
-    cpu_out = tack.field(dtype, (512,))
+    cpu_out = tack.zeros(dtype, (512,))
     with pytest.raises(RuntimeError, match='CPU.*barrier, shared_like, thread_id'):
         exchange_neighbors(cpu_data, cpu_out)
     np.testing.assert_array_equal(cpu_out.to_numpy(), np.zeros(512))

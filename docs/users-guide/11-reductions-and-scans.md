@@ -256,20 +256,22 @@ total = exclusive_scan(counts, offsets, n)  # i32 counts, i64 offsets and total
 Both functions run on every backend, by chunks: each chunk is copied into
 the output and totalled, the chunk totals are scanned the same way,
 recursively, and each chunk then writes its running sums from its offset.
-That is two launches per level. On the CPU a chunk is 256 elements, one
-thread each: three levels, eight launches, for a million elements. On GPU
-backends a chunk is a tile of 2048 elements scanned by one workgroup --
-eight elements to each of its 256 lanes, the lane totals scanned in shared
-memory -- so a million elements take two levels. Launches on the CPU, CUDA,
-HIP and Level Zero complete before returning; Metal queues them and waits
-when the host next reads a field. For small arrays, copying to NumPy,
-calling `np.cumsum` and copying back can still be faster.
+That is two launches per level, and a level small enough for one thread
+-- 4096 elements on the CPU, one tile on GPU backends -- is one launch
+that scans it in order. On the CPU a chunk is 256 elements, one thread
+each: a million elements take a chunked level and a serial one, three
+launches. On GPU backends a chunk is a tile of 2048 elements scanned by
+one workgroup -- eight elements to each of its 256 lanes, the lane totals
+scanned in shared memory -- so a million elements take a tiled level and
+a serial one. Launches on the CPU, CUDA, HIP and Level Zero complete
+before returning; Metal queues them and waits when the host next reads a
+field. For small arrays, copying to NumPy, calling `np.cumsum` and copying
+back can still be faster.
 
 **Return value.** Both return the sum of the first `n` inputs, in the
 output field's dtype, as a Python `int` (integer outputs) or `float`
-(floating outputs). It is read by a one-element kernel that copies the last
-inclusive sum into a one-element field, so only that element comes back to
-the host, not the whole output.
+(floating outputs). It is read as one element from the device, so only
+that element comes back to the host, not the whole output.
 
 **Behavior.**
 
@@ -289,18 +291,19 @@ the host, not the whole output.
   device (on Metal, for every launch queued so far). A caller that needs
   only the offsets passes `total=False`: the scan returns `None`, reads
   nothing, and stays queued with whatever follows.
-- Each call allocates two fields of the output's dtype per level, the
-  chunk totals and their offsets, one element per chunk: about `n / 128`
-  elements in all on the CPU, `n / 1024` on GPUs, not a copy of the input.
+- Each call allocates two fields of the output's dtype per chunked level,
+  the chunk totals and their offsets, one element per chunk: about
+  `n / 128` elements in all on the CPU, `n / 1024` on GPUs, not a copy of
+  the input, and a one-element field for the total.
 - Integer results are exact (modulo wrapping) and identical on every
   backend and every run.
-- Floating results are deterministic for a given `n` and backend. On the
-  CPU, through 512 elements (two chunks) they are added in `np.cumsum`'s
-  order and match it bit for bit; from the third chunk on, a chunk starts
-  from the sum of the earlier chunks' totals rather than from the previous
-  element's running sum, so results can differ from `np.cumsum` in the last
-  bits. On GPUs that happens from the ninth element: a tile's lanes start
-  from their predecessors' totals, combined in tree order.
+- Floating results are deterministic for a given `n` and backend. Through
+  the serial level's size -- 4096 elements on the CPU, 2048 on GPUs --
+  they are added in `np.cumsum`'s order and match it bit for bit; beyond
+  it a chunk starts from the sum of the earlier chunks' totals rather than
+  from the previous element's running sum (on GPUs a tile's lanes from
+  their predecessors' totals, combined in tree order), so results can
+  differ from `np.cumsum` in the last bits.
 
 ### Copy and fill utilities
 

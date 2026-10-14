@@ -414,7 +414,8 @@ def test_zero_dimensional_scalar_field(backend, dtype):
     `f[None]`. Metal could not allocate it: its buffer zeroed the view
     with `[:]`, which a zero-dimensional array rejects. A zero-dimensional
     vector field has a flat shape of `(n,)` and was not affected."""
-    f = tack.field(dtype=dtype, shape=())
+    assert tack.field(dtype=dtype, shape=()).to_numpy().shape == ()
+    f = tack.zeros(dtype=dtype, shape=())
     assert f.shape == () and f.to_numpy().shape == ()
     assert f.to_numpy() == 0
     f.fill(3)

@@ -68,6 +68,71 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- A scan's small levels are one launch: a level of at most 4096 elements
+  on the CPU, or one tile on a GPU backend, is scanned in order by one
+  thread, and the total is read as one element instead of copied by a
+  kernel. A million elements take three launches on the CPU instead of
+  eight; a contour at 1M cells makes 26 launches instead of 40 and a
+  threshold 18 instead of 33. Floating sums now match `np.cumsum` bit
+  for bit through 4096 elements on the CPU and 2048 on GPUs (512 and 8
+  before).
+- A warm dispatch costs less host time: the fast path keeps each
+  field's signature and each buffer's address and byte range once
+  computed, holds the variants it resolved instead of looking them up,
+  learns each template class's attribute layout once, checks field
+  overlap in one walk of the ranges, packs the pool's arguments with one
+  `struct.pack_into`, and skips the template scope and the texture
+  walks when a call has none. A serial dispatch of a kernel with eight
+  field arguments went from 66 to 34 µs on a 2 GHz Xeon, and inside a
+  dataset filter the host time per launch from 149 to 130 µs.
+- A CPU launch wakes only the pool workers it uses: each worker waits on
+  its own mailbox, a launch of `k` threads posts to `k - 1` of them, and
+  the rest sleep on, so the `k` of every launch are the same `k`.
+  A hot fan-out of two threads on a pool of sixteen cost 11 µs waking
+  every worker and costs 4.4.
+- `tack.field` returns uninitialized storage on every backend; `tack.zeros`
+  is the call that pays for zeros. The CPU backend used to fill every new
+  field on the calling thread, which at 5M cells on eight threads of a
+  2 GHz Xeon was half of threshold's and cell-to-point's time and grew
+  with the thread count. A field is now first touched by the kernel that
+  writes it, and a CPU fill of 256 KiB or more (so `zeros`, `ones`,
+  `full`) runs as a kernel through the dispatch, so the threads share it
+  and the pages land where they will be used; the executor's threads are
+  made under the NUMA interleave policy as the pool's are. The dataset
+  filters' fully written flag and offset arrays take plain fields.
+  `Backend.fill_field` is the hook. On Linux, `TACK_CPU_MALLOC=1` also
+  tells glibc to keep freed pages (`mallopt`: the mmap threshold at its
+  32 MiB cap, no trim under 4 GiB of free heap, the heap grown 256 MiB
+  at a time), since a filter reallocates the same temporaries on every
+  call and takes their page faults every time: threshold at 5M on 8
+  threads of one NUMA node 126 → 104 ms, slice 76 → 65. Off by default:
+  it changes `malloc` for the whole process, and unbound on a 28-core
+  EPYC it did not pay.
+- The CPU backend fans a range out through a thread pool JIT-compiled from
+  LLVM IR, with one ctypes call per launch and no Python on the workers'
+  path, instead of one `ThreadPoolExecutor` task per worker. A fan-out that
+  cost 60 µs per worker on a 2 GHz Xeon (1.2 ms for eight after an idle
+  gap) costs a few microseconds, so short launches thread too: the dataset
+  filters at a million cells went from 1.05× to 1.9× on eight threads
+  there. Workers claim chunks from a counter rather than taking one equal
+  share each, so one slowed by a sibling hyperthread or an uneven range
+  takes fewer. Dispatches from several
+  Python threads take turns at the pool, and a pool whose workers cannot
+  all be started is dismantled before the executor takes over.
+  `TACK_CPU_POOL=python` keeps the executor, which remains the fallback
+  on Windows.
+- A dispatch whose argument signature was seen before resolves its
+  variant from that signature instead of rebuilding the key, and the
+  CPU backend passes field addresses rather than typed pointer objects:
+  a warm dispatch costs 40 µs instead of 70 on a 2 GHz Xeon, on every
+  backend, which for a filter of forty launches is a few milliseconds.
+- NUMA interleave no longer replaces a bound thread's memory policy: a
+  process started under `numactl --membind` keeps its binding, and the
+  probe at `tack.init` puts back the policy it found instead of the
+  default.
+- CUDA launches are queued on a stream and return at once; the host
+  waits where it reads a field (`to_numpy`, indexing, reductions, DLPack
+  export) or calls `tack.sync()`. Fills and host writes queue in order
 - CUDA and HIP launches are queued on a stream and return at once; the
   host waits where it reads a field (`to_numpy`, indexing, reductions,
   DLPack export) or calls `tack.sync()`. Fills and host writes queue in order

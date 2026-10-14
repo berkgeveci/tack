@@ -280,6 +280,30 @@ def test_without_debug_mode_nothing_is_checked(backend):
     tack.init(arch=backend)
 
 
+def test_switching_modes_reuses_no_variant_of_the_other(backend):
+    """A warm call reuses its variant by argument signature (the dispatch
+    fast path); a call in the other mode with the same signature must not
+    find it there. Debug variants take two hidden arguments, and the
+    others check nothing."""
+    x, y = _field(np.arange(8)), _field(np.zeros(8))
+    try:
+        tack.init(arch=backend, debug=False)
+        for _ in range(2):
+            _shift(x, y, 0)
+        tack.init(arch=backend, debug=True)
+        with pytest.raises(IndexError):
+            _shift(x, y, 2)
+        for _ in range(2):
+            _shift(x, y, 0)
+        np.testing.assert_array_equal(y.to_numpy(), np.arange(8))
+        tack.init(arch=backend, debug=False)
+        for _ in range(2):
+            _shift(x, y, 0)
+        np.testing.assert_array_equal(y.to_numpy(), np.arange(8))
+    finally:
+        tack.init(arch=backend)
+
+
 def test_inspect_shows_the_checks(debug):
     a, b = _field(np.zeros((2, 2))), _field(np.zeros((2, 2)))
     assert '__tack_in_bounds__' in tack.inspect(_right, a, b, mode='source')

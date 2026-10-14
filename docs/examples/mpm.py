@@ -98,6 +98,8 @@ def run(arch="cpu", check=False):
     C = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
     J = tack.field(dtype=tack.f32, shape=(n,))
     x.from_numpy(initial)
+    v.fill(0.0)       # read by the first scatter, before anything writes them
+    C.fill(0.0)
     J.fill(1.0)
     momentum = tack.Vector.field(2, dtype=tack.f32, shape=(GRID, GRID))
     mass = tack.field(dtype=tack.f32, shape=(GRID, GRID))

@@ -158,8 +158,8 @@ CASES = [
                          ids=[case[0].split("  ")[0] for case in CASES])
 def test_field_updates_in_a_sequential_loop(backend, kernel, pick, want, dtype):
     np_dtype = tack.field(dtype=dtype, shape=(1,)).to_numpy().dtype
-    counter = tack.field(dtype=dtype, shape=(6,))
-    total = tack.field(dtype=dtype, shape=(6,))
+    counter = tack.zeros(dtype=dtype, shape=(6,))
+    total = tack.zeros(dtype=dtype, shape=(6,))
     x = tack.field(dtype=dtype, shape=(6,))
     x.from_numpy(np.array([10, 20, 30, 40, 50, 60]).astype(np_dtype))
     kernel(counter, total, x, 6, 0)
@@ -177,8 +177,8 @@ def _drain_queue(counter, total, x, n):
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32], ids=["i32", "f32"])
 def test_while_loop_over_zero_dimensional_fields(backend, dtype):
     """The form it was found in: a queue's head and a running total."""
-    counter = tack.field(dtype=dtype, shape=())
-    total = tack.field(dtype=dtype, shape=())
+    counter = tack.zeros(dtype=dtype, shape=())
+    total = tack.zeros(dtype=dtype, shape=())
     x = tack.field(dtype=dtype, shape=(6,))
     x.from_numpy(np.arange(6).astype(x.to_numpy().dtype))
     _drain_queue(counter, total, x, 6)

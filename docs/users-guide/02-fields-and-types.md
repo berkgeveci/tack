@@ -47,6 +47,10 @@ grid = tack.field(dtype=tack.f32, shape=(100, 100))
 indices = tack.field(dtype=tack.i32, shape=(256,))
 ```
 
+A new field's contents are unspecified, on every backend, until a kernel,
+`from_numpy` or `fill` writes them. `tack.zeros(dtype, shape)` makes a
+field of zeros (`ones` and `full` likewise), filled on the device.
+
 ### Creating from Numpy
 
 The easiest way to create a field with data is `tack.field_like`:
