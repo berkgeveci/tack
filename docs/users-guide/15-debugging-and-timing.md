@@ -80,7 +80,8 @@ when its inputs are `f64`.
 | Unknown name in device code | Pass a runtime value or declare `tack.constant`; check the defining namespace |
 | Field has unexpected values or shape | Compare NumPy shapes and dtype; distinguish vectors from flat components |
 | Results change between runs | Conflicting stores, missing atomics, or floating atomic summation |
-| Only boundary cells are wrong | Bounds and initialization of both timestep buffers |
+| Only boundary cells are wrong | Bounds and initialization of both timestep buffers: run in debug mode (below) |
+| A crash, or garbage that moves with the input size | An index out of bounds: run in debug mode (below) |
 | Kernel rejected on CPU | Workgroup primitives need a GPU; use a portable path or local arrays |
 | Kernel rejected on Metal | Look for `f64`, unsupported atomic types, or a runtime array size |
 | Every call seems slow | Compilation/specialization, allocation, readback, or small synchronous launches |
@@ -89,6 +90,31 @@ when its inputs are `f64`.
 and remove it when timing. Metal does not provide this printing facility. For
 portable inspection, write diagnostic values to a field and read it after the
 call.
+
+## Check every index with debug mode
+
+An index out of bounds is the usual cause of a kernel that crashes, or that
+gives wrong values near the edges of an array. Kernels do not check indices,
+so `a[i, j + 1]` at the last column quietly reads the first element of the
+next row. Turn on debug mode to find it:
+
+```python
+tack.init(arch=tack.cpu, debug=True)    # or TACK_DEBUG=1 in the environment
+```
+
+Every field and array index is then checked, one dimension at a time. An
+access out of bounds is skipped (a load gives 0) and the call raises
+`IndexError` naming the first one:
+
+```text
+IndexError: Kernel 'blur': a[i, j + 1] at blur.py:14, column 19: index 64 of
+dimension 1 is outside [0, 64). The access was skipped (a load gives 0).
+63 more out-of-bounds accesses in the launch were skipped too.
+```
+
+An access in a `@tack.func` names the device function and its line. Debug
+mode works on every backend and compiles kernels anew, so it is for finding
+bugs, not for timing: each launch waits for its result.
 
 To inspect compilation without running the kernel:
 

@@ -11,6 +11,24 @@ result variable, and the call expression evaluates to that variable.
 import ast
 import inspect
 import textwrap
+import weakref
+
+
+def tag_origin(tree, func):
+    """Mark every node of ``tree`` as parsed from ``func``'s source.
+
+    Inlining copies a device function's body into its caller, and lowers a
+    call's arguments while the callee is being inlined; the mark says
+    whose source (file, line, text) a node is in. Copies keep it.
+
+    Only nodes with a position are marked: CPython shares one ``Load``,
+    ``Store`` and operator node among all trees, and a mark there would be
+    global. The mark is a weak reference, so no tree keeps a function alive.
+    """
+    origin = weakref.ref(func)
+    for node in ast.walk(tree):
+        if hasattr(node, 'lineno'):
+            node._tack_origin = origin
 
 
 def read_source(func, kind: str) -> str:
@@ -44,6 +62,7 @@ class Func:
         self.name = func.__name__
         self._source = textwrap.dedent(read_source(func, "device function"))
         self._ast = ast.parse(self._source)
+        tag_origin(self._ast, func)
         # Extract the FunctionDef node
         self._funcdef = self._ast.body[0]
         if not isinstance(self._funcdef, ast.FunctionDef):

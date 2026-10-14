@@ -339,6 +339,36 @@ localization/packing allocate generated bindings through `fresh_name`
 
 `tack.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (Tack IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR; CPU only, other backends raise `ValueError` after the kernel's own checks). It makes dispatch's decisions too: `check_dispatch_types` and the backend's `_store_texture_shapes` (software sampling on HIP/Level Zero devices without texture hardware). Implementation in `lang/inspect_kernel.py`.
 
+### Debug mode (bounds checks)
+
+`tack.init(debug=True)` or `TACK_DEBUG` (read at `init`) sets
+`dispatch._debug`. `Kernel.get_ir(debug=True)` lowers separately (a
+`("debug",)` key part): `_visit_subscript_index`/`_linearize_index` and flat
+atomic indices go through `_checked`, which wraps the flat index in
+`IRBoundsCheck` (per-dimension indices and extents, a site, the errors
+field) and records an `ir_bounds.BoundsSite` in `function.bounds_sites`.
+Dimension 0 and flat extents are `IRFieldExtent`, which `ir_resolve` turns
+into loads from the hidden i64 `__tack_extents__` field (three per
+parameter), so nothing specializes on length; other dimensions are
+`IRDimSize`, already baked into strides. Arrays use their allocation size.
+Two hidden field parameters follow the kernel's (`ir_bounds.HIDDEN_PARAMS`);
+`_resolve_variant` appends their arguments (`debug_bounds.hidden_args`,
+per-thread fields) and notes the launch; `Kernel.__call__` (and the result
+epilogue) calls `debug_bounds.check()`, which raises `IndexError`. A check
+is -1 when out of bounds, after `__tack_in_bounds__` records the first
+violation (atomic add on the count). `annotate_types` ends with
+`ir_bounds.guard_accesses`: loads become `index >= 0 ? load : 0` (typed
+zero, hence after typing), stores and atomics run under `if`. The index is
+evaluated twice, which is fine because indices are pure. Every generator emits
+`IRBoundsCheck` (`codegen/bounds.py`, `llvm_gen._bounds_helper`); MSL counts
+it as a store for `_stores_inside_sequential_loop`. Debug off generates
+unchanged code. When the disk cache merges, its lowered-IR key must include
+debug mode. See `test_debug_bounds.py`. `TACK_DEBUG=1 pytest` runs every
+kernel of the suite with checks; the tests that fail then read generated
+source or IR text, call a compiled CPU kernel with its own argument list, or
+compile generated code with a reduced toolchain (OpenCL 1.2, the host C++
+shim without `atomicAdd`); kernels that run must all pass.
+
 ### IR structure (lang/ir.py)
 
 The IR is a simple tree of nodes:

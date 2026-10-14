@@ -33,6 +33,8 @@ def _nodes():
         ir.IRPrint([leaf], [('expr', 0)]), ir.IRDimSize('a', 0),
         ir.IRTextureSample('texture', [leaf, leaf, leaf], (2, 3, 4)),
         ir.IRTableLoad((3, 1, 4), i32, leaf),
+        ir.IRFieldExtent('a', ir.IRFieldExtent.LEADING),
+        ir.IRBoundsCheck([leaf], [leaf], leaf, 0, ir.IRName('__tack_errors__')),
     ]
 
 

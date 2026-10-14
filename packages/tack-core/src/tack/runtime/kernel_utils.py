@@ -35,6 +35,7 @@ from tack.lang.workgroup_participation import (
     check_workgroup_participation,
 )
 from tack.lang.workgroup_support import check_workgroup_support
+from tack.runtime import debug_bounds, dispatch
 
 
 def as_address(ptr) -> int | None:
@@ -503,6 +504,9 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
         store_texture_shapes = _store_texture_shapes
     if kwargs:
         raise NotImplementedError("Keyword arguments not supported in kernels")
+    debug = dispatch._debug
+    if debug:
+        debug_bounds.check()        # a launch that came without a check
 
     template_args = _detect_template_args(kernel, args)
     effective_args = _expand_template_args(args, template_args)
@@ -515,7 +519,10 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
         vector_fields,
         template_args=template_args if template_args else None,
         texture_fields=texture_fields,
+        debug=debug,
     ).functions[0]
+    if debug:
+        effective_args = debug_bounds.hidden_args(backend, template, effective_args)
 
     check_workgroup_support(
         template, supports_workgroups=backend.supports_workgroups,
@@ -588,6 +595,8 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
 
     check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
     check_writable_fields(variant.ir.name, variant.written_fields, effective_args)
+    if debug:
+        debug_bounds.launched(effective_args, template)
     return variant, effective_args
 
 

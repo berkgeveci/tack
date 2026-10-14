@@ -246,6 +246,58 @@ def test_kernels_from_one_factory_keep_their_own_entries(tmp_path):
     assert second["stats"].get("ir_stale", 0) == 0
 
 
+_DEBUG_KERNELS = """
+import os
+
+import numpy as np
+import tack
+
+
+@tack.kernel
+def shifted_read(x, out, k):
+    for i in range(out.shape[0]):
+        out[i] = x[i + k]
+
+
+def run():
+    x = tack.field(tack.f32, (8,))
+    x.from_numpy(np.arange(8, dtype=np.float32))
+    out = tack.field(tack.f32, (8,))
+    shifted_read(x, out, 0)
+    results = [out.to_numpy().tolist()]
+    if os.environ.get("TACK_DEBUG") == "1":
+        try:
+            shifted_read(x, out, 1)
+        except IndexError as error:
+            results.append(str(error))
+    return results
+"""
+
+
+def test_debug_mode_keeps_its_own_entries(tmp_path, backend):
+    """Debug mode lowers with bounds checks, so its kernels are stored apart
+    from the plain ones, and one read from disk still names what it caught."""
+    _cache_dir(tmp_path)
+    modules = {"kernels.py": _DEBUG_KERNELS}
+    plain = _run(tmp_path, backend, env={"TACK_DEBUG": None}, modules=modules)
+    stored = len(_entries(tmp_path))
+    debug = _run(tmp_path, backend, env={"TACK_DEBUG": "1"}, modules=modules)
+    assert debug["stats"].get("ir_hit", 0) == 0
+    assert debug["stats"].get("variant_hit", 0) == 0
+    assert len(_entries(tmp_path)) > stored
+    again = _run(tmp_path, backend, env={"TACK_DEBUG": "1"}, modules=modules)
+    assert again["stats"].get("ir_miss", 0) == 0
+    assert again["stats"].get("variant_miss", 0) == 0
+    assert again["result"] == debug["result"]
+    message = again["result"][1]
+    assert "Kernel 'shifted_read': x[i + k] at " in message
+    assert "kernels.py:" in message and "index 8 is outside [0, 8)" in message
+    plain_again = _run(tmp_path, backend, env={"TACK_DEBUG": None}, modules=modules)
+    assert plain_again["stats"].get("ir_miss", 0) == 0
+    assert plain_again["stats"].get("variant_miss", 0) == 0
+    assert plain_again["result"] == plain["result"] == [[float(i) for i in range(8)]]
+
+
 def test_another_tack_misses(tmp_path):
     _cache_dir(tmp_path)
     _run(tmp_path)

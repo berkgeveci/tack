@@ -88,6 +88,11 @@ def annotate_types(ir_func: ir.IRFunction):
     env.update(var_types)
     _annotate_body(ir_func.body, env, field_params, var_types, None)
 
+    # Debug mode: accesses whose checked index came out negative are
+    # skipped. Typed zeros stand in for their values, hence after typing.
+    from tack.lang.ir_bounds import guard_accesses
+    guard_accesses(ir_func)
+
 
 def _literal_only_locals(stmts):
     """Locals every one of whose assignments is a weak literal expression."""
@@ -295,6 +300,12 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
 
     if isinstance(node, ir.IRDimSize):
         # DimSize is retained only in the host-evaluated grid bound.
+        node.dtype = i64
+        return i64
+
+    if isinstance(node, ir.IRBoundsCheck):
+        for child in (*node.indices, *node.extents, node.flat):
+            _annotate_expr(child, env, field_params)
         node.dtype = i64
         return i64
 

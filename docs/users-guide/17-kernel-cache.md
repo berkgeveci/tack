@@ -40,8 +40,9 @@ compiles without it.
 Two things are stored for each kernel:
 
 - **The lowered kernel**, before it is specialized for argument types. Its
-  key is the kernel's source and specialization, and Tack's own version.
-  Every name the kernel and its device functions resolve (another
+  key is the kernel's source and specialization, Tack's own version, and
+  whether debug mode is on: a kernel lowered with bounds checks is a
+  different kernel, and so are the variants compiled from it. Every name the kernel and its device functions resolve (another
   `@tack.func`, a `tack.constant`, a module) is recorded with what it was
   bound to, and the entry is used only if each still resolves to the same
   thing.

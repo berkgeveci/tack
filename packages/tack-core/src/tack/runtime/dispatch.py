@@ -3,6 +3,8 @@
 import platform
 
 _current_backend = None
+# Debug mode (bounds checks, see lang/ir_bounds.py), set by init.
+_debug = False
 
 # What to actually do when a backend will not start. Two of these want more
 # than the extra's name, for opposite reasons: [hip] installs hip-python but
@@ -51,8 +53,14 @@ def env_flag(name: str) -> bool:
     return value not in ("", "0", "false", "no", "off")
 
 
-def init(arch: str = "cpu", **options):
+def init(arch: str = "cpu", debug: bool | None = None, **options):
     """Initialize Tack with a specific backend architecture.
+
+    ``debug=True`` checks every field and array index in every kernel
+    launched from now on, and raises ``IndexError`` after a launch that
+    went out of bounds, naming the access; the access itself is skipped.
+    ``None`` (the default) takes it from ``TACK_DEBUG``. Kernels compile
+    separately in debug mode and run slower; each launch waits to finish.
 
     Keyword options go to the backend and must be ones it declares in
     `Backend.init_options`. Level Zero accepts ``external_context``, the
@@ -61,10 +69,11 @@ def init(arch: str = "cpu", **options):
 
     Set ``TACK_NO_REINIT=1`` to skip re-initialization when a backend
     is already active (useful when embedded in an ANARI device that
-    shares the same process).
+    shares the same process). Debug mode is still set.
     """
-    global _current_backend
+    global _current_backend, _debug
 
+    _debug = env_flag("TACK_DEBUG") if debug is None else bool(debug)
     if _current_backend is not None and env_flag("TACK_NO_REINIT"):
         return
 
@@ -121,6 +130,11 @@ def sync():
     """
     if _current_backend is not None:
         _current_backend.synchronize()
+
+
+def debug_enabled() -> bool:
+    """Whether debug mode's bounds checks are on (``tack.init(debug=...)``)."""
+    return _debug
 
 
 def get_backend():

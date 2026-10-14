@@ -376,8 +376,10 @@ def _closure_content(func) -> tuple:
     return tuple(content)
 
 
-def lowered_key(kernel, vector_fields, texture_fields, template_args) -> str:
-    """The key of a kernel specialization's lowered IR."""
+def lowered_key(kernel, vector_fields, texture_fields, template_args, debug=False) -> str:
+    """The key of a kernel specialization's lowered IR. Debug mode lowers
+    with bounds checks, so its IR, and every variant built from it, is
+    stored apart."""
     result = kernel._result[0].name if kernel._result else None
     content = (
         "ir", FORMAT, tack_fingerprint(),
@@ -387,6 +389,7 @@ def lowered_key(kernel, vector_fields, texture_fields, template_args) -> str:
         tuple(sorted((texture_fields or {}).items())),
         tuple((idx, name, _template_content(obj))
               for idx, (name, obj) in sorted((template_args or {}).items())),
+        bool(debug),
     )
     return _digest(repr(content))
 
@@ -506,7 +509,7 @@ def _still_valid(queries, owners) -> bool:
     return True
 
 
-def lowered(kernel, vector_fields, texture_fields, template_args, lower):
+def lowered(kernel, vector_fields, texture_fields, template_args, lower, debug=False):
     """``lower()``, or the lowered IR a previous process stored for the same
     content. ``lower`` is the kernel's own transform; it runs while the names
     it resolves are recorded, so the entry can be checked when it is read."""
@@ -514,7 +517,7 @@ def lowered(kernel, vector_fields, texture_fields, template_args, lower):
     if cache is None or getattr(kernel.func, "__globals__", None) is None:
         return lower()
     try:
-        key = lowered_key(kernel, vector_fields, texture_fields, template_args)
+        key = lowered_key(kernel, vector_fields, texture_fields, template_args, debug)
         owners = _owners(kernel, template_args)
     except Exception:   # an attribute the key cannot describe: compile as usual
         _count("ir_unkeyed")
