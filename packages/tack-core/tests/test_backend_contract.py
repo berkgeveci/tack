@@ -12,6 +12,8 @@ import tack
 from tack.lang.types import f32, f64
 from tack.runtime.backend import Backend
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 ALL_BACKEND_CLASSES = []
 for _mod, _cls in [("cpu", "CPUBackend"), ("metal", "MetalBackend"),
                    ("cuda_backend", "CUDABackend"), ("hip_backend", "HIPBackend"),

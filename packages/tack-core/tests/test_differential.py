@@ -15,6 +15,8 @@ import pytest
 import tack
 from tack.lang.func import Func
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 def _load_kernel(tmp_path, source):
     path = tmp_path / "differential_kernel.py"

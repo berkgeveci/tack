@@ -8,6 +8,8 @@ import pytest
 import tack
 from tack.lang.constant import FloatConstant, IntConstant
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 COUNT = tack.constant(8)
 DT = tack.constant(0.25)
 GRAVITY = tack.constant(-9.8)

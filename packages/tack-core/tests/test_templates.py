@@ -5,6 +5,8 @@ import pytest
 
 import tack
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 # Build list of available backends
 
 

@@ -13,6 +13,8 @@ from vis_helpers import upload
 import tack
 from tack.deprecated.algorithms.cell_to_point import cell_to_point
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 def _run(cell_np, nx, ny, nz, dtype=tack.f32, np_dtype=np.float32):
     field = upload(cell_np, dtype=dtype, np_dtype=np_dtype)

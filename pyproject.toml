@@ -18,6 +18,8 @@ hip = ["tack-core[hip]"]
 level_zero = ["tack-core[level_zero]"]
 dev = [
     "pytest",
+    # `pytest -n auto` runs the suite across processes; see CLAUDE.md, Tests.
+    "pytest-xdist",
     # Voronoi columns in the polyhedra tests (scipy.spatial).
     "scipy",
 ]
@@ -125,6 +127,7 @@ addopts = "-m 'not slow'"
 markers = [
     "slow: runs every shipped example as a subprocess (see tests/test_examples.py)",
     "timing: asserts what the CPU scheduler actually did; needs an idle host and skips itself otherwise (see test_cpu_threading.py)",
+    "quick: the inner-loop set, a module per area of the code, 80 s on 4 workers (`pytest -m quick -n 4`; see CLAUDE.md, Tests)",
 ]
 testpaths = [
     "packages/tack-core/tests",

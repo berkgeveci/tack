@@ -21,6 +21,8 @@ import pytest
 import tack
 from tack.interop import vtk as interop
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 try:
     from vtkmodules.util import dlpack_support as _real_dlpack_support
     HAVE_VTK_DLPACK = True
