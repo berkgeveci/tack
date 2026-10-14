@@ -880,7 +880,7 @@ class _StagingBlock:
     """A block of USM host memory from `_HostStaging`, given back with
     `release` once the queue has passed the copy that uses it."""
 
-    __slots__ = ("ptr", "capacity", "_staging")
+    __slots__ = ("_staging", "capacity", "ptr")
 
     def __init__(self, ptr, capacity, staging):
         self.ptr = ptr
