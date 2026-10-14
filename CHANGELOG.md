@@ -7,6 +7,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- A scan's small levels are one launch: a level of at most 4096 elements
+  on the CPU, or one tile on a GPU backend, is scanned in order by one
+  thread, and the total is read as one element instead of copied by a
+  kernel. A million elements take three launches on the CPU instead of
+  eight; a contour at 1M cells makes 26 launches instead of 40 and a
+  threshold 18 instead of 33. Floating sums now match `np.cumsum` bit
+  for bit through 4096 elements on the CPU and 2048 on GPUs (512 and 8
+  before).
 - A warm dispatch costs less host time: the fast path keeps each
   field's signature and each buffer's address and byte range once
   computed, holds the variants it resolved instead of looking them up,
