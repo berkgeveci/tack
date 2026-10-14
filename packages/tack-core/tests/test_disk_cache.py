@@ -161,6 +161,29 @@ def test_a_second_process_reuses_every_kernel(tmp_path, backend):
     assert second["stats"].get("variant_hit", 0) == first["stats"]["variant_write"]
 
 
+def test_a_refused_native_binary_falls_back_to_spirv(tmp_path):
+    """Level Zero stores each kernel's native binary and its SPIR-V. A binary
+    the driver refuses -- another stepping, another IGC -- loads from the
+    SPIR-V: a hit still, not a compile from source."""
+    try:
+        tack.init(arch=tack.level_zero)
+    except (ImportError, RuntimeError, OSError, AttributeError) as e:
+        pytest.skip(f"no Level Zero backend: {e}")
+    _cache_dir(tmp_path)
+    first = _run(tmp_path, "level_zero")
+    second = _run(tmp_path, "level_zero", setup="""
+        from tack.runtime.level_zero_backend import LevelZeroBackend
+        load_variant = LevelZeroBackend.load_variant
+        def foreign(self, ir_func, artifact, effective_args):
+            return load_variant(self, ir_func, {**artifact, "native": b"\\0" * 64},
+                                effective_args)
+        LevelZeroBackend.load_variant = foreign
+    """)
+    assert second["result"] == first["result"]
+    assert second["stats"].get("variant_miss", 0) == 0
+    assert second["stats"].get("native_refused", 0) == first["stats"]["variant_write"]
+
+
 def test_a_changed_device_function_misses(tmp_path):
     _cache_dir(tmp_path)
     first = _run(tmp_path)

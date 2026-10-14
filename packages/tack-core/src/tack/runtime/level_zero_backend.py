@@ -84,6 +84,7 @@ ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES = 0x03
 ZE_STRUCTURE_TYPE_DEVICE_COMPUTE_PROPERTIES = 0x04
 ZE_STRUCTURE_TYPE_COMMAND_QUEUE_GROUP_PROPERTIES = 0x06
 ZE_STRUCTURE_TYPE_DEVICE_MODULE_PROPERTIES = 0x07
+ZE_STRUCTURE_TYPE_DEVICE_IP_VERSION_EXT = 0x1000f
 
 # Module format
 ZE_MODULE_FORMAT_IL_SPIRV = 0
@@ -215,6 +216,14 @@ class ze_driver_properties_t(ctypes.Structure):
         ("pNext", ctypes.c_void_p),
         ("uuid", ctypes.c_uint8 * ZE_MAX_DRIVER_UUID_SIZE),
         ("driverVersion", ctypes.c_uint32),
+    ]
+
+
+class ze_device_ip_version_ext_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("ipVersion", ctypes.c_uint32),
     ]
 
 
@@ -458,6 +467,9 @@ def _setup_argtypes(ze):
     ze.zeModuleCreate.argtypes = [P, P, P, P, P]
     ze.zeModuleCreate.restype = ctypes.c_int32
 
+    ze.zeModuleGetNativeBinary.argtypes = [P, ctypes.POINTER(ctypes.c_size_t), P]
+    ze.zeModuleGetNativeBinary.restype = ctypes.c_int32
+
     ze.zeModuleDestroy.argtypes = [P]
     ze.zeModuleDestroy.restype = ctypes.c_int32
 
@@ -681,20 +693,18 @@ def _compile_to_spirv(opencl_source: str, device_id: int) -> bytes:
     return spirv_bytes
 
 
-def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_field,
-                 param_is_texture, workgroup_size, requires_full_workgroups=False,
-                 opencl_source=None) -> "CompiledL0Kernel":
-    """A kernel from its SPIR-V, built into a module of the backend's context.
+def _create_module(backend, data: bytes, module_format, opencl_source=None):
+    """A module of the backend's context, from SPIR-V or a native binary.
 
     ``opencl_source``, when known, goes into the error a failed build raises.
     """
     ze = _get_ze()
-    spirv_buf = (ctypes.c_uint8 * len(spirv)).from_buffer_copy(spirv)
+    buf = (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
     module_desc = ze_module_desc_t(
         stype=ZE_STRUCTURE_TYPE_MODULE_DESC, pNext=None,
-        format=ZE_MODULE_FORMAT_IL_SPIRV,
-        inputSize=len(spirv),
-        pInputModule=ctypes.cast(spirv_buf, ctypes.c_void_p),
+        format=module_format,
+        inputSize=len(data),
+        pInputModule=ctypes.cast(buf, ctypes.c_void_p),
         pBuildFlags=_MODULE_BUILD_FLAGS,
         pConstants=None)
 
@@ -721,6 +731,40 @@ def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_
 
     if build_log:
         ze.zeModuleBuildLogDestroy(build_log)
+    return module
+
+
+def _native_binary(module) -> bytes:
+    """The device code the driver made for a module, loadable as ZE_MODULE_FORMAT_NATIVE."""
+    ze = _get_ze()
+    size = ctypes.c_size_t(0)
+    _check_ze(ze.zeModuleGetNativeBinary(module, ctypes.byref(size), None),
+               "zeModuleGetNativeBinary (size)")
+    buf = (ctypes.c_uint8 * size.value)()
+    _check_ze(ze.zeModuleGetNativeBinary(module, ctypes.byref(size), buf),
+               "zeModuleGetNativeBinary")
+    return bytes(buf)
+
+
+def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_field,
+                 param_is_texture, workgroup_size, requires_full_workgroups=False,
+                 opencl_source=None, native=None) -> "CompiledL0Kernel":
+    """A kernel from its SPIR-V, or from its native binary when one is given.
+
+    A native binary skips IGC's finalization of the SPIR-V, about 50 ms a
+    kernel when the driver's own cache does not have it. One the driver
+    refuses -- another stepping, another IGC -- falls back to the SPIR-V.
+    """
+    ze = _get_ze()
+    module = None
+    if native is not None:
+        try:
+            module = _create_module(backend, native, ZE_MODULE_FORMAT_NATIVE)
+        except RuntimeError:
+            from tack.runtime import disk_cache
+            disk_cache._count("native_refused")
+    if module is None:
+        module = _create_module(backend, spirv, ZE_MODULE_FORMAT_IL_SPIRV, opencl_source)
 
     # Create kernel
     kernel_desc = ze_kernel_desc_t(
@@ -1422,12 +1466,14 @@ class LevelZeroBackend(Backend):
                             param_is_texture, workgroup_size, full_groups,
                             opencl_source=opencl_source)
 
-    # ── The disk cache: SPIR-V, finalized by the driver ────────────────
-    # zeModuleCreate has IGC finalize the SPIR-V for the device, so the
-    # target names the device, the driver that finalizes it, the ocloc and
-    # options that made it, and whether the device has f64 (it changes
-    # supported_dtypes). Software texture sampling is decided before the
-    # variant key, and the device names whether it happens.
+    # ── The disk cache: native binaries, with SPIR-V to fall back on ───
+    # zeModuleCreate has IGC finalize SPIR-V for the device; the native
+    # binary is what it made, and loads without IGC. So the target names the
+    # device and its IP version (which includes the stepping), the driver
+    # that finalizes, the ocloc and options that made the SPIR-V, and
+    # whether the device has f64 (it changes supported_dtypes). Software
+    # texture sampling is decided before the variant key, and the device
+    # names whether it happens.
 
     _target = None
 
@@ -1438,9 +1484,17 @@ class LevelZeroBackend(Backend):
                 stype=ZE_STRUCTURE_TYPE_DRIVER_PROPERTIES, pNext=None)
             _check_ze(ze.zeDriverGetProperties(self._driver, ctypes.byref(props)),
                        "zeDriverGetProperties")
+            ip = ze_device_ip_version_ext_t(
+                stype=ZE_STRUCTURE_TYPE_DEVICE_IP_VERSION_EXT, pNext=None)
+            dev_props = ze_device_properties_t(
+                stype=ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES,
+                pNext=ctypes.cast(ctypes.pointer(ip), ctypes.c_void_p))
+            _check_ze(ze.zeDeviceGetProperties(self._device, ctypes.byref(dev_props)),
+                       "zeDeviceGetProperties (IP version)")
             options = " ".join(o.decode() for o in _OCLOC_OPTIONS)
             fp64 = "f64" if f64 in self.supported_dtypes else "no f64"
-            self._target = (f"{self._device_name} 0x{self._device_id:04x}; "
+            self._target = (f"{self._device_name} 0x{self._device_id:04x} "
+                            f"ip {ip.ipVersion:#x}; "
                             f"driver {props.driverVersion:#x}; "
                             f"ocloc {_ocloc_version()} {options}; "
                             f"module {_MODULE_BUILD_FLAGS.decode()}; {fp64}")
@@ -1450,7 +1504,8 @@ class LevelZeroBackend(Backend):
         compiled, pack_info, _ = payload
         if compiled.spirv is None:
             raise ValueError("no SPIR-V was kept for this kernel")
-        return {"spirv": compiled.spirv, "name": compiled._func_name,
+        return {"native": _native_binary(compiled._module),
+                "spirv": compiled.spirv, "name": compiled._func_name,
                 "param_types": compiled._param_types,
                 "param_is_field": compiled._param_is_field,
                 "param_is_texture": compiled._param_is_texture,
@@ -1464,7 +1519,7 @@ class LevelZeroBackend(Backend):
         compiled = _load_kernel(self, artifact["spirv"], artifact["name"],
                                 artifact["param_types"], artifact["param_is_field"],
                                 artifact["param_is_texture"], artifact["workgroup_size"],
-                                artifact["full_workgroups"])
+                                artifact["full_workgroups"], native=artifact["native"])
         pack_info = artifact["pack_info"]
         # The scalar pack buffers are device memory of this process, made
         # from this call's scalars as _build_variant makes them.

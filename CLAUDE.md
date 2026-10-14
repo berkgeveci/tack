@@ -272,10 +272,14 @@ stale entry runs. Backends opt into `.variant` with `cache_target()`,
 `variant_artifact()` and `load_variant(ir_func, artifact, effective_args)`
 (CPU: MCJIT object code; Metal: MSL; CUDA: PTX, loaded with
 `cuModuleLoadData`, its target naming the device and compute capability,
-the driver that compiles the PTX, NVRTC and its options; Level Zero:
-SPIR-V, loaded with `zeModuleCreate`, its target naming the device, the
-driver that finalizes the SPIR-V, ocloc's version, the ocloc and module
-options, and f64 support). A GPU payload's
+the driver that compiles the PTX, NVRTC and its options; Level Zero: the
+native binary (`zeModuleGetNativeBinary`) and the SPIR-V, loaded with
+`zeModuleCreate` as `ZE_MODULE_FORMAT_NATIVE`, from the SPIR-V if the
+driver refuses the binary (`native_refused` in the stats), its target
+naming the device and its IP version, the driver, ocloc's version, the
+ocloc and module options, and f64 support. From SPIR-V, IGC's
+finalization is about 50 ms a kernel unless the driver's own
+`neo_compiler_cache` has it). A GPU payload's
 scalar pack buffers are device memory, so `load_variant` recreates them
 from the call's `effective_args`; CPU and Metal ignore that argument. HIP
 still returns `None` from `cache_target()`. Atomic rename writes, checksummed entries, owner-only directories;
