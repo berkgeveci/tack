@@ -8,6 +8,8 @@ import tack
 import tack.data as td
 from tack.data import arrays
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 try:
     import vtkmodules.all as vtk
     from vtkmodules.util.numpy_support import vtk_to_numpy

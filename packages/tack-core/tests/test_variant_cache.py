@@ -15,6 +15,8 @@ import pytest
 
 import tack
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 def _variant_count(kernel):
     from tack.runtime.dispatch import get_backend

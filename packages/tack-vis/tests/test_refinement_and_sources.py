@@ -204,7 +204,7 @@ def test_integer_statistics_sum_exactly(backend):
     assert (result["min"], result["max"]) == (7, 1001)
 
 
-def test_integer_statistics_sum_in_the_computation_type(backend):
+def test_integer_statistics_sum_without_wrapping(backend):
     data = td.uniform_grid((2,))
     values = _scalars([2**63, 2**63], tack.u64)
     result = td.statistics(data, td.Field(td.H1(data), values))

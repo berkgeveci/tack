@@ -6,6 +6,8 @@ import pytest
 import tack
 from tack.rendering import Actor, Canvas, ColorTable, PerspectiveCamera, PointLight, Scene, render
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 @pytest.fixture(autouse=True)
 def init_cpu():

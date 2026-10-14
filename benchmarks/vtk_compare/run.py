@@ -112,13 +112,14 @@ def _meta(config, vtk_threads):
     arch, threads = _config(config)
     from tack.runtime.dispatch import get_backend
 
+    backend = get_backend()
     return {"config": config, "date": time.strftime("%Y-%m-%d %H:%M"),
             "machine": platform.platform(), "processor": _processor(),
-            "gpu": _gpu() if arch != "cpu" else None,
+            "gpu": _gpu(arch, backend) if arch != "cpu" else None,
             "python": platform.python_version(), "numpy": np.__version__,
             "vtk": vtkVersion.GetVTKVersionFull(), "vtk smp": smp.GetBackend(),
             "vtk threads": smp.GetEstimatedNumberOfThreads(),
-            "tack": sha + ("+changes" if dirty else ""), "tack backend": get_backend().label,
+            "tack": sha + ("+changes" if dirty else ""), "tack backend": backend.label,
             "tack threads": threads, "vtk threads for checks": vtk_threads}
 
 
@@ -143,9 +144,19 @@ def _processor():
     return platform.processor()
 
 
-def _gpu():
-    return (_run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"])
-            or _run(["rocm-smi", "--showproductname"]) or "")
+def _gpu(arch, backend):
+    """The GPU ``arch`` runs on, asked of that vendor's tool or of the backend:
+    asking whichever tool answers named the H100 for a HIP run on a machine
+    with both."""
+    if arch == "cuda":
+        return _run(["nvidia-smi", "--query-gpu=name,driver_version", "--format=csv,noheader"])
+    if arch == "hip":
+        return _run(["rocm-smi", "--showproductname"])
+    if arch == "level_zero":
+        return getattr(backend, "_device_name", "")
+    if arch == "metal":
+        return str(backend._device.name())
+    return ""
 
 
 def _start(config, vtk_threads):

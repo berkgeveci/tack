@@ -3,7 +3,7 @@
 import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import arrays, ids, shapes
-from tack.data.algorithms._common import _close, _compact, _field, _scalar_floating
+from tack.data.algorithms._common import _close, _compact, _crossing, _field, _scalar_floating
 from tack.data.buckets import bucket_order, run_offsets
 from tack.data.carry import Interpolate, Pieces, carry
 from tack.data.dataset import Field
@@ -42,7 +42,7 @@ def _contour_points(cells, u, isovalue, per_cell, starts, points, edges, weights
             if cells.point_id(c, jb) < cells.point_id(c, ja):
                 ja, jb = jb, ja
             va = u.corner_value(c, ja)
-            w = (isovalue - va) / (u.corner_value(c, jb) - va)
+            w = _crossing(isovalue, va, u.corner_value(c, jb))
             xa = cells.corner_position(c, ja)
             points[first + k] = xa + w * (cells.corner_position(c, jb) - xa)
             a = cells.point_id(c, ja)
@@ -297,7 +297,7 @@ def _iso_vertices(pair_from, order, offsets, values, iso, positions, weights, ou
         a = key[0]
         b = key[1]
         va = values[a]
-        w = (iso - va) / (values[b] - va)
+        w = _crossing(iso, va, values[b])
         xa = positions[a]
         out[r] = xa + w * (positions[b] - xa)
         ends[r] = [a, b]
@@ -436,7 +436,7 @@ def _line_pieces(cells, values, iso, starts, line_faces, line_cells, crossed, en
                     lo = 0 if a < b else 1
                     p = cells.side_point_id(c, k, lo)
                     q = cells.side_point_id(c, k, 1 - lo)
-                    w = (iso - values[p]) / (values[q] - values[p])
+                    w = _crossing(iso, values[p], values[q])
                     xp = cells.side_position(c, k, lo)
                     crossed[f] = 1
                     ends[f] = [p, q]
@@ -506,7 +506,7 @@ def _cell_line_points(cells, u, iso, starts, line_cells, ends, weights, position
                     lo = jb
                     hi = ja
                 v = u.corner_value(c, lo)
-                w = (iso - v) / (u.corner_value(c, hi) - v)
+                w = _crossing(iso, v, u.corner_value(c, hi))
                 x = cells.corner_position(c, lo)
                 slot = 2 * at + (1 if above_a else 0)
                 ends[slot] = [cells.point_id(c, lo), cells.point_id(c, hi)]

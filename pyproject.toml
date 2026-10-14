@@ -1,6 +1,6 @@
 [project]
 name = "tack-workspace"
-version = "0.3.0"
+version = "0.4.0"
 description = "Tack monorepo workspace"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -18,8 +18,19 @@ hip = ["tack-core[hip]"]
 level_zero = ["tack-core[level_zero]"]
 dev = [
     "pytest",
+    # `pytest -n auto` runs the suite across processes; see CLAUDE.md, Tests.
+    "pytest-xdist",
     # Voronoi columns in the polyhedra tests (scipy.spatial).
     "scipy",
+]
+# VTK and MFEM (PyMFEM), the references the dataset tests compare against;
+# without them those comparisons skip. In the lock, so `uv sync` keeps
+# them, and PyMFEM's numba resolves against the llvmlite Tack compiles with.
+# PyMFEM ships wheels for these two platforms only; elsewhere it would build
+# MFEM from source, so it is left out and the MFEM comparisons skip.
+interop = [
+    "vtk",
+    "mfem; (sys_platform == 'darwin' and platform_machine == 'arm64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
 ]
 docs = [
     "mkdocs-material",
@@ -125,6 +136,7 @@ addopts = "-m 'not slow'"
 markers = [
     "slow: runs every shipped example as a subprocess (see tests/test_examples.py)",
     "timing: asserts what the CPU scheduler actually did; needs an idle host and skips itself otherwise (see test_cpu_threading.py)",
+    "quick: the inner-loop set, a module per area of the code, 80 s on 4 workers (`pytest -m quick -n 4`; see CLAUDE.md, Tests)",
 ]
 testpaths = [
     "packages/tack-core/tests",

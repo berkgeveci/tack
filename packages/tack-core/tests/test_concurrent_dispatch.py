@@ -24,7 +24,7 @@ import pytest
 import tack
 from tack.runtime import kernel_utils
 
-pytestmark = pytest.mark.filterwarnings("ignore")
+pytestmark = [pytest.mark.filterwarnings("ignore"), pytest.mark.quick]
 
 TIMEOUT = 10
 
