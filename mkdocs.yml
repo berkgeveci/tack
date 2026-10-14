@@ -103,6 +103,7 @@ nav:
       - Advanced Features: users-guide/07-advanced.md
       - Reductions and Scans: users-guide/11-reductions-and-scans.md
       - Backends: users-guide/08-backends.md
+      - The Kernel Cache: users-guide/17-kernel-cache.md
       - Sharing Arrays: users-guide/16-interoperability.md
       - Datasets and Visualization: users-guide/09-visualization.md
       - Rendering: users-guide/10-rendering.md

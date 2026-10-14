@@ -254,7 +254,7 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
     np.testing.assert_array_equal(out.to_numpy(), np.zeros(4))
 
 
-def test_verifier_runs_only_when_templates_and_variants_are_new(monkeypatch):
+def test_verifier_runs_only_when_templates_and_variants_are_new(monkeypatch, no_disk_cache):
     import tack.lang.ir_verify as verifier
 
     tack.init(arch=tack.cpu)

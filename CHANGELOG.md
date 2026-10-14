@@ -7,6 +7,23 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Compiled kernels are kept on disk, so a later process starts warm: the
+  first contour of a 21³ grid in a new process went from 445 ms (CPU) and
+  1.1 s (Metal) to 31 ms on an M1 Max. The lowered kernel and each
+  compiled variant are stored, keyed by content; an edited kernel, device
+  function, constant or template class, another Tack or another machine
+  compiles again. `TACK_CACHE_DIR` chooses the directory (by default the
+  platform's per-user cache directory) and `TACK_CACHE=off` turns it off;
+  `tack.cache.configure()` does either from Python. For MPI jobs on a
+  shared file system, `python -m tack.cache pack` gathers a warm-up run's
+  entries into one bundle, which each rank reads once (or rank 0 reads and
+  broadcasts, `tack.cache.load_bundle(comm=...)`); under MPI nothing is
+  looked up or written per kernel. The entries take at most
+  `TACK_CACHE_SIZE` (1 GiB by default); the least recently used go first.
+  Every backend stores compiled code: CUDA its PTX, HIP its code objects,
+  Level Zero its native binary, with the SPIR-V to fall back on. Debug
+  mode's kernels are stored apart from the others.
+  See *The Kernel Cache* in the User's Guide.
 - Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
   field and array index in every kernel, one dimension at a time. An
   out-of-bounds access is skipped (a load gives 0) and the call raises
@@ -98,6 +115,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   million cells on an RTX 4060 Ti went from 9.6 to 7.1 ms, now the cost
   of its 31 launches' host side alone. Errors of a launch surface at the
   next wait rather than at its call, as on Metal.
+- Level Zero launches are queued the same way, on one asynchronous
+  immediate command list with a barrier after each command; fills and
+  host writes queue in order with them (from a private copy of the host
+  array, so it may change at once), and a dropped field is freed after the
+  work queued before it (the driver's deferred free). On an Intel Max
+  1100, 100 small launches went from 8.7 to 2.6 ms, and a contour of a
+  million hexahedra from about 24 to 18 ms. Ordering by barriers rather
+  than an in-order list: Intel's in-order lists cost about 100 µs of device
+  time per kernel on driver 25.05.
 
 ### Fixed
 
@@ -122,6 +148,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   are not derived yet, and asking now raises `NotImplementedError`.
 - `extract_cells` takes a cell `Set`, or its name in `data.sets`.
 - `dataset_to_vtk` writes a grid of one point or none as a grid.
+- On HIP, a variable could hold two values: hipRTC fused a product into one
+  read of it while another read it rounded, so `x - x` was the product's
+  rounding error rather than zero. A contour of a computed field (such as
+  `Function(ramp, n)`) then put some crossings at an edge's end. HIP now
+  fuses multiply and add only inside one expression, as the language
+  contract says.
 
 ## 0.4.0 — 2026-10-13
 

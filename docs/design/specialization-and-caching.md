@@ -222,7 +222,7 @@ itself depends on the host and the kernel; the tradeoff is discussed in
 | The kernel's name | each `Kernel` object has its own cache slot |
 | The backend | each backend instance has its own cache |
 | A floating-point math mode | there is one fixed policy (see [Numerical Semantics](numerical-semantics.md)); a selectable mode would have to join the key |
-| Device-function bindings | consulted only when an IR template is built; rebinding afterwards is unsupported, so recreate the kernel |
+| Device-function bindings | consulted only when an IR template is built; rebinding afterwards is unsupported, so recreate the kernel. The disk cache does record them (below) |
 
 ## Cache structure and lifetime
 
@@ -389,6 +389,88 @@ instance scalar `offset` and an instance field `data`:
 | `s.factor = 3.0` on the instance | 3 | 3 | it shadows a class constant, so it stays a constant |
 | an equivalent class defined inside a function | 4 | 4 | different class identity |
 | ... after that class is garbage-collected | 3 | 3 | `_retire_class` dropped its specializations |
+
+## The disk cache
+
+`runtime/disk_cache.py` keeps both kinds of cached code across processes.
+The in-memory caches above stay in front of it: the disk is consulted only
+on an in-memory miss, so a warm dispatch never touches it. User-facing
+settings are on [The Kernel Cache](../users-guide/17-kernel-cache.md).
+
+**Why the front end is cached too.** A cold contour of a 21³ grid on an M1
+Max spent about 1.15 s in 18 new kernels: 0.46 s lowering (template
+rewriting included), about 0.25 s in the IR passes and the verifier, 0.19 s
+generating MSL and 0.21 s in Metal's compiler. A cache of binaries alone
+would save the smallest part.
+
+**Two levels.**
+
+| Entry | Key | Holds |
+|---|---|---|
+| `.ir` | the kernel's module, qualified name and source; its result type; its closure cells' fingerprints; vector and texture fields; each template's content; Tack's fingerprint | the pickled `IRModule`, and the names lowering resolved |
+| `.variant` | the `.ir` entry's key and dependency digest; parameter types and categories, texture shapes, vector widths, `shape_sig`, `disjoint`; the backend and `Backend.cache_target()` | the post-pass IR, `requires_full_workgroups`, the atomic targets, and the backend's artifact |
+
+A template's content replaces the identities of the in-memory key: each
+class by its method resolution order (module and qualified name), its
+`@tack.func` methods by source and `__tack_iterate__`; device functions
+held as attributes by source; constants by value (floats by bit pattern).
+
+**Names lowering resolved.** The in-memory IR cache relies on the
+documented rule that bindings do not change during a process. Across
+processes they do: a device function is edited, a constant changes. Every
+`CallBindings.resolve` during a lowering is recorded (`_Recorder`) as the
+owner function, the dotted name, and a fingerprint of what it resolved to:
+a `Func` by its source, a `tack.constant` by value, a module by name, and
+"unbound" for a bare intrinsic. On a read, each name is resolved again in
+the current owner (`_lookup`, which follows `CallBindings`' rules) and the
+entry is used only if every fingerprint matches. Owners are the kernel,
+its templates' methods and function attributes, and each device function
+a recorded name resolved to, in recording order. A name bound to an object
+with no stable fingerprint, or a lowering with an explicit `bindings`
+namespace, is not stored. The closure cells are in the key itself, so
+kernels a factory makes over different device functions keep separate
+entries instead of replacing each other on every run.
+
+**Tack's fingerprint** covers everything else lowering and code generation
+depend on: the `RECORD` of each installed Tack package (one read each), or
+every source file of a source tree on the path (editable installs: 167
+files, 16 ms, once per process), plus the format version and Python's minor
+version. It names the directory the entries live in, so another Tack never
+reads them.
+
+**Artifacts.** `Backend.cache_target()`, `variant_artifact(payload)` and
+`load_variant(ir_func, artifact, effective_args)`; a backend whose
+`cache_target()` is None stores only the `.ir` level; every backend
+stores variants now. `effective_args` are the call's arguments: a GPU variant's
+scalar pack buffers are device memory of the process, so a load makes them
+anew from the call's scalars, as `_build_variant` does.
+
+| Backend | Artifact | Loading it |
+|---|---|---|
+| CPU | the object code MCJIT emitted (`set_object_cache`) | `add_object_file` into a new engine: about 0.4 ms, no LLVM optimization or code generation |
+| Metal | MSL source, entry name, parameter layout, scalar pack layout | `newLibraryWithSource`, which macOS's own shader cache makes fast for source it has compiled before |
+| CUDA | PTX from NVRTC, entry name, parameter layout, scalar pack layout | `cuModuleLoadData`: the driver compiles the PTX for the device, so the target names the device and compute capability, the driver version, NVRTC's version and its options |
+| HIP | the code object from hipRTC, entry name, parameter layout, scalar pack layout | `hipModuleLoadData`: machine code for one architecture, so the target names the device and `gcnArchName` with its feature flags (which also separates devices with and without texture hardware), the ROCm runtime and driver, hipRTC, hip-python and the hipRTC options |
+| Level Zero | the native binary IGC made (`zeModuleGetNativeBinary`), the SPIR-V from ocloc, entry name, parameter layout, workgroup size, scalar pack layout | `zeModuleCreate` in the backend's context (its own or the adopted one) as `ZE_MODULE_FORMAT_NATIVE`: about 0.2 ms a kernel. A binary the driver refuses loads from the SPIR-V, which IGC finalizes, about 50 ms a kernel without the driver's own cache. The target names the device and its IP version (stepping), the driver version, ocloc's version, the ocloc and module options, and f64 support |
+
+**File-system rules.** Entries are written to a temporary file in the same
+directory and renamed into place, atomic on POSIX file systems including
+Lustre and GPFS; concurrent writers of one entry write the same bytes. No
+locks. Each entry starts with a magic string and a SHA-256 of its payload,
+and holds its own key; anything else is ignored and counted as `bad`. The
+directory and the per-version directory must belong to the user and be
+writable by nobody else, since loading an entry unpickles it. Under MPI
+(a launcher's rank variable with a world size above one) the default mode
+is `bundle`: one file per Tack version, read once per process (or by rank 0
+and broadcast, `load_bundle(comm=...)`), and no per-kernel file is looked up
+or written. In `write` mode under MPI only rank 0 stores. Nothing compiles
+collectively: ranks reach different kernels, so a collective there could
+deadlock.
+
+`conftest.py` sets `TACK_CACHE=off` unless the environment chooses, so the
+suite compiles from scratch; `test_disk_cache.py` runs its cases in fresh
+processes against a temporary directory. `TACK_CACHE=write pytest`, run
+twice, serves most of the second run from disk.
 
 ## Costs and advice
 

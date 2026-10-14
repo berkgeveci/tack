@@ -392,7 +392,8 @@ Operands evaluate once, left to right, before the typed arithmetic.
 All CUDA kernels compile without `--use_fast_math`; Metal disables
 `fastMathEnabled` for all kernels. LLVM helpers use ordinary floating
 instructions without fast-math flags; HIP/OpenCL retain default math
-settings without unsafe options. The previous increment restricted safe
+settings without unsafe options, except that HIP limits contraction to
+one expression (`-ffp-contract=on`). The previous increment restricted safe
 math to kernels with floating `//` or `%`; the execution policy below
 extends it to every kernel, including runtime reduction sources. These
 settings follow the
@@ -652,6 +653,9 @@ these guarantees from the scalar builtin rule.
 multiply/subtract operations into one rounding. Contraction can change
 low bits, cancellation, intermediate overflow and zero signs. It is
 permitted, not required; CPU and GPU need not choose the same result.
+Fusion stays inside one expression: a value bound to a name, or returned
+from a device function, is rounded once, and every read of it sees that
+value, so `x - x` is zero for a finite `x`.
 General reassociation of addition or multiplication is not permitted:
 `(a+b)+c` and `a+(b+c)` retain their grouping. No cross-backend bitwise
 reproducibility or rounding of every source intermediate is promised.
@@ -664,6 +668,9 @@ parenthesized sums with cancellation to retain their order.
 `--use_fast_math`. Metal sets `fastMathEnabled` false. Both apply to
 ordinary kernels and runtime reduction sources. CPU emits no LLVM
 fast-math flags; HIP and OpenCL receive no unsafe/relaxed-math options.
+HIP compiles with `-ffp-contract=on`: hipRTC's default, `fast`, fuses
+across statements, and on AMD GPUs fused a product into one read of a
+variable while another read it rounded.
 These choices preserve classes and grouping while retaining permitted
 backend contraction. There is currently one policy, so no mutable math
 mode is omitted from the variant cache key and no per-dispatch scan is
