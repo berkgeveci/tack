@@ -383,7 +383,12 @@ def test_workers_are_pinned_to_distinct_cores_in_order(monkeypatch):
     cpus = pool.pin_cpus
     assert len(cpus) == pool.threads - 1
     pinned = [c for c in cpus if c is not None]
-    assert len(set(pinned)) == len(pinned) and len(pinned) >= len(cpus) - 1
+    cores = len(cpu_pool._cores())
+    # One worker per core, the caller's core excepted (and the caller's own
+    # CPU, if it was first in that core's turn); the rest float.
+    assert len(set(pinned)) == len(pinned)
+    assert min(len(cpus), cores - 2) <= len(pinned) <= cores - 1
+    assert all(c is None for c in cpus[cores - 1:])
     for i, cpu in enumerate(cpus):
         mask = (ctypes.c_ubyte * 128)()
         assert libc.pthread_getaffinity_np(ctypes.c_uint64(pool._tid(i)), ctypes.c_size_t(128),

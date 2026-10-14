@@ -478,15 +478,13 @@ def _target_machine():
                                         features=llvm.get_host_cpu_features().flatten(), opt=2)
 
 
-def _cpus_by_core() -> list:
-    """The CPUs this process may run on, every core's first sibling before
-    any core's second, the calling thread's node first, so the first k
-    workers land on k different cores of one node (Linux; elsewhere an
-    empty list)."""
+def _cores() -> dict:
+    """``(package, core) -> [cpus]`` for the CPUs this process may run on
+    (Linux; elsewhere empty)."""
     try:
         allowed = sorted(os.sched_getaffinity(0))
     except AttributeError:
-        return []
+        return {}
     by_core: dict = {}
     for cpu in allowed:
         try:
@@ -497,6 +495,17 @@ def _cpus_by_core() -> list:
         except OSError:
             core = ("?", cpu)
         by_core.setdefault(core, []).append(cpu)
+    return by_core
+
+
+def _cpus_by_core() -> list:
+    """The CPUs this process may run on, every core's first sibling before
+    any core's second, the calling thread's node first, so the first k
+    workers land on k different cores of one node (Linux; elsewhere an
+    empty list)."""
+    by_core = _cores()
+    if not by_core:
+        return []
     try:
         here = ctypes.CDLL(None).sched_getcpu()
     except (OSError, AttributeError):
@@ -531,13 +540,18 @@ def _pin_workers(tid_of, workers: int):
     workers sit on distinct cores: the CPU of each worker, None for one
     left to the scheduler; None altogether when nothing was pinned. The
     scheduler spreads a pool's threads two per core, and a launch of
-    eight on four cores ran at half speed. `TACK_CPU_POOL_PIN=0` leaves
-    the scheduler to it."""
+    eight on four cores ran at half speed. Only one worker per core is
+    pinned, and none to the caller's core: a worker pinned to the
+    sibling of a busy core cannot move, and with every hyperthread in
+    use the one on the caller's sibling halved the caller between
+    launches -- a 1M contour on 16 threads of 8 cores took 32 ms against
+    19 unpinned. `TACK_CPU_POOL_PIN=0` leaves the scheduler to it all."""
     if os.environ.get("TACK_CPU_POOL_PIN", "").strip().lower() in ("0", "off", "no", "false"):
         return None
     cpus = _cpus_by_core()
     if len(cpus) < workers:
         return None
+    pin_up_to = len(_cores()) - 1            # one per core, the caller's core excepted
     try:
         libc = ctypes.CDLL(None)
         setaffinity = libc.pthread_setaffinity_np
@@ -553,10 +567,9 @@ def _pin_workers(tid_of, workers: int):
         cpu = cpus[i]
         if cpu >= size * 8:
             return None
-        if cpu == here:
-            # The caller's own CPU, last in the order: a worker pinned to it
-            # would wait for the caller to be descheduled on every launch
-            # that uses every CPU. Leave that one to the scheduler.
+        if i >= pin_up_to or cpu == here:
+            # A second thread of a core, or the caller's own CPU: left to
+            # the scheduler.
             pinned.append(None)
             continue
         mask = (ctypes.c_ubyte * size)()
