@@ -48,8 +48,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 - A CPU launch wakes only the pool workers it uses: each worker waits on
   its own mailbox, a launch of `k` threads posts to `k - 1` of them, and
   the rest sleep on, so the `k` of every launch are the same `k`.
-  `TACK_CPU_POOL_PIN=1` also pins one worker per core on Linux; off by
-  default, since it did not pay where it was measured.
   A hot fan-out of two threads on a pool of sixteen cost 11 µs waking
   every worker and costs 4.4.
 - `tack.field` returns uninitialized storage on every backend; `tack.zeros`

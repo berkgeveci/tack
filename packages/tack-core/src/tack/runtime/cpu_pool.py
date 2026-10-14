@@ -17,10 +17,10 @@ that back off to a millisecond. ``pool_run`` with ``k`` threads posts to
 workers ``0 .. k - 2`` and no other, runs chunks on the calling thread as
 worker ``k - 1``, and waits for those ``k - 1``; a worker past that is
 not woken, so a launch of four on a pool of twenty-eight costs four
-wake-ups, and the ``k`` workers of every launch are the same ``k``
-(``TACK_CPU_POOL_PIN=1`` also pins one worker per core on Linux, which
-did not pay where it was measured; see `_pin_workers`). The workers
-never touch Python. Measured on the Xeon: 4 µs hot,
+wake-ups, and the ``k`` workers of every launch are the same ``k``.
+Workers are not pinned: pinning them to cores lost on both hosts it was
+measured on (``docs/design/cpu-threading.md``). The workers never touch
+Python. Measured on the Xeon: 4 µs hot,
 about 100 µs after an idle gap.
 
 Chunks are claimed, not assigned: a run is cut into several chunks per
@@ -446,11 +446,6 @@ def _pool_module() -> ir.Module:
     b = ir.IRBuilder(out)
     b.ret_void()
 
-    # pool_tid(i) -> worker i's pthread_t, for pinning it from Python.
-    tid_fn = ir.Function(m, ir.FunctionType(_i64, [_i32]), "tack_pool_tid")
-    b = ir.IRBuilder(tid_fn.append_basic_block("entry"))
-    b.ret(b.load(b.gep(tids, [_i32(0), tid_fn.args[0]])))
-
     # pool_spans(out): the workers' spans of the last run, n of them.
     get_spans = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr]), "tack_pool_spans")
     b = ir.IRBuilder(get_spans.append_basic_block("entry"))
@@ -477,110 +472,6 @@ def _target_machine():
     target = llvm.Target.from_default_triple()
     return target.create_target_machine(cpu=llvm.get_host_cpu_name(),
                                         features=llvm.get_host_cpu_features().flatten(), opt=2)
-
-
-def _cores() -> dict:
-    """``(package, core) -> [cpus]`` for the CPUs this process may run on
-    (Linux; elsewhere empty)."""
-    try:
-        allowed = sorted(os.sched_getaffinity(0))
-    except AttributeError:
-        return {}
-    by_core: dict = {}
-    for cpu in allowed:
-        try:
-            with open(f"/sys/devices/system/cpu/cpu{cpu}/topology/core_id") as f:
-                core = int(f.read())
-            with open(f"/sys/devices/system/cpu/cpu{cpu}/topology/physical_package_id") as f:
-                core = (int(f.read()), core)
-        except OSError:
-            core = ("?", cpu)
-        by_core.setdefault(core, []).append(cpu)
-    return by_core
-
-
-def _cpus_by_core() -> list:
-    """The CPUs this process may run on, every core's first sibling before
-    any core's second, the calling thread's node first, so the first k
-    workers land on k different cores of one node (Linux; elsewhere an
-    empty list)."""
-    by_core = _cores()
-    if not by_core:
-        return []
-    try:
-        here = ctypes.CDLL(None).sched_getcpu()
-    except (OSError, AttributeError):
-        here = -1
-    mine = next((core for core, cpus in by_core.items() if here in cpus), None)
-    home = mine[0] if mine is not None else None
-    # The core the calling thread is on goes last at every rank, so a
-    # launch that leaves a core free leaves that one: the host prepares
-    # the next launch while the workers run this one. Its node goes first.
-    ordered = []
-    rank = 0
-    while True:
-        tier = sorted((cpus[rank] for core, cpus in by_core.items()
-                       if len(cpus) > rank and core != mine),
-                      key=lambda cpu: (by_core_key(by_core, cpu) != home, cpu))
-        if mine is not None and len(by_core[mine]) > rank:
-            siblings = sorted(by_core[mine], key=lambda cpu: cpu == here)
-            tier.append(siblings[rank])
-        if not tier:
-            return ordered
-        ordered.extend(tier)
-        rank += 1
-
-
-def by_core_key(by_core, cpu):
-    """The package of `cpu` in a `_cpus_by_core` table."""
-    return next(core[0] for core, cpus in by_core.items() if cpu in cpus)
-
-
-def _pin_workers(tid_of, workers: int):
-    """With `TACK_CPU_POOL_PIN=1`, pin worker i to the i-th CPU of
-    `_cpus_by_core`, so a launch's workers sit on distinct cores: the CPU
-    of each worker, None for one left to the scheduler; None altogether
-    when nothing was pinned, which is the default. Pinning was meant for
-    a scheduler that spreads a pool's threads two per core (a launch of
-    eight on four cores ran at half speed), but measured on a two-socket
-    Xeon it never paid: parity on 8 threads of 8 cores, and on 16 threads
-    of 8 cores a 1M contour took 33 ms with every worker pinned, 17 with
-    one per core, and 17 unpinned with the rest of the filters faster
-    still -- a pinned worker cannot move off a busy core, and one on the
-    caller's sibling halves the caller between launches. Only one per
-    core is pinned, none to the caller's core, when it is asked for."""
-    if os.environ.get("TACK_CPU_POOL_PIN", "").strip().lower() not in ("1", "on", "yes", "true"):
-        return None
-    cpus = _cpus_by_core()
-    if len(cpus) < workers:
-        return None
-    pin_up_to = len(_cores()) - 1            # one per core, the caller's core excepted
-    try:
-        libc = ctypes.CDLL(None)
-        setaffinity = libc.pthread_setaffinity_np
-    except (OSError, AttributeError):
-        return None
-    try:
-        here = libc.sched_getcpu()
-    except AttributeError:
-        here = -1
-    size = 128                              # glibc's cpu_set_t: 1024 bits
-    pinned = []
-    for i in range(workers):
-        cpu = cpus[i]
-        if cpu >= size * 8:
-            return None
-        if i >= pin_up_to or cpu == here:
-            # A second thread of a core, or the caller's own CPU: left to
-            # the scheduler.
-            pinned.append(None)
-            continue
-        mask = (ctypes.c_ubyte * size)()
-        mask[cpu // 8] |= 1 << (cpu % 8)
-        if setaffinity(ctypes.c_uint64(tid_of(i)), ctypes.c_size_t(size), mask) != 0:
-            return None
-        pinned.append(cpu)
-    return pinned
 
 
 def _available_cpus() -> int:
@@ -669,7 +560,6 @@ class CPool:
                                      ctypes.c_int64, ctypes.c_int)(addr("tack_pool_run"))
         self._get_spans = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_spans"))
         self._get_elems = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_elems"))
-        self._tid = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_int)(addr("tack_pool_tid"))
         spin = int(os.environ.get("TACK_CPU_POOL_SPIN", SPIN_ITERATIONS))
         if not _blocking_available():
             futex, self.waiter = 0, "poll"
@@ -681,11 +571,6 @@ class CPool:
                        futex, GRAIN) != 0:
             raise RuntimeError(f"could not start a pool of {threads} threads")
         self.threads = threads
-        # With TACK_CPU_POOL_PIN=1, worker i on the i-th CPU of
-        # `_cpus_by_core` (Linux): one per core, the caller's core left to
-        # the caller. Off by default; see `_pin_workers`.
-        self.pin_cpus = _pin_workers(self._tid, threads - 1)
-        self.pinned = self.pin_cpus is not None
         self._spans = (ctypes.c_int64 * threads)()
         self._elems = (ctypes.c_int64 * threads)()
         self._report_fmt = f"{threads}q"
