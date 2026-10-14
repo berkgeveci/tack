@@ -932,10 +932,14 @@ class CPUBackend(Backend):
         buffer's pages are first touched by the workers (`tack.zeros` is
         such a fill). NumPy converts the value first, so what the kernel
         stores, and what is refused, is what `ndarray.fill` would store or
-        refuse. Smaller fills, and a backend of one thread, fill in place.
+        refuse. Smaller fills, a backend of one thread, and a field of
+        another backend fill in place.
         """
         buf = field._buffer
-        if self.num_threads <= 1 or buf.nbytes < _PARALLEL_FILL_MIN_BYTES:
+        if (buf.backend_name != self.name or self.num_threads <= 1
+                or buf.nbytes < _PARALLEL_FILL_MIN_BYTES):
+            # A field another backend allocated (made before a `tack.init`
+            # that switched to this one) is filled by its own buffer.
             return False
         from tack.algorithms.copy import _fill_kernel
         from tack.lang.field import Field

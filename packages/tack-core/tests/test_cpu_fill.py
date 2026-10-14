@@ -133,6 +133,28 @@ def test_one_thread_fills_in_place(monkeypatch):
         tack.init(arch="cpu")
 
 
+def test_a_field_of_another_backend_fills_in_place(monkeypatch, backend):
+    """A field made before `tack.init` switched to this backend has a buffer
+    the CPU kernel must not touch: `Field.fill` asks the current backend,
+    and the CPU backend answers only for its own buffers."""
+    from tack.lang.field import NumpyBuffer
+
+    class ForeignBuffer(NumpyBuffer):
+        backend_name = "elsewhere"
+
+        def fill(self, value):
+            self.filled = value
+            self._data.fill(value)
+
+    f = tack.field(tack.f32, (_BIG,))
+    foreign = ForeignBuffer(np.float32, (_BIG,))
+    f._buffer = foreign
+    fills = _fills(monkeypatch, backend)
+    f.fill(3.0)
+    assert fills == [(foreign.nbytes, False)] and foreign.filled == 3.0
+    assert (foreign._data == 3.0).all()
+
+
 @pytest.mark.skipif(platform.system() != "Linux", reason="set_mempolicy")
 def test_the_executor_threads_carry_the_interleave_policy(monkeypatch):
     """The executor's threads are made under the interleave policy, as the
