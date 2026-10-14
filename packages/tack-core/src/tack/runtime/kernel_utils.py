@@ -549,8 +549,10 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     from tack.lang.template_rewrite import template_scope
 
     # The fast path reads no template trees, so it runs outside the scope:
-    # entering one cost 2-3 µs of a 45 µs warm dispatch.
-    if not kwargs:
+    # entering one cost 2-3 µs of a 45 µs warm dispatch. Debug mode takes
+    # the slow path every call: its variants take hidden arguments the
+    # fast path does not append, and each launch is noted for the check.
+    if not kwargs and not dispatch._debug:
         hit = _fast_resolve(backend, kernel, args, specialize_disjoint)
         if hit is not None:
             return hit
@@ -679,7 +681,7 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
         check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
                                backend_label=backend.label)
 
-    if sig is not None:
+    if sig is not None and not debug:      # see resolve_variant
         entry = fast.get(sig)
         if entry is None:
             if len(fast) >= _FAST_CAP:
