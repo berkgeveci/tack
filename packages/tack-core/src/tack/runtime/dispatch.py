@@ -136,9 +136,8 @@ async def sync_async():
     """`sync` for ``asyncio``: ``await tack.sync_async()`` waits for every
     kernel launched so far without blocking the event loop.
 
-    On CUDA, Metal and Level Zero the wait runs in a worker thread and the
-    loop goes on;
-    launches made after the call are not waited for. A launch's error is
+    On CUDA, HIP, Metal and Level Zero the wait runs in a worker thread and
+    the loop goes on; launches made after the call are not waited for. A launch's error is
     raised here. On the CPU, whose launches complete before returning, it
     returns at once. See `tack.runtime.aio`.
     """

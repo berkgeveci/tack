@@ -13,14 +13,20 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   while kernels finish; kernel calls themselves are unchanged. On CUDA
   the wait is an event on the context's stream, on Metal the last
   committed command buffer, on Level Zero a host-visible event signalled
-  by a barrier on the backend's command list; elsewhere, where launches
-  complete before returning or a backend has not added a marker (HIP),
+  by a barrier on the backend's command list, on HIP an event on the
+  device's stream; on the CPU, whose launches complete before returning,
   the wait is inline. During a 490 ms CUDA kernel another task ran 436
   times while one awaited `sync_async`, and not once under `tack.sync()`;
-  during a 685 ms Level Zero kernel (Intel Max 1100), 311 to 384 times.
+  during a 685 ms Level Zero kernel (Intel Max 1100), 311 to 384 times;
+  during a 1.45 s HIP kernel (MI210), 1353 times.
   Level Zero's `to_numpy`, `read_range` and reductions now wait on such
   an event outside the backend's lock, so another thread may launch
-  while one waits.
+  while one waits. Every HIP wait (`tack.sync()`, reads, reductions) is
+  on an event too, through ctypes: hip-python's wrappers hold the GIL
+  while the runtime waits, which stopped every other Python thread for
+  the length of the kernel, and ROCm's `hipStreamSynchronize` holds the
+  stream, so a launch from another thread took the whole wait (350 ms)
+  and now takes 60 µs.
 - Compiled kernels are kept on disk, so a later process starts warm: the
   first contour of a 21³ grid in a new process went from 445 ms (CPU) and
   1.1 s (Metal) to 31 ms on an M1 Max. The lowered kernel and each

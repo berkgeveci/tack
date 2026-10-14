@@ -233,9 +233,9 @@ class Field:
     async def to_numpy_async(self, vectors: bool = False) -> np.ndarray:
         """`to_numpy` for ``asyncio``: ``await field.to_numpy_async()``.
 
-        Where reading waits for queued launches (CUDA, Metal, Level Zero), the wait and
-        the copy run in a worker thread and the event loop goes on; elsewhere
-        it is `to_numpy`. The result holds every write queued before the
+        Where reading waits for queued launches (CUDA, HIP, Metal, Level
+        Zero), the wait and the copy run in a worker thread and the event
+        loop goes on; elsewhere it is `to_numpy`. The result holds every write queued before the
         call; one queued later by another task may or may not be in it.
         """
         from tack.runtime.aio import to_numpy_async

@@ -113,10 +113,9 @@ async def frame():
 ones another task queues while it waits. `to_numpy_async` returns every
 write queued before the call; one queued later by another task may or may
 not be in it, so order the two with `await` if it matters. A launch's error
-is raised at the `await`. On CUDA, Metal and Level Zero the wait runs in
-a worker thread; on the CPU, whose launches complete before returning, both
-return at once, and on a backend that has not added an asynchronous wait
-(HIP, for now) they wait inline, which is correct but holds the loop.
+is raised at the `await`. On CUDA, HIP, Metal and Level Zero the wait runs
+in a worker thread; on the CPU, whose launches complete before returning,
+both return at once.
 
 A `tack.barrier()` synchronizes only a GPU workgroup. It cannot turn two stages
 over a whole grid into one ordered launch. Use completed kernel calls for that.

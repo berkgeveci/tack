@@ -13,6 +13,13 @@ No per-dispatch copies — data stays on the GPU between kernel calls. Launches,
 fills and copies go through one stream per device, in order, and return once
 queued; the host waits where it reads a field or calls ``tack.sync()``.
 
+Every wait is on an event recorded after the queued work, through ctypes
+(`_StreamMarker`, `_runtime`), never ``hipStreamSynchronize``: hip-python's
+wrappers hold the GIL while the runtime waits, which would stop every other
+Python thread (and an ``asyncio`` loop awaiting `tack.sync_async`) for the
+length of the kernel, and ROCm's stream synchronize holds the stream while it
+waits, so no other thread could launch on it meanwhile.
+
 Requires: hip-python (``pip install 'tack-core[hip]'``)
 """
 
@@ -82,6 +89,109 @@ def _check_hiprtc(result):
         raise RuntimeError(f"hipRTC error: {err}")
 
 
+# The HIP runtime through ctypes, for the calls that wait. hip-python's
+# wrappers call the runtime with the GIL held, so a thread waiting in
+# hipEventSynchronize stopped every other Python thread: another thread got
+# 6 turns during a 357 ms wait, and 353 when the same call went through
+# ctypes, which releases the GIL. It is the library hip-python loaded, by
+# the same name, or None if that fails, when the waits go through
+# hip-python: correct, but holding the GIL.
+#
+# The waits are on events, not hipStreamSynchronize: on ROCm 7.1 a thread
+# waiting in hipStreamSynchronize (even through ctypes) held the stream, and
+# another thread's launch on it took the whole 350 ms wait; waiting on an
+# event recorded after the same work, the other thread launched 309 times
+# at 60 us each. A copy to pageable host memory waits inside hipMemcpyAsync
+# the same way, so a read waits on an event before it copies. An idle event
+# wait costs about 8 us (create, record, wait, destroy; 0.7 for the stream).
+_RUNTIME = None
+_RUNTIME_LOCK = threading.Lock()
+_NO_RUNTIME = object()
+
+
+def _runtime():
+    global _RUNTIME
+    if _RUNTIME is None:
+        with _RUNTIME_LOCK:
+            if _RUNTIME is None:
+                _RUNTIME = _load_runtime() or _NO_RUNTIME
+    return None if _RUNTIME is _NO_RUNTIME else _RUNTIME
+
+
+def _load_runtime():
+    from hip import chip
+    name = getattr(chip, "DLL", b"libamdhip64.so")
+    try:
+        lib = ctypes.CDLL(name.decode() if isinstance(name, bytes) else name)
+        lib.hipEventSynchronize.argtypes = [ctypes.c_void_p]
+        lib.hipEventSynchronize.restype = ctypes.c_int
+    except (OSError, AttributeError):
+        return None
+    return lib
+
+
+def _check_code(code):
+    if code != 0:
+        raise HIPError(hip.hipError_t(code))
+
+
+def _wait_stream(stream):
+    """Wait for everything queued on ``stream`` so far, on an event, with
+    the GIL and the stream released: other threads launch meanwhile."""
+    _StreamMarker(stream).wait()
+
+
+def _wait_event(event):
+    """Wait for ``event``, with the GIL released."""
+    runtime = _runtime()
+    if runtime is None:
+        _check_hip(hip.hipEventSynchronize(event))
+    else:
+        _check_code(runtime.hipEventSynchronize(ctypes.c_void_p(int(event))))
+
+
+class _BoundDevice:
+    """Make a device current on this thread for the block, and put back
+    whatever was current before: a worker thread starts on device 0."""
+
+    __slots__ = ("_device", "_previous")
+
+    def __init__(self, device):
+        self._device = device
+
+    def __enter__(self):
+        err, self._previous = hip.hipGetDevice()
+        _check_hip(err)
+        if self._previous != self._device:
+            _check_hip(hip.hipSetDevice(self._device))
+        return self
+
+    def __exit__(self, *exc):
+        if self._previous != self._device:
+            hip.hipSetDevice(self._previous)
+
+
+class _StreamMarker:
+    """An event recorded on a device's stream after the work queued so far,
+    waited on from any thread (`Backend.async_marker`). The event sleeps
+    the waiting thread (blocking sync), the wait releases the GIL, and the
+    event is destroyed by the wait."""
+
+    __slots__ = ("_event",)
+
+    def __init__(self, stream):
+        err, self._event = hip.hipEventCreateWithFlags(
+            hip.hipEventBlockingSync | hip.hipEventDisableTiming)
+        _check_hip(err)
+        _check_hip(hip.hipEventRecord(self._event, stream))
+
+    def wait(self):
+        try:
+            _wait_event(self._event)
+        finally:
+            hip.hipEventDestroy(self._event)
+
+
 class _Queue:
     """A device's queue: every launch, fill and copy Tack makes on the device
     goes through this one stream, in order, and returns once it is queued.
@@ -94,9 +204,10 @@ class _Queue:
     whose ``hipFree`` waits for the device.
     """
 
-    __slots__ = ("pooled", "stream")
+    __slots__ = ("device", "pooled", "stream")
 
     def __init__(self, device):
+        self.device = device
         err, self.stream = hip.hipStreamCreate()
         _check_hip(err)
         err, pools = hip.hipDeviceGetAttribute(
@@ -179,7 +290,14 @@ class HIPBuffer(DeviceBuffer):
 
     def synchronize(self):
         """Wait for every queued launch, fill and copy on this device."""
-        _check_hip(hip.hipStreamSynchronize(self._stream))
+        _wait_stream(self._stream)
+
+    # Reading waits for the stream, so `Field.to_numpy_async` reads in a
+    # worker thread, with the buffer's device made current there.
+    waits_off_thread = True
+
+    def thread_binding(self):
+        return _BoundDevice(self._queue.device)
 
     def share(self):
         """Hand this memory outside Tack: wait for the queued work now, and
@@ -207,6 +325,9 @@ class HIPBuffer(DeviceBuffer):
     def to_numpy(self) -> np.ndarray:
         out = np.empty(self._shape, dtype=self._numpy_dtype)
         stream = self._stream
+        # A copy to pageable memory waits for the stream inside the call,
+        # holding the GIL and the stream: wait first, on an event.
+        _wait_stream(stream)
         _check_hip(hip.hipMemcpyAsync(
             out, self._device_ptr, self._nbytes,
             hip.hipMemcpyKind.hipMemcpyDeviceToHost, stream,
@@ -230,6 +351,7 @@ class HIPBuffer(DeviceBuffer):
         out = np.empty(count, dtype=self._numpy_dtype)
         if count:
             stream = self._stream
+            _wait_stream(stream)                  # as in to_numpy
             _check_hip(hip.hipMemcpyAsync(
                 out, self.address + start * itemsize, count * itemsize,
                 hip.hipMemcpyKind.hipMemcpyDeviceToHost, stream,
@@ -545,7 +667,15 @@ class HIPBackend(Backend):
         at its call."""
         stream = self._stream
         if stream is not None:
-            _check_hip(hip.hipStreamSynchronize(stream))
+            _wait_stream(stream)
+
+    def async_marker(self):
+        """An event after the work queued so far on this device's stream,
+        for `tack.sync_async` to wait on in a worker thread."""
+        stream = self._stream
+        if stream is None:
+            return None                      # the null stream: wait inline
+        return _StreamMarker(stream)
 
     def _query_image_support(self) -> bool:
         """True when the device exposes the texture/image API."""
