@@ -176,10 +176,13 @@ _init_numa()
 # above the cap come from the heap too. Measured on a 2 GHz Xeon, hex
 # shape 5M on 8 threads, with the first touch already in the kernels:
 # threshold 126 -> 104 ms, slice 76 -> 65, cell to point 48.6 -> 44.5,
-# nothing at 1M (its blocks already stayed). Process-wide, so NumPy's own
-# arrays keep their pages too; `TACK_CPU_MALLOC=0` opts out. Nothing on
-# macOS, whose allocator keeps large blocks in its own pool, or on a
-# libc without `mallopt`.
+# nothing at 1M (its blocks already stayed), on one node under numactl.
+# Opt-in (`TACK_CPU_MALLOC=1`): it is process-wide, so NumPy's own arrays
+# and every other library's keep their pages too; unbound on jura's
+# 28-core EPYC it gained nothing (6-8% slower, within noise), and a reused
+# block keeps the placement of its first touch (TA-49). Nothing on macOS,
+# whose allocator keeps large blocks in its own pool, or on a libc
+# without `mallopt`.
 _M_TRIM_THRESHOLD, _M_TOP_PAD, _M_MMAP_THRESHOLD = -1, -2, -3
 _MALLOC_MMAP_THRESHOLD = 32 << 20      # glibc's cap (HEAP_MAX_SIZE / 2 on 64-bit)
 _MALLOC_TRIM_THRESHOLD = 4 << 30
@@ -193,8 +196,8 @@ def _tune_malloc() -> bool:
     if _malloc_tuned is not None:
         return _malloc_tuned
     _malloc_tuned = False
-    if platform.system() != "Linux" or os.environ.get(
-            "TACK_CPU_MALLOC", "").strip().lower() in ("0", "false", "no", "off"):
+    from tack.runtime.dispatch import env_flag
+    if platform.system() != "Linux" or not env_flag("TACK_CPU_MALLOC"):
         return False
     try:
         mallopt = ctypes.CDLL(None).mallopt
@@ -867,7 +870,8 @@ class CPUBackend(Backend):
         # speedup not taken. `TACK_CPU_POLICY=v1` restores the old policy.
         # Anything else is refused: a misspelt value used to select v1.
         self.policy = os.environ.get("TACK_CPU_POLICY") or "v2"
-        # Whether glibc was told to keep freed pages (see `_tune_malloc`).
+        # Whether glibc was told to keep freed pages (`TACK_CPU_MALLOC=1`,
+        # see `_tune_malloc`).
         self.malloc_tuned = _tune_malloc()
         if self.policy not in _CPU_POLICIES:
             raise ValueError(

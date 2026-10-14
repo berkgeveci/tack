@@ -171,7 +171,7 @@ def test_a_field_the_workers_write_is_spread_across_the_nodes(pool):
     JIT'd pool's from `_jit_pool`, the executor's from `_get_pool`), so its
     pages are spread the way a buffer filled under the policy was.
 
-    In a fresh process: the CPU backend tells glibc to keep freed pages,
+    In a fresh process: with `TACK_CPU_MALLOC=1` glibc keeps freed pages,
     so in a process that already freed a block this size the "new" field
     would be that block, its pages present and placed by whoever touched
     them first. Only a process's first such block is a fresh mapping."""
@@ -221,7 +221,8 @@ def test_a_bound_thread_keeps_its_policy_and_its_node():
 
     In a fresh process, as the spreading test is: a block this size that
     the process freed before keeps its pages where they were first
-    placed, binding or not (the CPU backend tells glibc to keep them)."""
+    placed, binding or not, when glibc is told to keep them
+    (`TACK_CPU_MALLOC=1`)."""
     import os
     import subprocess
     import sys

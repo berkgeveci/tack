@@ -152,29 +152,51 @@ def test_the_executor_threads_carry_the_interleave_policy(monkeypatch):
     pool.shutdown()
 
 
-@pytest.mark.skipif(platform.system() != "Linux", reason="glibc mallopt")
-def test_the_cpu_backend_keeps_freed_pages(monkeypatch):
-    """A block freed and reallocated keeps its pages: the second fill of a
-    64 MiB array takes almost no minor faults once the backend has set
-    glibc's thresholds (it is process-wide, so the backend made by any
-    earlier test counts), and `TACK_CPU_MALLOC=0` is honoured."""
-    import resource
-    backend = CPUBackend(num_threads=2)
-    if not backend.malloc_tuned:
-        pytest.skip("mallopt not available (not glibc?) or TACK_CPU_MALLOC=0")
-    n = (64 << 20) // 4
-    a = np.empty(n, np.float32)
-    a.fill(1.0)
-    del a
-    before = resource.getrusage(resource.RUSAGE_SELF).ru_minflt
-    b = np.empty(n, np.float32)
-    b.fill(2.0)
-    faults = resource.getrusage(resource.RUSAGE_SELF).ru_minflt - before
-    assert faults < (64 << 20) // 4096 // 8, f"{faults} faults refilling a freed 64 MiB block"
-    del b
+def test_freed_pages_are_left_to_glibc_by_default(monkeypatch):
+    """Keeping freed pages is opt-in: without `TACK_CPU_MALLOC=1` the
+    backend leaves glibc's thresholds alone."""
+    monkeypatch.delenv("TACK_CPU_MALLOC", raising=False)
+    monkeypatch.setattr(cpu_mod, "_malloc_tuned", None)
+    assert not cpu_mod._tune_malloc()
+    assert not CPUBackend(num_threads=2).malloc_tuned
     monkeypatch.setenv("TACK_CPU_MALLOC", "0")
     monkeypatch.setattr(cpu_mod, "_malloc_tuned", None)
     assert not cpu_mod._tune_malloc()
-    monkeypatch.setattr(cpu_mod, "_malloc_tuned", None)
-    monkeypatch.delenv("TACK_CPU_MALLOC")
-    assert cpu_mod._tune_malloc()
+
+
+_KEEPS_PAGES = """
+import resource
+import numpy as np
+from tack.runtime.cpu import CPUBackend
+if not CPUBackend(num_threads=2).malloc_tuned:
+    print("untuned")
+    raise SystemExit
+n = (64 << 20) // 4
+a = np.empty(n, np.float32)
+a.fill(1.0)
+del a
+before = resource.getrusage(resource.RUSAGE_SELF).ru_minflt
+b = np.empty(n, np.float32)
+b.fill(2.0)
+print(resource.getrusage(resource.RUSAGE_SELF).ru_minflt - before)
+"""
+
+
+@pytest.mark.skipif(platform.system() != "Linux", reason="glibc mallopt")
+def test_with_tack_cpu_malloc_a_freed_block_keeps_its_pages():
+    """With `TACK_CPU_MALLOC=1` a block freed and reallocated keeps its
+    pages: the second fill of a 64 MiB array takes almost no minor faults.
+    In a fresh process, since the setting is process-wide and cannot be
+    undone."""
+    import os
+    import subprocess
+    import sys
+    env = dict(os.environ, TACK_CPU_MALLOC="1")
+    run = subprocess.run([sys.executable, "-c", _KEEPS_PAGES], env=env,
+                         capture_output=True, text=True, timeout=120)
+    assert run.returncode == 0, run.stderr[-800:]
+    out = run.stdout.strip().splitlines()[-1]
+    if out == "untuned":
+        pytest.skip("mallopt not available (not glibc?)")
+    faults = int(out)
+    assert faults < (64 << 20) // 4096 // 8, f"{faults} faults refilling a freed 64 MiB block"
