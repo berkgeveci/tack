@@ -105,7 +105,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 - **CPU**: `NumpyBuffer` wraps a numpy array. CPU backend accesses via ctypes pointers.
 - **Metal**: `MetalBuffer` — Metal shared buffer (zero-copy unified memory on Apple Silicon). The numpy array view points directly into Metal buffer memory.
 - **CUDA**: `CUDABuffer` holds a stream-ordered device pointer (`cuMemAllocAsync` on the context's stream, freed with `cuMemFreeAsync`, so a temporary dropped while a queued launch still uses it is freed after that launch, and the driver's pool, with its release threshold raised, hands memory back out without a round trip). Every launch, fill and copy goes through that one stream (`_ContextToken.queue()`) in order and returns once queued; `to_numpy`, `read_range` and reductions queue a copy and wait for it; `from_numpy` and `fill` queue and return; `tack.sync()` is a stream synchronize, and a launch's error surfaces at the next wait. A buffer handed outside Tack (`wrap_ptr`, DLPack export, `share()`) completes every launch that uses it before the launch returns, and so does a texture launch, since its image could be destroyed before a queued launch read it. See `test_cuda_async.py`.
-- **HIP**: `HIPBuffer` holds a device pointer (`hipMalloc`). Explicit host↔device copies.
+- **HIP**: `HIPBuffer` holds a stream-ordered device pointer, as CUDA's does: one blocking stream per device (`_Queue`, `_queue()` in `hip_backend.py`; ordered with the null stream), memory from `hipMallocAsync` on it and freed with `hipFreeAsync`, the default pool's release threshold raised. Launches, fills and copies are queued on it and return; `to_numpy`, `read_range` and reductions wait; `tack.sync()` is a stream synchronize; a launch's error surfaces at the next wait. A host write from pageable memory may be queued: HIP stages a small one before returning and waits for the stream before a large one (16 KB staged, 4 MB waited, ROCm 7.1). `wrap_ptr`, DLPack export (`share()`) and texture launches complete before returning. A device without memory pools falls back to `hipMalloc`/`hipFree`. See `test_hip_async.py`.
 - **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Explicit host↔device copies via immediate command list.
 
 `tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type. `Field.__getitem__` reads one element on the host through `DeviceBuffer.read_range(start, count)`: CPU and Metal slice their views, and CUDA, HIP and Level Zero copy just the range with one `cuMemcpyDtoH`, `hipMemcpy` or `zeCommandListAppendMemoryCopy` (on the immediate list) at the element's byte offset, each checking the range against the allocation first. `__setitem__` and `__iter__` raise.
@@ -246,9 +246,9 @@ smallest). See `test_field_updates_in_loops.py` and
 Dispatching one variant from several Python threads: CPU binds arguments
 per call and shares no launch state. CUDA and HIP variants share their
 scalar pack buffers, so they hold `KernelVariant.dispatch_lock` from the
-pack update through the launch (on CUDA both are queued on the stream in
-that order, so a later call's pack update cannot reach an earlier queued
-launch). Metal launches own their
+pack update through the launch (on CUDA and HIP both are queued on the
+stream in that order, so a later call's pack update cannot reach an earlier
+queued launch). Metal launches own their
 argument buffer and scalars, and encode under the backend's batch lock.
 Level Zero holds one backend `_launch_lock` (reentrant) over
 launches, reductions and copies, because its command lists are
