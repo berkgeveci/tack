@@ -161,8 +161,7 @@ ranges across a persistent pool of pthreads that is itself JIT'd from LLVM
 IR (`cpu_pool.py`): one ctypes call posts the launch to the workers it
 uses (each waits on its own mailbox; the rest sleep on), each worker
 calls the compiled function with a `(start, end)` sub-range through a
-per-kernel wrapper, and none of them touches Python. On Linux the
-workers are pinned in core order, the caller's node first.
+per-kernel wrapper, and none of them touches Python.
 `TACK_CPU_POOL=python` uses a `ThreadPoolExecutor` instead.
 
 Periodic serial rechecks sample different positions in the range. Long

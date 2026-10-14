@@ -40,11 +40,13 @@ Linux or `nanosleep` polls elsewhere). A fan-out is one ctypes call:
 runs as worker `k - 1` itself and leaves the rest asleep, so a launch of
 two on a pool of sixteen costs two wake-ups (4.4 µs hot on a 2 GHz Xeon,
 against 11 when every worker was woken) and the `k` threads of every
-launch are the same `k`. On Linux worker `i` is pinned to the `i`-th CPU
-in core order -- every core's first hyperthread before any core's second,
-the caller's node first, the caller's own core last -- so they are also
-the same `k` cores (`TACK_CPU_POOL_PIN=0` leaves placement to the
-scheduler). The workers and the caller claim chunks from a shared
+launch are the same `k`. `TACK_CPU_POOL_PIN=1` also pins one worker per core on
+Linux, in core order with the caller's node first and its own core left
+out; off by default, since on a two-socket Xeon it was parity on 8
+threads of 8 cores and a loss on 16 (every worker pinned: a 1M contour
+33 ms against 19; one per core: still behind unpinned on most filters),
+because a pinned worker cannot move off a busy core. The workers and the
+caller claim chunks from a shared
 counter (`GRAIN` per worker, each at least `MIN_CHUNK` elements) and run
 them through a wrapper JIT'd once per kernel that loads the arguments
 from 8-byte slots, and the workers never touch Python. Claimed rather

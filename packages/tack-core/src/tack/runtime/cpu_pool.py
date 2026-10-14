@@ -17,10 +17,10 @@ that back off to a millisecond. ``pool_run`` with ``k`` threads posts to
 workers ``0 .. k - 2`` and no other, runs chunks on the calling thread as
 worker ``k - 1``, and waits for those ``k - 1``; a worker past that is
 not woken, so a launch of four on a pool of twenty-eight costs four
-wake-ups, and the ``k`` workers of every launch are the same ``k``. On
-Linux worker ``i`` is pinned to the ``i``-th CPU in core order, the
-caller's node first (`_cpus_by_core`), so they are also the same ``k``
-cores. The workers never touch Python. Measured on the Xeon: 4 µs hot,
+wake-ups, and the ``k`` workers of every launch are the same ``k``
+(``TACK_CPU_POOL_PIN=1`` also pins one worker per core on Linux, which
+did not pay where it was measured; see `_pin_workers`). The workers
+never touch Python. Measured on the Xeon: 4 µs hot,
 about 100 µs after an idle gap.
 
 Chunks are claimed, not assigned: a run is cut into several chunks per
@@ -536,17 +536,19 @@ def by_core_key(by_core, cpu):
 
 
 def _pin_workers(tid_of, workers: int):
-    """Pin worker i to the i-th CPU of `_cpus_by_core`, so a launch's
-    workers sit on distinct cores: the CPU of each worker, None for one
-    left to the scheduler; None altogether when nothing was pinned. The
-    scheduler spreads a pool's threads two per core, and a launch of
-    eight on four cores ran at half speed. Only one worker per core is
-    pinned, and none to the caller's core: a worker pinned to the
-    sibling of a busy core cannot move, and with every hyperthread in
-    use the one on the caller's sibling halved the caller between
-    launches -- a 1M contour on 16 threads of 8 cores took 32 ms against
-    19 unpinned. `TACK_CPU_POOL_PIN=0` leaves the scheduler to it all."""
-    if os.environ.get("TACK_CPU_POOL_PIN", "").strip().lower() in ("0", "off", "no", "false"):
+    """With `TACK_CPU_POOL_PIN=1`, pin worker i to the i-th CPU of
+    `_cpus_by_core`, so a launch's workers sit on distinct cores: the CPU
+    of each worker, None for one left to the scheduler; None altogether
+    when nothing was pinned, which is the default. Pinning was meant for
+    a scheduler that spreads a pool's threads two per core (a launch of
+    eight on four cores ran at half speed), but measured on a two-socket
+    Xeon it never paid: parity on 8 threads of 8 cores, and on 16 threads
+    of 8 cores a 1M contour took 33 ms with every worker pinned, 17 with
+    one per core, and 17 unpinned with the rest of the filters faster
+    still -- a pinned worker cannot move off a busy core, and one on the
+    caller's sibling halves the caller between launches. Only one per
+    core is pinned, none to the caller's core, when it is asked for."""
+    if os.environ.get("TACK_CPU_POOL_PIN", "").strip().lower() not in ("1", "on", "yes", "true"):
         return None
     cpus = _cpus_by_core()
     if len(cpus) < workers:
@@ -678,9 +680,9 @@ class CPool:
                        futex, GRAIN) != 0:
             raise RuntimeError(f"could not start a pool of {threads} threads")
         self.threads = threads
-        # Worker i on the i-th CPU of `_cpus_by_core` (Linux): a launch's
-        # workers on distinct cores, the first k of them the same k cores
-        # for every k, and the caller's core left to the caller.
+        # With TACK_CPU_POOL_PIN=1, worker i on the i-th CPU of
+        # `_cpus_by_core` (Linux): one per core, the caller's core left to
+        # the caller. Off by default; see `_pin_workers`.
         self.pin_cpus = _pin_workers(self._tid, threads - 1)
         self.pinned = self.pin_cpus is not None
         self._spans = (ctypes.c_int64 * threads)()

@@ -369,32 +369,49 @@ def test_a_run_uses_only_the_first_k_workers(monkeypatch):
 
 
 @pytest.mark.skipif(platform.system() != "Linux", reason="pthread_setaffinity_np")
-def test_workers_are_pinned_to_distinct_cores_in_order(monkeypatch):
+def test_pinning_is_opt_in_and_pins_one_worker_per_core(monkeypatch):
+    """Off by default: the pool pins nothing. With TACK_CPU_POOL_PIN=1 (in
+    a fresh process, since the pool is one per process) worker i sits on
+    the i-th CPU in core order, one per core, the caller's core excepted,
+    and the rest float."""
     backend = _fresh_backend(4, monkeypatch)
     n = 4096
     out = tack.zeros(tack.i64, (n,))
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
-    pool = backend._cpool
-    if not pool.pinned:
-        pytest.skip("the pool could not pin (TACK_CPU_POOL_PIN=0, or too few CPUs)")
-    import ctypes
-    libc = ctypes.CDLL(None)
-    cpus = pool.pin_cpus
-    assert len(cpus) == pool.threads - 1
+    assert not backend._cpool.pinned and backend._cpool.pin_cpus is None
+    code = """
+import ctypes, json, os, tack
+from tack.runtime import cpu_pool
+tack.init(arch="cpu", num_threads=4)
+b = tack.runtime.dispatch.get_backend()
+f = tack.zeros(tack.f32, (1 << 20,)); f.fill(1.0)       # makes the pool
+pool = b._jit_pool()
+libc = ctypes.CDLL(None)
+masks = []
+for i in range(pool.threads - 1):
+    mask = (ctypes.c_ubyte * 128)()
+    assert libc.pthread_getaffinity_np(ctypes.c_uint64(pool._tid(i)), ctypes.c_size_t(128), mask) == 0
+    masks.append([c for c in range(1024) if mask[c // 8] >> (c % 8) & 1])
+print(json.dumps({"pinned": pool.pinned, "cpus": pool.pin_cpus, "masks": masks,
+                  "cores": len(cpu_pool._cores())}))
+"""
+    env = dict(os.environ, TACK_CPU_POOL_PIN="1")
+    env.pop("TACK_CPU_POOL", None)
+    run = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True, text=True,
+                         timeout=120)
+    assert run.returncode == 0, run.stderr[-800:]
+    import json
+    got = json.loads(run.stdout.strip().splitlines()[-1])
+    if not got["pinned"]:
+        pytest.skip("the pool could not pin (too few CPUs?)")
+    cpus, cores = got["cpus"], got["cores"]
     pinned = [c for c in cpus if c is not None]
-    cores = len(cpu_pool._cores())
-    # One worker per core, the caller's core excepted (and the caller's own
-    # CPU, if it was first in that core's turn); the rest float.
     assert len(set(pinned)) == len(pinned)
     assert min(len(cpus), cores - 2) <= len(pinned) <= cores - 1
     assert all(c is None for c in cpus[cores - 1:])
-    for i, cpu in enumerate(cpus):
-        mask = (ctypes.c_ubyte * 128)()
-        assert libc.pthread_getaffinity_np(ctypes.c_uint64(pool._tid(i)), ctypes.c_size_t(128),
-                                           mask) == 0
-        allowed = [c for c in range(1024) if mask[c // 8] >> (c % 8) & 1]
-        if cpu is None:          # the caller's own CPU: left to the scheduler
-            assert len(allowed) > 1
+    for cpu, mask in zip(cpus, got["masks"]):
+        if cpu is None:
+            assert len(mask) > 1
         else:
-            assert allowed == [cpu], (i, allowed, cpus[:8])
+            assert mask == [cpu]
