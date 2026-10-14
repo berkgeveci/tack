@@ -15,6 +15,7 @@ import subprocess
 import sys
 import textwrap
 import time
+import warnings
 
 import pytest
 
@@ -579,6 +580,36 @@ def test_load_bundle_broadcasts_from_rank_zero(tmp_path):
         moved = path.with_suffix(".moved")
         path.rename(moved)
         assert disk_cache.load_bundle(comm=_FakeComm(1, moved.read_bytes())) == count
+    finally:
+        disk_cache.configure()
+
+
+@pytest.mark.parametrize("problem, says", [
+    ("missing", "there is no bundle at .*`python -m tack.cache pack`"),
+    ("shared", "belongs to another user or others can write to it"),
+    ("damaged", "ignoring the damaged bundle"),
+])
+def test_load_bundle_says_why_it_reads_nothing(tmp_path, problem, says):
+    """A bundle rank 0 cannot use is named in a warning, once, on rank 0;
+    every rank then compiles instead of failing."""
+    if problem == "shared" and not hasattr(os, "getuid"):
+        pytest.skip("POSIX permissions")
+    cache_dir = _cache_dir(tmp_path)
+    try:
+        disk_cache.configure(directory=cache_dir, mode="bundle")
+        path = disk_cache._cache().bundle_path
+        if problem == "shared":
+            path.write_bytes(b"")
+            path.chmod(0o666)
+        elif problem == "damaged":
+            path.write_bytes(b"not a bundle")
+        with pytest.warns(RuntimeWarning, match=f"{says}.* Every kernel will be compiled"):
+            assert disk_cache.load_bundle(comm=_FakeComm(0)) == 0
+        with pytest.warns(RuntimeWarning, match=says):
+            assert disk_cache.load_bundle() == 0
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            assert disk_cache.load_bundle(comm=_FakeComm(1, None)) == 0
     finally:
         disk_cache.configure()
 

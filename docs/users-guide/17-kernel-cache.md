@@ -115,6 +115,10 @@ import tack.cache
 tack.cache.load_bundle(comm=MPI.COMM_WORLD)
 ```
 
+It returns the number of entries read. If rank 0 cannot use the bundle
+(there is none, it is damaged, or it is not your own), rank 0 warns why
+and every rank compiles its kernels, as it would without a cache.
+
 With `TACK_CACHE=write` under MPI, only rank 0 stores entries; the other
 ranks read. Entries are written to a temporary file and renamed into
 place, so a reader never sees a partial one. Concurrent writers are safe,

@@ -816,25 +816,47 @@ def load_bundle(path=None, comm=None) -> int:
     With an mpi4py communicator, rank 0 of ``comm`` reads the file and
     broadcasts it, so the other ranks never touch the file system. Call it
     on every rank of ``comm`` (it is collective), before the first kernel.
-    Returns the number of entries."""
+    Returns the number of entries. A bundle that is missing, unreadable,
+    damaged or not the user's own is not used: the reader (rank 0) warns
+    why, and every rank returns 0 and compiles its kernels."""
     cache = _cache()
     if cache is None:
         return 0
     path = Path(path) if path is not None else cache.bundle_path
-    data = None
+    data = entries = None
     if comm is None or comm.Get_rank() == 0:
-        try:
-            if _trusted(path):
-                data = path.read_bytes()
-        except OSError:
-            data = None
+        data, entries = _read_bundle_file(path)
     if comm is not None:
         data = comm.bcast(data, root=0)
-    entries = read_bundle(data) if data is not None else {}
+    if entries is None:
+        entries = read_bundle(data) if data is not None else {}
     with _lock:
         cache.bundle = entries
     _count("bundle_entries", len(entries))
     return len(entries)
+
+
+def _read_bundle_file(path) -> tuple:
+    """``(bytes, entries)`` of the bundle at ``path``, or ``(None, None)``
+    after a warning saying why it cannot be used."""
+    problem = None
+    try:
+        if not path.exists():
+            problem = (f"there is no bundle at {path}; make one with "
+                       f"`python -m tack.cache pack` after a warm-up run.")
+        elif not _trusted(path):
+            problem = (f"{path} belongs to another user or others can write to it; "
+                       f"not used.")
+        else:
+            data = path.read_bytes()
+            return data, read_bundle(data)
+    except OSError as e:
+        problem = f"cannot read the bundle {path} ({e})."
+    except (ValueError, pickle.UnpicklingError) as e:
+        problem = f"ignoring the damaged bundle {path} ({e})."
+    warnings.warn(f"Tack's kernel cache: {problem} Every kernel will be compiled.",
+                  RuntimeWarning, stacklevel=3)
+    return None, None
 
 
 def _version():
