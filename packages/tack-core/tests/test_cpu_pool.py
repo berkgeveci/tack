@@ -205,7 +205,7 @@ def test_concurrent_fan_outs_keep_their_own_launch_state(monkeypatch):
         np.testing.assert_array_equal(out.to_numpy(), rounds * np.arange(n, dtype=np.int64))
 
 
-def test_a_failed_worker_start_stops_the_started_workers():
+def test_a_failed_worker_start_stops_the_started_workers(tmp_path):
     """`pthread_create` failing after some workers exist: those workers
     wait in JIT'd code the constructor is about to free, so they must be
     told to leave and joined before the pool reports failure (TA-46: a
@@ -263,7 +263,11 @@ print("ok")
     if platform.system() != "Linux":
         pytest.skip("counts threads through /proc")
     env = {k: v for k, v in os.environ.items() if k != "TACK_CPU_POOL"}
-    run = subprocess.run([sys.executable, "-c", program], capture_output=True,
+    # A file, not `-c`: the program defines a kernel, whose source Tack
+    # reads back, and only Python 3.13 keeps the source of `-c` code.
+    script = tmp_path / "failed_start.py"
+    script.write_text(program)
+    run = subprocess.run([sys.executable, str(script)], capture_output=True,
                          text=True, env=env, timeout=120)
     assert run.returncode == 0, run.stderr
     assert run.stdout.strip().endswith("ok"), run.stdout + run.stderr
