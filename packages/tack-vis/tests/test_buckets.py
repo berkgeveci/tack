@@ -10,6 +10,8 @@ import tack
 from tack.data import buckets
 from tack.data.buckets import bucket_order, run_offsets
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 ID_TYPES = [tack.i32, tack.i64]
 
 

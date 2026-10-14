@@ -120,7 +120,10 @@ def _interpolate_rows(values, ends, weights, out):
     for i in range(weights.shape[0]):
         ab = ends[i]
         va = values[ab[0]]
-        out[i] = va + weights[i] * (values[ab[1]] - va)
+        vb = values[ab[1]]
+        w = weights[i]
+        # At an end, that end's value: a blend there is NaN beside infinity.
+        out[i] = va if w == 0.0 else (vb if w == 1.0 else va + w * (vb - va))
 
 
 @tack.kernel

@@ -5,28 +5,142 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ## Unreleased
 
-### Changed
+### Added
 
-- Dataset algorithms check field ownership before dispatch, including empty
-  inputs, and reject locators built for another dataset. `dot` and `cross`
-  require matching dtypes, as `composite` does; use `Cast` for conversion.
-- Fractional dataset computations convert integer storage before arithmetic,
-  avoiding overflow in clipping differences. Integer magnitude and logarithms
-  return floating point fields. Computation uses f64 for f64 input, otherwise
-  f32, with the corresponding precision limits. `statistics` sums integer
-  values exactly in f64 (to 2^53) instead of wrapping; its moments use the
-  floating precision.
-- Face positions refresh after editing L2 geometry. Shrink accepts quadratic
-  geometry through its corner values, and probe samples a quadratic target's
-  points while keeping its geometry. Advection and host-point probing preserve
-  the source's coordinate precision.
+- Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
+  field and array index in every kernel, one dimension at a time. An
+  out-of-bounds access is skipped (a load gives 0) and the call raises
+  `IndexError` naming the access, its file and line, the index and the
+  extent, and how many more were skipped; an access inside a device
+  function names it. It runs on every backend, compiles separately from
+  normal kernels, and does not compile per field length. Without it,
+  generated code is unchanged.
+- `pytest -m quick`, a module per area of the code, 80 s on four
+  workers, and `pytest -n auto` for the whole suite across processes
+  (pytest-xdist is in the `dev` extra): 4:30 on eight workers where the
+  serial run took 28 minutes, with the same counts. See CLAUDE.md,
+  "Tests, in three tiers".
+- An `interop` extra for VTK and MFEM (PyMFEM), the references the dataset
+  tests compare against: `uv sync --extra interop` installs them from the
+  lock, where a later `uv sync` used to remove a hand-installed copy. MFEM
+  is left out where PyMFEM has no wheels (anywhere but macOS on Apple
+  silicon and Linux x86_64).
+
+### Fixed
+
+- Grids with a size of 1 before another axis -- `uniform_grid((1, 3))`, a
+  VTK image of dimensions `(1, m, n)` -- were refused; so were grids of one
+  point or none (`(1, 1, 1)`, `(0,)`, `wavelet(extent=0)`). A size of 1 now
+  adds no cells in any position, and a grid with no axis of two points has
+  none.
+- Cells of no volume and faces of no area (coincident points, a grid of
+  spacing 0) have finite geometry: measure 0, the centroid at their points'
+  mean and zero normals, so the flux through them is 0. Their gradients,
+  flow quantities and Perot reconstruction are NaN, as before, and now
+  documented.
+- A contour or clip crossing beside an infinite or NaN value lies at the
+  finite end, where the crossing and the fields carried to it were NaN.
+- `algorithms.histogram` and `entropy` refuse a range that is not finite
+  (as `numpy.histogram` does), a reversed range and fewer than one bin;
+  `entropy` of no values says so, and of one value is `0.0`, not `-0.0`.
+- A mesh of line cells (a 1D grid, VTK lines) derived no faces, so its
+  `external_faces` were empty and `face_geometry`, `upwind_flux`,
+  `divergence` and `perot` failed with an internal error. Faces of lines
+  are not derived yet, and asking now raises `NotImplementedError`.
+- `extract_cells` takes a cell `Set`, or its name in `data.sets`.
+- `dataset_to_vtk` writes a grid of one point or none as a grid.
+
+## 0.4.0 — 2026-10-13
+
+The headline: `tack.data`, a dataset API in `tack-vis`. Meshes, the
+fields on them and over fifty visualization algorithms run on every
+backend, and their outputs agree with VTK's on hexahedral and tetrahedral
+meshes from 10k to 1M cells, and with Viskores' on CUDA. The core gained
+what that work needed: queued Metal launches, workgroup scans and sorts on
+GPUs, fills that stay on the device, 2D and 3D grids for `ndrange`, and
+device classes that hold and iterate over one another. Some kernels now
+compute different results: f64 kernels using float-literal locals, the
+statistics in `tack.algorithms`, floating-point scans on GPUs (in the last
+bits), and i8/i16 negation on CUDA drivers before 13.3; see *Kernels that
+now compute different results*.
+
+Validated on Linux (CPU; CUDA on an RTX 4060 Ti and an RTX 6000 Ada; HIP
+on an MI210; Level Zero on an Intel Max 1100) and macOS (CPU and Metal on
+an M1 Max), both id widths of the dataset tests, together with the 57
+example checks in tack-examples.
+
+### Added
+
+#### The dataset API
+
+- **`tack.data`** (in `tack-vis`): meshes, the fields on them, and the
+  algorithms that work on both. It is described in the User's Guide
+  chapter *Datasets and visualization* and the *Dataset API* reference.
+  - **Topologies:** structured grids; unstructured meshes of the linear
+    cells, vertex to pyramid; and polyhedra, polygons and polylines.
+  - **Fields:** a field is a space (`H1` of order 1 or 2, `L2`, `Constant`,
+    `Values`) and its values. The values may be an implicit array that
+    stores nothing, such as a grid's coordinates.
+  - **Sets:** named sets of points, cells or faces, carried through
+    filters.
+  - **64-bit ids** wherever a mesh needs them.
+  - **Algorithms:** over fifty, among them contour (and López's on
+    polyhedra), slice, clip, threshold, external faces, gradients,
+    `project` between spaces, the cell locator and probe, advection and
+    streamlines. All run on every backend.
+  - **Your own kernels** see a mesh as the built-in ones do, through
+    `for_each` and per-shape views.
+  - **Interop:** `tack.interop.vtk` converts whole datasets with VTK, and
+    `tack.interop.mfem` reads MFEM meshes and grid functions.
+- **What the algorithms promise.** They check field ownership before
+  dispatch, including empty inputs, and reject locators built for another
+  dataset. `dot` and `cross` require matching dtypes, as `composite` does;
+  use `Cast` for conversion. Fractional computations convert integer
+  storage before arithmetic, so clipping differences do not overflow;
+  integer magnitude and logarithms return floating point fields.
+  Computation uses f64 for f64 input, otherwise f32, with the
+  corresponding precision limits. `statistics` sums integer values exactly
+  in f64 (to 2^53) instead of wrapping; its moments use the floating
+  precision. Face positions refresh after editing L2 geometry. Shrink
+  accepts quadratic geometry through its corner values, and probe samples
+  a quadratic target's points while keeping its geometry. Advection and
+  host-point probing preserve the source's coordinate precision.
+
+#### Device classes
+
+- A `@tack.device_class` object may hold others as attributes, to any
+  depth: `self.base.get(k)` in a method, `obj.base.step` in a kernel. The
+  tree is one template argument. Composed objects inline to the code one
+  would write by hand, and a class holding itself is refused.
+- A kernel can loop over a `@tack.device_class` object: `for c in cells:`.
+  The class declares the attributes the loop runs through as
+  `__tack_iterate__`, one to three names, fastest first. One makes `c` an
+  integer over `range`; two or three make `c` the vector of indices over
+  an `ndrange`, which as the parallel loop launches in its own shape. The
+  object's methods take `c` as it comes, so one kernel runs over objects
+  that iterate differently. See *Iterating an Object* in the User's Guide.
+
+#### Runtime and algorithms
+
+- `tack.sync()` waits for every launch queued on the current backend. It
+  is a no-op where launches complete before returning.
+- `exclusive_scan` and `inclusive_scan` take `total=False` to skip the
+  total: nothing is read back to the host, so on Metal the scan stays
+  queued with whatever follows. The radix sort's passes and the dataset
+  algorithms that only need offsets use it; a 1M-key sort went from 10.7
+  to 9.4 ms on CPU and from 7.7 to 6.3 ms on Metal.
+- `argsort` and `sort_by_key` take more than 2^31 - 1 keys, with i64
+  indices beyond that count; `argsort(..., index_dtype=tack.i64)` asks
+  for them at any size.
+
+### Changed
 
 - `@tack.data_oriented` is now `@tack.device_class`, a name for what it
   does: its objects can be kernel arguments, and kernels specialize on
   their class. `@tack.data_oriented` remains as an alias, so existing
   code (and code written for Taichi) runs unchanged.
 - The first visualization worklets moved to `tack.deprecated`, superseded
-  by `tack.data` (below):
+  by `tack.data` (see *Added*):
   - `flying_edges`, `compute_normals`, `cell_to_point` and `amr_blanking`
     are now under `tack.deprecated.algorithms`;
   - the finite-element helpers in `tack.fe` are now `tack.deprecated.fe`.
@@ -58,60 +172,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   NVRTC 13.2). The warning names the remedy: the `nvidia-cuda-nvrtc`
   wheel for a CUDA version no newer than the driver's, which cuda-python
   finds before a system toolkit.
-
-### Added
-
-- Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
-  field and array index in every kernel, one dimension at a time. An
-  out-of-bounds access is skipped (a load gives 0) and the call raises
-  `IndexError` naming the access, its file and line, the index and the
-  extent, and how many more were skipped; an access inside a device
-  function names it. It runs on every backend, compiles separately from
-  normal kernels, and does not compile per field length. Without it,
-  generated code is unchanged.
-
-- `exclusive_scan` and `inclusive_scan` take `total=False` to skip the
-  total: nothing is read back to the host, so on Metal the scan stays
-  queued with whatever follows. The radix sort's passes and the dataset
-  algorithms that only need offsets use it; a 1M-key sort went from 10.7
-  to 9.4 ms on CPU and from 7.7 to 6.3 ms on Metal.
-
-- **`tack.data`, the dataset API** (in `tack-vis`): meshes, the fields on
-  them, and the algorithms that work on both. It is described in the
-  User's Guide chapter *Datasets and visualization* and the
-  *Dataset API* reference.
-  - **Topologies:** structured grids; unstructured meshes of the linear
-    cells, vertex to pyramid; and polyhedra, polygons and polylines.
-  - **Fields:** a field is a space (`H1` of order 1 or 2, `L2`, `Constant`,
-    `Values`) and its values. The values may be an implicit array that
-    stores nothing, such as a grid's coordinates.
-  - **Sets:** named sets of points, cells or faces, carried through
-    filters.
-  - **64-bit ids** wherever a mesh needs them.
-  - **Algorithms:** over fifty, among them contour (and López's on
-    polyhedra), slice, clip, threshold, external faces, gradients,
-    `project` between spaces, the cell locator and probe, advection and
-    streamlines. All run on every backend.
-  - **Your own kernels** see a mesh as the built-in ones do, through
-    `for_each` and per-shape views.
-  - **Interop:** `tack.interop.vtk` converts whole datasets with VTK, and
-    `tack.interop.mfem` reads MFEM meshes and grid functions.
-- A `@tack.device_class` object may hold others as attributes, to any
-  depth: `self.base.get(k)` in a method, `obj.base.step` in a kernel. The
-  tree is one template argument. Composed objects inline to the code one
-  would write by hand, and a class holding itself is refused.
-- `tack.sync()` waits for every launch queued on the current backend. It
-  is a no-op where launches complete before returning.
-- `argsort` and `sort_by_key` take more than 2^31 - 1 keys, with i64
-  indices beyond that count; `argsort(..., index_dtype=tack.i64)` asks
-  for them at any size.
-- A kernel can loop over a `@tack.device_class` object: `for c in cells:`.
-  The class declares the attributes the loop runs through as
-  `__tack_iterate__`, one to three names, fastest first. One makes `c` an
-  integer over `range`; two or three make `c` the vector of indices over
-  an `ndrange`, which as the parallel loop launches in its own shape. The
-  object's methods take `c` as it comes, so one kernel runs over objects
-  that iterate differently. See *Iterating an Object* in the User's Guide.
 
 ### Kernels that now compute different results
 
@@ -198,22 +258,6 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixes with no source change needed
 
-- `tack.interop.vtk.dataset_to_vtk` writes an order-2 `H1` field's values
-  at the points, one tuple per point of the linear grid; it attached all
-  of the field's nodes, which VTK then could not read back.
-  `vtk_to_dataset` reads an empty `vtkUnstructuredGrid` that has no
-  `vtkPoints`, and `mfem_to_dataset` an MFEM mesh with no vertices; both
-  raised.
-
-- On Metal, a field made before `tack.init` was called again could be
-  written by the host while launches that read it were still queued:
-  its host access waited for the backend it was made on, whose queue was
-  empty, not for the new one where its launches now queue. A program
-  that set a parameter field between launches computed with later values
-  (tack-examples' mpm128 drifted from its reference from the first
-  steps). Every Metal field's host access now waits for every live
-  Metal backend. This came with queued Metal launches, unreleased.
-
 - Metal buffers, textures, libraries and pipelines are freed.
   pyobjc-framework-Metal 12.1 describes Metal's `new...` methods without
   their ownership, so nothing Tack created was ever released.
@@ -239,6 +283,49 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   from the first compile on Python's default text encoding was ASCII, and
   `open`, `read_text` or `write_text` without an encoding failed on any
   non-ASCII character. The compile now restores the thread's locale.
+
+### Known limitations
+
+- **Dataset algorithms scale weakly with CPU threads on x86 Linux.** One
+  thread is faster than VTK on one, but the multi-pass algorithms
+  (contour, slice, threshold), the point and cell data conversions and
+  external faces gain little from more threads. From 1 to 8 threads at 1M
+  cells the median speedup was 1.05× on a Xeon E5-2650 and 1.5× on an
+  EPYC 7453, where VTK got 2.4× and 3.3×; on the EPYC, 28 threads were
+  slower than 8. On an M1 Max contour, slice and threshold scale 1.6–1.8×.
+  On CUDA they were faster than VTK on all 28 of the EPYC's cores in every
+  case at 1M cells.
+- **ROCm 7.0 and 7.1 miscompile some integer code on HIP.** Their device
+  compiler (AMD clang 20, inside hipRTC) can evaluate a 64-bit signed
+  comparison wrongly when it sits inside a long integer expression; the
+  kernel returns a wrong value with no error. Tack's generated source is
+  correct, and right on CUDA, as host C++ and under ROCm's clang 23. Use
+  a newer ROCm where possible; on 7.0 and 7.1, check integer-heavy kernels
+  against the CPU backend.
+- **CUDA with NVRTC older than 13 can compute wrong results** (see
+  *Changed*); Tack warns at the first compile.
+- **HIP on gfx90a (MI200) samples 3D textures in software.** The device
+  reports image support but refuses linear 3D filtering, which is all
+  `Texture3D` offers; Tack detects this at init and falls back. MI300
+  parts have no texture hardware and always sample in software.
+- **Metal compiles a kernel whose sequential loop stores to a field in a
+  function of its own**, to avoid an Apple GPU compiler fault (0.3.0's
+  *Fixes*). The fault's mechanism is not known, so the rule is wider than
+  the trigger; it costs under 3% on the kernels that take it.
+- **Not in this release:** dataset fields of order above 2, struct types
+  (use one field per member), a 3×3 SVD (2×2 only, in the examples),
+  swizzles such as `v.xy` or `v.yzw` (write `tack.Vector([v.y, v.z,
+  v.w])`), and automatic differentiation.
+- **Windows has not been revalidated.**
+- **HIP leaks one hipRTC program object per compiled variant.**
+  `hiprtcDestroyProgram` segfaults in hip-python (still in 7.2.2), so Tack
+  does not call it; the variant cache keeps compilations rare.
+- **Level Zero relies on two workarounds for Intel driver defects:** f64
+  `floor`/`ceil` restore the sign of zero with `copysign`, and narrow signed
+  negation and `abs` are emitted as non-inlined helpers.
+- **Raster depth bias:** in mixed scenes, path-traced surfaces are pushed
+  back by a fixed 0.5% relative depth bias so a wireframe lying on its own
+  surface is drawn; it can drop wire pixels at grazing angles.
 
 ## 0.3.0 — 2026-10-07
 

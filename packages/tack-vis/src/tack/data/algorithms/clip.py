@@ -6,7 +6,13 @@ import tack
 from tack.algorithms.scan import exclusive_scan
 from tack.data import _clip_tables as tables
 from tack.data import arrays, ids, shapes
-from tack.data.algorithms._common import _close, _converted, _field, _floating_dtype
+from tack.data.algorithms._common import (
+    _close,
+    _converted,
+    _crossing,
+    _field,
+    _floating_dtype,
+)
 from tack.data.algorithms.implicit_values import implicit_values
 from tack.data.buckets import bucket_order, run_offsets
 from tack.data.carry import Interpolate, Pieces, _point_values, carry
@@ -187,7 +193,7 @@ def _resolve_points(keys, order, run_offsets, slots, values, value, connectivity
         ends[r] = key
         weights[r] = 0.0
         if a != b:
-            weights[r] = (value - values[a]) / (values[b] - values[a])
+            weights[r] = _crossing(value, values[a], values[b])
         for i in range(run_offsets[r], run_offsets[r + 1]):
             slot = slots[order[i]]
             if slot >= 0:

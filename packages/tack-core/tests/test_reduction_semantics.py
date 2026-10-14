@@ -11,6 +11,8 @@ import tack
 from tack.codegen.reductions import f32_reduction_helpers, field_reduction_source
 from tack.lang.field import Field, NumpyBuffer
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 def _field(values, dtype=tack.f32):
     values = np.asarray(values, dtype=dtype.numpy_dtype)

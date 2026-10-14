@@ -20,13 +20,49 @@ All share the `tack` namespace via `pkgutil.extend_path`.
 
 ```bash
 uv sync --extra cpu --extra dev                             # install everything the tests need
-uv run pytest                                                # run all tests
-uv run pytest packages/tack-core/tests/test_cpu_jit.py        # run one test file
+uv sync --extra cpu --extra dev --extra interop             # ...and VTK and MFEM, which the dataset tests compare against
+uv run pytest packages/tack-core/tests/test_cpu_jit.py        # the files your change touches
+uv run pytest -m quick -n 4                                   # the inner-loop set, 80 s on 4 workers
+uv run pytest -n auto                                         # the whole suite across processes
+uv run pytest                                                 # the whole suite, serially (CI's way)
 uv run pytest packages/tack-core/tests/test_hip.py            # run HIP backend tests
 uv run pytest -k "test_saxpy"                                # run tests matching a pattern
 uv run python packages/tack-core/examples/validate_all.py     # validation suite
 uv run python packages/tack-core/examples/01_hello_tack.py --arch hip  # example on backend
 ```
+
+### Tests, in three tiers
+
+Run the smallest tier that covers the change; the whole suite is for a
+validation round or a merge gate, once per machine, not for iteration.
+
+1. **The files the change touches.** Seconds to a minute.
+2. **`-m quick`**: a module per area of the code (dispatch, the variant
+   cache, each backend's main file, templates, the dataset API and its
+   algorithms, rendering's dispatch), marked `pytestmark = pytest.mark.quick`
+   at module level; about 1900 tests, ~300 s of test time, 80 s on four
+   workers (a 16-thread Xeon with an RTX 4060 Ti). When a new area gets a
+   test module, mark it quick if it runs in under ten seconds; the heavy
+   modules (polyhedra, implicit, MFEM interop, flow, clip, the sort, the
+   kernel-cache recycle test) stay out so the tier stays quick.
+   `test_dataset_api.py` is the one exception, 180 s of the tier's 300:
+   it is the dataset API's main test and its cost is spread over 169
+   tests at a second each, so it only costs a second or so of wall time
+   per worker.
+3. **The whole suite**, with `-n auto` (pytest-xdist, in the `dev` extra):
+   6000 tests, 33 minutes of test time, 4:30 on eight workers here, with
+   the same counts as the serial run. Tests are handed out one at a time
+   (`--dist load`, xdist's default); no module depends on its tests'
+   order. Every xdist worker is a process with its own backends and CUDA
+   context, so GPU memory scales with the worker count. The `timing`
+   tests skip themselves on a busy host, so a parallel run skips them;
+   run `-m timing` alone when they matter.
+
+Do not edit a `.py` file while a run that imported it is still going:
+`linecache` reloads the changed file and every source lookup after that
+reads the wrong line, in pytest (`???` in the traceback) and in Tack
+(`@tack.func must decorate a function, got <class 'ast.Assign'>`), which
+looks like order dependence and is not.
 
 Examples accept `--arch` to select the backend. `09_shared_memory.py`
 requires an explicit GPU choice (`metal|cuda|hip|level_zero`); CPU has no

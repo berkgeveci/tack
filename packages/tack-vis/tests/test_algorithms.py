@@ -6,6 +6,8 @@ import pytest
 import tack
 from tack import algorithms
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 def test_exclusive_scan_basic(backend):
     """Exclusive scan: output[i] = sum(input[0..i-1])."""

@@ -6,6 +6,8 @@ import pytest
 import tack
 from tack.lang.source_validation import UnsupportedSyntaxError
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 N = 5
 _RNG = np.random.default_rng(11)
 A2 = (_RNG.standard_normal((N, 2, 2)) + 2.0 * np.eye(2)).astype(np.float32)

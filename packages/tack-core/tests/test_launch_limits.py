@@ -12,6 +12,8 @@ import tack
 from tack.runtime.dispatch import get_backend
 from tack.runtime.kernel_utils import check_launch_size
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 @tack.kernel
 def _fill_ones(out):

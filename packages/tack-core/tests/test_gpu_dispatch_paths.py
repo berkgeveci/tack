@@ -22,6 +22,8 @@ import textwrap
 
 import pytest
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 BACKENDS = {
     "cuda": {
         "cls": "from tack.runtime.cuda_backend import CUDABackend as Backend",

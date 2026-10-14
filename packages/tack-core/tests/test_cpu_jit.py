@@ -5,6 +5,8 @@ import pytest
 
 import tack
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 @pytest.fixture(autouse=True)
 def init_cpu():

@@ -16,6 +16,8 @@ from tack.codegen.msl_gen import generate_msl_source
 from tack.codegen.opencl_gen import generate_opencl_source
 from tack.lang.inspect_kernel import _prepare_ir
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 def _field(values, dtype):
     values = np.asarray(values, dtype=dtype.numpy_dtype)
