@@ -249,6 +249,9 @@ def _get_device_info(field):
         return kDLCUDA, 0, data_ptr
 
     if cls_name == "HIPBuffer":
+        # As for CUDA: complete the queued launches now, and every later
+        # one that uses it.
+        buf.share()
         data_ptr = int(buf._device_ptr)
         return kDLROCM, 0, data_ptr
 
