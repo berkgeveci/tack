@@ -626,6 +626,10 @@ def test_load_bundle_says_why_it_reads_nothing(tmp_path, problem, says):
             path.chmod(0o666)
         elif problem == "damaged":
             path.write_bytes(b"not a bundle")
+            # Private, as a bundle Tack wrote is: under a umask of 002 the
+            # file would be group-writable, and the cache refuses it as
+            # shared before it reads a byte.
+            path.chmod(0o600)
         with pytest.warns(RuntimeWarning, match=f"{says}.* Every kernel will be compiled"):
             assert disk_cache.load_bundle(comm=_FakeComm(0)) == 0
         with pytest.warns(RuntimeWarning, match=says):
