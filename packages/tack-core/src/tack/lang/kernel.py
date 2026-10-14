@@ -174,14 +174,8 @@ class Kernel:
             with _transform_lock:
                 # Re-check: another thread may have built it while we waited.
                 if key not in self._ir_cache:
-                    from tack.lang.template_rewrite import rewrite_templates
-                    rewritten_ast, resolved_funcs = rewrite_templates(
-                        self._ast, template_args)
-                    self._ir_cache[key] = _verified_transform(
-                        rewritten_ast, vector_fields=vector_fields,
-                        texture_fields=texture_fields, python_func=self.func,
-                        template_funcs=resolved_funcs, debug=debug,
-                    )
+                    self._ir_cache[key] = self._lower(vector_fields, texture_fields,
+                                                      template_args, debug)
                     for token in _key_tokens(key):
                         token.kernels.add(self)
                 return self._ir_cache[key]
@@ -189,7 +183,7 @@ class Kernel:
             if self._ir is None:
                 with _transform_lock:
                     if self._ir is None:
-                        self._ir = _verified_transform(self._ast, python_func=self.func)
+                        self._ir = self._lower(None, None, None)
             return self._ir
         key = self._make_cache_key(vector_fields, None, texture_fields, debug)
         cached = self._ir_cache.get(key)
@@ -197,11 +191,26 @@ class Kernel:
             return cached
         with _transform_lock:
             if key not in self._ir_cache:
-                self._ir_cache[key] = _verified_transform(
-                    self._ast, vector_fields=vector_fields,
-                    texture_fields=texture_fields, python_func=self.func, debug=debug,
-                )
+                self._ir_cache[key] = self._lower(vector_fields, texture_fields, None, debug)
             return self._ir_cache[key]
+
+    def _lower(self, vector_fields, texture_fields, template_args, debug=False):
+        """Lower one specialization, or read it from the disk cache."""
+        from tack.runtime.disk_cache import lowered
+
+        def lower():
+            if not template_args:
+                return _verified_transform(
+                    self._ast, vector_fields=vector_fields,
+                    texture_fields=texture_fields, python_func=self.func, debug=debug)
+            from tack.lang.template_rewrite import rewrite_templates
+            rewritten_ast, resolved_funcs = rewrite_templates(self._ast, template_args)
+            return _verified_transform(
+                rewritten_ast, vector_fields=vector_fields,
+                texture_fields=texture_fields, python_func=self.func,
+                template_funcs=resolved_funcs, debug=debug)
+
+        return lowered(self, vector_fields, texture_fields, template_args, lower, debug)
 
     def _make_cache_key(self, vector_fields, template_args, texture_fields=None, debug=False):
         """Build a cache key that distinguishes different specializations."""

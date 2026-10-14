@@ -258,6 +258,40 @@ CUDA's context comes from `cuCtxCreate` and is current only on the thread
 that called `tack.init`; another thread must make it current first, or
 its dispatch fails with `CUDA_ERROR_INVALID_CONTEXT`.
 
+### Disk cache
+
+`runtime/disk_cache.py` (public `tack.cache`, `python -m tack.cache`)
+stores lowered IR (`.ir`, in `Kernel._lower`) and compiled variants
+(`.variant`, in `_resolve_variant` on an in-memory miss) under
+`TACK_CACHE_DIR/v1-<tack fingerprint>/`. Keys are by content, never
+identity: kernel source, closure fingerprints, specialization, template
+content (MRO names, `@tack.func` sources, constants), Tack's fingerprint
+(installed `RECORD`s or the source tree). `CallBindings.resolve` reports
+each resolution to the thread's `_Recorder`; an `.ir` entry is used only if
+every recorded name re-resolves to the same fingerprint. Anything lowering
+reads from Python must go through `CallBindings` or into the key, or a
+stale entry runs. Backends opt into `.variant` with `cache_target()`,
+`variant_artifact()` and `load_variant(ir_func, artifact, effective_args)`
+(CPU: MCJIT object code; Metal: MSL; CUDA: PTX, loaded with
+`cuModuleLoadData`, its target naming the device and compute capability,
+the driver that compiles the PTX, NVRTC and its options; Level Zero: the
+native binary (`zeModuleGetNativeBinary`) and the SPIR-V, loaded with
+`zeModuleCreate` as `ZE_MODULE_FORMAT_NATIVE`, from the SPIR-V if the
+driver refuses the binary (`native_refused` in the stats), its target
+naming the device and its IP version, the driver, ocloc's version, the
+ocloc and module options, and f64 support. From SPIR-V, IGC's
+finalization is about 50 ms a kernel unless the driver's own
+`neo_compiler_cache` has it). A GPU payload's
+scalar pack buffers are device memory, so `load_variant` recreates them
+from the call's `effective_args`; CPU and Metal ignore that argument. HIP
+still returns `None` from `cache_target()`. Atomic rename writes, checksummed entries, owner-only directories;
+under MPI the default mode reads one bundle and writes nothing (a Slurm
+batch script is not MPI: Slurm's size is `SLURM_STEP_NUM_TASKS`). Entries
+of every version share `TACK_CACHE_SIZE` (1 GiB): a writer prunes by mtime
+at most hourly (`.pruned` mark), and write-mode hits refresh mtime. The test
+suite runs with `TACK_CACHE=off` (`conftest.py`); `test_disk_cache.py` uses
+subprocesses. `TACK_CACHE=write pytest`, run twice, is the end-to-end check.
+
 ### Field dimensions
 
 `field.shape[k]` and `len(field)` both lower to `IRDimSize` in `ast_transform.py`, which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).

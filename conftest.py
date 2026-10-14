@@ -37,7 +37,14 @@ wrong twice over: it named one backend for a property several share, and it
 went stale the moment another arrived.
 """
 
+import os
+
 import pytest
+
+# Tests compile from scratch: entries a previous run stored on disk would
+# hide a test that patches the compiler. test_disk_cache.py turns the cache
+# on for itself; `TACK_CACHE=write pytest` runs the suite through it.
+os.environ.setdefault("TACK_CACHE", "off")
 
 import tack
 
@@ -86,6 +93,16 @@ def backend(request):
     """Run a test once per available backend."""
     tack.init(arch=getattr(tack, request.param))
     return request.param
+
+
+@pytest.fixture
+def no_disk_cache():
+    """For a test that counts compile work in this process, which a disk-cache
+    hit would skip when the suite runs with the cache on."""
+    from tack import cache
+    cache.configure(mode="off")
+    yield
+    cache.configure()
 
 
 @pytest.fixture(params=f64_backends)

@@ -21,6 +21,10 @@ _METHODS = {'dot', 'cross', 'norm', 'norm_sqr', 'normalized', 'sum', 'min', 'max
 class CallBindings:
     def __init__(self, function, python_func=None, bindings=None, template_funcs=None):
         self.globals = python_func.__globals__ if python_func is not None else (bindings or {})
+        # Whose namespace this is, for the disk cache's record of what each
+        # name resolved to (None for an explicit namespace, which it cannot
+        # check in another process).
+        self.owner = python_func
         self.nonlocals = {}
         if python_func is not None and python_func.__closure__:
             for name, cell in zip(python_func.__code__.co_freevars, python_func.__closure__):
@@ -34,6 +38,14 @@ class CallBindings:
         self.template_funcs = template_funcs or {}
 
     def resolve(self, node):
+        value = self._resolve(node)
+        from tack.runtime.disk_cache import recorder
+        rec = recorder()
+        if rec is not None:
+            rec.note(self.owner, node, value)
+        return value
+
+    def _resolve(self, node):
         if isinstance(node, ast.Name):
             if getattr(node, '_tack_template_call', False):
                 return self.template_funcs.get(node.id, _UNBOUND)

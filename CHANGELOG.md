@@ -7,6 +7,23 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Compiled kernels are kept on disk, so a later process starts warm: the
+  first contour of a 21³ grid in a new process went from 445 ms (CPU) and
+  1.1 s (Metal) to 31 ms on an M1 Max. The lowered kernel and each
+  compiled variant are stored, keyed by content; an edited kernel, device
+  function, constant or template class, another Tack or another machine
+  compiles again. `TACK_CACHE_DIR` chooses the directory (by default the
+  platform's per-user cache directory) and `TACK_CACHE=off` turns it off;
+  `tack.cache.configure()` does either from Python. For MPI jobs on a
+  shared file system, `python -m tack.cache pack` gathers a warm-up run's
+  entries into one bundle, which each rank reads once (or rank 0 reads and
+  broadcasts, `tack.cache.load_bundle(comm=...)`); under MPI nothing is
+  looked up or written per kernel. The entries take at most
+  `TACK_CACHE_SIZE` (1 GiB by default); the least recently used go first.
+  CPU, Metal, CUDA and Level Zero store compiled code (CUDA its PTX, Level
+  Zero its native binary, with the SPIR-V to fall back on); HIP stores the
+  lowered kernels. Debug mode's kernels are stored apart from the others.
+  See *The Kernel Cache* in the User's Guide.
 - Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
   field and array index in every kernel, one dimension at a time. An
   out-of-bounds access is skipped (a load gives 0) and the call raises
