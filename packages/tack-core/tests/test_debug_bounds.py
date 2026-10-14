@@ -14,6 +14,8 @@ import pytest
 
 import tack
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 _FILE = __file__
 
 
@@ -300,10 +302,22 @@ def test_a_wrong_argument_count_names_the_kernels_own_parameters(debug):
         _shift(_field(np.zeros(4)), _field(np.zeros(4)))
 
 
+def _bind_device_to_this_thread():
+    """CUDA's context is current only on the thread that initialized Tack;
+    a new thread must make it current before it allocates or launches."""
+    from tack.runtime.dispatch import get_backend
+    backend = get_backend()
+    if backend.name == "cuda":
+        from cuda.bindings import driver
+        (err,) = driver.cuCtxSetCurrent(backend._context)
+        assert err == driver.CUresult.CUDA_SUCCESS, err
+
+
 def test_threads_report_their_own_launches(debug):
     errors = {}
 
     def run(k):
+        _bind_device_to_this_thread()
         try:
             for _ in range(20):
                 _shift(_field(np.arange(8)), _field(np.zeros(8)), k)
