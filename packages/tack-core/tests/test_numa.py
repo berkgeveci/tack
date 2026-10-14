@@ -14,7 +14,6 @@ import ctypes.util
 import platform
 from collections import Counter
 
-import numpy as np
 import pytest
 
 import tack
@@ -89,13 +88,36 @@ def test_policy_reads_back_as_interleave():
 
 @requires_numa
 def test_interleave_context_spreads_pages():
-    """The context manager must actually spread pages, not merely be entered."""
-    nbytes = 64 << 20
-    with cpu._NumaInterleave():
-        arr = np.empty(nbytes // 4, dtype=np.float32)
-        arr.fill(0)  # fault the pages under the policy
-    hist = pages_per_node(arr.ctypes.data, nbytes)
-    assert len(hist) > 1, f"all pages on one node: {dict(hist)}"
+    """The context manager must actually spread pages, not merely be entered.
+
+    In a fresh process: a block this size that the process freed before
+    would come back with its pages already placed (the CPU backend tells
+    glibc to keep them), and the policy only places pages faulted in."""
+    import os
+    import subprocess
+    import sys
+    code = _INTERLEAVE_CHECK.format(tests=os.path.dirname(os.path.abspath(__file__)))
+    run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         timeout=300)
+    assert run.returncode == 0 and run.stdout.strip().endswith("ok"), \
+        (run.stdout + run.stderr)[-1500:]
+
+
+_INTERLEAVE_CHECK = """
+import sys
+sys.path.insert(0, {tests!r})
+import numpy as np
+from tack.runtime import cpu
+from test_numa import pages_per_node
+
+nbytes = 64 << 20
+with cpu._NumaInterleave():
+    arr = np.empty(nbytes // 4, dtype=np.float32)
+    arr.fill(0)  # fault the pages under the policy
+hist = pages_per_node(arr.ctypes.data, nbytes)
+assert len(hist) > 1, f"all pages on one node: {{dict(hist)}}"
+print("ok")
+"""
 
 
 @tack.kernel
