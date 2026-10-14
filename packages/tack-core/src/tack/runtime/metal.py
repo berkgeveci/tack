@@ -541,12 +541,31 @@ class MetalBackend(Backend):
 
     def synchronize(self):
         """Commit the open batch and wait for every queued launch. A launch's
-        error surfaces here, at the next host access, rather than at its call."""
+        error surfaces here, at the next host access, rather than at its call.
+
+        The wait itself is outside ``_batch_lock``, so other threads keep
+        launching while one waits: `Field.to_numpy_async` reads in a worker
+        thread, and an event loop that launches meanwhile would otherwise
+        block on the lock until the read was done. Launches only remove
+        command buffers from the front (`_wait_oldest`), so the ones waited
+        for here are still the front of ``_committed``, less any a launch
+        has already waited for, when they are dropped.
+        """
         with self._batch_lock:
             if self._open is not None:
                 self._commit_open()
-            while self._committed:
-                self._wait_oldest()
+            pending = [command_buffer for command_buffer, _keep in self._committed]
+        for command_buffer in pending:
+            command_buffer.waitUntilCompleted()
+        waited = {id(command_buffer) for command_buffer in pending}
+        error = None
+        with self._batch_lock:
+            while self._committed and id(self._committed[0][0]) in waited:
+                command_buffer, _keep = self._committed.popleft()
+                if error is None:
+                    error = command_buffer.error()
+        if error is not None:
+            raise RuntimeError(f"Metal compute error: {error}")
 
     def async_marker(self):
         """The last command buffer committed, after committing the open batch,
