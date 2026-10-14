@@ -4,17 +4,20 @@ Pipeline:
     Tack IR → HIP C source → hipRTC (code object) → hipModuleLoad → hipLaunchKernel
 
 Fields are device-resident: ``tack.field()`` allocates a device buffer via
-``hipMalloc``.  Transfers are explicit:
+``hipMallocAsync``.  Transfers are explicit:
 
-    field.from_numpy(arr)   # host → device (hipMemcpyHtoD)
-    arr = field.to_numpy()  # device → host (hipMemcpyDtoH)
+    field.from_numpy(arr)   # host → device, queued
+    arr = field.to_numpy()  # device → host, queued and waited for
 
-No per-dispatch copies — data stays on the GPU between kernel calls.
+No per-dispatch copies — data stays on the GPU between kernel calls. Launches,
+fills and copies go through one stream per device, in order, and return once
+queued; the host waits where it reads a field or calls ``tack.sync()``.
 
 Requires: hip-python (``pip install 'tack-core[hip]'``)
 """
 
 import ctypes
+import threading
 
 import numpy as np
 
@@ -37,6 +40,7 @@ from tack.runtime.kernel_utils import (
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _HIP_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
+from hip import LONG_VERSION as _HIP_PYTHON_VERSION
 from hip import hip, hiprtc
 
 from tack.codegen.hip_gen import generate_hip_source
@@ -78,26 +82,110 @@ def _check_hiprtc(result):
         raise RuntimeError(f"hipRTC error: {err}")
 
 
+class _Queue:
+    """A device's queue: every launch, fill and copy Tack makes on the device
+    goes through this one stream, in order, and returns once it is queued.
+
+    The stream is a blocking one, so it stays ordered with the null stream
+    that synchronous HIP calls (and other libraries) use. Memory comes from
+    the device's pool in stream order (``hipMallocAsync``/``hipFreeAsync``),
+    so a field Python drops while a queued launch still uses it is freed
+    after that launch; a device without pools allocates with ``hipMalloc``,
+    whose ``hipFree`` waits for the device.
+    """
+
+    __slots__ = ("pooled", "stream")
+
+    def __init__(self, device):
+        err, self.stream = hip.hipStreamCreate()
+        _check_hip(err)
+        err, pools = hip.hipDeviceGetAttribute(
+            hip.hipDeviceAttribute_t.hipDeviceAttributeMemoryPoolsSupported, device)
+        _check_hip(err)
+        self.pooled = bool(pools)
+        if self.pooled:
+            # Keep freed memory in the pool rather than returning it to the
+            # device at every synchronization: a filter allocates and drops
+            # dozens of temporaries, and the pool hands them back out at once.
+            try:
+                err, pool = hip.hipDeviceGetDefaultMemPool(device)
+                _check_hip(err)
+                _check_hip(hip.hipMemPoolSetAttribute(
+                    pool, hip.hipMemPoolAttr.hipMemPoolAttrReleaseThreshold,
+                    ctypes.c_uint64(2**64 - 1)))
+            except Exception:
+                pass                        # the pool releases at syncs; still correct
+
+
+# One queue per device, made on first use, with the device current.
+_QUEUES = {}
+_QUEUES_LOCK = threading.Lock()
+
+
+def _queue(device=None):
+    """The queue of ``device``, or of the calling thread's current device."""
+    if device is None:
+        err, device = hip.hipGetDevice()
+        _check_hip(err)
+    queue = _QUEUES.get(device)
+    if queue is None:
+        with _QUEUES_LOCK:
+            queue = _QUEUES.get(device)
+            if queue is None:
+                queue = _QUEUES[device] = _Queue(device)
+    return queue
+
+
 class HIPBuffer(DeviceBuffer):
     """Device-resident buffer backed by a HIP device pointer.
 
-    Data lives on the GPU.  ``from_numpy`` copies host→device,
-    ``to_numpy`` copies device→host.
+    Data lives on the GPU. Everything that touches it goes through its
+    device's stream, in order with the launches: ``from_numpy`` and ``fill``
+    are queued and return at once, ``to_numpy`` and ``read_range`` are
+    queued and waited for. The memory is stream-ordered too, so a field
+    Python drops while a queued launch still uses it is freed after that
+    launch.
+
+    A host write from pageable memory is safe to queue: HIP stages a small
+    one before returning, and waits for the stream before a large one (on
+    ROCm 7.1, 16 KB was staged and 4 MB waited), so the array may go once
+    ``from_numpy`` returns.
     """
 
     backend_name = "hip"
+    # Memory handed outside Tack (DLPack, a wrapped pointer) may be read
+    # with no Tack call between: a launch that uses it completes before
+    # returning, as on Metal and CUDA.
+    _shared = False
 
-    def __init__(self, numpy_dtype, shape):
+    def __init__(self, numpy_dtype, shape, queue=None):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
+        self._queue = queue = queue or _queue()
         # hip-python returns None for a zero-byte request, which a launch
         # cannot pass as a pointer; an empty field gets one byte it never
         # reads, as on CUDA and Level Zero.
-        err, self._device_ptr = hip.hipMalloc(max(self._nbytes, 1))
+        if queue.pooled:
+            err, self._device_ptr = hip.hipMallocAsync(max(self._nbytes, 1), queue.stream)
+        else:
+            err, self._device_ptr = hip.hipMalloc(max(self._nbytes, 1))
         _check_hip(err)
-        # Zero-initialise
-        _check_hip(hip.hipMemset(self._device_ptr, 0, self._nbytes))
+        _check_hip(hip.hipMemsetAsync(self._device_ptr, 0, self._nbytes, queue.stream))
+
+    @property
+    def _stream(self):
+        return self._queue.stream
+
+    def synchronize(self):
+        """Wait for every queued launch, fill and copy on this device."""
+        _check_hip(hip.hipStreamSynchronize(self._stream))
+
+    def share(self):
+        """Hand this memory outside Tack: wait for the queued work now, and
+        have every later launch that uses it complete before returning."""
+        self._shared = True
+        self.synchronize()
 
     @property
     def address(self) -> int:
@@ -108,26 +196,31 @@ class HIPBuffer(DeviceBuffer):
         return self._device_ptr
 
     def from_numpy(self, arr: np.ndarray):
+        # Queued after the launches before it, which may still read the old
+        # contents.
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        _check_hip(hip.hipMemcpy(
+        _check_hip(hip.hipMemcpyAsync(
             self._device_ptr, src, self._nbytes,
-            hip.hipMemcpyKind.hipMemcpyHostToDevice,
+            hip.hipMemcpyKind.hipMemcpyHostToDevice, self._stream,
         ))
 
     def to_numpy(self) -> np.ndarray:
         out = np.empty(self._shape, dtype=self._numpy_dtype)
-        _check_hip(hip.hipMemcpy(
+        stream = self._stream
+        _check_hip(hip.hipMemcpyAsync(
             out, self._device_ptr, self._nbytes,
-            hip.hipMemcpyKind.hipMemcpyDeviceToHost,
+            hip.hipMemcpyKind.hipMemcpyDeviceToHost, stream,
         ))
+        _check_hip(hip.hipStreamSynchronize(stream))
         return out
 
     def read_range(self, start: int, count: int) -> np.ndarray:
         """Copy elements ``[start, start + count)`` to the host.
 
-        One ``hipMemcpy`` of just those bytes, so ``field[i]`` on the host
-        moves one element rather than the whole field. The range is checked
-        here because a device copy past the allocation is not caught by NumPy.
+        One copy of just those bytes, so ``field[i]`` on the host moves one
+        element rather than the whole field, queued after the launches
+        before it and waited for. The range is checked here because a
+        device copy past the allocation is not caught by NumPy.
         """
         itemsize = self._numpy_dtype.itemsize
         if start < 0 or count < 0 or (start + count) * itemsize > self._nbytes:
@@ -136,10 +229,12 @@ class HIPBuffer(DeviceBuffer):
                 f"{self._nbytes // itemsize} elements")
         out = np.empty(count, dtype=self._numpy_dtype)
         if count:
-            _check_hip(hip.hipMemcpy(
+            stream = self._stream
+            _check_hip(hip.hipMemcpyAsync(
                 out, self.address + start * itemsize, count * itemsize,
-                hip.hipMemcpyKind.hipMemcpyDeviceToHost,
+                hip.hipMemcpyKind.hipMemcpyDeviceToHost, stream,
             ))
+            _check_hip(hip.hipStreamSynchronize(stream))
         return out
 
     def fill(self, value):
@@ -147,28 +242,32 @@ class HIPBuffer(DeviceBuffer):
 
     def fill_bytes(self, pattern):
         base = self.address
+        stream = self._stream
 
         def native(pattern):
             byte = device_fill.uniform_byte(pattern)
             if byte is not None:
-                _check_hip(hip.hipMemsetD8(self._device_ptr, byte, self._nbytes))
+                _check_hip(hip.hipMemsetD8Async(self._device_ptr, byte, self._nbytes, stream))
             elif len(pattern) == 2:
-                _check_hip(hip.hipMemsetD16(self._device_ptr, device_fill.as_unsigned(pattern),
-                                            self._nbytes // 2))
+                _check_hip(hip.hipMemsetD16Async(self._device_ptr,
+                                                 device_fill.as_unsigned(pattern),
+                                                 self._nbytes // 2, stream))
             elif len(pattern) == 4:
-                _check_hip(hip.hipMemsetD32(self._device_ptr, device_fill.as_signed(pattern),
-                                            self._nbytes // 4))
+                _check_hip(hip.hipMemsetD32Async(self._device_ptr,
+                                                 device_fill.as_signed(pattern),
+                                                 self._nbytes // 4, stream))
             else:
                 return False
             return True
 
         device_fill.fill(
             self._nbytes, pattern, native,
-            lambda offset, data: _check_hip(hip.hipMemcpy(
+            lambda offset, data: _check_hip(hip.hipMemcpyAsync(
                 base + offset, np.frombuffer(bytearray(data), np.uint8), len(data),
-                hip.hipMemcpyKind.hipMemcpyHostToDevice)),
-            lambda dst, src, size: _check_hip(hip.hipMemcpy(
-                base + dst, base + src, size, hip.hipMemcpyKind.hipMemcpyDeviceToDevice)))
+                hip.hipMemcpyKind.hipMemcpyHostToDevice, stream)),
+            lambda dst, src, size: _check_hip(hip.hipMemcpyAsync(
+                base + dst, base + src, size, hip.hipMemcpyKind.hipMemcpyDeviceToDevice,
+                stream)))
         return True
 
     @property
@@ -178,9 +277,24 @@ class HIPBuffer(DeviceBuffer):
     def __del__(self):
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
-                hip.hipFree(self._device_ptr)
+                if self._queue.pooled:
+                    # In stream order: after every launch queued so far,
+                    # which may still be using this memory.
+                    hip.hipFreeAsync(self._device_ptr, self._stream)
+                else:
+                    hip.hipFree(self._device_ptr)
             except Exception:
                 pass
+
+
+# hipRTC's options. It compiles for the current device's architecture.
+# Contraction stays inside one expression, as the language contract permits:
+# hipRTC's default (-ffp-contract=fast) fused a product into a later
+# statement while another read of the same variable kept it rounded, so on
+# AMD GPUs `p - p` was the product's rounding error, not zero. Part of the
+# disk cache's target, so that changing an option misses the code objects
+# compiled without it.
+_HIPRTC_OPTIONS = [b"-ffp-contract=on"]
 
 
 def _compile_code_object(hip_source: str, func_name: str) -> bytes:
@@ -192,7 +306,8 @@ def _compile_code_object(hip_source: str, func_name: str) -> bytes:
     _check_hiprtc(err)
 
     # Compile for the current device architecture
-    compile_result = hiprtc.hiprtcCompileProgram(prog, 0, [])
+    compile_result = hiprtc.hiprtcCompileProgram(prog, len(_HIPRTC_OPTIONS),
+                                                 _HIPRTC_OPTIONS)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != hiprtc.hiprtcResult.HIPRTC_SUCCESS:
@@ -210,7 +325,20 @@ def _compile_code_object(hip_source: str, func_name: str) -> bytes:
     code = bytearray(code_size)
     _check_hiprtc(hiprtc.hiprtcGetCode(prog, code))
     # NOTE: skip hiprtcDestroyProgram — segfaults in hip-python 7.1
-    return code
+    return bytes(code)
+
+
+def _load_kernel(code: bytes, kernel_name: str, param_types, param_is_field,
+                 param_is_texture) -> "CompiledHIPKernel":
+    """A kernel from its code object, loaded on the current device."""
+    err, module = hip.hipModuleLoadData(code)
+    _check_hip(err)
+    err, func = hip.hipModuleGetFunction(module, kernel_name.encode())
+    _check_hip(err)
+    compiled = CompiledHIPKernel(module, func, kernel_name, param_types,
+                                 param_is_field, param_is_texture)
+    compiled.code_object = code
+    return compiled
 
 
 _HIP_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlong,
@@ -294,7 +422,7 @@ class HIPTextureImage:
         ext = copy_params.extent
         ext.width, ext.height, ext.depth = W, H, D
         copy_params.kind = hip.hipMemcpyKind.hipMemcpyDeviceToDevice
-        _check_hip(hip.hipMemcpy3D(copy_params))
+        _check_hip(hip.hipMemcpy3DAsync(copy_params, field._buffer._stream))
 
     def __del__(self):
         try:
@@ -317,9 +445,11 @@ class CompiledHIPKernel:
         self._param_types = param_types
         self._param_is_field = param_is_field
         self._param_is_texture = param_is_texture or [False] * len(param_types)
+        self.code_object = None     # what hipRTC made, kept for the disk cache
 
-    def __call__(self, kernel_args: list, loop_end: int, extents=(), limits=None):
-        """Dispatch the HIP kernel.
+    def __call__(self, kernel_args: list, loop_end: int, extents=(), limits=None,
+                 stream=None):
+        """Queue the HIP kernel on ``stream`` and return.
 
         A multi-dimensional loop (``extents``, slowest first) launches a grid
         of its shape, or a flat one with ``__flat__`` set when an extent is
@@ -352,14 +482,15 @@ class CompiledHIPKernel:
         for i, val in enumerate(arg_values):
             arg_ptrs[i] = ctypes.addressof(val)
 
+        # The arguments are copied when the launch is queued, so arg_values
+        # may go when this returns.
         _check_hip(hip.hipModuleLaunchKernel(
             self._func,
             *grid,
             *block,
-            0, None,
+            0, stream,
             arg_ptrs, None,
         ))
-        _check_hip(hip.hipDeviceSynchronize())
 
 
 class HIPBackend(Backend):
@@ -396,8 +527,25 @@ class HIPBackend(Backend):
             self._query_max_image_3d() if self._has_image_support else 0)
         self._max_launch = self._query_max_launch()
         self._launch_limits = self._query_launch_limits()
+        self._queue = _queue(device)
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledHIPKernel}
+
+    @property
+    def _stream(self):
+        """The device's queue; None for a backend built without a device
+        (the dispatch-path tests make one with ``__new__``), which launches
+        on the null stream."""
+        queue = getattr(self, "_queue", None)
+        return queue.stream if queue is not None else None
+
+    def synchronize(self):
+        """Wait for every launch, fill and copy queued on this device. A
+        launch's error surfaces here, at the next host access, rather than
+        at its call."""
+        stream = self._stream
+        if stream is not None:
+            _check_hip(hip.hipStreamSynchronize(stream))
 
     def _query_image_support(self) -> bool:
         """True when the device exposes the texture/image API."""
@@ -492,7 +640,7 @@ class HIPBackend(Backend):
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> HIPBuffer:
-        return HIPBuffer(dtype.numpy_dtype, shape)
+        return HIPBuffer(dtype.numpy_dtype, shape, getattr(self, "_queue", None))
 
     def memory_space(self, ptr) -> str:
         """Query where a pointer resides: 'cpu', 'hip', or 'hip_managed'.
@@ -553,6 +701,8 @@ class HIPBackend(Backend):
         # wrapped np.uint64 failed with hipErrorInvalidValue.
         buf._device_ptr = int(ptr)
         buf._owned = False
+        buf._queue = getattr(self, "_queue", None) or _queue()
+        buf._shared = True      # someone else's memory: launches on it complete
         return buf
 
     def execute(self, kernel, args, kwargs):
@@ -594,7 +744,13 @@ class HIPBackend(Backend):
                 kept_args = split_args(effective_args, pack_info)
                 kernel_args = bind_textures(kept_args) + pack_fields
 
-            compiled(kernel_args, loop_end, extents, self._launch_limits)
+            compiled(kernel_args, loop_end, extents, self._launch_limits, self._stream)
+        # Memory that can be read with no Tack call between -- a wrapped
+        # pointer, an exported field -- and a texture, whose image could be
+        # destroyed before a queued launch has read it: complete now.
+        if any(getattr(getattr(a, '_buffer', None), '_shared', False)
+               or isinstance(a, HIPTextureImage) for a in kernel_args):
+            self.synchronize()
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.
@@ -623,18 +779,60 @@ class HIPBackend(Backend):
         kernel_name = kernel_entry_name(ir_func.name)
         hip_source = generate_hip_source(ir_func)
         code = _compile_code_object(hip_source, kernel_name)
-
-        err, module = hip.hipModuleLoadData(code)
-        _check_hip(err)
-
-        err, func = hip.hipModuleGetFunction(module, kernel_name.encode())
-        _check_hip(err)
-
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        return CompiledHIPKernel(module, func, kernel_name, param_types,
-                                 param_is_field, param_is_texture)
+        return _load_kernel(code, kernel_name, param_types, param_is_field, param_is_texture)
+
+    # ── The disk cache: code objects, loaded as they are ──────────────
+    # A code object is machine code for one architecture and its feature
+    # flags (gcnArchName, e.g. gfx90a:sramecc+:xnack-), so the target names
+    # them, with the device, the ROCm runtime that loads the code, and the
+    # hipRTC, hip-python and options that made it. The device also covers
+    # the texture fallback, which changes the generated source: an MI300X
+    # (gfx942, no texture hardware) and an MI210 have different targets.
+
+    _target = None
+
+    def cache_target(self):
+        if self._target is None:
+            props = hip.hipDeviceProp_t()
+            _check_hip(hip.hipGetDeviceProperties(props, self._device))
+            device_name = props.name.decode(errors="replace")
+            arch = props.gcnArchName.decode(errors="replace")
+            err, runtime_version = hip.hipRuntimeGetVersion()
+            _check_hip(err)
+            err, driver_version = hip.hipDriverGetVersion()
+            _check_hip(err)
+            err, rtc_major, rtc_minor = hiprtc.hiprtcVersion()
+            _check_hiprtc(err)
+            options = " ".join(o.decode() for o in _HIPRTC_OPTIONS)
+            self._target = (f"{device_name} {arch}; runtime {runtime_version}; "
+                            f"driver {driver_version}; hiprtc {rtc_major}.{rtc_minor}; "
+                            f"hip-python {_HIP_PYTHON_VERSION}; options [{options}]")
+        return self._target
+
+    def variant_artifact(self, payload):
+        compiled, pack_info, _ = payload
+        if compiled.code_object is None:
+            raise ValueError("no code object was kept for this kernel")
+        return {"code_object": compiled.code_object, "name": compiled._func_name,
+                "param_types": compiled._param_types,
+                "param_is_field": compiled._param_is_field,
+                "param_is_texture": compiled._param_is_texture,
+                "pack_info": pack_info}
+
+    def load_variant(self, ir_func, artifact, effective_args):
+        from tack.runtime.kernel_utils import _create_pack_fields
+        compiled = _load_kernel(artifact["code_object"], artifact["name"],
+                                artifact["param_types"], artifact["param_is_field"],
+                                artifact["param_is_texture"])
+        pack_info = artifact["pack_info"]
+        # The scalar pack buffers are device memory of this process, made
+        # from this call's scalars as _build_variant makes them.
+        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+                       if pack_info else None)
+        return compiled, pack_info, pack_fields
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
@@ -653,7 +851,7 @@ class HIPBackend(Backend):
 
         func, module = self._reduce_cache[op]
 
-        out_buf = HIPBuffer(np.float32, (1,))
+        out_buf = HIPBuffer(np.float32, (1,), getattr(self, "_queue", None))
         out_buf.from_numpy(np.array([REDUCTION_IDENTITIES[op]], dtype=np.float32))
 
         block_dim = 256
@@ -670,10 +868,9 @@ class HIPBackend(Backend):
 
         _check_hip(hip.hipModuleLaunchKernel(
             func, grid_dim, 1, 1, block_dim, 1, 1,
-            block_dim * 4, None, args, 0))
-        _check_hip(hip.hipDeviceSynchronize())
+            block_dim * 4, self._stream, args, 0))
 
-        result = out_buf.to_numpy()
+        result = out_buf.to_numpy()         # queued after the launch, and waited for
         return float(result[0])
 
     def _compile_reduce(self, op: str):

@@ -105,9 +105,9 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 - **CPU**: `NumpyBuffer` wraps a numpy array. CPU backend accesses via ctypes pointers.
 - **Metal**: `MetalBuffer` — Metal shared buffer (zero-copy unified memory on Apple Silicon). The numpy array view points directly into Metal buffer memory.
 - **CUDA**: `CUDABuffer` holds a stream-ordered device pointer (`cuMemAllocAsync` on the context's stream, freed with `cuMemFreeAsync`, so a temporary dropped while a queued launch still uses it is freed after that launch, and the driver's pool, with its release threshold raised, hands memory back out without a round trip). Every launch, fill and copy goes through that one stream (`_ContextToken.queue()`) in order and returns once queued; `to_numpy`, `read_range` and reductions queue a copy and wait for it; `from_numpy` and `fill` queue and return; `tack.sync()` is a stream synchronize, and a launch's error surfaces at the next wait. A buffer handed outside Tack (`wrap_ptr`, DLPack export, `share()`) completes every launch that uses it before the launch returns, and so does a texture launch, since its image could be destroyed before a queued launch read it. See `test_cuda_async.py`.
+- **HIP**: `HIPBuffer` holds a stream-ordered device pointer, as CUDA's does: one blocking stream per device (`_Queue`, `_queue()` in `hip_backend.py`; ordered with the null stream), memory from `hipMallocAsync` on it and freed with `hipFreeAsync`, the default pool's release threshold raised. Launches, fills and copies are queued on it and return; `to_numpy`, `read_range` and reductions wait; `tack.sync()` is a stream synchronize; a launch's error surfaces at the next wait. A host write from pageable memory may be queued: HIP stages a small one before returning and waits for the stream before a large one (16 KB staged, 4 MB waited, ROCm 7.1). `wrap_ptr`, DLPack export (`share()`) and texture launches complete before returning. A device without memory pools falls back to `hipMalloc`/`hipFree`. See `test_hip_async.py`.
+- **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Every launch, fill and copy is appended to the backend's one asynchronous immediate command list (`_queue`) and returns once queued, each followed by a barrier (`_ordered`), which keeps program order: Intel's in-order lists (`ZE_COMMAND_QUEUE_FLAG_IN_ORDER`) cost about 100 µs of device time per kernel on driver 25.05, a barrier about 5. `to_numpy`, `read_range` and reductions queue a copy and wait (`zeCommandListHostSynchronize`); `from_numpy` copies the array privately and queues; host memory a queued copy or fill reads is held (`_hold`) until the next wait, which comes early past 1024 objects or 256 MiB. Fields are freed with `zeMemFreeExt(DEFER_FREE)`, after the work queued so far (`_free`; without the extension, wait then free). `share()`, `wrap_ptr`, DLPack export and textures complete their launches before returning, as on CUDA. A driver without `zeCommandListHostSynchronize` gets a synchronous list. See `test_level_zero_async.py`.
 - **`asyncio`** (`runtime/aio.py`, optional): `await tack.sync_async()` and `await field.to_numpy_async()` wait in one of Tack's worker threads (`tack-wait`, 4) and resume the coroutine, so an event loop (trame, Jupyter, a server) keeps running while the device works; kernel calls stay plain calls. A backend opts in with `Backend.async_marker()` -- an object whose blocking `wait()` covers every launch queued so far and raises a launch's error: CUDA records a blocking-sync event on the context's stream (`_StreamMarker`), Metal commits the open batch and waits on the last command buffer (`_CommandBufferMarker`) -- and buffers with `DeviceBuffer.waits_off_thread` and `thread_binding()` (CUDA makes its context current in the worker, `_BoundContext`). Without a marker (CPU; HIP and Level Zero until they add one) the wait is inline: correct, and the loop simply waits. The mark is taken at the call, so launches queued later are not waited for. cuda-bindings releases the GIL in `cuEventSynchronize`: during a 490 ms kernel another task ran 436 times awaiting `sync_async` and 0 times under `tack.sync()`. See `test_asyncio.py`.
-- **HIP**: `HIPBuffer` holds a device pointer (`hipMalloc`). Explicit host↔device copies.
-- **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Explicit host↔device copies via immediate command list.
 
 `tack.field()` calls `backend.allocate_field()` to create the appropriate buffer type. `Field.__getitem__` reads one element on the host through `DeviceBuffer.read_range(start, count)`: CPU and Metal slice their views, and CUDA, HIP and Level Zero copy just the range with one `cuMemcpyDtoH`, `hipMemcpy` or `zeCommandListAppendMemoryCopy` (on the immediate list) at the element's byte offset, each checking the range against the allocation first. `__setitem__` and `__iter__` raise.
 
@@ -247,17 +247,55 @@ smallest). See `test_field_updates_in_loops.py` and
 Dispatching one variant from several Python threads: CPU binds arguments
 per call and shares no launch state. CUDA and HIP variants share their
 scalar pack buffers, so they hold `KernelVariant.dispatch_lock` from the
-pack update through the launch (on CUDA both are queued on the stream in
-that order, so a later call's pack update cannot reach an earlier queued
-launch). Metal launches own their
+pack update through the launch (on CUDA and HIP both are queued on the
+stream in that order, so a later call's pack update cannot reach an earlier
+queued launch). Metal launches own their
 argument buffer and scalars, and encode under the backend's batch lock.
 Level Zero holds one backend `_launch_lock` (reentrant) over
-launches, reductions and copies, because its command lists are
-backend-wide. Unlocked, half of the CUDA dispatches from four threads
+launches, reductions, copies and waits, because its queue and its kernels'
+argument state are backend-wide; a kernel's arguments are captured when
+its launch is appended, so the next call may set them at once. Unlocked, half of the CUDA dispatches from four threads
 computed with another thread's scalars (`test_concurrent_dispatch.py`).
 CUDA's context comes from `cuCtxCreate` and is current only on the thread
 that called `tack.init`; another thread must make it current first, or
 its dispatch fails with `CUDA_ERROR_INVALID_CONTEXT`.
+
+### Disk cache
+
+`runtime/disk_cache.py` (public `tack.cache`, `python -m tack.cache`)
+stores lowered IR (`.ir`, in `Kernel._lower`) and compiled variants
+(`.variant`, in `_resolve_variant` on an in-memory miss) under
+`TACK_CACHE_DIR/v1-<tack fingerprint>/`. Keys are by content, never
+identity: kernel source, closure fingerprints, specialization, template
+content (MRO names, `@tack.func` sources, constants), Tack's fingerprint
+(installed `RECORD`s or the source tree). `CallBindings.resolve` reports
+each resolution to the thread's `_Recorder`; an `.ir` entry is used only if
+every recorded name re-resolves to the same fingerprint. Anything lowering
+reads from Python must go through `CallBindings` or into the key, or a
+stale entry runs. Backends opt into `.variant` with `cache_target()`,
+`variant_artifact()` and `load_variant(ir_func, artifact, effective_args)`
+(CPU: MCJIT object code; Metal: MSL; CUDA: PTX, loaded with
+`cuModuleLoadData`, its target naming the device and compute capability,
+the driver that compiles the PTX, NVRTC and its options; HIP: the code
+object, loaded with `hipModuleLoadData`, its target naming the device and
+`gcnArchName` with its feature flags, the ROCm runtime and driver, hipRTC,
+hip-python and the hipRTC options; Level Zero: the
+native binary (`zeModuleGetNativeBinary`) and the SPIR-V, loaded with
+`zeModuleCreate` as `ZE_MODULE_FORMAT_NATIVE`, from the SPIR-V if the
+driver refuses the binary (`native_refused` in the stats), its target
+naming the device and its IP version, the driver, ocloc's version, the
+ocloc and module options, and f64 support. From SPIR-V, IGC's
+finalization is about 50 ms a kernel unless the driver's own
+`neo_compiler_cache` has it). A GPU payload's
+scalar pack buffers are device memory, so `load_variant` recreates them
+from the call's `effective_args`; CPU and Metal ignore that argument. Every
+backend now stores variants. Atomic rename writes, checksummed entries, owner-only directories;
+under MPI the default mode reads one bundle and writes nothing (a Slurm
+batch script is not MPI: Slurm's size is `SLURM_STEP_NUM_TASKS`). Entries
+of every version share `TACK_CACHE_SIZE` (1 GiB): a writer prunes by mtime
+at most hourly (`.pruned` mark), and write-mode hits refresh mtime. The test
+suite runs with `TACK_CACHE=off` (`conftest.py`); `test_disk_cache.py` uses
+subprocesses. `TACK_CACHE=write pytest`, run twice, is the end-to-end check.
 
 ### Field dimensions
 
@@ -549,8 +587,13 @@ See `test_float_division.py` and the language contract.
 
 The floating-point baseline requires annotated precision, exceptional
 classes/signs and expression grouping. Adjacent multiply/add contraction
-is permitted; general reassociation is not. CPU emits no fast-math flags;
-HIP/OpenCL retain default settings without unsafe options. Floating math
+is permitted, inside one expression only: a named value is rounded once
+and every read agrees (`x - x` is 0). General reassociation is not
+permitted. CPU emits no fast-math flags; HIP/OpenCL retain default settings
+without unsafe options, except that HIP passes `-ffp-contract=on`
+(`_HIPRTC_OPTIONS`): hipRTC's default `fast` fused a product into one read
+of a variable while another read it rounded, which made `_crossing`'s
+`a - a != 0.0` finiteness test fire on finite values. Floating math
 calls convert arguments to the result precision first; integer arguments
 default to f32, irrespective of the destination field. CPU libm calls use
 the matching f32/f64 symbols and return that precision before nested

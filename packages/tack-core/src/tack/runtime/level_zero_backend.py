@@ -69,6 +69,7 @@ _NUMPY_DTYPE = {
 ZE_RESULT_SUCCESS = 0
 
 # Structure types
+ZE_STRUCTURE_TYPE_DRIVER_PROPERTIES = 0x01
 ZE_STRUCTURE_TYPE_CONTEXT_DESC = 0x0d
 ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC = 0x0e
 ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC = 0x0f
@@ -83,13 +84,20 @@ ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES = 0x03
 ZE_STRUCTURE_TYPE_DEVICE_COMPUTE_PROPERTIES = 0x04
 ZE_STRUCTURE_TYPE_COMMAND_QUEUE_GROUP_PROPERTIES = 0x06
 ZE_STRUCTURE_TYPE_DEVICE_MODULE_PROPERTIES = 0x07
+ZE_STRUCTURE_TYPE_DEVICE_IP_VERSION_EXT = 0x1000f
 
 # Module format
 ZE_MODULE_FORMAT_IL_SPIRV = 0
 ZE_MODULE_FORMAT_NATIVE = 1
 
-# Command queue mode
+# Command queue mode and flags
 ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS = 1
+ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS = 2
+ZE_RESULT_ERROR_UNSUPPORTED_FEATURE = 0x78000003
+
+# Freeing memory after the work queued so far (ZE_extension_memory_free_policies)
+ZE_STRUCTURE_TYPE_MEMORY_FREE_EXT_DESC = 0x1000a
+ZE_DRIVER_MEMORY_FREE_POLICY_EXT_FLAG_DEFER_FREE = 0x2
 
 # Command queue group property flags
 ZE_COMMAND_QUEUE_GROUP_PROPERTY_FLAG_COMPUTE = 0x1
@@ -117,6 +125,7 @@ ze_event_handle_t = ctypes.c_void_p
 
 ZE_MAX_DEVICE_NAME = 256
 ZE_MAX_DEVICE_UUID_SIZE = 16
+ZE_MAX_DRIVER_UUID_SIZE = 16
 
 
 # ---------------------------------------------------------------------------
@@ -163,6 +172,21 @@ class ze_module_desc_t(ctypes.Structure):
     ]
 
 
+class ze_memory_free_ext_desc_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("freePolicy", ctypes.c_uint32),
+    ]
+
+
+class ze_driver_extension_properties_t(ctypes.Structure):
+    _fields_ = [
+        ("name", ctypes.c_char * 256),
+        ("version", ctypes.c_uint32),
+    ]
+
+
 class ze_kernel_desc_t(ctypes.Structure):
     _fields_ = [
         ("stype", ctypes.c_uint32),
@@ -204,6 +228,23 @@ class ze_host_mem_alloc_desc_t(ctypes.Structure):
         ("stype", ctypes.c_uint32),
         ("pNext", ctypes.c_void_p),
         ("flags", ctypes.c_uint32),
+    ]
+
+
+class ze_driver_properties_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("uuid", ctypes.c_uint8 * ZE_MAX_DRIVER_UUID_SIZE),
+        ("driverVersion", ctypes.c_uint32),
+    ]
+
+
+class ze_device_ip_version_ext_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("ipVersion", ctypes.c_uint32),
     ]
 
 
@@ -371,6 +412,12 @@ def _setup_argtypes(ze):
     ze.zeDriverGet.argtypes = [ctypes.POINTER(U32), P]
     ze.zeDriverGet.restype = ctypes.c_int32
 
+    ze.zeDriverGetExtensionProperties.argtypes = [P, ctypes.POINTER(U32), P]
+    ze.zeDriverGetExtensionProperties.restype = ctypes.c_int32
+
+    ze.zeDriverGetProperties.argtypes = [P, P]
+    ze.zeDriverGetProperties.restype = ctypes.c_int32
+
     ze.zeDeviceGet.argtypes = [P, ctypes.POINTER(U32), P]
     ze.zeDeviceGet.restype = ctypes.c_int32
 
@@ -441,8 +488,20 @@ def _setup_argtypes(ze):
     ze.zeMemGetAllocProperties.argtypes = [P, P, P, P]
     ze.zeMemGetAllocProperties.restype = ctypes.c_int32
 
+    ze.zeCommandListAppendBarrier.argtypes = [P, P, U32, P]
+    ze.zeCommandListAppendBarrier.restype = ctypes.c_int32
+
+    ze.zeCommandListHostSynchronize.argtypes = [P, ctypes.c_uint64]
+    ze.zeCommandListHostSynchronize.restype = ctypes.c_int32
+
+    ze.zeMemFreeExt.argtypes = [P, P, P]
+    ze.zeMemFreeExt.restype = ctypes.c_int32
+
     ze.zeModuleCreate.argtypes = [P, P, P, P, P]
     ze.zeModuleCreate.restype = ctypes.c_int32
+
+    ze.zeModuleGetNativeBinary.argtypes = [P, ctypes.POINTER(ctypes.c_size_t), P]
+    ze.zeModuleGetNativeBinary.restype = ctypes.c_int32
 
     ze.zeModuleDestroy.argtypes = [P]
     ze.zeModuleDestroy.restype = ctypes.c_int32
@@ -513,6 +572,17 @@ def _get_ocloc():
     return _ocloc
 
 
+def _extensions(ze, driver) -> set:
+    """The names of the extensions a driver supports."""
+    count = ctypes.c_uint32(0)
+    if ze.zeDriverGetExtensionProperties(driver, ctypes.byref(count), None) != ZE_RESULT_SUCCESS:
+        return set()
+    props = (ze_driver_extension_properties_t * count.value)()
+    if ze.zeDriverGetExtensionProperties(driver, ctypes.byref(count), props) != ZE_RESULT_SUCCESS:
+        return set()
+    return {p.name.decode(errors="replace") for p in props}
+
+
 def _check_ze(result, msg="Level Zero"):
     """Check a Level Zero result, raise on error."""
     if result != ZE_RESULT_SUCCESS:
@@ -566,6 +636,34 @@ def _free_ocloc_output(num_outputs, data_outputs, len_outputs, name_outputs):
         ctypes.byref(len_outputs), ctypes.byref(name_outputs))
 
 
+# What ocloc is given besides the device, and the flags zeModuleCreate
+# finalizes the SPIR-V with. Part of the disk cache's target: SPIR-V
+# compiled, or a module built, with other options is another artifact.
+_OCLOC_OPTIONS = (b"-spv_only", b"-options", b"-cl-std=CL2.0")
+_MODULE_BUILD_FLAGS = b"-cl-std=CL2.0"
+
+
+def _ocloc_version() -> str:
+    """The driver version of the libocloc loaded, e.g. ``25.05.32567.17``."""
+    ocloc = _get_ocloc()
+    # Unlike compile's, a query's argv starts with the program's name.
+    args_list = [b"ocloc", b"query", b"OCL_DRIVER_VERSION"]
+    argv = (ctypes.c_char_p * len(args_list))(*args_list)
+    num_outputs = ctypes.c_uint32(0)
+    data_outputs = ctypes.c_void_p()
+    len_outputs = ctypes.c_void_p()
+    name_outputs = ctypes.c_void_p()
+    result = ocloc.oclocInvoke(
+        len(args_list), argv, 0, None, None, None, 0, None, None, None,
+        ctypes.byref(num_outputs), ctypes.byref(data_outputs),
+        ctypes.byref(len_outputs), ctypes.byref(name_outputs))
+    log = _extract_ocloc_log(num_outputs, data_outputs, len_outputs, name_outputs)
+    _free_ocloc_output(num_outputs, data_outputs, len_outputs, name_outputs)
+    if result != 0:
+        raise RuntimeError(f"ocloc query failed (error {result}):\n{log}")
+    return log.strip("\x00").strip()
+
+
 def _compile_to_spirv(opencl_source: str, device_id: int) -> bytes:
     """Compile OpenCL C source to SPIR-V binary using libocloc in-process."""
     ocloc = _get_ocloc()
@@ -577,9 +675,8 @@ def _compile_to_spirv(opencl_source: str, device_id: int) -> bytes:
     device_str = f"0x{device_id:04x}"
     args_list = [
         b"compile",
-        b"-spv_only",
         b"-device", device_str.encode(),
-        b"-options", b"-cl-std=CL2.0",
+        *_OCLOC_OPTIONS,
         b"-file", b"kernel.cl",
     ]
     argc = len(args_list)
@@ -640,17 +737,115 @@ def _compile_to_spirv(opencl_source: str, device_id: int) -> bytes:
     return spirv_bytes
 
 
+def _create_module(backend, data: bytes, module_format, opencl_source=None):
+    """A module of the backend's context, from SPIR-V or a native binary.
+
+    ``opencl_source``, when known, goes into the error a failed build raises.
+    """
+    ze = _get_ze()
+    buf = (ctypes.c_uint8 * len(data)).from_buffer_copy(data)
+    module_desc = ze_module_desc_t(
+        stype=ZE_STRUCTURE_TYPE_MODULE_DESC, pNext=None,
+        format=module_format,
+        inputSize=len(data),
+        pInputModule=ctypes.cast(buf, ctypes.c_void_p),
+        pBuildFlags=_MODULE_BUILD_FLAGS,
+        pConstants=None)
+
+    module = ze_module_handle_t()
+    build_log = ze_module_build_log_handle_t()
+    result = ze.zeModuleCreate(
+        backend._context, backend._device, ctypes.byref(module_desc),
+        ctypes.byref(module), ctypes.byref(build_log))
+
+    if result != ZE_RESULT_SUCCESS:
+        # Extract build log
+        log_text = ""
+        if build_log:
+            log_size = ctypes.c_size_t(0)
+            ze.zeModuleBuildLogGetString(build_log, ctypes.byref(log_size), None)
+            if log_size.value > 0:
+                log_buf = ctypes.create_string_buffer(log_size.value)
+                ze.zeModuleBuildLogGetString(build_log, ctypes.byref(log_size), log_buf)
+                log_text = log_buf.value.decode(errors="replace")
+            ze.zeModuleBuildLogDestroy(build_log)
+        source = f"Source:\n{opencl_source}" if opencl_source is not None else ""
+        raise RuntimeError(
+            f"zeModuleCreate failed (0x{result:08x}):\n{log_text}\n{source}")
+
+    if build_log:
+        ze.zeModuleBuildLogDestroy(build_log)
+    return module
+
+
+def _native_binary(module) -> bytes:
+    """The device code the driver made for a module, loadable as ZE_MODULE_FORMAT_NATIVE."""
+    ze = _get_ze()
+    size = ctypes.c_size_t(0)
+    _check_ze(ze.zeModuleGetNativeBinary(module, ctypes.byref(size), None),
+               "zeModuleGetNativeBinary (size)")
+    buf = (ctypes.c_uint8 * size.value)()
+    _check_ze(ze.zeModuleGetNativeBinary(module, ctypes.byref(size), buf),
+               "zeModuleGetNativeBinary")
+    return bytes(buf)
+
+
+def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_field,
+                 param_is_texture, workgroup_size, requires_full_workgroups=False,
+                 opencl_source=None, native=None) -> "CompiledL0Kernel":
+    """A kernel from its SPIR-V, or from its native binary when one is given.
+
+    A native binary skips IGC's finalization of the SPIR-V, about 50 ms a
+    kernel when the driver's own cache does not have it. One the driver
+    refuses -- another stepping, another IGC -- falls back to the SPIR-V.
+    """
+    ze = _get_ze()
+    module = None
+    if native is not None:
+        try:
+            module = _create_module(backend, native, ZE_MODULE_FORMAT_NATIVE)
+        except RuntimeError:
+            from tack.runtime import disk_cache
+            disk_cache._count("native_refused")
+    if module is None:
+        module = _create_module(backend, spirv, ZE_MODULE_FORMAT_IL_SPIRV, opencl_source)
+
+    # Create kernel
+    kernel_desc = ze_kernel_desc_t(
+        stype=ZE_STRUCTURE_TYPE_KERNEL_DESC, pNext=None,
+        flags=0, pKernelName=kernel_name.encode())
+    kernel = ze_kernel_handle_t()
+    _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
+                                 ctypes.byref(kernel)),
+               "zeKernelCreate")
+
+    compiled = CompiledL0Kernel(module, kernel, kernel_name,
+                                param_types, param_is_field, workgroup_size,
+                                param_is_texture,
+                                requires_full_workgroups=requires_full_workgroups)
+    compiled.spirv = spirv
+    return compiled
+
+
 # ---------------------------------------------------------------------------
 # L0Buffer
 # ---------------------------------------------------------------------------
 class L0Buffer(DeviceBuffer):
     """Device-resident buffer backed by a Level Zero device allocation.
 
-    Data lives on the GPU.  ``from_numpy`` copies host→device,
-    ``to_numpy`` copies device→host.
+    Data lives on the GPU. Everything that touches it goes through the
+    backend's queue, in order with the launches: ``from_numpy`` and ``fill``
+    are queued and return at once, ``to_numpy`` and ``read_range`` are
+    queued and waited for. Freeing is deferred by the driver until the work
+    queued so far is done, so a field Python drops while a queued launch
+    still uses it outlives that launch.
     """
 
     backend_name = "level_zero"
+    # Memory handed outside Tack (DLPack, a wrapped pointer) may be read
+    # with no Tack call between: a launch that uses it completes before
+    # returning, as on Metal and CUDA.
+    _shared = False
 
     def __init__(self, backend, numpy_dtype, shape):
         self._backend = backend
@@ -683,26 +878,43 @@ class L0Buffer(DeviceBuffer):
     def device_ptr(self):
         return self._device_ptr
 
+    def synchronize(self):
+        """Wait for every launch, fill and copy queued on the backend."""
+        self._backend.synchronize()
+
+    def share(self):
+        """Hand this memory outside Tack: wait for the queued work now, and
+        have every later launch that uses it complete before returning."""
+        self._shared = True
+        self.synchronize()
+
     def _copy_to_device(self, arr: np.ndarray):
-        """Copy numpy array → device using an immediate command list."""
+        """Queue a copy of a numpy array to the device.
+
+        The copy runs later, so it reads a private copy of ``arr``, which
+        the caller may change or drop at once; the backend holds it until
+        the queue has passed it.
+        """
         ze = _get_ze()
-        src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        with self._backend._launch_lock:
-            _check_ze(ze.zeCommandListAppendMemoryCopy(
-                self._backend._imm_cmd_list,
+        src = np.array(arr, dtype=self._numpy_dtype, order="C", copy=True)
+        backend = self._backend
+        with backend._launch_lock:
+            backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                backend._queue,
                 self._device_ptr, src.ctypes.data, self._nbytes,
-                None, 0, None),
-                "zeCommandListAppendMemoryCopy (H2D)")
+                None, 0, None), "zeCommandListAppendMemoryCopy (H2D)")
+            backend._hold(src, self._nbytes)
 
     def _copy_from_device(self, out: np.ndarray):
-        """Copy device → numpy array using an immediate command list."""
+        """Copy device → numpy array, after the work queued before it."""
         ze = _get_ze()
-        with self._backend._launch_lock:
-            _check_ze(ze.zeCommandListAppendMemoryCopy(
-                self._backend._imm_cmd_list,
+        backend = self._backend
+        with backend._launch_lock:
+            backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                backend._queue,
                 out.ctypes.data, self._device_ptr, self._nbytes,
-                None, 0, None),
-                "zeCommandListAppendMemoryCopy (D2H)")
+                None, 0, None), "zeCommandListAppendMemoryCopy (D2H)")
+            backend.synchronize()
 
     def from_numpy(self, arr: np.ndarray):
         self._copy_to_device(arr)
@@ -727,12 +939,13 @@ class L0Buffer(DeviceBuffer):
         out = np.empty(count, dtype=self._numpy_dtype)
         if count:
             ze = _get_ze()
-            with self._backend._launch_lock:
-                _check_ze(ze.zeCommandListAppendMemoryCopy(
-                    self._backend._imm_cmd_list,
+            backend = self._backend
+            with backend._launch_lock:
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue,
                     out.ctypes.data, self.address + start * itemsize,
-                    count * itemsize, None, 0, None),
-                    "zeCommandListAppendMemoryCopy (D2H range)")
+                    count * itemsize, None, 0, None), "zeCommandListAppendMemoryCopy (D2H range)")
+                backend.synchronize()
         return out
 
     def fill(self, value):
@@ -744,29 +957,30 @@ class L0Buffer(DeviceBuffer):
 
         def native(pattern):
             # The compute group's fill takes a power-of-two pattern up to its
-            # maximum; the list is synchronous, so the pattern outlives it.
+            # maximum. The fill runs later: the backend holds the pattern.
             size = len(pattern)
             if size & (size - 1) or size > backend._max_fill_pattern:
                 return False
             buffer = ctypes.create_string_buffer(pattern, size)
             with backend._launch_lock:
-                _check_ze(ze.zeCommandListAppendMemoryFill(
-                    backend._imm_cmd_list, self._device_ptr, buffer, size, self._nbytes,
-                    None, 0, None),
-                    "zeCommandListAppendMemoryFill")
+                backend._ordered(ze.zeCommandListAppendMemoryFill(
+                    backend._queue, self._device_ptr, buffer, size, self._nbytes,
+                    None, 0, None), "zeCommandListAppendMemoryFill")
+                backend._hold(buffer, size)
             return True
 
         def write(offset, data):
             source = ctypes.create_string_buffer(data, len(data))
             with backend._launch_lock:
-                _check_ze(ze.zeCommandListAppendMemoryCopy(
-                    backend._imm_cmd_list, base + offset, source, len(data), None, 0, None),
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue, base + offset, source, len(data), None, 0, None),
                     "zeCommandListAppendMemoryCopy (H2D pattern)")
+                backend._hold(source, len(data))
 
         def copy(dst, src, size):
             with backend._launch_lock:
-                _check_ze(ze.zeCommandListAppendMemoryCopy(
-                    backend._imm_cmd_list, base + dst, base + src, size, None, 0, None),
+                backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                    backend._queue, base + dst, base + src, size, None, 0, None),
                     "zeCommandListAppendMemoryCopy (D2D)")
 
         device_fill.fill(self._nbytes, pattern, native, write, copy)
@@ -779,8 +993,8 @@ class L0Buffer(DeviceBuffer):
     def __del__(self):
         if hasattr(self, '_device_ptr') and self._device_ptr and getattr(self, '_owned', True):
             try:
-                ze = _get_ze()
-                ze.zeMemFree(self._backend._context, self._device_ptr)
+                # After every launch queued so far, which may still use it.
+                self._backend._free(self._device_ptr)
             except Exception:
                 pass
 
@@ -853,21 +1067,19 @@ class L0TextureImage:
             nbytes, 0, ctypes.byref(host_ptr)),
             "zeMemAllocHost (image staging)")
 
-        # Device → host staging buffer
-        _check_ze(ze.zeCommandListAppendMemoryCopy(
-            backend._imm_cmd_list, host_ptr,
-            field._buffer.device_ptr, nbytes,
-            None, 0, None),
-            "zeCommandListAppendMemoryCopy (D2H staging)")
-
-        # Host staging buffer → image
-        _check_ze(ze.zeCommandListAppendImageCopyFromMemory(
-            backend._imm_cmd_list, self.handle,
-            host_ptr, None,
-            None, 0, None),
-            "zeCommandListAppendImageCopyFromMemory")
-
-        # Free staging buffer
+        # Device → host staging buffer → image, then wait for both before
+        # freeing the staging memory they use. Uploads are rare; launches
+        # are not. The queue is shared, so the appends hold its lock.
+        with backend._launch_lock:
+            backend._ordered(ze.zeCommandListAppendMemoryCopy(
+                backend._queue, host_ptr,
+                field._buffer.device_ptr, nbytes,
+                None, 0, None), "zeCommandListAppendMemoryCopy (D2H staging)")
+            backend._ordered(ze.zeCommandListAppendImageCopyFromMemory(
+                backend._queue, self.handle,
+                host_ptr, None,
+                None, 0, None), "zeCommandListAppendImageCopyFromMemory")
+            backend.synchronize()
         ze.zeMemFree(backend._context, host_ptr)
 
     def __del__(self):
@@ -895,6 +1107,7 @@ class CompiledL0Kernel:
         self._param_is_field = param_is_field
         self._workgroup_size = workgroup_size
         self._param_is_texture = param_is_texture or [False] * len(param_types)
+        self.spirv = None   # what ocloc made, kept for the disk cache
 
     def __call__(self, kernel_args: list, loop_end: int, backend, extents=()):
         """Dispatch the Level Zero kernel.
@@ -967,22 +1180,12 @@ class CompiledL0Kernel:
             groupCountY=grid[1],
             groupCountZ=grid[2])
 
-        # Append launch to command list, close, execute, sync, reset
-        cmd_list = backend._cmd_list
-        _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
-        _check_ze(ze.zeCommandListAppendLaunchKernel(
-            cmd_list, kernel, ctypes.byref(group_count),
-            None, 0, None),
-            "zeCommandListAppendLaunchKernel")
-        _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
-
-        cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
-        _check_ze(ze.zeCommandQueueExecuteCommandLists(
-            backend._cmd_queue, 1, cmd_lists, None),
-            "zeCommandQueueExecuteCommandLists")
-        _check_ze(ze.zeCommandQueueSynchronize(
-            backend._cmd_queue, 0xFFFFFFFFFFFFFFFF),
-            "zeCommandQueueSynchronize")
+        # Queue the launch and return. The kernel's arguments and group size
+        # are captured as it is appended, so the next launch of this kernel
+        # may set its own at once.
+        backend._ordered(ze.zeCommandListAppendLaunchKernel(
+            backend._queue, kernel, ctypes.byref(group_count),
+            None, 0, None), "zeCommandListAppendLaunchKernel")
 
 
 # ---------------------------------------------------------------------------
@@ -1160,43 +1363,100 @@ class LevelZeroBackend(Backend):
         self._max_fill_pattern = qg_props[self._compute_ordinal].maxMemoryFillPatternSize
 
     def _create_queues(self, ze):
-        # Create command queue (synchronous mode for simplicity)
-        queue_desc = ze_command_queue_desc_t(
-            stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
-            ordinal=self._compute_ordinal, index=0, flags=0,
-            mode=ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS, priority=0)
-        self._cmd_queue = ze_command_queue_handle_t()
-        _check_ze(ze.zeCommandQueueCreate(
-            self._context, self._device, ctypes.byref(queue_desc),
-            ctypes.byref(self._cmd_queue)),
-            "zeCommandQueueCreate")
-
         # Level Zero command lists and kernel argument state may not be used
-        # from two threads at once, and both lists below are shared by every
+        # from two threads at once, and the queue below is shared by every
         # dispatch, reduction and copy on this backend. Reentrant because a
         # dispatch copies its scalar pack into place while holding it.
         self._launch_lock = threading.RLock()
 
-        # Create a reusable command list for kernel dispatch
-        list_desc = ze_command_list_desc_t(
-            stype=ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC, pNext=None,
-            commandQueueGroupOrdinal=self._compute_ordinal, flags=0)
-        self._cmd_list = ze_command_list_handle_t()
-        _check_ze(ze.zeCommandListCreate(
-            self._context, self._device, ctypes.byref(list_desc),
-            ctypes.byref(self._cmd_list)),
-            "zeCommandListCreate")
+        # The backend's queue: one asynchronous immediate command list. Every
+        # launch, fill and copy is appended to it, followed by a barrier, and
+        # returns once queued; the host waits (`synchronize`) where it reads
+        # a field. The barriers keep the commands in program order. Not the
+        # in-order flag (ZE_COMMAND_QUEUE_FLAG_IN_ORDER): on driver
+        # 25.05.32567 it cost about 100 us of device time per kernel, a
+        # barrier about 5. Asynchronous where the driver has
+        # zeCommandListHostSynchronize (API 1.6); otherwise synchronous,
+        # every append completing at once.
+        self._queue = ze_command_list_handle_t()
+        result = ZE_RESULT_ERROR_UNSUPPORTED_FEATURE
+        if hasattr(ze, "zeCommandListHostSynchronize"):
+            desc = ze_command_queue_desc_t(
+                stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
+                ordinal=self._compute_ordinal, index=0, flags=0,
+                mode=ZE_COMMAND_QUEUE_MODE_ASYNCHRONOUS, priority=0)
+            result = ze.zeCommandListCreateImmediate(
+                self._context, self._device, ctypes.byref(desc),
+                ctypes.byref(self._queue))
+        self._queued = result == ZE_RESULT_SUCCESS
+        if not self._queued:
+            desc = ze_command_queue_desc_t(
+                stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
+                ordinal=self._compute_ordinal, index=0, flags=0,
+                mode=ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS, priority=0)
+            _check_ze(ze.zeCommandListCreateImmediate(
+                self._context, self._device, ctypes.byref(desc),
+                ctypes.byref(self._queue)),
+                "zeCommandListCreateImmediate")
 
-        # Create an immediate command list for memory copies
-        imm_desc = ze_command_queue_desc_t(
-            stype=ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC, pNext=None,
-            ordinal=self._compute_ordinal, index=0, flags=0,
-            mode=ZE_COMMAND_QUEUE_MODE_SYNCHRONOUS, priority=0)
-        self._imm_cmd_list = ze_command_list_handle_t()
-        _check_ze(ze.zeCommandListCreateImmediate(
-            self._context, self._device, ctypes.byref(imm_desc),
-            ctypes.byref(self._imm_cmd_list)),
-            "zeCommandListCreateImmediate")
+        # Host memory queued copies and fills read, held until the queue has
+        # passed them. Waiting releases it all; past these limits a hold
+        # waits first, so a loop that never reads holds a bounded amount.
+        self._held = []
+        self._held_bytes = 0
+
+        # A freed field may still be read by a queued launch. With the
+        # driver's deferred free, it frees the memory once the work queued
+        # so far is done; without it, freeing waits for the queue.
+        self._deferred_free = "ZE_extension_memory_free_policies" in _extensions(
+            ze, self._driver)
+
+    _HOLD_COUNT = 1024
+    _HOLD_BYTES = 256 << 20
+
+    def _ordered(self, result, what):
+        """Check an append to the queue, then put a barrier after it, so
+        nothing appended later starts before it completes. Called under
+        `_launch_lock`."""
+        _check_ze(result, what)
+        if self._queued:
+            _check_ze(_get_ze().zeCommandListAppendBarrier(self._queue, None, 0, None),
+                       "zeCommandListAppendBarrier")
+
+    def _hold(self, obj, nbytes):
+        """Keep host memory a queued copy or fill reads until it has run.
+        Called under `_launch_lock`, after the append."""
+        if not self._queued:
+            return
+        self._held.append(obj)
+        self._held_bytes += nbytes
+        if len(self._held) > self._HOLD_COUNT or self._held_bytes > self._HOLD_BYTES:
+            self.synchronize()
+
+    def synchronize(self):
+        """Wait for every launch, fill and copy queued on this backend. A
+        launch's error surfaces here, at the next host access, rather than
+        at its call."""
+        with self._launch_lock:
+            if self._queued:
+                _check_ze(_get_ze().zeCommandListHostSynchronize(
+                    self._queue, 0xFFFFFFFFFFFFFFFF),
+                    "zeCommandListHostSynchronize")
+            self._held.clear()
+            self._held_bytes = 0
+
+    def _free(self, ptr):
+        """Free device memory after the work queued so far, which may use it."""
+        ze = _get_ze()
+        if self._deferred_free:
+            desc = ze_memory_free_ext_desc_t(
+                stype=ZE_STRUCTURE_TYPE_MEMORY_FREE_EXT_DESC, pNext=None,
+                freePolicy=ZE_DRIVER_MEMORY_FREE_POLICY_EXT_FLAG_DEFER_FREE)
+            _check_ze(ze.zeMemFreeExt(self._context, ctypes.byref(desc), ptr),
+                       "zeMemFreeExt")
+        else:
+            self.synchronize()
+            ze.zeMemFree(self._context, ptr)
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> L0Buffer:
@@ -1211,6 +1471,7 @@ class LevelZeroBackend(Backend):
         buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
         buf._device_ptr = ctypes.c_void_p(int(ptr))
         buf._owned = False
+        buf._shared = True      # someone else's memory: launches on it complete
         return buf
 
     def execute(self, kernel, args, kwargs):
@@ -1253,6 +1514,12 @@ class LevelZeroBackend(Backend):
                 kernel_args = bind_textures(kept_args) + pack_fields
 
             compiled(kernel_args, loop_end, self, extents)
+            # Memory that can be read with no Tack call between -- a wrapped
+            # pointer, an exported field -- and a texture, whose image could
+            # be destroyed before a queued launch has read it: complete now.
+            if any(getattr(getattr(a, '_buffer', None), '_shared', False)
+                   or isinstance(a, L0TextureImage) for a in kernel_args):
+                self.synchronize()
 
     def _store_texture_shapes(self, ir_func, effective_args):
         """Record Texture3D extents, falling back to software sampling.
@@ -1308,7 +1575,6 @@ class LevelZeroBackend(Backend):
         if full_groups:
             check_workgroup_launch(ir_func.name, 0, backend_label=self.label,
                                    workgroup_size=workgroup_size)
-        ze = _get_ze()
 
         # Generate OpenCL C source
         opencl_source = generate_opencl_source(ir_func)
@@ -1316,56 +1582,73 @@ class LevelZeroBackend(Backend):
         # Compile to SPIR-V via libocloc
         spirv_bytes = _compile_to_spirv(opencl_source, self._device_id)
 
-        # Create module from SPIR-V
-        spirv_buf = (ctypes.c_uint8 * len(spirv_bytes)).from_buffer_copy(spirv_bytes)
-        module_desc = ze_module_desc_t(
-            stype=ZE_STRUCTURE_TYPE_MODULE_DESC, pNext=None,
-            format=ZE_MODULE_FORMAT_IL_SPIRV,
-            inputSize=len(spirv_bytes),
-            pInputModule=ctypes.cast(spirv_buf, ctypes.c_void_p),
-            pBuildFlags=b"-cl-std=CL2.0",
-            pConstants=None)
-
-        module = ze_module_handle_t()
-        build_log = ze_module_build_log_handle_t()
-        result = ze.zeModuleCreate(
-            self._context, self._device, ctypes.byref(module_desc),
-            ctypes.byref(module), ctypes.byref(build_log))
-
-        if result != ZE_RESULT_SUCCESS:
-            # Extract build log
-            log_text = ""
-            if build_log:
-                log_size = ctypes.c_size_t(0)
-                ze.zeModuleBuildLogGetString(build_log, ctypes.byref(log_size), None)
-                if log_size.value > 0:
-                    log_buf = ctypes.create_string_buffer(log_size.value)
-                    ze.zeModuleBuildLogGetString(build_log, ctypes.byref(log_size), log_buf)
-                    log_text = log_buf.value.decode(errors="replace")
-                ze.zeModuleBuildLogDestroy(build_log)
-            raise RuntimeError(
-                f"zeModuleCreate failed (0x{result:08x}):\n{log_text}\n"
-                f"Source:\n{opencl_source}")
-
-        if build_log:
-            ze.zeModuleBuildLogDestroy(build_log)
-
-        # Create kernel
-        kernel_desc = ze_kernel_desc_t(
-            stype=ZE_STRUCTURE_TYPE_KERNEL_DESC, pNext=None,
-            flags=0, pKernelName=kernel_name.encode())
-        kernel = ze_kernel_handle_t()
-        _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
-                                     ctypes.byref(kernel)),
-                   "zeKernelCreate")
-
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        return CompiledL0Kernel(module, kernel, kernel_name,
-                                param_types, param_is_field, workgroup_size,
-                                param_is_texture,
-                                requires_full_workgroups=full_groups)
+        return _load_kernel(self, spirv_bytes, kernel_name, param_types, param_is_field,
+                            param_is_texture, workgroup_size, full_groups,
+                            opencl_source=opencl_source)
+
+    # ── The disk cache: native binaries, with SPIR-V to fall back on ───
+    # zeModuleCreate has IGC finalize SPIR-V for the device; the native
+    # binary is what it made, and loads without IGC. So the target names the
+    # device and its IP version (which includes the stepping), the driver
+    # that finalizes, the ocloc and options that made the SPIR-V, and
+    # whether the device has f64 (it changes supported_dtypes). Software
+    # texture sampling is decided before the variant key, and the device
+    # names whether it happens.
+
+    _target = None
+
+    def cache_target(self):
+        if self._target is None:
+            ze = _get_ze()
+            props = ze_driver_properties_t(
+                stype=ZE_STRUCTURE_TYPE_DRIVER_PROPERTIES, pNext=None)
+            _check_ze(ze.zeDriverGetProperties(self._driver, ctypes.byref(props)),
+                       "zeDriverGetProperties")
+            ip = ze_device_ip_version_ext_t(
+                stype=ZE_STRUCTURE_TYPE_DEVICE_IP_VERSION_EXT, pNext=None)
+            dev_props = ze_device_properties_t(
+                stype=ZE_STRUCTURE_TYPE_DEVICE_PROPERTIES,
+                pNext=ctypes.cast(ctypes.pointer(ip), ctypes.c_void_p))
+            _check_ze(ze.zeDeviceGetProperties(self._device, ctypes.byref(dev_props)),
+                       "zeDeviceGetProperties (IP version)")
+            options = " ".join(o.decode() for o in _OCLOC_OPTIONS)
+            fp64 = "f64" if f64 in self.supported_dtypes else "no f64"
+            self._target = (f"{self._device_name} 0x{self._device_id:04x} "
+                            f"ip {ip.ipVersion:#x}; "
+                            f"driver {props.driverVersion:#x}; "
+                            f"ocloc {_ocloc_version()} {options}; "
+                            f"module {_MODULE_BUILD_FLAGS.decode()}; {fp64}")
+        return self._target
+
+    def variant_artifact(self, payload):
+        compiled, pack_info, _ = payload
+        if compiled.spirv is None:
+            raise ValueError("no SPIR-V was kept for this kernel")
+        return {"native": _native_binary(compiled._module),
+                "spirv": compiled.spirv, "name": compiled._func_name,
+                "param_types": compiled._param_types,
+                "param_is_field": compiled._param_is_field,
+                "param_is_texture": compiled._param_is_texture,
+                "workgroup_size": compiled._workgroup_size,
+                "full_workgroups": compiled._requires_full_workgroups,
+                "pack_info": pack_info}
+
+    def load_variant(self, ir_func, artifact, effective_args):
+        from tack.runtime.kernel_utils import _create_pack_fields
+        # Module creation outside _launch_lock, as _compile_kernel does it.
+        compiled = _load_kernel(self, artifact["spirv"], artifact["name"],
+                                artifact["param_types"], artifact["param_is_field"],
+                                artifact["param_is_texture"], artifact["workgroup_size"],
+                                artifact["full_workgroups"], native=artifact["native"])
+        pack_info = artifact["pack_info"]
+        # The scalar pack buffers are device memory of this process, made
+        # from this call's scalars as _build_variant makes them.
+        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+                       if pack_info else None)
+        return compiled, pack_info, pack_fields
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
@@ -1419,21 +1702,11 @@ class LevelZeroBackend(Backend):
             group_count = ze_group_count_t(
                 groupCountX=group_count_x, groupCountY=1, groupCountZ=1)
 
-            cmd_list = self._cmd_list
-            _check_ze(ze.zeCommandListReset(cmd_list), "zeCommandListReset")
-            _check_ze(ze.zeCommandListAppendLaunchKernel(
-                cmd_list, kernel, ctypes.byref(group_count), None, 0, None),
+            self._ordered(ze.zeCommandListAppendLaunchKernel(
+                self._queue, kernel, ctypes.byref(group_count), None, 0, None),
                 "zeCommandListAppendLaunchKernel")
-            _check_ze(ze.zeCommandListClose(cmd_list), "zeCommandListClose")
-            cmd_lists = (ctypes.c_void_p * 1)(cmd_list)
-            _check_ze(ze.zeCommandQueueExecuteCommandLists(
-                self._cmd_queue, 1, cmd_lists, None),
-                "zeCommandQueueExecuteCommandLists")
-            _check_ze(ze.zeCommandQueueSynchronize(
-                self._cmd_queue, 0xFFFFFFFFFFFFFFFF),
-                "zeCommandQueueSynchronize")
 
-        return float(out_buf.to_numpy()[0])
+        return float(out_buf.to_numpy()[0])     # queued after the launch, and waited for
 
     def _compile_reduce(self, op: str) -> CompiledL0Kernel:
         """Compile a reduction kernel for the given op."""
@@ -1450,7 +1723,7 @@ class LevelZeroBackend(Backend):
             format=ZE_MODULE_FORMAT_IL_SPIRV,
             inputSize=len(spirv),
             pInputModule=ctypes.cast(spirv_buf, ctypes.c_void_p),
-            pBuildFlags=b"-cl-std=CL2.0",
+            pBuildFlags=_MODULE_BUILD_FLAGS,
             pConstants=None)
 
         module = ze_module_handle_t()

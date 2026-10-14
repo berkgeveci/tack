@@ -87,8 +87,8 @@ for step in range(100):                    # Python controls the simulation
 Every launch sees the results of the launches before it, and every host
 access to a field -- `to_numpy`, `from_numpy`, indexing, reductions -- sees
 the results of every launch before it. So the second kernel sees the
-completed force field, and so does a read after the loop. On the CPU, HIP
-and Level Zero a call completes before Python continues; on CUDA and Metal
+completed force field, and so does a read after the loop. On the CPU a
+call completes before Python continues; on CUDA, HIP, Metal and Level Zero
 it is queued and returns at once, and the host access waits. The program
 above behaves the same either way, and there is no stream or event to
 manage. `tack.sync()` waits for everything launched so far, for timing

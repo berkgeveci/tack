@@ -614,6 +614,14 @@ def _warn_if_old_nvrtc():
         warnings.warn(message, stacklevel=3)
 
 
+# Preserve NaNs, signed zeros, and expression grouping in every kernel.
+# Adjacent multiply/add contraction is permitted by the language contract.
+# Part of the disk cache's target: PTX compiled with other options is another
+# artifact.
+_NVRTC_OPTIONS = [b"--ftz=false", b"--prec-div=true", b"--prec-sqrt=true",
+                  b"--fmad=true", b"--extra-device-vectorization"]
+
+
 def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     """Compile CUDA C source to PTX via NVRTC."""
     _warn_if_old_nvrtc()
@@ -621,12 +629,8 @@ def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     err, prog = nvrtc.nvrtcCreateProgram(src, f"{func_name}.cu".encode(), 0, None, None)
     _check(err)
 
-    # Preserve NaNs, signed zeros, and expression grouping in every kernel.
-    # Adjacent multiply/add contraction is permitted by the language contract.
-    opts = [b"--ftz=false", b"--prec-div=true", b"--prec-sqrt=true",
-            b"--fmad=true", b"--extra-device-vectorization"]
     # cuda-python marshals a list of bytes; a ctypes array can be misread.
-    compile_result = _compile_keeping_thread_locale(prog, opts)
+    compile_result = _compile_keeping_thread_locale(prog, _NVRTC_OPTIONS)
     compile_err = compile_result[0] if isinstance(compile_result, tuple) else compile_result
 
     if compile_err != nvrtc.nvrtcResult.NVRTC_SUCCESS:
@@ -645,6 +649,19 @@ def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     _check(nvrtc.nvrtcGetPTX(prog, ptx))
     nvrtc.nvrtcDestroyProgram(prog)
     return ptx
+
+
+def _load_kernel(ptx: bytes, kernel_name: str, param_types, param_is_field,
+                 param_is_texture) -> "CompiledCUDAKernel":
+    """A kernel from its PTX, loaded into the current context."""
+    err, module = driver.cuModuleLoadData(ptx)
+    _check(err)
+    err, func = driver.cuModuleGetFunction(module, kernel_name.encode())
+    _check(err)
+    compiled = CompiledCUDAKernel(module, func, kernel_name, param_types,
+                                  param_is_field, param_is_texture)
+    compiled.ptx = ptx
+    return compiled
 
 
 _CUDA_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlong,
@@ -755,6 +772,7 @@ class CompiledCUDAKernel:
         self._param_types = param_types
         self._param_is_field = param_is_field
         self._param_is_texture = param_is_texture or [False] * len(param_types)
+        self.ptx = None     # what NVRTC made, kept for the disk cache
 
     def __call__(self, kernel_args: list, loop_end: int, extents=(), limits=None,
                  stream=None):
@@ -1033,18 +1051,61 @@ class CUDABackend(Backend):
         kernel_name = kernel_entry_name(ir_func.name)
         cuda_source = generate_cuda_source(ir_func)
         ptx = _compile_ptx(cuda_source, kernel_name)
-
-        err, module = driver.cuModuleLoadData(ptx)
-        _check(err)
-
-        err, func = driver.cuModuleGetFunction(module, kernel_name.encode())
-        _check(err)
-
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        return CompiledCUDAKernel(module, func, kernel_name, param_types,
-                                  param_is_field, param_is_texture)
+        return _load_kernel(ptx, kernel_name, param_types, param_is_field, param_is_texture)
+
+    # ── The disk cache: PTX, loaded by the driver ──────────────────────
+    # The driver compiles PTX for the device at load, so the stored artifact
+    # is portable across devices of one architecture family, and the target
+    # names what that compilation depends on: the device, the driver that
+    # compiles it, and the NVRTC and options that made the PTX.
+
+    _target = None
+
+    def cache_target(self):
+        if self._target is None:
+            err, name = driver.cuDeviceGetName(128, self._device)
+            _check(err)
+            device_name = bytes(name).split(b"\0", 1)[0].decode(errors="replace")
+            err, major = driver.cuDeviceGetAttribute(
+                driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MAJOR,
+                self._device)
+            _check(err)
+            err, minor = driver.cuDeviceGetAttribute(
+                driver.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_COMPUTE_CAPABILITY_MINOR,
+                self._device)
+            _check(err)
+            err, driver_version = driver.cuDriverGetVersion()
+            _check(err)
+            err, nvrtc_major, nvrtc_minor = nvrtc.nvrtcVersion()
+            _check(err)
+            options = " ".join(o.decode() for o in _NVRTC_OPTIONS)
+            self._target = (f"{device_name} sm_{major}{minor}; driver {driver_version}; "
+                            f"nvrtc {nvrtc_major}.{nvrtc_minor}; {options}")
+        return self._target
+
+    def variant_artifact(self, payload):
+        compiled, pack_info, _ = payload
+        if compiled.ptx is None:
+            raise ValueError("no PTX was kept for this kernel")
+        return {"ptx": compiled.ptx, "name": compiled._func_name,
+                "param_types": compiled._param_types,
+                "param_is_field": compiled._param_is_field,
+                "param_is_texture": compiled._param_is_texture,
+                "pack_info": pack_info}
+
+    def load_variant(self, ir_func, artifact, effective_args):
+        from tack.runtime.kernel_utils import _create_pack_fields
+        compiled = _load_kernel(artifact["ptx"], artifact["name"], artifact["param_types"],
+                                artifact["param_is_field"], artifact["param_is_texture"])
+        pack_info = artifact["pack_info"]
+        # The scalar pack buffers are device memory of this process, made
+        # from this call's scalars as _build_variant makes them.
+        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+                       if pack_info else None)
+        return compiled, pack_info, pack_fields
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""

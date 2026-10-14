@@ -249,10 +249,16 @@ def _get_device_info(field):
         return kDLCUDA, 0, data_ptr
 
     if cls_name == "HIPBuffer":
+        # As for CUDA: complete the queued launches now, and every later
+        # one that uses it.
+        buf.share()
         data_ptr = int(buf._device_ptr)
         return kDLROCM, 0, data_ptr
 
     if cls_name == "L0Buffer":
+        # As for CUDABuffer: the consumer reads it at once, on its own
+        # queue, and may keep reading it after later launches.
+        buf.share()
         data_ptr = buf._device_ptr.value if hasattr(buf._device_ptr, 'value') else int(buf._device_ptr)
         return kDLOneAPI, 0, data_ptr
 
