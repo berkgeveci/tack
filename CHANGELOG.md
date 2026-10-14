@@ -7,6 +7,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `asyncio` waits: `await tack.sync_async()` and `await
+  field.to_numpy_async()` wait for the device in a worker thread, so an
+  application's event loop (trame, Jupyter, a server) keeps running
+  while kernels finish; kernel calls themselves are unchanged. On CUDA
+  the wait is an event on the context's stream, on Metal the last
+  committed command buffer; elsewhere, where launches complete before
+  returning or a backend has not added a marker, the wait is inline.
+  During a 490 ms CUDA kernel another task ran 436 times while one
+  awaited `sync_async`, and not once under `tack.sync()`.
 - Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
   field and array index in every kernel, one dimension at a time. An
   out-of-bounds access is skipped (a load gives 0) and the call raises

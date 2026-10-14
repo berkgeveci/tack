@@ -151,6 +151,10 @@ class MetalBuffer(DeviceBuffer):
         """Wait for queued kernels: they may be reading or writing this memory."""
         self._sync()
 
+    # Reading waits for queued command buffers, so `Field.to_numpy_async`
+    # reads in a worker thread. Metal needs no per-thread binding.
+    waits_off_thread = True
+
     def share(self):
         """Hand this memory outside Tack: wait for queued kernels now, and have
         every later launch that uses it complete before returning."""
@@ -422,6 +426,26 @@ _REDUCE_MSL_MIN = field_reduction_source('metal', 'min')
 _REDUCE_MSL_MAX = field_reduction_source('metal', 'max')
 
 
+class _CommandBufferMarker:
+    """Waits for one committed command buffer, from any thread
+    (`Backend.async_marker`); the backend's queue still drops it, and the
+    arguments it keeps alive, at its next synchronize."""
+
+    __slots__ = ("_command_buffer",)
+
+    def __init__(self, command_buffer):
+        self._command_buffer = command_buffer
+
+    def wait(self):
+        command_buffer = self._command_buffer
+        if command_buffer is None:
+            return
+        command_buffer.waitUntilCompleted()
+        error = command_buffer.error()
+        if error is not None:
+            raise RuntimeError(f"Metal compute error: {error}")
+
+
 class MetalBackend(Backend):
     """Metal GPU backend — zero-copy dispatch on Apple Silicon unified memory.
 
@@ -512,6 +536,16 @@ class MetalBackend(Backend):
                 self._commit_open()
             while self._committed:
                 self._wait_oldest()
+
+    def async_marker(self):
+        """The last command buffer committed, after committing the open batch,
+        for `tack.sync_async` to wait on in a worker thread: one queue runs
+        its command buffers in the order they were committed."""
+        with self._batch_lock:
+            if self._open is not None:
+                self._commit_open()
+            last = self._committed[-1][0] if self._committed else None
+        return _CommandBufferMarker(last)
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> MetalBuffer:

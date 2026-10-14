@@ -84,10 +84,39 @@ for step in range(100):                    # Python controls the simulation
     integrate(pos, vel, force, 0.01, n)
 ```
 
-Tack dispatch is synchronous: a call completes before Python continues. The
-second kernel therefore sees the completed force field. Host reads after the
-call also see completed results. There is no public asynchronous launch/stream
-API to manage in these examples.
+Every launch sees the results of the launches before it, and every host
+access to a field -- `to_numpy`, `from_numpy`, indexing, reductions -- sees
+the results of every launch before it. So the second kernel sees the
+completed force field, and so does a read after the loop. On the CPU, HIP
+and Level Zero a call completes before Python continues; on CUDA and Metal
+it is queued and returns at once, and the host access waits. The program
+above behaves the same either way, and there is no stream or event to
+manage. `tack.sync()` waits for everything launched so far, for timing
+kernels or for memory another library reads without Tack.
+
+### Waiting from `asyncio`
+
+A host access that waits blocks its thread. In an application with an
+event loop -- a trame or web server, a Jupyter kernel -- that thread is the
+loop, and nothing else runs while the device works. Two coroutines wait in
+a worker thread instead:
+
+```python
+async def frame():
+    advance(state, dt)                        # queued; returns at once
+    await tack.sync_async()                   # the loop runs while it works
+    pixels = await image.to_numpy_async()     # wait, then copy, off the loop
+    return pixels
+```
+
+`tack.sync_async()` waits for the launches made before the call, not for
+ones another task queues while it waits. `to_numpy_async` returns every
+write queued before the call; one queued later by another task may or may
+not be in it, so order the two with `await` if it matters. A launch's error
+is raised at the `await`. On CUDA and Metal the wait runs in a worker
+thread; on the CPU, whose launches complete before returning, both return
+at once, and on a backend that has not added an asynchronous wait they
+wait inline, which is correct but holds the loop.
 
 A `tack.barrier()` synchronizes only a GPU workgroup. It cannot turn two stages
 over a whole grid into one ordered launch. Use completed kernel calls for that.

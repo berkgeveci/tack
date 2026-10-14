@@ -19,6 +19,10 @@ behavior.
 
 ::: tack.runtime.dispatch.get_backend
 
+::: tack.runtime.dispatch.sync
+
+::: tack.runtime.dispatch.sync_async
+
 ## Fields
 
 The container everything else operates on: an n-dimensional array bound to

@@ -150,6 +150,50 @@ class _ContextToken:
 _CONTEXTS: dict[int, _ContextToken] = {}
 
 
+class _BoundContext:
+    """Make a context current on this thread for the block, and put back
+    whatever was current before. A worker thread has no current context
+    until one is pushed."""
+
+    __slots__ = ("_handle",)
+
+    def __init__(self, handle):
+        self._handle = handle
+
+    def __enter__(self):
+        _check(driver.cuCtxPushCurrent(self._handle))
+        return self
+
+    def __exit__(self, *exc):
+        driver.cuCtxPopCurrent()
+
+
+class _StreamMarker:
+    """An event recorded on a context's stream after the work queued so far,
+    waited on from any thread (`Backend.async_marker`). The event sleeps
+    the waiting thread (blocking sync) and is destroyed by the wait."""
+
+    __slots__ = ("_event", "_token")
+
+    def __init__(self, token):
+        self._token = token
+        with _BoundContext(token.handle):
+            flags = (driver.CUevent_flags.CU_EVENT_BLOCKING_SYNC
+                     | driver.CUevent_flags.CU_EVENT_DISABLE_TIMING)
+            err, self._event = driver.cuEventCreate(flags)
+            _check(err)
+            _check(driver.cuEventRecord(self._event, token.queue()))
+
+    def wait(self):
+        if not self._token.alive:
+            raise RuntimeError(f"Cannot wait for this CUDA work: {_DEAD_CONTEXT_MSG}")
+        with _BoundContext(self._token.handle):
+            try:
+                _check(driver.cuEventSynchronize(self._event))
+            finally:
+                driver.cuEventDestroy(self._event)
+
+
 def _current_context_token():
     """Token for the context that is current right now, or None if untracked."""
     err, ctx = driver.cuCtxGetCurrent()
@@ -225,6 +269,17 @@ class CUDABuffer(DeviceBuffer):
     @property
     def _stream(self):
         return self._token.queue()
+
+    # Reading waits for the stream, so `Field.to_numpy_async` reads in a
+    # worker thread, with the context made current there.
+    waits_off_thread = True
+
+    def thread_binding(self):
+        token = getattr(self, "_token", None)
+        if token is None:
+            return super().thread_binding()
+        self._live("read")
+        return _BoundContext(token.handle)
 
     def synchronize(self):
         """Wait for every queued launch, fill and copy in this context."""
@@ -455,6 +510,14 @@ class ExportableCUDABuffer(DeviceBuffer):
         out = np.empty(self._shape, dtype=self._numpy_dtype)
         _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
         return out
+
+    # A copy on the legacy stream waits for the context's stream, which is
+    # made blocking: `Field.to_numpy_async` reads it in a worker thread.
+    waits_off_thread = True
+
+    def thread_binding(self):
+        token = getattr(self, "_token", None)
+        return super().thread_binding() if token is None else _BoundContext(token.handle)
 
     def read_range(self, start: int, count: int) -> np.ndarray:
         return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
@@ -832,6 +895,14 @@ class CUDABackend(Backend):
         stream = self._stream
         if stream is not None:
             _check(driver.cuStreamSynchronize(stream))
+
+    def async_marker(self):
+        """An event after the work queued so far in this context, for
+        `tack.sync_async` to wait on in a worker thread."""
+        token = getattr(self, "_token", None)
+        if token is None:
+            return None                      # the legacy stream: wait inline
+        return _StreamMarker(token)
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> CUDABuffer:
