@@ -104,7 +104,7 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 `Field` (in `lang/field.py`) holds a `DeviceBuffer` — the backend-specific storage:
 - **CPU**: `NumpyBuffer` wraps a numpy array. CPU backend accesses via ctypes pointers.
 - **Metal**: `MetalBuffer` — Metal shared buffer (zero-copy unified memory on Apple Silicon). The numpy array view points directly into Metal buffer memory.
-- **CUDA**: `CUDABuffer` holds a device pointer (`cuMemAlloc`). Explicit host↔device copies on `from_numpy`/`to_numpy`.
+- **CUDA**: `CUDABuffer` holds a stream-ordered device pointer (`cuMemAllocAsync` on the context's stream, freed with `cuMemFreeAsync`, so a temporary dropped while a queued launch still uses it is freed after that launch, and the driver's pool, with its release threshold raised, hands memory back out without a round trip). Every launch, fill and copy goes through that one stream (`_ContextToken.queue()`) in order and returns once queued; `to_numpy`, `read_range` and reductions queue a copy and wait for it; `from_numpy` and `fill` queue and return; `tack.sync()` is a stream synchronize, and a launch's error surfaces at the next wait. A buffer handed outside Tack (`wrap_ptr`, DLPack export, `share()`) completes every launch that uses it before the launch returns, and so does a texture launch, since its image could be destroyed before a queued launch read it. See `test_cuda_async.py`.
 - **HIP**: `HIPBuffer` holds a device pointer (`hipMalloc`). Explicit host↔device copies.
 - **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Explicit host↔device copies via immediate command list.
 
@@ -246,7 +246,9 @@ smallest). See `test_field_updates_in_loops.py` and
 Dispatching one variant from several Python threads: CPU binds arguments
 per call and shares no launch state. CUDA and HIP variants share their
 scalar pack buffers, so they hold `KernelVariant.dispatch_lock` from the
-pack update through the synchronous launch. Metal launches own their
+pack update through the launch (on CUDA both are queued on the stream in
+that order, so a later call's pack update cannot reach an earlier queued
+launch). Metal launches own their
 argument buffer and scalars, and encode under the backend's batch lock.
 Level Zero holds one backend `_launch_lock` (reentrant) over
 launches, reductions and copies, because its command lists are

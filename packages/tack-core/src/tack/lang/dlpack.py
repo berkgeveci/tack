@@ -241,6 +241,10 @@ def _get_device_info(field):
         return kDLCPU, 0, data_ptr
 
     if cls_name == "CUDABuffer":
+        # The consumer reads it at once, on its own stream, and may keep
+        # reading it after later launches: complete the queued ones now and
+        # every later one that uses it.
+        buf.share()
         data_ptr = int(buf._device_ptr)
         return kDLCUDA, 0, data_ptr
 
