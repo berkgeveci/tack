@@ -469,4 +469,10 @@ def dump(node, indent=0) -> str:
     if isinstance(node, IRTextureSample):
         coords = ", ".join(dump(c) for c in node.coords)
         return f"{prefix}TexSample({node.field_name}, [{coords}], shape={node.shape})"
+    if isinstance(node, IRFieldExtent):
+        kind = ('leading', 'elements', 'storage')[node.kind]
+        return f"{prefix}Extent({node.field_name}, {kind})"
+    if isinstance(node, IRBoundsCheck):
+        checks = ", ".join(f"{dump(i)} < {dump(e)}" for i, e in zip(node.indices, node.extents))
+        return f"{prefix}Bounds[{node.site}]({checks}; {dump(node.flat)})"
     return f"{prefix}<unknown: {type(node).__name__}>"

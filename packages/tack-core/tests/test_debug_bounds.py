@@ -283,6 +283,14 @@ def test_without_debug_mode_nothing_is_checked(backend):
 def test_inspect_shows_the_checks(debug):
     a, b = _field(np.zeros((2, 2))), _field(np.zeros((2, 2)))
     assert '__tack_in_bounds__' in tack.inspect(_right, a, b, mode='source')
+    # The IR is shown resolved: the leading extent is a load from the hidden
+    # extents field, and dimension 1 is baked in.
+    ir_text = tack.inspect(_right, a, b, mode='ir')
+    assert 'a[Bounds[0](i < __tack_extents__[0], (j + 1) < 2; ((i * 2) + (j + 1)))]' in ir_text
+    assert '<unknown' not in ir_text
+    from tack.lang.ir import dump
+    lowered = _right.get_ir(debug=True).functions[0]
+    assert 'Bounds[0](i < Extent(a, leading), (j + 1) < DimSize(a, 1); ' in dump(lowered)
 
 
 def test_debug_mode_from_the_environment(backend, monkeypatch):
