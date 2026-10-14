@@ -70,6 +70,18 @@ class DeviceBuffer:
         """Wait for the launches queued on this storage's device, if any
         are: a backend that queues launches overrides it."""
 
+    #: Whether `Field.to_numpy_async` should read this storage in a worker
+    #: thread: true where reading waits for queued device work. Storage
+    #: whose reads never wait (the CPU's) is read inline.
+    waits_off_thread: bool = False
+
+    def thread_binding(self):
+        """A context manager that makes this storage usable from a thread
+        other than the one that made it -- CUDA's context made current --
+        for `Field.to_numpy_async`'s worker. Nothing by default."""
+        import contextlib
+        return contextlib.nullcontext()
+
     def share(self):
         """Hand this storage outside Tack: wait for queued launches, and
         have later launches that use it complete before returning. A
@@ -235,6 +247,17 @@ class Field:
         if vector_shape is not None:
             arr = arr.reshape(vector_shape)
         return arr
+
+    async def to_numpy_async(self, vectors: bool = False) -> np.ndarray:
+        """`to_numpy` for ``asyncio``: ``await field.to_numpy_async()``.
+
+        Where reading waits for queued launches (CUDA, HIP, Metal, Level
+        Zero), the wait and the copy run in a worker thread and the event
+        loop goes on; elsewhere it is `to_numpy`. The result holds every write queued before the
+        call; one queued later by another task may or may not be in it.
+        """
+        from tack.runtime.aio import to_numpy_async
+        return await to_numpy_async(self, vectors=vectors)
 
     def fill(self, value):
         """Fill the field with a scalar value.

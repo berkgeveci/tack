@@ -134,6 +134,19 @@ class Backend:
         kernels, or handing memory to a library Tack cannot see, waits.
         """
 
+    def async_marker(self):
+        """A mark after every launch queued so far that another thread can
+        wait on -- an object with a blocking ``wait()``, which raises a
+        launch's error as `synchronize` would -- or None.
+
+        `tack.sync_async` waits on it in a worker thread so an ``asyncio``
+        loop keeps running. None, the default, means there is no such mark,
+        and the coroutine calls `synchronize` inline: right for a backend
+        whose launches complete before returning, and still correct, if
+        blocking, for one that queues launches and has not added a mark.
+        """
+        return
+
     def memory_space(self, ptr) -> str:
         """Classify where an integer pointer lives.
 

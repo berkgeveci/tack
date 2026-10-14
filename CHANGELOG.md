@@ -7,6 +7,29 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `asyncio` waits: `await tack.sync_async()` and `await
+  field.to_numpy_async()` wait for the device in a worker thread, so an
+  application's event loop (trame, Jupyter, a server) keeps running
+  while kernels finish; kernel calls themselves are unchanged. On CUDA
+  the wait is an event on the context's stream, on Metal the last
+  committed command buffer, on Level Zero a host-visible event signalled
+  by a barrier on the backend's command list, on HIP an event on the
+  device's stream; on the CPU, whose launches complete before returning,
+  the wait is inline. During a 490 ms CUDA kernel another task ran 436
+  times while one awaited `sync_async`, and not once under `tack.sync()`;
+  during a 685 ms Level Zero kernel (Intel Max 1100), 311 to 384 times;
+  during a 1.45 s HIP kernel (MI210), 1353 times.
+  Level Zero's `to_numpy`, `read_range` and reductions now wait on such
+  an event outside the backend's lock, so another thread may launch
+  while one waits. Every HIP wait (`tack.sync()`, reads, reductions) is
+  on an event too, through ctypes: hip-python's wrappers hold the GIL
+  while the runtime waits, which stopped every other Python thread for
+  the length of the kernel, and ROCm's `hipStreamSynchronize` holds the
+  stream, so a launch from another thread took the whole wait (350 ms)
+  and now takes 60 µs. CUDA reads wait for the stream before they copy,
+  for the same reason: a copy to pageable host memory waited with the
+  context held, and a launch from another thread took the whole wait
+  (910 ms on an H100), now 43 µs.
 - Compiled kernels are kept on disk, so a later process starts warm: the
   first contour of a 21³ grid in a new process went from 445 ms (CPU) and
   1.1 s (Metal) to 31 ms on an M1 Max. The lowered kernel and each
@@ -126,7 +149,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   1100, 100 small launches went from 8.7 to 2.6 ms, and a contour of a
   million hexahedra from about 24 to 18 ms. Ordering by barriers rather
   than an in-order list: Intel's in-order lists cost about 100 µs of device
-  time per kernel on driver 25.05.
+  time per kernel on driver 25.05. Copies to the device up to 16 MiB and
+  from it up to 64 KiB go through pooled USM host memory: from pageable
+  memory the driver does not return from appending such a copy until the
+  queue has drained, so a launch whose scalars were uploaded behind a
+  680 ms kernel waited 682 ms, now under 1 ms, and 100 small launches with
+  a changing scalar take 5.4 ms rather than 8.7.
 
 ### Fixed
 

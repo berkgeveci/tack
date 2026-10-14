@@ -4,6 +4,7 @@ completed before returning: order, each launch's own scalars, host writes
 and fills ordered among the launches, dropped temporaries freed after the
 launches that use them, and sync waiting for everything."""
 import gc
+import threading
 import time
 
 import numpy as np
@@ -198,3 +199,131 @@ def test_a_dlpack_export_completes_its_launches():
     _add_into(acc, 1)
     (err,) = hip_backend.hip.hipStreamQuery(get_backend()._stream)
     assert err == hip_backend.hip.hipError_t.hipSuccess
+
+
+@tack.kernel
+def _spin(out, iters: tack.i32):
+    for i in range(out.shape[0]):
+        acc = 0.0
+        for k in range(iters):
+            acc = acc * 0.999 + 1.0
+        out[i] = acc
+
+
+def _long_launch(out, seconds=0.3):
+    """Iterations for a launch of about ``seconds`` on this device."""
+    iters = 1000
+    while iters < 1 << 28:
+        _spin(out, iters)
+        tack.sync()
+        t0 = time.perf_counter()
+        _spin(out, iters)
+        tack.sync()
+        if time.perf_counter() - t0 >= seconds:
+            return iters
+        iters *= 4
+    pytest.skip("no launch long enough to measure here")
+
+
+def _nothing_queued():
+    (err,) = hip_backend.hip.hipStreamQuery(get_backend()._stream)
+    return err == hip_backend.hip.hipError_t.hipSuccess
+
+
+def test_a_marker_waits_for_the_launches_before_it():
+    """`async_marker` covers every launch queued so far, and its wait
+    raises nothing when they succeed."""
+    acc = tack.zeros(tack.i32, (64,))
+    for k in range(50):
+        _add_into(acc, k)
+    marker = get_backend().async_marker()
+    assert isinstance(marker, hip_backend._StreamMarker)
+    marker.wait()
+    assert _nothing_queued()
+    np.testing.assert_array_equal(acc.to_numpy(), sum(range(50)) + 50 * np.arange(64))
+
+
+def test_a_marker_does_not_wait_for_later_launches():
+    out = tack.field(tack.f32, (1 << 18,))
+    short = tack.zeros(tack.i32, (16,))
+    iters = _long_launch(out)
+    _add_into(short, 1)
+    marker = get_backend().async_marker()
+    _spin(out, iters)                        # queued after the mark
+    t0 = time.perf_counter()
+    marker.wait()
+    assert time.perf_counter() - t0 < 0.1
+    assert not _nothing_queued()
+    np.testing.assert_array_equal(short.to_numpy(), 1 + np.arange(16))
+
+
+@pytest.mark.parametrize("wait", ["sync", "to_numpy", "index", "sum", "marker"])
+def test_a_wait_releases_the_gil_and_the_stream(wait):
+    """While one thread waits for a long launch, another thread keeps
+    launching on the same stream. hip-python's wrappers hold the GIL while
+    the runtime waits, and ROCm's hipStreamSynchronize holds the stream:
+    with either, the launcher got one launch per 350 ms wait. Waiting on an
+    event through ctypes, it launches every millisecond."""
+    out = tack.field(tack.f32, (1 << 18,))
+    short = tack.zeros(tack.i32, (16,))
+    iters = _long_launch(out)
+    _add_into(short, 1)                      # compiled before the timing,
+    out.sum()                                # as is the reduction kernel:
+    tack.sync()                              # hipRTC holds the GIL
+    waits = {
+        "sync": tack.sync,
+        "to_numpy": out.to_numpy,
+        "index": lambda: out[3],
+        "sum": out.sum,
+        "marker": lambda: get_backend().async_marker().wait(),
+    }
+    _spin(out, iters)
+    waiter = threading.Thread(target=waits[wait])
+    waiter.start()
+    time.sleep(0.01)
+    launched = 0
+    t0 = time.perf_counter()
+    while waiter.is_alive():
+        _add_into(short, 1)
+        launched += 1
+        time.sleep(0.001)
+    elapsed = time.perf_counter() - t0
+    waiter.join()
+    assert launched >= elapsed * 1000 * 0.1, (launched, elapsed)
+    assert short.to_numpy()[0] == 1 + launched
+
+
+def test_a_read_from_another_thread_binds_the_buffers_device():
+    """A worker thread starts on device 0; reading a field makes its device
+    current for the read and puts the previous one back."""
+    out = tack.field(tack.f32, (8,))
+    out.fill(2.5)
+    device = get_backend()._device
+    seen = {}
+
+    def read():
+        with out._buffer.thread_binding():
+            seen["bound"] = hip_backend.hip.hipGetDevice()[1]
+            seen["values"] = out.to_numpy()
+        seen["after"] = hip_backend.hip.hipGetDevice()[1]
+
+    t = threading.Thread(target=read)
+    t.start()
+    t.join()
+    assert seen["bound"] == device
+    assert seen["after"] == 0
+    np.testing.assert_array_equal(seen["values"], 2.5)
+    assert out._buffer.waits_off_thread
+
+
+def test_waits_go_through_hip_python_without_the_runtime_library(monkeypatch):
+    """Without the runtime library through ctypes the waits still work,
+    holding the GIL."""
+    monkeypatch.setattr(hip_backend, "_RUNTIME", hip_backend._NO_RUNTIME)
+    assert hip_backend._runtime() is None
+    acc = tack.zeros(tack.i32, (64,))
+    _add_into(acc, 3)
+    get_backend().async_marker().wait()
+    tack.sync()
+    assert acc[1] == 4
+    np.testing.assert_array_equal(acc.to_numpy(), 3 + np.arange(64))
