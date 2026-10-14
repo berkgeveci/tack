@@ -617,7 +617,7 @@ def _stored_variant(backend, disk_key, template, effective_args):
     import pickle
     try:
         ir_func = pickle.loads(entry["ir"])
-        payload = backend.load_variant(ir_func, entry["artifact"])
+        payload = backend.load_variant(ir_func, entry["artifact"], effective_args)
     except Exception:
         disk_cache._count("bad")
         return None

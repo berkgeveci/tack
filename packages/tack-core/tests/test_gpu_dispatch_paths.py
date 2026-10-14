@@ -16,6 +16,7 @@ Without this, three of the five execute() bodies are only ever verified by
 being read.
 """
 
+import os
 import subprocess
 import sys
 import textwrap
@@ -384,8 +385,12 @@ def test_gpu_dispatch_path(name, tmp_path):
     script_path = tmp_path / f"gpu_dispatch_{name}.py"
     script_path.write_text(script)
 
+    # The backend is a stub made with __new__, so a disk cache's target (the
+    # device, queried in __init__) is meaningless here: the cache stays off
+    # even when the suite runs through one.
     proc = subprocess.run([sys.executable, str(script_path)],
-                          capture_output=True, text=True)
+                          capture_output=True, text=True,
+                          env={**os.environ, "TACK_CACHE": "off"})
     assert proc.returncode == 0, (
         f"{name} dispatch path failed:\n{proc.stdout}\n{proc.stderr}")
     assert "OK" in proc.stdout

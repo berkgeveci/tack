@@ -630,7 +630,7 @@ class MetalBackend(Backend):
                 "full_workgroups": compiled._requires_full_workgroups,
                 "pack_info": pack_info}
 
-    def load_variant(self, ir_func, artifact):
+    def load_variant(self, ir_func, artifact, effective_args=None):
         compiled = _load_kernel(self._device, self._command_queue, artifact["msl"],
                                 artifact["name"], artifact["param_types"],
                                 artifact["param_is_field"], artifact["param_is_texture"],

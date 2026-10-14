@@ -439,13 +439,17 @@ version. It names the directory the entries live in, so another Tack never
 reads them.
 
 **Artifacts.** `Backend.cache_target()`, `variant_artifact(payload)` and
-`load_variant(ir_func, artifact)`; a backend whose `cache_target()` is None
-(CUDA, HIP and Level Zero, for now) stores only the `.ir` level.
+`load_variant(ir_func, artifact, effective_args)`; a backend whose
+`cache_target()` is None (HIP and Level Zero, for now) stores only the
+`.ir` level. `effective_args` are the call's arguments: a GPU variant's
+scalar pack buffers are device memory of the process, so a load makes them
+anew from the call's scalars, as `_build_variant` does.
 
 | Backend | Artifact | Loading it |
 |---|---|---|
 | CPU | the object code MCJIT emitted (`set_object_cache`) | `add_object_file` into a new engine: about 0.4 ms, no LLVM optimization or code generation |
 | Metal | MSL source, entry name, parameter layout, scalar pack layout | `newLibraryWithSource`, which macOS's own shader cache makes fast for source it has compiled before |
+| CUDA | PTX from NVRTC, entry name, parameter layout, scalar pack layout | `cuModuleLoadData`: the driver compiles the PTX for the device, so the target names the device and compute capability, the driver version, NVRTC's version and its options |
 
 **File-system rules.** Entries are written to a temporary file in the same
 directory and renamed into place, atomic on POSIX file systems including

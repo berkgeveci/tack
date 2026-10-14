@@ -269,8 +269,13 @@ each resolution to the thread's `_Recorder`; an `.ir` entry is used only if
 every recorded name re-resolves to the same fingerprint. Anything lowering
 reads from Python must go through `CallBindings` or into the key, or a
 stale entry runs. Backends opt into `.variant` with `cache_target()`,
-`variant_artifact()` and `load_variant()` (CPU: MCJIT object code; Metal:
-MSL). Atomic rename writes, checksummed entries, owner-only directories;
+`variant_artifact()` and `load_variant(ir_func, artifact, effective_args)`
+(CPU: MCJIT object code; Metal: MSL; CUDA: PTX, loaded with
+`cuModuleLoadData`, its target naming the device and compute capability,
+the driver that compiles the PTX, NVRTC and its options). A GPU payload's
+scalar pack buffers are device memory, so `load_variant` recreates them
+from the call's `effective_args`; CPU and Metal ignore that argument. HIP
+and Level Zero still return `None` from `cache_target()`. Atomic rename writes, checksummed entries, owner-only directories;
 under MPI the default mode reads one bundle and writes nothing (a Slurm
 batch script is not MPI: Slurm's size is `SLURM_STEP_NUM_TASKS`). Entries
 of every version share `TACK_CACHE_SIZE` (1 GiB): a writer prunes by mtime

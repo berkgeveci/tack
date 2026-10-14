@@ -5,7 +5,8 @@ argument types and shapes. Most of that time is Tack's own front end, and
 the rest is the backend's compiler. Tack keeps what it compiles on disk, so
 a later process starts warm. On an M1 Max, the first contour of a 21³ grid
 in a new process took 445 ms on the CPU and 1.1 s on Metal; with the cache
-warm, 31 ms on both.
+warm, 31 ms on both. On an RTX 6000 Ada it took 1.15 s on CUDA, 0.88 s
+with only the lowered kernels stored, and 72 ms with their PTX stored too.
 
 The cache is on by default and needs no code. This page covers where it
 lives, how to turn it off, and how to use it in MPI jobs on a shared file
@@ -132,6 +133,7 @@ first call in a process may be a disk hit rather than a compile. See
 
 ## Backends
 
-The CPU and Metal backends store both levels. On CUDA, HIP and Level Zero,
-lowered kernels are stored, and the variants are compiled in each process;
-storing their compiled code is planned.
+The CPU, Metal and CUDA backends store both levels (CUDA stores PTX, which
+the driver compiles for the device at load). On HIP and Level Zero, lowered
+kernels are stored, and the variants are compiled in each process; storing
+their compiled code is planned.

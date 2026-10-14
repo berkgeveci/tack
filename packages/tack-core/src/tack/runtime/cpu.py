@@ -903,7 +903,7 @@ class CPUBackend(Backend):
             raise ValueError("no object code was kept for this kernel")
         return compiled.object_code
 
-    def load_variant(self, ir_func, object_code):
+    def load_variant(self, ir_func, object_code, effective_args=None):
         engine = llvm.create_mcjit_compiler(llvm.parse_assembly(""), _create_target_machine())
         engine.add_object_file(llvm.ObjectFileRef.from_data(object_code))
         engine.finalize_object()

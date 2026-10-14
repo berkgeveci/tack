@@ -154,8 +154,12 @@ class Backend:
         from which ``load_variant`` rebuilds it in another process."""
         raise NotImplementedError
 
-    def load_variant(self, ir_func, artifact):
-        """The payload of a variant, from what ``variant_artifact`` stored."""
+    def load_variant(self, ir_func, artifact, effective_args):
+        """The payload of a variant, from what ``variant_artifact`` stored.
+
+        ``effective_args`` are the call's arguments, for what the payload
+        holds per process rather than on disk: the GPU backends' scalar
+        pack buffers. CPU and Metal ignore them."""
         raise NotImplementedError
 
     def reduce_field(self, field, op: str) -> float:
