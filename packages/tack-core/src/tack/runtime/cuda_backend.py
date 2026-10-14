@@ -125,13 +125,23 @@ class _ContextToken:
     Tack adopts those but never destroys them, so their token never dies here.
     """
 
-    __slots__ = ("alive", "handle", "owned", "users")
+    __slots__ = ("alive", "handle", "owned", "stream", "users")
 
     def __init__(self, handle, owned):
         self.handle = handle
         self.users = 1
         self.alive = True
         self.owned = owned
+        # The context's queue: every launch, fill and copy Tack makes in the
+        # context goes through this one stream, in order, and returns once
+        # it is queued. Made on first use, in the context.
+        self.stream = None
+
+    def queue(self):
+        if self.stream is None:
+            err, self.stream = driver.cuStreamCreate(0)   # ordered with the legacy stream
+            _check(err)
+        return self.stream
 
 
 # Every CUDA context Tack is currently aware of, keyed by handle. Contexts an
@@ -157,12 +167,13 @@ _DEAD_CONTEXT_MSG = (
 )
 
 
-def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count):
+def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count, stream=None):
     """Copy elements ``[start, start + count)`` of an allocation to the host.
 
-    One ``cuMemcpyDtoH`` of just those bytes, so ``field[i]`` on the host
-    moves one element rather than the whole field. The range is checked
-    here because a device copy past the allocation is not caught by NumPy.
+    One copy of just those bytes, so ``field[i]`` on the host moves one
+    element rather than the whole field, queued after the launches before
+    it and waited for. The range is checked here because a device copy past
+    the allocation is not caught by NumPy.
     """
     itemsize = numpy_dtype.itemsize
     if start < 0 or count < 0 or (start + count) * itemsize > nbytes:
@@ -171,31 +182,60 @@ def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count):
             f"{nbytes // itemsize} elements")
     out = np.empty(count, dtype=numpy_dtype)
     if count:
-        _check(driver.cuMemcpyDtoH(out, int(device_ptr) + start * itemsize,
-                                   count * itemsize))
+        if stream is None:
+            _check(driver.cuMemcpyDtoH(out, int(device_ptr) + start * itemsize,
+                                       count * itemsize))
+        else:
+            _check(driver.cuMemcpyDtoHAsync(out, int(device_ptr) + start * itemsize,
+                                            count * itemsize, stream))
+            _check(driver.cuStreamSynchronize(stream))
     return out
 
 
 class CUDABuffer(DeviceBuffer):
     """Device-resident buffer backed by a CUDA device pointer.
 
-    Data lives on the GPU.  ``from_numpy`` copies host→device,
-    ``to_numpy`` copies device→host.
+    Data lives on the GPU. Everything that touches it goes through the
+    context's stream, in order with the launches: ``from_numpy`` and
+    ``fill`` are queued and return at once, ``to_numpy`` and ``read_range``
+    are queued and waited for. The memory is stream-ordered too
+    (``cuMemAllocAsync``/``cuMemFreeAsync``), so a field Python drops while
+    a queued launch still uses it is freed after that launch, and the
+    driver's pool hands the memory back out without a device round trip.
     """
 
     backend_name = "cuda"
+    # Memory handed outside Tack (DLPack, a wrapped pointer) may be read
+    # with no Tack call between: a launch that uses it completes before
+    # returning, as on Metal.
+    _shared = False
 
     def __init__(self, numpy_dtype, shape):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
         self._token = _current_context_token()
-        # cuMemAlloc rejects a zero-byte request; an empty field gets one
-        # byte it never reads, as on Level Zero.
-        err, self._device_ptr = driver.cuMemAlloc(max(self._nbytes, 1))
+        stream = self._token.queue()
+        # A zero-byte request is rejected; an empty field gets one byte it
+        # never reads, as on Level Zero.
+        err, self._device_ptr = driver.cuMemAllocAsync(max(self._nbytes, 1), stream)
         _check(err)
-        # Zero-initialise
-        _check(driver.cuMemsetD8(self._device_ptr, 0, self._nbytes))
+        _check(driver.cuMemsetD8Async(self._device_ptr, 0, self._nbytes, stream))
+
+    @property
+    def _stream(self):
+        return self._token.queue()
+
+    def synchronize(self):
+        """Wait for every queued launch, fill and copy in this context."""
+        self._live("wait for")
+        _check(driver.cuStreamSynchronize(self._stream))
+
+    def share(self):
+        """Hand this memory outside Tack: wait for the queued work now, and
+        have every later launch that uses it complete before returning."""
+        self._shared = True
+        self.synchronize()
 
     def _live(self, verb):
         """Refuse to touch device memory whose context is gone."""
@@ -215,22 +255,28 @@ class CUDABuffer(DeviceBuffer):
         return self._device_ptr
 
     def from_numpy(self, arr: np.ndarray):
+        # Queued after the launches before it, which may still read the old
+        # contents. The host array is pageable, so the driver has staged it
+        # before this returns and the array may go.
         self._live("write to")
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        _check(driver.cuMemcpyHtoD(self._device_ptr, src, self._nbytes))
+        _check(driver.cuMemcpyHtoDAsync(self._device_ptr, src, self._nbytes, self._stream))
 
     def to_numpy(self) -> np.ndarray:
         self._live("read")
         out = np.empty(self._shape, dtype=self._numpy_dtype)
         # Through a flat view: cuda-python does not take a zero-dimensional
         # array as a host buffer (CUDA_ERROR_INVALID_VALUE, or a crash).
-        _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
+        stream = self._stream
+        _check(driver.cuMemcpyDtoHAsync(out.reshape(-1), self._device_ptr, self._nbytes,
+                                        stream))
+        _check(driver.cuStreamSynchronize(stream))
         return out
 
     def read_range(self, start: int, count: int) -> np.ndarray:
         self._live("read")
         return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
-                                  start, count)
+                                  start, count, self._stream)
 
     def fill(self, value):
         self.fill_bytes(device_fill.scalar_pattern(value, self._numpy_dtype))
@@ -238,26 +284,30 @@ class CUDABuffer(DeviceBuffer):
     def fill_bytes(self, pattern):
         self._live("write to")
         base = int(self._device_ptr)
+        stream = self._stream
 
         def native(pattern):
             byte = device_fill.uniform_byte(pattern)
             if byte is not None:
-                _check(driver.cuMemsetD8(self._device_ptr, byte, self._nbytes))
+                _check(driver.cuMemsetD8Async(self._device_ptr, byte, self._nbytes, stream))
             elif len(pattern) == 2:
-                _check(driver.cuMemsetD16(self._device_ptr, device_fill.as_unsigned(pattern),
-                                          self._nbytes // 2))
+                _check(driver.cuMemsetD16Async(self._device_ptr,
+                                               device_fill.as_unsigned(pattern),
+                                               self._nbytes // 2, stream))
             elif len(pattern) == 4:
-                _check(driver.cuMemsetD32(self._device_ptr, device_fill.as_unsigned(pattern),
-                                          self._nbytes // 4))
+                _check(driver.cuMemsetD32Async(self._device_ptr,
+                                               device_fill.as_unsigned(pattern),
+                                               self._nbytes // 4, stream))
             else:
                 return False
             return True
 
         device_fill.fill(
             self._nbytes, pattern, native,
-            lambda offset, data: _check(driver.cuMemcpyHtoD(
-                base + offset, np.frombuffer(data, np.uint8), len(data))),
-            lambda dst, src, size: _check(driver.cuMemcpyDtoD(base + dst, base + src, size)))
+            lambda offset, data: _check(driver.cuMemcpyHtoDAsync(
+                base + offset, np.frombuffer(data, np.uint8), len(data), stream)),
+            lambda dst, src, size: _check(driver.cuMemcpyDtoDAsync(
+                base + dst, base + src, size, stream)))
         return True
 
     @property
@@ -269,6 +319,7 @@ class CUDABuffer(DeviceBuffer):
         self._live("export")
         if not hasattr(self, '_export_buf'):
             self._export_buf = ExportableCUDABuffer(self._numpy_dtype, self._shape)
+            self.synchronize()
             _check(driver.cuMemcpyDtoD(
                 self._export_buf._device_ptr, self._device_ptr, self._nbytes))
         return self._export_buf.export_memory()
@@ -281,7 +332,9 @@ class CUDABuffer(DeviceBuffer):
             return
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
-                driver.cuMemFree(self._device_ptr)
+                # In stream order: after every launch queued so far, which
+                # may still be using this memory.
+                driver.cuMemFreeAsync(self._device_ptr, token.queue())
             except Exception:
                 pass
 
@@ -629,7 +682,7 @@ class CUDATextureImage:
         copy_params.Height = H
         copy_params.Depth = D
 
-        _check(driver.cuMemcpy3D(copy_params))
+        _check(driver.cuMemcpy3DAsync(copy_params, field._buffer._stream))
 
     def __del__(self):
         # Same rule as CUDABuffer: the context took these with it.
@@ -658,8 +711,9 @@ class CompiledCUDAKernel:
         self._param_is_texture = param_is_texture or [False] * len(param_types)
         self.ptx = None     # what NVRTC made, kept for the disk cache
 
-    def __call__(self, kernel_args: list, loop_end: int, extents=(), limits=None):
-        """Dispatch the CUDA kernel.
+    def __call__(self, kernel_args: list, loop_end: int, extents=(), limits=None,
+                 stream=None):
+        """Queue the CUDA kernel on ``stream`` and return.
 
         A multi-dimensional loop (``extents``, slowest first) launches a grid
         of its shape, or a flat one with ``__flat__`` set when an extent is
@@ -696,10 +750,9 @@ class CompiledCUDAKernel:
             self._func,
             *grid,
             *block,
-            0, 0,
+            0, stream or 0,
             arg_ptrs, 0,
         ))
-        _check(driver.cuCtxSynchronize())
 
 
 class CUDABackend(Backend):
@@ -770,6 +823,33 @@ class CUDABackend(Backend):
         }
 
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledCUDAKernel}
+        # Keep freed memory in the driver's pool rather than returning it to
+        # the device at every synchronization: a filter allocates and drops
+        # dozens of temporaries, and the pool hands them back out at once.
+        try:
+            err, pool = driver.cuDeviceGetDefaultMemPool(self._device)
+            _check(err)
+            _check(driver.cuMemPoolSetAttribute(
+                pool, driver.CUmemPool_attribute.CU_MEMPOOL_ATTR_RELEASE_THRESHOLD,
+                driver.cuuint64_t(2 ** 64 - 1)))
+        except Exception:
+            pass                            # the pool releases at syncs; still correct
+
+    @property
+    def _stream(self):
+        """The context's queue; None for a backend built without a context
+        (the dispatch-path tests make one with ``__new__``), which launches
+        on the legacy stream."""
+        token = getattr(self, "_token", None)
+        return token.queue() if token is not None else None
+
+    def synchronize(self):
+        """Wait for every launch, fill and copy queued in this context. A
+        launch's error surfaces here, at the next host access, rather than
+        at its call."""
+        stream = self._stream
+        if stream is not None:
+            _check(driver.cuStreamSynchronize(stream))
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> CUDABuffer:
@@ -824,6 +904,7 @@ class CUDABackend(Backend):
         buf._device_ptr = ptr  # integer or CUdeviceptr
         buf._owned = False
         buf._token = _current_context_token()
+        buf._shared = True      # someone else's memory: launches on it complete
         return buf
 
     def execute(self, kernel, args, kwargs):
@@ -864,7 +945,13 @@ class CUDABackend(Backend):
                 kept_args = split_args(effective_args, pack_info)
                 kernel_args = bind_textures(kept_args) + pack_fields
 
-            compiled(kernel_args, loop_end, extents, self._launch_limits)
+            compiled(kernel_args, loop_end, extents, self._launch_limits, self._stream)
+        # Memory that can be read with no Tack call between -- a wrapped
+        # pointer, an exported field -- and a texture, whose image could be
+        # destroyed before a queued launch has read it: complete now.
+        if any(getattr(getattr(a, '_buffer', None), '_shared', False)
+               or isinstance(a, CUDATextureImage) for a in kernel_args):
+            self.synchronize()
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.
@@ -983,10 +1070,9 @@ class CUDABackend(Backend):
 
         _check(driver.cuLaunchKernel(
             func, grid_dim, 1, 1, block_dim, 1, 1,
-            block_dim * 4, 0, args, 0))
-        _check(driver.cuCtxSynchronize())
+            block_dim * 4, self._stream, args, 0))
 
-        result = out_buf.to_numpy()
+        result = out_buf.to_numpy()         # queued after the launch, and waited for
         return float(result[0])
 
     def _compile_reduce(self, op: str):
@@ -1018,6 +1104,10 @@ class CUDABackend(Backend):
             if token.users > 0:
                 return
             _CONTEXTS.pop(int(token.handle), None)
+            if token.stream is not None:
+                driver.cuStreamSynchronize(token.stream)
+                driver.cuStreamDestroy(token.stream)
+                token.stream = None
             if token.owned:
                 # Mark dead before destroying, so any buffer still holding
                 # this token reports the problem instead of faulting.
