@@ -7,6 +7,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
+  field and array index in every kernel, one dimension at a time. An
+  out-of-bounds access is skipped (a load gives 0) and the call raises
+  `IndexError` naming the access, its file and line, the index and the
+  extent, and how many more were skipped; an access inside a device
+  function names it. It runs on every backend, compiles separately from
+  normal kernels, and does not compile per field length. Without it,
+  generated code is unchanged.
 - `pytest -m quick`, a module per area of the code, 80 s on four
   workers, and `pytest -n auto` for the whole suite across processes
   (pytest-xdist is in the `dev` extra): 4:30 on eight workers where the

@@ -11,6 +11,7 @@ OpenCL C uses ``long`` for 64-bit integers (``long long`` is not standard OpenCL
 This module reuses the CUDA codegen with OpenCL-specific overrides.
 """
 
+from tack.codegen.bounds import bounds_helpers
 from tack.codegen.cuda_gen import _BINOP_MAP, CUDACodeGen
 from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name
@@ -63,6 +64,7 @@ class OpenCLCodeGen(CUDACodeGen):
     """
 
     _table_dialect = 'opencl'
+    _BOUNDS_DIALECT = 'opencl'
 
     _LOOP_INDEX = _OCL_INT
 
@@ -136,6 +138,7 @@ class OpenCLCodeGen(CUDACodeGen):
                 self._integer_division_helpers, _OCL_C_TYPE_MAP, 'static inline')
             + self._integers.definitions('static inline')
             + f32_reduction_helpers('opencl', self._block_extrema)
+            + bounds_helpers('opencl', self._needs_bounds)
         )
         if self._needs_float_atomic_add:
             # The contributed value is evaluated once, outside the retries.

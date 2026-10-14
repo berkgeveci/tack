@@ -8,10 +8,11 @@ import types
 import weakref
 
 from tack.lang.ast_transform import transform_kernel
-from tack.lang.func import read_source
+from tack.lang.func import read_source, tag_origin
 from tack.lang.ir_verify import verify_ir
 from tack.lang.source_validation import UnsupportedSyntaxError
 from tack.lang.types import ScalarType, f32, i32
+from tack.runtime import debug_bounds, dispatch
 
 
 def _verified_transform(*args, **kwargs):
@@ -144,6 +145,7 @@ class Kernel:
         if funcdef is None:
             self._source = textwrap.dedent(read_source(func, "kernel"))
             self._ast = ast.parse(self._source)
+            tag_origin(self._ast, func)
             self._funcdef = self._ast.body[0]  # The FunctionDef node
         else:
             # A kernel derived from another's AST: the result epilogue below.
@@ -159,10 +161,13 @@ class Kernel:
         self._result = None if funcdef is not None else _split_result(self, func)
         self._result_field = None
 
-    def get_ir(self, vector_fields=None, template_args=None, texture_fields=None):
-        """Get IR, re-transforming if vector/texture field or template metadata is provided."""
+    def get_ir(self, vector_fields=None, template_args=None, texture_fields=None, debug=False):
+        """Get IR, re-transforming if vector/texture field or template metadata is provided.
+
+        ``debug`` lowers with bounds checks (see ``ir_bounds``), cached apart.
+        """
         if template_args:
-            key = self._make_cache_key(vector_fields, template_args, texture_fields)
+            key = self._make_cache_key(vector_fields, template_args, texture_fields, debug)
             cached = self._ir_cache.get(key)
             if cached is not None:
                 return cached
@@ -175,18 +180,18 @@ class Kernel:
                     self._ir_cache[key] = _verified_transform(
                         rewritten_ast, vector_fields=vector_fields,
                         texture_fields=texture_fields, python_func=self.func,
-                        template_funcs=resolved_funcs,
+                        template_funcs=resolved_funcs, debug=debug,
                     )
                     for token in _key_tokens(key):
                         token.kernels.add(self)
                 return self._ir_cache[key]
-        if not vector_fields and not texture_fields:
+        if not vector_fields and not texture_fields and not debug:
             if self._ir is None:
                 with _transform_lock:
                     if self._ir is None:
                         self._ir = _verified_transform(self._ast, python_func=self.func)
             return self._ir
-        key = self._make_cache_key(vector_fields, None, texture_fields)
+        key = self._make_cache_key(vector_fields, None, texture_fields, debug)
         cached = self._ir_cache.get(key)
         if cached is not None:
             return cached
@@ -194,13 +199,13 @@ class Kernel:
             if key not in self._ir_cache:
                 self._ir_cache[key] = _verified_transform(
                     self._ast, vector_fields=vector_fields,
-                    texture_fields=texture_fields, python_func=self.func,
+                    texture_fields=texture_fields, python_func=self.func, debug=debug,
                 )
             return self._ir_cache[key]
 
-    def _make_cache_key(self, vector_fields, template_args, texture_fields=None):
+    def _make_cache_key(self, vector_fields, template_args, texture_fields=None, debug=False):
         """Build a cache key that distinguishes different specializations."""
-        parts = []
+        parts = [("debug",)] if debug else []
         if vector_fields:
             parts.append(("vec", tuple(sorted(vector_fields.items()))))
         if texture_fields:
@@ -223,6 +228,8 @@ class Kernel:
             result = make_field(dtype=dtype, shape=(1,))
             self._result_field = result
         backend.execute(epilogue, (*args, result), kwargs)
+        if dispatch._debug:
+            debug_bounds.check()
         return result[0]
 
     def __get__(self, instance, owner=None):
@@ -241,6 +248,8 @@ class Kernel:
         backend = get_backend()
         try:
             backend.execute(self, args, kwargs)
+            if dispatch._debug:
+                debug_bounds.check()
             if self._result is None:
                 return None
             return self._run_result(backend, args, kwargs)
