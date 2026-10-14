@@ -1584,17 +1584,25 @@ class LevelZeroBackend(Backend):
         return self._events.pop()
 
     def _free(self, ptr):
-        """Free device memory after the work queued so far, which may use it."""
+        """Free device memory after the work queued so far, which may use it.
+
+        Under `_launch_lock`: the deferred free looks at what the queue has
+        yet to run, and two threads freeing at once, or one freeing while
+        another appends, crashed the driver (25.05; four threads launching
+        and dropping fields, within a few hundred frees). Reentrant, so a
+        field collected while its thread holds the lock is freed in turn.
+        """
         ze = _get_ze()
-        if self._deferred_free:
-            desc = ze_memory_free_ext_desc_t(
-                stype=ZE_STRUCTURE_TYPE_MEMORY_FREE_EXT_DESC, pNext=None,
-                freePolicy=ZE_DRIVER_MEMORY_FREE_POLICY_EXT_FLAG_DEFER_FREE)
-            _check_ze(ze.zeMemFreeExt(self._context, ctypes.byref(desc), ptr),
-                       "zeMemFreeExt")
-        else:
-            self.synchronize()
-            ze.zeMemFree(self._context, ptr)
+        with self._launch_lock:
+            if self._deferred_free:
+                desc = ze_memory_free_ext_desc_t(
+                    stype=ZE_STRUCTURE_TYPE_MEMORY_FREE_EXT_DESC, pNext=None,
+                    freePolicy=ZE_DRIVER_MEMORY_FREE_POLICY_EXT_FLAG_DEFER_FREE)
+                _check_ze(ze.zeMemFreeExt(self._context, ctypes.byref(desc), ptr),
+                           "zeMemFreeExt")
+            else:
+                self.synchronize()
+                ze.zeMemFree(self._context, ptr)
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> L0Buffer:

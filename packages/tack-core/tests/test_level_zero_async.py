@@ -259,3 +259,22 @@ def test_markers_reuse_their_events():
         assert acc[0] == k + 1
     assert len(backend._event_pools) == pools
     assert len(backend._events) == pools * backend._EVENT_POOL_SIZE
+
+
+def test_threads_launch_and_free_at_once():
+    """Four threads each allocate, launch on and drop fields. The deferred
+    free ran outside the launch lock and crashed the driver."""
+    import threading
+
+    def work(k):
+        for _ in range(400):
+            f = tack.zeros(tack.i32, (256,))
+            _add_into(f, k)
+            del f
+
+    threads = [threading.Thread(target=work, args=(k,)) for k in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    tack.sync()
