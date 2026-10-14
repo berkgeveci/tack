@@ -5,6 +5,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ## Unreleased
 
+### Added
+
+- `pytest -m quick`, a module per area of the code, 80 s on four
+  workers, and `pytest -n auto` for the whole suite across processes
+  (pytest-xdist is in the `dev` extra): 4:30 on eight workers where the
+  serial run took 28 minutes, with the same counts. See CLAUDE.md,
+  "Tests, in three tiers".
+
 ### Fixed
 
 - Grids with a size of 1 before another axis -- `uniform_grid((1, 3))`, a

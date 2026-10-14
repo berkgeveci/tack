@@ -14,6 +14,8 @@ import tack
 from tack.runtime import cpu
 from tack.runtime.kernel_utils import fields_disjoint, written_field_params
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 @pytest.fixture(autouse=True)
 def init_cpu():

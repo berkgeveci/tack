@@ -12,6 +12,8 @@ import pytest
 import tack
 from tack.lang.source_validation import UnsupportedSyntaxError
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 _MODULE_SOURCE = """
 import tack
 @tack.func
