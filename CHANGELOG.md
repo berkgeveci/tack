@@ -12,6 +12,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   (pytest-xdist is in the `dev` extra): 4:30 on eight workers where the
   serial run took 28 minutes, with the same counts. See CLAUDE.md,
   "Tests, in three tiers".
+- An `interop` extra for VTK and MFEM (PyMFEM), the references the dataset
+  tests compare against: `uv sync --extra interop` installs them from the
+  lock, where a later `uv sync` used to remove a hand-installed copy. MFEM
+  is left out where PyMFEM has no wheels (anywhere but macOS on Apple
+  silicon and Linux x86_64).
 
 ### Fixed
 

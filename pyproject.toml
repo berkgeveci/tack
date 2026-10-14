@@ -23,6 +23,15 @@ dev = [
     # Voronoi columns in the polyhedra tests (scipy.spatial).
     "scipy",
 ]
+# VTK and MFEM (PyMFEM), the references the dataset tests compare against;
+# without them those comparisons skip. In the lock, so `uv sync` keeps
+# them, and PyMFEM's numba resolves against the llvmlite Tack compiles with.
+# PyMFEM ships wheels for these two platforms only; elsewhere it would build
+# MFEM from source, so it is left out and the MFEM comparisons skip.
+interop = [
+    "vtk",
+    "mfem; (sys_platform == 'darwin' and platform_machine == 'arm64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
+]
 docs = [
     "mkdocs-material",
     "mkdocstrings[python]",
