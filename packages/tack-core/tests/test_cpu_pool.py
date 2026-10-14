@@ -4,11 +4,11 @@ Python path in test_cpu_threading.py; here the pool itself is: that it is
 chosen, that it runs every chunk once with the kernel's own arguments, that
 backends with different thread counts share it, that it zeroes new fields,
 and that it can be switched off."""
-import ctypes
 import os
 import platform
 import subprocess
 import sys
+import threading
 import time
 
 import numpy as np
@@ -167,19 +167,119 @@ def test_a_large_field_is_zeroed_through_the_pool(monkeypatch):
     assert not small._data.any()
 
 
-def test_a_slow_worker_takes_fewer_chunks(monkeypatch):
-    """Chunks are claimed: over a range long enough for several per worker,
-    no worker is left idle and none has to take a fixed share."""
+def test_chunks_are_claimed_and_cover_the_range(monkeypatch):
+    """Chunks are claimed, not assigned: a range long enough for several per
+    worker is cut finer than one share each, every element is claimed once
+    in whole chunks, and no worker is bound to a share. Which workers claim
+    is the scheduler's: a late one may claim nothing (on a loaded host the
+    counts have come out as [437500, 0, 0, 562500]), so nothing here needs
+    every worker to take part."""
     backend = _fresh_backend(4, monkeypatch)
     n = 1_000_000
     out = tack.zeros(tack.i64, (n,))
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
     counts = backend._cpool.elems()[:4]
-    assert sum(counts) == n and all(c > 0 for c in counts)
     chunk = backend._cpool.chunk_size(n, 4)
     assert chunk < n // 4, "one chunk per worker"
+    assert sum(counts) == n
     assert all(c % chunk == 0 or c % chunk == n % chunk for c in counts)
+    assert sum(-(-c // chunk) for c in counts) == -(-n // chunk), "a chunk claimed twice or not at all"
+    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
+
+
+def test_concurrent_fan_outs_keep_their_own_launch_state(monkeypatch):
+    """The pool's launch state is one set of globals for the process, so
+    two threads fanning out at once must take turns: before they did,
+    each wrote the function, pack and range the other was running, and
+    outputs came back wrong or unwritten (TA-45)."""
+    backend = _fresh_backend(4, monkeypatch)
+    n, threads, rounds = 400_000, 4, 25
+    outs = [tack.zeros(tack.i64, (n,)) for _ in range(threads)]
+    plans = [_compiled(backend, _number, [out]) for out in outs]
+    errors = []
+
+    def worker(k):
+        compiled, prefix, _ = plans[k]
+        try:
+            for _ in range(rounds):
+                backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
+        except Exception as e:
+            errors.append(e)
+
+    ts = [threading.Thread(target=worker, args=(k,)) for k in range(threads)]
+    for t in ts:
+        t.start()
+    for t in ts:
+        t.join()
+    assert not errors
+    for out in outs:
+        np.testing.assert_array_equal(out.to_numpy(), rounds * np.arange(n, dtype=np.int64))
+
+
+def test_a_failed_worker_start_stops_the_started_workers():
+    """`pthread_create` failing after some workers exist: those workers
+    wait in JIT'd code the constructor is about to free, so they must be
+    told to leave and joined before the pool reports failure (TA-46: a
+    SIGSEGV). A fresh process, with a `pthread_create` that fails on its
+    second call; the thread count must come back to what it was, the
+    backend must fall back to the executor, and the exit must be clean."""
+    program = r"""
+import ctypes, gc, os, re, sys
+import numpy as np
+import llvmlite.binding as llvm
+import tack
+from tack.runtime import cpu_pool
+from tack.runtime.dispatch import get_backend
+
+def threads():
+    return int(re.search(r"Threads:\s+(\d+)", open("/proc/self/status").read()).group(1))
+
+libc = ctypes.CDLL(None)
+real = ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                        ctypes.c_void_p)(ctypes.cast(libc.pthread_create, ctypes.c_void_p).value)
+calls = []
+@ctypes.CFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p)
+def failing_create(tid, attr, fn, arg):
+    calls.append(1)
+    return real(tid, attr, fn, arg) if len(calls) < 2 else 11      # EAGAIN
+register = cpu_pool._register_libc_symbols
+def patched():
+    register()
+    llvm.add_symbol("pthread_create", ctypes.cast(failing_create, ctypes.c_void_p).value)
+cpu_pool._register_libc_symbols = patched
+
+before = threads()
+try:
+    cpu_pool.CPool(4)
+except RuntimeError as e:
+    print("raised:", e)
+else:
+    sys.exit("the pool started")
+gc.collect()
+assert len(calls) == 2, calls
+assert threads() == before, (before, threads())
+tack.init(arch=tack.cpu, num_threads=4)
+backend = get_backend()
+assert backend._jit_pool() is None and backend.pool_kind == "python"
+n = 300_000
+@tack.kernel
+def number(out):
+    for i in range(out.shape[0]):
+        out[i] = out[i] + i
+out = tack.zeros(tack.i64, (n,))
+number(out)
+np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
+print("ok")
+"""
+    if platform.system() != "Linux":
+        pytest.skip("counts threads through /proc")
+    env = {k: v for k, v in os.environ.items() if k != "TACK_CPU_POOL"}
+    run = subprocess.run([sys.executable, "-c", program], capture_output=True,
+                         text=True, env=env, timeout=120)
+    assert run.returncode == 0, run.stderr
+    assert run.stdout.strip().endswith("ok"), run.stdout + run.stderr
+    assert "raised: could not start a pool of 4 threads" in run.stdout
 
 
 def test_zero_stops_at_the_end_of_the_buffer(monkeypatch):

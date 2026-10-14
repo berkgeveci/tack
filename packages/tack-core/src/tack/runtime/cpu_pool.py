@@ -132,10 +132,16 @@ def _pool_module() -> ir.Module:
     n_chunks = glob("n_chunks", _i32, 0)
     next_chunk = glob("next_chunk", _i32, 0)
     grain = glob("grain", _i32, 0)
+    # Set when a start fails part way: the workers already running leave
+    # instead of waiting for work, and pool_start joins them before it
+    # returns, so none is left running code the caller is about to free.
+    quit = glob("quit", _i32, 0)
+    tids = glob("tids", ir.ArrayType(_i64, MAX_WORKERS))
     timespec = ir.LiteralStructType([_i64, _i64])
 
     pthread_create = ir.Function(m, ir.FunctionType(_i32, [_ptr, _ptr, _ptr, _ptr]), "pthread_create")
     pthread_detach = ir.Function(m, ir.FunctionType(_i32, [_i64]), "pthread_detach")
+    pthread_join = ir.Function(m, ir.FunctionType(_i32, [_i64, _ptr]), "pthread_join")
     nanosleep = ir.Function(m, ir.FunctionType(_i32, [_ptr, _ptr]), "nanosleep")
     clock_gettime = ir.Function(m, ir.FunctionType(_i32, [_i32, _ptr]), "clock_gettime")
     syscall = ir.Function(m, ir.FunctionType(_i64, [_i64], var_arg=True), "syscall")
@@ -265,6 +271,9 @@ def _pool_module() -> ir.Module:
     b.branch(idle)
     b = ir.IRBuilder(work)
     b.store(b.load_atomic(gen, "acquire", 4), seen)
+    # A start that failed after this worker was made: leave, to be joined.
+    with b.if_then(b.icmp_signed("!=", b.load_atomic(quit, "acquire", 4), _i32(0))):
+        b.ret(ir.Constant(_ptr, None))
     # Workers 0 .. active - 2 claim chunks; the caller is worker active - 1.
     # A worker past that sits the run out, its slots cleared so nothing
     # stale is read.
@@ -300,21 +309,60 @@ def _pool_module() -> ir.Module:
     b.store(_i32(0), i)
     loop = start.append_basic_block("loop")
     body = start.append_basic_block("body")
+    fail = start.append_basic_block("fail")
     out = start.append_basic_block("out")
     b.branch(loop)
     b = ir.IRBuilder(loop)
     b.cbranch(b.icmp_signed("<", b.load(i), b.sub(want, _i32(1))), body, out)
     b = ir.IRBuilder(body)
-    tid = b.alloca(_i64)
+    tid = b.gep(tids, [_i32(0), b.load(i)])
     arg = b.inttoptr(b.sext(b.load(i), _i64), _ptr)
     rc = b.call(pthread_create, [b.bitcast(tid, _ptr), ir.Constant(_ptr, None),
                                  b.bitcast(worker, _ptr), arg])
     with b.if_then(b.icmp_signed("!=", rc, _i32(0))):
-        b.ret(_i32(-1))
-    b.call(pthread_detach, [b.load(tid)])
+        b.branch(fail)
     b.store(b.add(b.load(i), _i32(1)), i)
     b.branch(loop)
+    # A thread could not be made: the `i` already running wait on `gen`,
+    # in the JIT'd code the caller will free when this returns -1. Tell
+    # them to leave, wake them, and join each before returning.
+    b = ir.IRBuilder(fail)
+    b.store_atomic(_i32(1), quit, "seq_cst", 4)
+    b.atomic_rmw("add", gen, _i32(1), "seq_cst")
+    b.fence("seq_cst")
+    nr = b.load(futex_nr)
+    with b.if_then(b.icmp_signed("!=", nr, _i64(0))):
+        wake_all(b, nr)
+    j = b.alloca(_i32)
+    b.store(_i32(0), j)
+    join_loop = start.append_basic_block("join_loop")
+    join_body = start.append_basic_block("join_out")
+    join_out = start.append_basic_block("join_done")
+    b.branch(join_loop)
+    b = ir.IRBuilder(join_loop)
+    b.cbranch(b.icmp_signed("<", b.load(j), b.load(i)), join_body, join_out)
+    b = ir.IRBuilder(join_body)
+    b.call(pthread_join, [b.load(b.gep(tids, [_i32(0), b.load(j)])), ir.Constant(_ptr, None)])
+    b.store(b.add(b.load(j), _i32(1)), j)
+    b.branch(join_loop)
+    b = ir.IRBuilder(join_out)
+    b.store(_i32(0), n)
+    b.store_atomic(_i32(0), quit, "seq_cst", 4)
+    b.ret(_i32(-1))
+    # Every worker made: let them go.
     b = ir.IRBuilder(out)
+    b.store(_i32(0), i)
+    detach_loop = start.append_basic_block("detach_loop")
+    detach_body = start.append_basic_block("detach_body")
+    detach_out = start.append_basic_block("detach_out")
+    b.branch(detach_loop)
+    b = ir.IRBuilder(detach_loop)
+    b.cbranch(b.icmp_signed("<", b.load(i), b.sub(want, _i32(1))), detach_body, detach_out)
+    b = ir.IRBuilder(detach_body)
+    b.call(pthread_detach, [b.load(b.gep(tids, [_i32(0), b.load(i)]))])
+    b.store(b.add(b.load(i), _i32(1)), i)
+    b.branch(detach_loop)
+    b = ir.IRBuilder(detach_out)
     b.ret(_i32(0))
 
     # pool_run(fn, pack, start, end): every chunk, this thread's included.
@@ -445,7 +493,8 @@ def _register_libc_symbols():
     """MCJIT resolves the pool's libc calls through these, so it does not
     depend on how the process exports them."""
     libc = ctypes.CDLL(None)
-    names = ["pthread_create", "pthread_detach", "nanosleep", "clock_gettime", "syscall"]
+    names = ["pthread_create", "pthread_detach", "pthread_join", "nanosleep", "clock_gettime",
+             "syscall"]
     if _DARWIN:
         names += ["os_sync_wait_on_address", "os_sync_wake_by_address_all"]
     for name in names:
@@ -460,12 +509,20 @@ def _register_libc_symbols():
 
 class CPool:
     """``threads`` workers, the calling thread one of them. One per process:
-    its threads are detached and its state is a set of JIT'd globals."""
+    its threads are detached and its state is a set of JIT'd globals.
+
+    That state -- the function, pack, range and counters of the current run,
+    and the spans and counts it leaves -- is one set for the process, so
+    a run is a transaction under ``_txn``: two Python threads dispatching
+    at once would otherwise each write the globals and read the other's
+    results (the ctypes call releases the GIL). Zeroing goes through the
+    same lock; the empty probes do too, through ``run``."""
 
     _instance = None
     _lock = threading.Lock()
 
     def __init__(self, threads: int):
+        self._txn = threading.Lock()
         _register_libc_symbols()
         module = llvm.parse_assembly(str(_pool_module()))
         module.verify()
@@ -510,15 +567,27 @@ class CPool:
             pool = cls._instance
         return pool if pool and threads <= pool.threads else None
 
-    def run(self, wrapper: int, pack, start: int, end: int, threads: int):
+    def run(self, wrapper: int, pack, start: int, end: int, threads: int,
+            measure: bool = False):
         """[start, end) in chunks claimed by `threads` workers, this thread
-        one of them."""
-        self._run(wrapper, ctypes.addressof(pack), start, end, threads)
+        one of them. With `measure`, the run's per-worker spans (ns) and
+        element counts, read before another thread's run can replace them."""
+        with self._txn:
+            self._run(wrapper, ctypes.addressof(pack), start, end, threads)
+            if measure:
+                return self._spans_and_elems()
+        return None
+
+    def _spans_and_elems(self):
+        self._get_spans(ctypes.addressof(self._spans))
+        self._get_elems(ctypes.addressof(self._elems))
+        return list(self._spans), list(self._elems)
 
     def spans(self) -> list:
         """Per worker, the ns it spent in the last run's chunks."""
-        self._get_spans(ctypes.addressof(self._spans))
-        return list(self._spans)
+        with self._txn:
+            self._get_spans(ctypes.addressof(self._spans))
+            return list(self._spans)
 
     @staticmethod
     def chunk_size(total: int, threads: int) -> int:
@@ -531,13 +600,15 @@ class CPool:
 
     def elems(self) -> list:
         """Per worker, the elements it ran in the last run."""
-        self._get_elems(ctypes.addressof(self._elems))
-        return list(self._elems)
+        with self._txn:
+            self._get_elems(ctypes.addressof(self._elems))
+            return list(self._elems)
 
     def zero(self, address: int, nbytes: int, threads: int):
         """memset(address, 0, nbytes), one chunk per worker: a new buffer's
         pages are first touched by the workers, not the calling thread."""
-        self._run(self.zero_chunk, address, 0, nbytes, threads)
+        with self._txn:
+            self._run(self.zero_chunk, address, 0, nbytes, threads)
 
 
 # ── Per-kernel wrappers and argument packs ──────────────────────────

@@ -1903,13 +1903,14 @@ class CPUBackend(Backend):
         pack = cpu_pool.pack_args(compiled, prefix)
         gap = time.perf_counter_ns() - self._last_dispatch_ns
         dispatch_t0 = time.perf_counter_ns()
-        jit.run(wrapper, pack, start, end, self.num_threads)
+        # The pool's workers claim chunks, so each reports what it ran; the
+        # report is read in the run's own transaction, before another
+        # thread's run can overwrite it.
+        report = jit.run(wrapper, pack, start, end, self.num_threads, measure=measure)
         dispatch_ns = time.perf_counter_ns() - dispatch_t0
         if not measure:
             return
-        # The pool's workers claim chunks, so each reports what it ran.
-        raw = jit.spans()
-        counts = jit.elems()
+        raw, counts = report
         rates: list = [0.0] * self.num_threads
         spans: list = [0.0] * self.num_threads
         workers = 0
