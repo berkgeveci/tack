@@ -17,7 +17,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   and the pages land where they will be used; the executor's threads are
   made under the NUMA interleave policy as the pool's are. The dataset
   filters' fully written flag and offset arrays take plain fields.
-  `Backend.fill_field` is the hook.
+  `Backend.fill_field` is the hook. On Linux the CPU backend also tells
+  glibc to keep freed pages (`mallopt`: the mmap threshold at its 32 MiB
+  cap, no trim under 4 GiB of free heap, the heap grown 256 MiB at a
+  time), since a filter reallocates the same temporaries on every call
+  and took their page faults every time: threshold at 5M on 8 threads
+  126 → 104 ms, slice 76 → 65. `TACK_CPU_MALLOC=0` opts out.
 - The CPU backend fans a range out through a thread pool JIT-compiled from
   LLVM IR, with one ctypes call per launch and no Python on the workers'
   path, instead of one `ThreadPoolExecutor` task per worker. A fan-out that

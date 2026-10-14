@@ -166,6 +166,49 @@ def _init_numa():
 _init_numa()
 
 
+# ── glibc: keep freed pages ──────────────────────────────────────────
+# glibc hands a freed block above its mmap threshold straight back to the
+# OS, and trims the heap's top when more than a trim threshold is free, so
+# a filter that frees and reallocates the same 20-160 MB temporaries on
+# every call takes their page faults on every call. These three settings
+# keep the pages: the mmap threshold at its cap (32 MiB), no trim under
+# 4 GiB of free top, and the heap grown by 256 MiB at a time so blocks
+# above the cap come from the heap too. Measured on a 2 GHz Xeon, hex
+# shape 5M on 8 threads, with the first touch already in the kernels:
+# threshold 126 -> 104 ms, slice 76 -> 65, cell to point 48.6 -> 44.5,
+# nothing at 1M (its blocks already stayed). Process-wide, so NumPy's own
+# arrays keep their pages too; `TACK_CPU_MALLOC=0` opts out. Nothing on
+# macOS, whose allocator keeps large blocks in its own pool, or on a
+# libc without `mallopt`.
+_M_TRIM_THRESHOLD, _M_TOP_PAD, _M_MMAP_THRESHOLD = -1, -2, -3
+_MALLOC_MMAP_THRESHOLD = 32 << 20      # glibc's cap (HEAP_MAX_SIZE / 2 on 64-bit)
+_MALLOC_TRIM_THRESHOLD = 4 << 30
+_MALLOC_TOP_PAD = 256 << 20
+_malloc_tuned: bool | None = None      # None: not tried yet
+
+
+def _tune_malloc() -> bool:
+    """Apply the settings above once per process; whether they took."""
+    global _malloc_tuned
+    if _malloc_tuned is not None:
+        return _malloc_tuned
+    _malloc_tuned = False
+    if platform.system() != "Linux" or os.environ.get(
+            "TACK_CPU_MALLOC", "").strip().lower() in ("0", "false", "no", "off"):
+        return False
+    try:
+        mallopt = ctypes.CDLL(None).mallopt
+    except (OSError, AttributeError):
+        return False
+    mallopt.argtypes = (ctypes.c_int, ctypes.c_int)
+    mallopt.restype = ctypes.c_int
+    _malloc_tuned = all(mallopt(param, value) == 1 for param, value in (
+        (_M_MMAP_THRESHOLD, _MALLOC_MMAP_THRESHOLD),
+        (_M_TRIM_THRESHOLD, _MALLOC_TRIM_THRESHOLD),
+        (_M_TOP_PAD, _MALLOC_TOP_PAD)))
+    return _malloc_tuned
+
+
 class _NumaInterleave:
     """Context manager: MPOL_INTERLEAVE for allocations, the default policy
     put back on exit.
@@ -822,6 +865,8 @@ class CPUBackend(Backend):
         # speedup not taken. `TACK_CPU_POLICY=v1` restores the old policy.
         # Anything else is refused: a misspelt value used to select v1.
         self.policy = os.environ.get("TACK_CPU_POLICY") or "v2"
+        # Whether glibc was told to keep freed pages (see `_tune_malloc`).
+        self.malloc_tuned = _tune_malloc()
         if self.policy not in _CPU_POLICIES:
             raise ValueError(
                 f"TACK_CPU_POLICY={self.policy!r} is not a CPU threading "
