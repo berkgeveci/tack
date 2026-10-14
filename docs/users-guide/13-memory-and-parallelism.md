@@ -45,9 +45,13 @@ per-particle velocity updates when each iteration reads completed forces and
 writes only its own particle.
 
 Tack does not establish race freedom for you. A kernel compiling successfully
-does not mean two iterations cannot interfere. Field accesses are not generally
-bounds-checked either: keep indices within the storage you allocated. Negative
-host indices count from the end; do not assume that rule for kernel field loads.
+does not mean two iterations cannot interfere. Field accesses are not
+bounds-checked either: keep indices within the storage you allocated.
+[Debug mode](15-debugging-and-timing.md#check-every-index-with-debug-mode)
+(`tack.init(..., debug=True)` or `TACK_DEBUG=1`) checks every field and array
+index and raises `IndexError` naming the access, for finding such a bug.
+Negative host indices count from the end; do not assume that rule for kernel
+field loads.
 
 ## Neighbour reads need a stable input
 
@@ -73,7 +77,8 @@ for step in range(steps):
 The swap changes Python references and costs no field copy. Both buffers must
 have the same layout. Write every output that the next step will read, including
 the boundary. When using an interior-only `ndrange`, initialize or explicitly
-maintain the unwritten border of **both** buffers.
+maintain the unwritten border of **both** buffers: a new field's contents are
+unspecified, and `tack.zeros` is the allocation that starts at zero.
 
 The [heat tutorial](tutorials/heat.md) develops this pattern. In-place numerical
 schemes can be valid when they have an explicit ordering strategy, such as
@@ -158,7 +163,9 @@ set of fields when changing the backend.
 `from_numpy` and `to_numpy` transfer complete arrays. On CPU and Metal storage is
 host-addressable, but these methods still copy values. A host read `field[i]`
 reads one logical element; CUDA, HIP and Level Zero copy just that range, one
-transfer per read. Avoid making it the inner loop of an application.
+transfer per read. Avoid making it the inner loop of an application. On
+GPU backends launches are queued, and each of these reads first waits for
+the launches before it; see [When a call returns](08-backends.md#when-a-call-returns).
 
 For shared storage, `field_from_ptr` and DLPack have distinct lifetime and
 writability rules. Keep an external pointer's owner alive for as long as its

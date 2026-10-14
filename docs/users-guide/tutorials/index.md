@@ -14,6 +14,10 @@ uv run python docs/examples/heat.py --arch cpu --check
 uv run --with vtk python docs/examples/heat.py --output heat.png
 ```
 
+In a checkout, `uv sync --extra cpu --extra interop` (with your other extras)
+installs VTK from the lock instead, and `uv run python ... --output` then needs
+no `--with vtk`.
+
 With an installed Tack environment, download a script and use `python heat.py`.
 Install VTK separately if you want its figure. `--check` uses smaller
 inputs and checks a numerical reference or independent properties; it is not

@@ -23,8 +23,12 @@ this page explains how the implementation meets them and what that costs.
 | `_writable` | Whether the storage may be written: by `from_numpy()` and `fill()` on the host, and by kernel stores and atomics |
 
 Everything that touches memory goes through the buffer. `DeviceBuffer` is a
-small abstract interface — `from_numpy()`, `to_numpy()`, `fill()`, `nbytes`
-and `address` — plus a `backend_name` class attribute that exists only so a
+small abstract interface — `from_numpy()`, `to_numpy()`, `read_range()`,
+`fill()`, `nbytes` and `address`, and `synchronize()` and `share()` for
+backends that queue launches (see [below](#queued-launches-and-memory)) —
+plus two class attributes: `starts_zeroed`, true where a new buffer is
+known to read as zeros so `tack.zeros` need not fill it, and
+`backend_name`, which exists only so a
 diagnostic can say which backend allocated a stray field (see
 `_fields_from_another_backend` in `lang/kernel.py`).
 
@@ -37,22 +41,30 @@ Tack did not allocate with the same `Field` class.
 
 ### The five buffers
 
-| Backend | Buffer | Allocation | Zeroed by | Host ↔ device |
+| Backend | Buffer | Allocation | New contents | Host ↔ device |
 |---|---|---|---|---|
-| CPU | `NumpyBuffer` | `np.zeros`, or `np.empty` + `fill(0)` under NUMA interleave | allocation | `np.copyto` / `.copy()` |
-| Metal | `MetalBuffer` | `newBufferWithLength_options_`, shared storage mode | `_view[:] = 0` | `np.copyto` into the shared view / `.copy()` |
-| CUDA | `CUDABuffer` | `cuMemAlloc` | `cuMemsetD8` | `cuMemcpyHtoD` / `cuMemcpyDtoH` |
-| HIP | `HIPBuffer` | `hipMalloc` | `hipMemset` | `hipMemcpy` |
-| Level Zero | `L0Buffer` | `zeMemAllocDevice` (at least one byte) | a host-to-device copy of zeros | `zeCommandListAppendMemoryCopy` on the immediate command list |
+| CPU | `NumpyBuffer` | uninitialized NumPy storage | unspecified, untouched | `np.copyto` / `.copy()` |
+| Metal | `MetalBuffer` | `newBufferWithLength_options_`, shared storage mode | zeros: Metal clears a new buffer (`starts_zeroed`) | `np.copyto` into the shared view / `.copy()`, after waiting for queued launches |
+| CUDA | `CUDABuffer` | `cuMemAllocAsync` on the context's stream | zeros, from a queued `cuMemsetD8Async` | `cuMemcpyHtoDAsync` (queued) / `cuMemcpyDtoHAsync` and a wait |
+| HIP | `HIPBuffer` | `hipMallocAsync` on the device's stream (`hipMalloc` without memory pools) | zeros, from a queued `hipMemsetAsync` | `hipMemcpyAsync` (queued) / `hipMemcpyAsync` and a wait |
+| Level Zero | `L0Buffer` | `zeMemAllocDevice` (at least one byte) | zeros, from a queued device fill | `zeCommandListAppendMemoryCopy` on the backend's queue, from a snapshot of the array / and a wait |
 
-Every allocation is zero-initialized, so a fresh field reads as zeros on
-every backend.
+The contract makes a new field's contents unspecified until a kernel,
+`from_numpy` or `fill` writes them; `tack.zeros`, `ones` and `full` are the
+calls that fill. The GPU backends happen to zero new buffers, and only
+Metal declares it (`starts_zeroed`), so `tack.zeros` fills on the others
+again. The CPU leaves a new field untouched.
 
-**CPU.** `NumpyBuffer._data` *is* the storage. When libnuma is available,
-`CPUBackend.allocate_field` (`runtime/cpu.py`) allocates with `np.empty`
-inside a `_NumaInterleave` scope and then touches every page with
-`fill(0)`, so first-touch placement spreads pages across NUMA nodes instead
-of landing them all on the allocating thread's node.
+**CPU.** `NumpyBuffer._data` *is* the storage. `CPUBackend.allocate_field`
+(`runtime/cpu.py`) does not fill it: its pages are first touched by the
+kernel that writes the field, in parallel when the threading policy fans
+that kernel out, and a fill of 256 KiB or more runs as a kernel through the
+dispatch (`CPUBackend.fill_field`). With libnuma, the threads that touch
+the pages were made under an interleave policy, so the pages spread across
+NUMA nodes instead of landing on the allocating thread's node. Filling on
+the calling thread at allocation was serial and, after a fan-out, dearer:
+at 5M cells on eight threads it was about half of a threshold filter's
+time. See [CPU Threading Policy](cpu-threading.md#counting-cores-and-numa).
 
 **Metal.** Apple Silicon memory is unified, so a `MetalBuffer` keeps both
 the `MTLBuffer` and a NumPy view (`_view`) made from
@@ -61,8 +73,12 @@ same physical memory; there is no DMA. `to_numpy()` still returns a copy.
 
 **CUDA, HIP, Level Zero.** The buffer holds a device pointer and transfers
 are explicit. `from_numpy()` makes the source C-contiguous in the field's
-dtype (`np.ascontiguousarray`), then copies `nbytes`. `fill()` builds a full
-host array and copies it; there is no device-side fill.
+dtype (`np.ascontiguousarray`), then queues a copy of `nbytes` (Level Zero
+copies the array first and holds the copy until the queue has passed it).
+`fill()` stays on the device (`runtime/device_fill.py`): the backend's
+native fill where the pattern allows one (a byte memset, CUDA's and HIP's
+16- and 32-bit memsets, Level Zero's pattern fill), otherwise one element
+written from the host and doubled by device-to-device copies.
 
 `Field.from_numpy()` validates before the buffer is involved: it converts
 the array to the field's dtype if needed, raises `ValueError` on a shape
@@ -105,7 +121,7 @@ flowchart TD
     WRAP --> F
     F -->|"reshape()"| V["View Field<br/>(same buffer, same hold)"]
     HOLD -.->|"released when the Field and<br/>every reshape() view are gone"| PROD["Producer's deleter"]
-    OWN -->|"__del__: cuMemFree / hipFree / zeMemFree<br/>(NumPy array, MTLBuffer: refcount)"| FREE["Memory released"]
+    OWN -->|"__del__: cuMemFreeAsync / hipFreeAsync / deferred zeMemFreeExt<br/>(NumPy array, MTLBuffer: refcount)"| FREE["Memory released"]
     WRAP -->|"__del__ skips the free"| KEEP["Caller keeps the memory alive"]
 ```
 
@@ -116,13 +132,21 @@ Metal, Python reference counting does the work: the NumPy array or the
 `MTLBuffer` object goes away with the buffer. The device backends free
 explicitly in `__del__`:
 
-- `CUDABuffer.__del__` calls `cuMemFree`, unless the buffer's context is
-  gone (see [below](#when-the-cuda-context-goes-away)).
-- `HIPBuffer.__del__` calls `hipFree`.
-- `L0Buffer.__del__` calls `zeMemFree` against `self._backend._context`.
-  Each `L0Buffer` keeps a reference to the backend that allocated it, which
-  keeps that backend — its context handle and command lists — alive for as
-  long as any of its buffers exist.
+- `CUDABuffer.__del__` calls `cuMemFreeAsync` on the context's stream,
+  unless the buffer's context is gone (see
+  [below](#when-the-cuda-context-goes-away)).
+- `HIPBuffer.__del__` calls `hipFreeAsync` on the device's stream, or
+  `hipFree` on a device without memory pools.
+- `L0Buffer.__del__` frees through `LevelZeroBackend._free`, against
+  `self._backend._context`: `zeMemFreeExt` with the driver's deferred-free
+  policy, or a wait for the queue and `zeMemFree` where the driver lacks
+  that extension. Each `L0Buffer` keeps a reference to the backend that
+  allocated it, which keeps that backend — its context handle and command
+  list — alive for as long as any of its buffers exist.
+
+Each of these frees after the launches queued before it, which may still
+use the memory; on Metal, a queued launch holds references to its fields
+until it completes.
 
 All three wrap the free in `try/except` and ignore failures, because
 `__del__` can run at interpreter shutdown after the driver bindings are
@@ -242,9 +266,9 @@ fields:
 
 `CUDABuffer` records the current context's token at allocation, and
 `wrap_ptr` does the same. `_live(verb)` checks it before every operation
-that touches device memory — `from_numpy`, `to_numpy`, `fill` (through
-`from_numpy`), `export_memory`, and the `device_ptr` property, which is what
-a kernel launch reads. A dead token raises `RuntimeError` beginning
+that touches device memory — `from_numpy`, `to_numpy`, `read_range`,
+`fill`, `synchronize`, `export_memory`, and the `device_ptr` property,
+which is what a kernel launch reads. A dead token raises `RuntimeError` beginning
 `Cannot <verb> this CUDA field: the CUDA context this field was allocated
 in has been destroyed`, and `__del__` skips `cuMemFree`, because the context
 took the allocation with it.
@@ -253,6 +277,30 @@ HIP and Level Zero have no equivalent, and need none today: `HIPBackend`
 uses the runtime-managed device context and its `__del__` does nothing, and
 `LevelZeroBackend.__del__` deliberately skips all cleanup, so neither ever
 destroys a context under a live buffer.
+
+### Queued launches and memory
+
+The CPU's launches have run when their call returns. The GPU backends
+queue them and return (see
+[Backend Implementations](backend-implementations.md#launches-are-queued)),
+so a buffer can be named by launches that have not run yet. Three rules
+keep that invisible to a program that uses only Tack:
+
+- **Host access waits or queues.** Reads (`to_numpy`, `read_range`, host
+  indexing, reductions) wait for the launches before them. On CUDA, HIP and
+  Level Zero, writes (`from_numpy`, `fill`) are queued behind them; on
+  Metal, whose buffers are host memory, every `MetalBuffer` method waits
+  first.
+- **Frees are ordered.** A field Python drops is freed after the launches
+  queued before the free, as described under [Owned buffers](#owned-buffers).
+- **Memory outside Tack is completed.** A buffer from `wrap_ptr` is marked
+  shared from the start, and a DLPack export (or Metal's `export_memory`)
+  marks it with `DeviceBuffer.share()`, which also waits for the queued
+  launches. Every launch that binds a shared buffer completes before it
+  returns, because the other library may read or write the memory with no
+  Tack call in between. Memory reached any other way, for example through
+  an exportable CUDA buffer's OS handle, is the caller's to order with
+  `tack.sync()`.
 
 ## Alignment
 
@@ -358,16 +406,17 @@ generating source directly) remain `constant T&` arguments after the
 argument buffer. Argument buffers are a Metal 2 feature.
 
 On the runtime side, `_compile_kernel` in `runtime/metal.py` creates an
-`MTLArgumentEncoder` with `newArgumentEncoderWithBufferIndex_(0)`, and each
-`CompiledMetalKernel` allocates one shared-storage argument buffer. On
-*every* dispatch, `CompiledMetalKernel.__call__` encodes each field's
-`MTLBuffer` into the argument buffer and declares its residency with
+`MTLArgumentEncoder` with `newArgumentEncoderWithBufferIndex_(0)`. On
+*every* dispatch, `CompiledMetalKernel.__call__` allocates a fresh
+shared-storage argument buffer, encodes each field's
+`MTLBuffer` into it and declares its residency with
 `useResource_usage_(..., Read | Write)` — indirectly referenced resources
 need that explicit declaration, and it is refreshed each time because a
 cached variant can receive different buffers, or a different alias
-relationship, from one call to the next. The argument buffer itself is
-reused across dispatches, which is safe because dispatch waits for
-completion before returning. No GPU backend specializes on alias
+relationship, from one call to the next. The argument buffer belongs to
+the launch, and is kept alive until the launch completes, because
+launches are queued: one buffer reused across dispatches could be
+rewritten under a launch that has not run yet. No GPU backend specializes on alias
 relationships: one variant serves every combination.
 
 #### Loops that store to a field get a function of their own
@@ -521,7 +570,8 @@ would avoid the per-dispatch check, has not been tried.
 
 | Topic | Guarantee | Enforced in | On violation |
 |---|---|---|---|
-| Fresh allocation | Zero-initialized on every backend | buffer constructors | — |
+| Fresh allocation | Contents unspecified until written; `tack.zeros`, `ones`, `full` fill | `tack.field`, `Field.fill` | — |
+| Queued launches | A field outlives the queued launches that use it; memory handed outside Tack completes its launches before they return | stream-ordered or deferred frees, `DeviceBuffer.share()` | — |
 | Host transfer shape | `from_numpy` shape must equal `field.shape` | `Field.from_numpy` | `ValueError` |
 | Read-only host writes | `from_numpy`/`fill` refused when `_writable` is false | `Field._check_writable` | `RuntimeError` |
 | Read-only kernel writes | A read-only field bound to a parameter the kernel may store to is refused, on every dispatch | `check_writable_fields` | `ValueError` |
@@ -530,7 +580,7 @@ would avoid the per-dispatch check, has not been tried.
 | Atomic alignment | Natural alignment, checked on every dispatch | `check_atomic_alignment` | `ValueError` |
 | Overlapping fields | Program order within an iteration | code generation (no `noalias`/`restrict`; Metal argument buffer) | — |
 | External lifetime | Caller keeps wrapped memory alive | not checked | undefined behavior |
-| In-kernel bounds | Not promised | not checked | undefined behavior |
+| In-kernel bounds | Not promised, except in debug mode | debug mode only (`lang/ir_bounds.py`) | undefined behavior; in debug mode the access is skipped and the call raises `IndexError` |
 
 See also [Specialization and Caching](specialization-and-caching.md) for
 how the variant key is built, [Backend

@@ -42,11 +42,12 @@ If you already write GPU kernels, focus on [Kernels](03-kernels.md),
 |---|---|
 | [Advanced Features](07-advanced.md) | Private arrays, random state, atomics, shared memory and textures |
 | [Reductions and Scans](11-reductions-and-scans.md) | Statistics, output offsets, sorting and block reductions |
-| [Backends](08-backends.md) | Setup, capabilities and device differences |
+| [Backends](08-backends.md) | Setup, capabilities, queued launches and device differences |
+| [The Kernel Cache](17-kernel-cache.md) | Compiled kernels kept on disk, its settings, and MPI jobs |
 | [Sharing arrays](16-interoperability.md) | NumPy copies, external pointers, DLPack and VTK |
 | [Datasets and visualization](09-visualization.md) | Meshes, fields and sets; contour, threshold, projections, streamlines; your own mesh kernels |
 | [Rendering](10-rendering.md) | Mesh scenes, cameras, materials, volumes and output |
-| [Debugging and timing](15-debugging-and-timing.md) | Independent checks, numerical tolerance and warm measurements |
+| [Debugging and timing](15-debugging-and-timing.md) | Independent checks, debug mode's bounds checks, numerical tolerance and warm measurements |
 
 ## Worked examples
 

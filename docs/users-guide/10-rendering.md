@@ -154,6 +154,8 @@ counts and downloads its NumPy results.
 Scene preparation and BVH construction operate on fields, while small material
 and light tables are prepared on the host. Final image readback is another
 explicit boundary. Describe these costs when measuring an end-to-end pipeline.
+On GPU backends launches are queued, so `render` can return before the image
+is finished: stop a timer after `tack.sync()` or the readback.
 
 Scene geometry/BVH preparation is cached. Adding actors changes the scene's
 version; editing an actor's existing geometry fields does not automatically

@@ -9,7 +9,7 @@ it. Tack has two kinds of evidence:
   example sweeps on a named device at an exact commit
 
 This page maps the contracts to their tests at release candidate
-`23d6e1d`, describes the oracles the tests trust, and gives the procedure
+`23d6e1d` (with the modules added through `b94af23`), describes the oracles the tests trust, and gives the procedure
 for a hardware validation and the most recent status of each backend,
 recorded at `745e01f`.
 
@@ -40,7 +40,7 @@ Capability skips read the declared attributes described in
 names. A backend that fails to initialize with `ImportError`,
 `RuntimeError`, `OSError` or `AttributeError` is left out of every fixture.
 
-Two pytest markers are registered:
+Three pytest markers are registered:
 
 - **`slow`** marks the example sweep in `test_examples.py`. It is
   deselected by default (`addopts = "-m 'not slow'"`). Run it with
@@ -49,6 +49,15 @@ Two pytest markers are registered:
   CPU scheduler actually did. They skip themselves, and print the load,
   when the one-minute load average exceeds half the CPU backend's thread
   count. Let the load settle before a validation run so that they execute.
+- **`quick`** marks a module per area of the code, the inner-loop set
+  (`pytest -m quick -n 4`). It selects; it does not deselect anything from
+  a full run.
+
+The root `conftest.py` sets `TACK_CACHE=off` unless the environment
+chooses a mode, so the suite compiles from scratch rather than reading the
+[disk cache](../design/specialization-and-caching.md#the-disk-cache).
+`pytest -n auto` runs the suite across processes (pytest-xdist); each
+worker is a process with its own backends.
 
 ## Contract areas and their tests
 
@@ -66,7 +75,10 @@ named.
 | Workgroups and participation | `test_workgroup_contract.py`, `test_workgroup_participation.py`, `test_shared_like.py` |
 | Atomics | `test_atomic_contract.py` |
 | Memory and aliasing, CPU disjoint specialization | `test_compiler_contract.py` (LC2), `test_disjoint_fields.py` |
-| Specialization identity, caching and concurrent dispatch | `test_variant_cache.py`, `test_kernel_cache.py`, `test_concurrent_dispatch.py`, `test_templates.py` |
+| Specialization identity, caching and concurrent dispatch | `test_variant_cache.py`, `test_kernel_cache.py`, `test_dispatch_fast_path.py`, `test_concurrent_dispatch.py`, `test_templates.py` |
+| Disk cache | `test_disk_cache.py`, its cases in fresh processes against a temporary directory |
+| Debug mode bounds checks | `test_debug_bounds.py` |
+| Queued launches | `test_cuda_async.py`, `test_hip_async.py`, `test_level_zero_async.py`, `test_metal.py` |
 | GPU launch indexing and size limits | `test_launch_limits.py`, `test_cuda_gen.py`, `test_hip_gen.py` |
 | Device-function binding and inlining | `test_func_bindings.py`, `test_new_features.py`, `test_texture_inline.py` |
 | Identifier preservation in generated code | `test_gpu_identifiers.py` |
@@ -78,7 +90,7 @@ named.
 | Code generators (host-side, no device) | `test_llvm_gen.py`, `test_msl_gen.py`, `test_cuda_gen.py`, `test_hip_gen.py`, `test_opencl_gen.py`, `test_opencl_compilation.py`, `test_scalar_packing.py` |
 | GPU dispatch paths without a GPU | `test_gpu_dispatch_paths.py` |
 | Per-backend runtime behavior | `test_metal.py`, `test_cuda.py`, `test_hip.py` |
-| CPU threading and NUMA | `test_cpu_threading.py`, `test_threading_benchmark.py`, `test_numa.py` |
+| CPU threading, the JIT'd pool, fills and NUMA | `test_cpu_threading.py`, `test_threading_benchmark.py`, `test_cpu_pool.py`, `test_cpu_fill.py`, `test_numa.py` |
 | Rendering correctness | `tack-rendering/tests/test_raster_differential.py`, `test_raster_winners.py`, `test_rasterize.py`, `test_mixed_render.py`, `test_bvh.py`, and the remaining rendering modules |
 | Datasets (`tack.data`) | `tack-vis/tests/test_dataset_api.py`, `test_dataset_filters.py`, `test_shapes.py`, `test_polyhedra.py`, `test_faces_2d.py`, `test_polylines.py`, `test_project.py`, `test_sets.py`, `test_carry.py`, `test_arrays.py`, `test_ids.py`, `test_buckets.py`, `test_clip.py`, `test_gradients.py`, `test_transforms.py`, `test_implicit.py`, `test_probe.py`, `test_flow.py`, `test_refinement_and_sources.py`, `test_vtk_interop.py`, `test_mfem_interop.py`; most compare with VTK where it is installed, and `pytest --ids=i64` reruns them with 64-bit ids |
 | Deprecated visualization worklets | `tack-vis/tests/test_flying_edges.py`, `test_compute_normals.py`, `test_cell_to_point.py`, `test_amr_blanking.py`, `test_fe.py`, `test_algorithms.py` |

@@ -11,8 +11,12 @@ Tack has five ways to combine many values into a few:
 | [Block reductions](#block-reductions-inside-kernels) | `tack.block_sum`, `block_min`, `block_max` | Inside a kernel; GPU backends only |
 
 Every family runs on all five backends except block reductions, which need
-a workgroup execution model and are rejected on CPU. All of them return to
-Python only after the work has finished: dispatch is synchronous.
+a workgroup execution model and are rejected on CPU. A call that returns a
+Python value (a field reduction, a statistic, a scan's total) waits for the
+work it reads. On GPU backends launches are queued, so a scan without its
+total, a sort, or a kernel using block reductions may return before the
+device has finished; the next read of a field waits for it (see
+[When a call returns](08-backends.md#when-a-call-returns)).
 
 The behavior below is stated per backend. Where it is the current
 implementation rather than a promise, the page says so; the
@@ -69,9 +73,8 @@ an integer mean inherits any wrapping of the integer sum.
 
 **Empty fields.** `sum()` returns `0.0`, `mean()` returns NaN, and `min()`
 and `max()` raise `ValueError` ("min reduction requires a nonempty field").
-None of these launches anything. Whether a zero-element field can be
-allocated at all depends on the backend: CUDA's allocator refuses it with a
-`RuntimeError`.
+None of these launches anything. Every backend allocates a zero-element
+field.
 
 **Run-to-run repeatability.**
 
@@ -188,8 +191,7 @@ that.
 Use `field.max()` on `abs` values written by a kernel when NaNs must
 propagate.
 
-An empty field (`data.size == 0`) behaves like `n == 0`, where the backend
-can allocate one.
+An empty field (`data.size == 0`) behaves like `n == 0`.
 
 ### Histogram binning
 
@@ -263,9 +265,9 @@ each: a million elements take a chunked level and a serial one, three
 launches. On GPU backends a chunk is a tile of 2048 elements scanned by
 one workgroup -- eight elements to each of its 256 lanes, the lane totals
 scanned in shared memory -- so a million elements take a tiled level and
-a serial one. Launches on the CPU, CUDA, HIP and Level Zero complete
-before returning; Metal queues them and waits when the host next reads a
-field. For small arrays, copying to NumPy, calling `np.cumsum` and copying
+a serial one. Launches on the CPU complete before returning; Metal, CUDA,
+HIP and Level Zero queue them and wait when the host next reads a field.
+For small arrays, copying to NumPy, calling `np.cumsum` and copying
 back can still be faster.
 
 **Return value.** Both return the sum of the first `n` inputs, in the
@@ -288,7 +290,7 @@ that element comes back to the host, not the whole output.
   negative `n` raises `ValueError`. `n = 0` writes nothing and returns `0`,
   the empty sum.
 - Returning the total means reading it to the host, which waits for the
-  device (on Metal, for every launch queued so far). A caller that needs
+  device (on GPU backends, for every launch queued so far). A caller that needs
   only the offsets passes `total=False`: the scan returns `None`, reads
   nothing, and stays queued with whatever follows.
 - Each call allocates two fields of the output's dtype per chunked level,
@@ -326,8 +328,8 @@ field.
   `f32`, or `f64` when `dst` is `f64`; an int is `i32`, or `i64`/`u64` by
   magnitude) and converts it on store: `2.5` fills an `i32` field with `2`,
   and `300` fills a `u8` field with `44`. Unlike `field.fill(value)`, which
-  fills the whole field through a host-side NumPy array, it fills a prefix
-  with a kernel.
+  converts the value as NumPy's `ndarray.fill` does and fills the whole
+  field, it fills a prefix.
 - `copy_with_offset(src, dst, dst_offset, n)` writes
   `dst[dst_offset + i] = src[i]`. It is not re-exported from
   `tack.algorithms`; write `from tack.algorithms.copy import copy_with_offset`.

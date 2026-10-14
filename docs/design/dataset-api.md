@@ -9,7 +9,8 @@
 > - The geometry is `data.geometry`, kept apart from the named fields, not
 >   a field named `"shape"` (question 11).
 > - A 2D mesh's faces are its edges on every path (question 7), and there
->   is a polyline topology (question 15).
+>   is a polyline topology (question 15). A mesh of line cells refuses
+>   `faces()` (`NotImplementedError`) rather than deriving none.
 > - Sets are typed `Set`s of points, cells or faces, which filters carry
 >   and which are iteration domains (question 12).
 > - `project(data, field, space)` is the one projection; `to_points`,
@@ -463,7 +464,10 @@ What building it showed:
   grid's geometry is just an `H1` field over a `CartesianProduct`; it lost
   its special-case mixins. For a structured grid's cells over a storage
   with `get_ijk`, the host picks an addressing mixin that reads each
-  corner by (i, j, k), so no flat point id is ever split; elsewhere
+  corner by (i, j, k), so no flat point id is ever split (now only
+  where the storage's axes are the topology's: a grid with a size of 1
+  before another axis drops that axis from its topology, and reads flat
+  indices); elsewhere
   (faces, edges, an unstructured topology over the same points) the flat
   id is split as before.
 - **Spaces own their layout.** A space is built on a topology --
@@ -492,7 +496,8 @@ What building it showed:
   entry per (cell, corner), such as `to_points`, place a subgroup's cells
   by that position.
 - **MFEM is the reference for real data and for order 2.** PyMFEM (`pip
-  install mfem`) brings MFEM into the test process: meshes are built in it
+  install mfem`; now the workspace's `interop` extra) brings MFEM into the
+  test process: meshes are built in it
   (Cartesian meshes of every element type, a mixed one, curved ones by
   `SetCurvature` and `Transform`), and its own counts, face -> element
   records, Jacobians, `GetValue` and `GetGradient` check the derived

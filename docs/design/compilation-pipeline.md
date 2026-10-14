@@ -18,8 +18,14 @@ design follows from keeping them apart:
 | **Dispatch** | Every call | — | nothing is retained |
 
 A warm call touches only the third tier and the key derivation that leads
-to it. Validation, lowering, the IR passes, verification, code generation
-and native compilation run only when something new is needed.
+to it, and a call whose argument signature was seen before skips the key
+derivation too (`_fast_resolve`; see
+[Specialization and Caching](specialization-and-caching.md#the-dispatch-fast-path)).
+Validation, lowering, the IR passes, verification, code generation
+and native compilation run only when something new is needed, and the
+first two tiers are also kept on disk across processes
+([the disk cache](specialization-and-caching.md#the-disk-cache)), so a new
+process may load both instead of building them.
 
 ## Overview
 
@@ -27,9 +33,13 @@ and native compilation run only when something new is needed.
 flowchart TD
     call["Kernel.__call__<br/>(lang/kernel.py)"] --> exec["backend.execute()"]
     exec --> rv["resolve_variant()<br/>(runtime/kernel_utils.py)"]
-    rv --> args["classify arguments:<br/>templates, vectors, textures"]
+    rv --> fast{"signature seen before?<br/>(_fast_resolve)"}
+    fast -- yes --> launch
+    fast -- no --> args["classify arguments:<br/>templates, vectors, textures"]
     args --> getir{"Kernel.get_ir():<br/>IR template cached?"}
-    getir -- no --> tr["template_rewrite<br/>(device-class args only)"]
+    getir -- no --> dir{".ir entry on disk?"}
+    dir -- yes --> store
+    dir -- no --> tr["template_rewrite<br/>(device-class args only)"]
     tr --> val["source_validation<br/>validate_source()"]
     val --> ast["ast_transform<br/>transform_kernel()"]
     ast --> vlow["verify_ir('lowered')"]
@@ -37,7 +47,9 @@ flowchart TD
     store --> key
     getir -- yes --> key["derive variant key<br/>(_KeyProbe, shape_signature,<br/>fields_disjoint on CPU)"]
     key --> hit{"variant cached?"}
-    hit -- no --> clone["clone_ir(template)"]
+    hit -- no --> dvar{".variant entry on disk?"}
+    dvar -- "yes: backend.load_variant" --> cache
+    dvar -- no --> clone["clone_ir(template)"]
     clone --> passes["resolve → infer → check types →<br/>localize scalars → atomics/workgroups →<br/>optimize (verify after each)"]
     passes --> build["backend build callback:<br/>[GPU: clone + pack_scalars] →<br/>annotate_types → codegen → native compile"]
     build --> cache["store KernelVariant"]
@@ -97,21 +109,33 @@ It then classifies the positional arguments. This runs on every dispatch:
 
 ## Stage 3: the IR template
 
-`Kernel.get_ir(vector_fields, template_args, texture_fields)` returns the
+`Kernel.get_ir(vector_fields, template_args, texture_fields, debug)` returns the
 lowered, verified IR for this *lowering specialization*. Vector widths,
-texture extents and template objects change what the frontend emits
-(scalarized component loads, sampling code, inlined method bodies,
-constants), so each combination gets its own template:
+texture extents, template objects and debug mode change what the frontend
+emits (scalarized component loads, sampling code, inlined method bodies,
+constants, bounds checks), so each combination gets its own template:
 
-- with no vectors, textures or templates, the single `Kernel._ir`;
+- with no vectors, textures or templates, and debug mode off, the single
+  `Kernel._ir`;
 - otherwise `Kernel._ir_cache[key]`, with
-  `key = Kernel._make_cache_key(vector_fields, template_args, texture_fields)`.
+  `key = Kernel._make_cache_key(vector_fields, template_args, texture_fields, debug)`.
 
 Lookups are lock-free. A miss takes the module-level `_transform_lock` (an
 `RLock`) and checks again before building, so concurrent first calls lower
-a template once. Building is `_verified_transform`: `transform_kernel(...)`
-followed by `verify_ir(function, 'lowered')`. A template that fails
-verification raises before it is stored, so it is never cached.
+a template once. Building is `Kernel._lower`, which asks the disk cache
+(`disk_cache.lowered`) for a `.ir` entry first and otherwise runs
+`_verified_transform`: `transform_kernel(...)` followed by
+`verify_ir(function, 'lowered')`. A template that fails verification
+raises before it is stored, so it is never cached, in memory or on disk.
+
+In debug mode (`tack.init(debug=True)` or `TACK_DEBUG=1`) lowering wraps
+each field and array access's flat index in an `IRBoundsCheck`, which is
+`-1` when an index is out of bounds, after recording the first violation
+in a hidden errors field; leading and flat extents are `IRFieldExtent`
+loads from a hidden extents field, so no extent is compiled in. The two
+hidden field parameters (`__tack_errors__`, `__tack_extents__`) follow the
+kernel's own; dispatch appends them per thread (`runtime/debug_bounds.py`).
+The helpers are in `lang/ir_bounds.py`.
 
 ### 3a. Template rewrite
 
@@ -147,11 +171,14 @@ depends on context. Among other things it rejects:
 - parameters that are not plain positional ones, and default values;
 - non-numeric constants, except docstrings and `print` labels;
 - expression statements that are not calls, and keyword arguments;
-- atomics and `barrier()` used as values, and `barrier()`/`thread_id()`
-  with arguments;
+- `barrier()` used as a value, and `barrier()`/`thread_id()` with
+  arguments (an atomic may be a value: the element's old value);
 - `for`/`while` with `else`, and literal zero or negative `range` steps;
 - `break` out of the parallel loop, and `continue` outside a loop;
-- `return` in a kernel, and `return` inside a loop in a device function;
+- `return` in a kernel, and `return` inside a loop in a device function. A
+  kernel's final `return`, with a return annotation, is split off before
+  validation (`Kernel._split_result`) into a one-thread epilogue kernel that
+  stores the value in a hidden one-element field;
 - calls that are neither a statically bound `@tack.func` nor a kernel
   intrinsic (resolved through `CallBindings`, below).
 
@@ -289,6 +316,16 @@ compiler bugs rather than user errors. It runs once per IR template.
 
 ## Stage 4: variant key derivation (every dispatch)
 
+Before any of this, `resolve_variant` tries the dispatch fast path
+(`_fast_resolve`): when the call's signature (`_call_signature`, read off
+the arguments) was seen before on this backend and kernel, it reuses the
+template expansion plan and the variants that call resolved, decides
+disjointness, runs the per-call checks of stage 6 and returns. Calls with
+keyword arguments, arguments the signature cannot describe, and every call
+in debug mode take the steps below, the slow path, which records what it
+resolved for the next call
+([details](specialization-and-caching.md#the-dispatch-fast-path)).
+
 With the template in hand, `resolve_variant` takes these steps:
 
 1. It calls `check_workgroup_support` on the template. Backends that
@@ -312,7 +349,12 @@ What goes into the key, and why, is the subject of
 
 ## Stage 5: variant construction (miss only)
 
-On a miss, `resolve_variant` runs the common passes on a private copy. The
+On a miss, `resolve_variant` first asks the disk cache for a `.variant`
+entry (`_stored_variant`): its post-pass IR and the backend's artifact,
+rebuilt by `backend.load_variant`, skip everything below, and a damaged or
+unloadable entry is ignored. Otherwise it runs the common passes on a
+private copy, and afterwards stores the new variant on disk
+(`_store_variant`) when the backend has a `cache_target()`. The
 order matters: each step relies on annotations an earlier one established,
 and each verification boundary rechecks the whole tree.
 
@@ -364,8 +406,12 @@ GPU backends pack scalars on *another* clone. Packing rewrites the
 parameter list, and dispatch needs the unpacked IR to evaluate the launch
 range against the original arguments. `KernelVariant.ir` keeps the
 pre-packing IR. The payload holds the compiled kernel, the `pack_info`,
-and the pack buffers, which are allocated once per variant. The CPU
-annotates the variant's IR in place, since nothing else reads it.
+and on CUDA, HIP and Level Zero the pack buffers, which are allocated once
+per variant (Metal makes a buffer of a launch's scalars per launch). The
+CPU annotates the variant's IR in place, since nothing else reads it.
+In debug mode `annotate_types` ends with `ir_bounds.guard_accesses`, which
+skips each access whose checked index is negative: a load yields a zero of
+its type, and a store or atomic runs under `if index >= 0`.
 
 Annotation (`annotate_types` in `lang/ir_type_annotate.py`) can still
 reject a program: a negative literal integer exponent and a non-f32 block
@@ -374,7 +420,7 @@ and workgroup participation on their own input, because direct generation
 can receive IR that no dispatch prepared.
 
 The finished `KernelVariant(ir, payload, requires_full_workgroups,
-atomic_targets, written_fields)` is stored under its key. `written_fields`
+atomic_targets, written_fields, has_textures)` is stored under its key. `written_fields`
 lists the index and name of each field argument the kernel may store to
 (all of them when a store can't be traced), and the variant carries its
 own `dispatch_lock`. If any step raised, nothing is
@@ -402,11 +448,16 @@ backend then takes over:
    its hardware image or private field (`bind_textures`).
 3. On GPU, it writes the scalar values into the cached pack buffers
    (`_update_pack_fields`) and appends those buffers to the argument list.
-   CUDA, HIP and Metal do this and the launch under the variant's
-   `dispatch_lock`; Level Zero under its backend `_launch_lock`.
+   CUDA and HIP do this and the launch under the variant's
+   `dispatch_lock`, Level Zero under its backend `_launch_lock`; Metal
+   copies the values into a buffer the launch owns.
 4. It launches. The CPU backend chooses between a serial call and its
-   thread pool (see [CPU Threading Policy](cpu-threading.md)); GPU
-   backends launch a grid.
+   thread pool (see [CPU Threading Policy](cpu-threading.md)) and returns
+   once the range has run; GPU backends queue a grid and return (see
+   [Backend Implementations](backend-implementations.md#launches-are-queued)).
+   In debug mode `Kernel.__call__` then reads the errors field, which
+   waits for the launch, and raises `IndexError` for a recorded
+   violation.
 
 ## Verification at pass boundaries
 

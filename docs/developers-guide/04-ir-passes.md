@@ -14,9 +14,12 @@ pass inspects the IR tree; transformation passes mutate a private copy.
 6. ir_optimize      — Conservative copy propagation
 7. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
 8. ir_type_annotate — Annotate scalar expressions and assignment storage types
+9. ir_bounds.guard_accesses — Skip accesses whose checked index is negative (debug mode only, at the end of 8)
 ```
 
-`resolve_variant()` runs the common passes only for a new compiled variant.
+`resolve_variant()` runs the common passes only for a new compiled variant,
+one neither in the backend's cache nor in the disk cache; a variant read
+from disk carries its post-pass IR and runs none of them.
 GPU packing works on a separate copy so launch-range resolution retains the
 original parameter names. CPU skips packing. `tack.inspect()` also performs
 the backend's texture decision, `check_dispatch_types`, scalar
@@ -71,7 +74,9 @@ scalar expression dtype.
 `IRVerificationError` reports the kernel, stage, node kind, and structural
 path. Failed variants never reach compilation or enter the compiled cache.
 Template verification runs before caching lowered IR; the remaining checks
-run on variant misses. Warm dispatch performs no verification walks. Direct
+run on variant misses. Warm dispatch performs no verification walks, and
+neither does an entry read from the disk cache, which was verified when it
+was built. Direct
 low-level pass/codegen calls used to build IR fragments must invoke the
 verifier themselves when they need the full kernel contract.
 
@@ -86,7 +91,10 @@ necessary.
 
 Replaces `IRDimSize(field_name, dim)` with `IRConstant(shape[dim])` using
 the actual field shapes passed at call time. Also sets
-`IRTextureSample.shape` from the `Texture3D` object.
+`IRTextureSample.shape` from the `Texture3D` object. In debug mode it turns
+each `IRFieldExtent` into a load from the hidden `__tack_extents__` field
+(three i64 extents per parameter, written by dispatch), so a debug kernel
+does not specialize on the lengths it checks.
 
 This pass runs early because subsequent passes (optimization, codegen) need
 concrete sizes.
@@ -191,6 +199,20 @@ rejected here. See the [language contract](../reference/language-contract.md).
 
 The pass joins all assignments to each local to one storage type, then
 annotates expressions using the settled environment (`var_name → ScalarType`).
+An `IRBoundsCheck` is `i64`.
+
+## Bounds Guards (`ir_bounds.py`, debug mode)
+
+`annotate_types` ends with `guard_accesses`, which does nothing unless the
+function was lowered with bounds checks (`bounds_sites`). Each user field or
+array access whose index is an `IRBoundsCheck` is skipped when that index
+is negative: a load becomes `index >= 0 ? load : 0` with a zero of the
+load's own type (hence after typing), and a store or atomic runs under
+`if index >= 0`. The index is evaluated twice, which is harmless because
+indices have no effects but the check's record of the first violation.
+Accesses to the hidden fields and to GPU scalar packs are left alone. It
+runs once per function (`_bounds_guarded`), so annotating again before and
+after packing does not guard twice.
 
 ## Scalar Packing (`ir_pack_scalars.py`)
 

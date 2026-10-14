@@ -189,7 +189,9 @@ floating-point policy).
   and the result is part of the variant key.
 - **Floating point.** CUDA compiles with `--ftz=false --prec-div=true
   --prec-sqrt=true --fmad=true` and without `--use_fast_math`; Metal sets
-  `fastMathEnabled` to false; the CPU emits no LLVM fast-math flags. See
+  `fastMathEnabled` to false; HIP limits contraction to one expression
+  (`-ffp-contract=on`), since hipRTC's default fused across statements and
+  gave one variable two values; the CPU emits no LLVM fast-math flags. See
   the [floating-point policy](../reference/language-contract.md#floating-point-execution-policy).
 - **Optimization.** `optimize_ir` (`lang/ir_optimize.py`) performs only
   conservative copy propagation; LICM and CSE stay disabled until they have
@@ -271,7 +273,11 @@ See [Conformance and Validation](../contracts/conformance.md).
 - **Specialization versus cold-start cost.** Baking facts in makes warm
   code faster but multiplies compiles. Verification at every pass boundary
   (principle 2 applied to the compiler) adds to each one. Tack accepts a
-  slower first call in exchange for a fast and correct warm path.
+  slower first call in exchange for a fast and correct warm path, and the
+  disk cache pays it once per machine rather than once per process: its
+  keys name what was baked in, as the variant key does, plus every name
+  lowering resolved, so an edited device function or constant compiles
+  again (see [Specialization and Caching](specialization-and-caching.md#the-disk-cache)).
 - **Correctness versus speed.** The disjoint-field variant shows the
   intended resolution: keep the safe default, and add a faster path only
   where a per-call check proves the extra assumption, with the result in

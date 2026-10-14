@@ -81,6 +81,15 @@ from an arbitrary GPU backend. Do not interpret a GPU address as a NumPy pointer
 A raw DLPack capsule can be consumed only once. Passing producer objects is
 usually clearer than managing capsules yourself.
 
+On Metal, CUDA, HIP and Level Zero a kernel call returns once its launch is
+queued (see [When a call returns](08-backends.md#when-a-call-returns)), so
+memory another library reads is kept in step for it. Exporting a field
+through DLPack waits for the launches queued before it; from then on, every
+launch that uses that field completes before the call returns, and so does
+every launch that uses a wrapped pointer or a DLPack import. The other
+library can read the results as soon as the Tack call returns; the cost is
+a wait on each such launch.
+
 See the [runtime contract](../contracts/runtime-api.md#dlpack) for supported
 device types, copy requests, read-only behavior and errors. The
 [interoperability design](../design/interoperability.md) explains the lifetime
@@ -133,7 +142,9 @@ needs compatible device arrays and the context rules described above.
 Use a VTK build exposing `vtkmodules.util.dlpack_support`. Its Python version
 must match the interpreter running Tack. Add the build's Python site-packages
 directory to `PYTHONPATH` if it is not installed in that environment. A VTK
-wheel sufficient for the tutorial figures may lack this DLPack module.
+wheel sufficient for the tutorial figures may lack this DLPack module. The
+PyPI wheel that `uv sync --extra interop` installs (VTK 9.7.1) lacks it; it
+is enough for `vtk_to_dataset` and `dataset_to_vtk`, which copy the arrays.
 
 ```bash
 uv run python docs/examples/vtk_interop.py --output radius.vti

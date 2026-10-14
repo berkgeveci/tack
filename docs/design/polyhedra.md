@@ -7,7 +7,11 @@
 > sibling one dimension further down, `PolylineTopology`. View methods
 > were renamed: `side_point` is `side_point_id`, `side_size` is
 > `side_num_points`, a face view's `face_size` is `num_points` and its
-> `point(f, j)` is `corner_position(f, j)`.
+> `point(f, j)` is `corner_position(f, j)`. Faces and cells of no area or
+> volume, which section 10's geometry divided by zero on, now have finite
+> geometry: zero normals, a face's center at its points' mean, and a
+> cell's centroid at the mean of its faces' point means (a polygon's at
+> its corners' mean).
 
 Questions in section 7 were decided as recommended; phases 1 to 4 were
 built (sections 9 to 12). It refines section 10 of

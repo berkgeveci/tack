@@ -7,12 +7,15 @@ When a `@tack.kernel` is called, every backend's `execute()` goes through
 
 ```
 @tack.kernel Python function
-  Once per IR template (vector widths, texture extents, template structure):
+  Once per IR template (vector widths, texture extents, template structure,
+  debug mode), unless the disk cache has it:              [disk_cache.py]
     → Template rewrite (if @tack.device_class args)     [template_rewrite.py]
     → Source validation (reject unsupported syntax)      [source_validation.py]
     → AST transform → Tack IR, @tack.func inlining       [ast_transform.py, call_bindings.py]
+      (debug mode: bounds checks on every index)         [ir_bounds.py]
     → Verify 'lowered', cache the template on the Kernel [ir_verify.py, kernel.py]
-  Once per compiled variant (cache miss), on a clone_ir copy of the template:
+  Once per compiled variant (cache miss), on a clone_ir copy of the template,
+  unless the disk cache has it:
     → IR resolve (dimension sizes, texture shapes)       [ir_resolve.py]
     → Type inference (from actual arguments)             [type_inference.py]
     → Dispatch type check (backend dtypes)               [type_inference.py]
@@ -21,11 +24,14 @@ When a `@tack.kernel` is called, every backend's `execute()` goes through
     → IR optimize (conservative copy propagation)        [ir_optimize.py]
     → Scalar packing (GPU backends only, on a copy)      [ir_pack_scalars.py]
     → IR type annotate (resolved types for codegen)      [ir_type_annotate.py]
-    → Backend-specific codegen + native compile
+      (debug mode: guard checked accesses)               [ir_bounds.py]
+    → Backend-specific codegen + native compile, store on disk
   Every call:
-    → Derive the variant key, look it up
+    → Read the call's signature; a known one reuses its variant (fast path)
+    → Otherwise derive the variant key, look it up
     → Alignment, read-only and launch-size checks        [kernel_utils.py]
-    → Bind texture storage and arguments, launch
+    → Bind texture storage and arguments, launch (queued on GPU backends)
+    → Debug mode: raise IndexError for an out-of-bounds access [debug_bounds.py]
 ```
 
 `verify_ir()` checks the IR after each of these stages. The IR template
@@ -35,7 +41,9 @@ kernel object, under a key built from argument dtypes and field/scalar/texture
 categories, vector widths, texture extents, template structure and constants,
 the dimension sizes baked into the code, and (on the CPU) whether the field
 arguments overlap. A repeat call with the same key runs no passes and no
-verification. See [Compilation Pipeline](../design/compilation-pipeline.md)
+verification; a repeat call with the same argument signature does not even
+build the key. Lowered templates and compiled variants are also kept on
+disk, keyed by content, so a new process can skip both. See [Compilation Pipeline](../design/compilation-pipeline.md)
 and [Specialization and Caching](../design/specialization-and-caching.md)
 for the full account.
 
@@ -60,6 +68,7 @@ packages/
                 ir_traversal.py  # walk_ir, transform_ir, clone_ir
                 ir_names.py      # Binding names, fresh_name
                 ir_verify.py     # verify_ir: invariants at each pass boundary
+                ir_bounds.py     # Debug mode's bounds checks: sites, access guards
                 ir_resolve.py    # Replace IRDimSize with constants
                 ir_optimize.py   # conservative copy propagation
                 ir_type_annotate.py  # Annotate expressions with dtype
@@ -78,15 +87,20 @@ packages/
                 cuda_gen.py      # → CUDA C
                 hip_gen.py       # → HIP C (extends cuda_gen)
                 opencl_gen.py    # → OpenCL C (extends cuda_gen)
+                bounds.py        # Debug mode's bounds-check helper (C family)
             runtime/             # Dispatch and device management
                 backend.py       # Backend base class: declared capabilities
-                kernel_utils.py  # resolve_variant(), variant keys, kernel caches
-                dispatch.py      # tack.init(), backend selection
-                cpu.py           # CPU backend (llvmlite JIT, thread pool)
+                kernel_utils.py  # resolve_variant(), the fast path, variant keys, kernel caches
+                disk_cache.py    # Lowered IR and compiled variants on disk (tack.cache)
+                debug_bounds.py  # Debug mode's hidden arguments and IndexError
+                dispatch.py      # tack.init(), tack.sync(), backend selection
+                cpu.py           # CPU backend (llvmlite JIT, threading policy)
+                cpu_pool.py      # CPU thread pool, JIT-compiled from LLVM IR
                 metal.py         # Metal backend (pyobjc)
                 cuda_backend.py  # CUDA backend (cuda-python)
                 hip_backend.py   # HIP backend (hip-python)
                 level_zero_backend.py # Level Zero backend (ctypes)
+            cache.py             # tack.cache: settings, MPI bundles, python -m tack.cache
             algorithms/          # General-purpose parallel primitives
                 scan.py          # Parallel prefix sum (exclusive/inclusive)
                 copy.py          # copy, fill_value
@@ -117,15 +131,15 @@ All three packages share the `tack` namespace via `pkgutil.extend_path`.
 
 ## Code Size
 
-`tack-core` is about 16,700 lines of Python, including docstrings and
-comments (`wc -l` over `packages/tack-core/src` at this release);
-`tack-rendering` and `tack-vis` add about 3,800 and 1,900:
+`tack-core` is about 25,100 lines of Python, including docstrings and
+comments (`wc -l` over `packages/tack-core/src`, October 2026);
+`tack-rendering` and `tack-vis` add about 3,800 and 14,200:
 
 | Directory | Lines | Role |
 |-----------|-------|------|
-| `lang/` | ~6,000 | Frontend: validation, AST transform, IR, passes, verification |
-| `codegen/` | ~3,900 | 5 code generators and shared helpers |
-| `runtime/` | ~6,300 | 5 backend runtimes, variant resolution, CPU threading |
+| `lang/` | ~8,800 | Frontend: validation, AST transform, IR, passes, verification |
+| `codegen/` | ~4,500 | 5 code generators and shared helpers |
+| `runtime/` | ~10,200 | 5 backend runtimes, variant resolution, disk cache, CPU threading and pool |
 
 No C/C++ code. No build step. Everything is pure Python with JIT
 compilation at runtime.

@@ -36,7 +36,8 @@ Tack is split into three packages: **tack-core** (compute framework), **tack-ren
 # Install everything from source with uv
 git clone https://github.com/berkgeveci/tack.git
 cd tack
-uv sync
+uv sync --extra cpu    # add --extra metal, cuda, hip or level_zero for a GPU,
+                       # and --extra interop for VTK and MFEM
 
 # Or install individual packages
 pip install tack-core              # core only
@@ -85,9 +86,12 @@ offline compiler (`intel-opencl-icd`).
         Metal: MSL source → Metal compile → compute pipeline
         CUDA:  CUDA C source → NVRTC → PTX → cuLaunchKernel
         HIP:   HIP C source → hipRTC → code object → hipModuleLaunchKernel
+        Level Zero: OpenCL C source → libocloc → SPIR-V → zeCommandListAppendLaunchKernel
 ```
 
 Kernels are compiled on first call and cached by type signature. Subsequent calls with the same types skip compilation.
+Compiled kernels are also kept on disk, so a later process starts warm; see
+[The Kernel Cache](docs/users-guide/17-kernel-cache.md).
 
 ## Data Types
 
@@ -98,13 +102,14 @@ Kernels are compiled on first call and cached by type signature. Subsequent call
 | `tack.i32` / `tack.u32` | 32-bit signed / unsigned integer |
 | `tack.i64` / `tack.u64` | 64-bit signed / unsigned integer |
 | `tack.f32` | 32-bit float |
-| `tack.f64` | 64-bit float (CPU/CUDA only — Metal does not support double) |
+| `tack.f64` | 64-bit float (not on Metal; on Level Zero, where the device has it) |
 
 ## Fields
 
 Fields are n-dimensional arrays that live on the backend device.
 
 ```python
+# tack.field leaves the contents unspecified until a kernel or a host write sets them
 x = tack.field(dtype=tack.f32, shape=(1024,))         # 1D
 img = tack.field(dtype=tack.f32, shape=(512, 512))     # 2D
 vol = tack.field(dtype=tack.f32, shape=(64, 64, 64))   # 3D
@@ -121,7 +126,7 @@ pixels.from_numpy(rgb)                    # (width, height, 3), or the flat arra
 rgb = pixels.to_numpy(vectors=True)       # (width, height, 3); plain to_numpy() is flat
 x[7], pixels[3, 4]                        # read one element from the host (not written this way)
 
-# Reductions (GPU-accelerated on Metal)
+# Reductions (on the device for f32 fields on GPU backends)
 total = x.sum()
 lo = x.min()
 hi = x.max()
@@ -284,6 +289,10 @@ def debug_kern(x, out):
         out[i] = abs(x[i])
 ```
 
+To find an index out of bounds, run in debug mode: `tack.init(arch=..., debug=True)`
+or `TACK_DEBUG=1` checks every field and array index and raises `IndexError` naming
+the access. See [Debugging and timing](docs/users-guide/15-debugging-and-timing.md).
+
 ### Device Functions
 
 ```python
@@ -408,12 +417,18 @@ repository root because neither package depends on the other, so neither can own
 ## Testing
 
 ```bash
-uv run pytest                                                # all tests
+uv sync --extra cpu --extra dev --extra interop               # pytest, pytest-xdist, VTK, MFEM
 uv run pytest packages/tack-core/tests/test_cpu_jit.py        # CPU backend
 uv run pytest packages/tack-core/tests/test_metal.py          # Metal backend
 uv run pytest packages/tack-core/tests/test_hip.py            # HIP backend
 uv run pytest packages/tack-vis/tests                         # datasets and vis algorithms
+uv run pytest -m quick -n 4                                   # a module per area, on 4 workers
+uv run pytest -n auto                                         # all tests, across processes
 ```
+
+Run the files a change touches first, then `-m quick`; the whole suite is for a
+validation round. Without `--extra interop` the comparisons against VTK and MFEM
+skip.
 
 ## ROCm / HIP Setup
 
@@ -465,7 +480,7 @@ docs/                       # Users guide, developers guide, performance notes
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md). In short: `uv sync --extra cpu --extra dev`,
-then `uv run pytest`. Tests for a backend you don't have skip themselves, so a green
+then `uv run pytest -m quick -n 4`. Tests for a backend you don't have skip themselves, so a green
 run on one machine does not mean every backend was exercised — the CI log prints
 which backends it found.
 

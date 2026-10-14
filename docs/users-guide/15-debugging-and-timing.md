@@ -84,7 +84,7 @@ when its inputs are `f64`.
 | A crash, or garbage that moves with the input size | An index out of bounds: run in debug mode (below) |
 | Kernel rejected on CPU | Workgroup primitives need a GPU; use a portable path or local arrays |
 | Kernel rejected on Metal | Look for `f64`, unsupported atomic types, or a runtime array size |
-| Every call seems slow | Compilation/specialization, allocation, readback, or small synchronous launches |
+| Every call seems slow | Compilation/specialization, allocation, readback after every launch, or many small launches |
 
 `print` in a kernel is useful on CPU, CUDA and HIP. Limit it to a few iterations
 and remove it when timing. Metal does not provide this printing facility. For
@@ -129,10 +129,13 @@ shows optimized LLVM IR on CPU only. See [Inspecting Generated Code](03-kernels.
 
 ## Measure first-call and warm time separately
 
-Tack launches synchronously, so elapsed time around a completed call includes its
-execution. The first call also includes compilation, unless an earlier process
-left the kernel in the [disk cache](17-kernel-cache.md); run with
-`TACK_CACHE=off` to time a cold compile. Record these separately:
+On the CPU a call returns when the kernel has finished. On Metal, CUDA, HIP
+and Level Zero it returns once the launch is queued, and the host waits only
+when it reads a field or calls `tack.sync()`. Call `tack.sync()` before
+reading the clock, or a GPU time measures only the launch. The first call
+also includes compilation, unless an earlier process left the kernel in the
+[disk cache](17-kernel-cache.md); run with `TACK_CACHE=off` to time a cold
+compile. Record these separately:
 
 ```python
 from time import perf_counter
@@ -144,15 +147,18 @@ def timed_transform(x, out):
 
 start = perf_counter()
 timed_transform(x, out)                    # this kernel has not been called yet
+tack.sync()                                # wait for a queued GPU launch
 first_call = perf_counter() - start
 
 for _ in range(5):
     timed_transform(x, out)                 # warm compilation and CPU scheduling
+tack.sync()
 
 times = []
 for _ in range(30):
     start = perf_counter()
     timed_transform(x, out)
+    tack.sync()
     times.append(perf_counter() - start)
 
 print(f"First call: {first_call * 1e3:.3f} ms")

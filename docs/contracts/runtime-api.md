@@ -9,7 +9,9 @@ kernel *computes* is defined by the
 [kernel language contract](../reference/language-contract.md). What each
 backend supports is defined in [Backend capabilities](backend-capabilities.md).
 
-All statements describe release candidate `23d6e1d`. They use the labels
+All statements describe release candidate `23d6e1d`, updated for the
+queued launches, disk cache, debug mode and CPU pool merged through
+`b94af23`. They use the labels
 defined in [Contracts](index.md#how-to-read-a-contract).
 
 ## Backend selection
@@ -77,8 +79,9 @@ checked.
   several threads go out of bounds.
 - Kernels lower and compile separately in debug mode, and the extents are
   run-time arguments: debug mode compiles no variant per field length.
-  Each launch is checked when it returns, which on Metal means waiting for
-  it. Launches from different threads report their own violations.
+  Each launch is checked when it returns, which on the GPU backends means
+  waiting for it, since their launches are otherwise queued. Launches from
+  different threads report their own violations.
 - `tack.inspect` shows the code a debug launch runs.
 
 Implemented in `lang/ir_bounds.py` (the checks and guards),
@@ -104,7 +107,7 @@ owned by the backend that allocated it.
 | Function | Contract |
 |---|---|
 | `tack.field(dtype=f32, shape=(), exportable=False)` | Allocates on the active backend. An `int` shape becomes a 1-tuple. `exportable=True` requests memory that can be exported without a copy (CUDA only) |
-| `tack.zeros(dtype, shape)`, `tack.ones(dtype, shape)`, `tack.full(dtype, shape, value)` | `field()` followed by `fill()` |
+| `tack.zeros(dtype, shape)`, `tack.ones(dtype, shape)`, `tack.full(dtype, shape, value)` | `field()` followed by `fill()`. `zeros` skips the fill where the buffer starts zeroed (`starts_zeroed`: Metal, which clears new buffers) |
 | `tack.arange(n, dtype=i32)` | `[0, n)` built in NumPy and copied in |
 | `tack.field_like(arr, dtype=None)` | Allocates `arr.shape`. The dtype is inferred from `arr.dtype` unless given. Then copies `arr` in |
 | `tack.concat(fields)` | A new 1-D field holding all elements in order, copied on the device |
@@ -113,7 +116,15 @@ owned by the backend that allocated it.
 
 **Current behavior:**
 
-- New fields are zero-filled on every backend.
+- A new field's contents are unspecified until a kernel, `from_numpy` or
+  `fill` writes them (the
+  [language contract](../reference/language-contract.md#memory-and-aliasing));
+  use `tack.zeros` for zeros. The CPU leaves a new field untouched, so that
+  the kernel that writes it touches its pages first; the GPU backends
+  currently zero new buffers, which is not a promise.
+- On the CPU, a fill of 256 KiB or more runs as a kernel through the
+  dispatch, in parallel when the threading policy fans it out, and stores
+  and refuses exactly what `ndarray.fill` would.
 - Allocation doesn't check the dtype against `supported_dtypes`. An `f64`
   field can be allocated on Metal, and the
   [dispatch check](backend-capabilities.md#what-each-capability-gates)
@@ -154,10 +165,32 @@ owned by the backend that allocated it.
 | `f.size`, `len(f)` | `size` is the product of the extents. `len` is `shape[0]`, or `0` for `shape == ()` | — |
 | `f.export_memory()` | Returns an `ExportedMemory` handle for cross-API sharing. On CUDA, a field allocated without `exportable=True` is copied **once** into exportable memory, so the export is a snapshot | `RuntimeError` on CPU, HIP and Level Zero |
 
+**Current behavior:** on Metal, CUDA, HIP and Level Zero a kernel call
+returns once the launch is queued, not once it has run. Host operations
+keep this invisible: `to_numpy`, `f[i]` and reductions wait for the
+launches before them; `from_numpy` and `fill` take effect after them (on
+CUDA, HIP and Level Zero they are queued in order; on Metal they wait
+first). A queued launch's error, such as a device fault, is raised at the
+next wait rather than by its own call. A field dropped while a queued
+launch uses it is freed after that launch.
+
 **Required caller constraint:** a field is synchronized at kernel-call
-boundaries only. Dispatch is synchronous on every backend, so a kernel has
-completed when its call returns. Host reads and writes between calls are
-safe. Host access during a call from another thread is not.
+and host-operation boundaries only. Host reads and writes between calls
+are safe. Host access during a call from another thread is not. Memory
+that another library reads or writes without a Tack call in between must
+be ordered with `tack.sync()`, except where Tack does it: a DLPack export
+and a wrapped pointer make every launch that uses them complete before it
+returns (see [DLPack](#dlpack)).
+
+### `tack.sync()`
+
+Defined in `runtime/dispatch.py` (`sync`). Waits until every kernel
+launched so far on the active backend has finished, by calling its
+`Backend.synchronize()`; a no-op on the CPU, whose launches complete before
+returning. Most code never needs it, since reading a field waits already.
+It is for timing kernels, and for memory shared with another library that
+reads it without Tack. It raises the error of a queued launch that
+failed. `tack.init()` synchronizes the backend it replaces.
 
 ### Reductions
 
@@ -238,6 +271,10 @@ and `Field.__dlpack_device__()`.
   `0`.
 - Strides are C-contiguous. All ten Tack dtypes are exported.
 - `copy=True` raises `BufferError`. `stream` and `dl_device` are ignored.
+- On Metal, CUDA, HIP and Level Zero the export waits for the launches
+  queued so far, and from then on every launch that uses the field
+  completes before it returns (`DeviceBuffer.share()`), so the consumer
+  may read the memory at once and after later launches.
 
 **Import:** `tack.from_dlpack(source, copy=False)`.
 
@@ -248,6 +285,8 @@ and `Field.__dlpack_device__()`.
   producer's deleter runs exactly once.
 - A read-only versioned tensor produces a non-writable field, which
   host writes and kernel stores refuse as for `field_from_ptr`.
+- As for `field_from_ptr`, a launch that uses the imported field completes
+  before it returns.
 - With `copy=True`, the source is read through `np.from_dlpack` and copied
   into a new field with `field_like`. That works only for sources that
   NumPy can read on the host.
@@ -374,8 +413,11 @@ documentation only. Instances are recognized by the class's
 
 ## Calling a kernel
 
-`Kernel.__call__(*args)` dispatches on the active backend, returns `None`,
-and returns only after the kernel completes.
+`Kernel.__call__(*args)` dispatches on the active backend and returns
+`None`, or, for a kernel that ends in an annotated `return`, that value,
+read from a hidden one-element field (which waits for the launch). On the
+CPU the call returns after the kernel completes; on the GPU backends once
+it is queued (see [Host operations](#host-operations)).
 
 **Arguments**, matched positionally against the parameters:
 
@@ -395,14 +437,16 @@ and returns only after the kernel completes.
   texture extent compiles a new variant. See
   [Specialization and compilation identity](../reference/language-contract.md#specialization-and-compilation-identity).
 - One kernel may be dispatched from several threads concurrently. Each
-  thread's dispatch uses its own arguments. On CUDA, HIP and Metal,
-  dispatches of the same compiled variant are serialized by a
-  per-variant lock, `KernelVariant.dispatch_lock`, held from packing the
-  scalars to the end of the synchronous launch, so different variants
-  still run concurrently. Level Zero serializes all launches, reductions
-  and copies on one backend lock (`_launch_lock`). CPU takes no lock,
-  because it binds arguments per call. `test_concurrent_dispatch.py`
-  covers this.
+  thread's dispatch uses its own arguments. On CUDA and HIP, dispatches of
+  the same compiled variant are serialized by a per-variant lock,
+  `KernelVariant.dispatch_lock`, held from packing the scalars until the
+  launch is queued, so different variants still dispatch concurrently.
+  Metal launches own their argument buffer and scalars and are encoded
+  one at a time under the backend's batch lock. Level Zero serializes all
+  launches, reductions and copies on one backend lock (`_launch_lock`).
+  CPU binds arguments per call and takes no lock, but fan-outs through its
+  JIT'd pool run one at a time. `test_concurrent_dispatch.py` covers
+  this.
 - **Required caller constraint:** on CUDA, Tack's context is current only
   on the thread that called `tack.init`. Another thread must make it
   current, for example with `cuCtxSetCurrent(backend._context)`, before
@@ -427,7 +471,8 @@ and returns only after the kernel completes.
 | `TACK_CPU_THREADS` | `CPUBackend.__init__` | CPU worker count. Read each time a CPU backend is constructed, unless `tack.init(arch="cpu", num_threads=...)` gives one. Values below 1 become 1. `1` runs everything on the calling thread. A non-integer raises `ValueError` from `tack.init` |
 | `TACK_CPU_POLICY` | `CPUBackend.__init__` | Threading policy: `v1` or `v2`. Unset or empty means `v2`, the default. Any other value raises `ValueError` from `tack.init`, listing the accepted values |
 | `TACK_CPU_MARGIN` | `CPUBackend.__init__` | Float override of the threading decision's safety margin |
-| `TACK_CPU_POOL` | `CPUBackend.__init__` | `python` (or `0`, `off`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool, which is the default wherever it can be made |
+| `TACK_CPU_POOL` | `CPUBackend.__init__` | `python` (or `0`, `off`, `no`, `false`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool, which is the default wherever it can be made (not on Windows) |
+| `TACK_CPU_POOL_SPIN` | The JIT'd pool, when it is made | How many pause iterations a pool worker spins before sleeping (default 20000). For experiments |
 | `TACK_CPU_MALLOC` | `CPUBackend.__init__` | **Linux.** A boolean flag read like `TACK_NO_REINIT`. When on, the first CPU backend sets glibc's `malloc` thresholds so freed blocks keep their pages (`cpu._tune_malloc`), process-wide. Off by default |
 | `TACK_DEBUG` | `tack.init` | A boolean flag read like `TACK_NO_REINIT`: debug mode's bounds checks when `init`'s `debug` is `None` (above) |
 | `TACK_NO_REINIT` | `tack.init` | A boolean flag (`dispatch.env_flag`): when on, `init` is a no-op while a backend is active. `0`, `false`, `no`, `off` and empty mean off. See above |
@@ -493,6 +538,7 @@ Translated exceptions keep the original as `__cause__`.
 | `NotImplementedError` | Workgroup primitives on CPU, keyword arguments, and the few lowering checks that source validation doesn't already report as `UnsupportedSyntaxError` | Raised directly by inspection. Wrapped in `RuntimeError` at dispatch |
 | `RuntimeError` | Initialization failures, compilation and launch failures, stale fields after a backend switch, unreadable kernel or device-function source, host writes to read-only fields, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, raised when a pass leaves IR that breaks a structural invariant) | Everywhere |
 | `BufferError` | `__dlpack__(copy=True)` | Export |
+| `IndexError` | In debug mode, a launch that indexed a field or array out of bounds; host indexing `f[i]` outside the field | After the launch, from `Kernel.__call__`; host calls |
 | `AttributeError` | Passing a NumPy dtype where a Tack type is expected, or a non-array to `from_numpy` or `field_like` | Host calls (unvalidated caller constraint) |
 
 **Current behavior:** every dispatch rejection listed on this page and in

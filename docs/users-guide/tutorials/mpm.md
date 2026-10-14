@@ -27,6 +27,9 @@ All particles in this example have the same mass. The fixed grid size, spacing,
 timestep and material stiffness are `tack.constant` values. Particle count is
 a runtime kernel argument. The constitutive stress is a simple volume-based
 fluid model; this is not the multi-material snow/plasticity model in `mpm99`.
+The first scatter reads `v` and `C` before any kernel writes them, so the
+program fills them with zeros (and `J` with ones): a new field's contents
+are unspecified.
 
 ## Scatter particle mass and momentum
 
@@ -44,9 +47,10 @@ momentum vector is updated component by component atomically; the next launch
 waits for all components to finish before reading it.
 
 The stencil must fit inside the grid. Initial positions and boundary handling
-keep this small example in its supported range; Tack does not generally check
-the indices. If extending the model to emit particles or change boundaries,
-check that invariant explicitly.
+keep this small example in its supported range; Tack does not check the
+indices unless [debug mode](../15-debugging-and-timing.md#check-every-index-with-debug-mode)
+is on. If extending the model to emit particles or change boundaries, check
+that invariant explicitly.
 
 ## Update the grid, then gather
 

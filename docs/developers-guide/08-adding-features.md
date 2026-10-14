@@ -162,7 +162,41 @@ def test_local_array_store_load(backend):
     # ...
 ```
 
-## 7. Incidental Fixes
+A new test module for a new area joins the quick tier
+(`pytestmark = pytest.mark.quick` at module level) if it runs in under ten
+seconds; see "Tests, in three tiers" in `CLAUDE.md`. The suite runs with the
+disk cache off (`TACK_CACHE=off`) unless the environment says otherwise, so
+a test that counts compilations is not hidden by a cache hit.
+
+## 7. What Else a Feature Can Touch
+
+The IR node is most of the work, but several runtime mechanisms assume they
+know everything that shapes the generated code:
+
+- **Debug mode.** A node that indexes a field or array must have its index
+  checked in debug mode: lowering wraps it through `_checked` in
+  `ast_transform.py` (an `IRBoundsCheck`), `ir_bounds.guard_accesses`
+  must skip the access when the check is negative, and every generator must
+  emit the check. Run the new tests with `TACK_DEBUG=1` too.
+- **Variant key and fast-path signature.** A new fact about the arguments
+  that changes the generated code goes into the variant key, and the
+  dispatch fast path's `_call_signature` must distinguish it as well, or a
+  warm call reuses the wrong variant.
+- **Disk cache.** What lowering reads from Python must be resolved through
+  `CallBindings` or added to the lowered key (`disk_cache.lowered_key`).
+  What compiled code depends on besides the IR and argument types (a
+  device property, a compiler version or option) must be named by the
+  backend's `cache_target()`; keep compiler options in the module constant
+  the target reads.
+- **Metal objects.** Every `new...` selector `metal.py` calls must be
+  registered in `_OWNED_RESULTS` before it is first called, or PyObjC
+  retains its result once too often and it is never freed.
+- **Queued launches.** On Metal, CUDA, HIP and Level Zero a launch returns
+  before it runs. Host code that reads device memory without going through
+  a `DeviceBuffer` method, or hands it to another library, must call
+  `tack.sync()` (or `Backend.synchronize()`) first.
+
+## 8. Incidental Fixes
 
 New features often expose pre-existing bugs. `tack.local_array` revealed
 that reusing a loop variable name in sibling `for` loops caused
@@ -176,7 +210,9 @@ For any new IR node (all files under `packages/tack-core/src/tack/`):
 
 - [ ] `lang/ir.py`: Node class + dump entry
 - [ ] `__init__.py`: Python-side API placeholder
-- [ ] `lang/ast_transform.py`: AST recognition + parser
+- [ ] `lang/ast_transform.py`: AST recognition + parser (and `_checked` for an indexed access)
+- [ ] `lang/ir_traversal.py`: Structural children in `CHILD_FIELDS`
+- [ ] `lang/ir_verify.py`: Statement/expression role, required metadata
 - [ ] `lang/ir_resolve.py`: Recurse into child expressions
 - [ ] `lang/ir_pack_scalars.py`: Recurse into child expressions
 - [ ] `lang/ir_type_annotate.py`: Annotate dtype or skip
@@ -185,4 +221,5 @@ For any new IR node (all files under `packages/tack-core/src/tack/`):
 - [ ] `codegen/cuda_gen.py`: CUDA C emission (inherited by HIP)
 - [ ] `codegen/msl_gen.py`: MSL emission
 - [ ] `codegen/opencl_gen.py`: OpenCL C emission (if different from CUDA)
-- [ ] Tests on all backends (in `packages/tack-core/tests/`)
+- [ ] `lang/ir_bounds.py`: Guard the access in debug mode, if it indexes memory
+- [ ] Tests on all backends (in `packages/tack-core/tests/`), with and without `TACK_DEBUG=1`; a new module marked quick if it is fast

@@ -25,6 +25,9 @@ holds one compiled specialization:
 | `payload` | whatever the backend's `build` callback returned: the JIT'd function on the CPU; the compiled kernel, `pack_info` and pack buffers on GPU |
 | `requires_full_workgroups` | whether every launch must be a multiple of 256 lanes |
 | `atomic_targets` | atomic parameter indices and their alignments, rechecked against each call's storage |
+| `written_fields` | `(index, name)` of each field argument the kernel may store to, so a dispatch can refuse read-only storage without walking IR |
+| `has_textures` | whether any argument is a `Texture3D`, so a call without one skips rebinding textures |
+| `dispatch_lock` | serializes dispatches of this variant on CUDA and HIP, whose payload holds the scalar pack buffers |
 
 Variants are produced and looked up only by `resolve_variant()`, the
 single entry point all five backends share. The
@@ -34,7 +37,10 @@ that build one.
 ## Two caches, two keys
 
 Specialization happens at two levels, because some facts change what the
-*frontend* emits and others only change what the *passes* resolve.
+*frontend* emits and others only change what the *passes* resolve. Both
+levels are also kept on disk, across processes ([below](#the-disk-cache)),
+and in front of them a repeated call skips key derivation altogether
+([the dispatch fast path](#the-dispatch-fast-path)).
 
 ```mermaid
 flowchart LR
@@ -45,14 +51,23 @@ flowchart LR
 
 | Cache | Owner | Key | Built by |
 |-------|-------|-----|----------|
-| IR template | `Kernel` (`lang/kernel.py`) | `Kernel._make_cache_key(vector_fields, template_args, texture_fields)`, or none at all for the plain `Kernel._ir` | template rewrite, source validation, AST transform, `verify_ir('lowered')` |
+| IR template | `Kernel` (`lang/kernel.py`) | `Kernel._make_cache_key(vector_fields, template_args, texture_fields, debug)`, or none at all for the plain `Kernel._ir` (no vectors, textures or templates, debug mode off) | template rewrite, source validation, AST transform, `verify_ir('lowered')` |
 | Compiled variant | each backend instance (`backend._cache`) | `kernel_variant_key(...)` | clone, IR passes, verification, codegen, native compile |
 
 Every input to the IR template key also reaches the variant key, either
 directly (vector widths, template structure) or indirectly (texture
 extents arrive as `_texture_shape` on the parameter and, through each
-`IRTextureSample`, in the shape signature). Two calls that share a
-variant therefore always share an IR template.
+`IRTextureSample`, in the shape signature; debug mode's template has two
+more parameters, the hidden errors and extents fields, so its parameter
+signature differs). Two calls that share a variant therefore always share
+an IR template.
+
+**Debug mode.** `tack.init(debug=True)` (or `TACK_DEBUG=1`) lowers every
+kernel with bounds checks (`lang/ir_bounds.py`): `("debug",)` leads the IR
+template key, and the two hidden field parameters follow the kernel's own.
+The extents are read from a field at run time rather than resolved, so a
+debug kernel compiles no variant per field length. With debug mode off,
+the IR and generated code are those of a build without the feature.
 
 ## The variant key, element by element
 
@@ -221,6 +236,7 @@ itself depends on the host and the kernel; the tradeoff is discussed in
 | Field contents and addresses | never baked in; the only address-derived fact is the CPU `disjoint` bit |
 | The kernel's name | each `Kernel` object has its own cache slot |
 | The backend | each backend instance has its own cache |
+| Debug mode, as a flag | not needed: a debug template has two more parameters, so its `param_sig` differs; the IR template key and the disk keys name it |
 | A floating-point math mode | there is one fixed policy (see [Numerical Semantics](numerical-semantics.md)); a selectable mode would have to join the key |
 | Device-function bindings | consulted only when an IR template is built; rebinding afterwards is unsupported, so recreate the kernel. The disk cache does record them (below) |
 
@@ -289,16 +305,20 @@ are dictionary reads.
   replaces the other's slot dictionary, and the second `slot[key] = variant`
   overwrites the first. Each thread returns the variant it built, and both
   are correct, so the only cost is a duplicate compile.
-- **Launching a variant** is serialized on the GPU backends, because a
-  variant owns launch state: the pack buffers its scalars are written
-  into, and on Metal the argument buffer its field bindings are encoded
-  into. CUDA, HIP and Metal hold the variant's `dispatch_lock` (a slot of
-  `KernelVariant`) from the pack update through the synchronous launch, so
+- **Launching a variant** is serialized where a variant owns launch
+  state. On CUDA and HIP that is the pack buffers its scalars are written
+  into, and they hold the variant's `dispatch_lock` (a slot of
+  `KernelVariant`) from the pack update until the launch is queued, so
   dispatches of *different* variants still overlap. Level Zero holds one
-  backend-wide `_launch_lock`, because its command lists and kernel
-  argument state are shared by the whole backend. The CPU binds arguments
-  per call and takes no lock. See
+  backend-wide `_launch_lock`, because its command list and kernel
+  argument state are shared by the whole backend. Metal's launches own
+  their argument buffer and scalars and encode under the backend's batch
+  lock. The CPU binds arguments per call and takes no lock, though its
+  JIT'd pool runs one fan-out at a time. See
   [Backend Implementations](backend-implementations.md#scalar-arguments-on-the-gpu).
+- **The fast path's entries** are plain dictionary writes; the slot is
+  cleared when it reaches its cap of 256 signatures per kernel and
+  backend.
 
 ## Hit versus miss
 
@@ -309,17 +329,47 @@ are dictionary reads.
 | `check_workgroup_support` (memoized on the template on the CPU, immediate on GPU) | ✓ | ✓ |
 | type inference on the `_KeyProbe`, `shape_signature`, `fields_disjoint` (CPU) | ✓ | ✓ |
 | build the key, look up the variant | ✓ | ✓ |
-| `clone_ir`, resolve, infer, check, localize, atomic/workgroup analysis, optimize | | ✓ |
+| look up the variant in the disk cache, and load it on a disk hit | | ✓ |
+| `clone_ir`, resolve, infer, check, localize, atomic/workgroup analysis, optimize (on a disk miss) | | ✓ |
 | `verify_ir` at each boundary | | ✓ |
 | GPU clone and scalar packing, `annotate_types`, codegen, native compile | | ✓ |
 | `check_workgroup_launch` (collective kernels), `check_atomic_alignment`, `check_writable_fields` | ✓ | ✓ |
-| evaluate the launch range, `check_launch_size` (GPU), update pack buffers and launch under the variant's lock (GPU) | ✓ | ✓ |
+| evaluate the launch range, `check_launch_size` (GPU), update pack buffers and queue the launch under the variant's lock (CUDA, HIP) | ✓ | ✓ |
 
 A hit clones nothing, runs no passes and performs no verification. The
 memoized template facts (`_shape_deps`, `_written_flags`,
 `_workgroup_features`) and the variant's recorded `atomic_targets` and
 `written_fields` keep the remaining per-dispatch work proportional to
 the parameter count rather than to the kernel's size.
+
+### The dispatch fast path
+
+Even a hit walked the arguments half a dozen times: template detection and
+expansion, vector and texture detection, the IR lookup, type inference on
+the probe, the shape signature, the key. Each took a few microseconds, and
+together they were the largest part of a dispatch's host time (90 of about
+270 µs per launch of a contour's kernels on a 2 GHz Xeon). So
+`resolve_variant` first tries `_fast_resolve`: a call whose *signature*
+was seen before reuses what that call resolved.
+
+The signature (`_call_signature`) is read straight off the arguments: a
+field's dtype, shape and element layout (memoized on the field as
+`_sig`); a texture's extents; a scalar's kind and, for integers, the type
+its value selects; a template object's class token, its class constants'
+current values, and what the key and the expansion read of each
+attribute, nested templates by path. Equal signatures imply an equal
+variant key, so an entry, kept per backend and kernel, holds the
+expansion plan for template arguments, the variants it resolved by
+disjointness, and the field slots for the overlap check. A hit expands the
+templates through the plan, decides disjointness, runs the per-call checks
+(`_check_call`: full workgroups, atomic alignment, read-only fields) and
+returns. Entries hold no class, and `drop_variants` forgets the kernel's
+entries on every backend along with its variants, so a per-call template
+class is still collected and a dropped variant is resolved afresh. A call with keyword arguments,
+an argument the signature cannot describe, or debug mode (its variants
+take hidden arguments, and each launch is noted for the check) takes the
+slow path. Together with the CPU passing field addresses rather than
+typed pointer objects, a warm CPU dispatch went from 70 to 40 µs.
 
 ## The correctness argument
 
@@ -407,8 +457,15 @@ would save the smallest part.
 
 | Entry | Key | Holds |
 |---|---|---|
-| `.ir` | the kernel's module, qualified name and source; its result type; its closure cells' fingerprints; vector and texture fields; each template's content; Tack's fingerprint | the pickled `IRModule`, and the names lowering resolved |
+| `.ir` | the kernel's module, qualified name and source; its result type; its closure cells' fingerprints; vector and texture fields; each template's content; whether debug mode lowered it; Tack's fingerprint | the pickled `IRModule`, and the names lowering resolved |
 | `.variant` | the `.ir` entry's key and dependency digest; parameter types and categories, texture shapes, vector widths, `shape_sig`, `disjoint`; the backend and `Backend.cache_target()` | the post-pass IR, `requires_full_workgroups`, the atomic targets, and the backend's artifact |
+
+Debug mode is in the `.ir` key, and the `.variant` key follows from the
+`.ir` entry, so a debug kernel and a plain one never share an entry in
+either direction: without it, a debug process read the plain kernel from
+disk and its launch, missing the hidden arguments, failed. A debug kernel
+read from disk still names the access it caught, because its sites travel
+in the IR.
 
 A template's content replaces the identities of the in-memory key: each
 class by its method resolution order (module and qualified name), its
@@ -459,7 +516,15 @@ Lustre and GPFS; concurrent writers of one entry write the same bytes. No
 locks. Each entry starts with a magic string and a SHA-256 of its payload,
 and holds its own key; anything else is ignored and counted as `bad`. The
 directory and the per-version directory must belong to the user and be
-writable by nobody else, since loading an entry unpickles it. Under MPI
+writable by nobody else, since loading an entry unpickles it; the cache
+creates both with mode 0700, since under a umask of 002 a directory it made
+itself was group-writable and then refused. The entries of every Tack
+version share one size limit (`TACK_CACHE_SIZE`, 1 GiB by default): past
+it, a writing process deletes the least recently used entries until 90%
+of the limit is left, scanning the directory at most once an hour across
+processes (a `.pruned` mark), never per kernel; a hit refreshes its
+entry's time at most once an hour, and bundles are neither counted nor
+deleted. Under MPI
 (a launcher's rank variable with a world size above one) the default mode
 is `bundle`: one file per Tack version, read once per process (or by rank 0
 and broadcast, `load_bundle(comm=...)`), and no per-kernel file is looked up

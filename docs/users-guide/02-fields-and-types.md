@@ -74,8 +74,11 @@ result = data.to_numpy()
 ```
 
 On Metal (Apple Silicon), fields use shared memory — `from_numpy`/`to_numpy`
-are simple memory copies with no DMA transfers. On CUDA/HIP, these are
-explicit host-device copies.
+are simple memory copies with no DMA transfers. On CUDA, HIP and Level Zero,
+these are explicit host-device copies. On every GPU backend they take their
+place in order with the queued launches: `from_numpy` does not overtake a
+launch that still reads the old values, and `to_numpy` waits for the
+launches before it (see [When a call returns](08-backends.md#when-a-call-returns)).
 
 ### Field Access in Kernels
 
@@ -321,6 +324,8 @@ The field does **not** own the memory — Tack will not free it. On CPU, you
 can pass a numpy array directly. On Metal, pass an `MTLBuffer` object. On
 CUDA/HIP/Level Zero, pass the device address as an integer (a NumPy integer
 or a `CUdeviceptr` works too); a host address is rejected with `ValueError`.
+A launch that uses a wrapped pointer completes before the call returns, so
+the memory's owner can read the results at once.
 
 Read-only fields raise an error on `from_numpy()` and `fill()`, and a kernel
 call that passes one where the kernel may store to it raises `ValueError`

@@ -7,13 +7,13 @@ It is split into three packages:
 
 - **tack-core** — the compute framework (kernels, fields, types, backends)
 - **tack-rendering** — path tracing renderer
-- **tack-vis** — scientific visualization algorithms (flying edges, VTK interop)
+- **tack-vis** — datasets and visualization algorithms (`tack.data`, VTK interop)
 
 ```bash
 # Install everything from source with uv
 git clone https://github.com/berkgeveci/tack.git
 cd tack
-uv sync --extra cpu
+uv sync --extra cpu                   # or add --extra interop for VTK and MFEM
 
 # Or install individual packages
 pip install tack-core          # core only
@@ -106,6 +106,9 @@ When you call a kernel for the first time, Tack:
 LLVM and vendor compilers optimize the generated code. Subsequent calls
 with the same specialization reuse the compiled kernel; dtypes, vector
 widths, baked-in shapes, and template structure can require another variant.
+Compiled kernels are also kept on disk, so the next process that calls the
+same kernel loads it instead of compiling it; see
+[The Kernel Cache](17-kernel-cache.md).
 
 ## A useful next step
 
@@ -121,4 +124,6 @@ optional plots, also install VTK:
 pip install vtk
 # From a uv checkout, without changing project dependencies:
 uv run --with vtk python docs/examples/heat.py --output heat.png
+# Or keep VTK in the checkout's environment (uv sync would otherwise remove it):
+uv sync --extra cpu --extra interop
 ```

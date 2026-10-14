@@ -70,10 +70,12 @@ which exception, and whether it runs on a cache hit.
 compiled variant is and exactly what goes into its key: argument types and
 categories, vector widths, texture extents, template structure and
 constants, the shape signature of dimensions baked into code, and the CPU
-disjoint-fields bit. It covers cache structure, lifetime and thread
-safety, the correctness argument behind the key, worked examples of which
-calls reuse a variant and which recompile, and how to avoid unnecessary
-variants.
+disjoint-fields bit, and how debug mode's checked kernels are kept apart.
+It covers cache structure, lifetime and thread safety, the dispatch fast
+path that skips key derivation for a repeated call, the correctness
+argument behind the key, worked examples of which calls reuse a variant
+and which recompile, how to avoid unnecessary variants, and the disk cache
+that keeps lowered and compiled kernels across processes.
 
 **[Numerical Semantics](numerical-semantics.md).** How Tack implements its
 numerical rules: fixed-width integer types and promotion, division and
@@ -92,13 +94,14 @@ specialization recovers performance safely.
 
 **[CPU Threading Policy](cpu-threading.md).** How the CPU backend decides,
 per dispatch, whether to run a loop range serially or spread it across its
-thread pool, using measured per-kernel cost and measured fan-out cost
-rather than a fixed threshold.
+thread pool, a pool JIT'd from LLVM IR, using measured per-kernel cost
+and measured fan-out cost rather than a fixed threshold.
 
 **[Backend Implementations](backend-implementations.md).** How each of the
 five backends (CPU through LLVM, Metal, CUDA, HIP and Level Zero) turns the
-shared IR into native code, allocates and moves memory, and launches work,
-along with the device-specific fallbacks each one needs.
+shared IR into native code, allocates and moves memory, and launches work
+(queued in order on the GPU backends), along with the device-specific
+fallbacks each one needs.
 
 **[Interoperability](interoperability.md).** Sharing memory with other
 libraries and frameworks without copying: wrapping external pointers,

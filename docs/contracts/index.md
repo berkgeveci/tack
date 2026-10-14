@@ -12,9 +12,13 @@ a defect to report, not a reading to choose between.
     **draft under review**. It was baselined at `05174e1` and last updated
     for the fifth numerical-semantics increment on 2026-10-03. The other
     three pages describe release candidate `23d6e1d`. Their statements are
-    read from the source at that hash and cite where each one lives. The
-    hardware validation status in [Conformance](conformance.md) was
-    recorded at `745e01f`.
+    read from the source at that hash and cite where each one lives;
+    [Backend capabilities](backend-capabilities.md) and
+    [Runtime API](runtime-api.md) were since updated for the queued GPU
+    launches, the disk cache, debug mode and the CPU pool merged through
+    `b94af23`. The hardware validation status in
+    [Conformance](conformance.md) was recorded at `745e01f`, before those
+    changes.
 
 ## How to read a contract
 
@@ -54,8 +58,8 @@ Two more conventions apply on every contract page:
 | Contract | Scope | Status |
 |---|---|---|
 | [Kernel language contract](../reference/language-contract.md) | What a kernel means: supported constructs, execution and ordering, memory and aliasing, integer and floating-point semantics, reductions, workgroups, atomics and specialization identity. Regression IDs LC1–LC8 | Draft under review, normative for the compiler hardening work |
-| [Backend capabilities](backend-capabilities.md) | The `Backend` base class, the meaning of each capability attribute, the capability matrix for each backend, and what each capability rejects and when | Describes `23d6e1d` |
-| [Runtime API](runtime-api.md) | `tack.init`, fields and their host operations, reductions, pointer and DLPack interop, `tack.inspect`, the decorators, kernel call rules, environment variables and exception types | Describes `23d6e1d` |
+| [Backend capabilities](backend-capabilities.md) | The `Backend` base class, the meaning of each capability attribute, the capability matrix for each backend, how launches are queued, and what each capability rejects and when | Describes `23d6e1d`, updated through `b94af23` |
+| [Runtime API](runtime-api.md) | `tack.init` and debug mode, fields and their host operations, `tack.sync`, reductions, pointer and DLPack interop, `tack.inspect`, the decorators, kernel call rules, environment variables, `tack.cache` and exception types | Describes `23d6e1d`, updated through `b94af23` |
 | [Conformance and validation](conformance.md) | How each contract area is tested, which oracles the tests use, how a hardware validation is run and recorded, and the most recent status of each backend | Describes `23d6e1d`, with validation status recorded at `745e01f` |
 
 The language contract is long because it defines semantics. The other three
