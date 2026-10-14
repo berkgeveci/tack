@@ -9,15 +9,19 @@ rightly kept most of them serial and the rest gained little.
 
 Here the fan-out is one ctypes call. The pool is a small program in LLVM
 IR, built with ``llvmlite.ir`` (no C compiler, no binary wheel) and JIT'd
-beside the kernels: ``N - 1`` detached pthreads wait for a generation
-counter to change, spinning for a while and then sleeping -- on a futex
-on Linux and on ``os_sync_wait_on_address`` on macOS 14.4+, woken by
-``pool_run`` only when one of them sleeps; elsewhere in ``nanosleep``
-polls that back off to a millisecond; ``pool_run`` splits
-``[start, end)`` into ``N`` chunks
-exactly as the Python path does, bumps the counter, runs the last chunk on
-the calling thread, and waits for the others. The workers never touch
-Python. Measured on the Xeon: 4 µs hot, about 100 µs after an idle gap.
+beside the kernels: ``N - 1`` detached pthreads each wait on their own
+mailbox, a launch count, spinning for a while and then sleeping -- on a
+futex on Linux and on ``os_sync_wait_on_address`` on macOS 14.4+, woken
+by ``pool_run`` only when they sleep; elsewhere in ``nanosleep`` polls
+that back off to a millisecond. ``pool_run`` with ``k`` threads posts to
+workers ``0 .. k - 2`` and no other, runs chunks on the calling thread as
+worker ``k - 1``, and waits for those ``k - 1``; a worker past that is
+not woken, so a launch of four on a pool of twenty-eight costs four
+wake-ups, and the ``k`` workers of every launch are the same ``k``. On
+Linux worker ``i`` is pinned to the ``i``-th CPU in core order, the
+caller's node first (`_cpus_by_core`), so they are also the same ``k``
+cores. The workers never touch Python. Measured on the Xeon: 4 µs hot,
+about 100 µs after an idle gap.
 
 Chunks are claimed, not assigned: a run is cut into several chunks per
 worker (`GRAIN`, each at least `MIN_CHUNK` elements) and every worker takes
@@ -118,10 +122,13 @@ def _pool_module() -> ir.Module:
     sleep_ns = glob("sleep_ns", _i64, 0)
     sleep_max = glob("sleep_max", _i64, 0)
     clock_id = glob("clock_id", _i32, 0)
-    gen = glob("gen", _i32, 0)
+    # Each worker's mailbox: the launch count posted to it, which it waits
+    # on, and whether it sleeps on that word. A run posts to the workers it
+    # uses and wakes only those asleep; the rest never stir.
+    mail = glob("mail", ir.ArrayType(_i32, MAX_WORKERS))
+    asleep = glob("asleep", ir.ArrayType(_i32, MAX_WORKERS))
     done = glob("done", _i32, 0)
     futex_nr = glob("futex_nr", _i64, 0)       # 0: poll instead
-    sleepers = glob("sleepers", _i32, 0)
     cur_fn = glob("cur_fn", _ptr)
     cur_pack = glob("cur_pack", _ptr)
     cur_start = glob("cur_start", _i64, 0)
@@ -153,22 +160,50 @@ def _pool_module() -> ir.Module:
         wake_by_address = ir.Function(m, ir.FunctionType(_i32, [_ptr, _i64, _i32]),
                                       "os_sync_wake_by_address_all")
 
-    def block_on(b, nr, last):
-        """Block until `gen` changes from `last` (the caller has checked it
-        still equals `last` under a fence)."""
+    def block_on(b, nr, word, last):
+        """Block until the i32 at `word` changes from `last` (the caller has
+        checked it still equals `last` under a fence)."""
         if _DARWIN:
-            b.call(wait_on_address, [b.bitcast(gen, _ptr), b.zext(last, _i64), _i64(4),
+            b.call(wait_on_address, [b.bitcast(word, _ptr), b.zext(last, _i64), _i64(4),
                                      _i32(_WAIT_ON_ADDRESS_NONE)])
         else:
-            b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAIT_PRIVATE),
+            b.call(syscall, [nr, b.ptrtoint(word, _i64), _i64(_FUTEX_WAIT_PRIVATE),
                              b.sext(last, _i64), _i64(0), _i64(0), _i64(0)])
 
-    def wake_all(b, nr):
+    def wake(b, nr, word):
         if _DARWIN:
-            b.call(wake_by_address, [b.bitcast(gen, _ptr), _i64(4), _i32(_WAIT_ON_ADDRESS_NONE)])
+            b.call(wake_by_address, [b.bitcast(word, _ptr), _i64(4), _i32(_WAIT_ON_ADDRESS_NONE)])
         else:
-            b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAKE_PRIVATE),
+            b.call(syscall, [nr, b.ptrtoint(word, _i64), _i64(_FUTEX_WAKE_PRIVATE),
                              _i64(0x7fffffff), _i64(0), _i64(0), _i64(0)])
+
+    def post(b, nr, w):
+        """Post a launch to worker `w`'s mailbox and wake it if it sleeps:
+        bump under seq_cst, fence, then read its sleep flag -- the mirror
+        of the worker's flag-fence-recheck, so no wake-up is lost."""
+        word = b.gep(mail, [_i32(0), w])
+        b.atomic_rmw("add", word, _i32(1), "seq_cst")
+        b.fence("seq_cst")
+        flag = b.load_atomic(b.gep(asleep, [_i32(0), w]), "seq_cst", 4)
+        with b.if_then(b.and_(b.icmp_signed("!=", nr, _i64(0)),
+                              b.icmp_signed("!=", flag, _i32(0)))):
+            wake(b, nr, word)
+
+    def post_each(b, fn, nr, count):
+        """`post` to workers 0 .. count - 1."""
+        wi = b.alloca(_i32)
+        b.store(_i32(0), wi)
+        loop = fn.append_basic_block("post_loop")
+        body = fn.append_basic_block("post_body")
+        out = fn.append_basic_block("post_out")
+        b.branch(loop)
+        b = ir.IRBuilder(loop)
+        b.cbranch(b.icmp_signed("<", b.load(wi), count), body, out)
+        b = ir.IRBuilder(body)
+        post(b, nr, b.load(wi))
+        b.store(b.add(b.load(wi), _i32(1)), wi)
+        b.branch(loop)
+        return ir.IRBuilder(out)
 
     # now_ns(): CLOCK_MONOTONIC in nanoseconds.
     now = ir.Function(m, ir.FunctionType(_i64, []), "now_ns")
@@ -215,7 +250,7 @@ def _pool_module() -> ir.Module:
     b.store(b.load(count), b.gep(elems, [_i32(0), wid]))
     b.ret_void()
 
-    # worker(arg): wait for the generation to change, run the chunk, count in.
+    # worker(arg): wait for a post to its mailbox, run the chunks, count in.
     worker = ir.Function(m, ir.FunctionType(_ptr, [_ptr]), "tack_pool_worker")
     worker.linkage = "internal"
     entry = worker.append_basic_block("entry")
@@ -226,6 +261,8 @@ def _pool_module() -> ir.Module:
     work = worker.append_basic_block("work")
     b = ir.IRBuilder(entry)
     wid = b.trunc(b.ptrtoint(worker.args[0], _i64), _i32)
+    my_mail = b.gep(mail, [_i32(0), wid])
+    my_sleep = b.gep(asleep, [_i32(0), wid])
     seen = b.alloca(_i32)
     b.store(_i32(0), seen)
     count = b.alloca(_i32)
@@ -237,7 +274,7 @@ def _pool_module() -> ir.Module:
     b.store(b.load(sleep_ns), b.gep(ts, [_i32(0), _i32(1)]))
     b.branch(idle)
     b = ir.IRBuilder(idle)
-    current = b.load_atomic(gen, "acquire", 4)
+    current = b.load_atomic(my_mail, "acquire", 4)
     b.cbranch(b.icmp_signed("!=", current, b.load(seen)), work, sleep)
     b = ir.IRBuilder(sleep)
     c = b.add(b.load(count), _i32(1))
@@ -247,15 +284,15 @@ def _pool_module() -> ir.Module:
         nr = b.load(futex_nr)
         with b.if_else(b.icmp_signed("!=", nr, _i64(0))) as (futex, poll):
             with futex:
-                # Count in as a sleeper, then re-check the generation under
-                # a full fence before blocking: pool_run bumps it, fences,
-                # and wakes only if it sees a sleeper, so no wake is lost.
-                b.atomic_rmw("add", sleepers, _i32(1), "seq_cst")
+                # Raise the sleep flag, then re-check the mailbox under a
+                # full fence before blocking: a post bumps it, fences, and
+                # wakes only if it sees the flag, so no wake is lost.
+                b.store_atomic(_i32(1), my_sleep, "seq_cst", 4)
                 b.fence("seq_cst")
                 last = b.load(seen)
-                with b.if_then(b.icmp_signed("==", b.load_atomic(gen, "seq_cst", 4), last)):
-                    block_on(b, nr, last)
-                b.atomic_rmw("sub", sleepers, _i32(1), "seq_cst")
+                with b.if_then(b.icmp_signed("==", b.load_atomic(my_mail, "seq_cst", 4), last)):
+                    block_on(b, nr, my_mail, last)
+                b.store_atomic(_i32(0), my_sleep, "seq_cst", 4)
             with poll:
                 b.call(nanosleep, [b.bitcast(ts, _ptr), ir.Constant(_ptr, None)])
                 nsec = b.gep(ts, [_i32(0), _i32(1)])
@@ -268,20 +305,13 @@ def _pool_module() -> ir.Module:
     _pause(b, m)
     b.branch(idle)
     b = ir.IRBuilder(work)
-    b.store(b.load_atomic(gen, "acquire", 4), seen)
+    b.store(b.load_atomic(my_mail, "acquire", 4), seen)
     # A start that failed after this worker was made: leave, to be joined.
     with b.if_then(b.icmp_signed("!=", b.load_atomic(quit, "acquire", 4), _i32(0))):
         b.ret(ir.Constant(_ptr, None))
-    # Workers 0 .. active - 2 claim chunks; the caller is worker active - 1.
-    # A worker past that sits the run out, its slots cleared so nothing
-    # stale is read.
-    with b.if_else(b.icmp_signed("<", wid, b.sub(b.load(active), _i32(1)))) as (mine, idle_run):
-        with mine:
-            b.call(run_chunk, [wid])
-        with idle_run:
-            with b.if_then(b.icmp_signed(">=", wid, b.load(active))):
-                b.store(_i64(0), b.gep(spans, [_i32(0), wid]))
-                b.store(_i64(0), b.gep(elems, [_i32(0), wid]))
+    # Only workers 0 .. active - 2 are posted to; the caller is worker
+    # active - 1, and the rest sleep on, their slots cleared by pool_run.
+    b.call(run_chunk, [wid])
     b.atomic_rmw("add", done, _i32(1), "release")
     b.branch(wait)
 
@@ -321,16 +351,12 @@ def _pool_module() -> ir.Module:
         b.branch(fail)
     b.store(b.add(b.load(i), _i32(1)), i)
     b.branch(loop)
-    # A thread could not be made: the `i` already running wait on `gen`,
-    # in the JIT'd code the caller will free when this returns -1. Tell
-    # them to leave, wake them, and join each before returning.
+    # A thread could not be made: the `i` already running wait on their
+    # mailboxes, in the JIT'd code the caller will free when this returns
+    # -1. Tell them to leave, post to each, and join each before returning.
     b = ir.IRBuilder(fail)
     b.store_atomic(_i32(1), quit, "seq_cst", 4)
-    b.atomic_rmw("add", gen, _i32(1), "seq_cst")
-    b.fence("seq_cst")
-    nr = b.load(futex_nr)
-    with b.if_then(b.icmp_signed("!=", nr, _i64(0))):
-        wake_all(b, nr)
+    b = post_each(b, start, b.load(futex_nr), b.load(i))
     j = b.alloca(_i32)
     b.store(_i32(0), j)
     join_loop = start.append_basic_block("join_loop")
@@ -385,20 +411,26 @@ def _pool_module() -> ir.Module:
     chunk = b.select(b.icmp_signed("<", chunk, _i64(1)), _i64(1), chunk)
     b.store(chunk, cur_chunk)
     b.store(b.trunc(b.sdiv(b.add(total, b.sub(chunk, _i64(1))), chunk), _i32), n_chunks)
-    # Workers past `active` clear their own slots; slot n - 1 belongs to the
-    # caller only when every thread is active, so clear it here otherwise.
-    last = b.sub(b.load(n), _i32(1))
-    with b.if_then(b.icmp_signed("<", k_arg, b.load(n))):
-        b.store(_i64(0), b.gep(spans, [_i32(0), last]))
-        b.store(_i64(0), b.gep(elems, [_i32(0), last]))
+    # The slots of the workers this run does not use, the caller's (k - 1)
+    # included: cleared here, so nothing stale is read from them.
+    ci = b.alloca(_i32)
+    b.store(b.sub(k_arg, _i32(1)), ci)
+    clear_loop = run.append_basic_block("clear_loop")
+    clear_body = run.append_basic_block("clear_body")
+    clear_out = run.append_basic_block("clear_out")
+    b.branch(clear_loop)
+    b = ir.IRBuilder(clear_loop)
+    b.cbranch(b.icmp_signed("<", b.load(ci), b.load(n)), clear_body, clear_out)
+    b = ir.IRBuilder(clear_body)
+    b.store(_i64(0), b.gep(spans, [_i32(0), b.load(ci)]))
+    b.store(_i64(0), b.gep(elems, [_i32(0), b.load(ci)]))
+    b.store(b.add(b.load(ci), _i32(1)), ci)
+    b.branch(clear_loop)
+    b = ir.IRBuilder(clear_out)
     b.store_atomic(_i32(0), next_chunk, "monotonic", 4)
     b.store_atomic(_i32(0), done, "monotonic", 4)
-    b.atomic_rmw("add", gen, _i32(1), "seq_cst")
-    b.fence("seq_cst")
-    nr = b.load(futex_nr)
-    asleep = b.icmp_signed(">", b.load_atomic(sleepers, "seq_cst", 4), _i32(0))
-    with b.if_then(b.and_(b.icmp_signed("!=", nr, _i64(0)), asleep)):
-        wake_all(b, nr)
+    # Post to workers 0 .. k - 2 only; the others sleep through this run.
+    b = post_each(b, run, b.load(futex_nr), b.sub(k_arg, _i32(1)))
     b.call(run_chunk, [b.sub(k_arg, _i32(1))])
     wait = run.append_basic_block("wait")
     spin_bb = run.append_basic_block("spin")
@@ -406,12 +438,17 @@ def _pool_module() -> ir.Module:
     b.branch(wait)
     b = ir.IRBuilder(wait)
     finished = b.load_atomic(done, "acquire", 4)
-    b.cbranch(b.icmp_signed("<", finished, b.sub(b.load(n), _i32(1))), spin_bb, out)
+    b.cbranch(b.icmp_signed("<", finished, b.sub(k_arg, _i32(1))), spin_bb, out)
     b = ir.IRBuilder(spin_bb)
     _pause(b, m)
     b.branch(wait)
     b = ir.IRBuilder(out)
     b.ret_void()
+
+    # pool_tid(i) -> worker i's pthread_t, for pinning it from Python.
+    tid_fn = ir.Function(m, ir.FunctionType(_i64, [_i32]), "tack_pool_tid")
+    b = ir.IRBuilder(tid_fn.append_basic_block("entry"))
+    b.ret(b.load(b.gep(tids, [_i32(0), tid_fn.args[0]])))
 
     # pool_spans(out): the workers' spans of the last run, n of them.
     get_spans = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr]), "tack_pool_spans")
@@ -439,6 +476,95 @@ def _target_machine():
     target = llvm.Target.from_default_triple()
     return target.create_target_machine(cpu=llvm.get_host_cpu_name(),
                                         features=llvm.get_host_cpu_features().flatten(), opt=2)
+
+
+def _cpus_by_core() -> list:
+    """The CPUs this process may run on, every core's first sibling before
+    any core's second, the calling thread's node first, so the first k
+    workers land on k different cores of one node (Linux; elsewhere an
+    empty list)."""
+    try:
+        allowed = sorted(os.sched_getaffinity(0))
+    except AttributeError:
+        return []
+    by_core: dict = {}
+    for cpu in allowed:
+        try:
+            with open(f"/sys/devices/system/cpu/cpu{cpu}/topology/core_id") as f:
+                core = int(f.read())
+            with open(f"/sys/devices/system/cpu/cpu{cpu}/topology/physical_package_id") as f:
+                core = (int(f.read()), core)
+        except OSError:
+            core = ("?", cpu)
+        by_core.setdefault(core, []).append(cpu)
+    try:
+        here = ctypes.CDLL(None).sched_getcpu()
+    except (OSError, AttributeError):
+        here = -1
+    mine = next((core for core, cpus in by_core.items() if here in cpus), None)
+    home = mine[0] if mine is not None else None
+    # The core the calling thread is on goes last at every rank, so a
+    # launch that leaves a core free leaves that one: the host prepares
+    # the next launch while the workers run this one. Its node goes first.
+    ordered = []
+    rank = 0
+    while True:
+        tier = sorted((cpus[rank] for core, cpus in by_core.items()
+                       if len(cpus) > rank and core != mine),
+                      key=lambda cpu: (by_core_key(by_core, cpu) != home, cpu))
+        if mine is not None and len(by_core[mine]) > rank:
+            siblings = sorted(by_core[mine], key=lambda cpu: cpu == here)
+            tier.append(siblings[rank])
+        if not tier:
+            return ordered
+        ordered.extend(tier)
+        rank += 1
+
+
+def by_core_key(by_core, cpu):
+    """The package of `cpu` in a `_cpus_by_core` table."""
+    return next(core[0] for core, cpus in by_core.items() if cpu in cpus)
+
+
+def _pin_workers(tid_of, workers: int):
+    """Pin worker i to the i-th CPU of `_cpus_by_core`, so a launch's
+    workers sit on distinct cores: the CPU of each worker, None for one
+    left to the scheduler; None altogether when nothing was pinned. The
+    scheduler spreads a pool's threads two per core, and a launch of
+    eight on four cores ran at half speed. `TACK_CPU_POOL_PIN=0` leaves
+    the scheduler to it."""
+    if os.environ.get("TACK_CPU_POOL_PIN", "").strip().lower() in ("0", "off", "no", "false"):
+        return None
+    cpus = _cpus_by_core()
+    if len(cpus) < workers:
+        return None
+    try:
+        libc = ctypes.CDLL(None)
+        setaffinity = libc.pthread_setaffinity_np
+    except (OSError, AttributeError):
+        return None
+    try:
+        here = libc.sched_getcpu()
+    except AttributeError:
+        here = -1
+    size = 128                              # glibc's cpu_set_t: 1024 bits
+    pinned = []
+    for i in range(workers):
+        cpu = cpus[i]
+        if cpu >= size * 8:
+            return None
+        if cpu == here:
+            # The caller's own CPU, last in the order: a worker pinned to it
+            # would wait for the caller to be descheduled on every launch
+            # that uses every CPU. Leave that one to the scheduler.
+            pinned.append(None)
+            continue
+        mask = (ctypes.c_ubyte * size)()
+        mask[cpu // 8] |= 1 << (cpu % 8)
+        if setaffinity(ctypes.c_uint64(tid_of(i)), ctypes.c_size_t(size), mask) != 0:
+            return None
+        pinned.append(cpu)
+    return pinned
 
 
 def _available_cpus() -> int:
@@ -527,6 +653,7 @@ class CPool:
                                      ctypes.c_int64, ctypes.c_int)(addr("tack_pool_run"))
         self._get_spans = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_spans"))
         self._get_elems = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_elems"))
+        self._tid = ctypes.CFUNCTYPE(ctypes.c_int64, ctypes.c_int)(addr("tack_pool_tid"))
         spin = int(os.environ.get("TACK_CPU_POOL_SPIN", SPIN_ITERATIONS))
         if not _blocking_available():
             futex, self.waiter = 0, "poll"
@@ -538,6 +665,11 @@ class CPool:
                        futex, GRAIN) != 0:
             raise RuntimeError(f"could not start a pool of {threads} threads")
         self.threads = threads
+        # Worker i on the i-th CPU of `_cpus_by_core` (Linux): a launch's
+        # workers on distinct cores, the first k of them the same k cores
+        # for every k, and the caller's core left to the caller.
+        self.pin_cpus = _pin_workers(self._tid, threads - 1)
+        self.pinned = self.pin_cpus is not None
         self._spans = (ctypes.c_int64 * threads)()
         self._elems = (ctypes.c_int64 * threads)()
 

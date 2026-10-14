@@ -345,3 +345,51 @@ def test_a_kernel_through_init_and_call(monkeypatch):
     for _ in range(3):
         _number(out)
     np.testing.assert_array_equal(out.to_numpy(), 3 * np.arange(n, dtype=np.int64))
+
+
+def test_a_run_uses_only_the_first_k_workers(monkeypatch):
+    """A run of k threads posts to workers 0 .. k - 2 and runs as worker
+    k - 1 itself; the other workers are not woken and their slots read
+    zero. Every element is still claimed exactly once."""
+    backend = _fresh_backend(6, monkeypatch)
+    n = 200_000
+    out = tack.zeros(tack.i64, (n,))
+    compiled, prefix, _ = _compiled(backend, _number, [out])
+    backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)   # makes the pool
+    pool = backend._cpool
+    wrapper = cpu_pool.chunk_wrapper(compiled)
+    pack = cpu_pool.pack_args(compiled, prefix)
+    out.fill(0)
+    for k in (1, 2, 3, 6):
+        spans, elems = pool.run(wrapper, pack, 0, n, k, measure=True)
+        assert sum(elems) == n, (k, elems)
+        assert all(e == 0 and s == 0 for e, s in zip(elems[k:], spans[k:])), (k, elems)
+        assert k == 1 or any(e > 0 for e in elems[:k - 1]), (k, elems)
+    np.testing.assert_array_equal(out.to_numpy(), 4 * np.arange(n))
+
+
+@pytest.mark.skipif(platform.system() != "Linux", reason="pthread_setaffinity_np")
+def test_workers_are_pinned_to_distinct_cores_in_order(monkeypatch):
+    backend = _fresh_backend(4, monkeypatch)
+    n = 4096
+    out = tack.zeros(tack.i64, (n,))
+    compiled, prefix, _ = _compiled(backend, _number, [out])
+    backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
+    pool = backend._cpool
+    if not pool.pinned:
+        pytest.skip("the pool could not pin (TACK_CPU_POOL_PIN=0, or too few CPUs)")
+    import ctypes
+    libc = ctypes.CDLL(None)
+    cpus = pool.pin_cpus
+    assert len(cpus) == pool.threads - 1
+    pinned = [c for c in cpus if c is not None]
+    assert len(set(pinned)) == len(pinned) and len(pinned) >= len(cpus) - 1
+    for i, cpu in enumerate(cpus):
+        mask = (ctypes.c_ubyte * 128)()
+        assert libc.pthread_getaffinity_np(ctypes.c_uint64(pool._tid(i)), ctypes.c_size_t(128),
+                                           mask) == 0
+        allowed = [c for c in range(1024) if mask[c // 8] >> (c % 8) & 1]
+        if cpu is None:          # the caller's own CPU: left to the scheduler
+            assert len(allowed) > 1
+        else:
+            assert allowed == [cpu], (i, allowed, cpus[:8])

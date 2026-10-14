@@ -25,17 +25,26 @@ per-kernel state on `CompiledKernel`, decision and measurement code on
 
 ### What a fan-out costs
 
-`CPUBackend._parallel_execute` divides `[start, end)` into `num_threads`
-contiguous chunks of `ceil(total / num_threads)` elements. Arguments are
-marshalled once per dispatch (`CompiledKernel.bind`); only the loop bounds
-differ between chunks.
+`CPUBackend._parallel_execute` divides `[start, end)` among `k` threads,
+every one of the backend's `num_threads` unless `TACK_CPU_SUBSETS=1` lets
+`_threads_for` pick fewer (see "A thread count per launch" below).
+Arguments are marshalled once per dispatch (`CompiledKernel.bind`); only
+the loop bounds differ between chunks.
 
 The chunks run through one of two pools. The default is the pool in
 `cpu_pool.py`: a small program in LLVM IR, built with `llvmlite.ir` and
-JIT'd beside the kernels, whose `N - 1` detached pthreads wait on a
-generation counter (spinning for a while, then a futex on Linux or
-`nanosleep` polls elsewhere). A fan-out is one ctypes call: `pool_run`
-bumps the counter, the workers and the caller claim chunks from a shared
+JIT'd beside the kernels, whose `N - 1` detached pthreads each wait on
+their own mailbox, a launch count (spinning for a while, then a futex on
+Linux or `nanosleep` polls elsewhere). A fan-out is one ctypes call:
+`pool_run` posts to workers `0 .. k - 2`, wakes those of them that sleep,
+runs as worker `k - 1` itself and leaves the rest asleep, so a launch of
+two on a pool of sixteen costs two wake-ups (4.4 µs hot on a 2 GHz Xeon,
+against 11 when every worker was woken) and the `k` threads of every
+launch are the same `k`. On Linux worker `i` is pinned to the `i`-th CPU
+in core order -- every core's first hyperthread before any core's second,
+the caller's node first, the caller's own core last -- so they are also
+the same `k` cores (`TACK_CPU_POOL_PIN=0` leaves placement to the
+scheduler). The workers and the caller claim chunks from a shared
 counter (`GRAIN` per worker, each at least `MIN_CHUNK` elements) and run
 them through a wrapper JIT'd once per kernel that loads the arguments
 from 8-byte slots, and the workers never touch Python. Claimed rather
@@ -672,3 +681,39 @@ and on the scheduler's wake-up behavior; neither has been measured on Windows.
 **CI checks the logic, not the tuning.** The controlled tests pin the decision
 for given measurements. Whether the measurements and ratios suit a machine is
 checked only by running `benchmarks/threading_decisions.py` on it.
+
+## A thread count per launch
+
+With `TACK_CPU_SUBSETS=1` a fan-out uses the first `k` of the `N` threads
+when a smaller prefix is expected to finish just as soon
+(`CPUBackend._threads_for`). Two rules, each a cap on `k`:
+
+- *Size.* Each worker's chunk must cost at least `_SUBSET_WORK_RATIO`
+  (10) shares of the hot fan-out, the hot cost over `N`. The hot cost is
+  what grows with the thread count (3 + 0.3k µs on the Xeon); the price
+  the estimate adds after an idle gap is paid once per launch whatever
+  `k` is, so it is not charged per worker.
+- *Saturation.* The full fan-out's speedup `S = r_s / r_p` says how much
+  of the machine the kernel can use. When `ceil(2 S)` is at most `N / 2`
+  the kernel is bandwidth-bound and that many threads reach the same
+  throughput. The factor is 2 and the bound half because a compute-bound
+  kernel on a hyperthreaded host has `S` about `N / 1.6` -- the second
+  thread of a core adds a fifth -- and `ceil(1.5 S)` trimmed it a thread
+  for a 2-6% loss, as did any trim short of half.
+
+Only full runs teach the model `r_p`: a subset's aggregate rate is the
+rate at `k`, and folding it in would shrink `S`, and with it the next
+subset, all the way down. So after 1, 2, 4, ... 1024 subset runs one
+launch uses every thread again, and a subset whose rate falls short of
+the full one's by `_SUBSET_TOLERANCE` (15%) is retired until that run.
+Fan-out samples come from full runs only, so the calibration describes
+`N`, which bounds every prefix.
+
+`benchmarks/thread_subsets.py` scores the choice as
+`threading_decisions.py` scores the serial-or-parallel one: the fan-out is
+timed at every `k` directly, the backend's `k` is read off the pool after
+a dozen dispatches, and its regret is the sweep's time at that `k` minus
+the best. On 16 threads of the Xeon (8 cores, hyperthreaded) no row loses
+over 5% to always-`N`, and bandwidth-bound launches of 8M+ elements gain
+2-5% at `k = 4`. The gain the rules are for is a 28-core host's launches
+not being slower than an 8-core one's; that score is still to be taken.

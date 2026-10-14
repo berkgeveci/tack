@@ -7,6 +7,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- A CPU launch wakes only the pool workers it uses: each worker waits on
+  its own mailbox, a launch of `k` threads posts to `k - 1` of them, and
+  the rest sleep on, so the `k` of every launch are the same `k` -- and,
+  on Linux, the same `k` cores, since the workers are pinned in core
+  order with the caller's node first (`TACK_CPU_POOL_PIN=0` opts out).
+  A hot fan-out of two threads on a pool of sixteen cost 11 µs waking
+  every worker and costs 4.4. `TACK_CPU_SUBSETS=1` lets the backend
+  choose that `k` per launch from the kernel's measured speedup (a
+  bandwidth-bound kernel gets as many threads as reach its throughput)
+  and the launch's size; off by default until scored on a 28-thread
+  host (`benchmarks/thread_subsets.py` is the score).
 - `tack.field` returns uninitialized storage on every backend; `tack.zeros`
   is the call that pays for zeros. The CPU backend used to fill every new
   field on the calling thread, which at 5M cells on eight threads of a
