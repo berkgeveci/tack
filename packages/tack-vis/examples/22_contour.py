@@ -353,9 +353,11 @@ if __name__ == "__main__":
 
     num_lines_f = tack.field(dtype=tack.i32, shape=(NUM_CELLS,))
     scatter_offsets_f = tack.field(dtype=tack.i32, shape=(NUM_CELLS,))
-    interp_pa = tack.field(dtype=tack.i32, shape=(MAX_POINTS,))
-    interp_pb = tack.field(dtype=tack.i32, shape=(MAX_POINTS,))
-    interp_w = tack.field(dtype=tack.f32, shape=(MAX_POINTS,))
+    # The interpolation kernels walk every entry, and the generate pass
+    # writes only the first total_points: zero makes the rest point 0.
+    interp_pa = tack.zeros(dtype=tack.i32, shape=(MAX_POINTS,))
+    interp_pb = tack.zeros(dtype=tack.i32, shape=(MAX_POINTS,))
+    interp_w = tack.zeros(dtype=tack.f32, shape=(MAX_POINTS,))
     output_x = tack.field(dtype=tack.f32, shape=(MAX_POINTS,))
     output_y = tack.field(dtype=tack.f32, shape=(MAX_POINTS,))
 

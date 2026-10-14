@@ -87,8 +87,8 @@ def run(arch="cpu", check=False):
     n, size, frames = (128, 24, 8) if check else (4096, 128, 300)
     agents = Agents(n, size)
     agents.initialize()
-    old = tack.field(dtype=tack.f32, shape=(size, size))
-    new = tack.field(dtype=tack.f32, shape=(size, size))
+    old = tack.zeros(dtype=tack.f32, shape=(size, size))
+    new = tack.zeros(dtype=tack.f32, shape=(size, size))
     evaporation = 0.96
     expected_mass = 0.0
     snapshots = []

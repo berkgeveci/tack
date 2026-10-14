@@ -104,6 +104,7 @@ def test_a_vector_atomic_returns_the_components_old_values(backend):
     come from different moments, but each is a multiple of its increment."""
     n = 512
     vf = tack.Vector.field(2, dtype=tack.f32, shape=(1,))
+    vf.fill(0)                      # a new field holds unspecified values
     out = tack.field(dtype=tack.f32, shape=(n,))
     vector_olds(vf, out, n)
     np.testing.assert_array_equal(vf.to_numpy(), [n, 10 * n])
