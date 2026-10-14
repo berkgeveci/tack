@@ -26,6 +26,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   is left out where PyMFEM has no wheels (anywhere but macOS on Apple
   silicon and Linux x86_64).
 
+### Changed
+
+- CUDA launches are queued on a stream and return at once; the host
+  waits where it reads a field (`to_numpy`, indexing, reductions, DLPack
+  export) or calls `tack.sync()`. Fills and host writes queue in order
+  with the launches, and a field dropped while a queued launch still uses
+  it is freed after that launch (stream-ordered memory). A contour of a
+  million cells on an RTX 4060 Ti went from 9.6 to 7.1 ms, now the cost
+  of its 31 launches' host side alone. Errors of a launch surface at the
+  next wait rather than at its call, as on Metal.
+
 ### Fixed
 
 - Grids with a size of 1 before another axis -- `uniform_grid((1, 3))`, a
