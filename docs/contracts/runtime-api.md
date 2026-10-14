@@ -192,6 +192,13 @@ It is for timing kernels, and for memory shared with another library that
 reads it without Tack. It raises the error of a queued launch that
 failed. `tack.init()` synchronizes the backend it replaces.
 
+`tack.sync_async()` (`runtime/aio.py`) is the `asyncio` form: awaited, it
+waits in one of Tack's worker threads for the launches made before the
+call, not for later ones, and raises a queued launch's error at the
+`await`; `Field.to_numpy_async()` does the same for a read. A backend
+waits off the loop through `Backend.async_marker()`; without one (the
+CPU), the wait is inline.
+
 ### Reductions
 
 `f.sum()`, `f.min()`, `f.max()` and `f.mean()` reduce every element and
