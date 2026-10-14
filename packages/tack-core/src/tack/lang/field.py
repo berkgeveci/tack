@@ -77,12 +77,12 @@ class DeviceBuffer:
 
 
 class NumpyBuffer(DeviceBuffer):
-    """CPU backend buffer — just a numpy array."""
+    """CPU backend buffer — just a numpy array, uninitialized when new."""
 
     backend_name = "cpu"
 
     def __init__(self, numpy_dtype, shape):
-        self._data = np.zeros(shape, dtype=numpy_dtype)
+        self._data = np.empty(shape, dtype=numpy_dtype)
 
     def from_numpy(self, arr: np.ndarray):
         # A reshaped field shares this buffer under another shape; the
@@ -216,7 +216,9 @@ class Field:
         """
         self._check_writable()
         if np.ndim(value) == 0:
-            self._buffer.fill(value)
+            from tack.runtime.dispatch import get_backend
+            if not get_backend().fill_field(self, value):
+                self._buffer.fill(value)
             return
         vector_shape = self._vector_shape()
         element = np.asarray(value)
@@ -415,6 +417,9 @@ def field(dtype: ScalarType = f32, shape: tuple[int, ...] = (),
           exportable: bool = False) -> Field:
     """Create a new field on the currently active backend.
 
+    Its contents are unspecified until something writes them: a kernel,
+    ``from_numpy`` or ``fill``. ``tack.zeros`` makes a field of zeros.
+
     Args:
         dtype: scalar element type (default: f32)
         shape: dimensions of the field
@@ -456,7 +461,11 @@ def field_like(arr: np.ndarray, dtype: ScalarType = None) -> Field:
 
 
 def zeros(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
-    """Create a field filled with zeros."""
+    """Create a field filled with zeros.
+
+    A new field holds unspecified contents; this one is zeroed on the
+    device, in parallel where the backend fills that way.
+    """
     f = field(dtype=dtype, shape=shape)
     if not f._buffer.starts_zeroed:
         f.fill(0)

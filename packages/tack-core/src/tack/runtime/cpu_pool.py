@@ -169,8 +169,6 @@ def _pool_module() -> ir.Module:
         else:
             b.call(syscall, [nr, b.ptrtoint(gen, _i64), _i64(_FUTEX_WAKE_PRIVATE),
                              _i64(0x7fffffff), _i64(0), _i64(0), _i64(0)])
-    memset = ir.Function(m, ir.FunctionType(ir.VoidType(), [_ptr, _i8, _i64, ir.IntType(1)]),
-                         "llvm.memset.p0.i64")
 
     # now_ns(): CLOCK_MONOTONIC in nanoseconds.
     now = ir.Function(m, ir.FunctionType(_i64, []), "now_ns")
@@ -428,13 +426,6 @@ def _pool_module() -> ir.Module:
     b.call(memcpy, [get_elems.args[0], b.bitcast(elems, _ptr),
                     b.mul(b.sext(b.load(n), _i64), _i64(8)), ir.Constant(ir.IntType(1), 0)])
     b.ret_void()
-
-    # zero_chunk(base, a, b): a chunk function that zeroes bytes [a, b).
-    zero = ir.Function(m, _chunk_fn_type, "tack_pool_zero_chunk")
-    b = ir.IRBuilder(zero.append_basic_block("entry"))
-    base, a, bb = zero.args
-    b.call(memset, [b.gep(base, [a]), _i8(0), b.sub(bb, a), ir.Constant(ir.IntType(1), 0)])
-    b.ret_void()
     return m
 
 
@@ -536,7 +527,6 @@ class CPool:
                                      ctypes.c_int64, ctypes.c_int)(addr("tack_pool_run"))
         self._get_spans = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_spans"))
         self._get_elems = ctypes.CFUNCTYPE(None, ctypes.c_void_p)(addr("tack_pool_elems"))
-        self.zero_chunk = addr("tack_pool_zero_chunk")
         spin = int(os.environ.get("TACK_CPU_POOL_SPIN", SPIN_ITERATIONS))
         if not _blocking_available():
             futex, self.waiter = 0, "poll"
@@ -603,12 +593,6 @@ class CPool:
         with self._txn:
             self._get_elems(ctypes.addressof(self._elems))
             return list(self._elems)
-
-    def zero(self, address: int, nbytes: int, threads: int):
-        """memset(address, 0, nbytes), one chunk per worker: a new buffer's
-        pages are first touched by the workers, not the calling thread."""
-        with self._txn:
-            self._run(self.zero_chunk, address, 0, nbytes, threads)
 
 
 # ── Per-kernel wrappers and argument packs ──────────────────────────

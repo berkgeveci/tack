@@ -109,6 +109,16 @@ class Backend:
         """Wrap existing memory as a DeviceBuffer without copying."""
         raise NotImplementedError
 
+    def fill_field(self, field, value) -> bool:
+        """Fill a field with one scalar the backend's own way; false to let
+        `Field.fill` fill the buffer in place.
+
+        The CPU backend runs a large fill as a kernel through its dispatch,
+        so the threads first-touch the pages. GPU buffers fill on the
+        device through `DeviceBuffer.fill` and need nothing here.
+        """
+        return False
+
     def execute(self, kernel, args, kwargs):
         """Compile (or reuse) and run a kernel with these arguments."""
         raise NotImplementedError

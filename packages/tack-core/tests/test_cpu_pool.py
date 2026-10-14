@@ -155,18 +155,6 @@ def test_the_policy_measures_the_pool(monkeypatch):
     assert 0 < backend._fan_out_ns < 5_000_000
 
 
-def test_a_large_field_is_zeroed_through_the_pool(monkeypatch):
-    backend = _fresh_backend(4, monkeypatch)
-    n = 4096
-    out = tack.zeros(tack.i64, (n,))
-    compiled, prefix, _ = _compiled(backend, _number, [out])
-    backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)   # makes the pool
-    big = backend.allocate_field(tack.f32, (cpu_mod._POOL_ZERO_MIN_BYTES // 4 * 3,))
-    assert not big._data.any()
-    small = backend.allocate_field(tack.u8, (16,))
-    assert not small._data.any()
-
-
 def test_chunks_are_claimed_and_cover_the_range(monkeypatch):
     """Chunks are claimed, not assigned: a range long enough for several per
     worker is cut finer than one share each, every element is claimed once
@@ -280,17 +268,6 @@ print("ok")
     assert run.returncode == 0, run.stderr
     assert run.stdout.strip().endswith("ok"), run.stdout + run.stderr
     assert "raised: could not start a pool of 4 threads" in run.stdout
-
-
-def test_zero_stops_at_the_end_of_the_buffer(monkeypatch):
-    backend = _fresh_backend(5, monkeypatch)
-    n = 4096
-    out = tack.zeros(tack.i64, (n,))
-    compiled, prefix, _ = _compiled(backend, _number, [out])
-    backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
-    buf = np.full(1_000_003, 0xAB, np.uint8)
-    backend._cpool.zero(buf.ctypes.data, 1_000_000, 5)
-    assert not buf[:1_000_000].any() and (buf[1_000_000:] == 0xAB).all()
 
 
 def test_the_python_path_still_works(monkeypatch):

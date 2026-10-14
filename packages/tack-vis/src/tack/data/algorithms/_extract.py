@@ -61,7 +61,7 @@ def _keep_cells(data, keep, fields=None):
     if not getattr(data.topology, "reference_cells", True):
         return _polyhedral_keep_cells(data, keep, fields)
     n = data.num_cells
-    sizes = tack.zeros(tack.i32, (n,))
+    sizes = tack.field(tack.i32, shape=(n,))
     for group in data.topology.groups():
         if group.count:
             _kept_sizes(group.view(), keep, sizes)
@@ -73,7 +73,7 @@ def _keep_cells(data, keep, fields=None):
 
     num_points = data.num_points
     types = tack.field(tack.u8, shape=(count,))
-    offsets = tack.zeros(idt, (count + 1,))
+    offsets = tack.field(idt, shape=(count + 1,))
     connectivity = tack.field(idt, shape=(length,))
     sources = tack.field(idt, shape=(count,))
     used = tack.zeros(tack.i32, (num_points,))
@@ -107,7 +107,7 @@ def _polyhedral_keep_cells(data, keep, fields=None):
     if t.dimension < 3:
         # Polygons' loops or polylines' chains, copied whole.
         loop_offsets, loop_points = t.loops() if t.dimension == 2 else t.lines()
-        sizes = tack.zeros(tack.i32, (n,))
+        sizes = tack.field(tack.i32, shape=(n,))
         if n:
             _kept_entry_counts(loop_offsets, keep, sizes, n)
         starts = tack.field(idt, shape=(n + 1,))
@@ -140,7 +140,7 @@ def _polyhedral_keep_cells(data, keep, fields=None):
             _copy_faces(t.face_offsets, t.face_points, used, owned, new_face, starts,
                         face_points, flipped, point_used)
         face_offsets = _gather_offsets(starts, kept_faces, total)
-        counts = tack.zeros(tack.i32, (n,))
+        counts = tack.field(tack.i32, shape=(n,))
         if n:
             _kept_entry_counts(t.cell_offsets, keep, counts, n)
         entry_starts = tack.field(idt, shape=(n + 1,))

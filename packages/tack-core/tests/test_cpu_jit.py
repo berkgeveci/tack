@@ -349,7 +349,7 @@ def test_shared_memory():
     """CPU must reject cooperative kernels before writing output."""
     n = 10
     x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.zeros(dtype=tack.f32, shape=(n,))
     x.from_numpy(np.arange(n, dtype=np.float32))
 
     @tack.kernel

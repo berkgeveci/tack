@@ -217,7 +217,10 @@ safety. LLVM and the vendor compilers still perform their own optimizations.
 
 ## Memory and aliasing
 
-Fields are typed, shaped storage associated with a backend. A subscript of
+Fields are typed, shaped storage associated with a backend. A field from
+`tack.field` holds unspecified contents until a kernel, `from_numpy` or
+`fill` writes them; `tack.zeros`, `ones` and `full` make filled fields.
+A subscript of
 a field gives one index per dimension, or a single flat, row-major index;
 a vector of integers stands for one index per component. Binding a field
 whose number of dimensions differs from the number of indices a kernel

@@ -7,6 +7,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- `tack.field` returns uninitialized storage on every backend; `tack.zeros`
+  is the call that pays for zeros. The CPU backend used to fill every new
+  field on the calling thread, which at 5M cells on eight threads of a
+  2 GHz Xeon was half of threshold's and cell-to-point's time and grew
+  with the thread count. A field is now first touched by the kernel that
+  writes it, and a CPU fill of 256 KiB or more (so `zeros`, `ones`,
+  `full`) runs as a kernel through the dispatch, so the threads share it
+  and the pages land where they will be used; the executor's threads are
+  made under the NUMA interleave policy as the pool's are. The dataset
+  filters' fully written flag and offset arrays take plain fields.
+  `Backend.fill_field` is the hook.
 - The CPU backend fans a range out through a thread pool JIT-compiled from
   LLVM IR, with one ctypes call per launch and no Python on the workers'
   path, instead of one `ThreadPoolExecutor` task per worker. A fan-out that
@@ -15,8 +26,7 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   filters at a million cells went from 1.05× to 1.9× on eight threads
   there. Workers claim chunks from a counter rather than taking one equal
   share each, so one slowed by a sibling hyperthread or an uneven range
-  takes fewer. New fields of 256 KiB or more are zeroed through the pool,
-  so their pages are first touched in parallel. Dispatches from several
+  takes fewer. Dispatches from several
   Python threads take turns at the pool, and a pool whose workers cannot
   all be started is dismantled before the executor takes over.
   `TACK_CPU_POOL=python` keeps the executor, which remains the fallback

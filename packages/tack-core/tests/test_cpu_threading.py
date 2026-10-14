@@ -724,7 +724,7 @@ def test_first_sight_samples_inside_the_range_not_its_prefix(cpu):
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
     n = 1 << 20
-    visits = tack.field(dtype=tack.i32, shape=(n,))
+    visits = tack.zeros(dtype=tack.i32, shape=(n,))
     args = [visits, n]
     compiled = _compile_for(backend, _count_visits, args)
     assert n >= backend._probe_min_range()
@@ -857,7 +857,7 @@ def _fixed_timing(monkeypatch, compiled, work_ns):
 
 
 def _measured(backend, kernel, n):
-    x = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.zeros(dtype=tack.f32, shape=(n,))
     out = tack.field(dtype=tack.f32, shape=(n,))
     compiled = _compile_for(backend, kernel, [x, out, n])
     backend._dispatch(compiled, [x, out, n], n)

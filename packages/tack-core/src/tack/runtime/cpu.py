@@ -50,6 +50,7 @@ import ctypes.util
 import itertools
 import os
 import platform
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -619,9 +620,11 @@ class CompiledKernel:
 # 2-3x on such kernels. Overlapping calls get the variant without it.
 _SPECIALIZE_DISJOINT = True
 
-# A new buffer at least this big is zeroed through the JIT'd pool, one
-# chunk per worker, rather than filled on the calling thread.
-_POOL_ZERO_MIN_BYTES = 256 << 10
+# A fill of at least this many bytes runs as a kernel through the normal
+# dispatch, so the policy fans it out when that pays and a new buffer's
+# pages are first touched by the workers; below it `ndarray.fill` on the
+# calling thread is cheaper than a dispatch.
+_PARALLEL_FILL_MIN_BYTES = 256 << 10
 
 
 def _create_target_machine():
@@ -861,29 +864,36 @@ class CPUBackend(Backend):
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> NumpyBuffer:
-        jit = self._cpool if self.pool_kind == "jit" else None
-        if jit is not None:
-            # First touch by every worker, one chunk each, instead of a
-            # serial fill here: the fill of a buffer the workers just wrote
-            # was the slowest thing between launches, and the workers carry
-            # the policy the pool was made under (see `_jit_pool`).
-            buf = NumpyBuffer.__new__(NumpyBuffer)
-            buf._data = np.empty(shape, dtype=dtype.numpy_dtype)
-            if buf._data.nbytes >= _POOL_ZERO_MIN_BYTES:
-                jit.zero(buf._data.ctypes.data, buf._data.nbytes, self.num_threads)
-            else:
-                buf._data.fill(0)
-            return buf
-        if _numa_available:
-            # Use np.empty (no page faults) under interleave policy,
-            # so the first write spreads pages across NUMA nodes.
-            with _NumaInterleave():
-                buf = NumpyBuffer.__new__(NumpyBuffer)
-                buf._data = np.empty(shape, dtype=dtype.numpy_dtype)
-                # Force page faults under interleave policy by touching all pages
-                buf._data.fill(0)
-            return buf
+        # Uninitialized, as every GPU backend's allocation is. The pages are
+        # first touched by the kernel that writes the field: in parallel
+        # when the policy fans it out, and on the workers' terms -- the
+        # pool's and the executor's threads are made under the interleave
+        # policy (`_jit_pool`, `_get_pool`), or keep a bound task's
+        # binding. Filling here was serial, and dearer after a fan-out
+        # while the workers' caches owned the lines: at 5M cells on eight
+        # threads of a 2 GHz Xeon, allocation was 130 of threshold's
+        # 276 ms and 77 of cell-to-point's 135.
         return NumpyBuffer(dtype.numpy_dtype, shape)
+
+    def fill_field(self, field, value) -> bool:
+        """Fill `_PARALLEL_FILL_MIN_BYTES` or more as a kernel through the
+        normal dispatch, so the policy fans it out when that pays and a new
+        buffer's pages are first touched by the workers (`tack.zeros` is
+        such a fill). NumPy converts the value first, so what the kernel
+        stores, and what is refused, is what `ndarray.fill` would store or
+        refuse. Smaller fills, and a backend of one thread, fill in place.
+        """
+        buf = field._buffer
+        if self.num_threads <= 1 or buf.nbytes < _PARALLEL_FILL_MIN_BYTES:
+            return False
+        from tack.algorithms.copy import _fill_kernel
+        from tack.lang.field import Field
+        element = np.array(value, dtype=field.dtype.numpy_dtype)
+        n = buf.nbytes // element.itemsize
+        # A flat scalar view: a vector field's element count is its
+        # component count, and the kernel stores one scalar per index.
+        _fill_kernel(Field(field.dtype, (n,), buf), element.item(), n)
+        return True
 
     def memory_space(self, ptr) -> str:
         """CPU backend: all pointers are host memory."""
@@ -1398,9 +1408,24 @@ class CPUBackend(Backend):
                    int(fan_out * self._margin() / rate))
 
     def _get_pool(self) -> ThreadPoolExecutor:
-        """Return the persistent thread pool, creating it on first use."""
+        """The persistent executor, made on first use.
+
+        Made under the interleave policy, which its threads inherit as the
+        JIT'd pool's do (`_jit_pool`), so a buffer they first-touch is
+        spread across the nodes -- or keeps a bound task's binding. The
+        executor would start its threads lazily, from whichever dispatch
+        first needed each, under that dispatch's policy; they are all
+        started here instead.
+        """
         if self._pool is None:
-            self._pool = ThreadPoolExecutor(max_workers=self.num_threads)
+            with _NumaInterleave():
+                pool = ThreadPoolExecutor(max_workers=self.num_threads)
+                gate = threading.Barrier(self.num_threads + 1)
+                started = [pool.submit(gate.wait) for _ in range(self.num_threads)]
+                gate.wait()
+                for f in started:
+                    f.result()
+            self._pool = pool
         return self._pool
 
     def _jit_pool(self):
