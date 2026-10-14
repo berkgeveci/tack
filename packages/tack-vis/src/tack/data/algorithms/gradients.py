@@ -95,7 +95,7 @@ def gradients(data, field, at="cells"):
     VTK's and Viskores' gradient tensors. The field's basis gives its
     derivative in parametric coordinates and the geometry's Jacobian turns that
     into a world gradient, so the two need not share a space. Cells below three
-    dimensions get zero. ``flow_quantities`` derives divergence, vorticity and
+    dimensions get zero, and a cell of no volume NaN (its Jacobian is singular). ``flow_quantities`` derives divergence, vorticity and
     the Q-criterion from a vector field's gradient."""
     field = _field(data, field)
     reference_cells(data.topology, "gradients")

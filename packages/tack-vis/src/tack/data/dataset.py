@@ -86,7 +86,12 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
                         "(tack.data.traces)")
     mixins = [space_mixin or space.mixin_for(group.keys.get(space))]
     if isinstance(space, H1):
-        mixins.append(views.point_address(group.kind, storage))
+        # A grid's coordinates read a corner by (i, j, k) when their axes are
+        # the topology's; a grid with a size of 1 before another axis has its
+        # topology's axes renumbered (grid_topology), and reads flat indices.
+        aligned = (getattr(field.values, "point_dims", None)
+                   == getattr(space.topology, "point_dims", ()))
+        mixins.append(views.point_address(group.kind, storage, aligned))
     if not space_mixin:
         # A geometry's incidence is the domain view's own.
         mixins.extend(space.extra_mixins())
@@ -440,20 +445,38 @@ def _check_domain(space, kind):
     raise TypeError(f"a field on {space!r} cannot be viewed while iterating {kind}")
 
 
-def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32):
-    """A dataset of the grid whose lines run through ``x``, ``y`` and ``z``."""
-    from tack.data.topology import StructuredTopology
+def grid_topology(dims, id_dtype=None):
+    """The topology of a grid of ``dims`` points (one to three sizes, x fastest).
 
+    A size of 1 adds no cells, in any position: ``(1, 3)`` is a line of three
+    points (along y; the coordinates say where), as ``(3, 1)`` is. With no axis
+    of two or more points the grid is points without cells: one point, or
+    none when a size is 0. The flat point index is the same either way, so
+    the coordinates of all ``dims`` serve.
+    """
+    from tack.data.topology import StructuredTopology, UnstructuredTopology
+
+    dims = tuple(int(d) for d in dims)
+    if not 1 <= len(dims) <= 3 or min(dims) < 0:
+        raise ValueError(f"a grid has 1 to 3 sizes of at least 0 points, not {dims}")
+    axes = tuple(d for d in dims if d != 1)
+    if 0 in dims or not axes:
+        return UnstructuredTopology([], [0], [], num_points=int(np.prod(dims)), id_dtype=id_dtype)
+    return StructuredTopology(axes, id_dtype=id_dtype)
+
+
+def rectilinear_grid(x, y=(0.0,), z=(0.0,), dtype=tack.f32):
+    """A dataset of the grid whose lines run through ``x``, ``y`` and ``z``; see
+    ``grid_topology`` for axes of one point or none."""
     coordinates = CartesianProduct(x, y, z, dtype=dtype)
-    return DataSet(StructuredTopology(coordinates.point_dims), coordinates)
+    return DataSet(grid_topology(coordinates.dims), coordinates)
 
 
 def uniform_grid(dims, origin=(0.0, 0.0, 0.0), spacing=(1.0, 1.0, 1.0), direction=None,
                  dtype=tack.f32):
     """A dataset of ``dims`` points (one to three sizes) at ``origin + direction @
     (ijk * spacing)``: VTK's image data, Viskores' uniform data set. Nothing per
-    point is stored (``UniformCoordinates``)."""
-    from tack.data.topology import StructuredTopology
-
-    coordinates = UniformCoordinates(dims, origin, spacing, direction, dtype=dtype)
-    return DataSet(StructuredTopology(coordinates.point_dims), coordinates)
+    point is stored (``UniformCoordinates``). A size of 1 adds no cells, in any
+    position, and a grid with no axis of two points has none (``grid_topology``)."""
+    topology = grid_topology(dims)      # the sizes as given, before padding to three
+    return DataSet(topology, UniformCoordinates(dims, origin, spacing, direction, dtype=dtype))

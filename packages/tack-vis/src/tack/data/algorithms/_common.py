@@ -8,6 +8,19 @@ from tack.data.arrays import size_of
 from tack.data.ids import at_least
 
 
+@tack.func
+def _crossing(level, a, b):
+    """Where ``level`` lies between ``a`` and ``b``: 0 at ``a``, 1 at ``b``. A value
+    that is not finite is never reached, so a crossing beside one lies at the
+    other end, rather than at the NaN its difference gives."""
+    w = (level - a) / (b - a)
+    if a - a != 0.0:        # true for infinity and NaN alike
+        w = 1.0
+    elif b - b != 0.0:
+        w = 0.0
+    return w
+
+
 def _vectors(n, dtype, width=3):
     return tack.Vector.field(width, dtype, shape=(n,))
 
