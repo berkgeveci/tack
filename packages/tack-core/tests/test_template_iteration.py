@@ -123,7 +123,7 @@ class Particles:
 
     def __init__(self, count):
         self.count = count
-        self.x = tack.field(tack.f32, shape=(count,))
+        self.x = tack.zeros(tack.f32, shape=(count,))
 
     @tack.kernel
     def advance(self, dt: tack.f32):
