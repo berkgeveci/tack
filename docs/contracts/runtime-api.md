@@ -14,7 +14,7 @@ defined in [Contracts](index.md#how-to-read-a-contract).
 
 ## Backend selection
 
-### `tack.init(arch="cpu", **options)`
+### `tack.init(arch="cpu", debug=None, **options)`
 
 Defined in `packages/tack-core/src/tack/runtime/dispatch.py` (`init`) and
 re-exported as `tack.init`.
@@ -22,6 +22,7 @@ re-exported as `tack.init`.
 | | |
 |---|---|
 | `arch` | One of the strings `"cpu"`, `"metal"`, `"cuda"`, `"hip"` and `"level_zero"`. The constants `tack.cpu`, `tack.metal`, `tack.cuda`, `tack.hip` and `tack.level_zero` are those strings |
+| `debug` | `True` turns on debug mode (below) for every kernel launched from then on, `False` turns it off, and `None` takes it from `TACK_DEBUG` |
 | `**options` | Forwarded to the backend constructor. Each option must be in that backend's `init_options`. CPU declares `num_threads`, which takes precedence over `TACK_CPU_THREADS`, and Level Zero declares `external_context`. The other backends declare none |
 
 **Current behavior:**
@@ -51,12 +52,38 @@ re-exported as `tack.init`.
 | Any other constructor failure, such as `ValueError` for an incomplete `external_context` or a non-integer `TACK_CPU_THREADS` | Propagates unwrapped |
 
 **`TACK_NO_REINIT`:** if a backend is already active and this variable is
-switched on, `init` returns immediately and does nothing. It ignores `arch`
-and `options`, and it doesn't validate either. The variable is read by
+switched on, `init` returns immediately after setting debug mode. It ignores
+`arch` and `options`, and it doesn't validate either. The variable is read by
 `dispatch.env_flag`: unset, empty, `0`, `false`, `no` and `off` (in any
 case, ignoring surrounding spaces) mean off, and any other value means on.
 This exists for embedding, for example inside an ANARI device that shares
 the process. Unset it for testing, because it suppresses backend switching.
+
+**Debug mode** checks every index of every field and array access, one
+dimension at a time: a field's leading dimension against its length, the
+others against theirs, a flat index against the element count (a component
+count for a scalar atomic on a vector field), and a local or shared array
+index against its size. Constant tables and textures clamp and are not
+checked.
+
+- An access with an index outside its extent is not performed: a load gives
+  0 of its type, an atomic's value is 0, and a store or atomic does nothing.
+  The rest of the launch runs.
+- After the launch, `Kernel.__call__` raises `IndexError` for the first
+  violation it recorded: the kernel (and the device function an access was
+  inlined from), the file, line and column, the access as written, the
+  index, its dimension when there are several, the extent, and how many
+  more accesses were skipped. Which violation is first is unspecified when
+  several threads go out of bounds.
+- Kernels lower and compile separately in debug mode, and the extents are
+  run-time arguments: debug mode compiles no variant per field length.
+  Each launch is checked when it returns, which on Metal means waiting for
+  it. Launches from different threads report their own violations.
+- `tack.inspect` shows the code a debug launch runs.
+
+Implemented in `lang/ir_bounds.py` (the checks and guards),
+`runtime/debug_bounds.py` (the hidden arguments and the error) and the
+code generators (`codegen/bounds.py`, `llvm_gen.py`).
 
 ### `get_backend()`
 
@@ -404,6 +431,7 @@ and returns only after the kernel completes.
 | `TACK_CPU_POOL_PIN` | pool creation (`cpu_pool.CPool`) | **Linux.** `1`, `on`, `yes` or `true` pins one pool worker per core, in core order with the caller's node first and its own core left out. Off by default: measured, it did not pay |
 | `TACK_CPU_SUBSETS` | `CPUBackend.__init__` | When on (anything but `0`, `false`, `no`, `off` or empty), a fan-out may use the first *k* of the threads when a smaller prefix is expected to finish just as soon (`_threads_for`). Off by default |
 | `TACK_CPU_MALLOC` | `CPUBackend.__init__` | **Linux.** `0`, `off`, `no` or `false` leaves glibc's `malloc` thresholds alone; by default the first CPU backend sets them so freed blocks keep their pages (`cpu._tune_malloc`), process-wide |
+| `TACK_DEBUG` | `tack.init` | A boolean flag read like `TACK_NO_REINIT`: debug mode's bounds checks when `init`'s `debug` is `None` (above) |
 | `TACK_NO_REINIT` | `tack.init` | A boolean flag (`dispatch.env_flag`): when on, `init` is a no-op while a backend is active. `0`, `false`, `no`, `off` and empty mean off. See above |
 | `TACK_DUMP_MSL` | Metal kernel compilation | **Metal only.** A boolean flag read like `TACK_NO_REINIT`. When on, writes each compiled kernel's MSL to `/tmp/tack_<entry>.msl` and prints the path. Other backends ignore it. Use `tack.inspect` instead |
 | `TACK_REQUIRE_CLANG` | Test suite (`tests/compiler_tools.py`) | Any value other than empty or `0` turns missing or unusable Clang tooling into a test failure instead of a skip |

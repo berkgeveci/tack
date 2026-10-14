@@ -12,6 +12,10 @@ primitives alone. These tests pin both halves.
 import pathlib
 import types
 
+import pytest
+
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 def test_the_worklets_import_from_tack_deprecated():
     from tack.deprecated.algorithms import (

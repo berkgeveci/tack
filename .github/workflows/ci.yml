@@ -174,23 +174,21 @@ jobs:
           # to .python-version (3.13) and looks in a different environment.
           python-version: ${{ matrix.python-version }}
 
-      - name: Sync the workspace
-        run: uv sync --extra cpu --extra dev
-
       # VTK and MFEM (PyMFEM) are the references for tack.data: VTK for the
       # cell shapes, faces and filters, MFEM for the derived topology, the
-      # spaces and order 2. One job is enough, and the wheels are large;
-      # TACK_REQUIRE_VTK and TACK_REQUIRE_MFEM make that job fail rather than
-      # skip if either is missing or will not import. `uv run` does not
-      # remove them: only `uv sync` makes the environment exact. PyMFEM pulls
-      # in numba, whose newest wants a newer llvmlite than the lock's, so
-      # llvmlite is pinned to the version the sync installed: Tack's CPU
-      # backend compiles with it.
-      - name: Install VTK and MFEM, the references for the dataset tests
+      # spaces and order 2. One job is enough, and the wheels are large, so
+      # only 3.13 syncs the `interop` extra; its versions, and the numba
+      # PyMFEM pulls in, come from the lock. TACK_REQUIRE_VTK and
+      # TACK_REQUIRE_MFEM make that job fail rather than skip if either is
+      # missing or will not import.
+      - name: Sync the workspace
+        run: >-
+          uv sync --extra cpu --extra dev
+          ${{ matrix.python-version == '3.13' && '--extra interop' || '' }}
+
+      - name: Require VTK and MFEM, the references for the dataset tests
         if: matrix.python-version == '3.13'
         run: |
-          llvmlite=$(uv run python -c "import importlib.metadata as m; print(m.version('llvmlite'))")
-          uv pip install vtk mfem "llvmlite==$llvmlite"
           echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
           echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
 
@@ -238,13 +236,11 @@ jobs:
           cache-dependency-glob: "**/uv.lock"
           python-version: "3.13"
 
-      - name: Sync the workspace
-        run: uv sync --extra cpu --extra dev
+      - name: Sync the workspace, with VTK and MFEM
+        run: uv sync --extra cpu --extra dev --extra interop
 
-      - name: Install VTK and MFEM, the references for the dataset tests
+      - name: Require VTK and MFEM, the references for the dataset tests
         run: |
-          llvmlite=$(uv run python -c "import importlib.metadata as m; print(m.version('llvmlite'))")
-          uv pip install vtk mfem "llvmlite==$llvmlite"
           echo "TACK_REQUIRE_VTK=1" >> "$GITHUB_ENV"
           echo "TACK_REQUIRE_MFEM=1" >> "$GITHUB_ENV"
 

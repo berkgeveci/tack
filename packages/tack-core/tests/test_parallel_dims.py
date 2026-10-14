@@ -23,6 +23,8 @@ import tack
 from tack.lang import parallel_dims
 from tack.lang.parallel_dims import launch_geometry
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 @tack.kernel
 def _fill2(a):

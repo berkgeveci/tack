@@ -1,9 +1,12 @@
 """``tack.random``: a counter-based generator with explicit state, mirrored in NumPy."""
 
 import numpy as np
+import pytest
 
 import tack
 from tack import random
+
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 
 @tack.kernel

@@ -12,7 +12,7 @@ from llvmlite import ir as llvm_ir
 
 from tack.codegen.identifiers import kernel_entry_name
 from tack.codegen.integer_division import INTEGER_TYPES, UNSIGNED_TYPES
-from tack.lang import ir
+from tack.lang import ir, ir_bounds
 from tack.lang.atomic_support import check_atomic_support
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_support import check_workgroup_support
@@ -229,6 +229,8 @@ class LLVMCodeGen:
             return self._emit_atomic_op(node)
         if isinstance(node, ir.IRTextureSample):
             return self._emit_texture_sample(node)
+        if isinstance(node, ir.IRBoundsCheck):
+            return self._emit_bounds_check(node)
         raise NotImplementedError(f"Cannot emit expression: {type(node).__name__}")
 
     # --- Loops ---
@@ -866,6 +868,76 @@ class LLVMCodeGen:
             builder.position_at_end(exit_bb)
             builder.ret(result)
         return self.builder.call(helper, [base, exponent], name='pow.integer')
+
+    def _emit_bounds_check(self, node: ir.IRBoundsCheck) -> llvm_ir.Value:
+        """Debug mode: the flat index, or -1 if an index is out of bounds.
+
+        Every dimension is tested; the first to fail records itself, since
+        its atomic runs first (see ``ir_bounds``).
+        """
+        i64_type, i32_type = llvm_ir.IntType(64), llvm_ir.IntType(32)
+        errors = self.builder.bitcast(self._emit_expr(node.errors), i32_type.as_pointer())
+        helper = self._bounds_helper()
+        inside = None
+        for dim, (index, extent) in enumerate(zip(node.indices, node.extents)):
+            index = self._to_i64(self._emit_expr(index))
+            extent = self._to_i64(self._emit_expr(extent))
+            ok = self.builder.call(helper, [index, extent, llvm_ir.Constant(i32_type, node.site),
+                                            llvm_ir.Constant(i32_type, dim), errors],
+                                   name='bounds.ok')
+            inside = ok if inside is None else self.builder.and_(inside, ok)
+        flat = self._to_i64(self._emit_expr(node.flat))
+        return self.builder.select(inside, flat, llvm_ir.Constant(i64_type, -1),
+                                   name='bounds.index')
+
+    def _bounds_helper(self):
+        """``__tack_in_bounds__(index, extent, site, dim, errors) -> i1``.
+
+        Out of bounds, the first caller to bump the count stores the record
+        of ``ir_bounds``: site, dimension, then index and extent as halves.
+        """
+        name = '__tack_in_bounds__'
+        helper = self.module.globals.get(name)
+        if helper is not None:
+            return helper
+        i1_type, i32_type, i64_type = (llvm_ir.IntType(n) for n in (1, 32, 64))
+        helper = llvm_ir.Function(
+            self.module, llvm_ir.FunctionType(
+                i1_type, [i64_type, i64_type, i32_type, i32_type, i32_type.as_pointer()]),
+            name=name)
+        helper.linkage = 'internal'
+        index, extent, site, dim, errors = helper.args
+        entry, record, store, outside, inside = (
+            helper.append_basic_block(n) for n in ('entry', 'record', 'store', 'outside', 'inside'))
+        builder = llvm_ir.IRBuilder(entry)
+        ok = builder.and_(builder.icmp_signed('>=', index, llvm_ir.Constant(i64_type, 0)),
+                          builder.icmp_signed('<', index, extent))
+        builder.cbranch(ok, inside, record)
+        builder.position_at_end(record)
+        old = builder.atomic_rmw('add', errors, llvm_ir.Constant(i32_type, 1), 'monotonic')
+        builder.cbranch(builder.icmp_signed('==', old, llvm_ir.Constant(i32_type, 0)),
+                        store, outside)
+        builder.position_at_end(store)
+
+        def put(slot, value):
+            builder.store(value, builder.gep(errors, [llvm_ir.Constant(i64_type, slot)]))
+
+        def halves(value):
+            high = builder.ashr(value, llvm_ir.Constant(i64_type, 32))
+            return builder.trunc(value, i32_type), builder.trunc(high, i32_type)
+
+        put(ir_bounds.SITE, site)
+        put(ir_bounds.DIM, dim)
+        for slot, half in zip((ir_bounds.INDEX_LO, ir_bounds.INDEX_HI), halves(index)):
+            put(slot, half)
+        for slot, half in zip((ir_bounds.EXTENT_LO, ir_bounds.EXTENT_HI), halves(extent)):
+            put(slot, half)
+        builder.branch(outside)
+        builder.position_at_end(outside)
+        builder.ret(llvm_ir.Constant(i1_type, 0))
+        builder.position_at_end(inside)
+        builder.ret(llvm_ir.Constant(i1_type, 1))
+        return helper
 
     def _emit_integer_division(self, node, left, right):
         target = _llvm_type(node.dtype)

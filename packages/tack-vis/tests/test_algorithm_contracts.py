@@ -6,6 +6,8 @@ import pytest
 import tack
 import tack.data as td
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 FIELD_OPERATIONS = {
     "threshold": lambda d, f: td.threshold(d, f, 0, 1),
     "threshold_points": lambda d, f: td.threshold_points(d, f, 0, 1),

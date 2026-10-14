@@ -20,12 +20,14 @@ def _cell_geometry(cells, volumes, centroids):
         origin = cells.side_position(c, 0, 0)
         six = 0.0
         weighted = tack.Vector([0.0, 0.0, 0.0])
+        apexes = tack.Vector([0.0, 0.0, 0.0])
         for k in range(cells.num_faces(c)):
             size = cells.side_num_points(c, k)
             apex = tack.Vector([0.0, 0.0, 0.0])
             for j in range(size):
                 apex += cells.side_position(c, k, j) - origin
             apex = apex / size
+            apexes += apex
             for j in range(size):
                 a = cells.side_position(c, k, j) - origin
                 b = cells.side_position(c, k, j + 1 if j + 1 < size else 0) - origin
@@ -33,7 +35,11 @@ def _cell_geometry(cells, volumes, centroids):
                 six += t
                 weighted += t * (a + b + apex)
         volumes[cells.entity_id(c)] = six / 6.0
-        centroids[cells.entity_id(c)] = origin + weighted / (4.0 * six)
+        if six != 0.0:
+            centroids[cells.entity_id(c)] = origin + weighted / (4.0 * six)
+        else:
+            # No volume to weight by: the mean of its faces' centers of points.
+            centroids[cells.entity_id(c)] = origin + apexes / cells.num_faces(c)
 
 
 @tack.kernel
@@ -46,17 +52,24 @@ def _polygon_geometry(cells, areas, centroids):
         for k in range(cells.num_faces(c)):
             n += (cells.side_position(c, k, 0) - origin).cross(
                 cells.side_position(c, k, 1) - origin)
-        unit = n / n.norm()
+        length = n.norm()
+        unit = n / length if length > 0.0 else n
         twice = 0.0
         weighted = tack.Vector([0.0, 0.0, 0.0])
+        corners = tack.Vector([0.0, 0.0, 0.0])
         for k in range(cells.num_faces(c)):
             a = cells.side_position(c, k, 0) - origin
             b = cells.side_position(c, k, 1) - origin
             t = a.cross(b).dot(unit)
             twice += t
             weighted += t * (a + b)
+            corners += a
         areas[cells.entity_id(c)] = 0.5 * twice
-        centroids[cells.entity_id(c)] = origin + weighted / (3.0 * twice)
+        if twice != 0.0:
+            centroids[cells.entity_id(c)] = origin + weighted / (3.0 * twice)
+        else:
+            # No area to weight by: the mean of its corners.
+            centroids[cells.entity_id(c)] = origin + corners / cells.num_faces(c)
 
 
 @tack.kernel
@@ -67,14 +80,20 @@ def _line_geometry(cells, lengths, centroids):
         origin = cells.point_position(cells.line_point_id(c, 0))
         total = 0.0
         weighted = origin - origin
+        points = origin - origin
         for j in range(cells.line_num_points(c) - 1):
             a = cells.point_position(cells.line_point_id(c, j)) - origin
             b = cells.point_position(cells.line_point_id(c, j + 1)) - origin
             length = (b - a).norm()
             total += length
             weighted += length * (a + b)
+            points += b
         lengths[cells.entity_id(c)] = total
-        centroids[cells.entity_id(c)] = origin + weighted / (2.0 * total)
+        if total != 0.0:
+            centroids[cells.entity_id(c)] = origin + weighted / (2.0 * total)
+        else:
+            # No length to weight by: the mean of its points.
+            centroids[cells.entity_id(c)] = origin + points / cells.line_num_points(c)
 
 
 @tack.kernel

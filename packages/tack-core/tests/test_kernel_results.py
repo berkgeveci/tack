@@ -6,6 +6,8 @@ import pytest
 import tack
 from tack.lang.source_validation import UnsupportedSyntaxError
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 SCALE = tack.constant(2.0)
 
 

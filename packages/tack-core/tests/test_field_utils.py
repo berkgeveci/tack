@@ -6,6 +6,8 @@ import pytest
 import tack
 from tack import algorithms
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 # --- Field.size and len() ---
 
 def test_field_size(backend):

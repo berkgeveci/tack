@@ -17,6 +17,8 @@ from tack.lang.ir_resolve import resolve_ir
 from tack.lang.ir_type_annotate import annotate_types
 from tack.lang.type_inference import infer_param_types, promote_types
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 TYPES = [tack.i8, tack.u8, tack.i16, tack.u16,
          tack.i32, tack.u32, tack.i64, tack.u64]
 GENERATORS = [generate_cuda_source, generate_hip_source,

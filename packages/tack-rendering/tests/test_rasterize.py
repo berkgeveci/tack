@@ -14,6 +14,8 @@ from tack.rendering import (
     render,
 )
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 @pytest.fixture(autouse=True)
 def init_cpu():

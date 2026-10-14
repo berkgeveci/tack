@@ -14,6 +14,7 @@ with more than 2^31 elements.
 """
 
 from tack.codegen.atomics import cuda_atomic64_helpers
+from tack.codegen.bounds import bounds_check_expr, bounds_helpers
 from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
@@ -108,6 +109,7 @@ class CUDACodeGen:
     # The C type of a sequential loop's variable; OpenCL spells 64 bits `long`.
     _LOOP_INDEX = _INT
     _TEXTURE_OBJECT_TYPE = "cudaTextureObject_t"
+    _BOUNDS_DIALECT = 'cuda'      # debug mode's check helper (codegen/bounds.py)
 
     _atomic_backend = 'cuda'
     _table_dialect = 'cuda'
@@ -131,6 +133,7 @@ class CUDACodeGen:
         self._needs_float_atomic_max = False
         self._integer_division_helpers = set()
         self._float_division_helpers = set()
+        self._needs_bounds = False
         self._block_extrema = set()
         self._tables = Tables(self._table_dialect)
         self._integers = IntegerCodeGen(
@@ -196,6 +199,7 @@ class CUDACodeGen:
                 self._integer_division_helpers, _C_TYPE_MAP, '__device__ inline')
             + self._integers.definitions('__device__ inline')
             + f32_reduction_helpers('cuda', self._block_extrema)
+            + bounds_helpers('cuda', self._needs_bounds)
         )
         prefix_lines += cuda_atomic64_helpers(self._atomic64)
         if self._needs_float_atomic_min:
@@ -665,6 +669,9 @@ class CUDACodeGen:
             return self._expr_atomic(node)
         if isinstance(node, ir.IRTableLoad):
             return self._tables.load(node, self._expr(node.index))
+        if isinstance(node, ir.IRBoundsCheck):
+            self._needs_bounds = True
+            return bounds_check_expr(self._BOUNDS_DIALECT, node, self._expr)
         raise NotImplementedError(f"CUDA expr: {type(node).__name__}")
 
     def _expr_block_reduce(self, node: ir.IRBlockReduce) -> str:

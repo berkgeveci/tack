@@ -3,9 +3,11 @@
 Runs after AST transform, before codegen. Replaces:
 - IRDimSize(field_name, dim) → IRConstant(shape[dim])
   Uses _logical_shape for vector fields, shape for regular fields.
+- IRFieldExtent(field_name, kind) → a load from debug mode's extents field,
+  at its parameter's slot (an alias's root parameter, by name).
 """
 
-from tack.lang import ir
+from tack.lang import ir, ir_bounds
 from tack.lang.ir_traversal import transform_ir, walk_ir
 from tack.lang.types import INTEGER_TYPES
 
@@ -20,6 +22,16 @@ def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
     # so shared_like/DimSize can resolve the mangled name to the actual field.
     aliases = _collect_field_aliases(ir_func.body, name_to_field)
     extended = {**name_to_field, **aliases}
+    # Debug mode's extents are kept per parameter: a name reads its own
+    # parameter's, and an alias (an inlined function's) its root parameter's,
+    # by name. Never by which field object a call passed: two parameters bound
+    # to one field in the call that compiles the variant are two parameters
+    # in every later call that reuses it.
+    slots = {param.name: position for position, param in enumerate(ir_func.params)}
+    for node in walk_ir(ir_func.body):
+        if (isinstance(node, ir.IRAssign) and isinstance(node.value, ir.IRName)
+                and node.value.name in slots and node.target not in slots):
+            slots[node.target] = slots[node.value.name]
 
     for i, stmt in enumerate(ir_func.body):
         if isinstance(stmt, ir.IRParallelFor):
@@ -28,11 +40,11 @@ def resolve_ir(ir_func: ir.IRFunction, name_to_field: dict):
             # evaluates it against the actual arguments instead. Folding it
             # to a literal would make the compiled kernel depend on the
             # array's length and force a recompile for every new size.
-            stmt.start = _resolve(stmt.start, extended)
-            stmt.body = [_resolve(s, extended) for s in stmt.body]
+            stmt.start = _resolve(stmt.start, extended, slots)
+            stmt.body = [_resolve(s, extended, slots) for s in stmt.body]
             ir_func.body[i] = stmt
         else:
-            ir_func.body[i] = _resolve(stmt, extended)
+            ir_func.body[i] = _resolve(stmt, extended, slots)
 
 
 _FOLDABLE = {
@@ -81,9 +93,17 @@ def _collect_field_aliases(stmts, known_fields):
     return aliases
 
 
-def _resolve(node, fields):
+def _resolve(node, fields, slots=None):
     """Resolve dispatch-time leaves using the shared structural traversal."""
     def resolve_leaf(node):
+        if isinstance(node, ir.IRFieldExtent):
+            slot = (slots or {}).get(node.field_name)
+            if slot is None:
+                raise RuntimeError(f"Cannot resolve the extent of unknown field "
+                                   f"'{node.field_name}'")
+            return ir.IRFieldLoad(
+                ir.IRName(ir_bounds.EXTENTS_PARAM),
+                ir.IRConstant(ir_bounds.EXTENTS_PER_PARAM * slot + node.kind))
         if isinstance(node, ir.IRDimSize):
             field = fields.get(node.field_name)
             if field is None:
