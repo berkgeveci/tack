@@ -22,6 +22,8 @@ import pytest
 import tack
 from tack.lang import dlpack
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 ALL_DTYPES = [
     (tack.f32, np.float32), (tack.f64, np.float64),
     (tack.i8, np.int8), (tack.i16, np.int16),

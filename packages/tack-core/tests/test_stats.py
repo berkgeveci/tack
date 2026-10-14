@@ -6,6 +6,8 @@ import pytest
 import tack
 from tack.algorithms import absmax, count_nonzero, dot, histogram, norm, std, var
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 # --- field.mean() ---
 
 def test_mean(backend):

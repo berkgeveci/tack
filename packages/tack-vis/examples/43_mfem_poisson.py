@@ -10,6 +10,7 @@ fichera-q2.mesh, escher-p2.mesh, ...); without it, a Cartesian mesh of
 hexahedra bent by a smooth map. Pyramids have no order-2 space here.
 
 Usage:
+  uv sync --extra cpu --extra interop     # in the workspace; or, with pip:
   pip install mfem "llvmlite==0.46.0"     # numba's newest wants a newer llvmlite
   python packages/tack-vis/examples/43_mfem_poisson.py [--arch cpu|metal|cuda|hip|level_zero]
                                      [--mesh FILE] [--refine N] [--output DIR]

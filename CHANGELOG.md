@@ -5,6 +5,27 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ## Unreleased
 
+### Added
+
+- Debug mode: `tack.init(..., debug=True)` or `TACK_DEBUG=1` checks every
+  field and array index in every kernel, one dimension at a time. An
+  out-of-bounds access is skipped (a load gives 0) and the call raises
+  `IndexError` naming the access, its file and line, the index and the
+  extent, and how many more were skipped; an access inside a device
+  function names it. It runs on every backend, compiles separately from
+  normal kernels, and does not compile per field length. Without it,
+  generated code is unchanged.
+- `pytest -m quick`, a module per area of the code, 80 s on four
+  workers, and `pytest -n auto` for the whole suite across processes
+  (pytest-xdist is in the `dev` extra): 4:30 on eight workers where the
+  serial run took 28 minutes, with the same counts. See CLAUDE.md,
+  "Tests, in three tiers".
+- An `interop` extra for VTK and MFEM (PyMFEM), the references the dataset
+  tests compare against: `uv sync --extra interop` installs them from the
+  lock, where a later `uv sync` used to remove a hand-installed copy. MFEM
+  is left out where PyMFEM has no wheels (anywhere but macOS on Apple
+  silicon and Linux x86_64).
+
 ### Changed
 
 - CUDA launches are queued on a stream and return at once; the host
@@ -15,6 +36,30 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   million cells on an RTX 4060 Ti went from 9.6 to 7.1 ms, now the cost
   of its 31 launches' host side alone. Errors of a launch surface at the
   next wait rather than at its call, as on Metal.
+
+### Fixed
+
+- Grids with a size of 1 before another axis -- `uniform_grid((1, 3))`, a
+  VTK image of dimensions `(1, m, n)` -- were refused; so were grids of one
+  point or none (`(1, 1, 1)`, `(0,)`, `wavelet(extent=0)`). A size of 1 now
+  adds no cells in any position, and a grid with no axis of two points has
+  none.
+- Cells of no volume and faces of no area (coincident points, a grid of
+  spacing 0) have finite geometry: measure 0, the centroid at their points'
+  mean and zero normals, so the flux through them is 0. Their gradients,
+  flow quantities and Perot reconstruction are NaN, as before, and now
+  documented.
+- A contour or clip crossing beside an infinite or NaN value lies at the
+  finite end, where the crossing and the fields carried to it were NaN.
+- `algorithms.histogram` and `entropy` refuse a range that is not finite
+  (as `numpy.histogram` does), a reversed range and fewer than one bin;
+  `entropy` of no values says so, and of one value is `0.0`, not `-0.0`.
+- A mesh of line cells (a 1D grid, VTK lines) derived no faces, so its
+  `external_faces` were empty and `face_geometry`, `upwind_flux`,
+  `divergence` and `perot` failed with an internal error. Faces of lines
+  are not derived yet, and asking now raises `NotImplementedError`.
+- `extract_cells` takes a cell `Set`, or its name in `data.sets`.
+- `dataset_to_vtk` writes a grid of one point or none as a grid.
 
 ## 0.4.0 — 2026-10-13
 

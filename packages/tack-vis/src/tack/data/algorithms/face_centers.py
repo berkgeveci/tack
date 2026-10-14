@@ -25,8 +25,9 @@ def _face_centers(faces, out):
             area = (a - apex).cross(b - apex).norm()
             total += area
             weighted += area * (a + b + apex)
-        if size < 3:
-            # An edge, a 2D mesh's face, or a polyline's end: its points' mean.
+        if size < 3 or total == 0.0:
+            # An edge, a 2D mesh's face, or a polyline's end -- or a face of no
+            # area: its points' mean.
             out[faces.entity_id(f)] = origin + apex
         else:
             out[faces.entity_id(f)] = origin + weighted / (3.0 * total)

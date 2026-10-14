@@ -20,13 +20,49 @@ All share the `tack` namespace via `pkgutil.extend_path`.
 
 ```bash
 uv sync --extra cpu --extra dev                             # install everything the tests need
-uv run pytest                                                # run all tests
-uv run pytest packages/tack-core/tests/test_cpu_jit.py        # run one test file
+uv sync --extra cpu --extra dev --extra interop             # ...and VTK and MFEM, which the dataset tests compare against
+uv run pytest packages/tack-core/tests/test_cpu_jit.py        # the files your change touches
+uv run pytest -m quick -n 4                                   # the inner-loop set, 80 s on 4 workers
+uv run pytest -n auto                                         # the whole suite across processes
+uv run pytest                                                 # the whole suite, serially (CI's way)
 uv run pytest packages/tack-core/tests/test_hip.py            # run HIP backend tests
 uv run pytest -k "test_saxpy"                                # run tests matching a pattern
 uv run python packages/tack-core/examples/validate_all.py     # validation suite
 uv run python packages/tack-core/examples/01_hello_tack.py --arch hip  # example on backend
 ```
+
+### Tests, in three tiers
+
+Run the smallest tier that covers the change; the whole suite is for a
+validation round or a merge gate, once per machine, not for iteration.
+
+1. **The files the change touches.** Seconds to a minute.
+2. **`-m quick`**: a module per area of the code (dispatch, the variant
+   cache, each backend's main file, templates, the dataset API and its
+   algorithms, rendering's dispatch), marked `pytestmark = pytest.mark.quick`
+   at module level; about 1900 tests, ~300 s of test time, 80 s on four
+   workers (a 16-thread Xeon with an RTX 4060 Ti). When a new area gets a
+   test module, mark it quick if it runs in under ten seconds; the heavy
+   modules (polyhedra, implicit, MFEM interop, flow, clip, the sort, the
+   kernel-cache recycle test) stay out so the tier stays quick.
+   `test_dataset_api.py` is the one exception, 180 s of the tier's 300:
+   it is the dataset API's main test and its cost is spread over 169
+   tests at a second each, so it only costs a second or so of wall time
+   per worker.
+3. **The whole suite**, with `-n auto` (pytest-xdist, in the `dev` extra):
+   6000 tests, 33 minutes of test time, 4:30 on eight workers here, with
+   the same counts as the serial run. Tests are handed out one at a time
+   (`--dist load`, xdist's default); no module depends on its tests'
+   order. Every xdist worker is a process with its own backends and CUDA
+   context, so GPU memory scales with the worker count. The `timing`
+   tests skip themselves on a busy host, so a parallel run skips them;
+   run `-m timing` alone when they matter.
+
+Do not edit a `.py` file while a run that imported it is still going:
+`linecache` reloads the changed file and every source lookup after that
+reads the wrong line, in pytest (`???` in the traceback) and in Tack
+(`@tack.func must decorate a function, got <class 'ast.Assign'>`), which
+looks like order dependence and is not.
 
 Examples accept `--arch` to select the backend. `09_shared_memory.py`
 requires an explicit GPU choice (`metal|cuda|hip|level_zero`); CPU has no
@@ -282,6 +318,36 @@ localization/packing allocate generated bindings through `fresh_name`
 (`lang/ir_names.py`) so they cannot merge with Python source names.
 
 `tack.inspect(kernel, *args, mode=...)` runs the compilation pipeline and returns the generated code as a string without executing. Modes: `"ir"` (Tack IR), `"source"` (backend code: LLVM IR / MSL / CUDA C / HIP C / OpenCL C), `"optimized"` (post-LLVM-O3 IR; CPU only, other backends raise `ValueError` after the kernel's own checks). It makes dispatch's decisions too: `check_dispatch_types` and the backend's `_store_texture_shapes` (software sampling on HIP/Level Zero devices without texture hardware). Implementation in `lang/inspect_kernel.py`.
+
+### Debug mode (bounds checks)
+
+`tack.init(debug=True)` or `TACK_DEBUG` (read at `init`) sets
+`dispatch._debug`. `Kernel.get_ir(debug=True)` lowers separately (a
+`("debug",)` key part): `_visit_subscript_index`/`_linearize_index` and flat
+atomic indices go through `_checked`, which wraps the flat index in
+`IRBoundsCheck` (per-dimension indices and extents, a site, the errors
+field) and records an `ir_bounds.BoundsSite` in `function.bounds_sites`.
+Dimension 0 and flat extents are `IRFieldExtent`, which `ir_resolve` turns
+into loads from the hidden i64 `__tack_extents__` field (three per
+parameter), so nothing specializes on length; other dimensions are
+`IRDimSize`, already baked into strides. Arrays use their allocation size.
+Two hidden field parameters follow the kernel's (`ir_bounds.HIDDEN_PARAMS`);
+`_resolve_variant` appends their arguments (`debug_bounds.hidden_args`,
+per-thread fields) and notes the launch; `Kernel.__call__` (and the result
+epilogue) calls `debug_bounds.check()`, which raises `IndexError`. A check
+is -1 when out of bounds, after `__tack_in_bounds__` records the first
+violation (atomic add on the count). `annotate_types` ends with
+`ir_bounds.guard_accesses`: loads become `index >= 0 ? load : 0` (typed
+zero, hence after typing), stores and atomics run under `if`. The index is
+evaluated twice, which is fine because indices are pure. Every generator emits
+`IRBoundsCheck` (`codegen/bounds.py`, `llvm_gen._bounds_helper`); MSL counts
+it as a store for `_stores_inside_sequential_loop`. Debug off generates
+unchanged code. When the disk cache merges, its lowered-IR key must include
+debug mode. See `test_debug_bounds.py`. `TACK_DEBUG=1 pytest` runs every
+kernel of the suite with checks; the tests that fail then read generated
+source or IR text, call a compiled CPU kernel with its own argument list, or
+compile generated code with a reduced toolchain (OpenCL 1.2, the host C++
+shim without `atomicAdd`); kernels that run must all pass.
 
 ### IR structure (lang/ir.py)
 

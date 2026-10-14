@@ -100,6 +100,16 @@ dataset of more than 2^31 − 1 cells; everything else works there.
   side 0's cell, pointing out of it, and its length as its "area";
   `face_centers` its midpoint. `divergence`, `perot`, `jump` and
   `upwind_flux` then work on 2D meshes as on 3D ones.
+- A mesh of line cells (a 1D grid's, or VTK lines) has no faces yet: a
+  line's would be its end points, which are not derived, so `faces()` and
+  everything built on it (`face_geometry`, `external_faces`, `traces`,
+  `jump`, `upwind_flux`, ...) raise `NotImplementedError`. A polyline
+  topology's have them.
+- A cell of no volume (a hexahedron whose points coincide, a grid of
+  spacing 0), or a face or polygon of no area, has measure 0, its centroid at
+  the mean of its points, and normals of zero length, so `upwind_flux`
+  through it is 0. What divides by the measure has no value there: its
+  `gradients`, `flow_quantities` and `perot` are NaN.
 - A polyline topology's faces are the chains' ends, one per point that
   chains end at: side 0 is the first chain ending there (in cell order),
   side 1 the second, and the normal runs along side 0's chain, out of it, with
@@ -218,7 +228,12 @@ NumPy array is refused as values: put it in a `tack.field` first.
 `UniformCoordinates`, as `rectilinear_grid(x, y, z)` is on a
 `CartesianProduct`; `sources.wavelet` and `sources.tangle` are uniform
 grids. The VTK interop reads and writes `vtkImageData` as uniform grids,
-direction matrix included.
+direction matrix included. A size of 1 adds no cells, in any position:
+`(1, 3)` is a line of three points along y, as `(3, 1)` is along x. A grid
+with no axis of two or more points has no cells: `(1, 1, 1)` is one point,
+and a size of 0 makes it empty. Their topology is then an
+`UnstructuredTopology` without cells, and the VTK interop still writes them
+as `vtkImageData` (or `vtkRectilinearGrid`).
 
 **Geometry.** `DataSet(topology, geometry, fields=None, sets=None,
 dtype=tack.f32)` takes the geometry as an `H1` or `L2` field of 3-vectors,
@@ -455,7 +470,8 @@ vtkGradientFilter does (a pyramid's apex extrapolated from just below it, as
 vtkPyramid does). A vector field's gradient is `3k` values per entity, row by
 row (`d(u_i)/d(x_j)` at `3i + j`). `flow_quantities(data, gradient)`
 gives divergence, vorticity and the Q-criterion from a 3-vector field's, as a
-`FlowQuantities` named tuple.
+`FlowQuantities` named tuple. Cells below three dimensions get zero, and a
+cell of no volume NaN.
 
 ## Implicit functions
 

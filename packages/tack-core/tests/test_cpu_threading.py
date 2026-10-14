@@ -19,6 +19,8 @@ from tack.runtime import cpu as cpu_mod
 from tack.runtime.cpu import _MAX_SAMPLE_RATIO, CPUBackend
 from tack.runtime.dispatch import get_backend
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 
 @pytest.fixture(autouse=True)
 def cpu():

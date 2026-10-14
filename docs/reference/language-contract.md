@@ -273,9 +273,11 @@ refuses a read-only field (`field_from_ptr`'s default, or a DLPack import
 flagged read-only) bound to a parameter the kernel may store to or update
 atomically; when a store cannot be traced to a parameter, every field
 argument counts as written. That is a check of the binding, not of accesses:
-writable fields aliasing read-only storage are not detected, and bounds
-checking is not promised by this draft. Negative indices are outside the
-portable baseline; Python's wraparound indexing is not promised.
+writable fields aliasing read-only storage are not detected. Indices are
+not checked, except in debug mode (`tack.init(debug=True)`), which skips an
+out-of-bounds access and raises `IndexError` after the launch; see the
+runtime API. Negative indices are outside the portable baseline; Python's
+wraparound indexing is not promised.
 
 ## Types and numerical behavior
 

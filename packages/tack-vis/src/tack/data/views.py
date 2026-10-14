@@ -727,9 +727,10 @@ class _StructuredPointAddress:
         return self.get_ijk(self.point_index(c, j))
 
 
-def point_address(kind, storage):
-    """The addressing mixin for entities of ``kind`` over ``storage``."""
-    if issubclass(kind, _StructuredCells) and hasattr(storage, "get_ijk"):
+def point_address(kind, storage, ijk=True):
+    """The addressing mixin for entities of ``kind`` over ``storage``; ``ijk`` False
+    when the storage's (i, j, k) are not the cells' (see ``_space_parts``)."""
+    if ijk and issubclass(kind, _StructuredCells) and hasattr(storage, "get_ijk"):
         return _StructuredPointAddress
     return _PointAddress
 

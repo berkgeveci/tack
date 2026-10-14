@@ -45,12 +45,19 @@ def _prepare_ir(kernel, args, *, backend=None):
     vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
     texture_fields = _detect_texture_fields(kernel, args, template_args)
 
+    from tack.runtime.dispatch import debug_enabled, get_backend
+    debug = debug_enabled()
     ir_module = kernel.get_ir(
         vector_fields,
         template_args=template_args if template_args else None,
         texture_fields=texture_fields,
+        debug=debug,
     )
     template = ir_module.functions[0]
+    if debug:
+        # The code a debug launch runs: the hidden fields are its arguments too.
+        from tack.runtime.debug_bounds import hidden_args
+        effective_args = hidden_args(backend or get_backend(), template, effective_args)
     if backend is not None:
         check_workgroup_support(
             template, supports_workgroups=backend.supports_workgroups,

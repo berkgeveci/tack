@@ -35,7 +35,7 @@ def perot(data, flux):
     of its side 0; the side each cell is on gives the sign. Face centers, areas
     and cell centroids and volumes are this module's, so a uniform field's normal
     components give it back exactly on cells with planar faces. First order, as
-    Perot's method is."""
+    Perot's method is. A cell of no volume gives NaN."""
     flux = _field(data, flux)
     if not _on_faces(data, flux):
         raise TypeError("perot reconstructs from a field on faces")

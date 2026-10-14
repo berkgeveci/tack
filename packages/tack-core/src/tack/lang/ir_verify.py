@@ -15,7 +15,7 @@ EXPRS = {
     ir.IRFieldLoad, ir.IRConstant, ir.IRName, ir.IRAttribute, ir.IRCall,
     ir.IRCast, ir.IRBlockReduce, ir.IRThreadId, ir.IRDimSize, ir.IRTextureSample,
     ir.IRAtomicOp,     # as the value of an assignment: the element's old value
-    ir.IRTableLoad,
+    ir.IRTableLoad, ir.IRFieldExtent, ir.IRBoundsCheck,
 }
 STMTS = {
     ir.IRParallelFor, ir.IRSequentialFor, ir.IRWhile, ir.IRBreak, ir.IRContinue,
@@ -41,6 +41,7 @@ ATTRIBUTES = {
     ir.IRLocalAlloc: ('name', 'dtype', 'field_name'),
     ir.IRDimSize: ('field_name', 'dim'), ir.IRTextureSample: ('field_name', 'shape'),
     ir.IRPrint: ('format_parts',),
+    ir.IRFieldExtent: ('field_name', 'kind'), ir.IRBoundsCheck: ('site',),
 }
 ROLE_KINDS = {'function': {ir.IRFunction}, 'param': {ir.IRParam},
               'stmt': STMTS, 'expr': EXPRS}
@@ -153,6 +154,20 @@ def verify_ir(function: ir.IRFunction, stage: str):
                     'dimension must be a nonnegative integer')
             require(node, path, not resolved or host_bound,
                     'unresolved dimension in generated code')
+        if kind is ir.IRFieldExtent:
+            name(node, path, 'field_name')
+            require(node, path, node.kind in (ir.IRFieldExtent.LEADING,
+                                              ir.IRFieldExtent.ELEMENTS,
+                                              ir.IRFieldExtent.STORAGE),
+                    'extent kind must be LEADING, ELEMENTS or STORAGE')
+            require(node, path, not resolved, 'unresolved extent in generated code')
+        if kind is ir.IRBoundsCheck:
+            require(node, path, type(node.site) is int and node.site >= 0,
+                    'bounds check site must be a nonnegative integer')
+            require(node, path, len(node.indices) == len(node.extents) > 0,
+                    'bounds check needs one extent per index')
+            require(node, path, isinstance(node.errors, ir.IRName),
+                    'bounds check must name its errors field')
         if kind in (ir.IRSharedAlloc, ir.IRLocalAlloc):
             require(node, path, isinstance(node.dtype, ScalarType) or
                     (not resolved and node.dtype is None and
@@ -239,7 +254,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
     for node, path, host_bound in nodes:
         if isinstance(node, ir.IRName):
             require(node, path, node.name in bound, f'unbound name {node.name!r}')
-        if isinstance(node, (ir.IRDimSize, ir.IRTextureSample)):
+        if isinstance(node, (ir.IRDimSize, ir.IRFieldExtent, ir.IRTextureSample)):
             require(node, path, node.field_name in bound,
                     f'unbound field {node.field_name!r}')
         if inferred and isinstance(node, (ir.IRFieldLoad, ir.IRFieldStore, ir.IRAtomicOp)):

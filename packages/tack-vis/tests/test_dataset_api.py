@@ -20,6 +20,8 @@ from tack.data import algorithms as alg
 from tack.data.algorithms.values_at_centers import _at_centers
 from tack.runtime.dispatch import env_flag
 
+pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
+
 try:
     from vtkmodules import vtkCommonCore, vtkCommonDataModel, vtkFiltersCore
     from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
