@@ -18,9 +18,7 @@ import numpy as np
 import pytest
 
 import tack
-from tack.lang.field import Field
 from tack.runtime import cpu
-from tack.runtime.cpu import CPUBackend
 from tack.runtime.kernel_utils import resolve_variant
 
 # x86-64 syscall number.  Only used on machines where the backend has already
@@ -117,27 +115,53 @@ def _fan_out(backend, kernel, field, n):
     backend._parallel_execute(variant.payload, prefix, 0, n, whole_range=True)
 
 
+_SPREAD_CHECK = """
+import sys
+sys.path.insert(0, {tests!r})
+import numpy as np
+import tack
+from tack.lang.field import Field
+from tack.runtime.cpu import CPUBackend
+from test_numa import _fan_out, _number, pages_per_node
+
+backend = CPUBackend(num_threads=4)
+n = (64 << 20) // 4
+buf = backend.allocate_field(tack.f32, (n,))
+addr = buf._data.ctypes.data
+untouched = pages_per_node(addr, 64 << 20)[-14]
+assert untouched >= (64 << 20) // 4096 - 1, f"a new field's pages were touched: {{untouched}}"
+_fan_out(backend, _number, Field(tack.f32, (n,), buf), n)
+hist = pages_per_node(addr, 64 << 20)
+assert len(hist) > 1, f"all pages on one node: {{dict(hist)}}"
+# Interleave is round-robin, so no node should hold a lopsided share.
+biggest = max(hist.values()) / sum(hist.values())
+assert biggest < 0.75, f"lopsided placement: {{dict(hist)}}"
+np.testing.assert_array_equal(buf._data[:1000], np.arange(1000, dtype=np.float32))
+print("ok")
+"""
+
+
 @requires_numa
 @pytest.mark.parametrize("pool", ["jit", "python"])
-def test_a_field_the_workers_write_is_spread_across_the_nodes(monkeypatch, pool):
+def test_a_field_the_workers_write_is_spread_across_the_nodes(pool):
     """The path a real kernel takes. A new field is not touched when it is
     made; the workers that first write it carry the interleave policy (the
     JIT'd pool's from `_jit_pool`, the executor's from `_get_pool`), so its
-    pages are spread the way a buffer filled under the policy was."""
-    monkeypatch.setenv("TACK_CPU_POOL", pool)
-    backend = CPUBackend(num_threads=4)
-    n = (64 << 20) // 4
-    buf = backend.allocate_field(tack.f32, (n,))
-    addr = buf._data.ctypes.data
-    assert pages_per_node(addr, 64 << 20)[-14] >= (64 << 20) // 4096 - 1, \
-        "a new field's pages were touched (-14 is EFAULT: not present)"
-    _fan_out(backend, _number, Field(tack.f32, (n,), buf), n)
-    hist = pages_per_node(addr, 64 << 20)
-    assert len(hist) > 1, f"all pages on one node: {dict(hist)}"
-    # Interleave is round-robin, so no node should hold a lopsided share.
-    biggest = max(hist.values()) / sum(hist.values())
-    assert biggest < 0.75, f"lopsided placement: {dict(hist)}"
-    np.testing.assert_array_equal(buf._data[:1000], np.arange(1000, dtype=np.float32))
+    pages are spread the way a buffer filled under the policy was.
+
+    In a fresh process: the CPU backend tells glibc to keep freed pages,
+    so in a process that already freed a block this size the "new" field
+    would be that block, its pages present and placed by whoever touched
+    them first. Only a process's first such block is a fresh mapping."""
+    import os
+    import subprocess
+    import sys
+    env = dict(os.environ, TACK_CPU_POOL=pool)
+    code = _SPREAD_CHECK.format(tests=os.path.dirname(os.path.abspath(__file__)))
+    run = subprocess.run([sys.executable, "-c", code], env=env, capture_output=True,
+                         text=True, timeout=300)
+    assert run.returncode == 0 and run.stdout.strip().endswith("ok"), \
+        (run.stdout + run.stderr)[-1500:]
 
 
 @requires_numa
@@ -171,23 +195,40 @@ def test_a_bound_thread_keeps_its_policy_and_its_node():
     """Under ``numactl --membind=0`` (here: the same policy set by hand) a
     field's pages stay on node 0, and the policy is still the binding
     afterwards -- not the default, which is what restoring the default
-    unconditionally left behind."""
-    _set_policy(_MPOL_BIND, 1)
-    try:
-        # One thread: the fill then runs on this, bound, thread. The pool is
-        # one per process and its workers keep the policy they were made
-        # under, which under numactl is the binding too -- but here a
-        # test before this one may have made them under the default.
-        tack.init(arch=tack.cpu, num_threads=1)
-        n = (64 << 20) // 4
-        field = tack.zeros(tack.f32, (n,))
-        hist = pages_per_node(field._buffer._data.ctypes.data, 64 << 20)
-        assert set(hist) == {0}, f"pages left the bound node: {dict(hist)}"
-        assert cpu._read_mempolicy()[0] == _MPOL_BIND, "the binding was dropped"
-        with cpu._NumaInterleave():
-            assert cpu._read_mempolicy()[0] == _MPOL_BIND
-    finally:
-        _set_policy(cpu._MPOL_DEFAULT, 0)
+    unconditionally left behind.
+
+    In a fresh process, as the spreading test is: a block this size that
+    the process freed before keeps its pages where they were first
+    placed, binding or not (the CPU backend tells glibc to keep them)."""
+    import os
+    import subprocess
+    import sys
+    code = _BOUND_CHECK.format(tests=os.path.dirname(os.path.abspath(__file__)))
+    run = subprocess.run([sys.executable, "-c", code], capture_output=True, text=True,
+                         timeout=300)
+    assert run.returncode == 0 and run.stdout.strip().endswith("ok"), \
+        (run.stdout + run.stderr)[-1500:]
+
+
+_BOUND_CHECK = """
+import sys
+sys.path.insert(0, {tests!r})
+import tack
+from tack.runtime import cpu
+from test_numa import _MPOL_BIND, _set_policy, pages_per_node
+
+_set_policy(_MPOL_BIND, 1)
+# One thread: the fill runs on this, bound, thread.
+tack.init(arch=tack.cpu, num_threads=1)
+n = (64 << 20) // 4
+field = tack.zeros(tack.f32, (n,))
+hist = pages_per_node(field._buffer._data.ctypes.data, 64 << 20)
+assert set(hist) == {{0}}, f"pages left the bound node: {{dict(hist)}}"
+assert cpu._read_mempolicy()[0] == _MPOL_BIND, "the binding was dropped"
+with cpu._NumaInterleave():
+    assert cpu._read_mempolicy()[0] == _MPOL_BIND
+print("ok")
+"""
 
 
 @requires_numa
