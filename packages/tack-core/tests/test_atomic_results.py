@@ -16,7 +16,7 @@ def allocate(counter, slots, n):
 
 def test_the_old_value_allocates_unique_slots(backend):
     n = 4096
-    counter = tack.field(dtype=tack.i32, shape=(1,))
+    counter = tack.zeros(dtype=tack.i32, shape=(1,))
     slots = tack.field(dtype=tack.i32, shape=(n,))
     slots.fill(-1)
     allocate(counter, slots, n)
@@ -37,7 +37,7 @@ def test_add_returns_every_partial_sum_once(backend, dtype):
     if dtype not in get_backend().supported_atomic_dtypes:
         pytest.skip(f"{dtype} atomics are not implemented on {get_backend().name}")
     n = 2048
-    total = tack.field(dtype=dtype, shape=(1,))
+    total = tack.zeros(dtype=dtype, shape=(1,))
     olds = tack.field(dtype=dtype, shape=(n,))
     partial_sums(total, olds, n)
     np.testing.assert_array_equal(np.sort(olds.to_numpy()), 3 * np.arange(n))
@@ -84,7 +84,7 @@ def test_an_atomic_operand_keeps_source_order(backend):
     lands between the two, when it is negative. It is never positive, as
     it would be if the atomic ran first."""
     n = 1024
-    f = tack.field(dtype=tack.f32, shape=(1,))
+    f = tack.zeros(dtype=tack.f32, shape=(1,))
     out = tack.field(dtype=tack.f32, shape=(n,))
     operands_in_order(f, out, n)
     assert np.all(out.to_numpy() <= 0.0)
@@ -104,6 +104,7 @@ def test_a_vector_atomic_returns_the_components_old_values(backend):
     come from different moments, but each is a multiple of its increment."""
     n = 512
     vf = tack.Vector.field(2, dtype=tack.f32, shape=(1,))
+    vf.fill(0)                      # a new field holds unspecified values
     out = tack.field(dtype=tack.f32, shape=(n,))
     vector_olds(vf, out, n)
     np.testing.assert_array_equal(vf.to_numpy(), [n, 10 * n])

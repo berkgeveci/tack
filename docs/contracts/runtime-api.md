@@ -427,6 +427,8 @@ and returns only after the kernel completes.
 | `TACK_CPU_THREADS` | `CPUBackend.__init__` | CPU worker count. Read each time a CPU backend is constructed, unless `tack.init(arch="cpu", num_threads=...)` gives one. Values below 1 become 1. `1` runs everything on the calling thread. A non-integer raises `ValueError` from `tack.init` |
 | `TACK_CPU_POLICY` | `CPUBackend.__init__` | Threading policy: `v1` or `v2`. Unset or empty means `v2`, the default. Any other value raises `ValueError` from `tack.init`, listing the accepted values |
 | `TACK_CPU_MARGIN` | `CPUBackend.__init__` | Float override of the threading decision's safety margin |
+| `TACK_CPU_POOL` | `CPUBackend.__init__` | `python` (or `0`, `off`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool, which is the default wherever it can be made |
+| `TACK_CPU_MALLOC` | `CPUBackend.__init__` | **Linux.** A boolean flag read like `TACK_NO_REINIT`. When on, the first CPU backend sets glibc's `malloc` thresholds so freed blocks keep their pages (`cpu._tune_malloc`), process-wide. Off by default |
 | `TACK_DEBUG` | `tack.init` | A boolean flag read like `TACK_NO_REINIT`: debug mode's bounds checks when `init`'s `debug` is `None` (above) |
 | `TACK_NO_REINIT` | `tack.init` | A boolean flag (`dispatch.env_flag`): when on, `init` is a no-op while a backend is active. `0`, `false`, `no`, `off` and empty mean off. See above |
 | `TACK_CACHE` | The disk cache, at the first kernel compiled | `write` (default), `read`, `bundle` (default under MPI) or `off`; also `0`, `false`, `no`, `none` for off. Any other value raises `ValueError`. See [The Kernel Cache](../users-guide/17-kernel-cache.md) |

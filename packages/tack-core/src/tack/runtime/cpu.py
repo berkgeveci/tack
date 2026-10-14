@@ -50,6 +50,7 @@ import ctypes.util
 import itertools
 import os
 import platform
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 
@@ -84,6 +85,24 @@ _MPOL_DEFAULT = 0
 _MPOL_INTERLEAVE = 3
 
 
+def _read_mempolicy():
+    """The calling thread's memory policy as ``(mode, nodemask)``, or None."""
+    mode = ctypes.c_int(-1)
+    mask = (ctypes.c_ulong * 1)()
+    rc = _libc.syscall(_SYS_GET_MEMPOLICY, ctypes.byref(mode), mask,
+                       ctypes.c_ulong(_numa_max_node + 2), None, 0)
+    return (mode.value, mask[0]) if rc == 0 else None
+
+
+def _write_mempolicy(policy) -> int:
+    """Install a policy read by `_read_mempolicy`; 0 on success."""
+    mode, nodes = policy
+    if mode == _MPOL_DEFAULT:
+        return _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
+    mask = (ctypes.c_ulong * 1)(nodes)
+    return _libc.syscall(_SYS_SET_MEMPOLICY, mode, mask, _numa_max_node + 2)
+
+
 def _mempolicy_interleaves() -> bool:
     """Ask the kernel to interleave, then ask it what it actually stored.
 
@@ -92,16 +111,19 @@ def _mempolicy_interleaves() -> bool:
     that exists but means something else installs cleanly and then never
     interleaves.  Both were true of this code before, and both are invisible
     without reading the policy back, so it is read back.
+
+    The policy the thread had is put back afterwards, whatever it was: under
+    ``numactl --membind`` this probe used to leave the process with the
+    default policy, so the binding was gone after ``tack.init``.
     """
+    saved = _read_mempolicy()
     mask = (ctypes.c_ulong * 1)(_numa_node_mask)
     if _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_INTERLEAVE, mask,
                      _numa_max_node + 2) != 0:
         return False
-    mode = ctypes.c_int(-1)
-    rc = _libc.syscall(_SYS_GET_MEMPOLICY, ctypes.byref(mode), None,
-                       ctypes.c_ulong(0), None, 0)
-    _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
-    return rc == 0 and mode.value == _MPOL_INTERLEAVE
+    after = _read_mempolicy()
+    _write_mempolicy(saved if saved is not None else (_MPOL_DEFAULT, 0))
+    return after is not None and after[0] == _MPOL_INTERLEAVE
 
 
 def _init_numa():
@@ -144,21 +166,79 @@ def _init_numa():
 _init_numa()
 
 
+# ── glibc: keep freed pages ──────────────────────────────────────────
+# glibc hands a freed block above its mmap threshold straight back to the
+# OS, and trims the heap's top when more than a trim threshold is free, so
+# a filter that frees and reallocates the same 20-160 MB temporaries on
+# every call takes their page faults on every call. These three settings
+# keep the pages: the mmap threshold at its cap (32 MiB), no trim under
+# 4 GiB of free top, and the heap grown by 256 MiB at a time so blocks
+# above the cap come from the heap too. Measured on a 2 GHz Xeon, hex
+# shape 5M on 8 threads, with the first touch already in the kernels:
+# threshold 126 -> 104 ms, slice 76 -> 65, cell to point 48.6 -> 44.5,
+# nothing at 1M (its blocks already stayed), on one node under numactl.
+# Opt-in (`TACK_CPU_MALLOC=1`): it is process-wide, so NumPy's own arrays
+# and every other library's keep their pages too; unbound on jura's
+# 28-core EPYC it gained nothing (6-8% slower, within noise), and a reused
+# block keeps the placement of its first touch (TA-49). Nothing on macOS,
+# whose allocator keeps large blocks in its own pool, or on a libc
+# without `mallopt`.
+_M_TRIM_THRESHOLD, _M_TOP_PAD, _M_MMAP_THRESHOLD = -1, -2, -3
+_MALLOC_MMAP_THRESHOLD = 32 << 20      # glibc's cap (HEAP_MAX_SIZE / 2 on 64-bit)
+_MALLOC_TRIM_THRESHOLD = 4 << 30
+_MALLOC_TOP_PAD = 256 << 20
+_malloc_tuned: bool | None = None      # None: not tried yet
+
+
+def _tune_malloc() -> bool:
+    """Apply the settings above once per process; whether they took."""
+    global _malloc_tuned
+    if _malloc_tuned is not None:
+        return _malloc_tuned
+    _malloc_tuned = False
+    from tack.runtime.dispatch import env_flag
+    if platform.system() != "Linux" or not env_flag("TACK_CPU_MALLOC"):
+        return False
+    try:
+        mallopt = ctypes.CDLL(None).mallopt
+    except (OSError, AttributeError):
+        return False
+    mallopt.argtypes = (ctypes.c_int, ctypes.c_int)
+    mallopt.restype = ctypes.c_int
+    _malloc_tuned = all(mallopt(param, value) == 1 for param, value in (
+        (_M_MMAP_THRESHOLD, _MALLOC_MMAP_THRESHOLD),
+        (_M_TRIM_THRESHOLD, _MALLOC_TRIM_THRESHOLD),
+        (_M_TOP_PAD, _MALLOC_TOP_PAD)))
+    return _malloc_tuned
+
+
 class _NumaInterleave:
-    """Context manager: set MPOL_INTERLEAVE for allocations, restore on exit."""
+    """Context manager: MPOL_INTERLEAVE for allocations, the default policy
+    put back on exit.
+
+    Only a thread with the default policy is changed. One that was bound
+    to nodes -- by ``numactl --membind``, ``--cpunodebind`` with a memory
+    policy, or libnuma -- keeps its policy: interleaving a bound task's
+    pages across every node would put half of them where its threads are
+    not, and restoring the *default* afterwards would drop the binding for
+    the rest of the process.
+    """
 
     def __enter__(self):
+        self._active = False
         if not _numa_available:
             return self
+        policy = _read_mempolicy()
+        if policy is None or policy[0] != _MPOL_DEFAULT:
+            return self
         mask = (ctypes.c_ulong * 1)(_numa_node_mask)
-        _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_INTERLEAVE, mask,
-                      _numa_max_node + 2)
+        self._active = _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_INTERLEAVE, mask,
+                                     _numa_max_node + 2) == 0
         return self
 
     def __exit__(self, *exc):
-        if not _numa_available:
-            return
-        _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
+        if self._active:
+            _libc.syscall(_SYS_SET_MEMPOLICY, _MPOL_DEFAULT, None, 0)
 
 # Initialize LLVM native target (required before JIT compilation)
 llvm.initialize_native_target()
@@ -180,6 +260,7 @@ _CTYPES_MAP = {
 }
 
 
+from tack.runtime import cpu_pool
 from tack.runtime.backend import Backend
 
 # Re-export shared utilities so existing `from tack.runtime.cpu import ...` works.
@@ -447,16 +528,19 @@ class CompiledKernel:
         self._param_types = param_types
         self._param_is_field = param_is_field  # list[bool]
         self._func_name = func_name
+        self._num_dims = num_dims
+        # cpu_pool's chunk wrapper for this kernel, once one is built.
+        self._chunk = None
+        # `cpu_pool.pack_args`'s struct format per prefix length, built once.
+        self._pack_formats = {}
         self.object_code = None  # what MCJIT made, kept for the disk cache
 
         # Build the ctypes function type
-        ctypes_params = []
-        for ptype, is_field in zip(param_types, param_is_field):
-            ct = _CTYPES_MAP[ptype]
-            if is_field:
-                ctypes_params.append(ctypes.POINTER(ct))
-            else:
-                ctypes_params.append(ct)
+        # A field is passed as its address (`c_void_p` takes a Python int),
+        # which `bind` reads straight off the array: a typed pointer object
+        # per field cost 4 µs each.
+        ctypes_params = [ctypes.c_void_p if is_field else _CTYPES_MAP[ptype]
+                         for ptype, is_field in zip(param_types, param_is_field)]
         # A multi-dimensional loop's extents, then the chunk's start and end.
         ctypes_params.extend([ctypes.c_int64] * (num_dims + 2))
 
@@ -561,17 +645,17 @@ class CompiledKernel:
         prefix = []
         for arg, ptype, is_field in zip(kernel_args, self._param_types,
                                         self._param_is_field):
-            ct = _CTYPES_MAP[ptype]
             if is_field:
-                prefix.append(arg._buffer._data.ctypes.data_as(ctypes.POINTER(ct)))
+                prefix.append(arg._buffer.address)
             else:
-                prefix.append(ct(arg))
-        prefix.extend(ctypes.c_int64(e) for e in extents)
+                prefix.append(_CTYPES_MAP[ptype](arg))
+        prefix.extend(int(e) for e in extents)
         return tuple(prefix)
 
     def call_range(self, prefix: tuple, loop_start: int, loop_end: int):
-        """Run one chunk. Fresh c_int64s — chunks run concurrently."""
-        self._cfunc(*prefix, ctypes.c_int64(loop_start), ctypes.c_int64(loop_end))
+        """Run one chunk. The bounds are converted per call -- chunks run
+        concurrently."""
+        self._cfunc(*prefix, loop_start, loop_end)
 
     def __call__(self, kernel_args: list, loop_start: int, loop_end: int):
         """Call the compiled kernel with field pointers/scalars and loop range."""
@@ -584,6 +668,12 @@ class CompiledKernel:
 # and cannot vectorize a loop that accumulates through a field, which costs
 # 2-3x on such kernels. Overlapping calls get the variant without it.
 _SPECIALIZE_DISJOINT = True
+
+# A fill of at least this many bytes runs as a kernel through the normal
+# dispatch, so the policy fans it out when that pays and a new buffer's
+# pages are first touched by the workers; below it `ndarray.fill` on the
+# calling thread is cheaper than a dispatch.
+_PARALLEL_FILL_MIN_BYTES = 256 << 10
 
 
 def _create_target_machine():
@@ -777,6 +867,12 @@ class CPUBackend(Backend):
         self.num_threads = max(1, num_threads)
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledKernel}
         self._pool: ThreadPoolExecutor | None = None
+        # How a range is fanned out: "jit", the pool in `cpu_pool` reached
+        # with one ctypes call, or "python", one ThreadPoolExecutor task per
+        # worker (`TACK_CPU_POOL=python`, Windows, or a pool that could not
+        # be made). A backend that cannot make the pool falls back for good.
+        self.pool_kind = "jit" if cpu_pool.enabled() else "python"
+        self._cpool = None
         # Cost of a fan-out on this machine, measured on first use.
         self._fan_out_ns: float | None = None
         # policy v2: the fan-out cost as a function of how long the workers
@@ -792,6 +888,9 @@ class CPUBackend(Backend):
         # speedup not taken. `TACK_CPU_POLICY=v1` restores the old policy.
         # Anything else is refused: a misspelt value used to select v1.
         self.policy = os.environ.get("TACK_CPU_POLICY") or "v2"
+        # Whether glibc was told to keep freed pages (`TACK_CPU_MALLOC=1`,
+        # see `_tune_malloc`).
+        self.malloc_tuned = _tune_malloc()
         if self.policy not in _CPU_POLICIES:
             raise ValueError(
                 f"TACK_CPU_POLICY={self.policy!r} is not a CPU threading "
@@ -834,16 +933,40 @@ class CPUBackend(Backend):
 
     def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> NumpyBuffer:
-        if _numa_available:
-            # Use np.empty (no page faults) under interleave policy,
-            # so the first write spreads pages across NUMA nodes.
-            with _NumaInterleave():
-                buf = NumpyBuffer.__new__(NumpyBuffer)
-                buf._data = np.empty(shape, dtype=dtype.numpy_dtype)
-                # Force page faults under interleave policy by touching all pages
-                buf._data.fill(0)
-            return buf
+        # Uninitialized, as every GPU backend's allocation is. The pages are
+        # first touched by the kernel that writes the field: in parallel
+        # when the policy fans it out, and on the workers' terms -- the
+        # pool's and the executor's threads are made under the interleave
+        # policy (`_jit_pool`, `_get_pool`), or keep a bound task's
+        # binding. Filling here was serial, and dearer after a fan-out
+        # while the workers' caches owned the lines: at 5M cells on eight
+        # threads of a 2 GHz Xeon, allocation was 130 of threshold's
+        # 276 ms and 77 of cell-to-point's 135.
         return NumpyBuffer(dtype.numpy_dtype, shape)
+
+    def fill_field(self, field, value) -> bool:
+        """Fill `_PARALLEL_FILL_MIN_BYTES` or more as a kernel through the
+        normal dispatch, so the policy fans it out when that pays and a new
+        buffer's pages are first touched by the workers (`tack.zeros` is
+        such a fill). NumPy converts the value first, so what the kernel
+        stores, and what is refused, is what `ndarray.fill` would store or
+        refuse. Smaller fills, a backend of one thread, and a field of
+        another backend fill in place.
+        """
+        buf = field._buffer
+        if (buf.backend_name != self.name or self.num_threads <= 1
+                or buf.nbytes < _PARALLEL_FILL_MIN_BYTES):
+            # A field another backend allocated (made before a `tack.init`
+            # that switched to this one) is filled by its own buffer.
+            return False
+        from tack.algorithms.copy import _fill_kernel
+        from tack.lang.field import Field
+        element = np.array(value, dtype=field.dtype.numpy_dtype)
+        n = buf.nbytes // element.itemsize
+        # A flat scalar view: a vector field's element count is its
+        # component count, and the kernel stores one scalar per index.
+        _fill_kernel(Field(field.dtype, (n,), buf), element.item(), n)
+        return True
 
     def memory_space(self, ptr) -> str:
         """CPU backend: all pointers are host memory."""
@@ -883,13 +1006,16 @@ class CPUBackend(Backend):
             specialize_disjoint=_SPECIALIZE_DISJOINT,
         )
 
-        # The grid bound reads a texture's field; the kernel samples the
-        # texture's own snapshot of it.
-        loop_end, extents = _get_launch(
-            variant.ir, [a.field if isinstance(a, Texture3D) else a
-                         for a in effective_args])
-
-        self._dispatch(variant.payload, bind_textures(effective_args), loop_end, extents)
+        if variant.has_textures:
+            # The grid bound reads a texture's field; the kernel samples the
+            # texture's own snapshot of it.
+            loop_end, extents = _get_launch(
+                variant.ir, [a.field if isinstance(a, Texture3D) else a
+                             for a in effective_args])
+            self._dispatch(variant.payload, bind_textures(effective_args), loop_end, extents)
+            return
+        loop_end, extents = _get_launch(variant.ir, effective_args)
+        self._dispatch(variant.payload, effective_args, loop_end, extents)
 
     _target = None
 
@@ -1378,10 +1504,60 @@ class CPUBackend(Backend):
                    int(fan_out * self._margin() / rate))
 
     def _get_pool(self) -> ThreadPoolExecutor:
-        """Return the persistent thread pool, creating it on first use."""
+        """The persistent executor, made on first use.
+
+        Made under the interleave policy, which its threads inherit as the
+        JIT'd pool's do (`_jit_pool`), so a buffer they first-touch is
+        spread across the nodes -- or keeps a bound task's binding. The
+        executor would start its threads lazily, from whichever dispatch
+        first needed each, under that dispatch's policy; they are all
+        started here instead.
+        """
         if self._pool is None:
-            self._pool = ThreadPoolExecutor(max_workers=self.num_threads)
+            with _NumaInterleave():
+                pool = ThreadPoolExecutor(max_workers=self.num_threads)
+                gate = threading.Barrier(self.num_threads + 1)
+                started = [pool.submit(gate.wait) for _ in range(self.num_threads)]
+                gate.wait()
+                for f in started:
+                    f.result()
+            self._pool = pool
         return self._pool
+
+    def _jit_pool(self):
+        """The JIT'd pool (`cpu_pool.CPool`) if this backend fans out through
+        one, made on first use; None for the Python path.
+
+        It is made under the interleave policy, which its threads inherit,
+        so a buffer they first-touch is spread across the nodes the way a
+        buffer filled here is -- or keeps a bound task's binding.
+        """
+        if self.pool_kind != "jit" or self.num_threads <= 1:
+            return None
+        if self._cpool is None:
+            with _NumaInterleave():
+                self._cpool = cpu_pool.CPool.get(self.num_threads)
+            if self._cpool is None:
+                self.pool_kind = "python"
+        return self._cpool
+
+    def _empty_fan_out_ns(self, compiled: CompiledKernel, prefix: tuple) -> int:
+        """One fan-out of an empty range through whichever pool dispatches
+        use: the cost of a fan-out and nothing else."""
+        jit = self._jit_pool()
+        if jit is not None:
+            wrapper = compiled._chunk or cpu_pool.chunk_wrapper(compiled)
+            pack = cpu_pool.pack_args(compiled, prefix)
+            t0 = time.perf_counter_ns()
+            jit.run(wrapper, pack, 0, 0, self.num_threads)
+            return time.perf_counter_ns() - t0
+        pool = self._get_pool()
+        run = compiled.call_range
+        t0 = time.perf_counter_ns()
+        futures = [pool.submit(run, prefix, 0, 0) for _ in range(self.num_threads)]
+        for f in futures:
+            f.result()
+        return time.perf_counter_ns() - t0
 
     def _calibrate_fan_out(self, compiled: CompiledKernel, prefix: tuple):
         """Measure what a parallel dispatch costs before any work happens.
@@ -1396,16 +1572,8 @@ class CPUBackend(Backend):
         223 µs, actual 235 µs. A pure-Python no-op probe reads 122 µs, which
         would have understated the cost by nearly half.
         """
-        pool = self._get_pool()
-        run = compiled.call_range
-
         def once() -> int:
-            t0 = time.perf_counter_ns()
-            futures = [pool.submit(run, prefix, 0, 0)
-                       for _ in range(self.num_threads)]
-            for f in futures:
-                f.result()
-            return time.perf_counter_ns() - t0
+            return self._empty_fan_out_ns(compiled, prefix)
 
         self._fan_out_ns = float(min(once() for _ in range(_CALIBRATION_REPS)))
         if self.policy == "v2":
@@ -1505,16 +1673,8 @@ class CPUBackend(Backend):
         if (now - self._fan_out_measured_ns < _FAN_OUT_REFRESH_NS
                 and not self._prior_knot_near(gap)):
             return
-        pool = self._get_pool()
-        run = compiled.call_range
-
         def once() -> float:
-            t0 = time.perf_counter_ns()
-            futures = [pool.submit(run, prefix, 0, 0)
-                       for _ in range(self.num_threads)]
-            for f in futures:
-                f.result()
-            return float(time.perf_counter_ns() - t0)
+            return float(self._empty_fan_out_ns(compiled, prefix))
 
         self._update_fan_out_knot(once(), gap)
 
@@ -1784,10 +1944,16 @@ class CPUBackend(Backend):
         compiled.scattered = True
         total = end - start
         chunk = (total + self.num_threads - 1) // self.num_threads
+        measure = self._v2
+
+        jit = self._jit_pool()
+        if jit is not None:
+            self._pool_execute(jit, compiled, prefix, start, end, measure,
+                               whole_range)
+            return
 
         pool = self._get_pool()
         run = compiled.call_range
-        measure = self._v2
 
         if not measure:
             # v1's path, untouched: no clock read, no per-worker wrapper.
@@ -1847,5 +2013,40 @@ class CPUBackend(Backend):
         # phase -- and here the max is the right statistic rather than the
         # wrong one it is for `r_p`, because this is the quantity the
         # dispatch actually spent, not a rate being generalised from.
+        self._record_fan_out(float(dispatch_ns), max(spans), float(gap))
+
+    def _pool_execute(self, jit, compiled: CompiledKernel, prefix: tuple, start: int,
+                      end: int, measure: bool, whole_range: bool):
+        """The fan-out through the JIT'd pool: one ctypes call runs every
+        chunk, the workers never touch Python, and the per-worker spans
+        come back from the pool for the same bookkeeping as above."""
+        wrapper = compiled._chunk or cpu_pool.chunk_wrapper(compiled)
+        pack = cpu_pool.pack_args(compiled, prefix)
+        gap = time.perf_counter_ns() - self._last_dispatch_ns
+        dispatch_t0 = time.perf_counter_ns()
+        # The pool's workers claim chunks, so each reports what it ran; the
+        # report is read in the run's own transaction, before another
+        # thread's run can overwrite it.
+        report = jit.run(wrapper, pack, start, end, self.num_threads, measure=measure)
+        dispatch_ns = time.perf_counter_ns() - dispatch_t0
+        if not measure:
+            return
+        raw, counts = report
+        rates: list = [0.0] * self.num_threads
+        spans: list = [0.0] * self.num_threads
+        workers = 0
+        for t in range(self.num_threads):
+            if counts[t] <= 0:
+                continue
+            workers += 1
+            spans[t] = float(raw[t])
+            if raw[t] >= _RP_MIN_WORKER_NS:
+                rates[t] = raw[t] / counts[t]
+        measured = sorted(spans[t] for t in range(self.num_threads) if rates[t] > 0.0)
+        trusted_span = _RP_BOUND_SPAN_RATIO * workers * compiled.call_overhead_ns
+        bounds_serial = bool(measured) and (_worker_median(measured) >= trusted_span)
+        retire_floor = whole_range and workers > 0 and max(spans) < trusted_span
+        self._record_parallel_cost(compiled, [r for r in rates if r > 0.0],
+                                   workers, bounds_serial, retire_floor)
         self._record_fan_out(float(dispatch_ns), max(spans), float(gap))
         self._last_dispatch_ns = time.perf_counter_ns()

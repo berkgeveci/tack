@@ -38,8 +38,8 @@ def test_vector_comparisons_select_any_and_all(backend):
     n = len(points)
     pos = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
     pos.from_numpy(points)
-    out = tack.field(dtype=tack.f32, shape=(n, 7))
-    flags = tack.field(dtype=tack.i32, shape=(n,))
+    out = tack.zeros(dtype=tack.f32, shape=(n, 7))
+    flags = tack.zeros(dtype=tack.i32, shape=(n,))
     comparisons(pos, out, flags, n)
     want = []
     for p in points:

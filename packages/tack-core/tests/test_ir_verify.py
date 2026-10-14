@@ -228,7 +228,7 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
         for i in range(out.shape[0]):
             out[i] = 1
 
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.zeros(dtype=tack.f32, shape=(4,))
     target = importlib.import_module(module)
     original = getattr(target, pass_name)
 

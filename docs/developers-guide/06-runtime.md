@@ -157,8 +157,12 @@ within unified memory; on CUDA/HIP/L0 it involves explicit copies).
 
 The LLVM-JIT'd function is called via ctypes. The backend compares measured
 serial work against measured thread fan-out cost, splitting worthwhile
-ranges across a persistent `ThreadPoolExecutor`. Each thread calls the
-compiled function with a `(start, end)` sub-range.
+ranges across a persistent pool of pthreads that is itself JIT'd from LLVM
+IR (`cpu_pool.py`): one ctypes call posts the launch to the workers it
+uses (each waits on its own mailbox; the rest sleep on), each worker
+calls the compiled function with a `(start, end)` sub-range through a
+per-kernel wrapper, and none of them touches Python.
+`TACK_CPU_POOL=python` uses a `ThreadPoolExecutor` instead.
 
 Periodic serial rechecks sample different positions in the range. Long
 worker spans establish a floor under the serial estimate, preventing cheap
