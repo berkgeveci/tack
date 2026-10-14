@@ -1,6 +1,6 @@
 """Waiting for the device from ``asyncio`` without blocking the event loop.
 
-Kernel launches stay plain calls: on CUDA and Metal they are queued and
+Kernel launches stay plain calls: on the GPU backends they are queued and
 return at once, and every host access to a field waits for the launches
 before it. Those waits block the calling thread, which in an application
 with an event loop (a trame server, a Jupyter kernel, a web service) is
@@ -13,14 +13,16 @@ resume the caller when the device is done:
 A backend opts in with two hooks on `Backend` (`async_marker`) and on
 `DeviceBuffer` (`thread_binding`, `waits_off_thread`): CUDA records an event
 on its stream and waits on it; Metal waits on the last command buffer it
-committed. A backend without them (the CPU, whose launches complete before
-returning, and any backend that has not added them) waits inline, which
+committed; Level Zero appends a barrier that signals a host-visible event.
+A backend without them (the CPU, whose launches complete before returning,
+and any backend that has not added them, HIP for now) waits inline, which
 is correct and simply does not free the loop.
 
 The workers belong to Tack, not to the loop's default executor, so a busy
 or small default executor cannot hold up a wait. Python's GIL is released
 while a worker waits in the driver (measured with cuda-bindings 13.3: the
-loop ran throughout a 230 ms wait).
+loop ran throughout a 230 ms wait; Level Zero's ctypes calls release it
+too).
 """
 from __future__ import annotations
 

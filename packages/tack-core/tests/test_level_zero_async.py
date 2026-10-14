@@ -3,7 +3,9 @@ barriers, and return at once; the host waits only where it reads a field. Result
 completed before returning: order, each launch's own scalars, host writes
 and fills ordered among the launches, dropped temporaries freed after the
 launches that use them, and sync waiting for everything."""
+import asyncio
 import gc
+import threading
 import time
 
 import numpy as np
@@ -194,3 +196,66 @@ def test_the_host_memory_held_for_queued_copies_is_bounded():
         assert len(backend._held) <= backend._HOLD_COUNT + 1
     np.testing.assert_array_equal(acc.to_numpy(), 3 * backend._HOLD_COUNT - 1)
     assert not backend._held                        # the read waited, releasing them
+
+
+@tack.kernel
+def _heavy(x, out):
+    for i in range(out.shape[0]):
+        s = 0.0
+        for k in range(2000):
+            s += tack.sin(x[i] + k * 0.001)
+        out[i] = s
+
+
+def test_a_read_waits_outside_the_launch_lock():
+    """A read queues its copy and an event under the backend's lock and
+    waits on the event without it, so another thread may launch while a
+    read waits for long work."""
+    backend = get_backend()
+    x = tack.field(tack.f32, (1 << 20,))
+    out = tack.zeros(tack.f32, (1 << 20,))
+    _heavy(x, out)
+    tack.sync()
+    t0 = time.perf_counter()
+    _heavy(x, out)
+    tack.sync()
+    runs = max(1, int(0.5 / (time.perf_counter() - t0)))
+    for _ in range(runs):                          # about half a second queued
+        _heavy(x, out)
+    reader = threading.Thread(target=out.to_numpy)
+    reader.start()
+    time.sleep(0.05)
+    assert reader.is_alive(), "the queued work finished before the check"
+    assert backend._launch_lock.acquire(timeout=0.05), "the read held the lock while it waited"
+    backend._launch_lock.release()
+    waited = reader.is_alive()
+    reader.join()
+    assert waited, "the read finished before the lock was taken"
+
+
+def test_a_marker_releases_the_holds_before_it():
+    backend = get_backend()
+    acc = tack.zeros(tack.i32, (256,))
+    tack.sync()
+    acc.from_numpy(np.full(256, 1, np.int32))
+    marker = backend.async_marker()
+    acc.from_numpy(np.full(256, 2, np.int32))      # after the mark: still held
+    marker.wait()
+    marker.wait()                                  # a second wait returns at once
+    assert len(backend._held) == 1 and backend._held_bytes == 256 * 4
+    np.testing.assert_array_equal(acc.to_numpy(), 2)
+    assert not backend._held and backend._held_bytes == 0
+
+
+def test_markers_reuse_their_events():
+    """Each wait hands its event back: many waits use one pool."""
+    backend = get_backend()
+    acc = tack.zeros(tack.i32, (64,))
+    acc.to_numpy()
+    pools = len(backend._event_pools)
+    for k in range(3 * backend._EVENT_POOL_SIZE):
+        _add_into(acc, 1)
+        asyncio.run(tack.sync_async())
+        assert acc[0] == k + 1
+    assert len(backend._event_pools) == pools
+    assert len(backend._events) == pools * backend._EVENT_POOL_SIZE

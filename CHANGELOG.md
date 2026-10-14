@@ -12,10 +12,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   application's event loop (trame, Jupyter, a server) keeps running
   while kernels finish; kernel calls themselves are unchanged. On CUDA
   the wait is an event on the context's stream, on Metal the last
-  committed command buffer; elsewhere, where launches complete before
-  returning or a backend has not added a marker, the wait is inline.
-  During a 490 ms CUDA kernel another task ran 436 times while one
-  awaited `sync_async`, and not once under `tack.sync()`.
+  committed command buffer, on Level Zero a host-visible event signalled
+  by a barrier on the backend's command list; elsewhere, where launches
+  complete before returning or a backend has not added a marker (HIP),
+  the wait is inline. During a 490 ms CUDA kernel another task ran 436
+  times while one awaited `sync_async`, and not once under `tack.sync()`;
+  during a 685 ms Level Zero kernel (Intel Max 1100), 311 to 384 times.
+  Level Zero's `to_numpy`, `read_range` and reductions now wait on such
+  an event outside the backend's lock, so another thread may launch
+  while one waits.
 - Compiled kernels are kept on disk, so a later process starts warm: the
   first contour of a 21³ grid in a new process went from 445 ms (CPU) and
   1.1 s (Metal) to 31 ms on an M1 Max. The lowered kernel and each

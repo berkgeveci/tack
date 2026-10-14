@@ -119,10 +119,11 @@ def test_the_loop_runs_while_the_device_works(backend, wait):
     blocked_ticks, blocked_s = asyncio.run(measure(block=True))
     free_ticks, free_s = asyncio.run(measure(block=False))
     assert blocked_s >= 0.1 and free_s >= 0.1, (blocked_s, free_s)
-    # Ticks are 1 ms sleeps; the free wait should see most of its duration
-    # in them, the blocked one almost none.
+    # Ticks are 1 ms sleeps; the free wait should see many of them, the
+    # blocked one almost none. On a loaded host a 1 ms sleep takes 2-4 ms
+    # (Level Zero, load 115, four workers: 50 ticks in 207 ms).
     assert blocked_ticks <= 2, blocked_ticks
-    assert free_ticks >= free_s * 1000 * 0.25, (free_ticks, free_s)
+    assert free_ticks >= free_s * 1000 * 0.1, (free_ticks, free_s)
 
 
 def test_sync_async_does_not_wait_for_later_launches(backend):
