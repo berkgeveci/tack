@@ -90,6 +90,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   process started under `numactl --membind` keeps its binding, and the
   probe at `tack.init` puts back the policy it found instead of the
   default.
+- CUDA launches are queued on a stream and return at once; the host
+  waits where it reads a field (`to_numpy`, indexing, reductions, DLPack
+  export) or calls `tack.sync()`. Fills and host writes queue in order
+  with the launches, and a field dropped while a queued launch still uses
+  it is freed after that launch (stream-ordered memory). A contour of a
+  million cells on an RTX 4060 Ti went from 9.6 to 7.1 ms, now the cost
+  of its 31 launches' host side alone. Errors of a launch surface at the
+  next wait rather than at its call, as on Metal.
 
 ### Fixed
 

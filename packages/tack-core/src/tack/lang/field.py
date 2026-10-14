@@ -66,6 +66,16 @@ class DeviceBuffer:
         """
         return False
 
+    def synchronize(self):
+        """Wait for the launches queued on this storage's device, if any
+        are: a backend that queues launches overrides it."""
+
+    def share(self):
+        """Hand this storage outside Tack: wait for queued launches, and
+        have later launches that use it complete before returning. A
+        backend that queues launches overrides it."""
+        self.synchronize()
+
     @property
     def address(self) -> int:
         """Address used by kernels, for validating imported atomic storage."""
