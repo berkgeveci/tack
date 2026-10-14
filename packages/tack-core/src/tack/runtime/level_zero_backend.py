@@ -69,6 +69,7 @@ _NUMPY_DTYPE = {
 ZE_RESULT_SUCCESS = 0
 
 # Structure types
+ZE_STRUCTURE_TYPE_DRIVER_PROPERTIES = 0x01
 ZE_STRUCTURE_TYPE_CONTEXT_DESC = 0x0d
 ZE_STRUCTURE_TYPE_COMMAND_QUEUE_DESC = 0x0e
 ZE_STRUCTURE_TYPE_COMMAND_LIST_DESC = 0x0f
@@ -117,6 +118,7 @@ ze_event_handle_t = ctypes.c_void_p
 
 ZE_MAX_DEVICE_NAME = 256
 ZE_MAX_DEVICE_UUID_SIZE = 16
+ZE_MAX_DRIVER_UUID_SIZE = 16
 
 
 # ---------------------------------------------------------------------------
@@ -204,6 +206,15 @@ class ze_host_mem_alloc_desc_t(ctypes.Structure):
         ("stype", ctypes.c_uint32),
         ("pNext", ctypes.c_void_p),
         ("flags", ctypes.c_uint32),
+    ]
+
+
+class ze_driver_properties_t(ctypes.Structure):
+    _fields_ = [
+        ("stype", ctypes.c_uint32),
+        ("pNext", ctypes.c_void_p),
+        ("uuid", ctypes.c_uint8 * ZE_MAX_DRIVER_UUID_SIZE),
+        ("driverVersion", ctypes.c_uint32),
     ]
 
 
@@ -370,6 +381,9 @@ def _setup_argtypes(ze):
 
     ze.zeDriverGet.argtypes = [ctypes.POINTER(U32), P]
     ze.zeDriverGet.restype = ctypes.c_int32
+
+    ze.zeDriverGetProperties.argtypes = [P, P]
+    ze.zeDriverGetProperties.restype = ctypes.c_int32
 
     ze.zeDeviceGet.argtypes = [P, ctypes.POINTER(U32), P]
     ze.zeDeviceGet.restype = ctypes.c_int32
@@ -566,6 +580,34 @@ def _free_ocloc_output(num_outputs, data_outputs, len_outputs, name_outputs):
         ctypes.byref(len_outputs), ctypes.byref(name_outputs))
 
 
+# What ocloc is given besides the device, and the flags zeModuleCreate
+# finalizes the SPIR-V with. Part of the disk cache's target: SPIR-V
+# compiled, or a module built, with other options is another artifact.
+_OCLOC_OPTIONS = (b"-spv_only", b"-options", b"-cl-std=CL2.0")
+_MODULE_BUILD_FLAGS = b"-cl-std=CL2.0"
+
+
+def _ocloc_version() -> str:
+    """The driver version of the libocloc loaded, e.g. ``25.05.32567.17``."""
+    ocloc = _get_ocloc()
+    # Unlike compile's, a query's argv starts with the program's name.
+    args_list = [b"ocloc", b"query", b"OCL_DRIVER_VERSION"]
+    argv = (ctypes.c_char_p * len(args_list))(*args_list)
+    num_outputs = ctypes.c_uint32(0)
+    data_outputs = ctypes.c_void_p()
+    len_outputs = ctypes.c_void_p()
+    name_outputs = ctypes.c_void_p()
+    result = ocloc.oclocInvoke(
+        len(args_list), argv, 0, None, None, None, 0, None, None, None,
+        ctypes.byref(num_outputs), ctypes.byref(data_outputs),
+        ctypes.byref(len_outputs), ctypes.byref(name_outputs))
+    log = _extract_ocloc_log(num_outputs, data_outputs, len_outputs, name_outputs)
+    _free_ocloc_output(num_outputs, data_outputs, len_outputs, name_outputs)
+    if result != 0:
+        raise RuntimeError(f"ocloc query failed (error {result}):\n{log}")
+    return log.strip("\x00").strip()
+
+
 def _compile_to_spirv(opencl_source: str, device_id: int) -> bytes:
     """Compile OpenCL C source to SPIR-V binary using libocloc in-process."""
     ocloc = _get_ocloc()
@@ -577,9 +619,8 @@ def _compile_to_spirv(opencl_source: str, device_id: int) -> bytes:
     device_str = f"0x{device_id:04x}"
     args_list = [
         b"compile",
-        b"-spv_only",
         b"-device", device_str.encode(),
-        b"-options", b"-cl-std=CL2.0",
+        *_OCLOC_OPTIONS,
         b"-file", b"kernel.cl",
     ]
     argc = len(args_list)
@@ -638,6 +679,64 @@ def _compile_to_spirv(opencl_source: str, device_id: int) -> bytes:
             f"ocloc produced no .spv output.\nSource:\n{opencl_source}")
 
     return spirv_bytes
+
+
+def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_field,
+                 param_is_texture, workgroup_size, requires_full_workgroups=False,
+                 opencl_source=None) -> "CompiledL0Kernel":
+    """A kernel from its SPIR-V, built into a module of the backend's context.
+
+    ``opencl_source``, when known, goes into the error a failed build raises.
+    """
+    ze = _get_ze()
+    spirv_buf = (ctypes.c_uint8 * len(spirv)).from_buffer_copy(spirv)
+    module_desc = ze_module_desc_t(
+        stype=ZE_STRUCTURE_TYPE_MODULE_DESC, pNext=None,
+        format=ZE_MODULE_FORMAT_IL_SPIRV,
+        inputSize=len(spirv),
+        pInputModule=ctypes.cast(spirv_buf, ctypes.c_void_p),
+        pBuildFlags=_MODULE_BUILD_FLAGS,
+        pConstants=None)
+
+    module = ze_module_handle_t()
+    build_log = ze_module_build_log_handle_t()
+    result = ze.zeModuleCreate(
+        backend._context, backend._device, ctypes.byref(module_desc),
+        ctypes.byref(module), ctypes.byref(build_log))
+
+    if result != ZE_RESULT_SUCCESS:
+        # Extract build log
+        log_text = ""
+        if build_log:
+            log_size = ctypes.c_size_t(0)
+            ze.zeModuleBuildLogGetString(build_log, ctypes.byref(log_size), None)
+            if log_size.value > 0:
+                log_buf = ctypes.create_string_buffer(log_size.value)
+                ze.zeModuleBuildLogGetString(build_log, ctypes.byref(log_size), log_buf)
+                log_text = log_buf.value.decode(errors="replace")
+            ze.zeModuleBuildLogDestroy(build_log)
+        source = f"Source:\n{opencl_source}" if opencl_source is not None else ""
+        raise RuntimeError(
+            f"zeModuleCreate failed (0x{result:08x}):\n{log_text}\n{source}")
+
+    if build_log:
+        ze.zeModuleBuildLogDestroy(build_log)
+
+    # Create kernel
+    kernel_desc = ze_kernel_desc_t(
+        stype=ZE_STRUCTURE_TYPE_KERNEL_DESC, pNext=None,
+        flags=0, pKernelName=kernel_name.encode())
+    kernel = ze_kernel_handle_t()
+    _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
+                                 ctypes.byref(kernel)),
+               "zeKernelCreate")
+
+    compiled = CompiledL0Kernel(module, kernel, kernel_name,
+                                param_types, param_is_field, workgroup_size,
+                                param_is_texture,
+                                requires_full_workgroups=requires_full_workgroups)
+    compiled.spirv = spirv
+    return compiled
 
 
 # ---------------------------------------------------------------------------
@@ -895,6 +994,7 @@ class CompiledL0Kernel:
         self._param_is_field = param_is_field
         self._workgroup_size = workgroup_size
         self._param_is_texture = param_is_texture or [False] * len(param_types)
+        self.spirv = None   # what ocloc made, kept for the disk cache
 
     def __call__(self, kernel_args: list, loop_end: int, backend, extents=()):
         """Dispatch the Level Zero kernel.
@@ -1308,7 +1408,6 @@ class LevelZeroBackend(Backend):
         if full_groups:
             check_workgroup_launch(ir_func.name, 0, backend_label=self.label,
                                    workgroup_size=workgroup_size)
-        ze = _get_ze()
 
         # Generate OpenCL C source
         opencl_source = generate_opencl_source(ir_func)
@@ -1316,56 +1415,62 @@ class LevelZeroBackend(Backend):
         # Compile to SPIR-V via libocloc
         spirv_bytes = _compile_to_spirv(opencl_source, self._device_id)
 
-        # Create module from SPIR-V
-        spirv_buf = (ctypes.c_uint8 * len(spirv_bytes)).from_buffer_copy(spirv_bytes)
-        module_desc = ze_module_desc_t(
-            stype=ZE_STRUCTURE_TYPE_MODULE_DESC, pNext=None,
-            format=ZE_MODULE_FORMAT_IL_SPIRV,
-            inputSize=len(spirv_bytes),
-            pInputModule=ctypes.cast(spirv_buf, ctypes.c_void_p),
-            pBuildFlags=b"-cl-std=CL2.0",
-            pConstants=None)
-
-        module = ze_module_handle_t()
-        build_log = ze_module_build_log_handle_t()
-        result = ze.zeModuleCreate(
-            self._context, self._device, ctypes.byref(module_desc),
-            ctypes.byref(module), ctypes.byref(build_log))
-
-        if result != ZE_RESULT_SUCCESS:
-            # Extract build log
-            log_text = ""
-            if build_log:
-                log_size = ctypes.c_size_t(0)
-                ze.zeModuleBuildLogGetString(build_log, ctypes.byref(log_size), None)
-                if log_size.value > 0:
-                    log_buf = ctypes.create_string_buffer(log_size.value)
-                    ze.zeModuleBuildLogGetString(build_log, ctypes.byref(log_size), log_buf)
-                    log_text = log_buf.value.decode(errors="replace")
-                ze.zeModuleBuildLogDestroy(build_log)
-            raise RuntimeError(
-                f"zeModuleCreate failed (0x{result:08x}):\n{log_text}\n"
-                f"Source:\n{opencl_source}")
-
-        if build_log:
-            ze.zeModuleBuildLogDestroy(build_log)
-
-        # Create kernel
-        kernel_desc = ze_kernel_desc_t(
-            stype=ZE_STRUCTURE_TYPE_KERNEL_DESC, pNext=None,
-            flags=0, pKernelName=kernel_name.encode())
-        kernel = ze_kernel_handle_t()
-        _check_ze(ze.zeKernelCreate(module, ctypes.byref(kernel_desc),
-                                     ctypes.byref(kernel)),
-                   "zeKernelCreate")
-
         param_types = [p.type_annotation for p in ir_func.params]
         param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        return CompiledL0Kernel(module, kernel, kernel_name,
-                                param_types, param_is_field, workgroup_size,
-                                param_is_texture,
-                                requires_full_workgroups=full_groups)
+        return _load_kernel(self, spirv_bytes, kernel_name, param_types, param_is_field,
+                            param_is_texture, workgroup_size, full_groups,
+                            opencl_source=opencl_source)
+
+    # ── The disk cache: SPIR-V, finalized by the driver ────────────────
+    # zeModuleCreate has IGC finalize the SPIR-V for the device, so the
+    # target names the device, the driver that finalizes it, the ocloc and
+    # options that made it, and whether the device has f64 (it changes
+    # supported_dtypes). Software texture sampling is decided before the
+    # variant key, and the device names whether it happens.
+
+    _target = None
+
+    def cache_target(self):
+        if self._target is None:
+            ze = _get_ze()
+            props = ze_driver_properties_t(
+                stype=ZE_STRUCTURE_TYPE_DRIVER_PROPERTIES, pNext=None)
+            _check_ze(ze.zeDriverGetProperties(self._driver, ctypes.byref(props)),
+                       "zeDriverGetProperties")
+            options = " ".join(o.decode() for o in _OCLOC_OPTIONS)
+            fp64 = "f64" if f64 in self.supported_dtypes else "no f64"
+            self._target = (f"{self._device_name} 0x{self._device_id:04x}; "
+                            f"driver {props.driverVersion:#x}; "
+                            f"ocloc {_ocloc_version()} {options}; "
+                            f"module {_MODULE_BUILD_FLAGS.decode()}; {fp64}")
+        return self._target
+
+    def variant_artifact(self, payload):
+        compiled, pack_info, _ = payload
+        if compiled.spirv is None:
+            raise ValueError("no SPIR-V was kept for this kernel")
+        return {"spirv": compiled.spirv, "name": compiled._func_name,
+                "param_types": compiled._param_types,
+                "param_is_field": compiled._param_is_field,
+                "param_is_texture": compiled._param_is_texture,
+                "workgroup_size": compiled._workgroup_size,
+                "full_workgroups": compiled._requires_full_workgroups,
+                "pack_info": pack_info}
+
+    def load_variant(self, ir_func, artifact, effective_args):
+        from tack.runtime.kernel_utils import _create_pack_fields
+        # Module creation outside _launch_lock, as _compile_kernel does it.
+        compiled = _load_kernel(self, artifact["spirv"], artifact["name"],
+                                artifact["param_types"], artifact["param_is_field"],
+                                artifact["param_is_texture"], artifact["workgroup_size"],
+                                artifact["full_workgroups"])
+        pack_info = artifact["pack_info"]
+        # The scalar pack buffers are device memory of this process, made
+        # from this call's scalars as _build_variant makes them.
+        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+                       if pack_info else None)
+        return compiled, pack_info, pack_fields
 
     def reduce_field(self, field, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
@@ -1450,7 +1555,7 @@ class LevelZeroBackend(Backend):
             format=ZE_MODULE_FORMAT_IL_SPIRV,
             inputSize=len(spirv),
             pInputModule=ctypes.cast(spirv_buf, ctypes.c_void_p),
-            pBuildFlags=b"-cl-std=CL2.0",
+            pBuildFlags=_MODULE_BUILD_FLAGS,
             pConstants=None)
 
         module = ze_module_handle_t()
