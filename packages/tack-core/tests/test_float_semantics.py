@@ -204,6 +204,39 @@ def test_f64_parentheses_and_permitted_contraction(f64_backend):
     _check_order(tack.f64)
 
 
+@tack.func
+def _scaled(k, s):
+    return k * s
+
+
+@tack.kernel
+def _named_product(a, b, out):
+    for i in range(a.shape[0]):
+        p = _scaled(a[i], b[i])
+        out[i] = p - p
+
+
+def _check_named_product(dtype):
+    # Contraction stays inside one expression: a named value is rounded once,
+    # so every read of it agrees and p - p is zero. hipRTC's default fused the
+    # product into the subtraction while the other operand read it rounded,
+    # leaving the product's rounding error (k * 0.2 for k = 3, 5, ...).
+    rng = np.random.default_rng(31 + dtype.bits)
+    a = np.concatenate([np.arange(6), rng.uniform(-16, 16, 256)]).astype(dtype.numpy_dtype)
+    b = np.concatenate([np.full(6, 0.2), rng.uniform(-16, 16, 256)]).astype(dtype.numpy_dtype)
+    out = tack.field(dtype, a.shape)
+    _named_product(_field(a, dtype), _field(b, dtype), out)
+    np.testing.assert_array_equal(out.to_numpy(), np.zeros_like(a))
+
+
+def test_f32_a_named_value_reads_the_same_everywhere(backend):
+    _check_named_product(tack.f32)
+
+
+def test_f64_a_named_value_reads_the_same_everywhere(f64_backend):
+    _check_named_product(tack.f64)
+
+
 @tack.kernel
 def _math(a, b, out):
     for i in range(a.shape[0]):
