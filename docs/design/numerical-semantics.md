@@ -435,7 +435,7 @@ options:
 | CPU | `codegen/llvm_gen.py` | no LLVM fast-math flags on any instruction |
 | CUDA | `runtime/cuda_backend.py`, `_compile_ptx` | `--ftz=false --prec-div=true --prec-sqrt=true --fmad=true`, no `--use_fast_math` |
 | Metal | `runtime/metal.py`, `_compile_kernel` and `_get_reduce_pipeline` | `MTLCompileOptions.setFastMathEnabled_(False)` |
-| HIP | `runtime/hip_backend.py` | `hiprtcCompileProgram` with no options |
+| HIP | `runtime/hip_backend.py`, `_compile_code_object` | `_HIPRTC_OPTIONS`: `-ffp-contract=on` only; no unsafe or relaxed-math option |
 | Level Zero | `runtime/level_zero_backend.py` | build flags `-cl-std=CL2.0` only; no relaxed-math option |
 
 The same settings apply to the runtime field-reduction kernels.
@@ -455,6 +455,21 @@ is usually faster and at least as accurate per operation, and forbidding it
 would cost throughput on every GPU, so the contract permits it without
 requiring it. CPU and GPU can therefore differ in the last bits of such
 expressions. Regrouping `(a + b) + c` as `a + (b + c)` is never allowed.
+
+Fusion stays inside one expression: a value bound to a name, or returned
+from a device function, is rounded once, and every read of it sees that
+value, so `x - x` is zero for a finite `x`. hipRTC's default,
+`-ffp-contract=fast`, broke that. It fuses a multiply into an add or
+subtract in a later statement, and on AMD GPUs did so where the product
+had another use, so one variable held two values: with `p = k * 0.2`,
+`p - p` came out as the product's rounding error (1.49e-8 for `k = 3`)
+where CPU and CUDA gave zero. A contour that tests finiteness with
+`a - a != 0.0` then took finite values for infinite ones. HIP therefore
+compiles with `-ffp-contract=on`, which fuses only inside one expression;
+the option is part of the disk cache's target, so code objects compiled
+without it are not reused. `test_float_semantics.py` checks `p - p` for
+products returned from a device function, in f32 and f64, on every
+backend.
 
 ### NaN, infinity and signed zero
 

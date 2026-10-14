@@ -225,7 +225,8 @@ a field gives one index per dimension, or a single flat, row-major index;
 a vector of integers stands for one index per component. Binding a field
 whose number of dimensions differs from the number of indices a kernel
 gives it raises `TypeError` at the call, naming the source position.
-Indices are not checked against the field's extents. A field view or
+Indices are not checked against the field's extents, except in debug
+mode (below). A field view or
 an imported pointer can share storage with another field. Host code reads
 one element with `f[i, j]` (a Python number, or a NumPy array of a vector
 or matrix element) and may not write one; `DeviceBuffer.read_range`
@@ -277,9 +278,16 @@ flagged read-only) bound to a parameter the kernel may store to or update
 atomically; when a store cannot be traced to a parameter, every field
 argument counts as written. That is a check of the binding, not of accesses:
 writable fields aliasing read-only storage are not detected. Indices are
-not checked, except in debug mode (`tack.init(debug=True)`), which skips an
-out-of-bounds access and raises `IndexError` after the launch; see the
-runtime API. Negative indices are outside the portable baseline; Python's
+not checked, and an out-of-bounds access has no defined result. Debug mode
+(`tack.init(debug=True)` or `TACK_DEBUG=1`) is the exception: it checks
+every index of every field and array access against its extent, one
+dimension at a time (so `a[i, j + 1]` past the last column is caught even
+when its flat index lands inside the field), skips an access outside it (a
+load gives 0, a store or atomic does nothing), and makes the call raise
+`IndexError` naming the first such access; see the
+[runtime API](../contracts/runtime-api.md). It is a diagnostic, compiled
+separately; it does not bring out-of-bounds accesses into the baseline.
+Negative indices are outside the portable baseline; Python's
 wraparound indexing is not promised.
 
 ## Types and numerical behavior
@@ -1033,9 +1041,13 @@ there is no system-scope guarantee spanning concurrent host accesses or
 other devices. Do not mix ordinary reads/writes with conflicting atomic
 updates during a kernel unless appropriate workgroup synchronization orders
 them. Workgroup barriers order shared and global field memory among that
-workgroup's lanes; they do not synchronize different workgroups. Current
-synchronous dispatch waits for completion before host readback or the next
-kernel call, providing the supported way to consume a cross-workgroup result.
+workgroup's lanes; they do not synchronize different workgroups. Launches
+on one backend take effect in call order: a kernel call sees every effect
+of the calls before it. Metal, CUDA, HIP and Level Zero queue launches and
+return before they run, and the host waits for them before it reads field
+memory (`to_numpy`, indexing, reductions, DLPack export) or at
+`tack.sync()`. A later kernel call or a host read is the supported way to
+consume a cross-workgroup result.
 Atomics alone do not require a complete workgroup or uniform participation;
 partial final groups and lane-dependent atomic branches are permitted.
 
@@ -1092,10 +1104,23 @@ Different classes with identical names can have different methods, and
 adding a runtime attribute changes the parameter
 layout even when its value is not a compilation constant.
 
+Debug mode is part of the identity: a kernel lowered with bounds checks
+never shares IR or compiled code with the same kernel lowered without.
+
 The frontend's cached IR template must remain pristine. Mutating passes
 operate on a variant's copy. A backend cache must belong to the backend
 configuration that compiled its entries; compiled code must not outlive
 the resources needed to execute it.
+
+The same requirement holds across processes. The disk cache keys lowered
+IR by content rather than identity (the kernel's source and closure,
+template classes by their MRO names, method sources and constants, Tack's
+own version) and uses an entry only if every name lowering resolved still
+resolves to the same thing; it keys compiled code by that entry, the
+argument types and baked-in shapes, and the backend's target (the device,
+compiler and driver versions and compile options). Within one process a
+kernel still reads the constant its name was bound to when it was first
+lowered; a new process lowers again if that binding changed.
 
 ## Regression baseline
 

@@ -24,6 +24,26 @@ also extends the CUDA generator, but overrides considerably more — OpenCL C
 spells address spaces, thread indices, barriers and math differently, and the
 wrong spelling still compiles as C.
 
+## Launches and the disk cache
+
+| | A kernel call returns | The disk cache stores |
+|---|---|---|
+| **CPU** | when the kernel has finished | object code |
+| **Metal** | once queued in a command buffer, committed every 64 launches | MSL source |
+| **CUDA** | once queued on a stream | PTX, compiled by the driver at load |
+| **HIP** | once queued on a stream | the code object |
+| **Level Zero** | once queued on an asynchronous immediate command list | the native binary, and the SPIR-V to fall back on |
+
+A queued launch is waited for where the host reads a field or calls
+`tack.sync()`, and its errors surface there. A launch that uses memory
+shared with another library (DLPack export, `field_from_ptr`) completes
+before the call returns. See
+[Backends](../users-guide/08-backends.md#when-a-call-returns) in the User's
+Guide and [The Kernel Cache](../users-guide/17-kernel-cache.md).
+
+[Debug mode](../users-guide/15-debugging-and-timing.md#check-every-index-with-debug-mode)
+(`tack.init(..., debug=True)` or `TACK_DEBUG=1`) checks every index on all five.
+
 ## Scalar types
 
 | | `i8`/`u8` | `i16`/`u16` | `i32`/`u32` | `i64`/`u64` | `f32` | `f64` |

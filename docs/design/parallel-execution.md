@@ -39,8 +39,11 @@ the parallel loop. A kernel has one parallel loop, ..."). The IR verifier
 (`lang/ir_verify.py`) checks the same invariant ("kernel must contain
 exactly one top-level parallel loop") on every later stage, as a backstop
 for passes rather than as the user's diagnostic. Multiple parallel phases
-are written as separate kernels; since dispatch is synchronous, the second
-kernel sees everything the first wrote.
+are written as separate kernels. A backend runs its launches in the order
+they were made: the CPU completes each before its call returns, and each
+GPU backend queues them in order on one stream, command list or command
+buffer and returns once queued. Either way the second kernel sees
+everything the first wrote.
 
 **Why one loop.** A single flat index space is the one shape every backend
 supports with no runtime machinery: a grid on a GPU, a range split into
@@ -108,7 +111,15 @@ new array length reuses the compiled variant; see
 | Group size | n/a | `min(maxTotalThreadsPerThreadgroup, 256)` | 256 | `min(256, maxGroupSizeX, maxTotalGroupSize)` |
 | Launch | chunks on a thread pool, or serial | `dispatchThreads` with the exact count | `ceil(n / 256)` blocks | `ceil(n / group)` groups |
 | Tail handling | loop condition | exact grid; final group may be smaller | `if (idx >= __n__) return;` | `if (idx >= __n__) return;` |
+| The call returns | after the range has run | once encoded into the open command buffer | once queued on the context's stream (CUDA) or the device's (HIP) | once appended to the asynchronous immediate command list |
 | Largest launch | no limit | 2^32 (`_MAX_LAUNCH`) | CUDA: max `gridDim.x` × 256; HIP: the same, capped at 2^32 − 256 | `maxGroupCountX` × group size |
+
+A queued GPU launch is waited for where the host next touches field memory
+(`to_numpy`, indexing, reductions) or calls `tack.sync()`, and its error
+surfaces there. A launch that uses memory handed outside Tack (a wrapped
+pointer, a DLPack export) completes before its call returns, and so, on
+CUDA, HIP and Level Zero, does a launch that samples a hardware texture; see
+[Backend Implementations](backend-implementations.md#launches-are-queued).
 
 Loop variables are 64-bit on every backend (`long long` for CUDA/HIP,
 `long` for MSL and OpenCL, i64 in LLVM), so index arithmetic derived from
@@ -183,7 +194,7 @@ backend.
 | `continue` in a nested loop | next iteration of that loop | |
 | `break` in a nested loop | leaves that loop | |
 | `break` in the parallel loop | | `UnsupportedSyntaxError` |
-| `return` in a kernel | | `UnsupportedSyntaxError` |
+| `return` in a kernel, except as its last statement (after the parallel loop, with a return annotation) | | `UnsupportedSyntaxError` |
 | `return` in a `@tack.func` | ends the function on that path | inside a loop: `UnsupportedSyntaxError` |
 
 `UnsupportedSyntaxError` (`lang/source_validation.py`) derives from
@@ -494,9 +505,11 @@ field reductions; sums may vary in low bits with the reduction order.
 ## Atomic field updates
 
 `tack.atomic_add(field, index, value)`, `atomic_min` and `atomic_max` update
-one element of a global field indivisibly. They are statements:
-`lang/source_validation.py` rejects any use as an expression with
-`UnsupportedSyntaxError`, and no previous value is returned.
+one element of a global field indivisibly. An atomic is a statement, or an
+expression whose value is the element's value immediately before the
+update (`slot = tack.atomic_add(counter, 0, 1)`); as an expression it is
+lowered to a temporary among the statement's pre-statements, so it takes
+effect in source order among the operands.
 
 ### Per-backend domain
 
@@ -558,9 +571,10 @@ launch: CPU worker threads, or all workgroups on the executing GPU. The
 memory order is **relaxed**. An atomic is not a fence and cannot publish
 other data: writing a result, then atomically setting a flag, does not make
 the result visible to a reader that sees the flag. There is no system scope
-spanning the host or other devices. Dispatch is synchronous, so the
-supported way to consume a cross-workgroup result is to read it after the
-kernel returns, from the host or from the next kernel. Floating `atomic_add`
+spanning the host or other devices. The supported way to consume a
+cross-workgroup result is from the next kernel, which a backend runs after
+this one completes, or from the host, whose read of the field waits for
+the launch. Floating `atomic_add`
 rounds at the field's precision in an unspecified interleaving, so its
 result is not bitwise reproducible.
 
@@ -596,7 +610,7 @@ the native field reduction's final combine uses them too.
 
 | Situation | Exception | Raised by |
 |---|---|---|
-| `break` in the parallel loop, `return` in a kernel, atomic or barrier used as a value | `UnsupportedSyntaxError` (a `NotImplementedError`) | `lang/source_validation.py` |
+| `break` in the parallel loop, `return` in a kernel anywhere but last, barrier used as a value | `UnsupportedSyntaxError` (a `NotImplementedError`) | `lang/source_validation.py` |
 | No parallel loop, a second one, or one inside a top-level `if` or `while` | `UnsupportedSyntaxError` | `KernelTransformer._visit_parallel_for`, `visit_FunctionDef` |
 | Store, atomic, barrier, block reduction or `print` outside the parallel loop | `UnsupportedSyntaxError` | `KernelTransformer._check_outside_parallel_loop` |
 | Launch longer than one grid of the backend can index | `ValueError` | `check_launch_size` |

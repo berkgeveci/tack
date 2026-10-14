@@ -34,8 +34,14 @@ the loop bounds differ between chunks.
 The chunks run through one of two pools. The default is the pool in
 `cpu_pool.py`: a small program in LLVM IR, built with `llvmlite.ir` and
 JIT'd beside the kernels, whose `N - 1` detached pthreads each wait on
-their own mailbox, a launch count (spinning for a while, then a futex on
-Linux or `nanosleep` polls elsewhere). A fan-out is one ctypes call:
+their own mailbox, a launch count (spinning for a while, then sleeping:
+on a futex on Linux, on `os_sync_wait_on_address` on macOS 14.4 and
+later, and elsewhere in `nanosleep` polls that back off to a
+millisecond). macOS used to poll, and every launch then waited for its
+slowest sleeper: the policy measured a 1 ms fan-out, kept mid-size
+launches serial, and the pool made the dataset filters 1.3–2.6× slower
+than the executor on an M1 Max; blocking on an address, its fan-out
+measured 73 µs. A fan-out is one ctypes call:
 `pool_run` posts to workers `0 .. k - 2`, wakes those of them that sleep,
 runs as worker `k - 1` itself and leaves the rest asleep, so a launch of
 two on a pool of sixteen costs two wake-ups (4.4 µs hot on a 2 GHz Xeon,
@@ -57,8 +63,16 @@ over a million cells took 29 or 50 ms from run to run; claiming, it
 takes fewer chunks and the run takes 38 ms every time. Each worker
 reports the time and the elements it ran, which is what the rate and
 floor bookkeeping below reads. The pool is one
-per process, sized by the CPUs the process may run on; a dispatch uses as
-many of its threads as its backend has. `TACK_CPU_POOL=python` selects the
+per process (`CPool.get`), sized by the CPUs the process may run on (its
+affinity mask on Linux, the performance cores on Apple silicon), or by the
+first backend's thread count if that is larger; a dispatch uses as many of
+its threads as its backend has, and a backend asking for more threads than
+the pool has falls back to the executor. The pool's launch state is one
+set of JIT'd globals, so a run holds `CPool._txn` from the call through
+the read of its report: two Python threads fanning out at once otherwise
+ran each other's function and argument pack. A pool whose workers cannot
+all be started is dismantled, its workers joined, before the backend falls
+back. `TACK_CPU_POOL=python` selects the
 other pool, a `ThreadPoolExecutor` with one `call_range` task per chunk,
 which is also the fallback on Windows or when the JIT'd pool cannot be
 made.
@@ -312,8 +326,11 @@ disturbs what the dispatch measures.
 
 ### Parallel rate: `ns_per_elem_parallel`
 
-Under v2, `_parallel_execute` times each worker *inside* the worker, around
-its `call_range` only. A worker's own rate is roughly the serial rate — the
+Under v2, each worker is timed *inside* the worker, around its kernel calls
+only: through the JIT'd pool every worker reports its span and the
+elements it claimed (`CPool.run(..., measure=True)`, read in
+`_pool_execute`), and through the executor each task times its own
+`call_range`. A worker's own rate is roughly the serial rate — the
 speedup comes from running chunks together, not from cheaper elements — so
 `_record_parallel_cost` converts and smooths (weight 0.25):
 
@@ -321,7 +338,8 @@ speedup comes from running chunks together, not from cheaper elements — so
 r_p sample = median(worker ns/element) / workers_that_ran
 ```
 
-counting only workers whose span reached `_RP_MIN_WORKER_NS` (1 µs).
+counting only workers whose span reached `_RP_MIN_WORKER_NS` (1 µs); a
+pool worker that claimed no chunk is not counted.
 
 - **Why in-worker timing.** `r_p` used to be inferred as
   `(elapsed − fan_out_estimate) / elements`, charging every fan-out error to
@@ -331,9 +349,10 @@ counting only workers whose span reached `_RP_MIN_WORKER_NS` (1 µs).
   load the max is whichever worker was descheduled: `_record_parallel_cost`'s
   docstring records the max at 10–134x the fitted rate on a loaded M1 Max
   (August 2026), the median at 0.5–6.3x. The minimum worker and per-thread
-  CPU time were tried on a 1-socket Xeon (October 2026) and scored worse;
-  workers returning from ctypes together queue for the GIL, a real cost the
-  median tracks.
+  CPU time were tried on a 1-socket Xeon (October 2026), with the
+  executor, and scored worse; its workers returning from ctypes together
+  queue for the GIL, a real cost the median tracks. The pool's workers
+  never take the GIL.
   For an even number of workers it is the lower of the two middle values
   (`_worker_median`). The upper one of two workers is the slower worker,
   the max again: on a two-thread machine, stalling one worker for 2 ms
@@ -531,6 +550,7 @@ speedups not taken. The module docstring keeps that reasoning.
 | `TACK_CPU_MARGIN` | A float that replaces the margin under either policy, switching off v2's derived margin. For experiments. |
 | `TACK_CPU_POOL` | `python` (also `0`, `off`, `no`, `false`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool. Anything else, or unset, uses the pool where it can be made. |
 | `TACK_CPU_POOL_SPIN` | How many pause iterations a pool worker spins before sleeping (default 20000). For experiments. |
+| `TACK_CPU_MALLOC` | Linux only, off by default (read by `dispatch.env_flag`). When on, the first CPU backend tells glibc to keep freed pages (`_tune_malloc`: `mallopt` sets the mmap threshold to its 32 MiB cap, the trim threshold to 4 GiB and the top pad to 256 MiB), process-wide. A filter that frees and reallocates the same temporaries otherwise takes their page faults on every call: threshold at 5M cells on 8 threads of one bound NUMA node 126 → 104 ms. Opt-in because it changes `malloc` for NumPy and every other library, and unbound on a 28-core EPYC it gained nothing (6–8% slower, within noise); a reused block also keeps the placement of its first touch. |
 
 The ratios, caps, intervals and priors in the module's underscore-prefixed
 constants are private, with no supported override. Each carries a comment on
@@ -545,18 +565,33 @@ asked for physical cores, falling back to `os.cpu_count()`:
 | Probe | Source | Notes |
 |---|---|---|
 | `_linux_core_count` | `/sys/devices/system/cpu/cpu0/topology/thread_siblings_list` | Logical CPUs divided by cpu0's sibling count |
-| `_macos_core_count` | `sysctlbyname("hw.perflevel0.physicalcpu")`, then `hw.physicalcpu` | Performance cores only: chunks are equal, so an efficiency core would pace the whole dispatch (the docstring: 8 threads beat 10 on an 8+2 machine) |
+| `_macos_core_count` | `sysctlbyname("hw.perflevel0.physicalcpu")`, then `hw.physicalcpu` | Performance cores only: with equal chunks an efficiency core paced the whole dispatch (the docstring: 8 threads beat 10 on an 8+2 machine). The JIT'd pool is sized the same way (`cpu_pool._performance_cores`): a pool of `os.cpu_count()` had two workers more than any launch used |
 | `_windows_core_count` | `GetLogicalProcessorInformationEx(RelationProcessorCore)` | Never run on Windows; any failure returns `None` |
 
-On x86-64 Linux with libnuma and two or more memory nodes, `allocate_field`
-allocates under an interleave policy and touches every page, so pages spread
-across nodes. `_init_numa` reads the policy back with `get_mempolicy` and
+A new field is not filled: `allocate_field` returns uninitialized
+storage, and its pages are first touched by the kernel that writes it, in
+parallel when the policy fans that kernel out. Filling at allocation was
+serial, and dearer after a fan-out, while the workers' caches owned the
+lines: at 5M cells on eight threads of a 2 GHz Xeon it was 130 of
+threshold's 276 ms and 77 of cell-to-point's 135. A fill of 256 KiB or
+more (`_PARALLEL_FILL_MIN_BYTES`; `tack.zeros`, `ones` and `full` among
+them) runs `tack.algorithms.copy._fill_kernel` through the normal dispatch
+(`CPUBackend.fill_field`, offered first by `Field.fill`), after NumPy has
+converted the value, so it stores and refuses what `ndarray.fill` would.
+Smaller fills, a one-thread backend and another backend's buffers fill in
+place.
+
+On x86-64 Linux with libnuma and two or more memory nodes, the JIT'd
+pool's and the executor's threads are made under an interleave policy,
+which they inherit (`_jit_pool`, `_get_pool`; the executor's threads are
+all started there rather than lazily by whichever dispatch first needs
+one), so the pages they first touch spread across nodes.
+`_init_numa` reads the policy back with `get_mempolicy` and
 stays off unless the kernel confirms it; wrapped external memory is not
 affected. Only a thread whose policy is the default is changed, and the
 policy found is put back: a process started under `numactl --membind` (or
 bound through libnuma) keeps its binding and its fields stay on its nodes.
-The JIT'd pool is made under the same context, so its threads inherit
-that policy and a field they zero is placed the same way. The threading
+The threading
 policy has no NUMA term — remote-memory effects show up in the measured
 rates — and workers are not pinned.
 
@@ -566,7 +601,8 @@ rates — and workers are not pinned.
 
 Every path through `_run` executes each index of `[0, loop_end)` exactly
 once. `_parallel_execute` chunks are contiguous, disjoint, and cover
-`[start, end)`. First sight and rechecks split the range into head, slice and
+`[start, end)`, whether the executor assigns them or the pool's workers
+claim them from a counter. First sight and rechecks split the range into head, slice and
 tail (plus the second opinion's head and slice), each starting where the last
 ended. Every probe that is not real work — `_measure_call_overhead`,
 `_calibrate_fan_out`, `_refresh_fan_out` — runs on an empty range, which
@@ -598,6 +634,14 @@ promises to keep measuring, not to be right.
 ### How it is tested
 
 `packages/tack-core/tests/test_cpu_threading.py` has three kinds of check.
+Its tests drive the policy through the Python path's seams (a patched
+`call_range`, an inline pool, a fake clock), so an autouse fixture sets
+`TACK_CPU_POOL=python` and every backend they make fans out through the
+executor. The JIT'd pool has its own tests in `test_cpu_pool.py` (whole
+chunks covering the range, a launch of `k` using only the first `k`
+workers, concurrent fan-outs, a failed start that falls back and exits
+cleanly), the fills in `test_cpu_fill.py`, and first-touch placement in
+`test_numa.py`.
 
 **Correctness through every path.** Results against a reference for ranges of
 1 to 300,000 elements and over repeated dispatches; an atomic accumulation

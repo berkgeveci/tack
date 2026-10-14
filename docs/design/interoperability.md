@@ -25,9 +25,14 @@ Aliasing](memory-and-aliasing.md); this page assumes them.
 `Field.__dlpack__(*, stream=None, max_version=None, dl_device=None,
 copy=None)` (`lang/field.py`) delegates to `field_to_dlpack` in
 `lang/dlpack.py`. `copy=True` raises `BufferError`: an export is always a
-view. `stream` and `dl_device` are accepted and not used; every Tack
-dispatch has already completed when it returns, so there is no pending
-work for a consumer's stream to wait on.
+view. `stream` and `dl_device` are accepted and not used. GPU launches
+are queued, so instead of ordering the consumer's stream after Tack's, the
+export calls the buffer's `share()` (`_get_device_info`): it waits for the
+launches queued so far, and marks the buffer so that every later launch
+that uses it completes before returning, because the consumer may read
+the memory at once, on its own stream, and keep reading it after later
+launches. There is then no pending work for a consumer's stream to wait
+on. See [Memory and Aliasing](memory-and-aliasing.md#queued-launches-and-memory).
 
 **Legacy or versioned.** A consumer passing `max_version >= (1, 0)` gets a
 DLPack 1.0 `DLManagedTensorVersioned` in a `"dltensor_versioned"` capsule;
@@ -177,7 +182,9 @@ opts out.
 level: no capsule, no deleter, no device type. Tack validates every
 pointer with `as_address()` and `memory_space()` where the backend
 distinguishes device memory, wraps them without taking ownership, and leaves lifetime entirely to
-the caller. The per-backend details are in [Memory and
+the caller. A wrapped buffer, and so every DLPack import, is marked shared
+from the start: a launch that uses it completes before it returns, since
+the owning library may touch the memory with no Tack call in between. The per-backend details are in [Memory and
 Aliasing](memory-and-aliasing.md#wrapped-buffers). Use it for in situ
 frameworks and simulation codes that hand over a device pointer, and prefer
 DLPack whenever the producer speaks it, because then lifetime is handled.
@@ -198,10 +205,12 @@ read it, and dispatches on `handle_type`.
 | CUDA (Windows) | `win32_kmt` | a legacy global KMT handle |
 
 Other buffers raise `RuntimeError` (`Backend ... does not support memory
-export`). CUDA memory from `cuMemAlloc` cannot be exported as an OS handle,
-so `CUDABuffer.export_memory()` copies the field once, device to device,
-into a lazily created `ExportableCUDABuffer` and exports that — later
-kernel writes to the original are not reflected in the export. A field
+export`). CUDA memory from `cuMemAllocAsync` cannot be exported as an OS handle,
+so `CUDABuffer.export_memory()` waits for the launches queued on the
+field, copies it once, device to device, into a lazily created
+`ExportableCUDABuffer` and exports that — later kernel writes to the
+original are not reflected in the export. Metal's `export_memory()` calls
+`share()`, as a DLPack export does. A field
 allocated with `tack.field(..., exportable=True)` is an
 `ExportableCUDABuffer` from the start, and its export is zero-copy. The
 exportable buffer is allocated through CUDA's virtual memory management API
@@ -322,7 +331,7 @@ ones. Tack does not fill in a driver or device of its own, because a driver
 or device found separately need not be the one the context was created
 against. With the handles adopted, `_query_device` runs against the given
 device, `self._context` wraps the given context, and `_create_queues`
-creates Tack's command queue and lists *in* that context. Every later
+creates Tack's command list *in* that context. Every later
 `zeMemAllocDevice` — every `tack.field()` — allocates there.
 `LevelZeroBackend.shares_external_context` reports whether this happened.
 
@@ -336,8 +345,8 @@ exactly the failure no runtime check can detect later.
 
 **An adopted context is never destroyed.** In fact Tack destroys no Level
 Zero object at all: `LevelZeroBackend.__del__` skips cleanup, because the
-driver may already be unloaded at interpreter shutdown. The command queue
-and lists Tack created inside the adopted context are likewise left alone.
+driver may already be unloaded at interpreter shutdown. The command list
+Tack created inside the adopted context is likewise left alone.
 
 ### From VTK
 
@@ -407,7 +416,8 @@ with `external_context` first.
 Sharing a context couples lifetimes in a direction Tack cannot see.
 
 - **The owner must outlive Tack's use of the context.** Tack allocates
-  with `zeMemAllocDevice` and frees with `zeMemFree` in the adopted
+  with `zeMemAllocDevice` and frees with `zeMemFreeExt` (deferred until
+  the queued work is done) or `zeMemFree` in the adopted
   context, and it holds no reference that keeps the context alive. If the
   owning library destroys the context while Tack fields or the backend
   still exist, those frees and any further dispatch act on a destroyed

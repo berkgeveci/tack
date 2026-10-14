@@ -53,7 +53,8 @@ Two things are stored for each kernel:
   bound to, and the entry is used only if each still resolves to the same
   thing.
 - **Each compiled variant**: object code on the CPU, generated source on
-  Metal. Its key adds the argument types, the shapes compiled in, and what
+  Metal, and the compiled code on CUDA, HIP and Level Zero
+  ([below](#backends)). Its key adds the argument types, the shapes compiled in, and what
   the code depends on: the LLVM version and host CPU, or the GPU and
   system.
 

@@ -2,7 +2,7 @@
 
 !!! warning "These numbers predate current behavior (note added 2026-10-05)"
 
-    The measurements below were taken before three changes that affect
+    The measurements below were taken before several changes that affect
     them:
 
     1. **Safe floating-point math on CUDA and Metal (2026-10-03).** Kernels
@@ -21,6 +21,16 @@
        now compiles a separate `noalias` variant for calls whose written
        fields don't overlap other fields. See
        [Memory and Aliasing](design/memory-and-aliasing.md).
+    4. **Queued GPU launches (Metal 2026-10-09; CUDA, HIP and Level Zero
+       2026-10-14).** A kernel call on a GPU backend returns once the launch
+       is queued, and the host waits only when it reads a field or calls
+       `tack.sync()`. The two reproduce scripts below time a call without
+       `tack.sync()`, so their GPU columns would now time the launch rather
+       than the kernel.
+    5. **The CPU thread pool (2026-10-14).** CPU fan-outs go through a
+       thread pool JIT-compiled from LLVM IR: 3–5 µs per hot fan-out on a
+       2 GHz Xeon, where the executor cost about 60 µs per worker. A new
+       `tack.field` is no longer filled. See [CPU Threading Policy](design/cpu-threading.md).
 
     Re-measurement is planned. Until then, read the tables below as a
     historical record. They have not been edited.

@@ -309,6 +309,11 @@ the size as a scalar argument instead of reading it from `shape` inside the
 body. [Specialization and Caching](../design/specialization-and-caching.md)
 lists exactly what goes into the key, with worked examples.
 
+Compiled variants are also kept on disk, so a later process that calls the
+same kernel the same way starts warm; editing the kernel, a device function
+it calls, a constant or a template class compiles it again. See
+[The Kernel Cache](17-kernel-cache.md).
+
 ## Inspecting Generated Code
 
 `tack.inspect()` shows the generated code for a kernel without executing it.

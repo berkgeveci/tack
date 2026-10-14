@@ -13,6 +13,9 @@ its own compilation pipeline and memory model.
 | HIP | Linux | AMD (ROCm) | HIP C → hipRTC | `hip-python` |
 | Level Zero | Linux | Intel | OpenCL C → libocloc → SPIR-V | Level Zero runtime |
 
+Every backend keeps what it compiles on disk, so a later process does not
+compile the same kernel again. See [The Kernel Cache](17-kernel-cache.md).
+
 ## Capabilities
 
 Every backend runs the same kernel language, but within its own
@@ -43,11 +46,32 @@ be = get_backend()
 be.supports_f64, be.supports_workgroups, be.supported_atomic_dtypes
 ```
 
+## When a call returns
+
+On the CPU a kernel call returns when the kernel has finished. On Metal,
+CUDA, HIP and Level Zero it returns once the launch is queued; the device
+runs queued launches in order, and fills and host writes take their place
+in that order. The host waits where it reads a field (`to_numpy`,
+indexing, reductions, DLPack export) or calls `tack.sync()`. Most code
+never needs `tack.sync()`: it is for timing kernels (see
+[Debugging and timing](15-debugging-and-timing.md#measure-first-call-and-warm-time-separately)),
+and for memory another library reads without Tack. An error in a queued
+launch is raised at that wait rather than at the call. A launch that uses
+memory shared with another library (exported through DLPack, or wrapped
+with `tack.field_from_ptr`) completes before the call returns. In an
+`asyncio` program, `await tack.sync_async()` and
+`await field.to_numpy_async()` do the waiting in a worker thread, so the
+event loop keeps running (see
+[Waiting from `asyncio`](12-execution-model.md#waiting-from-asyncio)).
+
 ## CPU
 
 The CPU backend uses LLVM JIT (via llvmlite) to compile kernels to native
 machine code. Work is split across physical CPU cores using a persistent
-thread pool.
+thread pool. The pool is itself JIT-compiled from LLVM IR, so a fan-out is
+one call that never enters Python; `TACK_CPU_POOL=python` uses a
+`ThreadPoolExecutor` instead, which is also the fallback on Windows or
+where the pool cannot be started.
 
 Threading is not free — a fan-out costs a few microseconds when the
 workers are warm and about a hundred after they have been idle, and the

@@ -7,7 +7,9 @@ the contract for those differences. It covers what a backend declares, what
 each declaration means, what each one rejects and when, and the subset of
 the language that runs everywhere.
 
-All statements describe release candidate `23d6e1d`. The declarations live
+All statements describe release candidate `23d6e1d`, updated for the
+queued launches, disk cache, debug mode and CPU pool merged through
+`b94af23`. The declarations live
 in `packages/tack-core/src/tack/runtime/backend.py` (class `Backend`) and in
 the five subclasses in `runtime/cpu.py`, `runtime/metal.py`,
 `runtime/cuda_backend.py`, `runtime/hip_backend.py` and
@@ -38,6 +40,10 @@ The base class raises `NotImplementedError` for all three.
 
 | Method | Default | Overridden by |
 |---|---|---|
+| `synchronize()` | Does nothing, which is correct for a backend whose launches complete before `execute()` returns. Otherwise it waits for every launch, fill and copy queued so far, and a queued launch's error is raised here. `tack.sync()` calls it on the active backend | Metal, CUDA, HIP and Level Zero, which queue launches (see [Launches](#launches)) |
+| `fill_field(field, value)` | Returns `False`, and `Field.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more of its own buffers as a kernel through its dispatch, so the threads first-touch the pages |
+| `cache_target()` | Returns `None`: compiled variants are not stored on disk, only lowered IR. Otherwise a string naming what compiled code depends on besides the kernel (the device, the compiler and driver versions, the compile options) | all five |
+| `variant_artifact(payload)`, `load_variant(ir_func, artifact, effective_args)` | Raise `NotImplementedError`. Called only when `cache_target()` is not `None`: the picklable part of a compiled variant, and the payload rebuilt from it in another process. `effective_args` lets a GPU backend remake its scalar pack buffers | all five |
 | `memory_space(ptr)` | Returns `"cpu"`, which is correct for backends whose allocations are host-addressable | CUDA, HIP and Level Zero, which ask their driver. CPU overrides it with the same answer |
 | `reduce_field(field, op)` | Raises `NotImplementedError`. Called only when `supports_device_reductions` is true | Metal, CUDA, HIP and Level Zero |
 | `texture_in_hardware(shape_3d)` | Returns `False`: a `Texture3D` keeps a private `f32` field and the generated code interpolates it in software | Metal and CUDA (always `True`), HIP and Level Zero (per device and extent) |
@@ -85,6 +91,8 @@ Read from the backend classes at `23d6e1d`. "All ten" means `i8`, `u8`,
 | `Field.export_memory()` | no | yes (`mtl_buffer`) | yes (OS handle) | no | no |
 | DLPack export device | `kDLCPU` | `kDLCPU` (host view of unified memory) | `kDLCUDA` | `kDLROCM` | `kDLOneAPI` |
 | DLPack zero-copy import | `kDLCPU`, `kDLCUDAHost`, `kDLROCMHost` | none in practice (see [DLPack](runtime-api.md#dlpack)) | `kDLCUDA`, `kDLCUDAManaged` | `kDLROCM` | `kDLOneAPI` |
+| A kernel call returns | after the range has run | once queued | once queued | once queued | once queued (with a driver older than API 1.6, after it completes) |
+| Disk-cache artifact | object code | MSL source | PTX | code object | native binary, with SPIR-V to fall back on |
 | Device chosen | host | `MTLCreateSystemDefaultDevice()` | the current CUDA context if one exists, else device 0 | `hipGetDevice()` | the first device of the first driver, or the one in `external_context` |
 | Python requirements | `llvmlite` (`[cpu]` extra) | `pyobjc-framework-Metal` (`[metal]`) | `cuda-python>=13.2.0` (`[cuda]`) | `hip-python>=7.0`, Linux x86_64 only (`[hip]`) | none. The `[level_zero]` extra is empty |
 | System requirements | none | macOS with a Metal GPU | NVIDIA driver and NVRTC (13 or newer; older warns at the first compile) | ROCm with hipRTC | `libze_loader.so` and `libocloc.so` (Intel compute runtime) |
@@ -144,6 +152,23 @@ texture always holds the storage its compiled kernel binds:
   (Ponte Vecchio) reports no samplers.
 
 Metal and CUDA always answer true. CPU uses the base class's false.
+
+## Launches
+
+**Current behavior:** the CPU's kernel call returns once the range has run.
+Metal, CUDA, HIP and Level Zero queue the launch and return: Metal into an
+open command buffer, CUDA on one stream per context, HIP on one stream per
+device, Level Zero on one asynchronous immediate command list with a
+barrier after each command (a driver without `zeCommandListHostSynchronize`
+gets a synchronous list). On every backend, launches, fills and host
+writes take effect in the order they were made, host reads wait for the
+launches before them, a field dropped while a queued launch uses it
+outlives that launch, and a launch that binds memory handed outside Tack
+(a wrapped pointer, a DLPack export) completes before it returns. CUDA,
+HIP and Level Zero also complete a launch that samples a hardware texture.
+A queued launch's error is raised at the next wait. The user-facing rules
+are in [Runtime API](runtime-api.md#host-operations); the implementation
+is in [Backend Implementations](../design/backend-implementations.md#launches-are-queued).
 
 ## What each capability gates
 
@@ -208,7 +233,9 @@ defines results, precision and ordering for both paths.
 Kernels that use shared memory, barriers, `thread_id` or block reductions
 are rejected even when the primitive is unreachable. For private scratch
 storage, use `local_array` or `local_array_like`. Parallelism comes from a
-thread pool. See [CPU Threading Policy](../design/cpu-threading.md). The CPU
+thread pool JIT'd from LLVM IR, or a `ThreadPoolExecutor` with
+`TACK_CPU_POOL=python`, on Windows, or where the pool cannot be made. See
+[CPU Threading Policy](../design/cpu-threading.md). The CPU
 backend also compiles a separate `noalias` variant for calls whose written
 fields provably don't overlap other fields. See
 [Memory and Aliasing](../design/memory-and-aliasing.md).
@@ -226,8 +253,9 @@ the CUDA virtual memory management API, so `export_memory()` can hand out
 an OS handle without a copy.
 
 **HIP.** The code generator is the CUDA generator with a different include
-and texture handle type. Texture hardware is queried at initialization (see
-[Textures](#textures)).
+and texture handle type. hipRTC compiles with `-ffp-contract=on`, so
+contraction stays inside one expression. Texture hardware is queried at
+initialization (see [Textures](#textures)).
 
 **Level Zero.** `f64` depends on the device (see
 [Level Zero and `f64`](#level-zero-and-f64)). `external_context` takes a

@@ -6,18 +6,20 @@
 git clone https://github.com/berkgeveci/tack.git
 cd tack
 uv sync --extra cpu --extra dev
-uv run pytest
+uv run pytest -m quick -n 4
 ```
 
 Add the extra for your hardware if you have it — `--extra metal`, `--extra cuda`,
-`--extra level_zero`. Note that `uv sync` makes the environment match exactly the
+`--extra hip`, `--extra level_zero` — and `--extra interop` for VTK and MFEM, the
+references the dataset tests compare against (without them those comparisons skip;
+MFEM installs only on macOS on Apple silicon and Linux x86_64). Note that `uv sync` makes the environment match exactly the
 extras you list, so syncing without `--extra metal` will *remove* Metal from an
 environment that had it. That includes syncing for a different purpose: `uv sync
 --extra docs` on its own drops every backend but the default, and the only symptom
 is the suite quietly collecting a few hundred fewer tests. List them all together:
 
 ```bash
-uv sync --extra cpu --extra metal --extra dev --extra docs
+uv sync --extra cpu --extra metal --extra dev --extra interop --extra docs
 ```
 
 `hip-python` is on PyPI and the `[hip]` extra declares it; see the
@@ -66,6 +68,24 @@ ever changes.
 Link to it rather than restating it — that table has already drifted once
 across the README, `CLAUDE.md` and the guides.
 
+## Running the tests
+
+Run the smallest set that covers the change; the whole suite is for a
+validation round or a merge gate, not for iteration.
+
+```bash
+uv run pytest packages/tack-core/tests/test_cpu_jit.py   # 1. the files the change touches
+uv run pytest -m quick -n 4                              # 2. a module per area, 80 s on 4 workers
+uv run pytest -n auto                                    # 3. the whole suite across processes
+```
+
+`-m quick` selects the modules marked `pytestmark = pytest.mark.quick`. When you
+add a test module for a new area, mark it quick if it runs in under ten seconds.
+`-n` comes from pytest-xdist, in the `dev` extra; each worker is a process with
+its own backends, so GPU memory grows with the worker count. The `timing` tests
+skip themselves on a busy host, so a parallel run skips them; run `-m timing`
+alone when they matter. CI runs the suite serially (`uv run pytest`).
+
 ## The thing to know about the tests
 
 **A green run does not mean every backend was exercised.** Each backend's tests
@@ -83,8 +103,8 @@ for a in ('cpu','metal','cuda','hip','level_zero'):
 
 CI prints the same thing in its log.
 
-The 49 shipped examples are deselected from the default run — the sweep takes
-about a minute against an 18-second suite. Run them with:
+The 49 shipped examples are deselected from the default run and run as their own
+CI job. Run them with:
 
 ```bash
 uv run pytest -m slow -rs
@@ -96,10 +116,10 @@ runs this as its own job.
 
 Two suites cover ground your machine probably cannot:
 
-- `tests/test_gpu_dispatch_paths.py` drives the CUDA/HIP/Level Zero dispatch path in a
+- `packages/tack-core/tests/test_gpu_dispatch_paths.py` drives the CUDA/HIP/Level Zero dispatch path in a
   subprocess with the device bindings stubbed, so those code paths are checked
   anywhere.
-- `tests/test_backend_isolation.py` proves a GPU install works without `llvmlite`.
+- `packages/tack-core/tests/test_backend_isolation.py` proves a GPU install works without `llvmlite`.
   CI runs it against a deliberately minimal install; it is the only check that catches
   a CPU-only dependency leaking into a GPU backend.
 
@@ -113,10 +133,11 @@ Use the shared fixtures rather than rolling your own backend discovery:
 def test_something(backend):        # runs once per available backend
 def test_precision(f64_backend):    # only where f64 is supported
 def test_reduce(reduction_backend): # only where reductions run on device
+def test_shared(workgroup_backend): # only where workgroups exist
+def test_compiles(no_disk_cache):   # counts compile work, which a disk-cache hit would skip
 ```
 
-They live in `packages/tack-core/tests/conftest.py` and
-`packages/tack-vis/tests/conftest.py`.
+They live in `conftest.py` at the repository root.
 
 Ask the backend what it supports; never compare its name to a string:
 
@@ -135,6 +156,11 @@ coverage.
 a kernel that uses `x.shape[0]` in its body compiles a separate variant per shape.
 That is intentional, and `shape_signature()` keys the cache on exactly those
 dimensions. If you add a pass that bakes in something new, it has to reach the key.
+
+**A new field is not zeroed.** `tack.field` returns unspecified contents on every
+backend, the CPU included; a test that reads an element before a kernel writes it
+must allocate with `tack.zeros`. Filling every new CPU field with `0xAA` bytes
+found tests and examples that relied on zeros.
 
 **The IR from `kernel.get_ir()` is a template.** The passes mutate IR in place and run
 on a deep copy. Mutating the template consumes nodes later dispatches need.

@@ -318,3 +318,10 @@ def debug_kernel(data, n):
 ```
 
 This emits `printf` calls. On Metal, print is a no-op (Metal has no printf).
+CUDA and HIP launches are queued, so their output may appear only when the
+host next waits for the device: a read of a field, or `tack.sync()`.
+
+To find an index out of bounds, turn on
+[debug mode](15-debugging-and-timing.md#check-every-index-with-debug-mode)
+instead: it checks every field and array access and raises `IndexError`
+naming the first bad one.

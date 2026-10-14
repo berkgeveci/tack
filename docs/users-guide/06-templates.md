@@ -192,9 +192,9 @@ values reuse the compiled kernel, another nesting compiles anew. An object
 may not hold itself, directly or not.
 
 Each level costs a few microseconds per call on the host, where the tree is
-walked once to gather its arguments: about 9 us per level on the CPU
-backend and 7 us on Metal, against 27 and 39 us for a one-level template.
-The compiled code pays nothing.
+walked once to gather its arguments: about 4 us per level on the CPU
+backend of an M1 Max, against 8 us for a whole call with a one-level
+template. The compiled code pays nothing.
 
 ## Kernels as Methods
 
@@ -211,6 +211,7 @@ class Rasterizer:
         self.width, self.height = width, height
         self.vertices = tack.Vector.field(2, dtype=tack.f32, shape=(n, 3))
         self.pixels = tack.Vector.field(3, dtype=tack.f32, shape=(width, height))
+        self.pixels.fill(0.0)              # draw writes only covered pixels
 
     @staticmethod
     @tack.func

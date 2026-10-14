@@ -115,6 +115,14 @@ attributes, structure and cache-key part are found once (`memoized`). The
 objects are the call's arguments, alive throughout, so their ids cannot be
 reused within the scope.
 
+Only a call the dispatch fast path cannot answer enters the scope. A warm
+call reads each template into its signature instead (`_template_signature`
+in `runtime/kernel_utils.py`): the class token, the class constants' current
+values, and per attribute what the key and the expansion read, following
+an attribute layout learned once per class (`_template_layouts`, relearned
+when an instance's attribute names or types differ). It then expands the
+arguments through the plan stored with the signature.
+
 ## @tack.func Inlining
 
 When the AST transformer encounters a `@tack.func` call, it runs
@@ -202,3 +210,9 @@ attributes changes the parameter layout and requires another variant.
 
 This means `avg(structured_cs, ...)` and `avg(explicit_cs, ...)` produce
 two separately cached compilations with different generated code.
+
+The disk cache cannot use class identity across processes, so it keys a
+template by content instead: the names along its class's MRO, the sources
+of its `@tack.func` methods and function attributes, and its constants.
+Each name lowering resolves is also recorded with a fingerprint of what it
+was bound to, so an edited method or class constant misses.

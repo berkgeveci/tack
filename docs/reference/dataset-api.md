@@ -505,7 +505,13 @@ in VTK's, which taken directly would be inside out. Edge points are shared
 between cells; point data is interpolated onto them and onto the centroid
 points some cases add.
 
-Without a function: `extract_cells(data, ids)` (cells keep their order),
+On an edge with an infinite or NaN value at one end, `contour`, `slice` and
+`clip` put the crossing at the finite end, and the fields carried to it
+take that end's values; interpolating would give NaN.
+
+Without a function: `extract_cells(data, cells)`, where `cells` is ids (a
+host array or an integer field), a cell `Set` of `data`, or the name of one
+in `data.sets` (cells keep their order, not the order given),
 `mask(data, stride)`, `threshold_points(data, field, lower, upper)` and
 `mask_points(data, stride)`, the last two as vertex cells.
 
@@ -536,7 +542,7 @@ every field and set kept; on an `L2` geometry each cell's own corners move.
 | `shrink(data, factor)` | each cell toward its centroid: an `L2` geometry on the same topology, point data as `L2` (Viskores and VTK give each cell its own points) |
 | `point_cloud(data)` | every point as a vertex cell, with the point data |
 | `statistics(data, f)` | Viskores' descriptive statistics: n, min, max, sum, mean, central moments, sample and population variance and deviation, skewness, kurtosis |
-| `entropy(data, f, bins)` | Shannon entropy in bits of a `bins`-bin histogram |
+| `entropy(data, f, bins)` | Shannon entropy in bits of a `bins`-bin histogram over the values' range; refuses no values, fewer than one bin, and a range that is not finite (as `numpy.histogram` does) |
 | `sources.wavelet(extent, ...)` | VTK's and Viskores' wavelet (`RTData`) on a uniform grid |
 | `sources.tangle(dims)` | Viskores' tangle cube (`tangle`) on [0, 1]^3 |
 

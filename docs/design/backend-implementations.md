@@ -19,7 +19,19 @@ with a `build` callback, and that callback is where this page begins.
 All five backends subclass `Backend` (`runtime/backend.py`). It declares
 three required methods — `allocate_field()`, `wrap_ptr()` and `execute()` —
 and a set of capability attributes that callers *read* instead of probing
-with `hasattr`. Anything derivable is derived: `supports_f64` is a property
+with `hasattr`. Optional methods have defaults that suit a backend whose
+launches complete before `execute()` returns: `synchronize()` waits for
+every launch queued so far and is a no-op by default (`tack.sync()` calls
+it; see [Launches are queued](#launches-are-queued)); `fill_field()`
+returns false, leaving `Field.fill` to the buffer (the CPU fills large
+fields through its own dispatch); and `cache_target()` returns `None`,
+which keeps a backend's compiled variants off the disk cache, while
+`variant_artifact()` and `load_variant()` store and rebuild them (see
+[Specialization and Caching](specialization-and-caching.md#the-disk-cache)).
+`DeviceBuffer` likewise has `synchronize()`, a wait for the launches
+queued on the buffer's device, and `share()`, which hands the storage
+outside Tack: it waits now, and makes every later launch that uses the
+buffer complete before returning. Anything derivable is derived: `supports_f64` is a property
 over `supported_dtypes`, and `supported_atomic_dtypes` is a property that
 intersects the per-target table `ATOMIC_DTYPES` (`lang/atomic_support.py`)
 with `supported_dtypes`, so neither can disagree with the field types.
@@ -55,9 +67,11 @@ Capabilities](../contracts/backend-capabilities.md).
 | Loaded with | `create_mcjit_compiler` | `newComputePipelineState` | `cuModuleLoadData` | `hipModuleLoadData` | `zeModuleCreate` + `zeKernelCreate` |
 | Launch | ctypes call over `[start, end)` chunks | `dispatchThreads` | `cuLaunchKernel` | `hipModuleLaunchKernel` | `zeCommandListAppendLaunchKernel` |
 | Group size | — (thread pool) | `min(pipeline max, 256)` | 256 | 256 | `min(256, maxGroupSizeX, maxTotalGroupSize)` |
-| Field binding | typed pointer argument | pointer in one argument buffer | pointer argument | pointer argument | `__global` pointer argument |
-| Scalar binding | by value | packed into a field per dtype | packed | packed | packed |
-| Synchronization | the call returns | `waitUntilCompleted` | `cuCtxSynchronize` | `hipDeviceSynchronize` | `zeCommandQueueSynchronize` |
+| Field binding | typed pointer argument, passed as an address | pointer in one argument buffer | pointer argument | pointer argument | `__global` pointer argument |
+| Scalar binding | by value | packed, into a new buffer per launch | packed into the variant's pack fields | as CUDA | as CUDA |
+| Launch returns | after the range has run | once encoded into the open command buffer | once queued on the context's stream | once queued on the device's stream | once appended to the asynchronous immediate command list |
+| Host waits with | — | `waitUntilCompleted` on each committed command buffer | `cuStreamSynchronize` | `hipStreamSynchronize` | `zeCommandListHostSynchronize` |
+| Disk-cache artifact | object code | MSL source | PTX | code object | native binary and SPIR-V |
 | 3D textures | software, in LLVM | hardware | hardware | hardware, software without image support | hardware, software without samplers |
 | `Field.sum/min/max` | NumPy | device kernel for `f32` | device kernel for `f32` | device kernel for `f32` | device kernel for `f32` |
 
@@ -66,8 +80,13 @@ Capabilities](../contracts/backend-capabilities.md).
 **Initialization.** `CPUBackend.__init__` (`runtime/cpu.py`) chooses the
 thread count from `TACK_CPU_THREADS`, or else `_physical_core_count()`,
 which asks each platform for physical cores rather than logical processors.
-It creates the variant cache and, lazily, a `ThreadPoolExecutor`. There is
-no device to select.
+It creates the variant cache and, at the first fan-out, reaches the
+process's thread pool: the pool JIT'd from LLVM IR in `cpu_pool.py`, or a
+`ThreadPoolExecutor` with `TACK_CPU_POOL=python`, on Windows, or where the
+pool cannot be made ([CPU Threading Policy](cpu-threading.md#what-a-fan-out-costs)).
+With `TACK_CPU_MALLOC=1` on Linux it also tells glibc to keep freed pages.
+There is no device to select. `allocate_field` returns uninitialized
+NumPy storage, first touched by the kernel that writes it.
 
 **Compilation.** `_compile_kernel` generates an `llvmlite.ir` module with
 `generate_llvm_ir`, parses and verifies it with `llvm.parse_assembly` and
@@ -95,9 +114,19 @@ void tack_kernel_<name>(T0* field0, T1 scalar1, ..., int64 __loop_start__, int64
 
 Fields are pointers, scalars are passed by value, and the parallel loop runs
 over `[__loop_start__, __loop_end__)`. `CompiledKernel` builds a
-`ctypes.CFUNCTYPE` for this signature once. `bind()` marshals the field
-pointers and scalars once per dispatch; `call_range()` then runs each chunk
-with fresh `c_int64` bounds, because chunks run concurrently on the pool.
+`ctypes.CFUNCTYPE` for this signature once, with `c_void_p` for each field.
+`bind()` marshals the field addresses (`NumpyBuffer.address`, computed once
+per array) and scalars once per dispatch; `call_range()` then runs each
+chunk with its own bounds, because chunks run concurrently. The JIT'd pool
+does not call through ctypes at all: `cpu_pool.chunk_wrapper` JITs, once per
+compiled kernel and under a lock, a `__tack_chunk(pack, start, end)` that
+loads the arguments from 8-byte slots (`pack_args`) and calls the kernel at
+its address.
+
+**Disk cache.** `set_object_cache` captures the object code MCJIT emits, and
+`variant_artifact` stores it; `load_variant` adds it to a new engine with
+`add_object_file`, which takes about 0.4 ms and runs neither LLVM's
+optimizer nor its code generator.
 
 **Launch.** Whether a dispatch runs serially or fans out across the pool is
 decided by measurement, not a fixed threshold; [CPU Threading
@@ -141,8 +170,16 @@ parameter on its own, since Apple GPUs do not implement double precision.
 `min(pipeline.maxTotalThreadsPerThreadgroup(), 256)`. The grid is exactly
 `loop_end` threads (`dispatchThreads_threadsPerThreadgroup_`), so the last
 threadgroup may be partial and the kernel needs no bounds guard. Each
-dispatch creates a command buffer and a compute encoder, commits, and waits
-with `waitUntilCompleted`; a command-buffer error raises `RuntimeError`. An
+dispatch encodes a compute pass into the backend's open command buffer
+(`_open_batch`), under the backend's batch lock, and returns. The buffer is
+committed every `_BATCH` (64) launches, with at most `_IN_FLIGHT` (4)
+committed ones outstanding; `synchronize()` commits the open one and waits
+for all of them, and a command-buffer error raises `RuntimeError` there,
+at the next host access, rather than at the launch's call. Each launch
+owns what it reads: a fresh argument buffer, its packed scalars in a buffer
+of their own (`_Uniforms`), and references to its fields until it
+completes. A launch that binds memory handed outside Tack (`_shared`: an
+exported or wrapped buffer) completes before returning. An
 empty range returns before encoding anything. The loop index is declared
 `long` but initialized from `[[thread_position_in_grid]]`, which Metal
 types as `uint`, so one dispatch covers at most 2³² iterations;
@@ -169,7 +206,8 @@ explains why.
     context, or its launch fails with `CUDA_ERROR_INVALID_CONTEXT`.
 
 **Compilation.** `_compile_ptx` compiles with NVRTC using exactly these
-options:
+options, the module constant `_NVRTC_OPTIONS`, which the disk cache's
+target also names:
 
 | Option | Why |
 |---|---|
@@ -210,8 +248,21 @@ product would wrap once a launch reached 2³² threads. At initialization the
 backend reads `CU_DEVICE_ATTRIBUTE_MAX_GRID_DIM_X`, and a launch of more
 than that many blocks of 256 is refused by `check_launch_size()` with
 `ValueError`. Arguments are passed as a ctypes array of pointers to argument
-values; every launch is followed by `cuCtxSynchronize()`. An empty range
-returns before launching, since `cuLaunchKernel` rejects an empty grid.
+values, and the launch is queued on the context's stream (`_ContextToken`
+makes one per context, with `cuStreamCreate`, on first use) and returns. An
+empty range returns before launching, since `cuLaunchKernel` rejects an
+empty grid. Buffers are stream-ordered: `cuMemAllocAsync` and
+`cuMemFreeAsync` on that stream, from the device's default memory pool
+with its release threshold raised, so freed memory is handed back out
+without a device round trip, and a field dropped while a queued launch
+still uses it is freed after that launch. `from_numpy`, `fill` and the
+allocation's zeroing are queued in order with the launches; `to_numpy` and
+`read_range` queue their copy and wait with `cuStreamSynchronize`.
+
+**Disk cache.** The PTX NVRTC made is stored with the entry name, the
+parameter layout and the scalar pack layout, and loaded with
+`cuModuleLoadData`; `load_variant` makes the pack fields anew from the
+call's arguments, since they are device memory of the process.
 
 **Export.** `allocate_field(..., exportable=True)` returns an
 `ExportableCUDABuffer`, allocated through the virtual memory management API
@@ -227,10 +278,20 @@ then asks whether the device has texture hardware at all
 (`hipDeviceAttributeImageSupport`) and, if so, the smallest of its maximum
 3D texture extents.
 
-**Compilation.** `_compile_code_object` creates a hipRTC program and calls
-`hiprtcCompileProgram(prog, 0, [])` — no options. hipRTC targets the
+**Compilation.** `_compile_code_object` creates a hipRTC program and
+compiles it with the options in `_HIPRTC_OPTIONS`, which is one:
+`-ffp-contract=on`. hipRTC's default is clang's for HIP,
+`-ffp-contract=fast`, which fuses a multiply into an add or subtract in a
+later statement; on AMD GPUs it did so where the product had another use,
+so one variable held two values (with `p = k * 0.2`, `p - p` came out as
+the product's rounding error instead of zero), and a contour of a computed
+field took finite values for infinite ones. `on` fuses only inside one
+expression, which is what the contract permits. hipRTC targets the
 current device by default, and no unsafe or relaxed math option is
 requested. The result is a code object loaded with `hipModuleLoadData`.
+The disk cache stores that code object, machine code for one
+architecture, with the entry name, parameter and scalar pack layouts, and
+`load_variant` remakes the pack fields from the call's arguments.
 `HIPCodeGen` (`codegen/hip_gen.py`) is the CUDA generator with two
 overrides: it prepends `#include <hip/hip_runtime.h>`, and it spells the
 texture handle `hipTextureObject_t` (`_TEXTURE_OBJECT_TYPE`), because
@@ -238,7 +299,17 @@ hipRTC rejects CUDA's `cudaTextureObject_t`.
 
 **Launch.** Identical geometry to CUDA — 256-thread blocks, a ceiling-divided
 grid, the same 64-bit index, guard and locals — through
-`hipModuleLaunchKernel`, followed by `hipDeviceSynchronize()`. The launch
+`hipModuleLaunchKernel`, queued as on CUDA. HIP has no context object to
+hold the stream, so it belongs to the device (`_Queue`, a blocking stream
+made on first use, so it stays ordered with the null stream), and each
+buffer keeps a reference to it. Buffers are stream-ordered
+(`hipMallocAsync`/`hipFreeAsync`, with the default pool's release
+threshold raised); a device without memory pools falls back to
+`hipMalloc` and `hipFree`, which waits for the device. A host write from
+pageable memory is queued behind the launches; measured on ROCm 7.1, HIP
+stages a small one (16 KB) before `from_numpy` returns and waits for the
+stream before a large one (4 MB), so either way the field gets what the
+array held when the call returned (`test_hip_async.py`). The launch
 limit (`_query_max_launch`) is the device's maximum `gridDim.x` times 256,
 capped at 2³² − 256, because the dispatch packet on AMD GPUs holds the
 grid's total work-item count in 32 bits.
@@ -280,12 +351,15 @@ handles from another library instead — see
 
 `supported_dtypes` is assigned on the instance, shadowing the class
 attribute, so `supports_f64` follows the device automatically.
-`_create_queues` makes a synchronous command queue, one reusable command
-list for kernel launches, and one synchronous immediate command list for
-memory copies. Both lists, and each kernel's argument state, are shared by
-every dispatch on the backend, and Level Zero forbids using them from two
-threads at once, so a reentrant `_launch_lock` is held around every launch,
-native reduction and host copy.
+`_create_queues` makes the backend's queue: one asynchronous immediate
+command list, to which every launch, fill and copy is appended, each
+followed by a barrier (`_ordered`) that keeps them in program order. A
+driver without `zeCommandListHostSynchronize` (API 1.6) gets a synchronous
+immediate list instead, every append completing at once. The list, and
+each kernel's argument state, are shared by every dispatch on the backend,
+and Level Zero forbids using them from two threads at once, so a reentrant
+`_launch_lock` is held around every launch, native reduction and host
+copy.
 
 **Compilation.** OpenCL C from `generate_opencl_source` is compiled to
 SPIR-V *in process* by `_compile_to_spirv`, which calls `oclocInvoke` in
@@ -296,10 +370,11 @@ compile -spv_only -device 0x<deviceId> -options -cl-std=CL2.0 -file kernel.cl
 ```
 
 and passes the source from memory, null-terminated, because ocloc treats
-in-memory sources as C strings. The `.spv` output is handed to
-`zeModuleCreate` as `ZE_MODULE_FORMAT_IL_SPIRV` with build flags
-`-cl-std=CL2.0`; a failure raises `RuntimeError` with the module build log
-and the source. `zeKernelCreate` then returns the kernel handle. When the
+in-memory sources as C strings. The options are the module constant
+`_OCLOC_OPTIONS`. The `.spv` output is handed to `_create_module`, which
+calls `zeModuleCreate` as `ZE_MODULE_FORMAT_IL_SPIRV` with build flags
+`_MODULE_BUILD_FLAGS` (`-cl-std=CL2.0`); a failure raises `RuntimeError`
+with the module build log and the source. `zeKernelCreate` then returns the kernel handle. When the
 source uses `double`, the generator adds
 `#pragma OPENCL EXTENSION cl_khr_fp64 : enable`.
 
@@ -308,21 +383,39 @@ source uses `double`, the generator adds
 2026-10-04, idle, an ocloc call took about 191 ms regardless of kernel size,
 against 0.2 ms for `zeModuleCreate`; llvmlite on the CPU backend compiled
 the same kernel shapes in 21–55 ms. The floor is startup inside the
-library, not code generation. Because the variant cache belongs to a
-backend instance and `tack.init()` builds a new backend, a program that
-re-initializes recompiles the same sources. Memoizing
-`_compile_to_spirv(source, device_id)` — a pure function of its inputs —
-would capture almost all of that cost; it has not been done.
+library, not code generation. The disk cache is what avoids it: a variant
+is stored as the native binary IGC made at `zeModuleCreate`
+(`zeModuleGetNativeBinary`) beside the SPIR-V, and loaded as
+`ZE_MODULE_FORMAT_NATIVE`, about 0.2 ms a module in a new process; a binary the
+driver refuses loads from the SPIR-V instead (counted as
+`native_refused`). SPIR-V alone still went through IGC at `zeModuleCreate`,
+about 50 ms a kernel, unless the driver's own persistent cache, which lives
+outside `TACK_CACHE_DIR` and is off or unwritable on many clusters, held
+the result. The cache target therefore names the device and its IP version
+(which names its stepping), the driver, ocloc's version and options, the
+module build flags and f64 support. With the disk cache off, a program
+that re-initializes recompiles the same sources, because the in-memory
+variant cache belongs to a backend instance.
 
 **Launch.** The group size is `min(256, maxGroupSizeX, maxTotalGroupSize)`.
 Each argument is set with `zeKernelSetArgumentValue`, followed by the loop
 end as a 64-bit `__n__`; the kernel starts with
 `long i = (long)get_group_id(0) * (long)get_local_size(0) + (long)get_local_id(0);
 if (i >= __n__) return;`, because this driver's `get_global_id(0)` wraps
-at 2^32 (see [Parallel execution](parallel-execution.md)). Dispatch resets the
-reusable command list, appends the launch with
-`ceil(loop_end / group_size)` groups, closes it, executes it on the queue,
-and waits with `zeCommandQueueSynchronize` and an infinite timeout. An empty
+at 2^32 (see [Parallel execution](parallel-execution.md)). Dispatch appends
+the launch with `ceil(loop_end / group_size)` groups to the queue, followed
+by a barrier, and returns; the kernel's arguments are captured when the
+launch is appended, so the next call may set its own. The host waits with
+`zeCommandListHostSynchronize` where it reads a field or calls
+`tack.sync()`. Ordering by barriers was chosen over an in-order list
+(`ZE_COMMAND_QUEUE_FLAG_IN_ORDER`): on driver 25.05.32567 an in-order list,
+immediate or regular, cost about 130 µs of device time per kernel, a
+barrier about 5. `from_numpy` queues a copy of a private snapshot of the
+array, so the caller may change it at once; host memory a queued copy or
+fill reads is held until the next wait, which comes early past 1024 objects
+or 256 MiB. Fields are freed with `zeMemFreeExt`'s deferred policy, after
+the work queued so far, where the driver has the extension; otherwise
+freeing waits for the queue. An empty
 range returns first; a negative count would wrap as an unsigned group count.
 The group count is a ctypes `uint32` field that truncates rather than
 rejects, so a launch of more than `maxGroupCountX` groups is refused by
@@ -331,6 +424,51 @@ rejects, so a launch of more than `maxGroupCountX` groups is refused by
 `LevelZeroBackend.__del__` intentionally does nothing: Level Zero cleanup
 at interpreter shutdown can crash because the driver may already be
 unloaded.
+
+## Launches are queued
+
+The CPU's dispatch returns once the range has run. The four GPU backends
+queue a launch and return: Metal into the open command buffer, CUDA on one
+stream per context, HIP on one stream per device, Level Zero on one
+asynchronous immediate command list. Waiting after every launch kept
+Python from preparing launch n + 1 while launch n ran, and for short
+launches the host side was most of the call: on Metal a wait cost about
+0.3 ms; a contour of a million cells on an RTX 4060 Ti went from 9.6 to
+7.1 ms, about the host cost of its 31 launches alone; on an Intel Max 1100
+a hundred small launches went from 8.7 to 2.6 ms.
+
+- **Order.** Launches, fills and host-to-device copies on one backend run
+  in the order they were made. On CUDA, HIP and Level Zero `from_numpy`
+  and `fill` are queued with the launches; Metal's `MetalBuffer` methods
+  wait for every live Metal backend's launches (`_synchronize_all`)
+  before touching the shared memory.
+- **Waits.** The host waits where it reads a field (`to_numpy`,
+  `read_range` and so host indexing, reductions), where memory leaves
+  Tack (`share()`, below), when `tack.init()` replaces the backend (the old
+  one is synchronized first), after each launch in debug mode (its check
+  reads the errors field), and at `tack.sync()`, which calls the active
+  backend's `synchronize()`. A launch's error surfaces at the next wait
+  rather than at its call.
+- **Lifetimes.** A field Python drops while a queued launch still uses it
+  outlives that launch: CUDA and HIP allocate and free in stream order,
+  Level Zero frees with the driver's deferred policy, and a Metal launch
+  holds references to its fields until it completes.
+- **Memory outside Tack.** A wrapped pointer (`wrap_ptr`, so
+  `field_from_ptr` and DLPack imports), a DLPack export and Metal's
+  `export_memory()` mark the buffer shared (`DeviceBuffer.share()`): the
+  export waits for the queued launches, and every later launch that binds
+  a shared buffer completes before it returns, because the other library
+  may read the memory with no Tack call in between. CUDA's
+  `export_memory()` of an ordinary field waits, then copies it once into
+  exportable memory. CUDA, HIP and Level
+  Zero also complete a launch that samples a hardware texture, whose
+  image could otherwise be destroyed before the launch read it.
+
+`test_cuda_async.py`, `test_hip_async.py` and `test_level_zero_async.py`
+cover order across launches and fills, per-launch scalars, host writes
+while the queue is busy, dropped temporaries, waits and shared buffers;
+`test_metal.py` covers Metal's order across batches, per-launch scalars
+and host writes.
 
 ## Scalar arguments on the GPU
 
@@ -343,25 +481,29 @@ kernels have a limited number of buffer bindings; packing makes the count
 one per scalar type instead of one per scalar, and the other GPU backends
 share the code path.
 
-The pack fields are allocated once, when the variant is built
-(`_create_pack_fields` in `runtime/kernel_utils.py`), and stored in the
-variant's payload. Each dispatch writes the new values with
-`_update_pack_fields`, which is a host-to-device copy on CUDA, HIP and Level
-Zero and a memory copy on Metal. Changing a scalar's value therefore never
-recompiles. The loop range is resolved from the *unpacked* IR, because
-packing rewrites the parameter list that the range expression refers to.
+On CUDA, HIP and Level Zero the pack fields are allocated once, when the
+variant is built (`_create_pack_fields` in `runtime/kernel_utils.py`), and
+stored in the variant's payload. Each dispatch writes the new values with
+`_update_pack_fields`, a host-to-device copy queued after the launches
+before it, so a queued launch still reads the values it was given. Metal
+keeps no pack fields: each launch copies its values into a new buffer
+(`_Uniforms`) that the launch owns, since a shared pack rewritten for the
+next call could change under a launch that has not run yet. Changing a
+scalar's value therefore never recompiles. The loop range is resolved from
+the *unpacked* IR, because packing rewrites the parameter list that the
+range expression refers to.
 
-Since the pack fields belong to the variant, as does Metal's argument
-buffer, two threads dispatching the same variant at once would each write
-their arguments into the same buffers, and a launch could run with the
-other call's scalars or fields. Reproduced on CUDA with four threads, 248
-of 400 dispatches computed with another thread's scalars. CUDA, HIP and
-Metal therefore hold `KernelVariant.dispatch_lock` from the pack update
-through the synchronous launch, so different variants still run
-concurrently; uncontended, the lock cost about 0.25 µs against a 95 µs CUDA
-dispatch. Level Zero takes its backend-wide `_launch_lock` instead (see
-[Level Zero](#level-zero)). The CPU binds arguments per call and takes no
-lock.
+Since the pack fields belong to the variant, two threads dispatching the
+same variant at once would each write their arguments into the same
+buffers, and a launch could run with the other call's scalars. Reproduced
+on CUDA with four threads, 248 of 400 dispatches computed with another
+thread's scalars. CUDA and HIP therefore hold `KernelVariant.dispatch_lock`
+from the pack update until the launch is queued, so different variants
+still dispatch concurrently; uncontended, the lock cost about 0.25 µs
+against a 95 µs CUDA dispatch. Level Zero takes its backend-wide
+`_launch_lock` instead (see [Level Zero](#level-zero)). Metal launches own
+their argument buffer and scalars and encode one at a time under the
+backend's batch lock. The CPU binds arguments per call and takes no lock.
 
 ## Textures
 

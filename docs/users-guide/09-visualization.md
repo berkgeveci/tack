@@ -63,8 +63,11 @@ Changing an L2 geometry's values refreshes subsequent face-geometry results.
 ## Building a dataset
 
 Grids come from `uniform_grid` and `rectilinear_grid`, and the test sources
-from `wavelet` and `tangle`. An unstructured mesh takes VTK's cell types,
-offsets and connectivity:
+from `wavelet` and `tangle`. A grid size of 1 adds no cells, in any
+position: `uniform_grid((1, 3))` is a line of three points. A grid with no
+axis of two or more points, such as `(1, 1, 1)` or any grid with a size of
+0, has no cells. An unstructured mesh takes VTK's cell types, offsets and
+connectivity:
 
 ```python
 --8<-- "docs/examples/datasets.py:build"
@@ -77,6 +80,12 @@ The other topologies are built from their own arrays:
 - `PolylineTopology` takes each polyline's chain.
 
 `vtk_to_dataset` and `tack.interop.mfem` bring datasets in from VTK and MFEM.
+Neither library is a dependency of `tack-vis`: install `vtk` and `mfem`
+(PyMFEM) yourself, or, in a checkout of the repository, add the `interop`
+extra (`uv sync --extra cpu --extra interop`), which installs both from the
+lock and keeps them through later syncs with the same extras. PyMFEM has
+wheels only for macOS on Apple silicon and Linux x86_64, so elsewhere the
+extra leaves MFEM out.
 
 ## Algorithms
 

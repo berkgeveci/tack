@@ -51,7 +51,9 @@ The host coordinates the stages:
 --8<-- "docs/examples/physarum.py:loop"
 ```
 
-Here `expected_mass` is diagnostic host state. It predicts the total trail after
+The two trail buffers come from `tack.zeros`: the first move senses the trail
+before any deposit, and a new field's contents are unspecified. Here
+`expected_mass` is diagnostic host state. It predicts the total trail after
 adding one deposit per agent and multiplying by the evaporation factor.
 
 ## Run and validate

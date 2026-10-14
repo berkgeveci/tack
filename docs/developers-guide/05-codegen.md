@@ -140,13 +140,35 @@ math arguments default to f32 even when the destination field is f64.
 OpenCL/Metal calls need explicit casts to avoid overload ambiguity.
 
 CPU emits no fast-math flags and HIP/OpenCL retain standard compiler
-settings without unsafe math options. Expression grouping and nonfinite
+settings without unsafe math options, except that HIP passes
+`-ffp-contract=on` (`_HIPRTC_OPTIONS` in `hip_backend.py`): hipRTC's default,
+`fast`, fused a product into one read of a variable while another read it
+rounded, so `p - p` was not zero. Expression grouping and nonfinite
 classes/signs must survive optimization. Adjacent multiply/add contraction
-is permitted, so CPU/GPU results need not agree bitwise. Scalar floating
+is permitted inside one expression, so CPU/GPU results need not agree
+bitwise; a value bound to a name is rounded once and every read agrees. Scalar floating
 min/max prefer a number to NaN; the sign of equal zero ties is unspecified.
 Denormal support and global math accuracy are not inferred from safe
 compiler settings. `test_float_semantics.py` checks execution and explicit
 regression bounds; the language contract states the supported domains.
+
+Compiler options live in module constants (`_NVRTC_OPTIONS`,
+`_HIPRTC_OPTIONS`, `_OCLOC_OPTIONS` and `_MODULE_BUILD_FLAGS`) that both
+the compiler call and the backend's `cache_target()` read, so changing one
+also stops the disk cache from reusing code compiled without it.
+
+## Debug-Mode Bounds Checks
+
+Every generator emits `IRBoundsCheck`, and only when the kernel was lowered
+in debug mode, so normal kernels' code is unchanged. The C-family
+generators share `codegen/bounds.py`: one helper per kernel,
+`__tack_in_bounds__`, tests an index against its extent and, out of bounds,
+records the first violation in the errors field (an atomic add on its
+count elects the first); a check is `&&` over its dimensions, then the
+flat index or -1. `llvm_gen.py` builds the same helper in LLVM IR
+(`_bounds_helper`). MSL counts a check as a store when deciding whether a
+sequential loop's body goes in the `noinline` `__tack_body__` function
+(`_stores_inside_sequential_loop`), since it writes the errors field.
 
 ## LLVM Codegen (`llvm_gen.py`, 1,008 lines)
 

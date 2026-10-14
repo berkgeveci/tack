@@ -45,9 +45,9 @@ The scan returns the total, four, so the host can allocate exactly four segments
 ```
 
 The return value reaches Python to choose an allocation size; the counts and
-offsets remain fields. Handle `total == 0` before allocating an empty GPU output.
-The general scan implementation performs multiple synchronous launches, so
-this pattern is not free for small inputs.
+offsets remain fields. The example returns early when `total == 0`: there is
+nothing to write. The scan is several launches, and reading its total waits
+for the device, so this pattern is not free for small inputs.
 
 ## Write without competing for slots
 
