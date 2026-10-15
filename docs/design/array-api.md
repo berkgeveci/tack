@@ -104,7 +104,7 @@ not itself mean geometry, H1 velocity, or an H(div) finite-element field.
 
 ## Compatibility
 
-`field` remains a compatibility wrapper for `empty`; `field_from_numpy` for
+`field` remains a compatibility wrapper for `empty`; `array` for
 `array`; `field_from_ptr` for `array_from_ptr`. Internal `Field` imports name
 `Array`. `Vector.field` and `Matrix.field` retain their historical scalar
 `dtype`, flat host `shape`/`size`, and flat default `to_numpy()` output.

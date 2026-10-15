@@ -10,7 +10,7 @@ memory on CPU and private/register memory on GPU:
 def cached_interp(cs: tack.template(), ct: tack.template(),
                   field1, field2, out1, out2, n_cells):
     for c in range(n_cells):
-        # Compute weights once, reuse for both fields
+        # Compute weights once, reuse for both arrays
         w = tack.local_array(tack.f32, ct.num_points)
         pid = tack.local_array(tack.i32, ct.num_points)
         for v in range(ct.num_points):
@@ -27,32 +27,32 @@ def cached_interp(cs: tack.template(), ct: tack.template(),
 ```
 
 The size must be known at compilation: a literal, a class constant, a
-`tack.constant`, or an expression involving resolved field dimensions and
+`tack.constant`, or an expression involving resolved array dimensions and
 constants, such as `CAPACITY * 4`. An instance scalar is a runtime parameter
 and is unsuitable for a portable GPU allocation. Initialize each element
 before reading it; local scratch storage is not implicitly cleared.
 
 ### `local_array_like`
 
-When the local array dtype should match a field parameter, use
+When the local array dtype should match an array parameter, use
 `tack.local_array_like` instead of hardcoding the type:
 
 ```python
 @tack.kernel
 def generic_process(data, out):
     for i in range(data.shape[0]):
-        buf = tack.local_array_like(data, 8)   # inherits dtype from data
+        buf = tack.local_array_like(data, 8)   # inherits the scalar component dtype from data
         buf[0] = data[i]
         out[i] = buf[0]
 ```
 
-This works with both `f32` and `i32` fields without separate kernels.
+This works with both `f32` and `i32` arrays without separate kernels.
 Only the dtype is inherited: the second argument supplies the size, and no
-field values are copied. Initialize every scratch element before reading it.
+array values are copied. Initialize every scratch element before reading it.
 
-### Derive a scratch size from a field
+### Derive a scratch size from an array
 
-Size expressions can combine declared constants and resolved field dimensions.
+Size expressions can combine declared constants and resolved array dimensions.
 This example reserves two scalars per column, then sums the populated scratch:
 
 ```python
@@ -137,7 +137,7 @@ sequence, and reusing one repeats it.
 
 ## Atomic Operations
 
-Atomic operations make a single field update indivisible when several iterations
+Atomic operations make a single array update indivisible when several iterations
 contribute to it. Initialize the accumulator before the launch. Atomics do not
 order arbitrary reads/stores or make a vector update indivisible as a whole; see
 [Gather and scatter](13-memory-and-parallelism.md#gather-and-scatter).
@@ -151,9 +151,9 @@ def histogram(data, bins, n):
 ```
 
 Available atomics:
-- `tack.atomic_add(field, index, value)` — atomic addition
-- `tack.atomic_min(field, index, value)` — atomic minimum
-- `tack.atomic_max(field, index, value)` — atomic maximum
+- `tack.atomic_add(array, index, value)` — atomic addition
+- `tack.atomic_min(array, index, value)` — atomic minimum
+- `tack.atomic_max(array, index, value)` — atomic maximum
 
 Each one is also an expression whose value is the element's value just
 before the update, which is how threads claim unique slots and append to
@@ -172,8 +172,8 @@ Reset `count` before each call, allocate enough output capacity, and read it
 only after the call completes. Slot order depends on execution order. For ordered
 output and exact allocation, use the [count/scan/write tutorial](tutorials/contours.md).
 
-For a multi-dimensional field the index is a tuple with one index per
-dimension, and a vector may supply several of them. On a vector field a
+For a multi-dimensional array the index is a tuple with one index per
+dimension, and a vector may supply several of them. On a vector array a
 vector value updates every component of the element, one atomic per
 component (and, as an expression, gives the vector of their old values):
 
@@ -186,7 +186,7 @@ def scatter(pos, vel, mass, grid_m, grid_v, inv_dx, n):
         tack.atomic_add(grid_v, (cell[0], cell[1]), mass[p] * vel[p])
 ```
 
-A plain integer index is the flat, row-major index. On a vector field
+A plain integer index is the flat, row-major index. On a vector array
 with a scalar value it is the flat index of one component.
 
 ## Shared Memory
@@ -200,7 +200,7 @@ For scratch storage private to each iteration, use `tack.local_array`
 or `tack.local_array_like`; both work on CPU and GPU.
 
 Positive iteration counts must be divisible by 256. Scalar arguments can
-control collective branches and loops; field-loaded conditions and
+control collective branches and loops; array-loaded conditions and
 lane-dependent exits are rejected. See the
 [workgroup contract](../reference/language-contract.md#workgroups-and-synchronization)
 for the conservative supported domain and unsupported collective expressions.
@@ -238,14 +238,14 @@ For an `f32` sum, minimum or maximum over the workgroup, `tack.block_sum`,
 
 ### `shared_like`
 
-When the shared memory dtype should match a field parameter, use `tack.shared_like`
+When the shared memory dtype should match an array parameter, use `tack.shared_like`
 instead of hardcoding the type:
 
 ```python
 @tack.kernel
 def generic_reduce(data, partial_sums):
     for i in range(data.shape[0]):
-        smem = tack.shared_like(data, 256)   # inherits dtype from data
+        smem = tack.shared_like(data, 256)   # inherits the scalar component dtype from data
         tid = tack.thread_id()
         smem[tid] = data[i]
         tack.barrier()
@@ -253,16 +253,16 @@ def generic_reduce(data, partial_sums):
 ```
 
 This is especially useful for kernels that need to work with both `f32` and `i32`
-fields without separate implementations.
-As with `local_array_like`, only the dtype is inherited. The size is explicit,
-and no field values are copied into the shared array.
+arrays without separate implementations.
+As with `local_array_like`, only the scalar component dtype is inherited. The size is explicit,
+and no array values are copied into the shared array.
 
 ## 3D Textures
 
-Wrap a field as a 3D texture for hardware-accelerated trilinear interpolation:
+Wrap an array as a 3D texture for hardware-accelerated trilinear interpolation:
 
 ```python
-# Create texture from a field
+# Create texture from an array
 data = tack.empty(dtype=tack.f32, shape=(W * H * D,))
 data.from_numpy(volume_data.ravel())
 tex = tack.texture3d(data, shape=(W, H, D))
@@ -284,8 +284,8 @@ Sampling is always trilinear. Which unit does it depends on the backend:
 | HIP | Hardware when the device reports image support; software otherwise (for example on CDNA parts such as the MI300) |
 | Level Zero | Hardware `image3d_t` when the device has samplers; software on Xe-HPC (Ponte Vecchio) |
 
-The texture holds a copy of the field taken by `tack.texture3d()`, on every
-backend. Writes to the field afterwards are not visible to it until you call
+The texture holds a copy of the array taken by `tack.texture3d()`, on every
+backend. Writes to the array afterwards are not visible to it until you call
 `tex.update()`:
 
 ```python
@@ -293,7 +293,7 @@ data.from_numpy(next_frame.ravel())
 tex.update()   # sampling now sees next_frame
 ```
 
-The field must be `f32` and hold `W * H * D` elements, and `interp='linear'`
+The array must be `f32` and hold `W * H * D` elements, and `interp='linear'`
 is the only interpolation mode. See [Backend Implementations](../design/backend-implementations.md#textures).
 
 `tex.sample()` also works inside `@tack.func` — texture metadata is
@@ -302,12 +302,12 @@ propagated through inlining automatically.
 ## Vectors
 
 Vectors are part of the everyday kernel language. See [Vectors and matrices](14-vectors-and-matrices.md#vectors)
-for arithmetic, components, field layouts, masks and `tack.select`.
+for arithmetic, components, array layouts, masks and `tack.select`.
 
 ## Matrices
 
 See [Matrices](14-vectors-and-matrices.md#matrices) for fixed-size matrix values,
-products, methods and fields, and [MPM](tutorials/mpm.md) for a worked application.
+products, methods and arrays, and [MPM](tutorials/mpm.md) for a worked application.
 
 ## Printing (Debug)
 
@@ -323,9 +323,9 @@ def debug_kernel(data, n):
 
 This emits `printf` calls. On Metal, print is a no-op (Metal has no printf).
 CUDA and HIP launches are queued, so their output may appear only when the
-host next waits for the device: a read of a field, or `tack.sync()`.
+host next waits for the device: a read of an array, or `tack.sync()`.
 
 To find an index out of bounds, turn on
 [debug mode](15-debugging-and-timing.md#check-every-index-with-debug-mode)
-instead: it checks every field and array access and raises `IndexError`
+instead: it checks every array and array access and raises `IndexError`
 naming the first bad one.

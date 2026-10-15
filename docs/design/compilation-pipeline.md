@@ -104,7 +104,7 @@ It then classifies the positional arguments. This runs on every dispatch:
   matches the parameters that `rewrite_templates` appends, which is what
   lines the expanded argument tuple up with the IR's parameter list.
 - `_detect_vector_fields_from_args` maps parameter names to `_vector_n` for
-  `tack.Vector.field` arguments. `_detect_texture_fields` maps parameter
+  `tack.Array` with a vector element dtype arguments. `_detect_texture_fields` maps parameter
   names to `Texture3D.shape_3d`.
 
 ## Stage 3: the IR template

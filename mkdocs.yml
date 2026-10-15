@@ -1,5 +1,5 @@
 site_name: Tack
-site_description: A Python-first GPU compute framework — one kernel, five backends.
+site_description: Scientific data analysis, visualization and portable GPU compute in Python.
 # Published to GitHub Pages, so this is the project-page URL rather than a
 # Read the Docs one. It matters beyond cosmetics: canonical tags and the
 # generated sitemap are built from it. `.readthedocs.yaml` is still in the
@@ -91,23 +91,36 @@ nav:
   - Home: index.md
   - User's Guide:
       - users-guide/index.md
-      - Getting Started: users-guide/01-getting-started.md
-      - From Python to a Tack program: users-guide/12-execution-model.md
-      - Arrays and Types: users-guide/02-fields-and-types.md
-      - Vectors and Matrices: users-guide/14-vectors-and-matrices.md
-      - Kernels: users-guide/03-kernels.md
-      - Control Flow and Math: users-guide/04-control-flow.md
-      - Device Functions: users-guide/05-device-functions.md
-      - Templates: users-guide/06-templates.md
-      - Memory and Parallel Correctness: users-guide/13-memory-and-parallelism.md
-      - Advanced Features: users-guide/07-advanced.md
-      - Reductions and Scans: users-guide/11-reductions-and-scans.md
-      - Backends: users-guide/08-backends.md
-      - The Kernel Cache: users-guide/17-kernel-cache.md
-      - Sharing Arrays: users-guide/16-interoperability.md
-      - Datasets and Visualization: users-guide/09-visualization.md
-      - Rendering: users-guide/10-rendering.md
-      - Debugging and Timing: users-guide/15-debugging-and-timing.md
+      - Start Here:
+          - Getting Started: users-guide/01-getting-started.md
+          - From Python to a Tack program: users-guide/12-execution-model.md
+          - Quick Reference: users-guide/quick-reference.md
+      - Write Kernels:
+          - Arrays and Types: users-guide/02-fields-and-types.md
+          - Vectors and Matrices: users-guide/14-vectors-and-matrices.md
+          - Kernels: users-guide/03-kernels.md
+          - Control Flow and Math: users-guide/04-control-flow.md
+          - Device Functions: users-guide/05-device-functions.md
+          - Templates: users-guide/06-templates.md
+          - Memory and Parallel Correctness: users-guide/13-memory-and-parallelism.md
+      - Kernel Algorithms:
+          - Reductions and Scans: users-guide/11-reductions-and-scans.md
+          - Advanced Features: users-guide/07-advanced.md
+      - Datasets and Visualization:
+          - Overview and Quick Start: users-guide/09-visualization.md
+          - Function Space Fundamentals: users-guide/data/00-function-spaces.md
+          - Understand a Dataset: users-guide/data/01-datasets.md
+          - Build Meshes: users-guide/data/02-meshes.md
+          - Fields and Spaces: users-guide/data/03-fields-and-spaces.md
+          - Filter and Analyze: users-guide/data/04-filters.md
+          - Write Mesh Algorithms: users-guide/data/05-mesh-kernels.md
+          - Sample, Render and Connect Simulations: users-guide/data/06-pipelines.md
+          - Rendering: users-guide/10-rendering.md
+      - Run and Diagnose:
+          - Backends: users-guide/08-backends.md
+          - Sharing Arrays: users-guide/16-interoperability.md
+          - Debugging and Timing: users-guide/15-debugging-and-timing.md
+          - The Kernel Cache: users-guide/17-kernel-cache.md
       - Worked Examples:
           - Gallery: users-guide/tutorials/index.md
           - Heat Diffusion: users-guide/tutorials/heat.md

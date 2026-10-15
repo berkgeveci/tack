@@ -50,7 +50,9 @@ fields.
 surface's positions are a field of 3-vectors, whose storage is already
 interleaved: `reshape` makes a flat view of the same memory, so nothing is
 copied between extraction and rendering. A topology this small keeps its ids
-in `i32`; a very large one would need `connectivity.astype(tack.i32)`. A scene
+in `i32`. For `i64` connectivity, check that every id fits in `i32` before
+casting; a cast alone can wrap large ids and cannot make an oversized mesh
+renderable. A scene
 combines geometry and lighting; the camera defines rays; the canvas holds the
 image and depth. `smooth=True` computes vertex normals for a smoother appearance.
 

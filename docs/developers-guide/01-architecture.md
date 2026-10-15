@@ -117,7 +117,7 @@ packages/
 
     tack-vis/                     # Scientific visualization algorithms
         src/tack/
-            data/                # Datasets, spaces, views and their algorithms
+            dataset/             # Datasets, spaces, views and their algorithms
                 algorithms/      # contour, clip, threshold, gradients, ... (one per file)
             deprecated/          # Superseded by tack.dataset, kept for reference
                 algorithms/      # flying_edges, compute_normals, cell_to_point, amr_blanking

@@ -7,11 +7,16 @@ data structures. Classes decorated with `@tack.device_class` can be passed
 as kernel arguments with `tack.template()` type hints. (`@tack.data_oriented`,
 Taichi's name for it, still works and means the same.)
 
+The short examples below are fragments showing the class protocol. The
+[rasterizer](#kernels-as-methods) is a complete program with initialized input
+and a checked output; [Physarum](tutorials/physarum.md) uses the same ideas in
+a simulation.
+
 ```python
 @tack.device_class
 class AOSArray:
     def __init__(self, data):
-        self.data = data       # tack.field → becomes a buffer parameter
+        self.data = data       # tack.array → becomes a buffer parameter
 
     @tack.func
     def get_value(self, i):
@@ -48,13 +53,13 @@ When a `@tack.device_class` object is passed as a `tack.template()` argument:
   constants baked into generated code. Changing them triggers recompilation.
 - **Instance scalars** (set in `__init__`) → runtime kernel scalar parameters.
   Changing them does **not** trigger recompilation.
-- **Instance fields** (`tack.Field` set in `__init__`) → kernel buffer parameters
+- **Instance arrays** (`tack.Field` set in `__init__`) → kernel buffer parameters
 - **`@tack.func` methods** → inlined at the call site
 
 Each unique combination of template types and **class-level constants** produces
-a separately compiled kernel. Instance scalar values can change without recompilation. Replacing a field
+a separately compiled kernel. Instance scalar values can change without recompilation. Replacing an array
 with one whose dtype, vector width or baked-in dimensions differ can create
-another variant; field metadata still matters.
+another variant; array metadata still matters.
 
 ## Class Constants vs Instance Scalars
 
@@ -71,16 +76,17 @@ class ImageFilter:
     def __init__(self, width, height, data):
         self.width = width   # instance → runtime parameter (no recompile)
         self.height = height # instance → runtime parameter (no recompile)
-        self.data = data     # instance → field parameter
+        self.data = data     # instance → array parameter
 
     @tack.func
     def get_pixel(self, x, y):
         return self.data[y * self.width + x]
 ```
 
-**Rule of thumb:** if it controls an allocation size (`tack.local_array`,
-`tack.shared`), it **must** be a class variable. Everything else can be
-an instance variable.
+For an object attribute used as an allocation size (`tack.local_array`,
+`tack.shared`), use a class constant. Literals, `tack.constant` values and
+resolved array dimensions can also supply sizes; an instance scalar is a runtime
+parameter. Other changing parameters can be instance variables.
 
 ```python
 @tack.kernel
@@ -167,7 +173,7 @@ class Counting:
 @tack.device_class
 class Permuted:
     def __init__(self, ids, base):
-        self.ids = ids                             # a field of indices
+        self.ids = ids                             # an array of indices
         self.base = base                           # any object with get(k)
 
     @tack.func
@@ -183,7 +189,7 @@ read(Permuted(ids, Counting(10, 5)), out)          # out[i] = 10 + 5 * ids[i]
 read(Permuted(ids, Permuted(more, Counting(0, 1))), out)
 ```
 
-The tree is one template: every object's fields and scalars become kernel
+The tree is one template: every object's arrays and scalars become kernel
 parameters, its constants are compiled in, and its methods are inlined, so
 `Permuted(ids, Counting(10, 5))` compiles to `10 + 5 * ids[i]`, the code
 you would write by hand. A kernel can reach in too (`arr.base.step`). Which
@@ -200,17 +206,24 @@ template. The compiled code pays nothing.
 
 A kernel can be a method of the class. Called on an object, it receives
 that object as `self`, a template like any other argument, so the
-object's fields, scalars, constants and methods are reached through it
-and nothing has to be passed in:
+object's arrays, scalars, constants and methods are reached through it
+and nothing has to be passed in. Save this complete example in a `.py` file.
+It draws one initialized triangle into a `(height, width)` RGB array:
 
+<!-- tack-check: rasterizer -->
 ```python
+import numpy as np
+import tack
+
+tack.init(arch=tack.cpu)
+
 @tack.device_class
 class Rasterizer:
     def __init__(self, n, width, height):
         self.n = n
         self.width, self.height = width, height
         self.vertices = tack.empty(dtype=tack.vec2(tack.f32), shape=(n, 3))
-        self.pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(width, height))
+        self.pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(height, width))
         self.pixels.fill(0.0)              # draw writes only covered pixels
 
     @staticmethod
@@ -226,13 +239,18 @@ class Rasterizer:
 
     @tack.kernel
     def draw(self, shade):
-        for i, j in tack.ndrange(self.width, self.height):
+        for row, column in tack.ndrange(self.height, self.width):
             for t in range(self.n):
-                if self.inside([i + 0.5, j + 0.5], t):
-                    self.pixels[i, j] = [shade, shade, shade]
+                if self.inside([column + 0.5, row + 0.5], t):
+                    self.pixels[row, column] = [shade, shade, shade]
 
-raster = Rasterizer(60, 640, 480)
+raster = Rasterizer(1, 32, 32)
+raster.vertices.from_numpy(np.array([[[8, 8], [8, 24], [24, 8]]], dtype=np.float32))
 raster.draw(0.8)
+image = raster.pixels.to_numpy()
+np.testing.assert_allclose(image[10, 10], [0.8, 0.8, 0.8])
+np.testing.assert_array_equal(image[0, 0], [0.0, 0.0, 0.0])
+assert np.count_nonzero(image[:, :, 0]) > 0
 ```
 
 The kernel compiles once per class and is shared by its objects, as a
@@ -312,7 +330,7 @@ class CellSetExplicit:
     points_per_cell = 4  # class constant — used for local_array sizes
 
     def __init__(self, connectivity):
-        self.connectivity = connectivity    # tack.field
+        self.connectivity = connectivity    # tack.array
 
     @tack.func
     def get_point_id(self, cell_id, local_idx):
@@ -385,11 +403,11 @@ This single kernel works with any cell set + cell type combination.
 
 ## Organize an application around state
 
-Use a device class when several kernels share the same fields and model
+Use a device class when several kernels share the same arrays and model
 parameters. The [Physarum tutorial](tutorials/physarum.md) gathers positions and
 headings into `Agents`, uses an initialization kernel as a method, and passes the
 object to three simulation stages. Class constants describe the sensing model;
-instance dimensions and fields describe this particular simulation.
+instance dimensions and arrays describe this particular simulation.
 
 The cell-set sketches above show a more generic use: pass different topology
 implementations to one kernel. They illustrate a protocol; `tack.dataset` is the built-in

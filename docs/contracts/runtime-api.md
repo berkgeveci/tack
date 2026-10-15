@@ -115,7 +115,7 @@ The buffer belongs to the backend active when the array was allocated.
 | `tack.array(arr, dtype=None)` | Copies values into independent storage. Without dtype, infers a scalar type and uses all input dimensions. An element dtype consumes matching trailing component dimensions; a mismatch raises `ValueError`. Existing Tack arrays copy on the device |
 | `tack.empty_like(prototype, dtype=None)` | Allocates independent, writable storage on the active backend without reading or copying values. Accepts a NumPy array or Tack field; infers dtype unless overridden with a Tack type. Preserves vector/matrix field logical shape and component dimensions. NumPy arrays produce scalar fields with the array's shape. Contents are unspecified |
 | `tack.concat(fields)` | A new 1-D array holding all elements in order, copied on the device |
-| `tack.Vector.field(n, dtype=f32, shape=())` | A flat scalar field of `prod(shape) * n` elements that kernels index as `n`-component vectors |
+| `tack.empty(dtype=tack.vec(n, f32), shape=())` | A flat scalar field of `prod(shape) * n` elements that kernels index as `n`-component vectors |
 | `tack.texture3d(field, shape=None, interp="linear")` | A `Texture3D` holding a copy of the field taken at creation, for `sample(u, v, w)` in kernels. `tex.update()` copies the field again. See [Textures](backend-capabilities.md#textures) |
 
 **Current behavior:**
@@ -300,7 +300,7 @@ and `Field.__dlpack_device__()`.
 - As for `field_from_ptr`, a launch that uses the imported field completes
   before it returns.
 - With `copy=True`, the source is read through `np.from_dlpack` and copied
-  into a new field with `field_from_numpy`. That works only for sources that
+  into a new field with `array`. That works only for sources that
   NumPy can read on the host.
 
 | Condition | Exception |
@@ -545,13 +545,13 @@ Translated exceptions keep the original as `__cause__`.
 |---|---|---|
 | `UnsupportedSyntaxError` | Syntax outside the kernel language, in a kernel or a device function, including unreachable statements; a kernel without exactly one parallel loop directly in its body; a store, atomic, barrier, block reduction or `print` outside the parallel loop, including through an inlined device function or template method | First dispatch or inspection (frontend) |
 | `NameError` | A name that is neither a parameter nor assigned. Kernels don't capture Python globals | First dispatch or inspection (frontend) |
-| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, `field_from_numpy`, `empty_like` or DLPack dtypes, an invalid `empty_like` prototype, `concat` dtypes, a non-`MTLBuffer` on Metal, a `field_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
+| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, `array`, `empty_like` or DLPack dtypes, an invalid `empty_like` prototype, `concat` dtypes, a non-`MTLBuffer` on Metal, a `field_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
 | `ValueError` | Unknown arch or option, an unknown `TACK_CPU_POLICY`, incomplete `external_context`, workgroup participation, launch counts or device group size, a launch or reduction larger than one grid can index, atomic alignment, a read-only field the kernel may store to, `field_from_ptr` memory space, shape mismatches, `reshape`, `texture3d` arguments, empty `min`/`max`, empty `concat`, unknown inspect mode or `"optimized"` off CPU, template method or attribute errors, malformed or `kDLMetal` DLPack tensors | Initialization, dispatch (cold or every call), inspection, host calls |
 | `NotImplementedError` | Workgroup primitives on CPU, keyword arguments, and the few lowering checks that source validation doesn't already report as `UnsupportedSyntaxError` | Raised directly by inspection. Wrapped in `RuntimeError` at dispatch |
 | `RuntimeError` | Initialization failures, compilation and launch failures, stale fields after a backend switch, unreadable kernel or device-function source, host writes to read-only fields, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, raised when a pass leaves IR that breaks a structural invariant) | Everywhere |
 | `BufferError` | `__dlpack__(copy=True)` | Export |
 | `IndexError` | In debug mode, a launch that indexed a field or array out of bounds; host indexing `f[i]` outside the field | After the launch, from `Kernel.__call__`; host calls |
-| `AttributeError` | Passing a NumPy dtype where a Tack type is expected, or a non-array to `from_numpy` or `field_from_numpy` | Host calls (unvalidated caller constraint) |
+| `AttributeError` | Passing a NumPy dtype where a Tack type is expected, or a non-array to `from_numpy` or `array` | Host calls (unvalidated caller constraint) |
 
 **Current behavior:** every dispatch rejection listed on this page and in
 [Backend capabilities](backend-capabilities.md) is raised before the kernel

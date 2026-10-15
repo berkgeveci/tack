@@ -218,7 +218,7 @@ safety. LLVM and the vendor compilers still perform their own optimizations.
 ## Memory and aliasing
 
 Fields are typed, shaped storage associated with a backend. A field from
-`tack.field` holds unspecified contents until a kernel, `from_numpy` or
+`tack.Array` holds unspecified contents until a kernel, `from_numpy` or
 `fill` writes them; `tack.zeros`, `ones` and `full` make filled fields.
 A subscript of
 a field gives one index per dimension, or a single flat, row-major index;
@@ -734,8 +734,8 @@ rounding. No hidden state exists; two kernels that seed alike draw alike.
 ## Vectors and matrices
 
 **Required:** a vector (`tack.Vector([...])`, the same list of scalars
-written alone, an element of a `tack.Vector.field`) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
-`tack.Matrix.identity(n)`, an element of a `tack.Matrix.field`) are values
+written alone, an element of a `tack.Array` with a vector element dtype) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
+`tack.Matrix.identity(n)`, an element of a `tack.Array` with a matrix element dtype) are values
 made of scalar components, in row-major order for a matrix. Every
 operation on them is defined as the corresponding scalar operations on
 their components, each of which follows the numerical rules above. They

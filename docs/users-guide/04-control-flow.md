@@ -37,7 +37,7 @@ def newton_sqrt(x, out, n):
 The example requires nonnegative inputs; the zero case is handled before the
 iteration, avoiding division by zero. A fixed iteration cap makes runtime
 bounded. For a convergence loop, combine a tolerance with such a cap and write
-a status field if the host needs to know which elements converged. A kernel
+a status array if the host needs to know which elements converged. A kernel
 cannot raise a Python exception from an individual iteration.
 
 ## Break and Continue
@@ -125,7 +125,7 @@ negative coordinates are possible. Those are different operations:
 | `-0.3` | 0 | −1 |
 
 `tack.f64(x)` explicitly requests double precision where the backend provides
-it. An `f64` output field does not retroactively change all intermediate
+it. An `f64` output array does not retroactively change all intermediate
 operations: integer true division produces `f32`, so cast its operands for a
 double-precision quotient. Plain integer literals also participate in promotion;
 use typed constants for intentional unsigned wrapping arithmetic.
@@ -152,8 +152,8 @@ def map_values(data, colour, n):
         colour[i] = tm.mix([0.1, 0.2, 0.8], [1.0, 0.8, 0.1], t)
 ```
 
-Here `colour` is a three-component vector field. `mix` interpolates its arms;
+Here `colour` is a three-component vector array. `mix` interpolates its arms;
 `clamp` limits a value component by component. `fract(x)` is `x - floor(x)`,
 which is useful for repeating patterns. The [dye tutorial](tutorials/dye.md)
-uses interpolation over actual fields, and [marching squares](tutorials/contours.md)
+uses interpolation over actual arrays, and [marching squares](tutorials/contours.md)
 uses interpolated edge crossings to build geometry.

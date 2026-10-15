@@ -18,7 +18,7 @@ array[:] = -1                             # does not change the Tack field
 np.testing.assert_array_equal(field.to_numpy(), np.arange(12, dtype=np.float32).reshape(3, 4))
 ```
 
-`field_from_numpy` allocates and copies. `from_numpy` replaces the values in an existing
+`array` allocates and copies. `from_numpy` replaces the values in an existing
 field and converts to its dtype. `to_numpy` produces a NumPy copy. These are
 simple boundaries for a first program or for data that arrives infrequently.
 

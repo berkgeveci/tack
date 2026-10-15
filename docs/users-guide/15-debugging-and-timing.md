@@ -66,19 +66,21 @@ amplify those differences over many steps. Check an early timestep as well as
 the final result, and consider physical properties such as mass conservation,
 residuals or bounded temperatures when a long trajectory is sensitive.
 
-Do not increase a tolerance merely to hide a discrepancy. First check field
+Do not increase a tolerance merely to hide a discrepancy. First check array
 layout, boundaries, initialization, dtype conversions and cross-iteration races.
 Use [Arrays and Types](02-fields-and-types.md) for literal precision and integer
 rules, and [Reductions and Scans](11-reductions-and-scans.md) for accumulator
-precision. For example, a statistics `dot` currently accumulates in `f32` even
-when its inputs are `f64`.
+precision. Statistics such as `dot` form their terms in `f64` if either input
+is `f64`, and otherwise in `f32`, then use array reductions. For `f32` inputs,
+a `float64` reference is useful for measuring accumulated error; it is not a
+promise that the `f32` result will agree in every bit.
 
 ## Diagnose the failing stage
 
 | Symptom | First thing to inspect |
 |---|---|
 | Unknown name in device code | Pass a runtime value or declare `tack.constant`; check the defining namespace |
-| Field has unexpected values or shape | Compare NumPy shapes and dtype; distinguish vectors from flat components |
+| Array has unexpected values or shape | Compare NumPy shapes and dtype; distinguish vectors from flat components |
 | Results change between runs | Conflicting stores, missing atomics, or floating atomic summation |
 | Only boundary cells are wrong | Bounds and initialization of both timestep buffers: run in debug mode (below) |
 | A crash, or garbage that moves with the input size | An index out of bounds: run in debug mode (below) |
@@ -88,7 +90,7 @@ when its inputs are `f64`.
 
 `print` in a kernel is useful on CPU, CUDA and HIP. Limit it to a few iterations
 and remove it when timing. Metal does not provide this printing facility. For
-portable inspection, write diagnostic values to a field and read it after the
+portable inspection, write diagnostic values to an array and read it after the
 call.
 
 ## Check every index with debug mode
@@ -102,7 +104,7 @@ next row. Turn on debug mode to find it:
 tack.init(arch=tack.cpu, debug=True)    # or TACK_DEBUG=1 in the environment
 ```
 
-Every field and array index is then checked, one dimension at a time. An
+Every array and array index is then checked, one dimension at a time. An
 access out of bounds is skipped (a load gives 0) and the call raises
 `IndexError` naming the first one:
 
@@ -131,7 +133,7 @@ shows optimized LLVM IR on CPU only. See [Inspecting Generated Code](03-kernels.
 
 On the CPU a call returns when the kernel has finished. On Metal, CUDA, HIP
 and Level Zero it returns once the launch is queued, and the host waits only
-when it reads a field or calls `tack.sync()`. Call `tack.sync()` before
+when it reads an array or calls `tack.sync()`. Call `tack.sync()` before
 reading the clock, or a GPU time measures only the launch. The first call
 also includes compilation, unless an earlier process left the kernel in the
 [disk cache](17-kernel-cache.md); run with `TACK_CACHE=off` to time a cold
@@ -165,22 +167,22 @@ print(f"First call: {first_call * 1e3:.3f} ms")
 print(f"Warm median: {np.median(times) * 1e3:.3f} ms")
 ```
 
-The 32-element diagnostic example is intentionally small; use a larger field
+The 32-element diagnostic example is intentionally small; use a larger array
 when studying throughput. Keep its shape and dtype fixed during measurement.
 On CPU the scheduler measures whether worker threads help; several warm calls
 allow that policy to settle. A single-thread run can help distinguish scheduling
 cost from compiled arithmetic: `tack.init(arch=tack.cpu, num_threads=1)`.
 
 Measure end-to-end application time separately, including upload, preprocessing,
-kernel stages and readback. Allocate working fields outside the timed loop when
+kernel stages and readback. Allocate working arrays outside the timed loop when
 studying kernel execution, and describe which costs a reported number includes.
 There is no portable speedup factor for all problem sizes and machines.
 
 ## Improvements to try in order
 
-Keep intermediate data in fields, reuse allocations, swap timestep buffers, and
+Keep intermediate data in arrays, reuse allocations, swap timestep buffers, and
 read back only at checkpoints. Combine independent per-element operations in one
-kernel when that avoids launches and temporary fields. Keep dependent global
+kernel when that avoids launches and temporary arrays. Keep dependent global
 stages separate. After measuring a clear memory bottleneck, consider tiling;
 [N-body](tutorials/nbody.md) shows how to preserve both barriers and a CPU path.
 

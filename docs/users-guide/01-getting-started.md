@@ -2,37 +2,53 @@
 
 ## Installation
 
-Tack is a pure Python package with JIT compilation at runtime — no build step.
-It is split into three packages:
+Use Python 3.11 or newer. Tack compiles kernels at runtime; installing the
+Python packages needs no Tack build step. Start with the CPU backend so the
+first example needs no GPU runtime.
 
-- **tack-core** — the compute framework (kernels, fields, types, backends)
-- **tack-rendering** — path tracing renderer
-- **tack-vis** — datasets and visualization algorithms (`tack.dataset`, VTK interop)
+### Follow this guide from source
+
+The guide and its tutorial scripts describe the current checkout, including
+[unreleased additions](https://github.com/berkgeveci/tack/blob/main/CHANGELOG.md).
+To use the same API and run the commands shown throughout the guide, install
+the checkout with [uv](https://docs.astral.sh/uv/getting-started/installation/):
 
 ```bash
-# Install everything from source with uv
 git clone https://github.com/berkgeveci/tack.git
 cd tack
-uv sync --extra cpu                   # or add --extra interop for VTK and MFEM
-
-# Or install individual packages
-pip install tack-core          # core only
-pip install 'tack-core[cpu]'     # core + CPU backend (LLVM JIT)
-pip install tack-rendering     # rendering (pulls in tack-core)
-pip install tack-vis           # visualization (pulls in tack-core)
+uv sync --extra cpu
 ```
 
-Python 3.11 or newer is required. A bare `tack-core` install has the numerical
-API but no CPU JIT dependency; choose the backend extra you intend to run.
-`tack-vis` and `tack-rendering` also need a working backend. See
-[Backends](08-backends.md) for system runtimes required by GPU extras.
+Run Python with `uv run python` from this directory. All three Tack packages
+are installed: `tack-core` for compute, `tack-vis` for datasets and scientific
+visualization, and `tack-rendering` for rendering.
 
-The guide describes the current checkout, including additions recorded under
-[Unreleased in the changelog](https://github.com/berkgeveci/tack/blob/main/CHANGELOG.md).
-If an installed release lacks an API used here, run the source checkout or check
-its release notes. The tutorial scripts below are included in this checkout.
+### Use a released package
+
+For a separate application, create an environment and install the packages you
+need from PyPI:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install 'tack-core[cpu]'
+# Optional: datasets and rendering
+python -m pip install tack-vis tack-rendering
+```
+
+On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell. Run scripts
+with `python` in the activated environment. Download tutorial scripts from their
+pages instead of using checkout-relative paths such as `docs/examples/heat.py`.
+
+An installed release may lack APIs added in the checkout. If an example uses
+an unavailable API, check the release notes or use the source installation above.
+A bare `tack-core` install does not include the CPU JIT dependency; the `[cpu]`
+extra does. The visualization and rendering packages also need a working backend.
 
 ## Your First Kernel
+
+Save the following complete program as `first_kernel.py`. Tack needs the
+decorated function's source, so a `.py` file is the starting point for this guide.
 
 ```python
 import numpy as np
@@ -40,7 +56,7 @@ import tack
 
 tack.init(arch=tack.cpu)
 
-# Create fields from numpy arrays
+# Create arrays from numpy arrays
 n = 1024
 x = tack.array(np.arange(n, dtype=np.float32))
 y = tack.array(np.ones(n, dtype=np.float32) * 2.0)
@@ -57,15 +73,20 @@ vector_add(x, y, out)
 
 # Read results back to numpy
 result = out.to_numpy()
+np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32) + 2.0)
 print(result[:5])  # [2. 3. 4. 5. 6.]
 ```
 
-Save this example as `first_kernel.py` and run `python first_kernel.py` in your
-installed environment, or `uv run python first_kernel.py` from the checkout.
-The result assertion you can add is:
+Run it from the checkout:
 
-```python
-np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32) + 2.0)
+```bash
+uv run python first_kernel.py
+```
+
+Or use `python first_kernel.py` in your installed environment. You should see:
+
+```text
+[2. 3. 4. 5. 6.]
 ```
 
 A kernel is a Python function decorated with `@tack.kernel`. The outermost
@@ -74,15 +95,22 @@ separate thread on the GPU (or is split across CPU cores).
 
 ## Choosing a Backend
 
-```python
-tack.init(arch=tack.cpu)         # CPU via LLVM JIT
-tack.init(arch=tack.metal)       # Apple GPU
-tack.init(arch=tack.cuda)        # NVIDIA GPU
-tack.init(arch=tack.hip)         # AMD GPU (ROCm)
-tack.init(arch=tack.level_zero)  # Intel GPU
-```
+After the CPU example works, install your backend's extra and replace the
+single `tack.init` line. For a checkout, keep `--extra cpu` if you want both:
 
-All examples accept `--arch` on the command line:
+| Hardware | Checkout installation | Initialization |
+|---|---|---|
+| CPU | `uv sync --extra cpu` | `tack.init(arch=tack.cpu)` |
+| Apple silicon GPU | `uv sync --extra cpu --extra metal` | `tack.init(arch=tack.metal)` |
+| NVIDIA GPU | `uv sync --extra cpu --extra cuda` | `tack.init(arch=tack.cuda)` |
+| AMD GPU | `uv sync --extra cpu --extra hip` | `tack.init(arch=tack.hip)` |
+| Intel GPU | `uv sync --extra cpu --extra level_zero` | `tack.init(arch=tack.level_zero)` |
+
+For released packages, use the matching extra, such as `tack-core[cuda]`.
+GPU extras also require compatible system runtimes; see [Backends](08-backends.md).
+
+The supplied tutorial scripts accept `--arch` on the command line; the small
+`first_kernel.py` above selects its backend in code:
 
 ```bash
 uv run python packages/tack-core/examples/01_hello_tack.py --arch metal
@@ -90,10 +118,14 @@ uv run python packages/tack-core/examples/01_hello_tack.py --arch metal
 
 This kernel uses the portable numerical subset and runs on all five backends.
 Backend capabilities still matter: Metal has no `f64`, and CPU has no shared
-workgroup memory. Initialize before allocating fields; a later backend switch
+workgroup memory. Initialize before allocating arrays; a later backend switch
 does not migrate them.
 
 ## How It Works
+
+The [execution-model chapter](12-execution-model.md) develops these ideas through
+examples. You can continue there now; the compilation outline below is optional
+on a first reading.
 
 When you call a kernel for the first time, Tack:
 

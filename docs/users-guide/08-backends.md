@@ -25,9 +25,9 @@ with a different meaning.
 
 | | CPU | Metal | CUDA | HIP | Level Zero |
 |---|---|---|---|---|---|
-| `f64` fields | yes | no | yes | yes | depends on the device |
+| `f64` arrays | yes | no | yes | yes | depends on the device |
 | Shared memory, barriers, `thread_id`, block reductions | no | yes | yes | yes | yes |
-| Atomic field types | all ten | `i32`, `u32`, `f32` | 32- and 64-bit ints, `f32`, `f64` | 32- and 64-bit ints, `f32`, `f64` | `i32`, `u32`, `f32` |
+| Atomic array types | all ten | `i32`, `u32`, `f32` | 32- and 64-bit ints, `f32`, `f64` | 32- and 64-bit ints, `f32`, `f64` | `i32`, `u32`, `f32` |
 | `sum`/`min`/`max` on the device | no (NumPy) | `f32` | `f32` | `f32` | `f32` |
 | 3D textures | software | hardware | hardware | hardware where the device has image support | hardware where the device has samplers |
 | Iterations per launch | no limit | 2^32 | device limit (max grid × 256) | device limit, at most 2^32 − 256 | device limit (max group count × group size) |
@@ -51,7 +51,7 @@ be.supports_f64, be.supports_workgroups, be.supported_atomic_dtypes
 On the CPU a kernel call returns when the kernel has finished. On Metal,
 CUDA, HIP and Level Zero it returns once the launch is queued; the device
 runs queued launches in order, and fills and host writes take their place
-in that order. The host waits where it reads a field (`to_numpy`,
+in that order. The host waits where it reads an array (`to_numpy`,
 indexing, reductions, DLPack export) or calls `tack.sync()`. Most code
 never needs `tack.sync()`: it is for timing kernels (see
 [Debugging and timing](15-debugging-and-timing.md#measure-first-call-and-warm-time-separately)),
@@ -60,7 +60,7 @@ launch is raised at that wait rather than at the call. A launch that uses
 memory shared with another library (exported through DLPack, or wrapped
 with `tack.array_from_ptr`) completes before the call returns. In an
 `asyncio` program, `await tack.sync_async()` and
-`await field.to_numpy_async()` do the waiting in a worker thread, so the
+`await array.to_numpy_async()` do the waiting in a worker thread, so the
 event loop keeps running (see
 [Waiting from `asyncio`](12-execution-model.md#waiting-from-asyncio)).
 
@@ -107,11 +107,13 @@ tack.init(arch=tack.cpu)
 
 ## Metal
 
-Apple Silicon unified memory means fields are zero-copy — the numpy view
-and GPU buffer share the same physical memory. No host-device transfers.
+On Apple silicon the GPU buffer and Tack's internal NumPy view share the
+same allocation. There is no separate device-memory transfer, but the public
+`array`, `from_numpy` and `to_numpy` APIs still copy values. Use the
+[interoperability APIs](16-interoperability.md) when you need shared storage.
 
 ```bash
-pip install pyobjc-framework-Metal
+pip install 'tack-core[metal]'
 ```
 
 ```python
@@ -125,7 +127,7 @@ Hardware 3D texture sampling is supported via `texture3d<float>.sample()`.
 
 ## CUDA
 
-NVIDIA GPUs via the CUDA driver API. Fields use device memory (`cuMemAlloc`)
+NVIDIA GPUs via the CUDA driver API. Arrays use device memory (`cuMemAlloc`)
 with explicit host-device copies.
 
 ```bash
@@ -182,7 +184,7 @@ in-process using `libocloc`, then loaded via `zeModuleCreate`.
 
 **`f64` depends on the device.** Some Intel GPUs implement double precision
 and some don't. The backend asks the device during `tack.init()` and adds
-`f64` to its supported types only when the device reports it. Level Zero field atomics remain limited to `i32`, `u32` and `f32`, even
+`f64` to its supported types only when the device reports it. Level Zero array atomics remain limited to `i32`, `u32` and `f32`, even
 on a device with `f64` storage. Check `get_backend().supports_f64` rather than
 assuming.
 
@@ -190,7 +192,7 @@ assuming.
 meaningful only inside the context it was allocated from, so Tack and VTK
 must use the same one. Start Tack with
 `tack.interop.vtk.init_level_zero()` instead of
-`tack.init(arch=tack.level_zero)`. Fields allocated before that call can't
+`tack.init(arch=tack.level_zero)`. Arrays allocated before that call can't
 be shared with VTK.
 
 Hardware 3D texture sampling (`image3d_t` with `read_imagef`) is used on
@@ -221,7 +223,7 @@ Other backends ignore it.
 
 ## Type Checking
 
-Tack validates field dtypes at dispatch time before compilation. If a field
+Tack validates array dtypes at dispatch time before compilation. If an array
 uses a dtype not supported by the target backend, you get a clear error:
 
 ```

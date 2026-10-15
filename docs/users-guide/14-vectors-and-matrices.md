@@ -31,7 +31,7 @@ Each iteration loads a two-component velocity and updates its own position.
 corresponding components; use `dot` or `@` for a dot product.
 
 A local assignment `p = pos[i]` loads a value. Changing `p.x` changes that local;
-write `pos[i] = p` to store it back. Writing `pos[i].x` targets the field directly.
+write `pos[i] = p` to store it back. Writing `pos[i].x` targets the array directly.
 Vectors have a fixed width for each compiled specialization. There are no
 runtime-length vector values or swizzle constructors such as `v.rgb`/`vec4(v, 1)`;
 construct the components explicitly.
@@ -67,7 +67,7 @@ def step(pos, vel, grid, out, dt, n):
         v = v if pos[i].y > 0.0 else -v     # one condition, whole vectors
         speed = v.norm()                    # methods are listed below
         vel[i] = v
-        pos[i] += v * dt                    # augmented store to a field element
+        pos[i] += v * dt                    # augmented store to an array element
         out[i] = grid[cell] * speed         # grid[cell] is grid[cell[0], cell[1], cell[2]]
 ```
 
@@ -129,17 +129,17 @@ Two vectors in one operation must have the same number of components.
 An assignment evaluates its whole right side before it stores anything,
 so `v = v.cross(w)` and `pos[i] = pos[i].cross(axis[i])` read the old
 components. A tuple assignment does the same and then assigns its targets
-from left to right, and its targets may be field elements:
+from left to right, and its targets may be array elements:
 `pos[i], vel[i] = p, v`, or `a[i], b[i] = b[i], a[i]` to swap two.
 
-A store to a field element must match the field: a vector of the field's
+A store to an array element must match the array: a vector of the array's
 width, or a scalar, which sets every component (`vel[i] = 0.0`). A vector
-of another width, or a vector stored into a field of scalars, is
+of another width, or a vector stored into an array of scalars, is
 rejected.
 
 Components are scalars. `vec[0]` and `vec.x` read one (`x`, `y`, `z`, `w`
 name the first four); `vec[1] = x`, `vec.y = x` and `vec[1] += x` write
-one. The same forms work on a field element without naming the vector
+one. The same forms work on an array element without naming the vector
 first: `v[i][2]` and `v[i].z` read a component, `v[i][2] = x` and
 `v[i].z += x` store one. The index may be a runtime value (`vec[k]` for a
 loop variable `k`), which lowers to a chain of selects rather than a
@@ -180,13 +180,13 @@ def update(F, C, x, dt, n):
   determinant without checking it. `norm()` and `sum()` run over all
   entries.
 - **Entries.** `A[i, j]` reads one and `A[i, j] = x` or `A[i, j] += x`
-  writes one, on a matrix variable or directly on a field element
+  writes one, on a matrix variable or directly on an array element
   (`F[p][0, 1]`). The indices may be runtime values, which must then be
   in range.
 - **Arrays.** A matrix array stores each matrix in row-major order.
   `from_numpy` takes `(*shape, n, m)` and `to_numpy()` returns
   it. `F[p] = A`, `F[p] += A`, `F[p] *= s` and
-  `tack.atomic_add(F, p, A)` work as they do for vector fields.
+  `tack.atomic_add(F, p, A)` work as they do for vector arrays.
 - **Device functions** take and return matrices, alone or among several
   values.
 
@@ -202,7 +202,7 @@ vector array and reduce over all its components in storage order.
 In [MPM](tutorials/mpm.md), each particle stores a 2×2 affine velocity matrix.
 A matrix-vector product predicts a velocity contribution at a nearby grid node;
 an outer product reconstructs the affine matrix during interpolation. The
-example shows why `*` and `@` mean different operations, and why a matrix field
+example shows why `*` and `@` mean different operations, and why a matrix array
 is clearer than a four-component vector used as a matrix by hand.
 
 The [dye tutorial](tutorials/dye.md) reuses one interpolation function on RGB
@@ -212,5 +212,5 @@ Use those examples after the small position update above.
 
 `Vector` and `Matrix` still name kernel value construction, such as
 `Matrix.identity(3)`; array allocation does not use those namespaces.
-The older `Vector.field` and `Matrix.field` entry points remain compatible
+The older `Vector.array` and `Matrix.array` entry points remain compatible
 with their historical flat host metadata. Use element dtypes in new code.

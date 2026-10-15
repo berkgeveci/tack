@@ -50,7 +50,7 @@ def convert(r_field, theta_field, x_out, y_out, n):
 ```
 
 The values may be vectors and matrices as well as scalars, in any mix,
-and the targets may be field elements:
+and the targets may be array elements:
 
 ```python
 @tack.func
@@ -86,9 +86,9 @@ def length(x, y, z):
     return sqrt(square(x) + square(y) + square(z))
 ```
 
-## Passing Fields
+## Passing Arrays
 
-Fields can be passed to `@tack.func` — they work just like in kernels:
+Arrays can be passed to `@tack.func` — they work just like in kernels:
 
 ```python
 @tack.func
@@ -139,7 +139,7 @@ This also works with `@tack.device_class` methods — see
 
 ## Reuse a numerical operation across element types
 
-A device function is specialized on the values or fields it receives. The same
+A device function is specialized on the values or arrays it receives. The same
 linear interpolation expression works for scalars and vectors:
 
 ```python
@@ -148,7 +148,7 @@ def mix_values(a, b, t):
     return a * (1.0 - t) + b * t
 ```
 
-The [dye tutorial](tutorials/dye.md) builds a bilinear sampler from four field
+The [dye tutorial](tutorials/dye.md) builds a bilinear sampler from four array
 loads and applies it to RGB vectors. The [MPM tutorial](tutorials/mpm.md) uses
 matrix-valued arithmetic, and [N-body](tutorials/nbody.md) shares one interaction
 function between the plain and tiled kernels.
