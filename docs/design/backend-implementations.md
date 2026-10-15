@@ -315,6 +315,8 @@ limit (`_query_max_launch`) is the device's maximum `gridDim.x` times 256,
 capped at 2³² − 256, because the dispatch packet on AMD GPUs holds the
 grid's total work-item count in 32 bits.
 
+**hip-python 10 is a compatibility package** over `rocm.bindings` (PyPI's newest, so the extra's lower bound resolves to it), and four things moved: no `hip.LONG_VERSION` (`VERSION` instead; `_HIP_PYTHON_VERSION` reads either), no `hip.chip` (the runtime library for the ctypes waits comes from `rocm.bindings.util.paths.get_library_path`, `_runtime_library`), a function whose first C parameter is an output struct allocates and returns it, `(err, struct)`, instead of taking it (`hipPointerGetAttributes`, `hipGetDeviceProperties`; `_call_with_output` reads which from the binding's signature); and a struct's character arrays (`hipDeviceProp_t.name`, `gcnArchName`) are `str`, not `bytes` (`_text`). Before this, importing `LONG_VERSION` failed, so HIP read as unavailable and every HIP test skipped. With them the suite passes on hip-python 10.0 against ROCm 7.1.1 (MI210, 2026-10-15) as on 7.2.2.
+
 **Known toolchain defect.** ROCm 7.0.2's device compiler (AMD clang 20,
 embedded in hipRTC's comgr) miscompiles one generated integer expression
 at `-O1` and above: a 64-bit signed `-253 < -1` inside the full expression
@@ -472,6 +474,16 @@ while the queue is busy, dropped temporaries, waits and shared buffers;
 `test_metal.py` covers Metal's order across batches, per-launch scalars
 and host writes.
 
+### How each backend queues and waits, as measured
+
+The measurements behind each backend's queue and waits, kept from the
+developer notes:
+
+- **CUDA**: `CUDABuffer` holds a stream-ordered device pointer (`cuMemAllocAsync` on the context's stream, freed with `cuMemFreeAsync`, so a temporary dropped while a queued launch still uses it is freed after that launch, and the driver's pool, with its release threshold raised, hands memory back out without a round trip). Every launch, fill and copy goes through that one stream (`_ContextToken.queue()`) in order and returns once queued; `to_numpy`, `read_range` and reductions wait for the stream (`_drain`) and then copy: a copy to pageable host memory waits inside the driver with the context held, so no other thread could launch meanwhile (one launch per 910 ms wait on an H100, driver 595), while a thread in `cuStreamSynchronize` holds nothing a launch needs (511 launches at 43 µs); `from_numpy` and `fill` queue and return; `tack.sync()` is a stream synchronize, and a launch's error surfaces at the next wait. A launch's scalar upload is a pageable `cuMemcpyHtoDAsync`, staged by the driver; behind a long kernel the staging ring fills after about 510 queued launches and the next upload waits for the kernel. A buffer handed outside Tack (`wrap_ptr`, DLPack export, `share()`) completes every launch that uses it before the launch returns, and so does a texture launch, since its image could be destroyed before a queued launch read it. See `test_cuda_async.py`.
+- **HIP**: `HIPBuffer` holds a stream-ordered device pointer, as CUDA's does: one blocking stream per device (`_Queue`, `_queue()` in `hip_backend.py`; ordered with the null stream), memory from `hipMallocAsync` on it and freed with `hipFreeAsync`, the default pool's release threshold raised. Launches, fills and copies are queued on it and return; `to_numpy`, `read_range`, reductions and `tack.sync()` wait on an event recorded after the queued work (`_StreamMarker`, `_wait_stream`), through ctypes on the runtime library (`_runtime`), never `hipStreamSynchronize`: hip-python's wrappers hold the GIL while the runtime waits (another thread ran 6 times during a 357 ms wait, 353 through ctypes), and ROCm 7.1's stream synchronize holds the stream, so another thread's launch on it took the whole wait (350 ms; 60 µs waiting on an event). A copy to pageable host memory waits inside `hipMemcpyAsync` the same way, so a read waits on an event first (about 8 µs idle). A launch's error surfaces at the next wait. A host write from pageable memory may be queued: HIP stages a small one before returning and waits for the stream before a large one (16 KB staged, 4 MB waited, ROCm 7.1). `wrap_ptr`, DLPack export (`share()`) and texture launches complete before returning. A device without memory pools falls back to `hipMalloc`/`hipFree`. See `test_hip_async.py`.
+- **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Every launch, fill and copy is appended to the backend's one asynchronous immediate command list (`_queue`) and returns once queued, each followed by a barrier (`_ordered`), which keeps program order: Intel's in-order lists (`ZE_COMMAND_QUEUE_FLAG_IN_ORDER`) cost about 100 µs of device time per kernel on driver 25.05, a barrier about 5. `to_numpy`, `read_range` and reductions queue a copy and a marker under `_launch_lock` and wait on the marker's event outside it (`_ListMarker`), so other threads launch meanwhile; `tack.sync()` is `zeCommandListHostSynchronize`; `from_numpy` copies the array privately and queues; copies to the device up to 16 MiB and from it up to 64 KiB go through pooled USM host memory (`_HostStaging`, guarded by `_launch_lock`), since from pageable memory Intel's driver does not return from appending one (to the device up to 4 MiB, from it up to 1 KiB, driver 25.05) until the queue drains, which made a launch's scalar upload wait for the kernels before it; host memory a queued copy or fill reads is held (`_hold`) until the next wait (a marker releases the holds before it), which comes early past 1024 objects or 256 MiB. Arrays are freed with `zeMemFreeExt(DEFER_FREE)`, after the work queued so far (`_free`; without the extension, wait then free). `share()`, `wrap_ptr`, DLPack export and textures complete their launches before returning, as on CUDA. A driver without `zeCommandListHostSynchronize` gets a synchronous list. See `test_level_zero_async.py`.
+- **`asyncio`** (`runtime/aio.py`, optional): `await tack.sync_async()` and `await array.numpy_async()` wait in one of Tack's worker threads (`tack-wait`, 4) and resume the coroutine, so an event loop (trame, Jupyter, a server) keeps running while the device works; kernel calls stay plain calls. A backend opts in with `Backend.async_marker()` -- an object whose blocking `wait()` covers every launch queued so far and raises a launch's error: CUDA records a blocking-sync event on the context's stream (`_StreamMarker`), Metal commits the open batch and waits on the last command buffer (`_CommandBufferMarker`), Level Zero appends a barrier signalling a host-visible event from the backend's pools, reset and reused after the wait (`_ListMarker`, `_take_event`), HIP records a blocking-sync event on the device's stream and waits through ctypes (`_StreamMarker`) -- and buffers with `DeviceBuffer.waits_off_thread` and `thread_binding()` (CUDA makes its context current in the worker, `_BoundContext`; HIP makes the buffer's device current, `_BoundDevice`). Without a marker (the CPU) the wait is inline: correct, and the loop simply waits. The mark is taken at the call, so launches queued later are not waited for. cuda-bindings releases the GIL in `cuEventSynchronize`: during a 490 ms kernel another task ran 436 times awaiting `sync_async` and 0 times under `tack.sync()`; Level Zero's ctypes calls release it too (311-384 times during a 685 ms kernel on a Max 1100); hip-python's do not, hence HIP's ctypes waits (1353 times during a 1.45 s kernel on an MI210). See `test_asyncio.py`.
+
 ## Scalar arguments on the GPU
 
 The CPU passes scalars by value. The four GPU backends instead run
@@ -586,76 +598,10 @@ in the [contract](../reference/language-contract.md#array-and-parallel-reduction
 
 ## Workarounds and why they exist
 
-Each of these is narrow, documented at its site, and meant to be removed
-when its cause is fixed.
-
-**HIP: `hiprtcDestroyProgram` is never called.** In hip-python it
-segfaults on the first call after a successful compile. Recorded against
-7.1 and confirmed again on 2026-08-11 with hip-python 7.2.2 on ROCm 7.0.2
-(MI300X). The documented calling convention is the one that crashes. Tack
-skips the call in `_compile_code_object`; each compile leaks one program
-object, which the variant cache keeps rare.
-
-**Metal: an opaque 64-bit add in one loop shape.** On an M1 Max, pipeline
-compilation crashed when a wrapping 64-bit addition took part in reduction
-optimization inside a loop with a runtime bound. `MSLCodeGen._emit_assign`
-sets `_opaque_integer_add` while emitting an assignment whose value reads
-its own target, inside a sequential loop whose end is not a constant;
-`_expr_binop` then emits that `i64`/`u64` `+` through a helper declared
-`__attribute__((noinline))` (`IntegerCodeGen` in `codegen/integer_ops.py`).
-Every other integer operation stays inline.
-
-**Level Zero: opaque signed negation and `abs`.** On an Intel Data Center
-GPU Max 1100 (IGC 2.7.11), a wrapped negation or `abs` of a signed minimum
-was correct at its own width but lost its sign when widened: i16
-`-(-32768)` stored to an i32 array read `32768`, and `abs` of the i8, i16
-and i32 minimum widened as its magnitude. The SPIR-V from `ocloc` was
-correct, `-ze-opt-disable` hid the error, and no inlined form tried —
-`as_short`, a select on the minimum, complement-plus-one, a sign mask —
-survived the driver's folding; LLVM canonicalizes them all to the same
-shape. `OpenCLCodeGen` sets `_opaque_negation`, and `IntegerCodeGen`
-emits `neg` below 32 bits and `abs` below 64 bits as
-`__attribute__((noinline))` helpers. i32 negation, i64 `abs` and every
-other operation stay inline. `test_wrapped_negation_and_abs_survive_widening`
-covers the widened results on each backend.
-
-**CUDA: signed negation and `abs` below 32 bits as inline PTX.** On an
-H100 with driver 595.58 (CUDA 13.2), the same symptom: i16 `-(-32768)` and
-`abs(-32768)` widened as `32768`. Tack's C and NVRTC's PTX are correct
-(`neg.s16`, then `cvt.s64.s16`); the driver's JIT is not. ptxas 12.0
-through 13.2 sign-extend the input, negate in 32 bits and widen that
-without re-extending from bit 15; ptxas 13.3 does not, and the architecture
-does not matter (sm_80, sm_89 and sm_90 alike). Only `neg.s16` and
-`abs.s16` are affected. NVVM narrows every C spelling of the negation to
-those instructions, so `CUDACodeGen` sets `_ptx_negation` and
-`IntegerCodeGen` negates i8 and i16 (for `neg` and `abs`) with
-`__tack_ptx_neg_u32__`, an inline-PTX `sub.u32` on the 32-bit carrier,
-then narrows as before. A noinline helper also gave the right answer, but
-only because its caller re-extended the returned `short`. HIP and OpenCL
-inherit `CUDACodeGen` and turn the option off. `test_narrow_negation_avoids_ptx_neg_s16`
-checks the PTX, since drivers from 13.3 pass the widening test either way.
-
-**Level Zero: `f64` `floor` and `ceil` lose the sign of zero.** On an Intel
-Data Center GPU Max 1100 (intel-opencl-icd 25.05.32567.17), the double
-overloads returned `+0.0` for `ceil(-0.1)` and `floor(-0.0)`, where IEEE 754
-requires `-0.0`. The `f32` overloads are correct. `OpenCLCodeGen._expr_call`
-wraps those two builtins at double width as `copysign(floor(x), x)`. Neither
-function ever changes the sign of its operand, so restoring it is exact for
-every input, and a no-op where the runtime is already correct.
-
-**OpenCL C dialect rules.** Two inherited CUDA spellings are illegal OpenCL
-C and failed only on the device: a floating-point condition in `?:`
-(`_ifexp_condition` compares it against zero), and `__local` declarations
-in nested scopes (`_declare_local` hoists them to the kernel's outermost
-scope, which is legal because local memory is per-workgroup and statically
-sized).
-
-**CUDA exports avoid Win32 NT handles.** `_EXPORT_HANDLE_TYPES` uses
-`CU_MEM_HANDLE_TYPE_WIN32_KMT` on Windows. On a GeForce RTX 5060 the NT
-handle type was refused by `cuMemCreate` despite the device attribute
-claiming support, and cuda-python 13.3.1 segfaulted when asked for it with
-security attributes; `_create_backing` therefore trusts a successful
-allocation, not the attribute.
+Generated code and runtime calls shaped around a vendor defect, each with
+the vendor and version it was found on and the test that guards it, are
+recorded in [Vendor workarounds](vendor-workarounds.md), so that each can
+be retired when a fix ships.
 
 ## See also
 

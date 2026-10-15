@@ -373,6 +373,10 @@ take hidden arguments, and each launch is noted for the check) takes the
 slow path. Together with the CPU passing array addresses rather than
 typed pointer objects, a warm CPU dispatch went from 70 to 40 µs.
 
+#### What a warm call costs
+
+What a warm call pays (`_fast_resolve`): the call's signature (`_call_signature`, cached per `Array` as `_sig`; per template class the attribute layout `_template_layouts`, relearned when an instance's attribute names or types differ), one weak lookup for the kernel's entry, the disjointness check over the entry's precomputed array slots (`_disjoint_by_slots`, one sorted walk), and the per-call checks. It runs outside `template_scope`, which the slow path enters. `NumpyBuffer.address` and `span` are computed once per array. Measured on a 2 GHz Xeon: a warm CPU dispatch 70 → 40 µs from the signature alone, then a serial dispatch with eight array arguments 66 → 34 µs; inside a filter, where launches follow cache-trashing kernels and a third are template views, 149 → 130 µs per launch. Leaving the caller out of the chunks (k workers, caller waits) was tried for its warm caches and lost (161 µs), so the caller still runs chunks.
+
 ## The correctness argument
 
 The design rests on one rule: **anything a pass or code generator bakes
