@@ -95,14 +95,14 @@ class LLVMCodeGen:
                                 "Run type inference first.")
             self._param_types[param.name] = tack_type
             elem_llvm = _llvm_type(tack_type)
-            if hasattr(param, '_is_array') and param._is_array:
+            if param._is_array:
                 llvm_param_types.append(elem_llvm.as_pointer())
                 self._array_params.add(param.name)
-            elif hasattr(param, '_is_array') and not param._is_array:
+            elif param._is_array is False:
                 # Scalar parameter — passed by value
                 llvm_param_types.append(elem_llvm)
             else:
-                # Default: treat as pointer (array) for backwards compatibility
+                # Not inferred (hand-built IR): a pointer, as before
                 llvm_param_types.append(elem_llvm.as_pointer())
                 self._array_params.add(param.name)
             param_names.append(param.name)
@@ -125,7 +125,7 @@ class LLVMCodeGen:
         # unconditionally. The dispatcher sets `disjoint_arrays` only on a
         # variant it compiles for calls whose written arrays it has checked
         # share no storage with any other array (`arrays_disjoint`).
-        disjoint = getattr(func, 'disjoint_arrays', False)
+        disjoint = func.disjoint_arrays
         for arg, name in zip(llvm_func.args, param_names):
             arg.name = name
             self._params[name] = arg
@@ -622,7 +622,7 @@ class LLVMCodeGen:
 
     def _slot_type(self, node: ir.IRAssign, value) -> llvm_ir.Type:
         """LLVM type for a local's storage slot."""
-        resolved = getattr(node, '_resolved_type', None)
+        resolved = node._resolved_type
         if isinstance(resolved, ScalarType):
             try:
                 return _llvm_type(resolved)
@@ -1061,7 +1061,7 @@ class LLVMCodeGen:
     def _emit_compare(self, node: ir.IRCompare) -> llvm_ir.Value:
         left = self._emit_expr(node.left)
         right = self._emit_expr(node.right)
-        dtype = getattr(node, '_operand_type', None)
+        dtype = node._operand_type
         if dtype in INTEGER_TYPES:
             target = _llvm_type(dtype)
             left, right = self._coerce_to(left, target), self._coerce_to(right, target)

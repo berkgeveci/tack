@@ -2,7 +2,15 @@
 
 
 class IRNode:
-    """Base class for all IR nodes."""
+    """Base class for all IR nodes.
+
+    Besides its children (declared in ``ir_traversal``), a node may carry
+    metadata that passes set and later stages read. Each kind of node
+    declares its metadata here as a class attribute holding the value it
+    has until a pass sets it, so that every reader sees one default and
+    reads the attribute directly, not through ``getattr`` with a default of
+    its own. Metadata is not traversed, and ``clone_ir`` copies it.
+    """
 
 
 class IRModule(IRNode):
@@ -15,6 +23,14 @@ class IRModule(IRNode):
 class IRFunction(IRNode):
     """A kernel function."""
 
+    #: Whether no array the kernel stores to overlaps another argument for
+    #: this variant's calls, so the CPU may compile with ``noalias``. Set by
+    #: dispatch (``kernel_utils._resolve_variant``) and ``tack.inspect``.
+    disjoint_arrays = False
+    #: Debug mode: one ``ir_bounds.BoundsSite`` per checked access, in the
+    #: order of their site numbers. Set by lowering; None when not checked.
+    bounds_sites = None
+
     def __init__(self, name: str, params: list, body: list):
         self.name = name
         self.params = params  # list of IRParam
@@ -23,6 +39,19 @@ class IRFunction(IRNode):
 
 class IRParam(IRNode):
     """A function parameter."""
+
+    #: Whether the argument is an array (a pointer) or a scalar (a value):
+    #: None until type inference sets it from the call's arguments, which
+    #: ``ir_verify`` checks for at the "inferred" stage.
+    _is_array = None
+    #: Whether the argument is a texture sampled in hardware (type
+    #: inference; cleared where a backend samples in software).
+    _is_texture = False
+    #: A texture's ``(W, H, D)``, recorded at dispatch; None otherwise.
+    _texture_shape = None
+    #: The packed scalar buffer GPU scalar packing adds (``ir_pack_scalars``):
+    #: uniform across a launch, read-only.
+    _is_scalar_pack = False
 
     def __init__(self, name: str, type_annotation=None):
         self.name = name
@@ -130,6 +159,10 @@ class IRUnaryOp(IRNode):
 class IRCompare(IRNode):
     """Comparison: left op right (chained comparisons desugared to and-chains)."""
 
+    #: The type both operands are compared in, after promotion
+    #: (``ir_type_annotate``); the comparison itself is an i32 0 or 1.
+    _operand_type = None
+
     def __init__(self, op: str, left, right):
         self.op = op
         self.left = left
@@ -212,6 +245,11 @@ class IRCall(IRNode):
 class IRAssign(IRNode):
     """Variable assignment: target = value."""
 
+    #: The local's type when it differs from its value's (``ir_type_annotate``):
+    #: a declared or joined type the code generators declare it with; None
+    #: leaves the value's type.
+    _resolved_type = None
+
     def __init__(self, target: str, value):
         self.target = target
         self.value = value
@@ -291,6 +329,12 @@ class IRDimSize(IRNode):
     Resolved at dispatch time to an IRConstant when array shapes are known.
     Used for multi-dimensional index linearization.
     """
+
+    #: How many indices the subscript this stride came from gave, and where
+    #: it is in the source: ``ir_resolve`` raises if the count is not the
+    #: array's dimension count. None for a dimension query (``a.shape[k]``).
+    index_count = None
+    index_source = None
 
     def __init__(self, array_name: str, dim: int):
         self.array_name = array_name

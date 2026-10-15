@@ -249,6 +249,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- A device-class instance attribute that shadows a class constant with
+  something other than a number (`obj.SCALE = [1, 2]`) made every call
+  fail with "unhashable type: 'list'". Such an attribute now drops the
+  constant, as a subclass attribute does; a method that reads it gets the
+  error that names the attribute.
 - HIP works with hip-python 10, the newest on PyPI and what
   `tack-core[hip]` installs. Tack imported `hip.LONG_VERSION`, which 10 does
   not have, so HIP read as unavailable and its tests skipped; it also lacks

@@ -151,10 +151,7 @@ class MSLCodeGen:
             if param.type_annotation is f64:
                 raise TypeError("Apple GPUs do not support double precision (f64).")
             self._param_types[param.name] = param.type_annotation
-            if hasattr(param, '_is_array') and param._is_array:
-                self._array_params.add(param.name)
-            elif not hasattr(param, '_is_array'):
-                # Default: treat as array for backwards compatibility
+            if param._is_array is not False:       # an array, or not inferred (hand-built IR)
                 self._array_params.add(param.name)
 
         # Header
@@ -166,7 +163,7 @@ class MSLCodeGen:
         # Detect texture parameters
         self._texture_params: set[str] = set()
         for param in func.params:
-            if getattr(param, '_is_texture', False):
+            if param._is_texture:
                 self._texture_params.add(param.name)
 
         # Separate device-buffer arguments promise disjoint storage in MSL
@@ -351,7 +348,7 @@ class MSLCodeGen:
         for node in walk_ir(body):
             if not isinstance(node, ir.IRAssign) or node.target in self._declared_vars:
                 continue
-            resolved = getattr(node, '_resolved_type', None)
+            resolved = node._resolved_type
             if resolved is None:
                 continue
             msl_type = _MSL_TYPE_MAP.get(resolved)
@@ -467,7 +464,7 @@ class MSLCodeGen:
     def _find_assign_type(self, var_name: str, stmts: list) -> str | None:
         for stmt in stmts:
             if isinstance(stmt, ir.IRAssign) and stmt.target == var_name:
-                if hasattr(stmt, '_resolved_type') and stmt._resolved_type is not None:
+                if stmt._resolved_type is not None:
                     return _MSL_TYPE_MAP.get(stmt._resolved_type, self._infer_type(stmt.value))
                 return self._infer_type(stmt.value)
             if isinstance(stmt, ir.IRIf):
@@ -536,11 +533,11 @@ class MSLCodeGen:
             isinstance(n, ir.IRName) and n.name == node.target for n in walk_ir(node.value))
         value = self._expr(node.value)
         self._opaque_integer_add = previous
-        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, '_resolved_type', None))
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), node._resolved_type)
         if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
-            if hasattr(node, '_resolved_type') and node._resolved_type is not None:
+            if node._resolved_type is not None:
                 c_type = _MSL_TYPE_MAP.get(node._resolved_type, self._infer_type(node.value))
             else:
                 c_type = self._infer_type(node.value)
@@ -554,10 +551,6 @@ class MSLCodeGen:
         dtype = getattr(node, 'dtype', None)
         if dtype is not None:
             return _MSL_TYPE_MAP.get(dtype, "float")
-        # Check _resolved_cast_type for IRCast nodes
-        rct = getattr(node, '_resolved_cast_type', None)
-        if rct is not None:
-            return _MSL_TYPE_MAP.get(rct, "float")
         # Fallback for unannotated nodes (e.g., array pointer references)
         if isinstance(node, ir.IRName):
             if node.name in self._array_params:
@@ -735,7 +728,7 @@ class MSLCodeGen:
     def _expr_compare(self, node: ir.IRCompare) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
-        dtype = getattr(node, '_operand_type', None)
+        dtype = node._operand_type
         left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
         right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
         return f"({left} {_CMP_MAP[node.op]} {right})"

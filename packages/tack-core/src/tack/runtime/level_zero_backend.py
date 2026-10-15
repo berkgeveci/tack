@@ -1865,8 +1865,8 @@ class LevelZeroBackend(Backend):
         spirv_bytes = _compile_to_spirv(opencl_source, self._device_id)
 
         param_types = [p.type_annotation for p in ir_func.params]
-        param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
-        param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+        param_is_array = [p._is_array for p in ir_func.params]
+        param_is_texture = [p._is_texture for p in ir_func.params]
         return _load_kernel(self, spirv_bytes, kernel_name, param_types, param_is_array,
                             param_is_texture, workgroup_size, full_groups,
                             opencl_source=opencl_source)

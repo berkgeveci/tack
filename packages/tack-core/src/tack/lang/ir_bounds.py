@@ -58,12 +58,12 @@ def guard_accesses(function: ir.IRFunction):
     first violation. Accesses to the hidden arrays and to GPU scalar packs
     are Tack's own, and left alone.
     """
-    if getattr(function, 'bounds_sites', None) is None or \
+    if function.bounds_sites is None or \
             getattr(function, '_bounds_guarded', False):
         return
     function._bounds_guarded = True
     own = set(HIDDEN_PARAMS) | {p.name for p in function.params
-                                if getattr(p, '_is_scalar_pack', False)}
+                                if p._is_scalar_pack}
     names = {p.name for p in function.params}
     for node in walk_ir(function.body):
         names.update(n for n in (getattr(node, 'name', None), getattr(node, 'target', None),

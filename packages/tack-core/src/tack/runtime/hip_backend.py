@@ -957,8 +957,8 @@ class HIPBackend(Backend):
         hip_source = generate_hip_source(ir_func)
         code = _compile_code_object(hip_source, kernel_name)
         param_types = [p.type_annotation for p in ir_func.params]
-        param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
-        param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+        param_is_array = [p._is_array for p in ir_func.params]
+        param_is_texture = [p._is_texture for p in ir_func.params]
         return _load_kernel(code, kernel_name, param_types, param_is_array, param_is_texture)
 
     # ── The disk cache: code objects, loaded as they are ──────────────

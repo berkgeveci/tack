@@ -151,16 +151,13 @@ class CUDACodeGen:
             if param.type_annotation is None:
                 raise TypeError(f"Parameter '{param.name}' has no type. Run type inference first.")
             self._param_types[param.name] = param.type_annotation
-            if hasattr(param, '_is_array') and param._is_array:
-                self._array_params.add(param.name)
-            elif not hasattr(param, '_is_array'):
-                # Default: treat as array for backwards compatibility
+            if param._is_array is not False:       # an array, or not inferred (hand-built IR)
                 self._array_params.add(param.name)
 
         # Detect texture parameters for hardware texture object path
         self._texture_params: set[str] = set()
         for param in func.params:
-            if getattr(param, '_is_texture', False):
+            if param._is_texture:
                 self._texture_params.add(param.name)
 
         # Build function signature
@@ -328,7 +325,7 @@ class CUDACodeGen:
         for node in walk_ir(body):
             if not isinstance(node, ir.IRAssign) or node.target in self._declared_vars:
                 continue
-            resolved = getattr(node, '_resolved_type', None)
+            resolved = node._resolved_type
             if resolved is None:
                 continue  # untyped (an array alias): declared where it is assigned
             c_type = self._resolved_type_to_c(resolved)
@@ -492,7 +489,7 @@ class CUDACodeGen:
         for stmt in stmts:
             if isinstance(stmt, ir.IRAssign) and stmt.target == var_name:
                 # Prefer pre-computed type from ir_type_annotate pass
-                if hasattr(stmt, '_resolved_type') and stmt._resolved_type is not None:
+                if stmt._resolved_type is not None:
                     return self._resolved_type_to_c(stmt._resolved_type)
                 return self._infer_c_type(stmt.value)
             if isinstance(stmt, ir.IRIf):
@@ -590,12 +587,12 @@ class CUDACodeGen:
 
     def _emit_assign(self, node: ir.IRAssign):
         value = self._expr(node.value)
-        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, '_resolved_type', None))
+        value = self._integers.convert(value, getattr(node.value, 'dtype', None), node._resolved_type)
         if node.target in self._declared_vars:
             self._emit(f"{node.target} = {value};")
         else:
             # Use pre-computed type annotation if available, else fall back
-            if hasattr(node, '_resolved_type') and node._resolved_type is not None:
+            if node._resolved_type is not None:
                 c_type = self._resolved_type_to_c(node._resolved_type)
             else:
                 c_type = self._infer_c_type(node.value)
@@ -609,10 +606,6 @@ class CUDACodeGen:
         dtype = getattr(node, 'dtype', None)
         if dtype is not None:
             return self._resolved_type_to_c(dtype)
-        # Check _resolved_cast_type for IRCast nodes
-        rct = getattr(node, '_resolved_cast_type', None)
-        if rct is not None:
-            return self._resolved_type_to_c(rct)
         # Fallback for unannotated nodes (e.g., array pointer references)
         if isinstance(node, ir.IRName):
             if node.name in self._array_params:
@@ -816,7 +809,7 @@ class CUDACodeGen:
     def _expr_compare(self, node: ir.IRCompare) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
-        dtype = getattr(node, '_operand_type', None)
+        dtype = node._operand_type
         left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
         right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
         return f"({left} {_CMP_MAP[node.op]} {right})"

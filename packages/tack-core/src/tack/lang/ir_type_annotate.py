@@ -50,7 +50,7 @@ def annotate_types(ir_func: ir.IRFunction):
     array_params = set()  # names of array (pointer) parameters
     for param in ir_func.params:
         base_env[param.name] = param.type_annotation
-        if getattr(param, '_is_array', False):
+        if param._is_array:
             array_params.add(param.name)
 
     # Names whose type is declared elsewhere and must not be widened:

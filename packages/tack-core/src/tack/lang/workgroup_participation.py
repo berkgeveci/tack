@@ -45,7 +45,7 @@ class _Uniformity:
         self.function = function
         self.in_parallel = False
         self.scalar_packs = {p.name for p in function.params
-                             if getattr(p, '_is_scalar_pack', False)}
+                             if p._is_scalar_pack}
 
     def fail(self, node, path, reason):
         primitive = (f'block_{node.op}' if isinstance(node, ir.IRBlockReduce)
@@ -200,6 +200,6 @@ def check_workgroup_participation(ir_func):
     if not requires_full_workgroups(ir_func):
         return False
     checker = _Uniformity(ir_func)
-    env = {p.name: not getattr(p, '_is_array', False) for p in ir_func.params}
+    env = {p.name: not p._is_array for p in ir_func.params}
     checker.body(ir_func.body, env, True, 'body', True)
     return True

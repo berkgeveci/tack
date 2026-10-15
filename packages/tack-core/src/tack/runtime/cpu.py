@@ -733,7 +733,7 @@ def _load_kernel(engine, ir_func: ir.IRFunction) -> CompiledKernel:
         raise RuntimeError(f"Failed to JIT compile kernel '{ir_func.name}'")
 
     param_types = [p.type_annotation for p in ir_func.params]
-    param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
+    param_is_array = [p._is_array for p in ir_func.params]
     loop = next(s for s in ir_func.body if isinstance(s, ir.IRParallelFor))
     return CompiledKernel(engine, func_ptr, param_types, param_is_array, ir_func.name,
                           num_dims=len(loop.dims or ()))

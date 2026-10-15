@@ -86,15 +86,13 @@ class OpenCLCodeGen(CUDACodeGen):
             if param.type_annotation is None:
                 raise TypeError(f"Parameter '{param.name}' has no type. Run type inference first.")
             self._param_types[param.name] = param.type_annotation
-            if hasattr(param, '_is_array') and param._is_array:
-                self._array_params.add(param.name)
-            elif not hasattr(param, '_is_array'):
+            if param._is_array is not False:       # an array, or not inferred (hand-built IR)
                 self._array_params.add(param.name)
 
         # Detect texture parameters for hardware image3d path
         self._texture_params: set[str] = set()
         for param in func.params:
-            if getattr(param, '_is_texture', False):
+            if param._is_texture:
                 self._texture_params.add(param.name)
 
         # Build function signature with OpenCL qualifiers
@@ -545,9 +543,6 @@ class OpenCLCodeGen(CUDACodeGen):
         dtype = getattr(node, 'dtype', None)
         if dtype is not None:
             return self._resolved_type_to_c(dtype)
-        rct = getattr(node, '_resolved_cast_type', None)
-        if rct is not None:
-            return self._resolved_type_to_c(rct)
         # Fallback for unannotated nodes (e.g., array pointer references)
         if isinstance(node, ir.IRName):
             if node.name in self._array_params:
