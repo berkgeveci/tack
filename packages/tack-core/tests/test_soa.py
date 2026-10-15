@@ -386,3 +386,19 @@ def test_statistics_pair_components_as_interleaved_arrays_do(backend):
     aos = tack.array(p, layout="aos")
     assert alg.dot(p, p) == alg.dot(aos, aos) == alg.dot(p, aos)
     assert alg.absmax(p) == 23
+
+
+@tack.kernel
+def _offset_by(t, a, out):
+    for i in range(len(a)):
+        out[i] = a[i] + t.xyz[i]
+
+
+def test_an_soa_array_beside_a_device_class_on_the_fast_path(backend):
+    """The second call takes the fast path, which expanded the device class's
+    arrays onto the SOA components as a tuple and failed to append them."""
+    p = tack.soa(*_xyz())
+    out = tack.zeros((4,), tack.vec3())
+    for _ in range(2):
+        _offset_by(_Points(tack.array(_expected(), tack.vec3())), p, out)
+        np.testing.assert_allclose(out.numpy(), 2 * _expected())

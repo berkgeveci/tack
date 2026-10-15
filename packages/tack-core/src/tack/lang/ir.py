@@ -30,6 +30,11 @@ class IRFunction(IRNode):
     #: Debug mode: one ``ir_bounds.BoundsSite`` per checked access, in the
     #: order of their site numbers. Set by lowering; None when not checked.
     bounds_sites = None
+    #: The source spelling of each array a device-class argument holds, by
+    #: synthetic parameter (``__tmpl_dst_base__values__`` ->
+    #: ``dst.base.values``), for diagnostics. Set by lowering from the
+    #: template rewrite; kept in the disk cache with the IR.
+    held_arrays = {}
 
     def __init__(self, name: str, params: list, body: list):
         self.name = name

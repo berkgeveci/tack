@@ -497,7 +497,7 @@ class KernelVariant:
 def _written_array_args(template, effective_args) -> tuple:
     """``(index, name)`` of each array argument the kernel may store to, the
     name as the source wrote it (`_source_name`)."""
-    held = getattr(template, 'held_arrays', {})
+    held = template.held_arrays
     return tuple(
         (index, _source_name(param.name, held))
         for index, (param, written, arg) in enumerate(
@@ -1075,7 +1075,7 @@ def _expand_with_plan(args, plan) -> tuple:
     templates = {idx for idx, _ in plan}
     new_args = [arg for i, arg in enumerate(args) if i not in templates]
     if soa:
-        new_args = _flatten_soa(new_args)    # a template's own arrays are flattened below
+        new_args = list(_flatten_soa(new_args))   # a template's own arrays are flattened below
     for idx, paths in plan:
         obj = args[idx]
         for path in paths:
