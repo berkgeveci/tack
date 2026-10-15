@@ -126,7 +126,7 @@ def _is_array(value):
 def _only_order_one(family, order):
     if order != 1:
         raise NotImplementedError(
-            f"{family} order {order} is not in the prototype: its values on edges, faces "
+            f"{family} order {order} is not supported yet: its values on edges, faces "
             "and interiors need a cell -> DOF map built from the derived edges and faces")
     return {"order": order}
 
@@ -176,8 +176,8 @@ class H1(Space):
             for group in topology.groups():
                 if group.count and not group.shape.NUM_QUADRATIC:
                     raise NotImplementedError(
-                        f"H1 order 2 on {group.shape.__name__} cells is not in the "
-                        "prototype: tetrahedra, hexahedra, voxels and wedges")
+                        f"H1 order 2 on {group.shape.__name__} cells is not supported yet; "
+                        "it is on tetrahedra, hexahedra, voxels and wedges")
             edges, faces = topology.edges(), topology.faces()
             base = topology.num_points + edges.num_edges
             nf = faces.num_faces
@@ -220,10 +220,10 @@ class H1(Space):
         if group is not None:
             root = group.root
             attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
-                              edge_start=edges.group_starts[id(root)],
+                              edge_start=edges.group_starts[root],
                               side_face=faces.side_face, side_slot=faces.side_slot,
                               side_orientation=faces.side_orientation,
-                              face_start=faces.group_starts[id(root)])
+                              face_start=faces.group_starts[root])
         return attributes
 
     def extra_mixins(self):
@@ -282,7 +282,7 @@ class L2(Space):
                                  f"not {host.shape[0]}")
             if not np.isin(host, (0, 1)).all():
                 bad = sorted(set(host.tolist()) - {0, 1})
-                raise NotImplementedError(f"orders {bad} are not in the prototype: L2 "
+                raise NotImplementedError(f"orders {bad} are not supported yet: L2 "
                                           "has orders 0 and 1")
             orders = tack.empty(host.shape, tack.i32)
             if host.size:

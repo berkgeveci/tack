@@ -75,7 +75,7 @@ def _scalar_gradients(data, field, at):
     for group in data.launch_groups("cells", [field]):
         if group.count:
             _corner_gradients(data.domain_view("cells", group), field.view(group),
-                              start_of[id(group.root)], corners)
+                              start_of[group.root], corners)
     out = tack.empty((data.num_points,), tack.vec(3, data.dtype))
     out.fill(0)
     if total:

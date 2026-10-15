@@ -40,6 +40,6 @@ def traces(data, field):
         out.fill(0)
     starts = data.topology.faces().group_starts
     for group in data.launch_groups("cells", [field]):
-        if group.count and id(group.root) in starts:
+        if group.count and group.root in starts:
             _traces(data.domain_view("cells", group), field.view(group), out)
     return Field(out_space, out)

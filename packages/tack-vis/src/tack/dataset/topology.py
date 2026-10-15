@@ -91,7 +91,7 @@ def corner_layout(topology):
     groups = topology.groups()
     starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_POINTS
                                              for g in groups])]).astype(int)
-    return {id(g): int(s) for g, s in zip(groups, starts[:-1])}, int(starts[-1])
+    return {g: int(s) for g, s in zip(groups, starts[:-1])}, int(starts[-1])
 
 
 class _Topology:
@@ -111,7 +111,7 @@ class _Topology:
             keys = tack.empty((total,), self.id_dtype)
             for group in self.groups():
                 if group.count:
-                    _corner_keys(group.view(), start_of[id(group)], keys)
+                    _corner_keys(group.view(), start_of[group], keys)
             order, offsets = bucket_order(keys, self.num_points, self.id_dtype)
             self._point_links = (offsets, order)
         return self._point_links
@@ -366,7 +366,7 @@ class Faces:
         starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_FACES
                                                  for g in cell_groups])]).astype(int)
         total = int(starts[-1])
-        self.group_starts = {id(g): int(s) for g, s in zip(cell_groups, starts[:-1])}
+        self.group_starts = {g: int(s) for g, s in zip(cell_groups, starts[:-1])}
         self.id_dtype = idt = topology.id_dtype
         rows = tack.empty((total,), tack.vec(4, idt))
         kinds = tack.empty((total,), tack.i32)
@@ -523,7 +523,7 @@ class Edges:
         starts = np.concatenate([[0], np.cumsum([g.count * g.shape.NUM_EDGES
                                                  for g in cell_groups])]).astype(int)
         total = int(starts[-1])
-        self.group_starts = {id(g): int(s) for g, s in zip(cell_groups, starts[:-1])}
+        self.group_starts = {g: int(s) for g, s in zip(cell_groups, starts[:-1])}
         self.id_dtype = idt = topology.id_dtype
         keys = tack.empty((total,), tack.vec(2, idt))
         self.side_sign = tack.empty((total,), tack.i32)

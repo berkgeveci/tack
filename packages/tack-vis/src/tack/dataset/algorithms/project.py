@@ -113,7 +113,7 @@ def _onto_points(data, field, values):
         for group in data.launch_groups("cells", [field]):
             if group.count:
                 _corner_contributions(data.domain_view("cells", group), field.view(group),
-                                      start_of[id(group.root)], contributions)
+                                      start_of[group.root], contributions)
     out = _like(values, data.num_points)
     _start(data, field, out)
     if total:
@@ -127,7 +127,7 @@ def _onto_nodes(data, field, space, values):
     groups = data.topology.groups()
     starts, total = {}, 0
     for group in groups:
-        starts[id(group)] = total
+        starts[group] = total
         total += group.count * group.shape.NUM_QUADRATIC
     idt = ids.at_least(data.id_dtype, space.size)
     keys = tack.empty((total,), idt)
@@ -136,7 +136,7 @@ def _onto_nodes(data, field, space, values):
     for group in data.launch_groups("cells", [field, target]):
         if group.count:
             _node_contributions(data.domain_view("cells", group), field.view(group),
-                                target.view(group), starts[id(group.root)], keys,
+                                target.view(group), starts[group.root], keys,
                                 contributions)
     out = target.values
     _start(data, field, out)              # an order-2 field's points come first
