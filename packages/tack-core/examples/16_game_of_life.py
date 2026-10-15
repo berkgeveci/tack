@@ -26,9 +26,9 @@ tack.init(arch=_arch)
 N = 64
 STEPS = 100
 
-alive = tack.field(dtype=tack.i32, shape=(N, N))
-count = tack.field(dtype=tack.i32, shape=(N, N))
-new_alive = tack.field(dtype=tack.i32, shape=(N, N))
+alive = tack.empty(dtype=tack.i32, shape=(N, N))
+count = tack.empty(dtype=tack.i32, shape=(N, N))
+new_alive = tack.empty(dtype=tack.i32, shape=(N, N))
 
 
 @tack.kernel

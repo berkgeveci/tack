@@ -174,7 +174,7 @@ jobs:
           # to .python-version (3.13) and looks in a different environment.
           python-version: ${{ matrix.python-version }}
 
-      # VTK and MFEM (PyMFEM) are the references for tack.data: VTK for the
+      # VTK and MFEM (PyMFEM) are the references for tack.dataset: VTK for the
       # cell shapes, faces and filters, MFEM for the derived topology, the
       # spaces and order 2. One job is enough, and the wheels are large, so
       # only 3.13 syncs the `interop` extra; its versions, and the numba
@@ -215,7 +215,7 @@ jobs:
         run: uv run pytest -q
 
   # ── 64-bit ids ─────────────────────────────────────────────────────
-  # tack.data keeps a topology's ids in i32 unless it is too large or asked
+  # tack.dataset keeps a topology's ids in i32 unless it is too large or asked
   # for i64, and its kernels specialize on the id type -- so the i64 path is
   # a second set of compiled kernels that only a huge mesh would reach.
   # `--ids=i64` reruns the dataset tests with every topology built in i64,

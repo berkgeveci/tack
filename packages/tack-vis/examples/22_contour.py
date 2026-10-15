@@ -17,7 +17,7 @@ Runs contour on two representations of the same curvilinear mesh:
 Both produce identical results, validating the abstraction.
 
 This shows how such an algorithm is built from scratch. The library's
-version, for any 2D mesh, is ``tack.data.contour``.
+version, for any 2D mesh, is ``tack.dataset.contour``.
 
 Usage:
   uv run python packages/tack-vis/examples/22_contour.py
@@ -55,11 +55,11 @@ class MarchingSquaresTables:
     """Lookup tables for marching squares, passed as a template parameter."""
 
     def __init__(self):
-        self.num_lines = tack.field(dtype=tack.i32, shape=(16,))
+        self.num_lines = tack.empty(dtype=tack.i32, shape=(16,))
         # Flatten (16, 2, 2) -> (64,) for 1D field indexing
-        self.segments = tack.field(dtype=tack.i32, shape=(64,))
+        self.segments = tack.empty(dtype=tack.i32, shape=(64,))
         # Flatten (4, 2) -> (8,)
-        self.edge_verts = tack.field(dtype=tack.i32, shape=(8,))
+        self.edge_verts = tack.empty(dtype=tack.i32, shape=(8,))
 
         self.num_lines.from_numpy(np.array(
             [0, 1, 1, 1, 1, 2, 1, 1, 1, 1, 2, 1, 1, 1, 1, 0], dtype=np.int32))
@@ -137,7 +137,7 @@ class CellSetExplicitQuads:
     """Unstructured quad grid. Connectivity stored in arrays."""
 
     def __init__(self, connectivity_np, num_cells, num_points):
-        self.connectivity = tack.field(dtype=tack.i32, shape=(len(connectivity_np),))
+        self.connectivity = tack.empty(dtype=tack.i32, shape=(len(connectivity_np),))
         self.connectivity.from_numpy(connectivity_np)
 
     @tack.func
@@ -267,7 +267,7 @@ def run_contour(cell_set, coords_x, coords_y, scalar_field, isovalue,
     nc = num_lines_f.shape[0]
 
     # Store isovalue in a 1-element field
-    isovalue_f = tack.field(dtype=tack.f32, shape=(1,))
+    isovalue_f = tack.empty(dtype=tack.f32, shape=(1,))
     isovalue_f.from_numpy(np.array([isovalue], dtype=np.float32))
 
     # Pass 1: classify cells -- count output lines per cell
@@ -347,19 +347,19 @@ if __name__ == "__main__":
     explicit_cs = CellSetExplicitQuads(conn_np, NUM_CELLS, NUM_POINTS)
 
     # --- allocate fields ---
-    coords_x = tack.field(dtype=tack.f32, shape=(NUM_POINTS,))
-    coords_y = tack.field(dtype=tack.f32, shape=(NUM_POINTS,))
-    scalar_field = tack.field(dtype=tack.f32, shape=(NUM_POINTS,))
+    coords_x = tack.empty(dtype=tack.f32, shape=(NUM_POINTS,))
+    coords_y = tack.empty(dtype=tack.f32, shape=(NUM_POINTS,))
+    scalar_field = tack.empty(dtype=tack.f32, shape=(NUM_POINTS,))
 
-    num_lines_f = tack.field(dtype=tack.i32, shape=(NUM_CELLS,))
-    scatter_offsets_f = tack.field(dtype=tack.i32, shape=(NUM_CELLS,))
+    num_lines_f = tack.empty(dtype=tack.i32, shape=(NUM_CELLS,))
+    scatter_offsets_f = tack.empty(dtype=tack.i32, shape=(NUM_CELLS,))
     # The interpolation kernels walk every entry, and the generate pass
     # writes only the first total_points: zero makes the rest point 0.
     interp_pa = tack.zeros(dtype=tack.i32, shape=(MAX_POINTS,))
     interp_pb = tack.zeros(dtype=tack.i32, shape=(MAX_POINTS,))
     interp_w = tack.zeros(dtype=tack.f32, shape=(MAX_POINTS,))
-    output_x = tack.field(dtype=tack.f32, shape=(MAX_POINTS,))
-    output_y = tack.field(dtype=tack.f32, shape=(MAX_POINTS,))
+    output_x = tack.empty(dtype=tack.f32, shape=(MAX_POINTS,))
+    output_y = tack.empty(dtype=tack.f32, shape=(MAX_POINTS,))
 
     # --- load data ---
     coords_x.from_numpy(coords_x_np)

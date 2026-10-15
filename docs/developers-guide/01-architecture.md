@@ -119,7 +119,7 @@ packages/
         src/tack/
             data/                # Datasets, spaces, views and their algorithms
                 algorithms/      # contour, clip, threshold, gradients, ... (one per file)
-            deprecated/          # Superseded by tack.data, kept for reference
+            deprecated/          # Superseded by tack.dataset, kept for reference
                 algorithms/      # flying_edges, compute_normals, cell_to_point, amr_blanking
                 fe/              # Lagrange bases, geometry maps, accessors
             interop/             # External framework interop
@@ -173,7 +173,7 @@ attributes become parameters, and method calls become inlined function
 bodies. The IR and codegens never see
 templates.
 
-**Non-owning pointer interop.** `tack.field_from_ptr()` wraps external
+**Non-owning pointer interop.** `tack.array_from_ptr()` wraps external
 device memory without allocation or copy. Each backend implements
 `wrap_ptr()` so that the wrapped memory is never freed by Tack (the
 CUDA, HIP and Level Zero buffers carry an `_owned = False` flag).

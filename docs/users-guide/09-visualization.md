@@ -1,6 +1,6 @@
 # Datasets and visualization
 
-`tack.data` holds meshes and the fields on them, and the algorithms that work
+`tack.dataset` holds meshes and the fields on them, and the algorithms that work
 on both: contour, slice, clip, threshold, external faces, gradients,
 projections between spaces, streamlines and the rest. Like VTK and Viskores,
 it works on structured grids, unstructured meshes of the linear cells,
@@ -19,7 +19,7 @@ has every class and algorithm, and what each topology supports.
 
 ```python
 import tack
-import tack.data as td
+import tack.dataset as td
 
 tack.init(arch=tack.cpu)
 
@@ -52,9 +52,9 @@ A *space* says where a field's values live and how they are read between
 them. `H1` is point data, continuous and interpolated in each cell;
 `Constant` is cell data; `L2` holds each cell's own corner values, a
 discontinuous field. `Values(data, on)` is data about points, edges, faces or
-cells with no interpolation. A field's values are a `tack.field`, a
-`tack.Vector.field`, or an implicit array that computes them on demand: a
-grid's coordinates take no memory.
+cells with no interpolation. A field's values are a `tack.Array`, scalar or
+vector-valued, or an implicit array that computes them on demand. Uniform
+coordinates need only dimensions, origin, spacing and direction metadata.
 
 Geometry may also live in L2, giving each cell its own positions. Contour and
 slice preserve the resulting gaps; clipping requires shared H1 geometry.
@@ -89,7 +89,7 @@ extra leaves MFEM out.
 
 ## Algorithms
 
-Every algorithm is in `tack.data.algorithms`, re-exported from `tack.data`,
+Every algorithm is in `tack.dataset.algorithms`, re-exported from `tack.dataset`,
 and they share one set of conventions:
 
 - the dataset comes first;
@@ -258,7 +258,7 @@ separate Tack context cannot be exchanged through this path. For another library
 
 The first vis worklets, `flying_edges`, `compute_normals`, `cell_to_point`
 and `amr_blanking`, and the finite-element helpers in `tack.fe` are kept
-for reference in `tack.deprecated`. `tack.data` supersedes them:
+for reference in `tack.deprecated`. `tack.dataset` supersedes them:
 - `contour` replaces `flying_edges`;
 - `to_points` replaces `cell_to_point`;
 - `gradients` and `project` replace the finite-element helpers.

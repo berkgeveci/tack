@@ -20,9 +20,9 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 n = 1000
-x = tack.field(dtype=tack.f32, shape=(n,))
-y = tack.field(dtype=tack.f32, shape=(n,))
-out = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
+y = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty(dtype=tack.f32, shape=(n,))
 
 x.from_numpy(np.arange(n, dtype=np.float32))
 y.from_numpy(np.ones(n, dtype=np.float32) * 3.0)

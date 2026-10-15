@@ -20,7 +20,7 @@ def point_elevation(dataset, direction=(0.0, 0.0, 1.0), name="elevation"):
     Computes elevation = dot(coordinates, direction) for each point.
     """
     n = dataset.num_points
-    out_field = tack.field(dtype=tack.f32, shape=(n,))
+    out_field = tack.empty(dtype=tack.f32, shape=(n,))
     _elevation_kernel(dataset.coordinates, out_field,
                       direction[0], direction[1], direction[2], n)
     dataset.add_point_array(name, AOSArray(out_field))

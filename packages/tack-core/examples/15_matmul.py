@@ -33,9 +33,9 @@ def matmul(a, b, c, n):
             c[i * 128 + j] = s
 
 
-a = tack.field(dtype=tack.f32, shape=(N * N,))
-b = tack.field(dtype=tack.f32, shape=(N * N,))
-c = tack.field(dtype=tack.f32, shape=(N * N,))
+a = tack.empty(dtype=tack.f32, shape=(N * N,))
+b = tack.empty(dtype=tack.f32, shape=(N * N,))
+c = tack.empty(dtype=tack.f32, shape=(N * N,))
 
 np.random.seed(42)
 np_a = np.random.randn(N, N).astype(np.float32)

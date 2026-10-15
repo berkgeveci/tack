@@ -286,18 +286,18 @@ def main():
     B = precompute_basis_matrix_2d(basis, args.nsub)
     ndof = basis.n1d * basis.n1d
     n_pts = (args.nsub + 1) ** 2
-    f_B = tack.field_from_numpy(B.ravel().astype(np_fp))
-    f_elem_idx = tack.field_from_numpy(elem_idx)
+    f_B = tack.array(B.ravel().astype(np_fp))
+    f_elem_idx = tack.array(elem_idx)
 
     # Define kernels
     eval_field, count_segs, gen_segs = define_kernels()
 
     # Step 1: evaluate field at subdivision points
-    f_field_vals = tack.field(dtype=tack_fp, shape=(n_elems * n_pts,))
+    f_field_vals = tack.empty(dtype=tack_fp, shape=(n_elems * n_pts,))
     eval_field(accessor, f_B, ndof, n_pts, f_elem_idx, f_field_vals)
 
     # Step 2: count segments
-    f_counts = tack.field(dtype=tack.i32, shape=(n_elems,))
+    f_counts = tack.empty(dtype=tack.i32, shape=(n_elems,))
     count_segs(f_field_vals, args.nsub, n_elems, args.isovalue, f_counts)
 
     counts = f_counts.to_numpy()
@@ -311,12 +311,12 @@ def main():
     # Step 3: prefix scan + generate
     offsets = np.zeros(n_elems, dtype=np.int32)
     offsets[1:] = np.cumsum(counts[:-1])
-    f_offsets = tack.field_from_numpy(offsets)
+    f_offsets = tack.array(offsets)
 
-    f_x0 = tack.field(dtype=tack_fp, shape=(total_segs,))
-    f_y0 = tack.field(dtype=tack_fp, shape=(total_segs,))
-    f_x1 = tack.field(dtype=tack_fp, shape=(total_segs,))
-    f_y1 = tack.field(dtype=tack_fp, shape=(total_segs,))
+    f_x0 = tack.empty(dtype=tack_fp, shape=(total_segs,))
+    f_y0 = tack.empty(dtype=tack_fp, shape=(total_segs,))
+    f_x1 = tack.empty(dtype=tack_fp, shape=(total_segs,))
+    f_y1 = tack.empty(dtype=tack_fp, shape=(total_segs,))
 
     gen_segs(f_field_vals, geom, f_elem_idx, f_offsets,
              args.nsub, args.isovalue,

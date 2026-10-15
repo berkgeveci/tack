@@ -109,9 +109,9 @@ plane_v = np.array([
 plane_t = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
 
 def upload_mesh(verts, tris):
-    pts = tack.field(dtype=tack.f32, shape=(verts.size,))
+    pts = tack.empty(dtype=tack.f32, shape=(verts.size,))
     pts.from_numpy(verts.reshape(-1))
-    conn = tack.field(dtype=tack.i32, shape=(tris.size,))
+    conn = tack.empty(dtype=tack.i32, shape=(tris.size,))
     conn.from_numpy(tris.reshape(-1))
     return pts, conn
 

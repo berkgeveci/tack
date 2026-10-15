@@ -25,7 +25,7 @@ def cell_average(dataset, point_array_name, cell_array_name=None):
         cell_array_name = point_array_name
 
     pt_arr = dataset.get_point_array(point_array_name)
-    out_field = tack.field(dtype=tack.f32, shape=(dataset.num_cells,))
+    out_field = tack.empty(dtype=tack.f32, shape=(dataset.num_cells,))
     _cell_avg_kernel(dataset.cell_set, pt_arr.data, out_field, dataset.num_cells)
     dataset.add_cell_array(cell_array_name, AOSArray(out_field))
     return dataset

@@ -12,8 +12,8 @@ import numpy as np
 import pytest
 
 import tack
-import tack.data as td
-from tack.data import algorithms as alg
+import tack.dataset as td
+from tack.dataset import algorithms as alg
 from tack.runtime.dispatch import env_flag
 
 try:

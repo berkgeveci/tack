@@ -8,12 +8,16 @@ __path__ = extend_path(__path__, __name__)
 from tack.lang.constant import constant
 from tack.lang.device_class import data_oriented, device_class
 from tack.lang.field import (
+    Array,
     ExportedMemory,
     Matrix,
     Texture3D,
     Vector,
     arange,
+    array,
+    array_from_ptr,
     concat,
+    empty,
     empty_like,
     field,
     field_from_numpy,
@@ -27,7 +31,28 @@ from tack.lang.field import (
 from tack.lang.func import func
 from tack.lang.inspect_kernel import inspect
 from tack.lang.kernel import kernel
-from tack.lang.types import f32, f64, i8, i16, i32, i64, template, u8, u16, u32, u64
+from tack.lang.types import (
+    ElementType,
+    f32,
+    f64,
+    i8,
+    i16,
+    i32,
+    i64,
+    mat,
+    mat2,
+    mat3,
+    mat4,
+    template,
+    u8,
+    u16,
+    u32,
+    u64,
+    vec,
+    vec2,
+    vec3,
+    vec4,
+)
 from tack.runtime.dispatch import init, sync, sync_async
 
 

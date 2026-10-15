@@ -407,8 +407,8 @@ def _geometry(result):
 
 
 def _tack():
-    import tack.data as td
-    from tack.data import algorithms as alg
+    import tack.dataset as td
+    from tack.dataset import algorithms as alg
 
     return td, alg
 

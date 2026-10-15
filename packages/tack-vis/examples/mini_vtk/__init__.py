@@ -4,7 +4,7 @@ Provides array abstractions (AOS, SOA, constant), cell set types
 (structured, explicit), cell type abstractions (hex, tet, wedge),
 a Dataset container, and composable filters.
 
-Superseded by ``tack.data``, which grew from the same ideas. It is kept
+Superseded by ``tack.dataset``, which grew from the same ideas. It is kept
 as a small, self-contained example of the design, not as a library to
 build on.
 """

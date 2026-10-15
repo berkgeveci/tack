@@ -25,13 +25,13 @@ tack.init(arch=_arch)
 n = 100
 
 # Separate fields for each component
-ax = tack.field(dtype=tack.f32, shape=(n,))
-ay = tack.field(dtype=tack.f32, shape=(n,))
-az = tack.field(dtype=tack.f32, shape=(n,))
-nx_out = tack.field(dtype=tack.f32, shape=(n,))
-ny_out = tack.field(dtype=tack.f32, shape=(n,))
-nz_out = tack.field(dtype=tack.f32, shape=(n,))
-dot_out = tack.field(dtype=tack.f32, shape=(n,))
+ax = tack.empty(dtype=tack.f32, shape=(n,))
+ay = tack.empty(dtype=tack.f32, shape=(n,))
+az = tack.empty(dtype=tack.f32, shape=(n,))
+nx_out = tack.empty(dtype=tack.f32, shape=(n,))
+ny_out = tack.empty(dtype=tack.f32, shape=(n,))
+nz_out = tack.empty(dtype=tack.f32, shape=(n,))
+dot_out = tack.empty(dtype=tack.f32, shape=(n,))
 
 # Fill with points on a spiral
 theta = np.linspace(0, 4 * np.pi, n, dtype=np.float32)
@@ -64,9 +64,9 @@ print("1. Normalization: all vectors have unit length")
 
 # --- Dot product ---
 
-bx = tack.field(dtype=tack.f32, shape=(n,))
-by = tack.field(dtype=tack.f32, shape=(n,))
-bz = tack.field(dtype=tack.f32, shape=(n,))
+bx = tack.empty(dtype=tack.f32, shape=(n,))
+by = tack.empty(dtype=tack.f32, shape=(n,))
+bz = tack.empty(dtype=tack.f32, shape=(n,))
 
 # b = (1, 0, 0) everywhere
 bx.from_numpy(np.ones(n, dtype=np.float32))
@@ -92,9 +92,9 @@ print("2. Dot product: matches expected cos(theta)")
 
 # --- Cross product ---
 
-cx_out = tack.field(dtype=tack.f32, shape=(n,))
-cy_out = tack.field(dtype=tack.f32, shape=(n,))
-cz_out = tack.field(dtype=tack.f32, shape=(n,))
+cx_out = tack.empty(dtype=tack.f32, shape=(n,))
+cy_out = tack.empty(dtype=tack.f32, shape=(n,))
+cz_out = tack.empty(dtype=tack.f32, shape=(n,))
 
 
 @tack.kernel

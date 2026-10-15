@@ -7,7 +7,7 @@ It is split into three packages:
 
 - **tack-core** — the compute framework (kernels, fields, types, backends)
 - **tack-rendering** — path tracing renderer
-- **tack-vis** — datasets and visualization algorithms (`tack.data`, VTK interop)
+- **tack-vis** — datasets and visualization algorithms (`tack.dataset`, VTK interop)
 
 ```bash
 # Install everything from source with uv
@@ -42,9 +42,9 @@ tack.init(arch=tack.cpu)
 
 # Create fields from numpy arrays
 n = 1024
-x = tack.field_from_numpy(np.arange(n, dtype=np.float32))
-y = tack.field_from_numpy(np.ones(n, dtype=np.float32) * 2.0)
-out = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.array(np.arange(n, dtype=np.float32))
+y = tack.array(np.ones(n, dtype=np.float32) * 2.0)
+out = tack.empty(dtype=tack.f32, shape=(n,))
 
 # Define a kernel
 @tack.kernel

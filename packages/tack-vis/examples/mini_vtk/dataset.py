@@ -62,7 +62,7 @@ def make_rectilinear_dataset(x_np, y_np, z_np):
                 idx += 1
 
     flat = coords_np.ravel()
-    coord_field = tack.field(dtype=tack.f32, shape=(len(flat),))
+    coord_field = tack.empty(dtype=tack.f32, shape=(len(flat),))
     coord_field.from_numpy(flat)
     coordinates = AOSTupleArray(coord_field, n_points, 3)
 
@@ -86,11 +86,11 @@ def make_explicit_hex_dataset(points_np, connectivity_np):
     n_cells = len(connectivity_np) // 8
 
     flat = points_np.astype(np.float32).ravel()
-    coord_field = tack.field(dtype=tack.f32, shape=(len(flat),))
+    coord_field = tack.empty(dtype=tack.f32, shape=(len(flat),))
     coord_field.from_numpy(flat)
     coordinates = AOSTupleArray(coord_field, n_points, 3)
 
-    conn_field = tack.field(dtype=tack.i32, shape=(len(connectivity_np),))
+    conn_field = tack.empty(dtype=tack.i32, shape=(len(connectivity_np),))
     conn_field.from_numpy(connectivity_np.astype(np.int32))
     cell_set = CellSetExplicit(conn_field, 8)
 

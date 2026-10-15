@@ -260,6 +260,12 @@ class Actor:
                  point_colors=None, scalars=None, color_table=None,
                  smooth=False, normals=None, material=None,
                  render_mode="solid", transform=None):
+        # Render kernels read scalar components. Accept typed 3-vector arrays
+        # directly and retain a storage view, without downloading or copying.
+        if getattr(points, '_vector_n', None) is not None:
+            points = points._scalar_view()
+        if getattr(connectivity, '_vector_n', None) is not None:
+            connectivity = connectivity._scalar_view()
         self.points = points
         self.connectivity = connectivity
         self.color = tuple(float(c) for c in color)
@@ -277,7 +283,7 @@ class Actor:
             self.normals = tack.field(dtype=tack.f32, shape=(n.shape[0],))
             self.normals.from_numpy(n)
         else:
-            self.normals = normals
+            self.normals = normals._scalar_view() if hasattr(normals, '_vector_n') else normals
         self.material = material if material is not None else Material()
         if render_mode not in ("solid", "wireframe", "points"):
             raise ValueError(
@@ -297,7 +303,8 @@ class Actor:
             self.point_colors.from_numpy(pc)
         else:
             # Assume tack.field f32
-            self.point_colors = point_colors
+            self.point_colors = (point_colors._scalar_view()
+                                 if hasattr(point_colors, '_vector_n') else point_colors)
 
         # Handle scalar field + color table
         if scalars is not None and color_table is None:

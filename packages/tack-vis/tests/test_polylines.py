@@ -8,8 +8,8 @@ import pytest
 from test_dataset_api import _scalars
 
 import tack
-import tack.data as td
-from tack.data.algorithms.cell_geometry import _line_geometry
+import tack.dataset as td
+from tack.dataset.algorithms.cell_geometry import _line_geometry
 
 try:
     import vtkmodules.all as vtk

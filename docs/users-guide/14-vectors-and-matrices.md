@@ -3,7 +3,7 @@
 Particles, colours, directions and local deformation all have several components.
 Tack lets you express their arithmetic as small values instead of maintaining one
 scalar name per component. A value lives inside an iteration; a vector or matrix
-**field** stores one such value per element across iterations and launches.
+**array** stores one such value per element across iterations and launches.
 
 ## Start with positions and velocities
 
@@ -12,8 +12,8 @@ import numpy as np
 import tack
 
 tack.init(arch=tack.cpu)
-pos = tack.Vector.field(2, dtype=tack.f32, shape=(3,))
-vel = tack.Vector.field(2, dtype=tack.f32, shape=(3,))
+pos = tack.empty(dtype=tack.vec2(tack.f32), shape=(3,))
+vel = tack.empty(dtype=tack.vec2(tack.f32), shape=(3,))
 pos.from_numpy(np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float32))
 vel.fill([1.0, 0.0])
 
@@ -23,7 +23,7 @@ def advance(pos, vel, dt):
         pos[i] += dt * vel[i]
 
 advance(pos, vel, 0.5)
-print(pos.to_numpy(vectors=True))    # [[0.5, 0.0], [1.5, 0.0], [0.5, 1.0]]
+print(pos.to_numpy())    # [[0.5, 0.0], [1.5, 0.0], [0.5, 1.0]]
 ```
 
 Each iteration loads a two-component velocity and updates its own position.
@@ -38,11 +38,12 @@ construct the components explicitly.
 
 ## Vectors
 
-Tack provides a `Vector` type for multi-component fields. Vector operations
-are scalarized at the IR level:
+Choose a vector element dtype through `vec2`, `vec3`, `vec4`, or `vec(n)`.
+The component dtype defaults to f32. The ordinary array constructors allocate
+its storage, and vector operations are scalarized at the IR level:
 
 ```python
-v = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+v = tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))
 
 @tack.kernel
 def normalize_vectors(v, n):
@@ -117,10 +118,12 @@ def closest_hit(origin, direction):
 distance, normal, color = closest_hit(o, d)
 ```
 
-A vector field exchanges data with NumPy flat or with one row per
-vector: `v.from_numpy(a)` accepts an array of shape `(*shape, n)` or the
-flat `(prod(shape) * n,)`, and `v.to_numpy(vectors=True)` returns
-`(*shape, n)`. Plain `v.to_numpy()` returns the flat storage.
+A vector array's shape excludes its component dimension. A vector array
+of shape `(n,)` and dtype `tack.vec3(tack.f32)` downloads as `(n, 3)` with
+plain `to_numpy()`. `from_numpy` accepts that shape or the flat storage
+shape. `size` is `n`; `scalar_size` is `3 * n`. `scalar_dtype` gives the
+component type. Copies and reshapes preserve the element type; reshaping
+changes only the array dimensions, without copying storage.
 
 Two vectors in one operation must have the same number of components.
 An assignment evaluates its whole right side before it stores anything,
@@ -153,8 +156,8 @@ they are scalarized: a matrix is its entries, and every operation expands
 to scalar arithmetic at lowering.
 
 ```python
-F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))    # a 2x2 matrix per particle
-C = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+F = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))    # a 2x2 matrix per particle
+C = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))
 
 @tack.kernel
 def update(F, C, x, dt, n):
@@ -180,8 +183,8 @@ def update(F, C, x, dt, n):
   writes one, on a matrix variable or directly on a field element
   (`F[p][0, 1]`). The indices may be runtime values, which must then be
   in range.
-- **Fields.** A matrix field stores each matrix in row-major order.
-  `from_numpy` takes `(*shape, n, m)` and `to_numpy(vectors=True)` returns
+- **Arrays.** A matrix array stores each matrix in row-major order.
+  `from_numpy` takes `(*shape, n, m)` and `to_numpy()` returns
   it. `F[p] = A`, `F[p] += A`, `F[p] *= s` and
   `tack.atomic_add(F, p, A)` work as they do for vector fields.
 - **Device functions** take and return matrices, alone or among several
@@ -191,7 +194,7 @@ A matrix and a vector with the same number of entries are different
 things: storing one where the other belongs, or adding them, is rejected.
 
 The statistics in `tack.algorithms` (`dot`, `norm`, `var`, ...) accept a
-vector field and reduce over all its components in storage order.
+vector array and reduce over all its components in storage order.
 
 
 ## Matrices in a real computation
@@ -205,3 +208,9 @@ is clearer than a four-component vector used as a matrix by hand.
 The [dye tutorial](tutorials/dye.md) reuses one interpolation function on RGB
 vectors. [N-body](tutorials/nbody.md) accumulates three-component directions.
 Use those examples after the small position update above.
+
+
+`Vector` and `Matrix` still name kernel value construction, such as
+`Matrix.identity(3)`; array allocation does not use those namespaces.
+The older `Vector.field` and `Matrix.field` entry points remain compatible
+with their historical flat host metadata. Use element dtypes in new code.

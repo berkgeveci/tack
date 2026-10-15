@@ -23,10 +23,10 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 n = 256
-x = tack.field(dtype=tack.f32, shape=(n,))
-out_sqrt = tack.field(dtype=tack.f32, shape=(n,))
-out_sin = tack.field(dtype=tack.f32, shape=(n,))
-out_combined = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
+out_sqrt = tack.empty(dtype=tack.f32, shape=(n,))
+out_sin = tack.empty(dtype=tack.f32, shape=(n,))
+out_combined = tack.empty(dtype=tack.f32, shape=(n,))
 
 x.from_numpy(np.linspace(0.1, 10.0, n, dtype=np.float32))
 

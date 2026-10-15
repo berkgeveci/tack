@@ -45,9 +45,9 @@ class Grid:
 
 
 # Create a grid with some data
-data = tack.field(dtype=tack.f32, shape=(n,))
-out = tack.field(dtype=tack.f32, shape=(n,))
-grad_out = tack.field(dtype=tack.f32, shape=(n,))
+data = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty(dtype=tack.f32, shape=(n,))
+grad_out = tack.empty(dtype=tack.f32, shape=(n,))
 
 # Fill with a smooth function: sin(x)
 x_vals = np.linspace(0, 2 * np.pi, n, dtype=np.float32)

@@ -223,7 +223,7 @@ class TackMesh:
 
     def __init__(self, mesh, form):
         import tack
-        import tack.data as td
+        import tack.dataset as td
 
         m, k = mesh.cells.shape
         shape = td.UnstructuredTopology(
@@ -239,7 +239,7 @@ class TackMesh:
         self.topology.groups()
 
     def dataset(self, fields=(), fresh=False):
-        import tack.data as td
+        import tack.dataset as td
 
         topology = self.topology
         if fresh:

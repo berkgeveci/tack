@@ -44,7 +44,7 @@ class AOSTupleArray:
 
 def make_aos_array(np_array):
     """Create an AOSArray from a 1D numpy array."""
-    f = tack.field(dtype=tack.f32, shape=np_array.shape)
+    f = tack.empty(dtype=tack.f32, shape=np_array.shape)
     f.from_numpy(np_array.astype(np.float32))
     return AOSArray(f)
 
@@ -53,6 +53,6 @@ def make_aos_tuple_array(np_array_2d):
     """Create an AOSTupleArray from a (N, C) numpy array."""
     n, c = np_array_2d.shape
     flat = np_array_2d.astype(np.float32).ravel()
-    f = tack.field(dtype=tack.f32, shape=(len(flat),))
+    f = tack.empty(dtype=tack.f32, shape=(len(flat),))
     f.from_numpy(flat)
     return AOSTupleArray(f, n, c)

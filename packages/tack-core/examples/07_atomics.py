@@ -23,8 +23,8 @@ tack.init(arch=_arch)
 # --- Example 1: parallel sum with atomic_add ---
 
 n = 10000
-x = tack.field(dtype=tack.f32, shape=(n,))
-total = tack.field(dtype=tack.f32, shape=(1,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
+total = tack.empty(dtype=tack.f32, shape=(1,))
 
 x.from_numpy(np.ones(n, dtype=np.float32))
 total.fill(0.0)
@@ -45,8 +45,8 @@ assert abs(total.to_numpy()[0] - n) < 1.0
 data = np.random.randn(n).astype(np.float32) * 100.0
 x.from_numpy(data)
 
-min_val = tack.field(dtype=tack.f32, shape=(1,))
-max_val = tack.field(dtype=tack.f32, shape=(1,))
+min_val = tack.empty(dtype=tack.f32, shape=(1,))
+max_val = tack.empty(dtype=tack.f32, shape=(1,))
 min_val.from_numpy(np.array([1e10], dtype=np.float32))
 max_val.from_numpy(np.array([-1e10], dtype=np.float32))
 
@@ -64,7 +64,7 @@ print(f"   numpy ref:  [{data.min():.2f}, {data.max():.2f}]")
 
 # --- Example 3: histogram ---
 
-bins = tack.field(dtype=tack.f32, shape=(10,))
+bins = tack.empty(dtype=tack.f32, shape=(10,))
 bins.fill(0.0)
 
 # Uniform data in [0, 1)

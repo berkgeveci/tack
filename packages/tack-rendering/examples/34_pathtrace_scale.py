@@ -61,9 +61,9 @@ def make_sphere(center=(0, 0, 0), radius=1.0, subdivisions=16):
 
 
 def upload_mesh(verts, tris):
-    pts = tack.field(dtype=tack.f32, shape=(verts.size,))
+    pts = tack.empty(dtype=tack.f32, shape=(verts.size,))
     pts.from_numpy(verts.reshape(-1))
-    conn = tack.field(dtype=tack.i32, shape=(tris.size,))
+    conn = tack.empty(dtype=tack.i32, shape=(tris.size,))
     conn.from_numpy(tris.reshape(-1))
     return pts, conn
 

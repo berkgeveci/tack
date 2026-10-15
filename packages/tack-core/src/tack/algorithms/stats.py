@@ -86,12 +86,11 @@ def _count(n, *fields):
     """Resolve and check the element count, and flatten vector fields.
 
     Every kernel reads [0, n) scalar elements. A vector field is reduced
-    over all its components in storage order -- its ``size`` already counts
-    them -- through a reshape view, since the kernels index scalars and a
+    over all its scalar components in storage order through a storage view, since the kernels index scalars and a
     vector element in `a[i] * b[i]` has no scalar meaning.
     Returns ``(n, *fields)`` with the views substituted.
     """
-    flat = tuple(f.reshape((f.size,)) if hasattr(f, '_vector_n') else f for f in fields)
+    flat = tuple(f._scalar_view() if hasattr(f, '_vector_n') else f for f in fields)
     if n is None:
         n = flat[0].size
     n = int(n)

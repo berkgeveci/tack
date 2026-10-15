@@ -10,17 +10,18 @@ A scalar field with `shape=(height, width)` stores `height * width` values in
 row-major order: the last index varies fastest. `image[row, column]` is the same
 scalar as `image[row * width + column]` in a kernel.
 
-A vector field adds components to each logical element:
+A vector array adds components to each logical element:
 
-| Allocation | Logical element | `to_numpy(vectors=True)` |
+| Allocation | Logical element | `to_numpy()` |
 |---|---|---|
-| `tack.field(f32, shape=(h, w))` | One scalar per pixel | `(h, w)` |
-| `tack.Vector.field(3, f32, shape=(h, w))` | One RGB vector per pixel | `(h, w, 3)` |
-| `tack.Matrix.field(2, 2, f32, shape=(n,))` | One 2×2 matrix per particle | `(n, 2, 2)` |
+| `tack.empty(f32, shape=(h, w))` | One scalar per pixel | `(h, w)` |
+| `tack.empty(dtype=tack.vec3(), shape=(h, w))` | One RGB vector per pixel | `(h, w, 3)` |
+| `tack.empty(dtype=tack.mat2(), shape=(n,))` | One 2×2 matrix per particle | `(n, 2, 2)` |
 
-The first row uses plain `to_numpy()`; the option matters for vector/matrix fields.
-Their plain `to_numpy()` returns flat component storage. Host indexing reads a
-logical element; flat component indexing is a device-code convention.
+Every row uses the same constructor and download method. The dtype determines
+the component dimensions, which are appended to the array shape in NumPy.
+Host indexing reads a logical element; flat component indexing is an internal
+storage convention.
 
 Some examples instead use `(width, height)` and index `[x, y]`. Both conventions
 are valid. State yours, and transpose for an image library expecting `[row, column]`.
@@ -89,7 +90,7 @@ red-black updates in separate calls, but that needs an algorithm-specific argume
 `reshape` is a view; `copy` makes independent storage:
 
 ```python
-grid = tack.field(dtype=tack.f32, shape=(8, 8))
+grid = tack.empty(dtype=tack.f32, shape=(8, 8))
 view = grid.reshape((64,))                 # same allocation
 independent = grid.copy()                 # another allocation
 ```

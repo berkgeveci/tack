@@ -26,16 +26,16 @@ SOFTENING = 0.01
 STEPS = 10
 
 # Position, velocity, and force fields (separate x, y, z components)
-px = tack.field(dtype=tack.f32, shape=(N,))
-py = tack.field(dtype=tack.f32, shape=(N,))
-pz = tack.field(dtype=tack.f32, shape=(N,))
-vx = tack.field(dtype=tack.f32, shape=(N,))
-vy = tack.field(dtype=tack.f32, shape=(N,))
-vz = tack.field(dtype=tack.f32, shape=(N,))
-fx = tack.field(dtype=tack.f32, shape=(N,))
-fy = tack.field(dtype=tack.f32, shape=(N,))
-fz = tack.field(dtype=tack.f32, shape=(N,))
-mass = tack.field(dtype=tack.f32, shape=(N,))
+px = tack.empty(dtype=tack.f32, shape=(N,))
+py = tack.empty(dtype=tack.f32, shape=(N,))
+pz = tack.empty(dtype=tack.f32, shape=(N,))
+vx = tack.empty(dtype=tack.f32, shape=(N,))
+vy = tack.empty(dtype=tack.f32, shape=(N,))
+vz = tack.empty(dtype=tack.f32, shape=(N,))
+fx = tack.empty(dtype=tack.f32, shape=(N,))
+fy = tack.empty(dtype=tack.f32, shape=(N,))
+fz = tack.empty(dtype=tack.f32, shape=(N,))
+mass = tack.empty(dtype=tack.f32, shape=(N,))
 
 
 @tack.kernel

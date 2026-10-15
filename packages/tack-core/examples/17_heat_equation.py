@@ -25,8 +25,8 @@ DX = 1.0 / N
 DT = 0.2 * DX * DX / ALPHA  # CFL condition for stability
 STEPS = 2000
 
-u = tack.field(dtype=tack.f32, shape=(N, N))
-u_new = tack.field(dtype=tack.f32, shape=(N, N))
+u = tack.empty(dtype=tack.f32, shape=(N, N))
+u_new = tack.empty(dtype=tack.f32, shape=(N, N))
 
 
 @tack.kernel

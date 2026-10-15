@@ -1,7 +1,7 @@
 """31 -- Multi-block contour: isosurface extraction across AMR patches.
 
 Each block (an AMR patch, a FAB) is a uniform grid of its own, a
-tack.data dataset; the isosurface is one contour per block. Blocks share
+tack.dataset dataset; the isosurface is one contour per block. Blocks share
 their boundary points with their neighbours, so the pieces meet.
 
 Usage:
@@ -16,7 +16,7 @@ import time
 import numpy as np
 
 import tack
-import tack.data as td
+import tack.dataset as td
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu',
@@ -69,7 +69,7 @@ def make_blocks(nblocks, block_size):
                           domain_lo + bk * n * dz)
                 block = td.uniform_grid((n + 1, n + 1, n + 1), origin=origin,
                                         spacing=(dx, dy, dz))
-                scalar = tack.field(dtype=tack.f32, shape=(block.num_points,))
+                scalar = tack.empty(dtype=tack.f32, shape=(block.num_points,))
                 compute_gyroid(block.geometry.values, scalar)
                 block.fields["gyroid"] = td.Field(td.H1(block), scalar)
                 blocks.append(block)

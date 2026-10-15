@@ -16,7 +16,7 @@ Produces ~6x fewer output points than unmerged marching cubes.
 Scalar field: gyroid -- sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
 
 This shows how such an algorithm is built from scratch. The library's
-version, for any mesh, is ``tack.data.contour``.
+version, for any mesh, is ``tack.dataset.contour``.
 
 Usage:
   uv run python packages/tack-vis/examples/27_flying_edges.py
@@ -423,17 +423,17 @@ class MCTables:
     """Marching cubes lookup tables as tack fields."""
 
     def __init__(self):
-        self.tri_table = tack.field(dtype=tack.i32, shape=(4096,))
+        self.tri_table = tack.empty(dtype=tack.i32, shape=(4096,))
         self.tri_table.from_numpy(TRI_TABLE)
-        self.num_tris = tack.field(dtype=tack.i32, shape=(256,))
+        self.num_tris = tack.empty(dtype=tack.i32, shape=(256,))
         self.num_tris.from_numpy(NUM_TRIS)
-        self.edge_corners = tack.field(dtype=tack.i32, shape=(24,))
+        self.edge_corners = tack.empty(dtype=tack.i32, shape=(24,))
         self.edge_corners.from_numpy(EDGE_CORNERS)
-        self.corner_x = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_x = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_x.from_numpy(CORNER_X)
-        self.corner_y = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_y = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_y.from_numpy(CORNER_Y)
-        self.corner_z = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_z = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_z.from_numpy(CORNER_Z)
 
 
@@ -955,7 +955,7 @@ grid = UniformGrid(nx, ny, nz, x0, y0, z0, dx, dy, dz)
 tables = MCTables()
 
 # Compute scalar field (shared)
-scalar = tack.field(dtype=tack.f32, shape=(n_points,))
+scalar = tack.empty(dtype=tack.f32, shape=(n_points,))
 compute_scalar_field(scalar, grid, n_points)
 
 results = {}
@@ -965,9 +965,9 @@ results = {}
 print("Flying Edges (merged points)...")
 
 # Pass 1a: Count x/y/z edge intersections separately per node-row
-row_xc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_yc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_zc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+row_xc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_yc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_zc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 fe_count_edges_xyz(scalar, row_xc, row_yc, row_zc, grid, isovalue, n_node_rows)
 
 # 3 separate prefix sums -> per-type offsets (CPU, row arrays are small)
@@ -988,22 +988,22 @@ yo_np += total_x  # y-points start after all x-points
 zo_np[1:] = np.cumsum(zc_np[:-1])
 zo_np += total_x + total_y  # z-points start after x+y
 
-row_xo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_yo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_zo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+row_xo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_yo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_zo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 row_xo.from_numpy(xo_np)
 row_yo.from_numpy(yo_np)
 row_zo.from_numpy(zo_np)
 
 # Pass 1b: Count triangles per cell-row
-row_tri_count = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+row_tri_count = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 fe_count_rows(scalar, row_tri_count, grid, tables, isovalue, n_cell_rows)
 
 tri_counts_np = row_tri_count.to_numpy()
 tri_offsets_np = np.zeros(n_cell_rows, dtype=np.int32)
 tri_offsets_np[1:] = np.cumsum(tri_counts_np[:-1])
 total_tris_fe = int(np.sum(tri_counts_np))
-row_tri_offset = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+row_tri_offset = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 row_tri_offset.from_numpy(tri_offsets_np)
 
 print(f"  Unique points: {total_points_fe:,} (x:{total_x:,} y:{total_y:,} z:{total_z:,})")
@@ -1011,12 +1011,12 @@ print(f"  Triangles:     {total_tris_fe:,}")
 print(f"  Merge ratio:   {total_tris_fe * 3 / total_points_fe:.1f}x fewer points than unmerged")
 
 # Allocate output -- NO edge_ids buffer needed!
-pt_x = tack.field(dtype=tack.f32, shape=(total_points_fe,))
-pt_y = tack.field(dtype=tack.f32, shape=(total_points_fe,))
-pt_z = tack.field(dtype=tack.f32, shape=(total_points_fe,))
-tri_v0 = tack.field(dtype=tack.i32, shape=(total_tris_fe,))
-tri_v1 = tack.field(dtype=tack.i32, shape=(total_tris_fe,))
-tri_v2 = tack.field(dtype=tack.i32, shape=(total_tris_fe,))
+pt_x = tack.empty(dtype=tack.f32, shape=(total_points_fe,))
+pt_y = tack.empty(dtype=tack.f32, shape=(total_points_fe,))
+pt_z = tack.empty(dtype=tack.f32, shape=(total_points_fe,))
+tri_v0 = tack.empty(dtype=tack.i32, shape=(total_tris_fe,))
+tri_v1 = tack.empty(dtype=tack.i32, shape=(total_tris_fe,))
+tri_v2 = tack.empty(dtype=tack.i32, shape=(total_tris_fe,))
 
 
 def _fe_prefix_sums():
@@ -1077,8 +1077,8 @@ fe_t2 = tri_v2.to_numpy()
 # --- Cell-based MC (baseline, unmerged) ---
 print("\nCell-based MC (unmerged baseline)...")
 
-num_tri = tack.field(dtype=tack.i32, shape=(n_cells,))
-offsets = tack.field(dtype=tack.i32, shape=(n_cells,))
+num_tri = tack.empty(dtype=tack.i32, shape=(n_cells,))
+offsets = tack.empty(dtype=tack.i32, shape=(n_cells,))
 
 mc_classify(scalar, num_tri, grid, tables, n_cells, isovalue)
 total_tris_mc = algorithms.exclusive_scan(num_tri, offsets, n_cells)
@@ -1087,9 +1087,9 @@ total_verts_mc = total_tris_mc * 3
 print(f"  Triangles: {total_tris_mc:,}")
 print(f"  Vertices:  {total_verts_mc:,} (unmerged)")
 
-mc_out_x = tack.field(dtype=tack.f32, shape=(total_verts_mc,))
-mc_out_y = tack.field(dtype=tack.f32, shape=(total_verts_mc,))
-mc_out_z = tack.field(dtype=tack.f32, shape=(total_verts_mc,))
+mc_out_x = tack.empty(dtype=tack.f32, shape=(total_verts_mc,))
+mc_out_y = tack.empty(dtype=tack.f32, shape=(total_verts_mc,))
+mc_out_z = tack.empty(dtype=tack.f32, shape=(total_verts_mc,))
 
 for _w in range(warmup):
     mc_classify(scalar, num_tri, grid, tables, n_cells, isovalue)
@@ -1242,9 +1242,9 @@ yc_rect = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param))
 t_param = np.linspace(0, np.pi, nz + 1, dtype=np.float32)
 zc_rect = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param)) / 2.0
 
-xc_field = tack.field(dtype=tack.f32, shape=(nx + 1,))
-yc_field = tack.field(dtype=tack.f32, shape=(ny + 1,))
-zc_field = tack.field(dtype=tack.f32, shape=(nz + 1,))
+xc_field = tack.empty(dtype=tack.f32, shape=(nx + 1,))
+yc_field = tack.empty(dtype=tack.f32, shape=(ny + 1,))
+zc_field = tack.empty(dtype=tack.f32, shape=(nz + 1,))
 xc_field.from_numpy(xc_rect)
 yc_field.from_numpy(yc_rect)
 zc_field.from_numpy(zc_rect)
@@ -1252,13 +1252,13 @@ zc_field.from_numpy(zc_rect)
 rect_grid = RectilinearGrid(nx, ny, nz, xc_field, yc_field, zc_field)
 
 # Compute scalar field on rectilinear grid
-rect_scalar = tack.field(dtype=tack.f32, shape=(n_points,))
+rect_scalar = tack.empty(dtype=tack.f32, shape=(n_points,))
 compute_scalar_field(rect_scalar, rect_grid, n_points)
 
 # Initial FE run to get sizes
-rect_xc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-rect_yc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-rect_zc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+rect_xc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+rect_yc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+rect_zc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 fe_count_edges_xyz(rect_scalar, rect_xc, rect_yc, rect_zc, rect_grid, isovalue, n_node_rows)
 
 rxc_np = rect_xc.to_numpy()
@@ -1278,28 +1278,28 @@ ryo_np += rtx
 rzo_np[1:] = np.cumsum(rzc_np[:-1])
 rzo_np += rtx + rty
 
-rect_xo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-rect_yo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-rect_zo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+rect_xo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+rect_yo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+rect_zo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 rect_xo.from_numpy(rxo_np)
 rect_yo.from_numpy(ryo_np)
 rect_zo.from_numpy(rzo_np)
 
-rect_tri_count = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+rect_tri_count = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 fe_count_rows(rect_scalar, rect_tri_count, rect_grid, tables, isovalue, n_cell_rows)
 rtc_np = rect_tri_count.to_numpy()
 rect_total_tris = int(np.sum(rtc_np))
 rto_np = np.zeros(n_cell_rows, dtype=np.int32)
 rto_np[1:] = np.cumsum(rtc_np[:-1])
-rect_tri_offset = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+rect_tri_offset = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 rect_tri_offset.from_numpy(rto_np)
 
-rect_pt_x = tack.field(dtype=tack.f32, shape=(rtp,))
-rect_pt_y = tack.field(dtype=tack.f32, shape=(rtp,))
-rect_pt_z = tack.field(dtype=tack.f32, shape=(rtp,))
-rect_tv0 = tack.field(dtype=tack.i32, shape=(rect_total_tris,))
-rect_tv1 = tack.field(dtype=tack.i32, shape=(rect_total_tris,))
-rect_tv2 = tack.field(dtype=tack.i32, shape=(rect_total_tris,))
+rect_pt_x = tack.empty(dtype=tack.f32, shape=(rtp,))
+rect_pt_y = tack.empty(dtype=tack.f32, shape=(rtp,))
+rect_pt_z = tack.empty(dtype=tack.f32, shape=(rtp,))
+rect_tv0 = tack.empty(dtype=tack.i32, shape=(rect_total_tris,))
+rect_tv1 = tack.empty(dtype=tack.i32, shape=(rect_total_tris,))
+rect_tv2 = tack.empty(dtype=tack.i32, shape=(rect_total_tris,))
 
 print(f"  Points: {rtp:,}, Triangles: {rect_total_tris:,}")
 
@@ -1413,9 +1413,9 @@ except Exception as e:
 print("\n--- Structured (curvilinear) grid ---")
 
 # Build per-point coordinates: uniform + twist perturbation (GPU kernel)
-s_px = tack.field(dtype=tack.f32, shape=(n_points,))
-s_py = tack.field(dtype=tack.f32, shape=(n_points,))
-s_pz = tack.field(dtype=tack.f32, shape=(n_points,))
+s_px = tack.empty(dtype=tack.f32, shape=(n_points,))
+s_py = tack.empty(dtype=tack.f32, shape=(n_points,))
+s_pz = tack.empty(dtype=tack.f32, shape=(n_points,))
 build_twisted_coords(s_px, s_py, s_pz,
                      float(x0), float(y0), float(z0),
                      float(dx), float(dy), float(dz),
@@ -1424,13 +1424,13 @@ build_twisted_coords(s_px, s_py, s_pz,
 struct_grid = StructuredGrid(nx, ny, nz, s_px, s_py, s_pz)
 
 # Compute scalar field on structured grid
-struct_scalar = tack.field(dtype=tack.f32, shape=(n_points,))
+struct_scalar = tack.empty(dtype=tack.f32, shape=(n_points,))
 compute_scalar_field(struct_scalar, struct_grid, n_points)
 
 # Run FE
-s_xc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-s_yc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-s_zc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+s_xc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+s_yc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+s_zc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 fe_count_edges_xyz(struct_scalar, s_xc, s_yc, s_zc, struct_grid, isovalue, n_node_rows)
 
 sxc_np = s_xc.to_numpy()
@@ -1450,28 +1450,28 @@ syo_np += stx
 szo_np[1:] = np.cumsum(szc_np[:-1])
 szo_np += stx + sty
 
-s_xo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-s_yo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-s_zo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+s_xo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+s_yo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+s_zo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 s_xo.from_numpy(sxo_np)
 s_yo.from_numpy(syo_np)
 s_zo.from_numpy(szo_np)
 
-s_tri_count = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+s_tri_count = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 fe_count_rows(struct_scalar, s_tri_count, struct_grid, tables, isovalue, n_cell_rows)
 stc_np = s_tri_count.to_numpy()
 struct_total_tris = int(np.sum(stc_np))
 sto_np = np.zeros(n_cell_rows, dtype=np.int32)
 sto_np[1:] = np.cumsum(stc_np[:-1])
-s_tri_offset = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+s_tri_offset = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 s_tri_offset.from_numpy(sto_np)
 
-s_pt_x = tack.field(dtype=tack.f32, shape=(stp,))
-s_pt_y = tack.field(dtype=tack.f32, shape=(stp,))
-s_pt_z = tack.field(dtype=tack.f32, shape=(stp,))
-s_tv0 = tack.field(dtype=tack.i32, shape=(struct_total_tris,))
-s_tv1 = tack.field(dtype=tack.i32, shape=(struct_total_tris,))
-s_tv2 = tack.field(dtype=tack.i32, shape=(struct_total_tris,))
+s_pt_x = tack.empty(dtype=tack.f32, shape=(stp,))
+s_pt_y = tack.empty(dtype=tack.f32, shape=(stp,))
+s_pt_z = tack.empty(dtype=tack.f32, shape=(stp,))
+s_tv0 = tack.empty(dtype=tack.i32, shape=(struct_total_tris,))
+s_tv1 = tack.empty(dtype=tack.i32, shape=(struct_total_tris,))
+s_tv2 = tack.empty(dtype=tack.i32, shape=(struct_total_tris,))
 
 print(f"  Points: {stp:,}, Triangles: {struct_total_tris:,}")
 

@@ -31,7 +31,7 @@ import tack
 
 tack.init(arch=tack.cuda)
 
-data = tack.field(dtype=tack.f32, shape=(1024,))
+data = tack.empty(dtype=tack.f32, shape=(1024,))
 data.from_numpy(np.linspace(-1.0, 1.0, 1024, dtype=np.float32))
 
 total = data.sum()       # Python float
@@ -235,8 +235,8 @@ iterations reach the atomic. Two consequences:
 ```python
 from tack.algorithms import exclusive_scan, inclusive_scan
 
-counts = tack.field(dtype=tack.i32, shape=(n,))
-offsets = tack.field(dtype=tack.i32, shape=(n,))
+counts = tack.empty(dtype=tack.i32, shape=(n,))
+offsets = tack.empty(dtype=tack.i32, shape=(n,))
 # ... a kernel fills counts ...
 
 total = exclusive_scan(counts, offsets, n)  # offsets[i] = counts[0] + ... + counts[i-1]
@@ -251,7 +251,7 @@ scan runs in the output's dtype, so the running sums are formed in `i64`
 and the total comes back exact.
 
 ```python
-offsets = tack.field(dtype=tack.i64, shape=(n,))
+offsets = tack.empty(dtype=tack.i64, shape=(n,))
 total = exclusive_scan(counts, offsets, n)  # i32 counts, i64 offsets and total
 ```
 
@@ -359,7 +359,7 @@ always *make a key per item, sort, then walk the runs of equal keys*:
 # ids of each cell's corners; cell_of holds the cell id of each entry.
 points, cells = sort_by_key(conn, cell_of)     # entries grouped by point
 upoints, counts = unique(points)               # each point and its cell count
-offsets = tack.field(dtype=tack.i32, shape=(upoints.size,))
+offsets = tack.empty(dtype=tack.i32, shape=(upoints.size,))
 exclusive_scan(counts, offsets, upoints.size)  # cells[offsets[p]:offsets[p]+counts[p]]
 ```
 
@@ -419,8 +419,8 @@ def group_sums(data, partial, n):
             partial[i // 256] = s       # one lane writes the group's result
 
 n = 1 << 20                             # a multiple of 256
-data = tack.field(dtype=tack.f32, shape=(n,))
-partial = tack.field(dtype=tack.f32, shape=(n // 256,))
+data = tack.empty(dtype=tack.f32, shape=(n,))
+partial = tack.empty(dtype=tack.f32, shape=(n // 256,))
 group_sums(data, partial, n)
 total = partial.sum()
 ```

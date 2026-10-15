@@ -97,9 +97,9 @@ def scale_array(input1: tack.template(), scalar: tack.template(),
 # ---------------------------------------------------------------------------
 n = 1000
 
-a_data = tack.field(dtype=tack.f32, shape=(n,))
-b_data = tack.field(dtype=tack.f32, shape=(n,))
-out_data = tack.field(dtype=tack.f32, shape=(n,))
+a_data = tack.empty(dtype=tack.f32, shape=(n,))
+b_data = tack.empty(dtype=tack.f32, shape=(n,))
+out_data = tack.empty(dtype=tack.f32, shape=(n,))
 
 a_np = np.arange(n, dtype=np.float32)
 b_np = np.arange(n, dtype=np.float32) * 2.0

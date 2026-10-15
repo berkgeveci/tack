@@ -21,7 +21,7 @@ workgroup_backend
 Options
 -------
 --ids=i64
-    Every ``tack.data`` topology takes 64-bit ids, however small, so the
+    Every ``tack.dataset`` topology takes 64-bit ids, however small, so the
     dataset tests run each path in i64 as well as (by default) i32.
 
 A test that names one of these runs once per matching backend, so which
@@ -76,13 +76,13 @@ for _arch in _ALL_ARCHES:
 
 def pytest_addoption(parser):
     parser.addoption("--ids", choices=("i32", "i64"), default="i32",
-                     help="the narrowest id type tack.data topologies take")
+                     help="the narrowest id type tack.dataset topologies take")
 
 
 def pytest_configure(config):
     if config.getoption("--ids") == "i64":
         try:
-            from tack.data import ids
+            from tack.dataset import ids
         except ImportError:                    # tack-vis is not installed
             return
         ids._minimum = tack.i64

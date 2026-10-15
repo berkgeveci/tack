@@ -391,35 +391,35 @@ def main():
     print(f"Backend: {arch}")
 
     # Allocate fields
-    pixels = tack.Vector.field(3, dtype=tack.f32, shape=(WIDTH, HEIGHT))
-    pixel_alpha = tack.field(dtype=tack.f32, shape=(WIDTH, HEIGHT))
+    pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(WIDTH, HEIGHT))
+    pixel_alpha = tack.empty(dtype=tack.f32, shape=(WIDTH, HEIGHT))
 
-    block_origins = tack.Vector.field(3, dtype=tack.f32, shape=(MAX_BLOCKS,))
-    block_spacings = tack.Vector.field(3, dtype=tack.f32, shape=(MAX_BLOCKS,))
-    block_cell_dims = tack.Vector.field(3, dtype=tack.i32, shape=(MAX_BLOCKS,))
-    block_data_offsets = tack.field(dtype=tack.i32, shape=(MAX_BLOCKS,))
+    block_origins = tack.empty(dtype=tack.vec3(tack.f32), shape=(MAX_BLOCKS,))
+    block_spacings = tack.empty(dtype=tack.vec3(tack.f32), shape=(MAX_BLOCKS,))
+    block_cell_dims = tack.empty(dtype=tack.vec(3, tack.i32), shape=(MAX_BLOCKS,))
+    block_data_offsets = tack.empty(dtype=tack.i32, shape=(MAX_BLOCKS,))
 
-    field_data = tack.field(dtype=tack.f32, shape=(MAX_CELLS,))
+    field_data = tack.empty(dtype=tack.f32, shape=(MAX_CELLS,))
 
-    lookup_grid = tack.field(dtype=tack.i32, shape=(LG * LG * LG,))
+    lookup_grid = tack.empty(dtype=tack.i32, shape=(LG * LG * LG,))
 
-    tf_table = tack.Vector.field(4, dtype=tack.f32, shape=(TF_SIZE,))
+    tf_table = tack.empty(dtype=tack.vec4(tack.f32), shape=(TF_SIZE,))
 
-    cam_pos = tack.Vector.field(3, dtype=tack.f32, shape=())
-    cam_focus = tack.Vector.field(3, dtype=tack.f32, shape=())
-    cam_up = tack.Vector.field(3, dtype=tack.f32, shape=())
-    domain_min_f = tack.Vector.field(3, dtype=tack.f32, shape=())
-    domain_max_f = tack.Vector.field(3, dtype=tack.f32, shape=())
-    lookup_spacing_f = tack.Vector.field(3, dtype=tack.f32, shape=())
+    cam_pos = tack.empty(dtype=tack.vec3(tack.f32), shape=())
+    cam_focus = tack.empty(dtype=tack.vec3(tack.f32), shape=())
+    cam_up = tack.empty(dtype=tack.vec3(tack.f32), shape=())
+    domain_min_f = tack.empty(dtype=tack.vec3(tack.f32), shape=())
+    domain_max_f = tack.empty(dtype=tack.vec3(tack.f32), shape=())
+    lookup_spacing_f = tack.empty(dtype=tack.vec3(tack.f32), shape=())
 
-    step_size_f = tack.field(dtype=tack.f32, shape=(1,))
-    tf_log_min_f = tack.field(dtype=tack.f32, shape=(1,))
-    tf_log_range_f = tack.field(dtype=tack.f32, shape=(1,))
-    opacity_scale_f = tack.field(dtype=tack.f32, shape=(1,))
-    fov_half_tan_f = tack.field(dtype=tack.f32, shape=(1,))
+    step_size_f = tack.empty(dtype=tack.f32, shape=(1,))
+    tf_log_min_f = tack.empty(dtype=tack.f32, shape=(1,))
+    tf_log_range_f = tack.empty(dtype=tack.f32, shape=(1,))
+    opacity_scale_f = tack.empty(dtype=tack.f32, shape=(1,))
+    fov_half_tan_f = tack.empty(dtype=tack.f32, shape=(1,))
 
     # LG constant field (to pass LG into kernel)
-    LG_CONST = tack.field(dtype=tack.f32, shape=(1,))
+    LG_CONST = tack.empty(dtype=tack.f32, shape=(1,))
     LG_CONST.from_numpy(np.array([float(LG)], dtype=np.float32))
 
     # Load data

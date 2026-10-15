@@ -164,6 +164,15 @@ def field_to_vtk(field, n_components=None, name=None):
     """
     # Work out the layout before reaching for VTK, so a shape mistake
     # reports itself rather than being masked by a missing-VTK error.
+    if hasattr(field, '_vector_n') and not field._legacy_layout:
+        width = field._vector_n
+        if n_components is not None and n_components != width:
+            raise ValueError(
+                f"n_components={n_components} contradicts the element width {width}")
+        if len(field.shape) > 1:
+            raise ValueError("reshape a typed array to one array dimension for VTK tuples")
+        field = field._scalar_view().reshape((field.size, width))
+        n_components = width
     ndim = len(field.shape)
 
     if n_components is None:
@@ -224,7 +233,7 @@ def _array_to_field(array, float_dtype):
 
 
 def _attributes_to_fields(attributes, space, float_dtype):
-    from tack.data import Field
+    from tack.dataset import Field
 
     fields = {}
     for i in range(attributes.GetNumberOfArrays()):
@@ -246,7 +255,7 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None):
     """
     from vtkmodules.util.numpy_support import vtk_to_numpy
 
-    from tack.data import PolyhedralTopology
+    from tack.dataset import PolyhedralTopology
 
     try:
         types = vtk_to_numpy(grid.GetCellTypes())
@@ -289,7 +298,7 @@ def _polyhedral_topology(grid, orient=False, id_dtype=None):
 
 def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype=None):
     """Copy a ``vtkUnstructuredGrid``, ``vtkRectilinearGrid`` or ``vtkImageData`` into a
-    ``tack.data.DataSet``: an image's points as ``UniformCoordinates`` (with its
+    ``tack.dataset.DataSet``: an image's points as ``UniformCoordinates`` (with its
     direction matrix), a rectilinear grid's as a ``CartesianProduct``.
 
     Points and floating-point arrays become fields of ``dtype``; integer
@@ -302,12 +311,12 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     With ``orient``, inconsistently wound polyhedra are repaired first
     (``PolyhedralTopology.from_cell_faces``); without it they are refused.
     VTK's ids are 64-bit; the topology keeps them in ``id_dtype``, by default
-    ``i32`` unless the grid is too large for it (``tack.data.ids``).
+    ``i32`` unless the grid is too large for it (``tack.dataset.ids``).
     """
     import numpy as np
     from vtkmodules.util.numpy_support import vtk_to_numpy
 
-    from tack.data import (
+    from tack.dataset import (
         H1,
         CartesianProduct,
         Constant,
@@ -316,7 +325,7 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
         UniformCoordinates,
         UnstructuredTopology,
     )
-    from tack.data.dataset import grid_topology
+    from tack.dataset.dataset import grid_topology
 
     if grid.IsA("vtkUnstructuredGrid") and polyhedral is None:
         try:
@@ -390,7 +399,7 @@ def _vtk_points(grid):
 def _field_to_array(name, field):
     from vtkmodules.util.numpy_support import numpy_to_vtk
 
-    from tack.data.arrays import to_host
+    from tack.dataset.arrays import to_host
 
     values = to_host(field)
     array = numpy_to_vtk(values, deep=1)
@@ -399,7 +408,7 @@ def _field_to_array(name, field):
 
 
 def dataset_to_vtk(data):
-    """Copy a ``tack.data.DataSet`` into a new VTK dataset.
+    """Copy a ``tack.dataset.DataSet`` into a new VTK dataset.
 
     A structured topology over uniform coordinates gives a ``vtkImageData`` (with
     the direction matrix), over rectilinear ones a ``vtkRectilinearGrid``; an
@@ -425,7 +434,7 @@ def dataset_to_vtk(data):
         vtkUnstructuredGrid,
     )
 
-    from tack.data import (
+    from tack.dataset import (
         H1,
         CartesianProduct,
         Constant,
@@ -510,7 +519,7 @@ def dataset_to_vtk(data):
     else:
         raise TypeError(f"unsupported topology {type(topology).__name__} with "
                         f"{type(coordinates).__name__}")
-    from tack.data.carry import _point_values
+    from tack.dataset.carry import _point_values
 
     for name, field in data.fields.items():
         space = field.space

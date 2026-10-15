@@ -1,5 +1,8 @@
 """Tack type system — scalar types and type annotations for kernels."""
 
+from dataclasses import dataclass
+from functools import lru_cache
+
 import numpy as np
 
 
@@ -89,3 +92,75 @@ class TemplateType:
 def template() -> TemplateType:
     """Type annotation for kernel arguments that are resolved at call time."""
     return TemplateType()
+
+
+@dataclass(frozen=True)
+class ElementType:
+    """A fixed-size vector or matrix element, independent of an array's shape.
+
+    Components are stored together, without padding, in row-major order.
+    ``scalar_dtype`` is the component type; ``shape`` describes one element.
+    """
+
+    scalar_dtype: ScalarType
+    shape: tuple[int, ...]
+
+    def __post_init__(self):
+        if not isinstance(self.scalar_dtype, ScalarType):
+            raise TypeError("an element's component dtype must be a Tack scalar type")
+        if len(self.shape) not in (1, 2) or any(
+                isinstance(n, bool) or not isinstance(n, int) or n < 1 for n in self.shape):
+            raise ValueError("an element needs one or two positive integer dimensions")
+        if len(self.shape) == 2 and max(self.shape) > 4:
+            raise ValueError("matrix elements are at most 4x4")
+
+    @property
+    def size(self):
+        return int(np.prod(self.shape))
+
+    def __repr__(self):
+        if len(self.shape) == 1:
+            return f"tack.vec({self.shape[0]}, {self.scalar_dtype})"
+        return f"tack.mat({self.shape[0]}, {self.shape[1]}, {self.scalar_dtype})"
+
+
+@lru_cache(maxsize=None, typed=True)
+def vec(n: int, dtype: ScalarType = f32) -> ElementType:
+    """The type of an n-component vector; no storage is allocated."""
+    return ElementType(dtype, (n,))
+
+
+@lru_cache(maxsize=None, typed=True)
+def mat(rows: int, columns: int, dtype: ScalarType = f32) -> ElementType:
+    """The type of a row-major matrix element, up to 4x4."""
+    return ElementType(dtype, (rows, columns))
+
+
+def vec2(dtype: ScalarType = f32) -> ElementType:
+    """A two-component vector element type."""
+    return vec(2, dtype)
+
+
+def vec3(dtype: ScalarType = f32) -> ElementType:
+    """A three-component vector element type."""
+    return vec(3, dtype)
+
+
+def vec4(dtype: ScalarType = f32) -> ElementType:
+    """A four-component vector element type."""
+    return vec(4, dtype)
+
+
+def mat2(dtype: ScalarType = f32) -> ElementType:
+    """A 2x2 matrix element type."""
+    return mat(2, 2, dtype)
+
+
+def mat3(dtype: ScalarType = f32) -> ElementType:
+    """A 3x3 matrix element type."""
+    return mat(3, 3, dtype)
+
+
+def mat4(dtype: ScalarType = f32) -> ElementType:
+    """A 4x4 matrix element type."""
+    return mat(4, 4, dtype)

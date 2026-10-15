@@ -14,7 +14,7 @@ point IDs from (ci, cj, ck) decomposition; the explicit version reads
 them from a flat connectivity field.
 
 This shows how such an algorithm is built from scratch. The library's
-version, for any mesh, is ``tack.data.to_cells``.
+version, for any mesh, is ``tack.dataset.to_cells``.
 
 Usage:
   uv run python packages/tack-vis/examples/25_point_to_cell.py
@@ -151,11 +151,11 @@ print(f"Warmup: {warmup}, Trials: {trials}")
 print()
 
 # Point data: some interesting scalar field
-point_data = tack.field(dtype=tack.f32, shape=(n_points,))
+point_data = tack.empty(dtype=tack.f32, shape=(n_points,))
 pd = np.arange(n_points, dtype=np.float32) * 0.01
 point_data.from_numpy(pd)
 
-cell_data = tack.field(dtype=tack.f32, shape=(n_cells,))
+cell_data = tack.empty(dtype=tack.f32, shape=(n_cells,))
 
 results = {}
 
@@ -183,7 +183,7 @@ print(f"  Best of {trials}: {struct_time:.4f}s")
 
 # --- Explicit (built from structured) ---
 print("\nExplicit cell set...")
-conn_field = tack.field(dtype=tack.i32, shape=(n_cells * 8,))
+conn_field = tack.empty(dtype=tack.i32, shape=(n_cells * 8,))
 build_explicit_connectivity(struct, conn_field, n_cells)
 
 explicit = CellSetExplicitHex(conn_field)
@@ -412,11 +412,11 @@ results2 = {}
 
 # --- Structured + AOS ---
 print("Structured + AOS (3 components)...")
-aos_pt_field = tack.field(dtype=tack.f32, shape=(n_points * nc,))
+aos_pt_field = tack.empty(dtype=tack.f32, shape=(n_points * nc,))
 aos_pt_field.from_numpy(pd_mc.ravel())
 aos_pt = AOSTupleArray(aos_pt_field, n_points, nc)
 
-aos_cell_field = tack.field(dtype=tack.f32, shape=(n_cells * nc,))
+aos_cell_field = tack.empty(dtype=tack.f32, shape=(n_cells * nc,))
 aos_cell = AOSTupleArray(aos_cell_field, n_cells, nc)
 
 for i in range(warmup):
@@ -437,12 +437,12 @@ print(f"  Best of {trials}: {struct_aos_time:.4f}s")
 
 # --- Structured + SOA ---
 print("\nStructured + SOA (3 components)...")
-soa_pt_fields = [tack.field(dtype=tack.f32, shape=(n_points,)) for _ in range(nc)]
+soa_pt_fields = [tack.empty(dtype=tack.f32, shape=(n_points,)) for _ in range(nc)]
 for c in range(nc):
     soa_pt_fields[c].from_numpy(pd_mc[:, c].copy())
 soa_pt = SOATupleArray3(*soa_pt_fields)
 
-soa_cell_fields = [tack.field(dtype=tack.f32, shape=(n_cells,)) for _ in range(nc)]
+soa_cell_fields = [tack.empty(dtype=tack.f32, shape=(n_cells,)) for _ in range(nc)]
 soa_cell = SOATupleArray3(*soa_cell_fields)
 
 for i in range(warmup):
@@ -463,7 +463,7 @@ print(f"  Best of {trials}: {struct_soa_time:.4f}s")
 
 # --- Explicit + AOS ---
 print("\nExplicit + AOS (3 components)...")
-aos_cell_field2 = tack.field(dtype=tack.f32, shape=(n_cells * nc,))
+aos_cell_field2 = tack.empty(dtype=tack.f32, shape=(n_cells * nc,))
 aos_cell2 = AOSTupleArray(aos_cell_field2, n_cells, nc)
 
 for i in range(warmup):

@@ -144,5 +144,5 @@ def test_numpy_dtype_inference_requires_a_supported_type(backend, constructor):
 
 
 def test_empty_like_requires_a_field_or_numpy_array(backend):
-    with pytest.raises(TypeError, match="Tack field or NumPy array"):
+    with pytest.raises(TypeError, match="Tack array or NumPy array"):
         tack.empty_like([1, 2, 3])

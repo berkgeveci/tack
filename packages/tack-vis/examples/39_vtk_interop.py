@@ -89,8 +89,8 @@ def gyroid(points, scalars, nx, ny, nz):
                         tack.sin(c) * tack.cos(a))
 
 
-points = tack.field(dtype=tack.f32, shape=(N_POINTS, 3))
-scalars = tack.field(dtype=tack.f32, shape=(N_POINTS,))
+points = tack.empty(dtype=tack.f32, shape=(N_POINTS, 3))
+scalars = tack.empty(dtype=tack.f32, shape=(N_POINTS,))
 gyroid(points, scalars, NX, NY, NZ)
 
 print(f"Tack ({get_backend().label}): {NX}x{NY}x{NZ} = {N_POINTS:,} points")
@@ -159,7 +159,7 @@ staged_back = on_device and output_is_host
 
 if staged_back:
     host = vtk_to_numpy(out_array)
-    result = tack.field(dtype=tack.f32, shape=host.shape)
+    result = tack.empty(dtype=tack.f32, shape=host.shape)
     result.from_numpy(host)
     where = "copied up from the host, because the filter ran there"
 else:
@@ -180,8 +180,8 @@ def bounds(pts, lo, hi, n):
 
 
 n_out = result.shape[0]
-lo = tack.field(dtype=tack.f32, shape=(3,))
-hi = tack.field(dtype=tack.f32, shape=(3,))
+lo = tack.empty(dtype=tack.f32, shape=(3,))
+hi = tack.empty(dtype=tack.f32, shape=(3,))
 lo.from_numpy(np.full(3, 1e30, dtype=np.float32))
 hi.from_numpy(np.full(3, -1e30, dtype=np.float32))
 

@@ -23,20 +23,20 @@ behavior.
 
 ::: tack.runtime.dispatch.sync_async
 
-## Fields
+## Arrays
 
 The container everything else operates on: an n-dimensional array bound to
 whichever backend was active when it was allocated.
 
-::: tack.lang.field.Field
+::: tack.Array
 
 ::: tack.lang.field.DeviceBuffer
 
-### Creating fields
+### Creating arrays
 
-::: tack.lang.field.field
+::: tack.empty
 
-::: tack.lang.field.field_from_numpy
+::: tack.array
 
 ::: tack.empty_like
 
@@ -49,6 +49,28 @@ whichever backend was active when it was allocated.
 ::: tack.lang.field.arange
 
 ::: tack.lang.field.concat
+
+### Element types
+
+::: tack.ElementType
+
+::: tack.vec
+
+::: tack.vec2
+
+::: tack.vec3
+
+::: tack.vec4
+
+::: tack.mat
+
+::: tack.mat2
+
+::: tack.mat3
+
+::: tack.mat4
+
+### Kernel values and textures
 
 ::: tack.lang.field.Vector
 

@@ -961,11 +961,11 @@ class CPUBackend(Backend):
             return False
         from tack.algorithms.copy import _fill_kernel
         from tack.lang.field import Field
-        element = np.array(value, dtype=field.dtype.numpy_dtype)
+        element = np.array(value, dtype=field.scalar_dtype.numpy_dtype)
         n = buf.nbytes // element.itemsize
         # A flat scalar view: a vector field's element count is its
         # component count, and the kernel stores one scalar per index.
-        _fill_kernel(Field(field.dtype, (n,), buf), element.item(), n)
+        _fill_kernel(Field(field.scalar_dtype, (n,), buf), element.item(), n)
         return True
 
     def memory_space(self, ptr) -> str:

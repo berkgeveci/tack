@@ -209,8 +209,8 @@ class Rasterizer:
     def __init__(self, n, width, height):
         self.n = n
         self.width, self.height = width, height
-        self.vertices = tack.Vector.field(2, dtype=tack.f32, shape=(n, 3))
-        self.pixels = tack.Vector.field(3, dtype=tack.f32, shape=(width, height))
+        self.vertices = tack.empty(dtype=tack.vec2(tack.f32), shape=(n, 3))
+        self.pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(width, height))
         self.pixels.fill(0.0)              # draw writes only covered pixels
 
     @staticmethod
@@ -392,6 +392,6 @@ object to three simulation stages. Class constants describe the sensing model;
 instance dimensions and fields describe this particular simulation.
 
 The cell-set sketches above show a more generic use: pass different topology
-implementations to one kernel. They illustrate a protocol; `tack.data` is the built-in
+implementations to one kernel. They illustrate a protocol; `tack.dataset` is the built-in
 mesh API that follows it, with a template per shape and per topology (see
 [Datasets and visualization](09-visualization.md#writing-your-own-algorithm)).

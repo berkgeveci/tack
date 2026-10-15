@@ -28,8 +28,8 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 n = 256
-x = tack.field(dtype=tack.f32, shape=(n,))
-out = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty(dtype=tack.f32, shape=(n,))
 
 x.from_numpy(np.arange(n, dtype=np.float32))
 
@@ -67,8 +67,8 @@ print("Shared memory + barrier: OK")
 # tack.shared_like instead of hardcoding the type. This makes kernels
 # generic over field dtype.
 
-x_i32 = tack.field(dtype=tack.i32, shape=(n,))
-out_i32 = tack.field(dtype=tack.i32, shape=(n,))
+x_i32 = tack.empty(dtype=tack.i32, shape=(n,))
+out_i32 = tack.empty(dtype=tack.i32, shape=(n,))
 x_i32.from_numpy(np.arange(n, dtype=np.int32))
 
 

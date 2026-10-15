@@ -1,4 +1,4 @@
-"""Tests for tack.data.polyhedra: the polyhedral topology, phase 1.
+"""Tests for tack.dataset.polyhedra: the polyhedral topology, phase 1.
 
 Shape-based meshes converted to polyhedra must give back exactly what the
 shape path derives -- faces, sides, boundary, edges and their numbering --
@@ -23,7 +23,7 @@ from test_dataset_api import (
 )
 
 import tack
-import tack.data as td
+import tack.dataset as td
 from tack.runtime.dispatch import env_flag
 
 try:

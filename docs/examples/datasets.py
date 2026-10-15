@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Kitware, Inc.
 # SPDX-License-Identifier: BSD-3-Clause
-"""Datasets and their algorithms (``tack.data``): the code of the User's Guide
+"""Datasets and their algorithms (``tack.dataset``): the code of the User's Guide
 chapter, run end to end."""
 
 import argparse
@@ -12,7 +12,7 @@ import tack
 
 def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
-    import tack.data as td
+    import tack.dataset as td
 
     # --8<-- [start:build]
     # A hexahedron with a pyramid on top: VTK cell types, offsets, connectivity.
@@ -23,10 +23,10 @@ def run(arch="cpu", check=False):
                                        connectivity=[0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 6, 7, 8])
     mesh = td.DataSet(topology, positions)
 
-    height = tack.field(tack.f32, shape=(mesh.num_points,))
+    height = tack.empty(tack.f32, shape=(mesh.num_points,))
     height.from_numpy(positions[:, 2].copy())
     mesh.fields["height"] = td.Field(td.H1(mesh), height)            # point data
-    material = tack.field(tack.f32, shape=(mesh.num_cells,))
+    material = tack.empty(tack.f32, shape=(mesh.num_cells,))
     material.from_numpy(np.array([1.0, 2.0], np.float32))
     mesh.fields["material"] = td.Field(td.Constant(mesh), material)  # cell data
     # --8<-- [end:build]
@@ -66,8 +66,8 @@ def run(arch="cpu", check=False):
             out[cells.entity_id(c)] = u.value(c, pc)
             where[cells.entity_id(c)] = cells.position(c, pc)
 
-    values = tack.field(tack.f32, shape=(mesh.num_cells,))
-    where = tack.Vector.field(3, tack.f32, shape=(mesh.num_cells,))
+    values = tack.empty(tack.f32, shape=(mesh.num_cells,))
+    where = tack.empty(dtype=tack.vec3(tack.f32), shape=(mesh.num_cells,))
     td.for_each(centers, mesh, "cells", mesh.fields["height"], values, where)
     # --8<-- [end:kernel]
 
@@ -88,18 +88,18 @@ def run(arch="cpu", check=False):
             out[cells.entity_id(c)] = total
 
     mesh.topology.faces()                            # the faces kernels walk
-    areas = tack.field(tack.f32, shape=(mesh.num_cells,))
+    areas = tack.empty(tack.f32, shape=(mesh.num_cells,))
     td.for_each(surface_areas, mesh, "cells", areas)
 
     polyhedra = td.as_polyhedra(mesh)                # every cell a polyhedron
-    same = tack.field(tack.f32, shape=(polyhedra.num_cells,))
+    same = tack.empty(tack.f32, shape=(polyhedra.num_cells,))
     td.for_each(surface_areas, polyhedra, "cells", same)
     # --8<-- [end:faces]
 
     # --8<-- [start:lines]
     flow = td.uniform_grid((9, 9, 3), origin=(-1, -1, 0), spacing=(0.25, 0.25, 0.5))
     x = flow.positions()
-    swirl = tack.Vector.field(3, tack.f32, shape=(flow.num_points,))
+    swirl = tack.empty(dtype=tack.vec3(tack.f32), shape=(flow.num_points,))
     swirl.from_numpy(np.c_[-x[:, 1], x[:, 0], np.zeros(len(x))].astype(np.float32).ravel())
     flow.fields["velocity"] = td.Field(td.H1(flow), swirl)
     paths = td.streamlines(flow, "velocity", seeds=[[0.5, 0, 0.5], [0, 0.75, 0.5]],
@@ -120,7 +120,7 @@ def run(arch="cpu", check=False):
 
     positions = surface.geometry.values              # 3-vectors, stored interleaved
     points = positions.reshape(positions.size)       # a flat view: nothing copied
-    heights = tack.field(tack.f32, shape=(surface.num_points,))
+    heights = tack.empty(tack.f32, shape=(surface.num_points,))
     heights.from_numpy(surface.positions()[:, 2].copy())
     scene = Scene()
     scene.add(Actor(points, surface.topology.connectivity, scalars=heights,
@@ -143,12 +143,12 @@ def run(arch="cpu", check=False):
         np.testing.assert_allclose(on_cells.values.to_numpy(), [0.5, (4 + 1.6) / 5],
                                    rtol=1e-6)
         assert dg.values.shape[0] == 8 + 5
-        np.testing.assert_allclose(slope.values.to_numpy(vectors=True)[0], [0, 0, 1],
+        np.testing.assert_allclose(td.arrays.to_host(slope.values)[0], [0, 0, 1],
                                    atol=1e-6)
         assert len(mesh.sets["boundary"]) == 9                          # 5 + 4 faces
         np.testing.assert_array_equal(kept.sets["roof"].to_numpy(), [0])
         np.testing.assert_allclose(values.to_numpy()[0], 0.5)
-        np.testing.assert_allclose(where.to_numpy(vectors=True)[0], [0.5, 0.5, 0.5])
+        np.testing.assert_allclose(td.arrays.to_host(where)[0], [0.5, 0.5, 0.5])
         np.testing.assert_allclose(areas.to_numpy(), same.to_numpy(), rtol=1e-6)
         np.testing.assert_allclose(areas.to_numpy()[0], 6.0, rtol=1e-6)
         assert isinstance(paths.topology, td.PolylineTopology) and paths.num_cells == 2

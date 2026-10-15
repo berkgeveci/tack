@@ -44,8 +44,8 @@ def copy_field(src, dst, n):
 
 
 # Create two fields for ping-pong iteration
-u = tack.field(dtype=tack.f32, shape=(N, N))
-u_new = tack.field(dtype=tack.f32, shape=(N, N))
+u = tack.empty(dtype=tack.f32, shape=(N, N))
+u_new = tack.empty(dtype=tack.f32, shape=(N, N))
 
 # Boundary conditions: top edge = 100, rest = 0
 init = np.zeros((N, N), dtype=np.float32)

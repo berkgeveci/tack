@@ -113,9 +113,9 @@ def vector_add(x, y, out):
 
 def va_setup():
     n = 100_000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty(dtype=tack.f32, shape=(n,))
+    y = tack.empty(dtype=tack.f32, shape=(n,))
+    out = tack.empty(dtype=tack.f32, shape=(n,))
     x.from_numpy(np.arange(n, dtype=np.float32))
     y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
     return (x, y, out)
@@ -139,9 +139,9 @@ def saxpy(x, y, out):
 
 def saxpy_setup():
     n = 100_000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty(dtype=tack.f32, shape=(n,))
+    y = tack.empty(dtype=tack.f32, shape=(n,))
+    out = tack.empty(dtype=tack.f32, shape=(n,))
     x.from_numpy(np.random.randn(n).astype(np.float32))
     y.from_numpy(np.random.randn(n).astype(np.float32))
     return (x, y, out)
@@ -172,8 +172,8 @@ def partial_sum(data, out):
 
 def reduce_setup():
     n = REDUCE_BLOCK * 1024  # 262,144
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    partial = tack.field(dtype=tack.f32, shape=(1024,))
+    data = tack.empty(dtype=tack.f32, shape=(n,))
+    partial = tack.empty(dtype=tack.f32, shape=(1024,))
     data.from_numpy(np.ones(n, dtype=np.float32))
     return (data, partial)
 
@@ -224,7 +224,7 @@ def mandelbrot(pixels):
 
 
 def mandelbrot_setup():
-    pixels = tack.field(dtype=tack.f32, shape=(WIDTH * HEIGHT,))
+    pixels = tack.empty(dtype=tack.f32, shape=(WIDTH * HEIGHT,))
     return (pixels,)
 
 
@@ -287,13 +287,13 @@ def nbody_forces(px, py, pz, mass, fx, fy, fz):
 def nbody_setup():
     np.random.seed(42)
     n = N_BODIES
-    px = tack.field(dtype=tack.f32, shape=(n,))
-    py = tack.field(dtype=tack.f32, shape=(n,))
-    pz = tack.field(dtype=tack.f32, shape=(n,))
-    mass = tack.field(dtype=tack.f32, shape=(n,))
-    fx = tack.field(dtype=tack.f32, shape=(n,))
-    fy = tack.field(dtype=tack.f32, shape=(n,))
-    fz = tack.field(dtype=tack.f32, shape=(n,))
+    px = tack.empty(dtype=tack.f32, shape=(n,))
+    py = tack.empty(dtype=tack.f32, shape=(n,))
+    pz = tack.empty(dtype=tack.f32, shape=(n,))
+    mass = tack.empty(dtype=tack.f32, shape=(n,))
+    fx = tack.empty(dtype=tack.f32, shape=(n,))
+    fy = tack.empty(dtype=tack.f32, shape=(n,))
+    fz = tack.empty(dtype=tack.f32, shape=(n,))
 
     px.from_numpy(np.random.randn(n).astype(np.float32))
     py.from_numpy(np.random.randn(n).astype(np.float32))
@@ -343,8 +343,8 @@ def jacobi_step(src, dst):
 
 
 def jacobi_setup():
-    src = tack.field(dtype=tack.f32, shape=(JACOBI_N,))
-    dst = tack.field(dtype=tack.f32, shape=(JACOBI_N,))
+    src = tack.empty(dtype=tack.f32, shape=(JACOBI_N,))
+    dst = tack.empty(dtype=tack.f32, shape=(JACOBI_N,))
     # Initial: hot at center
     init = np.zeros(JACOBI_N, dtype=np.float32)
     init[JACOBI_N // 2] = 100.0
@@ -391,9 +391,9 @@ def matmul(a, b, c):
 def matmul_setup():
     np.random.seed(123)
     n = MAT_N
-    a = tack.field(dtype=tack.f32, shape=(n * n,))
-    b = tack.field(dtype=tack.f32, shape=(n * n,))
-    c = tack.field(dtype=tack.f32, shape=(n * n,))
+    a = tack.empty(dtype=tack.f32, shape=(n * n,))
+    b = tack.empty(dtype=tack.f32, shape=(n * n,))
+    c = tack.empty(dtype=tack.f32, shape=(n * n,))
     a.from_numpy(np.random.randn(n * n).astype(np.float32))
     b.from_numpy(np.random.randn(n * n).astype(np.float32))
     return (a, b, c)

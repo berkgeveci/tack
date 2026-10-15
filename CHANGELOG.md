@@ -7,6 +7,17 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tack.Array` names backend storage; `tack.dataset.Field` remains a function
+  space plus coefficients. `tack.empty` allocates uninitialized arrays and
+  `tack.array` copies NumPy arrays or sequences. `vec2`/`vec3`/`vec4`,
+  `mat2`/`mat3`/`mat4`, and general `vec(n)`/`mat(rows, columns)` describe
+  element types for the same constructors. Typed array shape and size count
+  elements; NumPy downloads expand components into trailing dimensions.
+  Copy, conversion, reshape, empty_like, pointer and DLPack interop preserve
+  their documented value/layout semantics. Previous storage constructors
+  remain available, including the old flat host metadata of Vector.field
+  and Matrix.field, while examples use array terminology.
+
 - `tack.empty_like(prototype, dtype=None)` allocates independent, uninitialized
   storage matching a NumPy array or Tack field. Vector and matrix fields retain
   their logical shape and component dimensions. No values are read or copied.
@@ -71,9 +82,15 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
-- **Breaking:** `tack.field_like` is renamed to `tack.field_from_numpy`.
-  Replace existing calls with `field_from_numpy` to keep allocating and copying
-  NumPy values. Use `empty_like` when only the shape and dtype should match.
+- **Breaking:** the dataset package is now `tack.dataset`, replacing
+  `tack.data`. Use `import tack.dataset as td`; submodules move with it
+  (for example, `tack.dataset.algorithms` and `tack.dataset.arrays`).
+  The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
+  is a separate kernel decorator and keeps its name.
+
+- **Breaking:** `tack.field_like` is removed. Replace existing calls with
+  `tack.array` to allocate and copy NumPy values; `field_from_numpy` remains
+  a compatibility spelling. Use `empty_like` when only shape and dtype should match.
   `local_array_like` and `shared_like` remain allocation-only helpers.
 - A scan's small levels are one launch: a level of at most 4096 elements
   on the CPU, or one tile on a GPU backend, is scanned in order by one

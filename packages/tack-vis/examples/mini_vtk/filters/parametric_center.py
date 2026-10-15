@@ -105,13 +105,13 @@ def parametric_center(dataset, cell_type, point_array_name=None, output_name=Non
         if output_name is None:
             output_name = point_array_name + "_center"
         pt_arr = dataset.get_point_array(point_array_name)
-        out_field = tack.field(dtype=tack.f32, shape=(n,))
+        out_field = tack.empty(dtype=tack.f32, shape=(n,))
         _center_scalar(dataset.cell_set, cell_type, pt_arr.data, out_field, n)
         dataset.add_cell_array(output_name, AOSArray(out_field))
     else:
-        cx = tack.field(dtype=tack.f32, shape=(n,))
-        cy = tack.field(dtype=tack.f32, shape=(n,))
-        cz = tack.field(dtype=tack.f32, shape=(n,))
+        cx = tack.empty(dtype=tack.f32, shape=(n,))
+        cy = tack.empty(dtype=tack.f32, shape=(n,))
+        cz = tack.empty(dtype=tack.f32, shape=(n,))
         _center_coords(dataset.cell_set, cell_type, dataset.coordinates,
                        cx, cy, cz, n)
         base = output_name or "center"
@@ -143,9 +143,9 @@ def parametric_center_multi(dataset, cell_type, names, output_names=None):
     f1 = dataset.get_point_array(names[0]).data
     f2 = dataset.get_point_array(names[1]).data
     f3 = dataset.get_point_array(names[2]).data
-    o1 = tack.field(dtype=tack.f32, shape=(n,))
-    o2 = tack.field(dtype=tack.f32, shape=(n,))
-    o3 = tack.field(dtype=tack.f32, shape=(n,))
+    o1 = tack.empty(dtype=tack.f32, shape=(n,))
+    o2 = tack.empty(dtype=tack.f32, shape=(n,))
+    o3 = tack.empty(dtype=tack.f32, shape=(n,))
 
     _center_multi(dataset.cell_set, cell_type, f1, f2, f3, o1, o2, o3, n)
 

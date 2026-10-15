@@ -20,7 +20,7 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 width, height = 64, 64
-pixels = tack.field(dtype=tack.f32, shape=(width, height))
+pixels = tack.empty(dtype=tack.f32, shape=(width, height))
 
 
 @tack.kernel
@@ -44,8 +44,8 @@ print(f"Corner distance: {corner_dist:.2f} (expected {np.sqrt(32**2+32**2):.2f})
 
 # --- Example 2: 2D Gaussian blur (3x3 kernel) ---
 
-src = tack.field(dtype=tack.f32, shape=(64, 64))
-dst = tack.field(dtype=tack.f32, shape=(64, 64))
+src = tack.empty(dtype=tack.f32, shape=(64, 64))
+dst = tack.empty(dtype=tack.f32, shape=(64, 64))
 
 # Create a simple image: bright spot at center
 img = np.zeros((64, 64), dtype=np.float32)

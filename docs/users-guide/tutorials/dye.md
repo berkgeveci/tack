@@ -16,7 +16,7 @@ incompressible-fluid solver.
 
 ## One vector per cell
 
-The dye uses `tack.Vector.field(3, dtype=tack.f32, shape=(n, n))`. Each element is
+The dye uses `tack.empty(dtype=tack.vec3(), shape=(n, n))`. Each element is
 an RGB vector. The storage convention is `[x, y]`; its NumPy form has shape
 `(n, n, 3)`. The plotting function transposes the first two axes for an image
 library expecting `[row, column, RGB]`.

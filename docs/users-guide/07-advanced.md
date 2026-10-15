@@ -263,7 +263,7 @@ Wrap a field as a 3D texture for hardware-accelerated trilinear interpolation:
 
 ```python
 # Create texture from a field
-data = tack.field(dtype=tack.f32, shape=(W * H * D,))
+data = tack.empty(dtype=tack.f32, shape=(W * H * D,))
 data.from_numpy(volume_data.ravel())
 tex = tack.texture3d(data, shape=(W, H, D))
 

@@ -69,9 +69,9 @@ def make_sphere(center=(0, 0, 0), radius=1.0, subdivisions=32):
 
 
 def upload(v, t):
-    p = tack.field(dtype=tack.f32, shape=(v.size,))
+    p = tack.empty(dtype=tack.f32, shape=(v.size,))
     p.from_numpy(v.reshape(-1))
-    c = tack.field(dtype=tack.i32, shape=(t.size,))
+    c = tack.empty(dtype=tack.i32, shape=(t.size,))
     c.from_numpy(t.reshape(-1))
     return p, c
 

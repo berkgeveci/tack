@@ -7,8 +7,8 @@ import pytest
 from test_dataset_api import _scalars, _two_hexes_and_a_pyramid
 
 import tack
-import tack.data as td
-from tack.data import ids
+import tack.dataset as td
+from tack.dataset import ids
 
 try:
     import vtkmodules.all as vtk

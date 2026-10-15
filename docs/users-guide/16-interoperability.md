@@ -13,7 +13,7 @@ import tack
 
 tack.init(arch=tack.cpu)
 array = np.arange(12, dtype=np.float32).reshape(3, 4)
-field = tack.field_from_numpy(array)
+field = tack.array(array)
 array[:] = -1                             # does not change the Tack field
 np.testing.assert_array_equal(field.to_numpy(), np.arange(12, dtype=np.float32).reshape(3, 4))
 ```
@@ -28,7 +28,7 @@ On CPU, a contiguous NumPy array can be wrapped directly:
 
 ```python
 array = np.zeros(8, dtype=np.float32)
-view = tack.field_from_ptr(array, dtype=tack.f32, shape=(8,), writable=True)
+view = tack.array_from_ptr(array, dtype=tack.f32, shape=(8,), writable=True)
 
 @tack.kernel
 def fill_indices(out):
@@ -72,7 +72,7 @@ Tack fields implement the DLPack protocol too. Pass a field to a consumer that
 supports its device. For a CPU field, NumPy offers a compact example:
 
 ```python
-data = tack.field_from_numpy(np.arange(8, dtype=np.float32))
+data = tack.array(np.arange(8, dtype=np.float32))
 shared_array = np.from_dlpack(data)
 ```
 

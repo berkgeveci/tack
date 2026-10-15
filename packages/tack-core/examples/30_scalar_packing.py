@@ -48,9 +48,9 @@ def weighted_sum(out, a, b,
 
 
 # Set up fields
-out = tack.field(dtype=tack.f32, shape=(n,))
-a = tack.field(dtype=tack.f32, shape=(n,))
-b = tack.field(dtype=tack.f32, shape=(n,))
+out = tack.empty(dtype=tack.f32, shape=(n,))
+a = tack.empty(dtype=tack.f32, shape=(n,))
+b = tack.empty(dtype=tack.f32, shape=(n,))
 
 a_np = np.arange(n, dtype=np.float32)
 b_np = np.ones(n, dtype=np.float32) * 0.5

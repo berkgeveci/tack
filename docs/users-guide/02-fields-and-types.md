@@ -1,4 +1,4 @@
-# Fields and Types
+# Arrays and Types
 
 ## Scalar Types
 
@@ -32,41 +32,99 @@ arguments are. The
 [language contract](../reference/language-contract.md#floating-point-execution-policy)
 has the full rule.
 
-## Fields
+## Arrays
 
-A field is a device-resident array — the fundamental data container in Tack.
+`tack.Array` is typed storage on a backend. `tack.empty` allocates it;
+`tack.array` copies existing values into it. Both are functions, hence their
+lowercase names. A dataset `tack.dataset.Field` is a different object: a space
+plus its coefficient values on a topology.
+
+```python
+import numpy as np
+import tack
+
+tack.init(arch=tack.cpu)
+velocity = tack.empty(shape=(4,), dtype=tack.vec3(tack.f32))
+velocity.fill([1.0, 0.0, 0.0])
+assert isinstance(velocity, tack.Array)
+assert velocity.shape == (4,) and velocity.dtype is tack.vec3(tack.f32)
+np.testing.assert_array_equal(velocity.to_numpy(), np.tile([1.0, 0.0, 0.0], (4, 1)))
+```
+
+An array's **shape counts elements**. Its **dtype describes one element**:
+scalar, fixed-size vector or fixed-size matrix. A scalar array of shape
+`(4, 3)` and a vector array of shape `(4,)` with dtype `vec3(f32)` both
+contain 12 scalars, but a kernel reads a scalar from the former and a
+3-vector from the latter.
+
+| Construction | Array shape | Element type | NumPy download shape |
+|---|---|---|---|
+| `tack.empty(shape=(n,), dtype=tack.f32)` | `(n,)` | f32 scalar | `(n,)` |
+| `tack.empty(shape=(n,), dtype=tack.vec3())` | `(n,)` | Three f32 components | `(n, 3)` |
+| `tack.empty(shape=(n,), dtype=tack.mat3())` | `(n,)` | 3x3 f32 matrix | `(n, 3, 3)` |
+
+`vec2`, `vec3`, `vec4`, `mat2`, `mat3` and `mat4` default to f32 components.
+Use `vec(n, dtype)` for another width and `mat(rows, columns, dtype)` for a
+rectangular matrix (up to 4x4). These functions describe types; they do not
+allocate arrays.
+
+The same allocation functions work for every element type:
 
 ```python
 # 1D field
-data = tack.field(dtype=tack.f32, shape=(1024,))
+data = tack.empty(dtype=tack.f32, shape=(1024,))
 
 # 2D field (linearized internally)
-grid = tack.field(dtype=tack.f32, shape=(100, 100))
+grid = tack.empty(dtype=tack.f32, shape=(100, 100))
 
 # Integer field
-indices = tack.field(dtype=tack.i32, shape=(256,))
+indices = tack.empty(dtype=tack.i32, shape=(256,))
 ```
 
 A new field's contents are unspecified, on every backend, until a kernel,
 `from_numpy` or `fill` writes them. `tack.zeros(dtype, shape)` makes a
 field of zeros (`ones` and `full` likewise), filled on the device.
 
-### Creating from Numpy
+### Copy values or allocate without copying
 
-The easiest way to create a field with data is `tack.field_from_numpy`:
+`tack.array(values, dtype=None)` always creates independent storage and
+copies values. With no dtype it infers a scalar type and uses every input
+dimension as an array dimension. It never guesses vector or matrix elements:
+
+```python
+positions = tack.array(np.zeros((10, 3), np.float32), dtype=tack.vec3())
+scalars = tack.array(np.zeros((10, 3), np.float32))
+assert positions.shape == (10,)
+assert scalars.shape == (10, 3)
+```
+
+An explicit vector or matrix dtype consumes matching trailing input dimensions.
+A mismatch raises `ValueError`. Lists are accepted too.
+
+`tack.empty_like(prototype)` reads only shape and type metadata, allocates
+independent storage on the active backend, and leaves values uninitialized.
+It preserves a Tack array's element type. A scalar dtype override changes the
+component type; an element dtype override selects a new element type:
+
+```python
+scratch = tack.empty_like(positions)                 # ten vec3(f32) elements
+integer_positions = tack.empty_like(positions, dtype=tack.i32)  # vec3(i32)
+```
+
+For scalar values:
 
 ```python
 # Create a field from a numpy array (infers shape and dtype)
-x = tack.field_from_numpy(np.arange(1024, dtype=np.float32))
+x = tack.array(np.arange(1024, dtype=np.float32))
 
 # Override dtype
-y = tack.field_from_numpy(some_array, dtype=tack.f32)
+y = tack.array(some_array, dtype=tack.f32)
 ```
 
 Or allocate first, then copy:
 
 ```python
-data = tack.field(dtype=tack.f32, shape=(1024,))
+data = tack.empty(dtype=tack.f32, shape=(1024,))
 data.from_numpy(np.arange(1024, dtype=np.float32))
 
 # Copy data back to numpy
@@ -113,9 +171,9 @@ supplies one index per component, so `grid[cell]` is
 A field can hold a small vector or matrix in each element:
 
 ```python
-pos = tack.Vector.field(3, dtype=tack.f32, shape=(n,))        # a 3-vector per element
-vel = tack.Vector.field(2, dtype=tack.f32, shape=(nx, ny))    # on a 2-D grid
-F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))       # a 2x2 matrix per element
+pos = tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))        # a 3-vector per element
+vel = tack.empty(dtype=tack.vec2(tack.f32), shape=(nx, ny))    # on a 2-D grid
+F = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))       # a 2x2 matrix per element
 ```
 
 In a kernel `pos[i]` is the whole vector and `F[i]` the whole matrix; see
@@ -127,10 +185,10 @@ Data moves to and from NumPy either flat or one row per element:
 
 ```python
 pos.from_numpy(points)                   # (n, 3), or the flat (n * 3,)
-points = pos.to_numpy(vectors=True)      # (n, 3)
+points = pos.to_numpy()      # (n, 3)
 flat = pos.to_numpy()                    # (n * 3,): the storage as it is
 F.from_numpy(gradients)                  # (n, 2, 2), or flat
-gradients = F.to_numpy(vectors=True)     # (n, 2, 2)
+gradients = F.to_numpy()     # (n, 2, 2)
 pos.fill([0.0, 1.0, 0.0])                # every element to this vector
 pos.fill(0.0)                            # every component to this scalar
 ```
@@ -161,7 +219,7 @@ Iterating a field raises for the same reason.
 A zero-dimensional field holds one logical element, accessed as `f[None]`:
 
 ```python
-strength = tack.field(dtype=tack.f32, shape=())
+strength = tack.empty(dtype=tack.f32, shape=())
 strength.fill(2.0)
 
 @tack.kernel
@@ -172,8 +230,8 @@ def add_strength(data, strength):
 
 Use a scalar argument for a host-supplied value that simply changes per call.
 A scalar field is useful when kernels also compute or retain that value. A
-zero-dimensional vector field works similarly: `gravity = tack.Vector.field(2,
-dtype=tack.f32, shape=())` and `gravity.fill([0.0, -9.8])`.
+zero-dimensional vector array works similarly: `gravity = tack.empty(
+dtype=tack.vec2(), shape=())` and `gravity.fill([0.0, -9.8])`.
 
 ### Reductions
 
@@ -187,12 +245,12 @@ its accumulator type and its NaN and empty-field behavior.
 
 ### Allocate matching storage without copying
 
-Use `tack.field_from_numpy(array)` when the field needs the array's values.
+Use `tack.array(array)` when the field needs the array's values.
 Use `tack.empty_like` for an output or scratch field that will be written before
 it is read:
 
 ```python
-source = tack.field_from_numpy(np.arange(8, dtype=np.float32))  # copies values
+source = tack.array(np.arange(8, dtype=np.float32))  # copies values
 out = tack.empty_like(source)                                 # same shape and dtype
 integer_out = tack.empty_like(source, dtype=tack.i32)           # override dtype
 grid_out = tack.empty_like(np.empty((4, 8), dtype=np.float32))  # no upload
@@ -244,7 +302,7 @@ combined = tack.concat([part_a, part_b, part_c])
 ### Size and Length
 
 ```python
-f = tack.field(dtype=tack.f32, shape=(4, 3))
+f = tack.empty(dtype=tack.f32, shape=(4, 3))
 f.size       # 12 (total elements)
 len(f)       # 4 (first dimension)
 ```
@@ -337,10 +395,10 @@ can wrap an existing device pointer as a Tack field without copying:
 
 ```python
 # Wrap a CUDA device pointer (read-only by default)
-field = tack.field_from_ptr(cuda_device_ptr, dtype=tack.f32, shape=(n,))
+field = tack.array_from_ptr(cuda_device_ptr, dtype=tack.f32, shape=(n,))
 
 # Wrap with write access
-field = tack.field_from_ptr(ptr, dtype=tack.f32, shape=(n,), writable=True)
+field = tack.array_from_ptr(ptr, dtype=tack.f32, shape=(n,), writable=True)
 ```
 
 The field does **not** own the memory — Tack will not free it. On CPU, you
@@ -356,3 +414,20 @@ before the kernel runs. Kernel reads work normally.
 
 For layout, views and simultaneous accesses, see [Memory and parallel correctness](13-memory-and-parallelism.md).
 For DLPack and borrowed allocations, see [Sharing arrays with other libraries](16-interoperability.md).
+
+
+## Migrating storage code
+
+| Previous spelling | Preferred spelling |
+|---|---|
+| `tack.field(dtype, shape)` | `tack.empty(dtype=dtype, shape=shape)` |
+| `tack.field_from_numpy(values, dtype)` | `tack.array(values, dtype=dtype)` |
+| `tack.Vector.field(3, dtype, shape)` | `tack.empty(dtype=tack.vec3(dtype), shape=shape)` |
+| `tack.Matrix.field(2, 3, dtype, shape)` | `tack.empty(dtype=tack.mat(2, 3, dtype), shape=shape)` |
+| `tack.field_from_ptr(ptr, dtype, shape)` | `tack.array_from_ptr(ptr, dtype, shape)` |
+
+The old allocation entry points remain compatibility names. In particular,
+`Vector.field` and `Matrix.field` retain their old scalar dtype, flat host
+shape, and flat default NumPy download. New typed arrays expose the element
+dtype and logical shape and expand component dimensions in `to_numpy()` by
+default. Kernel element access is the same. `td.Field` keeps its name and meaning.

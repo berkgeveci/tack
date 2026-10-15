@@ -57,9 +57,9 @@ def make_sphere(center=(0, 0, 0), radius=1.0, subdivisions=32):
 
 
 sv, st = make_sphere((0, 0, 0), 1.0, 32)
-sp = tack.field(dtype=tack.f32, shape=(sv.size,))
+sp = tack.empty(dtype=tack.f32, shape=(sv.size,))
 sp.from_numpy(sv.reshape(-1))
-sc = tack.field(dtype=tack.i32, shape=(st.size,))
+sc = tack.empty(dtype=tack.i32, shape=(st.size,))
 sc.from_numpy(st.reshape(-1))
 
 # Scalar: height (y coordinate)
@@ -70,9 +70,9 @@ ct = ColorTable('viridis')
 pv = np.array([[-3, -1, -3], [3, -1, -3], [3, -1, 3], [-3, -1, 3]],
               dtype=np.float32)
 pt = np.array([[0, 1, 2], [0, 2, 3]], dtype=np.int32)
-pp = tack.field(dtype=tack.f32, shape=(pv.size,))
+pp = tack.empty(dtype=tack.f32, shape=(pv.size,))
 pp.from_numpy(pv.reshape(-1))
-pc = tack.field(dtype=tack.i32, shape=(pt.size,))
+pc = tack.empty(dtype=tack.i32, shape=(pt.size,))
 pc.from_numpy(pt.reshape(-1))
 
 scene = Scene()

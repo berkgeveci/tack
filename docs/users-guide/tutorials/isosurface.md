@@ -75,7 +75,7 @@ Try replacing the sphere expression with the gyroid
 `sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)` on a larger domain. Keep the
 check for an empty surface for isovalues outside the scalar range. See
 [Datasets and visualization](../09-visualization.md) for the rest of
-`tack.data`, and
+`tack.dataset`, and
 [Rendering](../10-rendering.md) for materials, volumes and scalar colouring.
 
 ## Complete program

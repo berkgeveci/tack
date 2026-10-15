@@ -1,4 +1,4 @@
-"""Sets (``tack.data.Set``): named selections of points, cells or faces. Made and
+"""Sets (``tack.dataset.Set``): named selections of points, cells or faces. Made and
 checked, iterated over (cell and face sets), and carried through filters by the
 same maps as fields."""
 
@@ -7,7 +7,7 @@ import pytest
 from test_dataset_api import _scalars
 
 import tack
-import tack.data as td
+import tack.dataset as td
 
 
 def _grid():
@@ -38,21 +38,21 @@ def test_a_set_is_sorted_unique_and_checked(backend):
 def test_data_sets_are_checked(backend):
     data = _grid()
     data.sets["left"] = td.Set(data, "cells", [0, 3])
-    with pytest.raises(TypeError, match="not a tack.data.Set"):
+    with pytest.raises(TypeError, match="not a tack.dataset.Set"):
         data.sets["raw"] = tack.arange(3, tack.i32)
     with pytest.raises(ValueError, match="iteration domain's name"):
         data.sets["cells"] = td.Set(data, "cells", [0])
     with pytest.raises(ValueError, match="another topology"):
         data.sets["other"] = td.Set(_grid(), "cells", [0])
-    with pytest.raises(TypeError, match="not a tack.data.Set"):
+    with pytest.raises(TypeError, match="not a tack.dataset.Set"):
         td.DataSet(data.topology, data.geometry, sets={"raw": [0, 1]})
     # Every way in is checked, and a refused one leaves the sets as they were.
     sets = data.sets
     for put in (lambda: sets.update(raw=[0]), lambda: sets.setdefault("raw", [0]),
                 lambda: sets.__ior__({"good": td.Set(data, "cells", [1]), "raw": [0]})):
-        with pytest.raises(TypeError, match="not a tack.data.Set"):
+        with pytest.raises(TypeError, match="not a tack.dataset.Set"):
             put()
-    with pytest.raises(TypeError, match="not a tack.data.Set"):
+    with pytest.raises(TypeError, match="not a tack.dataset.Set"):
         data.sets |= {"raw": [0]}
     assert list(data.sets) == ["left"]
 
@@ -134,7 +134,7 @@ def test_sets_are_made_from_pairs_too(backend):
     left = td.Set(data, "cells", [0, 3])
     built = td.DataSet(data.topology, data.geometry, sets=[("left", left)])
     assert built.sets["left"] is left
-    with pytest.raises(TypeError, match="not a tack.data.Set"):
+    with pytest.raises(TypeError, match="not a tack.dataset.Set"):
         td.DataSet(data.topology, data.geometry, sets=[("left", left), ("raw", [0])])
 
 
@@ -142,7 +142,7 @@ def test_the_boundary_set_is_taken_as_the_faces_hold_it(backend, monkeypatch):
     """boundary_faces wraps the boundary the faces already hold, sorted and
     unique: it is not checked again over every face, which made external
     faces three times slower on 5M cells. Its flags are made when asked for."""
-    from tack.data import sets
+    from tack.dataset import sets
 
     data = _grid()
     faces = data.topology.faces()

@@ -351,7 +351,7 @@ def _template_content(obj) -> tuple:
         tuple((k, type(v).__name__,
                struct.pack("!d", v).hex() if isinstance(v, float) else v)
               for k, v in sorted(scalars.items())),
-        tuple((k, f.dtype.name, len(getattr(f, "_logical_shape", None) or f.shape),
+        tuple((k, f.scalar_dtype.name, len(getattr(f, "_logical_shape", None) or f.shape),
                getattr(f, "_vector_n", None), getattr(f, "_matrix_shape", None))
               for k, f in sorted(fields.items())),
         tuple(sorted(runtime)),

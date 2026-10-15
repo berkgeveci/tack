@@ -16,8 +16,8 @@ import tack
 tack.init(arch=tack.cpu)
 rng = np.random.default_rng(42)
 host_x = rng.normal(size=32).astype(np.float32)
-x = tack.field_from_numpy(host_x)
-out = tack.field(dtype=tack.f32, shape=host_x.shape)
+x = tack.array(host_x)
+out = tack.empty(dtype=tack.f32, shape=host_x.shape)
 
 @tack.kernel
 def transform(x, out):
@@ -68,7 +68,7 @@ residuals or bounded temperatures when a long trajectory is sensitive.
 
 Do not increase a tolerance merely to hide a discrepancy. First check field
 layout, boundaries, initialization, dtype conversions and cross-iteration races.
-Use [Fields and Types](02-fields-and-types.md) for literal precision and integer
+Use [Arrays and Types](02-fields-and-types.md) for literal precision and integer
 rules, and [Reductions and Scans](11-reductions-and-scans.md) for accumulator
 precision. For example, a statistics `dot` currently accumulates in `f32` even
 when its inputs are `f64`.

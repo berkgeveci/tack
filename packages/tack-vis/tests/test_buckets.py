@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 
 import tack
-from tack.data import buckets
-from tack.data.buckets import bucket_order, run_offsets
+from tack.dataset import buckets
+from tack.dataset.buckets import bucket_order, run_offsets
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 

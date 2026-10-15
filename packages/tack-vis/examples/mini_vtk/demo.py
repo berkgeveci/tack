@@ -155,9 +155,9 @@ tet_points = np.array([
 ], dtype=np.float32)
 tet_conn = np.array([0, 1, 2, 3], dtype=np.int32)
 
-coord_field = tack.field(dtype=tack.f32, shape=(12,))
+coord_field = tack.empty(dtype=tack.f32, shape=(12,))
 coord_field.from_numpy(tet_points.ravel())
-conn_field = tack.field(dtype=tack.i32, shape=(4,))
+conn_field = tack.empty(dtype=tack.i32, shape=(4,))
 conn_field.from_numpy(tet_conn)
 
 from examples.mini_vtk.dataset import Dataset
@@ -170,7 +170,7 @@ tet_ds = Dataset(
 
 # Add a scalar: value = x + y + z at each point
 scalar_np = np.array([0.0, 1.0, 1.0, 1.0], dtype=np.float32)  # sum of coords
-scalar_field = tack.field(dtype=tack.f32, shape=(4,))
+scalar_field = tack.empty(dtype=tack.f32, shape=(4,))
 scalar_field.from_numpy(scalar_np)
 tet_ds.add_point_array("scalar", AOSArray(scalar_field))
 

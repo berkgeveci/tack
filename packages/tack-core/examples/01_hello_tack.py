@@ -5,7 +5,7 @@ adds them element-wise on the GPU (or CPU), and checks the result.
 
 Key concepts:
   - tack.init()    -- choose a backend (cpu, metal, cuda, hip)
-  - tack.field()   -- allocate a device array
+  - tack.empty()   -- allocate a device array
   - @tack.kernel   -- mark a function for GPU compilation
   - from_numpy / to_numpy -- move data between host and device
 
@@ -26,9 +26,9 @@ tack.init(arch=_arch)
 
 # Allocate 1-D fields (device arrays)
 n = 10
-x = tack.field(dtype=tack.f32, shape=(n,))
-y = tack.field(dtype=tack.f32, shape=(n,))
-out = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
+y = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty(dtype=tack.f32, shape=(n,))
 
 # Upload data from numpy
 x.from_numpy(np.arange(n, dtype=np.float32))        # [0, 1, 2, ..., 9]

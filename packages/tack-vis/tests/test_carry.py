@@ -1,4 +1,4 @@
-"""How filters carry fields: one set of rules (``tack.data.carry``) for every
+"""How filters carry fields: one set of rules (``tack.dataset.carry``) for every
 filter that makes a new dataset, and ``fields=`` to choose which come."""
 
 import numpy as np
@@ -6,7 +6,7 @@ import pytest
 from test_dataset_api import _scalars, _two_hexes_and_a_pyramid
 
 import tack
-import tack.data as td
+import tack.dataset as td
 
 
 def _ints(values):

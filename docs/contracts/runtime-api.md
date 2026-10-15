@@ -96,22 +96,25 @@ field or calling a kernel before `tack.init()` therefore silently selects
 the CPU backend, and those fields become stale after a later
 `tack.init(arch=...)`.
 
-## Fields
+## Arrays
 
-`Field` is defined in `packages/tack-core/src/tack/lang/field.py`. A field
-has a `dtype` (a Tack `ScalarType`), a `shape` (a tuple), and a buffer
-owned by the backend that allocated it.
+`tack.Array` is defined in `packages/tack-core/src/tack/lang/field.py`.
+Its `dtype` describes one scalar, vector or matrix element; `shape` is the
+array's dimensions, excluding component dimensions. `size` counts elements.
+`scalar_dtype`, `scalar_size` and `storage_shape` describe the scalar storage.
+The buffer belongs to the backend active when the array was allocated.
+`tack.dataset.Field` is a separate class coupling a space with coefficient values.
 
 ### Creation
 
 | Function | Contract |
 |---|---|
-| `tack.field(dtype=f32, shape=(), exportable=False)` | Allocates on the active backend. An `int` shape becomes a 1-tuple. `exportable=True` requests memory that can be exported without a copy (CUDA only) |
-| `tack.zeros(dtype, shape)`, `tack.ones(dtype, shape)`, `tack.full(dtype, shape, value)` | `field()` followed by `fill()`. `zeros` skips the fill where the buffer starts zeroed (`starts_zeroed`: Metal, which clears new buffers) |
+| `tack.empty(dtype=f32, shape=(), exportable=False)` | Allocates on the active backend. An `int` shape becomes a 1-tuple. `exportable=True` requests memory that can be exported without a copy (CUDA only) |
+| `tack.zeros(dtype, shape)`, `tack.ones(dtype, shape)`, `tack.full(dtype, shape, value)` | `empty()` followed by `fill()`. `zeros` skips the fill where the buffer starts zeroed (`starts_zeroed`: Metal, which clears new buffers) |
 | `tack.arange(n, dtype=i32)` | `[0, n)` built in NumPy and copied in |
-| `tack.field_from_numpy(arr, dtype=None)` | Allocates `arr.shape`. The dtype is inferred from `arr.dtype` unless given. Then copies `arr` in |
+| `tack.array(arr, dtype=None)` | Copies values into independent storage. Without dtype, infers a scalar type and uses all input dimensions. An element dtype consumes matching trailing component dimensions; a mismatch raises `ValueError`. Existing Tack arrays copy on the device |
 | `tack.empty_like(prototype, dtype=None)` | Allocates independent, writable storage on the active backend without reading or copying values. Accepts a NumPy array or Tack field; infers dtype unless overridden with a Tack type. Preserves vector/matrix field logical shape and component dimensions. NumPy arrays produce scalar fields with the array's shape. Contents are unspecified |
-| `tack.concat(fields)` | A new 1-D field holding all elements in order, copied on the device |
+| `tack.concat(fields)` | A new 1-D array holding all elements in order, copied on the device |
 | `tack.Vector.field(n, dtype=f32, shape=())` | A flat scalar field of `prod(shape) * n` elements that kernels index as `n`-component vectors |
 | `tack.texture3d(field, shape=None, interp="linear")` | A `Texture3D` holding a copy of the field taken at creation, for `sample(u, v, w)` in kernels. `tex.update()` copies the field again. See [Textures](backend-capabilities.md#textures) |
 
@@ -131,23 +134,23 @@ owned by the backend that allocated it.
   [dispatch check](backend-capabilities.md#what-each-capability-gates)
   rejects it when a kernel uses it.
 - There is no `tack.fields()` function.
-- A vector field's host-side `shape`, `size` and `len()` are those of the
-  flat storage. Inside kernels, `v.shape[0]` and `len(v)` use the logical
-  element count.
+- Typed vector/matrix arrays expose logical shape and element dtype on
+  both host and device. `to_numpy()` appends component dimensions. Legacy
+  `Vector.field`/`Matrix.field` retain their scalar dtype and flat host
+  metadata; inside kernels they still index vector/matrix elements.
 
 **Required caller constraints:**
 
-- `dtype` is a Tack type such as `tack.f32`, not a NumPy dtype. This isn't
-  validated. A NumPy type raises `AttributeError`.
-- Shapes are non-negative. On CPU a negative extent raises NumPy's
-  `ValueError`.
+- `dtype` is a Tack scalar or element type; other values raise `TypeError`.
+- Shapes contain integer, nonnegative extents. Noninteger extents raise
+  `TypeError`; negative extents raise `ValueError`.
 
 **Errors:**
 
 | Condition | Exception |
 |---|---|
-| `field_from_numpy` or `empty_like` inferring a dtype that has no Tack type, such as `float16` | `TypeError`: "Unsupported numpy dtype: float16" |
-| `empty_like` with a prototype other than a NumPy array or Tack field | `TypeError`: "empty_like expects a Tack field or NumPy array" |
+| `array` or `empty_like` inferring a dtype that has no Tack type, such as `float16` | `TypeError`: "Unsupported numpy dtype: float16" |
+| `empty_like` with a prototype other than a NumPy array or Tack field | `TypeError`: "empty_like expects a Tack array or NumPy array" |
 | `concat([])` | `ValueError` |
 | `concat` with mixed dtypes | `TypeError` |
 | `texture3d` on a field that isn't `f32` | `ValueError`: "texture3d requires an f32 field, got f64; convert it first with field.astype(tack.f32)" |
@@ -159,8 +162,8 @@ owned by the backend that allocated it.
 
 | Operation | Guarantee | Errors |
 |---|---|---|
-| `f.from_numpy(arr)` | Copies `arr` into the field. If `arr.dtype` differs from the field's dtype, the array is converted first with NumPy `astype`, which is an unchecked cast. Works on reshaped views: the buffer copies the data in its own allocated shape | `RuntimeError` if the field is read-only. `ValueError` "Shape mismatch: field is (8,), got (4,)" unless `arr.shape == f.shape` exactly. `AttributeError` if `arr` isn't an ndarray |
-| `f.to_numpy()` | Returns a **new** array with shape `f.shape` and the field's dtype. Never a view, including on Metal | — |
+| `f.from_numpy(arr)` | Copies `arr` into the field. If `arr.dtype` differs from the field's dtype, the array is converted first with NumPy `astype`, which is an unchecked cast. Works on reshaped views: the buffer copies the data in its own allocated shape | `RuntimeError` if the field is read-only. `ValueError` "Shape mismatch: field is (8,), got (4,)" unless input matches the scalar storage shape or expanded element shape. `AttributeError` if `arr` isn't an ndarray |
+| `f.to_numpy()` | Returns a **new** NumPy array with scalar component dtype and component axes appended to `f.shape`. Legacy Vector/Matrix.field return flat storage by default. Never a view, including on Metal | — |
 | `f.fill(value)` | Sets every element | `RuntimeError` if read-only |
 | `f.reshape(shape)` | A metadata-only view that shares the buffer, the writability and any DLPack hold. Accepts an `int` | `ValueError` if the element count differs |
 | `f.copy()` / `f.astype(dtype)` | A new field on the **active** backend, filled by a device copy kernel. `astype` converts with the kernel language's conversion rules | Kernel errors, if any |
@@ -219,7 +222,7 @@ active.
 
 ## Pointer interop
 
-### `tack.field_from_ptr(ptr, dtype, shape, writable=False)`
+### `tack.array_from_ptr(ptr, dtype, shape, writable=False)`
 
 Wraps existing memory as a field without copying. Tack never frees it.
 
