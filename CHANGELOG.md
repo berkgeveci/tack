@@ -160,9 +160,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the two cross-package examples and the rendering benchmarks moved with it.
 - **Breaking:** the dataset package is now `tack.dataset`, replacing
   `tack.data`. Use `import tack.dataset as td`; submodules move with it
-  (for example, `tack.dataset.algorithms` and `tack.dataset.arrays`).
-  The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
-  is a separate kernel decorator and keeps its name.
+  (for example, `tack.dataset.algorithms`; the implicit arrays have since
+  moved on to `tack.arrays`). The dataset model and algorithm signatures
+  are unchanged.
 
 - **Breaking:** devices are values, spelled as the array API spells them,
   and `tack.init` is gone with the `tack.cpu`/`metal`/`cuda`/`hip`/
