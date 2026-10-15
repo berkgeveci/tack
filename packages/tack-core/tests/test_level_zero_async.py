@@ -257,17 +257,20 @@ def test_a_marker_releases_the_holds_before_it():
 
 
 def test_markers_reuse_their_events():
-    """Each wait hands its event back: many waits use one pool."""
+    """Each wait hands its event back: many waits use one pool. Counted
+    from the test's start: the backend is the process's one Level Zero
+    device, so its pools hold what every test before this one left."""
     backend = get_backend()
     acc = tack.zeros((64,), tack.i32)
     acc.numpy()
     pools = len(backend._event_pools)
+    events = len(backend._events)
     for k in range(3 * backend._EVENT_POOL_SIZE):
         _add_into(acc, 1)
         asyncio.run(tack.sync_async())
         assert acc[0] == k + 1
     assert len(backend._event_pools) == pools
-    assert len(backend._events) == pools * backend._EVENT_POOL_SIZE
+    assert len(backend._events) == events
 
 
 def test_small_host_copies_do_not_wait_for_the_queue():
@@ -307,9 +310,14 @@ def test_copies_either_side_of_the_staging_limits(nbytes):
 
 
 def test_staging_blocks_go_back_to_the_pool():
+    """Counted from the test's start, as the backend is the process's one
+    Level Zero device: an earlier test queued a thousand copies without a
+    wait, and their blocks are in the free list."""
     backend = get_backend()
     staging = backend._staging
     acc = tack.zeros((256,), tack.i32)
+    tack.sync()
+    before = len(staging._free.get(1024, []))
     for k in range(200):
         tack.copyto(acc, np.full(256, k, np.int32))
         acc[k % 256]
@@ -317,7 +325,7 @@ def test_staging_blocks_go_back_to_the_pool():
     assert not backend._held
     kept = sum(len(blocks) * size for size, blocks in staging._free.items())
     assert kept == staging._kept <= staging._KEEP_BYTES
-    assert len(staging._free[1024]) <= 2               # reused, not one per copy
+    assert len(staging._free[1024]) - before <= 2      # reused, not one per copy
 
 
 def test_threads_launch_and_free_at_once():
