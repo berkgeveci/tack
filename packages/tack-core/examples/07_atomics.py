@@ -23,10 +23,10 @@ tack.init(arch=_arch)
 # --- Example 1: parallel sum with atomic_add ---
 
 n = 10000
-x = tack.empty(dtype=tack.f32, shape=(n,))
-total = tack.empty(dtype=tack.f32, shape=(1,))
+x = tack.empty((n,))
+total = tack.empty((1,))
 
-x.from_numpy(np.ones(n, dtype=np.float32))
+tack.copyto(x, np.ones(n, dtype=np.float32))
 total.fill(0.0)
 
 
@@ -37,18 +37,18 @@ def parallel_sum(x, total):
 
 
 parallel_sum(x, total)
-print(f"1. Parallel sum of {n} ones = {total.to_numpy()[0]:.0f}")
-assert abs(total.to_numpy()[0] - n) < 1.0
+print(f"1. Parallel sum of {n} ones = {total.numpy()[0]:.0f}")
+assert abs(total.numpy()[0] - n) < 1.0
 
 # --- Example 2: find min and max in parallel ---
 
 data = np.random.randn(n).astype(np.float32) * 100.0
-x.from_numpy(data)
+tack.copyto(x, data)
 
-min_val = tack.empty(dtype=tack.f32, shape=(1,))
-max_val = tack.empty(dtype=tack.f32, shape=(1,))
-min_val.from_numpy(np.array([1e10], dtype=np.float32))
-max_val.from_numpy(np.array([-1e10], dtype=np.float32))
+min_val = tack.empty((1,))
+max_val = tack.empty((1,))
+tack.copyto(min_val, np.array([1e10], dtype=np.float32))
+tack.copyto(max_val, np.array([-1e10], dtype=np.float32))
 
 
 @tack.kernel
@@ -59,17 +59,17 @@ def find_extremes(x, min_val, max_val):
 
 
 find_extremes(x, min_val, max_val)
-print(f"2. Data range: [{min_val.to_numpy()[0]:.2f}, {max_val.to_numpy()[0]:.2f}]")
+print(f"2. Data range: [{min_val.numpy()[0]:.2f}, {max_val.numpy()[0]:.2f}]")
 print(f"   numpy ref:  [{data.min():.2f}, {data.max():.2f}]")
 
 # --- Example 3: histogram ---
 
-bins = tack.empty(dtype=tack.f32, shape=(10,))
+bins = tack.empty((10,))
 bins.fill(0.0)
 
 # Uniform data in [0, 1)
 uniform = np.random.rand(n).astype(np.float32) * 0.9999
-x.from_numpy(uniform)
+tack.copyto(x, uniform)
 
 
 @tack.kernel
@@ -80,7 +80,7 @@ def histogram(x, bins):
 
 
 histogram(x, bins)
-counts = bins.to_numpy()
+counts = bins.numpy()
 print(f"3. Histogram (10 bins, {n} samples):")
 for i, c in enumerate(counts):
     bar = "#" * int(c / n * 100)

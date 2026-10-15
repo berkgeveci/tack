@@ -324,15 +324,16 @@ grid = dataset_to_vtk(td.contour(data, "pressure", 0.5))
 Arrays exchange through DLPack, sharing storage where the device allows:
 
 ```python
-from tack.interop.vtk import field_to_vtk, vtk_to_field
+from tack.interop.vtk import array_to_vtk, vtk_to_array
 
-field = vtk_to_field(vtk_array)
-vtk_array = field_to_vtk(field)
+values = vtk_to_array(vtk_array)            # a tack.Array sharing VTK's storage
+vtk_array = array_to_vtk(values)
 ```
 
-VTK's tuples and components become a field shape: a `(1000, 3)` scalar field
-represents 1000 tuples of three components. `vtk_to_field(array,
-flatten=True)` and `field_to_vtk(field, n_components=3)` use the flat
+VTK's tuples and components become an array shape: a `(1000, 3)` scalar array
+represents 1000 tuples of three components, and an array of `vec3` elements
+exports as 1000 tuples of three as well. `vtk_to_array(array,
+flatten=True)` and `array_to_vtk(values, n_components=3)` use the flat
 interleaved layout instead. This requires a VTK build exposing
 `vtkmodules.util.dlpack_support`. Not every VTK installation provides device
 arrays. See [Sharing arrays with other libraries](16-interoperability.md) for
@@ -341,7 +342,7 @@ lifetime and read-only rules.
 ### Level Zero
 
 Level Zero device pointers need a shared allocation context. With a compatible
-VTK/Viskores Kokkos-SYCL build, initialize before allocating fields:
+VTK/Viskores Kokkos-SYCL build, initialize before allocating arrays:
 
 ```python
 from tack.interop.vtk import init_level_zero

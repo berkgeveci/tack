@@ -73,18 +73,18 @@ def as_ids(values, dtype, check=True):
             return values
         if values.dtype not in (tack.i32, tack.i64):
             raise TypeError(f"ids are i32 or i64 fields, not {values.dtype.name}")
-        out = tack.field(dtype, shape=values.shape)
+        out = tack.empty(values.shape, dtype)
         if values.size:
             if check and dtype == tack.i32:
-                _check_fits(values.to_numpy())
+                _check_fits(values.numpy())
             _convert(values, out)
         return out
     values = np.ascontiguousarray(values)
     if check and values.size and dtype == tack.i32:
         _check_fits(values)
-    out = tack.field(dtype, shape=values.shape)
+    out = tack.empty(values.shape, dtype)
     if values.size:
-        out.from_numpy(values.astype(dtype.numpy_dtype))
+        tack.copyto(out, values.astype(dtype.numpy_dtype))
     return out
 
 

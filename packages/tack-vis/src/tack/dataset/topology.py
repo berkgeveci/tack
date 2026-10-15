@@ -48,9 +48,9 @@ def _as_field(values, dtype):
             raise TypeError(f"expected a {dtype.name} field, got {values.dtype.name}")
         return values
     values = np.ascontiguousarray(values)
-    out = tack.field(dtype, shape=values.shape)
+    out = tack.empty(values.shape, dtype)
     if values.size:
-        out.from_numpy(values.astype(dtype.numpy_dtype))
+        tack.copyto(out, values.astype(dtype.numpy_dtype))
     return out
 
 
@@ -108,7 +108,7 @@ class _Topology:
         as VTK builds its cell links, rather than sorted."""
         if self._point_links is None:
             start_of, total = corner_layout(self)
-            keys = tack.field(self.id_dtype, shape=(total,))
+            keys = tack.empty((total,), self.id_dtype)
             for group in self.groups():
                 if group.count:
                     _corner_keys(group.view(), start_of[id(group)], keys)
@@ -166,7 +166,7 @@ class UnstructuredTopology(_Topology):
             raise ValueError(f"offsets must have num_cells + 1 = {self.num_cells + 1} "
                              f"entries, not {offsets.shape[0]}")
         if num_points is None:
-            used = connectivity.to_numpy() if isinstance(connectivity, Field) else connectivity
+            used = connectivity.numpy() if isinstance(connectivity, Field) else connectivity
             num_points = int(used.max()) + 1 if used.size else 0
         self.num_points = int(num_points)
         extent = max(self.num_points, int(connectivity.shape[0]), 12 * self.num_cells)
@@ -181,22 +181,22 @@ class UnstructuredTopology(_Topology):
         n = self.num_cells
         groups = []
         if n:
-            keys = tack.field(tack.i32, shape=(n,))
-            counts = tack.zeros(tack.i32, (256,))
+            keys = tack.empty((n,), tack.i32)
+            counts = tack.zeros((256,), tack.i32)
             _histogram_types(self.types, keys, counts)
-            counts = counts.to_numpy()
+            counts = counts.numpy()
             present = np.flatnonzero(counts)
             unknown = [int(t) for t in present if int(t) not in shapes._BY_ID]
             if unknown:
                 raise ValueError(f"cell types {unknown} are not linear shapes")
             order = argsort(keys, index_dtype=self.id_dtype)
-            bad = tack.zeros(tack.i32, (1,))
+            bad = tack.zeros((1,), tack.i32)
             starts = np.concatenate([[0], np.cumsum(counts)])
             for t in present:
                 shape = shapes.shape_class(t)
                 count = int(counts[t])
-                cell_ids = tack.field(self.id_dtype, shape=(count,))
-                rows = tack.field(self.id_dtype, shape=(count, shape.NUM_POINTS))
+                cell_ids = tack.empty((count,), self.id_dtype)
+                rows = tack.empty((count, shape.NUM_POINTS), self.id_dtype)
                 _gather_shape(order, int(starts[t]), self.offsets, self.connectivity,
                               cell_ids, rows, bad)
                 groups.append(DomainGroup(_Cells, shape, (rows, cell_ids, count), count,
@@ -368,34 +368,34 @@ class Faces:
         total = int(starts[-1])
         self.group_starts = {id(g): int(s) for g, s in zip(cell_groups, starts[:-1])}
         self.id_dtype = idt = topology.id_dtype
-        rows = tack.Vector.field(4, idt, shape=(total,))
-        kinds = tack.field(tack.i32, shape=(total,))
-        owners = tack.Vector.field(2, idt, shape=(total,))
+        rows = tack.empty((total,), tack.vec(4, idt))
+        kinds = tack.empty((total,), tack.i32)
+        owners = tack.empty((total,), tack.vec(2, idt))
         for group, start in zip(cell_groups, starts[:-1]):
             if group.count:
                 _emit_faces(group.view(), int(start), rows, kinds, owners)
 
-        self.side_face = tack.field(idt, shape=(total,))
-        self.side_slot = tack.field(tack.i32, shape=(total,))
-        self.side_orientation = tack.field(tack.i32, shape=(total,))
+        self.side_face = tack.empty((total,), idt)
+        self.side_slot = tack.empty((total,), tack.i32)
+        self.side_orientation = tack.empty((total,), tack.i32)
         if total:
-            keys = tack.Vector.field(4, idt, shape=(total,))
+            keys = tack.empty((total,), tack.vec(4, idt))
             _face_keys(rows, keys)
             order, _ = bucket_order(keys, topology.num_points, idt)
             offsets, count = run_offsets(keys, order)
         else:
             count = 0
         self.num_faces = count
-        self.rows = tack.Vector.field(4, idt, shape=(count,))
-        self.kinds = tack.field(tack.i32, shape=(count,))
-        self.sides = tack.Vector.field(4, idt, shape=(count,))
+        self.rows = tack.empty((count,), tack.vec(4, idt))
+        self.kinds = tack.empty((count,), tack.i32)
+        self.sides = tack.empty((count,), tack.vec(4, idt))
         if count:
-            too_many = tack.zeros(tack.i32, (1,))
+            too_many = tack.zeros((1,), tack.i32)
             _faces_from_runs(order, offsets, rows, kinds, owners, self.rows, self.kinds,
                              self.sides, self.side_face, self.side_slot, too_many, count)
             if too_many[0]:
                 raise ValueError(f"{too_many[0]} faces are shared by more than two cells")
-            bad = tack.zeros(tack.i32, (1,))
+            bad = tack.zeros((1,), tack.i32)
             _side_orientations(rows, self.side_face, self.rows, self.side_orientation, bad)
             if bad[0]:
                 raise ValueError(f"{bad[0]} cell faces do not go round their face's points "
@@ -411,21 +411,21 @@ class Faces:
             return self._groups
         idt = self.id_dtype
         ids_in = (ids.as_ids(subset, idt) if subset is not None
-                  else tack.arange(self.num_faces, idt))
+                  else tack.arange(self.num_faces, dtype=idt))
         n = ids_in.shape[0]
         kinds = _take_scalar(self.kinds, ids_in) if subset is not None else self.kinds
         rows = _take_vector(self.rows, ids_in) if subset is not None else self.rows
         sides = _take_vector(self.sides, ids_in) if subset is not None else self.sides
         groups = []
         for shape in (shapes.Line, shapes.Triangle, shapes.Quad):
-            flags = tack.field(tack.i32, shape=(n,))
-            slots = tack.field(idt, shape=(n,))
+            flags = tack.empty((n,), tack.i32)
+            slots = tack.empty((n,), idt)
             if n:
                 _select_kind(kinds, int(shape.ID), flags)
             count = exclusive_scan(flags, slots, n) if n else 0
-            positions = tack.field(idt, shape=(count,))
-            group_rows = tack.Vector.field(4, idt, shape=(count,))
-            group_sides = tack.Vector.field(4, idt, shape=(count,))
+            positions = tack.empty((count,), idt)
+            group_rows = tack.empty((count,), tack.vec(4, idt))
+            group_sides = tack.empty((count,), tack.vec(4, idt))
             if count:
                 _gather_kind(flags, slots, rows, sides, positions, group_rows, group_sides)
             face_ids = _take_scalar(ids_in, positions) if count else positions
@@ -440,12 +440,12 @@ class Faces:
         side set."""
         if self._boundary is None:
             n = self.num_faces
-            flags = tack.field(tack.i32, shape=(n,))
-            slots = tack.field(self.id_dtype, shape=(n,))
+            flags = tack.empty((n,), tack.i32)
+            slots = tack.empty((n,), self.id_dtype)
             if n:
                 _one_sided(self.sides, flags)
             count = exclusive_scan(flags, slots, n) if n else 0
-            boundary = tack.field(self.id_dtype, shape=(count,))
+            boundary = tack.empty((count,), self.id_dtype)
             if count:
                 _compact_ids(flags, slots, boundary)
             self._boundary = boundary
@@ -472,14 +472,14 @@ def _take_scalar_kernel(values, ids, out):
 
 
 def _take_scalar(values, ids):
-    out = tack.field(values.dtype, shape=(ids.shape[0],))
+    out = tack.empty((ids.shape[0],), values.dtype)
     if ids.shape[0]:
         _take_scalar_kernel(values, ids, out)
     return out
 
 
 def _take_vector(values, ids):
-    out = tack.Vector.field(values._vector_n, values.scalar_dtype, shape=(ids.shape[0],))
+    out = tack.empty((ids.shape[0],), tack.vec(values._vector_n, values.scalar_dtype))
     if ids.shape[0]:
         _take_scalar_kernel(values, ids, out)
     return out
@@ -525,24 +525,24 @@ class Edges:
         total = int(starts[-1])
         self.group_starts = {id(g): int(s) for g, s in zip(cell_groups, starts[:-1])}
         self.id_dtype = idt = topology.id_dtype
-        keys = tack.Vector.field(2, idt, shape=(total,))
-        self.side_sign = tack.field(tack.i32, shape=(total,))
+        keys = tack.empty((total,), tack.vec(2, idt))
+        self.side_sign = tack.empty((total,), tack.i32)
         for group, start in zip(cell_groups, starts[:-1]):
             if group.count:
                 _emit_edges(group.view(), int(start), keys, self.side_sign)
-        self.side_edge = tack.field(idt, shape=(total,))
+        self.side_edge = tack.empty((total,), idt)
         if total:
             order, _ = bucket_order(keys, topology.num_points, idt)
             offsets, count = run_offsets(keys, order)
         else:
             count = 0
         self.num_edges = count
-        self.rows = tack.Vector.field(2, idt, shape=(count,))
+        self.rows = tack.empty((count,), tack.vec(2, idt))
         if count:
             _edges_from_runs(order, offsets, keys, self.rows, self.side_edge, count)
         return self
 
     def groups(self):
-        edge_ids = tack.arange(self.num_edges, self.id_dtype)
+        edge_ids = tack.arange(self.num_edges, dtype=self.id_dtype)
         return [DomainGroup(_Edges, shapes.Line, (self.rows, edge_ids, self.num_edges),
                             self.num_edges, 0)]

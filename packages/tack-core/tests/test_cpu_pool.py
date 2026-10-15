@@ -84,15 +84,15 @@ def test_a_fan_out_runs_every_element_once_with_every_argument_kind(monkeypatch)
     pack and the wrapper, on a range the thread count does not divide."""
     backend = _fresh_backend(4, monkeypatch)
     n = 100_003
-    x = tack.field(tack.f32, (n,)); x.from_numpy(np.arange(n, dtype=np.float32))
-    y = tack.field(tack.f64, (n,)); y.from_numpy(np.full(n, 0.5))
-    out = tack.zeros(tack.f64, (n,))
+    x = tack.empty((n,)); tack.copyto(x, np.arange(n, dtype=np.float32))
+    y = tack.empty((n,), tack.f64); tack.copyto(y, np.full(n, 0.5))
+    out = tack.zeros((n,), tack.f64)
     compiled, prefix, loop_end = _compiled(backend, _mixed, [x, y, out, 2.0, 4.0, 7, 1 << 40])
     assert loop_end == n
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
     assert backend._cpool is not None, "the fan-out did not go through the pool"
     expected = np.arange(n, dtype=np.float32).astype(np.float64) * 2.0 + 2.0 + 7 + (1 << 40)
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+    np.testing.assert_array_equal(out.numpy(), expected)
     # Every element ran once: the workers' counts add up to the range and
     # the result says each element was touched exactly once.
     assert sum(backend._cpool.elems()[:4]) == n
@@ -102,27 +102,27 @@ def test_a_fan_out_runs_every_element_once_with_every_argument_kind(monkeypatch)
 def test_each_element_is_visited_exactly_once(monkeypatch):
     backend = _fresh_backend(8, monkeypatch)
     n = 1_000_001
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
-    np.testing.assert_array_equal(out.to_numpy(), 2 * np.arange(n, dtype=np.int64))
+    np.testing.assert_array_equal(out.numpy(), 2 * np.arange(n, dtype=np.int64))
 
 
 def test_a_multi_dimensional_range_carries_its_extents(monkeypatch):
     backend = _fresh_backend(7, monkeypatch)
-    out = tack.zeros(tack.i32, (300 * 257,))
+    out = tack.zeros((300 * 257,), tack.i32)
     compiled, prefix, loop_end = _compiled(backend, _grid, [out, 1000])
     assert loop_end == 300 * 257
     backend._parallel_execute(compiled, prefix, 0, loop_end, whole_range=True)
     i, j = np.indices((300, 257))
-    np.testing.assert_array_equal(out.to_numpy().reshape(300, 257), i * 1000 + j)
+    np.testing.assert_array_equal(out.numpy().reshape(300, 257), i * 1000 + j)
 
 
 def test_backends_with_different_thread_counts_share_the_pool(monkeypatch):
     two, three = _fresh_backend(2, monkeypatch), _fresh_backend(3, monkeypatch)
     n = 50_000
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     for backend, chunks in ((two, 2), (three, 3)):
         compiled, prefix, _ = _compiled(backend, _number, [out])
         backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
@@ -130,25 +130,25 @@ def test_backends_with_different_thread_counts_share_the_pool(monkeypatch):
         assert sum(counts[:chunks]) == n
         assert all(c == 0 for c in counts[chunks:])
     assert two._cpool is three._cpool
-    np.testing.assert_array_equal(out.to_numpy(), 2 * np.arange(n, dtype=np.int64))
+    np.testing.assert_array_equal(out.numpy(), 2 * np.arange(n, dtype=np.int64))
 
 
 def test_an_empty_range_is_a_fan_out_of_nothing(monkeypatch):
     """The calibration probes fan out empty ranges: no element may run."""
     backend = _fresh_backend(4, monkeypatch)
     n = 4096
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     assert backend._empty_fan_out_ns(compiled, prefix) > 0
     backend._parallel_execute(compiled, prefix, 0, 0, whole_range=True)
-    assert not out.to_numpy().any()
+    assert not out.numpy().any()
 
 
 def test_the_policy_measures_the_pool(monkeypatch):
     """The fan-out the policy calibrates is the pool's, not the executor's."""
     backend = _fresh_backend(4, monkeypatch)
     n = 4096
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._calibrate_fan_out(compiled, prefix)
     assert backend._pool is None, "the ThreadPoolExecutor was made"
@@ -164,7 +164,7 @@ def test_chunks_are_claimed_and_cover_the_range(monkeypatch):
     every worker to take part."""
     backend = _fresh_backend(4, monkeypatch)
     n = 1_000_000
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
     counts = backend._cpool.elems()[:4]
@@ -173,7 +173,7 @@ def test_chunks_are_claimed_and_cover_the_range(monkeypatch):
     assert sum(counts) == n
     assert all(c % chunk == 0 or c % chunk == n % chunk for c in counts)
     assert sum(-(-c // chunk) for c in counts) == -(-n // chunk), "a chunk claimed twice or not at all"
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.int64))
 
 
 def test_concurrent_fan_outs_keep_their_own_launch_state(monkeypatch):
@@ -183,7 +183,7 @@ def test_concurrent_fan_outs_keep_their_own_launch_state(monkeypatch):
     outputs came back wrong or unwritten (TA-45)."""
     backend = _fresh_backend(4, monkeypatch)
     n, threads, rounds = 400_000, 4, 25
-    outs = [tack.zeros(tack.i64, (n,)) for _ in range(threads)]
+    outs = [tack.zeros((n,), tack.i64) for _ in range(threads)]
     plans = [_compiled(backend, _number, [out]) for out in outs]
     errors = []
 
@@ -202,7 +202,7 @@ def test_concurrent_fan_outs_keep_their_own_launch_state(monkeypatch):
         t.join()
     assert not errors
     for out in outs:
-        np.testing.assert_array_equal(out.to_numpy(), rounds * np.arange(n, dtype=np.int64))
+        np.testing.assert_array_equal(out.numpy(), rounds * np.arange(n, dtype=np.int64))
 
 
 def test_a_failed_worker_start_stops_the_started_workers(tmp_path):
@@ -255,9 +255,9 @@ n = 300_000
 def number(out):
     for i in range(out.shape[0]):
         out[i] = out[i] + i
-out = tack.zeros(tack.i64, (n,))
+out = tack.zeros((n,), tack.i64)
 number(out)
-np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
+np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.int64))
 print("ok")
 """
     if platform.system() != "Linux":
@@ -278,11 +278,11 @@ def test_the_python_path_still_works(monkeypatch):
     monkeypatch.setenv("TACK_CPU_POOL", "python")
     backend = CPUBackend(num_threads=4)
     n = 100_003
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
     assert backend._cpool is None and backend._pool is not None
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.int64))
 
 
 def test_the_pool_builds_in_a_fresh_process():
@@ -321,10 +321,10 @@ def test_idle_workers_block_rather_than_poll(monkeypatch):
     # And it still runs every element once after the workers have slept.
     time.sleep(0.05)
     n = 100_000
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.int64))
 
 
 def test_a_pool_that_cannot_be_made_falls_back(monkeypatch):
@@ -334,10 +334,10 @@ def test_a_pool_that_cannot_be_made_falls_back(monkeypatch):
     assert backend._jit_pool() is None
     assert backend.pool_kind == "python"
     n = 10_000
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int64))
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.int64))
 
 
 def test_a_kernel_through_init_and_call(monkeypatch):
@@ -345,10 +345,10 @@ def test_a_kernel_through_init_and_call(monkeypatch):
     monkeypatch.delenv("TACK_CPU_POOL", raising=False)
     tack.init(arch=tack.cpu, num_threads=4)
     n = 2_000_000
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     for _ in range(3):
         _number(out)
-    np.testing.assert_array_equal(out.to_numpy(), 3 * np.arange(n, dtype=np.int64))
+    np.testing.assert_array_equal(out.numpy(), 3 * np.arange(n, dtype=np.int64))
 
 
 def test_a_run_uses_only_the_first_k_workers(monkeypatch):
@@ -360,7 +360,7 @@ def test_a_run_uses_only_the_first_k_workers(monkeypatch):
     threads = min(6, max(2, cpu_pool._available_cpus()))
     backend = _fresh_backend(threads, monkeypatch)
     n = 200_000
-    out = tack.zeros(tack.i64, (n,))
+    out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)   # makes the pool
     pool = backend._cpool
@@ -375,4 +375,4 @@ def test_a_run_uses_only_the_first_k_workers(monkeypatch):
         assert all(e == 0 and s == 0 for e, s in zip(elems[k:], spans[k:])), (k, elems)
         # Which of the k claim is the scheduler's (a posted worker that is
         # descheduled, as under a loaded test run, may claim nothing).
-    np.testing.assert_array_equal(out.to_numpy(), len(ks) * np.arange(n))
+    np.testing.assert_array_equal(out.numpy(), len(ks) * np.arange(n))

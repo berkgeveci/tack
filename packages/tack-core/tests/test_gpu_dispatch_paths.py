@@ -135,7 +135,7 @@ def rowwise(a, out, rows, cols):
 
 
 def field(shape, dtype=None):
-    return tack.field(dtype=dtype or tack.f32, shape=shape)
+    return tack.empty(shape, dtype or tack.f32)
 
 
 def check(label, cond):

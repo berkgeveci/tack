@@ -79,8 +79,8 @@ def fake_vtk(monkeypatch):
 
 def _field(values, shape=None):
     values = np.asarray(values, dtype=np.float32)
-    f = tack.field(dtype=tack.f32, shape=shape or values.shape)
-    f.from_numpy(values.reshape(shape) if shape else values)
+    f = tack.empty(shape or values.shape)
+    tack.copyto(f, values.reshape(shape) if shape else values)
     return f
 
 
@@ -88,66 +88,66 @@ def _field(values, shape=None):
 
 def test_two_d_field_needs_no_declaration(fake_vtk):
     """A (4, 3) field is 4 tuples of 3. Nothing to pass."""
-    array = interop.field_to_vtk(_field(range(12), shape=(4, 3)))
+    array = interop.array_to_vtk(_field(range(12), shape=(4, 3)))
     assert array.GetNumberOfTuples() == 4
     assert array.GetNumberOfComponents() == 3
 
 
 def test_flat_field_is_one_component(fake_vtk):
-    array = interop.field_to_vtk(_field(range(6)))
+    array = interop.array_to_vtk(_field(range(6)))
     assert array.GetNumberOfTuples() == 6
     assert array.GetNumberOfComponents() == 1
 
 
 def test_components_group_a_flat_field(fake_vtk):
     """The interleaved form tack's own algorithms produce."""
-    array = interop.field_to_vtk(_field(range(12)), n_components=3)
+    array = interop.array_to_vtk(_field(range(12)), n_components=3)
     assert array.GetNumberOfTuples() == 4
     assert array.GetNumberOfComponents() == 3
 
 
 def test_values_survive_the_grouping(fake_vtk):
-    array = interop.field_to_vtk(_field(range(12)), n_components=3)
+    array = interop.array_to_vtk(_field(range(12)), n_components=3)
     np.testing.assert_array_equal(array.array.ravel(), np.arange(12))
     np.testing.assert_array_equal(array.array[1], [3, 4, 5])
 
 
 def test_name_is_passed_through(fake_vtk):
-    array = interop.field_to_vtk(_field(range(4)), name="velocity")
+    array = interop.array_to_vtk(_field(range(4)), name="velocity")
     assert array.name == "velocity"
 
 
 def test_redundant_components_are_allowed(fake_vtk):
     """Saying what the shape already says is not an error."""
-    array = interop.field_to_vtk(_field(range(12), shape=(4, 3)), n_components=3)
+    array = interop.array_to_vtk(_field(range(12), shape=(4, 3)), n_components=3)
     assert array.GetNumberOfComponents() == 3
 
 
 def test_components_contradicting_the_shape_are_rejected(fake_vtk):
     """A (4, 3) field is not tuples of 2, and one of the two is a mistake."""
     with pytest.raises(ValueError, match="contradicts"):
-        interop.field_to_vtk(_field(range(12), shape=(4, 3)), n_components=2)
+        interop.array_to_vtk(_field(range(12), shape=(4, 3)), n_components=2)
 
 
 def test_indivisible_size_is_rejected(fake_vtk):
     """7 values cannot be tuples of 3, and guessing would corrupt the data."""
     with pytest.raises(ValueError, match="does not divide"):
-        interop.field_to_vtk(_field(range(7)), n_components=3)
+        interop.array_to_vtk(_field(range(7)), n_components=3)
 
 
 def test_zero_components_is_rejected(fake_vtk):
     with pytest.raises(ValueError, match="at least 1"):
-        interop.field_to_vtk(_field(range(6)), n_components=0)
+        interop.array_to_vtk(_field(range(6)), n_components=0)
 
 
 def test_three_d_field_is_rejected(fake_vtk):
     """VTK has no layout for it, so guessing one would be inventing data."""
     with pytest.raises(ValueError, match="no obvious VTK layout"):
-        interop.field_to_vtk(_field(range(24), shape=(2, 3, 4)))
+        interop.array_to_vtk(_field(range(24), shape=(2, 3, 4)))
 
 
 def test_three_d_field_can_be_flattened_explicitly(fake_vtk):
-    array = interop.field_to_vtk(_field(range(24), shape=(2, 3, 4)), n_components=4)
+    array = interop.array_to_vtk(_field(range(24), shape=(2, 3, 4)), n_components=4)
     assert array.GetNumberOfTuples() == 6
     assert array.GetNumberOfComponents() == 4
 
@@ -155,7 +155,7 @@ def test_three_d_field_can_be_flattened_explicitly(fake_vtk):
 def test_validation_does_not_need_vtk():
     """A shape mistake reports itself even where VTK is absent."""
     with pytest.raises(ValueError, match="does not divide"):
-        interop.field_to_vtk(_field(range(7)), n_components=3)
+        interop.array_to_vtk(_field(range(7)), n_components=3)
 
 
 # ── VTK -> Tack: the shape comes across intact ───────────────────────
@@ -163,39 +163,39 @@ def test_validation_does_not_need_vtk():
 def test_import_keeps_the_vtk_shape(fake_vtk):
     """4 tuples of 3 arrive as (4, 3), so field.shape[1] is the components."""
     source = FakeVTKArray(np.arange(12, dtype=np.float32).reshape(4, 3))
-    field = interop.vtk_to_field(source)
+    field = interop.vtk_to_array(source)
     assert field.shape == (4, 3)
-    np.testing.assert_array_equal(field.to_numpy(), np.arange(12).reshape(4, 3))
+    np.testing.assert_array_equal(field.numpy(), np.arange(12).reshape(4, 3))
 
 
 def test_single_component_arrives_flat(fake_vtk):
     """VTK exports (n, 1), but a scalar array is naturally 1-D."""
     source = FakeVTKArray(np.arange(5, dtype=np.float32))
-    field = interop.vtk_to_field(source)
+    field = interop.vtk_to_array(source)
     assert field.shape == (5,)
 
 
 def test_import_can_flatten_for_tacks_algorithms(fake_vtk):
     """flying_edges and compute_normals index points interleaved."""
     source = FakeVTKArray(np.arange(12, dtype=np.float32).reshape(4, 3))
-    field = interop.vtk_to_field(source, flatten=True)
+    field = interop.vtk_to_array(source, flatten=True)
     assert field.shape == (12,)
-    np.testing.assert_array_equal(field.to_numpy(), np.arange(12))
+    np.testing.assert_array_equal(field.numpy(), np.arange(12))
 
 
 def test_import_is_zero_copy(fake_vtk):
     data = np.arange(6, dtype=np.float32).reshape(3, 2)
-    field = interop.vtk_to_field(FakeVTKArray(data))
+    field = interop.vtk_to_array(FakeVTKArray(data))
     data[0, 0] = 99.0
-    assert field.to_numpy()[0, 0] == 99.0
+    assert field.numpy()[0, 0] == 99.0
 
 
 def test_flattened_import_is_also_zero_copy(fake_vtk):
     """reshape must carry the DLPack hold, not just the buffer."""
     data = np.arange(6, dtype=np.float32).reshape(3, 2)
-    field = interop.vtk_to_field(FakeVTKArray(data), flatten=True)
+    field = interop.vtk_to_array(FakeVTKArray(data), flatten=True)
     data[2, 1] = 99.0
-    assert field.to_numpy()[5] == 99.0
+    assert field.numpy()[5] == 99.0
 
 
 def test_imported_field_outlives_the_source(fake_vtk):
@@ -203,19 +203,19 @@ def test_imported_field_outlives_the_source(fake_vtk):
     import gc
 
     source = FakeVTKArray(np.arange(6, dtype=np.float32).reshape(3, 2))
-    field = interop.vtk_to_field(source)
+    field = interop.vtk_to_array(source)
     del source
     for _ in range(3):
         gc.collect()
-    np.testing.assert_array_equal(field.to_numpy().ravel(), np.arange(6))
+    np.testing.assert_array_equal(field.numpy().ravel(), np.arange(6))
 
 
 def test_round_trip_preserves_shape(fake_vtk):
     """(4, 3) out, (4, 3) back, with nothing declared either way."""
     field = _field(range(12), shape=(4, 3))
-    back = interop.vtk_to_field(interop.field_to_vtk(field))
+    back = interop.vtk_to_array(interop.array_to_vtk(field))
     assert back.shape == (4, 3)
-    np.testing.assert_array_equal(back.to_numpy(), np.arange(12).reshape(4, 3))
+    np.testing.assert_array_equal(back.numpy(), np.arange(12).reshape(4, 3))
 
 
 def test_missing_vtk_reports_what_is_missing(monkeypatch):
@@ -249,11 +249,11 @@ def test_round_trip_through_real_vtk():
     for i in range(12):
         array.SetValue(i, float(i))
 
-    field = interop.vtk_to_field(array)
+    field = interop.vtk_to_array(array)
     assert field.shape == (4, 3)
-    np.testing.assert_array_equal(field.to_numpy(), np.arange(12).reshape(4, 3))
+    np.testing.assert_array_equal(field.numpy(), np.arange(12).reshape(4, 3))
 
-    back = interop.field_to_vtk(field, name="round")
+    back = interop.array_to_vtk(field, name="round")
     assert back.GetNumberOfTuples() == 4
     assert back.GetNumberOfComponents() == 3
     assert back.GetName() == "round"
@@ -269,9 +269,9 @@ def test_real_vtk_exchange_is_zero_copy():
     for i in range(4):
         array.SetValue(i, 0.0)
 
-    field = interop.vtk_to_field(array)
+    field = interop.vtk_to_array(array)
     array.SetValue(2, 42.0)
-    assert field.to_numpy()[2] == 42.0
+    assert field.numpy()[2] == 42.0
 
 
 @needs_vtk
@@ -285,12 +285,12 @@ def test_real_vtk_exchange_is_zero_copy():
 def test_every_dtype_survives_real_vtk(dtype, np_dtype):
     """Only f32 was ever exercised against a real VTK build."""
     values = np.arange(12, dtype=np_dtype).reshape(6, 2)
-    field = tack.field(dtype=dtype, shape=(6, 2))
-    field.from_numpy(values)
+    field = tack.empty((6, 2), dtype)
+    tack.copyto(field, values)
 
-    back = interop.vtk_to_field(interop.field_to_vtk(field, name="t"))
+    back = interop.vtk_to_array(interop.array_to_vtk(field, name="t"))
     assert back.shape == (6, 2)
-    np.testing.assert_array_equal(back.to_numpy(), values)
+    np.testing.assert_array_equal(back.numpy(), values)
 
 
 @needs_vtk
@@ -311,7 +311,7 @@ def test_a_struct_of_arrays_is_refused_not_flattened():
             soa.SetTypedComponent(t, c, float(t * 2 + c))
 
     with pytest.raises(ValueError, match="SoA|contiguous"):
-        interop.vtk_to_field(soa)
+        interop.vtk_to_array(soa)
 
 
 @needs_vtk
@@ -325,7 +325,7 @@ def test_an_array_with_no_storage_is_refused():
     array.SetNumberOfTuples(4)
 
     with pytest.raises(ValueError, match="no memory"):
-        interop.vtk_to_field(array)
+        interop.vtk_to_array(array)
 
 
 @needs_vtk
@@ -337,10 +337,10 @@ def test_kernel_output_reaches_vtk_without_a_copy():
         for i in range(n):
             out[i] = float(i) * 2.0
 
-    out = tack.field(dtype=tack.f32, shape=(9,))
+    out = tack.empty((9,))
     ramp(out, 9)
 
-    array = interop.field_to_vtk(out, n_components=3, name="ramp")
+    array = interop.array_to_vtk(out, n_components=3, name="ramp")
     assert array.GetNumberOfTuples() == 3
     assert array.GetTuple3(1) == pytest.approx((6.0, 8.0, 10.0))
 
@@ -408,9 +408,9 @@ def test_device_memory_reaches_vtk_as_device_memory(arch, space):
     from vtkmodules.vtkCommonCore import vtkDataArray
 
     _init_device(arch)
-    field = tack.field(dtype=tack.f32, shape=(8,))
+    field = tack.empty((8,))
 
-    array = interop.field_to_vtk(field, n_components=1, name="ondevice")
+    array = interop.array_to_vtk(field, n_components=1, name="ondevice")
 
     assert array.GetMemorySpace() == getattr(vtkDataArray, space)
     assert array.GetMemorySpace() != vtkDataArray.HostMemory
@@ -433,12 +433,12 @@ def test_a_device_round_trip_still_shares_one_allocation(arch, space):
         for i in range(n):
             out[i] = float(i) * 2.0
 
-    original = tack.field(dtype=tack.f32, shape=(8,))
+    original = tack.empty((8,))
     ramp(original, 8)
 
-    back = interop.vtk_to_field(interop.field_to_vtk(original, n_components=1))
+    back = interop.vtk_to_array(interop.array_to_vtk(original, n_components=1))
     assert back.shape == (8,)
-    np.testing.assert_array_equal(back.to_numpy().reshape(-1),
+    np.testing.assert_array_equal(back.numpy().reshape(-1),
                                   np.arange(8, dtype=np.float32) * 2.0)
 
     # Write through the round-tripped handle; the original must see it.
@@ -448,7 +448,7 @@ def test_a_device_round_trip_still_shares_one_allocation(arch, space):
             out[i] = -out[i]
 
     negate(back, 8)
-    np.testing.assert_array_equal(original.to_numpy().reshape(-1),
+    np.testing.assert_array_equal(original.numpy().reshape(-1),
                                   -(np.arange(8, dtype=np.float32) * 2.0))
 
 
@@ -464,7 +464,7 @@ def test_level_zero_memory_from_a_private_context_is_refused():
         tack.init(arch=tack.level_zero)
     except RuntimeError as e:
         pytest.skip(f"no Level Zero backend: {e}")
-    field = tack.field(dtype=tack.f32, shape=(8,))
+    field = tack.empty((8,))
 
     with pytest.raises(RuntimeError, match="same Level Zero context"):
-        interop.field_to_vtk(field, n_components=1)
+        interop.array_to_vtk(field, n_components=1)

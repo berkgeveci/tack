@@ -21,9 +21,9 @@ except ImportError:
 
 def _field(values, dtype=tack.f32):
     values = np.asarray(values)
-    f = (tack.Vector.field(values.shape[1], dtype, shape=(values.shape[0],))
-         if values.ndim == 2 else tack.field(dtype, shape=values.shape))
-    f.from_numpy(values.astype(dtype.numpy_dtype))
+    f = (tack.empty((values.shape[0],), tack.vec(values.shape[1], dtype))
+         if values.ndim == 2 else tack.empty(values.shape, dtype))
+    tack.copyto(f, values.astype(dtype.numpy_dtype))
     return f
 
 
@@ -92,10 +92,10 @@ def test_each_kind_is_its_formula(backend, name):
 def test_random_arrays_are_tack_random(backend):
     from tack import random
 
-    u = td.RandomUniform(1000, seed=7, low=-1.0, high=1.0).to_numpy()
+    u = td.RandomUniform(1000, seed=7, low=-1.0, high=1.0).numpy()
     expected = [-1.0 + 2.0 * random.np_uniform(random.np_seed(k, 7))[0] for k in range(1000)]
     np.testing.assert_allclose(u, expected, atol=1e-6)
-    z = td.RandomNormal(20000, seed=3, mean=5.0, stddev=2.0).to_numpy()
+    z = td.RandomNormal(20000, seed=3, mean=5.0, stddev=2.0).numpy()
     assert abs(z.mean() - 5.0) < 0.05 and abs(z.std() - 2.0) < 0.05
 
 
@@ -108,7 +108,7 @@ def test_oriented_uniform_coordinates(backend):
     ijk = np.stack([i, j, k], -1).reshape(-1, 3) * [0.25, 0.5, 1.0]
     expected = np.array([1.0, -1.0, 0.5]) + ijk @ d.T
     np.testing.assert_allclose(arrays.to_host(arrays.materialize(grid)), expected, atol=1e-6)
-    np.testing.assert_allclose(grid.to_numpy(), expected, atol=1e-6)
+    np.testing.assert_allclose(grid.numpy(), expected, atol=1e-6)
 
 
 def test_composed_values_in_filters(backend):
@@ -130,10 +130,10 @@ def test_composed_values_in_filters(backend):
                                x[:, 0], atol=1e-6)
     cut = td.contour(data, "x", 0.5)
     np.testing.assert_allclose(cut.positions()[:, 0], 0.5, atol=1e-6)
-    np.testing.assert_allclose(cut.fields["shifted"].values.to_numpy(), -0.5, atol=1e-6)
+    np.testing.assert_allclose(cut.fields["shifted"].values.numpy(), -0.5, atol=1e-6)
     kept = td.threshold(data, "x", 0.3, 1.0)
     assert kept.num_cells == 3 * 4 * 3
-    gradient = td.algorithms.gradients(data, data.fields["x"]).values.to_numpy(vectors=True)
+    gradient = td.algorithms.gradients(data, data.fields["x"]).values.numpy()
     np.testing.assert_allclose(gradient, np.tile([1.0, 0.0, 0.0], (len(gradient), 1)),
                                atol=1e-5)
 
@@ -142,7 +142,7 @@ def test_refusals():
     with pytest.raises(TypeError, match="width"):
         td.Concatenate(td.CountingArray(3), td.ConstantArray([1.0, 2.0], 2))
     with pytest.raises(TypeError, match="ExtractComponent"):
-        td.Strided(tack.Vector.field(3, tack.f32, shape=(4,)), 3)
+        td.Strided(tack.empty((4,), tack.vec(3, tack.f32)), 3)
     with pytest.raises(TypeError, match="tack.func"):
         td.Function(lambda k: k, 3)
     with pytest.raises(ValueError, match="component"):
@@ -173,4 +173,4 @@ def test_image_data_both_ways(backend):
     assert isinstance(wavelet.geometry.values, td.UniformCoordinates)
     np.testing.assert_allclose(vtk_to_numpy(dataset_to_vtk(wavelet).GetPointData()
                                             .GetArray("RTData")),
-                               wavelet.fields["RTData"].values.to_numpy())
+                               wavelet.fields["RTData"].values.numpy())

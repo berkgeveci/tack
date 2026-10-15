@@ -123,7 +123,7 @@ def init(arch: str = "cpu", debug: bool | None = None, **options):
 def sync():
     """Wait until every kernel launched so far has finished.
 
-    Reading or writing a field from the host (``to_numpy``, ``from_numpy``,
+    Reading or writing an array from the host (``numpy``, ``tack.copyto``,
     indexing, reductions, DLPack export) already waits for the kernels
     before it, so most code never needs this. It is for timing kernels, and
     for memory shared with another library that reads it without Tack.

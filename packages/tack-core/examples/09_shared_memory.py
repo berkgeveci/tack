@@ -28,10 +28,10 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 n = 256
-x = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+out = tack.empty((n,))
 
-x.from_numpy(np.arange(n, dtype=np.float32))
+tack.copyto(x, np.arange(n, dtype=np.float32))
 
 
 @tack.kernel
@@ -57,8 +57,8 @@ def double_via_shared(x, out):
 double_via_shared(x, out)
 
 expected = np.arange(n, dtype=np.float32) * 2.0
-assert np.allclose(out.to_numpy(), expected)
-print(f"Shared memory double: first 10 = {out.to_numpy()[:10]}")
+assert np.allclose(out.numpy(), expected)
+print(f"Shared memory double: first 10 = {out.numpy()[:10]}")
 print("Shared memory + barrier: OK")
 
 
@@ -67,9 +67,9 @@ print("Shared memory + barrier: OK")
 # tack.shared_like instead of hardcoding the type. This makes kernels
 # generic over field dtype.
 
-x_i32 = tack.empty(dtype=tack.i32, shape=(n,))
-out_i32 = tack.empty(dtype=tack.i32, shape=(n,))
-x_i32.from_numpy(np.arange(n, dtype=np.int32))
+x_i32 = tack.empty((n,), tack.i32)
+out_i32 = tack.empty((n,), tack.i32)
+tack.copyto(x_i32, np.arange(n, dtype=np.int32))
 
 
 @tack.kernel
@@ -85,10 +85,10 @@ def double_via_shared_like(x, out):
 
 # Works with i32 fields — shared memory is automatically int
 double_via_shared_like(x_i32, out_i32)
-assert np.array_equal(out_i32.to_numpy(), np.arange(n, dtype=np.int32) * 2)
+assert np.array_equal(out_i32.numpy(), np.arange(n, dtype=np.int32) * 2)
 print("shared_like with i32: OK")
 
 # Works with f32 fields too — same kernel, shared memory is automatically float
 double_via_shared_like(x, out)
-assert np.allclose(out.to_numpy(), expected)
+assert np.allclose(out.numpy(), expected)
 print("shared_like with f32: OK")

@@ -12,12 +12,12 @@ import numpy as np
 tack.init(arch=tack.metal)  # or tack.cpu, tack.cuda, tack.hip, tack.level_zero
 
 n = 1_000_000
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
 
-x.from_numpy(np.random.randn(n).astype(np.float32))
-y.from_numpy(np.random.randn(n).astype(np.float32))
+tack.copyto(x, np.random.randn(n).astype(np.float32))
+tack.copyto(y, np.random.randn(n).astype(np.float32))
 
 @tack.kernel
 def vector_add(x, y, out):
@@ -25,7 +25,7 @@ def vector_add(x, y, out):
         out[i] = x[i] + y[i]
 
 vector_add(x, y, out)
-result = out.to_numpy()
+result = out.numpy()
 ```
 
 ## Installation
@@ -110,39 +110,42 @@ the dtype describes a scalar, vector or matrix element. A dataset
 `tack.dataset.Field` combines a function space with coefficient values.
 
 ```python
-# empty leaves contents unspecified until a kernel or host write sets them
-x = tack.empty(dtype=tack.f32, shape=(1024,))         # 1D
-img = tack.empty(dtype=tack.f32, shape=(512, 512))     # 2D
-vol = tack.empty(dtype=tack.f32, shape=(64, 64, 64))   # 3D
+# empty leaves contents unspecified until a kernel or host write sets them;
+# shape first, then dtype (f32 by default; NumPy dtypes work too)
+x = tack.empty((1024,))                  # 1D
+img = tack.empty((512, 512))             # 2D
+vol = tack.empty((64, 64, 64))           # 3D
+ids = tack.empty((1024,), tack.i32)
 
 # Vector and matrix elements use the same array constructor
-pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(width, height))
-F = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))
+pixels = tack.empty((width, height), tack.vec3())
+F = tack.empty((n,), tack.mat2())
 
 # Data transfer
-x.from_numpy(np_array)    # host → device
-result = x.to_numpy()     # device → host
-x.fill(0.0)               # fill with scalar
-pixels.from_numpy(rgb)                    # (width, height, 3), or the flat array
-rgb = pixels.to_numpy()                   # (width, height, 3)
-x[7], pixels[3, 4]                        # read one element from the host (not written this way)
+tack.copyto(x, np_array)                 # host → device, into an existing array
+result = x.numpy()                       # device → host (a copy; np.asarray(x) too)
+x.fill(0.0)                              # fill with a scalar
+tack.copyto(pixels, rgb)                 # rgb has shape (width, height, 3)
+rgb = pixels.numpy()                     # (width, height, 3)
+x[7], pixels[3, 4]                       # read one element from the host (not written this way)
 
-# Reductions (on the device for f32 fields on GPU backends)
+# Reductions (on the device for f32 arrays on GPU backends)
 total = x.sum()
 lo = x.min()
 hi = x.max()
 
 # Convenience constructors
-copied = tack.array(np_array)             # independent storage, copies values
-scratch = tack.empty_like(pixels)         # same shape and element type, no copy
-z = tack.zeros(dtype=tack.f32, shape=(1024,))
-o = tack.ones(dtype=tack.i32, shape=(256,))
-idx = tack.arange(100)
+copied = tack.array(np_array)            # independent storage, copies values and dtype
+scratch = tack.empty_like(pixels)        # same shape and element type, no copy
+z = tack.zeros((1024,))
+o = tack.ones((256,), tack.i32)
+c = tack.full((256,), 2.5)               # f32 from a Python float
+idx = tack.arange(100)                   # i32
 
 # Copy, convert, reshape, concatenate
 backup = x.copy()
 x_f64 = x.astype(tack.f64)
-flat = img.reshape((512 * 512,))
+flat = img.reshape(-1)
 combined = tack.concat([part_a, part_b])
 ```
 
@@ -189,7 +192,7 @@ def halve(x, out):
 
 ### Scalar Arguments
 
-Kernels accept Python scalars directly alongside fields:
+Kernels accept Python scalars directly alongside arrays:
 
 ```python
 @tack.kernel
@@ -259,7 +262,7 @@ def compact(values, out, count, n):
         if values[i] > 0.0:
             out[tack.atomic_add(count, 0, 1)] = values[i]
 
-# One index per dimension, and a whole vector into a vector field
+# One index per dimension, and a whole vector into a vector array
 @tack.kernel
 def scatter(pos, vel, mass, grid_m, grid_v, inv_dx, n):
     for p in range(n):
@@ -293,7 +296,7 @@ def debug_kern(x, out):
 ```
 
 To find an index out of bounds, run in debug mode: `tack.init(arch=..., debug=True)`
-or `TACK_DEBUG=1` checks every field and array index and raises `IndexError` naming
+or `TACK_DEBUG=1` checks every array index and raises `IndexError` naming
 the access. See [Debugging and timing](docs/users-guide/15-debugging-and-timing.md).
 
 ### Device Functions
@@ -321,13 +324,13 @@ scalarized at compile time, so they cost what the scalar code would.
 @tack.kernel
 def step(pos, vel, F, C, grid, out, dt, n):
     for p in range(n):
-        v = vel[p]                              # a whole vector from a vector field
+        v = vel[p]                              # a whole vector from a vector array
         v = min(max(v, -10.0), 10.0)            # builtins apply to each component
         v.y -= 9.8 * dt                         # components: v.x, v[1], pos[p].z, pos[p][0]
         cell = int(floor(pos[p] / 0.25))        # a vector of integers
-        out[p] = grid[cell] * v.norm()          # a vector indexes a field, one dimension each
-        pos[p] += v * dt                        # update a field element in place
-        vel[p], out[p] = v, v.dot(v)            # tuple assignment to field elements
+        out[p] = grid[cell] * v.norm()          # a vector indexes an array, one dimension each
+        pos[p] += v * dt                        # update an array element in place
+        vel[p], out[p] = v, v.dot(v)            # tuple assignment to array elements
 
         F[p] = (tack.Matrix.identity(2) + dt * C[p]) @ F[p]     # '@' multiplies
         J = F[p].determinant()
@@ -352,7 +355,7 @@ class Grid:
     scale = 2.0            # class-level scalar → compile-time constant
 
     def __init__(self, data, dx):
-        self.data = data   # field → becomes kernel parameter
+        self.data = data   # array → becomes kernel parameter
         self.dx = dx       # instance scalar → runtime parameter, no recompilation
 
     @tack.func
@@ -364,14 +367,14 @@ def process(grid: tack.template(), out):
     for i in range(out.shape[0]):
         out[i] = grid.sample(i)
 
-process(Grid(data_field, 0.1), output)
+process(Grid(data, 0.1), output)
 ```
 
 A device class can derive from another and inherits its
 `@tack.func` methods and class constants. An object can also hold a
 `@tack.func` as an attribute (`self.smoothing = cubic`) and call it.
 A kernel can be a method too: `@tack.kernel def step(self, dt)` is called
-as `grid.step(0.1)` and reaches the object's fields through `self`.
+as `grid.step(0.1)` and reaches the object's arrays through `self`.
 
 ## Datasets and Visualization
 
@@ -407,7 +410,7 @@ uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # ta
 
 | Location | Count | Covers |
 |----------|------:|--------|
-| `packages/tack-core/examples/` | 28 | Kernels, fields, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
+| `packages/tack-core/examples/` | 28 | Kernels, arrays, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
 | `packages/tack-vis/examples/` | 4 | A tour of `tack.dataset`, an MFEM solution through it, multi-block contour, VTK interop |
 
 Numbers are unique within a package but repeat across packages — `tack-vis/31_multiblock_contour.py`

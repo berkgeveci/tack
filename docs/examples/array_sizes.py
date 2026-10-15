@@ -33,9 +33,9 @@ def run(arch="cpu", check=False):
     for width in (4, 7):
         host = np.arange(3 * width, dtype=np.float32).reshape(3, width)
         data = tack.array(host)
-        out = tack.empty(dtype=tack.f32, shape=(3,))
+        out = tack.empty((3,))
         row_energy(data, out)
-        np.testing.assert_array_equal(out.to_numpy(), (host + host * host).sum(axis=1))
+        np.testing.assert_array_equal(out.numpy(), (host + host * host).sum(axis=1))
 
 
 if __name__ == "__main__":

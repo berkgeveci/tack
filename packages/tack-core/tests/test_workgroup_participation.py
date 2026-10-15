@@ -141,10 +141,10 @@ _GENERATORS = [generate_cuda_source, generate_hip_source,
 
 
 def _inputs(n=512):
-    data = tack.field(tack.f32, (n,))
-    out = tack.field(tack.f32, (n,))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
     values = np.arange(n, dtype=np.float32) + 1
-    data.from_numpy(values)
+    tack.copyto(data, values)
     out.fill(-7)
     return data, out, values
 
@@ -175,7 +175,7 @@ def test_gpu_rejects_before_compilation(workgroup_backend, kernel, mode, monkeyp
             kernel(data, out, 512)
         else:
             tack.inspect(kernel, data, out, 512, mode=mode)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(512, -7))
+    np.testing.assert_array_equal(out.numpy(), np.full(512, -7))
     assert not backend._cache.get(kernel)
 
 
@@ -202,7 +202,7 @@ def test_cold_partial_groups_rejected(workgroup_backend, count, mode, monkeypatc
             full_groups_only(data, out, count)
         else:
             tack.inspect(full_groups_only, data, out, count, mode=mode)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(768, -7))
+    np.testing.assert_array_equal(out.numpy(), np.full(768, -7))
 
 
 def test_cached_launch_rechecks_count_without_reanalysis(workgroup_backend, monkeypatch):
@@ -220,12 +220,12 @@ def test_cached_launch_rechecks_count_without_reanalysis(workgroup_backend, monk
         full_groups_only(data, out, count)
         expected = np.full(768, -7, dtype=np.float32)
         expected[:max(count, 0)] = values[:max(count, 0)]
-        np.testing.assert_array_equal(out.to_numpy(), expected)
+        np.testing.assert_array_equal(out.numpy(), expected)
     for count in (1, 255, 257, 513):
         out.fill(-7)
         with pytest.raises(ValueError, match='partial workgroup'):
             full_groups_only(data, out, count)
-        np.testing.assert_array_equal(out.to_numpy(), np.full(768, -7))
+        np.testing.assert_array_equal(out.numpy(), np.full(768, -7))
 
 
 @tack.kernel
@@ -254,7 +254,7 @@ def test_uniform_controls_and_packed_scalars(workgroup_backend):
         uniform_control(data, out, 512, enabled, rounds)
         expected = (np.repeat(values.reshape(2, 256).sum(axis=1) * rounds, 256)
                     if enabled else values)
-        np.testing.assert_array_equal(out.to_numpy(), expected)
+        np.testing.assert_array_equal(out.numpy(), expected)
 
 
 def test_repeated_reductions_protect_result_reads(workgroup_backend):
@@ -274,7 +274,7 @@ def test_repeated_reductions_protect_result_reads(workgroup_backend):
         kernel(data, out, rounds)
         expected = values.reshape(2, 256).sum(axis=1) * rounds
         expected += 256 * (rounds * (rounds - 1) // 2)
-        np.testing.assert_array_equal(out.to_numpy(), np.repeat(expected, 256))
+        np.testing.assert_array_equal(out.numpy(), np.repeat(expected, 256))
 
 
 @tack.kernel
@@ -296,7 +296,7 @@ def shared_tree(data, out):
 def test_varying_memory_updates_rejoin_before_barrier(workgroup_backend):
     data, out, values = _inputs()
     shared_tree(data, out)
-    np.testing.assert_array_equal(out.to_numpy(),
+    np.testing.assert_array_equal(out.numpy(),
                                   np.repeat(values.reshape(2, 256).sum(axis=1), 256))
 
 
@@ -312,7 +312,7 @@ def test_varying_loop_without_collectives_can_rejoin(workgroup_backend):
 
     data, out, values = _inputs()
     kernel(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), values)
+    np.testing.assert_array_equal(out.numpy(), values)
 
 
 @pytest.mark.parametrize('count', [1, 255, 257, 513])
@@ -325,9 +325,9 @@ def test_shared_and_thread_id_allow_partial_groups(workgroup_backend, count):
             scratch[tid] = tid
             out[i] = scratch[tid]
 
-    out = tack.field(tack.i32, (count,))
+    out = tack.empty((count,), tack.i32)
     kernel(out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(count) % 256)
+    np.testing.assert_array_equal(out.numpy(), np.arange(count) % 256)
 
 
 def test_stepped_range_checks_logical_count(workgroup_backend):
@@ -337,16 +337,16 @@ def test_stepped_range_checks_logical_count(workgroup_backend):
             tack.barrier()
             out[i] = i
 
-    out = tack.field(tack.i32, (768,))
+    out = tack.empty((768,), tack.i32)
     out.fill(-7)
     kernel(out, 515)  # 256 iterations; the endpoint itself is not divisible by 256.
     expected = np.full(768, -7, np.int32)
     expected[3:515:2] = np.arange(3, 515, 2)
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+    np.testing.assert_array_equal(out.numpy(), expected)
     out.fill(-7)
     with pytest.raises(ValueError, match='iteration count 257'):
         kernel(out, 516)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(768, -7))
+    np.testing.assert_array_equal(out.numpy(), np.full(768, -7))
 
 
 def test_ndrange_checks_flattened_count(workgroup_backend):
@@ -356,16 +356,16 @@ def test_ndrange_checks_flattened_count(workgroup_backend):
             tack.barrier()
             out[i, j] = i * 1000 + j
 
-    out = tack.field(tack.i32, (16, 20))
+    out = tack.empty((16, 20), tack.i32)
     out.fill(-7)
     kernel(out, 16)
     expected = np.full((16, 20), -7, np.int32)
     expected[:, :16] = np.arange(16)[:, None] * 1000 + np.arange(16)
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+    np.testing.assert_array_equal(out.numpy(), expected)
     out.fill(-7)
     with pytest.raises(ValueError, match='iteration count 272'):
         kernel(out, 17)
-    np.testing.assert_array_equal(out.to_numpy(), np.full((16, 20), -7))
+    np.testing.assert_array_equal(out.numpy(), np.full((16, 20), -7))
 
 
 def test_thread_id_in_condition_is_discovered(workgroup_backend):
@@ -377,9 +377,9 @@ def test_thread_id_in_condition_is_discovered(workgroup_backend):
             else:
                 out[i] = 2
 
-    out = tack.field(tack.i32, (7,))
+    out = tack.empty((7,), tack.i32)
     kernel(out)
-    np.testing.assert_array_equal(out.to_numpy(), np.where(np.arange(7) % 2 == 0, 1, 2))
+    np.testing.assert_array_equal(out.numpy(), np.where(np.arange(7) % 2 == 0, 1, 2))
 
 
 @pytest.mark.parametrize('limit', [128, 256, 512])

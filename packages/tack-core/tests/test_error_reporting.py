@@ -32,7 +32,7 @@ def test_kernel_type_error():
         for i in range(x.shape[0]):
             out[i] = x[i] + y[i]
 
-    x = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
     with pytest.raises(TypeError, match="my_kernel") as excinfo:
         my_kernel(x)  # too few args
     assert str(excinfo.value).count("my_kernel") == 1, \
@@ -48,7 +48,7 @@ def test_kernel_type_error_names_the_kernel_once():
         for i in range(out.shape[0]):
             out[i] = value
 
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.empty((4,))
     with pytest.raises(TypeError) as excinfo:
         fill(out, "one")
     message = str(excinfo.value)

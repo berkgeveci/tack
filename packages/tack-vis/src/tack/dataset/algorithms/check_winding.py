@@ -57,16 +57,16 @@ def _loop_ends(cell_offsets, cell_faces, cell_face_sides, face_points, keys, end
 
 def _check_loops(t):
     total = int(t.cell_faces.shape[0])
-    bad = tack.zeros(tack.i32, (t.num_cells,))
+    bad = tack.zeros((t.num_cells,), tack.i32)
     if total:
-        keys = tack.Vector.field(2, t.id_dtype, shape=(2 * total,))
-        ends = tack.field(tack.i32, shape=(2 * total,))
+        keys = tack.empty((2 * total,), tack.vec(2, t.id_dtype))
+        ends = tack.empty((2 * total,), tack.i32)
         _loop_ends(t.cell_offsets, t.cell_faces, t.cell_face_sides, t.face_points, keys, ends,
                    t.num_cells)
         order, _ = bucket_order(keys, t.num_cells, t.id_dtype)
         offsets, runs = run_offsets(keys, order)
         _unbalanced(keys, ends, order, offsets, bad, runs)
-    return np.flatnonzero(bad.to_numpy())
+    return np.flatnonzero(bad.numpy())
 
 
 def check_winding(data):
@@ -89,18 +89,18 @@ def check_winding(data):
         return _check_loops(t)
     edges = t.edges()
     n = t.num_cells
-    sizes = tack.field(tack.i32, shape=(n,))
-    starts = tack.field(t.id_dtype, shape=(n,))
+    sizes = tack.empty((n,), tack.i32)
+    starts = tack.empty((n,), t.id_dtype)
     if n:
         _cell_sizes(t.cell_offsets, t.cell_faces, t.face_offsets, sizes, n)
     total = exclusive_scan(sizes, starts, n) if n else 0
-    bad = tack.zeros(tack.i32, (n,))
+    bad = tack.zeros((n,), tack.i32)
     if total:
-        keys = tack.Vector.field(2, t.id_dtype, shape=(total,))
-        directions = tack.field(tack.i32, shape=(total,))
+        keys = tack.empty((total,), tack.vec(2, t.id_dtype))
+        directions = tack.empty((total,), tack.i32)
         _directed_edges(t.cell_offsets, t.cell_faces, t.cell_face_sides, t.face_offsets,
                         edges.face_edge, edges.face_edge_sign, starts, keys, directions, n)
         order, _ = bucket_order(keys, n, t.id_dtype)
         offsets, runs = run_offsets(keys, order)
         _unbalanced(keys, directions, order, offsets, bad, runs)
-    return np.flatnonzero(bad.to_numpy())
+    return np.flatnonzero(bad.numpy())

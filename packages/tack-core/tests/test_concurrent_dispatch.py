@@ -102,9 +102,9 @@ class Interleave:
 
 def _fields(dtype, np_dtype, n, length=None):
     length = length or n
-    x = tack.field(dtype=dtype, shape=(length,))
-    out = tack.field(dtype=dtype, shape=(length,))
-    x.from_numpy(np.arange(length, dtype=np_dtype))
+    x = tack.empty((length,), dtype)
+    out = tack.empty((length,), dtype)
+    tack.copyto(x, np.arange(length, dtype=np_dtype))
     return x, out
 
 
@@ -151,9 +151,9 @@ def test_a_thread_gets_code_built_for_its_own_dtype(monkeypatch):
                    lambda: _scale(f64_x, f64_out, n))
 
     np.testing.assert_array_equal(
-        f32_out.to_numpy()[:n], np.arange(n, dtype=np.float32) * 2.0)
+        f32_out.numpy()[:n], np.arange(n, dtype=np.float32) * 2.0)
     np.testing.assert_array_equal(
-        f64_out.to_numpy(), np.arange(n, dtype=np.float64) * 2.0)
+        f64_out.numpy(), np.arange(n, dtype=np.float64) * 2.0)
 
 
 def test_the_template_is_left_alone(monkeypatch):
@@ -190,7 +190,7 @@ def test_many_threads_one_kernel():
                 want = np.arange(n, dtype=np.float64) * 2.0
             for _ in range(20):
                 _scale(x, out, n)
-            results[i] = np.array_equal(out.to_numpy(), want)
+            results[i] = np.array_equal(out.numpy(), want)
         except Exception as exc:                        # pragma: no cover
             errors.append(exc)
 
@@ -236,9 +236,9 @@ def _bind_device_to_this_thread():
 def test_threads_sharing_a_variant_each_get_their_own_scalars(backend):
     threads, iterations, n = 4, 100, 1024
     base = np.arange(n, dtype=np.float32) % 97
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(base)
-    outs = [tack.field(dtype=tack.f32, shape=(n,)) for _ in range(threads)]
+    x = tack.empty((n,))
+    tack.copyto(x, base)
+    outs = [tack.empty((n,)) for _ in range(threads)]
     _affine(x, outs[0], 1.0, 0.0)  # one variant, compiled before the race
     start = threading.Barrier(threads)
     wrong, errors = [], []
@@ -250,7 +250,7 @@ def test_threads_sharing_a_variant_each_get_their_own_scalars(backend):
             for k in range(iterations):
                 scale, offset = float(t + 1), float(1000 * t + k % 7)
                 _affine(x, outs[t], scale, offset)
-                if not np.array_equal(outs[t].to_numpy(), base * scale + offset):
+                if not np.array_equal(outs[t].numpy(), base * scale + offset):
                     wrong.append((t, k))
         except Exception as exc:                        # pragma: no cover
             errors.append(exc)
@@ -312,12 +312,12 @@ def test_threads_sharing_a_template_object_all_succeed(monkeypatch):
 
     def run(tid):
         try:
-            x = tack.field(dtype=tack.f32, shape=(8,))
-            out = tack.field(dtype=tack.f32, shape=(8,))
-            x.from_numpy(np.ones(8, dtype=np.float32))
+            x = tack.empty((8,))
+            out = tack.empty((8,))
+            tack.copyto(x, np.ones(8, dtype=np.float32))
             _use_template(shared, x, out)
             with lock:
-                results[tid] = out.to_numpy()
+                results[tid] = out.numpy()
         except Exception as e:
             with lock:
                 errors.append(f"{type(e).__name__}: {e}")
@@ -343,8 +343,8 @@ def test_concurrent_templates_preserve_method_source(monkeypatch):
 
     def run(bias):
         s = _Scaler(bias)
-        x = tack.field(dtype=tack.f32, shape=(4,))
-        out = tack.field(dtype=tack.f32, shape=(4,))
+        x = tack.empty((4,))
+        out = tack.empty((4,))
         _use_template(s, x, out)
 
     threads = [threading.Thread(target=run, args=(float(i),)) for i in range(6)]
@@ -389,8 +389,8 @@ def test_a_failed_transform_still_cleans_up(monkeypatch):
     monkeypatch.setattr(kernel_mod, "transform_kernel", boom)
 
     s = _ColdScaler(1.0)
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
     with pytest.raises(Exception, match="synthetic transform failure"):
         _use_template(s, x, out)
 
@@ -421,9 +421,9 @@ def test_a_backend_switch_under_a_live_field_says_so():
 
     try:
         tack.init(arch=tack.cpu)
-        x = tack.field(dtype=tack.f32, shape=(8,))
-        out = tack.field(dtype=tack.f32, shape=(8,))
-        x.from_numpy(np.arange(8, dtype=np.float32))
+        x = tack.empty((8,))
+        out = tack.empty((8,))
+        tack.copyto(x, np.arange(8, dtype=np.float32))
 
         tack.init(arch=getattr(tack, second))
         with pytest.raises(RuntimeError) as excinfo:

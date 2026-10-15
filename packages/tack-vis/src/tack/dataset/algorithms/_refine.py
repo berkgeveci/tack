@@ -77,8 +77,8 @@ def _uniform_cells(types, offsets, shape, width, n):
 
 
 def _pieces_topology(data, connectivity, sources, count, shape, width, fields):
-    types = tack.field(tack.u8, shape=(count,))
-    offsets = tack.zeros(connectivity.dtype, (count + 1,))
+    types = tack.empty((count,), tack.u8)
+    offsets = tack.zeros((count + 1,), connectivity.dtype)
     if count:
         _uniform_cells(types, offsets, int(shape), width, int(types.shape[0]))
     out = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
@@ -90,15 +90,15 @@ def _split(data, kind, fields):
     width, shape = (4, shapes.TETRA) if kind == "tetrahedra" else (3, shapes.TRIANGLE)
     n = data.num_cells
     groups = [g for g in data.topology.groups() if g.count and int(g.shape.ID) in tables]
-    counts = tack.zeros(tack.i32, (n,))
+    counts = tack.zeros((n,), tack.i32)
     for group in groups:
         _piece_counts(group.view(), len(tables[int(group.shape.ID)]), counts)
     most = max((len(tables[int(g.shape.ID)]) for g in groups), default=0)
     odt = ids.for_output(data, most * width * n)
-    starts = tack.field(odt, shape=(n,))
+    starts = tack.empty((n,), odt)
     count = exclusive_scan(counts, starts, n) if n else 0
-    connectivity = tack.field(odt, shape=(count * width,))
-    sources = tack.field(data.id_dtype, shape=(count,))
+    connectivity = tack.empty((count * width,), odt)
+    sources = tack.empty((count,), data.id_dtype)
     for group in groups:
         table = np.asarray(tables[int(group.shape.ID)], np.int32)
         _split_cells(group.view(), _as_field(table.reshape(-1), tack.i32), len(table), width,

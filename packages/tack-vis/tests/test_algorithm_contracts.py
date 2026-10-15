@@ -40,7 +40,7 @@ def test_algorithms_refuse_fields_of_another_topology(backend, name, empty, name
 def test_a_raw_device_array_is_not_a_dataset_field(backend):
     data = td.uniform_grid((2, 2, 2))
     with pytest.raises(TypeError, match="tack.dataset.Field"):
-        td.threshold(data, tack.zeros(tack.f32, (data.num_points,)), 0, 1)
+        td.threshold(data, tack.zeros((data.num_points,)), 0, 1)
 
 
 @pytest.mark.parametrize("kind", ["shape", "polyhedron", "polygon", "polyline"])
@@ -66,7 +66,7 @@ def test_empty_filter_pipelines_preserve_maps_and_ids(backend, kind, unused_poin
         assert "empty" in out.sets and len(out.sets["empty"]) == 0
         assert out.geometry.values.size == 0
     points = td.to_points(data, "c")
-    np.testing.assert_array_equal(points.values.to_numpy(), np.zeros(unused_points))
+    np.testing.assert_array_equal(points.values.numpy(), np.zeros(unused_points))
     assert td.to_cells(data, "p").values.size == 0
     if kind == "polyline":
         with pytest.raises(NotImplementedError, match="polylines"):
@@ -89,7 +89,7 @@ def test_extracting_an_empty_face_set_keeps_point_fields(backend):
     data.sets["none"] = td.Set(data, "faces", [])
     out = td.extract_surface(data, "none")
     assert out.num_cells == 0 and out.num_points == data.num_points
-    assert out.topology.offsets.to_numpy().tolist() == [0]
+    assert out.topology.offsets.numpy().tolist() == [0]
     np.testing.assert_array_equal(td.arrays.to_host(out.fields["p"].values), np.arange(8))
     assert out.sets["none"].on == "cells" and len(out.sets["none"]) == 0
 
@@ -104,6 +104,6 @@ def test_empty_particles_keep_ids_and_field_layouts(backend):
         assert out.num_cells == out.num_points == 0
     out = td.advect(data, "v", [[1., 2., 3.]], 0.1, 1)
     np.testing.assert_array_equal(out.positions(), [[1., 2., 3.]])
-    np.testing.assert_array_equal(out.fields["steps"].values.to_numpy(), [0])
-    np.testing.assert_array_equal(out.fields["status"].values.to_numpy(),
+    np.testing.assert_array_equal(out.fields["steps"].values.numpy(), [0])
+    np.testing.assert_array_equal(out.fields["status"].values.numpy(),
                                   [int(td.ParticleStatus.SPATIAL_BOUNDS)])

@@ -23,13 +23,13 @@ N = 8
 
 
 def _run(kernel, n=N):
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
     src = np.arange(n, dtype=np.float32)
-    x.from_numpy(src)
+    tack.copyto(x, src)
     out.fill(-1.0)
     kernel(x, out)
-    return src, out.to_numpy()
+    return src, out.numpy()
 
 
 # ── .shape in each position ──────────────────────────────────────────
@@ -183,13 +183,13 @@ def _transpose_index(a, out):
 
 
 def _run2d(kernel, rows, cols):
-    a = tack.field(dtype=tack.f32, shape=(rows, cols))
-    out = tack.field(dtype=tack.f32, shape=(rows, cols))
+    a = tack.empty((rows, cols))
+    out = tack.empty((rows, cols))
     src = np.arange(rows * cols, dtype=np.float32).reshape(rows, cols)
-    a.from_numpy(src)
+    tack.copyto(a, src)
     out.fill(-1.0)
     kernel(a, out)
-    return src, out.to_numpy()
+    return src, out.numpy()
 
 
 @pytest.mark.parametrize("rows,cols", [(4, 8), (8, 4), (3, 5)])
@@ -254,12 +254,12 @@ def test_hoisting_the_length_into_a_scalar_avoids_specializing(backend):
             out[i] = x[n - 1 - i]
 
     for n in (8, 16, 64, 257):
-        x = tack.field(dtype=tack.f32, shape=(n,))
-        out = tack.field(dtype=tack.f32, shape=(n,))
+        x = tack.empty((n,))
+        out = tack.empty((n,))
         src = np.arange(n, dtype=np.float32)
-        x.from_numpy(src)
+        tack.copyto(x, src)
         reverse_n(x, out, n)
-        np.testing.assert_array_equal(out.to_numpy(), src[::-1])
+        np.testing.assert_array_equal(out.numpy(), src[::-1])
     assert _variants(reverse_n) == 1
 
 
@@ -319,14 +319,14 @@ def _calls_template(h: tack.template(), out):
 
 def test_shape_of_a_template_field(backend):
     """Template rewriting also renames the field."""
-    data = tack.field(dtype=tack.f32, shape=(N,))
-    out = tack.field(dtype=tack.f32, shape=(N,))
+    data = tack.empty((N,))
+    out = tack.empty((N,))
     src = np.arange(N, dtype=np.float32)
-    data.from_numpy(src)
+    tack.copyto(data, src)
     out.fill(-1.0)
 
     _calls_template(_Holder(data), out)
-    np.testing.assert_allclose(out.to_numpy(), src / N, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), src / N, rtol=1e-6)
 
 
 # ── Diagnostics ──────────────────────────────────────────────────────
@@ -339,6 +339,6 @@ def test_non_constant_dimension_index_is_rejected(backend):
             for i in range(x.shape[d]):
                 out[i] = x[i]
 
-        x = tack.field(dtype=tack.f32, shape=(N,))
-        out = tack.field(dtype=tack.f32, shape=(N,))
+        x = tack.empty((N,))
+        out = tack.empty((N,))
         dynamic_dim(x, out, 0)

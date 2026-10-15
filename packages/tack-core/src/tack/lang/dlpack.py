@@ -281,8 +281,7 @@ def field_to_dlpack(field, versioned=False):
         raise TypeError(f"DLPack does not support dtype: {field.dtype}")
     code, bits, lanes = dl_dtype
 
-    shape = field._vector_shape() if not field._legacy_layout else None
-    shape = field.shape if shape is None else shape
+    shape = field._host_shape
     ndim = len(shape)
     shape_arr = (ctypes.c_int64 * ndim)(*shape)
 
@@ -441,7 +440,7 @@ def dlpack_to_field(source, writable=True):
     host tensors for a different reason, and says which: it can read that
     memory, it just cannot make an MTLBuffer out of it.
     """
-    from tack.lang.field import field_from_ptr
+    from tack.lang.field import array_from_ptr
     from tack.runtime.dispatch import get_backend
 
     capsule = _request_capsule(source)
@@ -516,8 +515,8 @@ def dlpack_to_field(source, writable=True):
             message += f" {backend.dlpack_refusal_note}"
         raise RuntimeError(message)
 
-    field = field_from_ptr(
-        (tensor.data or 0) + tensor.byte_offset, dtype, shape, writable=writable)
+    field = array_from_ptr(
+        (tensor.data or 0) + tensor.byte_offset, shape, dtype, writable=writable)
 
     # Adopt the capsule: rename it so nobody else releases it, and attach the
     # hold to the field so the producer is told when the field is gone.

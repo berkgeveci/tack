@@ -17,7 +17,7 @@ tack.init(arch=tack.cpu)
 rng = np.random.default_rng(42)
 host_x = rng.normal(size=32).astype(np.float32)
 x = tack.array(host_x)
-out = tack.empty(dtype=tack.f32, shape=host_x.shape)
+out = tack.empty(host_x.shape)
 
 @tack.kernel
 def transform(x, out):
@@ -25,7 +25,7 @@ def transform(x, out):
         out[i] = sqrt(abs(x[i]))
 
 transform(x, out)
-actual = out.to_numpy()
+actual = out.numpy()
 expected = np.sqrt(np.abs(host_x))
 assert np.isfinite(actual).all()
 np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=1e-7)

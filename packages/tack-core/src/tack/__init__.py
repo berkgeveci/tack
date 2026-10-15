@@ -16,17 +16,19 @@ from tack.lang.field import (
     arange,
     array,
     array_from_ptr,
+    asarray,
     concat,
+    copyto,
     empty,
     empty_like,
-    field,
-    field_from_numpy,
-    field_from_ptr,
     from_dlpack,
     full,
+    full_like,
     memory_space,
     ones,
+    ones_like,
     zeros,
+    zeros_like,
 )
 from tack.lang.func import func
 from tack.lang.inspect_kernel import inspect
@@ -138,7 +140,7 @@ def texture3d(source_field, shape=None, interp='linear'):
     on every backend, including CPU.
 
     Args:
-        source_field: A tack.field with f32 dtype holding W*H*D elements,
+        source_field: A Tack array with f32 dtype holding W*H*D elements,
                x varying fastest.
         shape: (W, H, D) tuple for the 3D dimensions.  If the field's shape
                is already 3D, this can be omitted.

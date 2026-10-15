@@ -53,7 +53,7 @@ When a `@tack.device_class` object is passed as a `tack.template()` argument:
   constants baked into generated code. Changing them triggers recompilation.
 - **Instance scalars** (set in `__init__`) → runtime kernel scalar parameters.
   Changing them does **not** trigger recompilation.
-- **Instance arrays** (`tack.Field` set in `__init__`) → kernel buffer parameters
+- **Instance arrays** (`tack.Array` set in `__init__`) → kernel buffer parameters
 - **`@tack.func` methods** → inlined at the call site
 
 Each unique combination of template types and **class-level constants** produces
@@ -222,8 +222,8 @@ class Rasterizer:
     def __init__(self, n, width, height):
         self.n = n
         self.width, self.height = width, height
-        self.vertices = tack.empty(dtype=tack.vec2(tack.f32), shape=(n, 3))
-        self.pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(height, width))
+        self.vertices = tack.empty((n, 3), tack.vec2(tack.f32))
+        self.pixels = tack.empty((height, width), tack.vec3(tack.f32))
         self.pixels.fill(0.0)              # draw writes only covered pixels
 
     @staticmethod
@@ -245,9 +245,9 @@ class Rasterizer:
                     self.pixels[row, column] = [shade, shade, shade]
 
 raster = Rasterizer(1, 32, 32)
-raster.vertices.from_numpy(np.array([[[8, 8], [8, 24], [24, 8]]], dtype=np.float32))
+tack.copyto(raster.vertices, np.array([[[8, 8], [8, 24], [24, 8]]], dtype=np.float32))
 raster.draw(0.8)
-image = raster.pixels.to_numpy()
+image = raster.pixels.numpy()
 np.testing.assert_allclose(image[10, 10], [0.8, 0.8, 0.8])
 np.testing.assert_array_equal(image[0, 0], [0.0, 0.0, 0.0])
 assert np.count_nonzero(image[:, :, 0]) > 0

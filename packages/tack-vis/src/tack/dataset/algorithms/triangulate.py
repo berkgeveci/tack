@@ -20,13 +20,13 @@ def triangulate(data, fields=None):
     loop_offsets, loop_points = t.loops()
     n = data.num_cells
     odt = ids.for_output(data, 3 * int(loop_points.shape[0]))
-    counts = tack.field(tack.i32, shape=(n,))
-    starts = tack.field(odt, shape=(n,))
+    counts = tack.empty((n,), tack.i32)
+    starts = tack.empty((n,), odt)
     if n:
         _fan_counts(loop_offsets, counts)
     count = exclusive_scan(counts, starts, n) if n else 0
-    connectivity = tack.field(odt, shape=(3 * count,))
-    sources = tack.field(data.id_dtype, shape=(count,))
+    connectivity = tack.empty((3 * count,), odt)
+    sources = tack.empty((count,), data.id_dtype)
     if count:
         _fans(loop_offsets, loop_points, starts, connectivity, sources)
     return _pieces_topology(data, connectivity, sources, count, shapes.TRIANGLE, 3, fields)

@@ -573,9 +573,9 @@ def main():
 
     # MODEL_SCALE, because the slope fit runs well above the scoring grid.
     biggest = int(max(max(g) for g in GRIDS.values()) * args.scale * MODEL_SCALE)
-    x = tack.field(dtype=tack.f32, shape=(biggest,))
-    x.from_numpy(np.ones(biggest, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(biggest,))
+    x = tack.empty((biggest,))
+    tack.copyto(x, np.ones(biggest, dtype=np.float32))
+    out = tack.empty((biggest,))
 
     print(f"threads    : {backend.num_threads}")
     if args.load:

@@ -85,6 +85,24 @@ def from_numpy_dtype(dtype: np.dtype) -> ScalarType:
     return _numpy_to_tack[dtype]
 
 
+def as_dtype(dtype):
+    """A Tack scalar or element type for anything a dtype argument accepts.
+
+    Tack types pass through. Anything NumPy reads as a dtype maps to the
+    matching scalar type, following NumPy: ``np.float32``, ``"float32"``,
+    ``np.dtype("int64")``, and ``float`` (which NumPy reads as float64).
+    """
+    if isinstance(dtype, (ScalarType, ElementType)):
+        return dtype
+    try:
+        numpy_dtype = np.dtype(dtype)
+    except TypeError:
+        raise TypeError(
+            f"dtype must be a Tack type (tack.f32, tack.vec3(), ...) or a NumPy dtype, "
+            f"not {dtype!r}") from None
+    return from_numpy_dtype(numpy_dtype)
+
+
 class TemplateType:
     """Marker for template (generic) kernel arguments — resolved at call time."""
 

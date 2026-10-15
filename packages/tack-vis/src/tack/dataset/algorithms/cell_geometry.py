@@ -125,7 +125,7 @@ def cell_geometry(data):
     if data.topology.dimension > 1:
         data.topology.faces()                      # the incidence the cell views need
     n = data.num_cells
-    volumes = tack.field(data.dtype, shape=(n,))
+    volumes = tack.empty((n,), data.dtype)
     centroids = _vectors(n, data.dtype)
     for group in data.launch_groups("cells", []):
         if group.count and group.shape.DIMENSION == 3:

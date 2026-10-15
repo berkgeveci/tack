@@ -506,8 +506,8 @@ def _written_field_args(template, effective_args) -> tuple:
 def check_writable_fields(kernel_name, written_fields, args):
     """Refuse a read-only field where the kernel may store to it.
 
-    `field_from_ptr` makes read-only fields by default, and a read-only
-    DLPack tensor imports as one; `from_numpy` and `fill` already honour
+    `array_from_ptr` makes read-only arrays by default, and a read-only
+    DLPack tensor imports as one; `copyto` and `fill` already honour
     that. A kernel store would otherwise write straight through it.
     Runs on every dispatch, over only the fields the kernel writes.
     """
@@ -515,8 +515,8 @@ def check_writable_fields(kernel_name, written_fields, args):
         if not args[index]._writable:
             raise ValueError(
                 f"Kernel '{kernel_name}': parameter '{name}' may be written, "
-                f"but its field is read-only. Pass writable=True to "
-                f"field_from_ptr() if the memory may be modified.")
+                f"but its array is read-only. Pass writable=True to "
+                f"array_from_ptr() if the memory may be modified.")
 
 
 def resolve_variant(backend, kernel, args, kwargs, build,
@@ -1339,7 +1339,7 @@ def _create_pack_fields(pack_info, args, backend):
             arr[idx_in_pack] = args[orig_arg_idx]
         buf = backend.allocate_field(dtype, (len(entries),))
         f = Field(dtype, (len(entries),), buf)
-        f.from_numpy(arr)
+        f._buffer.from_numpy(arr)
         fields.append(f)
     return fields
 
@@ -1356,4 +1356,4 @@ def _update_pack_fields(pack_fields, pack_info, args):
         arr = np.zeros(len(entries), dtype=np_dtype)
         for _, orig_arg_idx, idx_in_pack in entries:
             arr[idx_in_pack] = args[orig_arg_idx]
-        field.from_numpy(arr)
+        field._buffer.from_numpy(arr)

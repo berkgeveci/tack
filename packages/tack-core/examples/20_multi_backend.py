@@ -70,13 +70,13 @@ print("-" * 60)
 for backend in BACKENDS:
     tack.init(arch=backend)
 
-    x = tack.empty(dtype=tack.f32, shape=(N,))
-    y = tack.empty(dtype=tack.f32, shape=(N,))
-    out = tack.empty(dtype=tack.f32, shape=(N,))
-    dot_result = tack.empty(dtype=tack.f32, shape=(1,))
+    x = tack.empty((N,))
+    y = tack.empty((N,))
+    out = tack.empty((N,))
+    dot_result = tack.empty((1,))
 
-    x.from_numpy(np_x)
-    y.from_numpy(np_y)
+    tack.copyto(x, np_x)
+    tack.copyto(y, np_y)
 
     # Warm up
     saxpy(x, y, out, ALPHA, N)
@@ -99,8 +99,8 @@ for backend in BACKENDS:
         times_dot.append(time.perf_counter() - t0)
 
     # Verify
-    saxpy_err = np.max(np.abs(out.to_numpy() - (ALPHA * np_x + np_y)))
-    dot_err = abs(dot_result.to_numpy()[0] - np.dot(np_x, np_y))
+    saxpy_err = np.max(np.abs(out.numpy() - (ALPHA * np_x + np_y)))
+    dot_err = abs(dot_result.numpy()[0] - np.dot(np_x, np_y))
 
     print(f"{backend:>8s} {min(times_saxpy)*1000:>12.3f} {min(times_dot)*1000:>10.3f} "
           f"{saxpy_err:>12.2e} {dot_err:>12.2e}")

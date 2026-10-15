@@ -127,9 +127,9 @@ def make_fields(n, count):
     """Create `count` f32 fields of size n, filled with test data."""
     fields = []
     for j in range(count):
-        f = tack.empty(dtype=tack.f32, shape=(n,))
+        f = tack.empty((n,))
         # Use different data per field to avoid trivial patterns
-        f.from_numpy(np.random.randn(n).astype(np.float32) + (j + 1.0))
+        tack.copyto(f, np.random.randn(n).astype(np.float32) + (j + 1.0))
         fields.append(f)
     return fields
 
@@ -171,7 +171,7 @@ def run_kernel_bench(name, kernel, nfields_fn, np_fn, np_nargs_fn, n):
     # --- NumPy ---
     tack.init(arch=tack.cpu)
     ref_fields = make_fields(n, nfields)
-    np_args = [ref_fields[j].to_numpy() for j in range(np_nargs_fn(n))]
+    np_args = [ref_fields[j].numpy() for j in range(np_nargs_fn(n))]
     np_times = bench(lambda: np_fn(*np_args))
     print_row("NumPy", n, np_times)
 

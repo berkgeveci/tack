@@ -20,14 +20,14 @@ R23 = _RNG.standard_normal((N, 2, 3)).astype(np.float32)
 
 
 def _matrices(values):
-    f = tack.Matrix.field(values.shape[1], values.shape[2], dtype=tack.f32, shape=(len(values),))
-    f.from_numpy(values)
+    f = tack.empty((len(values),), tack.mat(values.shape[1], values.shape[2], tack.f32))
+    tack.copyto(f, values)
     return f
 
 
 def _vectors(values):
-    f = tack.Vector.field(values.shape[1], dtype=tack.f32, shape=(len(values),))
-    f.from_numpy(values)
+    f = tack.empty((len(values),), tack.vec(values.shape[1], tack.f32))
+    tack.copyto(f, values)
     return f
 
 
@@ -36,7 +36,7 @@ def _like(values):
 
 
 def _scalars():
-    return tack.field(dtype=tack.f32, shape=(N,))
+    return tack.empty((N,))
 
 
 @tack.kernel
@@ -55,13 +55,13 @@ def test_matrix_products(backend):
     w = V2[::-1].copy()
     products(_matrices(A2), _matrices(B2), _matrices(R23), _vectors(V2), _vectors(w),
              ab, ar, av, wa, ww, N)
-    np.testing.assert_allclose(ab.to_numpy(vectors=True), A2 @ B2, rtol=1e-5, atol=1e-6)
-    np.testing.assert_allclose(ar.to_numpy(vectors=True), A2 @ R23, rtol=1e-5, atol=1e-6)
-    np.testing.assert_allclose(av.to_numpy(vectors=True), np.einsum('nij,nj->ni', A2, V2),
+    np.testing.assert_allclose(ab.numpy(), A2 @ B2, rtol=1e-5, atol=1e-6)
+    np.testing.assert_allclose(ar.numpy(), A2 @ R23, rtol=1e-5, atol=1e-6)
+    np.testing.assert_allclose(av.numpy(), np.einsum('nij,nj->ni', A2, V2),
                                rtol=1e-5, atol=1e-6)
-    np.testing.assert_allclose(wa.to_numpy(vectors=True), np.einsum('ni,nij->nj', w, A2),
+    np.testing.assert_allclose(wa.numpy(), np.einsum('ni,nij->nj', w, A2),
                                rtol=1e-5, atol=1e-6)
-    np.testing.assert_allclose(ww.to_numpy(), (V2 * w).sum(1), rtol=1e-5, atol=1e-6)
+    np.testing.assert_allclose(ww.numpy(), (V2 * w).sum(1), rtol=1e-5, atol=1e-6)
 
 
 @tack.kernel
@@ -80,14 +80,14 @@ def test_transpose_trace_determinant_inverse(backend):
     rt = _matrices(np.zeros((N, 3, 2), np.float32))
     dets, traces = _scalars(), _scalars()
     decompose(_matrices(A2), _matrices(A3), _matrices(R23), inv2, inv3, rt, dets, traces, N)
-    np.testing.assert_allclose(inv2.to_numpy(vectors=True), np.linalg.inv(A2.astype(np.float64)),
+    np.testing.assert_allclose(inv2.numpy(), np.linalg.inv(A2.astype(np.float64)),
                                rtol=2e-4, atol=1e-5)
-    np.testing.assert_allclose(inv3.to_numpy(vectors=True), np.linalg.inv(A3.astype(np.float64)),
+    np.testing.assert_allclose(inv3.numpy(), np.linalg.inv(A3.astype(np.float64)),
                                rtol=2e-4, atol=1e-5)
-    np.testing.assert_array_equal(rt.to_numpy(vectors=True), R23.transpose(0, 2, 1))
+    np.testing.assert_array_equal(rt.numpy(), R23.transpose(0, 2, 1))
     want = np.linalg.det(A2.astype(np.float64)) + np.linalg.det(A3.astype(np.float64))
-    np.testing.assert_allclose(dets.to_numpy(), want, rtol=2e-4)
-    np.testing.assert_allclose(traces.to_numpy(), np.trace(A2, axis1=1, axis2=2)
+    np.testing.assert_allclose(dets.numpy(), want, rtol=2e-4)
+    np.testing.assert_allclose(traces.numpy(), np.trace(A2, axis1=1, axis2=2)
                                + np.trace(A3, axis1=1, axis2=2), rtol=1e-5)
 
 
@@ -126,13 +126,13 @@ def test_constructors_device_functions_and_entrywise_arithmetic(backend):
     m = np.stack([np.stack([x, np.full(N, 2.0, np.float32)], 1),
                   np.stack([np.full(N, 3.0, np.float32), y], 1)], 1)
     rows = np.stack([V2, V2 * 2], 1)
-    np.testing.assert_allclose(built.to_numpy(vectors=True), m * rows - np.eye(2), rtol=1e-6)
-    np.testing.assert_allclose(updated.to_numpy(vectors=True), (np.eye(2) + 0.5 * B2) @ A2,
+    np.testing.assert_allclose(built.numpy(), m * rows - np.eye(2), rtol=1e-6)
+    np.testing.assert_allclose(updated.numpy(), (np.eye(2) + 0.5 * B2) @ A2,
                                rtol=1e-5, atol=1e-6)
-    np.testing.assert_allclose(sym.to_numpy(vectors=True), (A2 + A2.transpose(0, 2, 1)) * 0.5,
+    np.testing.assert_allclose(sym.numpy(), (A2 + A2.transpose(0, 2, 1)) * 0.5,
                                rtol=1e-6)
-    np.testing.assert_allclose(traces.to_numpy(), np.trace(A2, axis1=1, axis2=2), rtol=1e-6)
-    np.testing.assert_array_equal(outer.to_numpy(vectors=True),
+    np.testing.assert_allclose(traces.numpy(), np.trace(A2, axis1=1, axis2=2), rtol=1e-6)
+    np.testing.assert_array_equal(outer.numpy(),
                                   V2[:, :, None] * np.float32([1.0, -1.0])[None, None, :])
 
 
@@ -152,9 +152,9 @@ def entries(a, sel, out, picked, n):
 
 def test_matrix_entries_read_and_written(backend):
     a = _matrices(A3)
-    sel = tack.field(dtype=tack.i32, shape=(N,))
+    sel = tack.empty((N,), tack.i32)
     rows = np.array([0, 1, 2, 1, 0], np.int32)
-    sel.from_numpy(rows)
+    tack.copyto(sel, rows)
     out, picked = _like(A3), _scalars()
     entries(a, sel, out, picked, N)
     m = A3.copy()
@@ -164,10 +164,10 @@ def test_matrix_entries_read_and_written(backend):
     stored = A3.copy()
     stored[:, 2, 0] = 7
     stored[np.arange(N), rows, 1] *= 2
-    np.testing.assert_array_equal(out.to_numpy(vectors=True), m)
-    np.testing.assert_array_equal(a.to_numpy(vectors=True), stored)
+    np.testing.assert_array_equal(out.numpy(), m)
+    np.testing.assert_array_equal(a.numpy(), stored)
     want = m[np.arange(N), rows, rows] + stored[:, 1, 2] + (m @ m)[:, 0, 0]
-    np.testing.assert_allclose(picked.to_numpy(), want, rtol=1e-5)
+    np.testing.assert_allclose(picked.numpy(), want, rtol=1e-5)
 
 
 @tack.kernel
@@ -181,21 +181,24 @@ def accumulate(a, total, n):
 def test_matrix_fields_in_atomics_and_augmented_stores(backend):
     whole = np.round(A2 * 8) / 8          # sums of these are exact in f32
     a = _matrices(whole)
-    total = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(1,))
+    total = tack.empty((1,), tack.mat(2, 2, tack.f32))
     total.fill(0.0)
     accumulate(a, total, N)
-    np.testing.assert_array_equal(total.to_numpy(vectors=True)[0], whole.sum(0))
-    np.testing.assert_array_equal(a.to_numpy(vectors=True), (whole + np.eye(2, dtype=np.float32)) * 2)
+    np.testing.assert_array_equal(total.numpy()[0], whole.sum(0))
+    np.testing.assert_array_equal(a.numpy(), (whole + np.eye(2, dtype=np.float32)) * 2)
 
 
 def test_matrix_field_numpy_shapes():
-    f = tack.Matrix.field(2, 3, dtype=tack.f32, shape=(4, 2))
+    f = tack.empty((4, 2), tack.mat(2, 3, tack.f32))
     values = np.arange(48, dtype=np.float32).reshape(4, 2, 2, 3)
-    f.from_numpy(values)
-    assert f.to_numpy().shape == (48,)
-    np.testing.assert_array_equal(f.to_numpy(vectors=True), values)
+    tack.copyto(f, values)
+    assert f.shape == (4, 2)
+    assert f.numpy().shape == (4, 2, 2, 3)
+    np.testing.assert_array_equal(f.numpy(), values)
+    with pytest.raises(ValueError, match="cannot broadcast"):
+        tack.copyto(f, values.reshape(-1))
     with pytest.raises(ValueError, match="at most 4x4"):
-        tack.Matrix.field(5, 2)
+        tack.empty((), tack.mat(5, 2))
 
 
 def _product_shape_mismatch():
@@ -309,5 +312,5 @@ def test_matrix_unpacked_into_a_field_element_keeps_its_shape(backend):
     J = _scalars()
     unpack_matrix_into_fields(F, J, N)
     grown = A2 * np.float32(1.5)
-    np.testing.assert_allclose(F.to_numpy(vectors=True), grown, rtol=1e-6)
-    np.testing.assert_allclose(J.to_numpy(), np.linalg.det(grown.astype(np.float64)), rtol=1e-5)
+    np.testing.assert_allclose(F.numpy(), grown, rtol=1e-6)
+    np.testing.assert_allclose(J.numpy(), np.linalg.det(grown.astype(np.float64)), rtol=1e-5)

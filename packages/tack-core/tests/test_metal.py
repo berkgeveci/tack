@@ -21,10 +21,10 @@ def metal_backend():
                                    tack.i32, tack.u32, tack.i64, tack.u64, tack.f32])
 def test_imported_buffer_alias_preserves_order(dtype):
     """Distinct wrappers of an MTLBuffer preserve ordered typed accesses."""
-    a = tack.field(dtype=dtype, shape=(7,))
-    alias = tack.field_from_ptr(a._buffer.metal_buffer, dtype, (7,), writable=True)
+    a = tack.empty((7,), dtype)
+    alias = tack.array_from_ptr(a._buffer.metal_buffer, (7,), dtype, writable=True)
     assert alias._buffer is not a._buffer
-    out = tack.field(dtype=dtype, shape=(7,))
+    out = tack.empty((7,), dtype)
     a.fill(19)
 
     @tack.kernel
@@ -36,15 +36,15 @@ def test_imported_buffer_alias_preserves_order(dtype):
             out[i] = a[i] - before
 
     ordered(a, alias, out)
-    np.testing.assert_array_equal(a.to_numpy(), np.full(7, 21))
-    np.testing.assert_array_equal(out.to_numpy(), np.full(7, 2))
+    np.testing.assert_array_equal(a.numpy(), np.full(7, 21))
+    np.testing.assert_array_equal(out.numpy(), np.full(7, 2))
 
 
 def test_alias_bindings_with_mixed_scalar_packs():
     """Both scalar pack buffers stay correctly bound alongside aliases."""
-    a = tack.field(dtype=tack.f32, shape=(7,))
+    a = tack.empty((7,))
     alias = a.reshape((7,))
-    out = tack.field(dtype=tack.f32, shape=(7,))
+    out = tack.empty((7,))
 
     @tack.kernel
     def ordered(a, scale, b, increment, out):
@@ -55,12 +55,12 @@ def test_alias_bindings_with_mixed_scalar_packs():
 
     for scale, increment in ((1.5, 2), (3.5, 4), (0.5, 1)):
         ordered(a, scale, alias, increment, out)
-        np.testing.assert_array_equal(out.to_numpy(), np.full(7, scale + increment))
+        np.testing.assert_array_equal(out.numpy(), np.full(7, scale + increment))
 
 
 def test_atomic_updates_through_aliases():
     """Indirect buffer bindings keep atomic updates visible through aliases."""
-    out = tack.field(dtype=tack.i32, shape=(1,))
+    out = tack.empty((1,), tack.i32)
     alias = out.reshape((1,))
     out.fill(0)
 
@@ -71,17 +71,17 @@ def test_atomic_updates_through_aliases():
             tack.atomic_add(b, 0, 1)
 
     increment(out, alias, 257)
-    np.testing.assert_array_equal(out.to_numpy(), [514])
+    np.testing.assert_array_equal(out.numpy(), [514])
 
 
 def test_vector_add():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.arange(n, dtype=np.float32))
-    y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 2.0)
 
     @tack.kernel
     def add(x, y, out):
@@ -90,19 +90,19 @@ def test_vector_add():
 
     add(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.arange(n, dtype=np.float32) + 2.0
     assert np.allclose(result, expected)
 
 
 def test_saxpy():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32) * 3.0)
-    y.from_numpy(np.ones(n, dtype=np.float32) * 1.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 3.0)
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 1.0)
 
     @tack.kernel
     def saxpy(x, y, out):
@@ -111,19 +111,19 @@ def test_saxpy():
 
     saxpy(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = 2.0 * 3.0 + 1.0  # 7.0
     assert np.allclose(result, expected)
 
 
 def test_subtraction():
     n = 512
-    a = tack.field(dtype=tack.f32, shape=(n,))
-    b = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    a = tack.empty((n,))
+    b = tack.empty((n,))
+    out = tack.empty((n,))
 
-    a.from_numpy(np.full(n, 10.0, dtype=np.float32))
-    b.from_numpy(np.full(n, 3.0, dtype=np.float32))
+    tack.copyto(a, np.full(n, 10.0, dtype=np.float32))
+    tack.copyto(b, np.full(n, 3.0, dtype=np.float32))
 
     @tack.kernel
     def sub(a, b, out):
@@ -132,17 +132,17 @@ def test_subtraction():
 
     sub(a, b, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     assert np.allclose(result, 7.0)
 
 
 def test_conditional():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     data = np.arange(n, dtype=np.float32) - 512.0
-    x.from_numpy(data)
+    tack.copyto(x, data)
 
     @tack.kernel
     def relu(x, out):
@@ -154,17 +154,17 @@ def test_conditional():
 
     relu(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.maximum(data, 0.0)
     assert np.allclose(result, expected)
 
 
 def test_negation():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def neg(x, out):
@@ -173,21 +173,21 @@ def test_negation():
 
     neg(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = -np.arange(n, dtype=np.float32)
     assert np.allclose(result, expected)
 
 
 def test_multiple_ops():
     n = 512
-    a = tack.field(dtype=tack.f32, shape=(n,))
-    b = tack.field(dtype=tack.f32, shape=(n,))
-    c = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    a = tack.empty((n,))
+    b = tack.empty((n,))
+    c = tack.empty((n,))
+    out = tack.empty((n,))
 
-    a.from_numpy(np.full(n, 10.0, dtype=np.float32))
-    b.from_numpy(np.full(n, 3.0, dtype=np.float32))
-    c.from_numpy(np.full(n, 2.0, dtype=np.float32))
+    tack.copyto(a, np.full(n, 10.0, dtype=np.float32))
+    tack.copyto(b, np.full(n, 3.0, dtype=np.float32))
+    tack.copyto(c, np.full(n, 2.0, dtype=np.float32))
 
     @tack.kernel
     def kern(a, b, c, out):
@@ -196,18 +196,18 @@ def test_multiple_ops():
 
     kern(a, b, c, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = (10.0 - 3.0) * 2.0 / 2.0  # 7.0
     assert np.allclose(result, expected)
 
 
 def test_math_sqrt():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     data = np.arange(1, n + 1, dtype=np.float32)
-    x.from_numpy(data)
+    tack.copyto(x, data)
 
     @tack.kernel
     def kern(x, out):
@@ -216,7 +216,7 @@ def test_math_sqrt():
 
     kern(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.sqrt(data)
     assert np.allclose(result, expected, rtol=1e-5)
 
@@ -224,12 +224,12 @@ def test_math_sqrt():
 def test_cached_reuse():
     """Second call should use cached pipeline."""
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 2.0)
 
     @tack.kernel
     def add(x, y, out):
@@ -237,22 +237,22 @@ def test_cached_reuse():
             out[i] = x[i] + y[i]
 
     add(x, y, out)
-    assert np.allclose(out.to_numpy(), 3.0)
+    assert np.allclose(out.numpy(), 3.0)
 
     # Second call — cached
-    x.from_numpy(np.ones(n, dtype=np.float32) * 5.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 5.0)
     add(x, y, out)
-    assert np.allclose(out.to_numpy(), 7.0)
+    assert np.allclose(out.numpy(), 7.0)
 
 
 def test_atomic_add():
     """Test atomic_add on Metal."""
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    x = tack.empty((n,))
+    out = tack.empty((1,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    out.from_numpy(np.zeros(1, dtype=np.float32))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    tack.copyto(out, np.zeros(1, dtype=np.float32))
 
     @tack.kernel
     def sum_kernel(x, out):
@@ -260,20 +260,20 @@ def test_atomic_add():
             tack.atomic_add(out, 0, x[i])
 
     sum_kernel(x, out)
-    np.testing.assert_allclose(out.to_numpy()[0], 256.0, rtol=1e-5)
+    np.testing.assert_allclose(out.numpy()[0], 256.0, rtol=1e-5)
 
 
 def test_atomic_min_max():
     """Test atomic_min and atomic_max on Metal."""
     n = 64
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    min_out = tack.field(dtype=tack.f32, shape=(1,))
-    max_out = tack.field(dtype=tack.f32, shape=(1,))
+    x = tack.empty((n,))
+    min_out = tack.empty((1,))
+    max_out = tack.empty((1,))
 
     data = np.arange(n, dtype=np.float32) - 20.0
-    x.from_numpy(data)
-    min_out.from_numpy(np.array([1e10], dtype=np.float32))
-    max_out.from_numpy(np.array([-1e10], dtype=np.float32))
+    tack.copyto(x, data)
+    tack.copyto(min_out, np.array([1e10], dtype=np.float32))
+    tack.copyto(max_out, np.array([-1e10], dtype=np.float32))
 
     @tack.kernel
     def minmax_kernel(x, min_out, max_out):
@@ -282,14 +282,14 @@ def test_atomic_min_max():
             tack.atomic_max(max_out, 0, x[i])
 
     minmax_kernel(x, min_out, max_out)
-    np.testing.assert_allclose(min_out.to_numpy()[0], -20.0)
-    np.testing.assert_allclose(max_out.to_numpy()[0], 43.0)
+    np.testing.assert_allclose(min_out.numpy()[0], -20.0)
+    np.testing.assert_allclose(max_out.numpy()[0], 43.0)
 
 
 def test_range_with_step():
     """Test for-loop with step on Metal."""
     n = 64
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def step_test(out):
@@ -300,15 +300,15 @@ def test_range_with_step():
 
     step_test(out)
     # 0 + 3 + 6 + 9 = 18
-    np.testing.assert_allclose(out.to_numpy(), 18.0)
+    np.testing.assert_allclose(out.numpy(), 18.0)
 
 
 def test_shared_memory():
     """Test shared memory, thread_id, and barrier on Metal."""
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def shared_test(x, out):
@@ -321,15 +321,15 @@ def test_shared_memory():
 
     shared_test(x, out)
     expected = np.arange(n, dtype=np.float32) * 2.0
-    np.testing.assert_allclose(out.to_numpy(), expected)
+    np.testing.assert_allclose(out.numpy(), expected)
 
 
 def test_gpu_reductions():
     """Test GPU-side field.sum(), field.min(), field.max()."""
     n = 10000
-    x = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
     data = np.arange(n, dtype=np.float32)
-    x.from_numpy(data)
+    tack.copyto(x, data)
 
     np.testing.assert_allclose(x.sum(), data.sum(), rtol=1e-5)
     np.testing.assert_allclose(x.min(), data.min())
@@ -349,7 +349,7 @@ def test_fields_own_their_buffers_alone():
         for i in range(a.shape[0]):
             a[i] = i * 0.5
 
-    a = tack.field(tack.f32, shape=(1000,))
+    a = tack.empty((1000,))
     assert a._buffer.metal_buffer.retainCount() == 1
     fill(a)
     tack.sync()     # a queued launch's command buffer holds the buffer until it runs
@@ -376,29 +376,29 @@ def test_queued_launches_run_in_order_across_batches():
     from tack.runtime.metal import MetalBackend
 
     assert 400 > MetalBackend._BATCH * (MetalBackend._IN_FLIGHT + 1)
-    acc = tack.zeros(tack.i32, (1000,))
+    acc = tack.zeros((1000,), tack.i32)
     for k in range(400):
         _add_into(acc, k)
     expected = sum(range(400)) + 400 * np.arange(1000)
-    np.testing.assert_array_equal(acc.to_numpy(), expected)
+    np.testing.assert_array_equal(acc.numpy(), expected)
 
 
 def test_each_queued_launch_keeps_its_own_scalars():
     """A variant's scalars were packed into one buffer, rewritten per call; with
     launches queued, a rewrite would reach launches that have not run yet."""
-    outs = [tack.zeros(tack.i32, (16,)) for _ in range(40)]
+    outs = [tack.zeros((16,), tack.i32) for _ in range(40)]
     for k, out in enumerate(outs):
         _add_into(out, k)
     for k, out in enumerate(outs):
-        np.testing.assert_array_equal(out.to_numpy(), k + np.arange(16))
+        np.testing.assert_array_equal(out.numpy(), k + np.arange(16))
 
 
 def test_host_writes_wait_for_the_launches_before_them():
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     _add_into(acc, 1)
-    acc.from_numpy(np.full(64, 100, np.int32))     # after the launch, not under it
+    tack.copyto(acc, np.full(64, 100, np.int32))     # after the launch, not under it
     _add_into(acc, 2)
-    np.testing.assert_array_equal(acc.to_numpy(), 102 + np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), 102 + np.arange(64))
 
 
 @tack.kernel
@@ -413,18 +413,18 @@ def test_host_writes_wait_after_tack_init_runs_again():
     to wait for those, not for its first backend's (empty) queue. mpm128 in
     tack-examples rewrote its gravity under queued launches that way, 299 of
     300 launches here reading a later value."""
-    value = tack.field(tack.f32, shape=())
+    value = tack.empty(())
     tack.init(arch=tack.metal)
     n, steps = 4096, 300
-    out = tack.field(tack.f32, shape=(steps * n,))
+    out = tack.empty((steps * n,))
     for k in range(steps):
         value.fill(float(k))
         _record_value(value, out, k, n)
-    np.testing.assert_array_equal(out.to_numpy().reshape(steps, n)[:, 0], np.arange(steps))
+    np.testing.assert_array_equal(out.numpy().reshape(steps, n)[:, 0], np.arange(steps))
 
 
 def test_sync_waits_for_queued_launches():
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     _add_into(acc, 5)
     tack.sync()
     from tack.runtime.dispatch import get_backend
@@ -445,21 +445,21 @@ def test_zeros_do_not_wait_for_queued_launches(monkeypatch):
         for i in range(a.shape[0]):
             a[i] = 7
 
-    a = tack.field(tack.i32, shape=(1000,))
+    a = tack.empty((1000,), tack.i32)
     dirty(a)
     waits = []
     monkeypatch.setattr(metal.MetalBackend, "synchronize",
                         lambda self, _real=metal.MetalBackend.synchronize:
                         (waits.append(self), _real(self)))
-    z = tack.zeros(tack.i32, (1000,))
+    z = tack.zeros((1000,), tack.i32)
     assert not waits
     monkeypatch.undo()
-    assert not z.to_numpy().any()
-    np.testing.assert_array_equal(a.to_numpy(), np.full(1000, 7))
+    assert not z.numpy().any()
+    np.testing.assert_array_equal(a.numpy(), np.full(1000, 7))
     # Other fills still wait, since the field may be in use.
     dirty(a)
     a.fill(3)
-    np.testing.assert_array_equal(a.to_numpy(), np.full(1000, 3))
+    np.testing.assert_array_equal(a.numpy(), np.full(1000, 3))
 
 
 def test_new_fields_are_zero():
@@ -475,11 +475,11 @@ def test_new_fields_are_zero():
 
     for n in (1, 1000, 1 << 20):
         for _ in range(5):
-            a = tack.field(tack.i32, shape=(n,))
-            assert not a.to_numpy().any()
-            a.from_numpy(np.full(n, -1, np.int32))
-            b = tack.field(tack.i32, shape=(n,))
-            assert not b.to_numpy().any()
+            a = tack.empty((n,), tack.i32)
+            assert not a.numpy().any()
+            tack.copyto(a, np.full(n, -1, np.int32))
+            b = tack.empty((n,), tack.i32)
+            assert not b.numpy().any()
             dirty(b)
             tack.sync()
             del a, b

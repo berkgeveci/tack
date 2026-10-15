@@ -39,9 +39,9 @@ def kern(data, out):
 def test_shared_like_f32(workgroup_backend):
     """shared_like inherits f32 from the field."""
     n = 256
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def kern(data, out):
@@ -53,7 +53,7 @@ def test_shared_like_f32(workgroup_backend):
             out[i] = smem[tid]
 
     kern(data, out)
-    result = out.to_numpy()
+    result = out.numpy()
     np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32))
 
 
@@ -62,9 +62,9 @@ def test_shared_like_f32(workgroup_backend):
 def test_shared_like_i32(workgroup_backend):
     """shared_like inherits i32 from the field."""
     n = 256
-    data = tack.field(dtype=tack.i32, shape=(n,))
-    out = tack.field(dtype=tack.i32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.int32))
+    data = tack.empty((n,), tack.i32)
+    out = tack.empty((n,), tack.i32)
+    tack.copyto(data, np.arange(n, dtype=np.int32))
 
     @tack.kernel
     def kern(data, out):
@@ -76,7 +76,7 @@ def test_shared_like_i32(workgroup_backend):
             out[i] = smem[tid]
 
     kern(data, out)
-    result = out.to_numpy()
+    result = out.numpy()
     np.testing.assert_array_equal(result, np.arange(n, dtype=np.int32))
 
 
@@ -91,8 +91,8 @@ def test_shared_like_cuda_codegen():
     from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f32, shape=(10,))
-    out = tack.field(dtype=tack.f32, shape=(10,))
+    data = tack.empty((10,))
+    out = tack.empty((10,))
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
@@ -118,8 +118,8 @@ def test_shared_like_i32_cuda_codegen():
     from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.i32, shape=(10,))
-    out = tack.field(dtype=tack.i32, shape=(10,))
+    data = tack.empty((10,), tack.i32)
+    out = tack.empty((10,), tack.i32)
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")

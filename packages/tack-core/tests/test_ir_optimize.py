@@ -138,8 +138,8 @@ def test_field_passed_through_nested_device_functions(backend):
     """Three or more levels left a local holding the field, which failed to
     compile on every backend ("Cannot coerce float* to i32" on CPU)."""
     n = 6
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    out = tack.empty((n,))
     field_through_four_funcs(x, out, n)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n) + 3.0)
+    np.testing.assert_array_equal(out.numpy(), np.arange(n) + 3.0)

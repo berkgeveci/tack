@@ -1,7 +1,7 @@
 # Heat diffusion on a plate
 
 Two hot spots on a cold square spread and fade as heat diffuses. This is a good
-first simulation: each timestep needs one stencil kernel, two fields and a swap
+first simulation: each timestep needs one stencil kernel, two arrays and a swap
 of Python references.
 
 ![Two hot spots diffusing](../../assets/tutorials/heat.png)
@@ -25,9 +25,9 @@ Choose `r <= 1/4` for this two-dimensional scheme; the example uses `0.2`.
 The boundary is held at zero temperature. Heat can therefore leave the plate;
 the total heat does not remain constant.
 
-Each scalar field has shape `(n, n)`. Here the first index is the plotted row
+Each scalar array has shape `(n, n)`. Here the first index is the plotted row
 and the second is the column. Each iteration owns one output cell. It reads
-neighbours from a separate old field:
+neighbours from a separate old array:
 
 ```python
 --8<-- "docs/examples/heat.py:step"
@@ -39,13 +39,13 @@ iterations do not evaluate them.
 
 ## Repeat the timestep in Python
 
-Allocate the fields once and swap their roles after each completed launch:
+Allocate the arrays once and swap their roles after each completed launch:
 
 ```python
 --8<-- "docs/examples/heat.py:loop"
 ```
 
-The swap copies no field data. The next launch reads the just-computed state.
+The swap copies no array data. The next launch reads the just-computed state.
 Updating `old` in place would give other iterations a changing stencil input,
 so it would not implement this scheme. Readbacks are only for the figure's
 checkpoints; remove them when timing the timestep loop.

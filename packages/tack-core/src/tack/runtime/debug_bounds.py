@@ -44,7 +44,7 @@ def _fields(backend) -> dict:
 
 def hidden_args(backend, template, args) -> list:
     """``args`` and the hidden errors and extents fields a debug kernel takes."""
-    from tack.lang.field import Field, zeros
+    from tack.lang.field import Field, copyto, zeros
 
     own = len(template.params) - len(ir_bounds.HIDDEN_PARAMS)
     if len(args) != own:
@@ -56,15 +56,15 @@ def hidden_args(backend, template, args) -> list:
             slot = ir_bounds.EXTENTS_PER_PARAM * position
             table[slot] = shape[0] if shape else 1
             table[slot + 1] = math.prod(shape)
-            table[slot + 2] = arg.size
+            table[slot + 2] = arg.scalar_size
     fields = _fields(backend)
     errors = fields.get("errors")
     if errors is None:
-        errors = fields["errors"] = zeros(i32, (ir_bounds.ERRORS_SIZE,))
+        errors = fields["errors"] = zeros((ir_bounds.ERRORS_SIZE,), i32)
     extents = fields.get(table.size)
     if extents is None:
-        extents = fields[table.size] = zeros(i64, (table.size,))
-    extents.from_numpy(table)
+        extents = fields[table.size] = zeros((table.size,), i64)
+    copyto(extents, table)
     return [*args, errors, extents]
 
 
@@ -80,10 +80,10 @@ def check():
     if launch is None:
         return
     _local.pending = None
-    record = launch.errors.to_numpy()
+    record = launch.errors.numpy()
     if record[ir_bounds.COUNT] == 0:
         return
-    launch.errors.from_numpy(np.zeros(ir_bounds.ERRORS_SIZE, np.int32))
+    launch.errors.fill(0)
     raise IndexError(describe(launch.sites, record))
 
 

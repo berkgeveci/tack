@@ -109,18 +109,19 @@ The buffer belongs to the backend active when the array was allocated.
 
 | Function | Contract |
 |---|---|
-| `tack.empty(dtype=f32, shape=(), exportable=False)` | Allocates on the active backend. An `int` shape becomes a 1-tuple. `exportable=True` requests memory that can be exported without a copy (CUDA only) |
-| `tack.zeros(dtype, shape)`, `tack.ones(dtype, shape)`, `tack.full(dtype, shape, value)` | `empty()` followed by `fill()`. `zeros` skips the fill where the buffer starts zeroed (`starts_zeroed`: Metal, which clears new buffers) |
-| `tack.arange(n, dtype=i32)` | `[0, n)` built in NumPy and copied in |
-| `tack.array(arr, dtype=None)` | Copies values into independent storage. Without dtype, infers a scalar type and uses all input dimensions. An element dtype consumes matching trailing component dimensions; a mismatch raises `ValueError`. Existing Tack arrays copy on the device |
-| `tack.empty_like(prototype, dtype=None)` | Allocates independent, writable storage on the active backend without reading or copying values. Accepts a NumPy array or Tack field; infers dtype unless overridden with a Tack type. Preserves vector/matrix field logical shape and component dimensions. NumPy arrays produce scalar fields with the array's shape. Contents are unspecified |
-| `tack.concat(fields)` | A new 1-D array holding all elements in order, copied on the device |
-| `tack.empty(dtype=tack.vec(n, f32), shape=())` | A flat scalar field of `prod(shape) * n` elements that kernels index as `n`-component vectors |
-| `tack.texture3d(field, shape=None, interp="linear")` | A `Texture3D` holding a copy of the field taken at creation, for `sample(u, v, w)` in kernels. `tex.update()` copies the field again. See [Textures](backend-capabilities.md#textures) |
+| `tack.empty(shape, dtype=f32, *, exportable=False)` | Allocates on the active backend. An `int` shape becomes a 1-tuple. `exportable=True` requests memory that can be exported without a copy (CUDA only) |
+| `tack.zeros(shape, dtype=f32)`, `tack.ones(shape, dtype=f32)`, `tack.full(shape, fill_value, dtype=None)` | `empty()` followed by `fill()`. `zeros` skips the fill where the buffer starts zeroed (`starts_zeroed`: Metal, which clears new buffers). `full` without a dtype makes f32 from a Python float and i32 from an int (i64 if the value needs it); a sequence `fill_value` needs an element dtype |
+| `tack.arange([start,] stop[, step], dtype=None)` | Built in NumPy and copied in. Without a dtype, integer arguments give i32 (i64 if a value needs it) and a float argument gives f32 |
+| `tack.array(obj, dtype=None)` | Copies values into independent storage. Without dtype, uses all input dimensions; a NumPy array keeps its dtype, Python floats give f32 and Python ints i32 (i64 if a value needs it). An element dtype consumes matching trailing component dimensions; a mismatch raises `ValueError`. Existing Tack arrays copy on the device |
+| `tack.asarray(obj, dtype=None)` | `obj` itself when it is a Tack array and `dtype` is `None` or equals its dtype; otherwise `tack.array(obj, dtype)` |
+| `tack.empty_like(prototype, dtype=None)` | Allocates independent, writable storage on the active backend without reading or copying values. Accepts a NumPy array or Tack array; takes its dtype unless overridden. A scalar override of a vector/matrix prototype keeps the element dimensions. NumPy arrays produce scalar arrays with the array's shape. Contents are unspecified |
+| `tack.zeros_like`, `tack.ones_like`, `tack.full_like(prototype, fill_value, dtype=None)` | `empty_like()` followed by `fill()`, as for `zeros`, `ones` and `full` |
+| `tack.concat(arrays)` | A new 1-D array holding all elements in order, copied on the device |
+| `tack.texture3d(field, shape=None, interp="linear")` | A `Texture3D` holding a copy of the array taken at creation, for `sample(u, v, w)` in kernels. `tex.update()` copies the array again. See [Textures](backend-capabilities.md#textures) |
 
 **Current behavior:**
 
-- A new field's contents are unspecified until a kernel, `from_numpy` or
+- A new array's contents are unspecified until a kernel, `tack.copyto` or
   `fill` writes them (the
   [language contract](../reference/language-contract.md#memory-and-aliasing));
   use `tack.zeros` for zeros. The CPU leaves a new field untouched, so that
@@ -134,14 +135,14 @@ The buffer belongs to the backend active when the array was allocated.
   [dispatch check](backend-capabilities.md#what-each-capability-gates)
   rejects it when a kernel uses it.
 - There is no `tack.fields()` function.
-- Typed vector/matrix arrays expose logical shape and element dtype on
-  both host and device. `to_numpy()` appends component dimensions. Legacy
-  `Vector.field`/`Matrix.field` retain their scalar dtype and flat host
-  metadata; inside kernels they still index vector/matrix elements.
+- Vector/matrix arrays expose their array shape and element dtype on
+  both host and device. `numpy()` appends component dimensions.
 
 **Required caller constraints:**
 
-- `dtype` is a Tack scalar or element type; other values raise `TypeError`.
+- `dtype` is a Tack scalar or element type, or anything `np.dtype()`
+  accepts that maps to a Tack scalar type (`np.float32`, `"int64"`;
+  `float` means f64, as in NumPy). Other values raise `TypeError`.
 - Shapes contain integer, nonnegative extents. Noninteger extents raise
   `TypeError`; negative extents raise `ValueError`.
 
@@ -149,8 +150,9 @@ The buffer belongs to the backend active when the array was allocated.
 
 | Condition | Exception |
 |---|---|
-| `array` or `empty_like` inferring a dtype that has no Tack type, such as `float16` | `TypeError`: "Unsupported numpy dtype: float16" |
-| `empty_like` with a prototype other than a NumPy array or Tack field | `TypeError`: "empty_like expects a Tack array or NumPy array" |
+| A dtype, given or inferred, that has no Tack type, such as `float16` | `TypeError`: "Unsupported numpy dtype: float16" |
+| Boolean host values without a dtype | `TypeError`: "Tack has no boolean arrays; ..." |
+| `empty_like` (or another `*_like`) with a prototype other than a NumPy array or Tack array | `TypeError`: "expected a Tack array or NumPy array as the prototype" |
 | `concat([])` | `ValueError` |
 | `concat` with mixed dtypes | `TypeError` |
 | `texture3d` on a field that isn't `f32` | `ValueError`: "texture3d requires an f32 field, got f64; convert it first with field.astype(tack.f32)" |
@@ -162,18 +164,19 @@ The buffer belongs to the backend active when the array was allocated.
 
 | Operation | Guarantee | Errors |
 |---|---|---|
-| `f.from_numpy(arr)` | Copies `arr` into the field. If `arr.dtype` differs from the field's dtype, the array is converted first with NumPy `astype`, which is an unchecked cast. Works on reshaped views: the buffer copies the data in its own allocated shape | `RuntimeError` if the field is read-only. `ValueError` "Shape mismatch: field is (8,), got (4,)" unless input matches the scalar storage shape or expanded element shape. `AttributeError` if `arr` isn't an ndarray |
-| `f.to_numpy()` | Returns a **new** NumPy array with scalar component dtype and component axes appended to `f.shape`. Legacy Vector/Matrix.field return flat storage by default. Never a view, including on Metal | — |
-| `f.fill(value)` | Sets every element | `RuntimeError` if read-only |
-| `f.reshape(shape)` | A metadata-only view that shares the buffer, the writability and any DLPack hold. Accepts an `int` | `ValueError` if the element count differs |
-| `f.copy()` / `f.astype(dtype)` | A new field on the **active** backend, filled by a device copy kernel. `astype` converts with the kernel language's conversion rules | Kernel errors, if any |
-| `f.size`, `len(f)` | `size` is the product of the extents. `len` is `shape[0]`, or `0` for `shape == ()` | — |
-| `f.export_memory()` | Returns an `ExportedMemory` handle for cross-API sharing. On CUDA, a field allocated without `exportable=True` is copied **once** into exportable memory, so the export is a snapshot | `RuntimeError` on CPU, HIP and Level Zero |
+| `tack.copyto(a, src)` | With host `src` (a NumPy array, sequence or scalar): converts it to `a`'s scalar dtype with `np.asarray`, an unchecked cast, and copies it in. Its shape must be `a.numpy()`'s shape or broadcast to it, as in `np.copyto`; a flat array is not accepted for a vector or matrix array. Works on reshaped views. With a Tack array `src` of the same shape and scalar count: a device copy | `RuntimeError` if `a` is read-only. `ValueError` "copyto() into an array whose values have shape (8,): cannot broadcast shape (4,)", or for a Tack `src` of another shape. `TypeError` if `a` is not a Tack array |
+| `a.numpy()`, `np.asarray(a)` | Returns a **new** NumPy array with the scalar component dtype and component axes appended to `a.shape`. Never a view, including on Metal; `np.asarray(a, copy=False)` raises `ValueError` | — |
+| `a.fill(value)` | Sets every element to a scalar, or, for a vector or matrix array, to one element's components | `RuntimeError` if read-only. `TypeError` for a sequence on a scalar array; `ValueError` for a sequence of the wrong element shape |
+| `a[i]`, `a[i, j]`, `a[()]` | Reads one element: a Python number, or a NumPy array for a vector or matrix element. `a[None]` reads a 0-d array. There is no host assignment: `a[i] = x` and iteration raise `TypeError` | `TypeError` for anything but one integer per dimension; `IndexError` out of range |
+| `a.reshape(*shape)` | A metadata-only view that shares the buffer, the element type, the writability and any DLPack hold. Takes a tuple or separate integers; one extent may be `-1` | `ValueError` if the element count differs or more than one extent is `-1` |
+| `a.copy()` / `a.astype(dtype)` | A new array on the **active** backend, filled by a device copy kernel. `astype` converts with the kernel language's conversion rules; a scalar dtype keeps a vector or matrix element's dimensions | Kernel errors, if any. `TypeError` if `astype` would change element dimensions |
+| `a.shape`, `a.ndim`, `a.size`, `len(a)`, `a.nbytes` | `shape`, `ndim` and `size` count elements, not components. `len` is `shape[0]`. `nbytes` is the storage in bytes | `TypeError` from `len` of a 0-d array |
+| `a.export_memory()` | Returns an `ExportedMemory` handle for cross-API sharing. On CUDA, an array allocated without `exportable=True` is copied **once** into exportable memory, so the export is a snapshot | `RuntimeError` on CPU, HIP and Level Zero |
 
 **Current behavior:** on Metal, CUDA, HIP and Level Zero a kernel call
 returns once the launch is queued, not once it has run. Host operations
-keep this invisible: `to_numpy`, `f[i]` and reductions wait for the
-launches before them; `from_numpy` and `fill` take effect after them (on
+keep this invisible: `numpy`, `a[i]` and reductions wait for the
+launches before them; `copyto` and `fill` take effect after them (on
 CUDA, HIP and Level Zero they are queued in order; on Metal they wait
 first). A queued launch's error, such as a device fault, is raised at the
 next wait rather than by its own call. A field dropped while a queued
@@ -200,7 +203,7 @@ failed. `tack.init()` synchronizes the backend it replaces.
 `tack.sync_async()` (`runtime/aio.py`) is the `asyncio` form: awaited, it
 waits in one of Tack's worker threads for the launches made before the
 call, not for later ones, and raises a queued launch's error at the
-`await`; `Field.to_numpy_async()` does the same for a read. A backend
+`await`; `await a.numpy_async()` does the same for a read. A backend
 waits off the loop through `Backend.async_marker()`; without one (the
 CPU), the wait is inline.
 
@@ -222,9 +225,10 @@ active.
 
 ## Pointer interop
 
-### `tack.array_from_ptr(ptr, dtype, shape, writable=False)`
+### `tack.array_from_ptr(ptr, shape, dtype, *, writable=False)`
 
-Wraps existing memory as a field without copying. Tack never frees it.
+Wraps existing memory as an array without copying. `shape` counts
+elements; `dtype` may be an element type such as `tack.vec3()`. Tack never frees it.
 
 | Backend | What `ptr` must be |
 |---|---|
@@ -236,15 +240,15 @@ Wraps existing memory as a field without copying. Tack never frees it.
 **Guarantee:** on a backend that declares `device_memory_spaces` (CUDA,
 HIP and Level Zero), every pointer is converted with `as_address`
 (`runtime/kernel_utils.py`) and classified with `memory_space()`. A value
-that isn't an address raises `TypeError` ("field_from_ptr() on the CUDA
+that isn't an address raises `TypeError` ("array_from_ptr() on the CUDA
 backend takes a device address ..."), and a pointer outside those spaces
 raises `ValueError` ("Pointer is in 'cpu' memory but the active backend is
 'CUDA'. ..."). On Level Zero the driver answers for pointers from any
 context on the device, so the check can't detect a pointer from a
 different context.
 
-**Guarantee:** a field created with `writable=False`, the default, is
-read-only on the host and in kernels. `fill()` and `from_numpy()` raise
+**Guarantee:** an array created with `writable=False`, the default, is
+read-only on the host and in kernels. `fill()` and `tack.copyto()` raise
 `RuntimeError`. A dispatch that binds it to a parameter the kernel may
 store to, or use as an atomic target, raises `ValueError` before the
 launch: "Kernel '`k`': parameter '`out`' may be written, but its field is
@@ -270,8 +274,8 @@ host memory.
 
 Defined in `packages/tack-core/src/tack/lang/dlpack.py`.
 
-**Export:** `Field.__dlpack__(*, stream=None, max_version=None, dl_device=None, copy=None)`
-and `Field.__dlpack_device__()`.
+**Export:** `Array.__dlpack__(*, stream=None, max_version=None, dl_device=None, copy=None)`
+and `Array.__dlpack_device__()`.
 
 - Zero-copy. The capsule keeps the field alive until the consumer calls
   the deleter.
@@ -296,11 +300,11 @@ and `Field.__dlpack_device__()`.
   capsule until the field and every view of it are collected. Then the
   producer's deleter runs exactly once.
 - A read-only versioned tensor produces a non-writable field, which
-  host writes and kernel stores refuse as for `field_from_ptr`.
-- As for `field_from_ptr`, a launch that uses the imported field completes
+  host writes and kernel stores refuse as for `array_from_ptr`.
+- As for `array_from_ptr`, a launch that uses the imported field completes
   before it returns.
 - With `copy=True`, the source is read through `np.from_dlpack` and copied
-  into a new field with `array`. That works only for sources that
+  into a new array with `tack.array`. That works only for sources that
   NumPy can read on the host.
 
 | Condition | Exception |
@@ -312,7 +316,7 @@ and `Field.__dlpack_device__()`.
 | Unknown device type | `ValueError` |
 | `kDLMetal` tensor | `ValueError`: "Metal DLPack tensors (kDLMetal) cannot be imported: ..." |
 | Device type that the active backend can't wrap | `RuntimeError` naming the backend and the device type, followed by `dlpack_refusal_note` |
-| Wrapped pointer outside `device_memory_spaces` | `ValueError` from `field_from_ptr` |
+| Wrapped pointer outside `device_memory_spaces` | `ValueError` from `array_from_ptr` |
 
 **Current behavior:** Metal has no zero-copy import. Host tensors
 (`kDLCPU`) are refused with an explanation, because wrapping a host pointer
@@ -323,11 +327,11 @@ On Metal, use `copy=True` with a host tensor.
 
 ### VTK
 
-`tack.interop.vtk` (package `tack-vis`) provides `vtk_to_field(vtk_array, flatten=False)`,
-`field_to_vtk(field, n_components=None, name=None)` and `init_level_zero()`.
+`tack.interop.vtk` (package `tack-vis`) provides `vtk_to_array(vtk_array, flatten=False)`,
+`array_to_vtk(field, n_components=None, name=None)` and `init_level_zero()`.
 Both directions are zero-copy through DLPack and need VTK with
 `vtkmodules.util.dlpack_support`. Without it they raise `RuntimeError`.
-`field_to_vtk` validates the layout before importing VTK and raises
+`array_to_vtk` validates the layout before importing VTK and raises
 `ValueError` for a contradictory `n_components` or for fields with more
 than two dimensions.
 
@@ -543,13 +547,12 @@ Translated exceptions keep the original as `__cause__`.
 |---|---|---|
 | `UnsupportedSyntaxError` | Syntax outside the kernel language, in a kernel or a device function, including unreachable statements; a kernel without exactly one parallel loop directly in its body; a store, atomic, barrier, block reduction or `print` outside the parallel loop, including through an inlined device function or template method | First dispatch or inspection (frontend) |
 | `NameError` | A name that is neither a parameter nor assigned. Kernels don't capture Python globals | First dispatch or inspection (frontend) |
-| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, `array`, `empty_like` or DLPack dtypes, an invalid `empty_like` prototype, `concat` dtypes, a non-`MTLBuffer` on Metal, a `field_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
-| `ValueError` | Unknown arch or option, an unknown `TACK_CPU_POLICY`, incomplete `external_context`, workgroup participation, launch counts or device group size, a launch or reduction larger than one grid can index, atomic alignment, a read-only field the kernel may store to, `field_from_ptr` memory space, shape mismatches, `reshape`, `texture3d` arguments, empty `min`/`max`, empty `concat`, unknown inspect mode or `"optimized"` off CPU, template method or attribute errors, malformed or `kDLMetal` DLPack tensors | Initialization, dispatch (cold or every call), inspection, host calls |
+| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, a dtype argument that is neither a Tack type nor a NumPy dtype with a Tack type, `array`, `empty_like` or DLPack dtypes, an invalid `*_like` prototype, `concat` dtypes, `copyto` into a non-array, host element assignment or iteration, a non-`MTLBuffer` on Metal, an `array_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
+| `ValueError` | Unknown arch or option, an unknown `TACK_CPU_POLICY`, incomplete `external_context`, workgroup participation, launch counts or device group size, a launch or reduction larger than one grid can index, atomic alignment, a read-only field the kernel may store to, `array_from_ptr` memory space, shape mismatches (including `copyto` shapes that do not broadcast), `reshape`, `texture3d` arguments, empty `min`/`max`, empty `concat`, unknown inspect mode or `"optimized"` off CPU, template method or attribute errors, malformed or `kDLMetal` DLPack tensors | Initialization, dispatch (cold or every call), inspection, host calls |
 | `NotImplementedError` | Workgroup primitives on CPU, keyword arguments, and the few lowering checks that source validation doesn't already report as `UnsupportedSyntaxError` | Raised directly by inspection. Wrapped in `RuntimeError` at dispatch |
 | `RuntimeError` | Initialization failures, compilation and launch failures, stale fields after a backend switch, unreadable kernel or device-function source, host writes to read-only fields, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, raised when a pass leaves IR that breaks a structural invariant) | Everywhere |
 | `BufferError` | `__dlpack__(copy=True)` | Export |
 | `IndexError` | In debug mode, a launch that indexed a field or array out of bounds; host indexing `f[i]` outside the field | After the launch, from `Kernel.__call__`; host calls |
-| `AttributeError` | Passing a NumPy dtype where a Tack type is expected, or a non-array to `from_numpy` or `array` | Host calls (unvalidated caller constraint) |
 
 **Current behavior:** every dispatch rejection listed on this page and in
 [Backend capabilities](backend-capabilities.md) is raised before the kernel

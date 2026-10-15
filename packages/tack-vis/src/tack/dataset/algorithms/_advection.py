@@ -382,9 +382,9 @@ def _velocity(data, field):
 def _as_vectors(values, dtype):
     if values.scalar_dtype == dtype:
         return values
-    out = tack.Vector.field(3, dtype, shape=(arrays.size_of(values),))
+    out = tack.empty((arrays.size_of(values),), tack.vec(3, dtype))
     if arrays.size_of(values):
-        out.from_numpy(values.to_numpy(vectors=True).astype(dtype.numpy_dtype))
+        tack.copyto(out, values.numpy().astype(dtype.numpy_dtype))
     return out
 
 
@@ -422,19 +422,19 @@ def _run(data, field, seeds, step_size, steps, integrator, locator, record):
     bin_offsets, bin_cells = locator.cell_bins()
     dtype = data.dtype
     host = np.ascontiguousarray(np.asarray(
-        seeds.to_numpy(vectors=True) if hasattr(seeds, "to_numpy") else seeds,
+        seeds.numpy() if hasattr(seeds, "numpy") else seeds,
         dtype.numpy_dtype).reshape(-1, 3))
     m = len(host)
-    xs = tack.Vector.field(3, dtype, shape=(m,))
-    times = tack.field(dtype, shape=(m,))
-    taken = tack.field(tack.i32, shape=(m,))
-    status = tack.field(tack.i32, shape=(m,))
-    lengths = tack.field(tack.i32, shape=(m,))
+    xs = tack.empty((m,), tack.vec(3, dtype))
+    times = tack.empty((m,), dtype)
+    taken = tack.empty((m,), tack.i32)
+    status = tack.empty((m,), tack.i32)
+    lengths = tack.empty((m,), tack.i32)
     capacity = int(steps) + 1 if record else 1
-    trace = tack.Vector.field(3, dtype, shape=(m * capacity,))
-    trace_times = tack.field(dtype, shape=(m * capacity,))
+    trace = tack.empty((m * capacity,), tack.vec(3, dtype))
+    trace_times = tack.empty((m * capacity,), dtype)
     if m:
-        xs.from_numpy(host)
+        tack.copyto(xs, host)
         times.fill(0)
         taken.fill(0)
         status.fill(int(SUCCESS))

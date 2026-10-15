@@ -11,32 +11,32 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 # --- Field.size and len() ---
 
 def test_field_size(backend):
-    f = tack.field(dtype=tack.f32, shape=(3, 4))
+    f = tack.empty((3, 4))
     assert f.size == 12
 
 
 def test_field_size_1d(backend):
-    f = tack.field(dtype=tack.f32, shape=(100,))
+    f = tack.empty((100,))
     assert f.size == 100
 
 
 def test_empty_field(backend):
     """A filter that selects nothing returns a field of no elements; it
     allocates, round-trips an empty array and is a valid kernel argument."""
-    f = tack.field(dtype=tack.f32, shape=(0,))
+    f = tack.empty((0,))
     assert f.size == 0
-    assert f.to_numpy().shape == (0,)
-    f.from_numpy(np.zeros(0, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(0,))
+    assert f.numpy().shape == (0,)
+    tack.copyto(f, np.zeros(0, dtype=np.float32))
+    out = tack.empty((0,))
     algorithms.copy(f, out, 0)
-    assert out.to_numpy().shape == (0,)
+    assert out.numpy().shape == (0,)
 
 
 def test_empty_field_in_a_launch(backend):
     """An empty field passed beside a non-empty one still binds when the
     kernel launches. HIP once handed it a null pointer it could not bind."""
     x = tack.arange(8, dtype=tack.f32)
-    empty = tack.field(dtype=tack.f32, shape=(0,))
+    empty = tack.empty((0,))
 
     @tack.kernel
     def double(x, empty):
@@ -44,122 +44,122 @@ def test_empty_field_in_a_launch(backend):
             x[i] = x[i] * 2.0
 
     double(x, empty)
-    np.testing.assert_array_equal(x.to_numpy(), np.arange(8, dtype=np.float32) * 2)
+    np.testing.assert_array_equal(x.numpy(), np.arange(8, dtype=np.float32) * 2)
 
 
 def test_field_len(backend):
-    f = tack.field(dtype=tack.f32, shape=(10,))
+    f = tack.empty((10,))
     assert len(f) == 10
 
 
 def test_field_len_2d(backend):
-    f = tack.field(dtype=tack.f32, shape=(5, 3))
+    f = tack.empty((5, 3))
     assert len(f) == 5
 
 
 # --- Field.copy() ---
 
 def test_field_copy(backend):
-    f = tack.field(dtype=tack.f32, shape=(8,))
-    f.from_numpy(np.arange(8, dtype=np.float32))
+    f = tack.empty((8,))
+    tack.copyto(f, np.arange(8, dtype=np.float32))
     g = f.copy()
-    np.testing.assert_array_equal(g.to_numpy(), f.to_numpy())
+    np.testing.assert_array_equal(g.numpy(), f.numpy())
     # Verify it's a separate buffer (modifying one doesn't affect the other)
     g.fill(0)
-    assert f.to_numpy()[0] == 0.0  # original unchanged... well, depends on backend
+    assert f.numpy()[0] == 0.0  # original unchanged... well, depends on backend
     # At least verify shapes and dtypes match
     assert g.shape == f.shape
     assert g.dtype is f.dtype
 
 
 def test_field_copy_i32(backend):
-    f = tack.field(dtype=tack.i32, shape=(4,))
-    f.from_numpy(np.array([10, 20, 30, 40], dtype=np.int32))
+    f = tack.empty((4,), tack.i32)
+    tack.copyto(f, np.array([10, 20, 30, 40], dtype=np.int32))
     g = f.copy()
-    np.testing.assert_array_equal(g.to_numpy(), [10, 20, 30, 40])
+    np.testing.assert_array_equal(g.numpy(), [10, 20, 30, 40])
 
 
 # --- Field.astype() ---
 
 def test_astype_f32_to_i32(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1.5, 2.7, -0.3, 4.0], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1.5, 2.7, -0.3, 4.0], dtype=np.float32))
     g = f.astype(tack.i32)
     assert g.dtype is tack.i32
-    result = g.to_numpy()
+    result = g.numpy()
     assert result[0] == 1
     assert result[1] == 2
     assert result[3] == 4
 
 
 def test_astype_i32_to_f32(backend):
-    f = tack.field(dtype=tack.i32, shape=(3,))
-    f.from_numpy(np.array([1, 2, 3], dtype=np.int32))
+    f = tack.empty((3,), tack.i32)
+    tack.copyto(f, np.array([1, 2, 3], dtype=np.int32))
     g = f.astype(tack.f32)
     assert g.dtype is tack.f32
-    np.testing.assert_allclose(g.to_numpy(), [1.0, 2.0, 3.0])
+    np.testing.assert_allclose(g.numpy(), [1.0, 2.0, 3.0])
 
 
 def test_astype_same_dtype(backend):
     """astype with same dtype returns a copy."""
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.arange(4, dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.arange(4, dtype=np.float32))
     g = f.astype(tack.f32)
     assert g.dtype is tack.f32
-    np.testing.assert_array_equal(g.to_numpy(), f.to_numpy())
+    np.testing.assert_array_equal(g.numpy(), f.numpy())
 
 
 def test_astype_u8_to_f32(backend):
-    f = tack.field(dtype=tack.u8, shape=(3,))
-    f.from_numpy(np.array([0, 128, 255], dtype=np.uint8))
+    f = tack.empty((3,), tack.u8)
+    tack.copyto(f, np.array([0, 128, 255], dtype=np.uint8))
     g = f.astype(tack.f32)
-    np.testing.assert_allclose(g.to_numpy(), [0.0, 128.0, 255.0])
+    np.testing.assert_allclose(g.numpy(), [0.0, 128.0, 255.0])
 
 
 # --- Field.reshape() ---
 
 def test_reshape_1d_to_2d(backend):
-    f = tack.field(dtype=tack.f32, shape=(12,))
-    f.from_numpy(np.arange(12, dtype=np.float32))
+    f = tack.empty((12,))
+    tack.copyto(f, np.arange(12, dtype=np.float32))
     g = f.reshape((3, 4))
     assert g.shape == (3, 4)
     assert g.size == 12
-    np.testing.assert_array_equal(g.to_numpy().ravel(), f.to_numpy())
+    np.testing.assert_array_equal(g.numpy().ravel(), f.numpy())
 
 
 def test_reshape_2d_to_1d(backend):
-    f = tack.field(dtype=tack.f32, shape=(3, 4))
-    f.from_numpy(np.arange(12, dtype=np.float32).reshape(3, 4))
+    f = tack.empty((3, 4))
+    tack.copyto(f, np.arange(12, dtype=np.float32).reshape(3, 4))
     g = f.reshape((12,))
     assert g.shape == (12,)
 
 
 def test_reshape_shares_buffer(backend):
     """reshape shares the underlying buffer (no copy)."""
-    f = tack.field(dtype=tack.f32, shape=(12,))
-    f.from_numpy(np.arange(12, dtype=np.float32))
+    f = tack.empty((12,))
+    tack.copyto(f, np.arange(12, dtype=np.float32))
     g = f.reshape((3, 4))
     assert g._buffer is f._buffer
 
 
-def test_reshaped_view_accepts_from_numpy(backend):
+def test_reshaped_view_accepts_copyto(backend):
     """A view writes through in its own shape, whatever the buffer's is.
 
     Host-visible buffers used to copy into the allocation's array, which
     numpy refused to broadcast (2, 6) into (3, 4).
     """
-    f = tack.field(dtype=tack.f32, shape=(2, 6))
+    f = tack.empty((2, 6))
     g = f.reshape((3, 4))
     values = np.arange(12, dtype=np.float32).reshape(3, 4)
-    g.from_numpy(values)
-    np.testing.assert_array_equal(g.to_numpy(), values)
-    np.testing.assert_array_equal(f.to_numpy(), values.reshape(2, 6))
-    g.from_numpy(values.T.copy().T)  # non-contiguous input, same elements
-    np.testing.assert_array_equal(f.to_numpy(), values.reshape(2, 6))
+    tack.copyto(g, values)
+    np.testing.assert_array_equal(g.numpy(), values)
+    np.testing.assert_array_equal(f.numpy(), values.reshape(2, 6))
+    tack.copyto(g, values.T.copy().T)  # non-contiguous input, same elements
+    np.testing.assert_array_equal(f.numpy(), values.reshape(2, 6))
 
 
 def test_reshape_bad_size(backend):
-    f = tack.field(dtype=tack.f32, shape=(12,))
+    f = tack.empty((12,))
     with pytest.raises(ValueError, match="Cannot reshape"):
         f.reshape((5, 3))
 
@@ -167,21 +167,21 @@ def test_reshape_bad_size(backend):
 # --- tack.zeros / tack.ones / tack.full ---
 
 def test_zeros(backend):
-    f = tack.zeros(dtype=tack.f32, shape=(10,))
+    f = tack.zeros((10,))
     assert f.dtype is tack.f32
     assert f.shape == (10,)
-    np.testing.assert_array_equal(f.to_numpy(), 0.0)
+    np.testing.assert_array_equal(f.numpy(), 0.0)
 
 
 def test_ones(backend):
-    f = tack.ones(dtype=tack.i32, shape=(5,))
+    f = tack.ones((5,), tack.i32)
     assert f.dtype is tack.i32
-    np.testing.assert_array_equal(f.to_numpy(), 1)
+    np.testing.assert_array_equal(f.numpy(), 1)
 
 
 def test_full(backend):
-    f = tack.full(tack.f32, (4,), 3.14)
-    np.testing.assert_allclose(f.to_numpy(), 3.14, rtol=1e-6)
+    f = tack.full((4,), 3.14, tack.f32)
+    np.testing.assert_allclose(f.numpy(), 3.14, rtol=1e-6)
 
 
 # --- tack.arange ---
@@ -189,48 +189,48 @@ def test_full(backend):
 def test_arange_default(backend):
     f = tack.arange(8)
     assert f.dtype is tack.i32
-    np.testing.assert_array_equal(f.to_numpy(), np.arange(8, dtype=np.int32))
+    np.testing.assert_array_equal(f.numpy(), np.arange(8, dtype=np.int32))
 
 
 def test_arange_f32(backend):
     f = tack.arange(5, dtype=tack.f32)
     assert f.dtype is tack.f32
-    np.testing.assert_allclose(f.to_numpy(), [0.0, 1.0, 2.0, 3.0, 4.0])
+    np.testing.assert_allclose(f.numpy(), [0.0, 1.0, 2.0, 3.0, 4.0])
 
 
 # --- tack.concat ---
 
 def test_concat_basic(backend):
-    a = tack.field(dtype=tack.f32, shape=(3,))
-    b = tack.field(dtype=tack.f32, shape=(2,))
-    a.from_numpy(np.array([1.0, 2.0, 3.0], dtype=np.float32))
-    b.from_numpy(np.array([4.0, 5.0], dtype=np.float32))
+    a = tack.empty((3,))
+    b = tack.empty((2,))
+    tack.copyto(a, np.array([1.0, 2.0, 3.0], dtype=np.float32))
+    tack.copyto(b, np.array([4.0, 5.0], dtype=np.float32))
     c = tack.concat([a, b])
     assert c.shape == (5,)
-    np.testing.assert_array_equal(c.to_numpy(), [1.0, 2.0, 3.0, 4.0, 5.0])
+    np.testing.assert_array_equal(c.numpy(), [1.0, 2.0, 3.0, 4.0, 5.0])
 
 
 def test_concat_single(backend):
-    a = tack.field(dtype=tack.i32, shape=(3,))
-    a.from_numpy(np.array([10, 20, 30], dtype=np.int32))
+    a = tack.empty((3,), tack.i32)
+    tack.copyto(a, np.array([10, 20, 30], dtype=np.int32))
     c = tack.concat([a])
-    np.testing.assert_array_equal(c.to_numpy(), [10, 20, 30])
+    np.testing.assert_array_equal(c.numpy(), [10, 20, 30])
 
 
 def test_concat_three(backend):
     fields = []
     for v in [1.0, 2.0, 3.0]:
-        f = tack.field(dtype=tack.f32, shape=(2,))
+        f = tack.empty((2,))
         f.fill(v)
         fields.append(f)
     c = tack.concat(fields)
     assert c.shape == (6,)
-    np.testing.assert_allclose(c.to_numpy(), [1, 1, 2, 2, 3, 3])
+    np.testing.assert_allclose(c.numpy(), [1, 1, 2, 2, 3, 3])
 
 
 def test_concat_dtype_mismatch(backend):
-    a = tack.field(dtype=tack.f32, shape=(2,))
-    b = tack.field(dtype=tack.i32, shape=(2,))
+    a = tack.empty((2,))
+    b = tack.empty((2,), tack.i32)
     with pytest.raises(TypeError, match="same dtype"):
         tack.concat([a, b])
 
@@ -246,8 +246,8 @@ def test_workflow_arange_kernel_concat(backend):
     """Create fields with arange, process with kernel, concat results."""
     a = tack.arange(4, dtype=tack.f32)
     b = tack.arange(4, dtype=tack.f32)
-    out_a = tack.zeros(dtype=tack.f32, shape=(4,))
-    out_b = tack.zeros(dtype=tack.f32, shape=(4,))
+    out_a = tack.zeros((4,))
+    out_b = tack.zeros((4,))
 
     @tack.kernel
     def double_kern(x, out):
@@ -257,7 +257,7 @@ def test_workflow_arange_kernel_concat(backend):
     double_kern(a, out_a)
     double_kern(b, out_b)
     result = tack.concat([out_a, out_b])
-    np.testing.assert_allclose(result.to_numpy(),
+    np.testing.assert_allclose(result.numpy(),
                                [0, 2, 4, 6, 0, 2, 4, 6])
 
 
@@ -273,7 +273,7 @@ def _alias(field, writable):
         ptr = field._buffer.metal_buffer
     else:
         ptr = field._buffer.address
-    return tack.field_from_ptr(ptr, field.dtype, field.shape, writable=writable)
+    return tack.array_from_ptr(ptr, field.shape, field.dtype, writable=writable)
 
 
 @tack.kernel
@@ -290,27 +290,27 @@ def _bump(dst):
 
 def test_kernels_cannot_store_to_a_read_only_field(backend):
     """field_from_ptr is read-only by default; kernels used to ignore that."""
-    storage = tack.field(dtype=tack.f32, shape=(8,))
-    storage.from_numpy(np.arange(8, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(8,))
+    storage = tack.empty((8,))
+    tack.copyto(storage, np.arange(8, dtype=np.float32))
+    out = tack.empty((8,))
     read_only = _alias(storage, writable=False)
 
     _scale_into(read_only, out)  # reading is what read-only is for
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(8) * 2.0)
+    np.testing.assert_array_equal(out.numpy(), np.arange(8) * 2.0)
 
     with pytest.raises(ValueError, match="parameter 'dst'.*read-only"):
         _scale_into(out, read_only)
     with pytest.raises(ValueError, match="read-only"):
         _bump(read_only)
-    np.testing.assert_array_equal(storage.to_numpy(), np.arange(8))
+    np.testing.assert_array_equal(storage.numpy(), np.arange(8))
 
     # The refused calls compiled the variants these reuse.
     _scale_into(out, _alias(storage, writable=True))
-    np.testing.assert_array_equal(storage.to_numpy(), np.arange(8) * 4.0)
+    np.testing.assert_array_equal(storage.numpy(), np.arange(8) * 4.0)
 
 
 def test_a_read_only_reshaped_view_stays_read_only(backend):
-    storage = tack.field(dtype=tack.f32, shape=(8,))
+    storage = tack.empty((8,))
     view = _alias(storage, writable=False).reshape((8,))
     with pytest.raises(ValueError, match="read-only"):
         _bump(view)
@@ -322,25 +322,25 @@ def test_fill_takes_an_element_of_a_vector_or_matrix_field(backend):
     """`colors.fill([1.0, 0.5, 0.0])` sets every element to that vector. A
     sequence was passed to the buffer's scalar fill and failed inside
     NumPy with "setting an array element with a sequence"."""
-    colors = tack.Vector.field(3, dtype=tack.f32, shape=(4, 2))
+    colors = tack.empty((4, 2), tack.vec(3, tack.f32))
     colors.fill([1.0, 0.5, 0.0])
-    np.testing.assert_array_equal(colors.to_numpy(vectors=True),
+    np.testing.assert_array_equal(colors.numpy(),
                                   np.broadcast_to(np.array([1.0, 0.5, 0.0], np.float32), (4, 2, 3)))
     colors.fill(2.0)                    # a scalar still sets every component
-    assert (colors.to_numpy() == 2.0).all()
+    assert (colors.numpy() == 2.0).all()
 
-    frames = tack.Matrix.field(2, 2, dtype=tack.i32, shape=(3,))
+    frames = tack.empty((3,), tack.mat(2, 2, tack.i32))
     frames.fill(np.array([[1, 2], [3, 4]]))
-    np.testing.assert_array_equal(frames.to_numpy(vectors=True),
+    np.testing.assert_array_equal(frames.numpy(),
                                   np.broadcast_to(np.array([[1, 2], [3, 4]], np.int32), (3, 2, 2)))
 
 
 def test_fill_rejects_a_value_of_the_wrong_shape(backend):
-    colors = tack.Vector.field(3, dtype=tack.f32, shape=(4,))
-    with pytest.raises(ValueError, match=r"shape \(2,\); the elements of this field have shape \(3,\)"):
+    colors = tack.empty((4,), tack.vec(3, tack.f32))
+    with pytest.raises(ValueError, match=r"shape \(2,\); the elements of this array have shape \(3,\)"):
         colors.fill([1.0, 2.0])
-    scalars = tack.field(dtype=tack.f32, shape=(4,))
-    with pytest.raises(TypeError, match="takes a scalar for a field of scalars"):
+    scalars = tack.empty((4,))
+    with pytest.raises(TypeError, match="takes a scalar for an array of scalars"):
         scalars.fill([1.0, 2.0])
 
 
@@ -362,13 +362,13 @@ def test_fill_matches_numpy_full(backend, dtype):
         ([2.5, -0.0, 1e10] if kind == "f" else [])
     for value in values:
         for n in (0, 1, 3, 1000, 4097):
-            f = tack.field(dtype=dtype, shape=(n,))
+            f = tack.empty((n,), dtype)
             f.fill(value)
-            np.testing.assert_array_equal(f.to_numpy(), np.full(n, value, dtype.numpy_dtype),
+            np.testing.assert_array_equal(f.numpy(), np.full(n, value, dtype.numpy_dtype),
                                           err_msg=f"{dtype} fill({value}) of {n}")
-    np.testing.assert_array_equal(tack.zeros(dtype, (5, 3)).to_numpy(),
+    np.testing.assert_array_equal(tack.zeros((5, 3), dtype).numpy(),
                                   np.zeros((5, 3), dtype.numpy_dtype))
-    np.testing.assert_array_equal(tack.ones(dtype, (7,)).to_numpy(), np.ones(7, dtype.numpy_dtype))
+    np.testing.assert_array_equal(tack.ones((7,), dtype).numpy(), np.ones(7, dtype.numpy_dtype))
 
 
 def test_fill_stays_on_the_device(backend):
@@ -377,9 +377,9 @@ def test_fill_stays_on_the_device(backend):
     from tack.runtime.dispatch import get_backend
     if get_backend().name not in ("cuda", "hip", "level_zero"):
         pytest.skip("host-visible storage fills in place")
-    cases = ((tack.field(dtype=tack.f32, shape=(1000,)), 2.5),
-             (tack.field(dtype=tack.i64, shape=(1000,)), -7),
-             (tack.Vector.field(3, dtype=tack.f32, shape=(1000,)), [1.0, 2.0, 3.0]))
+    cases = ((tack.empty((1000,)), 2.5),
+             (tack.empty((1000,), tack.i64), -7),
+             (tack.empty((1000,), tack.vec(3, tack.f32)), [1.0, 2.0, 3.0]))
     for f, value in cases:
         def refuse(arr):
             raise AssertionError(f"fill uploaded {np.asarray(arr).nbytes} bytes")
@@ -388,10 +388,10 @@ def test_fill_stays_on_the_device(backend):
         del f._buffer.from_numpy
         if np.ndim(value):
             np.testing.assert_array_equal(
-                f.to_numpy(vectors=True),
+                f.numpy(),
                 np.broadcast_to(np.asarray(value, np.float32), (1000, 3)))
         else:
-            np.testing.assert_array_equal(f.to_numpy(), np.full(1000, value, f.dtype.numpy_dtype))
+            np.testing.assert_array_equal(f.numpy(), np.full(1000, value, f.dtype.numpy_dtype))
 
 
 # --- Zero-dimensional scalar fields ---
@@ -410,26 +410,26 @@ def _bump_scalar(offset):
 
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32])
 def test_zero_dimensional_scalar_field(backend, dtype):
-    """`tack.field(dtype, shape=())` is one value, read and written as
+    """`tack.empty((), dtype)` is one value, read and written as
     `f[None]`. Metal could not allocate it: its buffer zeroed the view
     with `[:]`, which a zero-dimensional array rejects. A zero-dimensional
     vector field has a flat shape of `(n,)` and was not affected."""
-    assert tack.field(dtype=dtype, shape=()).to_numpy().shape == ()
-    f = tack.zeros(dtype=dtype, shape=())
-    assert f.shape == () and f.to_numpy().shape == ()
-    assert f.to_numpy() == 0
+    assert tack.empty((), dtype).numpy().shape == ()
+    f = tack.zeros((), dtype)
+    assert f.shape == () and f.numpy().shape == ()
+    assert f.numpy() == 0
     f.fill(3)
-    assert f.to_numpy() == 3
-    f.from_numpy(np.array(5, f.to_numpy().dtype))
-    assert f.to_numpy() == 5
+    assert f.numpy() == 3
+    tack.copyto(f, np.array(5, f.numpy().dtype))
+    assert f.numpy() == 5
 
-    x = tack.field(dtype=dtype, shape=(6,))
-    out = tack.field(dtype=dtype, shape=(6,))
-    x.from_numpy(np.arange(6).astype(x.to_numpy().dtype))
+    x = tack.empty((6,), dtype)
+    out = tack.empty((6,), dtype)
+    tack.copyto(x, np.arange(6).astype(x.numpy().dtype))
     _bump_scalar(f)
-    assert f.to_numpy() == 12
+    assert f.numpy() == 12
     _add_offset(f, x, out, 6)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(6) + 12)
+    np.testing.assert_array_equal(out.numpy(), np.arange(6) + 12)
 
 
 # --- Reading one element from the host ---
@@ -438,22 +438,22 @@ def test_host_reads_one_element(backend):
     """`f[i]`, `f[i, j]`, `f[None]` read an element from the host: a Python
     number from a field of scalars, a NumPy array from a vector or matrix
     field. Negative indices count from the end."""
-    f = tack.field(dtype=tack.f32, shape=(3, 4))
-    f.from_numpy(np.arange(12, dtype=np.float32).reshape(3, 4))
+    f = tack.empty((3, 4))
+    tack.copyto(f, np.arange(12, dtype=np.float32).reshape(3, 4))
     assert f[1, 2] == 6.0 and isinstance(f[1, 2], float)
     assert f[-1, -1] == 11.0
     assert f.reshape((12,))[5] == 5.0                  # a view reads through its own shape
 
-    v = tack.Vector.field(2, dtype=tack.i32, shape=(5,))
-    v.from_numpy(np.arange(10, dtype=np.int32).reshape(5, 2))
+    v = tack.empty((5,), tack.vec(2, tack.i32))
+    tack.copyto(v, np.arange(10, dtype=np.int32).reshape(5, 2))
     np.testing.assert_array_equal(v[3], [6, 7])
     np.testing.assert_array_equal(v[-1], [8, 9])
 
-    m = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(2, 3))
-    m.from_numpy(np.arange(24, dtype=np.float32).reshape(2, 3, 2, 2))
+    m = tack.empty((2, 3), tack.mat(2, 2, tack.f32))
+    tack.copyto(m, np.arange(24, dtype=np.float32).reshape(2, 3, 2, 2))
     np.testing.assert_array_equal(m[1, 2], [[20, 21], [22, 23]])
 
-    z = tack.field(dtype=tack.i32, shape=())
+    z = tack.empty((), tack.i32)
     z.fill(9)
     assert z[None] == 9 and isinstance(z[None], int)
 
@@ -467,8 +467,8 @@ def test_read_range_copies_the_requested_elements(backend, dt):
 
     np_dtype = getattr(tack, dt).numpy_dtype
     data = np.arange(37).astype(np_dtype)
-    f = tack.field(dtype=getattr(tack, dt), shape=(37,))
-    f.from_numpy(data)
+    f = tack.empty((37,), getattr(tack, dt))
+    tack.copyto(f, data)
     buf = f._buffer
     if type(buf).read_range is not DeviceBuffer.read_range:
         def no_whole_copy():
@@ -482,14 +482,14 @@ def test_read_range_copies_the_requested_elements(backend, dt):
 
 
 def test_host_reads_are_checked_and_writes_refused(backend):
-    f = tack.field(dtype=tack.f32, shape=(3, 4))
+    f = tack.empty((3, 4))
     with pytest.raises(TypeError, match="takes 2 integer indices"):
         f[1]
     with pytest.raises(TypeError, match="takes 2 integer indices"):
         f[0:2, 0]
     with pytest.raises(IndexError, match="out of range"):
         f[0, 4]
-    with pytest.raises(TypeError, match="zero-dimensional"):
+    with pytest.raises(TypeError, match="takes 2 integer indices"):
         f[None]
     with pytest.raises(TypeError, match="not written by element"):
         f[0, 0] = 1.0

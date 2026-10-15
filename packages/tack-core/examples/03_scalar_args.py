@@ -20,12 +20,12 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 n = 1000
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
 
-x.from_numpy(np.arange(n, dtype=np.float32))
-y.from_numpy(np.ones(n, dtype=np.float32) * 3.0)
+tack.copyto(x, np.arange(n, dtype=np.float32))
+tack.copyto(y, np.ones(n, dtype=np.float32) * 3.0)
 
 
 @tack.kernel
@@ -39,14 +39,14 @@ def saxpy(x, y, out, alpha, n):
 alpha = 2.5
 saxpy(x, y, out, alpha, n)
 
-result = out.to_numpy()
+result = out.numpy()
 expected = alpha * np.arange(n, dtype=np.float32) + 3.0
 assert np.allclose(result, expected)
 print(f"SAXPY with alpha={alpha}: first 5 results = {result[:5]}")
 
 # Call again with a different alpha -- same compiled kernel is reused
 saxpy(x, y, out, -1.0, n)
-result2 = out.to_numpy()
+result2 = out.numpy()
 expected2 = -1.0 * np.arange(n, dtype=np.float32) + 3.0
 assert np.allclose(result2, expected2)
 print(f"SAXPY with alpha=-1.0: first 5 results = {result2[:5]}")

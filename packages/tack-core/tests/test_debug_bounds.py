@@ -35,8 +35,8 @@ def _line(text):
 
 def _field(values, dtype=tack.f32):
     values = np.asarray(values)
-    f = tack.field(dtype, values.shape)
-    f.from_numpy(values.astype(dtype.numpy_dtype))
+    f = tack.empty(values.shape, dtype)
+    tack.copyto(f, values.astype(dtype.numpy_dtype))
     return f
 
 
@@ -67,7 +67,7 @@ def _scatter(x, y, k):
 def test_a_flat_index_past_the_end_raises_and_reads_zero(debug):
     x, y = _field(np.arange(8)), _field(np.full(8, -1))
     _shift(x, y, 0)
-    np.testing.assert_array_equal(y.to_numpy(), np.arange(8))
+    np.testing.assert_array_equal(y.numpy(), np.arange(8))
     with pytest.raises(IndexError) as error:
         _shift(x, y, 2)
     # Which violation is first depends on the order threads ran in.
@@ -77,7 +77,7 @@ def test_a_flat_index_past_the_end_raises_and_reads_zero(debug):
     assert message.removeprefix(message[:message.index("index ")]) in (
         f"index {n} is outside [0, 8). The access was skipped (a load gives 0). "
         "1 more out-of-bounds access in the launch was skipped too." for n in (8, 9))
-    np.testing.assert_array_equal(y.to_numpy(), [2, 3, 4, 5, 6, 7, 0, 0])
+    np.testing.assert_array_equal(y.numpy(), [2, 3, 4, 5, 6, 7, 0, 0])
     # The record is cleared: a launch in bounds raises nothing.
     _shift(x, y, 0)
 
@@ -86,7 +86,7 @@ def test_a_negative_index_raises(debug):
     x, y = _field(np.arange(8)), _field(np.zeros(8))
     with pytest.raises(IndexError, match=r"index -[123] is outside \[0, 8\)"):
         _shift(x, y, -3)
-    np.testing.assert_array_equal(y.to_numpy(), [0, 0, 0, 0, 1, 2, 3, 4])
+    np.testing.assert_array_equal(y.numpy(), [0, 0, 0, 0, 1, 2, 3, 4])
 
 
 def test_each_dimension_is_checked_even_when_the_flat_index_is_inside(debug):
@@ -101,7 +101,7 @@ def test_each_dimension_is_checked_even_when_the_flat_index_is_inside(debug):
     assert "3 more out-of-bounds accesses" in str(error.value)
     expected = np.arange(16).reshape(4, 4) + 1
     expected[:, 3] = 0
-    np.testing.assert_array_equal(b.to_numpy(), expected)
+    np.testing.assert_array_equal(b.numpy(), expected)
 
 
 def test_the_leading_dimension_is_checked_without_compiling_per_length(debug):
@@ -109,7 +109,7 @@ def test_the_leading_dimension_is_checked_without_compiling_per_length(debug):
     for rows in (3, 5, 9):
         a, b = _field(np.ones((rows, 2))), _field(np.zeros((rows, 2)))
         _down(a, b, 0)
-        np.testing.assert_array_equal(b.to_numpy(), np.ones((rows, 2)))
+        np.testing.assert_array_equal(b.numpy(), np.ones((rows, 2)))
         with pytest.raises(IndexError, match=rf"index {rows} of dimension 0 is outside "
                                              rf"\[0, {rows}\)"):
             _down(a, b, 1)
@@ -124,8 +124,8 @@ def test_an_out_of_bounds_store_is_skipped(debug):
     with pytest.raises(IndexError, match=rf"y\[i \+ k\] at {_FILE}:{_line('# scatter store')}"
                                          r", column 9: index [45] is outside \[0, 4\)"):
         _scatter(x, y, 2)
-    np.testing.assert_array_equal(y.to_numpy(), [0, 0, 0, 1])
-    np.testing.assert_array_equal(after.to_numpy(), np.full(4, 7))
+    np.testing.assert_array_equal(y.numpy(), [0, 0, 0, 1])
+    np.testing.assert_array_equal(after.numpy(), np.full(4, 7))
 
 
 @tack.kernel
@@ -146,14 +146,14 @@ def test_atomics_are_checked_as_statements_and_as_values(debug):
     with pytest.raises(IndexError, match=r"tack\.atomic_add\(hist, keys\[i\], 1\) at .*: "
                                          r"index 4 is outside \[0, 4\)"):
         _count(keys, hist)
-    np.testing.assert_array_equal(hist.to_numpy(), [1, 2, 0, 0])
+    np.testing.assert_array_equal(hist.numpy(), [1, 2, 0, 0])
     hist = _field(np.zeros(4), tack.i32)
     olds = _field(np.zeros(4), tack.i32)
     with pytest.raises(IndexError, match=r"index 4 is outside \[0, 4\)"):
         _count_old(keys, hist, olds)
     # A skipped atomic's value is 0.
-    assert olds.to_numpy()[2] == 100
-    assert sorted(olds.to_numpy()[[1, 3]]) == [100, 101]
+    assert olds.numpy()[2] == 100
+    assert sorted(olds.numpy()[[1, 3]]) == [100, 101]
 
 
 @tack.kernel
@@ -169,16 +169,16 @@ def _bump_component(v, flat):
 
 
 def test_vector_fields_are_checked_by_element_and_by_component(debug):
-    v = tack.Vector.field(3, tack.f32, (4,))
-    v.from_numpy(np.zeros((4, 3), np.float32))
+    v = tack.empty((4,), tack.vec(3, tack.f32))
+    tack.copyto(v, np.zeros((4, 3), np.float32))
     with pytest.raises(IndexError, match=r"v\[i \+ k\] at .*: index 4 is outside \[0, 4\)"):
         _bump(v, 1)
     expected = np.zeros((4, 3))
     expected[1:] = [1, 2, 3]
-    np.testing.assert_array_equal(v.to_numpy(vectors=True), expected)
+    np.testing.assert_array_equal(v.numpy(), expected)
     # A scalar atomic on a vector field takes a component's flat index.
     _bump_component(v, 11)
-    assert v.to_numpy()[11] == 4
+    assert v.numpy().reshape(-1)[11] == 4
     with pytest.raises(IndexError, match=r"index 12 is outside \[0, 12\)"):
         _bump_component(v, 12)
 
@@ -197,7 +197,7 @@ def test_local_arrays_are_checked_against_their_size(debug):
     with pytest.raises(IndexError, match=rf"tmp\[i \+ k\] at {_FILE}:{_line('# local load')}, "
                                          r"column 18: index 4 is outside \[0, 4\)"):
         _local(out, 1)
-    np.testing.assert_array_equal(out.to_numpy(), [1, 1, 1, 0])
+    np.testing.assert_array_equal(out.numpy(), [1, 1, 1, 0])
 
 
 @tack.func
@@ -231,7 +231,7 @@ def _guarded(x, out):
 def test_a_short_circuit_guard_keeps_the_access_from_being_checked(debug):
     x, out = _field(np.ones(4)), _field(np.zeros(8))
     _guarded(x, out)
-    np.testing.assert_array_equal(out.to_numpy(), [1, 1, 1, 1, 0, 0, 0, 0])
+    np.testing.assert_array_equal(out.numpy(), [1, 1, 1, 1, 0, 0, 0, 0])
 
 
 @tack.device_class
@@ -254,7 +254,7 @@ def test_template_fields_are_checked(debug):
     grid, out = _Grid(_field(np.arange(4))), _field(np.zeros(4))
     with pytest.raises(IndexError, match=r"index 4 is outside \[0, 4\)"):
         _sample(grid, out, 1)
-    np.testing.assert_array_equal(out.to_numpy(), [1, 2, 3, 0])
+    np.testing.assert_array_equal(out.numpy(), [1, 2, 3, 0])
 
 
 @tack.kernel
@@ -274,7 +274,7 @@ def test_without_debug_mode_nothing_is_checked(backend):
     a = _field(np.arange(16).reshape(4, 4))
     b = _field(np.zeros((4, 4)))
     _right(a, b)        # reads the next row's first element, silently
-    assert b.to_numpy()[0, 3] == 4
+    assert b.numpy()[0, 3] == 4
     if backend == 'cpu':
         assert '__tack_in_bounds__' not in tack.inspect(_right, a, b, mode='source')
     tack.init(arch=backend)
@@ -295,11 +295,11 @@ def test_switching_modes_reuses_no_variant_of_the_other(backend):
             _shift(x, y, 2)
         for _ in range(2):
             _shift(x, y, 0)
-        np.testing.assert_array_equal(y.to_numpy(), np.arange(8))
+        np.testing.assert_array_equal(y.numpy(), np.arange(8))
         tack.init(arch=backend, debug=False)
         for _ in range(2):
             _shift(x, y, 0)
-        np.testing.assert_array_equal(y.to_numpy(), np.arange(8))
+        np.testing.assert_array_equal(y.numpy(), np.arange(8))
     finally:
         tack.init(arch=backend)
 
@@ -383,4 +383,4 @@ def test_each_parameter_has_its_own_extent_when_a_variant_is_reused(debug, monke
     _fill_second(shared, shared)
     small, large = _field(np.full(2, 5.0)), _field(np.zeros(8))
     _fill_second(small, large)
-    np.testing.assert_array_equal(large.to_numpy(), np.full(8, 5.0))
+    np.testing.assert_array_equal(large.numpy(), np.full(8, 5.0))

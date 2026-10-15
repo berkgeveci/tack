@@ -25,8 +25,8 @@ def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
     # --8<-- [start:build]
     data = td.uniform_grid((9, 5, 5), origin=(-1, -1, -1), spacing=(0.25, 0.5, 0.5))
-    x = tack.empty(tack.f32, shape=(data.num_points,))
-    velocity = tack.empty(dtype=tack.vec3(tack.f32), shape=(data.num_points,))
+    x = tack.empty((data.num_points,))
+    velocity = tack.empty((data.num_points,), tack.vec3(tack.f32))
     sample(data.geometry.values, x, velocity)
     data.fields["x"] = td.Field(td.H1(data), x)
     data.fields["velocity"] = td.Field(td.H1(data), velocity)
@@ -104,7 +104,7 @@ def save_figure(result, output):
     for k, (data, title) in enumerate(zip(result, titles, strict=True)):
         triangles = td.triangulate(td.external_faces(data)) if k < 2 else data
         xyz = triangles.positions()
-        ids = triangles.topology.connectivity.to_numpy().reshape(-1, 3)
+        ids = triangles.topology.connectivity.numpy().reshape(-1, 3)
         ax = fig.add_subplot(1, 3, k + 1, projection="3d")
         ax.add_collection3d(Poly3DCollection(xyz[ids], facecolor="#80b5dc", edgecolor="#335c7a",
                                            linewidth=0.35, alpha=0.85))

@@ -105,8 +105,8 @@ def _vtk_cell(shape):
 
 def _vectors(a, dtype):
     a = np.asarray(a)
-    f = tack.Vector.field(3, dtype, shape=a.shape[:-1])
-    f.from_numpy(a.astype(np.float64 if dtype == tack.f64 else np.float32))
+    f = tack.empty(a.shape[:-1], tack.vec(3, dtype))
+    tack.copyto(f, a.astype(np.float64 if dtype == tack.f64 else np.float32))
     return f
 
 
@@ -132,21 +132,21 @@ def _describe(cell, counts, center, points, edges, faces, face_shapes):
 def test_tables_match_the_recorded_ones(backend, shape):
     want = EXPECTED[shape]
     n = len(want["points"])
-    counts = tack.Vector.field(5, tack.i32, shape=(1,))
-    center = tack.Vector.field(3, tack.f32, shape=(1,))
-    points = tack.Vector.field(3, tack.f32, shape=(8,))
-    edges = tack.full(tack.i32, (12, 2), -1)
-    faces = tack.full(tack.i32, (6, 4), -1)
-    face_shapes = tack.full(tack.i32, (6,), -1)
+    counts = tack.empty((1,), tack.vec(5, tack.i32))
+    center = tack.empty((1,), tack.vec(3, tack.f32))
+    points = tack.empty((8,), tack.vec(3, tack.f32))
+    edges = tack.full((12, 2), -1, tack.i32)
+    faces = tack.full((6, 4), -1, tack.i32)
+    face_shapes = tack.full((6,), -1, tack.i32)
     _describe(shape(), counts, center, points, edges, faces, face_shapes)
-    assert counts.to_numpy().tolist() == [
+    assert counts[0].tolist() == [
         shape.ID, n, want["dim"], len(want["edges"]), len(want["faces"])]
-    np.testing.assert_allclose(center.to_numpy(), want["center"], atol=1e-7)
-    np.testing.assert_array_equal(points.to_numpy(vectors=True)[:n], want["points"])
-    assert [tuple(e) for e in edges.to_numpy()[:len(want["edges"])].tolist()] == want["edges"]
-    got_faces = [tuple(v for v in f if v >= 0) for f in faces.to_numpy().tolist()]
+    np.testing.assert_allclose(center[0], want["center"], atol=1e-7)
+    np.testing.assert_array_equal(points.numpy()[:n], want["points"])
+    assert [tuple(e) for e in edges.numpy()[:len(want["edges"])].tolist()] == want["edges"]
+    got_faces = [tuple(v for v in f if v >= 0) for f in faces.numpy().tolist()]
     assert got_faces[:len(want["faces"])] == want["faces"]
-    assert face_shapes.to_numpy()[:len(want["faces"])].tolist() == want["face_shapes"]
+    assert face_shapes.numpy()[:len(want["faces"])].tolist() == want["face_shapes"]
 
 
 @needs_vtk
@@ -203,10 +203,10 @@ def _functions(cell, pcs, values, gradients):
 def _evaluate(shape, pcs, dtype):
     pcs = np.asarray(pcs, np.float64)
     n = len(EXPECTED[shape]["points"])
-    values = tack.field(dtype, shape=(len(pcs), n))
-    gradients = tack.Vector.field(3, dtype, shape=(len(pcs), n))
+    values = tack.empty((len(pcs), n), dtype)
+    gradients = tack.empty((len(pcs), n), tack.vec(3, dtype))
     _functions(shape(), _vectors(pcs, dtype), values, gradients)
-    return values.to_numpy(), gradients.to_numpy(vectors=True)
+    return values.numpy(), gradients.numpy()
 
 
 # Inside, on and outside every domain: the functions are polynomials and
@@ -298,9 +298,9 @@ def _reference_inside(shape, pc, tol):
 
 
 def _is_inside(shape, pcs, tol):
-    out = tack.field(tack.i32, shape=(len(pcs),))
+    out = tack.empty((len(pcs),), tack.i32)
     _inside(shape(), _vectors(pcs, tack.f32), out, tol)
-    return out.to_numpy().astype(bool)
+    return out.numpy().astype(bool)
 
 
 @each_shape
@@ -405,14 +405,14 @@ def _round_trip_f32(cell, cells, pcs, offsets, positions, found, converged):
 def _run_round_trip(shape, cases, dtype):
     cells, pcs, offsets = cases
     n = len(pcs)
-    positions = tack.Vector.field(3, dtype, shape=(n,))
-    found = tack.Vector.field(3, dtype, shape=(n,))
-    converged = tack.field(tack.i32, shape=(n,))
+    positions = tack.empty((n,), tack.vec(3, dtype))
+    found = tack.empty((n,), tack.vec(3, dtype))
+    converged = tack.empty((n,), tack.i32)
     kernel = _round_trip if dtype == tack.f64 else _round_trip_f32
     kernel(shape(), _vectors(cells, dtype), _vectors(pcs, dtype), _vectors(offsets, dtype),
            positions, found, converged)
-    return (positions.to_numpy(vectors=True), found.to_numpy(vectors=True),
-            converged.to_numpy())
+    return (positions.numpy(), found.numpy(),
+            converged.numpy())
 
 
 @each_shape
@@ -500,11 +500,11 @@ def test_nearest_point_is_vtks(f64_backend, shape, outside):
     against VTK's clamped position, the same in either version."""
     cells, pcs, offsets = _make_cases(shape, seed=6, count=12, outside=outside)
     n = len(pcs)
-    positions = tack.Vector.field(3, tack.f64, shape=(n,))
-    nearest = tack.Vector.field(3, tack.f64, shape=(n,))
+    positions = tack.empty((n,), tack.vec(3, tack.f64))
+    nearest = tack.empty((n,), tack.vec(3, tack.f64))
     _nearest(shape(), _vectors(cells, tack.f64), _vectors(pcs, tack.f64),
              _vectors(offsets, tack.f64), positions, nearest)
-    positions, nearest = positions.to_numpy(vectors=True), nearest.to_numpy(vectors=True)
+    positions, nearest = positions.numpy(), nearest.numpy()
     for i in range(n):
         cell = _vtk_cell(shape)
         for j in range(cell.GetNumberOfPoints()):
@@ -534,15 +534,15 @@ def _geometry(cell, cells, pcs, values, interpolated, positions, jacobians):
 
 def _run_geometry(shape, cells, pcs, values):
     n = len(pcs)
-    vals = tack.field(tack.f64, shape=values.shape)
-    vals.from_numpy(values)
-    interpolated = tack.field(tack.f64, shape=(n,))
-    positions = tack.Vector.field(3, tack.f64, shape=(n,))
-    jacobians = tack.Matrix.field(3, 3, tack.f64, shape=(n,))
+    vals = tack.empty(values.shape, tack.f64)
+    tack.copyto(vals, values)
+    interpolated = tack.empty((n,), tack.f64)
+    positions = tack.empty((n,), tack.vec(3, tack.f64))
+    jacobians = tack.empty((n,), tack.mat(3, 3, tack.f64))
     _geometry(shape(), _vectors(cells, tack.f64), _vectors(pcs, tack.f64), vals,
               interpolated, positions, jacobians)
-    return (interpolated.to_numpy(), positions.to_numpy(vectors=True),
-            jacobians.to_numpy().reshape(n, 3, 3))
+    return (interpolated.numpy(), positions.numpy(),
+            jacobians.numpy().reshape(n, 3, 3))
 
 
 @each_shape

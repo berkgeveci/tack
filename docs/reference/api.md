@@ -8,14 +8,25 @@ belong on the host or in a kernel, use the [quick reference](../users-guide/quic
 | Task | Call | Result or effect |
 |---|---|---|
 | Select a backend | `tack.init(arch=tack.cpu, debug=False)` | Initializes the runtime; allocate arrays afterwards |
-| Allocate an output | `tack.empty(tack.f32, shape=(n,))` | New array with unspecified contents |
+| Allocate an output | `tack.empty((n,))` | New f32 array with unspecified contents |
+| Allocate with another dtype | `tack.empty((n,), tack.i32)` | Any Tack type or NumPy dtype (`np.int32`, `"int32"`) |
+| Allocate zeros, ones or a value | `tack.zeros((n,))`, `tack.ones((n,))`, `tack.full((n,), 2.5)` | New array, filled on the device |
 | Match storage without copying | `tack.empty_like(prototype)` | Same shape and element dtype; no values read or initialized |
-| Allocate zeros | `tack.zeros(tack.f32, shape=(n,))` | New array initialized to zero |
-| Upload NumPy data | `tack.array(host)` | New array with an independent copy of the array |
-| Download data | `values.to_numpy()` | Independent NumPy array; waits for earlier writes |
-| Allocate vector elements | `tack.empty(shape=(n,), dtype=tack.vec3())` | Array of n 3-vectors; NumPy download shape `(n, 3)` |
+| Match and fill | `tack.zeros_like(a)`, `tack.ones_like(a)`, `tack.full_like(a, v)` | Same shape and element dtype, filled |
+| Upload NumPy data | `tack.array(host)` | New array with an independent copy; a NumPy array keeps its dtype |
+| Use an array as is | `tack.asarray(obj)` | `obj` itself if it is already a Tack array (of `dtype`, if given), else `tack.array(obj)` |
+| Overwrite values from the host | `tack.copyto(a, host)` | Copies into `a`; `host` has `a.numpy()`'s shape or broadcasts to it |
+| Copy between arrays | `tack.copyto(dst, src)` | Device-side copy into an existing array of the same shape |
+| Download data | `a.numpy()` or `np.asarray(a)` | Independent NumPy array; waits for earlier writes |
+| Allocate vector elements | `tack.empty((n,), tack.vec3())` | Array of n 3-vectors; NumPy download shape `(n, 3)` |
+| Inspect shape and size | `a.shape`, `a.ndim`, `a.size`, `a.nbytes` | Element counts (components excluded) and storage bytes |
+| Reshape without copying | `a.reshape(rows, -1)` | Shares storage; one dimension may be `-1` |
 | Wait for device work | `tack.sync()` | Waits for queued launches; returns `None` |
 | Inspect a kernel | `tack.inspect(kernel, *args, mode="source")` | Generated source as a string; does not execute the kernel |
+
+Without a `dtype`, an allocation is f32; values from Python make f32 from
+floats and i32 from ints (i64 if a value needs it), and a NumPy array keeps
+its own dtype, so a float64 array becomes f64.
 
 For ownership, errors and precise guarantees, see the
 [Runtime API contract](../contracts/runtime-api.md) and the
@@ -47,19 +58,31 @@ See [Arrays and Types](../users-guide/02-fields-and-types.md) for examples.
 
 ::: tack.empty
 
-::: tack.array
-
-::: tack.empty_like
-
 ::: tack.zeros
 
 ::: tack.ones
 
 ::: tack.full
 
+::: tack.empty_like
+
+::: tack.zeros_like
+
+::: tack.ones_like
+
+::: tack.full_like
+
+::: tack.array
+
+::: tack.asarray
+
 ::: tack.arange
 
 ::: tack.concat
+
+### Copying values
+
+::: tack.copyto
 
 ### Element types
 
@@ -154,8 +177,8 @@ See [Arrays and Types](../users-guide/02-fields-and-types.md) for examples.
 
 How these behave on each backend — dtypes, accumulators, NaN and empty
 inputs, repeatability — is in the User's Guide chapter
-[Reductions and Scans](../users-guide/11-reductions-and-scans.md). Field
-reductions are the methods `Field.sum`, `min`, `max` and `mean`, above.
+[Reductions and Scans](../users-guide/11-reductions-and-scans.md). Array
+reductions are the methods `Array.sum`, `min`, `max` and `mean`, above.
 
 ### Statistics
 
@@ -232,8 +255,8 @@ Usable only inside a `@tack.kernel`, on backends with workgroups (not CPU).
 
 ## VTK interop
 
-`tack.interop.vtk` (in the `tack-vis` package) provides `vtk_to_field`,
-`field_to_vtk` and `init_level_zero`. Their contracts are in
+`tack.interop.vtk` (in the `tack-vis` package) provides `vtk_to_array`,
+`array_to_vtk` and `init_level_zero`. Their contracts are in
 [Runtime API: VTK](../contracts/runtime-api.md#vtk), and their docstrings
 are in `packages/tack-vis/src/tack/interop/vtk.py`.
 

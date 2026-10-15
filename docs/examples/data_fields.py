@@ -23,7 +23,7 @@ def temperature_at_points(xyz, out):
 def build():
     # --8<-- [start:build]
     data = td.uniform_grid((3, 2, 2), spacing=(0.5, 1.0, 1.0))
-    temperature = tack.empty(tack.f32, shape=(data.num_points,))
+    temperature = tack.empty((data.num_points,))
     temperature_at_points(data.geometry.values, temperature)
     data.fields["temperature"] = td.Field(td.H1(data), temperature)
 
@@ -63,7 +63,7 @@ def run(arch="cpu", check=False):
         np.testing.assert_array_equal(to_host(separate_material.values),
                                       np.repeat([1.0, 3.0], 8))
         np.testing.assert_allclose(to_host(gradient.values), np.tile([1, 2, 3], (2, 1)))
-        np.testing.assert_array_equal(explicit.to_numpy(), np.full(12, 5.0))
+        np.testing.assert_array_equal(explicit.numpy(), np.full(12, 5.0))
         np.testing.assert_array_equal(snapshot, np.full(12, 5.0))
         jumps = to_host(material_jump.values)
         assert np.count_nonzero(jumps) == 1

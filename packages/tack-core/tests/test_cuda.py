@@ -21,12 +21,12 @@ def cuda_backend():
 
 def test_vector_add():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.arange(n, dtype=np.float32))
-    y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 2.0)
 
     @tack.kernel
     def add(x, y, out):
@@ -35,19 +35,19 @@ def test_vector_add():
 
     add(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.arange(n, dtype=np.float32) + 2.0
     assert np.allclose(result, expected)
 
 
 def test_saxpy():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32) * 3.0)
-    y.from_numpy(np.ones(n, dtype=np.float32) * 1.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 3.0)
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 1.0)
 
     @tack.kernel
     def saxpy(x, y, out):
@@ -56,19 +56,19 @@ def test_saxpy():
 
     saxpy(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = 2.0 * 3.0 + 1.0  # 7.0
     assert np.allclose(result, expected)
 
 
 def test_subtraction():
     n = 512
-    a = tack.field(dtype=tack.f32, shape=(n,))
-    b = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    a = tack.empty((n,))
+    b = tack.empty((n,))
+    out = tack.empty((n,))
 
-    a.from_numpy(np.full(n, 10.0, dtype=np.float32))
-    b.from_numpy(np.full(n, 3.0, dtype=np.float32))
+    tack.copyto(a, np.full(n, 10.0, dtype=np.float32))
+    tack.copyto(b, np.full(n, 3.0, dtype=np.float32))
 
     @tack.kernel
     def sub(a, b, out):
@@ -77,17 +77,17 @@ def test_subtraction():
 
     sub(a, b, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     assert np.allclose(result, 7.0)
 
 
 def test_conditional():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     data = np.arange(n, dtype=np.float32) - 512.0
-    x.from_numpy(data)
+    tack.copyto(x, data)
 
     @tack.kernel
     def relu(x, out):
@@ -99,17 +99,17 @@ def test_conditional():
 
     relu(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.maximum(data, 0.0)
     assert np.allclose(result, expected)
 
 
 def test_negation():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def neg(x, out):
@@ -118,21 +118,21 @@ def test_negation():
 
     neg(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = -np.arange(n, dtype=np.float32)
     assert np.allclose(result, expected)
 
 
 def test_multiple_ops():
     n = 512
-    a = tack.field(dtype=tack.f32, shape=(n,))
-    b = tack.field(dtype=tack.f32, shape=(n,))
-    c = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    a = tack.empty((n,))
+    b = tack.empty((n,))
+    c = tack.empty((n,))
+    out = tack.empty((n,))
 
-    a.from_numpy(np.full(n, 10.0, dtype=np.float32))
-    b.from_numpy(np.full(n, 3.0, dtype=np.float32))
-    c.from_numpy(np.full(n, 2.0, dtype=np.float32))
+    tack.copyto(a, np.full(n, 10.0, dtype=np.float32))
+    tack.copyto(b, np.full(n, 3.0, dtype=np.float32))
+    tack.copyto(c, np.full(n, 2.0, dtype=np.float32))
 
     @tack.kernel
     def kern(a, b, c, out):
@@ -141,18 +141,18 @@ def test_multiple_ops():
 
     kern(a, b, c, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = (10.0 - 3.0) * 2.0 / 2.0  # 7.0
     assert np.allclose(result, expected)
 
 
 def test_math_sqrt():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     data = np.arange(1, n + 1, dtype=np.float32)
-    x.from_numpy(data)
+    tack.copyto(x, data)
 
     @tack.kernel
     def kern(x, out):
@@ -161,7 +161,7 @@ def test_math_sqrt():
 
     kern(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.sqrt(data)
     assert np.allclose(result, expected, rtol=1e-5)
 
@@ -169,12 +169,12 @@ def test_math_sqrt():
 def test_cached_reuse():
     """Second call should use cached pipeline."""
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 2.0)
 
     @tack.kernel
     def add(x, y, out):
@@ -182,23 +182,23 @@ def test_cached_reuse():
             out[i] = x[i] + y[i]
 
     add(x, y, out)
-    assert np.allclose(out.to_numpy(), 3.0)
+    assert np.allclose(out.numpy(), 3.0)
 
     # Second call — cached
-    x.from_numpy(np.ones(n, dtype=np.float32) * 5.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 5.0)
     add(x, y, out)
-    assert np.allclose(out.to_numpy(), 7.0)
+    assert np.allclose(out.numpy(), 7.0)
 
 
 def test_large_array():
     """Test with a larger array to exercise multiple thread blocks."""
     n = 1_000_000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32) * 3.0)
-    y.from_numpy(np.ones(n, dtype=np.float32) * 4.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 3.0)
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 4.0)
 
     @tack.kernel
     def add(x, y, out):
@@ -207,7 +207,7 @@ def test_large_array():
 
     add(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     assert np.allclose(result, 7.0)
 
 
@@ -223,8 +223,8 @@ def test_export_memory():
     with a bare CUDA_ERROR_INVALID_VALUE.
     """
     n = 256
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(np.arange(n, dtype=np.float32))
+    f = tack.empty((n,))
+    tack.copyto(f, np.arange(n, dtype=np.float32))
 
     exported = f.export_memory()
 
@@ -241,7 +241,7 @@ def test_export_memory():
     assert f.export_memory().handle == exported.handle
 
     # Exporting copies into VMM-backed memory; the field itself is untouched.
-    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+    assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))
 
 
 # --- Context ownership across re-initialization ---
@@ -265,9 +265,9 @@ def test_repeated_init_keeps_context_usable():
     gc.collect()  # force the outgoing backend's __del__ to run now
 
     n = 64
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(np.arange(n, dtype=np.float32))
-    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+    f = tack.empty((n,))
+    tack.copyto(f, np.arange(n, dtype=np.float32))
+    assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))
 
 
 def test_many_repeated_inits_do_not_leak_contexts():
@@ -291,9 +291,9 @@ def test_many_repeated_inits_do_not_leak_contexts():
     assert len(_CONTEXTS) == 1
     assert [t.users for t in _CONTEXTS.values()] == [live]
 
-    f = tack.field(dtype=tack.f32, shape=(32,))
-    f.from_numpy(np.ones(32, dtype=np.float32))
-    assert f.to_numpy()[0] == 1.0
+    f = tack.empty((32,))
+    tack.copyto(f, np.ones(32, dtype=np.float32))
+    assert f.numpy()[0] == 1.0
 
 
 def test_kernel_runs_after_reinit():
@@ -301,9 +301,9 @@ def test_kernel_runs_after_reinit():
     tack.init(arch=tack.cuda)
 
     n = 128
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.ones(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
 
     @tack.kernel
     def triple(x, out):
@@ -311,7 +311,7 @@ def test_kernel_runs_after_reinit():
             out[i] = x[i] * 3.0
 
     triple(x, out)
-    assert np.allclose(out.to_numpy(), 3.0)
+    assert np.allclose(out.numpy(), 3.0)
 
 
 def test_foreign_context_is_adopted_but_never_destroyed():
@@ -381,8 +381,8 @@ def double(x, out):
         out[i] = x[i] * 2.0
 
 tack.init(arch=tack.cuda)
-f = tack.field(dtype=tack.f32, shape=(64,))
-f.from_numpy(np.arange(64, dtype=np.float32))
+f = tack.empty((64,), tack.f32)
+tack.copyto(f, np.arange(64, dtype=np.float32))
 double(f, f)                 # compile a variant while the context is alive
 tack.init(arch=tack.cpu)     # destroys the CUDA context
 gc.collect()
@@ -408,8 +408,8 @@ def _assert_no_crash(proc):
 
 
 @pytest.mark.parametrize("verb,action", [
-    ("read", "f.to_numpy()"),
-    ("write", "f.from_numpy(np.ones(64, dtype=np.float32))"),
+    ("read", "f.numpy()"),
+    ("write", "tack.copyto(f, np.ones(64, dtype=np.float32))"),
     ("fill", "f.fill(1.0)"),
     ("export", "f.export_memory()"),
     ("launch", "double(f, f)"),
@@ -449,9 +449,9 @@ def test_stale_field_can_be_collected_without_crashing(tmp_path):
     body = """
 del f
 gc.collect()
-g = tack.field(dtype=tack.f32, shape=(16,))
-g.from_numpy(np.ones(16, dtype=np.float32))
-assert g.to_numpy()[0] == 1.0
+g = tack.empty((16,), tack.f32)
+tack.copyto(g, np.ones(16, dtype=np.float32))
+assert g.numpy()[0] == 1.0
 print("OK")
 """
     proc = _run_stale_script(tmp_path, body)
@@ -465,13 +465,13 @@ def test_field_survives_repeated_init():
     import gc
 
     n = 64
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(np.arange(n, dtype=np.float32))
+    f = tack.empty((n,))
+    tack.copyto(f, np.arange(n, dtype=np.float32))
 
     tack.init(arch=tack.cuda)
     gc.collect()
 
-    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+    assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))
 
 
 
@@ -512,8 +512,8 @@ def test_narrow_negation_avoids_ptx_neg_s16(dtype):
             n = -x[i]
             out[i, 2] = tack.i64(n)
 
-    x = tack.field(dtype, (4,))
-    out = tack.field(tack.i64, (4, 3))
+    x = tack.empty((4,), dtype)
+    out = tack.empty((4, 3), tack.i64)
     function, _ = _prepare_ir(negate, (x, out))
     ptx = _compile_ptx(generate_cuda_source(function), "negate").decode()
     assert "neg.s16" not in ptx and "abs.s16" not in ptx
@@ -563,11 +563,11 @@ def test_old_nvrtc_warns_at_the_first_compile(monkeypatch):
 def test_ordinary_and_floor_division_kernels_compile_in_sequence():
     """Ordinary and floating floor-division kernels compile and run in
     one process with the same safe settings, preserving the CX7 coverage."""
-    x = tack.field(dtype=tack.f32, shape=(8,))
-    y = tack.field(dtype=tack.f32, shape=(8,))
-    out = tack.field(dtype=tack.f32, shape=(8,))
-    x.from_numpy(np.array([6.0, 7.5, -7.5, 1e30, 0.3, -0.0, 5.0, 2.0], dtype=np.float32))
-    y.from_numpy(np.array([0.1, -3.0, 3.0, 1e-10, 0.1, 1.0, -2.0, 0.5], dtype=np.float32))
+    x = tack.empty((8,))
+    y = tack.empty((8,))
+    out = tack.empty((8,))
+    tack.copyto(x, np.array([6.0, 7.5, -7.5, 1e30, 0.3, -0.0, 5.0, 2.0], dtype=np.float32))
+    tack.copyto(y, np.array([0.1, -3.0, 3.0, 1e-10, 0.1, 1.0, -2.0, 0.5], dtype=np.float32))
 
     @tack.kernel
     def plain_first(x, y, out):
@@ -585,13 +585,13 @@ def test_ordinary_and_floor_division_kernels_compile_in_sequence():
             out[i] = x[i] * y[i] - 1.0
 
     plain_first(x, y, out)
-    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * y.to_numpy() + 1.0, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), x.numpy() * y.numpy() + 1.0, rtol=1e-6)
     floor_div(x, y, out)
     with np.errstate(all="ignore"):              # 1e30 // 1e-10 overflows to inf
-        expected = np.floor_divide(x.to_numpy(), y.to_numpy())
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+        expected = np.floor_divide(x.numpy(), y.numpy())
+    np.testing.assert_array_equal(out.numpy(), expected)
     plain_second(x, y, out)
-    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * y.to_numpy() - 1.0, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), x.numpy() * y.numpy() - 1.0, rtol=1e-6)
 
 
 def test_host_element_reads_copy_one_element():
@@ -600,19 +600,19 @@ def test_host_element_reads_copy_one_element():
     past the allocation is refused rather than read."""
     from tack.runtime.cuda_backend import ExportableCUDABuffer
 
-    f = tack.field(dtype=tack.f64, shape=(4, 5))
-    f.from_numpy(np.arange(20, dtype=np.float64).reshape(4, 5))
+    f = tack.empty((4, 5), tack.f64)
+    tack.copyto(f, np.arange(20, dtype=np.float64).reshape(4, 5))
     f._buffer.to_numpy = None          # a whole-buffer copy would fail here
     assert f[3, 4] == 19.0 and f[-4, 0] == 0.0
     assert f.reshape((20,))[7] == 7.0
 
     address = f._buffer.address
     for ptr in (address, np.uint64(address)):
-        alias = tack.field_from_ptr(ptr, tack.f64, (20,))
+        alias = tack.array_from_ptr(ptr, (20,), tack.f64)
         assert alias[13] == 13.0
 
-    v = tack.Vector.field(3, dtype=tack.i32, shape=(6,))
-    v.from_numpy(np.arange(18, dtype=np.int32).reshape(6, 3))
+    v = tack.empty((6,), tack.vec(3, tack.i32))
+    tack.copyto(v, np.arange(18, dtype=np.int32).reshape(6, 3))
     v._buffer.to_numpy = None
     np.testing.assert_array_equal(v[5], [15, 16, 17])
 

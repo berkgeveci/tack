@@ -63,8 +63,8 @@ def _pairs(dtype):
 
 def _field(values, dtype):
     data = np.asarray(values, dtype=dtype.numpy_dtype)
-    field = tack.field(dtype=dtype, shape=data.shape)
-    field.from_numpy(data)
+    field = tack.empty(data.shape, dtype)
+    tack.copyto(field, data)
     return field
 
 
@@ -77,16 +77,16 @@ def test_integer_division_matches_python(backend, dtype, nested):
     # only way that can occur with these identical divisors.
     a = _field([x for x, _ in pairs], dtype)
     b = _field([y for _, y in pairs], dtype)
-    q = tack.field(dtype, a.shape)
-    r = tack.field(dtype, a.shape)
+    q = tack.empty(a.shape, dtype)
+    r = tack.empty(a.shape, dtype)
     (_nested_divmod if nested else _divmod)(a, b, q, r)
     expected_q = [x // y for x, y in pairs]
     expected_r = [x % y for x, y in pairs]
     if nested:
         expected_q = [v // y for v, (_, y) in zip(expected_q, pairs)]
         expected_r = [v % y for v, (_, y) in zip(expected_r, pairs)]
-    np.testing.assert_array_equal(q.to_numpy(), np.asarray(expected_q, dtype=dtype.numpy_dtype))
-    np.testing.assert_array_equal(r.to_numpy(), np.asarray(expected_r, dtype=dtype.numpy_dtype))
+    np.testing.assert_array_equal(q.numpy(), np.asarray(expected_q, dtype=dtype.numpy_dtype))
+    np.testing.assert_array_equal(r.numpy(), np.asarray(expected_r, dtype=dtype.numpy_dtype))
     if not nested:
         for (x, y), quotient, remainder in zip(pairs, expected_q, expected_r):
             assert x == quotient * y + remainder
@@ -106,10 +106,10 @@ def test_integer_literals_use_tack_promotion(backend, dtype):
     info = np.iinfo(dtype.numpy_dtype)
     values = [int(info.min), int(info.min) + 1, 0, 1, int(info.max)]
     a = _field(values, dtype)
-    q, r = tack.field(tack.i64, a.shape), tack.field(tack.i64, a.shape)
+    q, r = tack.empty(a.shape, tack.i64), tack.empty(a.shape, tack.i64)
     _literal_divmod(a, q, r)
-    np.testing.assert_array_equal(q.to_numpy(), [x // 3 for x in values])
-    np.testing.assert_array_equal(r.to_numpy(), [x % -3 for x in values])
+    np.testing.assert_array_equal(q.numpy(), [x // 3 for x in values])
+    np.testing.assert_array_equal(r.numpy(), [x % -3 for x in values])
 
 
 @pytest.mark.parametrize('left_type,right_type', [
@@ -127,11 +127,11 @@ def test_lossless_mixed_integer_promotion(backend, left_type, right_type):
     pairs = [(x, y) for x in left for y in right if y]
     result_type = promote_types(left_type, right_type)
     a, b = _field([x for x, _ in pairs], left_type), _field([y for _, y in pairs], right_type)
-    q, r = tack.field(result_type, a.shape), tack.field(result_type, a.shape)
+    q, r = tack.empty(a.shape, result_type), tack.empty(a.shape, result_type)
     _divmod(a, b, q, r)
-    np.testing.assert_array_equal(q.to_numpy(), np.array([x // y for x, y in pairs],
+    np.testing.assert_array_equal(q.numpy(), np.array([x // y for x, y in pairs],
                                                        dtype=result_type.numpy_dtype))
-    np.testing.assert_array_equal(r.to_numpy(), np.array([x % y for x, y in pairs],
+    np.testing.assert_array_equal(r.numpy(), np.array([x % y for x, y in pairs],
                                                        dtype=result_type.numpy_dtype))
 
 
@@ -149,12 +149,12 @@ def _effects(state, q, r):
 
 
 def test_operands_execute_once(backend):
-    state = tack.zeros(tack.i32, (9,))
-    q, r = tack.field(tack.i32, (9,)), tack.field(tack.i32, (9,))
+    state = tack.zeros((9,), tack.i32)
+    q, r = tack.empty((9,), tack.i32), tack.empty((9,), tack.i32)
     _effects(state, q, r)
-    np.testing.assert_array_equal(state.to_numpy(), np.full(9, 4))
-    np.testing.assert_array_equal(q.to_numpy(), np.full(9, -3))
-    np.testing.assert_array_equal(r.to_numpy(), np.full(9, -2))
+    np.testing.assert_array_equal(state.numpy(), np.full(9, 4))
+    np.testing.assert_array_equal(q.numpy(), np.full(9, -3))
+    np.testing.assert_array_equal(r.numpy(), np.full(9, -2))
 
 
 @tack.kernel
@@ -166,10 +166,10 @@ def _guarded(a, b, q, r):
 
 def test_guarded_zero_divisor_is_not_evaluated(backend):
     a, b = _field([-7, 7, 3, 0], tack.i32), _field([3, -3, 0, 0], tack.i32)
-    q, r = tack.field(tack.i32, (4,)), tack.field(tack.i32, (4,))
+    q, r = tack.empty((4,), tack.i32), tack.empty((4,), tack.i32)
     _guarded(a, b, q, r)
-    np.testing.assert_array_equal(q.to_numpy(), [-3, -3, 99, 99])
-    np.testing.assert_array_equal(r.to_numpy(), [2, -2, 99, 99])
+    np.testing.assert_array_equal(q.numpy(), [-3, -3, 99, 99])
+    np.testing.assert_array_equal(r.numpy(), [2, -2, 99, 99])
 
 
 @tack.kernel
@@ -183,11 +183,11 @@ def _pixel_coordinates(width, x, y):
 def test_parallel_pixel_coordinates_are_exact(backend, width):
     """Integer indexing used by renderers stays exact across the grid."""
     n = width * width
-    x, y = tack.field(tack.i64, (n,)), tack.field(tack.i64, (n,))
+    x, y = tack.empty((n,), tack.i64), tack.empty((n,), tack.i64)
     _pixel_coordinates(width, x, y)
     ids = np.arange(n, dtype=np.int64)
-    np.testing.assert_array_equal(x.to_numpy(), ids % width)
-    np.testing.assert_array_equal(y.to_numpy(), ids // width)
+    np.testing.assert_array_equal(x.numpy(), ids % width)
+    np.testing.assert_array_equal(y.numpy(), ids // width)
 
 
 @pytest.mark.parametrize('generate', [generate_cuda_source, generate_hip_source,

@@ -26,13 +26,13 @@ tack.init(arch=_arch)
 
 # Allocate 1-D fields (device arrays)
 n = 10
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
 
 # Upload data from numpy
-x.from_numpy(np.arange(n, dtype=np.float32))        # [0, 1, 2, ..., 9]
-y.from_numpy(np.ones(n, dtype=np.float32) * 10.0)   # [10, 10, ..., 10]
+tack.copyto(x, np.arange(n, dtype=np.float32))        # [0, 1, 2, ..., 9]
+tack.copyto(y, np.ones(n, dtype=np.float32) * 10.0)   # [10, 10, ..., 10]
 
 
 @tack.kernel
@@ -46,9 +46,9 @@ def add(x, y, out):
 add(x, y, out)
 
 # Download result to numpy and print
-result = out.to_numpy()
-print("x  =", x.to_numpy())
-print("y  =", y.to_numpy())
+result = out.numpy()
+print("x  =", x.numpy())
+print("y  =", y.numpy())
 print("out=", result)
 assert np.allclose(result, np.arange(n) + 10.0)
 print("\nAll correct!")

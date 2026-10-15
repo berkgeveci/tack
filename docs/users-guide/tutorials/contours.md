@@ -45,7 +45,7 @@ The scan returns the total, four, so the host can allocate exactly four segments
 ```
 
 The return value reaches Python to choose an allocation size; the counts and
-offsets remain fields. The example returns early when `total == 0`: there is
+offsets remain arrays. The example returns early when `total == 0`: there is
 nothing to write. The scan is several launches, and reading its total waits
 for the device, so this pattern is not free for small inputs.
 
@@ -60,7 +60,7 @@ edges, and writes within that cell's interval:
 
 The two private arrays hold at most four crossings per iteration. Their sizes
 are fixed, and every used element is written before it is read. Output is a
-two-component vector field of shape `(total, 2)`: two endpoint vectors per
+two-component vector array of shape `(total, 2)`: two endpoint vectors per
 segment. No atomic is needed for those writes.
 
 Unlike a fetch-and-add append, scanning fixes output order by input cell order.

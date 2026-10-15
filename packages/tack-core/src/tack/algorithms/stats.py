@@ -106,7 +106,7 @@ def _prefix(data, n):
     if n == data.size:
         return data
     from tack.algorithms.copy import copy
-    head = tack.field(dtype=data.dtype, shape=(n,))
+    head = tack.empty((n,), data.dtype)
     copy(data, head, n)
     return head
 
@@ -133,7 +133,7 @@ def var(data, n=None):
         # An integer sum wraps (2^62 four times is 0): the values convert
         # first, as every other term does.
         mean_val = _terms(_converted, n, data).sum() / n
-    terms = tack.field(dtype=_precision(data), shape=(n,))
+    terms = tack.empty((n,), _precision(data))
     _squared_diffs(data, mean_val, 1.0, terms, n)
     return terms.sum() / n
 
@@ -146,7 +146,7 @@ def std(data, n=None):
 
 def _terms(kernel, n, *fields):
     """``kernel``'s terms over the first n elements, in the fields' precision."""
-    terms = tack.field(dtype=_precision(*fields), shape=(n,))
+    terms = tack.empty((n,), _precision(*fields))
     kernel(*fields, 1.0, terms, n)
     return terms
 
@@ -188,9 +188,9 @@ def count_nonzero(data, n=None):
     n, data = _count(n, data)
     if n == 0:
         return 0
-    flags = tack.field(dtype=tack.i32, shape=(n,))
+    flags = tack.empty((n,), tack.i32)
     _nonzero(data, flags, n)
-    return int(exclusive_scan(flags, tack.field(dtype=tack.i64, shape=(n,)), n))
+    return int(exclusive_scan(flags, tack.empty((n,), tack.i64), n))
 
 
 def dot(a, b, n=None):
@@ -216,7 +216,7 @@ def histogram(data, bins=10, range=None, n=None):
         n: number of elements (default: data.size)
 
     Returns:
-        (counts, bin_edges) where counts is a tack.field of i32,
+        (counts, bin_edges) where counts is a Tack array of i32,
         bin_edges is a numpy array of (bins + 1) float64 edges.
     """
     import numpy as np
@@ -247,7 +247,7 @@ def histogram(data, bins=10, range=None, n=None):
     bin_width = (hi - lo) / bins
     inv_bw = 1.0 / bin_width
 
-    counts = tack.field(dtype=tack.i32, shape=(bins,))
+    counts = tack.empty((bins,), tack.i32)
     counts.fill(0)
     _histogram_kernel(data, counts, lo, inv_bw, bins, n)
 

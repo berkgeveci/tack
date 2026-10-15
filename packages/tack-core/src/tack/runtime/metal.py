@@ -151,7 +151,7 @@ class MetalBuffer(DeviceBuffer):
         """Wait for queued kernels: they may be reading or writing this memory."""
         self._sync()
 
-    # Reading waits for queued command buffers, so `Field.to_numpy_async`
+    # Reading waits for queued command buffers, so `Array.numpy_async`
     # reads in a worker thread. Metal needs no per-thread binding.
     waits_off_thread = True
 
@@ -481,7 +481,7 @@ class MetalBackend(Backend):
         "Metal's own allocations are host-addressable, but not the reverse: "
         "wrapping a host pointer as an MTLBuffer without copying needs a "
         "page-aligned address, which host allocations only get by accident "
-        "of size. Use tack.field() + from_numpy(), or "
+        "of size. Use tack.array(source) to copy, or "
         "tack.from_dlpack(source, copy=True)."
     )
 
@@ -544,7 +544,7 @@ class MetalBackend(Backend):
         error surfaces here, at the next host access, rather than at its call.
 
         The wait itself is outside ``_batch_lock``, so other threads keep
-        launching while one waits: `Field.to_numpy_async` reads in a worker
+        launching while one waits: `Array.numpy_async` reads in a worker
         thread, and an event loop that launches meanwhile would otherwise
         block on the lock until the read was done. Launches only remove
         command buffers from the front (`_wait_oldest`), so the ones waited
@@ -600,8 +600,8 @@ class MetalBackend(Backend):
             raise TypeError(
                 f"the Metal backend wraps an MTLBuffer object, not "
                 f"{type(ptr).__name__}. An address cannot be turned back "
-                f"into an MTLBuffer; allocate with tack.field() and copy "
-                f"into it with from_numpy().")
+                f"into an MTLBuffer; allocate with tack.empty() and copy "
+                f"into it with tack.copyto().")
         buf = MetalBuffer.__new__(MetalBuffer)
         buf._sync = _synchronize_all
         buf._shared = True       # another library's buffer, read without Tack
@@ -723,7 +723,7 @@ class MetalBackend(Backend):
             return empty_reduction(op)
         if field.dtype is not f32:
             # Fall back to numpy for non-f32
-            return reduce_numpy(field.to_numpy(), op)
+            return reduce_numpy(field.numpy(), op)
         n = int(np.prod(field.shape))
         if n >= _MAX_LAUNCH:
             # The kernel holds the count and its thread position in 32 bits.

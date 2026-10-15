@@ -58,10 +58,10 @@ def mandelbrot(pixels, max_iter, width, height):
             pixels[idx] = float(max_iter)
 
 
-pixels = tack.empty(dtype=tack.f32, shape=(WIDTH * HEIGHT,))
+pixels = tack.empty((WIDTH * HEIGHT,))
 mandelbrot(pixels, MAX_ITER, WIDTH, HEIGHT)
 
-data = pixels.to_numpy().reshape(HEIGHT, WIDTH)
+data = pixels.numpy().reshape(HEIGHT, WIDTH)
 
 # Statistics
 in_set = np.sum(data >= MAX_ITER)

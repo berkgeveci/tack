@@ -35,12 +35,12 @@ def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
     data = td.uniform_grid((3, 2, 2), spacing=(0.5, 1.0, 1.0))
     xyz = data.positions()                      # one upload boundary for this example
-    values = tack.empty(tack.f32, shape=(data.num_points,))
-    values.from_numpy((xyz[:, 0] + 2 * xyz[:, 1] + 3 * xyz[:, 2]).astype(np.float32))
+    values = tack.empty((data.num_points,))
+    tack.copyto(values, (xyz[:, 0] + 2 * xyz[:, 1] + 3 * xyz[:, 2]).astype(np.float32))
     data.fields["temperature"] = td.Field(td.H1(data), values)
     # --8<-- [start:subset]
     data.sets["right"] = td.Set(data, "cells", [1])
-    means = tack.zeros(tack.f32, shape=(data.num_cells,))
+    means = tack.zeros((data.num_cells,))
     td.for_each(corner_mean, data, "right", data.fields["temperature"], means)
     # Only cell 1 is written. Cell 0 retains its initialized zero.
     # --8<-- [end:subset]
@@ -48,7 +48,7 @@ def run(arch="cpu", check=False):
     faces = data.topology.faces()               # derive incidence once
     geometry = td.face_geometry(data)
     centers = td.face_centers(data)
-    flux_values = tack.empty(tack.f32, shape=(faces.num_faces,))
+    flux_values = tack.empty((faces.num_faces,))
     td.for_each(integrated_flux, data, "faces", centers.values,
                 geometry.normal.values, geometry.area.values, flux_values)
     flux = td.Field(td.Values(data, "faces", oriented=True), flux_values)
@@ -57,16 +57,16 @@ def run(arch="cpu", check=False):
     # For v = (x,y,z), net_outflow / volume is the divergence 3.
     # --8<-- [end:balance]
     if check:
-        np.testing.assert_allclose(means.to_numpy(), [0, 3.25])
-        np.testing.assert_allclose(volume.values.to_numpy(), [0.5, 0.5])
-        np.testing.assert_allclose(net_outflow.values.to_numpy(), [1.5, 1.5], atol=1e-6)
+        np.testing.assert_allclose(means.numpy(), [0, 3.25])
+        np.testing.assert_allclose(volume.values.numpy(), [0.5, 0.5])
+        np.testing.assert_allclose(net_outflow.values.numpy(), [1.5, 1.5], atol=1e-6)
         boundary = td.boundary_faces(data)
-        np.testing.assert_allclose(flux_values.to_numpy()[boundary.ids.to_numpy()].sum(), 3.0)
-        all_means = tack.empty(tack.f32, shape=(data.num_cells,))
+        np.testing.assert_allclose(flux_values.numpy()[boundary.ids.numpy()].sum(), 3.0)
+        all_means = tack.empty((data.num_cells,))
         td.for_each(corner_mean, data, "cells", data.fields["temperature"], all_means)
-        np.testing.assert_allclose(all_means.to_numpy(), [2.75, 3.25])
-    print(f"Mesh kernels: selected means {means.to_numpy()}; "
-          f"integrated outflow {net_outflow.values.to_numpy()}")
+        np.testing.assert_allclose(all_means.numpy(), [2.75, 3.25])
+    print(f"Mesh kernels: selected means {means.numpy()}; "
+          f"integrated outflow {net_outflow.values.numpy()}")
 
 
 if __name__ == "__main__":

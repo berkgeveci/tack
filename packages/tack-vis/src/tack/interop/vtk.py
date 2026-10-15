@@ -1,9 +1,9 @@
 """tack.interop.vtk — Zero-copy interop between VTK arrays and Tack fields.
 
-    from tack.interop.vtk import vtk_to_field, field_to_vtk
+    from tack.interop.vtk import vtk_to_array, array_to_vtk
 
-    field = vtk_to_field(vtk_array)   # VTK  -> Tack
-    array = field_to_vtk(field)       # Tack -> VTK
+    field = vtk_to_array(vtk_array)   # VTK  -> Tack
+    array = array_to_vtk(field)       # Tack -> VTK
 
 Both directions share memory rather than copying, on the host and on the
 device, and each side keeps the other alive for as long as it is needed.
@@ -23,8 +23,8 @@ interleaved* arrays -- ``flying_edges`` returns points as ``(n*3,)``, and
 ``compute_normals`` indexes ``points[i * 3 + c]``. For those, ask for the
 flat form explicitly:
 
-    points = vtk_to_field(vtk_points, flatten=True)   # (n*3,)
-    array  = field_to_vtk(points, n_components=3)     # back to n x 3
+    points = vtk_to_array(vtk_points, flatten=True)   # (n*3,)
+    array  = array_to_vtk(points, n_components=3)     # back to n x 3
 
 Requirements
 ------------
@@ -51,7 +51,7 @@ be shared.
 
 import tack
 
-__all__ = ["dataset_to_vtk", "field_to_vtk", "init_level_zero", "vtk_to_dataset", "vtk_to_field"]
+__all__ = ["array_to_vtk", "dataset_to_vtk", "init_level_zero", "vtk_to_array", "vtk_to_dataset"]
 
 
 def _dlpack_support():
@@ -107,7 +107,7 @@ def _require_shared_level_zero_context(dlpack_support):
             "instead of tack.init(arch=tack.level_zero).")
 
 
-def vtk_to_field(vtk_array, flatten=False):
+def vtk_to_array(vtk_array, flatten=False):
     """Wrap a vtkDataArray as a Tack field, without copying.
 
     Args:
@@ -142,7 +142,7 @@ def vtk_to_field(vtk_array, flatten=False):
     return field
 
 
-def field_to_vtk(field, n_components=None, name=None):
+def array_to_vtk(field, n_components=None, name=None):
     """Wrap a Tack field as a vtkDataArray, without copying.
 
     Args:
@@ -164,7 +164,7 @@ def field_to_vtk(field, n_components=None, name=None):
     """
     # Work out the layout before reaching for VTK, so a shape mistake
     # reports itself rather than being masked by a missing-VTK error.
-    if hasattr(field, '_vector_n') and not field._legacy_layout:
+    if hasattr(field, '_vector_n'):
         width = field._vector_n
         if n_components is not None and n_components != width:
             raise ValueError(
@@ -224,11 +224,11 @@ def _array_to_field(array, float_dtype):
     dtype = float_dtype if values.dtype.kind == "f" else from_numpy_dtype(values.dtype)
     n = array.GetNumberOfComponents()
     if n == 1:
-        field = tack.field(dtype, shape=(values.shape[0],))
+        field = tack.empty((values.shape[0],), dtype)
     else:
-        field = tack.Vector.field(n, dtype, shape=(values.shape[0],))
+        field = tack.empty((values.shape[0],), tack.vec(n, dtype))
     if values.size:
-        field.from_numpy(np.ascontiguousarray(values).astype(dtype.numpy_dtype))
+        tack.copyto(field, np.ascontiguousarray(values).astype(dtype.numpy_dtype))
     return field
 
 
@@ -463,23 +463,23 @@ def dataset_to_vtk(data):
     elif grid and isinstance(coordinates, CartesianProduct):
         grid = vtkRectilinearGrid()
         grid.SetDimensions(*coordinates.dims)
-        grid.SetXCoordinates(numpy_to_vtk(coordinates.x.to_numpy(), deep=1))
-        grid.SetYCoordinates(numpy_to_vtk(coordinates.y.to_numpy(), deep=1))
-        grid.SetZCoordinates(numpy_to_vtk(coordinates.z.to_numpy(), deep=1))
+        grid.SetXCoordinates(numpy_to_vtk(coordinates.x.numpy(), deep=1))
+        grid.SetYCoordinates(numpy_to_vtk(coordinates.y.numpy(), deep=1))
+        grid.SetZCoordinates(numpy_to_vtk(coordinates.z.numpy(), deep=1))
     elif isinstance(topology, UnstructuredTopology):
         cell_array = vtkCellArray()
         cell_array.SetData(
-            numpy_to_vtkIdTypeArray(topology.offsets.to_numpy().astype(np.int64), deep=1),
-            numpy_to_vtkIdTypeArray(topology.connectivity.to_numpy().astype(np.int64), deep=1))
+            numpy_to_vtkIdTypeArray(topology.offsets.numpy().astype(np.int64), deep=1),
+            numpy_to_vtkIdTypeArray(topology.connectivity.numpy().astype(np.int64), deep=1))
         grid = vtkUnstructuredGrid()
-        grid.SetCells(numpy_to_vtk(topology.types.to_numpy().astype(np.uint8), deep=1),
+        grid.SetCells(numpy_to_vtk(topology.types.numpy().astype(np.uint8), deep=1),
                       cell_array)
         points = vtkPoints()
         points.SetData(numpy_to_vtk(data.positions(), deep=1))
         grid.SetPoints(points)
     elif isinstance(topology, (PolygonalTopology, PolylineTopology)):
         polygons = isinstance(topology, PolygonalTopology)
-        offsets, loops = (a.to_numpy() for a in (topology.loops() if polygons
+        offsets, loops = (a.numpy() for a in (topology.loops() if polygons
                                                   else topology.lines()))
         cells = vtkCellArray()
         cells.SetData(numpy_to_vtkIdTypeArray(offsets.astype(np.int64), deep=1),
@@ -494,7 +494,7 @@ def dataset_to_vtk(data):
         # VTK keeps a face per cell, outward for that cell: side 1's copy is
         # the face walked backwards from the same first point.
         face_offsets, face_points, cell_offsets, cell_faces, sides = topology.arrays()
-        point_offsets, point_ids = (a.to_numpy() for a in topology.cell_points())
+        point_offsets, point_ids = (a.numpy() for a in topology.cell_points())
         copies, copy_offsets = [], [0]
         for f, side in zip(cell_faces, sides):
             ring = face_points[face_offsets[f]:face_offsets[f + 1]]

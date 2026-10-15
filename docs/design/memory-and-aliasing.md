@@ -18,9 +18,9 @@ this page explains how the implementation meets them and what that costs.
 | Attribute | Meaning |
 |---|---|
 | `dtype` | A `ScalarType` (`tack.f32`, `tack.u8`, ...) |
-| `shape` | A tuple of dimensions; what kernels and `to_numpy()` see |
+| `shape` | A tuple of dimensions; what kernels and `numpy()` see |
 | `_buffer` | The `DeviceBuffer` that owns, or refers to, the storage |
-| `_writable` | Whether the storage may be written: by `from_numpy()` and `fill()` on the host, and by kernel stores and atomics |
+| `_writable` | Whether the storage may be written: by `tack.copyto()` and `fill()` on the host, and by kernel stores and atomics |
 
 Everything that touches memory goes through the buffer. `DeviceBuffer` is a
 small abstract interface — `from_numpy()`, `to_numpy()`, `read_range()`,
@@ -36,7 +36,7 @@ Why a separate buffer rather than a `Field` subclass per backend? Because a
 field's *shape* is a property of how kernels index the data, while the
 *buffer* is a property of where the bytes live. Separating them lets
 `Field.reshape()` produce a new field over the same buffer without knowing
-anything about the backend, and lets `field_from_ptr()` describe memory
+anything about the backend, and lets `array_from_ptr()` describe memory
 Tack did not allocate with the same `Field` class.
 
 ### The five buffers
@@ -50,7 +50,7 @@ Tack did not allocate with the same `Field` class.
 | Level Zero | `L0Buffer` | `zeMemAllocDevice` (at least one byte) | zeros, from a queued device fill | `zeCommandListAppendMemoryCopy` on the backend's queue, from a snapshot of the array / and a wait |
 
 The contract makes a new field's contents unspecified until a kernel,
-`from_numpy` or `fill` writes them; `tack.zeros`, `ones` and `full` are the
+`tack.copyto` or `fill` writes them; `tack.zeros`, `ones` and `full` are the
 calls that fill. The GPU backends happen to zero new buffers, and only
 Metal declares it (`starts_zeroed`), so `tack.zeros` fills on the others
 again. The CPU leaves a new field untouched.
@@ -69,7 +69,7 @@ time. See [CPU Threading Policy](cpu-threading.md#counting-cores-and-numa).
 **Metal.** Apple Silicon memory is unified, so a `MetalBuffer` keeps both
 the `MTLBuffer` and a NumPy view (`_view`) made from
 `contents().as_buffer(nbytes)`. Host transfers are memory copies within the
-same physical memory; there is no DMA. `to_numpy()` still returns a copy.
+same physical memory; there is no DMA. `numpy()` still returns a copy.
 
 **CUDA, HIP, Level Zero.** The buffer holds a device pointer and transfers
 are explicit. `from_numpy()` makes the source C-contiguous in the field's
@@ -80,10 +80,10 @@ native fill where the pattern allows one (a byte memset, CUDA's and HIP's
 16- and 32-bit memsets, Level Zero's pattern fill), otherwise one element
 written from the host and doubled by device-to-device copies.
 
-`Field.from_numpy()` validates before the buffer is involved: it converts
-the array to the field's dtype if needed, raises `ValueError` on a shape
-mismatch, and calls `_check_writable()`, which raises `RuntimeError` for a
-read-only field.
+`tack.copyto()` validates before the buffer is involved: it converts
+the array to the field's dtype if needed, raises `ValueError` when its shape
+neither matches nor broadcasts to the field's `numpy()` shape, and calls
+`_check_writable()`, which raises `RuntimeError` for a read-only field.
 
 ### Views and reshape
 
@@ -93,7 +93,7 @@ checks that the element count matches (`ValueError` otherwise) and copies
 [Interoperability](interoperability.md)), the reshaped field holds it too —
 otherwise dropping the original would release memory the view still uses.
 
-The buffer keeps the shape it was allocated with, so `Field.to_numpy()`
+The buffer keeps the shape it was allocated with, so `Field.numpy()`
 reshapes the buffer's result to the field's own shape, and the CPU and
 Metal buffers' `from_numpy()` reshape the incoming array to the buffer's
 shape before copying (the element count was already checked against the
@@ -101,7 +101,7 @@ field's shape). `reshape` is the
 only view operation; there is no slicing, so every view of a buffer covers
 all of it.
 
-`tack.empty(dtype=tack.vec(n, dtype), shape=shape)` allocates a flat buffer of
+`tack.empty(shape, tack.vec(n, dtype))` allocates a flat buffer of
 `prod(shape) * n` elements and records `_vector_n` and `_logical_shape` on
 the field. The storage is ordinary; the vector-ness is metadata that kernel
 dispatch uses for scalarization.
@@ -115,7 +115,7 @@ three origins, and the backends encode them slightly differently.
 flowchart TD
     A["tack.empty() / empty_like() / array() / zeros()"] -->|backend.allocate_field| OWN["Owned buffer<br/>(_owned absent, read as True)"]
     B["tack.array_from_ptr(ptr, ...)"] -->|"memory_space() check,<br/>backend.wrap_ptr()"| WRAP["Wrapped buffer<br/>_owned = False"]
-    C["tack.from_dlpack(x)"] -->|"dlpack_to_field()<br/>→ field_from_ptr()"| WRAP
+    C["tack.from_dlpack(x)"] -->|"dlpack_to_field()<br/>→ array_from_ptr()"| WRAP
     C -->|attaches| HOLD["_CapsuleHold<br/>on the Field"]
     OWN --> F["Field"]
     WRAP --> F
@@ -174,9 +174,9 @@ as the field — and every reshaped view of it — is in use. The contract
 states this as a caller constraint; violating it is undefined behavior, not
 an error Tack can detect.
 
-`field_from_ptr()` defaults to `writable=False`, and a read-only DLPack
+`array_from_ptr()` defaults to `writable=False`, and a read-only DLPack
 tensor imports as a non-writable field. `_writable` guards the host-side
-`from_numpy()` and `fill()` (`RuntimeError`) and kernel dispatch. Each
+`tack.copyto()` and `fill()` (`RuntimeError`) and kernel dispatch. Each
 variant records, in `KernelVariant.written_fields`, the index and name of
 every field argument the kernel may store to or use as an atomic target,
 from `written_field_params` (all of them when a store can't be traced).
@@ -189,7 +189,7 @@ a store the analysis cannot trace makes every field count as written.
 ### Memory-space validation
 
 A pointer of the wrong kind — a host address handed to the CUDA backend —
-would make a kernel fault inside the driver. So `field_from_ptr()` asks the
+would make a kernel fault inside the driver. So `array_from_ptr()` asks the
 backend before wrapping, whatever form the pointer arrives in:
 
 ```python
@@ -245,9 +245,9 @@ Tack could check. The usual way to get there is switching backends:
 
 ```python
 tack.init(arch=tack.cuda)
-f = tack.empty(dtype=tack.f32, shape=(64,))
+f = tack.empty((64,))
 tack.init(arch=tack.cpu)   # the CUDA backend, and its context, are dropped
-f.to_numpy()               # must not touch the dead pointer
+f.numpy()                  # must not touch the dead pointer
 ```
 
 A buffer cannot discover this from its own pointer, so it has to be told.
@@ -286,9 +286,9 @@ queue them and return (see
 so a buffer can be named by launches that have not run yet. Three rules
 keep that invisible to a program that uses only Tack:
 
-- **Host access waits or queues.** Reads (`to_numpy`, `read_range`, host
+- **Host access waits or queues.** Reads (`numpy`, `read_range`, host
   indexing, reductions) wait for the launches before them. On CUDA, HIP and
-  Level Zero, writes (`from_numpy`, `fill`) are queued behind them; on
+  Level Zero, writes (`copyto`, `fill`) are queued behind them; on
   Metal, whose buffers are host memory, every `MetalBuffer` method waits
   first.
 - **Frees are ordered.** A field Python drops is freed after the launches
@@ -352,10 +352,10 @@ contract baseline. The patterns that trigger it are ordinary:
 
 - **Views.** `reshape()` is how a flat buffer is seen as 2-D and back, and
   the interop layer hands out reshaped views of imported arrays
-  (`vtk_to_field(..., flatten=True)`).
+  (`vtk_to_array(..., flatten=True)`).
 - **The same field twice.** An in-place update `f(a, a)` is ordinary
   Python.
-- **Imported memory has no identity.** Two `field_from_ptr()` or
+- **Imported memory has no identity.** Two `array_from_ptr()` or
   `from_dlpack()` calls over overlapping external memory produce distinct
   `Field` objects with distinct buffers. Object identity says nothing about
   storage.
@@ -572,10 +572,10 @@ would avoid the per-dispatch check, has not been tried.
 |---|---|---|---|
 | Fresh allocation | Contents unspecified until written; `tack.zeros`, `ones`, `full` fill | `tack.Array`, `Field.fill` | — |
 | Queued launches | A field outlives the queued launches that use it; memory handed outside Tack completes its launches before they return | stream-ordered or deferred frees, `DeviceBuffer.share()` | — |
-| Host transfer shape | `from_numpy` shape must equal `field.shape` | `Field.from_numpy` | `ValueError` |
-| Read-only host writes | `from_numpy`/`fill` refused when `_writable` is false | `Field._check_writable` | `RuntimeError` |
+| Host transfer shape | `copyto` input must have the `numpy()` shape or broadcast to it | `tack.copyto` | `ValueError` |
+| Read-only host writes | `copyto`/`fill` refused when `_writable` is false | `Field._check_writable` | `RuntimeError` |
 | Read-only kernel writes | A read-only field bound to a parameter the kernel may store to is refused, on every dispatch | `check_writable_fields` | `ValueError` |
-| Pointer kind | Pointers must be device addresses where the backend distinguishes | `field_from_ptr` | `TypeError` (not an address), `ValueError` (wrong space) |
+| Pointer kind | Pointers must be device addresses where the backend distinguishes | `array_from_ptr` | `TypeError` (not an address), `ValueError` (wrong space) |
 | Dead CUDA context | Buffer refuses to touch its memory | `CUDABuffer._live` | `RuntimeError` |
 | Atomic alignment | Natural alignment, checked on every dispatch | `check_atomic_alignment` | `ValueError` |
 | Overlapping fields | Program order within an iteration | code generation (no `noalias`/`restrict`; Metal argument buffer) | — |

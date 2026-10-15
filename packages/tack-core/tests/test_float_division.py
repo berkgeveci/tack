@@ -36,8 +36,8 @@ def _divmod(a, b, out):
 
 def _field(values, dtype):
     values = np.asarray(values, dtype=dtype.numpy_dtype)
-    field = tack.field(dtype, values.shape)
-    field.from_numpy(values)
+    field = tack.empty(values.shape, dtype)
+    tack.copyto(field, values)
     return field
 
 
@@ -90,9 +90,9 @@ def _finite_pairs(dtype):
 
 def _check_pairs(pairs, dtype):
     a, b = (_field(pairs[:, i], dtype) for i in range(2))
-    out = tack.field(dtype, (len(pairs), 4))
+    out = tack.empty((len(pairs), 4), dtype)
     _divmod(a, b, out)
-    _assert_results(out.to_numpy(), _oracle(pairs[:, 0], pairs[:, 1], dtype))
+    _assert_results(out.numpy(), _oracle(pairs[:, 0], pairs[:, 1], dtype))
 
 
 def test_f32_finite_boundaries_and_large_quotients(backend):
@@ -131,7 +131,7 @@ def test_signed_zero_expressions_and_nan_guards(backend):
 
     x = np.asarray([0.0, -0.0, np.nan, 1.0, -1.0], dtype=np.float32)
     y = np.asarray([3.0, -3.0, 2.0, np.nan, np.inf], dtype=np.float32)
-    out = tack.field(tack.f32, (len(x), 6))
+    out = tack.empty((len(x), 6))
     expressions(_field(x, tack.f32), _field(y, tack.f32), out)
     with np.errstate(all='ignore'):
         qneg, rneg = np.divmod(-x, y)
@@ -139,7 +139,7 @@ def test_signed_zero_expressions_and_nan_guards(backend):
         qzero, rzero = np.divmod(np.float32(-0.0), y)
     expected = np.column_stack([qneg, rneg, np.where(y != 0, q, np.float32(12)),
                                 np.where(x.astype(bool), r, np.float32(13)), qzero, rzero])
-    _assert_results(out.to_numpy(), expected)
+    _assert_results(out.numpy(), expected)
 
 
 def _mixed_values(dtype):
@@ -154,9 +154,9 @@ def _check_mixed(left_type, right_type, result_type):
     values = list(itertools.product(_mixed_values(left_type), _mixed_values(right_type)))
     a = _field([x for x, _ in values], left_type)
     b = _field([y for _, y in values], right_type)
-    out = tack.field(result_type, (len(values), 4))
+    out = tack.empty((len(values), 4), result_type)
     _divmod(a, b, out)
-    _assert_results(out.to_numpy(), _oracle(a.to_numpy(), b.to_numpy(), result_type))
+    _assert_results(out.numpy(), _oracle(a.numpy(), b.numpy(), result_type))
 
 
 @pytest.mark.parametrize('left_type,right_type', F32_PAIRS, ids=lambda t: t.name)
@@ -192,14 +192,14 @@ def test_operands_evaluate_once_in_order_and_zero_guards(backend):
     b_values = np.asarray([3.0, 3.0, 0.0, -0.0], dtype=np.float32)
     a, b = _field(a_values, tack.f32), _field(b_values, tack.f32)
     state = _field(np.zeros(4, dtype=np.int32), tack.i32)
-    out = tack.field(tack.f32, (4, 4))
+    out = tack.empty((4, 4))
     guarded(a, b, state, out)
     expected = np.array([[8.0 // 5.0, 10.0 % 7.0, 7.0 // 3.0, 7.0 % 3.0],
                          [-6.0 // 5.0, -4.0 % 7.0, -7.0 // 3.0, -7.0 % 3.0],
                          [123.0, 456.0, 789.0, 321.0],
                          [123.0, 456.0, 789.0, 321.0]], dtype=np.float32)
-    np.testing.assert_array_equal(out.to_numpy(), expected)
-    np.testing.assert_array_equal(state.to_numpy(), [4, 4, 0, 0])
+    np.testing.assert_array_equal(out.numpy(), expected)
+    np.testing.assert_array_equal(state.numpy(), [4, 4, 0, 0])
 
 
 def test_destination_f64_does_not_widen_f32_operations(f64_backend):
@@ -213,26 +213,26 @@ def test_destination_f64_does_not_widen_f32_operations(f64_backend):
 
     a = _field([2**30], tack.f32)
     b = _field([3.0], tack.f32)
-    out = tack.field(tack.f64, (1, 4))
+    out = tack.empty((1, 4), tack.f64)
     precision(a, b, out)
-    q32, r32 = np.divmod(a.to_numpy(), b.to_numpy())
-    q64, r64 = np.divmod(a.to_numpy().astype(np.float64), b.to_numpy().astype(np.float64))
+    q32, r32 = np.divmod(a.numpy(), b.numpy())
+    q64, r64 = np.divmod(a.numpy().astype(np.float64), b.numpy().astype(np.float64))
     expected = np.column_stack([q32, r32, q64, r64])
     assert expected[0, 0] != expected[0, 2]
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+    np.testing.assert_array_equal(out.numpy(), expected)
 
 
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
 def test_annotations_keep_floating_result_types(dtype):
     tack.init(arch=tack.cpu)
     a, b = _field([7.5], dtype), _field([3.0], dtype)
-    out = tack.field(dtype, (1, 4))
+    out = tack.empty((1, 4), dtype)
     function, _ = _prepare_ir(_divmod, (a, b, out))
     operations = [n for n in walk_ir(function)
                   if isinstance(n, ir.IRBinOp) and n.op in ('//', '%')]
     assert len(operations) == 4
     assert all(n.dtype is dtype for n in operations)
-    integer_args = _field([7], tack.i32), _field([3], tack.i32), tack.field(tack.i32, (1, 4))
+    integer_args = _field([7], tack.i32), _field([3], tack.i32), tack.empty((1, 4), tack.i32)
     integer_function, _ = _prepare_ir(_divmod, integer_args)
     integer_operations = [n for n in walk_ir(integer_function)
                           if isinstance(n, ir.IRBinOp) and n.op in ('//', '%')]
@@ -248,7 +248,7 @@ def test_generators_keep_floating_result_types_and_compile_opencl(dtype, generat
         pytest.skip('MSL has no f64')
     tack.init(arch=tack.cpu)
     a, b = _field([7.5], dtype), _field([3.0], dtype)
-    out = tack.field(dtype, (1, 4))
+    out = tack.empty((1, 4), dtype)
     function, _ = _prepare_ir(_divmod, (a, b, out))
     source = generate(function)
     assert f'__tack_floordiv_{dtype.name}__' in source
@@ -271,7 +271,7 @@ def test_generated_cpp_executes_boundaries_and_exceptional_inputs(dtype, generat
     tack.init(arch=tack.cpu)
     pairs = np.concatenate([_finite_pairs(dtype), _exceptional_pairs(dtype)])
     a, b = (_field(pairs[:, i], dtype) for i in range(2))
-    out = tack.field(dtype, (len(pairs), 4))
+    out = tack.empty((len(pairs), 4), dtype)
     function, _ = _prepare_ir(_divmod, (a, b, out))
     source = '\n'.join(line for line in generate(function).splitlines()
                        if not line.startswith('#include'))

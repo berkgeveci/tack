@@ -24,11 +24,11 @@ def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
     # --8<-- [start:run]
     values = tack.array(np.array([-2, 1, -0.5, 3, 0, 2], dtype=np.float32))
-    out = tack.empty(dtype=tack.f32, shape=values.shape)  # capacity for every input
-    count = tack.empty(dtype=tack.i32, shape=(1,))
+    out = tack.empty(values.shape)  # capacity for every input
+    count = tack.empty((1,), tack.i32)
     count.fill(0)
     length = compact_positive(values, out, count, values.size)
-    result = out.to_numpy()[:length]
+    result = out.numpy()[:length]
     # Arrival order is unspecified: compare the values after sorting.
     assert length == 3 and isinstance(length, int)
     np.testing.assert_array_equal(np.sort(result), np.array([1, 2, 3], dtype=np.float32))

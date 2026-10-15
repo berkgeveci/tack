@@ -2,7 +2,7 @@
 
 Material point methods keep material state on particles and use a temporary
 grid to exchange momentum. This fluid-block example is a compact application
-of matrix fields, weighted interpolation and multidimensional atomic scatter.
+of matrix arrays, weighted interpolation and multidimensional atomic scatter.
 
 ![An MPM block falling under gravity](../../assets/tutorials/mpm.png)
 
@@ -14,7 +14,7 @@ method and its history, see the authors' [Taichi MPM project](https://github.com
 
 ## State on particles, scratch on a grid
 
-| Field | Element | Meaning |
+| Array | Element | Meaning |
 |---|---|---|
 | `x` | 2-vector | Particle position |
 | `v` | 2-vector | Particle velocity |
@@ -28,7 +28,7 @@ timestep and material stiffness are `tack.constant` values. Particle count is
 a runtime kernel argument. The constitutive stress is a simple volume-based
 fluid model; this is not the multi-material snow/plasticity model in `mpm99`.
 The first scatter reads `v` and `C` before any kernel writes them, so the
-program fills them with zeros (and `J` with ones): a new field's contents
+program fills them with zeros (and `J` with ones): a new array's contents
 are unspecified.
 
 ## Scatter particle mass and momentum
@@ -55,7 +55,7 @@ that invariant explicitly.
 ## Update the grid, then gather
 
 The grid-update kernel divides momentum by mass at occupied nodes, adds gravity
-and prevents outward velocities near the box edges. The field now holds grid
+and prevents outward velocities near the box edges. The array now holds grid
 velocity. A second interpolation transfers it back to particles:
 
 ```python
@@ -72,8 +72,8 @@ not require atomics. It reads a completed grid.
 --8<-- "docs/examples/mpm.py:loop"
 ```
 
-Clearing the grid is essential: its fields contain temporary contributions for
-one substep. Those fields are reused instead of reallocated. Each stage has one
+Clearing the grid is essential: its arrays contain temporary contributions for
+one substep. Those arrays are reused instead of reallocated. Each stage has one
 parallel loop, with nested stencil loops sequential within an iteration.
 
 ## Check and explore

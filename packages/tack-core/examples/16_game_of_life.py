@@ -26,9 +26,9 @@ tack.init(arch=_arch)
 N = 64
 STEPS = 100
 
-alive = tack.empty(dtype=tack.i32, shape=(N, N))
-count = tack.empty(dtype=tack.i32, shape=(N, N))
-new_alive = tack.empty(dtype=tack.i32, shape=(N, N))
+alive = tack.empty((N, N), tack.i32)
+count = tack.empty((N, N), tack.i32)
+new_alive = tack.empty((N, N), tack.i32)
 
 
 @tack.kernel
@@ -91,7 +91,7 @@ def copy_grid(src, dst, n):
 # Initialize with random state
 np.random.seed(42)
 init_state = (np.random.rand(N, N) > 0.7).astype(np.int32)
-alive.from_numpy(init_state)
+tack.copyto(alive, init_state)
 
 initial_pop = init_state.sum()
 print(f"Game of Life: {N}x{N} grid, {STEPS} generations")
@@ -103,10 +103,10 @@ for step in range(STEPS):
     copy_grid(new_alive, alive, N)
 
     if (step + 1) % 20 == 0:
-        pop = alive.to_numpy().reshape(N, N).sum()
+        pop = alive.numpy().reshape(N, N).sum()
         print(f"  Generation {step+1:>4d}: population = {pop}")
 
-final = alive.to_numpy().reshape(N, N)
+final = alive.numpy().reshape(N, N)
 final_pop = final.sum()
 print(f"\n  Final population: {final_pop}")
 

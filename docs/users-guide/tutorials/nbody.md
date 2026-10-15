@@ -71,7 +71,7 @@ On a GPU it also compares the tiled result with the plain kernel. A CPU check
 alone does not execute shared memory or barriers. The VTK view shows an XY projection
 of 3-D positions and a subset of projected acceleration arrows.
 
-For performance work, compile both kernels first, reuse their fields, time warm
+For performance work, compile both kernels first, reuse their arrays, time warm
 calls at the same `n`, and record the selected device. GPU launches are
 queued, so call `tack.sync()` before reading the clock (see
 [timing](../15-debugging-and-timing.md#measure-first-call-and-warm-time-separately)). Shared memory reduces

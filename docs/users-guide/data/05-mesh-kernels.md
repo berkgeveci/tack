@@ -38,7 +38,7 @@ mesh. A group-local index is not an output cell id on a mixed mesh.
 
 `td.for_each(kernel, data, "cells", *args)` supplies the domain view as the
 first argument. Each `td.Field` in the remaining arguments becomes a matching
-field view. A raw Tack field stays a raw buffer; the kernel is responsible for
+field view. A raw Tack array stays a raw buffer; the kernel is responsible for
 indexing it correctly.
 
 ## Run over a selection and initialize unwritten output

@@ -92,36 +92,36 @@ def show(name, data):
     # Geometry is evaluated through the cells' shape functions; an H1 field too.
     x = data.positions()
     data.fields["height"] = td.Field(td.H1(data), _scalars(x[:, 2] + 0.25 * x[:, 0]))
-    centers = alg.cell_centers(data).values.to_numpy()
+    centers = alg.cell_centers(data).values.numpy()
     data.fields["cell id"] = td.Field(td.Constant(data),
                                       _scalars(np.arange(data.num_cells, dtype=float)))
-    at_centers = alg.values_at_centers(data, data.fields["height"]).values.to_numpy()
+    at_centers = alg.values_at_centers(data, data.fields["height"]).values.numpy()
     print(f"  H1 'height' at the cell centers matches the centers' own height: "
           f"{np.allclose(at_centers, centers[:, 2] + 0.25 * centers[:, 0], atol=1e-5)}")
     # Its gradient: its own basis, and the geometry field's Jacobian.
-    gradient = alg.gradients(data, data.fields["height"]).values.to_numpy()
+    gradient = alg.gradients(data, data.fields["height"]).values.numpy()
     print(f"  its gradient is (0.25, 0, 1) in every cell: "
           f"{np.allclose(gradient, [0.25, 0, 1], atol=1e-5)}")
 
     # Fields on faces and edges.
     normals, areas = alg.face_geometry(data)
     lengths = alg.edge_lengths(data)
-    print(f"  face areas sum to {areas.values.to_numpy().sum():.4g}, "
-          f"edge lengths to {lengths.values.to_numpy().sum():.4g}")
+    print(f"  face areas sum to {areas.values.numpy().sum():.4g}, "
+          f"edge lengths to {lengths.values.numpy().sum():.4g}")
 
     # Two sides of a face: a cell field's jump, and the outward sum back onto cells.
     jump = alg.jump(data, data.fields["cell id"])
-    print(f"  'cell id' jumps across {np.count_nonzero(jump.values.to_numpy())} "
+    print(f"  'cell id' jumps across {np.count_nonzero(jump.values.numpy())} "
           f"interior faces")
-    area_vectors = normals.values.to_numpy() * areas.values.to_numpy()[:, None]
+    area_vectors = normals.values.numpy() * areas.values.numpy()[:, None]
     closed = alg.divergence(data, td.Field(td.Values(data, "faces"), _vectors(area_vectors)))
     print(f"  every cell's outward area vectors sum to zero: "
-          f"{np.allclose(closed.values.to_numpy(), 0, atol=1e-5)}")
+          f"{np.allclose(closed.values.numpy(), 0, atol=1e-5)}")
 
     # The boundary, a face set (a side set).
     boundary = alg.boundary_faces(data)
     print(f"  boundary: {len(boundary)} faces, area "
-          f"{areas.values.to_numpy()[boundary.to_numpy()].sum():.4g}")
+          f"{areas.values.numpy()[boundary.numpy()].sum():.4g}")
     data.fields["area"] = areas
     data.fields["jump"] = jump
     surface = alg.extract_surface(data, boundary)
@@ -129,10 +129,10 @@ def show(name, data):
     # Cell data to points, and the same function in the DG layout.
     data.fields["cell id at points"] = alg.to_points(data, data.fields["cell id"])
     dg = alg.discontinuous(data, data.fields["height"])
-    back = alg.to_points(data, dg).values.to_numpy()
+    back = alg.to_points(data, dg).values.numpy()
     print(f"  'height' as an L2 field: {dg.values.shape[0]} values, one per cell corner; "
           f"averaged back onto the points it is unchanged: "
-          f"{np.allclose(back, data.fields['height'].values.to_numpy(), atol=1e-5)}")
+          f"{np.allclose(back, data.fields['height'].values.numpy(), atol=1e-5)}")
 
     # Filters, reading fields through their spaces.
     iso = td.contour(data, "height", 1.0)
@@ -166,7 +166,7 @@ def explode(data, dg):
     from vtkmodules.vtkCommonDataModel import vtkCellArray, vtkUnstructuredGrid
 
     topology = data.topology
-    connectivity = topology.connectivity.to_numpy()
+    connectivity = topology.connectivity.numpy()
     grid = vtkUnstructuredGrid()
     points = vtkPoints()
     if isinstance(data.geometry.space, td.L2):
@@ -176,11 +176,11 @@ def explode(data, dg):
     points.SetData(numpy_to_vtk(corners, deep=1))
     grid.SetPoints(points)
     cells = vtkCellArray()
-    cells.SetData(numpy_to_vtkIdTypeArray(topology.offsets.to_numpy().astype(np.int64), deep=1),
+    cells.SetData(numpy_to_vtkIdTypeArray(topology.offsets.numpy().astype(np.int64), deep=1),
                   numpy_to_vtkIdTypeArray(np.arange(len(connectivity), dtype=np.int64),
                                           deep=1))
-    grid.SetCells(numpy_to_vtk(topology.types.to_numpy(), deep=1), cells)
-    values = numpy_to_vtk(dg.values.to_numpy(), deep=1)
+    grid.SetCells(numpy_to_vtk(topology.types.numpy(), deep=1), cells)
+    values = numpy_to_vtk(dg.values.numpy(), deep=1)
     values.SetName("dg")
     grid.GetPointData().AddArray(values)
     return grid
@@ -198,14 +198,14 @@ def _write(grid, stem):
 
 
 def _scalars(values):
-    f = tack.empty(tack.f32, shape=(len(values),))
-    f.from_numpy(np.asarray(values, np.float32))
+    f = tack.empty((len(values),))
+    tack.copyto(f, np.asarray(values, np.float32))
     return f
 
 
 def _vectors(values):
-    f = tack.empty(dtype=tack.vec3(tack.f32), shape=(len(values),))
-    f.from_numpy(np.asarray(values, np.float32))
+    f = tack.empty((len(values),), tack.vec3(tack.f32))
+    tack.copyto(f, np.asarray(values, np.float32))
     return f
 
 
@@ -216,25 +216,25 @@ dg = show("mixed", mixed)
 
 # Make the DG field discontinuous: each cell tilts its own values, so cells
 # disagree where they meet, and averaging onto points no longer recovers them.
-offsets = td.L2(mixed).offsets.to_numpy()
-values = dg.values.to_numpy()
+offsets = td.L2(mixed).offsets.numpy()
+values = dg.values.numpy()
 rng = np.random.default_rng(0)
 for c in range(mixed.num_cells):
     values[offsets[c]:offsets[c + 1]] += rng.uniform(-0.3, 0.3)
 dg = td.Field(td.L2(mixed), _scalars(values))
-spread = alg.to_points(mixed, dg).values.to_numpy() - mixed.fields["height"].values.to_numpy()
+spread = alg.to_points(mixed, dg).values.numpy() - mixed.fields["height"].values.numpy()
 print(f"  each cell shifted by up to 0.3: the point averages now differ by up to "
       f"{np.abs(spread).max():.3f}")
 # Each side of each face as its own cell has it: the DG field's own jumps,
 # and an upwind flux through every face, from the side the flow leaves.
-dg_jump = alg.jump(mixed, dg).values.to_numpy()
-height_jump = alg.jump(mixed, mixed.fields["height"]).values.to_numpy()
+dg_jump = alg.jump(mixed, dg).values.numpy()
+height_jump = alg.jump(mixed, mixed.fields["height"]).values.numpy()
 net = alg.divergence(mixed, alg.upwind_flux(mixed, td.Field(td.Constant(mixed),
                      td.ConstantArray(1.0, mixed.num_cells)), (1.0, 0.5, 0.0)))
 print(f"  traces: the DG field jumps by up to {np.abs(dg_jump).max():.3f} across faces, "
       f"the continuous one by {np.abs(height_jump).max():.1e}; an upwind flux of a "
       f"constant leaves every cell with no net outflow: "
-      f"{np.allclose(net.values.to_numpy(), 0, atol=1e-4)}")
+      f"{np.allclose(net.values.numpy(), 0, atol=1e-4)}")
 if args.output:
     _write(explode(mixed, dg), os.path.join(args.output, "mixed_dg"))
 
@@ -252,15 +252,15 @@ print(f"  an order per cell (0 or 1): {adaptive.size} values; "
 # corners, pulled toward its center. The topology is the same, so the cells
 # still know their faces and neighbours; the faces just have no single
 # position any more, which is what per-side traces will be for.
-centers = alg.cell_centers(mixed).values.to_numpy()
-connectivity = mixed.topology.connectivity.to_numpy()
+centers = alg.cell_centers(mixed).values.numpy()
+connectivity = mixed.topology.connectivity.numpy()
 corners = mixed.positions()[connectivity]
 for c in range(mixed.num_cells):
     rows = slice(offsets[c], offsets[c + 1])
     corners[rows] = centers[c] + 0.7 * (corners[rows] - centers[c])
 shrunk = td.DataSet(mixed.topology, td.Field(td.L2(mixed), _vectors(corners)),
                     fields={"height": mixed.fields["height"]})
-gradient = alg.gradients(shrunk, shrunk.fields["height"]).values.to_numpy()
+gradient = alg.gradients(shrunk, shrunk.fields["height"]).values.numpy()
 print(f"\nshrunk: the mixed grid with an L2 geometry, cells at 70%: "
       f"{shrunk.topology.faces().num_faces} faces, the same; 'height' over the "
       f"smaller cells has gradient (0.25, 0, 1) / 0.7 in every cell: "

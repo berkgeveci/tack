@@ -7,22 +7,25 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
-- `tack.Array` names backend storage; `tack.dataset.Field` remains a function
-  space plus coefficients. `tack.empty` allocates uninitialized arrays and
-  `tack.array` copies NumPy arrays or sequences. `vec2`/`vec3`/`vec4`,
-  `mat2`/`mat3`/`mat4`, and general `vec(n)`/`mat(rows, columns)` describe
-  element types for the same constructors. Typed array shape and size count
-  elements; NumPy downloads expand components into trailing dimensions.
-  Copy, conversion, reshape, empty_like, pointer and DLPack interop preserve
-  their documented value/layout semantics. Previous storage constructors
-  remain available, including the old flat host metadata of Vector.field
-  and Matrix.field, while examples use array terminology.
-
-- `tack.empty_like(prototype, dtype=None)` allocates independent, uninitialized
-  storage matching a NumPy array or Tack field. Vector and matrix fields retain
-  their logical shape and component dimensions. No values are read or copied.
+- NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`
+  is a function space plus coefficients, and "field" means only that now.
+  Constructors take the shape first, as NumPy's do: `tack.empty(shape,
+  dtype=f32)`, `zeros`, `ones`, `full(shape, fill_value, dtype=None)`,
+  `arange([start,] stop[, step], dtype=None)`, `empty_like`, `zeros_like`,
+  `ones_like`, `full_like`, `array(obj, dtype=None)`, `asarray`, `concat`
+  and `array_from_ptr(ptr, shape, dtype)`. Any NumPy dtype is accepted
+  where a dtype is (`np.float32`, `"float32"`). Python floats default to
+  f32 and ints to i32 (i64 if a value needs it), since f64 is not on every
+  backend; a NumPy array keeps its dtype. Vectors and matrices are element
+  types: `tack.empty((n,), tack.vec3())`, `vec(n, dtype)`, `mat2`...`mat4`,
+  `mat(rows, columns, dtype)`; `shape` counts elements and `a.numpy()`
+  gives `(*shape, 3)`. Data moves with `a.numpy()` or `np.asarray(a)`,
+  `await a.numpy_async()`, `tack.copyto(a, host)` (strict, as
+  `np.copyto`: the host values have `a.numpy()`'s shape or broadcast to
+  it) and `a.fill(value)`. Arrays also have `ndim`, `nbytes` and
+  `reshape(*shape)` with one `-1`.
 - `asyncio` waits: `await tack.sync_async()` and `await
-  field.to_numpy_async()` wait for the device in a worker thread, so an
+  a.numpy_async()` wait for the device in a worker thread, so an
   application's event loop (trame, Jupyter, a server) keeps running
   while kernels finish; kernel calls themselves are unchanged. On CUDA
   the wait is an event on the context's stream, on Metal the last
@@ -100,9 +103,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
   is a separate kernel decorator and keeps its name.
 
-- **Breaking:** `tack.field_like` is removed. Replace existing calls with
-  `tack.array` to allocate and copy NumPy values; `field_from_numpy` remains
-  a compatibility spelling. Use `empty_like` when only shape and dtype should match.
+- **Breaking:** the old storage API is gone, without deprecation:
+  `tack.field` (use `tack.empty(shape, dtype)`), `field_from_numpy` and
+  `field_like` (`tack.array`), `field_from_ptr` (`array_from_ptr(ptr, shape,
+  dtype)`), `Vector.field` and `Matrix.field` (`tack.empty(shape,
+  tack.vec(n, dtype))`, `tack.mat(...)`), `a.to_numpy()` (`a.numpy()`),
+  `a.from_numpy(x)` (`tack.copyto(a, x)`) and `to_numpy_async`
+  (`numpy_async`). `zeros`, `ones`, `full` and `arange` take NumPy's
+  argument order. The flat host layout of `Vector.field` and `Matrix.field`
+  went with them: a vector array's `shape` counts vectors and its values
+  download and upload as rows, and `copyto` refuses a flat array.
+  `tack.interop.vtk`'s `vtk_to_field` and `field_to_vtk` are
+  `vtk_to_array` and `array_to_vtk`.
   `local_array_like` and `shared_like` remain allocation-only helpers.
 - A scan's small levels are one launch: a level of at most 4096 elements
   on the CPU, or one tile on a GPU backend, is scanned in order by one
@@ -126,7 +138,7 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the rest sleep on, so the `k` of every launch are the same `k`.
   A hot fan-out of two threads on a pool of sixteen cost 11 µs waking
   every worker and costs 4.4.
-- `tack.field` returns uninitialized storage on every backend; `tack.zeros`
+- `tack.empty` returns uninitialized storage on every backend; `tack.zeros`
   is the call that pays for zeros. The CPU backend used to fill every new
   field on the calling thread, which at 5M cells on eight threads of a
   2 GHz Xeon was half of threshold's and cell-to-point's time and grew

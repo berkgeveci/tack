@@ -157,13 +157,13 @@ CASES = [
 @pytest.mark.parametrize("kernel, pick, want", [case[1:] for case in CASES],
                          ids=[case[0].split("  ")[0] for case in CASES])
 def test_field_updates_in_a_sequential_loop(backend, kernel, pick, want, dtype):
-    np_dtype = tack.field(dtype=dtype, shape=(1,)).to_numpy().dtype
-    counter = tack.zeros(dtype=dtype, shape=(6,))
-    total = tack.zeros(dtype=dtype, shape=(6,))
-    x = tack.field(dtype=dtype, shape=(6,))
-    x.from_numpy(np.array([10, 20, 30, 40, 50, 60]).astype(np_dtype))
+    np_dtype = tack.empty((1,), dtype).numpy().dtype
+    counter = tack.zeros((6,), dtype)
+    total = tack.zeros((6,), dtype)
+    x = tack.empty((6,), dtype)
+    tack.copyto(x, np.array([10, 20, 30, 40, 50, 60]).astype(np_dtype))
     kernel(counter, total, x, 6, 0)
-    assert tuple(pick(total.to_numpy(), counter.to_numpy())) == want
+    assert tuple(pick(total.numpy(), counter.numpy())) == want
 
 
 @tack.kernel
@@ -177,12 +177,12 @@ def _drain_queue(counter, total, x, n):
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32], ids=["i32", "f32"])
 def test_while_loop_over_zero_dimensional_fields(backend, dtype):
     """The form it was found in: a queue's head and a running total."""
-    counter = tack.zeros(dtype=dtype, shape=())
-    total = tack.zeros(dtype=dtype, shape=())
-    x = tack.field(dtype=dtype, shape=(6,))
-    x.from_numpy(np.arange(6).astype(x.to_numpy().dtype))
+    counter = tack.zeros((), dtype)
+    total = tack.zeros((), dtype)
+    x = tack.empty((6,), dtype)
+    tack.copyto(x, np.arange(6).astype(x.numpy().dtype))
     _drain_queue(counter, total, x, 6)
-    assert counter.to_numpy() == 6 and total.to_numpy() == 15
+    assert counter.numpy() == 6 and total.numpy() == 15
 
 
 @tack.kernel
@@ -206,11 +206,11 @@ def test_loop_storing_to_workgroup_memory_and_a_field(backend):
         pytest.skip("workgroup memory needs a GPU backend")
     n = 512
     values = np.arange(n, dtype=np.float32) % 7
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(values)
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, values)
     _block_prefix(x, out, n)
-    np.testing.assert_array_equal(out.to_numpy(), np.cumsum(values.reshape(2, 256), axis=1).ravel())
+    np.testing.assert_array_equal(out.numpy(), np.cumsum(values.reshape(2, 256), axis=1).ravel())
 
 
 @tack.kernel
@@ -241,8 +241,8 @@ def test_only_loops_that_store_get_a_body_function(backend):
     cannot reach keep the single function."""
     if get_backend().name != "metal":
         pytest.skip("Metal code generation")
-    x = tack.field(dtype=tack.f32, shape=(8,))
-    out = tack.field(dtype=tack.f32, shape=(8,))
+    x = tack.empty((8,))
+    out = tack.empty((8,))
     for kernel, separate in ((_no_loop, False), (_loop_without_a_store, False),
                              (_loop_with_a_store, True)):
         source = tack.inspect(kernel, x, out, 8, mode="source")

@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 from test_dataset_api import _scalars
 
+import tack
 import tack.dataset as td
 
 try:
@@ -41,12 +42,12 @@ def _edges_of(data):
     """Each face's two point ids, sorted, and its sides, on the host."""
     faces = data.topology.faces()
     if hasattr(faces, "rows"):
-        rows = faces.rows.to_numpy(vectors=True)[:, :2]
+        rows = faces.rows.numpy()[:, :2]
     else:
         t = data.topology
-        offsets, points = t.face_offsets.to_numpy(), t.face_points.to_numpy()
+        offsets, points = t.face_offsets.numpy(), t.face_points.numpy()
         rows = np.array([points[offsets[f]:offsets[f] + 2] for f in range(faces.num_faces)])
-    return rows, faces.sides.to_numpy(vectors=True)
+    return rows, faces.sides.numpy()
 
 
 @pytest.mark.parametrize("mesh", MESHES)
@@ -57,8 +58,8 @@ def test_a_2d_meshs_faces_are_its_edges(backend, mesh):
     edges = data.topology.edges()
     assert data.topology.faces().num_faces == edges.num_edges
     np.testing.assert_array_equal(sorted(map(tuple, np.sort(rows, axis=1))),
-                                  sorted(map(tuple, edges.rows.to_numpy(vectors=True))))
-    boundary = td.boundary_faces(data).to_numpy()
+                                  sorted(map(tuple, edges.rows.numpy())))
+    boundary = td.boundary_faces(data).numpy()
     assert ((sides[:, 2] < 0) == np.isin(np.arange(len(sides)), boundary)).all()
     # Every cell's edges: each interior one shared by two cells.
     assert (sides[:, 0] >= 0).all()
@@ -70,24 +71,24 @@ def test_edge_geometry_and_closed_cells(backend, mesh):
     x = data.positions()
     rows, sides = _edges_of(data)
     normals, lengths = td.face_geometry(data)
-    normals = normals.values.to_numpy(vectors=True)
-    lengths = lengths.values.to_numpy()
+    normals = normals.values.numpy()
+    lengths = lengths.values.numpy()
     d = x[rows[:, 1]] - x[rows[:, 0]]
     np.testing.assert_allclose(lengths, np.linalg.norm(d, axis=1), rtol=1e-6)
     np.testing.assert_allclose(normals[:, 2], 0, atol=1e-6)            # in the plane
     np.testing.assert_allclose((normals * d).sum(1), 0, atol=1e-6)     # across the edge
     # Out of side 0: away from that cell's centroid.
     _, centroids = td.cell_geometry(data)
-    c = centroids.values.to_numpy(vectors=True)[sides[:, 0]]
+    c = centroids.values.numpy()[sides[:, 0]]
     mid = 0.5 * (x[rows[:, 0]] + x[rows[:, 1]])
     assert ((normals * (mid - c)).sum(1) > 0).all()
     # A uniform flow's flux sums to zero through every cell's edges.
     velocity = np.array([0.7, -0.4, 0.0])
     flux = td.Field(td.Values(data, "faces", oriented=True), _scalars(normals @ velocity * lengths))
-    np.testing.assert_allclose(td.divergence(data, flux).values.to_numpy(), 0, atol=1e-5)
+    np.testing.assert_allclose(td.divergence(data, flux).values.numpy(), 0, atol=1e-5)
     # Perot's reconstruction gives the flow back in every cell.
     normal_component = td.Field(td.Values(data, "faces", oriented=True), _scalars(normals @ velocity))
-    np.testing.assert_allclose(td.perot(data, normal_component).values.to_numpy(vectors=True),
+    np.testing.assert_allclose(td.perot(data, normal_component).values.numpy(),
                                np.tile(velocity, (data.num_cells, 1)), atol=1e-5)
 
 
@@ -96,9 +97,9 @@ def test_the_boundary_of_a_2d_mesh_is_lines(backend, mesh):
     data = MESHES[mesh]()
     data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
     outside = td.external_faces(data)
-    assert set(outside.topology.types.to_numpy()) == {3}               # VTK_LINE
+    assert set(outside.topology.types.numpy()) == {3}               # VTK_LINE
     _, lengths = td.face_geometry(data)
-    perimeter = lengths.values.to_numpy()[td.boundary_faces(data).to_numpy()].sum()
+    perimeter = lengths.values.numpy()[td.boundary_faces(data).numpy()].sum()
     x = data.positions()
     span = x.max(0) - x.min(0)
     assert perimeter == pytest.approx(2 * (span[0] + span[1]), rel=1e-6)
@@ -115,13 +116,13 @@ def test_shape_and_polygonal_paths_agree(backend):
     for data in (shape, polygons):
         rows, _ = _edges_of(data)
         by_edge = dict(zip(map(tuple, np.sort(rows, axis=1).tolist()),
-                           td.face_geometry(data).area.values.to_numpy().tolist()))
+                           td.face_geometry(data).area.values.numpy().tolist()))
         lengths.append(by_edge)
     assert lengths[0].keys() == lengths[1].keys()
     np.testing.assert_allclose([lengths[0][k] for k in lengths[0]],
                                [lengths[1][k] for k in lengths[0]], rtol=1e-6)
-    np.testing.assert_allclose(td.cell_geometry(shape).measure.values.to_numpy(),
-                               td.cell_geometry(polygons).measure.values.to_numpy(), rtol=1e-6)
+    np.testing.assert_allclose(td.cell_geometry(shape).measure.values.numpy(),
+                               td.cell_geometry(polygons).measure.values.numpy(), rtol=1e-6)
     with pytest.raises(ValueError, match="not 3D"):
         td.as_polyhedra(shape)
 
@@ -134,8 +135,8 @@ def test_side_1_of_an_edge_is_reflected(backend, mesh):
     faces = MESHES[mesh]().topology.faces()
     if not hasattr(faces, "side_orientation"):
         pytest.skip("the polygonal path records sides per cell face, not orientations")
-    slots = faces.side_slot.to_numpy()
-    orientation = faces.side_orientation.to_numpy()
+    slots = faces.side_slot.numpy()
+    orientation = faces.side_orientation.numpy()
     np.testing.assert_array_equal(orientation & 1, slots)
     np.testing.assert_array_equal(orientation, 3 * slots)
 
@@ -149,16 +150,16 @@ def test_contour_of_l2_data_on_a_2d_mesh(backend):
     shared = td.contour(data, x, 0.5)
     own = td.contour(data, td.discontinuous(data, x), 0.5)
     assert (shared.num_cells, shared.num_points, own.num_cells, own.num_points) == (2, 3, 2, 4)
-    lines = own.positions()[own.topology.connectivity.to_numpy()].reshape(-1, 2, 3)
+    lines = own.positions()[own.topology.connectivity.numpy()].reshape(-1, 2, 3)
     np.testing.assert_allclose(lines, [[[0.5, 0, 0], [0.5, 1, 0]], [[0.5, 1, 0], [0.5, 2, 0]]])
     # The second cell lifted to z = 10: its line stays on it.
     geometry = td.discontinuous(data, data.geometry)
-    corners = geometry.values.to_numpy(vectors=True)
+    corners = geometry.values.numpy()
     corners[4:, 2] += 10.0
-    geometry.values.from_numpy(corners)
+    tack.copyto(geometry.values, corners)
     data.geometry = geometry
     cut = td.contour(data, x, 0.5)
-    lines = cut.positions()[cut.topology.connectivity.to_numpy()].reshape(-1, 2, 3)
+    lines = cut.positions()[cut.topology.connectivity.numpy()].reshape(-1, 2, 3)
     np.testing.assert_allclose(lines[:, :, 2], [[0, 0], [10, 10]])
     sliced = td.slice_plane(data, (0.5, 0.0, 0.0), (1.0, 0.0, 0.0))
     assert sliced.num_cells == 2
@@ -184,7 +185,7 @@ def test_contour_of_varying_l2_orders_on_mixed_2d_shapes(backend):
     space = td.L2(data, order=np.array([1, 0, 1]))
     field = td.Field(space, _scalars([0., 1., 0., 1., 0., 1., 0., 1.]))
     out = td.contour(data, field, 0.5)
-    segments = out.positions()[out.topology.connectivity.to_numpy()].reshape(-1, 2, 3)
+    segments = out.positions()[out.topology.connectivity.numpy()].reshape(-1, 2, 3)
     np.testing.assert_allclose(segments, [[[0.5, 0, 0], [0.5, 0.5, 0]],
                                         [[4.5, 0, 0], [4.5, 1, 0]]], atol=1e-6)
     np.testing.assert_array_equal(td.arrays.to_host(out.fields["cell"].values), [0, 2])

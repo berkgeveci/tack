@@ -37,12 +37,12 @@ tack.init(arch=args.arch)
 
 N = 1024
 
-x = tack.empty(dtype=tack.f32, shape=(N,))
-y = tack.empty(dtype=tack.f32, shape=(N,))
-out = tack.empty(dtype=tack.f32, shape=(N,))
+x = tack.empty((N,))
+y = tack.empty((N,))
+out = tack.empty((N,))
 
-x.from_numpy(np.arange(N, dtype=np.float32))
-y.from_numpy(np.ones(N, dtype=np.float32) * 2.0)
+tack.copyto(x, np.arange(N, dtype=np.float32))
+tack.copyto(y, np.ones(N, dtype=np.float32) * 2.0)
 
 
 @tack.kernel
@@ -54,7 +54,7 @@ def saxpy(x, y, out, alpha, n):
 alpha = 3.0
 saxpy(x, y, out, alpha, N)
 
-tack_result = out.to_numpy()
+tack_result = out.numpy()
 print(f"Tack computed SAXPY: first 5 = {tack_result[:5]}")
 print(f"  (expected: {alpha * np.arange(5, dtype=np.float32) + 2.0})")
 
@@ -181,7 +181,7 @@ dawn.submit(device, [cmd])
 dawn.sync(device)
 
 # Tack reads the same buffer — should see doubled values
-tack_after = out.to_numpy()
+tack_after = out.numpy()
 expected = tack_result * 2.0
 print("\nAfter Dawn compute (double):")
 print(f"  Tack reads: first 5 = {tack_after[:5]}")

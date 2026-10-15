@@ -80,7 +80,7 @@ def face_geometry(data):
     faces = data.topology.faces()
     dtype = data.dtype
     normals = _vectors(faces.num_faces, dtype)
-    areas = tack.field(dtype, shape=(faces.num_faces,))
+    areas = tack.empty((faces.num_faces,), dtype)
     if data.topology.dimension == 2:
         for_each(_edge_geometry, data, "cells", normals, areas)
     elif data.topology.dimension == 1:

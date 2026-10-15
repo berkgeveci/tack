@@ -17,12 +17,12 @@ EXACT = np.float64(0.625095466604667)
 
 
 def _run(kernel, values):
-    src = tack.field(dtype=tack.f64, shape=(values.size,))
-    src.from_numpy(values)
-    out = tack.field(dtype=tack.f64, shape=(values.size,))
+    src = tack.empty((values.size,), tack.f64)
+    tack.copyto(src, values)
+    out = tack.empty((values.size,), tack.f64)
     out.fill(0)
     kernel(src, out, values.size)
-    return out.to_numpy()
+    return out.numpy()
 
 
 def test_direct_expression_keeps_f64(f64_backend):

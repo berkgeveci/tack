@@ -46,12 +46,12 @@ def _check(kernel, values, *scalars):
     _python_reference(kernel)(*expected, *scalars)
     fields = []
     for initial in (values, np.zeros_like(values), np.full_like(values, -99)):
-        field = tack.field(dtype=tack.i32, shape=initial.shape)
-        field.from_numpy(initial)
+        field = tack.empty(initial.shape, tack.i32)
+        tack.copyto(field, initial)
         fields.append(field)
     kernel(*fields, *scalars)
     for field, reference in zip(fields, expected):
-        np.testing.assert_array_equal(field.to_numpy(), reference)
+        np.testing.assert_array_equal(field.numpy(), reference)
 
 
 @pytest.mark.parametrize("expression", [

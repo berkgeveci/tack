@@ -28,11 +28,11 @@ def run(arch="cpu", check=False):
     # --8<-- [end:unstructured]
 
     # --8<-- [start:fields]
-    height = tack.empty(tack.f32, shape=(mesh.num_points,))
-    height.from_numpy(positions[:, 2].copy())
+    height = tack.empty((mesh.num_points,))
+    tack.copyto(height, positions[:, 2].copy())
     mesh.fields["height"] = td.Field(td.H1(mesh), height)            # point data
-    material = tack.empty(tack.f32, shape=(mesh.num_cells,))
-    material.from_numpy(np.array([1.0, 2.0], np.float32))
+    material = tack.empty((mesh.num_cells,))
+    tack.copyto(material, np.array([1.0, 2.0], np.float32))
     mesh.fields["material"] = td.Field(td.Constant(mesh), material)  # cell data
     # --8<-- [end:fields]
     # --8<-- [end:build]
@@ -60,7 +60,7 @@ def run(arch="cpu", check=False):
     mesh.sets["roof"] = td.Set(mesh, "cells", [1])   # a cell Set
     kept = td.threshold(mesh, "material", 1.5, 3.0)  # sets come along
     print(f"boundary: {len(mesh.sets['boundary'])} faces; the roof is cell "
-          f"{kept.sets['roof'].to_numpy()} of the threshold")
+          f"{kept.sets['roof'].numpy()} of the threshold")
     # --8<-- [end:sets]
 
     # --8<-- [start:kernel]
@@ -72,8 +72,8 @@ def run(arch="cpu", check=False):
             out[cells.entity_id(c)] = u.value(c, pc)
             where[cells.entity_id(c)] = cells.position(c, pc)
 
-    values = tack.empty(tack.f32, shape=(mesh.num_cells,))
-    where = tack.empty(dtype=tack.vec3(tack.f32), shape=(mesh.num_cells,))
+    values = tack.empty((mesh.num_cells,))
+    where = tack.empty((mesh.num_cells,), tack.vec3(tack.f32))
     td.for_each(centers, mesh, "cells", mesh.fields["height"], values, where)
     # --8<-- [end:kernel]
 
@@ -94,19 +94,19 @@ def run(arch="cpu", check=False):
             out[cells.entity_id(c)] = total
 
     mesh.topology.faces()                            # the faces kernels walk
-    areas = tack.empty(tack.f32, shape=(mesh.num_cells,))
+    areas = tack.empty((mesh.num_cells,))
     td.for_each(surface_areas, mesh, "cells", areas)
 
     polyhedra = td.as_polyhedra(mesh)                # every cell a polyhedron
-    same = tack.empty(tack.f32, shape=(polyhedra.num_cells,))
+    same = tack.empty((polyhedra.num_cells,))
     td.for_each(surface_areas, polyhedra, "cells", same)
     # --8<-- [end:faces]
 
     # --8<-- [start:lines]
     flow = td.uniform_grid((9, 9, 3), origin=(-1, -1, 0), spacing=(0.25, 0.25, 0.5))
     x = flow.positions()
-    swirl = tack.empty(dtype=tack.vec3(tack.f32), shape=(flow.num_points,))
-    swirl.from_numpy(np.c_[-x[:, 1], x[:, 0], np.zeros(len(x))].astype(np.float32).ravel())
+    swirl = tack.empty((flow.num_points,), tack.vec3(tack.f32))
+    tack.copyto(swirl, np.c_[-x[:, 1], x[:, 0], np.zeros(len(x))])
     flow.fields["velocity"] = td.Field(td.H1(flow), swirl)
     paths = td.streamlines(flow, "velocity", seeds=[[0.5, 0, 0.5], [0, 0.75, 0.5]],
                            step_size=0.05, steps=40)
@@ -115,25 +115,25 @@ def run(arch="cpu", check=False):
 
     if check:
         assert surface.num_cells > 0 and inside.num_cells > 0 and skin.num_cells > 0
-        assert set(skin.topology.types.to_numpy()) <= {9}               # quads
+        assert set(skin.topology.types.numpy()) <= {9}               # quads
         assert cut.num_cells > 0
-        np.testing.assert_allclose(surface.fields["RTData"].values.to_numpy(), 157.0,
+        np.testing.assert_allclose(surface.fields["RTData"].values.numpy(), 157.0,
                                    atol=1e-3)
-        np.testing.assert_allclose(on_points.values.to_numpy()[[0, 4, 8]], [1.0, 1.5, 2.0])
-        np.testing.assert_allclose(on_cells.values.to_numpy(), [0.5, (4 + 1.6) / 5],
+        np.testing.assert_allclose(on_points.values.numpy()[[0, 4, 8]], [1.0, 1.5, 2.0])
+        np.testing.assert_allclose(on_cells.values.numpy(), [0.5, (4 + 1.6) / 5],
                                    rtol=1e-6)
         assert dg.values.shape[0] == 8 + 5
         np.testing.assert_allclose(td.arrays.to_host(slope.values)[0], [0, 0, 1],
                                    atol=1e-6)
         assert len(mesh.sets["boundary"]) == 9                          # 5 + 4 faces
-        np.testing.assert_array_equal(kept.sets["roof"].to_numpy(), [0])
-        np.testing.assert_allclose(values.to_numpy()[0], 0.5)
+        np.testing.assert_array_equal(kept.sets["roof"].numpy(), [0])
+        np.testing.assert_allclose(values.numpy()[0], 0.5)
         np.testing.assert_allclose(td.arrays.to_host(where)[0], [0.5, 0.5, 0.5])
-        np.testing.assert_allclose(areas.to_numpy(), same.to_numpy(), rtol=1e-6)
-        np.testing.assert_allclose(areas.to_numpy()[0], 6.0, rtol=1e-6)
+        np.testing.assert_allclose(areas.numpy(), same.numpy(), rtol=1e-6)
+        np.testing.assert_allclose(areas.numpy()[0], 6.0, rtol=1e-6)
         assert isinstance(paths.topology, td.PolylineTopology) and paths.num_cells == 2
         # Circles at unit angular speed for 40 steps of 0.05: 2 r long.
-        np.testing.assert_allclose(lengths.values.to_numpy(), [2 * 0.5, 2 * 0.75], rtol=2e-3)
+        np.testing.assert_allclose(lengths.values.numpy(), [2 * 0.5, 2 * 0.75], rtol=2e-3)
 
 
 if __name__ == "__main__":

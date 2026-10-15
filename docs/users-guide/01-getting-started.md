@@ -60,7 +60,7 @@ tack.init(arch=tack.cpu)
 n = 1024
 x = tack.array(np.arange(n, dtype=np.float32))
 y = tack.array(np.ones(n, dtype=np.float32) * 2.0)
-out = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty((n,))
 
 # Define a kernel
 @tack.kernel
@@ -72,7 +72,7 @@ def vector_add(x, y, out):
 vector_add(x, y, out)
 
 # Read results back to numpy
-result = out.to_numpy()
+result = out.numpy()
 np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32) + 2.0)
 print(result[:5])  # [2. 3. 4. 5. 6.]
 ```

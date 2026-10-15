@@ -19,7 +19,7 @@ def _get_ir(kernel_fn, *args):
 
 
 def _field(shape=(64,), dtype=tack.f32):
-    return tack.field(dtype=dtype, shape=shape)
+    return tack.empty(shape, dtype)
 
 
 class TestCUDACodeGen:

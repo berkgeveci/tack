@@ -13,9 +13,9 @@ def vector_add(x, y, out):
 
 def _make_fields():
     n = 64
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
     return x, y, out
 
 
@@ -87,8 +87,8 @@ def test_inspect_scalar_args(backend):
             out[i] = x[i] * factor
 
     n = 64
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
     result = tack.inspect(scale, x, out, 2.0, mode="source")
     assert isinstance(result, str)
     assert len(result) > 50
@@ -118,9 +118,9 @@ def test_inspect_rejects_dtypes_dispatch_would(monkeypatch, mode):
     backend = get_backend()
     monkeypatch.setattr(backend, "supported_dtypes",
                         backend.supported_dtypes - {tack.f64})
-    x = tack.field(dtype=tack.f64, shape=(4,))
-    out = tack.field(dtype=tack.f64, shape=(4,))
-    x.from_numpy(np.zeros(4))
+    x = tack.empty((4,), tack.f64)
+    out = tack.empty((4,), tack.f64)
+    tack.copyto(x, np.zeros(4))
 
     @tack.kernel
     def copy(x, out):
@@ -156,8 +156,8 @@ def test_inspect_takes_the_backends_texture_decision(monkeypatch):
         for i in range(out.shape[0]):
             out[i] = tex.sample(0.5, 0.5, 0.5)
 
-    data = tack.field(tack.f32, (8,))
-    data.from_numpy(np.ones(8, dtype=np.float32))
+    data = tack.empty((8,))
+    tack.copyto(data, np.ones(8, dtype=np.float32))
     tex = tack.texture3d(data, shape=(2, 2, 2))
-    tack.inspect(sample, tex, tack.field(tack.f32, (3,)), mode="source")
+    tack.inspect(sample, tex, tack.empty((3,)), mode="source")
     assert seen == ["tex"]

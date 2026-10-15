@@ -4,11 +4,11 @@ Pipeline:
     Tack IR → OpenCL C source → libocloc (SPIR-V) → zeModuleCreate → zeKernelCreate
            → zeCommandListAppendLaunchKernel
 
-Fields are device-resident: ``tack.field()`` allocates a device buffer via
+Arrays are device-resident: ``tack.empty()`` allocates a device buffer via
 ``zeMemAllocDevice``.  Transfers are explicit:
 
-    field.from_numpy(arr)   # host → device (zeCommandListAppendMemoryCopy)
-    arr = field.to_numpy()  # device → host (zeCommandListAppendMemoryCopy)
+    tack.copyto(a, arr)     # host → device (zeCommandListAppendMemoryCopy)
+    arr = a.numpy()         # device → host (zeCommandListAppendMemoryCopy)
 
 No per-dispatch copies — data stays on the GPU between kernel calls.
 
@@ -1010,7 +1010,7 @@ class L0Buffer(DeviceBuffer):
 
     @property
     def waits_off_thread(self) -> bool:
-        """Whether `Field.to_numpy_async` reads in a worker thread: where
+        """Whether `Array.numpy_async` reads in a worker thread: where
         launches are queued, reading waits for them. Level Zero needs no
         per-thread binding."""
         return self._backend._queued
@@ -1933,7 +1933,7 @@ class LevelZeroBackend(Backend):
         if (field.dtype is not f32
                 or self._compute_props.maxGroupSizeX < 256
                 or self._compute_props.maxTotalGroupSize < 256):
-            return reduce_numpy(field.to_numpy(), op)
+            return reduce_numpy(field.numpy(), op)
         check_launch_size(f"Field {op}()", field.size, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):

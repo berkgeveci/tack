@@ -93,8 +93,8 @@ print(f"tack: {data.num_cells} cells, {data.topology.faces().num_faces} faces, "
       f"u {field.space!r} with {field.space.size} values")
 
 # The same function: values and gradients at element centers, against MFEM.
-values = alg.values_at_centers(data, field).values.to_numpy()
-gradients = alg.gradients(data, field).values.to_numpy()
+values = alg.values_at_centers(data, field).values.numpy()
+gradients = alg.gradients(data, field).values.numpy()
 value_error = gradient_error = 0.0
 g = mfem.Vector(3)
 for e in range(mesh.GetNE()):
@@ -117,7 +117,7 @@ outside = td.external_faces(data)
 flux = alg.divergence(data, alg.upwind_flux(data, field, (1.0, 0.0, 0.0)))
 print(f"contour of u at half its peak: {iso.num_cells} triangles; slice: {cut.num_cells}; "
       f"boundary: {outside.num_cells} faces; net upwind outflow summed over cells "
-      f"{flux.values.to_numpy().sum():.2e}")
+      f"{flux.values.numpy().sum():.2e}")
 
 if args.output:
     from vtkmodules.vtkIOXML import vtkXMLUnstructuredGridWriter

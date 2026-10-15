@@ -148,14 +148,14 @@ results = {}
 
 # --- Product Points ---
 print("Product Points...")
-xc = tack.empty(dtype=tack.f32, shape=(N,))
-yc = tack.empty(dtype=tack.f32, shape=(N,))
-zc = tack.empty(dtype=tack.f32, shape=(N,))
-xc.from_numpy(x1d)
-yc.from_numpy(y1d)
-zc.from_numpy(z1d)
+xc = tack.empty((N,))
+yc = tack.empty((N,))
+zc = tack.empty((N,))
+tack.copyto(xc, x1d)
+tack.copyto(yc, y1d)
+tack.copyto(zc, z1d)
 product = ProductPoints(xc, yc, zc)
-output = tack.empty(dtype=tack.f32, shape=(num_points,))
+output = tack.empty((num_points,))
 
 coord_mem = (N + N + N) * 4
 print(f"  Coordinate memory: {coord_mem:,} bytes ({coord_mem/1024:.1f} KB)")
@@ -171,7 +171,7 @@ for i in range(trials):
     times.append(t1 - t0)
 
 product_time = min(times)
-product_result = output.to_numpy()[:8].copy()
+product_result = output.numpy()[:8].copy()
 results["Product"] = product_time
 print(f"  Best of {trials}: {product_time:.4f}s")
 
@@ -182,17 +182,17 @@ gc.collect()
 
 # --- SOA Points ---
 print("\nSOA Points...")
-sx = tack.empty(dtype=tack.f32, shape=(num_points,))
-sy = tack.empty(dtype=tack.f32, shape=(num_points,))
-sz = tack.empty(dtype=tack.f32, shape=(num_points,))
+sx = tack.empty((num_points,))
+sy = tack.empty((num_points,))
+sz = tack.empty((num_points,))
 
 # Build SOA coordinates using a Product -> SOA expansion kernel
-xc = tack.empty(dtype=tack.f32, shape=(N,))
-yc = tack.empty(dtype=tack.f32, shape=(N,))
-zc = tack.empty(dtype=tack.f32, shape=(N,))
-xc.from_numpy(x1d)
-yc.from_numpy(y1d)
-zc.from_numpy(z1d)
+xc = tack.empty((N,))
+yc = tack.empty((N,))
+zc = tack.empty((N,))
+tack.copyto(xc, x1d)
+tack.copyto(yc, y1d)
+tack.copyto(zc, z1d)
 tmp_product = ProductPoints(xc, yc, zc)
 
 @tack.device_class
@@ -247,7 +247,7 @@ for i in range(trials):
     times.append(t1 - t0)
 
 soa_time = min(times)
-soa_result = output.to_numpy()[:8].copy()
+soa_result = output.numpy()[:8].copy()
 results["SOA"] = soa_time
 print(f"  Best of {trials}: {soa_time:.4f}s")
 
@@ -257,15 +257,15 @@ gc.collect()
 
 # --- AOS Points ---
 print("\nAOS Points...")
-aos_field = tack.empty(dtype=tack.f32, shape=(num_points * 3,))
+aos_field = tack.empty((num_points * 3,))
 
 # Build AOS coordinates via Product -> AOS expansion
-xc = tack.empty(dtype=tack.f32, shape=(N,))
-yc = tack.empty(dtype=tack.f32, shape=(N,))
-zc = tack.empty(dtype=tack.f32, shape=(N,))
-xc.from_numpy(x1d)
-yc.from_numpy(y1d)
-zc.from_numpy(z1d)
+xc = tack.empty((N,))
+yc = tack.empty((N,))
+zc = tack.empty((N,))
+tack.copyto(xc, x1d)
+tack.copyto(yc, y1d)
+tack.copyto(zc, z1d)
 tmp_product = ProductPoints(xc, yc, zc)
 
 @tack.device_class
@@ -312,7 +312,7 @@ for i in range(trials):
     times.append(t1 - t0)
 
 aos_time = min(times)
-aos_result = output.to_numpy()[:8].copy()
+aos_result = output.numpy()[:8].copy()
 results["AOS"] = aos_time
 print(f"  Best of {trials}: {aos_time:.4f}s")
 

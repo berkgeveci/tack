@@ -11,7 +11,7 @@ def mask_points(data, stride, fields=None):
     Viskores' ``MaskPoints``."""
     if int(stride) < 1:
         raise ValueError(f"stride must be at least 1, not {stride!r}")
-    flags = tack.field(tack.i32, shape=(data.num_points,))
+    flags = tack.empty((data.num_points,), tack.i32)
     if data.num_points:
         _every(flags, int(stride))
     return _keep_points(data, flags, fields)

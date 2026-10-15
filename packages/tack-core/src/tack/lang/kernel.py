@@ -230,11 +230,11 @@ class Kernel:
 
     def _run_result(self, backend, args, kwargs):
         """Run the epilogue kernel and read the result it stored."""
-        from tack.lang.field import field as make_field
+        from tack.lang.field import empty
         dtype, epilogue = self._result
         result = self._result_field
         if result is None or result._buffer.backend_name != backend.name:
-            result = make_field(dtype=dtype, shape=(1,))
+            result = empty((1,), dtype)
             self._result_field = result
         backend.execute(epilogue, (*args, result), kwargs)
         if dispatch._debug:

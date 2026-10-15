@@ -34,8 +34,8 @@ def traces(data, field):
     data.topology.faces()
     out_space = SideTraces(data)
     width = arrays.width_of(field.values)
-    out = (tack.Vector.field(width, arrays.dtype_of(field.values), shape=(out_space.size,))
-           if width else tack.field(arrays.dtype_of(field.values), shape=(out_space.size,)))
+    out = (tack.empty((out_space.size,), tack.vec(width, arrays.dtype_of(field.values)))
+           if width else tack.empty((out_space.size,), arrays.dtype_of(field.values)))
     if out_space.size:
         out.fill(0)
     starts = data.topology.faces().group_starts

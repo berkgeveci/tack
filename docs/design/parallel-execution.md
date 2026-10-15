@@ -115,7 +115,7 @@ new array length reuses the compiled variant; see
 | Largest launch | no limit | 2^32 (`_MAX_LAUNCH`) | CUDA: max `gridDim.x` × 256; HIP: the same, capped at 2^32 − 256 | `maxGroupCountX` × group size |
 
 A queued GPU launch is waited for where the host next touches field memory
-(`to_numpy`, indexing, reductions) or calls `tack.sync()`, and its error
+(`numpy()`, indexing, reductions) or calls `tack.sync()`, and its error
 surfaces there. A launch that uses memory handed outside Tack (a wrapped
 pointer, a DLPack export) completes before its call returns, and so, on
 CUDA, HIP and Level Zero, does a launch that samples a hardware texture; see

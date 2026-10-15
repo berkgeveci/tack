@@ -77,30 +77,30 @@ def _label(cells, out):
     (Volume(4, 5, 6), 120), (Volume(65, 3, 2), 390), (FixedGrid(), 24),
 ], ids=lambda v: f"{type(v).__name__}" if not isinstance(v, int) else str(v))
 def test_one_kernel_over_every_iteration_space(backend, obj, n):
-    out = tack.field(tack.i32, shape=(n,))
+    out = tack.empty((n,), tack.i32)
     out.fill(-1)
     _label(obj, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n) + 1)
+    np.testing.assert_array_equal(out.numpy(), np.arange(n) + 1)
 
 
 def test_multi_dimensional_spaces_launch_in_their_shape():
     tack.init(arch=tack.cpu)
     for obj, n in ((Grid(3, 2), 2), (Volume(2, 2, 2), 3)):
-        ir_func = tack.inspect(_label, obj, tack.field(tack.i32, shape=(8,)), mode="ir")
+        ir_func = tack.inspect(_label, obj, tack.empty((8,), tack.i32), mode="ir")
         assert ir_func.startswith("Function") and "ParallelFor (" in ir_func
         assert ir_func.count(" < ") >= n
-    assert "ParallelFor (" not in tack.inspect(_label, Line(4), tack.field(tack.i32, shape=(4,)),
+    assert "ParallelFor (" not in tack.inspect(_label, Line(4), tack.empty((4,), tack.i32),
                                                mode="ir")
 
 
 def test_instance_extents_do_not_recompile(backend):
     from tack.runtime.dispatch import get_backend
-    _label(Grid(3, 5), tack.field(tack.i32, shape=(15,)))
+    _label(Grid(3, 5), tack.empty((15,), tack.i32))
     before = len(get_backend()._cache[_label])
     for nx, ny in ((8, 8), (100, 1), (11, 13)):
-        out = tack.field(tack.i32, shape=(nx * ny,))
+        out = tack.empty((nx * ny,), tack.i32)
         _label(Grid(nx, ny), out)
-        np.testing.assert_array_equal(out.to_numpy(), np.arange(nx * ny) + 1)
+        np.testing.assert_array_equal(out.numpy(), np.arange(nx * ny) + 1)
     assert len(get_backend()._cache[_label]) == before
 
 
@@ -112,9 +112,9 @@ def _rows(cells, out, m):
 
 
 def test_iterating_inside_the_parallel_loop(backend):
-    out = tack.field(tack.i32, shape=(3 * 12,))
+    out = tack.empty((3 * 12,), tack.i32)
     _rows(Grid(4, 3), out, 3)
-    np.testing.assert_array_equal(out.to_numpy(), np.repeat(np.arange(3), 12))
+    np.testing.assert_array_equal(out.numpy(), np.repeat(np.arange(3), 12))
 
 
 @tack.device_class
@@ -123,7 +123,7 @@ class Particles:
 
     def __init__(self, count):
         self.count = count
-        self.x = tack.zeros(tack.f32, shape=(count,))
+        self.x = tack.zeros((count,))
 
     @tack.kernel
     def advance(self, dt: tack.f32):
@@ -135,7 +135,7 @@ def test_a_kernel_method_iterates_its_own_object(backend):
     particles = Particles(10)
     particles.advance(0.5)
     particles.advance(0.25)
-    np.testing.assert_allclose(particles.x.to_numpy(), 0.75)
+    np.testing.assert_allclose(particles.x.numpy(), 0.75)
 
 
 # ── Errors ──────────────────────────────────────────────────────────
@@ -157,7 +157,7 @@ class NotAScalar:
     __tack_iterate__ = "values"
 
     def __init__(self):
-        self.values = tack.field(tack.f32, shape=(4,))
+        self.values = tack.empty((4,))
 
 
 @tack.kernel
@@ -174,13 +174,13 @@ def _pairs(cells, out):
 def test_what_cannot_be_iterated(obj, message):
     tack.init(arch=tack.cpu)
     with pytest.raises(TypeError, match=message):
-        _label(obj, tack.field(tack.i32, shape=(16,)))
+        _label(obj, tack.empty((16,), tack.i32))
 
 
 def test_the_loop_binds_one_name():
     tack.init(arch=tack.cpu)
     with pytest.raises(TypeError, match="binds one name, the index"):
-        _pairs(Grid(2, 2), tack.field(tack.i32, shape=(4,)))
+        _pairs(Grid(2, 2), tack.empty((4,), tack.i32))
 
 
 def test_the_declaration_is_read_from_the_class():

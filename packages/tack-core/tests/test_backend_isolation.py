@@ -69,9 +69,9 @@ def test_gpu_dispatch_works_without_llvmlite():
         tack.init(arch=tack.{_GPU})
 
         n = 64
-        x = tack.field(dtype=tack.f32, shape=(n,))
-        out = tack.field(dtype=tack.f32, shape=(n,))
-        x.from_numpy(np.arange(n, dtype=np.float32))
+        x = tack.empty((n,), tack.f32)
+        out = tack.empty((n,), tack.f32)
+        tack.copyto(x, np.arange(n, dtype=np.float32))
 
         @tack.kernel
         def double(x, out):
@@ -79,7 +79,7 @@ def test_gpu_dispatch_works_without_llvmlite():
                 out[i] = x[i] * 2.0
 
         double(x, out)
-        assert np.allclose(out.to_numpy(), np.arange(n) * 2.0)
+        assert np.allclose(out.numpy(), np.arange(n) * 2.0)
         assert "tack.runtime.cpu" not in sys.modules, \\
             "GPU dispatch imported the CPU backend"
         print("OK")

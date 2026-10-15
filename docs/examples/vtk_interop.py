@@ -12,7 +12,7 @@ from vtkmodules.util.numpy_support import numpy_to_vtk, vtk_to_numpy
 from vtkmodules.vtkCommonDataModel import vtkImageData
 
 import tack
-from tack.interop.vtk import field_to_vtk, vtk_to_field
+from tack.interop.vtk import array_to_vtk, vtk_to_array
 
 
 # --8<-- [start:kernel]
@@ -33,9 +33,9 @@ def run():
     image.SetDimensions(9, 7, 5)
     initial = numpy_to_vtk(np.zeros(image.GetNumberOfPoints(), dtype=np.float32), deep=True)
     image.GetPointData().SetScalars(initial)
-    values = vtk_to_field(initial)  # shares VTK's allocation; retains its owner
+    values = vtk_to_array(initial)  # shares VTK's allocation; retains its owner
     radius_squared(values, 9, 7)
-    result = field_to_vtk(values, name="radius_squared")  # shares the Tack field
+    result = array_to_vtk(values, name="radius_squared")  # shares the Tack field
     image.GetPointData().SetScalars(result)
     # --8<-- [end:share]
     # A VTK structured image's x index varies fastest.

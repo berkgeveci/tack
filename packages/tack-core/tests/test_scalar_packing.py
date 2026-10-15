@@ -20,7 +20,7 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 def test_many_float_scalars(backend):
     """Kernel with 20 float scalar params — packed into __pack_f32__ on GPU."""
     n = 100
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def add_scalars(out, s0, s1, s2, s3, s4, s5, s6, s7, s8, s9,
@@ -31,7 +31,7 @@ def test_many_float_scalars(backend):
     values = [float(i) * 0.5 for i in range(20)]
     add_scalars(out, *values, n)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = sum(values)
     np.testing.assert_allclose(result, expected, rtol=1e-4)
 
@@ -39,7 +39,7 @@ def test_many_float_scalars(backend):
 def test_mixed_int_and_float_scalars(backend):
     """Kernel with both int and float scalars — packed into separate buffers."""
     n = 64
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def mixed(out, scale, offset, stride, count):
@@ -47,7 +47,7 @@ def test_mixed_int_and_float_scalars(backend):
             out[i] = scale * float(i * stride) + offset
 
     mixed(out, 2.5, 10.0, 3, n)
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.array([2.5 * float(i * 3) + 10.0 for i in range(n)], dtype=np.float32)
     np.testing.assert_allclose(result, expected, rtol=1e-4)
 
@@ -55,7 +55,7 @@ def test_mixed_int_and_float_scalars(backend):
 def test_scalar_packing_called_twice(backend):
     """Verify packed kernels work on repeated calls with different scalar values."""
     n = 32
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def scale(out, a, b, count):
@@ -63,10 +63,10 @@ def test_scalar_packing_called_twice(backend):
             out[i] = a * float(i) + b
 
     scale(out, 3.0, 1.0, n)
-    r1 = out.to_numpy().copy()
+    r1 = out.numpy().copy()
 
     scale(out, -1.0, 100.0, n)
-    r2 = out.to_numpy().copy()
+    r2 = out.numpy().copy()
 
     np.testing.assert_allclose(r1, 3.0 * np.arange(n, dtype=np.float32) + 1.0, rtol=1e-4)
     np.testing.assert_allclose(r2, -1.0 * np.arange(n, dtype=np.float32) + 100.0, rtol=1e-4)
@@ -75,9 +75,9 @@ def test_scalar_packing_called_twice(backend):
 def test_no_scalars_no_packing(backend):
     """Kernel with only field params — packing is a no-op."""
     n = 64
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def copy(x, out):
@@ -85,13 +85,13 @@ def test_no_scalars_no_packing(backend):
             out[i] = x[i]
 
     copy(x, out)
-    np.testing.assert_allclose(out.to_numpy(), np.arange(n, dtype=np.float32))
+    np.testing.assert_allclose(out.numpy(), np.arange(n, dtype=np.float32))
 
 
 def test_numpy_scalar_types(backend):
     """numpy scalar types (np.float32, np.int32) work as kernel args."""
     n = 16
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def fill(out, val, count):
@@ -99,4 +99,4 @@ def test_numpy_scalar_types(backend):
             out[i] = val
 
     fill(out, np.float32(42.5), np.int32(n))
-    np.testing.assert_allclose(out.to_numpy(), 42.5)
+    np.testing.assert_allclose(out.numpy(), 42.5)

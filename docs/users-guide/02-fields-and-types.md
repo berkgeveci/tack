@@ -14,8 +14,8 @@ import tack
 
 tack.init(arch=tack.cpu)
 host = np.arange(6, dtype=np.float32).reshape(2, 3)
-source = tack.array(host)                            # copy input values
-out = tack.empty(dtype=tack.f32, shape=host.shape)            # every output will be written
+source = tack.array(host)                          # copy input values
+out = tack.empty(host.shape)                       # every output will be written
 
 @tack.kernel
 def add_one(source, out):
@@ -23,13 +23,14 @@ def add_one(source, out):
         out[row, column] = source[row, column] + 1.0
 
 add_one(source, out)
-np.testing.assert_array_equal(out.to_numpy(), host + 1.0)
-print(out.to_numpy())                                 # [[1. 2. 3.], [4. 5. 6.]]
+np.testing.assert_array_equal(out.numpy(), host + 1.0)
+print(out.numpy())                                 # [[1. 2. 3.], [4. 5. 6.]]
 ```
 
-`array` copies its NumPy input; `to_numpy` also returns a copy. Choose
-`tack.zeros` when a kernel needs an initial value of zero, and `tack.empty`
-when you will write every value before reading it. Allocate arrays once and
+`array` copies its NumPy input, keeping its dtype (here f32); `numpy` also
+returns a copy. Choose `tack.zeros` when a kernel needs an initial value of
+zero, and `tack.empty` when you will write every value before reading it.
+Both make f32 arrays unless given a dtype. Allocate arrays once and
 reuse them across timesteps.
 
 Use `tack.f32` for a portable starting point for real-valued data and `tack.i32`
@@ -49,11 +50,11 @@ import numpy as np
 import tack
 
 tack.init(arch=tack.cpu)
-velocity = tack.empty(shape=(4,), dtype=tack.vec3(tack.f32))
+velocity = tack.empty((4,), tack.vec3(tack.f32))
 velocity.fill([1.0, 0.0, 0.0])
 assert isinstance(velocity, tack.Array)
 assert velocity.shape == (4,) and velocity.dtype is tack.vec3(tack.f32)
-np.testing.assert_array_equal(velocity.to_numpy(), np.tile([1.0, 0.0, 0.0], (4, 1)))
+np.testing.assert_array_equal(velocity.numpy(), np.tile([1.0, 0.0, 0.0], (4, 1)))
 ```
 
 An array's **shape counts elements**. Its **dtype describes one element**:
@@ -64,37 +65,43 @@ contain 12 scalars, but a kernel reads a scalar from the former and a
 
 | Construction | Array shape | Element type | NumPy download shape |
 |---|---|---|---|
-| `tack.empty(shape=(n,), dtype=tack.f32)` | `(n,)` | f32 scalar | `(n,)` |
-| `tack.empty(shape=(n,), dtype=tack.vec3())` | `(n,)` | Three f32 components | `(n, 3)` |
-| `tack.empty(shape=(n,), dtype=tack.mat3())` | `(n,)` | 3x3 f32 matrix | `(n, 3, 3)` |
+| `tack.empty((n,))` | `(n,)` | f32 scalar | `(n,)` |
+| `tack.empty((n,), tack.vec3())` | `(n,)` | Three f32 components | `(n, 3)` |
+| `tack.empty((n,), tack.mat3())` | `(n,)` | 3x3 f32 matrix | `(n, 3, 3)` |
 
 `vec2`, `vec3`, `vec4`, `mat2`, `mat3` and `mat4` default to f32 components.
 Use `vec(n, dtype)` for another width and `mat(rows, columns, dtype)` for a
 rectangular matrix (up to 4x4). These functions describe types; they do not
 allocate arrays.
 
-The same allocation functions work for every element type:
+The shape comes first and the dtype second, as in NumPy. A dtype is a Tack
+type or anything NumPy accepts as one (`np.int32`, `"float64"`); without
+one, an allocation is f32. The same allocation functions work for every
+element type:
 
 ```python
 # 1D array
-data = tack.empty(dtype=tack.f32, shape=(1024,))
+data = tack.empty((1024,))
 
 # 2D array (linearized internally)
-grid = tack.empty(dtype=tack.f32, shape=(100, 100))
+grid = tack.empty((100, 100))
 
 # Integer array
-indices = tack.empty(dtype=tack.i32, shape=(256,))
+indices = tack.empty((256,), tack.i32)
+counts = tack.empty((256,), np.int32)      # the same type, named by NumPy
 ```
 
 A new array's contents are unspecified, on every backend, until a kernel,
-`from_numpy` or `fill` writes them. `tack.zeros(dtype, shape)` makes a
+`tack.copyto` or `fill` writes them. `tack.zeros(shape, dtype)` makes an
 array of zeros (`ones` and `full` likewise), filled on the device.
 
 ### Copy values or allocate without copying
 
 `tack.array(values, dtype=None)` always creates independent storage and
 copies values. With no dtype it infers a scalar type and uses every input
-dimension as an array dimension. It never guesses vector or matrix elements:
+dimension as an array dimension. A NumPy array keeps its dtype (a float64
+array gives an f64 array); Python floats give f32 and Python ints i32, or
+i64 if a value needs it. It never guesses vector or matrix elements:
 
 ```python
 positions = tack.array(np.zeros((10, 3), np.float32), dtype=tack.vec3())
@@ -105,6 +112,8 @@ assert scalars.shape == (10, 3)
 
 An explicit vector or matrix dtype consumes matching trailing input dimensions.
 A mismatch raises `ValueError`. Lists are accepted too.
+`tack.asarray(values, dtype=None)` is the same, except that it returns a Tack
+array of the requested dtype (or any, without one) as it is, without a copy.
 
 `tack.empty_like(prototype)` reads only shape and type metadata, allocates
 independent storage on the active backend, and leaves values uninitialized.
@@ -126,21 +135,28 @@ x = tack.array(np.arange(1024, dtype=np.float32))
 y = tack.array(some_array, dtype=tack.f32)
 ```
 
-Or allocate first, then copy:
+Or allocate first, then copy into the existing array:
 
 ```python
-data = tack.empty(dtype=tack.f32, shape=(1024,))
-data.from_numpy(np.arange(1024, dtype=np.float32))
+data = tack.empty((1024,))
+tack.copyto(data, np.arange(1024, dtype=np.float32))
+tack.copyto(data, 0.5)                     # a scalar broadcasts
 
 # Copy data back to numpy
-result = data.to_numpy()
+result = data.numpy()
+same = np.asarray(data)                    # also a copy
 ```
 
-On Metal (Apple Silicon), arrays use shared memory — `from_numpy`/`to_numpy`
+`tack.copyto(a, host)` is strict, like `np.copyto`: `host` must have the
+shape of `a.numpy()` or broadcast to it, and its values are converted to
+`a`'s dtype. Given another Tack array, `tack.copyto(dst, src)` copies on the
+device. Arrays are not assigned with `a[...] = values`.
+
+On Metal (Apple Silicon), arrays use shared memory — `copyto`/`numpy`
 are simple memory copies with no DMA transfers. On CUDA, HIP and Level Zero,
 these are explicit host-device copies. On every GPU backend they take their
-place in order with the queued launches: `from_numpy` does not overtake a
-launch that still reads the old values, and `to_numpy` waits for the
+place in order with the queued launches: `copyto` does not overtake a
+launch that still reads the old values, and `numpy` waits for the
 launches before it (see [When a call returns](08-backends.md#when-a-call-returns)).
 
 ### Array Access in Kernels
@@ -176,9 +192,9 @@ supplies one index per component, so `grid[cell]` is
 An array can hold a small vector or matrix in each element:
 
 ```python
-pos = tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))        # a 3-vector per element
-vel = tack.empty(dtype=tack.vec2(tack.f32), shape=(height, width))  # on a 2-D grid
-F = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))       # a 2x2 matrix per element
+pos = tack.empty((n,), tack.vec3(tack.f32))        # a 3-vector per element
+vel = tack.empty((height, width), tack.vec2(tack.f32))  # on a 2-D grid
+F = tack.empty((n,), tack.mat2(tack.f32))       # a 2x2 matrix per element
 ```
 
 In a kernel `pos[i]` is the whole vector and `F[i]` the whole matrix; see
@@ -186,17 +202,20 @@ In a kernel `pos[i]` is the whole vector and `F[i]` the whole matrix; see
 for what can be done with them. The storage is one flat array with the
 components of each element together (a matrix in row-major order).
 
-Data moves to and from NumPy either flat or one row per element:
+On the host, the components are trailing NumPy dimensions:
 
 ```python
-pos.from_numpy(points)                   # (n, 3), or the flat (n * 3,)
-points = pos.to_numpy()      # (n, 3)
-flat = pos.to_numpy().reshape(-1)        # flatten the downloaded snapshot
-F.from_numpy(gradients)                  # (n, 2, 2), or flat
-gradients = F.to_numpy()     # (n, 2, 2)
+tack.copyto(pos, points)                 # points has shape (n, 3)
+points = pos.numpy()                     # (n, 3)
+flat = pos.numpy().reshape(-1)           # flatten the downloaded copy
+tack.copyto(F, gradients)                # gradients has shape (n, 2, 2)
+gradients = F.numpy()                    # (n, 2, 2)
 pos.fill([0.0, 1.0, 0.0])                # every element to this vector
 pos.fill(0.0)                            # every component to this scalar
 ```
+
+A flat `(n * 3,)` array is not accepted by `copyto` for a vector array;
+reshape it to `(n, 3)` first.
 
 ### Reading One Element from the Host
 
@@ -214,17 +233,17 @@ if temperature[i, j] > melting:    # a host-side decision on one value
 This is for inspection and for decisions on single values. On CPU and
 Metal it reads unified memory directly; on the other backends every read
 is a transfer of that one element, so many elements are read at once
-with `to_numpy()`. Arrays
-are not written by element from the host: build the values in a NumPy
-array and `from_numpy` it, `fill` the array, or write them in a kernel.
-Iterating an array raises for the same reason.
+with `numpy()`. Arrays are not written by element from the host: build the
+values in a NumPy array and `tack.copyto` them, `fill` the array, or write
+them in a kernel. Iterating an array raises for the same reason.
 
 ### A scalar shared between launches
 
-A zero-dimensional array holds one logical element, accessed as `f[None]`:
+A zero-dimensional array holds one logical element, accessed as `f[None]`
+(on the host, `f[()]` works too):
 
 ```python
-strength = tack.empty(dtype=tack.f32, shape=())
+strength = tack.empty(())
 strength.fill(2.0)
 
 @tack.kernel
@@ -235,8 +254,8 @@ def add_strength(data, strength):
 
 Use a scalar argument for a host-supplied value that simply changes per call.
 A scalar array is useful when kernels also compute or retain that value. A
-zero-dimensional vector array works similarly: `gravity = tack.empty(
-dtype=tack.vec2(), shape=())` and `gravity.fill([0.0, -9.8])`.
+zero-dimensional vector array works similarly: `gravity = tack.empty((),
+tack.vec2())` and `gravity.fill([0.0, -9.8])`.
 
 ### Reductions
 
@@ -257,9 +276,9 @@ Use `tack.empty_like` for an output or scratch array that will be written before
 it is read:
 
 ```python
-source = tack.array(np.arange(8, dtype=np.float32))  # copies values
-out = tack.empty_like(source)                                 # same shape and dtype
-integer_out = tack.empty_like(source, dtype=tack.i32)           # override dtype
+source = tack.array(np.arange(8, dtype=np.float32))     # copies values
+out = tack.empty_like(source)                           # same shape and dtype
+integer_out = tack.empty_like(source, dtype=tack.i32)   # override dtype
 grid_out = tack.empty_like(np.empty((4, 8), dtype=np.float32))  # no upload
 ```
 
@@ -268,6 +287,8 @@ writable and allocated on the active backend. Vector and matrix array
 prototypes retain their logical shape and component dimensions. A NumPy array
 produces a scalar array of the same shape, including any trailing dimensions.
 No values are copied or initialized; write every value before reading it.
+`tack.zeros_like`, `tack.ones_like` and `tack.full_like(prototype, value)`
+allocate the same way and fill the new array.
 
 The kernel helpers `local_array_like(array, size)` and `shared_like(array, size)`
 also copy no values. They inherit the scalar component dtype and use the
@@ -277,11 +298,13 @@ explicitly supplied scratch size; see [Advanced Features](07-advanced.md#local_a
 
 ```python
 # Allocate filled arrays
-x = tack.zeros(dtype=tack.f32, shape=(1024,))
-y = tack.ones(dtype=tack.i32, shape=(256,))
-z = tack.full(tack.f32, (100,), 3.14)
-idx = tack.arange(64)                          # [0, 1, 2, ..., 63] as i32
+x = tack.zeros((1024,))                         # f32
+y = tack.ones((256,), tack.i32)
+z = tack.full((100,), 3.14)                     # f32, from the Python float
+c = tack.full((100,), 7)                        # i32, from the Python int
+idx = tack.arange(64)                           # [0, 1, 2, ..., 63] as i32
 idx_f = tack.arange(64, dtype=tack.f32)         # [0.0, 1.0, ..., 63.0]
+odd = tack.arange(1, 64, 2)                     # [1, 3, ..., 63]
 ```
 
 ### Copy, Convert, Reshape
@@ -295,8 +318,8 @@ data_f64 = data.astype(tack.f64)
 indices_u8 = indices.astype(tack.u8)
 
 # Reshape (metadata only, shares buffer — no copy)
-flat = grid.reshape((height * width,))
-grid2d = flat.reshape((height, width))
+flat = grid.reshape(-1)                  # -1 is inferred from the size
+grid2d = flat.reshape(height, width)     # or reshape((height, width))
 ```
 
 ### Concatenate
@@ -309,9 +332,14 @@ combined = tack.concat([part_a, part_b, part_c])
 ### Size and Length
 
 ```python
-f = tack.empty(dtype=tack.f32, shape=(4, 3))
+f = tack.empty((4, 3))
 f.size       # 12 (total elements)
+f.ndim       # 2
 len(f)       # 4 (first dimension)
+f.nbytes     # 48 (bytes of storage)
+
+v = tack.empty((4,), tack.vec3())
+v.size, v.ndim, v.nbytes   # 4, 1, 48: elements, not components
 ```
 
 ## Scalar Types
@@ -444,10 +472,10 @@ can wrap an existing device pointer as a Tack array without copying:
 
 ```python
 # Wrap a CUDA device pointer (read-only by default)
-array = tack.array_from_ptr(cuda_device_ptr, dtype=tack.f32, shape=(n,))
+array = tack.array_from_ptr(cuda_device_ptr, (n,), tack.f32)
 
 # Wrap with write access
-array = tack.array_from_ptr(ptr, dtype=tack.f32, shape=(n,), writable=True)
+array = tack.array_from_ptr(ptr, (n,), tack.f32, writable=True)
 ```
 
 The array does **not** own the memory — Tack will not free it. On CPU, you
@@ -457,26 +485,10 @@ or a `CUdeviceptr` works too); a host address is rejected with `ValueError`.
 A launch that uses a wrapped pointer completes before the call returns, so
 the memory's owner can read the results at once.
 
-Read-only arrays raise an error on `from_numpy()` and `fill()`, and a kernel
+Read-only arrays raise an error on `tack.copyto()` and `fill()`, and a kernel
 call that passes one where the kernel may store to it raises `ValueError`
 before the kernel runs. Kernel reads work normally.
 
 For layout, views and simultaneous accesses, see [Memory and parallel correctness](13-memory-and-parallelism.md).
 For DLPack and borrowed allocations, see [Sharing arrays with other libraries](16-interoperability.md).
 
-
-## Migrating storage code
-
-| Previous spelling | Preferred spelling |
-|---|---|
-| `tack.field(dtype, shape)` | `tack.empty(dtype=dtype, shape=shape)` |
-| `tack.field_from_numpy(values, dtype)` | `tack.array(values, dtype=dtype)` |
-| `tack.Vector.field(3, dtype, shape)` | `tack.empty(dtype=tack.vec3(dtype), shape=shape)` |
-| `tack.Matrix.field(2, 3, dtype, shape)` | `tack.empty(dtype=tack.mat(2, 3, dtype), shape=shape)` |
-| `tack.field_from_ptr(ptr, dtype, shape)` | `tack.array_from_ptr(ptr, dtype, shape)` |
-
-The old allocation entry points remain compatibility names. In particular,
-`Vector.field` and `Matrix.field` retain their old scalar dtype, flat host
-shape, and flat default NumPy download. New typed arrays expose the element
-dtype and logical shape and expand component dimensions in `to_numpy()` by
-default. Kernel element access is the same. `td.Field` keeps its name and meaning.

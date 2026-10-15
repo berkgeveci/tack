@@ -51,7 +51,7 @@ be.supports_f64, be.supports_workgroups, be.supported_atomic_dtypes
 On the CPU a kernel call returns when the kernel has finished. On Metal,
 CUDA, HIP and Level Zero it returns once the launch is queued; the device
 runs queued launches in order, and fills and host writes take their place
-in that order. The host waits where it reads an array (`to_numpy`,
+in that order. The host waits where it reads an array (`numpy()`,
 indexing, reductions, DLPack export) or calls `tack.sync()`. Most code
 never needs `tack.sync()`: it is for timing kernels (see
 [Debugging and timing](15-debugging-and-timing.md#measure-first-call-and-warm-time-separately)),
@@ -60,7 +60,7 @@ launch is raised at that wait rather than at the call. A launch that uses
 memory shared with another library (exported through DLPack, or wrapped
 with `tack.array_from_ptr`) completes before the call returns. In an
 `asyncio` program, `await tack.sync_async()` and
-`await array.to_numpy_async()` do the waiting in a worker thread, so the
+`await array.numpy_async()` do the waiting in a worker thread, so the
 event loop keeps running (see
 [Waiting from `asyncio`](12-execution-model.md#waiting-from-asyncio)).
 
@@ -109,7 +109,7 @@ tack.init(arch=tack.cpu)
 
 On Apple silicon the GPU buffer and Tack's internal NumPy view share the
 same allocation. There is no separate device-memory transfer, but the public
-`array`, `from_numpy` and `to_numpy` APIs still copy values. Use the
+`tack.array`, `tack.copyto` and `numpy()` calls still copy values. Use the
 [interoperability APIs](16-interoperability.md) when you need shared storage.
 
 ```bash

@@ -22,11 +22,11 @@ def _crossing(level, a, b):
 
 
 def _vectors(n, dtype, width=3):
-    return tack.Vector.field(width, dtype, shape=(n,))
+    return tack.empty((n,), tack.vec(width, dtype))
 
 
 def _scalars(n, dtype):
-    return tack.field(dtype, shape=(n,))
+    return tack.empty((n,), dtype)
 
 
 def _same_space(*fields):
@@ -96,13 +96,13 @@ def _compact(flags, dtype):
     """``(new ids, kept ids, count)`` of a 0/1 field: each kept index's new number,
     and the kept indices in order, both ``dtype``."""
     n = flags.shape[0]
-    slots = tack.field(dtype, shape=(n,))
+    slots = tack.empty((n,), dtype)
     count = exclusive_scan(flags, slots, n) if n else 0
-    kept = tack.field(dtype, shape=(count,))
+    kept = tack.empty((count,), dtype)
     if count:
         _kept_ids(flags, slots, kept)
     return slots, kept, count
 
 
 def _all(n):
-    return tack.arange(n, at_least(tack.i32, n))
+    return tack.arange(n, dtype=at_least(tack.i32, n))

@@ -80,17 +80,17 @@ def test_f64_dispatch_agrees_with_the_declaration(backend):
         for i in range(n):
             out[i] = x[i] * 2.0
 
-    x = tack.field(dtype=tack.f64, shape=(4,)) if be.supports_f64 else None
+    x = tack.empty((4,), tack.f64) if be.supports_f64 else None
     if be.supports_f64:
-        out = tack.field(dtype=tack.f64, shape=(4,))
-        x.from_numpy(np.arange(4, dtype=np.float64))
+        out = tack.empty((4,), tack.f64)
+        tack.copyto(x, np.arange(4, dtype=np.float64))
         double_it(x, out, 4)
-        np.testing.assert_allclose(out.to_numpy(),
+        np.testing.assert_allclose(out.numpy(),
                                    np.arange(4) * 2.0, rtol=1e-12)
     else:
         with pytest.raises(TypeError, match="f64"):
-            x = tack.field(dtype=tack.f64, shape=(4,))
-            out = tack.field(dtype=tack.f64, shape=(4,))
+            x = tack.empty((4,), tack.f64)
+            out = tack.empty((4,), tack.f64)
             double_it(x, out, 4)
 
 
@@ -108,8 +108,8 @@ def test_reductions_declaration_matches_behaviour(backend):
     from tack.runtime.dispatch import get_backend
     be = get_backend()
 
-    f = tack.field(dtype=tack.f32, shape=(8,))
-    f.from_numpy(np.arange(8, dtype=np.float32))
+    f = tack.empty((8,))
+    tack.copyto(f, np.arange(8, dtype=np.float32))
     assert f.sum() == pytest.approx(28.0)
     assert f.min() == pytest.approx(0.0)
     assert f.max() == pytest.approx(7.0)
@@ -153,14 +153,14 @@ def test_field_from_ptr_checks_every_form_of_address(backend):
     host = np.zeros(8, dtype=np.float32)
     for ptr in (host.ctypes.data, np.uint64(host.ctypes.data)):
         with pytest.raises(ValueError, match="requires a device"):
-            tack.field_from_ptr(ptr, tack.f32, (8,))
+            tack.array_from_ptr(ptr, (8,), tack.f32)
     with pytest.raises(TypeError, match="device address"):
-        tack.field_from_ptr("not a pointer", tack.f32, (8,))
+        tack.array_from_ptr("not a pointer", (8,), tack.f32)
 
-    device = tack.field(dtype=tack.f32, shape=(8,))
-    device.from_numpy(np.arange(8, dtype=np.float32))
-    alias = tack.field_from_ptr(np.uint64(device._buffer.address), tack.f32, (8,))
-    np.testing.assert_array_equal(alias.to_numpy(), np.arange(8))
+    device = tack.empty((8,))
+    tack.copyto(device, np.arange(8, dtype=np.float32))
+    alias = tack.array_from_ptr(np.uint64(device._buffer.address), (8,), tack.f32)
+    np.testing.assert_array_equal(alias.numpy(), np.arange(8))
 
 
 def test_numpy_integer_alias_copies_reach_the_device_memory(backend):
@@ -183,17 +183,17 @@ def test_numpy_integer_alias_copies_reach_the_device_memory(backend):
     if not get_backend().device_memory_spaces:
         pytest.skip(f"{get_backend().label} does not distinguish device memory")
 
-    device = tack.field(dtype=tack.f32, shape=(8,))
+    device = tack.empty((8,))
     address = device._buffer.address
     ptr_types = [np.uint64] + ([np.int64] if address < 1 << 63 else [])
     for ptr_type in ptr_types:
-        alias = tack.field_from_ptr(ptr_type(address), tack.f32, (8,), writable=True)
-        alias.from_numpy(np.arange(8, dtype=np.float32) + 1)
-        np.testing.assert_array_equal(device.to_numpy(), np.arange(8) + 1)
+        alias = tack.array_from_ptr(ptr_type(address), (8,), tack.f32, writable=True)
+        tack.copyto(alias, np.arange(8, dtype=np.float32) + 1)
+        np.testing.assert_array_equal(device.numpy(), np.arange(8) + 1)
         alias.fill(3.0)
-        np.testing.assert_array_equal(device.to_numpy(), np.full(8, 3.0))
-        device.from_numpy(np.arange(8, dtype=np.float32) * 2)
-        np.testing.assert_array_equal(alias.to_numpy(), np.arange(8) * 2)
+        np.testing.assert_array_equal(device.numpy(), np.full(8, 3.0))
+        tack.copyto(device, np.arange(8, dtype=np.float32) * 2)
+        np.testing.assert_array_equal(alias.numpy(), np.arange(8) * 2)
 
 
 # ── What counts as an address ────────────────────────────────────────

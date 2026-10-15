@@ -145,7 +145,7 @@ The zero-copy path is `dlpack_to_field(source, writable=True)`:
     backend raises `RuntimeError` — importing CUDA memory while running the
     CPU backend is a mistake, not something to paper over with a copy. The
     tensor's device id is not compared.
-6. **Wrap.** `field_from_ptr(data + byte_offset, dtype, shape,
+6. **Wrap.** `array_from_ptr(data + byte_offset, shape, dtype,
    writable=...)`, which runs the backend's
    [memory-space check](memory-and-aliasing.md#memory-space-validation).
 7. **Adopt.** Rename the capsule to its `used_` name, so no one else
@@ -160,7 +160,7 @@ hold is on the `Field`, not the buffer, so `Field.reshape()` copies it to
 the view; the producer is told the memory is free only when the last field
 over it is collected. The source object itself may be dropped immediately.
 
-Unlike `field_from_ptr`, which defaults to read-only, an imported field is
+Unlike `array_from_ptr`, which defaults to read-only, an imported field is
 writable unless the producer says otherwise: DLPack exchange is meant to
 share memory in both directions, and the versioned flag is how a producer
 opts out.
@@ -234,7 +234,7 @@ layer over DLPack and VTK's `vtkmodules.util.dlpack_support`. If that module
 is missing, both functions raise `RuntimeError` saying so. Host arrays work
 with any VTK that has it; device arrays need VTK built with Viskores.
 
-**`vtk_to_field(vtk_array, flatten=False)`** asks VTK for a capsule
+**`vtk_to_array(vtk_array, flatten=False)`** asks VTK for a capsule
 (`dlpack_support.vtk_to_dlpack`) and imports it with `tack.from_dlpack`.
 VTK always exports `(tuples, components)`. A single-component array comes
 back 1-D, and `flatten=True` returns a flat `(tuples * components,)` field —
@@ -242,7 +242,7 @@ the interleaved layout Tack's own visualization algorithms take. Both are
 `reshape()` views, which carry the DLPack hold, so the VTK array may be
 dropped as soon as the call returns.
 
-**`field_to_vtk(field, n_components=None, name=None)`** works out the
+**`array_to_vtk(field, n_components=None, name=None)`** works out the
 layout first, before touching VTK, so a shape mistake is reported as one
 (`ValueError` for a contradictory or non-dividing `n_components`, or for a
 field of three or more dimensions without one). It reshapes the field to
@@ -267,14 +267,14 @@ sequenceDiagram
     participant Driver as CUDA / HIP driver
     App->>Tack: tack.init(arch=tack.cuda)
     App->>VTK: run a Viskores filter (device array)
-    App->>Tack: vtk_to_field(vtk_array)
+    App->>Tack: vtk_to_array(vtk_array)
     Tack->>VTK: dlpack_support.vtk_to_dlpack(vtk_array)
     VTK-->>Tack: capsule (kDLCUDA, device pointer)
     Tack->>Driver: memory_space(pointer) via cuPointerGetAttribute
     Driver-->>Tack: "cuda"
     Tack-->>App: Field (wrapped, holds the capsule)
     App->>Tack: kernel(field, ...)
-    App->>Tack: field_to_vtk(field)
+    App->>Tack: array_to_vtk(field)
     Tack->>VTK: dlpack_to_vtk(field) — consumes field.__dlpack__()
     VTK-->>App: vtkDataArray over the same allocation
 ```
@@ -379,11 +379,11 @@ sequenceDiagram
     Note over Tack: shares_external_context is True
     App->>Tack: f = tack.empty(...)
     Tack->>L0: zeMemAllocDevice(shared context)
-    App->>Tack: field_to_vtk(f)
+    App->>Tack: array_to_vtk(f)
     Tack->>VTK: level_zero_handles() — same context? yes
     Tack->>VTK: dlpack_to_vtk(f) — kDLOneAPI pointer
     VTK-->>App: device vtkDataArray over Tack's allocation
-    App->>Tack: vtk_to_field(vtk_array)
+    App->>Tack: vtk_to_array(vtk_array)
     Tack->>VTK: same-context check, then vtk_to_dlpack
     Tack->>L0: memory_space(pointer) via zeMemGetAllocProperties
     Tack-->>App: Field over VTK's allocation
@@ -391,7 +391,7 @@ sequenceDiagram
 
 ### The guard, and why only Tack can enforce it
 
-Both `vtk_to_field` and `field_to_vtk` call
+Both `vtk_to_array` and `array_to_vtk` call
 `_require_shared_level_zero_context` before exchanging anything. When the
 active backend is Level Zero, it asks VTK for its handles again and compares
 the context with `backend._context`. If VTK has no handles, or the contexts
@@ -444,7 +444,7 @@ operated on a Tack-allocated field with writes through VTK visible to Tack.
 | Null data, non-contiguous strides, unknown device type | `dlpack_to_field` | `ValueError` |
 | Unknown dtype or `lanes != 1` | `dlpack_to_field` | `TypeError` |
 | Tensor on a device the active backend cannot wrap | `dlpack_to_field` | `RuntimeError` |
-| Integer pointer in the wrong memory space | `field_from_ptr` | `ValueError` |
+| Integer pointer in the wrong memory space | `array_from_ptr` | `ValueError` |
 | Address given to Metal's `wrap_ptr` | `MetalBackend.wrap_ptr` | `TypeError` |
 | Export from HIP, Level Zero or CPU | `Field.export_memory` | `RuntimeError` |
 | Unknown option to `tack.init` | `tack.init` | `ValueError` |

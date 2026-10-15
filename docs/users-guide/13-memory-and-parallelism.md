@@ -23,11 +23,11 @@ flowchart TB
 
 A vector array adds components to each logical element:
 
-| Allocation | Logical element | `to_numpy()` |
+| Allocation | Logical element | `numpy()` |
 |---|---|---|
-| `tack.empty(f32, shape=(h, w))` | One scalar per pixel | `(h, w)` |
-| `tack.empty(dtype=tack.vec3(), shape=(h, w))` | One RGB vector per pixel | `(h, w, 3)` |
-| `tack.empty(dtype=tack.mat2(), shape=(n,))` | One 2×2 matrix per particle | `(n, 2, 2)` |
+| `tack.empty((h, w))` | One f32 scalar per pixel | `(h, w)` |
+| `tack.empty((h, w), tack.vec3())` | One RGB vector per pixel | `(h, w, 3)` |
+| `tack.empty((n,), tack.mat2())` | One 2×2 matrix per particle | `(n, 2, 2)` |
 
 Every row uses the same constructor and download method. The dtype determines
 the component dimensions, which are appended to the array shape in NumPy.
@@ -106,7 +106,7 @@ red-black updates in separate calls, but that needs an algorithm-specific argume
 `reshape` is a view; `copy` makes independent storage:
 
 ```python
-grid = tack.empty(dtype=tack.f32, shape=(8, 8))
+grid = tack.empty((8, 8))
 view = grid.reshape((64,))                 # same allocation
 independent = grid.copy()                 # another allocation
 ```
@@ -177,8 +177,8 @@ Allocate arrays after `tack.init`. Arrays belong to the backend that created
 them; selecting another backend does not migrate their storage. Start a fresh
 set of arrays when changing the backend.
 
-`from_numpy` and `to_numpy` transfer complete arrays. On CPU and Metal storage is
-host-addressable, but these methods still copy values. A host read `array[i]`
+`tack.copyto` and `numpy()` transfer complete arrays. On CPU and Metal storage is
+host-addressable, but these calls still copy values. A host read `array[i]`
 reads one logical element; CUDA, HIP and Level Zero copy just that range, one
 transfer per read. Avoid making it the inner loop of an application. On
 GPU backends launches are queued, and each of these reads first waits for

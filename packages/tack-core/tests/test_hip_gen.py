@@ -12,7 +12,7 @@ def _get_ir(kernel_fn, *field_shapes):
     tack.init(arch=tack.cpu)
     fields = []
     for shape in field_shapes:
-        fields.append(tack.field(dtype=tack.f32, shape=shape))
+        fields.append(tack.empty(shape))
     ir_func = kernel_fn.get_ir().functions[0]
     infer_param_types(ir_func, tuple(fields))
     return ir_func
@@ -121,8 +121,8 @@ def _texture_ir():
     it would be on a device that has texture units.
     """
     tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f32, shape=(64,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    data = tack.empty((64,))
+    out = tack.empty((1,))
     tex = tack.texture3d(data, shape=(4, 4, 4))
 
     @tack.kernel

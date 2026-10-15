@@ -33,15 +33,15 @@ def matmul(a, b, c, n):
             c[i * 128 + j] = s
 
 
-a = tack.empty(dtype=tack.f32, shape=(N * N,))
-b = tack.empty(dtype=tack.f32, shape=(N * N,))
-c = tack.empty(dtype=tack.f32, shape=(N * N,))
+a = tack.empty((N * N,))
+b = tack.empty((N * N,))
+c = tack.empty((N * N,))
 
 np.random.seed(42)
 np_a = np.random.randn(N, N).astype(np.float32)
 np_b = np.random.randn(N, N).astype(np.float32)
-a.from_numpy(np_a.ravel())
-b.from_numpy(np_b.ravel())
+tack.copyto(a, np_a.ravel())
+tack.copyto(b, np_b.ravel())
 
 # Warm up (compile)
 matmul(a, b, c, N)
@@ -51,7 +51,7 @@ t0 = time.perf_counter()
 matmul(a, b, c, N)
 dt = time.perf_counter() - t0
 
-result = c.to_numpy().reshape(N, N)
+result = c.numpy().reshape(N, N)
 expected = np_a @ np_b
 max_err = np.max(np.abs(result - expected))
 

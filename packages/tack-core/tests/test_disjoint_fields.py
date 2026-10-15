@@ -74,7 +74,7 @@ def _template(kernel):
 
 
 def _f32(n=8, value=0.0):
-    f = tack.field(dtype=tack.f32, shape=(n,))
+    f = tack.empty((n,))
     f.fill(value)
     return f
 
@@ -144,8 +144,7 @@ def test_partial_overlap_of_imported_storage():
     tmpl = _template(_read_only)
 
     def view(lo, hi):
-        return tack.field_from_ptr(base[lo:hi], tack.f32, (hi - lo,),
-                                   writable=True)
+        return tack.array_from_ptr(base[lo:hi], (hi - lo,), tack.f32, writable=True)
 
     x = _f32()
     # Adjacent halves of one allocation touch but do not overlap.
@@ -216,11 +215,11 @@ def test_switching_between_disjoint_and_aliased_calls(order):
 
     get_backend()._cache.pop(_ordered, None)
     for alias in order:
-        a = tack.field(dtype=tack.i32, shape=(9,))
-        b = a.reshape((9,)) if alias else tack.field(dtype=tack.i32, shape=(9,))
-        out = tack.field(dtype=tack.i32, shape=(9,))
+        a = tack.empty((9,), tack.i32)
+        b = a.reshape((9,)) if alias else tack.empty((9,), tack.i32)
+        out = tack.empty((9,), tack.i32)
         _ordered(a, b, out)
-        np.testing.assert_array_equal(out.to_numpy(),
+        np.testing.assert_array_equal(out.numpy(),
                                       np.full(9, 2 if alias else 1))
     variants = get_backend()._cache[_ordered]
     assert sorted(key[-1] for key in variants) == [False, True]
@@ -228,31 +227,31 @@ def test_switching_between_disjoint_and_aliased_calls(order):
 
 def test_accumulating_into_its_own_input():
     """`out` is also `x`: each element reads itself, then accumulates."""
-    w = tack.field(dtype=tack.f32, shape=(4,))
-    w.from_numpy(np.array([1, 2, 3, 4], dtype=np.float32))
+    w = tack.empty((4,))
+    tack.copyto(w, np.array([1, 2, 3, 4], dtype=np.float32))
     xs = np.arange(1, 9, dtype=np.float32)
 
     x, out = _f32(), _f32()
-    x.from_numpy(xs)
+    tack.copyto(x, xs)
     _accumulate(x, w, out, 8)
-    np.testing.assert_array_equal(out.to_numpy(), xs * 10)
+    np.testing.assert_array_equal(out.numpy(), xs * 10)
 
     # Aliased, the first store zeroes x[i] before it is read.
-    x.from_numpy(xs)
+    tack.copyto(x, xs)
     _accumulate(x, w, x, 8)
-    np.testing.assert_array_equal(x.to_numpy(), np.zeros(8, dtype=np.float32))
+    np.testing.assert_array_equal(x.numpy(), np.zeros(8, dtype=np.float32))
 
     # And the disjoint variant is still right afterwards.
-    x.from_numpy(xs)
+    tack.copyto(x, xs)
     _accumulate(x, w, out, 8)
-    np.testing.assert_array_equal(out.to_numpy(), xs * 10)
+    np.testing.assert_array_equal(out.numpy(), xs * 10)
 
 
 def test_overlapping_imported_views_run_without_the_promise():
     """A three-point stencil written back into shifted storage."""
     base = np.arange(10, dtype=np.float32)
-    src = tack.field_from_ptr(base[1:9], tack.f32, (8,), writable=True)
-    dst = tack.field_from_ptr(base[0:8], tack.f32, (8,), writable=True)
+    src = tack.array_from_ptr(base[1:9], (8,), tack.f32, writable=True)
+    dst = tack.array_from_ptr(base[0:8], (8,), tack.f32, writable=True)
     y = _f32()
     _read_only(src, y, dst)
     np.testing.assert_array_equal(base, [1, 2, 3, 4, 5, 6, 7, 8, 8, 9])
@@ -272,7 +271,7 @@ def test_span_is_the_array_byte_range():
     ``byte_bounds`` in ``numpy.lib.array_utils``, NumPy 1 at top level, and
     the dependency is declared as plain ``numpy``. Every CPU dispatch reads
     it, so a missing import would fail every kernel call."""
-    x = tack.field(dtype=tack.f32, shape=(1024,))
+    x = tack.empty((1024,))
     start, end = x._buffer.span
     data = x._buffer._data
     assert start == data.ctypes.data

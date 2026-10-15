@@ -55,7 +55,7 @@ def probe(data, where, fields=None, locator=None):
     points = arrays.materialize(_point_values(where.geometry.values, where.num_points))
     found, pcs = locator.find(points)
     m = found.shape[0]
-    keys = tack.field(found.dtype, shape=(m,))
+    keys = tack.empty((m,), found.dtype)
     if m:
         _found_keys(found, data.num_cells, keys)
     # The extra cell: not found.
@@ -72,8 +72,8 @@ def probe(data, where, fields=None, locator=None):
             continue
         width = arrays.width_of(f.values)
         dtype = arrays.dtype_of(f.values)
-        values = (tack.Vector.field(width, dtype, shape=(m,)) if width
-                  else tack.field(dtype, shape=(m,)))
+        values = (tack.empty((m,), tack.vec(width, dtype)) if width
+                  else tack.empty((m,), dtype))
         if m:
             values.fill(0)
             for group in data.launch_groups("cells", [f]):
@@ -81,7 +81,7 @@ def probe(data, where, fields=None, locator=None):
                     _evaluate(data.domain_view("cells", group), f.view(group), links, order,
                               pcs, values)
         out[name] = Field(H1(where), values)
-    valid = tack.field(tack.i32, shape=(m,))
+    valid = tack.empty((m,), tack.i32)
     if m:
         _valid(found, valid)
     out["valid"] = Field(Values(where, "points"), valid)

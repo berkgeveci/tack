@@ -16,8 +16,8 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 def _field(values, dtype=tack.f32):
     values = np.asarray(values, dtype=dtype.numpy_dtype)
-    result = tack.field(dtype, values.shape)
-    result.from_numpy(values)
+    result = tack.empty(values.shape, dtype)
+    tack.copyto(result, values)
     return result
 
 
@@ -53,7 +53,7 @@ def test_nan_propagates_across_groups_and_tail(backend, position):
     field = _field(data)
     assert field.min() == -10 and field.max() == 10
     data[position] = np.nan
-    field.from_numpy(data)
+    tack.copyto(field, data)
     for op in ('sum', 'min', 'max', 'mean'):
         for _ in range(3):
             assert np.isnan(getattr(field, op)())
@@ -197,9 +197,9 @@ def _block_extrema(data, out):
                                    [-0.0], [0.0, -0.0], [2e38, 3e38]])
 def test_full_workgroup_f32_extrema(workgroup_backend, values):
     data = np.resize(np.asarray(values, np.float32), 512)
-    out = tack.field(tack.f32, (2, 2))
+    out = tack.empty((2, 2))
     _block_extrema(_field(data), out)
-    actual = out.to_numpy()
+    actual = out.numpy()
     for group in range(2):
         chunk = data[group * 256:(group + 1) * 256]
         for column, op in enumerate(('min', 'max')):
@@ -223,7 +223,7 @@ def test_block_integer_input_requires_explicit_f32(backend):
     message = ('requires f32 input' if get_backend().supports_workgroups
                else 'CPU backend does not support workgroup execution')
     with pytest.raises((TypeError, RuntimeError), match=message):
-        _block_sum(_field(np.ones(256), tack.i32), tack.field(tack.f32, (1,)))
+        _block_sum(_field(np.ones(256), tack.i32), tack.empty((1,)))
 
 
 def test_block_f64_input_requires_explicit_f32(f64_backend):
@@ -231,15 +231,15 @@ def test_block_f64_input_requires_explicit_f32(f64_backend):
     message = ('requires f32 input' if get_backend().supports_workgroups
                else 'CPU backend does not support workgroup execution')
     with pytest.raises((TypeError, RuntimeError), match=message):
-        _block_sum(_field(np.ones(256), tack.f64), tack.field(tack.f32, (1,)))
+        _block_sum(_field(np.ones(256), tack.f64), tack.empty((1,)))
 
 
 def test_full_workgroup_sum_accuracy(workgroup_backend):
     rng = np.random.default_rng(5812)
     values = rng.uniform(-64, 64, 512).astype(np.float32)
-    out = tack.field(tack.f32, (2,))
+    out = tack.empty((2,))
     _block_sum(_field(values), out)
-    for group, actual in enumerate(out.to_numpy()):
+    for group, actual in enumerate(out.numpy()):
         chunk = values[group * 256:(group + 1) * 256]
         exact = math.fsum(map(float, chunk))
         nu = len(chunk) * 2**-24
@@ -255,9 +255,9 @@ def test_block_explicit_f32_cast(workgroup_backend):
             if tack.thread_id() == 0:
                 out[0] = value
 
-    out = tack.field(tack.f32, (1,))
+    out = tack.empty((1,))
     cast_sum(_field(np.ones(256), tack.i32), out)
-    assert out.to_numpy()[0] == 256
+    assert out.numpy()[0] == 256
 
 
 @pytest.mark.parametrize('dialect', ['cuda', 'hip'])

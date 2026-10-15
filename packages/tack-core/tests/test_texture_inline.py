@@ -9,12 +9,12 @@ def test_texture_sample_direct(backend):
     """tex.sample() called directly in a kernel works."""
     W, H, D = 4, 4, 4
     n = W * H * D
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    data = tack.empty((n,))
+    out = tack.empty((1,))
 
     # Fill with a known pattern: value = x + y*4 + z*16
     arr = np.arange(n, dtype=np.float32)
-    data.from_numpy(arr)
+    tack.copyto(data, arr)
 
     tex = tack.texture3d(data, shape=(W, H, D))
 
@@ -25,7 +25,7 @@ def test_texture_sample_direct(backend):
             out[i] = tex.sample(0.0, 0.0, 0.0)
 
     sample_center(out, tex, 1)
-    result = out.to_numpy()[0]
+    result = out.numpy()[0]
     # At (0,0,0) the software trilinear should return the corner value
     assert abs(result - 0.0) < 0.1
 
@@ -34,11 +34,11 @@ def test_texture_sample_in_func(backend):
     """tex.sample() inside a @tack.func should work after inlining."""
     W, H, D = 4, 4, 4
     n = W * H * D
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    data = tack.empty((n,))
+    out = tack.empty((1,))
 
     # Fill with constant 7.0
-    data.from_numpy(np.full(n, 7.0, dtype=np.float32))
+    tack.copyto(data, np.full(n, 7.0, dtype=np.float32))
     tex = tack.texture3d(data, shape=(W, H, D))
 
     @tack.func
@@ -51,7 +51,7 @@ def test_texture_sample_in_func(backend):
             out[i] = do_sample(tex, 0.5, 0.5, 0.5)
 
     sample_via_func(out, tex, 1)
-    result = out.to_numpy()[0]
+    result = out.numpy()[0]
     # Uniform field → sample anywhere gives 7.0
     np.testing.assert_allclose(result, 7.0, rtol=1e-5)
 
@@ -60,10 +60,10 @@ def test_texture_sample_in_nested_func(backend):
     """tex.sample() in a @tack.func called by another @tack.func."""
     W, H, D = 4, 4, 4
     n = W * H * D
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    data = tack.empty((n,))
+    out = tack.empty((1,))
 
-    data.from_numpy(np.full(n, 3.0, dtype=np.float32))
+    tack.copyto(data, np.full(n, 3.0, dtype=np.float32))
     tex = tack.texture3d(data, shape=(W, H, D))
 
     @tack.func
@@ -80,7 +80,7 @@ def test_texture_sample_in_nested_func(backend):
             out[i] = outer_sample(tex, 0.5, 0.5, 0.5)
 
     nested(out, tex, 1)
-    result = out.to_numpy()[0]
+    result = out.numpy()[0]
     np.testing.assert_allclose(result, 6.0, rtol=1e-5)
 
 
@@ -88,12 +88,12 @@ def test_texture_with_other_field_args(backend):
     """tex.sample() in @tack.func alongside regular field parameters."""
     W, H, D = 4, 4, 4
     n = W * H * D
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    coords = tack.field(dtype=tack.f32, shape=(3,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    data = tack.empty((n,))
+    coords = tack.empty((3,))
+    out = tack.empty((1,))
 
-    data.from_numpy(np.full(n, 5.0, dtype=np.float32))
-    coords.from_numpy(np.array([0.5, 0.5, 0.5], dtype=np.float32))
+    tack.copyto(data, np.full(n, 5.0, dtype=np.float32))
+    tack.copyto(coords, np.array([0.5, 0.5, 0.5], dtype=np.float32))
     tex = tack.texture3d(data, shape=(W, H, D))
 
     @tack.func
@@ -106,5 +106,5 @@ def test_texture_with_other_field_args(backend):
             out[i] = sample_at(tex, coords)
 
     sample_coords(out, tex, coords, 1)
-    result = out.to_numpy()[0]
+    result = out.numpy()[0]
     np.testing.assert_allclose(result, 5.0, rtol=1e-5)

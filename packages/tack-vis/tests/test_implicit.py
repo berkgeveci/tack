@@ -103,7 +103,7 @@ def _run(algorithm, grid):
 def test_values_are_vtks(backend, name):
     ours, theirs = FUNCTIONS[name]
     data = vtk_to_dataset(_grid("hexahedron"))
-    values = td.algorithms.implicit_values(data, ours()).values.to_numpy()
+    values = td.algorithms.implicit_values(data, ours()).values.numpy()
     reference = theirs()
     expected = [reference.EvaluateFunction(*p) for p in data.positions()]
     np.testing.assert_allclose(values, expected, rtol=1e-5, atol=1e-5)
@@ -178,7 +178,7 @@ def test_threshold_points_is_vtks(backend):
     reference = _run(threshold, grid)
     out = td.threshold_points(vtk_to_dataset(grid), "h", 2.05, 3.95)
     assert out.num_points == reference.GetNumberOfPoints() > 0
-    values = out.fields["h"].values.to_numpy()
+    values = out.fields["h"].values.numpy()
     assert (values >= 2.05).all() and (values <= 3.95).all()
 
 
@@ -257,7 +257,7 @@ def test_moving_a_function_compiles_nothing_new(backend):
     td.algorithms.implicit_values(data, td.Sphere((0, 0, 0), 1.0))
     variants = len(get_backend()._cache[kernel])
     for r in (0.5, 2.0, 3.0):
-        values = td.algorithms.implicit_values(data, td.Sphere((1, 0, 0), r)).values.to_numpy()
+        values = td.algorithms.implicit_values(data, td.Sphere((1, 0, 0), r)).values.numpy()
         np.testing.assert_allclose(values, ((data.positions() - [1, 0, 0]) ** 2).sum(1) - r * r,
                                    rtol=1e-5, atol=1e-5)
     assert len(get_backend()._cache[kernel]) == variants
@@ -319,7 +319,7 @@ def _check_zero_neighbors(dtype, record_property):
 
     # The plane is x. Only its subnormal neighbors may be flushed by device
     # arithmetic; normal values and both signed zeros have exact expectations.
-    evaluated = field.values.to_numpy()
+    evaluated = field.values.numpy()
     ordinary = [0, 1, 3, 4, 6, 7]
     np.testing.assert_array_equal(evaluated[ordinary], x[ordinary])
     assert ((evaluated[2] == -neighbor and evaluated[5] == neighbor)
@@ -328,9 +328,9 @@ def _check_zero_neighbors(dtype, record_property):
     # Probe comparisons separately from the filters. Some devices preserve
     # subnormal storage but compare it as zero. Permit precisely that behavior,
     # and retain strict checks on zero and the smallest normal numbers.
-    signs = tack.field(tack.i32, shape=(len(x),))
+    signs = tack.empty((len(x),), tack.i32)
     _boundary_signs(field.values, signs)
-    compared = signs.to_numpy()
+    compared = signs.numpy()
     np.testing.assert_array_equal(compared[ordinary], [-1, -1, 0, 0, 1, 1])
     neighbors = compared[[2, 5]].tolist()
     assert neighbors in ([-1, 1], [0, 0])
@@ -347,19 +347,19 @@ def _check_zero_neighbors(dtype, record_property):
              (False, True, [4, 5, 7, 8] if flushed else [3, 4, 5, 6, 7, 8])]
     for inside, expected in [(True, inside_points), (False, outside_points)]:
         out = td.extract_points(data, plane, inside=inside)
-        np.testing.assert_array_equal(out.fields["point"].values.to_numpy(), expected)
+        np.testing.assert_array_equal(out.fields["point"].values.numpy(), expected)
     for inside, boundary, expected in cases:
         out = td.extract_geometry(data, plane, inside=inside, boundary=boundary)
-        np.testing.assert_array_equal(out.fields["cell"].values.to_numpy(), expected)
+        np.testing.assert_array_equal(out.fields["cell"].values.numpy(), expected)
 
     data.fields["x"] = field
     points = td.threshold_points(data, "x", 0., 0.)
-    np.testing.assert_array_equal(points.fields["point"].values.to_numpy(), zero_points)
+    np.testing.assert_array_equal(points.fields["point"].values.numpy(), zero_points)
     zeros = td.threshold(data, "x", 0., 0.)
-    np.testing.assert_array_equal(zeros.fields["cell"].values.to_numpy(),
+    np.testing.assert_array_equal(zeros.fields["cell"].values.numpy(),
                                   [1, 2, 3, 6] if flushed else [2])
     interval = td.threshold(data, "x", -float(normal), float(normal))
-    np.testing.assert_array_equal(interval.fields["cell"].values.to_numpy(), [1, 2, 3, 4, 6, 8])
+    np.testing.assert_array_equal(interval.fields["cell"].values.numpy(), [1, 2, 3, 4, 6, 8])
 
 
 def test_zero_neighbors_f32(backend, record_property):

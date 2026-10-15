@@ -26,16 +26,16 @@ SOFTENING = 0.01
 STEPS = 10
 
 # Position, velocity, and force fields (separate x, y, z components)
-px = tack.empty(dtype=tack.f32, shape=(N,))
-py = tack.empty(dtype=tack.f32, shape=(N,))
-pz = tack.empty(dtype=tack.f32, shape=(N,))
-vx = tack.empty(dtype=tack.f32, shape=(N,))
-vy = tack.empty(dtype=tack.f32, shape=(N,))
-vz = tack.empty(dtype=tack.f32, shape=(N,))
-fx = tack.empty(dtype=tack.f32, shape=(N,))
-fy = tack.empty(dtype=tack.f32, shape=(N,))
-fz = tack.empty(dtype=tack.f32, shape=(N,))
-mass = tack.empty(dtype=tack.f32, shape=(N,))
+px = tack.empty((N,))
+py = tack.empty((N,))
+pz = tack.empty((N,))
+vx = tack.empty((N,))
+vy = tack.empty((N,))
+vz = tack.empty((N,))
+fx = tack.empty((N,))
+fy = tack.empty((N,))
+fz = tack.empty((N,))
+mass = tack.empty((N,))
 
 
 @tack.kernel
@@ -77,10 +77,10 @@ def integrate(px, py, pz, vx, vy, vz, fx, fy, fz, mass, dt, n):
 # Initialize: random positions in a unit sphere, zero velocity
 np.random.seed(42)
 pos = np.random.randn(N, 3).astype(np.float32) * 0.5
-px.from_numpy(pos[:, 0])
-py.from_numpy(pos[:, 1])
-pz.from_numpy(pos[:, 2])
-mass.from_numpy(np.ones(N, dtype=np.float32))
+tack.copyto(px, pos[:, 0])
+tack.copyto(py, pos[:, 1])
+tack.copyto(pz, pos[:, 2])
+tack.copyto(mass, np.ones(N, dtype=np.float32))
 
 print(f"N-body simulation: {N} particles, {STEPS} steps")
 print(f"{'Step':>6s} {'KE':>12s} {'time (ms)':>10s}")
@@ -92,11 +92,11 @@ for step in range(STEPS):
     dt = (time.perf_counter() - t0) * 1000
 
     # Compute kinetic energy for monitoring
-    v2 = vx.to_numpy()**2 + vy.to_numpy()**2 + vz.to_numpy()**2
+    v2 = vx.numpy()**2 + vy.numpy()**2 + vz.numpy()**2
     ke = 0.5 * np.sum(v2)
     print(f"{step:>6d} {ke:>12.4f} {dt:>10.1f}")
 
 print("\nFinal center of mass:")
-print(f"  x={px.to_numpy().mean():.6f}  "
-      f"y={py.to_numpy().mean():.6f}  "
-      f"z={pz.to_numpy().mean():.6f}")
+print(f"  x={px.numpy().mean():.6f}  "
+      f"y={py.numpy().mean():.6f}  "
+      f"z={pz.numpy().mean():.6f}")

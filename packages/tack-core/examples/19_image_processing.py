@@ -35,11 +35,11 @@ def make_test_image(img, w, h):
         img[i, j] = 0.5 + 0.5 * sin(r * 0.3) * exp(0.0 - r * 0.005)
 
 
-src = tack.empty(dtype=tack.f32, shape=(H, W))
-dst = tack.empty(dtype=tack.f32, shape=(H, W))
+src = tack.empty((H, W))
+dst = tack.empty((H, W))
 
 make_test_image(src, W, H)
-test_img = src.to_numpy().reshape(H, W)
+test_img = src.numpy().reshape(H, W)
 
 
 # --- 1. Brightness and contrast ---
@@ -56,7 +56,7 @@ def adjust_brightness_contrast(src, dst, brightness, contrast, w, h):
 adjust_brightness_contrast(src, dst, 0.1, 1.5, W, H)
 print("1. Brightness/contrast: OK")
 print(f"   Input  range: [{test_img.min():.3f}, {test_img.max():.3f}]")
-result = dst.to_numpy().reshape(H, W)
+result = dst.numpy().reshape(H, W)
 print(f"   Output range: [{result.min():.3f}, {result.max():.3f}]")
 
 
@@ -84,17 +84,17 @@ def sobel(src, dst, w, h):
                         dst[i, j] = sqrt(gx * gx + gy * gy)
 
 
-src.from_numpy(test_img)
+tack.copyto(src, test_img)
 dst.fill(0.0)
 sobel(src, dst, W, H)
-edges = dst.to_numpy().reshape(H, W)
+edges = dst.numpy().reshape(H, W)
 print("\n2. Sobel edge detection: OK")
 print(f"   Edge strength: max={edges.max():.3f}, mean={edges.mean():.3f}")
 
 
 # --- 3. Gaussian blur (box blur approximation) ---
 
-tmp = tack.empty(dtype=tack.f32, shape=(H, W))
+tmp = tack.empty((H, W))
 
 
 @tack.kernel
@@ -129,10 +129,10 @@ def blur_vertical(src, dst, w, h):
             dst[i, j] = src[i, j]
 
 
-src.from_numpy(test_img)
+tack.copyto(src, test_img)
 blur_horizontal(src, tmp, W, H)
 blur_vertical(tmp, dst, W, H)
-blurred = dst.to_numpy().reshape(H, W)
+blurred = dst.numpy().reshape(H, W)
 print("\n3. Separable blur (5-tap): OK")
 print(f"   Input  variance: {test_img.var():.6f}")
 print(f"   Output variance: {blurred.var():.6f} (should be smaller)")

@@ -3,11 +3,11 @@
 Pipeline:
     Tack IR → HIP C source → hipRTC (code object) → hipModuleLoad → hipLaunchKernel
 
-Fields are device-resident: ``tack.field()`` allocates a device buffer via
+Arrays are device-resident: ``tack.empty()`` allocates a device buffer via
 ``hipMallocAsync``.  Transfers are explicit:
 
-    field.from_numpy(arr)   # host → device, queued
-    arr = field.to_numpy()  # device → host, queued and waited for
+    tack.copyto(a, arr)     # host → device, queued
+    arr = a.numpy()         # device → host, queued and waited for
 
 No per-dispatch copies — data stays on the GPU between kernel calls. Launches,
 fills and copies go through one stream per device, in order, and return once
@@ -292,7 +292,7 @@ class HIPBuffer(DeviceBuffer):
         """Wait for every queued launch, fill and copy on this device."""
         _wait_stream(self._stream)
 
-    # Reading waits for the stream, so `Field.to_numpy_async` reads in a
+    # Reading waits for the stream, so `Array.numpy_async` reads in a
     # worker thread, with the buffer's device made current there.
     waits_off_thread = True
 
@@ -788,7 +788,7 @@ class HIPBackend(Backend):
         `except` that returned 'cpu': `hipPointerGetAttributes` takes the
         attribute struct as an out-parameter rather than returning it, and
         `hip.hipSuccess` does not exist (it is `hip.hipError_t.hipSuccess`).
-        Since `field_from_ptr` validates against this, *every* attempt to
+        Since `array_from_ptr` validates against this, *every* attempt to
         wrap a HIP device pointer was rejected as host memory — which is the
         DLPack import path and the VTK device interop, both of them.
         """
@@ -970,7 +970,7 @@ class HIPBackend(Backend):
         if field.size == 0:
             return empty_reduction(op)
         if field.dtype is not f32:
-            return reduce_numpy(field.to_numpy(), op)
+            return reduce_numpy(field.numpy(), op)
         n = int(np.prod(field.shape))
         check_launch_size(f"Field {op}()", n, self._max_launch, self.label)
 

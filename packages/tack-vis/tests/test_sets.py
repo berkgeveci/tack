@@ -25,8 +25,8 @@ def test_a_set_is_sorted_unique_and_checked(backend):
     data = _grid()
     s = td.Set(data, "cells", [4, 1, 4, 0])
     assert (s.on, len(s)) == ("cells", 3)
-    np.testing.assert_array_equal(s.to_numpy(), [0, 1, 4])
-    np.testing.assert_array_equal(s.flags().to_numpy(), [1, 1, 0, 0, 1, 0])
+    np.testing.assert_array_equal(s.numpy(), [0, 1, 4])
+    np.testing.assert_array_equal(s.flags().numpy(), [1, 1, 0, 0, 1, 0])
     assert s.ids.dtype == data.id_dtype
     with pytest.raises(ValueError, match="outside the topology's 6 cells"):
         td.Set(data, "cells", [6])
@@ -39,7 +39,7 @@ def test_data_sets_are_checked(backend):
     data = _grid()
     data.sets["left"] = td.Set(data, "cells", [0, 3])
     with pytest.raises(TypeError, match="not a tack.dataset.Set"):
-        data.sets["raw"] = tack.arange(3, tack.i32)
+        data.sets["raw"] = tack.arange(3)
     with pytest.raises(ValueError, match="iteration domain's name"):
         data.sets["cells"] = td.Set(data, "cells", [0])
     with pytest.raises(ValueError, match="another topology"):
@@ -61,9 +61,9 @@ def test_for_each_over_a_cell_set(backend):
     data = _grid()
     data.fields["x"] = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
     data.sets["middle"] = td.Set(data, "cells", [1, 4])
-    out = tack.zeros(tack.f32, (data.num_cells,))
+    out = tack.zeros((data.num_cells,))
     td.for_each(_mark_cells, data, "middle", data.fields["x"], out)
-    np.testing.assert_allclose(out.to_numpy(), [0, 2.5, 0, 0, 2.5, 0])
+    np.testing.assert_allclose(out.numpy(), [0, 2.5, 0, 0, 2.5, 0])
     data.sets["corners"] = td.Set(data, "points", [0])
     with pytest.raises(ValueError, match="not an iteration domain"):
         td.for_each(_mark_cells, data, "corners", data.fields["x"], out)
@@ -74,23 +74,23 @@ def test_a_cell_set_in_a_mixed_mesh(backend):
     data.sets["ends"] = td.Set(data, "cells", [0, 5])
     groups = data.launch_groups("ends")
     assert sum(g.count for g in groups) == 2
-    volumes = td.cell_geometry(data).measure.values.to_numpy()
+    volumes = td.cell_geometry(data).measure.values.numpy()
     np.testing.assert_allclose(volumes, 1)
 
 
 def test_side_sets_from_cells_and_local_faces(backend):
     data = _grid()
     faces = data.topology.faces()
-    sides = faces.sides.to_numpy(vectors=True)
+    sides = faces.sides.numpy()
     # Each boundary face named by its cell and its local face.
     boundary = td.boundary_faces(data)
-    named = sides[boundary.to_numpy()]
+    named = sides[boundary.numpy()]
     s = td.Set.from_sides(data, named[:, 0], named[:, 1])
-    np.testing.assert_array_equal(s.to_numpy(), boundary.to_numpy())
+    np.testing.assert_array_equal(s.numpy(), boundary.numpy())
     # Either side of an interior face names that face.
     shared = np.flatnonzero(sides[:, 2] >= 0)[0]
     both = td.Set.from_sides(data, sides[shared, [0, 2]], sides[shared, [1, 3]])
-    np.testing.assert_array_equal(both.to_numpy(), [shared])
+    np.testing.assert_array_equal(both.numpy(), [shared])
     with pytest.raises(ValueError, match="a local face they do not have"):
         td.Set.from_sides(data, [0], [6])
 
@@ -114,7 +114,7 @@ def test_side_sets_of_cells_with_many_faces(backend):
     64 with face 0, and refused local faces past 62."""
     data = _prism(64)
     for local in (0, 1, 63, 65):
-        np.testing.assert_array_equal(td.Set.from_sides(data, [0], [local]).to_numpy(), [local])
+        np.testing.assert_array_equal(td.Set.from_sides(data, [0], [local]).numpy(), [local])
     with pytest.raises(ValueError, match="a local face they do not have"):
         td.Set.from_sides(data, [0], [66])
 
@@ -122,11 +122,11 @@ def test_side_sets_of_cells_with_many_faces(backend):
 @pytest.mark.parametrize("make", [td.as_polyhedra, lambda d: td.as_polygons(td.external_faces(d))])
 def test_side_sets_where_cells_list_their_faces(backend, make):
     data = make(_grid())
-    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    sides = data.topology.faces().sides.numpy()
     boundary = td.boundary_faces(data)
-    named = sides[boundary.to_numpy()]
+    named = sides[boundary.numpy()]
     s = td.Set.from_sides(data, named[:, 0], named[:, 1])
-    np.testing.assert_array_equal(s.to_numpy(), boundary.to_numpy())
+    np.testing.assert_array_equal(s.numpy(), boundary.numpy())
 
 
 def test_sets_are_made_from_pairs_too(backend):
@@ -153,8 +153,8 @@ def test_the_boundary_set_is_taken_as_the_faces_hold_it(backend, monkeypatch):
     assert not checked
     assert boundary.ids is faces.boundary()
     expected = np.zeros(faces.num_faces, np.int32)
-    expected[faces.boundary().to_numpy()] = 1
-    np.testing.assert_array_equal(boundary.flags().to_numpy(), expected)
+    expected[faces.boundary().numpy()] = 1
+    np.testing.assert_array_equal(boundary.flags().numpy(), expected)
     data.sets["boundary"] = boundary
     surface = td.external_faces(data)
     assert surface.num_cells == len(boundary)
@@ -168,7 +168,7 @@ def test_filters_carry_sets(backend):
     data.sets["boundary"] = td.boundary_faces(data)
     # threshold keeps cells 2..5: their cells and points renumbered.
     kept = td.threshold(data, "c", 2, 5)
-    np.testing.assert_array_equal(kept.sets["odd"].to_numpy(), [1, 3])
+    np.testing.assert_array_equal(kept.sets["odd"].numpy(), [1, 3])
     assert len(kept.sets["origin"]) == 0
     assert "boundary" not in kept.sets                  # faces are derived afresh
     # The boundary surface's cells are the boundary faces: the face set is all of them.
@@ -178,14 +178,14 @@ def test_filters_carry_sets(backend):
     # Same entities, same sets.
     poly = td.as_polyhedra(data)
     for name in data.sets:
-        np.testing.assert_array_equal(poly.sets[name].to_numpy(), data.sets[name].to_numpy())
+        np.testing.assert_array_equal(poly.sets[name].numpy(), data.sets[name].numpy())
         assert poly.sets[name].topology is poly.topology
     moved = td.warp(data, (0.0, 0.0, 1.0))
-    np.testing.assert_array_equal(moved.sets["odd"].to_numpy(), [1, 3, 5])
+    np.testing.assert_array_equal(moved.sets["odd"].numpy(), [1, 3, 5])
     # A contour's points are new: point sets are left behind, cell sets go by pieces.
     data.fields["x"] = td.Field(td.H1(data), _scalars(data.positions()[:, 0]))
     cut = td.contour(data, "x", 1.5)
     assert "origin" not in cut.sets
-    pieces = cut.fields["c"].values.to_numpy()
-    np.testing.assert_array_equal(np.sort(cut.sets["odd"].to_numpy()),
+    pieces = cut.fields["c"].values.numpy()
+    np.testing.assert_array_equal(np.sort(cut.sets["odd"].numpy()),
                                   np.flatnonzero(np.isin(pieces, [1, 3, 5])))

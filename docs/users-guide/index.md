@@ -17,7 +17,7 @@ for installation and the relationship to released APIs.
 2. **Understand a program.** [From Python to a Tack program](12-execution-model.md)
    explains which code runs in Python, which code is compiled, and how to order
    calculation stages.
-3. **Build a simulation.** [Heat diffusion](tutorials/heat.md) combines fields,
+3. **Build a simulation.** [Heat diffusion](tutorials/heat.md) combines arrays,
    a stencil, buffer swapping and an independent NumPy check in one complete script.
 
 You can follow this path before reading the language chapters in detail. Keep
@@ -51,7 +51,7 @@ If you already write GPU kernels, read [Kernels](03-kernels.md),
 | [Getting Started](01-getting-started.md) | Install and run the first kernel |
 | [From Python to a Tack program](12-execution-model.md) | Host/device boundary, stages and compilation |
 | [Arrays and Types](02-fields-and-types.md) | Storage, NumPy exchange, scalar types and precision |
-| [Vectors and matrices](14-vectors-and-matrices.md) | Component values, masks, products and fields |
+| [Vectors and matrices](14-vectors-and-matrices.md) | Component values, masks, products and arrays |
 | [Kernels](03-kernels.md) | Parallel ranges, constants, returns and specialization |
 | [Control Flow and Math](04-control-flow.md) | Conditions, sequential loops, casts and numerical helpers |
 | [Device Functions](05-device-functions.md) | Reusable compiled helpers |

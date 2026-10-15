@@ -46,68 +46,68 @@ def _record_value(value, out, k: tack.i32, n: tack.i32):
 
 def test_launches_run_in_order():
     """400 launches, each reading what the one before wrote."""
-    acc = tack.zeros(tack.i32, (1000,))
+    acc = tack.zeros((1000,), tack.i32)
     for k in range(400):
         _add_into(acc, k)
     expected = sum(range(400)) + 400 * np.arange(1000)
-    np.testing.assert_array_equal(acc.to_numpy(), expected)
+    np.testing.assert_array_equal(acc.numpy(), expected)
 
 
 def test_each_queued_launch_keeps_its_own_scalars():
     """A variant's scalars are packed into one buffer rewritten per call;
     the rewrite is queued after the launch that reads the old values."""
-    outs = [tack.zeros(tack.i32, (16,)) for _ in range(40)]
+    outs = [tack.zeros((16,), tack.i32) for _ in range(40)]
     for k, out in enumerate(outs):
         _add_into(out, k)
     for k, out in enumerate(outs):
-        np.testing.assert_array_equal(out.to_numpy(), k + np.arange(16))
+        np.testing.assert_array_equal(out.numpy(), k + np.arange(16))
 
 
 def test_host_writes_wait_for_the_launches_before_them():
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     _add_into(acc, 1)
-    acc.from_numpy(np.full(64, 100, np.int32))     # after the launch, not under it
+    tack.copyto(acc, np.full(64, 100, np.int32))     # after the launch, not under it
     _add_into(acc, 2)
-    np.testing.assert_array_equal(acc.to_numpy(), 102 + np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), 102 + np.arange(64))
 
 
 def test_fills_are_ordered_among_the_launches():
     n, steps = 4096, 300
-    value = tack.field(tack.f32, shape=(1,))
-    out = tack.field(tack.f32, shape=(steps * n,))
+    value = tack.empty((1,))
+    out = tack.empty((steps * n,))
     for k in range(steps):
         value.fill(float(k))
         _record_value(value, out, k, n)
-    np.testing.assert_array_equal(out.to_numpy().reshape(steps, n)[:, 0], np.arange(steps))
+    np.testing.assert_array_equal(out.numpy().reshape(steps, n)[:, 0], np.arange(steps))
 
 
 def test_a_dropped_temporary_is_freed_after_its_launches():
     """A field Python drops while launches that use it are queued is freed
     in stream order; the launches read and write it whole."""
-    x = tack.field(tack.f32, (1 << 20,))
+    x = tack.empty((1 << 20,))
     x.fill(2.0)
-    out = tack.zeros(tack.f32, (1 << 20,))
+    out = tack.zeros((1 << 20,))
     for _ in range(50):
-        tmp = tack.zeros(tack.f32, (1 << 20,))
+        tmp = tack.zeros((1 << 20,))
         _copy_scaled(x, tmp, 3.0)
         _copy_scaled(tmp, out, 0.5)
         del tmp                                   # queued launches still use it
         gc.collect()
-    np.testing.assert_array_equal(out.to_numpy(), 3.0)
+    np.testing.assert_array_equal(out.numpy(), 3.0)
 
 
 def test_sync_waits_for_queued_launches():
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     for k in range(50):
         _add_into(acc, k)
     tack.sync()
     (err,) = hip_backend.hip.hipStreamQuery(get_backend()._stream)
     assert err == hip_backend.hip.hipError_t.hipSuccess      # nothing left queued
-    np.testing.assert_array_equal(acc.to_numpy(), sum(range(50)) + 50 * np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), sum(range(50)) + 50 * np.arange(64))
 
 
 def test_an_indexed_read_waits():
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     _add_into(acc, 7)
     assert acc[3] == 10
 
@@ -123,8 +123,8 @@ def test_a_launch_returns_before_it_completes():
                 s += tack.sin(x[i] + k * 0.001)
             out[i] = s
 
-    x = tack.field(tack.f32, (1 << 20,))
-    out = tack.zeros(tack.f32, (1 << 20,))
+    x = tack.empty((1 << 20,))
+    out = tack.zeros((1 << 20,))
     heavy(x, out)
     tack.sync()
     t0 = time.perf_counter()
@@ -141,17 +141,17 @@ def test_a_launch_returns_before_it_completes():
 
 def test_a_shared_buffer_completes_its_launches():
     """Memory handed outside Tack is complete when a launch on it returns."""
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     acc._buffer.share()
     assert acc._buffer._shared
     _add_into(acc, 3)
     (err,) = hip_backend.hip.hipStreamQuery(get_backend()._stream)
     assert err == hip_backend.hip.hipError_t.hipSuccess
-    np.testing.assert_array_equal(acc.to_numpy(), 3 + np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), 3 + np.arange(64))
 
 
 def test_reductions_see_the_queued_launches():
-    acc = tack.zeros(tack.f32, (1000,))
+    acc = tack.zeros((1000,))
     for k in range(10):
         _copy_scaled(acc, acc, 1.0)
     acc.fill(2.0)
@@ -170,26 +170,26 @@ def _busy(x, out):
 
 @pytest.mark.parametrize("n", [16, 1 << 12, 1 << 22])
 def test_a_host_array_may_change_once_its_write_returns(n):
-    """from_numpy from pageable memory is queued behind busy launches; HIP
+    """copyto from pageable memory is queued behind busy launches; HIP
     stages a small write and waits before a large one, so either way the
     field gets what the array held when the call returned."""
-    x = tack.field(tack.f32, (1 << 20,))
-    busy = tack.zeros(tack.f32, (1 << 20,))
-    field = tack.zeros(tack.f32, (n,))
+    x = tack.empty((1 << 20,))
+    busy = tack.zeros((1 << 20,))
+    field = tack.zeros((n,))
     for _ in range(5):
         _busy(x, busy)
     host = np.arange(n, dtype=np.float32)
-    field.from_numpy(host)
+    tack.copyto(field, host)
     host[:] = -1.0
     del host
     gc.collect()
-    np.testing.assert_array_equal(field.to_numpy(), np.arange(n, dtype=np.float32))
+    np.testing.assert_array_equal(field.numpy(), np.arange(n, dtype=np.float32))
 
 
 def test_a_dlpack_export_completes_its_launches():
     """A consumer reads exported memory on its own; the queued launches are
     complete when it gets the capsule, and later ones before they return."""
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     for k in range(20):
         _add_into(acc, k)
     acc.__dlpack__()
@@ -233,19 +233,19 @@ def _nothing_queued():
 def test_a_marker_waits_for_the_launches_before_it():
     """`async_marker` covers every launch queued so far, and its wait
     raises nothing when they succeed."""
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     for k in range(50):
         _add_into(acc, k)
     marker = get_backend().async_marker()
     assert isinstance(marker, hip_backend._StreamMarker)
     marker.wait()
     assert _nothing_queued()
-    np.testing.assert_array_equal(acc.to_numpy(), sum(range(50)) + 50 * np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), sum(range(50)) + 50 * np.arange(64))
 
 
 def test_a_marker_does_not_wait_for_later_launches():
-    out = tack.field(tack.f32, (1 << 18,))
-    short = tack.zeros(tack.i32, (16,))
+    out = tack.empty((1 << 18,))
+    short = tack.zeros((16,), tack.i32)
     iters = _long_launch(out)
     _add_into(short, 1)
     marker = get_backend().async_marker()
@@ -254,25 +254,25 @@ def test_a_marker_does_not_wait_for_later_launches():
     marker.wait()
     assert time.perf_counter() - t0 < 0.1
     assert not _nothing_queued()
-    np.testing.assert_array_equal(short.to_numpy(), 1 + np.arange(16))
+    np.testing.assert_array_equal(short.numpy(), 1 + np.arange(16))
 
 
-@pytest.mark.parametrize("wait", ["sync", "to_numpy", "index", "sum", "marker"])
+@pytest.mark.parametrize("wait", ["sync", "numpy", "index", "sum", "marker"])
 def test_a_wait_releases_the_gil_and_the_stream(wait):
     """While one thread waits for a long launch, another thread keeps
     launching on the same stream. hip-python's wrappers hold the GIL while
     the runtime waits, and ROCm's hipStreamSynchronize holds the stream:
     with either, the launcher got one launch per 350 ms wait. Waiting on an
     event through ctypes, it launches every millisecond."""
-    out = tack.field(tack.f32, (1 << 18,))
-    short = tack.zeros(tack.i32, (16,))
+    out = tack.empty((1 << 18,))
+    short = tack.zeros((16,), tack.i32)
     iters = _long_launch(out)
     _add_into(short, 1)                      # compiled before the timing,
     out.sum()                                # as is the reduction kernel:
     tack.sync()                              # hipRTC holds the GIL
     waits = {
         "sync": tack.sync,
-        "to_numpy": out.to_numpy,
+        "numpy": out.numpy,
         "index": lambda: out[3],
         "sum": out.sum,
         "marker": lambda: get_backend().async_marker().wait(),
@@ -290,13 +290,13 @@ def test_a_wait_releases_the_gil_and_the_stream(wait):
     elapsed = time.perf_counter() - t0
     waiter.join()
     assert launched >= elapsed * 1000 * 0.1, (launched, elapsed)
-    assert short.to_numpy()[0] == 1 + launched
+    assert short.numpy()[0] == 1 + launched
 
 
 def test_a_read_from_another_thread_binds_the_buffers_device():
     """A worker thread starts on device 0; reading a field makes its device
     current for the read and puts the previous one back."""
-    out = tack.field(tack.f32, (8,))
+    out = tack.empty((8,))
     out.fill(2.5)
     device = get_backend()._device
     seen = {}
@@ -304,7 +304,7 @@ def test_a_read_from_another_thread_binds_the_buffers_device():
     def read():
         with out._buffer.thread_binding():
             seen["bound"] = hip_backend.hip.hipGetDevice()[1]
-            seen["values"] = out.to_numpy()
+            seen["values"] = out.numpy()
         seen["after"] = hip_backend.hip.hipGetDevice()[1]
 
     t = threading.Thread(target=read)
@@ -321,9 +321,9 @@ def test_waits_go_through_hip_python_without_the_runtime_library(monkeypatch):
     holding the GIL."""
     monkeypatch.setattr(hip_backend, "_RUNTIME", hip_backend._NO_RUNTIME)
     assert hip_backend._runtime() is None
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     _add_into(acc, 3)
     get_backend().async_marker().wait()
     tack.sync()
     assert acc[1] == 4
-    np.testing.assert_array_equal(acc.to_numpy(), 3 + np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), 3 + np.arange(64))

@@ -48,14 +48,14 @@ def weighted_sum(out, a, b,
 
 
 # Set up fields
-out = tack.empty(dtype=tack.f32, shape=(n,))
-a = tack.empty(dtype=tack.f32, shape=(n,))
-b = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty((n,))
+a = tack.empty((n,))
+b = tack.empty((n,))
 
 a_np = np.arange(n, dtype=np.float32)
 b_np = np.ones(n, dtype=np.float32) * 0.5
-a.from_numpy(a_np)
-b.from_numpy(b_np)
+tack.copyto(a, a_np)
+tack.copyto(b, b_np)
 
 # 30 float weights + 3 int scalars = 33 scalar parameters
 weights = [float(i) * 0.1 for i in range(30)]
@@ -66,7 +66,7 @@ count = n
 # Call the kernel -- all 33 scalars are packed automatically
 weighted_sum(out, a, b, *weights, offset, stride, count)
 
-result = out.to_numpy()
+result = out.numpy()
 total_w = sum(weights)
 expected = total_w * a_np + b_np + offset
 assert np.allclose(result, expected, rtol=1e-4), f"Mismatch: max err = {np.max(np.abs(result - expected))}"

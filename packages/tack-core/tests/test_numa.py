@@ -247,7 +247,7 @@ _set_policy(_MPOL_BIND, 1)
 # One thread: the fill runs on this, bound, thread.
 tack.init(arch=tack.cpu, num_threads=1)
 n = (64 << 20) // 4
-field = tack.zeros(tack.f32, (n,))
+field = tack.zeros((n,), tack.f32)
 hist = pages_per_node(field._buffer._data.ctypes.data, 64 << 20)
 assert set(hist) == {{0}}, f"pages left the bound node: {{dict(hist)}}"
 assert cpu._read_mempolicy()[0] == _MPOL_BIND, "the binding was dropped"

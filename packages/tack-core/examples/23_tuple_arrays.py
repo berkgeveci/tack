@@ -168,14 +168,14 @@ def dot_product(a: tack.template(), b: tack.template(), output, n, nc):
 def make_aos(data_np):
     """Create an AOSTupleArray from a (num_tuples, num_components) numpy array."""
     nt, nc = data_np.shape
-    field = tack.empty(dtype=tack.f32, shape=(nt * nc,))
-    field.from_numpy(data_np.ravel().astype(np.float32))
+    field = tack.empty((nt * nc,))
+    tack.copyto(field, data_np.ravel().astype(np.float32))
     return AOSTupleArray(field, nt, nc)
 
 
 def aos_to_numpy(arr):
     """Read back an AOSTupleArray to (num_tuples, num_components) numpy."""
-    return arr.data.to_numpy().reshape(arr.num_tuples, arr.num_components)
+    return arr.data.numpy().reshape(arr.num_tuples, arr.num_components)
 
 
 def make_soa(data_np):
@@ -184,15 +184,15 @@ def make_soa(data_np):
     SOAType = make_soa_type(nc)
     fields = []
     for c in range(nc):
-        f = tack.empty(dtype=tack.f32, shape=(nt,))
-        f.from_numpy(data_np[:, c].astype(np.float32).copy())
+        f = tack.empty((nt,))
+        tack.copyto(f, data_np[:, c].astype(np.float32).copy())
         fields.append(f)
     return SOAType(*fields)
 
 
 def soa_to_numpy(arr, nc):
     """Read back a SOATupleArray to (num_tuples, nc) numpy."""
-    columns = [getattr(arr, f"c{c}").to_numpy() for c in range(nc)]
+    columns = [getattr(arr, f"c{c}").numpy() for c in range(nc)]
     return np.column_stack(columns)
 
 
@@ -208,7 +208,7 @@ np.random.seed(42)
 data_a = np.random.randn(n, nc).astype(np.float32)
 data_b = np.random.randn(n, nc).astype(np.float32)
 
-output = tack.empty(dtype=tack.f32, shape=(n,))
+output = tack.empty((n,))
 
 
 # --- AOS tests ---
@@ -216,14 +216,14 @@ print("--- AOS layout ---")
 
 a = make_aos(data_a)
 b = make_aos(data_b)
-out_field = tack.empty(dtype=tack.f32, shape=(n * nc,))
+out_field = tack.empty((n * nc,))
 out = AOSTupleArray(out_field, n, nc)
 
 np.testing.assert_allclose(aos_to_numpy(a), data_a, atol=1e-6)
 
 compute_magnitude(a, output, n)
 expected = np.sqrt(np.sum(data_a ** 2, axis=1))
-assert np.allclose(output.to_numpy(), expected, atol=1e-4)
+assert np.allclose(output.numpy(), expected, atol=1e-4)
 print("  AOS magnitude: OK")
 
 add_tuple_arrays(a, b, out, n, nc)
@@ -236,7 +236,7 @@ print("  AOS scale: OK")
 
 dot_product(a, b, output, n, nc)
 expected = np.sum(data_a * data_b, axis=1)
-assert np.allclose(output.to_numpy(), expected, atol=1e-3)
+assert np.allclose(output.numpy(), expected, atol=1e-3)
 print("  AOS dot: OK")
 
 
@@ -248,16 +248,16 @@ SOAType = make_soa_type(nc)
 a = make_soa(data_a)
 b = make_soa(data_b)
 out = SOAType(
-    tack.empty(dtype=tack.f32, shape=(n,)),
-    tack.empty(dtype=tack.f32, shape=(n,)),
-    tack.empty(dtype=tack.f32, shape=(n,)),
+    tack.empty((n,)),
+    tack.empty((n,)),
+    tack.empty((n,)),
 )
 
 np.testing.assert_allclose(soa_to_numpy(a, nc), data_a, atol=1e-6)
 
 compute_magnitude(a, output, n)
 expected = np.sqrt(np.sum(data_a ** 2, axis=1))
-assert np.allclose(output.to_numpy(), expected, atol=1e-4)
+assert np.allclose(output.numpy(), expected, atol=1e-4)
 print("  SOA magnitude: OK")
 
 add_tuple_arrays(a, b, out, n, nc)
@@ -270,7 +270,7 @@ print("  SOA scale: OK")
 
 dot_product(a, b, output, n, nc)
 expected = np.sum(data_a * data_b, axis=1)
-assert np.allclose(output.to_numpy(), expected, atol=1e-3)
+assert np.allclose(output.numpy(), expected, atol=1e-3)
 print("  SOA dot: OK")
 
 
@@ -278,11 +278,11 @@ print("  SOA dot: OK")
 print("\n--- Mixed layouts ---")
 
 def make_soa_output(nc, n):
-    return SOAType(*[tack.empty(dtype=tack.f32, shape=(n,)) for _ in range(nc)])
+    return SOAType(*[tack.empty((n,)) for _ in range(nc)])
 
 aos_a = make_aos(data_a)
 soa_b = make_soa(data_b)
-aos_out_field = tack.empty(dtype=tack.f32, shape=(n * nc,))
+aos_out_field = tack.empty((n * nc,))
 aos_out = AOSTupleArray(aos_out_field, n, nc)
 soa_out = make_soa_output(nc, n)
 expected = data_a + data_b
@@ -314,7 +314,7 @@ data_5b = np.random.randn(n, nc5).astype(np.float32)
 soa5_a = make_soa(data_5a)
 soa5_b = make_soa(data_5b)
 SOA5 = make_soa_type(nc5)
-soa5_out = SOA5(*[tack.empty(dtype=tack.f32, shape=(n,)) for _ in range(nc5)])
+soa5_out = SOA5(*[tack.empty((n,)) for _ in range(nc5)])
 
 add_tuple_arrays(soa5_a, soa5_b, soa5_out, n, nc5)
 assert np.allclose(soa_to_numpy(soa5_out, nc5), data_5a + data_5b, atol=1e-4)
@@ -322,7 +322,7 @@ print("  SOA(5) add: OK")
 
 dot_product(soa5_a, soa5_b, output, n, nc5)
 expected = np.sum(data_5a * data_5b, axis=1)
-assert np.allclose(output.to_numpy(), expected, atol=1e-3)
+assert np.allclose(output.numpy(), expected, atol=1e-3)
 print("  SOA(5) dot: OK")
 
 # AOS(5) + SOA(5)

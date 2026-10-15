@@ -68,7 +68,7 @@ class Backend:
     init_options: frozenset[str] = frozenset()
 
     #: Memory-space names (as returned by `memory_space()`) that a pointer
-    #: must be in for `field_from_ptr()` to wrap it. Empty means this
+    #: must be in for `array_from_ptr()` to wrap it. Empty means this
     #: backend does not distinguish, so no check is made.
     device_memory_spaces: frozenset[str] = frozenset()
 

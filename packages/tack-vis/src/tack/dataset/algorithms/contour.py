@@ -137,22 +137,22 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
     n_cells = data.num_cells
     idt = data.id_dtype
     odt = ids.for_output(data, 15 * n_cells)     # up to five triangles a cell
-    counts = tack.zeros(tack.i32, (n_cells,))
+    counts = tack.zeros((n_cells,), tack.i32)
     for group in groups:
         _contour_counts(data.domain_view("cells", group), field.view(group), isovalue, counts)
-    starts = tack.field(odt, shape=(n_cells,))
+    starts = tack.empty((n_cells,), odt)
     triangles = exclusive_scan(counts, starts, n_cells) if n_cells else 0
 
     n = 3 * triangles
-    points = tack.Vector.field(3, data.dtype, shape=(n,))
-    edges = tack.Vector.field(2, idt, shape=(n,))
-    weights = tack.field(arrays.dtype_of(field.values), shape=(n,))
-    sources = tack.field(idt, shape=(n,))
-    keys = tack.Vector.field(2, idt, shape=(n,))
+    points = tack.empty((n,), tack.vec(3, data.dtype))
+    edges = tack.empty((n,), tack.vec(2, idt))
+    weights = tack.empty((n,), arrays.dtype_of(field.values))
+    sources = tack.empty((n,), idt)
+    keys = tack.empty((n,), tack.vec(2, idt))
     for group in groups:
         _contour_points(data.domain_view("cells", group), field.view(group), isovalue,
                         per_cell, starts, points, edges, weights, sources, keys)
-    triangle_cells = tack.field(idt, shape=(triangles,))
+    triangle_cells = tack.empty((triangles,), idt)
     if triangles:
         _triangle_cells(sources, triangle_cells)
 
@@ -160,20 +160,20 @@ def contour(data, field, isovalue, merge_points=True, fields=None):
         # A key is the edge's (low, high) points, or (within cells) (cell, local edge).
         order, _ = bucket_order(keys, n_cells if per_cell else data.num_points, odt)
         offsets, count = run_offsets(keys, order)
-        merged = tack.Vector.field(3, data.dtype, shape=(count,))
-        merged_edges = tack.Vector.field(2, idt, shape=(count,))
-        merged_weights = tack.field(weights.dtype, shape=(count,))
+        merged = tack.empty((count,), tack.vec(3, data.dtype))
+        merged_edges = tack.empty((count,), tack.vec(2, idt))
+        merged_weights = tack.empty((count,), weights.dtype)
         _first_of_runs(order, offsets, points, edges, weights, merged, merged_edges,
                        merged_weights, count)
-        rows = tack.field(odt, shape=(n,))
+        rows = tack.empty((n,), odt)
         _run_of_each(order, offsets, rows, count)
         points, edges, weights = merged, merged_edges, merged_weights
     else:
-        rows, count = tack.arange(n, odt), n
+        rows, count = tack.arange(n, dtype=odt), n
 
-    types = tack.field(tack.u8, shape=(triangles,))
-    tri_offsets = tack.zeros(odt, (triangles + 1,))
-    connectivity = tack.field(odt, shape=(n,))
+    types = tack.empty((triangles,), tack.u8)
+    tri_offsets = tack.zeros((triangles + 1,), odt)
+    connectivity = tack.empty((n,), odt)
     if triangles:
         _triangles(rows, types, tri_offsets, connectivity, triangles)
     surface = UnstructuredTopology(types, tri_offsets, connectivity, num_points=count)
@@ -325,36 +325,36 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
     idt = data.id_dtype
     # A face's crossings are at most its points; every face is in two cells at most.
     odt = ids.for_output(data, 2 * int(t.face_points.shape[0]))
-    counts = tack.zeros(tack.i32, (entries,))
+    counts = tack.zeros((entries,), tack.i32)
     for group in data.launch_groups("cells", []):
         if group.count:
             _lopez_counts(data.domain_view("cells", group), values, isovalue, counts)
-    pair_offsets = tack.field(odt, shape=(entries + 1,))
+    pair_offsets = tack.empty((entries + 1,), odt)
     pairs = exclusive_scan(counts, pair_offsets, entries) if entries else 0
     _close(pair_offsets, entries, pairs)
-    pair_from = tack.Vector.field(2, idt, shape=(pairs,))
-    pair_to = tack.Vector.field(2, idt, shape=(pairs,))
+    pair_from = tack.empty((pairs,), tack.vec(2, idt))
+    pair_to = tack.empty((pairs,), tack.vec(2, idt))
     if pairs:
         for group in data.launch_groups("cells", []):
             if group.count:
                 _lopez_pairs(data.domain_view("cells", group), values, isovalue,
                              pair_offsets, pair_from, pair_to)
     n = data.num_cells
-    poly_counts = tack.zeros(tack.i32, (n,))
-    poly_offsets = tack.field(odt, shape=(n + 1,))
-    bad = tack.zeros(tack.i32, (1,))
+    poly_counts = tack.zeros((n,), tack.i32)
+    poly_offsets = tack.empty((n + 1,), odt)
+    bad = tack.zeros((1,), tack.i32)
     buckets = SizeBuckets(t)
     traced = [g for g in data.launch_groups("cells", [], keys=[buckets]) if g.count]
-    dummy = tack.field(odt, shape=(1,))
+    dummy = tack.empty((1,), odt)
     if pairs:
         for group in traced:
             _lopez_trace(data.domain_view("cells", group), pair_offsets, pair_from, pair_to,
                          0, poly_counts, poly_offsets, dummy, dummy, dummy, bad)
     polygons = exclusive_scan(poly_counts, poly_offsets, n) if n and pairs else 0
     _close(poly_offsets, n, polygons)
-    poly_starts = tack.field(odt, shape=(polygons + 1,))
-    poly_cells = tack.field(idt, shape=(polygons,))
-    vertices = tack.field(odt, shape=(pairs,))
+    poly_starts = tack.empty((polygons + 1,), odt)
+    poly_cells = tack.empty((polygons,), idt)
+    vertices = tack.empty((pairs,), odt)
     if polygons:
         for group in traced:
             _lopez_trace(data.domain_view("cells", group), pair_offsets, pair_from, pair_to,
@@ -368,10 +368,10 @@ def _polyhedral_contour(data, field, isovalue, fields=None):
     # iso-vertex per run of equal names.
     order, _ = bucket_order(pair_from, data.num_points, odt)
     offsets, count = run_offsets(pair_from, order)
-    positions = tack.Vector.field(3, data.dtype, shape=(count,))
-    ends = tack.Vector.field(2, idt, shape=(count,))
-    weights = tack.field(arrays.dtype_of(field.values), shape=(count,))
-    vertex_of_pair = tack.field(odt, shape=(pairs,))
+    positions = tack.empty((count,), tack.vec(3, data.dtype))
+    ends = tack.empty((count,), tack.vec(2, idt))
+    weights = tack.empty((count,), arrays.dtype_of(field.values))
+    vertex_of_pair = tack.empty((pairs,), odt)
     if count:
         _iso_vertices(pair_from, order, offsets, values, isovalue,
                       arrays.materialize(data.geometry.values), weights, positions, ends,
@@ -539,24 +539,24 @@ def _contour_cell_lines(data, field, isovalue, fields=None):
               if g.count and g.shape.DIMENSION == 2]
     n = data.num_cells
     idt = data.id_dtype
-    counts = tack.zeros(tack.i32, (n,))
+    counts = tack.zeros((n,), tack.i32)
     for group in groups:
         _cell_line_counts(data.domain_view("cells", group), field.view(group), isovalue,
                           counts)
     odt = ids.for_output(data, 4 * n)        # at most two lines, four points, a cell
-    starts = tack.field(odt, shape=(n,))
+    starts = tack.empty((n,), odt)
     lines = exclusive_scan(counts, starts, n) if n else 0
-    line_cells = tack.field(idt, shape=(lines,))
-    ends = tack.Vector.field(2, idt, shape=(2 * lines,))
-    weights = tack.field(arrays.dtype_of(field.values), shape=(2 * lines,))
-    positions = tack.Vector.field(3, data.dtype, shape=(2 * lines,))
+    line_cells = tack.empty((lines,), idt)
+    ends = tack.empty((2 * lines,), tack.vec(2, idt))
+    weights = tack.empty((2 * lines,), arrays.dtype_of(field.values))
+    positions = tack.empty((2 * lines,), tack.vec(3, data.dtype))
     if lines:
         for group in groups:
             _cell_line_points(data.domain_view("cells", group), field.view(group), isovalue,
                               starts, line_cells, ends, weights, positions)
-    types = tack.field(tack.u8, shape=(lines,))
-    offsets = tack.zeros(odt, (lines + 1,))
-    connectivity = tack.field(odt, shape=(2 * lines,))
+    types = tack.empty((lines,), tack.u8)
+    offsets = tack.zeros((lines + 1,), odt)
+    connectivity = tack.empty((2 * lines,), odt)
     if lines:
         _paired_lines(types, offsets, connectivity, lines)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=2 * lines)
@@ -587,31 +587,31 @@ def _contour_lines(data, field, isovalue, fields=None):
     n = data.num_cells
     groups = [g for g in data.launch_groups("cells", [])
               if g.count and g.shape.DIMENSION == 2]
-    counts = tack.zeros(tack.i32, (n,))
+    counts = tack.zeros((n,), tack.i32)
     for group in groups:
         _line_counts(data.domain_view("cells", group), values, isovalue, counts)
     odt = ids.for_output(data, 2 * nf)
-    starts = tack.field(odt, shape=(n,))
+    starts = tack.empty((n,), odt)
     lines = exclusive_scan(counts, starts, n) if n else 0
-    line_faces = tack.Vector.field(2, idt, shape=(lines,))
-    line_cells = tack.field(idt, shape=(lines,))
-    crossed = tack.zeros(tack.i32, (nf,))
-    ends = tack.Vector.field(2, idt, shape=(nf,))
-    weights = tack.field(values.dtype, shape=(nf,))
-    positions = tack.Vector.field(3, data.dtype, shape=(nf,))
+    line_faces = tack.empty((lines,), tack.vec(2, idt))
+    line_cells = tack.empty((lines,), idt)
+    crossed = tack.zeros((nf,), tack.i32)
+    ends = tack.empty((nf,), tack.vec(2, idt))
+    weights = tack.empty((nf,), values.dtype)
+    positions = tack.empty((nf,), tack.vec(3, data.dtype))
     if lines:
         for group in groups:
             _line_pieces(data.domain_view("cells", group), values, isovalue, starts, line_faces,
                          line_cells, crossed, ends, weights, positions)
     point_of_face, kept, count = _compact(crossed, odt)
-    out_ends = tack.Vector.field(2, idt, shape=(count,))
-    out_weights = tack.field(values.dtype, shape=(count,))
-    out_positions = tack.Vector.field(3, data.dtype, shape=(count,))
+    out_ends = tack.empty((count,), tack.vec(2, idt))
+    out_weights = tack.empty((count,), values.dtype)
+    out_positions = tack.empty((count,), tack.vec(3, data.dtype))
     if count:
         _iso_points(kept, ends, weights, positions, out_ends, out_weights, out_positions)
-    types = tack.field(tack.u8, shape=(lines,))
-    offsets = tack.zeros(odt, (lines + 1,))
-    connectivity = tack.field(odt, shape=(2 * lines,))
+    types = tack.empty((lines,), tack.u8)
+    offsets = tack.zeros((lines + 1,), odt)
+    connectivity = tack.empty((2 * lines,), odt)
     if lines:
         _line_cells(line_faces, point_of_face, types, offsets, connectivity, lines)
     out = UnstructuredTopology(types, offsets, connectivity, num_points=count)

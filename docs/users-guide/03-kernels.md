@@ -79,7 +79,7 @@ def step(x, v):
 
 The kernel reads `DT` as the literal `0.01`. The constant is still an
 ordinary Python number, so host code uses the same name: `range(GRID)`,
-`np.float32(DT)`, `tack.empty(dtype=tack.f32, shape=(GRID,))`. Constants
+`np.float32(DT)`, `tack.empty((GRID,))`. Constants
 work from another module too (`from params import DT`, or `params.DT`),
 and inside device functions.
 
@@ -260,7 +260,7 @@ epilogue kernel that stores it into a hidden array the call reads back.
 So it may use arrays, arguments, constants and locals bound before the
 loop, but not a local the loop assigns, which has a value per thread.
 This replaces writing a one-element array and reading it with
-`to_numpy()` or `f[0]`; the cost is one extra, tiny launch and one
+`numpy()` or `f[0]`; the cost is one extra, tiny launch and one
 element's transfer.
 
 ### Return the length of an atomic append
@@ -327,9 +327,9 @@ def saxpy(x, y, out, a):
         out[i] = a * x[i] + y[i]
 
 n = 1024
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
 
 # Tack intermediate representation
 print(tack.inspect(saxpy, x, y, out, 2.0, mode="ir"))
@@ -362,8 +362,8 @@ class Sim:
     GRAVITY = -9.81
 
     def __init__(self, n):
-        self.pos = tack.empty(dtype=tack.f32, shape=(n,))
-        self.vel = tack.empty(dtype=tack.f32, shape=(n,))
+        self.pos = tack.empty((n,))
+        self.vel = tack.empty((n,))
         self.dt = 0.01
 
     @tack.func

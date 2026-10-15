@@ -51,8 +51,8 @@ KERNELS = {'add': atomic_add, 'min': atomic_min, 'max': atomic_max}
 
 def _field(values, dtype):
     array = np.asarray(values, dtype=dtype.numpy_dtype)
-    result = tack.field(dtype, array.shape)
-    result.from_numpy(array)
+    result = tack.empty(array.shape, dtype)
+    tack.copyto(result, array)
     return result
 
 
@@ -62,15 +62,15 @@ def _check_floating_extrema_zero(dtype, op, zero):
     data = _field([zero] * 4097, dtype)
     out = _field([direction * 4], dtype)
     KERNELS[op](data, out, 4097)
-    assert out.to_numpy()[0] == 0
+    assert out.numpy()[0] == 0
     for stored in [0.0, -0.0]:
         out.fill(stored)
         data.fill(direction * 2)
         KERNELS[op](data, out, 4097)
-        assert out.to_numpy()[0] == 0
+        assert out.numpy()[0] == 0
         data.fill(-direction * 2)
         KERNELS[op](data, out, 4097)
-        assert out.to_numpy()[0] == -direction * 2
+        assert out.numpy()[0] == -direction * 2
 
 
 @pytest.mark.parametrize('op', ['min', 'max'])
@@ -157,19 +157,19 @@ def test_atomic_results_and_cached_inputs(backend, dtype, op):
     if dtype not in be.supported_atomic_dtypes:
         with pytest.raises(TypeError, match=f'atomic_{op}.*target dtype.*{dtype.name}'):
             kernel(data, out, len(values))
-        assert out.to_numpy()[0] == initial
+        assert out.numpy()[0] == initial
         return
     for current in (values, list(reversed(values))):
-        data.from_numpy(np.asarray(current, dtype=dtype.numpy_dtype))
+        tack.copyto(data, np.asarray(current, dtype=dtype.numpy_dtype))
         out.fill(initial)
         kernel(data, out, len(values))
         expected = (_wrap(sum(map(int, current)), dtype) if info is not None else
-                    sum(current)) if op == 'add' else getattr(np, op)(data.to_numpy())
-        assert out.to_numpy()[0] == expected
+                    sum(current)) if op == 'add' else getattr(np, op)(data.numpy())
+        assert out.numpy()[0] == expected
     # Empty calls do not update storage, and atomics need no full workgroup.
     out.fill(initial)
     kernel(data, out, 0)
-    assert out.to_numpy()[0] == initial
+    assert out.numpy()[0] == initial
 
 
 @pytest.mark.parametrize('op', KERNELS)
@@ -178,7 +178,7 @@ def test_atomic_value_converts_to_unsigned_target(backend, op):
     out = _field([0 if op != 'min' else 2**32 - 1], tack.u32)
     KERNELS[op](data, out, 3)
     expected = {'add': 2**31 + 1792, 'min': 512, 'max': 2**31 + 256}[op]
-    assert out.to_numpy()[0] == expected
+    assert out.numpy()[0] == expected
 
 
 @pytest.mark.parametrize('op', KERNELS)
@@ -212,7 +212,7 @@ def test_cpu_concurrent_updates_are_atomic(dtype, op):
             futures = [pool.submit(run, slot) for slot in range(workers)]
             for future in futures:
                 future.result()
-            assert out.to_numpy()[0] == expected
+            assert out.numpy()[0] == expected
     if op != 'add':
         source = tack.inspect(kernel, data, out, count)
         assert 'load atomic' in source and 'cmpxchg' in source
@@ -225,7 +225,7 @@ def test_cpu_rejects_unaligned_atomic_storage(mode, monkeypatch):
     raw = bytearray(5)
     array = np.ndarray((1,), np.int32, buffer=raw, offset=1)
     array.fill(7)
-    out = tack.field_from_ptr(array, tack.i32, (1,), writable=True)
+    out = tack.array_from_ptr(array, (1,), tack.i32, writable=True)
     be = get_backend()
 
     def forbidden_build(*args):
@@ -252,11 +252,11 @@ def test_cached_atomic_alignment_without_ir_scan(monkeypatch):
 
     monkeypatch.setattr(kernel_utils, 'check_atomic_support', forbidden_scan)
     atomic_add(data, out, 1)
-    assert out.to_numpy()[0] == 2
+    assert out.numpy()[0] == 2
     raw = bytearray(5)
     array = np.ndarray((1,), np.int32, buffer=raw, offset=1)
     array.fill(7)
-    unaligned = tack.field_from_ptr(array, tack.i32, (1,), writable=True)
+    unaligned = tack.array_from_ptr(array, (1,), tack.i32, writable=True)
     with pytest.raises(ValueError, match='4-byte alignment'):
         atomic_add(data, unaligned, 1)
     assert array[0] == 7
@@ -315,7 +315,7 @@ def test_cross_workgroup_atomic_contention(backend, dtype, op):
     for _ in range(4):
         out.fill(initial)
         KERNELS[op](data, out, count)
-        assert out.to_numpy()[0] == expected
+        assert out.numpy()[0] == expected
 
 
 @pytest.mark.parametrize('mode', ['dispatch', 'ir', 'source', 'optimized'])
@@ -333,7 +333,7 @@ def test_gpu_unsupported_width_rejected_before_compilation(workgroup_backend, mo
             KERNELS[op](data, out, 0)  # Structural rejection even on an empty launch.
         else:
             tack.inspect(KERNELS[op], data, out, 0, mode=mode)
-    assert out.to_numpy()[0] == 7
+    assert out.numpy()[0] == 7
 
 
 @tack.kernel
@@ -349,7 +349,7 @@ def test_atomic_updates_through_aliased_fields(backend):
     for alias in (out, out.reshape((1,))):
         out.fill(0)
         aliased_atomic_updates(data, out, alias)
-        assert out.to_numpy()[0] == 513 / 2
+        assert out.numpy()[0] == 513 / 2
 
 
 @tack.kernel
@@ -366,7 +366,7 @@ def test_workgroup_barrier_publishes_global_field_updates(workgroup_backend):
     for _ in range(4):
         data.fill(0)
         publish_global_with_barrier(data, out)
-        np.testing.assert_array_equal(out.to_numpy(), np.roll(expected, -1, axis=1).ravel())
+        np.testing.assert_array_equal(out.numpy(), np.roll(expected, -1, axis=1).ravel())
 
 
 @pytest.mark.parametrize('arch,generator', GENERATORS[1:], ids=[x[0] for x in GENERATORS[1:]])
@@ -404,8 +404,8 @@ def test_inlined_atomic_targets_resolve_to_global_fields(backend):
     lo, hi = _field([2**32 - 1], tack.u32), _field([0], tack.u32)
     for _ in range(2):
         atomic_extrema_through_inlining(data, lo, hi)
-        assert lo.to_numpy()[0] == 2
-        assert hi.to_numpy()[0] == 2**31 + 5
+        assert lo.numpy()[0] == 2
+        assert hi.numpy()[0] == 2**31 + 5
     source = tack.inspect(atomic_extrema_through_inlining, data, lo, hi)
     assert source
 

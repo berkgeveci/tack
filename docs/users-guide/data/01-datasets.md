@@ -54,8 +54,8 @@ mesh. A cell or face set can also be a kernel's iteration domain.
 
 Here `td` is the conventional alias for `tack.dataset`. A raw buffer knows its
 element dtype and shape; it does not know whether its entries are point
-temperatures or cell averages. For example, `tack.empty(shape=(space.size,),
-dtype=tack.vec3())` allocates one vector per DOF. `td.Field(td.H1(data), values)` supplies that information.
+temperatures or cell averages. For example, `tack.empty((space.size,),
+tack.vec3())` allocates one vector per DOF. `td.Field(td.H1(data), values)` supplies that information.
 
 A NumPy array is useful input, but it is not itself a valid `td.Field` value
 array: use `tack.array(host, dtype=...)` to copy it into backend storage.

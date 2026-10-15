@@ -41,15 +41,15 @@ def _fill(data, value, count):
 
 
 def _constant(value):
-    data = tack.field(dtype=tack.f32, shape=(N,))
-    data.from_numpy(np.full(N, value, dtype=np.float32))
+    data = tack.empty((N,))
+    tack.copyto(data, np.full(N, value, dtype=np.float32))
     return data
 
 
 def _sample(tex):
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    out = tack.empty((1,))
     _sample_center(out, tex, 1)
-    return float(out.to_numpy()[0])
+    return float(out.numpy()[0])
 
 
 def test_writes_reach_texture_only_through_update(backend):
@@ -57,7 +57,7 @@ def test_writes_reach_texture_only_through_update(backend):
     tex = tack.texture3d(data, shape=(W, H, D))
     assert _sample(tex) == pytest.approx(1.0)
 
-    data.from_numpy(np.full(N, 7.0, dtype=np.float32))
+    tack.copyto(data, np.full(N, 7.0, dtype=np.float32))
     assert _sample(tex) == pytest.approx(1.0)
     tex.update()
     assert _sample(tex) == pytest.approx(7.0)
@@ -73,12 +73,12 @@ def test_textures_over_one_field_are_separate_snapshots(backend):
     """Two textures over the same storage were one cache entry on GPU."""
     data = _constant(1.0)
     first = tack.texture3d(data, shape=(W, H, D))
-    data.from_numpy(np.full(N, 2.0, dtype=np.float32))
+    tack.copyto(data, np.full(N, 2.0, dtype=np.float32))
     second = tack.texture3d(data, shape=(W, H, D))
 
-    out = tack.field(dtype=tack.f32, shape=(2,))
+    out = tack.empty((2,))
     _sample_pair(out, first, second, 1)
-    np.testing.assert_allclose(out.to_numpy(), [1.0, 2.0])
+    np.testing.assert_allclose(out.numpy(), [1.0, 2.0])
 
 
 def test_texture_is_not_served_for_reused_memory(backend):
@@ -118,18 +118,18 @@ def test_texture_passed_as_template_parameter(backend):
 
     data = _constant(2.0)
     tex = tack.texture3d(data, shape=(W, H, D))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    out = tack.empty((1,))
     sample_template(out, tex, 1)
-    assert out.to_numpy()[0] == pytest.approx(2.0)
-    data.from_numpy(np.full(N, 4.0, dtype=np.float32))
+    assert out.numpy()[0] == pytest.approx(2.0)
+    tack.copyto(data, np.full(N, 4.0, dtype=np.float32))
     tex.update()
     sample_template(out, tex, 1)
-    assert out.to_numpy()[0] == pytest.approx(4.0)
+    assert out.numpy()[0] == pytest.approx(4.0)
 
 
 def test_f64_field_is_rejected():
     tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f64, shape=(N,))
+    data = tack.empty((N,), tack.f64)
     with pytest.raises(ValueError, match='f32'):
         tack.texture3d(data, shape=(W, H, D))
 

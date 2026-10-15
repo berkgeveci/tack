@@ -40,9 +40,9 @@ def flow_quantities(data, gradient):
         raise TypeError("flow_quantities takes the gradient of a 3-vector field (9 values)")
     n = size_of(gradient.values)
     dtype = arrays.dtype_of(gradient.values)
-    divergence = tack.field(dtype, shape=(n,))
-    vorticity = tack.Vector.field(3, dtype, shape=(n,))
-    q = tack.field(dtype, shape=(n,))
+    divergence = tack.empty((n,), dtype)
+    vorticity = tack.empty((n,), tack.vec(3, dtype))
+    q = tack.empty((n,), dtype)
     if n:
         _flow_quantities(materialize(gradient.values), divergence, vorticity, q)
     return FlowQuantities(Field(gradient.space, divergence), Field(gradient.space, vorticity),

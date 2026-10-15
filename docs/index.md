@@ -23,14 +23,14 @@ def vector_add(x, y, out):
         out[i] = x[i] + y[i]
 
 n = 1_000_000
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
-x.from_numpy(np.arange(n, dtype=np.float32))
-y.from_numpy(np.ones(n, dtype=np.float32))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
+tack.copyto(x, np.arange(n, dtype=np.float32))
+tack.copyto(y, np.ones(n, dtype=np.float32))
 
 vector_add(x, y, out)
-print(out.to_numpy()[:4])         # [1. 2. 3. 4.]
+print(out.numpy()[:4])         # [1. 2. 3. 4.]
 ```
 
 Only the `tack.init()` line changes between backends:
@@ -96,7 +96,7 @@ scalar types each backend supports.
 
 -   **[User's Guide](users-guide/index.md)**
 
-    Writing kernels, fields and types, control flow, device functions,
+    Writing kernels, arrays and types, control flow, device functions,
     templates, atomics and shared memory, reductions and scans, alongside
     the data and visualization chapters.
 

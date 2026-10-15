@@ -66,9 +66,9 @@ def {name}({name}, out, scale):
 
 def _inputs():
     values = np.arange(7, dtype=np.int32) - 3
-    data = tack.field(tack.i32, values.shape)
-    data.from_numpy(values)
-    out = tack.field(tack.i32, values.shape)
+    data = tack.empty(values.shape, tack.i32)
+    tack.copyto(data, values)
+    out = tack.empty(values.shape, tack.i32)
     return data, out
 
 
@@ -81,7 +81,7 @@ def test_keyword_parameters_locals_loops_allocations_and_entry(backend, named_ke
     data, out = _inputs()
     for scale in [2, -3, 2]:
         named_kernel(data, out, scale)
-        np.testing.assert_array_equal(out.to_numpy(), _expected(scale))
+        np.testing.assert_array_equal(out.numpy(), _expected(scale))
 
 
 @tack.kernel
@@ -111,7 +111,7 @@ def test_helper_names_encoding_lookalikes_and_packed_local_collision(backend):
         _helper_collisions(data, out, scalar)
         expected = x**3 + np.where(np.arange(7) % 2 == 0, x // 3 + x % 2,
                                    -(x // 3) - x % 2) + 9 + scalar
-        np.testing.assert_array_equal(out.to_numpy(), expected)
+        np.testing.assert_array_equal(out.numpy(), expected)
 
 
 def test_shared_allocation_and_thread_builtin_names(workgroup_backend):
@@ -125,7 +125,7 @@ def test_shared_allocation_and_thread_builtin_names(workgroup_backend):
 
     data, out = _inputs()
     kernel(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(7) - 2)
+    np.testing.assert_array_equal(out.numpy(), np.arange(7) - 2)
 
 
 @tack.kernel
@@ -135,15 +135,15 @@ def _texture_names(__samp__, default, count):
 
 
 def _texture_inputs():
-    data = tack.field(tack.f32, (8,))
-    data.from_numpy(np.full(8, 7.0, dtype=np.float32))
-    return tack.texture3d(data, shape=(2, 2, 2)), tack.field(tack.f32, (3,)), 3
+    data = tack.empty((8,))
+    tack.copyto(data, np.full(8, 7.0, dtype=np.float32))
+    return tack.texture3d(data, shape=(2, 2, 2)), tack.empty((3,)), 3
 
 
 def test_texture_and_sampler_names(backend):
     args = _texture_inputs()
     _texture_names(*args)
-    np.testing.assert_array_equal(args[1].to_numpy(), np.full(3, 7.0))
+    np.testing.assert_array_equal(args[1].numpy(), np.full(3, 7.0))
 
 
 @tack.func
@@ -169,10 +169,10 @@ def test_lowered_temporaries_cannot_overwrite_user_bindings(backend):
                       + __unpack_tmp_0_0__ + __unpack_tmp_0_1__
                       + ___identifier_bump_x_1__ + ___identifier_bump_ret_1__)
 
-    out = tack.field(tack.i32, (7,))
+    out = tack.empty((7,), tack.i32)
     for scale in [5, -2, 5]:
         collide(out, scale)
-        np.testing.assert_array_equal(out.to_numpy(), 1533 + scale + 2 * np.arange(7))
+        np.testing.assert_array_equal(out.numpy(), 1533 + scale + 2 * np.arange(7))
 
 
 def test_vector_components_cannot_overwrite_scalar_bindings(backend):
@@ -185,9 +185,9 @@ def test_vector_components_cannot_overwrite_scalar_bindings(backend):
             v += tack.Vector([1, 2, 3])
             out[i] = v[0] + v[1] + v[2] + v__0 + v__1
 
-    out = tack.field(tack.i32, (7,))
+    out = tack.empty((7,), tack.i32)
     collide(out)
-    np.testing.assert_array_equal(out.to_numpy(), 311 + np.arange(7))
+    np.testing.assert_array_equal(out.numpy(), 311 + np.arange(7))
 
 
 @tack.device_class
@@ -211,13 +211,13 @@ def test_template_expansion_cannot_merge_user_and_attribute_bindings(backend):
                       + __tmpl_obj_default__[i] + __tmpl_obj_half__)
 
     data, out = _inputs()
-    other = tack.field(tack.i32, (7,))
+    other = tack.empty((7,), tack.i32)
     other.fill(100)
     obj = _IdentifierModel(data)
     for half in [3, 9, 3]:
         obj.half = half
         collide(obj, other, out, 200)
-        np.testing.assert_array_equal(out.to_numpy(),
+        np.testing.assert_array_equal(out.numpy(),
                                       2 * (np.arange(7) - 3 + half) + 312)
 
 

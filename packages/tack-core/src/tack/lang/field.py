@@ -1,12 +1,13 @@
 """Tack arrays — typed storage living on a device.
 
-Arrays are created by ``tack.empty()`` and ``tack.array()`` and are bound to
-whichever backend is active at allocation.  Data transfer between host (numpy) and device is explicit:
+Arrays are made by the NumPy-style constructors (``tack.empty``,
+``tack.zeros``, ``tack.array``, ...) and belong to the backend active when
+they are made. Moving data between the host and the device is explicit:
 
-    x.from_numpy(np_array)   # host → device
-    result = x.to_numpy()    # device → host
+    tack.copyto(x, host_values)   # host → device
+    host = x.numpy()              # device → host (also np.asarray(x))
 
-On CPU the "device" is just numpy.  On Metal (Apple Silicon unified memory)
+On CPU the "device" is just NumPy. On Metal (Apple Silicon unified memory)
 transfers copy values into or out of backend storage. On CUDA transfers
 can go over PCIe.
 """
@@ -20,7 +21,18 @@ try:
 except ImportError:  # NumPy 1.x exposes this in its top-level namespace.
     from numpy import byte_bounds
 
-from tack.lang.types import ElementType, ScalarType, f32, from_numpy_dtype, i32, mat, vec
+from tack.lang.types import (
+    ElementType,
+    ScalarType,
+    as_dtype,
+    f32,
+    from_numpy_dtype,
+    i32,
+    i64,
+    integer_type_for_value,
+    mat,
+    vec,
+)
 
 
 class DeviceBuffer:
@@ -71,7 +83,7 @@ class DeviceBuffer:
         """Wait for the launches queued on this storage's device, if any
         are: a backend that queues launches overrides it."""
 
-    #: Whether `Field.to_numpy_async` should read this storage in a worker
+    #: Whether `Array.numpy_async` should read this storage in a worker
     #: thread: true where reading waits for queued device work. Storage
     #: whose reads never wait (the CPU's) is read inline.
     waits_off_thread: bool = False
@@ -79,7 +91,7 @@ class DeviceBuffer:
     def thread_binding(self):
         """A context manager that makes this storage usable from a thread
         other than the one that made it -- CUDA's context made current --
-        for `Field.to_numpy_async`'s worker. Nothing by default."""
+        for `Array.numpy_async`'s worker. Nothing by default."""
         import contextlib
         return contextlib.nullcontext()
 
@@ -184,13 +196,17 @@ class ExportedMemory:
 
 
 class Array:
-    """An n-dimensional array bound to a specific device backend."""
+    """An n-dimensional array of scalar, vector or matrix elements on a device.
+
+    ``shape`` counts elements and ``dtype`` describes one element, so an array
+    of shape ``(n,)`` and dtype ``vec3(f32)`` holds ``3 * n`` scalars and
+    downloads as ``(n, 3)``.
+    """
 
     def __init__(self, dtype: ScalarType, shape: tuple[int, ...], buffer: DeviceBuffer,
                  writable: bool = True):
         self._dtype = dtype
         self._shape = tuple(shape)
-        self._legacy_layout = False
         self._buffer = buffer
         self._writable = writable
 
@@ -202,17 +218,21 @@ class Array:
     @property
     def dtype(self):
         """The type of one element, including vector or matrix dimensions."""
-        if self._legacy_layout or not hasattr(self, '_vector_n'):
+        n = getattr(self, '_vector_n', None)
+        if n is None:
             return self._dtype
         shape = getattr(self, '_matrix_shape', None)
-        return mat(*shape, self._dtype) if shape else vec(self._vector_n, self._dtype)
+        return _element(self._dtype, shape or (n,))
 
     @property
     def shape(self):
         """Array dimensions, excluding an element's component dimensions."""
-        if not self._legacy_layout and hasattr(self, '_logical_shape'):
-            return self._logical_shape
-        return self._shape
+        return getattr(self, '_logical_shape', self._shape)
+
+    @property
+    def ndim(self) -> int:
+        """Number of array dimensions, excluding an element's components."""
+        return len(self.shape)
 
     @property
     def storage_shape(self):
@@ -224,80 +244,72 @@ class Array:
         """Number of scalar components in storage."""
         return int(np.prod(self.storage_shape))
 
+    @property
+    def nbytes(self) -> int:
+        """Bytes of storage the elements occupy."""
+        return self.scalar_size * self._dtype.numpy_dtype.itemsize
+
     def _check_writable(self):
         if not self._writable:
             raise RuntimeError(
-                "Field is read-only (created from an external pointer). "
-                "Use writable=True in field_from_ptr() to enable writes.")
+                "Array is read-only (created from an external pointer). "
+                "Use writable=True in array_from_ptr() to enable writes.")
 
     def _vector_shape(self):
-        """``(*shape, n)`` for a vector field, ``(*shape, rows, columns)`` for a
-        matrix field, and None for any other."""
+        """``(*shape, n)`` for a vector array, ``(*shape, rows, columns)`` for a
+        matrix array, and None for any other."""
         n = getattr(self, '_vector_n', None)
         if n is None:
             return None
         element = getattr(self, '_matrix_shape', None) or (n,)
         return (*self._logical_shape, *element)
 
-    def from_numpy(self, arr: np.ndarray):
-        """Copy data from a numpy array to the device.
+    @property
+    def _host_shape(self):
+        """The shape of `numpy()`: array dimensions, then element dimensions."""
+        return self._vector_shape() or self.shape
 
-        The array has the field's shape. A vector field also takes one row
-        per vector, ``(*shape, n)``, besides its flat storage shape.
-        """
+    def _upload(self, host: np.ndarray):
+        """Copy host values of the right dtype and `_host_shape` to storage."""
         self._check_writable()
-        expected = self.scalar_dtype.numpy_dtype
-        if arr.dtype != expected:
-            arr = arr.astype(expected)
-        vector_shape = self._vector_shape()
-        if vector_shape is not None and arr.shape == vector_shape:
-            # Components are stored together, in row-major order.
-            arr = arr.reshape(self.storage_shape)
-        if arr.shape != self.storage_shape:
-            accepted = f"{self.shape}" if vector_shape is None \
-                else f"{vector_shape} or flat {self.storage_shape}"
-            raise ValueError(
-                f"Shape mismatch: field is {accepted}, got {arr.shape}"
-            )
-        self._buffer.from_numpy(arr)
+        self._buffer.from_numpy(np.ascontiguousarray(host).reshape(self.storage_shape))
 
-    def to_numpy(self, vectors: bool | None = None) -> np.ndarray:
-        """Copy data from the device to a new numpy array.
+    def numpy(self) -> np.ndarray:
+        """Copy the values into a new NumPy array.
 
-        Vector and matrix components become trailing NumPy dimensions:
-        an array of shape ``(n,)`` with dtype ``vec3(f32)`` gives ``(n, 3)``.
-        Legacy ``Vector.field``/``Matrix.field`` retain their flat default;
-        ``vectors=True`` expands them too. ``vectors=False`` explicitly
-        requests scalar storage dimensions for interop.
+        Vector and matrix components become trailing NumPy dimensions: an
+        array of shape ``(n,)`` and dtype ``vec3(f32)`` gives ``(n, 3)``.
         """
         arr = self._buffer.to_numpy()
         # The buffer keeps the shape it was allocated with, so a reshaped
-        # view has to impose its own -- otherwise field.shape and
-        # to_numpy().shape disagree, while from_numpy() validates against
-        # field.shape. Same data either way; only the view differs.
-        if arr.shape != self.storage_shape:
-            arr = arr.reshape(self.storage_shape)
-        expand = vectors or (vectors is None and not self._legacy_layout)
-        vector_shape = self._vector_shape() if expand else None
-        if vector_shape is not None:
-            arr = arr.reshape(vector_shape)
+        # view has to impose its own -- the same data either way.
+        if arr.shape != self._host_shape:
+            arr = arr.reshape(self._host_shape)
         return arr
 
-    async def to_numpy_async(self, vectors: bool | None = None) -> np.ndarray:
-        """`to_numpy` for ``asyncio``: ``await field.to_numpy_async()``.
+    def __array__(self, dtype=None, copy=None):
+        """``np.asarray(a)``: the values as a NumPy array (always a copy)."""
+        if copy is False:
+            raise ValueError("a Tack array cannot be viewed by NumPy without a copy")
+        arr = self.numpy()
+        return arr if dtype is None else arr.astype(dtype, copy=False)
+
+    async def numpy_async(self) -> np.ndarray:
+        """`numpy` for ``asyncio``: ``await a.numpy_async()``.
 
         Where reading waits for queued launches (CUDA, HIP, Metal, Level
         Zero), the wait and the copy run in a worker thread and the event
-        loop goes on; elsewhere it is `to_numpy`. The result holds every write queued before the
-        call; one queued later by another task may or may not be in it.
+        loop goes on; elsewhere it is `numpy`. The result holds every write
+        queued before the call; one queued later by another task may or may
+        not be in it.
         """
-        from tack.runtime.aio import to_numpy_async
-        return await to_numpy_async(self, vectors=vectors)
+        from tack.runtime.aio import numpy_async
+        return await numpy_async(self)
 
     def fill(self, value):
-        """Fill the field with a scalar value.
+        """Set every element to ``value``.
 
-        A vector or matrix field also takes one element's value, a sequence
+        A vector or matrix array also takes one element's value, a sequence
         of its components: ``colors.fill([1.0, 1.0, 1.0])``.
         """
         self._check_writable()
@@ -310,16 +322,17 @@ class Array:
         element = np.asarray(value)
         if vector_shape is None:
             raise TypeError(
-                f"fill() takes a scalar for a field of scalars, "
+                f"fill() takes a scalar for an array of scalars, "
                 f"got a value of shape {element.shape}")
         element_shape = vector_shape[len(self._logical_shape):]
         if element.shape != element_shape:
             raise ValueError(
                 f"fill() value has shape {element.shape}; "
-                f"the elements of this field have shape {element_shape}")
+                f"the elements of this array have shape {element_shape}")
         from tack.runtime.device_fill import element_pattern
         if not self._buffer.fill_bytes(element_pattern(element, self.scalar_dtype.numpy_dtype)):
-            self.from_numpy(np.broadcast_to(element, vector_shape))
+            self._upload(np.broadcast_to(element.astype(self.scalar_dtype.numpy_dtype),
+                                         vector_shape))
 
     def _reduce(self, op: str):
         """Reduce on the device where that is supported, else via numpy."""
@@ -330,7 +343,7 @@ class Array:
         backend = get_backend()
         if backend.supports_device_reductions:
             return backend.reduce_field(self._scalar_view(), op)
-        return reduce_numpy(self.to_numpy(), op)
+        return reduce_numpy(self.numpy(), op)
 
     def sum(self):
         """Return a float sum; parallel floating addition order may vary."""
@@ -351,11 +364,11 @@ class Array:
         return self.sum() / self.scalar_size
 
     def export_memory(self) -> ExportedMemory:
-        """Export the field's GPU memory for cross-API sharing.
+        """Export the array's GPU memory for cross-API sharing.
 
         Returns an ExportedMemory with backend tag and a handle suitable for
         importing into another API (e.g. Dawn, Vulkan, pycuda).
-        If the field was not allocated with ``exportable=True``, a one-time
+        If the array was not allocated with ``exportable=True``, a one-time
         copy into exportable memory is performed automatically.
         """
         if not hasattr(self._buffer, 'export_memory'):
@@ -364,12 +377,12 @@ class Array:
         return self._buffer.export_memory()
 
     def __dlpack__(self, *, stream=None, max_version=None, dl_device=None, copy=None):
-        """Export this field as a DLPack capsule for zero-copy interop.
+        """Export this array as a DLPack capsule for zero-copy interop.
 
         Usage:
-            torch_tensor = torch.from_dlpack(tack_field)
-            cupy_array = cupy.from_dlpack(tack_field)
-            np_array = np.from_dlpack(tack_field)  # numpy 1.25+
+            torch_tensor = torch.from_dlpack(tack_array)
+            cupy_array = cupy.from_dlpack(tack_array)
+            np_array = np.from_dlpack(tack_array)  # numpy 1.25+
 
         A consumer passing max_version >= (1, 0) gets a versioned capsule,
         which is the only form that can carry the read-only flag. Without
@@ -390,7 +403,7 @@ class Array:
 
     @property
     def size(self) -> int:
-        """Total number of elements in the field."""
+        """Total number of elements in the array."""
         result = 1
         for s in self.shape:
             result *= s
@@ -398,38 +411,42 @@ class Array:
 
     def __len__(self) -> int:
         """Number of elements along the first dimension."""
-        return self.shape[0] if self.shape else 0
+        if not self.shape:
+            raise TypeError("len() of a zero-dimensional array")
+        return self.shape[0]
 
     def __getitem__(self, index):
-        """Read one element from the host: ``f[i]``, ``f[i, j]``, ``f[None]``.
+        """Read one element from the host: ``a[i]``, ``a[i, j]``, ``a[()]`` (or
+        ``a[None]``) for a zero-dimensional array.
 
-        A field of scalars gives a Python number; a vector or matrix field
+        An array of scalars gives a Python number; a vector or matrix array
         gives a NumPy array of the element. Negative indices count from
         the end, as in Python. This is for inspection and for host-side
         decisions: on backends without host-visible memory each read is a
         transfer of that element, so many elements are read with
-        ``to_numpy()``. Fields are not written this way; see ``from_numpy``
+        ``numpy()``. Arrays are not written this way; see ``tack.copyto``
         and ``fill``.
         """
-        shape = tuple(getattr(self, '_logical_shape', None) or self.shape)
-        if index is None:
-            if shape != ():
-                raise TypeError(
-                    f"field[None] reads a zero-dimensional field; this one has shape {shape}")
-            indices = ()
-        else:
-            indices = index if isinstance(index, tuple) else (index,)
-            if len(indices) != len(shape) or not all(
-                    isinstance(i, (int, np.integer)) and not isinstance(i, bool) for i in indices):
-                plural = "one integer index" if len(shape) == 1 else f"{len(shape)} integer indices"
-                raise TypeError(
-                    f"a field of shape {shape} takes {plural} on the host, not {index!r}; "
-                    f"to read many elements use to_numpy()")
+        shape = self.shape
+        if index is None and not shape:
+            index = ()
+        indices = index if isinstance(index, tuple) else (index,)
+        if len(indices) != len(shape) or not all(
+                isinstance(i, (int, np.integer)) and not isinstance(i, bool) for i in indices):
+            if not shape:
+                wanted = "a[()]"
+            elif len(shape) == 1:
+                wanted = "one integer index"
+            else:
+                wanted = f"{len(shape)} integer indices"
+            raise TypeError(
+                f"an array of shape {shape} takes {wanted} on the host, not {index!r}; "
+                f"to read many elements use numpy()")
         flat = 0
         for i, extent in zip(indices, shape, strict=True):
             i = int(i)
             if not -extent <= i < extent:
-                raise IndexError(f"index {index!r} is out of range for a field of shape {shape}")
+                raise IndexError(f"index {index!r} is out of range for an array of shape {shape}")
             flat = flat * extent + (i + extent if i < 0 else i)
         vector_shape = self._vector_shape()
         if vector_shape is None:
@@ -440,12 +457,12 @@ class Array:
 
     def __setitem__(self, index, value):
         raise TypeError(
-            "fields are not written by element from the host; build the values in a NumPy "
-            "array and call from_numpy(), use fill(), or write them in a kernel")
+            "arrays are not written by element from the host; build the values in a NumPy "
+            "array and call tack.copyto(), use fill(), or write them in a kernel")
 
     def __iter__(self):
         raise TypeError(
-            "a field is not iterated by element from the host; iterate over to_numpy()")
+            "an array is not iterated by element from the host; iterate over numpy()")
 
     def _scalar_view(self):
         """A flat scalar view for storage-level copy, reductions and interop."""
@@ -462,54 +479,68 @@ class Array:
         _copy(self._scalar_view(), out._scalar_view(), self.scalar_size)
         return out
 
-    def astype(self, new_dtype) -> 'Array':
+    def astype(self, dtype) -> 'Array':
         """Copy with a new component type or a matching vector/matrix dtype.
 
         A scalar dtype changes the component type while preserving the element
         dimensions. An element dtype must have those same dimensions.
         """
+        dtype = as_dtype(dtype)
         element_shape = self._vector_shape()
-        if isinstance(new_dtype, ElementType):
-            if element_shape is None or new_dtype.shape != element_shape[len(self._logical_shape):]:
+        if isinstance(dtype, ElementType):
+            if element_shape is None or dtype.shape != element_shape[len(self._logical_shape):]:
                 raise TypeError("astype cannot change an element's component dimensions")
-        elif hasattr(self, '_vector_n'):
-            dims = getattr(self, '_matrix_shape', None)
-            new_dtype = mat(*dims, new_dtype) if dims else vec(self._vector_n, new_dtype)
-        out = empty(dtype=new_dtype, shape=getattr(self, '_logical_shape', self.shape))
-        if self._legacy_layout:
-            out._legacy_layout = True
+        elif element_shape is not None:
+            dtype = _element(dtype, self.dtype.shape)
+        out = empty(self.shape, dtype)
         from tack.algorithms.copy import copy as _copy
         _copy(self._scalar_view(), out._scalar_view(), self.scalar_size)
         return out
 
-    def reshape(self, new_shape: tuple[int, ...]) -> 'Array':
-        """Share storage with a new array shape, preserving the element type."""
-        new_shape = _array_shape(new_shape)
+    def reshape(self, *shape) -> 'Array':
+        """Share storage under a new shape, preserving the element type.
+
+        Takes the shape as a tuple or as separate integers, as NumPy does;
+        one dimension may be ``-1``, inferred from the size.
+        """
+        if len(shape) == 1 and not isinstance(shape[0], (int, np.integer)):
+            shape = shape[0]
+        new_shape = list(_array_shape(shape, allow_infer=True))
+        if new_shape.count(-1) > 1:
+            raise ValueError("reshape can infer at most one dimension")
+        if -1 in new_shape:
+            known = int(np.prod([n for n in new_shape if n != -1]))
+            if known == 0 or self.size % known:
+                raise ValueError(f"cannot reshape {self.shape} ({self.size} elements) "
+                                 f"to {tuple(shape)}")
+            new_shape[new_shape.index(-1)] = self.size // known
+        new_shape = tuple(new_shape)
         new_size = int(np.prod(new_shape))
         if new_size != self.size:
             raise ValueError(
                 f"Cannot reshape {self.shape} ({self.size} elements) "
                 f"to {new_shape} ({new_size} elements)")
-        if self._legacy_layout:
-            # Compatibility: legacy vector fields exposed flat scalar shape.
-            reshaped = Array(self.scalar_dtype, new_shape, self._buffer, self._writable)
-        else:
-            reshaped = _array_view(self.dtype, new_shape, self._buffer, self._writable)
+        reshaped = _array_view(self.dtype, new_shape, self._buffer, self._writable)
         hold = getattr(self, '_dlpack_hold', None)
         if hold is not None:
             reshaped._dlpack_hold = hold
         return reshaped
 
     def __repr__(self):
-        return f"Array(dtype={self.dtype}, shape={self.shape})"
+        return f"Array(shape={self.shape}, dtype={self.dtype})"
 
 
-# Internal imports and older callers used this name. Dataset Field remains
-# a separate class: a space plus coefficient values, not a storage buffer.
+# Internal modules still name the storage class Field; tack.dataset.Field is
+# a separate class, a space plus coefficient values.
 Field = Array
 
 
-def _array_shape(shape):
+def _element(scalar, shape):
+    """The (cached, so comparable with ``is``) element type of ``shape``."""
+    return mat(*shape, scalar) if len(shape) == 2 else vec(shape[0], scalar)
+
+
+def _array_shape(shape, allow_infer=False):
     import operator
     if isinstance(shape, (int, np.integer)):
         shape = (shape,)
@@ -517,7 +548,7 @@ def _array_shape(shape):
         dims = tuple(operator.index(n) for n in shape)
     except TypeError as exc:
         raise TypeError("array shape must contain integer dimensions") from exc
-    if any(n < 0 for n in dims):
+    if any(n < 0 and not (allow_infer and n == -1) for n in dims):
         raise ValueError("array dimensions must be nonnegative")
     return dims
 
@@ -536,169 +567,242 @@ def _array_view(dtype, shape, buffer, writable=True):
     return out
 
 
-def empty(dtype=f32, shape=(), exportable=False) -> Array:
-    """Allocate uninitialized scalar, vector or matrix elements.
+def _host_dtype(host: np.ndarray, values) -> ScalarType:
+    """The dtype an array made from host ``values`` gets when none is given.
+
+    A NumPy array keeps its own. Python numbers and sequences of them, which
+    NumPy would make float64 or int64, become f32, and i32 unless a value
+    needs i64 (f64 is not available on every backend).
+    """
+    if isinstance(values, np.ndarray) or isinstance(values, np.generic):
+        return from_numpy_dtype(host.dtype)
+    if host.dtype.kind == 'f':
+        return f32
+    if host.dtype.kind in 'iu':
+        if host.size == 0:
+            return i32
+        low, high = int(host.min()), int(host.max())
+        return i32 if integer_type_for_value(low) is i32 and integer_type_for_value(high) is i32 \
+            else from_numpy_dtype(host.dtype)
+    if host.dtype.kind == 'b':
+        raise TypeError("Tack has no boolean arrays; pass dtype=tack.u8 or tack.i32")
+    return from_numpy_dtype(host.dtype)
+
+
+def empty(shape, dtype=f32, *, exportable=False) -> Array:
+    """A new array of uninitialized scalar, vector or matrix elements.
 
     ``shape`` counts elements; ``dtype`` describes one element. A vector
     array of shape ``(n,)`` and dtype ``vec3(f32)`` downloads as ``(n, 3)``.
-    Initialize its values with a kernel, ``fill`` or ``from_numpy`` before
-    reading. All storage belongs to the currently active backend.
+    Initialize its values with a kernel, ``fill`` or ``tack.copyto`` before
+    reading. The storage belongs to the currently active backend.
     """
     from tack.runtime.dispatch import get_backend
     shape = _array_shape(shape)
-    if not isinstance(dtype, (ScalarType, ElementType)):
-        raise TypeError("dtype must be a Tack scalar, vector or matrix type")
+    dtype = as_dtype(dtype)
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
     storage = (int(np.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
     buffer = get_backend().allocate_field(scalar, storage, exportable=exportable)
     return _array_view(dtype, shape, buffer)
 
 
-def array(values, dtype=None) -> Array:
-    """Allocate and copy host values to the active backend.
+def zeros(shape, dtype=f32) -> Array:
+    """A new array of zeros, filled on the device."""
+    a = empty(shape, dtype)
+    if not a._buffer.starts_zeroed:
+        a.fill(0)
+    return a
 
-    Without ``dtype``, all NumPy dimensions are array dimensions; vector or
-    matrix elements are never inferred. With an element dtype, the trailing
-    dimensions must match its component shape. Lists and NumPy arrays are
-    accepted; existing Tack arrays are copied on the device.
+
+def ones(shape, dtype=f32) -> Array:
+    """A new array of ones."""
+    a = empty(shape, dtype)
+    a.fill(1)
+    return a
+
+
+def full(shape, fill_value, dtype=None) -> Array:
+    """A new array with every element ``fill_value``.
+
+    Without ``dtype``, a Python float gives f32 and an int i32 (i64 if it
+    needs it). A sequence fills vector or matrix elements; it needs an
+    element ``dtype``.
     """
-    if isinstance(values, Array):
-        out = values.copy() if dtype is None else values.astype(dtype)
-        out._legacy_layout = False
-        return out
-    host = np.asarray(values)
     if dtype is None:
-        dtype = from_numpy_dtype(host.dtype)
+        dtype = _host_dtype(np.asarray(fill_value), fill_value)
+    a = empty(shape, dtype)
+    a.fill(fill_value)
+    return a
+
+
+def _like(prototype, dtype):
+    if not isinstance(prototype, (Array, np.ndarray)):
+        raise TypeError("expected a Tack array or NumPy array as the prototype")
+    if dtype is None:
+        dtype = prototype.dtype if isinstance(prototype, Array) \
+            else from_numpy_dtype(prototype.dtype)
+    else:
+        dtype = as_dtype(dtype)
+        if (isinstance(dtype, ScalarType) and isinstance(prototype, Array)
+                and isinstance(prototype.dtype, ElementType)):
+            dtype = _element(dtype, prototype.dtype.shape)
+    return empty(prototype.shape, dtype)
+
+
+def empty_like(prototype, dtype=None) -> Array:
+    """A new uninitialized array of ``prototype``'s shape and dtype.
+
+    ``prototype`` is a Tack or NumPy array; nothing is read from it. A scalar
+    ``dtype`` changes the component type of a vector or matrix prototype and
+    keeps its element dimensions.
+    """
+    return _like(prototype, dtype)
+
+
+def zeros_like(prototype, dtype=None) -> Array:
+    """A new array of zeros of ``prototype``'s shape and dtype."""
+    a = _like(prototype, dtype)
+    if not a._buffer.starts_zeroed:
+        a.fill(0)
+    return a
+
+
+def ones_like(prototype, dtype=None) -> Array:
+    """A new array of ones of ``prototype``'s shape and dtype."""
+    a = _like(prototype, dtype)
+    a.fill(1)
+    return a
+
+
+def full_like(prototype, fill_value, dtype=None) -> Array:
+    """A new array of ``prototype``'s shape and dtype, every element ``fill_value``."""
+    a = _like(prototype, dtype)
+    a.fill(fill_value)
+    return a
+
+
+def array(obj, dtype=None) -> Array:
+    """A new array holding a copy of ``obj``: a NumPy array, a sequence or a Tack array.
+
+    Without ``dtype``, all of ``obj``'s dimensions are array dimensions, a
+    NumPy array keeps its dtype, and Python floats and ints become f32 and
+    i32 (i64 if a value needs it). With an element dtype such as
+    ``vec3(f32)``, the trailing dimensions are the elements' components.
+    """
+    if isinstance(obj, Array):
+        return obj.copy() if dtype is None else obj.astype(dtype)
+    host = np.asarray(obj)
+    dtype = _host_dtype(host, obj) if dtype is None else as_dtype(dtype)
     shape = host.shape
     if isinstance(dtype, ElementType):
         rank = len(dtype.shape)
         if len(shape) < rank or shape[-rank:] != dtype.shape:
             raise ValueError(f"input shape {shape} must end with element shape {dtype.shape}")
         shape = shape[:-rank]
-    out = empty(dtype=dtype, shape=shape)
-    out.from_numpy(host)
+    out = empty(shape, dtype)
+    out._upload(host.astype(out.scalar_dtype.numpy_dtype, copy=False))
     return out
 
 
-def field(dtype=f32, shape=(), exportable=False) -> Array:
-    """Compatibility name for ``empty``. Prefer array terminology in new code."""
-    return empty(dtype=dtype, shape=shape, exportable=exportable)
+def asarray(obj, dtype=None) -> Array:
+    """``obj`` itself if it is a Tack array of ``dtype`` (or any, without one),
+    else `array(obj, dtype)`."""
+    if isinstance(obj, Array) and (dtype is None or as_dtype(dtype) == obj.dtype):
+        return obj
+    return array(obj, dtype)
 
 
-def field_from_numpy(arr: np.ndarray, dtype=None) -> Array:
-    """Compatibility name for ``array``; always copies the values."""
-    return array(arr, dtype=dtype)
+def copyto(dst: Array, src):
+    """Copy ``src`` into the existing array ``dst``, as ``np.copyto`` does.
 
-
-def empty_like(prototype, dtype=None) -> Array:
-    """Allocate matching storage without reading or copying prototype values.
-
-    A scalar dtype override changes component precision while retaining a
-    vector/matrix element layout. An explicit element dtype selects a new
-    element layout, keeping the array shape. NumPy inputs describe scalar
-    arrays unless an element dtype is explicitly supplied.
+    ``src`` is host data -- a NumPy array, a sequence or a scalar -- whose
+    shape is ``dst.numpy()``'s or broadcasts to it, converted to ``dst``'s
+    dtype; or a Tack array of ``dst``'s shape, copied on the device.
     """
-    if not isinstance(prototype, (Array, np.ndarray)):
-        raise TypeError("empty_like expects a Tack array or NumPy array")
-    legacy = isinstance(prototype, Array) and prototype._legacy_layout
-    shape = getattr(prototype, '_logical_shape', prototype.shape)
+    if not isinstance(dst, Array):
+        raise TypeError(f"copyto() writes into a Tack array, not {type(dst).__name__}")
+    if isinstance(src, Array):
+        if src.shape != dst.shape or src.scalar_size != dst.scalar_size:
+            raise ValueError(f"copyto() from an array of shape {src.shape} and dtype "
+                             f"{src.dtype} into one of shape {dst.shape} and dtype {dst.dtype}")
+        dst._check_writable()
+        from tack.algorithms.copy import copy as _copy
+        _copy(src._scalar_view(), dst._scalar_view(), dst.scalar_size)
+        return
+    host = np.asarray(src, dtype=dst.scalar_dtype.numpy_dtype)
+    expected = dst._host_shape
+    if host.shape != expected:
+        try:
+            host = np.broadcast_to(host, expected)
+        except ValueError:
+            raise ValueError(f"copyto() into an array whose values have shape {expected}: "
+                             f"cannot broadcast shape {host.shape}") from None
+    dst._upload(host)
+
+
+def arange(start, stop=None, step=1, dtype=None) -> Array:
+    """Evenly spaced values in ``[start, stop)``, as ``np.arange``.
+
+    Without ``dtype``, integer arguments give i32 (i64 if a value needs it)
+    and any float argument gives f32.
+    """
+    if stop is None:
+        start, stop = 0, start
+    values = np.arange(start, stop, step)
     if dtype is None:
-        if isinstance(prototype, Array):
-            dtype = prototype.dtype
-            if legacy:
-                dims = getattr(prototype, '_matrix_shape', None)
-                dtype = mat(*dims, dtype) if dims else vec(prototype._vector_n, dtype)
-        else:
-            dtype = from_numpy_dtype(prototype.dtype)
-    elif isinstance(dtype, ScalarType) and isinstance(prototype, Array) and hasattr(prototype, '_vector_n'):
-        dims = getattr(prototype, '_matrix_shape', None)
-        dtype = mat(*dims, dtype) if dims else vec(prototype._vector_n, dtype)
-    out = empty(dtype=dtype, shape=shape)
-    out._legacy_layout = legacy
-    return out
+        dtype = _host_dtype(values, [start, stop, step])
+        if values.size == 0 and values.dtype.kind in 'iu':
+            dtype = i32 if all(integer_type_for_value(int(v)) is i32 for v in (start, stop)) else i64
+    return array(values, dtype)
 
 
-def zeros(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
-    """Create a field filled with zeros.
+def concat(arrays) -> Array:
+    """Join a sequence of arrays end to end into a new one-dimensional array.
 
-    A new field holds unspecified contents; this one is zeroed on the
-    device, in parallel where the backend fills that way.
+    All arrays must have the same dtype; the copy runs on the device.
     """
-    f = empty(dtype=dtype, shape=shape)
-    if not f._buffer.starts_zeroed:
-        f.fill(0)
-    return f
-
-
-def ones(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
-    """Create a field filled with ones."""
-    f = empty(dtype=dtype, shape=shape)
-    f.fill(1)
-    return f
-
-
-def full(dtype: ScalarType, shape: tuple[int, ...], value) -> Field:
-    """Create a field filled with a constant value."""
-    f = empty(dtype=dtype, shape=shape)
-    f.fill(value)
-    return f
-
-
-def arange(n: int, dtype: ScalarType = i32) -> Field:
-    """Create a field with values [0, 1, 2, ..., n-1]."""
-    arr = np.arange(n, dtype=dtype.numpy_dtype)
-    return field_from_numpy(arr, dtype=dtype)
-
-
-def concat(fields_list: list[Field]) -> Field:
-    """Concatenate a list of 1D fields into a single field (GPU kernel, no host roundtrip).
-
-    All fields must have the same dtype. Returns a new field with
-    shape (total_elements,).
-    """
-    if not fields_list:
-        raise ValueError("concat requires at least one field")
-    dt = fields_list[0].dtype
-    for f in fields_list[1:]:
-        if f.dtype is not dt:
+    arrays = list(arrays)
+    if not arrays:
+        raise ValueError("concat requires at least one array")
+    dt = arrays[0].dtype
+    for a in arrays[1:]:
+        if a.dtype != dt:
             raise TypeError(
-                f"concat: all fields must have the same dtype, "
-                f"got {dt} and {f.dtype}")
-    total = sum(f.size for f in fields_list)
-    result = field(dtype=dt, shape=(total,))
+                f"concat: all arrays must have the same dtype, got {dt} and {a.dtype}")
+    total = sum(a.size for a in arrays)
+    result = empty((total,), dt)
     from tack.algorithms.copy import copy_with_offset
     offset = 0
-    for f in fields_list:
-        n = f.size
-        copy_with_offset(f, result, offset, n)
-        offset += n
+    for a in arrays:
+        copy_with_offset(a, result, offset, a.size)
+        offset += a.size
     return result
 
 
-def from_dlpack(source, copy: bool = False) -> Field:
-    """Create a Tack field from a DLPack capsule or any object with __dlpack__.
+def from_dlpack(x, *, copy: bool = False) -> Array:
+    """A Tack array from a DLPack capsule or any object with ``__dlpack__``.
 
-    Zero-copy: the field shares memory with the source, and the source is
-    held alive for as long as the field lives. Works for device tensors as
+    Zero-copy: the array shares memory with the source, and the source is
+    held alive for as long as the array lives. Works for device tensors as
     well as host ones, provided the active backend can wrap them.
 
     Wrap, not address: the Metal backend reads host memory perfectly well
-    but cannot turn a host pointer into the MTLBuffer a field needs, so it
-    refuses host tensors and says so. Pass copy=True for an independent
-    field instead.
+    but cannot turn a host pointer into the MTLBuffer an array needs, so it
+    refuses host tensors and says so. Pass ``copy=True`` for an independent
+    array instead.
 
     Usage:
-        field = tack.from_dlpack(torch_tensor)
-        field = tack.from_dlpack(cupy_array)
-        field = tack.from_dlpack(numpy_array)
-        field = tack.from_dlpack(vtk_capsule)
+        a = tack.from_dlpack(torch_tensor)
+        a = tack.from_dlpack(cupy_array)
+        a = tack.from_dlpack(numpy_array)
+        a = tack.from_dlpack(vtk_capsule)
     """
     if copy:
-        arr = source if isinstance(source, np.ndarray) else np.from_dlpack(source)
-        return field_from_numpy(arr)
+        host = x if isinstance(x, np.ndarray) else np.from_dlpack(x)
+        return array(host)
 
     from tack.lang.dlpack import dlpack_to_field
-    return dlpack_to_field(source)
+    return dlpack_to_field(x)
 
 
 def memory_space(ptr) -> str:
@@ -719,14 +823,13 @@ def memory_space(ptr) -> str:
     return get_backend().memory_space(ptr)
 
 
-def field_from_ptr(ptr, dtype: ScalarType | ElementType, shape: tuple[int, ...],
-                   writable: bool = False) -> Field:
-    """Wrap an existing device pointer as a Tack field without copying.
+def array_from_ptr(ptr, shape, dtype, *, writable: bool = False) -> Array:
+    """Wrap existing device memory as a Tack array without copying.
 
     Use this for interop with external libraries (pycuda, cupy, Catalyst)
     or when receiving a device pointer from a simulation framework.
 
-    The field does NOT own the memory — Tack will not free it.
+    The array does NOT own the memory — Tack will not free it.
     Read-only by default; pass writable=True to enable writes.
 
     Raises ValueError if the pointer's memory space does not match the
@@ -739,24 +842,23 @@ def field_from_ptr(ptr, dtype: ScalarType | ElementType, shape: tuple[int, ...],
              - Metal: MTLBuffer object (from PyObjC)
              - CUDA/HIP: device pointer as integer
              - Level Zero: device pointer as integer
-        dtype: scalar type (tack.f32, tack.i32, etc.)
-        shape: tuple of dimensions
-        writable: if False (default), from_numpy() and fill() raise errors
+        shape: the array's dimensions, counting elements
+        dtype: scalar or element type (tack.f32, tack.vec3(), np.int32, ...)
+        writable: if False (default), copyto() and fill() raise errors
 
     Returns:
-        A Field wrapping the external memory.
+        An Array wrapping the external memory.
     """
     from tack.runtime.dispatch import get_backend
     from tack.runtime.kernel_utils import as_address
 
     shape = _array_shape(shape)
+    dtype = as_dtype(dtype)
     if isinstance(dtype, ElementType):
         scalar = dtype.scalar_dtype
         storage = (int(np.prod(shape)) * dtype.size,)
-    elif isinstance(dtype, ScalarType):
-        scalar, storage = dtype, shape
     else:
-        raise TypeError("dtype must be a Tack scalar, vector or matrix type")
+        scalar, storage = dtype, shape
     backend = get_backend()
 
     # Validate the pointer's memory space against what this backend expects,
@@ -767,92 +869,44 @@ def field_from_ptr(ptr, dtype: ScalarType | ElementType, shape: tuple[int, ...],
     if backend.device_memory_spaces:
         if as_address(ptr) is None:
             raise TypeError(
-                f"field_from_ptr() on the {backend.label} backend takes a "
+                f"array_from_ptr() on the {backend.label} backend takes a "
                 f"device address (an integer, or an object int() accepts), "
                 f"not {type(ptr).__name__}.")
         space = backend.memory_space(ptr)
         if space not in backend.device_memory_spaces:
             raise ValueError(
                 f"Pointer is in '{space}' memory but the active backend "
-                f"is '{backend.label}'. field_from_ptr() requires a device "
-                f"pointer. Use tack.field() + field.from_numpy() to copy "
-                f"host data to the device.")
+                f"is '{backend.label}'. array_from_ptr() requires a device "
+                f"pointer. Use tack.array() to copy host data to the device.")
 
     buf = backend.wrap_ptr(ptr, scalar, storage)
     return _array_view(dtype, shape, buf, writable=writable)
 
 
 class Vector:
-    """Vector type for creating vector fields.
+    """Vector values in kernels: ``tack.Vector([x, y, z])``.
 
-    Usage:
-        # Create a vector field (3-component vectors, n elements)
-        v = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
-
-        # In kernels, vectors are scalarized:
-        # v[i] loads 3 components from v[i*3], v[i*3+1], v[i*3+2]
+    In kernels a vector is scalarized; ``v.dot(w)``, ``v.cross(w)``,
+    ``v.norm()`` and ``v.normalized()`` operate on its components. Arrays of
+    vectors have an element dtype: ``tack.empty((n,), tack.vec3())``.
     """
-
-    @staticmethod
-    def field(n: int, dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
-        """Create a vector field with n components per element.
-
-        The underlying storage is a flat scalar field of size
-        prod(shape) * n elements.  In kernels, field[i] accesses
-        components at i*n, i*n+1, ..., i*n+(n-1).
-        """
-        from tack.runtime.dispatch import get_backend
-
-        if isinstance(shape, int):
-            shape = (shape,)
-
-        # Flatten: total elements = prod(shape) * n
-        total = 1
-        for s in shape:
-            total *= s
-        flat_shape = (total * n,)
-
-        backend = get_backend()
-        buf = backend.allocate_field(dtype, flat_shape)
-        f = Field(dtype, flat_shape, buf)
-        # Mark as vector field so kernel dispatch can handle it
-        f._vector_n = n
-        f._logical_shape = shape
-        f._legacy_layout = True
-        return f
 
 
 class Matrix:
-    """Small fixed-size matrices: fields of them, and matrix values in kernels.
+    """Small fixed-size matrix values in kernels.
 
-    Usage:
-        F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
+    In kernels a matrix is scalarized, like a vector:
+      A = tack.Matrix([[a, b], [c, d]])      rows of scalars, or of vectors
+      I = tack.Matrix.identity(2)
+      F[p] = (I + dt * C) @ F[p]             '@' multiplies; '*' is elementwise
+      A[i, j], A.transpose(), A.trace(), A.determinant(), A.inverse()
 
-        # In kernels a matrix is scalarized, like a vector:
-        #   A = tack.Matrix([[a, b], [c, d]])      rows of scalars, or of vectors
-        #   I = tack.Matrix.identity(2)
-        #   F[p] = (I + dt * C) @ F[p]             '@' multiplies; '*' is elementwise
-        #   A[i, j], A.transpose(), A.trace(), A.determinant(), A.inverse()
+    Arrays of matrices have an element dtype: ``tack.empty((n,), tack.mat2())``.
     """
-
-    @staticmethod
-    def field(n: int, m: int, dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
-        """Create a field of n-by-m matrices.
-
-        The storage is that of ``Vector.field(n * m, dtype, shape)``, each
-        matrix in row-major order. ``from_numpy`` takes ``(*shape, n, m)``
-        or the flat array, and ``to_numpy(vectors=True)`` returns
-        ``(*shape, n, m)``.
-        """
-        if not (1 <= n <= 4 and 1 <= m <= 4):
-            raise ValueError(f"Matrix.field({n}, {m}): matrices are at most 4x4")
-        f = Vector.field(n * m, dtype, shape)
-        f._matrix_shape = (n, m)
-        return f
 
 
 class Texture3D:
-    """A 3D texture over a snapshot of a Field, sampled trilinearly.
+    """A 3D texture over a snapshot of an array, sampled trilinearly.
 
     Created via ``tack.texture3d(field, shape=(W, H, D))``.  In kernels,
     ``tex.sample(u, v, w)`` samples at normalized [0,1] coordinates using
@@ -867,7 +921,7 @@ class Texture3D:
     texture and no other texture can be handed it.
     """
 
-    def __init__(self, source_field: Field, shape_3d: tuple, interp: str = 'linear'):
+    def __init__(self, source_field: Array, shape_3d: tuple, interp: str = 'linear'):
         from tack.runtime.dispatch import get_backend
 
         # Every hardware path builds a single-channel 32-bit float image,
@@ -895,7 +949,7 @@ class Texture3D:
         if backend.texture_in_hardware(shape_3d):
             self._storage = backend.create_texture_image(shape_3d)
         else:
-            self._storage = Field(f32, (source_field.size,),
+            self._storage = Array(f32, (source_field.size,),
                                   backend.allocate_field(f32, (source_field.size,)))
         self.update()
 
@@ -904,7 +958,7 @@ class Texture3D:
 
         Sampling after this sees the field as it is now, on every backend.
         """
-        if isinstance(self._storage, Field):
+        if isinstance(self._storage, Array):
             from tack.algorithms.copy import copy as _copy
             _copy(self.field.reshape((self.field.size,)), self._storage,
                   self.field.size)
@@ -919,5 +973,3 @@ class Texture3D:
         """Sample at normalized coordinates. Only usable inside @tack.kernel."""
         raise RuntimeError("Texture3D.sample() can only be used inside a @tack.kernel")
 
-
-array_from_ptr = field_from_ptr

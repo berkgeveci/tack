@@ -434,7 +434,7 @@ this call's *values*. When the variant needs full workgroups,
 `check_workgroup_launch` requires the logical count to be a multiple of
 256. `check_atomic_alignment` checks the alignment of the current atomic
 targets' storage, and `check_writable_fields` refuses a read-only field
-(from `field_from_ptr` without `writable=True`, or a read-only DLPack
+(from `array_from_ptr` without `writable=True`, or a read-only DLPack
 import) bound to a parameter in `written_fields`, with `ValueError`. The
 backend then takes over:
 

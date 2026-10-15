@@ -37,7 +37,7 @@
 
 64 MB of f32 data (16,777,216 elements), median of 30 trials after warmup.
 
-Reproduce: `uv run python packages/tack-core/examples/bench_64mb.py`
+Reproduce: `uv run python benchmarks/bench_64mb.py`
 
 ## Mac — Apple Silicon (Metal)
 

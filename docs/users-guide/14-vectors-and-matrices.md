@@ -12,9 +12,9 @@ import numpy as np
 import tack
 
 tack.init(arch=tack.cpu)
-pos = tack.empty(dtype=tack.vec2(tack.f32), shape=(3,))
-vel = tack.empty(dtype=tack.vec2(tack.f32), shape=(3,))
-pos.from_numpy(np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float32))
+pos = tack.empty((3,), tack.vec2(tack.f32))
+vel = tack.empty((3,), tack.vec2(tack.f32))
+tack.copyto(pos, np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float32))
 vel.fill([1.0, 0.0])
 
 @tack.kernel
@@ -23,7 +23,7 @@ def advance(pos, vel, dt):
         pos[i] += dt * vel[i]
 
 advance(pos, vel, 0.5)
-print(pos.to_numpy())    # [[0.5, 0.0], [1.5, 0.0], [0.5, 1.0]]
+print(pos.numpy())    # [[0.5, 0.0], [1.5, 0.0], [0.5, 1.0]]
 ```
 
 Each iteration loads a two-component velocity and updates its own position.
@@ -43,7 +43,7 @@ The component dtype defaults to f32. The ordinary array constructors allocate
 its storage, and vector operations are scalarized at the IR level:
 
 ```python
-v = tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))
+v = tack.empty((n,), tack.vec3(tack.f32))
 
 @tack.kernel
 def normalize_vectors(v, n):
@@ -120,8 +120,9 @@ distance, normal, color = closest_hit(o, d)
 
 A vector array's shape excludes its component dimension. A vector array
 of shape `(n,)` and dtype `tack.vec3(tack.f32)` downloads as `(n, 3)` with
-plain `to_numpy()`. `from_numpy` accepts that shape or the flat storage
-shape. `size` is `n`; `scalar_size` is `3 * n`. `scalar_dtype` gives the
+`numpy()`, and `tack.copyto` takes values of that shape, or values that
+broadcast to it (one `(3,)` vector, say), not the flat storage shape.
+`size` is `n`; `scalar_size` is `3 * n`. `scalar_dtype` gives the
 component type. Copies and reshapes preserve the element type; reshaping
 changes only the array dimensions, without copying storage.
 
@@ -156,8 +157,8 @@ they are scalarized: a matrix is its entries, and every operation expands
 to scalar arithmetic at lowering.
 
 ```python
-F = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))    # a 2x2 matrix per particle
-C = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))
+F = tack.empty((n,), tack.mat2(tack.f32))    # a 2x2 matrix per particle
+C = tack.empty((n,), tack.mat2(tack.f32))
 
 @tack.kernel
 def update(F, C, x, dt, n):
@@ -184,7 +185,7 @@ def update(F, C, x, dt, n):
   (`F[p][0, 1]`). The indices may be runtime values, which must then be
   in range.
 - **Arrays.** A matrix array stores each matrix in row-major order.
-  `from_numpy` takes `(*shape, n, m)` and `to_numpy()` returns
+  `tack.copyto` takes `(*shape, n, m)` and `numpy()` returns
   it. `F[p] = A`, `F[p] += A`, `F[p] *= s` and
   `tack.atomic_add(F, p, A)` work as they do for vector arrays.
 - **Device functions** take and return matrices, alone or among several
@@ -210,7 +211,6 @@ vectors. [N-body](tutorials/nbody.md) accumulates three-component directions.
 Use those examples after the small position update above.
 
 
-`Vector` and `Matrix` still name kernel value construction, such as
-`Matrix.identity(3)`; array allocation does not use those namespaces.
-The older `Vector.array` and `Matrix.array` entry points remain compatible
-with their historical flat host metadata. Use element dtypes in new code.
+`Vector` and `Matrix` name kernel values, such as `Matrix.identity(3)`;
+arrays of vectors and matrices are allocated with element dtypes
+(`tack.vec3()`, `tack.mat2()`), not through those classes.

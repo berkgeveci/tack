@@ -97,21 +97,21 @@ def scale_array(input1: tack.template(), scalar: tack.template(),
 # ---------------------------------------------------------------------------
 n = 1000
 
-a_data = tack.empty(dtype=tack.f32, shape=(n,))
-b_data = tack.empty(dtype=tack.f32, shape=(n,))
-out_data = tack.empty(dtype=tack.f32, shape=(n,))
+a_data = tack.empty((n,))
+b_data = tack.empty((n,))
+out_data = tack.empty((n,))
 
 a_np = np.arange(n, dtype=np.float32)
 b_np = np.arange(n, dtype=np.float32) * 2.0
-a_data.from_numpy(a_np)
-b_data.from_numpy(b_np)
+tack.copyto(a_data, a_np)
+tack.copyto(b_data, b_np)
 
 a = AOSArray(a_data)
 b = AOSArray(b_data)
 out = AOSArray(out_data)
 
 add_arrays(a, b, out, n)
-result = out_data.to_numpy()
+result = out_data.numpy()
 expected = a_np + b_np
 assert np.allclose(result, expected), f"AOS+AOS failed: max err {np.max(np.abs(result - expected))}"
 print("Test 1 -- AOS + AOS -> AOS: OK")
@@ -123,7 +123,7 @@ print("Test 1 -- AOS + AOS -> AOS: OK")
 offset = ConstantArray(42.0)
 
 add_arrays(a, offset, out, n)
-result = out_data.to_numpy()
+result = out_data.numpy()
 expected = a_np + 42.0
 assert np.allclose(result, expected), "AOS+Constant failed"
 print("Test 2 -- AOS + Constant -> AOS: OK")
@@ -135,7 +135,7 @@ print("Test 2 -- AOS + Constant -> AOS: OK")
 ramp = AffineArray(0.5, 10.0)  # value[i] = 0.5 * i + 10.0
 
 add_arrays(a, ramp, out, n)
-result = out_data.to_numpy()
+result = out_data.numpy()
 expected = a_np + (0.5 * np.arange(n) + 10.0).astype(np.float32)
 assert np.allclose(result, expected, atol=1e-3), "AOS+Affine failed"
 print("Test 3 -- AOS + Affine -> AOS: OK")
@@ -147,7 +147,7 @@ print("Test 3 -- AOS + Affine -> AOS: OK")
 c = ConstantArray(100.0)
 
 add_arrays(c, ramp, out, n)
-result = out_data.to_numpy()
+result = out_data.numpy()
 expected = (100.0 + 0.5 * np.arange(n) + 10.0).astype(np.float32)
 assert np.allclose(result, expected, atol=1e-3), "Constant+Affine failed"
 print("Test 4 -- Constant + Affine -> AOS: OK (no input buffers needed!)")
@@ -159,7 +159,7 @@ print("Test 4 -- Constant + Affine -> AOS: OK (no input buffers needed!)")
 factor = ConstantArray(3.0)
 
 scale_array(a, factor, out, n)
-result = out_data.to_numpy()
+result = out_data.numpy()
 expected = a_np * 3.0
 assert np.allclose(result, expected), "Scale by constant failed"
 print("Test 5 -- AOS * Constant -> AOS: OK")

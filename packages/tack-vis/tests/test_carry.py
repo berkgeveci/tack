@@ -10,8 +10,8 @@ import tack.dataset as td
 
 
 def _ints(values):
-    field = tack.field(tack.i32, shape=(len(values),))
-    field.from_numpy(np.asarray(values, np.int32))
+    field = tack.empty((len(values),), tack.i32)
+    tack.copyto(field, np.asarray(values, np.int32))
     return field
 
 
@@ -48,7 +48,7 @@ def test_threshold_keeps_whole_cells_and_all_their_data(backend):
         "height": ("H1", "points"), "label": ("Values", "points"),
         "cell": ("Constant", "cells"), "cell id": ("Values", "cells"),
         "dg": ("L2", "cells")}          # faces and edges are derived afresh
-    np.testing.assert_array_equal(out.fields["cell id"].values.to_numpy(), [1, 2])
+    np.testing.assert_array_equal(out.fields["cell id"].values.numpy(), [1, 2])
     assert out.fields["dg"].space.size == 8 + 5
 
 
@@ -59,7 +59,7 @@ def test_contour_interpolates_point_data_and_takes_its_cells(backend):
     # Integer point data cannot be interpolated; L2 data belongs to whole cells.
     assert _kinds(out) == {"height": ("H1", "points"), "cell": ("Constant", "cells"),
                            "cell id": ("Values", "cells")}
-    np.testing.assert_allclose(out.fields["height"].values.to_numpy(), 0.5, atol=1e-6)
+    np.testing.assert_allclose(out.fields["height"].values.numpy(), 0.5, atol=1e-6)
 
 
 def test_a_surface_takes_face_data_as_its_cells(backend):
@@ -103,5 +103,5 @@ def test_maps_take_ids_as_lists_or_arrays(backend):
         for kind in (td.carry.Take, td.carry.Pieces):
             out = td.carry.carry(data, t, points=td.carry.Same(), cells=kind(ids),
                                  fields=["cell"])
-            np.testing.assert_array_equal(out.fields["cell"].values.to_numpy(),
-                                          by_field.fields["cell"].values.to_numpy())
+            np.testing.assert_array_equal(out.fields["cell"].values.numpy(),
+                                          by_field.fields["cell"].values.numpy())

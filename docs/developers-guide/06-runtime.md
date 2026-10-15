@@ -27,7 +27,7 @@ Declared capabilities — read these instead of probing with `hasattr`:
 | `supports_f64` | Derived from `supported_dtypes` — never declared separately |
 | `supports_device_reductions` | Whether `reduce_field()` runs on device; otherwise `Field.sum()` and friends fall back to numpy |
 | `supports_workgroups` | Native workgroup execution for shared memory, barriers, local thread IDs and block reductions; false on CPU |
-| `device_memory_spaces` | Memory spaces a pointer must be in for `field_from_ptr()`; empty means no check |
+| `device_memory_spaces` | Memory spaces a pointer must be in for `array_from_ptr()`; empty means no check |
 
 Anything derivable is derived. `supports_f64` used to be declared
 independently, existed on Level Zero alone, and so
@@ -191,7 +191,7 @@ CUDA, HIP and Level Zero queue launches in program order (an open Metal
 command buffer, one stream per CUDA context or HIP device, one asynchronous
 immediate command list with a barrier after each command on Level Zero)
 and return; CUDA, HIP and Level Zero queue fills and host-to-device copies
-in the same order. The host waits where it reads field memory (`to_numpy`,
+in the same order. The host waits where it reads field memory (`numpy()`,
 `read_range`, reductions; on Metal every host access to a buffer) or calls
 `tack.sync()`, which is `Backend.synchronize()`. A field dropped
 while a queued launch still uses it is freed after that launch
@@ -235,8 +235,9 @@ backend-specific buffer:
 | HIP | `HIPBuffer` | Stream-ordered device pointer (`hipMallocAsync`; `hipMalloc` without memory pools) |
 | Level Zero | `L0Buffer` | Device pointer (`zeMemAllocDevice`) |
 
-`Field` wraps a buffer with dtype and shape metadata. `from_numpy()` /
-`to_numpy()` handle host-device transfers (on Metal this is a memcpy
+`Field` (`tack.Array`) wraps a buffer with dtype and shape metadata.
+`tack.copyto()` and `numpy()` handle host-device transfers through the
+buffer's `from_numpy()` / `to_numpy()` (on Metal this is a memcpy
 within unified memory; on CUDA/HIP/L0 it involves explicit copies).
 
 A new field's contents are unspecified on every backend; nothing fills it.
@@ -327,7 +328,7 @@ allocation or copy. Each backend implements `wrap_ptr(ptr, dtype, shape)`:
 | HIP | device address (anything `int()` accepts) | Stores it as an `int` (hip-python reads a NumPy scalar as a buffer), skips `hipMalloc` |
 | Level Zero | device address (anything `int()` accepts) | Stores `c_void_p`, skips `zeMemAllocDevice` |
 
-On CUDA, HIP and Level Zero, `field_from_ptr()` first checks the pointer
+On CUDA, HIP and Level Zero, `array_from_ptr()` first checks the pointer
 with `as_address()` (`TypeError` if it is not an address) and
 `memory_space()` (`ValueError` if it is not device memory).
 
@@ -346,8 +347,8 @@ def __del__(self):
 ### Read-Only Protection
 
 `Field._writable` defaults to `True` for allocated fields and `False` for
-`field_from_ptr()`; a read-only DLPack import is also not writable. The
-`_check_writable()` method guards `from_numpy()` and `fill()`. For kernels,
+`array_from_ptr()`; a read-only DLPack import is also not writable. The
+`_check_writable()` method guards `tack.copyto()` and `fill()`. For kernels,
 the variant records which field arguments the kernel may store to
 (`KernelVariant.written_fields`, from `written_field_params`, all of them
 when a store can't be traced), and `check_writable_fields()` raises

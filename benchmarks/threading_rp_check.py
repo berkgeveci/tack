@@ -85,9 +85,9 @@ def main():
     for name, kernel in KERNELS.items():
         grid = GRIDS[name]
         big = grid[-1] * 8
-        x = tack.field(dtype=tack.f32, shape=(big,))
-        out = tack.field(dtype=tack.f32, shape=(big,))
-        x.from_numpy(np.ones(big, dtype=np.float32))
+        x = tack.empty((big,))
+        out = tack.empty((big,))
+        tack.copyto(x, np.ones(big, dtype=np.float32))
 
         # Drive the whole grid repeatedly, so the estimates settle exactly
         # as they do in the scoring run whose threshold is in question.

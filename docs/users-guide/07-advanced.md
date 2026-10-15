@@ -263,8 +263,8 @@ Wrap an array as a 3D texture for hardware-accelerated trilinear interpolation:
 
 ```python
 # Create texture from an array
-data = tack.empty(dtype=tack.f32, shape=(W * H * D,))
-data.from_numpy(volume_data.ravel())
+data = tack.empty((W * H * D,))
+tack.copyto(data, volume_data.ravel())
 tex = tack.texture3d(data, shape=(W, H, D))
 
 @tack.kernel
@@ -289,7 +289,7 @@ backend. Writes to the array afterwards are not visible to it until you call
 `tex.update()`:
 
 ```python
-data.from_numpy(next_frame.ravel())
+tack.copyto(data, next_frame.ravel())
 tex.update()   # sampling now sees next_frame
 ```
 

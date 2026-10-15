@@ -118,9 +118,7 @@ def _width(values):
 
 
 def _count(values):
-    """The number of keys, including legacy vectors with flat host metadata."""
-    if getattr(values, '_legacy_layout', False):
-        return int(values.shape[0]) // _width(values)
+    """The number of keys."""
     return values.size
 
 
@@ -194,7 +192,7 @@ def _radix_order(values, n, indices):
         return argsort(values, index_dtype=indices)
     order = None
     for c in reversed(range(width)):
-        component = tack.field(values.scalar_dtype, shape=(n,))
+        component = tack.empty((n,), values.scalar_dtype)
         _component(values, c, component)
         if order is None:
             order = argsort(component, index_dtype=indices)
@@ -212,24 +210,24 @@ def bucket_order(values, nbuckets, index_dtype=None):
     keys = keys_of(values)
     n = _count(values)
     indices = _index_dtype(max(n, nbuckets), index_dtype)
-    starts = tack.field(indices, shape=(nbuckets + 1,))
+    starts = tack.empty((nbuckets + 1,), indices)
     if n == 0:
         starts.fill(0)
-        return tack.field(indices, shape=(0,)), starts
-    counts = tack.zeros(tack.i32, (nbuckets,))
-    bad = tack.zeros(tack.i32, (1,))
+        return tack.empty((0,), indices), starts
+    counts = tack.zeros((nbuckets,), tack.i32)
+    bad = tack.zeros((1,), tack.i32)
     _bucket_counts(keys, counts, bad, n, nbuckets)
     if bad[0]:
         raise ValueError(f"{bad[0]} keys lie outside the {nbuckets} buckets")
     exclusive_scan(counts, starts, nbuckets, total=False)
     _close(starts, nbuckets, n)
     nchunks = (nbuckets + _CHUNK - 1) // _CHUNK
-    largest = tack.field(tack.i32, shape=(nchunks,))
+    largest = tack.empty((nchunks,), tack.i32)
     _largest_counts(counts, largest, _CHUNK, nchunks, nbuckets)
-    if int(largest.to_numpy().max()) > _LARGEST:
+    if int(largest.numpy().max()) > _LARGEST:
         return _radix_order(values, n, indices), starts
-    fill = tack.zeros(tack.i32, (nbuckets,))
-    order = tack.field(indices, shape=(n,))
+    fill = tack.zeros((nbuckets,), tack.i32)
+    order = tack.empty((n,), indices)
     _bucket_scatter(keys, starts, fill, order, n)
     _sort_buckets(keys, starts, order, nbuckets)
     return order, starts
@@ -260,13 +258,13 @@ def run_offsets(values, order):
     ``order``'s type."""
     n = int(order.shape[0])
     if n == 0:
-        offsets = tack.field(order.dtype, shape=(1,))
+        offsets = tack.empty((1,), order.dtype)
         offsets.fill(0)
         return offsets, 0
-    flags = tack.field(tack.i32, shape=(n,))
-    run_ids = tack.field(order.dtype, shape=(n,))
+    flags = tack.empty((n,), tack.i32)
+    run_ids = tack.empty((n,), order.dtype)
     _flag_runs(keys_of(values), order, flags)
     nruns = exclusive_scan(flags, run_ids, n)
-    offsets = tack.field(order.dtype, shape=(nruns + 1,))
+    offsets = tack.empty((nruns + 1,), order.dtype)
     _scatter_run_starts(flags, run_ids, offsets, n, nruns)
     return offsets, nruns

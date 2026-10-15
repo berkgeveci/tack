@@ -41,10 +41,10 @@ def statistics(data, field):
     # converted f32 values was off by 57 for a million i32 values of 1001.
     # NumPy reduces integer fields on the host anyway.
     total = values.sum() if values is source else float(
-        np.sum(source.to_numpy(), dtype=np.float64))
+        np.sum(source.numpy(), dtype=np.float64))
     mean = total / n
     # The powers of differences from a mean are fractions, whatever the values are.
-    p2, p3, p4 = (tack.field(values.dtype, shape=(n,)) for _ in range(3))
+    p2, p3, p4 = (tack.empty((n,), values.dtype) for _ in range(3))
     _central_powers(values, mean, p2, p3, p4)
     m2, m3, m4 = p2.sum(), p3.sum(), p4.sum()
     skewness = math.sqrt(n) * m3 / m2 ** 1.5 if m2 else 0.0

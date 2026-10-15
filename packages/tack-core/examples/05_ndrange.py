@@ -20,7 +20,7 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 width, height = 64, 64
-pixels = tack.empty(dtype=tack.f32, shape=(width, height))
+pixels = tack.empty((width, height))
 
 
 @tack.kernel
@@ -34,7 +34,7 @@ def distance_field(pixels):
 
 distance_field(pixels)
 
-result = pixels.to_numpy().reshape(64, 64)
+result = pixels.numpy().reshape(64, 64)
 # Check center is ~0, corners are ~45
 assert result[32, 32] == 0.0
 corner_dist = result[0, 0]
@@ -44,13 +44,13 @@ print(f"Corner distance: {corner_dist:.2f} (expected {np.sqrt(32**2+32**2):.2f})
 
 # --- Example 2: 2D Gaussian blur (3x3 kernel) ---
 
-src = tack.empty(dtype=tack.f32, shape=(64, 64))
-dst = tack.empty(dtype=tack.f32, shape=(64, 64))
+src = tack.empty((64, 64))
+dst = tack.empty((64, 64))
 
 # Create a simple image: bright spot at center
 img = np.zeros((64, 64), dtype=np.float32)
 img[32, 32] = 100.0
-src.from_numpy(img)
+tack.copyto(src, img)
 
 
 @tack.kernel
@@ -69,7 +69,7 @@ def blur_3x3(src, dst):
 
 
 blur_3x3(src, dst)
-blurred = dst.to_numpy().reshape(64, 64)
+blurred = dst.numpy().reshape(64, 64)
 print(f"\nBlur: center pixel {blurred[32,32]:.2f} (was 100.00)")
 print(f"Blur: neighbor    {blurred[32,33]:.2f} (was 0.00)")
 print("2D ndrange + stencil: OK")

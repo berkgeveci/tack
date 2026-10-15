@@ -217,9 +217,10 @@ safety. LLVM and the vendor compilers still perform their own optimizations.
 
 ## Memory and aliasing
 
-Fields are typed, shaped storage associated with a backend. A field from
-`tack.Array` holds unspecified contents until a kernel, `from_numpy` or
-`fill` writes them; `tack.zeros`, `ones` and `full` make filled fields.
+Fields (kernel arguments that are `tack.Array`s) are typed, shaped
+storage associated with a backend. A new array holds unspecified contents
+until a kernel, `tack.copyto` or `fill` writes them; `tack.zeros`, `ones`
+and `full` make filled arrays.
 A subscript of
 a field gives one index per dimension, or a single flat, row-major index;
 a vector of integers stands for one index per component. Binding a field
@@ -260,7 +261,7 @@ signatures, and switching between overlapping and disjoint calls.
 
 **Textures.** `tack.texture3d(field, shape=(W, H, D))` copies the field's
 data when it is created, on every backend. Later writes to the field,
-whether kernel stores, `from_numpy`, or external and DLPack writes, are not
+whether kernel stores, `tack.copyto`, or external and DLPack writes, are not
 visible to the texture until `tex.update()` copies the field again; sampling
 after that call sees the field's data as of the call. The copy belongs to
 the texture: a hardware image on CUDA, Metal, HIP with image support and
@@ -273,7 +274,7 @@ only `interp='linear'` is implemented, and other modes are rejected.
 
 **Required caller constraints for this baseline:** access only in-bounds
 elements and initialized values; write only to writable storage. Dispatch
-refuses a read-only field (`field_from_ptr`'s default, or a DLPack import
+refuses a read-only field (`array_from_ptr`'s default, or a DLPack import
 flagged read-only) bound to a parameter the kernel may store to or update
 atomically; when a store cannot be traced to a parameter, every field
 argument counts as written. That is a check of the binding, not of accesses:
@@ -787,7 +788,7 @@ Tests: `test_new_features.py` (vectors), `test_matrix.py`.
 
 ## Field and parallel reductions
 
-`Field.sum()`, `min()`, `max()` and `mean()` reduce all logical elements
+`Array.sum()`, `min()`, `max()` and `mean()` reduce all logical elements
 and return Python `float` values. Reshaping a field does not select an axis
 or change the set of elements. CPU uses NumPy; GPU backends reduce eligible
 f32 fields on the device and use the shared NumPy fallback for other dtypes.
@@ -1045,7 +1046,7 @@ workgroup's lanes; they do not synchronize different workgroups. Launches
 on one backend take effect in call order: a kernel call sees every effect
 of the calls before it. Metal, CUDA, HIP and Level Zero queue launches and
 return before they run, and the host waits for them before it reads field
-memory (`to_numpy`, indexing, reductions, DLPack export) or at
+memory (`numpy()`, indexing, reductions, DLPack export) or at
 `tack.sync()`. A later kernel call or a host read is the supported way to
 consume a cross-workgroup result.
 Atomics alone do not require a complete workgroup or uniform participation;

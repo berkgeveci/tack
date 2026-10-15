@@ -39,7 +39,7 @@ def _blocks(cell_type, dims=(3, 2, 2)):
 
 def test_statistics_are_viskores(backend):
     data = td.sources.wavelet(5)
-    values = data.fields["RTData"].values.to_numpy().astype(np.float64)
+    values = data.fields["RTData"].values.numpy().astype(np.float64)
     s = td.algorithms.statistics(data, data.fields["RTData"])
     n, mean = values.size, values.mean()
     d = values - mean
@@ -57,7 +57,7 @@ def test_statistics_are_viskores(backend):
 
 def test_entropy_is_viskores(backend):
     data = td.sources.wavelet(5)
-    values = data.fields["RTData"].values.to_numpy()
+    values = data.fields["RTData"].values.numpy()
     for bins in (10, 37):
         counts, _ = np.histogram(values, bins=bins)
         p = counts[counts > 0] / counts.sum()
@@ -79,7 +79,7 @@ def test_wavelet_is_vtks(backend, extent):
     assert data.num_points == reference.GetNumberOfPoints()
     np.testing.assert_allclose(data.positions(), np.array(
         [reference.GetPoint(i) for i in range(reference.GetNumberOfPoints())]))
-    np.testing.assert_allclose(data.fields["RTData"].values.to_numpy(),
+    np.testing.assert_allclose(data.fields["RTData"].values.numpy(),
                                vtk_to_numpy(reference.GetPointData().GetArray("RTData")),
                                rtol=1e-4, atol=1e-3)
 
@@ -89,7 +89,7 @@ def test_tangle_is_viskores(backend):
     x = data.positions().astype(np.float64)
     p = 3.0 * (-1.0 + 2.0 * x)
     expected = ((p ** 4 - 5 * p ** 2).sum(axis=1) + 11.8) * 0.2 + 0.5
-    np.testing.assert_allclose(data.fields["tangle"].values.to_numpy(), expected, rtol=1e-5,
+    np.testing.assert_allclose(data.fields["tangle"].values.numpy(), expected, rtol=1e-5,
                                atol=1e-5)
     assert x.min() == 0.0 and x.max() == 1.0
     assert td.contour(data, "tangle", 0.5).num_cells > 0     # the handles
@@ -105,7 +105,7 @@ def test_tetrahedralize_keeps_the_volume(backend, cell_type, per_cell):
     data.fields["id"] = td.cell_ids(data)
     out = td.tetrahedralize(data)
     assert out.num_cells == per_cell * data.num_cells and out.num_points == data.num_points
-    assert {int(t) for t in out.topology.types.to_numpy()} == {10}
+    assert {int(t) for t in out.topology.types.numpy()} == {10}
     assert _measure(dataset_to_vtk(out), "Volume") == pytest.approx(
         _measure(grid, "Volume"), rel=1e-5)
     # Every tetrahedron the right way out (Viskores' wedge table has one inside out).
@@ -133,10 +133,10 @@ def test_triangulate_polygons_as_fans(backend):
     data = td.as_polygons(_plane())
     out = td.triangulate(data)
     loops, _ = data.topology.loops()
-    sizes = np.diff(loops.to_numpy())
+    sizes = np.diff(loops.numpy())
     assert out.num_cells == (sizes - 2).sum()
     assert _measure(dataset_to_vtk(out), "Area") == pytest.approx(
-        td.algorithms.cell_geometry(data)[0].values.to_numpy().sum(), rel=1e-6)
+        td.algorithms.cell_geometry(data)[0].values.numpy().sum(), rel=1e-6)
 
 
 def _plane():
@@ -161,7 +161,7 @@ def test_shrink_is_vtks(backend, cell_type):
     out = td.shrink(data, 0.7)
     assert isinstance(out.geometry.space, td.L2) and out.topology is data.topology
     # VTK gives each cell its own points, in the cell's corner order: the L2 layout.
-    corners = out.geometry.values.to_numpy(vectors=True)
+    corners = out.geometry.values.numpy()
     expected = np.concatenate([[reference.GetPoint(i) for i in
                                 (reference.GetCell(c).GetPointId(k) for k in range(
                                     reference.GetCell(c).GetNumberOfPoints()))]
@@ -175,8 +175,8 @@ def test_point_cloud_keeps_every_point(backend):
     data = td.sources.tangle((4, 4, 4))
     out = td.point_cloud(data)
     assert out.num_points == out.num_cells == data.num_points
-    np.testing.assert_array_equal(out.fields["tangle"].values.to_numpy(),
-                                  data.fields["tangle"].values.to_numpy())
+    np.testing.assert_array_equal(out.fields["tangle"].values.numpy(),
+                                  data.fields["tangle"].values.numpy())
 
 
 def test_statistics_of_integers(backend):
@@ -211,4 +211,4 @@ def test_integer_statistics_sum_without_wrapping(backend):
     assert result["sum"] == float(2**64)
     assert result["mean"] == float(2**63)
     assert result["population_variance"] == 0.0
-    np.testing.assert_array_equal(values.to_numpy(), np.array([2**63] * 2, np.uint64))
+    np.testing.assert_array_equal(values.numpy(), np.array([2**63] * 2, np.uint64))

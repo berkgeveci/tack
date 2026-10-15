@@ -30,7 +30,7 @@ can be derived is derived, so two declarations can't disagree.
 
 | Method | Contract |
 |---|---|
-| `allocate_field(dtype, shape, exportable=False)` | Allocates backend storage and returns a `DeviceBuffer`. `exportable=True` asks for memory that `Field.export_memory()` can share without a copy. Only CUDA acts on the flag, and the other backends ignore it |
+| `allocate_field(dtype, shape, exportable=False)` | Allocates backend storage and returns a `DeviceBuffer`. `exportable=True` asks for memory that `Array.export_memory()` can share without a copy. Only CUDA acts on the flag, and the other backends ignore it |
 | `wrap_ptr(ptr, dtype, shape)` | Wraps existing memory as a `DeviceBuffer` without copying or taking ownership. What counts as `ptr` is backend-specific. See [Pointer interop](runtime-api.md#pointer-interop) |
 | `execute(kernel, args, kwargs)` | Compiles or reuses a variant and runs it. All five backends delegate to `resolve_variant()` in `runtime/kernel_utils.py`, which is where every capability check below runs |
 
@@ -41,7 +41,7 @@ The base class raises `NotImplementedError` for all three.
 | Method | Default | Overridden by |
 |---|---|---|
 | `synchronize()` | Does nothing, which is correct for a backend whose launches complete before `execute()` returns. Otherwise it waits for every launch, fill and copy queued so far, and a queued launch's error is raised here. `tack.sync()` calls it on the active backend | Metal, CUDA, HIP and Level Zero, which queue launches (see [Launches](#launches)) |
-| `fill_field(field, value)` | Returns `False`, and `Field.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more of its own buffers as a kernel through its dispatch, so the threads first-touch the pages |
+| `fill_field(field, value)` | Returns `False`, and `Array.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more of its own buffers as a kernel through its dispatch, so the threads first-touch the pages |
 | `cache_target()` | Returns `None`: compiled variants are not stored on disk, only lowered IR. Otherwise a string naming what compiled code depends on besides the kernel (the device, the compiler and driver versions, the compile options) | all five |
 | `variant_artifact(payload)`, `load_variant(ir_func, artifact, effective_args)` | Raise `NotImplementedError`. Called only when `cache_target()` is not `None`: the picklable part of a compiled variant, and the payload rebuilt from it in another process. `effective_args` lets a GPU backend remake its scalar pack buffers | all five |
 | `memory_space(ptr)` | Returns `"cpu"`, which is correct for backends whose allocations are host-addressable | CUDA, HIP and Level Zero, which ask their driver. CPU overrides it with the same answer |
@@ -59,11 +59,11 @@ The base class raises `NotImplementedError` for all three.
 | `label` | derived | `display_name or name`. Use it in messages |
 | `supported_dtypes` | declared | A `frozenset` of the scalar types accepted as field argument dtypes. Dispatch checks every field argument against this set |
 | `supports_f64` | derived | `f64 in supported_dtypes` |
-| `supports_device_reductions` | declared | True when `Field.sum()`, `min()` and `max()` can run on the device. When false they run in NumPy on the host. It selects a path and never rejects anything |
+| `supports_device_reductions` | declared | True when `Array.sum()`, `min()` and `max()` can run on the device. When false they run in NumPy on the host. It selects a path and never rejects anything |
 | `supports_workgroups` | declared | Native workgroup execution for `shared`, `shared_like`, `barrier`, `thread_id` and `block_sum`/`block_min`/`block_max`. It does **not** promise uniform participation, atomic support or safe partial workgroups |
 | `supported_atomic_dtypes` | derived | Field dtypes that support `atomic_add`, `atomic_min` and `atomic_max`. This is the backend's entry in `ATOMIC_DTYPES` (`lang/atomic_support.py`) intersected with `supported_dtypes` |
 | `init_options` | declared | Keyword options that `tack.init()` forwards to the constructor. `tack.init()` rejects any other option |
-| `device_memory_spaces` | declared | `memory_space()` results that `field_from_ptr()` accepts. When the set is non-empty, every pointer must be an address (anything `int()` accepts) and is checked. An empty set means that the backend doesn't distinguish memory spaces and nothing is checked |
+| `device_memory_spaces` | declared | `memory_space()` results that `array_from_ptr()` accepts. When the set is non-empty, every pointer must be an address (anything `int()` accepts) and is checked. An empty set means that the backend doesn't distinguish memory spaces and nothing is checked |
 | `dlpack_refusal_note` | declared | Text appended to the error when a DLPack import is refused, for backends whose reason the device type doesn't convey |
 
 Because `supported_atomic_dtypes` is an intersection, a device without
@@ -88,7 +88,7 @@ Read from the backend classes at `23d6e1d`. "All ten" means `i8`, `u8`,
 | `dlpack_refusal_note` | none | set | none | none | none |
 | 3D textures | software trilinear over a private copy | hardware | hardware | hardware if the device has image support and the extents fit, else software | hardware if the device has samplers and the extents fit, else software |
 | Largest launch (iterations) | no limit | 2^32 | max `gridDim.x` × 256 | max `gridDim.x` × 256, capped at 2^32 − 256 | `maxGroupCountX` × the workgroup size |
-| `Field.export_memory()` | no | yes (`mtl_buffer`) | yes (OS handle) | no | no |
+| `Array.export_memory()` | no | yes (`mtl_buffer`) | yes (OS handle) | no | no |
 | DLPack export device | `kDLCPU` | `kDLCPU` (host view of unified memory) | `kDLCUDA` | `kDLROCM` | `kDLOneAPI` |
 | DLPack zero-copy import | `kDLCPU`, `kDLCUDAHost`, `kDLROCMHost` | none in practice (see [DLPack](runtime-api.md#dlpack)) | `kDLCUDA`, `kDLCUDAManaged` | `kDLROCM` | `kDLOneAPI` |
 | A kernel call returns | after the range has run | once queued | once queued | once queued | once queued (with a driver older than API 1.6, after it completes) |
@@ -121,7 +121,7 @@ On every backend, a texture samples the data its field held when
 `tack.texture3d()` created it, or when `tex.update()` last copied it (see
 [Memory and aliasing](../reference/language-contract.md#memory-and-aliasing)
 in the language contract). Writes to the field in between, whether by kernels,
-`from_numpy`, or external and DLPack writers, don't reach the texture.
+`tack.copyto`, or external and DLPack writers, don't reach the texture.
 The copy is storage the `Texture3D` owns (`tex._storage`): a hardware image
 from `create_texture_image()` where `texture_in_hardware()` is true, else a
 private `f32` field. Dispatch binds that storage through `bind_textures()`
@@ -189,9 +189,9 @@ before launch.
 | Atomic alignment | `check_atomic_alignment()` | Every dispatch and inspection | `ValueError`: "Kernel '`k`': atomic target parameter `i` requires `n`-byte alignment" |
 | Read-only fields | `check_writable_fields()` in `runtime/kernel_utils.py`, over the indices the variant recorded in `KernelVariant.written_fields` | Every dispatch | `ValueError`: "Kernel '`k`': parameter '`out`' may be written, but its field is read-only. ..." |
 | Launch size | `check_launch_size()` in `runtime/kernel_utils.py`, against the limit in the [capability matrix](#capability-matrix) | Every GPU dispatch, and every native `f32` reduction on CUDA, HIP and Level Zero | `ValueError`: "Kernel '`k`': `N` iterations exceed the `M` that one CUDA launch can index; split the work across several launches." A reduction is named "Field sum()" and so on. Metal reduces fields of 2^32 or more elements through NumPy instead |
-| `device_memory_spaces` | `field_from_ptr()` in `lang/field.py` | When wrapping, for any `ptr`, on backends with a non-empty set | `TypeError` if `ptr` isn't an address. `ValueError`: "Pointer is in '`cpu`' memory but the active backend is '`CUDA`'. field_from_ptr() requires a device pointer. ..." |
+| `device_memory_spaces` | `array_from_ptr()` in `lang/field.py` | When wrapping, for any `ptr`, on backends with a non-empty set | `TypeError` if `ptr` isn't an address. `ValueError`: "Pointer is in '`cpu`' memory but the active backend is '`CUDA`'. array_from_ptr() requires a device pointer. ..." |
 | DLPack device type | `dlpack_to_field()` in `lang/dlpack.py` | On import | `RuntimeError` naming the backend and DLPack device type, followed by `dlpack_refusal_note` if set. `ValueError` for an unknown device type and for `kDLMetal` |
-| `supports_device_reductions` | `Field._reduce()` | Never rejects | Selects the device or NumPy path. See [Reductions](runtime-api.md#reductions) |
+| `supports_device_reductions` | `Array._reduce()` | Never rejects | Selects the device or NumPy path. See [Reductions](runtime-api.md#reductions) |
 | Texture hardware | `texture_in_hardware()`, at `texture3d()` and in `_store_texture_shapes()` (HIP, Level Zero) | At texture creation, and before the key is built | Never rejects. Falls back to software sampling |
 
 A `TypeError` raised during dispatch reaches the caller prefixed with
@@ -242,7 +242,7 @@ fields provably don't overlap other fields. See
 
 **Metal.** There is no `f64`, because Apple GPUs don't implement double
 precision. Fields are shared buffers in unified memory, so `memory_space()`
-answers `"cpu"` for them and `field_from_ptr()` wraps an `MTLBuffer`
+answers `"cpu"` for them and `array_from_ptr()` wraps an `MTLBuffer`
 object, not an address. Collectives need a pipeline whose
 `maxTotalThreadsPerThreadgroup` is at least 256.
 
@@ -280,7 +280,7 @@ applies.
 | Workgroups | None. If you don't need the CPU, collectives are portable across the four GPU backends in complete 256-lane groups with proven-uniform participation |
 | Scratch storage | `local_array` and `local_array_like` |
 | Textures | `f32` sources, refreshed with `tex.update()` after the field changes |
-| Reductions | `Field.sum()`, `min()`, `max()` and `mean()` on any dtype. Only `f32` is reduced natively on the device |
+| Reductions | `Array.sum()`, `min()`, `max()` and `mean()` on any dtype. Only `f32` is reduced natively on the device |
 | Interop | Backend-specific by nature. DLPack device types and pointer kinds differ per backend |
 
 To keep code portable, branch on declared capabilities rather than on

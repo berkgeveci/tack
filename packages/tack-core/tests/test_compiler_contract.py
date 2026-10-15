@@ -12,8 +12,8 @@ import tack
 
 def _int_field(values):
     values = np.asarray(values, dtype=np.int32)
-    field = tack.field(dtype=tack.i32, shape=values.shape)
-    field.from_numpy(values)
+    field = tack.empty(values.shape, tack.i32)
+    tack.copyto(field, values)
     return field
 
 
@@ -31,14 +31,14 @@ def test_sequential_field_mutation_control(backend, iterations):
     """Empty and single-iteration loops establish the initial-state behavior."""
     state = _int_field([19] * 7)
     _increment(state, iterations)
-    np.testing.assert_array_equal(state.to_numpy(), np.full(7, iterations))
+    np.testing.assert_array_equal(state.numpy(), np.full(7, iterations))
 
 
 def test_sequential_field_read_after_write(backend):
     """An unchanged address does not imply an unchanged value (LC1)."""
     state = _int_field([19] * 7)
     _increment(state, 3)
-    np.testing.assert_array_equal(state.to_numpy(), np.full(7, 3))
+    np.testing.assert_array_equal(state.numpy(), np.full(7, 3))
 
 
 def test_sequential_field_mutation_without_tack_optimizations(backend, monkeypatch):
@@ -53,7 +53,7 @@ def test_sequential_field_mutation_without_tack_optimizations(backend, monkeypat
     monkeypatch.setattr(opt, "optimize_ir", lambda ir_func: None)
     state = _int_field([19] * 7)
     _increment(state, 3)
-    np.testing.assert_array_equal(state.to_numpy(), np.full(7, 3))
+    np.testing.assert_array_equal(state.numpy(), np.full(7, 3))
 
 
 @tack.kernel
@@ -69,9 +69,9 @@ def test_distinct_field_arguments_control(backend):
     b = _int_field([23] * 7)
     out = _int_field([-1] * 7)
     _ordered_writes(a, b, out)
-    np.testing.assert_array_equal(a.to_numpy(), np.full(7, 1))
-    np.testing.assert_array_equal(b.to_numpy(), np.full(7, 2))
-    np.testing.assert_array_equal(out.to_numpy(), np.full(7, 1))
+    np.testing.assert_array_equal(a.numpy(), np.full(7, 1))
+    np.testing.assert_array_equal(b.numpy(), np.full(7, 2))
+    np.testing.assert_array_equal(out.numpy(), np.full(7, 1))
 
 
 @pytest.mark.parametrize("alias", ["same_field", "reshape_view"])
@@ -85,7 +85,7 @@ def test_overlapping_field_arguments_preserve_program_order(backend, alias):
     b = a if alias == "same_field" else a.reshape((7,))
     out = _int_field([-1] * 7)
     _ordered_writes(a, b, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(7, 2))
+    np.testing.assert_array_equal(out.numpy(), np.full(7, 2))
 
 
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32])
@@ -95,16 +95,16 @@ def test_cached_kernel_handles_changing_alias_relationships(backend, dtype):
 
     get_backend()._cache.pop(_ordered_writes, None)
     for n, alias in ((7, False), (19, True), (7, False), (19, True)):
-        a = tack.field(dtype=dtype, shape=(n,))
-        b = a.reshape((n,)) if alias else tack.field(dtype=dtype, shape=(n,))
-        out = tack.field(dtype=dtype, shape=(n,))
+        a = tack.empty((n,), dtype)
+        b = a.reshape((n,)) if alias else tack.empty((n,), dtype)
+        out = tack.empty((n,), dtype)
         a.fill(19)
         b.fill(23)
         out.fill(-1)
         _ordered_writes(a, b, out)
-        np.testing.assert_array_equal(a.to_numpy(), np.full(n, 2 if alias else 1))
-        np.testing.assert_array_equal(b.to_numpy(), np.full(n, 2))
-        np.testing.assert_array_equal(out.to_numpy(), np.full(n, 2 if alias else 1))
+        np.testing.assert_array_equal(a.numpy(), np.full(n, 2 if alias else 1))
+        np.testing.assert_array_equal(b.numpy(), np.full(n, 2))
+        np.testing.assert_array_equal(out.numpy(), np.full(n, 2 if alias else 1))
     # CPU compiles the disjoint calls with a no-overlap promise and the
     # aliased ones without, so it holds one variant per relationship.
     expected = 2 if backend == "cpu" else 1
@@ -120,18 +120,18 @@ def _squared_norms(vectors, out):
 @pytest.mark.parametrize("widths", [(2, 3, 2), (3, 2, 3)], ids=["2-3-2", "3-2-3"])
 def test_vector_width_changes_preserve_results(backend, widths):
     """LC3: specialize vector lowering in both directions, then revisit it."""
-    out = tack.field(dtype=tack.f32, shape=(2,))
+    out = tack.empty((2,))
     actual = []
     expected = []
     for width in widths:
         # Three logical vectors provide enough storage even when the
         # broken cache uses width=3 to read a width=2 input. Only the first
         # two vectors are requested: no out-of-bounds probe on any backend.
-        vectors = tack.Vector.field(width, dtype=tack.f32, shape=(3,))
+        vectors = tack.empty((3,), tack.vec(width, tack.f32))
         values = np.arange(1, 3 * width + 1, dtype=np.float32).reshape(3, width)
-        vectors.from_numpy(values.ravel())
+        tack.copyto(vectors, values)
         _squared_norms(vectors, out)
-        actual.append(out.to_numpy())
+        actual.append(out.numpy())
         expected.append(np.sum(values[:2] ** 2, axis=1))
     np.testing.assert_array_equal(np.stack(actual), np.stack(expected))
 
@@ -148,7 +148,7 @@ def test_zero_trip_loop_preserves_prior_local_value(backend, iterations):
 
     out = _int_field([-1] * 7)
     local_value(out, iterations)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(7, 19 if iterations == 0 else 7))
+    np.testing.assert_array_equal(out.numpy(), np.full(7, 19 if iterations == 0 else 7))
 
 
 def test_while_loop_observes_field_mutation(backend):
@@ -164,7 +164,7 @@ def test_while_loop_observes_field_mutation(backend):
 
     state = _int_field([19] * 7)
     increment_while(state)
-    np.testing.assert_array_equal(state.to_numpy(), np.full(7, 3))
+    np.testing.assert_array_equal(state.numpy(), np.full(7, 3))
 
 
 def test_loop_load_observes_store_through_an_alias(backend):
@@ -178,7 +178,7 @@ def test_loop_load_observes_store_through_an_alias(backend):
 
     state = _int_field([19] * 7)
     increment_alias(state, state.reshape((7,)))
-    np.testing.assert_array_equal(state.to_numpy(), np.full(7, 3))
+    np.testing.assert_array_equal(state.numpy(), np.full(7, 3))
 
 
 def test_load_after_alias_store_is_not_a_common_subexpression(backend):
@@ -193,7 +193,7 @@ def test_load_after_alias_store_is_not_a_common_subexpression(backend):
     state = _int_field([19] * 7)
     out = _int_field([-1] * 7)
     read_write_read(state, state.reshape((7,)), out)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(7, 2))
+    np.testing.assert_array_equal(out.numpy(), np.full(7, 2))
 
 
 def test_copy_propagation_preserves_reads_before_assignment(backend):
@@ -206,7 +206,7 @@ def test_copy_propagation_preserves_reads_before_assignment(backend):
 
     out = _int_field([-1])
     late_copy(out, 3, 7)
-    np.testing.assert_array_equal(out.to_numpy(), [10])
+    np.testing.assert_array_equal(out.numpy(), [10])
 
 
 def test_copy_propagation_preserves_loop_steps(backend):
@@ -222,7 +222,7 @@ def test_copy_propagation_preserves_loop_steps(backend):
     data = _int_field([1, 2, 3, 4, 5, 6])
     out = _int_field([-1])
     stepped_sum(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), [9])
+    np.testing.assert_array_equal(out.numpy(), [9])
 
 
 def test_copy_propagation_counts_loop_variable_bindings(backend):
@@ -237,7 +237,7 @@ def test_copy_propagation_counts_loop_variable_bindings(backend):
 
     out = _int_field([-1])
     preserve_scalar(out, 7)
-    np.testing.assert_array_equal(out.to_numpy(), [21])
+    np.testing.assert_array_equal(out.numpy(), [21])
 
 
 @tack.kernel
@@ -253,7 +253,7 @@ def test_parallel_range_honors_its_start(backend, start, end):
     _mark_range(out, start, end)
     expected = np.full(7, -1)
     expected[start:end] = np.arange(start, end) + 1
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+    np.testing.assert_array_equal(out.numpy(), expected)
 
 
 def test_parallel_range_start_with_a_dimension_bound(backend):
@@ -269,7 +269,7 @@ def test_parallel_range_start_with_a_dimension_bound(backend):
         neighbor_sum(_int_field(values), out)
         expected = np.full(n, -1)
         expected[1:-1] = values[:-2] + values[2:]
-        np.testing.assert_array_equal(out.to_numpy(), expected)
+        np.testing.assert_array_equal(out.numpy(), expected)
 
 
 def test_empty_parallel_range_runs_nothing(backend):
@@ -280,7 +280,7 @@ def test_empty_parallel_range_runs_nothing(backend):
 
     out = _int_field([-1] * 7)
     fill(out, 0)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(7, -1))
+    np.testing.assert_array_equal(out.numpy(), np.full(7, -1))
 
 
 @tack.kernel
@@ -318,7 +318,7 @@ def test_scalar_parameter_assignment_is_per_iteration(backend, kernel, arg, expe
     """LC6: an assigned scalar parameter is a local, fresh in each iteration."""
     out = _int_field([-1] * 7)
     kernel(out, 7, arg)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(7, expected))
+    np.testing.assert_array_equal(out.numpy(), np.full(7, expected))
 
 
 def test_parameter_reassignment_without_tack_optimizations(backend, monkeypatch):
@@ -335,7 +335,7 @@ def test_parameter_reassignment_without_tack_optimizations(backend, monkeypatch)
     monkeypatch.setattr(opt, "optimize_ir", lambda ir_func: None)
     out = _int_field([-1])
     late_copy(out, 3, 7)
-    np.testing.assert_array_equal(out.to_numpy(), [10])
+    np.testing.assert_array_equal(out.numpy(), [10])
 
 
 @tack.func
@@ -370,8 +370,8 @@ def test_early_return_in_inlined_function(backend):
     clamped = _int_field([99] * 5)
     kind = _int_field([99] * 5)
     apply(_int_field(values), clamped, kind)
-    np.testing.assert_array_equal(clamped.to_numpy(), np.clip(values, 0, 5))
-    np.testing.assert_array_equal(kind.to_numpy(), [-2, -1, 0, 1, 1])
+    np.testing.assert_array_equal(clamped.numpy(), np.clip(values, 0, 5))
+    np.testing.assert_array_equal(kind.numpy(), [-2, -1, 0, 1, 1])
 
 
 def test_return_inside_a_loop_is_rejected():
@@ -412,11 +412,11 @@ def test_continue_skips_to_the_next_iteration(backend):
 
     out = _int_field([-1] * 4)
     sum_others(out, 4)
-    np.testing.assert_array_equal(out.to_numpy(), [6, 5, 4, 3])
+    np.testing.assert_array_equal(out.numpy(), [6, 5, 4, 3])
 
     out = _int_field([-1] * 6)
     skip_odd(out)
-    np.testing.assert_array_equal(out.to_numpy(), [0, -1, 2, -1, 4, -1])
+    np.testing.assert_array_equal(out.numpy(), [0, -1, 2, -1, 4, -1])
 
 
 @pytest.mark.parametrize("generator", ["cuda", "hip", "opencl", "msl"])
@@ -435,7 +435,7 @@ def test_outermost_continue_leaves_the_gpu_kernel(generator):
     def source(kernel):
         tack.init(arch=tack.cpu)
         ir_func = kernel.get_ir().functions[0]
-        infer_param_types(ir_func, (tack.field(dtype=tack.i32, shape=(8,)),))
+        infer_param_types(ir_func, (tack.empty((8,), tack.i32),))
         return generate(ir_func)
 
     @tack.kernel

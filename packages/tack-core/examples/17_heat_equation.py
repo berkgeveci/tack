@@ -25,8 +25,8 @@ DX = 1.0 / N
 DT = 0.2 * DX * DX / ALPHA  # CFL condition for stability
 STEPS = 2000
 
-u = tack.empty(dtype=tack.f32, shape=(N, N))
-u_new = tack.empty(dtype=tack.f32, shape=(N, N))
+u = tack.empty((N, N))
+u_new = tack.empty((N, N))
 
 
 @tack.kernel
@@ -87,7 +87,7 @@ for step in range(STEPS):
     copy_field(u_new, u, N)
 
     if (step + 1) % 500 == 0:
-        data = u.to_numpy().reshape(N, N)
+        data = u.numpy().reshape(N, N)
         snapshots.append(data.copy())
         print(f"  step {step+1:>5d}: max={data.max():.4f}  mean={data.mean():.4f}")
 

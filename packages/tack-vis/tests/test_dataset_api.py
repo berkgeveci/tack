@@ -47,15 +47,15 @@ SOLID_TYPES = {"tetra": 10, "voxel": 11, "hexahedron": 12, "wedge": 13, "pyramid
 
 def _scalars(values, dtype=tack.f32):
     values = np.asarray(values)
-    f = tack.field(dtype, shape=values.shape)
-    f.from_numpy(values.astype(dtype.numpy_dtype))
+    f = tack.empty(values.shape, dtype)
+    tack.copyto(f, values.astype(dtype.numpy_dtype))
     return f
 
 
 def _vectors(values, dtype=tack.f32):
     values = np.asarray(values)
-    f = tack.Vector.field(values.shape[1], dtype, shape=(values.shape[0],))
-    f.from_numpy(values.astype(dtype.numpy_dtype))
+    f = tack.empty((values.shape[0],), tack.vec(values.shape[1], dtype))
+    tack.copyto(f, values.astype(dtype.numpy_dtype))
     return f
 
 
@@ -81,20 +81,20 @@ def test_faces_of_a_mixed_mesh(backend):
     faces = data.topology.faces()
     assert faces.num_faces == 6 + 5 + 4             # 16 sides, one shared face of each pair
     assert data.topology.edges().num_edges == 12 + 8 + 4
-    sides = faces.sides.to_numpy(vectors=True)
+    sides = faces.sides.numpy()
     shared = {tuple(s) for s in sides if s[2] >= 0}
     assert shared == {(0, 1, 1, 0), (0, 5, 2, 0)}   # hex 0's +x and top faces
     assert len(alg.boundary_faces(data)) == 13
 
     jumps = alg.jump(data, td.Field(td.Constant(data), _scalars([1.0, 2.0, 5.0])))
-    by_sides = dict(zip(map(tuple, sides), jumps.values.to_numpy()))
+    by_sides = dict(zip(map(tuple, sides), jumps.values.numpy()))
     assert by_sides[(0, 1, 1, 0)] == 1.0 and by_sides[(0, 5, 2, 0)] == 4.0
-    assert np.count_nonzero(jumps.values.to_numpy()) == 2
+    assert np.count_nonzero(jumps.values.numpy()) == 2
 
     # A face counts plus for its side-0 cell and minus for its side-1 cell.
     _, areas = alg.face_geometry(data)
     slant = np.sqrt(0.5 ** 2 + 1.0 ** 2) / 2         # each pyramid side triangle
-    np.testing.assert_allclose(alg.divergence(data, areas).values.to_numpy(),
+    np.testing.assert_allclose(alg.divergence(data, areas).values.numpy(),
                                [6, 5 - 1, 4 * slant - 1], rtol=1e-6)
 
 
@@ -102,11 +102,11 @@ def _closed_cells_check(data):
     """Every cell's outward area vectors sum to zero: the faces' normals point out of
     side 0, and each cell knows which side it is."""
     normals, areas = alg.face_geometry(data)
-    area_vectors = normals.values.to_numpy(vectors=True) * areas.values.to_numpy()[:, None]
+    area_vectors = normals.values.numpy() * areas.values.numpy()[:, None]
     flux = td.Field(td.Values(data, "faces"), _vectors(area_vectors))
-    sums = alg.divergence(data, flux).values.to_numpy(vectors=True)
+    sums = alg.divergence(data, flux).values.numpy()
     np.testing.assert_allclose(sums, 0, atol=1e-5)
-    return areas.values.to_numpy()
+    return areas.values.numpy()
 
 
 def test_faces_point_out_of_side_zero(backend):
@@ -126,9 +126,9 @@ def test_rectilinear_faces_and_edges(backend):
     dx, dy, dz = np.diff(x), np.diff(y), np.diff(z)
     expected = 2 * sum(a * b for a, b in ((dx.sum(), dy.sum()), (dy.sum(), dz.sum()),
                                           (dx.sum(), dz.sum())))
-    boundary = alg.boundary_faces(data).to_numpy()
+    boundary = alg.boundary_faces(data).numpy()
     np.testing.assert_allclose(areas[boundary].sum(), expected, rtol=1e-6)
-    lengths = alg.edge_lengths(data).values.to_numpy()
+    lengths = alg.edge_lengths(data).values.numpy()
     total = (dx.sum() * ny * nz + dy.sum() * nx * nz + dz.sum() * nx * ny)
     np.testing.assert_allclose(lengths.sum(), total, rtol=1e-6)
 
@@ -145,15 +145,15 @@ def test_cells_know_their_edges(backend):
     data = td.rectilinear_grid([0, 1, 2], [0, 1, 2, 3], [0, 1])
     edges = data.topology.edges()
     n = data.num_cells * 12
-    ids, signs = tack.field(tack.i32, shape=(n,)), tack.field(tack.i32, shape=(n,))
+    ids, signs = tack.empty((n,), tack.i32), tack.empty((n,), tack.i32)
     td.for_each(_edge_incidence, data, "cells", ids, signs)
-    rows = edges.rows.to_numpy(vectors=True)
+    rows = edges.rows.numpy()
     assert (rows[:, 0] < rows[:, 1]).all()
     # VTK's hexahedron edges, and the cells' point ids in x-fastest order.
     hex_edges = [(0, 1), (1, 2), (3, 2), (0, 3), (4, 5), (5, 6), (7, 6), (4, 7),
                  (0, 4), (1, 5), (3, 7), (2, 6)]
     nx, ny = 3, 4
-    ids, signs = ids.to_numpy().reshape(-1, 12), signs.to_numpy().reshape(-1, 12)
+    ids, signs = ids.numpy().reshape(-1, 12), signs.numpy().reshape(-1, 12)
     for c in range(data.num_cells):
         i, j, k = c % 2, (c // 2) % 3, c // 6
         b = i + nx * (j + ny * k)
@@ -201,9 +201,9 @@ def test_faces_match_vtk(backend, kind):
     faces = data.topology.faces()
     expected = _vtk_faces(grid)
     assert faces.num_faces == len(expected)
-    rows = faces.rows.to_numpy(vectors=True)
-    sides = faces.sides.to_numpy(vectors=True)
-    kinds = faces.kinds.to_numpy()
+    rows = faces.rows.numpy()
+    sides = faces.sides.numpy()
+    kinds = faces.kinds.numpy()
     for row, side, k in zip(rows, sides, kinds):
         ids = row[:3] if k == 5 else row
         owners = expected[tuple(sorted(ids))]
@@ -229,7 +229,7 @@ def test_edges_match_vtk(backend, kind):
     lines = edges.GetOutput()
     expected = {tuple(sorted(lines.GetCell(i).GetPointIds().GetId(k) for k in range(2)))
                 for i in range(lines.GetNumberOfCells())}
-    rows = data.topology.edges().rows.to_numpy(vectors=True)
+    rows = data.topology.edges().rows.numpy()
     assert {tuple(r) for r in rows} == expected
     assert len(rows) == len(expected)
 
@@ -244,7 +244,7 @@ def test_cell_centers_match_vtk(backend, kind):
     centers.SetInputData(grid)
     centers.Update()
     expected = vtk_to_numpy(centers.GetOutput().GetPoints().GetData())
-    got = alg.cell_centers(vtk_to_dataset(grid)).values.to_numpy(vectors=True)
+    got = alg.cell_centers(vtk_to_dataset(grid)).values.numpy()
     np.testing.assert_allclose(got, expected, atol=1e-5 if kind == "wedge" else 1e-6)
 
 
@@ -263,7 +263,7 @@ def test_cell_to_point_matches_vtk(backend):
     assert data.fields["v"].space is td.Constant(data)
     got = alg.to_points(data, data.fields["v"])
     assert got.space is td.H1(data)
-    np.testing.assert_allclose(got.values.to_numpy(), expected, rtol=1e-5)
+    np.testing.assert_allclose(got.values.numpy(), expected, rtol=1e-5)
 
 
 def _height(data):
@@ -282,12 +282,12 @@ def test_continuous_field_in_dg_layout(backend, make):
     corners = sum(g.count * g.shape.NUM_POINTS for g in data.topology.groups())
     assert dg.values.shape == (corners,)
     # The same function: the same values at the centers, and back on the points.
-    np.testing.assert_allclose(alg.values_at_centers(data, dg).values.to_numpy(),
-                               alg.values_at_centers(data, u).values.to_numpy(), atol=1e-5)
-    np.testing.assert_allclose(alg.to_points(data, dg).values.to_numpy(),
-                               u.values.to_numpy(), atol=1e-5)
-    centers = alg.cell_centers(data).values.to_numpy(vectors=True)
-    np.testing.assert_allclose(alg.values_at_centers(data, u).values.to_numpy(),
+    np.testing.assert_allclose(alg.values_at_centers(data, dg).values.numpy(),
+                               alg.values_at_centers(data, u).values.numpy(), atol=1e-5)
+    np.testing.assert_allclose(alg.to_points(data, dg).values.numpy(),
+                               u.values.numpy(), atol=1e-5)
+    centers = alg.cell_centers(data).values.numpy()
+    np.testing.assert_allclose(alg.values_at_centers(data, u).values.numpy(),
                                centers @ [1, 2, -1], atol=1e-5)
 
 
@@ -297,22 +297,22 @@ def test_dg_values_can_disagree(backend):
     data = _two_hexes_and_a_pyramid()
     u = _height(data)
     dg = alg.discontinuous(data, u)
-    offsets = td.L2(data).offsets.to_numpy()
-    values = dg.values.to_numpy()
+    offsets = td.L2(data).offsets.numpy()
+    values = dg.values.numpy()
     for c in range(data.num_cells):
         values[offsets[c]:offsets[c + 1]] += 10 * c
     dg = td.Field(td.L2(data), _scalars(values))
-    connectivity = data.topology.connectivity.to_numpy()
-    expected = u.values.to_numpy().copy()
+    connectivity = data.topology.connectivity.numpy()
+    expected = u.values.numpy().copy()
     for p in range(data.num_points):
         cells = [c for c in range(data.num_cells)
                  if p in connectivity[offsets[c]:offsets[c + 1]]]
         expected[p] += 10 * np.mean(cells)
-    np.testing.assert_allclose(alg.to_points(data, dg).values.to_numpy(), expected,
+    np.testing.assert_allclose(alg.to_points(data, dg).values.numpy(), expected,
                                rtol=1e-6)
     # At a center each cell sees only its own values.
-    np.testing.assert_allclose(alg.values_at_centers(data, dg).values.to_numpy(),
-                               alg.values_at_centers(data, u).values.to_numpy()
+    np.testing.assert_allclose(alg.values_at_centers(data, dg).values.numpy(),
+                               alg.values_at_centers(data, u).values.numpy()
                                + 10 * np.arange(3), rtol=1e-6)
 
 
@@ -330,8 +330,8 @@ def test_surface_of_a_side_set(backend):
     reference.Update()
     assert surface.num_cells == reference.GetOutput().GetNumberOfCells()
     # The surface's own faces, as cells of a 2D mesh, cover the same area.
-    total = areas.values.to_numpy()[data.sets["boundary"].to_numpy()].sum()
-    np.testing.assert_allclose(surface.fields["area"].values.to_numpy().sum(), total)
+    total = areas.values.numpy()[data.sets["boundary"].numpy()].sum()
+    np.testing.assert_allclose(surface.fields["area"].values.numpy().sum(), total)
     out = dataset_to_vtk(surface)
     assert out.GetCellData().GetArray("area").GetNumberOfTuples() == surface.num_cells
 
@@ -345,10 +345,10 @@ def _set_areas(faces, out):
 def test_for_each_over_a_side_set(backend):
     data = td.rectilinear_grid([0, 1, 2, 3], [0, 1, 2], [0, 1])
     boundary = data.sets["boundary"] = alg.boundary_faces(data)
-    out = tack.zeros(tack.i32, (data.topology.faces().num_faces,))
+    out = tack.zeros((data.topology.faces().num_faces,), tack.i32)
     td.for_each(_set_areas, data, "boundary", out)
-    out = out.to_numpy()
-    np.testing.assert_array_equal(out[boundary.to_numpy()], 1)
+    out = out.numpy()
+    np.testing.assert_array_equal(out[boundary.numpy()], 1)
     assert np.count_nonzero(out) == len(boundary)
 
 
@@ -370,8 +370,8 @@ def test_rectilinear_round_trip(backend):
     back = vtk_to_dataset(grid)
     assert back.fields["h"].space is td.H1(back) and back.fields["c"].space is td.Constant(back)
     np.testing.assert_allclose(back.positions(), data.positions())
-    np.testing.assert_allclose(back.fields["h"].values.to_numpy(),
-                               data.fields["h"].values.to_numpy())
+    np.testing.assert_allclose(back.fields["h"].values.numpy(),
+                               data.fields["h"].values.numpy())
 
 
 # ── Geometry is a field, kept apart ─────────────────────────────────
@@ -405,10 +405,10 @@ def _jacobian_determinants(cells, out):
 def test_geometry_jacobian(backend):
     x, y, z = [0, 1, 3], [0, 0.5, 2], [0, 4]
     data = td.rectilinear_grid(x, y, z)
-    out = tack.field(tack.f32, shape=(data.num_cells,))
+    out = tack.empty((data.num_cells,))
     td.for_each(_jacobian_determinants, data, "cells", out)
     volumes = np.multiply.outer(np.multiply.outer(np.diff(z), np.diff(y)), np.diff(x))
-    np.testing.assert_allclose(out.to_numpy(), volumes.reshape(-1), rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), volumes.reshape(-1), rtol=1e-6)
 
 
 @pytest.mark.parametrize("make", ["mixed", "rectilinear"])
@@ -417,26 +417,26 @@ def test_gradients_of_a_linear_field(backend, make):
             else td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1, 1.5]))
     u = _height(data)
     for field in (u, alg.discontinuous(data, u)):
-        got = alg.gradients(data, field).values.to_numpy(vectors=True)
+        got = alg.gradients(data, field).values.numpy()
         np.testing.assert_allclose(got, np.tile([1, 2, -1], (data.num_cells, 1)), atol=1e-4)
     constant = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
-    np.testing.assert_array_equal(alg.gradients(data, constant).values.to_numpy(), 0)
+    np.testing.assert_array_equal(alg.gradients(data, constant).values.numpy(), 0)
 
 
 @needs_vtk
 @pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
 def test_gradients_on_every_solid(backend, kind):
     data = vtk_to_dataset(_vtk_cells(kind, (2, 2, 2)))
-    got = alg.gradients(data, _height(data)).values.to_numpy(vectors=True)
+    got = alg.gradients(data, _height(data)).values.numpy()
     np.testing.assert_allclose(got, np.tile([1, 2, -1], (data.num_cells, 1)), atol=1e-4)
 
 
 def _shrunk(data, s):
     """``data`` with an L2 geometry: each cell's corners pulled toward its center by
     ``s``. The topology, and so the faces, are unchanged."""
-    offsets = td.L2(data).offsets.to_numpy()
-    connectivity = data.topology.connectivity.to_numpy()
-    centers = alg.cell_centers(data).values.to_numpy(vectors=True)
+    offsets = td.L2(data).offsets.numpy()
+    connectivity = data.topology.connectivity.numpy()
+    centers = alg.cell_centers(data).values.numpy()
     positions = data.positions()
     corners = np.empty((offsets[-1], 3))
     for c in range(data.num_cells):
@@ -451,20 +451,20 @@ def test_discontinuous_geometry(backend):
     shrunk = _shrunk(data, 0.5)
     assert shrunk.geometry.space is td.L2(shrunk)
     # A cell's center is where its corners were pulled toward: unchanged.
-    np.testing.assert_allclose(alg.cell_centers(shrunk).values.to_numpy(vectors=True),
-                               alg.cell_centers(data).values.to_numpy(vectors=True), atol=1e-6)
+    np.testing.assert_allclose(alg.cell_centers(shrunk).values.numpy(),
+                               alg.cell_centers(data).values.numpy(), atol=1e-6)
     # The same point values over cells half the size: twice the gradient.
-    got = alg.gradients(shrunk, shrunk.fields["u"]).values.to_numpy(vectors=True)
+    got = alg.gradients(shrunk, shrunk.fields["u"]).values.numpy()
     np.testing.assert_allclose(got, np.tile([2, 4, -2], (3, 1)), atol=1e-4)
     # Faces come from the topology, which still has the cells share points; a face
     # is where its side 0 puts it: half the size each way, facing the same way.
     assert shrunk.topology.faces().num_faces == 15
     normals, areas = alg.face_geometry(shrunk)
     original_normals, original_areas = alg.face_geometry(data)
-    np.testing.assert_allclose(areas.values.to_numpy(), 0.25 * original_areas.values.to_numpy(),
+    np.testing.assert_allclose(areas.values.numpy(), 0.25 * original_areas.values.numpy(),
                                rtol=1e-5)
-    np.testing.assert_allclose(normals.values.to_numpy(vectors=True),
-                               original_normals.values.to_numpy(vectors=True), atol=1e-5)
+    np.testing.assert_allclose(normals.values.numpy(),
+                               original_normals.values.numpy(), atol=1e-5)
     # Edges have no sides to choose a cell from.
     with pytest.raises(NotImplementedError, match="edges"):
         alg.edge_lengths(shrunk)
@@ -479,8 +479,8 @@ def test_rectilinear_geometry_is_an_ordinary_field(backend):
     takes it as a field like any other."""
     data = td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1, 1.5])
     np.testing.assert_allclose(
-        alg.values_at_centers(data, data.geometry).values.to_numpy(vectors=True),
-        alg.cell_centers(data).values.to_numpy(vectors=True), rtol=1e-6)
+        alg.values_at_centers(data, data.geometry).values.numpy(),
+        alg.cell_centers(data).values.numpy(), rtol=1e-6)
     np.testing.assert_allclose(data.positions()[:4], [[0, 0, 0], [1, 0, 0], [3, 0, 0],
                                                       [0, 2, 0]])
 
@@ -499,7 +499,7 @@ def test_structured_cells_read_cartesian_values_by_ijk(backend):
         # No signed division: the structured path never splits a flat point id.
         import re
 
-        out = tack.Vector.field(3, tack.f32, shape=(data.num_cells,))
+        out = tack.empty((data.num_cells,), tack.vec(3, tack.f32))
         src = tack.inspect(_at_centers, data.domain_view("cells", cells),
                            data.geometry.view(cells), out, mode="source")
         assert not re.search(r"\bs(?:div|rem)\b", src)
@@ -517,15 +517,15 @@ def test_implicit_values_match_explicit(backend, make):
     ]
     for implicit, explicit in pairs:
         for algorithm in (alg.values_at_centers, alg.gradients):
-            np.testing.assert_allclose(algorithm(data, implicit).values.to_numpy(),
-                                       algorithm(data, explicit).values.to_numpy(), atol=1e-5)
+            np.testing.assert_allclose(algorithm(data, implicit).values.numpy(),
+                                       algorithm(data, explicit).values.numpy(), atol=1e-5)
     ids = td.Field(td.Constant(data), td.CountingArray(m, 0.0, 1.0))
-    np.testing.assert_allclose(alg.jump(data, ids).values.to_numpy(),
+    np.testing.assert_allclose(alg.jump(data, ids).values.numpy(),
                                alg.jump(data, td.Field(td.Constant(data), _scalars(np.arange(m))))
-                               .values.to_numpy())
-    np.testing.assert_allclose(alg.to_points(data, ids).values.to_numpy(),
+                               .values.numpy())
+    np.testing.assert_allclose(alg.to_points(data, ids).values.numpy(),
                                alg.to_points(data, td.Field(td.Constant(data), _scalars(np.arange(m))))
-                               .values.to_numpy(), rtol=1e-6)
+                               .values.numpy(), rtol=1e-6)
 
 
 def test_field_values_must_be_an_array(backend):
@@ -556,7 +556,7 @@ def test_spaces_own_their_layout(backend):
     assert td.L2(data).offsets is data.topology.offsets
     assert td.L2(data).size == 8 + 8 + 5
     grid = td.rectilinear_grid([0, 1, 2], [0, 1, 2], [0, 1])
-    np.testing.assert_array_equal(td.L2(grid).offsets.to_numpy(), 8 * np.arange(5))
+    np.testing.assert_array_equal(td.L2(grid).offsets.numpy(), 8 * np.arange(5))
     assert td.L2(grid).size == 32
     # Sizes follow the entities the values live on.
     assert td.H1(data).size == 13 and td.Constant(data).size == 3
@@ -583,8 +583,8 @@ def test_points_no_cell_uses_still_count(backend):
     positions = np.vstack([data.positions(), [[9, 9, 9], [8, 8, 8]]])
     wide = td.DataSet(wider, positions)
     assert wide.num_points == td.H1(wide).size == 15
-    np.testing.assert_allclose(alg.cell_centers(wide).values.to_numpy(vectors=True),
-                               alg.cell_centers(data).values.to_numpy(vectors=True))
+    np.testing.assert_allclose(alg.cell_centers(wide).values.numpy(),
+                               alg.cell_centers(data).values.numpy())
 
 
 def test_fields_stay_on_their_topology(backend):
@@ -603,7 +603,7 @@ def _cell_points(data):
     """Each cell's point ids, host lists: the connectivity, or a hexahedral grid's."""
     t = data.topology
     if hasattr(t, "connectivity"):
-        conn, offs = t.connectivity.to_numpy(), t.offsets.to_numpy()
+        conn, offs = t.connectivity.numpy(), t.offsets.numpy()
         return [conn[offs[c]:offs[c + 1]] for c in range(t.num_cells)]
     nx, ny, nz = t.point_dims
     rows = []
@@ -625,9 +625,9 @@ def _variable_height(data, orders):
     """The linear height in an L2 space of an order per cell: order-1 cells hold
     it at their corners, order-0 cells its value at their center."""
     space = td.L2(data, order=orders)
-    height = _height(data).values.to_numpy()
-    centers = alg.cell_centers(data).values.to_numpy(vectors=True) @ [1, 2, -1]
-    offsets = space.offsets.to_numpy()
+    height = _height(data).values.numpy()
+    centers = alg.cell_centers(data).values.numpy() @ [1, 2, -1]
+    offsets = space.offsets.numpy()
     values = np.empty(space.size)
     for c, points in enumerate(_cell_points(data)):
         if orders[c] == 1:
@@ -652,9 +652,9 @@ def test_each_cell_launches_with_its_own_order(backend, make):
     a[0], a[-1] = 0, 1                                  # both orders present
     u = td.Field(td.L2(data, order=a), _scalars(np.zeros(td.L2(data, order=a).size)))
     v = td.Field(td.L2(data, order=b), _scalars(np.zeros(td.L2(data, order=b).size)))
-    out = tack.zeros(tack.i32, (n,))
+    out = tack.zeros((n,), tack.i32)
     td.for_each(_orders_seen, data, "cells", u, v, out)
-    np.testing.assert_array_equal(out.to_numpy(), 10 * a + b)
+    np.testing.assert_array_equal(out.numpy(), 10 * a + b)
     # One launch per (shape, order of u, order of v) present.
     groups = data.launch_groups("cells", [u, v])
     expected = {(g.shape.__name__, int(x), int(y))
@@ -665,8 +665,8 @@ def test_each_cell_launches_with_its_own_order(backend, make):
 
 
 def _group_ids(group):
-    if hasattr(group.args[1], "to_numpy"):
-        return group.args[1].to_numpy()                 # an explicit group's cell ids
+    if hasattr(group.args[1], "numpy"):
+        return group.args[1].numpy()                 # an explicit group's cell ids
     return np.arange(group.count)                       # a structured group's
 
 
@@ -687,10 +687,10 @@ def test_subgroups_keep_their_cells_incidence(backend, make):
     orders = np.arange(n) % 2
     varying = td.Field(td.L2(data, order=orders), td.ConstantArray(0.0, td.L2(data, order=orders).size))
     uniform = td.Field(td.L2(data), td.ConstantArray(0.0, td.L2(data).size))
-    got, expected = tack.zeros(tack.i32, (n,)), tack.zeros(tack.i32, (n,))
+    got, expected = tack.zeros((n,), tack.i32), tack.zeros((n,), tack.i32)
     td.for_each(_face_ids_seen, data, "cells", varying, got)
     td.for_each(_face_ids_seen, data, "cells", uniform, expected)
-    np.testing.assert_array_equal(got.to_numpy(), expected.to_numpy())
+    np.testing.assert_array_equal(got.numpy(), expected.numpy())
 
 
 @pytest.mark.parametrize("make", ["mixed", "rectilinear"])
@@ -701,18 +701,18 @@ def test_variable_order_values(backend, make):
     orders[::2] = 1
     u, centers = _variable_height(data, orders)
     assert u.space.size == sum(len(p) if o else 1 for p, o in zip(_cell_points(data), orders))
-    np.testing.assert_allclose(alg.values_at_centers(data, u).values.to_numpy(), centers,
+    np.testing.assert_allclose(alg.values_at_centers(data, u).values.numpy(), centers,
                                atol=1e-5)
-    gradient = alg.gradients(data, u).values.to_numpy(vectors=True)
+    gradient = alg.gradients(data, u).values.numpy()
     np.testing.assert_allclose(gradient, np.outer(orders, [1, 2, -1]), atol=1e-4)
     # Each point averages what its cells give it: the height from order-1 cells,
     # the cell's one value from order-0 cells.
-    height = _height(data).values.to_numpy()
+    height = _height(data).values.numpy()
     given = [[] for _ in range(data.num_points)]
     for c, points in enumerate(_cell_points(data)):
         for p in points:
             given[p].append(height[p] if orders[c] else centers[c])
-    np.testing.assert_allclose(alg.to_points(data, u).values.to_numpy(),
+    np.testing.assert_allclose(alg.to_points(data, u).values.numpy(),
                                [np.mean(g) for g in given], atol=1e-5)
 
 
@@ -722,8 +722,8 @@ def test_variable_order_spaces(backend):
     assert td.L2(data, order=orders) is td.L2(data, order=orders)
     assert td.L2(data, order=orders) is not td.L2(data, order=orders.copy())
     assert td.L2(data, order=orders).varies and not td.L2(data).varies
-    np.testing.assert_array_equal(td.L2(data, order=orders).offsets.to_numpy(), [0, 8, 9, 14])
-    np.testing.assert_array_equal(td.L2(data, order=0).offsets.to_numpy(), [0, 1, 2, 3])
+    np.testing.assert_array_equal(td.L2(data, order=orders).offsets.numpy(), [0, 8, 9, 14])
+    np.testing.assert_array_equal(td.L2(data, order=0).offsets.numpy(), [0, 1, 2, 3])
     with pytest.raises(NotImplementedError, match=r"orders \[2\]"):
         td.L2(data, order=np.array([1, 2, 1])).cell_keys()
     with pytest.raises(ValueError, match="3 orders, not 2"):
@@ -758,15 +758,15 @@ def _check_orientation(data):
     slots = _scalars(np.full(n, -1), tack.i32)
     reflected = _scalars(np.zeros(data.num_cells * 6), tack.i32)
     td.for_each(_face_positions, data, "cells", points, slots, reflected)
-    points, slots = points.to_numpy(), slots.to_numpy()
+    points, slots = points.numpy(), slots.numpy()
     used = slots >= 0
-    rows = faces.rows.to_numpy()
+    rows = faces.rows.numpy().reshape(-1)              # slots index components
     np.testing.assert_array_equal(rows[slots[used]], points[used])
-    assert used.sum() == sum(4 if k == 9 else 3 for k in faces.kinds.to_numpy()
+    assert used.sum() == sum(4 if k == 9 else 3 for k in faces.kinds.numpy()
                              for _ in range(2)) - sum(
-        4 if k == 9 else 3 for k, s in zip(faces.kinds.to_numpy(),
-                                           faces.sides.to_numpy(vectors=True)) if s[2] < 0)
-    np.testing.assert_array_equal(reflected.to_numpy(), 0)
+        4 if k == 9 else 3 for k, s in zip(faces.kinds.numpy(),
+                                           faces.sides.numpy()) if s[2] < 0)
+    np.testing.assert_array_equal(reflected.numpy(), 0)
 
 
 @pytest.mark.parametrize("make", ["mixed", "rectilinear"])
@@ -784,8 +784,8 @@ def _with_cell_offsets(data, field, step):
     """``field`` in the DG layout with ``step`` times each cell's id added to its
     own values: cells disagree by known amounts wherever they meet."""
     dg = alg.discontinuous(data, field)
-    offsets = td.L2(data).offsets.to_numpy()
-    values = dg.values.to_numpy()
+    offsets = td.L2(data).offsets.numpy()
+    values = dg.values.numpy()
     for c in range(data.num_cells):
         values[offsets[c]:offsets[c + 1]] += step * c
     return td.Field(dg.space, _scalars(values))
@@ -798,32 +798,32 @@ def test_traces_line_up(backend, make):
     u = _height(data)
     t = alg.traces(data, u)
     assert t.space is td.SideTraces(data)
-    values = t.values.to_numpy().reshape(-1, 2, 4)
-    rows = faces.rows.to_numpy(vectors=True)
-    sides = faces.sides.to_numpy(vectors=True)
-    height = u.values.to_numpy()
+    values = t.values.numpy().reshape(-1, 2, 4)
+    rows = faces.rows.numpy()
+    sides = faces.sides.numpy()
+    height = u.values.numpy()
     for f, (row, side) in enumerate(zip(rows, sides)):
         n = 3 if faces.kinds[f] == 5 else 4
         np.testing.assert_allclose(values[f, 0, :n], height[row[:n]], atol=1e-5)
         if side[2] >= 0:
             np.testing.assert_allclose(values[f, 1, :n], height[row[:n]], atol=1e-5)
     # A continuous field has no jumps; a DG one has its own.
-    np.testing.assert_allclose(alg.jump(data, u).values.to_numpy(), 0, atol=1e-5)
+    np.testing.assert_allclose(alg.jump(data, u).values.numpy(), 0, atol=1e-5)
     dg = _with_cell_offsets(data, u, 10.0)
     expected = np.where(sides[:, 2] >= 0, 10.0 * (sides[:, 2] - sides[:, 0]), 0.0)
-    np.testing.assert_allclose(alg.jump(data, dg).values.to_numpy(), expected, atol=1e-4)
+    np.testing.assert_allclose(alg.jump(data, dg).values.numpy(), expected, atol=1e-4)
 
 
 @needs_vtk
 @pytest.mark.parametrize("kind", sorted(SOLID_TYPES))
 def test_jumps_on_every_solid(backend, kind):
     data = vtk_to_dataset(_vtk_cells(kind, (2, 2, 2)))
-    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    sides = data.topology.faces().sides.numpy()
     dg = _with_cell_offsets(data, _height(data), 10.0)
     expected = np.where(sides[:, 2] >= 0, 10.0 * (sides[:, 2] - sides[:, 0]), 0.0)
     # Values reach 10 * cells (about 500 here): a difference of two f32 traces
     # that size is good to a few units in their last place.
-    np.testing.assert_allclose(alg.jump(data, dg).values.to_numpy(), expected,
+    np.testing.assert_allclose(alg.jump(data, dg).values.numpy(), expected,
                                atol=1e-6 * 10.0 * data.num_cells * 8)
 
 
@@ -831,9 +831,9 @@ def test_traces_of_a_variable_order_field(backend):
     data = _two_hexes_and_a_pyramid()
     orders = np.array([1, 0, 1])
     u, centers = _variable_height(data, orders)
-    values = alg.traces(data, u).values.to_numpy().reshape(-1, 2, 4)
-    sides = data.topology.faces().sides.to_numpy(vectors=True)
-    kinds = data.topology.faces().kinds.to_numpy()
+    values = alg.traces(data, u).values.numpy().reshape(-1, 2, 4)
+    sides = data.topology.faces().sides.numpy()
+    kinds = data.topology.faces().kinds.numpy()
     for f, side in enumerate(sides):
         n = 3 if kinds[f] == 5 else 4
         for s in range(2 if side[2] >= 0 else 1):
@@ -848,16 +848,16 @@ def test_upwind_flux(backend, make):
     # A constant is carried through every closed cell unchanged: no net outflow.
     constant = td.Field(td.Constant(data), td.ConstantArray(2.0, data.num_cells))
     net = alg.divergence(data, alg.upwind_flux(data, constant, velocity))
-    np.testing.assert_allclose(net.values.to_numpy(), 0, atol=1e-4)
+    np.testing.assert_allclose(net.values.numpy(), 0, atol=1e-4)
     # Each face carries the value of the cell the flow leaves.
     values = np.arange(data.num_cells, dtype=float) + 1
     flux = alg.upwind_flux(data, td.Field(td.Constant(data), _scalars(values)), velocity)
     normals, areas = alg.face_geometry(data)
-    vn = normals.values.to_numpy(vectors=True) @ velocity
-    sides = data.topology.faces().sides.to_numpy(vectors=True)
+    vn = normals.values.numpy() @ velocity
+    sides = data.topology.faces().sides.numpy()
     upwind = np.where((vn < 0) & (sides[:, 2] >= 0), sides[:, 2], sides[:, 0])
-    np.testing.assert_allclose(flux.values.to_numpy(),
-                               vn * areas.values.to_numpy() * values[upwind], rtol=1e-5,
+    np.testing.assert_allclose(flux.values.numpy(),
+                               vn * areas.values.numpy() * values[upwind], rtol=1e-5,
                                atol=1e-6)
 
 
@@ -881,18 +881,18 @@ def test_quadratic_bases(backend, name):
 
     cls = getattr(shapes, name)
     n = cls.NUM_QUADRATIC
-    nodes = tack.Vector.field(3, tack.f32, shape=(27,))
+    nodes = tack.empty((27,), tack.vec(3, tack.f32))
 
     def evaluate(points):
         pcs = _vectors(points)
-        values = tack.field(tack.f32, shape=(27 * len(points),))
-        gradients = tack.Vector.field(3, tack.f32, shape=(27 * len(points),))
+        values = tack.empty((27 * len(points),))
+        gradients = tack.empty((27 * len(points),), tack.vec(3, tack.f32))
         _quadratic_at(cls(), pcs, values, gradients, nodes, len(points))
-        return (values.to_numpy().reshape(-1, 27)[:, :n],
-                gradients.to_numpy(vectors=True).reshape(-1, 27, 3)[:, :n])
+        return (values.numpy().reshape(-1, 27)[:, :n],
+                gradients.numpy().reshape(-1, 27, 3)[:, :n])
 
     evaluate(np.zeros((1, 3)))
-    at_nodes = nodes.to_numpy(vectors=True)[:n]
+    at_nodes = nodes.numpy()[:n]
     assert len(np.unique(at_nodes.round(5), axis=0)) == n
     values, _ = evaluate(at_nodes)
     np.testing.assert_allclose(values, np.eye(n), atol=1e-6)
@@ -917,10 +917,10 @@ def test_to_cells_averages_each_cells_points(backend, make):
     rows = _cell_points(data)
     out = alg.to_cells(data, td.Field(td.H1(data), _scalars(scalar)))
     assert out.space is td.Constant(data)
-    np.testing.assert_allclose(out.values.to_numpy(), [scalar[r].mean() for r in rows],
+    np.testing.assert_allclose(out.values.numpy(), [scalar[r].mean() for r in rows],
                                atol=1e-6)
     out = alg.to_cells(data, td.Field(td.Values(data, "points"), _vectors(vector)))
-    np.testing.assert_allclose(out.values.to_numpy(vectors=True),
+    np.testing.assert_allclose(out.values.numpy(),
                                [vector[r].mean(axis=0) for r in rows], atol=1e-6)
 
 
@@ -929,32 +929,32 @@ def test_to_cells_of_every_space(backend):
     order-2 field averages its corner values; an order per cell is followed."""
     data = _two_hexes_and_a_pyramid()
     u = _height(data)
-    expected = alg.to_cells(data, u).values.to_numpy()
-    np.testing.assert_allclose(alg.to_cells(data, alg.discontinuous(data, u)).values.to_numpy(),
+    expected = alg.to_cells(data, u).values.numpy()
+    np.testing.assert_allclose(alg.to_cells(data, alg.discontinuous(data, u)).values.numpy(),
                                expected, atol=1e-6)
     dg = _with_cell_offsets(data, u, 10.0)
-    np.testing.assert_allclose(alg.to_cells(data, dg).values.to_numpy(),
+    np.testing.assert_allclose(alg.to_cells(data, dg).values.numpy(),
                                expected + 10.0 * np.arange(3), atol=1e-5)
     constant = td.Field(td.Constant(data), _scalars([1.0, 2.0, 5.0]))
-    np.testing.assert_allclose(alg.to_cells(data, constant).values.to_numpy(), [1, 2, 5])
+    np.testing.assert_allclose(alg.to_cells(data, constant).values.numpy(), [1, 2, 5])
     orders = np.array([1, 0, 1])
     varying, centers = _variable_height(data, orders)
-    np.testing.assert_allclose(alg.to_cells(data, varying).values.to_numpy(),
+    np.testing.assert_allclose(alg.to_cells(data, varying).values.numpy(),
                                np.where(orders == 1, expected, centers), atol=1e-5)
     grid = td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1])
     quadratic = td.H1(grid, order=2)
     values = np.zeros(quadratic.size)
-    values[:grid.num_points] = _height(grid).values.to_numpy()       # the points' values
+    values[:grid.num_points] = _height(grid).values.numpy()       # the points' values
     values[grid.num_points:] = 100.0                                 # the rest: not read
     np.testing.assert_allclose(
-        alg.to_cells(grid, td.Field(quadratic, _scalars(values))).values.to_numpy(),
-        alg.to_cells(grid, _height(grid)).values.to_numpy(), atol=1e-5)
+        alg.to_cells(grid, td.Field(quadratic, _scalars(values))).values.numpy(),
+        alg.to_cells(grid, _height(grid)).values.numpy(), atol=1e-5)
 
 
 def test_to_cells_refuses(backend):
     data = _two_hexes_and_a_pyramid()
     with pytest.raises(TypeError, match="floating-point"):
-        alg.to_cells(data, td.Field(td.H1(data), tack.arange(data.num_points, tack.i32)))
+        alg.to_cells(data, td.Field(td.H1(data), tack.arange(data.num_points)))
     on_faces = td.Field(td.Values(data, "faces"), _scalars(np.zeros(15)))
     with pytest.raises(TypeError, match="on the points or cells"):
         alg.to_cells(data, on_faces)
@@ -973,7 +973,7 @@ def test_to_cells_is_vtks(f64_backend, kind):
     to_cells.Update()
     want = vtk_to_numpy(to_cells.GetOutput().GetCellData().GetArray("p"))
     data = vtk_to_dataset(grid, dtype=tack.f64)
-    np.testing.assert_allclose(alg.to_cells(data, data.fields["p"]).values.to_numpy(), want,
+    np.testing.assert_allclose(alg.to_cells(data, data.fields["p"]).values.numpy(), want,
                                atol=1e-12)
 
 
@@ -987,13 +987,13 @@ def test_vtk_edge_cases(backend):
     assert (empty.num_cells, empty.num_points) == (0, 0)
     data = td.uniform_grid((3, 3, 3))
     space = td.H1(data, order=2)
-    nodes = td.project(data, data.geometry, space).values.to_numpy(vectors=True)
+    nodes = td.project(data, data.geometry, space).values.numpy()
     data.fields["u"] = td.Field(space, _scalars(nodes[:, 0] + 2.0 * nodes[:, 1]))
     grid = dataset_to_vtk(data)
     assert grid.GetPointData().GetArray("u").GetNumberOfTuples() == data.num_points
     back = vtk_to_dataset(grid)
     x = back.positions()
-    np.testing.assert_allclose(back.fields["u"].values.to_numpy(), x[:, 0] + 2.0 * x[:, 1],
+    np.testing.assert_allclose(back.fields["u"].values.numpy(), x[:, 0] + 2.0 * x[:, 1],
                                rtol=1e-6)
 
 

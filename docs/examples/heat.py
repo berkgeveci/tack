@@ -34,7 +34,7 @@ def run(arch="cpu", check=False):
     initial[[0, -1], :] = 0
     initial[:, [0, -1]] = 0
     old = tack.array(initial)
-    new = tack.empty(dtype=tack.f32, shape=(n, n))
+    new = tack.empty((n, n))
     snapshots = [initial.copy()]
     reference = initial.copy()
     # --8<-- [start:loop]
@@ -42,9 +42,9 @@ def run(arch="cpu", check=False):
         heat_step(old, new, r, n)
         old, new = new, old                 # swap Python references, not field contents
         if (step + 1) % (steps // 3) == 0:
-            snapshots.append(old.to_numpy().copy())
+            snapshots.append(old.numpy().copy())
     # --8<-- [end:loop]
-    result = old.to_numpy()
+    result = old.numpy()
     if check:
         for _ in range(steps):
             next_u = np.zeros_like(reference)

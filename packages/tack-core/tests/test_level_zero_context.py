@@ -70,10 +70,10 @@ def test_kernels_run_on_fields_allocated_in_the_adopted_context(foreign):
         for i in range(n):
             out[i] = float(i) * 3.0
 
-    out = tack.field(dtype=tack.f32, shape=(64,))
+    out = tack.empty((64,))
     ramp(out, 64)
 
-    np.testing.assert_array_equal(out.to_numpy(),
+    np.testing.assert_array_equal(out.numpy(),
                                   np.arange(64, dtype=np.float32) * 3.0)
 
 
@@ -90,10 +90,10 @@ def test_every_handle_is_required(foreign, missing):
 def test_device_memory_is_told_apart_from_host_memory(foreign):
     tack.init(arch=tack.level_zero, external_context=foreign)
     backend = get_backend()
-    field = tack.field(dtype=tack.f32, shape=(8,))
+    field = tack.empty((8,))
     host = np.zeros(8, dtype=np.float32)
 
     assert backend.memory_space(field._buffer._device_ptr.value) == "level_zero"
     assert backend.memory_space(host.ctypes.data) == "cpu"
     with pytest.raises(ValueError, match="'cpu' memory"):
-        tack.field_from_ptr(host.ctypes.data, tack.f32, (8,))
+        tack.array_from_ptr(host.ctypes.data, (8,), tack.f32)

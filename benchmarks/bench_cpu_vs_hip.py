@@ -75,8 +75,8 @@ def bench(fn, warmup=3, trials=10):
 def make_fields(n, count):
     fields = []
     for _ in range(count):
-        f = tack.field(dtype=tack.f32, shape=(n,))
-        f.from_numpy(np.abs(np.random.randn(n).astype(np.float32)) + 0.1)
+        f = tack.empty((n,))
+        tack.copyto(f, np.abs(np.random.randn(n).astype(np.float32)) + 0.1)
         fields.append(f)
     return fields
 
@@ -94,18 +94,18 @@ def run_bench(name, kernel_fn, n, n_arrays):
         dst, = make_fields(n, 1)
         fn = lambda: kernel_fn(dst)
     elif name == "stencil1d":
-        src = tack.field(dtype=tack.f32, shape=(n + 1,))
-        src.from_numpy(np.random.randn(n + 1).astype(np.float32))
-        dst = tack.field(dtype=tack.f32, shape=(n,))
+        src = tack.empty((n + 1,))
+        tack.copyto(src, np.random.randn(n + 1).astype(np.float32))
+        dst = tack.empty((n,))
         fn = lambda: kernel_fn(src, dst)
     elif name in ("sqrt", "sin", "exp"):
         x, out = make_fields(n, 2)
         fn = lambda: kernel_fn(x, out)
     elif name == "reduce":
         n = (n // REDUCE_BLOCK) * REDUCE_BLOCK
-        data = tack.field(dtype=tack.f32, shape=(n,))
-        data.from_numpy(np.random.randn(n).astype(np.float32))
-        out = tack.field(dtype=tack.f32, shape=(n // REDUCE_BLOCK,))
+        data = tack.empty((n,))
+        tack.copyto(data, np.random.randn(n).astype(np.float32))
+        out = tack.empty((n // REDUCE_BLOCK,))
         fn = lambda: kernel_fn(data, out)
     else:
         raise ValueError(name)

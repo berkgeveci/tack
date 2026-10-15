@@ -25,8 +25,8 @@ class Agents:
     def __init__(self, n, size):
         self.n = n
         self.size = size
-        self.pos = tack.empty(dtype=tack.vec2(tack.f32), shape=(n,))
-        self.heading = tack.empty(dtype=tack.f32, shape=(n,))
+        self.pos = tack.empty((n,), tack.vec2(tack.f32))
+        self.heading = tack.empty((n,))
 
     @tack.func
     def sense(self, trail, p, angle):
@@ -87,8 +87,8 @@ def run(arch="cpu", check=False):
     n, size, frames = (128, 24, 8) if check else (4096, 128, 300)
     agents = Agents(n, size)
     agents.initialize()
-    old = tack.zeros(dtype=tack.f32, shape=(size, size))
-    new = tack.zeros(dtype=tack.f32, shape=(size, size))
+    old = tack.zeros((size, size))
+    new = tack.zeros((size, size))
     evaporation = 0.96
     expected_mass = 0.0
     snapshots = []
@@ -100,11 +100,11 @@ def run(arch="cpu", check=False):
         old, new = new, old
         expected_mass = (expected_mass + n) * evaporation
         if (frame + 1) % (frames // 3 if not check else frames) == 0:
-            snapshots.append(old.to_numpy())
+            snapshots.append(old.numpy())
     # --8<-- [end:loop]
     if check:
-        trail = old.to_numpy()
-        pos = agents.pos.to_numpy()
+        trail = old.numpy()
+        pos = agents.pos.numpy()
         assert np.all(np.isfinite(trail)) and trail.min() >= 0
         assert np.all((pos >= 0) & (pos < size))
         # Every deposit adds one, and periodic averaging preserves mass.

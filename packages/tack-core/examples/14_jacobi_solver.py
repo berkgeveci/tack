@@ -44,14 +44,14 @@ def copy_field(src, dst, n):
 
 
 # Create two fields for ping-pong iteration
-u = tack.empty(dtype=tack.f32, shape=(N, N))
-u_new = tack.empty(dtype=tack.f32, shape=(N, N))
+u = tack.empty((N, N))
+u_new = tack.empty((N, N))
 
 # Boundary conditions: top edge = 100, rest = 0
 init = np.zeros((N, N), dtype=np.float32)
 init[-1, :] = 100.0  # top edge
-u.from_numpy(init)
-u_new.from_numpy(init)
+tack.copyto(u, init)
+tack.copyto(u_new, init)
 
 print(f"Jacobi solver: {N}x{N} grid, {STEPS} iterations")
 
@@ -60,11 +60,11 @@ for step in range(STEPS):
     copy_field(u_new, u, N)
 
     if (step + 1) % 2000 == 0:
-        result = u.to_numpy().reshape(N, N)
+        result = u.numpy().reshape(N, N)
         center = result[N // 2, N // 2]
         print(f"  step {step+1:>5d}: center = {center:.4f}")
 
-result = u.to_numpy().reshape(N, N)
+result = u.numpy().reshape(N, N)
 print("\nFinal solution:")
 print(f"  Bottom edge (should be 0):    {result[0, N//2]:.4f}")
 print(f"  Center:                       {result[N//2, N//2]:.4f}")

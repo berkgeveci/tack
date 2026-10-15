@@ -36,10 +36,10 @@ def test_vector_comparisons_select_any_and_all(backend):
     points = np.array([[0.1, 0.6, 0.95], [-0.2, 0.5, 0.3], [0.7, 0.75, 0.3], [1.2, 0.0, 0.5]],
                       np.float32)
     n = len(points)
-    pos = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
-    pos.from_numpy(points)
-    out = tack.zeros(dtype=tack.f32, shape=(n, 7))
-    flags = tack.zeros(dtype=tack.i32, shape=(n,))
+    pos = tack.empty((n,), tack.vec(3, tack.f32))
+    tack.copyto(pos, points)
+    out = tack.zeros((n, 7))
+    flags = tack.zeros((n,), tack.i32)
     comparisons(pos, out, flags, n)
     want = []
     for p in points:
@@ -50,8 +50,8 @@ def test_vector_comparisons_select_any_and_all(backend):
                      np.where(p < 0.5, -1, 1) @ [1, 2, 4],
                      ((p > 0.2) & (p < 0.8)).sum() + (~m).sum() * 100,
                      (p if p[0] > 0.5 else np.zeros(3)).sum(), 3.0])
-    np.testing.assert_allclose(out.to_numpy(), want)
-    np.testing.assert_array_equal(flags.to_numpy(), (points >= 0).all(axis=1))
+    np.testing.assert_allclose(out.numpy(), want)
+    np.testing.assert_array_equal(flags.numpy(), (points >= 0).all(axis=1))
 
 
 @tack.kernel
@@ -64,11 +64,11 @@ def matrix_masks(m, out, n):
 
 def test_matrices_compare_like_vectors(backend):
     values = np.array([[[1.0, -2.0], [-3.0, 4.0]], [[0.0, 0.0], [0.0, 5.0]]], np.float32)
-    m = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(2,))
-    m.from_numpy(values)
-    out = tack.field(dtype=tack.f32, shape=(2,))
+    m = tack.empty((2,), tack.mat(2, 2, tack.f32))
+    tack.copyto(m, values)
+    out = tack.empty((2,))
     matrix_masks(m, out, 2)
-    np.testing.assert_allclose(out.to_numpy(), [2 + 10, 1 + 5])
+    np.testing.assert_allclose(out.numpy(), [2 + 10, 1 + 5])
 
 
 @tack.kernel
@@ -81,13 +81,13 @@ def links_are_all_evaluated(pos, hits, out, n):
 
 
 def test_every_link_of_a_vector_chain_is_evaluated(backend):
-    pos = tack.Vector.field(2, dtype=tack.f32, shape=(2,))
-    pos.from_numpy(np.array([[0.5, 3.0], [-1.0, 1.0]], np.float32))
-    hits = tack.field(dtype=tack.i32, shape=(1,))
-    out = tack.field(dtype=tack.f32, shape=(2,))
+    pos = tack.empty((2,), tack.vec(2, tack.f32))
+    tack.copyto(pos, np.array([[0.5, 3.0], [-1.0, 1.0]], np.float32))
+    hits = tack.empty((1,), tack.i32)
+    out = tack.empty((2,))
     links_are_all_evaluated(pos, hits, out, 2)
     # [0.5, 3.0]: 0 <= p and p < 2 -> [1, 0]; [-1, 1]: 1 <= p and p < 2 -> [0, 1]
-    np.testing.assert_array_equal(out.to_numpy(), [1, 1])
+    np.testing.assert_array_equal(out.numpy(), [1, 1])
 
 
 def _vector_as_if_condition():

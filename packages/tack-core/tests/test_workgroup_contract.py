@@ -82,7 +82,7 @@ _UNSUPPORTED = [
 @pytest.mark.parametrize('mode', ['dispatch', 'ir', 'source', 'optimized', 'llvm'])
 def test_cpu_rejects_workgroup_primitives(kernel, feature, mode):
     tack.init(arch=tack.cpu)
-    out = tack.field(tack.i32, (256,))
+    out = tack.empty((256,), tack.i32)
     out.fill(-7)
     message = f"{kernel.name}.*CPU backend does not support workgroup.*{feature}"
     with pytest.raises(RuntimeError, match=message) as error:
@@ -96,7 +96,7 @@ def test_cpu_rejects_workgroup_primitives(kernel, feature, mode):
         assert isinstance(error.value.__cause__, NotImplementedError)
     else:
         assert isinstance(error.value, NotImplementedError)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(256, -7, np.int32))
+    np.testing.assert_array_equal(out.numpy(), np.full(256, -7, np.int32))
     assert not get_backend()._cache.get(kernel)
 
 
@@ -129,11 +129,11 @@ def test_cpu_private_arrays_atomics_and_host_reductions(monkeypatch):
     from tack.lang import workgroup_support
 
     tack.init(arch=tack.cpu)
-    data = tack.field(tack.i32, (512,))
-    out = tack.field(tack.i32, (512,))
-    total = tack.field(tack.i32, (1,))
+    data = tack.empty((512,), tack.i32)
+    out = tack.empty((512,), tack.i32)
+    total = tack.empty((1,), tack.i32)
     values = np.arange(512, dtype=np.int32)
-    data.from_numpy(values)
+    tack.copyto(data, values)
     walks = []
     original = workgroup_support.walk_ir
 
@@ -146,11 +146,11 @@ def test_cpu_private_arrays_atomics_and_host_reductions(monkeypatch):
     initial_walks = len(walks)
     assert initial_walks > 0
     for offset in (1, 17):
-        data.from_numpy(values + offset)
+        tack.copyto(data, values + offset)
         total.fill(0)
         private_scratch(data, out, total)
-        np.testing.assert_array_equal(out.to_numpy(), (values + offset) * 2)
-        assert total.to_numpy()[0] == np.sum(values + offset)
+        np.testing.assert_array_equal(out.numpy(), (values + offset) * 2)
+        assert total.numpy()[0] == np.sum(values + offset)
         assert out.sum() == np.sum((values + offset) * 2)
         assert out.min() == offset * 2
         assert out.max() == (511 + offset) * 2
@@ -169,22 +169,22 @@ def exchange_neighbors(data, out):
 
 @pytest.mark.parametrize('dtype', [tack.i32, tack.f32])
 def test_workgroups_exchange_across_lanes_and_reject_cpu(workgroup_backend, dtype):
-    data = tack.field(dtype, (512,))
-    out = tack.field(dtype, (512,))
+    data = tack.empty((512,), dtype)
+    out = tack.empty((512,), dtype)
     values = np.arange(512, dtype=dtype.numpy_dtype)
     for mode in ('ir', 'source'):
         assert tack.inspect(exchange_neighbors, data, out, mode=mode)
     for offset in (0, 1000):
-        data.from_numpy(values + offset)
+        tack.copyto(data, values + offset)
         exchange_neighbors(data, out)
         expected = np.roll((values + offset).reshape(2, 256), -1, axis=1).ravel()
-        np.testing.assert_array_equal(out.to_numpy(), expected)
+        np.testing.assert_array_equal(out.numpy(), expected)
 
     # Reusing the same frontend template on another backend must be checked,
     # even after a successful GPU compilation and cached dispatch.
     tack.init(arch=tack.cpu)
-    cpu_data = tack.field(dtype, (512,))
-    cpu_out = tack.zeros(dtype, (512,))
+    cpu_data = tack.empty((512,), dtype)
+    cpu_out = tack.zeros((512,), dtype)
     with pytest.raises(RuntimeError, match='CPU.*barrier, shared_like, thread_id'):
         exchange_neighbors(cpu_data, cpu_out)
-    np.testing.assert_array_equal(cpu_out.to_numpy(), np.zeros(512))
+    np.testing.assert_array_equal(cpu_out.numpy(), np.zeros(512))

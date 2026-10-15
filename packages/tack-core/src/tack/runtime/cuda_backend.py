@@ -3,11 +3,11 @@
 Pipeline:
     Tack IR → CUDA C source → NVRTC (PTX) → cuModuleLoad → cuLaunchKernel
 
-Fields are device-resident: ``tack.field()`` allocates a device buffer via
+Arrays are device-resident: ``tack.empty()`` allocates a device buffer via
 ``cuMemAlloc``.  Transfers are explicit:
 
-    field.from_numpy(arr)   # host → device (cuMemcpyHtoD)
-    arr = field.to_numpy()  # device → host (cuMemcpyDtoH)
+    tack.copyto(a, arr)     # host → device (cuMemcpyHtoD)
+    arr = a.numpy()         # device → host (cuMemcpyDtoH)
 
 No per-dispatch copies — data stays on the GPU between kernel calls.
 """
@@ -286,7 +286,7 @@ class CUDABuffer(DeviceBuffer):
     def _stream(self):
         return self._token.queue()
 
-    # Reading waits for the stream, so `Field.to_numpy_async` reads in a
+    # Reading waits for the stream, so `Array.numpy_async` reads in a
     # worker thread, with the context made current there.
     waits_off_thread = True
 
@@ -506,9 +506,8 @@ class ExportableCUDABuffer(DeviceBuffer):
             "This CUDA device cannot allocate exportable memory on "
             f"{sys.platform}. Tried:\n"
             + "\n".join(f"  {a}" for a in attempts)
-            + "\nExportable memory is only needed by Field.export_memory() for "
-              "sharing with another API; ordinary tack.field() allocations are "
-              "unaffected."
+            + "\nExportable memory is only needed by Array.export_memory() for "
+              "sharing with another API; ordinary allocations are unaffected."
         )
 
     @property
@@ -530,7 +529,7 @@ class ExportableCUDABuffer(DeviceBuffer):
         return out
 
     # A copy on the legacy stream waits for the context's stream, which is
-    # made blocking: `Field.to_numpy_async` reads it in a worker thread.
+    # made blocking: `Array.numpy_async` reads it in a worker thread.
     waits_off_thread = True
 
     @property
@@ -1139,7 +1138,7 @@ class CUDABackend(Backend):
         if field.size == 0:
             return empty_reduction(op)
         if field.dtype is not f32:
-            return reduce_numpy(field.to_numpy(), op)
+            return reduce_numpy(field.numpy(), op)
         n = int(np.prod(field.shape))
         check_launch_size(f"Field {op}()", n, self._max_launch, self.label)
 

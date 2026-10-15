@@ -103,8 +103,8 @@ def kern(data, out):
     def test_shared_like_resolves_to_scalar_type(self):
         """shared_like resolves to the field's ScalarType, not a C string."""
         tack.init(arch=tack.cpu)
-        data = tack.field(dtype=tack.i32, shape=(10,))
-        out = tack.field(dtype=tack.i32, shape=(10,))
+        data = tack.empty((10,), tack.i32)
+        out = tack.empty((10,), tack.i32)
 
         p_data = ir.IRParam("data")
         p_out = ir.IRParam("out")
@@ -131,8 +131,8 @@ def test_cuda_shared_alloc_types():
     from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f32, shape=(10,))
-    out = tack.field(dtype=tack.f32, shape=(10,))
+    data = tack.empty((10,))
+    out = tack.empty((10,))
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
@@ -155,8 +155,8 @@ def test_msl_shared_alloc_types():
     from tack.lang.type_inference import infer_param_types
 
     tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f32, shape=(10,))
-    out = tack.field(dtype=tack.f32, shape=(10,))
+    data = tack.empty((10,))
+    out = tack.empty((10,))
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
@@ -175,9 +175,9 @@ def test_msl_shared_alloc_types():
 def test_shared_f32_end_to_end(workgroup_backend):
     """tack.shared(tack.f32, ...) works end-to-end."""
     n = 256
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def kern(data, out):
@@ -189,13 +189,13 @@ def test_shared_f32_end_to_end(workgroup_backend):
             out[i] = smem[tid]
 
     kern(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.float32))
 
 
 def test_local_array_u8_end_to_end(backend):
     """tack.local_array(tack.u8, ...) works end-to-end."""
     n = 8
-    out = tack.field(dtype=tack.u8, shape=(n,))
+    out = tack.empty((n,), tack.u8)
 
     @tack.kernel
     def kern(out):
@@ -205,7 +205,7 @@ def test_local_array_u8_end_to_end(backend):
             out[i] = buf[0]
 
     kern(out)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(n, 42, dtype=np.uint8))
+    np.testing.assert_array_equal(out.numpy(), np.full(n, 42, dtype=np.uint8))
 
 
 # --- Template transformations preserve captured method bodies ---
@@ -230,14 +230,14 @@ def test_template_method_source_is_preserved():
 
     before = ast.dump(MyClass._tack_func_methods['get_val']._funcdef)
 
-    out = tack.field(dtype=tack.i32, shape=(4,))
+    out = tack.empty((4,), tack.i32)
     obj = MyClass()
     kern(obj, out)
 
     assert ast.dump(MyClass._tack_func_methods['get_val']._funcdef) == before
 
     # Verify the kernel still works
-    np.testing.assert_array_equal(out.to_numpy(), np.full(4, 10, dtype=np.int32))
+    np.testing.assert_array_equal(out.numpy(), np.full(4, 10, dtype=np.int32))
 
 
 def test_repeated_templates_preserve_method_source():
@@ -259,9 +259,9 @@ def test_repeated_templates_preserve_method_source():
             out[i] = c.apply(data[i])
 
     n = 4
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     before = ast.dump(Counter._tack_func_methods['apply']._funcdef)
 

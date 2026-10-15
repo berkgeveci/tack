@@ -45,8 +45,8 @@ def test_dispatch_errors_keep_their_cause():
         for i in range(x.shape[d]):
             out[i] = x[i]
 
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
 
     with pytest.raises(RuntimeError) as excinfo:
         dynamic_dim(x, out, 0)
@@ -61,8 +61,8 @@ def test_type_errors_keep_their_cause():
         for i in range(n):
             out[i] = x[i] * 2.0
 
-    x = tack.field(dtype=tack.f64, shape=(4,))
-    out = tack.field(dtype=tack.f64, shape=(4,))
+    x = tack.empty((4,), tack.f64)
+    out = tack.empty((4,), tack.f64)
 
     from tack.runtime.dispatch import get_backend
     if get_backend().supports_f64:
@@ -85,8 +85,8 @@ def test_the_readable_summary_is_still_the_last_line():
         for i in range(x.shape[d]):
             out[i] = x[i]
 
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
 
     with pytest.raises(RuntimeError) as excinfo:
         dynamic_dim(x, out, 0)

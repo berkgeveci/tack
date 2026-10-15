@@ -45,12 +45,12 @@ def remap(value, in_lo, in_hi, out_lo, out_hi):
 # --- Kernel using device functions ---
 
 n = 100
-x = tack.empty(dtype=tack.f32, shape=(n,))
-out_lerp = tack.empty(dtype=tack.f32, shape=(n,))
-out_smooth = tack.empty(dtype=tack.f32, shape=(n,))
-out_remap = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+out_lerp = tack.empty((n,))
+out_smooth = tack.empty((n,))
+out_remap = tack.empty((n,))
 
-x.from_numpy(np.linspace(0.0, 1.0, n, dtype=np.float32))
+tack.copyto(x, np.linspace(0.0, 1.0, n, dtype=np.float32))
 
 
 @tack.kernel
@@ -64,12 +64,12 @@ def apply_all(x, out_lerp, out_smooth, out_remap):
 
 apply_all(x, out_lerp, out_smooth, out_remap)
 
-print("lerp(0,100,t):  ", out_lerp.to_numpy()[[0, 25, 50, 75, 99]])
-print("smoothstep:     ", out_smooth.to_numpy()[[0, 25, 50, 75, 99]])
-print("remap(0,1,-10,10):", out_remap.to_numpy()[[0, 25, 50, 75, 99]])
+print("lerp(0,100,t):  ", out_lerp.numpy()[[0, 25, 50, 75, 99]])
+print("smoothstep:     ", out_smooth.numpy()[[0, 25, 50, 75, 99]])
+print("remap(0,1,-10,10):", out_remap.numpy()[[0, 25, 50, 75, 99]])
 
 # Verify lerp
-assert np.allclose(out_lerp.to_numpy(), np.linspace(0, 100, n))
+assert np.allclose(out_lerp.numpy(), np.linspace(0, 100, n))
 # Verify remap
-assert np.allclose(out_remap.to_numpy(), np.linspace(-10, 10, n))
+assert np.allclose(out_remap.numpy(), np.linspace(-10, 10, n))
 print("\nDevice functions: OK")

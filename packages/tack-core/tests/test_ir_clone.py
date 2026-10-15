@@ -154,15 +154,15 @@ def test_cloning_runs_only_for_new_variants(backend, monkeypatch, no_disk_cache)
 
     monkeypatch.setattr(traversal, 'clone_ir', record)
     monkeypatch.setattr(utils, 'clone_ir', record)
-    out = tack.field(tack.f32, (8,))
+    out = tack.empty((8,))
     fill(out)
     initial_count = len(calls)
     assert initial_count > 0
     for _ in range(4):
         fill(out)
     assert len(calls) == initial_count
-    wider = tack.field(tack.i64, (8,))
+    wider = tack.empty((8,), tack.i64)
     fill(wider)
     assert len(calls) > initial_count
-    np.testing.assert_array_equal(out.to_numpy(), np.full(8, 3))
-    np.testing.assert_array_equal(wider.to_numpy(), np.full(8, 3))
+    np.testing.assert_array_equal(out.numpy(), np.full(8, 3))
+    np.testing.assert_array_equal(wider.numpy(), np.full(8, 3))

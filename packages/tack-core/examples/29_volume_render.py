@@ -334,16 +334,16 @@ yc_np = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param)) /
 t_param = np.linspace(0, np.pi, nz + 1, dtype=np.float32)
 zc_np = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param)) / 2.0
 
-xcoords = tack.empty(dtype=tack.f32, shape=(nx + 1,))
-ycoords = tack.empty(dtype=tack.f32, shape=(ny + 1,))
-zcoords = tack.empty(dtype=tack.f32, shape=(nz + 1,))
-xcoords.from_numpy(xc_np)
-ycoords.from_numpy(yc_np)
-zcoords.from_numpy(zc_np)
+xcoords = tack.empty((nx + 1,))
+ycoords = tack.empty((ny + 1,))
+zcoords = tack.empty((nz + 1,))
+tack.copyto(xcoords, xc_np)
+tack.copyto(ycoords, yc_np)
+tack.copyto(zcoords, zc_np)
 
 # Compute gyroid scalar field on GPU
 print("Computing scalar field...")
-scalar = tack.empty(dtype=tack.f32, shape=(n_points,))
+scalar = tack.empty((n_points,))
 compute_gyroid(scalar, xcoords, ycoords, zcoords, nx + 1, ny + 1)
 
 vmin = float(scalar.min())
@@ -406,7 +406,7 @@ print(f"Step size: {step_size:.5f}, opacity scale: {opacity_scale}")
 # ================================================================
 
 n_pixels = WIDTH * HEIGHT
-img = tack.empty(dtype=tack.f32, shape=(n_pixels * 3,))
+img = tack.empty((n_pixels * 3,))
 
 # Build inverse lookup tables for O(1) cell location
 INV_TABLE_SIZE = max(nx, ny, nz) * 2  # 2x oversampling for accuracy
@@ -434,22 +434,22 @@ inv_z_np, cmin_z, inv_sz = build_inv_table(zc_np, nz, INV_TABLE_SIZE)
 # Consolidated fields (VTK-style packed buffers):
 # coords: concatenated [xcoords, ycoords, zcoords]
 coords_np = np.concatenate([xc_np, yc_np, zc_np])
-coords = tack.empty(dtype=tack.f32, shape=(len(coords_np),))
-coords.from_numpy(coords_np)
+coords = tack.empty((len(coords_np),))
+tack.copyto(coords, coords_np)
 coord_off_y = len(xc_np)
 coord_off_z = len(xc_np) + len(yc_np)
 
 # inv_tables: concatenated [inv_x, inv_y, inv_z]
 inv_np = np.concatenate([inv_x_np, inv_y_np, inv_z_np])
-inv_tables = tack.empty(dtype=tack.i32, shape=(len(inv_np),))
-inv_tables.from_numpy(inv_np)
+inv_tables = tack.empty((len(inv_np),), tack.i32)
+tack.copyto(inv_tables, inv_np)
 inv_off_y = INV_TABLE_SIZE
 inv_off_z = INV_TABLE_SIZE * 2
 
 # tf: interleaved RGBA [r0,g0,b0,a0, r1,g1,b1,a1, ...]
 tf_interleaved = tf_np.astype(np.float32).ravel()  # already (256, 4) row-major
-tf = tack.empty(dtype=tack.f32, shape=(len(tf_interleaved),))
-tf.from_numpy(tf_interleaved)
+tf = tack.empty((len(tf_interleaved),))
+tack.copyto(tf, tf_interleaved)
 
 render_args = (img, tex, coords, inv_tables, tf,
                cam_pos[0], cam_pos[1], cam_pos[2],
@@ -504,7 +504,7 @@ print(f"  Mrays/s: {n_pixels / min(times) / 1e6:.1f}")
 # ================================================================
 
 # Read back interleaved RGB and reshape to (H, W, 3)
-img_np = img.to_numpy().reshape(HEIGHT, WIDTH, 3)
+img_np = img.numpy().reshape(HEIGHT, WIDTH, 3)
 img_np = np.clip(img_np, 0.0, 1.0)
 img_np = img_np[::-1]  # flip vertically (row 0 = bottom)
 

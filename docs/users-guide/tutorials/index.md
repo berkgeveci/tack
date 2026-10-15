@@ -33,11 +33,11 @@ geometry and image-panel rendering needs a working VTK rendering backend.
 
 | Example | What you will learn | Prerequisites |
 |---|---|---|
-| [Heat diffusion](heat.md) | Stencils, boundaries, two buffers, host timesteps | Fields and kernels |
-| [Advecting dye](dye.md) | Vector fields, interpolation, device functions | Vectors and loops |
+| [Heat diffusion](heat.md) | Stencils, boundaries, two buffers, host timesteps | Arrays and kernels |
+| [Advecting dye](dye.md) | Vector arrays, interpolation, device functions | Vectors and loops |
 | [Trail-following agents](physarum.md) | Random state, templates, scatter and diffusion | Vectors and atomics |
 | [Marching squares](contours.md) | Count, scan, allocation and ordered output | Local arrays and scans |
-| [Particle-to-grid simulation](mpm.md) | Matrix fields, interpolation and atomic scatter | Vectors, matrices and atomics |
+| [Particle-to-grid simulation](mpm.md) | Matrix arrays, interpolation and atomic scatter | Vectors, matrices and atomics |
 | [Tiled N-body forces](nbody.md) | Shared memory and barriers, with a CPU path | Sequential loops and workgroups |
 
 ## Datasets and visualization examples

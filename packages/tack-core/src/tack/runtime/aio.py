@@ -1,14 +1,14 @@
 """Waiting for the device from ``asyncio`` without blocking the event loop.
 
 Kernel launches stay plain calls: on the GPU backends they are queued and
-return at once, and every host access to a field waits for the launches
+return at once, and every host access to an array waits for the launches
 before it. Those waits block the calling thread, which in an application
 with an event loop (a trame server, a Jupyter kernel, a web service) is
 the loop. The two coroutines here wait in a worker thread instead and
 resume the caller when the device is done:
 
     await tack.sync_async()               # the launches queued so far
-    values = await field.to_numpy_async() # wait, then copy to the host
+    values = await array.numpy_async()    # wait, then copy to the host
 
 A backend opts in with two hooks on `Backend` (`async_marker`) and on
 `DeviceBuffer` (`thread_binding`, `waits_off_thread`): CUDA and HIP record
@@ -71,20 +71,20 @@ async def sync_async(backend=None):
     await _off_loop(marker.wait)
 
 
-async def to_numpy_async(field, vectors: bool = False):
-    """`Field.to_numpy` as a coroutine: the copy, and the wait for the
+async def numpy_async(array):
+    """`Array.numpy` as a coroutine: the copy, and the wait for the
     launches before it, run in a worker thread while the loop goes on.
 
     The result holds every write queued before the call. Work queued later
     by another task may or may not be in it, as with any read that runs
     beside writes; order the two with ``await`` if it matters.
     """
-    buffer = field._buffer
+    buffer = array._buffer
     if not buffer.waits_off_thread:
-        return field.to_numpy(vectors=vectors)
+        return array.numpy()
 
     def read():
         with buffer.thread_binding():
-            return field.to_numpy(vectors=vectors)
+            return array.numpy()
 
     return await _off_loop(read)

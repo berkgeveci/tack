@@ -228,7 +228,7 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
         for i in range(out.shape[0]):
             out[i] = 1
 
-    out = tack.zeros(dtype=tack.f32, shape=(4,))
+    out = tack.zeros((4,))
     target = importlib.import_module(module)
     original = getattr(target, pass_name)
 
@@ -251,7 +251,7 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
     assert isinstance(error.value.__cause__, IRVerificationError)
     assert not compile_calls
     assert not backend._cache.get(fill)
-    np.testing.assert_array_equal(out.to_numpy(), np.zeros(4))
+    np.testing.assert_array_equal(out.numpy(), np.zeros(4))
 
 
 def test_verifier_runs_only_when_templates_and_variants_are_new(monkeypatch, no_disk_cache):
@@ -273,14 +273,14 @@ def test_verifier_runs_only_when_templates_and_variants_are_new(monkeypatch, no_
 
     monkeypatch.setattr(verifier, 'verify_ir', record)
     monkeypatch.setattr('tack.lang.kernel.verify_ir', record)
-    out = tack.field(dtype=tack.f32, shape=(8,))
+    out = tack.empty((8,))
     for _ in range(5):
         fill(out)
     assert calls == ['lowered', 'resolved', 'inferred', 'localized', 'optimized', 'typed']
-    wider = tack.field(dtype=tack.i64, shape=(8,))
+    wider = tack.empty((8,), tack.i64)
     fill(wider)
     assert calls[6:] == ['resolved', 'inferred', 'localized', 'optimized', 'typed']
-    np.testing.assert_array_equal(wider.to_numpy(), np.full(8, 3))
+    np.testing.assert_array_equal(wider.numpy(), np.full(8, 3))
 
 
 def test_inspection_localizes_assigned_scalar_parameters():
@@ -296,7 +296,7 @@ def test_inspection_localizes_assigned_scalar_parameters():
             value = value + 1
             out[i] = value
 
-    out = tack.field(dtype=tack.i32, shape=(4,))
+    out = tack.empty((4,), tack.i32)
     inspected, _ = _prepare_ir(increment, (out, 3))
     increment(out, 3)
     executed = next(iter(get_backend()._cache[increment].values())).ir
@@ -304,7 +304,7 @@ def test_inspection_localizes_assigned_scalar_parameters():
     assignments = [node.target for node in walk_ir(inspected) if isinstance(node, ir.IRAssign)]
     assert 'value' not in assignments
     assert '__value_local__' in assignments
-    np.testing.assert_array_equal(out.to_numpy(), np.full(4, 4))
+    np.testing.assert_array_equal(out.numpy(), np.full(4, 4))
 
 
 def test_a_second_top_level_loop_is_rejected():
@@ -318,8 +318,8 @@ def test_a_second_top_level_loop_is_rejected():
         for j in range(b.shape[0]):
             b[j] = 2.0
 
-    a = tack.field(tack.f32, (4,))
-    b = tack.field(tack.f32, (4,))
+    a = tack.empty((4,))
+    b = tack.empty((4,))
     # The frontend reports it at the second loop's source position, before
     # the verifier's own "exactly one top-level parallel loop" check.
     with pytest.raises(UnsupportedSyntaxError,

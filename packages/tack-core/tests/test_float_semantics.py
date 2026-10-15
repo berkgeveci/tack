@@ -21,8 +21,8 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 def _field(values, dtype):
     values = np.asarray(values, dtype=dtype.numpy_dtype)
-    result = tack.field(dtype, values.shape)
-    result.from_numpy(values)
+    result = tack.empty(values.shape, dtype)
+    tack.copyto(result, values)
     return result
 
 
@@ -62,16 +62,16 @@ def _check_arithmetic(dtype):
     rng = np.random.default_rng(5707 + dtype.bits)
     pairs += list(rng.uniform(-16, 16, (512, 2)) * np.exp2(rng.integers(-20, 20, (512, 2))))
     a, b = np.asarray(pairs, dtype=dtype.numpy_dtype).T
-    out = tack.field(dtype, (len(a), 8))
+    out = tack.empty((len(a), 8), dtype)
     _arithmetic(_field(a, dtype), _field(b, dtype), out)
     with np.errstate(all='ignore'):
         expected = np.column_stack([a + b, a - b, a * b, a / b, -a,
                                     np.abs(a), np.floor(a), np.ceil(a)])
-    _assert_float(out.to_numpy(), expected)
+    _assert_float(out.numpy(), expected)
     # This also checks cached dispatch with different exceptional inputs.
     field_a, field_b = _field(a[::-1].copy(), dtype), _field(b[::-1].copy(), dtype)
     _arithmetic(field_a, field_b, out)
-    _assert_float(out.to_numpy(), expected[::-1])
+    _assert_float(out.numpy(), expected[::-1])
 
 
 def test_f32_arithmetic_and_exceptional_classes(backend):
@@ -95,12 +95,12 @@ def _identities(a, out):
 def _check_identities(dtype):
     a = np.asarray([0.0, -0.0, 1.0, -1.0, np.inf, -np.inf, np.nan],
                    dtype=dtype.numpy_dtype)
-    out = tack.field(dtype, (len(a), 4))
+    out = tack.empty((len(a), 4), dtype)
     _identities(_field(a, dtype), out)
     with np.errstate(all='ignore'):
         zero = dtype.numpy_dtype.type(0)
         expected = np.column_stack([a * zero, a - a, a + zero, zero / a])
-    _assert_float(out.to_numpy(), expected)
+    _assert_float(out.numpy(), expected)
 
 
 def test_f32_unsafe_identity_folds_are_disabled(backend):
@@ -129,11 +129,11 @@ def _comparisons(a, b, out):
 def _check_comparisons(dtype):
     values = [0.0, -0.0, 1.0, -1.0, np.inf, -np.inf, np.nan]
     a, b = np.asarray(list(itertools.product(values, repeat=2)), dtype=dtype.numpy_dtype).T
-    out = tack.field(tack.i32, (len(a), 9))
+    out = tack.empty((len(a), 9), tack.i32)
     _comparisons(_field(a, dtype), _field(b, dtype), out)
     expected = np.column_stack([a == b, a != b, a < b, a <= b, a > b, a >= b,
                                 ~a.astype(bool), a.astype(bool), (a != a) & (b == b)])
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+    np.testing.assert_array_equal(out.numpy(), expected)
 
 
 def test_f32_comparisons_and_truth(backend):
@@ -154,11 +154,11 @@ def _minmax(a, b, out):
 def _check_minmax(dtype):
     values = [0.0, -0.0, 1.0, -1.0, np.inf, -np.inf, np.nan]
     a, b = np.asarray(list(itertools.product(values, repeat=2)), dtype=dtype.numpy_dtype).T
-    out = tack.field(dtype, (len(a), 2))
+    out = tack.empty((len(a), 2), dtype)
     _minmax(_field(a, dtype), _field(b, dtype), out)
     expected = np.column_stack([np.fmin(a, b), np.fmax(a, b)])
     # Either input zero sign is permitted for min/max ties only.
-    _assert_float(out.to_numpy(), expected, maxulp=0, zero_sign=False)
+    _assert_float(out.numpy(), expected, maxulp=0, zero_sign=False)
 
 
 def test_f32_minmax_prefer_number_to_nan(backend):
@@ -184,9 +184,9 @@ def _check_order(dtype):
     a = np.asarray([big, near], dtype=dtype.numpy_dtype)
     b = np.asarray([-big, scalar(1 - (near - 1))], dtype=dtype.numpy_dtype)
     c = np.asarray([1, -1], dtype=dtype.numpy_dtype)
-    out = tack.field(dtype, (2, 3))
+    out = tack.empty((2, 3), dtype)
     _ordered(_field(a, dtype), _field(b, dtype), _field(c, dtype), out)
-    result = out.to_numpy()
+    result = out.numpy()
     np.testing.assert_array_equal(result[:, 0], (a + b) + c)
     np.testing.assert_array_equal(result[:, 1], a + (b + c))
     # Adjacent multiply/add contraction is permitted, but not reassociation.
@@ -224,9 +224,9 @@ def _check_named_product(dtype):
     rng = np.random.default_rng(31 + dtype.bits)
     a = np.concatenate([np.arange(6), rng.uniform(-16, 16, 256)]).astype(dtype.numpy_dtype)
     b = np.concatenate([np.full(6, 0.2), rng.uniform(-16, 16, 256)]).astype(dtype.numpy_dtype)
-    out = tack.field(dtype, a.shape)
+    out = tack.empty(a.shape, dtype)
     _named_product(_field(a, dtype), _field(b, dtype), out)
-    np.testing.assert_array_equal(out.to_numpy(), np.zeros_like(a))
+    np.testing.assert_array_equal(out.numpy(), np.zeros_like(a))
 
 
 def test_f32_a_named_value_reads_the_same_everywhere(backend):
@@ -264,7 +264,7 @@ def _math(a, b, out):
 def _check_math(dtype):
     a = np.asarray([-0.875, -0.5, -0.125, 0.125, 0.5, 0.875], dtype=dtype.numpy_dtype)
     b = np.asarray([0.25, 0.5, 0.75, 1.25, 2.0, 4.0], dtype=dtype.numpy_dtype)
-    out = tack.field(dtype, (len(a), 18))
+    out = tack.empty((len(a), 18), dtype)
     _math(_field(a, dtype), _field(b, dtype), out)
     expected = np.column_stack([np.sqrt(b), np.sin(a), np.cos(a), np.tan(a),
                                 np.arcsin(a), np.arccos(a), np.arctan(a),
@@ -273,7 +273,7 @@ def _check_math(dtype):
                                 np.power(b, a), np.power(b, a),
                                 np.sinh(a), np.cosh(a), np.tanh(a)])
     # A bounded-domain smoke test, not a global transcendental ULP contract.
-    _assert_float(out.to_numpy(), expected, maxulp=8)
+    _assert_float(out.numpy(), expected, maxulp=8)
 
 
 def test_f32_math_builtins_on_bounded_domains(backend):
@@ -296,9 +296,9 @@ def test_f32_libm_results_round_before_nested_arithmetic(backend):
             out[i, 4] = atan2(x, 2.0) - tack.f32(atan2(x, 2.0))
 
     a = _field([0.1, -0.1, 0.3, -0.3, 0.875, -0.875], tack.f32)
-    out = tack.field(tack.f32, (6, 5))
+    out = tack.empty((6, 5))
     precision(a, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.zeros((6, 5), dtype=np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.zeros((6, 5), dtype=np.float32))
 
 
 def test_integer_math_arguments_use_f32_on_f64_destination(f64_backend):
@@ -313,13 +313,13 @@ def test_integer_math_arguments_use_f32_on_f64_destination(f64_backend):
             out[i, 5] = atan2(tack.f64(a[i]), tack.f64(3))
 
     values = np.asarray([2**24 + 1, 2**30 + 3, 2**50 + 1], dtype=np.int64)
-    out = tack.field(tack.f64, (3, 6))
+    out = tack.empty((3, 6), tack.f64)
     integer_math(_field(values, tack.i64), out)
     single, double = values.astype(np.float32), values.astype(np.float64)
     expected = np.column_stack([np.sqrt(single), np.log(single),
                                 np.arctan2(single, np.float32(3)), np.sqrt(double),
                                 np.log(double), np.arctan2(double, np.float64(3))])
-    result = out.to_numpy()
+    result = out.numpy()
     # The first three expressions must be f32 before the f64 field store.
     np.testing.assert_array_equal(result[:, :3], result[:, :3].astype(np.float32).astype(np.float64))
     _assert_float(result[:, :3].astype(np.float32), expected[:, :3].astype(np.float32), maxulp=8)
@@ -338,14 +338,14 @@ def _mixed_math(a, b, out):
 def _check_mixed_math(dtype):
     values = np.asarray([2**24 + 1, 2**30 + 3, 2**50 + 1], dtype=np.int64)
     a, b = _field(values, tack.i64), _field([3, 2**30, 2**50], dtype)
-    out = tack.field(dtype, (3, 4))
+    out = tack.empty((3, 4), dtype)
     _mixed_math(a, b, out)
     promoted = values.astype(dtype.numpy_dtype)
     expected = np.column_stack([np.sqrt(values.astype(np.float32)),
-                                np.arctan2(promoted, b.to_numpy()),
-                                np.fmin(promoted, b.to_numpy()),
-                                np.fmax(promoted, b.to_numpy())])
-    _assert_float(out.to_numpy(), expected.astype(dtype.numpy_dtype), maxulp=8)
+                                np.arctan2(promoted, b.numpy()),
+                                np.fmin(promoted, b.numpy()),
+                                np.fmax(promoted, b.numpy())])
+    _assert_float(out.numpy(), expected.astype(dtype.numpy_dtype), maxulp=8)
 
 
 def test_f32_mixed_math_arguments(backend):
@@ -364,11 +364,11 @@ def _check_sqrt(dtype):
 
     values = np.asarray([0.0, -0.0, 1.0, 4.0, -1.0, np.inf, -np.inf, np.nan],
                         dtype=dtype.numpy_dtype)
-    out = tack.field(dtype, values.shape)
+    out = tack.empty(values.shape, dtype)
     roots(_field(values, dtype), out)
     with np.errstate(all='ignore'):
         expected = np.sqrt(values)
-    _assert_float(out.to_numpy(), expected)
+    _assert_float(out.numpy(), expected)
 
 
 def test_f32_sqrt_exceptional_classes(backend):
@@ -388,7 +388,7 @@ def test_math_generators_accept_integer_and_mixed_arguments(dtype, generate, tmp
         pytest.skip('MSL has no f64')
     tack.init(arch=tack.cpu)
     a, b = _field([2**30 + 3], tack.i64), _field([0.5], dtype)
-    out = tack.field(dtype, (1, 4))
+    out = tack.empty((1, 4), dtype)
     function, _ = _prepare_ir(_mixed_math, (a, b, out))
     source = generate(function)
     if generate is generate_opencl_source:
@@ -408,7 +408,7 @@ def test_generated_cpp_executes_safe_identities(dtype, generate, tmp_path):
     clang = require_clang('ubsan')
     tack.init(arch=tack.cpu)
     values = np.asarray([0.0, -0.0, 1.0, -1.0, np.inf, -np.inf, np.nan], dtype=dtype.numpy_dtype)
-    a, out = _field(values, dtype), tack.field(dtype, (len(values), 4))
+    a, out = _field(values, dtype), tack.empty((len(values), 4), dtype)
     function, _ = _prepare_ir(_identities, (a, out))
     source = '\n'.join(line for line in generate(function).splitlines()
                        if not line.startswith('#include'))

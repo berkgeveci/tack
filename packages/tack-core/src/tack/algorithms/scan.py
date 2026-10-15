@@ -184,16 +184,16 @@ def _scan(src, dst, n, inclusive, want_total=True):
     if n <= (size if tiles else _SERIAL_MAX):
         # One launch; with workgroups a level of one tile is one thread's
         # worth anyway. The total is read as one element, not a launch.
-        total = tack.field(dtype=dst.dtype, shape=(1,))
+        total = tack.empty((1,), dst.dtype)
         _scan_serial(src, dst, total, n, 1 if inclusive else 0)
         return total[0] if want_total else None
     nchunks = (n + size - 1) // size
-    sums = tack.field(dtype=dst.dtype, shape=(nchunks,))
+    sums = tack.empty((nchunks,), dst.dtype)
     if tiles:
         _tile_sums(src, dst, sums, n, nchunks)
     else:
         _chunk_sums(src, dst, sums, n, _CHUNK, nchunks)
-    offsets = tack.field(dtype=dst.dtype, shape=(nchunks,))
+    offsets = tack.empty((nchunks,), dst.dtype)
     total = _scan(sums, offsets, nchunks, inclusive=False, want_total=want_total)
     if tiles:
         _tile_apply(dst, offsets, n, nchunks, 1 if inclusive else 0)

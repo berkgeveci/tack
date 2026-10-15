@@ -97,8 +97,8 @@ def _compact(flags, slots, out):
 def _side_counts(topology):
     """References per (face, side), and how many entries name no face."""
     nf = topology.num_faces
-    counts = tack.zeros(tack.i32, (2 * nf,))
-    bad = tack.zeros(tack.i32, (1,))
+    counts = tack.zeros((2 * nf,), tack.i32)
+    bad = tack.zeros((1,), tack.i32)
     if topology.num_cells:
         _count_sides(topology.cell_offsets, topology.cell_faces, topology.cell_face_sides,
                      counts, bad, topology.num_cells, nf)
@@ -119,7 +119,7 @@ class PolygonFaces:
         if bad:
             raise ValueError(f"{bad} cell -> face entries name no face, or a side other "
                              "than 0 or 1")
-        problems = tack.zeros(tack.i32, (3,))
+        problems = tack.zeros((3,), tack.i32)
         if nf:
             _side_problems(counts, problems, nf)
         twice, inward, _ = (int(problems[i]) for i in range(3))
@@ -130,7 +130,7 @@ class PolygonFaces:
             raise ValueError(f"{inward} faces are wound into their only cell (side 1 with "
                              "no side 0); tack.dataset.polyhedra.orient turns them around")
         self.id_dtype = topology.id_dtype
-        self.sides = tack.Vector.field(4, self.id_dtype, shape=(nf,))
+        self.sides = tack.empty((nf,), tack.vec(4, self.id_dtype))
         if nf:
             self.sides.fill(-1)
             _scatter_sides(topology.cell_offsets, topology.cell_faces, topology.cell_face_sides,
@@ -146,7 +146,7 @@ class PolygonFaces:
         if subset is None and self._groups is not None:
             return self._groups
         face_ids = (ids.as_ids(subset, self.id_dtype) if subset is not None
-                    else tack.arange(self.num_faces, self.id_dtype))
+                    else tack.arange(self.num_faces, dtype=self.id_dtype))
         t = self.topology
         n = face_ids.shape[0]
         groups = [DomainGroup(_PolygonFaces, t.facet_shape,
@@ -159,12 +159,12 @@ class PolygonFaces:
         """The ids of the faces with one side, a field of ``id_dtype``."""
         if self._boundary is None:
             nf = self.num_faces
-            flags = tack.field(tack.i32, shape=(nf,))
-            slots = tack.field(self.id_dtype, shape=(nf,))
+            flags = tack.empty((nf,), tack.i32)
+            slots = tack.empty((nf,), self.id_dtype)
             if nf:
                 _one_sided(self.sides, flags)
             count = exclusive_scan(flags, slots, nf) if nf else 0
-            boundary = tack.field(self.id_dtype, shape=(count,))
+            boundary = tack.empty((count,), self.id_dtype)
             if count:
                 _compact(flags, slots, boundary)
             self._boundary = boundary
@@ -221,22 +221,22 @@ def _derive_cell_points(t, cell_offsets=None, cell_faces=None, face_offsets=None
     cell_faces = t.cell_faces if cell_faces is None else cell_faces
     face_offsets = t.face_offsets if face_offsets is None else face_offsets
     face_points = t.face_points if face_points is None else face_points
-    sizes = tack.field(tack.i32, shape=(n,))
-    starts = tack.field(idt, shape=(n,))
+    sizes = tack.empty((n,), tack.i32)
+    starts = tack.empty((n,), idt)
     if n:
         _cell_sizes(cell_offsets, cell_faces, face_offsets, sizes, n)
     total = exclusive_scan(sizes, starts, n) if n else 0
-    keys = tack.Vector.field(2, idt, shape=(total,))
+    keys = tack.empty((total,), tack.vec(2, idt))
     if total:
         _cell_point_keys(cell_offsets, cell_faces, face_offsets, face_points, starts,
                          keys, n)
     order, _ = bucket_order(keys, n, idt)
     offsets_of_runs, runs = run_offsets(keys, order)
-    points = tack.field(idt, shape=(runs,))
-    counts = tack.zeros(tack.i32, (n,))
+    points = tack.empty((runs,), idt)
+    counts = tack.zeros((n,), tack.i32)
     if runs:
         _split_keys(keys, order, offsets_of_runs, points, counts, runs)
-    offsets = tack.field(idt, shape=(n + 1,))
+    offsets = tack.empty((n + 1,), idt)
     if n:
         exclusive_scan(counts, offsets, n, total=False)
     _close(offsets, n, runs)
@@ -276,9 +276,9 @@ class PolygonEdges:
         t = topology
         self.id_dtype = idt = t.id_dtype
         total = int(t.face_points.shape[0])
-        keys = tack.Vector.field(2, idt, shape=(total,))
-        self.face_edge_sign = tack.field(tack.i32, shape=(total,))
-        self.face_edge = tack.field(idt, shape=(total,))
+        keys = tack.empty((total,), tack.vec(2, idt))
+        self.face_edge_sign = tack.empty((total,), tack.i32)
+        self.face_edge = tack.empty((total,), idt)
         if total:
             _face_edge_keys(t.face_offsets, t.face_points, keys, self.face_edge_sign,
                             t.num_faces)
@@ -287,12 +287,12 @@ class PolygonEdges:
         else:
             count = 0
         self.num_edges = count
-        self.rows = tack.Vector.field(2, idt, shape=(count,))
+        self.rows = tack.empty((count,), tack.vec(2, idt))
         if count:
             _edges_from_runs(order, offsets, keys, self.rows, self.face_edge, count)
 
     def groups(self):
-        edge_ids = tack.arange(self.num_edges, self.id_dtype)
+        edge_ids = tack.arange(self.num_edges, dtype=self.id_dtype)
         return [DomainGroup(_Edges, shapes.Line, (self.rows, edge_ids, self.num_edges),
                             self.num_edges, 0)]
 
@@ -325,7 +325,7 @@ class PolyhedralTopology(_Topology):
         face_offsets, face_points, cell_offsets, cell_faces = (
             ids.host_or_field(a) for a in (face_offsets, face_points, cell_offsets, cell_faces))
         if num_points is None:
-            used = face_points.to_numpy() if isinstance(face_points, Field) else face_points
+            used = face_points.numpy() if isinstance(face_points, Field) else face_points
             num_points = int(used.max()) + 1 if used.size else 0
         # Cell points and directed edges hold each face's points once per side.
         extent = max(int(num_points), 2 * int(face_points.shape[0]),
@@ -436,9 +436,9 @@ class PolyhedralTopology(_Topology):
 
     def arrays(self):
         """The five defining arrays as host arrays, in constructor order."""
-        return (self.face_offsets.to_numpy(), self.face_points.to_numpy(),
-                self.cell_offsets.to_numpy(), self.cell_faces.to_numpy(),
-                self.cell_face_sides.to_numpy())
+        return (self.face_offsets.numpy(), self.face_points.numpy(),
+                self.cell_offsets.numpy(), self.cell_faces.numpy(),
+                self.cell_face_sides.numpy())
 
 
 # ── Size buckets ────────────────────────────────────────────────────
@@ -485,12 +485,12 @@ class SizeBuckets:
         if "_keys" not in self.__dict__:
             t = self.topology
             n = t.num_cells
-            field = tack.field(tack.i32, shape=(n,))
+            field = tack.empty((n,), tack.i32)
             if n:
-                sizes = tack.field(tack.i32, shape=(n,))
+                sizes = tack.empty((n,), tack.i32)
                 _cell_sizes(t.cell_offsets, t.cell_faces, t.face_offsets, sizes, n)
                 caps = _as_field(np.asarray(self.caps, np.int32), tack.i32)
-                largest = tack.zeros(tack.i32, (1,))
+                largest = tack.zeros((1,), tack.i32)
                 _bucket_keys(sizes, caps, field, largest, n)
                 if largest[0]:
                     raise ValueError(f"a cell needs scratch for {largest[0]} entries, more "
@@ -581,7 +581,7 @@ class PolygonalTopology(PolyhedralTopology):
         loop_offsets, loop_points = ids.host_or_field(loop_offsets), ids.host_or_field(loop_points)
         total = int(loop_points.shape[0])
         if num_points is None:
-            used = loop_points.to_numpy() if isinstance(loop_points, Field) else loop_points
+            used = loop_points.numpy() if isinstance(loop_points, Field) else loop_points
             num_points = int(used.max()) + 1 if total else 0
         # Its facets' points are two per edge, and there are as many edges as loop points.
         idt = ids.choose(id_dtype, max(int(num_points), 4 * total + 2),
@@ -589,18 +589,18 @@ class PolygonalTopology(PolyhedralTopology):
         loop_offsets = ids.as_ids(loop_offsets, idt, check=False)
         loop_points = ids.as_ids(loop_points, idt, check=False)
         n = loop_offsets.shape[0] - 1
-        keys = tack.Vector.field(2, idt, shape=(total,))
-        directions = tack.field(tack.i32, shape=(total,))
-        cell_faces = tack.field(idt, shape=(total,))
-        sides = tack.field(tack.u8, shape=(total,))
+        keys = tack.empty((total,), tack.vec(2, idt))
+        directions = tack.empty((total,), tack.i32)
+        cell_faces = tack.empty((total,), idt)
+        sides = tack.empty((total,), tack.u8)
         count = 0
         if total:
             _loop_edge_keys(loop_offsets, loop_points, keys, directions, n)
             order, _ = bucket_order(keys, num_points, idt)
             offsets, count = run_offsets(keys, order)
-        face_points = tack.field(idt, shape=(2 * count,))
+        face_points = tack.empty((2 * count,), idt)
         if count:
-            problems = tack.zeros(tack.i32, (2,))
+            problems = tack.zeros((2,), tack.i32)
             _facets_from_runs(order, offsets, keys, directions, face_points, cell_faces,
                               sides, problems, count)
             if problems[0]:
@@ -609,7 +609,7 @@ class PolygonalTopology(PolyhedralTopology):
                 raise ValueError(f"{problems[1]} edges are walked the same way by both their "
                                  "polygons: the winding is inconsistent, or the surface is "
                                  "not orientable")
-        face_offsets = tack.field(idt, shape=(count + 1,))
+        face_offsets = tack.empty((count + 1,), idt)
         _every_other(face_offsets)
         super().__init__(face_offsets, face_points, loop_offsets, cell_faces, sides,
                          num_points=num_points, id_dtype=idt)
@@ -684,7 +684,7 @@ class PolylineTopology(_Topology):
         line_offsets, line_points = ids.host_or_field(line_offsets), ids.host_or_field(line_points)
         total = int(line_points.shape[0])
         if num_points is None:
-            used = line_points.to_numpy() if isinstance(line_points, Field) else line_points
+            used = line_points.numpy() if isinstance(line_points, Field) else line_points
             num_points = int(used.max()) + 1 if total else 0
         n = int(line_offsets.shape[0]) - 1
         if n < 0:
@@ -695,9 +695,9 @@ class PolylineTopology(_Topology):
         self.line_points = ids.as_ids(line_points, idt, check=False)
         self.num_cells = n
         self.num_points = int(num_points)
-        self._ends = tack.field(idt, shape=(2 * n,))
+        self._ends = tack.empty((2 * n,), idt)
         if n:
-            short = tack.zeros(tack.i32, (1,))
+            short = tack.zeros((1,), tack.i32)
             _line_ends(self.line_offsets, self.line_points, self._ends, short, n)
             if short[0]:
                 raise ValueError(f"{short[0]} polylines have fewer than two points")
@@ -712,7 +712,7 @@ class PolylineTopology(_Topology):
         """Each cell's points, sorted and unique: ``(offsets, point_ids)``, CSR."""
         if self._cell_points is None:
             # Each chain as its cell's one "face".
-            identity = tack.field(self.id_dtype, shape=(self.num_cells + 1,))
+            identity = tack.empty((self.num_cells + 1,), self.id_dtype)
             _counting(identity)
             self._cell_points = _derive_cell_points(self, identity, identity, self.line_offsets,
                                                     self.line_points)
@@ -735,25 +735,25 @@ class PolylineTopology(_Topology):
         first use and kept; refuses a point where more than two chains end."""
         if self._faces is None:
             n, idt = self.num_cells, self.id_dtype
-            cell_faces = tack.field(idt, shape=(2 * n,))
-            sides = tack.field(tack.u8, shape=(2 * n,))
+            cell_faces = tack.empty((2 * n,), idt)
+            sides = tack.empty((2 * n,), tack.u8)
             count = 0
             if n:
                 order, _ = bucket_order(self._ends, self.num_points, idt)
                 offsets, count = run_offsets(self._ends, order)
-            face_points = tack.field(idt, shape=(count,))
+            face_points = tack.empty((count,), idt)
             if count:
-                crowded = tack.zeros(tack.i32, (1,))
+                crowded = tack.zeros((1,), tack.i32)
                 _ends_from_runs(order, offsets, self._ends, face_points, cell_faces, sides,
                                 crowded, count)
                 if crowded[0]:
                     raise ValueError(
                         f"more than two polylines end at {crowded[0]} points: the faces of a "
                         "branching network are not defined (split it at the branches)")
-            self.face_offsets = tack.field(idt, shape=(count + 1,))
+            self.face_offsets = tack.empty((count + 1,), idt)
             _counting(self.face_offsets)
             self.face_points = face_points
-            self.cell_offsets = tack.field(idt, shape=(n + 1,))
+            self.cell_offsets = tack.empty((n + 1,), idt)
             _every_other(self.cell_offsets)
             self.cell_faces = cell_faces
             self.cell_face_sides = sides
@@ -868,7 +868,7 @@ def orient(topology):
     counts, bad = _side_counts(topology)
     if bad:
         raise ValueError(f"{bad} cell -> face entries name no face, or a bad side")
-    counts = counts.to_numpy().reshape(-1, 2)
+    counts = counts.numpy().reshape(-1, 2)
     inward = (counts[:, 0] == 0) & (counts[:, 1] == 1)
     face_points = face_points.copy()
     for f in np.flatnonzero(inward):

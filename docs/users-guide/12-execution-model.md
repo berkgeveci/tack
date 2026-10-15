@@ -22,7 +22,7 @@ import tack
 tack.init(arch=tack.cpu)
 x = tack.array(np.arange(8, dtype=np.float32))
 y = tack.array(np.ones(8, dtype=np.float32))
-out = tack.empty(dtype=tack.f32, shape=(8,))
+out = tack.empty((8,))
 
 @tack.kernel
 def saxpy(x, y, out, alpha):
@@ -30,7 +30,7 @@ def saxpy(x, y, out, alpha):
         out[i] = alpha * x[i] + y[i]
 
 saxpy(x, y, out, 2.0)
-np.testing.assert_array_equal(out.to_numpy(), np.arange(8, dtype=np.float32) * 2 + 1)
+np.testing.assert_array_equal(out.numpy(), np.arange(8, dtype=np.float32) * 2 + 1)
 ```
 
 The allocation, call and assertion run in Python. The arithmetic in `saxpy` runs
@@ -85,7 +85,7 @@ for step in range(100):                    # Python controls the simulation
 ```
 
 Every launch sees the results of the launches before it, and every host
-access to an array -- `to_numpy`, `from_numpy`, indexing, reductions -- sees
+access to an array -- `numpy()`, `tack.copyto`, indexing, reductions -- sees
 the results of every launch before it. So the second kernel sees the
 completed force array, and so does a read after the loop. On the CPU a
 call completes before Python continues; on CUDA, HIP, Metal and Level Zero
@@ -105,12 +105,12 @@ a worker thread instead:
 async def frame():
     advance(state, dt)                        # queued; returns at once
     await tack.sync_async()                   # the loop runs while it works
-    pixels = await image.to_numpy_async()     # wait, then copy, off the loop
+    pixels = await image.numpy_async()        # wait, then copy, off the loop
     return pixels
 ```
 
 `tack.sync_async()` waits for the launches made before the call, not for
-ones another task queues while it waits. `to_numpy_async` returns every
+ones another task queues while it waits. `numpy_async` returns every
 write queued before the call; one queued later by another task may or may
 not be in it, so order the two with `await` if it matters. A launch's error
 is raised at the `await`. On CUDA, HIP, Metal and Level Zero the wait runs

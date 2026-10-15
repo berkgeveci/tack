@@ -454,7 +454,7 @@ a hundred small launches went from 8.7 to 2.6 ms.
   Level Zero frees with the driver's deferred policy, and a Metal launch
   holds references to its fields until it completes.
 - **Memory outside Tack.** A wrapped pointer (`wrap_ptr`, so
-  `field_from_ptr` and DLPack imports), a DLPack export and Metal's
+  `array_from_ptr` and DLPack imports), a DLPack export and Metal's
   `export_memory()` mark the buffer shared (`DeviceBuffer.share()`): the
   export waits for the queued launches, and every later launch that binds
   a shared buffer completes before it returns, because the other library

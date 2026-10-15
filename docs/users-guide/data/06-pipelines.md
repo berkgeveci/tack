@@ -111,7 +111,7 @@ writer.Write()
 
 These whole-dataset conversions copy arrays and provide a straightforward
 host boundary. Zero-copy array exchange is a separate route using
-`field_to_vtk`, `vtk_to_field` and a DLPack-enabled VTK build. A standard VTK
+`array_to_vtk`, `vtk_to_array` and a DLPack-enabled VTK build. A standard VTK
 wheel sufficient for file I/O may not expose that route. Level Zero sharing
 also needs a shared allocation context. See [Sharing Arrays](../16-interoperability.md).
 

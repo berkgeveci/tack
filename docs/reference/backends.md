@@ -34,9 +34,9 @@ wrong spelling still compiles as C.
 | **HIP** | once queued on a stream | the code object |
 | **Level Zero** | once queued on an asynchronous immediate command list | the native binary, and the SPIR-V to fall back on |
 
-A queued launch is waited for where the host reads a field or calls
+A queued launch is waited for where the host reads an array or calls
 `tack.sync()`, and its errors surface there. A launch that uses memory
-shared with another library (DLPack export, `field_from_ptr`) completes
+shared with another library (DLPack export, `array_from_ptr`) completes
 before the call returns. See
 [Backends](../users-guide/08-backends.md#when-a-call-returns) in the User's
 Guide and [The Kernel Cache](../users-guide/17-kernel-cache.md).
@@ -123,7 +123,7 @@ from tack.runtime.dispatch import get_backend
 be = get_backend()
 be.name                       # 'cpu', 'metal', 'cuda', 'hip', 'level_zero'
 be.label                      # how to spell it in a message
-be.supported_dtypes           # the frozenset dispatch checks field arguments against
+be.supported_dtypes           # the frozenset dispatch checks array arguments against
 be.supports_f64               # derived from the above
 be.supports_device_reductions # whether .sum()/.min()/.max() run on device
 be.device_memory_spaces       # what memory_space() must return for a pointer

@@ -100,7 +100,7 @@ def _pre_fix_source(kernel_fn, *args):
 
 
 def _field(shape=(256,), dtype=tack.f32):
-    return tack.field(dtype=dtype, shape=shape)
+    return tack.empty(shape, dtype)
 
 
 # ── Kernels ──────────────────────────────────────────────────────────

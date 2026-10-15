@@ -28,7 +28,7 @@ cell's own corners. `H1(order=2)` adds higher-order degrees of freedom on
 supported shapes. `Values` describes association without promising any
 interpolation between entities.
 
-`tack.empty(shape=(field.space.size,), dtype=tack.vec3())` allocates one
+`tack.empty((field.space.size,), tack.vec3())` allocates one
 3-vector per DOF; `td.Field(field.space, values)` gives those values their
 mesh meaning. The array has shape `(field.space.size,)` and downloads as
 `(field.space.size, 3)`.

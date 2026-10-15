@@ -113,17 +113,17 @@ def vector_add(x, y, out):
 
 def va_setup():
     n = 100_000
-    x = tack.empty(dtype=tack.f32, shape=(n,))
-    y = tack.empty(dtype=tack.f32, shape=(n,))
-    out = tack.empty(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
-    y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 2.0)
     return (x, y, out)
 
 
 def va_verify(x, y, out):
-    result = out.to_numpy()
-    expected = x.to_numpy() + y.to_numpy()
+    result = out.numpy()
+    expected = x.numpy() + y.numpy()
     return np.allclose(result, expected)
 
 
@@ -139,17 +139,17 @@ def saxpy(x, y, out):
 
 def saxpy_setup():
     n = 100_000
-    x = tack.empty(dtype=tack.f32, shape=(n,))
-    y = tack.empty(dtype=tack.f32, shape=(n,))
-    out = tack.empty(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.random.randn(n).astype(np.float32))
-    y.from_numpy(np.random.randn(n).astype(np.float32))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.random.randn(n).astype(np.float32))
+    tack.copyto(y, np.random.randn(n).astype(np.float32))
     return (x, y, out)
 
 
 def saxpy_verify(x, y, out):
-    result = out.to_numpy()
-    expected = 2.5 * x.to_numpy() + y.to_numpy()
+    result = out.numpy()
+    expected = 2.5 * x.numpy() + y.numpy()
     return np.allclose(result, expected, rtol=1e-4, atol=1e-6)
 
 
@@ -172,15 +172,15 @@ def partial_sum(data, out):
 
 def reduce_setup():
     n = REDUCE_BLOCK * 1024  # 262,144
-    data = tack.empty(dtype=tack.f32, shape=(n,))
-    partial = tack.empty(dtype=tack.f32, shape=(1024,))
-    data.from_numpy(np.ones(n, dtype=np.float32))
+    data = tack.empty((n,))
+    partial = tack.empty((1024,))
+    tack.copyto(data, np.ones(n, dtype=np.float32))
     return (data, partial)
 
 
 def reduce_verify(data, partial):
     # Each partial sum should be REDUCE_BLOCK (256 ones)
-    partials = partial.to_numpy()
+    partials = partial.numpy()
     total = float(np.sum(partials))
     expected = float(data.shape[0])  # all ones
     return abs(total - expected) < 1.0
@@ -224,12 +224,12 @@ def mandelbrot(pixels):
 
 
 def mandelbrot_setup():
-    pixels = tack.empty(dtype=tack.f32, shape=(WIDTH * HEIGHT,))
+    pixels = tack.empty((WIDTH * HEIGHT,))
     return (pixels,)
 
 
 def mandelbrot_verify(pixels):
-    data = pixels.to_numpy().reshape(HEIGHT, WIDTH)
+    data = pixels.numpy().reshape(HEIGHT, WIDTH)
     # Center of Mandelbrot set (0,0 maps to px=533,py=300) should have max iterations
     center_px = int(2.0 / 3.0 * WIDTH)  # x0=0 -> px=533
     center_py = int(1.5 / 3.0 * HEIGHT)  # y0=0 -> py=300
@@ -287,27 +287,27 @@ def nbody_forces(px, py, pz, mass, fx, fy, fz):
 def nbody_setup():
     np.random.seed(42)
     n = N_BODIES
-    px = tack.empty(dtype=tack.f32, shape=(n,))
-    py = tack.empty(dtype=tack.f32, shape=(n,))
-    pz = tack.empty(dtype=tack.f32, shape=(n,))
-    mass = tack.empty(dtype=tack.f32, shape=(n,))
-    fx = tack.empty(dtype=tack.f32, shape=(n,))
-    fy = tack.empty(dtype=tack.f32, shape=(n,))
-    fz = tack.empty(dtype=tack.f32, shape=(n,))
+    px = tack.empty((n,))
+    py = tack.empty((n,))
+    pz = tack.empty((n,))
+    mass = tack.empty((n,))
+    fx = tack.empty((n,))
+    fy = tack.empty((n,))
+    fz = tack.empty((n,))
 
-    px.from_numpy(np.random.randn(n).astype(np.float32))
-    py.from_numpy(np.random.randn(n).astype(np.float32))
-    pz.from_numpy(np.random.randn(n).astype(np.float32))
-    mass.from_numpy(np.ones(n, dtype=np.float32))
+    tack.copyto(px, np.random.randn(n).astype(np.float32))
+    tack.copyto(py, np.random.randn(n).astype(np.float32))
+    tack.copyto(pz, np.random.randn(n).astype(np.float32))
+    tack.copyto(mass, np.ones(n, dtype=np.float32))
     return (px, py, pz, mass, fx, fy, fz)
 
 
 def nbody_verify(px, py, pz, mass, fx, fy, fz):
     # Verify against numpy reference (vectorized, no Python loops)
-    x = px.to_numpy().astype(np.float64)
-    y = py.to_numpy().astype(np.float64)
-    z = pz.to_numpy().astype(np.float64)
-    m = mass.to_numpy().astype(np.float64)
+    x = px.numpy().astype(np.float64)
+    y = py.numpy().astype(np.float64)
+    z = pz.numpy().astype(np.float64)
+    m = mass.numpy().astype(np.float64)
     n = len(m)
 
     # dx[i,j] = x[j] - x[i]
@@ -321,9 +321,9 @@ def nbody_verify(px, py, pz, mass, fx, fy, fz):
     ref_fy = np.sum(m[np.newaxis, :] * dy * inv_dist3, axis=1)
     ref_fz = np.sum(m[np.newaxis, :] * dz * inv_dist3, axis=1)
 
-    return (np.allclose(fx.to_numpy(), ref_fx.astype(np.float32), rtol=1e-3, atol=1e-3) and
-            np.allclose(fy.to_numpy(), ref_fy.astype(np.float32), rtol=1e-3, atol=1e-3) and
-            np.allclose(fz.to_numpy(), ref_fz.astype(np.float32), rtol=1e-3, atol=1e-3))
+    return (np.allclose(fx.numpy(), ref_fx.astype(np.float32), rtol=1e-3, atol=1e-3) and
+            np.allclose(fy.numpy(), ref_fy.astype(np.float32), rtol=1e-3, atol=1e-3) and
+            np.allclose(fz.numpy(), ref_fz.astype(np.float32), rtol=1e-3, atol=1e-3))
 
 
 # -------------------------------------------------------------
@@ -343,13 +343,13 @@ def jacobi_step(src, dst):
 
 
 def jacobi_setup():
-    src = tack.empty(dtype=tack.f32, shape=(JACOBI_N,))
-    dst = tack.empty(dtype=tack.f32, shape=(JACOBI_N,))
+    src = tack.empty((JACOBI_N,))
+    dst = tack.empty((JACOBI_N,))
     # Initial: hot at center
     init = np.zeros(JACOBI_N, dtype=np.float32)
     init[JACOBI_N // 2] = 100.0
-    src.from_numpy(init)
-    dst.from_numpy(init)
+    tack.copyto(src, init)
+    tack.copyto(dst, init)
     return (src, dst)
 
 
@@ -361,14 +361,14 @@ def jacobi_verify(src, dst):
     for _ in range(JACOBI_STEPS):
         ref2[1:-1] = 0.5 * (ref[:-2] + ref[2:])
         ref, ref2 = ref2, ref
-    return np.allclose(src.to_numpy(), ref, atol=1e-3)
+    return np.allclose(src.numpy(), ref, atol=1e-3)
 
 
 def run_jacobi(src, dst):
     for _ in range(JACOBI_STEPS):
         jacobi_step(src, dst)
         # Swap: copy dst -> src for next iteration
-        src.from_numpy(dst.to_numpy())
+        tack.copyto(src, dst.numpy())
 
 
 # -------------------------------------------------------------
@@ -391,19 +391,19 @@ def matmul(a, b, c):
 def matmul_setup():
     np.random.seed(123)
     n = MAT_N
-    a = tack.empty(dtype=tack.f32, shape=(n * n,))
-    b = tack.empty(dtype=tack.f32, shape=(n * n,))
-    c = tack.empty(dtype=tack.f32, shape=(n * n,))
-    a.from_numpy(np.random.randn(n * n).astype(np.float32))
-    b.from_numpy(np.random.randn(n * n).astype(np.float32))
+    a = tack.empty((n * n,))
+    b = tack.empty((n * n,))
+    c = tack.empty((n * n,))
+    tack.copyto(a, np.random.randn(n * n).astype(np.float32))
+    tack.copyto(b, np.random.randn(n * n).astype(np.float32))
     return (a, b, c)
 
 
 def matmul_verify(a, b, c):
     n = MAT_N
-    np_a = a.to_numpy().reshape(n, n)
-    np_b = b.to_numpy().reshape(n, n)
-    np_c = c.to_numpy().reshape(n, n)
+    np_a = a.numpy().reshape(n, n)
+    np_b = b.numpy().reshape(n, n)
+    np_c = c.numpy().reshape(n, n)
     expected = np_a @ np_b
     return np.allclose(np_c, expected, rtol=1e-3, atol=1e-3)
 

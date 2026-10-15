@@ -71,15 +71,15 @@ def test_probe_is_vtks(backend, kind):
     points = np.random.default_rng(3).uniform(-0.4, 3.4, (500, 3))
     out = td.probe(data, points)
     valid, expected = _vtk_probe(grid, points)
-    np.testing.assert_array_equal(out.fields["valid"].values.to_numpy(), valid)
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), valid)
     inside = valid == 1
     assert 50 < inside.sum() < 500
     lin = 2 * points[:, 0] - points[:, 1] + 0.5 * points[:, 2]
-    np.testing.assert_allclose(out.fields["lin"].values.to_numpy()[inside], lin[inside],
+    np.testing.assert_allclose(out.fields["lin"].values.numpy()[inside], lin[inside],
                                atol=2e-4)
-    assert (out.fields["s"].values.to_numpy()[~inside] == 0).all()
+    assert (out.fields["s"].values.numpy()[~inside] == 0).all()
     if kind != "wedge":
-        np.testing.assert_allclose(out.fields["s"].values.to_numpy()[inside],
+        np.testing.assert_allclose(out.fields["s"].values.numpy()[inside],
                                    expected[inside], atol=1e-3)
 
 
@@ -92,9 +92,9 @@ def test_probe_of_a_structured_grid_is_vtks(backend):
     points = np.random.default_rng(5).uniform(-7, 7, (800, 3))
     out = td.probe(data, points)
     valid, expected = _vtk_probe(source.GetOutput(), points, "RTData")
-    np.testing.assert_array_equal(out.fields["valid"].values.to_numpy(), valid)
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), valid)
     inside = valid == 1
-    np.testing.assert_allclose(out.fields["RTData"].values.to_numpy()[inside],
+    np.testing.assert_allclose(out.fields["RTData"].values.numpy()[inside],
                                expected[inside], rtol=2e-4)
 
 
@@ -104,7 +104,7 @@ def test_locator_finds_the_cell_and_its_coordinates(backend):
     data = vtk_to_dataset(grid)
     points = np.random.default_rng(4).uniform(0.2, 2.8, (100, 3)) * [1, 1, 0.6]
     cells, pcs = td.CellLocator(data).find(points)
-    cells, pcs = cells.to_numpy(), pcs.to_numpy(vectors=True)
+    cells, pcs = cells.numpy(), pcs.numpy()
     for q in range(0, 100, 9):
         cell = grid.GetCell(int(cells[q]))
         pc, weights = [0.0] * 3, [0.0] * 8
@@ -124,19 +124,19 @@ def test_probe_keeps_the_probed_dataset_and_evaluates_every_kind(backend):
     out = td.probe(data, where)
     assert out.topology is where.topology and "tangle" in out.fields
     p = where.positions()
-    valid = out.fields["valid"].values.to_numpy() == 1
-    np.testing.assert_allclose(out.fields["h"].values.to_numpy()[valid],
+    valid = out.fields["valid"].values.numpy() == 1
+    np.testing.assert_allclose(out.fields["h"].values.numpy()[valid],
                                (3 * p[:, 0] + p[:, 2])[valid], atol=1e-5)
-    np.testing.assert_allclose(out.fields["dg"].values.to_numpy()[valid],
+    np.testing.assert_allclose(out.fields["dg"].values.numpy()[valid],
                                (3 * p[:, 0] + p[:, 2])[valid], atol=1e-5)
-    assert set(np.unique(out.fields["c"].values.to_numpy()[valid])) <= {1.0, 2.0, 3.0}
+    assert set(np.unique(out.fields["c"].values.numpy()[valid])) <= {1.0, 2.0, 3.0}
     assert out.fields["h"].space is td.H1(out)
 
 
 def test_points_outside_every_cell(backend):
     data = _two_hexes_and_a_pyramid()
     out = td.probe(data, [[10.0, 10.0, 10.0], [-1.0, 0.5, 0.5]])
-    np.testing.assert_array_equal(out.fields["valid"].values.to_numpy(), [0, 0])
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), [0, 0])
     with pytest.raises(NotImplementedError):
         td.CellLocator(td.as_polyhedra(data))
 
@@ -151,8 +151,8 @@ def test_probe_keeps_target_topology_ids_and_quadratic_geometry(backend):
     assert out.topology is target.topology
     assert out.geometry is target.geometry
     assert out.id_dtype is tack.i64
-    np.testing.assert_allclose(out.fields["x"].values.to_numpy(), target.positions()[:, 0])
-    np.testing.assert_array_equal(out.fields["valid"].values.to_numpy(), 1)
+    np.testing.assert_allclose(out.fields["x"].values.numpy(), target.positions()[:, 0])
+    np.testing.assert_array_equal(out.fields["valid"].values.numpy(), 1)
 
 
 def test_probe_refuses_a_locator_for_another_geometry(backend):

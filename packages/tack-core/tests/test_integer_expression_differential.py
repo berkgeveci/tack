@@ -337,8 +337,8 @@ def _inputs(rng: random.Random, inputs, n: int, boundary: bool):
 
 def _field(values, t: str):
     data = np.asarray(values, dtype=NP[t])
-    f = tack.field(getattr(tack, t), data.shape)
-    f.from_numpy(data)
+    f = tack.empty(data.shape, getattr(tack, t))
+    tack.copyto(f, data)
     return f
 
 
@@ -361,7 +361,7 @@ def _run_and_check(kernel, path, stores, store_types, inputs, arrays, n, label):
     kernel(*fields, n, *outs)
     expected = _expected(stores, store_types, arrays, n)
     for k, (out, exp, st) in enumerate(zip(outs, expected, store_types)):
-        got = out.to_numpy()
+        got = out.numpy()
         assert got.dtype == NP[st], (got.dtype, st)
         bad = np.flatnonzero(got[:n] != exp)
         if len(bad):
@@ -509,7 +509,7 @@ def test_device_agrees_with_the_strict_oracle_on_controls(backend, tmp_path, nam
     ys = np.full(n, env["y"], dtype=NP[types[1]])
     out = _field(np.full(n + TAIL, SENTINEL[t], dtype=NP[t]), t)
     kernel(_field(xs, types[0]), _field(ys, types[1]), n, out)
-    got = out.to_numpy()
+    got = out.numpy()
     assert np.all(got[:n] == strict_value), (
         f"{name} on {backend}: got {got[0]}, strict oracle {strict_value}; source {path}")
     assert np.all(got[n:] == SENTINEL[t])

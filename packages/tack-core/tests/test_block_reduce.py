@@ -8,9 +8,9 @@ import tack
 def test_block_sum(workgroup_backend):
     """Each workgroup sums its elements and writes to partial_sums."""
     n = 256
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    partial = tack.field(dtype=tack.f32, shape=(1,))
-    data.from_numpy(np.ones(n, dtype=np.float32))
+    data = tack.empty((n,))
+    partial = tack.empty((1,))
+    tack.copyto(data, np.ones(n, dtype=np.float32))
 
     @tack.kernel
     def reduce_sum(data, partial, n):
@@ -20,7 +20,7 @@ def test_block_sum(workgroup_backend):
                 tack.atomic_add(partial, 0, total)
 
     reduce_sum(data, partial, n)
-    result = partial.to_numpy()[0]
+    result = partial.numpy()[0]
     # One workgroup of 256 threads, each contributing 1.0
     np.testing.assert_allclose(result, 256.0, rtol=1e-4)
 
@@ -28,9 +28,9 @@ def test_block_sum(workgroup_backend):
 def test_block_max(workgroup_backend):
     """Block max finds the maximum in each workgroup."""
     n = 256
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((1,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def reduce_max(data, out, n):
@@ -40,16 +40,16 @@ def test_block_max(workgroup_backend):
                 out[0] = mx
 
     reduce_max(data, out, n)
-    result = out.to_numpy()[0]
+    result = out.numpy()[0]
     np.testing.assert_allclose(result, 255.0, rtol=1e-4)
 
 
 def test_block_min(workgroup_backend):
     """Block min finds the minimum in each workgroup."""
     n = 256
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
-    data.from_numpy(np.arange(n, dtype=np.float32) + 10.0)
+    data = tack.empty((n,))
+    out = tack.empty((1,))
+    tack.copyto(data, np.arange(n, dtype=np.float32) + 10.0)
 
     @tack.kernel
     def reduce_min(data, out, n):
@@ -59,16 +59,16 @@ def test_block_min(workgroup_backend):
                 out[0] = mn
 
     reduce_min(data, out, n)
-    result = out.to_numpy()[0]
+    result = out.numpy()[0]
     np.testing.assert_allclose(result, 10.0, rtol=1e-4)
 
 
 def test_block_sum_multi_workgroup(workgroup_backend):
     """Sum across multiple workgroups using atomic accumulation."""
     n = 1024  # 4 workgroups of 256
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    partial = tack.field(dtype=tack.f32, shape=(1,))
-    data.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
+    data = tack.empty((n,))
+    partial = tack.empty((1,))
+    tack.copyto(data, np.ones(n, dtype=np.float32) * 2.0)
 
     @tack.kernel
     def multi_sum(data, partial, n):
@@ -78,6 +78,6 @@ def test_block_sum_multi_workgroup(workgroup_backend):
                 tack.atomic_add(partial, 0, total)
 
     multi_sum(data, partial, n)
-    result = partial.to_numpy()[0]
+    result = partial.numpy()[0]
     # 1024 elements * 2.0 = 2048, accumulated across 4 workgroup block_sums
     np.testing.assert_allclose(result, 2048.0, rtol=1e-3)

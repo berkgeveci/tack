@@ -53,11 +53,11 @@ def _record_value(value, out, k: tack.i32, n: tack.i32):
 
 def test_launches_run_in_order():
     """400 launches, each reading what the one before wrote."""
-    acc = tack.zeros(tack.i32, (1000,))
+    acc = tack.zeros((1000,), tack.i32)
     for k in range(400):
         _add_into(acc, k)
     expected = sum(range(400)) + 400 * np.arange(1000)
-    np.testing.assert_array_equal(acc.to_numpy(), expected)
+    np.testing.assert_array_equal(acc.numpy(), expected)
 
 
 def test_each_queued_launch_keeps_its_own_scalars():
@@ -65,58 +65,58 @@ def test_each_queued_launch_keeps_its_own_scalars():
     the rewrite is queued after the launch that reads the old values. Each
     launch also writes its own field: the kernel's argument state, set
     again by the next call, was captured when the launch was appended."""
-    outs = [tack.zeros(tack.i32, (16,)) for _ in range(40)]
+    outs = [tack.zeros((16,), tack.i32) for _ in range(40)]
     for k, out in enumerate(outs):
         _add_into(out, k)
     for k, out in enumerate(outs):
-        np.testing.assert_array_equal(out.to_numpy(), k + np.arange(16))
+        np.testing.assert_array_equal(out.numpy(), k + np.arange(16))
 
 
 def test_host_writes_wait_for_the_launches_before_them():
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     _add_into(acc, 1)
-    acc.from_numpy(np.full(64, 100, np.int32))     # after the launch, not under it
+    tack.copyto(acc, np.full(64, 100, np.int32))     # after the launch, not under it
     _add_into(acc, 2)
-    np.testing.assert_array_equal(acc.to_numpy(), 102 + np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), 102 + np.arange(64))
 
 
 def test_fills_are_ordered_among_the_launches():
     n, steps = 4096, 300
-    value = tack.field(tack.f32, shape=(1,))
-    out = tack.field(tack.f32, shape=(steps * n,))
+    value = tack.empty((1,))
+    out = tack.empty((steps * n,))
     for k in range(steps):
         value.fill(float(k))
         _record_value(value, out, k, n)
-    np.testing.assert_array_equal(out.to_numpy().reshape(steps, n)[:, 0], np.arange(steps))
+    np.testing.assert_array_equal(out.numpy().reshape(steps, n)[:, 0], np.arange(steps))
 
 
 def test_a_dropped_temporary_is_freed_after_its_launches():
     """A field Python drops while launches that use it are queued is freed
     after the work queued so far (the driver's deferred free); the launches
     read and write it whole."""
-    x = tack.field(tack.f32, (1 << 20,))
+    x = tack.empty((1 << 20,))
     x.fill(2.0)
-    out = tack.zeros(tack.f32, (1 << 20,))
+    out = tack.zeros((1 << 20,))
     for _ in range(50):
-        tmp = tack.zeros(tack.f32, (1 << 20,))
+        tmp = tack.zeros((1 << 20,))
         _copy_scaled(x, tmp, 3.0)
         _copy_scaled(tmp, out, 0.5)
         del tmp                                   # queued launches still use it
         gc.collect()
-    np.testing.assert_array_equal(out.to_numpy(), 3.0)
+    np.testing.assert_array_equal(out.numpy(), 3.0)
 
 
 def test_sync_waits_for_queued_launches():
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     for k in range(50):
         _add_into(acc, k)
     tack.sync()
     assert _nothing_queued()
-    np.testing.assert_array_equal(acc.to_numpy(), sum(range(50)) + 50 * np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), sum(range(50)) + 50 * np.arange(64))
 
 
 def test_an_indexed_read_waits():
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     _add_into(acc, 7)
     assert acc[3] == 10
 
@@ -132,8 +132,8 @@ def test_a_launch_returns_before_it_completes():
                 s += tack.sin(x[i] + k * 0.001)
             out[i] = s
 
-    x = tack.field(tack.f32, (1 << 20,))
-    out = tack.zeros(tack.f32, (1 << 20,))
+    x = tack.empty((1 << 20,))
+    out = tack.zeros((1 << 20,))
     heavy(x, out)
     tack.sync()
     t0 = time.perf_counter()
@@ -150,16 +150,16 @@ def test_a_launch_returns_before_it_completes():
 
 def test_a_shared_buffer_completes_its_launches():
     """Memory handed outside Tack is complete when a launch on it returns."""
-    acc = tack.zeros(tack.i32, (64,))
+    acc = tack.zeros((64,), tack.i32)
     acc._buffer.share()
     assert acc._buffer._shared
     _add_into(acc, 3)
     assert _nothing_queued()
-    np.testing.assert_array_equal(acc.to_numpy(), 3 + np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), 3 + np.arange(64))
 
 
 def test_reductions_see_the_queued_launches():
-    acc = tack.zeros(tack.f32, (1000,))
+    acc = tack.zeros((1000,))
     for k in range(10):
         _copy_scaled(acc, acc, 1.0)
     acc.fill(2.0)
@@ -173,28 +173,28 @@ def test_the_backend_queues_on_this_driver():
     assert get_backend()._queued
 
 
-def test_a_host_array_may_change_once_from_numpy_returns():
+def test_a_host_array_may_change_once_copyto_returns():
     """The copy to the device runs later, from a private copy of the array."""
-    acc = tack.zeros(tack.i32, (1 << 16,))
+    acc = tack.zeros((1 << 16,), tack.i32)
     _add_into(acc, 1)                              # the copy below queues behind it
     values = np.full(1 << 16, 5, np.int32)
-    acc.from_numpy(values)
+    tack.copyto(acc, values)
     values[:] = -1
     del values
     gc.collect()
     _add_into(acc, 0)
-    np.testing.assert_array_equal(acc.to_numpy(), 5 + np.arange(1 << 16))
+    np.testing.assert_array_equal(acc.numpy(), 5 + np.arange(1 << 16))
 
 
 def test_the_host_memory_held_for_queued_copies_is_bounded():
     """A loop that writes and never reads waits now and then, rather than
     holding every array it ever wrote."""
     backend = get_backend()
-    acc = tack.zeros(tack.i32, (256,))
+    acc = tack.zeros((256,), tack.i32)
     for k in range(3 * backend._HOLD_COUNT):
-        acc.from_numpy(np.full(256, k, np.int32))
+        tack.copyto(acc, np.full(256, k, np.int32))
         assert len(backend._held) <= backend._HOLD_COUNT + 1
-    np.testing.assert_array_equal(acc.to_numpy(), 3 * backend._HOLD_COUNT - 1)
+    np.testing.assert_array_equal(acc.numpy(), 3 * backend._HOLD_COUNT - 1)
     assert not backend._held                        # the read waited, releasing them
 
 
@@ -210,8 +210,8 @@ def _heavy(x, out):
 def _heavy_queue(seconds):
     """Queue about ``seconds`` of `_heavy` (timed by its fastest of three
     runs, as other processes may share the device) and return the fields."""
-    x = tack.field(tack.f32, (1 << 20,))
-    out = tack.zeros(tack.f32, (1 << 20,))
+    x = tack.empty((1 << 20,))
+    out = tack.zeros((1 << 20,))
     _heavy(x, out)
     tack.sync()
     one = float("inf")
@@ -231,7 +231,7 @@ def test_a_read_waits_outside_the_launch_lock():
     read waits for long work."""
     backend = get_backend()
     x, out = _heavy_queue(0.5)
-    reader = threading.Thread(target=out.to_numpy)
+    reader = threading.Thread(target=out.numpy)
     reader.start()
     time.sleep(0.05)
     assert reader.is_alive(), "the queued work finished before the check"
@@ -244,23 +244,23 @@ def test_a_read_waits_outside_the_launch_lock():
 
 def test_a_marker_releases_the_holds_before_it():
     backend = get_backend()
-    acc = tack.zeros(tack.i32, (256,))
+    acc = tack.zeros((256,), tack.i32)
     tack.sync()
-    acc.from_numpy(np.full(256, 1, np.int32))
+    tack.copyto(acc, np.full(256, 1, np.int32))
     marker = backend.async_marker()
-    acc.from_numpy(np.full(256, 2, np.int32))      # after the mark: still held
+    tack.copyto(acc, np.full(256, 2, np.int32))      # after the mark: still held
     marker.wait()
     marker.wait()                                  # a second wait returns at once
     assert len(backend._held) == 1 and backend._held_bytes == 256 * 4
-    np.testing.assert_array_equal(acc.to_numpy(), 2)
+    np.testing.assert_array_equal(acc.numpy(), 2)
     assert not backend._held and backend._held_bytes == 0
 
 
 def test_markers_reuse_their_events():
     """Each wait hands its event back: many waits use one pool."""
     backend = get_backend()
-    acc = tack.zeros(tack.i32, (64,))
-    acc.to_numpy()
+    acc = tack.zeros((64,), tack.i32)
+    acc.numpy()
     pools = len(backend._event_pools)
     for k in range(3 * backend._EVENT_POOL_SIZE):
         _add_into(acc, 1)
@@ -273,23 +273,23 @@ def test_markers_reuse_their_events():
 def test_small_host_copies_do_not_wait_for_the_queue():
     """Appending a copy from pageable memory waited for the queue to drain
     (to the device up to 4 MiB, from it up to 1 KiB, driver 25.05): a
-    launch's scalar pack, a small from_numpy and a pattern fill waited for
+    launch's scalar pack, a small copyto and a pattern fill waited for
     the long kernel queued before them. They are staged in USM host memory."""
-    acc = tack.zeros(tack.i32, (64,))
-    big = tack.zeros(tack.f32, (1 << 20,))
+    acc = tack.zeros((64,), tack.i32)
+    big = tack.zeros((1 << 20,))
     _add_into(acc, 0)
     big.fill(1.0)
     tack.sync()
     _heavy_queue(0.3)
     t0 = time.perf_counter()
     _add_into(acc, 5)                              # its scalar is uploaded
-    acc.from_numpy(np.arange(64, dtype=np.int32))
-    big.from_numpy(np.full(1 << 20, 2.0, np.float32))
+    tack.copyto(acc, np.arange(64, dtype=np.int32))
+    tack.copyto(big, np.full(1 << 20, 2.0, np.float32))
     queued = time.perf_counter() - t0
     tack.sync()
     whole = time.perf_counter() - t0
     assert queued < 0.25 * whole, (queued, whole)
-    np.testing.assert_array_equal(acc.to_numpy(), np.arange(64))
+    np.testing.assert_array_equal(acc.numpy(), np.arange(64))
     assert big[7] == 2.0
 
 
@@ -299,19 +299,19 @@ def test_copies_either_side_of_the_staging_limits(nbytes):
     above them direct; both ways round trip."""
     n = nbytes // 4
     values = np.arange(n, dtype=np.int32) * 3 - 7
-    f = tack.zeros(tack.i32, (n,))
-    f.from_numpy(values)
+    f = tack.zeros((n,), tack.i32)
+    tack.copyto(f, values)
     _add_into(f, 1)
-    np.testing.assert_array_equal(f.to_numpy(), values + 1 + np.arange(n))
+    np.testing.assert_array_equal(f.numpy(), values + 1 + np.arange(n))
     assert f[n - 1] == values[-1] + n
 
 
 def test_staging_blocks_go_back_to_the_pool():
     backend = get_backend()
     staging = backend._staging
-    acc = tack.zeros(tack.i32, (256,))
+    acc = tack.zeros((256,), tack.i32)
     for k in range(200):
-        acc.from_numpy(np.full(256, k, np.int32))
+        tack.copyto(acc, np.full(256, k, np.int32))
         acc[k % 256]
     tack.sync()
     assert not backend._held
@@ -327,7 +327,7 @@ def test_threads_launch_and_free_at_once():
 
     def work(k):
         for _ in range(400):
-            f = tack.zeros(tack.i32, (256,))
+            f = tack.zeros((256,), tack.i32)
             _add_into(f, k)
             del f
 

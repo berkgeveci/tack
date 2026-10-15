@@ -45,13 +45,13 @@ class Grid:
 
 
 # Create a grid with some data
-data = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
-grad_out = tack.empty(dtype=tack.f32, shape=(n,))
+data = tack.empty((n,))
+out = tack.empty((n,))
+grad_out = tack.empty((n,))
 
 # Fill with a smooth function: sin(x)
 x_vals = np.linspace(0, 2 * np.pi, n, dtype=np.float32)
-data.from_numpy(np.sin(x_vals))
+tack.copyto(data, np.sin(x_vals))
 
 dx = float(x_vals[1] - x_vals[0])
 grid = Grid(data, dx)
@@ -77,13 +77,13 @@ process(grid, out)
 compute_gradient(grid, grad_out)
 
 # Verify: sample should be sin(x) * dx
-sampled = out.to_numpy()
+sampled = out.numpy()
 expected_sample = np.sin(x_vals) * dx
 assert np.allclose(sampled, expected_sample, atol=1e-5)
 print("Grid sampling: OK")
 
 # Verify: gradient of sin(x) ~= cos(x)
-grad = grad_out.to_numpy()
+grad = grad_out.numpy()
 expected_grad = np.cos(x_vals)
 interior = slice(2, n - 2)  # skip boundary effects
 max_err = np.max(np.abs(grad[interior] - expected_grad[interior]))
