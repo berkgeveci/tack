@@ -490,7 +490,8 @@ class MetalBackend(Backend):
         if Metal is None:
             raise ImportError(
                 "Metal backend requires pyobjc-framework-Metal. "
-                "Install with: pip install 'tack[metal]'"
+                "Install the [metal] extra: pip install -e 'packages/tack-core[metal]' "
+                "in a clone of the repository, or uv sync --extra metal"
             )
 
         self._device = Metal.MTLCreateSystemDefaultDevice()

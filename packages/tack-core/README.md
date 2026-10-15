@@ -30,14 +30,16 @@ print(out.numpy())
 
 ## Install
 
-Pick the extra matching your hardware:
+Tack is not on PyPI yet. From a clone of
+[the repository](https://github.com/berkgeveci/tack), pick the extra matching
+your hardware:
 
 ```bash
-pip install tack-core[cpu]          # LLVM JIT via llvmlite
-pip install tack-core[metal]        # Apple Silicon
-pip install tack-core[cuda]         # NVIDIA
-pip install tack-core[hip]          # AMD/ROCm — see the repo for hip-python
-pip install tack-core[level_zero]   # Intel — needs the system Level Zero runtime
+pip install -e "packages/tack-core[cpu]"          # LLVM JIT via llvmlite
+pip install -e "packages/tack-core[metal]"        # Apple Silicon
+pip install -e "packages/tack-core[cuda]"         # NVIDIA
+pip install -e "packages/tack-core[hip]"          # AMD/ROCm — see the repo for hip-python
+pip install -e "packages/tack-core[level_zero]"   # Intel — needs the system Level Zero runtime
 ```
 
 ## Backends

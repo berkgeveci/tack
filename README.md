@@ -39,15 +39,16 @@ cd tack
 uv sync --extra cpu    # add --extra metal, cuda, hip or level_zero for a GPU,
                        # and --extra interop for VTK and MFEM
 
-# Or install individual packages
-pip install tack-core              # core only
-pip install tack-core[cpu]         # core + CPU backend (LLVM JIT)
-pip install tack-core[metal]       # core + Metal backend (macOS)
-pip install tack-core[cuda]        # core + CUDA backend
-pip install tack-core[hip]         # core + HIP backend (see note below)
-pip install tack-core[level_zero]  # core + Level Zero backend (Intel)
-pip install tack-vis               # datasets and visualization (pulls in tack-core)
+# Or with pip, from the same clone (tack-core first: tack-vis needs it)
+pip install -e "packages/tack-core[cpu]"         # core + CPU backend (LLVM JIT)
+pip install -e "packages/tack-core[metal]"       # ...or + Metal (macOS)
+pip install -e "packages/tack-core[cuda]"        # ...or + CUDA
+pip install -e "packages/tack-core[hip]"         # ...or + HIP (see note below)
+pip install -e "packages/tack-core[level_zero]"  # ...or + Level Zero (Intel)
+pip install -e packages/tack-vis                 # datasets and visualization
 ```
+
+Tack is not on PyPI yet; install it from source as above.
 
 ## Backends
 
@@ -65,7 +66,7 @@ are allocated; `with tack.device("cuda"):` does so for a block, and
 device (`a.device`, `a.to_device(...)`), and a kernel runs where its arrays
 are. With nothing set, the default is the CPU.
 
-`hip-python` is on PyPI, so `pip install tack-core[hip]` is enough. It ships
+`hip-python` is on PyPI, so the `[hip]` extra is enough. It ships
 manylinux x86_64 wheels only, so the dependency carries a platform marker and
 installs nothing elsewhere rather than failing to resolve.
 
@@ -447,9 +448,8 @@ skip.
 On a system with ROCm installed:
 
 ```bash
-# Install hip-python and Tack
-pip install hip-python
-pip install tack-core
+# Install Tack with the HIP extra, which brings hip-python
+uv sync --extra cpu --extra hip
 
 # Run HIP test suite
 uv run pytest packages/tack-core/tests/test_hip.py -v

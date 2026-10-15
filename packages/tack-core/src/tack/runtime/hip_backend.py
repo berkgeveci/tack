@@ -20,7 +20,7 @@ Python thread (and an ``asyncio`` loop awaiting `tack.sync_async`) for the
 length of the kernel, and ROCm's stream synchronize holds the stream while it
 waits, so no other thread could launch on it meanwhile.
 
-Requires: hip-python (``pip install 'tack-core[hip]'``)
+Requires: hip-python (the ``[hip]`` extra)
 """
 
 import ctypes

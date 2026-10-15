@@ -87,12 +87,15 @@ execution model and does not certify participation or atomics. See the
 
 ## Installing
 
+Tack is not on PyPI yet. In a clone of the repository, each backend is an
+extra of `tack-core` (`uv sync --extra cuda` does the same as the line below):
+
 ```bash
-pip install 'tack-core[cpu]'          # llvmlite
-pip install 'tack-core[metal]'        # pyobjc-framework-Metal
-pip install 'tack-core[cuda]'         # cuda-python; needs the NVIDIA driver
-pip install 'tack-core[hip]'          # hip-python; needs ROCm
-pip install 'tack-core[level_zero]'   # installs nothing — see below
+pip install -e 'packages/tack-core[cpu]'          # llvmlite
+pip install -e 'packages/tack-core[metal]'        # pyobjc-framework-Metal
+pip install -e 'packages/tack-core[cuda]'         # cuda-python; needs the NVIDIA driver
+pip install -e 'packages/tack-core[hip]'          # hip-python; needs ROCm
+pip install -e 'packages/tack-core[level_zero]'   # installs nothing — see below
 ```
 
 Two of these need a word.

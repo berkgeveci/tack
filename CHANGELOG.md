@@ -85,6 +85,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- The install instructions say how to install from source: Tack is not on
+  PyPI yet, and `pip install tack-core` found nothing. The README, the
+  guide, the backends reference and the errors for a missing backend now
+  give `uv sync --extra ...` or `pip install -e 'packages/tack-core[...]'`
+  in a clone.
+
 - **Breaking:** `tack.deprecated` is gone: the first vis worklets
   (`flying_edges`, `compute_normals`, `cell_to_point`, `amr_blanking`) and
   the finite-element helpers in `tack.fe`, with the examples written on

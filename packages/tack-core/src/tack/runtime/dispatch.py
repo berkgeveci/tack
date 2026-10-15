@@ -29,14 +29,15 @@ _debug = os.environ.get("TACK_DEBUG", "").strip().lower() not in ("", "0", "fals
 # does not pin. It prints only where there is no ROCm and somebody asks for
 # HIP, so nothing catches it going stale except reading it.
 _BACKEND_HELP = {
-    "cpu": "Requires llvmlite:  pip install 'tack-core[cpu]'",
-    "metal": ("Requires macOS on Apple Silicon:  "
-              "pip install 'tack-core[metal]'"),
-    "cuda": ("Requires an NVIDIA GPU and the CUDA toolkit:  "
-             "pip install 'tack-core[cuda]'"),
+    "cpu": ("Requires llvmlite; in a clone of the repository:\n"
+            "    pip install -e 'packages/tack-core[cpu]'   (or: uv sync --extra cpu)"),
+    "metal": ("Requires macOS on Apple Silicon; in a clone of the repository:\n"
+              "    pip install -e 'packages/tack-core[metal]'   (or: uv sync --extra metal)"),
+    "cuda": ("Requires an NVIDIA GPU and the CUDA toolkit; in a clone of the repository:\n"
+             "    pip install -e 'packages/tack-core[cuda]'   (or: uv sync --extra cuda)"),
     "hip": (
-        "Requires an AMD GPU with ROCm, plus hip-python:\n"
-        "    pip install 'tack-core[hip]'\n"
+        "Requires an AMD GPU with ROCm, plus hip-python; in a clone:\n"
+        "    pip install -e 'packages/tack-core[hip]'   (or: uv sync --extra hip)\n"
         "  hip-python ships manylinux x86_64 wheels only, and its version\n"
         "  tracks the ROCm release it binds to — 7.1.x against ROCm 7.1,\n"
         "  7.2.x against 7.2. The extra sets a lower bound rather than a\n"
