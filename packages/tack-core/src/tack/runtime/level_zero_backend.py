@@ -33,14 +33,11 @@ from tack.lang.workgroup_participation import (
     requires_full_workgroups,
 )
 from tack.runtime import device_fill
-from tack.runtime.backend import Backend
+from tack.runtime.gpu_backend import GPUBackend
 from tack.runtime.kernel_utils import (
-    _get_launch,
     as_address,
-    bind_textures,
     check_launch_size,
     new_kernel_cache,
-    resolve_variant,
 )
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
@@ -1397,7 +1394,7 @@ class CompiledL0Kernel:
 # ---------------------------------------------------------------------------
 # LevelZeroBackend
 # ---------------------------------------------------------------------------
-class LevelZeroBackend(Backend):
+class LevelZeroBackend(GPUBackend):
     """Level Zero GPU backend — device-resident arrays, ocloc compilation."""
 
     name = "level_zero"
@@ -1756,69 +1753,6 @@ class LevelZeroBackend(Backend):
         buf._shared = True      # someone else's memory: launches on it complete
         return buf
 
-    def execute(self, kernel, args, kwargs):
-        """Execute a kernel on the Level Zero GPU.
-
-        The IR passes and device compilation run only when this argument
-        shape/type combination is new; see `resolve_variant`.
-        """
-        from tack.lang.array import Texture3D
-
-        variant, effective_args = resolve_variant(
-            self, kernel, args, kwargs,
-            build=self._build_variant,
-            store_texture_shapes=self._store_texture_shapes,
-        )
-        compiled, pack_info, pack_arrays = variant.payload
-
-        # Loop range comes from the pre-packing IR: packing rewrites the
-        # parameter list, and the range expression names the original args.
-        kernel_args = [a.array if isinstance(a, Texture3D) else a
-                       for a in effective_args]
-        loop_end, extents = _get_launch(variant.ir, kernel_args)
-        if loop_end <= 0:
-            # range(0) runs nothing; a negative count would wrap as uint32.
-            return
-        check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
-
-        # Textures bind their own snapshot, not the array they came from.
-        kernel_args = bind_textures(effective_args)
-
-        # Replace scalar args with the packed array buffers. The pack, the
-        # kernel's argument state and the command list are shared, so the
-        # whole launch holds the backend's lock (see `_launch_lock`).
-        with self._launch_lock:
-            if pack_info:
-                from tack.lang.ir_pack_scalars import split_args
-                from tack.runtime.kernel_utils import _update_pack_arrays
-                _update_pack_arrays(pack_arrays, pack_info, effective_args)
-                kept_args = split_args(effective_args, pack_info)
-                kernel_args = bind_textures(kept_args) + pack_arrays
-
-            compiled(kernel_args, loop_end, self, extents)
-            # Memory that can be read with no Tack call between -- a wrapped
-            # pointer, an exported array -- and a texture, whose image could
-            # be destroyed before a queued launch has read it: complete now.
-            if any(getattr(getattr(a, '_buffer', None), '_shared', False)
-                   or isinstance(a, L0TextureImage) for a in kernel_args):
-                self.synchronize()
-
-    def _store_texture_shapes(self, ir_func, effective_args):
-        """Record Texture3D extents, falling back to software sampling.
-
-        Devices without hardware samplers (Xe-HPC), or textures past the
-        device's 3D image limit, are sampled in software instead. That
-        changes the generated code, so it is decided here — before the
-        variant key is built — rather than at codegen time.
-        """
-        from tack.lang.array import Texture3D
-        for param, arg in zip(ir_func.params, effective_args):
-            if isinstance(arg, Texture3D):
-                if self.texture_in_hardware(arg.shape_3d):
-                    param._texture_shape = arg.shape_3d
-                else:
-                    param._is_texture = False  # software fallback
-
     def texture_in_hardware(self, shape_3d) -> bool:
         max_dim = self._max_image_3d
         return self._has_hw_sampler and all(s <= max_dim for s in shape_3d)
@@ -1826,27 +1760,15 @@ class LevelZeroBackend(Backend):
     def create_texture_image(self, shape_3d) -> L0TextureImage:
         return L0TextureImage(shape_3d, self)
 
-    def _build_variant(self, ir_func, effective_args):
-        """Pack scalars, annotate, compile. Runs once per variant.
+    _texture_image_type = L0TextureImage
 
-        Packing rewrites the parameter list, so it works on its own copy —
-        the caller keeps `ir_func` for loop-range resolution.
-        """
-        from tack.lang.ir_pack_scalars import pack_scalars
-        from tack.lang.ir_traversal import clone_ir
-        from tack.lang.ir_type_annotate import annotate_types
-        from tack.lang.ir_verify import verify_ir
-        from tack.runtime.kernel_utils import _create_pack_arrays
+    def _launch_guard(self, variant):
+        # The pack, the kernel's argument state and the command list are
+        # backend-wide, so the whole launch holds the backend's lock.
+        return self._launch_lock
 
-        packed = clone_ir(ir_func)
-        _, pack_info = pack_scalars(packed, effective_args)
-        verify_ir(packed, 'packed')
-        annotate_types(packed)
-        verify_ir(packed, 'typed')
-        compiled = self._compile_kernel(packed)
-        pack_arrays = (_create_pack_arrays(pack_info, effective_args, self)
-                       if pack_info else None)
-        return compiled, pack_info, pack_arrays
+    def _launch(self, compiled, kernel_args, loop_end, extents):
+        compiled(kernel_args, loop_end, self, extents)
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledL0Kernel:
         """Compile Tack IR → OpenCL C → SPIR-V → ze_module → ze_kernel."""

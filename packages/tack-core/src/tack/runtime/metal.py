@@ -38,13 +38,9 @@ from tack.lang.workgroup_participation import (
     check_workgroup_launch,
     requires_full_workgroups,
 )
-from tack.runtime.backend import Backend
+from tack.runtime.gpu_backend import GPUBackend, _no_guard
 from tack.runtime.kernel_utils import (
-    _get_launch,
-    bind_textures,
-    check_launch_size,
     new_kernel_cache,
-    resolve_variant,
 )
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
@@ -457,7 +453,7 @@ class _CommandBufferMarker:
             raise RuntimeError(f"Metal compute error: {error}")
 
 
-class MetalBackend(Backend):
+class MetalBackend(GPUBackend):
     """Metal GPU backend — zero-copy dispatch on Apple Silicon unified memory.
 
     Arrays are backed by Metal shared buffers allocated at array creation time.
@@ -612,62 +608,30 @@ class MetalBackend(Backend):
         buf._view = np.frombuffer(raw, dtype=dtype.numpy_dtype).reshape(shape)
         return buf
 
-    def execute(self, kernel, args, kwargs):
-        """Execute a kernel on the Metal GPU with zero-copy dispatch.
+    _max_launch = _MAX_LAUNCH
 
-        The IR passes and MSL compilation run only when this argument
-        shape/type combination is new; see `resolve_variant`.
-        """
-        from tack.lang.array import Texture3D
+    def _compile_kernel(self, packed_ir):
+        return _compile_kernel(self._device, self._command_queue, packed_ir, backend=self)
 
-        variant, effective_args = resolve_variant(
-            self, kernel, args, kwargs,
-            build=self._build_variant,
-        )
-        compiled, pack_info, pack_arrays = variant.payload
-
-        # Loop range comes from the pre-packing IR: packing rewrites the
-        # parameter list, and the range expression names the original args.
-        kernel_args = [a.array if isinstance(a, Texture3D) else a
-                       for a in effective_args]
-        loop_end, extents = _get_launch(variant.ir, kernel_args)
-        if loop_end <= 0:
-            # range(0) runs nothing; do not dispatch an empty grid.
-            return
-        check_launch_size(f"Kernel '{kernel.name}'", loop_end, _MAX_LAUNCH, self.label)
-
-        # Textures bind their own snapshot, not the array they came from.
-        kernel_args = bind_textures(effective_args)
-
-        # Replace scalar args with packed buffers of their values. Launches are
-        # queued, so each gets its own: a variant's shared pack, rewritten for
-        # the next call, could change under a launch that has not run yet.
-        if pack_info:
-            from tack.lang.ir_pack_scalars import split_args
-            kept_args = split_args(effective_args, pack_info)
-            kernel_args = bind_textures(kept_args) + [
-                _Uniforms(self._device, dtype, entries, effective_args)
-                for _, dtype, entries in pack_info]
+    def _launch(self, compiled, kernel_args, loop_end, extents):
         compiled(kernel_args, loop_end, extents)
 
-    def _build_variant(self, ir_func, effective_args):
-        """Pack scalars, annotate, compile. Runs once per variant.
+    # Launches are queued, so each owns its packed scalars (`_Uniforms`):
+    # a variant's shared pack, rewritten for the next call, could change
+    # under a launch that has not run yet. Nothing to lock, then, and
+    # memory handed outside Tack is completed by the launch itself.
+    def _variant_scalar_buffers(self, pack_info, effective_args):
+        return None
 
-        Packing rewrites the parameter list, so it works on its own copy —
-        the caller keeps `ir_func` for loop-range resolution.
-        """
-        from tack.lang.ir_pack_scalars import pack_scalars
-        from tack.lang.ir_traversal import clone_ir
-        from tack.lang.ir_type_annotate import annotate_types
-        from tack.lang.ir_verify import verify_ir
+    def _scalar_buffers(self, pack_info, pack_arrays, effective_args):
+        return [_Uniforms(self._device, dtype, entries, effective_args)
+                for _, dtype, entries in pack_info]
 
-        packed = clone_ir(ir_func)
-        _, pack_info = pack_scalars(packed, effective_args)
-        verify_ir(packed, 'packed')
-        annotate_types(packed)
-        verify_ir(packed, 'typed')
-        compiled = _compile_kernel(self._device, self._command_queue, packed, backend=self)
-        return compiled, pack_info, None
+    def _launch_guard(self, variant):
+        return _no_guard
+
+    def _must_complete(self, kernel_args):
+        return False
 
     def cache_target(self):
         # The stored artifact is MSL source, which does not depend on the

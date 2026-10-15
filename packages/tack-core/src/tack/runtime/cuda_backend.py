@@ -27,14 +27,11 @@ from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
 from tack.runtime import device_fill
-from tack.runtime.backend import Backend
+from tack.runtime.gpu_backend import GPUBackend
 from tack.runtime.kernel_utils import (
-    _get_launch,
     as_address,
-    bind_textures,
     check_launch_size,
     new_kernel_cache,
-    resolve_variant,
 )
 from tack.runtime.nvrtc_version import old_nvrtc_message
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
@@ -843,7 +840,7 @@ class CompiledCUDAKernel:
         ))
 
 
-class CUDABackend(Backend):
+class CUDABackend(GPUBackend):
     """CUDA GPU backend — device-resident arrays, NVRTC compilation."""
 
     name = "cuda"
@@ -1004,73 +1001,10 @@ class CUDABackend(Backend):
         buf._shared = True      # someone else's memory: launches on it complete
         return buf
 
-    def execute(self, kernel, args, kwargs):
-        """Execute a kernel on the CUDA GPU.
+    _texture_image_type = CUDATextureImage
 
-        The IR passes and device compilation run only when this argument
-        shape/type combination is new; see `resolve_variant`.
-        """
-        from tack.lang.array import Texture3D
-
-        variant, effective_args = resolve_variant(
-            self, kernel, args, kwargs,
-            build=self._build_variant,
-        )
-        compiled, pack_info, pack_arrays = variant.payload
-
-        # Loop range comes from the pre-packing IR: packing rewrites the
-        # parameter list, and the range expression names the original args.
-        kernel_args = [a.array if isinstance(a, Texture3D) else a
-                       for a in effective_args]
-        loop_end, extents = _get_launch(variant.ir, kernel_args)
-        if loop_end <= 0:
-            # range(0) runs nothing, and cuLaunchKernel rejects an empty grid.
-            return
-        check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
-
-        # Textures bind their own snapshot, not the array they came from.
-        kernel_args = bind_textures(effective_args)
-
-        # Replace scalar args with the packed array buffers. The buffers
-        # belong to the variant, so writing them and the launch that reads
-        # them happen under its lock (see KernelVariant.dispatch_lock).
-        with variant.dispatch_lock:
-            if pack_info:
-                from tack.lang.ir_pack_scalars import split_args
-                from tack.runtime.kernel_utils import _update_pack_arrays
-                _update_pack_arrays(pack_arrays, pack_info, effective_args)
-                kept_args = split_args(effective_args, pack_info)
-                kernel_args = bind_textures(kept_args) + pack_arrays
-
-            compiled(kernel_args, loop_end, extents, self._launch_limits, self._stream)
-        # Memory that can be read with no Tack call between -- a wrapped
-        # pointer, an exported array -- and a texture, whose image could be
-        # destroyed before a queued launch has read it: complete now.
-        if any(getattr(getattr(a, '_buffer', None), '_shared', False)
-               or isinstance(a, CUDATextureImage) for a in kernel_args):
-            self.synchronize()
-
-    def _build_variant(self, ir_func, effective_args):
-        """Pack scalars, annotate, compile. Runs once per variant.
-
-        Packing rewrites the parameter list, so it works on its own copy —
-        the caller keeps `ir_func` for loop-range resolution.
-        """
-        from tack.lang.ir_pack_scalars import pack_scalars
-        from tack.lang.ir_traversal import clone_ir
-        from tack.lang.ir_type_annotate import annotate_types
-        from tack.lang.ir_verify import verify_ir
-        from tack.runtime.kernel_utils import _create_pack_arrays
-
-        packed = clone_ir(ir_func)
-        _, pack_info = pack_scalars(packed, effective_args)
-        verify_ir(packed, 'packed')
-        annotate_types(packed)
-        verify_ir(packed, 'typed')
-        compiled = self._compile_kernel(packed)
-        pack_arrays = (_create_pack_arrays(pack_info, effective_args, self)
-                       if pack_info else None)
-        return compiled, pack_info, pack_arrays
+    def _launch(self, compiled, kernel_args, loop_end, extents):
+        compiled(kernel_args, loop_end, extents, self._launch_limits, self._stream)
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledCUDAKernel:
         """Compile Tack IR → CUDA C → PTX → CUfunction."""
