@@ -2,7 +2,7 @@
 
 Tack's former LICM treated an invariant address as an invariant value and
 could execute a zero-trip loop's assignments. Its CSE invalidation tracked
-field names rather than possibly overlapping storage. Neither pass has the
+array names rather than possibly overlapping storage. Neither pass has the
 memory and control-flow analysis required to justify those transformations,
 so hoisting and CSE are left to LLVM and the vendor compilers.
 
@@ -151,8 +151,8 @@ def _copy_prop_body(body: list, assign_counts: dict[str, int] | None = None) -> 
     # Each statement is tested after the copies before it are applied, so
     # a chain resolves to its root in one walk: with a = p, the later
     # b = a reads b = p and is itself a copy of p. Nested device functions
-    # pass a field down as exactly such a chain, and a link left behind is
-    # a local holding a field, which no backend can compile.
+    # pass an array down as exactly such a chain, and a link left behind is
+    # a local holding an array, which no backend can compile.
     resolved = {}
     result = []
     for stmt in body:

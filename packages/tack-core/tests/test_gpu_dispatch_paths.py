@@ -78,10 +78,10 @@ for sub in ("driver", "nvrtc"):
 import numpy as np
 import tack
 import tack.lang.types
-from tack.lang.field import Field, NumpyBuffer
+from tack.lang.array import Array, NumpyBuffer
 from tack.runtime.kernel_utils import new_kernel_cache
 
-tack.init(arch=tack.cpu)   # fields are allocated on the host
+tack.set_default_device("cpu")   # arrays are allocated on the host
 {cls}
 
 
@@ -107,7 +107,7 @@ def make_backend():
         return rec
 
     backend._compile_kernel = _compile_kernel
-    backend.allocate_field = (
+    backend.allocate_array = (
         lambda dtype, shape, exportable=False: NumpyBuffer(dtype.numpy_dtype, shape))
     {attrs}
     return backend
@@ -121,9 +121,9 @@ def elementwise(x, out, n):
 
 @tack.kernel
 def grid2d(a, rows, cols):
-    # Scalar extents and a flat field: `a[i, j]` would compile the row
+    # Scalar extents and a flat array: `a[i, j]` would compile the row
     # stride in, a variant per column count, by design.
-    for i, j in tack.ndrange(rows, cols):
+    for i, j in tack.ndindex(rows, cols):
         a[i * cols + j] = 1.0
 
 
@@ -134,8 +134,8 @@ def rowwise(a, out, rows, cols):
             out[i, j] = a[i, j] + 1.0
 
 
-def field(shape, dtype=None):
-    return tack.field(dtype=dtype or tack.f32, shape=shape)
+def array(shape, dtype=None):
+    return tack.empty(shape, dtype or tack.f32)
 
 
 def check(label, cond):
@@ -145,15 +145,15 @@ def check(label, cond):
 _CHECKS = '''
 # --- a launch happens, with the right range -------------------------
 b = make_backend()
-x, out = field((128,)), field((128,))
+x, out = array((128,)), array((128,))
 b.execute(elementwise, (x, out, 128), {})
 check("one compile", len(b.compiled) == 1)
 check("one launch", len(b.compiled[0].launches) == 1)
 check("loop range", b.compiled[0].launches[0][1] == 128)
 check("launch args present",
       all(a is not None for a in b.compiled[0].launches[0][0]))
-check("fields reach the launch",
-      any(isinstance(a, Field) for a in b.compiled[0].launches[0][0]))
+check("arrays reach the launch",
+      any(isinstance(a, Array) for a in b.compiled[0].launches[0][0]))
 
 # --- the launch and its scalar pack are serialized ------------------
 # Pack buffers (and Level Zero's command lists) are shared launch state,
@@ -167,7 +167,7 @@ def launch_lock_held(backend):
 
 b = make_backend()
 held = []
-x, out = field((32,)), field((32,))
+x, out = array((32,)), array((32,))
 b.execute(elementwise, (x, out, 32), {})
 real_call = type(b.compiled[0]).__call__
 type(b.compiled[0]).__call__ = (
@@ -178,7 +178,7 @@ check("launch runs under the dispatch lock", held == [True])
 
 # --- repeat dispatches reuse the variant ----------------------------
 b = make_backend()
-x, out = field((64,)), field((64,))
+x, out = array((64,)), array((64,))
 for _ in range(5):
     b.execute(elementwise, (x, out, 64), {})
 check("compiled once for 5 dispatches", len(b.compiled) == 1)
@@ -187,7 +187,7 @@ check("five launches", len(b.compiled[0].launches) == 5)
 # --- a launch past the grid's limit is refused, not wrapped ---------
 b = make_backend()
 b._max_launch = 64
-x, out = field((128,)), field((128,))
+x, out = array((128,)), array((128,))
 b.execute(elementwise, (x, out, 64), {})
 try:
     b.execute(elementwise, (x, out, 128), {})
@@ -203,7 +203,7 @@ calls = []
 real = opt.optimize_ir
 opt.optimize_ir = lambda f: (calls.append(1), real(f))[1]
 b = make_backend()
-x, out = field((64,)), field((64,))
+x, out = array((64,)), array((64,))
 for _ in range(6):
     b.execute(elementwise, (x, out, 64), {})
 opt.optimize_ir = real
@@ -212,40 +212,40 @@ check("optimize_ir ran once, not per dispatch, got %d" % len(calls), len(calls) 
 # --- a flat length must not multiply variants -----------------------
 b = make_backend()
 for n in (16, 32, 64, 128, 256):
-    x, out = field((n,)), field((n,))
+    x, out = array((n,)), array((n,))
     b.execute(elementwise, (x, out, n), {})
 check("one variant across lengths, got %d" % len(b.compiled), len(b.compiled) == 1)
 check("ranges", [l[1] for l in b.compiled[0].launches] == [16, 32, 64, 128, 256])
 
-# --- a 2-D ndrange launches its extents, one variant for every shape --
+# --- a 2-D ndindex launches its extents, one variant for every shape --
 b = make_backend()
 for rows, cols in ((3, 5), (7, 11), (1, 300)):
-    b.execute(grid2d, (field((rows * cols,)), rows, cols), {})
+    b.execute(grid2d, (array((rows * cols,)), rows, cols), {})
 check("one variant across 2-D shapes, got %d" % len(b.compiled), len(b.compiled) == 1)
 check("extents reach the launch, got %s" % [l[2] for l in b.compiled[0].launches],
       [l[2] for l in b.compiled[0].launches] == [(3, 5), (7, 11), (1, 300)])
 check("items are the product", [l[1] for l in b.compiled[0].launches] == [15, 77, 300])
-b.execute(grid2d, (field((4,)), 0, 4), {})
+b.execute(grid2d, (array((4,)), 0, 4), {})
 check("an empty extent launches nothing", len(b.compiled[0].launches) == 3)
 
 # --- but a changed row stride must ----------------------------------
 b = make_backend()
-a1, o1 = field((4, 8)), field((4, 8))
+a1, o1 = array((4, 8)), array((4, 8))
 b.execute(rowwise, (a1, o1, 4, 8), {})
 check("first 2d variant", len(b.compiled) == 1)
-a2, o2 = field((8, 4)), field((8, 4))
+a2, o2 = array((8, 4)), array((8, 4))
 b.execute(rowwise, (a2, o2, 8, 4), {})
 check("row stride must not reuse code, got %d" % len(b.compiled), len(b.compiled) == 2)
-a3, o3 = field((4, 8)), field((4, 8))
+a3, o3 = array((4, 8)), array((4, 8))
 b.execute(rowwise, (a3, o3, 4, 8), {})
 check("returning to the first shape reuses it, got %d" % len(b.compiled),
       len(b.compiled) == 2)
 
 # --- dtype still separates variants ---------------------------------
 b = make_backend()
-x, out = field((64,)), field((64,))
+x, out = array((64,)), array((64,))
 b.execute(elementwise, (x, out, 64), {})
-xi, oi = field((64,), tack.i32), field((64,), tack.i32)
+xi, oi = array((64,), tack.i32), array((64,), tack.i32)
 b.execute(elementwise, (xi, oi, 64), {})
 check("dtype variant", len(b.compiled) == 2)
 
@@ -261,7 +261,7 @@ from tack.runtime.backend import Backend as BaseBackend
 b = make_backend()
 check("subclasses Backend", isinstance(b, BaseBackend))
 check("declares an arch name", b.name != BaseBackend.name)
-check("arch name is an init value", hasattr(tack, b.name))
+check("arch name is a device type", b.name in __import__("tack.runtime.dispatch", fromlist=["_"])._CONSTRUCTORS)
 check("declares supported dtypes", bool(b.supported_dtypes))
 check("supports_f64 is derived from supported_dtypes",
       b.supports_f64 == (tack.lang.types.f64 in b.supported_dtypes))
@@ -285,7 +285,7 @@ if b.device_memory_spaces:
 
     # And a real address does reach the driver, which is the point of
     # moving the call outside the `try`: a fault there must not come back
-    # as host memory, because the damage lands upstream -- field_from_ptr
+    # as host memory, because the damage lands upstream -- array_from_ptr
     # then refuses a good device pointer with a message about the wrong
     # thing. D9 is what that costs when it goes unnoticed.
     # Import only this run's backend: each subprocess stubs the bindings
@@ -346,7 +346,7 @@ finally:
 check("invalid packing not compiled", not b.compiled)
 check("invalid packing not cached", not b._cache.get(elementwise))
 
-# --- a texture binds its own snapshot, never its field --------------
+# --- a texture binds its own snapshot, never its array --------------
 @tack.kernel
 def sample(out, tex, n):
     for i in range(n):
@@ -354,17 +354,17 @@ def sample(out, tex, n):
 
 for shape in ((4, 4, 4), (4, 4, 20000)):
     b = make_backend()
-    # Made while CPU is active, so its storage is a private field whatever
+    # Made while CPU is active, so its storage is a private array whatever
     # this backend would build; what matters is which object reaches the
     # launch, through the scalar-packing path the count takes.
-    data = field((shape[0] * shape[1] * shape[2],))
+    data = array((shape[0] * shape[1] * shape[2],))
     tex = tack.texture3d(data, shape=shape)
-    out = field((1,))
+    out = array((1,))
     b.execute(sample, (out, tex, 1), {})
     bound = b.compiled[0].launches[0][0]
     check("texture snapshot reaches the launch",
           any(a is tex._storage for a in bound))
-    check("texture's field does not", not any(a is data for a in bound))
+    check("texture's array does not", not any(a is data for a in bound))
     param = next(p for p in b.compiled[0].ir.params if p.name == "tex")
     check("variant and Texture3D agree on hardware sampling for %s" % (shape,),
           param._is_texture == b.texture_in_hardware(shape))

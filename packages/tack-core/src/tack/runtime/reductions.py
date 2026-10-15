@@ -1,4 +1,4 @@
-"""Host reductions and identities shared by Field and device fallbacks."""
+"""Host reductions and identities shared by Array and device fallbacks."""
 
 import numpy as np
 
@@ -9,7 +9,7 @@ def empty_reduction(op):
     if op == 'sum':
         return 0.0
     if op in ('min', 'max'):
-        raise ValueError(f'{op} reduction requires a nonempty field')
+        raise ValueError(f'{op} reduction requires a nonempty array')
     raise ValueError(f'Unknown reduction: {op}')
 
 

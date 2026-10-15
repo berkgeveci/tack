@@ -16,11 +16,11 @@ def allocate(counter, slots, n):
 
 def test_the_old_value_allocates_unique_slots(backend):
     n = 4096
-    counter = tack.zeros(dtype=tack.i32, shape=(1,))
-    slots = tack.field(dtype=tack.i32, shape=(n,))
+    counter = tack.zeros((1,), tack.i32)
+    slots = tack.empty((n,), tack.i32)
     slots.fill(-1)
     allocate(counter, slots, n)
-    np.testing.assert_array_equal(np.sort(slots.to_numpy()), np.arange(n))
+    np.testing.assert_array_equal(np.sort(slots.numpy()), np.arange(n))
     assert counter[0] == n
 
 
@@ -37,10 +37,10 @@ def test_add_returns_every_partial_sum_once(backend, dtype):
     if dtype not in get_backend().supported_atomic_dtypes:
         pytest.skip(f"{dtype} atomics are not implemented on {get_backend().name}")
     n = 2048
-    total = tack.zeros(dtype=dtype, shape=(1,))
-    olds = tack.field(dtype=dtype, shape=(n,))
+    total = tack.zeros((1,), dtype)
+    olds = tack.empty((n,), dtype)
     partial_sums(total, olds, n)
-    np.testing.assert_array_equal(np.sort(olds.to_numpy()), 3 * np.arange(n))
+    np.testing.assert_array_equal(np.sort(olds.numpy()), 3 * np.arange(n))
     assert total[0] == 3 * n
 
 
@@ -59,15 +59,15 @@ def extrema_in_order(f, u, out):
 
 
 def test_min_max_and_float_add_return_the_old_value(backend):
-    f = tack.field(dtype=tack.f32, shape=(3,))
-    f.from_numpy(np.array([10.0, -3.0, 1.0], np.float32))
-    u = tack.field(dtype=tack.u32, shape=(2,))
-    u.from_numpy(np.array([4, 0], np.uint32))
-    out = tack.field(dtype=tack.f32, shape=(9,))
+    f = tack.empty((3,))
+    tack.copyto(f, np.array([10.0, -3.0, 1.0], np.float32))
+    u = tack.empty((2,), tack.u32)
+    tack.copyto(u, np.array([4, 0], np.uint32))
+    out = tack.empty((9,))
     extrema_in_order(f, u, out)
-    np.testing.assert_array_equal(out.to_numpy(), [10, 5, -3, -1, 1, 4, 9, 0, 1.5])
-    np.testing.assert_array_equal(f.to_numpy(), [5.0, -1.0, 2.5])
-    np.testing.assert_array_equal(u.to_numpy(), [2, 1])
+    np.testing.assert_array_equal(out.numpy(), [10, 5, -3, -1, 1, 4, 9, 0, 1.5])
+    np.testing.assert_array_equal(f.numpy(), [5.0, -1.0, 2.5])
+    np.testing.assert_array_equal(u.numpy(), [2, 1])
 
 
 @tack.kernel
@@ -84,10 +84,10 @@ def test_an_atomic_operand_keeps_source_order(backend):
     lands between the two, when it is negative. It is never positive, as
     it would be if the atomic ran first."""
     n = 1024
-    f = tack.zeros(dtype=tack.f32, shape=(1,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    f = tack.zeros((1,))
+    out = tack.empty((n,))
     operands_in_order(f, out, n)
-    assert np.all(out.to_numpy() <= 0.0)
+    assert np.all(out.numpy() <= 0.0)
     assert f[0] == n
 
 
@@ -103,12 +103,12 @@ def test_a_vector_atomic_returns_the_components_old_values(backend):
     the element as a whole is not updated atomically, so the two olds may
     come from different moments, but each is a multiple of its increment."""
     n = 512
-    vf = tack.Vector.field(2, dtype=tack.f32, shape=(1,))
-    vf.fill(0)                      # a new field holds unspecified values
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    vf = tack.empty((1,), tack.vec(2, tack.f32))
+    vf.fill(0)                      # a new array holds unspecified values
+    out = tack.empty((n,))
     vector_olds(vf, out, n)
-    np.testing.assert_array_equal(vf.to_numpy(), [n, 10 * n])
-    assert np.all(np.abs(out.to_numpy()) % 10.0 == 0.0)
+    np.testing.assert_array_equal(vf.numpy(), [[n, 10 * n]])
+    assert np.all(np.abs(out.numpy()) % 10.0 == 0.0)
 
 
 def test_barrier_is_still_a_statement_only():

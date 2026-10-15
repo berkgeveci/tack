@@ -653,9 +653,9 @@ def _build_chunk_wrapper(compiled) -> int:
     from tack.codegen.llvm_gen import _llvm_type
 
     ptypes = []
-    for ptype, is_field in zip(compiled._param_types, compiled._param_is_field):
+    for ptype, is_array in zip(compiled._param_types, compiled._param_is_array):
         t = _llvm_type(ptype)
-        ptypes.append(t.as_pointer() if is_field else t)
+        ptypes.append(t.as_pointer() if is_array else t)
     ptypes.extend([_i64] * compiled._num_dims)
     kernel_type = ir.FunctionType(ir.VoidType(), [*ptypes, _i64, _i64])
     module = ir.Module(name=f"chunk_{compiled._func_name}")
@@ -687,19 +687,19 @@ _SLOT_CODES = {ctypes.c_int8: "b7x", ctypes.c_uint8: "B7x", ctypes.c_int16: "h6x
 
 
 def pack_args(compiled, prefix: tuple):
-    """The ``bind()`` prefix as 8-byte slots: a field's address, a scalar
+    """The ``bind()`` prefix as 8-byte slots: an array's address, a scalar
     stored with its own ctypes type at the slot's start, an extent as i64.
     One `struct.pack_into` with a format built once per kernel, instead of
     a ctypes `from_buffer` per slot (6 µs for nine slots on a 2 GHz Xeon)."""
-    fields = compiled._param_is_field
+    arrays = compiled._param_is_array
     fmt = compiled._pack_formats.get(len(prefix))
     if fmt is None:
-        codes = ["Q" if fields[i] else _SLOT_CODES[type(prefix[i])]
-                 for i in range(min(len(prefix), len(fields)))]
-        codes.extend("q" for _ in range(len(fields), len(prefix)))
+        codes = ["Q" if arrays[i] else _SLOT_CODES[type(prefix[i])]
+                 for i in range(min(len(prefix), len(arrays)))]
+        codes.extend("q" for _ in range(len(arrays), len(prefix)))
         fmt = compiled._pack_formats[len(prefix)] = "=" + "".join(codes)
     pack = (ctypes.c_uint64 * max(1, len(prefix)))()
     struct.pack_into(fmt, pack, 0,
-                     *(a if f else a.value for a, f in zip(prefix, fields)),
-                     *prefix[len(fields):])
+                     *(a if f else a.value for a, f in zip(prefix, arrays)),
+                     *prefix[len(arrays):])
     return pack

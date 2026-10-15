@@ -20,6 +20,6 @@ def entropy(data, field, bins=10):
     if size_of(field.values) == 0:
         raise ValueError("entropy of no values")
     counts, _ = histogram(materialize(field.values), bins=bins)
-    p = np.asarray(counts.to_numpy() if hasattr(counts, "to_numpy") else counts, float)
+    p = np.asarray(counts.numpy() if hasattr(counts, "numpy") else counts, float)
     p = p[p > 0] / p.sum()
     return 0.0 - float((p * np.log2(p)).sum())     # 0.0, not -0.0, for one value

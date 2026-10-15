@@ -4,11 +4,11 @@ When a @tack.kernel is called with a @tack.device_class object, this pass
 rewrites the kernel AST before IR transformation:
 
 1. Removes template parameters from the function signature
-2. Adds synthetic parameters for the template object's field attributes
+2. Adds synthetic parameters for the template object's array attributes
 3. Rewrites method calls (obj.method(args)) to plain function calls
 4. Resolves self.attr references in method bodies:
    - scalar (int/float) → ast.Constant
-   - Field → ast.Name referencing synthetic parameter
+   - Array → ast.Name referencing synthetic parameter
 5. Rewrites ``for c in obj:`` over the object's iteration space (see
    ``iteration_space``)
 
@@ -17,7 +17,7 @@ A template may hold other templates as instance attributes, to any depth:
 reads its attribute, in methods and (as ``obj.base...``) in kernels. The
 whole tree is one template: ``classify_template_attrs`` flattens it, a
 nested object's attributes named by their path (``base__step``), so the
-runtime expands, detects and keys nested fields and scalars as it does its
+runtime expands, detects and keys nested arrays and scalars as it does its
 own, and every method of the tree takes the same synthetic parameters.
 Each nested class is part of the cache key, as the outer one is.
 """
@@ -28,7 +28,7 @@ import copy
 import threading
 import weakref
 
-from tack.lang.field import Field
+from tack.lang.array import Array
 from tack.lang.func import Func
 from tack.lang.ir_names import fresh_name
 
@@ -75,7 +75,7 @@ def _class_constants(cls):
 _NESTED = "__"
 
 # One dispatch reads a template's tree several times -- its cache key, its
-# expanded arguments, its vector fields -- and each pass walked and
+# expanded arguments, its vector arrays -- and each pass walked and
 # classified the whole tree again, 20 us a level. Within `template_scope`
 # each object's answers are found once. The objects are the call's
 # arguments, alive throughout, so their ids cannot be reused within it.
@@ -149,9 +149,9 @@ def _prefix(path):
 
 
 def _classify_own(obj):
-    """One object's own constants, fields and runtime scalars (not its children's)."""
+    """One object's own constants, arrays and runtime scalars (not its children's)."""
     scalars = _class_constants(type(obj))
-    fields = {}
+    arrays = {}
     runtime_scalars = {}
 
     # Scan instance variables (runtime parameters)
@@ -166,17 +166,17 @@ def _classify_own(obj):
         val = getattr(obj, name)
         if isinstance(val, (int, float)):
             runtime_scalars[name] = val
-        elif isinstance(val, Field):
-            fields[name] = val
-    return scalars, fields, runtime_scalars
+        elif isinstance(val, Array):
+            arrays[name] = val
+    return scalars, arrays, runtime_scalars
 
 
 def classify_template_attrs(obj):
-    """Classify a template object's attributes into constants, runtime scalars, and fields.
+    """Classify a template object's attributes into constants, runtime scalars, and arrays.
 
-    Returns (scalars, fields, runtime_scalars) where:
+    Returns (scalars, arrays, runtime_scalars) where:
     - scalars: dict[str, int|float] — class-level variables, become compile-time constants
-    - fields: dict[str, Field] — instance fields, become extra kernel parameters
+    - arrays: dict[str, Array] — instance arrays, become extra kernel parameters
     - runtime_scalars: dict[str, int|float] — instance scalars, become kernel scalar parameters
 
     Class variables (defined on the class, not in __init__) are treated as
@@ -271,7 +271,7 @@ def iteration_space(cls) -> tuple:
     three names of its scalar attributes, class constants or instance
     values. One name makes ``for c in obj`` the loop ``for c in
     range(obj.name)``, with ``c`` an integer. Two or three make it an
-    ``ndrange`` over them, with ``c`` the vector of indices, ``c[0]``
+    ``ndindex`` over them, with ``c`` the vector of indices, ``c[0]``
     running fastest; at the top of a kernel that loop is launched in its
     own shape, so nothing divides to recover the indices. The object's
     methods take ``c`` as it comes, so a kernel written ``for c in obj:``
@@ -289,11 +289,11 @@ def iteration_space(cls) -> tuple:
     return names
 
 
-def template_field_param_name(param_name, attr_name):
-    """The kernel parameter a template's field attribute becomes.
+def template_array_param_name(param_name, attr_name):
+    """The kernel parameter a template's array attribute becomes.
 
     The runtime predicts this name before lowering to tell the transform
-    which of those parameters are vector fields, so both sides must agree;
+    which of those parameters are vector arrays, so both sides must agree;
     `fresh_name` only departs from it when the kernel's own source already
     uses the name.
     """
@@ -317,7 +317,7 @@ def rewrite_templates(kernel_ast, template_args):
     resolved_funcs = {}
     # Reserve source names in both the caller and template methods before
     # allocating synthetic parameters. Attribute expansion must not merge a
-    # user's binding with a field/scalar reference in the rewritten AST.
+    # user's binding with an array/scalar reference in the rewritten AST.
     sources = [funcdef]
     for _, obj in template_args.values():
         for _, node in template_tree(obj):
@@ -344,14 +344,14 @@ def rewrite_templates(kernel_ast, template_args):
 
 class _Node:
     """One object of a template tree, as its methods see it: its own constants, the
-    synthetic names of its fields and runtime scalars, its resolved methods and
+    synthetic names of its arrays and runtime scalars, its resolved methods and
     device-function attributes, and its child nodes."""
 
     def __init__(self, obj, path):
         self.obj = obj
         self.path = path
         self.scalars = {}
-        self.fields = {}
+        self.arrays = {}
         self.runtime = {}
         self.methods = {}
         self.funcs = {}
@@ -361,13 +361,13 @@ class _Node:
 def _template_nodes(param_name, obj, used_names, resolved_funcs):
     """The resolved tree of one template argument: ``(root, extra)``, ``extra`` the
     synthetic parameters every resolved method takes, in the runtime's order --
-    the flattened fields by name, then the flattened runtime scalars by name."""
-    _, fields, runtime = classify_template_attrs(obj)
-    field_names = {key: fresh_name(template_field_param_name(param_name, key), used_names)
-                   for key in sorted(fields)}
+    the flattened arrays by name, then the flattened runtime scalars by name."""
+    _, arrays, runtime = classify_template_attrs(obj)
+    array_names = {key: fresh_name(template_array_param_name(param_name, key), used_names)
+                   for key in sorted(arrays)}
     runtime_names = {key: fresh_name(f"__tmpl_{param_name}_{key}__", used_names)
                      for key in sorted(runtime)}
-    extra = [field_names[k] for k in sorted(field_names)] + \
+    extra = [array_names[k] for k in sorted(array_names)] + \
         [runtime_names[k] for k in sorted(runtime_names)]
 
     nodes = {}
@@ -376,9 +376,9 @@ def _template_nodes(param_name, obj, used_names, resolved_funcs):
         if path:
             nodes[path[:-1]].children[path[-1]] = node
         prefix = _prefix(path)
-        scalars, own_fields, own_runtime = _classify_own(node_obj)
+        scalars, own_arrays, own_runtime = _classify_own(node_obj)
         node.scalars = scalars
-        node.fields = {name: field_names[prefix + name] for name in own_fields}
+        node.arrays = {name: array_names[prefix + name] for name in own_arrays}
         node.runtime = {name: runtime_names[prefix + name] for name in own_runtime}
         # Device functions held as attributes are called as they are: they
         # take no self and no synthetic parameters. An attribute shadows a
@@ -438,11 +438,11 @@ def _resolve_call(node, call, names, root, extra):
 
 
 def _own_attribute(owner, name):
-    """An object's own constant, field or runtime scalar as an expression, or None."""
+    """An object's own constant, array or runtime scalar as an expression, or None."""
     if name in owner.scalars:
         return ast.Constant(value=owner.scalars[name])
-    if name in owner.fields:
-        return ast.Name(id=owner.fields[name], ctx=ast.Load())
+    if name in owner.arrays:
+        return ast.Name(id=owner.arrays[name], ctx=ast.Load())
     if name in owner.runtime:
         return ast.Name(id=owner.runtime[name], ctx=ast.Load())
     return None
@@ -450,7 +450,7 @@ def _own_attribute(owner, name):
 
 def _resolve_attribute(node, names, root, strict=True):
     """``root.a.b.attr...``: through the held templates ``a`` and ``b``, ``attr`` as a
-    constant or a synthetic name, with any further attributes (a field's
+    constant or a synthetic name, with any further attributes (an array's
     ``.shape``) read from it. None for a method or a template, which only a call
     or a longer chain may use; an unknown name raises when ``strict``."""
     owner = node
@@ -465,7 +465,7 @@ def _resolve_attribute(node, names, root, strict=True):
                 return None
             raise ValueError(
                 f"Template method references {'.'.join([root, *names[:k + 1]])} which is "
-                f"neither a class constant, an instance scalar, a tack.Field, "
+                f"neither a class constant, an instance scalar, a tack.Array, "
                 f"a @tack.func method, a @tack.func held as an attribute, nor a template")
         for rest in names[k + 1:]:
             base = ast.Attribute(value=base, attr=rest, ctx=ast.Load())
@@ -480,7 +480,7 @@ def _resolve_method(func_obj, resolved_name, node, extra):
     - 'self' parameter removed
     - the tree's synthetic parameters appended
     - self.class_scalar replaced with constants
-    - self.field_attr and self.instance_scalar replaced with synthetic parameter names
+    - self.array_attr and self.instance_scalar replaced with synthetic parameter names
     - self.method(args) calls replaced with resolved function calls
     - and the same through templates held as attributes (self.base.get(k))
     """
@@ -563,7 +563,7 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
         return node
 
     def visit_For(self, node):
-        # for c in obj: becomes a range or ndrange loop over its iteration
+        # for c in obj: becomes a range or ndindex loop over its iteration
         # space; generic_visit then resolves the obj.attr extents.
         if isinstance(node.iter, ast.Name) and node.iter.id == self.param_name:
             node = self._iteration_loop(node)
@@ -590,11 +590,11 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
             return node
         index = node.target.id
         dims = [fresh_name(f"__{index}_{k}__", self.used_names) for k in range(len(names))]
-        # ndrange runs slowest first; the index vector is fastest first.
+        # ndindex runs slowest first; the index vector is fastest first.
         loop = ast.For(
             target=ast.Tuple(elts=[ast.Name(id=d, ctx=ast.Store()) for d in reversed(dims)],
                              ctx=ast.Store()),
-            iter=ast.Call(func=ast.Name(id='ndrange', ctx=ast.Load()),
+            iter=ast.Call(func=ast.Name(id='ndindex', ctx=ast.Load()),
                           args=[extent(n) for n in reversed(names)], keywords=[]),
             body=[ast.Assign(targets=[ast.Name(id=index, ctx=ast.Store())],
                              value=ast.List(elts=[ast.Name(id=d, ctx=ast.Load())

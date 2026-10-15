@@ -10,7 +10,7 @@ import tack
 def test_local_array_store_load(backend):
     """Write to local array, read back, write to output."""
     n = 64
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def use_local(out, n):
@@ -23,14 +23,14 @@ def test_local_array_store_load(backend):
             out[i] = arr[0] + arr[1] + arr[2] + arr[3]
 
     use_local(out, n)
-    result = out.to_numpy()
+    result = out.numpy()
     np.testing.assert_allclose(result, 10.0)
 
 
 def test_local_array_loop_fill(backend):
     """Fill local array in a loop, sum it."""
     n = 32
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def loop_fill(out, n):
@@ -45,13 +45,13 @@ def test_local_array_loop_fill(backend):
 
     loop_fill(out, n)
     expected = sum(k * 0.5 for k in range(8))
-    np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-5)
+    np.testing.assert_allclose(out.numpy(), expected, rtol=1e-5)
 
 
 def test_local_array_int(backend):
     """Local array with integer type."""
     n = 16
-    out = tack.field(dtype=tack.i32, shape=(n,))
+    out = tack.empty((n,), tack.i32)
 
     @tack.kernel
     def int_local(out, n):
@@ -63,20 +63,20 @@ def test_local_array_int(backend):
             out[i] = idx[0] + idx[1] + idx[2]
 
     int_local(out, n)
-    np.testing.assert_array_equal(out.to_numpy(), 60)
+    np.testing.assert_array_equal(out.numpy(), 60)
 
 
 def test_local_array_with_template_size(backend):
     """Local array size from a template parameter (compile-time constant)."""
     n = 16
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.device_class
     class Config:
         size = 5  # class variable → compile-time constant (needed for local_array size)
 
     @tack.kernel
-    def tmpl_local(cfg: tack.template(), out, n):
+    def tmpl_local(cfg, out, n):
         for i in range(n):
             buf = tack.local_array(tack.f32, cfg.size)
             for k in range(cfg.size):
@@ -89,13 +89,13 @@ def test_local_array_with_template_size(backend):
     cfg = Config()
     tmpl_local(cfg, out, n)
     expected = sum(range(5))
-    np.testing.assert_allclose(out.to_numpy(), float(expected), rtol=1e-5)
+    np.testing.assert_allclose(out.numpy(), float(expected), rtol=1e-5)
 
 
 def test_local_array_passed_to_func(backend):
     """Pass a local array to a @tack.func that fills it."""
     n = 16
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.func
     def fill_buf(arr, size):
@@ -110,13 +110,13 @@ def test_local_array_passed_to_func(backend):
             out[i] = buf[0] + buf[1] + buf[2] + buf[3]
 
     use_func(out, n)
-    np.testing.assert_allclose(out.to_numpy(), 0 + 10 + 20 + 30)
+    np.testing.assert_allclose(out.numpy(), 0 + 10 + 20 + 30)
 
 
 def test_local_array_in_template_method(backend):
     """Pass a local array to a @tack.device_class method."""
     n = 2
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.device_class
     class CellSet:
@@ -133,13 +133,13 @@ def test_local_array_in_template_method(backend):
     conn_np = np.array([0, 1, 2, 3, 4, 5, 6, 7], dtype=np.int32)
     data_np = np.array([10, 20, 30, 40, 50, 60, 70, 80], dtype=np.float32)
 
-    conn = tack.field(dtype=tack.i32, shape=(8,))
-    data = tack.field(dtype=tack.f32, shape=(8,))
-    conn.from_numpy(conn_np)
-    data.from_numpy(data_np)
+    conn = tack.empty((8,), tack.i32)
+    data = tack.empty((8,))
+    tack.copyto(conn, conn_np)
+    tack.copyto(data, data_np)
 
     @tack.kernel
-    def avg(cs: tack.template(), data, out, n_cells):
+    def avg(cs, data, out, n_cells):
         for c in range(n_cells):
             pts = tack.local_array(tack.i32, cs.points_per_cell)
             cs.get_cell_points(c, pts)
@@ -151,17 +151,17 @@ def test_local_array_in_template_method(backend):
     cs = CellSet(conn)
     avg(cs, data, out, 2)
     # cell 0: (10+20+30+40)/4 = 25, cell 1: (50+60+70+80)/4 = 65
-    np.testing.assert_allclose(out.to_numpy(), [25.0, 65.0])
+    np.testing.assert_allclose(out.numpy(), [25.0, 65.0])
 
 
-# --- local_array_like: inherit dtype from field ---
+# --- local_array_like: inherit dtype from array ---
 
 def test_local_array_like_f32(backend):
-    """local_array_like inherits f32 from the field."""
+    """local_array_like inherits f32 from the array."""
     n = 10
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def kern(data, out):
@@ -171,15 +171,15 @@ def test_local_array_like_f32(backend):
             out[i] = buf[0]
 
     kern(data, out)
-    np.testing.assert_allclose(out.to_numpy(), np.arange(n, dtype=np.float32) * 2.0)
+    np.testing.assert_allclose(out.numpy(), np.arange(n, dtype=np.float32) * 2.0)
 
 
 def test_local_array_like_i32(backend):
-    """local_array_like inherits i32 from the field."""
+    """local_array_like inherits i32 from the array."""
     n = 10
-    data = tack.field(dtype=tack.i32, shape=(n,))
-    out = tack.field(dtype=tack.i32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.int32))
+    data = tack.empty((n,), tack.i32)
+    out = tack.empty((n,), tack.i32)
+    tack.copyto(data, np.arange(n, dtype=np.int32))
 
     @tack.kernel
     def kern(data, out):
@@ -189,15 +189,15 @@ def test_local_array_like_i32(backend):
             out[i] = buf[0]
 
     kern(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.int32) * 2)
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.int32) * 2)
 
 
 def test_local_array_like_in_func(backend):
-    """local_array_like inside @tack.func resolves mangled field names."""
+    """local_array_like inside @tack.func resolves mangled array names."""
     n = 10
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     @tack.func
     def process(data, out, idx):
@@ -211,7 +211,7 @@ def test_local_array_like_in_func(backend):
             process(data, out, i)
 
     kern(data, out)
-    np.testing.assert_allclose(out.to_numpy(), np.arange(n, dtype=np.float32) * 3.0)
+    np.testing.assert_allclose(out.numpy(), np.arange(n, dtype=np.float32) * 3.0)
 
 
 # --- Sizes written as arithmetic on constants ---
@@ -239,10 +239,10 @@ def test_array_sizes_fold_to_constants(backend):
     """`tack.local_array(f32, MAX * 4)` is an array of a constant size. Only
     a literal was: the size stayed an expression, and Metal refused the
     kernel with "array size is not a constant expression"."""
-    x = tack.field(dtype=tack.f32, shape=(5,))
+    x = tack.empty((5,))
     x.fill(2.0)
-    out = tack.field(dtype=tack.f32, shape=(5,))
+    out = tack.empty((5,))
     arithmetic_sizes(x, out, 5)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(5, 2.0 * 31 + 16 + 1))
+    np.testing.assert_array_equal(out.numpy(), np.full(5, 2.0 * 31 + 16 + 1))
     ir_text = tack.inspect(arithmetic_sizes, x, out, 5, mode="ir")
     assert "32" in ir_text and "17" in ir_text and "6" in ir_text

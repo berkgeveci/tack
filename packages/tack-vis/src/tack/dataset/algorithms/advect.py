@@ -21,7 +21,7 @@ def advect(data, field, seeds, step_size, steps, integrator="rk4", locator=None)
     ``CellLocator`` of ``data``."""
     xs, times, taken, status, _, _, _ = _run(data, field, seeds, step_size, steps,
                                              integrator, locator, record=False)
-    out = _vertices(xs.to_numpy(vectors=True) if xs.size else np.zeros((0, 3)), data)
+    out = _vertices(xs.numpy() if xs.size else np.zeros((0, 3)), data)
     points = Values(out, "points")
     for name, values in (("steps", taken), ("time", times), ("status", status)):
         out.fields[name] = Field(points, values)

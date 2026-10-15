@@ -38,14 +38,14 @@ def as_polygons(data, fields=None):
             raise ValueError(f"{group.shape.__name__} cells are not 2D")
     n = data.num_cells
     idt = topology.id_dtype
-    sizes = tack.zeros(tack.i32, (n,))
+    sizes = tack.zeros((n,), tack.i32)
     for group in topology.groups():
         if group.count:
             _polygon_sizes(group.view(), sizes)
-    offsets = tack.field(idt, shape=(n + 1,))
+    offsets = tack.empty((n + 1,), idt)
     total = exclusive_scan(sizes, offsets, n) if n else 0
     _close(offsets, n, total)
-    loops = tack.field(idt, shape=(total,))
+    loops = tack.empty((total,), idt)
     for group in topology.groups():
         if group.count:
             _polygon_loops(group.view(), offsets, loops)

@@ -1,7 +1,7 @@
 """Tests for tack.shared_like (Layer 4 of type system refactor).
 
-Validates that tack.shared_like(field, size) allocates shared memory
-with the same dtype as the given field.
+Validates that tack.shared_like(array, size) allocates shared memory
+with the same dtype as the given array.
 """
 
 import numpy as np
@@ -11,7 +11,7 @@ import tack
 # --- AST transform level ---
 
 def test_shared_like_produces_ir():
-    """shared_like(field, size) should produce IRSharedAlloc with field_name."""
+    """shared_like(array, size) should produce IRSharedAlloc with array_name."""
     import ast
     import textwrap
 
@@ -31,17 +31,17 @@ def kern(data, out):
     shared_alloc = pfor.body[0]
     assert isinstance(shared_alloc, ir.IRSharedAlloc)
     assert shared_alloc.dtype is None  # not yet resolved
-    assert shared_alloc.field_name == "data"
+    assert shared_alloc.array_name == "data"
 
 
-# --- End-to-end: shared_like with f32 field ---
+# --- End-to-end: shared_like with f32 array ---
 
 def test_shared_like_f32(workgroup_backend):
-    """shared_like inherits f32 from the field."""
+    """shared_like inherits f32 from the array."""
     n = 256
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def kern(data, out):
@@ -53,18 +53,18 @@ def test_shared_like_f32(workgroup_backend):
             out[i] = smem[tid]
 
     kern(data, out)
-    result = out.to_numpy()
+    result = out.numpy()
     np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32))
 
 
-# --- End-to-end: shared_like with i32 field ---
+# --- End-to-end: shared_like with i32 array ---
 
 def test_shared_like_i32(workgroup_backend):
-    """shared_like inherits i32 from the field."""
+    """shared_like inherits i32 from the array."""
     n = 256
-    data = tack.field(dtype=tack.i32, shape=(n,))
-    out = tack.field(dtype=tack.i32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.int32))
+    data = tack.empty((n,), tack.i32)
+    out = tack.empty((n,), tack.i32)
+    tack.copyto(data, np.arange(n, dtype=np.int32))
 
     @tack.kernel
     def kern(data, out):
@@ -76,7 +76,7 @@ def test_shared_like_i32(workgroup_backend):
             out[i] = smem[tid]
 
     kern(data, out)
-    result = out.to_numpy()
+    result = out.numpy()
     np.testing.assert_array_equal(result, np.arange(n, dtype=np.int32))
 
 
@@ -90,14 +90,14 @@ def test_shared_like_cuda_codegen():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f32, shape=(10,))
-    out = tack.field(dtype=tack.f32, shape=(10,))
+    tack.set_default_device("cpu")
+    data = tack.empty((10,))
+    out = tack.empty((10,))
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
     shared_alloc = ir.IRSharedAlloc("smem", dtype=None, size=ir.IRConstant(256),
-                                     field_name="data")
+                                     array_name="data")
     body = [shared_alloc]
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), body)
     func = ir.IRFunction("test", [p_data, p_out], [pfor])
@@ -110,21 +110,21 @@ def test_shared_like_cuda_codegen():
 
 
 def test_shared_like_i32_cuda_codegen():
-    """CUDA codegen emits int shared type from i32 field."""
+    """CUDA codegen emits int shared type from i32 array."""
     from tack.codegen.cuda_gen import generate_cuda_source
     from tack.lang import ir
     from tack.lang.ir_resolve import resolve_ir
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.i32, shape=(10,))
-    out = tack.field(dtype=tack.i32, shape=(10,))
+    tack.set_default_device("cpu")
+    data = tack.empty((10,), tack.i32)
+    out = tack.empty((10,), tack.i32)
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
     shared_alloc = ir.IRSharedAlloc("smem", dtype=None, size=ir.IRConstant(256),
-                                     field_name="data")
+                                     array_name="data")
     body = [shared_alloc]
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), body)
     func = ir.IRFunction("test", [p_data, p_out], [pfor])

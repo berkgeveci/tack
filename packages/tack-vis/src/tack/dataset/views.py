@@ -19,7 +19,7 @@ every compiled kernel is specialized to it (``docs/design/dataset-api.md``
   spaces with a basis, ``at(i)`` for values on entities.
 
 Geometry and spaces read values through a *storage* mixin, ``get(k)``, so
-a field's values may be a device field or an implicit array
+a field's values may be a device array or an implicit array
 (``tack.dataset.arrays``), which the view holds as a nested template. Values shared by points are read through
 ``point_value(i, j)``, which an *addressing* mixin defines: by the flat
 point id, or -- for a structured grid's cells over a storage that has
@@ -526,7 +526,7 @@ class _Geometry:
     @tack.func
     def position(self, i, pc):
         """The world position at parametric coordinates ``pc``."""
-        x = tack.Vector([0.0, 0.0, 0.0])
+        x = tack.vec3(0.0, 0.0, 0.0)
         for j in range(self.NUM_POINTS):
             x += self.shape_function(j, pc) * self.corner_position(i, j)
         return x
@@ -535,7 +535,7 @@ class _Geometry:
     def geometry_jacobian(self, i, pc):
         """The 3x3 derivative of world position by parametric coordinates at ``pc``:
         column ``k`` is ``dx/d(pc[k])``, zero past the shape's dimension."""
-        m = tack.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
         for j in range(self.NUM_POINTS):
             m += self.corner_position(i, j).outer_product(self.shape_gradient(j, pc))
         return m
@@ -584,14 +584,14 @@ class _H1Order2Geometry(_QuadraticDofs, _Geometry):
 
     @tack.func
     def position(self, c, pc):
-        x = tack.Vector([0.0, 0.0, 0.0])
+        x = tack.vec3(0.0, 0.0, 0.0)
         for k in range(self.NUM_QUADRATIC):
             x += self.quadratic_function(k, pc) * self.get(self.dof_index(c, k))
         return x
 
     @tack.func
     def geometry_jacobian(self, c, pc):
-        m = tack.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
         for k in range(self.NUM_QUADRATIC):
             m += self.get(self.dof_index(c, k)).outer_product(self.quadratic_gradient(k, pc))
         return m
@@ -684,7 +684,7 @@ class _EdgeIncidence:
 
 
 class _ExplicitStorage:
-    """A device field: value ``k`` is stored at ``values[k]``."""
+    """A device array: value ``k`` is stored at ``values[k]``."""
 
     @tack.func
     def get(self, k):
@@ -752,7 +752,7 @@ class _Interpolated:
     @tack.func
     def parametric_gradient(self, i, pc):
         """The derivative by parametric coordinates at ``pc``, a 3-vector."""
-        g = tack.Vector([0.0, 0.0, 0.0])
+        g = tack.vec3(0.0, 0.0, 0.0)
         for j in range(self.NUM_POINTS):
             g += self.dof(i, j) * self.shape_gradient(j, pc)
         return g
@@ -792,7 +792,7 @@ class _H1Order2Field(_QuadraticDofs, _Interpolated):
 
     @tack.func
     def parametric_gradient(self, c, pc):
-        g = tack.Vector([0.0, 0.0, 0.0])
+        g = tack.vec3(0.0, 0.0, 0.0)
         for k in range(self.NUM_QUADRATIC):
             g += self.dof(c, k) * self.quadratic_gradient(k, pc)
         return g
@@ -824,7 +824,7 @@ class _L2Order0Field:
 
     @tack.func
     def parametric_gradient(self, i, pc):
-        return tack.Vector([0.0, 0.0, 0.0])
+        return tack.vec3(0.0, 0.0, 0.0)
 
     @tack.func
     def corner_value(self, i, j):
@@ -844,7 +844,7 @@ class _ConstantField:
 
     @tack.func
     def parametric_gradient(self, i, pc):
-        return tack.Vector([0.0, 0.0, 0.0])
+        return tack.vec3(0.0, 0.0, 0.0)
 
     @tack.func
     def corner_value(self, i, j):

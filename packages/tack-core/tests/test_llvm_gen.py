@@ -16,7 +16,7 @@ def _gen(source: str, param_types=None) -> str:
     module = transform_kernel(tree)
     func = module.functions[0]
 
-    # Default: all params are f32 fields
+    # Default: all params are f32 arrays
     if param_types is None:
         param_types = [f32] * len(func.params)
 
@@ -188,7 +188,7 @@ def test_floor_div_float():
 
 
 def test_saxpy():
-    """SAXPY: out[i] = alpha * x[i] + y[i] — validates scalar + field mixing."""
+    """SAXPY: out[i] = alpha * x[i] + y[i] — validates scalar + array mixing."""
     ll = _gen("""
         def saxpy(x, y, out):
             for i in range(10):

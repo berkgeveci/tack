@@ -211,8 +211,8 @@ def vtk_subset(grid, point_fields=(), cell_fields=()):
 def _scalars(values):
     import tack
 
-    field = tack.field(tack.f32, shape=(values.shape[0],))
-    field.from_numpy(np.ascontiguousarray(values, np.float32))
+    field = tack.empty((values.shape[0],))
+    tack.copyto(field, np.ascontiguousarray(values, np.float32))
     return field
 
 
@@ -229,8 +229,8 @@ class TackMesh:
         shape = td.UnstructuredTopology(
             np.full(m, mesh.cell_type, np.uint8), np.arange(0, m * k + 1, k, dtype=np.int32),
             mesh.cells.ravel().astype(np.int32), num_points=mesh.num_points)
-        self.positions = tack.Vector.field(3, tack.f32, shape=(mesh.num_points,))
-        self.positions.from_numpy(np.ascontiguousarray(mesh.points, np.float32))
+        self.positions = tack.empty((mesh.num_points,), tack.vec(3, tack.f32))
+        tack.copyto(self.positions, np.ascontiguousarray(mesh.points, np.float32))
         self.values = {"p": ("points", _scalars(mesh.p)), "c": ("cells", _scalars(mesh.c))}
         self.form = form
         self.topology = shape

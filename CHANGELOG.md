@@ -7,22 +7,25 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
-- `tack.Array` names backend storage; `tack.dataset.Field` remains a function
-  space plus coefficients. `tack.empty` allocates uninitialized arrays and
-  `tack.array` copies NumPy arrays or sequences. `vec2`/`vec3`/`vec4`,
-  `mat2`/`mat3`/`mat4`, and general `vec(n)`/`mat(rows, columns)` describe
-  element types for the same constructors. Typed array shape and size count
-  elements; NumPy downloads expand components into trailing dimensions.
-  Copy, conversion, reshape, empty_like, pointer and DLPack interop preserve
-  their documented value/layout semantics. Previous storage constructors
-  remain available, including the old flat host metadata of Vector.field
-  and Matrix.field, while examples use array terminology.
-
-- `tack.empty_like(prototype, dtype=None)` allocates independent, uninitialized
-  storage matching a NumPy array or Tack field. Vector and matrix fields retain
-  their logical shape and component dimensions. No values are read or copied.
+- NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`
+  is a function space plus coefficients, and "field" means only that now.
+  Constructors take the shape first, as NumPy's do: `tack.empty(shape,
+  dtype=f32)`, `zeros`, `ones`, `full(shape, fill_value, dtype=None)`,
+  `arange([start,] stop[, step], dtype=None)`, `empty_like`, `zeros_like`,
+  `ones_like`, `full_like`, `array(obj, dtype=None)`, `asarray`, `concat`
+  and `array_from_ptr(ptr, shape, dtype)`. Any NumPy dtype is accepted
+  where a dtype is (`np.float32`, `"float32"`). Python floats default to
+  f32 and ints to i32 (i64 if a value needs it), since f64 is not on every
+  backend; a NumPy array keeps its dtype. Vectors and matrices are element
+  types: `tack.empty((n,), tack.vec3())`, `vec(n, dtype)`, `mat2`...`mat4`,
+  `mat(rows, columns, dtype)`; `shape` counts elements and `a.numpy()`
+  gives `(*shape, 3)`. Data moves with `a.numpy()` or `np.asarray(a)`,
+  `await a.numpy_async()`, `tack.copyto(a, host)` (strict, as
+  `np.copyto`: the host values have `a.numpy()`'s shape or broadcast to
+  it) and `a.fill(value)`. Arrays also have `ndim`, `nbytes` and
+  `reshape(*shape)` with one `-1`.
 - `asyncio` waits: `await tack.sync_async()` and `await
-  field.to_numpy_async()` wait for the device in a worker thread, so an
+  a.numpy_async()` wait for the device in a worker thread, so an
   application's event loop (trame, Jupyter, a server) keeps running
   while kernels finish; kernel calls themselves are unchanged. On CUDA
   the wait is an event on the context's stream, on Metal the last
@@ -82,15 +85,73 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- **Breaking:** `tack.deprecated` is gone: the first vis worklets
+  (`flying_edges`, `compute_normals`, `cell_to_point`, `amr_blanking`) and
+  the finite-element helpers in `tack.fe`, with the examples written on
+  them (contour, marching cubes, flying edges, point-to-cell, `mini_vtk`,
+  the `tack.fe` isolines and isosurfaces). `tack.dataset` supersedes them:
+  `contour` for `flying_edges`, `to_points` for `cell_to_point`,
+  `gradients` and `project` for the finite-element helpers.
+- **Breaking:** `tack-rendering` (path tracer, rasterizer, volume renderer)
+  is archived in `archive/tack-rendering` and no longer part of the
+  workspace, the tests or the documentation, until the dataset API and its
+  implementation settle. Its user-guide chapter, the isosurface tutorial,
+  the two cross-package examples and the rendering benchmarks moved with it.
 - **Breaking:** the dataset package is now `tack.dataset`, replacing
   `tack.data`. Use `import tack.dataset as td`; submodules move with it
   (for example, `tack.dataset.algorithms` and `tack.dataset.arrays`).
   The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
   is a separate kernel decorator and keeps its name.
 
-- **Breaking:** `tack.field_like` is removed. Replace existing calls with
-  `tack.array` to allocate and copy NumPy values; `field_from_numpy` remains
-  a compatibility spelling. Use `empty_like` when only shape and dtype should match.
+- **Breaking:** devices are values, spelled as the array API spells them,
+  and `tack.init` is gone with the `tack.cpu`/`metal`/`cuda`/`hip`/
+  `level_zero` constants. `tack.device("cuda")` (or `"cuda:0"`, `"cpu"`,
+  `"metal"`, `"hip"`, `"level_zero"`) is a `tack.Device`, the same one
+  every time; options (`num_threads`, `external_context`) make a new one.
+  `tack.set_default_device(...)` chooses the default, `get_default_device()`
+  reads it, and `with tack.device(...):` sets it in a block, per thread.
+  `tack.set_debug()` replaces `init(debug=...)`; `TACK_DEBUG` is read at
+  import. Arrays know their device (`a.device`, `a.to_device(...)`, and
+  `device=` on every constructor), and a kernel runs where its arrays are,
+  so changing the default no longer strands arrays made before it; arrays
+  on two devices are refused, by `tack.algorithms`, `copyto` and `concat`
+  under their own names. `tack.algorithms` run on their inputs' device,
+  and `tack.sync()` and `tack.sync_async()` wait for every device.
+  `tack.from_dlpack(x)` keeps memory on its own device when the default
+  cannot wrap it, as the array API's does: CUDA memory with the CPU as
+  default is a CUDA array, host memory with Metal as default a CPU array;
+  `device=` still refuses what it cannot wrap. `Backend.init_options`
+  is `Backend.device_options`. A warm dispatch costs about 0.4 µs more
+  (6.7 to 7.1 µs on an M1 Max) for reading its arrays' devices.
+- **Breaking:** kernel values and loops are spelled as NumPy and GLSL
+  spell them, and Taichi's names are gone. Vectors are `tack.vec2`,
+  `vec3`, `vec4` (N scalars, one scalar for every component, or one
+  N-vector); a list of scalars is still a vector. Matrices are `tack.mat2`
+  to `mat4` (rows, or N*N row-major scalars), `tack.mat(row, ...)` for any
+  shape up to 4x4, and `tack.identity(n)`; on the host the same names are
+  element dtypes. A zero-dimensional array's element is `a[()]`, in kernels
+  and on the host; `a[None]` is refused. `tack.ndrange` is `tack.ndindex`.
+  Removed: `tack.Vector`, `tack.Matrix`, `tack.template()` (an annotation
+  nothing read) and `data_oriented`.
+- **Breaking** for code that reaches inside Tack: storage is "array"
+  throughout the core too. The module is `tack.lang.array`; the backend
+  contract's hooks are `allocate_array`, `fill_array` and `reduce_array`;
+  the IR's nodes are `IRArrayLoad`, `IRArrayStore` and `IRArrayExtent`;
+  messages, docstrings, the language contract and the design pages say
+  "array" where they said "field". The User's Guide chapter is
+  `02-arrays-and-types.md`.
+- **Breaking:** the old storage API is gone, without deprecation:
+  `tack.field` (use `tack.empty(shape, dtype)`), `field_from_numpy` and
+  `field_like` (`tack.array`), `field_from_ptr` (`array_from_ptr(ptr, shape,
+  dtype)`), `Vector.field` and `Matrix.field` (`tack.empty(shape,
+  tack.vec(n, dtype))`, `tack.mat(...)`), `a.to_numpy()` (`a.numpy()`),
+  `a.from_numpy(x)` (`tack.copyto(a, x)`) and `to_numpy_async`
+  (`numpy_async`). `zeros`, `ones`, `full` and `arange` take NumPy's
+  argument order. The flat host layout of `Vector.field` and `Matrix.field`
+  went with them: a vector array's `shape` counts vectors and its values
+  download and upload as rows, and `copyto` refuses a flat array.
+  `tack.interop.vtk`'s `vtk_to_field` and `field_to_vtk` are
+  `vtk_to_array` and `array_to_vtk(array, ...)`.
   `local_array_like` and `shared_like` remain allocation-only helpers.
 - A scan's small levels are one launch: a level of at most 4096 elements
   on the CPU, or one tile on a GPU backend, is scanned in order by one
@@ -114,7 +175,7 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   the rest sleep on, so the `k` of every launch are the same `k`.
   A hot fan-out of two threads on a pool of sixteen cost 11 µs waking
   every worker and costs 4.4.
-- `tack.field` returns uninitialized storage on every backend; `tack.zeros`
+- `tack.empty` returns uninitialized storage on every backend; `tack.zeros`
   is the call that pays for zeros. The CPU backend used to fill every new
   field on the calling thread, which at 5M cells on eight threads of a
   2 GHz Xeon was half of threshold's and cell-to-point's time and grew

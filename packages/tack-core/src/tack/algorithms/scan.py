@@ -1,4 +1,4 @@
-"""Parallel prefix sum (scan) on tack fields.
+"""Parallel prefix sum (scan) on tack arrays.
 
 Reduce, then scan, by chunks: one thread per chunk of ``_CHUNK``
 elements totals it, the chunk totals are scanned the same way, and each
@@ -13,10 +13,11 @@ Usage:
     from tack import algorithms
 
     total = algorithms.exclusive_scan(counts, offsets, n)
-    algorithms.inclusive_scan(input_field, output_field, n)
+    algorithms.inclusive_scan(input_array, output_array, n)
 """
 
 import tack
+from tack.runtime.dispatch import on_inputs_device
 
 _CHUNK = 256  # elements one thread scans in turn
 # A level of at most this many elements is scanned by one thread in one
@@ -152,20 +153,20 @@ def _scan_serial(src, dst, total, n, inclusive):
         total[0] = running
 
 
-def _count(n, *fields):
+def _count(n, *arrays):
     """Check the element count: the scan reads and writes [0, n)."""
     n = int(n)
-    for f in fields:
+    for f in arrays:
         if not 0 <= n <= f.size:
             raise ValueError(
-                f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
+                f"n={n} is outside [0, {f.size}] for an array of {f.size} elements")
     return n
 
 
-def _total(field, n):
-    """field[n - 1] as a Python number: one element read on the host, which
+def _total(array, n):
+    """array[n - 1] as a Python number: one element read on the host, which
     on every backend is a copy of just that element and no launch."""
-    return field[n - 1]
+    return array[n - 1]
 
 
 def _scan(src, dst, n, inclusive, want_total=True):
@@ -184,16 +185,16 @@ def _scan(src, dst, n, inclusive, want_total=True):
     if n <= (size if tiles else _SERIAL_MAX):
         # One launch; with workgroups a level of one tile is one thread's
         # worth anyway. The total is read as one element, not a launch.
-        total = tack.field(dtype=dst.dtype, shape=(1,))
+        total = tack.empty((1,), dst.dtype)
         _scan_serial(src, dst, total, n, 1 if inclusive else 0)
         return total[0] if want_total else None
     nchunks = (n + size - 1) // size
-    sums = tack.field(dtype=dst.dtype, shape=(nchunks,))
+    sums = tack.empty((nchunks,), dst.dtype)
     if tiles:
         _tile_sums(src, dst, sums, n, nchunks)
     else:
         _chunk_sums(src, dst, sums, n, _CHUNK, nchunks)
-    offsets = tack.field(dtype=dst.dtype, shape=(nchunks,))
+    offsets = tack.empty((nchunks,), dst.dtype)
     total = _scan(sums, offsets, nchunks, inclusive=False, want_total=want_total)
     if tiles:
         _tile_apply(dst, offsets, n, nchunks, 1 if inclusive else 0)
@@ -202,18 +203,19 @@ def _scan(src, dst, n, inclusive, want_total=True):
     return total
 
 
-def exclusive_scan(input_field, output_field, n, total=True):
-    """Compute exclusive prefix sum on the active backend.
+@on_inputs_device
+def exclusive_scan(input_array, output_array, n, total=True):
+    """Compute exclusive prefix sum on the inputs' device.
 
     output[i] = sum(input[0..i-1]), output[0] = 0.
 
-    The scan runs in the output field's dtype; input values convert to it
+    The scan runs in the output array's dtype; input values convert to it
     on the copy, so any dtype the backend allocates works.
 
     Args:
-        input_field: field with input values.
-        output_field: field for the output offsets.
-        n: number of elements, at most either field's size. Zero writes
+        input_array: array with input values.
+        output_array: array for the output offsets.
+        n: number of elements, at most either array's size. Zero writes
             nothing and returns 0.
         total: whether to return the total. Reading it waits for the
             device (on Metal, for every launch queued so far); a caller
@@ -224,27 +226,28 @@ def exclusive_scan(input_field, output_field, n, total=True):
         The total of all input elements in the output's dtype, as a Python
         int or float; ``None`` with ``total=False``.
     """
-    n = _count(n, input_field, output_field)
+    n = _count(n, input_array, output_array)
     if n == 0:
-        # Nothing to scan; the empty sum is 0, as for Field.sum().
+        # Nothing to scan; the empty sum is 0, as for Array.sum().
         return 0 if total else None
     # Scan in the output's dtype, as the inclusive scan does: an i32 work
     # buffer truncated float inputs and wrapped wider integers.
-    return _scan(input_field, output_field, n, inclusive=False, want_total=total)
+    return _scan(input_array, output_array, n, inclusive=False, want_total=total)
 
 
-def inclusive_scan(input_field, output_field, n, total=True):
-    """Compute inclusive prefix sum on the active backend.
+@on_inputs_device
+def inclusive_scan(input_array, output_array, n, total=True):
+    """Compute inclusive prefix sum on the inputs' device.
 
     output[i] = sum(input[0..i]).
 
-    The scan runs in the output field's dtype; input values convert to it
+    The scan runs in the output array's dtype; input values convert to it
     on the copy, so any dtype the backend allocates works.
 
     Args:
-        input_field: field with input values.
-        output_field: field for the output sums.
-        n: number of elements, at most either field's size. Zero writes
+        input_array: array with input values.
+        output_array: array for the output sums.
+        n: number of elements, at most either array's size. Zero writes
             nothing and returns 0.
         total: whether to return the total; see ``exclusive_scan``.
 
@@ -252,7 +255,7 @@ def inclusive_scan(input_field, output_field, n, total=True):
         The total of all input elements in the output's dtype, as a Python
         int or float; ``None`` with ``total=False``.
     """
-    n = _count(n, input_field, output_field)
+    n = _count(n, input_array, output_array)
     if n == 0:
         return 0 if total else None
-    return _scan(input_field, output_field, n, inclusive=True, want_total=total)
+    return _scan(input_array, output_array, n, inclusive=True, want_total=total)

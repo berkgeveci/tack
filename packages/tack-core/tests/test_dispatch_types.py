@@ -1,6 +1,6 @@
 """Tests for dispatch-time type checking (Layer 5 of type system refactor).
 
-Validates that unsupported field dtypes are caught with clear errors
+Validates that unsupported array dtypes are caught with clear errors
 before hitting the compiler.
 """
 
@@ -17,12 +17,12 @@ from tack.lang.types import f32, f64, i32, i64, u32, u64
 class TestCheckDispatchTypes:
     @pytest.fixture(autouse=True)
     def _init_cpu(self):
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
 
     def test_supported_dtype_passes(self):
-        """f32 field should pass when f32 is supported."""
+        """f32 array should pass when f32 is supported."""
         func = ir.IRFunction("k", [ir.IRParam("data")], [])
-        data = tack.field(dtype=tack.f32, shape=(10,))
+        data = tack.empty((10,))
         infer_param_types(func, (data,))
         # Should not raise
         check_dispatch_types(func, (data,),
@@ -30,9 +30,9 @@ class TestCheckDispatchTypes:
                              backend_name="Test")
 
     def test_unsupported_dtype_raises(self):
-        """f64 field should raise when f64 is not supported."""
+        """f64 array should raise when f64 is not supported."""
         func = ir.IRFunction("k", [ir.IRParam("data")], [])
-        data = tack.field(dtype=tack.f64, shape=(10,))
+        data = tack.empty((10,), tack.f64)
         infer_param_types(func, (data,))
         with pytest.raises(TypeError, match="f64.*not supported.*TestBackend"):
             check_dispatch_types(func, (data,),
@@ -42,7 +42,7 @@ class TestCheckDispatchTypes:
     def test_error_names_parameter(self):
         """Error message should include the parameter name."""
         func = ir.IRFunction("k", [ir.IRParam("my_data")], [])
-        data = tack.field(dtype=tack.f64, shape=(10,))
+        data = tack.empty((10,), tack.f64)
         infer_param_types(func, (data,))
         with pytest.raises(TypeError, match="my_data"):
             check_dispatch_types(func, (data,),
@@ -52,7 +52,7 @@ class TestCheckDispatchTypes:
     def test_error_names_kernel(self):
         """Error message should include the kernel name."""
         func = ir.IRFunction("my_kernel", [ir.IRParam("data")], [])
-        data = tack.field(dtype=tack.f64, shape=(10,))
+        data = tack.empty((10,), tack.f64)
         infer_param_types(func, (data,))
         with pytest.raises(TypeError, match="my_kernel"):
             check_dispatch_types(func, (data,),
@@ -68,11 +68,11 @@ class TestCheckDispatchTypes:
                              supported_dtypes={f32},
                              backend_name="Test")
 
-    def test_multiple_fields_first_bad(self):
-        """First unsupported field should trigger the error."""
+    def test_multiple_arrays_first_bad(self):
+        """First unsupported array should trigger the error."""
         func = ir.IRFunction("k", [ir.IRParam("a"), ir.IRParam("b")], [])
-        a = tack.field(dtype=tack.f64, shape=(10,))
-        b = tack.field(dtype=tack.f32, shape=(10,))
+        a = tack.empty((10,), tack.f64)
+        b = tack.empty((10,))
         infer_param_types(func, (a, b))
         with pytest.raises(TypeError, match="'a'.*f64"):
             check_dispatch_types(func, (a, b),
@@ -82,7 +82,7 @@ class TestCheckDispatchTypes:
     def test_no_supported_dtypes_skips_check(self):
         """When supported_dtypes is None, no check is performed."""
         func = ir.IRFunction("k", [ir.IRParam("data")], [])
-        data = tack.field(dtype=tack.f64, shape=(10,))
+        data = tack.empty((10,), tack.f64)
         infer_param_types(func, (data,))
         # Should not raise
         check_dispatch_types(func, (data,),
@@ -95,7 +95,7 @@ class TestCheckDispatchTypes:
         all_dtypes = {f32, f64, i32, i64, u32, u64}
         for dtype in [tack.f32, tack.f64, tack.i32, tack.i64, tack.u32, tack.u64]:
             func = ir.IRFunction("k", [ir.IRParam("data")], [])
-            data = tack.field(dtype=dtype, shape=(10,))
+            data = tack.empty((10,), dtype)
             infer_param_types(func, (data,))
             check_dispatch_types(func, (data,),
                                  supported_dtypes=all_dtypes,
@@ -104,15 +104,15 @@ class TestCheckDispatchTypes:
 
 # --- End-to-end: Metal rejects f64 ---
 
-def test_metal_rejects_f64_field():
-    """Metal backend should reject f64 fields with a clear error."""
+def test_metal_rejects_f64_array():
+    """Metal backend should reject f64 arrays with a clear error."""
     try:
-        tack.init(arch=tack.metal)
+        tack.set_default_device("metal")
     except Exception:
         pytest.skip("Metal not available")
 
-    data = tack.field(dtype=tack.f64, shape=(10,))
-    out = tack.field(dtype=tack.f64, shape=(10,))
+    data = tack.empty((10,), tack.f64)
+    out = tack.empty((10,), tack.f64)
 
     @tack.kernel
     def kern(data, out):
@@ -127,12 +127,12 @@ def test_metal_rejects_f64_field():
 
 backends = []
 try:
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backends.append("cpu")
 except Exception:
     pass
 try:
-    tack.init(arch=tack.metal)
+    tack.set_default_device("metal")
     backends.append("metal")
 except Exception:
     pass
@@ -140,16 +140,16 @@ except Exception:
 
 @pytest.fixture(params=backends)
 def backend(request):
-    tack.init(arch=getattr(tack, request.param))
+    tack.set_default_device(request.param)
     return request.param
 
 
 def test_valid_dtypes_execute_successfully(backend):
     """Valid dtypes should execute without type errors on both backends."""
     n = 4
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
 
     @tack.kernel
     def copy(x, out):
@@ -157,4 +157,4 @@ def test_valid_dtypes_execute_successfully(backend):
             out[i] = x[i]
 
     copy(x, out)
-    np.testing.assert_array_equal(out.to_numpy(), x.to_numpy())
+    np.testing.assert_array_equal(out.numpy(), x.numpy())

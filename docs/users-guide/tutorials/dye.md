@@ -2,7 +2,7 @@
 
 A blob of RGB dye rotates in a prescribed velocity field. Every output cell
 traces backward to find where its colour came from, then interpolates the old
-dye there. This introduces vector fields and reusable device functions without
+dye there. This introduces vector arrays and reusable device functions without
 requiring a fluid pressure solver.
 
 ![Dye advected around the centre](../../assets/tutorials/dye.png)
@@ -16,7 +16,7 @@ incompressible-fluid solver.
 
 ## One vector per cell
 
-The dye uses `tack.empty(dtype=tack.vec3(), shape=(n, n))`. Each element is
+The dye uses `tack.empty((n, n), tack.vec3())`. Each element is
 an RGB vector. The storage convention is `[x, y]`; its NumPy form has shape
 `(n, n, 3)`. The plotting function transposes the first two axes for an image
 library expecting `[row, column, RGB]`.
@@ -47,7 +47,7 @@ they do not represent a periodic boundary.
 ```
 
 All four reads come from `old`, and each iteration writes just `new[i, j]`.
-The host swaps the two fields after the call. Updating dye in place would let
+The host swaps the two arrays after the call. Updating dye in place would let
 other iterations interpolate partially updated state.
 
 Repeated interpolation smooths the dye. A backward first-order trajectory also

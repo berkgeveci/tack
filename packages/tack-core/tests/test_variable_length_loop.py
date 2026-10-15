@@ -1,4 +1,4 @@
-"""Tests for sequential for-loops with runtime bounds from field loads.
+"""Tests for sequential for-loops with runtime bounds from array loads.
 
 This validates the pattern used by Viskores-style variable-length cell
 connectivity: for i in range(offsets[c], offsets[c+1]).
@@ -10,7 +10,7 @@ import tack
 
 
 def test_sum_variable_length(backend):
-    """Sum variable-length segments using offsets from a field."""
+    """Sum variable-length segments using offsets from an array."""
 
     @tack.kernel
     def sum_segments(offsets, data, output, n):
@@ -26,20 +26,20 @@ def test_sum_variable_length(backend):
     offsets_np = np.array([0, 2, 5, 9], dtype=np.int32)
     data_np = np.array([1, 2, 10, 20, 30, 100, 200, 300, 400], dtype=np.float32)
 
-    offsets = tack.field(dtype=tack.i32, shape=(4,))
-    data = tack.field(dtype=tack.f32, shape=(9,))
-    output = tack.field(dtype=tack.f32, shape=(3,))
-    offsets.from_numpy(offsets_np)
-    data.from_numpy(data_np)
+    offsets = tack.empty((4,), tack.i32)
+    data = tack.empty((9,))
+    output = tack.empty((3,))
+    tack.copyto(offsets, offsets_np)
+    tack.copyto(data, data_np)
 
     sum_segments(offsets, data, output, 3)
 
     expected = np.array([3.0, 60.0, 1000.0], dtype=np.float32)
-    np.testing.assert_allclose(output.to_numpy(), expected)
+    np.testing.assert_allclose(output.numpy(), expected)
 
 
-def test_range_from_single_field_load(backend):
-    """for i in range(count[c]) where count comes from a field."""
+def test_range_from_single_array_load(backend):
+    """for i in range(count[c]) where count comes from an array."""
 
     @tack.kernel
     def fill_counted(counts, output, n):
@@ -50,13 +50,13 @@ def test_range_from_single_field_load(backend):
             output[c] = total
 
     counts_np = np.array([0, 5, 3, 10], dtype=np.int32)
-    counts = tack.field(dtype=tack.i32, shape=(4,))
-    output = tack.field(dtype=tack.f32, shape=(4,))
-    counts.from_numpy(counts_np)
+    counts = tack.empty((4,), tack.i32)
+    output = tack.empty((4,))
+    tack.copyto(counts, counts_np)
 
     fill_counted(counts, output, 4)
 
-    np.testing.assert_allclose(output.to_numpy(), counts_np.astype(np.float32))
+    np.testing.assert_allclose(output.numpy(), counts_np.astype(np.float32))
 
 
 def test_indirect_gather(backend):
@@ -79,22 +79,22 @@ def test_indirect_gather(backend):
     conn_np = np.array([0, 1, 2, 1, 2, 3, 4], dtype=np.int32)
     point_np = np.array([10, 20, 30, 40, 50], dtype=np.float32)
 
-    offsets = tack.field(dtype=tack.i32, shape=(3,))
-    conn = tack.field(dtype=tack.i32, shape=(7,))
-    point_data = tack.field(dtype=tack.f32, shape=(5,))
-    cell_data = tack.field(dtype=tack.f32, shape=(2,))
-    offsets.from_numpy(offsets_np)
-    conn.from_numpy(conn_np)
-    point_data.from_numpy(point_np)
+    offsets = tack.empty((3,), tack.i32)
+    conn = tack.empty((7,), tack.i32)
+    point_data = tack.empty((5,))
+    cell_data = tack.empty((2,))
+    tack.copyto(offsets, offsets_np)
+    tack.copyto(conn, conn_np)
+    tack.copyto(point_data, point_np)
 
     gather_avg(offsets, conn, point_data, cell_data, 2)
 
     # cell 0: (10+20+30)/3 = 20, cell 1: (20+30+40+50)/4 = 35
     expected = np.array([20.0, 35.0], dtype=np.float32)
-    np.testing.assert_allclose(cell_data.to_numpy(), expected)
+    np.testing.assert_allclose(cell_data.numpy(), expected)
 
 
-def test_nested_field_access(backend):
+def test_nested_array_access(backend):
     """Direct nested indexing: data[conn[i]] without a temp variable."""
 
     @tack.kernel
@@ -105,16 +105,16 @@ def test_nested_field_access(backend):
     conn_np = np.array([2, 0, 3, 1], dtype=np.int32)
     data_np = np.array([10, 20, 30, 40], dtype=np.float32)
 
-    conn = tack.field(dtype=tack.i32, shape=(4,))
-    data = tack.field(dtype=tack.f32, shape=(4,))
-    output = tack.field(dtype=tack.f32, shape=(4,))
-    conn.from_numpy(conn_np)
-    data.from_numpy(data_np)
+    conn = tack.empty((4,), tack.i32)
+    data = tack.empty((4,))
+    output = tack.empty((4,))
+    tack.copyto(conn, conn_np)
+    tack.copyto(data, data_np)
 
     gather_direct(conn, data, output, 4)
 
     expected = data_np[conn_np]  # [30, 10, 40, 20]
-    np.testing.assert_allclose(output.to_numpy(), expected)
+    np.testing.assert_allclose(output.numpy(), expected)
 
 
 def test_double_indirect_nested(backend):
@@ -134,17 +134,17 @@ def test_double_indirect_nested(backend):
     conn_np = np.array([2, 0, 3, 1], dtype=np.int32)
     data_np = np.array([10, 20, 30, 40], dtype=np.float32)
 
-    offsets = tack.field(dtype=tack.i32, shape=(3,))
-    conn = tack.field(dtype=tack.i32, shape=(4,))
-    data = tack.field(dtype=tack.f32, shape=(4,))
-    output = tack.field(dtype=tack.f32, shape=(2,))
-    offsets.from_numpy(offsets_np)
-    conn.from_numpy(conn_np)
-    data.from_numpy(data_np)
+    offsets = tack.empty((3,), tack.i32)
+    conn = tack.empty((4,), tack.i32)
+    data = tack.empty((4,))
+    output = tack.empty((2,))
+    tack.copyto(offsets, offsets_np)
+    tack.copyto(conn, conn_np)
+    tack.copyto(data, data_np)
 
     gather_double(offsets, conn, data, output, 2)
 
     # cell 0: data[conn[0]] + data[conn[1]] = data[2] + data[0] = 30 + 10 = 40
     # cell 1: data[conn[2]] + data[conn[3]] = data[3] + data[1] = 40 + 20 = 60
     expected = np.array([40.0, 60.0], dtype=np.float32)
-    np.testing.assert_allclose(output.to_numpy(), expected)
+    np.testing.assert_allclose(output.numpy(), expected)

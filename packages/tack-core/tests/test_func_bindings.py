@@ -80,54 +80,54 @@ def modules(request, tmp_path, monkeypatch):
 
 def test_module_collisions_aliases_and_cached_kernels(backend, modules):
     a, b = modules
-    out = tack.field(tack.i32, (6, 3))
+    out = tack.empty((6, 3), tack.i32)
     for module, offset in [(a, 10), (b, 30), (a, 10), (b, 30)]:
         module.apply(out)
         x = np.arange(6, dtype=np.int32)
-        np.testing.assert_array_equal(out.to_numpy(),
+        np.testing.assert_array_equal(out.numpy(),
                                       np.column_stack([x + offset, x + offset,
                                                        2 * (x + 2 * offset)]))
     # A new kernel object must bind correctly after all colliding definitions.
     tack.kernel(a.apply.func)(out)
-    np.testing.assert_array_equal(out.to_numpy()[:, 0], np.arange(6) + 10)
+    np.testing.assert_array_equal(out.numpy()[:, 0], np.arange(6) + 10)
 
 
 def test_nested_callees_use_own_namespace_and_arguments_use_caller(backend, modules):
     a, b = modules
-    out = tack.field(tack.i32, (6,))
+    out = tack.empty((6,), tack.i32)
     for module, own, peer in [(a, 10, 30), (b, 30, 10), (a, 10, 30)]:
         module.cross_apply(out)
         x = np.arange(6, dtype=np.int32)
-        np.testing.assert_array_equal(out.to_numpy(), 2 * (x + own + peer) + x + own)
+        np.testing.assert_array_equal(out.numpy(), 2 * (x + own + peer) + x + own)
 
 
 def test_templates_keep_defining_bindings_and_synthetic_calls_distinct(backend, modules):
     a, b = modules
-    out = tack.field(tack.i32, (6, 2))
+    out = tack.empty((6, 2), tack.i32)
     for module, offset in [(a, 10), (b, 30), (a, 10)]:
         obj = module.Model(7)
         module.template_apply(obj, out)
         x = np.arange(6, dtype=np.int32)
-        np.testing.assert_array_equal(out.to_numpy(),
+        np.testing.assert_array_equal(out.numpy(),
                                       np.column_stack([3 * (x + offset) + 7, x + 100]))
 
 
 def test_multiple_template_arguments_and_repeated_instance(backend, modules):
     a, b = modules
-    out = tack.field(tack.i32, (6,))
+    out = tack.empty((6,), tack.i32)
     x = np.arange(6, dtype=np.int32)
     for left, right, expected in [
         (a.Model(2), b.Model(5), 4 * x + 10 + 2 + 90 + 5),
         (b.Model(2), a.Model(5), 4 * x + 30 + 2 + 30 + 5),
     ]:
         a.template_pair(left, right, out)
-        np.testing.assert_array_equal(out.to_numpy(), expected)
+        np.testing.assert_array_equal(out.numpy(), expected)
     shared = a.Model(4)
     a.template_pair(shared, shared, out)
-    np.testing.assert_array_equal(out.to_numpy(), 4 * (x + 10) + 8)
+    np.testing.assert_array_equal(out.numpy(), 4 * (x + 10) + 8)
     shared.bias = 9
     a.template_pair(shared, shared, out)
-    np.testing.assert_array_equal(out.to_numpy(), 4 * (x + 10) + 18)
+    np.testing.assert_array_equal(out.numpy(), 4 * (x + 10) + 18)
 
 
 @tack.func
@@ -154,10 +154,10 @@ def _closure_kernel(device):
 
 def test_closure_bindings_keep_same_named_device_functions_distinct(backend):
     first, second = _closure_kernel(_add_ten), _closure_kernel(_add_thirty)
-    out = tack.field(tack.i32, (6,))
+    out = tack.empty((6,), tack.i32)
     for kernel, offset in [(first, 10), (second, 30), (first, 10)]:
         kernel(out)
-        np.testing.assert_array_equal(out.to_numpy(), np.arange(6) + offset)
+        np.testing.assert_array_equal(out.numpy(), np.arange(6) + offset)
 
 
 @tack.func
@@ -260,8 +260,8 @@ def _caller_keeps_its_t(x, out):
 def test_tuple_unpacked_callee_locals_do_not_clobber_the_caller(backend):
     """`t, u = ...` inside a device function used to escape renaming, so the
     inlined body overwrote the caller's `t` and `u`."""
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
-    x.from_numpy(np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
+    tack.copyto(x, np.array([1.0, 2.0, 3.0, 4.0], dtype=np.float32))
     _caller_keeps_its_t(x, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.array([305.0, 310.0, 315.0, 320.0], np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.array([305.0, 310.0, 315.0, 320.0], np.float32))

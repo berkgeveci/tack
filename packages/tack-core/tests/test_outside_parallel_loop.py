@@ -90,7 +90,7 @@ def _inlined_store_before_loop(x, out):
 @tack.device_class
 class _Counter:
     def __init__(self, n):
-        self.counts = tack.field(dtype=tack.i32, shape=(n,))
+        self.counts = tack.empty((n,), tack.i32)
 
     @tack.func
     def bump(self):
@@ -111,15 +111,15 @@ def _atomic_before_loop(counter, out):
         out[i] = 1.0
 
 
-def _fields(n):
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
-    return x, tack.field(dtype=tack.f32, shape=(n,))
+def _arrays(n):
+    x = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    return x, tack.empty((n,))
 
 
 def test_inlined_effect_names_the_device_function(backend):
     with pytest.raises(UnsupportedSyntaxError) as error:
-        _inlined_store_before_loop(*_fields(4))
+        _inlined_store_before_loop(*_arrays(4))
     assert str(error.value).startswith(
         "Device function '_store_first' (inlined into kernel "
         "'_inlined_store_before_loop'): store at line 3, column 5 "
@@ -128,7 +128,7 @@ def test_inlined_effect_names_the_device_function(backend):
 
 def test_template_method_effect_names_the_method(backend):
     with pytest.raises(UnsupportedSyntaxError) as error:
-        _template_effect_before_loop(_Counter(1), _fields(4)[1])
+        _template_effect_before_loop(_Counter(1), _arrays(4)[1])
     assert str(error.value).startswith(
         "Device function 'bump' (inlined into kernel "
         "'_template_effect_before_loop'): atomic_add() at line 3, column 5 "
@@ -136,11 +136,11 @@ def test_template_method_effect_names_the_method(backend):
 
 
 def test_atomic_before_the_loop_is_rejected_at_dispatch(backend):
-    counter = tack.field(dtype=tack.i32, shape=(1,))
-    counter.from_numpy(np.zeros(1, dtype=np.int32))
+    counter = tack.empty((1,), tack.i32)
+    tack.copyto(counter, np.zeros(1, dtype=np.int32))
     with pytest.raises(UnsupportedSyntaxError, match="atomic_add.*outside the parallel loop"):
-        _atomic_before_loop(counter, _fields(1 << 16)[1])
-    assert counter.to_numpy().tolist() == [0]
+        _atomic_before_loop(counter, _arrays(1 << 16)[1])
+    assert counter.numpy().tolist() == [0]
 
 
 @tack.kernel
@@ -162,14 +162,14 @@ def _rebinds_outer_local(out):
 
 
 def test_locals_before_the_loop_are_used_inside_it(backend):
-    x, out = _fields(1000)
+    x, out = _arrays(1000)
     _locals_before_loop(x, out, 3)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(1000, dtype=np.float32) * 6 + 1)
+    np.testing.assert_array_equal(out.numpy(), np.arange(1000, dtype=np.float32) * 6 + 1)
 
 
 def test_each_iteration_starts_from_the_outer_local(backend):
     # On CPU the statements before the loop ran once per chunk, so the
     # count carried over from one iteration to the next of that chunk.
-    out = tack.field(dtype=tack.f32, shape=(1 << 16,))
+    out = tack.empty((1 << 16,))
     _rebinds_outer_local(out)
-    assert set(out.to_numpy().tolist()) == {1.0}
+    assert set(out.numpy().tolist()) == {1.0}

@@ -11,10 +11,10 @@ scalar name per component. A value lives inside an iteration; a vector or matrix
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
-pos = tack.empty(dtype=tack.vec2(tack.f32), shape=(3,))
-vel = tack.empty(dtype=tack.vec2(tack.f32), shape=(3,))
-pos.from_numpy(np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float32))
+tack.set_default_device("cpu")
+pos = tack.empty((3,), tack.vec2(tack.f32))
+vel = tack.empty((3,), tack.vec2(tack.f32))
+tack.copyto(pos, np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float32))
 vel.fill([1.0, 0.0])
 
 @tack.kernel
@@ -23,7 +23,7 @@ def advance(pos, vel, dt):
         pos[i] += dt * vel[i]
 
 advance(pos, vel, 0.5)
-print(pos.to_numpy())    # [[0.5, 0.0], [1.5, 0.0], [0.5, 1.0]]
+print(pos.numpy())    # [[0.5, 0.0], [1.5, 0.0], [0.5, 1.0]]
 ```
 
 Each iteration loads a two-component velocity and updates its own position.
@@ -33,8 +33,8 @@ corresponding components; use `dot` or `@` for a dot product.
 A local assignment `p = pos[i]` loads a value. Changing `p.x` changes that local;
 write `pos[i] = p` to store it back. Writing `pos[i].x` targets the array directly.
 Vectors have a fixed width for each compiled specialization. There are no
-runtime-length vector values or swizzle constructors such as `v.rgb`/`vec4(v, 1)`;
-construct the components explicitly.
+runtime-length vector values or swizzle constructors such as
+`v.rgb`/`tack.vec4(v, 1.0)`; construct the components explicitly.
 
 ## Vectors
 
@@ -43,7 +43,7 @@ The component dtype defaults to f32. The ordinary array constructors allocate
 its storage, and vector operations are scalarized at the IR level:
 
 ```python
-v = tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))
+v = tack.empty((n,), tack.vec3(tack.f32))
 
 @tack.kernel
 def normalize_vectors(v, n):
@@ -71,10 +71,12 @@ def step(pos, vel, grid, out, dt, n):
         out[i] = grid[cell] * speed         # grid[cell] is grid[cell[0], cell[1], cell[2]]
 ```
 
-A list of scalars is a vector, so `tack.Vector` can be left out wherever
-a vector is expected: `pos[i] = [x, y]`, `v = [0.0, 0.0]`,
-`w.dot([1.0, 0.0])`, `p - [1.0, 0.0]`. A matrix still needs
-`tack.Matrix([[...], [...]])`.
+In a kernel the element-type names build vector values: `tack.vec3(x, y, z)`
+from three scalars, `tack.vec3(s)` with every component `s`, and
+`tack.vec3(v)` from a 3-vector (`vec2` and `vec4` likewise). A list of
+scalars is also a vector, of any width, so it can stand wherever a
+vector is expected: `pos[i] = [x, y]`, `v = [0.0, 0.0]`,
+`w.dot([1.0, 0.0])`, `p - [1.0, 0.0]`.
 
 The vector methods are `norm()`, `norm_sqr()`, `dot(w)`, `cross(w)`
 (3-vectors), `normalized()`, and the reductions over components `sum()`,
@@ -120,8 +122,9 @@ distance, normal, color = closest_hit(o, d)
 
 A vector array's shape excludes its component dimension. A vector array
 of shape `(n,)` and dtype `tack.vec3(tack.f32)` downloads as `(n, 3)` with
-plain `to_numpy()`. `from_numpy` accepts that shape or the flat storage
-shape. `size` is `n`; `scalar_size` is `3 * n`. `scalar_dtype` gives the
+`numpy()`, and `tack.copyto` takes values of that shape, or values that
+broadcast to it (one `(3,)` vector, say), not the flat storage shape.
+`size` is `n`; `scalar_size` is `3 * n`. `scalar_dtype` gives the
 component type. Copies and reshapes preserve the element type; reshaping
 changes only the array dimensions, without copying storage.
 
@@ -151,26 +154,29 @@ literal out of range is rejected at lowering.
 
 ## Matrices
 
-`tack.Matrix` gives small fixed-size matrices, up to 4×4. Like vectors
+Matrices are small and fixed-size, up to 4×4. Like vectors
 they are scalarized: a matrix is its entries, and every operation expands
 to scalar arithmetic at lowering.
 
 ```python
-F = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))    # a 2x2 matrix per particle
-C = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))
+F = tack.empty((n,), tack.mat2(tack.f32))    # a 2x2 matrix per particle
+C = tack.empty((n,), tack.mat2(tack.f32))
 
 @tack.kernel
 def update(F, C, x, dt, n):
     for p in range(n):
-        F[p] = (tack.Matrix.identity(2) + dt * C[p]) @ F[p]   # '@' multiplies
+        F[p] = (tack.identity(2) + dt * C[p]) @ F[p]   # '@' multiplies
         J = F[p].determinant()
         stress = (F[p] - F[p].inverse().transpose()) * J      # '*' is entry by entry
-        x[p] += stress @ tack.Vector([0.0, -1.0]) * dt        # matrix @ vector
+        x[p] += stress @ tack.vec2(0.0, -1.0) * dt        # matrix @ vector
 ```
 
-- **Building one.** `tack.Matrix([[a, b], [c, d]])` from rows of scalars,
-  `tack.Matrix([u, v])` from vectors as rows, `tack.Matrix.identity(n)`,
-  or `u.outer_product(v)`.
+- **Building one.** `tack.mat2([a, b], [c, d])` from rows of scalars,
+  `tack.mat2(u, v)` from vectors as rows, `tack.mat2(a, b, c, d)` from
+  four scalars in row-major order (`mat3`, `mat4` likewise);
+  `tack.mat(row, ...)` for any shape up to 4×4, such as three rows of
+  two; `tack.identity(n)` for a literal `n`, as `np.identity`; or
+  `u.outer_product(v)`.
 - **Products.** `A @ B` for matrices; `A @ v` and `v @ A` take a vector as
   a column and as a row and give a vector; `u @ v` is the dot product.
   Shapes must agree. `+`, `-`, `*`, `/`, the math builtins and scalar
@@ -184,7 +190,7 @@ def update(F, C, x, dt, n):
   (`F[p][0, 1]`). The indices may be runtime values, which must then be
   in range.
 - **Arrays.** A matrix array stores each matrix in row-major order.
-  `from_numpy` takes `(*shape, n, m)` and `to_numpy()` returns
+  `tack.copyto` takes `(*shape, n, m)` and `numpy()` returns
   it. `F[p] = A`, `F[p] += A`, `F[p] *= s` and
   `tack.atomic_add(F, p, A)` work as they do for vector arrays.
 - **Device functions** take and return matrices, alone or among several
@@ -210,7 +216,7 @@ vectors. [N-body](tutorials/nbody.md) accumulates three-component directions.
 Use those examples after the small position update above.
 
 
-`Vector` and `Matrix` still name kernel value construction, such as
-`Matrix.identity(3)`; array allocation does not use those namespaces.
-The older `Vector.array` and `Matrix.array` entry points remain compatible
-with their historical flat host metadata. Use element dtypes in new code.
+The same names serve both sides: on the host `tack.vec3()` and
+`tack.mat2()` are element dtypes that allocate arrays of vectors and
+matrices, and in a kernel `tack.vec3(x, y, z)` and `tack.mat2(...)` build
+values.

@@ -19,9 +19,9 @@ cd tack
 uv sync --extra cpu
 ```
 
-Run Python with `uv run python` from this directory. All three Tack packages
-are installed: `tack-core` for compute, `tack-vis` for datasets and scientific
-visualization, and `tack-rendering` for rendering.
+Run Python with `uv run python` from this directory. Both Tack packages are
+installed: `tack-core` for compute and `tack-vis` for datasets and scientific
+visualization.
 
 ### Use a released package
 
@@ -32,8 +32,8 @@ need from PyPI:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install 'tack-core[cpu]'
-# Optional: datasets and rendering
-python -m pip install tack-vis tack-rendering
+# Optional: datasets and visualization
+python -m pip install tack-vis
 ```
 
 On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell. Run scripts
@@ -54,13 +54,13 @@ decorated function's source, so a `.py` file is the starting point for this guid
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 
 # Create arrays from numpy arrays
 n = 1024
 x = tack.array(np.arange(n, dtype=np.float32))
 y = tack.array(np.ones(n, dtype=np.float32) * 2.0)
-out = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty((n,))
 
 # Define a kernel
 @tack.kernel
@@ -72,7 +72,7 @@ def vector_add(x, y, out):
 vector_add(x, y, out)
 
 # Read results back to numpy
-result = out.to_numpy()
+result = out.numpy()
 np.testing.assert_array_equal(result, np.arange(n, dtype=np.float32) + 2.0)
 print(result[:5])  # [2. 3. 4. 5. 6.]
 ```
@@ -96,15 +96,15 @@ separate thread on the GPU (or is split across CPU cores).
 ## Choosing a Backend
 
 After the CPU example works, install your backend's extra and replace the
-single `tack.init` line. For a checkout, keep `--extra cpu` if you want both:
+single `tack.set_default_device` line. For a checkout, keep `--extra cpu` if you want both:
 
-| Hardware | Checkout installation | Initialization |
+| Hardware | Checkout installation | Default device |
 |---|---|---|
-| CPU | `uv sync --extra cpu` | `tack.init(arch=tack.cpu)` |
-| Apple silicon GPU | `uv sync --extra cpu --extra metal` | `tack.init(arch=tack.metal)` |
-| NVIDIA GPU | `uv sync --extra cpu --extra cuda` | `tack.init(arch=tack.cuda)` |
-| AMD GPU | `uv sync --extra cpu --extra hip` | `tack.init(arch=tack.hip)` |
-| Intel GPU | `uv sync --extra cpu --extra level_zero` | `tack.init(arch=tack.level_zero)` |
+| CPU | `uv sync --extra cpu` | `tack.set_default_device("cpu")` |
+| Apple silicon GPU | `uv sync --extra cpu --extra metal` | `tack.set_default_device("metal")` |
+| NVIDIA GPU | `uv sync --extra cpu --extra cuda` | `tack.set_default_device("cuda")` |
+| AMD GPU | `uv sync --extra cpu --extra hip` | `tack.set_default_device("hip")` |
+| Intel GPU | `uv sync --extra cpu --extra level_zero` | `tack.set_default_device("level_zero")` |
 
 For released packages, use the matching extra, such as `tack-core[cuda]`.
 GPU extras also require compatible system runtimes; see [Backends](08-backends.md).

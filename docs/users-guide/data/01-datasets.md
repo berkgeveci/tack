@@ -3,7 +3,7 @@
 A scientific visualization pipeline starts with a mesh and values that mean
 something on that mesh: temperature at points, material per cell, flux through
 faces. `tack.dataset` keeps those relationships explicit so the same field can be
-interpolated, filtered, sampled and rendered without each stage inventing its
+interpolated, filtered and sampled without each stage inventing its
 own connectivity and indexing rules.
 
 Start with the [visualization quick start](../09-visualization.md#quick-start)
@@ -54,8 +54,8 @@ mesh. A cell or face set can also be a kernel's iteration domain.
 
 Here `td` is the conventional alias for `tack.dataset`. A raw buffer knows its
 element dtype and shape; it does not know whether its entries are point
-temperatures or cell averages. For example, `tack.empty(shape=(space.size,),
-dtype=tack.vec3())` allocates one vector per DOF. `td.Field(td.H1(data), values)` supplies that information.
+temperatures or cell averages. For example, `tack.empty((space.size,),
+tack.vec3())` allocates one vector per DOF. `td.Field(td.H1(data), values)` supplies that information.
 
 A NumPy array is useful input, but it is not itself a valid `td.Field` value
 array: use `tack.array(host, dtype=...)` to copy it into backend storage.
@@ -232,7 +232,7 @@ when it has the same number of values. The field length must also match the
 space's size; matching a shape alone does not establish the association.
 
 The example assumes the imports `numpy as np`, `tack`, and `tack.dataset as td`,
-with `tack.init(arch=tack.cpu)` before construction. The complete source below
+with `tack.set_default_device("cpu")` before construction. The complete source below
 includes them and runs independently.
 
 ## Inspect without losing track of transfers
@@ -268,7 +268,7 @@ visible through more than one dataset that refers to it.
 For a time-dependent simulation, retain the mesh and update its working fields.
 Run the analysis stages again for the new values; an old contour is a previous
 result, not a live view that recomputes itself. Rebuild spatial locators after
-moving geometry, and prepare a new rendering scene when its geometry changes.
+moving geometry.
 The [pipeline chapter](06-pipelines.md) makes these boundaries explicit.
 
 ## Run and check

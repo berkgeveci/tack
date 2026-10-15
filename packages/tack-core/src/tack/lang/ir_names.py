@@ -5,19 +5,19 @@ from tack.lang.ir_traversal import walk_ir
 
 # Definitions and references share a binding spelling in Tack IR. Attributes
 # and IRCall.func_name describe operations, rather than variable bindings.
-NAME_FIELDS = {
+NAME_ARRAYS = {
     ir.IRParam: ('name',),
     ir.IRName: ('name',),
     ir.IRAssign: ('target',),
     ir.IRParallelFor: ('var',),
     ir.IRSequentialFor: ('var',),
-    ir.IRSharedAlloc: ('name', 'field_name'),
-    ir.IRLocalAlloc: ('name', 'field_name'),
-    ir.IRDimSize: ('field_name',),
-    ir.IRTextureSample: ('field_name',),
+    ir.IRSharedAlloc: ('name', 'array_name'),
+    ir.IRLocalAlloc: ('name', 'array_name'),
+    ir.IRDimSize: ('array_name',),
+    ir.IRTextureSample: ('array_name',),
 }
 # Slots holding a list of names: a multi-dimensional parallel loop's indices.
-NAME_LIST_FIELDS = {
+NAME_LIST_ARRAYS = {
     ir.IRParallelFor: ('dims',),
 }
 
@@ -25,10 +25,10 @@ NAME_LIST_FIELDS = {
 def ir_names(root):
     """Return all variable spellings, including allocation/texture references."""
     names = {name for node in walk_ir(root)
-             for attr in NAME_FIELDS.get(type(node), ())
+             for attr in NAME_ARRAYS.get(type(node), ())
              if (name := getattr(node, attr)) is not None}
     names.update(name for node in walk_ir(root)
-                 for attr in NAME_LIST_FIELDS.get(type(node), ())
+                 for attr in NAME_LIST_ARRAYS.get(type(node), ())
                  for name in getattr(node, attr) or ())
     return names
 

@@ -21,8 +21,8 @@ needs_vtk = pytest.mark.skipif(vtk is None, reason="needs VTK, the reference")
 
 def _vectors(rows):
     rows = np.asarray(rows, np.float32)
-    field = tack.Vector.field(rows.shape[1], tack.f32, shape=(len(rows),))
-    field.from_numpy(rows)
+    field = tack.empty((len(rows),), tack.vec(rows.shape[1], tack.f32))
+    tack.copyto(field, rows)
     return field
 
 
@@ -43,15 +43,15 @@ def test_vector_analysis(backend):
     rng = np.random.default_rng(1)
     a, b = rng.normal(size=(2, data.num_points, 3)).astype(np.float32)
     fa, fb = td.Field(td.H1(data), _vectors(a)), td.Field(td.H1(data), _vectors(b))
-    np.testing.assert_allclose(td.magnitude(data, fa).values.to_numpy(), np.linalg.norm(a, axis=1),
+    np.testing.assert_allclose(td.magnitude(data, fa).values.numpy(), np.linalg.norm(a, axis=1),
                                rtol=1e-5)
-    np.testing.assert_allclose(td.dot(data, fa, fb).values.to_numpy(), (a * b).sum(1), rtol=1e-4,
+    np.testing.assert_allclose(td.dot(data, fa, fb).values.numpy(), (a * b).sum(1), rtol=1e-4,
                                atol=1e-5)
-    np.testing.assert_allclose(td.cross(data, fa, fb).values.to_numpy(vectors=True), np.cross(a, b),
+    np.testing.assert_allclose(td.cross(data, fa, fb).values.numpy(), np.cross(a, b),
                                rtol=1e-4, atol=1e-5)
     both = td.composite(data, td.Field(td.H1(data), _scalars(a[:, 0])),
                         td.Field(td.H1(data), _scalars(b[:, 1])))
-    np.testing.assert_array_equal(both.values.to_numpy(vectors=True), np.c_[a[:, 0], b[:, 1]])
+    np.testing.assert_array_equal(both.values.numpy(), np.c_[a[:, 0], b[:, 1]])
     assert td.magnitude(data, fa).space is td.H1(data)
     with pytest.raises(ValueError, match="one space"):
         td.dot(data, fa, td.Field(td.L2(data), _vectors(np.zeros((td.L2(data).size, 3)))))
@@ -61,11 +61,11 @@ def test_vector_analysis(backend):
 def test_log_values_clamp_below_the_minimum(backend, base):
     data = _two_hexes_and_a_pyramid()
     values = np.linspace(-1.0, 5.0, data.num_points).astype(np.float32)
-    out = td.log_values(data, td.Field(td.H1(data), _scalars(values)), base).values.to_numpy()
+    out = td.log_values(data, td.Field(td.H1(data), _scalars(values)), base).values.numpy()
     tiny = np.finfo(np.float32).tiny
     np.testing.assert_allclose(out, np.log(np.maximum(values, tiny)) / np.log(base), rtol=1e-5)
     out = td.log_values(data, td.Field(td.H1(data), _scalars(values)), base, min_value=0.5)
-    np.testing.assert_allclose(out.values.to_numpy(),
+    np.testing.assert_allclose(out.values.numpy(),
                                np.log(np.maximum(values, 0.5)) / np.log(base), rtol=1e-5)
 
 
@@ -88,7 +88,7 @@ def test_point_elevation_is_vtks(backend):
     expected = vtk_to_numpy(elevation.GetOutput().GetPointData().GetArray("Elevation"))
     out = td.point_elevation(vtk_to_dataset(grid), (-1.0, -0.5, 0.2), (1.5, 0.7, -0.4),
                              (3.0, 7.0))
-    np.testing.assert_allclose(out.values.to_numpy(), expected, rtol=1e-5, atol=1e-5)
+    np.testing.assert_allclose(out.values.numpy(), expected, rtol=1e-5, atol=1e-5)
     assert expected.min() == pytest.approx(3.0) and expected.max() == pytest.approx(7.0)
 
 
@@ -180,8 +180,8 @@ def test_an_l2_geometry_moves_every_corner(backend):
     pulled = td.DataSet(data.topology, corners)
     moved = td.transform(pulled, [[1, 0, 0, 5], [0, 1, 0, 0], [0, 0, 1, 0]])
     assert isinstance(moved.geometry.space, td.L2)
-    np.testing.assert_allclose(moved.geometry.values.to_numpy(vectors=True),
-                               corners.values.to_numpy(vectors=True) + np.array([5.0, 0.0, 0.0]))
+    np.testing.assert_allclose(moved.geometry.values.numpy(),
+                               corners.values.numpy() + np.array([5.0, 0.0, 0.0]))
 
 
 def test_composite_refuses_mixed_types(backend):
@@ -201,7 +201,7 @@ def test_binary_vector_operations_refuse_mixed_types(backend, algorithm):
         with pytest.raises(TypeError, match="differ in type"):
             algorithm(data, left, right)
     converted = td.Field(a.space, td.Cast(a.values, tack.f32))
-    result = algorithm(data, converted, b).values.to_numpy(vectors=True)
+    result = algorithm(data, converted, b).values.numpy()
     expected = [3.25, 3.25] if algorithm is td.dot else [[0.75, 0.75, -0.75]] * 2
     np.testing.assert_allclose(result, expected, rtol=1e-6)
 
@@ -211,33 +211,33 @@ def test_integer_nonlinear_transforms_compute_floating_results(backend):
     vector = td.Field(td.H1(data), td.ConstantArray([1, 1, 0], 2, dtype=tack.i32))
     norm = td.magnitude(data, vector)
     assert norm.values.dtype is tack.f32
-    np.testing.assert_allclose(norm.values.to_numpy(), np.sqrt(2), rtol=1e-6)
+    np.testing.assert_allclose(norm.values.numpy(), np.sqrt(2), rtol=1e-6)
     scalar = td.Field(td.H1(data), _scalars([1, 2], tack.i32))
     logarithm = td.log_values(data, scalar)
     assert logarithm.values.dtype is tack.f32
-    np.testing.assert_allclose(logarithm.values.to_numpy(), [0, np.log(2)], atol=1e-6)
+    np.testing.assert_allclose(logarithm.values.numpy(), [0, np.log(2)], atol=1e-6)
 
 
 def test_l2_face_positions_follow_mutable_geometry(backend):
     data = td.uniform_grid((2, 2, 2))
     data.geometry = td.discontinuous(data, data.geometry)
-    points = data.geometry.values.to_numpy(vectors=True)
-    before = td.face_centers(data).values.to_numpy(vectors=True)
+    points = data.geometry.values.numpy()
+    before = td.face_centers(data).values.numpy()
     shift = np.array([10, -3, 2], np.float32)
-    data.geometry.values.from_numpy(points + shift)
-    after = td.face_centers(data).values.to_numpy(vectors=True)
+    tack.copyto(data.geometry.values, points + shift)
+    after = td.face_centers(data).values.numpy()
     np.testing.assert_allclose(after, before + shift, atol=1e-6)
-    np.testing.assert_allclose(td.face_geometry(data).area.values.to_numpy(), 1, atol=1e-6)
+    np.testing.assert_allclose(td.face_geometry(data).area.values.numpy(), 1, atol=1e-6)
 
 
 def test_shrink_linearizes_quadratic_geometry_without_mutating_input(backend):
     data = td.uniform_grid((2, 2, 2))
     data.geometry = td.project(data, data.geometry, td.H1(data, order=2))
-    original = data.geometry.values.to_numpy(vectors=True).copy()
+    original = data.geometry.values.numpy().copy()
     out = td.shrink(data, factor=0.5)
     assert isinstance(out.geometry.space, td.L2)
-    corners = out.geometry.values.to_numpy(vectors=True)
+    corners = out.geometry.values.numpy()
     assert corners.shape == (8, 3)
     np.testing.assert_allclose(corners.min(axis=0), [0.25] * 3)
     np.testing.assert_allclose(corners.max(axis=0), [0.75] * 3)
-    np.testing.assert_array_equal(data.geometry.values.to_numpy(vectors=True), original)
+    np.testing.assert_array_equal(data.geometry.values.numpy(), original)

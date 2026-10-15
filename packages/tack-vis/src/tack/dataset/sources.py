@@ -56,7 +56,7 @@ def wavelet(extent=10, spacing=1.0, center=(0.0, 0.0, 0.0), maximum=255.0,
     data = uniform_grid([int(hi[d] - lo[d] + 1) for d in range(3)],
                         [lo[d] * s[d] for d in range(3)], s, dtype=dtype)
     n = data.num_points
-    out = tack.field(dtype, shape=(n,))
+    out = tack.empty((n,), dtype)
     scale = [1.0 / (hi[d] - lo[d]) if hi[d] > lo[d] else 1.0 for d in range(3)]
     _wavelet(out, int(hi[0] - lo[0] + 1), int(hi[1] - lo[1] + 1), *map(float, lo),
              *map(float, s), *map(float, center), *scale, *map(float, frequency),
@@ -88,7 +88,7 @@ def tangle(dims=(16, 16, 16), dtype=tack.f32):
         raise ValueError("tangle needs at least two points per axis")
     cells = dims - 1
     data = uniform_grid(dims, (0.0, 0.0, 0.0), 1.0 / cells, dtype=dtype)
-    out = tack.field(dtype, shape=(data.num_points,))
+    out = tack.empty((data.num_points,), dtype)
     _tangle(out, int(dims[0]), int(dims[1]), *map(float, cells))
     data.fields["tangle"] = Field(H1(data), out)
     return data

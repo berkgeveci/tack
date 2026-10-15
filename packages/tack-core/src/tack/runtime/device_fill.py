@@ -1,12 +1,12 @@
 """Filling device memory on the device.
 
-``Field.fill`` and ``tack.zeros``/``ones``/``full`` on CUDA, HIP and Level Zero
-used to build a host array the size of the field and upload it. On a 5M-cell
+``Array.fill`` and ``tack.zeros``/``ones``/``full`` on CUDA, HIP and Level Zero
+used to build a host array the size of the array and upload it. On a 5M-cell
 contour that was 24 ms of 40, more than every kernel together. A fill now
 stays on the device: the backend's native fill where the pattern allows one
 (a byte memset, CUDA's and HIP's 16- and 32-bit memsets, Level Zero's pattern
 fill), otherwise one element written from the host and doubled by
-device-to-device copies, a few dozen copies for any field size.
+device-to-device copies, a few dozen copies for any array size.
 """
 
 import numpy as np

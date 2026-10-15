@@ -3,22 +3,22 @@
 Pipeline:
     Tack IR → MSL (via msl_gen.py) → Metal compute pipeline
 
-Field pointers are encoded in one argument buffer to permit overlapping storage.
+Array pointers are encoded in one argument buffer to permit overlapping storage.
 The parallel loop range is dispatched as a 1D grid of threads.
 
 On Apple Silicon, Metal shared buffers live in unified memory accessible by both
-CPU and GPU.  Fields are backed directly by Metal buffer memory — no per-dispatch
+CPU and GPU.  Arrays are backed directly by Metal buffer memory — no per-dispatch
 copies are needed.
 
 Launches are queued, not waited for: each is encoded into the backend's open
 command buffer, committed every ``_BATCH`` launches, with at most
 ``_IN_FLIGHT`` committed ones outstanding. The host waits
-(``MetalBackend.synchronize``) only when it touches field memory -- every
+(``MetalBackend.synchronize``) only when it touches array memory -- every
 ``MetalBuffer`` method that reads or writes it, DLPack export, reductions,
 texture uploads -- or when ``tack.sync()`` asks. Waiting after every launch
 cost about 0.3 ms each, most of a small filter's time. Each queued launch
 therefore owns what it reads: its own argument buffer and its own copy of
-its packed scalars, and references to its fields until it completes.
+its packed scalars, and references to its arrays until it completes.
 """
 
 import atexit
@@ -28,9 +28,9 @@ from collections import deque
 
 import numpy as np
 
-from tack.codegen.reductions import field_reduction_source
+from tack.codegen.reductions import array_reduction_source
 from tack.lang import ir
-from tack.lang.field import DeviceBuffer, ExportedMemory
+from tack.lang.array import DeviceBuffer, ExportedMemory
 from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import (
@@ -93,12 +93,12 @@ if Metal is not None:
 # dispatch can index 2^32 threads; past that the position would wrap.
 _MAX_LAUNCH = 2**32
 
-# Every live Metal backend. tack.init makes a new backend each time it is
-# called, but fields made before it remain usable, and their launches now
-# queue on the new one: a buffer's host access has to wait for whichever
-# backend may be using it, not for the one it was made with. Holding the
-# buffer to its first backend's queue let mpm128's host write gravity while
-# launches queued on the second still had to read the old value.
+# Every live Metal backend. There is one Metal device, but a backend can be
+# made beside it (directly, as tests do), and a buffer's host access has to
+# wait for whichever backend may be using it, not only the one it was made
+# with. Holding the buffer to its first backend's queue once let mpm128's
+# host write gravity while launches queued on a second backend still had
+# to read the old value.
 _backends = weakref.WeakSet()
 
 
@@ -134,13 +134,13 @@ class MetalBuffer(DeviceBuffer):
     def __init__(self, device, numpy_dtype, shape, sync=None):
         nbytes = int(np.prod(shape)) * np.dtype(numpy_dtype).itemsize
         # MTLResourceStorageModeShared = 0 (CPU+GPU unified memory). A
-        # zero-length request returns no buffer, so an empty field (the
+        # zero-length request returns no buffer, so an empty array (the
         # result of a filter that selected nothing) gets one byte it never
         # reads; the view below still has zero elements.
-        # Metal clears a new buffer (newBufferWithLength:options:), so a field
+        # Metal clears a new buffer (newBufferWithLength:options:), so an array
         # starts zeroed without the CPU pass over every byte that clearing it
         # here once made -- most of a large filter's time on Metal, for the
-        # temporaries it allocates. test_new_fields_are_zero holds Metal to it.
+        # temporaries it allocates. test_new_arrays_are_zero holds Metal to it.
         self._metal_buffer = device.newBufferWithLength_options_(max(nbytes, 1), 0)
         raw = self._metal_buffer.contents().as_buffer(nbytes)
         self._view = np.frombuffer(raw, dtype=numpy_dtype).reshape(shape)
@@ -151,7 +151,7 @@ class MetalBuffer(DeviceBuffer):
         """Wait for queued kernels: they may be reading or writing this memory."""
         self._sync()
 
-    # Reading waits for queued command buffers, so `Field.to_numpy_async`
+    # Reading waits for queued command buffers, so `Array.numpy_async`
     # reads in a worker thread. Metal needs no per-thread binding.
     waits_off_thread = True
 
@@ -170,7 +170,7 @@ class MetalBuffer(DeviceBuffer):
         return self._metal_buffer
 
     def from_numpy(self, arr: np.ndarray):
-        # A reshaped field shares this buffer under another shape; the
+        # A reshaped array shares this buffer under another shape; the
         # element count already matches, so copy in the buffer's own shape.
         self._sync()
         np.copyto(self._view, arr.reshape(self._view.shape))
@@ -207,7 +207,7 @@ class MetalBuffer(DeviceBuffer):
 class MetalTextureImage:
     """A shader-read R32Float 3D MTLTexture.
 
-    Owned by one `Texture3D`, which uploads its field's data at creation and
+    Owned by one `Texture3D`, which uploads its array's data at creation and
     on ``update()``. Nothing else keeps a reference, so the texture is
     released with it: no later texture can be served one that was made from
     someone else's buffer.
@@ -228,16 +228,16 @@ class MetalTextureImage:
         desc.setStorageMode_(0)  # MTLStorageModeShared
         self.texture = device.newTextureWithDescriptor_(desc)
 
-    def upload(self, field):
-        """Copy a field's buffer into the texture via blit."""
+    def upload(self, array):
+        """Copy an array's buffer into the texture via blit."""
         W, H, D = self._shape
-        self._sync()          # kernels may still be writing the field
+        self._sync()          # kernels may still be writing the array
         blit_buf = self._command_queue.commandBuffer()
         blit_enc = blit_buf.blitCommandEncoder()
         bytes_per_row = W * 4
         bytes_per_image = W * H * 4
         blit_enc.copyFromBuffer_sourceOffset_sourceBytesPerRow_sourceBytesPerImage_sourceSize_toTexture_destinationSlice_destinationLevel_destinationOrigin_(
-            field._buffer.metal_buffer, 0, bytes_per_row, bytes_per_image,
+            array._buffer.metal_buffer, 0, bytes_per_row, bytes_per_image,
             Metal.MTLSizeMake(W, H, D), self.texture, 0, 0,
             Metal.MTLOriginMake(0, 0, 0))
         blit_enc.endEncoding()
@@ -247,7 +247,7 @@ class MetalTextureImage:
 
 class _Uniforms:
     """One launch's packed scalars: a buffer of their values, standing where the
-    launch binds a field (``arg._buffer.metal_buffer``)."""
+    launch binds an array (``arg._buffer.metal_buffer``)."""
 
     def __init__(self, device, dtype, entries, args):
         values = np.zeros(len(entries), dtype=dtype.numpy_dtype)
@@ -264,7 +264,7 @@ class CompiledMetalKernel:
     _NUMPY_MAP = {f32: np.float32, i32: np.int32, i64: np.int64, u32: np.uint32, u64: np.uint64}
 
     def __init__(self, device, command_queue, pipeline, func_name,
-                 param_types, param_is_field, param_is_texture=None,
+                 param_types, param_is_array, param_is_texture=None,
                  argument_encoder=None, *,
                  requires_full_workgroups=False, backend=None):
         self._max_threads_per_group = pipeline.maxTotalThreadsPerThreadgroup()
@@ -278,7 +278,7 @@ class CompiledMetalKernel:
         self._pipeline = pipeline
         self._func_name = func_name
         self._param_types = param_types
-        self._param_is_field = param_is_field
+        self._param_is_array = param_is_array
         self._param_is_texture = param_is_texture or [False] * len(param_types)
         self._argument_encoder = argument_encoder
         self._backend = backend
@@ -301,18 +301,18 @@ class CompiledMetalKernel:
         """Encode one launch into the backend's open command buffer. It runs after
         the launches before it (a compute pass per launch, buffers hazard-tracked)
         and owns what it reads, since the host may move on before it runs."""
-        # Everything that can fail on an argument (a field from another backend
+        # Everything that can fail on an argument (an array from another backend
         # has no metal_buffer) fails here, before an encoder is open: a command
         # buffer committed with an encoder still open aborts the process.
         bindings = []
         shared = False
-        for i, (arg, ptype, is_field, is_tex) in enumerate(
-                zip(kernel_args, self._param_types, self._param_is_field,
+        for i, (arg, ptype, is_array, is_tex) in enumerate(
+                zip(kernel_args, self._param_types, self._param_is_array,
                     self._param_is_texture)):
             if is_tex:
                 bindings.append(("texture", arg, arg.texture))
-            elif is_field:
-                bindings.append(("field", arg._buffer, arg._buffer.metal_buffer))
+            elif is_array:
+                bindings.append(("array", arg._buffer, arg._buffer.metal_buffer))
                 shared = shared or getattr(arg._buffer, "_shared", False)
             else:
                 bindings.append(("scalar", None,
@@ -342,7 +342,7 @@ class CompiledMetalKernel:
         )
         try:
             encoder.setComputePipelineState_(self._pipeline)
-            # Field pointers go in the argument buffer (buffer 0); scalars and
+            # Array pointers go in the argument buffer (buffer 0); scalars and
             # textures bind after it, textures in their own namespace.
             buf_idx = 0
             if argument_buffer is not None:
@@ -354,7 +354,7 @@ class CompiledMetalKernel:
                     encoder.setTexture_atIndex_(value, tex_idx)
                     keep.append(owner)
                     tex_idx += 1
-                elif kind == "field":
+                elif kind == "array":
                     # Encoded per launch: a cached variant can receive new
                     # buffers or a different alias relationship. The indirect
                     # resources also need residency declarations, which also
@@ -390,15 +390,15 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction,
         print(f"[Tack] Dumped MSL to {path}")
 
     param_types = [p.type_annotation for p in ir_func.params]
-    param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+    param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
     param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
     return _load_kernel(device, command_queue, msl_source, kernel_name, param_types,
-                        param_is_field, param_is_texture, requires_full_workgroups(ir_func),
+                        param_is_array, param_is_texture, requires_full_workgroups(ir_func),
                         backend)
 
 
 def _load_kernel(device, command_queue, msl_source, kernel_name, param_types,
-                 param_is_field, param_is_texture, full_workgroups,
+                 param_is_array, param_is_texture, full_workgroups,
                  backend=None) -> CompiledMetalKernel:
     """Compile MSL source into a pipeline for the kernel's entry point."""
     options = Metal.MTLCompileOptions.alloc().init()
@@ -418,13 +418,13 @@ def _load_kernel(device, command_queue, msl_source, kernel_name, param_types,
         raise RuntimeError(f"Metal pipeline creation failed: {error}")
 
     argument_encoder = None
-    if any(is_field and not is_texture for is_field, is_texture
-           in zip(param_is_field, param_is_texture)):
+    if any(is_array and not is_texture for is_array, is_texture
+           in zip(param_is_array, param_is_texture)):
         argument_encoder = func.newArgumentEncoderWithBufferIndex_(0)
         if argument_encoder is None:
             raise RuntimeError(f"Could not create argument encoder for '{kernel_name}'")
     compiled = CompiledMetalKernel(device, command_queue, pipeline, kernel_name,
-                                   param_types, param_is_field, param_is_texture,
+                                   param_types, param_is_array, param_is_texture,
                                    argument_encoder,
                                    requires_full_workgroups=full_workgroups,
                                    backend=backend)
@@ -432,9 +432,9 @@ def _load_kernel(device, command_queue, msl_source, kernel_name, param_types,
     return compiled
 
 
-_REDUCE_MSL_SUM = field_reduction_source('metal', 'sum')
-_REDUCE_MSL_MIN = field_reduction_source('metal', 'min')
-_REDUCE_MSL_MAX = field_reduction_source('metal', 'max')
+_REDUCE_MSL_SUM = array_reduction_source('metal', 'sum')
+_REDUCE_MSL_MIN = array_reduction_source('metal', 'min')
+_REDUCE_MSL_MAX = array_reduction_source('metal', 'max')
 
 
 class _CommandBufferMarker:
@@ -460,7 +460,7 @@ class _CommandBufferMarker:
 class MetalBackend(Backend):
     """Metal GPU backend — zero-copy dispatch on Apple Silicon unified memory.
 
-    Fields are backed by Metal shared buffers allocated at field creation time.
+    Arrays are backed by Metal shared buffers allocated at array creation time.
     from_numpy/to_numpy operate on the numpy view into shared memory — no
     host↔device transfers needed.
     """
@@ -481,7 +481,7 @@ class MetalBackend(Backend):
         "Metal's own allocations are host-addressable, but not the reverse: "
         "wrapping a host pointer as an MTLBuffer without copying needs a "
         "page-aligned address, which host allocations only get by accident "
-        "of size. Use tack.field() + from_numpy(), or "
+        "of size. Use tack.array(source) to copy, or "
         "tack.from_dlpack(source, copy=True)."
     )
 
@@ -544,7 +544,7 @@ class MetalBackend(Backend):
         error surfaces here, at the next host access, rather than at its call.
 
         The wait itself is outside ``_batch_lock``, so other threads keep
-        launching while one waits: `Field.to_numpy_async` reads in a worker
+        launching while one waits: `Array.numpy_async` reads in a worker
         thread, and an event loop that launches meanwhile would otherwise
         block on the lock until the read was done. Launches only remove
         command buffers from the front (`_wait_oldest`), so the ones waited
@@ -577,7 +577,7 @@ class MetalBackend(Backend):
             last = self._committed[-1][0] if self._committed else None
         return _CommandBufferMarker(last)
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+    def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> MetalBuffer:
         return MetalBuffer(self._device, dtype.numpy_dtype, shape, sync=_synchronize_all)
 
@@ -600,8 +600,8 @@ class MetalBackend(Backend):
             raise TypeError(
                 f"the Metal backend wraps an MTLBuffer object, not "
                 f"{type(ptr).__name__}. An address cannot be turned back "
-                f"into an MTLBuffer; allocate with tack.field() and copy "
-                f"into it with from_numpy().")
+                f"into an MTLBuffer; allocate with tack.empty() and copy "
+                f"into it with tack.copyto().")
         buf = MetalBuffer.__new__(MetalBuffer)
         buf._sync = _synchronize_all
         buf._shared = True       # another library's buffer, read without Tack
@@ -617,17 +617,17 @@ class MetalBackend(Backend):
         The IR passes and MSL compilation run only when this argument
         shape/type combination is new; see `resolve_variant`.
         """
-        from tack.lang.field import Texture3D
+        from tack.lang.array import Texture3D
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
             build=self._build_variant,
         )
-        compiled, pack_info, pack_fields = variant.payload
+        compiled, pack_info, pack_arrays = variant.payload
 
         # Loop range comes from the pre-packing IR: packing rewrites the
         # parameter list, and the range expression names the original args.
-        kernel_args = [a.field if isinstance(a, Texture3D) else a
+        kernel_args = [a.array if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end, extents = _get_launch(variant.ir, kernel_args)
         if loop_end <= 0:
@@ -635,7 +635,7 @@ class MetalBackend(Backend):
             return
         check_launch_size(f"Kernel '{kernel.name}'", loop_end, _MAX_LAUNCH, self.label)
 
-        # Textures bind their own snapshot, not the field they came from.
+        # Textures bind their own snapshot, not the array they came from.
         kernel_args = bind_textures(effective_args)
 
         # Replace scalar args with packed buffers of their values. Launches are
@@ -678,7 +678,7 @@ class MetalBackend(Backend):
         compiled, pack_info, _ = payload
         return {"msl": compiled.msl_source, "name": compiled._func_name,
                 "param_types": compiled._param_types,
-                "param_is_field": compiled._param_is_field,
+                "param_is_array": compiled._param_is_array,
                 "param_is_texture": compiled._param_is_texture,
                 "full_workgroups": compiled._requires_full_workgroups,
                 "pack_info": pack_info}
@@ -686,7 +686,7 @@ class MetalBackend(Backend):
     def load_variant(self, ir_func, artifact, effective_args=None):
         compiled = _load_kernel(self._device, self._command_queue, artifact["msl"],
                                 artifact["name"], artifact["param_types"],
-                                artifact["param_is_field"], artifact["param_is_texture"],
+                                artifact["param_is_array"], artifact["param_is_texture"],
                                 artifact["full_workgroups"], backend=self)
         return compiled, artifact["pack_info"], None
 
@@ -715,20 +715,20 @@ class MetalBackend(Backend):
         self._reduce_pipelines[op] = pipeline
         return pipeline
 
-    def reduce_field(self, field, op: str) -> float:
+    def reduce_array(self, array, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
         self.synchronize()
-        if field.size == 0:
+        if array.size == 0:
             return empty_reduction(op)
-        if field.dtype is not f32:
+        if array.dtype is not f32:
             # Fall back to numpy for non-f32
-            return reduce_numpy(field.to_numpy(), op)
-        n = int(np.prod(field.shape))
+            return reduce_numpy(array.numpy(), op)
+        n = int(np.prod(array.shape))
         if n >= _MAX_LAUNCH:
             # The kernel holds the count and its thread position in 32 bits.
             # Reduce the shared buffer in place rather than copy 16 GB.
-            return reduce_numpy(field._buffer._view, op)
+            return reduce_numpy(array._buffer._view, op)
 
         pipeline = self._get_reduce_pipeline(op)
 
@@ -745,7 +745,7 @@ class MetalBackend(Backend):
         encoder = command_buffer.computeCommandEncoderWithDescriptor_(
             Metal.MTLComputePassDescriptor.computePassDescriptor())
         encoder.setComputePipelineState_(pipeline)
-        encoder.setBuffer_offset_atIndex_(field._buffer.metal_buffer, 0, 0)
+        encoder.setBuffer_offset_atIndex_(array._buffer.metal_buffer, 0, 0)
         encoder.setBuffer_offset_atIndex_(out_buf, 0, 1)
 
         block_dim = 256

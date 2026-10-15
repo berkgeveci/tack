@@ -16,8 +16,8 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 N = 128
 ALPHA = 1.0  # thermal diffusivity
@@ -25,14 +25,14 @@ DX = 1.0 / N
 DT = 0.2 * DX * DX / ALPHA  # CFL condition for stability
 STEPS = 2000
 
-u = tack.empty(dtype=tack.f32, shape=(N, N))
-u_new = tack.empty(dtype=tack.f32, shape=(N, N))
+u = tack.empty((N, N))
+u_new = tack.empty((N, N))
 
 
 @tack.kernel
 def heat_step(u, u_new, alpha_dt_dx2, n):
     """One explicit Euler step of the heat equation."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         if i > 0:
             if i < n - 1:
                 if j > 0:
@@ -54,14 +54,14 @@ def heat_step(u, u_new, alpha_dt_dx2, n):
 
 
 @tack.kernel
-def copy_field(src, dst, n):
-    for i, j in tack.ndrange(n, n):
+def copy_array(src, dst, n):
+    for i, j in tack.ndindex(n, n):
         dst[i, j] = src[i, j]
 
 
 @tack.kernel
 def init_hotspots(u, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         r1 = sqrt(float((i - n // 3) * (i - n // 3) + (j - n // 3) * (j - n // 3)))
         r2 = sqrt(float((i - 2 * n // 3) * (i - 2 * n // 3) + (j - 2 * n // 3) * (j - 2 * n // 3)))
         if r1 < float(n // 8):
@@ -84,10 +84,10 @@ print(f"  CFL parameter alpha*dt/dx^2 = {alpha_dt_dx2:.4f} (must be < 0.25)")
 snapshots = []
 for step in range(STEPS):
     heat_step(u, u_new, alpha_dt_dx2, N)
-    copy_field(u_new, u, N)
+    copy_array(u_new, u, N)
 
     if (step + 1) % 500 == 0:
-        data = u.to_numpy().reshape(N, N)
+        data = u.numpy().reshape(N, N)
         snapshots.append(data.copy())
         print(f"  step {step+1:>5d}: max={data.max():.4f}  mean={data.mean():.4f}")
 

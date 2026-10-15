@@ -87,9 +87,9 @@ class Set:
         n = _count(topology, on)
         idt = topology.id_dtype
         given = id_types.as_ids(ids, id_types.at_least(idt, n))
-        flags = tack.zeros(tack.i32, (n,))
+        flags = tack.zeros((n,), tack.i32)
         if given.shape[0]:
-            bad = tack.zeros(tack.i32, (1,))
+            bad = tack.zeros((1,), tack.i32)
             _mark(given, flags, bad, n)
             if bad[0]:
                 raise ValueError(f"{bad[0]} ids are outside the topology's {n} {on}")
@@ -108,7 +108,7 @@ class Set:
 
     @classmethod
     def _from_flags(cls, topology, on, flags):
-        """A set from a 0/1 i32 field over the entities."""
+        """A set from a 0/1 i32 array over the entities."""
         out = cls.__new__(cls)
         out.topology = topology
         out.on = on
@@ -118,9 +118,9 @@ class Set:
     def _adopt(self, flags):
         n = flags.shape[0]
         idt = self.topology.id_dtype
-        slots = tack.field(idt, shape=(n,))
+        slots = tack.empty((n,), idt)
         count = exclusive_scan(flags, slots, n) if n else 0
-        self.ids = tack.field(idt, shape=(count,))
+        self.ids = tack.empty((count,), idt)
         if count:
             _members(flags, slots, self.ids)
         self._flags = flags
@@ -144,23 +144,23 @@ class Set:
             raise ValueError("local faces are numbered from 0")
         topology = data.topology
         faces = topology.faces()
-        flags = tack.zeros(tack.i32, (faces.num_faces,))
-        bad = tack.zeros(tack.i32, (1,))
+        flags = tack.zeros((faces.num_faces,), tack.i32)
+        bad = tack.zeros((1,), tack.i32)
         if hasattr(topology, "cell_faces"):
             # Cells list their faces, as many as they like: look each pair up.
             if cells.size:
-                _listed_faces(tack.field_from_numpy(cells), tack.field_from_numpy(local),
+                _listed_faces(tack.array(cells), tack.array(local),
                               topology.cell_offsets, topology.cell_faces, flags, bad)
         else:
             # Shapes have at most six faces: a bit per local face, a mask per cell.
             if local.size and local.max() >= 63:
-                bad = tack.full(tack.i32, (1,), int((local >= 63).sum()))
+                bad = tack.full((1,), int((local >= 63).sum()), tack.i32)
             else:
                 host = np.zeros(n, np.int64)
                 np.bitwise_or.at(host, cells, np.left_shift(np.int64(1), local))
-                masks = tack.field(tack.i64, shape=(n,))
+                masks = tack.empty((n,), tack.i64)
                 if n:
-                    masks.from_numpy(host)
+                    tack.copyto(masks, host)
                 if cells.size:
                     for_each(_side_faces, data, "cells", masks, flags, bad)
         if bad[0]:
@@ -168,12 +168,12 @@ class Set:
         return cls._from_flags(data.topology, "faces", flags)
 
     def flags(self):
-        """Membership: an i32 field, 1 for each entity in the set, else 0."""
+        """Membership: an i32 array, 1 for each entity in the set, else 0."""
         if self._flags is None:
             n = _count(self.topology, self.on)
-            flags = tack.zeros(tack.i32, (n,))
+            flags = tack.zeros((n,), tack.i32)
             if self.ids.shape[0]:
-                _mark(self.ids, flags, tack.zeros(tack.i32, (1,)), n)
+                _mark(self.ids, flags, tack.zeros((1,), tack.i32), n)
             self._flags = flags
         return self._flags
 
@@ -184,9 +184,16 @@ class Set:
     def __len__(self):
         return int(self.ids.shape[0])
 
-    def to_numpy(self):
+    def numpy(self):
         """The ids, sorted, on the host."""
-        return self.ids.to_numpy()
+        return self.ids.numpy()
+
+    def __array__(self, dtype=None, copy=None):
+        """``np.asarray(set)``: the ids, sorted, on the host."""
+        if copy is False:
+            raise ValueError("a Set cannot be viewed by NumPy without a copy")
+        ids = self.numpy()
+        return ids if dtype is None else ids.astype(dtype, copy=False)
 
     def __repr__(self):
         return f"Set(on={self.on!r}, {len(self)} ids)"

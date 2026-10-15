@@ -1,7 +1,7 @@
 """Arrays: what a field's values are, apart from how they are stored.
 
-A ``Field``'s ``values`` is any array: a device field (``tack.field`` or
-``tack.Vector.field``), stored explicitly, or an implicit array, which
+A ``Field``'s ``values`` is any array: a Tack array (``tack.empty``,
+``tack.array``), stored explicitly, or an implicit array, which
 computes each value from its index and stores next to nothing. Implicit
 arrays compose: a permutation of a concatenation of a counting array is an
 array, to any depth.
@@ -47,7 +47,7 @@ import numpy as np
 
 import tack
 from tack import random
-from tack.lang.field import Field as _DeviceField
+from tack.lang.array import Array as _DeviceArray
 from tack.lang.func import Func
 
 __all__ = ["CartesianProduct", "Cast", "Components", "Concatenate", "ConstantArray",
@@ -75,10 +75,16 @@ class _Implicit:
     def dtype(self):
         return self._dtype
 
-    def to_numpy(self, vectors=False):
-        """The values as a host array: ``(size,)``, or ``(size, width)`` for vectors
-        (also when ``vectors`` is false: there is no flat layout to return)."""
+    def numpy(self):
+        """The values as a host array: ``(size,)``, or ``(size, width)`` for vectors."""
         return to_host(materialize(self))
+
+    def __array__(self, dtype=None, copy=None):
+        """``np.asarray(values)``: the values computed on the host."""
+        if copy is False:
+            raise ValueError("an implicit array cannot be viewed by NumPy without a copy")
+        values = self.numpy()
+        return values if dtype is None else values.astype(dtype, copy=False)
 
     def __repr__(self):
         return type(self).__name__
@@ -90,7 +96,7 @@ def _metadata(array, size, width, dtype):
 
 @tack.device_class
 class _Explicit(_Implicit):
-    """A device field, where an array holds an array: value ``k`` is ``values[k]``."""
+    """A device array, where an array holds an array: value ``k`` is ``values[k]``."""
 
     def __init__(self, values):
         self.values = values
@@ -103,10 +109,10 @@ class _Explicit(_Implicit):
 
 def _operand(values):
     """``values`` as an array another array can hold: an implicit array as it is, a
-    device field wrapped, anything else stored first."""
+    device array wrapped, anything else stored first."""
     if isinstance(values, _Implicit):
         return values
-    if isinstance(values, _DeviceField):
+    if isinstance(values, _DeviceArray):
         return _Explicit(values)
     host = np.asarray(values)
     dtype = tack.i64 if host.dtype.kind in "iu" and host.size and \
@@ -117,11 +123,11 @@ def _operand(values):
 def _store(host, dtype):
     host = np.ascontiguousarray(host, dtype=dtype.numpy_dtype)
     if host.ndim == 2:
-        field = tack.Vector.field(host.shape[1], dtype, shape=(host.shape[0],))
+        field = tack.empty((host.shape[0],), tack.vec(host.shape[1], dtype))
     else:
-        field = tack.field(dtype, shape=host.shape)
+        field = tack.empty(host.shape, dtype)
     if host.size:
-        field.from_numpy(host)
+        tack.copyto(field, host)
     return field
 
 
@@ -165,7 +171,7 @@ class CountingArray(_Implicit):
     def get(self, k):
         return self.start + self.step * k
 
-    def to_numpy(self, vectors=False):
+    def numpy(self):
         return (self.start + self.step * np.arange(self.size)).astype(self.dtype.numpy_dtype)
 
 
@@ -184,7 +190,7 @@ class CartesianProduct(_Implicit):
 
     @staticmethod
     def _axis(values, dtype):
-        if isinstance(values, _DeviceField):
+        if isinstance(values, _DeviceArray):
             return values
         return _store(np.asarray(values).reshape(-1), dtype)
 
@@ -209,8 +215,8 @@ class CartesianProduct(_Implicit):
     def get_ijk(self, at):
         return [self.xs[at[0]], self.ys[at[1]], self.zs[at[2]]]
 
-    def to_numpy(self, vectors=False):
-        z, y, x = np.meshgrid(self.zs.to_numpy(), self.ys.to_numpy(), self.xs.to_numpy(),
+    def numpy(self):
+        z, y, x = np.meshgrid(self.zs.numpy(), self.ys.numpy(), self.xs.numpy(),
                               indexing="ij")
         return np.stack([x, y, z], axis=-1).reshape(-1, 3)
 
@@ -267,7 +273,7 @@ class UniformCoordinates(_Implicit):
         rest = p // self.px
         return self.get_ijk([p - rest * self.px, rest % self.py, rest // self.py])
 
-    def to_numpy(self, vectors=False):
+    def numpy(self):
         k, j, i = np.meshgrid(*(np.arange(n) for n in self.dims[::-1]), indexing="ij")
         ijk = np.stack([i, j, k], axis=-1).reshape(-1, 3) * np.asarray(self._spacing)
         points = np.asarray(self._origin) + ijk @ self._matrix.T
@@ -319,7 +325,7 @@ def Concatenate(*arrays):
 
 @tack.device_class
 class Strided(_Implicit):
-    """``values[offset + stride * k]`` of a scalar device field, as VTK's strided array:
+    """``values[offset + stride * k]`` of a scalar device array, as VTK's strided array:
     one column of interleaved data, or every n-th value."""
 
     def __init__(self, values, stride, offset=0, size=None):
@@ -517,11 +523,7 @@ class RandomNormal(_Implicit):
 
 def size_of(values):
     """The number of values."""
-    if isinstance(values, _Implicit):
-        return values.size
-    if not getattr(values, '_legacy_layout', False):
-        return values.size
-    return values.shape[0] if not width_of(values) else values.shape[0] // width_of(values)
+    return values.size
 
 
 def width_of(values):
@@ -533,14 +535,12 @@ def width_of(values):
 
 def dtype_of(values):
     """The type of each component."""
-    return values.scalar_dtype if isinstance(values, _DeviceField) else values.dtype
+    return values.scalar_dtype if isinstance(values, _DeviceArray) else values.dtype
 
 
 def to_host(values):
     """The values as a host array: ``(size,)`` for scalars, ``(size, width)`` for vectors."""
-    if isinstance(values, _Implicit):
-        return values.to_numpy(vectors=True)
-    return values.to_numpy(vectors=True) if width_of(values) else values.to_numpy()
+    return values.numpy()
 
 
 @tack.kernel
@@ -550,15 +550,15 @@ def _fill(array, out):
 
 
 def materialize(values):
-    """``values`` as a device field: itself if it is one, else computed by a kernel."""
+    """``values`` as a device array: itself if it is one, else computed by a kernel."""
     if not isinstance(values, _Implicit):
         return values
     if isinstance(values, _Explicit):
         return values.values
     if values.width:
-        out = tack.Vector.field(values.width, values.dtype, shape=(values.size,))
+        out = tack.empty((values.size,), tack.vec(values.width, values.dtype))
     else:
-        out = tack.field(values.dtype, shape=(values.size,))
+        out = tack.empty((values.size,), values.dtype)
     if values.size:
         _fill(values, out)
     return out
@@ -571,7 +571,7 @@ def storage(values):
     if isinstance(values, _Implicit):
         mixin = views._ArrayIJKStorage if hasattr(values, "get_ijk") else views._ArrayStorage
         return mixin, {"array": values}
-    if isinstance(values, _DeviceField):
+    if isinstance(values, _DeviceArray):
         return views._ExplicitStorage, {"values": values}
-    raise TypeError(f"field values must be a tack field or an implicit array, "
+    raise TypeError(f"field values must be a Tack array or an implicit array, "
                     f"not {type(values).__name__}")

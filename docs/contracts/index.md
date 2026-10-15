@@ -47,7 +47,7 @@ Two more conventions apply on every contract page:
   *rejected*, it names the exception type and where the exception is
   raised: at decoration, at first dispatch, on every dispatch, or at
   inspection. It also gives the shape of the message. A rejection raised
-  before compilation or launch leaves field storage unchanged.
+  before compilation or launch leaves array storage unchanged.
 - **Current behavior is not a promise.** It is recorded so that you can
   rely on it today and so that any change to it is deliberate. Don't build
   a portable program on a **Current behavior** item when a **Required**
@@ -59,7 +59,7 @@ Two more conventions apply on every contract page:
 |---|---|---|
 | [Kernel language contract](../reference/language-contract.md) | What a kernel means: supported constructs, execution and ordering, memory and aliasing, integer and floating-point semantics, reductions, workgroups, atomics and specialization identity. Regression IDs LC1–LC8 | Draft under review, normative for the compiler hardening work |
 | [Backend capabilities](backend-capabilities.md) | The `Backend` base class, the meaning of each capability attribute, the capability matrix for each backend, how launches are queued, and what each capability rejects and when | Describes `23d6e1d`, updated through `b94af23` |
-| [Runtime API](runtime-api.md) | `tack.init` and debug mode, fields and their host operations, `tack.sync`, reductions, pointer and DLPack interop, `tack.inspect`, the decorators, kernel call rules, environment variables, `tack.cache` and exception types | Describes `23d6e1d`, updated through `b94af23` |
+| [Runtime API](runtime-api.md) | Devices (`tack.device`, the default device, launch placement) and debug mode, arrays and their host operations, `tack.sync`, reductions, pointer and DLPack interop, `tack.inspect`, the decorators, kernel call rules, environment variables, `tack.cache` and exception types | Describes `23d6e1d`, updated through `b94af23` and the device model of `bba0846` |
 | [Conformance and validation](conformance.md) | How each contract area is tested, which oracles the tests use, how a hardware validation is run and recorded, and the most recent status of each backend | Describes `23d6e1d`, with validation status recorded at `745e01f` |
 
 The language contract is long because it defines semantics. The other three

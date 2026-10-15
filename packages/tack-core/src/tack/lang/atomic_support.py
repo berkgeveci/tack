@@ -16,9 +16,9 @@ ATOMIC_DTYPES = {
 def check_atomic_support(func, *, backend_name, supported_dtypes=None):
     """Validate fresh IR; return atomic parameter indices and byte alignment.
 
-    Targets must resolve uniquely to global field parameters, including
+    Targets must resolve uniquely to global array parameters, including
     pointer copies introduced by inlining. Private/shared allocations,
-    textures and scalar parameters are separate address spaces, not fields.
+    textures and scalar parameters are separate address spaces, not arrays.
     Never trust cached node dtype annotations on mutable direct-codegen IR.
     """
     supported = (ATOMIC_DTYPES.get(backend_name, frozenset())
@@ -56,12 +56,12 @@ def check_atomic_support(func, *, backend_name, supported_dtypes=None):
         context = f"Kernel '{func.name}': {backend_name} atomic_{node.op}"
         if node.op not in ('add', 'min', 'max'):
             raise TypeError(f'{context} is not supported')
-        name = node.field.name if isinstance(node.field, ir.IRName) else None
+        name = node.array.name if isinstance(node.array, ir.IRName) else None
         origins = sources.get(name, set())
         entry = params.get(next(iter(origins))) if len(origins) == 1 else None
-        if (entry is None or not getattr(entry[1], '_is_field', True)
+        if (entry is None or not getattr(entry[1], '_is_array', True)
                 or getattr(entry[1], '_is_texture', False)):
-            raise TypeError(f'{context} requires a global field parameter target')
+            raise TypeError(f'{context} requires a global array parameter target')
         index, param = entry
         dtype = param.type_annotation
         if dtype not in supported:

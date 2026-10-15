@@ -24,8 +24,8 @@ except ImportError:
 
 def _vectors(values):
     values = np.asarray(values, np.float32)
-    field = tack.Vector.field(3, tack.f32, shape=(len(values),))
-    field.from_numpy(values)
+    field = tack.empty((len(values),), tack.vec(3, tack.f32))
+    tack.copyto(field, values)
     return field
 
 
@@ -80,10 +80,10 @@ def test_rk4_through_a_linear_field_is_exact(backend, mesh):
     for i, seed in enumerate(seeds):
         np.testing.assert_allclose(out.positions()[i], _numpy_rk4(seed, 0.02, 120, center),
                                    atol=2e-4)
-    np.testing.assert_array_equal(out.fields["steps"].values.to_numpy(), [120, 120])
-    np.testing.assert_array_equal(out.fields["status"].values.to_numpy(),
+    np.testing.assert_array_equal(out.fields["steps"].values.numpy(), [120, 120])
+    np.testing.assert_array_equal(out.fields["status"].values.numpy(),
                                   td.ParticleStatus.SUCCESS | td.ParticleStatus.TERMINATE | td.ParticleStatus.TOOK_ANY_STEPS)
-    np.testing.assert_allclose(out.fields["time"].values.to_numpy(), 2.4, rtol=1e-5)
+    np.testing.assert_allclose(out.fields["time"].values.numpy(), 2.4, rtol=1e-5)
 
 
 def test_a_mixed_mesh(backend):
@@ -107,22 +107,22 @@ def test_leaving_the_mesh_bisects_then_pushes_out(backend):
     out = td.advect(_uniform(), "v", [[1.55, 1.0, 1.0]], 0.1, 100)
     x = out.positions()[0]
     assert 2.0 < x[0] < 2.0 + 0.051 and x[1] == pytest.approx(1.0)
-    assert out.fields["steps"].values.to_numpy()[0] == 5
-    assert out.fields["status"].values.to_numpy()[0] == (
+    assert out.fields["steps"].values.numpy()[0] == 5
+    assert out.fields["status"].values.numpy()[0] == (
         td.ParticleStatus.SUCCESS | td.ParticleStatus.SPATIAL_BOUNDS | td.ParticleStatus.TOOK_ANY_STEPS)
-    assert out.fields["time"].values.to_numpy()[0] == pytest.approx(0.45, abs=1e-3)
+    assert out.fields["time"].values.numpy()[0] == pytest.approx(0.45, abs=1e-3)
 
 
 def test_seeds_outside_and_still_fields(backend):
     data = _uniform()
     out = td.advect(data, "v", [[5.0, 1.0, 1.0]], 0.1, 10)
-    assert out.fields["steps"].values.to_numpy()[0] == 0
-    assert out.fields["status"].values.to_numpy()[0] == td.ParticleStatus.SPATIAL_BOUNDS
+    assert out.fields["steps"].values.numpy()[0] == 0
+    assert out.fields["status"].values.numpy()[0] == td.ParticleStatus.SPATIAL_BOUNDS
     np.testing.assert_array_equal(out.positions()[0], [5.0, 1.0, 1.0])
     still = _uniform((0.0, 0.0, 0.0))
     out = td.advect(still, "v", [[1.0, 1.0, 1.0]], 0.1, 10)
-    assert out.fields["steps"].values.to_numpy()[0] == 1
-    assert out.fields["status"].values.to_numpy()[0] == (
+    assert out.fields["steps"].values.numpy()[0] == 1
+    assert out.fields["status"].values.numpy()[0] == (
         td.ParticleStatus.SUCCESS | td.ParticleStatus.TERMINATE | td.ParticleStatus.ZERO_VELOCITY | td.ParticleStatus.TOOK_ANY_STEPS)
 
 
@@ -134,8 +134,8 @@ def test_cell_velocity_and_euler(backend):
                                 _vectors(np.tile([0.0, 0.0, 1.0], (data.num_cells, 1))))
     out = td.advect(data, "c", [[1.0, 1.0, 0.5]], 0.25, 100, integrator="euler")
     np.testing.assert_allclose(out.positions()[0], [1.0, 1.0, 2.25], atol=1e-5)
-    assert out.fields["steps"].values.to_numpy()[0] == 7
-    assert out.fields["status"].values.to_numpy()[0] == td.ParticleStatus.SPATIAL_BOUNDS | td.ParticleStatus.TOOK_ANY_STEPS
+    assert out.fields["steps"].values.numpy()[0] == 7
+    assert out.fields["status"].values.numpy()[0] == td.ParticleStatus.SPATIAL_BOUNDS | td.ParticleStatus.TOOK_ANY_STEPS
 
 
 def test_streamlines_are_the_paths(backend):
@@ -145,22 +145,22 @@ def test_streamlines_are_the_paths(backend):
     # One polyline per seed that moved; the third, outside, keeps its point.
     assert isinstance(lines.topology, td.PolylineTopology)
     assert lines.num_points == 31 + 31 + 1 and lines.num_cells == 2
-    np.testing.assert_array_equal(lines.fields["seed"].values.to_numpy(), [0, 1])
+    np.testing.assert_array_equal(lines.fields["seed"].values.numpy(), [0, 1])
     x = lines.positions()
     np.testing.assert_array_equal(x[0], seeds[0])
     np.testing.assert_allclose(x[30], _numpy_rk4(seeds[0], 0.05, 30), atol=2e-4)
-    np.testing.assert_allclose(lines.fields["time"].values.to_numpy()[:31],
+    np.testing.assert_allclose(lines.fields["time"].values.numpy()[:31],
                                0.05 * np.arange(31), atol=1e-5)
-    line_offsets, line_points = (a.to_numpy() for a in lines.topology.lines())
+    line_offsets, line_points = (a.numpy() for a in lines.topology.lines())
     np.testing.assert_array_equal(line_offsets, [0, 31, 62])
     np.testing.assert_array_equal(line_points, np.arange(62))
     # Each path's length is its steps', and its loose ends are its first and last.
-    lengths = td.cell_geometry(lines).measure.values.to_numpy()
+    lengths = td.cell_geometry(lines).measure.values.numpy()
     np.testing.assert_allclose(lengths, [np.linalg.norm(np.diff(x[:31], axis=0), axis=1).sum(),
                                          np.linalg.norm(np.diff(x[31:62], axis=0), axis=1).sum()],
                                rtol=1e-5)
     ends = td.external_faces(lines)
-    np.testing.assert_array_equal(np.sort(ends.topology.connectivity.to_numpy()), [0, 30, 31, 61])
+    np.testing.assert_array_equal(np.sort(ends.topology.connectivity.numpy()), [0, 30, 31, 61])
     advected = td.advect(data, "v", seeds, 0.05, 30)
     np.testing.assert_allclose(x[[30, 61]], advected.positions()[:2], atol=1e-6)
 

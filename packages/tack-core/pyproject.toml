@@ -37,7 +37,7 @@ metal = [
 # dependency now. It ships manylinux x86_64 wheels only, hence the marker:
 # without it, `pip install tack-core[hip]` fails to resolve on macOS and
 # Windows instead of quietly installing nothing, which is the friendlier
-# outcome given tack.init() already explains what a missing HIP runtime
+# outcome given tack.device() already explains what a missing HIP runtime
 # means.
 #
 # Lower bound only. hip-python's version tracks the ROCm release it binds

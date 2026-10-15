@@ -37,14 +37,14 @@ from tack.dataset import arrays, ids
 from tack.dataset.arrays import materialize, size_of, width_of
 from tack.dataset.dataset import DataSet, Field
 from tack.dataset.spaces import H1, L2, Constant, Values
-from tack.lang.field import Field as _DeviceField
+from tack.lang.array import Array as _DeviceArray
 
 __all__ = ["Interpolate", "Pieces", "Same", "Take", "carry"]
 
 
 def _id_field(values):
     """Ids as a field: a field as it is, a list or an array copied to one."""
-    if values is None or isinstance(values, _DeviceField):
+    if values is None or isinstance(values, _DeviceArray):
         return values
     host = np.asarray(values)
     return ids.as_ids(host, ids.at_least(tack.i32, int(host.max()) + 1 if host.size else 0))
@@ -56,13 +56,13 @@ class Same:
 
 class Take:
     """Output entity ``i`` is input entity ``ids[i]``. ``turned``, for faces: an
-    i32 field, 1 where the output face is the input face turned around, so
+    i32 array, 1 where the output face is the input face turned around, so
     its oriented values change sign."""
 
     def __init__(self, ids, turned=None):
         self.ids = _id_field(ids)
-        self.turned = turned if turned is None or isinstance(turned, _DeviceField) \
-            else tack.field_from_numpy(np.asarray(turned, np.int32))
+        self.turned = turned if turned is None or isinstance(turned, _DeviceArray) \
+            else tack.array(np.asarray(turned, np.int32))
 
 
 class Pieces(Take):
@@ -90,8 +90,8 @@ class Interpolate:
 def _like(values, n):
     width = width_of(values)
     if width:
-        return tack.Vector.field(width, arrays.dtype_of(values), shape=(n,))
-    return tack.field(values.dtype, shape=(n,))
+        return tack.empty((n,), tack.vec(width, arrays.dtype_of(values)))
+    return tack.empty((n,), values.dtype)
 
 
 @tack.kernel
@@ -112,7 +112,7 @@ def _point_values(values, n):
     of an order-2 field's (which go on to its edges, faces and cells)."""
     if size_of(values) == n:
         return values
-    return _take(values, tack.arange(n, ids.at_least(tack.i32, n)))
+    return _take(values, tack.arange(n, dtype=ids.at_least(tack.i32, n)))
 
 
 @tack.kernel
@@ -188,7 +188,7 @@ def _carry_l2(field, out, cells):
         return None
     if isinstance(cells, Same):
         topology = field.space.topology
-        sources = tack.arange(topology.num_cells, topology.id_dtype)
+        sources = tack.arange(topology.num_cells, dtype=topology.id_dtype)
     elif isinstance(cells, Take) and not isinstance(cells, Pieces):
         sources = cells.ids
     else:
@@ -196,7 +196,7 @@ def _carry_l2(field, out, cells):
     count = sources.shape[0]
     if space.varies:
         orders = np.asarray(arrays.to_host(space.cell_keys()))
-        out_space = L2(out, order=orders[sources.to_numpy()] if count else np.zeros(0, int))
+        out_space = L2(out, order=orders[sources.numpy()] if count else np.zeros(0, int))
     else:
         out_space = L2(out, order=space.order)
     values = _like(field.values, out_space.size)
@@ -258,7 +258,7 @@ def _carry_set(member, out, points, cells, faces, faces_to_cells):
         return Set._from_flags(out, target, member.flags())
     if not isinstance(mapping, Take):
         return None
-    flags = tack.field(tack.i32, shape=(mapping.ids.shape[0],))
+    flags = tack.empty((mapping.ids.shape[0],), tack.i32)
     if mapping.ids.shape[0]:
         _member_of_source(member.flags(), mapping.ids, flags)
     return Set._from_flags(out, target, flags)

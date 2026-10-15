@@ -84,7 +84,7 @@ def test_binop_add():
                 out[i] = x[i] + y[i]
     """)
     store = module.functions[0].body[0].body[0]
-    assert isinstance(store, ir.IRFieldStore)
+    assert isinstance(store, ir.IRArrayStore)
     assert isinstance(store.value, ir.IRBinOp)
     assert store.value.op == "+"
 
@@ -382,14 +382,14 @@ def test_float_cast():
 
 # --- Augmented assignment ---
 
-def test_augassign_field():
+def test_augassign_array():
     module = _transform("""
         def kern(x, out):
             for i in range(10):
                 out[i] += x[i]
     """)
     store = module.functions[0].body[0].body[0]
-    assert isinstance(store, ir.IRFieldStore)
+    assert isinstance(store, ir.IRArrayStore)
     assert isinstance(store.value, ir.IRBinOp)
     assert store.value.op == "+"
 
@@ -418,7 +418,7 @@ def test_attribute_shape():
     """)
     loop = module.functions[0].body[0]
     assert isinstance(loop.end, ir.IRDimSize)
-    assert loop.end.field_name == "x"
+    assert loop.end.array_name == "x"
     assert loop.end.dim == 0
 
 
@@ -433,7 +433,7 @@ def test_attribute_shape_in_the_body():
     # x[x.shape[0] - 1 - i] → index is ((DimSize - 1) - i)
     index = store.value.index
     assert isinstance(index.left.left, ir.IRDimSize)
-    assert index.left.left.field_name == "x"
+    assert index.left.left.array_name == "x"
     assert index.left.left.dim == 0
 
 
@@ -445,7 +445,7 @@ def test_len_becomes_dim_size():
     """)
     loop = module.functions[0].body[0]
     assert isinstance(loop.end, ir.IRDimSize)
-    assert (loop.end.field_name, loop.end.dim) == ("x", 0)
+    assert (loop.end.array_name, loop.end.dim) == ("x", 0)
     inner = loop.body[0].value.value    # float(...) wraps the DimSize
     assert isinstance(inner, ir.IRDimSize)
 

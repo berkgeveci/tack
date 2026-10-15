@@ -15,7 +15,7 @@ import tack
 # --8<-- [start:step]
 @tack.kernel
 def heat_step(old, new, r, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         if 0 < i < n - 1 and 0 < j < n - 1:
             lap = old[i - 1, j] + old[i + 1, j] + old[i, j - 1] + old[i, j + 1]
             new[i, j] = old[i, j] + r * (lap - 4.0 * old[i, j])
@@ -25,7 +25,7 @@ def heat_step(old, new, r, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n, steps, r = (32, 40, 0.2) if check else (96, 600, 0.2)
     yy, xx = np.mgrid[:n, :n]
     initial = (np.exp(-((xx - n / 3) ** 2 + (yy - n / 3) ** 2) / (n / 12) ** 2)
@@ -34,7 +34,7 @@ def run(arch="cpu", check=False):
     initial[[0, -1], :] = 0
     initial[:, [0, -1]] = 0
     old = tack.array(initial)
-    new = tack.empty(dtype=tack.f32, shape=(n, n))
+    new = tack.empty((n, n))
     snapshots = [initial.copy()]
     reference = initial.copy()
     # --8<-- [start:loop]
@@ -42,9 +42,9 @@ def run(arch="cpu", check=False):
         heat_step(old, new, r, n)
         old, new = new, old                 # swap Python references, not field contents
         if (step + 1) % (steps // 3) == 0:
-            snapshots.append(old.to_numpy().copy())
+            snapshots.append(old.numpy().copy())
     # --8<-- [end:loop]
-    result = old.to_numpy()
+    result = old.numpy()
     if check:
         for _ in range(steps):
             next_u = np.zeros_like(reference)

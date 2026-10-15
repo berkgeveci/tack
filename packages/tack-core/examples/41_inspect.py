@@ -15,7 +15,7 @@ import tack
 parser = argparse.ArgumentParser()
 parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
 args = parser.parse_args()
-tack.init(arch=args.arch)
+tack.set_default_device(args.arch)
 
 # A simple kernel to inspect
 @tack.kernel
@@ -24,9 +24,9 @@ def saxpy(x, y, out, a):
         out[i] = a * x[i] + y[i]
 
 n = 1024
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
 
 # Print the Tack IR
 print("=== Tack IR ===")
@@ -43,8 +43,8 @@ class Particles:
     GRAVITY = -9.81  # class-level constant (baked into code)
 
     def __init__(self, n):
-        self.pos = tack.empty(dtype=tack.f32, shape=(n,))
-        self.vel = tack.empty(dtype=tack.f32, shape=(n,))
+        self.pos = tack.empty((n,))
+        self.vel = tack.empty((n,))
         self.dt = 0.01  # instance scalar (runtime parameter)
 
     @tack.func

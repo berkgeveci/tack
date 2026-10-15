@@ -6,7 +6,7 @@
 #   tests      — the suite on Python 3.11/3.12/3.13 (Linux, CPU backend)
 #   ids-i64    — the dataset tests again, every topology with 64-bit ids
 #   packaging  — proves a GPU install works without llvmlite
-#   examples   — runs all 51 shipped examples (deselected from the suite)
+#   examples   — runs every shipped example (deselected from the suite)
 #   metal      — the suite on an Apple Silicon runner, with a real GPU
 #
 # The runners have no NVIDIA or AMD GPU. That is less limiting than it
@@ -42,7 +42,7 @@ jobs:
   # ── Lint ───────────────────────────────────────────────────────────
   # Cheapest job here and the one most likely to catch something before a
   # human looks. It found a real bug on its first run: an f-string with a
-  # backslash in packages/tack-core/examples/bench_64mb.py, legal from 3.12
+  # backslash in benchmarks/bench_64mb.py, legal from 3.12
   # and a SyntaxError on 3.11, which the packages declare support for. No
   # test collected that file and the examples job runs 3.13, so nothing
   # here could have caught it. Ruff reads requires-python and did.
@@ -204,7 +204,7 @@ jobs:
           found = []
           for arch in ("cpu", "metal", "cuda", "hip", "level_zero"):
               try:
-                  tack.init(arch=getattr(tack, arch))
+                  tack.set_default_device(arch)
               except Exception:
                   continue
               found.append(arch)
@@ -298,14 +298,14 @@ jobs:
             packages/tack-core/tests/test_backend_isolation.py
 
   # ── Examples ───────────────────────────────────────────────────────
-  # The 51 shipped examples are the code new users copy, and they exercise
-  # combinations the unit tests do not — templates feeding a path tracer,
-  # a contour into a renderer. They are deselected from the default
+  # The shipped examples are the code new users copy, and they exercise
+  # combinations the unit tests do not — templates feeding a solver, a
+  # dataset filter into VTK. They are deselected from the default
   # suite because the sweep takes about a minute against an 18-second
   # suite, so this is where they actually get run.
   #
-  # Examples needing an optional package (matplotlib, vtk, oidn,
-  # imgui_bundle) skip themselves with the reason; -rs prints those, so
+  # Examples needing an optional package (matplotlib, vtk, mfem,
+  # pydawn) skip themselves with the reason; -rs prints those, so
   # the log says what was really checked rather than just "green".
   examples:
     name: examples
@@ -369,7 +369,7 @@ jobs:
           found = []
           for arch in ("cpu", "metal"):
               try:
-                  tack.init(arch=getattr(tack, arch))
+                  tack.set_default_device(arch)
               except Exception as e:
                   print(f"{arch}: unavailable ({type(e).__name__})")
                   continue
@@ -385,7 +385,7 @@ jobs:
           import tack
           from tack.runtime.dispatch import get_backend
           os.environ.pop("TACK_NO_REINIT", None)
-          tack.init(arch=tack.metal)
+          tack.set_default_device("metal")
           assert get_backend().name == "metal"
           print("Required hardware backend: metal", flush=True)
           raise SystemExit(pytest.main(["-q", "-rs"]))

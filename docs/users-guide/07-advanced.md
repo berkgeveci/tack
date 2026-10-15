@@ -7,8 +7,8 @@ memory on CPU and private/register memory on GPU:
 
 ```python
 @tack.kernel
-def cached_interp(cs: tack.template(), ct: tack.template(),
-                  field1, field2, out1, out2, n_cells):
+def cached_interp(cs, ct,
+                  array1, array2, out1, out2, n_cells):
     for c in range(n_cells):
         # Compute weights once, reuse for both arrays
         w = tack.local_array(tack.f32, ct.num_points)
@@ -20,8 +20,8 @@ def cached_interp(cs: tack.template(), ct: tack.template(),
         v1 = 0.0
         v2 = 0.0
         for v in range(ct.num_points):
-            v1 = v1 + w[v] * field1[pid[v]]
-            v2 = v2 + w[v] * field2[pid[v]]
+            v1 = v1 + w[v] * array1[pid[v]]
+            v2 = v2 + w[v] * array2[pid[v]]
         out1[c] = v1
         out2[c] = v2
 ```
@@ -91,7 +91,7 @@ class CellSetExplicit:
             pts[v] = self.connectivity[cell_id * self.points_per_cell + v]
 
 @tack.kernel
-def cell_average(cs: tack.template(), data, out, n_cells):
+def cell_average(cs, data, out, n_cells):
     for c in range(n_cells):
         pts = tack.local_array(tack.i32, cs.points_per_cell)
         cs.get_cell_points(c, pts)      # fills pts in one call
@@ -263,8 +263,8 @@ Wrap an array as a 3D texture for hardware-accelerated trilinear interpolation:
 
 ```python
 # Create texture from an array
-data = tack.empty(dtype=tack.f32, shape=(W * H * D,))
-data.from_numpy(volume_data.ravel())
+data = tack.empty((W * H * D,))
+tack.copyto(data, volume_data.ravel())
 tex = tack.texture3d(data, shape=(W, H, D))
 
 @tack.kernel
@@ -289,7 +289,7 @@ backend. Writes to the array afterwards are not visible to it until you call
 `tex.update()`:
 
 ```python
-data.from_numpy(next_frame.ravel())
+tack.copyto(data, next_frame.ravel())
 tex.update()   # sampling now sees next_frame
 ```
 

@@ -101,15 +101,15 @@ def kern(data, out):
         assert local_alloc.dtype is u8
 
     def test_shared_like_resolves_to_scalar_type(self):
-        """shared_like resolves to the field's ScalarType, not a C string."""
-        tack.init(arch=tack.cpu)
-        data = tack.field(dtype=tack.i32, shape=(10,))
-        out = tack.field(dtype=tack.i32, shape=(10,))
+        """shared_like resolves to the array's ScalarType, not a C string."""
+        tack.set_default_device("cpu")
+        data = tack.empty((10,), tack.i32)
+        out = tack.empty((10,), tack.i32)
 
         p_data = ir.IRParam("data")
         p_out = ir.IRParam("out")
         shared_alloc = ir.IRSharedAlloc("smem", dtype=None, size=ir.IRConstant(256),
-                                         field_name="data")
+                                         array_name="data")
         pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), [shared_alloc])
         func = ir.IRFunction("test", [p_data, p_out], [pfor])
 
@@ -130,9 +130,9 @@ def test_cuda_shared_alloc_types():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f32, shape=(10,))
-    out = tack.field(dtype=tack.f32, shape=(10,))
+    tack.set_default_device("cpu")
+    data = tack.empty((10,))
+    out = tack.empty((10,))
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
@@ -154,9 +154,9 @@ def test_msl_shared_alloc_types():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f32, shape=(10,))
-    out = tack.field(dtype=tack.f32, shape=(10,))
+    tack.set_default_device("cpu")
+    data = tack.empty((10,))
+    out = tack.empty((10,))
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
@@ -175,9 +175,9 @@ def test_msl_shared_alloc_types():
 def test_shared_f32_end_to_end(workgroup_backend):
     """tack.shared(tack.f32, ...) works end-to-end."""
     n = 256
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def kern(data, out):
@@ -189,13 +189,13 @@ def test_shared_f32_end_to_end(workgroup_backend):
             out[i] = smem[tid]
 
     kern(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.float32))
 
 
 def test_local_array_u8_end_to_end(backend):
     """tack.local_array(tack.u8, ...) works end-to-end."""
     n = 8
-    out = tack.field(dtype=tack.u8, shape=(n,))
+    out = tack.empty((n,), tack.u8)
 
     @tack.kernel
     def kern(out):
@@ -205,7 +205,7 @@ def test_local_array_u8_end_to_end(backend):
             out[i] = buf[0]
 
     kern(out)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(n, 42, dtype=np.uint8))
+    np.testing.assert_array_equal(out.numpy(), np.full(n, 42, dtype=np.uint8))
 
 
 # --- Template transformations preserve captured method bodies ---
@@ -213,7 +213,7 @@ def test_local_array_u8_end_to_end(backend):
 def test_template_method_source_is_preserved():
     """Resolved methods must not mutate the class's captured device source."""
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.device_class
     class MyClass:
@@ -224,26 +224,26 @@ def test_template_method_source_is_preserved():
             return self.val
 
     @tack.kernel
-    def kern(obj: tack.template(), out):
+    def kern(obj, out):
         for i in range(out.shape[0]):
             out[i] = obj.get_val()
 
     before = ast.dump(MyClass._tack_func_methods['get_val']._funcdef)
 
-    out = tack.field(dtype=tack.i32, shape=(4,))
+    out = tack.empty((4,), tack.i32)
     obj = MyClass()
     kern(obj, out)
 
     assert ast.dump(MyClass._tack_func_methods['get_val']._funcdef) == before
 
     # Verify the kernel still works
-    np.testing.assert_array_equal(out.to_numpy(), np.full(4, 10, dtype=np.int32))
+    np.testing.assert_array_equal(out.numpy(), np.full(4, 10, dtype=np.int32))
 
 
 def test_repeated_templates_preserve_method_source():
     """Instance-specific resolution must leave the reusable method intact."""
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.device_class
     class Counter:
@@ -254,14 +254,14 @@ def test_repeated_templates_preserve_method_source():
             return x + self.step
 
     @tack.kernel
-    def kern(c: tack.template(), data, out):
+    def kern(c, data, out):
         for i in range(data.shape[0]):
             out[i] = c.apply(data[i])
 
     n = 4
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.float32))
+    data = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(data, np.arange(n, dtype=np.float32))
 
     before = ast.dump(Counter._tack_func_methods['apply']._funcdef)
 

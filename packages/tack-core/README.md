@@ -1,6 +1,6 @@
 # tack-core
 
-Kernels, fields, types, IR, codegen and backends for [Tack](https://github.com/berkgeveci/tack) —
+Kernels, arrays, types, IR, codegen and backends for [Tack](https://github.com/berkgeveci/tack) —
 a Python-first GPU compute framework.
 
 Write compute kernels as decorated Python functions; they are JIT-compiled at first call (and
@@ -11,21 +11,21 @@ primitives).
 
 ```python
 import tack, numpy as np
-tack.init(arch=tack.cpu)          # or metal, cuda, hip, level_zero
+tack.set_default_device("cpu")          # or metal, cuda, hip, level_zero
 
 @tack.kernel
 def vector_add(x, y, out):
     for i in range(x.shape[0]):   # outermost loop → thread parallelism
         out[i] = x[i] + y[i]
 
-x = tack.field(dtype=tack.f32, shape=(1024,))
-y = tack.field(dtype=tack.f32, shape=(1024,))
-out = tack.field(dtype=tack.f32, shape=(1024,))
-x.from_numpy(np.arange(1024, dtype=np.float32))
-y.from_numpy(np.ones(1024, dtype=np.float32))
+x = tack.empty((1024,))       # f32 unless a dtype is given
+y = tack.empty((1024,))
+out = tack.empty((1024,))
+tack.copyto(x, np.arange(1024, dtype=np.float32))
+tack.copyto(y, np.ones(1024, dtype=np.float32))
 
 vector_add(x, y, out)
-print(out.to_numpy())
+print(out.numpy())
 ```
 
 ## Install
@@ -52,8 +52,7 @@ pip install tack-core[level_zero]   # Intel — needs the system Level Zero runt
 
 ## Related packages
 
-- `tack-rendering` — path tracer, volume rendering, rasterization
-- `tack-vis` — flying edges, normals, cell↔point, VTK interop
+- `tack-vis` — `tack.dataset`: meshes, fields and visualization algorithms; VTK and MFEM interop
 
 Full documentation, examples and the kernel-language reference are in the
 [repository](https://github.com/berkgeveci/tack).

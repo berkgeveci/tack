@@ -64,7 +64,7 @@ mapped to a C type string via the backend's type map (`_C_TYPE_MAP`,
 For expression nodes used in other contexts (index casts, printf format
 selection, floor division), the codegen reads `node.dtype` directly.
 The `_infer_c_type(node)` method checks `node.dtype` first and falls
-back to `_local_vars` only for field pointer references (which have
+back to `_local_vars` only for array pointer references (which have
 `dtype=None`).
 
 The `_resolved_type_to_c()` method maps `ScalarType` → C type string,
@@ -136,7 +136,7 @@ See the language contract for the nonzero-divisor and denormal domains.
 Floating math calls convert arguments to their annotated result precision
 before calling backend routines. CPU libm functions use their f32/f64
 symbols and return that precision before enclosing arithmetic; integer
-math arguments default to f32 even when the destination field is f64.
+math arguments default to f32 even when the destination array is f64.
 OpenCL/Metal calls need explicit casts to avoid overload ambiguity.
 
 CPU emits no fast-math flags and HIP/OpenCL retain standard compiler
@@ -163,16 +163,16 @@ Every generator emits `IRBoundsCheck`, and only when the kernel was lowered
 in debug mode, so normal kernels' code is unchanged. The C-family
 generators share `codegen/bounds.py`: one helper per kernel,
 `__tack_in_bounds__`, tests an index against its extent and, out of bounds,
-records the first violation in the errors field (an atomic add on its
+records the first violation in the errors array (an atomic add on its
 count elects the first); a check is `&&` over its dimensions, then the
 flat index or -1. `llvm_gen.py` builds the same helper in LLVM IR
 (`_bounds_helper`). MSL counts a check as a store when deciding whether a
 sequential loop's body goes in the `noinline` `__tack_body__` function
-(`_stores_inside_sequential_loop`), since it writes the errors field.
+(`_stores_inside_sequential_loop`), since it writes the errors array.
 
 ## LLVM Codegen (`llvm_gen.py`, 1,008 lines)
 
-Uses llvmlite's `IRBuilder` to construct LLVM IR. Fields become pointer
+Uses llvmlite's `IRBuilder` to construct LLVM IR. Arrays become pointer
 arguments; scalars become value arguments. All allocas are placed in the
 entry block for SSA dominance.
 
@@ -223,4 +223,4 @@ Extends CUDA with OpenCL syntax differences. Also handles:
   the device supports it (checked at runtime via `maxSamplers`)
 - Software trilinear fallback: generates an inline helper function with
   the texture dimensions baked in as constants, reading the texture's
-  private `f32` copy of its field
+  private `f32` copy of its array

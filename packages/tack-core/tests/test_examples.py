@@ -1,9 +1,8 @@
 """Every numbered example must still run.
 
-49 examples ship with Tack and none of them were executed by the test
-suite. They are the code new users copy, they exercise combinations the
-unit tests do not — templates feeding a path tracer, flying edges into a
-renderer — and nothing noticed when one broke.
+The examples are the code new users copy, and they exercise combinations
+the unit tests do not, such as templates feeding a solver or a dataset
+filter feeding VTK. Before this sweep, nothing noticed when one broke.
 
 Marked `slow` and deselected from the default run, because the full sweep
 takes about a minute against an 18-second suite. CI runs it as its own
@@ -16,7 +15,7 @@ about what it actually checked, and means adding an example with a new
 optional dependency will not turn CI red. A missing *tack* module is not
 treated as optional — that is a real failure.
 
-This lives under tack-core/tests because it spans all three packages and
+This lives under tack-core/tests because it spans both packages and
 `testpaths` only covers the package test directories.
 """
 
@@ -30,9 +29,7 @@ import pytest
 
 REPO = pathlib.Path(__file__).resolve().parents[3]
 
-EXAMPLES = (sorted(REPO.glob("packages/*/examples/[0-9]*.py"))
-            + sorted(REPO.glob("packages/*/examples/deprecated/[0-9]*.py"))
-            + sorted(REPO.glob("examples/[0-9]*.py")))
+EXAMPLES = sorted(REPO.glob("packages/*/examples/[0-9]*.py"))
 
 # CI has no GPU, so the sweep runs on CPU unless told otherwise. On a machine
 # with a device, `TACK_EXAMPLES_ARCH=metal pytest -m slow` (or cuda, hip,
@@ -44,16 +41,12 @@ _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _example_id(path: pathlib.Path) -> str:
-    folder = path.parent
-    deprecated = folder.name == "deprecated"
-    package = (folder.parent if deprecated else folder).parent.name
-    name = f"deprecated/{path.name}" if deprecated else path.name
-    return f"{package}/{name}" if package != "tack" else name
+    return f"{path.parent.parent.name}/{path.name}"
 
 
 def test_examples_were_found():
     """A glob that silently matches nothing would make every test below vacuous."""
-    assert len(EXAMPLES) >= 45, f"only found {len(EXAMPLES)} examples"
+    assert len(EXAMPLES) >= 30, f"only found {len(EXAMPLES)} examples"
 
 
 @pytest.mark.slow

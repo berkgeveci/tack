@@ -1,17 +1,17 @@
-"""tack.interop.vtk — Zero-copy interop between VTK arrays and Tack fields.
+"""tack.interop.vtk — Zero-copy interop between VTK arrays and Tack arrays.
 
-    from tack.interop.vtk import vtk_to_field, field_to_vtk
+    from tack.interop.vtk import vtk_to_array, array_to_vtk
 
-    field = vtk_to_field(vtk_array)   # VTK  -> Tack
-    array = field_to_vtk(field)       # Tack -> VTK
+    field = vtk_to_array(vtk_array)   # VTK  -> Tack
+    array = array_to_vtk(field)       # Tack -> VTK
 
 Both directions share memory rather than copying, on the host and on the
 device, and each side keeps the other alive for as long as it is needed.
 
 Shape
 -----
-A vtkDataArray is *tuples x components*, and a Tack field is n-dimensional,
-so the two line up directly: a 2-D field of shape ``(n, 3)`` is n tuples of
+A vtkDataArray is *tuples x components*, and a Tack array is n-dimensional,
+so the two line up directly: a 2-D array of shape ``(n, 3)`` is n tuples of
 3 components, and ``field.shape[1]`` is the component count. Nothing needs
 to be declared -- the shape already says it.
 
@@ -23,8 +23,8 @@ interleaved* arrays -- ``flying_edges`` returns points as ``(n*3,)``, and
 ``compute_normals`` indexes ``points[i * 3 + c]``. For those, ask for the
 flat form explicitly:
 
-    points = vtk_to_field(vtk_points, flatten=True)   # (n*3,)
-    array  = field_to_vtk(points, n_components=3)     # back to n x 3
+    points = vtk_to_array(vtk_points, flatten=True)   # (n*3,)
+    array  = array_to_vtk(points, n_components=3)     # back to n x 3
 
 Requirements
 ------------
@@ -41,7 +41,7 @@ field for a context. So the two libraries have to be in the same one before
 any array is exchanged:
 
     from tack.interop.vtk import init_level_zero
-    init_level_zero()        # instead of tack.init(arch=tack.level_zero)
+    init_level_zero()        # instead of tack.set_default_device("level_zero")
 
 That starts Tack's Level Zero backend inside the context VTK's Viskores
 device already uses. It needs VTK built with Viskores on Kokkos' SYCL
@@ -51,7 +51,7 @@ be shared.
 
 import tack
 
-__all__ = ["dataset_to_vtk", "field_to_vtk", "init_level_zero", "vtk_to_dataset", "vtk_to_field"]
+__all__ = ["array_to_vtk", "dataset_to_vtk", "init_level_zero", "vtk_to_array", "vtk_to_dataset"]
 
 
 def _dlpack_support():
@@ -68,7 +68,8 @@ def _dlpack_support():
 
 
 def init_level_zero():
-    """Start Tack's Level Zero backend in the context VTK's device memory uses.
+    """Make a Level Zero device in the context VTK's device memory uses the
+    default device, and return it.
 
     Raises RuntimeError if this VTK cannot report one: it predates
     ``dlpack_support.level_zero_handles``, was built without Viskores on
@@ -81,10 +82,10 @@ def init_level_zero():
             "this VTK has no Level Zero context to share. Device interop on "
             "Level Zero needs VTK built with Viskores on Kokkos' SYCL "
             "backend, running on a Level Zero device.")
-    tack.init(arch=tack.level_zero, external_context=handles)
+    return tack.set_default_device("level_zero", external_context=handles)
 
 
-def _require_shared_level_zero_context(dlpack_support):
+def _require_shared_level_zero_context(dlpack_support, backend=None):
     """Refuse to exchange Level Zero memory across contexts.
 
     Nothing downstream can catch this. The driver answers for a pointer from
@@ -93,9 +94,9 @@ def _require_shared_level_zero_context(dlpack_support):
     does not. Tack knows which context it allocates in, so it is checked
     here.
     """
-    from tack.runtime.dispatch import get_backend
-
-    backend = get_backend()
+    if backend is None:
+        from tack.runtime.dispatch import get_backend
+        backend = get_backend()
     if backend.name != "level_zero":
         return
     handles = getattr(dlpack_support, "level_zero_handles", lambda: None)()
@@ -104,106 +105,112 @@ def _require_shared_level_zero_context(dlpack_support):
             "Tack's Level Zero backend and VTK are not in the same Level "
             "Zero context, so a device pointer from one means nothing to "
             "the other. Start Tack with tack.interop.vtk.init_level_zero() "
-            "instead of tack.init(arch=tack.level_zero).")
+            "instead of tack.set_default_device('level_zero').")
 
 
-def vtk_to_field(vtk_array, flatten=False):
-    """Wrap a vtkDataArray as a Tack field, without copying.
+def vtk_to_array(vtk_array, flatten=False):
+    """Wrap a vtkDataArray as a Tack array, without copying.
 
     Args:
         vtk_array: any vtkDataArray, on the host or on a device.
-        flatten: return a 1-D field of ``tuples * components`` values
+        flatten: return a 1-D array of ``tuples * components`` values
             instead of a 2-D one. Tack's visualization algorithms take
             their point and vector inputs in this interleaved form.
 
     Returns:
-        A tack.field sharing the array's memory, shaped
+        A Tack array sharing the VTK array's memory, shaped
         ``(tuples, components)`` -- or ``(tuples,)`` when there is one
         component, since a scalar array is naturally 1-D. The VTK array is
-        held for as long as the field lives, so it may be dropped
+        held for as long as the array lives, so it may be dropped
         immediately.
 
+    The array is on the default device when that can address the memory,
+    else on the memory's own device: a CUDA array with the CPU as default is
+    a CUDA array.
+
     Raises:
-        RuntimeError: if the array lives somewhere the active Tack backend
-            cannot address -- a CUDA array under the CPU backend, say.
+        RuntimeError: for Level Zero memory from another context than
+            Tack's (see `init_level_zero`).
         ValueError: for an array with no memory to share (implicit and
             computed arrays have none) or a non-contiguous layout.
     """
     dlpack_support = _dlpack_support()
-    _require_shared_level_zero_context(dlpack_support)
 
-    # VTK always exports 2-D, (tuples, components).
-    field = tack.from_dlpack(dlpack_support.vtk_to_dlpack(vtk_array))
+    # VTK always exports 2-D, (tuples, components). The array lands on the
+    # default device if that can wrap the memory, else on the memory's own
+    # device, whose context is the one to check.
+    array = tack.from_dlpack(dlpack_support.vtk_to_dlpack(vtk_array))
+    _require_shared_level_zero_context(dlpack_support, array._backend)
 
     if flatten:
-        return field.reshape((field.size,))
-    if len(field.shape) == 2 and field.shape[1] == 1:
-        return field.reshape((field.shape[0],))
-    return field
+        return array.reshape((array.size,))
+    if len(array.shape) == 2 and array.shape[1] == 1:
+        return array.reshape((array.shape[0],))
+    return array
 
 
-def field_to_vtk(field, n_components=None, name=None):
-    """Wrap a Tack field as a vtkDataArray, without copying.
+def array_to_vtk(array, n_components=None, name=None):
+    """Wrap a Tack array as a vtkDataArray, without copying.
 
     Args:
-        field: the tack.field to share. A 2-D field maps straight over --
+        array: the Tack array to share. A 2-D array maps straight over --
             ``(1000, 3)`` becomes 1000 tuples of 3.
-        n_components: only needed for a *flat* field holding interleaved
+        n_components: only needed for a *flat* array holding interleaved
             data, which is the form Tack's own algorithms produce. A
-            ``(3000,)`` field with n_components=3 becomes 1000 tuples of 3.
-            Leave it unset for a 2-D field, whose shape already says.
+            ``(3000,)`` array with n_components=3 becomes 1000 tuples of 3.
+            Leave it unset for a 2-D array, whose shape already says.
         name: array name, as VTK uses to identify it in a dataset.
 
     Returns:
-        A vtkDataArray sharing the field's memory. The field is held for as
+        A vtkDataArray sharing the array's memory. The array is held for as
         long as the array lives.
 
     Raises:
-        ValueError: if n_components contradicts the field's shape, does not
-            divide its size, or the field has more than 2 dimensions.
+        ValueError: if n_components contradicts the array's shape, does not
+            divide its size, or the array has more than 2 dimensions.
     """
     # Work out the layout before reaching for VTK, so a shape mistake
     # reports itself rather than being masked by a missing-VTK error.
-    if hasattr(field, '_vector_n') and not field._legacy_layout:
-        width = field._vector_n
+    if hasattr(array, '_vector_n'):
+        width = array._vector_n
         if n_components is not None and n_components != width:
             raise ValueError(
                 f"n_components={n_components} contradicts the element width {width}")
-        if len(field.shape) > 1:
+        if len(array.shape) > 1:
             raise ValueError("reshape a typed array to one array dimension for VTK tuples")
-        field = field._scalar_view().reshape((field.size, width))
+        array = array._scalar_view().reshape((array.size, width))
         n_components = width
-    ndim = len(field.shape)
+    ndim = len(array.shape)
 
     if n_components is None:
         if ndim == 2:
-            n_components = field.shape[1]
+            n_components = array.shape[1]
         elif ndim <= 1:
             n_components = 1
         else:
             raise ValueError(
-                f"a {ndim}-dimensional field has no obvious VTK layout; "
+                f"a {ndim}-dimensional array has no obvious VTK layout; "
                 f"reshape it to (tuples, components), or pass n_components "
                 f"if it holds flat interleaved data")
     else:
         if n_components < 1:
             raise ValueError(f"n_components must be at least 1, got {n_components}")
-        if ndim == 2 and field.shape[1] != n_components:
+        if ndim == 2 and array.shape[1] != n_components:
             raise ValueError(
-                f"n_components={n_components} contradicts the field's shape "
-                f"{field.shape}, which already says {field.shape[1]}")
-        if field.size % n_components:
+                f"n_components={n_components} contradicts the array's shape "
+                f"{array.shape}, which already says {array.shape[1]}")
+        if array.size % n_components:
             raise ValueError(
-                f"a field of {field.size} values does not divide into tuples "
+                f"an array of {array.size} values does not divide into tuples "
                 f"of {n_components}")
 
     dlpack_support = _dlpack_support()
-    _require_shared_level_zero_context(dlpack_support)
+    _require_shared_level_zero_context(dlpack_support, array._backend)
 
     # VTK reads the tensor as (tuples, components), so give it that shape.
-    shaped = field
-    if field.shape != (field.size // n_components, n_components):
-        shaped = field.reshape((field.size // n_components, n_components))
+    shaped = array
+    if array.shape != (array.size // n_components, n_components):
+        shaped = array.reshape((array.size // n_components, n_components))
 
     return dlpack_support.dlpack_to_vtk(shaped, name=name)
 
@@ -224,11 +231,11 @@ def _array_to_field(array, float_dtype):
     dtype = float_dtype if values.dtype.kind == "f" else from_numpy_dtype(values.dtype)
     n = array.GetNumberOfComponents()
     if n == 1:
-        field = tack.field(dtype, shape=(values.shape[0],))
+        field = tack.empty((values.shape[0],), dtype)
     else:
-        field = tack.Vector.field(n, dtype, shape=(values.shape[0],))
+        field = tack.empty((values.shape[0],), tack.vec(n, dtype))
     if values.size:
-        field.from_numpy(np.ascontiguousarray(values).astype(dtype.numpy_dtype))
+        tack.copyto(field, np.ascontiguousarray(values).astype(dtype.numpy_dtype))
     return field
 
 
@@ -463,23 +470,23 @@ def dataset_to_vtk(data):
     elif grid and isinstance(coordinates, CartesianProduct):
         grid = vtkRectilinearGrid()
         grid.SetDimensions(*coordinates.dims)
-        grid.SetXCoordinates(numpy_to_vtk(coordinates.x.to_numpy(), deep=1))
-        grid.SetYCoordinates(numpy_to_vtk(coordinates.y.to_numpy(), deep=1))
-        grid.SetZCoordinates(numpy_to_vtk(coordinates.z.to_numpy(), deep=1))
+        grid.SetXCoordinates(numpy_to_vtk(coordinates.x.numpy(), deep=1))
+        grid.SetYCoordinates(numpy_to_vtk(coordinates.y.numpy(), deep=1))
+        grid.SetZCoordinates(numpy_to_vtk(coordinates.z.numpy(), deep=1))
     elif isinstance(topology, UnstructuredTopology):
         cell_array = vtkCellArray()
         cell_array.SetData(
-            numpy_to_vtkIdTypeArray(topology.offsets.to_numpy().astype(np.int64), deep=1),
-            numpy_to_vtkIdTypeArray(topology.connectivity.to_numpy().astype(np.int64), deep=1))
+            numpy_to_vtkIdTypeArray(topology.offsets.numpy().astype(np.int64), deep=1),
+            numpy_to_vtkIdTypeArray(topology.connectivity.numpy().astype(np.int64), deep=1))
         grid = vtkUnstructuredGrid()
-        grid.SetCells(numpy_to_vtk(topology.types.to_numpy().astype(np.uint8), deep=1),
+        grid.SetCells(numpy_to_vtk(topology.types.numpy().astype(np.uint8), deep=1),
                       cell_array)
         points = vtkPoints()
         points.SetData(numpy_to_vtk(data.positions(), deep=1))
         grid.SetPoints(points)
     elif isinstance(topology, (PolygonalTopology, PolylineTopology)):
         polygons = isinstance(topology, PolygonalTopology)
-        offsets, loops = (a.to_numpy() for a in (topology.loops() if polygons
+        offsets, loops = (a.numpy() for a in (topology.loops() if polygons
                                                   else topology.lines()))
         cells = vtkCellArray()
         cells.SetData(numpy_to_vtkIdTypeArray(offsets.astype(np.int64), deep=1),
@@ -494,7 +501,7 @@ def dataset_to_vtk(data):
         # VTK keeps a face per cell, outward for that cell: side 1's copy is
         # the face walked backwards from the same first point.
         face_offsets, face_points, cell_offsets, cell_faces, sides = topology.arrays()
-        point_offsets, point_ids = (a.to_numpy() for a in topology.cell_points())
+        point_offsets, point_ids = (a.numpy() for a in topology.cell_points())
         copies, copy_offsets = [], [0]
         for f, side in zip(cell_faces, sides):
             ring = face_points[face_offsets[f]:face_offsets[f + 1]]

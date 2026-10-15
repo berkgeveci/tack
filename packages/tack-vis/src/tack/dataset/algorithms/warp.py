@@ -35,7 +35,7 @@ def warp(data, direction, scale=1.0, scale_by=None, fields=None):
     dtype = data.dtype
     factors = (scale_by if not isinstance(scale_by, str) else data.fields[scale_by])
     if factors is None:
-        factors = tack.full(dtype, (n,), 1.0) if n else tack.field(dtype, shape=(0,))
+        factors = tack.full((n,), 1.0, dtype) if n else tack.empty((0,), dtype)
     else:
         if factors.space is not geometry.space or width_of(factors.values):
             raise ValueError("scale_by must be a scalar field in the geometry's space")

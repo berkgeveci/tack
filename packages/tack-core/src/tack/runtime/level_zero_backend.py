@@ -4,11 +4,11 @@ Pipeline:
     Tack IR → OpenCL C source → libocloc (SPIR-V) → zeModuleCreate → zeKernelCreate
            → zeCommandListAppendLaunchKernel
 
-Fields are device-resident: ``tack.field()`` allocates a device buffer via
+Arrays are device-resident: ``tack.empty()`` allocates a device buffer via
 ``zeMemAllocDevice``.  Transfers are explicit:
 
-    field.from_numpy(arr)   # host → device (zeCommandListAppendMemoryCopy)
-    arr = field.to_numpy()  # device → host (zeCommandListAppendMemoryCopy)
+    tack.copyto(a, arr)     # host → device (zeCommandListAppendMemoryCopy)
+    arr = a.numpy()         # device → host (zeCommandListAppendMemoryCopy)
 
 No per-dispatch copies — data stays on the GPU between kernel calls.
 
@@ -22,9 +22,9 @@ import threading
 
 import numpy as np
 
-from tack.codegen.reductions import field_reduction_source
+from tack.codegen.reductions import array_reduction_source
 from tack.lang import ir
-from tack.lang.field import DeviceBuffer
+from tack.lang.array import DeviceBuffer
 from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import (
@@ -51,9 +51,9 @@ from tack.codegen.opencl_gen import generate_opencl_source
 # ---------------------------------------------------------------------------
 # Reduce kernel sources (OpenCL C)
 # ---------------------------------------------------------------------------
-_REDUCE_OCL_SUM = field_reduction_source('opencl', 'sum')
-_REDUCE_OCL_MIN = field_reduction_source('opencl', 'min')
-_REDUCE_OCL_MAX = field_reduction_source('opencl', 'max')
+_REDUCE_OCL_SUM = array_reduction_source('opencl', 'sum')
+_REDUCE_OCL_MIN = array_reduction_source('opencl', 'min')
+_REDUCE_OCL_MAX = array_reduction_source('opencl', 'max')
 # ---------------------------------------------------------------------------
 # Numpy dtype mapping
 # ---------------------------------------------------------------------------
@@ -828,7 +828,7 @@ def _native_binary(module) -> bytes:
     return bytes(buf)
 
 
-def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_field,
+def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_array,
                  param_is_texture, workgroup_size, requires_full_workgroups=False,
                  opencl_source=None, native=None) -> "CompiledL0Kernel":
     """A kernel from its SPIR-V, or from its native binary when one is given.
@@ -858,7 +858,7 @@ def _load_kernel(backend, spirv: bytes, kernel_name: str, param_types, param_is_
                "zeKernelCreate")
 
     compiled = CompiledL0Kernel(module, kernel, kernel_name,
-                                param_types, param_is_field, workgroup_size,
+                                param_types, param_is_array, workgroup_size,
                                 param_is_texture,
                                 requires_full_workgroups=requires_full_workgroups)
     compiled.spirv = spirv
@@ -909,7 +909,7 @@ class _HostStaging:
     of two from 256 bytes, kept for reuse up to `_KEEP_BYTES` in all.
 
     The free lists are guarded by the backend's `_launch_lock`, not a lock
-    of their own: a field collected while a thread held a second lock would
+    of their own: an array collected while a thread held a second lock would
     wait for the launch lock in `_free`, and a thread holding the launch
     lock while releasing blocks would wait for the second.
     """
@@ -957,7 +957,7 @@ class L0Buffer(DeviceBuffer):
     are queued and return at once, ``to_numpy`` and ``read_range`` are
     queued and waited for, on an event after the copy and outside the
     backend's lock, so other threads go on launching meanwhile. Freeing is
-    deferred by the driver until the work queued so far is done, so a field
+    deferred by the driver until the work queued so far is done, so an array
     Python drops while a queued launch still uses it outlives that launch.
     """
 
@@ -1010,7 +1010,7 @@ class L0Buffer(DeviceBuffer):
 
     @property
     def waits_off_thread(self) -> bool:
-        """Whether `Field.to_numpy_async` reads in a worker thread: where
+        """Whether `Array.numpy_async` reads in a worker thread: where
         launches are queued, reading waits for them. Level Zero needs no
         per-thread binding."""
         return self._backend._queued
@@ -1096,8 +1096,8 @@ class L0Buffer(DeviceBuffer):
     def read_range(self, start: int, count: int) -> np.ndarray:
         """Copy elements ``[start, start + count)`` to the host.
 
-        One copy of just those bytes, so ``field[i]`` on the host moves one
-        element rather than the whole field. The range is checked here
+        One copy of just those bytes, so ``array[i]`` on the host moves one
+        element rather than the whole array. The range is checked here
         because a device copy past the allocation is not caught by NumPy.
         """
         itemsize = self._numpy_dtype.itemsize
@@ -1217,7 +1217,7 @@ _L0_CTYPES_MAP = {
 class L0TextureImage:
     """A read-only Level Zero 3D image, sampled through a hardware sampler.
 
-    Owned by one `Texture3D`, which uploads its field's data at creation and
+    Owned by one `Texture3D`, which uploads its array's data at creation and
     on ``update()``. Nothing else keeps a reference, so the image is
     destroyed with the texture: no later texture can be served one that was
     made from someone else's memory.
@@ -1255,8 +1255,8 @@ class L0TextureImage:
             "zeImageCreate")
         self.handle = image
 
-    def upload(self, field):
-        """Copy a field's device buffer into the image."""
+    def upload(self, array):
+        """Copy an array's device buffer into the image."""
         ze = _get_ze()
         backend = self._backend
         W, H, D = self._shape
@@ -1279,7 +1279,7 @@ class L0TextureImage:
         with backend._launch_lock:
             backend._ordered(ze.zeCommandListAppendMemoryCopy(
                 backend._queue, host_ptr,
-                field._buffer.device_ptr, nbytes,
+                array._buffer.device_ptr, nbytes,
                 None, 0, None), "zeCommandListAppendMemoryCopy (D2H staging)")
             backend._ordered(ze.zeCommandListAppendImageCopyFromMemory(
                 backend._queue, self.handle,
@@ -1299,7 +1299,7 @@ class L0TextureImage:
 class CompiledL0Kernel:
     """A compiled Level Zero kernel ready for dispatch."""
 
-    def __init__(self, module, kernel, func_name, param_types, param_is_field,
+    def __init__(self, module, kernel, func_name, param_types, param_is_array,
                  workgroup_size, param_is_texture=None, *,
                  requires_full_workgroups=False):
         self._requires_full_workgroups = requires_full_workgroups
@@ -1310,7 +1310,7 @@ class CompiledL0Kernel:
         self._kernel = kernel
         self._func_name = func_name
         self._param_types = param_types
-        self._param_is_field = param_is_field
+        self._param_is_array = param_is_array
         self._workgroup_size = workgroup_size
         self._param_is_texture = param_is_texture or [False] * len(param_types)
         self.spirv = None   # what ocloc made, kept for the disk cache
@@ -1330,8 +1330,8 @@ class CompiledL0Kernel:
 
         # Set kernel arguments
         arg_idx = 0
-        for arg, ptype, is_field, is_tex in zip(
-                kernel_args, self._param_types, self._param_is_field,
+        for arg, ptype, is_array, is_tex in zip(
+                kernel_args, self._param_types, self._param_is_array,
                 self._param_is_texture):
             if is_tex:
                 # Bind an L0TextureImage as image3d_t
@@ -1339,12 +1339,12 @@ class CompiledL0Kernel:
                     kernel, arg_idx, ctypes.sizeof(ctypes.c_void_p),
                     ctypes.byref(arg.handle)),
                     f"zeKernelSetArgumentValue (image arg {arg_idx})")
-            elif is_field:
+            elif is_array:
                 ptr = arg._buffer.device_ptr
                 _check_ze(ze.zeKernelSetArgumentValue(
                     kernel, arg_idx, ctypes.sizeof(ctypes.c_void_p),
                     ctypes.byref(ptr)),
-                    f"zeKernelSetArgumentValue (field arg {arg_idx})")
+                    f"zeKernelSetArgumentValue (array arg {arg_idx})")
             else:
                 ct = _L0_CTYPES_MAP[ptype]
                 val = ct(arg)
@@ -1398,7 +1398,7 @@ class CompiledL0Kernel:
 # LevelZeroBackend
 # ---------------------------------------------------------------------------
 class LevelZeroBackend(Backend):
-    """Level Zero GPU backend — device-resident fields, ocloc compilation."""
+    """Level Zero GPU backend — device-resident arrays, ocloc compilation."""
 
     name = "level_zero"
     display_name = "Level Zero"
@@ -1407,7 +1407,13 @@ class LevelZeroBackend(Backend):
     supported_dtypes = _L0_SUPPORTED_DTYPES
     supports_device_reductions = True
     supports_workgroups = True
-    init_options = frozenset({"external_context"})
+    device_options = frozenset({"external_context"})
+
+    @property
+    def memory_domain(self) -> tuple:
+        # A USM pointer is valid only in the context that allocated it, and
+        # two backends (one adopting another library's context) can differ.
+        return (self.name, self.ordinal, self._context.value)
     device_memory_spaces = frozenset({"level_zero"})
 
     def __init__(self, external_context=None):
@@ -1578,7 +1584,7 @@ class LevelZeroBackend(Backend):
         # The backend's queue: one asynchronous immediate command list. Every
         # launch, fill and copy is appended to it, followed by a barrier, and
         # returns once queued; the host waits (`synchronize`) where it reads
-        # a field. The barriers keep the commands in program order. Not the
+        # an array. The barriers keep the commands in program order. Not the
         # in-order flag (ZE_COMMAND_QUEUE_FLAG_IN_ORDER): on driver
         # 25.05.32567 it cost about 100 us of device time per kernel, a
         # barrier about 5. Asynchronous where the driver has
@@ -1622,7 +1628,7 @@ class LevelZeroBackend(Backend):
         self._events = []
         self._event_pools = []
 
-        # A freed field may still be read by a queued launch. With the
+        # A freed array may still be read by a queued launch. With the
         # driver's deferred free, it frees the memory once the work queued
         # so far is done; without it, freeing waits for the queue.
         self._deferred_free = "ZE_extension_memory_free_policies" in _extensions(
@@ -1719,8 +1725,8 @@ class LevelZeroBackend(Backend):
         Under `_launch_lock`: the deferred free looks at what the queue has
         yet to run, and two threads freeing at once, or one freeing while
         another appends, crashed the driver (25.05; four threads launching
-        and dropping fields, within a few hundred frees). Reentrant, so a
-        field collected while its thread holds the lock is freed in turn.
+        and dropping arrays, within a few hundred frees). Reentrant, so a
+        array collected while its thread holds the lock is freed in turn.
         """
         ze = _get_ze()
         with self._launch_lock:
@@ -1734,7 +1740,7 @@ class LevelZeroBackend(Backend):
                 self.synchronize()
                 ze.zeMemFree(self._context, ptr)
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+    def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> L0Buffer:
         return L0Buffer(self, dtype.numpy_dtype, shape)
 
@@ -1756,18 +1762,18 @@ class LevelZeroBackend(Backend):
         The IR passes and device compilation run only when this argument
         shape/type combination is new; see `resolve_variant`.
         """
-        from tack.lang.field import Texture3D
+        from tack.lang.array import Texture3D
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
             build=self._build_variant,
             store_texture_shapes=self._store_texture_shapes,
         )
-        compiled, pack_info, pack_fields = variant.payload
+        compiled, pack_info, pack_arrays = variant.payload
 
         # Loop range comes from the pre-packing IR: packing rewrites the
         # parameter list, and the range expression names the original args.
-        kernel_args = [a.field if isinstance(a, Texture3D) else a
+        kernel_args = [a.array if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end, extents = _get_launch(variant.ir, kernel_args)
         if loop_end <= 0:
@@ -1775,23 +1781,23 @@ class LevelZeroBackend(Backend):
             return
         check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
-        # Textures bind their own snapshot, not the field they came from.
+        # Textures bind their own snapshot, not the array they came from.
         kernel_args = bind_textures(effective_args)
 
-        # Replace scalar args with the packed field buffers. The pack, the
+        # Replace scalar args with the packed array buffers. The pack, the
         # kernel's argument state and the command list are shared, so the
         # whole launch holds the backend's lock (see `_launch_lock`).
         with self._launch_lock:
             if pack_info:
                 from tack.lang.ir_pack_scalars import split_args
-                from tack.runtime.kernel_utils import _update_pack_fields
-                _update_pack_fields(pack_fields, pack_info, effective_args)
+                from tack.runtime.kernel_utils import _update_pack_arrays
+                _update_pack_arrays(pack_arrays, pack_info, effective_args)
                 kept_args = split_args(effective_args, pack_info)
-                kernel_args = bind_textures(kept_args) + pack_fields
+                kernel_args = bind_textures(kept_args) + pack_arrays
 
             compiled(kernel_args, loop_end, self, extents)
             # Memory that can be read with no Tack call between -- a wrapped
-            # pointer, an exported field -- and a texture, whose image could
+            # pointer, an exported array -- and a texture, whose image could
             # be destroyed before a queued launch has read it: complete now.
             if any(getattr(getattr(a, '_buffer', None), '_shared', False)
                    or isinstance(a, L0TextureImage) for a in kernel_args):
@@ -1805,7 +1811,7 @@ class LevelZeroBackend(Backend):
         changes the generated code, so it is decided here — before the
         variant key is built — rather than at codegen time.
         """
-        from tack.lang.field import Texture3D
+        from tack.lang.array import Texture3D
         for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Texture3D):
                 if self.texture_in_hardware(arg.shape_3d):
@@ -1830,7 +1836,7 @@ class LevelZeroBackend(Backend):
         from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
-        from tack.runtime.kernel_utils import _create_pack_fields
+        from tack.runtime.kernel_utils import _create_pack_arrays
 
         packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
@@ -1838,9 +1844,9 @@ class LevelZeroBackend(Backend):
         annotate_types(packed)
         verify_ir(packed, 'typed')
         compiled = self._compile_kernel(packed)
-        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+        pack_arrays = (_create_pack_arrays(pack_info, effective_args, self)
                        if pack_info else None)
-        return compiled, pack_info, pack_fields
+        return compiled, pack_info, pack_arrays
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledL0Kernel:
         """Compile Tack IR → OpenCL C → SPIR-V → ze_module → ze_kernel."""
@@ -1859,9 +1865,9 @@ class LevelZeroBackend(Backend):
         spirv_bytes = _compile_to_spirv(opencl_source, self._device_id)
 
         param_types = [p.type_annotation for p in ir_func.params]
-        param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+        param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        return _load_kernel(self, spirv_bytes, kernel_name, param_types, param_is_field,
+        return _load_kernel(self, spirv_bytes, kernel_name, param_types, param_is_array,
                             param_is_texture, workgroup_size, full_groups,
                             opencl_source=opencl_source)
 
@@ -1906,35 +1912,35 @@ class LevelZeroBackend(Backend):
         return {"native": _native_binary(compiled._module),
                 "spirv": compiled.spirv, "name": compiled._func_name,
                 "param_types": compiled._param_types,
-                "param_is_field": compiled._param_is_field,
+                "param_is_array": compiled._param_is_array,
                 "param_is_texture": compiled._param_is_texture,
                 "workgroup_size": compiled._workgroup_size,
                 "full_workgroups": compiled._requires_full_workgroups,
                 "pack_info": pack_info}
 
     def load_variant(self, ir_func, artifact, effective_args):
-        from tack.runtime.kernel_utils import _create_pack_fields
+        from tack.runtime.kernel_utils import _create_pack_arrays
         # Module creation outside _launch_lock, as _compile_kernel does it.
         compiled = _load_kernel(self, artifact["spirv"], artifact["name"],
-                                artifact["param_types"], artifact["param_is_field"],
+                                artifact["param_types"], artifact["param_is_array"],
                                 artifact["param_is_texture"], artifact["workgroup_size"],
                                 artifact["full_workgroups"], native=artifact["native"])
         pack_info = artifact["pack_info"]
         # The scalar pack buffers are device memory of this process, made
         # from this call's scalars as _build_variant makes them.
-        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+        pack_arrays = (_create_pack_arrays(pack_info, effective_args, self)
                        if pack_info else None)
-        return compiled, pack_info, pack_fields
+        return compiled, pack_info, pack_arrays
 
-    def reduce_field(self, field, op: str) -> float:
+    def reduce_array(self, array, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
-        if field.size == 0:
+        if array.size == 0:
             return empty_reduction(op)
-        if (field.dtype is not f32
+        if (array.dtype is not f32
                 or self._compute_props.maxGroupSizeX < 256
                 or self._compute_props.maxTotalGroupSize < 256):
-            return reduce_numpy(field.to_numpy(), op)
-        check_launch_size(f"Field {op}()", field.size, self._max_launch, self.label)
+            return reduce_numpy(array.numpy(), op)
+        check_launch_size(f"Array {op}()", array.size, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -1942,7 +1948,7 @@ class LevelZeroBackend(Backend):
             self._reduce_cache[op] = self._compile_reduce(op)
 
         compiled_kernel = self._reduce_cache[op]
-        n = int(np.prod(field.shape))
+        n = int(np.prod(array.shape))
 
         # Create output buffer with init value
         init_vals = REDUCTION_IDENTITIES
@@ -1958,7 +1964,7 @@ class LevelZeroBackend(Backend):
         # The reduction kernel's arguments and the command list are shared.
         with self._launch_lock:
             # Set arguments: input, output, __n__
-            in_ptr = field._buffer.device_ptr
+            in_ptr = array._buffer.device_ptr
             out_ptr = out_buf.device_ptr
             _check_ze(ze.zeKernelSetArgumentValue(
                 kernel, 0, ctypes.sizeof(ctypes.c_void_p), ctypes.byref(in_ptr)),

@@ -19,10 +19,10 @@ iteration space:
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 x = tack.array(np.arange(8, dtype=np.float32))
 y = tack.array(np.ones(8, dtype=np.float32))
-out = tack.empty(dtype=tack.f32, shape=(8,))
+out = tack.empty((8,))
 
 @tack.kernel
 def saxpy(x, y, out, alpha):
@@ -30,7 +30,7 @@ def saxpy(x, y, out, alpha):
         out[i] = alpha * x[i] + y[i]
 
 saxpy(x, y, out, 2.0)
-np.testing.assert_array_equal(out.to_numpy(), np.arange(8, dtype=np.float32) * 2 + 1)
+np.testing.assert_array_equal(out.numpy(), np.arange(8, dtype=np.float32) * 2 + 1)
 ```
 
 The allocation, call and assertion run in Python. The arithmetic in `saxpy` runs
@@ -58,7 +58,7 @@ between threads. Sequential statement order inside an iteration is preserved;
 it does not establish an order between rows.
 
 For a serial recurrence, use `for _ in range(1)` with an ordinary loop inside it.
-For multidimensional work, use `tack.ndrange`. See [Kernels](03-kernels.md) for
+For multidimensional work, use `tack.ndindex`. See [Kernels](03-kernels.md) for
 stepped ranges, interior ranges and variable-length inner loops.
 
 ## Separate stages into separate kernels
@@ -85,13 +85,13 @@ for step in range(100):                    # Python controls the simulation
 ```
 
 Every launch sees the results of the launches before it, and every host
-access to an array -- `to_numpy`, `from_numpy`, indexing, reductions -- sees
+access to an array -- `numpy()`, `tack.copyto`, indexing, reductions -- sees
 the results of every launch before it. So the second kernel sees the
 completed force array, and so does a read after the loop. On the CPU a
 call completes before Python continues; on CUDA, HIP, Metal and Level Zero
 it is queued and returns at once, and the host access waits. The program
 above behaves the same either way, and there is no stream or event to
-manage. `tack.sync()` waits for everything launched so far, for timing
+manage. `tack.sync()` waits for everything launched so far on every device, for timing
 kernels or for memory another library reads without Tack.
 
 ### Waiting from `asyncio`
@@ -105,12 +105,12 @@ a worker thread instead:
 async def frame():
     advance(state, dt)                        # queued; returns at once
     await tack.sync_async()                   # the loop runs while it works
-    pixels = await image.to_numpy_async()     # wait, then copy, off the loop
+    pixels = await image.numpy_async()        # wait, then copy, off the loop
     return pixels
 ```
 
-`tack.sync_async()` waits for the launches made before the call, not for
-ones another task queues while it waits. `to_numpy_async` returns every
+`tack.sync_async()` waits for the launches made on every device
+before the call, not for ones another task queues while it waits. `numpy_async` returns every
 write queued before the call; one queued later by another task may or may
 not be in it, so order the two with `await` if it matters. A launch's error
 is raised at the `await`. On CUDA, HIP, Metal and Level Zero the wait runs

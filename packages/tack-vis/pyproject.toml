@@ -1,7 +1,8 @@
 [project]
 name = "tack-vis"
 version = "0.4.0"
-description = "Tack — Scientific visualization algorithms"
+description = "Tack — datasets and scientific visualization"
+readme = "README.md"
 requires-python = ">=3.11"
 license = "BSD-3-Clause"
 license-files = ["LICENSE"]

@@ -399,11 +399,12 @@ def _points_of(out):
 
 
 def _host(result, vectors=False):
-    return result.values.to_numpy(vectors=True) if vectors else result.values.to_numpy()
+    values = result.values.numpy()
+    return values if vectors else values.reshape(-1)
 
 
 def _geometry(result):
-    return result.geometry.values.to_numpy(vectors=True)
+    return result.geometry.values.numpy()
 
 
 def _tack():

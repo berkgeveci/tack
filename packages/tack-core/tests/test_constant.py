@@ -75,71 +75,71 @@ def shadowed(out, n):
 def test_constants_read_as_their_values(backend):
     """A module constant is the literal it names, in a kernel, as a loop
     bound, and inside a device function."""
-    out = tack.field(dtype=tack.f32, shape=(COUNT,))
+    out = tack.empty((COUNT,))
     ramp(out)
-    np.testing.assert_allclose(out.to_numpy(), np.arange(8) * 0.25 - 9.8, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), np.arange(8) * 0.25 - 9.8, rtol=1e-6)
     integrate(out, 4)
-    np.testing.assert_allclose(out.to_numpy()[:4], -9.8 * 0.25 * 3, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy()[:4], -9.8 * 0.25 * 3, rtol=1e-6)
 
 
 def test_typed_integer_constants_keep_their_width(backend):
     """u32 times a plain literal is i64 arithmetic; times a u32 constant it
     wraps at 32 bits, which a hash needs."""
     values = np.array([1, 7, 123456789, 4000000000], np.uint32)
-    src = tack.field(dtype=tack.u32, shape=(4,))
-    out = tack.field(dtype=tack.u32, shape=(4,))
-    src.from_numpy(values)
+    src = tack.empty((4,), tack.u32)
+    out = tack.empty((4,), tack.u32)
+    tack.copyto(src, values)
     hash_step(src, out, 4)
     with np.errstate(over="ignore"):
         want = values * np.uint32(747796405) + np.uint32(2891336453)
-    np.testing.assert_array_equal(out.to_numpy(), want)
+    np.testing.assert_array_equal(out.numpy(), want)
 
 
 def test_typed_constant_as_the_parallel_bound(backend):
-    out = tack.field(dtype=tack.i64, shape=(5,))
+    out = tack.empty((5,), tack.i64)
     typed_bound(out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(5) + 5)
+    np.testing.assert_array_equal(out.numpy(), np.arange(5) + 5)
 
 
 def test_typed_float_constant_is_exact_in_f64(backend):
     if not tack.runtime.dispatch.get_backend().supports_f64:
         pytest.skip("backend has no f64")
-    out = tack.field(dtype=tack.f64, shape=(2,))
+    out = tack.empty((2,), tack.f64)
     exact_double(out, 2)
-    np.testing.assert_array_equal(out.to_numpy(), np.full(2, 0.1 * 3.0))
+    np.testing.assert_array_equal(out.numpy(), np.full(2, 0.1 * 3.0))
 
 
 def test_math_module_constants(backend):
     """`math.pi`, `math.e` and `math.tau` read as their values; they used
     to be an unbound name."""
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.empty((4,))
     circle(out, 4)
     want = 2.0 * math.pi * np.arange(4) + math.tau + math.e
-    np.testing.assert_allclose(out.to_numpy(), want, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), want, rtol=1e-6)
 
 
 @tack.kernel
 def scaled_rows(grid, out, n, scale):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         out[i, j] = grid[i, j] * scale + grid.shape[1]
 
 
-def test_constants_as_field_shapes_and_arguments(backend):
-    """A constant used as a field's shape is baked into indexing as a
+def test_constants_as_array_shapes_and_arguments(backend):
+    """A constant used as an array's shape is baked into indexing as a
     number, and one passed as an argument is an ordinary scalar. The
     shape once reached generated code as the text "tack.constant(8)"."""
-    grid = tack.field(dtype=tack.f32, shape=(COUNT, COUNT))
-    out = tack.field(dtype=tack.f32, shape=(COUNT, COUNT))
+    grid = tack.empty((COUNT, COUNT))
+    out = tack.empty((COUNT, COUNT))
     values = np.arange(64, dtype=np.float32).reshape(8, 8)
-    grid.from_numpy(values)
+    tack.copyto(grid, values)
     scaled_rows(grid, out, COUNT, DT)
-    np.testing.assert_array_equal(out.to_numpy(), values * 0.25 + 8)
+    np.testing.assert_array_equal(out.numpy(), values * 0.25 + 8)
 
 
 def test_a_local_shadows_a_constant(backend):
-    out = tack.field(dtype=tack.f32, shape=(2,))
+    out = tack.empty((2,))
     shadowed(out, 2)
-    np.testing.assert_array_equal(out.to_numpy(), [2.0, 2.0])
+    np.testing.assert_array_equal(out.numpy(), [2.0, 2.0])
 
 
 def test_constants_are_ordinary_numbers_on_the_host():
@@ -211,29 +211,29 @@ def wrapping_vector_constant(out, n):
 
 
 def test_vector_and_matrix_constants_in_kernels(backend):
-    """`tack.constant((0.5, 0.25, 0.0))` is `tack.Vector([0.5, 0.25, 0.0])`
+    """`tack.constant((0.5, 0.25, 0.0))` is `tack.vec3(0.5, 0.25, 0.0)`
     in a kernel and a matrix constant the matrix with those rows: as
-    operands, by component (`SUN.y`, `SUN[2]`, `ROT[1, 0]`), as a field
+    operands, by component (`SUN.y`, `SUN[2]`, `ROT[1, 0]`), as an array
     index, and inside device functions."""
     n = 3
     points = np.array([[0.1, 0.2, 0.3], [0.5, 0.25, 0.0], [1.0, -1.0, 2.0]], np.float32)
-    pos = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
-    pos.from_numpy(points)
-    grid = tack.field(dtype=tack.f32, shape=(4, 4))
+    pos = tack.empty((n,), tack.vec(3, tack.f32))
+    tack.copyto(pos, points)
+    grid = tack.empty((4, 4))
     grid.fill(7.0)
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
     vector_constants(pos, grid, out, n)
     sun, rot = np.array(SUN, np.float32), np.array(ROT, np.float32)
     want = [np.linalg.norm(p - sun) + 0.25 + 0.0 + 1.0 + (rot @ p[:2]).sum() + 7.0
             + np.linalg.norm(sun - p) + 0.75 for p in points]
-    np.testing.assert_allclose(out.to_numpy(), want, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), want, rtol=1e-6)
 
 
 def test_typed_vector_constant_keeps_its_width(backend):
-    out = tack.field(dtype=tack.u32, shape=(1,))
+    out = tack.empty((1,), tack.u32)
     wrapping_vector_constant(out, 1)
     h = (np.array([747796405, 2891336453], np.uint32) * np.uint32(3))
-    assert out.to_numpy()[0] == np.uint32(h[0] + h[1])
+    assert out.numpy()[0] == np.uint32(h[0] + h[1])
 
 
 def test_vector_constants_on_the_host():

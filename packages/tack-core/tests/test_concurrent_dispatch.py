@@ -31,7 +31,7 @@ TIMEOUT = 10
 
 @pytest.fixture(autouse=True)
 def cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 @tack.kernel
@@ -100,11 +100,11 @@ class Interleave:
         return errors
 
 
-def _fields(dtype, np_dtype, n, length=None):
+def _arrays(dtype, np_dtype, n, length=None):
     length = length or n
-    x = tack.field(dtype=dtype, shape=(length,))
-    out = tack.field(dtype=dtype, shape=(length,))
-    x.from_numpy(np.arange(length, dtype=np_dtype))
+    x = tack.empty((length,), dtype)
+    out = tack.empty((length,), dtype)
+    tack.copyto(x, np.arange(length, dtype=np_dtype))
     return x, out
 
 
@@ -116,8 +116,8 @@ def _slot():
 def test_concurrent_dtypes_get_their_own_variants(monkeypatch):
     """Two dtypes must produce two entries, not one shared by both."""
     n = 8
-    f32_x, f32_out = _fields(tack.f32, np.float32, n)
-    f64_x, f64_out = _fields(tack.f64, np.float64, n)
+    f32_x, f32_out = _arrays(tack.f32, np.float32, n)
+    f64_x, f64_out = _arrays(tack.f64, np.float64, n)
 
     interleave = Interleave(monkeypatch)
     interleave.run(lambda: _scale(f32_x, f32_out, n),
@@ -138,22 +138,22 @@ def test_a_thread_gets_code_built_for_its_own_dtype(monkeypatch):
     variant -- before A resumes, so a crossed key is a cache *hit* on
     somebody else's code rather than a redundant compile.
 
-    A's fields are twice the dispatched length so that f64 code reading
+    A's arrays are twice the dispatched length so that f64 code reading
     them stays in bounds: at equal length this reads and writes 2x past the
     end, and the test would be a heap corruption rather than an assertion.
     """
     n = 8
-    f32_x, f32_out = _fields(tack.f32, np.float32, n, length=2 * n)
-    f64_x, f64_out = _fields(tack.f64, np.float64, n)
+    f32_x, f32_out = _arrays(tack.f32, np.float32, n, length=2 * n)
+    f64_x, f64_out = _arrays(tack.f64, np.float64, n)
 
     interleave = Interleave(monkeypatch, hold_b_until_done=True)
     interleave.run(lambda: _scale(f32_x, f32_out, n),
                    lambda: _scale(f64_x, f64_out, n))
 
     np.testing.assert_array_equal(
-        f32_out.to_numpy()[:n], np.arange(n, dtype=np.float32) * 2.0)
+        f32_out.numpy()[:n], np.arange(n, dtype=np.float32) * 2.0)
     np.testing.assert_array_equal(
-        f64_out.to_numpy(), np.arange(n, dtype=np.float64) * 2.0)
+        f64_out.numpy(), np.arange(n, dtype=np.float64) * 2.0)
 
 
 def test_the_template_is_left_alone(monkeypatch):
@@ -163,7 +163,7 @@ def test_the_template_is_left_alone(monkeypatch):
     can read them. Nothing may be recorded there.
     """
     n = 8
-    x, out = _fields(tack.f32, np.float32, n)
+    x, out = _arrays(tack.f32, np.float32, n)
     template = _scale.get_ir().functions[0]
 
     _scale(x, out, n)
@@ -171,7 +171,7 @@ def test_the_template_is_left_alone(monkeypatch):
     recorded = [p.type_annotation for p in template.params]
     assert recorded == [None] * len(recorded), (
         f"dispatch wrote {recorded} into the shared template")
-    assert not any(getattr(p, "_is_field", False) for p in template.params)
+    assert not any(getattr(p, "_is_array", False) for p in template.params)
 
 
 def test_many_threads_one_kernel():
@@ -183,14 +183,14 @@ def test_many_threads_one_kernel():
     def work(i):
         try:
             if i % 2:
-                x, out = _fields(tack.f32, np.float32, n)
+                x, out = _arrays(tack.f32, np.float32, n)
                 want = np.arange(n, dtype=np.float32) * 2.0
             else:
-                x, out = _fields(tack.f64, np.float64, n)
+                x, out = _arrays(tack.f64, np.float64, n)
                 want = np.arange(n, dtype=np.float64) * 2.0
             for _ in range(20):
                 _scale(x, out, n)
-            results[i] = np.array_equal(out.to_numpy(), want)
+            results[i] = np.array_equal(out.numpy(), want)
         except Exception as exc:                        # pragma: no cover
             errors.append(exc)
 
@@ -208,7 +208,7 @@ def test_many_threads_one_kernel():
 # ── One compiled variant, dispatched from several threads ───────────
 #
 # A variant's launch state is shared on the GPU backends: the buffer its
-# scalars are packed into, and on Metal the argument buffer its field
+# scalars are packed into, and on Metal the argument buffer its array
 # bindings are encoded into. Unlocked, a thread could write its scalars,
 # have another thread overwrite them, and launch with the other's -- on
 # CUDA, half the dispatches below came back computed with the wrong ones.
@@ -236,9 +236,9 @@ def _bind_device_to_this_thread():
 def test_threads_sharing_a_variant_each_get_their_own_scalars(backend):
     threads, iterations, n = 4, 100, 1024
     base = np.arange(n, dtype=np.float32) % 97
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(base)
-    outs = [tack.field(dtype=tack.f32, shape=(n,)) for _ in range(threads)]
+    x = tack.empty((n,))
+    tack.copyto(x, base)
+    outs = [tack.empty((n,)) for _ in range(threads)]
     _affine(x, outs[0], 1.0, 0.0)  # one variant, compiled before the race
     start = threading.Barrier(threads)
     wrong, errors = [], []
@@ -250,7 +250,7 @@ def test_threads_sharing_a_variant_each_get_their_own_scalars(backend):
             for k in range(iterations):
                 scale, offset = float(t + 1), float(1000 * t + k % 7)
                 _affine(x, outs[t], scale, offset)
-                if not np.array_equal(outs[t].to_numpy(), base * scale + offset):
+                if not np.array_equal(outs[t].numpy(), base * scale + offset):
                     wrong.append((t, k))
         except Exception as exc:                        # pragma: no cover
             errors.append(exc)
@@ -312,12 +312,12 @@ def test_threads_sharing_a_template_object_all_succeed(monkeypatch):
 
     def run(tid):
         try:
-            x = tack.field(dtype=tack.f32, shape=(8,))
-            out = tack.field(dtype=tack.f32, shape=(8,))
-            x.from_numpy(np.ones(8, dtype=np.float32))
+            x = tack.empty((8,))
+            out = tack.empty((8,))
+            tack.copyto(x, np.ones(8, dtype=np.float32))
             _use_template(shared, x, out)
             with lock:
-                results[tid] = out.to_numpy()
+                results[tid] = out.numpy()
         except Exception as e:
             with lock:
                 errors.append(f"{type(e).__name__}: {e}")
@@ -343,8 +343,8 @@ def test_concurrent_templates_preserve_method_source(monkeypatch):
 
     def run(bias):
         s = _Scaler(bias)
-        x = tack.field(dtype=tack.f32, shape=(4,))
-        out = tack.field(dtype=tack.f32, shape=(4,))
+        x = tack.empty((4,))
+        out = tack.empty((4,))
         _use_template(s, x, out)
 
     threads = [threading.Thread(target=run, args=(float(i),)) for i in range(6)]
@@ -389,8 +389,8 @@ def test_a_failed_transform_still_cleans_up(monkeypatch):
     monkeypatch.setattr(kernel_mod, "transform_kernel", boom)
 
     s = _ColdScaler(1.0)
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
     with pytest.raises(Exception, match="synthetic transform failure"):
         _use_template(s, x, out)
 
@@ -399,39 +399,30 @@ def test_a_failed_transform_still_cleans_up(monkeypatch):
         _use_template._make_cache_key(None, {0: ('s', s)}))
 
 
-# ── Switching backends under a live field ────────────────────────────
+# ── Switching the default device under a live array ──────────────
 
-def test_a_backend_switch_under_a_live_field_says_so():
-    """`tack.init()` rebinds a module global; fields do not follow it.
-
-    The raw failure is `'NumpyBuffer' object has no attribute
-    'metal_buffer'`, which names neither the cause nor the fix. Any second
-    backend will do — the point is the diagnosis, not which one.
-    """
+def test_arrays_made_before_a_switch_run_on_their_device():
+    """Changing the default device leaves arrays where they are: a kernel
+    given CPU arrays runs on the CPU, whatever the default is now. Any
+    second device will do."""
     second = None
-    for arch in ("metal", "cuda", "hip", "level_zero"):
+    for kind in ("metal", "cuda", "hip", "level_zero"):
         try:
-            tack.init(arch=getattr(tack, arch))
-            second = arch
+            tack.set_default_device(kind)
+            second = kind
             break
         except (ImportError, RuntimeError, OSError):
             continue
     if second is None:
-        pytest.skip("only one backend on this machine")
+        pytest.skip("only one device type on this machine")
 
     try:
-        tack.init(arch=tack.cpu)
-        x = tack.field(dtype=tack.f32, shape=(8,))
-        out = tack.field(dtype=tack.f32, shape=(8,))
-        x.from_numpy(np.arange(8, dtype=np.float32))
-
-        tack.init(arch=getattr(tack, second))
-        with pytest.raises(RuntimeError) as excinfo:
-            _scale(x, out, 8)
-
-        message = str(excinfo.value)
-        assert "another backend" in message
-        assert "cpu" in message, "the message must name where the field came from"
-        assert "Re-allocate" in message, "and what to do about it"
+        tack.set_default_device("cpu")
+        x = tack.array(np.arange(8, dtype=np.float32))
+        out = tack.empty((8,))
+        tack.set_default_device(second)
+        _scale(x, out, 8)
+        assert out.device == tack.device("cpu")
+        np.testing.assert_allclose(out.numpy(), np.arange(8) * 2.0)
     finally:
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")

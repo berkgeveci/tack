@@ -15,7 +15,7 @@ def _face_geometry(faces, normals, areas):
     for f in faces:
         size = faces.num_points(f)                # the shape's constant, or a polygon's
         origin = faces.corner_position(f, 0)
-        n = tack.Vector([0.0, 0.0, 0.0])
+        n = tack.vec3(0.0, 0.0, 0.0)
         for j in range(1, size - 1):
             # Newell's normal, from the face's first point: a fan of triangles.
             n += (faces.corner_position(f, j) - origin).cross(faces.corner_position(f, j + 1) - origin)
@@ -80,7 +80,7 @@ def face_geometry(data):
     faces = data.topology.faces()
     dtype = data.dtype
     normals = _vectors(faces.num_faces, dtype)
-    areas = tack.field(dtype, shape=(faces.num_faces,))
+    areas = tack.empty((faces.num_faces,), dtype)
     if data.topology.dimension == 2:
         for_each(_edge_geometry, data, "cells", normals, areas)
     elif data.topology.dimension == 1:

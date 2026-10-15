@@ -11,15 +11,15 @@ from tack.lang.type_inference import infer_param_types
 
 
 def _get_ir(kernel_fn, *args):
-    """Helper: define a kernel, create dummy fields/scalars, run type inference, return IR."""
-    tack.init(arch=tack.cpu)
+    """Helper: define a kernel, create dummy arrays/scalars, run type inference, return IR."""
+    tack.set_default_device("cpu")
     ir_func = kernel_fn.get_ir().functions[0]
     infer_param_types(ir_func, tuple(args))
     return ir_func
 
 
-def _field(shape=(64,), dtype=tack.f32):
-    return tack.field(dtype=dtype, shape=shape)
+def _array(shape=(64,), dtype=tack.f32):
+    return tack.empty(shape, dtype)
 
 
 class TestCUDACodeGen:
@@ -31,7 +31,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = x[i] + y[i]
 
-        src = generate_cuda_source(_get_ir(add, _field(), _field(), _field()))
+        src = generate_cuda_source(_get_ir(add, _array(), _array(), _array()))
         assert 'extern "C" __global__' in src
 
     def test_thread_index(self):
@@ -40,7 +40,7 @@ class TestCUDACodeGen:
             for i in range(out.shape[0]):
                 out[i] = 42.0
 
-        src = generate_cuda_source(_get_ir(fill, _field()))
+        src = generate_cuda_source(_get_ir(fill, _array()))
         # Widened before the multiply: blockIdx.x * blockDim.x is 32-bit
         # unsigned and wraps once a launch reaches 2^32 threads.
         assert ('long long tack_var_a_i = (long long)blockIdx.x * blockDim.x '
@@ -53,16 +53,16 @@ class TestCUDACodeGen:
             for i in range(out.shape[0]):
                 out[i] = 42.0
 
-        src = generate_cuda_source(_get_ir(fill, _field()))
+        src = generate_cuda_source(_get_ir(fill, _array()))
         assert 'if (tack_var_a_i >= __n__) return;' in src
 
-    def test_field_pointers_allow_aliasing(self):
+    def test_array_pointers_allow_aliasing(self):
         @tack.kernel
         def add(x, y, out):
             for i in range(x.shape[0]):
                 out[i] = x[i] + y[i]
 
-        src = generate_cuda_source(_get_ir(add, _field(), _field(), _field()))
+        src = generate_cuda_source(_get_ir(add, _array(), _array(), _array()))
         assert 'float* tack_var_a_x' in src
         assert '__restrict__' not in src
 
@@ -72,7 +72,7 @@ class TestCUDACodeGen:
             for i in range(out.shape[0]):
                 out[i] = 1.0
 
-        src = generate_cuda_source(_get_ir(fill, _field()))
+        src = generate_cuda_source(_get_ir(fill, _array()))
         assert 'long long __n__' in src
 
     def test_math_functions(self):
@@ -81,7 +81,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = sqrt(x[i])
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert 'sqrtf(' in src
 
     def test_sin_cos(self):
@@ -90,7 +90,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = sin(x[i]) + cos(x[i])
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert 'sinf(' in src
         assert 'cosf(' in src
 
@@ -103,7 +103,7 @@ class TestCUDACodeGen:
                 else:
                     out[i] = 0.0
 
-        src = generate_cuda_source(_get_ir(relu, _field(), _field()))
+        src = generate_cuda_source(_get_ir(relu, _array(), _array()))
         assert 'if (' in src
         assert '} else {' in src
 
@@ -114,7 +114,7 @@ class TestCUDACodeGen:
                 for j in range(10):
                     b[i] = a[i]
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert 'for (long long tack_var_a_j = 0; tack_var_a_j < 10; tack_var_a_j++)' in src
 
     def test_loop_variable_rebound_as_a_local_is_declared(self):
@@ -129,7 +129,7 @@ class TestCUDACodeGen:
                 d = tack.i32(x[i])
                 out[i] = acc + d
 
-        src = generate_cuda_source(_get_ir(kern, _field(dtype=tack.i32), _field(dtype=tack.i32)))
+        src = generate_cuda_source(_get_ir(kern, _array(dtype=tack.i32), _array(dtype=tack.i32)))
         assert 'for (long long tack_var_a_d = 0; tack_var_a_d < 4; tack_var_a_d++)' in src
         assert 'int tack_var_a_d = ' in src
 
@@ -142,7 +142,7 @@ class TestCUDACodeGen:
                     out[i] = out[i] + x[i]
                     j = j + 1
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert 'while (' in src
 
     def test_scalar_arg_not_pointer(self):
@@ -151,7 +151,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = alpha * x[i] + y[i]
 
-        src = generate_cuda_source(_get_ir(saxpy, _field(), _field(), _field(), 2.5))
+        src = generate_cuda_source(_get_ir(saxpy, _array(), _array(), _array(), 2.5))
         # alpha should be a value, not a pointer
         assert 'float tack_var_a_alpha' in src
         assert 'float* tack_var_a_alpha' not in src
@@ -162,7 +162,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 tack.atomic_add(total, 0, x[i])
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field((1,))))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array((1,))))
         assert 'atomicAdd(' in src
 
     def test_float_atomic_min_uses_cas(self):
@@ -171,7 +171,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 tack.atomic_min(min_val, 0, x[i])
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field((1,))))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array((1,))))
         assert 'atomicMinFloat(' in src
         assert '__device__ float atomicMinFloat' in src
         assert 'atomicCAS(' in src
@@ -182,7 +182,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 tack.atomic_max(max_val, 0, x[i])
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field((1,))))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array((1,))))
         assert 'atomicMaxFloat(' in src
         assert '__device__ float atomicMaxFloat' in src
         assert 'atomicCAS(' in src
@@ -195,7 +195,7 @@ class TestCUDACodeGen:
                 tack.barrier()
                 out[i] = x[i]
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert '__shared__' in src
         assert '__syncthreads()' in src
 
@@ -206,7 +206,7 @@ class TestCUDACodeGen:
                 print("val:", x[i])
                 out[i] = x[i]
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert 'printf(' in src
 
     def test_int_cast(self):
@@ -215,7 +215,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = float(int(x[i]))
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert '((int)(' in src
 
     def test_negation(self):
@@ -224,7 +224,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = -x[i]
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert '(-' in src
 
     def test_power_uses_powf(self):
@@ -233,7 +233,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = x[i] ** 2.0
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert 'powf(' in src
 
     def test_floor_div(self):
@@ -242,7 +242,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = x[i] // 2.0
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array()))
         assert 'floorf(' in src
 
     def test_min_max_builtins(self):
@@ -251,7 +251,7 @@ class TestCUDACodeGen:
             for i in range(x.shape[0]):
                 out[i] = min(x[i], y[i]) + max(x[i], y[i])
 
-        src = generate_cuda_source(_get_ir(kern, _field(), _field(), _field()))
+        src = generate_cuda_source(_get_ir(kern, _array(), _array(), _array()))
         assert 'fminf(' in src
         assert 'fmaxf(' in src
 
@@ -271,15 +271,15 @@ def test_narrow_signed_negation_is_inline_ptx(dtype, in_ptx):
     from bit 15, so i16 -(-32768) read 32768 once widened (driver 595 on an
     H100). NVVM narrows any C spelling to those instructions; an inline-PTX
     32-bit subtract keeps them out. HIP and OpenCL keep their own forms."""
-    tack.init(arch=tack.cpu)
-    fields = [_field(dtype=dtype) for _ in range(3)]
-    function, _ = _prepare_ir(_negate, tuple(fields))
+    tack.set_default_device("cpu")
+    arrays = [_array(dtype=dtype) for _ in range(3)]
+    function, _ = _prepare_ir(_negate, tuple(arrays))
     src = generate_cuda_source(function)
     for op in ("neg", "abs"):
         body = src.split(f"__tack_{op}_{dtype.name}__(")[1].split("}")[0]
         assert ("__tack_ptx_neg_u32__(" in body) == in_ptx
     assert ('asm("sub.u32 %0, 0, %1;"' in src) == in_ptx
     for generate in (generate_hip_source, generate_opencl_source):
-        function, _ = _prepare_ir(_negate, tuple(fields))
+        function, _ = _prepare_ir(_negate, tuple(arrays))
         other = generate(function)
         assert "asm(" not in other and "__tack_ptx_neg_u32__" not in other

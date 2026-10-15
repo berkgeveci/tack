@@ -34,15 +34,15 @@ wrong spelling still compiles as C.
 | **HIP** | once queued on a stream | the code object |
 | **Level Zero** | once queued on an asynchronous immediate command list | the native binary, and the SPIR-V to fall back on |
 
-A queued launch is waited for where the host reads a field or calls
+A queued launch is waited for where the host reads an array or calls
 `tack.sync()`, and its errors surface there. A launch that uses memory
-shared with another library (DLPack export, `field_from_ptr`) completes
+shared with another library (DLPack export, `array_from_ptr`) completes
 before the call returns. See
 [Backends](../users-guide/08-backends.md#when-a-call-returns) in the User's
 Guide and [The Kernel Cache](../users-guide/17-kernel-cache.md).
 
 [Debug mode](../users-guide/15-debugging-and-timing.md#check-every-index-with-debug-mode)
-(`tack.init(..., debug=True)` or `TACK_DEBUG=1`) checks every index on all five.
+(`tack.set_debug(True)` or `TACK_DEBUG=1`) checks every index on all five.
 
 ## Scalar types
 
@@ -58,12 +58,12 @@ Guide and [The Kernel Cache](../users-guide/17-kernel-cache.md).
 is a hardware fact rather than a gap in Tack.
 
 **Level Zero decides at runtime.** Some Intel parts implement `f64` and some do
-not, so the backend queries `zeDeviceGetModuleProperties` during `init()` and
+not, so the backend queries `zeDeviceGetModuleProperties` when the device starts and
 builds its supported set from the answer. Ask the backend rather than assuming:
 
 ```python
 from tack.runtime.dispatch import get_backend
-tack.init(arch=tack.level_zero)
+tack.set_default_device("level_zero")
 print(get_backend().supports_f64)
 ```
 
@@ -125,7 +125,7 @@ from tack.runtime.dispatch import get_backend
 be = get_backend()
 be.name                       # 'cpu', 'metal', 'cuda', 'hip', 'level_zero'
 be.label                      # how to spell it in a message
-be.supported_dtypes           # the frozenset dispatch checks field arguments against
+be.supported_dtypes           # the frozenset dispatch checks array arguments against
 be.supports_f64               # derived from the above
 be.supports_device_reductions # whether .sum()/.min()/.max() run on device
 be.device_memory_spaces       # what memory_space() must return for a pointer

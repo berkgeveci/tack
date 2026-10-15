@@ -1,16 +1,16 @@
-# Sample, render and connect simulations
+# Sample and connect simulations
 
 A useful visualization pipeline connects a simulation's fields to a scientific
 question and an output. Keep the data's space and lifetime explicit at each
-stage: a streamline needs an interpolated velocity, an image needs geometry
-and colours, and a file writer needs host-accessible data in its format.
+stage: a streamline needs an interpolated velocity, and a file writer needs
+host-accessible data in its format.
 
 ```mermaid
 flowchart LR
     A[Simulation or reader] --> B[Dataset and named fields]
     B --> C[Derived fields and selections]
     C --> D[Contour, slice or boundary]
-    D --> E[Render an image]
+    D --> G
     C --> F[Probe or integrate trajectories]
     C --> G[Export a dataset]
 ```
@@ -69,34 +69,6 @@ evidence of low speed. These functions sample one steady field. A pathline
 through a changing simulation requires a time-dependent integration strategy;
 repeating a steady streamline calculation does not by itself provide one.
 
-## Pass an extracted surface to the renderer
-
-The [isosurface tutorial](../tutorials/isosurface.md) samples an analytic sphere,
-extracts it and renders its retained device fields. Its rendering stage is:
-
-```python
---8<-- "docs/examples/isosurface.py:render"
-```
-
-`surface.geometry.values` stores interleaved 3-vectors. `reshape` exposes the
-flat XYZ field that `Actor` expects without copying those values. Connectivity
-contains vertex ids, not scalar-component offsets. It must be `i32` for the
-current renderer; check the range before converting an `i64` mesh.
-
-For a coloured surface, carry the desired floating scalar through extraction
-and pass its output values as `scalars=` with a `ColorTable`. A contour's own
-scalar is constant at its isovalue, so another field is often more informative
-for colouring. Convert cell data to a deliberate point representation before
-supplying one scalar per vertex; [projection](03-fields-and-spaces.md) explains
-the averaging that this can introduce.
-
-Use a fixed colour range for comparing timesteps. Match camera and canvas
-dimensions, and check depth hits when debugging a blank render. Scene geometry
-and BVH preparation are cached: editing an actor's existing positions does not
-automatically refresh them. Construct a fresh scene when geometry changes.
-The [rendering chapter](../10-rendering.md) covers cameras, volumes, materials
-and postprocessing.
-
 ## Keep a simulation's state in the pipeline
 
 A common pattern is to retain topology and geometry, attach each working field
@@ -108,9 +80,8 @@ they are not a graph that recomputes automatically when an input changes.
 |---|---|
 | Values in an existing simulation field | Re-run dependent filters, samples and summaries |
 | A field was replaced by a new buffer | Update the named `td.Field` attachment |
-| Point positions changed | Rebuild locators; recreate rendering scenes with current bounds |
+| Point positions changed | Rebuild locators |
 | Connectivity changed | Construct a corresponding topology, spaces and associations |
-| Only the camera changed | Reuse geometry with a camera for the new view |
 
 Prefer kernels that compute through `data.geometry.values` to downloading all
 positions just to form a derived field on the host. Keep readback at checkpoints
@@ -140,7 +111,7 @@ writer.Write()
 
 These whole-dataset conversions copy arrays and provide a straightforward
 host boundary. Zero-copy array exchange is a separate route using
-`field_to_vtk`, `vtk_to_field` and a DLPack-enabled VTK build. A standard VTK
+`array_to_vtk`, `vtk_to_array` and a DLPack-enabled VTK build. A standard VTK
 wheel sufficient for file I/O may not expose that route. Level Zero sharing
 also needs a shared allocation context. See [Sharing Arrays](../16-interoperability.md).
 
@@ -158,7 +129,6 @@ for signatures and the current mapping limits.
 | Extract variable-size geometry | Count readbacks and output allocation |
 | Return a scalar summary | Device wait and result readback |
 | Probe or integrate | Locator setup, query upload; streamlines also read path lengths for output allocation |
-| Prepare a scene and render | Geometry preparation, BVH work and image readback |
 | Export to VTK or a file | Array copies and writer time |
 
 Queued GPU launches preserve Tack's program order, but host reads synchronize.
@@ -170,11 +140,9 @@ output stage when reporting application time. See [Debugging and Timing](../15-d
 
 ```bash
 uv run python docs/examples/data_analysis.py --arch cpu --check
-uv run python docs/examples/isosurface.py --arch cpu --check
 uv run python docs/examples/datasets.py --arch cpu --check
 ```
 
 The [analysis program](../../examples/data_analysis.py) covers probing and flow,
-the [sphere program](../../examples/isosurface.py) covers extraction through
-rendered image and depth checks, and the [dataset tour](../../examples/datasets.py)
-connects mixed meshes, spaces, sets and a coloured rendering.
+and the [dataset tour](../../examples/datasets.py) connects mixed meshes,
+spaces, sets and streamlines.

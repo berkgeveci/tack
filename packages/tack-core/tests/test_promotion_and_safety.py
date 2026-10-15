@@ -62,7 +62,7 @@ class TestMixedSignPromotion:
 
 def test_kernel_named_double(backend):
     """Kernel named 'double' (C reserved word) should compile and run."""
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.empty((4,))
 
     @tack.kernel
     def double(out):
@@ -70,12 +70,12 @@ def test_kernel_named_double(backend):
             out[i] = float(i) * 2.0
 
     double(out)
-    np.testing.assert_allclose(out.to_numpy(), [0.0, 2.0, 4.0, 6.0])
+    np.testing.assert_allclose(out.numpy(), [0.0, 2.0, 4.0, 6.0])
 
 
 def test_kernel_named_float(backend):
     """Kernel named 'float' (C reserved word) should compile and run."""
-    out = tack.field(dtype=tack.i32, shape=(4,))
+    out = tack.empty((4,), tack.i32)
 
     @tack.kernel
     def float(out):
@@ -83,12 +83,12 @@ def test_kernel_named_float(backend):
             out[i] = i + 1
 
     float(out)
-    np.testing.assert_array_equal(out.to_numpy(), [1, 2, 3, 4])
+    np.testing.assert_array_equal(out.numpy(), [1, 2, 3, 4])
 
 
 def test_kernel_named_int(backend):
     """Kernel named 'int' should compile and run."""
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    out = tack.empty((4,))
 
     # Use globals trick since 'int' shadows the builtin
     @tack.kernel
@@ -97,7 +97,7 @@ def test_kernel_named_int(backend):
             out[i] = 1.0
 
     int(out)
-    np.testing.assert_allclose(out.to_numpy(), [1.0, 1.0, 1.0, 1.0])
+    np.testing.assert_allclose(out.numpy(), [1.0, 1.0, 1.0, 1.0])
 
 
 def test_codegen_escapes_reserved_name():
@@ -107,11 +107,11 @@ def test_codegen_escapes_reserved_name():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    tack.set_default_device("cpu")
+    out = tack.empty((4,))
 
     p = ir.IRParam("out")
-    store = ir.IRFieldStore(ir.IRName("out"), ir.IRName("i"), ir.IRConstant(1.0))
+    store = ir.IRArrayStore(ir.IRName("out"), ir.IRName("i"), ir.IRConstant(1.0))
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(4), [store])
     func = ir.IRFunction("double", [p], [pfor])
     infer_param_types(func, (out,))
@@ -126,9 +126,9 @@ def test_codegen_escapes_reserved_name():
 
 def test_u32_to_f32_cast(backend):
     """u32 values > 2^31 should cast correctly to f32 (uitofp, not sitofp)."""
-    data = tack.field(dtype=tack.u32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
-    data.from_numpy(np.array([0, 1, 2**31, 2**32 - 1], dtype=np.uint32))
+    data = tack.empty((4,), tack.u32)
+    out = tack.empty((4,))
+    tack.copyto(data, np.array([0, 1, 2**31, 2**32 - 1], dtype=np.uint32))
 
     @tack.kernel
     def cast_u32(data, out):
@@ -136,7 +136,7 @@ def test_u32_to_f32_cast(backend):
             out[i] = tack.f32(data[i])
 
     cast_u32(data, out)
-    result = out.to_numpy()
+    result = out.numpy()
     assert result[0] == 0.0
     assert result[1] == 1.0
     assert result[2] == pytest.approx(2**31, rel=1e-6)
@@ -145,10 +145,10 @@ def test_u32_to_f32_cast(backend):
 
 def test_u64_to_f64_cast():
     """u64 values should cast correctly to f64."""
-    tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.u64, shape=(3,))
-    out = tack.field(dtype=tack.f64, shape=(3,))
-    data.from_numpy(np.array([0, 2**32, 2**63], dtype=np.uint64))
+    tack.set_default_device("cpu")
+    data = tack.empty((3,), tack.u64)
+    out = tack.empty((3,), tack.f64)
+    tack.copyto(data, np.array([0, 2**32, 2**63], dtype=np.uint64))
 
     @tack.kernel
     def cast_u64(data, out):
@@ -156,7 +156,7 @@ def test_u64_to_f64_cast():
             out[i] = tack.f64(data[i])
 
     cast_u64(data, out)
-    result = out.to_numpy()
+    result = out.numpy()
     assert result[0] == 0.0
     assert result[1] == pytest.approx(2**32)
     assert result[2] == pytest.approx(2**63, rel=1e-10)

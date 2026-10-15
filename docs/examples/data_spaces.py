@@ -37,7 +37,7 @@ def initialize_pressure(cells, offsets, values):
 def sample_profiles(cells, temperature, pressure, linearized, xs, ts, ps, ls, count):
     for c in cells:
         for j in range(count):
-            pc = tack.Vector([j / (count - 1), 0.5, 0.5])
+            pc = tack.vec3(j / (count - 1), 0.5, 0.5)
             k = cells.entity_id(c) * count + j
             xs[k] = cells.position(c, pc).x
             ts[k] = temperature.value(c, pc)
@@ -46,7 +46,7 @@ def sample_profiles(cells, temperature, pressure, linearized, xs, ts, ps, ls, co
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     # --8<-- [start:spaces]
     # --8<-- [start:mesh]
     # Shortcut mesh setup: two adjacent hexes in the unit cube.
@@ -56,13 +56,13 @@ def run(arch="cpu", check=False):
     temperature_space = td.H1(data, order=2)
     # Evaluate geometry at all 45 temperature nodes, not just the 12 corners.
     temperature_nodes = td.project(data, data.geometry, temperature_space)
-    temperature = tack.empty(dtype=tack.f32, shape=(temperature_space.size,))
+    temperature = tack.empty((temperature_space.size,))
     quadratic_temperature(temperature_nodes.values, temperature)
     data.fields["temperature"] = td.Field(temperature_space, temperature)
     # --8<-- [end:h1-build]
     # --8<-- [start:l2-build]
     pressure_space = td.L2(data, order=1)
-    pressure = tack.empty(shape=(pressure_space.size,), dtype=tack.f32)
+    pressure = tack.empty((pressure_space.size,))
     td.for_each(initialize_pressure, data, "cells", pressure_space.offsets, pressure)
     data.fields["pressure"] = td.Field(pressure_space, pressure)
     # --8<-- [end:l2-build]
@@ -96,7 +96,7 @@ def run(arch="cpu", check=False):
     # Centers: [0.25, 2.75]; gradients: [1, 0, 0]; interface jump magnitude: 2.
     # --8<-- [end:l2-check]
     count = 101
-    xs, ts, ps, ls = (tack.empty(shape=(data.num_cells * count,), dtype=tack.f32)
+    xs, ts, ps, ls = (tack.empty((data.num_cells * count,))
                       for _ in range(4))
     td.for_each(sample_profiles, data, "cells", data.fields["temperature"],
                 data.fields["pressure"], linearized, xs, ts, ps, ls, count)

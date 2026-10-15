@@ -59,19 +59,19 @@ def extract_surface(data, faces, fields=None):
     faces = data.topology.faces()
     idt = data.id_dtype
     n = ids.shape[0]
-    sizes = tack.field(tack.i32, shape=(n,))
-    starts = tack.field(idt, shape=(n,))
+    sizes = tack.empty((n,), tack.i32)
+    starts = tack.empty((n,), idt)
     if n:
         _surface_sizes(ids, faces.kinds, sizes)
     length = exclusive_scan(sizes, starts, n) if n else 0
-    types = tack.field(tack.u8, shape=(n,))
-    offsets = tack.zeros(idt, (n + 1,))
-    connectivity = tack.field(idt, shape=(length,))
+    types = tack.empty((n,), tack.u8)
+    offsets = tack.zeros((n + 1,), idt)
+    connectivity = tack.empty((length,), idt)
     if n:
         _surface_cells(ids, faces.kinds, faces.rows, starts, types, offsets, connectivity,
                        length, n)
     surface = UnstructuredTopology(types, offsets, connectivity, num_points=data.num_points)
-    cells = tack.field(idt, shape=(n,))
+    cells = tack.empty((n,), idt)
     if n:
         _face_cells(ids, faces.sides, cells)
     return carry(data, surface, points=Same(), cells=Pieces(cells), faces_to_cells=Take(ids),
@@ -122,23 +122,23 @@ def _polygon_surface(data, ids, fields=None):
     faces = topology.faces()
     idt = data.id_dtype
     n = ids.shape[0]
-    sizes = tack.field(tack.i32, shape=(n,))
-    offsets = tack.field(idt, shape=(n + 1,))
+    sizes = tack.empty((n,), tack.i32)
+    offsets = tack.empty((n + 1,), idt)
     if n:
         _surface_loop_sizes(ids, topology.face_offsets, sizes)
     total = exclusive_scan(sizes, offsets, n) if n else 0
     _close(offsets, n, total)
-    loops = tack.field(idt, shape=(total,))
+    loops = tack.empty((total,), idt)
     if n:
         _surface_loops(ids, topology.face_offsets, topology.face_points, offsets, loops)
     if topology.dimension == 3:
         surface = PolygonalTopology(offsets, loops, num_points=data.num_points)
     else:
-        types = tack.field(tack.u8, shape=(n,))
+        types = tack.empty((n,), tack.u8)
         if n:
             _facet_types(offsets, types)
         surface = UnstructuredTopology(types, offsets, loops, num_points=data.num_points)
-    cells = tack.field(idt, shape=(n,))
+    cells = tack.empty((n,), idt)
     if n:
         _face_cells(ids, faces.sides, cells)
     return carry(data, surface, points=Same(), cells=Pieces(cells), faces_to_cells=Take(ids),

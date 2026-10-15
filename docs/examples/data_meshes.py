@@ -11,7 +11,7 @@ import tack.dataset as td
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     # --8<-- [start:uniform]
     point_dims = (3, 2, 2)
     uniform_topology = td.StructuredTopology(point_dims)
@@ -85,10 +85,10 @@ def run(arch="cpu", check=False):
             assert explicit.topology.point_dims == shortcut.topology.point_dims
             assert explicit.geometry.space.order == shortcut.geometry.space.order == 1
             np.testing.assert_array_equal(explicit.positions(), shortcut.positions())
-            np.testing.assert_allclose(td.cell_geometry(explicit).measure.values.to_numpy(),
-                                       td.cell_geometry(shortcut).measure.values.to_numpy())
+            np.testing.assert_allclose(td.cell_geometry(explicit).measure.values.numpy(),
+                                       td.cell_geometry(shortcut).measure.values.numpy())
         for data, expected in ((cube, 1.0), (square, 1.0), (path, 2.0)):
-            np.testing.assert_allclose(td.cell_geometry(data).measure.values.to_numpy(), [expected])
+            np.testing.assert_allclose(td.cell_geometry(data).measure.values.numpy(), [expected])
         assert len(td.check_winding(cube)) == 0
         assert len(td.boundary_faces(cube)) == 6
     print("Dataset construction: explicit topology and geometry; factory equivalence checked")

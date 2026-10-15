@@ -1,13 +1,13 @@
 """Debug mode at dispatch: the hidden arguments, and the IndexError after a launch.
 
-A kernel lowered in debug mode takes two hidden fields after its own
+A kernel lowered in debug mode takes two hidden arrays after its own
 parameters (``lang/ir_bounds.py``): the errors record, which its bounds
 checks fill on the first violation, and the extents of every parameter,
 which the checks compare indices against. ``hidden_args`` appends them
 for a call; ``launched`` notes the launch; ``check`` reads the record
 afterwards and raises ``IndexError`` naming the access.
 
-Each thread has its own errors field per backend, so launches from two
+Each thread has its own errors array per backend, so launches from two
 threads do not report each other's violations. A launch is checked when
 the kernel returns, or, if the launch came another way, before the next
 debug launch on the thread.
@@ -27,15 +27,15 @@ _local = threading.local()
 
 
 class _Launch(NamedTuple):
-    errors: object          # the errors Field
+    errors: object          # the errors Array
     sites: tuple            # the kernel's bounds_sites
 
 
-def _fields(backend) -> dict:
-    """This thread's hidden fields on ``backend``: ``errors`` and extents by size."""
-    per_backend = getattr(_local, "fields", None)
+def _arrays(backend) -> dict:
+    """This thread's hidden arrays on ``backend``: ``errors`` and extents by size."""
+    per_backend = getattr(_local, "arrays", None)
     if per_backend is None:
-        per_backend = _local.fields = weakref.WeakKeyDictionary()
+        per_backend = _local.arrays = weakref.WeakKeyDictionary()
     found = per_backend.get(backend)
     if found is None:
         found = per_backend[backend] = {}
@@ -43,33 +43,37 @@ def _fields(backend) -> dict:
 
 
 def hidden_args(backend, template, args) -> list:
-    """``args`` and the hidden errors and extents fields a debug kernel takes."""
-    from tack.lang.field import Field, zeros
+    """``args`` and the hidden errors and extents arrays a debug kernel takes."""
+    from tack.lang.array import Array, copyto, zeros
+    from tack.runtime.dispatch import as_device
 
     own = len(template.params) - len(ir_bounds.HIDDEN_PARAMS)
     if len(args) != own:
         raise TypeError(f"Kernel '{template.name}' expects {own} arguments, got {len(args)}")
     table = np.zeros(ir_bounds.EXTENTS_PER_PARAM * len(template.params), np.int64)
     for position, arg in enumerate(args):
-        if isinstance(arg, Field):
+        if isinstance(arg, Array):
             shape = tuple(getattr(arg, "_logical_shape", None) or arg.shape)
             slot = ir_bounds.EXTENTS_PER_PARAM * position
             table[slot] = shape[0] if shape else 1
             table[slot + 1] = math.prod(shape)
-            table[slot + 2] = arg.size
-    fields = _fields(backend)
-    errors = fields.get("errors")
+            table[slot + 2] = arg.scalar_size
+    # On the launch's device, which need not be the default one: a kernel
+    # runs where its arrays are.
+    device = as_device(backend)
+    arrays = _arrays(backend)
+    errors = arrays.get("errors")
     if errors is None:
-        errors = fields["errors"] = zeros(i32, (ir_bounds.ERRORS_SIZE,))
-    extents = fields.get(table.size)
+        errors = arrays["errors"] = zeros((ir_bounds.ERRORS_SIZE,), i32, device=device)
+    extents = arrays.get(table.size)
     if extents is None:
-        extents = fields[table.size] = zeros(i64, (table.size,))
-    extents.from_numpy(table)
+        extents = arrays[table.size] = zeros((table.size,), i64, device=device)
+    copyto(extents, table)
     return [*args, errors, extents]
 
 
 def launched(args, template):
-    """Note a debug launch, whose errors field ``check`` reads."""
+    """Note a debug launch, whose errors array ``check`` reads."""
     _local.pending = _Launch(args[-len(ir_bounds.HIDDEN_PARAMS)], template.bounds_sites)
 
 
@@ -80,10 +84,10 @@ def check():
     if launch is None:
         return
     _local.pending = None
-    record = launch.errors.to_numpy()
+    record = launch.errors.numpy()
     if record[ir_bounds.COUNT] == 0:
         return
-    launch.errors.from_numpy(np.zeros(ir_bounds.ERRORS_SIZE, np.int32))
+    launch.errors.fill(0)
     raise IndexError(describe(launch.sites, record))
 
 

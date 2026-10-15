@@ -6,12 +6,12 @@ via @tack.device_class templates.  Kernels written against this interface
 work with either layout -- the template system inlines the correct indexing.
 
 AOS (Array of Structures):
-    Storage: one flat field -- [x0, y0, z0, x1, y1, z1, ...]
+    Storage: one flat array -- [x0, y0, z0, x1, y1, z1, ...]
     get_value(i, c) = data[i * num_components + c]
 
 SOA (Structure of Arrays):
-    Storage: one field per component -- x=[x0, x1, ...], y=[y0, y1, ...], ...
-    get_value(i, c) dispatches to the correct component field
+    Storage: one array per component -- x=[x0, x1, ...], y=[y0, y1, ...], ...
+    get_value(i, c) dispatches to the correct component array
 
 Storage is provided externally, just like example 21.
 
@@ -29,8 +29,8 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 
 # ================================================================
@@ -41,12 +41,12 @@ tack.init(arch=_arch)
 class AOSTupleArray:
     """Multi-component array in Array-of-Structures layout.
 
-    Takes a single externally-provided field of size num_tuples * num_components.
+    Takes a single externally-provided array of size num_tuples * num_components.
     Memory: [x0, y0, z0, x1, y1, z1, ...]
     """
 
     def __init__(self, data, num_tuples, num_components):
-        self.data = data                # tack.field -- provided externally
+        self.data = data                # tack.array -- provided externally
         self.num_tuples = num_tuples
         self.num_components = num_components
 
@@ -62,7 +62,7 @@ class AOSTupleArray:
 # ================================================================
 # SOA FACTORY -- generates SOATupleArray classes for any N components
 # ================================================================
-# Tack templates need named field attributes (self.c0, self.c1, ...),
+# Tack templates need named array attributes (self.c0, self.c1, ...),
 # and @tack.func needs inspectable source.  We generate the class
 # source dynamically and register it with linecache so that
 # inspect.getsource() works.
@@ -71,7 +71,7 @@ _soa_cache = {}  # nc -> class
 
 
 def make_soa_type(nc):
-    """Generate a @tack.device_class SOA class with nc component fields."""
+    """Generate a @tack.device_class SOA class with nc component arrays."""
     if nc in _soa_cache:
         return _soa_cache[nc]
 
@@ -125,7 +125,7 @@ class SOATupleArray{nc}:
 # ================================================================
 
 @tack.kernel
-def compute_magnitude(arr: tack.template(), output, n):
+def compute_magnitude(arr, output, n):
     """Compute 3D vector magnitude: sqrt(x^2 + y^2 + z^2)."""
     for i in range(n):
         x = arr.get_value(i, 0)
@@ -135,8 +135,8 @@ def compute_magnitude(arr: tack.template(), output, n):
 
 
 @tack.kernel
-def add_tuple_arrays(a: tack.template(), b: tack.template(),
-                     out: tack.template(), n, nc):
+def add_tuple_arrays(a, b,
+                     out, n, nc):
     """Component-wise addition: out[i,c] = a[i,c] + b[i,c]."""
     for i in range(n):
         for c in range(nc):
@@ -144,7 +144,7 @@ def add_tuple_arrays(a: tack.template(), b: tack.template(),
 
 
 @tack.kernel
-def scale_tuple_array(arr: tack.template(), factor, out: tack.template(), n, nc):
+def scale_tuple_array(arr, factor, out, n, nc):
     """Scale every component: out[i,c] = arr[i,c] * factor."""
     for i in range(n):
         for c in range(nc):
@@ -152,7 +152,7 @@ def scale_tuple_array(arr: tack.template(), factor, out: tack.template(), n, nc)
 
 
 @tack.kernel
-def dot_product(a: tack.template(), b: tack.template(), output, n, nc):
+def dot_product(a, b, output, n, nc):
     """Per-tuple dot product: output[i] = sum_c(a[i,c] * b[i,c])."""
     for i in range(n):
         s = 0.0
@@ -168,31 +168,31 @@ def dot_product(a: tack.template(), b: tack.template(), output, n, nc):
 def make_aos(data_np):
     """Create an AOSTupleArray from a (num_tuples, num_components) numpy array."""
     nt, nc = data_np.shape
-    field = tack.empty(dtype=tack.f32, shape=(nt * nc,))
-    field.from_numpy(data_np.ravel().astype(np.float32))
-    return AOSTupleArray(field, nt, nc)
+    array = tack.empty((nt * nc,))
+    tack.copyto(array, data_np.ravel().astype(np.float32))
+    return AOSTupleArray(array, nt, nc)
 
 
 def aos_to_numpy(arr):
     """Read back an AOSTupleArray to (num_tuples, num_components) numpy."""
-    return arr.data.to_numpy().reshape(arr.num_tuples, arr.num_components)
+    return arr.data.numpy().reshape(arr.num_tuples, arr.num_components)
 
 
 def make_soa(data_np):
     """Create a SOATupleArray from a (num_tuples, nc) numpy array."""
     nt, nc = data_np.shape
     SOAType = make_soa_type(nc)
-    fields = []
+    arrays = []
     for c in range(nc):
-        f = tack.empty(dtype=tack.f32, shape=(nt,))
-        f.from_numpy(data_np[:, c].astype(np.float32).copy())
-        fields.append(f)
-    return SOAType(*fields)
+        f = tack.empty((nt,))
+        tack.copyto(f, data_np[:, c].astype(np.float32).copy())
+        arrays.append(f)
+    return SOAType(*arrays)
 
 
 def soa_to_numpy(arr, nc):
     """Read back a SOATupleArray to (num_tuples, nc) numpy."""
-    columns = [getattr(arr, f"c{c}").to_numpy() for c in range(nc)]
+    columns = [getattr(arr, f"c{c}").numpy() for c in range(nc)]
     return np.column_stack(columns)
 
 
@@ -208,7 +208,7 @@ np.random.seed(42)
 data_a = np.random.randn(n, nc).astype(np.float32)
 data_b = np.random.randn(n, nc).astype(np.float32)
 
-output = tack.empty(dtype=tack.f32, shape=(n,))
+output = tack.empty((n,))
 
 
 # --- AOS tests ---
@@ -216,14 +216,14 @@ print("--- AOS layout ---")
 
 a = make_aos(data_a)
 b = make_aos(data_b)
-out_field = tack.empty(dtype=tack.f32, shape=(n * nc,))
-out = AOSTupleArray(out_field, n, nc)
+out_array = tack.empty((n * nc,))
+out = AOSTupleArray(out_array, n, nc)
 
 np.testing.assert_allclose(aos_to_numpy(a), data_a, atol=1e-6)
 
 compute_magnitude(a, output, n)
 expected = np.sqrt(np.sum(data_a ** 2, axis=1))
-assert np.allclose(output.to_numpy(), expected, atol=1e-4)
+assert np.allclose(output.numpy(), expected, atol=1e-4)
 print("  AOS magnitude: OK")
 
 add_tuple_arrays(a, b, out, n, nc)
@@ -236,7 +236,7 @@ print("  AOS scale: OK")
 
 dot_product(a, b, output, n, nc)
 expected = np.sum(data_a * data_b, axis=1)
-assert np.allclose(output.to_numpy(), expected, atol=1e-3)
+assert np.allclose(output.numpy(), expected, atol=1e-3)
 print("  AOS dot: OK")
 
 
@@ -248,16 +248,16 @@ SOAType = make_soa_type(nc)
 a = make_soa(data_a)
 b = make_soa(data_b)
 out = SOAType(
-    tack.empty(dtype=tack.f32, shape=(n,)),
-    tack.empty(dtype=tack.f32, shape=(n,)),
-    tack.empty(dtype=tack.f32, shape=(n,)),
+    tack.empty((n,)),
+    tack.empty((n,)),
+    tack.empty((n,)),
 )
 
 np.testing.assert_allclose(soa_to_numpy(a, nc), data_a, atol=1e-6)
 
 compute_magnitude(a, output, n)
 expected = np.sqrt(np.sum(data_a ** 2, axis=1))
-assert np.allclose(output.to_numpy(), expected, atol=1e-4)
+assert np.allclose(output.numpy(), expected, atol=1e-4)
 print("  SOA magnitude: OK")
 
 add_tuple_arrays(a, b, out, n, nc)
@@ -270,7 +270,7 @@ print("  SOA scale: OK")
 
 dot_product(a, b, output, n, nc)
 expected = np.sum(data_a * data_b, axis=1)
-assert np.allclose(output.to_numpy(), expected, atol=1e-3)
+assert np.allclose(output.numpy(), expected, atol=1e-3)
 print("  SOA dot: OK")
 
 
@@ -278,12 +278,12 @@ print("  SOA dot: OK")
 print("\n--- Mixed layouts ---")
 
 def make_soa_output(nc, n):
-    return SOAType(*[tack.empty(dtype=tack.f32, shape=(n,)) for _ in range(nc)])
+    return SOAType(*[tack.empty((n,)) for _ in range(nc)])
 
 aos_a = make_aos(data_a)
 soa_b = make_soa(data_b)
-aos_out_field = tack.empty(dtype=tack.f32, shape=(n * nc,))
-aos_out = AOSTupleArray(aos_out_field, n, nc)
+aos_out_array = tack.empty((n * nc,))
+aos_out = AOSTupleArray(aos_out_array, n, nc)
 soa_out = make_soa_output(nc, n)
 expected = data_a + data_b
 
@@ -314,7 +314,7 @@ data_5b = np.random.randn(n, nc5).astype(np.float32)
 soa5_a = make_soa(data_5a)
 soa5_b = make_soa(data_5b)
 SOA5 = make_soa_type(nc5)
-soa5_out = SOA5(*[tack.empty(dtype=tack.f32, shape=(n,)) for _ in range(nc5)])
+soa5_out = SOA5(*[tack.empty((n,)) for _ in range(nc5)])
 
 add_tuple_arrays(soa5_a, soa5_b, soa5_out, n, nc5)
 assert np.allclose(soa_to_numpy(soa5_out, nc5), data_5a + data_5b, atol=1e-4)
@@ -322,7 +322,7 @@ print("  SOA(5) add: OK")
 
 dot_product(soa5_a, soa5_b, output, n, nc5)
 expected = np.sum(data_5a * data_5b, axis=1)
-assert np.allclose(output.to_numpy(), expected, atol=1e-3)
+assert np.allclose(output.numpy(), expected, atol=1e-3)
 print("  SOA(5) dot: OK")
 
 # AOS(5) + SOA(5)
@@ -338,8 +338,8 @@ Key insight: the same kernels (compute_magnitude, add_tuple_arrays,
 scale_tuple_array, dot_product) work with ANY combination of AOS and
 SOA arrays.  Storage is provided externally:
 
-  AOS: one flat field, data[i * nc + c]
-  SOA: N separate fields (c0, c1, ...), generated by make_soa_type(N)
+  AOS: one flat array, data[i * nc + c]
+  SOA: N separate arrays (c0, c1, ...), generated by make_soa_type(N)
 
 make_soa_type(nc) generates @tack.device_class classes for any number
 of components.  You can mix layouts freely in a single kernel call.

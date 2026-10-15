@@ -16,6 +16,74 @@ its own compilation pipeline and memory model.
 Every backend keeps what it compiles on disk, so a later process does not
 compile the same kernel again. See [The Kernel Cache](17-kernel-cache.md).
 
+## Devices
+
+A device is where arrays live and kernels run. `tack.device("cuda")`
+returns one: the spec is `"cpu"`, `"metal"`, `"cuda"`, `"hip"` or
+`"level_zero"`, and the numbered types also take `"cuda:0"` (only device 0
+is reachable for now). Asked for twice, it is the same device, with the
+kernels it has compiled.
+
+- `tack.set_default_device("cuda")` makes it the default device: where
+  arrays are allocated, and where kernels with no array arguments run.
+  With nothing set, the default is the CPU. `tack.get_default_device()`
+  says which it is.
+- `with tack.device("cuda"):` makes it the default inside the block, on
+  that thread only. Blocks nest.
+- Every array constructor takes `device=`, and every array records its
+  device in `a.device`. `a.to_device(d)` returns the array itself if its
+  memory is usable on `d`, else a copy there. `empty_like` and the other
+  `*_like` constructors allocate on the prototype's device.
+- A kernel runs where its arrays are: on the default device when that can
+  address them, otherwise on the arrays' own device. Arrays on two devices
+  in one call raise `ValueError`; move one with `to_device` first. Copies,
+  reductions and `tack.algorithms` functions run on their input's device.
+- Switching the default doesn't invalidate anything. Arrays made before
+  the switch keep their device and keep working.
+- `tack.sync()` waits for every device; `d.synchronize()` waits for one.
+
+Options make a separate device: `tack.device("cpu", num_threads=1)` is a
+second CPU device with one thread. It shares memory with the default CPU
+device, so it runs kernels on CPU arrays made before it.
+
+<!-- tack-check: devices -->
+```python
+import numpy as np
+import tack
+
+tack.set_default_device("cpu")
+
+
+@tack.kernel
+def scale(x, out, factor):
+    for i in range(x.shape[0]):
+        out[i] = x[i] * factor
+
+
+x = tack.arange(8, dtype=tack.f32)
+out = tack.empty_like(x)            # on x's device
+scale(x, out, 2.0)                  # runs where x and out are
+assert x.device == tack.get_default_device() and str(x.device) == "cpu"
+
+serial = tack.device("cpu", num_threads=1)
+with serial:                        # the default device inside the block
+    y = tack.ones(8)
+    scale(x, out, 3.0)              # serial can address CPU arrays: runs there
+assert y.device == serial
+assert x.to_device(serial) is x     # same memory, so no copy
+np.testing.assert_allclose(out.numpy(), np.arange(8) * 3.0)
+```
+
+On a machine with a GPU the same calls move data to it:
+
+```python
+gpu = tack.device("cuda")
+grid = tack.zeros(1024, device=gpu) # allocated on the GPU
+b = x.to_device(gpu)                # a copy of the CPU array
+c = tack.empty_like(b)              # on b's device
+scale(b, c, 2.0)                    # runs on the GPU, whatever the default
+```
+
 ## Capabilities
 
 Every backend runs the same kernel language, but within its own
@@ -51,7 +119,7 @@ be.supports_f64, be.supports_workgroups, be.supported_atomic_dtypes
 On the CPU a kernel call returns when the kernel has finished. On Metal,
 CUDA, HIP and Level Zero it returns once the launch is queued; the device
 runs queued launches in order, and fills and host writes take their place
-in that order. The host waits where it reads an array (`to_numpy`,
+in that order. The host waits where it reads an array (`numpy()`,
 indexing, reductions, DLPack export) or calls `tack.sync()`. Most code
 never needs `tack.sync()`: it is for timing kernels (see
 [Debugging and timing](15-debugging-and-timing.md#measure-first-call-and-warm-time-separately)),
@@ -60,7 +128,7 @@ launch is raised at that wait rather than at the call. A launch that uses
 memory shared with another library (exported through DLPack, or wrapped
 with `tack.array_from_ptr`) completes before the call returns. In an
 `asyncio` program, `await tack.sync_async()` and
-`await array.to_numpy_async()` do the waiting in a worker thread, so the
+`await array.numpy_async()` do the waiting in a worker thread, so the
 event loop keeps running (see
 [Waiting from `asyncio`](12-execution-model.md#waiting-from-asyncio)).
 
@@ -82,8 +150,8 @@ That matters because the break-even point depends on how much work the
 kernel does per element, and moves by a factor of a thousand between a
 memory-bound expression and a compute-heavy one.
 
-Set `TACK_CPU_THREADS`, or pass `tack.init(arch=tack.cpu, num_threads=n)`,
-to override the thread count. A thread count of 1 runs everything on the
+Set `TACK_CPU_THREADS`, or use `tack.device("cpu", num_threads=n)`, to
+override the thread count. A thread count of 1 runs everything on the
 calling thread, which is useful when profiling or
 when Tack is embedded in a host that manages its own threads.
 
@@ -102,14 +170,14 @@ pip install 'tack-core[cpu]'
 ```
 
 ```python
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 ```
 
 ## Metal
 
 On Apple silicon the GPU buffer and Tack's internal NumPy view share the
 same allocation. There is no separate device-memory transfer, but the public
-`array`, `from_numpy` and `to_numpy` APIs still copy values. Use the
+`tack.array`, `tack.copyto` and `numpy()` calls still copy values. Use the
 [interoperability APIs](16-interoperability.md) when you need shared storage.
 
 ```bash
@@ -117,7 +185,7 @@ pip install 'tack-core[metal]'
 ```
 
 ```python
-tack.init(arch=tack.metal)
+tack.set_default_device("metal")
 ```
 
 Metal has a 31-buffer binding limit per kernel. Tack automatically packs
@@ -135,18 +203,17 @@ pip install 'cuda-python>=13.2'
 ```
 
 ```python
-tack.init(arch=tack.cuda)
+tack.set_default_device("cuda")
 ```
 
-Tack's CUDA context is current only on the thread that called
-`tack.init()`. To call kernels from another thread, make the context
-current there first:
+Tack's CUDA context is current only on the thread that first asked for
+the device (`tack.device("cuda")`, `set_default_device` or `device=`).
+To call kernels from another thread, make the context current there first:
 
 ```python
 from cuda.bindings import driver
-from tack.runtime.dispatch import get_backend
 
-driver.cuCtxSetCurrent(get_backend()._context)  # in the other thread
+driver.cuCtxSetCurrent(tack.device("cuda")._backend._context)  # in the other thread
 ```
 
 Calls of one kernel from several threads are safe on every backend: each
@@ -163,7 +230,7 @@ uv sync --extra hip        # hip-python is on PyPI
 ```
 
 ```python
-tack.init(arch=tack.hip)
+tack.set_default_device("hip")
 ```
 
 **ROCm 7.0.2 and 7.1.1 miscompile some integer code.** Their device
@@ -183,32 +250,34 @@ Intel GPUs via the Level Zero API. OpenCL C source is compiled to SPIR-V
 in-process using `libocloc`, then loaded via `zeModuleCreate`.
 
 **`f64` depends on the device.** Some Intel GPUs implement double precision
-and some don't. The backend asks the device during `tack.init()` and adds
+and some don't. The backend asks the device when it starts and adds
 `f64` to its supported types only when the device reports it. Level Zero array atomics remain limited to `i32`, `u32` and `f32`, even
-on a device with `f64` storage. Check `get_backend().supports_f64` rather than
-assuming.
+on a device with `f64` storage. Check `tack.device("level_zero")._backend.supports_f64` rather
+than assuming.
 
 **VTK device interop needs a shared context.** A Level Zero pointer is
 meaningful only inside the context it was allocated from, so Tack and VTK
 must use the same one. Start Tack with
 `tack.interop.vtk.init_level_zero()` instead of
-`tack.init(arch=tack.level_zero)`. Arrays allocated before that call can't
-be shared with VTK.
+`tack.set_default_device("level_zero")`; it returns the Level Zero device,
+in VTK's context, that it made the default. Arrays on another Level Zero
+device can't be shared with VTK, and can't be mixed with this device's in
+one kernel call.
 
 Hardware 3D texture sampling (`image3d_t` with `read_imagef`) is used on
 devices with texture units (Xe-HPG/Xe-LPG). Xe-HPC (Ponte Vecchio) falls
 back to software trilinear since it has no sampler hardware.
 
 ```python
-tack.init(arch=tack.level_zero)
+tack.set_default_device("level_zero")
 ```
 
 ## Error Messages
 
-If a backend is unavailable, `tack.init()` gives a clear error:
+If a backend is unavailable, `tack.device()` gives a clear error:
 
 ```
-RuntimeError: Cannot initialize 'hip' backend: missing dependency.
+RuntimeError: Cannot start the 'hip' device: missing dependency.
   No module named 'hip'
   Requires an AMD GPU with ROCm, plus hip-python:
     pip install 'tack-core[hip]'

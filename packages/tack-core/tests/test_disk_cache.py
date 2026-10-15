@@ -28,7 +28,7 @@ sys.path.insert(0, {moddir!r})
 import tack
 from tack import cache
 from tack.runtime import disk_cache
-tack.init(arch=getattr(tack, {arch!r}))
+tack.set_default_device({arch!r})
 {setup}
 import kernels
 result = kernels.run()
@@ -91,24 +91,24 @@ def rows(a, out):
 
 def run():
     n = 8
-    x = tack.field(tack.f32, (n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
-    out = tack.field(tack.f32, (n,))
+    x = tack.empty((n,), tack.f32)
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    out = tack.empty((n,), tack.f32)
     results = []
     apply(x, out)
-    results.append(out.to_numpy().tolist())
+    results.append(out.numpy().tolist())
     shifted(Shift(x), out)
-    results.append(out.to_numpy().tolist())
+    results.append(out.numpy().tolist())
     shifted(Shift10(x), out)
-    results.append(out.to_numpy().tolist())
-    v = tack.Vector.field(3, tack.f32, (n,))
-    v.from_numpy(np.repeat(np.arange(n, dtype=np.float32)[:, None], 3, axis=1))
+    results.append(out.numpy().tolist())
+    v = tack.empty((n,), tack.vec(3, tack.f32))
+    tack.copyto(v, np.repeat(np.arange(n, dtype=np.float32)[:, None], 3, axis=1))
     lengths(v, out)
-    results.append([round(r, 5) for r in out.to_numpy().tolist()])
-    a = tack.field(tack.f32, (n, 2))
-    a.from_numpy(np.arange(2 * n, dtype=np.float32).reshape(n, 2))
+    results.append([round(r, 5) for r in out.numpy().tolist()])
+    a = tack.empty((n, 2), tack.f32)
+    tack.copyto(a, np.arange(2 * n, dtype=np.float32).reshape(n, 2))
     rows(a, out)
-    results.append(out.to_numpy().tolist())
+    results.append(out.numpy().tolist())
     return results
 """
 
@@ -166,7 +166,7 @@ def test_a_refused_native_binary_falls_back_to_spirv(tmp_path):
     the driver refuses -- another stepping, another IGC -- loads from the
     SPIR-V: a hit still, not a compile from source."""
     try:
-        tack.init(arch=tack.level_zero)
+        tack.set_default_device("level_zero")
     except (ImportError, RuntimeError, OSError, AttributeError) as e:
         pytest.skip(f"no Level Zero backend: {e}")
     _cache_dir(tmp_path)
@@ -253,13 +253,13 @@ def test_kernels_from_one_factory_keep_their_own_entries(tmp_path):
 
 
     def run():
-        x = tack.field(tack.f32, (4,))
-        x.from_numpy(np.arange(4, dtype=np.float32))
-        out = tack.field(tack.f32, (4,))
+        x = tack.empty((4,), tack.f32)
+        tack.copyto(x, np.arange(4, dtype=np.float32))
+        out = tack.empty((4,), tack.f32)
         results = []
         for op in (double, square, double):
             make(op)(x, out)
-            results.append(out.to_numpy().tolist())
+            results.append(out.numpy().tolist())
         return results
     """
     first = _run(tmp_path, modules={"kernels.py": factory})
@@ -284,11 +284,11 @@ def shifted_read(x, out, k):
 
 
 def run():
-    x = tack.field(tack.f32, (8,))
-    x.from_numpy(np.arange(8, dtype=np.float32))
-    out = tack.field(tack.f32, (8,))
+    x = tack.empty((8,), tack.f32)
+    tack.copyto(x, np.arange(8, dtype=np.float32))
+    out = tack.empty((8,), tack.f32)
     shifted_read(x, out, 0)
-    results = [out.to_numpy().tolist()]
+    results = [out.numpy().tolist()]
     if os.environ.get("TACK_DEBUG") == "1":
         try:
             shifted_read(x, out, 1)
@@ -700,8 +700,8 @@ def test_typed_arrays_reuse_kernels_in_a_second_process(tmp_path, backend):
     moddir = tmp_path / "src"
     moddir.mkdir()
     kernels = _KERNELS.replace(
-        "tack.Vector.field(3, tack.f32, (n,))",
-        "tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))")
+        "tack.empty((n,), tack.vec(3, tack.f32))",
+        "tack.empty((n,), tack.vec3())")
     _write(moddir / "kernels.py", kernels)
     first = _run(tmp_path, backend)
     second = _run(tmp_path, backend)

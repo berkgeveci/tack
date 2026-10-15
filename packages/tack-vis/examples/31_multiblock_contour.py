@@ -26,8 +26,8 @@ _parser.add_argument('--nblocks', type=int, default=8,
 _parser.add_argument('--block_size', type=int, default=32,
                      help='Cells per dimension per block (default 32)')
 _args = _parser.parse_args()
-_arch = getattr(tack, _args.arch)
-tack.init(arch=_arch)
+_arch = _args.arch
+tack.set_default_device(_arch)
 
 
 # ================================================================
@@ -69,7 +69,7 @@ def make_blocks(nblocks, block_size):
                           domain_lo + bk * n * dz)
                 block = td.uniform_grid((n + 1, n + 1, n + 1), origin=origin,
                                         spacing=(dx, dy, dz))
-                scalar = tack.empty(dtype=tack.f32, shape=(block.num_points,))
+                scalar = tack.empty((block.num_points,))
                 compute_gyroid(block.geometry.values, scalar)
                 block.fields["gyroid"] = td.Field(td.H1(block), scalar)
                 blocks.append(block)
@@ -120,7 +120,7 @@ else:
 
     # Verify connectivity
     for piece in pieces:
-        conn = piece.topology.connectivity.to_numpy()
+        conn = piece.topology.connectivity.numpy()
         assert np.all(conn >= 0) and np.all(conn < piece.num_points)
     print("  Connectivity: OK (all indices in range)")
 

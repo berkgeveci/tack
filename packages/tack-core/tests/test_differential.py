@@ -44,14 +44,14 @@ def _check(kernel, values, *scalars):
     values = np.asarray(values, dtype=np.int32)
     expected = [values.copy(), np.zeros_like(values), np.full_like(values, -99)]
     _python_reference(kernel)(*expected, *scalars)
-    fields = []
+    arrays = []
     for initial in (values, np.zeros_like(values), np.full_like(values, -99)):
-        field = tack.field(dtype=tack.i32, shape=initial.shape)
-        field.from_numpy(initial)
-        fields.append(field)
-    kernel(*fields, *scalars)
-    for field, reference in zip(fields, expected):
-        np.testing.assert_array_equal(field.to_numpy(), reference)
+        array = tack.empty(initial.shape, tack.i32)
+        tack.copyto(array, initial)
+        arrays.append(array)
+    kernel(*arrays, *scalars)
+    for array, reference in zip(arrays, expected):
+        np.testing.assert_array_equal(array.numpy(), reference)
 
 
 @pytest.mark.parametrize("expression", [

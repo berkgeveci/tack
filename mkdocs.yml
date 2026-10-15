@@ -75,7 +75,6 @@ plugins:
         python:
           paths:
             - packages/tack-core/src
-            - packages/tack-rendering/src
             - packages/tack-vis/src
           options:
             docstring_style: google
@@ -96,7 +95,7 @@ nav:
           - From Python to a Tack program: users-guide/12-execution-model.md
           - Quick Reference: users-guide/quick-reference.md
       - Write Kernels:
-          - Arrays and Types: users-guide/02-fields-and-types.md
+          - Arrays and Types: users-guide/02-arrays-and-types.md
           - Vectors and Matrices: users-guide/14-vectors-and-matrices.md
           - Kernels: users-guide/03-kernels.md
           - Control Flow and Math: users-guide/04-control-flow.md
@@ -114,8 +113,7 @@ nav:
           - Fields and Spaces: users-guide/data/03-fields-and-spaces.md
           - Filter and Analyze: users-guide/data/04-filters.md
           - Write Mesh Algorithms: users-guide/data/05-mesh-kernels.md
-          - Sample, Render and Connect Simulations: users-guide/data/06-pipelines.md
-          - Rendering: users-guide/10-rendering.md
+          - Sample and Connect Simulations: users-guide/data/06-pipelines.md
       - Run and Diagnose:
           - Backends: users-guide/08-backends.md
           - Sharing Arrays: users-guide/16-interoperability.md
@@ -129,7 +127,6 @@ nav:
           - Marching Squares: users-guide/tutorials/contours.md
           - Particle-to-grid Simulation: users-guide/tutorials/mpm.md
           - Tiled N-body Forces: users-guide/tutorials/nbody.md
-          - Isosurface to Image: users-guide/tutorials/isosurface.md
   - Design and Implementation:
       - design/index.md
       - Principles: design/principles.md

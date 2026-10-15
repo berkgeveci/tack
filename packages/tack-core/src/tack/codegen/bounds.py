@@ -1,7 +1,7 @@
 """Debug mode's bounds checks in the C-family generators (CUDA, HIP, OpenCL, MSL).
 
 One helper per kernel, ``__tack_in_bounds__``, tests an index against its
-extent and, out of bounds, records the first violation in the errors field
+extent and, out of bounds, records the first violation in the errors array
 (the layout of ``lang/ir_bounds.py``): an atomic add elects the first, which
 stores the rest. An ``IRBoundsCheck`` is ``&&`` over its dimensions, so the
 first failing dimension is the one recorded, then the flat index or -1.

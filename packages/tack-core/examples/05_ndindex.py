@@ -1,0 +1,75 @@
+"""05 -- Multi-dimensional parallel iteration with tack.ndindex.
+
+Instead of computing linear indices manually, use tack.ndindex(w, h) to
+iterate over a 2D grid in parallel.  Each (i, j) pair maps to a separate
+GPU thread.
+
+Usage:
+  uv run python examples/05_ndindex.py
+"""
+
+import argparse
+
+import numpy as np
+
+import tack
+
+_parser = argparse.ArgumentParser()
+_parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
+
+width, height = 64, 64
+pixels = tack.empty((width, height))
+
+
+@tack.kernel
+def distance_array(pixels):
+    """Compute distance from center for each pixel."""
+    for i, j in tack.ndindex(64, 64):
+        dx = float(i) - 32.0
+        dy = float(j) - 32.0
+        pixels[i, j] = sqrt(dx * dx + dy * dy)
+
+
+distance_array(pixels)
+
+result = pixels.numpy().reshape(64, 64)
+# Check center is ~0, corners are ~45
+assert result[32, 32] == 0.0
+corner_dist = result[0, 0]
+assert abs(corner_dist - np.sqrt(32**2 + 32**2)) < 0.01
+print(f"Center distance: {result[32, 32]:.2f} (expected 0)")
+print(f"Corner distance: {corner_dist:.2f} (expected {np.sqrt(32**2+32**2):.2f})")
+
+# --- Example 2: 2D Gaussian blur (3x3 kernel) ---
+
+src = tack.empty((64, 64))
+dst = tack.empty((64, 64))
+
+# Create a simple image: bright spot at center
+img = np.zeros((64, 64), dtype=np.float32)
+img[32, 32] = 100.0
+tack.copyto(src, img)
+
+
+@tack.kernel
+def blur_3x3(src, dst):
+    """Simple 3x3 box blur, skipping borders."""
+    for i, j in tack.ndindex(64, 64):
+        if i > 0:
+            if i < 63:
+                if j > 0:
+                    if j < 63:
+                        s = 0.0
+                        for di in range(-1, 2):
+                            for dj in range(-1, 2):
+                                s = s + src[i + di, j + dj]
+                        dst[i, j] = s / 9.0
+
+
+blur_3x3(src, dst)
+blurred = dst.numpy().reshape(64, 64)
+print(f"\nBlur: center pixel {blurred[32,32]:.2f} (was 100.00)")
+print(f"Blur: neighbor    {blurred[32,33]:.2f} (was 0.00)")
+print("2D ndindex + stencil: OK")

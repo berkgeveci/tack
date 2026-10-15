@@ -116,8 +116,8 @@ def _as_geometry(geometry, topology, dtype):
             arrays.storage(geometry)
         except TypeError:
             positions = np.ascontiguousarray(geometry)
-            geometry = tack.Vector.field(3, dtype, shape=(positions.shape[0],))
-            geometry.from_numpy(positions.astype(dtype.numpy_dtype))
+            geometry = tack.empty((positions.shape[0],), tack.vec(3, dtype))
+            tack.copyto(geometry, positions.astype(dtype.numpy_dtype))
         geometry = Field(H1(topology), geometry)
     if geometry.space.topology is not topology:
         raise ValueError("the geometry's space is on another topology")
@@ -159,7 +159,7 @@ def _geometry_parts(data, group, kind):
 class DataSet:
     """A topology, a geometry, named fields and named sets. The geometry is a
     ``Field`` in ``H1`` or ``L2`` of 3-vectors -- or positions per point (a host
-    array, or any array of 3-vectors, such as a device field or a
+    array, or any array of 3-vectors, such as a device array or a
     ``CartesianProduct``), which become an ``H1`` field -- kept apart from
     ``fields`` as ``data.geometry``: algorithms move it with the cells, never as
     one of the fields they carry or select."""
@@ -386,8 +386,8 @@ def _subgroups(group, spaces):
         raise NotImplementedError("at most 7 spaces that vary per cell in one launch")
     n = group.count
     cells = group.view()
-    keys = tack.field(tack.i32, shape=(n,))
-    bad = tack.zeros(tack.i32, (1,))
+    keys = tack.empty((n,), tack.i32)
+    bad = tack.zeros((1,), tack.i32)
     _clear_keys(keys)
     for space in spaces:
         _add_key(cells, space.cell_keys(), keys, bad)
@@ -397,7 +397,7 @@ def _subgroups(group, spaces):
     perm = argsort(keys, index_dtype=idt)
     sorted_keys = gather(keys, perm)
     offsets, runs = _run_offsets(sorted_keys, n, idt)
-    bounds = offsets.to_numpy()
+    bounds = offsets.numpy()
     if issubclass(group.kind, views._CellsById):
         # A polyhedral or polyline cell is its id: subgroups select ids, sorted by
         # key (the group's arguments, the count last, then the selection).
@@ -410,11 +410,11 @@ def _subgroups(group, spaces):
                 keys=_decode(int(sorted_keys[first]), spaces)))
         cache[cache_key] = subgroups
         return subgroups
-    rank = tack.field(idt, shape=(n,))
+    rank = tack.empty((n,), idt)
     _invert(perm, rank)
-    rows = tack.field(idt, shape=(n, group.shape.NUM_POINTS))
-    cell_ids = tack.field(idt, shape=(n,))
-    positions = tack.field(idt, shape=(n,))
+    rows = tack.empty((n, group.shape.NUM_POINTS), idt)
+    cell_ids = tack.empty((n,), idt)
+    positions = tack.empty((n,), idt)
     _gather_selected(cells, rank, rows, cell_ids, positions)
     subgroups = []
     for r in range(runs):

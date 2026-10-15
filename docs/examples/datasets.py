@@ -11,7 +11,7 @@ import tack
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     import tack.dataset as td
 
     # --8<-- [start:build]
@@ -28,11 +28,11 @@ def run(arch="cpu", check=False):
     # --8<-- [end:unstructured]
 
     # --8<-- [start:fields]
-    height = tack.empty(tack.f32, shape=(mesh.num_points,))
-    height.from_numpy(positions[:, 2].copy())
+    height = tack.empty((mesh.num_points,))
+    tack.copyto(height, positions[:, 2].copy())
     mesh.fields["height"] = td.Field(td.H1(mesh), height)            # point data
-    material = tack.empty(tack.f32, shape=(mesh.num_cells,))
-    material.from_numpy(np.array([1.0, 2.0], np.float32))
+    material = tack.empty((mesh.num_cells,))
+    tack.copyto(material, np.array([1.0, 2.0], np.float32))
     mesh.fields["material"] = td.Field(td.Constant(mesh), material)  # cell data
     # --8<-- [end:fields]
     # --8<-- [end:build]
@@ -60,7 +60,7 @@ def run(arch="cpu", check=False):
     mesh.sets["roof"] = td.Set(mesh, "cells", [1])   # a cell Set
     kept = td.threshold(mesh, "material", 1.5, 3.0)  # sets come along
     print(f"boundary: {len(mesh.sets['boundary'])} faces; the roof is cell "
-          f"{kept.sets['roof'].to_numpy()} of the threshold")
+          f"{kept.sets['roof'].numpy()} of the threshold")
     # --8<-- [end:sets]
 
     # --8<-- [start:kernel]
@@ -72,8 +72,8 @@ def run(arch="cpu", check=False):
             out[cells.entity_id(c)] = u.value(c, pc)
             where[cells.entity_id(c)] = cells.position(c, pc)
 
-    values = tack.empty(tack.f32, shape=(mesh.num_cells,))
-    where = tack.empty(dtype=tack.vec3(tack.f32), shape=(mesh.num_cells,))
+    values = tack.empty((mesh.num_cells,))
+    where = tack.empty((mesh.num_cells,), tack.vec3(tack.f32))
     td.for_each(centers, mesh, "cells", mesh.fields["height"], values, where)
     # --8<-- [end:kernel]
 
@@ -94,86 +94,52 @@ def run(arch="cpu", check=False):
             out[cells.entity_id(c)] = total
 
     mesh.topology.faces()                            # the faces kernels walk
-    areas = tack.empty(tack.f32, shape=(mesh.num_cells,))
+    areas = tack.empty((mesh.num_cells,))
     td.for_each(surface_areas, mesh, "cells", areas)
 
     polyhedra = td.as_polyhedra(mesh)                # every cell a polyhedron
-    same = tack.empty(tack.f32, shape=(polyhedra.num_cells,))
+    same = tack.empty((polyhedra.num_cells,))
     td.for_each(surface_areas, polyhedra, "cells", same)
     # --8<-- [end:faces]
 
     # --8<-- [start:lines]
     flow = td.uniform_grid((9, 9, 3), origin=(-1, -1, 0), spacing=(0.25, 0.25, 0.5))
     x = flow.positions()
-    swirl = tack.empty(dtype=tack.vec3(tack.f32), shape=(flow.num_points,))
-    swirl.from_numpy(np.c_[-x[:, 1], x[:, 0], np.zeros(len(x))].astype(np.float32).ravel())
+    swirl = tack.empty((flow.num_points,), tack.vec3(tack.f32))
+    tack.copyto(swirl, np.c_[-x[:, 1], x[:, 0], np.zeros(len(x))])
     flow.fields["velocity"] = td.Field(td.H1(flow), swirl)
     paths = td.streamlines(flow, "velocity", seeds=[[0.5, 0, 0.5], [0, 0.75, 0.5]],
                            step_size=0.05, steps=40)
     lengths = td.cell_geometry(paths).measure        # a polyline's length
     # --8<-- [end:lines]
 
-    # --8<-- [start:render]
-    from tack.rendering import (
-        Actor,
-        Canvas,
-        ColorTable,
-        PerspectiveCamera,
-        PointLight,
-        Scene,
-        render,
-    )
-
-    positions = surface.geometry.values              # 3-vectors, stored interleaved
-    points = positions.reshape(positions.size)       # a flat view: nothing copied
-    heights = tack.empty(tack.f32, shape=(surface.num_points,))
-    heights.from_numpy(surface.positions()[:, 2].copy())
-    scene = Scene()
-    scene.add(Actor(points, surface.topology.connectivity, scalars=heights,
-                    color_table=ColorTable("viridis"), smooth=True))
-    scene.add(PointLight(position=(30, 40, 50), intensity=6000.0))
-    size = 64 if check else 400
-    camera = PerspectiveCamera((25, 20, 30), (0, 0, 0), width=size, height=size)
-    canvas = Canvas(size, size)
-    render(canvas, scene, camera, samples=1 if check else 8, max_bounces=1)
-    image = canvas.to_numpy()                        # (size, size, 4) uint8
-    # --8<-- [end:render]
-
     if check:
         assert surface.num_cells > 0 and inside.num_cells > 0 and skin.num_cells > 0
-        assert set(skin.topology.types.to_numpy()) <= {9}               # quads
+        assert set(skin.topology.types.numpy()) <= {9}               # quads
         assert cut.num_cells > 0
-        np.testing.assert_allclose(surface.fields["RTData"].values.to_numpy(), 157.0,
+        np.testing.assert_allclose(surface.fields["RTData"].values.numpy(), 157.0,
                                    atol=1e-3)
-        np.testing.assert_allclose(on_points.values.to_numpy()[[0, 4, 8]], [1.0, 1.5, 2.0])
-        np.testing.assert_allclose(on_cells.values.to_numpy(), [0.5, (4 + 1.6) / 5],
+        np.testing.assert_allclose(on_points.values.numpy()[[0, 4, 8]], [1.0, 1.5, 2.0])
+        np.testing.assert_allclose(on_cells.values.numpy(), [0.5, (4 + 1.6) / 5],
                                    rtol=1e-6)
         assert dg.values.shape[0] == 8 + 5
         np.testing.assert_allclose(td.arrays.to_host(slope.values)[0], [0, 0, 1],
                                    atol=1e-6)
         assert len(mesh.sets["boundary"]) == 9                          # 5 + 4 faces
-        np.testing.assert_array_equal(kept.sets["roof"].to_numpy(), [0])
-        np.testing.assert_allclose(values.to_numpy()[0], 0.5)
+        np.testing.assert_array_equal(kept.sets["roof"].numpy(), [0])
+        np.testing.assert_allclose(values.numpy()[0], 0.5)
         np.testing.assert_allclose(td.arrays.to_host(where)[0], [0.5, 0.5, 0.5])
-        np.testing.assert_allclose(areas.to_numpy(), same.to_numpy(), rtol=1e-6)
-        np.testing.assert_allclose(areas.to_numpy()[0], 6.0, rtol=1e-6)
+        np.testing.assert_allclose(areas.numpy(), same.numpy(), rtol=1e-6)
+        np.testing.assert_allclose(areas.numpy()[0], 6.0, rtol=1e-6)
         assert isinstance(paths.topology, td.PolylineTopology) and paths.num_cells == 2
         # Circles at unit angular speed for 40 steps of 0.05: 2 r long.
-        np.testing.assert_allclose(lengths.values.to_numpy(), [2 * 0.5, 2 * 0.75], rtol=2e-3)
-        assert image.shape == (size, size, 4)
-        assert np.count_nonzero(canvas.depth_to_numpy() >= 0) > 100     # the surface is in view
-    return image
+        np.testing.assert_allclose(lengths.values.numpy(), [2 * 0.5, 2 * 0.75], rtol=2e-3)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", help="Save the rendered image (requires Pillow)")
     args = parser.parse_args()
-    image = run(args.arch, args.check)
-    if args.output:
-        from PIL import Image
-
-        Image.fromarray(image).save(args.output)
+    run(args.arch, args.check)
     print("Datasets: check passed" if args.check else "Datasets: done")

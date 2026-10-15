@@ -49,14 +49,14 @@ def test_recycled_kernel_id_does_not_reuse_compiled_code(backend, tmp_path):
     answer within ~30 iterations.
     """
     n = 4
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    out = tack.empty((n,))
 
     for i, factor in enumerate(range(2, 62)):
         kern = _build_kernel(tmp_path, factor, i)
         kern(x, out)
-        got = out.to_numpy()
+        got = out.numpy()
         np.testing.assert_allclose(
             got, np.full(n, float(factor), dtype=np.float32), rtol=1e-6,
             err_msg=(f"kernel scaling by {factor} returned {got[0]} -- "
@@ -72,14 +72,14 @@ def test_same_kernel_reuses_one_cache_entry(backend, tmp_path):
 
     be = get_backend()
     n = 8
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    out = tack.empty((n,))
 
     kern = _build_kernel(tmp_path, 3, 900)
     for _ in range(10):
         kern(x, out)
-    np.testing.assert_allclose(out.to_numpy(), 3.0, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), 3.0, rtol=1e-6)
 
     assert len(be._cache[kern]) == 1, "one kernel + one signature = one entry"
 
@@ -90,10 +90,11 @@ def test_compiled_code_is_released_with_the_kernel(backend, tmp_path):
 
     be = get_backend()
     n = 4
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    out = tack.empty((n,))
 
+    gc.collect()   # earlier tests' dead kernels, on the same device
     before = len(be._cache)
     kern = _build_kernel(tmp_path, 7, 901)
     kern(x, out)

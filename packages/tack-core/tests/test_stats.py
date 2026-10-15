@@ -8,40 +8,40 @@ from tack.algorithms import absmax, count_nonzero, dot, histogram, norm, std, va
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
-# --- field.mean() ---
+# --- array.mean() ---
 
 def test_mean(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, 2, 3, 4], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, 2, 3, 4], dtype=np.float32))
     assert f.mean() == pytest.approx(2.5)
 
 
 def test_mean_large(backend):
     n = 10000
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(np.ones(n, dtype=np.float32) * 7.0)
+    f = tack.empty((n,))
+    tack.copyto(f, np.ones(n, dtype=np.float32) * 7.0)
     assert f.mean() == pytest.approx(7.0, rel=1e-5)
 
 
 # --- var / std ---
 
 def test_var(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, 2, 3, 4], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, 2, 3, 4], dtype=np.float32))
     expected = np.var([1, 2, 3, 4])
     assert var(f) == pytest.approx(expected, rel=1e-4)
 
 
 def test_std(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, 2, 3, 4], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, 2, 3, 4], dtype=np.float32))
     expected = np.std([1, 2, 3, 4])
     assert std(f) == pytest.approx(expected, rel=1e-4)
 
 
 def test_var_constant(backend):
-    """Variance of constant field is 0."""
-    f = tack.field(dtype=tack.f32, shape=(100,))
+    """Variance of constant array is 0."""
+    f = tack.empty((100,))
     f.fill(5.0)
     assert var(f) == pytest.approx(0.0, abs=1e-4)
 
@@ -49,53 +49,53 @@ def test_var_constant(backend):
 # --- norm ---
 
 def test_norm_l2(backend):
-    f = tack.field(dtype=tack.f32, shape=(3,))
-    f.from_numpy(np.array([3, 4, 0], dtype=np.float32))
+    f = tack.empty((3,))
+    tack.copyto(f, np.array([3, 4, 0], dtype=np.float32))
     assert norm(f, ord=2) == pytest.approx(5.0, rel=1e-5)
 
 
 def test_norm_l1(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, -2, 3, -4], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, -2, 3, -4], dtype=np.float32))
     assert norm(f, ord=1) == pytest.approx(10.0, rel=1e-4)
 
 
 def test_norm_linf(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, -5, 3, 2], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, -5, 3, 2], dtype=np.float32))
     assert norm(f, ord=float('inf')) == pytest.approx(5.0, rel=1e-5)
 
 
 # --- absmax ---
 
 def test_absmax(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, -7, 3, 2], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, -7, 3, 2], dtype=np.float32))
     assert absmax(f) == pytest.approx(7.0, rel=1e-5)
 
 
 def test_absmax_positive(backend):
-    f = tack.field(dtype=tack.f32, shape=(3,))
-    f.from_numpy(np.array([1, 2, 3], dtype=np.float32))
+    f = tack.empty((3,))
+    tack.copyto(f, np.array([1, 2, 3], dtype=np.float32))
     assert absmax(f) == pytest.approx(3.0, rel=1e-5)
 
 
 # --- count_nonzero ---
 
 def test_count_nonzero(backend):
-    f = tack.field(dtype=tack.f32, shape=(6,))
-    f.from_numpy(np.array([0, 1, 0, 0, 5, 3], dtype=np.float32))
+    f = tack.empty((6,))
+    tack.copyto(f, np.array([0, 1, 0, 0, 5, 3], dtype=np.float32))
     assert count_nonzero(f) == 3
 
 
 def test_count_nonzero_all(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, 2, 3, 4], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, 2, 3, 4], dtype=np.float32))
     assert count_nonzero(f) == 4
 
 
 def test_count_nonzero_none(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
+    f = tack.empty((4,))
     f.fill(0.0)
     assert count_nonzero(f) == 0
 
@@ -103,20 +103,20 @@ def test_count_nonzero_none(backend):
 # --- dot ---
 
 def test_dot_basic(backend):
-    a = tack.field(dtype=tack.f32, shape=(3,))
-    b = tack.field(dtype=tack.f32, shape=(3,))
-    a.from_numpy(np.array([1, 2, 3], dtype=np.float32))
-    b.from_numpy(np.array([4, 5, 6], dtype=np.float32))
+    a = tack.empty((3,))
+    b = tack.empty((3,))
+    tack.copyto(a, np.array([1, 2, 3], dtype=np.float32))
+    tack.copyto(b, np.array([4, 5, 6], dtype=np.float32))
     # 1*4 + 2*5 + 3*6 = 32
     assert dot(a, b) == pytest.approx(32.0, rel=1e-4)
 
 
 def test_dot_orthogonal(backend):
     """Dot product of orthogonal vectors is 0."""
-    a = tack.field(dtype=tack.f32, shape=(3,))
-    b = tack.field(dtype=tack.f32, shape=(3,))
-    a.from_numpy(np.array([1, 0, 0], dtype=np.float32))
-    b.from_numpy(np.array([0, 1, 0], dtype=np.float32))
+    a = tack.empty((3,))
+    b = tack.empty((3,))
+    tack.copyto(a, np.array([1, 0, 0], dtype=np.float32))
+    tack.copyto(b, np.array([0, 1, 0], dtype=np.float32))
     assert dot(a, b) == pytest.approx(0.0, abs=1e-6)
 
 
@@ -125,11 +125,11 @@ def test_dot_orthogonal(backend):
 def test_histogram_uniform(backend):
     """Uniform distribution should have roughly equal bin counts."""
     n = 10000
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(np.linspace(0, 1, n, dtype=np.float32))
+    f = tack.empty((n,))
+    tack.copyto(f, np.linspace(0, 1, n, dtype=np.float32))
     counts, edges = histogram(f, bins=10, range=(0, 1))
 
-    counts_np = counts.to_numpy()
+    counts_np = counts.numpy()
     assert counts_np.shape == (10,)
     assert edges.shape == (11,)
     assert int(counts_np.sum()) == n
@@ -140,10 +140,10 @@ def test_histogram_uniform(backend):
 
 def test_histogram_single_value(backend):
     """All values in one bin."""
-    f = tack.field(dtype=tack.f32, shape=(100,))
+    f = tack.empty((100,))
     f.fill(0.5)
     counts, edges = histogram(f, bins=10, range=(0, 1))
-    counts_np = counts.to_numpy()
+    counts_np = counts.numpy()
     assert int(counts_np.sum()) == 100
     # All in the middle bin
     assert counts_np[5] == 100
@@ -151,10 +151,10 @@ def test_histogram_single_value(backend):
 
 def test_histogram_auto_range(backend):
     """Range is auto-detected from data."""
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([10, 20, 30, 40], dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([10, 20, 30, 40], dtype=np.float32))
     counts, edges = histogram(f, bins=3)
-    counts_np = counts.to_numpy()
+    counts_np = counts.numpy()
     assert int(counts_np.sum()) == 4
     assert edges[0] == pytest.approx(10.0)
     assert edges[-1] == pytest.approx(40.0)
@@ -167,8 +167,8 @@ def test_analysis_workflow(backend):
     n = 1000
     np.random.seed(42)
     data_np = np.random.randn(n).astype(np.float32)
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(data_np)
+    f = tack.empty((n,))
+    tack.copyto(f, data_np)
 
     # Stats
     assert f.mean() == pytest.approx(np.mean(data_np), rel=1e-3)
@@ -177,7 +177,7 @@ def test_analysis_workflow(backend):
 
     # Histogram
     counts, edges = histogram(f, bins=20, range=(-3, 3))
-    assert int(counts.to_numpy().sum()) <= n  # some may be outside range
+    assert int(counts.numpy().sum()) <= n  # some may be outside range
     assert edges[0] == pytest.approx(-3.0)
     assert edges[-1] == pytest.approx(3.0)
 
@@ -185,34 +185,34 @@ def test_analysis_workflow(backend):
 # --- an explicit n covers only the first n elements ---
 
 def test_var_and_std_of_a_prefix_use_the_prefix_mean(backend):
-    """The mean came from the whole field, so var([1,-2,3,-4], n=2) was 2.5."""
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, -2, 3, -4], dtype=np.float32))
+    """The mean came from the whole array, so var([1,-2,3,-4], n=2) was 2.5."""
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, -2, 3, -4], dtype=np.float32))
     assert var(f, n=2) == pytest.approx(np.var([1, -2]), rel=1e-6)
     assert std(f, n=3) == pytest.approx(np.std([1, -2, 3]), rel=1e-6)
 
 
 def test_var_of_no_elements_is_nan(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
-    f.from_numpy(np.arange(4, dtype=np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.arange(4, dtype=np.float32))
     assert np.isnan(var(f, n=0))
     assert np.isnan(std(f, n=0))
 
 
 def test_histogram_of_a_prefix_takes_its_range_from_the_prefix(backend):
-    f = tack.field(dtype=tack.f32, shape=(6,))
-    f.from_numpy(np.array([0, 1, 2, 3, 100, -100], dtype=np.float32))
+    f = tack.empty((6,))
+    tack.copyto(f, np.array([0, 1, 2, 3, 100, -100], dtype=np.float32))
     counts, edges = histogram(f, bins=4, n=4)
     assert edges[0] == 0.0 and edges[-1] == 3.0
-    np.testing.assert_array_equal(counts.to_numpy(), [1, 1, 1, 1])
+    np.testing.assert_array_equal(counts.numpy(), [1, 1, 1, 1])
 
 
 def test_histogram_of_no_elements_needs_a_range(backend):
-    f = tack.field(dtype=tack.f32, shape=(4,))
+    f = tack.empty((4,))
     with pytest.raises(ValueError, match="explicit range"):
         histogram(f, n=0)
     counts, _ = histogram(f, bins=3, range=(0.0, 1.0), n=0)
-    np.testing.assert_array_equal(counts.to_numpy(), [0, 0, 0])
+    np.testing.assert_array_equal(counts.numpy(), [0, 0, 0])
 
 
 @pytest.mark.parametrize("call", [
@@ -225,10 +225,10 @@ def test_histogram_of_no_elements_needs_a_range(backend):
     lambda a, b, n: histogram(a, range=(0.0, 1.0), n=n),
     lambda a, b, n: dot(a, b, n=n),
 ], ids=["var", "std", "norm1", "norm2", "absmax", "count_nonzero", "histogram", "dot"])
-def test_a_count_past_any_field_is_refused(backend, call):
-    """Every kernel reads [0, n); a count past a field used to read beyond it."""
-    a = tack.field(dtype=tack.f32, shape=(8,))
-    b = tack.field(dtype=tack.f32, shape=(4,))
+def test_a_count_past_any_array_is_refused(backend, call):
+    """Every kernel reads [0, n); a count past an array used to read beyond it."""
+    a = tack.empty((8,))
+    b = tack.empty((4,))
     a.fill(1.0)
     b.fill(1.0)
     with pytest.raises(ValueError, match="outside"):
@@ -237,9 +237,9 @@ def test_a_count_past_any_field_is_refused(backend, call):
         call(a, b, -1)
 
 
-def test_dot_refuses_a_shorter_second_field(backend):
-    a = tack.field(dtype=tack.f32, shape=(8,))
-    b = tack.field(dtype=tack.f32, shape=(4,))
+def test_dot_refuses_a_shorter_second_array(backend):
+    a = tack.empty((8,))
+    b = tack.empty((4,))
     a.fill(1.0)
     b.fill(1.0)
     with pytest.raises(ValueError, match="outside"):
@@ -247,25 +247,25 @@ def test_dot_refuses_a_shorter_second_field(backend):
     assert dot(a, b, n=4) == pytest.approx(4.0)
 
 
-def test_statistics_reduce_vector_fields_over_all_components(backend):
-    """A vector field is reduced over its components in storage order; the
+def test_statistics_reduce_vector_arrays_over_all_components(backend):
+    """A vector array is reduced over its components in storage order; the
     kernels used to receive vector elements and fail IR verification."""
-    v = tack.Vector.field(2, dtype=tack.f32, shape=(4,))
-    v.from_numpy(np.arange(8, dtype=np.float32))
+    v = tack.empty((4,), tack.vec(2, tack.f32))
+    tack.copyto(v, np.arange(8, dtype=np.float32).reshape(4, 2))
     assert dot(v, v) == 140.0
     assert norm(v, ord=2) == pytest.approx(np.sqrt(140.0))
     assert var(v) == pytest.approx(5.25)
     assert absmax(v) == 7.0
     assert count_nonzero(v) == 7
     counts, _ = histogram(v, bins=2, range=(0.0, 8.0))
-    np.testing.assert_array_equal(counts.to_numpy(), [4, 4])
+    np.testing.assert_array_equal(counts.numpy(), [4, 4])
 
 
 # --- precision, exceptional values and empty ranges ---
 
 def _f64(values):
-    f = tack.field(tack.f64, shape=(len(values),))
-    f.from_numpy(np.asarray(values, np.float64))
+    f = tack.empty((len(values),), tack.f64)
+    tack.copyto(f, np.asarray(values, np.float64))
     return f
 
 
@@ -282,15 +282,15 @@ def test_f64_statistics_accumulate_in_f64(f64_backend):
 def test_integer_inputs_convert_before_multiplying(backend):
     """i32 products past 2^31 do not wrap: each value converts to the
     floating precision first."""
-    a = tack.field(tack.i32, shape=(3,))
-    a.from_numpy(np.full(3, 100_000, np.int32))
+    a = tack.empty((3,), tack.i32)
+    tack.copyto(a, np.full(3, 100_000, np.int32))
     assert dot(a, a) == pytest.approx(3e10, rel=1e-6)
     assert norm(a) == pytest.approx(np.sqrt(3e10), rel=1e-6)
 
 
 def test_count_nonzero_counts_nan_and_not_negative_zero(backend):
-    f = tack.field(tack.f32, shape=(5,))
-    f.from_numpy(np.array([0.0, -0.0, np.nan, 1.0, -2.0], np.float32))
+    f = tack.empty((5,))
+    tack.copyto(f, np.array([0.0, -0.0, np.nan, 1.0, -2.0], np.float32))
     assert count_nonzero(f) == 3
 
 
@@ -303,14 +303,14 @@ def test_count_nonzero_counts_in_i64(backend, monkeypatch):
     real = scan.exclusive_scan
     monkeypatch.setattr(scan, "exclusive_scan",
                         lambda a, out, n, **k: seen.append(out.dtype) or real(a, out, n, **k))
-    f = tack.field(tack.f32, shape=(4,))
-    f.from_numpy(np.array([1, 0, 2, 3], np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.array([1, 0, 2, 3], np.float32))
     assert count_nonzero(f) == 3 and seen == [tack.i64]
 
 
 def test_statistics_of_no_elements(backend):
-    f = tack.field(tack.f32, shape=(4,))
-    f.from_numpy(np.ones(4, np.float32))
+    f = tack.empty((4,))
+    tack.copyto(f, np.ones(4, np.float32))
     assert norm(f, n=0) == 0.0 and norm(f, ord=1, n=0) == 0.0
     assert absmax(f, n=0) == 0.0 and dot(f, f, n=0) == 0.0 and count_nonzero(f, n=0) == 0
     with pytest.raises(ValueError, match="Unsupported norm order"):
@@ -322,6 +322,6 @@ def test_statistics_of_no_elements(backend):
 def test_var_of_integers_does_not_wrap_the_mean(backend, dtype, value):
     """The mean of integers summed in their own width wrapped to 0 (the outside
     review's 1-e): var of four equal 2^62 gave 2e37, of 2^63 infinity."""
-    f = tack.field(dtype, shape=(4,))
-    f.from_numpy(np.full(4, value, dtype.numpy_dtype))
+    f = tack.empty((4,), dtype)
+    tack.copyto(f, np.full(4, value, dtype.numpy_dtype))
     assert var(f) == 0.0

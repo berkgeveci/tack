@@ -45,7 +45,7 @@ flowchart TD
     ast --> vlow["verify_ir('lowered')"]
     vlow --> store["store IR template"]
     store --> key
-    getir -- yes --> key["derive variant key<br/>(_KeyProbe, shape_signature,<br/>fields_disjoint on CPU)"]
+    getir -- yes --> key["derive variant key<br/>(_KeyProbe, shape_signature,<br/>arrays_disjoint on CPU)"]
     key --> hit{"variant cached?"}
     hit -- no --> dvar{".variant entry on disk?"}
     dvar -- "yes: backend.load_variant" --> cache
@@ -70,8 +70,14 @@ function and chaining the `OSError`. A kernel is compiled from its source
 text, so there is nothing to fall back on. `@tack.func` reads device
 functions through the same helper.
 
-**`Kernel.__call__`** asks `tack.runtime.dispatch.get_backend()` for the
-active backend (initializing the CPU backend if none was chosen) and calls
+**`Kernel.__call__`** asks `tack.runtime.dispatch.launch_backend(name, args)`
+which backend runs the launch: the default device's (`get_backend()`, the
+CPU if none was chosen) when it can address every array argument (an equal
+`Backend.memory_domain`) or there are none, otherwise the arrays' own
+device's. Arrays in two memory domains raise `ValueError` naming both. A
+`@tack.device_class` argument's arrays decide only when no plain array
+does, and `resolve_variant` checks them all against the chosen backend
+(`check_devices`, on the slow and the fast path). It then calls
 `backend.execute(self, args, kwargs)`. Every backend's `execute` begins with
 `resolve_variant()` in `packages/tack-core/src/tack/runtime/kernel_utils.py`
 and passes it a backend-specific `build` callback. The CPU backend also
@@ -86,7 +92,6 @@ translates them by exception type:
 | `UnsupportedSyntaxError` | unchanged (it already names the kernel and source position) |
 | `TypeError` | `TypeError("Kernel '<name>': …")`, chained to the original. A message that already starts with the kernel's name (argument count, backend dtypes, atomic targets) keeps it, so the name appears once |
 | other `RuntimeError`, including `NotImplementedError` and `IRVerificationError` | `RuntimeError("Kernel '<name>' failed on <BackendClass>: …")`, chained, with any inner `Kernel '<name>': ` prefix removed. A message containing "compilation failed" is shortened to its `error:` lines |
-| `AttributeError` caused by fields allocated by a different backend | `RuntimeError` explaining that `tack.init()` replaced the backend |
 | anything else (`NameError`, `ValueError`, …) | unchanged |
 
 ## Stage 2: argument classification
@@ -98,18 +103,18 @@ It then classifies the positional arguments. This runs on every dispatch:
 - `_detect_template_args` finds `@tack.device_class` objects (anything
   with a true `_device_class` attribute) and records their parameter
   indices.
-- `_expand_template_args` removes them and appends each template's field
+- `_expand_template_args` removes them and appends each template's array
   attributes and then its runtime (instance) scalars, each group sorted by
   attribute name, taking templates from the highest index down. This order
   matches the parameters that `rewrite_templates` appends, which is what
   lines the expanded argument tuple up with the IR's parameter list.
-- `_detect_vector_fields_from_args` maps parameter names to `_vector_n` for
-  `tack.Array` with a vector element dtype arguments. `_detect_texture_fields` maps parameter
+- `_detect_vector_arrays_from_args` maps parameter names to `_vector_n` for
+  `tack.Array` with a vector element dtype arguments. `_detect_texture_arrays` maps parameter
   names to `Texture3D.shape_3d`.
 
 ## Stage 3: the IR template
 
-`Kernel.get_ir(vector_fields, template_args, texture_fields, debug)` returns the
+`Kernel.get_ir(vector_arrays, template_args, texture_arrays, debug)` returns the
 lowered, verified IR for this *lowering specialization*. Vector widths,
 texture extents, template objects and debug mode change what the frontend
 emits (scalarized component loads, sampling code, inlined method bodies,
@@ -118,7 +123,7 @@ constants, bounds checks), so each combination gets its own template:
 - with no vectors, textures or templates, and debug mode off, the single
   `Kernel._ir`;
 - otherwise `Kernel._ir_cache[key]`, with
-  `key = Kernel._make_cache_key(vector_fields, template_args, texture_fields, debug)`.
+  `key = Kernel._make_cache_key(vector_arrays, template_args, texture_arrays, debug)`.
 
 Lookups are lock-free. A miss takes the module-level `_transform_lock` (an
 `RLock`) and checks again before building, so concurrent first calls lower
@@ -128,12 +133,12 @@ a template once. Building is `Kernel._lower`, which asks the disk cache
 `verify_ir(function, 'lowered')`. A template that fails verification
 raises before it is stored, so it is never cached, in memory or on disk.
 
-In debug mode (`tack.init(debug=True)` or `TACK_DEBUG=1`) lowering wraps
-each field and array access's flat index in an `IRBoundsCheck`, which is
+In debug mode (`tack.set_debug(True)` or `TACK_DEBUG=1`) lowering wraps
+each array and array access's flat index in an `IRBoundsCheck`, which is
 `-1` when an index is out of bounds, after recording the first violation
-in a hidden errors field; leading and flat extents are `IRFieldExtent`
-loads from a hidden extents field, so no extent is compiled in. The two
-hidden field parameters (`__tack_errors__`, `__tack_extents__`) follow the
+in a hidden errors array; leading and flat extents are `IRArrayExtent`
+loads from a hidden extents array, so no extent is compiled in. The two
+hidden array parameters (`__tack_errors__`, `__tack_extents__`) follow the
 kernel's own; dispatch appends them per thread (`runtime/debug_bounds.py`).
 The helpers are in `lang/ir_bounds.py`.
 
@@ -146,7 +151,7 @@ sorts the object's public attributes three ways:
 
 - class-level numeric attributes become `ast.Constant`s (compile-time
   constants);
-- instance numeric attributes and `Field` attributes become synthetic
+- instance numeric attributes and `Array` attributes become synthetic
   parameters;
 - `@tack.func` methods are resolved with `self` removed, into a map local
   to this transformation.
@@ -178,7 +183,7 @@ depends on context. Among other things it rejects:
 - `return` in a kernel, and `return` inside a loop in a device function. A
   kernel's final `return`, with a return annotation, is split off before
   validation (`Kernel._split_result`) into a one-thread epilogue kernel that
-  stores the value in a hidden one-element field;
+  stores the value in a hidden one-element array;
 - calls that are neither a statically bound `@tack.func` nor a kernel
   intrinsic (resolved through `CallBindings`, below).
 
@@ -211,16 +216,16 @@ rest of the pipeline are these:
   launches its grid over `[0, n)` and never sees the start (regression
   **LC5**). Nested loops become `IRSequentialFor`, and their `range`
   arguments are captured into temporaries so they are evaluated once, on
-  entry. `tack.ndrange(a, b)` or `(a, b, c)` becomes one parallel loop
+  entry. `tack.ndindex(a, b)` or `(a, b, c)` becomes one parallel loop
   that keeps its dimensions (`dims`, `extents`), which each backend binds
   from a launch of that shape; workgroup kernels and four or more
   dimensions use a loop over the product with the indices recovered by
   `//` and `%` in the body (`lang/parallel_dims.py`).
-- **Field indexing.** `f[i, j]` linearizes to `i * IRDimSize(f, 1) + j`.
+- **Array indexing.** `f[i, j]` linearizes to `i * IRDimSize(f, 1) + j`.
   `f.shape[k]` and `len(f)` lower to `IRDimSize`. A dimension index that is
   not a literal is rejected.
 - **Vectors.** Vector expressions are scalarized into per-component names
-  (`_component_name`), and a vector-field load expands into one load per
+  (`_component_name`), and a vector-array load expands into one load per
   component.
 - **Evaluation order.** `_visit_ordered` and `_capture_value` hoist the
   statements produced by expression-level inlining (`_pre_stmts`). When a
@@ -228,7 +233,7 @@ rest of the pipeline are these:
   temporaries first. Together they preserve left-to-right evaluation.
 - **Statements outside the loop.** `_visit_body` checks each statement
   lowered outside the parallel loop with `_check_outside_parallel_loop`.
-  A field or array store, atomic, barrier, block reduction or `print`
+  An array or array store, atomic, barrier, block reduction or `print`
   there raises `UnsupportedSyntaxError` at its source position, since such
   statements may run any number of times per launch. The check runs on the
   lowered statement, so effects arriving through inlined device functions,
@@ -339,8 +344,8 @@ With the template in hand, `resolve_variant` takes these steps:
    are not written to. Otherwise two threads dispatching the same kernel
    with different dtypes could read each other's annotations between write
    and read, and fetch a variant compiled for the other call's types.
-3. It computes `shape_signature(template, name_to_field)` and, on the CPU,
-   `fields_disjoint(template, effective_args)`.
+3. It computes `shape_signature(template, name_to_array)` and, on the CPU,
+   `arrays_disjoint(template, effective_args)`.
 4. It builds the key with `kernel_variant_key` and looks it up in the
    kernel's slot of `backend._cache`.
 
@@ -361,21 +366,21 @@ and each verification boundary rechecks the whole tree.
 | # | Step | Function | Establishes | Rejects |
 |---|------|----------|-------------|---------|
 | 1 | Copy | `clone_ir(template)` | a private, fully independent IR graph | — |
-| 2 | Resolve | `resolve_ir` (`lang/ir_resolve.py`) | every `IRDimSize` outside the parallel loop's end becomes a constant, following `@tack.func` field aliases; `shared_like`/`local_array_like` dtypes and texture extents are filled in | unknown field: `RuntimeError` |
+| 2 | Resolve | `resolve_ir` (`lang/ir_resolve.py`) | every `IRDimSize` outside the parallel loop's end becomes a constant, following `@tack.func` array aliases; `shared_like`/`local_array_like` dtypes and texture extents are filled in | unknown array: `RuntimeError` |
 | | | `verify_ir(…, 'resolved')` | | |
-| 3 | Infer | `infer_param_types` (`lang/type_inference.py`), `store_texture_shapes` | `type_annotation`, `_is_field`, `_is_texture` and `_texture_shape` on every parameter | wrong argument count or unsupported argument type: `TypeError` |
+| 3 | Infer | `infer_param_types` (`lang/type_inference.py`), `store_texture_shapes` | `type_annotation`, `_is_array`, `_is_texture` and `_texture_shape` on every parameter | wrong argument count or unsupported argument type: `TypeError` |
 | | | `verify_ir(…, 'inferred')` | | |
-| 4 | Check types | `check_dispatch_types` | every field dtype is in `backend.supported_dtypes` | `TypeError` naming the kernel, parameter, dtype and backend |
+| 4 | Check types | `check_dispatch_types` | every array dtype is in `backend.supported_dtypes` | `TypeError` naming the kernel, parameter, dtype and backend |
 | 5 | Localize scalars | `_localize_outer_scalars` (`runtime/kernel_utils.py`) | a scalar parameter, or a local bound before the loop, that the loop body assigns to becomes a fresh local, seeded at the top of each iteration (regression **LC6**) | — |
 | | | `verify_ir(…, 'localized')` | | |
-| 6 | Atomics | `check_atomic_support`, `check_atomic_alignment` (`lang/atomic_support.py`) | each atomic target is a global field parameter of a dtype the backend supports, and suitably aligned | `TypeError` (target or dtype), `ValueError` (alignment) |
+| 6 | Atomics | `check_atomic_support`, `check_atomic_alignment` (`lang/atomic_support.py`) | each atomic target is a global array parameter of a dtype the backend supports, and suitably aligned | `TypeError` (target or dtype), `ValueError` (alignment) |
 | 7 | Workgroups (GPU) | `check_workgroup_participation`, `check_workgroup_launch` (`lang/workgroup_participation.py`) | collectives sit in provably uniform control flow; records whether the variant needs full 256-lane groups | `ValueError` |
 | 8 | Optimize | `optimize_ir` (`lang/ir_optimize.py`) | conservative copy propagation only | — |
 | | | `verify_ir(…, 'optimized')` | | |
-| 9 | Record | `ir_func.disjoint_fields = disjoint` | the CPU no-overlap promise, for codegen | — |
+| 9 | Record | `ir_func.disjoint_arrays = disjoint` | the CPU no-overlap promise, for codegen | — |
 | 10 | Build | the backend's `build(ir_func, effective_args)` | see below | backend compiler errors |
 
-Scalar localization runs after inference because it needs `_is_field`. It
+Scalar localization runs after inference because it needs `_is_array`. It
 runs before packing because packing rewrites every read of a scalar
 parameter into a load from the pack buffer, so on GPU an assignment to that
 name would otherwise be lost. Outer locals are renamed for a different
@@ -420,8 +425,8 @@ and workgroup participation on their own input, because direct generation
 can receive IR that no dispatch prepared.
 
 The finished `KernelVariant(ir, payload, requires_full_workgroups,
-atomic_targets, written_fields, has_textures)` is stored under its key. `written_fields`
-lists the index and name of each field argument the kernel may store to
+atomic_targets, written_arrays, has_textures)` is stored under its key. `written_arrays`
+lists the index and name of each array argument the kernel may store to
 (all of them when a store can't be traced), and the variant carries its
 own `dispatch_lock`. If any step raised, nothing is
 stored. The next call retries the variant (and fails the same way) rather
@@ -433,21 +438,21 @@ On a hit or a miss, `resolve_variant` ends with the checks that depend on
 this call's *values*. When the variant needs full workgroups,
 `check_workgroup_launch` requires the logical count to be a multiple of
 256. `check_atomic_alignment` checks the alignment of the current atomic
-targets' storage, and `check_writable_fields` refuses a read-only field
-(from `field_from_ptr` without `writable=True`, or a read-only DLPack
-import) bound to a parameter in `written_fields`, with `ValueError`. The
+targets' storage, and `check_writable_arrays` refuses a read-only array
+(from `array_from_ptr` without `writable=True`, or a read-only DLPack
+import) bound to a parameter in `written_arrays`, with `ValueError`. The
 backend then takes over:
 
 1. It evaluates the launch count with `_get_loop_range(variant.ir, args)`.
    This interprets the parallel loop's `end` against the arguments, with a
-   texture standing for its source field; it understands constants, scalar parameters, `IRDimSize`, and `+ - * //`
+   texture standing for its source array; it understands constants, scalar parameters, `IRDimSize`, and `+ - * //`
    over those. GPU backends return without launching when the count is not
    positive, and refuse a count past what one grid can index with
    `check_launch_size()` (`ValueError`).
 2. It replaces each `Texture3D` argument with the storage the texture owns,
-   its hardware image or private field (`bind_textures`).
+   its hardware image or private array (`bind_textures`).
 3. On GPU, it writes the scalar values into the cached pack buffers
-   (`_update_pack_fields`) and appends those buffers to the argument list.
+   (`_update_pack_arrays`) and appends those buffers to the argument list.
    CUDA and HIP do this and the launch under the variant's
    `dispatch_lock`, Level Zero under its backend `_launch_lock`; Metal
    copies the values into a buffer the launch owns.
@@ -455,7 +460,7 @@ backend then takes over:
    thread pool (see [CPU Threading Policy](cpu-threading.md)) and returns
    once the range has run; GPU backends queue a grid and return (see
    [Backend Implementations](backend-implementations.md#launches-are-queued)).
-   In debug mode `Kernel.__call__` then reads the errors field, which
+   In debug mode `Kernel.__call__` then reads the errors array, which
    waits for the launch, and raises `IndexError` for a recorded
    violation.
 
@@ -470,10 +475,10 @@ example `function.body[0].body[2].value`.
 
 | Stage | Called from | Adds |
 |-------|-------------|------|
-| *(all)* | — | every node is a registered kind in a valid role (statement, expression, parameter); required attributes are present; names are nonempty; operators come from the known sets; constants are numeric; no cycles; parameter names are unique; exactly one top-level `IRParallelFor`, starting at constant `0`; no field store, atomic, block reduction, barrier or print outside it; sequential loops sit inside it; `break` targets a sequential loop; each `continue`'s `outermost` flag matches its loop; no `IRReturn`; every name read is bound somewhere in the function |
+| *(all)* | — | every node is a registered kind in a valid role (statement, expression, parameter); required attributes are present; names are nonempty; operators come from the known sets; constants are numeric; no cycles; parameter names are unique; exactly one top-level `IRParallelFor`, starting at constant `0`; no array store, atomic, block reduction, barrier or print outside it; sequential loops sit inside it; `break` targets a sequential loop; each `continue`'s `outermost` flag matches its loop; no `IRReturn`; every name read is bound somewhere in the function |
 | `lowered` | `kernel._verified_transform` | nothing further; a `shared_like` allocation may still lack its dtype |
 | `resolved` | `resolve_variant`, `inspect` | no `IRDimSize` or `IRAttribute` outside the parallel loop's end; allocation dtypes are `ScalarType`s; texture extents are three positive integers |
-| `inferred` | `resolve_variant`, `inspect` | every parameter has a `ScalarType` and a boolean `_is_field`; every field load, store and atomic names a field parameter, an allocation, or a pointer copy of one |
+| `inferred` | `resolve_variant`, `inspect` | every parameter has a `ScalarType` and a boolean `_is_array`; every array load, store and atomic names an array parameter, an allocation, or a pointer copy of one |
 | `localized` | `resolve_variant`, `inspect` | rechecks the above after scalar localization |
 | `optimized` | `resolve_variant`, `inspect` | rechecks the above after copy propagation |
 | `packed` | GPU `_build_variant`, `inspect` | no scalar parameter remains |
@@ -508,7 +513,7 @@ variant built from it. Passes mutate IR in place: `resolve_ir` *replaces*
 parameters, and packing rewrites the parameter list. Running them on the
 template had two failure modes, both seen before the current design:
 
-- **Consumed nodes.** Once the first call had resolved a 2-D field's row
+- **Consumed nodes.** Once the first call had resolved a 2-D array's row
   stride into a literal, no `IRDimSize` remained for a second shape to
   resolve. The IR itself was stale, not only the compiled code.
 - **Published annotations.** Annotations written onto shared parameters
@@ -534,7 +539,7 @@ the same result as a deep copy, faster for this kind of data:
   graph.
 - One identity memo spans the whole graph, so shared nodes stay shared and
   cycles are preserved rather than duplicated. The sharing is real: an
-  `ndrange` dimension node appears both in the loop's end and in its
+  `ndindex` dimension node appears both in the loop's end and in its
   `extents`, and a range's start both in an extent and in the body.
 - `ScalarType` instances keep their identity, because type maps compare by
   identity. This matches `ScalarType.__deepcopy__`. Other metadata falls
@@ -565,7 +570,7 @@ template and runs resolve, infer, the backend's `_store_texture_shapes`,
 optimize and annotate, with the same verification stages, so it rejects
 what dispatch would and makes the same texture decision. For
 `mode="source"` on a GPU backend it then packs and re-annotates (`packed`,
-`typed`). On the CPU it computes the disjoint-fields bit for the given
+`typed`). On the CPU it computes the disjoint-arrays bit for the given
 arguments, so the LLVM it shows is the variant those arguments would run.
 `mode="optimized"` is the CPU module after O3; on other backends it raises
 `ValueError` once the kernel's own checks have passed. Inspection never

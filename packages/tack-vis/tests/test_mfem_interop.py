@@ -132,7 +132,7 @@ def test_topology_matches_mfem(backend, name):
     assert data.topology.edges().num_edges == mesh.GetNEdges()
     # The elements on each side of each face: the same pairs, side 0 aside.
     theirs = sorted(tuple(sorted(mesh.GetFaceElements(f))) for f in range(mesh.GetNFaces()))
-    sides = faces.sides.to_numpy(vectors=True)
+    sides = faces.sides.numpy()
     ours = sorted(tuple(sorted((int(s[0]), int(s[2])))) for s in sides)
     assert ours == theirs
     assert faces.boundary().shape[0] == sum(1 for e1, e2 in theirs if e1 < 0)
@@ -151,14 +151,14 @@ def test_cells_are_right_side_out(backend, name):
     mesh = _make(name)
     assert (_mfem_determinants(mesh) > 0).all()
     data = mfem_to_dataset(mesh)
-    out = tack.field(tack.f32, shape=(data.num_cells,))
+    out = tack.empty((data.num_cells,))
     td.for_each(_determinants, data, "cells", out)
-    assert (out.to_numpy() > 0).all()
+    assert (out.numpy() > 0).all()
     normals, areas = alg.face_geometry(data)
-    flux = td.Field(td.Values(data, "faces"), tack.Vector.field(3, tack.f32, shape=(areas.values.shape[0],)))
-    flux.values.from_numpy((normals.values.to_numpy(vectors=True)
-                            * areas.values.to_numpy()[:, None]).astype(np.float32))
-    np.testing.assert_allclose(alg.divergence(data, flux).values.to_numpy(vectors=True), 0,
+    flux = td.Field(td.Values(data, "faces"), tack.empty((areas.values.shape[0],), tack.vec(3, tack.f32)))
+    tack.copyto(flux.values, (normals.values.numpy()
+                            * areas.values.numpy()[:, None]).astype(np.float32))
+    np.testing.assert_allclose(alg.divergence(data, flux).values.numpy(), 0,
                                atol=1e-5)
 
 
@@ -170,10 +170,10 @@ def test_h1_values_and_gradients_match_mfem(backend, name):
     gf = _projected(mesh, mfem.H1_FECollection(1, 3), _f)
     data = mfem_to_dataset(mesh, {"u": gf})
     assert data.fields["u"].space is td.H1(data)
-    np.testing.assert_allclose(data.fields["u"].values.to_numpy(), gf.GetDataArray(),
+    np.testing.assert_allclose(data.fields["u"].values.numpy(), gf.GetDataArray(),
                                rtol=1e-6)
-    ours = alg.values_at_centers(data, data.fields["u"]).values.to_numpy()
-    gradients = alg.gradients(data, data.fields["u"]).values.to_numpy(vectors=True)
+    ours = alg.values_at_centers(data, data.fields["u"]).values.numpy()
+    gradients = alg.gradients(data, data.fields["u"]).values.numpy()
     gradient = mfem.Vector(3)
     for e, center in enumerate(_centers(mesh)):
         if mesh.GetElementBaseGeometry(e) == 7:
@@ -203,12 +203,12 @@ def test_l2_fields_and_their_jumps(backend, name):
     u = data.fields["u"]
     assert u.space is td.L2(data)
     exact = _not_pyramids(mesh)
-    ours = alg.values_at_centers(data, u).values.to_numpy()
+    ours = alg.values_at_centers(data, u).values.numpy()
     for e, center in enumerate(_centers(mesh)):
         if exact[e]:
             np.testing.assert_allclose(ours[e], gf.GetValue(e, center), rtol=1e-5, atol=1e-4)
-    sides = data.topology.faces().sides.to_numpy(vectors=True)
-    jumps = alg.jump(data, u).values.to_numpy()
+    sides = data.topology.faces().sides.numpy()
+    jumps = alg.jump(data, u).values.numpy()
     interior = sides[:, 2] >= 0
     # The function is continuous; only the offsets jump (exactly, where both
     # sides are exact).
@@ -227,12 +227,12 @@ def test_cell_constants_vectors_and_attributes(backend):
         "x by vdim": _projected(mesh, mfem.H1_FECollection(1, 3), lambda x: list(x), 3, 1),
     })
     assert data.fields["c"].space is td.Constant(data)
-    np.testing.assert_allclose(data.fields["c"].values.to_numpy(), constant.GetDataArray(),
+    np.testing.assert_allclose(data.fields["c"].values.numpy(), constant.GetDataArray(),
                                rtol=1e-6)
     for name in ("x by nodes", "x by vdim"):
-        np.testing.assert_allclose(data.fields[name].values.to_numpy(vectors=True),
+        np.testing.assert_allclose(data.fields[name].values.numpy(),
                                    data.positions(), atol=1e-6)
-    np.testing.assert_array_equal(data.fields["attribute"].values.to_numpy(), [1, 2, 3, 4])
+    np.testing.assert_array_equal(data.fields["attribute"].values.numpy(), [1, 2, 3, 4])
 
 
 def test_what_is_not_mapped_yet(backend):
@@ -295,14 +295,14 @@ def _compare(mesh, data, field, gf, rng, tolerance):
     """``field`` and the geometry at a random point of every element against MFEM."""
     n = mesh.GetNE()
     points = np.array([_inside(mesh.GetElementBaseGeometry(e), rng) for e in range(n)])
-    pcs = tack.Vector.field(3, tack.f32, shape=(n,))
-    pcs.from_numpy(points.astype(np.float32))
-    values = tack.field(tack.f32, shape=(n,))
-    positions = tack.Vector.field(3, tack.f32, shape=(n,))
-    gradients = tack.Vector.field(3, tack.f32, shape=(n,))
+    pcs = tack.empty((n,), tack.vec(3, tack.f32))
+    tack.copyto(pcs, points.astype(np.float32))
+    values = tack.empty((n,))
+    positions = tack.empty((n,), tack.vec(3, tack.f32))
+    gradients = tack.empty((n,), tack.vec(3, tack.f32))
     td.for_each(_evaluate, data, "cells", field, pcs, values, positions, gradients)
-    values, positions = values.to_numpy(), positions.to_numpy(vectors=True)
-    gradients = gradients.to_numpy(vectors=True)
+    values, positions = values.numpy(), positions.numpy()
+    gradients = gradients.numpy()
     gradient = mfem.Vector(3)
     for e in range(n):
         ip = mfem.IntegrationPoint()
@@ -342,9 +342,9 @@ def test_fields_on_curved_meshes(backend, kind, order):
     data = mfem_to_dataset(mesh, {"u": gf})
     assert data.geometry.space is td.H1(data, order=2)
     _compare(mesh, data, data.fields["u"], gf, np.random.default_rng(order), 3e-5)
-    out = tack.field(tack.f32, shape=(data.num_cells,))
+    out = tack.empty((data.num_cells,))
     td.for_each(_determinants, data, "cells", out)
-    np.testing.assert_allclose(out.to_numpy(), _mfem_determinants(mesh), rtol=1e-4)
+    np.testing.assert_allclose(out.numpy(), _mfem_determinants(mesh), rtol=1e-4)
 
 
 def test_an_empty_mesh(backend):

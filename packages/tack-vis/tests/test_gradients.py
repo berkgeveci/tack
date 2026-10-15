@@ -66,16 +66,16 @@ def test_point_gradients_are_vtks(backend, kind):
     data = vtk_to_dataset(grid)
     scalar = td.algorithms.gradients(data, data.fields["s"], at="points")
     assert scalar.space is td.Values(data, "points")
-    np.testing.assert_allclose(scalar.values.to_numpy(vectors=True),
+    np.testing.assert_allclose(scalar.values.numpy(),
                                _vtk_gradients(grid, "s")["gradient"], rtol=1e-4, atol=1e-4)
     vector = td.algorithms.gradients(data, data.fields["v"], at="points")
     reference = _vtk_gradients(grid, "v")
-    np.testing.assert_allclose(vector.values.to_numpy(vectors=True), reference["gradient"],
+    np.testing.assert_allclose(vector.values.numpy(), reference["gradient"],
                                rtol=1e-4, atol=1e-4)
     derived = td.algorithms.flow_quantities(data, vector)
     for key in ("divergence", "vorticity", "q_criterion"):
         np.testing.assert_allclose(
-            getattr(derived, key).values.to_numpy(**({"vectors": True} if key == "vorticity" else {})),
+            getattr(derived, key).values.numpy(),
             reference[key], rtol=1e-4, atol=1e-4, err_msg=key)
 
 
@@ -92,7 +92,7 @@ def test_cell_gradients_of_vectors_are_vtks(backend, kind):
     data = vtk_to_dataset(grid)
     out = td.algorithms.gradients(data, data.fields["v"])
     assert out.space is td.Values(data, "cells")
-    np.testing.assert_allclose(out.values.to_numpy(vectors=True), expected, rtol=1e-4,
+    np.testing.assert_allclose(out.values.numpy(), expected, rtol=1e-4,
                                atol=1e-4)
 
 
@@ -100,20 +100,19 @@ def test_a_linear_field_has_its_gradient_everywhere(backend):
     data = _two_hexes_and_a_pyramid()
     x = data.positions()
     rows = np.c_[2 * x[:, 0] - x[:, 2], 3 * x[:, 1], x[:, 0] + x[:, 1] + x[:, 2]]
-    v = tack.Vector.field(3, tack.f32, shape=(data.num_points,))
-    v.from_numpy(rows.astype(np.float32))
+    v = tack.empty((data.num_points,), tack.vec(3, tack.f32))
+    tack.copyto(v, rows.astype(np.float32))
     J = np.array([[2, 0, -1], [0, 3, 0], [1, 1, 1]], float)
     for at in ("cells", "points"):
         g = td.algorithms.gradients(data, td.Field(td.H1(data), v), at=at)
-        np.testing.assert_allclose(g.values.to_numpy(vectors=True),
-                                   np.tile(J.reshape(-1), (len(g.values.to_numpy(
-                                       vectors=True)), 1)), atol=1e-5)
+        np.testing.assert_allclose(g.values.numpy(),
+                                   np.tile(J.reshape(-1), (len(g.values.numpy()), 1)), atol=1e-5)
         quantities = td.algorithms.flow_quantities(data, g)
-        np.testing.assert_allclose(quantities.divergence.values.to_numpy(), 6.0, atol=1e-5)
-        np.testing.assert_allclose(quantities.vorticity.values.to_numpy(vectors=True),
-                                   [[1, -2, 0]] * len(quantities.divergence.values.to_numpy()),
+        np.testing.assert_allclose(quantities.divergence.values.numpy(), 6.0, atol=1e-5)
+        np.testing.assert_allclose(quantities.vorticity.values.numpy(),
+                                   [[1, -2, 0]] * len(quantities.divergence.values.numpy()),
                                    atol=1e-5)
-        np.testing.assert_allclose(quantities.q_criterion.values.to_numpy(),
+        np.testing.assert_allclose(quantities.q_criterion.values.numpy(),
                                    -0.5 * np.trace(J @ J), atol=1e-5)
     with pytest.raises(ValueError, match="'cells' or 'points'"):
         td.algorithms.gradients(data, td.Field(td.H1(data), v), at="faces")

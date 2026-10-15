@@ -201,8 +201,8 @@ def _points_of(out):
 
 
 def _host(field_result, vectors=False):
-    return field_result.values.to_numpy(vectors=True) if vectors else \
-        field_result.values.to_numpy()
+    values = field_result.values.numpy()
+    return values if vectors else values.reshape(-1)
 
 
 def _tack():

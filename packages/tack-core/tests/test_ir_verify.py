@@ -15,10 +15,10 @@ from tack.lang.types import f32, i32, i64
 
 def function(value=None):
     out = ir.IRParam('out', f32)
-    out._is_field = True
+    out._is_array = True
     count = ir.IRParam('count', i32)
-    count._is_field = False
-    store = ir.IRFieldStore(ir.IRName('out'), ir.IRName('i'),
+    count._is_array = False
+    store = ir.IRArrayStore(ir.IRName('out'), ir.IRName('i'),
                            value if value is not None else ir.IRConstant(1))
     loop = ir.IRParallelFor('i', ir.IRConstant(0), ir.IRName('count'), [store])
     return ir.IRFunction('example', [out, count], [loop])
@@ -78,7 +78,7 @@ def test_cycle_is_reported_but_shared_subexpressions_are_valid():
     (lambda f: f.body.insert(0, ir.IRSequentialFor('j', ir.IRConstant(0), ir.IRConstant(1), [])),
      'sequential loop must be inside'),
     (lambda f: setattr(f.params[0], 'type_annotation', 'float'), 'parameter type'),
-    (lambda f: delattr(f.params[0], '_is_field'), 'field/scalar category'),
+    (lambda f: delattr(f.params[0], '_is_array'), 'array/scalar category'),
 ])
 def test_structure_and_loop_invariants(corrupt, message):
     func = function()
@@ -141,7 +141,7 @@ def test_texture_resolution(shape, coords, message):
 
 def test_array_like_allocation_must_resolve_before_inference():
     func = function()
-    alloc = ir.IRSharedAlloc('tmp', None, ir.IRConstant(8), field_name='out')
+    alloc = ir.IRSharedAlloc('tmp', None, ir.IRConstant(8), array_name='out')
     func.body[0].body.insert(0, alloc)
     verify_ir(func, 'lowered')
     with pytest.raises(IRVerificationError, match='allocation dtype is unresolved'):
@@ -152,8 +152,8 @@ def test_array_like_allocation_must_resolve_before_inference():
 
 def test_scalar_parameter_cannot_be_used_as_a_buffer():
     func = function()
-    func.body[0].body[0].field = ir.IRName('count')
-    with pytest.raises(IRVerificationError, match='field access must name a field'):
+    func.body[0].body[0].array = ir.IRName('count')
+    with pytest.raises(IRVerificationError, match='array access must name an array'):
         verify_ir(func, 'inferred')
 
 
@@ -168,8 +168,8 @@ def test_typed_expressions_and_assignment_storage_are_required():
     func.body[0].body[1].value = ir.IRName('value')
     annotate_types(func)
     verify_ir(func, 'typed')
-    # A field pointer intentionally carries no scalar dtype.
-    assert func.body[0].body[1].field.dtype is None
+    # An array pointer intentionally carries no scalar dtype.
+    assert func.body[0].body[1].array.dtype is None
     del func.body[0].body[0]._resolved_type
     with pytest.raises(IRVerificationError, match='assignment storage type is missing'):
         verify_ir(func, 'typed')
@@ -220,7 +220,7 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
 
     from tack.runtime.dispatch import get_backend
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
 
     @tack.kernel
@@ -228,7 +228,7 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
         for i in range(out.shape[0]):
             out[i] = 1
 
-    out = tack.zeros(dtype=tack.f32, shape=(4,))
+    out = tack.zeros((4,))
     target = importlib.import_module(module)
     original = getattr(target, pass_name)
 
@@ -251,13 +251,13 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
     assert isinstance(error.value.__cause__, IRVerificationError)
     assert not compile_calls
     assert not backend._cache.get(fill)
-    np.testing.assert_array_equal(out.to_numpy(), np.zeros(4))
+    np.testing.assert_array_equal(out.numpy(), np.zeros(4))
 
 
 def test_verifier_runs_only_when_templates_and_variants_are_new(monkeypatch, no_disk_cache):
     import tack.lang.ir_verify as verifier
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.kernel
     def fill(out):
@@ -273,14 +273,14 @@ def test_verifier_runs_only_when_templates_and_variants_are_new(monkeypatch, no_
 
     monkeypatch.setattr(verifier, 'verify_ir', record)
     monkeypatch.setattr('tack.lang.kernel.verify_ir', record)
-    out = tack.field(dtype=tack.f32, shape=(8,))
+    out = tack.empty((8,))
     for _ in range(5):
         fill(out)
     assert calls == ['lowered', 'resolved', 'inferred', 'localized', 'optimized', 'typed']
-    wider = tack.field(dtype=tack.i64, shape=(8,))
+    wider = tack.empty((8,), tack.i64)
     fill(wider)
     assert calls[6:] == ['resolved', 'inferred', 'localized', 'optimized', 'typed']
-    np.testing.assert_array_equal(wider.to_numpy(), np.full(8, 3))
+    np.testing.assert_array_equal(wider.numpy(), np.full(8, 3))
 
 
 def test_inspection_localizes_assigned_scalar_parameters():
@@ -288,7 +288,7 @@ def test_inspection_localizes_assigned_scalar_parameters():
     from tack.lang.ir_traversal import walk_ir
     from tack.runtime.dispatch import get_backend
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.kernel
     def increment(out, value):
@@ -296,7 +296,7 @@ def test_inspection_localizes_assigned_scalar_parameters():
             value = value + 1
             out[i] = value
 
-    out = tack.field(dtype=tack.i32, shape=(4,))
+    out = tack.empty((4,), tack.i32)
     inspected, _ = _prepare_ir(increment, (out, 3))
     increment(out, 3)
     executed = next(iter(get_backend()._cache[increment].values())).ir
@@ -304,12 +304,12 @@ def test_inspection_localizes_assigned_scalar_parameters():
     assignments = [node.target for node in walk_ir(inspected) if isinstance(node, ir.IRAssign)]
     assert 'value' not in assignments
     assert '__value_local__' in assignments
-    np.testing.assert_array_equal(out.to_numpy(), np.full(4, 4))
+    np.testing.assert_array_equal(out.numpy(), np.full(4, 4))
 
 
 def test_a_second_top_level_loop_is_rejected():
     """The language contract states this rule; pin the rule and its message."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.kernel
     def two_loops(a, b):
@@ -318,8 +318,8 @@ def test_a_second_top_level_loop_is_rejected():
         for j in range(b.shape[0]):
             b[j] = 2.0
 
-    a = tack.field(tack.f32, (4,))
-    b = tack.field(tack.f32, (4,))
+    a = tack.empty((4,))
+    b = tack.empty((4,))
     # The frontend reports it at the second loop's source position, before
     # the verifier's own "exactly one top-level parallel loop" check.
     with pytest.raises(UnsupportedSyntaxError,

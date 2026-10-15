@@ -13,12 +13,12 @@ def _face_centers(faces, out):
     for f in faces:
         size = faces.num_points(f)
         origin = faces.corner_position(f, 0)
-        apex = tack.Vector([0.0, 0.0, 0.0])
+        apex = tack.vec3(0.0, 0.0, 0.0)
         for j in range(size):
             apex += faces.corner_position(f, j) - origin
         apex = apex / size
         total = 0.0
-        weighted = tack.Vector([0.0, 0.0, 0.0])
+        weighted = tack.vec3(0.0, 0.0, 0.0)
         for j in range(size):
             a = faces.corner_position(f, j) - origin
             b = faces.corner_position(f, j + 1 if j + 1 < size else 0) - origin

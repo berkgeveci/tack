@@ -174,9 +174,9 @@ def _start(config, vtk_threads):
     import tack
 
     if arch == "cpu":
-        tack.init(arch=tack.cpu, num_threads=threads)
+        tack.set_default_device("cpu", num_threads=threads)
     else:
-        tack.init(arch=getattr(tack, arch))
+        tack.set_default_device(arch)
 
 
 def _meshes(names, sizes, square_bend):

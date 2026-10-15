@@ -68,13 +68,13 @@ named.
 |---|---|
 | Regression baseline LC1–LC8 | `test_compiler_contract.py` |
 | Source validation and diagnostics | `test_source_validation.py`, `test_outside_parallel_loop.py`, `test_error_messages.py`, `test_error_reporting.py` |
-| Execution order, short-circuiting and control flow | `test_differential.py`, `test_variable_length_loop.py`, `test_field_shape.py` |
+| Execution order, short-circuiting and control flow | `test_differential.py`, `test_variable_length_loop.py`, `test_array_shape.py` |
 | Fixed-width integers, division and power | `test_integer_semantics.py`, `test_integer_division.py`, `test_integer_expression_differential.py`, `test_division_and_power.py`, `test_small_int_types.py`, `test_promotion_and_safety.py`, `test_explicit_casts.py` |
 | Floating-point policy | `test_float_semantics.py`, `test_float_literals.py`, `test_float_division.py`, `test_scalar_matching.py`, `test_local_var_types.py` |
-| Field, block and statistical reductions | `test_reduction_semantics.py`, `test_block_reduce.py`, `test_stats.py` |
+| Array, block and statistical reductions | `test_reduction_semantics.py`, `test_block_reduce.py`, `test_stats.py` |
 | Workgroups and participation | `test_workgroup_contract.py`, `test_workgroup_participation.py`, `test_shared_like.py` |
 | Atomics | `test_atomic_contract.py` |
-| Memory and aliasing, CPU disjoint specialization | `test_compiler_contract.py` (LC2), `test_disjoint_fields.py` |
+| Memory and aliasing, CPU disjoint specialization | `test_compiler_contract.py` (LC2), `test_disjoint_arrays.py` |
 | Specialization identity, caching and concurrent dispatch | `test_variant_cache.py`, `test_kernel_cache.py`, `test_dispatch_fast_path.py`, `test_concurrent_dispatch.py`, `test_templates.py` |
 | Disk cache | `test_disk_cache.py`, its cases in fresh processes against a temporary directory |
 | Debug mode bounds checks | `test_debug_bounds.py` |
@@ -84,22 +84,21 @@ named.
 | Identifier preservation in generated code | `test_gpu_identifiers.py` |
 | IR structure and passes | `test_ir_verify.py`, `test_ir_clone.py`, `test_ir_traversal.py`, `test_ir_optimize.py`, `test_ast_transform.py`, `test_type_annotate.py`, `test_type_annotate_expr.py`, `test_type_inference.py` |
 | Backend capability declarations | `test_backend_contract.py`, `test_dispatch_types.py`, `test_backend_isolation.py` |
-| Runtime API: fields, inspection, local arrays | `test_field_utils.py`, `test_inspect.py`, `test_local_array.py`, `test_vector_add.py`, `test_cpu_jit.py` |
-| Texture snapshots and storage | `test_texture_snapshot.py`, `test_texture_inline.py`, `test_gpu_dispatch_paths.py`, `tack-rendering/tests/test_volume.py` |
+| Runtime API: arrays, inspection, local arrays | `test_array_utils.py`, `test_inspect.py`, `test_local_array.py`, `test_vector_add.py`, `test_cpu_jit.py` |
+| Texture snapshots and storage | `test_texture_snapshot.py`, `test_texture_inline.py`, `test_gpu_dispatch_paths.py` |
 | Interop | `test_dlpack.py`, `test_level_zero_context.py`, `tack-vis/tests/test_vtk_interop.py` |
 | Code generators (host-side, no device) | `test_llvm_gen.py`, `test_msl_gen.py`, `test_cuda_gen.py`, `test_hip_gen.py`, `test_opencl_gen.py`, `test_opencl_compilation.py`, `test_scalar_packing.py` |
 | GPU dispatch paths without a GPU | `test_gpu_dispatch_paths.py` |
 | Per-backend runtime behavior | `test_metal.py`, `test_cuda.py`, `test_hip.py` |
 | CPU threading, the JIT'd pool, fills and NUMA | `test_cpu_threading.py`, `test_threading_benchmark.py`, `test_cpu_pool.py`, `test_cpu_fill.py`, `test_numa.py` |
-| Rendering correctness | `tack-rendering/tests/test_raster_differential.py`, `test_raster_winners.py`, `test_rasterize.py`, `test_mixed_render.py`, `test_bvh.py`, and the remaining rendering modules |
 | Datasets (`tack.dataset`) | `tack-vis/tests/test_dataset_api.py`, `test_dataset_filters.py`, `test_shapes.py`, `test_polyhedra.py`, `test_faces_2d.py`, `test_polylines.py`, `test_project.py`, `test_sets.py`, `test_carry.py`, `test_arrays.py`, `test_ids.py`, `test_buckets.py`, `test_clip.py`, `test_gradients.py`, `test_transforms.py`, `test_implicit.py`, `test_probe.py`, `test_flow.py`, `test_refinement_and_sources.py`, `test_vtk_interop.py`, `test_mfem_interop.py`; most compare with VTK where it is installed, and `pytest --ids=i64` reruns them with 64-bit ids |
-| Deprecated visualization worklets | `tack-vis/tests/test_flying_edges.py`, `test_compute_normals.py`, `test_cell_to_point.py`, `test_amr_blanking.py`, `test_fe.py`, `test_algorithms.py` |
+| Core algorithms (`tack.algorithms`) from tack-vis | `tack-vis/tests/test_algorithms.py` |
 | Package namespace | `tack-vis/tests/test_namespace.py` |
 | Validation tooling | `test_examples.py`, `test_validation_harness.py`, `test_compiler_tools.py` |
 
 The language contract describes what its central modules cover in its own
 sections. For example,
-[Atomic field updates](../reference/language-contract.md#atomic-field-updates)
+[Atomic array updates](../reference/language-contract.md#atomic-array-updates)
 lists the cases in `test_atomic_contract.py`, and the
 [regression baseline](../reference/language-contract.md#regression-baseline)
 lists LC1–LC8 with the CPU evidence that first exposed each defect.
@@ -112,12 +111,11 @@ code under test. The suite uses these kinds of oracle:
 | Oracle | Used for | Example modules |
 |---|---|---|
 | Plain arithmetic and NumPy | Ordering, aliasing and control flow, where the answer is obvious by hand | `test_compiler_contract.py` |
-| Serial Python execution of the same source | Differential testing: the kernel body runs as ordinary Python over independent NumPy arrays, and every field is compared | `test_differential.py` |
+| Serial Python execution of the same source | Differential testing: the kernel body runs as ordinary Python over independent NumPy arrays, and every array is compared | `test_differential.py` |
 | Python big integers | Fixed-width wrapping, division, remainder, power and casts, computed exactly and then reduced modulo the width | `test_integer_semantics.py`, `test_integer_division.py`, `test_integer_expression_differential.py`, `test_division_and_power.py` |
 | Exact rationals and correctly rounded sums | Contraction and rounding (`fractions.Fraction`), and reduction error budgets (`math.fsum`) | `test_float_semantics.py`, `test_reduction_semantics.py` |
-| Structural invariants | Properties that must hold whatever the output, such as BVH containment, surface watertightness and analytic surfaces | `tack-rendering/tests/test_bvh.py`, `tack-vis/tests/test_flying_edges.py` |
-| Reference renders | Raster output checked against an oracle composed from renders of each candidate alone, with an index-coded palette | `tack-rendering/tests/test_raster_differential.py`, `test_raster_winners.py` |
-| Negative controls | Show that an oracle can fail: planted wrong pixels, a mutation reference with Tack's IR optimizations bypassed, a final-only wrapping oracle that a late-wrapping compiler would satisfy, and generator shapes that a device previously rejected | `test_raster_differential.py`, `test_compiler_contract.py`, `test_integer_expression_differential.py`, `test_opencl_compilation.py` |
+| Structural invariants | Properties that must hold whatever the output, such as surface watertightness and analytic surfaces | `tack-vis/tests/test_dataset_filters.py`, `test_polyhedra.py` |
+| Negative controls | Show that an oracle can fail: a mutation reference with Tack's IR optimizations bypassed, a final-only wrapping oracle that a late-wrapping compiler would satisfy, and generator shapes that a device previously rejected | `test_compiler_contract.py`, `test_integer_expression_differential.py`, `test_opencl_compilation.py` |
 
 Generated cases use fixed grammars and reproducible seeds. A failure
 report names the seed, backend and input, so it can be reproduced without
@@ -161,7 +159,7 @@ TACK_EXAMPLES_ARCH=cuda uv run --no-sync pytest -m slow -q -ra packages/tack-cor
 
 **Harness.** `packages/tack-core/examples/validate_all.py` runs seven
 workloads (vector add, SAXPY, reduction, Mandelbrot, N-body, Jacobi and
-matrix multiply). Each runs four times on fresh fields, every call is
+matrix multiply). Each runs four times on fresh arrays, every call is
 verified, and the first and fastest warm times are printed. With `--arch`,
 the harness initializes exactly that backend, confirms that
 `get_backend().name` matches, and prints `Backends: <arch>`. Without
@@ -189,11 +187,10 @@ a time.
     ```bash
     uv run --no-sync python - cuda <<'PYTEST'
     import sys, pytest, tack
-    from tack.runtime.dispatch import get_backend
     arch = sys.argv[1]
-    tack.init(arch=getattr(tack, arch))
-    assert get_backend().name == arch
-    print('Required hardware backend:', get_backend().name, flush=True)
+    device = tack.set_default_device(arch)
+    assert device.type == arch
+    print('Required hardware backend:', device, flush=True)
     raise SystemExit(pytest.main(['-q', '-ra']))
     PYTEST
     ```

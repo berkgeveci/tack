@@ -11,15 +11,15 @@ are factory functions that return `Array` instances.
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
-temperature = tack.empty(shape=(100,), dtype=tack.f32)
-velocity = tack.empty(shape=(100,), dtype=tack.vec3(tack.f32))
-stress = tack.empty(shape=(100,), dtype=tack.mat3(tack.f32))
+tack.set_default_device("cpu")
+temperature = tack.empty((100,))
+velocity = tack.empty((100,), tack.vec3(tack.f32))
+stress = tack.empty((100,), tack.mat3(tack.f32))
 velocity.fill([1.0, 0.0, 0.0])
 assert velocity.shape == (100,)
 assert velocity.size == 100
 assert velocity.dtype is tack.vec3(tack.f32)
-assert velocity.to_numpy().shape == (100, 3)
+assert velocity.numpy().shape == (100, 3)
 ```
 
 All three arrays contain 100 elements. Their dtypes describe a scalar,
@@ -38,11 +38,11 @@ They allocate no backend storage and do not define a finite-element space.
 
 | Operation | Values | Allocation and ownership |
 |---|---|---|
-| `empty(shape=..., dtype=...)` | Uninitialized | Independent storage on the active backend |
+| `empty(shape, dtype=f32, *, device=None)` | Uninitialized | Independent storage on `device`, by default the default device |
 | `array(values, dtype=None)` | Copies input values | Independent storage; scalar dtype inferred if omitted |
 | `empty_like(prototype, dtype=None)` | Does not read or initialize values | Independent storage matching metadata |
-| `zeros`, `ones`, `full` | Initialized | Same element types as `empty` |
-| `array_from_ptr(ptr, dtype, shape)` | Shares existing values | Borrowed external storage, read-only by default |
+| `zeros`, `ones`, `full`, and their `_like` forms | Initialized | Same element types as `empty` |
+| `array_from_ptr(ptr, shape, dtype)` | Shares existing values | Borrowed external storage, read-only by default |
 | `from_dlpack(source)` | Shares existing values | Holds the source alive; preserves supported access constraints |
 
 Without an explicit dtype, `array(np.zeros((n, 3), np.float32))` is a scalar
@@ -51,8 +51,11 @@ Specifying `dtype=vec3()` consumes a trailing dimension of size three and
 gives array shape `(n,)`. Matrix dtypes similarly consume two matching
 trailing dimensions. Wrong component dimensions raise `ValueError`.
 
-`array(existing_tack_array)` copies on the device. `empty_like` reads only
-metadata, including for a prototype on another backend. A scalar dtype
+`array(existing_tack_array)` copies on that array's device, or through the
+host when `device=` names another. `empty_like` reads only metadata and
+allocates on the prototype's device unless `device=` says otherwise. Every
+array records its device (`a.device`); `a.to_device(d)` returns the array
+itself when its memory is usable on `d`, else a copy. A scalar dtype
 override preserves vector/matrix dimensions and changes component precision;
 an element dtype override selects another element type at the same array shape.
 
@@ -65,7 +68,7 @@ An explicit element dtype must have the same component dimensions.
 preserving the element type and count. A view preserves imported-storage
 lifetime and access restrictions.
 
-`to_numpy()` and its async equivalent return a host snapshot with component
+`numpy()` and its async equivalent return a host snapshot with component
 axes appended to array shape: `(n, 3)` for vectors, `(n, 3, 3)` for matrices.
 DLPack exports the same scalar tensor dimensions; importing that tensor
 produces a scalar array with those axes because DLPack does not carry Tack's
@@ -93,7 +96,7 @@ import tack.dataset as td
 
 data = td.uniform_grid((2, 2, 2))
 space = td.H1(data)
-values = tack.empty(shape=(space.size,), dtype=tack.vec3())
+values = tack.empty((space.size,), tack.vec3())
 values.fill([1.0, 0.0, 0.0])
 data.fields["velocity"] = td.Field(space, values)
 ```
@@ -104,13 +107,15 @@ not itself mean geometry, H1 velocity, or an H(div) finite-element field.
 
 ## Compatibility
 
-`field` remains a compatibility wrapper for `empty`; `array` for
-`array`; `field_from_ptr` for `array_from_ptr`. Internal `Field` imports name
-`Array`. `Vector.field` and `Matrix.field` retain their historical scalar
-`dtype`, flat host `shape`/`size`, and flat default `to_numpy()` output.
-Their kernel indexing is unchanged. New typed arrays consistently expose
-element dtype and logical shape. Prefer the new factories in new code.
+The earlier names (`field`, `field_from_numpy`, `field_from_ptr`,
+`Vector.field`, `Matrix.field`, `to_numpy`/`from_numpy`) were later removed
+without compatibility wrappers, along with the flat host layout of vector
+and matrix arrays; host values move with `numpy()` and `tack.copyto`.
+Internal `Field` imports name `Array`.
 
 Kernel value construction (`Vector([...])`, `Matrix(...)`, and
-`Matrix.identity(...)`) is retained. The element-type factories in this change
-are host-side dtype descriptions, not additional kernel value constructors.
+`Matrix.identity(...)`) was retained by this change, and later replaced
+without compatibility wrappers: in a kernel the element-type names build
+values (`tack.vec3(x, y, z)`, `tack.mat2([a, b], [c, d])`), and
+`tack.identity(n)` is the identity matrix. On the host those names remain
+dtype descriptions.

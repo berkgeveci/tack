@@ -8,16 +8,16 @@ import pytest
 from compiler_tools import require_clang
 
 import tack
-from tack.codegen.reductions import f32_reduction_helpers, field_reduction_source
-from tack.lang.field import Field, NumpyBuffer
+from tack.codegen.reductions import array_reduction_source, f32_reduction_helpers
+from tack.lang.array import Array, NumpyBuffer
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 
-def _field(values, dtype=tack.f32):
+def _array(values, dtype=tack.f32):
     values = np.asarray(values, dtype=dtype.numpy_dtype)
-    result = tack.field(dtype, values.shape)
-    result.from_numpy(values)
+    result = tack.empty(values.shape, dtype)
+    tack.copyto(result, values)
     return result
 
 
@@ -38,25 +38,25 @@ def _assert_value(actual, expected):
 ])
 def test_f32_extrema_classes_and_zero_signs(backend, values):
     data = np.asarray(values, np.float32)
-    field = _field(data)
+    array = _array(data)
     for op in ('min', 'max'):
         expected = float(getattr(data, op)())
         if expected == 0:
             signs = np.signbit(data[data == 0])
             expected = -0.0 if (signs.any() if op == 'min' else signs.all()) else 0.0
-        _assert_value(getattr(field, op)(), expected)
+        _assert_value(getattr(array, op)(), expected)
 
 
 @pytest.mark.parametrize('position', [0, 127, 255, 256, 511, 512, 768])
 def test_nan_propagates_across_groups_and_tail(backend, position):
     data = np.linspace(-10, 10, 769, dtype=np.float32)
-    field = _field(data)
-    assert field.min() == -10 and field.max() == 10
+    array = _array(data)
+    assert array.min() == -10 and array.max() == 10
     data[position] = np.nan
-    field.from_numpy(data)
+    tack.copyto(array, data)
     for op in ('sum', 'min', 'max', 'mean'):
         for _ in range(3):
-            assert np.isnan(getattr(field, op)())
+            assert np.isnan(getattr(array, op)())
 
 
 @pytest.mark.parametrize('position', [0, 256, 512, 768])
@@ -64,24 +64,24 @@ def test_zero_ties_across_groups_and_tail(backend, position):
     for base, alternate in ((0.0, -0.0), (-0.0, 0.0)):
         values = np.full(769, base, np.float32)
         values[position] = alternate
-        field = _field(values)
+        array = _array(values)
         for _ in range(3):
-            _assert_value(field.min(), -0.0)
-            _assert_value(field.max(), 0.0)
+            _assert_value(array.min(), -0.0)
+            _assert_value(array.max(), 0.0)
 
 
 @pytest.mark.parametrize('n', [1, 255, 256, 257, 513, 4099])
 def test_exact_sums_and_partial_groups(backend, n):
-    field = _field(np.full(n, 0.25, dtype=np.float32))
-    assert field.sum() == n / 4
-    assert field.mean() == 0.25
-    assert field.min() == field.max() == 0.25
+    array = _array(np.full(n, 0.25, dtype=np.float32))
+    assert array.sum() == n / 4
+    assert array.mean() == 0.25
+    assert array.min() == array.max() == 0.25
 
 
 def _check_accuracy(dtype):
     rng = np.random.default_rng(5801)
     values = (rng.uniform(-1, 1, 4099) * np.exp2(rng.integers(-8, 9, 4099))).astype(dtype.numpy_dtype)
-    field = _field(values, dtype)
+    array = _array(values, dtype)
     exact = math.fsum(map(float, values))
     absolute_sum = math.fsum(abs(float(x)) for x in values)
     unit_roundoff = 2.0 ** (-24 if dtype is tack.f32 else -53)
@@ -90,8 +90,8 @@ def _check_accuracy(dtype):
     # Test the supported error budget on every run, rather than assuming
     # equal low bits or requiring scheduling to produce a different result.
     for _ in range(5):
-        assert abs(field.sum() - exact) <= bound
-        assert abs(field.mean() - exact / len(values)) <= bound / len(values) + math.ulp(exact / len(values))
+        assert abs(array.sum() - exact) <= bound
+        assert abs(array.mean() - exact / len(values)) <= bound / len(values) + math.ulp(exact / len(values))
 
 
 def test_f32_sum_accuracy_budget(backend):
@@ -103,8 +103,8 @@ def test_f64_host_sum_accuracy_budget(f64_backend):
 
 
 def test_cancellation_accepts_valid_groupings(backend):
-    field = _field([-2**24, 1, 2**24])
-    assert field.sum() in (0.0, 1.0)
+    array = _array([-2**24, 1, 2**24])
+    assert array.sum() in (0.0, 1.0)
 
 
 @pytest.mark.parametrize('values, expected', [
@@ -113,7 +113,7 @@ def test_cancellation_accepts_valid_groupings(backend):
     ([3e38, 3e38], np.inf), ([-3e38, -3e38], -np.inf),
 ])
 def test_f32_sum_nonfinite_classes(backend, values, expected):
-    _assert_value(_field(values).sum(), expected)
+    _assert_value(_array(values).sum(), expected)
 
 
 @pytest.mark.parametrize('dtype', [tack.i8, tack.u8, tack.i16, tack.u16,
@@ -121,25 +121,25 @@ def test_f32_sum_nonfinite_classes(backend, values, expected):
 def test_integer_host_reduction_promotion_and_wrap(backend, dtype):
     limits = np.iinfo(dtype.numpy_dtype)
     values = [limits.max, limits.max, 1]
-    field = _field(values, dtype)
+    array = _array(values, dtype)
     total = sum(values) % 2**64
     if limits.min < 0 and total >= 2**63:
         total -= 2**64
-    assert field.sum() == float(total)
-    assert field.min() == 1.0
-    assert field.max() == float(limits.max)
-    assert field.mean() == float(total) / len(values)
+    assert array.sum() == float(total)
+    assert array.min() == 1.0
+    assert array.max() == float(limits.max)
+    assert array.mean() == float(total) / len(values)
 
 
 @pytest.mark.parametrize('values', [[np.nan, 1], [-0.0, 0.0], [-0.0], [0.0]])
 def test_f64_host_extrema_rules(f64_backend, values):
-    field = _field(values, tack.f64)
+    array = _array(values, tack.f64)
     if np.isnan(values).any():
-        assert np.isnan(field.min()) and np.isnan(field.max())
+        assert np.isnan(array.min()) and np.isnan(array.max())
     else:
         signs = np.signbit(values)
-        _assert_value(field.min(), -0.0 if signs.any() else 0.0)
-        _assert_value(field.max(), -0.0 if signs.all() else 0.0)
+        _assert_value(array.min(), -0.0 if signs.any() else 0.0)
+        _assert_value(array.max(), -0.0 if signs.all() else 0.0)
 
 
 def test_empty_reductions_skip_backend_and_storage(monkeypatch):
@@ -149,19 +149,19 @@ def test_empty_reductions_skip_backend_and_storage(monkeypatch):
         raise AssertionError('empty reduction must not launch or read storage')
 
     monkeypatch.setattr(dispatch, 'get_backend', unexpected_backend)
-    # Logical empty field: no allocation is needed to establish the result.
-    field = Field(tack.f32, (0,), None)
-    _assert_value(field.sum(), 0.0)
-    assert np.isnan(field.mean())
+    # Logical empty array: no allocation is needed to establish the result.
+    array = Array(tack.f32, (0,), None)
+    _assert_value(array.sum(), 0.0)
+    assert np.isnan(array.mean())
     for op in ('min', 'max'):
-        with pytest.raises(ValueError, match='nonempty field'):
-            getattr(field, op)()
+        with pytest.raises(ValueError, match='nonempty array'):
+            getattr(array, op)()
 
 
-def test_empty_cpu_field_and_multidimensional_host_reductions():
-    empty = Field(tack.f32, (0, 3), NumpyBuffer(np.float32, (0, 3)))
+def test_empty_cpu_array_and_multidimensional_host_reductions():
+    empty = Array(tack.f32, (0, 3), NumpyBuffer(np.float32, (0, 3)))
     assert empty.sum() == 0 and np.isnan(empty.mean())
-    # Shared NumPy fallback also serves non-f32 fields on every GPU.
+    # Shared NumPy fallback also serves non-f32 arrays on every GPU.
     from tack.runtime.reductions import reduce_numpy
     values = np.array([[0.0, 1.0], [-0.0, 2.0]])
     _assert_value(reduce_numpy(values, 'min'), -0.0)
@@ -178,9 +178,9 @@ def test_level_zero_small_workgroup_uses_host_fallback(group_x, total):
     values = np.array([2e38, 3e38], np.float32)
     buffer = NumpyBuffer(np.float32, values.shape)
     buffer.from_numpy(values)
-    field = Field(tack.f32, values.shape, buffer)
-    assert be.reduce_field(field, 'min') == float(values[0])
-    assert be.reduce_field(field, 'max') == float(values[1])
+    array = Array(tack.f32, values.shape, buffer)
+    assert be.reduce_array(array, 'min') == float(values[0])
+    assert be.reduce_array(array, 'max') == float(values[1])
 
 
 @tack.kernel
@@ -197,9 +197,9 @@ def _block_extrema(data, out):
                                    [-0.0], [0.0, -0.0], [2e38, 3e38]])
 def test_full_workgroup_f32_extrema(workgroup_backend, values):
     data = np.resize(np.asarray(values, np.float32), 512)
-    out = tack.field(tack.f32, (2, 2))
-    _block_extrema(_field(data), out)
-    actual = out.to_numpy()
+    out = tack.empty((2, 2))
+    _block_extrema(_array(data), out)
+    actual = out.numpy()
     for group in range(2):
         chunk = data[group * 256:(group + 1) * 256]
         for column, op in enumerate(('min', 'max')):
@@ -223,7 +223,7 @@ def test_block_integer_input_requires_explicit_f32(backend):
     message = ('requires f32 input' if get_backend().supports_workgroups
                else 'CPU backend does not support workgroup execution')
     with pytest.raises((TypeError, RuntimeError), match=message):
-        _block_sum(_field(np.ones(256), tack.i32), tack.field(tack.f32, (1,)))
+        _block_sum(_array(np.ones(256), tack.i32), tack.empty((1,)))
 
 
 def test_block_f64_input_requires_explicit_f32(f64_backend):
@@ -231,15 +231,15 @@ def test_block_f64_input_requires_explicit_f32(f64_backend):
     message = ('requires f32 input' if get_backend().supports_workgroups
                else 'CPU backend does not support workgroup execution')
     with pytest.raises((TypeError, RuntimeError), match=message):
-        _block_sum(_field(np.ones(256), tack.f64), tack.field(tack.f32, (1,)))
+        _block_sum(_array(np.ones(256), tack.f64), tack.empty((1,)))
 
 
 def test_full_workgroup_sum_accuracy(workgroup_backend):
     rng = np.random.default_rng(5812)
     values = rng.uniform(-64, 64, 512).astype(np.float32)
-    out = tack.field(tack.f32, (2,))
-    _block_sum(_field(values), out)
-    for group, actual in enumerate(out.to_numpy()):
+    out = tack.empty((2,))
+    _block_sum(_array(values), out)
+    for group, actual in enumerate(out.numpy()):
         chunk = values[group * 256:(group + 1) * 256]
         exact = math.fsum(map(float, chunk))
         nu = len(chunk) * 2**-24
@@ -255,9 +255,9 @@ def test_block_explicit_f32_cast(workgroup_backend):
             if tack.thread_id() == 0:
                 out[0] = value
 
-    out = tack.field(tack.f32, (1,))
-    cast_sum(_field(np.ones(256), tack.i32), out)
-    assert out.to_numpy()[0] == 256
+    out = tack.empty((1,))
+    cast_sum(_array(np.ones(256), tack.i32), out)
+    assert out.numpy()[0] == 256
 
 
 @pytest.mark.parametrize('dialect', ['cuda', 'hip'])
@@ -279,7 +279,7 @@ float atomicAdd(float*, float);
 unsigned int atomicCAS(unsigned int*, unsigned int, unsigned int);
 '''
     source = tmp_path / 'reduce.cpp'
-    body = field_reduction_source(dialect, op).replace('#include <hip/hip_runtime.h>\n', '')
+    body = array_reduction_source(dialect, op).replace('#include <hip/hip_runtime.h>\n', '')
     source.write_text(preamble + body)
     result = subprocess.run([clang, '-std=c++17', '-fsyntax-only', str(source)],
                             capture_output=True, text=True)
@@ -290,7 +290,7 @@ unsigned int atomicCAS(unsigned int*, unsigned int, unsigned int);
 def test_opencl_native_reduction_syntax(op, tmp_path):
     clang = require_clang()
     source = tmp_path / 'reduce.cl'
-    source.write_text(field_reduction_source('opencl', op))
+    source.write_text(array_reduction_source('opencl', op))
     result = subprocess.run([clang, '-x', 'cl', '-cl-std=CL2.0', '-fsyntax-only', str(source)],
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stderr

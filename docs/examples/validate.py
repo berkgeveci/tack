@@ -9,13 +9,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody", "isosurface",
+EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody",
             "kernel_results", "array_sizes", "datasets", "data_fields", "data_meshes",
             "data_analysis", "data_mesh_kernels", "data_spaces")
 QUICKSTARTS = (
-    "01-getting-started", "02-fields-and-types", "11-reductions-and-scans",
+    "01-getting-started", "02-arrays-and-types", "11-reductions-and-scans",
     "12-execution-model", "14-vectors-and-matrices",
-    "09-visualization", "10-rendering", "15-debugging-and-timing", "16-interoperability",
+    "09-visualization", "15-debugging-and-timing", "16-interoperability",
 )
 
 
@@ -30,7 +30,7 @@ def check_quickstarts():
             if not blocks:
                 raise RuntimeError(f"No Python quick start in {page.name}")
             code = blocks[0]
-            if "import tack" not in code or "tack.init" not in code:
+            if "import tack" not in code or "tack.set_default_device" not in code:
                 raise RuntimeError(f"The first Python example in {page.name} is not standalone")
             if name == "09-visualization":
                 code += '\nassert surface.num_cells > 0 and surface.num_points > 0\n'

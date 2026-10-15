@@ -18,7 +18,7 @@ def _upwind(faces, t, normals, areas, vx, vy, vz, out):
     for f in faces:
         e = faces.entity_id(f)
         pc = faces.parametric_center()
-        vn = normals[e].dot(tack.Vector([vx, vy, vz]))
+        vn = normals[e].dot(tack.vec3(vx, vy, vz))
         upwind = t.value(f, 0, pc)
         if vn < 0.0 and faces.num_sides(f) == 2:
             upwind = t.value(f, 1, pc)
@@ -29,7 +29,7 @@ def _upwind(faces, t, normals, areas, vx, vy, vz, out):
 def _cell_upwind(faces, values, normals, areas, vx, vy, vz, out):
     for f in faces:
         e = faces.entity_id(f)
-        vn = normals[e].dot(tack.Vector([vx, vy, vz]))
+        vn = normals[e].dot(tack.vec3(vx, vy, vz))
         cell = faces.side_cell(f, 0)
         if vn < 0.0 and faces.num_sides(f) == 2:
             cell = faces.side_cell(f, 1)

@@ -79,7 +79,7 @@ def step(x, v):
 
 The kernel reads `DT` as the literal `0.01`. The constant is still an
 ordinary Python number, so host code uses the same name: `range(GRID)`,
-`np.float32(DT)`, `tack.empty(dtype=tack.f32, shape=(GRID,))`. Constants
+`np.float32(DT)`, `tack.empty((GRID,))`. Constants
 work from another module too (`from params import DT`, or `params.DT`),
 and inside device functions.
 
@@ -155,7 +155,7 @@ def reverse(x, out):
 
 @tack.kernel
 def normalize_rows(a, out):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         out[i, j] = a[i, j] / float(a.shape[1])
 ```
 
@@ -178,12 +178,12 @@ def reverse(x, out, n):     # one compiled kernel for every n
 
 ## Multi-Dimensional Iteration
 
-Use `tack.ndrange` for 2D or 3D parallel iteration:
+Use `tack.ndindex` for 2D or 3D parallel iteration:
 
 ```python
 @tack.kernel
 def fill_2d(grid, height, width):
-    for row, column in tack.ndrange(height, width):
+    for row, column in tack.ndindex(height, width):
         grid[row, column] = float(row + column)
 ```
 
@@ -196,7 +196,7 @@ visits the interior of a grid and leaves the boundary alone:
 ```python
 @tack.kernel
 def smooth(u, out, n, m):
-    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+    for i, j in tack.ndindex((1, n - 1), (1, m - 1)):
         out[i, j] = 0.25 * (u[i - 1, j] + u[i + 1, j] + u[i, j - 1] + u[i, j + 1])
 ```
 
@@ -260,7 +260,7 @@ epilogue kernel that stores it into a hidden array the call reads back.
 So it may use arrays, arguments, constants and locals bound before the
 loop, but not a local the loop assigns, which has a value per thread.
 This replaces writing a one-element array and reading it with
-`to_numpy()` or `f[0]`; the cost is one extra, tiny launch and one
+`numpy()` or `f[0]`; the cost is one extra, tiny launch and one
 element's transfer.
 
 ### Return the length of an atomic append
@@ -327,9 +327,9 @@ def saxpy(x, y, out, a):
         out[i] = a * x[i] + y[i]
 
 n = 1024
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
 
 # Tack intermediate representation
 print(tack.inspect(saxpy, x, y, out, 2.0, mode="ir"))
@@ -362,8 +362,8 @@ class Sim:
     GRAVITY = -9.81
 
     def __init__(self, n):
-        self.pos = tack.empty(dtype=tack.f32, shape=(n,))
-        self.vel = tack.empty(dtype=tack.f32, shape=(n,))
+        self.pos = tack.empty((n,))
+        self.vel = tack.empty((n,))
         self.dt = 0.01
 
     @tack.func

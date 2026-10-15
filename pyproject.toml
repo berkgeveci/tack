@@ -6,7 +6,6 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "tack-core",
-    "tack-rendering",
     "tack-vis",
 ]
 
@@ -47,11 +46,12 @@ docs = [
 
 [tool.uv.sources]
 tack-core = { workspace = true }
-tack-rendering = { workspace = true }
 tack-vis = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/*"]
+# Listed, not globbed: a package directory left behind by a move (holding
+# only ignored __pycache__ files) would otherwise stop `uv sync`.
+members = ["packages/tack-core", "packages/tack-vis"]
 
 [tool.ruff]
 line-length = 100
@@ -60,6 +60,8 @@ line-length = 100
 # bench_64mb.py was found, unparseable on 3.11 since it was written, in a
 # file no test collected and on a CI job that runs 3.13.
 target-version = "py311"
+# Archived packages are kept for reference, not maintained against the API.
+extend-exclude = ["archive"]
 
 [tool.ruff.lint]
 select = [
@@ -140,6 +142,5 @@ markers = [
 ]
 testpaths = [
     "packages/tack-core/tests",
-    "packages/tack-rendering/tests",
     "packages/tack-vis/tests",
 ]

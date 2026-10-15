@@ -10,7 +10,7 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 # Build list of available backends
 
 
-# --- Structured cell set (scalar attrs only, no field attrs) ---
+# --- Structured cell set (scalar attrs only, no array attrs) ---
 
 @tack.device_class
 class CellSetStructured:
@@ -25,13 +25,13 @@ class CellSetStructured:
         return cy * self.nx + cx
 
 
-# --- Explicit cell set (field attrs) ---
+# --- Explicit cell set (array attrs) ---
 
 @tack.device_class
 class CellSetExplicit:
     def __init__(self, conn_np):
-        self.connectivity = tack.field(dtype=tack.i32, shape=(len(conn_np),))
-        self.connectivity.from_numpy(conn_np)
+        self.connectivity = tack.empty((len(conn_np),), tack.i32)
+        tack.copyto(self.connectivity, conn_np)
 
     @tack.func
     def get_cell_point0(self, cell_id):
@@ -50,18 +50,18 @@ def test_structured_template(backend):
     """Template with scalar attrs only (nx, ny become constants)."""
     nx, ny = 4, 3
     num_cells = (nx - 1) * (ny - 1)
-    output = tack.field(dtype=tack.i32, shape=(num_cells,))
+    output = tack.empty((num_cells,), tack.i32)
 
     cs = CellSetStructured(nx, ny)
     extract_point0(cs, output)
 
-    result = output.to_numpy()
+    result = output.numpy()
     expected = np.array([0, 1, 2, 4, 5, 6], dtype=np.int32)
     np.testing.assert_array_equal(result, expected)
 
 
 def test_explicit_template(backend):
-    """Template with field attrs (connectivity becomes extra parameter)."""
+    """Template with array attrs (connectivity becomes extra parameter)."""
     # Build connectivity for a 4x3 structured grid
     nx, ny = 4, 3
     num_cells = (nx - 1) * (ny - 1)
@@ -72,11 +72,11 @@ def test_explicit_template(backend):
             p0 = cj * nx + ci
             conn[cid * 4: cid * 4 + 4] = [p0, p0 + 1, p0 + nx + 1, p0 + nx]
 
-    output = tack.field(dtype=tack.i32, shape=(num_cells,))
+    output = tack.empty((num_cells,), tack.i32)
     cs = CellSetExplicit(conn)
     extract_point0(cs, output)
 
-    result = output.to_numpy()
+    result = output.numpy()
     expected = np.array([0, 1, 2, 4, 5, 6], dtype=np.int32)
     np.testing.assert_array_equal(result, expected)
 
@@ -94,8 +94,8 @@ def test_same_kernel_different_templates(backend):
             p0 = cj * nx + ci
             conn[cid * 4: cid * 4 + 4] = [p0, p0 + 1, p0 + nx + 1, p0 + nx]
 
-    output_s = tack.field(dtype=tack.i32, shape=(num_cells,))
-    output_e = tack.field(dtype=tack.i32, shape=(num_cells,))
+    output_s = tack.empty((num_cells,), tack.i32)
+    output_e = tack.empty((num_cells,), tack.i32)
 
     cs_s = CellSetStructured(nx, ny)
     cs_e = CellSetExplicit(conn)
@@ -103,7 +103,7 @@ def test_same_kernel_different_templates(backend):
     extract_point0(cs_s, output_s)
     extract_point0(cs_e, output_e)
 
-    np.testing.assert_array_equal(output_s.to_numpy(), output_e.to_numpy())
+    np.testing.assert_array_equal(output_s.numpy(), output_e.numpy())
 
 
 def test_different_scalar_values(backend):
@@ -111,30 +111,30 @@ def test_different_scalar_values(backend):
     cs_a = CellSetStructured(4, 3)
     cs_b = CellSetStructured(5, 4)
 
-    output_a = tack.field(dtype=tack.i32, shape=(6,))
-    output_b = tack.field(dtype=tack.i32, shape=(12,))
+    output_a = tack.empty((6,), tack.i32)
+    output_b = tack.empty((12,), tack.i32)
 
     extract_point0(cs_a, output_a)
     extract_point0(cs_b, output_b)
 
     # 4x3 grid: point0 of cells
     expected_a = np.array([0, 1, 2, 4, 5, 6], dtype=np.int32)
-    np.testing.assert_array_equal(output_a.to_numpy(), expected_a)
+    np.testing.assert_array_equal(output_a.numpy(), expected_a)
 
     # 5x4 grid: point0 of cells
     expected_b = np.array([0, 1, 2, 3, 5, 6, 7, 8, 10, 11, 12, 13], dtype=np.int32)
-    np.testing.assert_array_equal(output_b.to_numpy(), expected_b)
+    np.testing.assert_array_equal(output_b.numpy(), expected_b)
 
 
-# --- Vector field attributes ---------------------------------------------------
+# --- Vector array attributes ---------------------------------------------------
 
 @tack.device_class
 class _Flow:
-    """A template whose state includes a vector field its methods read."""
+    """A template whose state includes a vector array its methods read."""
 
     def __init__(self, n):
-        self.rho = tack.field(dtype=tack.f32, shape=(n, n))
-        self.vel = tack.Vector.field(2, dtype=tack.f32, shape=(n, n))
+        self.rho = tack.empty((n, n))
+        self.vel = tack.empty((n, n), tack.vec(2, tack.f32))
 
     @tack.func
     def momentum_x(self, i, j, k):
@@ -143,41 +143,41 @@ class _Flow:
 
 
 @tack.kernel
-def _momentum_direct(flow: tack.template(), out, n):
-    for i, j in tack.ndrange(n, n):
+def _momentum_direct(flow, out, n):
+    for i, j in tack.ndindex(n, n):
         u = flow.vel[i, j]
         out[i, j] = flow.rho[i, j] * u[1]
 
 
 @tack.kernel
-def _momentum_through_method(flow: tack.template(), out, n):
-    for i, j in tack.ndrange(n, n):
+def _momentum_through_method(flow, out, n):
+    for i, j in tack.ndindex(n, n):
         acc = 0.0
         for k in range(3):
             acc = acc + flow.momentum_x(i, j, k)
         out[i, j] = acc
 
 
-def test_template_vector_field_attribute_in_kernel_and_method(backend):
-    """A template's vector field attribute loads whole vectors, whether the
+def test_template_vector_array_attribute_in_kernel_and_method(backend):
+    """A template's vector array attribute loads whole vectors, whether the
     kernel reads it directly or a method does. The runtime detected vector
     widths only for direct kernel arguments, so the synthetic parameter the
-    attribute became was a scalar field and the method's load failed IR
+    attribute became was a scalar array and the method's load failed IR
     verification."""
     n = 4
     flow = _Flow(n)
-    flow.rho.from_numpy(np.full((n, n), 2.0, np.float32))
+    tack.copyto(flow.rho, np.full((n, n), 2.0, np.float32))
     vel = np.zeros((n, n, 2), np.float32)
     vel[..., 0] = 3.0
     vel[..., 1] = 5.0
-    flow.vel.from_numpy(vel.reshape(-1))
-    out = tack.field(dtype=tack.f32, shape=(n, n))
+    tack.copyto(flow.vel, vel)
+    out = tack.empty((n, n))
 
     _momentum_direct(flow, out, n)
-    np.testing.assert_array_equal(out.to_numpy(), np.full((n, n), 10.0, np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.full((n, n), 10.0, np.float32))
 
     _momentum_through_method(flow, out, n)
-    np.testing.assert_array_equal(out.to_numpy(), np.full((n, n), 18.0, np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.full((n, n), 18.0, np.float32))
 
 
 # --- Inheritance, and device functions held as attributes ---
@@ -198,9 +198,9 @@ class _BaseModel:
 
     def __init__(self, n, h):
         self.h = h
-        self.x = tack.field(dtype=tack.f32, shape=(n,))
-        self.x.from_numpy(np.arange(n, dtype=np.float32) * 0.5)
-        self.out = tack.field(dtype=tack.f32, shape=(n,))
+        self.x = tack.empty((n,))
+        tack.copyto(self.x, np.arange(n, dtype=np.float32) * 0.5)
+        self.out = tack.empty((n,))
 
     @tack.func
     def weight(self, r):
@@ -238,9 +238,9 @@ class _ModelWithKernel:
     def __init__(self, n, falloff):
         self.falloff = falloff          # a device function held as an attribute
         self.h = 2.0
-        self.x = tack.field(dtype=tack.f32, shape=(n,))
-        self.x.from_numpy(np.arange(n, dtype=np.float32) * 0.5)
-        self.out = tack.field(dtype=tack.f32, shape=(n,))
+        self.x = tack.empty((n,))
+        tack.copyto(self.x, np.arange(n, dtype=np.float32) * 0.5)
+        self.out = tack.empty((n,))
 
     @tack.func
     def twice(self, r):
@@ -248,13 +248,13 @@ class _ModelWithKernel:
 
 
 @tack.kernel
-def _apply_shaped(s: tack.template(), n):
+def _apply_shaped(s, n):
     for i in range(n):
         s.out[i] = s.shaped(s.x[i])
 
 
 @tack.kernel
-def _apply_falloff(s: tack.template(), n):
+def _apply_falloff(s, n):
     for i in range(n):
         s.out[i] = s.falloff(s.x[i], s.h) + s.twice(s.x[i])
 
@@ -269,15 +269,15 @@ def test_device_class_subclass_inherits_methods_and_constants(backend):
 
     base = _BaseModel(n, 2.0)
     _apply_shaped(base, n)
-    np.testing.assert_allclose(base.out.to_numpy(), cubic * 2.0, rtol=1e-6)
+    np.testing.assert_allclose(base.out.numpy(), cubic * 2.0, rtol=1e-6)
 
     derived = _DerivedModel(n, 2.0, 2.0)
     _apply_shaped(derived, n)
-    np.testing.assert_allclose(derived.out.to_numpy(), (cubic * 2.0) ** 2 + 10.0, rtol=1e-5)
+    np.testing.assert_allclose(derived.out.numpy(), (cubic * 2.0) ** 2 + 10.0, rtol=1e-5)
 
     undecorated = _UndecoratedModel(n, 2.0)
     _apply_shaped(undecorated, n)
-    np.testing.assert_allclose(undecorated.out.to_numpy(), cubic * 3.0 + 1.0, rtol=1e-6)
+    np.testing.assert_allclose(undecorated.out.numpy(), cubic * 3.0 + 1.0, rtol=1e-6)
 
 
 def test_device_function_held_as_an_attribute(backend):
@@ -291,12 +291,12 @@ def test_device_function_held_as_an_attribute(backend):
                           (_cubic_falloff, np.maximum(0, 1 - x / 2.0) ** 3)):
         model = _ModelWithKernel(n, falloff)
         _apply_falloff(model, n)
-        np.testing.assert_allclose(model.out.to_numpy(), 3.0 * want, rtol=1e-6)
+        np.testing.assert_allclose(model.out.numpy(), 3.0 * want, rtol=1e-6)
 
 
 def test_unknown_template_method_is_reported():
     @tack.kernel
-    def bad(s: tack.template(), n):
+    def bad(s, n):
         for i in range(n):
             s.out[i] = s.missing(s.x[i])
     with pytest.raises(Exception, match="no @tack.func method 'missing'"):
@@ -308,9 +308,9 @@ class _WithStatic:
     scale = 2.0
 
     def __init__(self, n):
-        self.x = tack.field(dtype=tack.f32, shape=(n,))
-        self.out = tack.field(dtype=tack.f32, shape=(n,))
-        self.x.from_numpy(np.arange(n, dtype=np.float32))
+        self.x = tack.empty((n,))
+        self.out = tack.empty((n,))
+        tack.copyto(self.x, np.arange(n, dtype=np.float32))
 
     @staticmethod
     @tack.func
@@ -324,7 +324,7 @@ class _WithStatic:
 
 
 @tack.kernel
-def _use_static(s: tack.template(), n):
+def _use_static(s, n):
     for i in range(n):
         inside, _offset = s.between(s.x[i], 0.0, 0.5)
         s.out[i] = s.clipped(i) + (100.0 if inside else 0.0)
@@ -337,7 +337,7 @@ def test_static_device_function_of_a_template_class(backend):
     n = 5
     s = _WithStatic(n)
     _use_static(s, n)
-    np.testing.assert_array_equal(s.out.to_numpy(), [99.0, 0.0, 2.0, 4.0, -1.0])
+    np.testing.assert_array_equal(s.out.numpy(), [99.0, 0.0, 2.0, 4.0, -1.0])
 
 
 @tack.device_class
@@ -347,8 +347,8 @@ class _WithKernels:
     def __init__(self, n, bias):
         self.n = n
         self.bias = bias
-        self.x = tack.field(dtype=tack.f32, shape=(n,))
-        self.out = tack.field(dtype=tack.f32, shape=(n,))
+        self.x = tack.empty((n,))
+        self.out = tack.empty((n,))
 
     @tack.func
     def scaled(self, i):
@@ -371,23 +371,23 @@ class _WithKernelsSub(_WithKernels):
 
 def test_kernel_defined_as_a_method(backend):
     """`model.apply(...)` passes the model as the kernel's first argument,
-    a template like any other: its fields, scalars, constants and methods
+    a template like any other: its arrays, scalars, constants and methods
     are reached through `self`. It failed with "expects 1 arguments, got
     0", so every Taichi class with `@ti.kernel` methods had to be taken
     apart."""
     n = 4
-    other = tack.field(dtype=tack.f32, shape=(n,))
+    other = tack.empty((n,))
     other.fill(0.5)
     for cls, bias in ((_WithKernels, 1.0), (_WithKernels, 2.0), (_WithKernelsSub, 1.0)):
         model = cls(n, bias)
         model.ramp()
         model.apply(100.0, other)
-        np.testing.assert_allclose(model.out.to_numpy(),
+        np.testing.assert_allclose(model.out.numpy(),
                                    np.arange(n) * cls.gain + bias + 100.5)
 
     model = _WithKernels(n, 0.0)
     _WithKernels.ramp(model)                         # unbound, through the class
-    np.testing.assert_array_equal(model.x.to_numpy(), np.arange(n))
+    np.testing.assert_array_equal(model.x.numpy(), np.arange(n))
     assert model.apply.name == "apply"
     bound = tack.inspect(model.apply, 1.0, other, mode="ir")
     assert bound == tack.inspect(_WithKernels.apply, model, 1.0, other, mode="ir")
@@ -416,26 +416,24 @@ def test_a_changed_class_constant_is_seen(backend):
         FACTOR = 2
 
         def __init__(self, n):
-            self.values = tack.field(dtype=tack.f32, shape=(n,))
+            self.values = tack.empty((n,))
 
     @tack.kernel
-    def fill(obj: tack.template()):
+    def fill(obj):
         for i in range(obj.values.shape[0]):
             obj.values[i] = obj.FACTOR * i
 
     obj = Scaled(4)
     fill(obj)
-    np.testing.assert_array_equal(obj.values.to_numpy(), [0, 2, 4, 6])
+    np.testing.assert_array_equal(obj.values.numpy(), [0, 2, 4, 6])
     Scaled.FACTOR = 3
     fill(obj)
-    np.testing.assert_array_equal(obj.values.to_numpy(), [0, 3, 6, 9])
+    np.testing.assert_array_equal(obj.values.numpy(), [0, 3, 6, 9])
 
 
-def test_data_oriented_is_device_class_under_taichis_name(backend):
-    """The old name still decorates a class that kernels take."""
-    assert tack.data_oriented is tack.device_class
-
-    @tack.data_oriented
+def test_a_device_class_argument_needs_no_annotation(backend):
+    """A device class's object is recognized by its type, not an annotation."""
+    @tack.device_class
     class Offset:
         def __init__(self, by):
             self.by = by
@@ -449,6 +447,6 @@ def test_data_oriented_is_device_class_under_taichis_name(backend):
         for i in range(out.shape[0]):
             out[i] = offset.apply(i)
 
-    out = tack.field(tack.i32, shape=(3,))
+    out = tack.empty((3,), tack.i32)
     shift(Offset(10), out)
-    assert out.to_numpy().tolist() == [10, 11, 12]
+    assert out.numpy().tolist() == [10, 11, 12]

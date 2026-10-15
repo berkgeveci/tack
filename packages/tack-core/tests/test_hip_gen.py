@@ -4,17 +4,17 @@ import tack
 from tack.codegen.hip_gen import generate_hip_source
 from tack.lang.ir_resolve import resolve_ir
 from tack.lang.type_inference import infer_param_types
-from tack.runtime.kernel_utils import dispatch_name_to_field
+from tack.runtime.kernel_utils import dispatch_name_to_array
 
 
-def _get_ir(kernel_fn, *field_shapes):
-    """Helper: define a kernel, create dummy fields, run type inference, return IR."""
-    tack.init(arch=tack.cpu)
-    fields = []
-    for shape in field_shapes:
-        fields.append(tack.field(dtype=tack.f32, shape=shape))
+def _get_ir(kernel_fn, *array_shapes):
+    """Helper: define a kernel, create dummy arrays, run type inference, return IR."""
+    tack.set_default_device("cpu")
+    arrays = []
+    for shape in array_shapes:
+        arrays.append(tack.empty(shape))
     ir_func = kernel_fn.get_ir().functions[0]
-    infer_param_types(ir_func, tuple(fields))
+    infer_param_types(ir_func, tuple(arrays))
     return ir_func
 
 
@@ -64,7 +64,7 @@ class TestHIPCodeGen:
         src = generate_hip_source(ir_func)
         assert 'if (tack_var_a_i >= __n__) return;' in src
 
-    def test_field_pointers_allow_aliasing(self):
+    def test_array_pointers_allow_aliasing(self):
         @tack.kernel
         def add(x, y, out):
             for i in range(x.shape[0]):
@@ -107,7 +107,7 @@ class TestHIPCodeGen:
 
         ir_func = _get_ir(saxpy, (64,), (64,), (64,))
         src = generate_hip_source(ir_func)
-        # Field parameters do not promise disjoint storage
+        # Array parameters do not promise disjoint storage
         assert '__restrict__' not in src
         # Should have the n parameter
         assert 'long long __n__' in src
@@ -120,9 +120,9 @@ def _texture_ir():
     Texture3D is enough — the hardware-sampling path is selected exactly as
     it would be on a device that has texture units.
     """
-    tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.f32, shape=(64,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    tack.set_default_device("cpu")
+    data = tack.empty((64,))
+    out = tack.empty((1,))
     tex = tack.texture3d(data, shape=(4, 4, 4))
 
     @tack.kernel
@@ -132,12 +132,12 @@ def _texture_ir():
 
     # The transform has to be told which param is a texture, or `tex.sample`
     # is just an unknown method call.
-    ir_func = sample.get_ir(texture_fields={'tex': (4, 4, 4)}).functions[0]
+    ir_func = sample.get_ir(texture_arrays={'tex': (4, 4, 4)}).functions[0]
     # resolve fills IRTextureSample.shape, which codegen reads. Build the
     # name map the same way dispatch does, so the texture resolves to its
-    # 3D extent rather than the flat field's length.
+    # 3D extent rather than the flat array's length.
     args = (out, tex, 1)
-    resolve_ir(ir_func, dispatch_name_to_field(ir_func, args))
+    resolve_ir(ir_func, dispatch_name_to_array(ir_func, args))
     infer_param_types(ir_func, args)
     for param, arg in zip(ir_func.params, args):
         if getattr(param, '_is_texture', False):

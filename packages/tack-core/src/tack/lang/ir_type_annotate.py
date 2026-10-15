@@ -11,7 +11,7 @@ promotion of every type assigned to it. Backends give each local a single
 storage slot — an `alloca` on CPU, a declared C variable elsewhere — so a
 type that drifted statement by statement would silently narrow every store
 after the first. That is how `total = 0.0` followed by adds from an f64
-field used to accumulate in f32.
+array used to accumulate in f32.
 
 Float literals are weakly typed, like Python scalars under NumPy's NEP 50.
 A *literal expression* is built only from numeric literals with unary
@@ -23,7 +23,7 @@ converts once, from its exact Python value, and its floating operations run
 at that precision. `x_f64 * 0.1` therefore uses the f64 nearest 0.1, while
 every f32 expression keeps the types it had before.
 
-Must run after type inference (needs _is_field and type_annotation on params).
+Must run after type inference (needs _is_array and type_annotation on params).
 """
 
 from tack.lang import ir
@@ -47,11 +47,11 @@ def annotate_types(ir_func: ir.IRFunction):
     """
     # Build initial type environment from parameters
     base_env = {}  # var_name → ScalarType
-    field_params = set()  # names of field (pointer) parameters
+    array_params = set()  # names of array (pointer) parameters
     for param in ir_func.params:
         base_env[param.name] = param.type_annotation
-        if getattr(param, '_is_field', False):
-            field_params.add(param.name)
+        if getattr(param, '_is_array', False):
+            array_params.add(param.name)
 
     # Names whose type is declared elsewhere and must not be widened:
     # parameters, loop variables, and shared/local allocations.
@@ -60,8 +60,8 @@ def annotate_types(ir_func: ir.IRFunction):
     # A local assigned only float literals, more than once (a device
     # function returning literals from several branches; once is already
     # the literal, see ir_optimize), takes the kernel's float precision:
-    # f64 when a field is f64, as float scalar arguments do.
-    float_context = f64 if any(base_env[p] is f64 for p in field_params) else f32
+    # f64 when an array is f64, as float scalar arguments do.
+    float_context = f64 if any(base_env[p] is f64 for p in array_params) else f32
     literal_only = (_literal_only_locals(ir_func.body) - pinned
                     if float_context is f64 else set())
 
@@ -73,7 +73,7 @@ def annotate_types(ir_func: ir.IRFunction):
         env = dict(base_env)
         env.update(var_types)
         collected = {}
-        _annotate_body(ir_func.body, env, field_params, var_types, collected)
+        _annotate_body(ir_func.body, env, array_params, var_types, collected)
         for name in pinned:
             collected.pop(name, None)
         for name in literal_only:
@@ -86,7 +86,7 @@ def annotate_types(ir_func: ir.IRFunction):
     # the same type its storage slot will have.
     env = dict(base_env)
     env.update(var_types)
-    _annotate_body(ir_func.body, env, field_params, var_types, None)
+    _annotate_body(ir_func.body, env, array_params, var_types, None)
 
     # Debug mode: accesses whose checked index came out negative are
     # skipped. Typed zeros stand in for their values, hence after typing.
@@ -126,11 +126,11 @@ def _join(current, new):
     return promote_types(current, new)
 
 
-def _annotate_expr(node, env, field_params) -> ScalarType | None:
+def _annotate_expr(node, env, array_params) -> ScalarType | None:
     """Infer and set the dtype of an IR expression node.
 
     Returns the ScalarType (also sets node.dtype as side effect).
-    Returns None for field references (pointer types).
+    Returns None for array references (pointer types).
     """
     if isinstance(node, ir.IRConstant):
         node._literal = isinstance(node.value, (int, float))
@@ -149,26 +149,26 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         return node.dtype
 
     if isinstance(node, ir.IRName):
-        if node.name in field_params:
-            return None  # Field pointer — not a scalar
+        if node.name in array_params:
+            return None  # Array pointer — not a scalar
         dtype = env.get(node.name, i32)
         node.dtype = dtype
         return dtype
 
-    if isinstance(node, ir.IRFieldLoad):
+    if isinstance(node, ir.IRArrayLoad):
         # Annotate sub-expressions
-        _annotate_expr(node.index, env, field_params)
-        # Type comes from the field's element type
-        field_name = _get_field_name(node.field)
-        if field_name and field_name in env:
-            node.dtype = env[field_name]
+        _annotate_expr(node.index, env, array_params)
+        # Type comes from the array's element type
+        array_name = _get_array_name(node.array)
+        if array_name and array_name in env:
+            node.dtype = env[array_name]
         else:
             node.dtype = f32  # fallback
         return node.dtype
 
     if isinstance(node, ir.IRBinOp):
-        lt = _annotate_expr(node.left, env, field_params)
-        rt = _annotate_expr(node.right, env, field_params)
+        lt = _annotate_expr(node.left, env, array_params)
+        rt = _annotate_expr(node.right, env, array_params)
         if lt is None or rt is None:
             return None
         lt, rt = _meet(node.left, lt, node.right, rt)
@@ -183,7 +183,7 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         return node.dtype
 
     if isinstance(node, ir.IRUnaryOp):
-        t = _annotate_expr(node.operand, env, field_params)
+        t = _annotate_expr(node.operand, env, array_params)
         node.dtype = i32 if node.op == 'not' else t
         if node.op in ('+', '-'):
             _mark_literal(node, (node.operand,))
@@ -195,7 +195,7 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         # Annotate arguments
         arg_types = []
         for arg in node.args:
-            t = _annotate_expr(arg, env, field_params)
+            t = _annotate_expr(arg, env, array_params)
             if t is not None:
                 arg_types.append(t)
         # Math builtins (sqrt, sin, etc.) preserve float type
@@ -222,7 +222,7 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         return node.dtype
 
     if isinstance(node, ir.IRCast):
-        _annotate_expr(node.value, env, field_params)
+        _annotate_expr(node.value, env, array_params)
         # dtype is a ScalarType (i32, f32, f64, etc.)
         if isinstance(node.dtype, ScalarType):
             # tack.f64(0.1) converts the literal directly, never via f32.
@@ -236,9 +236,9 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         return f32
 
     if isinstance(node, ir.IRIfExp):
-        _annotate_expr(node.condition, env, field_params)
-        tt = _annotate_expr(node.then_value, env, field_params)
-        et = _annotate_expr(node.else_value, env, field_params)
+        _annotate_expr(node.condition, env, array_params)
+        tt = _annotate_expr(node.then_value, env, array_params)
+        et = _annotate_expr(node.else_value, env, array_params)
         if tt is None or et is None:
             return None
         tt, et = _meet(node.then_value, tt, node.else_value, et)
@@ -247,8 +247,8 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         return node.dtype
 
     if isinstance(node, ir.IRCompare):
-        lt = _annotate_expr(node.left, env, field_params)
-        rt = _annotate_expr(node.right, env, field_params)
+        lt = _annotate_expr(node.left, env, array_params)
+        rt = _annotate_expr(node.right, env, array_params)
         lt, rt = _meet(node.left, lt, node.right, rt)
         node._operand_type = promote_types(lt, rt)
         node.dtype = i32  # comparisons always produce int
@@ -256,17 +256,17 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
 
     if isinstance(node, ir.IRBoolOp):
         for v in node.values:
-            _annotate_expr(v, env, field_params)
+            _annotate_expr(v, env, array_params)
         node.dtype = i32  # boolean ops always produce int
         return i32
 
     if isinstance(node, ir.IRTableLoad):
-        _annotate_expr(node.index, env, field_params)
+        _annotate_expr(node.index, env, array_params)
         return node.dtype
 
     if isinstance(node, ir.IRTextureSample):
         for c in node.coords:
-            _annotate_expr(c, env, field_params)
+            _annotate_expr(c, env, array_params)
         node.dtype = f32  # texture samples return float
         return f32
 
@@ -275,24 +275,24 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
         return i32
 
     if isinstance(node, ir.IRAttribute):
-        # e.g., field.shape[0] — integer
+        # e.g., array.shape[0] — integer
         node.dtype = i32
         return i32
 
     if isinstance(node, ir.IRAtomicOp):
-        _annotate_expr(node.index, env, field_params)
-        _annotate_expr(node.value, env, field_params)
-        # Atomic ops return the field's element type
-        field_name = _get_field_name(node.field)
-        if field_name and field_name in env:
-            node.dtype = env[field_name]
+        _annotate_expr(node.index, env, array_params)
+        _annotate_expr(node.value, env, array_params)
+        # Atomic ops return the array's element type
+        array_name = _get_array_name(node.array)
+        if array_name and array_name in env:
+            node.dtype = env[array_name]
             _adopt(node.value, node.dtype)
         else:
             node.dtype = f32
         return node.dtype
 
     if isinstance(node, ir.IRBlockReduce):
-        t = _annotate_expr(node.value, env, field_params)
+        t = _annotate_expr(node.value, env, array_params)
         if t is not f32:
             raise TypeError(f'block_{node.op} requires f32 input; use an explicit f32 cast')
         node.dtype = f32
@@ -305,7 +305,7 @@ def _annotate_expr(node, env, field_params) -> ScalarType | None:
 
     if isinstance(node, ir.IRBoundsCheck):
         for child in (*node.indices, *node.extents, node.flat):
-            _annotate_expr(child, env, field_params)
+            _annotate_expr(child, env, array_params)
         node.dtype = i64
         return i64
 
@@ -365,7 +365,7 @@ def _retype(node, dtype):
         _retype(child, dtype)
 
 
-def _get_field_name(node) -> str | None:
+def _get_array_name(node) -> str | None:
     if isinstance(node, ir.IRName):
         return node.name
     return None
@@ -378,13 +378,13 @@ def _check_integer_exponent(node):
                         'cast the base to a floating-point type for negative powers')
 
 
-def _annotate_body(stmts, env, field_params, var_types=None, collected=None):
+def _annotate_body(stmts, env, array_params, var_types=None, collected=None):
     """Walk a list of statements, annotating all nodes and updating env."""
     for stmt in stmts:
-        _annotate_stmt(stmt, env, field_params, var_types, collected)
+        _annotate_stmt(stmt, env, array_params, var_types, collected)
 
 
-def _annotate_stmt(node, env, field_params, var_types=None, collected=None):
+def _annotate_stmt(node, env, array_params, var_types=None, collected=None):
     """Annotate a single statement and all its sub-expressions.
 
     `var_types` holds the settled per-variable join; when a target is in it,
@@ -395,7 +395,7 @@ def _annotate_stmt(node, env, field_params, var_types=None, collected=None):
         return
 
     if isinstance(node, ir.IRAssign):
-        resolved = _annotate_expr(node.value, env, field_params)
+        resolved = _annotate_expr(node.value, env, array_params)
         declared = var_types.get(node.target) if var_types else None
         if collected is not None and resolved is not None:
             collected[node.target] = _join(collected.get(node.target), resolved)
@@ -415,61 +415,61 @@ def _annotate_stmt(node, env, field_params, var_types=None, collected=None):
         env[node.var] = i64
         for dim in node.dims or ():
             env[dim] = i64
-        _annotate_expr(node.start, env, field_params)
-        _annotate_expr(node.end, env, field_params)
-        _annotate_body(node.body, env, field_params, var_types, collected)
+        _annotate_expr(node.start, env, array_params)
+        _annotate_expr(node.end, env, array_params)
+        _annotate_body(node.body, env, array_params, var_types, collected)
         return
 
     if isinstance(node, ir.IRSequentialFor):
         env[node.var] = i64
-        _annotate_expr(node.start, env, field_params)
-        _annotate_expr(node.end, env, field_params)
+        _annotate_expr(node.start, env, array_params)
+        _annotate_expr(node.end, env, array_params)
         if node.step:
-            _annotate_expr(node.step, env, field_params)
-        _annotate_body(node.body, env, field_params, var_types, collected)
+            _annotate_expr(node.step, env, array_params)
+        _annotate_body(node.body, env, array_params, var_types, collected)
         return
 
     if isinstance(node, ir.IRWhile):
-        _annotate_expr(node.condition, env, field_params)
-        _annotate_body(node.body, env, field_params, var_types, collected)
+        _annotate_expr(node.condition, env, array_params)
+        _annotate_body(node.body, env, array_params, var_types, collected)
         return
 
     if isinstance(node, ir.IRIf):
-        _annotate_expr(node.condition, env, field_params)
-        _annotate_body(node.then_body, env, field_params, var_types, collected)
+        _annotate_expr(node.condition, env, array_params)
+        _annotate_body(node.then_body, env, array_params, var_types, collected)
         if node.else_body:
-            _annotate_body(node.else_body, env, field_params, var_types, collected)
+            _annotate_body(node.else_body, env, array_params, var_types, collected)
         return
 
-    if isinstance(node, ir.IRFieldStore):
-        _annotate_expr(node.index, env, field_params)
-        _annotate_expr(node.value, env, field_params)
-        node.dtype = env.get(_get_field_name(node.field))
+    if isinstance(node, ir.IRArrayStore):
+        _annotate_expr(node.index, env, array_params)
+        _annotate_expr(node.value, env, array_params)
+        node.dtype = env.get(_get_array_name(node.array))
         _adopt(node.value, node.dtype)
         return
 
     if isinstance(node, ir.IRAtomicOp):
-        _annotate_expr(node, env, field_params)
+        _annotate_expr(node, env, array_params)
         return
 
     if isinstance(node, ir.IRPrint):
         for arg in node.args:
-            _annotate_expr(arg, env, field_params)
+            _annotate_expr(arg, env, array_params)
         return
 
     if isinstance(node, ir.IRReturn):
         if node.value is not None:
-            _annotate_expr(node.value, env, field_params)
+            _annotate_expr(node.value, env, array_params)
         return
 
     if isinstance(node, ir.IRSharedAlloc):
-        _annotate_expr(node.size, env, field_params)
+        _annotate_expr(node.size, env, array_params)
         if isinstance(node.dtype, ScalarType):
             env[node.name] = node.dtype
         return
 
     if isinstance(node, ir.IRLocalAlloc):
-        _annotate_expr(node.size, env, field_params)
+        _annotate_expr(node.size, env, array_params)
         if isinstance(node.dtype, ScalarType):
             env[node.name] = node.dtype
         return

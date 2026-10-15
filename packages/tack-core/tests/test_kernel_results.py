@@ -24,7 +24,7 @@ def scaled_total(x, acc, n, offset) -> tack.f32:
     half = 0.5                                     # a local bound outside the loop
     for i in range(n):
         tack.atomic_add(acc, 0, x[i])
-    return half * acc[0] * SCALE + offset          # fields, constants, arguments, locals
+    return half * acc[0] * SCALE + offset          # arrays, constants, arguments, locals
 
 
 @tack.kernel
@@ -36,31 +36,31 @@ def biggest(x, acc, n) -> float:
 
 def test_kernels_return_a_value(backend):
     n = 1000
-    cells = tack.field(dtype=tack.i32, shape=(n,))
-    cells.from_numpy((np.arange(n) % 3 == 0).astype(np.int32))
-    count = tack.zeros(dtype=tack.i32, shape=(1,))
+    cells = tack.empty((n,), tack.i32)
+    tack.copyto(cells, (np.arange(n) % 3 == 0).astype(np.int32))
+    count = tack.zeros((1,), tack.i32)
     live = count_live(cells, count, n)
     assert live == 334 and isinstance(live, int)
 
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.linspace(0, 1, n, dtype=np.float32))
-    acc = tack.zeros(dtype=tack.f32, shape=(1,))
+    x = tack.empty((n,))
+    tack.copyto(x, np.linspace(0, 1, n, dtype=np.float32))
+    acc = tack.zeros((1,))
     total = scaled_total(x, acc, n, 1.0)
     assert isinstance(total, float)
-    assert total == pytest.approx(0.5 * x.to_numpy().astype(np.float64).sum() * 2.0 + 1.0, rel=1e-5)
+    assert total == pytest.approx(0.5 * x.numpy().astype(np.float64).sum() * 2.0 + 1.0, rel=1e-5)
 
     acc.fill(-1.0)
     assert biggest(x, acc, n) == 1.0
-    assert count_live(cells, count, n) == 668        # the count field accumulates; the kernel is reusable
+    assert count_live(cells, count, n) == 668        # the count array accumulates; the kernel is reusable
 
 
 @tack.device_class
 class _Sim:
     def __init__(self, n):
         self.n = n
-        self.x = tack.field(dtype=tack.f32, shape=(n,))
+        self.x = tack.empty((n,))
         self.x.fill(1.5)
-        self.acc = tack.zeros(dtype=tack.f32, shape=(1,))
+        self.acc = tack.zeros((1,))
 
     @tack.kernel
     def mass(self) -> tack.f32:
@@ -80,10 +80,10 @@ def test_a_plain_kernel_still_returns_none(backend):
         for i in range(n):
             x[i] *= 2.0
 
-    x = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
     x.fill(1.0)
     assert double(x, 4) is None
-    assert (x.to_numpy() == 2.0).all()
+    assert (x.numpy() == 2.0).all()
 
 
 def test_a_return_needs_an_annotation():

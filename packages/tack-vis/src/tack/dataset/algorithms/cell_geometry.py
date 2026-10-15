@@ -19,11 +19,11 @@ def _cell_geometry(cells, volumes, centroids):
         # cells far from the origin keep their precision.
         origin = cells.side_position(c, 0, 0)
         six = 0.0
-        weighted = tack.Vector([0.0, 0.0, 0.0])
-        apexes = tack.Vector([0.0, 0.0, 0.0])
+        weighted = tack.vec3(0.0, 0.0, 0.0)
+        apexes = tack.vec3(0.0, 0.0, 0.0)
         for k in range(cells.num_faces(c)):
             size = cells.side_num_points(c, k)
-            apex = tack.Vector([0.0, 0.0, 0.0])
+            apex = tack.vec3(0.0, 0.0, 0.0)
             for j in range(size):
                 apex += cells.side_position(c, k, j) - origin
             apex = apex / size
@@ -48,15 +48,15 @@ def _polygon_geometry(cells, areas, centroids):
         # Newell's area vector over the polygon's edges, walked its way, then a fan
         # from its first point weighted by each triangle's area along the normal.
         origin = cells.side_position(c, 0, 0)
-        n = tack.Vector([0.0, 0.0, 0.0])
+        n = tack.vec3(0.0, 0.0, 0.0)
         for k in range(cells.num_faces(c)):
             n += (cells.side_position(c, k, 0) - origin).cross(
                 cells.side_position(c, k, 1) - origin)
         length = n.norm()
         unit = n / length if length > 0.0 else n
         twice = 0.0
-        weighted = tack.Vector([0.0, 0.0, 0.0])
-        corners = tack.Vector([0.0, 0.0, 0.0])
+        weighted = tack.vec3(0.0, 0.0, 0.0)
+        corners = tack.vec3(0.0, 0.0, 0.0)
         for k in range(cells.num_faces(c)):
             a = cells.side_position(c, k, 0) - origin
             b = cells.side_position(c, k, 1) - origin
@@ -125,7 +125,7 @@ def cell_geometry(data):
     if data.topology.dimension > 1:
         data.topology.faces()                      # the incidence the cell views need
     n = data.num_cells
-    volumes = tack.field(data.dtype, shape=(n,))
+    volumes = tack.empty((n,), data.dtype)
     centroids = _vectors(n, data.dtype)
     for group in data.launch_groups("cells", []):
         if group.count and group.shape.DIMENSION == 3:

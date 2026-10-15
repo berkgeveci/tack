@@ -83,7 +83,7 @@ native math operations (e.g., `sinf` on CUDA, `metal::sin` on MSL).
 With two integer operands, `pow` and `**` compute exact fixed-width power
 and preserve the base type; the exponent must be nonnegative. With a
 floating operand they use floating-point power at the promoted precision.
-See [Arrays and Types](02-fields-and-types.md) for wrapping and division rules.
+See [Arrays and Types](02-arrays-and-types.md) for wrapping and division rules.
 
 ```python
 from math import sqrt, sin, cos, exp, log, floor, ceil, pow  # optional

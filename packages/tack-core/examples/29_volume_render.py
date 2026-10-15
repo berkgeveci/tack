@@ -1,11 +1,11 @@
 """29 -- Volume rendering of a rectilinear grid.
 
 Ray-cast volume renderer using front-to-back compositing with a simple
-transfer function.  The scalar field is the same gyroid used in example 27,
+transfer function.  The scalar array is the same gyroid used in example 27,
 evaluated on a cosine-spaced rectilinear grid.
 
 Each pixel casts one ray through the volume.  At each step the ray samples
-the scalar field via trilinear interpolation (binary search to locate the
+the scalar array via trilinear interpolation (binary search to locate the
 cell on each axis, then lerp the eight corners).  The sample is mapped to
 RGBA through a piecewise-linear transfer function and composited.
 
@@ -35,8 +35,8 @@ _parser.add_argument('--save', default=_os.path.join(_os.path.dirname(__file__),
 _parser.add_argument('--warmup', type=int, default=2)
 _parser.add_argument('--trials', type=int, default=5)
 _args = _parser.parse_args()
-_arch = getattr(tack, _args.arch)
-tack.init(arch=_arch)
+_arch = _args.arch
+tack.set_default_device(_arch)
 
 WIDTH = _args.width
 HEIGHT = _args.height
@@ -45,7 +45,7 @@ TF_SIZE = 256
 
 
 # ================================================================
-# TRANSFER FUNCTION TABLE (built on CPU, uploaded as field)
+# TRANSFER FUNCTION TABLE (built on CPU, uploaded as array)
 # ================================================================
 
 def build_transfer_function(vmin, vmax, n_layers=10):
@@ -192,7 +192,7 @@ def render(img, tex, coords, inv_tables, tf,
            n_pixels):
     """Cast one ray per pixel, front-to-back compositing.
 
-    Consolidated fields (VTK-style packed buffers):
+    Consolidated arrays (VTK-style packed buffers):
       img:        interleaved RGB [r0,g0,b0, r1,g1,b1, ...]
       coords:     concatenated [xcoords..., ycoords..., zcoords...]
       inv_tables: concatenated [inv_x..., inv_y..., inv_z...]
@@ -315,7 +315,7 @@ def compute_gyroid(scalar, xcoords, ycoords, zcoords, nx_p1, ny_p1):
 
 
 # ================================================================
-# BUILD GRID AND SCALAR FIELD
+# BUILD GRID AND SCALAR ARRAY
 # ================================================================
 
 N = _args.size
@@ -334,16 +334,16 @@ yc_np = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param)) /
 t_param = np.linspace(0, np.pi, nz + 1, dtype=np.float32)
 zc_np = np.float32(-np.pi) + np.float32(2.0 * np.pi) * (1.0 - np.cos(t_param)) / 2.0
 
-xcoords = tack.empty(dtype=tack.f32, shape=(nx + 1,))
-ycoords = tack.empty(dtype=tack.f32, shape=(ny + 1,))
-zcoords = tack.empty(dtype=tack.f32, shape=(nz + 1,))
-xcoords.from_numpy(xc_np)
-ycoords.from_numpy(yc_np)
-zcoords.from_numpy(zc_np)
+xcoords = tack.empty((nx + 1,))
+ycoords = tack.empty((ny + 1,))
+zcoords = tack.empty((nz + 1,))
+tack.copyto(xcoords, xc_np)
+tack.copyto(ycoords, yc_np)
+tack.copyto(zcoords, zc_np)
 
-# Compute gyroid scalar field on GPU
-print("Computing scalar field...")
-scalar = tack.empty(dtype=tack.f32, shape=(n_points,))
+# Compute gyroid scalar array on GPU
+print("Computing scalar array...")
+scalar = tack.empty((n_points,))
 compute_gyroid(scalar, xcoords, ycoords, zcoords, nx + 1, ny + 1)
 
 vmin = float(scalar.min())
@@ -351,7 +351,7 @@ vmax = float(scalar.max())
 vrange = vmax - vmin
 print(f"Scalar range: [{vmin:.3f}, {vmax:.3f}]")
 
-# Wrap scalar field as a 3D texture for hardware-accelerated sampling
+# Wrap scalar array as a 3D texture for hardware-accelerated sampling
 tex = tack.texture3d(scalar, shape=(nx + 1, ny + 1, nz + 1))
 
 
@@ -406,7 +406,7 @@ print(f"Step size: {step_size:.5f}, opacity scale: {opacity_scale}")
 # ================================================================
 
 n_pixels = WIDTH * HEIGHT
-img = tack.empty(dtype=tack.f32, shape=(n_pixels * 3,))
+img = tack.empty((n_pixels * 3,))
 
 # Build inverse lookup tables for O(1) cell location
 INV_TABLE_SIZE = max(nx, ny, nz) * 2  # 2x oversampling for accuracy
@@ -431,25 +431,25 @@ inv_x_np, cmin_x, inv_sx = build_inv_table(xc_np, nx, INV_TABLE_SIZE)
 inv_y_np, cmin_y, inv_sy = build_inv_table(yc_np, ny, INV_TABLE_SIZE)
 inv_z_np, cmin_z, inv_sz = build_inv_table(zc_np, nz, INV_TABLE_SIZE)
 
-# Consolidated fields (VTK-style packed buffers):
+# Consolidated arrays (VTK-style packed buffers):
 # coords: concatenated [xcoords, ycoords, zcoords]
 coords_np = np.concatenate([xc_np, yc_np, zc_np])
-coords = tack.empty(dtype=tack.f32, shape=(len(coords_np),))
-coords.from_numpy(coords_np)
+coords = tack.empty((len(coords_np),))
+tack.copyto(coords, coords_np)
 coord_off_y = len(xc_np)
 coord_off_z = len(xc_np) + len(yc_np)
 
 # inv_tables: concatenated [inv_x, inv_y, inv_z]
 inv_np = np.concatenate([inv_x_np, inv_y_np, inv_z_np])
-inv_tables = tack.empty(dtype=tack.i32, shape=(len(inv_np),))
-inv_tables.from_numpy(inv_np)
+inv_tables = tack.empty((len(inv_np),), tack.i32)
+tack.copyto(inv_tables, inv_np)
 inv_off_y = INV_TABLE_SIZE
 inv_off_z = INV_TABLE_SIZE * 2
 
 # tf: interleaved RGBA [r0,g0,b0,a0, r1,g1,b1,a1, ...]
 tf_interleaved = tf_np.astype(np.float32).ravel()  # already (256, 4) row-major
-tf = tack.empty(dtype=tack.f32, shape=(len(tf_interleaved),))
-tf.from_numpy(tf_interleaved)
+tf = tack.empty((len(tf_interleaved),))
+tack.copyto(tf, tf_interleaved)
 
 render_args = (img, tex, coords, inv_tables, tf,
                cam_pos[0], cam_pos[1], cam_pos[2],
@@ -504,7 +504,7 @@ print(f"  Mrays/s: {n_pixels / min(times) / 1e6:.1f}")
 # ================================================================
 
 # Read back interleaved RGB and reshape to (H, W, 3)
-img_np = img.to_numpy().reshape(HEIGHT, WIDTH, 3)
+img_np = img.numpy().reshape(HEIGHT, WIDTH, 3)
 img_np = np.clip(img_np, 0.0, 1.0)
 img_np = img_np[::-1]  # flip vertically (row 0 = bottom)
 

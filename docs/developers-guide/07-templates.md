@@ -28,7 +28,7 @@ template_args = _detect_template_args(kernel, args)
 # → {0: ("grid", grid_obj)}  (param index → (name, object))
 
 effective_args = _expand_template_args(args, template_args)
-# → removes template objects, inserts their field attributes and runtime scalars
+# → removes template objects, inserts their array attributes and runtime scalars
 
 ir_module = kernel.get_ir(..., template_args=template_args)
 # → calls template_rewrite.rewrite_templates() before AST transform
@@ -40,7 +40,7 @@ Given a kernel:
 
 ```python
 @tack.kernel
-def avg(cs: tack.template(), data, out, n):
+def avg(cs, data, out, n):
     for c in range(n):
         total = 0.0
         for v in range(cs.points_per_cell):
@@ -51,7 +51,7 @@ def avg(cs: tack.template(), data, out, n):
 Called with `CellSetStructured3D(nx=50, ny=50, nz=50)`:
 
 1. **Remove template param** from signature: `cs` is removed
-2. **Add field params**: `cs.connectivity` (if it exists) becomes a new
+2. **Add array params**: `cs.connectivity` (if it exists) becomes a new
    parameter `__tmpl_cs_connectivity__`
 3. **Add runtime scalar params**: `cs.width` (instance scalar) becomes
    parameter `__tmpl_cs_width__`
@@ -64,7 +64,7 @@ Called with `CellSetStructured3D(nx=50, ny=50, nz=50)`:
 
 The rewrite returns the AST and a local map of resolved methods. Method
 names include the template parameter name, so repeated object arguments
-retain distinct synthetic field/scalar layouts. Generated calls carry an
+retain distinct synthetic array/scalar layouts. Generated calls carry an
 AST marker to distinguish them from user functions with the same spelling.
 The map belongs to this transformation; no registration or global cleanup
 is required. Resolved methods retain the original Python callable for
@@ -76,7 +76,7 @@ globals/closure lookup and do not mutate the class's captured source.
 
 ```python
 scalars = {"points_per_cell": 8}              # class variables → compile-time constants
-fields = {"connectivity": <Field>}             # instance Fields → kernel parameters
+arrays = {"connectivity": <Array>}             # instance Arrays → kernel parameters
 runtime_scalars = {"width": 512, "height": 512}  # instance scalars → runtime parameters
 ```
 
@@ -86,7 +86,7 @@ runtime_scalars = {"width": 512, "height": 512}  # instance scalars → runtime 
 - **Instance scalars** (set in `__init__`, e.g., `self.width = width`) become
   synthetic kernel scalar parameters. They are passed at dispatch time and
   do **not** appear in the cache key — changing them reuses the compiled kernel.
-- **Instance fields** become synthetic kernel buffer parameters (as before).
+- **Instance arrays** become synthetic kernel buffer parameters (as before).
 
 This distinction avoids unnecessary JIT recompilation when only runtime
 values (like image dimensions) change between calls.
@@ -96,20 +96,20 @@ values (like image dimensions) change between calls.
 A template may hold templates as instance attributes. `template_tree(obj)`
 lists `(path, object)` for the object and everything nested in it, depth
 first, children by name, and refuses a cycle. `classify_template_attrs`
-flattens the tree: a nested object's constants, fields and runtime scalars
+flattens the tree: a nested object's constants, arrays and runtime scalars
 are named by their path joined with `__` (`base__step`), so the runtime's
-argument expansion and vector-field detection, which read the flattened
+argument expansion and vector-array detection, which read the flattened
 dicts, need nothing new, and the synthetic parameters follow one order.
 `rewrite_templates` builds a `_Node` per object (its own constants, the
-synthetic names of its own fields and scalars, its resolved methods and
+synthetic names of its own arrays and scalars, its resolved methods and
 function attributes, its children); every resolved method of the tree takes
 the whole tree's synthetic parameters, and `self.a.b.method()` and
 `self.a.b.attr` resolve by walking the children (`_resolve_call`,
 `_resolve_attribute`). A chain stops at the first attribute that is not a
-template, so `self.data.shape[0]` still reads a field's shape.
+template, so `self.data.shape[0]` still reads an array's shape.
 
 A dispatch reads a template several times -- its key, its expanded
-arguments, its vector fields -- so `resolve_variant` opens a
+arguments, its vector arrays -- so `resolve_variant` opens a
 `template_scope`, in which each object's tree, classification, function
 attributes, structure and cache-key part are found once (`memoized`). The
 objects are the call's arguments, alive throughout, so their ids cannot be
@@ -139,7 +139,7 @@ callables are unsupported. The active function identities detect recursion.
 1. **Generate unique suffix**: `__{func_name}_{param}_{counter}__`
 2. **Build rename map**: callee param names → unique names
 3. **Deep-copy callee AST** and rename all variables
-4. **Propagate metadata**: vector variables, texture fields
+4. **Propagate metadata**: vector variables, texture arrays
 5. **Emit parameter assignments**: `__func_x_0__ = caller_arg`
    (skipped for texture params — they reference the original kernel parameter)
 6. **Visit renamed body** to produce IR statements
@@ -166,12 +166,12 @@ assignments to these variables.
 
 ### Texture Propagation
 
-When a texture field is passed through `@tack.func`, the inliner must:
+When a texture array is passed through `@tack.func`, the inliner must:
 
-1. **Propagate `_texture_fields`**: renamed param → same shape metadata
+1. **Propagate `_texture_arrays`**: renamed param → same shape metadata
 2. **Track origin**: `_texture_origin[renamed] = original_param_name`
 3. **Skip assignment**: texture params can't be assigned to pointer variables
-4. **Use original name**: `IRTextureSample.field_name` uses the original
+4. **Use original name**: `IRTextureSample.array_name` uses the original
    kernel param name (via `_texture_origin`), not the renamed inline name
 
 ### Local Array Propagation
@@ -196,12 +196,12 @@ Each unique combination of template types produces a different compiled
 kernel. The cache key includes:
 
 - Kernel object identity (held weakly by the backend cache)
-- Type signature and field/scalar/texture category of all params
-- Actual template class identity, typed compile-time constants, field
+- Type signature and array/scalar/texture category of all params
+- Actual template class identity, typed compile-time constants, array
   metadata, and runtime scalar attribute names
 - The paths and classes of the templates it holds (`template_structure`),
   whose tokens also retire the variants when a nested class is collected
-- Vector field widths
+- Vector array widths
 - Texture shapes
 - Dimension sizes baked into code by shape resolution
 

@@ -34,8 +34,8 @@ def _corner_gradients(cells, u, start, out):
             elif cells.ID == shapes.PYRAMID and j == 4:
                 # The Jacobian is singular at a pyramid's apex. Extrapolate from
                 # two points just below it on the axis, as vtkPyramid does.
-                a = tack.Vector([0.5, 0.5, 0.998])
-                b = tack.Vector([0.5, 0.5, 0.996])
+                a = tack.vec3(0.5, 0.5, 0.998)
+                b = tack.vec3(0.5, 0.5, 0.996)
                 ga = (cells.geometry_jacobian(c, a).inverse().transpose()
                       @ u.parametric_gradient(c, a))
                 gb = (cells.geometry_jacobian(c, b).inverse().transpose()
@@ -76,7 +76,7 @@ def _scalar_gradients(data, field, at):
         if group.count:
             _corner_gradients(data.domain_view("cells", group), field.view(group),
                               start_of[id(group.root)], corners)
-    out = tack.Vector.field(3, data.dtype, shape=(data.num_points,))
+    out = tack.empty((data.num_points,), tack.vec(3, data.dtype))
     out.fill(0)
     if total:
         offsets, entries = data.topology.point_links()
@@ -106,10 +106,10 @@ def gradients(data, field, at="cells"):
     if not width:
         return Field(space, _scalar_gradients(data, field, at))
     n = data.num_cells if at == "cells" else data.num_points
-    out = tack.Vector.field(3 * width, data.dtype, shape=(n,))
+    out = tack.empty((n,), tack.vec(3 * width, data.dtype))
     values = materialize(field.values)
     for k in range(width):
-        part = tack.field(arrays.dtype_of(field.values), shape=(size_of(field.values),))
+        part = tack.empty((size_of(field.values),), arrays.dtype_of(field.values))
         if part.shape[0]:
             _component(values, k, part)
         rows = _scalar_gradients(data, Field(field.space, part), at)

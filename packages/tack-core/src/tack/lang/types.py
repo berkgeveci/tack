@@ -7,7 +7,7 @@ import numpy as np
 
 
 class ScalarType:
-    """Represents a scalar data type for fields and kernel arguments."""
+    """Represents a scalar data type for arrays and kernel arguments."""
 
     def __init__(self, name: str, numpy_dtype: np.dtype, llvm_name: str, bits: int):
         self.name = name
@@ -85,13 +85,22 @@ def from_numpy_dtype(dtype: np.dtype) -> ScalarType:
     return _numpy_to_tack[dtype]
 
 
-class TemplateType:
-    """Marker for template (generic) kernel arguments — resolved at call time."""
+def as_dtype(dtype):
+    """A Tack scalar or element type for anything a dtype argument accepts.
 
-
-def template() -> TemplateType:
-    """Type annotation for kernel arguments that are resolved at call time."""
-    return TemplateType()
+    Tack types pass through. Anything NumPy reads as a dtype maps to the
+    matching scalar type, following NumPy: ``np.float32``, ``"float32"``,
+    ``np.dtype("int64")``, and ``float`` (which NumPy reads as float64).
+    """
+    if isinstance(dtype, (ScalarType, ElementType)):
+        return dtype
+    try:
+        numpy_dtype = np.dtype(dtype)
+    except TypeError:
+        raise TypeError(
+            f"dtype must be a Tack type (tack.f32, tack.vec3(), ...) or a NumPy dtype, "
+            f"not {dtype!r}") from None
+    return from_numpy_dtype(numpy_dtype)
 
 
 @dataclass(frozen=True)
@@ -132,35 +141,62 @@ def vec(n: int, dtype: ScalarType = f32) -> ElementType:
 
 @lru_cache(maxsize=None, typed=True)
 def mat(rows: int, columns: int, dtype: ScalarType = f32) -> ElementType:
-    """The type of a row-major matrix element, up to 4x4."""
+    """The type of a row-major matrix element, up to 4x4.
+
+    In a kernel, ``tack.mat(row, ...)`` builds a matrix from its rows instead.
+    """
     return ElementType(dtype, (rows, columns))
 
 
 def vec2(dtype: ScalarType = f32) -> ElementType:
-    """A two-component vector element type."""
+    """A two-component vector element type; in a kernel, ``tack.vec2(...)`` builds one.
+
+    In kernels it takes 2 scalars, one scalar for every component, or one
+    2-vector.
+    """
     return vec(2, dtype)
 
 
 def vec3(dtype: ScalarType = f32) -> ElementType:
-    """A three-component vector element type."""
+    """A three-component vector element type; in a kernel, ``tack.vec3(...)`` builds one.
+
+    In kernels it takes 3 scalars, one scalar for every component, or one
+    3-vector.
+    """
     return vec(3, dtype)
 
 
 def vec4(dtype: ScalarType = f32) -> ElementType:
-    """A four-component vector element type."""
+    """A four-component vector element type; in a kernel, ``tack.vec4(...)`` builds one.
+
+    In kernels it takes 4 scalars, one scalar for every component, or one
+    4-vector.
+    """
     return vec(4, dtype)
 
 
 def mat2(dtype: ScalarType = f32) -> ElementType:
-    """A 2x2 matrix element type."""
+    """A 2x2 matrix element type; in a kernel, ``tack.mat2(...)`` builds one.
+
+    In kernels it takes 2 rows (lists of scalars or vectors) or 4
+    scalars in row-major order.
+    """
     return mat(2, 2, dtype)
 
 
 def mat3(dtype: ScalarType = f32) -> ElementType:
-    """A 3x3 matrix element type."""
+    """A 3x3 matrix element type; in a kernel, ``tack.mat3(...)`` builds one.
+
+    In kernels it takes 3 rows (lists of scalars or vectors) or 9
+    scalars in row-major order.
+    """
     return mat(3, 3, dtype)
 
 
 def mat4(dtype: ScalarType = f32) -> ElementType:
-    """A 4x4 matrix element type."""
+    """A 4x4 matrix element type; in a kernel, ``tack.mat4(...)`` builds one.
+
+    In kernels it takes 4 rows (lists of scalars or vectors) or 16
+    scalars in row-major order.
+    """
     return mat(4, 4, dtype)

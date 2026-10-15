@@ -61,26 +61,26 @@ def as_polyhedra(data, fields=None):
     faces = topology.faces()
     nf = faces.num_faces
     idt = topology.id_dtype
-    sizes = tack.field(tack.i32, shape=(nf,))
-    starts = tack.field(idt, shape=(nf + 1,))
+    sizes = tack.empty((nf,), tack.i32)
+    starts = tack.empty((nf + 1,), idt)
     if nf:
         _face_sizes(faces.kinds, sizes)
     total = exclusive_scan(sizes, starts, nf) if nf else 0
     _close(starts, nf, total)
-    face_points = tack.field(idt, shape=(total,))
+    face_points = tack.empty((total,), idt)
     if nf:
         _face_rows(faces.rows, starts, sizes, face_points)
 
     n = data.num_cells
-    counts = tack.zeros(tack.i32, (n,))
+    counts = tack.zeros((n,), tack.i32)
     for group in topology.groups():
         if group.count:
             _cell_face_counts(group.view(), counts)
-    cell_offsets = tack.field(idt, shape=(n + 1,))
+    cell_offsets = tack.empty((n + 1,), idt)
     entries = exclusive_scan(counts, cell_offsets, n) if n else 0
     _close(cell_offsets, n, entries)
-    cell_faces = tack.field(idt, shape=(entries,))
-    cell_face_sides = tack.field(tack.u8, shape=(entries,))
+    cell_faces = tack.empty((entries,), idt)
+    cell_face_sides = tack.empty((entries,), tack.u8)
     for group in topology.groups():
         if group.count:
             _cell_face_entries(data.domain_view("cells", group), cell_offsets, cell_faces,

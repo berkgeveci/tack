@@ -90,9 +90,9 @@ class _Uniformity:
             return env.get(node.name, False)
         if isinstance(node, ir.IRAttribute):
             return node.attr in ('shape', '__len__')
-        if isinstance(node, ir.IRFieldLoad):
-            descriptor = isinstance(node.field, ir.IRAttribute) and node.field.attr == 'shape'
-            packed = isinstance(node.field, ir.IRName) and node.field.name in self.scalar_packs
+        if isinstance(node, ir.IRArrayLoad):
+            descriptor = isinstance(node.array, ir.IRAttribute) and node.array.attr == 'shape'
+            packed = isinstance(node.array, ir.IRName) and node.array.name in self.scalar_packs
             return (descriptor or packed) and children[-1]
         if isinstance(node, (ir.IRThreadId, ir.IRTextureSample)):
             return False
@@ -200,6 +200,6 @@ def check_workgroup_participation(ir_func):
     if not requires_full_workgroups(ir_func):
         return False
     checker = _Uniformity(ir_func)
-    env = {p.name: not getattr(p, '_is_field', False) for p in ir_func.params}
+    env = {p.name: not getattr(p, '_is_array', False) for p in ir_func.params}
     checker.body(ir_func.body, env, True, 'body', True)
     return True

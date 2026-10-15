@@ -1,7 +1,7 @@
 """Templates holding templates: ``self.base.get(k)`` through any depth.
 
 A device-class object may hold others as instance attributes. Their methods,
-fields, runtime scalars and constants resolve as the outer object's do, and
+arrays, runtime scalars and constants resolve as the outer object's do, and
 the whole tree is one specialization: values change without recompiling,
 a different nesting compiles anew.
 """
@@ -70,15 +70,15 @@ def _read_step(arr, out):
 
 def _ints(values):
     values = np.asarray(values, np.int32)
-    field = tack.field(tack.i32, shape=values.shape)
-    field.from_numpy(values)
-    return field
+    array = tack.empty(values.shape, tack.i32)
+    tack.copyto(array, values)
+    return array
 
 
 def _run(arr, n):
-    out = tack.field(tack.i32, shape=(n,))
+    out = tack.empty((n,), tack.i32)
     _read(arr, out)
-    return out.to_numpy()
+    return out.numpy()
 
 
 def test_one_level(backend):
@@ -96,22 +96,22 @@ def test_two_levels_and_constants(backend):
 
 
 def test_a_kernel_reads_through_the_tree(backend):
-    out = tack.field(tack.i32, shape=(3,))
+    out = tack.empty((3,), tack.i32)
     _read_step(Permuted(_ints([5, 6, 7]), Counting(0, 4)), out)
-    np.testing.assert_array_equal(out.to_numpy(), [5, 10, 15])
+    np.testing.assert_array_equal(out.numpy(), [5, 10, 15])
 
 
-def test_nested_vector_fields(backend):
+def test_nested_vector_arrays(backend):
     @tack.kernel
     def norms(arr, out):
         for i in range(out.shape[0]):
             out[i] = arr.get(i).norm()
 
-    vectors = tack.Vector.field(3, tack.f32, shape=(2,))
-    vectors.from_numpy(np.array([[3, 4, 0], [0, 0, 2]], np.float32))
-    out = tack.field(tack.f32, shape=(2,))
+    vectors = tack.empty((2,), tack.vec(3, tack.f32))
+    tack.copyto(vectors, np.array([[3, 4, 0], [0, 0, 2]], np.float32))
+    out = tack.empty((2,))
     norms(Permuted(_ints([1, 0]), Explicit(vectors)), out)
-    np.testing.assert_allclose(out.to_numpy(), [2, 5])
+    np.testing.assert_allclose(out.numpy(), [2, 5])
 
 
 def test_values_do_not_recompile_and_nestings_do(backend):
@@ -121,13 +121,13 @@ def test_values_do_not_recompile_and_nestings_do(backend):
             out[i] = arr.get(i)
 
     ids = _ints([1, 0])
-    out = tack.field(tack.i32, shape=(2,))
+    out = tack.empty((2,), tack.i32)
     read(Permuted(ids, Counting(1, 1)), out)
     read(Permuted(ids, Counting(7, 3)), out)
-    np.testing.assert_array_equal(out.to_numpy(), [10, 7])
+    np.testing.assert_array_equal(out.numpy(), [10, 7])
     assert len(read._ir_cache) == 1
     read(Permuted(ids, Explicit(_ints([4, 9]))), out)
-    np.testing.assert_array_equal(out.to_numpy(), [9, 4])
+    np.testing.assert_array_equal(out.numpy(), [9, 4])
     assert len(read._ir_cache) == 2
 
 
@@ -174,6 +174,6 @@ def test_flattened_names_may_not_collide(backend, value):
     """A function attribute that flattened onto a nested one's name dropped the
     other from the cache key, so replacing it ran stale code (the outside
     review's 1-a). Every kind of attribute is refused on such a collision."""
-    out = tack.field(tack.i32, shape=(1,))
+    out = tack.empty((1,), tack.i32)
     with pytest.raises(Exception, match="flatten to the same name"):
         _read_both(_Clash("base__get", value), out)

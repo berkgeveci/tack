@@ -15,15 +15,15 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 n = 256
-x = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+out = tack.empty((n,))
 
 data = np.arange(n, dtype=np.float32) - 128.0  # [-128, ..., 127]
-x.from_numpy(data)
+tack.copyto(x, data)
 
 # --- Example 1: if/else (ReLU activation) ---
 
@@ -36,7 +36,7 @@ def relu(x, out):
             out[i] = 0.0
 
 relu(x, out)
-assert np.allclose(out.to_numpy(), np.maximum(data, 0.0))
+assert np.allclose(out.numpy(), np.maximum(data, 0.0))
 print("1. ReLU (if/else): OK")
 
 # --- Example 2: while loop with early exit ---
@@ -59,7 +59,7 @@ def collatz_steps(x, out):
         out[i] = steps
 
 collatz_steps(x, out)
-print("2. Collatz steps (while + break): OK, first 5 steps =", out.to_numpy()[:5])
+print("2. Collatz steps (while + break): OK, first 5 steps =", out.numpy()[:5])
 
 # --- Example 3: ternary expression ---
 
@@ -74,13 +74,13 @@ def clamp(x, out):
 
 clamp(x, out)
 expected = np.clip(data, -50.0, 50.0)
-assert np.allclose(out.to_numpy(), expected)
+assert np.allclose(out.numpy(), expected)
 print("3. Clamp (ternary): OK")
 
 # --- Example 4: nested loops ---
 
 n2 = 16
-mat = tack.empty(dtype=tack.f32, shape=(n2 * n2,))
+mat = tack.empty((n2 * n2,))
 
 @tack.kernel
 def fill_checkerboard(mat):
@@ -92,7 +92,7 @@ def fill_checkerboard(mat):
                 mat[i * 16 + j] = 0.0
 
 fill_checkerboard(mat)
-board = mat.to_numpy().reshape(16, 16)
+board = mat.numpy().reshape(16, 16)
 print("4. Checkerboard (nested loops): OK")
 print("   Top-left 4x4:")
 for row in board[:4]:

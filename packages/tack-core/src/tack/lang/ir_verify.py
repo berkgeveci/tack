@@ -12,17 +12,17 @@ from tack.lang.types import ScalarType, i32
 STAGES = ('lowered', 'resolved', 'inferred', 'localized', 'optimized', 'packed', 'typed')
 EXPRS = {
     ir.IRIfExp, ir.IRBinOp, ir.IRUnaryOp, ir.IRCompare, ir.IRBoolOp,
-    ir.IRFieldLoad, ir.IRConstant, ir.IRName, ir.IRAttribute, ir.IRCall,
+    ir.IRArrayLoad, ir.IRConstant, ir.IRName, ir.IRAttribute, ir.IRCall,
     ir.IRCast, ir.IRBlockReduce, ir.IRThreadId, ir.IRDimSize, ir.IRTextureSample,
     ir.IRAtomicOp,     # as the value of an assignment: the element's old value
-    ir.IRTableLoad, ir.IRFieldExtent, ir.IRBoundsCheck,
+    ir.IRTableLoad, ir.IRArrayExtent, ir.IRBoundsCheck,
 }
 STMTS = {
     ir.IRParallelFor, ir.IRSequentialFor, ir.IRWhile, ir.IRBreak, ir.IRContinue,
-    ir.IRIf, ir.IRFieldStore, ir.IRAtomicOp, ir.IRAssign, ir.IRReturn,
+    ir.IRIf, ir.IRArrayStore, ir.IRAtomicOp, ir.IRAssign, ir.IRReturn,
     ir.IRSharedAlloc, ir.IRLocalAlloc, ir.IRBarrier, ir.IRPrint, ir.IRCall,
 }
-EFFECTS = (ir.IRFieldStore, ir.IRAtomicOp, ir.IRBlockReduce, ir.IRBarrier, ir.IRPrint)
+EFFECTS = (ir.IRArrayStore, ir.IRAtomicOp, ir.IRBlockReduce, ir.IRBarrier, ir.IRPrint)
 BINOPS = {'+', '-', '*', '/', '//', '%', '**', '&', '|', '^', '<<', '>>'}
 COMPARES = {'==', '!=', '<', '<=', '>', '>='}
 OPERATORS = {
@@ -37,18 +37,18 @@ ATTRIBUTES = {
     ir.IRBoolOp: ('op',), ir.IRAtomicOp: ('op',), ir.IRBlockReduce: ('op',),
     ir.IRConstant: ('value',), ir.IRName: ('name',), ir.IRAttribute: ('attr',),
     ir.IRCall: ('func_name',), ir.IRAssign: ('target',), ir.IRCast: ('dtype',), ir.IRTableLoad: ('values', 'dtype'),
-    ir.IRSharedAlloc: ('name', 'dtype', 'field_name'),
-    ir.IRLocalAlloc: ('name', 'dtype', 'field_name'),
-    ir.IRDimSize: ('field_name', 'dim'), ir.IRTextureSample: ('field_name', 'shape'),
+    ir.IRSharedAlloc: ('name', 'dtype', 'array_name'),
+    ir.IRLocalAlloc: ('name', 'dtype', 'array_name'),
+    ir.IRDimSize: ('array_name', 'dim'), ir.IRTextureSample: ('array_name', 'shape'),
     ir.IRPrint: ('format_parts',),
-    ir.IRFieldExtent: ('field_name', 'kind'), ir.IRBoundsCheck: ('site',),
+    ir.IRArrayExtent: ('array_name', 'kind'), ir.IRBoundsCheck: ('site',),
 }
 ROLE_KINDS = {'function': {ir.IRFunction}, 'param': {ir.IRParam},
               'stmt': STMTS, 'expr': EXPRS}
 SINGULAR_ROLES = {'params': 'param', 'stmts': 'stmt', 'exprs': 'expr'}
 REQUIRED_ATTRIBUTES = {
-    kind: ATTRIBUTES.get(kind, ()) + tuple(attr for attr, _ in fields)
-    for kind, fields in CHILD_FIELDS.items()
+    kind: ATTRIBUTES.get(kind, ()) + tuple(attr for attr, _ in arrays)
+    for kind, arrays in CHILD_FIELDS.items()
 }
 
 
@@ -93,7 +93,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
         require(node, path, id(node) not in active, 'cycle in IR tree')
         active.add(id(node))
         nodes.append((node, path, host_bound))
-        fields = child_fields(node)
+        arrays = child_fields(node)
         for attr in REQUIRED_ATTRIBUTES[kind]:
             if not hasattr(node, attr):
                 fail(node, path, f'missing attribute {attr}')
@@ -149,16 +149,16 @@ def verify_ir(function: ir.IRFunction, stage: str):
             require(node, path, not resolved or host_bound,
                     'unresolved attribute in generated code')
         if kind is ir.IRDimSize:
-            name(node, path, 'field_name')
+            name(node, path, 'array_name')
             require(node, path, type(node.dim) is int and node.dim >= 0,
                     'dimension must be a nonnegative integer')
             require(node, path, not resolved or host_bound,
                     'unresolved dimension in generated code')
-        if kind is ir.IRFieldExtent:
-            name(node, path, 'field_name')
-            require(node, path, node.kind in (ir.IRFieldExtent.LEADING,
-                                              ir.IRFieldExtent.ELEMENTS,
-                                              ir.IRFieldExtent.STORAGE),
+        if kind is ir.IRArrayExtent:
+            name(node, path, 'array_name')
+            require(node, path, node.kind in (ir.IRArrayExtent.LEADING,
+                                              ir.IRArrayExtent.ELEMENTS,
+                                              ir.IRArrayExtent.STORAGE),
                     'extent kind must be LEADING, ELEMENTS or STORAGE')
             require(node, path, not resolved, 'unresolved extent in generated code')
         if kind is ir.IRBoundsCheck:
@@ -167,11 +167,11 @@ def verify_ir(function: ir.IRFunction, stage: str):
             require(node, path, len(node.indices) == len(node.extents) > 0,
                     'bounds check needs one extent per index')
             require(node, path, isinstance(node.errors, ir.IRName),
-                    'bounds check must name its errors field')
+                    'bounds check must name its errors array')
         if kind in (ir.IRSharedAlloc, ir.IRLocalAlloc):
             require(node, path, isinstance(node.dtype, ScalarType) or
                     (not resolved and node.dtype is None and
-                     isinstance(node.field_name, str)), 'allocation dtype is unresolved')
+                     isinstance(node.array_name, str)), 'allocation dtype is unresolved')
         if kind is ir.IRCast:
             require(node, path, isinstance(node.dtype, ScalarType),
                     'cast target must be a ScalarType')
@@ -182,7 +182,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
                     and all(type(v) in (int, float) for v in node.values),
                     'table values must be a non-empty tuple of numbers')
         if kind is ir.IRTextureSample:
-            name(node, path, 'field_name')
+            name(node, path, 'array_name')
             if resolved:
                 require(node, path, isinstance(node.shape, tuple) and len(node.shape) == 3
                         and all(type(n) is int and n > 0 for n in node.shape),
@@ -190,11 +190,11 @@ def verify_ir(function: ir.IRFunction, stage: str):
         if kind is ir.IRParam and inferred:
             require(node, path, isinstance(node.type_annotation, ScalarType),
                     'parameter type must be a ScalarType')
-            require(node, path, type(getattr(node, '_is_field', None)) is bool,
-                    'parameter field/scalar category is missing')
+            require(node, path, type(getattr(node, '_is_array', None)) is bool,
+                    'parameter array/scalar category is missing')
 
         try:
-            for attr, child_role in fields:
+            for attr, child_role in arrays:
                 value = getattr(node, attr)
                 child_path = f'{path}.{attr}'
                 child_loops = loops
@@ -231,7 +231,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
     # Function-wide binding existence, not definite assignment. Loop-carried
     # and branch-defined variables require a separate control-flow analysis.
     bound = set(params)
-    buffers = {p.name for p in function.params if getattr(p, '_is_field', False)}
+    buffers = {p.name for p in function.params if getattr(p, '_is_array', False)}
     for node, _, _ in nodes:
         if isinstance(node, ir.IRAssign):
             bound.add(node.target)
@@ -241,7 +241,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
         elif isinstance(node, (ir.IRSharedAlloc, ir.IRLocalAlloc)):
             bound.add(node.name)
             buffers.add(node.name)
-    # Inlined field arguments can remain as pointer copies in the IR.
+    # Inlined array arguments can remain as pointer copies in the IR.
     changed = True
     while changed:
         changed = False
@@ -254,14 +254,14 @@ def verify_ir(function: ir.IRFunction, stage: str):
     for node, path, host_bound in nodes:
         if isinstance(node, ir.IRName):
             require(node, path, node.name in bound, f'unbound name {node.name!r}')
-        if isinstance(node, (ir.IRDimSize, ir.IRFieldExtent, ir.IRTextureSample)):
-            require(node, path, node.field_name in bound,
-                    f'unbound field {node.field_name!r}')
-        if inferred and isinstance(node, (ir.IRFieldLoad, ir.IRFieldStore, ir.IRAtomicOp)):
-            require(node, path, isinstance(node.field, ir.IRName) and node.field.name in buffers,
-                    'field access must name a field parameter or an array allocation')
+        if isinstance(node, (ir.IRDimSize, ir.IRArrayExtent, ir.IRTextureSample)):
+            require(node, path, node.array_name in bound,
+                    f'unbound array {node.array_name!r}')
+        if inferred and isinstance(node, (ir.IRArrayLoad, ir.IRArrayStore, ir.IRAtomicOp)):
+            require(node, path, isinstance(node.array, ir.IRName) and node.array.name in buffers,
+                    'array access must name an array parameter or an array allocation')
         if stage == 'packed' and isinstance(node, ir.IRParam):
-            require(node, path, node._is_field, 'scalar parameter survived GPU packing')
+            require(node, path, node._is_array, 'scalar parameter survived GPU packing')
         if typed and not host_bound:
             pointer = isinstance(node, ir.IRName) and node.name in buffers
             if (type(node) in EXPRS or isinstance(node, ir.IRAtomicOp)) and not pointer:

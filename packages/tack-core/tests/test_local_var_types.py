@@ -4,7 +4,7 @@ Every backend gives a local one storage slot, so the annotation pass gives
 it one type: the promotion of everything assigned to it.  Sizing the slot
 from the first assignment instead — which is what used to happen — meant an
 accumulator seeded with a float literal (``total = 0.0``) was declared f32,
-and every later add from an f64 field round-tripped f64 → f32 → f64 and
+and every later add from an f64 array round-tripped f64 → f32 → f64 and
 silently lost precision.
 """
 
@@ -17,12 +17,12 @@ EXACT = np.float64(0.625095466604667)
 
 
 def _run(kernel, values):
-    src = tack.field(dtype=tack.f64, shape=(values.size,))
-    src.from_numpy(values)
-    out = tack.field(dtype=tack.f64, shape=(values.size,))
+    src = tack.empty((values.size,), tack.f64)
+    tack.copyto(src, values)
+    out = tack.empty((values.size,), tack.f64)
     out.fill(0)
     kernel(src, out, values.size)
-    return out.to_numpy()
+    return out.numpy()
 
 
 def test_direct_expression_keeps_f64(f64_backend):
@@ -37,8 +37,8 @@ def test_direct_expression_keeps_f64(f64_backend):
     np.testing.assert_array_equal(_run(direct, values), values)
 
 
-def test_local_seeded_from_a_field_keeps_f64(f64_backend):
-    """Seeding the local from the field types it f64, which is correct."""
+def test_local_seeded_from_a_array_keeps_f64(f64_backend):
+    """Seeding the local from the array types it f64, which is correct."""
 
     @tack.kernel
     def seeded(src, out, n):
@@ -53,9 +53,9 @@ def test_local_seeded_from_a_field_keeps_f64(f64_backend):
 def test_accumulator_seeded_from_a_literal_keeps_f64(f64_backend):
     """``total = 0.0`` widens to f64 once an f64 value is added.
 
-    This is the pattern in tack.deprecated.algorithms.cell_to_point and in any
-    hand-written reduction, so the precision loss was easy to hit and
-    invisible — the output field was f64 and the values merely wrong in
+    This is the pattern of a point-to-cell average and of any hand-written
+    reduction, so the precision loss was easy to hit and
+    invisible — the output array was f64 and the values merely wrong in
     the low bits.
     """
 

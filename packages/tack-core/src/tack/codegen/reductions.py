@@ -1,4 +1,4 @@
-"""Shared f32 extrema semantics and native field-reduction kernel sources."""
+"""Shared f32 extrema semantics and native array-reduction kernel sources."""
 
 
 def f32_reduction_helpers(dialect, operations=('min', 'max')):
@@ -24,7 +24,7 @@ def f32_reduction_helpers(dialect, operations=('min', 'max')):
     return lines
 
 
-def field_reduction_source(dialect, op):
+def array_reduction_source(dialect, op):
     """A 256-lane tree followed by unordered atomic partial accumulation."""
     if op not in ('sum', 'min', 'max'):
         raise ValueError(f'Unknown reduction: {op}')

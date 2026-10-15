@@ -32,7 +32,7 @@ import tack
 
 @pytest.fixture(autouse=True)
 def cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 # ── The chain survives ───────────────────────────────────────────────
@@ -45,8 +45,8 @@ def test_dispatch_errors_keep_their_cause():
         for i in range(x.shape[d]):
             out[i] = x[i]
 
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
 
     with pytest.raises(RuntimeError) as excinfo:
         dynamic_dim(x, out, 0)
@@ -61,8 +61,8 @@ def test_type_errors_keep_their_cause():
         for i in range(n):
             out[i] = x[i] * 2.0
 
-    x = tack.field(dtype=tack.f64, shape=(4,))
-    out = tack.field(dtype=tack.f64, shape=(4,))
+    x = tack.empty((4,), tack.f64)
+    out = tack.empty((4,), tack.f64)
 
     from tack.runtime.dispatch import get_backend
     if get_backend().supports_f64:
@@ -85,8 +85,8 @@ def test_the_readable_summary_is_still_the_last_line():
         for i in range(x.shape[d]):
             out[i] = x[i]
 
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
 
     with pytest.raises(RuntimeError) as excinfo:
         dynamic_dim(x, out, 0)
@@ -184,12 +184,12 @@ def test_unavailable_backend_raises_with_the_guidance_attached():
     unavailable = None
     for arch in ("hip", "level_zero", "cuda"):
         try:
-            tack.init(arch=getattr(tack, arch))
+            tack.set_default_device(arch)
         except (RuntimeError, ImportError) as e:
             unavailable = (arch, str(e))
             break
         finally:
-            tack.init(arch=tack.cpu)
+            tack.set_default_device("cpu")
 
     if unavailable is None:
         pytest.skip("every backend is available on this machine")
@@ -198,12 +198,12 @@ def test_unavailable_backend_raises_with_the_guidance_attached():
     from tack.runtime.dispatch import _BACKEND_HELP
     first_line = _BACKEND_HELP[arch].splitlines()[0]
     assert first_line in message, \
-        f"init() error for '{arch}' did not carry its install guidance"
+        f"the error for '{arch}' did not carry its install guidance"
 
 
 def test_unknown_arch_lists_the_real_ones():
     with pytest.raises(ValueError) as excinfo:
-        tack.init(arch="quantum")
+        tack.set_default_device("quantum")
     message = str(excinfo.value)
     for arch in ("cpu", "metal", "cuda", "hip", "level_zero"):
         assert arch in message

@@ -34,7 +34,7 @@ class IRParam(IRNode):
 class IRParallelFor(IRNode):
     """A parallel for-loop over a range (top-level for in range()).
 
-    ``var`` runs over ``[start, end)``. A loop over ``tack.ndrange`` of two
+    ``var`` runs over ``[start, end)``. A loop over ``tack.ndindex`` of two
     or three dimensions also has ``dims``, one index variable per
     dimension (slowest first), and ``extents``, their sizes as expressions
     the host evaluates at dispatch like ``end``, whose product they are.
@@ -146,30 +146,30 @@ class IRBoolOp(IRNode):
         self.dtype = None
 
 
-class IRFieldLoad(IRNode):
-    """Load from a field: field[index]."""
+class IRArrayLoad(IRNode):
+    """Load from an array: array[index]."""
 
-    def __init__(self, field, index):
-        self.field = field
+    def __init__(self, array, index):
+        self.array = array
         self.index = index
         self.dtype = None
 
 
-class IRFieldStore(IRNode):
-    """Store to a field: field[index] = value."""
+class IRArrayStore(IRNode):
+    """Store to an array: array[index] = value."""
 
-    def __init__(self, field, index, value):
-        self.field = field
+    def __init__(self, array, index, value):
+        self.array = array
         self.index = index
         self.value = value
 
 
 class IRAtomicOp(IRNode):
-    """Atomic operation on a field: atomic_add(field, index, value), etc."""
+    """Atomic operation on an array: atomic_add(array, index, value), etc."""
 
-    def __init__(self, op: str, field, index, value):
+    def __init__(self, op: str, array, index, value):
         self.op = op  # "add", "min", "max"
-        self.field = field
+        self.array = array
         self.index = index
         self.value = value
         self.dtype = None
@@ -235,21 +235,21 @@ class IRCast(IRNode):
 class IRSharedAlloc(IRNode):
     """Allocate shared/threadgroup memory."""
 
-    def __init__(self, name: str, dtype: str, size, field_name: str | None = None):
+    def __init__(self, name: str, dtype: str, size, array_name: str | None = None):
         self.name = name
         self.dtype = dtype         # "float", "int", etc. (None for shared_like, resolved later)
         self.size = size           # IRNode expression for number of elements
-        self.field_name = field_name  # source field name for shared_like (resolved in ir_resolve)
+        self.array_name = array_name  # source array name for shared_like (resolved in ir_resolve)
 
 
 class IRLocalAlloc(IRNode):
     """Allocate a per-thread local array (private memory on GPU, stack on CPU)."""
 
-    def __init__(self, name: str, dtype: str, size, field_name: str | None = None):
+    def __init__(self, name: str, dtype: str, size, array_name: str | None = None):
         self.name = name
         self.dtype = dtype   # "float", "int", etc. (None for local_array_like, resolved later)
         self.size = size     # IRNode expression for number of elements
-        self.field_name = field_name  # source field name for local_array_like (resolved in ir_resolve)
+        self.array_name = array_name  # source array name for local_array_like (resolved in ir_resolve)
 
 
 class IRBlockReduce(IRNode):
@@ -286,31 +286,31 @@ class IRPrint(IRNode):
 
 
 class IRDimSize(IRNode):
-    """Query the size of a specific dimension of a field parameter.
+    """Query the size of a specific dimension of an array parameter.
 
-    Resolved at dispatch time to an IRConstant when field shapes are known.
+    Resolved at dispatch time to an IRConstant when array shapes are known.
     Used for multi-dimensional index linearization.
     """
 
-    def __init__(self, field_name: str, dim: int):
-        self.field_name = field_name
+    def __init__(self, array_name: str, dim: int):
+        self.array_name = array_name
         self.dim = dim
 
 
-class IRFieldExtent(IRNode):
-    """A field parameter's extent read at run time, in debug mode's bounds checks.
+class IRArrayExtent(IRNode):
+    """An array parameter's extent read at run time, in debug mode's bounds checks.
 
     ``kind`` is ``LEADING`` (dimension 0, logical), ``ELEMENTS`` (logical
     elements, a flat index's bound) or ``STORAGE`` (scalar components, the
-    bound of a vector field's component index). Unlike ``IRDimSize`` it is
+    bound of a vector array's component index). Unlike ``IRDimSize`` it is
     never compiled in: ``ir_resolve`` turns it into a load from the hidden
-    extents field, so checking does not specialize a kernel on lengths.
+    extents array, so checking does not specialize a kernel on lengths.
     """
 
     LEADING, ELEMENTS, STORAGE = range(3)
 
-    def __init__(self, field_name: str, kind: int):
-        self.field_name = field_name
+    def __init__(self, array_name: str, kind: int):
+        self.array_name = array_name
         self.kind = kind
 
 
@@ -319,11 +319,11 @@ class IRBoundsCheck(IRNode):
 
     Each of ``indices`` is checked against the extent beside it, in order;
     the first one outside ``[0, extent)`` is recorded in the ``errors``
-    field (unless another violation was recorded first), with ``site``,
+    array (unless another violation was recorded first), with ``site``,
     which names the access in the kernel's ``bounds_sites``. The value is
     ``flat`` as i64 when every index is in bounds. An access whose index is
     negative is skipped (``ir_bounds.guard_accesses``), so -1 also covers
-    arithmetic on it, such as a vector field's ``element * width + c``.
+    arithmetic on it, such as a vector array's ``element * width + c``.
     """
 
     def __init__(self, indices: list, extents: list, flat, site: int, errors):
@@ -354,13 +354,13 @@ class IRTableLoad(IRNode):
 class IRTextureSample(IRNode):
     """Sample a 3D texture at normalized coordinates (u, v, w) in [0, 1].
 
-    field_name: name of the texture's underlying field parameter.
+    array_name: name of the texture's underlying array parameter.
     coords: list of 3 IRNode expressions [u, v, w].
-    shape: (W, H, D) tuple — filled in by ir_resolve from the field's shape.
+    shape: (W, H, D) tuple — filled in by ir_resolve from the array's shape.
     """
 
-    def __init__(self, field_name: str, coords: list, shape: tuple | None = None):
-        self.field_name = field_name
+    def __init__(self, array_name: str, coords: list, shape: tuple | None = None):
+        self.array_name = array_name
         self.coords = coords  # [u, v, w]
         self.shape = shape    # (W, H, D) — set during resolve
         self.dtype = None
@@ -426,12 +426,12 @@ def dump(node, indent=0) -> str:
     if isinstance(node, IRBoolOp):
         parts = f" {node.op} ".join(dump(v) for v in node.values)
         return f"{prefix}({parts})"
-    if isinstance(node, IRFieldLoad):
-        return f"{prefix}{dump(node.field)}[{dump(node.index)}]"
-    if isinstance(node, IRFieldStore):
-        return f"{prefix}{dump(node.field)}[{dump(node.index)}] = {dump(node.value)}"
+    if isinstance(node, IRArrayLoad):
+        return f"{prefix}{dump(node.array)}[{dump(node.index)}]"
+    if isinstance(node, IRArrayStore):
+        return f"{prefix}{dump(node.array)}[{dump(node.index)}] = {dump(node.value)}"
     if isinstance(node, IRAtomicOp):
-        return f"{prefix}atomic_{node.op}({dump(node.field)}[{dump(node.index)}], {dump(node.value)})"
+        return f"{prefix}atomic_{node.op}({dump(node.array)}[{dump(node.index)}], {dump(node.value)})"
     if isinstance(node, IRConstant):
         return f"{prefix}{node.value!r}"
     if isinstance(node, IRName):
@@ -462,16 +462,16 @@ def dump(node, indent=0) -> str:
         args = ", ".join(dump(a) for a in node.args)
         return f"{prefix}Print({args})"
     if isinstance(node, IRDimSize):
-        return f"{prefix}DimSize({node.field_name}, {node.dim})"
+        return f"{prefix}DimSize({node.array_name}, {node.dim})"
     if isinstance(node, IRTableLoad):
         values = ", ".join(str(v) for v in node.values)
         return f"{prefix}Table[{node.dtype.name}]({values})[{dump(node.index)}]"
     if isinstance(node, IRTextureSample):
         coords = ", ".join(dump(c) for c in node.coords)
-        return f"{prefix}TexSample({node.field_name}, [{coords}], shape={node.shape})"
-    if isinstance(node, IRFieldExtent):
+        return f"{prefix}TexSample({node.array_name}, [{coords}], shape={node.shape})"
+    if isinstance(node, IRArrayExtent):
         kind = ('leading', 'elements', 'storage')[node.kind]
-        return f"{prefix}Extent({node.field_name}, {kind})"
+        return f"{prefix}Extent({node.array_name}, {kind})"
     if isinstance(node, IRBoundsCheck):
         checks = ", ".join(f"{dump(i)} < {dump(e)}" for i, e in zip(node.indices, node.extents))
         return f"{prefix}Bounds[{node.site}]({checks}; {dump(node.flat)})"

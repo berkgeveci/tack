@@ -149,4 +149,4 @@ interpolated velocity, flow derivatives, probe validity and analytic rotation.
 [Download the complete program](../../examples/data_analysis.py).
 
 Continue with [Mesh Kernels](05-mesh-kernels.md) to implement an operation,
-or [Sampling, Rendering and Simulation Pipelines](06-pipelines.md) to connect stages.
+or [Sample and Connect Simulations](06-pipelines.md) to connect stages.

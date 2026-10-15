@@ -27,7 +27,7 @@ Tack keeps the syntax and defines its own meaning for it.
   source and its global and closure bindings.
 - Types are fixed-width and inferred at dispatch: `infer_param_types`
   (`lang/type_inference.py`) gives Python `int` arguments `i32`, `i64` or
-  `u64` by value, and Python `float` arguments `f32` unless an `f64` field
+  `u64` by value, and Python `float` arguments `f32` unless an `f64` array
   is present. Float literals are weakly typed, as NumPy's NEP 50 treats
   Python scalars: `annotate_types` gives a literal the floating type of the
   operand, cast or target it meets, and f32 otherwise.
@@ -71,7 +71,7 @@ can have. An early version of the transformer did exactly this with
   fails loudly.
 - `CallBindings` (`lang/call_bindings.py`) resolves device calls statically
   and rejects calls that are neither a bound `@tack.func` nor an intrinsic.
-- Unsupported field dtypes are rejected by `check_dispatch_types`, never
+- Unsupported array dtypes are rejected by `check_dispatch_types`, never
   narrowed. Unsupported workgroup primitives and atomic types are rejected
   before compilation.
 - A statement with no defined execution count is rejected rather than run
@@ -80,7 +80,7 @@ can have. An early version of the transformer did exactly this with
   its source position (`_check_outside_parallel_loop`). Likewise a GPU
   launch longer than one grid can index raises `ValueError`
   (`check_launch_size`) instead of wrapping, and a kernel store to a
-  read-only field is refused at dispatch.
+  read-only array is refused at dispatch.
 - `verify_ir` (`lang/ir_verify.py`) applies the same idea to the compiler
   itself: a pass that breaks an invariant stops the variant before code
   generation.
@@ -107,9 +107,10 @@ Level Zero device pointer. A declaration states what *is* supported.
 **Where it shows.**
 
 - `Backend` (`packages/tack-core/src/tack/runtime/backend.py`) declares
-  `name`, `display_name`/`label`, `supported_dtypes`,
-  `supports_device_reductions`, `supports_workgroups`, `init_options`,
-  `device_memory_spaces` and `dlpack_refusal_note`.
+  `name`, `ordinal`, `display_name`/`label`, `supported_dtypes`,
+  `supports_device_reductions`, `supports_workgroups`, `device_options`,
+  `device_memory_spaces` and `dlpack_refusal_note`, and derives
+  `memory_domain`.
 - Anything derivable is derived, so it cannot disagree with its source:
   `supports_f64` is `f64 in supported_dtypes`, and
   `supported_atomic_dtypes` intersects a per-target table with
@@ -158,7 +159,7 @@ row stride, and a key without vector widths (**LC3**).
 
 **Costs and limits.** Variants multiply, and each pays a cold compile.
 A dimension used inside the kernel body specializes on every value, so
-open-ended shape sets need the length passed as a scalar. Template field
+open-ended shape sets need the length passed as a scalar. Template array
 shapes are keyed in full, which is stricter than necessary. See
 [Specialization and Caching](specialization-and-caching.md).
 
@@ -171,7 +172,7 @@ and only where it has been measured to help.
 
 **Rationale.** A numerical framework that is fast but occasionally wrong
 cannot be trusted for anything. The original Tack made three unsafe
-promises: field pointers were marked `noalias`/`restrict` unconditionally,
+promises: array pointers were marked `noalias`/`restrict` unconditionally,
 CUDA and Metal compiled with fast math, and custom LICM and CSE moved
 loads without memory or control-flow analysis. Each was removed when a
 case was found where it changed results (regressions **LC1** and
@@ -180,12 +181,12 @@ floating-point policy).
 
 **Where it shows.**
 
-- **Aliasing.** Fields may overlap, and no generated parameter carries an
+- **Aliasing.** Arrays may overlap, and no generated parameter carries an
   unconditional no-alias promise (`LLVMCodeGen` in `codegen/llvm_gen.py`,
   the C-family generators, and Metal's argument buffer).
 - **Measured opt-in.** The CPU backend compiles a second, `noalias`
-  variant used only for calls whose written fields `fields_disjoint`
-  proves do not overlap any other field. The check runs on every dispatch,
+  variant used only for calls whose written arrays `arrays_disjoint`
+  proves do not overlap any other array. The check runs on every dispatch,
   and the result is part of the variant key.
 - **Floating point.** CUDA compiles with `--ftz=false --prec-div=true
   --prec-sqrt=true --fmad=true` and without `--use_fast_math`; Metal sets
@@ -198,10 +199,10 @@ floating-point policy).
   the analyses they need.
 
 **Costs and limits.** Safe defaults cost throughput in some kernels: an
-accumulation through a field that may alias cannot be kept in a register,
+accumulation through an array that may alias cannot be kept in a register,
 and the contract notes that leaving fast math off may change throughput
 as well as low-order bits. The
-disjoint-field check adds a small cost to every CPU dispatch, and whether
+disjoint-array check adds a small cost to every CPU dispatch, and whether
 it pays depends on the host. Users cannot currently opt into fast math or
 declare no-alias themselves. See [Memory and Aliasing](memory-and-aliasing.md)
 and [Numerical Semantics](numerical-semantics.md).
@@ -278,7 +279,7 @@ See [Conformance and Validation](../contracts/conformance.md).
   keys name what was baked in, as the variant key does, plus every name
   lowering resolved, so an edited device function or constant compiles
   again (see [Specialization and Caching](specialization-and-caching.md#the-disk-cache)).
-- **Correctness versus speed.** The disjoint-field variant shows the
+- **Correctness versus speed.** The disjoint-array variant shows the
   intended resolution: keep the safe default, and add a faster path only
   where a per-call check proves the extra assumption, with the result in
   the cache key.

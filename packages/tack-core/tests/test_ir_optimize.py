@@ -74,22 +74,22 @@ def test_assignment_summary_is_fresh_for_each_invocation():
 
 
 def test_a_chain_of_copies_resolves_to_its_root_in_one_pass():
-    """Nested device functions pass a field down as p -> a -> b -> c. Every
+    """Nested device functions pass an array down as p -> a -> b -> c. Every
     later use must name the parameter: a link left behind is a local that
-    holds a field."""
+    holds an array."""
     body = [
         ir.IRAssign('a', ir.IRName('p')),
         ir.IRAssign('b', ir.IRName('a')),
         ir.IRIf(ir.IRConstant(1), [
             ir.IRAssign('c', ir.IRName('b')),
-            ir.IRAssign('out', ir.IRFieldLoad(ir.IRName('c'), ir.IRConstant(0))),
+            ir.IRAssign('out', ir.IRArrayLoad(ir.IRName('c'), ir.IRConstant(0))),
         ], []),
     ]
     result = optimize._copy_prop_body(body)
     assert [stmt.value.name for stmt in result[:2]] == ['p', 'p']
     inner = result[2].then_body
     assert inner[0].value.name == 'p'
-    assert inner[1].value.field.name == 'p'
+    assert inner[1].value.array.name == 'p'
 
 
 def test_a_chain_stops_at_a_reassigned_link():
@@ -106,7 +106,7 @@ def test_a_chain_stops_at_a_reassigned_link():
     assert result[4].value.name == 'c'
 
 
-# --- A field handed down through nested device functions ---
+# --- An array handed down through nested device functions ---
 
 @tack.func
 def _load_1(f, i):
@@ -129,17 +129,17 @@ def _load_4(f, i):
 
 
 @tack.kernel
-def field_through_four_funcs(x, out, n):
+def array_through_four_funcs(x, out, n):
     for i in range(n):
         out[i] = _load_4(x, i)
 
 
-def test_field_passed_through_nested_device_functions(backend):
-    """Three or more levels left a local holding the field, which failed to
+def test_array_passed_through_nested_device_functions(backend):
+    """Three or more levels left a local holding the array, which failed to
     compile on every backend ("Cannot coerce float* to i32" on CPU)."""
     n = 6
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    field_through_four_funcs(x, out, n)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n) + 3.0)
+    x = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    out = tack.empty((n,))
+    array_through_four_funcs(x, out, n)
+    np.testing.assert_array_equal(out.numpy(), np.arange(n) + 3.0)

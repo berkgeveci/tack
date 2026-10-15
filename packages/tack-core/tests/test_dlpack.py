@@ -36,12 +36,12 @@ ALL_DTYPES = [
 @pytest.fixture(autouse=True)
 def cpu():
     """DLPack export needs host-addressable memory."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
-def _field(values, dtype):
-    f = tack.field(dtype=dtype, shape=values.shape)
-    f.from_numpy(values)
+def _array(values, dtype):
+    f = tack.empty(values.shape, dtype)
+    tack.copyto(f, values)
     return f
 
 
@@ -50,32 +50,32 @@ def _field(values, dtype):
 @pytest.mark.parametrize("dtype,np_dtype", ALL_DTYPES,
                          ids=[str(d[0]) for d in ALL_DTYPES])
 def test_every_supported_dtype_exports(dtype, np_dtype):
-    """Every dtype a field can hold must survive the round trip.
+    """Every dtype an array can hold must survive the round trip.
 
     The narrow ints were missing from the type map — they raised
-    "DLPack does not support dtype" despite being perfectly valid fields.
+    "DLPack does not support dtype" despite being perfectly valid arrays.
     """
     values = np.arange(4, dtype=np_dtype)
-    got = np.from_dlpack(_field(values, dtype))
+    got = np.from_dlpack(_array(values, dtype))
     assert got.dtype == np_dtype
     np.testing.assert_array_equal(got, values)
 
 
 def test_export_is_zero_copy():
-    """No copy: the consumer's buffer is the field's own memory."""
+    """No copy: the consumer's buffer is the array's own memory."""
     values = np.arange(6, dtype=np.float32)
-    field = _field(values, tack.f32)
-    view = np.from_dlpack(field)
+    array = _array(values, tack.f32)
+    view = np.from_dlpack(array)
 
     assert view.__array_interface__["data"][0] == \
-        field._buffer._data.__array_interface__["data"][0]
+        array._buffer._data.__array_interface__["data"][0]
 
 
-def test_writes_through_the_field_show_up_in_the_view():
+def test_writes_through_the_array_show_up_in_the_view():
     """The consequence that matters: the consumer sees live data."""
-    field = _field(np.zeros(4, dtype=np.float32), tack.f32)
-    view = np.from_dlpack(field)
-    field.from_numpy(np.array([1, 2, 3, 4], dtype=np.float32))
+    array = _array(np.zeros(4, dtype=np.float32), tack.f32)
+    view = np.from_dlpack(array)
+    tack.copyto(array, np.array([1, 2, 3, 4], dtype=np.float32))
     np.testing.assert_array_equal(view, [1, 2, 3, 4])
 
 
@@ -99,11 +99,11 @@ def test_the_exported_view_is_writable():
     worst and marks what it gets read-only. Exporting the versioned form
     is what makes writing back possible.
     """
-    field = _field(np.arange(4, dtype=np.float32), tack.f32)
-    view = np.from_dlpack(field)
+    array = _array(np.arange(4, dtype=np.float32), tack.f32)
+    view = np.from_dlpack(array)
     assert view.flags.writeable
     view[0] = 99.0
-    assert field.to_numpy()[0] == 99.0
+    assert array.numpy()[0] == 99.0
 
 
 def test_an_exported_view_can_be_exported_again():
@@ -113,26 +113,26 @@ def test_an_exported_view_can_be_exported_again():
     the legacy capsule any round trip through a consumer that hands the
     array back would fail -- as VTK interop does.
     """
-    field = _field(np.arange(6, dtype=np.float32), tack.f32)
-    again = np.from_dlpack(np.from_dlpack(field))
+    array = _array(np.arange(6, dtype=np.float32), tack.f32)
+    again = np.from_dlpack(np.from_dlpack(array))
     np.testing.assert_array_equal(again, np.arange(6))
 
 
-def test_a_read_only_field_exports_the_flag():
-    """A field over immutable memory must not hand out a writable view."""
+def test_a_read_only_array_exports_the_flag():
+    """An array over immutable memory must not hand out a writable view."""
     source = np.arange(4, dtype=np.float32)
     source.flags.writeable = False
-    field = tack.from_dlpack(source)
-    assert not field._writable
+    array = tack.from_dlpack(source)
+    assert not array._writable
 
-    capsule = field.__dlpack__(max_version=(1, 0))
+    capsule = array.__dlpack__(max_version=(1, 0))
     tensor = _versioned_tensor(capsule)
     assert tensor.flags & dlpack.DLPACK_FLAG_BITMASK_READ_ONLY
-    assert not np.from_dlpack(field).flags.writeable
+    assert not np.from_dlpack(array).flags.writeable
 
 
 def test_kernels_do_not_write_through_a_read_only_import():
-    """The producer's read-only flag binds kernels, not only from_numpy."""
+    """The producer's read-only flag binds kernels, not only copyto."""
     @tack.kernel
     def zero(out):
         for i in range(out.shape[0]):
@@ -140,27 +140,27 @@ def test_kernels_do_not_write_through_a_read_only_import():
 
     source = np.arange(4, dtype=np.float32)
     source.flags.writeable = False
-    field = tack.from_dlpack(source)
+    array = tack.from_dlpack(source)
     with pytest.raises(ValueError, match="read-only"):
-        zero(field)
+        zero(array)
     np.testing.assert_array_equal(source, np.arange(4))
 
 
-def test_a_writable_field_exports_no_flag():
-    field = _field(np.arange(4, dtype=np.float32), tack.f32)
-    capsule = field.__dlpack__(max_version=(1, 0))
+def test_a_writable_array_exports_no_flag():
+    array = _array(np.arange(4, dtype=np.float32), tack.f32)
+    capsule = array.__dlpack__(max_version=(1, 0))
     tensor = _versioned_tensor(capsule)
     assert not tensor.flags & dlpack.DLPACK_FLAG_BITMASK_READ_ONLY
     assert (tensor.version.major, tensor.version.minor) == (1, 0)
 
 
 def test_the_capsule_name_matches_the_struct():
-    """Reading one layout as the other misreads every field silently."""
-    field = _field(np.arange(4, dtype=np.float32), tack.f32)
-    legacy = field.__dlpack__()
+    """Reading one layout as the other misreads every array silently."""
+    array = _array(np.arange(4, dtype=np.float32), tack.f32)
+    legacy = array.__dlpack__()
     assert dlpack._PyCapsule_IsValid(ctypes.c_void_p(id(legacy)), b"dltensor")
 
-    versioned = field.__dlpack__(max_version=(1, 0))
+    versioned = array.__dlpack__(max_version=(1, 0))
     assert dlpack._PyCapsule_IsValid(
         ctypes.c_void_p(id(versioned)), b"dltensor_versioned")
 
@@ -170,9 +170,9 @@ def test_an_unconsumed_versioned_capsule_is_released():
     gc.collect()
     before = len(dlpack._prevent_gc)
     for _ in range(25):
-        field = _field(np.arange(4, dtype=np.float32), tack.f32)
-        capsule = field.__dlpack__(max_version=(1, 0))
-        del field, capsule
+        array = _array(np.arange(4, dtype=np.float32), tack.f32)
+        capsule = array.__dlpack__(max_version=(1, 0))
+        del array, capsule
     gc.collect()
     assert len(dlpack._prevent_gc) == before
 
@@ -180,7 +180,7 @@ def test_an_unconsumed_versioned_capsule_is_released():
 @pytest.mark.parametrize("shape", [(6,), (2, 3), (2, 3, 4), (1, 1)])
 def test_shape_survives(shape):
     values = np.arange(int(np.prod(shape)), dtype=np.float32).reshape(shape)
-    got = np.from_dlpack(_field(values, tack.f32))
+    got = np.from_dlpack(_array(values, tack.f32))
     assert got.shape == shape
     np.testing.assert_array_equal(got, values)
 
@@ -194,17 +194,17 @@ def test_kernel_results_are_visible_through_the_view():
             out[i] = x[i] * 2.0
 
     n = 32
-    x = _field(np.arange(n, dtype=np.float32), tack.f32)
-    out = _field(np.zeros(n, dtype=np.float32), tack.f32)
+    x = _array(np.arange(n, dtype=np.float32), tack.f32)
+    out = _array(np.zeros(n, dtype=np.float32), tack.f32)
     view = np.from_dlpack(out)
 
     double_it(x, out, n)
     np.testing.assert_allclose(view, np.arange(n) * 2.0, rtol=1e-6)
 
 
-def test_the_field_outlives_its_capsule():
+def test_the_array_outlives_its_capsule():
     """Exporting must not hand out a view into freed memory."""
-    view = np.from_dlpack(_field(np.arange(8, dtype=np.float32), tack.f32))
+    view = np.from_dlpack(_array(np.arange(8, dtype=np.float32), tack.f32))
     import gc
     gc.collect()
     np.testing.assert_array_equal(view, np.arange(8, dtype=np.float32))
@@ -212,7 +212,7 @@ def test_the_field_outlives_its_capsule():
 
 # ── Export lifetime ──────────────────────────────────────────────────
 #
-# The producer pins the field, the managed tensor and the shape/stride
+# The producer pins the array, the managed tensor and the shape/stride
 # arrays for as long as a consumer holds the tensor. Getting this wrong in
 # either direction is bad and silent: release too early and the consumer
 # reads freed memory; never release and every export leaks — device memory
@@ -227,14 +227,14 @@ def test_a_consumed_export_is_released():
 
     The retained objects were keyed by a counter while the deleter popped
     id(pointer), so the keys never matched. 50 export-and-drop cycles left
-    50 fields pinned forever.
+    50 arrays pinned forever.
     """
     import gc
     before = _pinned()
     for _ in range(25):
-        field = _field(np.arange(64, dtype=np.float32), tack.f32)
-        view = np.from_dlpack(field)
-        del field, view
+        array = _array(np.arange(64, dtype=np.float32), tack.f32)
+        view = np.from_dlpack(array)
+        del array, view
     gc.collect()
     assert _pinned() == before
 
@@ -249,26 +249,26 @@ def test_an_unconsumed_capsule_is_released():
     import gc
     before = _pinned()
     for _ in range(10):
-        field = _field(np.arange(16, dtype=np.float32), tack.f32)
-        capsule = field.__dlpack__()
-        del capsule, field
+        array = _array(np.arange(16, dtype=np.float32), tack.f32)
+        capsule = array.__dlpack__()
+        del capsule, array
     gc.collect()
     assert _pinned() == before
 
 
-def test_the_field_survives_while_a_consumer_holds_it():
+def test_the_array_survives_while_a_consumer_holds_it():
     """Release must not be eager: the view owns the data now."""
     import gc
-    field = _field(np.arange(8, dtype=np.float32), tack.f32)
-    view = np.from_dlpack(field)
-    del field
+    array = _array(np.arange(8, dtype=np.float32), tack.f32)
+    view = np.from_dlpack(array)
+    del array
     for _ in range(3):
         gc.collect()
     np.testing.assert_array_equal(view, np.arange(8, dtype=np.float32))
 
 
-def test_kernel_output_survives_its_field():
-    """The realistic case: compute into a field, hand the result away."""
+def test_kernel_output_survives_its_array():
+    """The realistic case: compute into an array, hand the result away."""
     import gc
 
     @tack.kernel
@@ -276,7 +276,7 @@ def test_kernel_output_survives_its_field():
         for i in range(n):
             out[i] = float(i) * 3.0
 
-    out = _field(np.zeros(6, dtype=np.float32), tack.f32)
+    out = _array(np.zeros(6, dtype=np.float32), tack.f32)
     triple(out, 6)
     view = np.from_dlpack(out)
     del out
@@ -288,7 +288,7 @@ def test_kernel_output_survives_its_field():
 def test_many_live_exports_are_tracked_independently():
     import gc
     before = _pinned()
-    views = [np.from_dlpack(_field(np.arange(16, dtype=np.float32), tack.f32))
+    views = [np.from_dlpack(_array(np.arange(16, dtype=np.float32), tack.f32))
              for _ in range(25)]
     assert _pinned() == before + 25
     for v in views:
@@ -303,8 +303,8 @@ def test_the_context_key_is_recoverable_from_the_tensor():
     """manager_ctx is the only thing the deleter gets; it must carry the key."""
     import ctypes
 
-    field = _field(np.arange(4, dtype=np.float32), tack.f32)
-    capsule = field.__dlpack__()
+    array = _array(np.arange(4, dtype=np.float32), tack.f32)
+    capsule = array.__dlpack__()
 
     ptr = dlpack._PyCapsule_GetPointer(
         ctypes.cast(id(capsule), ctypes.c_void_p), b"dltensor")
@@ -316,10 +316,10 @@ def test_the_context_key_is_recoverable_from_the_tensor():
 
 
 def test_two_exports_share_the_same_memory():
-    field = _field(np.arange(4, dtype=np.float32), tack.f32)
-    a, b = np.from_dlpack(field), np.from_dlpack(field)
+    array = _array(np.arange(4, dtype=np.float32), tack.f32)
+    a, b = np.from_dlpack(array), np.from_dlpack(array)
     assert a.__array_interface__["data"][0] == b.__array_interface__["data"][0]
-    field.from_numpy(np.full(4, 42.0, dtype=np.float32))
+    tack.copyto(array, np.full(4, 42.0, dtype=np.float32))
     np.testing.assert_array_equal(a, b)
     assert a[0] == 42.0
 
@@ -328,55 +328,55 @@ def test_two_exports_share_the_same_memory():
 
 def test_dlpack_device_reports_cpu():
     """kDLCPU is 1; the second element is the device ordinal."""
-    device = _field(np.zeros(4, dtype=np.float32), tack.f32).__dlpack_device__()
+    device = _array(np.zeros(4, dtype=np.float32), tack.f32).__dlpack_device__()
     assert device == (1, 0)
 
 
 def test_copy_true_is_refused():
     """Tack's export is a view; it cannot honour a copy request."""
-    field = _field(np.zeros(4, dtype=np.float32), tack.f32)
+    array = _array(np.zeros(4, dtype=np.float32), tack.f32)
     with pytest.raises(BufferError, match="copy"):
-        field.__dlpack__(copy=True)
+        array.__dlpack__(copy=True)
 
 
 # ── Import ───────────────────────────────────────────────────────────
 
 def test_import_from_numpy():
     values = np.arange(5, dtype=np.float32)
-    field = tack.from_dlpack(values)
-    assert field.dtype is tack.f32
-    assert field.shape == (5,)
-    np.testing.assert_array_equal(field.to_numpy(), values)
+    array = tack.from_dlpack(values)
+    assert array.dtype is tack.f32
+    assert array.shape == (5,)
+    np.testing.assert_array_equal(array.numpy(), values)
 
 
 @pytest.mark.parametrize("dtype,np_dtype", ALL_DTYPES,
                          ids=[str(d[0]) for d in ALL_DTYPES])
 def test_import_preserves_dtype(dtype, np_dtype):
     values = np.arange(4, dtype=np_dtype)
-    field = tack.from_dlpack(values)
-    assert field.dtype is dtype
-    np.testing.assert_array_equal(field.to_numpy(), values)
+    array = tack.from_dlpack(values)
+    assert array.dtype is dtype
+    np.testing.assert_array_equal(array.numpy(), values)
 
 
 def test_round_trip_through_both_directions():
-    """field → numpy → field preserves dtype, shape and values."""
-    original = _field(np.arange(6, dtype=np.float32), tack.f32)
+    """array → numpy → array preserves dtype, shape and values."""
+    original = _array(np.arange(6, dtype=np.float32), tack.f32)
     back = tack.from_dlpack(np.from_dlpack(original))
 
     assert back.dtype is original.dtype
     assert back.shape == original.shape
-    np.testing.assert_array_equal(back.to_numpy(), original.to_numpy())
+    np.testing.assert_array_equal(back.numpy(), original.numpy())
 
 
 def test_a_metal_tensor_is_refused_before_wrap_ptr(monkeypatch):
     """kDLMetal was mapped to the Metal backend, whose wrap_ptr then
     rejected the handle as an integer. Refused up front, on any backend,
     and checkable without a Mac by labelling a host export as Metal."""
-    source = _field(np.arange(4, dtype=np.float32), tack.f32)
+    source = _array(np.arange(4, dtype=np.float32), tack.f32)
     real = dlpack._get_device_info
 
-    def as_metal(field):
-        _, device_id, ptr = real(field)
+    def as_metal(array):
+        _, device_id, ptr = real(array)
         return dlpack.kDLMetal, device_id, ptr
 
     monkeypatch.setattr(dlpack, "_get_device_info", as_metal)
@@ -388,11 +388,11 @@ def test_a_metal_tensor_is_refused_before_wrap_ptr(monkeypatch):
 
 def test_unsupported_dtype_is_rejected_clearly():
     """A dtype with no DLPack equivalent must say so, not produce garbage."""
-    field = _field(np.zeros(4, dtype=np.float32), tack.f32)
+    array = _array(np.zeros(4, dtype=np.float32), tack.f32)
     # Deliberately corrupt private storage metadata; public dtype is read-only.
-    field._dtype = "not-a-dtype"
+    array._dtype = "not-a-dtype"
     with pytest.raises(TypeError, match="DLPack"):
-        field.__dlpack__()
+        array.__dlpack__()
 
 
 # ── Metal ────────────────────────────────────────────────────────────
@@ -404,7 +404,7 @@ def test_unsupported_dtype_is_rejected_clearly():
 
 def _metal_or_skip():
     try:
-        tack.init(arch=tack.metal)
+        tack.set_default_device("metal")
     except (ImportError, RuntimeError, OSError) as e:
         pytest.skip(f"no Metal backend: {e}")
 
@@ -413,7 +413,7 @@ def _metal_or_skip():
 def metal():
     _metal_or_skip()
     yield
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 def test_a_metal_export_points_into_the_mtlbuffer(metal):
@@ -424,8 +424,8 @@ def test_a_metal_export_points_into_the_mtlbuffer(metal):
     passing suite. The aliasing checks below are the real ones; this
     pins the address because a mismatch here localises the fault.
     """
-    f = tack.field(dtype=tack.f32, shape=(8,))
-    f.from_numpy(np.arange(8, dtype=np.float32))
+    f = tack.empty((8,))
+    tack.copyto(f, np.arange(8, dtype=np.float32))
 
     view = np.from_dlpack(f)
     assert view.ctypes.data == f._buffer._view.ctypes.data
@@ -435,8 +435,8 @@ def test_a_metal_export_points_into_the_mtlbuffer(metal):
 def test_a_gpu_kernel_sees_writes_made_through_the_exported_view(metal):
     """Write through the DLPack view, read it back with a real dispatch.
 
-    No `from_numpy` anywhere: if the export were a copy, the kernel would
-    read the field's original contents and the values below would be the
+    No `copyto` anywhere: if the export were a copy, the kernel would
+    read the array's original contents and the values below would be the
     ones it was seeded with.
     """
     @tack.kernel
@@ -444,9 +444,9 @@ def test_a_gpu_kernel_sees_writes_made_through_the_exported_view(metal):
         for i in range(x.shape[0]):
             out[i] = x[i] * 10.0
 
-    f = tack.field(dtype=tack.f32, shape=(8,))
-    f.from_numpy(np.zeros(8, dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=(8,))
+    f = tack.empty((8,))
+    tack.copyto(f, np.zeros(8, dtype=np.float32))
+    out = tack.empty((8,))
 
     view = np.from_dlpack(f)
     assert view.flags.writeable, "the versioned capsule should export writable"
@@ -454,7 +454,7 @@ def test_a_gpu_kernel_sees_writes_made_through_the_exported_view(metal):
 
     scale(f, out)
     np.testing.assert_array_equal(
-        out.to_numpy(), np.arange(100, 108, dtype=np.float32) * 10.0)
+        out.numpy(), np.arange(100, 108, dtype=np.float32) * 10.0)
 
 
 def test_the_exported_view_sees_what_a_gpu_kernel_writes(metal):
@@ -464,7 +464,7 @@ def test_the_exported_view_sees_what_a_gpu_kernel_writes(metal):
         for i in range(out.shape[0]):
             out[i] = 7.0
 
-    f = tack.field(dtype=tack.f32, shape=(8,))
+    f = tack.empty((8,))
     view = np.from_dlpack(f)
 
     sevens(f)
@@ -480,7 +480,7 @@ def test_importing_host_memory_on_metal_is_refused_with_a_reason(metal):
     the CPU-pinned tests above, so it had never run.
     """
     with pytest.raises(RuntimeError) as excinfo:
-        tack.from_dlpack(np.arange(8, dtype=np.float32))
+        tack.from_dlpack(np.arange(8, dtype=np.float32), device="metal")
 
     message = str(excinfo.value)
     assert "page-aligned" in message, \
@@ -488,30 +488,46 @@ def test_importing_host_memory_on_metal_is_refused_with_a_reason(metal):
     assert "copy=True" in message, "and what to do instead"
 
 
-def test_a_metal_field_does_not_round_trip_through_dlpack(metal):
-    """The same refusal, reached from the field's own capsule.
+def test_host_memory_imported_with_metal_as_default_is_a_cpu_array(metal):
+    """With no device asked for, host memory stays on its device, the CPU,
+    as the array API's from_dlpack keeps an array where it is; still
+    without a copy."""
+    values = np.arange(8, dtype=np.float32)
+    f = tack.from_dlpack(values)
+    assert f.device == tack.device("cpu")
+    values[0] = 99.0
+    assert f.numpy()[0] == 99.0, "the import must alias, not copy"
 
-    A Metal field exports as kDLCPU — correctly, its memory is
-    host-addressable — so re-importing it takes the host path and hits
-    the same wall. Worth pinning separately: it is the case that looks
-    like it obviously ought to work.
+
+def test_a_metal_array_does_not_round_trip_through_dlpack(metal):
+    """The same refusal, reached from the array's own capsule.
+
+    A Metal array exports as kDLCPU — correctly, its memory is
+    host-addressable — so re-importing it onto Metal takes the host path
+    and hits the same wall. Worth pinning separately: it is the case that
+    looks like it obviously ought to work. Without a device it comes back
+    as a CPU array over the same memory.
     """
-    f = tack.field(dtype=tack.f32, shape=(8,))
+    f = tack.empty((8,))
     with pytest.raises(RuntimeError, match="page-aligned"):
-        tack.from_dlpack(f)
+        tack.from_dlpack(f, device="metal")
+    f.fill(3.0)
+    host = tack.from_dlpack(f)
+    assert host.device == tack.device("cpu")
+    np.testing.assert_array_equal(host.numpy(), np.full(8, 3.0, np.float32))
 
 
 def test_copying_is_still_offered_on_metal(metal):
     """The refusal names `copy=True`, so that had better work."""
     values = np.arange(8, dtype=np.float32)
     f = tack.from_dlpack(values, copy=True)
-    np.testing.assert_array_equal(f.to_numpy(), values)
+    np.testing.assert_array_equal(f.numpy(), values)
     values[0] = 99.0
-    assert f.to_numpy()[0] == 0.0, "copy=True must not alias"
+    assert f.numpy()[0] == 0.0, "copy=True must not alias"
 
 
 def test_wrap_ptr_rejects_an_address_clearly(metal):
-    """field_from_ptr is public, and its Metal contract is an object."""
+    """array_from_ptr is public, and its Metal contract is an object."""
     from tack.runtime.dispatch import get_backend
     with pytest.raises(TypeError, match="MTLBuffer object"):
         get_backend().wrap_ptr(0x1234, tack.f32, (8,))
@@ -533,11 +549,11 @@ def test_an_unadopted_capsule_is_released_without_module_globals(versioned):
 
     A consumer that failed part-way through an import was seen holding one
     until interpreter exit, where the destructor's global lookups raised
-    NameError and the pinned field was never released. The destructor must
+    NameError and the pinned array was never released. The destructor must
     work from what it captured at definition.
     """
-    field = tack.field(dtype=tack.f32, shape=(4,))
-    capsule = dlpack.field_to_dlpack(field, versioned=versioned)
+    array = tack.empty((4,))
+    capsule = dlpack.array_to_dlpack(array, versioned=versioned)
     pinned = len(dlpack._prevent_gc)
 
     _without_globals(dlpack._destroy_capsule)(id(capsule))
@@ -558,9 +574,9 @@ def test_the_capsule_destructor_outlives_the_module_globals(versioned):
     script = textwrap.dedent(f"""
         import ctypes, gc
         import tack
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
         from tack.lang import dlpack
-        capsule = dlpack.field_to_dlpack(tack.field(dtype=tack.f32, shape=(4,)),
+        capsule = dlpack.array_to_dlpack(tack.empty((4,), tack.f32),
                                          versioned={versioned})
         pinned = len(dlpack._prevent_gc)
         del dlpack._capsule_destructor

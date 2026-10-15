@@ -13,11 +13,11 @@ The first check should include input upload, execution and output download:
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 rng = np.random.default_rng(42)
 host_x = rng.normal(size=32).astype(np.float32)
 x = tack.array(host_x)
-out = tack.empty(dtype=tack.f32, shape=host_x.shape)
+out = tack.empty(host_x.shape)
 
 @tack.kernel
 def transform(x, out):
@@ -25,7 +25,7 @@ def transform(x, out):
         out[i] = sqrt(abs(x[i]))
 
 transform(x, out)
-actual = out.to_numpy()
+actual = out.numpy()
 expected = np.sqrt(np.abs(host_x))
 assert np.isfinite(actual).all()
 np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=1e-7)
@@ -68,7 +68,7 @@ residuals or bounded temperatures when a long trajectory is sensitive.
 
 Do not increase a tolerance merely to hide a discrepancy. First check array
 layout, boundaries, initialization, dtype conversions and cross-iteration races.
-Use [Arrays and Types](02-fields-and-types.md) for literal precision and integer
+Use [Arrays and Types](02-arrays-and-types.md) for literal precision and integer
 rules, and [Reductions and Scans](11-reductions-and-scans.md) for accumulator
 precision. Statistics such as `dot` form their terms in `f64` if either input
 is `f64`, and otherwise in `f32`, then use array reductions. For `f32` inputs,
@@ -101,10 +101,10 @@ so `a[i, j + 1]` at the last column quietly reads the first element of the
 next row. Turn on debug mode to find it:
 
 ```python
-tack.init(arch=tack.cpu, debug=True)    # or TACK_DEBUG=1 in the environment
+tack.set_debug(True)    # or run with TACK_DEBUG=1 in the environment
 ```
 
-Every array and array index is then checked, one dimension at a time. An
+Every array index is then checked, one dimension at a time. An
 access out of bounds is skipped (a load gives 0) and the call raises
 `IndexError` naming the first one:
 
@@ -117,6 +117,8 @@ dimension 1 is outside [0, 64). The access was skipped (a load gives 0).
 An access in a `@tack.func` names the device function and its line. Debug
 mode works on every backend and compiles kernels anew, so it is for finding
 bugs, not for timing: each launch waits for its result.
+`tack.set_debug(False)` turns it off again. `TACK_DEBUG` is read once, when
+Tack is imported.
 
 To inspect compilation without running the kernel:
 
@@ -171,7 +173,7 @@ The 32-element diagnostic example is intentionally small; use a larger array
 when studying throughput. Keep its shape and dtype fixed during measurement.
 On CPU the scheduler measures whether worker threads help; several warm calls
 allow that policy to settle. A single-thread run can help distinguish scheduling
-cost from compiled arithmetic: `tack.init(arch=tack.cpu, num_threads=1)`.
+cost from compiled arithmetic: `tack.set_default_device("cpu", num_threads=1)`.
 
 Measure end-to-end application time separately, including upload, preprocessing,
 kernel stages and readback. Allocate working arrays outside the timed loop when

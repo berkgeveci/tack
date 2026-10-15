@@ -4,13 +4,13 @@ import numpy as np
 
 import tack
 
-# --- Field creation and read/write ---
+# --- Array creation and read/write ---
 
-def test_u8_field(backend):
+def test_u8_array(backend):
     n = 16
-    data = tack.field(dtype=tack.u8, shape=(n,))
-    out = tack.field(dtype=tack.u8, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.uint8))
+    data = tack.empty((n,), tack.u8)
+    out = tack.empty((n,), tack.u8)
+    tack.copyto(data, np.arange(n, dtype=np.uint8))
 
     @tack.kernel
     def copy(data, out):
@@ -18,14 +18,14 @@ def test_u8_field(backend):
             out[i] = data[i]
 
     copy(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.uint8))
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.uint8))
 
 
-def test_i8_field(backend):
+def test_i8_array(backend):
     n = 16
-    data = tack.field(dtype=tack.i8, shape=(n,))
-    out = tack.field(dtype=tack.i8, shape=(n,))
-    data.from_numpy(np.arange(-8, 8, dtype=np.int8))
+    data = tack.empty((n,), tack.i8)
+    out = tack.empty((n,), tack.i8)
+    tack.copyto(data, np.arange(-8, 8, dtype=np.int8))
 
     @tack.kernel
     def copy(data, out):
@@ -33,14 +33,14 @@ def test_i8_field(backend):
             out[i] = data[i]
 
     copy(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(-8, 8, dtype=np.int8))
+    np.testing.assert_array_equal(out.numpy(), np.arange(-8, 8, dtype=np.int8))
 
 
-def test_u16_field(backend):
+def test_u16_array(backend):
     n = 16
-    data = tack.field(dtype=tack.u16, shape=(n,))
-    out = tack.field(dtype=tack.u16, shape=(n,))
-    data.from_numpy(np.arange(n, dtype=np.uint16) * 1000)
+    data = tack.empty((n,), tack.u16)
+    out = tack.empty((n,), tack.u16)
+    tack.copyto(data, np.arange(n, dtype=np.uint16) * 1000)
 
     @tack.kernel
     def copy(data, out):
@@ -48,14 +48,14 @@ def test_u16_field(backend):
             out[i] = data[i]
 
     copy(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.uint16) * 1000)
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.uint16) * 1000)
 
 
-def test_i16_field(backend):
+def test_i16_array(backend):
     n = 16
-    data = tack.field(dtype=tack.i16, shape=(n,))
-    out = tack.field(dtype=tack.i16, shape=(n,))
-    data.from_numpy(np.arange(-8, 8, dtype=np.int16) * 100)
+    data = tack.empty((n,), tack.i16)
+    out = tack.empty((n,), tack.i16)
+    tack.copyto(data, np.arange(-8, 8, dtype=np.int16) * 100)
 
     @tack.kernel
     def copy(data, out):
@@ -63,16 +63,16 @@ def test_i16_field(backend):
             out[i] = data[i]
 
     copy(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(-8, 8, dtype=np.int16) * 100)
+    np.testing.assert_array_equal(out.numpy(), np.arange(-8, 8, dtype=np.int16) * 100)
 
 
 # --- Arithmetic ---
 
 def test_u8_arithmetic(backend):
     n = 10
-    a = tack.field(dtype=tack.u8, shape=(n,))
-    out = tack.field(dtype=tack.u8, shape=(n,))
-    a.from_numpy(np.arange(n, dtype=np.uint8))
+    a = tack.empty((n,), tack.u8)
+    out = tack.empty((n,), tack.u8)
+    tack.copyto(a, np.arange(n, dtype=np.uint8))
 
     @tack.kernel
     def double_u8(a, out):
@@ -80,14 +80,14 @@ def test_u8_arithmetic(backend):
             out[i] = a[i] * 2
 
     double_u8(a, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(n, dtype=np.uint8) * 2)
+    np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.uint8) * 2)
 
 
 def test_i16_arithmetic(backend):
     n = 10
-    a = tack.field(dtype=tack.i16, shape=(n,))
-    out = tack.field(dtype=tack.i16, shape=(n,))
-    a.from_numpy(np.arange(n, dtype=np.int16) * 100)
+    a = tack.empty((n,), tack.i16)
+    out = tack.empty((n,), tack.i16)
+    tack.copyto(a, np.arange(n, dtype=np.int16) * 100)
 
     @tack.kernel
     def negate(a, out):
@@ -95,16 +95,16 @@ def test_i16_arithmetic(backend):
             out[i] = 0 - a[i]
 
     negate(a, out)
-    np.testing.assert_array_equal(out.to_numpy(), -np.arange(n, dtype=np.int16) * 100)
+    np.testing.assert_array_equal(out.numpy(), -np.arange(n, dtype=np.int16) * 100)
 
 
 # --- Explicit casts ---
 
 def test_cast_f32_to_u8(backend):
     n = 8
-    data = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.u8, shape=(n,))
-    data.from_numpy(np.array([0.0, 1.9, 50.5, 127.0, 200.0, 254.9, 255.0, 0.1],
+    data = tack.empty((n,))
+    out = tack.empty((n,), tack.u8)
+    tack.copyto(data, np.array([0.0, 1.9, 50.5, 127.0, 200.0, 254.9, 255.0, 0.1],
                               dtype=np.float32))
 
     @tack.kernel
@@ -113,7 +113,7 @@ def test_cast_f32_to_u8(backend):
             out[i] = tack.u8(data[i])
 
     cast_kern(data, out)
-    result = out.to_numpy()
+    result = out.numpy()
     assert result[0] == 0
     assert result[1] == 1
     assert result[3] == 127
@@ -122,9 +122,9 @@ def test_cast_f32_to_u8(backend):
 
 def test_cast_i32_to_i16(backend):
     n = 4
-    data = tack.field(dtype=tack.i32, shape=(n,))
-    out = tack.field(dtype=tack.i16, shape=(n,))
-    data.from_numpy(np.array([0, 100, -100, 32000], dtype=np.int32))
+    data = tack.empty((n,), tack.i32)
+    out = tack.empty((n,), tack.i16)
+    tack.copyto(data, np.array([0, 100, -100, 32000], dtype=np.int32))
 
     @tack.kernel
     def cast_kern(data, out):
@@ -132,14 +132,14 @@ def test_cast_i32_to_i16(backend):
             out[i] = tack.i16(data[i])
 
     cast_kern(data, out)
-    np.testing.assert_array_equal(out.to_numpy(), [0, 100, -100, 32000])
+    np.testing.assert_array_equal(out.numpy(), [0, 100, -100, 32000])
 
 
 def test_cast_u8_to_f32(backend):
     n = 4
-    data = tack.field(dtype=tack.u8, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    data.from_numpy(np.array([0, 128, 255, 1], dtype=np.uint8))
+    data = tack.empty((n,), tack.u8)
+    out = tack.empty((n,))
+    tack.copyto(data, np.array([0, 128, 255, 1], dtype=np.uint8))
 
     @tack.kernel
     def cast_kern(data, out):
@@ -147,7 +147,7 @@ def test_cast_u8_to_f32(backend):
             out[i] = tack.f32(data[i])
 
     cast_kern(data, out)
-    np.testing.assert_allclose(out.to_numpy(), [0.0, 128.0, 255.0, 1.0])
+    np.testing.assert_allclose(out.numpy(), [0.0, 128.0, 255.0, 1.0])
 
 
 # --- Mixed-type operations (promotion) ---
@@ -155,11 +155,11 @@ def test_cast_u8_to_f32(backend):
 def test_u8_plus_i32_promotes(backend):
     """u8 + i32 should promote to i32."""
     n = 4
-    a = tack.field(dtype=tack.u8, shape=(n,))
-    b = tack.field(dtype=tack.i32, shape=(n,))
-    out = tack.field(dtype=tack.i32, shape=(n,))
-    a.from_numpy(np.array([10, 20, 30, 40], dtype=np.uint8))
-    b.from_numpy(np.array([1000, 2000, 3000, 4000], dtype=np.int32))
+    a = tack.empty((n,), tack.u8)
+    b = tack.empty((n,), tack.i32)
+    out = tack.empty((n,), tack.i32)
+    tack.copyto(a, np.array([10, 20, 30, 40], dtype=np.uint8))
+    tack.copyto(b, np.array([1000, 2000, 3000, 4000], dtype=np.int32))
 
     @tack.kernel
     def add(a, b, out):
@@ -167,7 +167,7 @@ def test_u8_plus_i32_promotes(backend):
             out[i] = tack.i32(a[i]) + b[i]
 
     add(a, b, out)
-    np.testing.assert_array_equal(out.to_numpy(), [1010, 2020, 3030, 4040])
+    np.testing.assert_array_equal(out.numpy(), [1010, 2020, 3030, 4040])
 
 
 # --- Codegen output checks ---
@@ -179,14 +179,14 @@ def test_cuda_codegen_i8_u8():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.u8, shape=(10,))
-    out = tack.field(dtype=tack.i8, shape=(10,))
+    tack.set_default_device("cpu")
+    data = tack.empty((10,), tack.u8)
+    out = tack.empty((10,), tack.i8)
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
-    store = ir.IRFieldStore(ir.IRName("out"), ir.IRName("i"),
-                            ir.IRFieldLoad(ir.IRName("data"), ir.IRName("i")))
+    store = ir.IRArrayStore(ir.IRName("out"), ir.IRName("i"),
+                            ir.IRArrayLoad(ir.IRName("data"), ir.IRName("i")))
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), [store])
     func = ir.IRFunction("test", [p_data, p_out], [pfor])
     infer_param_types(func, (data, out))
@@ -204,14 +204,14 @@ def test_msl_codegen_u16():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
-    data = tack.field(dtype=tack.u16, shape=(10,))
-    out = tack.field(dtype=tack.u16, shape=(10,))
+    tack.set_default_device("cpu")
+    data = tack.empty((10,), tack.u16)
+    out = tack.empty((10,), tack.u16)
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
-    store = ir.IRFieldStore(ir.IRName("out"), ir.IRName("i"),
-                            ir.IRFieldLoad(ir.IRName("data"), ir.IRName("i")))
+    store = ir.IRArrayStore(ir.IRName("out"), ir.IRName("i"),
+                            ir.IRArrayLoad(ir.IRName("data"), ir.IRName("i")))
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), [store])
     func = ir.IRFunction("test", [p_data, p_out], [pfor])
     infer_param_types(func, (data, out))

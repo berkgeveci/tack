@@ -41,8 +41,8 @@ def write_segments(scalar, offsets, lines, n):
     for c in range(n * n):
         i, j = c // n, c % n
         s = corners(scalar, i, j)
-        x = tack.Vector([float(i), float(i + 1), float(i + 1), float(i)])
-        y = tack.Vector([float(j), float(j), float(j + 1), float(j + 1)])
+        x = tack.vec4(float(i), float(i + 1), float(i + 1), float(i))
+        y = tack.vec4(float(j), float(j), float(j + 1), float(j + 1))
         px = tack.local_array(tack.f32, 4)
         py = tack.local_array(tack.f32, 4)
         hits = 0
@@ -61,21 +61,21 @@ def write_segments(scalar, offsets, lines, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n = 24 if check else 48
     axis = np.linspace(-1, 1, n + 1, dtype=np.float32)
     scalar = tack.array(axis[:, None] ** 2 + axis[None, :] ** 2 - np.float32(0.7**2))
     # --8<-- [start:allocate]
-    counts = tack.empty(dtype=tack.i32, shape=(n * n,))
-    offsets = tack.empty(dtype=tack.i32, shape=(n * n,))
+    counts = tack.empty((n * n,), tack.i32)
+    offsets = tack.empty((n * n,), tack.i32)
     count_segments(scalar, counts, n)
     total = exclusive_scan(counts, offsets, n * n)
     if total == 0:
         return np.empty((0, 2, 2), dtype=np.float32), n
-    lines = tack.empty(dtype=tack.vec2(tack.f32), shape=(total, 2))
+    lines = tack.empty((total, 2), tack.vec2(tack.f32))
     write_segments(scalar, offsets, lines, n)
     # --8<-- [end:allocate]
-    points = lines.to_numpy()
+    points = lines.numpy()
     if check:
         assert points.shape == (total, 2, 2) and total > 0
         assert np.isfinite(points).all()
@@ -83,8 +83,8 @@ def run(arch="cpu", check=False):
         residual = np.abs(np.sum(points**2, axis=-1) - 0.7**2)
         assert residual.max() < (2.0 / n) ** 2
         assert np.all(np.linalg.norm(points[:, 0] - points[:, 1], axis=1) > 0)
-        host_counts = counts.to_numpy()
-        host_offsets = offsets.to_numpy()
+        host_counts = counts.numpy()
+        host_offsets = offsets.numpy()
         np.testing.assert_array_equal(host_offsets, np.cumsum(host_counts) - host_counts)
         assert int(host_counts.sum()) == total
     return points, n

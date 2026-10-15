@@ -12,7 +12,7 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 def cuda_backend():
     """Initialize CUDA backend for all tests in this module."""
     try:
-        tack.init(arch=tack.cuda)
+        tack.set_default_device("cuda")
     except (ImportError, RuntimeError) as e:
         pytest.skip(f"CUDA not available: {e}")
 
@@ -21,12 +21,12 @@ def cuda_backend():
 
 def test_vector_add():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.arange(n, dtype=np.float32))
-    y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
+    tack.copyto(x, np.arange(n, dtype=np.float32))
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 2.0)
 
     @tack.kernel
     def add(x, y, out):
@@ -35,19 +35,19 @@ def test_vector_add():
 
     add(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.arange(n, dtype=np.float32) + 2.0
     assert np.allclose(result, expected)
 
 
 def test_saxpy():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32) * 3.0)
-    y.from_numpy(np.ones(n, dtype=np.float32) * 1.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 3.0)
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 1.0)
 
     @tack.kernel
     def saxpy(x, y, out):
@@ -56,19 +56,19 @@ def test_saxpy():
 
     saxpy(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = 2.0 * 3.0 + 1.0  # 7.0
     assert np.allclose(result, expected)
 
 
 def test_subtraction():
     n = 512
-    a = tack.field(dtype=tack.f32, shape=(n,))
-    b = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    a = tack.empty((n,))
+    b = tack.empty((n,))
+    out = tack.empty((n,))
 
-    a.from_numpy(np.full(n, 10.0, dtype=np.float32))
-    b.from_numpy(np.full(n, 3.0, dtype=np.float32))
+    tack.copyto(a, np.full(n, 10.0, dtype=np.float32))
+    tack.copyto(b, np.full(n, 3.0, dtype=np.float32))
 
     @tack.kernel
     def sub(a, b, out):
@@ -77,17 +77,17 @@ def test_subtraction():
 
     sub(a, b, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     assert np.allclose(result, 7.0)
 
 
 def test_conditional():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     data = np.arange(n, dtype=np.float32) - 512.0
-    x.from_numpy(data)
+    tack.copyto(x, data)
 
     @tack.kernel
     def relu(x, out):
@@ -99,17 +99,17 @@ def test_conditional():
 
     relu(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.maximum(data, 0.0)
     assert np.allclose(result, expected)
 
 
 def test_negation():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def neg(x, out):
@@ -118,21 +118,21 @@ def test_negation():
 
     neg(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = -np.arange(n, dtype=np.float32)
     assert np.allclose(result, expected)
 
 
 def test_multiple_ops():
     n = 512
-    a = tack.field(dtype=tack.f32, shape=(n,))
-    b = tack.field(dtype=tack.f32, shape=(n,))
-    c = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    a = tack.empty((n,))
+    b = tack.empty((n,))
+    c = tack.empty((n,))
+    out = tack.empty((n,))
 
-    a.from_numpy(np.full(n, 10.0, dtype=np.float32))
-    b.from_numpy(np.full(n, 3.0, dtype=np.float32))
-    c.from_numpy(np.full(n, 2.0, dtype=np.float32))
+    tack.copyto(a, np.full(n, 10.0, dtype=np.float32))
+    tack.copyto(b, np.full(n, 3.0, dtype=np.float32))
+    tack.copyto(c, np.full(n, 2.0, dtype=np.float32))
 
     @tack.kernel
     def kern(a, b, c, out):
@@ -141,18 +141,18 @@ def test_multiple_ops():
 
     kern(a, b, c, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = (10.0 - 3.0) * 2.0 / 2.0  # 7.0
     assert np.allclose(result, expected)
 
 
 def test_math_sqrt():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     data = np.arange(1, n + 1, dtype=np.float32)
-    x.from_numpy(data)
+    tack.copyto(x, data)
 
     @tack.kernel
     def kern(x, out):
@@ -161,7 +161,7 @@ def test_math_sqrt():
 
     kern(x, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np.sqrt(data)
     assert np.allclose(result, expected, rtol=1e-5)
 
@@ -169,12 +169,12 @@ def test_math_sqrt():
 def test_cached_reuse():
     """Second call should use cached pipeline."""
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    y.from_numpy(np.ones(n, dtype=np.float32) * 2.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 2.0)
 
     @tack.kernel
     def add(x, y, out):
@@ -182,23 +182,23 @@ def test_cached_reuse():
             out[i] = x[i] + y[i]
 
     add(x, y, out)
-    assert np.allclose(out.to_numpy(), 3.0)
+    assert np.allclose(out.numpy(), 3.0)
 
     # Second call — cached
-    x.from_numpy(np.ones(n, dtype=np.float32) * 5.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 5.0)
     add(x, y, out)
-    assert np.allclose(out.to_numpy(), 7.0)
+    assert np.allclose(out.numpy(), 7.0)
 
 
 def test_large_array():
     """Test with a larger array to exercise multiple thread blocks."""
     n = 1_000_000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32) * 3.0)
-    y.from_numpy(np.ones(n, dtype=np.float32) * 4.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 3.0)
+    tack.copyto(y, np.ones(n, dtype=np.float32) * 4.0)
 
     @tack.kernel
     def add(x, y, out):
@@ -207,7 +207,7 @@ def test_large_array():
 
     add(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     assert np.allclose(result, 7.0)
 
 
@@ -223,8 +223,8 @@ def test_export_memory():
     with a bare CUDA_ERROR_INVALID_VALUE.
     """
     n = 256
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(np.arange(n, dtype=np.float32))
+    f = tack.empty((n,))
+    tack.copyto(f, np.arange(n, dtype=np.float32))
 
     exported = f.export_memory()
 
@@ -240,17 +240,18 @@ def test_export_memory():
     # of a second OS handle per call.
     assert f.export_memory().handle == exported.handle
 
-    # Exporting copies into VMM-backed memory; the field itself is untouched.
-    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+    # Exporting copies into VMM-backed memory; the array itself is untouched.
+    assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))
 
 
 # --- Context ownership across re-initialization ---
 
 def test_repeated_init_keeps_context_usable():
-    """``tack.init(arch=tack.cuda)`` twice in a row must not kill the context.
+    """``tack.set_default_device("cuda")`` twice in a row must not kill the context.
 
-    ``init()`` builds the new backend before dropping the old one, so for a
-    moment two CUDABackend objects hold the same context. The adopting one
+    Devices are made once now, but a device made with options, or a second
+    backend, can still overlap another: for a moment two CUDABackend objects
+    hold the same context. The adopting one
     used to record ``_owns_context = False`` -- correct for a context owned
     by an embedding application, wrong for one Tack created -- and the
     outgoing backend's ``__del__`` then destroyed the context out from under
@@ -261,13 +262,13 @@ def test_repeated_init_keeps_context_usable():
     """
     import gc
 
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
     gc.collect()  # force the outgoing backend's __del__ to run now
 
     n = 64
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(np.arange(n, dtype=np.float32))
-    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+    f = tack.empty((n,))
+    tack.copyto(f, np.arange(n, dtype=np.float32))
+    assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))
 
 
 def test_many_repeated_inits_do_not_leak_contexts():
@@ -284,26 +285,26 @@ def test_many_repeated_inits_do_not_leak_contexts():
     from tack.runtime.cuda_backend import _CONTEXTS, CUDABackend
 
     for _ in range(5):
-        tack.init(arch=tack.cuda)
+        tack.set_default_device("cuda")
     gc.collect()
 
     live = sum(1 for o in gc.get_objects() if isinstance(o, CUDABackend))
     assert len(_CONTEXTS) == 1
     assert [t.users for t in _CONTEXTS.values()] == [live]
 
-    f = tack.field(dtype=tack.f32, shape=(32,))
-    f.from_numpy(np.ones(32, dtype=np.float32))
-    assert f.to_numpy()[0] == 1.0
+    f = tack.empty((32,))
+    tack.copyto(f, np.ones(32, dtype=np.float32))
+    assert f.numpy()[0] == 1.0
 
 
 def test_kernel_runs_after_reinit():
     """A dispatch after re-initialization compiles and runs against a live context."""
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
 
     n = 128
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.ones(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
 
     @tack.kernel
     def triple(x, out):
@@ -311,92 +312,102 @@ def test_kernel_runs_after_reinit():
             out[i] = x[i] * 3.0
 
     triple(x, out)
-    assert np.allclose(out.to_numpy(), 3.0)
+    assert np.allclose(out.numpy(), 3.0)
 
 
-def test_foreign_context_is_adopted_but_never_destroyed():
-    """A context Tack did not create stays alive after every backend is gone.
+_FOREIGN_SCRIPT = """
+import gc
+from cuda.bindings import driver
+
+# The embedding framework's context, current before Tack touches CUDA.
+driver.cuInit(0)
+err, dev = driver.cuDeviceGet(0)
+assert err == driver.CUresult.CUDA_SUCCESS
+err, foreign = driver.cuCtxCreate(None, 0, dev)
+assert err == driver.CUresult.CUDA_SUCCESS
+
+import tack
+from tack.runtime import dispatch
+from tack.runtime.cuda_backend import _CONTEXTS
+
+backend = tack.device("cuda")._backend
+assert int(backend._context) == int(foreign), "the current context was not adopted"
+assert backend._owns_context is False
+# Tracked, so buffers get a token to hold, but not owned -- which is
+# what keeps it out of cuCtxDestroy's way.
+assert _CONTEXTS[int(foreign)].owned is False
+
+# Let go of every Tack reference to the device; the foreign context must survive.
+del backend
+dispatch._devices.pop(("cuda", 0))
+gc.collect()
+
+err, ptr = driver.cuMemAlloc(256)
+assert err == driver.CUresult.CUDA_SUCCESS, "foreign context was destroyed"
+driver.cuMemFree(ptr)
+driver.cuCtxDestroy(foreign)
+print("ok")
+"""
+
+
+def test_foreign_context_is_adopted_but_never_destroyed(tmp_path):
+    """A context Tack did not create stays alive after Tack lets go of it.
 
     This is the case the adoption logic exists for -- an embedding framework
     (AMReX and friends) sets up its own context and expects Tack to share it,
     not to take it away. Refcounting ownership must not regress that: a
     foreign context is never recorded as owned, so nothing ever destroys it.
+
+    In a fresh process, because a device lives as long as the process: this
+    one made its CUDA device long ago, with Tack's own context, so the
+    context is adopted only where it is current before Tack's first use.
     """
-    import gc
+    import subprocess
+    import sys
 
-    from cuda.bindings import driver
-
-    from tack.runtime import dispatch
-    from tack.runtime.cuda_backend import _CONTEXTS
-
-    # Drop Tack's own context first, so the one we create is the current one.
-    tack.init(arch=tack.cpu)
-    gc.collect()
-
-    driver.cuInit(0)
-    err, dev = driver.cuDeviceGet(0)
-    assert err == driver.CUresult.CUDA_SUCCESS
-    err, foreign = driver.cuCtxCreate(None, 0, dev)
-    assert err == driver.CUresult.CUDA_SUCCESS
-
-    try:
-        tack.init(arch=tack.cuda)
-        backend = dispatch.get_backend()
-
-        assert int(backend._context) == int(foreign)
-        assert backend._owns_context is False
-        # Tracked, so buffers get a token to hold, but not owned -- which is
-        # what keeps it out of cuCtxDestroy's way.
-        assert _CONTEXTS[int(foreign)].owned is False
-
-        # Tear every Tack backend down; the foreign context must survive.
-        del backend
-        tack.init(arch=tack.cpu)
-        gc.collect()
-
-        err, ptr = driver.cuMemAlloc(256)
-        assert err == driver.CUresult.CUDA_SUCCESS, "foreign context was destroyed"
-        driver.cuMemFree(ptr)
-    finally:
-        driver.cuCtxDestroy(foreign)
+    script = tmp_path / "foreign.py"
+    script.write_text(_FOREIGN_SCRIPT)
+    proc = subprocess.run([sys.executable, "-u", str(script)],
+                          capture_output=True, text=True, timeout=300)
+    assert proc.returncode == 0 and proc.stdout.strip() == "ok", proc.stderr
 
 
-# --- Fields do not outlive their context ---
+# A device is a value that lives as long as the process (or as long as
+# something holds it), and every array holds its device. So nothing a
+# program can do through the API destroys a CUDA context under a live
+# array: releasing Tack's own reference to the device, as below, still
+# leaves the array's. The stale-pointer token (`_ContextToken`) remains for
+# contexts an embedding application destroys behind Tack's back.
 
-# These run in a subprocess for two reasons. The scenario used to be a
-# SIGSEGV, and a segfault in-process takes the whole test session with it --
-# there would be no failure report, just a dead runner. And the root
-# conftest holds a CUDABackend in a module global for the life of the
-# session, so the CUDA context never actually reaches zero users here and an
-# in-process test could not build a stale field even if it were safe to.
-
-_STALE_PRELUDE = """
+_RELEASED_PRELUDE = """
 import gc, sys
 import numpy as np
 import tack
+from tack.runtime import dispatch
 
 @tack.kernel
 def double(x, out):
     for i in range(x.shape[0]):
         out[i] = x[i] * 2.0
 
-tack.init(arch=tack.cuda)
-f = tack.field(dtype=tack.f32, shape=(64,))
-f.from_numpy(np.arange(64, dtype=np.float32))
-double(f, f)                 # compile a variant while the context is alive
-tack.init(arch=tack.cpu)     # destroys the CUDA context
-gc.collect()
-tack.init(arch=tack.cuda)    # fresh context; the old pointers stay dead
+tack.set_default_device("cuda")
+f = tack.empty((64,), tack.f32)
+tack.copyto(f, np.arange(64, dtype=np.float32))
+double(f, f)                    # compile a variant while the context is alive
+tack.set_default_device("cpu")
+dispatch._devices.pop(("cuda", 0))     # Tack forgets the device...
+gc.collect()                           # ...but the array still holds it
+tack.set_default_device("cuda")        # a new device, with its own context
 """
 
 
-def _run_stale_script(tmp_path, body):
-    """Run a stale-field access in a subprocess; return the CompletedProcess."""
+def _run_released_script(tmp_path, body):
+    """Run an access after the release above in a subprocess."""
     import subprocess
     import sys
 
-    script = tmp_path / "stale.py"
-    script.write_text(_STALE_PRELUDE + body)
+    script = tmp_path / "released.py"
+    script.write_text(_RELEASED_PRELUDE + body)
     return subprocess.run([sys.executable, "-u", str(script)],
                           capture_output=True, text=True, timeout=300)
 
@@ -408,70 +419,56 @@ def _assert_no_crash(proc):
 
 
 @pytest.mark.parametrize("verb,action", [
-    ("read", "f.to_numpy()"),
-    ("write", "f.from_numpy(np.ones(64, dtype=np.float32))"),
+    ("read", "assert f.numpy()[3] == 6.0"),
+    ("write", "tack.copyto(f, np.ones(64, dtype=np.float32))"),
     ("fill", "f.fill(1.0)"),
     ("export", "f.export_memory()"),
     ("launch", "double(f, f)"),
 ])
-def test_stale_field_raises_instead_of_segfaulting(tmp_path, verb, action):
-    """Touching a field whose context is gone must raise, not crash.
-
-    cuCtxDestroy invalidates every allocation made in the context, and a copy
-    through one of those pointers faults inside the driver -- SIGSEGV, with no
-    CUresult to check and no traceback to print. The buffer cannot learn this
-    from its own pointer, so it holds a token that the context marks dead on
-    the way out.
-    """
+def test_an_array_keeps_its_device_and_context_alive(tmp_path, verb, action):
+    """An array whose device Tack has let go of still works: it holds the
+    device, so its context and its pointers stay valid. A launch runs on
+    the array's device, not the new default's."""
     body = f"""
-try:
-    {action}
-except RuntimeError as e:
-    assert "context" in str(e), e
-    print("RAISED")
-    sys.exit(0)
-print("NO ERROR")
-sys.exit(1)
+{action}
+print("OK")
 """
-    proc = _run_stale_script(tmp_path, body)
+    proc = _run_released_script(tmp_path, body)
     _assert_no_crash(proc)
-    assert "RAISED" in proc.stdout, (
-        f"{verb} did not raise (rc={proc.returncode})\n"
+    assert proc.returncode == 0 and "OK" in proc.stdout, (
+        f"{verb} failed (rc={proc.returncode})\n"
         f"stdout: {proc.stdout}\nstderr: {proc.stderr[-2000:]}")
 
 
-def test_stale_field_can_be_collected_without_crashing(tmp_path):
-    """Freeing a dead allocation is the same fault as copying into one.
-
-    The context took the allocation with it, so ``__del__`` has to skip
-    cuMemFree rather than call it into a context that no longer exists.
-    """
+def test_a_released_array_can_be_collected_without_crashing(tmp_path):
+    """Dropping the last array of a released device frees it, and its context,
+    cleanly; the new device goes on working."""
     body = """
 del f
 gc.collect()
-g = tack.field(dtype=tack.f32, shape=(16,))
-g.from_numpy(np.ones(16, dtype=np.float32))
-assert g.to_numpy()[0] == 1.0
+g = tack.empty((16,), tack.f32)
+tack.copyto(g, np.ones(16, dtype=np.float32))
+assert g.numpy()[0] == 1.0
 print("OK")
 """
-    proc = _run_stale_script(tmp_path, body)
+    proc = _run_released_script(tmp_path, body)
     _assert_no_crash(proc)
     assert proc.returncode == 0, f"stderr: {proc.stderr[-2000:]}"
     assert "OK" in proc.stdout
 
 
-def test_field_survives_repeated_init():
-    """Re-initializing CUDA keeps the context, so existing fields stay valid."""
+def test_array_survives_repeated_init():
+    """Re-initializing CUDA keeps the context, so existing arrays stay valid."""
     import gc
 
     n = 64
-    f = tack.field(dtype=tack.f32, shape=(n,))
-    f.from_numpy(np.arange(n, dtype=np.float32))
+    f = tack.empty((n,))
+    tack.copyto(f, np.arange(n, dtype=np.float32))
 
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
     gc.collect()
 
-    assert np.allclose(f.to_numpy(), np.arange(n, dtype=np.float32))
+    assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))
 
 
 
@@ -512,8 +509,8 @@ def test_narrow_negation_avoids_ptx_neg_s16(dtype):
             n = -x[i]
             out[i, 2] = tack.i64(n)
 
-    x = tack.field(dtype, (4,))
-    out = tack.field(tack.i64, (4, 3))
+    x = tack.empty((4,), dtype)
+    out = tack.empty((4, 3), tack.i64)
     function, _ = _prepare_ir(negate, (x, out))
     ptx = _compile_ptx(generate_cuda_source(function), "negate").decode()
     assert "neg.s16" not in ptx and "abs.s16" not in ptx
@@ -563,11 +560,11 @@ def test_old_nvrtc_warns_at_the_first_compile(monkeypatch):
 def test_ordinary_and_floor_division_kernels_compile_in_sequence():
     """Ordinary and floating floor-division kernels compile and run in
     one process with the same safe settings, preserving the CX7 coverage."""
-    x = tack.field(dtype=tack.f32, shape=(8,))
-    y = tack.field(dtype=tack.f32, shape=(8,))
-    out = tack.field(dtype=tack.f32, shape=(8,))
-    x.from_numpy(np.array([6.0, 7.5, -7.5, 1e30, 0.3, -0.0, 5.0, 2.0], dtype=np.float32))
-    y.from_numpy(np.array([0.1, -3.0, 3.0, 1e-10, 0.1, 1.0, -2.0, 0.5], dtype=np.float32))
+    x = tack.empty((8,))
+    y = tack.empty((8,))
+    out = tack.empty((8,))
+    tack.copyto(x, np.array([6.0, 7.5, -7.5, 1e30, 0.3, -0.0, 5.0, 2.0], dtype=np.float32))
+    tack.copyto(y, np.array([0.1, -3.0, 3.0, 1e-10, 0.1, 1.0, -2.0, 0.5], dtype=np.float32))
 
     @tack.kernel
     def plain_first(x, y, out):
@@ -585,34 +582,34 @@ def test_ordinary_and_floor_division_kernels_compile_in_sequence():
             out[i] = x[i] * y[i] - 1.0
 
     plain_first(x, y, out)
-    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * y.to_numpy() + 1.0, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), x.numpy() * y.numpy() + 1.0, rtol=1e-6)
     floor_div(x, y, out)
     with np.errstate(all="ignore"):              # 1e30 // 1e-10 overflows to inf
-        expected = np.floor_divide(x.to_numpy(), y.to_numpy())
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+        expected = np.floor_divide(x.numpy(), y.numpy())
+    np.testing.assert_array_equal(out.numpy(), expected)
     plain_second(x, y, out)
-    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * y.to_numpy() - 1.0, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), x.numpy() * y.numpy() - 1.0, rtol=1e-6)
 
 
 def test_host_element_reads_copy_one_element():
-    """field[i] copies just the element on CUDA, from an owned buffer, a
+    """array[i] copies just the element on CUDA, from an owned buffer, a
     wrapped pointer in each form, a view and an exportable buffer; a range
     past the allocation is refused rather than read."""
     from tack.runtime.cuda_backend import ExportableCUDABuffer
 
-    f = tack.field(dtype=tack.f64, shape=(4, 5))
-    f.from_numpy(np.arange(20, dtype=np.float64).reshape(4, 5))
+    f = tack.empty((4, 5), tack.f64)
+    tack.copyto(f, np.arange(20, dtype=np.float64).reshape(4, 5))
     f._buffer.to_numpy = None          # a whole-buffer copy would fail here
     assert f[3, 4] == 19.0 and f[-4, 0] == 0.0
     assert f.reshape((20,))[7] == 7.0
 
     address = f._buffer.address
     for ptr in (address, np.uint64(address)):
-        alias = tack.field_from_ptr(ptr, tack.f64, (20,))
+        alias = tack.array_from_ptr(ptr, (20,), tack.f64)
         assert alias[13] == 13.0
 
-    v = tack.Vector.field(3, dtype=tack.i32, shape=(6,))
-    v.from_numpy(np.arange(18, dtype=np.int32).reshape(6, 3))
+    v = tack.empty((6,), tack.vec(3, tack.i32))
+    tack.copyto(v, np.arange(18, dtype=np.int32).reshape(6, 3))
     v._buffer.to_numpy = None
     np.testing.assert_array_equal(v[5], [15, 16, 17])
 
@@ -624,3 +621,17 @@ def test_host_element_reads_copy_one_element():
         f._buffer.read_range(19, 2)
     with pytest.raises(IndexError, match="outside"):
         f._buffer.read_range(-1, 1)
+
+
+def test_device_memory_imported_with_the_cpu_as_default_stays_on_its_device():
+    """As the array API's from_dlpack does: CUDA memory is a CUDA array,
+    sharing the allocation, whatever the default device. Asked onto the
+    CPU, the refusal names the fix."""
+    g = tack.arange(4, dtype=tack.f32)              # on CUDA, the default here
+    with tack.device("cpu"):
+        wrapped = tack.from_dlpack(g)
+        with pytest.raises(RuntimeError, match=r"from_dlpack\(x, device='cuda'\)"):
+            tack.from_dlpack(g, device="cpu")
+    assert wrapped.device == tack.device("cuda")
+    assert int(wrapped._buffer.device_ptr) == int(g._buffer.device_ptr)
+    assert np.array_equal(wrapped.numpy(), np.arange(4, dtype=np.float32))

@@ -258,7 +258,7 @@ def clip(data, by, value=0.0, invert=False, fields=None):
             if t is None:
                 raise NotImplementedError(f"clip has no table for {group.shape.__name__} cells")
             groups.append((group, t))
-    counts = tack.Vector.field(_KINDS, tack.i32, shape=(n,))
+    counts = tack.empty((n,), tack.vec(_KINDS, tack.i32))
     if n:
         counts.fill(0)
     for group, (table, cases, _, remap, _, _) in groups:
@@ -267,24 +267,24 @@ def clip(data, by, value=0.0, invert=False, fields=None):
     odt = ids.for_output(data, _MOST * n)
     totals, parts = [], []
     for kind in range(_KINDS):
-        part = tack.field(tack.i32, shape=(n,))
-        starts = tack.field(odt, shape=(n,))
+        part = tack.empty((n,), tack.i32)
+        starts = tack.empty((n,), odt)
         if n:
             _split_counts(counts, kind, part)
         totals.append(exclusive_scan(part, starts, n) if n else 0)
         parts.append(starts)
     n_cells, n_conn, n_records, n_centroids, n_members = totals
-    starts = tack.Vector.field(_KINDS, odt, shape=(n,))
+    starts = tack.empty((n,), tack.vec(_KINDS, odt))
     if n:
         _join_starts(*parts, starts)
 
-    types = tack.field(tack.u8, shape=(n_cells,))
-    offsets = tack.zeros(odt, (n_cells + 1,))
-    connectivity = tack.field(odt, shape=(n_conn,))
-    sources = tack.field(idt, shape=(n_cells,))
-    keys = tack.Vector.field(2, idt, shape=(n_records,))
-    slots = tack.field(odt, shape=(n_records,))
-    centroid_offsets = tack.field(odt, shape=(n_centroids + 1,))
+    types = tack.empty((n_cells,), tack.u8)
+    offsets = tack.zeros((n_cells + 1,), odt)
+    connectivity = tack.empty((n_conn,), odt)
+    sources = tack.empty((n_cells,), idt)
+    keys = tack.empty((n_records,), tack.vec(2, idt))
+    slots = tack.empty((n_records,), odt)
+    centroid_offsets = tack.empty((n_centroids + 1,), odt)
     for group, (table, cases, edges, remap, whole_type, whole_order) in groups:
         _clip_emit(group.view(), values, float(value), invert, table, cases, edges, remap,
                    whole_type, whole_order, starts, types, offsets, connectivity, sources,
@@ -294,11 +294,11 @@ def clip(data, by, value=0.0, invert=False, fields=None):
 
     order, _ = bucket_order(keys, data.num_points, odt)
     point_runs, count = run_offsets(keys, order)
-    members = tack.field(odt, shape=(n_members,))
-    ends = tack.Vector.field(2, idt, shape=(count,))
+    members = tack.empty((n_members,), odt)
+    ends = tack.empty((count,), tack.vec(2, idt))
     # Weights are fractions even when the values are integers (Viskores interpolates
     # an integer field's crossings the same way).
-    weights = tack.field(precision, shape=(count,))
+    weights = tack.empty((count,), precision)
     if count:
         _resolve_points(keys, order, point_runs, slots, values, float(value), connectivity,
                         members, ends, weights, count)

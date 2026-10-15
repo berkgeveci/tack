@@ -21,7 +21,7 @@ them. Two other sections go deeper:
 3. [IR Design](03-ir.md) — Node types, structure, invariants
 4. [IR Passes](04-ir-passes.md) — Resolve, optimize, type annotate, scalar packing
 5. [Codegen](05-codegen.md) — LLVM, MSL, CUDA, HIP, OpenCL
-6. [Runtime and Dispatch](06-runtime.md) — Backend lifecycle, field allocation, kernel dispatch
+6. [Runtime and Dispatch](06-runtime.md) — Backend lifecycle, array allocation, kernel dispatch
 7. [Template System](07-templates.md) — @tack.device_class, template rewrite, @tack.func inlining
 8. [Adding a New Feature](08-adding-features.md) — Walkthrough of adding a new IR node
 

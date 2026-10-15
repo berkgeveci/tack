@@ -23,8 +23,8 @@ def _nodes():
         ir.IRBreak(), ir.IRContinue(), ir.IRIf(leaf, [], []),
         ir.IRIfExp(leaf, leaf, leaf), ir.IRBinOp('+', leaf, leaf),
         ir.IRUnaryOp('-', leaf), ir.IRCompare('<', leaf, leaf),
-        ir.IRBoolOp('and', [leaf, leaf]), ir.IRFieldLoad(ir.IRName('a'), leaf),
-        ir.IRFieldStore(ir.IRName('a'), leaf, leaf),
+        ir.IRBoolOp('and', [leaf, leaf]), ir.IRArrayLoad(ir.IRName('a'), leaf),
+        ir.IRArrayStore(ir.IRName('a'), leaf, leaf),
         ir.IRAtomicOp('add', ir.IRName('a'), leaf, leaf), leaf, ir.IRName('a'),
         ir.IRAttribute(ir.IRName('a'), 'shape'), ir.IRCall('sqrt', [leaf]),
         ir.IRAssign('x', leaf), ir.IRReturn(leaf), ir.IRCast(leaf, f32),
@@ -33,7 +33,7 @@ def _nodes():
         ir.IRPrint([leaf], [('expr', 0)]), ir.IRDimSize('a', 0),
         ir.IRTextureSample('texture', [leaf, leaf, leaf], (2, 3, 4)),
         ir.IRTableLoad((3, 1, 4), i32, leaf),
-        ir.IRFieldExtent('a', ir.IRFieldExtent.LEADING),
+        ir.IRArrayExtent('a', ir.IRArrayExtent.LEADING),
         ir.IRBoundsCheck([leaf], [leaf], leaf, 0, ir.IRName('__tack_errors__')),
     ]
 
@@ -107,7 +107,7 @@ def test_structural_cycles_remain_rejected_by_verification():
     out = ir.IRParam('out', f32)
     function = ir.IRFunction('cycle', [out], [ir.IRParallelFor(
         'i', ir.IRConstant(0), ir.IRConstant(1),
-        [ir.IRFieldStore(ir.IRName('out'), ir.IRName('i'), value)],
+        [ir.IRArrayStore(ir.IRName('out'), ir.IRName('i'), value)],
     )])
     copied = clone_ir(function)
     assert copied.body[0].body[0].value.operand is copied.body[0].body[0].value
@@ -154,15 +154,15 @@ def test_cloning_runs_only_for_new_variants(backend, monkeypatch, no_disk_cache)
 
     monkeypatch.setattr(traversal, 'clone_ir', record)
     monkeypatch.setattr(utils, 'clone_ir', record)
-    out = tack.field(tack.f32, (8,))
+    out = tack.empty((8,))
     fill(out)
     initial_count = len(calls)
     assert initial_count > 0
     for _ in range(4):
         fill(out)
     assert len(calls) == initial_count
-    wider = tack.field(tack.i64, (8,))
+    wider = tack.empty((8,), tack.i64)
     fill(wider)
     assert len(calls) > initial_count
-    np.testing.assert_array_equal(out.to_numpy(), np.full(8, 3))
-    np.testing.assert_array_equal(wider.to_numpy(), np.full(8, 3))
+    np.testing.assert_array_equal(out.numpy(), np.full(8, 3))
+    np.testing.assert_array_equal(wider.numpy(), np.full(8, 3))

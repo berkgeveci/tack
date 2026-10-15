@@ -25,10 +25,10 @@ def draw(out, dirs, n, frame):
 
 
 def _draw(backend_n, frame):
-    out = tack.field(dtype=tack.f32, shape=(backend_n, 4))
-    dirs = tack.Vector.field(3, dtype=tack.f32, shape=(backend_n,))
+    out = tack.empty((backend_n, 4))
+    dirs = tack.empty((backend_n,), tack.vec(3, tack.f32))
     draw(out, dirs, backend_n, frame)
-    return out.to_numpy(), dirs.to_numpy(vectors=True)
+    return out.numpy(), dirs.numpy()
 
 
 def test_kernels_draw_what_the_numpy_mirrors_draw(backend):

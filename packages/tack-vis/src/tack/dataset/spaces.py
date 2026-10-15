@@ -94,7 +94,7 @@ class Space:
         return self.mixin
 
     def cell_keys(self):
-        """For a space that ``varies``: an i32 field of each cell's key, by cell id."""
+        """For a space that ``varies``: an i32 array of each cell's key, by cell id."""
         return
 
     @property
@@ -120,7 +120,7 @@ def reference_cells(topology, what):
 
 
 def _is_array(value):
-    return isinstance(value, np.ndarray) or hasattr(value, "to_numpy")
+    return isinstance(value, np.ndarray) or hasattr(value, "numpy")
 
 
 def _only_order_one(family, order):
@@ -183,20 +183,20 @@ class H1(Space):
             nf = faces.num_faces
             n = topology.num_cells
             idt = ids.at_least(topology.id_dtype, base + nf + n)
-            flags = tack.field(tack.i32, shape=(nf,))
-            slots = tack.field(idt, shape=(nf,))
-            face_dofs = tack.field(idt, shape=(nf,))
+            flags = tack.empty((nf,), tack.i32)
+            slots = tack.empty((nf,), idt)
+            face_dofs = tack.empty((nf,), idt)
             quads = 0
             if nf:
                 _quad_face_dofs(faces.kinds, flags)
                 quads = exclusive_scan(flags, slots, nf)
                 _place(flags, slots, base, face_dofs)
-            flags = tack.zeros(tack.i32, (n,))
+            flags = tack.zeros((n,), tack.i32)
             for group in topology.groups():
                 if group.count:
                     _interiors(group.view(), flags)
-            slots = tack.field(idt, shape=(n,))
-            cell_dofs = tack.field(idt, shape=(n,))
+            slots = tack.empty((n,), idt)
+            cell_dofs = tack.empty((n,), idt)
             inside = exclusive_scan(flags, slots, n) if n else 0
             if n:
                 _place(flags, slots, base + quads, cell_dofs)
@@ -271,11 +271,11 @@ class L2(Space):
         return views._L2Order0Field if order == 0 else views._L2Field
 
     def cell_keys(self):
-        """Each cell's order, an i32 field (for a space with an order per cell)."""
+        """Each cell's order, an i32 array (for a space with an order per cell)."""
         if not self.varies:
             return None
         if "_orders" not in self.__dict__:
-            host = self.order.to_numpy() if hasattr(self.order, "to_numpy") else self.order
+            host = self.order.numpy() if hasattr(self.order, "numpy") else self.order
             host = np.asarray(host).reshape(-1)
             if host.shape[0] != self.topology.num_cells:
                 raise ValueError(f"an order per cell: {self.topology.num_cells} orders, "
@@ -284,9 +284,9 @@ class L2(Space):
                 bad = sorted(set(host.tolist()) - {0, 1})
                 raise NotImplementedError(f"orders {bad} are not in the prototype: L2 "
                                           "has orders 0 and 1")
-            orders = tack.field(tack.i32, shape=host.shape)
+            orders = tack.empty(host.shape, tack.i32)
             if host.size:
-                orders.from_numpy(host.astype(np.int32))
+                tack.copyto(orders, host.astype(np.int32))
             self._orders = orders
         return self._orders
 
@@ -298,16 +298,16 @@ class L2(Space):
             n = topology.num_cells
             if self.varies:
                 orders = self.cell_keys()
-                counts = tack.field(tack.i32, shape=(n,))
+                counts = tack.empty((n,), tack.i32)
                 for group in topology.groups():
                     if group.count:
                         _l2_counts(group.view(), orders, counts)
-                offsets = tack.field(ids.at_least(topology.id_dtype, 8 * n), shape=(n + 1,))
+                offsets = tack.empty((n + 1,), ids.at_least(topology.id_dtype, 8 * n))
                 size = exclusive_scan(counts, offsets, n) if n else 0
                 _set_last(offsets, n, size)
                 self._offsets, self._size = offsets, int(size)
             elif self.order == 0:
-                offsets = tack.arange(n + 1, topology.id_dtype)
+                offsets = tack.arange(n + 1, dtype=topology.id_dtype)
                 self._offsets, self._size = offsets, n
             elif hasattr(topology, "offsets"):
                 self._offsets = topology.offsets          # the connectivity's: shared
@@ -315,8 +315,8 @@ class L2(Space):
             else:
                 k = topology.groups()[0].shape.NUM_POINTS
                 dtype = ids.at_least(topology.id_dtype, n * k)
-                offsets = tack.field(dtype, shape=(n + 1,))
-                offsets.from_numpy(np.arange(n + 1, dtype=dtype.numpy_dtype) * k)
+                offsets = tack.empty((n + 1,), dtype)
+                tack.copyto(offsets, np.arange(n + 1, dtype=dtype.numpy_dtype) * k)
                 self._offsets = offsets
                 self._size = n * k
         return self._offsets, self._size

@@ -52,7 +52,7 @@ def _grids():
 def _faces_by_points(topology):
     """Each face as (sorted point ids) -> (cell on side 0, cell on side 1 or -1)."""
     face_offsets, face_points = topology.arrays()[:2]
-    sides = topology.faces().sides.to_numpy(vectors=True)
+    sides = topology.faces().sides.numpy()
     return {tuple(sorted(face_points[face_offsets[f]:face_offsets[f + 1]])):
             (int(sides[f][0]), int(sides[f][2])) for f in range(topology.num_faces)}
 
@@ -65,13 +65,13 @@ def _check_same_as_shape_path(data):
     assert isinstance(t, td.PolyhedralTopology)
     assert (t.num_cells, t.num_points) == (shape.num_cells, shape.num_points)
     assert t.num_faces == shape.faces().num_faces
-    np.testing.assert_array_equal(t.faces().sides.to_numpy(vectors=True),
-                                  shape.faces().sides.to_numpy(vectors=True))
-    np.testing.assert_array_equal(t.faces().boundary().to_numpy(),
-                                  shape.faces().boundary().to_numpy())
-    np.testing.assert_array_equal(t.edges().rows.to_numpy(vectors=True),
-                                  shape.edges().rows.to_numpy(vectors=True))
-    offsets, ids = (a.to_numpy() for a in t.cell_points())
+    np.testing.assert_array_equal(t.faces().sides.numpy(),
+                                  shape.faces().sides.numpy())
+    np.testing.assert_array_equal(t.faces().boundary().numpy(),
+                                  shape.faces().boundary().numpy())
+    np.testing.assert_array_equal(t.edges().rows.numpy(),
+                                  shape.edges().rows.numpy())
+    offsets, ids = (a.numpy() for a in t.cell_points())
     expected = [sorted(set(row)) for row in _cell_points(data)] if hasattr(
         shape, "connectivity") or len(_cell_points(data)) == data.num_cells else None
     for c, want in enumerate(expected):
@@ -93,10 +93,10 @@ def test_shape_meshes_as_polyhedra(backend, make):
     t = poly.topology
     assert poly.fields["u"].space is td.H1(poly) and poly.fields["c"].space is td.Constant(poly)
     assert poly.fields["flux"].space is td.Values(poly, "faces")
-    np.testing.assert_array_equal(poly.fields["flux"].values.to_numpy(), np.arange(nf))
+    np.testing.assert_array_equal(poly.fields["flux"].values.numpy(), np.arange(nf))
     assert poly.fields["circulation"].space.size == ne
-    np.testing.assert_array_equal(poly.sets["boundary"].to_numpy(),
-                                  t.faces().boundary().to_numpy())
+    np.testing.assert_array_equal(poly.sets["boundary"].numpy(),
+                                  t.faces().boundary().numpy())
 
 
 @needs_vtk
@@ -128,7 +128,7 @@ def test_cells_walk_their_faces_outward(backend):
     width = 6 * 4
     out = _scalars(np.full(3 * width, -1), tack.i32)
     td.for_each(_walks, poly, "cells", out, width)
-    walks = out.to_numpy().reshape(3, width)
+    walks = out.numpy().reshape(3, width)
     hex_faces = [(0, 4, 7, 3), (1, 2, 6, 5), (0, 1, 5, 4), (3, 7, 6, 2), (0, 3, 2, 1),
                  (4, 5, 6, 7)]
     pyramid_faces = [(0, 3, 2, 1), (0, 1, 4), (1, 2, 4), (2, 3, 4), (3, 0, 4)]
@@ -163,7 +163,7 @@ def test_check_winding_finds_a_backwards_face(backend):
 def test_orient_turns_inward_boundary_faces(backend):
     poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
     face_offsets, face_points, cell_offsets, cell_faces, sides = poly.topology.arrays()
-    boundary = poly.topology.faces().boundary().to_numpy()
+    boundary = poly.topology.faces().boundary().numpy()
     flipped = boundary[::3]
     face_points = face_points.copy()
     for f in flipped:
@@ -174,7 +174,7 @@ def test_orient_turns_inward_boundary_faces(backend):
     with pytest.raises(ValueError, match="wound into their only cell"):
         inward.faces()
     mended = td.orient(inward)
-    np.testing.assert_array_equal(mended.faces().boundary().to_numpy(), boundary)
+    np.testing.assert_array_equal(mended.faces().boundary().numpy(), boundary)
     assert td.check_winding(mended).size == 0
     assert _faces_by_points(mended) == _faces_by_points(poly.topology)
 
@@ -183,7 +183,7 @@ def test_what_a_polyhedral_topology_refuses(backend):
     poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
     face_offsets, face_points, cell_offsets, cell_faces, sides = poly.topology.arrays()
     twice = sides.copy()
-    shared = int(np.flatnonzero(poly.topology.faces().sides.to_numpy(vectors=True)[:, 2]
+    shared = int(np.flatnonzero(poly.topology.faces().sides.numpy()[:, 2]
                                 >= 0)[0])
     twice[cell_faces == shared] = 0                  # both cells claim side 0
     with pytest.raises(ValueError, match="same side of two cells"):
@@ -246,7 +246,7 @@ def test_voronoi_columns(backend):
     sizes = np.diff(t.arrays()[0])
     assert sizes.max() >= 6                           # polygonal faces, not just quads
     faces = t.faces()
-    sides = faces.sides.to_numpy(vectors=True)
+    sides = faces.sides.numpy()
     # Each column's layers share their tops and bottoms; neighbours their sides.
     assert (sides[:, 2] >= 0).sum() == faces.num_faces - faces.boundary().shape[0]
     assert t.num_cells == 3 * columns
@@ -312,7 +312,7 @@ def test_vtk_refuses_faces_wound_the_same_way(backend):
     connectivity = vtk_to_numpy(faces.GetConnectivityArray())
     offsets = vtk_to_numpy(faces.GetOffsetsArray())
     # Turn one copy of the shared hex-hex face around: both cells then claim it.
-    sides = poly.topology.faces().sides.to_numpy(vectors=True)
+    sides = poly.topology.faces().sides.numpy()
     shared = int(np.flatnonzero(sides[:, 2] >= 0)[0])
     cell1, local1 = int(sides[shared][2]), int(sides[shared][3])
     copy = poly.topology.arrays()[2][cell1] + local1
@@ -376,19 +376,19 @@ def _fv_results(data, flux, cell_values, velocity=(1.0, 0.5, -0.25)):
     normals, areas = alg.face_geometry(data)
     volumes, centroids = alg.cell_geometry(data)
     return {
-        "normals": normals.values.to_numpy(vectors=True),
-        "areas": areas.values.to_numpy(),
-        "centers": alg.face_centers(data).values.to_numpy(vectors=True),
-        "volumes": volumes.values.to_numpy(),
-        "centroids": centroids.values.to_numpy(vectors=True),
+        "normals": normals.values.numpy(),
+        "areas": areas.values.numpy(),
+        "centers": alg.face_centers(data).values.numpy(),
+        "volumes": volumes.values.numpy(),
+        "centroids": centroids.values.numpy(),
         "divergence": alg.divergence(data, td.Field(td.Values(data, "faces"),
-                                                    flux)).values.to_numpy(),
-        "jump": alg.jump(data, td.Field(td.Constant(data), cell_values)).values.to_numpy(),
+                                                    flux)).values.numpy(),
+        "jump": alg.jump(data, td.Field(td.Constant(data), cell_values)).values.numpy(),
         "upwind": alg.upwind_flux(data, td.Field(td.Constant(data), cell_values),
-                                  velocity).values.to_numpy(),
+                                  velocity).values.numpy(),
         "perot": alg.perot(data, td.Field(td.Values(data, "faces"),
-                                          flux)).values.to_numpy(vectors=True),
-        "boundary": alg.boundary_faces(data).to_numpy(),
+                                          flux)).values.numpy(),
+        "boundary": alg.boundary_faces(data).numpy(),
     }
 
 
@@ -415,21 +415,21 @@ def test_face_based_algorithms_run_on_both_paths(backend, name):
 def test_cell_geometry_of_known_cells(backend):
     poly = td.as_polyhedra(_two_hexes_and_a_pyramid())
     volumes, centroids = alg.cell_geometry(poly)
-    np.testing.assert_allclose(volumes.values.to_numpy(), [1, 1, 1 / 3], rtol=1e-6)
+    np.testing.assert_allclose(volumes.values.numpy(), [1, 1, 1 / 3], rtol=1e-6)
     # A pyramid's centroid is a quarter of the way from base to apex.
-    np.testing.assert_allclose(centroids.values.to_numpy(vectors=True),
+    np.testing.assert_allclose(centroids.values.numpy(),
                                [[0.5, 0.5, 0.5], [1.5, 0.5, 0.5], [0.5, 0.5, 1.25]],
                                atol=1e-6)
     grid = td.rectilinear_grid([0, 1, 3, 4], [0, 2, 3], [0, 1, 1.5])
     volumes, _ = alg.cell_geometry(td.as_polyhedra(grid))
     dx, dy, dz = np.diff([0, 1, 3, 4]), np.diff([0, 2, 3]), np.diff([0, 1, 1.5])
-    np.testing.assert_allclose(volumes.values.to_numpy(),
+    np.testing.assert_allclose(volumes.values.numpy(),
                                np.einsum("k,j,i->kji", dz, dy, dx).reshape(-1), rtol=1e-6)
 
 
 def _uniform_flux(data, velocity):
     normals, _ = alg.face_geometry(data)
-    return _scalars(normals.values.to_numpy(vectors=True) @ np.asarray(velocity))
+    return _scalars(normals.values.numpy() @ np.asarray(velocity))
 
 
 @pytest.mark.parametrize("name", ["mixed", "rectilinear", "tetra", "wedge", "pyramid",
@@ -448,13 +448,13 @@ def test_perot_gives_back_a_uniform_field(backend, name):
     velocity = (0.3, -1.2, 0.7)
     for mesh in ((data, td.as_polyhedra(data)) if name != "voronoi" else (data,)):
         flux = td.Field(td.Values(mesh, "faces"), _uniform_flux(mesh, velocity))
-        got = alg.perot(mesh, flux).values.to_numpy(vectors=True)
+        got = alg.perot(mesh, flux).values.numpy()
         np.testing.assert_allclose(got, np.tile(velocity, (mesh.num_cells, 1)), atol=2e-4)
         # Each closed cell lets as much of a uniform flow out as in.
         _, areas = alg.face_geometry(mesh)
         carried = td.Field(td.Values(mesh, "faces"),
-                           _scalars(flux.values.to_numpy() * areas.values.to_numpy()))
-        np.testing.assert_allclose(alg.divergence(mesh, carried).values.to_numpy(), 0,
+                           _scalars(flux.values.numpy() * areas.values.numpy()))
+        np.testing.assert_allclose(alg.divergence(mesh, carried).values.numpy(), 0,
                                    atol=1e-5)
 
 
@@ -462,17 +462,17 @@ def test_voronoi_columns_measure_up(backend):
     points, cells, columns = _voronoi_columns(layers=3, thickness=0.01)
     data = td.DataSet(_from_cell_faces(cells, len(points)), points)
     volumes, centroids = alg.cell_geometry(data)
-    assert (volumes.values.to_numpy() > 0).all()
+    assert (volumes.values.numpy() > 0).all()
     # Each column's three layers have one footprint, so one volume, stacked.
-    v = volumes.values.to_numpy()
+    v = volumes.values.numpy()
     for c in range(0, len(cells), 3):
         np.testing.assert_allclose(v[c:c + 3], v[c], rtol=1e-4)
-    z = centroids.values.to_numpy(vectors=True)[:, 2]
+    z = centroids.values.numpy()[:, 2]
     np.testing.assert_allclose(z, np.tile([0.005, 0.015, 0.025], columns), atol=1e-6)
     # Interior faces, by cell values: jumps are differences of the two sides' values.
     values = np.arange(data.num_cells, dtype=float)
-    sides = data.topology.faces().sides.to_numpy(vectors=True)
-    jumps = alg.jump(data, td.Field(td.Constant(data), _scalars(values))).values.to_numpy()
+    sides = data.topology.faces().sides.numpy()
+    jumps = alg.jump(data, td.Field(td.Constant(data), _scalars(values))).values.numpy()
     expected = np.where(sides[:, 2] >= 0, values[sides[:, 2]] - values[sides[:, 0]], 0)
     np.testing.assert_allclose(jumps, expected)
 
@@ -484,7 +484,7 @@ def test_volumes_agree_with_vtk(backend):
                  td.DataSet(_from_cell_faces(cells, len(points)), points)):
         grid = dataset_to_vtk(data)
         theirs = [grid.GetCell(c).ComputeVolume() for c in range(grid.GetNumberOfCells())]
-        ours = alg.cell_geometry(data)[0].values.to_numpy()
+        ours = alg.cell_geometry(data)[0].values.numpy()
         np.testing.assert_allclose(ours, theirs, rtol=1e-4)
 
 
@@ -521,16 +521,16 @@ def test_polygons_from_2d_meshes(backend, make):
     # Facets are the edges, numbered as the shape path numbers them.
     np.testing.assert_array_equal(
         np.sort(t.arrays()[1].reshape(-1, 2), axis=1),
-        data.topology.edges().rows.to_numpy(vectors=True))
-    sides = t.faces().sides.to_numpy(vectors=True)
+        data.topology.edges().rows.numpy())
+    sides = t.faces().sides.numpy()
     assert ((sides[:, 2] >= 0).sum() + t.faces().boundary().shape[0]) == t.num_faces
     assert td.check_winding(poly).size == 0
-    offsets, loops = (a.to_numpy() for a in t.loops())
+    offsets, loops = (a.numpy() for a in t.loops())
     rings = [loops[offsets[c]:offsets[c + 1]] for c in range(t.num_cells)]
     areas, centroids = td.algorithms.cell_geometry(poly)
-    np.testing.assert_allclose(areas.values.to_numpy(), _shoelace(poly.positions(), rings),
+    np.testing.assert_allclose(areas.values.numpy(), _shoelace(poly.positions(), rings),
                                rtol=1e-6)
-    np.testing.assert_allclose(centroids.values.to_numpy(vectors=True)[:, 2], 0, atol=1e-6)
+    np.testing.assert_allclose(centroids.values.numpy()[:, 2], 0, atol=1e-6)
 
 
 def _pixel_grid():
@@ -560,12 +560,12 @@ def _check_closed_surface(data, surface):
     assert t.num_cells == data.topology.faces().boundary().shape[0]
     assert t.faces().boundary().shape[0] == 0                 # closed: every edge twice
     assert td.check_winding(surface).size == 0
-    used = np.unique(t.loops()[1].to_numpy())
+    used = np.unique(t.loops()[1].numpy())
     assert used.size - t.num_faces + t.num_cells == 2         # a sphere's Euler number
     _, areas = td.algorithms.face_geometry(data)
-    boundary = data.topology.faces().boundary().to_numpy()
-    np.testing.assert_allclose(td.algorithms.cell_geometry(surface)[0].values.to_numpy(),
-                               areas.values.to_numpy()[boundary], rtol=1e-5)
+    boundary = data.topology.faces().boundary().numpy()
+    np.testing.assert_allclose(td.algorithms.cell_geometry(surface)[0].values.numpy(),
+                               areas.values.numpy()[boundary], rtol=1e-5)
 
 
 def test_a_polyhedral_mesh_has_a_polygonal_surface(backend):
@@ -576,10 +576,10 @@ def test_a_polyhedral_mesh_has_a_polygonal_surface(backend):
     data.sets["boundary"] = td.algorithms.boundary_faces(data)
     surface = td.algorithms.extract_surface(data, "boundary")
     _check_closed_surface(data, surface)
-    boundary = data.sets["boundary"].to_numpy()
-    sides = data.topology.faces().sides.to_numpy(vectors=True)
-    np.testing.assert_array_equal(surface.fields["flux"].values.to_numpy(), boundary)
-    np.testing.assert_array_equal(surface.fields["cell"].values.to_numpy(),
+    boundary = data.sets["boundary"].numpy()
+    sides = data.topology.faces().sides.numpy()
+    np.testing.assert_array_equal(surface.fields["flux"].values.numpy(), boundary)
+    np.testing.assert_array_equal(surface.fields["cell"].values.numpy(),
                                   np.array([1.0, 2.0, 5.0])[sides[boundary, 0]])
     points, cells, _ = _voronoi_columns()
     columns = td.DataSet(_from_cell_faces(cells, len(points)), points)
@@ -602,7 +602,7 @@ def test_polygons_through_vtk(backend):
     sizes.SetInputData(grid)
     sizes.Update()
     theirs = vtk_to_numpy(sizes.GetOutput().GetCellData().GetArray("Area"))
-    np.testing.assert_allclose(td.algorithms.cell_geometry(surface)[0].values.to_numpy(),
+    np.testing.assert_allclose(td.algorithms.cell_geometry(surface)[0].values.numpy(),
                                theirs, rtol=1e-5)
 
 
@@ -651,13 +651,13 @@ def test_contour_of_polyhedra_is_the_shape_paths(backend, name):
         assert isinstance(ours.topology, td.PolygonalTopology)
         np.testing.assert_allclose(np.unique(ours.positions().round(6), axis=0),
                                    np.unique(theirs.positions().round(6), axis=0), atol=1e-6)
-        np.testing.assert_allclose(ours.fields["s"].values.to_numpy(), iso, atol=1e-5)
+        np.testing.assert_allclose(ours.fields["s"].values.numpy(), iso, atol=1e-5)
         assert td.check_winding(ours).size == 0
         if field is _height:
             # A linear field's iso-polygons are planar: the same area as triangles.
-            area = td.algorithms.cell_geometry(ours)[0].values.to_numpy().sum()
+            area = td.algorithms.cell_geometry(ours)[0].values.numpy().sum()
             points = theirs.positions()
-            tri = theirs.topology.connectivity.to_numpy().reshape(-1, 3)
+            tri = theirs.topology.connectivity.numpy().reshape(-1, 3)
             theirs_area = 0.5 * np.linalg.norm(np.cross(points[tri[:, 1]] - points[tri[:, 0]],
                                                         points[tri[:, 2]] - points[tri[:, 0]]),
                                                axis=1).sum()
@@ -713,7 +713,7 @@ def test_contour_of_polyhedra_is_vtks_lopez(backend, name):
         isos = (0.9, 1.4)
     for iso in isos:
         ours = td.contour(poly, "s", iso)
-        o, loops = (a.to_numpy() for a in ours.topology.loops())
+        o, loops = (a.numpy() for a in ours.topology.loops())
         theirs = _vtk_lopez(poly, "s", iso)
         mine = _cycles(ours.positions(), o, loops)
         assert len(mine) == len(theirs[1]) - 1 and mine == _cycles(*theirs)
@@ -721,7 +721,7 @@ def test_contour_of_polyhedra_is_vtks_lopez(backend, name):
 
 def test_saddle_faces_stay_watertight(backend):
     surface = td.contour(_saddle_pair(), "s", 0.5)
-    sizes = np.diff(surface.topology.loops()[0].to_numpy())
+    sizes = np.diff(surface.topology.loops()[0].numpy())
     assert surface.num_cells >= 2 and td.check_winding(surface).size == 0
     # The saddle face's four crossings pair up alike in both cells: every edge of
     # the surface on that face is shared, wound oppositely.
@@ -742,14 +742,14 @@ def test_size_buckets(backend):
     assert buckets is td.SizeBuckets(t, caps=(16, 32))
     groups = data.launch_groups("cells", [], keys=[buckets])
     assert len(groups) == 2 and sum(g.count for g in groups) == t.num_cells
-    out = tack.zeros(tack.i32, (t.num_cells,))
+    out = tack.zeros((t.num_cells,), tack.i32)
     for group in groups:
         _caps(data.domain_view("cells", group), out)
     face_sizes = np.diff(t.arrays()[0])
     cell_offsets, cell_faces = t.arrays()[2], t.arrays()[3]
     need = [(face_sizes[cell_faces[cell_offsets[c]:cell_offsets[c + 1]]].sum() + 1) // 2
             for c in range(t.num_cells)]
-    np.testing.assert_array_equal(out.to_numpy(), np.where(np.array(need) <= 16, 16, 32))
+    np.testing.assert_array_equal(out.numpy(), np.where(np.array(need) <= 16, 16, 32))
     with pytest.raises(ValueError, match="largest bucket"):
         td.SizeBuckets(t, caps=(4,)).cell_keys()
 
@@ -763,11 +763,11 @@ def test_slice_and_fields_on_polyhedra(backend):
     assert isinstance(cut.topology, td.PolygonalTopology)
     np.testing.assert_allclose((cut.positions() - origin) @ normal, 0, atol=1e-5)
     p = cut.positions()
-    np.testing.assert_allclose(cut.fields["u"].values.to_numpy(), p[:, 0] + 2 * p[:, 1] - p[:, 2],
+    np.testing.assert_allclose(cut.fields["u"].values.numpy(), p[:, 0] + 2 * p[:, 1] - p[:, 2],
                                atol=1e-5)
     # Each polygon carries the cell it lies in.
-    centroids = td.algorithms.cell_geometry(cut)[1].values.to_numpy(vectors=True)
-    cells = cut.fields["cell"].values.to_numpy()
+    centroids = td.algorithms.cell_geometry(cut)[1].values.numpy()
+    cells = cut.fields["cell"].values.numpy()
     inside_first = centroids[:, 0] < 1.0
     assert set(cells[inside_first & (centroids[:, 2] < 1)]) <= {1.0}
     assert set(cells[~inside_first]) <= {2.0}
@@ -789,8 +789,7 @@ def test_oriented_face_values(backend):
 def _threshold_meshes():
     meshes = _solid_meshes()
     for data in meshes.values():
-        centers = td.algorithms.cell_geometry(td.as_polyhedra(data))[1].values.to_numpy(
-            vectors=True)
+        centers = td.algorithms.cell_geometry(td.as_polyhedra(data))[1].values.numpy()
         data.fields["c"] = td.Field(td.Constant(data), _scalars(centers[:, 0]))
         data.fields["p"] = td.Field(td.H1(data), _scalars(data.positions()[:, 0]
                                                           + 0.5 * data.positions()[:, 2]))
@@ -814,12 +813,12 @@ def test_threshold_of_polyhedra_is_the_shape_paths(backend, name, how):
     np.testing.assert_allclose(ours.positions(), theirs.positions(), atol=1e-6)
     assert td.check_winding(ours).size == 0
     reference = td.as_polyhedra(theirs)
-    np.testing.assert_allclose(td.algorithms.cell_geometry(ours)[0].values.to_numpy(),
-                               td.algorithms.cell_geometry(reference)[0].values.to_numpy(),
+    np.testing.assert_allclose(td.algorithms.cell_geometry(ours)[0].values.numpy(),
+                               td.algorithms.cell_geometry(reference)[0].values.numpy(),
                                rtol=1e-5)
     assert _faces_by_points(ours.topology) == _faces_by_points(reference.topology)
-    np.testing.assert_allclose(ours.fields["c"].values.to_numpy(),
-                               theirs.fields["c"].values.to_numpy())
+    np.testing.assert_allclose(ours.fields["c"].values.numpy(),
+                               theirs.fields["c"].values.numpy())
 
 
 def test_threshold_turns_faces_and_their_oriented_values(backend):
@@ -833,15 +832,15 @@ def test_threshold_turns_faces_and_their_oriented_values(backend):
     values = _uniform_flux(data, velocity)
     data.fields["flux"] = td.Field(td.Values(data, "faces", oriented=True), values)
     data.fields["plain"] = td.Field(td.Values(data, "faces"), values)
-    layer = td.algorithms.cell_geometry(data)[1].values.to_numpy(vectors=True)[:, 2]
+    layer = td.algorithms.cell_geometry(data)[1].values.numpy()[:, 2]
     data.fields["layer"] = td.Field(td.Constant(data), _scalars(layer))
     upper = td.threshold(data, "layer", 0.01, 1.0)
     assert upper.num_cells == 2 * columns
     assert td.check_winding(upper).size == 0
     np.testing.assert_allclose(
-        td.algorithms.perot(upper, upper.fields["flux"]).values.to_numpy(vectors=True),
+        td.algorithms.perot(upper, upper.fields["flux"]).values.numpy(),
         np.tile(velocity, (upper.num_cells, 1)), atol=2e-4)
-    plain = td.algorithms.perot(upper, upper.fields["plain"]).values.to_numpy(vectors=True)
+    plain = td.algorithms.perot(upper, upper.fields["plain"]).values.numpy()
     assert not np.allclose(plain[:columns], velocity, atol=1e-2)      # the bottom kept layer
 
 
@@ -851,8 +850,8 @@ def test_threshold_of_polygons(backend):
     kept = td.threshold(data, "id", 0.5, 2.5)
     assert isinstance(kept.topology, td.PolygonalTopology)
     assert kept.num_cells == 2 and td.check_winding(kept).size == 0
-    np.testing.assert_allclose(kept.fields["id"].values.to_numpy(), [1, 2])
-    np.testing.assert_allclose(td.algorithms.cell_geometry(kept)[0].values.to_numpy(),
+    np.testing.assert_allclose(kept.fields["id"].values.numpy(), [1, 2])
+    np.testing.assert_allclose(td.algorithms.cell_geometry(kept)[0].values.numpy(),
                                [1.0, 0.5], rtol=1e-6)
 
 
@@ -873,7 +872,7 @@ def test_threshold_of_polyhedra_is_vtks(backend):
     ours = td.threshold(poly, "c", 0.3, 1.2)
     assert (ours.num_cells, ours.num_points) == (theirs.GetNumberOfCells(),
                                                  theirs.GetNumberOfPoints())
-    np.testing.assert_allclose(sorted(td.algorithms.cell_geometry(ours)[0].values.to_numpy()),
+    np.testing.assert_allclose(sorted(td.algorithms.cell_geometry(ours)[0].values.numpy()),
                                sorted(theirs.GetCell(c).ComputeVolume()
                                       for c in range(theirs.GetNumberOfCells())), rtol=1e-5)
 
@@ -892,7 +891,7 @@ def test_orient_repairs_reversed_faces_and_cells(backend):
                                                    orient=True)
     assert td.check_winding(mended).size == 0
     data = td.DataSet(mended, points)
-    assert (td.algorithms.cell_geometry(data)[0].values.to_numpy() > 0).all()
+    assert (td.algorithms.cell_geometry(data)[0].values.numpy() > 0).all()
     ours, theirs = _faces_by_points(mended), _faces_by_points(reference)
     assert ours.keys() == theirs.keys()
     assert all(set(ours[k]) == set(theirs[k]) for k in ours)
@@ -920,7 +919,7 @@ def test_cgns_in_both_polyhedral_conventions(backend):
     for data in (nface, ngon):
         assert isinstance(data.topology, td.PolyhedralTopology)
         assert td.check_winding(data).size == 0
-        assert (td.algorithms.cell_geometry(data)[0].values.to_numpy() > 0).all()
+        assert (td.algorithms.cell_geometry(data)[0].values.numpy() > 0).all()
 
     def by_position(data):
         p = np.round(data.positions(), 6)
@@ -938,7 +937,7 @@ def test_a_real_cfd_mesh_needs_orienting(backend):
         vtk_to_dataset(grid)
     data = vtk_to_dataset(grid, orient=True)
     assert data.num_cells == 1956 and td.check_winding(data).size == 0
-    assert (td.algorithms.cell_geometry(data)[0].values.to_numpy() > 0).all()
+    assert (td.algorithms.cell_geometry(data)[0].values.numpy() > 0).all()
     surface = vtk.vtkGeometryFilter()
     surface.SetInputData(dataset_to_vtk(data))
     surface.Update()
@@ -984,14 +983,14 @@ def test_averages_are_the_shape_paths(backend, name):
     for d in (data, poly):
         d.fields["p"] = td.Field(td.H1(d), point_values)
         d.fields["c"] = td.Field(td.Constant(d), cell_values)
-    np.testing.assert_allclose(td.algorithms.to_cells(poly, poly.fields["p"]).values.to_numpy(),
-                               td.algorithms.to_cells(data, data.fields["p"]).values.to_numpy(),
+    np.testing.assert_allclose(td.algorithms.to_cells(poly, poly.fields["p"]).values.numpy(),
+                               td.algorithms.to_cells(data, data.fields["p"]).values.numpy(),
                                rtol=1e-6, atol=1e-6)
-    np.testing.assert_allclose(td.algorithms.to_points(poly, poly.fields["c"]).values.to_numpy(),
-                               td.algorithms.to_points(data, data.fields["c"]).values.to_numpy(),
+    np.testing.assert_allclose(td.algorithms.to_points(poly, poly.fields["c"]).values.numpy(),
+                               td.algorithms.to_points(data, data.fields["c"]).values.numpy(),
                                rtol=1e-6, atol=1e-6)
     same = td.algorithms.to_cells(poly, poly.fields["c"])
-    np.testing.assert_array_equal(same.values.to_numpy(), cell_values.to_numpy())
+    np.testing.assert_array_equal(same.values.numpy(), cell_values.numpy())
 
 
 @needs_vtk
@@ -1017,11 +1016,11 @@ def test_averages_on_voronoi_columns_are_vtks(backend):
     to_points.SetInputData(grid)
     to_points.Update()
     ours = td.algorithms.to_cells(data, td.Field(td.H1(data), _scalars(p)))
-    np.testing.assert_allclose(ours.values.to_numpy(),
+    np.testing.assert_allclose(ours.values.numpy(),
                                vtk_to_numpy(to_cells.GetOutput().GetCellData().GetArray("p")),
                                rtol=1e-5, atol=1e-6)
     ours = td.algorithms.to_points(data, td.Field(td.Values(data, "cells"), _scalars(c)))
-    np.testing.assert_allclose(ours.values.to_numpy(),
+    np.testing.assert_allclose(ours.values.numpy(),
                                vtk_to_numpy(to_points.GetOutput().GetPointData().GetArray("c")),
                                rtol=1e-5, atol=1e-6)
 

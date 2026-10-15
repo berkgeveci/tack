@@ -1,26 +1,29 @@
 # Sharing arrays with other libraries
 
 There are two choices when another library produces your data: copy its values
-into a Tack field, or share compatible storage. A copy gives Tack an independent
+into a Tack array, or share compatible storage. A copy gives Tack an independent
 allocation. A shared view needs agreement on the device, layout, lifetime and
 permission to write.
 
-## NumPy: an independent field
+## NumPy: an independent array
 
 ```python
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
-array = np.arange(12, dtype=np.float32).reshape(3, 4)
-field = tack.array(array)
-array[:] = -1                             # does not change the Tack field
-np.testing.assert_array_equal(field.to_numpy(), np.arange(12, dtype=np.float32).reshape(3, 4))
+tack.set_default_device("cpu")
+host = np.arange(12, dtype=np.float32).reshape(3, 4)
+data = tack.array(host)
+host[:] = -1                              # does not change the Tack array
+np.testing.assert_array_equal(data.numpy(), np.arange(12, dtype=np.float32).reshape(3, 4))
+tack.copyto(data, host)                   # now it does
+np.testing.assert_array_equal(np.asarray(data), host)
 ```
 
-`array` allocates and copies. `from_numpy` replaces the values in an existing
-field and converts to its dtype. `to_numpy` produces a NumPy copy. These are
-simple boundaries for a first program or for data that arrives infrequently.
+`tack.array` allocates and copies. `tack.copyto` replaces the values in an
+existing array and converts to its dtype. `numpy()` and `np.asarray` produce
+a NumPy copy. These are simple boundaries for a first program or for data
+that arrives infrequently.
 
 ## External pointers: borrowed storage
 
@@ -28,7 +31,7 @@ On CPU, a contiguous NumPy array can be wrapped directly:
 
 ```python
 array = np.zeros(8, dtype=np.float32)
-view = tack.array_from_ptr(array, dtype=tack.f32, shape=(8,), writable=True)
+view = tack.array_from_ptr(array, (8,), tack.f32, writable=True)
 
 @tack.kernel
 def fill_indices(out):
@@ -59,17 +62,17 @@ view = tack.from_dlpack(producer)
 ```
 
 Tack reads the producer's device, dtype and shape and retains the managed tensor
-while its field uses the storage. A DLPack import cannot represent arbitrary
+while its array uses the storage. A DLPack import cannot represent arbitrary
 strided layouts: contiguous storage is required. Device support is
 backend-dependent, and an imported read-only tensor remains read-only.
 
 Metal currently has no zero-copy DLPack import. Use
 `tack.from_dlpack(host_tensor, copy=True)` to copy a NumPy-readable host tensor
-into a Metal field. Export from a Metal field describes its shared host storage
+into a Metal array. Export from a Metal array describes its shared host storage
 as `kDLCPU`, so it does not exchange an `MTLBuffer` handle with another GPU API.
 
-Tack fields implement the DLPack protocol too. Pass a field to a consumer that
-supports its device. For a CPU field, NumPy offers a compact example:
+Tack arrays implement the DLPack protocol too. Pass an array to a consumer that
+supports its device. For a CPU array, NumPy offers a compact example:
 
 ```python
 data = tack.array(np.arange(8, dtype=np.float32))
@@ -83,9 +86,9 @@ usually clearer than managing capsules yourself.
 
 On Metal, CUDA, HIP and Level Zero a kernel call returns once its launch is
 queued (see [When a call returns](08-backends.md#when-a-call-returns)), so
-memory another library reads is kept in step for it. Exporting a field
+memory another library reads is kept in step for it. Exporting an array
 through DLPack waits for the launches queued before it; from then on, every
-launch that uses that field completes before the call returns, and so does
+launch that uses that array completes before the call returns, and so does
 every launch that uses a wrapped pointer or a DLPack import. The other
 library can read the results as soon as the Tack call returns; the cost is
 a wait on each such launch.
@@ -100,19 +103,19 @@ mechanism.
 With `tack-vis` and a compatible VTK build:
 
 ```python
-from tack.interop.vtk import field_to_vtk, vtk_to_field
+from tack.interop.vtk import array_to_vtk, vtk_to_array
 
-field = vtk_to_field(vtk_array)             # VTK tuples × components become field shape
-vtk_array = field_to_vtk(field)
+data = vtk_to_array(vtk_array)              # VTK tuples × components become the array shape
+vtk_array = array_to_vtk(data)
 ```
 
-For a flat interleaved coordinate field, specify the component count when
-exporting: `field_to_vtk(points, n_components=3)`. For input to flying edges or
-normal calculation, `vtk_to_field(array, flatten=True)` gives their required
-flat layout.
+For a flat interleaved coordinate array, specify the component
+count when exporting: `array_to_vtk(points, n_components=3)`; an array of
+`vec3` elements needs no count. `vtk_to_array(array, flatten=True)` gives a
+flat array of `tuples * components` values.
 
 Level Zero sharing with VTK needs a shared context. Call
-`tack.interop.vtk.init_level_zero()` before creating fields, using a VTK build
+`tack.interop.vtk.init_level_zero()` before creating arrays, using a VTK build
 that exposes the necessary handles. The [Visualization](09-visualization.md#vtk-interop)
 chapter describes that setup; a system VTK wheel does not necessarily offer
 every device-interoperability path.
@@ -120,8 +123,8 @@ every device-interoperability path.
 ### A complete CPU exchange
 
 The [VTK image example](../examples/vtk_interop.py) creates a `vtkImageData`,
-wraps its scalar array with Tack, fills it in a kernel, and exports the field
-back to VTK. Each image point stores its squared distance from the centre.
+wraps its scalar array with Tack, fills it in a kernel, and exports the Tack
+array back to VTK. Each image point stores its squared distance from the centre.
 VTK image indices are x-fast, so the kernel decomposes the flat index accordingly:
 
 ```python

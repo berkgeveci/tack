@@ -4,8 +4,8 @@ Tack computes, VTK filters, Tack computes again -- and the data never
 moves. Both speak DLPack, so an exchange is one call in each direction and
 the memory is shared, not copied.
 
-    field = vtk_to_field(vtk_array)   # VTK  -> Tack
-    array = field_to_vtk(field)       # Tack -> VTK
+    field = vtk_to_array(vtk_array)   # VTK  -> Tack
+    array = array_to_vtk(field)       # Tack -> VTK
 
 A vtkDataArray is tuples x components and a Tack field is n-dimensional,
 so the shapes line up on their own: a (n, 3) field is n tuples of 3.
@@ -41,7 +41,7 @@ import numpy as np
 import vtkmodules.util.dlpack_support  # noqa: F401
 
 import tack
-from tack.interop.vtk import field_to_vtk, vtk_to_field
+from tack.interop.vtk import array_to_vtk, vtk_to_array
 from tack.runtime.dispatch import get_backend
 
 parser = argparse.ArgumentParser()
@@ -54,7 +54,7 @@ if args.arch == "level_zero":
     from tack.interop.vtk import init_level_zero
     init_level_zero()
 else:
-    tack.init(arch=getattr(tack, args.arch))
+    tack.set_default_device(args.arch)
 
 NX = NY = NZ = 64
 N_POINTS = NX * NY * NZ
@@ -89,8 +89,8 @@ def gyroid(points, scalars, nx, ny, nz):
                         tack.sin(c) * tack.cos(a))
 
 
-points = tack.empty(dtype=tack.f32, shape=(N_POINTS, 3))
-scalars = tack.empty(dtype=tack.f32, shape=(N_POINTS,))
+points = tack.empty((N_POINTS, 3))
+scalars = tack.empty((N_POINTS,))
 gyroid(points, scalars, NX, NY, NZ)
 
 print(f"Tack ({get_backend().label}): {NX}x{NY}x{NZ} = {N_POINTS:,} points")
@@ -102,8 +102,8 @@ print(f"  scalars {scalars.shape}")
 #
 # No component count to pass: points.shape already says 3.
 
-coord_array = field_to_vtk(points, name="Points")
-scalar_array = field_to_vtk(scalars, name="gyroid")
+coord_array = array_to_vtk(points, name="Points")
+scalar_array = array_to_vtk(scalars, name="gyroid")
 
 print("\nVTK arrays (shared memory, not copied):")
 print(f"  {coord_array.GetClassName()}: "
@@ -146,7 +146,7 @@ if output.GetNumberOfPoints() == 0:
 # Where the result lives is the filter's choice, not ours, so ask rather
 # than assume. A host filter's output is host memory even when its input
 # was on the device, and wrapping host memory into a device backend would
-# hand a kernel an address it cannot dereference -- so vtk_to_field
+# hand a kernel an address it cannot dereference -- so vtk_to_array
 # refuses it, and the copy is made here where it is visible.
 
 from vtkmodules.util.numpy_support import vtk_to_numpy
@@ -159,11 +159,11 @@ staged_back = on_device and output_is_host
 
 if staged_back:
     host = vtk_to_numpy(out_array)
-    result = tack.empty(dtype=tack.f32, shape=host.shape)
-    result.from_numpy(host)
+    result = tack.empty(host.shape)
+    tack.copyto(result, host)
     where = "copied up from the host, because the filter ran there"
 else:
-    result = vtk_to_field(out_array)
+    result = vtk_to_array(out_array)
     where = "still VTK's memory"
 
 print(f"\nBack in Tack: {result.shape} -- {result.shape[1]} components, {where}")
@@ -180,14 +180,14 @@ def bounds(pts, lo, hi, n):
 
 
 n_out = result.shape[0]
-lo = tack.empty(dtype=tack.f32, shape=(3,))
-hi = tack.empty(dtype=tack.f32, shape=(3,))
-lo.from_numpy(np.full(3, 1e30, dtype=np.float32))
-hi.from_numpy(np.full(3, -1e30, dtype=np.float32))
+lo = tack.empty((3,))
+hi = tack.empty((3,))
+tack.copyto(lo, np.full(3, 1e30, dtype=np.float32))
+tack.copyto(hi, np.full(3, -1e30, dtype=np.float32))
 
 bounds(result, lo, hi, n_out)
 
-lo_v, hi_v = lo.to_numpy(), hi.to_numpy()
+lo_v, hi_v = lo.numpy(), hi.numpy()
 print(f"  bounds x [{lo_v[0]:.3f}, {hi_v[0]:.3f}]  "
       f"y [{lo_v[1]:.3f}, {hi_v[1]:.3f}]  "
       f"z [{lo_v[2]:.3f}, {hi_v[2]:.3f}]")

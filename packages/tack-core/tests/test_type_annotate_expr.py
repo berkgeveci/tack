@@ -14,15 +14,15 @@ def _make_func(params, body):
     return ir.IRFunction("test", params, body)
 
 
-def _field_param(name, dtype):
+def _array_param(name, dtype):
     p = ir.IRParam(name, dtype)
-    p._is_field = True
+    p._is_array = True
     return p
 
 
 def _scalar_param(name, dtype):
     p = ir.IRParam(name, dtype)
-    p._is_field = False
+    p._is_array = False
     return p
 
 
@@ -77,9 +77,9 @@ class TestNameDtype:
         annotate_types(func)
         assert name.dtype is f32
 
-    def test_field_param_returns_none(self):
-        """Field (pointer) params should get dtype=None — they aren't scalars."""
-        p = _field_param("data", f32)
+    def test_array_param_returns_none(self):
+        """Array (pointer) params should get dtype=None — they aren't scalars."""
+        p = _array_param("data", f32)
         name = ir.IRName("data")
         func = _make_func([p], [ir.IRAssign("alias", name)])
         annotate_types(func)
@@ -87,8 +87,8 @@ class TestNameDtype:
 
     def test_propagated_from_prior_assign(self):
         """A name should pick up the type from a preceding assignment."""
-        p = _field_param("data", f32)
-        load = ir.IRFieldLoad(ir.IRName("data"), ir.IRConstant(0))
+        p = _array_param("data", f32)
+        load = ir.IRArrayLoad(ir.IRName("data"), ir.IRConstant(0))
         a1 = ir.IRAssign("val", load)
         name = ir.IRName("val")
         a2 = ir.IRAssign("copy", name)
@@ -97,35 +97,35 @@ class TestNameDtype:
         assert name.dtype is f32
 
 
-# --- Field loads ---
+# --- Array loads ---
 
-class TestFieldLoadDtype:
-    def test_f32_field(self):
-        p = _field_param("data", f32)
-        load = ir.IRFieldLoad(ir.IRName("data"), ir.IRConstant(0))
+class TestArrayLoadDtype:
+    def test_f32_array(self):
+        p = _array_param("data", f32)
+        load = ir.IRArrayLoad(ir.IRName("data"), ir.IRConstant(0))
         func = _make_func([p], [ir.IRAssign("v", load)])
         annotate_types(func)
         assert load.dtype is f32
 
-    def test_i32_field(self):
-        p = _field_param("idx", i32)
-        load = ir.IRFieldLoad(ir.IRName("idx"), ir.IRConstant(0))
+    def test_i32_array(self):
+        p = _array_param("idx", i32)
+        load = ir.IRArrayLoad(ir.IRName("idx"), ir.IRConstant(0))
         func = _make_func([p], [ir.IRAssign("v", load)])
         annotate_types(func)
         assert load.dtype is i32
 
-    def test_f64_field(self):
-        p = _field_param("data", f64)
-        load = ir.IRFieldLoad(ir.IRName("data"), ir.IRConstant(0))
+    def test_f64_array(self):
+        p = _array_param("data", f64)
+        load = ir.IRArrayLoad(ir.IRName("data"), ir.IRConstant(0))
         func = _make_func([p], [ir.IRAssign("v", load)])
         annotate_types(func)
         assert load.dtype is f64
 
     def test_index_gets_annotated(self):
-        """The index sub-expression inside a field load should also get dtype."""
-        p = _field_param("data", f32)
+        """The index sub-expression inside an array load should also get dtype."""
+        p = _array_param("data", f32)
         idx = ir.IRConstant(5)
-        load = ir.IRFieldLoad(ir.IRName("data"), idx)
+        load = ir.IRArrayLoad(ir.IRName("data"), idx)
         func = _make_func([p], [ir.IRAssign("v", load)])
         annotate_types(func)
         assert idx.dtype is i32
@@ -152,9 +152,9 @@ class TestBinOpDtype:
         annotate_types(func)
         assert binop.dtype is i64
 
-    def test_f32_times_f32_field(self):
-        p = _field_param("data", f32)
-        load = ir.IRFieldLoad(ir.IRName("data"), ir.IRConstant(0))
+    def test_f32_times_f32_array(self):
+        p = _array_param("data", f32)
+        load = ir.IRArrayLoad(ir.IRName("data"), ir.IRConstant(0))
         binop = ir.IRBinOp("*", load, ir.IRConstant(2.0))
         func = _make_func([p], [ir.IRAssign("r", binop)])
         annotate_types(func)
@@ -379,20 +379,20 @@ class TestLoopVarDtype:
 # --- Type promotion through complex expressions ---
 
 class TestPromotionChains:
-    def test_field_load_plus_int_constant(self):
-        """f32_field[i] + 1 → f32"""
-        p = _field_param("data", f32)
-        load = ir.IRFieldLoad(ir.IRName("data"), ir.IRConstant(0))
+    def test_array_load_plus_int_constant(self):
+        """f32_array[i] + 1 → f32"""
+        p = _array_param("data", f32)
+        load = ir.IRArrayLoad(ir.IRName("data"), ir.IRConstant(0))
         binop = ir.IRBinOp("+", load, ir.IRConstant(1))
         func = _make_func([p], [ir.IRAssign("r", binop)])
         annotate_types(func)
         assert load.dtype is f32
         assert binop.dtype is f32
 
-    def test_i32_field_load_stays_int(self):
-        """i32_field[i] + 1 → i32"""
-        p = _field_param("idx", i32)
-        load = ir.IRFieldLoad(ir.IRName("idx"), ir.IRConstant(0))
+    def test_i32_array_load_stays_int(self):
+        """i32_array[i] + 1 → i32"""
+        p = _array_param("idx", i32)
+        load = ir.IRArrayLoad(ir.IRName("idx"), ir.IRConstant(0))
         binop = ir.IRBinOp("+", load, ir.IRConstant(1))
         func = _make_func([p], [ir.IRAssign("r", binop)])
         annotate_types(func)
@@ -446,12 +446,12 @@ class TestControlFlowAnnotation:
         assert then_val.dtype is f32
         assert else_val.dtype is i32
 
-    def test_field_store_subexprs_annotated(self):
-        """Index and value in a field store should get dtype."""
-        p = _field_param("out", f32)
+    def test_array_store_subexprs_annotated(self):
+        """Index and value in an array store should get dtype."""
+        p = _array_param("out", f32)
         idx = ir.IRConstant(0)
         val = ir.IRBinOp("+", ir.IRConstant(1.0), ir.IRConstant(2.0))
-        store = ir.IRFieldStore(ir.IRName("out"), idx, val)
+        store = ir.IRArrayStore(ir.IRName("out"), idx, val)
         func = _make_func([p], [store])
         annotate_types(func)
         assert idx.dtype is i32
@@ -462,14 +462,14 @@ class TestControlFlowAnnotation:
 
 class TestAtomicOpDtype:
     def test_atomic_add_f32(self):
-        p = _field_param("buf", f32)
+        p = _array_param("buf", f32)
         atomic = ir.IRAtomicOp("add", ir.IRName("buf"), ir.IRConstant(0), ir.IRConstant(1.0))
         func = _make_func([p], [atomic])
         annotate_types(func)
         assert atomic.dtype is f32
 
     def test_atomic_add_i32(self):
-        p = _field_param("buf", i32)
+        p = _array_param("buf", i32)
         atomic = ir.IRAtomicOp("add", ir.IRName("buf"), ir.IRConstant(0), ir.IRConstant(1))
         func = _make_func([p], [atomic])
         annotate_types(func)
@@ -481,19 +481,19 @@ class TestAtomicOpDtype:
 class TestEndToEnd:
     def test_saxpy_pattern(self):
         """y[i] = a * x[i] + y[i]  — all expression nodes should be f32."""
-        x = _field_param("x", f32)
-        y = _field_param("y", f32)
+        x = _array_param("x", f32)
+        y = _array_param("y", f32)
         a = _scalar_param("a", f32)
 
         # a * x[i]
-        xi_load = ir.IRFieldLoad(ir.IRName("x"), ir.IRName("i"))
+        xi_load = ir.IRArrayLoad(ir.IRName("x"), ir.IRName("i"))
         ax = ir.IRBinOp("*", ir.IRName("a"), xi_load)
         # y[i]
-        yi_load = ir.IRFieldLoad(ir.IRName("y"), ir.IRName("i"))
+        yi_load = ir.IRArrayLoad(ir.IRName("y"), ir.IRName("i"))
         # a*x[i] + y[i]
         add = ir.IRBinOp("+", ax, yi_load)
         # y[i] = ...
-        store = ir.IRFieldStore(ir.IRName("y"), ir.IRName("i"), add)
+        store = ir.IRArrayStore(ir.IRName("y"), ir.IRName("i"), add)
         pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(1000), [store])
 
         func = _make_func([x, y, a], [pfor])
@@ -506,7 +506,7 @@ class TestEndToEnd:
 
     def test_index_arithmetic_stays_int(self):
         """idx = i * width + j — should stay i64 (loop vars are i64)."""
-        p = _field_param("data", f32)
+        p = _array_param("data", f32)
         w = _scalar_param("width", i32)
 
         i_name = ir.IRName("i")

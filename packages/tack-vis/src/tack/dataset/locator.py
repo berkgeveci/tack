@@ -177,11 +177,11 @@ class CellLocator:
         self.data = data
         n = data.num_cells
         dtype = data.dtype
-        self.lo = tack.Vector.field(3, dtype, shape=(n,))
-        self.hi = tack.Vector.field(3, dtype, shape=(n,))
+        self.lo = tack.empty((n,), tack.vec(3, dtype))
+        self.hi = tack.empty((n,), tack.vec(3, dtype))
         if n:
             for_each(_cell_boxes, data, "cells", self.lo, self.hi)
-            lo, hi = self.lo.to_numpy(vectors=True), self.hi.to_numpy(vectors=True)
+            lo, hi = self.lo.numpy(), self.hi.numpy()
             low, high = lo.min(axis=0).astype(float), hi.max(axis=0).astype(float)
         else:
             low = high = np.zeros(3)
@@ -209,15 +209,15 @@ class CellLocator:
             data = self.data
             n = data.num_cells
             nbins = int(np.prod(self.dims))
-            counts = tack.field(tack.i32, shape=(n,))
-            starts = tack.field(tack.i64, shape=(n,))
+            counts = tack.empty((n,), tack.i32)
+            starts = tack.empty((n,), tack.i64)
             total = 0
             if n:
                 _bins_per_cell(self.lo, self.hi, *self._grid(), _TOLERANCE, counts)
                 total = exclusive_scan(counts, starts, n)
             index = ids.at_least(data.id_dtype, total)
-            keys = tack.field(tack.i32, shape=(total,))
-            cells = tack.field(data.id_dtype, shape=(total,))
+            keys = tack.empty((total,), tack.i32)
+            cells = tack.empty((total,), data.id_dtype)
             if total:
                 _bin_entries(self.lo, self.hi, *self._grid(), _TOLERANCE, starts, keys, cells)
             order, offsets = bucket_order(keys, nbins, index)
@@ -230,11 +230,11 @@ class CellLocator:
         dataset's ``id_dtype``, and a field of its parametric coordinates there."""
         data = self.data
         dtype = data.dtype
-        if not hasattr(points, "to_numpy"):
+        if not hasattr(points, "numpy"):
             host = np.ascontiguousarray(np.asarray(points, dtype.numpy_dtype).reshape(-1, 3))
-            points = tack.Vector.field(3, dtype, shape=(len(host),))
+            points = tack.empty((len(host),), tack.vec(3, dtype))
             if len(host):
-                points.from_numpy(host)
+                tack.copyto(points, host)
         m = arrays.size_of(points)
         # The smallest cell holding a point wins by an atomic minimum: in i32 below
         # 2**31 cells, as every backend has those atomics; in i64 past that.
@@ -247,13 +247,13 @@ class CellLocator:
                 raise NotImplementedError(
                     f"locating points among {data.num_cells} cells needs 64-bit atomics, "
                     f"which the {get_backend().name} backend does not have")
-        found = tack.full(scratch, (m,), none) if m else tack.field(scratch, shape=(0,))
-        pcs = tack.Vector.field(3, dtype, shape=(m,))
+        found = tack.full((m,), none, scratch) if m else tack.empty((0,), scratch)
+        pcs = tack.empty((m,), tack.vec(3, dtype))
         if m:
             pcs.fill(0)
         if m and data.num_cells:
             nbins = int(np.prod(self.dims))
-            keys = tack.field(tack.i32, shape=(m,))
+            keys = tack.empty((m,), tack.i32)
             _point_bins(points, *self._grid(), float(self.slack), keys)
             # The extra bin: outside the grid.
             order, starts = bucket_order(keys, nbins + 1, ids.at_least(data.id_dtype, m))

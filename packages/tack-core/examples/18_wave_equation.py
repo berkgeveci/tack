@@ -18,8 +18,8 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 N = 1024
 C = 1.0  # wave speed
@@ -27,9 +27,9 @@ DX = 1.0 / N
 DT = 0.5 * DX / C  # CFL: c*dt/dx < 1
 STEPS = 2000
 
-u_prev = tack.empty(dtype=tack.f32, shape=(N,))
-u_curr = tack.empty(dtype=tack.f32, shape=(N,))
-u_next = tack.empty(dtype=tack.f32, shape=(N,))
+u_prev = tack.empty((N,))
+u_curr = tack.empty((N,))
+u_next = tack.empty((N,))
 
 
 @tack.kernel
@@ -58,8 +58,8 @@ def shift(u_prev, u_curr, u_next, n):
 x = np.linspace(0, 1, N, dtype=np.float32)
 sigma = 0.02
 pulse = np.exp(-((x - 0.5) ** 2) / (2 * sigma**2)).astype(np.float32)
-u_curr.from_numpy(pulse)
-u_prev.from_numpy(pulse)  # zero initial velocity
+tack.copyto(u_curr, pulse)
+tack.copyto(u_prev, pulse)  # zero initial velocity
 
 courant2 = (C * DT / DX) ** 2
 print(f"1D Wave equation: N={N}, c={C}, Courant^2={courant2:.4f}")
@@ -70,7 +70,7 @@ for step in range(STEPS):
     shift(u_prev, u_curr, u_next, N)
 
     if step % 400 == 0:
-        data = u_curr.to_numpy()
+        data = u_curr.numpy()
         snapshots.append((step, data.copy()))
         print(f"  step {step:>5d}: max={data.max():.6f}  energy~{np.sum(data**2):.6f}")
 

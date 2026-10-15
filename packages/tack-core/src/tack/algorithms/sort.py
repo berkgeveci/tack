@@ -1,4 +1,4 @@
-"""Sorting and segmented reductions on tack fields.
+"""Sorting and segmented reductions on tack arrays.
 
 A stable least-significant-digit radix sort, with ``unique`` and
 ``reduce_by_key`` on top of it. On the CPU, everything here is a sequence of
@@ -10,7 +10,7 @@ Usage:
     from tack import algorithms
 
     perm = algorithms.argsort(keys)                       # stable permutation
-    skeys, svals = algorithms.sort_by_key(keys, values)   # new, sorted fields
+    skeys, svals = algorithms.sort_by_key(keys, values)   # new, sorted arrays
     ukeys, counts = algorithms.unique(skeys)              # run-length summary
     ukeys, sums = algorithms.reduce_by_key(skeys, svals)  # one value per key
 
@@ -53,6 +53,7 @@ whose ids are 64-bit asks for ``i64`` whatever its size.
 import tack
 from tack.algorithms.copy import copy
 from tack.algorithms.scan import exclusive_scan
+from tack.runtime.dispatch import on_inputs_device
 
 # Elements per chunk in the counting and scatter kernels. Larger chunks
 # mean fewer threads with longer serial loops and a shorter scan. The
@@ -166,8 +167,8 @@ def _key_range(mapped, n):
     mins = maxs = mapped
     while True:
         nchunks = (n + (2048 if tiles else _CHUNK) - 1) // (2048 if tiles else _CHUNK)
-        out_mins = tack.field(dtype=tack.u64, shape=(nchunks,))
-        out_maxs = tack.field(dtype=tack.u64, shape=(nchunks,))
+        out_mins = tack.empty((nchunks,), tack.u64)
+        out_maxs = tack.empty((nchunks,), tack.u64)
         if tiles:
             _tile_range(mins, maxs, out_mins, out_maxs, n, nchunks)
             if nchunks == 1:
@@ -416,17 +417,18 @@ _REDUCERS = {
 
 # --- host side --------------------------------------------------------------
 
-def _count(n, *fields):
-    """Resolve and check the element count: every field is read or written
+def _count(n, *arrays):
+    """Resolve and check the element count: every array is read or written
     on [0, n)."""
-    n = fields[0].size if n is None else int(n)
-    for f in fields:
+    n = arrays[0].size if n is None else int(n)
+    for f in arrays:
         if not 0 <= n <= f.size:
             raise ValueError(
-                f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
+                f"n={n} is outside [0, {f.size}] for an array of {f.size} elements")
     return n
 
 
+@on_inputs_device
 def _key_width(keys):
     mapped = _KEY_DTYPES.get(keys.dtype)
     if mapped is None:
@@ -436,23 +438,24 @@ def _key_width(keys):
     return mapped
 
 
-def _read(field):
-    return field.to_numpy()[0].item()
+def _read(array):
+    return array.numpy()[0].item()
 
 
+@on_inputs_device
 def argsort(keys, n=None, index_dtype=None):
     """Stable permutation that sorts the first ``n`` keys ascending.
 
-    ``keys`` is an ``i32``, ``u32``, ``i64`` or ``u64`` field.  Returns a
-    new field ``perm`` of ``n`` elements with ``keys[perm[0]] <=
+    ``keys`` is an ``i32``, ``u32``, ``i64`` or ``u64`` array.  Returns a
+    new array ``perm`` of ``n`` elements with ``keys[perm[0]] <=
     keys[perm[1]] <= ...``; equal keys keep their original order.  ``n``
-    defaults to the whole field and may be zero.  ``perm`` is ``i32``, or
+    defaults to the whole array and may be zero.  ``perm`` is ``i32``, or
     ``i64`` past ``2**31 - 1`` elements or when ``index_dtype`` asks.
     """
     _key_width(keys)
     n = _count(n, keys)
     indices = _index_dtype(n, index_dtype)
-    perm = tack.field(dtype=indices, shape=(n,))
+    perm = tack.empty((n,), indices)
     if n == 0:
         return perm
     _iota(perm, n)
@@ -460,7 +463,7 @@ def argsort(keys, n=None, index_dtype=None):
         return perm
 
     flip = 0 if keys.dtype in (tack.u32, tack.u64) else 1 << (keys.dtype.bits - 1)
-    mapped = tack.field(dtype=tack.u64, shape=(n,))
+    mapped = tack.empty((n,), tack.u64)
     map_keys = _map_keys_32 if keys.dtype.bits == 32 else _map_keys_64
     map_keys(keys, mapped, flip, n)
 
@@ -475,15 +478,15 @@ def argsort(keys, n=None, index_dtype=None):
 
     from tack.runtime.dispatch import get_backend
 
-    mapped_b = tack.field(dtype=tack.u64, shape=(n,))
-    perm_b = tack.field(dtype=indices, shape=(n,))
+    mapped_b = tack.empty((n,), tack.u64)
+    perm_b = tack.empty((n,), indices)
     if get_backend().supports_workgroups:
         # Tiles sorted into the second buffers, then scattered back: the
         # pass's result is where its input was.
         ntiles = (n + _TILE - 1) // _TILE
-        counts = tack.field(dtype=tack.i32, shape=(_RADIX * ntiles,))
-        offsets = tack.field(dtype=indices, shape=(_RADIX * ntiles,))
-        starts = tack.field(dtype=tack.i32, shape=(_RADIX * ntiles,))
+        counts = tack.empty((_RADIX * ntiles,), tack.i32)
+        offsets = tack.empty((_RADIX * ntiles,), indices)
+        starts = tack.empty((_RADIX * ntiles,), tack.i32)
         for p in range(passes):
             shift = p * _RADIX_BITS
             _sort_tiles(mapped, perm, mapped_b, perm_b, counts, starts, base, shift, n,
@@ -493,8 +496,8 @@ def argsort(keys, n=None, index_dtype=None):
                            ntiles)
         return perm
     nchunks = (n + _CHUNK - 1) // _CHUNK
-    counts = tack.field(dtype=tack.i32, shape=(_RADIX * nchunks,))
-    offsets = tack.field(dtype=indices, shape=(_RADIX * nchunks,))
+    counts = tack.empty((_RADIX * nchunks,), tack.i32)
+    offsets = tack.empty((_RADIX * nchunks,), indices)
     src_keys, src_perm, dst_keys, dst_perm = mapped, perm, mapped_b, perm_b
     for p in range(passes):
         shift = p * _RADIX_BITS
@@ -509,77 +512,82 @@ def argsort(keys, n=None, index_dtype=None):
     return perm
 
 
+@on_inputs_device
 def gather(src, indices, n=None):
-    """New field ``out`` with ``out[i] = src[indices[i]]`` for ``i < n``.
+    """New array ``out`` with ``out[i] = src[indices[i]]`` for ``i < n``.
 
-    ``indices`` is an integer field; ``n`` defaults to its size.  The
+    ``indices`` is an integer array; ``n`` defaults to its size.  The
     output has ``src``'s dtype.  Indices must lie in ``[0, src.size)``.
     """
     n = _count(n, indices)
-    out = tack.field(dtype=src.dtype, shape=(n,))
+    out = tack.empty((n,), src.dtype)
     if n:
         _gather(src, indices, out, n)
     return out
 
 
+@on_inputs_device
 def sort_by_key(keys, values=None, n=None):
     """Sort the first ``n`` keys ascending, carrying ``values`` along.
 
-    Returns ``(sorted_keys, sorted_values)`` as new fields of ``n``
+    Returns ``(sorted_keys, sorted_values)`` as new arrays of ``n``
     elements; ``sorted_values`` is ``None`` when no values are given.  The
     sort is stable, so equal keys keep the order of their values.  See
     ``argsort`` for the key dtypes.
     """
-    fields = (keys,) if values is None else (keys, values)
-    n = _count(n, *fields)
+    arrays = (keys,) if values is None else (keys, values)
+    n = _count(n, *arrays)
     perm = argsort(keys, n)
     sorted_keys = gather(keys, perm, n)
     sorted_values = None if values is None else gather(values, perm, n)
     return sorted_keys, sorted_values
 
 
+@on_inputs_device
 def _run_offsets(sorted_keys, n, index_dtype=None):
-    """Offsets of the runs of equal adjacent keys: an index field (see
+    """Offsets of the runs of equal adjacent keys: an index array (see
     ``argsort``) of ``nruns + 1`` entries with ``offsets[nruns] == n``.
     Returns ``(offsets, nruns)``; an empty input has no runs."""
     indices = _index_dtype(n, index_dtype)
     if n == 0:
-        return tack.field(dtype=indices, shape=(1,)), 0
-    flags = tack.field(dtype=tack.i32, shape=(n,))
-    run_ids = tack.field(dtype=indices, shape=(n,))
+        return tack.empty((1,), indices), 0
+    flags = tack.empty((n,), tack.i32)
+    run_ids = tack.empty((n,), indices)
     _flag_run_starts(sorted_keys, flags, n)
     nruns = exclusive_scan(flags, run_ids, n)
-    offsets = tack.field(dtype=indices, shape=(nruns + 1,))
+    offsets = tack.empty((nruns + 1,), indices)
     _scatter_run_starts(flags, run_ids, offsets, n, nruns)
     return offsets, nruns
 
 
+@on_inputs_device
 def unique(sorted_keys, n=None):
-    """The distinct keys of a sorted field and how often each occurs.
+    """The distinct keys of a sorted array and how often each occurs.
 
     ``sorted_keys`` must have equal keys adjacent (sorted, or grouped).
-    Returns ``(keys, counts)``: ``keys`` is a new field of the same dtype
+    Returns ``(keys, counts)``: ``keys`` is a new array of the same dtype
     holding each distinct key once, in order of first appearance, and
-    ``counts`` the run lengths, an index field (see ``argsort``).  Works for any
+    ``counts`` the run lengths, an index array (see ``argsort``).  Works for any
     dtype that supports ``!=``.
     """
     n = _count(n, sorted_keys)
     offsets, nruns = _run_offsets(sorted_keys, n)
-    keys = tack.field(dtype=sorted_keys.dtype, shape=(nruns,))
-    counts = tack.field(dtype=offsets.dtype, shape=(nruns,))
+    keys = tack.empty((nruns,), sorted_keys.dtype)
+    counts = tack.empty((nruns,), offsets.dtype)
     if nruns:
         _gather(sorted_keys, offsets, keys, nruns)
         _run_lengths(offsets, counts, nruns)
     return keys, counts
 
 
+@on_inputs_device
 def reduce_by_key(sorted_keys, values, n=None, op="sum"):
     """Reduce the values of each run of equal keys to one value.
 
     ``sorted_keys`` must have equal keys adjacent, as for ``unique``;
-    ``values`` is any field with at least ``n`` elements.  ``op`` is
+    ``values`` is any array with at least ``n`` elements.  ``op`` is
     ``"sum"``, ``"min"`` or ``"max"``.  Returns ``(keys, reduced)``: the
-    distinct keys and a new field of ``values``' dtype with one entry per
+    distinct keys and a new array of ``values``' dtype with one entry per
     key.  Each run is reduced serially in element order, so the result is
     exact for integers and reproducible for floats; integer sums wrap at
     the values' width.
@@ -589,8 +597,8 @@ def reduce_by_key(sorted_keys, values, n=None, op="sum"):
         raise ValueError(f"op must be one of {', '.join(_REDUCERS)}; got {op!r}")
     n = _count(n, sorted_keys, values)
     offsets, nruns = _run_offsets(sorted_keys, n)
-    keys = tack.field(dtype=sorted_keys.dtype, shape=(nruns,))
-    reduced = tack.field(dtype=values.dtype, shape=(nruns,))
+    keys = tack.empty((nruns,), sorted_keys.dtype)
+    reduced = tack.empty((nruns,), values.dtype)
     if nruns:
         _gather(sorted_keys, offsets, keys, nruns)
         reducer(values, offsets, reduced, nruns)

@@ -34,7 +34,7 @@ def _python_pool(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     return get_backend()
 
 
@@ -61,11 +61,11 @@ def _sum_into(x, total, n):
 
 
 def _run(kernel, n, dtype=tack.f32):
-    x = tack.field(dtype=dtype, shape=(n,))
-    out = tack.field(dtype=dtype, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32) * 0.001)
+    x = tack.empty((n,), dtype)
+    out = tack.empty((n,), dtype)
+    tack.copyto(x, np.arange(n, dtype=np.float32) * 0.001)
     kernel(x, out, n)
-    return x.to_numpy(), out.to_numpy()
+    return x.numpy(), out.numpy()
 
 
 # ── Correctness across every dispatch path ───────────────────────────
@@ -80,13 +80,13 @@ def test_results_match_a_single_serial_run(cpu, n):
 def test_repeated_dispatches_stay_correct(cpu):
     """The estimate updates as it goes; the results must not drift."""
     n = 200000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32) * 0.001)
-    expected = x.to_numpy() * 2.0 + 1.0
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32) * 0.001)
+    expected = x.numpy() * 2.0 + 1.0
     for _ in range(20):
         _scale(x, out, n)
-        np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-6)
+        np.testing.assert_allclose(out.numpy(), expected, rtol=1e-6)
 
 
 def test_atomics_are_not_double_counted(cpu):
@@ -96,27 +96,27 @@ def test_atomics_are_not_double_counted(cpu):
     element exactly once — so an atomic accumulation totals correctly.
     """
     n = 100000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.ones(n, dtype=np.float32))
+    x = tack.empty((n,))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
     for _ in range(3):
-        total = tack.field(dtype=tack.f32, shape=(1,))
+        total = tack.empty((1,))
         total.fill(0)
         _sum_into(x, total, n)
-        assert total.to_numpy()[0] == pytest.approx(float(n), rel=1e-4)
+        assert total.numpy()[0] == pytest.approx(float(n), rel=1e-4)
 
 
 def test_expensive_kernel_matches_numpy(cpu):
     """A kernel that certainly threads still agrees with a reference."""
     n = 50000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
     src = np.linspace(0.0, 3.0, n, dtype=np.float32)
-    x.from_numpy(src)
+    tack.copyto(x, src)
     _expensive(x, out, n)
 
     j = np.arange(24, dtype=np.float64)
     expected = (np.sin(src[:, None] + j) * np.cos(src[:, None] - j)).sum(axis=1)
-    np.testing.assert_allclose(out.to_numpy(), expected, atol=2e-4)
+    np.testing.assert_allclose(out.numpy(), expected, atol=2e-4)
 
 
 # ── The policy itself ────────────────────────────────────────────────
@@ -124,8 +124,8 @@ def test_expensive_kernel_matches_numpy(cpu):
 def test_small_range_never_spins_up_threads(cpu):
     """A tiny dispatch must not pay for a pool, or even measure one."""
     backend = CPUBackend()
-    x = tack.field(dtype=tack.f32, shape=(256,))
-    out = tack.field(dtype=tack.f32, shape=(256,))
+    x = tack.empty((256,))
+    out = tack.empty((256,))
     compiled = _compile_for(backend, _scale, [x, out, 256])
 
     for _ in range(5):
@@ -139,8 +139,8 @@ def test_cost_estimate_is_recorded(cpu):
     """A serial run leaves behind a per-element cost and a threshold."""
     backend = CPUBackend()
     n = 4096
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
     compiled = _compile_for(backend, _scale, [x, out, n])
 
     assert compiled.ns_per_elem == 0.0
@@ -203,9 +203,9 @@ def test_measured_cost_ranks_two_real_kernels(cpu):
     """
     backend = CPUBackend()
     n = 100_000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.linspace(0, 1, n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.linspace(0, 1, n, dtype=np.float32))
 
     cheap = _compile_for(backend, _scale, [x, out, n])
     costly = _compile_for(backend, _expensive, [x, out, n])
@@ -397,9 +397,9 @@ def test_a_long_fan_out_floors_the_serial_estimate(cpu):
     if not backend._v2:
         pytest.skip("policy v1 does not measure the parallel rate")
     n = 200000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.linspace(0, 1, n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.linspace(0, 1, n, dtype=np.float32))
     compiled = _compile_for(backend, _expensive, [x, out, n])
     backend._dispatch(compiled, [x, out, n], n)      # measures the call cost
 
@@ -429,9 +429,9 @@ def test_a_workload_that_becomes_cheap_returns_to_serial(cpu, monkeypatch):
     if not backend._v2:
         pytest.skip("policy v1 does not measure the parallel rate")
     n = 1 << 17
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.linspace(0, 3, n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.linspace(0, 3, n, dtype=np.float32))
     args = [x, out, n, 24]
     compiled = _compile_for(backend, _variable_work, args)
     compiled.call_range(compiled.bind(args), 0, n)
@@ -472,7 +472,7 @@ def test_a_workload_that_becomes_cheap_returns_to_serial(cpu, monkeypatch):
     assert serial_ranges and serial_ranges[-1] == (0, n), (
         'the cheap workload never returned to whole-range serial execution')
     assert compiled.parallel_min_elems > n
-    np.testing.assert_array_equal(out.to_numpy(), np.zeros(n, dtype=np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.zeros(n, dtype=np.float32))
 
 
 @pytest.mark.parametrize('whole_range, worker_spans, retire', [
@@ -492,9 +492,9 @@ def test_floor_retirement_requires_the_whole_range_to_be_fast(
     if not backend._v2:
         pytest.skip("policy v1 does not measure the parallel rate")
     n = 4096
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
     out.fill(0)
     args = [x, out, n]
     compiled = _compile_for(backend, _scale, args)
@@ -530,8 +530,8 @@ def test_floor_retirement_requires_the_whole_range_to_be_fast(
         assert compiled.serial_floor_ns == 1000.0
         assert not compiled.recheck_due()
     expected = np.zeros(n, dtype=np.float32)
-    expected[:end] = x.to_numpy()[:end] * 2.0 + 1.0
-    np.testing.assert_array_equal(out.to_numpy(), expected)
+    expected[:end] = x.numpy()[:end] * 2.0 + 1.0
+    np.testing.assert_array_equal(out.numpy(), expected)
 
 
 @tack.kernel
@@ -594,9 +594,9 @@ def test_a_cheap_prefix_does_not_stall_the_rechecks(cpu, monkeypatch):
         pytest.skip("machine has one core")
     n = 1 << 17
     cut = n // 4
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.linspace(0.0, 3.0, n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.linspace(0.0, 3.0, n, dtype=np.float32))
     args = [x, out, n, cut]
     compiled = _compile_for(backend, _front_loaded, args)
     backend._measure_call_overhead(compiled, compiled.bind(args))
@@ -636,9 +636,9 @@ def test_negative_control_prefix_only_sampling_is_detected(cpu, monkeypatch):
         pytest.skip("machine has one core")
     n = 1 << 17
     cut = n // 4
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.linspace(0.0, 3.0, n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.linspace(0.0, 3.0, n, dtype=np.float32))
     args = [x, out, n, cut]
     compiled = _compile_for(backend, _front_loaded, args)
     backend._measure_call_overhead(compiled, compiled.bind(args))
@@ -667,12 +667,12 @@ def test_negative_control_prefix_only_sampling_is_detected(cpu, monkeypatch):
 def _check_front_loaded(x, out, n, cut):
     j2 = np.arange(2, dtype=np.float64)
     j24 = np.arange(24, dtype=np.float64)
-    src = x.to_numpy()
+    src = x.numpy()
     expected = np.where(
         np.arange(n) < cut,
         (np.sin(src[:, None] + j2) * np.cos(src[:, None] - j2)).sum(axis=1),
         (np.sin(src[:, None] + j24) * np.cos(src[:, None] - j24)).sum(axis=1))
-    np.testing.assert_allclose(out.to_numpy(), expected, atol=2e-4)
+    np.testing.assert_allclose(out.numpy(), expected, atol=2e-4)
 
 
 @pytest.mark.timing
@@ -688,9 +688,9 @@ def test_timing_a_cheap_prefix_does_not_stall_the_rechecks(cpu):
     _require_idle(backend)
     n = 1 << 17
     cut = n // 4
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.linspace(0.0, 3.0, n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.linspace(0.0, 3.0, n, dtype=np.float32))
     args = [x, out, n, cut]
     compiled = _compile_for(backend, _front_loaded, args)
 
@@ -726,7 +726,7 @@ def test_first_sight_samples_inside_the_range_not_its_prefix(cpu):
     if backend.num_threads < 2:
         pytest.skip("machine has one core")
     n = 1 << 20
-    visits = tack.zeros(dtype=tack.i32, shape=(n,))
+    visits = tack.zeros((n,), tack.i32)
     args = [visits, n]
     compiled = _compile_for(backend, _count_visits, args)
     assert n >= backend._probe_min_range()
@@ -741,7 +741,7 @@ def test_first_sight_samples_inside_the_range_not_its_prefix(cpu):
     assert first_start > n // 2, f"first sample was {serial[0]}"
     assert first_end - first_start < n // 8
     # Head, sample and tail together cover every element exactly once.
-    np.testing.assert_array_equal(visits.to_numpy(), np.ones(n, dtype=np.int32))
+    np.testing.assert_array_equal(visits.numpy(), np.ones(n, dtype=np.int32))
 
 
 # ── Counting cores ───────────────────────────────────────────────────
@@ -859,8 +859,8 @@ def _fixed_timing(monkeypatch, compiled, work_ns):
 
 
 def _measured(backend, kernel, n):
-    x = tack.zeros(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.zeros((n,))
+    out = tack.empty((n,))
     compiled = _compile_for(backend, kernel, [x, out, n])
     backend._dispatch(compiled, [x, out, n], n)
     assert compiled.ns_per_elem > 0.0
@@ -1214,7 +1214,7 @@ def test_a_stale_parallel_rate_gets_re_measured(cpu, monkeypatch):
     assert fanned, "a parallel rate that holds the range serial was never re-measured"
     assert min(seen) < rate * 0.95, (
         f"re-measured r_p never got under the stale {rate * 0.95:.3f}: {seen}")
-    x, out = args[0].to_numpy().astype(np.float64), args[1].to_numpy()
+    x, out = args[0].numpy().astype(np.float64), args[1].numpy()
     want = sum(np.sin(x + j) * np.cos(x - j) for j in range(24))
     np.testing.assert_allclose(out, want, rtol=1e-4, atol=1e-4)
 
@@ -1272,7 +1272,7 @@ def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
 
     It is taken on a range nothing has touched yet, so it pays first-touch
     page faults on top of a short slice's start-up: 15 ns/element for a
-    kernel that runs at 0.2 once its fields are resident, on a one-socket
+    kernel that runs at 0.2 once its arrays are resident, on a one-socket
     Xeon. Believed, that puts the threshold under the range, and the next
     dispatch calibrates the fan-out -- 210 ms of deliberate sleeps -- to
     learn the range never wanted threads. A range a serial run finishes
@@ -1283,9 +1283,9 @@ def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
         pytest.skip("policy v2 with threads only")
     n = 100_000
     assert n >= backend._probe_min_range(), "test needs the first-sight path"
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
     args = [x, out, n]
     compiled = _compile_for(backend, _scale, args)
     backend._dispatch(compiled, args, n)
@@ -1301,7 +1301,7 @@ def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
     assert backend._fan_out_ns is None, (
         "calibrated the fan-out for a range serial finishes in microseconds")
     assert n < compiled.parallel_min_elems
-    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * 2.0 + 1.0,
+    np.testing.assert_allclose(out.numpy(), x.numpy() * 2.0 + 1.0,
                                rtol=1e-6)
 
 
@@ -1381,9 +1381,9 @@ def test_recheck_keeps_the_parallelism(cpu, monkeypatch):
     """
     backend = CPUBackend()
     n = 1 << 17
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32) * 0.001)
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32) * 0.001)
     compiled = _compile_for(backend, _scale, [x, out, n])
 
     backend._dispatch(compiled, [x, out, n], n)
@@ -1412,16 +1412,16 @@ def test_recheck_keeps_the_parallelism(cpu, monkeypatch):
     assert end - start < n // 2, (
         f"re-measured {end - start} of {n} elements serially")
     np.testing.assert_allclose(
-        out.to_numpy(), x.to_numpy() * 2.0 + 1.0, rtol=1e-5)
+        out.numpy(), x.numpy() * 2.0 + 1.0, rtol=1e-5)
 
 
 def test_single_thread_backend_never_threads(cpu):
     """num_threads=1 keeps everything on the calling thread."""
     backend = CPUBackend(num_threads=1)
     n = 500000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
     compiled = _compile_for(backend, _scale, [x, out, n])
 
     for _ in range(3):
@@ -1429,7 +1429,7 @@ def test_single_thread_backend_never_threads(cpu):
 
     assert backend._pool is None
     assert compiled.parallel_min_elems > n
-    np.testing.assert_allclose(out.to_numpy(), x.to_numpy() * 2.0 + 1.0, rtol=1e-6)
+    np.testing.assert_allclose(out.numpy(), x.numpy() * 2.0 + 1.0, rtol=1e-6)
 
 
 def test_thread_count_from_environment(cpu, monkeypatch):
@@ -1482,9 +1482,9 @@ def test_timing_expensive_kernel_does_fan_out(cpu):
     _require_idle(backend)
 
     n = 200000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.linspace(0, 1, n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.linspace(0, 1, n, dtype=np.float32))
     compiled = _compile_for(backend, _expensive, [x, out, n])
 
     for _ in range(2):

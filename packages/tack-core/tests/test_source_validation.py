@@ -181,8 +181,8 @@ def _passes_local_array(x, out):
 
 
 def _pair(n=4):
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
     x.fill(2.0)
     return x, out
 
@@ -228,7 +228,7 @@ def bad(x, out):
 '''))
 
 
-def test_unbound_field_in_dimension_query():
+def test_unbound_array_in_dimension_query():
     with pytest.raises(NameError, match="name 'ghost'"):
         transform_kernel(ast.parse('''
 def bad(out):
@@ -377,7 +377,7 @@ def test_aliasing_a_local_array_is_rejected_with_its_position(backend):
 def test_passing_a_local_array_to_a_device_function_still_works(backend):
     x, out = _pair()
     _passes_local_array(x, out)
-    assert out.to_numpy().tolist() == [3.0] * 4
+    assert out.numpy().tolist() == [3.0] * 4
 
 
 def test_unsupported_syntax_reaches_the_caller_unwrapped(backend):

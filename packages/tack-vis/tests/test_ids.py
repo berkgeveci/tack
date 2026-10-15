@@ -32,8 +32,8 @@ def test_small_topologies_are_i32_unless_asked(backend, request):
 
 
 def test_i64_fields_keep_their_type(backend):
-    connectivity = tack.field(tack.i64, shape=(4,))
-    connectivity.from_numpy(np.arange(4, dtype=np.int64))
+    connectivity = tack.empty((4,), tack.i64)
+    tack.copyto(connectivity, np.arange(4, dtype=np.int64))
     assert _tetra(connectivity).id_dtype == tack.i64
 
 
@@ -41,7 +41,7 @@ def test_ids_past_32_bits_are_kept_not_wrapped(backend):
     big = 2**31 + 5
     t = _tetra(np.array([0, 1, 2, big], np.int64))
     assert t.id_dtype == tack.i64 and t.num_points == big + 1
-    assert t.connectivity.to_numpy()[3] == big
+    assert t.connectivity.numpy()[3] == big
     with pytest.raises(ValueError, match="i32"):
         _tetra(np.array([0, 1, 2, big], np.int64), id_dtype=tack.i32)
     with pytest.raises(ValueError, match="do not fit i32"):
@@ -56,10 +56,10 @@ def test_derived_entities_and_filters_follow_the_topology(backend):
                                               data.topology.connectivity,
                                               id_dtype=tack.i64), data.geometry.values)
     faces, edges = wide.topology.faces(), wide.topology.edges()
-    assert faces.rows.dtype == faces.side_face.dtype == edges.rows.dtype == tack.i64
+    assert faces.rows.scalar_dtype == faces.side_face.dtype == edges.rows.scalar_dtype == tack.i64
     narrow_faces = data.topology.faces()
-    np.testing.assert_array_equal(faces.rows.to_numpy(), narrow_faces.rows.to_numpy())
-    np.testing.assert_array_equal(edges.rows.to_numpy(), data.topology.edges().rows.to_numpy())
+    np.testing.assert_array_equal(faces.rows.numpy(), narrow_faces.rows.numpy())
+    np.testing.assert_array_equal(edges.rows.numpy(), data.topology.edges().rows.numpy())
     x = wide.positions()
     wide.fields["s"] = td.Field(td.H1(wide), _scalars(x[:, 0]))
     cut = td.contour(wide, "s", 0.7)
@@ -67,7 +67,7 @@ def test_derived_entities_and_filters_follow_the_topology(backend):
     assert td.as_polyhedra(wide).id_dtype == tack.i64
     cells, _ = td.CellLocator(wide).find([[0.5, 0.5, 0.5], [9.0, 9.0, 9.0]])
     assert cells.dtype == tack.i64
-    np.testing.assert_array_equal(cells.to_numpy(), [0, -1])
+    np.testing.assert_array_equal(cells.numpy(), [0, -1])
 
 
 def test_outputs_widen_only_when_they_must():

@@ -37,9 +37,9 @@ When a `@tack.kernel` is called, every backend's `execute()` goes through
 `verify_ir()` checks the IR after each of these stages. The IR template
 cached on the `Kernel` is never mutated; each new variant clones it and the
 passes mutate the clone. Compiled variants are cached per backend and per
-kernel object, under a key built from argument dtypes and field/scalar/texture
+kernel object, under a key built from argument dtypes and array/scalar/texture
 categories, vector widths, texture extents, template structure and constants,
-the dimension sizes baked into the code, and (on the CPU) whether the field
+the dimension sizes baked into the code, and (on the CPU) whether the array
 arguments overlap. A repeat call with the same key runs no passes and no
 verification; a repeat call with the same argument signature does not even
 build the key. Lowered templates and compiled variants are also kept on
@@ -59,7 +59,7 @@ packages/
             lang/                # Frontend: AST → IR
                 kernel.py        # @tack.kernel decorator, Kernel class, IR template cache
                 func.py          # @tack.func decorator, Func class
-                device_class.py  # @tack.device_class decorator (data_oriented: alias)
+                device_class.py  # @tack.device_class decorator
                 source_validation.py # Reject unsupported syntax before lowering
                 call_bindings.py # Static resolution of device-function calls
                 ast_transform.py # Python AST → Tack IR
@@ -72,13 +72,13 @@ packages/
                 ir_resolve.py    # Replace IRDimSize with constants
                 ir_optimize.py   # conservative copy propagation
                 ir_type_annotate.py  # Annotate expressions with dtype
-                ir_pack_scalars.py   # Group scalar params into field buffers
+                ir_pack_scalars.py   # Group scalar params into array buffers
                 type_inference.py    # Annotate IR params from actual args
                 atomic_support.py    # Atomic target and dtype checks
                 workgroup_support.py, workgroup_participation.py  # Workgroup checks
                 inspect_kernel.py    # tack.inspect()
                 types.py         # ScalarType: f32, i32, i64, etc.
-                field.py         # Field, Texture3D, Vector
+                array.py         # Array, Texture3D
                 dlpack.py        # DLPack import/export
             codegen/             # IR → target code
                 identifiers.py   # Collision-free target identifiers
@@ -93,7 +93,7 @@ packages/
                 kernel_utils.py  # resolve_variant(), the fast path, variant keys, kernel caches
                 disk_cache.py    # Lowered IR and compiled variants on disk (tack.cache)
                 debug_bounds.py  # Debug mode's hidden arguments and IndexError
-                dispatch.py      # tack.init(), tack.sync(), backend selection
+                dispatch.py      # devices, the default device, launch placement, tack.sync()
                 cpu.py           # CPU backend (llvmlite JIT, threading policy)
                 cpu_pool.py      # CPU thread pool, JIT-compiled from LLVM IR
                 metal.py         # Metal backend (pyobjc)
@@ -106,34 +106,23 @@ packages/
                 copy.py          # copy, fill_value
                 stats.py         # Statistics and histograms
 
-    tack-rendering/               # Path tracing renderer
-        src/tack/
-            rendering/
-                camera.py        # PerspectiveCamera, OrthographicCamera
-                canvas.py        # Canvas (framebuffer)
-                scene.py         # Scene, Actor, PointLight
-                bvh.py           # GPU BVH construction
-                pathtrace.py     # Path tracing kernel
-
     tack-vis/                     # Scientific visualization algorithms
         src/tack/
             dataset/             # Datasets, spaces, views and their algorithms
                 algorithms/      # contour, clip, threshold, gradients, ... (one per file)
-            deprecated/          # Superseded by tack.dataset, kept for reference
-                algorithms/      # flying_edges, compute_normals, cell_to_point, amr_blanking
-                fe/              # Lagrange bases, geometry maps, accessors
             interop/             # External framework interop
                 vtk.py           # VTK ↔ Tack zero-copy exchange
 ```
 
-All three packages share the `tack` namespace via `pkgutil.extend_path`.
-`tack-rendering` and `tack-vis` depend on `tack-core` but not on each other.
+Both packages share the `tack` namespace via `pkgutil.extend_path`;
+`tack-vis` depends on `tack-core`. The path tracer that was `tack-rendering`
+is archived under `archive/tack-rendering` until the dataset API settles.
 
 ## Code Size
 
 `tack-core` is about 25,100 lines of Python, including docstrings and
 comments (`wc -l` over `packages/tack-core/src`, October 2026);
-`tack-rendering` and `tack-vis` add about 3,800 and 14,200:
+`tack-vis` adds about 12,400:
 
 | Directory | Lines | Role |
 |-----------|-------|------|
@@ -168,7 +157,7 @@ function call support in the IR or any backend.
 
 **Template expansion at AST level.** `@tack.device_class` objects are
 resolved by rewriting the kernel AST before IR transformation. Class-level
-scalar attributes become constants, instance scalar attributes and field
+scalar attributes become constants, instance scalar attributes and array
 attributes become parameters, and method calls become inlined function
 bodies. The IR and codegens never see
 templates.
@@ -177,9 +166,9 @@ templates.
 device memory without allocation or copy. Each backend implements
 `wrap_ptr()` so that the wrapped memory is never freed by Tack (the
 CUDA, HIP and Level Zero buffers carry an `_owned = False` flag).
-Such fields are read-only by default, with an explicit `writable`
-opt-in. The flag is checked by host-side `Field` methods and, for
-kernels, at dispatch: a read-only field bound to a parameter the kernel
+Such arrays are read-only by default, with an explicit `writable`
+opt-in. The flag is checked by host-side `Array` methods and, for
+kernels, at dispatch: a read-only array bound to a parameter the kernel
 may store to is refused before the launch. This enables interop with in-situ frameworks
 (Catalyst), GPU libraries (pycuda, cupy), and cross-library buffer
 sharing. See [Interoperability](../design/interoperability.md).

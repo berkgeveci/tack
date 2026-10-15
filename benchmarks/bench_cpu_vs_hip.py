@@ -75,8 +75,8 @@ def bench(fn, warmup=3, trials=10):
 def make_fields(n, count):
     fields = []
     for _ in range(count):
-        f = tack.field(dtype=tack.f32, shape=(n,))
-        f.from_numpy(np.abs(np.random.randn(n).astype(np.float32)) + 0.1)
+        f = tack.empty((n,))
+        tack.copyto(f, np.abs(np.random.randn(n).astype(np.float32)) + 0.1)
         fields.append(f)
     return fields
 
@@ -94,18 +94,18 @@ def run_bench(name, kernel_fn, n, n_arrays):
         dst, = make_fields(n, 1)
         fn = lambda: kernel_fn(dst)
     elif name == "stencil1d":
-        src = tack.field(dtype=tack.f32, shape=(n + 1,))
-        src.from_numpy(np.random.randn(n + 1).astype(np.float32))
-        dst = tack.field(dtype=tack.f32, shape=(n,))
+        src = tack.empty((n + 1,))
+        tack.copyto(src, np.random.randn(n + 1).astype(np.float32))
+        dst = tack.empty((n,))
         fn = lambda: kernel_fn(src, dst)
     elif name in ("sqrt", "sin", "exp"):
         x, out = make_fields(n, 2)
         fn = lambda: kernel_fn(x, out)
     elif name == "reduce":
         n = (n // REDUCE_BLOCK) * REDUCE_BLOCK
-        data = tack.field(dtype=tack.f32, shape=(n,))
-        data.from_numpy(np.random.randn(n).astype(np.float32))
-        out = tack.field(dtype=tack.f32, shape=(n // REDUCE_BLOCK,))
+        data = tack.empty((n,))
+        tack.copyto(data, np.random.randn(n).astype(np.float32))
+        out = tack.empty((n // REDUCE_BLOCK,))
         fn = lambda: kernel_fn(data, out)
     else:
         raise ValueError(name)
@@ -133,7 +133,7 @@ def main():
     # Collect results
     results = {}
     for backend in ["cpu", "hip"]:
-        tack.init(arch=backend)
+        tack.set_default_device(backend)
         print(f"\n--- Running on {backend.upper()} ---")
         for bench_name, kernel, n_arrays in benchmarks:
             for size_tag, n in DATA_SIZES.items():
@@ -156,11 +156,6 @@ def main():
             if cpu_t and hip_t:
                 speedup = cpu_t / hip_t
                 print(f"  {bench_name:>12s}  {size_tag:>6s}  {cpu_t*1000:>10.3f}  {hip_t*1000:>10.3f}  {speedup:>7.1f}x")
-
-    # Volrender comparison (already measured externally, just print note)
-    print(f"\n{'='*90}")
-    print("  VOLUME RENDER: see --bench output from packages/tack-rendering/examples/tack_volrender.py")
-    print(f"{'='*90}")
 
 
 if __name__ == "__main__":

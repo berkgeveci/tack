@@ -7,7 +7,7 @@ model, or arrays you wrote yourself. [Factory methods](#factory-methods-as-short
 then provide shortcuts for common combinations.
 
 The snippets assume NumPy, Tack and `tack.dataset` imported as `np`, `tack`
-and `td`, with a backend initialized. The [complete mesh-construction program](../../examples/data_meshes.py)
+and `td`, with a default device set. The [complete mesh-construction program](../../examples/data_meshes.py)
 and [mixed-cell tour](../../examples/datasets.py) can be downloaded and run.
 
 ## Topology defines corners, geometry defines positions
@@ -252,10 +252,6 @@ holds their ids unless another width is requested.
 Call them before a kernel that needs those relations. First-use derivation can
 be a substantial part of a filter's first call; distinguish it from steady
 execution when measuring a repeated pipeline.
-
-Rendering currently requires `i32` triangle connectivity. A cast from `i64`
-is valid only when every referenced id fits; it cannot make an oversized mesh
-fit that interface.
 
 ## Run and check
 

@@ -7,9 +7,10 @@ Use this page while writing a kernel. For a first complete program, start with
 
 | Task | In Python, outside a kernel | In a kernel or `@tack.func` |
 |---|---|---|
-| Allocate storage | `tack.empty`, `tack.zeros`, `tack.array` | Fixed-size scratch with `tack.local_array` |
-| Access values | `data.to_numpy()`, or `data[i]` for one element | `data[i]`, `grid[row, column]` |
-| Write values | `data.from_numpy(a)`, `data.fill(value)` | `data[i] = value` |
+| Allocate storage | `tack.empty`, `tack.zeros`, `tack.full`, `tack.array` | Fixed-size scratch with `tack.local_array` |
+| Choose a device | `tack.set_default_device("cuda")`, `with tack.device("cuda"):`, `device=` on a constructor, `data.to_device(d)` | Runs on its arrays' device |
+| Access values | `data.numpy()` or `np.asarray(data)` (copies), or `data[i]` for one element | `data[i]`, `grid[row, column]` |
+| Write values | `tack.copyto(data, a)`, `data.fill(value)` | `data[i] = value` |
 | Repeat work | Python timestep loop calling kernels | One parallel `for` in a kernel; sequential nested loops |
 | Reuse an operation | Ordinary Python function | Helper decorated with `@tack.func` |
 | Change a parameter | Pass a scalar argument | Read that argument |
@@ -25,17 +26,18 @@ and arbitrary Python objects belong on the host. Save decorated functions in a
 
 | Need | Allocation | NumPy result |
 |---|---|---|
-| Uninitialized scalar array | `tack.empty(tack.f32, shape=(h, w))` | `to_numpy()` → `(h, w)` |
-| Zero-filled scalar array | `tack.zeros(tack.f32, shape=(h, w))` | `to_numpy()` → `(h, w)` |
+| Uninitialized scalar array | `tack.empty((h, w))` (f32) | `numpy()` → `(h, w)` |
+| Zero-filled integer array | `tack.zeros((h, w), tack.i32)` | `numpy()` → `(h, w)` |
 | Allocate without copying | `tack.empty_like(prototype)` | Same array shape and element type; unspecified values |
-| Copy an existing NumPy array | `tack.array(a)` | Same shape and inferred dtype |
-| One RGB vector per pixel | `tack.empty(dtype=tack.vec3(tack.f32), shape=(h, w))` | `to_numpy()` → `(h, w, 3)` |
-| One 2×2 matrix per particle | `tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))` | `to_numpy()` → `(n, 2, 2)` |
+| Copy an existing NumPy array | `tack.array(a)` | Same shape and dtype (float64 stays f64) |
+| One RGB vector per pixel | `tack.empty((h, w), tack.vec3())` | `numpy()` → `(h, w, 3)` |
+| One 2×2 matrix per particle | `tack.empty((n,), tack.mat2())` | `numpy()` → `(n, 2, 2)` |
 
-Initialize every value before reading it. Array shape counts elements; the
-dtype describes one scalar, vector or matrix element. `to_numpy()` appends
-component dimensions. `reshape` preserves the element type and shares storage;
-`copy` allocates independent storage. See [Arrays and Types](02-fields-and-types.md).
+Initialize every value before reading it. Shape comes first, then dtype, as in
+NumPy; the dtype defaults to f32. Array shape counts elements; the
+dtype describes one scalar, vector or matrix element. `numpy()` appends
+component dimensions, and `tack.copyto` expects them. `reshape` preserves the element type and shares storage;
+`copy` allocates independent storage. See [Arrays and Types](02-arrays-and-types.md).
 
 ## Choose an execution pattern
 
@@ -82,12 +84,12 @@ can interpolate or propagate it.
   independent result with a tolerance chosen for the calculation.
 
 See [Control Flow and Math](04-control-flow.md),
-[numerical details](02-fields-and-types.md#type-casts), and
+[numerical details](02-arrays-and-types.md#type-casts), and
 [reductions](11-reductions-and-scans.md).
 
 ## Check, then time
 
-Use `tack.init(arch=tack.cpu, debug=True)` to find invalid indices. Compare a small
+Use `tack.set_debug(True)` to find invalid indices. Compare a small
 case with a NumPy reference before increasing the input size. For timing, disable
 debug mode, warm the kernel, reuse allocations, and call `tack.sync()` before
 stopping the clock. Measure transfers separately when studying kernel execution.

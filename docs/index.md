@@ -2,7 +2,7 @@
 
 A Python framework for scientific data analysis, visualization and GPU compute.
 Build pipelines over structured grids, mixed meshes and polyhedra: associate
-fields, derive quantities, extract surfaces, sample solutions and render results.
+arrays, derive quantities, extract surfaces, sample solutions and render results.
 The dataset algorithms are Tack kernels, and you can write your own as decorated
 Python functions. **The same supported kernel source runs on five backends**, within
 each backend's [capabilities](contracts/backend-capabilities.md). Metal has
@@ -15,7 +15,7 @@ to write a first kernel. A small compute example is:
 ```python
 import tack, numpy as np
 
-tack.init(arch=tack.cpu)          # or metal, cuda, hip, level_zero
+tack.set_default_device("cpu")          # or metal, cuda, hip, level_zero
 
 @tack.kernel
 def vector_add(x, y, out):
@@ -23,22 +23,22 @@ def vector_add(x, y, out):
         out[i] = x[i] + y[i]
 
 n = 1_000_000
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
-x.from_numpy(np.arange(n, dtype=np.float32))
-y.from_numpy(np.ones(n, dtype=np.float32))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
+tack.copyto(x, np.arange(n, dtype=np.float32))
+tack.copyto(y, np.ones(n, dtype=np.float32))
 
 vector_add(x, y, out)
-print(out.to_numpy()[:4])         # [1. 2. 3. 4.]
+print(out.numpy()[:4])         # [1. 2. 3. 4.]
 ```
 
-Only the `tack.init()` line changes between backends:
+Only the `tack.set_default_device()` line changes between backends:
 
 === "CPU"
 
     ```python
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     ```
     LLVM IR through llvmlite, dispatched with ctypes. Threads are used only
     when a measurement says they pay — see [Backends](users-guide/08-backends.md).
@@ -46,7 +46,7 @@ Only the `tack.init()` line changes between backends:
 === "Metal"
 
     ```python
-    tack.init(arch=tack.metal)
+    tack.set_default_device("metal")
     ```
     MSL compiled by the Metal API. Buffers are shared memory on Apple silicon,
     so host and device see the same allocation.
@@ -54,14 +54,14 @@ Only the `tack.init()` line changes between backends:
 === "CUDA"
 
     ```python
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
     ```
     CUDA C through NVRTC to PTX, launched with `cuLaunchKernel`.
 
 === "HIP"
 
     ```python
-    tack.init(arch=tack.hip)
+    tack.set_default_device("hip")
     ```
     HIP C through hipRTC. The code generator is the CUDA one with a different
     `#include` — device syntax is shared.
@@ -69,7 +69,7 @@ Only the `tack.init()` line changes between backends:
 === "Level Zero"
 
     ```python
-    tack.init(arch=tack.level_zero)
+    tack.set_default_device("level_zero")
     ```
     OpenCL C compiled to SPIR-V by `libocloc`, launched through Level Zero.
 
@@ -96,7 +96,7 @@ scalar types each backend supports.
 
 -   **[User's Guide](users-guide/index.md)**
 
-    Writing kernels, fields and types, control flow, device functions,
+    Writing kernels, arrays and types, control flow, device functions,
     templates, atomics and shared memory, reductions and scans, alongside
     the data and visualization chapters.
 

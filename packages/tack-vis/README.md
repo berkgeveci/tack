@@ -1,41 +1,46 @@
 # tack-vis
 
-Scientific visualization algorithms for [Tack](https://github.com/berkgeveci/tack).
+Datasets and scientific visualization for [Tack](https://github.com/berkgeveci/tack):
+`tack.dataset`.
 
-Every algorithm is written as `@tack.kernel` functions, so it runs on every backend
-`tack-core` supports — CPU, Metal, CUDA, HIP and Level Zero — from one source, within each
-backend's capabilities (for example, `f64` inputs need a backend with `f64`).
+`tack.dataset` holds meshes and the fields on them -- structured grids,
+unstructured meshes of the linear cells, polyhedra, polygons and polylines --
+and the algorithms that work on them: contour, slice, clip, threshold,
+external faces, gradients, projections between spaces, streamlines and more.
+Every algorithm is a Tack kernel, so it runs on every backend `tack-core`
+supports -- CPU, Metal, CUDA, HIP and Level Zero -- from one source, within
+each backend's capabilities. Your own kernels see a mesh the same way, through
+`for_each`.
 
 ```python
 import tack
-from tack.deprecated.algorithms.flying_edges import flying_edges, UniformGrid
+import tack.dataset as td
 
-tack.init(arch=tack.cpu)
-
-grid = UniformGrid(nx, ny, nz, x0, y0, z0, dx, dy, dz)
-result = flying_edges(scalar_field, grid, isovalue=0.0)
-
-result["points"]  # (n, 3) float32
-result["conn"]    # (m, 3) int32
+tack.set_default_device("cpu")
+data = td.wavelet(extent=10)                    # VTK's wavelet: 21^3 points
+surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
+print(surface.num_cells, "triangles")
 ```
 
 ## What's here
 
-- **Flying edges** — merged-point isosurface extraction, single- and multi-block
-- **Compute normals** — area-weighted vertex normals accumulated with atomics
-- **Cell↔point** — cell-centred to node-centred averaging
-- **AMR blanking** — ghost and refinement masks following VTK's conventions
-- **Finite elements** — Lagrange bases, geometry maps, DOF accessors
-- **VTK interop** — zero-copy wrapping of `vtkDataArray`, host and device
+- **Data model** -- topologies, function spaces (H1, L2, constant, per-entity
+  values, side traces), fields as a space plus values, named sets
+- **Algorithms** -- contour, slice, clip, threshold, extraction, gradients and
+  flow quantities, projections, probing, streamlines, transforms, statistics
+- **Interop** -- VTK datasets and arrays (zero-copy through DLPack where VTK
+  supports it), MFEM meshes and grid functions
 
 ## Install
 
+From a checkout of the repository:
+
 ```bash
-pip install tack-vis
+uv sync --extra cpu
 ```
 
-Requires `tack-core` with a backend extra — see the
-[tack-core README](https://pypi.org/project/tack-core/). The VTK interop module
-additionally needs `vtk` at runtime; nothing else does.
+`tack-vis` requires `tack-core` with a backend extra. The VTK and MFEM interop
+modules additionally need `vtk` and `mfem` at runtime (`--extra interop`);
+nothing else does.
 
 BSD 3-Clause licensed.

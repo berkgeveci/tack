@@ -130,7 +130,7 @@ def _onto_nodes(data, field, space, values):
         starts[id(group)] = total
         total += group.count * group.shape.NUM_QUADRATIC
     idt = ids.at_least(data.id_dtype, space.size)
-    keys = tack.field(idt, shape=(total,))
+    keys = tack.empty((total,), idt)
     contributions = _like(values, total)
     target = Field(space, _like(values, space.size))
     for group in data.launch_groups("cells", [field, target]):
@@ -196,7 +196,7 @@ def project(data, field, space):
                         "they were taken from")
     values = field.values
     if space is source:
-        return Field(space, _take(values, tack.arange(space.size, data.id_dtype)))
+        return Field(space, _take(values, tack.arange(space.size, dtype=data.id_dtype)))
     if dtype_of(values) not in (tack.f32, tack.f64):
         raise TypeError(f"project averages and interpolates floating-point values, not "
                         f"{dtype_of(values).name}")

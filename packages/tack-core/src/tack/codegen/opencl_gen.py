@@ -1,7 +1,7 @@
 """Tack OpenCL C code generation — transforms Tack IR to OpenCL C source.
 
 Generates a ``__kernel`` function where:
-  - Each Field parameter becomes a ``__global`` typed pointer
+  - Each Array parameter becomes a ``__global`` typed pointer
   - The outermost parallel for-loop's index is built in 64 bits from
     ``get_group_id(0)``, ``get_local_size(0)`` and ``get_local_id(0)``
   - Sequential for-loops, while-loops, if/else map to standard C control flow
@@ -86,10 +86,10 @@ class OpenCLCodeGen(CUDACodeGen):
             if param.type_annotation is None:
                 raise TypeError(f"Parameter '{param.name}' has no type. Run type inference first.")
             self._param_types[param.name] = param.type_annotation
-            if hasattr(param, '_is_field') and param._is_field:
-                self._field_params.add(param.name)
-            elif not hasattr(param, '_is_field'):
-                self._field_params.add(param.name)
+            if hasattr(param, '_is_array') and param._is_array:
+                self._array_params.add(param.name)
+            elif not hasattr(param, '_is_array'):
+                self._array_params.add(param.name)
 
         # Detect texture parameters for hardware image3d path
         self._texture_params: set[str] = set()
@@ -103,7 +103,7 @@ class OpenCLCodeGen(CUDACodeGen):
             c_type = _OCL_C_TYPE_MAP[param.type_annotation]
             if param.name in self._texture_params:
                 params_c.append(f"__read_only image3d_t {param.name}")
-            elif param.name in self._field_params:
+            elif param.name in self._array_params:
                 params_c.append(f"__global {c_type}* {param.name}")
             else:
                 params_c.append(f"{c_type} {param.name}")
@@ -452,7 +452,7 @@ class OpenCLCodeGen(CUDACodeGen):
 
     def _expr_atomic(self, node: ir.IRAtomicOp) -> str:
         """The atomic as an expression whose value is the element's old value."""
-        field = self._expr(node.field)
+        array = self._expr(node.array)
         index = self._expr(node.index)
         value = self._expr(node.value)
         idx_type = self._infer_expr_type(node.index)
@@ -464,36 +464,36 @@ class OpenCLCodeGen(CUDACodeGen):
         value = f"(({_OCL_C_TYPE_MAP[dtype]})({value}))"
         if node.op == "min" and dtype is f32:
             self._needs_float_atomic_min = True
-            return f"atomicMinFloat(&{field}[{index}], {value})"
+            return f"atomicMinFloat(&{array}[{index}], {value})"
         if node.op == "max" and dtype is f32:
             self._needs_float_atomic_max = True
-            return f"atomicMaxFloat(&{field}[{index}], {value})"
+            return f"atomicMaxFloat(&{array}[{index}], {value})"
         if dtype is f32:
             self._needs_float_atomic_add = True
-            return f"atomicAddFloat(&{field}[{index}], {value})"
+            return f"atomicAddFloat(&{array}[{index}], {value})"
         atomic_type = 'atomic_uint' if dtype is u32 else 'atomic_int'
         return (f"atomic_fetch_{node.op}_explicit("
-                f"(volatile __global {atomic_type}*)&{field}[{index}], {value}, "
+                f"(volatile __global {atomic_type}*)&{array}[{index}], {value}, "
                 "memory_order_relaxed, memory_scope_device)")
 
-    # --- Field store/load (use 'long' for index casts) ---
+    # --- Array store/load (use 'long' for index casts) ---
 
-    def _emit_field_store(self, node: ir.IRFieldStore):
-        field = self._expr(node.field)
+    def _emit_array_store(self, node: ir.IRArrayStore):
+        array = self._expr(node.array)
         index = self._expr(node.index)
         value = self._expr(node.value)
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
             index = f"(({_OCL_INT})({index}))"
-        self._emit(f"{field}[{index}] = {value};")
+        self._emit(f"{array}[{index}] = {value};")
 
-    def _expr_field_load(self, node: ir.IRFieldLoad) -> str:
-        field = self._expr(node.field)
+    def _expr_array_load(self, node: ir.IRArrayLoad) -> str:
+        array = self._expr(node.array)
         index = self._expr(node.index)
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
             index = f"(({_OCL_INT})({index}))"
-        return f"{field}[{index}]"
+        return f"{array}[{index}]"
 
     # --- Texture sampling: hardware image3d or software trilinear fallback ---
 
@@ -503,7 +503,7 @@ class OpenCLCodeGen(CUDACodeGen):
         v = self._expr(node.coords[1])
         w = self._expr(node.coords[2])
 
-        if hasattr(self, '_texture_params') and node.field_name in self._texture_params:
+        if hasattr(self, '_texture_params') and node.array_name in self._texture_params:
             # Hardware path: read_imagef with coordinate transform.
             # Tack convention: texel centers at i/(N-1), u=0 → texel 0, u=1 → texel N-1.
             # OpenCL normalized+linear: texel centers at (i+0.5)/N.
@@ -511,7 +511,7 @@ class OpenCLCodeGen(CUDACodeGen):
             ou = f"(({u}) * {W - 1}.0f + 0.5f) / {W}.0f"
             ov = f"(({v}) * {H - 1}.0f + 0.5f) / {H}.0f"
             ow = f"(({w}) * {D - 1}.0f + 0.5f) / {D}.0f"
-            return (f"read_imagef({node.field_name}, __samp__, "
+            return (f"read_imagef({node.array_name}, __samp__, "
                     f"(float4)({ou}, {ov}, {ow}, 0.0f)).x")
 
         # Software trilinear fallback
@@ -519,7 +519,7 @@ class OpenCLCodeGen(CUDACodeGen):
         if not hasattr(self, '_texture_helpers'):
             self._texture_helpers = {}
         self._texture_helpers[helper] = (W, H, D)
-        return f"{helper}({node.field_name}, {u}, {v}, {w})"
+        return f"{helper}({node.array_name}, {u}, {v}, {w})"
 
     def _expr_cast(self, node) -> str:
         val = self._expr(node.value)
@@ -548,9 +548,9 @@ class OpenCLCodeGen(CUDACodeGen):
         rct = getattr(node, '_resolved_cast_type', None)
         if rct is not None:
             return self._resolved_type_to_c(rct)
-        # Fallback for unannotated nodes (e.g., field pointer references)
+        # Fallback for unannotated nodes (e.g., array pointer references)
         if isinstance(node, ir.IRName):
-            if node.name in self._field_params:
+            if node.name in self._array_params:
                 c_type = _OCL_C_TYPE_MAP[self._param_types[node.name]]
                 return f"__global {c_type}*"
             if node.name in self._local_vars:

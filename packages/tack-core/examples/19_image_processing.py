@@ -5,7 +5,7 @@ Demonstrates common image processing operations as Tack kernels:
   2. Sobel edge detection
   3. Gaussian blur (separable)
 
-Operates on synthetic images stored as 2D float fields.
+Operates on synthetic images stored as 2D float arrays.
 
 Usage:
   uv run python examples/19_image_processing.py
@@ -17,8 +17,8 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 W, H = 256, 256
 
@@ -28,18 +28,18 @@ W, H = 256, 256
 @tack.kernel
 def make_test_image(img, w, h):
     """Concentric rings + gradient."""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         dx = float(j) - float(w) / 2.0
         dy = float(i) - float(h) / 2.0
         r = sqrt(dx * dx + dy * dy)
         img[i, j] = 0.5 + 0.5 * sin(r * 0.3) * exp(0.0 - r * 0.005)
 
 
-src = tack.empty(dtype=tack.f32, shape=(H, W))
-dst = tack.empty(dtype=tack.f32, shape=(H, W))
+src = tack.empty((H, W))
+dst = tack.empty((H, W))
 
 make_test_image(src, W, H)
-test_img = src.to_numpy().reshape(H, W)
+test_img = src.numpy().reshape(H, W)
 
 
 # --- 1. Brightness and contrast ---
@@ -47,7 +47,7 @@ test_img = src.to_numpy().reshape(H, W)
 @tack.kernel
 def adjust_brightness_contrast(src, dst, brightness, contrast, w, h):
     """Apply brightness and contrast: out = contrast * (in - 0.5) + 0.5 + brightness"""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         v = contrast * (src[i, j] - 0.5) + 0.5 + brightness
         v = max(0.0, min(1.0, v))
         dst[i, j] = v
@@ -56,7 +56,7 @@ def adjust_brightness_contrast(src, dst, brightness, contrast, w, h):
 adjust_brightness_contrast(src, dst, 0.1, 1.5, W, H)
 print("1. Brightness/contrast: OK")
 print(f"   Input  range: [{test_img.min():.3f}, {test_img.max():.3f}]")
-result = dst.to_numpy().reshape(H, W)
+result = dst.numpy().reshape(H, W)
 print(f"   Output range: [{result.min():.3f}, {result.max():.3f}]")
 
 
@@ -65,7 +65,7 @@ print(f"   Output range: [{result.min():.3f}, {result.max():.3f}]")
 @tack.kernel
 def sobel(src, dst, w, h):
     """Sobel edge detection (gradient magnitude)."""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         if i > 0:
             if i < h - 1:
                 if j > 0:
@@ -84,23 +84,23 @@ def sobel(src, dst, w, h):
                         dst[i, j] = sqrt(gx * gx + gy * gy)
 
 
-src.from_numpy(test_img)
+tack.copyto(src, test_img)
 dst.fill(0.0)
 sobel(src, dst, W, H)
-edges = dst.to_numpy().reshape(H, W)
+edges = dst.numpy().reshape(H, W)
 print("\n2. Sobel edge detection: OK")
 print(f"   Edge strength: max={edges.max():.3f}, mean={edges.mean():.3f}")
 
 
 # --- 3. Gaussian blur (box blur approximation) ---
 
-tmp = tack.empty(dtype=tack.f32, shape=(H, W))
+tmp = tack.empty((H, W))
 
 
 @tack.kernel
 def blur_horizontal(src, dst, w, h):
     """Horizontal pass of a 5-tap box filter."""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         if j >= 2:
             if j < w - 2:
                 dst[i, j] = (
@@ -116,7 +116,7 @@ def blur_horizontal(src, dst, w, h):
 @tack.kernel
 def blur_vertical(src, dst, w, h):
     """Vertical pass of a 5-tap box filter."""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         if i >= 2:
             if i < h - 2:
                 dst[i, j] = (
@@ -129,10 +129,10 @@ def blur_vertical(src, dst, w, h):
             dst[i, j] = src[i, j]
 
 
-src.from_numpy(test_img)
+tack.copyto(src, test_img)
 blur_horizontal(src, tmp, W, H)
 blur_vertical(tmp, dst, W, H)
-blurred = dst.to_numpy().reshape(H, W)
+blurred = dst.numpy().reshape(H, W)
 print("\n3. Separable blur (5-tap): OK")
 print(f"   Input  variance: {test_img.var():.6f}")
 print(f"   Output variance: {blurred.var():.6f} (should be smaller)")

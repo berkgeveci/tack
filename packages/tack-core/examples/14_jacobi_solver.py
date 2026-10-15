@@ -18,8 +18,8 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 N = 64  # grid size
 STEPS = 10000
@@ -28,7 +28,7 @@ STEPS = 10000
 @tack.kernel
 def jacobi_step(src, dst, n):
     """One Jacobi iteration: dst[i,j] = average of 4 neighbors in src."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         if i > 0 and i < n - 1 and j > 0 and j < n - 1:
             dst[i, j] = 0.25 * (
                 src[i - 1, j] + src[i + 1, j] +
@@ -37,34 +37,34 @@ def jacobi_step(src, dst, n):
 
 
 @tack.kernel
-def copy_field(src, dst, n):
+def copy_array(src, dst, n):
     """Copy src into dst."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         dst[i, j] = src[i, j]
 
 
-# Create two fields for ping-pong iteration
-u = tack.empty(dtype=tack.f32, shape=(N, N))
-u_new = tack.empty(dtype=tack.f32, shape=(N, N))
+# Create two arrays for ping-pong iteration
+u = tack.empty((N, N))
+u_new = tack.empty((N, N))
 
 # Boundary conditions: top edge = 100, rest = 0
 init = np.zeros((N, N), dtype=np.float32)
 init[-1, :] = 100.0  # top edge
-u.from_numpy(init)
-u_new.from_numpy(init)
+tack.copyto(u, init)
+tack.copyto(u_new, init)
 
 print(f"Jacobi solver: {N}x{N} grid, {STEPS} iterations")
 
 for step in range(STEPS):
     jacobi_step(u, u_new, N)
-    copy_field(u_new, u, N)
+    copy_array(u_new, u, N)
 
     if (step + 1) % 2000 == 0:
-        result = u.to_numpy().reshape(N, N)
+        result = u.numpy().reshape(N, N)
         center = result[N // 2, N // 2]
         print(f"  step {step+1:>5d}: center = {center:.4f}")
 
-result = u.to_numpy().reshape(N, N)
+result = u.numpy().reshape(N, N)
 print("\nFinal solution:")
 print(f"  Bottom edge (should be 0):    {result[0, N//2]:.4f}")
 print(f"  Center:                       {result[N//2, N//2]:.4f}")

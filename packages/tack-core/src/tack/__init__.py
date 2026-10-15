@@ -1,33 +1,33 @@
-# Enable namespace package merging across tack-core, tack-rendering, tack-vis
+# Enable namespace package merging across tack-core and tack-vis
 from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)
 
 """Tack — GPU compute framework framework."""
 
-from tack.lang.constant import constant
-from tack.lang.device_class import data_oriented, device_class
-from tack.lang.field import (
+from tack.lang.array import (
     Array,
     ExportedMemory,
-    Matrix,
     Texture3D,
-    Vector,
     arange,
     array,
     array_from_ptr,
+    asarray,
     concat,
+    copyto,
     empty,
     empty_like,
-    field,
-    field_from_numpy,
-    field_from_ptr,
     from_dlpack,
     full,
+    full_like,
     memory_space,
     ones,
+    ones_like,
     zeros,
+    zeros_like,
 )
+from tack.lang.constant import constant
+from tack.lang.device_class import device_class
 from tack.lang.func import func
 from tack.lang.inspect_kernel import inspect
 from tack.lang.kernel import kernel
@@ -43,7 +43,6 @@ from tack.lang.types import (
     mat2,
     mat3,
     mat4,
-    template,
     u8,
     u16,
     u32,
@@ -53,7 +52,15 @@ from tack.lang.types import (
     vec3,
     vec4,
 )
-from tack.runtime.dispatch import init, sync, sync_async
+from tack.runtime.dispatch import (
+    Device,
+    device,
+    get_default_device,
+    set_debug,
+    set_default_device,
+    sync,
+    sync_async,
+)
 
 
 # Shared memory, barrier, thread_id — only usable inside @tack.kernel
@@ -61,8 +68,8 @@ def shared(dtype, size):
     """Allocate threadgroup shared memory. Only usable inside a @tack.kernel."""
     raise RuntimeError("shared() can only be used inside a @tack.kernel")
 
-def shared_like(field, size):
-    """Allocate shared memory with the same dtype as a field. Only usable inside a @tack.kernel."""
+def shared_like(array, size):
+    """Allocate shared memory with the same dtype as an array. Only usable inside a @tack.kernel."""
     raise RuntimeError("shared_like() can only be used inside a @tack.kernel")
 
 def select(mask, a, b):
@@ -84,26 +91,31 @@ def thread_id():
     raise RuntimeError("thread_id() can only be used inside a @tack.kernel")
 
 # Atomic operations — only usable inside @tack.kernel
-def atomic_add(field, index, value):
-    """Atomic add: field[index] += value. Only usable inside a @tack.kernel."""
+def atomic_add(array, index, value):
+    """Atomic add: array[index] += value. Only usable inside a @tack.kernel."""
     raise RuntimeError("atomic_add() can only be used inside a @tack.kernel")
 
-def atomic_min(field, index, value):
-    """Atomic min: field[index] = min(field[index], value). Only usable inside a @tack.kernel."""
+def atomic_min(array, index, value):
+    """Atomic min: array[index] = min(array[index], value). Only usable inside a @tack.kernel."""
     raise RuntimeError("atomic_min() can only be used inside a @tack.kernel")
 
-def atomic_max(field, index, value):
-    """Atomic max: field[index] = max(field[index], value). Only usable inside a @tack.kernel."""
+def atomic_max(array, index, value):
+    """Atomic max: array[index] = max(array[index], value). Only usable inside a @tack.kernel."""
     raise RuntimeError("atomic_max() can only be used inside a @tack.kernel")
 
-# ndrange for multi-dimensional parallel iteration
-def ndrange(*args):
-    """Multi-dimensional parallel iteration range.
+# ndindex for multi-dimensional parallel iteration
+def ndindex(*args):
+    """Multi-dimensional parallel iteration, as ``np.ndindex``.
 
-    Used in kernels: for i, j in tack.ndrange(w, h)
-    Cannot be called from Python directly.
+    Used in kernels: ``for i, j in tack.ndindex(w, h)``; each argument is a
+    size or a ``(start, end)`` pair. Cannot be called from Python directly.
     """
-    raise RuntimeError("ndrange() can only be used inside a @tack.kernel")
+    raise RuntimeError("ndindex() can only be used inside a @tack.kernel")
+
+
+def identity(n):
+    """The n-by-n identity matrix, as ``np.identity``. Only usable inside a @tack.kernel."""
+    raise RuntimeError("identity() can only be used inside a @tack.kernel")
 
 def block_sum(value):
     """Sum a value across all threads in the workgroup. Only usable inside a @tack.kernel."""
@@ -125,36 +137,28 @@ def local_array(dtype, size):
     """
     raise RuntimeError("local_array() can only be used inside a @tack.kernel")
 
-def local_array_like(field, size):
-    """Allocate a per-thread local array with the same dtype as a field. Only usable inside a @tack.kernel."""
+def local_array_like(array, size):
+    """Allocate a per-thread local array with the same dtype as an array. Only usable inside a @tack.kernel."""
     raise RuntimeError("local_array_like() can only be used inside a @tack.kernel")
 
-def texture3d(source_field, shape=None, interp='linear'):
-    """Create a 3D texture from a field for hardware-accelerated sampling.
+def texture3d(source_array, shape=None, interp='linear'):
+    """Create a 3D texture from an array for hardware-accelerated sampling.
 
-    The texture copies the field's data now. Later writes to the field --
+    The texture copies the array's data now. Later writes to the array --
     kernel stores, ``from_numpy``, external or DLPack writes -- are not
-    visible to it until ``tex.update()`` copies the field again. That holds
+    visible to it until ``tex.update()`` copies the array again. That holds
     on every backend, including CPU.
 
     Args:
-        source_field: A tack.field with f32 dtype holding W*H*D elements,
+        source_array: A Tack array with f32 dtype holding W*H*D elements,
                x varying fastest.
-        shape: (W, H, D) tuple for the 3D dimensions.  If the field's shape
+        shape: (W, H, D) tuple for the 3D dimensions.  If the array's shape
                is already 3D, this can be omitted.
         interp: Interpolation mode. Only 'linear' (the default) is
                implemented.
     """
     if shape is None:
-        shape = source_field.shape
+        shape = source_array.shape
     if len(shape) != 3:
         raise ValueError("texture3d requires a 3D shape")
-    return Texture3D(source_field, shape_3d=shape, interp=interp)
-
-
-# Backend selectors
-cpu = "cpu"
-metal = "metal"
-cuda = "cuda"
-hip = "hip"
-level_zero = "level_zero"
+    return Texture3D(source_array, shape_3d=shape, interp=interp)

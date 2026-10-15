@@ -4,8 +4,8 @@
 
 The template system lets you write generic kernels that work with different
 data structures. Classes decorated with `@tack.device_class` can be passed
-as kernel arguments with `tack.template()` type hints. (`@tack.data_oriented`,
-Taichi's name for it, still works and means the same.)
+as kernel arguments. They are recognized by type, so the parameter that
+takes one needs no annotation.
 
 The short examples below are fragments showing the class protocol. The
 [rasterizer](#kernels-as-methods) is a complete program with initialized input
@@ -36,24 +36,24 @@ A single kernel works with both:
 
 ```python
 @tack.kernel
-def add_arrays(a: tack.template(), b: tack.template(), out, n):
+def add_arrays(a, b, out, n):
     for i in range(n):
         out[i] = a.get_value(i) + b.get_value(i)
 
 # Works with any combination:
-add_arrays(AOSArray(field1), AOSArray(field2), out, n)
-add_arrays(AOSArray(field1), ConstantArray(3.14), out, n)
+add_arrays(AOSArray(array1), AOSArray(array2), out, n)
+add_arrays(AOSArray(array1), ConstantArray(3.14), out, n)
 ```
 
 ## How It Works
 
-When a `@tack.device_class` object is passed as a `tack.template()` argument:
+When a `@tack.device_class` object is passed as a kernel argument:
 
 - **Class-level scalars** (defined on the class, not in `__init__`) → compile-time
   constants baked into generated code. Changing them triggers recompilation.
 - **Instance scalars** (set in `__init__`) → runtime kernel scalar parameters.
   Changing them does **not** trigger recompilation.
-- **Instance arrays** (`tack.Field` set in `__init__`) → kernel buffer parameters
+- **Instance arrays** (`tack.Array` set in `__init__`) → kernel buffer parameters
 - **`@tack.func` methods** → inlined at the call site
 
 Each unique combination of template types and **class-level constants** produces
@@ -90,7 +90,7 @@ parameter. Other changing parameters can be instance variables.
 
 ```python
 @tack.kernel
-def process(filt: tack.template(), out):
+def process(filt, out):
     for i in range(filt.width):              # runtime — OK as instance var
         buf = tack.local_array(tack.f32, filt.block_size)  # must be class constant
         # ...
@@ -181,7 +181,7 @@ class Permuted:
         return self.base.get(self.ids[k])
 
 @tack.kernel
-def read(arr: tack.template(), out):
+def read(arr, out):
     for i in range(out.shape[0]):
         out[i] = arr.get(i)
 
@@ -215,15 +215,15 @@ It draws one initialized triangle into a `(height, width)` RGB array:
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 
 @tack.device_class
 class Rasterizer:
     def __init__(self, n, width, height):
         self.n = n
         self.width, self.height = width, height
-        self.vertices = tack.empty(dtype=tack.vec2(tack.f32), shape=(n, 3))
-        self.pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(height, width))
+        self.vertices = tack.empty((n, 3), tack.vec2(tack.f32))
+        self.pixels = tack.empty((height, width), tack.vec3(tack.f32))
         self.pixels.fill(0.0)              # draw writes only covered pixels
 
     @staticmethod
@@ -239,15 +239,15 @@ class Rasterizer:
 
     @tack.kernel
     def draw(self, shade):
-        for row, column in tack.ndrange(self.height, self.width):
+        for row, column in tack.ndindex(self.height, self.width):
             for t in range(self.n):
                 if self.inside([column + 0.5, row + 0.5], t):
                     self.pixels[row, column] = [shade, shade, shade]
 
 raster = Rasterizer(1, 32, 32)
-raster.vertices.from_numpy(np.array([[[8, 8], [8, 24], [24, 8]]], dtype=np.float32))
+tack.copyto(raster.vertices, np.array([[[8, 8], [8, 24], [24, 8]]], dtype=np.float32))
 raster.draw(0.8)
-image = raster.pixels.to_numpy()
+image = raster.pixels.numpy()
 np.testing.assert_allclose(image[10, 10], [0.8, 0.8, 0.8])
 np.testing.assert_array_equal(image[0, 0], [0.0, 0.0, 0.0])
 assert np.count_nonzero(image[:, :, 0]) > 0
@@ -287,7 +287,7 @@ def label(cells, out):
 ```
 
 With one name, `for c in cells` is `for c in range(cells.n)` and `c` is an
-integer. With two or three, it is a `tack.ndrange` over them, slowest
+integer. With two or three, it is a `tack.ndindex` over them, slowest
 first, and `c` is the vector of indices with `c[0]` running fastest; as the
 kernel's parallel loop it launches in that shape, so recovering the
 indices costs no division. The object's methods receive `c` as it comes,
@@ -341,7 +341,7 @@ One kernel, two cell set types:
 
 ```python
 @tack.kernel
-def cell_average(cs: tack.template(), point_data, cell_data, n_cells):
+def cell_average(cs, point_data, cell_data, n_cells):
     for c in range(n_cells):
         total = 0.0
         for v in range(cs.points_per_cell):    # loop count is a constant
@@ -386,7 +386,7 @@ A generic interpolation kernel takes both:
 
 ```python
 @tack.kernel
-def interpolate_to_center(cs: tack.template(), ct: tack.template(),
+def interpolate_to_center(cs, ct,
                           point_data, cell_data, n_cells):
     for c in range(n_cells):
         pc0 = ct.center(0)

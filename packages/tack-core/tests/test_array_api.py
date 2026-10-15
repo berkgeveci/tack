@@ -25,12 +25,17 @@ def test_array_element_shape_and_round_trip(backend, shape, dtype, components):
     assert values.dtype is dtype
     assert values.shape == shape
     assert values.size == int(np.prod(shape))
-    assert len(values) == (shape[0] if shape else 0)
+    if shape:
+        assert len(values) == shape[0]
+    else:
+        with pytest.raises(TypeError, match='zero-dimensional'):
+            len(values)
+    assert values.ndim == len(shape)
     assert values.scalar_dtype is tack.f32
-    np.testing.assert_array_equal(values.to_numpy(), host)
-    np.testing.assert_array_equal(asyncio.run(values.to_numpy_async()), host)
+    np.testing.assert_array_equal(values.numpy(), host)
+    np.testing.assert_array_equal(asyncio.run(values.numpy_async()), host)
     host.fill(-10)
-    assert not np.any(values.to_numpy() == -10)
+    assert not np.any(values.numpy() == -10)
 
 
 @tack.kernel
@@ -43,48 +48,48 @@ def _twice(src, dst):
     (tack.f32, 2), (tack.vec3(), [1, 2, 3]), (tack.mat2(), [[1, 2], [3, 4]]),
 ])
 def test_array_allocations_copy_conversion_and_concat(backend, dtype, element):
-    source = tack.empty(shape=(5,), dtype=dtype)
+    source = tack.empty((5,), dtype)
     source.fill(element)
     result = tack.empty_like(source)
     _twice(source, result)
-    expected = np.broadcast_to(element, result.to_numpy().shape)
-    np.testing.assert_array_equal(result.to_numpy(), expected * 2)
+    expected = np.broadcast_to(element, result.numpy().shape)
+    np.testing.assert_array_equal(result.numpy(), expected * 2)
     assert result.dtype is dtype
     for copied in (source.copy(), tack.array(source)):
         assert copied.dtype is dtype and copied.shape == source.shape
         copied.fill(9)
-        np.testing.assert_array_equal(source.to_numpy(), expected)
+        np.testing.assert_array_equal(source.numpy(), expected)
     converted = source.astype(tack.i32)
     assert converted.scalar_dtype is tack.i32
     assert converted.shape == source.shape
-    np.testing.assert_array_equal(converted.to_numpy(), expected)
+    np.testing.assert_array_equal(converted.numpy(), expected)
     joined = tack.concat([source, result])
     assert joined.shape == (10,) and joined.dtype is dtype
-    np.testing.assert_array_equal(joined.to_numpy(), np.concatenate([expected, expected * 2]))
+    np.testing.assert_array_equal(joined.numpy(), np.concatenate([expected, expected * 2]))
     for make, fill in ((tack.zeros, 0), (tack.ones, 1)):
         initialized = make(shape=(5,), dtype=dtype)
-        np.testing.assert_array_equal(initialized.to_numpy(), np.full(expected.shape, fill))
-    np.testing.assert_array_equal(tack.full(dtype, (5,), element).to_numpy(), expected)
+        np.testing.assert_array_equal(initialized.numpy(), np.full(expected.shape, fill))
+    np.testing.assert_array_equal(tack.full((5,), element, dtype).numpy(), expected)
 
 
 def test_typed_matrix_operations_and_multidimensional_views(backend):
-    matrices = tack.empty(shape=(2, 3), dtype=tack.mat2())
+    matrices = tack.empty((2, 3), tack.mat2())
     matrices.fill([[1, 2], [3, 4]])
-    vectors = tack.empty(shape=(2, 3), dtype=tack.vec2())
+    vectors = tack.empty((2, 3), tack.vec2())
     vectors.fill([1, 2])
     out = tack.empty_like(vectors)
 
     @tack.kernel
     def multiply(matrices, vectors, out):
-        for i, j in tack.ndrange(out.shape[0], out.shape[1]):
+        for i, j in tack.ndindex(out.shape[0], out.shape[1]):
             out[i, j] = matrices[i, j] @ vectors[i, j]
 
     multiply(matrices, vectors, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.broadcast_to([5, 11], (2, 3, 2)))
+    np.testing.assert_array_equal(out.numpy(), np.broadcast_to([5, 11], (2, 3, 2)))
     flat = out.reshape((6,))
     assert flat.dtype is tack.vec2() and flat._buffer is out._buffer
-    flat.from_numpy(np.arange(12, dtype=np.float32).reshape(6, 2))
-    np.testing.assert_array_equal(out.to_numpy(), np.arange(12).reshape(2, 3, 2))
+    tack.copyto(flat, np.arange(12, dtype=np.float32).reshape(6, 2))
+    np.testing.assert_array_equal(out.numpy(), np.arange(12).reshape(2, 3, 2))
     np.testing.assert_array_equal(out[1, -1], [10, 11])
     with pytest.raises(ValueError, match='Cannot reshape'):
         out.reshape((12,))
@@ -99,26 +104,26 @@ def test_zero_dimensional_vector_in_kernel(backend):
     @tack.kernel
     def double_one(source, out):
         for _ in range(1):
-            out[None] = source[None] * 2
+            out[()] = source[()] * 2
 
     double_one(source, out)
     assert out.shape == () and out.size == 1
-    np.testing.assert_array_equal(out[None], [2, 4, 6])
+    np.testing.assert_array_equal(out[()], [2, 4, 6])
 
 
 def test_empty_like_reads_only_metadata(backend, monkeypatch):
-    prototype = tack.empty(shape=(4,), dtype=tack.vec3())
+    prototype = tack.empty((4,), tack.vec3())
 
     def refuse(*args, **kwargs):
         raise AssertionError('empty_like must not read, copy or initialize values')
 
     with monkeypatch.context() as patch:
-        for method in ('fill', 'from_numpy', 'to_numpy', 'copy'):
+        for method in ('fill', '_upload', 'numpy', 'copy'):
             patch.setattr(tack.Array, method, refuse)
         result = tack.empty_like(prototype, dtype=tack.i32)
     assert result.shape == (4,) and result.dtype is tack.vec3(tack.i32)
     result.fill(7)
-    np.testing.assert_array_equal(result.to_numpy(), np.full((4, 3), 7))
+    np.testing.assert_array_equal(result.numpy(), np.full((4, 3), 7))
     changed = tack.empty_like(prototype, dtype=tack.mat2())
     assert changed.shape == (4,) and changed.dtype is tack.mat2()
 
@@ -130,14 +135,15 @@ def test_numpy_dimensions_are_not_guessed_as_vectors(backend):
     assert tack.empty_like(host).shape == (4, 3)
     typed = tack.array(host.T.copy().T, dtype=tack.vec3(tack.i32))
     assert typed.shape == (4,) and typed.dtype is tack.vec3(tack.i32)
-    np.testing.assert_array_equal(typed.to_numpy(), host)
+    np.testing.assert_array_equal(typed.numpy(), host)
     assert tack.array([1, 2, 3], dtype=tack.i32).shape == (3,)
     with pytest.raises(ValueError, match='must end with element shape'):
         tack.array(host, dtype=tack.mat2())
+    assert tack.empty((4,), 'float32').dtype is tack.f32
     with pytest.raises(TypeError, match='dtype'):
-        tack.empty(dtype='float32', shape=(4,))
+        tack.empty((4,), object())
     with pytest.raises(ValueError, match='nonnegative'):
-        tack.empty(shape=(-1,))
+        tack.empty((-1,))
 
 
 @pytest.mark.parametrize('dtype', [tack.vec3(tack.i32), tack.mat(2, 3, tack.f64)])
@@ -191,67 +197,42 @@ def test_typed_pointer_and_dlpack_views(backend):
     # Metal's public wrap_ptr takes its MTLBuffer rather than a CPU address.
     if backend == 'metal':
         pointer = buffer.metal_buffer
-    shared = tack.array_from_ptr(pointer, dtype=tack.vec3(), shape=(4,))
+    shared = tack.array_from_ptr(pointer, (4,), tack.vec3())
     assert shared.dtype is tack.vec3() and shared.shape == (4,)
-    np.testing.assert_array_equal(shared.to_numpy(), values.to_numpy())
+    np.testing.assert_array_equal(shared.numpy(), values.numpy())
     with pytest.raises(RuntimeError, match='read-only'):
         shared.fill(0)
     if backend == 'metal':
         # Metal exports host-addressable memory but cannot wrap arbitrary
-        # host pointers as MTLBuffers; the explicit copying import works.
+        # host pointers as MTLBuffers; the explicit copying import works,
+        # and without a device the memory comes back as a CPU array.
         with pytest.raises(RuntimeError, match='cannot wrap without copying'):
-            tack.from_dlpack(values)
+            tack.from_dlpack(values, device='metal')
+        np.testing.assert_array_equal(tack.from_dlpack(values).numpy(), values.numpy())
         round_trip = tack.from_dlpack(values, copy=True)
     else:
         round_trip = tack.from_dlpack(values)
     assert round_trip.shape == (4, 3)  # DLPack has scalar dtypes and trailing component axes.
-    np.testing.assert_array_equal(round_trip.to_numpy(), values.to_numpy())
-
-
-def test_render_actor_accepts_typed_components_without_copy(backend):
-    from tack.rendering import Actor
-    points = tack.array(np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], np.float32),
-                        dtype=tack.vec3())
-    triangles = tack.array(np.array([[0, 1, 2]], np.int32), dtype=tack.vec3(tack.i32))
-    colors = tack.ones(shape=(3,), dtype=tack.vec3())
-    normals = tack.empty_like(points)
-    normals.fill([0, 0, 1])
-    actor = Actor(points, triangles, point_colors=colors, normals=normals)
-    assert actor.n_verts == 3 and actor.n_tris == 1
-    assert actor.points._buffer is points._buffer
-    assert actor.connectivity._buffer is triangles._buffer
-    assert actor.point_colors._buffer is colors._buffer
-    assert actor.normals._buffer is normals._buffer
-    np.testing.assert_array_equal(actor.points.to_numpy(), points.to_numpy().ravel())
+    np.testing.assert_array_equal(round_trip.numpy(), values.numpy())
 
 
 def test_vtk_layout_understands_element_types(backend, monkeypatch):
     from types import SimpleNamespace
 
     from tack.interop import vtk
-    values = tack.empty(shape=(4,), dtype=tack.mat2())
+    values = tack.empty((4,), tack.mat2())
     values.fill([[1, 2], [3, 4]])
     # The boundary can be checked without installing VTK: it receives a
     # scalar tensor of (tuples, components), sharing the original buffer.
     bridge = SimpleNamespace(dlpack_to_vtk=lambda shaped, name: shaped)
     monkeypatch.setattr(vtk, '_dlpack_support', lambda: bridge)
-    monkeypatch.setattr(vtk, '_require_shared_level_zero_context', lambda support: None)
-    shaped = vtk.field_to_vtk(values)
+    monkeypatch.setattr(vtk, '_require_shared_level_zero_context', lambda *args: None)
+    shaped = vtk.array_to_vtk(values)
     assert shaped.shape == (4, 4) and shaped.dtype is tack.f32
     assert shaped._buffer is values._buffer
-    np.testing.assert_array_equal(shaped.to_numpy(), np.tile([1, 2, 3, 4], (4, 1)))
+    np.testing.assert_array_equal(shaped.numpy(), np.tile([1, 2, 3, 4], (4, 1)))
     with pytest.raises(ValueError, match='element width'):
-        vtk.field_to_vtk(values, n_components=3)
-
-
-def test_array_migrates_legacy_vector_metadata(backend):
-    legacy = tack.Vector.field(3, tack.f32, shape=(4,))
-    legacy.fill([1, 2, 3])
-    modern = tack.array(legacy)
-    assert modern.shape == (4,) and modern.dtype is tack.vec3()
-    assert legacy.shape == (12,) and legacy.dtype is tack.f32
-    modern.fill(7)
-    np.testing.assert_array_equal(legacy.to_numpy(vectors=True), np.tile([1, 2, 3], (4, 1)))
+        vtk.array_to_vtk(values, n_components=3)
 
 
 def test_component_precision_controls_scalar_arguments_and_capability_checks(backend):
@@ -271,4 +252,4 @@ def test_component_precision_controls_scalar_arguments_and_capability_checks(bac
             add_epsilon(source, output, epsilon)
     else:
         add_epsilon(source, output, epsilon)
-        np.testing.assert_array_equal(output.to_numpy(), np.full((4, 3), 1.0 + epsilon))
+        np.testing.assert_array_equal(output.numpy(), np.full((4, 3), 1.0 + epsilon))

@@ -96,15 +96,15 @@ def _by_dof(fes, values):
 
 
 def _field_values(array, dtype):
-    """A host array of ``(n,)`` or ``(n, width)`` as a device field."""
+    """A host array of ``(n,)`` or ``(n, width)`` as a device array."""
     array = np.ascontiguousarray(array)
     if array.ndim == 1 or array.shape[1] == 1:
         array = array.reshape(-1)
-        field = tack.field(dtype, shape=(array.shape[0],))
+        field = tack.empty((array.shape[0],), dtype)
     else:
-        field = tack.Vector.field(array.shape[1], dtype, shape=(array.shape[0],))
+        field = tack.empty((array.shape[0],), tack.vec(array.shape[1], dtype))
     if array.size:
-        field.from_numpy(array.astype(dtype.numpy_dtype))
+        tack.copyto(field, array.astype(dtype.numpy_dtype))
     return field
 
 
@@ -149,14 +149,13 @@ def _quadratic_values(data, mesh, gf):
     from tack.dataset.ids import at_least
 
     index = at_least(data.id_dtype, space.size)
-    indices = tack.field(index, shape=(n * width,))
+    indices = tack.empty((n * width,), index)
     indices.fill(-1)
-    nodes = tack.Vector.field(3, tack.f64 if tack.f64 in _supported() else tack.f32,
-                              shape=(n * width,))
+    nodes = tack.empty((n * width,), tack.vec(3, tack.f64 if tack.f64 in _supported() else tack.f32))
     for_each(_quadratic_layout, data, "cells", Field(space, ConstantArray(0.0, space.size)),
              indices, nodes, width)
-    indices = indices.to_numpy().reshape(n, width)
-    nodes = nodes.to_numpy(vectors=True).reshape(n, width, 3)
+    indices = indices.numpy().reshape(n, width)
+    nodes = nodes.numpy().reshape(n, width, 3)
     vdim = gf.FESpace().GetVDim()
     out = np.zeros((space.size, vdim))
     vector = m.Vector(vdim)

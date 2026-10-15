@@ -25,8 +25,8 @@ class Agents:
     def __init__(self, n, size):
         self.n = n
         self.size = size
-        self.pos = tack.empty(dtype=tack.vec2(tack.f32), shape=(n,))
-        self.heading = tack.empty(dtype=tack.f32, shape=(n,))
+        self.pos = tack.empty((n,), tack.vec2(tack.f32))
+        self.heading = tack.empty((n,))
 
     @tack.func
     def sense(self, trail, p, angle):
@@ -47,7 +47,7 @@ class Agents:
 
 # --8<-- [start:move]
 @tack.kernel
-def move(agents: tack.template(), trail, frame):
+def move(agents, trail, frame):
     for i in range(agents.n):
         p, angle = agents.pos[i], agents.heading[i]
         left = agents.sense(trail, p, angle - agents.sense_angle)
@@ -60,12 +60,12 @@ def move(agents: tack.template(), trail, frame):
         elif center < left and center < right:
             coin, state = random.uniform(random.seed(i, frame + 1))
             angle += agents.turn_angle * (2 * int(coin < 0.5) - 1)
-        agents.pos[i] = (p + tack.Vector([cos(angle), sin(angle)])) % agents.size
+        agents.pos[i] = (p + tack.vec2(cos(angle), sin(angle))) % agents.size
         agents.heading[i] = angle
 
 
 @tack.kernel
-def deposit(agents: tack.template(), trail):
+def deposit(agents, trail):
     for i in range(agents.n):
         cell = int(agents.pos[i]) % agents.size
         tack.atomic_add(trail, cell, 1.0)
@@ -73,7 +73,7 @@ def deposit(agents: tack.template(), trail):
 
 @tack.kernel
 def diffuse(old, new, size, evaporation):
-    for i, j in tack.ndrange(size, size):
+    for i, j in tack.ndindex(size, size):
         total = 0.0
         for di in range(-1, 2):
             for dj in range(-1, 2):
@@ -83,12 +83,12 @@ def diffuse(old, new, size, evaporation):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n, size, frames = (128, 24, 8) if check else (4096, 128, 300)
     agents = Agents(n, size)
     agents.initialize()
-    old = tack.zeros(dtype=tack.f32, shape=(size, size))
-    new = tack.zeros(dtype=tack.f32, shape=(size, size))
+    old = tack.zeros((size, size))
+    new = tack.zeros((size, size))
     evaporation = 0.96
     expected_mass = 0.0
     snapshots = []
@@ -100,11 +100,11 @@ def run(arch="cpu", check=False):
         old, new = new, old
         expected_mass = (expected_mass + n) * evaporation
         if (frame + 1) % (frames // 3 if not check else frames) == 0:
-            snapshots.append(old.to_numpy())
+            snapshots.append(old.numpy())
     # --8<-- [end:loop]
     if check:
-        trail = old.to_numpy()
-        pos = agents.pos.to_numpy()
+        trail = old.numpy()
+        pos = agents.pos.numpy()
         assert np.all(np.isfinite(trail)) and trail.min() >= 0
         assert np.all((pos >= 0) & (pos < size))
         # Every deposit adds one, and periodic averaging preserves mass.

@@ -4,10 +4,10 @@ Tack has five ways to combine many values into a few:
 
 | Family | Entry points | Where it runs |
 |---|---|---|
-| [Array reductions](#array-reductions) | `array.sum()`, `.min()`, `.max()`, `.mean()` | Called from Python; the device or NumPy, depending on backend and dtype |
-| [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; terms formed on the active backend and reduced as arrays are |
-| [Prefix scans](#prefix-scans) | `exclusive_scan`, `inclusive_scan` (plus `copy`, `fill_value`) in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
-| [Sorting and segmented reductions](#sorting-and-segmented-reductions) | `argsort`, `sort_by_key`, `gather`, `unique`, `reduce_by_key` in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
+| [Array reductions](#array-reductions) | `array.sum()`, `.min()`, `.max()`, `.mean()` | Called from Python; the array's device or NumPy, depending on backend and dtype |
+| [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; terms formed on the inputs' device and reduced as arrays are |
+| [Prefix scans](#prefix-scans) | `exclusive_scan`, `inclusive_scan` (plus `copy`, `fill_value`) in `tack.algorithms` | Called from Python; a sequence of kernels on the inputs' device |
+| [Sorting and segmented reductions](#sorting-and-segmented-reductions) | `argsort`, `sort_by_key`, `gather`, `unique`, `reduce_by_key` in `tack.algorithms` | Called from Python; a sequence of kernels on the inputs' device |
 | [Block reductions](#block-reductions-inside-kernels) | `tack.block_sum`, `block_min`, `block_max` | Inside a kernel; GPU backends only |
 
 Every family runs on all five backends except block reductions, which need
@@ -20,7 +20,7 @@ device has finished; the next read of an array waits for it (see
 
 The behavior below is stated per backend. Where it is the current
 implementation rather than a promise, the page says so; the
-[reduction contract](../reference/language-contract.md#field-and-parallel-reductions)
+[reduction contract](../reference/language-contract.md#array-and-parallel-reductions)
 is the normative text.
 
 ## Array reductions
@@ -29,7 +29,7 @@ is the normative text.
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)   # or a configured GPU backend
+tack.set_default_device("cpu")   # or a configured GPU backend
 
 data = tack.array(np.arange(8, dtype=np.float32))
 
@@ -49,7 +49,7 @@ The result is always a Python `float`, including for integer arrays.
 **Where it runs.** CPU always reduces with NumPy. Metal, CUDA, HIP and Level
 Zero reduce `f32` arrays on the device with a 256-lane tree per group and an
 atomic combine of the group results. Every other dtype is copied to the
-host with `to_numpy()` and reduced with NumPy. Two further host fallbacks
+host with `numpy()` and reduced with NumPy. Two further host fallbacks
 exist for `f32`: Metal reduces arrays of 2^32 or more elements with NumPy
 over its shared buffer, and Level Zero uses NumPy when the device cannot
 run 256-lane groups.
@@ -91,7 +91,7 @@ The NumPy paths currently give the same answer on every call, but the
 contract does not promise that floating sums are reproducible on any
 backend. The accuracy that *is* promised is an absolute error budget,
 stated in the
-[reduction contract](../reference/language-contract.md#field-and-parallel-reductions).
+[reduction contract](../reference/language-contract.md#array-and-parallel-reductions).
 
 !!! note "What crosses to the host"
     On a GPU backend an `f32` reduction reads back one value. Any other
@@ -181,7 +181,7 @@ import numpy as np
 import tack
 from tack.algorithms import absmax, dot
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 integers = tack.array(np.array([100000], dtype=np.int32))
 assert dot(integers, integers) == 10_000_000_000.0
 
@@ -236,7 +236,7 @@ range with a nonfinite endpoint or `lo > hi`. Equal endpoints are expanded
 by setting `hi = lo + 1`. For an `f32` input the bin arithmetic uses `f32`
 while `edges` is `float64`, so a value lying exactly on an interior edge can
 land on either side of it. `counts` stays on the device; call
-`counts.to_numpy()` to read it. Counts must fit in each bin's `i32` accumulator.
+`counts.numpy()` to read it. Counts must fit in each bin's `i32` accumulator.
 
 ### Accuracy and repeatability
 
@@ -256,8 +256,8 @@ their `i32` bins. Extrema are order-independent and propagate NaNs as above.
 ```python
 from tack.algorithms import exclusive_scan, inclusive_scan
 
-counts = tack.empty(dtype=tack.i32, shape=(n,))
-offsets = tack.empty(dtype=tack.i32, shape=(n,))
+counts = tack.empty((n,), tack.i32)
+offsets = tack.empty((n,), tack.i32)
 # ... a kernel fills counts ...
 
 total = exclusive_scan(counts, offsets, n)  # offsets[i] = counts[0] + ... + counts[i-1]
@@ -272,7 +272,7 @@ scan runs in the output's dtype, so the running sums are formed in `i64`
 and the total comes back exact.
 
 ```python
-offsets = tack.empty(dtype=tack.i64, shape=(n,))
+offsets = tack.empty((n,), tack.i64)
 total = exclusive_scan(counts, offsets, n)  # i32 counts, i64 offsets and total
 ```
 
@@ -337,7 +337,7 @@ copy(src, dst, n)          # dst[i] = src[i] for i < n
 fill_value(dst, 0, n)      # dst[i] = 0 for i < n
 ```
 
-Both are single kernels on the active backend and return `None`. They work
+Both are single kernels on their arrays' device and return `None`. They work
 on the first `n` elements in flat order and do not check `n` against either
 array.
 
@@ -380,7 +380,7 @@ always *make a key per item, sort, then walk the runs of equal keys*:
 # ids of each cell's corners; cell_of holds the cell id of each entry.
 points, cells = sort_by_key(conn, cell_of)     # entries grouped by point
 upoints, counts = unique(points)               # each point and its cell count
-offsets = tack.empty(dtype=tack.i32, shape=(upoints.size,))
+offsets = tack.empty((upoints.size,), tack.i32)
 exclusive_scan(counts, offsets, upoints.size)  # cells[offsets[p]:offsets[p]+counts[p]]
 ```
 
@@ -440,8 +440,8 @@ def group_sums(data, partial, n):
             partial[i // 256] = s       # one lane writes the group's result
 
 n = 1 << 20                             # a multiple of 256
-data = tack.empty(dtype=tack.f32, shape=(n,))
-partial = tack.empty(dtype=tack.f32, shape=(n // 256,))
+data = tack.empty((n,))
+partial = tack.empty((n // 256,))
 group_sums(data, partial, n)
 total = partial.sum()
 ```
@@ -465,7 +465,7 @@ has the full conservative domain; in short:
   explicit f32 cast") on the first call. Write `tack.block_sum(tack.f32(x))`
   for an integer or `f64` value.
 - **Complete groups.** A positive iteration count must be a multiple of
-  256, including stepped ranges and the total of a `tack.ndrange`.
+  256, including stepped ranges and the total of a `tack.ndindex`.
   Otherwise the call raises `ValueError` ("... require complete 256-lane
   groups; iteration count 1000 would create a partial workgroup") before
   anything runs. A count of zero runs nothing. Tack does not pad; pad the

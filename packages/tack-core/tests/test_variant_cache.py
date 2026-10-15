@@ -3,7 +3,7 @@
 The IR pass pipeline substitutes dispatch-time constants into the IR — a
 multi-dimensional index linearizes to ``i * dim1 + j`` with ``dim1`` as a
 literal.  So the row stride is part of the compiled code's identity, and
-reusing that code for a differently shaped field reads the wrong addresses
+reusing that code for a differently shaped array reads the wrong addresses
 and returns wrong numbers with no error.
 
 The other half of the contract is that the key must not be *too* fine: a
@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 import tack
+from tack.runtime.kernel_utils import drop_variants
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
@@ -38,13 +39,13 @@ def _flat(x, out, n):
 
 
 def _run2d(rows, cols):
-    a = tack.field(dtype=tack.f32, shape=(rows, cols))
-    out = tack.field(dtype=tack.f32, shape=(rows, cols))
+    a = tack.empty((rows, cols))
+    out = tack.empty((rows, cols))
     src = np.arange(rows * cols, dtype=np.float32).reshape(rows, cols)
-    a.from_numpy(src)
+    tack.copyto(a, src)
     out.fill(-1.0)
     _scale2d(a, out, rows, cols)
-    return out.to_numpy(), src * 2.0
+    return out.numpy(), src * 2.0
 
 
 def test_row_stride_change_is_not_miscompiled(backend):
@@ -65,8 +66,7 @@ def test_alternating_shapes_stay_correct(backend):
 
 
 def test_each_row_stride_gets_its_own_variant(backend):
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_scale2d, None)
+    drop_variants(_scale2d, lambda key: True)        # in every cache, the fast path's too
 
     _run2d(4, 8)
     assert _variant_count(_scale2d) == 1
@@ -78,29 +78,27 @@ def test_each_row_stride_gets_its_own_variant(backend):
 
 def test_flat_length_does_not_recompile(backend):
     """Nothing about a 1-D length is baked in, so one variant covers all."""
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_flat, None)
+    drop_variants(_flat, lambda key: True)        # in every cache, the fast path's too
 
     for n in (16, 64, 256, 1024, 4099):
-        x = tack.field(dtype=tack.f32, shape=(n,))
-        out = tack.field(dtype=tack.f32, shape=(n,))
-        x.from_numpy(np.arange(n, dtype=np.float32))
+        x = tack.empty((n,))
+        out = tack.empty((n,))
+        tack.copyto(x, np.arange(n, dtype=np.float32))
         _flat(x, out, n)
-        np.testing.assert_allclose(out.to_numpy(),
+        np.testing.assert_allclose(out.numpy(),
                                    np.arange(n) + 1.0, rtol=1e-6)
     assert _variant_count(_flat) == 1
 
 
 def test_dtype_still_separates_variants(backend):
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_flat, None)
+    drop_variants(_flat, lambda key: True)        # in every cache, the fast path's too
 
     for dtype, np_dtype in ((tack.f32, np.float32), (tack.i32, np.int32)):
-        x = tack.field(dtype=dtype, shape=(32,))
-        out = tack.field(dtype=dtype, shape=(32,))
-        x.from_numpy(np.arange(32, dtype=np_dtype))
+        x = tack.empty((32,), dtype)
+        out = tack.empty((32,), dtype)
+        tack.copyto(x, np.arange(32, dtype=np_dtype))
         _flat(x, out, 32)
-        np.testing.assert_array_equal(out.to_numpy(),
+        np.testing.assert_array_equal(out.numpy(),
                                       np.arange(32, dtype=np_dtype) + 1)
     assert _variant_count(_flat) == 2
 
@@ -108,16 +106,15 @@ def test_dtype_still_separates_variants(backend):
 def test_ir_passes_run_once_per_variant(backend, monkeypatch, no_disk_cache):
     """The dispatch path must not re-derive the IR it already has."""
     import tack.lang.ir_optimize as opt
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_flat, None)
+    drop_variants(_flat, lambda key: True)        # in every cache, the fast path's too
 
     calls = []
     real = opt.optimize_ir
     monkeypatch.setattr(opt, "optimize_ir",
                         lambda f: (calls.append(1), real(f))[1])
 
-    x = tack.field(dtype=tack.f32, shape=(64,))
-    out = tack.field(dtype=tack.f32, shape=(64,))
+    x = tack.empty((64,))
+    out = tack.empty((64,))
     for _ in range(8):
         _flat(x, out, 64)
     assert len(calls) == 1
@@ -134,19 +131,19 @@ def test_template_ir_is_not_mutated_by_dispatch(backend):
     assert dims, "a dispatch consumed the template's IRDimSize nodes"
 
 
-@pytest.mark.parametrize("order", [("field", "scalar"), ("scalar", "field")])
-def test_field_and_scalar_arguments_have_distinct_calling_conventions(backend, order):
+@pytest.mark.parametrize("order", [("array", "scalar"), ("scalar", "array")])
+def test_array_and_scalar_arguments_have_distinct_calling_conventions(backend, order):
     @tack.kernel
     def fill(unused, out):
         for i in range(out.shape[0]):
             out[i] = 2.0
 
-    field = tack.field(dtype=tack.f32, shape=(7,))
-    out = tack.field(dtype=tack.f32, shape=(7,))
+    array = tack.empty((7,))
+    out = tack.empty((7,))
     for kind in (*order, order[0]):
         out.fill(-1)
-        fill(field if kind == "field" else 1.0, out)
-        np.testing.assert_array_equal(out.to_numpy(), np.full(7, 2.0))
+        fill(array if kind == "array" else 1.0, out)
+        np.testing.assert_array_equal(out.numpy(), np.full(7, 2.0))
     assert _variant_count(fill) == 2
 
 
@@ -174,12 +171,12 @@ def test_same_named_template_classes_keep_their_own_methods(backend):
         for i in range(out.shape[0]):
             out[i] = mapper.apply(data[i])
 
-    data = tack.field(dtype=tack.i32, shape=(7,))
-    data.from_numpy(np.arange(7, dtype=np.int32))
-    out = tack.field(dtype=tack.i32, shape=(7,))
+    data = tack.empty((7,), tack.i32)
+    tack.copyto(data, np.arange(7, dtype=np.int32))
+    out = tack.empty((7,), tack.i32)
     for cls, offset in ((first, 1), (second, 2), (first, 1)):
         apply(cls(), data, out)
-        np.testing.assert_array_equal(out.to_numpy(), np.arange(7) + offset)
+        np.testing.assert_array_equal(out.numpy(), np.arange(7) + offset)
     assert _variant_count(apply) == 2
 
 
@@ -196,10 +193,10 @@ def test_template_runtime_attribute_layout_is_part_of_ir_identity(backend):
         for i in range(out.shape[0]):
             out[i] = config.value
 
-    out = tack.field(dtype=tack.i32, shape=(7,))
+    out = tack.empty((7,), tack.i32)
     for config in (Config(3), Config(7, extra=11), Config(5)):
         fill(config, out)
-        np.testing.assert_array_equal(out.to_numpy(), np.full(7, config.value))
+        np.testing.assert_array_equal(out.numpy(), np.full(7, config.value))
     assert _variant_count(fill) == 2
 
 
@@ -216,12 +213,12 @@ def test_template_constant_types_specialize_independently(backend):
         for i in range(out.shape[0]):
             out[i] = config.value
 
-    out = tack.field(dtype=tack.f32, shape=(7,))
+    out = tack.empty((7,))
     # Python keys consider 1 and 1.0 equal, but their literals lower to
     # different Tack types. Revisiting either type must reuse its variant.
     for value in (1, 1.0, 1, 1.0):
         fill(Config(value), out)
-        np.testing.assert_array_equal(out.to_numpy(), np.ones(7))
+        np.testing.assert_array_equal(out.numpy(), np.ones(7))
     assert _variant_count(fill) == 2
 
 
@@ -239,15 +236,15 @@ def test_template_float_constants_preserve_signed_zero(backend, values):
         for i in range(out.shape[0]):
             out[i] = config.value
 
-    out = tack.field(dtype=tack.f32, shape=(7,))
+    out = tack.empty((7,))
     for value in values:
         fill(Config(value), out)
-        np.testing.assert_array_equal(np.signbit(out.to_numpy()), np.full(7, np.signbit(value)))
+        np.testing.assert_array_equal(np.signbit(out.numpy()), np.full(7, np.signbit(value)))
     assert _variant_count(fill) == 2
 
 
 @tack.kernel
-def _scale_by_template(x, out, cfg: tack.template()):
+def _scale_by_template(x, out, cfg):
     for i in range(out.shape[0]):
         out[i] = cfg.apply(x[i])
 
@@ -271,10 +268,10 @@ def test_variants_of_a_collected_template_class_are_released(backend):
 
     from tack.runtime.dispatch import get_backend
 
-    get_backend()._cache.pop(_scale_by_template, None)
+    drop_variants(_scale_by_template, lambda key: True)        # in every cache, the fast path's too
     _scale_by_template._ir_cache.clear()
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
     x.fill(2.0)
 
     refs = []
@@ -282,7 +279,7 @@ def test_variants_of_a_collected_template_class_are_released(backend):
         cls = _per_call_class(3.0)
         refs.append(weakref.ref(cls))
         _scale_by_template(x, out, cls())
-        np.testing.assert_array_equal(out.to_numpy(), np.full(4, 6.0, np.float32))
+        np.testing.assert_array_equal(out.numpy(), np.full(4, 6.0, np.float32))
         del cls
     gc.collect()
 
@@ -296,26 +293,26 @@ def test_a_live_template_class_keeps_its_variant(backend):
 
     from tack.runtime.dispatch import get_backend
 
-    get_backend()._cache.pop(_scale_by_template, None)
+    drop_variants(_scale_by_template, lambda key: True)        # in every cache, the fast path's too
     _scale_by_template._ir_cache.clear()
-    x = tack.field(dtype=tack.f32, shape=(4,))
-    out = tack.field(dtype=tack.f32, shape=(4,))
+    x = tack.empty((4,))
+    out = tack.empty((4,))
     x.fill(2.0)
 
     kept = _per_call_class(5.0)
     _scale_by_template(x, out, kept())
     _scale_by_template(x, out, _per_call_class(7.0)())
-    np.testing.assert_array_equal(out.to_numpy(), np.full(4, 14.0, np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.full(4, 14.0, np.float32))
     gc.collect()
 
     slot = get_backend()._cache[_scale_by_template]
     assert len(slot) == 1
     _scale_by_template(x, out, kept())
-    np.testing.assert_array_equal(out.to_numpy(), np.full(4, 10.0, np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.full(4, 10.0, np.float32))
     assert len(slot) == 1
 
 
-# ── A template's fields: rank, not size ───────────────────────────────
+# ── A template's arrays: rank, not size ───────────────────────────────
 
 @tack.device_class
 class _Holds:
@@ -343,25 +340,25 @@ def _rows_through_holder(h, out):
         out[i] = h.at(i, 1)
 
 
-def test_a_templates_field_length_does_not_specialize():
-    """A template holding a field compiled once per length of that field, every
+def test_a_templates_array_length_does_not_specialize():
+    """A template holding an array compiled once per length of that array, every
     time a filter's output changed size; only what the code bakes in counts."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     for n in (10, 20, 30):
-        out = tack.field(tack.i32, shape=(n,))
-        _through_holder(_Holds(tack.arange(n, tack.i32)), out)
-        np.testing.assert_array_equal(out.to_numpy(), np.arange(n))
+        out = tack.empty((n,), tack.i32)
+        _through_holder(_Holds(tack.arange(n)), out)
+        np.testing.assert_array_equal(out.numpy(), np.arange(n))
     assert _variant_count(_through_holder) == 1
 
 
 def test_a_dimension_a_template_bakes_in_still_specializes():
     """values[i, j] bakes the row length in: each length is its own variant, and
     each computes with its own."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     for cols in (3, 5):
-        values = tack.field(tack.i32, shape=(4, cols))
-        values.from_numpy(np.arange(4 * cols, dtype=np.int32).reshape(4, cols))
-        out = tack.field(tack.i32, shape=(4,))
+        values = tack.empty((4, cols), tack.i32)
+        tack.copyto(values, np.arange(4 * cols, dtype=np.int32).reshape(4, cols))
+        out = tack.empty((4,), tack.i32)
         _rows_through_holder(_Holds(values), out)
-        np.testing.assert_array_equal(out.to_numpy(), np.arange(4) * cols + 1)
+        np.testing.assert_array_equal(out.numpy(), np.arange(4) * cols + 1)
     assert _variant_count(_rows_through_holder) == 2

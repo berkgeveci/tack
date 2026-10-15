@@ -48,45 +48,45 @@ def test_launch_size_check_names_the_operation_and_limit():
 
 def test_over_limit_launch_is_refused_before_dispatch(workgroup_backend, monkeypatch):
     _limit_launches(monkeypatch, 1024)
-    at_limit = tack.field(dtype=tack.f32, shape=(1024,))
+    at_limit = tack.empty((1024,))
     _fill_ones(at_limit)
-    assert at_limit.to_numpy().min() == 1.0
+    assert at_limit.numpy().min() == 1.0
 
-    over = tack.field(dtype=tack.f32, shape=(1025,))
+    over = tack.empty((1025,))
     with pytest.raises(ValueError, match="Kernel '_fill_ones': 1025 iterations exceed the 1024"):
         _fill_ones(over)
-    assert over.to_numpy().max() == 0.0
+    assert over.numpy().max() == 0.0
 
 
 def test_over_limit_native_reduction(reduction_backend, monkeypatch):
     _limit_launches(monkeypatch, 1024)
-    field = tack.field(dtype=tack.f32, shape=(1025,))
-    field.fill(1.0)
+    array = tack.empty((1025,))
+    array.fill(1.0)
     if get_backend().name == 'metal':
-        # Metal reduces a field its 32-bit kernel cannot index through NumPy.
-        assert field.sum() == 1025.0
+        # Metal reduces an array its 32-bit kernel cannot index through NumPy.
+        assert array.sum() == 1025.0
         return
-    with pytest.raises(ValueError, match=r"Field sum\(\): 1025 iterations exceed the 1024"):
-        field.sum()
+    with pytest.raises(ValueError, match=r"Array sum\(\): 1025 iterations exceed the 1024"):
+        array.sum()
 
 
 @pytest.mark.parametrize('n', [1, 255, 257, 100_003])
 def test_native_reduction_counts_every_element(reduction_backend, n):
-    field = tack.field(dtype=tack.f32, shape=(n,))
-    field.fill(1.0)
-    assert field.sum() == float(n)
-    assert field.max() == 1.0
+    array = tack.empty((n,))
+    array.fill(1.0)
+    assert array.sum() == float(n)
+    assert array.max() == 1.0
 
 
 def test_launch_past_2_32_iterations_reaches_every_index(workgroup_backend):
-    # Only the last 256 of 2^32 + 256 iterations store, so the field stays
+    # Only the last 256 of 2^32 + 256 iterations store, so the array stays
     # tiny. A 32-bit index never reaches them, and they stayed zero.
     base = 2**32
-    out = tack.field(dtype=tack.i32, shape=(256,))
+    out = tack.empty((256,), tack.i32)
     if get_backend().name in ('hip', 'metal'):
         # One launch there indexes at most 2^32 threads: refuse, not wrap.
         with pytest.raises(ValueError, match="iterations exceed"):
             _mark_past(out, base + 256, base)
         return
     _mark_past(out, base + 256, base)
-    np.testing.assert_array_equal(out.to_numpy(), np.ones(256, dtype=np.int32))
+    np.testing.assert_array_equal(out.numpy(), np.ones(256, dtype=np.int32))

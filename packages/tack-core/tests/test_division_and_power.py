@@ -23,10 +23,10 @@ GENERATORS = [generate_cuda_source, generate_hip_source,
               generate_msl_source, generate_opencl_source]
 
 
-def _field(values, dtype):
+def _array(values, dtype):
     values = np.asarray(values, dtype=dtype.numpy_dtype)
-    result = tack.field(dtype, values.shape)
-    result.from_numpy(values)
+    result = tack.empty(values.shape, dtype)
+    tack.copyto(result, values)
     return result
 
 
@@ -76,9 +76,9 @@ def test_integer_power_is_exact_and_preserves_base_width(backend, base_type, exp
                                        range(limit + 1)))
     else:
         pairs = list(itertools.product(_values(base_type), exponents))
-    a = _field([x for x, _ in pairs], base_type)
-    b = _field([e for _, e in pairs], exponent_type)
-    out = tack.field(base_type, (len(pairs), 7))
+    a = _array([x for x, _ in pairs], base_type)
+    b = _array([e for _, e in pairs], exponent_type)
+    out = tack.empty((len(pairs), 7), base_type)
     _power(a, b, out)
     modulus = 1 << base_type.bits
     expected = []
@@ -86,7 +86,7 @@ def test_integer_power_is_exact_and_preserves_base_width(backend, base_type, exp
         powered = _wrap(pow(x, e, modulus), base_type)
         expected.append([powered, powered, _wrap(powered + x, base_type),
                          _wrap(pow(powered, e, modulus), base_type), 1, x, int(powered < x)])
-    np.testing.assert_array_equal(out.to_numpy(),
+    np.testing.assert_array_equal(out.numpy(),
                                   np.asarray(expected, dtype=base_type.numpy_dtype))
 
 
@@ -126,8 +126,8 @@ DIVISION_TYPES = [(t, t) for t in TYPES] + [
 @pytest.mark.parametrize('left,right', DIVISION_TYPES, ids=lambda t: t.name)
 def test_integer_true_division_returns_f32(backend, left, right):
     pairs = [(x, y) for x in _values(left) for y in _values(right) if y]
-    a, b = _field([x for x, _ in pairs], left), _field([y for _, y in pairs], right)
-    out = tack.field(tack.f32, (len(pairs), 3))
+    a, b = _array([x for x, _ in pairs], left), _array([y for _, y in pairs], right)
+    out = tack.empty((len(pairs), 3))
     _true_division(a, b, out)
     expected = []
     for x, y in pairs:
@@ -135,7 +135,7 @@ def test_integer_true_division_returns_f32(backend, left, right):
         expected.append([q, np.float32(q + q), abs(q)])
     # Vendor default floating-point options may approximate division; the
     # wider floating-point accuracy/optimization policy remains separate.
-    np.testing.assert_array_max_ulp(out.to_numpy(), np.asarray(expected, dtype=np.float32),
+    np.testing.assert_array_max_ulp(out.numpy(), np.asarray(expected, dtype=np.float32),
                                    maxulp=4)
 
 
@@ -147,20 +147,20 @@ def _division_precision(a, b, narrow, wide):
 
 
 def test_division_precision_is_explicit(f64_backend):
-    a = _field([7, -7, 2**53 + 1, 2**62 + 2**38 + 1], tack.i64)
-    b = _field([2, 2, 3, 7], tack.i64)
-    default, wide = tack.field(tack.f64, a.shape), tack.field(tack.f64, a.shape)
+    a = _array([7, -7, 2**53 + 1, 2**62 + 2**38 + 1], tack.i64)
+    b = _array([2, 2, 3, 7], tack.i64)
+    default, wide = tack.empty(a.shape, tack.f64), tack.empty(a.shape, tack.f64)
     _division_precision(a, b, default, wide)
-    values = a.to_numpy().tolist()
-    divisors = b.to_numpy().tolist()
+    values = a.numpy().tolist()
+    divisors = b.numpy().tolist()
     expected_default = [np.float32(float(_rounded_f32_integer(x)) /
                                    float(_rounded_f32_integer(y)))
                         for x, y in zip(values, divisors)]
-    actual_default = default.to_numpy()
+    actual_default = default.numpy()
     np.testing.assert_array_equal(actual_default, actual_default.astype(np.float32))
     np.testing.assert_array_max_ulp(actual_default.astype(np.float32),
                                    np.asarray(expected_default, dtype=np.float32), maxulp=4)
-    np.testing.assert_allclose(wide.to_numpy(), [float(x) / float(y)
+    np.testing.assert_allclose(wide.numpy(), [float(x) / float(y)
                                                 for x, y in zip(values, divisors)], rtol=1e-14)
 
 
@@ -173,11 +173,11 @@ def _fractional(a, b, out, integer):
 
 
 def test_fractional_result_survives_nested_expression_and_truncates_on_store(backend):
-    a, b = _field([7, -7, 1, -1], tack.i32), _field([2, 2, 2, 2], tack.i32)
-    out, integer = tack.field(tack.f32, (4, 2)), tack.field(tack.i32, (4,))
+    a, b = _array([7, -7, 1, -1], tack.i32), _array([2, 2, 2, 2], tack.i32)
+    out, integer = tack.empty((4, 2)), tack.empty((4,), tack.i32)
     _fractional(a, b, out, integer)
-    np.testing.assert_array_equal(out.to_numpy(), [[3.5, 7], [-3.5, -7], [0.5, 1], [-0.5, -1]])
-    np.testing.assert_array_equal(integer.to_numpy(), [3, -3, 0, 0])
+    np.testing.assert_array_equal(out.numpy(), [[3.5, 7], [-3.5, -7], [0.5, 1], [-0.5, -1]])
+    np.testing.assert_array_equal(integer.numpy(), [3, -3, 0, 0])
 
 
 @tack.kernel
@@ -188,11 +188,11 @@ def _guarded(a, e, b, power, quotient):
 
 
 def test_guarded_invalid_operations_are_not_executed(backend):
-    a, e, b = [_field(v, tack.i32) for v in ([3, 0, -2, 7], [4, 0, -1, -9], [2, 1, 0, 0])]
-    power, quotient = tack.field(tack.i32, (4,)), tack.field(tack.f32, (4,))
+    a, e, b = [_array(v, tack.i32) for v in ([3, 0, -2, 7], [4, 0, -1, -9], [2, 1, 0, 0])]
+    power, quotient = tack.empty((4,), tack.i32), tack.empty((4,))
     _guarded(a, e, b, power, quotient)
-    np.testing.assert_array_equal(power.to_numpy(), [81, 1, 99, 99])
-    np.testing.assert_array_equal(quotient.to_numpy(), [1.5, 0, 99, 99])
+    np.testing.assert_array_equal(power.numpy(), [81, 1, 99, 99])
+    np.testing.assert_array_equal(quotient.numpy(), [1.5, 0, 99, 99])
 
 
 @tack.func
@@ -210,19 +210,19 @@ def _effects(state, powers, quotients):
 
 
 def test_operands_execute_once_in_order(backend):
-    state = _field([0] * 7, tack.i32)
-    powers, quotients = tack.field(tack.i32, (7, 2)), tack.field(tack.f32, (7,))
+    state = _array([0] * 7, tack.i32)
+    powers, quotients = tack.empty((7, 2), tack.i32), tack.empty((7,))
     _effects(state, powers, quotients)
-    np.testing.assert_array_equal(state.to_numpy(), [232372] * 7)
-    np.testing.assert_array_equal(powers.to_numpy(), [[8, 8]] * 7)
-    np.testing.assert_array_equal(quotients.to_numpy(), [3.5] * 7)
+    np.testing.assert_array_equal(state.numpy(), [232372] * 7)
+    np.testing.assert_array_equal(powers.numpy(), [[8, 8]] * 7)
+    np.testing.assert_array_equal(quotients.numpy(), [3.5] * 7)
 
 
-def test_opencl_inlined_effects_preserve_field_address_space(tmp_path):
+def test_opencl_inlined_effects_preserve_array_address_space(tmp_path):
     clang = require_clang()
-    tack.init(arch=tack.cpu)
-    state = _field([0], tack.i32)
-    powers, quotients = tack.field(tack.i32, (1, 2)), tack.field(tack.f32, (1,))
+    tack.set_default_device("cpu")
+    state = _array([0], tack.i32)
+    powers, quotients = tack.empty((1, 2), tack.i32), tack.empty((1,))
     func, _ = _prepare_ir(_effects, (state, powers, quotients))
     path = tmp_path / 'effects.cl'
     path.write_text(generate_opencl_source(func))
@@ -239,23 +239,23 @@ def _floating_power(a, b, out):
 
 
 def test_explicit_float_base_supports_negative_exponents(backend):
-    a, b = _field([2, 4, 0.5], tack.f32), _field([-3, -2, -1], tack.i64)
-    out = tack.field(tack.f32, (3, 2))
+    a, b = _array([2, 4, 0.5], tack.f32), _array([-3, -2, -1], tack.i64)
+    out = tack.empty((3, 2))
     _floating_power(a, b, out)
-    np.testing.assert_allclose(out.to_numpy(), [[0.125] * 2, [0.0625] * 2, [2] * 2],
+    np.testing.assert_allclose(out.numpy(), [[0.125] * 2, [0.0625] * 2, [2] * 2],
                                rtol=1e-6)
 
 
 @pytest.mark.parametrize('wide_base', [True, False])
 def test_f64_power_preserves_argument_precision(f64_backend, wide_base):
     if wide_base:
-        a, b = _field([1.000000000001, 2], tack.f64), _field([3, -3], tack.i32)
+        a, b = _array([1.000000000001, 2], tack.f64), _array([3, -3], tack.i32)
     else:
-        a, b = _field([2, 3], tack.i32), _field([1.000000000001, -0.5], tack.f64)
-    out = tack.field(tack.f64, (2, 2))
+        a, b = _array([2, 3], tack.i32), _array([1.000000000001, -0.5], tack.f64)
+    out = tack.empty((2, 2), tack.f64)
     _floating_power(a, b, out)
-    expected = [[float(x) ** float(y)] * 2 for x, y in zip(a.to_numpy(), b.to_numpy())]
-    np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-14)
+    expected = [[float(x) ** float(y)] * 2 for x, y in zip(a.numpy(), b.numpy())]
+    np.testing.assert_allclose(out.numpy(), expected, rtol=1e-14)
 
 
 @tack.kernel
@@ -272,8 +272,8 @@ def _negative_builtin(a, out):
 
 @pytest.mark.parametrize('kernel', [_negative_literal, _negative_builtin])
 def test_negative_integer_literal_exponent_is_rejected(kernel):
-    tack.init(arch=tack.cpu)
-    a, out = _field([2], tack.i32), tack.field(tack.i32, (1,))
+    tack.set_default_device("cpu")
+    a, out = _array([2], tack.i32), tack.empty((1,), tack.i32)
     with pytest.raises(TypeError, match='nonnegative exponent.*cast the base'):
         tack.inspect(kernel, a, out)
 
@@ -281,9 +281,9 @@ def test_negative_integer_literal_exponent_is_rejected(kernel):
 @pytest.mark.parametrize('generate', GENERATORS)
 @pytest.mark.parametrize('dtype', TYPES, ids=lambda t: t.name)
 def test_all_generators_use_integer_power_helpers(generate, dtype):
-    tack.init(arch=tack.cpu)
-    a, e = _field([2], dtype), _field([2**63], tack.u64)
-    out = tack.field(dtype, (1, 7))
+    tack.set_default_device("cpu")
+    a, e = _array([2], dtype), _array([2**63], tack.u64)
+    out = tack.empty((1, 7), dtype)
     func, _ = _prepare_ir(_power, (a, e, out))
     source = generate(func)
     assert 'powf(' not in source and 'pow(' not in source
@@ -301,9 +301,9 @@ def test_all_generators_use_integer_power_helpers(generate, dtype):
 def test_float_power_generators_use_promoted_precision(generate, dtype):
     if generate is generate_msl_source and dtype is tack.f64:
         pytest.skip('Metal does not support f64')
-    tack.init(arch=tack.cpu)
-    a, e = _field([2], tack.i32), _field([1.5], dtype)
-    out = tack.field(dtype, (1, 2))
+    tack.set_default_device("cpu")
+    a, e = _array([2], tack.i32), _array([1.5], dtype)
+    out = tack.empty((1, 2), dtype)
     func, _ = _prepare_ir(_floating_power, (a, e, out))
     source = generate(func)
     name = 'powf' if dtype is tack.f32 and generate in (
@@ -316,9 +316,9 @@ def test_float_power_generators_use_promoted_precision(generate, dtype):
 @pytest.mark.parametrize('base_type,exponent_type', itertools.product(TYPES, repeat=2),
                          ids=lambda t: t.name)
 def test_power_annotation_preserves_base_type(base_type, exponent_type):
-    tack.init(arch=tack.cpu)
-    a, e = _field([2], base_type), _field([3], exponent_type)
-    out = tack.field(base_type, (1, 7))
+    tack.set_default_device("cpu")
+    a, e = _array([2], base_type), _array([3], exponent_type)
+    out = tack.empty((1, 7), base_type)
     func, _ = _prepare_ir(_power, (a, e, out))
     expressions = [n for n in walk_ir(func.body)
                    if (isinstance(n, ir.IRBinOp) and n.op == '**')
@@ -328,10 +328,10 @@ def test_power_annotation_preserves_base_type(base_type, exponent_type):
 
 
 def test_integer_division_annotation_does_not_depend_on_output_type():
-    tack.init(arch=tack.cpu)
-    a, b = _field([7], tack.i64), _field([2], tack.u64)
+    tack.set_default_device("cpu")
+    a, b = _array([7], tack.i64), _array([2], tack.u64)
     for output_type in (tack.f32, tack.f64):
-        out = tack.field(output_type, (1, 3))
+        out = tack.empty((1, 3), output_type)
         func, _ = _prepare_ir(_true_division, (a, b, out))
         divisions = [n for n in walk_ir(func.body) if isinstance(n, ir.IRBinOp) and n.op == '/']
         assert len(divisions) == 1

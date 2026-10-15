@@ -7,12 +7,12 @@ checkout whose ``benchmarks/vtk_compare`` supplies the meshes and the
 filter pairs; the tack that runs is whatever this interpreter imports,
 so run it with the venv of the build being traced. SIZE is one of
 vtk_compare's sizes or 20M / 50M. Patches the CPU backend's dispatch,
-``allocate_field``, ``resolve_variant``, ``tack.zeros`` and
+``allocate_array``, ``resolve_variant``, ``tack.zeros`` and
 ``Field.fill`` to report, per filter:
 
   per launch      kernel, elements, wall ms, fanned out, minor faults, the
                   gap since the previous launch returned
-  per allocation  bytes, dtype, time in allocate_field, the fill zeros or
+  per allocation  bytes, dtype, time in allocate_array, the fill zeros or
                   Field.fill added, and the first kernel that bound the
                   field: written over its whole range or not, an atomic
                   target, or only read
@@ -36,10 +36,10 @@ import numpy as np
 import pairs as p
 
 import tack
-import tack.lang.field as fieldmod
+import tack.lang.array as fieldmod
 import tack.runtime.cpu as cpu
 
-tack.init(arch="cpu", num_threads=threads)
+tack.set_default_device("cpu", num_threads=threads)
 
 SIZES = dict(m.SIZES, **{"20M": 20_000_000, "50M": 50_000_000})
 
@@ -54,7 +54,7 @@ last_end = [0]
 _resolve = cpu.resolve_variant
 _dispatch = cpu.CPUBackend._dispatch
 _par = cpu.CPUBackend._parallel_execute
-_alloc = cpu.CPUBackend.allocate_field
+_alloc = cpu.CPUBackend.allocate_array
 _zeros = fieldmod.zeros
 _fill = fieldmod.Field.fill
 
@@ -74,7 +74,7 @@ def dispatch(self, compiled, kernel_args, loop_end, extents=()):
     variant, eargs = state["variant"], state["eargs"]
     state["variant"] = state["eargs"] = None
     if variant is not None:
-        written = {i for i, _ in variant.written_fields}
+        written = {i for i, _ in variant.written_arrays}
         atomic = {i for i, _ in variant.atomic_targets}
         for i, a in enumerate(eargs):
             if not isinstance(a, fieldmod.Field):
@@ -110,7 +110,7 @@ def par(self, compiled, prefix, start, end, **kw):
     return _par(self, compiled, prefix, start, end, **kw)
 
 
-def allocate_field(self, dtype, shape, exportable=False):
+def allocate_array(self, dtype, shape, exportable=False):
     t0 = time.perf_counter_ns()
     f0 = resource.getrusage(resource.RUSAGE_SELF).ru_minflt
     buf = _alloc(self, dtype, shape, exportable)
@@ -149,7 +149,7 @@ def fill(self, value):
 cpu.resolve_variant = resolve_variant
 cpu.CPUBackend._dispatch = dispatch
 cpu.CPUBackend._parallel_execute = par
-cpu.CPUBackend.allocate_field = allocate_field
+cpu.CPUBackend.allocate_array = allocate_array
 fieldmod.zeros = zeros
 tack.zeros = zeros
 fieldmod.Field.fill = fill

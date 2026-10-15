@@ -27,7 +27,7 @@ below shows how to construct these pieces explicitly for several mesh types.
 import tack
 import tack.dataset as td
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 
 data = td.uniform_grid((17, 17, 17), origin=(-1, -1, -1), spacing=(0.125, 0.125, 0.125))
 positions = data.positions()                   # corner positions as a NumPy array
@@ -54,7 +54,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Fields and Spaces](data/03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
 | [Filter and Analyze](data/04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
 | [Write Mesh Algorithms](data/05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
-| [Sample, Render and Connect Simulations](data/06-pipelines.md) | Probe a solution, integrate paths, render a surface or exchange datasets |
+| [Sample and Connect Simulations](data/06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
 
 For a first reading, follow the fundamentals, dataset and mesh chapters,
 then the field and filter chapters.
@@ -292,22 +292,10 @@ A topology keeps its ids in `i32` unless it is too large or asked for `i64`
 pays nothing for large ones. VTK's 64-bit ids come in as the narrowest type
 that holds them.
 
-## Rendering a result
+## Running the examples
 
-`tack.rendering` draws triangles from flat point and connectivity fields. A
-field of 3-vectors is stored interleaved, so `reshape` gives that flat view
-without a copy:
-
-```python
---8<-- "docs/examples/datasets.py:render"
-```
-
-![The wavelet's isosurface at 157, colored by height](../assets/datasets-contour.png)
-
-The whole example is [`docs/examples/datasets.py`](../examples/datasets.py).
-`--check` runs its assertions, and `--output image.png` saves the picture.
-Saving this particular image uses Pillow: from a checkout, run
-`uv run --with pillow python docs/examples/datasets.py --output image.png`.
+The whole example is [`docs/examples/datasets.py`](../examples/datasets.py);
+`--check` runs its assertions.
 
 The new chapter examples can be checked together with the rest of the guide:
 
@@ -336,15 +324,16 @@ grid = dataset_to_vtk(td.contour(data, "pressure", 0.5))
 Arrays exchange through DLPack, sharing storage where the device allows:
 
 ```python
-from tack.interop.vtk import field_to_vtk, vtk_to_field
+from tack.interop.vtk import array_to_vtk, vtk_to_array
 
-field = vtk_to_field(vtk_array)
-vtk_array = field_to_vtk(field)
+values = vtk_to_array(vtk_array)            # a tack.Array sharing VTK's storage
+vtk_array = array_to_vtk(values)
 ```
 
-VTK's tuples and components become a field shape: a `(1000, 3)` scalar field
-represents 1000 tuples of three components. `vtk_to_field(array,
-flatten=True)` and `field_to_vtk(field, n_components=3)` use the flat
+VTK's tuples and components become an array shape: a `(1000, 3)` scalar array
+represents 1000 tuples of three components, and an array of `vec3` elements
+exports as 1000 tuples of three as well. `vtk_to_array(array,
+flatten=True)` and `array_to_vtk(values, n_components=3)` use the flat
 interleaved layout instead. This requires a VTK build exposing
 `vtkmodules.util.dlpack_support`. Not every VTK installation provides device
 arrays. See [Sharing arrays with other libraries](16-interoperability.md) for
@@ -353,26 +342,15 @@ lifetime and read-only rules.
 ### Level Zero
 
 Level Zero device pointers need a shared allocation context. With a compatible
-VTK/Viskores Kokkos-SYCL build, initialize before allocating fields:
+VTK/Viskores Kokkos-SYCL build, initialize before allocating arrays:
 
 ```python
 from tack.interop.vtk import init_level_zero
 
-init_level_zero()                       # instead of tack.init(arch=tack.level_zero)
+init_level_zero()     # instead of tack.set_default_device("level_zero")
 ```
 
 The VTK DLPack support must provide `level_zero_handles()`. Fields created in a
 separate Tack context cannot be exchanged through this path. For another library,
-`tack.init(arch=tack.level_zero, external_context={"driver": ..., "device": ...,
-"context": ...})` adopts its context; Tack never destroys an adopted context.
-
-## Earlier algorithms
-
-The first vis worklets, `flying_edges`, `compute_normals`, `cell_to_point`
-and `amr_blanking`, and the finite-element helpers in `tack.fe` are kept
-for reference in `tack.deprecated`. `tack.dataset` supersedes them:
-- `contour` replaces `flying_edges`;
-- `to_points` replaces `cell_to_point`;
-- `gradients` and `project` replace the finite-element helpers.
-
-Some examples still use the old modules until they are ported.
+`tack.device("level_zero", external_context={"driver": ..., "device": ...,
+"context": ...})` makes a device in its context; Tack never destroys an adopted context.

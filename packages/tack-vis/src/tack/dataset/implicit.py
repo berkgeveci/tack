@@ -129,8 +129,8 @@ class Planes:
         if not (lengths > 0).all():
             raise ValueError("a plane's normal must not be zero")
         rows = np.hstack([origins, normals / lengths[:, None]]).astype(np.float32)
-        self.planes = tack.field(tack.f32, shape=(rows.size,))
-        self.planes.from_numpy(rows.reshape(-1))
+        self.planes = tack.empty((rows.size,))
+        tack.copyto(self.planes, rows.reshape(-1))
 
     @tack.func
     def value(self, p):

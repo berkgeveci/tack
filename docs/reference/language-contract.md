@@ -43,12 +43,12 @@ all corner cases have been validated.
 
 | Family | Kernel surface | Boundary |
 |---|---|---|
-| Values | Numeric literals, scalar parameters, field loads, local variables, `tack.constant` names (scalars, vectors, matrices), vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
+| Values | Numeric literals, scalar parameters, array loads, local variables, `tack.constant` names (scalars, vectors, matrices), vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions of vectors act per component |
-| Assignments | Local assignment, augmented assignment, field stores, tuple assignment to names, field elements and components | Storage and ordering rules below |
-| Control flow | `range`, `tack.ndrange` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load fields and declare arrays |
+| Assignments | Local assignment, augmented assignment, array stores, tuple assignment to names, array elements and components | Storage and ordering rules below |
+| Control flow | `range`, `tack.ndindex` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load arrays and declare arrays |
 | Composition | `@tack.func` inlining, returning one or several values; a kernel's trailing `return`; `@tack.device_class` templates, with inheritance, device functions held as attributes or under `@staticmethod`, and kernels as methods | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
-| Storage | Scalar fields, vector fields, matrix fields, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
+| Storage | Scalar arrays, vector arrays, matrix arrays, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
 
 Python exceptions, `try`, context managers, generators, and runtime Python
@@ -117,16 +117,16 @@ arguments are positional. A kernel whose last statement is `return expr`,
 with a return annotation naming the type (`-> tack.f32`, `-> float` for
 f32, `-> int` for i32), gives the host that value: after the launch, a
 one-thread epilogue kernel runs the statements outside the parallel loop
-and stores the expression into a hidden one-element field of that type,
+and stores the expression into a hidden one-element array of that type,
 which the call reads and returns as a Python number. The expression may
-read fields, arguments, constants and locals bound outside the loop, not
+read arrays, arguments, constants and locals bound outside the loop, not
 a local the loop assigns. A kernel without one returns None. Device
 functions can return supported scalar, vector or tuple values for inlining.
 
 ## Execution and ordering
 
 **Required:** the portable baseline has one top-level parallel `range` or
-`ndrange` iteration space. Each iteration owns its local variables. There
+`ndindex` iteration space. Each iteration owns its local variables. There
 is no defined order among different parallel iterations. Algorithms must
 avoid conflicting cross-iteration memory accesses unless they use the
 appropriate supported synchronization or atomic operation.
@@ -137,8 +137,8 @@ in a branch or `while` is rejected with a source diagnostic. Statements
 outside the parallel loop, before or after it, may be evaluated any
 number of times per launch: once per GPU thread, and on CPU once per
 chunk, threading probe or timing sample. They may therefore only assign
-local variables, load fields, and declare shared or local arrays, which
-is unobservable however often it runs. Stores to fields or arrays,
+local variables, load arrays, and declare shared or local arrays, which
+is unobservable however often it runs. Stores to arrays or arrays,
 atomics, barriers, block reductions and `print` there are rejected with
 the kernel or device function and source position, including inside
 top-level branches and `while` loops and when they arrive through an
@@ -164,7 +164,7 @@ targets from left to right, so a subscript target's index sees the names
 assigned before it and not those after. A vector
 assignment evaluates every component of its right-hand side before it
 assigns any: `v = v.cross(w)` and `a[i] = a[i].cross(b[i])` read the old
-components, including when the fields read and written share storage.
+components, including when the arrays read and written share storage.
 Sequential
 `range` arguments are evaluated once before entering the loop, including
 when its body changes a bound or step variable.
@@ -197,7 +197,7 @@ zero or negative steps are rejected. A dynamic step must be positive;
 runtime validation of that caller constraint remains open. Cross-iteration
 communication requires further validation before joining the portable
 baseline. Outer launch bounds must be resolvable from host arguments and
-field metadata.
+array metadata.
 
 **Required:** optimizations preserve the observable behavior of every
 defined, race-free program, whether or not a current example uses that
@@ -217,72 +217,74 @@ safety. LLVM and the vendor compilers still perform their own optimizations.
 
 ## Memory and aliasing
 
-Fields are typed, shaped storage associated with a backend. A field from
-`tack.Array` holds unspecified contents until a kernel, `from_numpy` or
-`fill` writes them; `tack.zeros`, `ones` and `full` make filled fields.
+Arrays (kernel arguments that are `tack.Array`s) are typed, shaped
+storage associated with a backend. A new array holds unspecified contents
+until a kernel, `tack.copyto` or `fill` writes them; `tack.zeros`, `ones`
+and `full` make filled arrays.
 A subscript of
-a field gives one index per dimension, or a single flat, row-major index;
-a vector of integers stands for one index per component. Binding a field
+an array gives one index per dimension, or a single flat, row-major index;
+a vector of integers stands for one index per component. Binding an array
 whose number of dimensions differs from the number of indices a kernel
 gives it raises `TypeError` at the call, naming the source position.
-Indices are not checked against the field's extents, except in debug
-mode (below). A field view or
-an imported pointer can share storage with another field. Host code reads
+Indices are not checked against the array's extents, except in debug
+mode (below). An array view or
+an imported pointer can share storage with another array. Host code reads
 one element with `f[i, j]` (a Python number, or a NumPy array of a vector
 or matrix element) and may not write one; `DeviceBuffer.read_range`
 defines the copy, which is a slice of host-visible memory on CPU and
 Metal and a copy of just the element on CUDA, HIP and Level Zero. Object identity
-does not establish that two fields have different backing allocations.
-Callers must keep external storage alive for its use and must use fields
-compatible with the active backend.
+does not establish that two arrays have different backing allocations.
+Callers must keep external storage alive for its use and must pass, in one
+launch, arrays in one device's memory; a launch runs on that device (the
+default device when it can address them).
 
-**Required:** support overlapping field arguments by default, preserving
-program order within each iteration. This includes passing the same field
+**Required:** support overlapping array arguments by default, preserving
+program order within each iteration. This includes passing the same array
 twice and passing distinct views over the same storage. It does not make
-cross-iteration data races valid. LC2 tests this policy. LLVM field parameters
-carry no `noalias` promise; CUDA/HIP and OpenCL field pointers carry no
-`__restrict__` or `restrict` promise. Metal loads field pointers from one
-argument buffer, so overlapping fields are not passed as separate device-buffer
+cross-iteration data races valid. LC2 tests this policy. LLVM array parameters
+carry no `noalias` promise; CUDA/HIP and OpenCL array pointers carry no
+`__restrict__` or `restrict` promise. Metal loads array pointers from one
+argument buffer, so overlapping arrays are not passed as separate device-buffer
 kernel arguments.
 
 **Disjoint-storage specialization (CPU).** The CPU backend may compile a
-second variant whose field pointers carry `noalias`, and uses it only for
+second variant whose array pointers carry `noalias`, and uses it only for
 calls it has checked. The check runs on every dispatch and compares the byte
-ranges of the field arguments, never Python object identity: a call
-qualifies when no field the kernel stores to, directly, atomically, or
-through an inlined device function, shares a byte with any other field
-argument. Fields that are only read may overlap each other. Calls that do
+ranges of the array arguments, never Python object identity: a call
+qualifies when no array the kernel stores to, directly, atomically, or
+through an inlined device function, shares a byte with any other array
+argument. Arrays that are only read may overlap each other. Calls that do
 not qualify run the variant without the promise, so the overlap policy above
 is unchanged and the two variants must agree on every race-free program.
-The qualification is part of the compiled-variant key. `test_disjoint_fields.py`
+The qualification is part of the compiled-variant key. `test_disjoint_arrays.py`
 covers the analysis, partial overlaps of imported storage, the generated
 signatures, and switching between overlapping and disjoint calls.
 
-**Textures.** `tack.texture3d(field, shape=(W, H, D))` copies the field's
-data when it is created, on every backend. Later writes to the field,
-whether kernel stores, `from_numpy`, or external and DLPack writes, are not
-visible to the texture until `tex.update()` copies the field again; sampling
-after that call sees the field's data as of the call. The copy belongs to
+**Textures.** `tack.texture3d(array, shape=(W, H, D))` copies the array's
+data when it is created, on every backend. Later writes to the array,
+whether kernel stores, `tack.copyto`, or external and DLPack writes, are not
+visible to the texture until `tex.update()` copies the array again; sampling
+after that call sees the array's data as of the call. The copy belongs to
 the texture: a hardware image on CUDA, Metal, HIP with image support and
-Level Zero with samplers, otherwise a private field that generated code
+Level Zero with samplers, otherwise a private array that generated code
 interpolates in software. It is released with the texture, and is never
 looked up by device address, so one texture cannot be served another's
-data. The field must be f32 with exactly W·H·D elements, x varying fastest;
+data. The array must be f32 with exactly W·H·D elements, x varying fastest;
 only `interp='linear'` is implemented, and other modes are rejected.
 `test_texture_snapshot.py` covers this on every available backend.
 
 **Required caller constraints for this baseline:** access only in-bounds
 elements and initialized values; write only to writable storage. Dispatch
-refuses a read-only field (`field_from_ptr`'s default, or a DLPack import
+refuses a read-only array (`array_from_ptr`'s default, or a DLPack import
 flagged read-only) bound to a parameter the kernel may store to or update
-atomically; when a store cannot be traced to a parameter, every field
+atomically; when a store cannot be traced to a parameter, every array
 argument counts as written. That is a check of the binding, not of accesses:
-writable fields aliasing read-only storage are not detected. Indices are
+writable arrays aliasing read-only storage are not detected. Indices are
 not checked, and an out-of-bounds access has no defined result. Debug mode
-(`tack.init(debug=True)` or `TACK_DEBUG=1`) is the exception: it checks
-every index of every field and array access against its extent, one
+(`tack.set_debug(True)` or `TACK_DEBUG=1`) is the exception: it checks
+every index of every array and array access against its extent, one
 dimension at a time (so `a[i, j + 1]` past the last column is caught even
-when its flat index lands inside the field), skips an access outside it (a
+when its flat index lands inside the array), skips an access outside it (a
 load gives 0, a store or atomic does nothing), and makes the call raise
 `IndexError` naming the first such access; see the
 [runtime API](../contracts/runtime-api.md). It is a diagnostic, compiled
@@ -292,18 +294,18 @@ wraparound indexing is not promised.
 
 ## Types and numerical behavior
 
-Fields have explicit fixed-width integer or floating-point element types.
+Arrays have explicit fixed-width integer or floating-point element types.
 Backend capabilities restrict which types can execute. Unsupported types
 must be rejected rather than silently narrowed to a supported type.
 
-CPU field loads and stores promise only byte alignment, since imported
+CPU array loads and stores promise only byte alignment, since imported
 buffers may be unaligned and byte-sized elements do not preserve four-byte
 alignment. The numerical regression checks imported buffers at a one-byte
 offset for all ten scalar types and verifies that emitted LLVM does not
 claim stronger alignment than the storage provides.
 
 **Current behavior:** Python floating-point arguments default to f32 unless
-an f64 field argument establishes an f64 context. Float literals are weakly
+an f64 array argument establishes an f64 context. Float literals are weakly
 typed and take the floating type of the operand they meet; the rule is
 under the floating-point execution policy below. Integer scalar arguments
 use i32, i64, or u64 based on magnitude; values outside the supported
@@ -361,7 +363,7 @@ signed truncating operations with floor correction, or unsigned operations.
 floating, `a // b` and `a % b` convert both operands to the promoted
 floating type: f64 if present, otherwise f32. Both results have that type;
 `//` returns an integer-valued **float**, without narrowing to an integer.
-An f64 output field alone does not widen f32 field operands; explicit f64
+An f64 output array alone does not widen f32 array operands; explicit f64
 casts do. Mixed integer operands can lose precision in this conversion.
 
 The operations use a truncating floating remainder, corrected to the
@@ -444,7 +446,7 @@ conditional arms, and joining assignments to one local variable.
 An explicit cast can express intentional wrapping before promotion. True
 division and integer power have the distinct result-type rules below.
 
-Integer-to-integer casts and integer field stores reduce the mathematical
+Integer-to-integer casts and integer array stores reduce the mathematical
 value modulo 2^N at the destination width, then interpret the resulting
 bits using the destination signedness. Widening therefore respects the
 **source** signedness: i8 `-1` to u64 gives `2^64 - 1`, while u8 `255`
@@ -504,12 +506,12 @@ truncate to an integer. For example, `7 / 2` gives `3.5`, and `(7 / 2) * 2`
 gives `7.0`. This follows Python's distinction between true and floor
 division, with Tack's default floating-point precision. To request f64 on
 a capable backend, cast explicitly: `tack.f64(a) / tack.f64(b)`. An f64
-destination field alone does not widen the division. With a floating-point
+destination array alone does not widen the division. With a floating-point
 operand, `/` uses the promoted floating type: f64 if present, otherwise f32.
 
 **Required caller constraint for integer operands:** the evaluated divisor
 is nonzero. Guarded unselected divisions must not execute. Storing a
-fractional result in an integer field follows the floating-to-integer
+fractional result in an integer array follows the floating-to-integer
 conversion constraints above. Large integer inputs may lose precision
 during conversion, and this increment does not promise bitwise-identical
 floating results or settle the general rounding/optimization policy.
@@ -554,13 +556,13 @@ to at most 64 iterations, including outside-domain negative signed counts.
 
 **Required baseline:** f32 and f64 expressions use their annotated
 precision. Floating operands promote to f64 if present, otherwise f32;
-an output field does not widen the input computation. Floating math
+an output array does not widen the input computation. Floating math
 builtins convert arguments to their annotated result precision before
 the call and return that precision before enclosing arithmetic. Integer
 arguments to `sqrt`, trigonometric, exponential and logarithmic functions
 convert to f32 unless another argument is f64. Integer `abs`, `min`, `max`
 and power retain the integer rules above. For example, storing `sqrt(i64)`
-in an f64 field widens an f32 result; `sqrt(tack.f64(i64))` requests f64.
+in an f64 array widens an f32 result; `sqrt(tack.f64(i64))` requests f64.
 
 **Required: float literals are weakly typed.** Following NumPy's
 [NEP 50](https://numpy.org/neps/nep-0050-scalar-promotion.html) treatment
@@ -577,7 +579,7 @@ literal is *weak*. A weak expression takes floating type T when it is:
   result type T comes from a non-weak floating argument;
 - an arm of a conditional expression whose other arm has floating type T;
 - the operand of an explicit `tack.f32`/`tack.f64` cast to T; or
-- a value stored to a T field, used by a floating atomic on a T field, or
+- a value stored to a T array, used by a floating atomic on a T array, or
   assigned to a local whose settled type is T.
 
 Taking T converts each float literal in the expression once, from its
@@ -607,7 +609,7 @@ assignments: when another assignment makes it f64, every literal assigned
 to it converts exactly. A local every one of whose assignments is a weak
 expression -- a device function returning literals from several
 branches, say -- takes the kernel's float precision, as a float scalar
-argument does: f64 when any field argument is f64, otherwise f32. Class-level
+argument does: f64 when any array argument is f64, otherwise f32. Class-level
 `@tack.device_class` constants are substituted as literals and follow the
 same rule. A conversion to an integer type, such as `int(2.5)`, still
 evaluates the literal as f32.
@@ -733,9 +735,13 @@ rounding. No hidden state exists; two kernels that seed alike draw alike.
 
 ## Vectors and matrices
 
-**Required:** a vector (`tack.Vector([...])`, the same list of scalars
-written alone, an element of a `tack.Array` with a vector element dtype) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
-`tack.Matrix.identity(n)`, an element of a `tack.Array` with a matrix element dtype) are values
+**Required:** a vector (`tack.vec2/vec3/vec4(...)` from N scalars, one
+scalar for every component or one N-vector; a list of scalars written
+alone; an element of a `tack.Array` with a vector element dtype) and a
+matrix of at most 4×4 (`tack.mat2/mat3/mat4(...)` from rows that are
+lists of scalars or vectors, or from N*N scalars in row-major order;
+`tack.mat(row, ...)`; `tack.identity(n)` for a literal `n`; an element of
+a `tack.Array` with a matrix element dtype) are values
 made of scalar components, in row-major order for a matrix. Every
 operation on them is defined as the corresponding scalar operations on
 their components, each of which follows the numerical rules above. They
@@ -771,7 +777,7 @@ the adjugate by the determinant and does not test it.
 
 A component is selected by an index (`v[c]`, `m[i, j]`) or, for the first
 four components of a vector, by name (`v.x`, `v.y`, `v.z`, `v.w`), on a
-variable, on a field element (`vf[i][c]`) or on any vector-valued
+variable, on an array element (`vf[i][c]`) or on any vector-valued
 expression. A literal index is checked when the kernel is lowered and may
 count from the end. A runtime index into a vector must lie in `[0, n)`:
 outside that range a read yields the last component and a store has no
@@ -779,23 +785,23 @@ effect. Runtime row and column indices of a matrix must be in range.
 
 An assignment of a vector or matrix evaluates every component of its
 right-hand side before it assigns any (see *Execution and ordering*). A
-store to a field element requires the element's shape, or a scalar, which
+store to an array element requires the element's shape, or a scalar, which
 is stored to every component. Storing a vector into scalar storage is
 rejected.
 
 Tests: `test_new_features.py` (vectors), `test_matrix.py`.
 
-## Field and parallel reductions
+## Array and parallel reductions
 
-`Field.sum()`, `min()`, `max()` and `mean()` reduce all logical elements
-and return Python `float` values. Reshaping a field does not select an axis
+`Array.sum()`, `min()`, `max()` and `mean()` reduce all logical elements
+and return Python `float` values. Reshaping an array does not select an axis
 or change the set of elements. CPU uses NumPy; GPU backends reduce eligible
-f32 fields on the device and use the shared NumPy fallback for other dtypes.
-Allocation and field/backend ownership requirements still apply. CUDA,
+f32 arrays on the device and use the shared NumPy fallback for other dtypes.
+Allocation and array/backend ownership requirements still apply. CUDA,
 HIP and Level Zero pass the element count to the device in 64 bits and
 reject a reduction longer than one launch can index, as for kernels
 below. Metal's reduction kernel holds the count and thread position in 32
-bits, so Metal reduces fields of 2^32 or more elements through NumPy.
+bits, so Metal reduces arrays of 2^32 or more elements through NumPy.
 
 **Accumulation precision:** f32 sums accumulate in f32, and f64 sums in
 f64. Integer sums promote signed inputs to i64 and unsigned inputs to u64,
@@ -827,12 +833,12 @@ remain outside the floating baseline above.
 
 **Order and reproducibility:** floating summation may reorder and regroup
 elements, and may produce different low bits across calls, devices,
-backends, compiler versions or implementations. Current GPU field sums
+backends, compiler versions or implementations. Current GPU array sums
 use 256-lane trees followed by atomically accumulated group partials;
 group arrival order is unspecified. No deterministic or compensated sum
 mode is currently exposed. Repeated equality in a test does not establish
 a reproducibility guarantee. Floating extrema are order-independent under
-the class/zero rules above, apart from NaN representation. Integer field
+the class/zero rules above, apart from NaN representation. Integer array
 reductions have the defined accumulator/conversion behavior independently
 of reduction order.
 
@@ -852,7 +858,7 @@ especially the general summation analysis in section 3.
 require f32 arguments and return f32. Integer/f64 arguments require an
 explicit `tack.f32(...)` conversion; they are rejected rather than silently
 narrowed or given an inconsistent annotation. On correctly participating
-GPU workgroups, block extrema use the same NaN/zero rules as field extrema,
+GPU workgroups, block extrema use the same NaN/zero rules as array extrema,
 and block sums permit order variation with the same addition budget over
 their contributed terms. The tested GPU domain here is fully participating
 256-lane groups. Full participation, launch sizes and partial groups
@@ -863,16 +869,16 @@ User reductions combining `atomic_add` with block partials likewise have
 unspecified accumulation order. Atomic min/max are separate backend
 primitives. Their portable floating domain is finite stored values and
 contributed operands, including numeric zero, with an unspecified result
-sign on a zero tie; NaNs and infinities are outside it. The field/block
+sign on a zero tie; NaNs and infinities are outside it. The array/block
 extrema guarantees do not imply those atomic semantics. Atomic scope and supported widths are defined below;
 workgroup participation follows its separate contract. The statistical algorithms in
 `tack.algorithms.stats` form their terms in the inputs' precision (f64 if any
-input is f64) and reduce them as fields, so field reductions' accuracy and
+input is f64) and reduce them as arrays, so array reductions' accuracy and
 repeatability rules apply to them; `histogram` counts bins with atomics.
 
 `test_reduction_semantics.py` covers full-range extrema, NaNs and zero ties
 across groups and tails, exact and bounded-error sums, allowed cancellation
-groupings, nonfinite classes, host fallback types and empty fields, explicit
+groupings, nonfinite classes, host fallback types and empty arrays, explicit
 block precision, and complete GPU groups. Host-sanitized helpers and full
 CUDA/HIP/OpenCL syntax checks supplement actual backend execution.
 
@@ -895,7 +901,7 @@ and supported input domains rather than a general bitwise-equality promise.
 
 Shared memory, barriers, thread indices, and block reductions require an
 explicit workgroup execution model. A barrier orders participating threads
-within its workgroup, fencing both shared and global field memory; it is not
+within its workgroup, fencing both shared and global array memory; it is not
 a global barrier between parallel iterations on different workgroups.
 Programs must not rely on divergent participation
 or uninitialized shared memory.
@@ -913,11 +919,11 @@ This is a structural requirement, including nested branches and inlined
 device functions, even if the primitive would be unreachable at runtime.
 CPU does not emulate workgroups. Use `local_array` or `local_array_like`
 for private scratch arrays; these remain supported on CPU, as do ordinary
-scalar kernels, host field reductions and supported atomic operations.
+scalar kernels, host array reductions and supported atomic operations.
 
 **GPU launch domain:** barriers and block reductions require complete
 **256-lane workgroups**. Positive logical iteration counts must be divisible
-by 256, including normalized stepped ranges and `ndrange`. Cold dispatch
+by 256, including normalized stepped ranges and `ndindex`. Cold dispatch
 rejects partial groups before compilation; cached dispatch rechecks every
 count before execution without repeating analysis. Zero/negative counts
 run nothing. Metal pipeline limits and Level Zero X/total device limits
@@ -969,39 +975,39 @@ initialization, bounds safety or termination, or synchronize different
 workgroups. Hardware confirmation is required per backend; CPU results do
 not validate cooperative GPU execution.
 
-## Atomic field updates
+## Atomic array updates
 
 `atomic_add`, `atomic_min` and `atomic_max` act on one scalar element of a
-global field. As a statement the old value is dropped; as an expression
+global array. As a statement the old value is dropped; as an expression
 (`slot = tack.atomic_add(counter, 0, 1)`) the value is the element's value
 immediately before this update, as the hardware atomic returns it, and
 the atomic takes effect in source order among the expression's operands:
 it is performed before the expression that contains it is evaluated and
-after the operands to its left. On a vector field with a vector value the
+after the operands to its left. On a vector array with a vector value the
 expression's value is the vector of the components' old values, each from
 its own atomic.
 The index is a flat, row-major index, or a tuple with one index per
 dimension, in which a vector of integers supplies one index per component.
-On a vector or matrix field, a value of the element's shape updates the
+On a vector or matrix array, a value of the element's shape updates the
 element addressed by that index with one atomic operation per component;
 the element as a whole is not updated atomically, and the element index
-and any component that loads from a field are evaluated before the first
-of them. A scalar value on such a field addresses one component by its
+and any component that loads from an array are evaluated before the first
+of them. A scalar value on such an array addresses one component by its
 flat index.
 `Backend.supported_atomic_dtypes` declares the implemented add/min/max domain,
-independently of the ordinary field types or workgroup capability:
+independently of the ordinary array types or workgroup capability:
 
-| Target | Atomic field types, for all three operations |
+| Target | Atomic array types, for all three operations |
 |---|---|
 | CPU | i8/u8, i16/u16, i32/u32, i64/u64, f32/f64 |
 | CUDA / HIP | i32/u32, i64/u64, f32/f64 |
 | Metal / Level Zero | i32/u32, f32 |
 
 Metal/Level Zero 64-bit atomics and GPU 8/16-bit atomics are outside this
-implementation domain, even when ordinary fields of those widths are
-supported. No reinterpretation as a neighbouring wider field is allowed.
+implementation domain, even when ordinary arrays of those widths are
+supported. No reinterpretation as a neighbouring wider array is allowed.
 Private/shared arrays, textures, scalar arguments, and targets that cannot
-be traced uniquely to a global field parameter are rejected. Field-pointer
+be traced uniquely to a global array parameter are rejected. Field-pointer
 copies introduced by device-function inlining are traced to that parameter.
 The checker runs before optimization, including structurally unreachable
 operations and empty grids. Public inspection in every mode enforces the
@@ -1010,42 +1016,42 @@ trust stale atomic dtype annotations. Unsupported operations/types/targets
 raise `TypeError` naming the kernel, target, operation and reason.
 
 Atomic targets require natural alignment (1/2/4/8 bytes for their width).
-Allocated fields satisfy this; imported field addresses are checked before
+Allocated arrays satisfy this; imported array addresses are checked before
 cold compilation and on every cached dispatch. Unaligned targets raise
 `ValueError` before updating storage. Cached variants retain parameter indices
 and alignment requirements, not addresses; changed arguments are checked
 without repeating IR analysis. Direct-codegen callers must validate the
 addresses used by their eventual launch. Index bounds, allocated extent,
 initialization and valid floating-to-integer conversion remain caller
-requirements. Ordinary non-atomic field accesses retain their existing
+requirements. Ordinary non-atomic array accesses retain their existing
 support for unaligned imported storage.
 
-The contributed scalar is converted to the field's dtype once before the
+The contributed scalar is converted to the array's dtype once before the
 read-modify-write operation, using the existing scalar conversion domain.
 Integer addition wraps modulo the target width. Integer extrema compare
 with the target's signedness, including unsigned values above the signed
-maximum. Floating addition rounds at field precision with unspecified
+maximum. Floating addition rounds at array precision with unspecified
 interleaving; exact reduction order and bitwise reproducibility are not
 promised. Normal floating arithmetic constraints, including the denormal
 exclusion, apply. Floating atomic extrema's portable domain is **finite
 stored values and contributed operands, including numeric zero**. Both zero
 signs compare equal; the sign of a zero result on a tie is unspecified.
-NaNs and infinities remain outside that extrema domain; field/block
+NaNs and infinities remain outside that extrema domain; array/block
 extrema's stronger exceptional-value policy does not apply to user atomics.
 
 **Ordering and scope:** updates to the same element are indivisible among
 kernel participants across CPU worker threads or GPU workgroups on the
 executing device. The portable memory order is **relaxed**. An atomic update
-is not an acquire/release fence for other fields or a publication flag, and
+is not an acquire/release fence for other arrays or a publication flag, and
 there is no system-scope guarantee spanning concurrent host accesses or
 other devices. Do not mix ordinary reads/writes with conflicting atomic
 updates during a kernel unless appropriate workgroup synchronization orders
-them. Workgroup barriers order shared and global field memory among that
+them. Workgroup barriers order shared and global array memory among that
 workgroup's lanes; they do not synchronize different workgroups. Launches
 on one backend take effect in call order: a kernel call sees every effect
 of the calls before it. Metal, CUDA, HIP and Level Zero queue launches and
-return before they run, and the host waits for them before it reads field
-memory (`to_numpy`, indexing, reductions, DLPack export) or at
+return before they run, and the host waits for them before it reads array
+memory (`numpy()`, indexing, reductions, DLPack export) or at
 `tack.sync()`. A later kernel call or a host read is the supported way to
 consume a cross-workgroup result.
 Atomics alone do not require a complete workgroup or uniform participation;
@@ -1057,7 +1063,7 @@ CUDA/HIP 64-bit operations use 64-bit integer CAS, avoiding optional native
 f64-add and signed-i64-add overloads; f32 extrema also begin with an atomic
 read. Metal uses correctly typed `atomic_int`/`atomic_uint` and f32 atomics.
 OpenCL uses explicit relaxed, device-scope C11 atomics, including the final
-combine in native field reductions. Its former legacy functions guarantee
+combine in native array reductions. Its former legacy functions guarantee
 only workgroup scope in the specification, which is insufficient for that
 combine. Compare-and-swap retries compare integer bits and capture the
 contributed value once; they do not repeat the user's value expression.
@@ -1072,7 +1078,7 @@ and [OpenCL atomic specification](https://registry.khronos.org/OpenCL/specs/unif
 `test_atomic_contract.py` covers unsigned boundaries, wrapping/conversion,
 actual contended CPU workers, GPU updates across groups and tails, aliases
 and inlined targets, cached alignment checks, unsupported target rejection,
-global-field publication within a workgroup, LLVM verification and GPU
+global-array publication within a workgroup, LLVM verification and GPU
 source compilation checks. Device hardware confirmation is required for
 CUDA/HIP/Level Zero; host syntax checks do not establish atomic scheduling
 or memory-order behavior on those devices.
@@ -1091,11 +1097,11 @@ body can require specialization even when that dimension also sets the
 launch length. Class-level template constants and instance-level runtime
 scalars retain their distinct roles.
 
-The current key includes argument dtypes and field/scalar/texture categories,
-vector widths and matrix shapes (a 2×2 matrix field and a 4-vector field
+The current key includes argument dtypes and array/scalar/texture categories,
+vector widths and matrix shapes (a 2×2 matrix array and a 4-vector array
 compile separately), texture extents, and resolved shape dependencies.
 Template identity includes the actual class, typed constants (inherited
-ones included), field metadata, runtime scalar attribute names, and the
+ones included), array metadata, runtime scalar attribute names, and the
 identity of each device function held as an attribute. A `tack.constant`
 is a literal in the lowered kernel and needs no key entry; a kernel reads
 the constant its name was bound to when it was first lowered. Floating-point constants use their bit
@@ -1130,7 +1136,7 @@ not from recording Tack's current output.
 
 | ID | Requirement | CPU evidence at the baseline |
 |---|---|---|
-| LC1 | Sequential field loads observe preceding writes | Three increments produce `1`; bypassing Tack IR optimization produces `3` |
+| LC1 | Sequential array loads observe preceding writes | Three increments produce `1`; bypassing Tack IR optimization produces `3` |
 | LC2 | Support for overlapping arguments | Write `1` through `a`, write `2` through aliased `b`, read `a`: returns `1` |
 | LC3 | Vector widths specialize independently | Width 2 followed by width 3 reuses the first variant and gives incorrect squared norms |
 | LC4 | Unsupported statements are rejected | `assert False` disappears from transformed IR without a diagnostic |
@@ -1155,7 +1161,7 @@ writes, inner-loop mutation through an alias, and a read after an alias store.
 The same failures reproduce at the pre-stage-four `e265e7f`. Direct MSL kernel
 buffer arguments must be disjoint under the [Metal language specification,
 section 5.2](https://developer.apple.com/metal/Metal-Shading-Language-Specification.pdf).
-Metal now uses indirect field pointers in one argument buffer, supported since
+Metal now uses indirect array pointers in one argument buffer, supported since
 Metal 2, rather than separate device-buffer arguments. The runtime refreshes
 references on each cached dispatch and explicitly declares resource residency.
 All four original failures pass on Apple M1 Max, with additional coverage for
@@ -1202,7 +1208,7 @@ it now has a twin with Tack's passes bypassed.
 There are **35 numerical cases per backend**, plus six host-side cases:
 LC4, rejection of `return` inside a loop, and one generated-source check
 per GPU generator for the top-level `continue`.
-`test_variant_cache.py` covers field/scalar calling conventions, same-named
+`test_variant_cache.py` covers array/scalar calling conventions, same-named
 template classes, typed template constants including signed zero, and changes
 to runtime template attribute layouts.
 
@@ -1210,7 +1216,7 @@ Stage three fixes LC4 and removes its expected-failure marker. All contract
 cases are ordinary assertions. `test_source_validation.py` adds rejection
 and diagnostic coverage, while `test_differential.py` runs identical source
 as a compiled kernel and as serial Python over independent NumPy arrays.
-It compares every field, including fields mutated by inlined calls. Its
+It compares every array, including arrays mutated by inlined calls. Its
 generated cases use a fixed grammar and reproducible seed IDs, varying
 bounds, positive steps, branches, `break`, and `continue`. They exclude
 atomics, cooperative workgroups, vector methods, and open numerical cases.
@@ -1241,11 +1247,11 @@ must show that backend's cases; deselection or a skip is not validation.
 For example, after installing the CUDA extra and runtime:
 
 ```bash
-uv run --no-sync python -c 'import tack; tack.init(arch=tack.cuda)' && \
+uv run --no-sync python -c 'import tack; tack.set_default_device("cuda")' && \
   uv run --no-sync pytest packages/tack-core/tests/test_compiler_contract.py packages/tack-core/tests/test_differential.py -k cuda -v -rxX
 ```
 
-Use `tack.hip` / `-k hip` or `tack.level_zero` / `-k level_zero` for those
+Use `"hip"` / `-k hip` or `"level_zero"` / `-k level_zero` for those
 backends. `--no-sync` preserves the existing environment's backend extras.
 The shared-frontend LC4 test runs in the unfiltered command. Record backend,
 device, runtime/binding versions, pass/fail/xfail counts, and numerical

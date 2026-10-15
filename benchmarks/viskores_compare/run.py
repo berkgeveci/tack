@@ -153,7 +153,7 @@ def _start(vtk_threads, resident):
     smp.Initialize(vtk_threads)
     import tack
 
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
 
 
 def _host_output(pair, result):
@@ -218,8 +218,8 @@ def run(sizes, mesh_names, filters, budget, vtk_threads, resident=False):
             full = None if resident else m.vtk_shape_grid(mesh)
             source = m.TackMesh(mesh, "shape")
             if resident:
-                positions = tack.field(tack.f32, shape=(mesh.num_points, 3))
-                positions.from_numpy(mesh.points.astype(np.float32))
+                positions = tack.empty((mesh.num_points, 3))
+                tack.copyto(positions, mesh.points.astype(np.float32))
                 tack.sync()
             for pair in p.PAIRS:
                 if filters and pair.name not in filters:

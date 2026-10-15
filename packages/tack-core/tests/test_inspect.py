@@ -11,16 +11,16 @@ def vector_add(x, y, out):
         out[i] = x[i] + y[i]
 
 
-def _make_fields():
+def _make_arrays():
     n = 64
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
     return x, y, out
 
 
 def test_inspect_ir(backend):
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     result = tack.inspect(vector_add, x, y, out, mode="ir")
     assert isinstance(result, str)
     assert "Function" in result
@@ -42,7 +42,7 @@ _ENTRY_POINT = {
 
 
 def test_inspect_source(backend):
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     result = tack.inspect(vector_add, x, y, out, mode="source")
     assert isinstance(result, str)
     assert len(result) > 50
@@ -57,20 +57,20 @@ def test_hip_source_carries_its_runtime_header(backend):
     """HIP shares the CUDA codegen and differs by exactly this include."""
     if backend != "hip":
         pytest.skip("HIP only")
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     result = tack.inspect(vector_add, x, y, out, mode="source")
     assert "#include <hip/hip_runtime.h>" in result
 
 
 def test_inspect_default_mode(backend):
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     result = tack.inspect(vector_add, x, y, out)
     assert isinstance(result, str)
     assert len(result) > 50
 
 
 def test_inspect_invalid_mode(backend):
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     with pytest.raises(ValueError, match="Unknown inspect mode"):
         tack.inspect(vector_add, x, y, out, mode="bad")
 
@@ -87,8 +87,8 @@ def test_inspect_scalar_args(backend):
             out[i] = x[i] * factor
 
     n = 64
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
     result = tack.inspect(scale, x, out, 2.0, mode="source")
     assert isinstance(result, str)
     assert len(result) > 50
@@ -99,7 +99,7 @@ def test_optimized_mode_is_cpu_only(backend):
 
     It used to hand back the unoptimized source under the optimized name.
     """
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     if backend == "cpu":
         assert "define" in tack.inspect(vector_add, x, y, out, mode="optimized")
         return
@@ -114,13 +114,13 @@ def test_inspect_rejects_dtypes_dispatch_would(monkeypatch, mode):
 
     from tack.runtime.dispatch import get_backend
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
     monkeypatch.setattr(backend, "supported_dtypes",
                         backend.supported_dtypes - {tack.f64})
-    x = tack.field(dtype=tack.f64, shape=(4,))
-    out = tack.field(dtype=tack.f64, shape=(4,))
-    x.from_numpy(np.zeros(4))
+    x = tack.empty((4,), tack.f64)
+    out = tack.empty((4,), tack.f64)
+    tack.copyto(x, np.zeros(4))
 
     @tack.kernel
     def copy(x, out):
@@ -139,7 +139,7 @@ def test_inspect_takes_the_backends_texture_decision(monkeypatch):
 
     from tack.runtime.dispatch import get_backend
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
     seen = []
 
@@ -156,8 +156,8 @@ def test_inspect_takes_the_backends_texture_decision(monkeypatch):
         for i in range(out.shape[0]):
             out[i] = tex.sample(0.5, 0.5, 0.5)
 
-    data = tack.field(tack.f32, (8,))
-    data.from_numpy(np.ones(8, dtype=np.float32))
+    data = tack.empty((8,))
+    tack.copyto(data, np.ones(8, dtype=np.float32))
     tex = tack.texture3d(data, shape=(2, 2, 2))
-    tack.inspect(sample, tex, tack.field(tack.f32, (3,)), mode="source")
+    tack.inspect(sample, tex, tack.empty((3,)), mode="source")
     assert seen == ["tex"]

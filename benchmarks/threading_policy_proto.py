@@ -156,9 +156,9 @@ def measure(backend, name, gap_ms):
     """Ground truth for one kernel: both paths, fitted where they are real."""
     kernel = KERNELS[name]
     big = max(FIT_GRID[name])
-    x = tack.field(dtype=tack.f32, shape=(big,))
-    out = tack.field(dtype=tack.f32, shape=(big,))
-    x.from_numpy(np.ones(big, dtype=np.float32))
+    x = tack.empty((big,))
+    out = tack.empty((big,))
+    tack.copyto(x, np.ones(big, dtype=np.float32))
 
     kernel(x, out, 1024)
     compiled = variant_for(backend, name)
@@ -232,7 +232,7 @@ def main():
                          "back-to-back loop, 50 a script that pauses")
     args = ap.parse_args()
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
 
     print(f"threads {backend.num_threads}, gap {args.gap_ms:g} ms\n")
@@ -241,8 +241,8 @@ def main():
     # ns_per_elem -- parallel_min_elems starts at _NEVER, so nothing
     # considers fanning out until a later call sees a lowered threshold,
     # and the probe runs then.
-    warm = tack.field(dtype=tack.f32, shape=(8 << 20,))
-    warm_o = tack.field(dtype=tack.f32, shape=(8 << 20,))
+    warm = tack.empty((8 << 20,))
+    warm_o = tack.empty((8 << 20,))
     for _ in range(4):
         KERNELS["cheap"](warm, warm_o, 8 << 20)
         if backend._fan_out_ns is not None:

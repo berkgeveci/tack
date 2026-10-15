@@ -10,19 +10,19 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 @pytest.fixture(autouse=True)
 def init_cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 def test_vector_add():
     n = 1024
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
     np_x = np.arange(n, dtype=np.float32)
     np_y = np.ones(n, dtype=np.float32) * 2.0
-    x.from_numpy(np_x)
-    y.from_numpy(np_y)
+    tack.copyto(x, np_x)
+    tack.copyto(y, np_y)
 
     @tack.kernel
     def vector_add(x, y, out):
@@ -31,21 +31,21 @@ def test_vector_add():
 
     vector_add(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = np_x + np_y
     np.testing.assert_allclose(result, expected)
 
 
 def test_saxpy():
     n = 512
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
     np_x = np.arange(n, dtype=np.float32)
     np_y = np.ones(n, dtype=np.float32) * 3.0
-    x.from_numpy(np_x)
-    y.from_numpy(np_y)
+    tack.copyto(x, np_x)
+    tack.copyto(y, np_y)
 
     @tack.kernel
     def saxpy(x, y, out):
@@ -54,18 +54,18 @@ def test_saxpy():
 
     saxpy(x, y, out)
 
-    result = out.to_numpy()
+    result = out.numpy()
     expected = 2.0 * np_x + np_y
     np.testing.assert_allclose(result, expected)
 
 
 def test_negation():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     np_x = np.arange(n, dtype=np.float32) - 128.0
-    x.from_numpy(np_x)
+    tack.copyto(x, np_x)
 
     @tack.kernel
     def negate(x, out):
@@ -73,13 +73,13 @@ def test_negation():
             out[i] = -x[i]
 
     negate(x, out)
-    np.testing.assert_allclose(out.to_numpy(), -np_x)
+    np.testing.assert_allclose(out.numpy(), -np_x)
 
 
 def test_constant_range():
-    """Test kernel with a constant loop range (not derived from field shape)."""
+    """Test kernel with a constant loop range (not derived from array shape)."""
     n = 100
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def fill(out):
@@ -87,16 +87,16 @@ def test_constant_range():
             out[i] = 42.0
 
     fill(out)
-    np.testing.assert_allclose(out.to_numpy(), 42.0)
+    np.testing.assert_allclose(out.numpy(), 42.0)
 
 
 def test_conditional():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     np_x = np.arange(n, dtype=np.float32) - 128.0
-    x.from_numpy(np_x)
+    tack.copyto(x, np_x)
 
     @tack.kernel
     def clamp_positive(x, out):
@@ -108,17 +108,17 @@ def test_conditional():
 
     clamp_positive(x, out)
     expected = np.maximum(np_x, 0.0)
-    np.testing.assert_allclose(out.to_numpy(), expected)
+    np.testing.assert_allclose(out.numpy(), expected)
 
 
 def test_nested_loops():
     """Test matrix-like operation with nested loops."""
     n = 16
-    a = tack.field(dtype=tack.f32, shape=(n * n,))
-    out = tack.field(dtype=tack.f32, shape=(n * n,))
+    a = tack.empty((n * n,))
+    out = tack.empty((n * n,))
 
     np_a = np.arange(n * n, dtype=np.float32)
-    a.from_numpy(np_a)
+    tack.copyto(a, np_a)
 
     @tack.kernel
     def scale_2d(a, out):
@@ -127,12 +127,12 @@ def test_nested_loops():
                 out[i * 16 + j] = a[i * 16 + j] * 2.0
 
     scale_2d(a, out)
-    np.testing.assert_allclose(out.to_numpy(), np_a * 2.0)
+    np.testing.assert_allclose(out.numpy(), np_a * 2.0)
 
 
 def test_while_loop():
     n = 10
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def count_up(out):
@@ -145,16 +145,16 @@ def test_while_loop():
             out[i] = val
 
     count_up(out)
-    np.testing.assert_allclose(out.to_numpy(), 5.0)
+    np.testing.assert_allclose(out.numpy(), 5.0)
 
 
 def test_math_sqrt():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     np_x = np.arange(1, n + 1, dtype=np.float32)
-    x.from_numpy(np_x)
+    tack.copyto(x, np_x)
 
     @tack.kernel
     def apply_sqrt(x, out):
@@ -163,19 +163,19 @@ def test_math_sqrt():
 
     apply_sqrt(x, out)
     expected = np.sqrt(np_x)
-    np.testing.assert_allclose(out.to_numpy(), expected, rtol=1e-5)
+    np.testing.assert_allclose(out.numpy(), expected, rtol=1e-5)
 
 
 def test_min_max():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
     np_x = np.random.randn(n).astype(np.float32)
     np_y = np.random.randn(n).astype(np.float32)
-    x.from_numpy(np_x)
-    y.from_numpy(np_y)
+    tack.copyto(x, np_x)
+    tack.copyto(y, np_y)
 
     @tack.kernel
     def element_min(x, y, out):
@@ -183,16 +183,16 @@ def test_min_max():
             out[i] = min(x[i], y[i])
 
     element_min(x, y, out)
-    np.testing.assert_allclose(out.to_numpy(), np.minimum(np_x, np_y))
+    np.testing.assert_allclose(out.numpy(), np.minimum(np_x, np_y))
 
 
 def test_abs():
     n = 256
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
     np_x = np.random.randn(n).astype(np.float32)
-    x.from_numpy(np_x)
+    tack.copyto(x, np_x)
 
     @tack.kernel
     def apply_abs(x, out):
@@ -200,16 +200,16 @@ def test_abs():
             out[i] = abs(x[i])
 
     apply_abs(x, out)
-    np.testing.assert_allclose(out.to_numpy(), np.abs(np_x))
+    np.testing.assert_allclose(out.numpy(), np.abs(np_x))
 
 
 def test_augmented_assignment():
     n = 100
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    out.from_numpy(np.arange(n, dtype=np.float32))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    tack.copyto(out, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def add_in_place(x, out):
@@ -218,20 +218,20 @@ def test_augmented_assignment():
 
     add_in_place(x, out)
     expected = np.arange(n, dtype=np.float32) + 1.0
-    np.testing.assert_allclose(out.to_numpy(), expected)
+    np.testing.assert_allclose(out.numpy(), expected)
 
 
 def test_large_parallel():
     """Test with enough elements to trigger multi-threaded execution."""
     n = 100_000
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    y = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
+    y = tack.empty((n,))
+    out = tack.empty((n,))
 
     np_x = np.random.randn(n).astype(np.float32)
     np_y = np.random.randn(n).astype(np.float32)
-    x.from_numpy(np_x)
-    y.from_numpy(np_y)
+    tack.copyto(x, np_x)
+    tack.copyto(y, np_y)
 
     @tack.kernel
     def vector_add(x, y, out):
@@ -239,15 +239,15 @@ def test_large_parallel():
             out[i] = x[i] + y[i]
 
     vector_add(x, y, out)
-    np.testing.assert_allclose(out.to_numpy(), np_x + np_y)
+    np.testing.assert_allclose(out.numpy(), np_x + np_y)
 
 
 def test_cached_compilation():
     """Calling the same kernel twice should use the cache."""
     n = 64
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.ones(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
 
     @tack.kernel
     def double(x, out):
@@ -255,22 +255,22 @@ def test_cached_compilation():
             out[i] = x[i] * 2.0
 
     double(x, out)
-    np.testing.assert_allclose(out.to_numpy(), 2.0)
+    np.testing.assert_allclose(out.numpy(), 2.0)
 
     # Call again — should hit cache
-    x.from_numpy(np.ones(n, dtype=np.float32) * 3.0)
+    tack.copyto(x, np.ones(n, dtype=np.float32) * 3.0)
     double(x, out)
-    np.testing.assert_allclose(out.to_numpy(), 6.0)
+    np.testing.assert_allclose(out.numpy(), 6.0)
 
 
 def test_atomic_add():
-    """Test atomic_add on a field."""
+    """Test atomic_add on an array."""
     n = 100
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(1,))
+    x = tack.empty((n,))
+    out = tack.empty((1,))
 
-    x.from_numpy(np.ones(n, dtype=np.float32))
-    out.from_numpy(np.zeros(1, dtype=np.float32))
+    tack.copyto(x, np.ones(n, dtype=np.float32))
+    tack.copyto(out, np.zeros(1, dtype=np.float32))
 
     @tack.kernel
     def sum_kernel(x, out):
@@ -278,20 +278,20 @@ def test_atomic_add():
             tack.atomic_add(out, 0, x[i])
 
     sum_kernel(x, out)
-    np.testing.assert_allclose(out.to_numpy()[0], 100.0, rtol=1e-5)
+    np.testing.assert_allclose(out.numpy()[0], 100.0, rtol=1e-5)
 
 
 def test_atomic_min_max():
-    """Test atomic_min and atomic_max on fields."""
+    """Test atomic_min and atomic_max on arrays."""
     n = 64
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    min_out = tack.field(dtype=tack.f32, shape=(1,))
-    max_out = tack.field(dtype=tack.f32, shape=(1,))
+    x = tack.empty((n,))
+    min_out = tack.empty((1,))
+    max_out = tack.empty((1,))
 
     data = np.arange(n, dtype=np.float32) - 20.0  # -20 to 43
-    x.from_numpy(data)
-    min_out.from_numpy(np.array([1e10], dtype=np.float32))
-    max_out.from_numpy(np.array([-1e10], dtype=np.float32))
+    tack.copyto(x, data)
+    tack.copyto(min_out, np.array([1e10], dtype=np.float32))
+    tack.copyto(max_out, np.array([-1e10], dtype=np.float32))
 
     @tack.kernel
     def minmax_kernel(x, min_out, max_out):
@@ -300,16 +300,16 @@ def test_atomic_min_max():
             tack.atomic_max(max_out, 0, x[i])
 
     minmax_kernel(x, min_out, max_out)
-    np.testing.assert_allclose(min_out.to_numpy()[0], -20.0)
-    np.testing.assert_allclose(max_out.to_numpy()[0], 43.0)
+    np.testing.assert_allclose(min_out.numpy()[0], -20.0)
+    np.testing.assert_allclose(max_out.numpy()[0], 43.0)
 
 
-def test_field_reductions():
-    """Test field.sum(), field.min(), field.max() reduction builtins."""
+def test_array_reductions():
+    """Test array.sum(), array.min(), array.max() reduction builtins."""
     n = 100
-    x = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty((n,))
     data = np.arange(n, dtype=np.float32)
-    x.from_numpy(data)
+    tack.copyto(x, data)
 
     assert x.sum() == pytest.approx(data.sum())
     assert x.min() == pytest.approx(data.min())
@@ -319,7 +319,7 @@ def test_field_reductions():
 def test_range_with_step_sequential():
     """Test nested for-loop with step: range(start, end, step)."""
     n = 10
-    out = tack.field(dtype=tack.f32, shape=(n,))
+    out = tack.empty((n,))
 
     @tack.kernel
     def step_sum(out):
@@ -330,12 +330,12 @@ def test_range_with_step_sequential():
 
     step_sum(out)
     # 0 + 2 + 4 + 6 + 8 = 20
-    np.testing.assert_allclose(out.to_numpy(), 20.0)
+    np.testing.assert_allclose(out.numpy(), 20.0)
 
 
 def test_range_with_step_parallel():
     """Test top-level parallel for-loop with step."""
-    out = tack.field(dtype=tack.f32, shape=(50,))
+    out = tack.empty((50,))
 
     @tack.kernel
     def parallel_step(out):
@@ -344,15 +344,15 @@ def test_range_with_step_parallel():
 
     parallel_step(out)
     expected = np.arange(0, 100, 2, dtype=np.float32)
-    np.testing.assert_allclose(out.to_numpy(), expected)
+    np.testing.assert_allclose(out.numpy(), expected)
 
 
 def test_shared_memory():
     """CPU must reject cooperative kernels before writing output."""
     n = 10
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.zeros(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.arange(n, dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.zeros((n,))
+    tack.copyto(x, np.arange(n, dtype=np.float32))
 
     @tack.kernel
     def shared_test(x, out):
@@ -365,15 +365,15 @@ def test_shared_memory():
 
     with pytest.raises(RuntimeError, match="CPU backend does not support workgroup"):
         shared_test(x, out)
-    np.testing.assert_array_equal(out.to_numpy(), np.zeros(n, np.float32))
+    np.testing.assert_array_equal(out.numpy(), np.zeros(n, np.float32))
 
 
 def test_print_in_kernel():
     """Test that print() in kernel doesn't crash (CPU)."""
     n = 3
-    x = tack.field(dtype=tack.f32, shape=(n,))
-    out = tack.field(dtype=tack.f32, shape=(n,))
-    x.from_numpy(np.array([1.0, 2.0, 3.0], dtype=np.float32))
+    x = tack.empty((n,))
+    out = tack.empty((n,))
+    tack.copyto(x, np.array([1.0, 2.0, 3.0], dtype=np.float32))
 
     @tack.kernel
     def kern(x, out):
@@ -382,4 +382,4 @@ def test_print_in_kernel():
             out[i] = x[i] * 2.0
 
     kern(x, out)
-    np.testing.assert_allclose(out.to_numpy(), [2.0, 4.0, 6.0])
+    np.testing.assert_allclose(out.numpy(), [2.0, 4.0, 6.0])

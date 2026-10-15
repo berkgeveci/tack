@@ -1,9 +1,9 @@
 """Tack CPU backend — JIT compiles kernels via llvmlite and runs with thread pool.
 
 The kernel function signature is:
-    void kernel(field0_ptr, field1_ptr, ..., i64 loop_start, i64 loop_end)
+    void kernel(array0_ptr, array1_ptr, ..., i64 loop_start, i64 loop_end)
 
-Fields are passed as ctypes pointers to their underlying numpy data.
+Arrays are passed as ctypes pointers to their underlying numpy data.
 The loop range is split across threads for parallel execution.
 
 Threading decision
@@ -58,7 +58,7 @@ import numpy as np
 from llvmlite import binding as llvm
 
 from tack.lang import ir
-from tack.lang.field import NumpyBuffer
+from tack.lang.array import NumpyBuffer
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 
 _CPU_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
@@ -114,7 +114,7 @@ def _mempolicy_interleaves() -> bool:
 
     The policy the thread had is put back afterwards, whatever it was: under
     ``numactl --membind`` this probe used to leave the process with the
-    default policy, so the binding was gone after ``tack.init``.
+    default policy, so the binding was gone once a CPU device was made.
     """
     saved = _read_mempolicy()
     mask = (ctypes.c_ulong * 1)(_numa_node_mask)
@@ -267,16 +267,16 @@ from tack.runtime.backend import Backend
 # Backends must NOT rely on this — importing this module pulls in llvmlite, which
 # is a CPU-only dependency.  Import from tack.runtime.kernel_utils instead.
 from tack.runtime.kernel_utils import (  # noqa: F401
-    _create_pack_fields,
+    _create_pack_arrays,
     _detect_template_args,
-    _detect_texture_fields,
-    _detect_vector_fields,
-    _detect_vector_fields_from_args,
+    _detect_texture_arrays,
+    _detect_vector_arrays,
+    _detect_vector_arrays_from_args,
     _expand_template_args,
     _get_launch,
     _get_loop_range,
     _resolve_range_expr,
-    _update_pack_fields,
+    _update_pack_arrays,
     bind_textures,
     new_kernel_cache,
     resolve_variant,
@@ -521,12 +521,12 @@ _NEVER = 1 << 62
 class CompiledKernel:
     """A JIT-compiled kernel ready for execution."""
 
-    def __init__(self, engine, func_ptr, param_types, param_is_field, func_name,
+    def __init__(self, engine, func_ptr, param_types, param_is_array, func_name,
                  num_dims=0):
         self._engine = engine  # prevent GC
         self._func_ptr = func_ptr
         self._param_types = param_types
-        self._param_is_field = param_is_field  # list[bool]
+        self._param_is_array = param_is_array  # list[bool]
         self._func_name = func_name
         self._num_dims = num_dims
         # cpu_pool's chunk wrapper for this kernel, once one is built.
@@ -536,11 +536,11 @@ class CompiledKernel:
         self.object_code = None  # what MCJIT made, kept for the disk cache
 
         # Build the ctypes function type
-        # A field is passed as its address (`c_void_p` takes a Python int),
+        # An array is passed as its address (`c_void_p` takes a Python int),
         # which `bind` reads straight off the array: a typed pointer object
-        # per field cost 4 µs each.
-        ctypes_params = [ctypes.c_void_p if is_field else _CTYPES_MAP[ptype]
-                         for ptype, is_field in zip(param_types, param_is_field)]
+        # per array cost 4 µs each.
+        ctypes_params = [ctypes.c_void_p if is_array else _CTYPES_MAP[ptype]
+                         for ptype, is_array in zip(param_types, param_is_array)]
         # A multi-dimensional loop's extents, then the chunk's start and end.
         ctypes_params.extend([ctypes.c_int64] * (num_dims + 2))
 
@@ -635,7 +635,7 @@ class CompiledKernel:
         return int(room * ((self.sample_phase * 0.6180339887498949) % 1.0))
 
     def bind(self, kernel_args: list, extents=()) -> tuple:
-        """Marshal the field pointers and scalars once for a dispatch.
+        """Marshal the array pointers and scalars once for a dispatch.
 
         Only loop_start/loop_end differ between the chunks of one dispatch,
         so doing this per chunk re-derived every pointer under the GIL —
@@ -643,9 +643,9 @@ class CompiledKernel:
         result to `call_range` for each chunk.
         """
         prefix = []
-        for arg, ptype, is_field in zip(kernel_args, self._param_types,
-                                        self._param_is_field):
-            if is_field:
+        for arg, ptype, is_array in zip(kernel_args, self._param_types,
+                                        self._param_is_array):
+            if is_array:
                 prefix.append(arg._buffer.address)
             else:
                 prefix.append(_CTYPES_MAP[ptype](arg))
@@ -658,14 +658,14 @@ class CompiledKernel:
         self._cfunc(*prefix, loop_start, loop_end)
 
     def __call__(self, kernel_args: list, loop_start: int, loop_end: int):
-        """Call the compiled kernel with field pointers/scalars and loop range."""
+        """Call the compiled kernel with array pointers/scalars and loop range."""
         self.call_range(self.bind(kernel_args), loop_start, loop_end)
 
 
-# Compile a separate `noalias` variant for calls whose field arguments are
-# checked, per dispatch, not to overlap. Fields may alias, so the promise is
+# Compile a separate `noalias` variant for calls whose array arguments are
+# checked, per dispatch, not to overlap. Arrays may alias, so the promise is
 # never made unconditionally; without it LLVM must reload after every store
-# and cannot vectorize a loop that accumulates through a field, which costs
+# and cannot vectorize a loop that accumulates through an array, which costs
 # 2-3x on such kernels. Overlapping calls get the variant without it.
 _SPECIALIZE_DISJOINT = True
 
@@ -733,9 +733,9 @@ def _load_kernel(engine, ir_func: ir.IRFunction) -> CompiledKernel:
         raise RuntimeError(f"Failed to JIT compile kernel '{ir_func.name}'")
 
     param_types = [p.type_annotation for p in ir_func.params]
-    param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+    param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
     loop = next(s for s in ir_func.body if isinstance(s, ir.IRParallelFor))
-    return CompiledKernel(engine, func_ptr, param_types, param_is_field, ir_func.name,
+    return CompiledKernel(engine, func_ptr, param_types, param_is_array, ir_func.name,
                           num_dims=len(loop.dims or ()))
 
 
@@ -856,15 +856,17 @@ class CPUBackend(Backend):
     supported_dtypes = _CPU_SUPPORTED_DTYPES
     # Reductions go through numpy on the host — the data is already there.
     supports_device_reductions = False
-    # `tack.init(arch="cpu", num_threads=4)`; overrides TACK_CPU_THREADS.
-    init_options = frozenset({"num_threads"})
+    # `tack.set_default_device("cpu", num_threads=4)`; overrides TACK_CPU_THREADS.
+    device_options = frozenset({"num_threads"})
 
 
     def __init__(self, num_threads: int | None = None):
         if num_threads is None:
             env = os.environ.get("TACK_CPU_THREADS")
             num_threads = int(env) if env else _physical_core_count()
-        self.num_threads = max(1, num_threads)
+        elif isinstance(num_threads, bool) or not isinstance(num_threads, (int, np.integer)):
+            raise TypeError(f"num_threads is a thread count, not {num_threads!r}")
+        self.num_threads = max(1, int(num_threads))
         self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledKernel}
         self._pool: ThreadPoolExecutor | None = None
         # How a range is fanned out: "jit", the pool in `cpu_pool` reached
@@ -931,10 +933,10 @@ class CPUBackend(Backend):
         # dearer and wanted far less often.
         self._hot_refreshed_ns = 0
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+    def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> NumpyBuffer:
         # Uninitialized, as every GPU backend's allocation is. The pages are
-        # first touched by the kernel that writes the field: in parallel
+        # first touched by the kernel that writes the array: in parallel
         # when the policy fans it out, and on the workers' terms -- the
         # pool's and the executor's threads are made under the interleave
         # policy (`_jit_pool`, `_get_pool`), or keep a bound task's
@@ -944,28 +946,27 @@ class CPUBackend(Backend):
         # 276 ms and 77 of cell-to-point's 135.
         return NumpyBuffer(dtype.numpy_dtype, shape)
 
-    def fill_field(self, field, value) -> bool:
+    def fill_array(self, array, value) -> bool:
         """Fill `_PARALLEL_FILL_MIN_BYTES` or more as a kernel through the
         normal dispatch, so the policy fans it out when that pays and a new
         buffer's pages are first touched by the workers (`tack.zeros` is
         such a fill). NumPy converts the value first, so what the kernel
         stores, and what is refused, is what `ndarray.fill` would store or
-        refuse. Smaller fills, a backend of one thread, and a field of
+        refuse. Smaller fills, a backend of one thread, and an array of
         another backend fill in place.
         """
-        buf = field._buffer
+        buf = array._buffer
         if (buf.backend_name != self.name or self.num_threads <= 1
                 or buf.nbytes < _PARALLEL_FILL_MIN_BYTES):
-            # A field another backend allocated (made before a `tack.init`
-            # that switched to this one) is filled by its own buffer.
+            # An array another device allocated is filled by its own buffer.
             return False
         from tack.algorithms.copy import _fill_kernel
-        from tack.lang.field import Field
-        element = np.array(value, dtype=field.scalar_dtype.numpy_dtype)
+        from tack.lang.array import Array
+        element = np.array(value, dtype=array.scalar_dtype.numpy_dtype)
         n = buf.nbytes // element.itemsize
-        # A flat scalar view: a vector field's element count is its
+        # A flat scalar view: a vector array's element count is its
         # component count, and the kernel stores one scalar per index.
-        _fill_kernel(Field(field.scalar_dtype, (n,), buf), element.item(), n)
+        _fill_kernel(Array(array.scalar_dtype, (n,), buf), element.item(), n)
         return True
 
     def memory_space(self, ptr) -> str:
@@ -998,7 +999,7 @@ class CPUBackend(Backend):
         combination is new; see `resolve_variant`. A repeat dispatch resolves
         the loop range, marshals the arguments, and runs.
         """
-        from tack.lang.field import Texture3D
+        from tack.lang.array import Texture3D
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
@@ -1007,10 +1008,10 @@ class CPUBackend(Backend):
         )
 
         if variant.has_textures:
-            # The grid bound reads a texture's field; the kernel samples the
+            # The grid bound reads a texture's array; the kernel samples the
             # texture's own snapshot of it.
             loop_end, extents = _get_launch(
-                variant.ir, [a.field if isinstance(a, Texture3D) else a
+                variant.ir, [a.array if isinstance(a, Texture3D) else a
                              for a in effective_args])
             self._dispatch(variant.payload, bind_textures(effective_args), loop_end, extents)
             return

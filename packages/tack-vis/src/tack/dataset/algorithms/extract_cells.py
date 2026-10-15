@@ -29,15 +29,15 @@ def extract_cells(data, cells, fields=None):
                              f"set of {cells.on}" + ("" if cells.topology is data.topology
                                                     else " of another topology"))
         cells = cells.ids
-    if not hasattr(cells, "to_numpy"):
+    if not hasattr(cells, "numpy"):
         values = np.asarray(cells).reshape(-1)
         if values.size and not np.issubdtype(values.dtype, np.integer):
             raise TypeError("cell ids must be integers")
         cells = values
     chosen = ids.as_ids(cells, data.id_dtype)
-    keep = tack.zeros(tack.i32, (data.num_cells,))
+    keep = tack.zeros((data.num_cells,), tack.i32)
     if chosen.shape[0]:
-        bad = chosen.to_numpy()
+        bad = chosen.numpy()
         if bad.min() < 0 or bad.max() >= data.num_cells:
             raise IndexError(f"cell ids must lie in [0, {data.num_cells})")
         _flag_ids(chosen, keep)

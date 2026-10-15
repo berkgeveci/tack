@@ -23,7 +23,7 @@ STIFFNESS = tack.constant(400.0)
 
 @tack.kernel
 def clear_grid(momentum, mass):
-    for i, j in tack.ndrange(GRID, GRID):
+    for i, j in tack.ndindex(GRID, GRID):
         momentum[i, j] = 0.0
         mass[i, j] = 0.0
 
@@ -35,12 +35,12 @@ def particle_to_grid(x, v, C, J, momentum, mass, n):
         xp = x[p] / DX
         base = int(xp - 0.5)
         fx = xp - base
-        weights = tack.Matrix([0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2,
-                               0.5 * (fx - 0.5) ** 2])
+        weights = tack.mat(0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2,
+                           0.5 * (fx - 0.5) ** 2)
         stress = -DT * 4.0 * STIFFNESS * VOLUME * (J[p] - 1.0) / DX**2
-        affine = tack.Matrix([[stress, 0.0], [0.0, stress]]) + MASS * C[p]
-        for i, j in tack.ndrange(3, 3):
-            offset = tack.Vector([i, j])
+        affine = tack.mat2([stress, 0.0], [0.0, stress]) + MASS * C[p]
+        for i, j in tack.ndindex(3, 3):
+            offset = tack.vec2(i, j)
             dpos = (offset - fx) * DX
             weight = weights[i, 0] * weights[j, 1]
             tack.atomic_add(momentum, base + offset, weight * (MASS * v[p] + affine @ dpos))
@@ -50,7 +50,7 @@ def particle_to_grid(x, v, C, J, momentum, mass, n):
 
 @tack.kernel
 def grid_update(momentum, mass):
-    for i, j in tack.ndrange(GRID, GRID):
+    for i, j in tack.ndindex(GRID, GRID):
         if mass[i, j] > 0:
             momentum[i, j] /= mass[i, j]  # momentum becomes velocity
             momentum[i, j].y -= DT * 9.8
@@ -71,12 +71,12 @@ def grid_to_particle(x, v, C, J, grid_v, n):
         xp = x[p] / DX
         base = int(xp - 0.5)
         fx = xp - base
-        weights = tack.Matrix([0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2,
-                               0.5 * (fx - 0.5) ** 2])
-        new_v = tack.Vector([0.0, 0.0])
-        new_C = tack.Matrix([[0.0, 0.0], [0.0, 0.0]])
-        for i, j in tack.ndrange(3, 3):
-            offset = tack.Vector([i, j])
+        weights = tack.mat(0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2,
+                           0.5 * (fx - 0.5) ** 2)
+        new_v = tack.vec2(0.0, 0.0)
+        new_C = tack.mat2([0.0, 0.0], [0.0, 0.0])
+        for i, j in tack.ndindex(3, 3):
+            offset = tack.vec2(i, j)
             dpos = (offset - fx) * DX
             weight = weights[i, 0] * weights[j, 1]
             gv = grid_v[base + offset]
@@ -90,19 +90,19 @@ def grid_to_particle(x, v, C, J, grid_v, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n, steps = (128, 10) if check else (2048, 900)
     initial = (np.random.default_rng(0).random((n, 2)) * 0.3 + [0.35, 0.45]).astype(np.float32)
-    x = tack.empty(dtype=tack.vec2(tack.f32), shape=(n,))
-    v = tack.empty(dtype=tack.vec2(tack.f32), shape=(n,))
-    C = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))
-    J = tack.empty(dtype=tack.f32, shape=(n,))
-    x.from_numpy(initial)
+    x = tack.empty((n,), tack.vec2(tack.f32))
+    v = tack.empty((n,), tack.vec2(tack.f32))
+    C = tack.empty((n,), tack.mat2(tack.f32))
+    J = tack.empty((n,))
+    tack.copyto(x, initial)
     v.fill(0.0)       # read by the first scatter, before anything writes them
     C.fill(0.0)
     J.fill(1.0)
-    momentum = tack.empty(dtype=tack.vec2(tack.f32), shape=(GRID, GRID))
-    mass = tack.empty(dtype=tack.f32, shape=(GRID, GRID))
+    momentum = tack.empty((GRID, GRID), tack.vec2(tack.f32))
+    mass = tack.empty((GRID, GRID))
     snapshots = [initial.copy()]
     # --8<-- [start:loop]
     for step in range(steps):
@@ -111,15 +111,15 @@ def run(arch="cpu", check=False):
         grid_update(momentum, mass)
         grid_to_particle(x, v, C, J, momentum, n)
         if (step + 1) % (steps // 3 if not check else steps) == 0:
-            snapshots.append(x.to_numpy())
+            snapshots.append(x.numpy())
     # --8<-- [end:loop]
     if check:
-        positions = x.to_numpy()
-        velocity = v.to_numpy()
+        positions = x.numpy()
+        velocity = v.numpy()
         # The weights partition unity, so scatter must conserve particle mass.
-        np.testing.assert_allclose(mass.to_numpy().sum(dtype=np.float64), n * float(MASS), rtol=2e-6)
+        np.testing.assert_allclose(mass.numpy().sum(dtype=np.float64), n * float(MASS), rtol=2e-6)
         assert np.all(np.isfinite(positions)) and np.all((positions > 0) & (positions < 1))
-        assert np.all(J.to_numpy() > 0)
+        assert np.all(J.numpy() > 0)
         # Before contact, a uniform gravitational acceleration moves every particle together.
         np.testing.assert_allclose(velocity[:, 1], -9.8 * float(DT) * steps, atol=2e-5)
         np.testing.assert_allclose(positions[:, 0], initial[:, 0], atol=2e-6)

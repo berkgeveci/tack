@@ -6,7 +6,7 @@ Rules applied simultaneously to all cells:
   - A dead cell with exactly 3 neighbors becomes alive
   - All other cells die
 
-Uses 2D field indexing and ndrange for parallel update.
+Uses 2D array indexing and ndindex for parallel update.
 
 Usage:
   uv run python examples/16_game_of_life.py
@@ -20,21 +20,21 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 N = 64
 STEPS = 100
 
-alive = tack.empty(dtype=tack.i32, shape=(N, N))
-count = tack.empty(dtype=tack.i32, shape=(N, N))
-new_alive = tack.empty(dtype=tack.i32, shape=(N, N))
+alive = tack.empty((N, N), tack.i32)
+count = tack.empty((N, N), tack.i32)
+new_alive = tack.empty((N, N), tack.i32)
 
 
 @tack.kernel
 def count_neighbors(alive, count, n):
     """Count live neighbors for each cell (no wrapping)."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         c = 0
         # Check all 8 neighbors with boundary checks
         for di in range(-1, 2):
@@ -62,7 +62,7 @@ def count_neighbors(alive, count, n):
 @tack.kernel
 def apply_rules(alive, count, new_alive, n):
     """Apply Conway's rules to produce the next generation."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         c = count[i, j]
         a = alive[i, j]
         if a == 1:
@@ -84,14 +84,14 @@ def apply_rules(alive, count, new_alive, n):
 
 @tack.kernel
 def copy_grid(src, dst, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         dst[i, j] = src[i, j]
 
 
 # Initialize with random state
 np.random.seed(42)
 init_state = (np.random.rand(N, N) > 0.7).astype(np.int32)
-alive.from_numpy(init_state)
+tack.copyto(alive, init_state)
 
 initial_pop = init_state.sum()
 print(f"Game of Life: {N}x{N} grid, {STEPS} generations")
@@ -103,10 +103,10 @@ for step in range(STEPS):
     copy_grid(new_alive, alive, N)
 
     if (step + 1) % 20 == 0:
-        pop = alive.to_numpy().reshape(N, N).sum()
+        pop = alive.numpy().reshape(N, N).sum()
         print(f"  Generation {step+1:>4d}: population = {pop}")
 
-final = alive.to_numpy().reshape(N, N)
+final = alive.numpy().reshape(N, N)
 final_pop = final.sum()
 print(f"\n  Final population: {final_pop}")
 

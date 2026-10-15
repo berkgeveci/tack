@@ -44,10 +44,10 @@ def test_grids_need_one_to_three_sizes_of_at_least_zero(backend):
 
 def test_a_line_along_y_has_its_cells_along_y(backend):
     data = td.uniform_grid((1, 3), origin=(1, 2, 3), spacing=(0.5, 2.0, 4.0))
-    np.testing.assert_allclose(td.cell_centers(data).values.to_numpy(vectors=True),
+    np.testing.assert_allclose(td.cell_centers(data).values.numpy(),
                                [[1, 3, 3], [1, 5, 3]])
     lines = td.rectilinear_grid([0.0], [0.0, 1.0, 3.0])
-    np.testing.assert_allclose(td.cell_centers(lines).values.to_numpy(vectors=True),
+    np.testing.assert_allclose(td.cell_centers(lines).values.numpy(),
                                [[0, 0.5, 0], [0, 2, 0]])
     assert td.rectilinear_grid([]).num_points == 0
     assert td.sources.wavelet(extent=0).num_points == 1
@@ -77,8 +77,7 @@ def test_a_grid_squeezed_of_a_size_one_axis_is_the_same_grid(backend, dims):
     grid read point by point."""
     data = td.uniform_grid(dims, origin=(0.3, -0.2, 0.1), spacing=(0.5, 0.7, 0.9))
     x = data.positions()
-    data.fields["p"] = td.Field(td.H1(data), tack.field_from_numpy(
-        (x @ [1.0, 2.0, 3.0]).astype(np.float32)))
+    data.fields["p"] = td.Field(td.H1(data), tack.array((x @ [1.0, 2.0, 3.0]).astype(np.float32)))
     data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([0.1, 0.2, 0.3], data.num_points))
     stored = _with_points_stored(data)
     seed, middle = x[len(x) // 2] + 0.01, (x.min(0) + x.max(0)) / 2
@@ -132,10 +131,10 @@ def test_a_mesh_of_lines_has_no_faces_and_says_so(backend, name):
 
 def test_a_mesh_of_lines_still_has_cells(backend):
     data = td.uniform_grid((4,), spacing=(0.5, 1.0, 1.0))
-    data.fields["p"] = td.Field(td.H1(data), tack.field_from_numpy(np.array([0, 1, 4, 9], np.float32)))
-    np.testing.assert_allclose(td.cell_centers(data).values.to_numpy(vectors=True)[:, 0],
+    data.fields["p"] = td.Field(td.H1(data), tack.array(np.array([0, 1, 4, 9], np.float32)))
+    np.testing.assert_allclose(td.cell_centers(data).values.numpy()[:, 0],
                                [0.25, 0.75, 1.25])
-    np.testing.assert_allclose(td.to_cells(data, "p").values.to_numpy(), [0.5, 2.5, 6.5])
+    np.testing.assert_allclose(td.to_cells(data, "p").values.numpy(), [0.5, 2.5, 6.5])
     assert td.threshold(data, "p", 0.5, 5.0).num_cells == 1     # the line from 1 to 4
 
 
@@ -155,15 +154,15 @@ def test_geometry_of_cells_of_no_volume_is_finite(backend, kind):
     data = _collapsed(kind)
     data.fields["c"] = td.Field(td.Constant(data), td.ConstantArray(1.0, data.num_cells))
     measure, centroid = td.cell_geometry(data)
-    np.testing.assert_array_equal(measure.values.to_numpy(), 0)
-    np.testing.assert_allclose(centroid.values.to_numpy(vectors=True), 2.0)
-    np.testing.assert_allclose(td.face_centers(data).values.to_numpy(vectors=True), 2.0)
+    np.testing.assert_array_equal(measure.values.numpy(), 0)
+    np.testing.assert_allclose(centroid.values.numpy(), 2.0)
+    np.testing.assert_allclose(td.face_centers(data).values.numpy(), 2.0)
     normals, areas = td.face_geometry(data)
-    np.testing.assert_array_equal(normals.values.to_numpy(), 0)
-    np.testing.assert_array_equal(areas.values.to_numpy(), 0)
+    np.testing.assert_array_equal(normals.values.numpy(), 0)
+    np.testing.assert_array_equal(areas.values.numpy(), 0)
     flux = td.upwind_flux(data, "c", (1.0, 0.0, 0.0))
-    np.testing.assert_array_equal(flux.values.to_numpy(), 0)
-    np.testing.assert_array_equal(td.divergence(data, flux).values.to_numpy(), 0)
+    np.testing.assert_array_equal(flux.values.numpy(), 0)
+    np.testing.assert_array_equal(td.divergence(data, flux).values.numpy(), 0)
 
 
 @pytest.mark.parametrize("kind", ["hexahedron", "grid"])
@@ -171,20 +170,20 @@ def test_derivatives_on_cells_of_no_volume_are_nan(backend, kind):
     data = _collapsed(kind)
     data.fields["p"] = td.Field(td.H1(data), td.ConstantArray(1.0, data.num_points))
     data.fields["c"] = td.Field(td.Constant(data), td.ConstantArray(1.0, data.num_cells))
-    assert np.isnan(td.gradients(data, "p").values.to_numpy()).all()
-    assert np.isnan(td.perot(data, td.upwind_flux(data, "c", (1, 0, 0))).values.to_numpy()).all()
+    assert np.isnan(td.gradients(data, "p").values.numpy()).all()
+    assert np.isnan(td.perot(data, td.upwind_flux(data, "c", (1, 0, 0))).values.numpy()).all()
 
 
 def test_polygons_and_polylines_of_no_extent(backend):
     flat = td.DataSet(td.PolygonalTopology([0, 3], [0, 1, 2]), np.ones((3, 3), np.float32))
     area, centroid = td.cell_geometry(flat)
-    assert area.values.to_numpy()[0] == 0
-    np.testing.assert_allclose(centroid.values.to_numpy(vectors=True), [[1, 1, 1]])
+    assert area.values.numpy()[0] == 0
+    np.testing.assert_allclose(centroid.values.numpy(), [[1, 1, 1]])
     line = td.DataSet(td.PolylineTopology([0, 3], [0, 1, 2]), np.ones((3, 3), np.float32))
     length, centroid = td.cell_geometry(line)
-    assert length.values.to_numpy()[0] == 0
-    np.testing.assert_allclose(centroid.values.to_numpy(vectors=True), [[1, 1, 1]])
-    np.testing.assert_array_equal(td.face_geometry(line).normal.values.to_numpy(), 0)
+    assert length.values.numpy()[0] == 0
+    np.testing.assert_allclose(centroid.values.numpy(), [[1, 1, 1]])
+    np.testing.assert_array_equal(td.face_geometry(line).normal.values.numpy(), 0)
 
 
 # ── Values that are not finite ──────────────────────────────────────
@@ -194,7 +193,7 @@ def _ramp_with(value):
     data = td.uniform_grid((3, 3, 3))
     values = np.linspace(0, 1, 27).astype(np.float32)
     values[0] = value
-    data.fields["p"] = td.Field(td.H1(data), tack.field_from_numpy(values))
+    data.fields["p"] = td.Field(td.H1(data), tack.array(values))
     data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([1.0, 2.0, 3.0], 27))
     return data
 
@@ -206,21 +205,21 @@ def test_a_crossing_beside_a_value_that_is_not_finite_lies_at_the_other_end(back
     data = _ramp_with(value)
     surface = td.contour(data, "p", 0.5)
     assert surface.num_cells and np.isfinite(surface.positions()).all()
-    np.testing.assert_allclose(surface.fields["v"].values.to_numpy(vectors=True), [[1, 2, 3]] * surface.num_points)
+    np.testing.assert_allclose(surface.fields["v"].values.numpy(), [[1, 2, 3]] * surface.num_points)
     clipped = td.clip(data, "p", 0.03)
     assert np.isfinite(clipped.positions()).all()
-    assert np.isfinite(clipped.fields["v"].values.to_numpy()).all()
+    assert np.isfinite(clipped.fields["v"].values.numpy()).all()
 
 
 def test_histograms_refuse_ranges_that_are_not_finite(backend):
     from tack.algorithms import histogram
     for value in (np.inf, np.nan):
-        data = tack.field_from_numpy(np.array([0.0, 1.0, value], np.float32))
+        data = tack.array(np.array([0.0, 1.0, value], np.float32))
         with pytest.raises(ValueError, match="range of .* is not finite"):
             histogram(data)
         with pytest.raises(ValueError, match="is not finite"):
             td.entropy(_ramp_with(value), "p")
-    finite = tack.field_from_numpy(np.array([0.0, 1.0], np.float32))
+    finite = tack.array(np.array([0.0, 1.0], np.float32))
     with pytest.raises(ValueError, match="is not finite"):
         histogram(finite, range=(0.0, np.inf))
     with pytest.raises(ValueError, match="minimum above its maximum"):

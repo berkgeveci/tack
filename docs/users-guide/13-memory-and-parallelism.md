@@ -23,11 +23,11 @@ flowchart TB
 
 A vector array adds components to each logical element:
 
-| Allocation | Logical element | `to_numpy()` |
+| Allocation | Logical element | `numpy()` |
 |---|---|---|
-| `tack.empty(f32, shape=(h, w))` | One scalar per pixel | `(h, w)` |
-| `tack.empty(dtype=tack.vec3(), shape=(h, w))` | One RGB vector per pixel | `(h, w, 3)` |
-| `tack.empty(dtype=tack.mat2(), shape=(n,))` | One 2×2 matrix per particle | `(n, 2, 2)` |
+| `tack.empty((h, w))` | One f32 scalar per pixel | `(h, w)` |
+| `tack.empty((h, w), tack.vec3())` | One RGB vector per pixel | `(h, w, 3)` |
+| `tack.empty((n,), tack.mat2())` | One 2×2 matrix per particle | `(n, 2, 2)` |
 
 Every row uses the same constructor and download method. The dtype determines
 the component dimensions, which are appended to the array shape in NumPy.
@@ -65,7 +65,7 @@ Tack does not establish race freedom for you. A kernel compiling successfully
 does not mean two iterations cannot interfere. Array accesses are not
 bounds-checked either: keep indices within the storage you allocated.
 [Debug mode](15-debugging-and-timing.md#check-every-index-with-debug-mode)
-(`tack.init(..., debug=True)` or `TACK_DEBUG=1`) checks every array and array
+(`tack.set_debug(True)` or `TACK_DEBUG=1`) checks every array and array
 index and raises `IndexError` naming the access, for finding such a bug.
 Negative host indices count from the end; do not assume that rule for kernel
 array loads.
@@ -79,7 +79,7 @@ Use distinct input/output arrays:
 ```python
 @tack.kernel
 def smooth(old, new, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         if 0 < i < n - 1 and 0 < j < n - 1:
             new[i, j] = 0.25 * (old[i - 1, j] + old[i + 1, j]
                                + old[i, j - 1] + old[i, j + 1])
@@ -93,7 +93,7 @@ for step in range(steps):
 
 The swap changes Python references and costs no array copy. Both buffers must
 have the same layout. Write every output that the next step will read, including
-the boundary. When using an interior-only `ndrange`, initialize or explicitly
+the boundary. When using an interior-only `ndindex`, initialize or explicitly
 maintain the unwritten border of **both** buffers: a new array's contents are
 unspecified, and `tack.zeros` is the allocation that starts at zero.
 
@@ -106,7 +106,7 @@ red-black updates in separate calls, but that needs an algorithm-specific argume
 `reshape` is a view; `copy` makes independent storage:
 
 ```python
-grid = tack.empty(dtype=tack.f32, shape=(8, 8))
+grid = tack.empty((8, 8))
 view = grid.reshape((64,))                 # same allocation
 independent = grid.copy()                 # another allocation
 ```
@@ -173,12 +173,13 @@ input its own output interval and tells Python the exact allocation size. See
 
 ## Host access and ownership
 
-Allocate arrays after `tack.init`. Arrays belong to the backend that created
-them; selecting another backend does not migrate their storage. Start a fresh
-set of arrays when changing the backend.
+Every array belongs to the device it was allocated on (`a.device`), and a
+kernel runs on its arrays' device. Changing the default device does not move
+existing arrays; they keep working where they are. Use `a.to_device(d)` to
+copy one to another device. See [Devices](08-backends.md#devices).
 
-`from_numpy` and `to_numpy` transfer complete arrays. On CPU and Metal storage is
-host-addressable, but these methods still copy values. A host read `array[i]`
+`tack.copyto` and `numpy()` transfer complete arrays. On CPU and Metal storage is
+host-addressable, but these calls still copy values. A host read `array[i]`
 reads one logical element; CUDA, HIP and Level Zero copy just that range, one
 transfer per read. Avoid making it the inner loop of an application. On
 GPU backends launches are queued, and each of these reads first waits for

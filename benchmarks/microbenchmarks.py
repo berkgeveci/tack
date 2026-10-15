@@ -166,8 +166,8 @@ def k_reduce(data, out):
 def make_fields(n, count):
     fields = []
     for _ in range(count):
-        f = tack.field(dtype=tack.f32, shape=(n,))
-        f.from_numpy(np.random.randn(n).astype(np.float32).clip(-10, 10))
+        f = tack.empty((n,))
+        tack.copyto(f, np.random.randn(n).astype(np.float32).clip(-10, 10))
         fields.append(f)
     return fields
 
@@ -181,7 +181,7 @@ def bench_saxpy(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            tack.init(arch=backend)
+            tack.set_default_device(backend)
             x, y, z = make_fields(n, 3)
             k_saxpy(x, y, z)  # warmup/compile
             times = bench(lambda: k_saxpy(x, y, z), warmup=3, trials=repeats)
@@ -211,7 +211,7 @@ def bench_memcpy(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            tack.init(arch=backend)
+            tack.set_default_device(backend)
             src, dst = make_fields(n, 2)
             k_memcpy(src, dst)
             times = bench(lambda: k_memcpy(src, dst), warmup=3, trials=repeats)
@@ -238,7 +238,7 @@ def bench_fill(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            tack.init(arch=backend)
+            tack.set_default_device(backend)
             dst, = make_fields(n, 1)
             k_fill(dst)
             times = bench(lambda: k_fill(dst), warmup=3, trials=repeats)
@@ -264,12 +264,12 @@ def bench_stencil(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            tack.init(arch=backend)
+            tack.set_default_device(backend)
             # src needs n+1 elements so src[i+1] is valid when i = n-1
-            src = tack.field(dtype=tack.f32, shape=(n + 1,))
-            src.from_numpy(np.random.randn(n + 1).astype(np.float32).clip(-10, 10))
-            dst = tack.field(dtype=tack.f32, shape=(n,))
-            dst.from_numpy(np.zeros(n, dtype=np.float32))
+            src = tack.empty((n + 1,))
+            tack.copyto(src, np.random.randn(n + 1).astype(np.float32).clip(-10, 10))
+            dst = tack.empty((n,))
+            tack.copyto(dst, np.zeros(n, dtype=np.float32))
             k_stencil1d(src, dst)
             times = bench(lambda: k_stencil1d(src, dst), warmup=3, trials=repeats)
             print_row(tag, n, backend, times, n_arrays=2)
@@ -305,10 +305,10 @@ def bench_math(sizes):
             repeats = scaled_repeats(size_bytes)
 
             for backend in ["cpu", "metal"]:
-                tack.init(arch=backend)
+                tack.set_default_device(backend)
                 x, out = make_fields(n, 2)
                 # Ensure positive values for sqrt/exp
-                x.from_numpy(np.abs(np.random.randn(n).astype(np.float32)) + 0.1)
+                tack.copyto(x, np.abs(np.random.randn(n).astype(np.float32)) + 0.1)
                 kernel(x, out)
                 times = bench(lambda: kernel(x, out), warmup=3, trials=repeats)
                 print_row(tag, n, backend, times, n_arrays=2)
@@ -339,10 +339,10 @@ def bench_reduce(sizes):
         repeats = scaled_repeats(size_bytes)
 
         for backend in ["cpu", "metal"]:
-            tack.init(arch=backend)
-            data = tack.field(dtype=tack.f32, shape=(n,))
-            out = tack.field(dtype=tack.f32, shape=(n_blocks,))
-            data.from_numpy(np.random.randn(n).astype(np.float32))
+            tack.set_default_device(backend)
+            data = tack.empty((n,))
+            out = tack.empty((n_blocks,))
+            tack.copyto(data, np.random.randn(n).astype(np.float32))
             k_reduce(data, out)
             times = bench(lambda: k_reduce(data, out), warmup=3, trials=repeats)
             print_row(tag, n, backend, times, n_arrays=1)

@@ -9,15 +9,15 @@ A Python-first GPU compute framework. Write compute kernels as decorated Python 
 import tack
 import numpy as np
 
-tack.init(arch=tack.metal)  # or tack.cpu, tack.cuda, tack.hip, tack.level_zero
+tack.set_default_device("metal")  # or "cpu", "cuda", "hip", "level_zero"
 
 n = 1_000_000
-x = tack.empty(dtype=tack.f32, shape=(n,))
-y = tack.empty(dtype=tack.f32, shape=(n,))
-out = tack.empty(dtype=tack.f32, shape=(n,))
+x = tack.empty((n,))
+y = tack.empty((n,))
+out = tack.empty((n,))
 
-x.from_numpy(np.random.randn(n).astype(np.float32))
-y.from_numpy(np.random.randn(n).astype(np.float32))
+tack.copyto(x, np.random.randn(n).astype(np.float32))
+tack.copyto(y, np.random.randn(n).astype(np.float32))
 
 @tack.kernel
 def vector_add(x, y, out):
@@ -25,12 +25,12 @@ def vector_add(x, y, out):
         out[i] = x[i] + y[i]
 
 vector_add(x, y, out)
-result = out.to_numpy()
+result = out.numpy()
 ```
 
 ## Installation
 
-Tack is split into three packages: **tack-core** (compute framework), **tack-rendering** (path tracer), and **tack-vis** (datasets and visualization: `tack.dataset`).
+Tack is split into two packages: **tack-core** (compute framework) and **tack-vis** (datasets and visualization: `tack.dataset`).
 
 ```bash
 # Install everything from source with uv
@@ -46,19 +46,24 @@ pip install tack-core[metal]       # core + Metal backend (macOS)
 pip install tack-core[cuda]        # core + CUDA backend
 pip install tack-core[hip]         # core + HIP backend (see note below)
 pip install tack-core[level_zero]  # core + Level Zero backend (Intel)
-pip install tack-rendering         # path tracer (pulls in tack-core)
 pip install tack-vis               # datasets and visualization (pulls in tack-core)
 ```
 
 ## Backends
 
-| Backend | Platform | Init | Dependencies |
+| Backend | Platform | Device | Dependencies |
 |---------|----------|------|-------------|
-| CPU | Any | `tack.init(arch=tack.cpu)` | `llvmlite`, `numpy` |
-| Metal | macOS (Apple Silicon) | `tack.init(arch=tack.metal)` | `pyobjc-framework-Metal` |
-| CUDA | Linux/Windows (NVIDIA) | `tack.init(arch=tack.cuda)` | `cuda-python>=13.2`, CUDA toolkit |
-| HIP | Linux (AMD) | `tack.init(arch=tack.hip)` | `hip-python`, ROCm toolkit |
-| Level Zero | Linux (Intel) | `tack.init(arch=tack.level_zero)` | `libze_loader.so`, `libocloc.so` |
+| CPU | Any | `tack.device("cpu")` | `llvmlite`, `numpy` |
+| Metal | macOS (Apple Silicon) | `tack.device("metal")` | `pyobjc-framework-Metal` |
+| CUDA | Linux/Windows (NVIDIA) | `tack.device("cuda")` | `cuda-python>=13.2`, CUDA toolkit |
+| HIP | Linux (AMD) | `tack.device("hip")` | `hip-python`, ROCm toolkit |
+| Level Zero | Linux (Intel) | `tack.device("level_zero")` | `libze_loader.so`, `libocloc.so` |
+
+`tack.set_default_device("cuda")` makes a device the default, where arrays
+are allocated; `with tack.device("cuda"):` does so for a block, and
+`device=` on any constructor picks one for an array. Every array records its
+device (`a.device`, `a.to_device(...)`), and a kernel runs where its arrays
+are. With nothing set, the default is the CPU.
 
 `hip-python` is on PyPI, so `pip install tack-core[hip]` is enough. It ships
 manylinux x86_64 wheels only, so the dependency carries a platform marker and
@@ -111,39 +116,42 @@ the dtype describes a scalar, vector or matrix element. A dataset
 `tack.dataset.Field` combines a function space with coefficient values.
 
 ```python
-# empty leaves contents unspecified until a kernel or host write sets them
-x = tack.empty(dtype=tack.f32, shape=(1024,))         # 1D
-img = tack.empty(dtype=tack.f32, shape=(512, 512))     # 2D
-vol = tack.empty(dtype=tack.f32, shape=(64, 64, 64))   # 3D
+# empty leaves contents unspecified until a kernel or host write sets them;
+# shape first, then dtype (f32 by default; NumPy dtypes work too)
+x = tack.empty((1024,))                  # 1D
+img = tack.empty((512, 512))             # 2D
+vol = tack.empty((64, 64, 64))           # 3D
+ids = tack.empty((1024,), tack.i32)
 
 # Vector and matrix elements use the same array constructor
-pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(width, height))
-F = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))
+pixels = tack.empty((width, height), tack.vec3())
+F = tack.empty((n,), tack.mat2())
 
 # Data transfer
-x.from_numpy(np_array)    # host → device
-result = x.to_numpy()     # device → host
-x.fill(0.0)               # fill with scalar
-pixels.from_numpy(rgb)                    # (width, height, 3), or the flat array
-rgb = pixels.to_numpy()                   # (width, height, 3)
-x[7], pixels[3, 4]                        # read one element from the host (not written this way)
+tack.copyto(x, np_array)                 # host → device, into an existing array
+result = x.numpy()                       # device → host (a copy; np.asarray(x) too)
+x.fill(0.0)                              # fill with a scalar
+tack.copyto(pixels, rgb)                 # rgb has shape (width, height, 3)
+rgb = pixels.numpy()                     # (width, height, 3)
+x[7], pixels[3, 4]                       # read one element from the host (not written this way)
 
-# Reductions (on the device for f32 fields on GPU backends)
+# Reductions (on the device for f32 arrays on GPU backends)
 total = x.sum()
 lo = x.min()
 hi = x.max()
 
 # Convenience constructors
-copied = tack.array(np_array)             # independent storage, copies values
-scratch = tack.empty_like(pixels)         # same shape and element type, no copy
-z = tack.zeros(dtype=tack.f32, shape=(1024,))
-o = tack.ones(dtype=tack.i32, shape=(256,))
-idx = tack.arange(100)
+copied = tack.array(np_array)            # independent storage, copies values and dtype
+scratch = tack.empty_like(pixels)        # same shape and element type, no copy
+z = tack.zeros((1024,))
+o = tack.ones((256,), tack.i32)
+c = tack.full((256,), 2.5)               # f32 from a Python float
+idx = tack.arange(100)                   # i32
 
 # Copy, convert, reshape, concatenate
 backup = x.copy()
 x_f64 = x.astype(tack.f64)
-flat = img.reshape((512 * 512,))
+flat = img.reshape(-1)
 combined = tack.concat([part_a, part_b])
 ```
 
@@ -169,13 +177,13 @@ def evens(out):
 # Multi-dimensional parallel iteration
 @tack.kernel
 def fill(img):
-    for i, j in tack.ndrange(img.shape[0], img.shape[1]):
+    for i, j in tack.ndindex(img.shape[0], img.shape[1]):
         img[i, j] = float(i * j)
 
 # A (start, end) pair instead of a size: the interior of a grid
 @tack.kernel
 def smooth(u, out, n, m):
-    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+    for i, j in tack.ndindex((1, n - 1), (1, m - 1)):
         out[i, j] = 0.25 * (u[i - 1, j] + u[i + 1, j] + u[i, j - 1] + u[i, j + 1])
 
 # While loops with break/continue
@@ -190,7 +198,7 @@ def halve(x, out):
 
 ### Scalar Arguments
 
-Kernels accept Python scalars directly alongside fields:
+Kernels accept Python scalars directly alongside arrays:
 
 ```python
 @tack.kernel
@@ -260,7 +268,7 @@ def compact(values, out, count, n):
         if values[i] > 0.0:
             out[tack.atomic_add(count, 0, 1)] = values[i]
 
-# One index per dimension, and a whole vector into a vector field
+# One index per dimension, and a whole vector into a vector array
 @tack.kernel
 def scatter(pos, vel, mass, grid_m, grid_v, inv_dx, n):
     for p in range(n):
@@ -293,8 +301,8 @@ def debug_kern(x, out):
         out[i] = abs(x[i])
 ```
 
-To find an index out of bounds, run in debug mode: `tack.init(arch=..., debug=True)`
-or `TACK_DEBUG=1` checks every field and array index and raises `IndexError` naming
+To find an index out of bounds, run in debug mode: `tack.set_debug(True)`
+or `TACK_DEBUG=1` checks every array index and raises `IndexError` naming
 the access. See [Debugging and timing](docs/users-guide/15-debugging-and-timing.md).
 
 ### Device Functions
@@ -316,21 +324,25 @@ them: `distance, normal, color = closest_hit(origin, direction)`.
 ### Vectors and Matrices
 
 Vectors and small matrices (up to 4x4) are values in kernels. They are
-scalarized at compile time, so they cost what the scalar code would.
+scalarized at compile time, so they cost what the scalar code would. In a
+kernel the element-type names build them: `tack.vec3(x, y, z)`,
+`tack.vec3(s)` (every component), `tack.mat2([a, b], [c, d])`,
+`tack.mat2(a, b, c, d)` (row-major), `tack.mat(row, ...)` for other
+shapes and `tack.identity(n)`; a list of scalars `[x, y]` is a vector too.
 
 ```python
 @tack.kernel
 def step(pos, vel, F, C, grid, out, dt, n):
     for p in range(n):
-        v = vel[p]                              # a whole vector from a vector field
+        v = vel[p]                              # a whole vector from a vector array
         v = min(max(v, -10.0), 10.0)            # builtins apply to each component
         v.y -= 9.8 * dt                         # components: v.x, v[1], pos[p].z, pos[p][0]
         cell = int(floor(pos[p] / 0.25))        # a vector of integers
-        out[p] = grid[cell] * v.norm()          # a vector indexes a field, one dimension each
-        pos[p] += v * dt                        # update a field element in place
-        vel[p], out[p] = v, v.dot(v)            # tuple assignment to field elements
+        out[p] = grid[cell] * v.norm()          # a vector indexes an array, one dimension each
+        pos[p] += v * dt                        # update an array element in place
+        vel[p], out[p] = v, v.dot(v)            # tuple assignment to array elements
 
-        F[p] = (tack.Matrix.identity(2) + dt * C[p]) @ F[p]     # '@' multiplies
+        F[p] = (tack.identity(2) + dt * C[p]) @ F[p]     # '@' multiplies
         J = F[p].determinant()
         stress = (F[p] - F[p].inverse().transpose()) * J        # '*' is entry by entry
         C[p] = v.outer_product(stress @ v)
@@ -353,7 +365,7 @@ class Grid:
     scale = 2.0            # class-level scalar → compile-time constant
 
     def __init__(self, data, dx):
-        self.data = data   # field → becomes kernel parameter
+        self.data = data   # array → becomes kernel parameter
         self.dx = dx       # instance scalar → runtime parameter, no recompilation
 
     @tack.func
@@ -361,18 +373,18 @@ class Grid:
         return self.data[i] * self.dx
 
 @tack.kernel
-def process(grid: tack.template(), out):
+def process(grid, out):
     for i in range(out.shape[0]):
         out[i] = grid.sample(i)
 
-process(Grid(data_field, 0.1), output)
+process(Grid(data, 0.1), output)
 ```
 
 A device class can derive from another and inherits its
 `@tack.func` methods and class constants. An object can also hold a
 `@tack.func` as an attribute (`self.smoothing = cubic`) and call it.
 A kernel can be a method too: `@tack.kernel def step(self, dt)` is called
-as `grid.step(0.1)` and reaches the object's fields through `self`.
+as `grid.step(0.1)` and reaches the object's arrays through `self`.
 
 ## Datasets and Visualization
 
@@ -387,7 +399,7 @@ and your own kernels see a mesh the same way through `for_each`.
 import tack
 import tack.dataset as td
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 data = td.wavelet(extent=10)                    # VTK's wavelet: 21^3 points
 surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
 print(surface.num_cells, "triangles")
@@ -398,25 +410,21 @@ User's Guide and the [Dataset API reference](docs/reference/dataset-api.md).
 
 ## Examples
 
-49 progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip|level_zero`.
+32 progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip|level_zero`.
 
 ```bash
 uv run python packages/tack-core/examples/01_hello_tack.py              # simplest kernel
 uv run python packages/tack-core/examples/12_mandelbrot.py --arch metal # fractal on GPU
 uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # tack.dataset
-uv run python examples/32_pathtrace.py --arch metal                    # path tracing
 ```
 
 | Location | Count | Covers |
 |----------|------:|--------|
-| `packages/tack-core/examples/` | 28 | Kernels, fields, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
-| `packages/tack-vis/examples/` | 9 | A tour of `tack.dataset`, an MFEM solution through it, multi-block contour, VTK interop; and contour, marching cubes, flying edges and point-to-cell written from scratch. `deprecated/` holds the `tack.fe` isolines and isosurfaces |
-| `packages/tack-rendering/examples/` | 10 | GPU BVH, path tracing, denoising, materials, multiple lights, scalar colouring, volume rendering, annotations |
-| `examples/` | 2 | Cross-package pipelines that need both tack-vis and tack-rendering |
+| `packages/tack-core/examples/` | 28 | Kernels, arrays, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
+| `packages/tack-vis/examples/` | 4 | A tour of `tack.dataset`, an MFEM solution through it, multi-block contour, VTK interop |
 
 Numbers are unique within a package but repeat across packages — `tack-vis/31_multiblock_contour.py`
-and `tack-core/31_dawn_interop.py` both exist. The cross-package examples live at the
-repository root because neither package depends on the other, so neither can own them.
+and `tack-core/31_dawn_interop.py` both exist.
 
 ## Testing
 
@@ -449,7 +457,7 @@ uv run pytest packages/tack-core/tests/test_hip.py -v
 
 ## Project Structure
 
-Tack is a monorepo with three packages sharing the `tack` namespace:
+Tack is a monorepo with two packages sharing the `tack` namespace:
 
 ```
 packages/
@@ -463,20 +471,15 @@ packages/
     tests/                  # Core tests (CPU, Metal, CUDA, HIP, codegen)
     examples/               # Core examples
 
-  tack-rendering/            # Path tracing renderer
-    src/tack/rendering/      # Camera, BVH, scene, pathtrace kernels
-    examples/               # Rendering examples
-
   tack-vis/                  # Datasets and visualization
     src/tack/
       dataset/              # tack.dataset: topologies, spaces, fields, sets, views
         algorithms/         # Every algorithm, one module each
       interop/              # VTK and MFEM interop
-      deprecated/           # The first vis worklets and tack.fe, for reference
     tests/                  # Dataset and algorithm tests
     examples/               # Vis examples
 
-examples/                   # Cross-package examples (need vis + rendering)
+archive/                    # Retired packages kept for reference (tack-rendering)
 benchmarks/                 # Performance benchmarks
 docs/                       # Users guide, developers guide, performance notes
 ```

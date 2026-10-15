@@ -45,9 +45,9 @@ SOLIDS = [sh.Tetra, sh.Voxel, sh.Hexahedron, sh.Wedge, sh.Pyramid]
 
 def _scalars(values, dtype=tack.f32):
     values = np.asarray(values)
-    f = tack.field(dtype, shape=(len(values),))
+    f = tack.empty((len(values),), dtype)
     if len(values):
-        f.from_numpy(values.astype(dtype.numpy_dtype))
+        tack.copyto(f, values.astype(dtype.numpy_dtype))
     return f
 
 
@@ -78,7 +78,7 @@ def _with_radius(data, dtype=tack.f32):
 
 def _triangles(surface):
     points = surface.positions()
-    return points, surface.topology.connectivity.to_numpy().reshape(-1, 3)
+    return points, surface.topology.connectivity.numpy().reshape(-1, 3)
 
 
 def _edge_uses(triangles):
@@ -106,7 +106,7 @@ def test_a_sphere_is_closed_and_on_the_isovalue(backend, form):
     points, triangles = _triangles(surface)
     assert len(triangles) > 100
     assert (_edge_uses(triangles) == 2).all()                  # watertight
-    np.testing.assert_allclose(surface.fields["r"].values.to_numpy(), 0.6, atol=1e-5)
+    np.testing.assert_allclose(surface.fields["r"].values.numpy(), 0.6, atol=1e-5)
     # Linear interpolation puts the points inside the sphere, by little.
     radii = np.linalg.norm(points, axis=1)
     assert (radii <= 0.6 + 1e-5).all() and (radii > 0.55).all()
@@ -132,8 +132,8 @@ def test_a_dg_field_keeps_its_jumps(backend):
     assert same.num_points > continuous.num_points
     assert (_edge_uses(_triangles(same)[1]) == 1).any()
     # Each cell its own offset: every cell's piece moves, and pieces part.
-    offsets = td.L2(data).offsets.to_numpy()
-    values = dg.values.to_numpy()
+    offsets = td.L2(data).offsets.numpy()
+    values = dg.values.numpy()
     for cell in range(data.num_cells):
         values[offsets[cell]:offsets[cell + 1]] += 0.02 * (cell % 3 - 1)
     shifted = td.contour(data, td.Field(dg.space, _scalars(values)), 0.7)
@@ -142,11 +142,11 @@ def test_a_dg_field_keeps_its_jumps(backend):
 
 def test_a_variable_order_field_contours_its_order_one_cells(backend):
     data = _with_radius(_grid(7, "explicit"))
-    radius = data.fields["r"].values.to_numpy()
+    radius = data.fields["r"].values.numpy()
     orders = (np.arange(data.num_cells) % 2).astype(int)
     space = td.L2(data, order=orders)
-    connectivity = data.topology.connectivity.to_numpy().reshape(-1, 8)
-    offsets = space.offsets.to_numpy()
+    connectivity = data.topology.connectivity.numpy().reshape(-1, 8)
+    offsets = space.offsets.numpy()
     values = np.empty(space.size)
     for cell in range(data.num_cells):
         values[offsets[cell]:offsets[cell + 1]] = (radius[connectivity[cell]] if orders[cell]
@@ -156,7 +156,7 @@ def test_a_variable_order_field_contours_its_order_one_cells(backend):
     # continuous contour's triangles from those cells.
     data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
     full = td.contour(data, "r", 0.7, merge_points=False)
-    from_order_one = orders[full.fields["cell"].values.to_numpy().astype(int)] == 1
+    from_order_one = orders[full.fields["cell"].values.numpy().astype(int)] == 1
     points, triangles = _triangles(full)
     assert _oriented(*_triangles(surface)) == _oriented(points, triangles[from_order_one])
 
@@ -168,12 +168,12 @@ def test_fields_carried_onto_the_surface(backend):
     data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
     surface = td.contour(data, "r", 0.7)
     points = surface.positions()
-    np.testing.assert_allclose(surface.fields["x"].values.to_numpy(), points[:, 0], atol=1e-5)
+    np.testing.assert_allclose(surface.fields["x"].values.numpy(), points[:, 0], atol=1e-5)
     assert surface.fields["cell"].space is td.Constant(surface)    # it keeps its kind
     # Each triangle lies in the cell it says it came from.
     _, triangles = _triangles(surface)
-    cells = surface.fields["cell"].values.to_numpy().astype(int)
-    corners = positions[data.topology.connectivity.to_numpy().reshape(-1, 8)]
+    cells = surface.fields["cell"].values.numpy().astype(int)
+    corners = positions[data.topology.connectivity.numpy().reshape(-1, 8)]
     lo, hi = corners.min(axis=1)[cells], corners.max(axis=1)[cells]
     centroid = points[triangles].mean(axis=1)
     assert ((centroid >= lo - 1e-5) & (centroid <= hi + 1e-5)).all()
@@ -186,7 +186,7 @@ def test_contours_that_miss_and_bad_fields(backend):
         assert surface.num_cells == 0 and surface.num_points == 0
     with pytest.raises(TypeError, match="scalar field"):
         td.contour(data, data.geometry, 0.5)
-    data.fields["id"] = td.Field(td.H1(data), tack.arange(data.num_points, tack.i32))
+    data.fields["id"] = td.Field(td.H1(data), tack.arange(data.num_points))
     with pytest.raises(TypeError, match="floating-point"):
         td.contour(data, "id", 1.0)
     with pytest.raises(TypeError, match="with a basis"):
@@ -299,8 +299,8 @@ def test_a_slice_of_an_l2_geometry_is_its_cells_own(backend):
     """Each cell shrunk about its center, an L2 geometry: the slice cuts each cell
     where its own corners are, and the pieces no longer meet."""
     data = _grid(5, "explicit")
-    centers = alg.cell_centers(data).values.to_numpy(vectors=True)
-    connectivity = data.topology.connectivity.to_numpy().reshape(-1, 8)
+    centers = alg.cell_centers(data).values.numpy()
+    connectivity = data.topology.connectivity.numpy().reshape(-1, 8)
     corners = (centers[:, None, :] + 0.8 * (data.positions()[connectivity]
                                             - centers[:, None, :])).reshape(-1, 3)
     geometry = td.Field(td.L2(data), _vectors(corners))
@@ -316,8 +316,8 @@ def test_a_slice_of_an_l2_geometry_is_its_cells_own(backend):
 
 def _vectors(values):
     values = np.asarray(values)
-    f = tack.Vector.field(3, tack.f32, shape=(len(values),))
-    f.from_numpy(values.astype(np.float32))
+    f = tack.empty((len(values),), tack.vec(3, tack.f32))
+    tack.copyto(f, values.astype(np.float32))
     return f
 
 
@@ -349,15 +349,15 @@ def _cells(data):
     """Each cell as (type, its points' coordinates in order), in cell order."""
     points = data.positions()
     t = data.topology
-    offsets, connectivity = t.offsets.to_numpy(), t.connectivity.to_numpy()
+    offsets, connectivity = t.offsets.numpy(), t.connectivity.numpy()
     return [(int(k), tuple(tuple(np.round(points[p], 6)) for p in
                            connectivity[offsets[i]:offsets[i + 1]]))
-            for i, k in enumerate(t.types.to_numpy())]
+            for i, k in enumerate(t.types.numpy())]
 
 
 def _values_data(dtype=tack.f32):
     data = _grid(5, "explicit", dtype)
-    centers = alg.cell_centers(data).values.to_numpy(vectors=True)
+    centers = alg.cell_centers(data).values.numpy()
     data.fields["c"] = td.Field(td.Constant(data), _scalars(centers[:, 0] + 0.5 * centers[:, 1],
                                                             dtype))
     p = data.positions()
@@ -367,23 +367,23 @@ def _values_data(dtype=tack.f32):
 
 def test_threshold_by_cell_values(backend):
     data = _values_data()
-    c = data.fields["c"].values.to_numpy()
+    c = data.fields["c"].values.numpy()
     out = td.threshold(data, "c", -0.2, 0.4)
     kept = np.flatnonzero((c >= -0.2) & (c <= 0.4))
     assert out.num_cells == len(kept)
-    np.testing.assert_allclose(out.fields["c"].values.to_numpy(), c[kept])
-    used = np.unique(data.topology.connectivity.to_numpy().reshape(-1, 8)[kept])
+    np.testing.assert_allclose(out.fields["c"].values.numpy(), c[kept])
+    used = np.unique(data.topology.connectivity.numpy().reshape(-1, 8)[kept])
     assert out.num_points == len(used)
     np.testing.assert_allclose(out.positions(), data.positions()[used])
-    np.testing.assert_allclose(out.fields["p"].values.to_numpy(),
-                               data.fields["p"].values.to_numpy()[used])
+    np.testing.assert_allclose(out.fields["p"].values.numpy(),
+                               data.fields["p"].values.numpy()[used])
 
 
 @pytest.mark.parametrize("all_points", [True, False])
 def test_threshold_by_point_values(backend, all_points):
     data = _values_data()
-    p = data.fields["p"].values.to_numpy()
-    rows = data.topology.connectivity.to_numpy().reshape(-1, 8)
+    p = data.fields["p"].values.numpy()
+    rows = data.topology.connectivity.numpy().reshape(-1, 8)
     inside = (p[rows] >= -0.5) & (p[rows] <= 0.8)
     expected = inside.all(axis=1) if all_points else inside.any(axis=1)
     out = td.threshold(data, "p", -0.5, 0.8, all_points=all_points)
@@ -394,8 +394,8 @@ def test_threshold_of_a_rectilinear_grid_and_nothing(backend):
     data = _with_radius(_grid(5, "rectilinear"))
     out = td.threshold(data, "r", 0.0, 0.9)
     assert out.num_cells > 0 and isinstance(out.topology, td.UnstructuredTopology)
-    assert set(out.topology.types.to_numpy()) == {12}
-    assert (out.fields["r"].values.to_numpy() <= 0.9 + 1e-6).all()
+    assert set(out.topology.types.numpy()) == {12}
+    assert (out.fields["r"].values.numpy() <= 0.9 + 1e-6).all()
     empty = td.threshold(data, "r", 10.0, 11.0)
     assert empty.num_cells == 0 and empty.num_points == 0
 
@@ -409,23 +409,23 @@ def test_threshold_carries_l2_blocks(backend):
     space = td.L2(data, order=orders)
     values = np.arange(space.size, dtype=float)
     data.fields["dg"] = td.Field(space, _scalars(values))
-    centers = alg.cell_centers(data).values.to_numpy(vectors=True)
-    connectivity = data.topology.connectivity.to_numpy().reshape(-1, 8)
+    centers = alg.cell_centers(data).values.numpy()
+    connectivity = data.topology.connectivity.numpy().reshape(-1, 8)
     corners = (centers[:, None, :] + 0.9 * (data.positions()[connectivity]
                                             - centers[:, None, :])).reshape(-1, 3)
     shrunk = td.DataSet(data.topology, td.Field(td.L2(data), _vectors(corners)),
                         fields=dict(data.fields))
-    c = data.fields["c"].values.to_numpy()
+    c = data.fields["c"].values.numpy()
     kept = np.flatnonzero((c >= -0.2) & (c <= 0.4))
     out = td.threshold(shrunk, "c", -0.2, 0.4)
     assert isinstance(out.geometry.space, td.L2) and out.dtype == data.dtype
-    np.testing.assert_allclose(out.geometry.values.to_numpy(vectors=True),
+    np.testing.assert_allclose(out.geometry.values.numpy(),
                                corners.reshape(n, 8, 3)[kept].reshape(-1, 3), atol=1e-6)
     dg = out.fields["dg"]
-    offsets = space.offsets.to_numpy()
+    offsets = space.offsets.numpy()
     expected = np.concatenate([values[offsets[k]:offsets[k + 1]] for k in kept])
-    np.testing.assert_allclose(dg.values.to_numpy(), expected)
-    np.testing.assert_array_equal(dg.space.cell_keys().to_numpy(), orders[kept])
+    np.testing.assert_allclose(dg.values.numpy(), expected)
+    np.testing.assert_array_equal(dg.space.cell_keys().numpy(), orders[kept])
 
 
 @needs_vtk
@@ -453,20 +453,20 @@ def test_external_faces_of_a_grid(backend, form):
     data.fields["cell"] = td.Field(td.Constant(data), _scalars(np.arange(data.num_cells)))
     surface = td.external_faces(data)
     assert surface.num_cells == 6 * 9
-    assert set(surface.topology.types.to_numpy()) == {9}
+    assert set(surface.topology.types.numpy()) == {9}
     assert surface.fields["r"].space is td.H1(surface)
     # Each face carries its cell's value: the cell whose points it is made of.
-    cells = surface.fields["cell"].values.to_numpy().astype(int)
+    cells = surface.fields["cell"].values.numpy().astype(int)
     faces = data.topology.faces()
     np.testing.assert_array_equal(
-        cells, faces.sides.to_numpy(vectors=True)[td.algorithms.boundary_faces(data).to_numpy(), 0])
-    face_rows = surface.topology.connectivity.to_numpy().reshape(-1, 4)
+        cells, faces.sides.numpy()[td.algorithms.boundary_faces(data).numpy(), 0])
+    face_rows = surface.topology.connectivity.numpy().reshape(-1, 4)
     cell_points = [set(alg_cell) for alg_cell in _cell_point_ids(data)]
     assert all(set(row) <= cell_points[c] for row, c in zip(face_rows, cells))
     # And faces out of it.
-    centers = alg.cell_centers(data).values.to_numpy(vectors=True)[cells]
+    centers = alg.cell_centers(data).values.numpy()[cells]
     points = surface.positions()
-    rows = surface.topology.connectivity.to_numpy().reshape(-1, 4)
+    rows = surface.topology.connectivity.numpy().reshape(-1, 4)
     normal = np.cross(points[rows[:, 1]] - points[rows[:, 0]], points[rows[:, 2]] - points[rows[:, 0]])
     assert ((points[rows].mean(axis=1) - centers) * normal).sum(axis=1).min() > 0
 
@@ -480,9 +480,9 @@ def _rows_of(cells, out):
 
 def _cell_point_ids(data):
     """Each hexahedron's point ids, from its view: explicit or structured alike."""
-    out = tack.field(tack.i32, shape=(data.num_cells, 8))
+    out = tack.empty((data.num_cells, 8), tack.i32)
     td.for_each(_rows_of, data, "cells", out)
-    return out.to_numpy()
+    return out.numpy()
 
 
 @needs_vtk
@@ -508,7 +508,7 @@ def test_external_faces_are_vtks(f64_backend, kind):
               for i in range(len(offsets) - 1)}
     surface = td.external_faces(vtk_to_dataset(grid, dtype=tack.f64))
     t = surface.topology
-    o, c = t.offsets.to_numpy(), t.connectivity.to_numpy()
+    o, c = t.offsets.numpy(), t.connectivity.numpy()
     ours_at = np.round(surface.positions(), 6)
     ours = {frozenset(map(tuple, ours_at[c[o[i]:o[i + 1]]])) for i in range(len(o) - 1)}
     assert len(ours) == surface.num_cells == len(theirs) and ours == theirs

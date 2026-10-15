@@ -61,33 +61,33 @@ def _keep_cells(data, keep, fields=None):
     if not getattr(data.topology, "reference_cells", True):
         return _polyhedral_keep_cells(data, keep, fields)
     n = data.num_cells
-    sizes = tack.field(tack.i32, shape=(n,))
+    sizes = tack.empty((n,), tack.i32)
     for group in data.topology.groups():
         if group.count:
             _kept_sizes(group.view(), keep, sizes)
     idt = data.id_dtype
-    slots = tack.field(idt, shape=(n,))
-    starts = tack.field(idt, shape=(n,))
+    slots = tack.empty((n,), idt)
+    starts = tack.empty((n,), idt)
     count = exclusive_scan(keep, slots, n) if n else 0
     length = exclusive_scan(sizes, starts, n) if n else 0
 
     num_points = data.num_points
-    types = tack.field(tack.u8, shape=(count,))
-    offsets = tack.field(idt, shape=(count + 1,))
-    connectivity = tack.field(idt, shape=(length,))
-    sources = tack.field(idt, shape=(count,))
-    used = tack.zeros(tack.i32, (num_points,))
+    types = tack.empty((count,), tack.u8)
+    offsets = tack.empty((count + 1,), idt)
+    connectivity = tack.empty((length,), idt)
+    sources = tack.empty((count,), idt)
+    used = tack.zeros((num_points,), tack.i32)
     for group in data.topology.groups():
         if group.count:
             _kept_cells(group.view(), keep, slots, starts, types, offsets, connectivity,
                         sources, used)
     _close(offsets, count, length)
-    new_ids = tack.field(idt, shape=(num_points,))
+    new_ids = tack.empty((num_points,), idt)
     kept_points = exclusive_scan(used, new_ids, num_points) if num_points else 0
     if length:
         _renumber(connectivity, new_ids)
     kept = UnstructuredTopology(types, offsets, connectivity, num_points=kept_points)
-    point_ids = tack.field(idt, shape=(kept_points,))
+    point_ids = tack.empty((kept_points,), idt)
     if kept_points:
         _kept_ids(used, new_ids, point_ids)
     return carry(data, kept, points=Take(point_ids), cells=Take(sources), fields=fields)
@@ -102,17 +102,17 @@ def _polyhedral_keep_cells(data, keep, fields=None):
     n = data.num_cells
     idt = data.id_dtype
     _, kept_cells, kept_n = _compact(keep, idt)
-    point_used = tack.zeros(tack.i32, (data.num_points,))
+    point_used = tack.zeros((data.num_points,), tack.i32)
 
     if t.dimension < 3:
         # Polygons' loops or polylines' chains, copied whole.
         loop_offsets, loop_points = t.loops() if t.dimension == 2 else t.lines()
-        sizes = tack.field(tack.i32, shape=(n,))
+        sizes = tack.empty((n,), tack.i32)
         if n:
             _kept_entry_counts(loop_offsets, keep, sizes, n)
-        starts = tack.field(idt, shape=(n + 1,))
+        starts = tack.empty((n + 1,), idt)
         total = exclusive_scan(sizes, starts, n) if n else 0
-        out_loops = tack.field(idt, shape=(total,))
+        out_loops = tack.empty((total,), idt)
         if total:
             _copy_loops(loop_offsets, loop_points, keep, starts, out_loops, point_used, n)
         point_new, kept_points, kept_np = _compact(point_used, idt)
@@ -124,29 +124,29 @@ def _polyhedral_keep_cells(data, keep, fields=None):
         flipped = None
     else:
         nf = t.num_faces
-        used = tack.zeros(tack.i32, (nf,))
-        owned = tack.zeros(tack.i32, (nf,))
+        used = tack.zeros((nf,), tack.i32)
+        owned = tack.zeros((nf,), tack.i32)
         if n:
             _kept_faces(t.cell_offsets, t.cell_faces, t.cell_face_sides, keep, used, owned, n)
         new_face, kept_faces, kept_nf = _compact(used, idt)
-        sizes = tack.field(tack.i32, shape=(nf,))
+        sizes = tack.empty((nf,), tack.i32)
         if nf:
             _kept_face_sizes(t.face_offsets, used, sizes)
-        starts = tack.field(idt, shape=(nf + 1,))
+        starts = tack.empty((nf + 1,), idt)
         total = exclusive_scan(sizes, starts, nf) if nf else 0
-        face_points = tack.field(idt, shape=(total,))
-        flipped = tack.zeros(tack.i32, (kept_nf,))
+        face_points = tack.empty((total,), idt)
+        flipped = tack.zeros((kept_nf,), tack.i32)
         if nf:
             _copy_faces(t.face_offsets, t.face_points, used, owned, new_face, starts,
                         face_points, flipped, point_used)
         face_offsets = _gather_offsets(starts, kept_faces, total)
-        counts = tack.field(tack.i32, shape=(n,))
+        counts = tack.empty((n,), tack.i32)
         if n:
             _kept_entry_counts(t.cell_offsets, keep, counts, n)
-        entry_starts = tack.field(idt, shape=(n + 1,))
+        entry_starts = tack.empty((n + 1,), idt)
         entries = exclusive_scan(counts, entry_starts, n) if n else 0
-        cell_faces = tack.field(idt, shape=(entries,))
-        cell_sides = tack.field(tack.u8, shape=(entries,))
+        cell_faces = tack.empty((entries,), idt)
+        cell_sides = tack.empty((entries,), tack.u8)
         if entries:
             _copy_entries(t.cell_offsets, t.cell_faces, t.cell_face_sides, keep, new_face,
                           flipped, entry_starts, cell_faces, cell_sides, n)
@@ -245,7 +245,7 @@ def _offsets_of(starts, kept, out, total, n):
 def _gather_offsets(starts, kept, total):
     """CSR offsets of the kept rows: each kept row's start in the compacted array, and
     ``total`` at the end."""
-    out = tack.field(starts.dtype, shape=(kept.shape[0] + 1,))
+    out = tack.empty((kept.shape[0] + 1,), starts.dtype)
     if kept.shape[0]:
         _offsets_of(starts, kept, out, total, int(kept.shape[0]))
     else:
@@ -267,9 +267,9 @@ def _keep_points(data, flags, fields):
     """The points whose ``flags`` (i32, one per point) is 1, each a vertex cell; point
     fields come along, cell fields do not."""
     _, kept, count = _compact(flags, data.id_dtype)
-    types = tack.field(tack.u8, shape=(count,))
-    offsets = tack.zeros(data.id_dtype, (count + 1,))
-    connectivity = tack.field(data.id_dtype, shape=(count,))
+    types = tack.empty((count,), tack.u8)
+    offsets = tack.zeros((count + 1,), data.id_dtype)
+    connectivity = tack.empty((count,), data.id_dtype)
     if count:
         _vertex_cells(types, offsets, connectivity, int(connectivity.shape[0]))
     vertices = UnstructuredTopology(types, offsets, connectivity, num_points=count)
@@ -284,7 +284,7 @@ def _flag_range(values, lower, upper, flags):
 
 
 def _point_flags(data, values, lower, upper):
-    flags = tack.field(tack.i32, shape=(data.num_points,))
+    flags = tack.empty((data.num_points,), tack.i32)
     if data.num_points:
         _flag_range(arrays.materialize(values), lower, upper, flags)
     return flags
@@ -302,9 +302,9 @@ def _vertices(points, like=None):
 
     n = len(points)
     idt = ids.for_output(like, n) if like is not None else ids.choose(None, n)
-    types = tack.field(tack.u8, shape=(n,))
-    offsets = tack.zeros(idt, (n + 1,))
-    connectivity = tack.field(idt, shape=(n,))
+    types = tack.empty((n,), tack.u8)
+    offsets = tack.zeros((n + 1,), idt)
+    connectivity = tack.empty((n,), idt)
     if n:
         _vertex_cells(types, offsets, connectivity, int(connectivity.shape[0]))
     return DataSet(UnstructuredTopology(types, offsets, connectivity, num_points=n), points,
