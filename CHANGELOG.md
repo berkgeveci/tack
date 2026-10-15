@@ -87,6 +87,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- **Breaking:** CPU threading policy v1 is removed; the policy that has
+  been the default since 2026-08-10 is the only one. `TACK_CPU_POLICY=v2`
+  (or unset) is still accepted, and any other value, `v1` included, raises
+  `ValueError`. `CPUBackend.policy` and `CPUBackend.margin` are gone (the
+  margin in use is `_margin()`).
 - The install instructions say how to install from source: Tack is not on
   PyPI yet, and `pip install tack-core` found nothing. The README, the
   guide, the backends reference and the errors for a missing backend now

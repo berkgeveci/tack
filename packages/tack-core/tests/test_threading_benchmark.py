@@ -109,8 +109,6 @@ def test_later_fan_out_read_cannot_replace_the_cached_threshold(benchmark, monke
     clock = [0]
     monkeypatch.setattr(cpu, 'time', SimpleNamespace(perf_counter_ns=lambda: clock[0]))
     backend = cpu.CPUBackend(num_threads=8)
-    backend.policy = 'v2'
-    backend._v2 = True
     backend.margin_override = 1.0
     backend._last_dispatch_ns = 0
     backend._fan_out_curve = [(0, 100.0), (100, 1000.0)]
@@ -127,7 +125,7 @@ def test_later_fan_out_read_cannot_replace_the_cached_threshold(benchmark, monke
            'chose': 'parallel', 'regret_us': 0.0,
            'threshold_inputs_basis': 'post-settlement live snapshot'}
     before = copy.deepcopy(row)
-    check = benchmark._threshold_snapshot(row, backend.policy, backend.num_threads)
+    check = benchmark._threshold_snapshot(row, 'v2', backend.num_threads)
     assert check['threshold_snapshot_status'] == 'different'
     assert check['snapshot_parallel_min_elems'] == 500
     assert check['snapshot_choice_differs'] is True
@@ -219,8 +217,6 @@ def test_score_keeps_cached_choice_and_restores_estimators_before_annotating(
     clock = [0]
     monkeypatch.setattr(cpu, 'time', SimpleNamespace(perf_counter_ns=lambda: clock[0]))
     backend = cpu.CPUBackend(num_threads=8)
-    backend.policy = 'v2'
-    backend._v2 = True
     backend.margin_override = 1.0
     backend._fan_out_ns = 100.0
     backend._last_dispatch_ns = 0

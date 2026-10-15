@@ -572,7 +572,7 @@ it is queued (see [Host operations](#host-operations)).
 | Variable | Read by | Effect |
 |---|---|---|
 | `TACK_CPU_THREADS` | `CPUBackend.__init__` | CPU worker count. Read each time a CPU backend is constructed, unless `tack.device("cpu", num_threads=...)` gives one. Values below 1 become 1. `1` runs everything on the calling thread. A non-integer raises `ValueError` from `tack.device` |
-| `TACK_CPU_POLICY` | `CPUBackend.__init__` | Threading policy: `v1` or `v2`. Unset or empty means `v2`, the default. Any other value raises `ValueError` from `tack.device`, listing the accepted values |
+| `TACK_CPU_POLICY` | `CPUBackend.__init__` | Accepted for old scripts only: unset, empty or `v2`, the one threading policy since `v1` was removed. Any other value, `v1` included, raises `ValueError` from `tack.device` |
 | `TACK_CPU_MARGIN` | `CPUBackend.__init__` | Float override of the threading decision's safety margin |
 | `TACK_CPU_POOL` | `CPUBackend.__init__` | `python` (or `0`, `off`, `no`, `false`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool, which is the default wherever it can be made (not on Windows) |
 | `TACK_CPU_POOL_SPIN` | The JIT'd pool, when it is made | How many pause iterations a pool worker spins before sleeping (default 20000). For experiments |

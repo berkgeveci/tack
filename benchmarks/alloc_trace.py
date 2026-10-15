@@ -158,7 +158,7 @@ mesh = m.hexahedra(SIZES[size])
 source = m.TackMesh(mesh, "shape")
 b = tack.runtime.dispatch.get_backend()
 print(f"# tack {tack.__file__}; pool {getattr(b, 'pool_kind', 'executor')}; "
-      f"numa {cpu._numa_available}; policy {os.environ.get('TACK_CPU_POLICY') or 'v2'}; "
+      f"numa {cpu._numa_available}; "
       f"MALLOC_MMAP_THRESHOLD_={os.environ.get('MALLOC_MMAP_THRESHOLD_')} "
       f"MALLOC_TRIM_THRESHOLD_={os.environ.get('MALLOC_TRIM_THRESHOLD_')}; "
       f"load {os.getloadavg()[0]:.2f}")
