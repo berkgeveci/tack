@@ -24,6 +24,7 @@ Requires: hip-python (``pip install 'tack-core[hip]'``)
 """
 
 import ctypes
+import inspect
 import threading
 
 import numpy as np
@@ -47,8 +48,13 @@ from tack.runtime.kernel_utils import (
 from tack.runtime.reductions import REDUCTION_IDENTITIES, empty_reduction, reduce_numpy
 
 _HIP_SUPPORTED_DTYPES = frozenset({i8, u8, i16, u16, i32, u32, i64, u64, f32, f64})
-from hip import LONG_VERSION as _HIP_PYTHON_VERSION
+import hip as _hip_python
 from hip import hip, hiprtc
+
+# hip-python 10 is a compatibility package over `rocm.bindings`: it has
+# `VERSION` but no `LONG_VERSION` (7.x has both, equal) and no `chip`.
+_HIP_PYTHON_VERSION = (getattr(_hip_python, "LONG_VERSION", None)
+                       or getattr(_hip_python, "VERSION", "unknown"))
 
 from tack.codegen.hip_gen import generate_hip_source
 from tack.codegen.identifiers import kernel_entry_name
@@ -80,6 +86,33 @@ def _check_hip(result):
     err = result[0] if isinstance(result, tuple) else result
     if isinstance(err, hip.hipError_t) and err != hip.hipError_t.hipSuccess:
         raise HIPError(err)
+
+
+_TAKES_OUTPUT = {}
+
+
+def _call_with_output(fn, struct, *args):
+    """Call a HIP function whose first C parameter is an output struct, and
+    return `(error, struct)`. hip-python 7.x takes the struct as the first
+    argument and returns the error; hip-python 10 allocates it and returns
+    `(error, struct)`. Which one is read off the binding's signature."""
+    takes = _TAKES_OUTPUT.get(fn.__name__)
+    if takes is None:
+        try:
+            takes = len(inspect.signature(fn).parameters) > len(args)
+        except (TypeError, ValueError):
+            takes = True
+        _TAKES_OUTPUT[fn.__name__] = takes
+    if takes:
+        out = struct()
+        result = fn(out, *args)
+        return (result[0] if isinstance(result, tuple) else result), out
+    return fn(*args)
+
+
+def _text(value):
+    """A struct's character array: bytes in hip-python 7.x, str in 10."""
+    return value.decode(errors="replace") if isinstance(value, bytes) else str(value)
 
 
 def _check_hiprtc(result):
@@ -118,9 +151,23 @@ def _runtime():
     return None if _RUNTIME is _NO_RUNTIME else _RUNTIME
 
 
+def _runtime_library():
+    """The HIP runtime library hip-python loaded, so the ctypes waits use
+    the same one: `hip.chip.DLL` before hip-python 10, `rocm.bindings`'s
+    lookup from 10 on, the soname if neither is there."""
+    try:
+        from hip import chip
+    except ImportError:
+        try:
+            from rocm.bindings.util.paths import get_library_path
+        except ImportError:
+            return b"libamdhip64.so"
+        return get_library_path("amdhip64")
+    return getattr(chip, "DLL", b"libamdhip64.so")
+
+
 def _load_runtime():
-    from hip import chip
-    name = getattr(chip, "DLL", b"libamdhip64.so")
+    name = _runtime_library()
     try:
         lib = ctypes.CDLL(name.decode() if isinstance(name, bytes) else name)
         lib.hipEventSynchronize.argtypes = [ctypes.c_void_p]
@@ -801,13 +848,13 @@ class HIPBackend(Backend):
             # marshalling, which used to be caught and reported as "cpu".
             return "cpu"
 
-        # `attributes` is an out-parameter: hip-python allocates nothing for
-        # you, and the result tuple carries only the error code. Getting this
-        # wrong is how this function came to answer "cpu" for every pointer
-        # it was ever given -- see the note below.
-        attrs = hip.hipPointerAttribute_t()
-        res = hip.hipPointerGetAttributes(attrs, hip.hipDeviceptr_t(addr))
-        err = res[0] if isinstance(res, tuple) else res
+        # `attributes` is an out-parameter in hip-python 7.x, which
+        # allocates nothing for you and returns only the error code; 10
+        # returns it. Getting this wrong is how this function came to answer
+        # "cpu" for every pointer it was ever given -- see the note above.
+        err, attrs = _call_with_output(hip.hipPointerGetAttributes,
+                                       hip.hipPointerAttribute_t,
+                                       hip.hipDeviceptr_t(addr))
         if int(err) != int(hip.hipError_t.hipSuccess):
             # Documented outcome for a pointer HIP does not recognise, which
             # is what an ordinary host allocation is.
@@ -926,10 +973,11 @@ class HIPBackend(Backend):
 
     def cache_target(self):
         if self._target is None:
-            props = hip.hipDeviceProp_t()
-            _check_hip(hip.hipGetDeviceProperties(props, self._device))
-            device_name = props.name.decode(errors="replace")
-            arch = props.gcnArchName.decode(errors="replace")
+            err, props = _call_with_output(hip.hipGetDeviceProperties,
+                                           hip.hipDeviceProp_t, self._device)
+            _check_hip(err)
+            device_name = _text(props.name)
+            arch = _text(props.gcnArchName)
             err, runtime_version = hip.hipRuntimeGetVersion()
             _check_hip(err)
             err, driver_version = hip.hipDriverGetVersion()

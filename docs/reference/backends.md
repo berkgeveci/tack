@@ -106,7 +106,9 @@ pip install 'hip-python~=7.2.0'
 ```
 
 It ships manylinux x86_64 wheels only, so the dependency carries a platform
-marker and is skipped elsewhere.
+marker and is skipped elsewhere. hip-python 10, a compatibility package over
+`rocm.bindings`, works too: it is what the lower bound installs today, and
+Tack runs on it against ROCm 7.1.
 
 **Level Zero.** The extra is deliberately empty. Level Zero is reached through
 ctypes to `libze_loader.so` (the Level Zero runtime) and `libocloc.so` (the
