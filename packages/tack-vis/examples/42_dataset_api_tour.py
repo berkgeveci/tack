@@ -43,9 +43,12 @@ import tack
 
 try:
     import vtkmodules  # noqa: F401
-except ImportError:
-    raise SystemExit("This example builds its mixed grid with VTK; install the interop "
-                     "extra: uv sync --extra cpu --extra interop") from None
+except ModuleNotFoundError as error:
+    # Still a ModuleNotFoundError naming the module, which the examples
+    # sweep (test_examples.py) reads as an optional dependency to skip.
+    raise ModuleNotFoundError(f"{error}: this example builds its mixed grid with VTK; "
+                              "install the interop extra (uv sync --extra cpu --extra "
+                              "interop)", name=error.name) from None
 
 parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 parser.add_argument("--arch", default="cpu",
