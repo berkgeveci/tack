@@ -37,7 +37,7 @@ _ARCHES = ('cpu', 'metal', 'cuda', 'hip', 'level_zero')
 
 def _init_backend(arch):
     """Initialize and confirm the backend whose results we will report."""
-    tack.init(arch=arch)
+    tack.set_default_device(arch)
     selected = get_backend().name
     if selected != arch:
         raise RuntimeError(f"Requested '{arch}' backend but selected '{selected}'")
@@ -49,7 +49,7 @@ def _available_backends():
     Probes every backend tack ships. This listed only cpu/metal/cuda until
     2026-08-11, so on a ROCm or Intel box it validated the CPU backend and
     reported "All validations passed!" -- a pass that named a machine it had
-    not touched. `tack.init` is the honest probe: it is what the caller would
+    not touched. `tack.set_default_device` is the honest probe: it is what the caller would
     do, and it fails the same way for a missing runtime as for a missing
     device.
     """

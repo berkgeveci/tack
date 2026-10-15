@@ -18,9 +18,9 @@ _BIG = cpu_mod._PARALLEL_FILL_MIN_BYTES
 @pytest.fixture
 def backend(monkeypatch):
     monkeypatch.delenv("TACK_CPU_POOL", raising=False)
-    tack.init(arch="cpu", num_threads=4)
+    tack.set_default_device("cpu", num_threads=4)
     yield tack.runtime.dispatch.get_backend()
-    tack.init(arch="cpu")
+    tack.set_default_device("cpu")
 
 
 def _fills(monkeypatch, backend):
@@ -123,14 +123,14 @@ def test_a_read_only_array_refuses_a_fill_before_any_kernel(backend):
 
 def test_one_thread_fills_in_place(monkeypatch):
     monkeypatch.delenv("TACK_CPU_POOL", raising=False)
-    tack.init(arch="cpu", num_threads=1)
+    tack.set_default_device("cpu", num_threads=1)
     try:
         fills = _fills(monkeypatch, tack.runtime.dispatch.get_backend())
         f = tack.zeros((_BIG,), tack.f64)
         assert fills == [(f._buffer.nbytes, False)]
         assert not f.numpy().any()
     finally:
-        tack.init(arch="cpu")
+        tack.set_default_device("cpu")
 
 
 def test_a_array_of_another_backend_fills_in_place(monkeypatch, backend):

@@ -70,7 +70,7 @@ def fit(xs, ys):
 
 
 def main():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     be = get_backend()
     if be.policy != "v2":
         raise SystemExit("run with TACK_CPU_POLICY=v2 -- v1 has no r_p")

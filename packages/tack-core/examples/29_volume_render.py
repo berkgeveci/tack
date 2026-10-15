@@ -35,8 +35,8 @@ _parser.add_argument('--save', default=_os.path.join(_os.path.dirname(__file__),
 _parser.add_argument('--warmup', type=int, default=2)
 _parser.add_argument('--trials', type=int, default=5)
 _args = _parser.parse_args()
-_arch = getattr(tack, _args.arch)
-tack.init(arch=_arch)
+_arch = _args.arch
+tack.set_default_device(_arch)
 
 WIDTH = _args.width
 HEIGHT = _args.height

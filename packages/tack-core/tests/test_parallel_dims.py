@@ -167,7 +167,7 @@ def _loop(kernel):
 
 
 def test_two_and_three_dimensions_keep_their_dimensions():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     for kernel, n in ((_fill2, 2), (_fill3, 3)):
         loop = _loop(kernel)
         assert loop.dims is not None and len(loop.dims) == n
@@ -192,7 +192,7 @@ def _shared_rows(a):
 
 
 def test_workgroup_kernels_keep_the_flat_loop():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     assert _loop(_shared_rows).dims is None
 
 
@@ -230,7 +230,7 @@ def _compile_cpu(kernel, args):
     [0, 58, 59],
 ], ids=str)
 def test_cpu_chunks_start_and_end_anywhere_in_2d(cuts):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a = _i32((15, 4))                     # 60 elements, rows of 4
     compiled, extents = _compile_cpu(_fill2, [a])
     prefix = compiled.bind([a], extents)
@@ -241,7 +241,7 @@ def test_cpu_chunks_start_and_end_anywhere_in_2d(cuts):
 
 
 def test_cpu_chunks_carry_across_planes_in_3d():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     shape = (4, 3, 5)
     a = _i32(shape)
     compiled, extents = _compile_cpu(_fill3, [a, 0])
@@ -257,7 +257,7 @@ def test_cpu_chunks_carry_across_planes_in_3d():
 
 def test_cpu_empty_chunk_with_a_zero_extent_does_not_divide():
     """The dispatcher's probes run empty chunks; a zero extent must not reach a division."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a = _i32((4,))
     compiled, _ = _compile_cpu(_scalar_extents, [a, 0, 0])
     compiled.call_range(compiled.bind([a, 0, 0], (0, 0)), 0, 0)
@@ -265,7 +265,7 @@ def test_cpu_empty_chunk_with_a_zero_extent_does_not_divide():
 
 def test_cpu_fan_out_across_workers():
     """The dispatcher's own fan-out, on worker chunks that end mid-row."""
-    tack.init(arch=tack.cpu, num_threads=7)
+    tack.set_default_device("cpu", num_threads=7)
     backend = tack.runtime.dispatch.get_backend()
     backend.pool_kind = "python"            # the chunks are recorded through call_range
     shape = (300, 257)                      # 77100 elements: 7 chunks of 11015

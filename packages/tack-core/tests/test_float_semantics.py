@@ -386,7 +386,7 @@ def test_f64_sqrt_exceptional_classes(f64_backend):
 def test_math_generators_accept_integer_and_mixed_arguments(dtype, generate, tmp_path):
     if dtype is tack.f64 and generate is generate_msl_source:
         pytest.skip('MSL has no f64')
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, b = _array([2**30 + 3], tack.i64), _array([0.5], dtype)
     out = tack.empty((1, 4), dtype)
     function, _ = _prepare_ir(_mixed_math, (a, b, out))
@@ -406,7 +406,7 @@ def test_math_generators_accept_integer_and_mixed_arguments(dtype, generate, tmp
                          ids=['cuda-host', 'hip-host'])
 def test_generated_cpp_executes_safe_identities(dtype, generate, tmp_path):
     clang = require_clang('ubsan')
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     values = np.asarray([0.0, -0.0, 1.0, -1.0, np.inf, -np.inf, np.nan], dtype=dtype.numpy_dtype)
     a, out = _array(values, dtype), tack.empty((len(values), 4), dtype)
     function, _ = _prepare_ir(_identities, (a, out))

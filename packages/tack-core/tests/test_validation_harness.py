@@ -25,7 +25,7 @@ def harness():
 
 def test_import_does_not_probe_backends(monkeypatch):
     calls = []
-    monkeypatch.setattr(tack, 'init', lambda arch: calls.append(arch))
+    monkeypatch.setattr(tack, 'set_default_device', lambda arch: calls.append(arch))
     _load_harness()
     assert calls == []
 
@@ -101,7 +101,7 @@ def _fake_backends(harness, monkeypatch, available):
             raise RuntimeError(f'{arch} device unavailable')
         current.name = arch
 
-    monkeypatch.setattr(harness.tack, 'init', init)
+    monkeypatch.setattr(harness.tack, 'set_default_device', init)
     monkeypatch.setattr(harness, 'get_backend', lambda: current)
     return current, attempts
 
@@ -168,7 +168,7 @@ def test_empty_discovery_fails(harness, monkeypatch, capsys):
 
 def test_backend_mismatch_cannot_be_reported_as_gpu_success(harness, monkeypatch, capsys):
     _fake_backends(harness, monkeypatch, {'cpu'})
-    monkeypatch.setattr(harness.tack, 'init', lambda arch: None)
+    monkeypatch.setattr(harness.tack, 'set_default_device', lambda arch: None)
     monkeypatch.setattr(harness, 'get_backend', lambda: SimpleNamespace(name='cpu'))
     with pytest.raises(SystemExit) as error:
         harness.main(['--arch', 'metal'])

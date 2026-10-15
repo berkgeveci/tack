@@ -13,7 +13,7 @@ The first check should include input upload, execution and output download:
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 rng = np.random.default_rng(42)
 host_x = rng.normal(size=32).astype(np.float32)
 x = tack.array(host_x)
@@ -101,7 +101,8 @@ so `a[i, j + 1]` at the last column quietly reads the first element of the
 next row. Turn on debug mode to find it:
 
 ```python
-tack.init(arch=tack.cpu, debug=True)    # or TACK_DEBUG=1 in the environment
+tack.set_debug(True)    # or TACK_DEBUG=1 in the environment
+tack.set_default_device("cpu")    # or TACK_DEBUG=1 in the environment
 ```
 
 Every array and array index is then checked, one dimension at a time. An

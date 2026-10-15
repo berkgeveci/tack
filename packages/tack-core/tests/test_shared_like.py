@@ -90,7 +90,7 @@ def test_shared_like_cuda_codegen():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((10,))
     out = tack.empty((10,))
 
@@ -117,7 +117,7 @@ def test_shared_like_i32_cuda_codegen():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((10,), tack.i32)
     out = tack.empty((10,), tack.i32)
 

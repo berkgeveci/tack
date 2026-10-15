@@ -13,7 +13,7 @@ import pytest
 import tack
 
 try:
-    tack.init(arch=tack.hip)
+    tack.set_default_device("hip")
 except RuntimeError as e:
     pytest.skip(f"HIP not available: {e}", allow_module_level=True)
 
@@ -23,7 +23,7 @@ from tack.runtime.dispatch import get_backend
 
 @pytest.fixture(autouse=True)
 def _on_hip():
-    tack.init(arch=tack.hip)
+    tack.set_default_device("hip")
 
 
 @tack.kernel

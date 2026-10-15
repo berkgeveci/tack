@@ -13,6 +13,7 @@ atomics: each bin's count is an exact integer whatever the order.
 """
 
 import tack
+from tack.runtime.dispatch import on_inputs_device
 
 # ================================================================
 # KERNELS
@@ -101,6 +102,7 @@ def _count(n, *arrays):
     return (n, *flat)
 
 
+@on_inputs_device
 def _prefix(data, n):
     """The first n elements of data, as an array the host reductions accept."""
     if n == data.size:
@@ -116,6 +118,7 @@ def _precision(*arrays):
     return tack.f64 if any(f.dtype is tack.f64 for f in arrays) else tack.f32
 
 
+@on_inputs_device
 def var(data, n=None):
     """Population variance of an array: Σ(x - mean)² / n.
 
@@ -138,6 +141,7 @@ def var(data, n=None):
     return terms.sum() / n
 
 
+@on_inputs_device
 def std(data, n=None):
     """Population standard deviation of an array."""
     from math import sqrt
@@ -151,6 +155,7 @@ def _terms(kernel, n, *arrays):
     return terms
 
 
+@on_inputs_device
 def norm(data, ord=2, n=None):
     """Vector norm of an array, in the data's precision (f64 for f64 data,
     otherwise f32), as a Python float.
@@ -174,11 +179,13 @@ def norm(data, ord=2, n=None):
     return _terms(_abs_values, n, data).max()
 
 
+@on_inputs_device
 def absmax(data, n=None):
     """Maximum absolute value of an array, as a Python float; 0.0 when empty."""
     return norm(data, float('inf'), n)
 
 
+@on_inputs_device
 def count_nonzero(data, n=None):
     """The number of nonzero elements of an array, as a Python int: its 0/1 flags
     scanned into i64 on the device, so the count is exact past 2^31 and only
@@ -193,6 +200,7 @@ def count_nonzero(data, n=None):
     return int(exclusive_scan(flags, tack.empty((n,), tack.i64), n))
 
 
+@on_inputs_device
 def dot(a, b, n=None):
     """Dot product of two arrays, Σa[i]·b[i], in their precision (f64 if either
     is f64, otherwise f32), as a Python float; 0.0 when empty."""
@@ -202,6 +210,7 @@ def dot(a, b, n=None):
     return _terms(_products, n, a, b).sum()
 
 
+@on_inputs_device
 def histogram(data, bins=10, range=None, n=None):
     """Compute a histogram of array values with atomic bin counts.
 

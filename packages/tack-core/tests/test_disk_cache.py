@@ -28,7 +28,7 @@ sys.path.insert(0, {moddir!r})
 import tack
 from tack import cache
 from tack.runtime import disk_cache
-tack.init(arch=getattr(tack, {arch!r}))
+tack.set_default_device({arch!r})
 {setup}
 import kernels
 result = kernels.run()
@@ -166,7 +166,7 @@ def test_a_refused_native_binary_falls_back_to_spirv(tmp_path):
     the driver refuses -- another stepping, another IGC -- loads from the
     SPIR-V: a hit still, not a compile from source."""
     try:
-        tack.init(arch=tack.level_zero)
+        tack.set_default_device("level_zero")
     except (ImportError, RuntimeError, OSError, AttributeError) as e:
         pytest.skip(f"no Level Zero backend: {e}")
     _cache_dir(tmp_path)

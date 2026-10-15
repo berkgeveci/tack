@@ -25,7 +25,7 @@ def heat_step(old, new, r, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n, steps, r = (32, 40, 0.2) if check else (96, 600, 0.2)
     yy, xx = np.mgrid[:n, :n]
     initial = (np.exp(-((xx - n / 3) ** 2 + (yy - n / 3) ** 2) / (n / 12) ** 2)

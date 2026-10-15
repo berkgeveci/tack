@@ -105,8 +105,8 @@ def run_kernel(name, tack_fn, tack_setup, np_fn, np_setup):
     """Benchmark one kernel across CPU, CUDA, NumPy. Returns (cpu, cuda, numpy) M/s."""
     results = {}
 
-    for label, arch in [("cpu", tack.cpu), ("cuda", tack.cuda)]:
-        tack.init(arch=arch)
+    for label, arch in [("cpu", "cpu"), ("cuda", "cuda")]:
+        tack.set_default_device(arch)
         fields = tack_setup()
         tack_fn(*fields)  # warmup / compile
         med = bench(lambda: tack_fn(*fields))

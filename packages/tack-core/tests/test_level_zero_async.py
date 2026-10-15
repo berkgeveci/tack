@@ -14,7 +14,7 @@ import pytest
 import tack
 
 try:
-    tack.init(arch=tack.level_zero)
+    tack.set_default_device("level_zero")
 except (ImportError, RuntimeError, OSError, AttributeError) as e:
     pytest.skip(f"Level Zero not available: {e}", allow_module_level=True)
 
@@ -24,7 +24,7 @@ from tack.runtime.dispatch import get_backend
 
 @pytest.fixture(autouse=True)
 def _on_level_zero():
-    tack.init(arch=tack.level_zero)
+    tack.set_default_device("level_zero")
 
 
 def _nothing_queued():

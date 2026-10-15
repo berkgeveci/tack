@@ -31,7 +31,7 @@ TIMEOUT = 10
 
 @pytest.fixture(autouse=True)
 def cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 @tack.kernel
@@ -399,39 +399,30 @@ def test_a_failed_transform_still_cleans_up(monkeypatch):
         _use_template._make_cache_key(None, {0: ('s', s)}))
 
 
-# ── Switching backends under a live array ────────────────────────────
+# ── Switching the default device under a live array ──────────────
 
-def test_a_backend_switch_under_a_live_array_says_so():
-    """`tack.init()` rebinds a module global; arrays do not follow it.
-
-    The raw failure is `'NumpyBuffer' object has no attribute
-    'metal_buffer'`, which names neither the cause nor the fix. Any second
-    backend will do — the point is the diagnosis, not which one.
-    """
+def test_arrays_made_before_a_switch_run_on_their_device():
+    """Changing the default device leaves arrays where they are: a kernel
+    given CPU arrays runs on the CPU, whatever the default is now. Any
+    second device will do."""
     second = None
-    for arch in ("metal", "cuda", "hip", "level_zero"):
+    for kind in ("metal", "cuda", "hip", "level_zero"):
         try:
-            tack.init(arch=getattr(tack, arch))
-            second = arch
+            tack.set_default_device(kind)
+            second = kind
             break
         except (ImportError, RuntimeError, OSError):
             continue
     if second is None:
-        pytest.skip("only one backend on this machine")
+        pytest.skip("only one device type on this machine")
 
     try:
-        tack.init(arch=tack.cpu)
-        x = tack.empty((8,))
+        tack.set_default_device("cpu")
+        x = tack.array(np.arange(8, dtype=np.float32))
         out = tack.empty((8,))
-        tack.copyto(x, np.arange(8, dtype=np.float32))
-
-        tack.init(arch=getattr(tack, second))
-        with pytest.raises(RuntimeError) as excinfo:
-            _scale(x, out, 8)
-
-        message = str(excinfo.value)
-        assert "another backend" in message
-        assert "cpu" in message, "the message must name where the array came from"
-        assert "Re-allocate" in message, "and what to do about it"
+        tack.set_default_device(second)
+        _scale(x, out, 8)
+        assert out.device == tack.device("cpu")
+        np.testing.assert_allclose(out.numpy(), np.arange(8) * 2.0)
     finally:
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")

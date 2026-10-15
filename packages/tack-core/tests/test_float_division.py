@@ -224,7 +224,7 @@ def test_destination_f64_does_not_widen_f32_operations(f64_backend):
 
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
 def test_annotations_keep_floating_result_types(dtype):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, b = _array([7.5], dtype), _array([3.0], dtype)
     out = tack.empty((1, 4), dtype)
     function, _ = _prepare_ir(_divmod, (a, b, out))
@@ -246,7 +246,7 @@ def test_annotations_keep_floating_result_types(dtype):
 def test_generators_keep_floating_result_types_and_compile_opencl(dtype, generate, tmp_path):
     if dtype is tack.f64 and generate is generate_msl_source:
         pytest.skip('MSL has no f64')
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, b = _array([7.5], dtype), _array([3.0], dtype)
     out = tack.empty((1, 4), dtype)
     function, _ = _prepare_ir(_divmod, (a, b, out))
@@ -268,7 +268,7 @@ def test_generators_keep_floating_result_types_and_compile_opencl(dtype, generat
                          ids=['cuda-host', 'hip-host'])
 def test_generated_cpp_executes_boundaries_and_exceptional_inputs(dtype, generate, tmp_path):
     clang = require_clang('ubsan')
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     pairs = np.concatenate([_finite_pairs(dtype), _exceptional_pairs(dtype)])
     a, b = (_array(pairs[:, i], dtype) for i in range(2))
     out = tack.empty((len(pairs), 4), dtype)

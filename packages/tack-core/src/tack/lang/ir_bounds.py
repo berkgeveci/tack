@@ -1,6 +1,6 @@
 """Debug mode's bounds checks: the parts shared by lowering, the passes and dispatch.
 
-With ``tack.init(debug=True)`` (or ``TACK_DEBUG=1``) every index of an array
+With ``tack.set_debug(True)`` (or ``TACK_DEBUG=1``) every index of an array
 or array access is checked against its extent, one dimension at a time.
 Lowering wraps each access's flat index in an ``IRBoundsCheck``, which is -1
 when an index is out of bounds and records the first violation in a hidden

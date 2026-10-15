@@ -19,7 +19,7 @@ iteration space:
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 x = tack.array(np.arange(8, dtype=np.float32))
 y = tack.array(np.ones(8, dtype=np.float32))
 out = tack.empty((8,))

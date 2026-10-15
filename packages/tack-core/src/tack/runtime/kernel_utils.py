@@ -577,7 +577,11 @@ def _fast_resolve(backend, kernel, args, specialize_disjoint):
     # arrays and which of those the kernel writes: fixed by the signature,
     # so no type test per call.
     plan, variants, array_slots = hit
-    effective_args = _expand_with_plan(args, plan) if plan else args
+    if plan:
+        effective_args = _expand_with_plan(args, plan)
+        dispatch.check_devices(kernel.name, backend, effective_args)
+    else:
+        effective_args = args
     disjoint = specialize_disjoint and _disjoint_by_slots(effective_args, array_slots)
     variant = variants.get(disjoint)
     if variant is None:
@@ -603,6 +607,10 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
 
     template_args = _detect_template_args(kernel, args)
     effective_args = _expand_template_args(args, template_args)
+    if template_args:
+        # Plain arrays chose the backend (dispatch.launch_backend); a device
+        # class's arrays must agree.
+        dispatch.check_devices(kernel.name, backend, effective_args)
     vector_arrays = _detect_vector_arrays_from_args(kernel, args, template_args)
     texture_arrays = _detect_texture_arrays(kernel, args, template_args)
 
@@ -1338,7 +1346,7 @@ def _create_pack_arrays(pack_info, args, backend):
         for _, orig_arg_idx, idx_in_pack in entries:
             arr[idx_in_pack] = args[orig_arg_idx]
         buf = backend.allocate_array(dtype, (len(entries),))
-        f = Array(dtype, (len(entries),), buf)
+        f = Array(dtype, (len(entries),), buf, device=backend)
         f._buffer.from_numpy(arr)
         arrays.append(f)
     return arrays

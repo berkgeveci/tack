@@ -22,7 +22,7 @@ def sample(xyz, scalar, velocity):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     # --8<-- [start:build]
     data = td.uniform_grid((9, 5, 5), origin=(-1, -1, -1), spacing=(0.25, 0.5, 0.5))
     x = tack.empty((data.num_points,))

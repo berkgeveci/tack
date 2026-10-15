@@ -63,7 +63,7 @@ builds its supported set from the answer. Ask the backend rather than assuming:
 
 ```python
 from tack.runtime.dispatch import get_backend
-tack.init(arch=tack.level_zero)
+tack.set_default_device("level_zero")
 print(get_backend().supports_f64)
 ```
 

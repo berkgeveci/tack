@@ -34,7 +34,7 @@ def build():
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     data = build()
     # --8<-- [start:spaces]
     cell_temperature = td.to_cells(data, "temperature")

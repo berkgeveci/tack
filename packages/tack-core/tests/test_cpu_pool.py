@@ -28,7 +28,7 @@ pytestmark = pytest.mark.skipif(platform.system() == "Windows",
 def _on_the_cpu():
     """The arrays these tests make must be CPU arrays whatever backend the
     session last initialized."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 @tack.kernel
@@ -247,7 +247,7 @@ else:
 gc.collect()
 assert len(calls) == 2, calls
 assert threads() == before, (before, threads())
-tack.init(arch=tack.cpu, num_threads=4)
+tack.set_default_device("cpu", num_threads=4)
 backend = get_backend()
 assert backend._jit_pool() is None and backend.pool_kind == "python"
 n = 300_000
@@ -294,7 +294,7 @@ def test_the_pool_builds_in_a_fresh_process():
     program = (
         "import tack\n"
         "from tack.runtime.dispatch import get_backend\n"
-        "tack.init(arch=tack.cpu, num_threads=2)\n"
+        "tack.set_default_device('cpu', num_threads=2)\n"
         "pool = get_backend()._jit_pool()\n"
         "print('jit' if pool is not None else 'python')\n"
     )
@@ -343,7 +343,7 @@ def test_a_pool_that_cannot_be_made_falls_back(monkeypatch):
 def test_a_kernel_through_init_and_call(monkeypatch):
     """The ordinary path: tack.init, a kernel call big enough to thread."""
     monkeypatch.delenv("TACK_CPU_POOL", raising=False)
-    tack.init(arch=tack.cpu, num_threads=4)
+    tack.set_default_device("cpu", num_threads=4)
     n = 2_000_000
     out = tack.zeros((n,), tack.i64)
     for _ in range(3):

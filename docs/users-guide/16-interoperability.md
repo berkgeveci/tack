@@ -11,7 +11,7 @@ permission to write.
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 host = np.arange(12, dtype=np.float32).reshape(3, 4)
 data = tack.array(host)
 host[:] = -1                              # does not change the Tack array

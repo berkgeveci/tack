@@ -204,7 +204,7 @@ jobs:
           found = []
           for arch in ("cpu", "metal", "cuda", "hip", "level_zero"):
               try:
-                  tack.init(arch=getattr(tack, arch))
+                  tack.set_default_device(arch)
               except Exception:
                   continue
               found.append(arch)
@@ -369,7 +369,7 @@ jobs:
           found = []
           for arch in ("cpu", "metal"):
               try:
-                  tack.init(arch=getattr(tack, arch))
+                  tack.set_default_device(arch)
               except Exception as e:
                   print(f"{arch}: unavailable ({type(e).__name__})")
                   continue
@@ -385,7 +385,7 @@ jobs:
           import tack
           from tack.runtime.dispatch import get_backend
           os.environ.pop("TACK_NO_REINIT", None)
-          tack.init(arch=tack.metal)
+          tack.set_default_device("metal")
           assert get_backend().name == "metal"
           print("Required hardware backend: metal", flush=True)
           raise SystemExit(pytest.main(["-q", "-rs"]))

@@ -39,8 +39,11 @@ class Backend:
 
     # ── Identity ─────────────────────────────────────────────────────
 
-    #: Arch identifier, matching `tack.init(arch=...)`.
+    #: Device type, as a device spec writes it (`tack.device("cuda")`).
     name: str = "unknown"
+
+    #: Which of the type's devices this backend drives. Only 0, for now.
+    ordinal: int = 0
 
     #: How the backend is written in messages meant for people. Defaults to
     #: `name`; backends whose arch id is not how you would spell it in prose
@@ -62,10 +65,10 @@ class Backend:
     #: supported atomic types/scopes, or safe partial-workgroup execution.
     supports_workgroups: bool = False
 
-    #: Keyword options `tack.init()` forwards to this backend's constructor.
+    #: Keyword options `tack.device()` forwards to this backend's constructor.
     #: Anything else is rejected there, so a misspelt or misdirected option
     #: cannot be silently dropped.
-    init_options: frozenset[str] = frozenset()
+    device_options: frozenset[str] = frozenset()
 
     #: Memory-space names (as returned by `memory_space()`) that a pointer
     #: must be in for `array_from_ptr()` to wrap it. Empty means this
@@ -92,6 +95,13 @@ class Backend:
         Derived, so it cannot disagree with `supported_dtypes`.
         """
         return f64 in self.supported_dtypes
+
+    @property
+    def memory_domain(self) -> tuple:
+        """What an array's memory is valid in: two backends with one domain can use
+        each other's arrays (two CPU backends with different thread counts,
+        say). Level Zero adds its context, since its pointers belong to one."""
+        return (self.name, self.ordinal)
 
     @property
     def label(self) -> str:

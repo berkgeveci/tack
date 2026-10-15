@@ -194,7 +194,7 @@ def test_parallel_pixel_coordinates_are_exact(backend, width):
                                      generate_msl_source, generate_opencl_source])
 @pytest.mark.parametrize('dtype', [tack.i32, tack.i64, tack.u32, tack.u64], ids=lambda t: t.name)
 def test_all_gpu_generators_emit_integer_division(generate, dtype):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, b, q, r = [_array([3], dtype) for _ in range(4)]
     func = copy.deepcopy(_divmod.get_ir().functions[0])
     resolve_ir(func, {'a': a, 'b': b, 'quotients': q, 'remainders': r})

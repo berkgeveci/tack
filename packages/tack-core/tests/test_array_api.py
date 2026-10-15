@@ -224,7 +224,7 @@ def test_vtk_layout_understands_element_types(backend, monkeypatch):
     # scalar tensor of (tuples, components), sharing the original buffer.
     bridge = SimpleNamespace(dlpack_to_vtk=lambda shaped, name: shaped)
     monkeypatch.setattr(vtk, '_dlpack_support', lambda: bridge)
-    monkeypatch.setattr(vtk, '_require_shared_level_zero_context', lambda support: None)
+    monkeypatch.setattr(vtk, '_require_shared_level_zero_context', lambda *args: None)
     shaped = vtk.array_to_vtk(values)
     assert shaped.shape == (4, 4) and shaped.dtype is tack.f32
     assert shaped._buffer is values._buffer

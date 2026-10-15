@@ -128,7 +128,7 @@ def test_texture_passed_as_template_parameter(backend):
 
 
 def test_f64_array_is_rejected():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((N,), tack.f64)
     with pytest.raises(ValueError, match='f32'):
         tack.texture3d(data, shape=(W, H, D))
@@ -136,12 +136,12 @@ def test_f64_array_is_rejected():
 
 @pytest.mark.parametrize('interp', ['nearest', 'cubic'])
 def test_only_linear_interpolation_is_accepted(interp):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     with pytest.raises(ValueError, match="'linear'"):
         tack.texture3d(_constant(1.0), shape=(W, H, D), interp=interp)
 
 
 def test_shape_must_cover_the_array():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     with pytest.raises(ValueError, match='64 elements'):
         tack.texture3d(_constant(1.0), shape=(W, H, D + 1))

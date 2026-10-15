@@ -17,6 +17,7 @@ Usage:
 """
 
 import tack
+from tack.runtime.dispatch import on_inputs_device
 
 _CHUNK = 256  # elements one thread scans in turn
 # A level of at most this many elements is scanned by one thread in one
@@ -202,6 +203,7 @@ def _scan(src, dst, n, inclusive, want_total=True):
     return total
 
 
+@on_inputs_device
 def exclusive_scan(input_array, output_array, n, total=True):
     """Compute exclusive prefix sum on the active backend.
 
@@ -233,6 +235,7 @@ def exclusive_scan(input_array, output_array, n, total=True):
     return _scan(input_array, output_array, n, inclusive=False, want_total=total)
 
 
+@on_inputs_device
 def inclusive_scan(input_array, output_array, n, total=True):
     """Compute inclusive prefix sum on the active backend.
 

@@ -153,7 +153,7 @@ def _start(vtk_threads, resident):
     smp.Initialize(vtk_threads)
     import tack
 
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
 
 
 def _host_output(pair, result):

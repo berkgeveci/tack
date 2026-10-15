@@ -153,7 +153,7 @@ def _long_literal(a, out):
 
 def _prepare(kernel, dtype):
     """Annotated IR for `kernel` on one-row arrays, without a device."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     shape = (1,) if kernel is _long_literal else (1, _COLUMNS)
     function, _ = _prepare_ir(kernel, (_array([1.0], dtype), tack.empty(shape, dtype)))
     return function
@@ -333,7 +333,7 @@ def test_f32_kernels_are_unchanged(backend):
 
 def test_which_locals_are_replaced():
     from tack.lang.ir_optimize import _literal
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     text = tack.inspect(_weak_locals, _array([1.0], tack.f64), tack.empty((1, 9), tack.f64),
                         tack.empty((1,)), 1, mode="ir")
     assigned = {line.split("=")[0].strip() for line in text.splitlines() if " = " in line

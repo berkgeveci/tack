@@ -1,6 +1,6 @@
 """Debug mode: every array and array index is checked, one dimension at a time.
 
-With ``tack.init(debug=True)`` an out-of-bounds access is skipped (a load
+With ``tack.set_debug(True)`` an out-of-bounds access is skipped (a load
 gives 0) and the launch raises ``IndexError`` naming the first one: kernel
 or device function, file and line, source text, index and extent. In-bounds
 kernels give the results they give without debug mode, and debug mode off
@@ -13,17 +13,25 @@ import numpy as np
 import pytest
 
 import tack
+from tack.runtime.dispatch import env_flag
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 _FILE = __file__
 
 
+@pytest.fixture(autouse=True)
+def _restore_debug_mode():
+    """Debug mode is a process-wide switch: leave it as TACK_DEBUG set it."""
+    yield
+    tack.set_debug(env_flag("TACK_DEBUG"))
+
+
 @pytest.fixture
 def debug(backend):
-    tack.init(arch=backend, debug=True)
-    yield backend
-    tack.init(arch=backend)
+    tack.set_debug(True)
+    tack.set_default_device(backend)
+    return backend
 
 
 def _line(text):
@@ -270,14 +278,15 @@ def test_a_kernel_returning_a_value_raises_for_its_loop(debug):
 
 
 def test_without_debug_mode_nothing_is_checked(backend):
-    tack.init(arch=backend, debug=False)
+    tack.set_debug(False)
+    tack.set_default_device(backend)
     a = _array(np.arange(16).reshape(4, 4))
     b = _array(np.zeros((4, 4)))
     _right(a, b)        # reads the next row's first element, silently
     assert b.numpy()[0, 3] == 4
     if backend == 'cpu':
         assert '__tack_in_bounds__' not in tack.inspect(_right, a, b, mode='source')
-    tack.init(arch=backend)
+    tack.set_default_device(backend)
 
 
 def test_switching_modes_reuses_no_variant_of_the_other(backend):
@@ -287,21 +296,24 @@ def test_switching_modes_reuses_no_variant_of_the_other(backend):
     others check nothing."""
     x, y = _array(np.arange(8)), _array(np.zeros(8))
     try:
-        tack.init(arch=backend, debug=False)
+        tack.set_debug(False)
+        tack.set_default_device(backend)
         for _ in range(2):
             _shift(x, y, 0)
-        tack.init(arch=backend, debug=True)
+        tack.set_debug(True)
+        tack.set_default_device(backend)
         with pytest.raises(IndexError):
             _shift(x, y, 2)
         for _ in range(2):
             _shift(x, y, 0)
         np.testing.assert_array_equal(y.numpy(), np.arange(8))
-        tack.init(arch=backend, debug=False)
+        tack.set_debug(False)
+        tack.set_default_device(backend)
         for _ in range(2):
             _shift(x, y, 0)
         np.testing.assert_array_equal(y.numpy(), np.arange(8))
     finally:
-        tack.init(arch=backend)
+        tack.set_default_device(backend)
 
 
 def test_inspect_shows_the_checks(debug):
@@ -317,16 +329,30 @@ def test_inspect_shows_the_checks(debug):
     assert 'Bounds[0](i < Extent(a, leading), (j + 1) < DimSize(a, 1); ' in dump(lowered)
 
 
-def test_debug_mode_from_the_environment(backend, monkeypatch):
-    monkeypatch.setenv("TACK_DEBUG", "1")
-    tack.init(arch=backend)
-    try:
-        with pytest.raises(IndexError):
-            _shift(_array(np.arange(4)), _array(np.zeros(4)), 1)
-    finally:
-        monkeypatch.delenv("TACK_DEBUG")
-        tack.init(arch=backend)
-    _shift(_array(np.arange(4)), _array(np.zeros(4)), 1)
+def test_debug_mode_from_the_environment(backend, tmp_path):
+    """TACK_DEBUG=1 turns debug mode on when Tack is imported."""
+    import os
+    import subprocess
+    import sys
+    script = tmp_path / "debug_env.py"
+    script.write_text(
+        "import numpy as np\n"
+        "import tack\n"
+        f"tack.set_default_device({backend!r})\n"
+        "@tack.kernel\n"
+        "def shift(x, y, k):\n"
+        "    for i in range(x.shape[0]):\n"
+        "        y[i] = x[i + k]\n"
+        "x = tack.array(np.arange(4, dtype=np.float32))\n"
+        "try:\n"
+        "    shift(x, tack.zeros((4,)), 1)\n"
+        "except IndexError:\n"
+        "    print('checked')\n")
+    env = {**os.environ, "TACK_DEBUG": "1", "TACK_CACHE": "off"}
+    proc = subprocess.run([sys.executable, str(script)], capture_output=True, text=True,
+                          env=env, timeout=300)
+    assert proc.returncode == 0, proc.stderr[-2000:]
+    assert "checked" in proc.stdout
 
 
 def test_a_wrong_argument_count_names_the_kernels_own_parameters(debug):

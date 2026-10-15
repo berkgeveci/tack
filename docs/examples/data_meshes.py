@@ -11,7 +11,7 @@ import tack.dataset as td
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     # --8<-- [start:uniform]
     point_dims = (3, 2, 2)
     uniform_topology = td.StructuredTopology(point_dims)

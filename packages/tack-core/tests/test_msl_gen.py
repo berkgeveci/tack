@@ -7,7 +7,7 @@ from tack.lang.type_inference import infer_param_types
 
 def _get_ir(kernel_fn, *args):
     """Helper: define a kernel, create dummy arrays/scalars, run type inference, return IR."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     ir_func = kernel_fn.get_ir().functions[0]
     infer_param_types(ir_func, tuple(args))
     return ir_func

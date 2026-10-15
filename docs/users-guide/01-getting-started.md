@@ -54,7 +54,7 @@ decorated function's source, so a `.py` file is the starting point for this guid
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 
 # Create arrays from numpy arrays
 n = 1024

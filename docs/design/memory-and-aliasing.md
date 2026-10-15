@@ -244,9 +244,9 @@ pointers faults inside the driver — a segmentation fault, not a `CUresult`
 Tack could check. The usual way to get there is switching backends:
 
 ```python
-tack.init(arch=tack.cuda)
+tack.set_default_device("cuda")
 f = tack.empty((64,))
-tack.init(arch=tack.cpu)   # the CUDA backend, and its context, are dropped
+tack.set_default_device("cpu")   # the CUDA backend, and its context, are dropped
 f.numpy()                  # must not touch the dead pointer
 ```
 

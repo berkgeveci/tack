@@ -15,7 +15,7 @@ import tack
 parser = argparse.ArgumentParser()
 parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
 args = parser.parse_args()
-tack.init(arch=args.arch)
+tack.set_default_device(args.arch)
 
 # A simple kernel to inspect
 @tack.kernel

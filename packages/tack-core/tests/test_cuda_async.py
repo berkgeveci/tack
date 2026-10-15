@@ -12,7 +12,7 @@ import pytest
 import tack
 
 try:
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
 except RuntimeError as e:
     pytest.skip(f"CUDA not available: {e}", allow_module_level=True)
 
@@ -22,7 +22,7 @@ from tack.runtime.dispatch import get_backend
 
 @pytest.fixture(autouse=True)
 def _on_cuda():
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
 
 
 @tack.kernel

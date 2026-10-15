@@ -220,7 +220,7 @@ def test_operands_execute_once_in_order(backend):
 
 def test_opencl_inlined_effects_preserve_array_address_space(tmp_path):
     clang = require_clang()
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     state = _array([0], tack.i32)
     powers, quotients = tack.empty((1, 2), tack.i32), tack.empty((1,))
     func, _ = _prepare_ir(_effects, (state, powers, quotients))
@@ -272,7 +272,7 @@ def _negative_builtin(a, out):
 
 @pytest.mark.parametrize('kernel', [_negative_literal, _negative_builtin])
 def test_negative_integer_literal_exponent_is_rejected(kernel):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, out = _array([2], tack.i32), tack.empty((1,), tack.i32)
     with pytest.raises(TypeError, match='nonnegative exponent.*cast the base'):
         tack.inspect(kernel, a, out)
@@ -281,7 +281,7 @@ def test_negative_integer_literal_exponent_is_rejected(kernel):
 @pytest.mark.parametrize('generate', GENERATORS)
 @pytest.mark.parametrize('dtype', TYPES, ids=lambda t: t.name)
 def test_all_generators_use_integer_power_helpers(generate, dtype):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, e = _array([2], dtype), _array([2**63], tack.u64)
     out = tack.empty((1, 7), dtype)
     func, _ = _prepare_ir(_power, (a, e, out))
@@ -301,7 +301,7 @@ def test_all_generators_use_integer_power_helpers(generate, dtype):
 def test_float_power_generators_use_promoted_precision(generate, dtype):
     if generate is generate_msl_source and dtype is tack.f64:
         pytest.skip('Metal does not support f64')
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, e = _array([2], tack.i32), _array([1.5], dtype)
     out = tack.empty((1, 2), dtype)
     func, _ = _prepare_ir(_floating_power, (a, e, out))
@@ -316,7 +316,7 @@ def test_float_power_generators_use_promoted_precision(generate, dtype):
 @pytest.mark.parametrize('base_type,exponent_type', itertools.product(TYPES, repeat=2),
                          ids=lambda t: t.name)
 def test_power_annotation_preserves_base_type(base_type, exponent_type):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, e = _array([2], base_type), _array([3], exponent_type)
     out = tack.empty((1, 7), base_type)
     func, _ = _prepare_ir(_power, (a, e, out))
@@ -328,7 +328,7 @@ def test_power_annotation_preserves_base_type(base_type, exponent_type):
 
 
 def test_integer_division_annotation_does_not_depend_on_output_type():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, b = _array([7], tack.i64), _array([2], tack.u64)
     for output_type in (tack.f32, tack.f64):
         out = tack.empty((1, 3), output_type)

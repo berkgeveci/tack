@@ -47,7 +47,7 @@ def test_gpu_backend_does_not_import_cpu_backend(module):
 def _first_gpu_backend():
     for arch in ["metal", "cuda", "hip", "level_zero"]:
         try:
-            tack.init(arch=getattr(tack, arch))
+            tack.set_default_device(arch)
             return arch
         except (ImportError, RuntimeError, OSError):
             continue
@@ -66,7 +66,7 @@ def test_gpu_dispatch_works_without_llvmlite():
 
         import numpy as np
         import tack
-        tack.init(arch=tack.{_GPU})
+        tack.set_default_device("{_GPU}")
 
         n = 64
         x = tack.empty((n,), tack.f32)

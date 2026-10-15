@@ -12,7 +12,7 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 def cuda_backend():
     """Initialize CUDA backend for all tests in this module."""
     try:
-        tack.init(arch=tack.cuda)
+        tack.set_default_device("cuda")
     except (ImportError, RuntimeError) as e:
         pytest.skip(f"CUDA not available: {e}")
 
@@ -247,10 +247,11 @@ def test_export_memory():
 # --- Context ownership across re-initialization ---
 
 def test_repeated_init_keeps_context_usable():
-    """``tack.init(arch=tack.cuda)`` twice in a row must not kill the context.
+    """``tack.set_default_device("cuda")`` twice in a row must not kill the context.
 
-    ``init()`` builds the new backend before dropping the old one, so for a
-    moment two CUDABackend objects hold the same context. The adopting one
+    Devices are made once now, but a device made with options, or a second
+    backend, can still overlap another: for a moment two CUDABackend objects
+    hold the same context. The adopting one
     used to record ``_owns_context = False`` -- correct for a context owned
     by an embedding application, wrong for one Tack created -- and the
     outgoing backend's ``__del__`` then destroyed the context out from under
@@ -261,7 +262,7 @@ def test_repeated_init_keeps_context_usable():
     """
     import gc
 
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
     gc.collect()  # force the outgoing backend's __del__ to run now
 
     n = 64
@@ -284,7 +285,7 @@ def test_many_repeated_inits_do_not_leak_contexts():
     from tack.runtime.cuda_backend import _CONTEXTS, CUDABackend
 
     for _ in range(5):
-        tack.init(arch=tack.cuda)
+        tack.set_default_device("cuda")
     gc.collect()
 
     live = sum(1 for o in gc.get_objects() if isinstance(o, CUDABackend))
@@ -298,7 +299,7 @@ def test_many_repeated_inits_do_not_leak_contexts():
 
 def test_kernel_runs_after_reinit():
     """A dispatch after re-initialization compiles and runs against a live context."""
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
 
     n = 128
     x = tack.empty((n,))
@@ -330,7 +331,7 @@ def test_foreign_context_is_adopted_but_never_destroyed():
     from tack.runtime.cuda_backend import _CONTEXTS
 
     # Drop Tack's own context first, so the one we create is the current one.
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     gc.collect()
 
     driver.cuInit(0)
@@ -340,7 +341,7 @@ def test_foreign_context_is_adopted_but_never_destroyed():
     assert err == driver.CUresult.CUDA_SUCCESS
 
     try:
-        tack.init(arch=tack.cuda)
+        tack.set_default_device("cuda")
         backend = dispatch.get_backend()
 
         assert int(backend._context) == int(foreign)
@@ -351,7 +352,7 @@ def test_foreign_context_is_adopted_but_never_destroyed():
 
         # Tear every Tack backend down; the foreign context must survive.
         del backend
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
         gc.collect()
 
         err, ptr = driver.cuMemAlloc(256)
@@ -361,42 +362,42 @@ def test_foreign_context_is_adopted_but_never_destroyed():
         driver.cuCtxDestroy(foreign)
 
 
-# --- Arrays do not outlive their context ---
+# A device is a value that lives as long as the process (or as long as
+# something holds it), and every array holds its device. So nothing a
+# program can do through the API destroys a CUDA context under a live
+# array: releasing Tack's own reference to the device, as below, still
+# leaves the array's. The stale-pointer token (`_ContextToken`) remains for
+# contexts an embedding application destroys behind Tack's back.
 
-# These run in a subprocess for two reasons. The scenario used to be a
-# SIGSEGV, and a segfault in-process takes the whole test session with it --
-# there would be no failure report, just a dead runner. And the root
-# conftest holds a CUDABackend in a module global for the life of the
-# session, so the CUDA context never actually reaches zero users here and an
-# in-process test could not build a stale array even if it were safe to.
-
-_STALE_PRELUDE = """
+_RELEASED_PRELUDE = """
 import gc, sys
 import numpy as np
 import tack
+from tack.runtime import dispatch
 
 @tack.kernel
 def double(x, out):
     for i in range(x.shape[0]):
         out[i] = x[i] * 2.0
 
-tack.init(arch=tack.cuda)
+tack.set_default_device("cuda")
 f = tack.empty((64,), tack.f32)
 tack.copyto(f, np.arange(64, dtype=np.float32))
-double(f, f)                 # compile a variant while the context is alive
-tack.init(arch=tack.cpu)     # destroys the CUDA context
-gc.collect()
-tack.init(arch=tack.cuda)    # fresh context; the old pointers stay dead
+double(f, f)                    # compile a variant while the context is alive
+tack.set_default_device("cpu")
+dispatch._devices.pop(("cuda", 0))     # Tack forgets the device...
+gc.collect()                           # ...but the array still holds it
+tack.set_default_device("cuda")        # a new device, with its own context
 """
 
 
-def _run_stale_script(tmp_path, body):
-    """Run a stale-array access in a subprocess; return the CompletedProcess."""
+def _run_released_script(tmp_path, body):
+    """Run an access after the release above in a subprocess."""
     import subprocess
     import sys
 
-    script = tmp_path / "stale.py"
-    script.write_text(_STALE_PRELUDE + body)
+    script = tmp_path / "released.py"
+    script.write_text(_RELEASED_PRELUDE + body)
     return subprocess.run([sys.executable, "-u", str(script)],
                           capture_output=True, text=True, timeout=300)
 
@@ -408,44 +409,30 @@ def _assert_no_crash(proc):
 
 
 @pytest.mark.parametrize("verb,action", [
-    ("read", "f.numpy()"),
+    ("read", "assert f.numpy()[3] == 6.0"),
     ("write", "tack.copyto(f, np.ones(64, dtype=np.float32))"),
     ("fill", "f.fill(1.0)"),
     ("export", "f.export_memory()"),
     ("launch", "double(f, f)"),
 ])
-def test_stale_array_raises_instead_of_segfaulting(tmp_path, verb, action):
-    """Touching an array whose context is gone must raise, not crash.
-
-    cuCtxDestroy invalidates every allocation made in the context, and a copy
-    through one of those pointers faults inside the driver -- SIGSEGV, with no
-    CUresult to check and no traceback to print. The buffer cannot learn this
-    from its own pointer, so it holds a token that the context marks dead on
-    the way out.
-    """
+def test_an_array_keeps_its_device_and_context_alive(tmp_path, verb, action):
+    """An array whose device Tack has let go of still works: it holds the
+    device, so its context and its pointers stay valid. A launch runs on
+    the array's device, not the new default's."""
     body = f"""
-try:
-    {action}
-except RuntimeError as e:
-    assert "context" in str(e), e
-    print("RAISED")
-    sys.exit(0)
-print("NO ERROR")
-sys.exit(1)
+{action}
+print("OK")
 """
-    proc = _run_stale_script(tmp_path, body)
+    proc = _run_released_script(tmp_path, body)
     _assert_no_crash(proc)
-    assert "RAISED" in proc.stdout, (
-        f"{verb} did not raise (rc={proc.returncode})\n"
+    assert proc.returncode == 0 and "OK" in proc.stdout, (
+        f"{verb} failed (rc={proc.returncode})\n"
         f"stdout: {proc.stdout}\nstderr: {proc.stderr[-2000:]}")
 
 
-def test_stale_array_can_be_collected_without_crashing(tmp_path):
-    """Freeing a dead allocation is the same fault as copying into one.
-
-    The context took the allocation with it, so ``__del__`` has to skip
-    cuMemFree rather than call it into a context that no longer exists.
-    """
+def test_a_released_array_can_be_collected_without_crashing(tmp_path):
+    """Dropping the last array of a released device frees it, and its context,
+    cleanly; the new device goes on working."""
     body = """
 del f
 gc.collect()
@@ -454,7 +441,7 @@ tack.copyto(g, np.ones(16, dtype=np.float32))
 assert g.numpy()[0] == 1.0
 print("OK")
 """
-    proc = _run_stale_script(tmp_path, body)
+    proc = _run_released_script(tmp_path, body)
     _assert_no_crash(proc)
     assert proc.returncode == 0, f"stderr: {proc.stderr[-2000:]}"
     assert "OK" in proc.stdout
@@ -468,7 +455,7 @@ def test_array_survives_repeated_init():
     f = tack.empty((n,))
     tack.copyto(f, np.arange(n, dtype=np.float32))
 
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
     gc.collect()
 
     assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))

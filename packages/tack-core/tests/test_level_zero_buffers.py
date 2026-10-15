@@ -10,7 +10,7 @@ import tack
 def level_zero_backend():
     """Initialize the Level Zero backend for all tests in this module."""
     try:
-        tack.init(arch=tack.level_zero)
+        tack.set_default_device("level_zero")
     except (ImportError, RuntimeError) as e:
         pytest.skip(f"Level Zero not available: {e}")
 

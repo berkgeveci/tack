@@ -36,7 +36,7 @@ ALL_DTYPES = [
 @pytest.fixture(autouse=True)
 def cpu():
     """DLPack export needs host-addressable memory."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 def _array(values, dtype):
@@ -404,7 +404,7 @@ def test_unsupported_dtype_is_rejected_clearly():
 
 def _metal_or_skip():
     try:
-        tack.init(arch=tack.metal)
+        tack.set_default_device("metal")
     except (ImportError, RuntimeError, OSError) as e:
         pytest.skip(f"no Metal backend: {e}")
 
@@ -413,7 +413,7 @@ def _metal_or_skip():
 def metal():
     _metal_or_skip()
     yield
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 def test_a_metal_export_points_into_the_mtlbuffer(metal):
@@ -558,7 +558,7 @@ def test_the_capsule_destructor_outlives_the_module_globals(versioned):
     script = textwrap.dedent(f"""
         import ctypes, gc
         import tack
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
         from tack.lang import dlpack
         capsule = dlpack.array_to_dlpack(tack.empty((4,), tack.f32),
                                          versioned={versioned})

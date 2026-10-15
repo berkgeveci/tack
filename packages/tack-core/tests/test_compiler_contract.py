@@ -8,6 +8,7 @@ import numpy as np
 import pytest
 
 import tack
+from tack.runtime.kernel_utils import drop_variants
 
 
 def _int_array(values):
@@ -93,7 +94,7 @@ def test_cached_kernel_handles_changing_alias_relationships(backend, dtype):
     """Bindings, including aliases, must refresh on every cached dispatch."""
     from tack.runtime.dispatch import get_backend
 
-    get_backend()._cache.pop(_ordered_writes, None)
+    drop_variants(_ordered_writes, lambda key: True)        # in every cache, the fast path's too
     for n, alias in ((7, False), (19, True), (7, False), (19, True)):
         a = tack.empty((n,), dtype)
         b = a.reshape((n,)) if alias else tack.empty((n,), dtype)
@@ -433,7 +434,7 @@ def test_outermost_continue_leaves_the_gpu_kernel(generator):
     generate = getattr(module, f"generate_{generator}_source")
 
     def source(kernel):
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
         ir_func = kernel.get_ir().functions[0]
         infer_param_types(ir_func, (tack.empty((8,), tack.i32),))
         return generate(ir_func)

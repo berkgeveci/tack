@@ -90,7 +90,7 @@ def grid_to_particle(x, v, C, J, grid_v, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n, steps = (128, 10) if check else (2048, 900)
     initial = (np.random.default_rng(0).random((n, 2)) * 0.3 + [0.35, 0.45]).astype(np.float32)
     x = tack.empty((n,), tack.vec2(tack.f32))

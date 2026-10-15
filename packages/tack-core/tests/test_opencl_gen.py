@@ -25,7 +25,7 @@ from tack.lang.type_inference import infer_param_types
 
 def _source(kernel_fn, *args):
     """Run the front end for `args` and generate OpenCL C."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     ir_func = kernel_fn.get_ir().functions[0]
     infer_param_types(ir_func, tuple(args))
     return generate_opencl_source(ir_func)
@@ -40,7 +40,7 @@ def _annotated_source(kernel_fn, *args):
     it, and a test written against it can assert on code no device receives.
     `_prepare_ir` is the real path, annotation included.
     """
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     function, _ = _prepare_ir(kernel_fn, args)
     return generate_opencl_source(function)
 

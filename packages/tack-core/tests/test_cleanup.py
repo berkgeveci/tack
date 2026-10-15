@@ -102,7 +102,7 @@ def kern(data, out):
 
     def test_shared_like_resolves_to_scalar_type(self):
         """shared_like resolves to the array's ScalarType, not a C string."""
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
         data = tack.empty((10,), tack.i32)
         out = tack.empty((10,), tack.i32)
 
@@ -130,7 +130,7 @@ def test_cuda_shared_alloc_types():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((10,))
     out = tack.empty((10,))
 
@@ -154,7 +154,7 @@ def test_msl_shared_alloc_types():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((10,))
     out = tack.empty((10,))
 
@@ -213,7 +213,7 @@ def test_local_array_u8_end_to_end(backend):
 def test_template_method_source_is_preserved():
     """Resolved methods must not mutate the class's captured device source."""
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.device_class
     class MyClass:
@@ -243,7 +243,7 @@ def test_template_method_source_is_preserved():
 def test_repeated_templates_preserve_method_source():
     """Instance-specific resolution must leave the reusable method intact."""
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.device_class
     class Counter:

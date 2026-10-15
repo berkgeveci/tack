@@ -34,7 +34,7 @@ def _python_pool(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     return get_backend()
 
 

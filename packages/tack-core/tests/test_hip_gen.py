@@ -9,7 +9,7 @@ from tack.runtime.kernel_utils import dispatch_name_to_array
 
 def _get_ir(kernel_fn, *array_shapes):
     """Helper: define a kernel, create dummy arrays, run type inference, return IR."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     arrays = []
     for shape in array_shapes:
         arrays.append(tack.empty(shape))
@@ -120,7 +120,7 @@ def _texture_ir():
     Texture3D is enough — the hardware-sampling path is selected exactly as
     it would be on a device that has texture units.
     """
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((64,))
     out = tack.empty((1,))
     tex = tack.texture3d(data, shape=(4, 4, 4))

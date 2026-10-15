@@ -215,7 +215,7 @@ It draws one initialized triangle into a `(height, width)` RGB array:
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 
 @tack.device_class
 class Rasterizer:

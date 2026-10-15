@@ -152,7 +152,7 @@ def _inputs(n=512):
 @pytest.mark.parametrize('kernel', _INVALID, ids=lambda k: k.name)
 @pytest.mark.parametrize('generate', _GENERATORS, ids=lambda f: f.__name__)
 def test_direct_generators_reject_unsafe_participation(kernel, generate):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data, out, _ = _inputs()
     prepared, _ = _prepare_ir(kernel, (data, out, 512))
     with pytest.raises(ValueError, match='requires uniform workgroup participation'):

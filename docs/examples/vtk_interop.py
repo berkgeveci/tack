@@ -27,7 +27,7 @@ def radius_squared(values, nx, ny):
 
 
 def run():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     # --8<-- [start:share]
     image = vtkImageData()
     image.SetDimensions(9, 7, 5)

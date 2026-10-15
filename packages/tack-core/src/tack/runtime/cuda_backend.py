@@ -119,8 +119,8 @@ class _ContextToken:
     and consult it before touching device memory.
 
     ``users`` counts the live CUDABackend objects sharing the context.
-    ``tack.init()`` builds the new backend before dropping the old one, so two
-    of them routinely overlap, and the context must survive until the last one
+    A device made with options is a second backend on the same context, so two
+    of them can overlap, and the context must survive until the last one
     goes. ``owned`` is False for a context an embedding application created:
     Tack adopts those but never destroys them, so their token never dies here.
     """
@@ -203,11 +203,10 @@ def _current_context_token():
 
 
 _DEAD_CONTEXT_MSG = (
-    "the CUDA context this array was allocated in has been destroyed. "
-    "Switching backends -- tack.init(arch=tack.cpu) after tack.init("
-    "arch=tack.cuda) -- tears down the CUDA context, and every device "
-    "pointer allocated in it dies with the context. Arrays do not survive "
-    "that; allocate them again after switching back."
+    "the CUDA context this array was allocated in has been destroyed, and "
+    "every device pointer allocated in it died with the context. Tack keeps "
+    "a context while any array of its device lives, so something outside "
+    "Tack destroyed it; allocate the array again."
 )
 
 
@@ -864,8 +863,8 @@ class CUDABackend(Backend):
         # no current context exists.
         #
         # Whether the context may be destroyed is a property of the context,
-        # not of the backend that happens to hold it: `tack.init(arch=...)`
-        # builds the new backend before dropping the old one, so two
+        # not of the backend that happens to hold it: a device made with options
+        # is a second backend on the context, so two
         # CUDABackend objects routinely share one context for a moment. When
         # that context is ours, both must agree that the *last* one out
         # destroys it -- an adopter that recorded `_owns_context = False`

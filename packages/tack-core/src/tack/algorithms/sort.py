@@ -53,6 +53,7 @@ whose ids are 64-bit asks for ``i64`` whatever its size.
 import tack
 from tack.algorithms.copy import copy
 from tack.algorithms.scan import exclusive_scan
+from tack.runtime.dispatch import on_inputs_device
 
 # Elements per chunk in the counting and scatter kernels. Larger chunks
 # mean fewer threads with longer serial loops and a shorter scan. The
@@ -427,6 +428,7 @@ def _count(n, *arrays):
     return n
 
 
+@on_inputs_device
 def _key_width(keys):
     mapped = _KEY_DTYPES.get(keys.dtype)
     if mapped is None:
@@ -440,6 +442,7 @@ def _read(array):
     return array.numpy()[0].item()
 
 
+@on_inputs_device
 def argsort(keys, n=None, index_dtype=None):
     """Stable permutation that sorts the first ``n`` keys ascending.
 
@@ -509,6 +512,7 @@ def argsort(keys, n=None, index_dtype=None):
     return perm
 
 
+@on_inputs_device
 def gather(src, indices, n=None):
     """New array ``out`` with ``out[i] = src[indices[i]]`` for ``i < n``.
 
@@ -522,6 +526,7 @@ def gather(src, indices, n=None):
     return out
 
 
+@on_inputs_device
 def sort_by_key(keys, values=None, n=None):
     """Sort the first ``n`` keys ascending, carrying ``values`` along.
 
@@ -538,6 +543,7 @@ def sort_by_key(keys, values=None, n=None):
     return sorted_keys, sorted_values
 
 
+@on_inputs_device
 def _run_offsets(sorted_keys, n, index_dtype=None):
     """Offsets of the runs of equal adjacent keys: an index array (see
     ``argsort``) of ``nruns + 1`` entries with ``offsets[nruns] == n``.
@@ -554,6 +560,7 @@ def _run_offsets(sorted_keys, n, index_dtype=None):
     return offsets, nruns
 
 
+@on_inputs_device
 def unique(sorted_keys, n=None):
     """The distinct keys of a sorted array and how often each occurs.
 
@@ -573,6 +580,7 @@ def unique(sorted_keys, n=None):
     return keys, counts
 
 
+@on_inputs_device
 def reduce_by_key(sorted_keys, values, n=None, op="sum"):
     """Reduce the values of each run of equal keys to one value.
 

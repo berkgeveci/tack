@@ -107,7 +107,7 @@ def test_codegen_escapes_reserved_name():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     out = tack.empty((4,))
 
     p = ir.IRParam("out")
@@ -145,7 +145,7 @@ def test_u32_to_f32_cast(backend):
 
 def test_u64_to_f64_cast():
     """u64 values should cast correctly to f64."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((3,), tack.u64)
     out = tack.empty((3,), tack.f64)
     tack.copyto(data, np.array([0, 2**32, 2**63], dtype=np.uint64))

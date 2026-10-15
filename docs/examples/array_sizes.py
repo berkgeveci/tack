@@ -28,7 +28,7 @@ def row_energy(data, out):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     # A changed row width resolves a different scratch capacity.
     for width in (4, 7):
         host = np.arange(3 * width, dtype=np.float32).reshape(3, width)

@@ -135,8 +135,8 @@ def inspect(kernel, *args, mode="source"):
         raise TypeError(f"Expected a @tack.kernel, got {type(kernel).__name__}")
 
     if mode == "ir":
-        from tack.runtime.dispatch import get_backend
-        ir_func, _ = _prepare_ir(kernel, args, backend=get_backend())
+        from tack.runtime.dispatch import launch_backend
+        ir_func, _ = _prepare_ir(kernel, args, backend=launch_backend(kernel.name, args))
         return ir.dump(ir_func)
 
     if mode == "source":
@@ -152,8 +152,8 @@ def inspect(kernel, *args, mode="source"):
 
 def _generate_source(kernel, args, optimize=False):
     """Generate backend-specific source code."""
-    from tack.runtime.dispatch import get_backend
-    backend = get_backend()
+    from tack.runtime.dispatch import launch_backend
+    backend = launch_backend(kernel.name, args)
     backend_name = type(backend).__name__
 
     ir_func, effective_args = _prepare_ir(kernel, args, backend=backend)

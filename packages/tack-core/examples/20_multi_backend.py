@@ -68,7 +68,7 @@ print(f"\n{'Backend':>8s} {'SAXPY (ms)':>12s} {'Dot (ms)':>10s} {'SAXPY err':>12
 print("-" * 60)
 
 for backend in BACKENDS:
-    tack.init(arch=backend)
+    tack.set_default_device(backend)
 
     x = tack.empty((N,))
     y = tack.empty((N,))

@@ -11,7 +11,7 @@ import tack
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     import tack.dataset as td
 
     # --8<-- [start:build]

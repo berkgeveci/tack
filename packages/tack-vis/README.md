@@ -16,7 +16,7 @@ each backend's capabilities. Your own kernels see a mesh the same way, through
 import tack
 import tack.dataset as td
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 data = td.wavelet(extent=10)                    # VTK's wavelet: 21^3 points
 surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
 print(surface.num_cells, "triangles")

@@ -47,7 +47,7 @@ if args.arch == "level_zero":
     from tack.interop.vtk import init_level_zero
     init_level_zero()
 else:
-    tack.init(arch=getattr(tack, args.arch))
+    tack.set_default_device(args.arch)
 
 import tack.dataset as td
 from tack.dataset import algorithms as alg

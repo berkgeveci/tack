@@ -29,7 +29,7 @@ is the normative text.
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)   # or a configured GPU backend
+tack.set_default_device("cpu")   # or a configured GPU backend
 
 data = tack.array(np.arange(8, dtype=np.float32))
 
@@ -181,7 +181,7 @@ import numpy as np
 import tack
 from tack.algorithms import absmax, dot
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 integers = tack.array(np.array([100000], dtype=np.int32))
 assert dot(integers, integers) == 10_000_000_000.0
 

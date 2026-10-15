@@ -18,7 +18,7 @@ from tack.lang.types import f32, f64, i32
 class TestScalarParamInference:
     @pytest.fixture(autouse=True)
     def _init_cpu(self):
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
 
     def test_float_with_f32_array(self):
         """Float scalar stays f32 when all arrays are f32."""
@@ -127,7 +127,7 @@ def test_f32_arrays_keep_f32_scalar(backend):
 backends = []
 for _b in ["cpu", "metal", "cuda", "hip", "level_zero"]:
     try:
-        tack.init(arch=getattr(tack, _b))
+        tack.set_default_device(_b)
         backends.append(_b)
     except (ImportError, RuntimeError, OSError):
         pass
@@ -135,7 +135,7 @@ for _b in ["cpu", "metal", "cuda", "hip", "level_zero"]:
 
 @pytest.fixture(params=backends)
 def backend(request):
-    tack.init(arch=getattr(tack, request.param))
+    tack.set_default_device(request.param)
     return request.param
 
 

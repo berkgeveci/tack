@@ -27,25 +27,6 @@ def _verified_transform(*args, **kwargs):
 _transform_lock = threading.RLock()
 
 
-def _arrays_from_another_backend(args, backend) -> set:
-    """Names of backends that allocated the array arguments, minus this one.
-
-    Empty when nothing is out of place, which is the only answer the happy
-    path ever needs — this runs after an AttributeError has already been
-    raised, never before one.
-    """
-    from tack.lang.array import Array, Texture3D
-    stale = set()
-    for arg in args:
-        array = arg.array if isinstance(arg, Texture3D) else arg
-        if not isinstance(array, Array):
-            continue
-        origin = getattr(array._buffer, "backend_name", "")
-        if origin and origin != backend.name:
-            stale.add(origin)
-    return stale
-
-
 class _ClassToken:
     """Stands in for a template class in cache keys.
 
@@ -233,8 +214,8 @@ class Kernel:
         from tack.lang.array import empty
         dtype, epilogue = self._result
         result = self._result_array
-        if result is None or result._buffer.backend_name != backend.name:
-            result = empty((1,), dtype)
+        if result is None or result._device is not backend:
+            result = empty((1,), dtype, device=backend)
             self._result_array = result
         backend.execute(epilogue, (*args, result), kwargs)
         if dispatch._debug:
@@ -253,8 +234,8 @@ class Kernel:
         return types.MethodType(self, instance)
 
     def __call__(self, *args, **kwargs):
-        from tack.runtime.dispatch import get_backend
-        backend = get_backend()
+        # Where the arrays are: the default device if it can address them.
+        backend = dispatch.launch_backend(self.name, args)
         try:
             backend.execute(self, args, kwargs)
             if dispatch._debug:
@@ -262,26 +243,6 @@ class Kernel:
             if self._result is None:
                 return None
             return self._run_result(backend, args, kwargs)
-        except AttributeError as e:
-            # Almost always one thing: an array allocated before `tack.init()`
-            # switched backends, so its buffer is the old backend's type and
-            # the new one reaches for an attribute that was never there. The
-            # raw error is `'NumpyBuffer' object has no attribute
-            # 'metal_buffer'`, which names neither the cause nor the fix.
-            # Diagnosed here rather than checked per dispatch: the check
-            # costs nothing on the path that works.
-            stale = _arrays_from_another_backend(args, backend)
-            if not stale:
-                raise
-            raise RuntimeError(
-                f"Kernel '{self.name}' was called on the {backend.label} "
-                f"backend with {len(stale)} array(s) allocated by another "
-                f"backend ({', '.join(sorted(stale))}). `tack.init()` replaces "
-                f"the active backend; arrays allocated before it still belong "
-                f"to the old one and cannot be dispatched on the new one. "
-                f"Re-allocate them after switching, and do not re-initialize "
-                f"while another thread is dispatching."
-            ) from e
         except TypeError as e:
             # `from e`, not `from None`. Naming the kernel is worth doing, but
             # discarding the chain with it means a codegen failure reports

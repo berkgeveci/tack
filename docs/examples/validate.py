@@ -30,7 +30,7 @@ def check_quickstarts():
             if not blocks:
                 raise RuntimeError(f"No Python quick start in {page.name}")
             code = blocks[0]
-            if "import tack" not in code or "tack.init" not in code:
+            if "import tack" not in code or "tack.set_default_device" not in code:
                 raise RuntimeError(f"The first Python example in {page.name} is not standalone")
             if name == "09-visualization":
                 code += '\nassert surface.num_cells > 0 and surface.num_points > 0\n'

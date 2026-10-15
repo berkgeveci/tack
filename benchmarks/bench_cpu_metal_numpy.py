@@ -136,11 +136,11 @@ def make_fields(n, count):
 
 def _available_backends():
     """Detect which GPU backends are available."""
-    backends = [("CPU JIT", tack.cpu)]
+    backends = [("CPU JIT", "cpu")]
     try:
         import Metal
         if Metal.MTLCreateSystemDefaultDevice() is not None:
-            backends.append(("Metal GPU", tack.metal))
+            backends.append(("Metal GPU", "metal"))
     except ImportError:
         pass
     try:
@@ -148,7 +148,7 @@ def _available_backends():
         driver.cuInit(0)
         err, dev = driver.cuDeviceGet(0)
         if err == driver.CUresult.CUDA_SUCCESS:
-            backends.append(("CUDA GPU", tack.cuda))
+            backends.append(("CUDA GPU", "cuda"))
     except (ImportError, Exception):
         pass
     return backends
@@ -162,14 +162,14 @@ def run_kernel_bench(name, kernel, nfields_fn, np_fn, np_nargs_fn, n):
     nfields = nfields_fn(n)
 
     for label, arch in BENCH_BACKENDS:
-        tack.init(arch=arch)
+        tack.set_default_device(arch)
         fields = make_fields(n, nfields)
         kernel(*fields)  # warmup (includes compilation)
         times = bench(lambda: kernel(*fields))
         print_row(label, n, times)
 
     # --- NumPy ---
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     ref_fields = make_fields(n, nfields)
     np_args = [ref_fields[j].numpy() for j in range(np_nargs_fn(n))]
     np_times = bench(lambda: np_fn(*np_args))
@@ -189,7 +189,7 @@ def bench_compilation():
 
         for label, arch in BENCH_BACKENDS:
             # A fresh backend starts with an empty compiled-kernel cache.
-            tack.init(arch=arch)
+            tack.set_default_device(arch)
             fields = make_fields(n, nfields_fn(n))
             t0 = time.perf_counter()
             kernel_fn(*fields)
@@ -204,14 +204,14 @@ def main():
     import os
     print(f"CPU cores: {os.cpu_count()}")
     for label, arch in BENCH_BACKENDS:
-        if arch == tack.metal:
+        if arch == "metal":
             try:
                 import Metal as MetalFramework
                 device = MetalFramework.MTLCreateSystemDefaultDevice()
                 print(f"Metal device: {device.name()}")
             except ImportError:
                 pass
-        elif arch == tack.cuda:
+        elif arch == "cuda":
             try:
                 from cuda.bindings import driver
                 driver.cuInit(0)

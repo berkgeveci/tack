@@ -56,7 +56,7 @@ def acceleration_tiled(pos, acceleration, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n = 256 if check else 512
     xyz = np.random.default_rng(42).normal(size=(n, 3)).astype(np.float32)
     pos = tack.empty((n,), tack.vec3(tack.f32))

@@ -52,7 +52,7 @@ def main():
         records.append(('typed', function))
         return original_compile(function)
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     import tack.dataset as td
 
     def filters():

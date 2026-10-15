@@ -179,7 +179,7 @@ def test_cuda_codegen_i8_u8():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((10,), tack.u8)
     out = tack.empty((10,), tack.i8)
 
@@ -204,7 +204,7 @@ def test_msl_codegen_u16():
     from tack.lang.ir_type_annotate import annotate_types
     from tack.lang.type_inference import infer_param_types
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((10,), tack.u16)
     out = tack.empty((10,), tack.u16)
 

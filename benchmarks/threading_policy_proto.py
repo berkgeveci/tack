@@ -232,7 +232,7 @@ def main():
                          "back-to-back loop, 50 a script that pauses")
     args = ap.parse_args()
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
 
     print(f"threads {backend.num_threads}, gap {args.gap_ms:g} ms\n")

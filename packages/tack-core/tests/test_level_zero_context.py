@@ -3,7 +3,7 @@
 A USM pointer means something only inside the context it was allocated
 from, and neither DLPack nor a raw address carries one. So sharing device
 memory with another Level Zero user means starting Tack inside *its*
-context: `tack.init(arch=tack.level_zero, external_context=...)`.
+context: `tack.set_default_device("level_zero", external_context=...)`.
 
 These tests stand in for the other library with a second context created
 directly through Level Zero, so they need a device but not VTK or SYCL.
@@ -22,16 +22,16 @@ def test_an_option_the_backend_does_not_declare_is_refused():
     """Dropping it silently would start a private context while the caller
     believes memory is shared."""
     with pytest.raises(ValueError, match="does not accept.*external_context"):
-        tack.init(arch=tack.cpu, external_context={"context": 1})
+        tack.set_default_device("cpu", external_context={"context": 1})
     with pytest.raises(ValueError, match="does not accept.*contxt"):
-        tack.init(arch=tack.cpu, contxt=1)
+        tack.set_default_device("cpu", contxt=1)
 
 
 @pytest.fixture
 def foreign():
     """Driver, device and a context Tack did not create."""
     try:
-        tack.init(arch=tack.level_zero)
+        tack.set_default_device("level_zero")
     except RuntimeError as e:
         pytest.skip(f"no Level Zero backend: {e}")
     from tack.runtime import level_zero_backend as l0
@@ -45,7 +45,7 @@ def foreign():
                                     ctypes.byref(context)), "zeContextCreate")
     yield {"driver": own._driver, "device": own._device,
            "context": context.value}
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 def test_the_default_backend_owns_its_context(foreign):
@@ -53,7 +53,7 @@ def test_the_default_backend_owns_its_context(foreign):
 
 
 def test_an_external_context_is_adopted_not_replaced(foreign):
-    tack.init(arch=tack.level_zero, external_context=foreign)
+    tack.set_default_device("level_zero", external_context=foreign)
     backend = get_backend()
 
     assert backend.shares_external_context is True
@@ -63,7 +63,7 @@ def test_an_external_context_is_adopted_not_replaced(foreign):
 
 
 def test_kernels_run_on_arrays_allocated_in_the_adopted_context(foreign):
-    tack.init(arch=tack.level_zero, external_context=foreign)
+    tack.set_default_device("level_zero", external_context=foreign)
 
     @tack.kernel
     def ramp(out, n):
@@ -84,11 +84,11 @@ def test_every_handle_is_required(foreign, missing):
     handles = dict(foreign)
     handles[missing] = 0
     with pytest.raises(ValueError, match=missing):
-        tack.init(arch=tack.level_zero, external_context=handles)
+        tack.set_default_device("level_zero", external_context=handles)
 
 
 def test_device_memory_is_told_apart_from_host_memory(foreign):
-    tack.init(arch=tack.level_zero, external_context=foreign)
+    tack.set_default_device("level_zero", external_context=foreign)
     backend = get_backend()
     array = tack.empty((8,))
     host = np.zeros(8, dtype=np.float32)

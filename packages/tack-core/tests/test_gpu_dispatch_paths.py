@@ -81,7 +81,7 @@ import tack.lang.types
 from tack.lang.array import Array, NumpyBuffer
 from tack.runtime.kernel_utils import new_kernel_cache
 
-tack.init(arch=tack.cpu)   # arrays are allocated on the host
+tack.set_default_device("cpu")   # arrays are allocated on the host
 {cls}
 
 
@@ -261,7 +261,7 @@ from tack.runtime.backend import Backend as BaseBackend
 b = make_backend()
 check("subclasses Backend", isinstance(b, BaseBackend))
 check("declares an arch name", b.name != BaseBackend.name)
-check("arch name is an init value", hasattr(tack, b.name))
+check("arch name is a device type", b.name in __import__("tack.runtime.dispatch", fromlist=["_"])._CONSTRUCTORS)
 check("declares supported dtypes", bool(b.supported_dtypes))
 check("supports_f64 is derived from supported_dtypes",
       b.supports_f64 == (tack.lang.types.f64 in b.supported_dtypes))

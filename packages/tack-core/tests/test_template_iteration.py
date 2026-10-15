@@ -84,7 +84,7 @@ def test_one_kernel_over_every_iteration_space(backend, obj, n):
 
 
 def test_multi_dimensional_spaces_launch_in_their_shape():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     for obj, n in ((Grid(3, 2), 2), (Volume(2, 2, 2), 3)):
         ir_func = tack.inspect(_label, obj, tack.empty((8,), tack.i32), mode="ir")
         assert ir_func.startswith("Function") and "ParallelFor (" in ir_func
@@ -172,13 +172,13 @@ def _pairs(cells, out):
     (NotAScalar(), "'values', which is not a scalar attribute"),
 ], ids=["undeclared", "too-many", "not-a-scalar"])
 def test_what_cannot_be_iterated(obj, message):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     with pytest.raises(TypeError, match=message):
         _label(obj, tack.empty((16,), tack.i32))
 
 
 def test_the_loop_binds_one_name():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     with pytest.raises(TypeError, match="binds one name, the index"):
         _pairs(Grid(2, 2), tack.empty((4,), tack.i32))
 

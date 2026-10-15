@@ -139,16 +139,16 @@ def _available_backends():
     backends = ["cpu"]
     for arch in ["metal", "cuda", "hip", "level_zero"]:
         try:
-            tack.init(arch=arch)
+            tack.set_default_device(arch)
             backends.append(arch)
         except (ImportError, RuntimeError, OSError):
             pass
-    tack.init(arch="cpu")
+    tack.set_default_device("cpu")
     return backends
 
 @pytest.fixture(params=_available_backends())
 def backend(request):
-    tack.init(arch=request.param)
+    tack.set_default_device(request.param)
     return request.param
 
 def test_local_array_store_load(backend):

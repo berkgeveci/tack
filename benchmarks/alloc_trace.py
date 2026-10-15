@@ -39,7 +39,7 @@ import tack
 import tack.lang.array as fieldmod
 import tack.runtime.cpu as cpu
 
-tack.init(arch="cpu", num_threads=threads)
+tack.set_default_device("cpu", num_threads=threads)
 
 SIZES = dict(m.SIZES, **{"20M": 20_000_000, "50M": 50_000_000})
 

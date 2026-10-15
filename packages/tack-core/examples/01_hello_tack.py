@@ -4,7 +4,7 @@ This is the simplest possible Tack program.  It creates two arrays,
 adds them element-wise on the GPU (or CPU), and checks the result.
 
 Key concepts:
-  - tack.init()    -- choose a backend (cpu, metal, cuda, hip)
+  - tack.set_default_device() -- choose a device (cpu, metal, cuda, hip)
   - tack.empty()   -- allocate a device array
   - @tack.kernel   -- mark a function for GPU compilation
   - from_numpy / to_numpy -- move data between host and device
@@ -21,8 +21,8 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 # Allocate 1-D arrays (device arrays)
 n = 10

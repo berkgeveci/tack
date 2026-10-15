@@ -27,7 +27,7 @@ below shows how to construct these pieces explicitly for several mesh types.
 import tack
 import tack.dataset as td
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 
 data = td.uniform_grid((17, 17, 17), origin=(-1, -1, -1), spacing=(0.125, 0.125, 0.125))
 positions = data.positions()                   # corner positions as a NumPy array

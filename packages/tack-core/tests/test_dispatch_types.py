@@ -17,7 +17,7 @@ from tack.lang.types import f32, f64, i32, i64, u32, u64
 class TestCheckDispatchTypes:
     @pytest.fixture(autouse=True)
     def _init_cpu(self):
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
 
     def test_supported_dtype_passes(self):
         """f32 array should pass when f32 is supported."""
@@ -107,7 +107,7 @@ class TestCheckDispatchTypes:
 def test_metal_rejects_f64_array():
     """Metal backend should reject f64 arrays with a clear error."""
     try:
-        tack.init(arch=tack.metal)
+        tack.set_default_device("metal")
     except Exception:
         pytest.skip("Metal not available")
 
@@ -127,12 +127,12 @@ def test_metal_rejects_f64_array():
 
 backends = []
 try:
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backends.append("cpu")
 except Exception:
     pass
 try:
-    tack.init(arch=tack.metal)
+    tack.set_default_device("metal")
     backends.append("metal")
 except Exception:
     pass
@@ -140,7 +140,7 @@ except Exception:
 
 @pytest.fixture(params=backends)
 def backend(request):
-    tack.init(arch=getattr(tack, request.param))
+    tack.set_default_device(request.param)
     return request.param
 
 

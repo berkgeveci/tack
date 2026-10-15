@@ -133,7 +133,7 @@ def main():
     # Collect results
     results = {}
     for backend in ["cpu", "hip"]:
-        tack.init(arch=backend)
+        tack.set_default_device(backend)
         print(f"\n--- Running on {backend.upper()} ---")
         for bench_name, kernel, n_arrays in benchmarks:
             for size_tag, n in DATA_SIZES.items():

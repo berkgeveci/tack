@@ -220,7 +220,7 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
 
     from tack.runtime.dispatch import get_backend
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
 
     @tack.kernel
@@ -257,7 +257,7 @@ def test_corrupt_pass_stops_before_codegen_and_caching(stage, module, pass_name,
 def test_verifier_runs_only_when_templates_and_variants_are_new(monkeypatch, no_disk_cache):
     import tack.lang.ir_verify as verifier
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.kernel
     def fill(out):
@@ -288,7 +288,7 @@ def test_inspection_localizes_assigned_scalar_parameters():
     from tack.lang.ir_traversal import walk_ir
     from tack.runtime.dispatch import get_backend
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.kernel
     def increment(out, value):
@@ -309,7 +309,7 @@ def test_inspection_localizes_assigned_scalar_parameters():
 
 def test_a_second_top_level_loop_is_rejected():
     """The language contract states this rule; pin the rule and its message."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
     @tack.kernel
     def two_loops(a, b):

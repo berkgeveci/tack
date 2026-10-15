@@ -11,7 +11,7 @@ are factory functions that return `Array` instances.
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 temperature = tack.empty((100,))
 velocity = tack.empty((100,), tack.vec3(tack.f32))
 stress = tack.empty((100,), tack.mat3(tack.f32))

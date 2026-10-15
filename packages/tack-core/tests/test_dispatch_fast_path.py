@@ -196,7 +196,7 @@ def test_the_map_is_bounded(backend):
 
 
 def test_a_read_only_array_is_refused_on_a_hit():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     base = np.zeros(8, np.float32)
     x = tack.empty((8,)); x.fill(1.0)
     out = tack.array_from_ptr(base, (8,), tack.f32, writable=True)
@@ -215,7 +215,7 @@ def _shift(x, out):
 def test_overlapping_and_disjoint_calls_alternate_on_a_hit():
     """The CPU compiles a no-overlap variant and an overlapping one; a hit
     must pick by this call's storage, not the first call's."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     base = np.arange(10, dtype=np.float32)
     whole = tack.array_from_ptr(base, (10,), tack.f32, writable=True)
     head = tack.array_from_ptr(base[:9], (9,), tack.f32, writable=True)

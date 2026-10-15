@@ -321,8 +321,7 @@ itself is unchanged.
 so
 
 ```python
-tack.init(arch=tack.level_zero,
-          external_context={"driver": d, "device": dev, "context": ctx})
+tack.set_default_device("level_zero", external_context={"driver": d, "device": dev, "context": ctx})
 ```
 
 passes the dictionary to `LevelZeroBackend.__init__`. All three handles are

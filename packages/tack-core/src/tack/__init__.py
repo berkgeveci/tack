@@ -52,7 +52,15 @@ from tack.lang.types import (
     vec3,
     vec4,
 )
-from tack.runtime.dispatch import init, sync, sync_async
+from tack.runtime.dispatch import (
+    Device,
+    device,
+    get_default_device,
+    set_debug,
+    set_default_device,
+    sync,
+    sync_async,
+)
 
 
 # Shared memory, barrier, thread_id — only usable inside @tack.kernel
@@ -154,11 +162,3 @@ def texture3d(source_array, shape=None, interp='linear'):
     if len(shape) != 3:
         raise ValueError("texture3d requires a 3D shape")
     return Texture3D(source_array, shape_3d=shape, interp=interp)
-
-
-# Backend selectors
-cpu = "cpu"
-metal = "metal"
-cuda = "cuda"
-hip = "hip"
-level_zero = "level_zero"

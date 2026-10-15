@@ -856,8 +856,8 @@ class CPUBackend(Backend):
     supported_dtypes = _CPU_SUPPORTED_DTYPES
     # Reductions go through numpy on the host — the data is already there.
     supports_device_reductions = False
-    # `tack.init(arch="cpu", num_threads=4)`; overrides TACK_CPU_THREADS.
-    init_options = frozenset({"num_threads"})
+    # `tack.set_default_device("cpu", num_threads=4)`; overrides TACK_CPU_THREADS.
+    device_options = frozenset({"num_threads"})
 
 
     def __init__(self, num_threads: int | None = None):

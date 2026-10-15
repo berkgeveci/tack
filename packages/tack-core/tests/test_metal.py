@@ -10,7 +10,7 @@ import tack
 def metal_backend():
     """Initialize Metal backend for all tests in this module."""
     try:
-        tack.init(arch=tack.metal)
+        tack.set_default_device("metal")
     except (ImportError, RuntimeError) as e:
         pytest.skip(f"Metal not available: {e}")
 
@@ -414,7 +414,7 @@ def test_host_writes_wait_after_tack_init_runs_again():
     tack-examples rewrote its gravity under queued launches that way, 299 of
     300 launches here reading a later value."""
     value = tack.empty(())
-    tack.init(arch=tack.metal)
+    tack.set_default_device("metal")
     n, steps = 4096, 300
     out = tack.empty((steps * n,))
     for k in range(steps):

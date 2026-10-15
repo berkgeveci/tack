@@ -114,7 +114,7 @@ def test_inspect_rejects_dtypes_dispatch_would(monkeypatch, mode):
 
     from tack.runtime.dispatch import get_backend
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
     monkeypatch.setattr(backend, "supported_dtypes",
                         backend.supported_dtypes - {tack.f64})
@@ -139,7 +139,7 @@ def test_inspect_takes_the_backends_texture_decision(monkeypatch):
 
     from tack.runtime.dispatch import get_backend
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
     seen = []
 

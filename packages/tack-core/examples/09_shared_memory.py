@@ -24,8 +24,8 @@ _parser.add_argument(
     '--arch', required=True, choices=['metal', 'cuda', 'hip', 'level_zero'],
     help='GPU backend with workgroup execution',
 )
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 n = 256
 x = tack.empty((n,))

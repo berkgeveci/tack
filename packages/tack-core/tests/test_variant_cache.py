@@ -14,6 +14,7 @@ import numpy as np
 import pytest
 
 import tack
+from tack.runtime.kernel_utils import drop_variants
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
@@ -65,8 +66,7 @@ def test_alternating_shapes_stay_correct(backend):
 
 
 def test_each_row_stride_gets_its_own_variant(backend):
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_scale2d, None)
+    drop_variants(_scale2d, lambda key: True)        # in every cache, the fast path's too
 
     _run2d(4, 8)
     assert _variant_count(_scale2d) == 1
@@ -78,8 +78,7 @@ def test_each_row_stride_gets_its_own_variant(backend):
 
 def test_flat_length_does_not_recompile(backend):
     """Nothing about a 1-D length is baked in, so one variant covers all."""
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_flat, None)
+    drop_variants(_flat, lambda key: True)        # in every cache, the fast path's too
 
     for n in (16, 64, 256, 1024, 4099):
         x = tack.empty((n,))
@@ -92,8 +91,7 @@ def test_flat_length_does_not_recompile(backend):
 
 
 def test_dtype_still_separates_variants(backend):
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_flat, None)
+    drop_variants(_flat, lambda key: True)        # in every cache, the fast path's too
 
     for dtype, np_dtype in ((tack.f32, np.float32), (tack.i32, np.int32)):
         x = tack.empty((32,), dtype)
@@ -108,8 +106,7 @@ def test_dtype_still_separates_variants(backend):
 def test_ir_passes_run_once_per_variant(backend, monkeypatch, no_disk_cache):
     """The dispatch path must not re-derive the IR it already has."""
     import tack.lang.ir_optimize as opt
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_flat, None)
+    drop_variants(_flat, lambda key: True)        # in every cache, the fast path's too
 
     calls = []
     real = opt.optimize_ir
@@ -271,7 +268,7 @@ def test_variants_of_a_collected_template_class_are_released(backend):
 
     from tack.runtime.dispatch import get_backend
 
-    get_backend()._cache.pop(_scale_by_template, None)
+    drop_variants(_scale_by_template, lambda key: True)        # in every cache, the fast path's too
     _scale_by_template._ir_cache.clear()
     x = tack.empty((4,))
     out = tack.empty((4,))
@@ -296,7 +293,7 @@ def test_a_live_template_class_keeps_its_variant(backend):
 
     from tack.runtime.dispatch import get_backend
 
-    get_backend()._cache.pop(_scale_by_template, None)
+    drop_variants(_scale_by_template, lambda key: True)        # in every cache, the fast path's too
     _scale_by_template._ir_cache.clear()
     x = tack.empty((4,))
     out = tack.empty((4,))
@@ -346,7 +343,7 @@ def _rows_through_holder(h, out):
 def test_a_templates_array_length_does_not_specialize():
     """A template holding an array compiled once per length of that array, every
     time a filter's output changed size; only what the code bakes in counts."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     for n in (10, 20, 30):
         out = tack.empty((n,), tack.i32)
         _through_holder(_Holds(tack.arange(n)), out)
@@ -357,7 +354,7 @@ def test_a_templates_array_length_does_not_specialize():
 def test_a_dimension_a_template_bakes_in_still_specializes():
     """values[i, j] bakes the row length in: each length is its own variant, and
     each computes with its own."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     for cols in (3, 5):
         values = tack.empty((4, cols), tack.i32)
         tack.copyto(values, np.arange(4 * cols, dtype=np.int32).reshape(4, cols))

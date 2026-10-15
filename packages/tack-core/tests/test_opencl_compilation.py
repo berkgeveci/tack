@@ -88,13 +88,13 @@ class _PreRebindingFixOpenCLCodeGen(OpenCLCodeGen):
 
 def _source(kernel_fn, *args):
     """Generate OpenCL C the way the backend does, annotation included."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     function, _ = _prepare_ir(kernel_fn, args)
     return OpenCLCodeGen(function).generate()
 
 
 def _pre_fix_source(kernel_fn, *args):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     function, _ = _prepare_ir(kernel_fn, args)
     return _PreFixOpenCLCodeGen(function).generate()
 
@@ -275,7 +275,7 @@ def test_rebound_loop_variable_compiles(clang, tmp_path, kernel):
 @pytest.mark.parametrize("kernel", [_loop_variable_rebound, _loop_variable_rebound_in_branch],
                          ids=["after_loop", "in_branch"])
 def test_pre_fix_rebound_loop_variable_is_rejected(clang, tmp_path, kernel):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     function, _ = _prepare_ir(kernel, (_array(dtype=tack.i32), _array(dtype=tack.i32)))
     src = _PreRebindingFixOpenCLCodeGen(function).generate()
     code, err = _compile(clang, src, tmp_path)
@@ -302,7 +302,7 @@ def test_block_scoped_first_assignment_compiles(clang, tmp_path, kernel):
                                     _assigned_in_a_loop_read_after],
                          ids=["branch_in_while", "loop_then_read"])
 def test_pre_fix_block_scoped_first_assignment_is_rejected(clang, tmp_path, kernel):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     function, _ = _prepare_ir(kernel, (_array(dtype=tack.i32), _array(dtype=tack.i32)))
     src = _PreRebindingFixOpenCLCodeGen(function).generate()
     code, err = _compile(clang, src, tmp_path)

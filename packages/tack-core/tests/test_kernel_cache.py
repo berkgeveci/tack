@@ -94,6 +94,7 @@ def test_compiled_code_is_released_with_the_kernel(backend, tmp_path):
     tack.copyto(x, np.ones(n, dtype=np.float32))
     out = tack.empty((n,))
 
+    gc.collect()   # earlier tests' dead kernels, on the same device
     before = len(be._cache)
     kern = _build_kernel(tmp_path, 7, 901)
     kern(x, out)

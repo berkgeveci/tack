@@ -10,7 +10,7 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 @pytest.fixture(autouse=True)
 def init_cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 def test_vector_add():

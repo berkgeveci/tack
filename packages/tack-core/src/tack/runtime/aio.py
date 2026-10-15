@@ -53,7 +53,7 @@ async def _off_loop(fn):
 
 async def sync_async(backend=None):
     """Wait, without blocking the event loop, until every kernel launched so
-    far on ``backend`` (the active one by default) has finished.
+    far on ``backend`` (the default device's by default) has finished.
 
     The ``asyncio`` form of `tack.sync`: launches made after the call, by
     this task or another, are not waited for. A launch's error is raised
@@ -61,9 +61,8 @@ async def sync_async(backend=None):
     before returning (the CPU) it returns at once.
     """
     if backend is None:
-        from tack.runtime.dispatch import _current_backend as backend
-        if backend is None:
-            return
+        from tack.runtime.dispatch import get_backend
+        backend = get_backend()
     marker = backend.async_marker()
     if marker is None:
         backend.synchronize()

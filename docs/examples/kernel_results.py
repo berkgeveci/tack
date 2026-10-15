@@ -21,7 +21,7 @@ def compact_positive(values, out, count, n) -> int:
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     # --8<-- [start:run]
     values = tack.array(np.array([-2, 1, -0.5, 3, 0, 2], dtype=np.float32))
     out = tack.empty(values.shape)  # capacity for every input

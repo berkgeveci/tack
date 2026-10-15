@@ -9,7 +9,7 @@ A Python-first GPU compute framework. Write compute kernels as decorated Python 
 import tack
 import numpy as np
 
-tack.init(arch=tack.metal)  # or tack.cpu, tack.cuda, tack.hip, tack.level_zero
+tack.set_default_device("metal")  # or tack.cpu, tack.cuda, tack.hip, tack.level_zero
 
 n = 1_000_000
 x = tack.empty((n,))
@@ -393,7 +393,7 @@ and your own kernels see a mesh the same way through `for_each`.
 import tack
 import tack.dataset as td
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 data = td.wavelet(extent=10)                    # VTK's wavelet: 21^3 points
 surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
 print(surface.num_cells, "triangles")

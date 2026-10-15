@@ -45,7 +45,7 @@ def advect(old, new, angular_speed, dt, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n, steps = (24, 5) if check else (96, 90)
     ii, jj = np.mgrid[:n, :n]
     blob = np.exp(-((ii - 0.65 * n) ** 2 + (jj - 0.5 * n) ** 2) / (0.08 * n) ** 2)

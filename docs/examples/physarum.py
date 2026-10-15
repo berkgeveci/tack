@@ -83,7 +83,7 @@ def diffuse(old, new, size, evaporation):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n, size, frames = (128, 24, 8) if check else (4096, 128, 300)
     agents = Agents(n, size)
     agents.initialize()

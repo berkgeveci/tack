@@ -10,7 +10,7 @@ import tack
 def hip_backend():
     """Initialize HIP backend for all tests in this module."""
     try:
-        tack.init(arch=tack.hip)
+        tack.set_default_device("hip")
     except (ImportError, RuntimeError) as e:
         pytest.skip(f"HIP not available: {e}")
 

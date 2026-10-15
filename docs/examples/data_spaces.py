@@ -46,7 +46,7 @@ def sample_profiles(cells, temperature, pressure, linearized, xs, ts, ps, ls, co
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     # --8<-- [start:spaces]
     # --8<-- [start:mesh]
     # Shortcut mesh setup: two adjacent hexes in the unit cube.

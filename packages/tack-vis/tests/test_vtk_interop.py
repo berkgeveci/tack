@@ -37,7 +37,7 @@ needs_vtk = pytest.mark.skipif(
 
 @pytest.fixture(autouse=True)
 def cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 # ── A stand-in for VTK's module ──────────────────────────────────────
@@ -375,7 +375,7 @@ def _init_device(arch):
     if arch == "level_zero":
         interop.init_level_zero()
     else:
-        tack.init(arch=getattr(tack, arch))
+        tack.set_default_device(arch)
 
 
 def _device_arches():
@@ -390,7 +390,7 @@ def _device_arches():
             continue  # not built, no device, no driver, or no shared context
         if get_backend().device_memory_spaces:
             found.append(pytest.param(arch, space, id=arch))
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     return found
 
 
@@ -461,7 +461,7 @@ def test_level_zero_memory_from_a_private_context_is_refused():
     allocated somewhere else, so only Tack can refuse.
     """
     try:
-        tack.init(arch=tack.level_zero)
+        tack.set_default_device("level_zero")
     except RuntimeError as e:
         pytest.skip(f"no Level Zero backend: {e}")
     field = tack.empty((8,))

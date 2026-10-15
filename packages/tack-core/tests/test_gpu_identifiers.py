@@ -232,7 +232,7 @@ def _packed(kernel, args):
 
 @pytest.mark.parametrize('generate', GENERATORS, ids=['cuda', 'hip', 'metal', 'opencl'])
 def test_generation_preserves_ir_and_parameter_layout(generate):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data, out = _inputs()
     function = _packed(_helper_collisions, (data, out, 5))
     before = copy.deepcopy(function)
@@ -253,7 +253,7 @@ def test_generation_preserves_ir_and_parameter_layout(generate):
 
 @pytest.mark.parametrize('generate', GENERATORS, ids=['cuda', 'hip', 'metal', 'opencl'])
 def test_texture_reference_slots_are_encoded(generate):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     function = _packed(_texture_names, _texture_inputs())
     texture = function.params[0]
     texture._is_texture = True
@@ -270,7 +270,7 @@ def test_texture_reference_slots_are_encoded(generate):
 
 def test_opencl_compiles_keyword_and_internal_collisions(named_kernel, tmp_path):
     clang = require_clang()
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data, out = _inputs()
     for kernel in [named_kernel, _helper_collisions]:
         function = _packed(kernel, (data, out, 5))
@@ -287,7 +287,7 @@ def test_opencl_compiles_keyword_and_internal_collisions(named_kernel, tmp_path)
 def test_generated_cpp_compiles_and_executes_collisions(generate, named_kernel, tmp_path):
     """Host C++ execution validates naming, independently of GPU availability."""
     clang = require_clang('ubsan')
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data, out = _inputs()
     function = _packed(named_kernel, (data, out, 2))
     source = generate(function)

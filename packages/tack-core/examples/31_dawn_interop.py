@@ -33,7 +33,7 @@ import tack
 parser = argparse.ArgumentParser()
 parser.add_argument("--arch", default="metal", choices=["metal", "cuda"])
 args = parser.parse_args()
-tack.init(arch=args.arch)
+tack.set_default_device(args.arch)
 
 N = 1024
 

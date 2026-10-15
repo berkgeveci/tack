@@ -17,8 +17,8 @@ import tack
 
 _parser = argparse.ArgumentParser()
 _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', 'hip', 'level_zero'])
-_arch = getattr(tack, _parser.parse_args().arch)
-tack.init(arch=_arch)
+_arch = _parser.parse_args().arch
+tack.set_default_device(_arch)
 
 W, H = 256, 256
 

@@ -233,7 +233,7 @@ def test_local_join_cannot_swallow_promotion_error():
 @pytest.mark.parametrize('generate', GENERATORS)
 @pytest.mark.parametrize('dtype', TYPES, ids=lambda t: t.name)
 def test_gpu_integer_helpers_use_unsigned_arithmetic(generate, dtype):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     a, b = _array([1], dtype), _array([2], dtype)
     out = tack.empty((1, 16), dtype)
     func = copy.deepcopy(_arithmetic.get_ir().functions[0])
@@ -440,7 +440,7 @@ def _copy_integer(a, out):
 
 @pytest.mark.parametrize('dtype', [*TYPES, tack.f32, tack.f64], ids=lambda t: t.name)
 def test_arrays_do_not_promise_unproved_alignment(dtype):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     values = _values(dtype) if dtype in TYPES else [0.0, -0.5, 1.0, 4.0]
     size = len(values) * dtype.numpy_dtype.itemsize
     data = np.ndarray((len(values),), dtype=dtype.numpy_dtype, buffer=bytearray(size + 1), offset=1)

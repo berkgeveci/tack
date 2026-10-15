@@ -1407,7 +1407,13 @@ class LevelZeroBackend(Backend):
     supported_dtypes = _L0_SUPPORTED_DTYPES
     supports_device_reductions = True
     supports_workgroups = True
-    init_options = frozenset({"external_context"})
+    device_options = frozenset({"external_context"})
+
+    @property
+    def memory_domain(self) -> tuple:
+        # A USM pointer is valid only in the context that allocated it, and
+        # two backends (one adopting another library's context) can differ.
+        return (self.name, self.ordinal, self._context.value)
     device_memory_spaces = frozenset({"level_zero"})
 
     def __init__(self, external_context=None):

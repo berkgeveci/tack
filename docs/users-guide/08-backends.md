@@ -102,7 +102,7 @@ pip install 'tack-core[cpu]'
 ```
 
 ```python
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 ```
 
 ## Metal
@@ -117,7 +117,7 @@ pip install 'tack-core[metal]'
 ```
 
 ```python
-tack.init(arch=tack.metal)
+tack.set_default_device("metal")
 ```
 
 Metal has a 31-buffer binding limit per kernel. Tack automatically packs
@@ -135,7 +135,7 @@ pip install 'cuda-python>=13.2'
 ```
 
 ```python
-tack.init(arch=tack.cuda)
+tack.set_default_device("cuda")
 ```
 
 Tack's CUDA context is current only on the thread that called
@@ -163,7 +163,7 @@ uv sync --extra hip        # hip-python is on PyPI
 ```
 
 ```python
-tack.init(arch=tack.hip)
+tack.set_default_device("hip")
 ```
 
 **ROCm 7.0.2 and 7.1.1 miscompile some integer code.** Their device
@@ -200,7 +200,7 @@ devices with texture units (Xe-HPG/Xe-LPG). Xe-HPC (Ponte Vecchio) falls
 back to software trilinear since it has no sampler hardware.
 
 ```python
-tack.init(arch=tack.level_zero)
+tack.set_default_device("level_zero")
 ```
 
 ## Error Messages

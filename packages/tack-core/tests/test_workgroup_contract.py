@@ -81,7 +81,7 @@ _UNSUPPORTED = [
                          ids=[kernel.name for kernel, _ in _UNSUPPORTED])
 @pytest.mark.parametrize('mode', ['dispatch', 'ir', 'source', 'optimized', 'llvm'])
 def test_cpu_rejects_workgroup_primitives(kernel, feature, mode):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     out = tack.empty((256,), tack.i32)
     out.fill(-7)
     message = f"{kernel.name}.*CPU backend does not support workgroup.*{feature}"
@@ -128,7 +128,7 @@ def private_scratch(data, out, total):
 def test_cpu_private_arrays_atomics_and_host_reductions(monkeypatch):
     from tack.lang import workgroup_support
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = tack.empty((512,), tack.i32)
     out = tack.empty((512,), tack.i32)
     total = tack.empty((1,), tack.i32)
@@ -182,7 +182,7 @@ def test_workgroups_exchange_across_lanes_and_reject_cpu(workgroup_backend, dtyp
 
     # Reusing the same frontend template on another backend must be checked,
     # even after a successful GPU compilation and cached dispatch.
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     cpu_data = tack.empty((512,), dtype)
     cpu_out = tack.zeros((512,), dtype)
     with pytest.raises(RuntimeError, match='CPU.*barrier, shared_like, thread_id'):

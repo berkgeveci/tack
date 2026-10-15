@@ -184,7 +184,7 @@ def test_atomic_value_converts_to_unsigned_target(backend, op):
 @pytest.mark.parametrize('op', KERNELS)
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
 def test_cpu_concurrent_updates_are_atomic(dtype, op):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     be = get_backend()
     count, workers = 32768, 8
     values = np.random.default_rng(6017).permutation(count).astype(dtype.numpy_dtype) + 1
@@ -220,7 +220,7 @@ def test_cpu_concurrent_updates_are_atomic(dtype, op):
 
 @pytest.mark.parametrize('mode', ['dispatch', 'ir', 'source', 'optimized'])
 def test_cpu_rejects_unaligned_atomic_storage(mode, monkeypatch):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data = _array([1], tack.i32)
     raw = bytearray(5)
     array = np.ndarray((1,), np.int32, buffer=raw, offset=1)
@@ -243,7 +243,7 @@ def test_cpu_rejects_unaligned_atomic_storage(mode, monkeypatch):
 def test_cached_atomic_alignment_without_ir_scan(monkeypatch):
     from tack.runtime import kernel_utils
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     data, out = _array([1], tack.i32), _array([0], tack.i32)
     atomic_add(data, out, 1)
 

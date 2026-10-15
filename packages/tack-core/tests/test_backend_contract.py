@@ -38,8 +38,8 @@ def test_backend_subclasses_the_base(cls):
 def test_arch_name_is_declared(cls):
     assert cls.name != Backend.name, f"{cls.__name__} did not declare a name"
     assert cls.name == cls.name.lower()
-    assert hasattr(tack, cls.name), \
-        f"'{cls.name}' is not a tack.init(arch=...) value"
+    from tack.runtime.dispatch import _CONSTRUCTORS
+    assert cls.name in _CONSTRUCTORS, f"'{cls.name}' is not a device type"
 
 
 @pytest.mark.parametrize("cls", ALL_BACKEND_CLASSES,
@@ -253,10 +253,10 @@ def test_cpu_declares_num_threads():
     """CPUBackend takes num_threads; tack.init used to refuse to pass it."""
     from tack.runtime.dispatch import get_backend
     try:
-        tack.init(arch=tack.cpu, num_threads=3)
+        tack.set_default_device("cpu", num_threads=3)
         assert get_backend().num_threads == 3
     finally:
-        tack.init(arch=tack.cpu)
+        tack.set_default_device("cpu")
 
 
 @pytest.mark.parametrize("policy", ["v1", "v2"])
@@ -282,8 +282,10 @@ def test_cpu_policy_refuses_anything_else(monkeypatch, policy):
 def test_no_reinit_reads_as_a_flag(monkeypatch, value, keeps):
     """`TACK_NO_REINIT=0` used to count as set."""
     from tack.runtime.dispatch import get_backend
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     before = get_backend()
     monkeypatch.setenv("TACK_NO_REINIT", value)
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu", num_threads=2)      # a new device, unless kept
     assert (get_backend() is before) == keeps
+    monkeypatch.delenv("TACK_NO_REINIT")
+    tack.set_default_device("cpu")

@@ -12,7 +12,7 @@ from tack.lang.type_inference import infer_param_types
 
 def _get_ir(kernel_fn, *args):
     """Helper: define a kernel, create dummy arrays/scalars, run type inference, return IR."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     ir_func = kernel_fn.get_ir().functions[0]
     infer_param_types(ir_func, tuple(args))
     return ir_func
@@ -271,7 +271,7 @@ def test_narrow_signed_negation_is_inline_ptx(dtype, in_ptx):
     from bit 15, so i16 -(-32768) read 32768 once widened (driver 595 on an
     H100). NVVM narrows any C spelling to those instructions; an inline-PTX
     32-bit subtract keeps them out. HIP and OpenCL keep their own forms."""
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     arrays = [_array(dtype=dtype) for _ in range(3)]
     function, _ = _prepare_ir(_negate, tuple(arrays))
     src = generate_cuda_source(function)

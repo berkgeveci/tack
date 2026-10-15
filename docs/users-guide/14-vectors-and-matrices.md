@@ -11,7 +11,7 @@ scalar name per component. A value lives inside an iteration; a vector or matrix
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 pos = tack.empty((3,), tack.vec2(tack.f32))
 vel = tack.empty((3,), tack.vec2(tack.f32))
 tack.copyto(pos, np.array([[0, 0], [1, 0], [0, 1]], dtype=np.float32))

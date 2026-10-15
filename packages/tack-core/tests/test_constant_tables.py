@@ -151,7 +151,7 @@ def _faces_args():
 
 
 def test_which_lookups_become_tables():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     text = tack.inspect(_faces, *_faces_args(), mode="ir")
     assert "Table[i32]" in text and "IfExp((__eval" not in text
     index = tack.empty((4,), tack.i32)
@@ -168,7 +168,7 @@ def test_which_lookups_become_tables():
     (generate_msl_source, "constant int"),
 ], ids=["cuda", "hip", "opencl", "metal"])
 def test_each_table_is_declared_once(generate, qualifier):
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     source = generate(_prepared(_faces, *_faces_args()))
     assert source.count(f"{qualifier} __tack_table_0__[24]") == 1
     assert source.count(f"{qualifier} __tack_table_1__[6]") == 1
@@ -178,7 +178,7 @@ def test_each_table_is_declared_once(generate, qualifier):
 
 def test_opencl_tables_compile(tmp_path):
     clang = require_clang()
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     index = tack.empty((4,), tack.i32)
     args = (index, tack.empty((4,), tack.i32), tack.empty((4,), tack.i64),
             tack.empty((4,), tack.u32), tack.empty((4,)))

@@ -61,7 +61,7 @@ def write_segments(scalar, offsets, lines, n):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     n = 24 if check else 48
     axis = np.linspace(-1, 1, n + 1, dtype=np.float32)
     scalar = tack.array(axis[:, None] ** 2 + axis[None, :] ** 2 - np.float32(0.7**2))

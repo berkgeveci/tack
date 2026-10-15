@@ -26,8 +26,8 @@ _parser.add_argument('--nblocks', type=int, default=8,
 _parser.add_argument('--block_size', type=int, default=32,
                      help='Cells per dimension per block (default 32)')
 _args = _parser.parse_args()
-_arch = getattr(tack, _args.arch)
-tack.init(arch=_arch)
+_arch = _args.arch
+tack.set_default_device(_arch)
 
 
 # ================================================================

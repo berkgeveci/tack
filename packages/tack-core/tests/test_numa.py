@@ -245,7 +245,7 @@ from test_numa import _MPOL_BIND, _set_policy, pages_per_node
 
 _set_policy(_MPOL_BIND, 1)
 # One thread: the fill runs on this, bound, thread.
-tack.init(arch=tack.cpu, num_threads=1)
+tack.set_default_device("cpu", num_threads=1)
 n = (64 << 20) // 4
 array = tack.zeros((n,), tack.f32)
 hist = pages_per_node(array._buffer._data.ctypes.data, 64 << 20)

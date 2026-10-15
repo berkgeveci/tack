@@ -11,7 +11,7 @@ primitives).
 
 ```python
 import tack, numpy as np
-tack.init(arch=tack.cpu)          # or metal, cuda, hip, level_zero
+tack.set_default_device("cpu")          # or metal, cuda, hip, level_zero
 
 @tack.kernel
 def vector_add(x, y, out):

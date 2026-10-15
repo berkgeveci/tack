@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 
 import tack
+from tack.runtime.kernel_utils import drop_variants
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
@@ -225,8 +226,7 @@ def test_shape_in_the_bound_does_not_specialize_on_length(backend):
     The bound is passed to the launch rather than compiled in, so it must
     not force a recompile for every array size.
     """
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_bound, None)
+    drop_variants(_bound, lambda key: True)        # in every cache, the fast path's too
 
     for n in (8, 16, 64, 257, 1000):
         src, got = _run(_bound, n)
@@ -237,8 +237,7 @@ def test_shape_in_the_bound_does_not_specialize_on_length(backend):
 def test_shape_in_the_body_stays_correct_across_lengths(backend):
     """The length is compiled into the index arithmetic here, so this
     specializes — but every specialization must be right."""
-    from tack.runtime.dispatch import get_backend
-    get_backend()._cache.pop(_reverse, None)
+    drop_variants(_reverse, lambda key: True)        # in every cache, the fast path's too
 
     for n in (8, 1000, 8, 64, 1000):
         src, got = _run(_reverse, n)

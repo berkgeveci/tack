@@ -12,7 +12,7 @@ Save this complete example in a `.py` file:
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 host = np.arange(6, dtype=np.float32).reshape(2, 3)
 source = tack.array(host)                          # copy input values
 out = tack.empty(host.shape)                       # every output will be written
@@ -49,7 +49,7 @@ plus its coefficient values on a topology.
 import numpy as np
 import tack
 
-tack.init(arch=tack.cpu)
+tack.set_default_device("cpu")
 velocity = tack.empty((4,), tack.vec3(tack.f32))
 velocity.fill([1.0, 0.0, 0.0])
 assert isinstance(velocity, tack.Array)

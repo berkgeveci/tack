@@ -110,7 +110,7 @@ current device supports, ask:
 import tack
 from tack.runtime.dispatch import get_backend
 
-tack.init(arch=tack.level_zero)
+tack.set_default_device("level_zero")
 be = get_backend()
 print(be.supports_f64, sorted(t.name for t in be.supported_atomic_dtypes))
 ```

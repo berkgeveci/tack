@@ -12,14 +12,14 @@ import pytest
 
 import tack
 from tack.runtime import cpu
-from tack.runtime.kernel_utils import arrays_disjoint, written_array_params
+from tack.runtime.kernel_utils import arrays_disjoint, drop_variants, written_array_params
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 
 @pytest.fixture(autouse=True)
 def init_cpu():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
 
 
 @tack.func
@@ -213,7 +213,7 @@ def test_codegen_makes_no_promise_by_default():
 def test_switching_between_disjoint_and_aliased_calls(order):
     from tack.runtime.dispatch import get_backend
 
-    get_backend()._cache.pop(_ordered, None)
+    drop_variants(_ordered, lambda key: True)        # in every cache, the fast path's too
     for alias in order:
         a = tack.empty((9,), tack.i32)
         b = a.reshape((9,)) if alias else tack.empty((9,), tack.i32)
@@ -260,7 +260,7 @@ def test_overlapping_imported_views_run_without_the_promise():
 def test_disjoint_variant_does_not_respecialize_on_length():
     from tack.runtime.dispatch import get_backend
 
-    get_backend()._cache.pop(_accumulate, None)
+    drop_variants(_accumulate, lambda key: True)        # in every cache, the fast path's too
     for n in (4, 16, 64):
         _accumulate(_f32(n), _f32(4), _f32(n), n)
     assert len(get_backend()._cache[_accumulate]) == 1

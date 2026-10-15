@@ -564,7 +564,7 @@ def main():
                              "of the core count.")
     args = parser.parse_args()
 
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     backend = get_backend()
     machine = machine_id(backend)
     print(f"host       : {machine['host']}  ({machine['machine']}, "

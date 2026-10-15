@@ -204,11 +204,37 @@ class Array:
     """
 
     def __init__(self, dtype: ScalarType, shape: tuple[int, ...], buffer: DeviceBuffer,
-                 writable: bool = True):
+                 writable: bool = True, device=None):
         self._dtype = dtype
         self._shape = tuple(shape)
         self._buffer = buffer
         self._writable = writable
+        # The backend that made the buffer. Every Tack constructor says; an
+        # array built without one takes the default device when asked.
+        self._device = device
+
+    @property
+    def _backend(self):
+        if self._device is None:
+            from tack.runtime.dispatch import get_backend
+            self._device = get_backend()
+        return self._device
+
+    @property
+    def device(self):
+        """The `tack.Device` this array's memory belongs to; kernels given the
+        array run there."""
+        from tack.runtime.dispatch import as_device
+        return as_device(self._backend)
+
+    def to_device(self, device) -> 'Array':
+        """This array on ``device`` (a `tack.Device` or a spec such as ``"cpu"``):
+        itself if its memory is already usable there, else a copy."""
+        from tack.runtime.dispatch import backend_of
+        target = backend_of(device)
+        if target is self._backend or target.memory_domain == self._backend.memory_domain:
+            return self
+        return array(self.numpy(), self.dtype, device=target)
 
     @property
     def scalar_dtype(self):
@@ -314,8 +340,7 @@ class Array:
         """
         self._check_writable()
         if np.ndim(value) == 0:
-            from tack.runtime.dispatch import get_backend
-            if not get_backend().fill_array(self, value):
+            if not self._backend.fill_array(self, value):
                 self._buffer.fill(value)
             return
         vector_shape = self._vector_shape()
@@ -336,11 +361,10 @@ class Array:
 
     def _reduce(self, op: str):
         """Reduce on the device where that is supported, else via numpy."""
-        from tack.runtime.dispatch import get_backend
         from tack.runtime.reductions import empty_reduction, reduce_numpy
         if self.size == 0:
             return empty_reduction(op)
-        backend = get_backend()
+        backend = self._backend
         if backend.supports_device_reductions:
             return backend.reduce_array(self._scalar_view(), op)
         return reduce_numpy(self.numpy(), op)
@@ -464,14 +488,15 @@ class Array:
 
     def _scalar_view(self):
         """A flat scalar view for storage-level copy, reductions and interop."""
-        out = Array(self.scalar_dtype, (self.scalar_size,), self._buffer, self._writable)
+        out = Array(self.scalar_dtype, (self.scalar_size,), self._buffer, self._writable,
+                    self._device)
         hold = getattr(self, '_dlpack_hold', None)
         if hold is not None:
             out._dlpack_hold = hold
         return out
 
     def copy(self) -> 'Array':
-        """Copy all values into independent storage on the active backend."""
+        """Copy all values into independent storage on the same device."""
         from tack.algorithms.copy import copy as _copy
         out = empty_like(self)
         _copy(self._scalar_view(), out._scalar_view(), self.scalar_size)
@@ -490,7 +515,7 @@ class Array:
                 raise TypeError("astype cannot change an element's component dimensions")
         elif element_shape is not None:
             dtype = _element(dtype, self.dtype.shape)
-        out = empty(self.shape, dtype)
+        out = empty(self.shape, dtype, device=self._backend)
         from tack.algorithms.copy import copy as _copy
         _copy(self._scalar_view(), out._scalar_view(), self.scalar_size)
         return out
@@ -518,7 +543,8 @@ class Array:
             raise ValueError(
                 f"Cannot reshape {self.shape} ({self.size} elements) "
                 f"to {new_shape} ({new_size} elements)")
-        reshaped = _array_view(self.dtype, new_shape, self._buffer, self._writable)
+        reshaped = _array_view(self.dtype, new_shape, self._buffer, self._writable,
+                               self._device)
         hold = getattr(self, '_dlpack_hold', None)
         if hold is not None:
             reshaped._dlpack_hold = hold
@@ -547,12 +573,12 @@ def _array_shape(shape, allow_infer=False):
     return dims
 
 
-def _array_view(dtype, shape, buffer, writable=True):
+def _array_view(dtype, shape, buffer, writable=True, device=None):
     if not isinstance(dtype, (ScalarType, ElementType)):
         raise TypeError("dtype must be a Tack scalar, vector or matrix type")
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
     storage = (int(np.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
-    out = Array(scalar, storage, buffer, writable)
+    out = Array(scalar, storage, buffer, writable, device)
     if isinstance(dtype, ElementType):
         out._vector_n = dtype.size
         out._logical_shape = shape
@@ -583,39 +609,48 @@ def _host_dtype(host: np.ndarray, values) -> ScalarType:
     return from_numpy_dtype(host.dtype)
 
 
-def empty(shape, dtype=f32, *, exportable=False) -> Array:
+def _target(device):
+    """The backend ``device`` names: a `Device`, a spec, a backend, or None for
+    the default device."""
+    from tack.runtime.backend import Backend
+    from tack.runtime.dispatch import backend_of
+    return device if isinstance(device, Backend) else backend_of(device)
+
+
+def empty(shape, dtype=f32, *, device=None, exportable=False) -> Array:
     """A new array of uninitialized scalar, vector or matrix elements.
 
     ``shape`` counts elements; ``dtype`` describes one element. A vector
     array of shape ``(n,)`` and dtype ``vec3(f32)`` downloads as ``(n, 3)``.
     Initialize its values with a kernel, ``fill`` or ``tack.copyto`` before
-    reading. The storage belongs to the currently active backend.
+    reading. ``device`` is a `tack.Device` or a spec such as ``"cuda"``; by
+    default the default device.
     """
-    from tack.runtime.dispatch import get_backend
+    backend = _target(device)
     shape = _array_shape(shape)
     dtype = as_dtype(dtype)
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
     storage = (int(np.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
-    buffer = get_backend().allocate_array(scalar, storage, exportable=exportable)
-    return _array_view(dtype, shape, buffer)
+    buffer = backend.allocate_array(scalar, storage, exportable=exportable)
+    return _array_view(dtype, shape, buffer, device=backend)
 
 
-def zeros(shape, dtype=f32) -> Array:
+def zeros(shape, dtype=f32, *, device=None) -> Array:
     """A new array of zeros, filled on the device."""
-    a = empty(shape, dtype)
+    a = empty(shape, dtype, device=device)
     if not a._buffer.starts_zeroed:
         a.fill(0)
     return a
 
 
-def ones(shape, dtype=f32) -> Array:
+def ones(shape, dtype=f32, *, device=None) -> Array:
     """A new array of ones."""
-    a = empty(shape, dtype)
+    a = empty(shape, dtype, device=device)
     a.fill(1)
     return a
 
 
-def full(shape, fill_value, dtype=None) -> Array:
+def full(shape, fill_value, dtype=None, *, device=None) -> Array:
     """A new array with every element ``fill_value``.
 
     Without ``dtype``, a Python float gives f32 and an int i32 (i64 if it
@@ -624,12 +659,12 @@ def full(shape, fill_value, dtype=None) -> Array:
     """
     if dtype is None:
         dtype = _host_dtype(np.asarray(fill_value), fill_value)
-    a = empty(shape, dtype)
+    a = empty(shape, dtype, device=device)
     a.fill(fill_value)
     return a
 
 
-def _like(prototype, dtype):
+def _like(prototype, dtype, device):
     if not isinstance(prototype, (Array, np.ndarray)):
         raise TypeError("expected a Tack array or NumPy array as the prototype")
     if dtype is None:
@@ -640,50 +675,56 @@ def _like(prototype, dtype):
         if (isinstance(dtype, ScalarType) and isinstance(prototype, Array)
                 and isinstance(prototype.dtype, ElementType)):
             dtype = _element(dtype, prototype.dtype.shape)
-    return empty(prototype.shape, dtype)
+    if device is None and isinstance(prototype, Array):
+        device = prototype._backend
+    return empty(prototype.shape, dtype, device=device)
 
 
-def empty_like(prototype, dtype=None) -> Array:
+def empty_like(prototype, dtype=None, *, device=None) -> Array:
     """A new uninitialized array of ``prototype``'s shape and dtype.
 
     ``prototype`` is a Tack or NumPy array; nothing is read from it. A scalar
     ``dtype`` changes the component type of a vector or matrix prototype and
-    keeps its element dimensions.
+    keeps its element dimensions. A Tack prototype's device is the default.
     """
-    return _like(prototype, dtype)
+    return _like(prototype, dtype, device)
 
 
-def zeros_like(prototype, dtype=None) -> Array:
+def zeros_like(prototype, dtype=None, *, device=None) -> Array:
     """A new array of zeros of ``prototype``'s shape and dtype."""
-    a = _like(prototype, dtype)
+    a = _like(prototype, dtype, device)
     if not a._buffer.starts_zeroed:
         a.fill(0)
     return a
 
 
-def ones_like(prototype, dtype=None) -> Array:
+def ones_like(prototype, dtype=None, *, device=None) -> Array:
     """A new array of ones of ``prototype``'s shape and dtype."""
-    a = _like(prototype, dtype)
+    a = _like(prototype, dtype, device)
     a.fill(1)
     return a
 
 
-def full_like(prototype, fill_value, dtype=None) -> Array:
+def full_like(prototype, fill_value, dtype=None, *, device=None) -> Array:
     """A new array of ``prototype``'s shape and dtype, every element ``fill_value``."""
-    a = _like(prototype, dtype)
+    a = _like(prototype, dtype, device)
     a.fill(fill_value)
     return a
 
 
-def array(obj, dtype=None) -> Array:
+def array(obj, dtype=None, *, device=None) -> Array:
     """A new array holding a copy of ``obj``: a NumPy array, a sequence or a Tack array.
 
     Without ``dtype``, all of ``obj``'s dimensions are array dimensions, a
     NumPy array keeps its dtype, and Python floats and ints become f32 and
     i32 (i64 if a value needs it). With an element dtype such as
     ``vec3(f32)``, the trailing dimensions are the elements' components.
+    A Tack array is copied on its device unless ``device`` names another.
     """
     if isinstance(obj, Array):
+        if device is not None and _target(device).memory_domain != obj._backend.memory_domain:
+            moved = obj.to_device(device)
+            return moved if dtype is None else moved.astype(dtype)
         return obj.copy() if dtype is None else obj.astype(dtype)
     host = np.asarray(obj)
     dtype = _host_dtype(host, obj) if dtype is None else as_dtype(dtype)
@@ -693,17 +734,21 @@ def array(obj, dtype=None) -> Array:
         if len(shape) < rank or shape[-rank:] != dtype.shape:
             raise ValueError(f"input shape {shape} must end with element shape {dtype.shape}")
         shape = shape[:-rank]
-    out = empty(shape, dtype)
+    out = empty(shape, dtype, device=device)
     out._upload(host.astype(out.scalar_dtype.numpy_dtype, copy=False))
     return out
 
 
-def asarray(obj, dtype=None) -> Array:
-    """``obj`` itself if it is a Tack array of ``dtype`` (or any, without one),
-    else `array(obj, dtype)`."""
-    if isinstance(obj, Array) and (dtype is None or as_dtype(dtype) == obj.dtype):
-        return obj
-    return array(obj, dtype)
+def asarray(obj, dtype=None, *, device=None) -> Array:
+    """``obj`` itself if it is a Tack array of ``dtype`` (or any, without one)
+    on ``device`` (or any, without one), else `array(obj, dtype, device=device)`."""
+    if isinstance(obj, Array):
+        if device is not None:
+            obj = obj.to_device(device)
+        if dtype is None or as_dtype(dtype) == obj.dtype:
+            return obj
+        return obj.astype(dtype)
+    return array(obj, dtype, device=device)
 
 
 def copyto(dst: Array, src):
@@ -734,7 +779,7 @@ def copyto(dst: Array, src):
     dst._upload(host)
 
 
-def arange(start, stop=None, step=1, dtype=None) -> Array:
+def arange(start, stop=None, step=1, dtype=None, *, device=None) -> Array:
     """Evenly spaced values in ``[start, stop)``, as ``np.arange``.
 
     Without ``dtype``, integer arguments give i32 (i64 if a value needs it)
@@ -747,13 +792,14 @@ def arange(start, stop=None, step=1, dtype=None) -> Array:
         dtype = _host_dtype(values, [start, stop, step])
         if values.size == 0 and values.dtype.kind in 'iu':
             dtype = i32 if all(integer_type_for_value(int(v)) is i32 for v in (start, stop)) else i64
-    return array(values, dtype)
+    return array(values, dtype, device=device)
 
 
 def concat(arrays) -> Array:
     """Join a sequence of arrays end to end into a new one-dimensional array.
 
-    All arrays must have the same dtype; the copy runs on the device.
+    All arrays must have the same dtype; the copy runs on the first array's
+    device.
     """
     arrays = list(arrays)
     if not arrays:
@@ -764,7 +810,7 @@ def concat(arrays) -> Array:
             raise TypeError(
                 f"concat: all arrays must have the same dtype, got {dt} and {a.dtype}")
     total = sum(a.size for a in arrays)
-    result = empty((total,), dt)
+    result = empty((total,), dt, device=arrays[0]._backend)
     from tack.algorithms.copy import copy_with_offset
     offset = 0
     for a in arrays:
@@ -773,12 +819,13 @@ def concat(arrays) -> Array:
     return result
 
 
-def from_dlpack(x, *, copy: bool = False) -> Array:
+def from_dlpack(x, *, device=None, copy: bool = False) -> Array:
     """A Tack array from a DLPack capsule or any object with ``__dlpack__``.
 
     Zero-copy: the array shares memory with the source, and the source is
     held alive for as long as the array lives. Works for device tensors as
-    well as host ones, provided the active backend can wrap them.
+    well as host ones, provided ``device`` (by default the default device)
+    can wrap them.
 
     Wrap, not address: the Metal backend reads host memory perfectly well
     but cannot turn a host pointer into the MTLBuffer an array needs, so it
@@ -793,16 +840,19 @@ def from_dlpack(x, *, copy: bool = False) -> Array:
     """
     if copy:
         host = x if isinstance(x, np.ndarray) else np.from_dlpack(x)
-        return array(host)
+        return array(host, device=device)
 
     from tack.lang.dlpack import dlpack_to_array
-    return dlpack_to_array(x)
+    from tack.runtime.dispatch import as_device
+    with as_device(_target(device)):
+        return dlpack_to_array(x)
 
 
-def memory_space(ptr) -> str:
+def memory_space(ptr, *, device=None) -> str:
     """Query the memory space of a pointer.
 
-    Uses the active backend to determine where the pointer resides.
+    Uses ``device`` (by default the default device) to determine where the
+    pointer resides.
 
     Returns:
         'cpu'          — unregistered host memory (regular malloc/new)
@@ -813,11 +863,10 @@ def memory_space(ptr) -> str:
         'hip_pinned'   — HIP pinned host memory (hipHostMalloc)
         'hip_managed'  — HIP unified memory (hipMallocManaged)
     """
-    from tack.runtime.dispatch import get_backend
-    return get_backend().memory_space(ptr)
+    return _target(device).memory_space(ptr)
 
 
-def array_from_ptr(ptr, shape, dtype, *, writable: bool = False) -> Array:
+def array_from_ptr(ptr, shape, dtype, *, device=None, writable: bool = False) -> Array:
     """Wrap existing device memory as a Tack array without copying.
 
     Use this for interop with external libraries (pycuda, cupy, Catalyst)
@@ -838,12 +887,12 @@ def array_from_ptr(ptr, shape, dtype, *, writable: bool = False) -> Array:
              - Level Zero: device pointer as integer
         shape: the array's dimensions, counting elements
         dtype: scalar or element type (tack.f32, tack.vec3(), np.int32, ...)
+        device: the device whose memory this is; by default the default device
         writable: if False (default), copyto() and fill() raise errors
 
     Returns:
         An Array wrapping the external memory.
     """
-    from tack.runtime.dispatch import get_backend
     from tack.runtime.kernel_utils import as_address
 
     shape = _array_shape(shape)
@@ -853,7 +902,7 @@ def array_from_ptr(ptr, shape, dtype, *, writable: bool = False) -> Array:
         storage = (int(np.prod(shape)) * dtype.size,)
     else:
         scalar, storage = dtype, shape
-    backend = get_backend()
+    backend = _target(device)
 
     # Validate the pointer's memory space against what this backend expects,
     # on backends that distinguish device memory; Metal MTLBuffer objects
@@ -874,7 +923,7 @@ def array_from_ptr(ptr, shape, dtype, *, writable: bool = False) -> Array:
                 f"pointer. Use tack.array() to copy host data to the device.")
 
     buf = backend.wrap_ptr(ptr, scalar, storage)
-    return _array_view(dtype, shape, buf, writable=writable)
+    return _array_view(dtype, shape, buf, writable=writable, device=backend)
 
 
 class Texture3D:
@@ -894,8 +943,6 @@ class Texture3D:
     """
 
     def __init__(self, source_array: Array, shape_3d: tuple, interp: str = 'linear'):
-        from tack.runtime.dispatch import get_backend
-
         # Every hardware path builds a single-channel 32-bit float image,
         # so f64 data would be reinterpreted rather than converted.
         if source_array.dtype is not f32:
@@ -917,12 +964,15 @@ class Texture3D:
         self.shape_3d = shape_3d   # (W, H, D) logical 3D shape
         self.interp = interp
 
-        backend = get_backend()
+        # The texture lives where its array does, and kernels sampling it run
+        # there (``dispatch.launch_backend`` reads ``_device``).
+        backend = self._device = source_array._backend
         if backend.texture_in_hardware(shape_3d):
             self._storage = backend.create_texture_image(shape_3d)
         else:
             self._storage = Array(f32, (source_array.size,),
-                                  backend.allocate_array(f32, (source_array.size,)))
+                                  backend.allocate_array(f32, (source_array.size,)),
+                                  device=backend)
         self.update()
 
     def update(self):

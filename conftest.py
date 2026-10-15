@@ -57,7 +57,7 @@ workgroup_backends = []
 
 for _arch in _ALL_ARCHES:
     try:
-        tack.init(arch=getattr(tack, _arch))
+        tack.set_default_device(_arch)
     except (ImportError, RuntimeError, OSError, AttributeError):
         # Not built, no device, or no driver. All three mean the same here.
         continue
@@ -91,7 +91,7 @@ def pytest_configure(config):
 @pytest.fixture(params=available_backends)
 def backend(request):
     """Run a test once per available backend."""
-    tack.init(arch=getattr(tack, request.param))
+    tack.set_default_device(request.param)
     return request.param
 
 
@@ -108,19 +108,19 @@ def no_disk_cache():
 @pytest.fixture(params=f64_backends)
 def f64_backend(request):
     """Run a test once per backend that supports f64."""
-    tack.init(arch=getattr(tack, request.param))
+    tack.set_default_device(request.param)
     return request.param
 
 
 @pytest.fixture(params=reduction_backends)
 def reduction_backend(request):
     """Run a test once per backend that reduces on the device."""
-    tack.init(arch=getattr(tack, request.param))
+    tack.set_default_device(request.param)
     return request.param
 
 
 @pytest.fixture(params=workgroup_backends)
 def workgroup_backend(request):
     """Run a test once per available backend with workgroup execution."""
-    tack.init(arch=getattr(tack, request.param))
+    tack.set_default_device(request.param)
     return request.param

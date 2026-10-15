@@ -241,7 +241,7 @@ def test_without_a_marker_the_wait_is_inline(backend, monkeypatch):
 
 
 def test_the_cpu_reads_inline():
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     assert get_backend().async_marker() is None
     out = tack.empty((10,))
     _ramp(out, 3.0)

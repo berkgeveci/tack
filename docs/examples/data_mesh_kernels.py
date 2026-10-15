@@ -32,7 +32,7 @@ def integrated_flux(faces, centers, normals, areas, out):
 
 
 def run(arch="cpu", check=False):
-    tack.init(arch=getattr(tack, arch))
+    tack.set_default_device(arch)
     data = td.uniform_grid((3, 2, 2), spacing=(0.5, 1.0, 1.0))
     xyz = data.positions()                      # one upload boundary for this example
     values = tack.empty((data.num_points,))
