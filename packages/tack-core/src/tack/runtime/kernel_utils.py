@@ -495,9 +495,11 @@ class KernelVariant:
 
 
 def _written_array_args(template, effective_args) -> tuple:
-    """``(index, name)`` of each array argument the kernel may store to."""
+    """``(index, name)`` of each array argument the kernel may store to, the
+    name as the source wrote it (`_source_name`)."""
+    held = getattr(template, 'held_arrays', {})
     return tuple(
-        (index, param.name)
+        (index, _source_name(param.name, held))
         for index, (param, written, arg) in enumerate(
             zip(template.params, _written_flags(template), effective_args))
         if written and isinstance(arg, Array))
@@ -514,17 +516,17 @@ def check_writable_arrays(kernel_name, written_arrays, args):
     for index, name in written_arrays:
         if not args[index]._writable:
             raise ValueError(
-                f"Kernel '{kernel_name}': {_source_name(name)} may be written, "
+                f"Kernel '{kernel_name}': {name} may be written, "
                 f"but its array is read-only. Pass writable=True to "
                 f"array_from_ptr() if the memory may be modified.")
 
 
-def _source_name(name):
+def _source_name(name, held):
     """A parameter as the source wrote it: ``parameter 'out'``, or for an array a
-    device-class argument holds (``__tmpl_dst_base__values__``) ``'dst.base.values'``."""
-    from tack.lang.template_rewrite import held_array_name
-    held = held_array_name(name)
-    return f"parameter '{name}'" if held is None else f"'{held}'"
+    device-class argument holds (``__tmpl_dst_base__values__``, found in the
+    lowered function's ``held``) ``'dst.base.values'``."""
+    source = held.get(name)
+    return f"parameter '{name}'" if source is None else f"'{source}'"
 
 
 def resolve_variant(backend, kernel, args, kwargs, build,

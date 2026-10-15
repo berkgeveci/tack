@@ -322,6 +322,44 @@ def test_debug_mode_keeps_its_own_entries(tmp_path, backend):
     assert plain_again["result"] == plain["result"] == [[float(i) for i in range(8)]]
 
 
+_HELD_KERNELS = """
+import numpy as np
+import tack
+
+
+@tack.device_class
+class Holder:
+    def __init__(self, values):
+        self.values = values
+
+
+@tack.kernel
+def zero(h):
+    for i in range(h.values.shape[0]):
+        h.values[i] = 0.0
+
+
+def run():
+    host = np.ones(4, np.float32)
+    try:
+        zero(Holder(tack.array_from_ptr(host, (4,), tack.f32)))
+    except ValueError as error:
+        return str(error)
+"""
+
+
+def test_a_kernel_read_from_disk_names_what_a_device_class_holds(tmp_path):
+    """The source spelling of a held array lives in the lowered IR, not in
+    state the lowering of this process left behind."""
+    _cache_dir(tmp_path)
+    modules = {"kernels.py": _HELD_KERNELS}
+    first = _run(tmp_path, modules=modules)
+    again = _run(tmp_path, modules=modules)
+    assert again["stats"].get("ir_miss", 0) == 0
+    assert "'h.values' may be written, but its array is read-only" in first["result"]
+    assert again["result"] == first["result"]
+
+
 def test_another_tack_misses(tmp_path):
     _cache_dir(tmp_path)
     _run(tmp_path)

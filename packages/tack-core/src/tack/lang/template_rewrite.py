@@ -374,10 +374,14 @@ def rewrite_templates(kernel_ast, template_args):
     used_names.update(n.arg for source in sources for n in ast.walk(source)
                       if isinstance(n, ast.arg))
 
+    # The source spelling of each held array's synthetic parameter, for
+    # diagnostics; lowering keeps it on the IR (`IRFunction.held_arrays`).
+    funcdef._tack_held_arrays = {}
     # Process each template parameter (reverse order to keep indices stable)
     for idx in sorted(template_args.keys(), reverse=True):
         param_name, obj = template_args[idx]
-        root, extra = _template_nodes(param_name, obj, used_names, resolved_funcs)
+        root, extra = _template_nodes(param_name, obj, used_names, resolved_funcs,
+                                      funcdef._tack_held_arrays)
 
         # obj[i], obj[i] = v and len(obj) as the protocol's method calls
         _desugar_indexing(funcdef, param_name, root, used_names)
@@ -596,27 +600,17 @@ class _Node:
         self.children = {}
 
 
-# The synthetic parameter of an array a device-class argument holds, by the
-# path the source wrote: ``__tmpl_dst_base__values__`` -> ``dst.base.values``.
-# Names are made from the parameter and the attribute path, so the map
-# stays as small as the set of distinct paths.
-_HELD_ARRAY_NAMES = {}
-
-
-def held_array_name(synthetic):
-    """``dst.base.values`` for the synthetic name of an array ``dst`` holds, or None."""
-    return _HELD_ARRAY_NAMES.get(synthetic)
-
-
-def _template_nodes(param_name, obj, used_names, resolved_funcs):
+def _template_nodes(param_name, obj, used_names, resolved_funcs, held_arrays):
     """The resolved tree of one template argument: ``(root, extra)``, ``extra`` the
     synthetic parameters every resolved method takes, in the runtime's order --
-    the flattened arrays by name, then the flattened runtime scalars by name."""
+    the flattened arrays by name, then the flattened runtime scalars by name.
+    Each array's synthetic parameter goes into ``held_arrays`` with the path
+    the source writes: ``__tmpl_dst_base__values__`` -> ``dst.base.values``."""
     _, arrays, runtime = classify_template_attrs(obj)
     array_names = {key: fresh_name(template_array_param_name(param_name, key), used_names)
                    for key in sorted(arrays)}
     for key, synthetic in array_names.items():
-        _HELD_ARRAY_NAMES[synthetic] = f"{param_name}.{key.replace(_NESTED, '.')}"
+        held_arrays[synthetic] = f"{param_name}.{key.replace(_NESTED, '.')}"
     runtime_names = {key: fresh_name(f"__tmpl_{param_name}_{key}__", used_names)
                      for key in sorted(runtime)}
     extra = [array_names[k] for k in sorted(array_names)] + \

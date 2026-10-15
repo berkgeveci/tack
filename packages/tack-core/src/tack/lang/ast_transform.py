@@ -219,6 +219,9 @@ class KernelTransformer(ast.NodeVisitor):
         if self._debug:
             params.extend(ir.IRParam(name=name) for name in ir_bounds.HIDDEN_PARAMS)
         function = ir.IRFunction(name=node.name, params=params, body=body)
+        # The source spelling of the arrays device-class arguments hold, by
+        # synthetic parameter (template_rewrite), for diagnostics.
+        function.held_arrays = dict(getattr(node, '_tack_held_arrays', {}))
         if self._debug:
             function.bounds_sites = tuple(self._bounds_sites)
         if workgroup_features(function):
