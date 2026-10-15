@@ -43,7 +43,9 @@ metal = [
 # Lower bound only. hip-python's version tracks the ROCm release it binds
 # to -- 7.1.x against ROCm 7.1, 7.2.x against 7.2 -- so the right version
 # is whichever matches the system's ROCm, and pinning one here would be
-# guessing at somebody else's install.
+# guessing at somebody else's install. hip-python 10 (a compatibility
+# package over rocm.bindings) is what the bound resolves to today, and
+# hip_backend reads its version, runtime library and output structs too.
 hip = [
     "hip-python>=7.0; sys_platform == 'linux' and platform_machine == 'x86_64'",
 ]
