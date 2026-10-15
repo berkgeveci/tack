@@ -166,7 +166,7 @@ per-iteration scratch storage, use
 which work on every backend.
 
 ```bash
-pip install 'tack-core[cpu]'
+uv sync --extra cpu      # or, in another environment: pip install -e 'packages/tack-core[cpu]'
 ```
 
 ```python
@@ -181,7 +181,7 @@ same allocation. There is no separate device-memory transfer, but the public
 [interoperability APIs](16-interoperability.md) when you need shared storage.
 
 ```bash
-pip install 'tack-core[metal]'
+uv sync --extra metal    # or: pip install -e 'packages/tack-core[metal]'
 ```
 
 ```python
@@ -279,8 +279,8 @@ If a backend is unavailable, `tack.device()` gives a clear error:
 ```
 RuntimeError: Cannot start the 'hip' device: missing dependency.
   No module named 'hip'
-  Requires an AMD GPU with ROCm, plus hip-python:
-    pip install 'tack-core[hip]'
+  Requires an AMD GPU with ROCm, plus hip-python; in a clone:
+    pip install -e 'packages/tack-core[hip]'   (or: uv sync --extra hip)
   ...
 ```
 

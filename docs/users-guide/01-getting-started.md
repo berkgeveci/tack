@@ -23,17 +23,17 @@ Run Python with `uv run python` from this directory. Both Tack packages are
 installed: `tack-core` for compute and `tack-vis` for datasets and scientific
 visualization.
 
-### Use a released package
+### Install into another environment
 
-For a separate application, create an environment and install the packages you
-need from PyPI:
+Tack is not on PyPI yet. For a separate application, create an environment
+and install the packages from the clone, `tack-core` first:
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
-python -m pip install 'tack-core[cpu]'
+python -m pip install -e '/path/to/tack/packages/tack-core[cpu]'
 # Optional: datasets and visualization
-python -m pip install tack-vis
+python -m pip install -e /path/to/tack/packages/tack-vis
 ```
 
 On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell. Run scripts

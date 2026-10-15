@@ -86,6 +86,13 @@ plugins:
             show_signature_annotations: true
             merge_init_into_class: true
 
+# A page left out of the nav is a warning, which --strict makes an error:
+# otherwise it builds, unreachable, and nothing says so.
+validation:
+  nav:
+    omitted_files: warn
+    not_found: warn
+
 nav:
   - Home: index.md
   - User's Guide:

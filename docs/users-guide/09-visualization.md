@@ -9,7 +9,7 @@ Tack kernels, so they run on every backend, and the kernels you write
 yourself see a mesh the way the built-in ones do.
 
 ```bash
-pip install 'tack-core[cpu]' tack-vis
+uv sync --extra cpu      # in a clone; both packages are installed
 ```
 
 This overview is a tour; the chapters below develop the data model and complete

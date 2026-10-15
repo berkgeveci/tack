@@ -1,9 +1,26 @@
+"""Tack: a Python-first compute framework.
+
+Kernels are Python functions decorated with ``@tack.kernel``, compiled when
+first called for the device they run on: the CPU (through LLVM), Metal, CUDA,
+HIP or Level Zero. Arrays (``tack.empty``, ``tack.array``, ...) hold typed
+values on a device, and a kernel runs where its arrays are. ``tack.dataset``,
+in the tack-vis package, adds meshes, fields on them, and the algorithms of
+scientific visualization.
+"""
+
 # Enable namespace package merging across tack-core and tack-vis
+from importlib.metadata import PackageNotFoundError as _NotInstalled
+from importlib.metadata import version as _installed_version
 from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)
+del extend_path
 
-"""Tack — GPU compute framework framework."""
+try:
+    __version__ = _installed_version("tack-core")
+except _NotInstalled:          # a source tree that was never installed
+    __version__ = "0+unknown"
+del _NotInstalled, _installed_version
 
 from tack.lang.array import (
     Array,

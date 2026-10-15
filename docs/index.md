@@ -75,10 +75,14 @@ Only the `tack.set_default_device()` line changes between backends:
 
 ## Install
 
+Tack is not on PyPI yet; install it from a clone of the repository:
+
 ```bash
-pip install 'tack-core[cpu]'      # CPU only
-pip install 'tack-core[metal]'    # + Apple silicon
-pip install 'tack-core[cuda]'     # + NVIDIA
+git clone https://github.com/berkgeveci/tack.git && cd tack
+pip install -e 'packages/tack-core[cpu]'      # CPU only
+pip install -e 'packages/tack-core[metal]'    # ...or Apple silicon
+pip install -e 'packages/tack-core[cuda]'     # ...or NVIDIA
+pip install -e packages/tack-vis              # datasets and visualization
 ```
 
 See [Backends](reference/backends.md) for what each extra pulls in and which

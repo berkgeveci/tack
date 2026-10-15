@@ -32,8 +32,12 @@ interop = [
     "mfem; (sys_platform == 'darwin' and platform_machine == 'arm64') or (sys_platform == 'linux' and platform_machine == 'x86_64')",
 ]
 docs = [
-    "mkdocs-material",
-    "mkdocstrings[python]",
+    # MkDocs 2.0 drops the plugin system and Material's themes; stay on 1.x
+    # until Material says how to move. Material and mkdocstrings are held to
+    # the majors the site is built and checked with.
+    "mkdocs>=1.6,<2",
+    "mkdocs-material>=9.7,<10",
+    "mkdocstrings[python]>=1.0,<2",
     # mkdocstrings formats signatures with Black or Ruff if one is present
     # and silently leaves them unformatted otherwise. Ruff is already this
     # project's linter.

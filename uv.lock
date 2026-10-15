@@ -1696,6 +1696,7 @@ dev = [
     { name = "scipy", version = "1.18.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 docs = [
+    { name = "mkdocs" },
     { name = "mkdocs-material" },
     { name = "mkdocstrings", extra = ["python"] },
     { name = "ruff" },
@@ -1718,8 +1719,9 @@ metal = [
 [package.metadata]
 requires-dist = [
     { name = "mfem", marker = "(platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'interop') or (platform_machine == 'x86_64' and sys_platform == 'linux' and extra == 'interop')" },
-    { name = "mkdocs-material", marker = "extra == 'docs'" },
-    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'" },
+    { name = "mkdocs", marker = "extra == 'docs'", specifier = ">=1.6,<2" },
+    { name = "mkdocs-material", marker = "extra == 'docs'", specifier = ">=9.7,<10" },
+    { name = "mkdocstrings", extras = ["python"], marker = "extra == 'docs'", specifier = ">=1.0,<2" },
     { name = "pytest", marker = "extra == 'dev'" },
     { name = "pytest-xdist", marker = "extra == 'dev'" },
     { name = "ruff", marker = "extra == 'docs'" },

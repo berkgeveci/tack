@@ -7,6 +7,8 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tack.__version__`, the installed tack-core's version, and a docstring
+  for `tack` (`help(tack)` said nothing: the docstring followed code).
 - NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`
   is a function space plus coefficients, and "field" means only that now.
   Constructors take the shape first, as NumPy's do: `tack.empty(shape,
@@ -84,6 +86,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   silicon and Linux x86_64).
 
 ### Changed
+
+- The install instructions say how to install from source: Tack is not on
+  PyPI yet, and `pip install tack-core` found nothing. The README, the
+  guide, the backends reference and the errors for a missing backend now
+  give `uv sync --extra ...` or `pip install -e 'packages/tack-core[...]'`
+  in a clone.
 
 - **Breaking:** `tack.deprecated` is gone: the first vis worklets
   (`flying_edges`, `compute_normals`, `cell_to_point`, `amr_blanking`) and

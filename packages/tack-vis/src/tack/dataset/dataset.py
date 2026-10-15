@@ -1,6 +1,6 @@
 """Datasets: a topology, a geometry, fields on spaces, and sets.
 
-``docs/design/dataset-api.md`` §3 in prototype form:
+As ``docs/design/dataset-api.md`` §3 describes them:
 
 - *spaces* (``tack.dataset.spaces``) say where a field's values live, on one
   topology, and own the layout that follows: ``H1(data)`` one per point,
@@ -265,16 +265,16 @@ class DataSet:
             # it shares that group's incidence.
             faces = self.topology._faces
             # The cells the faces were derived from: those of the top dimension.
-            if faces is not None and id(group.root) in getattr(faces, "group_starts", {}):
+            if faces is not None and group.root in getattr(faces, "group_starts", {}):
                 mixins.extend((views._FaceIncidence, views._FaceWalk))
                 attributes.update(side_face=faces.side_face, side_slot=faces.side_slot,
                                   side_orientation=faces.side_orientation,
-                                  face_start=faces.group_starts[id(group.root)])
+                                  face_start=faces.group_starts[group.root])
             edges = self.topology._edges
             if edges is not None and group.shape.NUM_EDGES:
                 mixins.append(views._EdgeIncidence)
                 attributes.update(side_edge=edges.side_edge, side_sign=edges.side_sign,
-                                  edge_start=edges.group_starts[id(group.root)])
+                                  edge_start=edges.group_starts[group.root])
         # A key that shapes the kernel -- a size bucket's cap -- brings its mixin.
         for key, value in group.keys.items():
             if hasattr(key, "domain_mixin"):
@@ -379,7 +379,7 @@ def _subgroups(group, spaces):
     A subgroup's cells are gathered into rows, ids and positions sorted by key,
     shared by all the subgroups; each is a slice of them."""
     cache = spaces[0].topology.__dict__.setdefault("_subgroups", {})
-    cache_key = (id(group), spaces)
+    cache_key = (group, spaces)
     if cache_key in cache:
         return cache[cache_key]
     if len(spaces) > 7:
