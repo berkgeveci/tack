@@ -75,8 +75,10 @@ for _arch in _ALL_ARCHES:
 
 # Probing left the last backend found as the default; arrays a test module
 # makes at import (parametrize lists, module globals) go to the CPU instead,
-# whatever this machine has.
-tack.set_default_device("cpu")
+# whatever this machine has -- if it has the CPU backend: an install for a
+# GPU alone has no llvmlite.
+if "cpu" in available_backends:
+    tack.set_default_device("cpu")
 
 
 def pytest_addoption(parser):

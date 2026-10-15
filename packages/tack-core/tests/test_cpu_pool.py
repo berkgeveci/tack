@@ -59,8 +59,16 @@ def _compiled(backend, kernel, args):
 
 
 def _fresh_backend(threads, monkeypatch=None):
+    """A backend of ``threads`` threads, or of as many as the process's pool
+    has. The pool is made once, sized by whichever backend asks first (at
+    least one thread per CPU), and a backend wanting more threads than it
+    has takes the Python path: on a three-CPU runner, earlier tests made it
+    with three, and a four-thread backend here never reached it."""
     if monkeypatch is not None:
         monkeypatch.delenv("TACK_CPU_POOL", raising=False)
+    pool = cpu_pool.CPool.get(2)
+    if pool:
+        threads = min(threads, pool.threads)
     return CPUBackend(num_threads=threads)
 
 
@@ -95,8 +103,8 @@ def test_a_fan_out_runs_every_element_once_with_every_argument_kind(monkeypatch)
     np.testing.assert_array_equal(out.numpy(), expected)
     # Every element ran once: the workers' counts add up to the range and
     # the result says each element was touched exactly once.
-    assert sum(backend._cpool.elems()[:4]) == n
-    assert any(s > 0 for s in backend._cpool.spans()[:4])
+    assert sum(backend._cpool.elems()[:backend.num_threads]) == n
+    assert any(s > 0 for s in backend._cpool.spans()[:backend.num_threads])
 
 
 def test_each_element_is_visited_exactly_once(monkeypatch):
@@ -167,9 +175,10 @@ def test_chunks_are_claimed_and_cover_the_range(monkeypatch):
     out = tack.zeros((n,), tack.i64)
     compiled, prefix, _ = _compiled(backend, _number, [out])
     backend._parallel_execute(compiled, prefix, 0, n, whole_range=True)
-    counts = backend._cpool.elems()[:4]
-    chunk = backend._cpool.chunk_size(n, 4)
-    assert chunk < n // 4, "one chunk per worker"
+    threads = backend.num_threads
+    counts = backend._cpool.elems()[:threads]
+    chunk = backend._cpool.chunk_size(n, threads)
+    assert chunk < n // threads, "one chunk per worker"
     assert sum(counts) == n
     assert all(c % chunk == 0 or c % chunk == n % chunk for c in counts)
     assert sum(-(-c // chunk) for c in counts) == -(-n // chunk), "a chunk claimed twice or not at all"
