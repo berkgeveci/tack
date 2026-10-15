@@ -110,7 +110,7 @@ def test_texture_storage_is_released_with_the_texture(backend):
 
 
 def test_texture_passed_as_template_parameter(backend):
-    """The volume renderer's form: a texture in a `tack.template()` slot."""
+    """A texture passed where a device-class object could be."""
     @tack.kernel
     def sample_template(out, tex, count):
         for i in range(count):

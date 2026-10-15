@@ -103,6 +103,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
   is a separate kernel decorator and keeps its name.
 
+- **Breaking:** kernel values and loops are spelled as NumPy and GLSL
+  spell them, and Taichi's names are gone. Vectors are `tack.vec2`,
+  `vec3`, `vec4` (N scalars, one scalar for every component, or one
+  N-vector); a list of scalars is still a vector. Matrices are `tack.mat2`
+  to `mat4` (rows, or N*N row-major scalars), `tack.mat(row, ...)` for any
+  shape up to 4x4, and `tack.identity(n)`; on the host the same names are
+  element dtypes. A zero-dimensional array's element is `a[()]`, in kernels
+  and on the host; `a[None]` is refused. `tack.ndrange` is `tack.ndindex`.
+  Removed: `tack.Vector`, `tack.Matrix`, `tack.template()` (an annotation
+  nothing read) and `data_oriented`.
 - **Breaking** for code that reaches inside Tack: storage is "array"
   throughout the core too. The module is `tack.lang.array`; the backend
   contract's hooks are `allocate_array`, `fill_array` and `reduce_array`;

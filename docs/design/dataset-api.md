@@ -21,8 +21,9 @@
 >   `num_points`. Views stay flat, not nested templates (questions 8 and 9).
 > - Algorithms live one per module in `tack.dataset.algorithms`, take the
 >   dataset first, and never change their input.
-> - `@tack.data_oriented` is now `@tack.device_class` (the old name remains
->   an alias), and templates may hold templates.
+> - `@tack.data_oriented` is now `@tack.device_class` (the old name was an
+>   alias at first and has since been removed), and templates may hold
+>   templates.
 
 It builds on the prototype on `vis/data-model` (cell shapes, cell sets,
 `for_each_shape`, six filters) and on two studies of prior art: MFEM 4.9's

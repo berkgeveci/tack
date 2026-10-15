@@ -33,8 +33,8 @@ corresponding components; use `dot` or `@` for a dot product.
 A local assignment `p = pos[i]` loads a value. Changing `p.x` changes that local;
 write `pos[i] = p` to store it back. Writing `pos[i].x` targets the array directly.
 Vectors have a fixed width for each compiled specialization. There are no
-runtime-length vector values or swizzle constructors such as `v.rgb`/`vec4(v, 1)`;
-construct the components explicitly.
+runtime-length vector values or swizzle constructors such as
+`v.rgb`/`tack.vec4(v, 1.0)`; construct the components explicitly.
 
 ## Vectors
 
@@ -71,10 +71,12 @@ def step(pos, vel, grid, out, dt, n):
         out[i] = grid[cell] * speed         # grid[cell] is grid[cell[0], cell[1], cell[2]]
 ```
 
-A list of scalars is a vector, so `tack.Vector` can be left out wherever
-a vector is expected: `pos[i] = [x, y]`, `v = [0.0, 0.0]`,
-`w.dot([1.0, 0.0])`, `p - [1.0, 0.0]`. A matrix still needs
-`tack.Matrix([[...], [...]])`.
+In a kernel the element-type names build vector values: `tack.vec3(x, y, z)`
+from three scalars, `tack.vec3(s)` with every component `s`, and
+`tack.vec3(v)` from a 3-vector (`vec2` and `vec4` likewise). A list of
+scalars is also a vector, of any width, so it can stand wherever a
+vector is expected: `pos[i] = [x, y]`, `v = [0.0, 0.0]`,
+`w.dot([1.0, 0.0])`, `p - [1.0, 0.0]`.
 
 The vector methods are `norm()`, `norm_sqr()`, `dot(w)`, `cross(w)`
 (3-vectors), `normalized()`, and the reductions over components `sum()`,
@@ -152,7 +154,7 @@ literal out of range is rejected at lowering.
 
 ## Matrices
 
-`tack.Matrix` gives small fixed-size matrices, up to 4×4. Like vectors
+Matrices are small and fixed-size, up to 4×4. Like vectors
 they are scalarized: a matrix is its entries, and every operation expands
 to scalar arithmetic at lowering.
 
@@ -169,9 +171,12 @@ def update(F, C, x, dt, n):
         x[p] += stress @ tack.vec2(0.0, -1.0) * dt        # matrix @ vector
 ```
 
-- **Building one.** `tack.Matrix([[a, b], [c, d]])` from rows of scalars,
-  `tack.Matrix([u, v])` from vectors as rows, `tack.Matrix.identity(n)`,
-  or `u.outer_product(v)`.
+- **Building one.** `tack.mat2([a, b], [c, d])` from rows of scalars,
+  `tack.mat2(u, v)` from vectors as rows, `tack.mat2(a, b, c, d)` from
+  four scalars in row-major order (`mat3`, `mat4` likewise);
+  `tack.mat(row, ...)` for any shape up to 4×4, such as three rows of
+  two; `tack.identity(n)` for a literal `n`, as `np.identity`; or
+  `u.outer_product(v)`.
 - **Products.** `A @ B` for matrices; `A @ v` and `v @ A` take a vector as
   a column and as a row and give a vector; `u @ v` is the dot product.
   Shapes must agree. `+`, `-`, `*`, `/`, the math builtins and scalar
@@ -211,6 +216,7 @@ vectors. [N-body](tutorials/nbody.md) accumulates three-component directions.
 Use those examples after the small position update above.
 
 
-`Vector` and `Matrix` name kernel values, such as `Matrix.identity(3)`;
-arrays of vectors and matrices are allocated with element dtypes
-(`tack.vec3()`, `tack.mat2()`), not through those classes.
+The same names serve both sides: on the host `tack.vec3()` and
+`tack.mat2()` are element dtypes that allocate arrays of vectors and
+matrices, and in a kernel `tack.vec3(x, y, z)` and `tack.mat2(...)` build
+values.

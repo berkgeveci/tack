@@ -151,8 +151,11 @@ i = __idx__ // h
 10. **Vector and matrix methods** (`.normalized()`, `.dot()`, `.cross()`,
     `.sum()`, `.transpose()`, `.inverse()`, ...) → scalarized ops, in
     `_emit_vector_method` and `_emit_matrix_method`
-11. **`tack.Matrix([[...]])`, `tack.Matrix.identity(n)`** → a `VectorValue`
-    with a two-dimensional shape
+11. **`tack.vec2/vec3/vec4(...)`** → a `VectorValue`
+    (`_visit_vector_construct`); **`tack.mat2/mat3/mat4(...)`,
+    `tack.mat(row, ...)`, `tack.identity(n)`** → a `VectorValue` with a
+    two-dimensional shape (`_visit_matrix_construct`,
+    `_visit_matrix_identity`)
 12. **`@tack.func` calls** → inlined via `_inline_func_call`
 
 A name that the function does not bind is resolved through `CallBindings`
@@ -166,7 +169,7 @@ constant is typed), and `math.pi`/`e`/`tau` likewise.
 a plain `IRAssign`:
 
 1. **Shared/local allocation**: `smem = tack.shared(...)`, `arr = tack.local_array(...)`
-2. **Vector construction**: `v = tack.Vector([a, b, c])`
+2. **Vector construction**: `v = tack.vec3(a, b, c)` (`_try_parse_vector_construct`)
 3. **Multi-dimensional array store**: `array[i, j] = val` → linearized index
 4. **Tuple unpacking**: `a, b = func()` → multiple `IRAssign` nodes. A
    target that is a subscript or a component gets its value through a

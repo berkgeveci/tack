@@ -436,9 +436,11 @@ per component without short-circuiting, `any`/`all` to an `IRBoolOp` over
 the components, and `tack.select` to one `IRIfExp` per component.
 `_scalar_condition` rejects a mask as an `if`/`while` condition with the
 remedy. See `test_vector_comparisons.py`.
-A list of scalars in kernel source is a vector (`visit_List`), the same
-value as `tack.Vector([...])`; the validator rejects an empty or nested
-list, a list target and a loop over a list.
+A vector value is `tack.vec2/vec3/vec4(...)` (`_visit_vector_construct`):
+N scalars, one scalar for every component, or one N-vector; on the host the
+same names are element dtypes. A list of scalars in kernel source is also a
+vector, of any width (`visit_List`); the validator rejects an empty or
+nested list, a list target and a loop over a list.
 In `ast_transform.py` a vector value is a `VectorValue`, a list of
 component expressions with a `shape`; a source tuple (indices, multiple
 results) is a `TupleValue`. Neither enters the IR: `_check_single_values`
@@ -474,7 +476,10 @@ elements are `VectorValue`s; only tuple unpacking consumes that. `v.min()`/`v.ma
 `v.sum()` are intercepted before the same-named builtins, which need
 arguments. See the vector tests in `test_new_features.py`.
 
-A matrix (`tack.Matrix`, an element of a `tack.mat(n, m)` array) is a `VectorValue`
+A matrix (`tack.mat2/mat3/mat4(...)` from rows, lists of scalars or
+vectors, or N*N row-major scalars; `tack.mat(row, ...)` for any shape;
+`tack.identity(n)`, a literal `n`: `_visit_matrix_construct`,
+`_visit_matrix_identity`; an element of a `tack.mat(n, m)` array) is a `VectorValue`
 with a two-dimensional shape and row-major components, so everything
 componentwise applies unchanged. A matrix array is a vector array of
 `n * m` components with `_matrix_shape`; the runtime reports it to
@@ -668,13 +673,14 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 ## Kernel language features
 
 - **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndindex(w, h)` (each argument a size or a `(start, end)` pair, whose extent is clamped at zero; the host evaluates `max`/`min` in the launch size), `while`, `break`, `continue`
+- **Vectors and matrices**: `tack.vec3(x, y, z)`, `tack.vec3(s)`, `tack.vec3(v)`, `[a, b, c]`; `tack.mat2([a, b], [c, d])`, `tack.mat2(a, b, c, d)`, `tack.mat(row, ...)` (up to 4x4), `tack.identity(n)`; `.dot`, `.cross`, `.norm`, `.normalized`, `.transpose()`, `.trace()`, `.determinant()`, `.inverse()`, `@`
 - **Masks**: comparisons of vectors give a vector of `0`/`1` per component; `any(mask)`, `all(mask)`, `tack.select(mask, a, b)`
 - **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max` (two or more values), `pow`; all apply to each component of a vector
 - **Types**: `int()`, `float()` casts, plus explicit `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`, `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`
 - **Atomics**: `tack.atomic_add(array, idx, val)`, `tack.atomic_min(...)`, `tack.atomic_max(...)`
 - **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(array, size)`, `tack.barrier()`, `tack.thread_id()`
 - **Debug**: `print("label:", value)` — emits printf on CPU/CUDA/HIP, no-op on Metal
-- **Arrays**: `array[i]`, `array[i, j]`, `array[None]`, `array.shape[k]`, `len(array)` — usable anywhere in a kernel (loop bounds, conditions, arithmetic, indices), not just as the outer loop bound. The dimension index must be a literal. See "Array dimensions" below for what specializes.
+- **Arrays**: `array[i]`, `array[i, j]`, `array[()]` (zero-dimensional; `array[None]` is refused), `array.shape[k]`, `len(array)` — usable anywhere in a kernel (loop bounds, conditions, arithmetic, indices), not just as the outer loop bound. The dimension index must be a literal. See "Array dimensions" below for what specializes.
 - **Reductions**: `array.sum()`, `array.min()`, `array.max()`, `array.mean()` return Python floats. Eligible f32 arrays reduce on GPU; CPU and other dtypes use shared NumPy semantics. f32/f64 sums retain their precision; signed/unsigned integer sums use wrapping i64/u64 accumulators before float conversion. Floating extrema propagate NaNs and use negative-zero min / positive-zero max ties. Empty sum is +0, empty mean NaN, empty extrema raise. Floating addition order may vary; see the absolute error budget in `docs/reference/language-contract.md`. Runtime kernels and GPU block extrema share `codegen/reductions.py`; block arguments/results are f32, requiring explicit casts for other inputs. CPU rejects cooperative kernels; GPU participation and atomic target/order/scope domains are defined in the language contract. See `test_reduction_semantics.py`.
 
 ## Platform-specific dependencies

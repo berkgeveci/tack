@@ -318,7 +318,11 @@ them: `distance, normal, color = closest_hit(origin, direction)`.
 ### Vectors and Matrices
 
 Vectors and small matrices (up to 4x4) are values in kernels. They are
-scalarized at compile time, so they cost what the scalar code would.
+scalarized at compile time, so they cost what the scalar code would. In a
+kernel the element-type names build them: `tack.vec3(x, y, z)`,
+`tack.vec3(s)` (every component), `tack.mat2([a, b], [c, d])`,
+`tack.mat2(a, b, c, d)` (row-major), `tack.mat(row, ...)` for other
+shapes and `tack.identity(n)`; a list of scalars `[x, y]` is a vector too.
 
 ```python
 @tack.kernel

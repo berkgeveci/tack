@@ -157,9 +157,9 @@ a kernel that uses `x.shape[0]` in its body compiles a separate variant per shap
 That is intentional, and `shape_signature()` keys the cache on exactly those
 dimensions. If you add a pass that bakes in something new, it has to reach the key.
 
-**A new field is not zeroed.** `tack.field` returns unspecified contents on every
+**A new array is not zeroed.** `tack.empty` returns unspecified contents on every
 backend, the CPU included; a test that reads an element before a kernel writes it
-must allocate with `tack.zeros`. Filling every new CPU field with `0xAA` bytes
+must allocate with `tack.zeros`. Filling every new CPU array with `0xAA` bytes
 found tests and examples that relied on zeros.
 
 **The IR from `kernel.get_ir()` is a template.** The passes mutate IR in place and run

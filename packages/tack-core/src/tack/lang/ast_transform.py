@@ -108,7 +108,7 @@ class KernelTransformer(ast.NodeVisitor):
       - Multi-dimensional array indexing: array[i, j] → array[i * shape1 + j]
       - array[()] → array[0] for zero-dimensional arrays
       - ndindex(w, h) → 1D parallel loop with index decomposition
-      - Vector scalarization: Vector([a, b, c]) → 3 scalar variables
+      - Vector scalarization: tack.vec3(a, b, c) → 3 scalar variables
     """
 
     def __init__(self, vector_arrays=None, texture_arrays=None, python_func=None,
@@ -2088,7 +2088,7 @@ class KernelTransformer(ast.NodeVisitor):
                            (rows, cols))
 
     def _assign_vector(self, name: str, ast_elts: list) -> list:
-        """Assign a vector construction to a variable: v = Vector([a, b, c])."""
+        """Assign a vector construction to a variable: v = tack.vec3(a, b, c)."""
         return self._assign_vector_from_ir(name, self._visit_ordered(ast_elts))
 
     def _assign_vector_from_ir(self, name: str, components: list) -> list:

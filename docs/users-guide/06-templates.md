@@ -4,8 +4,8 @@
 
 The template system lets you write generic kernels that work with different
 data structures. Classes decorated with `@tack.device_class` can be passed
-as kernel arguments with `tack.template()` type hints. (`@tack.data_oriented`,
-Taichi's name for it, still works and means the same.)
+as kernel arguments. They are recognized by type, so the parameter that
+takes one needs no annotation.
 
 The short examples below are fragments showing the class protocol. The
 [rasterizer](#kernels-as-methods) is a complete program with initialized input
@@ -47,7 +47,7 @@ add_arrays(AOSArray(array1), ConstantArray(3.14), out, n)
 
 ## How It Works
 
-When a `@tack.device_class` object is passed as a `tack.template()` argument:
+When a `@tack.device_class` object is passed as a kernel argument:
 
 - **Class-level scalars** (defined on the class, not in `__init__`) → compile-time
   constants baked into generated code. Changing them triggers recompilation.

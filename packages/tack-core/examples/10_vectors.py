@@ -1,8 +1,8 @@
 """10 -- Vector operations in kernels.
 
-Tack has a built-in Vector type for 3D math.  Construct vectors from
-scalar values, then use methods like .dot(), .cross(), .normalized(),
-.norm(), and .norm_sqr().
+Kernels have small vector values for 3D math.  Construct them from
+scalar values with tack.vec3(x, y, z), then use methods like .dot(),
+.cross(), .normalized(), .norm(), and .norm_sqr().
 
 Vectors are temporary values inside kernels -- component data lives in
 separate scalar arrays (one array per component).

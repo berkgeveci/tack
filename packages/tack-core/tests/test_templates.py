@@ -431,10 +431,8 @@ def test_a_changed_class_constant_is_seen(backend):
     np.testing.assert_array_equal(obj.values.numpy(), [0, 3, 6, 9])
 
 
-def test_data_oriented_is_device_class_under_taichis_name(backend):
-    """The old name still decorates a class that kernels take."""
-    assert tack.device_class is tack.device_class
-
+def test_a_device_class_argument_needs_no_annotation(backend):
+    """A device class's object is recognized by its type, not an annotation."""
     @tack.device_class
     class Offset:
         def __init__(self, by):

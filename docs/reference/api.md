@@ -106,9 +106,13 @@ See [Arrays and Types](../users-guide/02-arrays-and-types.md) for examples.
 
 ### Kernel values and textures
 
-::: tack.Vector
+Inside a kernel the element-type names above build values instead:
+`tack.vec3(x, y, z)`, `tack.vec3(s)` (every component `s`) or
+`tack.vec3(v)` (a 3-vector), and `tack.mat2([a, b], [c, d])`,
+`tack.mat2(a, b, c, d)` (row-major) or `tack.mat(row, ...)` for any
+shape up to 4×4. See [Vectors and Matrices](../users-guide/14-vectors-and-matrices.md).
 
-::: tack.Matrix
+::: tack.identity
 
 ::: tack.select
 
@@ -144,13 +148,13 @@ See [Arrays and Types](../users-guide/02-arrays-and-types.md) for examples.
 
 ::: tack.lang.kernel.Kernel
 
+::: tack.ndindex
+
 ::: tack.func
 
 ::: tack.lang.func.Func
 
 ::: tack.device_class
-
-::: tack.template
 
 ::: tack.constant
 

@@ -59,7 +59,7 @@ packages/
             lang/                # Frontend: AST → IR
                 kernel.py        # @tack.kernel decorator, Kernel class, IR template cache
                 func.py          # @tack.func decorator, Func class
-                device_class.py  # @tack.device_class decorator (data_oriented: alias)
+                device_class.py  # @tack.device_class decorator
                 source_validation.py # Reject unsupported syntax before lowering
                 call_bindings.py # Static resolution of device-function calls
                 ast_transform.py # Python AST → Tack IR
@@ -78,7 +78,7 @@ packages/
                 workgroup_support.py, workgroup_participation.py  # Workgroup checks
                 inspect_kernel.py    # tack.inspect()
                 types.py         # ScalarType: f32, i32, i64, etc.
-                array.py         # Array, Texture3D, Vector
+                array.py         # Array, Texture3D
                 dlpack.py        # DLPack import/export
             codegen/             # IR → target code
                 identifiers.py   # Collision-free target identifiers

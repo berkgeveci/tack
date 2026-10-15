@@ -167,7 +167,7 @@ The buffer belongs to the backend active when the array was allocated.
 | `tack.copyto(a, src)` | With host `src` (a NumPy array, sequence or scalar): converts it to `a`'s scalar dtype with `np.asarray`, an unchecked cast, and copies it in. Its shape must be `a.numpy()`'s shape or broadcast to it, as in `np.copyto`; a flat array is not accepted for a vector or matrix array. Works on reshaped views. With a Tack array `src` of the same shape and scalar count: a device copy | `RuntimeError` if `a` is read-only. `ValueError` "copyto() into an array whose values have shape (8,): cannot broadcast shape (4,)", or for a Tack `src` of another shape. `TypeError` if `a` is not a Tack array |
 | `a.numpy()`, `np.asarray(a)` | Returns a **new** NumPy array with the scalar component dtype and component axes appended to `a.shape`. Never a view, including on Metal; `np.asarray(a, copy=False)` raises `ValueError` | — |
 | `a.fill(value)` | Sets every element to a scalar, or, for a vector or matrix array, to one element's components | `RuntimeError` if read-only. `TypeError` for a sequence on a scalar array; `ValueError` for a sequence of the wrong element shape |
-| `a[i]`, `a[i, j]`, `a[()]` | Reads one element: a Python number, or a NumPy array for a vector or matrix element. `a[None]` reads a 0-d array. There is no host assignment: `a[i] = x` and iteration raise `TypeError` | `TypeError` for anything but one integer per dimension; `IndexError` out of range |
+| `a[i]`, `a[i, j]`, `a[()]` | Reads one element: a Python number, or a NumPy array for a vector or matrix element. `a[()]` reads a 0-d array, as in NumPy. There is no host assignment: `a[i] = x` and iteration raise `TypeError` | `TypeError` for anything but one integer per dimension, including `a[None]`, whose message names `a[()]`; `IndexError` out of range |
 | `a.reshape(*shape)` | A metadata-only view that shares the buffer, the element type, the writability and any DLPack hold. Takes a tuple or separate integers; one extent may be `-1` | `ValueError` if the element count differs or more than one extent is `-1` |
 | `a.copy()` / `a.astype(dtype)` | A new array on the **active** backend, filled by a device copy kernel. `astype` converts with the kernel language's conversion rules; a scalar dtype keeps a vector or matrix element's dimensions | Kernel errors, if any. `TypeError` if `astype` would change element dimensions |
 | `a.shape`, `a.ndim`, `a.size`, `len(a)`, `a.nbytes` | `shape`, `ndim` and `size` count elements, not components. `len` is `shape[0]`. `nbytes` is the storage in bytes | `TypeError` from `len` of a 0-d array |
@@ -403,7 +403,7 @@ rejection are **Required** items of the language contract. See
 | Source isn't readable | `RuntimeError` at decoration, the same explanation as for kernels, naming the device function. The `OSError` is chained |
 | Calling the function from Python | `RuntimeError`: "@tack.func '`f`' cannot be called from Python. ..." |
 
-### `@tack.device_class` and `tack.template()`
+### `@tack.device_class`
 
 `@tack.device_class` (`lang/device_class.py`) marks a class so that its
 instances can be passed as kernel arguments, and it collects the class's
@@ -423,9 +423,8 @@ dispatch. Specializations are keyed on the class object itself, so two
 classes with the same name don't share variants. When a class is garbage
 collected, its variants are dropped.
 
-`tack.template()` returns a marker for use as a parameter annotation. It is
-documentation only. Instances are recognized by the class's
-`_device_class` flag, not by the annotation.
+Instances are recognized by argument type (the class's `_device_class`
+flag), so a parameter that takes one needs no annotation.
 
 ## Calling a kernel
 

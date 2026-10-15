@@ -111,5 +111,8 @@ and matrix arrays; host values move with `numpy()` and `tack.copyto`.
 Internal `Field` imports name `Array`.
 
 Kernel value construction (`Vector([...])`, `Matrix(...)`, and
-`Matrix.identity(...)`) is retained. The element-type factories in this change
-are host-side dtype descriptions, not additional kernel value constructors.
+`Matrix.identity(...)`) was retained by this change, and later replaced
+without compatibility wrappers: in a kernel the element-type names build
+values (`tack.vec3(x, y, z)`, `tack.mat2([a, b], [c, d])`), and
+`tack.identity(n)` is the identity matrix. On the host those names remain
+dtype descriptions.

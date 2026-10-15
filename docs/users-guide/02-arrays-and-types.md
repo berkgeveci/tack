@@ -219,12 +219,12 @@ reshape it to `(n, 3)` first.
 
 ### Reading One Element from the Host
 
-`f[i]`, `f[i, j]` and `f[None]` (for a zero-dimensional array) read one
+`f[i]`, `f[i, j]` and `f[()]` (for a zero-dimensional array) read one
 element in host code: a Python number from an array of scalars, a NumPy
 array from a vector or matrix array. Negative indices count from the end.
 
 ```python
-head = queue[()]                 # a counter a kernel maintains
+head = queue[()]                   # a counter a kernel maintains
 comet = pos[0]                     # a 3-vector, as a NumPy array
 if temperature[i, j] > melting:    # a host-side decision on one value
     ...
@@ -239,8 +239,8 @@ them in a kernel. Iterating an array raises for the same reason.
 
 ### A scalar shared between launches
 
-A zero-dimensional array holds one logical element, accessed as `f[None]`
-(on the host, `f[()]` works too):
+A zero-dimensional array holds one logical element, accessed as `f[()]`,
+NumPy's spelling, in kernels and on the host (`f[None]` is refused):
 
 ```python
 strength = tack.empty(())

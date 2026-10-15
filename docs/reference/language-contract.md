@@ -734,9 +734,13 @@ rounding. No hidden state exists; two kernels that seed alike draw alike.
 
 ## Vectors and matrices
 
-**Required:** a vector (`tack.Vector([...])`, the same list of scalars
-written alone, an element of a `tack.Array` with a vector element dtype) and a matrix of at most 4×4 (`tack.Matrix([[...]])`,
-`tack.Matrix.identity(n)`, an element of a `tack.Array` with a matrix element dtype) are values
+**Required:** a vector (`tack.vec2/vec3/vec4(...)` from N scalars, one
+scalar for every component or one N-vector; a list of scalars written
+alone; an element of a `tack.Array` with a vector element dtype) and a
+matrix of at most 4×4 (`tack.mat2/mat3/mat4(...)` from rows that are
+lists of scalars or vectors, or from N*N scalars in row-major order;
+`tack.mat(row, ...)`; `tack.identity(n)` for a literal `n`; an element of
+a `tack.Array` with a matrix element dtype) are values
 made of scalar components, in row-major order for a matrix. Every
 operation on them is defined as the corresponding scalar operations on
 their components, each of which follows the numerical rules above. They
