@@ -145,6 +145,7 @@ nav:
       - Memory and Aliasing: design/memory-and-aliasing.md
       - CPU Threading Policy: design/cpu-threading.md
       - Backend Implementations: design/backend-implementations.md
+      - Vendor Workarounds: design/vendor-workarounds.md
       - Interoperability: design/interoperability.md
       - Dataset API: design/dataset-api.md
       - Polyhedra: design/polyhedra.md

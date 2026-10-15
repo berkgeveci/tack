@@ -85,6 +85,10 @@ the array to the array's dtype if needed, raises `ValueError` when its shape
 neither matches nor broadcasts to the array's `numpy()` shape, and calls
 `_check_writable()`, which raises `RuntimeError` for a read-only array.
 
+### New arrays, fills and one-element reads
+
+`tack.empty()` (under every array constructor) calls `backend.allocate_array()` to create the appropriate buffer type. A new array's contents are unspecified on every backend (`np.empty` on the CPU, `cuMemAllocAsync` on CUDA); `tack.zeros` fills it, and `Array.fill` first offers the fill to `Backend.fill_array`, which the CPU backend answers for 256 KiB or more by running `tack.algorithms.copy._fill_kernel` through the normal dispatch, so the policy fans it out when that pays and the workers first-touch the pages. On Linux `TACK_CPU_MALLOC=1` also tells glibc to keep freed pages (`_tune_malloc`: mmap threshold at its 32 MiB cap, no trim under 4 GiB, the heap grown 256 MiB at a time; off by default, since it is process-wide and did not pay unbound on jura), because a filter frees and reallocates the same temporaries on every call and took their page faults every time: threshold at 5M on 8 threads 126 → 104 ms, slice 76 → 65, nothing at 1M. Allocation used to fill on the calling thread, serially: at 5M cells on eight threads it was half of threshold and cell-to-point (130 of 276 ms, 77 of 135), and it grew with the thread count, because the fill ran while the workers' caches owned the lines. `Array.__getitem__` reads one element on the host through `DeviceBuffer.read_range(start, count)`: CPU and Metal slice their views (Metal after waiting for its queued launches), and CUDA, HIP and Level Zero queue a copy of just the range at the element's byte offset (`cuMemcpyDtoHAsync`, `hipMemcpyAsync`, or `zeCommandListAppendMemoryCopy` on the backend's asynchronous list) after the queued launches and wait for it, each checking the range against the allocation first. `__setitem__` and `__iter__` raise.
+
 ### Views and reshape
 
 `Array.reshape(new_shape)` returns a new `Array` over the *same* buffer. It
