@@ -487,10 +487,12 @@ def field(dtype: ScalarType = f32, shape: tuple[int, ...] = (),
     return Field(dtype, shape, buf)
 
 
-def field_like(arr: np.ndarray, dtype: ScalarType = None) -> Field:
+def field_from_numpy(arr: np.ndarray, dtype: ScalarType = None) -> Field:
     """Create a field from a numpy array, inferring shape and dtype.
 
-    Allocates the field and copies the data in one step.
+    Allocates independent storage on the active backend and copies the values.
+    Later changes to the array and field do not affect each other. Use
+    ``empty_like`` to allocate matching storage without copying values.
 
     Args:
         arr: numpy array to copy
@@ -509,6 +511,35 @@ def field_like(arr: np.ndarray, dtype: ScalarType = None) -> Field:
     f = Field(dtype, shape, buf)
     f.from_numpy(arr)
     return f
+
+
+def empty_like(prototype: Field | np.ndarray, dtype: ScalarType | None = None) -> Field:
+    """Allocate a field matching a field or NumPy array, without copying values.
+
+    The new field belongs to the active backend, has independent, writable
+    storage, and must be initialized before reading. A vector or matrix field
+    preserves its logical shape and component dimensions. A NumPy array gives
+    a scalar field with the array's shape; trailing dimensions are not inferred
+    to be vectors or matrices. Only metadata is read from the prototype.
+
+    Args:
+        prototype: Tack field or NumPy array providing the shape and dtype.
+        dtype: Tack scalar type overriding the prototype's dtype, if given.
+
+    Returns:
+        A new field with unspecified contents.
+    """
+    if not isinstance(prototype, (Field, np.ndarray)):
+        raise TypeError("empty_like expects a Tack field or NumPy array")
+    if dtype is None:
+        dtype = prototype.dtype if isinstance(prototype, Field) \
+            else from_numpy_dtype(prototype.dtype)
+    if isinstance(prototype, Field) and hasattr(prototype, '_vector_n'):
+        matrix_shape = getattr(prototype, '_matrix_shape', None)
+        if matrix_shape is not None:
+            return Matrix.field(*matrix_shape, dtype=dtype, shape=prototype._logical_shape)
+        return Vector.field(prototype._vector_n, dtype=dtype, shape=prototype._logical_shape)
+    return field(dtype=dtype, shape=prototype.shape)
 
 
 def zeros(dtype: ScalarType = f32, shape: tuple[int, ...] = ()) -> Field:
@@ -540,7 +571,7 @@ def full(dtype: ScalarType, shape: tuple[int, ...], value) -> Field:
 def arange(n: int, dtype: ScalarType = i32) -> Field:
     """Create a field with values [0, 1, 2, ..., n-1]."""
     arr = np.arange(n, dtype=dtype.numpy_dtype)
-    return field_like(arr, dtype=dtype)
+    return field_from_numpy(arr, dtype=dtype)
 
 
 def concat(fields_list: list[Field]) -> Field:
@@ -588,7 +619,7 @@ def from_dlpack(source, copy: bool = False) -> Field:
     """
     if copy:
         arr = source if isinstance(source, np.ndarray) else np.from_dlpack(source)
-        return field_like(arr)
+        return field_from_numpy(arr)
 
     from tack.lang.dlpack import dlpack_to_field
     return dlpack_to_field(source)

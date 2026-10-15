@@ -132,7 +132,7 @@ class QuadBasis:
 
     def __init__(self, gl_nodes_1d_np, np_fp=np.float64):
         self._gl_np = gl_nodes_1d_np.copy()
-        self.gl_nodes_1d = tack.field_like(
+        self.gl_nodes_1d = tack.field_from_numpy(
             gl_nodes_1d_np.astype(np_fp))
         self.n1d = len(gl_nodes_1d_np)
 
@@ -198,7 +198,7 @@ class HexBasis:
 
     def __init__(self, gl_nodes_1d_np, np_fp=np.float64):
         self._gl_np = gl_nodes_1d_np.copy()
-        self.gl_nodes_1d = tack.field_like(
+        self.gl_nodes_1d = tack.field_from_numpy(
             gl_nodes_1d_np.astype(np_fp))
         self.n1d = len(gl_nodes_1d_np)
 

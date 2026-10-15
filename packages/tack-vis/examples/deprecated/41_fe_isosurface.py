@@ -332,13 +332,13 @@ def main():
     B = precompute_basis_matrix_3d(basis, args.nsub)
     ndof = basis.n1d ** 3
     n_pts = (args.nsub + 1) ** 3
-    f_B = tack.field_like(B.ravel().astype(np_fp))
-    f_elem_idx = tack.field_like(elem_idx)
+    f_B = tack.field_from_numpy(B.ravel().astype(np_fp))
+    f_elem_idx = tack.field_from_numpy(elem_idx)
 
     # MC tables
-    f_num_tris = tack.field_like(NUM_TRIS)
-    f_tri_table = tack.field_like(TRI_TABLE)
-    f_edge_verts = tack.field_like(EDGE_VERTS)
+    f_num_tris = tack.field_from_numpy(NUM_TRIS)
+    f_tri_table = tack.field_from_numpy(TRI_TABLE)
+    f_edge_verts = tack.field_from_numpy(EDGE_VERTS)
 
     eval_field, count_tris_k, gen_tris = define_kernels()
 
@@ -362,7 +362,7 @@ def main():
     # Generate
     offsets = np.zeros(n_elems, dtype=np.int32)
     offsets[1:] = np.cumsum(counts[:-1])
-    f_offsets = tack.field_like(offsets)
+    f_offsets = tack.field_from_numpy(offsets)
 
     n_out = total_tris * 3
     f_px = tack.field(dtype=tack_fp, shape=(n_out,))

@@ -7,6 +7,9 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tack.empty_like(prototype, dtype=None)` allocates independent, uninitialized
+  storage matching a NumPy array or Tack field. Vector and matrix fields retain
+  their logical shape and component dimensions. No values are read or copied.
 - `asyncio` waits: `await tack.sync_async()` and `await
   field.to_numpy_async()` wait for the device in a worker thread, so an
   application's event loop (trame, Jupyter, a server) keeps running
@@ -68,6 +71,10 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- **Breaking:** `tack.field_like` is renamed to `tack.field_from_numpy`.
+  Replace existing calls with `field_from_numpy` to keep allocating and copying
+  NumPy values. Use `empty_like` when only the shape and dtype should match.
+  `local_array_like` and `shared_like` remain allocation-only helpers.
 - A scan's small levels are one launch: a level of at most 4096 elements
   on the CPU, or one tile on a GPU backend, is scanned in order by one
   thread, and the total is read as one element instead of copied by a

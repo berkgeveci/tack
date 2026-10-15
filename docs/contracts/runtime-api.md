@@ -109,7 +109,8 @@ owned by the backend that allocated it.
 | `tack.field(dtype=f32, shape=(), exportable=False)` | Allocates on the active backend. An `int` shape becomes a 1-tuple. `exportable=True` requests memory that can be exported without a copy (CUDA only) |
 | `tack.zeros(dtype, shape)`, `tack.ones(dtype, shape)`, `tack.full(dtype, shape, value)` | `field()` followed by `fill()`. `zeros` skips the fill where the buffer starts zeroed (`starts_zeroed`: Metal, which clears new buffers) |
 | `tack.arange(n, dtype=i32)` | `[0, n)` built in NumPy and copied in |
-| `tack.field_like(arr, dtype=None)` | Allocates `arr.shape`. The dtype is inferred from `arr.dtype` unless given. Then copies `arr` in |
+| `tack.field_from_numpy(arr, dtype=None)` | Allocates `arr.shape`. The dtype is inferred from `arr.dtype` unless given. Then copies `arr` in |
+| `tack.empty_like(prototype, dtype=None)` | Allocates independent, writable storage on the active backend without reading or copying values. Accepts a NumPy array or Tack field; infers dtype unless overridden with a Tack type. Preserves vector/matrix field logical shape and component dimensions. NumPy arrays produce scalar fields with the array's shape. Contents are unspecified |
 | `tack.concat(fields)` | A new 1-D field holding all elements in order, copied on the device |
 | `tack.Vector.field(n, dtype=f32, shape=())` | A flat scalar field of `prod(shape) * n` elements that kernels index as `n`-component vectors |
 | `tack.texture3d(field, shape=None, interp="linear")` | A `Texture3D` holding a copy of the field taken at creation, for `sample(u, v, w)` in kernels. `tex.update()` copies the field again. See [Textures](backend-capabilities.md#textures) |
@@ -145,7 +146,8 @@ owned by the backend that allocated it.
 
 | Condition | Exception |
 |---|---|
-| `field_like` with a dtype that has no Tack type, such as `float16` | `TypeError`: "Unsupported numpy dtype: float16" |
+| `field_from_numpy` or `empty_like` inferring a dtype that has no Tack type, such as `float16` | `TypeError`: "Unsupported numpy dtype: float16" |
+| `empty_like` with a prototype other than a NumPy array or Tack field | `TypeError`: "empty_like expects a Tack field or NumPy array" |
 | `concat([])` | `ValueError` |
 | `concat` with mixed dtypes | `TypeError` |
 | `texture3d` on a field that isn't `f32` | `ValueError`: "texture3d requires an f32 field, got f64; convert it first with field.astype(tack.f32)" |
@@ -295,7 +297,7 @@ and `Field.__dlpack_device__()`.
 - As for `field_from_ptr`, a launch that uses the imported field completes
   before it returns.
 - With `copy=True`, the source is read through `np.from_dlpack` and copied
-  into a new field with `field_like`. That works only for sources that
+  into a new field with `field_from_numpy`. That works only for sources that
   NumPy can read on the host.
 
 | Condition | Exception |
@@ -540,13 +542,13 @@ Translated exceptions keep the original as `__cause__`.
 |---|---|---|
 | `UnsupportedSyntaxError` | Syntax outside the kernel language, in a kernel or a device function, including unreachable statements; a kernel without exactly one parallel loop directly in its body; a store, atomic, barrier, block reduction or `print` outside the parallel loop, including through an inlined device function or template method | First dispatch or inspection (frontend) |
 | `NameError` | A name that is neither a parameter nor assigned. Kernels don't capture Python globals | First dispatch or inspection (frontend) |
-| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, `field_like` or DLPack dtypes, `concat` dtypes, a non-`MTLBuffer` on Metal, a `field_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
+| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, `field_from_numpy`, `empty_like` or DLPack dtypes, an invalid `empty_like` prototype, `concat` dtypes, a non-`MTLBuffer` on Metal, a `field_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
 | `ValueError` | Unknown arch or option, an unknown `TACK_CPU_POLICY`, incomplete `external_context`, workgroup participation, launch counts or device group size, a launch or reduction larger than one grid can index, atomic alignment, a read-only field the kernel may store to, `field_from_ptr` memory space, shape mismatches, `reshape`, `texture3d` arguments, empty `min`/`max`, empty `concat`, unknown inspect mode or `"optimized"` off CPU, template method or attribute errors, malformed or `kDLMetal` DLPack tensors | Initialization, dispatch (cold or every call), inspection, host calls |
 | `NotImplementedError` | Workgroup primitives on CPU, keyword arguments, and the few lowering checks that source validation doesn't already report as `UnsupportedSyntaxError` | Raised directly by inspection. Wrapped in `RuntimeError` at dispatch |
 | `RuntimeError` | Initialization failures, compilation and launch failures, stale fields after a backend switch, unreadable kernel or device-function source, host writes to read-only fields, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, raised when a pass leaves IR that breaks a structural invariant) | Everywhere |
 | `BufferError` | `__dlpack__(copy=True)` | Export |
 | `IndexError` | In debug mode, a launch that indexed a field or array out of bounds; host indexing `f[i]` outside the field | After the launch, from `Kernel.__call__`; host calls |
-| `AttributeError` | Passing a NumPy dtype where a Tack type is expected, or a non-array to `from_numpy` or `field_like` | Host calls (unvalidated caller constraint) |
+| `AttributeError` | Passing a NumPy dtype where a Tack type is expected, or a non-array to `from_numpy` or `field_from_numpy` | Host calls (unvalidated caller constraint) |
 
 **Current behavior:** every dispatch rejection listed on this page and in
 [Backend capabilities](backend-capabilities.md) is raised before the kernel

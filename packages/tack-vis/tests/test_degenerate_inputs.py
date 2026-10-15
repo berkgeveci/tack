@@ -77,7 +77,7 @@ def test_a_grid_squeezed_of_a_size_one_axis_is_the_same_grid(backend, dims):
     grid read point by point."""
     data = td.uniform_grid(dims, origin=(0.3, -0.2, 0.1), spacing=(0.5, 0.7, 0.9))
     x = data.positions()
-    data.fields["p"] = td.Field(td.H1(data), tack.field_like(
+    data.fields["p"] = td.Field(td.H1(data), tack.field_from_numpy(
         (x @ [1.0, 2.0, 3.0]).astype(np.float32)))
     data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([0.1, 0.2, 0.3], data.num_points))
     stored = _with_points_stored(data)
@@ -132,7 +132,7 @@ def test_a_mesh_of_lines_has_no_faces_and_says_so(backend, name):
 
 def test_a_mesh_of_lines_still_has_cells(backend):
     data = td.uniform_grid((4,), spacing=(0.5, 1.0, 1.0))
-    data.fields["p"] = td.Field(td.H1(data), tack.field_like(np.array([0, 1, 4, 9], np.float32)))
+    data.fields["p"] = td.Field(td.H1(data), tack.field_from_numpy(np.array([0, 1, 4, 9], np.float32)))
     np.testing.assert_allclose(td.cell_centers(data).values.to_numpy(vectors=True)[:, 0],
                                [0.25, 0.75, 1.25])
     np.testing.assert_allclose(td.to_cells(data, "p").values.to_numpy(), [0.5, 2.5, 6.5])
@@ -194,7 +194,7 @@ def _ramp_with(value):
     data = td.uniform_grid((3, 3, 3))
     values = np.linspace(0, 1, 27).astype(np.float32)
     values[0] = value
-    data.fields["p"] = td.Field(td.H1(data), tack.field_like(values))
+    data.fields["p"] = td.Field(td.H1(data), tack.field_from_numpy(values))
     data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([1.0, 2.0, 3.0], 27))
     return data
 
@@ -215,12 +215,12 @@ def test_a_crossing_beside_a_value_that_is_not_finite_lies_at_the_other_end(back
 def test_histograms_refuse_ranges_that_are_not_finite(backend):
     from tack.algorithms import histogram
     for value in (np.inf, np.nan):
-        data = tack.field_like(np.array([0.0, 1.0, value], np.float32))
+        data = tack.field_from_numpy(np.array([0.0, 1.0, value], np.float32))
         with pytest.raises(ValueError, match="range of .* is not finite"):
             histogram(data)
         with pytest.raises(ValueError, match="is not finite"):
             td.entropy(_ramp_with(value), "p")
-    finite = tack.field_like(np.array([0.0, 1.0], np.float32))
+    finite = tack.field_from_numpy(np.array([0.0, 1.0], np.float32))
     with pytest.raises(ValueError, match="is not finite"):
         histogram(finite, range=(0.0, np.inf))
     with pytest.raises(ValueError, match="minimum above its maximum"):

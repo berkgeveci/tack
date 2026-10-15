@@ -113,7 +113,7 @@ three origins, and the backends encode them slightly differently.
 
 ```mermaid
 flowchart TD
-    A["tack.field() / field_like() / zeros()"] -->|backend.allocate_field| OWN["Owned buffer<br/>(_owned absent, read as True)"]
+    A["tack.field() / empty_like() / field_from_numpy() / zeros()"] -->|backend.allocate_field| OWN["Owned buffer<br/>(_owned absent, read as True)"]
     B["tack.field_from_ptr(ptr, ...)"] -->|"memory_space() check,<br/>backend.wrap_ptr()"| WRAP["Wrapped buffer<br/>_owned = False"]
     C["tack.from_dlpack(x)"] -->|"dlpack_to_field()<br/>→ field_from_ptr()"| WRAP
     C -->|attaches| HOLD["_CapsuleHold<br/>on the Field"]

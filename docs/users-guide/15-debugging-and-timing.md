@@ -16,7 +16,7 @@ import tack
 tack.init(arch=tack.cpu)
 rng = np.random.default_rng(42)
 host_x = rng.normal(size=32).astype(np.float32)
-x = tack.field_like(host_x)
+x = tack.field_from_numpy(host_x)
 out = tack.field(dtype=tack.f32, shape=host_x.shape)
 
 @tack.kernel

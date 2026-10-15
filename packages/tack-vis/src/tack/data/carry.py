@@ -62,7 +62,7 @@ class Take:
     def __init__(self, ids, turned=None):
         self.ids = _id_field(ids)
         self.turned = turned if turned is None or isinstance(turned, _DeviceField) \
-            else tack.field_like(np.asarray(turned, np.int32))
+            else tack.field_from_numpy(np.asarray(turned, np.int32))
 
 
 class Pieces(Take):

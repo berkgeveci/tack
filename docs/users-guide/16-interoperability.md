@@ -13,12 +13,12 @@ import tack
 
 tack.init(arch=tack.cpu)
 array = np.arange(12, dtype=np.float32).reshape(3, 4)
-field = tack.field_like(array)
+field = tack.field_from_numpy(array)
 array[:] = -1                             # does not change the Tack field
 np.testing.assert_array_equal(field.to_numpy(), np.arange(12, dtype=np.float32).reshape(3, 4))
 ```
 
-`field_like` allocates and copies. `from_numpy` replaces the values in an existing
+`field_from_numpy` allocates and copies. `from_numpy` replaces the values in an existing
 field and converts to its dtype. `to_numpy` produces a NumPy copy. These are
 simple boundaries for a first program or for data that arrives infrequently.
 
@@ -72,7 +72,7 @@ Tack fields implement the DLPack protocol too. Pass a field to a consumer that
 supports its device. For a CPU field, NumPy offers a compact example:
 
 ```python
-data = tack.field_like(np.arange(8, dtype=np.float32))
+data = tack.field_from_numpy(np.arange(8, dtype=np.float32))
 shared_array = np.from_dlpack(data)
 ```
 

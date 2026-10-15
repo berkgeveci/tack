@@ -64,7 +64,7 @@ def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
     n = 24 if check else 48
     axis = np.linspace(-1, 1, n + 1, dtype=np.float32)
-    scalar = tack.field_like(axis[:, None] ** 2 + axis[None, :] ** 2 - np.float32(0.7**2))
+    scalar = tack.field_from_numpy(axis[:, None] ** 2 + axis[None, :] ** 2 - np.float32(0.7**2))
     # --8<-- [start:allocate]
     counts = tack.field(dtype=tack.i32, shape=(n * n,))
     offsets = tack.field(dtype=tack.i32, shape=(n * n,))

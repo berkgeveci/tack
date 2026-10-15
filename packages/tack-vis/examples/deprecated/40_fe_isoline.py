@@ -286,8 +286,8 @@ def main():
     B = precompute_basis_matrix_2d(basis, args.nsub)
     ndof = basis.n1d * basis.n1d
     n_pts = (args.nsub + 1) ** 2
-    f_B = tack.field_like(B.ravel().astype(np_fp))
-    f_elem_idx = tack.field_like(elem_idx)
+    f_B = tack.field_from_numpy(B.ravel().astype(np_fp))
+    f_elem_idx = tack.field_from_numpy(elem_idx)
 
     # Define kernels
     eval_field, count_segs, gen_segs = define_kernels()
@@ -311,7 +311,7 @@ def main():
     # Step 3: prefix scan + generate
     offsets = np.zeros(n_elems, dtype=np.int32)
     offsets[1:] = np.cumsum(counts[:-1])
-    f_offsets = tack.field_like(offsets)
+    f_offsets = tack.field_from_numpy(offsets)
 
     f_x0 = tack.field(dtype=tack_fp, shape=(total_segs,))
     f_y0 = tack.field(dtype=tack_fp, shape=(total_segs,))

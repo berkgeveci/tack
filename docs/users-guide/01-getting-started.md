@@ -42,8 +42,8 @@ tack.init(arch=tack.cpu)
 
 # Create fields from numpy arrays
 n = 1024
-x = tack.field_like(np.arange(n, dtype=np.float32))
-y = tack.field_like(np.ones(n, dtype=np.float32) * 2.0)
+x = tack.field_from_numpy(np.arange(n, dtype=np.float32))
+y = tack.field_from_numpy(np.ones(n, dtype=np.float32) * 2.0)
 out = tack.field(dtype=tack.f32, shape=(n,))
 
 # Define a kernel

@@ -53,14 +53,14 @@ field of zeros (`ones` and `full` likewise), filled on the device.
 
 ### Creating from Numpy
 
-The easiest way to create a field with data is `tack.field_like`:
+The easiest way to create a field with data is `tack.field_from_numpy`:
 
 ```python
 # Create a field from a numpy array (infers shape and dtype)
-x = tack.field_like(np.arange(1024, dtype=np.float32))
+x = tack.field_from_numpy(np.arange(1024, dtype=np.float32))
 
 # Override dtype
-y = tack.field_like(some_array, dtype=tack.f32)
+y = tack.field_from_numpy(some_array, dtype=tack.f32)
 ```
 
 Or allocate first, then copy:
@@ -184,6 +184,29 @@ element of a field and return a Python `float`; statistics such as `var`,
 its accumulator type and its NaN and empty-field behavior.
 
 ## Field Utilities
+
+### Allocate matching storage without copying
+
+Use `tack.field_from_numpy(array)` when the field needs the array's values.
+Use `tack.empty_like` for an output or scratch field that will be written before
+it is read:
+
+```python
+source = tack.field_from_numpy(np.arange(8, dtype=np.float32))  # copies values
+out = tack.empty_like(source)                                 # same shape and dtype
+integer_out = tack.empty_like(source, dtype=tack.i32)           # override dtype
+grid_out = tack.empty_like(np.empty((4, 8), dtype=np.float32))  # no upload
+```
+
+The prototype may be a NumPy array or Tack field. Storage is independent,
+writable and allocated on the active backend. Vector and matrix field
+prototypes retain their logical shape and component dimensions. A NumPy array
+produces a scalar field of the same shape, including any trailing dimensions.
+No values are copied or initialized; write every value before reading it.
+
+The kernel helpers `local_array_like(field, size)` and `shared_like(field, size)`
+also copy no values. They inherit only the dtype and use the explicitly supplied
+scratch size; see [Advanced Features](07-advanced.md#local_array_like).
 
 ### Constructors
 

@@ -33,7 +33,7 @@ def run(arch="cpu", check=False):
                               / (n / 10) ** 2)).astype(np.float32)
     initial[[0, -1], :] = 0
     initial[:, [0, -1]] = 0
-    old = tack.field_like(initial)
+    old = tack.field_from_numpy(initial)
     new = tack.field(dtype=tack.f32, shape=(n, n))
     snapshots = [initial.copy()]
     reference = initial.copy()
