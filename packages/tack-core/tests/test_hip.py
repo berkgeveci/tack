@@ -576,3 +576,66 @@ def test_a_host_read_sees_the_last_kernel_write():
     for value in (7, 70, 700):
         mark(f, value)
         assert f[1023] == value + 1023
+
+
+# --- hip-python versions ---
+
+def test_cache_target_names_the_installed_hip_python():
+    """hip-python 10 has `VERSION` but no `LONG_VERSION`; importing the
+    latter kept the backend from loading at all. Either way the disk cache's
+    target must name the distribution that is installed."""
+    import importlib.metadata
+
+    from tack.runtime import hip_backend
+    assert hip_backend._HIP_PYTHON_VERSION == importlib.metadata.version("hip-python")
+
+
+def test_ctypes_waits_find_the_runtime():
+    """The event waits go through ctypes on the runtime hip-python loaded;
+    without it they fall back to hip-python's, which hold the GIL."""
+    from tack.runtime import hip_backend
+    assert hip_backend._runtime() is not None
+
+
+def test_runtime_library_without_hip_chip(monkeypatch):
+    """hip-python 10 has no `hip.chip`, whose ImportError escaped the loader.
+    Without it the library comes from `rocm.bindings`, or is the soname."""
+    import ctypes
+    import sys
+
+    from tack.runtime import hip_backend
+    monkeypatch.setitem(sys.modules, "hip.chip", None)  # import raises ImportError
+    name = hip_backend._runtime_library()
+    lib = ctypes.CDLL(name.decode() if isinstance(name, bytes) else name)
+    assert hasattr(lib, "hipEventSynchronize")
+
+
+def test_output_structs_in_both_conventions():
+    """hip-python 7.x takes an output struct as the first argument and
+    returns the error; 10 allocates it and returns `(error, struct)`."""
+    from tack.runtime import hip_backend
+
+    class Props:
+        value = 0
+
+    def fill(out, device):  # 7.x: (prop, deviceId)
+        out.value = device + 1
+        return (0,)
+
+    def make(device):  # 10: (deviceId)
+        out = Props()
+        out.value = device + 1
+        return 0, out
+
+    for fn in (fill, make):
+        fn.__name__ = f"fake_{fn.__name__}"
+        err, props = hip_backend._call_with_output(fn, Props, 4)
+        assert (err, props.value) == (0, 5)
+
+
+def test_cache_target_reads_the_device_strings():
+    """hip-python 10 returns a struct's character arrays as str, 7.x as
+    bytes; the disk cache's target decoded them and failed on 10."""
+    from tack.runtime import dispatch
+    target = dispatch.get_backend().cache_target()
+    assert "gfx" in target and "hip-python" in target

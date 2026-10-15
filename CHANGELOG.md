@@ -180,6 +180,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Fixed
 
+- HIP works with hip-python 10, the newest on PyPI and what
+  `tack-core[hip]` installs. Tack imported `hip.LONG_VERSION`, which 10 does
+  not have, so HIP read as unavailable and its tests skipped; it also lacks
+  `hip.chip`, and returns the output structs of `hipPointerGetAttributes`
+  and `hipGetDeviceProperties` instead of filling them, and gives the device
+  name as `str`. 7.x keeps working.
 - Grids with a size of 1 before another axis -- `uniform_grid((1, 3))`, a
   VTK image of dimensions `(1, m, n)` -- were refused; so were grids of one
   point or none (`(1, 1, 1)`, `(0,)`, `wavelet(extent=0)`). A size of 1 now
