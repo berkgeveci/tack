@@ -102,8 +102,8 @@ def contiguous_from_numpy(dof_values_np, elem_offsets_np, np_fp=np.float64):
         np_fp: float dtype for the DOF values.
     """
     return ContiguousDofs(
-        dof_values=tack.field_like(dof_values_np.astype(np_fp)),
-        elem_offsets=tack.field_like(elem_offsets_np.astype(np.int32)))
+        dof_values=tack.field_from_numpy(dof_values_np.astype(np_fp)),
+        elem_offsets=tack.field_from_numpy(elem_offsets_np.astype(np.int32)))
 
 
 def gathered_from_numpy(dof_values_np, dof_indices_np, elem_offsets_np,
@@ -120,9 +120,9 @@ def gathered_from_numpy(dof_values_np, dof_indices_np, elem_offsets_np,
     """
     tp_field = None
     if tp_perm_np is not None:
-        tp_field = tack.field_like(tp_perm_np.astype(np.int32))
+        tp_field = tack.field_from_numpy(tp_perm_np.astype(np.int32))
     return GatheredDofs(
-        dof_values=tack.field_like(dof_values_np.astype(np_fp)),
-        dof_indices=tack.field_like(dof_indices_np.astype(np.int32)),
-        elem_offsets=tack.field_like(elem_offsets_np.astype(np.int32)),
+        dof_values=tack.field_from_numpy(dof_values_np.astype(np_fp)),
+        dof_indices=tack.field_from_numpy(dof_indices_np.astype(np.int32)),
+        elem_offsets=tack.field_from_numpy(elem_offsets_np.astype(np.int32)),
         tp_to_mfem=tp_field)

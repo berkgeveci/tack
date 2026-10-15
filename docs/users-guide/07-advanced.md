@@ -47,6 +47,8 @@ def generic_process(data, out):
 ```
 
 This works with both `f32` and `i32` fields without separate kernels.
+Only the dtype is inherited: the second argument supplies the size, and no
+field values are copied. Initialize every scratch element before reading it.
 
 ### Derive a scratch size from a field
 
@@ -252,6 +254,8 @@ def generic_reduce(data, partial_sums):
 
 This is especially useful for kernels that need to work with both `f32` and `i32`
 fields without separate implementations.
+As with `local_array_like`, only the dtype is inherited. The size is explicit,
+and no field values are copied into the shared array.
 
 ## 3D Textures
 

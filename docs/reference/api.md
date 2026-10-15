@@ -36,7 +36,9 @@ whichever backend was active when it was allocated.
 
 ::: tack.lang.field.field
 
-::: tack.lang.field.field_like
+::: tack.lang.field.field_from_numpy
+
+::: tack.empty_like
 
 ::: tack.lang.field.zeros
 

@@ -24,8 +24,8 @@ from tack.rendering import Actor, Canvas, PerspectiveCamera, PointLight, Scene, 
 tack.init(arch=tack.cpu)
 vertices = np.array([[0, 0, 0], [1, 0, 0], [0.5, 1, 0]], dtype=np.float32)
 triangles = np.array([[0, 1, 2]], dtype=np.int32)
-points = tack.field_like(vertices.ravel())
-connectivity = tack.field_like(triangles.ravel())
+points = tack.field_from_numpy(vertices.ravel())
+connectivity = tack.field_from_numpy(triangles.ravel())
 
 scene = Scene()
 scene.add(Actor(points, connectivity, color=(0.8, 0.2, 0.2)))

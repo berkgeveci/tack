@@ -149,7 +149,7 @@ class Set:
         if hasattr(topology, "cell_faces"):
             # Cells list their faces, as many as they like: look each pair up.
             if cells.size:
-                _listed_faces(tack.field_like(cells), tack.field_like(local),
+                _listed_faces(tack.field_from_numpy(cells), tack.field_from_numpy(local),
                               topology.cell_offsets, topology.cell_faces, flags, bad)
         else:
             # Shapes have at most six faces: a bit per local face, a mask per cell.

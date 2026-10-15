@@ -134,18 +134,18 @@ def linear_quad_map_from_numpy(vx_np, vy_np, conn_np, conn_off_np,
                                np_fp=np.float64):
     """Create LinearQuadMap from numpy arrays."""
     return LinearQuadMap(
-        vx=tack.field_like(vx_np.astype(np_fp)),
-        vy=tack.field_like(vy_np.astype(np_fp)),
-        connectivity=tack.field_like(conn_np.astype(np.int32)),
-        conn_offsets=tack.field_like(conn_off_np.astype(np.int32)))
+        vx=tack.field_from_numpy(vx_np.astype(np_fp)),
+        vy=tack.field_from_numpy(vy_np.astype(np_fp)),
+        connectivity=tack.field_from_numpy(conn_np.astype(np.int32)),
+        conn_offsets=tack.field_from_numpy(conn_off_np.astype(np.int32)))
 
 
 def linear_hex_map_from_numpy(vx_np, vy_np, vz_np, conn_np, conn_off_np,
                               np_fp=np.float64):
     """Create LinearHexMap from numpy arrays."""
     return LinearHexMap(
-        vx=tack.field_like(vx_np.astype(np_fp)),
-        vy=tack.field_like(vy_np.astype(np_fp)),
-        vz=tack.field_like(vz_np.astype(np_fp)),
-        connectivity=tack.field_like(conn_np.astype(np.int32)),
-        conn_offsets=tack.field_like(conn_off_np.astype(np.int32)))
+        vx=tack.field_from_numpy(vx_np.astype(np_fp)),
+        vy=tack.field_from_numpy(vy_np.astype(np_fp)),
+        vz=tack.field_from_numpy(vz_np.astype(np_fp)),
+        connectivity=tack.field_from_numpy(conn_np.astype(np.int32)),
+        conn_offsets=tack.field_from_numpy(conn_off_np.astype(np.int32)))
