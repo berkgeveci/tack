@@ -16,6 +16,7 @@ from tack.lang.array import soa_param_names
 from tack.lang.constant import constant_components, constant_ir, constant_table
 from tack.lang.ir_names import fresh_name
 from tack.lang.ir_traversal import LIST_ROLES, child_fields, walk_ir
+from tack.lang.lowering.bounds import BoundsChecks
 from tack.lang.lowering.values import (
     _MATRIX_CONSTRUCTORS,
     _VECTOR_CONSTRUCTORS,
@@ -33,7 +34,7 @@ from tack.lang.types import f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_support import workgroup_features
 
 
-class KernelTransformer(ast.NodeVisitor):
+class KernelTransformer(BoundsChecks, ast.NodeVisitor):
     """Transforms a Python AST (from a @kernel function) into Tack IR.
 
     Tracks nesting depth to distinguish parallel for-loops (top-level)
@@ -50,12 +51,8 @@ class KernelTransformer(ast.NodeVisitor):
     def __init__(self, vector_arrays=None, texture_arrays=None, python_func=None,
                  bindings=None, template_funcs=None, debug=False):
         self._python_func = python_func
-        # Debug mode: every array and array index is checked (IRBoundsCheck),
-        # and each checked access is described in _bounds_sites.
-        self._debug = debug
-        self._bounds_sites: list = []
+        self._init_bounds(debug)
         self._array_sizes: dict = {}   # local/shared array name -> its size expression
-        self._sources: dict = {}       # Python function -> its source, for _source_text
         self._bindings = bindings
         self._template_funcs = template_funcs
         self._call_bindings = None
@@ -2605,79 +2602,6 @@ class KernelTransformer(ast.NodeVisitor):
         return self._checked(node, array_name, flat, result, source=source)
 
     # --- Debug mode: bounds checks ---
-
-    def _source_text(self, python, node) -> str:
-        """``node`` as written in ``python``'s source, before inlining renamed it."""
-        if python is not None and getattr(node, 'end_col_offset', None) is not None:
-            source = self._sources.get(python)
-            if source is None:
-                import textwrap
-
-                from tack.lang.func import read_source
-                try:
-                    source = textwrap.dedent(read_source(python, "kernel"))
-                except Exception:   # no source to read: the AST's text below
-                    source = ""
-                self._sources[python] = source
-            try:
-                text = ast.get_source_segment(source, node)
-            except (IndexError, ValueError):     # positions from elsewhere
-                text = None
-            if text:
-                return text
-        return ast.unparse(node)
-
-    def _checked(self, node, name, indices, flat, kind=ir.IRArrayExtent.ELEMENTS,
-                 source=None):
-        """``flat``, the index of an access to ``name``, as debug mode checks it.
-
-        Several ``indices`` are checked against one dimension of the array
-        each; one is a flat index, checked against the ``kind`` of extent.
-        An array is checked against its size. Out of debug mode, or for an
-        array this function cannot size, ``flat`` is returned unchecked.
-        """
-        if not self._debug or name is None:
-            return flat
-        name = self._shape_name(name)
-        if name in self._shared_vars:
-            size = self._array_sizes.get(name)
-            if size is None or len(indices) != 1:
-                return flat
-            extents = [copy.deepcopy(size)]
-        elif len(indices) == 1:
-            extents = [ir.IRArrayExtent(name, kind)]
-        else:
-            extents = [ir.IRArrayExtent(name, ir.IRArrayExtent.LEADING)]
-            for d in range(1, len(indices)):
-                # Tagged as linearization's are, so too many indices is
-                # the same TypeError whichever node resolve meets first.
-                dim_size = ir.IRDimSize(array_name=name, dim=d)
-                dim_size.index_count = len(indices)
-                dim_size.index_source = source
-                extents.append(dim_size)
-        site = len(self._bounds_sites)
-        # Whose source the access is in (func.tag_origin): a call's
-        # arguments are the caller's although they are lowered while the
-        # callee is inlined. The line in the file is where the function's
-        # source, parsed alone, starts at line 1 with the decorator.
-        origin = getattr(node, '_tack_origin', None)
-        python = origin() if origin is not None else None
-        if python is not None:
-            function = None if python is self._python_func else python.__name__
-        else:   # a node lowering made: where the other diagnostics say
-            function = self._inline_stack[-1] if self._inline_stack else None
-        code = getattr(python, '__code__', None)
-        line = getattr(node, 'lineno', None)
-        self._bounds_sites.append(ir_bounds.BoundsSite(
-            kernel=self._function_name, function=function,
-            file=code.co_filename if code is not None and line is not None else None,
-            line=code.co_firstlineno + line - 1 if code is not None and line is not None
-            else line,
-            column=getattr(node, 'col_offset', 0) + 1,
-            text=self._source_text(python, node), dimensions=len(indices)))
-        # The check evaluates its own copy of the indices: IR is a tree.
-        return ir.IRBoundsCheck(indices=[copy.deepcopy(i) for i in indices], extents=extents,
-                                flat=flat, site=site, errors=ir.IRName(ir_bounds.ERRORS_PARAM))
 
     def _is_range_call(self, node: ast.expr) -> bool:
         """Check if an AST node is a call to range()."""
