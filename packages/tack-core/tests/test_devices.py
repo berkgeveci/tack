@@ -303,3 +303,20 @@ def test_library_functions_refuse_two_devices_under_their_own_name(cpu, second):
 def test_a_thread_count_is_an_integer(count):
     with pytest.raises(TypeError, match="num_threads is a thread count"):
         tack.device("cpu", num_threads=count)
+
+
+def test_an_implicit_array_is_where_its_arrays_are(cpu, second):
+    from tack import arrays
+    from tack.algorithms import exclusive_scan
+    base = tack.array(np.arange(4, dtype=np.float32), device=second)
+    perm = arrays.Permutation(tack.array(np.array([3, 2, 1, 0], np.int32), device=second),
+                              base)
+    assert perm.device == second
+    assert arrays.CountingArray(3).device == cpu          # holds nothing: the default
+    assert perm.sum() == 6
+    assert arrays.materialize(perm).device == second
+    out = tack.zeros((4,), device=second)
+    assert exclusive_scan(perm, out, 4) == 6
+    np.testing.assert_allclose(out.numpy(), [0, 3, 5, 6])
+    with pytest.raises(ValueError, match="two devices"):
+        exclusive_scan(perm, tack.zeros((4,)), 4)

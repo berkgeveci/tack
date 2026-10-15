@@ -89,6 +89,42 @@ class _Implicit:
     def __len__(self):
         return self.length
 
+    @property
+    def _device(self):
+        """The backend of the arrays this one holds, or None for one that holds
+        none: where it is read, and where `materialize` stores it."""
+        for value in vars(self).values():
+            dev = getattr(value, "_device", None)
+            if dev is not None:
+                return dev
+        return None
+
+    @property
+    def device(self):
+        """The `tack.Device` of the arrays this one holds; the default device for
+        one that holds none."""
+        from tack.runtime.dispatch import as_device, get_backend
+        return as_device(self._device or get_backend())
+
+    # Reductions compute the values into a temporary array and reduce it as a
+    # stored array is reduced, so they share its semantics exactly: float
+    # extrema propagate NaNs, integer sums wrap in 64 bits.
+    def sum(self):
+        """The sum of every component, as ``Array.sum``."""
+        return materialize(self).sum()
+
+    def min(self):
+        """The least component, as ``Array.min``."""
+        return materialize(self).min()
+
+    def max(self):
+        """The greatest component, as ``Array.max``."""
+        return materialize(self).max()
+
+    def mean(self):
+        """The mean of every component, as ``Array.mean``."""
+        return materialize(self).mean()
+
     def numpy(self):
         """The values as a host array: ``(size,)``, or ``(size, width)`` for vectors."""
         return to_host(materialize(self))
@@ -571,10 +607,8 @@ def materialize(values):
         return values
     if isinstance(values, _Explicit):
         return values.values
-    if values.width:
-        out = tack.empty((values.size,), tack.vec(values.width, values.dtype))
-    else:
-        out = tack.empty((values.size,), values.dtype)
+    dtype = tack.vec(values.width, values.dtype) if values.width else values.dtype
+    out = tack.empty((values.size,), dtype, device=values._device)
     if values.size:
         _fill(values, out)
     return out

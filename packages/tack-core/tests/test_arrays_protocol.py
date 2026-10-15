@@ -96,3 +96,33 @@ def test_a_new_length_does_not_recompile(backend):
         _scaled(arrays.CountingArray(n, 0.0, 1.0), out, 1)
         np.testing.assert_allclose(out.numpy(), np.arange(n))
     assert len(get_backend()._cache[_scaled]) == 1
+
+
+def test_algorithms_take_implicit_arrays(backend):
+    from tack import algorithms as alg
+    c = arrays.CountingArray(10, 1.0, 1.0)                  # 1 .. 10
+    down = arrays.CountingArray(10, 9, -1, tack.i32)        # 9 .. 0
+    out = tack.empty((10,))
+    assert alg.exclusive_scan(c, out, 10) == 55
+    np.testing.assert_allclose(out.numpy(), np.cumsum(np.arange(1, 11)) - np.arange(1, 11))
+    np.testing.assert_array_equal(alg.argsort(down).numpy(), np.arange(10)[::-1])
+    keys, values = alg.sort_by_key(down, c)
+    np.testing.assert_array_equal(keys.numpy(), np.arange(10))
+    np.testing.assert_allclose(values.numpy(), np.arange(10, 0, -1))
+    np.testing.assert_allclose(alg.gather(c, tack.array([3, 0])).numpy(), [4, 1])
+    runs, totals = alg.reduce_by_key(arrays.ConstantArray(2, 4, tack.i32), c)
+    np.testing.assert_array_equal(runs.numpy(), [2])
+    np.testing.assert_allclose(totals.numpy(), [10])
+    assert alg.dot(c, c) == 385 and alg.count_nonzero(c) == 10 and alg.absmax(c) == 10
+    assert alg.var(c) == pytest.approx(np.var(np.arange(1, 11)))
+    counts, edges = alg.histogram(c, bins=2)
+    np.testing.assert_array_equal(counts.numpy(), [5, 5])
+
+
+def test_reductions_of_implicit_arrays_are_a_stored_arrays(backend):
+    c = arrays.CountingArray(10, 1.0, 1.0)
+    assert (c.sum(), c.min(), c.max(), c.mean()) == (55, 1, 10, 5.5)
+    soa = arrays.Components(arrays.CountingArray(3, 0.0, 1.0), arrays.ConstantArray(9.0, 3))
+    assert soa.sum() == 30 and soa.mean() == 5           # every component, as Array
+    wide = arrays.CountingArray(3, 2**40, 2**40, tack.i64)
+    assert wide.sum() == 6 * 2**40

@@ -25,6 +25,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   kernel takes them as it takes a stored array, `a[k]` and `len(a)`, not
   only through a dataset field. **Breaking:** import them from
   `tack.arrays`; `tack.dataset` no longer re-exports them.
+- `tack.algorithms` (scans, sorts, `gather`, `unique`, `reduce_by_key`, the
+  statistics, `copy`) take implicit arrays as inputs, read in their kernels
+  without storing them, and implicit arrays have `sum`, `min`, `max` and
+  `mean` with a stored array's semantics (computed into a temporary, then
+  reduced). An implicit array is on the device of the arrays it holds
+  (`a.device`), so these run and allocate there.
 - `tack.__version__`, the installed tack-core's version, and a docstring
   for `tack` (`help(tack)` said nothing: the docstring followed code).
 - NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`

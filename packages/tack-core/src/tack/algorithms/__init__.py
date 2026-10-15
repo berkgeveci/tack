@@ -1,9 +1,11 @@
 """tack.algorithms — GPU algorithm primitives.
 
 Portable, backend-agnostic building blocks for common parallel patterns:
-scan, sort, segmented reductions, copy, fill, stats. All operate on
-Tack arrays and run as kernels on their inputs' device (CPU, Metal,
-CUDA, HIP, Level Zero), reading back at most a scalar result.
+scan, sort, segmented reductions, copy, fill, stats. Their inputs are any
+arrays a kernel indexes -- stored Tack arrays or the implicit arrays of
+``tack.arrays`` -- and their outputs stored arrays; they run as kernels on
+their inputs' device (CPU, Metal, CUDA, HIP, Level Zero), reading back at
+most a scalar result.
 
 Visualization algorithms are in ``tack.dataset`` (tack-vis).
 """
