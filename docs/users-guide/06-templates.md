@@ -392,6 +392,6 @@ object to three simulation stages. Class constants describe the sensing model;
 instance dimensions and fields describe this particular simulation.
 
 The cell-set sketches above show a more generic use: pass different topology
-implementations to one kernel. They illustrate a protocol; `tack.data` is the built-in
+implementations to one kernel. They illustrate a protocol; `tack.dataset` is the built-in
 mesh API that follows it, with a template per shape and per topology (see
 [Datasets and visualization](09-visualization.md#writing-your-own-algorithm)).

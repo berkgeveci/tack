@@ -14,7 +14,7 @@ Scalar field: a gyroid -- sin(x)*cos(y) + sin(y)*cos(z) + sin(z)*cos(x)
 This produces a beautiful triply-periodic minimal surface at isovalue 0.
 
 This shows how such an algorithm is built from scratch. The library's
-version, for any mesh and with points merged, is ``tack.data.contour``.
+version, for any mesh and with points merged, is ``tack.dataset.contour``.
 
 Usage:
   uv run python packages/tack-vis/examples/26_marching_cubes.py

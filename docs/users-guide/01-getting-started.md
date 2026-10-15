@@ -7,7 +7,7 @@ It is split into three packages:
 
 - **tack-core** — the compute framework (kernels, fields, types, backends)
 - **tack-rendering** — path tracing renderer
-- **tack-vis** — datasets and visualization algorithms (`tack.data`, VTK interop)
+- **tack-vis** — datasets and visualization algorithms (`tack.dataset`, VTK interop)
 
 ```bash
 # Install everything from source with uv

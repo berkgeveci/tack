@@ -14,7 +14,7 @@ point IDs from (ci, cj, ck) decomposition; the explicit version reads
 them from a flat connectivity field.
 
 This shows how such an algorithm is built from scratch. The library's
-version, for any mesh, is ``tack.data.to_cells``.
+version, for any mesh, is ``tack.dataset.to_cells``.
 
 Usage:
   uv run python packages/tack-vis/examples/25_point_to_cell.py

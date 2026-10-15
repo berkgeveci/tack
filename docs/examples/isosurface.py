@@ -10,7 +10,7 @@ import argparse
 import numpy as np
 
 import tack
-import tack.data as td
+import tack.dataset as td
 from tack.rendering import Actor, Canvas, PerspectiveCamera, PointLight, Scene, render
 
 

@@ -8,8 +8,8 @@ import pytest
 from test_dataset_api import _two_hexes_and_a_pyramid
 
 import tack
-import tack.data as td
-from tack.data.algorithms.implicit_values import _implicit_values
+import tack.dataset as td
+from tack.dataset.algorithms.implicit_values import _implicit_values
 
 try:
     import vtkmodules.all as vtk

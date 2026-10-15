@@ -7,7 +7,7 @@ import pytest
 from test_dataset_api import _two_hexes_and_a_pyramid
 
 import tack
-import tack.data as td
+import tack.dataset as td
 
 try:
     import vtkmodules.all as vtk

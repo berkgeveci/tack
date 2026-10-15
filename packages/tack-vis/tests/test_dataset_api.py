@@ -15,9 +15,9 @@ import numpy as np
 import pytest
 
 import tack
-import tack.data as td
-from tack.data import algorithms as alg
-from tack.data.algorithms.values_at_centers import _at_centers
+import tack.dataset as td
+from tack.dataset import algorithms as alg
+from tack.dataset.algorithms.values_at_centers import _at_centers
 from tack.runtime.dispatch import env_flag
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
@@ -486,7 +486,7 @@ def test_rectilinear_geometry_is_an_ordinary_field(backend):
 
 
 def test_structured_cells_read_cartesian_values_by_ijk(backend):
-    from tack.data import views
+    from tack.dataset import views
 
     data = td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1])
     cells = data.topology.groups()[0]
@@ -877,7 +877,7 @@ def _quadratic_at(shape: tack.template(), pcs, values, gradients, nodes, n):
 def test_quadratic_bases(backend, name):
     """Each shape's quadratic Lagrange functions: one at their own node and zero at
     the others, summing to one, with gradients their finite differences."""
-    from tack.data import shapes
+    from tack.dataset import shapes
 
     cls = getattr(shapes, name)
     n = cls.NUM_QUADRATIC
@@ -999,7 +999,7 @@ def test_vtk_edge_cases(backend):
 
 def test_view_mixins_may_not_share_a_name():
     """Stacked into one view, a name two mixins define would hide one of them."""
-    from tack.data import shapes, views
+    from tack.dataset import shapes, views
 
     class First:
         @tack.func

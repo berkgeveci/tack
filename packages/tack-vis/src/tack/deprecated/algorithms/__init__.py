@@ -1,4 +1,4 @@
-"""The first vis worklets, superseded by ``tack.data.algorithms``; see ``tack.deprecated``."""
+"""The first vis worklets, superseded by ``tack.dataset.algorithms``; see ``tack.deprecated``."""
 
 from tack.deprecated.algorithms.cell_to_point import cell_to_point
 from tack.deprecated.algorithms.compute_normals import compute_normals

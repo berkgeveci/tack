@@ -36,7 +36,7 @@ has the full rule.
 
 `tack.Array` is typed storage on a backend. `tack.empty` allocates it;
 `tack.array` copies existing values into it. Both are functions, hence their
-lowercase names. A dataset `tack.data.Field` is a different object: a space
+lowercase names. A dataset `tack.dataset.Field` is a different object: a space
 plus its coefficient values on a topology.
 
 ```python

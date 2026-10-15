@@ -1,4 +1,4 @@
-"""Tests for tack.data.filters: contour, slice, threshold and external faces.
+"""Tests for tack.dataset.filters: contour, slice, threshold and external faces.
 
 Ported from vis/data-model's filter tests, with the same references: VTK's
 vtkContourGrid for every case of every 3D shape and for real meshes,
@@ -16,9 +16,9 @@ import pytest
 from test_shapes import EXPECTED
 
 import tack
-import tack.data as td
-from tack.data import algorithms as alg
-from tack.data import shapes as sh
+import tack.dataset as td
+from tack.dataset import algorithms as alg
+from tack.dataset import shapes as sh
 from tack.runtime.dispatch import env_flag
 
 try:

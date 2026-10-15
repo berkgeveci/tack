@@ -8,7 +8,7 @@ import numpy as np
 import pytest
 
 import tack
-import tack.data as td
+import tack.dataset as td
 
 pytestmark = pytest.mark.quick
 

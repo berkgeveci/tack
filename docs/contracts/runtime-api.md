@@ -103,7 +103,7 @@ Its `dtype` describes one scalar, vector or matrix element; `shape` is the
 array's dimensions, excluding component dimensions. `size` counts elements.
 `scalar_dtype`, `scalar_size` and `storage_shape` describe the scalar storage.
 The buffer belongs to the backend active when the array was allocated.
-`tack.data.Field` is a separate class coupling a space with coefficient values.
+`tack.dataset.Field` is a separate class coupling a space with coefficient values.
 
 ### Creation
 

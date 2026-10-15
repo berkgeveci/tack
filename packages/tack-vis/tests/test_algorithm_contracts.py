@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 
 import tack
-import tack.data as td
+import tack.dataset as td
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
@@ -39,7 +39,7 @@ def test_algorithms_refuse_fields_of_another_topology(backend, name, empty, name
 
 def test_a_raw_device_array_is_not_a_dataset_field(backend):
     data = td.uniform_grid((2, 2, 2))
-    with pytest.raises(TypeError, match="tack.data.Field"):
+    with pytest.raises(TypeError, match="tack.dataset.Field"):
         td.threshold(data, tack.zeros(tack.f32, (data.num_points,)), 0, 1)
 
 

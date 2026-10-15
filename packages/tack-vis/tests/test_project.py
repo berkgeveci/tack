@@ -9,7 +9,7 @@ from test_dataset_api import _scalars
 from test_shapes import EXPECTED
 
 import tack
-import tack.data as td
+import tack.dataset as td
 
 
 def _linear(x):

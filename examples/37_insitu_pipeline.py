@@ -2,7 +2,7 @@
 
 Demonstrates the full zero-copy GPU pipeline:
   1. Generate scalar field on GPU (simulating in situ data)
-  2. Extract the isosurface with tack.data's contour (GPU)
+  2. Extract the isosurface with tack.dataset's contour (GPU)
   3. Path trace with BVH (GPU)
   4. Denoise with OIDN (CPU)
   5. Write image
@@ -23,7 +23,7 @@ import time
 import numpy as np
 
 import tack
-import tack.data as td
+import tack.dataset as td
 from tack.rendering import (
     Actor,
     Canvas,

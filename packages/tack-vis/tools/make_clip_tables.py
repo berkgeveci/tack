@@ -1,9 +1,9 @@
-"""Generate tack/data/_clip_tables.py from Viskores' clip tables.
+"""Generate tack/dataset/_clip_tables.py from Viskores' clip tables.
 
 Usage:
   python packages/tack-vis/tools/make_clip_tables.py \
       <viskores>/viskores/filter/contour/worklet/clip/ClipTables.h \
-      packages/tack-vis/src/tack/data/_clip_tables.py
+      packages/tack-vis/src/tack/dataset/_clip_tables.py
 
 Parses the edge table and both case tables (kept and inverted) with their
 per-case offsets, checks that every case of every shape decodes within the

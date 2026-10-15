@@ -1,4 +1,4 @@
-"""MFEM meshes and grid functions as ``tack.data`` datasets, through PyMFEM.
+"""MFEM meshes and grid functions as ``tack.dataset`` datasets, through PyMFEM.
 
 ``mfem_to_dataset(mesh, fields)`` copies an ``mfem.ser.Mesh`` and named
 ``GridFunction``s on it. The mesh's elements are the topology, and its
@@ -58,7 +58,7 @@ def _corners(geometry, n):
 
 
 def _topology(mesh, id_dtype=None):
-    from tack.data import UnstructuredTopology
+    from tack.dataset import UnstructuredTopology
 
     types, rows = [], []
     for e in range(mesh.GetNE()):
@@ -140,13 +140,13 @@ def _quadratic_values(data, mesh, gf):
     """``gf`` at every value of ``data``'s H1 order-2 space: each element evaluates it
     at its quadratic nodes, whose parametric coordinates are MFEM's reference
     coordinates too (the corners agree, and so the references)."""
-    from tack.data import H1, ConstantArray, Field, for_each
+    from tack.dataset import H1, ConstantArray, Field, for_each
 
     m = _mfem()
     space = H1(data, order=2)
     width = 27
     n = data.num_cells
-    from tack.data.ids import at_least
+    from tack.dataset.ids import at_least
 
     index = at_least(data.id_dtype, space.size)
     indices = tack.field(index, shape=(n * width,))
@@ -181,7 +181,7 @@ def _supported():
 def mfem_field(data, mesh, gf, dtype=tack.f32):
     """``gf``, an MFEM grid function on ``mesh``, as a field of ``data`` (the dataset
     ``mfem_to_dataset`` made from ``mesh``)."""
-    from tack.data import H1, L2, Constant, Field
+    from tack.dataset import H1, L2, Constant, Field
 
     fes = gf.FESpace()
     family, order = _collection(fes)
@@ -200,14 +200,14 @@ def mfem_field(data, mesh, gf, dtype=tack.f32):
 
 
 def mfem_to_dataset(mesh, fields=None, dtype=tack.f32, id_dtype=None):
-    """A ``tack.data.DataSet`` of an MFEM mesh and named grid functions on it.
+    """A ``tack.dataset.DataSet`` of an MFEM mesh and named grid functions on it.
 
     The geometry is the vertex positions (z = 0 for a 2D mesh), or for a curved
     mesh -- nodes of order 2 -- an H1 order-2 field of positions; nodes of
     higher order are refused. Element attributes become ``fields["attribute"]``.
-    ``id_dtype`` is the topology's (``tack.data.ids``).
+    ``id_dtype`` is the topology's (``tack.dataset.ids``).
     """
-    from tack.data import Constant, DataSet, Field
+    from tack.dataset import Constant, DataSet, Field
 
     nodes = mesh.GetNodes()
     curved = nodes is not None and _collection(nodes.FESpace())[1] > 1

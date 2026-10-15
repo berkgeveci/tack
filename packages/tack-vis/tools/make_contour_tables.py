@@ -1,14 +1,14 @@
-"""Generate tack.data's contour case tables from VTK's own cells.
+"""Generate tack.dataset's contour case tables from VTK's own cells.
 
 For every cell shape and every way its points can be above or below the
 isovalue, contour one reference cell with VTK: scalars 1 at the points
 above, 0 below, isovalue 0.5. Every output point is then the midpoint of
 the cell edge it lies on, which names the edge, so each case's triangles
 come out in VTK's order and orientation, as edges in VTK's GetEdge
-numbering -- the numbering tack.data.shapes uses.
+numbering -- the numbering tack.dataset.shapes uses.
 
     uv run python packages/tack-vis/tools/make_contour_tables.py \\
-        > packages/tack-vis/src/tack/data/_contour_tables.py
+        > packages/tack-vis/src/tack/dataset/_contour_tables.py
 
 A point's bit in the case index is 1 when its value is at least the
 isovalue, as in VTK.

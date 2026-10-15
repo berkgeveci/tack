@@ -1,6 +1,6 @@
 # Polyhedral meshes: design record
 
-> **Status: built**, in `tack.data`. This records how the polyhedral path
+> **Status: built**, in `tack.dataset`. This records how the polyhedral path
 > was reasoned out (2026-10-08); the API as it stands is the
 > [Dataset API reference](../reference/dataset-api.md), which is right where
 > the two differ. Since this was written, the polygonal path gained a
@@ -38,7 +38,7 @@ cells, `sides` per face, face data as `Values(data, "faces")`. The
 explicit unstructured grid is the polyhedral topology this document
 designs.
 
-The aim, as for the rest of `tack.data`, is the API: what a polyhedral
+The aim, as for the rest of `tack.dataset`, is the API: what a polyhedral
 topology is, what kernels see, and how much of the shape-based path's
 API carries over. Algorithms are sketched only as far as they test that.
 
@@ -395,7 +395,7 @@ reference element.
 
 ## 9. Phase 1 as built
 
-`packages/tack-vis/src/tack/data/polyhedra.py`, with views in `views.py`
+`packages/tack-vis/src/tack/dataset/polyhedra.py`, with views in `views.py`
 and VTK conversion in `interop/vtk.py`:
 
 - **`PolyhedralTopology(face_offsets, face_points, cell_offsets, cell_faces,

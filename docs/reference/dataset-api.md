@@ -1,6 +1,6 @@
 # Dataset API
 
-`tack.data`, in the `tack-vis` package. This page describes the API as it
+`tack.dataset`, in the `tack-vis` package. This page describes the API as it
 stands; the [User's Guide chapter](../users-guide/09-visualization.md) is a
 tour of it. For why it is shaped this way and how it got here, see the
 design records: [Dataset API](../design/dataset-api.md) and
@@ -9,8 +9,8 @@ current state. What is missing is listed with each part, and under
 [Settled, and open](#settled-and-open).
 
 ```python
-import tack.data as td
-from tack.data import algorithms as alg
+import tack.dataset as td
+from tack.dataset import algorithms as alg
 ```
 
 ## The model
@@ -36,6 +36,14 @@ gradient = alg.gradients(data, data.fields["height"])     # a field on the cells
 
 Here `scalars` stands for any function that puts a host array in a
 `tack.field`.
+
+## Import path migration
+
+The package is `tack.dataset` (previously `tack.data`). Change
+`import tack.data as td` to `import tack.dataset as td`, and use
+`tack.dataset.<submodule>` for direct imports. Existing `td.DataSet`,
+`td.Field`, spaces, topologies and algorithm calls keep their names and signatures.
+The shorthand `td` means Tack datasets.
 
 ## Topologies
 
@@ -370,8 +378,8 @@ side `s` and its local face number.
 
 ## Algorithms and filters
 
-Every algorithm is in `tack.data.algorithms`, one module each, and
-`tack.data` re-exports them all. They share one set of conventions:
+Every algorithm is in `tack.dataset.algorithms`, one module each, and
+`tack.dataset` re-exports them all. They share one set of conventions:
 
 - the dataset comes first: `f(data, ...)`;
 - a field argument is a `Field` or the name of one of `data`'s fields;
@@ -432,7 +440,7 @@ raises `NotImplementedError` saying so.
 **How fields carry through filters.** Every filter that makes a new dataset
 (contour, slice, threshold, external faces and `extract_surface`,
 `as_polyhedra`, `as_polygons`) carries fields the same way, through
-`tack.data.carry`. The filter states how its output's entities come from the
+`tack.dataset.carry`. The filter states how its output's entities come from the
 input's -- the same entity (`Same`), input entity `ids[i]` (`Take`), a piece
 of input cell `ids[i]` (`Pieces`), or a point between two input points
 (`Interpolate`) -- and one set of rules applies to every field:
@@ -475,7 +483,7 @@ cell of no volume NaN.
 
 ## Implicit functions
 
-`tack.data.Plane(origin, normal)`, `Sphere(center, radius)`,
+`tack.dataset.Plane(origin, normal)`, `Sphere(center, radius)`,
 `Cylinder(center, axis, radius)` (infinite), `Box(lower, upper)`
 (axis-aligned) and `Planes(origins, normals)` (the convex region below every
 plane: a frustum, a box at any angle). `value(p)` is negative inside, zero on
@@ -517,7 +525,7 @@ in `data.sets` (cells keep their order, not the order given),
 
 ## Field and geometry transforms
 
-In `tack.data.algorithms` (and `tack.data`), in Viskores' conventions:
+In `tack.dataset.algorithms` (and `tack.dataset`), in Viskores' conventions:
 
 | Function | Result |
 |---|---|

@@ -30,7 +30,7 @@ result = out.to_numpy()
 
 ## Installation
 
-Tack is split into three packages: **tack-core** (compute framework), **tack-rendering** (path tracer), and **tack-vis** (datasets and visualization: `tack.data`).
+Tack is split into three packages: **tack-core** (compute framework), **tack-rendering** (path tracer), and **tack-vis** (datasets and visualization: `tack.dataset`).
 
 ```bash
 # Install everything from source with uv
@@ -108,7 +108,7 @@ Compiled kernels are also kept on disk, so a later process starts warm; see
 
 `tack.Array` is typed storage on a backend. Array shape counts elements;
 the dtype describes a scalar, vector or matrix element. A dataset
-`tack.data.Field` combines a function space with coefficient values.
+`tack.dataset.Field` combines a function space with coefficient values.
 
 ```python
 # empty leaves contents unspecified until a kernel or host write sets them
@@ -376,7 +376,7 @@ as `grid.step(0.1)` and reaches the object's fields through `self`.
 
 ## Datasets and Visualization
 
-`tack.data` (in tack-vis) holds meshes and the fields on them -- structured
+`tack.dataset` (in tack-vis) holds meshes and the fields on them -- structured
 grids, unstructured meshes of the linear cells, polyhedra, polygons and
 polylines -- and the algorithms that work on them: contour, slice, clip,
 threshold, external faces, gradients, projections between spaces,
@@ -385,7 +385,7 @@ and your own kernels see a mesh the same way through `for_each`.
 
 ```python
 import tack
-import tack.data as td
+import tack.dataset as td
 
 tack.init(arch=tack.cpu)
 data = td.wavelet(extent=10)                    # VTK's wavelet: 21^3 points
@@ -403,14 +403,14 @@ User's Guide and the [Dataset API reference](docs/reference/dataset-api.md).
 ```bash
 uv run python packages/tack-core/examples/01_hello_tack.py              # simplest kernel
 uv run python packages/tack-core/examples/12_mandelbrot.py --arch metal # fractal on GPU
-uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # tack.data
+uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # tack.dataset
 uv run python examples/32_pathtrace.py --arch metal                    # path tracing
 ```
 
 | Location | Count | Covers |
 |----------|------:|--------|
 | `packages/tack-core/examples/` | 28 | Kernels, fields, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
-| `packages/tack-vis/examples/` | 9 | A tour of `tack.data`, an MFEM solution through it, multi-block contour, VTK interop; and contour, marching cubes, flying edges and point-to-cell written from scratch. `deprecated/` holds the `tack.fe` isolines and isosurfaces |
+| `packages/tack-vis/examples/` | 9 | A tour of `tack.dataset`, an MFEM solution through it, multi-block contour, VTK interop; and contour, marching cubes, flying edges and point-to-cell written from scratch. `deprecated/` holds the `tack.fe` isolines and isosurfaces |
 | `packages/tack-rendering/examples/` | 10 | GPU BVH, path tracing, denoising, materials, multiple lights, scalar colouring, volume rendering, annotations |
 | `examples/` | 2 | Cross-package pipelines that need both tack-vis and tack-rendering |
 
@@ -469,7 +469,7 @@ packages/
 
   tack-vis/                  # Datasets and visualization
     src/tack/
-      data/                 # tack.data: topologies, spaces, fields, sets, views
+      dataset/              # tack.dataset: topologies, spaces, fields, sets, views
         algorithms/         # Every algorithm, one module each
       interop/              # VTK and MFEM interop
       deprecated/           # The first vis worklets and tack.fe, for reference

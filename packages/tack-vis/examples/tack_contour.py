@@ -14,7 +14,7 @@ Runs contour on two representations of the same curvilinear mesh:
 Both produce identical results, validating the abstraction.
 
 This shows how such an algorithm is built from scratch. The library's
-version, for any 2D mesh, is ``tack.data.contour``.
+version, for any 2D mesh, is ``tack.dataset.contour``.
 """
 
 import sys

@@ -119,7 +119,7 @@ packages/
         src/tack/
             data/                # Datasets, spaces, views and their algorithms
                 algorithms/      # contour, clip, threshold, gradients, ... (one per file)
-            deprecated/          # Superseded by tack.data, kept for reference
+            deprecated/          # Superseded by tack.dataset, kept for reference
                 algorithms/      # flying_edges, compute_normals, cell_to_point, amr_blanking
                 fe/              # Lagrange bases, geometry maps, accessors
             interop/             # External framework interop

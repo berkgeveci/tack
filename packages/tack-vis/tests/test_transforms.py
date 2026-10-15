@@ -1,4 +1,4 @@
-"""Field and geometry transforms and vector analysis (now in tack.data.algorithms), in
+"""Field and geometry transforms and vector analysis (now in tack.dataset.algorithms), in
 Viskores' conventions, against VTK where VTK has the filter."""
 
 import numpy as np
@@ -6,7 +6,7 @@ import pytest
 from test_dataset_api import _scalars, _two_hexes_and_a_pyramid
 
 import tack
-import tack.data as td
+import tack.dataset as td
 
 try:
     import vtkmodules.all as vtk

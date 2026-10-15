@@ -1,7 +1,7 @@
 # Arrays, element types and dataset fields
 
 Tack separates storage from the meaning of values on a mesh. `tack.Array`
-holds typed backend storage; `tack.data.Field` couples coefficient values
+holds typed backend storage; `tack.dataset.Field` couples coefficient values
 with a function space on a topology. Lowercase `tack.array` and `tack.empty`
 are factory functions that return `Array` instances.
 
@@ -89,7 +89,7 @@ and obtains scalar storage views without a host transfer.
 ## Dataset fields
 
 ```python
-import tack.data as td
+import tack.dataset as td
 
 data = td.uniform_grid((2, 2, 2))
 space = td.H1(data)

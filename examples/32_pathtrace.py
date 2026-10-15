@@ -1,6 +1,6 @@
 """32 -- Path tracing: render an isosurface with global illumination.
 
-Extracts a gyroid isosurface with tack.data's contour, then path traces
+Extracts a gyroid isosurface with tack.dataset's contour, then path traces
 it with the tack.rendering module. The surface goes from one to the other
 on the device: the renderer reads the contour's own fields.
 
@@ -18,7 +18,7 @@ import time
 import numpy as np
 
 import tack
-import tack.data as td
+import tack.dataset as td
 from tack.rendering import (
     Actor,
     Canvas,

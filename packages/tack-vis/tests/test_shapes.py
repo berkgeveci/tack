@@ -1,4 +1,4 @@
-"""Tests for tack.data.shapes: VTK's linear cells as template classes.
+"""Tests for tack.dataset.shapes: VTK's linear cells as template classes.
 
 VTK is the reference. Its tables (points, centers, edges, faces) are
 recorded below as literals, so every machine checks Tack against them;
@@ -19,7 +19,7 @@ import numpy as np
 import pytest
 
 import tack
-from tack.data import shapes as sh
+from tack.dataset import shapes as sh
 from tack.runtime.dispatch import env_flag
 
 # Only VTK's data model: plain `import vtk` also loads its rendering

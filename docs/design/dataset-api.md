@@ -1,6 +1,6 @@
 # A common dataset API: design record
 
-> **Status: built.** This is the design record of `tack.data`: how the API
+> **Status: built.** This is the design record of `tack.dataset`: how the API
 > was reasoned out, 2026-10-08 to 10-12. The API as it stands is the
 > [Dataset API reference](../reference/dataset-api.md), and where the two
 > differ the reference is right. The build departed from this proposal in
@@ -19,7 +19,7 @@
 >   `_position`, `_corner`, `num_`): `side_point` is `side_point_id`,
 >   `point(c, j)` is `corner_position(c, j)`, `face_size` is
 >   `num_points`. Views stay flat, not nested templates (questions 8 and 9).
-> - Algorithms live one per module in `tack.data.algorithms`, take the
+> - Algorithms live one per module in `tack.dataset.algorithms`, take the
 >   dataset first, and never change their input.
 > - `@tack.data_oriented` is now `@tack.device_class` (the old name remains
 >   an alias), and templates may hold templates.
@@ -116,7 +116,7 @@ DataSet
 
 Entities are the vertices (dimension 0), edges (1), faces (2) and cells
 (3, or 2 for a surface mesh), each with its own index space. A cell has a
-shape from `tack.data.shapes`, and its sides -- the faces, edges and
+shape from `tack.dataset.shapes`, and its sides -- the faces, edges and
 vertices of its reference element, in a fixed local order -- come from the
 shape's tables.
 
@@ -229,7 +229,7 @@ Kernels stay what they are in the prototype: specialized per shape,
 iterating a view. What generalizes is *what* is iterated and *how fields
 are read*.
 
-**Iteration domains.** `tack.data.for_each(kernel, data, domain, *args)`
+**Iteration domains.** `tack.dataset.for_each(kernel, data, domain, *args)`
 launches once per shape present in the domain:
 
 | Domain | One iteration is | Launches |
@@ -280,10 +280,10 @@ a language feature to add first; nothing below depends on it.
 ## 5. Host API
 
 ```python
-data = tack.data.DataSet(topology, geometry=positions_or_field)
-data.fields["T"] = tack.data.Field(H1(order=2), coefficients)
-data.fields["flux"] = tack.data.Field(Values(on="faces"), per_face)
-data.sets["inlet"] = tack.data.SideSet(cells, local_faces)
+data = tack.dataset.DataSet(topology, geometry=positions_or_field)
+data.fields["T"] = tack.dataset.Field(H1(order=2), coefficients)
+data.fields["flux"] = tack.dataset.Field(Values(on="faces"), per_face)
+data.sets["inlet"] = tack.dataset.SideSet(cells, local_faces)
 
 data.topology.faces()        # derive faces and face -> cells, cached
 data.fields["T"].at_vertices()   # resample to a linear point field
@@ -348,7 +348,7 @@ Every filter becomes "per shape, per domain, with field views":
    and sides; `point_data`/`cell_data` as views over them. Face and edge
    data round-trip from MFEM and through vtkCellGrid.
 3. **Spaces with bases, low order.** Constant, H1 1, L2 1 (linear DG), with
-   field views evaluating through `tack.data.shapes`' existing shape
+   field views evaluating through `tack.dataset.shapes`' existing shape
    functions. Geometry becomes the `"shape"` field. Contour and the
    averaging filters move to field views; DG fields contour with their
    jumps intact.
@@ -358,7 +358,7 @@ Every filter becomes "per shape, per domain, with field views":
 
 ## 9. The prototype
 
-`packages/tack-vis/src/tack/data/` implements phases 1 and 2 and the
+`packages/tack-vis/src/tack/dataset/` implements phases 1 and 2 and the
 linear part of phase 3, for an unstructured grid of any of the linear
 shapes and a rectilinear grid:
 

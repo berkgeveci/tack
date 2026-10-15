@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 from test_dataset_api import _scalars
 
-import tack.data as td
+import tack.dataset as td
 
 try:
     import vtkmodules.all as vtk

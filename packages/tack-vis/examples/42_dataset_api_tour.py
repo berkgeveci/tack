@@ -1,4 +1,4 @@
-"""42 -- A tour of tack.data, the dataset API (docs/reference/dataset-api.md).
+"""42 -- A tour of tack.dataset, the dataset API (docs/reference/dataset-api.md).
 
 One mixed unstructured grid (hexahedra, wedges, pyramids and tetrahedra)
 and one rectilinear grid, each run through the same algorithms:
@@ -49,8 +49,8 @@ if args.arch == "level_zero":
 else:
     tack.init(arch=getattr(tack, args.arch))
 
-import tack.data as td
-from tack.data import algorithms as alg
+import tack.dataset as td
+from tack.dataset import algorithms as alg
 
 
 def mixed_grid():

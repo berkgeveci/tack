@@ -13,7 +13,7 @@ Pipeline (same 4 passes, passes 2-3 trimmed):
 4. Emit triangle connectivity (only within cell trim range)
 
 This shows how such an algorithm is built from scratch. The library's
-version, for any mesh, is ``tack.data.contour``.
+version, for any mesh, is ``tack.dataset.contour``.
 
 Usage:
   uv run python packages/tack-vis/examples/28_flying_edges_trimmed.py

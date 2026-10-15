@@ -1,6 +1,6 @@
 # Copyright (c) 2026 Kitware, Inc.
 # SPDX-License-Identifier: BSD-3-Clause
-"""Datasets and their algorithms (``tack.data``): the code of the User's Guide
+"""Datasets and their algorithms (``tack.dataset``): the code of the User's Guide
 chapter, run end to end."""
 
 import argparse
@@ -12,7 +12,7 @@ import tack
 
 def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
-    import tack.data as td
+    import tack.dataset as td
 
     # --8<-- [start:build]
     # A hexahedron with a pyramid on top: VTK cell types, offsets, connectivity.

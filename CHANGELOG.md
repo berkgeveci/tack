@@ -7,7 +7,7 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
-- `tack.Array` names backend storage; `tack.data.Field` remains a function
+- `tack.Array` names backend storage; `tack.dataset.Field` remains a function
   space plus coefficients. `tack.empty` allocates uninitialized arrays and
   `tack.array` copies NumPy arrays or sequences. `vec2`/`vec3`/`vec4`,
   `mat2`/`mat3`/`mat4`, and general `vec(n)`/`mat(rows, columns)` describe
@@ -81,6 +81,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   silicon and Linux x86_64).
 
 ### Changed
+
+- **Breaking:** the dataset package is now `tack.dataset`, replacing
+  `tack.data`. Use `import tack.dataset as td`; submodules move with it
+  (for example, `tack.dataset.algorithms` and `tack.dataset.arrays`).
+  The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
+  is a separate kernel decorator and keeps its name.
 
 - **Breaking:** `tack.field_like` is removed. Replace existing calls with
   `tack.array` to allocate and copy NumPy values; `field_from_numpy` remains

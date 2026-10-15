@@ -5,8 +5,8 @@ import numpy as np
 import pytest
 
 import tack
-import tack.data as td
-from tack.data import arrays
+import tack.dataset as td
+from tack.dataset import arrays
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 

@@ -1,8 +1,8 @@
-"""43 -- A Poisson solution from MFEM, curved and quadratic, through tack.data.
+"""43 -- A Poisson solution from MFEM, curved and quadratic, through tack.dataset.
 
 Solves -laplace(u) = 1 with u = 0 on the boundary in PyMFEM (MFEM's first
 example), in H1 of order 2 on a curved mesh, brings the mesh and solution
-into a tack.data dataset -- the geometry an order-2 H1 field, the solution
+into a tack.dataset dataset -- the geometry an order-2 H1 field, the solution
 another -- and checks them against MFEM before running filters on them.
 
 The mesh is --mesh, any mesh MFEM reads (MFEM's data folder has curved ones:
@@ -41,8 +41,8 @@ else:
 
 import mfem.ser as mfem
 
-import tack.data as td
-from tack.data import algorithms as alg
+import tack.dataset as td
+from tack.dataset import algorithms as alg
 from tack.interop.mfem import mfem_to_dataset
 
 
