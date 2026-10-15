@@ -860,7 +860,18 @@ def _scalar_bits(value):
 # Xeon; one that differs is walked in full and the layout replaced.
 _template_layouts = weakref.WeakKeyDictionary()
 _LAYOUT_CONSTANT, _LAYOUT_ARRAY, _LAYOUT_INT, _LAYOUT_FLOAT, _LAYOUT_FUNC, _LAYOUT_CHILD, \
-    _LAYOUT_SKIP = range(7)
+    _LAYOUT_TUPLE, _LAYOUT_SKIP = range(8)
+
+
+def _number_tuple(value):
+    from tack.lang.template_rewrite import _number_tuple as number_tuple
+    return number_tuple(value)
+
+
+def _tuple_signature(value):
+    """A number tuple's part of a signature: its length and each entry's kind,
+    as for scalar attributes (an int's width, a float)."""
+    return tuple(2 if isinstance(v, float) else integer_type_for_value(v) for v in value)
 
 
 def _template_signature(obj, path, seen):
@@ -904,6 +915,11 @@ def _template_signature(obj, path, seen):
                 own.append((name, 2))
             elif kind == _LAYOUT_FUNC:
                 own.append((name, 5, value))
+            elif kind == _LAYOUT_TUPLE:
+                if not _number_tuple(value):
+                    layout = None
+                    break
+                own.append((name, 6, _tuple_signature(value)))
             elif kind == _LAYOUT_CHILD:
                 children.append((name, value))
     if layout is None:
@@ -940,6 +956,9 @@ def _template_signature(obj, path, seen):
             elif isinstance(value, Func):
                 kinds.append(_LAYOUT_FUNC)
                 own.append((name, 5, value))
+            elif _number_tuple(value):
+                kinds.append(_LAYOUT_TUPLE)
+                own.append((name, 6, _tuple_signature(value)))
             elif getattr(type(value), '_device_class', False) is True:
                 kinds.append(_LAYOUT_CHILD)
                 children.append((name, value))
@@ -966,7 +985,7 @@ def _expansion_plan(template_args) -> tuple:
     """How `_expand_template_args` turns these template arguments into
     arguments: for each template, highest index first, the attribute paths
     it appends, arrays then runtime scalars, each sorted by flattened name."""
-    from tack.lang.template_rewrite import _classify_own, _prefix, template_tree
+    from tack.lang.template_rewrite import _classify_own, _prefix, scalar_path, template_tree
 
     plan = []
     for idx in sorted(template_args, reverse=True):
@@ -977,7 +996,7 @@ def _expansion_plan(template_args) -> tuple:
             for name in own_arrays:
                 arrays.append((_prefix(path) + name, (*path, name)))
             for name in own_scalars:
-                scalars.append((_prefix(path) + name, (*path, name)))
+                scalars.append((_prefix(path) + name, (*path, *scalar_path(name))))
         arrays.sort()
         scalars.sort()
         plan.append((idx, tuple(p for _, p in arrays) + tuple(p for _, p in scalars)))
@@ -992,7 +1011,8 @@ def _expand_with_plan(args, plan) -> tuple:
         for path in paths:
             value = obj
             for name in path:
-                value = getattr(value, name)
+                # An int is an entry of a tuple attribute (`shape`, then 0).
+                value = value[name] if type(name) is int else getattr(value, name)
             new_args.append(value)
     return tuple(new_args)
 

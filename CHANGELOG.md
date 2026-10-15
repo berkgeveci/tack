@@ -7,6 +7,16 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- Indexable objects. A `@tack.device_class` that defines `__getitem__`,
+  `__setitem__` and `__len__` as `@tack.func` methods is indexed in kernels
+  as an array is: `obj[i]`, `obj[i] = v`, `obj[i] += v` (the index evaluated
+  once) and `len(obj)`, which may bound the parallel loop. Several indices,
+  `obj[i, j]`, arrive as one vector. One kernel then takes a stored array or
+  any indexable object, compiled once for each. An instance tuple of
+  numbers, `self.shape = (nx, ny)`, is one runtime scalar per entry, read
+  as `obj.shape[k]` with a literal `k`; a new shape does not recompile. A
+  store without `__setitem__`, and an atomic on an indexable object, are
+  refused when the kernel compiles.
 - `tack.__version__`, the installed tack-core's version, and a docstring
   for `tack` (`help(tack)` said nothing: the docstring followed code).
 - NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`

@@ -295,6 +295,78 @@ so the same kernel runs over a class that iterates one-dimensionally and
 one that iterates over a grid. Instance attributes are runtime extents,
 as any instance scalar is: a new grid size does not recompile.
 
+## Indexable Objects
+
+A class becomes indexable in kernels by defining Python's own indexing
+methods as device functions: `__getitem__`, `__setitem__` for stores, and
+`__len__`. A kernel then indexes the object as it would an array:
+
+```python
+@tack.device_class
+class Counting:
+    def __init__(self, n, start, step):
+        self.n, self.start, self.step = n, start, step
+
+    @tack.func
+    def __getitem__(self, k):
+        return self.start + self.step * k
+
+    @tack.func
+    def __len__(self):
+        return self.n
+
+
+@tack.kernel
+def double(a, out):
+    for i in range(len(a)):
+        out[i] = a[i] * 2.0
+
+
+double(tack.arange(5, dtype=tack.f32), out)    # a stored array
+double(Counting(5, 1.0, 0.5), out)             # an indexable object
+```
+
+The two calls compile to two variants of one kernel: a direct load for the
+array, the inlined `__getitem__` for the object. Nothing marks `a` as
+either. `obj[i] = v` calls `__setitem__(i, v)`, and `obj[i] += v` calls
+`__getitem__` and then `__setitem__`, with the index evaluated once. Several
+indices, `obj[i, j]`, arrive as one vector, so `__getitem__(self, k)` reads
+`k[0]` and `k[1]`. `len(obj)` may be the parallel loop's bound: it is
+evaluated when the kernel launches, like an array's length. An object held
+by another is indexed the same way, `self.base[k]`.
+
+An instance tuple of numbers is one runtime scalar per entry, read with a
+literal index: `self.shape = (nx, ny)` gives `obj.shape[0]` and
+`obj.shape[1]`, and `len(obj.shape)` is 2. A new shape does not recompile.
+
+```python
+@tack.device_class
+class Grid:
+    def __init__(self, values, nx, ny):
+        self.values = values
+        self.shape = (nx, ny)
+
+    @tack.func
+    def __getitem__(self, k):
+        return self.values[k[1] * self.shape[0] + k[0]]
+
+    @tack.func
+    def __setitem__(self, k, v):
+        self.values[k[1] * self.shape[0] + k[0]] = v
+
+
+@tack.kernel
+def bump(g):
+    for i, j in tack.ndindex(g.shape[0], g.shape[1]):
+        g[i, j] += 1.0
+```
+
+A store into an object without `__setitem__` is refused when the kernel is
+compiled, and so is an atomic on an indexable object, which has no memory
+of its own to update. The methods run only in kernels: on the host, Python
+calls `__len__` to truth-test an object, so test an indexable with
+`is None`, not `if obj:`.
+
 ## Cell Set Example
 
 Templates are ideal for topology abstractions where the same algorithm
