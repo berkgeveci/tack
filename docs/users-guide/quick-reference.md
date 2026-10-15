@@ -36,7 +36,7 @@ Initialize every value before reading it. Shape comes first, then dtype, as in
 NumPy; the dtype defaults to f32. Array shape counts elements; the
 dtype describes one scalar, vector or matrix element. `numpy()` appends
 component dimensions, and `tack.copyto` expects them. `reshape` preserves the element type and shares storage;
-`copy` allocates independent storage. See [Arrays and Types](02-fields-and-types.md).
+`copy` allocates independent storage. See [Arrays and Types](02-arrays-and-types.md).
 
 ## Choose an execution pattern
 
@@ -83,7 +83,7 @@ can interpolate or propagate it.
   independent result with a tolerance chosen for the calculation.
 
 See [Control Flow and Math](04-control-flow.md),
-[numerical details](02-fields-and-types.md#type-casts), and
+[numerical details](02-arrays-and-types.md#type-casts), and
 [reductions](11-reductions-and-scans.md).
 
 ## Check, then time

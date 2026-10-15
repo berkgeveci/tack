@@ -124,8 +124,8 @@ def scaled_rows(grid, out, n, scale):
         out[i, j] = grid[i, j] * scale + grid.shape[1]
 
 
-def test_constants_as_field_shapes_and_arguments(backend):
-    """A constant used as a field's shape is baked into indexing as a
+def test_constants_as_array_shapes_and_arguments(backend):
+    """A constant used as an array's shape is baked into indexing as a
     number, and one passed as an argument is an ordinary scalar. The
     shape once reached generated code as the text "tack.constant(8)"."""
     grid = tack.empty((COUNT, COUNT))
@@ -213,7 +213,7 @@ def wrapping_vector_constant(out, n):
 def test_vector_and_matrix_constants_in_kernels(backend):
     """`tack.constant((0.5, 0.25, 0.0))` is `tack.Vector([0.5, 0.25, 0.0])`
     in a kernel and a matrix constant the matrix with those rows: as
-    operands, by component (`SUN.y`, `SUN[2]`, `ROT[1, 0]`), as a field
+    operands, by component (`SUN.y`, `SUN[2]`, `ROT[1, 0]`), as an array
     index, and inside device functions."""
     n = 3
     points = np.array([[0.1, 0.2, 0.3], [0.5, 0.25, 0.0], [1.0, -1.0, 2.0]], np.float32)

@@ -57,17 +57,17 @@ def test_report_checks_fresh_results_outside_kernel_timing(harness, monkeypatch,
 
     def setup():
         clock[0] += 100.0
-        fields = object()
-        setups.append(fields)
-        return (fields,)
+        arrays = object()
+        setups.append(arrays)
+        return (arrays,)
 
-    def call(fields):
+    def call(arrays):
         clock[0] += next(durations)
-        executed.append(fields)
+        executed.append(arrays)
 
-    def verify(fields):
+    def verify(arrays):
         clock[0] += 1000.0
-        verified.append(fields)
+        verified.append(arrays)
         return True
 
     harness._report('Vector Add', 'cpu', setup, call, verify)

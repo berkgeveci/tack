@@ -2,7 +2,7 @@
 
 ``FACES[4 * f + k]`` used to lower to a chain of conditional expressions,
 one comparison per entry, inlined at every lookup. A kernel whose loop
-stores to a field and does many such lookups killed Metal's compiler
+stores to an array and does many such lookups killed Metal's compiler
 service at pipeline creation (M1 Max, macOS 26). Now a typed or integer
 constant read at a runtime index is an ``IRTableLoad``: one constant
 array per table, one load per lookup, on every backend. An index outside

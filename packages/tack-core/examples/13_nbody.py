@@ -25,7 +25,7 @@ DT = 0.001
 SOFTENING = 0.01
 STEPS = 10
 
-# Position, velocity, and force fields (separate x, y, z components)
+# Position, velocity, and force arrays (separate x, y, z components)
 px = tack.empty((N,))
 py = tack.empty((N,))
 pz = tack.empty((N,))

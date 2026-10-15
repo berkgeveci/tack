@@ -41,8 +41,8 @@ def add_arrays(a: tack.template(), b: tack.template(), out, n):
         out[i] = a.get_value(i) + b.get_value(i)
 
 # Works with any combination:
-add_arrays(AOSArray(field1), AOSArray(field2), out, n)
-add_arrays(AOSArray(field1), ConstantArray(3.14), out, n)
+add_arrays(AOSArray(array1), AOSArray(array2), out, n)
+add_arrays(AOSArray(array1), ConstantArray(3.14), out, n)
 ```
 
 ## How It Works

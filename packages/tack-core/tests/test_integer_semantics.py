@@ -42,11 +42,11 @@ def _values(dtype):
     return sorted(boundaries) + [rng.randint(lo, hi) for _ in range(64)]
 
 
-def _field(values, dtype):
+def _array(values, dtype):
     data = np.asarray(values, dtype=dtype.numpy_dtype)
-    field = tack.empty(data.shape, dtype)
-    tack.copyto(field, data)
-    return field
+    array = tack.empty(data.shape, dtype)
+    tack.copyto(array, data)
+    return array
 
 
 @tack.kernel
@@ -79,7 +79,7 @@ def test_wrapping_arithmetic_and_unsigned_order(backend, dtype):
     lo = int(np.iinfo(dtype.numpy_dtype).min)
     # Signed min / -1 remains outside the division domain, even after wrapping.
     pairs = [(x, y) for x, y in pairs if not (lo < 0 and _wrap(x * y, dtype) == lo and y == -1)]
-    a, b = _field([x for x, _ in pairs], dtype), _field([y for _, y in pairs], dtype)
+    a, b = _array([x for x, _ in pairs], dtype), _array([y for _, y in pairs], dtype)
     out = tack.empty((len(pairs), 16), dtype)
     _arithmetic(a, b, out)
     expected = []
@@ -111,7 +111,7 @@ def test_wrapped_negation_and_abs_survive_widening(backend, dtype):
     # ptxas 12.0-13.2 for i16 (the JIT of drivers before CUDA 13.3).
     values = _values(dtype)
     out = tack.empty((len(values), 3), tack.i64)
-    _negate_widened(_field(values, dtype), out)
+    _negate_widened(_array(values, dtype), out)
     expected = [[_wrap(-x, dtype), _wrap(abs(x), dtype), _wrap(-x, dtype)] for x in values]
     np.testing.assert_array_equal(out.numpy(), np.asarray(expected, dtype=np.int64))
 
@@ -157,7 +157,7 @@ def _convert(a, oi8, ou8, oi16, ou16, oi32, ou32, oi64, ou64):
 @pytest.mark.parametrize('source', TYPES, ids=lambda t: t.name)
 def test_all_integer_conversions(backend, source):
     values = _values(source)
-    a = _field(values, source)
+    a = _array(values, source)
     outputs = [tack.empty((len(values), 3), t) for t in TYPES]
     _convert(a, *outputs)
     for target, out in zip(TYPES, outputs):
@@ -187,7 +187,7 @@ MIXED = [(tack.i8, tack.u16, tack.i32), (tack.u16, tack.i8, tack.i32),
 @pytest.mark.parametrize('left,right,result', MIXED, ids=lambda t: t.name)
 def test_mixed_operands_preserve_values(backend, left, right, result):
     pairs = list(itertools.product(_values(left)[:11], _values(right)[:11]))
-    a, b = _field([x for x, _ in pairs], left), _field([y for _, y in pairs], right)
+    a, b = _array([x for x, _ in pairs], left), _array([y for _, y in pairs], right)
     out = tack.empty((len(pairs), 6), result)
     _mixed(a, b, out)
     expected = [[_wrap(x + y, result), int(x < y), min(x, y), max(x, y),
@@ -234,7 +234,7 @@ def test_local_join_cannot_swallow_promotion_error():
 @pytest.mark.parametrize('dtype', TYPES, ids=lambda t: t.name)
 def test_gpu_integer_helpers_use_unsigned_arithmetic(generate, dtype):
     tack.init(arch=tack.cpu)
-    a, b = _field([1], dtype), _field([2], dtype)
+    a, b = _array([1], dtype), _array([2], dtype)
     out = tack.empty((1, 16), dtype)
     func = copy.deepcopy(_arithmetic.get_ir().functions[0])
     resolve_ir(func, {'a': a, 'b': b, 'out': out})
@@ -258,8 +258,8 @@ def _shifts(a, counts, out):
 @pytest.mark.parametrize('dtype', TYPES, ids=lambda t: t.name)
 def test_shift_width_and_signedness(backend, dtype):
     pairs = list(itertools.product(_values(dtype)[:11], [0, 1, dtype.bits // 2, dtype.bits - 1]))
-    a = _field([x for x, _ in pairs], dtype)
-    counts = _field([n for _, n in pairs], tack.u64)
+    a = _array([x for x, _ in pairs], dtype)
+    counts = _array([n for _, n in pairs], tack.u64)
     out = tack.empty((len(pairs), 2), dtype)
     _shifts(a, counts, out)
     expected = [[_wrap(x << n, dtype), x >> n] for x, n in pairs]
@@ -280,7 +280,7 @@ def _as_float(a, out):
 @pytest.mark.parametrize('dtype', TYPES, ids=lambda t: t.name)
 def test_integer_signedness_survives_locals_and_float_conversion(backend, dtype):
     values = _values(dtype)
-    a, out = _field(values, dtype), tack.empty((len(values), 4))
+    a, out = _array(values, dtype), tack.empty((len(values), 4))
     _as_float(a, out)
     expected = [[float(x)] * 3 + [float(_wrap(x + x, dtype))] for x in values]
     np.testing.assert_array_equal(out.numpy(), np.asarray(expected, dtype=np.float32))
@@ -306,7 +306,7 @@ def _cast_chain(a, out):
 
 def test_cast_results_keep_their_own_signedness(backend):
     values = _values(tack.u64)
-    a, out = _field(values, tack.u64), tack.empty((len(values), 8), tack.i64)
+    a, out = _array(values, tack.u64), tack.empty((len(values), 8), tack.i64)
     _cast_chain(a, out)
     expected = [[_wrap(x, t) for t in TYPES[:6]] + [int(_wrap(x, tack.i64) < 0),
                 int(x < 2**63 - 1)] for x in values]
@@ -325,7 +325,7 @@ def _float_to_unsigned(a, out32, out64):
 
 def test_representable_float_to_unsigned_conversion(backend):
     values = np.asarray([0.0, 1.9, 2**31, 2**32 - 256, 2**63, 2**64 - 2**40], dtype=np.float32)
-    a = _field(values, tack.f32)
+    a = _array(values, tack.f32)
     out32, out64 = tack.empty((4, 2), tack.u32), tack.empty((6, 2), tack.u64)
     _float_to_unsigned(a, out32, out64)
     expected = [[int(x)] * 2 for x in values]
@@ -359,7 +359,7 @@ def test_wrapping_dynamic_range_bound_and_empty_ranges(backend):
     triples = [(-3, 1, 2), (4, 1, 2), (3, 1, 2), (-5, -3, 2),
                (-2**31, 2**31 - 1, 2), (-2**31, -2**31, 1),
                (2**31 - 2, -2**31, -1)]
-    starts, a, b = [_field([row[c] for row in triples], tack.i32) for c in range(3)]
+    starts, a, b = [_array([row[c] for row in triples], tack.i32) for c in range(3)]
     out = tack.empty((len(triples), 4), tack.i64)
     _wrapping_bounds(starts, a, b, out)
     expected = [[sum(range(start, _wrap(x + y, tack.i32), step)) for step in (1, 1, 2)]
@@ -394,7 +394,7 @@ def _unsigned_scalar(a, value, out):
 @pytest.mark.parametrize('value', [2**63, np.uint64(2**64 - 1)])
 def test_full_width_unsigned_scalar_arguments(backend, value):
     values = [0, 1, 2**63 - 1, 2**64 - 1]
-    a, out = _field(values, tack.u64), tack.empty((4, 2), tack.u64)
+    a, out = _array(values, tack.u64), tack.empty((4, 2), tack.u64)
     _unsigned_scalar(a, value, out)
     expected = [[_wrap(int(value) + x, tack.u64), int(int(value) < x)] for x in values]
     np.testing.assert_array_equal(out.numpy(), np.asarray(expected, dtype=np.uint64))
@@ -424,7 +424,7 @@ def test_guarded_invalid_shift_is_not_evaluated(backend, dtype):
     if x == 0:
         x = int(np.iinfo(dtype.numpy_dtype).max)
     counts = [-1, dtype.bits, dtype.bits + 1, 0, dtype.bits - 1]
-    a, n = _field([x] * len(counts), dtype), _field(counts, tack.i64)
+    a, n = _array([x] * len(counts), dtype), _array(counts, tack.i64)
     out = tack.empty((len(counts), 2), dtype)
     _guarded_shifts(a, n, dtype.bits, out)
     expected = [[_wrap(x << c, dtype), x >> c] if 0 <= c < dtype.bits else [99, 99]
@@ -439,7 +439,7 @@ def _copy_integer(a, out):
 
 
 @pytest.mark.parametrize('dtype', [*TYPES, tack.f32, tack.f64], ids=lambda t: t.name)
-def test_fields_do_not_promise_unproved_alignment(dtype):
+def test_arrays_do_not_promise_unproved_alignment(dtype):
     tack.init(arch=tack.cpu)
     values = _values(dtype) if dtype in TYPES else [0.0, -0.5, 1.0, 4.0]
     size = len(values) * dtype.numpy_dtype.itemsize

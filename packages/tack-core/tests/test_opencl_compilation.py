@@ -99,7 +99,7 @@ def _pre_fix_source(kernel_fn, *args):
     return _PreFixOpenCLCodeGen(function).generate()
 
 
-def _field(shape=(256,), dtype=tack.f32):
+def _array(shape=(256,), dtype=tack.f32):
     return tack.empty(shape, dtype)
 
 
@@ -213,14 +213,14 @@ def _float_math(a, out):
 @pytest.mark.parametrize("dtype", [tack.f32, tack.f64], ids=["f32", "f64"])
 def test_float_ternary_condition_compiles(clang, tmp_path, dtype):
     """`x ? a : b` with a floating `x`: legal C++, rejected OpenCL C."""
-    src = _source(_ternary, _field(dtype=dtype), _field(dtype=tack.i32))
+    src = _source(_ternary, _array(dtype=dtype), _array(dtype=tack.i32))
     _assert_compiles(clang, src, tmp_path)
 
 
 @pytest.mark.parametrize("dtype", [tack.f32, tack.f64], ids=["f32", "f64"])
 def test_pre_fix_float_ternary_is_rejected(clang, tmp_path, dtype):
     """The check earns its place only if it fails on the old spelling."""
-    src = _pre_fix_source(_ternary, _field(dtype=dtype), _field(dtype=tack.i32))
+    src = _pre_fix_source(_ternary, _array(dtype=dtype), _array(dtype=tack.i32))
     code, err = _compile(clang, src, tmp_path)
     assert code != 0, f"Clang accepted the pre-fix float ternary:\n{src}"
     assert "where floating point type is not allowed" in err, err
@@ -230,14 +230,14 @@ def test_pre_fix_float_ternary_is_rejected(clang, tmp_path, dtype):
                          ids=["shared", "shared_like"])
 def test_nested_local_allocation_compiles(clang, tmp_path, kernel):
     """`__local` belongs in the outermost scope of a kernel."""
-    src = _source(kernel, _field(), _field())
+    src = _source(kernel, _array(), _array())
     _assert_compiles(clang, src, tmp_path)
 
 
 @pytest.mark.parametrize("kernel", [_shared_nested, _shared_like_nested],
                          ids=["shared", "shared_like"])
 def test_pre_fix_nested_local_is_rejected(clang, tmp_path, kernel):
-    src = _pre_fix_source(kernel, _field(), _field())
+    src = _pre_fix_source(kernel, _array(), _array())
     code, err = _compile(clang, src, tmp_path)
     assert code != 0, f"Clang accepted a nested __local declaration:\n{src}"
     assert "local address space" in err and "outermost scope" in err, err
@@ -245,18 +245,18 @@ def test_pre_fix_nested_local_is_rejected(clang, tmp_path, kernel):
 
 def test_block_reduction_in_a_uniform_branch_compiles(clang, tmp_path):
     """Reduction scratch under a uniform scalar condition."""
-    src = _source(_reduce_in_uniform_branch, _field(), _field(), 4)
+    src = _source(_reduce_in_uniform_branch, _array(), _array(), 4)
     _assert_compiles(clang, src, tmp_path)
 
 
 def test_block_reduction_in_a_loop_compiles(clang, tmp_path):
-    src = _source(_reduce_in_loop, _field(), _field())
+    src = _source(_reduce_in_loop, _array(), _array())
     _assert_compiles(clang, src, tmp_path)
 
 
 def test_pre_fix_block_reduction_scratch_is_rejected(clang, tmp_path):
     """The reduction site is the one the device actually failed on."""
-    src = _pre_fix_source(_reduce_in_loop, _field(), _field())
+    src = _pre_fix_source(_reduce_in_loop, _array(), _array())
     code, err = _compile(clang, src, tmp_path)
     assert code != 0, f"Clang accepted nested reduction scratch:\n{src}"
     assert "outermost scope" in err, err
@@ -268,7 +268,7 @@ def test_pre_fix_block_reduction_scratch_is_rejected(clang, tmp_path):
                          ids=["after_loop", "in_branch"])
 def test_rebound_loop_variable_compiles(clang, tmp_path, kernel):
     """`for d in range(...)` then `d = ...`: the second binding is a new local."""
-    src = _source(kernel, _field(dtype=tack.i32), _field(dtype=tack.i32))
+    src = _source(kernel, _array(dtype=tack.i32), _array(dtype=tack.i32))
     _assert_compiles(clang, src, tmp_path)
 
 
@@ -276,7 +276,7 @@ def test_rebound_loop_variable_compiles(clang, tmp_path, kernel):
                          ids=["after_loop", "in_branch"])
 def test_pre_fix_rebound_loop_variable_is_rejected(clang, tmp_path, kernel):
     tack.init(arch=tack.cpu)
-    function, _ = _prepare_ir(kernel, (_field(dtype=tack.i32), _field(dtype=tack.i32)))
+    function, _ = _prepare_ir(kernel, (_array(dtype=tack.i32), _array(dtype=tack.i32)))
     src = _PreRebindingFixOpenCLCodeGen(function).generate()
     code, err = _compile(clang, src, tmp_path)
     assert code != 0, f"Clang accepted an undeclared rebound loop variable:\n{src}"
@@ -294,7 +294,7 @@ def test_block_scoped_first_assignment_compiles(clang, tmp_path, kernel):
     Declaring at the first assignment put the declaration inside the loop
     or branch holding it, and a later use at the kernel's level was an
     undeclared identifier. Locals are declared once at kernel scope now."""
-    src = _source(kernel, _field(dtype=tack.i32), _field(dtype=tack.i32))
+    src = _source(kernel, _array(dtype=tack.i32), _array(dtype=tack.i32))
     _assert_compiles(clang, src, tmp_path)
 
 
@@ -303,7 +303,7 @@ def test_block_scoped_first_assignment_compiles(clang, tmp_path, kernel):
                          ids=["branch_in_while", "loop_then_read"])
 def test_pre_fix_block_scoped_first_assignment_is_rejected(clang, tmp_path, kernel):
     tack.init(arch=tack.cpu)
-    function, _ = _prepare_ir(kernel, (_field(dtype=tack.i32), _field(dtype=tack.i32)))
+    function, _ = _prepare_ir(kernel, (_array(dtype=tack.i32), _array(dtype=tack.i32)))
     src = _PreRebindingFixOpenCLCodeGen(function).generate()
     code, err = _compile(clang, src, tmp_path)
     assert code != 0, f"Clang accepted a block-scoped local used outside its block:\n{src}"
@@ -313,7 +313,7 @@ def test_pre_fix_block_scoped_first_assignment_is_rejected(clang, tmp_path, kern
 # ── Controls: shapes that were always fine and must stay cheap ────────
 
 def test_integer_ternary_condition_compiles(clang, tmp_path):
-    src = _source(_ternary, _field(dtype=tack.i32), _field(dtype=tack.i32))
+    src = _source(_ternary, _array(dtype=tack.i32), _array(dtype=tack.i32))
     _assert_compiles(clang, src, tmp_path)
     assert "!= 0" not in src, "an integer condition does not need a comparison"
 
@@ -324,7 +324,7 @@ def test_float_if_statement_compiles(clang, tmp_path):
     This is also a negative control for the ternary fix: the pre-fix generator
     emitted the same thing here, so rewriting `if` would be cost without cause.
     """
-    src = _source(_if_statement, _field(), _field(dtype=tack.i32))
+    src = _source(_if_statement, _array(), _array(dtype=tack.i32))
     _assert_compiles(clang, src, tmp_path)
     assert "!= 0.0f" not in src
 
@@ -332,7 +332,7 @@ def test_float_if_statement_compiles(clang, tmp_path):
 @pytest.mark.parametrize("dtype", [tack.f32, tack.f64], ids=["f32", "f64"])
 def test_float_math_compiles(clang, tmp_path, dtype):
     """f64 reaches here through `cl_khr_fp64`, and `copysign` wraps floor/ceil."""
-    src = _source(_float_math, _field(dtype=dtype), _field(dtype=dtype))
+    src = _source(_float_math, _array(dtype=dtype), _array(dtype=dtype))
     _assert_compiles(clang, src, tmp_path)
     if dtype is tack.f64:
         assert "cl_khr_fp64" in src

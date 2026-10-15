@@ -325,7 +325,7 @@ def test_shared_memory():
 
 
 def test_gpu_reductions():
-    """Test GPU-side field.sum(), field.min(), field.max()."""
+    """Test GPU-side array.sum(), array.min(), array.max()."""
     n = 10000
     x = tack.empty((n,))
     data = np.arange(n, dtype=np.float32)
@@ -338,9 +338,9 @@ def test_gpu_reductions():
 
 # --- Ownership ---
 
-def test_fields_own_their_buffers_alone():
-    """A field's MTLBuffer is held by the field alone -- retained once -- so it is
-    freed with the field. pyobjc-framework-Metal 12.1 describes Metal's new...
+def test_arrays_own_their_buffers_alone():
+    """An array's MTLBuffer is held by the array alone -- retained once -- so it is
+    freed with the array. pyobjc-framework-Metal 12.1 describes Metal's new...
     methods without "already_retained"; unpatched, every buffer kept one
     retain too many and was never freed."""
 
@@ -408,7 +408,7 @@ def _record_value(value: tack.template(), out: tack.template(), k: int, n: int):
 
 
 def test_host_writes_wait_after_tack_init_runs_again():
-    """A field made before another tack.init is still written by the host and
+    """An array made before another tack.init is still written by the host and
     read by launches, which now queue on the new backend: the host's write has
     to wait for those, not for its first backend's (empty) queue. mpm128 in
     tack-examples rewrote its gravity under queued launches that way, 299 of
@@ -456,14 +456,14 @@ def test_zeros_do_not_wait_for_queued_launches(monkeypatch):
     monkeypatch.undo()
     assert not z.numpy().any()
     np.testing.assert_array_equal(a.numpy(), np.full(1000, 7))
-    # Other fills still wait, since the field may be in use.
+    # Other fills still wait, since the array may be in use.
     dirty(a)
     a.fill(3)
     np.testing.assert_array_equal(a.numpy(), np.full(1000, 3))
 
 
-def test_new_fields_are_zero():
-    """Fields are not cleared on the CPU: Metal clears new buffers. Hold it to that
+def test_new_arrays_are_zero():
+    """Arrays are not cleared on the CPU: Metal clears new buffers. Hold it to that
     where reuse would show -- the same sizes again, after buffers the CPU and the
     GPU dirtied were freed."""
     import gc

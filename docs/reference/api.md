@@ -48,11 +48,11 @@ the [Developer's Guide](../developers-guide/01-architecture.md).
 `tack.Array` holds storage on the backend active at allocation. Its shape
 counts elements; its dtype describes one scalar, vector or matrix element.
 `tack.dataset.Field` instead couples coefficient values with a space on a topology.
-See [Arrays and Types](../users-guide/02-fields-and-types.md) for examples.
+See [Arrays and Types](../users-guide/02-arrays-and-types.md) for examples.
 
 ::: tack.Array
 
-::: tack.lang.field.DeviceBuffer
+::: tack.lang.array.DeviceBuffer
 
 ### Creating arrays
 
@@ -117,7 +117,7 @@ See [Arrays and Types](../users-guide/02-fields-and-types.md) for examples.
       docstring_options:
         warn_missing_types: false
 
-::: tack.lang.field.Texture3D
+::: tack.lang.array.Texture3D
 
 ### Sharing memory
 
@@ -132,9 +132,9 @@ See [Arrays and Types](../users-guide/02-fields-and-types.md) for examples.
 
 ::: tack.ExportedMemory
 
-::: tack.lang.dlpack.field_to_dlpack
+::: tack.lang.dlpack.array_to_dlpack
 
-::: tack.lang.dlpack.dlpack_to_field
+::: tack.lang.dlpack.dlpack_to_array
 
 ::: tack.lang.dlpack.dlpack_device
 
@@ -264,7 +264,7 @@ are in `packages/tack-vis/src/tack/interop/vtk.py`.
 
 Every backend subclasses this. It exists so callers can *ask* what a backend
 supports instead of probing for methods — the distinction that
-`hasattr(backend, 'reduce_field')` got wrong, since it answers "is this
+`hasattr(backend, 'reduce_array')` got wrong, since it answers "is this
 defined" rather than "is this supported".
 
 ::: tack.runtime.backend.Backend

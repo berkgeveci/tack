@@ -77,7 +77,7 @@ def test_negation():
 
 
 def test_constant_range():
-    """Test kernel with a constant loop range (not derived from field shape)."""
+    """Test kernel with a constant loop range (not derived from array shape)."""
     n = 100
     out = tack.empty((n,))
 
@@ -264,7 +264,7 @@ def test_cached_compilation():
 
 
 def test_atomic_add():
-    """Test atomic_add on a field."""
+    """Test atomic_add on an array."""
     n = 100
     x = tack.empty((n,))
     out = tack.empty((1,))
@@ -282,7 +282,7 @@ def test_atomic_add():
 
 
 def test_atomic_min_max():
-    """Test atomic_min and atomic_max on fields."""
+    """Test atomic_min and atomic_max on arrays."""
     n = 64
     x = tack.empty((n,))
     min_out = tack.empty((1,))
@@ -304,8 +304,8 @@ def test_atomic_min_max():
     np.testing.assert_allclose(max_out.numpy()[0], 43.0)
 
 
-def test_field_reductions():
-    """Test field.sum(), field.min(), field.max() reduction builtins."""
+def test_array_reductions():
+    """Test array.sum(), array.min(), array.max() reduction builtins."""
     n = 100
     x = tack.empty((n,))
     data = np.arange(n, dtype=np.float32)

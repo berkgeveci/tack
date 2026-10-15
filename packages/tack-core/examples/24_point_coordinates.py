@@ -175,7 +175,7 @@ product_result = output.numpy()[:8].copy()
 results["Product"] = product_time
 print(f"  Best of {trials}: {product_time:.4f}s")
 
-# Keep output, release product-specific fields
+# Keep output, release product-specific arrays
 del product, xc, yc, zc
 gc.collect()
 
@@ -257,7 +257,7 @@ gc.collect()
 
 # --- AOS Points ---
 print("\nAOS Points...")
-aos_field = tack.empty((num_points * 3,))
+aos_array = tack.empty((num_points * 3,))
 
 # Build AOS coordinates via Product -> AOS expansion
 xc = tack.empty((N,))
@@ -292,12 +292,12 @@ class _WritableAOS:
     def get_z(self, id):
         return self.data[id * 3 + 2]
 
-waos = _WritableAOS(aos_field, num_points)
+waos = _WritableAOS(aos_array, num_points)
 _expand(tmp_product, waos, num_points)
 del tmp_product, xc, yc, zc
 gc.collect()
 
-aos = AOSPoints(aos_field, num_points)
+aos = AOSPoints(aos_array, num_points)
 coord_mem = num_points * 3 * 4
 print(f"  Coordinate memory: {coord_mem:,} bytes ({coord_mem/1024/1024:.1f} MB)")
 
@@ -316,7 +316,7 @@ aos_result = output.numpy()[:8].copy()
 results["AOS"] = aos_time
 print(f"  Best of {trials}: {aos_time:.4f}s")
 
-del aos, aos_field, output
+del aos, aos_array, output
 gc.collect()
 
 

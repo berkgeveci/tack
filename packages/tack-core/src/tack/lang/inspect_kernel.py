@@ -6,8 +6,8 @@ Usage:
 """
 
 from tack.lang import ir
+from tack.lang.array import Array
 from tack.lang.atomic_support import check_atomic_alignment, check_atomic_support
-from tack.lang.field import Field
 from tack.lang.ir_optimize import optimize_ir
 from tack.lang.ir_resolve import resolve_ir
 from tack.lang.ir_traversal import clone_ir
@@ -21,8 +21,8 @@ from tack.lang.workgroup_participation import (
 from tack.lang.workgroup_support import check_workgroup_support
 from tack.runtime.kernel_utils import (
     _detect_template_args,
-    _detect_texture_fields,
-    _detect_vector_fields_from_args,
+    _detect_texture_arrays,
+    _detect_vector_arrays_from_args,
     _expand_template_args,
     _get_loop_range,
     _localize_outer_scalars,
@@ -38,24 +38,24 @@ def _prepare_ir(kernel, args, *, backend=None):
     decisions. Cross-target codegen tools may omit it and let their
     selected generator check support.
     """
-    from tack.lang.field import Texture3D
+    from tack.lang.array import Texture3D
 
     template_args = _detect_template_args(kernel, args)
     effective_args = _expand_template_args(args, template_args)
-    vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
-    texture_fields = _detect_texture_fields(kernel, args, template_args)
+    vector_arrays = _detect_vector_arrays_from_args(kernel, args, template_args)
+    texture_arrays = _detect_texture_arrays(kernel, args, template_args)
 
     from tack.runtime.dispatch import debug_enabled, get_backend
     debug = debug_enabled()
     ir_module = kernel.get_ir(
-        vector_fields,
+        vector_arrays,
         template_args=template_args if template_args else None,
-        texture_fields=texture_fields,
+        texture_arrays=texture_arrays,
         debug=debug,
     )
     template = ir_module.functions[0]
     if debug:
-        # The code a debug launch runs: the hidden fields are its arguments too.
+        # The code a debug launch runs: the hidden arrays are its arguments too.
         from tack.runtime.debug_bounds import hidden_args
         effective_args = hidden_args(backend or get_backend(), template, effective_args)
     if backend is not None:
@@ -66,11 +66,11 @@ def _prepare_ir(kernel, args, *, backend=None):
     ir_func = clone_ir(template)
 
     # Resolve dimension sizes
-    name_to_field = {}
+    name_to_array = {}
     for param, arg in zip(ir_func.params, effective_args):
-        if isinstance(arg, (Field, Texture3D)):
-            name_to_field[param.name] = arg
-    resolve_ir(ir_func, name_to_field)
+        if isinstance(arg, (Array, Texture3D)):
+            name_to_array[param.name] = arg
+    resolve_ir(ir_func, name_to_array)
     verify_ir(ir_func, 'resolved')
 
     # Type inference, and texture extents recorded the way dispatch records
@@ -176,11 +176,11 @@ def _generate_source(kernel, args, optimize=False):
     if backend_name == "CPUBackend":
         from tack.codegen.llvm_gen import generate_llvm_ir
         from tack.runtime import cpu
-        from tack.runtime.kernel_utils import fields_disjoint
+        from tack.runtime.kernel_utils import arrays_disjoint
 
         # Show the variant these arguments would run.
-        ir_func.disjoint_fields = (
-            cpu._SPECIALIZE_DISJOINT and fields_disjoint(ir_func, effective_args))
+        ir_func.disjoint_arrays = (
+            cpu._SPECIALIZE_DISJOINT and arrays_disjoint(ir_func, effective_args))
         llvm_module = generate_llvm_ir(ir_func)
         llvm_ir_str = str(llvm_module)
         if optimize:

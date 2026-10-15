@@ -34,11 +34,11 @@ def _divmod(a, b, out):
         out[i, 3] = (x % y) * 0.5
 
 
-def _field(values, dtype):
+def _array(values, dtype):
     values = np.asarray(values, dtype=dtype.numpy_dtype)
-    field = tack.empty(values.shape, dtype)
-    tack.copyto(field, values)
-    return field
+    array = tack.empty(values.shape, dtype)
+    tack.copyto(array, values)
+    return array
 
 
 def _oracle(a, b, dtype):
@@ -89,7 +89,7 @@ def _finite_pairs(dtype):
 
 
 def _check_pairs(pairs, dtype):
-    a, b = (_field(pairs[:, i], dtype) for i in range(2))
+    a, b = (_array(pairs[:, i], dtype) for i in range(2))
     out = tack.empty((len(pairs), 4), dtype)
     _divmod(a, b, out)
     _assert_results(out.numpy(), _oracle(pairs[:, 0], pairs[:, 1], dtype))
@@ -132,7 +132,7 @@ def test_signed_zero_expressions_and_nan_guards(backend):
     x = np.asarray([0.0, -0.0, np.nan, 1.0, -1.0], dtype=np.float32)
     y = np.asarray([3.0, -3.0, 2.0, np.nan, np.inf], dtype=np.float32)
     out = tack.empty((len(x), 6))
-    expressions(_field(x, tack.f32), _field(y, tack.f32), out)
+    expressions(_array(x, tack.f32), _array(y, tack.f32), out)
     with np.errstate(all='ignore'):
         qneg, rneg = np.divmod(-x, y)
         q, r = np.divmod(x, y)
@@ -152,8 +152,8 @@ def _mixed_values(dtype):
 
 def _check_mixed(left_type, right_type, result_type):
     values = list(itertools.product(_mixed_values(left_type), _mixed_values(right_type)))
-    a = _field([x for x, _ in values], left_type)
-    b = _field([y for _, y in values], right_type)
+    a = _array([x for x, _ in values], left_type)
+    b = _array([y for _, y in values], right_type)
     out = tack.empty((len(values), 4), result_type)
     _divmod(a, b, out)
     _assert_results(out.numpy(), _oracle(a.numpy(), b.numpy(), result_type))
@@ -190,8 +190,8 @@ def test_operands_evaluate_once_in_order_and_zero_guards(backend):
 
     a_values = np.asarray([7.0, -7.0, 0.0, 1.0], dtype=np.float32)
     b_values = np.asarray([3.0, 3.0, 0.0, -0.0], dtype=np.float32)
-    a, b = _field(a_values, tack.f32), _field(b_values, tack.f32)
-    state = _field(np.zeros(4, dtype=np.int32), tack.i32)
+    a, b = _array(a_values, tack.f32), _array(b_values, tack.f32)
+    state = _array(np.zeros(4, dtype=np.int32), tack.i32)
     out = tack.empty((4, 4))
     guarded(a, b, state, out)
     expected = np.array([[8.0 // 5.0, 10.0 % 7.0, 7.0 // 3.0, 7.0 % 3.0],
@@ -211,8 +211,8 @@ def test_destination_f64_does_not_widen_f32_operations(f64_backend):
             out[i, 2] = tack.f64(a[i]) // tack.f64(b[i])
             out[i, 3] = tack.f64(a[i]) % tack.f64(b[i])
 
-    a = _field([2**30], tack.f32)
-    b = _field([3.0], tack.f32)
+    a = _array([2**30], tack.f32)
+    b = _array([3.0], tack.f32)
     out = tack.empty((1, 4), tack.f64)
     precision(a, b, out)
     q32, r32 = np.divmod(a.numpy(), b.numpy())
@@ -225,14 +225,14 @@ def test_destination_f64_does_not_widen_f32_operations(f64_backend):
 @pytest.mark.parametrize('dtype', [tack.f32, tack.f64], ids=lambda t: t.name)
 def test_annotations_keep_floating_result_types(dtype):
     tack.init(arch=tack.cpu)
-    a, b = _field([7.5], dtype), _field([3.0], dtype)
+    a, b = _array([7.5], dtype), _array([3.0], dtype)
     out = tack.empty((1, 4), dtype)
     function, _ = _prepare_ir(_divmod, (a, b, out))
     operations = [n for n in walk_ir(function)
                   if isinstance(n, ir.IRBinOp) and n.op in ('//', '%')]
     assert len(operations) == 4
     assert all(n.dtype is dtype for n in operations)
-    integer_args = _field([7], tack.i32), _field([3], tack.i32), tack.empty((1, 4), tack.i32)
+    integer_args = _array([7], tack.i32), _array([3], tack.i32), tack.empty((1, 4), tack.i32)
     integer_function, _ = _prepare_ir(_divmod, integer_args)
     integer_operations = [n for n in walk_ir(integer_function)
                           if isinstance(n, ir.IRBinOp) and n.op in ('//', '%')]
@@ -247,7 +247,7 @@ def test_generators_keep_floating_result_types_and_compile_opencl(dtype, generat
     if dtype is tack.f64 and generate is generate_msl_source:
         pytest.skip('MSL has no f64')
     tack.init(arch=tack.cpu)
-    a, b = _field([7.5], dtype), _field([3.0], dtype)
+    a, b = _array([7.5], dtype), _array([3.0], dtype)
     out = tack.empty((1, 4), dtype)
     function, _ = _prepare_ir(_divmod, (a, b, out))
     source = generate(function)
@@ -270,7 +270,7 @@ def test_generated_cpp_executes_boundaries_and_exceptional_inputs(dtype, generat
     clang = require_clang('ubsan')
     tack.init(arch=tack.cpu)
     pairs = np.concatenate([_finite_pairs(dtype), _exceptional_pairs(dtype)])
-    a, b = (_field(pairs[:, i], dtype) for i in range(2))
+    a, b = (_array(pairs[:, i], dtype) for i in range(2))
     out = tack.empty((len(pairs), 4), dtype)
     function, _ = _prepare_ir(_divmod, (a, b, out))
     source = '\n'.join(line for line in generate(function).splitlines()

@@ -228,7 +228,7 @@ def bad(x, out):
 '''))
 
 
-def test_unbound_field_in_dimension_query():
+def test_unbound_array_in_dimension_query():
     with pytest.raises(NameError, match="name 'ghost'"):
         transform_kernel(ast.parse('''
 def bad(out):

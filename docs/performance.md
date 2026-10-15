@@ -17,7 +17,7 @@
     2. **CPU threading policy repairs (2026-10-02 to 2026-10-04).** The
        decision between a serial run and a thread fan-out was revised. See
        [CPU Threading Policy](design/cpu-threading.md).
-    3. **CPU disjoint-field specialization (2026-10-03).** The CPU backend
+    3. **CPU disjoint-array specialization (2026-10-03).** The CPU backend
        now compiles a separate `noalias` variant for calls whose written
        fields don't overlap other fields. See
        [Memory and Aliasing](design/memory-and-aliasing.md).

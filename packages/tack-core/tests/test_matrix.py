@@ -144,7 +144,7 @@ def entries(a, sel, out, picked, n):
         m[1, 1] += 10.0
         k = sel[i]
         m[k, 2] = 100.0                    # a runtime row
-        a[i][2, 0] = 7.0                   # an entry of a field element
+        a[i][2, 0] = 7.0                   # an entry of an array element
         a[i][k, 1] *= 2.0
         out[i] = m
         picked[i] = m[k, k] + a[i][1, 2] + (m @ m)[0, 0]
@@ -178,7 +178,7 @@ def accumulate(a, total, n):
         a[i] *= 2.0
 
 
-def test_matrix_fields_in_atomics_and_augmented_stores(backend):
+def test_matrix_arrays_in_atomics_and_augmented_stores(backend):
     whole = np.round(A2 * 8) / 8          # sums of these are exact in f32
     a = _matrices(whole)
     total = tack.empty((1,), tack.mat(2, 2, tack.f32))
@@ -188,7 +188,7 @@ def test_matrix_fields_in_atomics_and_augmented_stores(backend):
     np.testing.assert_array_equal(a.numpy(), (whole + np.eye(2, dtype=np.float32)) * 2)
 
 
-def test_matrix_field_numpy_shapes():
+def test_matrix_array_numpy_shapes():
     f = tack.empty((4, 2), tack.mat(2, 3, tack.f32))
     values = np.arange(48, dtype=np.float32).reshape(4, 2, 2, 3)
     tack.copyto(f, values)
@@ -226,7 +226,7 @@ def _one_index():
     return bad
 
 
-def _vector_into_matrix_field():
+def _vector_into_matrix_array():
     @tack.kernel
     def bad(m, v, out, n):
         for i in range(n):
@@ -280,7 +280,7 @@ def _matrix_as_a_condition():
     (_product_shape_mismatch, "multiplies a 2x2 matrix by a 3-vector"),
     (_scaled_with_matmul, r"use '\*' to scale by a scalar"),
     (_one_index, r"of a 2x2 matrix needs a row and a column: m\[i, j\]"),
-    (_vector_into_matrix_field, "stores a 4-vector into a field of 2x2 matrix elements"),
+    (_vector_into_matrix_array, "stores a 4-vector into an array of 2x2 matrix elements"),
     (_matrix_plus_vector, "combines a 2x2 matrix and 4-vector"),
     (_inverse_of_a_rectangle, r"inverse\(\) needs a square matrix, not a 2x3 matrix"),
     (_named_component, r"'x' names a component of a vector; a matrix entry is m\[i, j\]"),
@@ -289,7 +289,7 @@ def _matrix_as_a_condition():
 ])
 def test_mismatched_matrix_forms_are_rejected(define, message):
     with pytest.raises(UnsupportedSyntaxError, match=message):
-        define().get_ir(vector_fields={"m": (2, 2), "v": 2, "out": 2})
+        define().get_ir(vector_arrays={"m": (2, 2), "v": 2, "out": 2})
 
 
 @tack.func
@@ -299,18 +299,18 @@ def _stretch_and_volume(F, dt):
 
 
 @tack.kernel
-def unpack_matrix_into_fields(F, J, n):
+def unpack_matrix_into_arrays(F, J, n):
     for p in range(n):
         F[p], J[p] = _stretch_and_volume(F[p], 0.5)
 
 
-def test_matrix_unpacked_into_a_field_element_keeps_its_shape(backend):
+def test_matrix_unpacked_into_a_array_element_keeps_its_shape(backend):
     """A matrix among several results, unpacked straight into a matrix
-    field: the values are evaluated into temporaries before the first
+    array: the values are evaluated into temporaries before the first
     store, and must still be a matrix afterwards."""
     F = _matrices(A2)
     J = _scalars()
-    unpack_matrix_into_fields(F, J, N)
+    unpack_matrix_into_arrays(F, J, N)
     grown = A2 * np.float32(1.5)
     np.testing.assert_allclose(F.numpy(), grown, rtol=1e-6)
     np.testing.assert_allclose(J.numpy(), np.linalg.det(grown.astype(np.float64)), rtol=1e-5)

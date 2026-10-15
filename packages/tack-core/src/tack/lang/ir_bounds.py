@@ -1,17 +1,17 @@
 """Debug mode's bounds checks: the parts shared by lowering, the passes and dispatch.
 
-With ``tack.init(debug=True)`` (or ``TACK_DEBUG=1``) every index of a field
+With ``tack.init(debug=True)`` (or ``TACK_DEBUG=1``) every index of an array
 or array access is checked against its extent, one dimension at a time.
 Lowering wraps each access's flat index in an ``IRBoundsCheck``, which is -1
 when an index is out of bounds and records the first violation in a hidden
-errors field; ``guard_accesses`` then skips every access whose index is
+errors array; ``guard_accesses`` then skips every access whose index is
 negative, so a bad load reads 0 and a bad store or atomic does nothing.
-After the launch, dispatch reads the errors field and raises ``IndexError``
+After the launch, dispatch reads the errors array and raises ``IndexError``
 naming the access (``runtime/debug_bounds.py``).
 
-Two hidden field parameters follow the kernel's own: ``ERRORS_PARAM``
+Two hidden array parameters follow the kernel's own: ``ERRORS_PARAM``
 (i32, the record below) and ``EXTENTS_PARAM`` (i64, three extents per
-parameter: see ``IRFieldExtent``).
+parameter: see ``IRArrayExtent``).
 """
 
 from typing import NamedTuple
@@ -25,7 +25,7 @@ ERRORS_PARAM = "__tack_errors__"
 EXTENTS_PARAM = "__tack_extents__"
 HIDDEN_PARAMS = (ERRORS_PARAM, EXTENTS_PARAM)
 
-# The errors field: a count of violations, then the first one's site,
+# The errors array: a count of violations, then the first one's site,
 # dimension, index (low and high 32 bits) and extent (likewise).
 COUNT, SITE, DIM, INDEX_LO, INDEX_HI, EXTENT_LO, EXTENT_HI = range(7)
 ERRORS_SIZE = 8
@@ -47,7 +47,7 @@ class BoundsSite(NamedTuple):
 
 
 def guard_accesses(function: ir.IRFunction):
-    """Skip each field or array access of a debug kernel whose index is negative.
+    """Skip each array or array access of a debug kernel whose index is negative.
 
     Runs once types are annotated: a skipped load or atomic yields a zero
     of its own type. A load becomes ``index >= 0 ? load : 0`` (only the
@@ -55,7 +55,7 @@ def guard_accesses(function: ir.IRFunction):
     statement runs under ``if index >= 0``, and an atomic whose old value is
     assigned assigns 0 otherwise. The index is evaluated again by the test,
     which is harmless: indices have no effects but a check's record of the
-    first violation. Accesses to the hidden fields and to GPU scalar packs
+    first violation. Accesses to the hidden arrays and to GPU scalar packs
     are Tack's own, and left alone.
     """
     if getattr(function, 'bounds_sites', None) is None or \
@@ -72,7 +72,7 @@ def guard_accesses(function: ir.IRFunction):
 
 
 def _user_access(node, own) -> bool:
-    return not (isinstance(node.field, ir.IRName) and node.field.name in own)
+    return not (isinstance(node.array, ir.IRName) and node.array.name in own)
 
 
 def _guard_stmts(stmts, own, names):
@@ -89,7 +89,7 @@ def _guard_stmts(stmts, own, names):
             out.append(stmt)
             continue
         _guard_children(stmt, own, names)
-        if isinstance(stmt, (ir.IRFieldStore, ir.IRAtomicOp)) and _user_access(stmt, own):
+        if isinstance(stmt, (ir.IRArrayStore, ir.IRAtomicOp)) and _user_access(stmt, own):
             out.extend(_collective_first(stmt, names))
             stmt = ir.IRIf(_nonnegative(stmt.index), [stmt], [])
         out.append(stmt)
@@ -126,7 +126,7 @@ def _guard_children(node, own, names):
 
 def _guard_expr(node, own, names):
     _guard_children(node, own, names)
-    if isinstance(node, ir.IRFieldLoad) and _user_access(node, own):
+    if isinstance(node, ir.IRArrayLoad) and _user_access(node, own):
         guarded = ir.IRIfExp(_nonnegative(node.index), node, _zero(node.dtype))
         guarded.dtype = node.dtype
         return guarded

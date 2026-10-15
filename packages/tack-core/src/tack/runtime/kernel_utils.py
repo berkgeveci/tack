@@ -1,6 +1,6 @@
 """Shared kernel utility functions used by all backends.
 
-These helpers handle template detection, vector field detection, texture detection,
+These helpers handle template detection, vector array detection, texture detection,
 loop range resolution, and scalar packing — common pre-dispatch logic shared
 by every backend.
 
@@ -28,8 +28,8 @@ import weakref
 import numpy as np
 
 from tack.lang import ir
+from tack.lang.array import Array, Texture3D
 from tack.lang.atomic_support import check_atomic_alignment, check_atomic_support
-from tack.lang.field import Field, Texture3D
 from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_traversal import walk_ir as _walk_ir
 from tack.lang.type_inference import check_dispatch_types, infer_param_types
@@ -126,7 +126,7 @@ def kernel_cache_slot(cache, kernel) -> dict:
     return slot
 
 
-def kernel_variant_key(ir_func, kernel, vector_fields, template_args,
+def kernel_variant_key(ir_func, kernel, vector_arrays, template_args,
                        shape_sig=(), disjoint=False) -> tuple:
     """Build the cache key distinguishing compiled variants of one kernel.
 
@@ -135,30 +135,30 @@ def kernel_variant_key(ir_func, kernel, vector_fields, template_args,
     vector widths, texture shapes, template structure/constants, and every
     dimension size the resolve pass bakes into generated code (``shape_sig``,
     from ``shape_signature``).  ``disjoint`` separates code compiled with a
-    no-overlap promise on its field pointers from code compiled without one;
+    no-overlap promise on its array pointers from code compiled without one;
     only backends that ask for that specialization ever pass it.
 
     Leaving the dimension sizes out is a correctness bug, not a missed
     optimization: a kernel that indexes ``a[i, j]`` compiles the row stride
-    in as a literal, so reusing that code for a differently shaped field
+    in as a literal, so reusing that code for a differently shaped array
     reads the wrong addresses and silently returns wrong numbers.
     """
     # One pass over the params: this runs on every dispatch, and a separate
     # walk per property cost a measurable few microseconds.
     param_sig = tuple(
-        (p.type_annotation, getattr(p, '_is_field', True),
+        (p.type_annotation, getattr(p, '_is_array', True),
          getattr(p, '_is_texture', False), getattr(p, '_texture_shape', None))
         for p in ir_func.params)
-    vec_sig = tuple(sorted(vector_fields.items())) if vector_fields else ()
+    vec_sig = tuple(sorted(vector_arrays.items())) if vector_arrays else ()
     tmpl_key = ()
     if template_args:
         # Keep the structural key: stringifying it loses class identity.
-        tmpl_key = kernel._make_cache_key(vector_fields, template_args)
+        tmpl_key = kernel._make_cache_key(vector_arrays, template_args)
     return (param_sig, vec_sig, tmpl_key, shape_sig, disjoint)
 
 
-def _static_field_aliases(ir_func) -> dict:
-    """Map each alias name to the field name it ultimately refers to.
+def _static_array_aliases(ir_func) -> dict:
+    """Map each alias name to the array name it ultimately refers to.
 
     Inlining a ``@tack.func`` emits assignments like
     ``__func_out_x0_0__ = out_x0``, so a dimension query can name an alias
@@ -193,9 +193,9 @@ def _dependent_nodes(ir_func):
 
 
 def ir_shape_deps(ir_func) -> tuple:
-    """Which field dimensions the resolve pass will bake into this IR.
+    """Which array dimensions the resolve pass will bake into this IR.
 
-    Returns a tuple of ``(field_name, dim)``, memoized on the IR function —
+    Returns a tuple of ``(array_name, dim)``, memoized on the IR function —
     it depends on the kernel's source, not on the arguments. Most kernels
     index one-dimensionally and get back an empty tuple, so the per-dispatch
     cost of keying on shapes is nothing at all.
@@ -204,43 +204,43 @@ def ir_shape_deps(ir_func) -> tuple:
     if deps is not None:
         return deps
 
-    aliases = _static_field_aliases(ir_func)
+    aliases = _static_array_aliases(ir_func)
     found = set()
     for node in _dependent_nodes(ir_func):
         if isinstance(node, ir.IRDimSize):
-            found.add((aliases.get(node.field_name, node.field_name), node.dim))
+            found.add((aliases.get(node.array_name, node.array_name), node.dim))
         elif isinstance(node, ir.IRTextureSample):
             # The sampled extent is embedded in the generated code too.
-            name = aliases.get(node.field_name, node.field_name)
+            name = aliases.get(node.array_name, node.array_name)
             found.update((name, d) for d in range(3))
     deps = tuple(sorted(found))
     ir_func._shape_deps = deps
     return deps
 
 
-def shape_signature(ir_func, name_to_field) -> tuple:
+def shape_signature(ir_func, name_to_array) -> tuple:
     """The concrete dimension sizes this call would bake into the code."""
     deps = ir_shape_deps(ir_func)
     if not deps:
         return ()
     sig = []
     for name, dim in deps:
-        field = name_to_field.get(name)
-        if field is None:
+        array = name_to_array.get(name)
+        if array is None:
             sig.append(None)
             continue
-        shape = getattr(field, 'shape_3d', None) \
-            or getattr(field, '_logical_shape', None) or field.shape
+        shape = getattr(array, 'shape_3d', None) \
+            or getattr(array, '_logical_shape', None) or array.shape
         sig.append(shape[dim] if dim < len(shape) else None)
     return tuple(sig)
 
 
-def written_field_params(ir_func):
-    """Names of the field parameters this kernel may store to.
+def written_array_params(ir_func):
+    """Names of the array parameters this kernel may store to.
 
     Returns a frozenset, or ``None`` when a store goes through something
     this cannot trace back to a parameter or a local allocation, in which
-    case every field has to be assumed written.  Memoized on the IR
+    case every array has to be assumed written.  Memoized on the IR
     function: it is a property of the source, not of a dispatch.
     """
     cached = ir_func.__dict__.get('_written_params', False)
@@ -256,10 +256,10 @@ def written_field_params(ir_func):
             local.add(node.name)
         elif isinstance(node, ir.IRAssign) and isinstance(node.value, ir.IRName):
             copies.append((node.target, node.value.name))
-        elif isinstance(node, (ir.IRFieldStore, ir.IRAtomicOp)):
-            stores.append(node.field)
+        elif isinstance(node, (ir.IRArrayStore, ir.IRAtomicOp)):
+            stores.append(node.array)
 
-    # A name can be bound to different fields on different paths, so each
+    # A name can be bound to different arrays on different paths, so each
     # one maps to every parameter it might stand for.
     sources = {name: {name} for name in params}
     changed = True
@@ -272,8 +272,8 @@ def written_field_params(ir_func):
                 changed = True
 
     written = set()
-    for field in stores:
-        name = getattr(field, 'name', None) if isinstance(field, ir.IRName) \
+    for array in stores:
+        name = getattr(array, 'name', None) if isinstance(array, ir.IRName) \
             else None
         if name in sources:
             written |= sources[name]
@@ -286,39 +286,39 @@ def written_field_params(ir_func):
 
 
 def _written_flags(ir_func) -> tuple:
-    """`written_field_params` as one bool per parameter, memoized."""
+    """`written_array_params` as one bool per parameter, memoized."""
     flags = ir_func.__dict__.get('_written_flags')
     if flags is None:
-        written = written_field_params(ir_func)
+        written = written_array_params(ir_func)
         flags = tuple(written is None or p.name in written
                       for p in ir_func.params)
         ir_func._written_flags = flags
     return flags
 
 
-def _field_slots(ir_func, effective_args) -> tuple:
-    """``(index, written, through_texture)`` of each field argument, for
-    `_disjoint_by_slots`: what `fields_disjoint` works out per call."""
+def _array_slots(ir_func, effective_args) -> tuple:
+    """``(index, written, through_texture)`` of each array argument, for
+    `_disjoint_by_slots`: what `arrays_disjoint` works out per call."""
     slots = []
     for i, (is_written, arg) in enumerate(zip(_written_flags(ir_func), effective_args)):
-        if isinstance(arg, Field):
+        if isinstance(arg, Array):
             slots.append((i, bool(is_written), False))
         elif isinstance(arg, Texture3D):
             slots.append((i, bool(is_written), True))
     return tuple(slots)
 
 
-def _disjoint_by_slots(effective_args, field_slots) -> bool:
-    """`fields_disjoint` for a call whose argument kinds are known.
+def _disjoint_by_slots(effective_args, array_slots) -> bool:
+    """`arrays_disjoint` for a call whose argument kinds are known.
 
     One walk of the ranges in start order, instead of every written range
-    against every other: a dataset view expands to twenty fields, and
+    against every other: a dataset view expands to twenty arrays, and
     that was 20 µs a launch. Walking, a range overlaps an earlier one iff
     it starts before the furthest end so far; it overlaps an earlier
     *written* one iff it starts before the furthest written end so far.
     """
     spans = []
-    for i, is_written, through_texture in field_slots:
+    for i, is_written, through_texture in array_slots:
         arg = effective_args[i]
         buf = arg._storage._buffer if through_texture else arg._buffer
         try:
@@ -341,23 +341,23 @@ def _disjoint_by_slots(effective_args, field_slots) -> bool:
     return True
 
 
-def fields_disjoint(ir_func, effective_args) -> bool:
-    """Whether this call's field storage satisfies a no-overlap promise.
+def arrays_disjoint(ir_func, effective_args) -> bool:
+    """Whether this call's array storage satisfies a no-overlap promise.
 
-    True when no field the kernel stores to shares a byte with any other
-    field argument.  Fields that are only read may overlap each other
+    True when no array the kernel stores to shares a byte with any other
+    array argument.  Arrays that are only read may overlap each other
     freely -- ``dot(x, x)`` is still disjoint in the sense that matters,
     because nothing read through one pointer can change under the other.
 
     Needs host addresses, so it is only meaningful for buffers that have a
-    ``span``; a field without one makes the answer False.
+    ``span``; an array without one makes the answer False.
 
     This runs on every dispatch, hence the plain loops.
     """
     spans = []
     written = []
     for is_written, arg in zip(_written_flags(ir_func), effective_args):
-        if isinstance(arg, Field):
+        if isinstance(arg, Array):
             buf = arg._buffer
         elif isinstance(arg, Texture3D):
             buf = arg._storage._buffer
@@ -374,7 +374,7 @@ def fields_disjoint(ir_func, effective_args) -> bool:
     if not written or len(spans) < 2:
         return True
     # Each written range against every other one. Kernels write to a
-    # handful of fields at most, so this beats sorting the ranges.
+    # handful of arrays at most, so this beats sorting the ranges.
     for w in written:
         start, end = spans[w]
         for i, (other_start, other_end) in enumerate(spans):
@@ -383,12 +383,12 @@ def fields_disjoint(ir_func, effective_args) -> bool:
     return True
 
 
-def dispatch_name_to_field(ir_func, effective_args) -> dict:
-    """Map parameter names to the Field/Texture3D arguments bound to them."""
-    from tack.lang.field import Texture3D
+def dispatch_name_to_array(ir_func, effective_args) -> dict:
+    """Map parameter names to the Array/Texture3D arguments bound to them."""
+    from tack.lang.array import Texture3D
     mapping = {}
     for param, arg in zip(ir_func.params, effective_args):
-        if isinstance(arg, (Field, Texture3D)):
+        if isinstance(arg, (Array, Texture3D)):
             mapping[param.name] = arg
     return mapping
 
@@ -396,8 +396,8 @@ def dispatch_name_to_field(ir_func, effective_args) -> dict:
 def bind_textures(args) -> list:
     """Replace each Texture3D with the storage its compiled kernel binds.
 
-    That is the texture's own snapshot -- a private field, or a hardware
-    image -- never the field it was made from, so writes to that field do
+    That is the texture's own snapshot -- a private array, or a hardware
+    image -- never the array it was made from, so writes to that array do
     not reach the kernel before ``Texture3D.update()``.
     """
     return [a._storage if isinstance(a, Texture3D) else a for a in args]
@@ -405,7 +405,7 @@ def bind_textures(args) -> list:
 
 def _store_texture_shapes(ir_func, effective_args):
     """Record Texture3D extents on the params, for codegen and the key."""
-    from tack.lang.field import Texture3D
+    from tack.lang.array import Texture3D
     for param, arg in zip(ir_func.params, effective_args):
         if isinstance(arg, Texture3D):
             param._texture_shape = arg.shape_3d
@@ -421,7 +421,7 @@ class _ProbeParam:
     """
 
     __slots__ = (
-        "_is_field",
+        "_is_array",
         "_is_texture",
         "_texture_shape",
         "name",
@@ -431,7 +431,7 @@ class _ProbeParam:
     def __init__(self, name):
         self.name = name
         self.type_annotation = None
-        self._is_field = False
+        self._is_array = False
         self._is_texture = False
         self._texture_shape = None
 
@@ -464,14 +464,14 @@ class KernelVariant:
 
     `ir` is the post-pass IR — kept so the loop range can be resolved from
     it on every dispatch without re-running the passes. `payload` is
-    whatever the backend needed to cache alongside it. `written_fields`
-    lists ``(index, name)`` for each field argument the kernel may store
+    whatever the backend needed to cache alongside it. `written_arrays`
+    lists ``(index, name)`` for each array argument the kernel may store
     to, so a dispatch can refuse read-only storage without walking IR.
 
     `dispatch_lock` serializes dispatches of this variant on backends whose
     payload holds per-variant launch state: the GPU scalar pack buffers,
     and Metal's argument buffer. Two threads dispatching one variant would
-    otherwise each write their scalars and field bindings into the same
+    otherwise each write their scalars and array bindings into the same
     buffers, and a launch could read the other call's -- measured on CUDA,
     half of the dispatches from four threads computed with another
     thread's scalars. The lock is held across the synchronous launch;
@@ -479,39 +479,39 @@ class KernelVariant:
     """
 
     __slots__ = ("atomic_targets", "dispatch_lock", "has_textures", "ir", "payload",
-                 "requires_full_workgroups", "written_fields")
+                 "requires_full_workgroups", "written_arrays")
 
     def __init__(self, ir_func, payload, *, requires_full_workgroups=False,
-                 atomic_targets=(), written_fields=(), has_textures=False):
+                 atomic_targets=(), written_arrays=(), has_textures=False):
         self.ir = ir_func
         self.payload = payload
         self.requires_full_workgroups = requires_full_workgroups
         self.atomic_targets = atomic_targets
-        self.written_fields = written_fields
+        self.written_arrays = written_arrays
         # Whether any argument is a Texture3D, so a dispatch without one
         # skips the two walks that rebind textures.
         self.has_textures = has_textures
         self.dispatch_lock = threading.Lock()
 
 
-def _written_field_args(template, effective_args) -> tuple:
-    """``(index, name)`` of each field argument the kernel may store to."""
+def _written_array_args(template, effective_args) -> tuple:
+    """``(index, name)`` of each array argument the kernel may store to."""
     return tuple(
         (index, param.name)
         for index, (param, written, arg) in enumerate(
             zip(template.params, _written_flags(template), effective_args))
-        if written and isinstance(arg, Field))
+        if written and isinstance(arg, Array))
 
 
-def check_writable_fields(kernel_name, written_fields, args):
-    """Refuse a read-only field where the kernel may store to it.
+def check_writable_arrays(kernel_name, written_arrays, args):
+    """Refuse a read-only array where the kernel may store to it.
 
     `array_from_ptr` makes read-only arrays by default, and a read-only
     DLPack tensor imports as one; `copyto` and `fill` already honour
     that. A kernel store would otherwise write straight through it.
-    Runs on every dispatch, over only the fields the kernel writes.
+    Runs on every dispatch, over only the arrays the kernel writes.
     """
-    for index, name in written_fields:
+    for index, name in written_arrays:
         if not args[index]._writable:
             raise ValueError(
                 f"Kernel '{kernel_name}': parameter '{name}' may be written, "
@@ -525,7 +525,7 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     """Find or build the compiled variant for this call.
 
     Template arguments are read once per call (``template_scope``): their
-    cache key, expansion and vector fields share one walk of each tree.
+    cache key, expansion and vector arrays share one walk of each tree.
 
     On a cache hit this copies no IR: type inference runs on a stand-in
     parameter list (`_KeyProbe`), and the per-call checks read only what
@@ -539,10 +539,10 @@ def resolve_variant(backend, kernel, args, kwargs, build,
     without hardware samplers, and that choice changes the generated code,
     so it has to happen before the key is built.
 
-    `specialize_disjoint` asks for a separate variant when this call's field
-    storage is provably non-overlapping (see `fields_disjoint`). The answer
+    `specialize_disjoint` asks for a separate variant when this call's array
+    storage is provably non-overlapping (see `arrays_disjoint`). The answer
     is part of the key and is recorded on the variant's IR as
-    `disjoint_fields`, for the backend's codegen to act on.
+    `disjoint_arrays`, for the backend's codegen to act on.
 
     Returns ``(variant, effective_args)``.
     """
@@ -574,11 +574,11 @@ def _fast_resolve(backend, kernel, args, specialize_disjoint):
         return None
     # The entry holds the variants it resolved (dropped with the slot's by
     # `drop_variants`) and, for the disjointness check, which arguments are
-    # fields and which of those the kernel writes: fixed by the signature,
+    # arrays and which of those the kernel writes: fixed by the signature,
     # so no type test per call.
-    plan, variants, field_slots = hit
+    plan, variants, array_slots = hit
     effective_args = _expand_with_plan(args, plan) if plan else args
-    disjoint = specialize_disjoint and _disjoint_by_slots(effective_args, field_slots)
+    disjoint = specialize_disjoint and _disjoint_by_slots(effective_args, array_slots)
     variant = variants.get(disjoint)
     if variant is None:
         return None
@@ -603,15 +603,15 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
 
     template_args = _detect_template_args(kernel, args)
     effective_args = _expand_template_args(args, template_args)
-    vector_fields = _detect_vector_fields_from_args(kernel, args, template_args)
-    texture_fields = _detect_texture_fields(kernel, args, template_args)
+    vector_arrays = _detect_vector_arrays_from_args(kernel, args, template_args)
+    texture_arrays = _detect_texture_arrays(kernel, args, template_args)
 
     # The pristine IR for this specialization. Never mutated below the
     # parameter list — the passes run on a copy.
     template = kernel.get_ir(
-        vector_fields,
+        vector_arrays,
         template_args=template_args if template_args else None,
-        texture_fields=texture_fields,
+        texture_arrays=texture_arrays,
         debug=debug,
     ).functions[0]
     if debug:
@@ -622,7 +622,7 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
         backend_label=backend.label, cache_features=True,
     )
 
-    name_to_field = dispatch_name_to_field(template, effective_args)
+    name_to_array = dispatch_name_to_array(template, effective_args)
 
     # Parameter types and texture extents come from the actual arguments and
     # are part of the key, so they have to be derived before the lookup.
@@ -633,15 +633,15 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
     infer_param_types(probe, effective_args)
     store_texture_shapes(probe, effective_args)
 
-    disjoint = specialize_disjoint and fields_disjoint(template, effective_args)
-    shape_sig = shape_signature(template, name_to_field)
-    key = kernel_variant_key(probe, kernel, vector_fields, template_args, shape_sig, disjoint)
+    disjoint = specialize_disjoint and arrays_disjoint(template, effective_args)
+    shape_sig = shape_signature(template, name_to_array)
+    key = kernel_variant_key(probe, kernel, vector_arrays, template_args, shape_sig, disjoint)
 
     slot = kernel_cache_slot(backend._cache, kernel)
     variant = slot.get(key)
     if variant is None:
         from tack.runtime import disk_cache
-        disk_key = disk_cache.variant_key(backend, template, probe, vector_fields,
+        disk_key = disk_cache.variant_key(backend, template, probe, vector_arrays,
                                           shape_sig, disjoint)
         variant = _stored_variant(backend, disk_key, template, effective_args)
         if variant is not None:
@@ -652,7 +652,7 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
         from tack.lang.ir_verify import verify_ir
 
         ir_func = clone_ir(template)
-        resolve_ir(ir_func, name_to_field)
+        resolve_ir(ir_func, name_to_array)
         verify_ir(ir_func, 'resolved')
         infer_param_types(ir_func, effective_args)
         store_texture_shapes(ir_func, effective_args)
@@ -674,11 +674,11 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
                                    backend_label=backend.label)
         optimize_ir(ir_func)
         verify_ir(ir_func, 'optimized')
-        ir_func.disjoint_fields = disjoint
+        ir_func.disjoint_arrays = disjoint
         variant = KernelVariant(ir_func, build(ir_func, effective_args),
                                 requires_full_workgroups=full_groups,
                                 atomic_targets=atomic_targets,
-                                written_fields=_written_field_args(
+                                written_arrays=_written_array_args(
                                     template, effective_args),
                                 has_textures=any(isinstance(a, Texture3D)
                                                  for a in effective_args))
@@ -694,11 +694,11 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
             if len(fast) >= _FAST_CAP:
                 fast.clear()
             entry = fast[sig] = (_expansion_plan(template_args), {},
-                                 _field_slots(template, effective_args))
+                                 _array_slots(template, effective_args))
         entry[1][disjoint] = variant
 
     check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
-    check_writable_fields(variant.ir.name, variant.written_fields, effective_args)
+    check_writable_arrays(variant.ir.name, variant.written_arrays, effective_args)
     if debug:
         debug_bounds.launched(effective_args, template)
     return variant, effective_args
@@ -728,7 +728,7 @@ def _stored_variant(backend, disk_key, template, effective_args):
     variant = KernelVariant(ir_func, payload,
                             requires_full_workgroups=entry["full_groups"],
                             atomic_targets=entry["atomic_targets"],
-                            written_fields=_written_field_args(template, effective_args),
+                            written_arrays=_written_array_args(template, effective_args),
                             has_textures=any(isinstance(a, Texture3D) for a in effective_args))
     if variant.requires_full_workgroups:
         check_workgroup_launch(ir_func.name, _get_loop_range(ir_func, effective_args),
@@ -759,7 +759,7 @@ def _check_call(backend, variant, effective_args):
         check_workgroup_launch(variant.ir.name, _get_loop_range(variant.ir, effective_args),
                                backend_label=backend.label)
     check_atomic_alignment(variant.ir.name, variant.atomic_targets, effective_args)
-    check_writable_fields(variant.ir.name, variant.written_fields, effective_args)
+    check_writable_arrays(variant.ir.name, variant.written_arrays, effective_args)
 
 
 # ── The dispatch fast path ──────────────────────────────────────────
@@ -773,7 +773,7 @@ def _check_call(backend, variant, effective_args):
 # dozens of such launches, and on a GPU the host side is most of the call.
 #
 # The signature below is what the variant key is a function of, read
-# straight off the arguments: for a field its dtype, shape and element
+# straight off the arguments: for an array its dtype, shape and element
 # layout; for a scalar its kind and integer width; for a template object
 # its class, its class constants' current values, and for each attribute
 # the kind, dtype, shape or function that `_template_key` and the
@@ -781,7 +781,7 @@ def _check_call(backend, variant, effective_args):
 # therefore mean an equal key (the full shape is more than the key needs,
 # so distinct lengths miss, harmlessly, and find the same variant). What a
 # hit must still do per call -- expand the templates, decide disjointness,
-# check atomic alignment, writable fields and the workgroup launch -- it
+# check atomic alignment, writable arrays and the workgroup launch -- it
 # does. An entry names its variants by key and holds no class or variant
 # itself, so a template class defined per call is collected as before and
 # a variant dropped by `drop_variants` is resolved afresh.
@@ -809,13 +809,13 @@ def _call_signature(args):
     not describe (the slow path then reports it)."""
     sig = []
     for arg in args:
-        if isinstance(arg, Field):
+        if isinstance(arg, Array):
             try:
                 sig.append(arg._sig)
             except AttributeError:
-                # Computed once per field: its dtype, shape and element layout
+                # Computed once per array: its dtype, shape and element layout
                 # are set when it is made and never change (a reshape is a
-                # new Field over the same buffer).
+                # new Array over the same buffer).
                 arg._sig = (0, arg.dtype, arg.shape, getattr(arg, '_logical_shape', None),
                             getattr(arg, '_vector_n', None), getattr(arg, '_matrix_shape', None))
                 sig.append(arg._sig)
@@ -844,13 +844,13 @@ def _scalar_bits(value):
 
 
 # Per template class, how `_template_signature` last read an instance: the
-# attribute names in order, each one's kind (constant, field, int, float,
+# attribute names in order, each one's kind (constant, array, int, float,
 # function, child template) and its value's type. An instance with the same
 # names and types is read by kind, one attribute access each, instead of
 # the type tests per attribute that cost 25 µs a dataset view on a 2 GHz
 # Xeon; one that differs is walked in full and the layout replaced.
 _template_layouts = weakref.WeakKeyDictionary()
-_LAYOUT_CONSTANT, _LAYOUT_FIELD, _LAYOUT_INT, _LAYOUT_FLOAT, _LAYOUT_FUNC, _LAYOUT_CHILD, \
+_LAYOUT_CONSTANT, _LAYOUT_ARRAY, _LAYOUT_INT, _LAYOUT_FLOAT, _LAYOUT_FUNC, _LAYOUT_CHILD, \
     _LAYOUT_SKIP = range(7)
 
 
@@ -875,7 +875,7 @@ def _template_signature(obj, path, seen):
             if type(value) is not typ:
                 layout = None
                 break
-            if kind == _LAYOUT_FIELD:
+            if kind == _LAYOUT_ARRAY:
                 try:
                     own.append((name, *value._sig))
                 except AttributeError:
@@ -906,8 +906,8 @@ def _template_signature(obj, path, seen):
             elif name in constants:
                 kinds.append(_LAYOUT_CONSTANT)
                 own.append((name, type(value), _scalar_bits(value)))
-            elif isinstance(value, Field):
-                kinds.append(_LAYOUT_FIELD)
+            elif isinstance(value, Array):
+                kinds.append(_LAYOUT_ARRAY)
                 own.append((name, 0, value.dtype, value.shape,
                             getattr(value, '_logical_shape', None),
                             getattr(value, '_vector_n', None),
@@ -946,22 +946,22 @@ def _template_signature(obj, path, seen):
 def _expansion_plan(template_args) -> tuple:
     """How `_expand_template_args` turns these template arguments into
     arguments: for each template, highest index first, the attribute paths
-    it appends, fields then runtime scalars, each sorted by flattened name."""
+    it appends, arrays then runtime scalars, each sorted by flattened name."""
     from tack.lang.template_rewrite import _classify_own, _prefix, template_tree
 
     plan = []
     for idx in sorted(template_args, reverse=True):
         _, obj = template_args[idx]
-        fields, scalars = [], []
+        arrays, scalars = [], []
         for path, node in template_tree(obj):
-            _, own_fields, own_scalars = _classify_own(node)
-            for name in own_fields:
-                fields.append((_prefix(path) + name, (*path, name)))
+            _, own_arrays, own_scalars = _classify_own(node)
+            for name in own_arrays:
+                arrays.append((_prefix(path) + name, (*path, name)))
             for name in own_scalars:
                 scalars.append((_prefix(path) + name, (*path, name)))
-        fields.sort()
+        arrays.sort()
         scalars.sort()
-        plan.append((idx, tuple(p for _, p in fields) + tuple(p for _, p in scalars)))
+        plan.append((idx, tuple(p for _, p in arrays) + tuple(p for _, p in scalars)))
     return tuple(plan)
 
 
@@ -995,13 +995,13 @@ def _localize_outer_scalars(ir_func):
     On GPU each thread runs them for its one iteration, which is the
     defined behavior; the same renaming gives it on every backend.
 
-    Needs the `_is_field` annotations, so it runs after type inference.
+    Needs the `_is_array` annotations, so it runs after type inference.
     """
     from tack.lang.ir_names import fresh_name, ir_names
 
     used_names = ir_names(ir_func)
     scalars = {p.name for p in ir_func.params
-               if not getattr(p, '_is_field', True)}
+               if not getattr(p, '_is_array', True)}
     for stmt in ir_func.body:
         if not isinstance(stmt, ir.IRParallelFor):
             scalars.update(n.target for n in _walk_ir(stmt) if isinstance(n, ir.IRAssign))
@@ -1044,10 +1044,10 @@ def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:
 
 
 def _expand_template_args(args, template_args) -> tuple:
-    """Replace template args with their field and runtime scalar attributes.
+    """Replace template args with their array and runtime scalar attributes.
 
     Returns new args tuple with template objects removed and their
-    field attributes and runtime scalars appended.  These are appended
+    array attributes and runtime scalars appended.  These are appended
     in reverse template index order to match the AST rewrite pass
     (which processes templates from highest index to lowest).
     """
@@ -1058,12 +1058,12 @@ def _expand_template_args(args, template_args) -> tuple:
 
     new_args = []
     extra = []
-    # Collect template fields and runtime scalars in reverse index order
+    # Collect template arrays and runtime scalars in reverse index order
     for idx in sorted(template_args.keys(), reverse=True):
         _, obj = template_args[idx]
-        _, fields, runtime_scalars = classify_template_attrs(obj)
-        for attr_name in sorted(fields.keys()):
-            extra.append(fields[attr_name])
+        _, arrays, runtime_scalars = classify_template_attrs(obj)
+        for attr_name in sorted(arrays.keys()):
+            extra.append(arrays[attr_name])
         for attr_name in sorted(runtime_scalars.keys()):
             extra.append(runtime_scalars[attr_name])
     # Build non-template args in order
@@ -1074,69 +1074,69 @@ def _expand_template_args(args, template_args) -> tuple:
     return tuple(new_args)
 
 
-def _detect_vector_fields(kernel, args) -> dict[str, int] | None:
-    """Detect which kernel parameters are vector fields.
+def _detect_vector_arrays(kernel, args) -> dict[str, int] | None:
+    """Detect which kernel parameters are vector arrays.
 
     Returns a dict mapping parameter names to component counts,
-    or None if no vector fields are present.
+    or None if no vector arrays are present.
     """
     funcdef = kernel._funcdef
     params = [a.arg for a in funcdef.args.args]
-    vector_fields = {}
+    vector_arrays = {}
     for param_name, arg in zip(params, args):
-        if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
-            vector_fields[param_name] = _element_shape(arg)
-    return vector_fields if vector_fields else None
+        if isinstance(arg, Array) and hasattr(arg, '_vector_n'):
+            vector_arrays[param_name] = _element_shape(arg)
+    return vector_arrays if vector_arrays else None
 
 
-def _element_shape(field):
-    """What lowering needs to know about a vector or matrix field's elements:
-    the component count, or ``(rows, columns)`` for a matrix field."""
-    return getattr(field, '_matrix_shape', None) or field._vector_n
+def _element_shape(array):
+    """What lowering needs to know about a vector or matrix array's elements:
+    the component count, or ``(rows, columns)`` for a matrix array."""
+    return getattr(array, '_matrix_shape', None) or array._vector_n
 
 
-def _detect_vector_fields_from_args(kernel, args, template_args) -> dict[str, int] | None:
-    """Detect vector fields, accounting for template parameters.
+def _detect_vector_arrays_from_args(kernel, args, template_args) -> dict[str, int] | None:
+    """Detect vector arrays, accounting for template parameters.
 
     When template args are present, we need to skip them when matching
     parameter names to arguments.
     """
     if not template_args:
-        return _detect_vector_fields(kernel, args)
+        return _detect_vector_arrays(kernel, args)
 
-    from tack.lang.template_rewrite import classify_template_attrs, template_field_param_name
+    from tack.lang.template_rewrite import classify_template_attrs, template_array_param_name
 
     funcdef = kernel._funcdef
     params = [a.arg for a in funcdef.args.args]
-    vector_fields = {}
+    vector_arrays = {}
     for i, (param_name, arg) in enumerate(zip(params, args)):
         if i in template_args:
-            # A template's vector field attributes become kernel parameters
+            # A template's vector array attributes become kernel parameters
             # too, under the rewrite's synthetic names; without this a
             # `self.vel[i, j]` in a template method lowered as a scalar load.
-            _, fields, _ = classify_template_attrs(arg)
-            for attr_name, field in fields.items():
-                if hasattr(field, '_vector_n'):
-                    vector_fields[template_field_param_name(param_name, attr_name)] = \
-                        _element_shape(field)
+            _, arrays, _ = classify_template_attrs(arg)
+            for attr_name, array in arrays.items():
+                if hasattr(array, '_vector_n'):
+                    vector_arrays[template_array_param_name(param_name, attr_name)] = \
+                        _element_shape(array)
             continue
-        if isinstance(arg, Field) and hasattr(arg, '_vector_n'):
-            vector_fields[param_name] = _element_shape(arg)
-    return vector_fields if vector_fields else None
+        if isinstance(arg, Array) and hasattr(arg, '_vector_n'):
+            vector_arrays[param_name] = _element_shape(arg)
+    return vector_arrays if vector_arrays else None
 
 
-def _detect_texture_fields(kernel, args, template_args=None) -> dict[str, tuple] | None:
+def _detect_texture_arrays(kernel, args, template_args=None) -> dict[str, tuple] | None:
     """Detect which kernel parameters are Texture3D objects."""
-    from tack.lang.field import Texture3D
+    from tack.lang.array import Texture3D
     funcdef = kernel._funcdef
     params = [a.arg for a in funcdef.args.args]
-    texture_fields = {}
+    texture_arrays = {}
     for i, (param_name, arg) in enumerate(zip(params, args)):
         if template_args and i in template_args:
             continue
         if isinstance(arg, Texture3D):
-            texture_fields[param_name] = arg.shape_3d
-    return texture_fields if texture_fields else None
+            texture_arrays[param_name] = arg.shape_3d
+    return texture_arrays if texture_arrays else None
 
 
 def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
@@ -1148,19 +1148,19 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
     # leaves these alone so the compiled kernel does not depend on the
     # array's length; they are evaluated here instead, per dispatch.
     if isinstance(node, ir.IRDimSize):
-        arg = name_to_arg.get(node.field_name)
+        arg = name_to_arg.get(node.array_name)
         if arg is not None:
             shape = getattr(arg, 'shape_3d', None) \
                 or getattr(arg, '_logical_shape', None) or arg.shape
             return shape[node.dim]
 
-    # x.shape[0]  →  IRFieldLoad(IRAttribute(IRName("x"), "shape"), IRConstant(0))
-    if isinstance(node, ir.IRFieldLoad):
-        obj = node.field
+    # x.shape[0]  →  IRArrayLoad(IRAttribute(IRName("x"), "shape"), IRConstant(0))
+    if isinstance(node, ir.IRArrayLoad):
+        obj = node.array
         if isinstance(obj, ir.IRAttribute) and obj.attr == "shape":
             if isinstance(obj.obj, ir.IRName):
                 arg = name_to_arg.get(obj.obj.name)
-                if isinstance(arg, Field):
+                if isinstance(arg, Array):
                     idx = _resolve_range_expr(node.index, name_to_arg)
                     return arg.shape[idx]
 
@@ -1168,7 +1168,7 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
     if isinstance(node, ir.IRAttribute) and node.attr == "__len__":
         if isinstance(node.obj, ir.IRName):
             arg = name_to_arg.get(node.obj.name)
-            if isinstance(arg, Field):
+            if isinstance(arg, Array):
                 return arg.shape[0]
 
     # Binary ops on range expressions (e.g., n - 1)
@@ -1212,7 +1212,7 @@ def _get_loop_range(ir_func: ir.IRFunction, args: tuple) -> int:
 
     Resolves the loop end expression — supports:
       - IRConstant(N)
-      - IRFieldLoad(IRAttribute(IRName("x"), "shape"), IRConstant(0))  →  x.shape[0]
+      - IRArrayLoad(IRAttribute(IRName("x"), "shape"), IRConstant(0))  →  x.shape[0]
       - IRAttribute(IRName("x"), "__len__")  →  len(x)
     """
     # Find the top-level parallel for
@@ -1263,8 +1263,8 @@ def _launch_plan(ir_func: ir.IRFunction) -> tuple:
         def step(node):
             if isinstance(node, ir.IRConstant):
                 return (0, int(node.value))
-            if isinstance(node, ir.IRDimSize) and node.field_name in index:
-                return (1, index[node.field_name], node.dim)
+            if isinstance(node, ir.IRDimSize) and node.array_name in index:
+                return (1, index[node.array_name], node.dim)
             if isinstance(node, ir.IRName) and node.name in index:
                 return (2, index[node.name])
             return (3, node)
@@ -1316,44 +1316,44 @@ def check_launch_size(what: str, items: int, max_items: int, backend_label: str)
             f"several launches.")
 
 
-def _create_pack_fields(pack_info, args, backend):
-    """Create packed Field objects from scalar pack info.
+def _create_pack_arrays(pack_info, args, backend):
+    """Create packed Array objects from scalar pack info.
 
     Args:
         pack_info: list of (pack_name, dtype, [(orig_name, orig_arg_idx, idx_in_pack)])
         args: the original effective_args tuple
-        backend: the active backend (for allocate_field)
+        backend: the active backend (for allocate_array)
 
     Returns:
-        list of Field objects, one per pack group.
+        list of Array objects, one per pack group.
     """
     import numpy as np
 
-    from tack.lang.field import Field
+    from tack.lang.array import Array
 
-    fields = []
+    arrays = []
     for pack_name, dtype, entries in pack_info:
         np_dtype = dtype.numpy_dtype
         arr = np.zeros(len(entries), dtype=np_dtype)
         for _, orig_arg_idx, idx_in_pack in entries:
             arr[idx_in_pack] = args[orig_arg_idx]
-        buf = backend.allocate_field(dtype, (len(entries),))
-        f = Field(dtype, (len(entries),), buf)
+        buf = backend.allocate_array(dtype, (len(entries),))
+        f = Array(dtype, (len(entries),), buf)
         f._buffer.from_numpy(arr)
-        fields.append(f)
-    return fields
+        arrays.append(f)
+    return arrays
 
 
-def _update_pack_fields(pack_fields, pack_info, args):
-    """Update existing packed Field objects with new scalar values.
+def _update_pack_arrays(pack_arrays, pack_info, args):
+    """Update existing packed Array objects with new scalar values.
 
     Reuses the allocated device buffers — only copies new values.
     """
     import numpy as np
 
-    for field, (pack_name, dtype, entries) in zip(pack_fields, pack_info):
+    for array, (pack_name, dtype, entries) in zip(pack_arrays, pack_info):
         np_dtype = dtype.numpy_dtype
         arr = np.zeros(len(entries), dtype=np_dtype)
         for _, orig_arg_idx, idx_in_pack in entries:
             arr[idx_in_pack] = args[orig_arg_idx]
-        field._buffer.from_numpy(arr)
+        array._buffer.from_numpy(arr)

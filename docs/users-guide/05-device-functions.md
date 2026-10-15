@@ -42,9 +42,9 @@ def polar_to_cart(r, theta):
     return x, y
 
 @tack.kernel
-def convert(r_field, theta_field, x_out, y_out, n):
+def convert(r_array, theta_array, x_out, y_out, n):
     for i in range(n):
-        x, y = polar_to_cart(r_field[i], theta_field[i])
+        x, y = polar_to_cart(r_array[i], theta_array[i])
         x_out[i] = x
         y_out[i] = y
 ```

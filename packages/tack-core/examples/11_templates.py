@@ -1,7 +1,7 @@
 """11 -- Template classes with @tack.device_class.
 
-Use @tack.device_class to bundle fields and scalar parameters into a
-class that can be passed to kernels.  Field attributes become kernel
+Use @tack.device_class to bundle arrays and scalar parameters into a
+class that can be passed to kernels.  Array attributes become kernel
 buffer parameters, scalar attributes become compile-time constants,
 and methods marked with @tack.func are inlined.
 
@@ -30,7 +30,7 @@ class Grid:
     """A 1D grid with uniform spacing and stored values."""
 
     def __init__(self, data, dx):
-        self.data = data   # field -> becomes a kernel buffer parameter
+        self.data = data   # array -> becomes a kernel buffer parameter
         self.dx = dx       # scalar -> becomes a compile-time constant
 
     @tack.func

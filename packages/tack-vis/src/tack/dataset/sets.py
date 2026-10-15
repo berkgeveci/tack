@@ -108,7 +108,7 @@ class Set:
 
     @classmethod
     def _from_flags(cls, topology, on, flags):
-        """A set from a 0/1 i32 field over the entities."""
+        """A set from a 0/1 i32 array over the entities."""
         out = cls.__new__(cls)
         out.topology = topology
         out.on = on
@@ -168,7 +168,7 @@ class Set:
         return cls._from_flags(data.topology, "faces", flags)
 
     def flags(self):
-        """Membership: an i32 field, 1 for each entity in the set, else 0."""
+        """Membership: an i32 array, 1 for each entity in the set, else 0."""
         if self._flags is None:
             n = _count(self.topology, self.on)
             flags = tack.zeros((n,), tack.i32)

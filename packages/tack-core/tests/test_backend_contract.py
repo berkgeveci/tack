@@ -117,7 +117,7 @@ def test_reductions_declaration_matches_behaviour(backend):
     if not be.supports_device_reductions:
         # The base class raises rather than silently doing something else.
         with pytest.raises(NotImplementedError, match="device reductions"):
-            Backend.reduce_field(be, f, 'sum')
+            Backend.reduce_array(be, f, 'sum')
 
 
 def test_memory_space_is_answered_not_guessed(backend):
@@ -137,7 +137,7 @@ def test_device_memory_spaces_are_self_consistent(backend):
             f"{be.name} lists device memory spaces but inherits the default"
 
 
-def test_field_from_ptr_checks_every_form_of_address(backend):
+def test_array_from_ptr_checks_every_form_of_address(backend):
     """The memory-space check used to run for a Python int alone.
 
     A host address handed over as a numpy integer, or as the driver's own

@@ -16,7 +16,7 @@ can be too large for ``i32`` (``for_output``), so a pipeline that starts in
 import numpy as np
 
 import tack
-from tack.lang.field import Field
+from tack.lang.array import Array
 
 __all__ = ["LIMIT", "as_ids", "at_least", "choose", "for_output"]
 
@@ -34,7 +34,7 @@ def choose(dtype=None, extent=0, given=()):
     needs it or any field in ``given`` is ``i64``, else ``i32``."""
     if dtype is None:
         wide = (extent > LIMIT or _minimum == tack.i64
-                or any(isinstance(f, Field) and f.dtype == tack.i64 for f in given))
+                or any(isinstance(f, Array) and f.dtype == tack.i64 for f in given))
         return tack.i64 if wide else tack.i32
     if dtype not in (tack.i32, tack.i64):
         raise TypeError(f"ids are i32 or i64, not {getattr(dtype, 'name', dtype)}")
@@ -68,11 +68,11 @@ def as_ids(values, dtype, check=True):
     unless ``check`` is false, for a topology's own arrays, which ``choose``
     has already sized: a valid mesh's ids lie below its point count, its
     offsets within its connectivity."""
-    if isinstance(values, Field):
+    if isinstance(values, Array):
         if values.dtype == dtype:
             return values
         if values.dtype not in (tack.i32, tack.i64):
-            raise TypeError(f"ids are i32 or i64 fields, not {values.dtype.name}")
+            raise TypeError(f"ids are i32 or i64 arrays, not {values.dtype.name}")
         out = tack.empty(values.shape, dtype)
         if values.size:
             if check and dtype == tack.i32:
@@ -90,7 +90,7 @@ def as_ids(values, dtype, check=True):
 
 def host_or_field(values):
     """A field as it is; anything else (a list, an array) as an array."""
-    return values if isinstance(values, Field) else np.asarray(values)
+    return values if isinstance(values, Array) else np.asarray(values)
 
 
 def _check_fits(values):

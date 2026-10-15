@@ -5,7 +5,7 @@ Demonstrates common image processing operations as Tack kernels:
   2. Sobel edge detection
   3. Gaussian blur (separable)
 
-Operates on synthetic images stored as 2D float fields.
+Operates on synthetic images stored as 2D float arrays.
 
 Usage:
   uv run python examples/19_image_processing.py

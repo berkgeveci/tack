@@ -1,6 +1,6 @@
 """Tests for automatic scalar parameter packing into constant buffers.
 
-GPU backends pack scalar params into typed field buffers to reduce buffer
+GPU backends pack scalar params into typed array buffers to reduce buffer
 bindings. CPU passes scalars directly as register values (no packing).
 Both paths are tested here.
 """
@@ -73,7 +73,7 @@ def test_scalar_packing_called_twice(backend):
 
 
 def test_no_scalars_no_packing(backend):
-    """Kernel with only field params — packing is a no-op."""
+    """Kernel with only array params — packing is a no-op."""
     n = 64
     x = tack.empty((n,))
     out = tack.empty((n,))

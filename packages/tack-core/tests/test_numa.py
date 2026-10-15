@@ -1,4 +1,4 @@
-"""NUMA interleave for CPU field allocations.
+"""NUMA interleave for CPU array allocations.
 
 These tests need a machine with two or more memory nodes, so they skip almost
 everywhere -- including CI, which is single-node.  They exist because the thing
@@ -126,10 +126,10 @@ def _number(out):
         out[i] = i
 
 
-def _fan_out(backend, kernel, field, n):
+def _fan_out(backend, kernel, array, n):
     """Run the whole range through the backend's workers, the way a
     dispatch the policy threads does."""
-    variant, effective = resolve_variant(backend, kernel, (field,), {},
+    variant, effective = resolve_variant(backend, kernel, (array,), {},
                                          build=backend._build_variant,
                                          specialize_disjoint=cpu._SPECIALIZE_DISJOINT)
     _, extents = cpu._get_launch(variant.ir, list(effective))
@@ -142,20 +142,20 @@ import sys
 sys.path.insert(0, {tests!r})
 import numpy as np
 import tack
-from tack.lang.field import Field
+from tack.lang.array import Array
 from tack.runtime.cpu import CPUBackend
 from test_numa import _fan_out, _number, pages_per_node
 
 backend = CPUBackend(num_threads=4)
 n = (64 << 20) // 4
-buf = backend.allocate_field(tack.f32, (n,))
+buf = backend.allocate_array(tack.f32, (n,))
 addr = buf._data.ctypes.data
 # A page not present reads -EFAULT (-14) on older kernels and -ENOENT
 # (-2) on newer ones (Linux 7.0).
 hist = pages_per_node(addr, 64 << 20)
 untouched = hist[-14] + hist[-2]
-assert untouched >= (64 << 20) // 4096 - 1, f"a new field's pages were touched: {{untouched}}"
-_fan_out(backend, _number, Field(tack.f32, (n,), buf), n)
+assert untouched >= (64 << 20) // 4096 - 1, f"a new array's pages were touched: {{untouched}}"
+_fan_out(backend, _number, Array(tack.f32, (n,), buf), n)
 hist = pages_per_node(addr, 64 << 20)
 assert len(hist) > 1, f"all pages on one node: {{dict(hist)}}"
 # Interleave is round-robin, so no node should hold a lopsided share.
@@ -168,14 +168,14 @@ print("ok")
 
 @requires_numa
 @pytest.mark.parametrize("pool", ["jit", "python"])
-def test_a_field_the_workers_write_is_spread_across_the_nodes(pool):
-    """The path a real kernel takes. A new field is not touched when it is
+def test_a_array_the_workers_write_is_spread_across_the_nodes(pool):
+    """The path a real kernel takes. A new array is not touched when it is
     made; the workers that first write it carry the interleave policy (the
     JIT'd pool's from `_jit_pool`, the executor's from `_get_pool`), so its
     pages are spread the way a buffer filled under the policy was.
 
     In a fresh process: with `TACK_CPU_MALLOC=1` glibc keeps freed pages,
-    so in a process that already freed a block this size the "new" field
+    so in a process that already freed a block this size the "new" array
     would be that block, its pages present and placed by whoever touched
     them first. Only a process's first such block is a fresh mapping."""
     import os
@@ -218,7 +218,7 @@ def _set_policy(mode, nodes):
 @requires_numa
 def test_a_bound_thread_keeps_its_policy_and_its_node():
     """Under ``numactl --membind=0`` (here: the same policy set by hand) a
-    field's pages stay on node 0, and the policy is still the binding
+    array's pages stay on node 0, and the policy is still the binding
     afterwards -- not the default, which is what restoring the default
     unconditionally left behind.
 
@@ -247,8 +247,8 @@ _set_policy(_MPOL_BIND, 1)
 # One thread: the fill runs on this, bound, thread.
 tack.init(arch=tack.cpu, num_threads=1)
 n = (64 << 20) // 4
-field = tack.zeros((n,), tack.f32)
-hist = pages_per_node(field._buffer._data.ctypes.data, 64 << 20)
+array = tack.zeros((n,), tack.f32)
+hist = pages_per_node(array._buffer._data.ctypes.data, 64 << 20)
 assert set(hist) == {{0}}, f"pages left the bound node: {{dict(hist)}}"
 assert cpu._read_mempolicy()[0] == _MPOL_BIND, "the binding was dropped"
 with cpu._NumaInterleave():

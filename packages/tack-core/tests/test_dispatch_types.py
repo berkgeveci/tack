@@ -1,6 +1,6 @@
 """Tests for dispatch-time type checking (Layer 5 of type system refactor).
 
-Validates that unsupported field dtypes are caught with clear errors
+Validates that unsupported array dtypes are caught with clear errors
 before hitting the compiler.
 """
 
@@ -20,7 +20,7 @@ class TestCheckDispatchTypes:
         tack.init(arch=tack.cpu)
 
     def test_supported_dtype_passes(self):
-        """f32 field should pass when f32 is supported."""
+        """f32 array should pass when f32 is supported."""
         func = ir.IRFunction("k", [ir.IRParam("data")], [])
         data = tack.empty((10,))
         infer_param_types(func, (data,))
@@ -30,7 +30,7 @@ class TestCheckDispatchTypes:
                              backend_name="Test")
 
     def test_unsupported_dtype_raises(self):
-        """f64 field should raise when f64 is not supported."""
+        """f64 array should raise when f64 is not supported."""
         func = ir.IRFunction("k", [ir.IRParam("data")], [])
         data = tack.empty((10,), tack.f64)
         infer_param_types(func, (data,))
@@ -68,8 +68,8 @@ class TestCheckDispatchTypes:
                              supported_dtypes={f32},
                              backend_name="Test")
 
-    def test_multiple_fields_first_bad(self):
-        """First unsupported field should trigger the error."""
+    def test_multiple_arrays_first_bad(self):
+        """First unsupported array should trigger the error."""
         func = ir.IRFunction("k", [ir.IRParam("a"), ir.IRParam("b")], [])
         a = tack.empty((10,), tack.f64)
         b = tack.empty((10,))
@@ -104,8 +104,8 @@ class TestCheckDispatchTypes:
 
 # --- End-to-end: Metal rejects f64 ---
 
-def test_metal_rejects_f64_field():
-    """Metal backend should reject f64 fields with a clear error."""
+def test_metal_rejects_f64_array():
+    """Metal backend should reject f64 arrays with a clear error."""
     try:
         tack.init(arch=tack.metal)
     except Exception:

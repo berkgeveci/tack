@@ -101,7 +101,7 @@ def kern(data, out):
         assert local_alloc.dtype is u8
 
     def test_shared_like_resolves_to_scalar_type(self):
-        """shared_like resolves to the field's ScalarType, not a C string."""
+        """shared_like resolves to the array's ScalarType, not a C string."""
         tack.init(arch=tack.cpu)
         data = tack.empty((10,), tack.i32)
         out = tack.empty((10,), tack.i32)
@@ -109,7 +109,7 @@ def kern(data, out):
         p_data = ir.IRParam("data")
         p_out = ir.IRParam("out")
         shared_alloc = ir.IRSharedAlloc("smem", dtype=None, size=ir.IRConstant(256),
-                                         field_name="data")
+                                         array_name="data")
         pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), [shared_alloc])
         func = ir.IRFunction("test", [p_data, p_out], [pfor])
 

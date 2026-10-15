@@ -1,5 +1,5 @@
 """Tests for new Tack features: @tack.func, ndrange, multi-dim indexing,
-field[None], Vector types, and vector methods."""
+array[None], Vector types, and vector methods."""
 
 import numpy as np
 import pytest
@@ -84,23 +84,23 @@ def test_func_inline_nested(backend):
     assert np.allclose(result, expected)
 
 
-# ─── field[None] (scalar fields) ──────────────────────────────────────
+# ─── array[None] (scalar arrays) ──────────────────────────────────────
 
 @tack.kernel
-def scale_field(x, factor, out):
+def scale_array(x, factor, out):
     for i in range(x.shape[0]):
         out[i] = x[i] * factor[0]
 
 
-def test_scalar_field(backend):
-    """Scalar field (1-element) used as a parameter."""
+def test_scalar_array(backend):
+    """Scalar array (1-element) used as a parameter."""
     n = 100
     x = tack.empty((n,))
     factor = tack.empty((1,))
     out = tack.empty((n,))
     tack.copyto(x, np.ones(n, dtype=np.float32) * 3.0)
     tack.copyto(factor, np.array([2.5], dtype=np.float32))
-    scale_field(x, factor, out)
+    scale_array(x, factor, out)
     result = out.numpy()
     assert np.allclose(result, 7.5)
 
@@ -108,8 +108,8 @@ def test_scalar_field(backend):
 # ─── ndrange (2D parallel iteration) ──────────────────────────────────
 
 @tack.kernel
-def fill_2d(out, w_field):
-    w = w_field[0]
+def fill_2d(out, w_array):
+    w = w_array[0]
     for i, j in tack.ndrange(4, 4):
         out[i * 4 + j] = float(i * 10 + j)
 
@@ -117,9 +117,9 @@ def fill_2d(out, w_field):
 def test_ndrange_2d(backend):
     """2D parallel iteration with ndrange."""
     out = tack.empty((16,))
-    w_field = tack.empty((1,))
-    tack.copyto(w_field, np.array([4.0], dtype=np.float32))
-    fill_2d(out, w_field)
+    w_array = tack.empty((1,))
+    tack.copyto(w_array, np.array([4.0], dtype=np.float32))
+    fill_2d(out, w_array)
     result = out.numpy()
     expected = np.array([i * 10 + j for i in range(4) for j in range(4)],
                         dtype=np.float32)
@@ -142,10 +142,10 @@ def vec_add(ax, ay, az, bx, by, bz, cx, cy, cz):
 def test_vector_add(backend):
     """Vector addition with component extraction."""
     n = 100
-    fields = []
+    arrays = []
     for _ in range(9):
-        fields.append(tack.empty((n,)))
-    ax, ay, az, bx, by, bz, cx, cy, cz = fields
+        arrays.append(tack.empty((n,)))
+    ax, ay, az, bx, by, bz, cx, cy, cz = arrays
 
     np.random.seed(42)
     tack.copyto(ax, np.random.randn(n).astype(np.float32))
@@ -324,28 +324,28 @@ def test_func_with_multiple_locals(backend):
     assert np.allclose(result, 6.0)
 
 
-# ─── Multi-dimensional field indexing ─────────────────────────────────
+# ─── Multi-dimensional array indexing ─────────────────────────────────
 
 @tack.kernel
-def fill_2d_field(out):
+def fill_2d_array(out):
     for i, j in tack.ndrange(4, 3):
         out[i, j] = float(i * 10 + j)
 
 
-def test_multidim_field_indexing(backend):
-    """Multi-dimensional field indexing: field[i, j]."""
+def test_multidim_array_indexing(backend):
+    """Multi-dimensional array indexing: array[i, j]."""
     out = tack.empty((4, 3))
-    fill_2d_field(out)
+    fill_2d_array(out)
     result = out.numpy()
     expected = np.array([[i * 10 + j for j in range(3)] for i in range(4)],
                         dtype=np.float32)
     assert np.allclose(result, expected)
 
 
-# ─── Vector field load/store ──────────────────────────────────────────
+# ─── Vector array load/store ──────────────────────────────────────────
 
 @tack.kernel
-def vec_field_load(vf, out_x, out_y, out_z):
+def vec_array_load(vf, out_x, out_y, out_z):
     for i in range(out_x.shape[0]):
         v = vf[i]
         out_x[i] = v[0]
@@ -353,8 +353,8 @@ def vec_field_load(vf, out_x, out_y, out_z):
         out_z[i] = v[2]
 
 
-def test_vector_field_load(backend):
-    """Load vectors from a vector field."""
+def test_vector_array_load(backend):
+    """Load vectors from a vector array."""
     n = 10
     vf = tack.empty((n,), tack.vec(3, tack.f32))
     out_x = tack.empty((n,))
@@ -364,7 +364,7 @@ def test_vector_field_load(backend):
     i = np.arange(n, dtype=np.float32)
     tack.copyto(vf, np.stack([i, i * 10, i * 100], axis=1))
 
-    vec_field_load(vf, out_x, out_y, out_z)
+    vec_array_load(vf, out_x, out_y, out_z)
 
     assert np.allclose(out_x.numpy(), np.arange(n, dtype=np.float32))
     assert np.allclose(out_y.numpy(), np.arange(n, dtype=np.float32) * 10)
@@ -397,23 +397,23 @@ def _blend(vf, i, n):
 
 
 @tack.kernel
-def vec_field_through_func(vf, out, blended, n):
+def vec_array_through_func(vf, out, blended, n):
     for i in range(n):
         out[i] = _element(vf, i)
         blended[i] = _blend(vf, i, n)
 
 
 @tack.kernel
-def vec_field_2d_through_func(vf, out, w, h):
+def vec_array_2d_through_func(vf, out, w, h):
     for i, j in tack.ndrange(w, h):
         out[i, j] = _element_2d(vf, i, j)
 
 
-def test_vector_field_element_returned_from_func(backend):
-    """A device function given a vector field loads whole vectors from it.
+def test_vector_array_element_returned_from_func(backend):
+    """A device function given a vector array loads whole vectors from it.
 
     The inliner propagated vector-variable and texture metadata to renamed
-    parameters but not vector-field metadata, so `return vf[i]` lowered to
+    parameters but not vector-array metadata, so `return vf[i]` lowered to
     one scalar load and the store wrote one component."""
     n = 6
     v = np.arange(n * 3, dtype=np.float32).reshape(n, 3) + 1
@@ -422,34 +422,34 @@ def test_vector_field_element_returned_from_func(backend):
     out = tack.empty((n,), tack.vec(3, tack.f32))
     blended = tack.empty((n,), tack.vec(3, tack.f32))
 
-    vec_field_through_func(vf, out, blended, n)
+    vec_array_through_func(vf, out, blended, n)
 
     np.testing.assert_array_equal(out.numpy(), v)
     nxt = np.vstack([v[1:], np.zeros((1, 3), np.float32)])
     np.testing.assert_array_equal(blended.numpy(), v + (nxt - v) * 0.5)
 
 
-def test_vector_field_2d_element_returned_from_func(backend):
+def test_vector_array_2d_element_returned_from_func(backend):
     w, h = 4, 3
     data = np.arange(w * h * 2, dtype=np.float32).reshape(w, h, 2) + 1
     vf = tack.empty((w, h), tack.vec(2, tack.f32))
     tack.copyto(vf, data)
     out = tack.empty((w, h), tack.vec(2, tack.f32))
 
-    vec_field_2d_through_func(vf, out, w, h)
+    vec_array_2d_through_func(vf, out, w, h)
 
     np.testing.assert_array_equal(out.numpy(), data)
 
 
 @tack.kernel
-def vec_field_store(in_x, in_y, in_z, vf):
+def vec_array_store(in_x, in_y, in_z, vf):
     for i in range(in_x.shape[0]):
         v = tack.Vector([in_x[i], in_y[i], in_z[i]])
         vf[i] = v
 
 
-def test_vector_field_store(backend):
-    """Store vectors to a vector field."""
+def test_vector_array_store(backend):
+    """Store vectors to a vector array."""
     n = 10
     in_x = tack.empty((n,))
     in_y = tack.empty((n,))
@@ -460,14 +460,14 @@ def test_vector_field_store(backend):
     tack.copyto(in_y, np.arange(n, dtype=np.float32) * 10)
     tack.copyto(in_z, np.arange(n, dtype=np.float32) * 100)
 
-    vec_field_store(in_x, in_y, in_z, vf)
+    vec_array_store(in_x, in_y, in_z, vf)
 
     i = np.arange(n, dtype=np.float32)
     np.testing.assert_array_equal(vf.numpy(), np.stack([i, i * 10, i * 100], axis=1))
 
 
 @tack.kernel
-def scalar_vec_field_load(cam, out_x, out_y, out_z):
+def scalar_vec_array_load(cam, out_x, out_y, out_z):
     for i in range(out_x.shape[0]):
         c = cam[None]
         out_x[i] = c[0]
@@ -475,8 +475,8 @@ def scalar_vec_field_load(cam, out_x, out_y, out_z):
         out_z[i] = c[2]
 
 
-def test_scalar_vector_field(backend):
-    """Scalar vector field (shape=()) load with field[None]."""
+def test_scalar_vector_array(backend):
+    """Scalar vector array (shape=()) load with array[None]."""
     cam = tack.empty((), tack.vec(3, tack.f32))
     tack.copyto(cam, np.array([1.0, 2.0, 3.0], dtype=np.float32))
 
@@ -485,7 +485,7 @@ def test_scalar_vector_field(backend):
     out_y = tack.empty((n,))
     out_z = tack.empty((n,))
 
-    scalar_vec_field_load(cam, out_x, out_y, out_z)
+    scalar_vec_array_load(cam, out_x, out_y, out_z)
 
     assert np.allclose(out_x.numpy(), 1.0)
     assert np.allclose(out_y.numpy(), 2.0)
@@ -644,7 +644,7 @@ def test_vector_component_out_of_range_literal_is_rejected():
         def bad(vf, out, n):
             for i in range(n):
                 out[i] = vf[i][3]
-        bad.get_ir(vector_fields={"vf": 3})
+        bad.get_ir(vector_arrays={"vf": 3})
 
 
 def test_subscript_of_a_scalar_value_is_rejected():
@@ -674,14 +674,14 @@ def vec_assign_from_itself(a, b, crossed, rotated, augmented, n):
 
 
 @tack.kernel
-def vec_field_store_from_itself(a, b, c, n):
+def vec_array_store_from_itself(a, b, c, n):
     for i in range(n):
         a[i] = a[i].cross(b[i])
         c[i] = tack.Vector([c[i][1], c[i][2], c[i][0]])
 
 
 @tack.kernel
-def vec_field_store_through_alias(src, dst, n):
+def vec_array_store_through_alias(src, dst, n):
     for i in range(n):
         v = src[i]
         dst[i] = tack.Vector([v[2], src[i][0], src[i][1]])
@@ -697,7 +697,7 @@ def vec_unpack_from_itself(a, out, n):
         out[i] = x * 10.0 + y
 
 
-def _vec3_field(values):
+def _vec3_array(values):
     f = tack.empty((len(values),), tack.vec(3, tack.f32))
     tack.copyto(f, np.asarray(values, np.float32))
     return f
@@ -713,36 +713,36 @@ def test_vector_variable_assigned_from_itself(backend):
     read the earlier ones already overwritten."""
     n = len(_VEC_A)
     outs = [tack.empty((n,), tack.vec(3, tack.f32)) for _ in range(3)]
-    vec_assign_from_itself(_vec3_field(_VEC_A), _vec3_field(_VEC_B), *outs, n)
+    vec_assign_from_itself(_vec3_array(_VEC_A), _vec3_array(_VEC_B), *outs, n)
     crossed, rotated, augmented = (o.numpy() for o in outs)
     np.testing.assert_array_equal(crossed, np.cross(_VEC_A, _VEC_B))
     np.testing.assert_array_equal(rotated, _VEC_A[:, [1, 2, 0]])
     np.testing.assert_array_equal(augmented, _VEC_A + np.cross(_VEC_A, _VEC_B))
 
 
-def test_vector_field_element_stored_from_itself(backend):
-    """A store to a vector field element loads its right side before the
+def test_vector_array_element_stored_from_itself(backend):
+    """A store to a vector array element loads its right side before the
     first component is written."""
     n = len(_VEC_A)
-    a, c = _vec3_field(_VEC_A), _vec3_field(_VEC_B)
-    vec_field_store_from_itself(a, _vec3_field(_VEC_B), c, n)
+    a, c = _vec3_array(_VEC_A), _vec3_array(_VEC_B)
+    vec_array_store_from_itself(a, _vec3_array(_VEC_B), c, n)
     np.testing.assert_array_equal(a.numpy(), np.cross(_VEC_A, _VEC_B))
     np.testing.assert_array_equal(c.numpy(), _VEC_B[:, [1, 2, 0]])
 
 
-def test_vector_field_store_through_an_alias(backend):
-    """The same holds when source and destination are one field passed
+def test_vector_array_store_through_an_alias(backend):
+    """The same holds when source and destination are one array passed
     twice: the kernel cannot see that the names share storage."""
     n = len(_VEC_A)
-    f = _vec3_field(_VEC_A)
-    vec_field_store_through_alias(f, f, n)
+    f = _vec3_array(_VEC_A)
+    vec_array_store_through_alias(f, f, n)
     np.testing.assert_array_equal(f.numpy(), _VEC_A[:, [2, 0, 1]])
 
 
 def test_tuple_unpacking_a_vector_built_from_its_targets(backend):
     n = len(_VEC_A)
     out = tack.empty((n,))
-    vec_unpack_from_itself(_vec3_field(_VEC_A), out, n)
+    vec_unpack_from_itself(_vec3_array(_VEC_A), out, n)
     x, y = _VEC_A[:, 0], _VEC_A[:, 1]
     np.testing.assert_array_equal(out.numpy(), (2 * x + y) * 10 + (2 * y + x))
 
@@ -787,7 +787,7 @@ def test_math_builtins_apply_to_each_component(backend):
     repeated for every component. They used to fail IR verification."""
     n = len(_VEC_M)
     outs = [tack.empty((n,), tack.vec(3, tack.f32)) for _ in range(3)]
-    vec_math_builtins(_vec3_field(_VEC_M), *outs, n)
+    vec_math_builtins(_vec3_array(_VEC_M), *outs, n)
     rounded, clamped, powered = (o.numpy() for o in outs)
     m = _VEC_M
     np.testing.assert_allclose(
@@ -800,7 +800,7 @@ def test_math_builtins_apply_to_each_component(backend):
 def test_casts_apply_to_each_component(backend):
     n = len(_VEC_M)
     out = tack.empty((n,), tack.vec(3, tack.f32))
-    vec_casts(_vec3_field(_VEC_M), out, n)
+    vec_casts(_vec3_array(_VEC_M), out, n)
     np.testing.assert_array_equal(out.numpy(), np.trunc(_VEC_M) * 1.5)
 
 
@@ -809,7 +809,7 @@ def test_conditional_expression_with_vector_arms(backend):
     runs only when selected; a scalar arm is repeated."""
     n = len(_VEC_M)
     outs = [tack.empty((n,), tack.vec(3, tack.f32)) for _ in range(3)]
-    vec_conditionals(_vec3_field(_VEC_M), *outs, n)
+    vec_conditionals(_vec3_array(_VEC_M), *outs, n)
     plain, inlined, mixed = (o.numpy() for o in outs)
     m = _VEC_M
     np.testing.assert_array_equal(plain, np.where(m[:, :1] > 0, m, -m))
@@ -817,7 +817,7 @@ def test_conditional_expression_with_vector_arms(backend):
     np.testing.assert_array_equal(mixed, np.where(m[:, 2:] > 0, m, 0))
 
 
-# --- Components by name, components of field elements, augmented element stores ---
+# --- Components by name, components of array elements, augmented element stores ---
 
 @tack.kernel
 def vec_named_components(a, out, n):
@@ -829,7 +829,7 @@ def vec_named_components(a, out, n):
 
 
 @tack.kernel
-def vec_field_element_components(a, b, sel, n):
+def vec_array_element_components(a, b, sel, n):
     for i in range(n):
         a[i][1] = 7.0
         a[i][2] += a[i][0]
@@ -840,7 +840,7 @@ def vec_field_element_components(a, b, sel, n):
 
 
 @tack.kernel
-def vec_field_augmented(a, b, n):
+def vec_array_augmented(a, b, n):
     for i in range(n):
         a[i] -= 0.5 * tack.Vector([a[i][1], a[i][2], a[i][0]])
         b[i] *= 2.0
@@ -848,7 +848,7 @@ def vec_field_augmented(a, b, n):
 
 
 @tack.kernel
-def field_indexed_by_vector(grid, out, n):
+def array_indexed_by_vector(grid, out, n):
     for i in range(n):
         cell = tack.Vector([i, 2 - i % 3])
         out[i] = grid[cell] + grid[cell + 1]
@@ -859,21 +859,21 @@ def test_vector_components_by_name(backend):
     vector variable. Reads used to fail IR verification."""
     n = len(_VEC_M)
     out = tack.empty((n,), tack.vec(3, tack.f32))
-    vec_named_components(_vec3_field(_VEC_M), out, n)
+    vec_named_components(_vec3_array(_VEC_M), out, n)
     want = _VEC_M.copy()
     want[:, 0] = -_VEC_M[:, 1]
     want[:, 2] += _VEC_M[:, 0]
     np.testing.assert_array_equal(out.numpy(), want)
 
 
-def test_components_of_a_vector_field_element(backend):
+def test_components_of_a_vector_array_element(backend):
     """`vf[i][c] = x`, `vf[i][c] += x` and `vf[i].y = x` store one component;
     a runtime component past the last stores nothing."""
     n = len(_VEC_M)
-    a, b = _vec3_field(_VEC_M), _vec3_field(_VEC_M)
+    a, b = _vec3_array(_VEC_M), _vec3_array(_VEC_M)
     sel = tack.empty((n,), tack.i32)
     tack.copyto(sel, np.array([0, 1, 2, 7], np.int32))
-    vec_field_element_components(a, b, sel, n)
+    vec_array_element_components(a, b, sel, n)
     want_a = _VEC_M.copy()
     want_a[:, 1] = 7
     want_a[:, 2] += _VEC_M[:, 0]
@@ -886,25 +886,25 @@ def test_components_of_a_vector_field_element(backend):
     np.testing.assert_array_equal(b.numpy(), want_b)
 
 
-def test_augmented_store_to_a_vector_field_element(backend):
+def test_augmented_store_to_a_vector_array_element(backend):
     """`vf[i] -= vec` and `vf[i] *= scalar`; the first reads the element it
     updates. Used to raise AttributeError during lowering."""
     n = len(_VEC_M)
-    a, b = _vec3_field(_VEC_M), _vec3_field(_VEC_A)
-    vec_field_augmented(a, b, n)
+    a, b = _vec3_array(_VEC_M), _vec3_array(_VEC_A)
+    vec_array_augmented(a, b, n)
     want_a = _VEC_M - np.float32(0.5) * _VEC_M[:, [1, 2, 0]]
     np.testing.assert_array_equal(a.numpy(), want_a)
     np.testing.assert_array_equal(b.numpy(), _VEC_A * 2 + want_a)
 
 
-def test_field_indexed_by_a_vector(backend):
+def test_array_indexed_by_a_vector(backend):
     """A vector index supplies one dimension per component: g[I] is g[I[0], I[1]]."""
     n = 3
     values = np.arange(20, dtype=np.float32).reshape(4, 5)
     grid = tack.empty(values.shape)
     tack.copyto(grid, values)
     out = tack.empty((n,))
-    field_indexed_by_vector(grid, out, n)
+    array_indexed_by_vector(grid, out, n)
     rows, cols = np.arange(n), 2 - np.arange(n) % 3
     np.testing.assert_array_equal(out.numpy(), values[rows, cols] + values[rows + 1, cols + 1])
 
@@ -973,7 +973,7 @@ def test_mismatched_vector_forms_are_rejected(define, message):
     verification with "expected expr node"."""
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
-        define().get_ir(vector_fields={"vf": 3, "out": 3})
+        define().get_ir(vector_arrays={"vf": 3, "out": 3})
 
 
 # --- Tuple assignment to subscripts and components ---
@@ -1003,11 +1003,11 @@ def tuple_assign_to_components(a, n):
 
 
 def test_tuple_assignment_to_subscripts(backend):
-    """`x[i], v[i] = p, q` assigns field elements, whole vectors included,
+    """`x[i], v[i] = p, q` assigns array elements, whole vectors included,
     after evaluating the whole right side; a swap of two elements works.
     Only plain names were accepted as targets."""
     n = len(_VEC_M)
-    pos = _vec3_field(_VEC_M)
+    pos = _vec3_array(_VEC_M)
     heading, lo, hi = (tack.empty((n,)) for _ in range(3))
     h = np.arange(n, dtype=np.float32) + 1
     low, high = h * 3, h * 5
@@ -1024,7 +1024,7 @@ def test_tuple_assignment_to_subscripts(backend):
 
 def test_tuple_assignment_to_components(backend):
     n = len(_VEC_M)
-    a = _vec3_field(_VEC_M)
+    a = _vec3_array(_VEC_M)
     tuple_assign_to_components(a, n)
     m = _VEC_M
     # v becomes (y, x, z); then a[i] = (v.y, v.z, v.x) = (x, z, y)
@@ -1047,7 +1047,7 @@ def atomic_scatter(cells, grid, layers, momentum, bias, n):
 def test_atomics_take_an_index_per_dimension(backend):
     """A tuple index, with a vector supplying several dimensions, replaces
     hand-linearized indices; a vector value updates every component of a
-    vector field element. A tuple index failed IR verification."""
+    vector array element. A tuple index failed IR verification."""
     n, g = 4000, 4
     rng = np.random.default_rng(3)
     where = rng.integers(0, g, size=(n, 2)).astype(np.int32)
@@ -1101,14 +1101,14 @@ def _atomic_width_mismatch():
 
 
 @pytest.mark.parametrize("define, message", [
-    (_atomic_vector_to_scalars, "gives a vector to a field of scalars"),
-    (_atomic_scalar_to_vector_element, "names an element of a field of 3-vectors"),
-    (_atomic_width_mismatch, "gives a 2-vector to a field of 3-vectors"),
+    (_atomic_vector_to_scalars, "gives a vector to an array of scalars"),
+    (_atomic_scalar_to_vector_element, "names an element of an array of 3-vectors"),
+    (_atomic_width_mismatch, "gives a 2-vector to an array of 3-vectors"),
 ])
 def test_mismatched_atomics_are_rejected(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
-        define().get_ir(vector_fields={"vf": 3, "out": 3})
+        define().get_ir(vector_arrays={"vf": 3, "out": 3})
 
 
 # --- Several return values with vectors among them; min/max of several; vector reductions ---
@@ -1146,7 +1146,7 @@ def test_device_function_returns_vectors_among_several_values(backend):
     slots were never bound, and lowering failed on the unbound name."""
     n = len(_VEC_M)
     shaded, normals = (tack.empty((n,), tack.vec(3, tack.f32)) for _ in range(2))
-    tuple_return_with_vectors(_vec3_field(_VEC_M), shaded, normals, n)
+    tuple_return_with_vectors(_vec3_array(_VEC_M), shaded, normals, n)
     m = _VEC_M.astype(np.float64)
     length = np.linalg.norm(m, axis=1, keepdims=True)
     far = length * 1.5 > 2.0
@@ -1161,7 +1161,7 @@ def test_min_max_of_several_values_and_vector_reductions(backend):
     vector's components; `normalized(eps)` for a vector that may be zero."""
     n = len(_VEC_M)
     out, safe = (tack.empty((n,), tack.vec(3, tack.f32)) for _ in range(2))
-    vec_reductions(_vec3_field(_VEC_M), out, safe, n)
+    vec_reductions(_vec3_array(_VEC_M), out, safe, n)
     m = _VEC_M
     want = np.stack([m.min(1), np.maximum(m.max(1), 0.5), m.max(1) + m.min(1) + m.sum(1)], 1)
     np.testing.assert_allclose(out.numpy(), want, rtol=1e-6)
@@ -1178,7 +1178,7 @@ def _several_values_bound_to_one_name():
     return bad
 
 
-def _field_reduced_inside_a_kernel():
+def _array_reduced_inside_a_kernel():
     @tack.kernel
     def bad(vf, s, out, n):
         for i in range(n):
@@ -1188,12 +1188,12 @@ def _field_reduced_inside_a_kernel():
 
 @pytest.mark.parametrize("define, message", [
     (_several_values_bound_to_one_name, "binds one target to several values"),
-    (_field_reduced_inside_a_kernel, "a field is reduced from Python"),
+    (_array_reduced_inside_a_kernel, "an array is reduced from Python"),
 ])
 def test_misused_results_and_reductions_are_rejected(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
-        define().get_ir(vector_fields={"vf": 3, "out": 3})
+        define().get_ir(vector_arrays={"vf": 3, "out": 3})
 
 
 # --- ndrange with (start, end) ranges ---
@@ -1315,9 +1315,9 @@ def test_sequential_ndrange_ranges_may_use_the_outer_index(backend):
     np.testing.assert_array_equal(a.numpy(), want)
 
 
-# --- Vector fields to and from NumPy, one row per vector ---
+# --- Vector arrays to and from NumPy, one row per vector ---
 
-def test_vector_field_takes_and_returns_one_row_per_vector(backend):
+def test_vector_array_takes_and_returns_one_row_per_vector(backend):
     """`numpy()` returns (*shape, n), one row per vector, and `copyto` takes
     that shape or one that broadcasts to it; the flat storage shape and a
     reshaped element grid are rejected, as `np.copyto` would."""
@@ -1337,20 +1337,20 @@ def test_vector_field_takes_and_returns_one_row_per_vector(backend):
     assert scalar.numpy().shape == (4,)
 
 
-# --- What a subscript of a vector field accepts ---
+# --- What a subscript of a vector array accepts ---
 
 @tack.kernel
-def vec_field_scalar_store(a, n):
+def vec_array_scalar_store(a, n):
     for i in range(n):
         a[i] = float(i) + 0.5
 
 
-def test_scalar_stored_to_a_vector_field_element_sets_every_component(backend):
+def test_scalar_stored_to_a_vector_array_element_sets_every_component(backend):
     """`vf[i] = s` names element i, as a load of `vf[i]` does. It used to
     write the single component at flat index i."""
     n = 4
-    a = _vec3_field(_VEC_M)
-    vec_field_scalar_store(a, n)
+    a = _vec3_array(_VEC_M)
+    vec_array_scalar_store(a, n)
     want = np.repeat(np.arange(n, dtype=np.float32) + 0.5, 3).reshape(n, 3)
     np.testing.assert_array_equal(a.numpy(), want)
 
@@ -1373,19 +1373,19 @@ def _vector_into_another_width():
 
 @pytest.mark.parametrize("define, message", [
     (_vector_into_scalar_storage, "stores a 3-vector into an element of scalar storage"),
-    (_vector_into_another_width, "stores a 2-vector into a field of 3-vectors"),
+    (_vector_into_another_width, "stores a 2-vector into an array of 3-vectors"),
 ])
-def test_vector_stores_must_match_their_field(define, message):
+def test_vector_stores_must_match_their_array(define, message):
     """Both used to write components at offsets computed from the value's
     width, into whatever was there."""
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
-        define().get_ir(vector_fields={"vf": 3, "out": 3})
+        define().get_ir(vector_arrays={"vf": 3, "out": 3})
 
 
-def test_vector_field_element_index_is_64_bit():
+def test_vector_array_element_index_is_64_bit():
     """The element index is scaled by the width in i64: an i32 product
-    wraps for a field of more than 2**31 components."""
+    wraps for an array of more than 2**31 components."""
     @tack.kernel
     def load(vf, out, where):
         for i in range(1):
@@ -1470,7 +1470,7 @@ def test_vector_where_one_value_is_required_is_diagnosed(define, message):
     with a tree path. Any such statement now gets its source position."""
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
-        define().get_ir(vector_fields={"vf": 3, "out": 3})
+        define().get_ir(vector_arrays={"vf": 3, "out": 3})
 
 
 # --- Tuple assignment assigns its targets from left to right ---
@@ -1535,15 +1535,15 @@ def flat_index(grid, out, n):
 
 
 @pytest.mark.parametrize("kernel", [two_indices, vector_index_and_atomic])
-def test_index_count_must_match_the_field(backend, kernel):
-    """`grid[1, 2]` on a three-dimensional field linearized with the sizes
+def test_index_count_must_match_the_array(backend, kernel):
+    """`grid[1, 2]` on a three-dimensional array linearized with the sizes
     it had and read flat element 7. A vector index and an atomic's index
     take the same path."""
     values = np.arange(120, dtype=np.float32)
     grid3 = tack.empty((4, 5, 6))
     tack.copyto(grid3, values.reshape(4, 5, 6))
     out = tack.empty((1,))
-    with pytest.raises(TypeError, match=r"field of 3 dimensions \(4, 5, 6\) is indexed "
+    with pytest.raises(TypeError, match=r"array of 3 dimensions \(4, 5, 6\) is indexed "
                                         r"with 2 indices at line \d+, column \d+"):
         kernel(grid3, out, 1)
     grid2 = tack.empty((4, 30))
@@ -1597,7 +1597,7 @@ def _shifted(p, d):
 @tack.kernel
 def list_vectors(vf, m, out, n):
     for i in range(n):
-        vf[i] = [i * 1.0, 2.0]                     # store to a field element
+        vf[i] = [i * 1.0, 2.0]                     # store to an array element
         v = [1.0, 0.5]                             # a local
         v += [0.5, 0.5]
         w = _shifted(vf[i], [10.0, 20.0])          # an argument
@@ -1651,13 +1651,13 @@ def _list_as_a_condition():
 
 @pytest.mark.parametrize("define, message", [
     (_list_into_a_scalar_element, "stores a 2-vector into an element of scalar storage"),
-    (_list_of_the_wrong_width, "stores a 2-vector into a field of 3-vectors"),
+    (_list_of_the_wrong_width, "stores a 2-vector into an array of 3-vectors"),
     (_list_as_a_condition, "vector"),
 ])
 def test_a_list_is_checked_as_the_vector_it_is(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
-        define().get_ir(vector_fields={"vf": 3, "out": 3})
+        define().get_ir(vector_arrays={"vf": 3, "out": 3})
 
 
 # --- norm(eps) ---
@@ -1699,4 +1699,4 @@ def test_norm_rejects_a_vector_eps_and_extra_arguments():
     for kernel, message in ((vector_eps, "eps must be a scalar"),
                             (two_arguments, "at most one argument")):
         with pytest.raises(Exception, match=message):
-            kernel.get_ir(vector_fields={"vf": 2})
+            kernel.get_ir(vector_arrays={"vf": 2})

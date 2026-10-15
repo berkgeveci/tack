@@ -1,5 +1,5 @@
-"""The CPU backend's allocation and fill: a new field is not filled, and a
-large fill runs as a kernel through the dispatch (`CPUBackend.fill_field`),
+"""The CPU backend's allocation and fill: a new array is not filled, and a
+large fill runs as a kernel through the dispatch (`CPUBackend.fill_array`),
 storing what `ndarray.fill` would store and refusing what it would refuse."""
 import platform
 
@@ -26,17 +26,17 @@ def backend(monkeypatch):
 def _fills(monkeypatch, backend):
     """Record each fill the backend routed through its kernel."""
     seen = []
-    real = CPUBackend.fill_field
+    real = CPUBackend.fill_array
 
-    def spy(self, field, value):
-        took = real(self, field, value)
-        seen.append((field._buffer.nbytes, took))
+    def spy(self, array, value):
+        took = real(self, array, value)
+        seen.append((array._buffer.nbytes, took))
         return took
-    monkeypatch.setattr(CPUBackend, "fill_field", spy)
+    monkeypatch.setattr(CPUBackend, "fill_array", spy)
     return seen
 
 
-def test_a_new_field_is_allocated_without_a_fill(monkeypatch, backend):
+def test_a_new_array_is_allocated_without_a_fill(monkeypatch, backend):
     calls = []
     real_empty, real_zeros = np.empty, np.zeros
     monkeypatch.setattr(np, "empty", lambda *a, **k: calls.append("empty") or real_empty(*a, **k))
@@ -93,7 +93,7 @@ def test_a_large_fill_refuses_what_numpy_refuses(backend):
         tack.empty((_BIG,), tack.u8).fill(-1)
 
 
-def test_a_large_fill_covers_a_two_dimensional_field_and_a_view(monkeypatch, backend):
+def test_a_large_fill_covers_a_two_dimensional_array_and_a_view(monkeypatch, backend):
     fills = _fills(monkeypatch, backend)
     grid = tack.empty((300, _BIG // 4 // 100))
     grid.fill(2.5)
@@ -104,7 +104,7 @@ def test_a_large_fill_covers_a_two_dimensional_field_and_a_view(monkeypatch, bac
     np.testing.assert_array_equal(grid.numpy(), np.full(grid.shape, -1.0, np.float32))
 
 
-def test_a_large_fill_of_a_vector_field_takes_a_scalar(backend):
+def test_a_large_fill_of_a_vector_array_takes_a_scalar(backend):
     n = _BIG // 12 + 5
     v = tack.empty((n,), tack.vec(3, tack.f32))
     v.fill(4.0)
@@ -113,7 +113,7 @@ def test_a_large_fill_of_a_vector_field_takes_a_scalar(backend):
     np.testing.assert_array_equal(v.numpy(), np.tile([1.0, 2.0, 3.0], (n, 1)))
 
 
-def test_a_read_only_field_refuses_a_fill_before_any_kernel(backend):
+def test_a_read_only_array_refuses_a_fill_before_any_kernel(backend):
     host = np.zeros(_BIG // 4, np.float32)
     f = tack.array_from_ptr(host, host.shape, tack.f32)
     with pytest.raises(RuntimeError, match="read-only"):
@@ -133,11 +133,11 @@ def test_one_thread_fills_in_place(monkeypatch):
         tack.init(arch="cpu")
 
 
-def test_a_field_of_another_backend_fills_in_place(monkeypatch, backend):
-    """A field made before `tack.init` switched to this backend has a buffer
-    the CPU kernel must not touch: `Field.fill` asks the current backend,
+def test_a_array_of_another_backend_fills_in_place(monkeypatch, backend):
+    """An array made before `tack.init` switched to this backend has a buffer
+    the CPU kernel must not touch: `Array.fill` asks the current backend,
     and the CPU backend answers only for its own buffers."""
-    from tack.lang.field import NumpyBuffer
+    from tack.lang.array import NumpyBuffer
 
     class ForeignBuffer(NumpyBuffer):
         backend_name = "elsewhere"

@@ -24,7 +24,7 @@ pixels = tack.empty((width, height))
 
 
 @tack.kernel
-def distance_field(pixels):
+def distance_array(pixels):
     """Compute distance from center for each pixel."""
     for i, j in tack.ndrange(64, 64):
         dx = float(i) - 32.0
@@ -32,7 +32,7 @@ def distance_field(pixels):
         pixels[i, j] = sqrt(dx * dx + dy * dy)
 
 
-distance_field(pixels)
+distance_array(pixels)
 
 result = pixels.numpy().reshape(64, 64)
 # Check center is ~0, corners are ~45

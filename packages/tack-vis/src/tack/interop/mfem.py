@@ -96,7 +96,7 @@ def _by_dof(fes, values):
 
 
 def _field_values(array, dtype):
-    """A host array of ``(n,)`` or ``(n, width)`` as a device field."""
+    """A host array of ``(n,)`` or ``(n, width)`` as a device array."""
     array = np.ascontiguousarray(array)
     if array.ndim == 1 or array.shape[1] == 1:
         array = array.reshape(-1)

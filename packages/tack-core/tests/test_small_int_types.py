@@ -4,9 +4,9 @@ import numpy as np
 
 import tack
 
-# --- Field creation and read/write ---
+# --- Array creation and read/write ---
 
-def test_u8_field(backend):
+def test_u8_array(backend):
     n = 16
     data = tack.empty((n,), tack.u8)
     out = tack.empty((n,), tack.u8)
@@ -21,7 +21,7 @@ def test_u8_field(backend):
     np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.uint8))
 
 
-def test_i8_field(backend):
+def test_i8_array(backend):
     n = 16
     data = tack.empty((n,), tack.i8)
     out = tack.empty((n,), tack.i8)
@@ -36,7 +36,7 @@ def test_i8_field(backend):
     np.testing.assert_array_equal(out.numpy(), np.arange(-8, 8, dtype=np.int8))
 
 
-def test_u16_field(backend):
+def test_u16_array(backend):
     n = 16
     data = tack.empty((n,), tack.u16)
     out = tack.empty((n,), tack.u16)
@@ -51,7 +51,7 @@ def test_u16_field(backend):
     np.testing.assert_array_equal(out.numpy(), np.arange(n, dtype=np.uint16) * 1000)
 
 
-def test_i16_field(backend):
+def test_i16_array(backend):
     n = 16
     data = tack.empty((n,), tack.i16)
     out = tack.empty((n,), tack.i16)
@@ -185,8 +185,8 @@ def test_cuda_codegen_i8_u8():
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
-    store = ir.IRFieldStore(ir.IRName("out"), ir.IRName("i"),
-                            ir.IRFieldLoad(ir.IRName("data"), ir.IRName("i")))
+    store = ir.IRArrayStore(ir.IRName("out"), ir.IRName("i"),
+                            ir.IRArrayLoad(ir.IRName("data"), ir.IRName("i")))
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), [store])
     func = ir.IRFunction("test", [p_data, p_out], [pfor])
     infer_param_types(func, (data, out))
@@ -210,8 +210,8 @@ def test_msl_codegen_u16():
 
     p_data = ir.IRParam("data")
     p_out = ir.IRParam("out")
-    store = ir.IRFieldStore(ir.IRName("out"), ir.IRName("i"),
-                            ir.IRFieldLoad(ir.IRName("data"), ir.IRName("i")))
+    store = ir.IRArrayStore(ir.IRName("out"), ir.IRName("i"),
+                            ir.IRArrayLoad(ir.IRName("data"), ir.IRName("i")))
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), [store])
     func = ir.IRFunction("test", [p_data, p_out], [pfor])
     infer_param_types(func, (data, out))

@@ -240,7 +240,7 @@ def test_export_memory():
     # of a second OS handle per call.
     assert f.export_memory().handle == exported.handle
 
-    # Exporting copies into VMM-backed memory; the field itself is untouched.
+    # Exporting copies into VMM-backed memory; the array itself is untouched.
     assert np.allclose(f.numpy(), np.arange(n, dtype=np.float32))
 
 
@@ -361,14 +361,14 @@ def test_foreign_context_is_adopted_but_never_destroyed():
         driver.cuCtxDestroy(foreign)
 
 
-# --- Fields do not outlive their context ---
+# --- Arrays do not outlive their context ---
 
 # These run in a subprocess for two reasons. The scenario used to be a
 # SIGSEGV, and a segfault in-process takes the whole test session with it --
 # there would be no failure report, just a dead runner. And the root
 # conftest holds a CUDABackend in a module global for the life of the
 # session, so the CUDA context never actually reaches zero users here and an
-# in-process test could not build a stale field even if it were safe to.
+# in-process test could not build a stale array even if it were safe to.
 
 _STALE_PRELUDE = """
 import gc, sys
@@ -391,7 +391,7 @@ tack.init(arch=tack.cuda)    # fresh context; the old pointers stay dead
 
 
 def _run_stale_script(tmp_path, body):
-    """Run a stale-field access in a subprocess; return the CompletedProcess."""
+    """Run a stale-array access in a subprocess; return the CompletedProcess."""
     import subprocess
     import sys
 
@@ -414,8 +414,8 @@ def _assert_no_crash(proc):
     ("export", "f.export_memory()"),
     ("launch", "double(f, f)"),
 ])
-def test_stale_field_raises_instead_of_segfaulting(tmp_path, verb, action):
-    """Touching a field whose context is gone must raise, not crash.
+def test_stale_array_raises_instead_of_segfaulting(tmp_path, verb, action):
+    """Touching an array whose context is gone must raise, not crash.
 
     cuCtxDestroy invalidates every allocation made in the context, and a copy
     through one of those pointers faults inside the driver -- SIGSEGV, with no
@@ -440,7 +440,7 @@ sys.exit(1)
         f"stdout: {proc.stdout}\nstderr: {proc.stderr[-2000:]}")
 
 
-def test_stale_field_can_be_collected_without_crashing(tmp_path):
+def test_stale_array_can_be_collected_without_crashing(tmp_path):
     """Freeing a dead allocation is the same fault as copying into one.
 
     The context took the allocation with it, so ``__del__`` has to skip
@@ -460,8 +460,8 @@ print("OK")
     assert "OK" in proc.stdout
 
 
-def test_field_survives_repeated_init():
-    """Re-initializing CUDA keeps the context, so existing fields stay valid."""
+def test_array_survives_repeated_init():
+    """Re-initializing CUDA keeps the context, so existing arrays stay valid."""
     import gc
 
     n = 64
@@ -595,7 +595,7 @@ def test_ordinary_and_floor_division_kernels_compile_in_sequence():
 
 
 def test_host_element_reads_copy_one_element():
-    """field[i] copies just the element on CUDA, from an owned buffer, a
+    """array[i] copies just the element on CUDA, from an owned buffer, a
     wrapped pointer in each form, a view and an exportable buffer; a range
     past the allocation is refused rather than read."""
     from tack.runtime.cuda_backend import ExportableCUDABuffer

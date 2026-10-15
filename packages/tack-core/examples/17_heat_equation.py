@@ -54,7 +54,7 @@ def heat_step(u, u_new, alpha_dt_dx2, n):
 
 
 @tack.kernel
-def copy_field(src, dst, n):
+def copy_array(src, dst, n):
     for i, j in tack.ndrange(n, n):
         dst[i, j] = src[i, j]
 
@@ -84,7 +84,7 @@ print(f"  CFL parameter alpha*dt/dx^2 = {alpha_dt_dx2:.4f} (must be < 0.25)")
 snapshots = []
 for step in range(STEPS):
     heat_step(u, u_new, alpha_dt_dx2, N)
-    copy_field(u_new, u, N)
+    copy_array(u_new, u, N)
 
     if (step + 1) % 500 == 0:
         data = u.numpy().reshape(N, N)

@@ -30,16 +30,16 @@ def test_array_converts_noncontiguous_input(backend):
 
 
 @pytest.mark.parametrize("shape", [(), (0,), (2, 3)])
-@pytest.mark.parametrize("use_field", [False, True], ids=["numpy", "field"])
-def test_empty_like_matches_scalar_metadata(backend, shape, use_field):
+@pytest.mark.parametrize("use_array", [False, True], ids=["numpy", "array"])
+def test_empty_like_matches_scalar_metadata(backend, shape, use_array):
     source = np.ones(shape, dtype=np.float32)
-    prototype = tack.array(source) if use_field else source
+    prototype = tack.array(source) if use_array else source
     result = tack.empty_like(prototype)
     assert result.dtype is tack.f32
     assert result.shape == shape
     result.fill(7)
     np.testing.assert_array_equal(result.numpy(), np.full(shape, 7, dtype=np.float32))
-    actual = prototype.numpy() if use_field else source
+    actual = prototype.numpy() if use_array else source
     np.testing.assert_array_equal(actual, np.ones(shape, dtype=np.float32))
 
 
@@ -51,10 +51,10 @@ def test_empty_like_uses_view_shape(backend):
     np.testing.assert_array_equal(source.numpy(), np.arange(12).reshape(3, 4))
 
 
-@pytest.mark.parametrize("use_field", [False, True], ids=["numpy", "field"])
-def test_empty_like_dtype_override(backend, use_field):
+@pytest.mark.parametrize("use_array", [False, True], ids=["numpy", "array"])
+def test_empty_like_dtype_override(backend, use_array):
     source = np.ones((2, 3), dtype=np.float32)
-    prototype = tack.array(source) if use_field else source
+    prototype = tack.array(source) if use_array else source
     result = tack.empty_like(prototype, dtype=tack.i32)
     assert result.dtype is tack.i32
     assert result.shape == source.shape
@@ -71,7 +71,7 @@ def _double_elements(src, dst, n):
 @pytest.mark.parametrize("shape", [(), (0,), (4,), (2, 3)])
 @pytest.mark.parametrize("components", [(3,), (2, 3)], ids=["vector", "matrix"])
 @pytest.mark.parametrize("dtype", [None, tack.i32], ids=["inferred", "override"])
-def test_empty_like_preserves_component_fields_in_kernels(backend, shape, components, dtype):
+def test_empty_like_preserves_component_arrays_in_kernels(backend, shape, components, dtype):
     source = tack.empty(shape, tack.vec(*components) if len(components) == 1
                         else tack.mat(*components))
     source.fill(3)
@@ -82,7 +82,7 @@ def test_empty_like_preserves_component_fields_in_kernels(backend, shape, compon
     assert output.shape == source.shape
     logical_count = int(np.prod(shape))
     if len(shape) > 1:
-        # Use multidimensional indexing for a multidimensional logical field.
+        # Use multidimensional indexing for a multidimensional logical array.
         @tack.kernel
         def double_grid(src, dst):
             for row, column in tack.ndrange(src.shape[0], src.shape[1]):
@@ -123,7 +123,7 @@ def test_empty_like_reads_only_metadata_and_does_not_initialize(backend, monkeyp
 
 
 def test_empty_like_of_read_only_storage_is_writable(backend):
-    # A NumPy prototype may be read-only; the new field owns its storage.
+    # A NumPy prototype may be read-only; the new array owns its storage.
     source = np.ones(4, dtype=np.float32)
     source.flags.writeable = False
     result = tack.empty_like(source)
@@ -141,7 +141,7 @@ def test_numpy_dtype_inference_requires_a_supported_type(backend, constructor):
     assert result.dtype is tack.f32
 
 
-def test_empty_like_requires_a_field_or_numpy_array(backend):
+def test_empty_like_requires_a_array_or_numpy_array(backend):
     with pytest.raises(TypeError, match="Tack array or NumPy array"):
         tack.empty_like([1, 2, 3])
 

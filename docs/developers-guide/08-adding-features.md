@@ -73,7 +73,7 @@ def _try_parse_local_alloc(self, target_name, value_node):
 ```
 
 Note: adding to `_shared_vars` ensures that `arr[i]` is recognized as
-array indexing (field load/store) rather than a scalar subscript.
+array indexing (array load/store) rather than a scalar subscript.
 
 ## 4. Update IR Passes
 
@@ -92,7 +92,7 @@ handling. For an allocation, annotate the size and record the element type:
 
 ```python
 if isinstance(node, ir.IRLocalAlloc):
-    _annotate_expr(node.size, env, field_params)
+    _annotate_expr(node.size, env, array_params)
     env[node.name] = node.dtype
     return
 ```
@@ -173,7 +173,7 @@ a test that counts compilations is not hidden by a cache hit.
 The IR node is most of the work, but several runtime mechanisms assume they
 know everything that shapes the generated code:
 
-- **Debug mode.** A node that indexes a field or array must have its index
+- **Debug mode.** A node that indexes an array or array must have its index
   checked in debug mode: lowering wraps it through `_checked` in
   `ast_transform.py` (an `IRBoundsCheck`), `ir_bounds.guard_accesses`
   must skip the access when the check is negative, and every generator must

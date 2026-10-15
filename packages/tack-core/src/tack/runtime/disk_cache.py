@@ -6,7 +6,7 @@ the backend's compiler. This cache keeps both across processes, in two
 levels:
 
 - **Lowered IR** (``.ir`` entries), keyed by content: the kernel's source,
-  its specialization (vector and texture fields, template classes, their
+  its specialization (vector and texture arrays, template classes, their
   methods and constants), Tack's own sources and the Python version. Every
   name lowering resolved in the kernel's namespace, and in the namespaces of
   the device functions it inlined, is recorded with a fingerprint of what it
@@ -345,7 +345,7 @@ def _template_content(obj) -> tuple:
         template_func_attrs,
         template_structure,
     )
-    scalars, fields, runtime = classify_template_attrs(obj)
+    scalars, arrays, runtime = classify_template_attrs(obj)
     return (
         _class_fingerprint(type(obj)),
         tuple((k, type(v).__name__,
@@ -353,7 +353,7 @@ def _template_content(obj) -> tuple:
               for k, v in sorted(scalars.items())),
         tuple((k, f.scalar_dtype.name, len(getattr(f, "_logical_shape", None) or f.shape),
                getattr(f, "_vector_n", None), getattr(f, "_matrix_shape", None))
-              for k, f in sorted(fields.items())),
+              for k, f in sorted(arrays.items())),
         tuple(sorted(runtime)),
         tuple((k, func_fingerprint(f)) for k, f in sorted(template_func_attrs(obj).items())),
         tuple((path, _class_fingerprint(cls)) for path, cls in template_structure(obj)),
@@ -376,7 +376,7 @@ def _closure_content(func) -> tuple:
     return tuple(content)
 
 
-def lowered_key(kernel, vector_fields, texture_fields, template_args, debug=False) -> str:
+def lowered_key(kernel, vector_arrays, texture_arrays, template_args, debug=False) -> str:
     """The key of a kernel specialization's lowered IR. Debug mode lowers
     with bounds checks, so its IR, and every variant built from it, is
     stored apart."""
@@ -385,8 +385,8 @@ def lowered_key(kernel, vector_fields, texture_fields, template_args, debug=Fals
         "ir", FORMAT, tack_fingerprint(),
         *_function_name(kernel.func), _digest(kernel._source), result,
         _closure_content(kernel.func),
-        tuple(sorted((vector_fields or {}).items())),
-        tuple(sorted((texture_fields or {}).items())),
+        tuple(sorted((vector_arrays or {}).items())),
+        tuple(sorted((texture_arrays or {}).items())),
         tuple((idx, name, _template_content(obj))
               for idx, (name, obj) in sorted((template_args or {}).items())),
         bool(debug),
@@ -509,7 +509,7 @@ def _still_valid(queries, owners) -> bool:
     return True
 
 
-def lowered(kernel, vector_fields, texture_fields, template_args, lower, debug=False):
+def lowered(kernel, vector_arrays, texture_arrays, template_args, lower, debug=False):
     """``lower()``, or the lowered IR a previous process stored for the same
     content. ``lower`` is the kernel's own transform; it runs while the names
     it resolves are recorded, so the entry can be checked when it is read."""
@@ -517,7 +517,7 @@ def lowered(kernel, vector_fields, texture_fields, template_args, lower, debug=F
     if cache is None or getattr(kernel.func, "__globals__", None) is None:
         return lower()
     try:
-        key = lowered_key(kernel, vector_fields, texture_fields, template_args, debug)
+        key = lowered_key(kernel, vector_arrays, texture_arrays, template_args, debug)
         owners = _owners(kernel, template_args)
     except Exception:   # an attribute the key cannot describe: compile as usual
         _count("ir_unkeyed")
@@ -561,7 +561,7 @@ def _mark(module, key, deps):
 # ── Compiled variants ───────────────────────────────────────────────────
 
 
-def variant_key(backend, template, probe, vector_fields, shape_sig, disjoint):
+def variant_key(backend, template, probe, vector_arrays, shape_sig, disjoint):
     """The key of a compiled variant, or None if it cannot be stored."""
     if _cache() is None:
         return None
@@ -573,10 +573,10 @@ def variant_key(backend, template, probe, vector_fields, shape_sig, disjoint):
         return None
     params = tuple(
         (p.name, getattr(p.type_annotation, "name", repr(p.type_annotation)),
-         p._is_field, p._is_texture, p._texture_shape)
+         p._is_array, p._is_texture, p._texture_shape)
         for p in probe.params)
     content = ("variant", FORMAT, lowered_entry, params,
-               tuple(sorted((vector_fields or {}).items())), shape_sig, disjoint,
+               tuple(sorted((vector_arrays or {}).items())), shape_sig, disjoint,
                backend.name, target)
     return _digest(repr(content))
 

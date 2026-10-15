@@ -52,7 +52,7 @@ def test_texture_sample_in_func(backend):
 
     sample_via_func(out, tex, 1)
     result = out.numpy()[0]
-    # Uniform field → sample anywhere gives 7.0
+    # Uniform array → sample anywhere gives 7.0
     np.testing.assert_allclose(result, 7.0, rtol=1e-5)
 
 
@@ -84,8 +84,8 @@ def test_texture_sample_in_nested_func(backend):
     np.testing.assert_allclose(result, 6.0, rtol=1e-5)
 
 
-def test_texture_with_other_field_args(backend):
-    """tex.sample() in @tack.func alongside regular field parameters."""
+def test_texture_with_other_array_args(backend):
+    """tex.sample() in @tack.func alongside regular array parameters."""
     W, H, D = 4, 4, 4
     n = W * H * D
     data = tack.empty((n,))

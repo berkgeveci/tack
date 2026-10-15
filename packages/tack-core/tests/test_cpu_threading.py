@@ -1272,7 +1272,7 @@ def test_a_dear_first_sample_does_not_buy_a_fan_out_calibration(cpu):
 
     It is taken on a range nothing has touched yet, so it pays first-touch
     page faults on top of a short slice's start-up: 15 ns/element for a
-    kernel that runs at 0.2 once its fields are resident, on a one-socket
+    kernel that runs at 0.2 once its arrays are resident, on a one-socket
     Xeon. Believed, that puts the threshold under the range, and the next
     dispatch calibrates the fan-out -- 210 ms of deliberate sleeps -- to
     learn the range never wanted threads. A range a serial run finishes

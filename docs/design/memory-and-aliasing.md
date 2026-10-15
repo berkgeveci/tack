@@ -1,19 +1,19 @@
 # Memory and Aliasing
 
 A Tack kernel never sees a NumPy array or a device allocation directly. It
-sees *fields*, and a field is a thin description — dtype and shape — wrapped
+sees *arrays*, and an array is a thin description — dtype and shape — wrapped
 around a backend-specific *buffer*. This page explains how that split works,
-who owns the memory behind a field and when it is freed, and why Tack lets
-two field arguments refer to the same bytes, which is the single decision
+who owns the memory behind an array and when it is freed, and why Tack lets
+two array arguments refer to the same bytes, which is the single decision
 that shapes most of the code generation described here.
 
 The normative statements live in the
 [kernel language contract](../reference/language-contract.md#memory-and-aliasing);
 this page explains how the implementation meets them and what that costs.
 
-## Field and DeviceBuffer
+## Array and DeviceBuffer
 
-`Field` (`packages/tack-core/src/tack/lang/field.py`) holds four things:
+`Array` (`packages/tack-core/src/tack/lang/array.py`) holds four things:
 
 | Attribute | Meaning |
 |---|---|
@@ -29,15 +29,15 @@ backends that queue launches (see [below](#queued-launches-and-memory)) —
 plus two class attributes: `starts_zeroed`, true where a new buffer is
 known to read as zeros so `tack.zeros` need not fill it, and
 `backend_name`, which exists only so a
-diagnostic can say which backend allocated a stray field (see
-`_fields_from_another_backend` in `lang/kernel.py`).
+diagnostic can say which backend allocated a stray array (see
+`_arrays_from_another_backend` in `lang/kernel.py`).
 
-Why a separate buffer rather than a `Field` subclass per backend? Because a
-field's *shape* is a property of how kernels index the data, while the
+Why a separate buffer rather than a `Array` subclass per backend? Because a
+array's *shape* is a property of how kernels index the data, while the
 *buffer* is a property of where the bytes live. Separating them lets
-`Field.reshape()` produce a new field over the same buffer without knowing
+`Array.reshape()` produce a new array over the same buffer without knowing
 anything about the backend, and lets `array_from_ptr()` describe memory
-Tack did not allocate with the same `Field` class.
+Tack did not allocate with the same `Array` class.
 
 ### The five buffers
 
@@ -49,17 +49,17 @@ Tack did not allocate with the same `Field` class.
 | HIP | `HIPBuffer` | `hipMallocAsync` on the device's stream (`hipMalloc` without memory pools) | zeros, from a queued `hipMemsetAsync` | `hipMemcpyAsync` (queued) / `hipMemcpyAsync` and a wait |
 | Level Zero | `L0Buffer` | `zeMemAllocDevice` (at least one byte) | zeros, from a queued device fill | `zeCommandListAppendMemoryCopy` on the backend's queue, from a snapshot of the array / and a wait |
 
-The contract makes a new field's contents unspecified until a kernel,
+The contract makes a new array's contents unspecified until a kernel,
 `tack.copyto` or `fill` writes them; `tack.zeros`, `ones` and `full` are the
 calls that fill. The GPU backends happen to zero new buffers, and only
 Metal declares it (`starts_zeroed`), so `tack.zeros` fills on the others
-again. The CPU leaves a new field untouched.
+again. The CPU leaves a new array untouched.
 
-**CPU.** `NumpyBuffer._data` *is* the storage. `CPUBackend.allocate_field`
+**CPU.** `NumpyBuffer._data` *is* the storage. `CPUBackend.allocate_array`
 (`runtime/cpu.py`) does not fill it: its pages are first touched by the
-kernel that writes the field, in parallel when the threading policy fans
+kernel that writes the array, in parallel when the threading policy fans
 that kernel out, and a fill of 256 KiB or more runs as a kernel through the
-dispatch (`CPUBackend.fill_field`). With libnuma, the threads that touch
+dispatch (`CPUBackend.fill_array`). With libnuma, the threads that touch
 the pages were made under an interleave policy, so the pages spread across
 NUMA nodes instead of landing on the allocating thread's node. Filling on
 the calling thread at allocation was serial and, after a fan-out, dearer:
@@ -72,7 +72,7 @@ the `MTLBuffer` and a NumPy view (`_view`) made from
 same physical memory; there is no DMA. `numpy()` still returns a copy.
 
 **CUDA, HIP, Level Zero.** The buffer holds a device pointer and transfers
-are explicit. `from_numpy()` makes the source C-contiguous in the field's
+are explicit. `from_numpy()` makes the source C-contiguous in the array's
 dtype (`np.ascontiguousarray`), then queues a copy of `nbytes` (Level Zero
 copies the array first and holds the copy until the queue has passed it).
 `fill()` stays on the device (`runtime/device_fill.py`): the backend's
@@ -81,53 +81,53 @@ native fill where the pattern allows one (a byte memset, CUDA's and HIP's
 written from the host and doubled by device-to-device copies.
 
 `tack.copyto()` validates before the buffer is involved: it converts
-the array to the field's dtype if needed, raises `ValueError` when its shape
-neither matches nor broadcasts to the field's `numpy()` shape, and calls
-`_check_writable()`, which raises `RuntimeError` for a read-only field.
+the array to the array's dtype if needed, raises `ValueError` when its shape
+neither matches nor broadcasts to the array's `numpy()` shape, and calls
+`_check_writable()`, which raises `RuntimeError` for a read-only array.
 
 ### Views and reshape
 
-`Field.reshape(new_shape)` returns a new `Field` over the *same* buffer. It
+`Array.reshape(new_shape)` returns a new `Array` over the *same* buffer. It
 checks that the element count matches (`ValueError` otherwise) and copies
 `_writable`. If the original holds a DLPack import (`_dlpack_hold`, see
-[Interoperability](interoperability.md)), the reshaped field holds it too —
+[Interoperability](interoperability.md)), the reshaped array holds it too —
 otherwise dropping the original would release memory the view still uses.
 
-The buffer keeps the shape it was allocated with, so `Field.numpy()`
-reshapes the buffer's result to the field's own shape, and the CPU and
+The buffer keeps the shape it was allocated with, so `Array.numpy()`
+reshapes the buffer's result to the array's own shape, and the CPU and
 Metal buffers' `from_numpy()` reshape the incoming array to the buffer's
 shape before copying (the element count was already checked against the
-field's shape). `reshape` is the
+array's shape). `reshape` is the
 only view operation; there is no slicing, so every view of a buffer covers
 all of it.
 
 `tack.empty(shape, tack.vec(n, dtype))` allocates a flat buffer of
 `prod(shape) * n` elements and records `_vector_n` and `_logical_shape` on
-the field. The storage is ordinary; the vector-ness is metadata that kernel
+the array. The storage is ordinary; the vector-ness is metadata that kernel
 dispatch uses for scalarization.
 
 ## Ownership and lifetime
 
-Who frees a field's memory depends on how the field came to exist. There are
+Who frees an array's memory depends on how the array came to exist. There are
 three origins, and the backends encode them slightly differently.
 
 ```mermaid
 flowchart TD
-    A["tack.empty() / empty_like() / array() / zeros()"] -->|backend.allocate_field| OWN["Owned buffer<br/>(_owned absent, read as True)"]
+    A["tack.empty() / empty_like() / array() / zeros()"] -->|backend.allocate_array| OWN["Owned buffer<br/>(_owned absent, read as True)"]
     B["tack.array_from_ptr(ptr, ...)"] -->|"memory_space() check,<br/>backend.wrap_ptr()"| WRAP["Wrapped buffer<br/>_owned = False"]
-    C["tack.from_dlpack(x)"] -->|"dlpack_to_field()<br/>→ array_from_ptr()"| WRAP
-    C -->|attaches| HOLD["_CapsuleHold<br/>on the Field"]
-    OWN --> F["Field"]
+    C["tack.from_dlpack(x)"] -->|"dlpack_to_array()<br/>→ array_from_ptr()"| WRAP
+    C -->|attaches| HOLD["_CapsuleHold<br/>on the Array"]
+    OWN --> F["Array"]
     WRAP --> F
-    F -->|"reshape()"| V["View Field<br/>(same buffer, same hold)"]
-    HOLD -.->|"released when the Field and<br/>every reshape() view are gone"| PROD["Producer's deleter"]
+    F -->|"reshape()"| V["View Array<br/>(same buffer, same hold)"]
+    HOLD -.->|"released when the Array and<br/>every reshape() view are gone"| PROD["Producer's deleter"]
     OWN -->|"__del__: cuMemFreeAsync / hipFreeAsync / deferred zeMemFreeExt<br/>(NumPy array, MTLBuffer: refcount)"| FREE["Memory released"]
     WRAP -->|"__del__ skips the free"| KEEP["Caller keeps the memory alive"]
 ```
 
 ### Owned buffers
 
-Fields from `tack.empty()` and its helpers own their storage. On CPU and
+Arrays from `tack.empty()` and its helpers own their storage. On CPU and
 Metal, Python reference counting does the work: the NumPy array or the
 `MTLBuffer` object goes away with the buffer. The device backends free
 explicitly in `__del__`:
@@ -145,7 +145,7 @@ explicitly in `__del__`:
   list — alive for as long as any of its buffers exist.
 
 Each of these frees after the launches queued before it, which may still
-use the memory; on Metal, a queued launch holds references to its fields
+use the memory; on Metal, a queued launch holds references to its arrays
 until it completes.
 
 All three wrap the free in `try/except` and ignore failures, because
@@ -170,21 +170,21 @@ The `__del__` methods test `getattr(self, '_owned', True)` and skip the free
 for wrapped buffers. That flag is the whole ownership protocol: Tack never
 frees what it did not allocate, and it does not extend the lifetime of raw
 external memory either. The caller must keep that memory valid for as long
-as the field — and every reshaped view of it — is in use. The contract
+as the array — and every reshaped view of it — is in use. The contract
 states this as a caller constraint; violating it is undefined behavior, not
 an error Tack can detect.
 
 `array_from_ptr()` defaults to `writable=False`, and a read-only DLPack
-tensor imports as a non-writable field. `_writable` guards the host-side
+tensor imports as a non-writable array. `_writable` guards the host-side
 `tack.copyto()` and `fill()` (`RuntimeError`) and kernel dispatch. Each
-variant records, in `KernelVariant.written_fields`, the index and name of
-every field argument the kernel may store to or use as an atomic target,
-from `written_field_params` (all of them when a store can't be traced).
-`check_writable_fields()` runs on every dispatch, over only those indices,
+variant records, in `KernelVariant.written_arrays`, the index and name of
+every array argument the kernel may store to or use as an atomic target,
+from `written_array_params` (all of them when a store can't be traced).
+`check_writable_arrays()` runs on every dispatch, over only those indices,
 and raises `ValueError` before the launch when one of them is bound to a
-read-only field. The warm-path cost is about 0.15 µs. Generated code itself
+read-only array. The warm-path cost is about 0.15 µs. Generated code itself
 does not enforce read-only access; the dispatch check is complete because
-a store the analysis cannot trace makes every field count as written.
+a store the analysis cannot trace makes every array count as written.
 
 ### Memory-space validation
 
@@ -253,7 +253,7 @@ f.numpy()                  # must not touch the dead pointer
 A buffer cannot discover this from its own pointer, so it has to be told.
 `runtime/cuda_backend.py` keeps a module-level registry, `_CONTEXTS`, of
 `_ContextToken` objects — one per context Tack knows about — with three
-fields:
+arrays:
 
 - `users` — how many live `CUDABackend` objects share the context.
   `tack.init()` constructs the new backend before dropping the old one, so
@@ -269,7 +269,7 @@ fields:
 that touches device memory — `from_numpy`, `to_numpy`, `read_range`,
 `fill`, `synchronize`, `export_memory`, and the `device_ptr` property,
 which is what a kernel launch reads. A dead token raises `RuntimeError` beginning
-`Cannot <verb> this CUDA field: the CUDA context this field was allocated
+`Cannot <verb> this CUDA array: the CUDA context this array was allocated
 in has been destroyed`, and `__del__` skips `cuMemFree`, because the context
 took the allocation with it.
 
@@ -291,7 +291,7 @@ keep that invisible to a program that uses only Tack:
   Level Zero, writes (`copyto`, `fill`) are queued behind them; on
   Metal, whose buffers are host memory, every `MetalBuffer` method waits
   first.
-- **Frees are ordered.** A field Python drops is freed after the launches
+- **Frees are ordered.** An array Python drops is freed after the launches
   queued before the free, as described under [Owned buffers](#owned-buffers).
 - **Memory outside Tack is completed.** A buffer from `wrap_ptr` is marked
   shared from the start, and a DLPack export (or Metal's `export_memory`)
@@ -305,7 +305,7 @@ keep that invisible to a program that uses only Tack:
 ## Alignment
 
 **CPU loads and stores promise only byte alignment.** `LLVMCodeGen` in
-`codegen/llvm_gen.py` emits every field `load` and `store` with `align=1`.
+`codegen/llvm_gen.py` emits every array `load` and `store` with `align=1`.
 The contract gives the two reasons: imported buffers may start at any byte,
 and a byte-sized element type gives no four-byte guarantee even inside an
 owned buffer. The numerical regression suite checks imported buffers at a
@@ -316,15 +316,15 @@ aligned to its element width. `check_atomic_support`
 (`lang/atomic_support.py`) returns each atomic target's parameter index and
 required alignment (`dtype.bits // 8`), and `resolve_variant` stores them on
 the `KernelVariant` as `atomic_targets`. `check_atomic_alignment` then tests
-`field._buffer.address % alignment` before the cold compile *and* on every
+`array._buffer.address % alignment` before the cold compile *and* on every
 cached dispatch, because a cached variant can be called with a different,
 imported, misaligned buffer. A violation raises `ValueError`
 (`Kernel '<name>': atomic target parameter N requires K-byte alignment`)
-before any storage is updated. Allocated fields always satisfy this; only
+before any storage is updated. Allocated arrays always satisfy this; only
 imported pointers can fail it.
 
 **GPU code uses typed pointers.** The C-family and MSL generators declare
-field parameters as typed pointers (`float*`, `__global double*`, ...) and
+array parameters as typed pointers (`float*`, `__global double*`, ...) and
 index them directly, so an imported device pointer is expected to be
 aligned for its element type. Allocations made by the backends are.
 
@@ -332,9 +332,9 @@ aligned for its element type. Allocations made by the backends are.
 
 ### What is promised
 
-Two field arguments may refer to overlapping storage. The contract requires
+Two array arguments may refer to overlapping storage. The contract requires
 it ([LC2](../reference/language-contract.md#regression-baseline)): passing
-the same field twice, passing two `reshape()` views of one buffer, and
+the same array twice, passing two `reshape()` views of one buffer, and
 passing imported pointers that overlap must all preserve program order
 *within each iteration*. A store through one argument followed by a load
 through another must observe the store. This does not make cross-iteration
@@ -345,7 +345,7 @@ caller's bug.
 
 The alternative is the C `restrict` model: declare that distinct arguments
 never overlap. That was Tack's earlier behavior — unconditional `noalias` on
-LLVM field parameters, `__restrict__` on CUDA and HIP — and it produced
+LLVM array parameters, `__restrict__` on CUDA and HIP — and it produced
 wrong answers rather than errors. LC2's reproduction (write `1` through
 `a`, write `2` through an aliased `b`, read `a`) returned `1` on CPU at the
 contract baseline. The patterns that trigger it are ordinary:
@@ -353,11 +353,11 @@ contract baseline. The patterns that trigger it are ordinary:
 - **Views.** `reshape()` is how a flat buffer is seen as 2-D and back, and
   the interop layer hands out reshaped views of imported arrays
   (`vtk_to_array(..., flatten=True)`).
-- **The same field twice.** An in-place update `f(a, a)` is ordinary
+- **The same array twice.** An in-place update `f(a, a)` is ordinary
   Python.
 - **Imported memory has no identity.** Two `array_from_ptr()` or
   `from_dlpack()` calls over overlapping external memory produce distinct
-  `Field` objects with distinct buffers. Object identity says nothing about
+  `Array` objects with distinct buffers. Object identity says nothing about
   storage.
 
 So the contract makes overlap legal everywhere and lets a backend recover
@@ -365,23 +365,23 @@ the lost optimization only where it can prove, per call, that it is safe.
 
 ### How each backend preserves program order
 
-| Backend | Field parameter | Why it is safe |
+| Backend | Array parameter | Why it is safe |
 |---|---|---|
 | CPU | LLVM pointer without `noalias` (default variant) | LLVM must assume any two pointers may alias |
-| CUDA / HIP | `T* name` — no `__restrict__` | `CUDACodeGen.generate` says it directly: restrict would let the compiler reuse a value across a store through another field |
+| CUDA / HIP | `T* name` — no `__restrict__` | `CUDACodeGen.generate` says it directly: restrict would let the compiler reuse a value across a store through another array |
 | Level Zero | `__global T* name` — no `restrict` | `OpenCLCodeGen.generate` emits plain `__global` pointers |
 | Metal | a member of one argument buffer | MSL itself forbids overlap between separate buffer arguments; see below |
 
 **Metal is the exception, because MSL forbids overlap by construction.**
 There is no `restrict` keyword to remove: section 5.2 of the Metal Shading
 Language specification states that device buffers passed as separate kernel
-arguments must not overlap. Binding two aliasing fields to two
+arguments must not overlap. Binding two aliasing arrays to two
 `[[buffer(n)]]` slots is outside the language, and on an Apple M1 Max four
 overlap cases failed numerically (the contract's regression baseline,
 "Metal validation, 2026-10-03").
 
 The fix is indirect binding. `MSLCodeGen.generate` (`codegen/msl_gen.py`)
-emits one struct holding every non-texture field pointer, with `[[id(i)]]`
+emits one struct holding every non-texture array pointer, with `[[id(i)]]`
 equal to the parameter's position:
 
 ```c
@@ -400,7 +400,7 @@ kernel void k(constant __tack_buffer_args__& __tack_buffers__ [[buffer(0)]],
 ```
 
 The kernel has a single buffer argument, so the separate-argument rule has
-nothing to apply to, and the field pointers inside it may alias. Textures
+nothing to apply to, and the array pointers inside it may alias. Textures
 keep their own `[[texture(n)]]` namespace; unpacked scalars (seen only when
 generating source directly) remain `constant T&` arguments after the
 argument buffer. Argument buffers are a Metal 2 feature.
@@ -408,7 +408,7 @@ argument buffer. Argument buffers are a Metal 2 feature.
 On the runtime side, `_compile_kernel` in `runtime/metal.py` creates an
 `MTLArgumentEncoder` with `newArgumentEncoderWithBufferIndex_(0)`. On
 *every* dispatch, `CompiledMetalKernel.__call__` allocates a fresh
-shared-storage argument buffer, encodes each field's
+shared-storage argument buffer, encodes each array's
 `MTLBuffer` into it and declares its residency with
 `useResource_usage_(..., Read | Write)` — indirectly referenced resources
 need that explicit declaration, and it is refreshed each time because a
@@ -419,13 +419,13 @@ launches are queued: one buffer reused across dispatches could be
 rewritten under a launch that has not run yet. No GPU backend specializes on alias
 relationships: one variant serves every combination.
 
-#### Loops that store to a field get a function of their own
+#### Loops that store to an array get a function of their own
 
 The argument buffer brought a miscompilation with it, found on an M1 Max
 in October 2026. In the kernel entry function, Apple's compiler reads a
-field element once before a loop and never again when the element's
+array element once before a loop and never again when the element's
 address does not depend on the thread, the loop also stores to another
-field of the same type, and the trip count is a runtime value:
+array of the same type, and the trip count is a runtime value:
 
 ```python
 for t in range(1):
@@ -435,23 +435,23 @@ for t in range(1):
 ```
 
 The generated MSL was correct and one thread ran it. Every case was right
-on the commit before the argument buffer, when each field was its own
+on the commit before the argument buffer, when each array was its own
 buffer argument. With `total[t]` (an address that depends on the thread),
-with a literal trip count, with one field, with fields of different
+with a literal trip count, with one array, with arrays of different
 types, or with the statements written out instead of looped, the result
 was right.
 
 What does and does not avoid it, each tried on thirty variations of the
-loop (`test_field_updates_in_loops.py`):
+loop (`test_array_updates_in_loops.py`):
 
 | Change to the generated source | Wrong results |
 |---|---|
 | none | 20 of 30 |
 | the kernel body in a `noinline` function called by the entry | 0 |
 | the same function without `noinline` | 20 |
-| `volatile` on the pointers of the fields the kernel writes | 0 |
-| `__restrict` on the field pointers | 20 |
-| field pointers, the thread index, or both passed through opaque `noinline` identity functions | 20 |
+| `volatile` on the pointers of the arrays the kernel writes | 0 |
+| `__restrict` on the array pointers | 20 |
+| array pointers, the thread index, or both passed through opaque `noinline` identity functions | 20 |
 | the struct by `device` reference, no local pointer copies, `const` pointers | wrong (tried on the first case only) |
 | size optimization, language versions 2.4 to 3.2 | 10 of the 15 i32 cases, as with none |
 
@@ -483,45 +483,45 @@ changes nothing, so that is not the cause either. The rule is therefore
 wider than the observed trigger (any store in any sequential loop), and
 it rests on `noinline` being honored, as the 64-bit accumulator helpers
 already do. A standalone report to Apple would be the shader in
-`test_field_updates_in_loops.py` and the thirty-case table above.
+`test_array_updates_in_loops.py` and the thirty-case table above.
 
-### The CPU disjoint-fields specialization
+### The CPU disjoint-arrays specialization
 
 Dropping `noalias` is not free on the CPU. Without it LLVM must reload a
-field after every store through another field, and its loop vectorizer
-must guard a loop that accumulates through a field with runtime overlap
+array after every store through another array, and its loop vectorizer
+must guard a loop that accumulates through an array with runtime overlap
 checks. So the CPU backend compiles a second variant *with* `noalias` and
 uses it only for calls it has checked.
 
 The pieces, in `runtime/kernel_utils.py` unless noted:
 
-1. **`written_field_params(ir_func)`** finds the parameters the kernel may
-   store to: targets of `IRFieldStore` and `IRAtomicOp`, propagated to a
+1. **`written_array_params(ir_func)`** finds the parameters the kernel may
+   store to: targets of `IRArrayStore` and `IRAtomicOp`, propagated to a
    fixed point through `IRAssign` copies of names — which is how a store
    through an inlined device function's parameter is traced back to the
    kernel argument. Stores into local or shared allocations are ignored. A
    store through anything it cannot trace returns `None`, meaning "assume
-   every field is written". The result is memoized on the IR template, and
+   every array is written". The result is memoized on the IR template, and
    `_written_flags` turns it into one boolean per parameter.
-2. **`NumpyBuffer.span`** (`lang/field.py`) is the half-open byte range
+2. **`NumpyBuffer.span`** (`lang/array.py`) is the half-open byte range
    `[start, end)` the array occupies, from NumPy's `byte_bounds`. It is
    cached on the buffer together with the array it was computed from, so a
-   dispatch normally pays one attribute read per field.
-3. **`fields_disjoint(ir_func, effective_args)`** collects the spans of
-   every `Field` argument and of each `Texture3D` argument's private
+   dispatch normally pays one attribute read per array.
+3. **`arrays_disjoint(ir_func, effective_args)`** collects the spans of
+   every `Array` argument and of each `Texture3D` argument's private
    storage (the copy the kernel samples), skipping empty ones, and returns
-   `True` when no *written* span intersects any *other* span. Fields that
+   `True` when no *written* span intersects any *other* span. Arrays that
    are only read may overlap each other — `dot(x, x)` qualifies, because
    nothing read through one pointer can change under the other. A buffer
    without a `span` makes the answer `False`. Kernels write a handful of
-   fields at most, so it compares pairs directly instead of sorting.
+   arrays at most, so it compares pairs directly instead of sorting.
 4. **`resolve_variant(..., specialize_disjoint=True)`** — the CPU backend
    passes the module flag `_SPECIALIZE_DISJOINT` from `runtime/cpu.py` —
-   evaluates `fields_disjoint` on every dispatch, appends the answer to the
+   evaluates `arrays_disjoint` on every dispatch, appends the answer to the
    variant key, and on a miss records it on the variant's IR as
-   `disjoint_fields`.
-5. **`LLVMCodeGen`** adds the `noalias` attribute to field parameters, and
-   only to field parameters, when `disjoint_fields` is set. Otherwise the
+   `disjoint_arrays`.
+5. **`LLVMCodeGen`** adds the `noalias` attribute to array parameters, and
+   only to array parameters, when `disjoint_arrays` is set. Otherwise the
    function makes no promise.
 
 The answer comes from byte ranges, never from object identity, so it is
@@ -534,7 +534,7 @@ the specialization changes speed, not results.
 particular arguments would run.
 
 **NumPy 1 and 2.** `byte_bounds` lives in the top-level `numpy` namespace
-in NumPy 1 and in `numpy.lib.array_utils` in NumPy 2. `lang/field.py`
+in NumPy 1 and in `numpy.lib.array_utils` in NumPy 2. `lang/array.py`
 chooses the location once, at import. An earlier version imported it from
 the NumPy 2 location unconditionally, and because every CPU dispatch reads
 `span`, every kernel call under NumPy 1.26 raised `ModuleNotFoundError`.
@@ -556,12 +556,12 @@ path was already fast, so there the check is overhead. The tradeoff was
 accepted as bounded on one side and large on the other, and the
 specialization is on by default. Setting
 `tack.runtime.cpu._SPECIALIZE_DISJOINT = False` before the first dispatch
-turns it off. A per-kernel "these fields never alias" declaration, which
+turns it off. A per-kernel "these arrays never alias" declaration, which
 would avoid the per-dispatch check, has not been tried.
 
 !!! note "GPU backends do not specialize"
 
-    `fields_disjoint` needs host-visible byte ranges, and only `NumpyBuffer`
+    `arrays_disjoint` needs host-visible byte ranges, and only `NumpyBuffer`
     has a `span`; every other buffer makes the answer `False`. GPU
     backends do not pass `specialize_disjoint`, so they compile one variant
     with no aliasing promise.
@@ -570,15 +570,15 @@ would avoid the per-dispatch check, has not been tried.
 
 | Topic | Guarantee | Enforced in | On violation |
 |---|---|---|---|
-| Fresh allocation | Contents unspecified until written; `tack.zeros`, `ones`, `full` fill | `tack.Array`, `Field.fill` | — |
-| Queued launches | A field outlives the queued launches that use it; memory handed outside Tack completes its launches before they return | stream-ordered or deferred frees, `DeviceBuffer.share()` | — |
+| Fresh allocation | Contents unspecified until written; `tack.zeros`, `ones`, `full` fill | `tack.Array`, `Array.fill` | — |
+| Queued launches | An array outlives the queued launches that use it; memory handed outside Tack completes its launches before they return | stream-ordered or deferred frees, `DeviceBuffer.share()` | — |
 | Host transfer shape | `copyto` input must have the `numpy()` shape or broadcast to it | `tack.copyto` | `ValueError` |
-| Read-only host writes | `copyto`/`fill` refused when `_writable` is false | `Field._check_writable` | `RuntimeError` |
-| Read-only kernel writes | A read-only field bound to a parameter the kernel may store to is refused, on every dispatch | `check_writable_fields` | `ValueError` |
+| Read-only host writes | `copyto`/`fill` refused when `_writable` is false | `Array._check_writable` | `RuntimeError` |
+| Read-only kernel writes | A read-only array bound to a parameter the kernel may store to is refused, on every dispatch | `check_writable_arrays` | `ValueError` |
 | Pointer kind | Pointers must be device addresses where the backend distinguishes | `array_from_ptr` | `TypeError` (not an address), `ValueError` (wrong space) |
 | Dead CUDA context | Buffer refuses to touch its memory | `CUDABuffer._live` | `RuntimeError` |
 | Atomic alignment | Natural alignment, checked on every dispatch | `check_atomic_alignment` | `ValueError` |
-| Overlapping fields | Program order within an iteration | code generation (no `noalias`/`restrict`; Metal argument buffer) | — |
+| Overlapping arrays | Program order within an iteration | code generation (no `noalias`/`restrict`; Metal argument buffer) | — |
 | External lifetime | Caller keeps wrapped memory alive | not checked | undefined behavior |
 | In-kernel bounds | Not promised, except in debug mode | debug mode only (`lang/ir_bounds.py`) | undefined behavior; in debug mode the access is skipped and the call raises `IndexError` |
 

@@ -36,7 +36,7 @@ from tack.dataset import ids, shapes
 from tack.dataset.buckets import bucket_order, run_offsets
 from tack.dataset.topology import _as_field, _Topology
 from tack.dataset.views import DomainGroup, _Edges, _PolygonFaces, _PolyhedralCells, _PolylineCells
-from tack.lang.field import Field
+from tack.lang.array import Array
 
 __all__ = ["PolygonalTopology", "PolyhedralTopology", "PolylineTopology", "SizeBuckets",
            "orient"]
@@ -325,7 +325,7 @@ class PolyhedralTopology(_Topology):
         face_offsets, face_points, cell_offsets, cell_faces = (
             ids.host_or_field(a) for a in (face_offsets, face_points, cell_offsets, cell_faces))
         if num_points is None:
-            used = face_points.numpy() if isinstance(face_points, Field) else face_points
+            used = face_points.numpy() if isinstance(face_points, Array) else face_points
             num_points = int(used.max()) + 1 if used.size else 0
         # Cell points and directed edges hold each face's points once per side.
         extent = max(int(num_points), 2 * int(face_points.shape[0]),
@@ -481,7 +481,7 @@ class SizeBuckets:
         return kept[caps]
 
     def cell_keys(self):
-        """Each cell's bucket, an i32 field."""
+        """Each cell's bucket, an i32 array."""
         if "_keys" not in self.__dict__:
             t = self.topology
             n = t.num_cells
@@ -581,7 +581,7 @@ class PolygonalTopology(PolyhedralTopology):
         loop_offsets, loop_points = ids.host_or_field(loop_offsets), ids.host_or_field(loop_points)
         total = int(loop_points.shape[0])
         if num_points is None:
-            used = loop_points.numpy() if isinstance(loop_points, Field) else loop_points
+            used = loop_points.numpy() if isinstance(loop_points, Array) else loop_points
             num_points = int(used.max()) + 1 if total else 0
         # Its facets' points are two per edge, and there are as many edges as loop points.
         idt = ids.choose(id_dtype, max(int(num_points), 4 * total + 2),
@@ -684,7 +684,7 @@ class PolylineTopology(_Topology):
         line_offsets, line_points = ids.host_or_field(line_offsets), ids.host_or_field(line_points)
         total = int(line_points.shape[0])
         if num_points is None:
-            used = line_points.numpy() if isinstance(line_points, Field) else line_points
+            used = line_points.numpy() if isinstance(line_points, Array) else line_points
             num_points = int(used.max()) + 1 if total else 0
         n = int(line_offsets.shape[0]) - 1
         if n < 0:

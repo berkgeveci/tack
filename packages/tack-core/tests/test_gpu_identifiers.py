@@ -192,8 +192,8 @@ def test_vector_components_cannot_overwrite_scalar_bindings(backend):
 
 @tack.device_class
 class _IdentifierModel:
-    def __init__(self, field):
-        self.default = field
+    def __init__(self, array):
+        self.default = array
         self.half = 3
 
     @tack.func
@@ -241,8 +241,8 @@ def test_generation_preserves_ir_and_parameter_layout(generate):
     assert kernel_entry_name(function.name) + '(' in source
     for param in function.params:
         assert gpu_variable_name(param.name) in source
-    assert [(p.name, p.type_annotation, p._is_field) for p in function.params] == [
-        (p.name, p.type_annotation, p._is_field) for p in before.params]
+    assert [(p.name, p.type_annotation, p._is_array) for p in function.params] == [
+        (p.name, p.type_annotation, p._is_array) for p in before.params]
     assert function._scalar_pack_info == before._scalar_pack_info
     assert [(type(n), getattr(n, 'name', None), getattr(n, 'target', None),
              getattr(n, 'var', None)) for n in walk_ir(function)] == [

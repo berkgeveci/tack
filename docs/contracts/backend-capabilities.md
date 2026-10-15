@@ -2,7 +2,7 @@
 
 Tack compiles one kernel source for five targets, but the targets don't
 all offer the same things. Metal has no `f64`, the CPU has no workgroups,
-and atomics are narrower on some GPUs than ordinary fields. This page is
+and atomics are narrower on some GPUs than ordinary arrays. This page is
 the contract for those differences. It covers what a backend declares, what
 each declaration means, what each one rejects and when, and the subset of
 the language that runs everywhere.
@@ -30,7 +30,7 @@ can be derived is derived, so two declarations can't disagree.
 
 | Method | Contract |
 |---|---|
-| `allocate_field(dtype, shape, exportable=False)` | Allocates backend storage and returns a `DeviceBuffer`. `exportable=True` asks for memory that `Array.export_memory()` can share without a copy. Only CUDA acts on the flag, and the other backends ignore it |
+| `allocate_array(dtype, shape, exportable=False)` | Allocates backend storage and returns a `DeviceBuffer`. `exportable=True` asks for memory that `Array.export_memory()` can share without a copy. Only CUDA acts on the flag, and the other backends ignore it |
 | `wrap_ptr(ptr, dtype, shape)` | Wraps existing memory as a `DeviceBuffer` without copying or taking ownership. What counts as `ptr` is backend-specific. See [Pointer interop](runtime-api.md#pointer-interop) |
 | `execute(kernel, args, kwargs)` | Compiles or reuses a variant and runs it. All five backends delegate to `resolve_variant()` in `runtime/kernel_utils.py`, which is where every capability check below runs |
 
@@ -41,13 +41,13 @@ The base class raises `NotImplementedError` for all three.
 | Method | Default | Overridden by |
 |---|---|---|
 | `synchronize()` | Does nothing, which is correct for a backend whose launches complete before `execute()` returns. Otherwise it waits for every launch, fill and copy queued so far, and a queued launch's error is raised here. `tack.sync()` calls it on the active backend | Metal, CUDA, HIP and Level Zero, which queue launches (see [Launches](#launches)) |
-| `fill_field(field, value)` | Returns `False`, and `Array.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more of its own buffers as a kernel through its dispatch, so the threads first-touch the pages |
+| `fill_array(array, value)` | Returns `False`, and `Array.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more of its own buffers as a kernel through its dispatch, so the threads first-touch the pages |
 | `cache_target()` | Returns `None`: compiled variants are not stored on disk, only lowered IR. Otherwise a string naming what compiled code depends on besides the kernel (the device, the compiler and driver versions, the compile options) | all five |
 | `variant_artifact(payload)`, `load_variant(ir_func, artifact, effective_args)` | Raise `NotImplementedError`. Called only when `cache_target()` is not `None`: the picklable part of a compiled variant, and the payload rebuilt from it in another process. `effective_args` lets a GPU backend remake its scalar pack buffers | all five |
 | `memory_space(ptr)` | Returns `"cpu"`, which is correct for backends whose allocations are host-addressable | CUDA, HIP and Level Zero, which ask their driver. CPU overrides it with the same answer |
-| `reduce_field(field, op)` | Raises `NotImplementedError`. Called only when `supports_device_reductions` is true | Metal, CUDA, HIP and Level Zero |
-| `texture_in_hardware(shape_3d)` | Returns `False`: a `Texture3D` keeps a private `f32` field and the generated code interpolates it in software | Metal and CUDA (always `True`), HIP and Level Zero (per device and extent) |
-| `create_texture_image(shape_3d)` | Raises `NotImplementedError`. Called only when `texture_in_hardware()` is true. Returns an image object with `upload(field)`, owned by one `Texture3D` | Metal, CUDA, HIP and Level Zero |
+| `reduce_array(array, op)` | Raises `NotImplementedError`. Called only when `supports_device_reductions` is true | Metal, CUDA, HIP and Level Zero |
+| `texture_in_hardware(shape_3d)` | Returns `False`: a `Texture3D` keeps a private `f32` array and the generated code interpolates it in software | Metal and CUDA (always `True`), HIP and Level Zero (per device and extent) |
+| `create_texture_image(shape_3d)` | Raises `NotImplementedError`. Called only when `texture_in_hardware()` is true. Returns an image object with `upload(array)`, owned by one `Texture3D` | Metal, CUDA, HIP and Level Zero |
 | `_store_texture_shapes(ir_func, args)` | Records each `Texture3D` argument's extents on its parameter | HIP and Level Zero, which clear the parameter's `_is_texture` flag when `texture_in_hardware()` is false |
 
 ### Attributes
@@ -57,11 +57,11 @@ The base class raises `NotImplementedError` for all three.
 | `name` | declared | Arch identifier, matching `tack.init(arch=...)`: `cpu`, `metal`, `cuda`, `hip` or `level_zero` |
 | `display_name` | declared | How messages spell the backend, if different from `name` |
 | `label` | derived | `display_name or name`. Use it in messages |
-| `supported_dtypes` | declared | A `frozenset` of the scalar types accepted as field argument dtypes. Dispatch checks every field argument against this set |
+| `supported_dtypes` | declared | A `frozenset` of the scalar types accepted as array argument dtypes. Dispatch checks every array argument against this set |
 | `supports_f64` | derived | `f64 in supported_dtypes` |
 | `supports_device_reductions` | declared | True when `Array.sum()`, `min()` and `max()` can run on the device. When false they run in NumPy on the host. It selects a path and never rejects anything |
 | `supports_workgroups` | declared | Native workgroup execution for `shared`, `shared_like`, `barrier`, `thread_id` and `block_sum`/`block_min`/`block_max`. It does **not** promise uniform participation, atomic support or safe partial workgroups |
-| `supported_atomic_dtypes` | derived | Field dtypes that support `atomic_add`, `atomic_min` and `atomic_max`. This is the backend's entry in `ATOMIC_DTYPES` (`lang/atomic_support.py`) intersected with `supported_dtypes` |
+| `supported_atomic_dtypes` | derived | Array dtypes that support `atomic_add`, `atomic_min` and `atomic_max`. This is the backend's entry in `ATOMIC_DTYPES` (`lang/atomic_support.py`) intersected with `supported_dtypes` |
 | `init_options` | declared | Keyword options that `tack.init()` forwards to the constructor. `tack.init()` rejects any other option |
 | `device_memory_spaces` | declared | `memory_space()` results that `array_from_ptr()` accepts. When the set is non-empty, every pointer must be an address (anything `int()` accepts) and is checked. An empty set means that the backend doesn't distinguish memory spaces and nothing is checked |
 | `dlpack_refusal_note` | declared | Text appended to the error when a DLPack import is refused, for backends whose reason the device type doesn't convey |
@@ -117,24 +117,24 @@ print(be.supports_f64, sorted(t.name for t in be.supported_atomic_dtypes))
 
 ### Textures
 
-On every backend, a texture samples the data its field held when
+On every backend, a texture samples the data its array held when
 `tack.texture3d()` created it, or when `tex.update()` last copied it (see
 [Memory and aliasing](../reference/language-contract.md#memory-and-aliasing)
-in the language contract). Writes to the field in between, whether by kernels,
+in the language contract). Writes to the array in between, whether by kernels,
 `tack.copyto`, or external and DLPack writers, don't reach the texture.
 The copy is storage the `Texture3D` owns (`tex._storage`): a hardware image
 from `create_texture_image()` where `texture_in_hardware()` is true, else a
-private `f32` field. Dispatch binds that storage through `bind_textures()`
-(`runtime/kernel_utils.py`), never the source field. No compiled variant
+private `f32` array. Dispatch binds that storage through `bind_textures()`
+(`runtime/kernel_utils.py`), never the source array. No compiled variant
 caches images, and an image is released with its texture. Two textures over
-one field are separate copies.
+one array are separate copies.
 
-`tack.texture3d()` raises `ValueError` for a field that isn't `f32`,
+`tack.texture3d()` raises `ValueError` for an array that isn't `f32`,
 because every hardware path builds a single-channel 32-bit float image
 (`R32Float` on Metal, `CU_AD_FORMAT_FLOAT` on CUDA and HIP,
 `ZE_IMAGE_FORMAT_TYPE_FLOAT` on Level Zero). It also rejects an `interp`
 other than `"linear"`, since sampling is trilinear on every backend, and a
-shape whose `W*H*D` differs from the field's size.
+shape whose `W*H*D` differs from the array's size.
 
 The variant key records which texture path a call uses, because the path
 changes the generated code. HIP and Level Zero answer
@@ -162,7 +162,7 @@ device, Level Zero on one asynchronous immediate command list with a
 barrier after each command (a driver without `zeCommandListHostSynchronize`
 gets a synchronous list). On every backend, launches, fills and host
 writes take effect in the order they were made, host reads wait for the
-launches before them, a field dropped while a queued launch uses it
+launches before them, an array dropped while a queued launch uses it
 outlives that launch, and a launch that binds memory handed outside Tack
 (a wrapped pointer, a DLPack export) completes before it returns. CUDA,
 HIP and Level Zero also complete a launch that samples a hardware texture.
@@ -185,12 +185,12 @@ before launch.
 | Workgroup participation | `check_workgroup_participation()` in `lang/workgroup_participation.py` | Cold dispatch and inspection, on backends with `supports_workgroups` | `ValueError`: "Kernel '`k`': `barrier` at `<IR path>` requires uniform workgroup participation: ..." |
 | Full 256-lane groups | `check_workgroup_launch()` | Cold dispatch, every cached dispatch, and inspection, for kernels with barriers or block reductions | `ValueError`: "...workgroup collectives require complete 256-lane groups; iteration count `N` would create a partial workgroup." |
 | Device group size | `CompiledMetalKernel` and `CompiledL0Kernel` | At compilation, for collective kernels, when the Metal pipeline or Level Zero device allows fewer than 256 lanes | `ValueError`: "...workgroup collectives require 256 lanes; this pipeline/device selects `n`." |
-| `supported_atomic_dtypes` | `check_atomic_support()` in `lang/atomic_support.py` | Cold dispatch and inspection in every mode, including structurally unreachable atomics and empty grids | `TypeError`: "Kernel '`k`': `metal` atomic_add does not support target dtype `tack.i64`". The same check rejects targets that aren't global field parameters |
+| `supported_atomic_dtypes` | `check_atomic_support()` in `lang/atomic_support.py` | Cold dispatch and inspection in every mode, including structurally unreachable atomics and empty grids | `TypeError`: "Kernel '`k`': `metal` atomic_add does not support target dtype `tack.i64`". The same check rejects targets that aren't global array parameters |
 | Atomic alignment | `check_atomic_alignment()` | Every dispatch and inspection | `ValueError`: "Kernel '`k`': atomic target parameter `i` requires `n`-byte alignment" |
-| Read-only fields | `check_writable_fields()` in `runtime/kernel_utils.py`, over the indices the variant recorded in `KernelVariant.written_fields` | Every dispatch | `ValueError`: "Kernel '`k`': parameter '`out`' may be written, but its field is read-only. ..." |
-| Launch size | `check_launch_size()` in `runtime/kernel_utils.py`, against the limit in the [capability matrix](#capability-matrix) | Every GPU dispatch, and every native `f32` reduction on CUDA, HIP and Level Zero | `ValueError`: "Kernel '`k`': `N` iterations exceed the `M` that one CUDA launch can index; split the work across several launches." A reduction is named "Field sum()" and so on. Metal reduces fields of 2^32 or more elements through NumPy instead |
-| `device_memory_spaces` | `array_from_ptr()` in `lang/field.py` | When wrapping, for any `ptr`, on backends with a non-empty set | `TypeError` if `ptr` isn't an address. `ValueError`: "Pointer is in '`cpu`' memory but the active backend is '`CUDA`'. array_from_ptr() requires a device pointer. ..." |
-| DLPack device type | `dlpack_to_field()` in `lang/dlpack.py` | On import | `RuntimeError` naming the backend and DLPack device type, followed by `dlpack_refusal_note` if set. `ValueError` for an unknown device type and for `kDLMetal` |
+| Read-only arrays | `check_writable_arrays()` in `runtime/kernel_utils.py`, over the indices the variant recorded in `KernelVariant.written_arrays` | Every dispatch | `ValueError`: "Kernel '`k`': parameter '`out`' may be written, but its array is read-only. ..." |
+| Launch size | `check_launch_size()` in `runtime/kernel_utils.py`, against the limit in the [capability matrix](#capability-matrix) | Every GPU dispatch, and every native `f32` reduction on CUDA, HIP and Level Zero | `ValueError`: "Kernel '`k`': `N` iterations exceed the `M` that one CUDA launch can index; split the work across several launches." A reduction is named "Array sum()" and so on. Metal reduces arrays of 2^32 or more elements through NumPy instead |
+| `device_memory_spaces` | `array_from_ptr()` in `lang/array.py` | When wrapping, for any `ptr`, on backends with a non-empty set | `TypeError` if `ptr` isn't an address. `ValueError`: "Pointer is in '`cpu`' memory but the active backend is '`CUDA`'. array_from_ptr() requires a device pointer. ..." |
+| DLPack device type | `dlpack_to_array()` in `lang/dlpack.py` | On import | `RuntimeError` naming the backend and DLPack device type, followed by `dlpack_refusal_note` if set. `ValueError` for an unknown device type and for `kDLMetal` |
 | `supports_device_reductions` | `Array._reduce()` | Never rejects | Selects the device or NumPy path. See [Reductions](runtime-api.md#reductions) |
 | Texture hardware | `texture_in_hardware()`, at `texture3d()` and in `_store_texture_shapes()` (HIP, Level Zero) | At texture creation, and before the key is built | Never rejects. Falls back to software sampling |
 
@@ -201,7 +201,7 @@ the original exception chained. `ValueError` passes through unchanged. See
 
 For the full text of the workgroup and atomic rules, see
 [Workgroups and synchronization](../reference/language-contract.md#workgroups-and-synchronization)
-and [Atomic field updates](../reference/language-contract.md#atomic-field-updates).
+and [Atomic array updates](../reference/language-contract.md#atomic-array-updates).
 
 !!! note "What inspection does not check"
 
@@ -209,21 +209,21 @@ and [Atomic field updates](../reference/language-contract.md#atomic-field-update
     workgroup-launch, atomic and alignment checks above, and it makes the
     texture decision through the backend's `_store_texture_shapes()`, so
     the source it shows is the source dispatch would compile. It doesn't
-    check read-only fields or the backend's launch-size limit, which
+    check read-only arrays or the backend's launch-size limit, which
     belong to a launch rather than to the generated code.
 
 ### Device reductions
 
 `supports_device_reductions` does not mean that every reduction runs on the
-device. **Current behavior:** on every GPU backend, `reduce_field()` reduces
-only `f32` fields natively, and other dtypes use the shared NumPy fallback.
+device. **Current behavior:** on every GPU backend, `reduce_array()` reduces
+only `f32` arrays natively, and other dtypes use the shared NumPy fallback.
 Level Zero also falls back when the device's maximum group size is below
-256. Empty fields return without a device launch. CUDA, HIP and Level Zero
-pass the element count as a 64-bit kernel argument and reject a field
+256. Empty arrays return without a device launch. CUDA, HIP and Level Zero
+pass the element count as a 64-bit kernel argument and reject an array
 larger than one launch can index. Metal's reduction kernel holds the count
-and thread position in 32 bits, so Metal reduces a field of 2^32 or more
+and thread position in 32 bits, so Metal reduces an array of 2^32 or more
 elements with NumPy over the shared buffer. The
-[reduction contract](../reference/language-contract.md#field-and-parallel-reductions)
+[reduction contract](../reference/language-contract.md#array-and-parallel-reductions)
 defines results, precision and ordering for both paths.
 
 ## Backend notes
@@ -237,11 +237,11 @@ thread pool JIT'd from LLVM IR, or a `ThreadPoolExecutor` with
 `TACK_CPU_POOL=python`, on Windows, or where the pool cannot be made. See
 [CPU Threading Policy](../design/cpu-threading.md). The CPU
 backend also compiles a separate `noalias` variant for calls whose written
-fields provably don't overlap other fields. See
+arrays provably don't overlap other arrays. See
 [Memory and Aliasing](../design/memory-and-aliasing.md).
 
 **Metal.** There is no `f64`, because Apple GPUs don't implement double
-precision. Fields are shared buffers in unified memory, so `memory_space()`
+precision. Arrays are shared buffers in unified memory, so `memory_space()`
 answers `"cpu"` for them and `array_from_ptr()` wraps an `MTLBuffer`
 object, not an address. Collectives need a pipeline whose
 `maxTotalThreadsPerThreadgroup` is at least 256.
@@ -274,12 +274,12 @@ applies.
 
 | Area | Portable on all five backends |
 |---|---|
-| Field and scalar dtypes | `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`. Don't use `f64`, which Metal and some Level Zero devices lack. A Python `float` scalar becomes `f64` only when a field argument is `f64` |
-| Atomics | `atomic_add`, `atomic_min` and `atomic_max` on `i32`, `u32` or `f32` global fields, as statements |
+| Array and scalar dtypes | `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`. Don't use `f64`, which Metal and some Level Zero devices lack. A Python `float` scalar becomes `f64` only when an array argument is `f64` |
+| Atomics | `atomic_add`, `atomic_min` and `atomic_max` on `i32`, `u32` or `f32` global arrays, as statements |
 | Launch size | At most 2^32 − 256 iterations per launch, HIP's cap, unless the CUDA or Level Zero device reports a lower limit. Split larger work across launches |
 | Workgroups | None. If you don't need the CPU, collectives are portable across the four GPU backends in complete 256-lane groups with proven-uniform participation |
 | Scratch storage | `local_array` and `local_array_like` |
-| Textures | `f32` sources, refreshed with `tex.update()` after the field changes |
+| Textures | `f32` sources, refreshed with `tex.update()` after the array changes |
 | Reductions | `Array.sum()`, `min()`, `max()` and `mean()` on any dtype. Only `f32` is reduced natively on the device |
 | Interop | Backend-specific by nature. DLPack device types and pointer kinds differ per backend |
 

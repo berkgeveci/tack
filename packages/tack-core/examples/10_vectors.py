@@ -5,7 +5,7 @@ scalar values, then use methods like .dot(), .cross(), .normalized(),
 .norm(), and .norm_sqr().
 
 Vectors are temporary values inside kernels -- component data lives in
-separate scalar fields (one field per component).
+separate scalar arrays (one array per component).
 
 Usage:
   uv run python examples/10_vectors.py
@@ -24,7 +24,7 @@ tack.init(arch=_arch)
 
 n = 100
 
-# Separate fields for each component
+# Separate arrays for each component
 ax = tack.empty((n,))
 ay = tack.empty((n,))
 az = tack.empty((n,))
@@ -76,7 +76,7 @@ tack.copyto(bz, np.zeros(n, dtype=np.float32))
 
 @tack.kernel
 def compute_dot(ax, ay, az, bx, by, bz, dot_out):
-    """Compute dot product of two vector fields."""
+    """Compute dot product of two vector arrays."""
     for i in range(ax.shape[0]):
         a = tack.Vector([ax[i], ay[i], az[i]])
         b = tack.Vector([bx[i], by[i], bz[i]])
@@ -99,7 +99,7 @@ cz_out = tack.empty((n,))
 
 @tack.kernel
 def compute_cross(ax, ay, az, bx, by, bz, cx, cy, cz):
-    """Cross product of two vector fields."""
+    """Cross product of two vector arrays."""
     for i in range(ax.shape[0]):
         a = tack.Vector([ax[i], ay[i], az[i]])
         b = tack.Vector([bx[i], by[i], bz[i]])

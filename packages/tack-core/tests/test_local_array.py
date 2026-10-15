@@ -154,10 +154,10 @@ def test_local_array_in_template_method(backend):
     np.testing.assert_allclose(out.numpy(), [25.0, 65.0])
 
 
-# --- local_array_like: inherit dtype from field ---
+# --- local_array_like: inherit dtype from array ---
 
 def test_local_array_like_f32(backend):
-    """local_array_like inherits f32 from the field."""
+    """local_array_like inherits f32 from the array."""
     n = 10
     data = tack.empty((n,))
     out = tack.empty((n,))
@@ -175,7 +175,7 @@ def test_local_array_like_f32(backend):
 
 
 def test_local_array_like_i32(backend):
-    """local_array_like inherits i32 from the field."""
+    """local_array_like inherits i32 from the array."""
     n = 10
     data = tack.empty((n,), tack.i32)
     out = tack.empty((n,), tack.i32)
@@ -193,7 +193,7 @@ def test_local_array_like_i32(backend):
 
 
 def test_local_array_like_in_func(backend):
-    """local_array_like inside @tack.func resolves mangled field names."""
+    """local_array_like inside @tack.func resolves mangled array names."""
     n = 10
     data = tack.empty((n,))
     out = tack.empty((n,))

@@ -2,7 +2,7 @@
 
 Transforms a @kernel-decorated Python function's AST into Tack's internal IR.
 Supports: parallel/sequential for-range loops, while loops, if/else, comparisons,
-boolean ops, unary ops, math builtins, field indexing, type inference,
+boolean ops, unary ops, math builtins, array indexing, type inference,
 @tack.func inlining, multi-dimensional indexing, ndrange, and vector operations.
 
 Inspired by Taichi's AST transformer (Apache 2.0), simplified for Tack's needs.
@@ -100,16 +100,16 @@ class KernelTransformer(ast.NodeVisitor):
 
     Supports:
       - @tack.func inlining at call sites
-      - Multi-dimensional field indexing: field[i, j] → field[i * shape1 + j]
-      - field[None] → field[0] for scalar fields
+      - Multi-dimensional array indexing: array[i, j] → array[i * shape1 + j]
+      - array[None] → array[0] for scalar arrays
       - ndrange(w, h) → 1D parallel loop with index decomposition
       - Vector scalarization: Vector([a, b, c]) → 3 scalar variables
     """
 
-    def __init__(self, vector_fields=None, texture_fields=None, python_func=None,
+    def __init__(self, vector_arrays=None, texture_arrays=None, python_func=None,
                  bindings=None, template_funcs=None, debug=False):
         self._python_func = python_func
-        # Debug mode: every field and array index is checked (IRBoundsCheck),
+        # Debug mode: every array and array index is checked (IRBoundsCheck),
         # and each checked access is described in _bounds_sites.
         self._debug = debug
         self._bounds_sites: list = []
@@ -131,20 +131,20 @@ class KernelTransformer(ast.NodeVisitor):
         self._pre_stmts: list = []
         # Shared memory variables
         self._shared_vars: set[str] = set()
-        # Vector field metadata: param_name → number of components. The
-        # caller gives a matrix field as its (rows, columns); those are
+        # Vector array metadata: param_name → number of components. The
+        # caller gives a matrix array as its (rows, columns); those are
         # kept beside the component count.
-        self._vector_fields: dict[str, int] = {}
-        self._matrix_fields: dict[str, tuple] = {}
-        for name, width in (vector_fields or {}).items():
+        self._vector_arrays: dict[str, int] = {}
+        self._matrix_arrays: dict[str, tuple] = {}
+        for name, width in (vector_arrays or {}).items():
             if isinstance(width, tuple):
-                self._matrix_fields[name] = width
+                self._matrix_arrays[name] = width
                 width = _size(width)
-            self._vector_fields[name] = width
+            self._vector_arrays[name] = width
         # Matrix variables: name → (rows, columns), beside _vector_vars
         self._matrix_vars: dict[str, tuple] = {}
-        # Texture field metadata: param_name → (W, H, D) shape
-        self._texture_fields: dict[str, tuple] = texture_fields or {}
+        # Texture array metadata: param_name → (W, H, D) shape
+        self._texture_arrays: dict[str, tuple] = texture_arrays or {}
         # Maps renamed texture names back to the original kernel param name
         self._texture_origin: dict[str, str] = {}
         # Where each name is first read: name → (line, column, device
@@ -307,7 +307,7 @@ class KernelTransformer(ast.NodeVisitor):
             elif isinstance(n, ir.IRName):
                 used.append(n.name)
             elif isinstance(n, (ir.IRDimSize, ir.IRTextureSample)):
-                used.append(n.field_name)
+                used.append(n.array_name)
         for name in used:
             if name in bound:
                 continue
@@ -750,7 +750,7 @@ class KernelTransformer(ast.NodeVisitor):
             return self._visit_tuple_unpack(target, value)
 
         # Check for shared memory allocation: smem = tack.shared(tack.f32, 256)
-        #                             or: smem = tack.shared_like(field, 256)
+        #                             or: smem = tack.shared_like(array, 256)
         if isinstance(target, ast.Name) and isinstance(value, ast.Call):
             shared_result = self._try_parse_shared_alloc(target.id, value)
             if shared_result is not None:
@@ -760,7 +760,7 @@ class KernelTransformer(ast.NodeVisitor):
                 return shared_like_result
 
         # Check for local array allocation: arr = tack.local_array(tack.f32, 8)
-        #                            or: arr = tack.local_array_like(field, 8)
+        #                            or: arr = tack.local_array_like(array, 8)
         if isinstance(target, ast.Name) and isinstance(value, ast.Call):
             local_result = self._try_parse_local_alloc(target.id, value)
             if local_result is not None:
@@ -790,9 +790,9 @@ class KernelTransformer(ast.NodeVisitor):
                 and target.value.id in self._vector_vars):
             return self._store_vector_component(target, visited_value)
 
-        # vf[i][c] = expr for a vector field: store the component
-        if self._is_field_component(target):
-            return self._assign_field_component(target, visited_value)
+        # vf[i][c] = expr for a vector array: store the component
+        if self._is_array_component(target):
+            return self._assign_array_component(target, visited_value)
 
         # Check if RHS is a vector variable → propagate vector-ness
         if isinstance(visited_value, list):
@@ -803,22 +803,22 @@ class KernelTransformer(ast.NodeVisitor):
             # Vector expression result (list of IR nodes)
             if isinstance(target, ast.Name):
                 return self._assign_vector_from_ir(target.id, visited_value)
-            # Vector store: field[i] = vec_var
+            # Vector store: array[i] = vec_var
             if isinstance(target, ast.Subscript):
-                return self._store_vector_field(target, visited_value)
+                return self._store_vector_array(target, visited_value)
 
-        # field[i] = expr  →  IRFieldStore
+        # array[i] = expr  →  IRArrayStore
         if isinstance(target, ast.Subscript):
-            if isinstance(target.value, ast.Name) and target.value.id in self._vector_fields:
+            if isinstance(target.value, ast.Name) and target.value.id in self._vector_arrays:
                 # A scalar sets every component of the element, as it does
                 # in vf[i] *= 2.0; the subscript names an element here just
                 # as it does in a load.
                 value = self._capture_value(visited_value, self._pre_stmts)
-                shape = self._field_shape(target.value.id)
-                return self._store_vector_field(
+                shape = self._array_shape(target.value.id)
+                return self._store_vector_array(
                     target, VectorValue([value] * _size(shape), shape))
-            field, index, visited_value = self._visit_store_location(target, visited_value)
-            return ir.IRFieldStore(field=field, index=index, value=visited_value)
+            array, index, visited_value = self._visit_store_location(target, visited_value)
+            return ir.IRArrayStore(array=array, index=index, value=visited_value)
 
         # x = expr  →  IRAssign
         if isinstance(target, ast.Name):
@@ -854,16 +854,16 @@ class KernelTransformer(ast.NodeVisitor):
             return self._store_vector_component(
                 target, ir.IRBinOp(op=op, left=read, right=right))
 
-        # vf[i][c] += expr, and vf[i] += vec, for a vector field
-        if self._is_field_component(target):
-            return self._augment_field_component(target, op, node.value)
+        # vf[i][c] += expr, and vf[i] += vec, for a vector array
+        if self._is_array_component(target):
+            return self._augment_array_component(target, op, node.value)
         if (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Name)
-                and target.value.id in self._vector_fields):
-            return self._augment_vector_field(target, op, node.value)
+                and target.value.id in self._vector_arrays):
+            return self._augment_vector_array(target, op, node.value)
 
         left = self.visit(target)
         # Evaluate a subscript once, reusing its address for the store.
-        if isinstance(left, ir.IRFieldLoad):
+        if isinstance(left, ir.IRArrayLoad):
             left.index = self._capture_value(left.index, self._pre_stmts)
         right, statements = self._visit_expression(node.value)
         if statements:
@@ -877,7 +877,7 @@ class KernelTransformer(ast.NodeVisitor):
         rhs = ir.IRBinOp(op=op, left=read, right=right)
 
         if isinstance(target, ast.Subscript):
-            return ir.IRFieldStore(field=left.field, index=left.index, value=rhs)
+            return ir.IRArrayStore(array=left.array, index=left.index, value=rhs)
 
         if isinstance(target, ast.Name):
             return ir.IRAssign(target=target.id, value=rhs)
@@ -1135,7 +1135,7 @@ class KernelTransformer(ast.NodeVisitor):
             return self._vector_component(node, self._variable_value(node.value.id))
         # A component of a vector or matrix constant: SUN[2], ROT[1, 0]
         if isinstance(node.value, (ast.Name, ast.Attribute)):
-            named = self._named_constant(node.value)      # None for a local or a field
+            named = self._named_constant(node.value)      # None for a local or an array
             if isinstance(named, VectorValue):
                 return self._vector_component(node, named)
 
@@ -1146,37 +1146,37 @@ class KernelTransformer(ast.NodeVisitor):
             if isinstance(inner, list):
                 return self._vector_component(node, inner)
             raise self._source_error(
-                node, "subscript", "indexes a scalar value; only fields, local and "
+                node, "subscript", "indexes a scalar value; only arrays, local and "
                 "shared arrays, and vectors can be indexed")
 
-        # field.shape[k] — a dimension query, not a load from a field
+        # array.shape[k] — a dimension query, not a load from an array
         dim_size = self._as_dim_size(node)
         if dim_size is not None:
             return dim_size
 
-        # Get field name for vector field detection
-        field_name = node.value.id if isinstance(node.value, ast.Name) else None
-        is_vector_field = field_name is not None and field_name in self._vector_fields
+        # Get array name for vector array detection
+        array_name = node.value.id if isinstance(node.value, ast.Name) else None
+        is_vector_array = array_name is not None and array_name in self._vector_arrays
 
         # Compute the linearized index (handles multi-dim, None, etc.)
         index = self._visit_subscript_index(node)
-        field_ir = self.visit(node.value)
+        array_ir = self.visit(node.value)
 
-        # Vector field load: expand to n component loads
-        if is_vector_field:
-            ndim = self._vector_fields[field_name]
+        # Vector array load: expand to n component loads
+        if is_vector_array:
+            ndim = self._vector_arrays[array_name]
             # Cast index to int before computing component offsets so that
             # a float index like 127.7 maps to element 127, not a fractional
             # position that shifts the component access.
             int_index = self._element_index(index)
             return VectorValue(
-                (ir.IRFieldLoad(field=field_ir, index=self._component_index(int_index, ndim, c))
-                 for c in range(ndim)), self._matrix_fields.get(field_name))
+                (ir.IRArrayLoad(array=array_ir, index=self._component_index(int_index, ndim, c))
+                 for c in range(ndim)), self._matrix_arrays.get(array_name))
 
-        return ir.IRFieldLoad(field=field_ir, index=index)
+        return ir.IRArrayLoad(array=array_ir, index=index)
 
     def _as_dim_size(self, node: ast.Subscript) -> ir.IRDimSize | None:
-        """`f.shape[k]` on a field → IRDimSize, which resolve_ir folds.
+        """`f.shape[k]` on an array → IRDimSize, which resolve_ir folds.
 
         Emitting a generic IRAttribute here is what limited `.shape` to the
         outermost loop bound: dispatch evaluated that one expression
@@ -1195,7 +1195,7 @@ class KernelTransformer(ast.NodeVisitor):
                 f"'{value.value.id}.shape[...]' needs a constant dimension "
                 f"index; the shape is resolved when the kernel is compiled."
             )
-        return ir.IRDimSize(field_name=value.value.id, dim=index.value)
+        return ir.IRDimSize(array_name=value.value.id, dim=index.value)
 
     def visit_Attribute(self, node: ast.Attribute) -> ir.IRAttribute:
         # module.NAME bound to a tack.constant reads as its value
@@ -1235,9 +1235,9 @@ class KernelTransformer(ast.NodeVisitor):
             n = self._vector_vars[vector.id]
             is_matrix = vector.id in self._matrix_vars
         elif (isinstance(vector, ast.Subscript) and isinstance(vector.value, ast.Name)
-                and vector.value.id in self._vector_fields):
-            n = self._vector_fields[vector.value.id]
-            is_matrix = vector.value.id in self._matrix_fields
+                and vector.value.id in self._vector_arrays):
+            n = self._vector_arrays[vector.value.id]
+            is_matrix = vector.value.id in self._matrix_arrays
         else:
             return target
         if is_matrix:
@@ -1294,7 +1294,7 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRConstant(value=node.value)
 
     def visit_Tuple(self, node: ast.Tuple) -> list:
-        """Visit tuple — used for multi-dimensional indexing like field[i, j]."""
+        """Visit tuple — used for multi-dimensional indexing like array[i, j]."""
         return TupleValue(self._visit_ordered(node.elts))
 
     def visit_List(self, node: ast.List) -> VectorValue:
@@ -1316,9 +1316,9 @@ class KernelTransformer(ast.NodeVisitor):
         else:
             self._matrix_vars.pop(name, None)
 
-    def _field_shape(self, name: str) -> tuple:
-        """The shape of one element of the vector or matrix field ``name``."""
-        return self._matrix_fields.get(name) or (self._vector_fields[name],)
+    def _array_shape(self, name: str) -> tuple:
+        """The shape of one element of the vector or matrix array ``name``."""
+        return self._matrix_arrays.get(name) or (self._vector_arrays[name],)
 
     def visit_Call(self, node: ast.Call) -> ir.IRNode:
         # Check for @tack.func calls → inline
@@ -1346,7 +1346,7 @@ class KernelTransformer(ast.NodeVisitor):
                 return reduced
             raise NotImplementedError(
                 f"{func_name}() without arguments reduces a vector's components; "
-                f"a field is reduced from Python, with field.{func_name}()")
+                f"an array is reduced from Python, with array.{func_name}()")
 
         # Math builtins from the math module or bare names
         if func_name in MATH_BUILTINS:
@@ -1385,13 +1385,13 @@ class KernelTransformer(ast.NodeVisitor):
             return self._elementwise(node, "select()", [mask, a, b],
                                      lambda row: ir.IRIfExp(row[0], row[1], row[2]))
 
-        # len(field) → the field's first dimension
+        # len(array) → the array's first dimension
         if func_name == "len":
             if len(node.args) != 1:
                 raise NotImplementedError("len() takes exactly one argument")
             target = node.args[0]
             if isinstance(target, ast.Name) and target.id not in self._vector_vars:
-                return ir.IRDimSize(field_name=target.id, dim=0)
+                return ir.IRDimSize(array_name=target.id, dim=0)
             arg = self.visit(target)
             return ir.IRAttribute(obj=arg, attr="__len__")
 
@@ -1403,21 +1403,21 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name == "ndrange":
             raise NotImplementedError("ndrange() outside of for-loop not supported")
 
-        # Shared memory: tack.shared(dtype, size) or tack.shared_like(field, size)
+        # Shared memory: tack.shared(dtype, size) or tack.shared_like(array, size)
         if func_name == "shared":
             raise NotImplementedError(
                 "tack.shared() must be used in an assignment: smem = tack.shared(tack.f32, 256)")
         if func_name == "shared_like":
             raise NotImplementedError(
-                "tack.shared_like() must be used in an assignment: smem = tack.shared_like(field, 256)")
+                "tack.shared_like() must be used in an assignment: smem = tack.shared_like(array, 256)")
 
-        # Local array: tack.local_array(dtype, size) or tack.local_array_like(field, size)
+        # Local array: tack.local_array(dtype, size) or tack.local_array_like(array, size)
         if func_name == "local_array":
             raise NotImplementedError(
                 "tack.local_array() must be used in an assignment: arr = tack.local_array(tack.f32, 8)")
         if func_name == "local_array_like":
             raise NotImplementedError(
-                "tack.local_array_like() must be used in an assignment: arr = tack.local_array_like(field, 8)")
+                "tack.local_array_like() must be used in an assignment: arr = tack.local_array_like(array, 8)")
 
         # Block reductions: tack.block_sum(val), tack.block_max(val), tack.block_min(val)
         if func_name in ("block_sum", "block_max", "block_min"):
@@ -1437,7 +1437,7 @@ class KernelTransformer(ast.NodeVisitor):
         # Atomic operations: atomic_add, atomic_min, atomic_max
         if func_name in ("atomic_add", "atomic_min", "atomic_max"):
             if len(node.args) != 3:
-                raise NotImplementedError(f"{func_name}() takes exactly 3 arguments (field, index, value)")
+                raise NotImplementedError(f"{func_name}() takes exactly 3 arguments (array, index, value)")
             return self._visit_atomic(node, func_name, as_statement=False)
 
         # print() for kernel debugging
@@ -1472,14 +1472,14 @@ class KernelTransformer(ast.NodeVisitor):
         # Check for texture3d.sample(u, v, w)
         if isinstance(node.func, ast.Attribute) and node.func.attr == "sample":
             tex_name = getattr(node.func.value, 'id', None)
-            if tex_name and tex_name in self._texture_fields:
+            if tex_name and tex_name in self._texture_arrays:
                 if len(node.args) != 3:
                     raise TypeError("sample() takes exactly 3 arguments (u, v, w)")
                 coords = [self.visit(a) for a in node.args]
                 # Use the original kernel param name, not the inlined rename
                 original_name = self._texture_origin.get(tex_name, tex_name)
                 return ir.IRTextureSample(
-                    field_name=original_name, coords=coords)
+                    array_name=original_name, coords=coords)
 
         # Check for vector method calls: v.normalized(), v.cross(w), v.dot(w), v.norm()
         if isinstance(node.func, ast.Attribute):
@@ -1497,10 +1497,10 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRCall(func_name=func_name, args=args)
 
     def _visit_atomic(self, node: ast.Call, func_name: str, *, as_statement: bool):
-        """``tack.atomic_<op>(field, index, value)``.
+        """``tack.atomic_<op>(array, index, value)``.
 
         The index is a flat index, or a tuple with one index per dimension,
-        where a vector supplies one per component. On a vector field a
+        where a vector supplies one per component. On a vector array a
         vector value updates each component of the element the index
         names, one atomic per component. A scalar value there keeps the
         older meaning: the index is the flat index of one component.
@@ -1512,36 +1512,36 @@ class KernelTransformer(ast.NodeVisitor):
         operands unspecified); the expression then reads the temporary.
         """
         op = func_name.replace("atomic_", "")  # "add", "min", "max"
-        field_node = node.args[0]
-        field_name = field_node.id if isinstance(field_node, ast.Name) else None
-        field, index, value = self._visit_ordered(node.args)
+        array_node = node.args[0]
+        array_name = array_node.id if isinstance(array_node, ast.Name) else None
+        array, index, value = self._visit_ordered(node.args)
         by_dimension = isinstance(index, list)
         if by_dimension:
-            if field_name is None:
+            if array_name is None:
                 raise self._source_error(
-                    node, f"{func_name}()", "needs a named field for an index per dimension")
-            index = self._linearize_index(node, field_name, index)
-        ndim = self._vector_fields.get(field_name)
+                    node, f"{func_name}()", "needs a named array for an index per dimension")
+            index = self._linearize_index(node, array_name, index)
+        ndim = self._vector_arrays.get(array_name)
         if not by_dimension:
-            # A scalar value on a vector field takes a component's flat index.
-            kind = (ir.IRFieldExtent.STORAGE if ndim is not None and not isinstance(value, list)
-                    else ir.IRFieldExtent.ELEMENTS)
-            index = self._checked(node, field_name, [index], index, kind)
+            # A scalar value on a vector array takes a component's flat index.
+            kind = (ir.IRArrayExtent.STORAGE if ndim is not None and not isinstance(value, list)
+                    else ir.IRArrayExtent.ELEMENTS)
+            index = self._checked(node, array_name, [index], index, kind)
         if not isinstance(value, list):
             if by_dimension and ndim is not None:
                 raise self._source_error(
-                    node, f"{func_name}()", f"names an element of a field of {ndim}-vectors; "
+                    node, f"{func_name}()", f"names an element of an array of {ndim}-vectors; "
                     f"give it a {ndim}-vector, or the flat index of one component")
-            atomic = ir.IRAtomicOp(op=op, field=field, index=index, value=value)
+            atomic = ir.IRAtomicOp(op=op, array=array, index=index, value=value)
             if as_statement:
                 return atomic
             return self._capture_atomic(atomic)
         if ndim is None:
             raise self._source_error(
-                node, f"{func_name}()", "gives a vector to a field of scalars")
+                node, f"{func_name}()", "gives a vector to an array of scalars")
         if len(value) != ndim:
             raise self._source_error(
-                node, f"{func_name}()", f"gives a {len(value)}-vector to a field of {ndim}-vectors")
+                node, f"{func_name}()", f"gives a {len(value)}-vector to an array of {ndim}-vectors")
         # One atomic per component, each a statement among the
         # pre-statements; as an expression the value is the vector of the
         # components' old values.
@@ -1550,7 +1550,7 @@ class KernelTransformer(ast.NodeVisitor):
         olds = []
         for c, component in enumerate(value):
             atomic = ir.IRAtomicOp(
-                op=op, field=field, index=self._component_index(element, ndim, c),
+                op=op, array=array, index=self._component_index(element, ndim, c),
                 value=component)
             if as_statement:
                 self._pre_stmts.append(atomic)
@@ -1692,14 +1692,14 @@ class KernelTransformer(ast.NodeVisitor):
                 arg_name = call_node.args[callee_params.index(param_name)].id
                 if arg_name in self._vector_vars:
                     self._bind_vector(renamed, self._variable_value(arg_name))
-                if arg_name in self._vector_fields:
-                    # A vector field passed in: `fld[i]` in the body must
+                if arg_name in self._vector_arrays:
+                    # A vector array passed in: `fld[i]` in the body must
                     # expand to its components, as it does in the caller.
-                    self._vector_fields[renamed] = self._vector_fields[arg_name]
-                    if arg_name in self._matrix_fields:
-                        self._matrix_fields[renamed] = self._matrix_fields[arg_name]
-                if arg_name in self._texture_fields:
-                    self._texture_fields[renamed] = self._texture_fields[arg_name]
+                    self._vector_arrays[renamed] = self._vector_arrays[arg_name]
+                    if arg_name in self._matrix_arrays:
+                        self._matrix_arrays[renamed] = self._matrix_arrays[arg_name]
+                if arg_name in self._texture_arrays:
+                    self._texture_arrays[renamed] = self._texture_arrays[arg_name]
                     self._texture_origin[renamed] = self._texture_origin.get(arg_name, arg_name)
 
         # Emit parameter assignments
@@ -1708,7 +1708,7 @@ class KernelTransformer(ast.NodeVisitor):
             renamed = rename_map[param_name]
             # Skip assignment for texture params and local array params —
             # these are aliased to the caller's variable directly.
-            if renamed in self._texture_fields:
+            if renamed in self._texture_arrays:
                 continue
             if renamed in self._shared_vars:
                 continue
@@ -1834,7 +1834,7 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRSharedAlloc(name=target_name, dtype=scalar_type, size=size)
 
     def _try_parse_shared_like(self, target_name: str, value_node: ast.Call):
-        """Try to parse smem = tack.shared_like(field, 256). Returns IRSharedAlloc or None."""
+        """Try to parse smem = tack.shared_like(array, 256). Returns IRSharedAlloc or None."""
         try:
             name = self._resolve_call_name(value_node)
         except (NotImplementedError, AttributeError):
@@ -1842,21 +1842,21 @@ class KernelTransformer(ast.NodeVisitor):
         if name != "shared_like":
             return None
         if len(value_node.args) != 2:
-            raise NotImplementedError("tack.shared_like() takes exactly 2 arguments (field, size)")
+            raise NotImplementedError("tack.shared_like() takes exactly 2 arguments (array, size)")
 
-        # First arg is the field reference
-        field_arg = value_node.args[0]
-        if isinstance(field_arg, ast.Name):
-            field_name = field_arg.id
-        elif isinstance(field_arg, ast.Attribute):
-            field_name = field_arg.attr
+        # First arg is the array reference
+        array_arg = value_node.args[0]
+        if isinstance(array_arg, ast.Name):
+            array_name = array_arg.id
+        elif isinstance(array_arg, ast.Attribute):
+            array_name = array_arg.attr
         else:
-            raise NotImplementedError("tack.shared_like() first argument must be a field name")
+            raise NotImplementedError("tack.shared_like() first argument must be an array name")
 
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)
         self._array_sizes[target_name] = size
-        return ir.IRSharedAlloc(name=target_name, dtype=None, size=size, field_name=field_name)
+        return ir.IRSharedAlloc(name=target_name, dtype=None, size=size, array_name=array_name)
 
     def _try_parse_local_alloc(self, target_name: str, value_node: ast.Call):
         """Try to parse arr = tack.local_array(tack.f32, 8). Returns IRLocalAlloc or None."""
@@ -1888,7 +1888,7 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRLocalAlloc(name=target_name, dtype=scalar_type, size=size)
 
     def _try_parse_local_array_like(self, target_name: str, value_node: ast.Call):
-        """Try to parse arr = tack.local_array_like(field, 8). Returns IRLocalAlloc or None."""
+        """Try to parse arr = tack.local_array_like(array, 8). Returns IRLocalAlloc or None."""
         try:
             name = self._resolve_call_name(value_node)
         except (NotImplementedError, AttributeError):
@@ -1896,21 +1896,21 @@ class KernelTransformer(ast.NodeVisitor):
         if name != "local_array_like":
             return None
         if len(value_node.args) != 2:
-            raise NotImplementedError("tack.local_array_like() takes exactly 2 arguments (field, size)")
+            raise NotImplementedError("tack.local_array_like() takes exactly 2 arguments (array, size)")
 
-        # First arg is the field reference
-        field_arg = value_node.args[0]
-        if isinstance(field_arg, ast.Name):
-            field_name = field_arg.id
-        elif isinstance(field_arg, ast.Attribute):
-            field_name = field_arg.attr
+        # First arg is the array reference
+        array_arg = value_node.args[0]
+        if isinstance(array_arg, ast.Name):
+            array_name = array_arg.id
+        elif isinstance(array_arg, ast.Attribute):
+            array_name = array_arg.attr
         else:
-            raise NotImplementedError("tack.local_array_like() first argument must be a field name")
+            raise NotImplementedError("tack.local_array_like() first argument must be an array name")
 
         size = self.visit(value_node.args[1])
         self._shared_vars.add(target_name)  # treat as array for indexing purposes
         self._array_sizes[target_name] = size
-        return ir.IRLocalAlloc(name=target_name, dtype=None, size=size, field_name=field_name)
+        return ir.IRLocalAlloc(name=target_name, dtype=None, size=size, array_name=array_name)
 
     def _try_parse_vector_construct(self, value_node: ast.expr) -> list | None:
         """Try to parse a Vector([a, b, c]) constructor. Returns list of AST element nodes or None."""
@@ -2089,15 +2089,15 @@ class KernelTransformer(ast.NodeVisitor):
         binding anything. A component that reads what an earlier component's
         assignment has already written would see the new value, so it is
         evaluated into a temporary first: for a vector variable, a read of
-        an earlier target component (``v = v.cross(w)``); for a field
-        element, any field load, since fields may share storage
+        an earlier target component (``v = v.cross(w)``); for an array
+        element, any array load, since arrays may share storage
         (``a[i] = a[i].cross(b[i])``). ``targets`` names the variable's
-        components, or is None for a store to a field.
+        components, or is None for a store to an array.
         """
         settled = list(components)
         for c in range(1, len(settled)):
             if targets is None:
-                hazard = any(isinstance(n, ir.IRFieldLoad) for n in walk_ir(settled[c]))
+                hazard = any(isinstance(n, ir.IRArrayLoad) for n in walk_ir(settled[c]))
             else:
                 written = set(targets[:c])
                 hazard = any(isinstance(n, ir.IRName) and n.name in written
@@ -2106,44 +2106,44 @@ class KernelTransformer(ast.NodeVisitor):
                 settled[c] = self._capture_value(settled[c], statements, freeze_name=True)
         return _like(components, settled)
 
-    def _store_vector_field(self, target: ast.Subscript, components: list) -> list:
-        """Store a vector into a vector field: field[i] = vec."""
+    def _store_vector_array(self, target: ast.Subscript, components: list) -> list:
+        """Store a vector into a vector array: array[i] = vec."""
         ndim = len(components)
         name = target.value.id if isinstance(target.value, ast.Name) else None
-        width = self._vector_fields.get(name)
+        width = self._vector_arrays.get(name)
         if width is None:
             raise self._source_error(
                 target, "assignment", f"stores {_describe_value(components)} into an "
-                f"element of scalar storage; '{name}' is not a vector field")
-        shape = self._field_shape(name)
+                f"element of scalar storage; '{name}' is not a vector array")
+        shape = self._array_shape(name)
         if getattr(components, 'shape', (ndim,)) != shape:
             element = VectorValue([None] * width, shape).describe()[2:]
             raise self._source_error(
                 target, "assignment",
-                f"stores {_describe_value(components)} into a field of {element}"
+                f"stores {_describe_value(components)} into an array of {element}"
                 + ("s" if len(shape) == 1 else " elements"))
-        field_node, index_node, components = self._visit_store_location(target, components)
+        array_node, index_node, components = self._visit_store_location(target, components)
         stmts = []
         # Each component store repeats the index, so one that loads from a
-        # field is read before the first store can change it.
-        if any(isinstance(n, ir.IRFieldLoad) for n in walk_ir(index_node)):
+        # array is read before the first store can change it.
+        if any(isinstance(n, ir.IRArrayLoad) for n in walk_ir(index_node)):
             index_node = self._capture_value(index_node, stmts)
         int_index = self._element_index(index_node)
         components = self._settle_components(components, stmts)
         for c in range(ndim):
-            stmts.append(ir.IRFieldStore(
-                field=field_node, index=self._component_index(int_index, ndim, c),
+            stmts.append(ir.IRArrayStore(
+                array=array_node, index=self._component_index(int_index, ndim, c),
                 value=components[c]))
         return stmts
 
     @staticmethod
     def _element_index(index):
-        """A vector field element's index as an integer.
+        """A vector array element's index as an integer.
 
         The cast makes a float index name an element (127.7 is element
         127) before it is scaled by the width. It is 64-bit: a narrower
         one would wrap the index, or its product with the width, for a
-        field of more than 2**31 components.
+        array of more than 2**31 components.
         """
         return ir.IRCast(value=index, dtype=i64)
 
@@ -2188,38 +2188,38 @@ class KernelTransformer(ast.NodeVisitor):
         return VectorValue(
             (build(row) for row in self._componentwise(node, construct, args)), shape)
 
-    # --- Vector field elements: vf[i] op= vec, vf[i][c] = x, vf[i][c] op= x ---
+    # --- Vector array elements: vf[i] op= vec, vf[i][c] = x, vf[i][c] op= x ---
 
-    def _is_field_component(self, target) -> bool:
-        """``vf[i][c]``: one component of an element of a vector field."""
+    def _is_array_component(self, target) -> bool:
+        """``vf[i][c]``: one component of an element of a vector array."""
         return (isinstance(target, ast.Subscript) and isinstance(target.value, ast.Subscript)
                 and isinstance(target.value.value, ast.Name)
-                and target.value.value.id in self._vector_fields)
+                and target.value.value.id in self._vector_arrays)
 
-    def _field_element(self, node: ast.Subscript):
-        """The field and the component indices of the vector field element ``vf[i]``.
+    def _array_element(self, node: ast.Subscript):
+        """The array and the component indices of the vector array element ``vf[i]``.
 
         The element index is evaluated once, so a load and a store of the
         element can share it.
         """
-        ndim = self._vector_fields[node.value.id]
+        ndim = self._vector_arrays[node.value.id]
         index = self._capture_value(self._visit_subscript_index(node), self._pre_stmts)
-        field = self.visit(node.value)
+        array = self.visit(node.value)
         element = self._element_index(index)
-        return field, [self._component_index(element, ndim, c) for c in range(ndim)]
+        return array, [self._component_index(element, ndim, c) for c in range(ndim)]
 
-    def _component_stores(self, field, indices: list, selector, value):
-        """Store ``value`` to the component of a field element ``selector`` picks."""
+    def _component_stores(self, array, indices: list, selector, value):
+        """Store ``value`` to the component of an array element ``selector`` picks."""
         if isinstance(selector, int):
-            return ir.IRFieldStore(field=field, index=indices[selector], value=value)
+            return ir.IRArrayStore(array=array, index=indices[selector], value=value)
         value = self._capture_value(value, self._pre_stmts)
         return [
             ir.IRIf(ir.IRCompare(op="==", left=selector, right=ir.IRConstant(c)),
-                    [ir.IRFieldStore(field=field, index=index, value=value)], [])
+                    [ir.IRArrayStore(array=array, index=index, value=value)], [])
             for c, index in enumerate(indices)
         ]
 
-    def _assign_field_component(self, target: ast.Subscript, value):
+    def _assign_array_component(self, target: ast.Subscript, value):
         """``vf[i][c] = value``.
 
         A literal component is one store. A runtime one guards a store to
@@ -2232,22 +2232,22 @@ class KernelTransformer(ast.NodeVisitor):
         # The value is evaluated before the target's indices.
         saved = self._pre_stmts
         self._pre_stmts = []
-        field, indices = self._field_element(target.value)
+        array, indices = self._array_element(target.value)
         selector = self._component_selector(
-            target, len(indices), self._matrix_fields.get(target.value.value.id))
+            target, len(indices), self._matrix_arrays.get(target.value.value.id))
         statements = self._pre_stmts
         self._pre_stmts = saved
         if statements:
             value = self._capture_value(value, self._pre_stmts)
             self._pre_stmts.extend(statements)
-        return self._component_stores(field, indices, selector, value)
+        return self._component_stores(array, indices, selector, value)
 
-    def _augment_field_component(self, target: ast.Subscript, op: str, value_node):
+    def _augment_array_component(self, target: ast.Subscript, op: str, value_node):
         """``vf[i][c] op= value``: indices once, the old value read first."""
-        field, indices = self._field_element(target.value)
+        array, indices = self._array_element(target.value)
         selector = self._component_selector(
-            target, len(indices), self._matrix_fields.get(target.value.value.id))
-        loads = [ir.IRFieldLoad(field=field, index=index) for index in indices]
+            target, len(indices), self._matrix_arrays.get(target.value.value.id))
+        loads = [ir.IRArrayLoad(array=array, index=index) for index in indices]
         if isinstance(selector, int):
             read = loads[selector]
         else:
@@ -2260,13 +2260,13 @@ class KernelTransformer(ast.NodeVisitor):
             read = self._capture_value(read, self._pre_stmts)
             self._pre_stmts.extend(statements)
         return self._component_stores(
-            field, indices, selector, ir.IRBinOp(op=op, left=read, right=right))
+            array, indices, selector, ir.IRBinOp(op=op, left=read, right=right))
 
-    def _augment_vector_field(self, target: ast.Subscript, op: str, value_node):
+    def _augment_vector_array(self, target: ast.Subscript, op: str, value_node):
         """``vf[i] op= value`` for a vector or a scalar ``value``."""
-        field, indices = self._field_element(target)
-        loads = VectorValue((ir.IRFieldLoad(field=field, index=index) for index in indices),
-                            self._matrix_fields.get(target.value.id))
+        array, indices = self._array_element(target)
+        loads = VectorValue((ir.IRArrayLoad(array=array, index=index) for index in indices),
+                            self._matrix_arrays.get(target.value.id))
         right, statements = self._visit_expression(value_node)
         if statements:
             loads = self._capture_value(loads, self._pre_stmts)
@@ -2275,7 +2275,7 @@ class KernelTransformer(ast.NodeVisitor):
         stmts = []
         values = self._settle_components(
             [ir.IRBinOp(op=op, left=old, right=new) for old, new in rows], stmts)
-        stmts.extend(ir.IRFieldStore(field=field, index=index, value=value)
+        stmts.extend(ir.IRArrayStore(array=array, index=index, value=value)
                      for index, value in zip(indices, values))
         return stmts
 
@@ -2527,46 +2527,46 @@ class KernelTransformer(ast.NodeVisitor):
         """Evaluate an assignment RHS before side effects in its target."""
         saved = self._pre_stmts
         self._pre_stmts = []
-        field = self.visit(target.value)
+        array = self.visit(target.value)
         index = self._visit_subscript_index(target)
         statements = self._pre_stmts
         self._pre_stmts = saved
         if statements:
             value = self._capture_value(value, self._pre_stmts)
             self._pre_stmts.extend(statements)
-        return field, index, value
+        return array, index, value
 
     def _visit_subscript_index(self, node: ast.Subscript):
         """Extract and linearize index from a subscript.
 
         Handles:
-        - field[i] → i
-        - field[None] → 0
-        - field[i, j] → i * DimSize(field, 1) + j
-        - field[i, j, k] → (i * DimSize(field, 1) + j) * DimSize(field, 2) + k
+        - array[i] → i
+        - array[None] → 0
+        - array[i, j] → i * DimSize(array, 1) + j
+        - array[i, j, k] → (i * DimSize(array, 1) + j) * DimSize(array, 2) + k
         """
-        # field[None] → 0
+        # array[None] → 0
         if isinstance(node.slice, ast.Constant) and node.slice.value is None:
             return ir.IRConstant(0)
 
-        # Multi-dimensional: field[i, j, k]
+        # Multi-dimensional: array[i, j, k]
         if isinstance(node.slice, ast.Tuple):
-            field_name = node.value.id if isinstance(node.value, ast.Name) else None
-            if field_name is None:
-                raise NotImplementedError("Multi-dim indexing requires a named field")
+            array_name = node.value.id if isinstance(node.value, ast.Name) else None
+            if array_name is None:
+                raise NotImplementedError("Multi-dim indexing requires a named array")
 
-            return self._linearize_index(node, field_name, self._visit_ordered(node.slice.elts))
+            return self._linearize_index(node, array_name, self._visit_ordered(node.slice.elts))
 
         index = self.visit(node.slice)
         if isinstance(index, list):
             # A vector indexes one dimension per component: g[I] is g[I[0], I[1]]
             if not isinstance(node.value, ast.Name):
-                raise self._source_error(node, "subscript", "indexes an unnamed field with a vector")
+                raise self._source_error(node, "subscript", "indexes an unnamed array with a vector")
             return self._linearize_index(node, node.value.id, [index])
         name = node.value.id if isinstance(node.value, ast.Name) else None
         return self._checked(node, name, [index], index)
 
-    def _linearize_index(self, node, field_name: str, indices: list):
+    def _linearize_index(self, node, array_name: str, indices: list):
         """Row-major index from one index per dimension: (i * dim1 + j) * dim2 + k.
 
         A vector among the indices supplies one dimension per component.
@@ -2574,14 +2574,14 @@ class KernelTransformer(ast.NodeVisitor):
         flat = []
         for index in indices:
             flat.extend(index if isinstance(index, list) else [index])
-        # The field's shape is known only at dispatch, where its dimension
+        # The array's shape is known only at dispatch, where its dimension
         # sizes are resolved; each size carries what that check needs. One
         # index alone has no size to resolve: it is a flat index.
         source = (getattr(node, 'lineno', None), getattr(node, 'col_offset', 0) + 1,
                   self._inline_stack[-1] if self._inline_stack else None)
         result = flat[0]
         for d in range(1, len(flat)):
-            dim_size = ir.IRDimSize(field_name=field_name, dim=d)
+            dim_size = ir.IRDimSize(array_name=array_name, dim=d)
             dim_size.index_count = len(flat)
             dim_size.index_source = source
             result = ir.IRBinOp(
@@ -2589,7 +2589,7 @@ class KernelTransformer(ast.NodeVisitor):
                 left=ir.IRBinOp(op="*", left=result, right=dim_size),
                 right=flat[d],
             )
-        return self._checked(node, field_name, flat, result, source=source)
+        return self._checked(node, array_name, flat, result, source=source)
 
     # --- Debug mode: bounds checks ---
 
@@ -2614,11 +2614,11 @@ class KernelTransformer(ast.NodeVisitor):
                 return text
         return ast.unparse(node)
 
-    def _checked(self, node, name, indices, flat, kind=ir.IRFieldExtent.ELEMENTS,
+    def _checked(self, node, name, indices, flat, kind=ir.IRArrayExtent.ELEMENTS,
                  source=None):
         """``flat``, the index of an access to ``name``, as debug mode checks it.
 
-        Several ``indices`` are checked against one dimension of the field
+        Several ``indices`` are checked against one dimension of the array
         each; one is a flat index, checked against the ``kind`` of extent.
         An array is checked against its size. Out of debug mode, or for an
         array this function cannot size, ``flat`` is returned unchecked.
@@ -2631,13 +2631,13 @@ class KernelTransformer(ast.NodeVisitor):
                 return flat
             extents = [copy.deepcopy(size)]
         elif len(indices) == 1:
-            extents = [ir.IRFieldExtent(name, kind)]
+            extents = [ir.IRArrayExtent(name, kind)]
         else:
-            extents = [ir.IRFieldExtent(name, ir.IRFieldExtent.LEADING)]
+            extents = [ir.IRArrayExtent(name, ir.IRArrayExtent.LEADING)]
             for d in range(1, len(indices)):
                 # Tagged as linearization's are, so too many indices is
                 # the same TypeError whichever node resolve meets first.
-                dim_size = ir.IRDimSize(field_name=name, dim=d)
+                dim_size = ir.IRDimSize(array_name=name, dim=d)
                 dim_size.index_count = len(indices)
                 dim_size.index_source = source
                 extents.append(dim_size)
@@ -2740,7 +2740,7 @@ class KernelTransformer(ast.NodeVisitor):
 
 def _effect_name(node) -> str | None:
     """Name an observable effect, or None for an effect-free node."""
-    if isinstance(node, ir.IRFieldStore):
+    if isinstance(node, ir.IRArrayStore):
         return "store"
     if isinstance(node, (ir.IRAtomicOp, ir.IRBlockReduce)):
         prefix = "atomic" if isinstance(node, ir.IRAtomicOp) else "block"
@@ -2851,24 +2851,24 @@ class _NameRenamer(ast.NodeTransformer):
         return node
 
 
-def transform_kernel(kernel_ast: ast.Module, vector_fields=None,
-                     texture_fields=None, python_func=None, bindings=None,
+def transform_kernel(kernel_ast: ast.Module, vector_arrays=None,
+                     texture_arrays=None, python_func=None, bindings=None,
                      template_funcs=None, debug=False) -> ir.IRModule:
     """Transform a kernel's Python AST into Tack IR.
 
     Args:
         kernel_ast: Parsed Python AST of the kernel function.
-        vector_fields: Optional dict mapping parameter names to their
+        vector_arrays: Optional dict mapping parameter names to their
             vector component count (e.g., {"pixels": 3, "cam_pos": 3}).
-        texture_fields: Optional dict mapping parameter names to their
+        texture_arrays: Optional dict mapping parameter names to their
             3D shape (e.g., {"vol": (100, 100, 100)}).
         python_func: Defining Python callable for globals/closure bindings.
         bindings: Explicit namespace for AST-only callers without a callable.
         template_funcs: Transformation-local map of resolved template methods.
-        debug: Check every field and array index (see ``ir_bounds``).
+        debug: Check every array and array index (see ``ir_bounds``).
     """
-    transformer = KernelTransformer(vector_fields=vector_fields,
-                                    texture_fields=texture_fields, python_func=python_func,
+    transformer = KernelTransformer(vector_arrays=vector_arrays,
+                                    texture_arrays=texture_arrays, python_func=python_func,
                                     bindings=bindings, template_funcs=template_funcs,
                                     debug=debug)
     return transformer.visit(kernel_ast)

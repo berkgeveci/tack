@@ -4,7 +4,7 @@ Backends were duck-typed: the contract had to be reconstructed by reading
 five files, and callers asked what a backend could do by probing for
 methods —
 
-    if hasattr(backend, 'reduce_field'):     # does it reduce on device?
+    if hasattr(backend, 'reduce_array'):     # does it reduce on device?
     if hasattr(backend, 'memory_space'):     # can it classify a pointer?
     if "CUDA" in type(backend).__name__:     # which backend is this?
 
@@ -49,12 +49,12 @@ class Backend:
 
     # ── Capabilities ─────────────────────────────────────────────────
 
-    #: Scalar types this backend accepts as field dtypes. Dispatch checks
-    #: every field argument against this set.
+    #: Scalar types this backend accepts as array dtypes. Dispatch checks
+    #: every array argument against this set.
     supported_dtypes: frozenset[ScalarType] = frozenset()
 
-    #: True when `reduce_field()` runs reductions on the device. When
-    #: False, `Field.sum()`/`min()`/`max()` fall back to numpy on the host.
+    #: True when `reduce_array()` runs reductions on the device. When
+    #: False, `Array.sum()`/`min()`/`max()` fall back to numpy on the host.
     supports_device_reductions: bool = False
 
     #: Native workgroup execution for shared memory, barriers, local thread
@@ -81,13 +81,13 @@ class Backend:
 
     @property
     def supported_atomic_dtypes(self) -> frozenset[ScalarType]:
-        """Global field types supporting add/min/max on this target."""
+        """Global array types supporting add/min/max on this target."""
         from tack.lang.atomic_support import ATOMIC_DTYPES
         return ATOMIC_DTYPES.get(self.name, frozenset()) & self.supported_dtypes
 
     @property
     def supports_f64(self) -> bool:
-        """Whether kernels can be dispatched with f64 fields.
+        """Whether kernels can be dispatched with f64 arrays.
 
         Derived, so it cannot disagree with `supported_dtypes`.
         """
@@ -100,18 +100,18 @@ class Backend:
 
     # ── Required of every backend ────────────────────────────────────
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+    def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                        exportable: bool = False):
-        """Allocate backend storage for a field, returning a DeviceBuffer."""
+        """Allocate backend storage for an array, returning a DeviceBuffer."""
         raise NotImplementedError
 
     def wrap_ptr(self, ptr, dtype: ScalarType, shape: tuple[int, ...]):
         """Wrap existing memory as a DeviceBuffer without copying."""
         raise NotImplementedError
 
-    def fill_field(self, field, value) -> bool:
-        """Fill a field with one scalar the backend's own way; false to let
-        `Field.fill` fill the buffer in place.
+    def fill_array(self, array, value) -> bool:
+        """Fill an array with one scalar the backend's own way; false to let
+        `Array.fill` fill the buffer in place.
 
         The CPU backend runs a large fill as a kernel through its dispatch,
         so the threads first-touch the pages. GPU buffers fill on the
@@ -130,7 +130,7 @@ class Backend:
 
         Backends whose launches complete before ``execute`` returns need not
         override it. Metal queues launches and waits only when the host
-        touches field memory, so ``tack.sync()`` is how a caller timing
+        touches array memory, so ``tack.sync()`` is how a caller timing
         kernels, or handing memory to a library Tack cannot see, waits.
         """
 
@@ -185,8 +185,8 @@ class Backend:
         pack buffers. CPU and Metal ignore them."""
         raise NotImplementedError
 
-    def reduce_field(self, field, op: str) -> float:
-        """Reduce a field on the device. Only called when
+    def reduce_array(self, array, op: str) -> float:
+        """Reduce an array on the device. Only called when
         `supports_device_reductions` is True."""
         raise NotImplementedError(
             f"{self.label} backend does not implement device reductions")
@@ -194,7 +194,7 @@ class Backend:
     def texture_in_hardware(self, shape_3d) -> bool:
         """Whether a `Texture3D` of this extent is sampled by texture units.
 
-        False means the texture keeps a private field and the generated
+        False means the texture keeps a private array and the generated
         code interpolates it in software, which is what CPU does. `Texture3D`
         asks when choosing its storage, and backends whose answer varies by
         device or extent ask again when preparing a variant, so a texture
@@ -206,8 +206,8 @@ class Backend:
         """Allocate a single-channel f32 3D texture image.
 
         Only called when `texture_in_hardware()` is True. The result is
-        owned by one `Texture3D`: it exposes ``upload(field)``, which copies
-        the field into it, and frees the device objects when collected.
+        owned by one `Texture3D`: it exposes ``upload(array)``, which copies
+        the array into it, and frees the device objects when collected.
         """
         raise NotImplementedError(
             f"{self.label} backend has no hardware textures")

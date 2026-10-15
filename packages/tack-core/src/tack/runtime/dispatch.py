@@ -56,7 +56,7 @@ def env_flag(name: str) -> bool:
 def init(arch: str = "cpu", debug: bool | None = None, **options):
     """Initialize Tack with a specific backend architecture.
 
-    ``debug=True`` checks every field and array index in every kernel
+    ``debug=True`` checks every array and array index in every kernel
     launched from now on, and raises ``IndexError`` after a launch that
     went out of bounds, naming the access; the access itself is skipped.
     ``None`` (the default) takes it from ``TACK_DEBUG``. Kernels compile

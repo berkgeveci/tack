@@ -10,7 +10,7 @@ each entry's index into its bucket, and sorts each bucket by (key, index):
 the same stable order a radix sort of the whole key gives, in a few
 launches.
 
-A key is an id field, or a vector field of two or four ids (an edge's two
+A key is an id array, or a vector field of two or four ids (an edge's two
 points, a face's four), compared component by component; its first
 component is its bucket. Ids are the topology's ``id_dtype``, so a key
 takes no more room than the ids it holds, and nothing is packed: 64-bit ids
@@ -123,7 +123,7 @@ def _count(values):
 
 
 def keys_of(values):
-    """The template over ``values``: an id field, or a vector field of 2 or 4 ids."""
+    """The template over ``values``: an id array, or a vector field of 2 or 4 ids."""
     width = _width(values)
     if width not in _KEYS:
         raise ValueError(f"keys have 1, 2 or 4 components, not {width}")
@@ -202,7 +202,7 @@ def _radix_order(values, n, indices):
 
 
 def bucket_order(values, nbuckets, index_dtype=None):
-    """``(order, starts)``: the stable permutation sorting ``values`` -- an id field,
+    """``(order, starts)``: the stable permutation sorting ``values`` -- an id array,
     or a vector field of 2 or 4 ids compared component by component -- as
     ``argsort`` would, for keys whose first component is a bucket in ``[0,
     nbuckets)``; and where each bucket starts in it, ``nbuckets + 1`` offsets.

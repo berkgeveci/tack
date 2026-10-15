@@ -3,7 +3,7 @@
 The IR pass pipeline substitutes dispatch-time constants into the IR — a
 multi-dimensional index linearizes to ``i * dim1 + j`` with ``dim1`` as a
 literal.  So the row stride is part of the compiled code's identity, and
-reusing that code for a differently shaped field reads the wrong addresses
+reusing that code for a differently shaped array reads the wrong addresses
 and returns wrong numbers with no error.
 
 The other half of the contract is that the key must not be *too* fine: a
@@ -134,18 +134,18 @@ def test_template_ir_is_not_mutated_by_dispatch(backend):
     assert dims, "a dispatch consumed the template's IRDimSize nodes"
 
 
-@pytest.mark.parametrize("order", [("field", "scalar"), ("scalar", "field")])
-def test_field_and_scalar_arguments_have_distinct_calling_conventions(backend, order):
+@pytest.mark.parametrize("order", [("array", "scalar"), ("scalar", "array")])
+def test_array_and_scalar_arguments_have_distinct_calling_conventions(backend, order):
     @tack.kernel
     def fill(unused, out):
         for i in range(out.shape[0]):
             out[i] = 2.0
 
-    field = tack.empty((7,))
+    array = tack.empty((7,))
     out = tack.empty((7,))
     for kind in (*order, order[0]):
         out.fill(-1)
-        fill(field if kind == "field" else 1.0, out)
+        fill(array if kind == "array" else 1.0, out)
         np.testing.assert_array_equal(out.numpy(), np.full(7, 2.0))
     assert _variant_count(fill) == 2
 
@@ -315,7 +315,7 @@ def test_a_live_template_class_keeps_its_variant(backend):
     assert len(slot) == 1
 
 
-# ── A template's fields: rank, not size ───────────────────────────────
+# ── A template's arrays: rank, not size ───────────────────────────────
 
 @tack.device_class
 class _Holds:
@@ -343,8 +343,8 @@ def _rows_through_holder(h, out):
         out[i] = h.at(i, 1)
 
 
-def test_a_templates_field_length_does_not_specialize():
-    """A template holding a field compiled once per length of that field, every
+def test_a_templates_array_length_does_not_specialize():
+    """A template holding an array compiled once per length of that array, every
     time a filter's output changed size; only what the code bakes in counts."""
     tack.init(arch=tack.cpu)
     for n in (10, 20, 30):

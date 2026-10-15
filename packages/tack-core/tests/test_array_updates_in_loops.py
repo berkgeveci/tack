@@ -1,4 +1,4 @@
-"""Field elements updated inside sequential loops.
+"""Array elements updated inside sequential loops.
 
 On Metal a loop like
 
@@ -9,10 +9,10 @@ On Metal a loop like
 left total at start + x[n - 1]: Apple's compiler read total[0]
 once, before the loop. The generated source was right, and one thread ran
 it. It happened when the element's address did not depend on the thread,
-the loop also stored to another field of the same type, and the trip count
-was a runtime value; it began when field pointers became members of one
+the loop also stored to another array of the same type, and the trip count
+was a runtime value; it began when array pointers became members of one
 argument buffer (the commit before gave the right answer in every case
-here). msl_gen now compiles a loop that stores to a field in a function
+here). msl_gen now compiles a loop that stores to an array in a function
 of its own, which the kernel entry calls.
 
 These run on every backend: they are plain statements about what a loop
@@ -148,7 +148,7 @@ CASES = [
     ("counter[0] = k + 1 (a plain store)", k_plain_store_other, lambda t, c: (t[0], c[0]), (210, 6)),
     ("counter[k] = 1 (other address varies)", k_other_varies, lambda t, c: (t[0], c[5]), (210, 1)),
     ("total[k] += x[k] (total address varies)", k_total_varies, lambda t, c: (t[5], c[0]), (60, 6)),
-    ("three stores, two fields", k_three, lambda t, c: (t[0], c[0], c[1]), (210, 6, 12)),
+    ("three stores, two arrays", k_three, lambda t, c: (t[0], c[0], c[1]), (210, 6, 12)),
     ("one thread of 64 runs the loop", k_many_threads, lambda t, c: (t[0], c[0]), (210, 6)),
 ]
 
@@ -156,7 +156,7 @@ CASES = [
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32], ids=["i32", "f32"])
 @pytest.mark.parametrize("kernel, pick, want", [case[1:] for case in CASES],
                          ids=[case[0].split("  ")[0] for case in CASES])
-def test_field_updates_in_a_sequential_loop(backend, kernel, pick, want, dtype):
+def test_array_updates_in_a_sequential_loop(backend, kernel, pick, want, dtype):
     np_dtype = tack.empty((1,), dtype).numpy().dtype
     counter = tack.zeros((6,), dtype)
     total = tack.zeros((6,), dtype)
@@ -175,7 +175,7 @@ def _drain_queue(counter, total, x, n):
 
 
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32], ids=["i32", "f32"])
-def test_while_loop_over_zero_dimensional_fields(backend, dtype):
+def test_while_loop_over_zero_dimensional_arrays(backend, dtype):
     """The form it was found in: a queue's head and a running total."""
     counter = tack.zeros((), dtype)
     total = tack.zeros((), dtype)
@@ -199,8 +199,8 @@ def _block_prefix(x, out, n):
                 out[i + k] = smem[k]
 
 
-def test_loop_storing_to_workgroup_memory_and_a_field(backend):
-    """A kernel whose loops store to a workgroup array and to a field takes
+def test_loop_storing_to_workgroup_memory_and_a_array(backend):
+    """A kernel whose loops store to a workgroup array and to an array takes
     the separate body function with the array declared in the entry."""
     if not get_backend().supports_workgroups:
         pytest.skip("workgroup memory needs a GPU backend")

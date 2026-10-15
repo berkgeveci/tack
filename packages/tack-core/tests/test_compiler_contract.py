@@ -10,11 +10,11 @@ import pytest
 import tack
 
 
-def _int_field(values):
+def _int_array(values):
     values = np.asarray(values, dtype=np.int32)
-    field = tack.empty(values.shape, tack.i32)
-    tack.copyto(field, values)
-    return field
+    array = tack.empty(values.shape, tack.i32)
+    tack.copyto(array, values)
+    return array
 
 
 @tack.kernel
@@ -27,21 +27,21 @@ def _increment(state, iterations):
 
 
 @pytest.mark.parametrize("iterations", [0, 1])
-def test_sequential_field_mutation_control(backend, iterations):
+def test_sequential_array_mutation_control(backend, iterations):
     """Empty and single-iteration loops establish the initial-state behavior."""
-    state = _int_field([19] * 7)
+    state = _int_array([19] * 7)
     _increment(state, iterations)
     np.testing.assert_array_equal(state.numpy(), np.full(7, iterations))
 
 
-def test_sequential_field_read_after_write(backend):
+def test_sequential_array_read_after_write(backend):
     """An unchanged address does not imply an unchanged value (LC1)."""
-    state = _int_field([19] * 7)
+    state = _int_array([19] * 7)
     _increment(state, 3)
     np.testing.assert_array_equal(state.numpy(), np.full(7, 3))
 
 
-def test_sequential_field_mutation_without_tack_optimizations(backend, monkeypatch):
+def test_sequential_array_mutation_without_tack_optimizations(backend, monkeypatch):
     """The same program reaches the reference result without Tack's passes.
 
     The backend fixture creates a fresh backend, so the dispatch cannot
@@ -51,7 +51,7 @@ def test_sequential_field_mutation_without_tack_optimizations(backend, monkeypat
     import tack.lang.ir_optimize as opt
 
     monkeypatch.setattr(opt, "optimize_ir", lambda ir_func: None)
-    state = _int_field([19] * 7)
+    state = _int_array([19] * 7)
     _increment(state, 3)
     np.testing.assert_array_equal(state.numpy(), np.full(7, 3))
 
@@ -64,26 +64,26 @@ def _ordered_writes(a, b, out):
         out[i] = a[i]
 
 
-def test_distinct_field_arguments_control(backend):
-    a = _int_field([19] * 7)
-    b = _int_field([23] * 7)
-    out = _int_field([-1] * 7)
+def test_distinct_array_arguments_control(backend):
+    a = _int_array([19] * 7)
+    b = _int_array([23] * 7)
+    out = _int_array([-1] * 7)
     _ordered_writes(a, b, out)
     np.testing.assert_array_equal(a.numpy(), np.full(7, 1))
     np.testing.assert_array_equal(b.numpy(), np.full(7, 2))
     np.testing.assert_array_equal(out.numpy(), np.full(7, 1))
 
 
-@pytest.mark.parametrize("alias", ["same_field", "reshape_view"])
-def test_overlapping_field_arguments_preserve_program_order(backend, alias):
+@pytest.mark.parametrize("alias", ["same_array", "reshape_view"])
+def test_overlapping_array_arguments_preserve_program_order(backend, alias):
     """LC2: overlapping arguments preserve each iteration's program order.
 
     Each parallel iteration owns one element; aliasing here creates no
-    inter-iteration race. A distinct Field wrapper must obey the same rule.
+    inter-iteration race. A distinct Array wrapper must obey the same rule.
     """
-    a = _int_field([19] * 7)
-    b = a if alias == "same_field" else a.reshape((7,))
-    out = _int_field([-1] * 7)
+    a = _int_array([19] * 7)
+    b = a if alias == "same_array" else a.reshape((7,))
+    out = _int_array([-1] * 7)
     _ordered_writes(a, b, out)
     np.testing.assert_array_equal(out.numpy(), np.full(7, 2))
 
@@ -146,12 +146,12 @@ def test_zero_trip_loop_preserves_prior_local_value(backend, iterations):
                 value = 7
             out[i] = value
 
-    out = _int_field([-1] * 7)
+    out = _int_array([-1] * 7)
     local_value(out, iterations)
     np.testing.assert_array_equal(out.numpy(), np.full(7, 19 if iterations == 0 else 7))
 
 
-def test_while_loop_observes_field_mutation(backend):
+def test_while_loop_observes_array_mutation(backend):
     @tack.kernel
     def increment_while(state):
         for i in range(state.shape[0]):
@@ -162,7 +162,7 @@ def test_while_loop_observes_field_mutation(backend):
                 state[i] = value + 1
                 j = j + 1
 
-    state = _int_field([19] * 7)
+    state = _int_array([19] * 7)
     increment_while(state)
     np.testing.assert_array_equal(state.numpy(), np.full(7, 3))
 
@@ -176,7 +176,7 @@ def test_loop_load_observes_store_through_an_alias(backend):
                 value = b[i]
                 a[i] = value + 1
 
-    state = _int_field([19] * 7)
+    state = _int_array([19] * 7)
     increment_alias(state, state.reshape((7,)))
     np.testing.assert_array_equal(state.numpy(), np.full(7, 3))
 
@@ -190,8 +190,8 @@ def test_load_after_alias_store_is_not_a_common_subexpression(backend):
             after = a[i]
             out[i] = after - before
 
-    state = _int_field([19] * 7)
-    out = _int_field([-1] * 7)
+    state = _int_array([19] * 7)
+    out = _int_array([-1] * 7)
     read_write_read(state, state.reshape((7,)), out)
     np.testing.assert_array_equal(out.numpy(), np.full(7, 2))
 
@@ -204,7 +204,7 @@ def test_copy_propagation_preserves_reads_before_assignment(backend):
             value = replacement
             out[i] = before + value
 
-    out = _int_field([-1])
+    out = _int_array([-1])
     late_copy(out, 3, 7)
     np.testing.assert_array_equal(out.numpy(), [10])
 
@@ -219,8 +219,8 @@ def test_copy_propagation_preserves_loop_steps(backend):
                 total = total + alias[j]
             out[i] = total
 
-    data = _int_field([1, 2, 3, 4, 5, 6])
-    out = _int_field([-1])
+    data = _int_array([1, 2, 3, 4, 5, 6])
+    out = _int_array([-1])
     stepped_sum(data, out)
     np.testing.assert_array_equal(out.numpy(), [9])
 
@@ -235,7 +235,7 @@ def test_copy_propagation_counts_loop_variable_bindings(backend):
                 total = total + saved
             out[i] = total
 
-    out = _int_field([-1])
+    out = _int_array([-1])
     preserve_scalar(out, 7)
     np.testing.assert_array_equal(out.numpy(), [21])
 
@@ -249,7 +249,7 @@ def _mark_range(out, start, end):
 @pytest.mark.parametrize("start, end", [(0, 7), (3, 7), (6, 7), (4, 4), (5, 2)])
 def test_parallel_range_honors_its_start(backend, start, end):
     """LC5: the outermost range covers [start, end), or nothing when empty."""
-    out = _int_field([-1] * 7)
+    out = _int_array([-1] * 7)
     _mark_range(out, start, end)
     expected = np.full(7, -1)
     expected[start:end] = np.arange(start, end) + 1
@@ -265,8 +265,8 @@ def test_parallel_range_start_with_a_dimension_bound(backend):
 
     for n in (5, 9):
         values = np.arange(1, n + 1)
-        out = _int_field([-1] * n)
-        neighbor_sum(_int_field(values), out)
+        out = _int_array([-1] * n)
+        neighbor_sum(_int_array(values), out)
         expected = np.full(n, -1)
         expected[1:-1] = values[:-2] + values[2:]
         np.testing.assert_array_equal(out.numpy(), expected)
@@ -278,7 +278,7 @@ def test_empty_parallel_range_runs_nothing(backend):
         for i in range(n):
             out[i] = 7
 
-    out = _int_field([-1] * 7)
+    out = _int_array([-1] * 7)
     fill(out, 0)
     np.testing.assert_array_equal(out.numpy(), np.full(7, -1))
 
@@ -316,7 +316,7 @@ def _param_augmented(out, value, step):
 ], ids=["branch-skipped", "branch-taken", "loop-0", "loop-3", "augmented-0", "augmented-3"])
 def test_scalar_parameter_assignment_is_per_iteration(backend, kernel, arg, expected):
     """LC6: an assigned scalar parameter is a local, fresh in each iteration."""
-    out = _int_field([-1] * 7)
+    out = _int_array([-1] * 7)
     kernel(out, 7, arg)
     np.testing.assert_array_equal(out.numpy(), np.full(7, expected))
 
@@ -333,7 +333,7 @@ def test_parameter_reassignment_without_tack_optimizations(backend, monkeypatch)
             out[i] = before + value
 
     monkeypatch.setattr(opt, "optimize_ir", lambda ir_func: None)
-    out = _int_field([-1])
+    out = _int_array([-1])
     late_copy(out, 3, 7)
     np.testing.assert_array_equal(out.numpy(), [10])
 
@@ -367,9 +367,9 @@ def test_early_return_in_inlined_function(backend):
             kind[i] = _contract_classify(x[i])
 
     values = np.array([-20, -3, 0, 4, 9])
-    clamped = _int_field([99] * 5)
-    kind = _int_field([99] * 5)
-    apply(_int_field(values), clamped, kind)
+    clamped = _int_array([99] * 5)
+    kind = _int_array([99] * 5)
+    apply(_int_array(values), clamped, kind)
     np.testing.assert_array_equal(clamped.numpy(), np.clip(values, 0, 5))
     np.testing.assert_array_equal(kind.numpy(), [-2, -1, 0, 1, 1])
 
@@ -410,11 +410,11 @@ def test_continue_skips_to_the_next_iteration(backend):
                 continue
             out[i] = i
 
-    out = _int_field([-1] * 4)
+    out = _int_array([-1] * 4)
     sum_others(out, 4)
     np.testing.assert_array_equal(out.numpy(), [6, 5, 4, 3])
 
-    out = _int_field([-1] * 6)
+    out = _int_array([-1] * 6)
     skip_odd(out)
     np.testing.assert_array_equal(out.numpy(), [0, -1, 2, -1, 4, -1])
 

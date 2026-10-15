@@ -49,7 +49,7 @@ def atomic_max(data, out, n):
 KERNELS = {'add': atomic_add, 'min': atomic_min, 'max': atomic_max}
 
 
-def _field(values, dtype):
+def _array(values, dtype):
     array = np.asarray(values, dtype=dtype.numpy_dtype)
     result = tack.empty(array.shape, dtype)
     tack.copyto(result, array)
@@ -59,8 +59,8 @@ def _field(values, dtype):
 def _check_floating_extrema_zero(dtype, op, zero):
     # Numeric zeros are valid extrema. Their sign on a tie is unspecified.
     direction = 1 if op == 'min' else -1
-    data = _field([zero] * 4097, dtype)
-    out = _field([direction * 4], dtype)
+    data = _array([zero] * 4097, dtype)
+    out = _array([direction * 4], dtype)
     KERNELS[op](data, out, 4097)
     assert out.numpy()[0] == 0
     for stored in [0.0, -0.0]:
@@ -84,7 +84,7 @@ def test_f32_atomic_extrema_numeric_zeros(backend, op, zero):
 def test_f64_atomic_extrema_numeric_zeros(f64_backend, op, zero):
     be = get_backend()
     if tack.f64 not in be.supported_atomic_dtypes:
-        pytest.skip('Backend has f64 fields but no f64 atomics')
+        pytest.skip('Backend has f64 arrays but no f64 atomics')
     _check_floating_extrema_zero(tack.f64, op, zero)
 
 
@@ -99,7 +99,7 @@ def _wrap(value, dtype):
 
 def _typed_ir(dtype, op):
     target = ir.IRParam('out', dtype)
-    target._is_field = True
+    target._is_array = True
     atomic = ir.IRAtomicOp(op, ir.IRName('out'), ir.IRConstant(0), ir.IRConstant(1))
     func = ir.IRFunction('atomic_contract', [target], [
         ir.IRParallelFor('i', ir.IRConstant(0), ir.IRConstant(513), [atomic]),
@@ -131,13 +131,13 @@ def test_direct_generators_enforce_width_domain(arch, generator, dtype, op):
 def test_direct_generators_reject_other_atomic_address_spaces(arch, generator, target_kind):
     func, _ = _typed_ir(tack.f32, 'add')
     if target_kind in ('scalar', 'texture'):
-        func.params[0]._is_field = target_kind == 'texture'
+        func.params[0]._is_array = target_kind == 'texture'
         func.params[0]._is_texture = target_kind == 'texture'
     else:
         allocation = ir.IRLocalAlloc if target_kind == 'local' else ir.IRSharedAlloc
         func.params.clear()
         func.body.insert(0, allocation('out', tack.f32, ir.IRConstant(1)))
-    with pytest.raises(TypeError, match='atomic_add.*global field parameter'):
+    with pytest.raises(TypeError, match='atomic_add.*global array parameter'):
         generator(func)
 
 
@@ -146,13 +146,13 @@ def test_direct_generators_reject_other_atomic_address_spaces(arch, generator, t
 def test_atomic_results_and_cached_inputs(backend, dtype, op):
     be = get_backend()
     if dtype not in be.supported_dtypes:
-        pytest.skip('target does not support this field dtype')
+        pytest.skip('target does not support this array dtype')
     info = np.iinfo(dtype.numpy_dtype) if dtype.name[0] in 'iu' else None
     values = ([1, info.max, 2, info.min + 1] if info is not None else [0.25, -2, 8, 0.5])
-    data = _field(values, dtype)
+    data = _array(values, dtype)
     initial = {'add': 0, 'min': info.max if info else 99,
                'max': info.min if info else -99}[op]
-    out = _field([initial], dtype)
+    out = _array([initial], dtype)
     kernel = KERNELS[op]
     if dtype not in be.supported_atomic_dtypes:
         with pytest.raises(TypeError, match=f'atomic_{op}.*target dtype.*{dtype.name}'):
@@ -174,8 +174,8 @@ def test_atomic_results_and_cached_inputs(backend, dtype, op):
 
 @pytest.mark.parametrize('op', KERNELS)
 def test_atomic_value_converts_to_unsigned_target(backend, op):
-    data = _field([2**31 + 256, 512, 1024], tack.f32)
-    out = _field([0 if op != 'min' else 2**32 - 1], tack.u32)
+    data = _array([2**31 + 256, 512, 1024], tack.f32)
+    out = _array([0 if op != 'min' else 2**32 - 1], tack.u32)
     KERNELS[op](data, out, 3)
     expected = {'add': 2**31 + 1792, 'min': 512, 'max': 2**31 + 256}[op]
     assert out.numpy()[0] == expected
@@ -188,8 +188,8 @@ def test_cpu_concurrent_updates_are_atomic(dtype, op):
     be = get_backend()
     count, workers = 32768, 8
     values = np.random.default_rng(6017).permutation(count).astype(dtype.numpy_dtype) + 1
-    data = _field(values, dtype)
-    out = _field([0 if op == 'add' else count + 1 if op == 'min' else -1], dtype)
+    data = _array(values, dtype)
+    out = _array([0 if op == 'add' else count + 1 if op == 'min' else -1], dtype)
     kernel = KERNELS[op]
     # Compile through the real variant pipeline, then exercise real concurrent
     # call_range workers without depending on the adaptive threading policy.
@@ -221,7 +221,7 @@ def test_cpu_concurrent_updates_are_atomic(dtype, op):
 @pytest.mark.parametrize('mode', ['dispatch', 'ir', 'source', 'optimized'])
 def test_cpu_rejects_unaligned_atomic_storage(mode, monkeypatch):
     tack.init(arch=tack.cpu)
-    data = _field([1], tack.i32)
+    data = _array([1], tack.i32)
     raw = bytearray(5)
     array = np.ndarray((1,), np.int32, buffer=raw, offset=1)
     array.fill(7)
@@ -244,7 +244,7 @@ def test_cached_atomic_alignment_without_ir_scan(monkeypatch):
     from tack.runtime import kernel_utils
 
     tack.init(arch=tack.cpu)
-    data, out = _field([1], tack.i32), _field([0], tack.i32)
+    data, out = _array([1], tack.i32), _array([0], tack.i32)
     atomic_add(data, out, 1)
 
     def forbidden_scan(*args, **kwargs):
@@ -305,11 +305,11 @@ def test_cross_workgroup_atomic_contention(backend, dtype, op):
         values[count // 2] = 2**32 - 1
     if dtype is tack.f32 and op == 'add':
         values.fill(0.25)
-    data = _field(values, dtype)
+    data = _array(values, dtype)
     info = np.iinfo(dtype.numpy_dtype) if dtype is not tack.f32 else None
     initial = {'add': 0, 'min': info.max if info else count + 1,
                'max': info.min if info else -1}[op]
-    out = _field([initial], dtype)
+    out = _array([initial], dtype)
     expected = (_wrap(sum(map(int, values)), dtype) if info else sum(map(float, values))) \
         if op == 'add' else getattr(np, op)(values)
     for _ in range(4):
@@ -322,7 +322,7 @@ def test_cross_workgroup_atomic_contention(backend, dtype, op):
 @pytest.mark.parametrize('op', KERNELS)
 def test_gpu_unsupported_width_rejected_before_compilation(workgroup_backend, mode, op, monkeypatch):
     be = get_backend()
-    data, out = _field([1], tack.i16), _field([7], tack.i16)
+    data, out = _array([1], tack.i16), _array([7], tack.i16)
 
     def forbidden_build(*args):
         pytest.fail('unsupported atomic width reached device compilation')
@@ -343,9 +343,9 @@ def aliased_atomic_updates(data, left, right):
         tack.atomic_add(right, 0, data[i])
 
 
-def test_atomic_updates_through_aliased_fields(backend):
-    data = _field(np.full(513, 0.25), tack.f32)
-    out = _field([0], tack.f32)
+def test_atomic_updates_through_aliased_arrays(backend):
+    data = _array(np.full(513, 0.25), tack.f32)
+    out = _array([0], tack.f32)
     for alias in (out, out.reshape((1,))):
         out.fill(0)
         aliased_atomic_updates(data, out, alias)
@@ -360,8 +360,8 @@ def publish_global_with_barrier(data, out):
         out[i] = data[(i // 256) * 256 + (tack.thread_id() + 1) % 256]
 
 
-def test_workgroup_barrier_publishes_global_field_updates(workgroup_backend):
-    data, out = _field(np.zeros(512), tack.i32), _field(np.zeros(512), tack.i32)
+def test_workgroup_barrier_publishes_global_array_updates(workgroup_backend):
+    data, out = _array(np.zeros(512), tack.i32), _array(np.zeros(512), tack.i32)
     expected = np.arange(1, 513, dtype=np.int32).reshape(2, 256)
     for _ in range(4):
         data.fill(0)
@@ -399,9 +399,9 @@ def atomic_extrema_through_inlining(data, lo, hi):
         nested_atomic_extrema(data, lo, hi, i)
 
 
-def test_inlined_atomic_targets_resolve_to_global_fields(backend):
-    data = _field([2**31 + 5, 2], tack.u32)
-    lo, hi = _field([2**32 - 1], tack.u32), _field([0], tack.u32)
+def test_inlined_atomic_targets_resolve_to_global_arrays(backend):
+    data = _array([2**31 + 5, 2], tack.u32)
+    lo, hi = _array([2**32 - 1], tack.u32), _array([0], tack.u32)
     for _ in range(2):
         atomic_extrema_through_inlining(data, lo, hi)
         assert lo.numpy()[0] == 2
@@ -411,12 +411,12 @@ def test_inlined_atomic_targets_resolve_to_global_fields(backend):
 
 
 @pytest.mark.parametrize('arch,generator', GENERATORS, ids=[x[0] for x in GENERATORS])
-def test_atomic_alias_cannot_hide_a_nonfield_target(arch, generator):
+def test_atomic_alias_cannot_hide_a_nonarray_target(arch, generator):
     func, node = _typed_ir(tack.f32, 'add')
     func.body[0].body.insert(0, ir.IRAssign('alias', ir.IRName('out')))
     func.body[0].body.insert(1, ir.IRAssign('alias', ir.IRConstant(0)))
-    node.field = ir.IRName('alias')
-    with pytest.raises(TypeError, match='global field parameter'):
+    node.array = ir.IRName('alias')
+    with pytest.raises(TypeError, match='global array parameter'):
         generator(func)
 
 

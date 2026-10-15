@@ -8,11 +8,11 @@ pass inspects the IR tree; transformation passes mutate a private copy.
 ```
 1. ir_resolve       — Replace compiled-in dimensions, set texture shapes, resolve array-like dtypes
 2. type_inference   — Annotate params with types from actual arguments
-3. check_dispatch_types — Validate field dtypes against backend capabilities
+3. check_dispatch_types — Validate array dtypes against backend capabilities
 4. scalar localization — Give scalar params and outer locals the loop assigns per-iteration local storage
 5. workgroup participation — Prove the supported collective control-flow domain (GPU only)
 6. ir_optimize      — Conservative copy propagation
-7. ir_pack_scalars  — Group scalar params into field buffers (GPU only)
+7. ir_pack_scalars  — Group scalar params into array buffers (GPU only)
 8. ir_type_annotate — Annotate scalar expressions and assignment storage types
 9. ir_bounds.guard_accesses — Skip accesses whose checked index is negative (debug mode only, at the end of 8)
 ```
@@ -60,7 +60,7 @@ The production pipeline calls `verify_ir()` at these boundaries:
 |-------|--------------------------------------------|
 | `lowered` | Valid statement/expression roles, known node kinds/operators, numeric constants, unique parameters, existing bindings, exactly one normalized top-level parallel loop, no store, atomic, block reduction, barrier or print outside it, and consistent `break`/`continue` targets |
 | `resolved` | No dimensions or attributes in generated expressions; allocation dtypes and texture extents resolved |
-| `inferred` | Scalar parameter types and field/scalar categories present; field accesses name field parameters or allocated arrays, including inlined pointer copies |
+| `inferred` | Scalar parameter types and array/scalar categories present; array accesses name array parameters or allocated arrays, including inlined pointer copies |
 | `localized` | Recheck the invariants after assigned scalar parameters and outer locals become per-iteration locals |
 | `optimized` | Recheck the invariants after copy propagation |
 | `packed` | Recheck the invariants and ensure no scalar parameters remain on GPU |
@@ -68,7 +68,7 @@ The production pipeline calls `verify_ir()` at these boundaries:
 
 The parallel loop end is evaluated by the host on each dispatch. Dimension
 queries in that expression remain legal and do not force specialization on
-a flat field's length. Field references are pointers and do not require a
+a flat array's length. Array references are pointers and do not require a
 scalar expression dtype.
 
 `IRVerificationError` reports the kernel, stage, node kind, and structural
@@ -89,10 +89,10 @@ necessary.
 
 ## IR Resolve (`ir_resolve.py`)
 
-Replaces `IRDimSize(field_name, dim)` with `IRConstant(shape[dim])` using
-the actual field shapes passed at call time. Also sets
+Replaces `IRDimSize(array_name, dim)` with `IRConstant(shape[dim])` using
+the actual array shapes passed at call time. Also sets
 `IRTextureSample.shape` from the `Texture3D` object. In debug mode it turns
-each `IRFieldExtent` into a load from the hidden `__tack_extents__` field
+each `IRArrayExtent` into a load from the hidden `__tack_extents__` array
 (three i64 extents per parameter, written by dispatch), so a debug kernel
 does not specialize on the lengths it checks.
 
@@ -103,18 +103,18 @@ concrete sizes.
 
 Annotates each `IRParam` with:
 - `type_annotation` — a `ScalarType` (f32, i32, i64, etc.)
-- `_is_field` — True if the argument is a `Field` or `Texture3D`
+- `_is_array` — True if the argument is a `Array` or `Texture3D`
 - `_is_texture` — True if the argument is a `Texture3D`
 
 Type rules:
-- `Field` → dtype of the field
-- `Texture3D` → dtype of the underlying field (always `f32`; `tack.texture3d()` rejects others)
-- Python `float` or `np.floating` → `f32` by default; auto-promotes to `f64` if any field argument uses `f64`
+- `Array` → dtype of the array
+- `Texture3D` → dtype of the underlying array (always `f32`; `tack.texture3d()` rejects others)
+- Python `float` or `np.floating` → `f32` by default; auto-promotes to `f64` if any array argument uses `f64`
 - Python `int` or `np.integer` → `i32` if it fits, else `i64`, else `u64`
 
 ## Dispatch-Time Type Checking (`type_inference.py`)
 
-`check_dispatch_types()` validates that all field argument dtypes are
+`check_dispatch_types()` validates that all array argument dtypes are
 supported by the target backend. This runs after type inference when
 building a new compiled variant.
 
@@ -151,16 +151,16 @@ Assignments remain in place, reads before the assignment are unchanged,
 and rewritten sequential loops retain their step.
 
 This is useful after `@tack.func` inlining, which creates assignments such
-as `__func_x_0__ = x`. Field aliases can then use the original parameter:
+as `__func_x_0__ = x`. Array aliases can then use the original parameter:
 `a = x` followed by `a[i]` becomes `x[i]`.
 
 Tack's custom loop-invariant code motion and common subexpression
 elimination are disabled. An invariant address does not imply an invariant
 loaded value, and hoisting an assignment can change a zero-trip loop's
-behavior. Loads must also account for stores through overlapping fields.
+behavior. Loads must also account for stores through overlapping arrays.
 These passes need memory and control-flow safety analyses before they can
 return. LLVM and vendor compilers continue to optimize generated code,
-without unconditional disjoint-storage promises on field parameters.
+without unconditional disjoint-storage promises on array parameters.
 
 ## IR Type Annotate (`ir_type_annotate.py`)
 
@@ -180,7 +180,7 @@ Key rules:
   (`_meet`, `_adopt`, `_retype`), following NumPy's NEP 50. Nodes carry
   `_literal` and `_weak` flags for this. Expressions without `f64` operands
   annotate exactly as f32 literals would
-- `IRFieldLoad` → element type of the field
+- `IRArrayLoad` → element type of the array
 - `IRBinOp` → promoted type, except integer `/` → `f32`, and shifts or
   integer `**` → the left/base type independent of the count/exponent type
 - `IRCast(value, ScalarType)` → the target ScalarType
@@ -190,7 +190,7 @@ Key rules:
 - `IRCall("pow", [int_base, int_exponent])` → the base type; otherwise the
   promoted floating precision
 - `IRCompare`, `IRBoolOp` → `i32`
-- `IRName` referencing a field param → `None` (field pointers aren't scalars)
+- `IRName` referencing an array param → `None` (array pointers aren't scalars)
 
 Integer promotion preserves both full operand ranges; signed/u64 pairs
 require an explicit cast where promotion applies. True division and power
@@ -204,30 +204,30 @@ An `IRBoundsCheck` is `i64`.
 ## Bounds Guards (`ir_bounds.py`, debug mode)
 
 `annotate_types` ends with `guard_accesses`, which does nothing unless the
-function was lowered with bounds checks (`bounds_sites`). Each user field or
+function was lowered with bounds checks (`bounds_sites`). Each user array or
 array access whose index is an `IRBoundsCheck` is skipped when that index
 is negative: a load becomes `index >= 0 ? load : 0` with a zero of the
 load's own type (hence after typing), and a store or atomic runs under
 `if index >= 0`. The index is evaluated twice, which is harmless because
 indices have no effects but the check's record of the first violation.
-Accesses to the hidden fields and to GPU scalar packs are left alone. It
+Accesses to the hidden arrays and to GPU scalar packs are left alone. It
 runs once per function (`_bounds_guarded`), so annotating again before and
 after packing does not guard twice.
 
 ## Scalar Packing (`ir_pack_scalars.py`)
 
-GPU backends only. Groups scalar parameters by type into packed field
+GPU backends only. Groups scalar parameters by type into packed array
 buffers to reduce buffer binding count (critical for Metal's 31-binding
 limit).
 
 Algorithm:
-1. Collect all params where `_is_field == False`, grouped by type
+1. Collect all params where `_is_array == False`, grouped by type
 2. Create new `IRParam` for each group: `__pack_f32__`, `__pack_i32__`, etc.
-3. Rewrite `IRName("scalar_param")` → `IRFieldLoad(IRName("__pack_f32__"), IRConstant(idx))`
+3. Rewrite `IRName("scalar_param")` → `IRArrayLoad(IRName("__pack_f32__"), IRConstant(idx))`
 4. Remove original scalar params, append pack params
 
 The pass runs on a `clone_ir` copy of the IR (to preserve the cached original)
-and stores `pack_info` metadata for the dispatch layer. Pack field buffers
+and stores `pack_info` metadata for the dispatch layer. Pack array buffers
 are allocated once and cached alongside the compiled kernel — subsequent
 calls just update the scalar values via `from_numpy`.
 

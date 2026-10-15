@@ -37,9 +37,9 @@ When a `@tack.kernel` is called, every backend's `execute()` goes through
 `verify_ir()` checks the IR after each of these stages. The IR template
 cached on the `Kernel` is never mutated; each new variant clones it and the
 passes mutate the clone. Compiled variants are cached per backend and per
-kernel object, under a key built from argument dtypes and field/scalar/texture
+kernel object, under a key built from argument dtypes and array/scalar/texture
 categories, vector widths, texture extents, template structure and constants,
-the dimension sizes baked into the code, and (on the CPU) whether the field
+the dimension sizes baked into the code, and (on the CPU) whether the array
 arguments overlap. A repeat call with the same key runs no passes and no
 verification; a repeat call with the same argument signature does not even
 build the key. Lowered templates and compiled variants are also kept on
@@ -72,13 +72,13 @@ packages/
                 ir_resolve.py    # Replace IRDimSize with constants
                 ir_optimize.py   # conservative copy propagation
                 ir_type_annotate.py  # Annotate expressions with dtype
-                ir_pack_scalars.py   # Group scalar params into field buffers
+                ir_pack_scalars.py   # Group scalar params into array buffers
                 type_inference.py    # Annotate IR params from actual args
                 atomic_support.py    # Atomic target and dtype checks
                 workgroup_support.py, workgroup_participation.py  # Workgroup checks
                 inspect_kernel.py    # tack.inspect()
                 types.py         # ScalarType: f32, i32, i64, etc.
-                field.py         # Field, Texture3D, Vector
+                array.py         # Array, Texture3D, Vector
                 dlpack.py        # DLPack import/export
             codegen/             # IR → target code
                 identifiers.py   # Collision-free target identifiers
@@ -157,7 +157,7 @@ function call support in the IR or any backend.
 
 **Template expansion at AST level.** `@tack.device_class` objects are
 resolved by rewriting the kernel AST before IR transformation. Class-level
-scalar attributes become constants, instance scalar attributes and field
+scalar attributes become constants, instance scalar attributes and array
 attributes become parameters, and method calls become inlined function
 bodies. The IR and codegens never see
 templates.
@@ -166,9 +166,9 @@ templates.
 device memory without allocation or copy. Each backend implements
 `wrap_ptr()` so that the wrapped memory is never freed by Tack (the
 CUDA, HIP and Level Zero buffers carry an `_owned = False` flag).
-Such fields are read-only by default, with an explicit `writable`
-opt-in. The flag is checked by host-side `Field` methods and, for
-kernels, at dispatch: a read-only field bound to a parameter the kernel
+Such arrays are read-only by default, with an explicit `writable`
+opt-in. The flag is checked by host-side `Array` methods and, for
+kernels, at dispatch: a read-only array bound to a parameter the kernel
 may store to is refused before the launch. This enables interop with in-situ frameworks
 (Catalyst), GPU libraries (pycuda, cupy), and cross-library buffer
 sharing. See [Interoperability](../design/interoperability.md).

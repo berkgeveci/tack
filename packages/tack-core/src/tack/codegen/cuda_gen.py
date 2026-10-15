@@ -1,7 +1,7 @@
 """Tack CUDA C code generation — transforms Tack IR to CUDA C source for NVRTC.
 
 Generates an ``extern "C" __global__`` kernel function where:
-  - Each Field parameter becomes a typed device pointer (``float*``, etc.)
+  - Each Array parameter becomes a typed device pointer (``float*``, etc.)
   - The outermost parallel for-loop maps to the standard CUDA thread index:
         long long __idx__ = (long long)blockIdx.x * blockDim.x + threadIdx.x;
     with a bounds guard. The built-ins are 32-bit unsigned, so the cast
@@ -123,7 +123,7 @@ class CUDACodeGen:
         self._indent = 0
         self._lines: list[str] = []
         self._param_types: dict[str, ScalarType] = {}
-        self._field_params: set[str] = set()
+        self._array_params: set[str] = set()
         self._local_vars: dict[str, str] = {}  # name → C type (all known vars)
         self._declared_vars: set[str] = set()  # vars already emitted with declaration
         self._loop_end_name: str | None = None
@@ -151,11 +151,11 @@ class CUDACodeGen:
             if param.type_annotation is None:
                 raise TypeError(f"Parameter '{param.name}' has no type. Run type inference first.")
             self._param_types[param.name] = param.type_annotation
-            if hasattr(param, '_is_field') and param._is_field:
-                self._field_params.add(param.name)
-            elif not hasattr(param, '_is_field'):
-                # Default: treat as field for backwards compatibility
-                self._field_params.add(param.name)
+            if hasattr(param, '_is_array') and param._is_array:
+                self._array_params.add(param.name)
+            elif not hasattr(param, '_is_array'):
+                # Default: treat as array for backwards compatibility
+                self._array_params.add(param.name)
 
         # Detect texture parameters for hardware texture object path
         self._texture_params: set[str] = set()
@@ -169,9 +169,9 @@ class CUDACodeGen:
             c_type = _C_TYPE_MAP[param.type_annotation]
             if param.name in self._texture_params:
                 params_c.append(f"{self._TEXTURE_OBJECT_TYPE} {param.name}")
-            elif param.name in self._field_params:
-                # Fields can alias; restrict would let the compiler reuse
-                # a value across a store through another field argument.
+            elif param.name in self._array_params:
+                # Arrays can alias; restrict would let the compiler reuse
+                # a value across a store through another array argument.
                 params_c.append(f"{c_type}* {param.name}")
             else:
                 params_c.append(f"{c_type} {param.name}")
@@ -284,8 +284,8 @@ class CUDACodeGen:
             self._emit_while(node)
         elif isinstance(node, ir.IRIf):
             self._emit_if(node)
-        elif isinstance(node, ir.IRFieldStore):
-            self._emit_field_store(node)
+        elif isinstance(node, ir.IRArrayStore):
+            self._emit_array_store(node)
         elif isinstance(node, ir.IRAssign):
             self._emit_assign(node)
         elif isinstance(node, ir.IRReturn):
@@ -330,7 +330,7 @@ class CUDACodeGen:
                 continue
             resolved = getattr(node, '_resolved_type', None)
             if resolved is None:
-                continue  # untyped (a field alias): declared where it is assigned
+                continue  # untyped (an array alias): declared where it is assigned
             c_type = self._resolved_type_to_c(resolved)
             self._emit(f"{c_type} {node.target};")
             self._local_vars[node.target] = c_type
@@ -548,7 +548,7 @@ class CUDACodeGen:
 
     def _expr_atomic(self, node: ir.IRAtomicOp) -> str:
         """The atomic as an expression whose value is the element's old value."""
-        field = self._expr(node.field)
+        array = self._expr(node.array)
         index = self._expr(node.index)
         value = self._expr(node.value)
         idx_type = self._infer_expr_type(node.index)
@@ -560,21 +560,21 @@ class CUDACodeGen:
         value = f"(({_C_TYPE_MAP[dtype]})({value}))"
         if dtype in (i64, u64, f64):
             self._atomic64.add((node.op, dtype))
-            return f"tack_atomic_{node.op}_{dtype.name}(&{field}[{index}], {value})"
+            return f"tack_atomic_{node.op}_{dtype.name}(&{array}[{index}], {value})"
         if node.op == "min" and dtype is f32:
             self._needs_float_atomic_min = True
-            return f"atomicMinFloat(&{field}[{index}], {value})"
+            return f"atomicMinFloat(&{array}[{index}], {value})"
         if node.op == "max" and dtype is f32:
             self._needs_float_atomic_max = True
-            return f"atomicMaxFloat(&{field}[{index}], {value})"
+            return f"atomicMaxFloat(&{array}[{index}], {value})"
         _ATOMIC_FUNCS = {"add": "atomicAdd", "min": "atomicMin", "max": "atomicMax"}
         func = _ATOMIC_FUNCS.get(node.op)
         if func is None:
             raise NotImplementedError(f"CUDA atomic op: {node.op}")
-        return f"{func}(&{field}[{index}], {value})"
+        return f"{func}(&{array}[{index}], {value})"
 
-    def _emit_field_store(self, node: ir.IRFieldStore):
-        field = self._expr(node.field)
+    def _emit_array_store(self, node: ir.IRArrayStore):
+        array = self._expr(node.array)
         index = self._expr(node.index)
         value = self._expr(node.value)
         value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, 'dtype', None))
@@ -582,7 +582,7 @@ class CUDACodeGen:
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
             index = f"(({_INT})({index}))"
-        self._emit(f"{field}[{index}] = {value};")
+        self._emit(f"{array}[{index}] = {value};")
 
     def _resolved_type_to_c(self, scalar_type: 'ScalarType') -> str:
         """Map a ScalarType to C type string. Overridden by OpenCL for long vs long long."""
@@ -613,9 +613,9 @@ class CUDACodeGen:
         rct = getattr(node, '_resolved_cast_type', None)
         if rct is not None:
             return self._resolved_type_to_c(rct)
-        # Fallback for unannotated nodes (e.g., field pointer references)
+        # Fallback for unannotated nodes (e.g., array pointer references)
         if isinstance(node, ir.IRName):
-            if node.name in self._field_params:
+            if node.name in self._array_params:
                 c_type = _C_TYPE_MAP[self._param_types[node.name]]
                 return f"{c_type}*"
             if node.name in self._local_vars:
@@ -629,7 +629,7 @@ class CUDACodeGen:
         """Get C type of an expression, using annotated dtype."""
         return self._infer_c_type(node)
 
-    def _get_field_name(self, node) -> str | None:
+    def _get_array_name(self, node) -> str | None:
         if isinstance(node, ir.IRName):
             return node.name
         return None
@@ -649,8 +649,8 @@ class CUDACodeGen:
             return self._expr_compare(node)
         if isinstance(node, ir.IRBoolOp):
             return self._expr_boolop(node)
-        if isinstance(node, ir.IRFieldLoad):
-            return self._expr_field_load(node)
+        if isinstance(node, ir.IRArrayLoad):
+            return self._expr_array_load(node)
         if isinstance(node, ir.IRAttribute):
             return self._expr_attribute(node)
         if isinstance(node, ir.IRCall):
@@ -725,7 +725,7 @@ class CUDACodeGen:
         v = self._expr(node.coords[1])
         w = self._expr(node.coords[2])
 
-        if hasattr(self, '_texture_params') and node.field_name in self._texture_params:
+        if hasattr(self, '_texture_params') and node.array_name in self._texture_params:
             # Hardware path: tex3D<float> with coordinate transform.
             # Tack convention: texel centers at i/(N-1), u=0 → texel 0, u=1 → texel N-1.
             # CUDA normalized+linear: texel centers at (i+0.5)/N.
@@ -733,14 +733,14 @@ class CUDACodeGen:
             cu = f"(({u}) * {W - 1}.0f + 0.5f) / {W}.0f"
             cv = f"(({v}) * {H - 1}.0f + 0.5f) / {H}.0f"
             cw = f"(({w}) * {D - 1}.0f + 0.5f) / {D}.0f"
-            return f"tex3D<float>({node.field_name}, {cu}, {cv}, {cw})"
+            return f"tex3D<float>({node.array_name}, {cu}, {cv}, {cw})"
 
         # Software trilinear fallback
         helper = f"__tex3d_linear_{W}_{H}_{D}__"
         if not hasattr(self, '_texture_helpers'):
             self._texture_helpers = {}
         self._texture_helpers[helper] = (W, H, D)
-        return f"{helper}({node.field_name}, {u}, {v}, {w})"
+        return f"{helper}({node.array_name}, {u}, {v}, {w})"
 
     def _expr_constant(self, node: ir.IRConstant) -> str:
         if isinstance(node.value, float):
@@ -826,14 +826,14 @@ class CUDACodeGen:
         parts = [self._expr(v) for v in node.values]
         return "(" + f" {c_op} ".join(parts) + ")"
 
-    def _expr_field_load(self, node: ir.IRFieldLoad) -> str:
-        field = self._expr(node.field)
+    def _expr_array_load(self, node: ir.IRArrayLoad) -> str:
+        array = self._expr(node.array)
         index = self._expr(node.index)
         # Ensure array index is integer — float indices are invalid in CUDA
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
             index = f"(({_INT})({index}))"
-        return f"{field}[{index}]"
+        return f"{array}[{index}]"
 
     def _expr_attribute(self, node: ir.IRAttribute) -> str:
         raise NotImplementedError(

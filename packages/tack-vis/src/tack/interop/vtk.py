@@ -1,4 +1,4 @@
-"""tack.interop.vtk — Zero-copy interop between VTK arrays and Tack fields.
+"""tack.interop.vtk — Zero-copy interop between VTK arrays and Tack arrays.
 
     from tack.interop.vtk import vtk_to_array, array_to_vtk
 
@@ -10,8 +10,8 @@ device, and each side keeps the other alive for as long as it is needed.
 
 Shape
 -----
-A vtkDataArray is *tuples x components*, and a Tack field is n-dimensional,
-so the two line up directly: a 2-D field of shape ``(n, 3)`` is n tuples of
+A vtkDataArray is *tuples x components*, and a Tack array is n-dimensional,
+so the two line up directly: a 2-D array of shape ``(n, 3)`` is n tuples of
 3 components, and ``field.shape[1]`` is the component count. Nothing needs
 to be declared -- the shape already says it.
 
@@ -108,11 +108,11 @@ def _require_shared_level_zero_context(dlpack_support):
 
 
 def vtk_to_array(vtk_array, flatten=False):
-    """Wrap a vtkDataArray as a Tack field, without copying.
+    """Wrap a vtkDataArray as a Tack array, without copying.
 
     Args:
         vtk_array: any vtkDataArray, on the host or on a device.
-        flatten: return a 1-D field of ``tuples * components`` values
+        flatten: return a 1-D array of ``tuples * components`` values
             instead of a 2-D one. Tack's visualization algorithms take
             their point and vector inputs in this interleaved form.
 
@@ -143,15 +143,15 @@ def vtk_to_array(vtk_array, flatten=False):
 
 
 def array_to_vtk(field, n_components=None, name=None):
-    """Wrap a Tack field as a vtkDataArray, without copying.
+    """Wrap a Tack array as a vtkDataArray, without copying.
 
     Args:
-        field: the tack.field to share. A 2-D field maps straight over --
+        field: the tack.field to share. A 2-D array maps straight over --
             ``(1000, 3)`` becomes 1000 tuples of 3.
         n_components: only needed for a *flat* field holding interleaved
             data, which is the form Tack's own algorithms produce. A
             ``(3000,)`` field with n_components=3 becomes 1000 tuples of 3.
-            Leave it unset for a 2-D field, whose shape already says.
+            Leave it unset for a 2-D array, whose shape already says.
         name: array name, as VTK uses to identify it in a dataset.
 
     Returns:

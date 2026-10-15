@@ -33,10 +33,10 @@ tack.init(arch=_arch)
 
 @tack.device_class
 class AOSArray:
-    """Backed by a tack.field -- standard memory-resident array."""
+    """Backed by a tack.array -- standard memory-resident array."""
 
     def __init__(self, data):
-        self.data = data  # Field -> kernel buffer parameter
+        self.data = data  # Array -> kernel buffer parameter
 
     @tack.func
     def get_value(self, i):

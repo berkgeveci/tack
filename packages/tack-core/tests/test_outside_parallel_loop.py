@@ -111,7 +111,7 @@ def _atomic_before_loop(counter, out):
         out[i] = 1.0
 
 
-def _fields(n):
+def _arrays(n):
     x = tack.empty((n,))
     tack.copyto(x, np.arange(n, dtype=np.float32))
     return x, tack.empty((n,))
@@ -119,7 +119,7 @@ def _fields(n):
 
 def test_inlined_effect_names_the_device_function(backend):
     with pytest.raises(UnsupportedSyntaxError) as error:
-        _inlined_store_before_loop(*_fields(4))
+        _inlined_store_before_loop(*_arrays(4))
     assert str(error.value).startswith(
         "Device function '_store_first' (inlined into kernel "
         "'_inlined_store_before_loop'): store at line 3, column 5 "
@@ -128,7 +128,7 @@ def test_inlined_effect_names_the_device_function(backend):
 
 def test_template_method_effect_names_the_method(backend):
     with pytest.raises(UnsupportedSyntaxError) as error:
-        _template_effect_before_loop(_Counter(1), _fields(4)[1])
+        _template_effect_before_loop(_Counter(1), _arrays(4)[1])
     assert str(error.value).startswith(
         "Device function 'bump' (inlined into kernel "
         "'_template_effect_before_loop'): atomic_add() at line 3, column 5 "
@@ -139,7 +139,7 @@ def test_atomic_before_the_loop_is_rejected_at_dispatch(backend):
     counter = tack.empty((1,), tack.i32)
     tack.copyto(counter, np.zeros(1, dtype=np.int32))
     with pytest.raises(UnsupportedSyntaxError, match="atomic_add.*outside the parallel loop"):
-        _atomic_before_loop(counter, _fields(1 << 16)[1])
+        _atomic_before_loop(counter, _arrays(1 << 16)[1])
     assert counter.numpy().tolist() == [0]
 
 
@@ -162,7 +162,7 @@ def _rebinds_outer_local(out):
 
 
 def test_locals_before_the_loop_are_used_inside_it(backend):
-    x, out = _fields(1000)
+    x, out = _arrays(1000)
     _locals_before_loop(x, out, 3)
     np.testing.assert_array_equal(out.numpy(), np.arange(1000, dtype=np.float32) * 6 + 1)
 

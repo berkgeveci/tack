@@ -66,6 +66,6 @@ def test_kernel_runtime_error_includes_name():
         for i in range(n):
             out[i] = 1.0
 
-    # Pass a non-field where a field is expected
+    # Pass a non-array where an array is expected
     with pytest.raises((TypeError, RuntimeError)):
-        bad_kernel("not_a_field", 10)
+        bad_kernel("not_a_array", 10)

@@ -14,7 +14,7 @@ def cuda_atomic64_helpers(operations):
         old = ('__longlong_as_double((long long)assumed)' if dtype is f64 else
                '(long long)assumed' if dtype is i64 else 'assumed')
         if op == 'add':
-            # Integer addition is modulo 2**64, including signed fields.
+            # Integer addition is modulo 2**64, including signed arrays.
             update = ('__double_as_longlong(current + val)' if dtype is f64 else
                       'assumed + (unsigned long long)val')
         else:

@@ -8,7 +8,7 @@ memory on CPU and private/register memory on GPU:
 ```python
 @tack.kernel
 def cached_interp(cs: tack.template(), ct: tack.template(),
-                  field1, field2, out1, out2, n_cells):
+                  array1, array2, out1, out2, n_cells):
     for c in range(n_cells):
         # Compute weights once, reuse for both arrays
         w = tack.local_array(tack.f32, ct.num_points)
@@ -20,8 +20,8 @@ def cached_interp(cs: tack.template(), ct: tack.template(),
         v1 = 0.0
         v2 = 0.0
         for v in range(ct.num_points):
-            v1 = v1 + w[v] * field1[pid[v]]
-            v2 = v2 + w[v] * field2[pid[v]]
+            v1 = v1 + w[v] * array1[pid[v]]
+            v2 = v2 + w[v] * array2[pid[v]]
         out1[c] = v1
         out2[c] = v2
 ```

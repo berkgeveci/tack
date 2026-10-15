@@ -4,14 +4,14 @@ Demonstrates tack.algorithms statistics functions that run entirely
 on the GPU using atomic operations — no host roundtrips.
 
 Key APIs:
-  field.mean()                      -- mean (GPU sum / size)
-  algorithms.var(field)             -- population variance
-  algorithms.std(field)             -- population standard deviation
-  algorithms.norm(field, ord)       -- L1, L2, L-infinity norms
-  algorithms.absmax(field)          -- max absolute value
-  algorithms.count_nonzero(field)   -- count non-zero elements
+  array.mean()                      -- mean (GPU sum / size)
+  algorithms.var(array)             -- population variance
+  algorithms.std(array)             -- population standard deviation
+  algorithms.norm(array, ord)       -- L1, L2, L-infinity norms
+  algorithms.absmax(array)          -- max absolute value
+  algorithms.count_nonzero(array)   -- count non-zero elements
   algorithms.dot(a, b)              -- dot product
-  algorithms.histogram(field, bins) -- GPU histogram via atomics
+  algorithms.histogram(array, bins) -- GPU histogram via atomics
 
 Usage:
   uv run python packages/tack-core/examples/40_statistics.py
@@ -91,7 +91,7 @@ sparse_np[::10] = 1.0  # every 10th element is 1
 tack.copyto(sparse, sparse_np)
 
 nz = count_nonzero(sparse)
-print(f"\nSparse field: {nz} non-zero out of {sparse.size}")
+print(f"\nSparse array: {nz} non-zero out of {sparse.size}")
 assert nz == 1000
 
 
@@ -123,18 +123,18 @@ print(f"  Total in range: {total_in_range:,} / {n:,}")
 print("\nResidual norm example:")
 # Simulate solving Ax = b: compute residual r = b - Ax
 x = tack.empty((1000,))
-b_field = tack.empty((1000,))
+b_array = tack.empty((1000,))
 residual = tack.empty((1000,))
 
 tack.copyto(x, np.ones(1000, dtype=np.float32))
-tack.copyto(b_field, np.ones(1000, dtype=np.float32) * 1.001)
+tack.copyto(b_array, np.ones(1000, dtype=np.float32) * 1.001)
 
 @tack.kernel
 def compute_residual(b, x, r):
     for i in range(b.shape[0]):
         r[i] = b[i] - x[i]
 
-compute_residual(b_field, x, residual)
+compute_residual(b_array, x, residual)
 
 r_norm = norm(residual, ord=2)
 r_max = absmax(residual)

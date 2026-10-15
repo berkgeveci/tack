@@ -3,7 +3,7 @@
 This page describes how a Tack kernel executes in parallel: the single
 top-level iteration space and how each backend maps it onto threads, the
 rules for early exits, the workgroup model behind shared memory, barriers
-and block reductions, and atomic field updates. For each it gives the
+and block reductions, and atomic array updates. For each it gives the
 design rationale, the implementing functions, and the contract: what is
 guaranteed, what the caller must ensure, and which exception is raised
 where.
@@ -11,7 +11,7 @@ where.
 The normative text is in the [kernel language contract](../reference/language-contract.md),
 sections [Execution and ordering](../reference/language-contract.md#execution-and-ordering),
 [Workgroups and synchronization](../reference/language-contract.md#workgroups-and-synchronization)
-and [Atomic field updates](../reference/language-contract.md#atomic-field-updates).
+and [Atomic array updates](../reference/language-contract.md#atomic-array-updates).
 How the CPU decides between serial and threaded execution is a separate
 page, [CPU Threading Policy](cpu-threading.md).
 
@@ -114,7 +114,7 @@ new array length reuses the compiled variant; see
 | The call returns | after the range has run | once encoded into the open command buffer | once queued on the context's stream (CUDA) or the device's (HIP) | once appended to the asynchronous immediate command list |
 | Largest launch | no limit | 2^32 (`_MAX_LAUNCH`) | CUDA: max `gridDim.x` × 256; HIP: the same, capped at 2^32 − 256 | `maxGroupCountX` × group size |
 
-A queued GPU launch is waited for where the host next touches field memory
+A queued GPU launch is waited for where the host next touches array memory
 (`numpy()`, indexing, reductions) or calls `tack.sync()`, and its error
 surfaces there. A launch that uses memory handed outside Tack (a wrapped
 pointer, a DLPack export) completes before its call returns, and so, on
@@ -123,7 +123,7 @@ CUDA, HIP and Level Zero, does a launch that samples a hardware texture; see
 
 Loop variables are 64-bit on every backend (`long long` for CUDA/HIP,
 `long` for MSL and OpenCL, i64 in LLVM), so index arithmetic derived from
-them does not overflow 32 bits for large fields. The thread index itself
+them does not overflow 32 bits for large arrays. The thread index itself
 must be formed at that width too. CUDA's `blockIdx.x`, `blockDim.x` and
 `threadIdx.x` are 32-bit unsigned, so `CUDACodeGen._emit_parallel_for`
 casts `blockIdx.x` to `long long` *before* the multiply; a 32-bit product
@@ -160,9 +160,9 @@ compiled function, which is once per chunk, threading probe or timing
 sample. They have no defined execution count, so they must be
 unobservable however often they run. `KernelTransformer._visit_body` checks
 each statement outside the loop after lowering it
-(`_check_outside_parallel_loop`) and accepts only local assignments, field
+(`_check_outside_parallel_loop`) and accepts only local assignments, array
 loads, `tack.shared`/`tack.local_array` declarations and `thread_id()`
-reads. A field or array store, an atomic, a barrier, a block reduction or a
+reads. An array or array store, an atomic, a barrier, a block reduction or a
 `print` raises `UnsupportedSyntaxError` naming the construct and its line
 and column ("store at line 2, column 5 is outside the parallel loop. ..."),
 including inside top-level `if` and `while` statements.
@@ -174,7 +174,7 @@ augmented stores. Nested and inlined bodies are checked first, so the error
 names the innermost statement, in the device function or method where it
 was written ("Device function '`bump`' (inlined into kernel '`k`'):
 atomic_add() at line 3, column 5 ..."). The IR verifier rejects any
-`IRFieldStore`, `IRAtomicOp`, `IRBlockReduce`, `IRBarrier` or `IRPrint`
+`IRArrayStore`, `IRAtomicOp`, `IRBlockReduce`, `IRBarrier` or `IRPrint`
 outside the loop at every later stage.
 
 Local assignments are not unobservable on their own. On the CPU a local
@@ -260,7 +260,7 @@ runs at three points:
 
 Private scratch storage remains available on CPU through
 `tack.local_array` and `tack.local_array_like`, which lower to a stack
-allocation. Ordinary kernels, host field reductions and supported atomics
+allocation. Ordinary kernels, host array reductions and supported atomics
 are unaffected.
 
 **Why reject rather than emulate.** Before this check, the CPU lowering
@@ -337,7 +337,7 @@ domain and rejects everything else.
 |---|---|
 | constants and resolved dimension sizes | the parallel loop variable |
 | scalar kernel parameters | `tack.thread_id()` |
-| `x.shape[k]` and `len(x)` | field, local-array and shared-memory loads |
+| `x.shape[k]` and `len(x)` | array, local-array and shared-memory loads |
 | loads from a packed scalar buffer (`_is_scalar_pack`) at a uniform index | texture samples |
 | results of `block_sum`/`block_min`/`block_max` | anything computed from a varying value |
 | operators, casts and calls whose operands are all uniform | |
@@ -463,7 +463,7 @@ loads must stay uniform for the generator's second check.
 | Level Zero | <code>barrier(CLK_LOCAL_MEM_FENCE &#124; CLK_GLOBAL_MEM_FENCE);</code> | local and global memory |
 
 A user barrier orders memory among the lanes of **one workgroup**: a value
-one lane writes to shared memory or to a field before the barrier is
+one lane writes to shared memory or to an array before the barrier is
 visible to the other lanes of its group after it. It is not a grid-wide
 barrier; different workgroups are never synchronized inside a launch. The
 barriers internal to block reductions fence only shared memory, which is all
@@ -500,12 +500,12 @@ The final barrier, after every lane has read the result, protects against a
 fast lane starting the next loop iteration and overwriting the shared array
 before slower lanes have read it, so the caller needs no barrier of their
 own. Extrema use the same NaN-propagating, order-independent combiner as
-field reductions; sums may vary in low bits with the reduction order.
+array reductions; sums may vary in low bits with the reduction order.
 
-## Atomic field updates
+## Atomic array updates
 
-`tack.atomic_add(field, index, value)`, `atomic_min` and `atomic_max` update
-one element of a global field indivisibly. An atomic is a statement, or an
+`tack.atomic_add(array, index, value)`, `atomic_min` and `atomic_max` update
+one element of a global array indivisibly. An atomic is a statement, or an
 expression whose value is the element's value immediately before the
 update (`slot = tack.atomic_add(counter, 0, 1)`); as an expression it is
 lowered to a temporary among the statement's pre-statements, so it takes
@@ -517,7 +517,7 @@ effect in source order among the operands.
 in `ATOMIC_DTYPES` (`lang/atomic_support.py`) intersected with its
 `supported_dtypes`. All three operations share one domain per backend:
 
-| Backend | Atomic field types |
+| Backend | Atomic array types |
 |---|---|
 | CPU | i8, u8, i16, u16, i32, u32, i64, u64, f32, f64 |
 | CUDA, HIP | i32, u32, i64, u64, f32, f64 |
@@ -525,7 +525,7 @@ in `ATOMIC_DTYPES` (`lang/atomic_support.py`) intersected with its
 
 The domain is independent of `supports_workgroups`: atomics work on CPU, and
 atomic-only kernels need neither complete groups nor uniform control.
-Widths outside the domain are rejected even where ordinary fields of that
+Widths outside the domain are rejected even where ordinary arrays of that
 width work. Emulating an 8- or 16-bit atomic with a compare-and-swap on the
 containing 32-bit word was rejected: it would atomically rewrite
 neighboring elements that ordinary stores may be writing at the same time.
@@ -534,16 +534,16 @@ Portable code stays within i32, u32 and f32.
 ### Target tracing
 
 `check_atomic_support` requires that the first argument resolve to exactly
-one **global field parameter**. It records, for every name, the set of
+one **global array parameter**. It records, for every name, the set of
 places its value can come from: a parameter is its own source; an
 assignment `g = f` copies `f`'s sources to `g`; any other assignment, a
 loop variable, or a local or shared allocation adds an unknown source. The
 copies are propagated to a fixed point, which follows the pointer copies
 that device-function inlining introduces. The target is accepted only when
-it has a single source, that source is a parameter, the parameter is a field
+it has a single source, that source is a parameter, the parameter is an array
 and it is not a texture. Local arrays, shared memory, textures, scalars, and
-names that could refer to more than one field all raise `TypeError`
-("requires a global field parameter target"). An unsupported operation or
+names that could refer to more than one array all raise `TypeError`
+("requires a global array parameter target"). An unsupported operation or
 element type also raises `TypeError`. The check sets each atomic node's
 dtype from the parameter rather than trusting an earlier annotation.
 
@@ -555,7 +555,7 @@ code, or in a kernel launched with an empty range, is still checked.
 ### Alignment
 
 An atomic target must be naturally aligned: 1, 2, 4 or 8 bytes for its
-width. Fields Tack allocates always are; imported pointers
+width. Arrays Tack allocates always are; imported pointers
 (`tack.array_from_ptr`, DLPack) need not be. `check_atomic_support` returns
 `(parameter index, alignment)` pairs, which the variant stores as
 `atomic_targets`. `check_atomic_alignment` checks each target's
@@ -573,17 +573,17 @@ other data: writing a result, then atomically setting a flag, does not make
 the result visible to a reader that sees the flag. There is no system scope
 spanning the host or other devices. The supported way to consume a
 cross-workgroup result is from the next kernel, which a backend runs after
-this one completes, or from the host, whose read of the field waits for
+this one completes, or from the host, whose read of the array waits for
 the launch. Floating `atomic_add`
-rounds at the field's precision in an unspecified interleaving, so its
+rounds at the array's precision in an unspecified interleaving, so its
 result is not bitwise reproducible.
 
-The contributed value is converted to the field's dtype once, before the
+The contributed value is converted to the array's dtype once, before the
 read-modify-write; integer addition wraps; integer extrema compare with the
-field's signedness. Floating atomic extrema are defined only for finite
+array's signedness. Floating atomic extrema are defined only for finite
 values, including zeros (the sign of a zero tie is unspecified); NaN and
 infinity are outside their domain. They do **not** inherit the stronger
-NaN and signed-zero rules of field and block reductions.
+NaN and signed-zero rules of array and block reductions.
 
 ### Lowering
 
@@ -604,7 +604,7 @@ not re-evaluated.
 functions guarantee only workgroup scope in the specification, which is not
 enough for updates from different workgroups to the same element. The C11
 `*_explicit` forms with `memory_scope_device` state the required scope;
-the native field reduction's final combine uses them too.
+the native array reduction's final combine uses them too.
 
 ## Exceptions summary
 

@@ -37,13 +37,13 @@ def jacobi_step(src, dst, n):
 
 
 @tack.kernel
-def copy_field(src, dst, n):
+def copy_array(src, dst, n):
     """Copy src into dst."""
     for i, j in tack.ndrange(n, n):
         dst[i, j] = src[i, j]
 
 
-# Create two fields for ping-pong iteration
+# Create two arrays for ping-pong iteration
 u = tack.empty((N, N))
 u_new = tack.empty((N, N))
 
@@ -57,7 +57,7 @@ print(f"Jacobi solver: {N}x{N} grid, {STEPS} iterations")
 
 for step in range(STEPS):
     jacobi_step(u, u_new, N)
-    copy_field(u_new, u, N)
+    copy_array(u_new, u, N)
 
     if (step + 1) % 2000 == 0:
         result = u.numpy().reshape(N, N)

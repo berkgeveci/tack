@@ -24,7 +24,7 @@ _parser.add_argument('--arch', default='cpu', choices=['cpu', 'metal', 'cuda', '
 _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
-# Allocate 1-D fields (device arrays)
+# Allocate 1-D arrays (device arrays)
 n = 10
 x = tack.empty((n,))
 y = tack.empty((n,))

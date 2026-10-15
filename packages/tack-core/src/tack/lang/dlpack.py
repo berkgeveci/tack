@@ -1,4 +1,4 @@
-"""DLPack support for Tack fields.
+"""DLPack support for Tack arrays.
 
 Implements the DLPack protocol (__dlpack__, __dlpack_device__) for
 zero-copy tensor exchange with PyTorch, CuPy, JAX, NumPy, VTK, etc.
@@ -28,7 +28,7 @@ kDLInt = 0
 kDLUInt = 1
 
 # Map Tack types to DLPack (code, bits, lanes).
-# Every dtype a backend accepts as a field belongs here — the narrow ints
+# Every dtype a backend accepts as an array belongs here — the narrow ints
 # were missing, so tack.i8 and friends round-tripped through numpy fine but
 # raised "DLPack does not support dtype" on export.
 _DTYPE_TO_DLPACK = {
@@ -99,11 +99,11 @@ class DLManagedTensor(ctypes.Structure):
 # DLPack v1.0 adds a versioned managed tensor, which is the only form that
 # can say a buffer is read-only. Both directions need it: NumPy will only
 # export a read-only array through it, and it is the only way tack can
-# say that a field over external memory must not be written.
+# say that an array over external memory must not be written.
 #
-# Note the field order differs from the unversioned struct -- dl_tensor
+# Note the member order differs from the unversioned struct -- dl_tensor
 # moves to the end. Reading one as the other silently misreads every
-# field, so the two are never used interchangeably.
+# array, so the two are never used interchangeably.
 class DLPackVersion(ctypes.Structure):
     _fields_ = [("major", ctypes.c_uint32), ("minor", ctypes.c_uint32)]
 
@@ -123,8 +123,8 @@ DLPACK_FLAG_BITMASK_READ_ONLY = 1 << 0
 
 # ── Export lifetime ──────────────────────────────────────────────────
 #
-# An exported capsule points at the field's memory, so everything backing
-# it has to outlive the consumer: the field itself, the DLManagedTensor,
+# An exported capsule points at the array's memory, so everything backing
+# it has to outlive the consumer: the array itself, the DLManagedTensor,
 # and the shape/stride arrays. They are pinned here and released when the
 # consumer is done.
 #
@@ -222,9 +222,9 @@ for _thunk in (_dlpack_deleter, _dlpack_deleter_versioned, _capsule_destructor):
 del _thunk
 
 
-def _get_device_info(field):
-    """Determine DLPack device type and data pointer for a field."""
-    buf = field._buffer
+def _get_device_info(array):
+    """Determine DLPack device type and data pointer for an array."""
+    buf = array._buffer
     cls_name = type(buf).__name__
 
     if cls_name == "NumpyBuffer":
@@ -265,23 +265,23 @@ def _get_device_info(field):
     raise RuntimeError(f"DLPack not supported for buffer type: {cls_name}")
 
 
-def field_to_dlpack(field, versioned=False):
-    """Create a DLPack capsule from a Tack field.
+def array_to_dlpack(array, versioned=False):
+    """Create a DLPack capsule from a Tack array.
 
     With `versioned`, produces a v1.0 DLManagedTensorVersioned in a
     'dltensor_versioned' capsule; otherwise the legacy DLManagedTensor in
     a 'dltensor' one. Only the versioned form can carry the read-only
-    flag, so a non-writable field exported the legacy way arrives as
+    flag, so a non-writable array exported the legacy way arrives as
     writable -- the legacy protocol simply has no way to say otherwise.
     """
-    device_type, device_id, data_ptr = _get_device_info(field)
+    device_type, device_id, data_ptr = _get_device_info(array)
 
-    dl_dtype = _DTYPE_TO_DLPACK.get(field.scalar_dtype)
+    dl_dtype = _DTYPE_TO_DLPACK.get(array.scalar_dtype)
     if dl_dtype is None:
-        raise TypeError(f"DLPack does not support dtype: {field.dtype}")
+        raise TypeError(f"DLPack does not support dtype: {array.dtype}")
     code, bits, lanes = dl_dtype
 
-    shape = field._host_shape
+    shape = array._host_shape
     ndim = len(shape)
     shape_arr = (ctypes.c_int64 * ndim)(*shape)
 
@@ -295,7 +295,7 @@ def field_to_dlpack(field, versioned=False):
     if versioned:
         managed = DLManagedTensorVersioned()
         managed.version = DLPackVersion(major=1, minor=0)
-        managed.flags = 0 if field._writable else DLPACK_FLAG_BITMASK_READ_ONLY
+        managed.flags = 0 if array._writable else DLPACK_FLAG_BITMASK_READ_ONLY
         capsule_name = b"dltensor_versioned"
         deleter = _dlpack_deleter_versioned
     else:
@@ -316,7 +316,7 @@ def field_to_dlpack(field, versioned=False):
     key = next(_ctx_keys)
     managed.manager_ctx = ctypes.c_void_p(key)
     managed.deleter = deleter
-    _prevent_gc[key] = (field, managed, shape_arr, strides_arr)
+    _prevent_gc[key] = (array, managed, shape_arr, strides_arr)
 
     # addressof, not byref: byref yields a temporary whose lifetime is not
     # tied to the capsule. `managed` itself is kept alive by _prevent_gc.
@@ -326,18 +326,18 @@ def field_to_dlpack(field, versioned=False):
     )
 
 
-def dlpack_device(field):
+def dlpack_device(array):
     """Return (device_type, device_id) tuple for DLPack protocol."""
-    device_type, device_id, _ = _get_device_info(field)
+    device_type, device_id, _ = _get_device_info(array)
     return (device_type, device_id)
 
 
 # ── Import ───────────────────────────────────────────────────────────
 #
 # The mirror of the export side. A consumer that adopts a tensor takes on
-# calling its deleter, so an imported field has to hold the capsule and
-# release it when the field dies -- otherwise the producer frees memory
-# the field is still pointing at.
+# calling its deleter, so an imported array has to hold the capsule and
+# release it when the array dies -- otherwise the producer frees memory
+# the array is still pointing at.
 
 _PyCapsule_SetName = ctypes.pythonapi.PyCapsule_SetName
 _PyCapsule_SetName.restype = ctypes.c_int
@@ -354,7 +354,7 @@ _PyCapsule_SetName.argtypes = [ctypes.py_object, ctypes.c_char_p]
 # accident of size -- measured on an M1 Max, a 4000-byte numpy array is and
 # a 256-byte one is not -- so supporting it would work or fail depending on
 # how big the array happened to be. The entry never worked in any case:
-# `dlpack_to_field` hands `wrap_ptr` an integer address and Metal's expects
+# `dlpack_to_array` hands `wrap_ptr` an integer address and Metal's expects
 # an MTLBuffer object, so every such import raised AttributeError.
 #
 # kDLMetal is absent for a related reason. Its `data` is an opaque
@@ -392,8 +392,8 @@ def _request_capsule(source):
 class _CapsuleHold:
     """Keeps an adopted DLPack tensor alive, and releases it exactly once.
 
-    Attached to the imported field, so the producer is told the memory is
-    free the moment the field is collected -- and not before.
+    Attached to the imported array, so the producer is told the memory is
+    free the moment the array is collected -- and not before.
     """
 
     __slots__ = ("_capsule", "_managed_ptr", "_released", "_struct")
@@ -423,15 +423,15 @@ class _CapsuleHold:
             pass
 
 
-def dlpack_to_field(source, writable=True):
-    """Wrap a DLPack tensor as a Tack field, without copying.
+def dlpack_to_array(source, writable=True):
+    """Wrap a DLPack tensor as a Tack array, without copying.
 
     `source` may be a capsule or anything implementing ``__dlpack__`` -- a
     CuPy array, a PyTorch tensor, a VTK array via
     ``vtkmodules.util.dlpack_support``.
 
-    The tensor is held for as long as the field lives, so the source may be
-    dropped immediately. The field does not copy, so the two share memory
+    The tensor is held for as long as the array lives, so the source may be
+    dropped immediately. The array does not copy, so the two share memory
     and a write through either is visible to the other.
 
     Raises RuntimeError if the tensor lives somewhere the active backend
@@ -440,7 +440,7 @@ def dlpack_to_field(source, writable=True):
     host tensors for a different reason, and says which: it can read that
     memory, it just cannot make an MTLBuffer out of it.
     """
-    from tack.lang.field import array_from_ptr
+    from tack.lang.array import array_from_ptr
     from tack.runtime.dispatch import get_backend
 
     capsule = _request_capsule(source)
@@ -464,7 +464,7 @@ def dlpack_to_field(source, writable=True):
     if struct is DLManagedTensorVersioned and \
             managed.flags & DLPACK_FLAG_BITMASK_READ_ONLY:
         # The producer says this memory must not be written. Honour it rather
-        # than handing back a field whose writes go somewhere unexpected.
+        # than handing back an array whose writes go somewhere unexpected.
         writable = False
 
     if not tensor.data:
@@ -515,11 +515,11 @@ def dlpack_to_field(source, writable=True):
             message += f" {backend.dlpack_refusal_note}"
         raise RuntimeError(message)
 
-    field = array_from_ptr(
+    array = array_from_ptr(
         (tensor.data or 0) + tensor.byte_offset, shape, dtype, writable=writable)
 
     # Adopt the capsule: rename it so nobody else releases it, and attach the
-    # hold to the field so the producer is told when the field is gone.
+    # hold to the array so the producer is told when the array is gone.
     _PyCapsule_SetName(capsule, used_name)
-    field._dlpack_hold = _CapsuleHold(capsule, managed_ptr, struct)
-    return field
+    array._dlpack_hold = _CapsuleHold(capsule, managed_ptr, struct)
+    return array

@@ -6,7 +6,7 @@ inlined, with ``self`` resolved:
 
 - a class-level ``int`` or ``float`` → a compile-time constant
 - an instance ``int`` or ``float`` → a runtime kernel parameter
-- an instance field → an extra kernel parameter
+- an instance array → an extra kernel parameter
 - an instance device-class object → nested: its methods and attributes too
 
 ``data_oriented`` is the same decorator under Taichi's name, kept so code

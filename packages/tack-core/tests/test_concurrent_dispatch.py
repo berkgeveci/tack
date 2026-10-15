@@ -100,7 +100,7 @@ class Interleave:
         return errors
 
 
-def _fields(dtype, np_dtype, n, length=None):
+def _arrays(dtype, np_dtype, n, length=None):
     length = length or n
     x = tack.empty((length,), dtype)
     out = tack.empty((length,), dtype)
@@ -116,8 +116,8 @@ def _slot():
 def test_concurrent_dtypes_get_their_own_variants(monkeypatch):
     """Two dtypes must produce two entries, not one shared by both."""
     n = 8
-    f32_x, f32_out = _fields(tack.f32, np.float32, n)
-    f64_x, f64_out = _fields(tack.f64, np.float64, n)
+    f32_x, f32_out = _arrays(tack.f32, np.float32, n)
+    f64_x, f64_out = _arrays(tack.f64, np.float64, n)
 
     interleave = Interleave(monkeypatch)
     interleave.run(lambda: _scale(f32_x, f32_out, n),
@@ -138,13 +138,13 @@ def test_a_thread_gets_code_built_for_its_own_dtype(monkeypatch):
     variant -- before A resumes, so a crossed key is a cache *hit* on
     somebody else's code rather than a redundant compile.
 
-    A's fields are twice the dispatched length so that f64 code reading
+    A's arrays are twice the dispatched length so that f64 code reading
     them stays in bounds: at equal length this reads and writes 2x past the
     end, and the test would be a heap corruption rather than an assertion.
     """
     n = 8
-    f32_x, f32_out = _fields(tack.f32, np.float32, n, length=2 * n)
-    f64_x, f64_out = _fields(tack.f64, np.float64, n)
+    f32_x, f32_out = _arrays(tack.f32, np.float32, n, length=2 * n)
+    f64_x, f64_out = _arrays(tack.f64, np.float64, n)
 
     interleave = Interleave(monkeypatch, hold_b_until_done=True)
     interleave.run(lambda: _scale(f32_x, f32_out, n),
@@ -163,7 +163,7 @@ def test_the_template_is_left_alone(monkeypatch):
     can read them. Nothing may be recorded there.
     """
     n = 8
-    x, out = _fields(tack.f32, np.float32, n)
+    x, out = _arrays(tack.f32, np.float32, n)
     template = _scale.get_ir().functions[0]
 
     _scale(x, out, n)
@@ -171,7 +171,7 @@ def test_the_template_is_left_alone(monkeypatch):
     recorded = [p.type_annotation for p in template.params]
     assert recorded == [None] * len(recorded), (
         f"dispatch wrote {recorded} into the shared template")
-    assert not any(getattr(p, "_is_field", False) for p in template.params)
+    assert not any(getattr(p, "_is_array", False) for p in template.params)
 
 
 def test_many_threads_one_kernel():
@@ -183,10 +183,10 @@ def test_many_threads_one_kernel():
     def work(i):
         try:
             if i % 2:
-                x, out = _fields(tack.f32, np.float32, n)
+                x, out = _arrays(tack.f32, np.float32, n)
                 want = np.arange(n, dtype=np.float32) * 2.0
             else:
-                x, out = _fields(tack.f64, np.float64, n)
+                x, out = _arrays(tack.f64, np.float64, n)
                 want = np.arange(n, dtype=np.float64) * 2.0
             for _ in range(20):
                 _scale(x, out, n)
@@ -208,7 +208,7 @@ def test_many_threads_one_kernel():
 # ── One compiled variant, dispatched from several threads ───────────
 #
 # A variant's launch state is shared on the GPU backends: the buffer its
-# scalars are packed into, and on Metal the argument buffer its field
+# scalars are packed into, and on Metal the argument buffer its array
 # bindings are encoded into. Unlocked, a thread could write its scalars,
 # have another thread overwrite them, and launch with the other's -- on
 # CUDA, half the dispatches below came back computed with the wrong ones.
@@ -399,10 +399,10 @@ def test_a_failed_transform_still_cleans_up(monkeypatch):
         _use_template._make_cache_key(None, {0: ('s', s)}))
 
 
-# ── Switching backends under a live field ────────────────────────────
+# ── Switching backends under a live array ────────────────────────────
 
-def test_a_backend_switch_under_a_live_field_says_so():
-    """`tack.init()` rebinds a module global; fields do not follow it.
+def test_a_backend_switch_under_a_live_array_says_so():
+    """`tack.init()` rebinds a module global; arrays do not follow it.
 
     The raw failure is `'NumpyBuffer' object has no attribute
     'metal_buffer'`, which names neither the cause nor the fix. Any second
@@ -431,7 +431,7 @@ def test_a_backend_switch_under_a_live_field_says_so():
 
         message = str(excinfo.value)
         assert "another backend" in message
-        assert "cpu" in message, "the message must name where the field came from"
+        assert "cpu" in message, "the message must name where the array came from"
         assert "Re-allocate" in message, "and what to do about it"
     finally:
         tack.init(arch=tack.cpu)

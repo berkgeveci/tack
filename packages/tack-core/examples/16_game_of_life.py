@@ -6,7 +6,7 @@ Rules applied simultaneously to all cells:
   - A dead cell with exactly 3 neighbors becomes alive
   - All other cells die
 
-Uses 2D field indexing and ndrange for parallel update.
+Uses 2D array indexing and ndrange for parallel update.
 
 Usage:
   uv run python examples/16_game_of_life.py

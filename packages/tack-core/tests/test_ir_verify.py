@@ -15,10 +15,10 @@ from tack.lang.types import f32, i32, i64
 
 def function(value=None):
     out = ir.IRParam('out', f32)
-    out._is_field = True
+    out._is_array = True
     count = ir.IRParam('count', i32)
-    count._is_field = False
-    store = ir.IRFieldStore(ir.IRName('out'), ir.IRName('i'),
+    count._is_array = False
+    store = ir.IRArrayStore(ir.IRName('out'), ir.IRName('i'),
                            value if value is not None else ir.IRConstant(1))
     loop = ir.IRParallelFor('i', ir.IRConstant(0), ir.IRName('count'), [store])
     return ir.IRFunction('example', [out, count], [loop])
@@ -78,7 +78,7 @@ def test_cycle_is_reported_but_shared_subexpressions_are_valid():
     (lambda f: f.body.insert(0, ir.IRSequentialFor('j', ir.IRConstant(0), ir.IRConstant(1), [])),
      'sequential loop must be inside'),
     (lambda f: setattr(f.params[0], 'type_annotation', 'float'), 'parameter type'),
-    (lambda f: delattr(f.params[0], '_is_field'), 'field/scalar category'),
+    (lambda f: delattr(f.params[0], '_is_array'), 'array/scalar category'),
 ])
 def test_structure_and_loop_invariants(corrupt, message):
     func = function()
@@ -141,7 +141,7 @@ def test_texture_resolution(shape, coords, message):
 
 def test_array_like_allocation_must_resolve_before_inference():
     func = function()
-    alloc = ir.IRSharedAlloc('tmp', None, ir.IRConstant(8), field_name='out')
+    alloc = ir.IRSharedAlloc('tmp', None, ir.IRConstant(8), array_name='out')
     func.body[0].body.insert(0, alloc)
     verify_ir(func, 'lowered')
     with pytest.raises(IRVerificationError, match='allocation dtype is unresolved'):
@@ -152,8 +152,8 @@ def test_array_like_allocation_must_resolve_before_inference():
 
 def test_scalar_parameter_cannot_be_used_as_a_buffer():
     func = function()
-    func.body[0].body[0].field = ir.IRName('count')
-    with pytest.raises(IRVerificationError, match='field access must name a field'):
+    func.body[0].body[0].array = ir.IRName('count')
+    with pytest.raises(IRVerificationError, match='array access must name an array'):
         verify_ir(func, 'inferred')
 
 
@@ -168,8 +168,8 @@ def test_typed_expressions_and_assignment_storage_are_required():
     func.body[0].body[1].value = ir.IRName('value')
     annotate_types(func)
     verify_ir(func, 'typed')
-    # A field pointer intentionally carries no scalar dtype.
-    assert func.body[0].body[1].field.dtype is None
+    # An array pointer intentionally carries no scalar dtype.
+    assert func.body[0].body[1].array.dtype is None
     del func.body[0].body[0]._resolved_type
     with pytest.raises(IRVerificationError, match='assignment storage type is missing'):
         verify_ir(func, 'typed')

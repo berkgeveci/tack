@@ -36,12 +36,12 @@ from tack.lang.types import (
 
 
 class DeviceBuffer:
-    """Abstract interface for backend-specific field storage."""
+    """Abstract interface for backend-specific array storage."""
 
     #: `Backend.name` of whoever allocates this kind of buffer. A class
     #: attribute, so it costs nothing and survives buffers built with
     #: `__new__` (Metal's `wrap_ptr` does that). Only a diagnostic reads
-    #: it — see `_fields_from_another_backend` in lang/kernel.py, which
+    #: it — see `_arrays_from_another_backend` in lang/kernel.py, which
     #: uses it to explain the AttributeError a backend switch produces.
     backend_name: str = ""
 
@@ -59,7 +59,7 @@ class DeviceBuffer:
     def read_range(self, start: int, count: int) -> np.ndarray:
         """Elements ``[start, start + count)`` of the flat storage, as a copy.
 
-        Serves ``field[i]`` on the host. Every shipped buffer overrides it:
+        Serves ``array[i]`` on the host. Every shipped buffer overrides it:
         CPU and Metal slice their host-visible views, and CUDA, HIP and
         Level Zero copy just the range. This default, for a buffer that
         does not, copies the whole buffer, which is correct and slow.
@@ -73,7 +73,7 @@ class DeviceBuffer:
         """Fill the storage with ``pattern``, one element's bytes, repeated.
 
         Returns false when this buffer cannot, and the caller uploads the
-        field instead: right for host-visible storage, which this default
+        array instead: right for host-visible storage, which this default
         serves. CUDA, HIP and Level Zero override it to fill on the device
         (``runtime/device_fill.py``).
         """
@@ -120,7 +120,7 @@ class NumpyBuffer(DeviceBuffer):
         self._data = np.empty(shape, dtype=numpy_dtype)
 
     def from_numpy(self, arr: np.ndarray):
-        # A reshaped field shares this buffer under another shape; the
+        # A reshaped array shares this buffer under another shape; the
         # element count already matches, so copy in the buffer's own shape.
         np.copyto(self._data, arr.reshape(self._data.shape))
 
@@ -141,7 +141,7 @@ class NumpyBuffer(DeviceBuffer):
     def address(self) -> int:
         """The data pointer, computed once per array: NumPy's ``.ctypes``
         builds an object per access, 1.6 µs each, and every CPU dispatch
-        binds every field argument."""
+        binds every array argument."""
         try:
             data, address = self._address
             if data is self._data:
@@ -156,7 +156,7 @@ class NumpyBuffer(DeviceBuffer):
     def span(self) -> tuple[int, int]:
         """The half-open byte range ``[start, end)`` this buffer occupies.
 
-        Read on every CPU dispatch to decide whether the field arguments
+        Read on every CPU dispatch to decide whether the array arguments
         overlap, so it is computed once per array rather than per call.
         """
         try:
@@ -315,7 +315,7 @@ class Array:
         self._check_writable()
         if np.ndim(value) == 0:
             from tack.runtime.dispatch import get_backend
-            if not get_backend().fill_field(self, value):
+            if not get_backend().fill_array(self, value):
                 self._buffer.fill(value)
             return
         vector_shape = self._vector_shape()
@@ -342,7 +342,7 @@ class Array:
             return empty_reduction(op)
         backend = get_backend()
         if backend.supports_device_reductions:
-            return backend.reduce_field(self._scalar_view(), op)
+            return backend.reduce_array(self._scalar_view(), op)
         return reduce_numpy(self.numpy(), op)
 
     def sum(self):
@@ -390,11 +390,11 @@ class Array:
         what it gets read-only and then cannot re-export it -- which breaks
         round trips through anything that hands the array back.
         """
-        from tack.lang.dlpack import field_to_dlpack
+        from tack.lang.dlpack import array_to_dlpack
         if copy is True:
             raise BufferError("Tack DLPack export does not support copy=True")
         versioned = max_version is not None and max_version[0] >= 1
-        return field_to_dlpack(self, versioned=versioned)
+        return array_to_dlpack(self, versioned=versioned)
 
     def __dlpack_device__(self):
         """Return (device_type, device_id) for the DLPack protocol."""
@@ -530,10 +530,6 @@ class Array:
         return f"Array(shape={self.shape}, dtype={self.dtype})"
 
 
-# Internal modules still name the storage class Field; tack.dataset.Field is
-# a separate class, a space plus coefficient values.
-Field = Array
-
 
 def _element(scalar, shape):
     """The (cached, so comparable with ``is``) element type of ``shape``."""
@@ -602,7 +598,7 @@ def empty(shape, dtype=f32, *, exportable=False) -> Array:
     dtype = as_dtype(dtype)
     scalar = dtype.scalar_dtype if isinstance(dtype, ElementType) else dtype
     storage = (int(np.prod(shape)) * dtype.size,) if isinstance(dtype, ElementType) else shape
-    buffer = get_backend().allocate_field(scalar, storage, exportable=exportable)
+    buffer = get_backend().allocate_array(scalar, storage, exportable=exportable)
     return _array_view(dtype, shape, buffer)
 
 
@@ -801,8 +797,8 @@ def from_dlpack(x, *, copy: bool = False) -> Array:
         host = x if isinstance(x, np.ndarray) else np.from_dlpack(x)
         return array(host)
 
-    from tack.lang.dlpack import dlpack_to_field
-    return dlpack_to_field(x)
+    from tack.lang.dlpack import dlpack_to_array
+    return dlpack_to_array(x)
 
 
 def memory_space(ptr) -> str:
@@ -908,28 +904,28 @@ class Matrix:
 class Texture3D:
     """A 3D texture over a snapshot of an array, sampled trilinearly.
 
-    Created via ``tack.texture3d(field, shape=(W, H, D))``.  In kernels,
+    Created via ``tack.texture3d(array, shape=(W, H, D))``.  In kernels,
     ``tex.sample(u, v, w)`` samples at normalized [0,1] coordinates using
     trilinear interpolation.
 
-    The texture copies the field's data when it is created, and again on
-    ``update()``; writes to the field in between do not reach it. That
+    The texture copies the array's data when it is created, and again on
+    ``update()``; writes to the array in between do not reach it. That
     holds on every backend. Where the backend samples in hardware the copy
     is a texture image (a CUDA or HIP array, an MTLTexture, a Level Zero
-    image); elsewhere it is a private field the generated code interpolates
+    image); elsewhere it is a private array the generated code interpolates
     in software. Either way the texture owns it, so it is released with the
     texture and no other texture can be handed it.
     """
 
-    def __init__(self, source_field: Array, shape_3d: tuple, interp: str = 'linear'):
+    def __init__(self, source_array: Array, shape_3d: tuple, interp: str = 'linear'):
         from tack.runtime.dispatch import get_backend
 
         # Every hardware path builds a single-channel 32-bit float image,
         # so f64 data would be reinterpreted rather than converted.
-        if source_field.dtype is not f32:
+        if source_array.dtype is not f32:
             raise ValueError(
-                f"texture3d requires an f32 field, got {source_field.dtype}; "
-                f"convert it first with field.astype(tack.f32)")
+                f"texture3d requires an f32 array, got {source_array.dtype}; "
+                f"convert it first with array.astype(tack.f32)")
         # The generated code interpolates linearly on every backend; nothing
         # implements another mode.
         if interp != 'linear':
@@ -937,11 +933,11 @@ class Texture3D:
                 f"texture3d supports interp='linear' only, got {interp!r}")
         shape_3d = tuple(int(s) for s in shape_3d)
         W, H, D = shape_3d
-        if W * H * D != source_field.size:
+        if W * H * D != source_array.size:
             raise ValueError(
                 f"texture3d shape {shape_3d} holds {W * H * D} elements, but "
-                f"the field has {source_field.size} elements")
-        self.field = source_field
+                f"the array has {source_array.size} elements")
+        self.array = source_array
         self.shape_3d = shape_3d   # (W, H, D) logical 3D shape
         self.interp = interp
 
@@ -949,25 +945,25 @@ class Texture3D:
         if backend.texture_in_hardware(shape_3d):
             self._storage = backend.create_texture_image(shape_3d)
         else:
-            self._storage = Array(f32, (source_field.size,),
-                                  backend.allocate_field(f32, (source_field.size,)))
+            self._storage = Array(f32, (source_array.size,),
+                                  backend.allocate_array(f32, (source_array.size,)))
         self.update()
 
     def update(self):
-        """Copy the field's current data into the texture.
+        """Copy the array's current data into the texture.
 
-        Sampling after this sees the field as it is now, on every backend.
+        Sampling after this sees the array as it is now, on every backend.
         """
         if isinstance(self._storage, Array):
             from tack.algorithms.copy import copy as _copy
-            _copy(self.field.reshape((self.field.size,)), self._storage,
-                  self.field.size)
+            _copy(self.array.reshape((self.array.size,)), self._storage,
+                  self.array.size)
         else:
-            self._storage.upload(self.field)
+            self._storage.upload(self.array)
 
     @property
     def dtype(self):
-        return self.field.dtype
+        return self.array.dtype
 
     def sample(self, u, v, w):
         """Sample at normalized coordinates. Only usable inside @tack.kernel."""

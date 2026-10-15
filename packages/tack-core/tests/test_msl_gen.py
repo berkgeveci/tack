@@ -6,14 +6,14 @@ from tack.lang.type_inference import infer_param_types
 
 
 def _get_ir(kernel_fn, *args):
-    """Helper: define a kernel, create dummy fields/scalars, run type inference, return IR."""
+    """Helper: define a kernel, create dummy arrays/scalars, run type inference, return IR."""
     tack.init(arch=tack.cpu)
     ir_func = kernel_fn.get_ir().functions[0]
     infer_param_types(ir_func, tuple(args))
     return ir_func
 
 
-def _field(shape=(64,), dtype=tack.f32):
+def _array(shape=(64,), dtype=tack.f32):
     return tack.empty(shape, dtype)
 
 
@@ -26,7 +26,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = x[i] + y[i]
 
-        src = generate_msl_source(_get_ir(add, _field(), _field(), _field()))
+        src = generate_msl_source(_get_ir(add, _array(), _array(), _array()))
         assert '#include <metal_stdlib>' in src
         assert 'using namespace metal;' in src
 
@@ -36,7 +36,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = x[i] + y[i]
 
-        src = generate_msl_source(_get_ir(add, _field(), _field(), _field()))
+        src = generate_msl_source(_get_ir(add, _array(), _array(), _array()))
         assert 'kernel void tack_kernel_a_add(' in src
 
     def test_buffer_bindings(self):
@@ -45,7 +45,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = x[i] + y[i]
 
-        src = generate_msl_source(_get_ir(add, _field(), _field(), _field()))
+        src = generate_msl_source(_get_ir(add, _array(), _array(), _array()))
         assert '[[buffer(0)]]' in src
         assert src.count('[[buffer(') == 1
         assert 'device float* tack_var_a_x [[id(0)]]' in src
@@ -58,7 +58,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = x[i] + y[i]
 
-        src = generate_msl_source(_get_ir(add, _field(), _field(), _field()))
+        src = generate_msl_source(_get_ir(add, _array(), _array(), _array()))
         assert 'device float*' in src
 
     def test_thread_position_in_grid(self):
@@ -67,7 +67,7 @@ class TestMSLCodeGen:
             for i in range(out.shape[0]):
                 out[i] = 42.0
 
-        src = generate_msl_source(_get_ir(fill, _field()))
+        src = generate_msl_source(_get_ir(fill, _array()))
         assert '[[thread_position_in_grid]]' in src
         assert '__tid__' in src
 
@@ -77,7 +77,7 @@ class TestMSLCodeGen:
             for i in range(out.shape[0]):
                 out[i] = 42.0
 
-        src = generate_msl_source(_get_ir(fill, _field()))
+        src = generate_msl_source(_get_ir(fill, _array()))
         assert 'long tack_var_a_i = __tid__;' in src
 
     def test_math_functions(self):
@@ -86,7 +86,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = sqrt(x[i])
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert 'sqrt(' in src
 
     def test_sin_cos(self):
@@ -95,7 +95,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = sin(x[i]) + cos(x[i])
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert 'sin(' in src
         assert 'cos(' in src
 
@@ -108,7 +108,7 @@ class TestMSLCodeGen:
                 else:
                     out[i] = 0.0
 
-        src = generate_msl_source(_get_ir(relu, _field(), _field()))
+        src = generate_msl_source(_get_ir(relu, _array(), _array()))
         assert 'if (' in src
         assert '} else {' in src
 
@@ -119,7 +119,7 @@ class TestMSLCodeGen:
                 for j in range(10):
                     b[i] = a[i]
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert 'for (long tack_var_a_j = 0; tack_var_a_j < 10; tack_var_a_j++)' in src
 
     def test_loop_variable_rebound_as_a_local_is_declared(self):
@@ -134,7 +134,7 @@ class TestMSLCodeGen:
                 d = tack.i32(x[i])
                 out[i] = acc + d
 
-        src = generate_msl_source(_get_ir(kern, _field(dtype=tack.i32), _field(dtype=tack.i32)))
+        src = generate_msl_source(_get_ir(kern, _array(dtype=tack.i32), _array(dtype=tack.i32)))
         assert 'for (long tack_var_a_d = 0; tack_var_a_d < 4; tack_var_a_d++)' in src
         assert 'int tack_var_a_d = ' in src
 
@@ -147,7 +147,7 @@ class TestMSLCodeGen:
                     out[i] = out[i] + x[i]
                     j = j + 1
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert 'while (' in src
 
     def test_scalar_arg_constant_buffer(self):
@@ -156,7 +156,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = alpha * x[i] + y[i]
 
-        src = generate_msl_source(_get_ir(saxpy, _field(), _field(), _field(), 2.5))
+        src = generate_msl_source(_get_ir(saxpy, _array(), _array(), _array(), 2.5))
         # Scalar passed as constant buffer reference, not device pointer
         assert 'constant float& tack_var_a_alpha' in src
         assert 'device float* tack_var_a_alpha' not in src
@@ -167,7 +167,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 tack.atomic_add(total, 0, x[i])
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field((1,))))
+        src = generate_msl_source(_get_ir(kern, _array(), _array((1,))))
         assert 'atomic_fetch_add_explicit(' in src
         assert 'atomic_float' in src
 
@@ -177,7 +177,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 tack.atomic_min(min_val, 0, x[i])
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field((1,))))
+        src = generate_msl_source(_get_ir(kern, _array(), _array((1,))))
         assert 'atomic_compare_exchange_weak_explicit(' in src
         assert 'as_type<float>' in src
 
@@ -187,7 +187,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 tack.atomic_max(max_val, 0, x[i])
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field((1,))))
+        src = generate_msl_source(_get_ir(kern, _array(), _array((1,))))
         assert 'atomic_compare_exchange_weak_explicit(' in src
 
     def test_shared_memory(self):
@@ -198,7 +198,7 @@ class TestMSLCodeGen:
                 tack.barrier()
                 out[i] = x[i]
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert 'threadgroup' in src
         assert 'threadgroup_barrier(mem_flags::mem_threadgroup | mem_flags::mem_device)' in src
 
@@ -210,7 +210,7 @@ class TestMSLCodeGen:
                 tack.barrier()
                 out[i] = x[i]
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert '[[thread_position_in_threadgroup]]' in src
 
     def test_print_is_noop(self):
@@ -220,7 +220,7 @@ class TestMSLCodeGen:
                 print("val:", x[i])
                 out[i] = x[i]
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert 'print not supported on Metal' in src
 
     def test_int_cast(self):
@@ -229,7 +229,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = float(int(x[i]))
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert '((int)(' in src
 
     def test_negation(self):
@@ -238,7 +238,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = -x[i]
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert '(-' in src
 
     def test_power(self):
@@ -247,7 +247,7 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = x[i] ** 2.0
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array()))
         assert 'pow(' in src
 
     def test_min_max_builtins(self):
@@ -256,6 +256,6 @@ class TestMSLCodeGen:
             for i in range(x.shape[0]):
                 out[i] = min(x[i], y[i]) + max(x[i], y[i])
 
-        src = generate_msl_source(_get_ir(kern, _field(), _field(), _field()))
+        src = generate_msl_source(_get_ir(kern, _array(), _array(), _array()))
         assert 'min(' in src
         assert 'max(' in src

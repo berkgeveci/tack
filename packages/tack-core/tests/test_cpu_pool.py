@@ -2,7 +2,7 @@
 call. The policy that decides *whether* to fan out is tested through the
 Python path in test_cpu_threading.py; here the pool itself is: that it is
 chosen, that it runs every chunk once with the kernel's own arguments, that
-backends with different thread counts share it, that it zeroes new fields,
+backends with different thread counts share it, that it zeroes new arrays,
 and that it can be switched off."""
 import os
 import platform
@@ -26,7 +26,7 @@ pytestmark = pytest.mark.skipif(platform.system() == "Windows",
 
 @pytest.fixture(autouse=True)
 def _on_the_cpu():
-    """The fields these tests make must be CPU fields whatever backend the
+    """The arrays these tests make must be CPU arrays whatever backend the
     session last initialized."""
     tack.init(arch=tack.cpu)
 

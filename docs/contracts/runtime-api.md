@@ -1,7 +1,7 @@
 # Runtime API
 
 This page is the contract for Tack's host-side surface: selecting a
-backend, creating and moving fields, reductions, sharing memory with other
+backend, creating and moving arrays, reductions, sharing memory with other
 libraries, inspecting generated code, the decorators, and the rules for
 calling a kernel. Each entry gives the signature, what is guaranteed, what
 the caller must ensure, and which exception a violation raises. What a
@@ -33,9 +33,9 @@ re-exported as `tack.init`.
   on every call, including when the same `arch` is already active.
 - The new backend is built before the old one is released. If construction
   fails, the previous backend stays active.
-- Fields belong to the backend that was active when they were allocated.
-  **Required caller constraint:** re-allocate fields after calling `init`.
-  When the new backend is a different kind, passing an old field to a
+- Arrays belong to the backend that was active when they were allocated.
+  **Required caller constraint:** re-allocate arrays after calling `init`.
+  When the new backend is a different kind, passing an old array to a
   kernel raises `RuntimeError`, which names the backends involved and tells
   you to re-allocate. `Kernel.__call__` diagnoses this from the
   `AttributeError` that the mismatched buffer produces. Re-initializing the
@@ -61,10 +61,10 @@ case, ignoring surrounding spaces) mean off, and any other value means on.
 This exists for embedding, for example inside an ANARI device that shares
 the process. Unset it for testing, because it suppresses backend switching.
 
-**Debug mode** checks every index of every field and array access, one
-dimension at a time: a field's leading dimension against its length, the
+**Debug mode** checks every index of every array and array access, one
+dimension at a time: an array's leading dimension against its length, the
 others against theirs, a flat index against the element count (a component
-count for a scalar atomic on a vector field), and a local or shared array
+count for a scalar atomic on a vector array), and a local or shared array
 index against its size. Constant tables and textures clamp and are not
 checked.
 
@@ -78,7 +78,7 @@ checked.
   more accesses were skipped. Which violation is first is unspecified when
   several threads go out of bounds.
 - Kernels lower and compile separately in debug mode, and the extents are
-  run-time arguments: debug mode compiles no variant per field length.
+  run-time arguments: debug mode compiles no variant per array length.
   Each launch is checked when it returns, which on the GPU backends means
   waiting for it, since their launches are otherwise queued. Launches from
   different threads report their own violations.
@@ -92,13 +92,13 @@ code generators (`codegen/bounds.py`, `llvm_gen.py`).
 
 `tack.runtime.dispatch.get_backend()` returns the active `Backend`. If none
 is active, it calls `init("cpu")` first. **Current behavior:** creating a
-field or calling a kernel before `tack.init()` therefore silently selects
-the CPU backend, and those fields become stale after a later
+array or calling a kernel before `tack.init()` therefore silently selects
+the CPU backend, and those arrays become stale after a later
 `tack.init(arch=...)`.
 
 ## Arrays
 
-`tack.Array` is defined in `packages/tack-core/src/tack/lang/field.py`.
+`tack.Array` is defined in `packages/tack-core/src/tack/lang/array.py`.
 Its `dtype` describes one scalar, vector or matrix element; `shape` is the
 array's dimensions, excluding component dimensions. `size` counts elements.
 `scalar_dtype`, `scalar_size` and `storage_shape` describe the scalar storage.
@@ -117,21 +117,21 @@ The buffer belongs to the backend active when the array was allocated.
 | `tack.empty_like(prototype, dtype=None)` | Allocates independent, writable storage on the active backend without reading or copying values. Accepts a NumPy array or Tack array; takes its dtype unless overridden. A scalar override of a vector/matrix prototype keeps the element dimensions. NumPy arrays produce scalar arrays with the array's shape. Contents are unspecified |
 | `tack.zeros_like`, `tack.ones_like`, `tack.full_like(prototype, fill_value, dtype=None)` | `empty_like()` followed by `fill()`, as for `zeros`, `ones` and `full` |
 | `tack.concat(arrays)` | A new 1-D array holding all elements in order, copied on the device |
-| `tack.texture3d(field, shape=None, interp="linear")` | A `Texture3D` holding a copy of the array taken at creation, for `sample(u, v, w)` in kernels. `tex.update()` copies the array again. See [Textures](backend-capabilities.md#textures) |
+| `tack.texture3d(array, shape=None, interp="linear")` | A `Texture3D` holding a copy of the array taken at creation, for `sample(u, v, w)` in kernels. `tex.update()` copies the array again. See [Textures](backend-capabilities.md#textures) |
 
 **Current behavior:**
 
 - A new array's contents are unspecified until a kernel, `tack.copyto` or
   `fill` writes them (the
   [language contract](../reference/language-contract.md#memory-and-aliasing));
-  use `tack.zeros` for zeros. The CPU leaves a new field untouched, so that
+  use `tack.zeros` for zeros. The CPU leaves a new array untouched, so that
   the kernel that writes it touches its pages first; the GPU backends
   currently zero new buffers, which is not a promise.
 - On the CPU, a fill of 256 KiB or more runs as a kernel through the
   dispatch, in parallel when the threading policy fans it out, and stores
   and refuses exactly what `ndarray.fill` would.
 - Allocation doesn't check the dtype against `supported_dtypes`. An `f64`
-  field can be allocated on Metal, and the
+  array can be allocated on Metal, and the
   [dispatch check](backend-capabilities.md#what-each-capability-gates)
   rejects it when a kernel uses it.
 - There is no `tack.fields()` function.
@@ -155,9 +155,9 @@ The buffer belongs to the backend active when the array was allocated.
 | `empty_like` (or another `*_like`) with a prototype other than a NumPy array or Tack array | `TypeError`: "expected a Tack array or NumPy array as the prototype" |
 | `concat([])` | `ValueError` |
 | `concat` with mixed dtypes | `TypeError` |
-| `texture3d` on a field that isn't `f32` | `ValueError`: "texture3d requires an f32 field, got f64; convert it first with field.astype(tack.f32)" |
+| `texture3d` on an array that isn't `f32` | `ValueError`: "texture3d requires an f32 array, got f64; convert it first with array.astype(tack.f32)" |
 | `texture3d` without a 3-D shape | `ValueError`: "texture3d requires a 3D shape" |
-| `texture3d` with a shape whose `W*H*D` differs from the field's size | `ValueError` naming both element counts |
+| `texture3d` with a shape whose `W*H*D` differs from the array's size | `ValueError` naming both element counts |
 | `texture3d` with `interp` other than `"linear"` | `ValueError`: "texture3d supports interp='linear' only, ..." |
 
 ### Host operations
@@ -179,10 +179,10 @@ keep this invisible: `numpy`, `a[i]` and reductions wait for the
 launches before them; `copyto` and `fill` take effect after them (on
 CUDA, HIP and Level Zero they are queued in order; on Metal they wait
 first). A queued launch's error, such as a device fault, is raised at the
-next wait rather than by its own call. A field dropped while a queued
+next wait rather than by its own call. An array dropped while a queued
 launch uses it is freed after that launch.
 
-**Required caller constraint:** a field is synchronized at kernel-call
+**Required caller constraint:** an array is synchronized at kernel-call
 and host-operation boundaries only. Host reads and writes between calls
 are safe. Host access during a call from another thread is not. Memory
 that another library reads or writes without a Tack call in between must
@@ -195,7 +195,7 @@ returns (see [DLPack](#dlpack)).
 Defined in `runtime/dispatch.py` (`sync`). Waits until every kernel
 launched so far on the active backend has finished, by calling its
 `Backend.synchronize()`; a no-op on the CPU, whose launches complete before
-returning. Most code never needs it, since reading a field waits already.
+returning. Most code never needs it, since reading an array waits already.
 It is for timing kernels, and for memory shared with another library that
 reads it without Tack. It raises the error of a queued launch that
 failed. `tack.init()` synchronizes the backend it replaces.
@@ -210,17 +210,17 @@ CPU), the wait is inline.
 ### Reductions
 
 `f.sum()`, `f.min()`, `f.max()` and `f.mean()` reduce every element and
-return a Python `float`. Integer fields included.
+return a Python `float`. Integer arrays included.
 
 | | `sum` | `min` / `max` | `mean` |
 |---|---|---|---|
-| Empty field | `0.0` | `ValueError`: "min reduction requires a nonempty field" | `nan` |
-| Path | On the device when the **active** backend has `supports_device_reductions` and the field is `f32`. Otherwise NumPy on the host | same | `sum() / size` in host binary64 |
+| Empty array | `0.0` | `ValueError`: "min reduction requires a nonempty array" | `nan` |
+| Path | On the device when the **active** backend has `supports_device_reductions` and the array is `f32`. Otherwise NumPy on the host | same | `sum() / size` in host binary64 |
 
 Accumulation precision, NaN and signed-zero rules, permitted reordering and
 the error budget are **Required** items of the
-[reduction contract](../reference/language-contract.md#field-and-parallel-reductions).
-**Required caller constraint:** reduce a field only while its backend is
+[reduction contract](../reference/language-contract.md#array-and-parallel-reductions).
+**Required caller constraint:** reduce an array only while its backend is
 active.
 
 ## Pointer interop
@@ -251,13 +251,13 @@ different context.
 read-only on the host and in kernels. `fill()` and `tack.copyto()` raise
 `RuntimeError`. A dispatch that binds it to a parameter the kernel may
 store to, or use as an atomic target, raises `ValueError` before the
-launch: "Kernel '`k`': parameter '`out`' may be written, but its field is
+launch: "Kernel '`k`': parameter '`out`' may be written, but its array is
 read-only. ...". A parameter whose stores can't be traced counts as
 written.
 
 **Required caller constraints:**
 
-- Keep the memory alive and unmoved for the field's lifetime.
+- Keep the memory alive and unmoved for the array's lifetime.
 - Provide at least `prod(shape) * itemsize` contiguous bytes.
 
 ### `tack.memory_space(ptr)`
@@ -277,10 +277,10 @@ Defined in `packages/tack-core/src/tack/lang/dlpack.py`.
 **Export:** `Array.__dlpack__(*, stream=None, max_version=None, dl_device=None, copy=None)`
 and `Array.__dlpack_device__()`.
 
-- Zero-copy. The capsule keeps the field alive until the consumer calls
+- Zero-copy. The capsule keeps the array alive until the consumer calls
   the deleter.
 - A consumer passing `max_version >= (1, 0)` receives a versioned capsule
-  that carries the read-only flag for non-writable fields. The legacy
+  that carries the read-only flag for non-writable arrays. The legacy
   capsule can't express read-only.
 - The device type is `kDLCPU` on CPU and Metal, `kDLCUDA` on CUDA,
   `kDLROCM` on HIP, and `kDLOneAPI` on Level Zero. The device id is always
@@ -288,7 +288,7 @@ and `Array.__dlpack_device__()`.
 - Strides are C-contiguous. All ten Tack dtypes are exported.
 - `copy=True` raises `BufferError`. `stream` and `dl_device` are ignored.
 - On Metal, CUDA, HIP and Level Zero the export waits for the launches
-  queued so far, and from then on every launch that uses the field
+  queued so far, and from then on every launch that uses the array
   completes before it returns (`DeviceBuffer.share()`), so the consumer
   may read the memory at once and after later launches.
 
@@ -296,12 +296,12 @@ and `Array.__dlpack_device__()`.
 
 - `source` is a capsule or an object with `__dlpack__`. A versioned
   capsule is requested first.
-- With `copy=False`, the field shares the tensor's memory and holds the
-  capsule until the field and every view of it are collected. Then the
+- With `copy=False`, the array shares the tensor's memory and holds the
+  capsule until the array and every view of it are collected. Then the
   producer's deleter runs exactly once.
-- A read-only versioned tensor produces a non-writable field, which
+- A read-only versioned tensor produces a non-writable array, which
   host writes and kernel stores refuse as for `array_from_ptr`.
-- As for `array_from_ptr`, a launch that uses the imported field completes
+- As for `array_from_ptr`, a launch that uses the imported array completes
   before it returns.
 - With `copy=True`, the source is read through `np.from_dlpack` and copied
   into a new array with `tack.array`. That works only for sources that
@@ -328,11 +328,11 @@ On Metal, use `copy=True` with a host tensor.
 ### VTK
 
 `tack.interop.vtk` (package `tack-vis`) provides `vtk_to_array(vtk_array, flatten=False)`,
-`array_to_vtk(field, n_components=None, name=None)` and `init_level_zero()`.
+`array_to_vtk(array, n_components=None, name=None)` and `init_level_zero()`.
 Both directions are zero-copy through DLPack and need VTK with
 `vtkmodules.util.dlpack_support`. Without it they raise `RuntimeError`.
 `array_to_vtk` validates the layout before importing VTK and raises
-`ValueError` for a contradictory `n_components` or for fields with more
+`ValueError` for a contradictory `n_components` or for arrays with more
 than two dimensions.
 
 **Required for Level Zero:** start Tack with
@@ -354,7 +354,7 @@ doesn't populate the backend's variant cache.
 | `mode` | Returns |
 |---|---|
 | `"ir"` | Tack IR after resolution, inference, scalar localization, optimization and type annotation (`ir.dump`), before GPU scalar packing |
-| `"source"` | The backend's source. On CPU, LLVM IR for the variant these arguments would select, including the disjoint-field specialization. On Metal, CUDA, HIP and Level Zero, MSL, CUDA C, HIP C or OpenCL C after scalar packing |
+| `"source"` | The backend's source. On CPU, LLVM IR for the variant these arguments would select, including the disjoint-array specialization. On Metal, CUDA, HIP and Level Zero, MSL, CUDA C, HIP C or OpenCL C after scalar packing |
 | `"optimized"` | CPU only: the LLVM module after the backend's O3 pipeline. On any other backend it raises `ValueError` ("inspect mode 'optimized' is CPU only: ..."), after the kernel's own checks have run, because the GPU backends' optimizers run inside vendor compilers whose output is never shown |
 
 **Guarantees:** inspection enforces the same dtype, workgroup-support,
@@ -370,7 +370,7 @@ for the dispatch checks it skips.
 first argument isn't a `Kernel`. `ValueError` "Unknown inspect mode:
 '`ptx`'. Use 'ir', 'source', or 'optimized'." Unlike dispatch, inspection
 doesn't wrap errors. For example, a workgroup primitive on CPU raises
-`NotImplementedError` directly, and an unsupported field dtype raises the
+`NotImplementedError` directly, and an unsupported array dtype raises the
 dtype check's `TypeError`.
 
 ## Decorators
@@ -414,7 +414,7 @@ instances can be passed as kernel arguments, and it collects the class's
 | Class-level `int` or `float` defined on the class itself | A compile-time constant | Yes. The value, with its type and float bit pattern, is part of the key |
 | Instance attribute that shadows such a class attribute | A compile-time constant with the instance's value | Yes |
 | Instance `int` or `float` | A runtime scalar parameter | Only when its inferred type changes. The attribute *names* are in the key, and the values are not |
-| Instance `Field` | An extra field parameter | Only when dtype, shape or vector width changes |
+| Instance `Array` | An extra array parameter | Only when dtype, shape or vector width changes |
 | Names starting with `_`, and attributes of other types | Ignored | — |
 
 Calling a method that isn't a `@tack.func`, or referencing a `self.`
@@ -431,7 +431,7 @@ documentation only. Instances are recognized by the class's
 
 `Kernel.__call__(*args)` dispatches on the active backend and returns
 `None`, or, for a kernel that ends in an annotated `return`, that value,
-read from a hidden one-element field (which waits for the launch). On the
+read from a hidden one-element array (which waits for the launch). On the
 CPU the call returns after the kernel completes; on the GPU backends once
 it is queued (see [Host operations](#host-operations)).
 
@@ -439,17 +439,17 @@ it is queued (see [Host operations](#host-operations)).
 
 | Argument | Treated as |
 |---|---|
-| `Field` | A field parameter. Its dtype must be in `supported_dtypes` |
-| `Texture3D` | A sampled texture parameter. The kernel samples the texture's own copy, not its field |
+| `Array` | An array parameter. Its dtype must be in `supported_dtypes` |
+| `Texture3D` | A sampled texture parameter. The kernel samples the texture's own copy, not its array |
 | `int`, `bool` or NumPy integer | A scalar: `i32` if it fits, else `i64`, else `u64`. Outside the `u64` range raises `TypeError` |
-| `float` or NumPy floating | A scalar: `f64` if any field argument is `f64`, otherwise `f32`. Textures are always `f32`. A NumPy `float64` with only `f32` fields becomes `f32` |
+| `float` or NumPy floating | A scalar: `f64` if any array argument is `f64`, otherwise `f32`. Textures are always `f32`. A NumPy `float64` with only `f32` arrays becomes `f32` |
 | `@tack.device_class` instance | Expanded as described above |
 | Anything else | `TypeError`: "Unsupported argument type for parameter '`a`': <class 'str'>" |
 
 **Current behavior:**
 
 - Changing a scalar's *value* never recompiles. Changing its inferred
-  *type*, a field's dtype or vector width, a baked shape dimension, or a
+  *type*, an array's dtype or vector width, a baked shape dimension, or a
   texture extent compiles a new variant. See
   [Specialization and compilation identity](../reference/language-contract.md#specialization-and-compilation-identity).
 - One kernel may be dispatched from several threads concurrently. Each
@@ -477,7 +477,7 @@ it is queued (see [Host operations](#host-operations)).
   CPUBackend: Keyword arguments not supported in kernels".
 - **A wrong argument count.** `TypeError`: "Kernel '`k`' expects 2
   arguments, got 1". Arguments are counted after template expansion.
-- **A read-only field where the kernel may store.** `ValueError` before
+- **A read-only array where the kernel may store.** `ValueError` before
   the launch. See [Pointer interop](#pointer-interop).
 
 ## Environment variables
@@ -536,7 +536,7 @@ in Python subclasses `RuntimeError`.
   as `RuntimeError("Kernel '<name>' failed on <BackendClass>: ...")`,
   dropping an inner `Kernel '<name>': ` prefix. For compiler failures, it
   uses a short "failed to compile" form that lists the error lines.
-- It diagnoses an `AttributeError` caused by stale fields as a
+- It diagnoses an `AttributeError` caused by stale arrays as a
   `RuntimeError`.
 - It passes everything else through unchanged, notably `ValueError` and
   `NameError`.
@@ -547,16 +547,16 @@ Translated exceptions keep the original as `__cause__`.
 |---|---|---|
 | `UnsupportedSyntaxError` | Syntax outside the kernel language, in a kernel or a device function, including unreachable statements; a kernel without exactly one parallel loop directly in its body; a store, atomic, barrier, block reduction or `print` outside the parallel loop, including through an inlined device function or template method | First dispatch or inspection (frontend) |
 | `NameError` | A name that is neither a parameter nor assigned. Kernels don't capture Python globals | First dispatch or inspection (frontend) |
-| `TypeError` | Argument count or type, an integer outside 64 bits, a field dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, a dtype argument that is neither a Tack type nor a NumPy dtype with a Tack type, `array`, `empty_like` or DLPack dtypes, an invalid `*_like` prototype, `concat` dtypes, `copyto` into a non-array, host element assignment or iteration, a non-`MTLBuffer` on Metal, an `array_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
-| `ValueError` | Unknown arch or option, an unknown `TACK_CPU_POLICY`, incomplete `external_context`, workgroup participation, launch counts or device group size, a launch or reduction larger than one grid can index, atomic alignment, a read-only field the kernel may store to, `array_from_ptr` memory space, shape mismatches (including `copyto` shapes that do not broadcast), `reshape`, `texture3d` arguments, empty `min`/`max`, empty `concat`, unknown inspect mode or `"optimized"` off CPU, template method or attribute errors, malformed or `kDLMetal` DLPack tensors | Initialization, dispatch (cold or every call), inspection, host calls |
+| `TypeError` | Argument count or type, an integer outside 64 bits, an array dtype unsupported by the backend, an unsupported atomic dtype or target, the MSL generator receiving `f64`, `inspect` of a non-kernel, `@tack.func` on a non-function, a dtype argument that is neither a Tack type nor a NumPy dtype with a Tack type, `array`, `empty_like` or DLPack dtypes, an invalid `*_like` prototype, `concat` dtypes, `copyto` into a non-array, host element assignment or iteration, a non-`MTLBuffer` on Metal, an `array_from_ptr` pointer that isn't an address on CUDA, HIP or Level Zero | Dispatch (cold), inspection, host calls |
+| `ValueError` | Unknown arch or option, an unknown `TACK_CPU_POLICY`, incomplete `external_context`, workgroup participation, launch counts or device group size, a launch or reduction larger than one grid can index, atomic alignment, a read-only array the kernel may store to, `array_from_ptr` memory space, shape mismatches (including `copyto` shapes that do not broadcast), `reshape`, `texture3d` arguments, empty `min`/`max`, empty `concat`, unknown inspect mode or `"optimized"` off CPU, template method or attribute errors, malformed or `kDLMetal` DLPack tensors | Initialization, dispatch (cold or every call), inspection, host calls |
 | `NotImplementedError` | Workgroup primitives on CPU, keyword arguments, and the few lowering checks that source validation doesn't already report as `UnsupportedSyntaxError` | Raised directly by inspection. Wrapped in `RuntimeError` at dispatch |
-| `RuntimeError` | Initialization failures, compilation and launch failures, stale fields after a backend switch, unreadable kernel or device-function source, host writes to read-only fields, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, raised when a pass leaves IR that breaks a structural invariant) | Everywhere |
+| `RuntimeError` | Initialization failures, compilation and launch failures, stale arrays after a backend switch, unreadable kernel or device-function source, host writes to read-only arrays, calling device-only functions (`tack.shared`, `tack.atomic_add`, `@tack.func`s) from Python, DLPack device refusals, `export_memory` on unsupported backends, `tack.interop.vtk` requirements, and IR verification failures (`IRVerificationError`, a `RuntimeError` subclass, raised when a pass leaves IR that breaks a structural invariant) | Everywhere |
 | `BufferError` | `__dlpack__(copy=True)` | Export |
-| `IndexError` | In debug mode, a launch that indexed a field or array out of bounds; host indexing `f[i]` outside the field | After the launch, from `Kernel.__call__`; host calls |
+| `IndexError` | In debug mode, a launch that indexed an array or array out of bounds; host indexing `f[i]` outside the array | After the launch, from `Kernel.__call__`; host calls |
 
 **Current behavior:** every dispatch rejection listed on this page and in
 [Backend capabilities](backend-capabilities.md) is raised before the kernel
-launches, so a rejected call leaves field storage unchanged.
+launches, so a rejected call leaves array storage unchanged.
 `test_workgroup_contract.py` tests this property for workgroup rejections,
 `test_atomic_contract.py` for alignment, `test_launch_limits.py` for
 oversized launches, and `test_outside_parallel_loop.py` for effects outside

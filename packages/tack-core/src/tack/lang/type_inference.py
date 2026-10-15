@@ -7,7 +7,7 @@ This module infers scalar types for IR nodes based on the concrete argument type
 import numpy as np
 
 from tack.lang import ir
-from tack.lang.field import Field, Texture3D
+from tack.lang.array import Array, Texture3D
 from tack.lang.types import (
     ScalarType,
     f32,
@@ -25,7 +25,7 @@ from tack.lang.types import (
 
 
 def _storage_dtype(arg):
-    return arg.scalar_dtype if isinstance(arg, Field) else arg.dtype
+    return arg.scalar_dtype if isinstance(arg, Array) else arg.dtype
 
 
 def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
@@ -40,11 +40,11 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
             f"got {len(args)}"
         )
 
-    # Determine the float context from field arguments: if any field is f64,
+    # Determine the float context from array arguments: if any array is f64,
     # Python float scalars should be f64 to avoid silent precision loss.
     float_context = f32
     for arg in args:
-        if isinstance(arg, (Field, Texture3D)) and _storage_dtype(arg) is f64:
+        if isinstance(arg, (Array, Texture3D)) and _storage_dtype(arg) is f64:
             float_context = f64
             break
 
@@ -52,22 +52,22 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
     for param, arg in zip(ir_func.params, args):
         if isinstance(arg, Texture3D):
             param.type_annotation = arg.dtype
-            param._is_field = True
+            param._is_array = True
             param._is_texture = True
             types.append(arg.dtype)
-        elif isinstance(arg, Field):
+        elif isinstance(arg, Array):
             param.type_annotation = arg.scalar_dtype
-            param._is_field = True
+            param._is_array = True
             types.append(arg.scalar_dtype)
         elif isinstance(arg, (float, np.floating)):
             param.type_annotation = float_context
-            param._is_field = False
+            param._is_array = False
             types.append(float_context)
         elif isinstance(arg, (int, np.integer)):
             val = int(arg)
             dtype = integer_type_for_value(val)
             param.type_annotation = dtype
-            param._is_field = False
+            param._is_array = False
             types.append(dtype)
         else:
             raise TypeError(
@@ -82,16 +82,16 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
 def check_dispatch_types(ir_func: ir.IRFunction, args: tuple,
                          supported_dtypes: set[ScalarType] | None = None,
                          backend_name: str = ""):
-    """Validate field and scalar types at dispatch time.
+    """Validate array and scalar types at dispatch time.
 
     Checks:
-    - Field dtypes are supported by the target backend
+    - Array dtypes are supported by the target backend
     - All arguments have valid Tack types
 
     Raises TypeError with a clear message if validation fails.
     """
     for param, arg in zip(ir_func.params, args):
-        if isinstance(arg, (Field, Texture3D)):
+        if isinstance(arg, (Array, Texture3D)):
             dtype = _storage_dtype(arg)
             if supported_dtypes is not None and dtype not in supported_dtypes:
                 raise TypeError(

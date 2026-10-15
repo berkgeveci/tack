@@ -24,7 +24,7 @@ def scaled_total(x, acc, n, offset) -> tack.f32:
     half = 0.5                                     # a local bound outside the loop
     for i in range(n):
         tack.atomic_add(acc, 0, x[i])
-    return half * acc[0] * SCALE + offset          # fields, constants, arguments, locals
+    return half * acc[0] * SCALE + offset          # arrays, constants, arguments, locals
 
 
 @tack.kernel
@@ -51,7 +51,7 @@ def test_kernels_return_a_value(backend):
 
     acc.fill(-1.0)
     assert biggest(x, acc, n) == 1.0
-    assert count_live(cells, count, n) == 668        # the count field accumulates; the kernel is reusable
+    assert count_live(cells, count, n) == 668        # the count array accumulates; the kernel is reusable
 
 
 @tack.device_class

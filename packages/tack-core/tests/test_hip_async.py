@@ -1,5 +1,5 @@
 """HIP launches are queued on a stream and return at once; the host waits
-only where it reads a field. Results must be the same as when every launch
+only where it reads an array. Results must be the same as when every launch
 completed before returning: order, each launch's own scalars, host writes
 and fills ordered among the launches, dropped temporaries freed after the
 launches that use them, and sync waiting for everything."""
@@ -82,7 +82,7 @@ def test_fills_are_ordered_among_the_launches():
 
 
 def test_a_dropped_temporary_is_freed_after_its_launches():
-    """A field Python drops while launches that use it are queued is freed
+    """An array Python drops while launches that use it are queued is freed
     in stream order; the launches read and write it whole."""
     x = tack.empty((1 << 20,))
     x.fill(2.0)
@@ -172,18 +172,18 @@ def _busy(x, out):
 def test_a_host_array_may_change_once_its_write_returns(n):
     """copyto from pageable memory is queued behind busy launches; HIP
     stages a small write and waits before a large one, so either way the
-    field gets what the array held when the call returned."""
+    array gets what the array held when the call returned."""
     x = tack.empty((1 << 20,))
     busy = tack.zeros((1 << 20,))
-    field = tack.zeros((n,))
+    array = tack.zeros((n,))
     for _ in range(5):
         _busy(x, busy)
     host = np.arange(n, dtype=np.float32)
-    tack.copyto(field, host)
+    tack.copyto(array, host)
     host[:] = -1.0
     del host
     gc.collect()
-    np.testing.assert_array_equal(field.numpy(), np.arange(n, dtype=np.float32))
+    np.testing.assert_array_equal(array.numpy(), np.arange(n, dtype=np.float32))
 
 
 def test_a_dlpack_export_completes_its_launches():
@@ -294,7 +294,7 @@ def test_a_wait_releases_the_gil_and_the_stream(wait):
 
 
 def test_a_read_from_another_thread_binds_the_buffers_device():
-    """A worker thread starts on device 0; reading a field makes its device
+    """A worker thread starts on device 0; reading an array makes its device
     current for the read and puts the previous one back."""
     out = tack.empty((8,))
     out.fill(2.5)

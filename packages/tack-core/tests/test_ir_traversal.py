@@ -18,9 +18,9 @@ from tack.lang.types import f32
     lambda x: ir.IRCompare('<', ir.IRConstant(0), x),
     lambda x: ir.IRBoolOp('and', [ir.IRConstant(1), x]),
     lambda x: ir.IRIfExp(ir.IRConstant(1), x, ir.IRConstant(0)),
-    lambda x: ir.IRFieldLoad(ir.IRName('field'), x),
-    lambda x: ir.IRFieldStore(ir.IRName('field'), ir.IRConstant(0), x),
-    lambda x: ir.IRAtomicOp('add', ir.IRName('field'), x, ir.IRConstant(1)),
+    lambda x: ir.IRArrayLoad(ir.IRName('array'), x),
+    lambda x: ir.IRArrayStore(ir.IRName('array'), ir.IRConstant(0), x),
+    lambda x: ir.IRAtomicOp('add', ir.IRName('array'), x, ir.IRConstant(1)),
     lambda x: ir.IRAttribute(x, 'attribute'),
     lambda x: ir.IRCall('sqrt', [x]),
     lambda x: ir.IRAssign('value', x),
@@ -108,9 +108,9 @@ def test_all_structural_passes_reach_uncommon_expression_slots(wrap):
     assert any(isinstance(node, ir.IRName) and node.name == 'original' for node in walk_ir(copied))
 
     packed = _rewrite(wrap(ir.IRName('scalar')), {'scalar': ('__pack_f32__', 2)})
-    loads = [node for node in walk_ir(packed) if isinstance(node, ir.IRFieldLoad)]
+    loads = [node for node in walk_ir(packed) if isinstance(node, ir.IRArrayLoad)]
     assert len(loads) == 1
-    assert loads[0].field.name == '__pack_f32__'
+    assert loads[0].array.name == '__pack_f32__'
     assert loads[0].index.value == 2
 
 

@@ -1,4 +1,4 @@
-"""Sorting and segmented reductions on tack fields.
+"""Sorting and segmented reductions on tack arrays.
 
 A stable least-significant-digit radix sort, with ``unique`` and
 ``reduce_by_key`` on top of it. On the CPU, everything here is a sequence of
@@ -10,7 +10,7 @@ Usage:
     from tack import algorithms
 
     perm = algorithms.argsort(keys)                       # stable permutation
-    skeys, svals = algorithms.sort_by_key(keys, values)   # new, sorted fields
+    skeys, svals = algorithms.sort_by_key(keys, values)   # new, sorted arrays
     ukeys, counts = algorithms.unique(skeys)              # run-length summary
     ukeys, sums = algorithms.reduce_by_key(skeys, svals)  # one value per key
 
@@ -416,14 +416,14 @@ _REDUCERS = {
 
 # --- host side --------------------------------------------------------------
 
-def _count(n, *fields):
-    """Resolve and check the element count: every field is read or written
+def _count(n, *arrays):
+    """Resolve and check the element count: every array is read or written
     on [0, n)."""
-    n = fields[0].size if n is None else int(n)
-    for f in fields:
+    n = arrays[0].size if n is None else int(n)
+    for f in arrays:
         if not 0 <= n <= f.size:
             raise ValueError(
-                f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
+                f"n={n} is outside [0, {f.size}] for an array of {f.size} elements")
     return n
 
 
@@ -436,17 +436,17 @@ def _key_width(keys):
     return mapped
 
 
-def _read(field):
-    return field.numpy()[0].item()
+def _read(array):
+    return array.numpy()[0].item()
 
 
 def argsort(keys, n=None, index_dtype=None):
     """Stable permutation that sorts the first ``n`` keys ascending.
 
-    ``keys`` is an ``i32``, ``u32``, ``i64`` or ``u64`` field.  Returns a
-    new field ``perm`` of ``n`` elements with ``keys[perm[0]] <=
+    ``keys`` is an ``i32``, ``u32``, ``i64`` or ``u64`` array.  Returns a
+    new array ``perm`` of ``n`` elements with ``keys[perm[0]] <=
     keys[perm[1]] <= ...``; equal keys keep their original order.  ``n``
-    defaults to the whole field and may be zero.  ``perm`` is ``i32``, or
+    defaults to the whole array and may be zero.  ``perm`` is ``i32``, or
     ``i64`` past ``2**31 - 1`` elements or when ``index_dtype`` asks.
     """
     _key_width(keys)
@@ -510,9 +510,9 @@ def argsort(keys, n=None, index_dtype=None):
 
 
 def gather(src, indices, n=None):
-    """New field ``out`` with ``out[i] = src[indices[i]]`` for ``i < n``.
+    """New array ``out`` with ``out[i] = src[indices[i]]`` for ``i < n``.
 
-    ``indices`` is an integer field; ``n`` defaults to its size.  The
+    ``indices`` is an integer array; ``n`` defaults to its size.  The
     output has ``src``'s dtype.  Indices must lie in ``[0, src.size)``.
     """
     n = _count(n, indices)
@@ -525,13 +525,13 @@ def gather(src, indices, n=None):
 def sort_by_key(keys, values=None, n=None):
     """Sort the first ``n`` keys ascending, carrying ``values`` along.
 
-    Returns ``(sorted_keys, sorted_values)`` as new fields of ``n``
+    Returns ``(sorted_keys, sorted_values)`` as new arrays of ``n``
     elements; ``sorted_values`` is ``None`` when no values are given.  The
     sort is stable, so equal keys keep the order of their values.  See
     ``argsort`` for the key dtypes.
     """
-    fields = (keys,) if values is None else (keys, values)
-    n = _count(n, *fields)
+    arrays = (keys,) if values is None else (keys, values)
+    n = _count(n, *arrays)
     perm = argsort(keys, n)
     sorted_keys = gather(keys, perm, n)
     sorted_values = None if values is None else gather(values, perm, n)
@@ -539,7 +539,7 @@ def sort_by_key(keys, values=None, n=None):
 
 
 def _run_offsets(sorted_keys, n, index_dtype=None):
-    """Offsets of the runs of equal adjacent keys: an index field (see
+    """Offsets of the runs of equal adjacent keys: an index array (see
     ``argsort``) of ``nruns + 1`` entries with ``offsets[nruns] == n``.
     Returns ``(offsets, nruns)``; an empty input has no runs."""
     indices = _index_dtype(n, index_dtype)
@@ -555,12 +555,12 @@ def _run_offsets(sorted_keys, n, index_dtype=None):
 
 
 def unique(sorted_keys, n=None):
-    """The distinct keys of a sorted field and how often each occurs.
+    """The distinct keys of a sorted array and how often each occurs.
 
     ``sorted_keys`` must have equal keys adjacent (sorted, or grouped).
-    Returns ``(keys, counts)``: ``keys`` is a new field of the same dtype
+    Returns ``(keys, counts)``: ``keys`` is a new array of the same dtype
     holding each distinct key once, in order of first appearance, and
-    ``counts`` the run lengths, an index field (see ``argsort``).  Works for any
+    ``counts`` the run lengths, an index array (see ``argsort``).  Works for any
     dtype that supports ``!=``.
     """
     n = _count(n, sorted_keys)
@@ -577,9 +577,9 @@ def reduce_by_key(sorted_keys, values, n=None, op="sum"):
     """Reduce the values of each run of equal keys to one value.
 
     ``sorted_keys`` must have equal keys adjacent, as for ``unique``;
-    ``values`` is any field with at least ``n`` elements.  ``op`` is
+    ``values`` is any array with at least ``n`` elements.  ``op`` is
     ``"sum"``, ``"min"`` or ``"max"``.  Returns ``(keys, reduced)``: the
-    distinct keys and a new field of ``values``' dtype with one entry per
+    distinct keys and a new array of ``values``' dtype with one entry per
     key.  Each run is reduced serially in element order, so the result is
     exact for integers and reproducible for floats; integer sums wrap at
     the values' width.

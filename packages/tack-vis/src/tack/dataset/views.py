@@ -19,7 +19,7 @@ every compiled kernel is specialized to it (``docs/design/dataset-api.md``
   spaces with a basis, ``at(i)`` for values on entities.
 
 Geometry and spaces read values through a *storage* mixin, ``get(k)``, so
-a field's values may be a device field or an implicit array
+a field's values may be a device array or an implicit array
 (``tack.dataset.arrays``), which the view holds as a nested template. Values shared by points are read through
 ``point_value(i, j)``, which an *addressing* mixin defines: by the flat
 point id, or -- for a structured grid's cells over a storage that has
@@ -684,7 +684,7 @@ class _EdgeIncidence:
 
 
 class _ExplicitStorage:
-    """A device field: value ``k`` is stored at ``values[k]``."""
+    """A device array: value ``k`` is stored at ``values[k]``."""
 
     @tack.func
     def get(self, k):

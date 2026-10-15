@@ -1,8 +1,8 @@
 """03 -- Scalar arguments: pass Python numbers directly to kernels.
 
-Kernels can accept plain Python int/float values alongside fields.
+Kernels can accept plain Python int/float values alongside arrays.
 This is useful for passing constants like time steps, coefficients,
-or array sizes without creating a field.
+or array sizes without creating an array.
 
 Usage:
   uv run python examples/03_scalar_args.py
@@ -35,7 +35,7 @@ def saxpy(x, y, out, alpha, n):
         out[i] = alpha * x[i] + y[i]
 
 
-# Pass scalar values directly -- no need to wrap in fields
+# Pass scalar values directly -- no need to wrap in arrays
 alpha = 2.5
 saxpy(x, y, out, alpha, n)
 

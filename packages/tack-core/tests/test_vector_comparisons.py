@@ -143,7 +143,7 @@ def _mismatched_comparison():
 def test_misused_comparisons_are_rejected(define, message):
     from tack.lang.source_validation import UnsupportedSyntaxError
     with pytest.raises(UnsupportedSyntaxError, match=message):
-        define().get_ir(vector_fields={"vf": 3})
+        define().get_ir(vector_arrays={"vf": 3})
 
 
 def test_select_is_kernel_only():

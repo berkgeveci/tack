@@ -1,4 +1,4 @@
-"""Tests for field utility functions: copy, astype, reshape, concat, zeros, etc."""
+"""Tests for array utility functions: copy, astype, reshape, concat, zeros, etc."""
 
 import numpy as np
 import pytest
@@ -8,20 +8,20 @@ from tack import algorithms
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
-# --- Field.size and len() ---
+# --- Array.size and len() ---
 
-def test_field_size(backend):
+def test_array_size(backend):
     f = tack.empty((3, 4))
     assert f.size == 12
 
 
-def test_field_size_1d(backend):
+def test_array_size_1d(backend):
     f = tack.empty((100,))
     assert f.size == 100
 
 
-def test_empty_field(backend):
-    """A filter that selects nothing returns a field of no elements; it
+def test_empty_array(backend):
+    """A filter that selects nothing returns an array of no elements; it
     allocates, round-trips an empty array and is a valid kernel argument."""
     f = tack.empty((0,))
     assert f.size == 0
@@ -32,8 +32,8 @@ def test_empty_field(backend):
     assert out.numpy().shape == (0,)
 
 
-def test_empty_field_in_a_launch(backend):
-    """An empty field passed beside a non-empty one still binds when the
+def test_empty_array_in_a_launch(backend):
+    """An empty array passed beside a non-empty one still binds when the
     kernel launches. HIP once handed it a null pointer it could not bind."""
     x = tack.arange(8, dtype=tack.f32)
     empty = tack.empty((0,))
@@ -47,19 +47,19 @@ def test_empty_field_in_a_launch(backend):
     np.testing.assert_array_equal(x.numpy(), np.arange(8, dtype=np.float32) * 2)
 
 
-def test_field_len(backend):
+def test_array_len(backend):
     f = tack.empty((10,))
     assert len(f) == 10
 
 
-def test_field_len_2d(backend):
+def test_array_len_2d(backend):
     f = tack.empty((5, 3))
     assert len(f) == 5
 
 
-# --- Field.copy() ---
+# --- Array.copy() ---
 
-def test_field_copy(backend):
+def test_array_copy(backend):
     f = tack.empty((8,))
     tack.copyto(f, np.arange(8, dtype=np.float32))
     g = f.copy()
@@ -72,14 +72,14 @@ def test_field_copy(backend):
     assert g.dtype is f.dtype
 
 
-def test_field_copy_i32(backend):
+def test_array_copy_i32(backend):
     f = tack.empty((4,), tack.i32)
     tack.copyto(f, np.array([10, 20, 30, 40], dtype=np.int32))
     g = f.copy()
     np.testing.assert_array_equal(g.numpy(), [10, 20, 30, 40])
 
 
-# --- Field.astype() ---
+# --- Array.astype() ---
 
 def test_astype_f32_to_i32(backend):
     f = tack.empty((4,))
@@ -116,7 +116,7 @@ def test_astype_u8_to_f32(backend):
     np.testing.assert_allclose(g.numpy(), [0.0, 128.0, 255.0])
 
 
-# --- Field.reshape() ---
+# --- Array.reshape() ---
 
 def test_reshape_1d_to_2d(backend):
     f = tack.empty((12,))
@@ -218,12 +218,12 @@ def test_concat_single(backend):
 
 
 def test_concat_three(backend):
-    fields = []
+    arrays = []
     for v in [1.0, 2.0, 3.0]:
         f = tack.empty((2,))
         f.fill(v)
-        fields.append(f)
-    c = tack.concat(fields)
+        arrays.append(f)
+    c = tack.concat(arrays)
     assert c.shape == (6,)
     np.testing.assert_allclose(c.numpy(), [1, 1, 2, 2, 3, 3])
 
@@ -243,7 +243,7 @@ def test_concat_empty_raises(backend):
 # --- End-to-end: use utilities in a kernel workflow ---
 
 def test_workflow_arange_kernel_concat(backend):
-    """Create fields with arange, process with kernel, concat results."""
+    """Create arrays with arange, process with kernel, concat results."""
     a = tack.arange(4, dtype=tack.f32)
     b = tack.arange(4, dtype=tack.f32)
     out_a = tack.zeros((4,))
@@ -263,17 +263,17 @@ def test_workflow_arange_kernel_concat(backend):
 
 # --- Read-only imported storage ---
 
-def _alias(field, writable):
-    """`field`'s storage wrapped again through field_from_ptr."""
+def _alias(array, writable):
+    """`array`'s storage wrapped again through array_from_ptr."""
     from tack.runtime.dispatch import get_backend
     name = get_backend().name
     if name == "cpu":
-        ptr = field._buffer._data
+        ptr = array._buffer._data
     elif name == "metal":
-        ptr = field._buffer.metal_buffer
+        ptr = array._buffer.metal_buffer
     else:
-        ptr = field._buffer.address
-    return tack.array_from_ptr(ptr, field.shape, field.dtype, writable=writable)
+        ptr = array._buffer.address
+    return tack.array_from_ptr(ptr, array.shape, array.dtype, writable=writable)
 
 
 @tack.kernel
@@ -288,8 +288,8 @@ def _bump(dst):
         tack.atomic_add(dst, i, 1.0)
 
 
-def test_kernels_cannot_store_to_a_read_only_field(backend):
-    """field_from_ptr is read-only by default; kernels used to ignore that."""
+def test_kernels_cannot_store_to_a_read_only_array(backend):
+    """array_from_ptr is read-only by default; kernels used to ignore that."""
     storage = tack.empty((8,))
     tack.copyto(storage, np.arange(8, dtype=np.float32))
     out = tack.empty((8,))
@@ -318,7 +318,7 @@ def test_a_read_only_reshaped_view_stays_read_only(backend):
 
 # --- fill() with one element's value ---
 
-def test_fill_takes_an_element_of_a_vector_or_matrix_field(backend):
+def test_fill_takes_an_element_of_a_vector_or_matrix_array(backend):
     """`colors.fill([1.0, 0.5, 0.0])` sets every element to that vector. A
     sequence was passed to the buffer's scalar fill and failed inside
     NumPy with "setting an array element with a sequence"."""
@@ -372,7 +372,7 @@ def test_fill_matches_numpy_full(backend, dtype):
 
 
 def test_fill_stays_on_the_device(backend):
-    """A fill on CUDA, HIP or Level Zero does not build the field on the host
+    """A fill on CUDA, HIP or Level Zero does not build the array on the host
     and upload it: that was most of a 5M-cell contour's time."""
     from tack.runtime.dispatch import get_backend
     if get_backend().name not in ("cuda", "hip", "level_zero"):
@@ -394,7 +394,7 @@ def test_fill_stays_on_the_device(backend):
             np.testing.assert_array_equal(f.numpy(), np.full(1000, value, f.dtype.numpy_dtype))
 
 
-# --- Zero-dimensional scalar fields ---
+# --- Zero-dimensional scalar arrays ---
 
 @tack.kernel
 def _add_offset(offset, x, out, n):
@@ -409,11 +409,11 @@ def _bump_scalar(offset):
 
 
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32])
-def test_zero_dimensional_scalar_field(backend, dtype):
+def test_zero_dimensional_scalar_array(backend, dtype):
     """`tack.empty((), dtype)` is one value, read and written as
     `f[None]`. Metal could not allocate it: its buffer zeroed the view
     with `[:]`, which a zero-dimensional array rejects. A zero-dimensional
-    vector field has a flat shape of `(n,)` and was not affected."""
+    vector array has a flat shape of `(n,)` and was not affected."""
     assert tack.empty((), dtype).numpy().shape == ()
     f = tack.zeros((), dtype)
     assert f.shape == () and f.numpy().shape == ()
@@ -436,8 +436,8 @@ def test_zero_dimensional_scalar_field(backend, dtype):
 
 def test_host_reads_one_element(backend):
     """`f[i]`, `f[i, j]`, `f[None]` read an element from the host: a Python
-    number from a field of scalars, a NumPy array from a vector or matrix
-    field. Negative indices count from the end."""
+    number from an array of scalars, a NumPy array from a vector or matrix
+    array. Negative indices count from the end."""
     f = tack.empty((3, 4))
     tack.copyto(f, np.arange(12, dtype=np.float32).reshape(3, 4))
     assert f[1, 2] == 6.0 and isinstance(f[1, 2], float)
@@ -463,7 +463,7 @@ def test_read_range_copies_the_requested_elements(backend, dt):
     """A backend that defines its own read_range copies just the elements asked
     for: element offsets scale by the dtype's size, and the whole buffer is
     never copied to read one. The others use DeviceBuffer's whole-buffer copy."""
-    from tack.lang.field import DeviceBuffer
+    from tack.lang.array import DeviceBuffer
 
     np_dtype = getattr(tack, dt).numpy_dtype
     data = np.arange(37).astype(np_dtype)

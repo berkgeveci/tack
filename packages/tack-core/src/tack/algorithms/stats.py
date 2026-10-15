@@ -1,11 +1,11 @@
-"""Statistics and analysis on tack fields.
+"""Statistics and analysis on tack arrays.
 
 Each statistic forms its terms -- |x|, x², (x - mean)², a·b, x ≠ 0 -- in a
-temporary field, in the precision of its inputs (f64 if any is f64,
-otherwise f32), and reduces that field with ``Field.sum()`` or
-``Field.max()``. They therefore follow the field-reduction contract: f64
+temporary array, in the precision of its inputs (f64 if any is f64,
+otherwise f32), and reduces that array with ``Array.sum()`` or
+``Array.max()``. They therefore follow the array-reduction contract: f64
 inputs accumulate in f64, and the error budget and repeatability are those
-of field reductions. ``count_nonzero`` scans its 0/1 flags into i64. (They used to combine into a
+of array reductions. ``count_nonzero`` scans its 0/1 flags into i64. (They used to combine into a
 one-element f32 or i32 accumulator with atomics: f64 data was summed in
 f32, counts wrapped past 2^31, and the order of the additions was
 whatever order the launches arrived in.) ``histogram`` still bins with
@@ -18,7 +18,7 @@ import tack
 # KERNELS
 # ================================================================
 # ``one`` is 1.0 in the accumulation precision: a float scalar takes f64
-# when a field argument is f64, so ``x * one`` converts an f32 or integer
+# when an array argument is f64, so ``x * one`` converts an f32 or integer
 # input once, before any arithmetic, to the precision of ``out``.
 
 @tack.kernel
@@ -82,27 +82,27 @@ def _histogram_kernel(data, counts, lo, inv_bin_width, n_bins, n):
 # PUBLIC API
 # ================================================================
 
-def _count(n, *fields):
-    """Resolve and check the element count, and flatten vector fields.
+def _count(n, *arrays):
+    """Resolve and check the element count, and flatten vector arrays.
 
-    Every kernel reads [0, n) scalar elements. A vector field is reduced
+    Every kernel reads [0, n) scalar elements. A vector array is reduced
     over all its scalar components in storage order through a storage view, since the kernels index scalars and a
     vector element in `a[i] * b[i]` has no scalar meaning.
-    Returns ``(n, *fields)`` with the views substituted.
+    Returns ``(n, *arrays)`` with the views substituted.
     """
-    flat = tuple(f._scalar_view() if hasattr(f, '_vector_n') else f for f in fields)
+    flat = tuple(f._scalar_view() if hasattr(f, '_vector_n') else f for f in arrays)
     if n is None:
         n = flat[0].size
     n = int(n)
     for f in flat:
         if not 0 <= n <= f.size:
             raise ValueError(
-                f"n={n} is outside [0, {f.size}] for a field of {f.size} elements")
+                f"n={n} is outside [0, {f.size}] for an array of {f.size} elements")
     return (n, *flat)
 
 
 def _prefix(data, n):
-    """The first n elements of data, as a field the host reductions accept."""
+    """The first n elements of data, as an array the host reductions accept."""
     if n == data.size:
         return data
     from tack.algorithms.copy import copy
@@ -111,18 +111,18 @@ def _prefix(data, n):
     return head
 
 
-def _precision(*fields):
-    """The accumulation precision of a statistic of ``fields``: f64 if any is f64."""
-    return tack.f64 if any(f.dtype is tack.f64 for f in fields) else tack.f32
+def _precision(*arrays):
+    """The accumulation precision of a statistic of ``arrays``: f64 if any is f64."""
+    return tack.f64 if any(f.dtype is tack.f64 for f in arrays) else tack.f32
 
 
 def var(data, n=None):
-    """Population variance of a field: Σ(x - mean)² / n.
+    """Population variance of an array: Σ(x - mean)² / n.
 
-    Two passes over the first n elements: the mean by ``Field.sum()``, then
+    Two passes over the first n elements: the mean by ``Array.sum()``, then
     the squared differences, formed in the data's precision (f64 for f64
-    data, otherwise f32) and summed by ``Field.sum()``. Returns a Python
-    float; an empty range gives NaN, as ``Field.mean()`` does.
+    data, otherwise f32) and summed by ``Array.sum()``. Returns a Python
+    float; an empty range gives NaN, as ``Array.mean()`` does.
     """
     n, data = _count(n, data)
     if n == 0:
@@ -139,20 +139,20 @@ def var(data, n=None):
 
 
 def std(data, n=None):
-    """Population standard deviation of a field."""
+    """Population standard deviation of an array."""
     from math import sqrt
     return sqrt(var(data, n))
 
 
-def _terms(kernel, n, *fields):
-    """``kernel``'s terms over the first n elements, in the fields' precision."""
-    terms = tack.empty((n,), _precision(*fields))
-    kernel(*fields, 1.0, terms, n)
+def _terms(kernel, n, *arrays):
+    """``kernel``'s terms over the first n elements, in the arrays' precision."""
+    terms = tack.empty((n,), _precision(*arrays))
+    kernel(*arrays, 1.0, terms, n)
     return terms
 
 
 def norm(data, ord=2, n=None):
-    """Vector norm of a field, in the data's precision (f64 for f64 data,
+    """Vector norm of an array, in the data's precision (f64 for f64 data,
     otherwise f32), as a Python float.
 
     ord=1: L1 norm (sum of absolute values)
@@ -175,12 +175,12 @@ def norm(data, ord=2, n=None):
 
 
 def absmax(data, n=None):
-    """Maximum absolute value of a field, as a Python float; 0.0 when empty."""
+    """Maximum absolute value of an array, as a Python float; 0.0 when empty."""
     return norm(data, float('inf'), n)
 
 
 def count_nonzero(data, n=None):
-    """The number of nonzero elements of a field, as a Python int: its 0/1 flags
+    """The number of nonzero elements of an array, as a Python int: its 0/1 flags
     scanned into i64 on the device, so the count is exact past 2^31 and only
     the total comes back to the host."""
     from tack.algorithms.scan import exclusive_scan
@@ -194,7 +194,7 @@ def count_nonzero(data, n=None):
 
 
 def dot(a, b, n=None):
-    """Dot product of two fields, Σa[i]·b[i], in their precision (f64 if either
+    """Dot product of two arrays, Σa[i]·b[i], in their precision (f64 if either
     is f64, otherwise f32), as a Python float; 0.0 when empty."""
     n, a, b = _count(n, a, b)
     if n == 0:
@@ -203,13 +203,13 @@ def dot(a, b, n=None):
 
 
 def histogram(data, bins=10, range=None, n=None):
-    """Compute a histogram of field values with atomic bin counts.
+    """Compute a histogram of array values with atomic bin counts.
 
     Values below the range are counted in the first bin and values above it
     in the last, unlike numpy.histogram, which drops them.
 
     Args:
-        data: input field of any dtype
+        data: input array of any dtype
         bins: number of bins (at least 1)
         range: (min, max) tuple. If None, uses the minimum and maximum of
             the first n elements, and n must then be at least 1.
@@ -240,7 +240,7 @@ def histogram(data, bins=10, range=None, n=None):
         if lo > hi:
             raise ValueError(f"histogram range [{lo}, {hi}] has its minimum above its maximum")
 
-    # Avoid division by zero for constant fields
+    # Avoid division by zero for constant arrays
     if hi == lo:
         hi = lo + 1.0
 

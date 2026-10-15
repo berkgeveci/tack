@@ -1,6 +1,6 @@
-"""08 -- Field reductions: sum, min, max.
+"""08 -- Array reductions: sum, min, max.
 
-Fields have built-in reduction methods.  On Metal, these run entirely
+Arrays have built-in reduction methods.  On Metal, these run entirely
 on the GPU using optimized threadgroup reduction kernels.  On other
 backends, they fall back to efficient numpy reductions.
 
@@ -31,7 +31,7 @@ total = x.sum()
 lo = x.min()
 hi = x.max()
 
-print(f"Field of {n:,} random values:")
+print(f"Array of {n:,} random values:")
 print(f"  sum = {total:>12.2f}   (numpy: {data.sum():.2f})")
 print(f"  min = {lo:>12.2f}   (numpy: {data.min():.2f})")
 print(f"  max = {hi:>12.2f}   (numpy: {data.max():.2f})")

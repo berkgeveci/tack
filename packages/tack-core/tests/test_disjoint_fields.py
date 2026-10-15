@@ -1,8 +1,8 @@
 """The CPU backend's proven-disjoint specialization.
 
-Fields may share storage, so the generated code never promises otherwise
-unconditionally.  The CPU backend checks each call's field ranges and uses
-a `noalias` variant only when no written field overlaps another field.
+Arrays may share storage, so the generated code never promises otherwise
+unconditionally.  The CPU backend checks each call's array ranges and uses
+a `noalias` variant only when no written array overlaps another array.
 These tests cover the analysis, the range check, the generated signature,
 and that switching between overlapping and disjoint calls stays correct.
 """
@@ -12,7 +12,7 @@ import pytest
 
 import tack
 from tack.runtime import cpu
-from tack.runtime.kernel_utils import fields_disjoint, written_field_params
+from tack.runtime.kernel_utils import arrays_disjoint, written_array_params
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
@@ -70,7 +70,7 @@ def _ordered(a, b, out):
 
 
 def _template(kernel):
-    return kernel.get_ir({}, template_args=None, texture_fields={}).functions[0]
+    return kernel.get_ir({}, template_args=None, texture_arrays={}).functions[0]
 
 
 def _f32(n=8, value=0.0):
@@ -95,48 +95,48 @@ def _signature(kernel, *args):
     (_ordered, {"a", "b", "out"}),
 ])
 def test_written_parameters(kernel, written):
-    assert written_field_params(_template(kernel)) == frozenset(written)
+    assert written_array_params(_template(kernel)) == frozenset(written)
 
 
 def test_untraceable_store_marks_everything_written():
     from tack.lang import ir
     func = ir.IRFunction("k", [ir.IRParam("x"), ir.IRParam("out")], [
-        ir.IRFieldStore(ir.IRName("mystery"), ir.IRConstant(0),
+        ir.IRArrayStore(ir.IRName("mystery"), ir.IRConstant(0),
                         ir.IRConstant(1))])
-    assert written_field_params(func) is None
+    assert written_array_params(func) is None
     x, out = _f32(), _f32()
-    assert fields_disjoint(func, (x, out))
-    assert not fields_disjoint(func, (x, x))
+    assert arrays_disjoint(func, (x, out))
+    assert not arrays_disjoint(func, (x, x))
 
 
-def test_a_name_bound_to_two_fields_writes_both():
+def test_a_name_bound_to_two_arrays_writes_both():
     from tack.lang import ir
     func = ir.IRFunction("k", [ir.IRParam("a"), ir.IRParam("b")], [
         ir.IRAssign("v", ir.IRName("a")),
         ir.IRAssign("v", ir.IRName("b")),
         ir.IRAssign("u", ir.IRName("v")),
-        ir.IRFieldStore(ir.IRName("u"), ir.IRConstant(0), ir.IRConstant(1))])
-    assert written_field_params(func) == frozenset({"a", "b"})
+        ir.IRArrayStore(ir.IRName("u"), ir.IRConstant(0), ir.IRConstant(1))])
+    assert written_array_params(func) == frozenset({"a", "b"})
 
 
 # ── The per-call range check ────────────────────────────────────────
 
-def test_distinct_fields_are_disjoint():
-    assert fields_disjoint(_template(_read_only), (_f32(), _f32(), _f32()))
+def test_distinct_arrays_are_disjoint():
+    assert arrays_disjoint(_template(_read_only), (_f32(), _f32(), _f32()))
 
 
-def test_read_only_fields_may_overlap():
+def test_read_only_arrays_may_overlap():
     x = _f32()
     tmpl = _template(_read_only)
-    assert fields_disjoint(tmpl, (x, x, _f32()))
-    assert fields_disjoint(tmpl, (x, x.reshape((2, 4)), _f32()))
+    assert arrays_disjoint(tmpl, (x, x, _f32()))
+    assert arrays_disjoint(tmpl, (x, x.reshape((2, 4)), _f32()))
 
 
-def test_written_field_overlapping_a_read_is_not_disjoint():
+def test_written_array_overlapping_a_read_is_not_disjoint():
     x = _f32()
     tmpl = _template(_read_only)
-    assert not fields_disjoint(tmpl, (x, _f32(), x))
-    assert not fields_disjoint(tmpl, (_f32(), x, x.reshape((8,))))
+    assert not arrays_disjoint(tmpl, (x, _f32(), x))
+    assert not arrays_disjoint(tmpl, (_f32(), x, x.reshape((8,))))
 
 
 def test_partial_overlap_of_imported_storage():
@@ -148,17 +148,17 @@ def test_partial_overlap_of_imported_storage():
 
     x = _f32()
     # Adjacent halves of one allocation touch but do not overlap.
-    assert fields_disjoint(tmpl, (view(0, 8), x, view(8, 16)))
-    assert not fields_disjoint(tmpl, (view(0, 9), x, view(8, 16)))
-    assert not fields_disjoint(tmpl, (view(4, 12), x, view(0, 16)))
+    assert arrays_disjoint(tmpl, (view(0, 8), x, view(8, 16)))
+    assert not arrays_disjoint(tmpl, (view(0, 9), x, view(8, 16)))
+    assert not arrays_disjoint(tmpl, (view(4, 12), x, view(0, 16)))
     # One byte range strictly inside another.
-    assert not fields_disjoint(tmpl, (view(0, 16), x, view(6, 7)))
+    assert not arrays_disjoint(tmpl, (view(0, 16), x, view(6, 7)))
 
 
 def test_scalars_are_ignored():
     x, w, out = _f32(), _f32(4), _f32()
-    assert fields_disjoint(_template(_accumulate), (x, w, out, 8))
-    assert not fields_disjoint(_template(_accumulate), (out, w, out, 8))
+    assert arrays_disjoint(_template(_accumulate), (x, w, out, 8))
+    assert not arrays_disjoint(_template(_accumulate), (out, w, out, 8))
 
 
 def test_span_follows_the_array():
@@ -173,7 +173,7 @@ def test_span_follows_the_array():
 
 # ── Generated code ──────────────────────────────────────────────────
 
-def test_disjoint_call_promises_noalias_on_fields_only():
+def test_disjoint_call_promises_noalias_on_arrays_only():
     sig = _signature(_accumulate, _f32(), _f32(4), _f32(), 8)
     assert sig.count("noalias") == 3
     assert 'noalias %"n"' not in sig

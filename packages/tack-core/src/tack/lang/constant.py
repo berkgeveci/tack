@@ -93,7 +93,7 @@ class ArrayConstant:
 
 
 # Neither scalar class changes how the number prints. A constant is used wherever
-# a number is, including as a field's shape, and code that formats a number
+# a number is, including as an array's shape, and code that formats a number
 # into generated source must get its digits.
 
 
@@ -133,7 +133,7 @@ def constant(value, dtype=None):
         return FloatConstant(float(value), dtype)
     raise TypeError(
         f"tack.constant takes an int, a float, or a tuple of them (a vector) or of "
-        f"tuples (a matrix), not {type(value).__name__}; fields and other objects are "
+        f"tuples (a matrix), not {type(value).__name__}; arrays and other objects are "
         f"passed to kernels as arguments")
 
 

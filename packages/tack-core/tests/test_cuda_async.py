@@ -1,5 +1,5 @@
 """CUDA launches are queued on a stream and return at once; the host waits
-only where it reads a field. Results must be the same as when every launch
+only where it reads an array. Results must be the same as when every launch
 completed before returning: order, each launch's own scalars, host writes
 and fills ordered among the launches, dropped temporaries freed after the
 launches that use them, and sync waiting for everything."""
@@ -81,7 +81,7 @@ def test_fills_are_ordered_among_the_launches():
 
 
 def test_a_dropped_temporary_is_freed_after_its_launches():
-    """A field Python drops while launches that use it are queued is freed
+    """An array Python drops while launches that use it are queued is freed
     in stream order; the launches read and write it whole."""
     x = tack.empty((1 << 20,))
     x.fill(2.0)

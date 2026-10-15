@@ -103,6 +103,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
   is a separate kernel decorator and keeps its name.
 
+- **Breaking** for code that reaches inside Tack: storage is "array"
+  throughout the core too. The module is `tack.lang.array`; the backend
+  contract's hooks are `allocate_array`, `fill_array` and `reduce_array`;
+  the IR's nodes are `IRArrayLoad`, `IRArrayStore` and `IRArrayExtent`;
+  messages, docstrings, the language contract and the design pages say
+  "array" where they said "field". The User's Guide chapter is
+  `02-arrays-and-types.md`.
 - **Breaking:** the old storage API is gone, without deprecation:
   `tack.field` (use `tack.empty(shape, dtype)`), `field_from_numpy` and
   `field_like` (`tack.array`), `field_from_ptr` (`array_from_ptr(ptr, shape,

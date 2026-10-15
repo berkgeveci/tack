@@ -47,7 +47,7 @@ import numpy as np
 
 import tack
 from tack import random
-from tack.lang.field import Field as _DeviceField
+from tack.lang.array import Array as _DeviceArray
 from tack.lang.func import Func
 
 __all__ = ["CartesianProduct", "Cast", "Components", "Concatenate", "ConstantArray",
@@ -96,7 +96,7 @@ def _metadata(array, size, width, dtype):
 
 @tack.device_class
 class _Explicit(_Implicit):
-    """A device field, where an array holds an array: value ``k`` is ``values[k]``."""
+    """A device array, where an array holds an array: value ``k`` is ``values[k]``."""
 
     def __init__(self, values):
         self.values = values
@@ -109,10 +109,10 @@ class _Explicit(_Implicit):
 
 def _operand(values):
     """``values`` as an array another array can hold: an implicit array as it is, a
-    device field wrapped, anything else stored first."""
+    device array wrapped, anything else stored first."""
     if isinstance(values, _Implicit):
         return values
-    if isinstance(values, _DeviceField):
+    if isinstance(values, _DeviceArray):
         return _Explicit(values)
     host = np.asarray(values)
     dtype = tack.i64 if host.dtype.kind in "iu" and host.size and \
@@ -190,7 +190,7 @@ class CartesianProduct(_Implicit):
 
     @staticmethod
     def _axis(values, dtype):
-        if isinstance(values, _DeviceField):
+        if isinstance(values, _DeviceArray):
             return values
         return _store(np.asarray(values).reshape(-1), dtype)
 
@@ -325,7 +325,7 @@ def Concatenate(*arrays):
 
 @tack.device_class
 class Strided(_Implicit):
-    """``values[offset + stride * k]`` of a scalar device field, as VTK's strided array:
+    """``values[offset + stride * k]`` of a scalar device array, as VTK's strided array:
     one column of interleaved data, or every n-th value."""
 
     def __init__(self, values, stride, offset=0, size=None):
@@ -535,7 +535,7 @@ def width_of(values):
 
 def dtype_of(values):
     """The type of each component."""
-    return values.scalar_dtype if isinstance(values, _DeviceField) else values.dtype
+    return values.scalar_dtype if isinstance(values, _DeviceArray) else values.dtype
 
 
 def to_host(values):
@@ -550,7 +550,7 @@ def _fill(array, out):
 
 
 def materialize(values):
-    """``values`` as a device field: itself if it is one, else computed by a kernel."""
+    """``values`` as a device array: itself if it is one, else computed by a kernel."""
     if not isinstance(values, _Implicit):
         return values
     if isinstance(values, _Explicit):
@@ -571,7 +571,7 @@ def storage(values):
     if isinstance(values, _Implicit):
         mixin = views._ArrayIJKStorage if hasattr(values, "get_ijk") else views._ArrayStorage
         return mixin, {"array": values}
-    if isinstance(values, _DeviceField):
+    if isinstance(values, _DeviceArray):
         return views._ExplicitStorage, {"values": values}
-    raise TypeError(f"field values must be a tack field or an implicit array, "
+    raise TypeError(f"field values must be a Tack array or an implicit array, "
                     f"not {type(values).__name__}")

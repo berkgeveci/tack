@@ -25,7 +25,7 @@ holds one compiled specialization:
 | `payload` | whatever the backend's `build` callback returned: the JIT'd function on the CPU; the compiled kernel, `pack_info` and pack buffers on GPU |
 | `requires_full_workgroups` | whether every launch must be a multiple of 256 lanes |
 | `atomic_targets` | atomic parameter indices and their alignments, rechecked against each call's storage |
-| `written_fields` | `(index, name)` of each field argument the kernel may store to, so a dispatch can refuse read-only storage without walking IR |
+| `written_arrays` | `(index, name)` of each array argument the kernel may store to, so a dispatch can refuse read-only storage without walking IR |
 | `has_textures` | whether any argument is a `Texture3D`, so a call without one skips rebinding textures |
 | `dispatch_lock` | serializes dispatches of this variant on CUDA and HIP, whose payload holds the scalar pack buffers |
 
@@ -51,27 +51,27 @@ flowchart LR
 
 | Cache | Owner | Key | Built by |
 |-------|-------|-----|----------|
-| IR template | `Kernel` (`lang/kernel.py`) | `Kernel._make_cache_key(vector_fields, template_args, texture_fields, debug)`, or none at all for the plain `Kernel._ir` (no vectors, textures or templates, debug mode off) | template rewrite, source validation, AST transform, `verify_ir('lowered')` |
+| IR template | `Kernel` (`lang/kernel.py`) | `Kernel._make_cache_key(vector_arrays, template_args, texture_arrays, debug)`, or none at all for the plain `Kernel._ir` (no vectors, textures or templates, debug mode off) | template rewrite, source validation, AST transform, `verify_ir('lowered')` |
 | Compiled variant | each backend instance (`backend._cache`) | `kernel_variant_key(...)` | clone, IR passes, verification, codegen, native compile |
 
 Every input to the IR template key also reaches the variant key, either
 directly (vector widths, template structure) or indirectly (texture
 extents arrive as `_texture_shape` on the parameter and, through each
 `IRTextureSample`, in the shape signature; debug mode's template has two
-more parameters, the hidden errors and extents fields, so its parameter
+more parameters, the hidden errors and extents arrays, so its parameter
 signature differs). Two calls that share a variant therefore always share
 an IR template.
 
 **Debug mode.** `tack.init(debug=True)` (or `TACK_DEBUG=1`) lowers every
 kernel with bounds checks (`lang/ir_bounds.py`): `("debug",)` leads the IR
-template key, and the two hidden field parameters follow the kernel's own.
-The extents are read from a field at run time rather than resolved, so a
-debug kernel compiles no variant per field length. With debug mode off,
+template key, and the two hidden array parameters follow the kernel's own.
+The extents are read from an array at run time rather than resolved, so a
+debug kernel compiles no variant per array length. With debug mode off,
 the IR and generated code are those of a build without the feature.
 
 ## The variant key, element by element
 
-`kernel_variant_key(ir_func, kernel, vector_fields, template_args,
+`kernel_variant_key(ir_func, kernel, vector_arrays, template_args,
 shape_sig, disjoint)` returns a five-tuple:
 
 ```python
@@ -87,7 +87,7 @@ One entry per IR parameter, computed in a single pass because it runs on
 every dispatch:
 
 ```python
-(p.type_annotation, p._is_field, p._is_texture, p._texture_shape)
+(p.type_annotation, p._is_array, p._is_texture, p._texture_shape)
 ```
 
 These come from `infer_param_types` (`lang/type_inference.py`) and the
@@ -96,14 +96,14 @@ on the shared template (see [Concurrency](#concurrency)).
 
 | Component | Values | What it bakes in |
 |-----------|--------|------------------|
-| `type_annotation` | a field's dtype; for a Python `int`/`np.integer`, `i32`, `i64` or `u64` chosen by `integer_type_for_value` from the *value*; for a `float`/`np.floating`, `f32`, or `f64` when any field argument is `f64` | every expression's type, the arithmetic emitted, the C/LLVM parameter type, the pack buffer an argument lands in |
-| `_is_field` | field (or texture) versus scalar | the calling convention: pointer versus value on the CPU; buffer binding versus packed scalar on GPU |
+| `type_annotation` | an array's dtype; for a Python `int`/`np.integer`, `i32`, `i64` or `u64` chosen by `integer_type_for_value` from the *value*; for a `float`/`np.floating`, `f32`, or `f64` when any array argument is `f64` | every expression's type, the arithmetic emitted, the C/LLVM parameter type, the pack buffer an argument lands in |
+| `_is_array` | array (or texture) versus scalar | the calling convention: pointer versus value on the CPU; buffer binding versus packed scalar on GPU |
 | `_is_texture` | hardware texture versus not | sampler code versus loads; HIP and Level Zero set it to `False` to choose software sampling when the device has no image support or the extent exceeds its 3-D image limit |
 | `_texture_shape` | `Texture3D.shape_3d` | the extents used in sampling code |
 
 ### `vec_sig`: vector widths
 
-`tuple(sorted(vector_fields.items()))`: the component count of each
+`tuple(sorted(vector_arrays.items()))`: the component count of each
 `tack.Array` with a vector element dtype argument. Width determines how many component loads
 the frontend emits and the stride between vectors, so two widths need two
 lowerings and two compiled kernels. Leaving width out of the key once let a
@@ -119,11 +119,11 @@ contributes one part per template parameter:
 ("tmpl_<index>",
  _ClassToken,                                   # identity of the class
  ((name, type(v), bits_or_value), ...),         # class-level constants
- ((name, dtype, shape, vector_n), ...),         # field attributes
+ ((name, dtype, shape, vector_n), ...),         # array attributes
  (runtime_attr_name, ...))                      # instance scalar names
 ```
 
-(plus a leading `("vec", …)` part when vector fields are present).
+(plus a leading `("vec", …)` part when vector arrays are present).
 
 - **Class identity.** Two classes with the same name can have different
   methods, so the actual class is keyed, through a `_ClassToken` (below)
@@ -135,24 +135,24 @@ contributes one part per template parameter:
   `-0.0` and gives NaN a key equal to itself despite `NaN != NaN`. An
   instance attribute that shadows a class attribute keeps the constant
   role, with the instance's value.
-- **Field attributes.** Their dtype, full shape and vector width.
+- **Array attributes.** Their dtype, full shape and vector width.
 - **Runtime scalar names.** Instance scalars are runtime parameters, so
   their *values* are not keyed. Their *names* are, because adding or
   removing one changes the parameter layout.
 
 !!! note
-    Template field attributes are keyed by their full shape, which is
-    stricter than plain field arguments (those specialize only on the
+    Template array attributes are keyed by their full shape, which is
+    stricter than plain array arguments (those specialize only on the
     dimensions in the shape signature). Changing the length of a template's
-    field therefore lowers a new IR template and compiles a new variant even
+    array therefore lowers a new IR template and compiles a new variant even
     when no dimension is baked in. This over-specializes, which is safe; it
     is a cost, not a correctness issue.
 
 ### `shape_sig`: dimensions baked into code
 
-`resolve_ir` substitutes field dimensions as literals: `a[i, j]` becomes
+`resolve_ir` substitutes array dimensions as literals: `a[i, j]` becomes
 `i * 8 + j` when `a.shape[1] == 8`. That literal is part of the compiled
-code's identity. `shape_signature(template, name_to_field)` reports
+code's identity. `shape_signature(template, name_to_array)` reports
 exactly the dimensions a kernel bakes in, as a tuple of concrete sizes.
 
 It is built from `ir_shape_deps(ir_func)`, which scans the template once
@@ -161,13 +161,13 @@ not on the arguments):
 
 - `_dependent_nodes` yields every node whose value reaches generated code,
   **skipping the parallel loop's `end`**.
-- Each `IRDimSize(field, d)` contributes `(field, d)`. The field name is
-  mapped through `_static_field_aliases`, which follows the
+- Each `IRDimSize(array, d)` contributes `(array, d)`. The array name is
+  mapped through `_static_array_aliases`, which follows the
   `__<func>_<param>_<N>__ = param` copies that `@tack.func` inlining creates.
 - Each `IRTextureSample` contributes all three dimensions of its texture.
 
 `shape_signature` then looks up each `(name, d)` in this call's arguments,
-using `shape_3d` for textures, `_logical_shape` for vector fields and
+using `shape_3d` for textures, `_logical_shape` for vector arrays and
 `shape` otherwise. A kernel with no baked-in dimensions gets the empty
 tuple, so the common 1-D kernel pays nothing for shape keying.
 
@@ -188,37 +188,37 @@ kernel, would compile a new variant for every array length.
 
 ### `disjoint`: the CPU no-overlap bit
 
-Fields may share storage: the same field passed twice, two views of one
+Arrays may share storage: the same array passed twice, two views of one
 allocation, or imported pointers. Generated code therefore never promises
 `noalias`/`restrict` unconditionally (contract regression **LC2**; see
 [Memory and Aliasing](memory-and-aliasing.md)). Without that promise,
 though, LLVM must reload after every store and cannot vectorize a loop
-that accumulates through a field.
+that accumulates through an array.
 
 The CPU backend recovers that case with a second variant. It calls
 `resolve_variant(..., specialize_disjoint=True)` (the module constant
 `_SPECIALIZE_DISJOINT` in `runtime/cpu.py`), and on every dispatch
-`fields_disjoint(template, effective_args)` decides whether this call
+`arrays_disjoint(template, effective_args)` decides whether this call
 qualifies:
 
-1. `written_field_params(template)` finds the field parameters the kernel
+1. `written_array_params(template)` finds the array parameters the kernel
    may store to, directly, atomically, or through `@tack.func` pointer
    copies, by a fixed point over name copies. If a store goes through a
    name it cannot trace back to a parameter or a local allocation, it
-   returns `None` and every field counts as written. The result, and a
+   returns `None` and every array counts as written. The result, and a
    per-parameter flag tuple, are memoized on the template.
-2. Each field argument's byte range comes from its buffer's `span`
+2. Each array argument's byte range comes from its buffer's `span`
    (`NumpyBuffer.span`, cached per array). A buffer without a `span` makes
    the answer `False`.
-3. The call qualifies when no written range overlaps any other field's
-   range. Read-only fields may overlap each other freely: `dot(x, x)` still
+3. The call qualifies when no written range overlaps any other array's
+   range. Read-only arrays may overlap each other freely: `dot(x, x)` still
    qualifies.
 
 The answer is the last key element and is stored on the variant's IR as
-`disjoint_fields`. `LLVMCodeGen` then adds `noalias` to field parameters
+`disjoint_arrays`. `LLVMCodeGen` then adds `noalias` to array parameters
 only in that variant. Both variants must agree on every race-free program,
 so overlapping and non-overlapping calls of one kernel each get correct
-code; a kernel that is sometimes called with aliased fields simply has two
+code; a kernel that is sometimes called with aliased arrays simply has two
 variants. GPU backends never pass `specialize_disjoint`, so for them the
 element is always `False`.
 
@@ -233,7 +233,7 @@ itself depends on the host and the kernel; the tradeoff is discussed in
 | Scalar argument values (within one inferred type) | scalars are runtime parameters; on GPU they are rewritten into the pack buffers on each dispatch |
 | The outer launch length | read from `__loop_end__`, evaluated per dispatch |
 | Template instance scalar values | runtime parameters; only their names are keyed |
-| Field contents and addresses | never baked in; the only address-derived fact is the CPU `disjoint` bit |
+| Array contents and addresses | never baked in; the only address-derived fact is the CPU `disjoint` bit |
 | The kernel's name | each `Kernel` object has its own cache slot |
 | The backend | each backend instance has its own cache |
 | Debug mode, as a flag | not needed: a debug template has two more parameters, so its `param_sig` differs; the IR template key and the disk keys name it |
@@ -261,7 +261,7 @@ as the process, and so do their variants.
 
 **One cache per backend instance.** `tack.init()` constructs a new backend
 with a new, empty cache. Variants compiled before the switch stay with the
-old backend object, and fields allocated by the old backend are rejected
+old backend object, and arrays allocated by the old backend are rejected
 with a `RuntimeError` when dispatched on the new one.
 
 **Every cache is registered.** `new_kernel_cache` appends a weak reference
@@ -327,19 +327,19 @@ are dictionary reads.
 | classify arguments (templates, vectors, textures) | ✓ | ✓ |
 | IR template lookup (a template key is built for template/vector/texture calls) | ✓ | ✓ |
 | `check_workgroup_support` (memoized on the template on the CPU, immediate on GPU) | ✓ | ✓ |
-| type inference on the `_KeyProbe`, `shape_signature`, `fields_disjoint` (CPU) | ✓ | ✓ |
+| type inference on the `_KeyProbe`, `shape_signature`, `arrays_disjoint` (CPU) | ✓ | ✓ |
 | build the key, look up the variant | ✓ | ✓ |
 | look up the variant in the disk cache, and load it on a disk hit | | ✓ |
 | `clone_ir`, resolve, infer, check, localize, atomic/workgroup analysis, optimize (on a disk miss) | | ✓ |
 | `verify_ir` at each boundary | | ✓ |
 | GPU clone and scalar packing, `annotate_types`, codegen, native compile | | ✓ |
-| `check_workgroup_launch` (collective kernels), `check_atomic_alignment`, `check_writable_fields` | ✓ | ✓ |
+| `check_workgroup_launch` (collective kernels), `check_atomic_alignment`, `check_writable_arrays` | ✓ | ✓ |
 | evaluate the launch range, `check_launch_size` (GPU), update pack buffers and queue the launch under the variant's lock (CUDA, HIP) | ✓ | ✓ |
 
 A hit clones nothing, runs no passes and performs no verification. The
 memoized template facts (`_shape_deps`, `_written_flags`,
 `_workgroup_features`) and the variant's recorded `atomic_targets` and
-`written_fields` keep the remaining per-dispatch work proportional to
+`written_arrays` keep the remaining per-dispatch work proportional to
 the parameter count rather than to the kernel's size.
 
 ### The dispatch fast path
@@ -353,22 +353,22 @@ together they were the largest part of a dispatch's host time (90 of about
 was seen before reuses what that call resolved.
 
 The signature (`_call_signature`) is read straight off the arguments: a
-field's dtype, shape and element layout (memoized on the field as
+array's dtype, shape and element layout (memoized on the array as
 `_sig`); a texture's extents; a scalar's kind and, for integers, the type
 its value selects; a template object's class token, its class constants'
 current values, and what the key and the expansion read of each
 attribute, nested templates by path. Equal signatures imply an equal
 variant key, so an entry, kept per backend and kernel, holds the
 expansion plan for template arguments, the variants it resolved by
-disjointness, and the field slots for the overlap check. A hit expands the
+disjointness, and the array slots for the overlap check. A hit expands the
 templates through the plan, decides disjointness, runs the per-call checks
-(`_check_call`: full workgroups, atomic alignment, read-only fields) and
+(`_check_call`: full workgroups, atomic alignment, read-only arrays) and
 returns. Entries hold no class, and `drop_variants` forgets the kernel's
 entries on every backend along with its variants, so a per-call template
 class is still collected and a dropped variant is resolved afresh. A call with keyword arguments,
 an argument the signature cannot describe, or debug mode (its variants
 take hidden arguments, and each launch is noted for the check) takes the
-slow path. Together with the CPU passing field addresses rather than
+slow path. Together with the CPU passing array addresses rather than
 typed pointer objects, a warm CPU dispatch went from 70 to 40 µs.
 
 ## The correctness argument
@@ -381,12 +381,12 @@ The table pairs each baked-in fact with the key element that names it:
 | Baked into the variant | By | Named by |
 |------------------------|----|----------|
 | parameter types, expression types, pack layout | inference, annotation, packing | `param_sig[*].type_annotation` |
-| pointer versus value calling convention | codegen, packing | `param_sig[*]._is_field` |
+| pointer versus value calling convention | codegen, packing | `param_sig[*]._is_array` |
 | sampler versus software sampling, texture extents | codegen, `store_texture_shapes` | `param_sig[*]._is_texture`, `_texture_shape`, `shape_sig` |
 | vector scalarization | AST transform | `vec_sig` (and the IR template key) |
 | inlined template methods, class constants, template parameter layout | template rewrite | `tmpl_key` |
 | dimension literals in index arithmetic and loops | `resolve_ir` | `shape_sig` |
-| `noalias` on field pointers | `LLVMCodeGen` | `disjoint` |
+| `noalias` on array pointers | `LLVMCodeGen` | `disjoint` |
 | everything derived from the source | all stages | the per-kernel slot |
 
 This rule has been learned the hard way. The cache was once keyed on
@@ -395,13 +395,13 @@ alone (a new row stride reused code with the old stride baked in); then
 without vector widths (**LC3**). Each was a silent wrong-numbers bug. The
 regression tests for this area are in
 `packages/tack-core/tests/test_variant_cache.py`, `test_kernel_cache.py`,
-`test_field_shape.py` and `test_disjoint_fields.py`.
+`test_array_shape.py` and `test_disjoint_arrays.py`.
 
 ## Worked examples
 
 The variant counts below were observed on the CPU backend at this release
 by inspecting `backend._cache[kernel]` after each call, starting from an
-empty cache. All fields are `f32` unless noted. The disjoint bit is `True`
+empty cache. All arrays are `f32` unless noted. The disjoint bit is `True`
 for every call except the aliased one.
 
 ```python
@@ -417,25 +417,25 @@ def scale(x, out, a):
 | `scale(x8, o8, 3.5)` | 1 | a new scalar value is a runtime argument |
 | `scale(x8, o8, 3)` | 2 | `int` infers `i32`, not `f32` |
 | `scale(x8, o8, 2**40)` | 3 | beyond the `i32` range, so `i64` |
-| `scale(x8_f64, o8_f64, 2.0)` | 4 | new field dtype, and the float scalar becomes `f64` |
-| `scale(x, x, 2.0)` | 5 | the written field overlaps another field, so the disjoint bit is `False` |
+| `scale(x8_f64, o8_f64, 2.0)` | 4 | new array dtype, and the float scalar becomes `f64` |
+| `scale(x, x, 2.0)` | 5 | the written array overlaps another array, so the disjoint bit is `False` |
 
 | Kernel | Calls | Variants |
 |--------|-------|:-------:|
 | `out[i] = x[x.shape[0] - 1 - i]` | lengths 8, 16, 32 | 3 |
 | the same with `n` passed as a scalar: `out[i] = x[n - 1 - i]` | lengths 8, 16, 32 | 1 |
-| `tack.ndrange(a.shape[0], a.shape[1])` over 2-D fields | shapes `(4, 8)`, `(16, 8)`, `(4, 9)` | 2 |
+| `tack.ndrange(a.shape[0], a.shape[1])` over 2-D arrays | shapes `(4, 8)`, `(16, 8)`, `(4, 9)` | 2 |
 | `range(1, x.shape[0] - 1)` stencil | lengths 8, 16, 32 | 1 |
 | `out[i] = v[i].dot(v[i])` with `tack.Array` with a vector element dtype | widths 2, then 3 | 2 (and 2 IR templates) |
 
 For a `@tack.device_class` class with a class constant `factor`, an
-instance scalar `offset` and an instance field `data`:
+instance scalar `offset` and an instance array `data`:
 
 | Call | Variants | IR templates | Why |
 |------|:-------:|:------------:|-----|
 | first call | 1 | 1 | |
 | new `offset` value | 1 | 1 | instance scalars are runtime parameters |
-| `data` of a different length | 2 | 2 | template field shapes are keyed |
+| `data` of a different length | 2 | 2 | template array shapes are keyed |
 | `s.factor = 3.0` on the instance | 3 | 3 | it shadows a class constant, so it stays a constant |
 | an equivalent class defined inside a function | 4 | 4 | different class identity |
 | ... after that class is garbage-collected | 3 | 3 | `_retire_class` dropped its specializations |
@@ -457,7 +457,7 @@ would save the smallest part.
 
 | Entry | Key | Holds |
 |---|---|---|
-| `.ir` | the kernel's module, qualified name and source; its result type; its closure cells' fingerprints; vector and texture fields; each template's content; whether debug mode lowered it; Tack's fingerprint | the pickled `IRModule`, and the names lowering resolved |
+| `.ir` | the kernel's module, qualified name and source; its result type; its closure cells' fingerprints; vector and texture arrays; each template's content; whether debug mode lowered it; Tack's fingerprint | the pickled `IRModule`, and the names lowering resolved |
 | `.variant` | the `.ir` entry's key and dependency digest; parameter types and categories, texture shapes, vector widths, `shape_sig`, `disjoint`; the backend and `Backend.cache_target()` | the post-pass IR, `requires_full_workgroups`, the atomic targets, and the backend's artifact |
 
 Debug mode is in the `.ir` key, and the `.variant` key follows from the
@@ -555,14 +555,14 @@ To keep the number of variants down:
   appear only in the outermost `range` never specialize.
 - **Keep scalar types stable.** Integer scalars are typed by value: a
   value that crosses the `i32` range selects a new `i64` variant. Float
-  scalars follow the precision of the field arguments.
+  scalars follow the precision of the array arguments.
 - **Use instance attributes for values that change, class attributes for
   true constants.** Class constants are baked in, and each new value
   compiles a new variant.
 - **Define `@tack.device_class` classes once, at module level.** A class
   defined per call is a new identity each time. Its variants are released
   when it is collected, but each call still pays a cold compile.
-- **Expect re-specialization when a template's field changes shape.** Its
+- **Expect re-specialization when a template's array changes shape.** Its
   full shape is part of the template key.
 
 Specializing on baked-in dimensions is usually worth it: a known row

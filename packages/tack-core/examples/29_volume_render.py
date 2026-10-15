@@ -1,11 +1,11 @@
 """29 -- Volume rendering of a rectilinear grid.
 
 Ray-cast volume renderer using front-to-back compositing with a simple
-transfer function.  The scalar field is the same gyroid used in example 27,
+transfer function.  The scalar array is the same gyroid used in example 27,
 evaluated on a cosine-spaced rectilinear grid.
 
 Each pixel casts one ray through the volume.  At each step the ray samples
-the scalar field via trilinear interpolation (binary search to locate the
+the scalar array via trilinear interpolation (binary search to locate the
 cell on each axis, then lerp the eight corners).  The sample is mapped to
 RGBA through a piecewise-linear transfer function and composited.
 
@@ -45,7 +45,7 @@ TF_SIZE = 256
 
 
 # ================================================================
-# TRANSFER FUNCTION TABLE (built on CPU, uploaded as field)
+# TRANSFER FUNCTION TABLE (built on CPU, uploaded as array)
 # ================================================================
 
 def build_transfer_function(vmin, vmax, n_layers=10):
@@ -192,7 +192,7 @@ def render(img, tex, coords, inv_tables, tf,
            n_pixels):
     """Cast one ray per pixel, front-to-back compositing.
 
-    Consolidated fields (VTK-style packed buffers):
+    Consolidated arrays (VTK-style packed buffers):
       img:        interleaved RGB [r0,g0,b0, r1,g1,b1, ...]
       coords:     concatenated [xcoords..., ycoords..., zcoords...]
       inv_tables: concatenated [inv_x..., inv_y..., inv_z...]
@@ -315,7 +315,7 @@ def compute_gyroid(scalar, xcoords, ycoords, zcoords, nx_p1, ny_p1):
 
 
 # ================================================================
-# BUILD GRID AND SCALAR FIELD
+# BUILD GRID AND SCALAR ARRAY
 # ================================================================
 
 N = _args.size
@@ -341,8 +341,8 @@ tack.copyto(xcoords, xc_np)
 tack.copyto(ycoords, yc_np)
 tack.copyto(zcoords, zc_np)
 
-# Compute gyroid scalar field on GPU
-print("Computing scalar field...")
+# Compute gyroid scalar array on GPU
+print("Computing scalar array...")
 scalar = tack.empty((n_points,))
 compute_gyroid(scalar, xcoords, ycoords, zcoords, nx + 1, ny + 1)
 
@@ -351,7 +351,7 @@ vmax = float(scalar.max())
 vrange = vmax - vmin
 print(f"Scalar range: [{vmin:.3f}, {vmax:.3f}]")
 
-# Wrap scalar field as a 3D texture for hardware-accelerated sampling
+# Wrap scalar array as a 3D texture for hardware-accelerated sampling
 tex = tack.texture3d(scalar, shape=(nx + 1, ny + 1, nz + 1))
 
 
@@ -431,7 +431,7 @@ inv_x_np, cmin_x, inv_sx = build_inv_table(xc_np, nx, INV_TABLE_SIZE)
 inv_y_np, cmin_y, inv_sy = build_inv_table(yc_np, ny, INV_TABLE_SIZE)
 inv_z_np, cmin_z, inv_sz = build_inv_table(zc_np, nz, INV_TABLE_SIZE)
 
-# Consolidated fields (VTK-style packed buffers):
+# Consolidated arrays (VTK-style packed buffers):
 # coords: concatenated [xcoords, ycoords, zcoords]
 coords_np = np.concatenate([xc_np, yc_np, zc_np])
 coords = tack.empty((len(coords_np),))

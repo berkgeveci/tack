@@ -16,8 +16,8 @@ def level_zero_backend():
 
 
 def test_host_element_reads_copy_one_element():
-    """field[i] copies just the element on Level Zero, from an owned buffer,
-    a wrapped pointer in each form, a view and a vector field; a range past
+    """array[i] copies just the element on Level Zero, from an owned buffer,
+    a wrapped pointer in each form, a view and a vector array; a range past
     the allocation is refused rather than read."""
     f = tack.empty((4, 5), tack.f64)
     tack.copyto(f, np.arange(20, dtype=np.float64).reshape(4, 5))

@@ -8,7 +8,7 @@ from tack.lang.type_inference import infer_param_types, promote_types
 from tack.lang.types import f32, f64, i32, i64
 
 
-def test_infer_field_types():
+def test_infer_array_types():
     x = tack.empty((10,))
     y = tack.empty((10,))
     out = tack.empty((10,))

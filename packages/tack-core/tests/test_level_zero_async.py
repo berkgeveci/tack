@@ -1,5 +1,5 @@
 """Level Zero launches are queued on one immediate command list, ordered by
-barriers, and return at once; the host waits only where it reads a field. Results must be the same as when every launch
+barriers, and return at once; the host waits only where it reads an array. Results must be the same as when every launch
 completed before returning: order, each launch's own scalars, host writes
 and fills ordered among the launches, dropped temporaries freed after the
 launches that use them, and sync waiting for everything."""
@@ -63,7 +63,7 @@ def test_launches_run_in_order():
 def test_each_queued_launch_keeps_its_own_scalars():
     """A variant's scalars are packed into one buffer rewritten per call;
     the rewrite is queued after the launch that reads the old values. Each
-    launch also writes its own field: the kernel's argument state, set
+    launch also writes its own array: the kernel's argument state, set
     again by the next call, was captured when the launch was appended."""
     outs = [tack.zeros((16,), tack.i32) for _ in range(40)]
     for k, out in enumerate(outs):
@@ -91,7 +91,7 @@ def test_fills_are_ordered_among_the_launches():
 
 
 def test_a_dropped_temporary_is_freed_after_its_launches():
-    """A field Python drops while launches that use it are queued is freed
+    """An array Python drops while launches that use it are queued is freed
     after the work queued so far (the driver's deferred free); the launches
     read and write it whole."""
     x = tack.empty((1 << 20,))
@@ -209,7 +209,7 @@ def _heavy(x, out):
 
 def _heavy_queue(seconds):
     """Queue about ``seconds`` of `_heavy` (timed by its fastest of three
-    runs, as other processes may share the device) and return the fields."""
+    runs, as other processes may share the device) and return the arrays."""
     x = tack.empty((1 << 20,))
     out = tack.zeros((1 << 20,))
     _heavy(x, out)
@@ -321,7 +321,7 @@ def test_staging_blocks_go_back_to_the_pool():
 
 
 def test_threads_launch_and_free_at_once():
-    """Four threads each allocate, launch on and drop fields. The deferred
+    """Four threads each allocate, launch on and drop arrays. The deferred
     free ran outside the launch lock and crashed the driver."""
     import threading
 

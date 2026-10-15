@@ -45,15 +45,15 @@ def test_sync_async_then_the_results_are_there(backend):
 
 
 def test_numpy_async_reads_what_was_queued(backend):
-    fields = [tack.empty((500,)) for _ in range(4)]
+    arrays = [tack.empty((500,)) for _ in range(4)]
     vec = tack.empty((7,), tack.vec(3, tack.f32))
     tack.copyto(vec, np.arange(21, dtype=np.float32).reshape(7, 3))
 
     async def main():
-        for k, f in enumerate(fields):
+        for k, f in enumerate(arrays):
             _ramp(f, float(k + 1))
         rows, again = await asyncio.gather(vec.numpy_async(), vec.numpy_async())
-        return await asyncio.gather(*(f.numpy_async() for f in fields)), rows, again
+        return await asyncio.gather(*(f.numpy_async() for f in arrays)), rows, again
 
     got, rows, again = asyncio.run(main())
     for k, values in enumerate(got):

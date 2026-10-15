@@ -406,8 +406,8 @@ def test_shared_memory():
 
 # --- Reductions ---
 
-def test_field_reductions():
-    """Test GPU-side field.sum(), field.min(), field.max()."""
+def test_array_reductions():
+    """Test GPU-side array.sum(), array.min(), array.max()."""
     n = 10000
     x = tack.empty((n,))
     data = np.arange(n, dtype=np.float32)
@@ -463,7 +463,7 @@ def test_dlpack_device_is_rocm():
 
 
 def test_dlpack_round_trip_aliases():
-    """A HIP field imported back through DLPack shares its allocation.
+    """A HIP array imported back through DLPack shares its allocation.
 
     Checked by writing through each handle with a kernel and reading the
     other, since equal values alone cannot tell an alias from a copy.
@@ -537,8 +537,8 @@ def test_hardware_texture_decision_matches_the_device():
 
 
 def test_host_element_reads_copy_one_element():
-    """field[i] copies just the element on HIP, from an owned buffer, a
-    wrapped pointer in each form, a view and a vector field; a range past
+    """array[i] copies just the element on HIP, from an owned buffer, a
+    wrapped pointer in each form, a view and a vector array; a range past
     the allocation is refused rather than read."""
     f = tack.empty((4, 5), tack.f64)
     tack.copyto(f, np.arange(20, dtype=np.float64).reshape(4, 5))

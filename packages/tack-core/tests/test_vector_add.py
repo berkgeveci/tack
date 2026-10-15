@@ -29,7 +29,7 @@ def test_vector_add(backend):
     np.testing.assert_allclose(result, expected)
 
 
-def test_field_basics(backend):
+def test_array_basics(backend):
     f = tack.empty((10,))
     assert f.shape == (10,)
     assert f.dtype == tack.f32

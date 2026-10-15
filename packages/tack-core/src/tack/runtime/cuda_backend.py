@@ -20,9 +20,9 @@ import warnings
 
 import numpy as np
 
-from tack.codegen.reductions import field_reduction_source
+from tack.codegen.reductions import array_reduction_source
 from tack.lang import ir
-from tack.lang.field import DeviceBuffer
+from tack.lang.array import DeviceBuffer
 from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
@@ -91,9 +91,9 @@ _NUMPY_DTYPE = {
 }
 
 
-_REDUCE_CUDA_SUM = field_reduction_source('cuda', 'sum')
-_REDUCE_CUDA_MIN = field_reduction_source('cuda', 'min')
-_REDUCE_CUDA_MAX = field_reduction_source('cuda', 'max')
+_REDUCE_CUDA_SUM = array_reduction_source('cuda', 'sum')
+_REDUCE_CUDA_MIN = array_reduction_source('cuda', 'min')
+_REDUCE_CUDA_MAX = array_reduction_source('cuda', 'max')
 
 
 def _check(err):
@@ -203,10 +203,10 @@ def _current_context_token():
 
 
 _DEAD_CONTEXT_MSG = (
-    "the CUDA context this field was allocated in has been destroyed. "
+    "the CUDA context this array was allocated in has been destroyed. "
     "Switching backends -- tack.init(arch=tack.cpu) after tack.init("
     "arch=tack.cuda) -- tears down the CUDA context, and every device "
-    "pointer allocated in it dies with the context. Fields do not survive "
+    "pointer allocated in it dies with the context. Arrays do not survive "
     "that; allocate them again after switching back."
 )
 
@@ -229,8 +229,8 @@ def _drain(stream):
 def _read_device_range(device_ptr, numpy_dtype, nbytes, start, count, stream=None):
     """Copy elements ``[start, start + count)`` of an allocation to the host.
 
-    One copy of just those bytes, so ``field[i]`` on the host moves one
-    element rather than the whole field, queued after the launches before
+    One copy of just those bytes, so ``array[i]`` on the host moves one
+    element rather than the whole array, queued after the launches before
     it and waited for. The range is checked here because a device copy past
     the allocation is not caught by NumPy.
     """
@@ -259,7 +259,7 @@ class CUDABuffer(DeviceBuffer):
     context's stream, in order with the launches: ``from_numpy`` and
     ``fill`` are queued and return at once, ``to_numpy`` and ``read_range``
     are queued and waited for. The memory is stream-ordered too
-    (``cuMemAllocAsync``/``cuMemFreeAsync``), so a field Python drops while
+    (``cuMemAllocAsync``/``cuMemFreeAsync``), so an array Python drops while
     a queued launch still uses it is freed after that launch, and the
     driver's pool hands the memory back out without a device round trip.
     """
@@ -276,7 +276,7 @@ class CUDABuffer(DeviceBuffer):
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
         self._token = _current_context_token()
         stream = self._token.queue()
-        # A zero-byte request is rejected; an empty field gets one byte it
+        # A zero-byte request is rejected; an empty array gets one byte it
         # never reads, as on Level Zero.
         err, self._device_ptr = driver.cuMemAllocAsync(max(self._nbytes, 1), stream)
         _check(err)
@@ -312,7 +312,7 @@ class CUDABuffer(DeviceBuffer):
         """Refuse to touch device memory whose context is gone."""
         token = getattr(self, "_token", None)
         if token is not None and not token.alive:
-            raise RuntimeError(f"Cannot {verb} this CUDA field: {_DEAD_CONTEXT_MSG}")
+            raise RuntimeError(f"Cannot {verb} this CUDA array: {_DEAD_CONTEXT_MSG}")
 
     @property
     def address(self) -> int:
@@ -321,7 +321,7 @@ class CUDABuffer(DeviceBuffer):
     @property
     def device_ptr(self):
         # Guarded because this is what a kernel launch reads: without the
-        # check a dispatch against a stale field faults in the driver.
+        # check a dispatch against a stale array faults in the driver.
         self._live("run a kernel against")
         return self._device_ptr
 
@@ -558,7 +558,7 @@ class ExportableCUDABuffer(DeviceBuffer):
 
     def export_memory(self):
         """Export as ExportedMemory (handle + size + UUID). The handle is cached."""
-        from tack.lang.field import ExportedMemory
+        from tack.lang.array import ExportedMemory
         if self._exported_handle is None:
             err, handle = driver.cuMemExportToShareableHandle(
                 self._mem_handle, self._handle_type, 0)
@@ -676,7 +676,7 @@ def _compile_ptx(cuda_source: str, func_name: str) -> bytes:
     return ptx
 
 
-def _load_kernel(ptx: bytes, kernel_name: str, param_types, param_is_field,
+def _load_kernel(ptx: bytes, kernel_name: str, param_types, param_is_array,
                  param_is_texture) -> "CompiledCUDAKernel":
     """A kernel from its PTX, loaded into the current context."""
     err, module = driver.cuModuleLoadData(ptx)
@@ -684,7 +684,7 @@ def _load_kernel(ptx: bytes, kernel_name: str, param_types, param_is_field,
     err, func = driver.cuModuleGetFunction(module, kernel_name.encode())
     _check(err)
     compiled = CompiledCUDAKernel(module, func, kernel_name, param_types,
-                                  param_is_field, param_is_texture)
+                                  param_is_array, param_is_texture)
     compiled.ptx = ptx
     return compiled
 
@@ -696,7 +696,7 @@ _CUDA_CTYPES_MAP = {f32: ctypes.c_float, i32: ctypes.c_int, i64: ctypes.c_longlo
 class CUDATextureImage:
     """A CUDA 3D array and the texture object that samples it.
 
-    Owned by one `Texture3D`, which uploads its field's data at creation and
+    Owned by one `Texture3D`, which uploads its array's data at creation and
     on ``update()``. Nothing else keeps a reference, so the array and the
     texture object are destroyed with the texture: no later texture can be
     served one that was made from someone else's memory.
@@ -749,8 +749,8 @@ class CUDATextureImage:
         """The texture object a kernel launch passes."""
         return int(self._tex_obj)
 
-    def upload(self, field):
-        """Copy a field's device buffer into the array.
+    def upload(self, array):
+        """Copy an array's device buffer into the array.
 
         The texture object reads the array, so it sees the new contents
         without being recreated.
@@ -759,7 +759,7 @@ class CUDATextureImage:
         copy_params = driver.CUDA_MEMCPY3D()
         # Source: device pointer, pitched linear memory
         copy_params.srcMemoryType = driver.CUmemorytype.CU_MEMORYTYPE_DEVICE
-        copy_params.srcDevice = field._buffer.device_ptr
+        copy_params.srcDevice = array._buffer.device_ptr
         copy_params.srcPitch = W * 4   # bytes per row
         copy_params.srcHeight = H
         # Destination: CUDA array
@@ -770,7 +770,7 @@ class CUDATextureImage:
         copy_params.Height = H
         copy_params.Depth = D
 
-        _check(driver.cuMemcpy3DAsync(copy_params, field._buffer._stream))
+        _check(driver.cuMemcpy3DAsync(copy_params, array._buffer._stream))
 
     def __del__(self):
         # Same rule as CUDABuffer: the context took these with it.
@@ -789,13 +789,13 @@ class CUDATextureImage:
 class CompiledCUDAKernel:
     """A compiled CUDA kernel ready for dispatch."""
 
-    def __init__(self, module, func, func_name, param_types, param_is_field,
+    def __init__(self, module, func, func_name, param_types, param_is_array,
                  param_is_texture=None):
         self._module = module
         self._func = func
         self._func_name = func_name
         self._param_types = param_types
-        self._param_is_field = param_is_field
+        self._param_is_array = param_is_array
         self._param_is_texture = param_is_texture or [False] * len(param_types)
         self.ptx = None     # what NVRTC made, kept for the disk cache
 
@@ -810,13 +810,13 @@ class CompiledCUDAKernel:
         n_val = ctypes.c_longlong(loop_end)
 
         arg_values = []
-        for arg, ptype, is_field, is_tex in zip(
-                kernel_args, self._param_types, self._param_is_field,
+        for arg, ptype, is_array, is_tex in zip(
+                kernel_args, self._param_types, self._param_is_array,
                 self._param_is_texture):
             if is_tex:
                 # A CUDATextureImage; cudaTextureObject_t is unsigned long long
                 arg_values.append(ctypes.c_ulonglong(arg.handle))
-            elif is_field:
+            elif is_array:
                 arg_values.append(ctypes.c_void_p(int(arg._buffer.device_ptr)))
             else:
                 ct = _CUDA_CTYPES_MAP[ptype]
@@ -844,7 +844,7 @@ class CompiledCUDAKernel:
 
 
 class CUDABackend(Backend):
-    """CUDA GPU backend — device-resident fields, NVRTC compilation."""
+    """CUDA GPU backend — device-resident arrays, NVRTC compilation."""
 
     name = "cuda"
     display_name = "CUDA"
@@ -947,7 +947,7 @@ class CUDABackend(Backend):
             return None                      # the legacy stream: wait inline
         return _StreamMarker(token)
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+    def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> CUDABuffer:
         if exportable:
             return ExportableCUDABuffer(dtype.numpy_dtype, shape)
@@ -1009,17 +1009,17 @@ class CUDABackend(Backend):
         The IR passes and device compilation run only when this argument
         shape/type combination is new; see `resolve_variant`.
         """
-        from tack.lang.field import Texture3D
+        from tack.lang.array import Texture3D
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
             build=self._build_variant,
         )
-        compiled, pack_info, pack_fields = variant.payload
+        compiled, pack_info, pack_arrays = variant.payload
 
         # Loop range comes from the pre-packing IR: packing rewrites the
         # parameter list, and the range expression names the original args.
-        kernel_args = [a.field if isinstance(a, Texture3D) else a
+        kernel_args = [a.array if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end, extents = _get_launch(variant.ir, kernel_args)
         if loop_end <= 0:
@@ -1027,23 +1027,23 @@ class CUDABackend(Backend):
             return
         check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
-        # Textures bind their own snapshot, not the field they came from.
+        # Textures bind their own snapshot, not the array they came from.
         kernel_args = bind_textures(effective_args)
 
-        # Replace scalar args with the packed field buffers. The buffers
+        # Replace scalar args with the packed array buffers. The buffers
         # belong to the variant, so writing them and the launch that reads
         # them happen under its lock (see KernelVariant.dispatch_lock).
         with variant.dispatch_lock:
             if pack_info:
                 from tack.lang.ir_pack_scalars import split_args
-                from tack.runtime.kernel_utils import _update_pack_fields
-                _update_pack_fields(pack_fields, pack_info, effective_args)
+                from tack.runtime.kernel_utils import _update_pack_arrays
+                _update_pack_arrays(pack_arrays, pack_info, effective_args)
                 kept_args = split_args(effective_args, pack_info)
-                kernel_args = bind_textures(kept_args) + pack_fields
+                kernel_args = bind_textures(kept_args) + pack_arrays
 
             compiled(kernel_args, loop_end, extents, self._launch_limits, self._stream)
         # Memory that can be read with no Tack call between -- a wrapped
-        # pointer, an exported field -- and a texture, whose image could be
+        # pointer, an exported array -- and a texture, whose image could be
         # destroyed before a queued launch has read it: complete now.
         if any(getattr(getattr(a, '_buffer', None), '_shared', False)
                or isinstance(a, CUDATextureImage) for a in kernel_args):
@@ -1059,7 +1059,7 @@ class CUDABackend(Backend):
         from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
-        from tack.runtime.kernel_utils import _create_pack_fields
+        from tack.runtime.kernel_utils import _create_pack_arrays
 
         packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
@@ -1067,9 +1067,9 @@ class CUDABackend(Backend):
         annotate_types(packed)
         verify_ir(packed, 'typed')
         compiled = self._compile_kernel(packed)
-        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+        pack_arrays = (_create_pack_arrays(pack_info, effective_args, self)
                        if pack_info else None)
-        return compiled, pack_info, pack_fields
+        return compiled, pack_info, pack_arrays
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledCUDAKernel:
         """Compile Tack IR → CUDA C → PTX → CUfunction."""
@@ -1077,9 +1077,9 @@ class CUDABackend(Backend):
         cuda_source = generate_cuda_source(ir_func)
         ptx = _compile_ptx(cuda_source, kernel_name)
         param_types = [p.type_annotation for p in ir_func.params]
-        param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+        param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        return _load_kernel(ptx, kernel_name, param_types, param_is_field, param_is_texture)
+        return _load_kernel(ptx, kernel_name, param_types, param_is_array, param_is_texture)
 
     # ── The disk cache: PTX, loaded by the driver ──────────────────────
     # The driver compiles PTX for the device at load, so the stored artifact
@@ -1117,30 +1117,30 @@ class CUDABackend(Backend):
             raise ValueError("no PTX was kept for this kernel")
         return {"ptx": compiled.ptx, "name": compiled._func_name,
                 "param_types": compiled._param_types,
-                "param_is_field": compiled._param_is_field,
+                "param_is_array": compiled._param_is_array,
                 "param_is_texture": compiled._param_is_texture,
                 "pack_info": pack_info}
 
     def load_variant(self, ir_func, artifact, effective_args):
-        from tack.runtime.kernel_utils import _create_pack_fields
+        from tack.runtime.kernel_utils import _create_pack_arrays
         compiled = _load_kernel(artifact["ptx"], artifact["name"], artifact["param_types"],
-                                artifact["param_is_field"], artifact["param_is_texture"])
+                                artifact["param_is_array"], artifact["param_is_texture"])
         pack_info = artifact["pack_info"]
         # The scalar pack buffers are device memory of this process, made
         # from this call's scalars as _build_variant makes them.
-        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+        pack_arrays = (_create_pack_arrays(pack_info, effective_args, self)
                        if pack_info else None)
-        return compiled, pack_info, pack_fields
+        return compiled, pack_info, pack_arrays
 
-    def reduce_field(self, field, op: str) -> float:
+    def reduce_array(self, array, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
-        if field.size == 0:
+        if array.size == 0:
             return empty_reduction(op)
-        if field.dtype is not f32:
-            return reduce_numpy(field.numpy(), op)
-        n = int(np.prod(field.shape))
-        check_launch_size(f"Field {op}()", n, self._max_launch, self.label)
+        if array.dtype is not f32:
+            return reduce_numpy(array.numpy(), op)
+        n = int(np.prod(array.shape))
+        check_launch_size(f"Array {op}()", n, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -1156,7 +1156,7 @@ class CUDABackend(Backend):
         grid_dim = (n + block_dim - 1) // block_dim
 
         # Dispatch
-        in_ptr = ctypes.c_void_p(int(field._buffer.device_ptr))
+        in_ptr = ctypes.c_void_p(int(array._buffer.device_ptr))
         out_ptr = ctypes.c_void_p(int(out_buf.device_ptr))
         n_val = ctypes.c_longlong(n)
         args = (ctypes.c_void_p * 3)()

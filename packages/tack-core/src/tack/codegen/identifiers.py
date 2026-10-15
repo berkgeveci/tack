@@ -7,7 +7,7 @@ other names use UTF-8 hex in a separate namespace. Both encodings are injective,
 including user names that already resemble an encoded name.
 """
 
-from tack.lang.ir_names import NAME_FIELDS, NAME_LIST_FIELDS, ir_names
+from tack.lang.ir_names import NAME_ARRAYS, NAME_LIST_ARRAYS, ir_names
 from tack.lang.ir_traversal import transform_ir
 
 
@@ -43,11 +43,11 @@ def rename_gpu_bindings(ir_func):
     names = {name: gpu_variable_name(name) for name in ir_names(ir_func)}
 
     def rename(node):
-        for attr in NAME_FIELDS.get(type(node), ()):
+        for attr in NAME_ARRAYS.get(type(node), ()):
             name = getattr(node, attr)
             if name is not None:
                 setattr(node, attr, names[name])
-        for attr in NAME_LIST_FIELDS.get(type(node), ()):
+        for attr in NAME_LIST_ARRAYS.get(type(node), ()):
             if getattr(node, attr):
                 setattr(node, attr, [names[name] for name in getattr(node, attr)])
         return node

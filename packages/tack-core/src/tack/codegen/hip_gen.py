@@ -1,7 +1,7 @@
 """Tack HIP C code generation — transforms Tack IR to HIP C source for hipRTC.
 
 Generates an ``extern "C" __global__`` kernel function where:
-  - Each Field parameter becomes a typed device pointer (``float*``, etc.)
+  - Each Array parameter becomes a typed device pointer (``float*``, etc.)
   - The outermost parallel for-loop maps to the standard HIP thread index,
     computed in 64 bits as in CUDA:
         long long __idx__ = (long long)blockIdx.x * blockDim.x + threadIdx.x;

@@ -37,13 +37,13 @@ from tack.dataset.views import (
     _StructuredLines,
     _StructuredQuads,
 )
-from tack.lang.field import Field
+from tack.lang.array import Array
 
 __all__ = ["Edges", "Faces", "StructuredTopology", "UnstructuredTopology"]
 
 
 def _as_field(values, dtype):
-    if isinstance(values, Field):
+    if isinstance(values, Array):
         if values.dtype != dtype:
             raise TypeError(f"expected a {dtype.name} field, got {values.dtype.name}")
         return values
@@ -166,7 +166,7 @@ class UnstructuredTopology(_Topology):
             raise ValueError(f"offsets must have num_cells + 1 = {self.num_cells + 1} "
                              f"entries, not {offsets.shape[0]}")
         if num_points is None:
-            used = connectivity.numpy() if isinstance(connectivity, Field) else connectivity
+            used = connectivity.numpy() if isinstance(connectivity, Array) else connectivity
             num_points = int(used.max()) + 1 if used.size else 0
         self.num_points = int(num_points)
         extent = max(self.num_points, int(connectivity.shape[0]), 12 * self.num_cells)

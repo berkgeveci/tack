@@ -28,7 +28,7 @@ the [quick reference](quick-reference.md) nearby as you write your own program.
 | I want to… | Start with |
 |---|---|
 | Turn a NumPy expression into a kernel | [One operation per element](12-execution-model.md#start-with-one-operation-per-element) |
-| Allocate arrays and exchange data with NumPy | [Arrays and Types](02-fields-and-types.md) |
+| Allocate arrays and exchange data with NumPy | [Arrays and Types](02-arrays-and-types.md) |
 | Store positions, colours or local matrices | [Vectors and Matrices](14-vectors-and-matrices.md) |
 | Update a grid over many timesteps | [Heat diffusion](tutorials/heat.md) and [stable stencil inputs](13-memory-and-parallelism.md#neighbour-reads-need-a-stable-input) |
 | Combine contributions from many particles | [Gather and scatter](13-memory-and-parallelism.md#gather-and-scatter), then [MPM](tutorials/mpm.md) |
@@ -50,7 +50,7 @@ If you already write GPU kernels, read [Kernels](03-kernels.md),
 |---|---|
 | [Getting Started](01-getting-started.md) | Install and run the first kernel |
 | [From Python to a Tack program](12-execution-model.md) | Host/device boundary, stages and compilation |
-| [Arrays and Types](02-fields-and-types.md) | Storage, NumPy exchange, scalar types and precision |
+| [Arrays and Types](02-arrays-and-types.md) | Storage, NumPy exchange, scalar types and precision |
 | [Vectors and matrices](14-vectors-and-matrices.md) | Component values, masks, products and arrays |
 | [Kernels](03-kernels.md) | Parallel ranges, constants, returns and specialization |
 | [Control Flow and Math](04-control-flow.md) | Conditions, sequential loops, casts and numerical helpers |
@@ -71,7 +71,7 @@ You can use the dataset algorithms before writing a kernel. Begin with the
 [visualization quick start](09-visualization.md#quick-start), then follow
 [Function Space Fundamentals](data/00-function-spaces.md),
 [Understand a Dataset](data/01-datasets.md), and [Filter and Analyze](data/04-filters.md). The examples start with analytic
-fields so you can check what each filter means, as well as view its output.
+arrays so you can check what each filter means, as well as view its output.
 
 | Chapter | What you will learn |
 |---|---|
@@ -79,12 +79,12 @@ fields so you can check what each filter means, as well as view its output.
 | [Understand a Dataset](data/01-datasets.md) | Topology, geometry, associated fields and named selections |
 | [Build Meshes](data/02-meshes.md) | Structured and mixed meshes, polyhedra, polygons, lines and ids |
 | [Fields and Spaces](data/03-fields-and-spaces.md) | Continuous and discontinuous values, projection, traces and implicit arrays |
-| [Filter and Analyze](data/04-filters.md) | Selection versus cutting, field propagation, gradients and statistics |
+| [Filter and Analyze](data/04-filters.md) | Selection versus cutting, array propagation, gradients and statistics |
 | [Write Mesh Algorithms](data/05-mesh-kernels.md) | Per-shape cell kernels, subsets, faces and oriented flux balances |
 | [Sample and Connect Simulations](data/06-pipelines.md) | Probes, streamlines, retained geometry, VTK/MFEM and repeated pipelines |
 
 Read the kernel chapters when you want to initialize data on the device, write
-a custom operation, or connect a simulation's working fields to the dataset.
+a custom operation, or connect a simulation's working arrays to the dataset.
 
 ## Run and diagnose
 

@@ -68,7 +68,7 @@ residuals or bounded temperatures when a long trajectory is sensitive.
 
 Do not increase a tolerance merely to hide a discrepancy. First check array
 layout, boundaries, initialization, dtype conversions and cross-iteration races.
-Use [Arrays and Types](02-fields-and-types.md) for literal precision and integer
+Use [Arrays and Types](02-arrays-and-types.md) for literal precision and integer
 rules, and [Reductions and Scans](11-reductions-and-scans.md) for accumulator
 precision. Statistics such as `dot` form their terms in `f64` if either input
 is `f64`, and otherwise in `f32`, then use array reductions. For `f32` inputs,

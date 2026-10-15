@@ -1,6 +1,6 @@
 """15 -- Matrix multiplication.
 
-Compute C = A @ B for square matrices stored as flat 1D fields.
+Compute C = A @ B for square matrices stored as flat 1D arrays.
 Uses 2D indexing with manual row-major layout.
 
 Usage:

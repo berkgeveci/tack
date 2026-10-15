@@ -1,7 +1,7 @@
 """Tack MSL code generation — transforms Tack IR to Metal Shading Language source.
 
 Generates a ``kernel void`` compute function where:
-  - Field pointers are members of one argument buffer, so they may alias
+  - Array pointers are members of one argument buffer, so they may alias
   - The outermost parallel for-loop maps to ``[[thread_position_in_grid]]``
   - Sequential for-loops, while-loops, if/else map to standard C control flow
   - Math builtins map to Metal stdlib functions (sqrt, sin, etc.)
@@ -96,7 +96,7 @@ def _float_atomic_extrema_helpers(ops) -> list:
 
 
 # The function a kernel's body moves to when it has a loop that stores to a
-# field. Generated variables carry the `tack_var_` prefix, so it cannot
+# array. Generated variables carry the `tack_var_` prefix, so it cannot
 # collide with one.
 _BODY_FUNCTION = "__tack_body__"
 
@@ -108,7 +108,7 @@ def _stores_inside_sequential_loop(body) -> bool:
     """
     for node in walk_ir(body):
         if isinstance(node, (ir.IRSequentialFor, ir.IRWhile)):
-            if any(isinstance(inner, (ir.IRFieldStore, ir.IRAtomicOp, ir.IRBoundsCheck))
+            if any(isinstance(inner, (ir.IRArrayStore, ir.IRAtomicOp, ir.IRBoundsCheck))
                    for inner in walk_ir(node)):
                 return True
     return False
@@ -125,7 +125,7 @@ class MSLCodeGen:
         self._indent = 0
         self._lines: list[str] = []
         self._param_types: dict[str, ScalarType] = {}
-        self._field_params: set[str] = set()
+        self._array_params: set[str] = set()
         self._local_vars: dict[str, str] = {}  # name -> MSL type
         self._declared_vars: set[str] = set()
         self._integer_division_helpers = set()
@@ -151,11 +151,11 @@ class MSLCodeGen:
             if param.type_annotation is f64:
                 raise TypeError("Apple GPUs do not support double precision (f64).")
             self._param_types[param.name] = param.type_annotation
-            if hasattr(param, '_is_field') and param._is_field:
-                self._field_params.add(param.name)
-            elif not hasattr(param, '_is_field'):
-                # Default: treat as field for backwards compatibility
-                self._field_params.add(param.name)
+            if hasattr(param, '_is_array') and param._is_array:
+                self._array_params.add(param.name)
+            elif not hasattr(param, '_is_array'):
+                # Default: treat as array for backwards compatibility
+                self._array_params.add(param.name)
 
         # Header
         self._emit("#include <metal_stdlib>")
@@ -173,19 +173,19 @@ class MSLCodeGen:
         # (section 5.2). Indirect pointers in one argument buffer preserve
         # Tack's overlap contract without specializing on alias relationships.
         buffer_params = [p for p in func.params
-                         if p.name in self._field_params
+                         if p.name in self._array_params
                          and p.name not in self._texture_params]
         if buffer_params:
             self._emit("struct __tack_buffer_args__ {")
             for i, param in enumerate(func.params):
-                if param.name in self._field_params and param.name not in self._texture_params:
+                if param.name in self._array_params and param.name not in self._texture_params:
                     msl_type = _MSL_TYPE_MAP[param.type_annotation]
                     self._emit(f"    device {msl_type}* {param.name} [[id({i})]];")
             self._emit("};")
             self._emit("")
 
         # Textures keep their separate binding namespace. Unpacked scalars
-        # remain constant references; normal dispatch packs them into fields.
+        # remain constant references; normal dispatch packs them into arrays.
         self._scalar_buffer_params: set[str] = set()
         # Each parameter as (declaration, binding attribute, name): the
         # kernel entry declares them with their attributes, and a separate
@@ -203,7 +203,7 @@ class MSLCodeGen:
                 params.append((f"texture3d<float, access::sample> {param.name}",
                                f"[[texture({tex_idx})]]", param.name))
                 tex_idx += 1
-            elif param.name in self._field_params:
+            elif param.name in self._array_params:
                 continue
             else:
                 params.append((f"constant {msl_type}& {param.name}",
@@ -219,13 +219,13 @@ class MSLCodeGen:
             params.append(("uint __local_tid__", "[[thread_position_in_threadgroup]]",
                            "__local_tid__"))
 
-        # A loop that stores to a field is compiled in a function of its
+        # A loop that stores to an array is compiled in a function of its
         # own. In the kernel entry function, Apple's compiler (M1 Max,
-        # macOS 26) reads a field element once before such a loop and never
+        # macOS 26) reads an array element once before such a loop and never
         # again when the element's address does not depend on the thread
-        # and the loop also stores to another field of the same type:
+        # and the loop also stores to another array of the same type:
         #     for k in range(n): total[0] += x[k]; counter[0] += 1
-        # left total at start + x[n - 1]. It began when field pointers
+        # left total at start + x[n - 1]. It began when array pointers
         # became members of one argument buffer. The same loop in a
         # function the entry calls is compiled correctly, provided the
         # function is not inlined; hiding the pointers or the thread index
@@ -317,8 +317,8 @@ class MSLCodeGen:
             self._emit_while(node)
         elif isinstance(node, ir.IRIf):
             self._emit_if(node)
-        elif isinstance(node, ir.IRFieldStore):
-            self._emit_field_store(node)
+        elif isinstance(node, ir.IRArrayStore):
+            self._emit_array_store(node)
         elif isinstance(node, ir.IRAssign):
             self._emit_assign(node)
         elif isinstance(node, ir.IRReturn):
@@ -491,7 +491,7 @@ class MSLCodeGen:
         lacks, are compare-and-swap loops in helper functions that return
         the value the successful exchange replaced.
         """
-        field = self._expr(node.field)
+        array = self._expr(node.array)
         index = self._expr(node.index)
         value = self._expr(node.value)
         idx_type = self._infer_expr_type(node.index)
@@ -507,28 +507,28 @@ class MSLCodeGen:
         if node.op == "add":
             pointer_type = 'atomic_float' if is_float else atomic_type
             return (f"atomic_fetch_add_explicit("
-                    f"(volatile device {pointer_type}*)&{field}[{index}], "
+                    f"(volatile device {pointer_type}*)&{array}[{index}], "
                     f"{value}, memory_order_relaxed)")
         if node.op in ("min", "max"):
             if is_float:
                 self._float_atomic_extrema.add(node.op)
                 return (f"__tack_atomic_f{node.op}__("
-                        f"(volatile device atomic_uint*)&{field}[{index}], {value})")
+                        f"(volatile device atomic_uint*)&{array}[{index}], {value})")
             func = "atomic_fetch_min_explicit" if node.op == "min" else "atomic_fetch_max_explicit"
             return (f"{func}("
-                    f"(volatile device {atomic_type}*)&{field}[{index}], "
+                    f"(volatile device {atomic_type}*)&{array}[{index}], "
                     f"{value}, memory_order_relaxed)")
         raise NotImplementedError(f"MSL atomic op: {node.op}")
 
-    def _emit_field_store(self, node: ir.IRFieldStore):
-        field = self._expr(node.field)
+    def _emit_array_store(self, node: ir.IRArrayStore):
+        array = self._expr(node.array)
         index = self._expr(node.index)
         value = self._expr(node.value)
         value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, 'dtype', None))
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float", "double"):
             index = f"(({_INT})({index}))"
-        self._emit(f"{field}[{index}] = {value};")
+        self._emit(f"{array}[{index}] = {value};")
 
     def _emit_assign(self, node: ir.IRAssign):
         previous = self._opaque_integer_add
@@ -558,9 +558,9 @@ class MSLCodeGen:
         rct = getattr(node, '_resolved_cast_type', None)
         if rct is not None:
             return _MSL_TYPE_MAP.get(rct, "float")
-        # Fallback for unannotated nodes (e.g., field pointer references)
+        # Fallback for unannotated nodes (e.g., array pointer references)
         if isinstance(node, ir.IRName):
-            if node.name in self._field_params:
+            if node.name in self._array_params:
                 c_type = _MSL_TYPE_MAP[self._param_types[node.name]]
                 return f"device {c_type}*"
             if node.name in self._local_vars:
@@ -573,7 +573,7 @@ class MSLCodeGen:
     def _infer_expr_type(self, node) -> str:
         return self._infer_type(node)
 
-    def _get_field_name(self, node) -> str | None:
+    def _get_array_name(self, node) -> str | None:
         if isinstance(node, ir.IRName):
             return node.name
         return None
@@ -595,8 +595,8 @@ class MSLCodeGen:
             return self._expr_compare(node)
         if isinstance(node, ir.IRBoolOp):
             return self._expr_boolop(node)
-        if isinstance(node, ir.IRFieldLoad):
-            return self._expr_field_load(node)
+        if isinstance(node, ir.IRArrayLoad):
+            return self._expr_array_load(node)
         if isinstance(node, ir.IRAttribute):
             return self._expr_attribute(node)
         if isinstance(node, ir.IRCall):
@@ -745,13 +745,13 @@ class MSLCodeGen:
         parts = [self._expr(v) for v in node.values]
         return "(" + f" {c_op} ".join(parts) + ")"
 
-    def _expr_field_load(self, node: ir.IRFieldLoad) -> str:
-        field = self._expr(node.field)
+    def _expr_array_load(self, node: ir.IRArrayLoad) -> str:
+        array = self._expr(node.array)
         index = self._expr(node.index)
         idx_type = self._infer_expr_type(node.index)
         if idx_type in ("float",):
             index = f"(({_INT})({index}))"
-        return f"{field}[{index}]"
+        return f"{array}[{index}]"
 
     def _expr_attribute(self, node: ir.IRAttribute) -> str:
         raise NotImplementedError(
@@ -779,7 +779,7 @@ class MSLCodeGen:
             if isinstance(children, list):
                 self._pre_scan_textures(children)
         for attr in ('value', 'condition', 'left', 'right', 'operand',
-                      'field', 'index', 'then_value', 'else_value'):
+                      'array', 'index', 'then_value', 'else_value'):
             child = getattr(node, attr, None)
             if isinstance(child, ir.IRNode):
                 self._pre_scan_textures_node(child)
@@ -803,11 +803,11 @@ class MSLCodeGen:
         u = self._expr(node.coords[0])
         v = self._expr(node.coords[1])
         w = self._expr(node.coords[2])
-        field = node.field_name
+        array = node.array_name
         mu = f"(({u}) * {W - 1}.0f + 0.5f) / {W}.0f"
         mv = f"(({v}) * {H - 1}.0f + 0.5f) / {H}.0f"
         mw = f"(({w}) * {D - 1}.0f + 0.5f) / {D}.0f"
-        return f"{field}.sample(__samp__, float3({mu}, {mv}, {mw})).x"
+        return f"{array}.sample(__samp__, float3({mu}, {mv}, {mw})).x"
 
     def _generate_texture_helpers(self) -> str:
         """Generate MSL helper functions for software texture sampling."""

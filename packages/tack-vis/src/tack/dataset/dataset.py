@@ -159,7 +159,7 @@ def _geometry_parts(data, group, kind):
 class DataSet:
     """A topology, a geometry, named fields and named sets. The geometry is a
     ``Field`` in ``H1`` or ``L2`` of 3-vectors -- or positions per point (a host
-    array, or any array of 3-vectors, such as a device field or a
+    array, or any array of 3-vectors, such as a device array or a
     ``CartesianProduct``), which become an ``H1`` field -- kept apart from
     ``fields`` as ``data.geometry``: algorithms move it with the cells, never as
     one of the fields they carry or select."""

@@ -9,7 +9,7 @@ the frontend.
 ```python
 # In kernel.py, when get_ir() is called:
 from tack.lang.ast_transform import transform_kernel
-ir_module = transform_kernel(ast_tree, vector_fields=..., texture_fields=...,
+ir_module = transform_kernel(ast_tree, vector_arrays=..., texture_arrays=...,
                              python_func=kernel.func, template_funcs=...)
 ```
 
@@ -44,7 +44,7 @@ The transformer tracks several pieces of state:
   body; a second one, or one inside a top-level `if` or `while`, raises
   `UnsupportedSyntaxError`, as does a kernel with none. While
   `_in_parallel_loop` is false, `_visit_body` passes each lowered statement
-  to `_check_outside_parallel_loop`, which rejects a field or array store,
+  to `_check_outside_parallel_loop`, which rejects an array or array store,
   atomic, barrier, block reduction or `print` (`_effect_name`) at the
   statement's source position. It runs on the lowered IR so effects from
   inlined device functions and template methods are seen; nested bodies
@@ -55,11 +55,11 @@ The transformer tracks several pieces of state:
   (name → component count). **`_matrix_vars`** holds `(rows, columns)` for
   the ones that are matrices. `_bind_vector` sets both and
   `_variable_value` reads them, so use those rather than the dicts.
-- **`_vector_fields`** — tracks which parameters are vector fields (for
-  scalarization), with **`_matrix_fields`** beside it. The runtime passes a
-  matrix field's entry as a `(rows, columns)` tuple; the constructor splits
-  it. `_field_shape(name)` gives an element's shape either way.
-- **`_texture_fields`** — tracks which parameters are textures (for `tex.sample()`).
+- **`_vector_arrays`** — tracks which parameters are vector arrays (for
+  scalarization), with **`_matrix_arrays`** beside it. The runtime passes a
+  matrix array's entry as a `(rows, columns)` tuple; the constructor splits
+  it. `_array_shape(name)` gives an element's shape either way.
+- **`_texture_arrays`** — tracks which parameters are textures (for `tex.sample()`).
 - **`_texture_origin`** — maps renamed texture names back to original parameter names
   (needed when textures pass through `@tack.func` inlining).
 - **`_shared_vars`** — names of `tack.shared()` and `tack.local_array()` variables
@@ -167,7 +167,7 @@ a plain `IRAssign`:
 
 1. **Shared/local allocation**: `smem = tack.shared(...)`, `arr = tack.local_array(...)`
 2. **Vector construction**: `v = tack.Vector([a, b, c])`
-3. **Multi-dimensional field store**: `field[i, j] = val` → linearized index
+3. **Multi-dimensional array store**: `array[i, j] = val` → linearized index
 4. **Tuple unpacking**: `a, b = func()` → multiple `IRAssign` nodes. A
    target that is a subscript or a component gets its value through a
    temporary and is stored at its own position among the targets
@@ -189,8 +189,8 @@ v__1 = a__1 + b__1
 v__2 = a__2 + b__2
 ```
 
-Field loads/stores are similarly scalarized: `v = field[i]` loads
-`field[i*3]`, `field[i*3+1]`, `field[i*3+2]`.
+Array loads/stores are similarly scalarized: `v = array[i]` loads
+`array[i*3]`, `array[i*3+1]`, `array[i*3+2]`.
 
 During lowering a vector or matrix is a `VectorValue`: a list of component
 expressions with a `shape`, `(n,)` or `(rows, columns)`. A source tuple
@@ -210,8 +210,8 @@ list of statements. Three rules follow from the representation:
 - **Assignment is per component, but the right side is one value.**
   `_settle_components` evaluates into a temporary any component that could
   observe an earlier component's write: a read of an earlier target
-  component for a variable, any field load for a field element, since
-  fields may share storage.
+  component for a variable, any array load for an array element, since
+  arrays may share storage.
 
 Operations that use each component several times (`@`, `determinant`,
 `inverse`, `outer_product`) capture their operands into temporaries first,

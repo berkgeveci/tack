@@ -1,6 +1,6 @@
 """Float literals are weakly typed: they take the precision of what they meet.
 
-Every float literal used to be f32, so `x * 0.1` on an f64 field multiplied
+Every float literal used to be f32, so `x * 0.1` on an f64 array multiplied
 by 0.10000000149011612, and even `tack.f64(0.1)` widened that f32 value.
 A literal expression now adopts the floating type of its partner, converting
 the exact Python value once. Pure f32 expressions are unchanged.
@@ -26,7 +26,7 @@ _VALUES = [0.1, float(np.float32(0.1)), 0.1000000001, 1.0, 7.0, 2.5, 1e-3, 123.4
 _COLUMNS = 10
 
 
-def _field(values, dtype):
+def _array(values, dtype):
     values = np.asarray(values, dtype=dtype.numpy_dtype)
     result = tack.empty(values.shape, dtype)
     tack.copyto(result, values)
@@ -64,7 +64,7 @@ def _expected(a, scalar):
 def test_f64_literals_take_f64_precision(f64_backend):
     a = np.asarray(_VALUES)
     out = tack.empty((len(a), _COLUMNS), tack.f64)
-    _literals(_field(a, tack.f64), out)
+    _literals(_array(a, tack.f64), out)
     # Each operation here is correctly rounded in f64, so equality is exact.
     np.testing.assert_array_equal(out.numpy(), _expected(a, np.float64))
 
@@ -72,7 +72,7 @@ def test_f64_literals_take_f64_precision(f64_backend):
 def test_f32_literals_are_unchanged(backend):
     a = np.asarray(_VALUES, dtype=np.float32)
     out = tack.empty((len(a), _COLUMNS))
-    _literals(_field(a, tack.f32), out)
+    _literals(_array(a, tack.f32), out)
     result, expected = out.numpy(), _expected(a, np.float32)
     # f32 division and square root need not be correctly rounded on a GPU.
     rounded = [3, 6]
@@ -92,23 +92,23 @@ def test_explicit_casts_convert_literals_once(f64_backend):
 
     a = np.asarray([1.0, 3.0, 0.5], dtype=np.float32)
     out = tack.empty((3, 4), tack.f64)
-    casts(_field(a, tack.f32), out)
+    casts(_array(a, tack.f32), out)
     wide = a.astype(np.float64)
     expected = np.column_stack([np.full(3, 0.1), wide * 0.1,
                                 np.full(3, np.float64(np.float32(0.1))), np.full(3, 1.0 / 3.0)])
     np.testing.assert_array_equal(out.numpy(), expected)
 
 
-def test_atomic_literal_takes_the_field_type(f64_backend):
+def test_atomic_literal_takes_the_array_type(f64_backend):
     if tack.f64 not in get_backend().supported_atomic_dtypes:
-        pytest.skip('Backend has f64 fields but no f64 atomics')
+        pytest.skip('Backend has f64 arrays but no f64 atomics')
 
     @tack.kernel
     def accumulate(total):
         for i in range(1):
             tack.atomic_add(total, 0, 0.1)
 
-    total = _field([1.0], tack.f64)
+    total = _array([1.0], tack.f64)
     accumulate(total)
     assert total.numpy()[0] == 1.0 + 0.1
 
@@ -129,7 +129,7 @@ def test_literals_without_a_floating_partner_keep_f32(f64_backend):
 
     a = np.asarray([1.0, 3.0, 0.5])
     out = tack.empty((3, 5), tack.f64)
-    partners(_field(a, tack.f64), out)
+    partners(_array(a, tack.f64), out)
     expected = np.column_stack([
         # A local assigned once, to literals, is the literal where it is read.
         a * 0.1,
@@ -152,10 +152,10 @@ def _long_literal(a, out):
 
 
 def _prepare(kernel, dtype):
-    """Annotated IR for `kernel` on one-row fields, without a device."""
+    """Annotated IR for `kernel` on one-row arrays, without a device."""
     tack.init(arch=tack.cpu)
     shape = (1,) if kernel is _long_literal else (1, _COLUMNS)
-    function, _ = _prepare_ir(kernel, (_field([1.0], dtype), tack.empty(shape, dtype)))
+    function, _ = _prepare_ir(kernel, (_array([1.0], dtype), tack.empty(shape, dtype)))
     return function
 
 
@@ -298,7 +298,7 @@ def test_locals_holding_literals_take_the_precision_they_meet(f64_backend):
     a = np.asarray([1.0, 3.0, 0.7])
     out64 = tack.empty((3, 9), tack.f64)
     out32 = tack.empty((3,))
-    _weak_locals(_field(a, tack.f64), out64, out32, 1)
+    _weak_locals(_array(a, tack.f64), out64, out32, 1)
     f32 = np.float32
     expected = np.column_stack([
         a * (1.0 / 3.0),
@@ -326,7 +326,7 @@ def _f32_locals(a, out):
 def test_f32_kernels_are_unchanged(backend):
     a = np.asarray([1.0, 3.0, 0.7], np.float32)
     out = tack.empty((3,))
-    _f32_locals(_field(a, tack.f32), out)
+    _f32_locals(_array(a, tack.f32), out)
     f32 = np.float32
     np.testing.assert_allclose(out.numpy(), a * f32(1.0 / 3.0) + a * f32(0.1), rtol=1e-6)
 
@@ -334,7 +334,7 @@ def test_f32_kernels_are_unchanged(backend):
 def test_which_locals_are_replaced():
     from tack.lang.ir_optimize import _literal
     tack.init(arch=tack.cpu)
-    text = tack.inspect(_weak_locals, _field([1.0], tack.f64), tack.empty((1, 9), tack.f64),
+    text = tack.inspect(_weak_locals, _array([1.0], tack.f64), tack.empty((1, 9), tack.f64),
                         tack.empty((1,)), 1, mode="ir")
     assigned = {line.split("=")[0].strip() for line in text.splitlines() if " = " in line
                 and "[" not in line.split("=")[0]}

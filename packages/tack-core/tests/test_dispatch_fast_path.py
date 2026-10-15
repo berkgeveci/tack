@@ -1,7 +1,7 @@
 """The dispatch fast path: a call whose signature was seen before reuses the
 variant that call resolved, without rebuilding the key. What the signature
 must still separate (integer widths, the float context, class constants,
-template structure), what a hit must still check (read-only fields,
+template structure), what a hit must still check (read-only arrays,
 disjointness), and what it must not hold on to."""
 import gc
 import weakref
@@ -102,7 +102,7 @@ def test_an_integer_past_i32_gets_its_own_variant(backend):
     assert _variants(_plus) == before + 2
 
 
-def test_the_float_context_follows_the_fields(f64_backend):
+def test_the_float_context_follows_the_arrays(f64_backend):
     x32 = tack.empty((4,)); x32.fill(1.0)
     o32 = tack.zeros((4,))
     x64 = tack.empty((4,), tack.f64); x64.fill(1.0)
@@ -134,7 +134,7 @@ def test_a_changed_class_constant_is_seen(backend):
 
 def test_nested_templates_expand_through_the_plan(backend):
     """Fresh objects every call, as the dataset filters make: a hit must read
-    the new objects' fields and scalars, not the first call's."""
+    the new objects' arrays and scalars, not the first call's."""
     out = tack.zeros((4,))
     a = tack.empty((4,)); a.fill(1.0)
     b = tack.empty((4,)); b.fill(10.0)
@@ -195,7 +195,7 @@ def test_the_map_is_bounded(backend):
     assert _variants(_plus) <= 2                           # the length is not compiled in
 
 
-def test_a_read_only_field_is_refused_on_a_hit():
+def test_a_read_only_array_is_refused_on_a_hit():
     tack.init(arch=tack.cpu)
     base = np.zeros(8, np.float32)
     x = tack.empty((8,)); x.fill(1.0)

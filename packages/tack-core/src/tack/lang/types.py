@@ -7,7 +7,7 @@ import numpy as np
 
 
 class ScalarType:
-    """Represents a scalar data type for fields and kernel arguments."""
+    """Represents a scalar data type for arrays and kernel arguments."""
 
     def __init__(self, name: str, numpy_dtype: np.dtype, llvm_name: str, bits: int):
         self.name = name

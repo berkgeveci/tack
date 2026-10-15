@@ -60,26 +60,26 @@ def test_over_limit_launch_is_refused_before_dispatch(workgroup_backend, monkeyp
 
 def test_over_limit_native_reduction(reduction_backend, monkeypatch):
     _limit_launches(monkeypatch, 1024)
-    field = tack.empty((1025,))
-    field.fill(1.0)
+    array = tack.empty((1025,))
+    array.fill(1.0)
     if get_backend().name == 'metal':
-        # Metal reduces a field its 32-bit kernel cannot index through NumPy.
-        assert field.sum() == 1025.0
+        # Metal reduces an array its 32-bit kernel cannot index through NumPy.
+        assert array.sum() == 1025.0
         return
-    with pytest.raises(ValueError, match=r"Field sum\(\): 1025 iterations exceed the 1024"):
-        field.sum()
+    with pytest.raises(ValueError, match=r"Array sum\(\): 1025 iterations exceed the 1024"):
+        array.sum()
 
 
 @pytest.mark.parametrize('n', [1, 255, 257, 100_003])
 def test_native_reduction_counts_every_element(reduction_backend, n):
-    field = tack.empty((n,))
-    field.fill(1.0)
-    assert field.sum() == float(n)
-    assert field.max() == 1.0
+    array = tack.empty((n,))
+    array.fill(1.0)
+    assert array.sum() == float(n)
+    assert array.max() == 1.0
 
 
 def test_launch_past_2_32_iterations_reaches_every_index(workgroup_backend):
-    # Only the last 256 of 2^32 + 256 iterations store, so the field stays
+    # Only the last 256 of 2^32 + 256 iterations store, so the array stays
     # tiny. A 32-bit index never reaches them, and they stayed zero.
     base = 2**32
     out = tack.empty((256,), tack.i32)

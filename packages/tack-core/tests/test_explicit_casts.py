@@ -163,11 +163,11 @@ def test_cuda_codegen_explicit_cast():
     from tack.lang.types import f32, f64, i64, u32
 
     p = ir.IRParam("x", f32)
-    p._is_field = True
+    p._is_array = True
     body = [
-        ir.IRAssign("a", ir.IRCast(ir.IRFieldLoad(ir.IRName("x"), ir.IRName("i")), f64)),
-        ir.IRAssign("b", ir.IRCast(ir.IRFieldLoad(ir.IRName("x"), ir.IRName("i")), i64)),
-        ir.IRAssign("c", ir.IRCast(ir.IRFieldLoad(ir.IRName("x"), ir.IRName("i")), u32)),
+        ir.IRAssign("a", ir.IRCast(ir.IRArrayLoad(ir.IRName("x"), ir.IRName("i")), f64)),
+        ir.IRAssign("b", ir.IRCast(ir.IRArrayLoad(ir.IRName("x"), ir.IRName("i")), i64)),
+        ir.IRAssign("c", ir.IRCast(ir.IRArrayLoad(ir.IRName("x"), ir.IRName("i")), u32)),
     ]
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), body)
     func = ir.IRFunction("test", [p], [pfor])
@@ -187,10 +187,10 @@ def test_msl_codegen_explicit_cast():
     from tack.lang.types import f32, i64, u32
 
     p = ir.IRParam("x", f32)
-    p._is_field = True
+    p._is_array = True
     body = [
-        ir.IRAssign("a", ir.IRCast(ir.IRFieldLoad(ir.IRName("x"), ir.IRName("i")), i64)),
-        ir.IRAssign("b", ir.IRCast(ir.IRFieldLoad(ir.IRName("x"), ir.IRName("i")), u32)),
+        ir.IRAssign("a", ir.IRCast(ir.IRArrayLoad(ir.IRName("x"), ir.IRName("i")), i64)),
+        ir.IRAssign("b", ir.IRCast(ir.IRArrayLoad(ir.IRName("x"), ir.IRName("i")), u32)),
     ]
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), body)
     func = ir.IRFunction("test", [p], [pfor])
@@ -209,9 +209,9 @@ def test_msl_codegen_rejects_f64():
     from tack.lang.types import f32, f64
 
     p = ir.IRParam("x", f32)
-    p._is_field = True
+    p._is_array = True
     body = [
-        ir.IRAssign("a", ir.IRCast(ir.IRFieldLoad(ir.IRName("x"), ir.IRName("i")), f64)),
+        ir.IRAssign("a", ir.IRCast(ir.IRArrayLoad(ir.IRName("x"), ir.IRName("i")), f64)),
     ]
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(10), body)
     func = ir.IRFunction("test", [p], [pfor])

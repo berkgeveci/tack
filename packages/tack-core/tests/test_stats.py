@@ -8,7 +8,7 @@ from tack.algorithms import absmax, count_nonzero, dot, histogram, norm, std, va
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
-# --- field.mean() ---
+# --- array.mean() ---
 
 def test_mean(backend):
     f = tack.empty((4,))
@@ -40,7 +40,7 @@ def test_std(backend):
 
 
 def test_var_constant(backend):
-    """Variance of constant field is 0."""
+    """Variance of constant array is 0."""
     f = tack.empty((100,))
     f.fill(5.0)
     assert var(f) == pytest.approx(0.0, abs=1e-4)
@@ -185,7 +185,7 @@ def test_analysis_workflow(backend):
 # --- an explicit n covers only the first n elements ---
 
 def test_var_and_std_of_a_prefix_use_the_prefix_mean(backend):
-    """The mean came from the whole field, so var([1,-2,3,-4], n=2) was 2.5."""
+    """The mean came from the whole array, so var([1,-2,3,-4], n=2) was 2.5."""
     f = tack.empty((4,))
     tack.copyto(f, np.array([1, -2, 3, -4], dtype=np.float32))
     assert var(f, n=2) == pytest.approx(np.var([1, -2]), rel=1e-6)
@@ -225,8 +225,8 @@ def test_histogram_of_no_elements_needs_a_range(backend):
     lambda a, b, n: histogram(a, range=(0.0, 1.0), n=n),
     lambda a, b, n: dot(a, b, n=n),
 ], ids=["var", "std", "norm1", "norm2", "absmax", "count_nonzero", "histogram", "dot"])
-def test_a_count_past_any_field_is_refused(backend, call):
-    """Every kernel reads [0, n); a count past a field used to read beyond it."""
+def test_a_count_past_any_array_is_refused(backend, call):
+    """Every kernel reads [0, n); a count past an array used to read beyond it."""
     a = tack.empty((8,))
     b = tack.empty((4,))
     a.fill(1.0)
@@ -237,7 +237,7 @@ def test_a_count_past_any_field_is_refused(backend, call):
         call(a, b, -1)
 
 
-def test_dot_refuses_a_shorter_second_field(backend):
+def test_dot_refuses_a_shorter_second_array(backend):
     a = tack.empty((8,))
     b = tack.empty((4,))
     a.fill(1.0)
@@ -247,8 +247,8 @@ def test_dot_refuses_a_shorter_second_field(backend):
     assert dot(a, b, n=4) == pytest.approx(4.0)
 
 
-def test_statistics_reduce_vector_fields_over_all_components(backend):
-    """A vector field is reduced over its components in storage order; the
+def test_statistics_reduce_vector_arrays_over_all_components(backend):
+    """A vector array is reduced over its components in storage order; the
     kernels used to receive vector elements and fail IR verification."""
     v = tack.empty((4,), tack.vec(2, tack.f32))
     tack.copyto(v, np.arange(8, dtype=np.float32).reshape(4, 2))

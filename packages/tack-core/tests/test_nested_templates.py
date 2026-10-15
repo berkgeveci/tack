@@ -1,7 +1,7 @@
 """Templates holding templates: ``self.base.get(k)`` through any depth.
 
 A device-class object may hold others as instance attributes. Their methods,
-fields, runtime scalars and constants resolve as the outer object's do, and
+arrays, runtime scalars and constants resolve as the outer object's do, and
 the whole tree is one specialization: values change without recompiling,
 a different nesting compiles anew.
 """
@@ -70,9 +70,9 @@ def _read_step(arr, out):
 
 def _ints(values):
     values = np.asarray(values, np.int32)
-    field = tack.empty(values.shape, tack.i32)
-    tack.copyto(field, values)
-    return field
+    array = tack.empty(values.shape, tack.i32)
+    tack.copyto(array, values)
+    return array
 
 
 def _run(arr, n):
@@ -101,7 +101,7 @@ def test_a_kernel_reads_through_the_tree(backend):
     np.testing.assert_array_equal(out.numpy(), [5, 10, 15])
 
 
-def test_nested_vector_fields(backend):
+def test_nested_vector_arrays(backend):
     @tack.kernel
     def norms(arr, out):
         for i in range(out.shape[0]):

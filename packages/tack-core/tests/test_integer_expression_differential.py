@@ -335,7 +335,7 @@ def _inputs(rng: random.Random, inputs, n: int, boundary: bool):
     return arrays
 
 
-def _field(values, t: str):
+def _array(values, t: str):
     data = np.asarray(values, dtype=NP[t])
     f = tack.empty(data.shape, getattr(tack, t))
     tack.copyto(f, data)
@@ -351,14 +351,14 @@ def _expected(stores, store_types, arrays, n):
         for col, (name, e, et), st in zip(outs, stores, store_types):
             v = evaluate(e, env)                     # already wrapped at the local's type
             env[name] = v
-            col[i] = wrap(v, st)                     # the store converts to the field type
+            col[i] = wrap(v, st)                     # the store converts to the array type
     return outs
 
 
 def _run_and_check(kernel, path, stores, store_types, inputs, arrays, n, label):
-    fields = [_field(arrays[v.name], v.t) for v in inputs]
-    outs = [_field(np.full(n + TAIL, SENTINEL[st], dtype=NP[st]), st) for st in store_types]
-    kernel(*fields, n, *outs)
+    args = [_array(arrays[v.name], v.t) for v in inputs]
+    outs = [_array(np.full(n + TAIL, SENTINEL[st], dtype=NP[st]), st) for st in store_types]
+    kernel(*args, n, *outs)
     expected = _expected(stores, store_types, arrays, n)
     for k, (out, exp, st) in enumerate(zip(outs, expected, store_types)):
         got = out.numpy()
@@ -507,8 +507,8 @@ def test_device_agrees_with_the_strict_oracle_on_controls(backend, tmp_path, nam
     n = 257
     xs = np.full(n, env["x"], dtype=NP[types[0]])
     ys = np.full(n, env["y"], dtype=NP[types[1]])
-    out = _field(np.full(n + TAIL, SENTINEL[t], dtype=NP[t]), t)
-    kernel(_field(xs, types[0]), _field(ys, types[1]), n, out)
+    out = _array(np.full(n + TAIL, SENTINEL[t], dtype=NP[t]), t)
+    kernel(_array(xs, types[0]), _array(ys, types[1]), n, out)
     got = out.numpy()
     assert np.all(got[:n] == strict_value), (
         f"{name} on {backend}: got {got[0]}, strict oracle {strict_value}; source {path}")

@@ -94,7 +94,7 @@ class Space:
         return self.mixin
 
     def cell_keys(self):
-        """For a space that ``varies``: an i32 field of each cell's key, by cell id."""
+        """For a space that ``varies``: an i32 array of each cell's key, by cell id."""
         return
 
     @property
@@ -271,7 +271,7 @@ class L2(Space):
         return views._L2Order0Field if order == 0 else views._L2Field
 
     def cell_keys(self):
-        """Each cell's order, an i32 field (for a space with an order per cell)."""
+        """Each cell's order, an i32 array (for a space with an order per cell)."""
         if not self.varies:
             return None
         if "_orders" not in self.__dict__:

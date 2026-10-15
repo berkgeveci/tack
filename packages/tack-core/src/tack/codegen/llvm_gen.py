@@ -1,9 +1,9 @@
 """Tack LLVM IR code generation — transforms Tack IR to LLVM IR via llvmlite.
 
 Generates a kernel function with signature:
-    void kernel(ptr field0, ptr field1, ..., i64 scalar0, ..., i64 n)
+    void kernel(ptr array0, ptr array1, ..., i64 scalar0, ..., i64 n)
 
-Fields are passed as typed pointers. The outermost parallel for-loop becomes
+Arrays are passed as typed pointers. The outermost parallel for-loop becomes
 a simple sequential loop in the LLVM IR — the CPU backend splits the range
 across threads and calls the kernel with different (start, end) pairs.
 """
@@ -47,7 +47,7 @@ class LLVMCodeGen:
     """Generates LLVM IR from Tack IR for a single kernel function.
 
     The generated function takes:
-      - One pointer per Field parameter (element type based on field dtype)
+      - One pointer per Array parameter (element type based on array dtype)
       - One scalar per scalar parameter
       - Two i64 values: loop_start, loop_end (for the parallel for range)
 
@@ -64,10 +64,10 @@ class LLVMCodeGen:
 
         # Maps Tack parameter names to LLVM values
         self._params: dict[str, llvm_ir.Value] = {}
-        # Maps Tack parameter names to their types (for knowing element type of fields)
+        # Maps Tack parameter names to their types (for knowing element type of arrays)
         self._param_types: dict[str, ScalarType] = {}
-        # Which params are fields (pointers) vs scalars
-        self._field_params: set[str] = set()
+        # Which params are arrays (pointers) vs scalars
+        self._array_params: set[str] = set()
         # Local variable storage (name -> alloca)
         self._locals: dict[str, llvm_ir.Value] = {}
         # Track LLVM values that carry unsigned semantics (for correct sitofp vs uitofp)
@@ -85,7 +85,7 @@ class LLVMCodeGen:
             func, supports_workgroups=False, backend_label='CPU',
         )
 
-        # Classify parameters: fields become pointers, scalars stay scalar
+        # Classify parameters: arrays become pointers, scalars stay scalar
         llvm_param_types = []
         param_names = []
         for param in func.params:
@@ -95,16 +95,16 @@ class LLVMCodeGen:
                                 "Run type inference first.")
             self._param_types[param.name] = tack_type
             elem_llvm = _llvm_type(tack_type)
-            if hasattr(param, '_is_field') and param._is_field:
+            if hasattr(param, '_is_array') and param._is_array:
                 llvm_param_types.append(elem_llvm.as_pointer())
-                self._field_params.add(param.name)
-            elif hasattr(param, '_is_field') and not param._is_field:
+                self._array_params.add(param.name)
+            elif hasattr(param, '_is_array') and not param._is_array:
                 # Scalar parameter — passed by value
                 llvm_param_types.append(elem_llvm)
             else:
-                # Default: treat as pointer (field) for backwards compatibility
+                # Default: treat as pointer (array) for backwards compatibility
                 llvm_param_types.append(elem_llvm.as_pointer())
-                self._field_params.add(param.name)
+                self._array_params.add(param.name)
             param_names.append(param.name)
 
         # A multi-dimensional parallel loop's extents (i64 each), then
@@ -120,16 +120,16 @@ class LLVMCodeGen:
         fn_type = llvm_ir.FunctionType(llvm_ir.VoidType(), llvm_param_types)
         llvm_func = llvm_ir.Function(self.module, fn_type, name=kernel_entry_name(func.name))
 
-        # Field arguments may refer to overlapping storage, including
+        # Array arguments may refer to overlapping storage, including
         # distinct reshaped/imported views, so noalias is never promised
-        # unconditionally. The dispatcher sets `disjoint_fields` only on a
-        # variant it compiles for calls whose written fields it has checked
-        # share no storage with any other field (`fields_disjoint`).
-        disjoint = getattr(func, 'disjoint_fields', False)
+        # unconditionally. The dispatcher sets `disjoint_arrays` only on a
+        # variant it compiles for calls whose written arrays it has checked
+        # share no storage with any other array (`arrays_disjoint`).
+        disjoint = getattr(func, 'disjoint_arrays', False)
         for arg, name in zip(llvm_func.args, param_names):
             arg.name = name
             self._params[name] = arg
-            if disjoint and name in self._field_params:
+            if disjoint and name in self._array_params:
                 arg.add_attribute("noalias")
 
         entry = llvm_func.append_basic_block("entry")
@@ -163,8 +163,8 @@ class LLVMCodeGen:
             self._emit_while(node)
         elif isinstance(node, ir.IRIf):
             self._emit_if(node)
-        elif isinstance(node, ir.IRFieldStore):
-            self._emit_field_store(node)
+        elif isinstance(node, ir.IRArrayStore):
+            self._emit_array_store(node)
         elif isinstance(node, ir.IRAssign):
             self._emit_assign(node)
         elif isinstance(node, ir.IRReturn):
@@ -215,8 +215,8 @@ class LLVMCodeGen:
             return self._emit_compare(node)
         if isinstance(node, ir.IRBoolOp):
             return self._emit_boolop(node)
-        if isinstance(node, ir.IRFieldLoad):
-            return self._emit_field_load(node)
+        if isinstance(node, ir.IRArrayLoad):
+            return self._emit_array_load(node)
         if isinstance(node, ir.IRAttribute):
             return self._emit_attribute(node)
         if isinstance(node, ir.IRCall):
@@ -561,9 +561,9 @@ class LLVMCodeGen:
 
     # --- Assignments ---
 
-    def _emit_field_store(self, node: ir.IRFieldStore):
-        """Emit: field[index] = value."""
-        base_ptr = self._emit_expr(node.field)
+    def _emit_array_store(self, node: ir.IRArrayStore):
+        """Emit: array[index] = value."""
+        base_ptr = self._emit_expr(node.array)
         index = self._to_i64(self._emit_expr(node.index))
         value = self._emit_expr(node.value)
 
@@ -637,8 +637,8 @@ class LLVMCodeGen:
         self.builder.ret_void()
 
     def _emit_atomic_op(self, node: ir.IRAtomicOp) -> llvm_ir.Value:
-        """Emit an atomic operation on a field element; the value is the old element."""
-        base_ptr = self._emit_expr(node.field)
+        """Emit an atomic operation on an array element; the value is the old element."""
+        base_ptr = self._emit_expr(node.array)
         index = self._to_i64(self._emit_expr(node.index))
         value = self._emit_expr(node.value)
 
@@ -698,14 +698,14 @@ class LLVMCodeGen:
             # Bitcast to pointer for array access
             ptr = self.builder.bitcast(alloca, elem_type.as_pointer())
             self._locals[node.name] = ptr
-            self._field_params.add(node.name)  # treat as pointer for load/store
+            self._array_params.add(node.name)  # treat as pointer for load/store
         else:
             # Dynamic size — use a fixed upper bound
             arr_type = llvm_ir.ArrayType(elem_type, 256)
             alloca = self._create_entry_alloca(arr_type, node.name)
             ptr = self.builder.bitcast(alloca, elem_type.as_pointer())
             self._locals[node.name] = ptr
-            self._field_params.add(node.name)
+            self._array_params.add(node.name)
 
     _printf_count = 0
 
@@ -1113,8 +1113,8 @@ class LLVMCodeGen:
             joined.add_incoming(value, block)
         return self.builder.zext(joined, llvm_ir.IntType(32), name='boolean.result')
 
-    def _emit_field_load(self, node: ir.IRFieldLoad) -> llvm_ir.Value:
-        base_ptr = self._emit_expr(node.field)
+    def _emit_array_load(self, node: ir.IRArrayLoad) -> llvm_ir.Value:
+        base_ptr = self._emit_expr(node.array)
         index = self._to_i64(self._emit_expr(node.index))
         elem_ptr = self.builder.gep(base_ptr, [index], inbounds=True, name="load.ptr")
         val = self.builder.load(elem_ptr, name="load.val", align=1)
@@ -1130,8 +1130,8 @@ class LLVMCodeGen:
         i64_type = llvm_ir.IntType(64)
         W, H, D = node.shape
 
-        # Get field pointer
-        base_ptr = self._params[node.field_name]
+        # Get array pointer
+        base_ptr = self._params[node.array_name]
 
         # Evaluate normalized [0,1] coordinates
         u = self._to_float(self._emit_expr(node.coords[0]))

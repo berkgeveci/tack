@@ -1,9 +1,9 @@
-"""A texture samples a snapshot of its field, refreshed by ``update()``.
+"""A texture samples a snapshot of its array, refreshed by ``update()``.
 
-The hardware paths used to copy the field into a texture image on first
+The hardware paths used to copy the array into a texture image on first
 dispatch and cache it by device address, forever: CUDA kept sampling the
-first data after the field was refilled, while CPU, which interpolates in
-software, read the field live. Every backend now copies at creation and
+first data after the array was refilled, while CPU, which interpolates in
+software, read the array live. Every backend now copies at creation and
 again on ``tex.update()``, and nothing in between reaches the texture.
 """
 
@@ -69,7 +69,7 @@ def test_writes_reach_texture_only_through_update(backend):
     assert _sample(tex) == pytest.approx(3.0)
 
 
-def test_textures_over_one_field_are_separate_snapshots(backend):
+def test_textures_over_one_array_are_separate_snapshots(backend):
     """Two textures over the same storage were one cache entry on GPU."""
     data = _constant(1.0)
     first = tack.texture3d(data, shape=(W, H, D))
@@ -82,10 +82,10 @@ def test_textures_over_one_field_are_separate_snapshots(backend):
 
 
 def test_texture_is_not_served_for_reused_memory(backend):
-    """A new field at a freed field's address gets its own texture.
+    """A new array at a freed array's address gets its own texture.
 
     Allocators hand a just-freed block of the same size straight back, so
-    the second field usually sits where the first one did. Keyed by
+    the second array usually sits where the first one did. Keyed by
     address, the compiled kernel served the first texture's image again.
     """
     data = _constant(1.0)
@@ -127,7 +127,7 @@ def test_texture_passed_as_template_parameter(backend):
     assert out.numpy()[0] == pytest.approx(4.0)
 
 
-def test_f64_field_is_rejected():
+def test_f64_array_is_rejected():
     tack.init(arch=tack.cpu)
     data = tack.empty((N,), tack.f64)
     with pytest.raises(ValueError, match='f32'):
@@ -141,7 +141,7 @@ def test_only_linear_interpolation_is_accepted(interp):
         tack.texture3d(_constant(1.0), shape=(W, H, D), interp=interp)
 
 
-def test_shape_must_cover_the_field():
+def test_shape_must_cover_the_array():
     tack.init(arch=tack.cpu)
     with pytest.raises(ValueError, match='64 elements'):
         tack.texture3d(_constant(1.0), shape=(W, H, D + 1))

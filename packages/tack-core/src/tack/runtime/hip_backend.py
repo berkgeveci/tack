@@ -11,7 +11,7 @@ Arrays are device-resident: ``tack.empty()`` allocates a device buffer via
 
 No per-dispatch copies — data stays on the GPU between kernel calls. Launches,
 fills and copies go through one stream per device, in order, and return once
-queued; the host waits where it reads a field or calls ``tack.sync()``.
+queued; the host waits where it reads an array or calls ``tack.sync()``.
 
 Every wait is on an event recorded after the queued work, through ctypes
 (`_StreamMarker`, `_runtime`), never ``hipStreamSynchronize``: hip-python's
@@ -28,9 +28,9 @@ import threading
 
 import numpy as np
 
-from tack.codegen.reductions import field_reduction_source
+from tack.codegen.reductions import array_reduction_source
 from tack.lang import ir
-from tack.lang.field import DeviceBuffer
+from tack.lang.array import DeviceBuffer
 from tack.lang.parallel_dims import launch_geometry
 from tack.lang.types import ScalarType, f32, f64, i8, i16, i32, i64, u8, u16, u32, u64
 from tack.lang.workgroup_participation import WORKGROUP_SIZE
@@ -53,9 +53,9 @@ from hip import hip, hiprtc
 from tack.codegen.hip_gen import generate_hip_source
 from tack.codegen.identifiers import kernel_entry_name
 
-_REDUCE_HIP_SUM = field_reduction_source('hip', 'sum')
-_REDUCE_HIP_MIN = field_reduction_source('hip', 'min')
-_REDUCE_HIP_MAX = field_reduction_source('hip', 'max')
+_REDUCE_HIP_SUM = array_reduction_source('hip', 'sum')
+_REDUCE_HIP_MIN = array_reduction_source('hip', 'min')
+_REDUCE_HIP_MAX = array_reduction_source('hip', 'max')
 
 _NUMPY_DTYPE = {
     f32: np.float32,
@@ -199,7 +199,7 @@ class _Queue:
     The stream is a blocking one, so it stays ordered with the null stream
     that synchronous HIP calls (and other libraries) use. Memory comes from
     the device's pool in stream order (``hipMallocAsync``/``hipFreeAsync``),
-    so a field Python drops while a queued launch still uses it is freed
+    so an array Python drops while a queued launch still uses it is freed
     after that launch; a device without pools allocates with ``hipMalloc``,
     whose ``hipFree`` waits for the device.
     """
@@ -253,7 +253,7 @@ class HIPBuffer(DeviceBuffer):
     Data lives on the GPU. Everything that touches it goes through its
     device's stream, in order with the launches: ``from_numpy`` and ``fill``
     are queued and return at once, ``to_numpy`` and ``read_range`` are
-    queued and waited for. The memory is stream-ordered too, so a field
+    queued and waited for. The memory is stream-ordered too, so an array
     Python drops while a queued launch still uses it is freed after that
     launch.
 
@@ -275,7 +275,7 @@ class HIPBuffer(DeviceBuffer):
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
         self._queue = queue = queue or _queue()
         # hip-python returns None for a zero-byte request, which a launch
-        # cannot pass as a pointer; an empty field gets one byte it never
+        # cannot pass as a pointer; an empty array gets one byte it never
         # reads, as on CUDA and Level Zero.
         if queue.pooled:
             err, self._device_ptr = hip.hipMallocAsync(max(self._nbytes, 1), queue.stream)
@@ -338,8 +338,8 @@ class HIPBuffer(DeviceBuffer):
     def read_range(self, start: int, count: int) -> np.ndarray:
         """Copy elements ``[start, start + count)`` to the host.
 
-        One copy of just those bytes, so ``field[i]`` on the host moves one
-        element rather than the whole field, queued after the launches
+        One copy of just those bytes, so ``array[i]`` on the host moves one
+        element rather than the whole array, queued after the launches
         before it and waited for. The range is checked here because a
         device copy past the allocation is not caught by NumPy.
         """
@@ -450,7 +450,7 @@ def _compile_code_object(hip_source: str, func_name: str) -> bytes:
     return bytes(code)
 
 
-def _load_kernel(code: bytes, kernel_name: str, param_types, param_is_field,
+def _load_kernel(code: bytes, kernel_name: str, param_types, param_is_array,
                  param_is_texture) -> "CompiledHIPKernel":
     """A kernel from its code object, loaded on the current device."""
     err, module = hip.hipModuleLoadData(code)
@@ -458,7 +458,7 @@ def _load_kernel(code: bytes, kernel_name: str, param_types, param_is_field,
     err, func = hip.hipModuleGetFunction(module, kernel_name.encode())
     _check_hip(err)
     compiled = CompiledHIPKernel(module, func, kernel_name, param_types,
-                                 param_is_field, param_is_texture)
+                                 param_is_array, param_is_texture)
     compiled.code_object = code
     return compiled
 
@@ -475,7 +475,7 @@ def _set_handle(address, handle):
 class HIPTextureImage:
     """A HIP 3D array and the texture object that samples it.
 
-    Owned by one `Texture3D`, which uploads its field's data at creation and
+    Owned by one `Texture3D`, which uploads its array's data at creation and
     on ``update()``. Nothing else keeps a reference, so the array and the
     texture object are destroyed with the texture: no later texture can be
     served one that was made from someone else's memory.
@@ -524,8 +524,8 @@ class HIPTextureImage:
         """
         return self._tex_obj.as_c_void_p().value
 
-    def upload(self, field):
-        """Copy a field's device buffer into the array.
+    def upload(self, array):
+        """Copy an array's device buffer into the array.
 
         The texture object reads the array, so it sees the new contents
         without being recreated.
@@ -537,14 +537,14 @@ class HIPTextureImage:
         # just before dstPos.
         copy_params = hip.hipMemcpy3DParms()
         src = copy_params.srcPtr
-        src.ptr = field._buffer.device_ptr
+        src.ptr = array._buffer.device_ptr
         src.pitch, src.xsize, src.ysize = W * 4, W, H
         _set_handle(copy_params.dstPos.as_c_void_p().value
                     - ctypes.sizeof(ctypes.c_void_p), self._array)
         ext = copy_params.extent
         ext.width, ext.height, ext.depth = W, H, D
         copy_params.kind = hip.hipMemcpyKind.hipMemcpyDeviceToDevice
-        _check_hip(hip.hipMemcpy3DAsync(copy_params, field._buffer._stream))
+        _check_hip(hip.hipMemcpy3DAsync(copy_params, array._buffer._stream))
 
     def __del__(self):
         try:
@@ -559,13 +559,13 @@ class HIPTextureImage:
 class CompiledHIPKernel:
     """A compiled HIP kernel ready for dispatch."""
 
-    def __init__(self, module, func, func_name, param_types, param_is_field,
+    def __init__(self, module, func, func_name, param_types, param_is_array,
                  param_is_texture=None):
         self._module = module
         self._func = func
         self._func_name = func_name
         self._param_types = param_types
-        self._param_is_field = param_is_field
+        self._param_is_array = param_is_array
         self._param_is_texture = param_is_texture or [False] * len(param_types)
         self.code_object = None     # what hipRTC made, kept for the disk cache
 
@@ -580,13 +580,13 @@ class CompiledHIPKernel:
         n_val = ctypes.c_longlong(loop_end)
 
         arg_values = []
-        for arg, ptype, is_field, is_tex in zip(
-                kernel_args, self._param_types, self._param_is_field,
+        for arg, ptype, is_array, is_tex in zip(
+                kernel_args, self._param_types, self._param_is_array,
                 self._param_is_texture):
             if is_tex:
                 # A HIPTextureImage; hipTextureObject_t is unsigned long long
                 arg_values.append(ctypes.c_ulonglong(arg.handle))
-            elif is_field:
+            elif is_array:
                 arg_values.append(ctypes.c_void_p(int(arg._buffer.device_ptr)))
             else:
                 ct = _HIP_CTYPES_MAP[ptype]
@@ -616,7 +616,7 @@ class CompiledHIPKernel:
 
 
 class HIPBackend(Backend):
-    """HIP GPU backend — device-resident fields, hipRTC compilation."""
+    """HIP GPU backend — device-resident arrays, hipRTC compilation."""
 
     name = "hip"
     display_name = "HIP"
@@ -752,7 +752,7 @@ class HIPBackend(Backend):
         software instead. That changes the generated code, so it is decided
         here — before the variant key is built — rather than at codegen time.
         """
-        from tack.lang.field import Texture3D
+        from tack.lang.array import Texture3D
         for param, arg in zip(ir_func.params, effective_args):
             if isinstance(arg, Texture3D):
                 if self.texture_in_hardware(arg.shape_3d):
@@ -768,7 +768,7 @@ class HIPBackend(Backend):
     def create_texture_image(self, shape_3d) -> HIPTextureImage:
         return HIPTextureImage(shape_3d)
 
-    def allocate_field(self, dtype: ScalarType, shape: tuple[int, ...],
+    def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> HIPBuffer:
         return HIPBuffer(dtype.numpy_dtype, shape, getattr(self, "_queue", None))
 
@@ -841,18 +841,18 @@ class HIPBackend(Backend):
         The IR passes and device compilation run only when this argument
         shape/type combination is new; see `resolve_variant`.
         """
-        from tack.lang.field import Texture3D
+        from tack.lang.array import Texture3D
 
         variant, effective_args = resolve_variant(
             self, kernel, args, kwargs,
             build=self._build_variant,
             store_texture_shapes=self._store_texture_shapes,
         )
-        compiled, pack_info, pack_fields = variant.payload
+        compiled, pack_info, pack_arrays = variant.payload
 
         # Loop range comes from the pre-packing IR: packing rewrites the
         # parameter list, and the range expression names the original args.
-        kernel_args = [a.field if isinstance(a, Texture3D) else a
+        kernel_args = [a.array if isinstance(a, Texture3D) else a
                        for a in effective_args]
         loop_end, extents = _get_launch(variant.ir, kernel_args)
         if loop_end <= 0:
@@ -860,23 +860,23 @@ class HIPBackend(Backend):
             return
         check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
-        # Textures bind their own snapshot, not the field they came from.
+        # Textures bind their own snapshot, not the array they came from.
         kernel_args = bind_textures(effective_args)
 
-        # Replace scalar args with the packed field buffers. The buffers
+        # Replace scalar args with the packed array buffers. The buffers
         # belong to the variant, so writing them and the launch that reads
         # them happen under its lock (see KernelVariant.dispatch_lock).
         with variant.dispatch_lock:
             if pack_info:
                 from tack.lang.ir_pack_scalars import split_args
-                from tack.runtime.kernel_utils import _update_pack_fields
-                _update_pack_fields(pack_fields, pack_info, effective_args)
+                from tack.runtime.kernel_utils import _update_pack_arrays
+                _update_pack_arrays(pack_arrays, pack_info, effective_args)
                 kept_args = split_args(effective_args, pack_info)
-                kernel_args = bind_textures(kept_args) + pack_fields
+                kernel_args = bind_textures(kept_args) + pack_arrays
 
             compiled(kernel_args, loop_end, extents, self._launch_limits, self._stream)
         # Memory that can be read with no Tack call between -- a wrapped
-        # pointer, an exported field -- and a texture, whose image could be
+        # pointer, an exported array -- and a texture, whose image could be
         # destroyed before a queued launch has read it: complete now.
         if any(getattr(getattr(a, '_buffer', None), '_shared', False)
                or isinstance(a, HIPTextureImage) for a in kernel_args):
@@ -892,7 +892,7 @@ class HIPBackend(Backend):
         from tack.lang.ir_traversal import clone_ir
         from tack.lang.ir_type_annotate import annotate_types
         from tack.lang.ir_verify import verify_ir
-        from tack.runtime.kernel_utils import _create_pack_fields
+        from tack.runtime.kernel_utils import _create_pack_arrays
 
         packed = clone_ir(ir_func)
         _, pack_info = pack_scalars(packed, effective_args)
@@ -900,9 +900,9 @@ class HIPBackend(Backend):
         annotate_types(packed)
         verify_ir(packed, 'typed')
         compiled = self._compile_kernel(packed)
-        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+        pack_arrays = (_create_pack_arrays(pack_info, effective_args, self)
                        if pack_info else None)
-        return compiled, pack_info, pack_fields
+        return compiled, pack_info, pack_arrays
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledHIPKernel:
         """Compile Tack IR → HIP C → code object → hipFunction."""
@@ -910,9 +910,9 @@ class HIPBackend(Backend):
         hip_source = generate_hip_source(ir_func)
         code = _compile_code_object(hip_source, kernel_name)
         param_types = [p.type_annotation for p in ir_func.params]
-        param_is_field = [getattr(p, '_is_field', True) for p in ir_func.params]
+        param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
         param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
-        return _load_kernel(code, kernel_name, param_types, param_is_field, param_is_texture)
+        return _load_kernel(code, kernel_name, param_types, param_is_array, param_is_texture)
 
     # ── The disk cache: code objects, loaded as they are ──────────────
     # A code object is machine code for one architecture and its feature
@@ -948,31 +948,31 @@ class HIPBackend(Backend):
             raise ValueError("no code object was kept for this kernel")
         return {"code_object": compiled.code_object, "name": compiled._func_name,
                 "param_types": compiled._param_types,
-                "param_is_field": compiled._param_is_field,
+                "param_is_array": compiled._param_is_array,
                 "param_is_texture": compiled._param_is_texture,
                 "pack_info": pack_info}
 
     def load_variant(self, ir_func, artifact, effective_args):
-        from tack.runtime.kernel_utils import _create_pack_fields
+        from tack.runtime.kernel_utils import _create_pack_arrays
         compiled = _load_kernel(artifact["code_object"], artifact["name"],
-                                artifact["param_types"], artifact["param_is_field"],
+                                artifact["param_types"], artifact["param_is_array"],
                                 artifact["param_is_texture"])
         pack_info = artifact["pack_info"]
         # The scalar pack buffers are device memory of this process, made
         # from this call's scalars as _build_variant makes them.
-        pack_fields = (_create_pack_fields(pack_info, effective_args, self)
+        pack_arrays = (_create_pack_arrays(pack_info, effective_args, self)
                        if pack_info else None)
-        return compiled, pack_info, pack_fields
+        return compiled, pack_info, pack_arrays
 
-    def reduce_field(self, field, op: str) -> float:
+    def reduce_array(self, array, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
         from tack.lang.types import f32
-        if field.size == 0:
+        if array.size == 0:
             return empty_reduction(op)
-        if field.dtype is not f32:
-            return reduce_numpy(field.numpy(), op)
-        n = int(np.prod(field.shape))
-        check_launch_size(f"Field {op}()", n, self._max_launch, self.label)
+        if array.dtype is not f32:
+            return reduce_numpy(array.numpy(), op)
+        n = int(np.prod(array.shape))
+        check_launch_size(f"Array {op}()", n, self._max_launch, self.label)
 
         if not hasattr(self, '_reduce_cache'):
             self._reduce_cache = {}
@@ -988,7 +988,7 @@ class HIPBackend(Backend):
         grid_dim = (n + block_dim - 1) // block_dim
 
         # Dispatch
-        in_ptr = ctypes.c_void_p(int(field._buffer.device_ptr))
+        in_ptr = ctypes.c_void_p(int(array._buffer.device_ptr))
         out_ptr = ctypes.c_void_p(int(out_buf.device_ptr))
         n_val = ctypes.c_longlong(n)
         args = (ctypes.c_void_p * 3)()

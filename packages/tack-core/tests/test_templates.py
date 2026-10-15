@@ -10,7 +10,7 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 # Build list of available backends
 
 
-# --- Structured cell set (scalar attrs only, no field attrs) ---
+# --- Structured cell set (scalar attrs only, no array attrs) ---
 
 @tack.device_class
 class CellSetStructured:
@@ -25,7 +25,7 @@ class CellSetStructured:
         return cy * self.nx + cx
 
 
-# --- Explicit cell set (field attrs) ---
+# --- Explicit cell set (array attrs) ---
 
 @tack.device_class
 class CellSetExplicit:
@@ -61,7 +61,7 @@ def test_structured_template(backend):
 
 
 def test_explicit_template(backend):
-    """Template with field attrs (connectivity becomes extra parameter)."""
+    """Template with array attrs (connectivity becomes extra parameter)."""
     # Build connectivity for a 4x3 structured grid
     nx, ny = 4, 3
     num_cells = (nx - 1) * (ny - 1)
@@ -126,11 +126,11 @@ def test_different_scalar_values(backend):
     np.testing.assert_array_equal(output_b.numpy(), expected_b)
 
 
-# --- Vector field attributes ---------------------------------------------------
+# --- Vector array attributes ---------------------------------------------------
 
 @tack.device_class
 class _Flow:
-    """A template whose state includes a vector field its methods read."""
+    """A template whose state includes a vector array its methods read."""
 
     def __init__(self, n):
         self.rho = tack.empty((n, n))
@@ -158,11 +158,11 @@ def _momentum_through_method(flow: tack.template(), out, n):
         out[i, j] = acc
 
 
-def test_template_vector_field_attribute_in_kernel_and_method(backend):
-    """A template's vector field attribute loads whole vectors, whether the
+def test_template_vector_array_attribute_in_kernel_and_method(backend):
+    """A template's vector array attribute loads whole vectors, whether the
     kernel reads it directly or a method does. The runtime detected vector
     widths only for direct kernel arguments, so the synthetic parameter the
-    attribute became was a scalar field and the method's load failed IR
+    attribute became was a scalar array and the method's load failed IR
     verification."""
     n = 4
     flow = _Flow(n)
@@ -371,7 +371,7 @@ class _WithKernelsSub(_WithKernels):
 
 def test_kernel_defined_as_a_method(backend):
     """`model.apply(...)` passes the model as the kernel's first argument,
-    a template like any other: its fields, scalars, constants and methods
+    a template like any other: its arrays, scalars, constants and methods
     are reached through `self`. It failed with "expects 1 arguments, got
     0", so every Taichi class with `@ti.kernel` methods had to be taken
     apart."""

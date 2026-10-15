@@ -102,21 +102,21 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 | HIP | `hip_gen.py` → HIP C source (extends CUDA) | hipRTC → code object | hipModuleLaunchKernel |
 | Level Zero | `opencl_gen.py` → OpenCL C source (extends CUDA) | libocloc → SPIR-V | zeCommandListAppendLaunchKernel |
 
-### Key abstraction: Field with DeviceBuffer
+### Key abstraction: Array with DeviceBuffer
 
-`Field` (in `lang/field.py`) holds a `DeviceBuffer` — the backend-specific storage:
+`Array` (in `lang/array.py`) holds a `DeviceBuffer` — the backend-specific storage:
 - **CPU**: `NumpyBuffer` wraps a numpy array. CPU backend accesses via ctypes pointers.
 - **Metal**: `MetalBuffer` — Metal shared buffer (zero-copy unified memory on Apple Silicon). The numpy array view points directly into Metal buffer memory.
 - **CUDA**: `CUDABuffer` holds a stream-ordered device pointer (`cuMemAllocAsync` on the context's stream, freed with `cuMemFreeAsync`, so a temporary dropped while a queued launch still uses it is freed after that launch, and the driver's pool, with its release threshold raised, hands memory back out without a round trip). Every launch, fill and copy goes through that one stream (`_ContextToken.queue()`) in order and returns once queued; `to_numpy`, `read_range` and reductions wait for the stream (`_drain`) and then copy: a copy to pageable host memory waits inside the driver with the context held, so no other thread could launch meanwhile (one launch per 910 ms wait on an H100, driver 595), while a thread in `cuStreamSynchronize` holds nothing a launch needs (511 launches at 43 µs); `from_numpy` and `fill` queue and return; `tack.sync()` is a stream synchronize, and a launch's error surfaces at the next wait. A launch's scalar upload is a pageable `cuMemcpyHtoDAsync`, staged by the driver; behind a long kernel the staging ring fills after about 510 queued launches and the next upload waits for the kernel. A buffer handed outside Tack (`wrap_ptr`, DLPack export, `share()`) completes every launch that uses it before the launch returns, and so does a texture launch, since its image could be destroyed before a queued launch read it. See `test_cuda_async.py`.
 - **HIP**: `HIPBuffer` holds a stream-ordered device pointer, as CUDA's does: one blocking stream per device (`_Queue`, `_queue()` in `hip_backend.py`; ordered with the null stream), memory from `hipMallocAsync` on it and freed with `hipFreeAsync`, the default pool's release threshold raised. Launches, fills and copies are queued on it and return; `to_numpy`, `read_range`, reductions and `tack.sync()` wait on an event recorded after the queued work (`_StreamMarker`, `_wait_stream`), through ctypes on the runtime library (`_runtime`), never `hipStreamSynchronize`: hip-python's wrappers hold the GIL while the runtime waits (another thread ran 6 times during a 357 ms wait, 353 through ctypes), and ROCm 7.1's stream synchronize holds the stream, so another thread's launch on it took the whole wait (350 ms; 60 µs waiting on an event). A copy to pageable host memory waits inside `hipMemcpyAsync` the same way, so a read waits on an event first (about 8 µs idle). A launch's error surfaces at the next wait. A host write from pageable memory may be queued: HIP stages a small one before returning and waits for the stream before a large one (16 KB staged, 4 MB waited, ROCm 7.1). `wrap_ptr`, DLPack export (`share()`) and texture launches complete before returning. A device without memory pools falls back to `hipMalloc`/`hipFree`. See `test_hip_async.py`.
-- **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Every launch, fill and copy is appended to the backend's one asynchronous immediate command list (`_queue`) and returns once queued, each followed by a barrier (`_ordered`), which keeps program order: Intel's in-order lists (`ZE_COMMAND_QUEUE_FLAG_IN_ORDER`) cost about 100 µs of device time per kernel on driver 25.05, a barrier about 5. `to_numpy`, `read_range` and reductions queue a copy and a marker under `_launch_lock` and wait on the marker's event outside it (`_ListMarker`), so other threads launch meanwhile; `tack.sync()` is `zeCommandListHostSynchronize`; `from_numpy` copies the array privately and queues; copies to the device up to 16 MiB and from it up to 64 KiB go through pooled USM host memory (`_HostStaging`, guarded by `_launch_lock`), since from pageable memory Intel's driver does not return from appending one (to the device up to 4 MiB, from it up to 1 KiB, driver 25.05) until the queue drains, which made a launch's scalar upload wait for the kernels before it; host memory a queued copy or fill reads is held (`_hold`) until the next wait (a marker releases the holds before it), which comes early past 1024 objects or 256 MiB. Fields are freed with `zeMemFreeExt(DEFER_FREE)`, after the work queued so far (`_free`; without the extension, wait then free). `share()`, `wrap_ptr`, DLPack export and textures complete their launches before returning, as on CUDA. A driver without `zeCommandListHostSynchronize` gets a synchronous list. See `test_level_zero_async.py`.
+- **Level Zero**: `L0Buffer` holds a device pointer (`zeMemAllocDevice`). Every launch, fill and copy is appended to the backend's one asynchronous immediate command list (`_queue`) and returns once queued, each followed by a barrier (`_ordered`), which keeps program order: Intel's in-order lists (`ZE_COMMAND_QUEUE_FLAG_IN_ORDER`) cost about 100 µs of device time per kernel on driver 25.05, a barrier about 5. `to_numpy`, `read_range` and reductions queue a copy and a marker under `_launch_lock` and wait on the marker's event outside it (`_ListMarker`), so other threads launch meanwhile; `tack.sync()` is `zeCommandListHostSynchronize`; `from_numpy` copies the array privately and queues; copies to the device up to 16 MiB and from it up to 64 KiB go through pooled USM host memory (`_HostStaging`, guarded by `_launch_lock`), since from pageable memory Intel's driver does not return from appending one (to the device up to 4 MiB, from it up to 1 KiB, driver 25.05) until the queue drains, which made a launch's scalar upload wait for the kernels before it; host memory a queued copy or fill reads is held (`_hold`) until the next wait (a marker releases the holds before it), which comes early past 1024 objects or 256 MiB. Arrays are freed with `zeMemFreeExt(DEFER_FREE)`, after the work queued so far (`_free`; without the extension, wait then free). `share()`, `wrap_ptr`, DLPack export and textures complete their launches before returning, as on CUDA. A driver without `zeCommandListHostSynchronize` gets a synchronous list. See `test_level_zero_async.py`.
 - **`asyncio`** (`runtime/aio.py`, optional): `await tack.sync_async()` and `await array.numpy_async()` wait in one of Tack's worker threads (`tack-wait`, 4) and resume the coroutine, so an event loop (trame, Jupyter, a server) keeps running while the device works; kernel calls stay plain calls. A backend opts in with `Backend.async_marker()` -- an object whose blocking `wait()` covers every launch queued so far and raises a launch's error: CUDA records a blocking-sync event on the context's stream (`_StreamMarker`), Metal commits the open batch and waits on the last command buffer (`_CommandBufferMarker`), Level Zero appends a barrier signalling a host-visible event from the backend's pools, reset and reused after the wait (`_ListMarker`, `_take_event`), HIP records a blocking-sync event on the device's stream and waits through ctypes (`_StreamMarker`) -- and buffers with `DeviceBuffer.waits_off_thread` and `thread_binding()` (CUDA makes its context current in the worker, `_BoundContext`; HIP makes the buffer's device current, `_BoundDevice`). Without a marker (the CPU) the wait is inline: correct, and the loop simply waits. The mark is taken at the call, so launches queued later are not waited for. cuda-bindings releases the GIL in `cuEventSynchronize`: during a 490 ms kernel another task ran 436 times awaiting `sync_async` and 0 times under `tack.sync()`; Level Zero's ctypes calls release it too (311-384 times during a 685 ms kernel on a Max 1100); hip-python's do not, hence HIP's ctypes waits (1353 times during a 1.45 s kernel on an MI210). See `test_asyncio.py`.
 
-`tack.empty()` (under every array constructor) calls `backend.allocate_field()` to create the appropriate buffer type. A new field's contents are unspecified on every backend (`np.empty` on the CPU, `cuMemAllocAsync` on CUDA); `tack.zeros` fills it, and `Field.fill` first offers the fill to `Backend.fill_field`, which the CPU backend answers for 256 KiB or more by running `tack.algorithms.copy._fill_kernel` through the normal dispatch, so the policy fans it out when that pays and the workers first-touch the pages. On Linux `TACK_CPU_MALLOC=1` also tells glibc to keep freed pages (`_tune_malloc`: mmap threshold at its 32 MiB cap, no trim under 4 GiB, the heap grown 256 MiB at a time; off by default, since it is process-wide and did not pay unbound on jura), because a filter frees and reallocates the same temporaries on every call and took their page faults every time: threshold at 5M on 8 threads 126 → 104 ms, slice 76 → 65, nothing at 1M. Allocation used to fill on the calling thread, serially: at 5M cells on eight threads it was half of threshold and cell-to-point (130 of 276 ms, 77 of 135), and it grew with the thread count, because the fill ran while the workers' caches owned the lines. `Field.__getitem__` reads one element on the host through `DeviceBuffer.read_range(start, count)`: CPU and Metal slice their views (Metal after waiting for its queued launches), and CUDA, HIP and Level Zero queue a copy of just the range at the element's byte offset (`cuMemcpyDtoHAsync`, `hipMemcpyAsync`, or `zeCommandListAppendMemoryCopy` on the backend's asynchronous list) after the queued launches and wait for it, each checking the range against the allocation first. `__setitem__` and `__iter__` raise.
+`tack.empty()` (under every array constructor) calls `backend.allocate_array()` to create the appropriate buffer type. A new array's contents are unspecified on every backend (`np.empty` on the CPU, `cuMemAllocAsync` on CUDA); `tack.zeros` fills it, and `Array.fill` first offers the fill to `Backend.fill_array`, which the CPU backend answers for 256 KiB or more by running `tack.algorithms.copy._fill_kernel` through the normal dispatch, so the policy fans it out when that pays and the workers first-touch the pages. On Linux `TACK_CPU_MALLOC=1` also tells glibc to keep freed pages (`_tune_malloc`: mmap threshold at its 32 MiB cap, no trim under 4 GiB, the heap grown 256 MiB at a time; off by default, since it is process-wide and did not pay unbound on jura), because a filter frees and reallocates the same temporaries on every call and took their page faults every time: threshold at 5M on 8 threads 126 → 104 ms, slice 76 → 65, nothing at 1M. Allocation used to fill on the calling thread, serially: at 5M cells on eight threads it was half of threshold and cell-to-point (130 of 276 ms, 77 of 135), and it grew with the thread count, because the fill ran while the workers' caches owned the lines. `Array.__getitem__` reads one element on the host through `DeviceBuffer.read_range(start, count)`: CPU and Metal slice their views (Metal after waiting for its queued launches), and CUDA, HIP and Level Zero queue a copy of just the range at the element's byte offset (`cuMemcpyDtoHAsync`, `hipMemcpyAsync`, or `zeCommandListAppendMemoryCopy` on the backend's asynchronous list) after the queued launches and wait for it, each checking the range against the allocation first. `__setitem__` and `__iter__` raise.
 
 ### Backend contract
 
-All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_field`, `wrap_ptr`, `execute`), the hooks with defaults (`fill_field`, `synchronize` for backends that queue launches, `memory_space`, `reduce_field`, the texture hooks, and the disk cache's `cache_target`/`variant_artifact`/`load_variant`), and the capability attributes callers read instead of probing with `hasattr`: `name`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `supports_workgroups`, `device_memory_spaces`.
+All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_array`, `wrap_ptr`, `execute`), the hooks with defaults (`fill_array`, `synchronize` for backends that queue launches, `memory_space`, `reduce_array`, the texture hooks, and the disk cache's `cache_target`/`variant_artifact`/`load_variant`), and the capability attributes callers read instead of probing with `hasattr`: `name`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `supports_workgroups`, `device_memory_spaces`.
 
 `supports_workgroups` is false on CPU and true on GPU backends. CPU rejects
 shared allocations, barriers, thread IDs and block reductions before variant
@@ -124,7 +124,7 @@ construction; public inspection and direct LLVM generation also reject them.
 `lang/workgroup_support.py` discovers nested/inlined requirements, memoized
 only on immutable frontend templates. Direct LLVM generation scans mutable
 IR afresh. GPU targets bypass this rejection check. Local arrays, ordinary
-atomics and host field reductions remain supported on CPU. This flag does
+atomics and host array reductions remain supported on CPU. This flag does
 not itself prove participation or atomic type/scope support. GPU collectives
 also require full 256-lane groups and conservative uniform participation
 (`workgroup_participation.py`). Check variants before optimization/packing;
@@ -133,21 +133,21 @@ direct GPU generators validate participation too. Scalar-pack params carry
 `_is_scalar_pack` to preserve uniformity. Metal pipeline and Level Zero
 X/total device limits cannot silently shrink collective groups. MSL uses
 structural feature discovery, including thread IDs in conditions. Explicit
-user barriers fence shared and global field memory within the workgroup.
+user barriers fence shared and global array memory within the workgroup.
 See `test_workgroup_contract.py`, `test_workgroup_participation.py` and the
 language contract.
 
 `Backend.supported_atomic_dtypes` declares add/min/max targets: CPU all
 shipped scalar widths; CUDA/HIP i32/u32/i64/u64/f32/f64; Metal/Level Zero
-only i32/u32/f32. `lang/atomic_support.py` checks global field targets,
+only i32/u32/f32. `lang/atomic_support.py` checks global array targets,
 including uniquely traced inlined pointer copies, before optimization and
 in all inspection modes. Direct generators scan mutable IR afresh. Reject
 private/shared arrays, textures, unsupported widths and ambiguous targets.
-Atomic fields require natural alignment; `DeviceBuffer.address` exposes
+Atomic arrays require natural alignment; `DeviceBuffer.address` exposes
 current storage for the cold/cached checks. Variants retain target parameter
 indices/alignments, not addresses; warm dispatch does not scan IR. CPU
 floating extrema use real CAS loops; unsigned extrema use unsigned RMW.
-CUDA/HIP wide operations use 64-bit CAS. OpenCL user atomics and field
+CUDA/HIP wide operations use 64-bit CAS. OpenCL user atomics and array
 reductions use explicit relaxed device scope, rather than legacy atomics'
 workgroup-only guarantee. Values convert once to target precision and are
 captured outside CAS retries. Atomics are relaxed, spanning CPU workers or
@@ -166,41 +166,41 @@ All five backends share one entry point: `resolve_variant()` in `runtime/kernel_
 Every dispatch:
 1. `Kernel.__call__` → `backend.execute(kernel, args)` → `resolve_variant(...)`, which first tries the dispatch fast path (below; skipped with keyword arguments or in debug mode); a miss runs `_resolve_variant` inside a `template_scope`:
 2. Detect template arguments (`@tack.device_class` classes) and expand them
-3. Detect vector fields and set up scalarization metadata
+3. Detect vector arrays and set up scalarization metadata
 4. `kernel.get_ir(..., debug=...)` returns the **pristine IR template** for this specialization (lowered, or read from the disk cache); in debug mode append the two hidden arguments (`debug_bounds.hidden_args`); check required workgroup support against the backend
-5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_field`
+5. Type inference (`infer_param_types`) — annotates params from actual args, sets `_is_array`
 6. Build the variant key and look it up (see below): in the backend's cache, then on disk (`_stored_variant`, see Disk cache)
-7. Check the call's storage against what the variant recorded: atomic target alignment, and no read-only field (`array_from_ptr`'s default, a read-only DLPack import) bound where the kernel may store (`written_fields`, from `written_field_params`); record the call's signature for the fast path
+7. Check the call's storage against what the variant recorded: atomic target alignment, and no read-only array (`array_from_ptr`'s default, a read-only DLPack import) bound where the kernel may store (`written_arrays`, from `written_array_params`); record the call's signature for the fast path
 8. Resolve the loop range from the variant's IR; dispatch (CPU decides serial vs threads, GPU queues a grid launch and returns)
 
 Only on a cache miss (memory and disk):
 1. Deep-copy the template with `clone_ir()` — the passes below mutate IR in place and must not touch the template
 2. Dimension size resolution (`ir_resolve.py`)
-3. Dispatch-time type checking (`check_dispatch_types`) — validates field dtypes against the backend
+3. Dispatch-time type checking (`check_dispatch_types`) — validates array dtypes against the backend
 4. IR optimization: conservative copy propagation (`ir_optimize.py`)
 5. Backend `build` callback: scalar packing (GPU), type annotation (`ir_type_annotate.py`, which ends with debug mode's `ir_bounds.guard_accesses`), codegen, compile
 6. `_store_variant` writes the variant (post-pass IR and the backend's `variant_artifact`) to disk, if the backend has a `cache_target()`
 
 ### The dispatch fast path
 
-`resolve_variant` first tries a per-backend, per-kernel map from the call's *signature* (`_call_signature` in `runtime/kernel_utils.py`) to the variants it resolved before (`_fast_resolve`, outside the template scope); a miss runs `_resolve_variant`, which records the entry. The signature is read straight off the arguments: a field's dtype, shape and element layout; a scalar's kind and integer width; a template object's class (by token), its class constants' current values, and per attribute what `_template_key` and the expansion read, nested templates by path. Equal signatures imply an equal variant key, so a hit expands the templates through a precomputed plan (`_expansion_plan`), decides disjointness, runs the per-call checks (`_check_call`: workgroup launch, atomic alignment, writable fields) and returns. An entry is `(expansion plan, {disjoint: variant}, field slots)`: it holds the variants it resolved, and `drop_variants` (which a collected template class's token triggers) drops the kernel's entries with them, so a variant it removed is resolved afresh; the map is capped at `_FAST_CAP` signatures. The launch range is evaluated through a plan found once per IR (`_launch_plan`). Debug mode and keyword arguments never use or record entries: debug variants take hidden arguments the fast path does not append (`test_switching_modes_reuses_no_variant_of_the_other`). See `test_dispatch_fast_path.py`.
+`resolve_variant` first tries a per-backend, per-kernel map from the call's *signature* (`_call_signature` in `runtime/kernel_utils.py`) to the variants it resolved before (`_fast_resolve`, outside the template scope); a miss runs `_resolve_variant`, which records the entry. The signature is read straight off the arguments: an array's dtype, shape and element layout; a scalar's kind and integer width; a template object's class (by token), its class constants' current values, and per attribute what `_template_key` and the expansion read, nested templates by path. Equal signatures imply an equal variant key, so a hit expands the templates through a precomputed plan (`_expansion_plan`), decides disjointness, runs the per-call checks (`_check_call`: workgroup launch, atomic alignment, writable arrays) and returns. An entry is `(expansion plan, {disjoint: variant}, array slots)`: it holds the variants it resolved, and `drop_variants` (which a collected template class's token triggers) drops the kernel's entries with them, so a variant it removed is resolved afresh; the map is capped at `_FAST_CAP` signatures. The launch range is evaluated through a plan found once per IR (`_launch_plan`). Debug mode and keyword arguments never use or record entries: debug variants take hidden arguments the fast path does not append (`test_switching_modes_reuses_no_variant_of_the_other`). See `test_dispatch_fast_path.py`.
 
-What a warm call pays (`_fast_resolve`): the call's signature (`_call_signature`, cached per `Field` as `_sig`; per template class the attribute layout `_template_layouts`, relearned when an instance's attribute names or types differ), one weak lookup for the kernel's entry, the disjointness check over the entry's precomputed field slots (`_disjoint_by_slots`, one sorted walk), and the per-call checks. It runs outside `template_scope`, which the slow path enters. `NumpyBuffer.address` and `span` are computed once per array. Measured on a 2 GHz Xeon: a warm CPU dispatch 70 → 40 µs from the signature alone, then a serial dispatch with eight field arguments 66 → 34 µs; inside a filter, where launches follow cache-trashing kernels and a third are template views, 149 → 130 µs per launch. Leaving the caller out of the chunks (k workers, caller waits) was tried for its warm caches and lost (161 µs), so the caller still runs chunks.
+What a warm call pays (`_fast_resolve`): the call's signature (`_call_signature`, cached per `Array` as `_sig`; per template class the attribute layout `_template_layouts`, relearned when an instance's attribute names or types differ), one weak lookup for the kernel's entry, the disjointness check over the entry's precomputed array slots (`_disjoint_by_slots`, one sorted walk), and the per-call checks. It runs outside `template_scope`, which the slow path enters. `NumpyBuffer.address` and `span` are computed once per array. Measured on a 2 GHz Xeon: a warm CPU dispatch 70 → 40 µs from the signature alone, then a serial dispatch with eight array arguments 66 → 34 µs; inside a filter, where launches follow cache-trashing kernels and a third are template views, 149 → 130 µs per launch. Leaving the caller out of the chunks (k workers, caller waits) was tried for its warm caches and lost (161 µs), so the caller still runs chunks.
 
 ### Variant cache key
 
 Keyed per `Kernel` (weakly, so compiled code is released with the kernel), then by:
-argument type signature + field/scalar/texture categories + vector widths + texture extents + template structure/constants + **`shape_signature`** + (CPU only) whether the call's fields are disjoint. Template keys preserve actual class identity through a `_ClassToken` rather than the class object, so a `@tack.device_class` class that is garbage-collected takes its IR and compiled variants with it on every backend (a class defined per call still compiles per call, but no longer accumulates). Template keys also preserve typed constants, field metadata, and runtime scalar attribute names; runtime scalar values do not specialize.
+argument type signature + array/scalar/texture categories + vector widths + texture extents + template structure/constants + **`shape_signature`** + (CPU only) whether the call's arrays are disjoint. Template keys preserve actual class identity through a `_ClassToken` rather than the class object, so a `@tack.device_class` class that is garbage-collected takes its IR and compiled variants with it on every backend (a class defined per call still compiles per call, but no longer accumulates). Template keys also preserve typed constants, array metadata, and runtime scalar attribute names; runtime scalar values do not specialize.
 
 That last one matters for correctness, not speed. `ir_resolve` substitutes dimension sizes as literals — `a[i, j]` linearizes to `i * dim1 + j` with `dim1` baked in — so the row stride is part of the compiled code's identity. `shape_signature()` reports exactly the dimensions a kernel bakes in (memoized per IR; empty for 1-D kernels, so varying a flat length does **not** re-specialize).
 
 Because the passes mutate IR in place, the template from `get_ir()` must be treated as immutable — a pass that consumed its `IRDimSize` nodes would leave nothing for a later shape to resolve.
 
-Fields may share storage, including distinct views and imported pointers. Preserve program order within each race-free iteration; field parameters must not carry unconditional `noalias`/`restrict` promises.
+Arrays may share storage, including distinct views and imported pointers. Preserve program order within each race-free iteration; array parameters must not carry unconditional `noalias`/`restrict` promises.
 
-The CPU backend makes that promise *conditionally*. On every dispatch `fields_disjoint()` (`runtime/kernel_utils.py`) compares the byte ranges of the field arguments: the call is disjoint when no field the kernel stores to (`written_field_params`, memoized per IR) overlaps any other field. Read-only fields may overlap each other. The answer is the last element of the variant key, so a kernel holds at most two CPU variants per specialization: one compiled with `noalias` on its field pointers, used only for calls that passed the check, and one without. The check is based on storage ranges, never object identity, and costs about 1 µs per dispatch. `cpu._SPECIALIZE_DISJOINT = False` turns it off. GPU backends do not specialize: removing `__restrict__` cost nothing measurable on CUDA.
+The CPU backend makes that promise *conditionally*. On every dispatch `arrays_disjoint()` (`runtime/kernel_utils.py`) compares the byte ranges of the array arguments: the call is disjoint when no array the kernel stores to (`written_array_params`, memoized per IR) overlaps any other array. Read-only arrays may overlap each other. The answer is the last element of the variant key, so a kernel holds at most two CPU variants per specialization: one compiled with `noalias` on its array pointers, used only for calls that passed the check, and one without. The check is based on storage ranges, never object identity, and costs about 1 µs per dispatch. `cpu._SPECIALIZE_DISJOINT = False` turns it off. GPU backends do not specialize: removing `__restrict__` cost nothing measurable on CUDA.
 
-Metal field pointers are members of one argument buffer, rather than separate
+Metal array pointers are members of one argument buffer, rather than separate
 device-buffer kernel arguments (which implicitly promise disjoint storage in
 MSL). Members use the packed parameter positions as `[[id(N)]]` indices;
 textures retain their separate binding namespace. Each cached dispatch refreshes
@@ -209,14 +209,14 @@ the buffer references and declares indirect-resource residency with
 `_open_batch`/`_launched`/`synchronize`): each encodes a compute pass into
 the open command buffer, committed every 64 launches with at most 4 in
 flight, and owns what it reads -- a fresh argument buffer, its packed
-scalars as `_Uniforms`, references to its fields until it completes. The
-host waits only when it touches field memory (every `MetalBuffer` method,
+scalars as `_Uniforms`, references to its arrays until it completes. The
+host waits only when it touches array memory (every `MetalBuffer` method,
 reductions, texture uploads) or calls `tack.sync()`; `tack.zeros` takes a
 new buffer as Metal cleared it (`starts_zeroed`), without waiting. Bindings
 are resolved before an encoder opens, since committing an open encoder aborts. A
 buffer's host access waits for every live Metal backend (`_backends`,
 `_synchronize_all`), not the one it was made on: `tack.init` makes a new
-backend each call and earlier fields keep working on it. Memory
+backend each call and earlier arrays keep working on it. Memory
 handed outside Tack (DLPack, `export_memory`, `wrap_ptr`) is `_shared`: a
 launch using it completes before returning. Waiting after every launch cost
 about 0.3 ms each. `test_metal.py` covers order across batches, per-launch
@@ -229,20 +229,20 @@ but pyobjc-framework-Metal 12.1's metadata omits `already_retained`, so
 PyObjC retained each once more and they were never freed (a benchmark's
 temporaries reached 150 GB). `metal.py` registers the ownership for every
 `new...` selector it calls (`_OWNED_RESULTS`), before any is called; add
-any new one there. `test_fields_own_their_buffers_alone` checks retain counts.
+any new one there. `test_arrays_own_their_buffers_alone` checks retain counts.
 
-A Metal kernel with a sequential loop that stores to a field (or runs an
+A Metal kernel with a sequential loop that stores to an array (or runs an
 atomic) has its body in `__tack_body__`, a `noinline` function the entry
 calls (`_stores_inside_sequential_loop` in `msl_gen.py`); workgroup arrays
 are declared in the entry and passed as pointers. Compiled inside the
 entry function, such a loop gave wrong results: Apple's compiler read a
-field element once before the loop when its address did not depend on the
-thread and the loop stored to another same-typed field
+array element once before the loop when its address did not depend on the
+thread and the loop stored to another same-typed array
 (`total[0] += x[k]; counter[0] += 1`). The front end's LLVM IR is correct
 and the fault is in the GPU back end at pipeline creation; alias metadata
 is not the cause. Do not merge the two functions or drop `noinline`;
 `restrict`, opaque pointers and compile options do not avoid it. Loop-free kernels keep one function (the call costs 7-15% on the
-smallest). See `test_field_updates_in_loops.py` and
+smallest). See `test_array_updates_in_loops.py` and
 `docs/design/memory-and-aliasing.md`.
 
 Dispatching one variant from several Python threads: CPU binds arguments
@@ -302,9 +302,9 @@ at most hourly (`.pruned` mark), and write-mode hits refresh mtime. The test
 suite runs with `TACK_CACHE=off` (`conftest.py`); `test_disk_cache.py` uses
 subprocesses. `TACK_CACHE=write pytest`, run twice, is the end-to-end check.
 
-### Field dimensions
+### Array dimensions
 
-`field.shape[k]` and `len(field)` both lower to `IRDimSize` in `ast_transform.py`, which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).
+`array.shape[k]` and `len(array)` both lower to `IRDimSize` in `ast_transform.py`, which `ir_resolve.py` folds to a literal wherever it appears — loop bounds, conditions, arithmetic, indices. The dimension index must be a literal (`x.shape[d]` with a runtime `d` raises).
 
 **One exception, and it matters:** the outermost parallel loop's bound is left unresolved. It never reaches generated code — codegen reads the `__loop_end__` parameter — so `_resolve_range_expr` evaluates it per dispatch instead, and `ir_shape_deps` excludes it from the variant key. Without that, `for i in range(x.shape[0])` — the most common line in any kernel — would compile a new variant for every array length.
 
@@ -337,16 +337,16 @@ See `test_parallel_dims.py`.
 
 ### Textures
 
-`tack.texture3d(field, shape)` copies the field into storage the `Texture3D`
+`tack.texture3d(array, shape)` copies the array into storage the `Texture3D`
 owns, on every backend, and `tex.update()` copies it again; writes to the
-field in between do not reach the texture. `Backend.texture_in_hardware()`
+array in between do not reach the texture. `Backend.texture_in_hardware()`
 picks the storage: a hardware image from `create_texture_image()` (CUDA,
 Metal, HIP with image support, Level Zero with samplers, within the device's
-3D limit) or a private f32 field sampled in software (CPU and the fallbacks).
+3D limit) or a private f32 array sampled in software (CPU and the fallbacks).
 Dispatch binds that storage through `bind_textures()`; the grid bound still
-reads the source field. No compiled kernel caches texture objects, and none
+reads the source array. No compiled kernel caches texture objects, and none
 is keyed by device address: images free their device objects when the
-texture is collected. Only f32 fields of exactly W*H*D elements and
+texture is collected. Only f32 arrays of exactly W*H*D elements and
 `interp='linear'` are accepted. See `test_texture_snapshot.py`.
 
 ### Kernel code inspection
@@ -368,14 +368,14 @@ localization/packing allocate generated bindings through `fresh_name`
 `("debug",)` key part): `_visit_subscript_index`/`_linearize_index` and flat
 atomic indices go through `_checked`, which wraps the flat index in
 `IRBoundsCheck` (per-dimension indices and extents, a site, the errors
-field) and records an `ir_bounds.BoundsSite` in `function.bounds_sites`.
-Dimension 0 and flat extents are `IRFieldExtent`, which `ir_resolve` turns
-into loads from the hidden i64 `__tack_extents__` field (three per
+array) and records an `ir_bounds.BoundsSite` in `function.bounds_sites`.
+Dimension 0 and flat extents are `IRArrayExtent`, which `ir_resolve` turns
+into loads from the hidden i64 `__tack_extents__` array (three per
 parameter), so nothing specializes on length; other dimensions are
 `IRDimSize`, already baked into strides. Arrays use their allocation size.
-Two hidden field parameters follow the kernel's (`ir_bounds.HIDDEN_PARAMS`);
+Two hidden array parameters follow the kernel's (`ir_bounds.HIDDEN_PARAMS`);
 `_resolve_variant` appends their arguments (`debug_bounds.hidden_args`,
-per-thread fields) and notes the launch; `Kernel.__call__` (and the result
+per-thread arrays) and notes the launch; `Kernel.__call__` (and the result
 epilogue) calls `debug_bounds.check()`, which raises `IndexError`. A check
 is -1 when out of bounds, after `__tack_in_bounds__` records the first
 violation (atomic add on the count). `annotate_types` ends with
@@ -402,33 +402,33 @@ The IR is a simple tree of nodes:
 
 **Control flow**: `IRIf`, `IRIfExp` (ternary)
 
-**Field access**: `IRFieldLoad`, `IRFieldStore`, `IRAtomicOp` (atomic_add/min/max)
+**Array access**: `IRArrayLoad`, `IRArrayStore`, `IRAtomicOp` (atomic_add/min/max)
 
 **GPU primitives**: `IRSharedAlloc` (threadgroup memory), `IRBarrier` (sync), `IRThreadId` (local thread index)
 
 **Expressions**: `IRBinOp`, `IRUnaryOp`, `IRCompare`, `IRBoolOp`, `IRCall` (math builtins), `IRCast`, `IRConstant`, `IRName`, `IRAttribute`, `IRDimSize`
 
-**Debug mode only**: `IRBoundsCheck` (an access's flat index, or -1 out of bounds), `IRFieldExtent` (a parameter's extent, resolved to a load from the hidden extents field)
+**Debug mode only**: `IRBoundsCheck` (an access's flat index, or -1 out of bounds), `IRArrayExtent` (a parameter's extent, resolved to a load from the hidden extents array)
 
 **Other**: `IRAssign`, `IRReturn`, `IRPrint` (kernel debugging)
 
 ### IR passes
 
-- **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from field shapes, resolves `IRAtomicOp` sub-expressions, resolves `shared_like` dtypes from fields, and (debug mode) turns `IRFieldExtent` into loads from `__tack_extents__`
+- **ir_resolve.py**: Replaces `IRDimSize` nodes with concrete constants from array shapes, resolves `IRAtomicOp` sub-expressions, resolves `shared_like` dtypes from arrays, and (debug mode) turns `IRArrayExtent` into loads from `__tack_extents__`
 - **ir_bounds.py** (debug mode): `guard_accesses`, run at the end of `annotate_types`, skips each access whose checked index is negative (a load gives a typed zero)
-- **ir_optimize.py**: Conservative copy propagation for inlined arguments. Assignment counts are computed once per kernel and reused in nested blocks: the copy target must have one binding and its source must have no assignments, loop bindings, or allocations anywhere in the kernel. Each statement is tested after earlier copies are applied, so a chain resolves to its root in one walk; nested device functions pass a field down as such a chain, and an unresolved link is a local holding a field. This leaves some block-local copies to LLVM/vendor optimization and avoids repeated subtree counting during cold compilation. Custom LICM and CSE remain disabled because they lack memory/control-flow safety analysis.
-- **type_inference.py**: Annotates IR params with types from actual arguments. Fields get `_is_field=True`, scalars get `_is_field=False`. Float scalars auto-promote to `f64` when any field arg uses `f64`; otherwise default to `f32`. Int scalars exceeding i32 range auto-promote to `i64`. `check_dispatch_types()` validates field dtypes against backend capabilities.
+- **ir_optimize.py**: Conservative copy propagation for inlined arguments. Assignment counts are computed once per kernel and reused in nested blocks: the copy target must have one binding and its source must have no assignments, loop bindings, or allocations anywhere in the kernel. Each statement is tested after earlier copies are applied, so a chain resolves to its root in one walk; nested device functions pass an array down as such a chain, and an unresolved link is a local holding an array. This leaves some block-local copies to LLVM/vendor optimization and avoids repeated subtree counting during cold compilation. Custom LICM and CSE remain disabled because they lack memory/control-flow safety analysis.
+- **type_inference.py**: Annotates IR params with types from actual arguments. Arrays get `_is_array=True`, scalars get `_is_array=False`. Float scalars auto-promote to `f64` when any array arg uses `f64`; otherwise default to `f32`. Int scalars exceeding i32 range auto-promote to `i64`. `check_dispatch_types()` validates array dtypes against backend capabilities.
 - **ir_type_annotate.py**: Sets `dtype` (a `ScalarType`) on every expression IR node. Codegens read `node.dtype` directly instead of reimplementing type inference heuristics.
 - **ir_traversal.py**: Explicit structural child schema, preorder `walk_ir`, and postorder `transform_ir`. Resolution, scalar packing, copy substitution, and shape-dependency queries share it. Metadata is not traversed; unregistered node kinds fail loudly. `clone_ir` specializes deep copying for registered plain IR nodes and list/dict containers, copying every attribute (including metadata) with one identity memo. It preserves shared references, cycles and ScalarType identity; other metadata retains Python's deepcopy protocol. Variant preparation, scalar localization, GPU packing and inspection use it; cache hits do not clone IR. Keep all verifier boundaries. Compare copying costs with `uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json`; this is a CPU component benchmark, not an end-to-end latency measurement.
-- **ir_verify.py**: Checks lowered templates before caching and variant IR after resolve, infer, scalar localization, optimize, GPU packing, and annotation. Errors report kernel, stage, node kind, and tree path. Checks cover structure, bindings, loop targets, unresolved dimensions/allocation types/texture extents, parameter categories, and scalar annotations. Host-evaluated grid ends retain dimension queries; field pointers need no scalar dtype. Cache hits do not run the verifier. This is not definite-assignment, bounds, race, or barrier-uniformity analysis. Direct pass/codegen calls on IR fragments must request verification themselves.
+- **ir_verify.py**: Checks lowered templates before caching and variant IR after resolve, infer, scalar localization, optimize, GPU packing, and annotation. Errors report kernel, stage, node kind, and tree path. Checks cover structure, bindings, loop targets, unresolved dimensions/allocation types/texture extents, parameter categories, and scalar annotations. Host-evaluated grid ends retain dimension queries; array pointers need no scalar dtype. Cache hits do not run the verifier. This is not definite-assignment, bounds, race, or barrier-uniformity analysis. Direct pass/codegen calls on IR fragments must request verification themselves.
 
 ### Scalar kernel arguments
 
-Kernels accept both fields and Python scalars (int, float) directly. The `_is_field` attribute on IR params controls codegen: fields become pointers, scalars become values. All four backends handle this distinction in their codegen and dispatch paths.
+Kernels accept both arrays and Python scalars (int, float) directly. The `_is_array` attribute on IR params controls codegen: arrays become pointers, scalars become values. All four backends handle this distinction in their codegen and dispatch paths.
 
 ### Vector scalarization
 
-`tack.empty(shape, tack.vec(n, dtype))` creates an array of `shape` vector elements over a flat scalar buffer of `prod(shape) * n` components (`_vector_n`, `_logical_shape`); its `shape` counts elements and `numpy()` returns `(*shape, n)`. In kernels, `field[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
+`tack.empty(shape, tack.vec(n, dtype))` creates an array of `shape` vector elements over a flat scalar buffer of `prod(shape) * n` components (`_vector_n`, `_logical_shape`); its `shape` counts elements and `numpy()` returns `(*shape, n)`. In kernels, `array[i]` expands to n component loads/stores. Vector operations (add, dot, cross, normalize) are scalarized at the IR level.
 
 Comparisons with a vector operand lower per component to a mask
 (`_vector_compare`; chains evaluate every link), `and`/`or` over masks
@@ -449,8 +449,8 @@ and conditional expressions map over components (`_componentwise`
 repeats scalars and rejects mixed widths). An assignment lowers to one
 assignment per component, so `_settle_components` first evaluates any
 component that could observe an earlier one's write: a read of an earlier
-target component for a variable, any field load for a field element
-(fields may alias). Components are `v[c]`/`v.x`, on variables and on field
+target component for a variable, any array load for an array element
+(arrays may alias). Components are `v[c]`/`v.x`, on variables and on array
 elements (`vf[i][c] = x` stores one component); a runtime index selects
 through a chain and stores through per-component guards. A named typed or
 integer `ArrayConstant` read at a runtime index is instead an `IRTableLoad`
@@ -461,13 +461,13 @@ in a storing loop crashed Metal's compiler service; see
 `test_constant_tables.py`. A vector index
 supplies one dimension per component, in subscripts and in atomics, whose
 index may be a tuple with one entry per dimension; a vector value given
-to an atomic on a vector field lowers to one atomic per component, while
+to an atomic on a vector array lowers to one atomic per component, while
 a scalar value keeps the index a flat component index. Tuple assignment
 accepts subscript and component targets through temporaries, stored at
 their own position among the targets (left to right, after the whole
 right side). `_linearize_index` tags each `IRDimSize` with the number of
 indices given, and `ir_resolve` raises `TypeError` when that differs from
-the field's dimension count; a single index is a flat index and is not
+the array's dimension count; a single index is a flat index and is not
 checked. A device
 function returning several values yields a `TupleValue` whose vector
 elements are `VectorValue`s; only tuple unpacking consumes that. `v.min()`/`v.max()`/
@@ -476,11 +476,11 @@ arguments. See the vector tests in `test_new_features.py`.
 
 A matrix (`tack.Matrix`, an element of a `tack.mat(n, m)` array) is a `VectorValue`
 with a two-dimensional shape and row-major components, so everything
-componentwise applies unchanged. A matrix field is a vector field of
+componentwise applies unchanged. A matrix array is a vector array of
 `n * m` components with `_matrix_shape`; the runtime reports it to
-lowering as the tuple `(n, m)` in the `vector_fields` dict, which also
-keeps a 2x2 matrix field and a 4-vector field in different IR cache
-entries. `_matrix_vars`/`_matrix_fields` hold shapes beside the component
+lowering as the tuple `(n, m)` in the `vector_arrays` dict, which also
+keeps a 2x2 matrix array and a 4-vector array in different IR cache
+entries. `_matrix_vars`/`_matrix_arrays` hold shapes beside the component
 counts; `_bind_vector` and `_variable_value` keep them in step. `@` is
 `_matmul` (operands captured first, since every entry is used several
 times); `transpose`/`trace`/`determinant`/`inverse` are in
@@ -520,13 +520,13 @@ Keep the IR cache construction lock. Cached IR retains its inlined bodies;
 rebinding a callable requires recreating the kernel. AST-only transforms may
 pass an explicit `bindings` dictionary. See `test_func_bindings.py`.
 
-Original kernels and device functions are validated before lowering; unsupported syntax raises `UnsupportedSyntaxError` with the function and captured-source line/column. Device source is checked before return restructuring, including unreachable statements. `and`, `or`, and conditional expressions short-circuit, including inlined effects. Scalar operands/arguments evaluate left to right; augmented stores evaluate their index once, and sequential `range` bounds/steps are captured at entry. Comparisons and logical expressions yield i32 `0`/`1`. Outer parallel `break`, keyword arguments, and assertions are rejected; a kernel `return` is allowed only as the last statement, with a return annotation: `Kernel._split_result` strips it and builds a one-thread epilogue `Kernel` (statements outside the loop plus a store of the expression into a hidden one-element field, parameter `__tack_result__`) that `__call__` runs after the launch and reads with `result[0]`; barriers are statement-only, while an atomic may be an expression whose value is the element's old value (lowered to a temporary among the pre-statements, so it runs in source order; every generator's atomic yields the old value, the CAS loops through helpers). Reading a name the kernel never binds (typically a module-level Python value) raises `NameError` naming the kernel or inlined device function and the source position; binding a second name to a local or shared array (`view = tmp`) raises `UnsupportedSyntaxError`. `Kernel.__call__` lets `UnsupportedSyntaxError` through unwrapped. See `docs/reference/language-contract.md` and `test_source_validation.py` / `test_differential.py`.
+Original kernels and device functions are validated before lowering; unsupported syntax raises `UnsupportedSyntaxError` with the function and captured-source line/column. Device source is checked before return restructuring, including unreachable statements. `and`, `or`, and conditional expressions short-circuit, including inlined effects. Scalar operands/arguments evaluate left to right; augmented stores evaluate their index once, and sequential `range` bounds/steps are captured at entry. Comparisons and logical expressions yield i32 `0`/`1`. Outer parallel `break`, keyword arguments, and assertions are rejected; a kernel `return` is allowed only as the last statement, with a return annotation: `Kernel._split_result` strips it and builds a one-thread epilogue `Kernel` (statements outside the loop plus a store of the expression into a hidden one-element array, parameter `__tack_result__`) that `__call__` runs after the launch and reads with `result[0]`; barriers are statement-only, while an atomic may be an expression whose value is the element's old value (lowered to a temporary among the pre-statements, so it runs in source order; every generator's atomic yields the old value, the CAS loops through helpers). Reading a name the kernel never binds (typically a module-level Python value) raises `NameError` naming the kernel or inlined device function and the source position; binding a second name to a local or shared array (`view = tmp`) raises `UnsupportedSyntaxError`. `Kernel.__call__` lets `UnsupportedSyntaxError` through unwrapped. See `docs/reference/language-contract.md` and `test_source_validation.py` / `test_differential.py`.
 
-The parallel loop must be a `for` directly in the kernel body, exactly once. Statements outside it run any number of times per launch (per GPU thread; per CPU chunk, probe and timing sample), so they may only bind locals, load fields and declare arrays. `ast_transform` rejects stores, atomics, barriers, block reductions and `print` there by scanning each statement's lowered IR, which catches effects from inlined functions and template methods at their own source line; `ir_verify` enforces the same invariant on later IR. `_localize_outer_scalars` gives each iteration its own copy of any outer local (or scalar parameter) the loop reassigns. See `test_outside_parallel_loop.py`.
+The parallel loop must be a `for` directly in the kernel body, exactly once. Statements outside it run any number of times per launch (per GPU thread; per CPU chunk, probe and timing sample), so they may only bind locals, load arrays and declare arrays. `ast_transform` rejects stores, atomics, barriers, block reductions and `print` there by scanning each statement's lowered IR, which catches effects from inlined functions and template methods at their own source line; `ir_verify` enforces the same invariant on later IR. `_localize_outer_scalars` gives each iteration its own copy of any outer local (or scalar parameter) the loop reassigns. See `test_outside_parallel_loop.py`.
 
 ### @tack.device_class templates
 
-Classes decorated with `@tack.device_class` can be passed as template arguments. A kernel defined in the class body binds the instance it is called on (`Kernel.__get__` returns a bound method), so `model.step(dt)` passes `model` as the first argument; template detection is by argument type, so nothing else changes. `template_func_methods` unwraps `@staticmethod` over `@tack.func`. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), field attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`. `for c in obj:` over a template is rewritten in `_KernelTemplateRewriter.visit_For` to `range` (one name in the class's `__tack_iterate__`) or to an `ndrange` over its names reversed, binding `c` to the index vector fastest first (`iteration_space`, `test_template_iteration.py`).
+Classes decorated with `@tack.device_class` can be passed as template arguments. A kernel defined in the class body binds the instance it is called on (`Kernel.__get__` returns a bound method), so `model.step(dt)` passes `model` as the first argument; template detection is by argument type, so nothing else changes. `template_func_methods` unwraps `@staticmethod` over `@tack.func`. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), array attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`. `for c in obj:` over a template is rewritten in `_KernelTemplateRewriter.visit_For` to `range` (one name in the class's `__tack_iterate__`) or to an `ndrange` over its names reversed, binding `c` to the index vector fastest first (`iteration_space`, `test_template_iteration.py`).
 
 A template may hold templates as attributes, to any depth (`self.base.get(k)`, `obj.base.step` in a kernel). `template_tree` lists the tree (cycles refused); `classify_template_attrs` flattens it, nested names joined by `__` (`base__step`), so expansion and vector detection are unchanged; `rewrite_templates` resolves chains through `_Node`s, every method of the tree taking the tree's synthetic parameters; a chain stops at the first non-template attribute (`self.data.shape[0]`). Nested paths and classes are in the cache key (`template_structure`) and their class tokens retire variants. `resolve_variant` runs in a `template_scope` that memoizes each object's tree, classification and key part for the call: walking a tree per use cost 20 us a level per dispatch, now about 8. Composed code inlines to what one would write by hand (identical optimized LLVM IR). See `test_nested_templates.py`.
 
@@ -566,7 +566,7 @@ value. See `test_integer_semantics.py` and the language contract.
 
 Integer `/` converts operands independently to f32 and returns f32, rather
 than truncating; explicit floating casts request f64 on capable backends.
-The output field does not widen the intermediate precision. The evaluated
+The output array does not widen the intermediate precision. The evaluated
 integer divisor must be nonzero. With a floating operand, division uses
 the promoted floating precision. Integer `**` and two-argument `pow`
 preserve the base type, with an independently typed nonnegative exponent,
@@ -604,7 +604,7 @@ without unsafe options, except that HIP passes `-ffp-contract=on`
 of a variable while another read it rounded, which made `_crossing`'s
 `a - a != 0.0` finiteness test fire on finite values. Floating math
 calls convert arguments to the result precision first; integer arguments
-default to f32, irrespective of the destination field. CPU libm calls use
+default to f32, irrespective of the destination array. CPU libm calls use
 the matching f32/f64 symbols and return that precision before nested
 arithmetic. Scalar floating min/max prefer a number to NaN and permit
 either zero sign on ties. Denormals, NaN payloads/signaling, exception
@@ -630,7 +630,7 @@ function's literal results reach the caller that way. A conditional counts
 only with a constant condition. A local assigned more than once is the
 join of its assignments; if they are all weak literal expressions
 (`_literal_only_locals`, any condition), it takes the kernel's float
-context instead, f64 when a field parameter is f64, as scalar arguments
+context instead, f64 when an array parameter is f64, as scalar arguments
 do (`annotate_types`).
 LLVM emits a `double` constant and CUDA/HIP/OpenCL an unsuffixed `repr`
 when the constant's dtype is f64; f32 code is unchanged. See
@@ -640,19 +640,19 @@ when the constant's dtype is f64; f32 code is unchanged. See
 
 GPU backends use 64-bit integers for loop variables and index arithmetic (`long` on Metal, `long long` on CUDA/HIP) to support grids with more than 2^31 elements. CUDA/HIP widen `blockIdx.x` before multiplying by `blockDim.x`: the built-ins are 32-bit unsigned, and the product wrapped silently at 2^32 threads. OpenCL builds the index from `get_group_id(0)` the same way, since Intel's `get_global_id(0)` wraps at 2^32 despite its `size_t` type; native reductions use the same index. The CPU backend already used i64 via LLVM. Metal's `thread_position_in_grid` attribute is limited to `uint`, so max single dispatch is 2^32 threads. The `int()` cast in kernel code remains 32-bit (user semantics).
 
-Each GPU backend's `execute` and native `reduce_field` call `check_launch_size` (`runtime/kernel_utils.py`), which raises `ValueError` for more iterations than one grid can index, instead of a driver error or a wrap. `_max_launch` is queried at init: CUDA max `gridDim.x` × 256; HIP the same, capped at 2^32 − 256 (AMD's dispatch packet counts work-items in 32 bits); Level Zero `maxGroupCountX` × workgroup size (the group count is a ctypes uint32 that would truncate). Metal uses `_MAX_LAUNCH = 2**32`, and reduces fields of 2^32+ elements through NumPy because its reduction kernel's count and thread position are 32-bit. CUDA/HIP reduction kernels take the count as a `long long` argument. See `test_launch_limits.py`.
+Each GPU backend's `execute` and native `reduce_array` call `check_launch_size` (`runtime/kernel_utils.py`), which raises `ValueError` for more iterations than one grid can index, instead of a driver error or a wrap. `_max_launch` is queried at init: CUDA max `gridDim.x` × 256; HIP the same, capped at 2^32 − 256 (AMD's dispatch packet counts work-items in 32 bits); Level Zero `maxGroupCountX` × workgroup size (the group count is a ctypes uint32 that would truncate). Metal uses `_MAX_LAUNCH = 2**32`, and reduces arrays of 2^32+ elements through NumPy because its reduction kernel's count and thread position are 32-bit. CUDA/HIP reduction kernels take the count as a `long long` argument. See `test_launch_limits.py`.
 
 ### Algorithms (tack.algorithms)
 
-`exclusive_scan` and `inclusive_scan` (`algorithms/scan.py`) reduce, then scan, by chunks of `_CHUNK` (256): one thread per chunk copies it into the output (converting to the output's dtype on the store, so sums form in that dtype) and totals it, the chunk totals are scanned recursively the same way, and each chunk then writes its running sums from its offset. A level of at most `_SERIAL_MAX` (4096) elements on the CPU, or one tile on GPU backends, is one launch that one thread scans in order (`_scan_serial`, which also leaves the total in a one-element field): a million elements take three launches on the CPU, where the two levels below the chunk totals took five launches of microseconds of work each and most of a contour's host time between launches; the Blelloch scan before that made two launches per factor of two. In place (`input is output`) works; the total is read as one element (`field[n - 1]`, no launch). On backends with workgroups the chunk is a 2048-element tile scanned by a workgroup (`_tile_sums`/`_tile_apply`: eight per lane, lane totals Hillis-Steele in shared memory, a lane's exclusive prefix read from its neighbour rather than subtracted), since one thread per chunk is slow on GPUs (Metal, 1M elements: 4.6 -> 1.1 ms); floating sums then combine lanes in tree order.
+`exclusive_scan` and `inclusive_scan` (`algorithms/scan.py`) reduce, then scan, by chunks of `_CHUNK` (256): one thread per chunk copies it into the output (converting to the output's dtype on the store, so sums form in that dtype) and totals it, the chunk totals are scanned recursively the same way, and each chunk then writes its running sums from its offset. A level of at most `_SERIAL_MAX` (4096) elements on the CPU, or one tile on GPU backends, is one launch that one thread scans in order (`_scan_serial`, which also leaves the total in a one-element array): a million elements take three launches on the CPU, where the two levels below the chunk totals took five launches of microseconds of work each and most of a contour's host time between launches; the Blelloch scan before that made two launches per factor of two. In place (`input is output`) works; the total is read as one element (`array[n - 1]`, no launch). On backends with workgroups the chunk is a 2048-element tile scanned by a workgroup (`_tile_sums`/`_tile_apply`: eight per lane, lane totals Hillis-Steele in shared memory, a lane's exclusive prefix read from its neighbour rather than subtracted), since one thread per chunk is slow on GPUs (Metal, 1M elements: 4.6 -> 1.1 ms); floating sums then combine lanes in tree order.
 
-`argsort`/`sort_by_key` (`algorithms/sort.py`) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped. On the CPU, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. On backends with workgroups (`supports_workgroups`) a pass instead sorts 4096-key tiles in shared memory (`_sort_tiles`: eight stable one-bit splits by workgroup prefix sums, no shared atomics, u8 digits and u16 positions to fit Metal's 32 KB), takes each tile's digit counts from the runs, scans them and scatters runs (`_scatter_tiles`); per-lane private tables spilled on GPUs, which made Metal's sort 3.5x slower than 8 CPU threads. The pass count follows the key spread (min subtracted on the fly), found by a chunked min/max reduction over the full u64 keys (`_key_range`). Not with atomics: four per key on one address made the sort four times slower on eight CPU threads than on one. `unique`/`reduce_by_key` flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty fields (`shape=(0,)`) are valid outputs and allocate on every backend.
+`argsort`/`sort_by_key` (`algorithms/sort.py`) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped. On the CPU, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. On backends with workgroups (`supports_workgroups`) a pass instead sorts 4096-key tiles in shared memory (`_sort_tiles`: eight stable one-bit splits by workgroup prefix sums, no shared atomics, u8 digits and u16 positions to fit Metal's 32 KB), takes each tile's digit counts from the runs, scans them and scatters runs (`_scatter_tiles`); per-lane private tables spilled on GPUs, which made Metal's sort 3.5x slower than 8 CPU threads. The pass count follows the key spread (min subtracted on the fly), found by a chunked min/max reduction over the full u64 keys (`_key_range`). Not with atomics: four per key on one address made the sort four times slower on eight CPU threads than on one. `unique`/`reduce_by_key` flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty arrays (`shape=(0,)`) are valid outputs and allocate on every backend.
 
 ### CPU threading decision
 
 The CPU backend fans a loop range out to its thread pool only when the serial run would cost meaningfully more than the fan-out. Both sides are measured, not assumed:
 
-- The fan-out itself is one ctypes call into a pool JIT'd by `runtime/cpu_pool.py` (LLVM IR built with `llvmlite.ir`, no C compiler): `N - 1` detached pthreads each wait on their own mailbox, a launch count (spinning briefly, then blocking on a futex on Linux or `os_sync_wait_on_address` on macOS 14.4+, woken only if asleep; `nanosleep` polls backing off to 1 ms elsewhere, which on the Mac made every launch wait for its slowest sleeper and kept mid-size launches serial); a launch of `k` threads posts to workers `0 .. k - 2` only and runs as worker `k - 1` itself, so the others are not woken and the `k` of every launch are the same `k` (the hot fan-out is 3 + 0.3k µs on a 2 GHz Xeon, where waking all 16 for a launch of 2 cost 11; workers are not pinned: pinning lost on a two-socket Xeon and on jura's EPYC, since a pinned worker cannot move off a busy core); the workers and the caller claim chunks from a counter (`GRAIN` per worker, at least `MIN_CHUNK` elements) and run them through a per-kernel wrapper that unpacks the arguments from 8-byte slots (`chunk_wrapper`, `pack_args`); a worker on a busy core's sibling hyperthread, or over the dear part of an uneven range, simply takes fewer (one equal chunk per worker made a compute-bound 1M-cell kernel take 29 or 50 ms as the scheduler placed the workers). The pool is one per process, sized by the CPUs the process may run on (on Apple silicon the performance cores, `hw.perflevel0.physicalcpu`, so no idle efficiency-core workers are woken and waited for), and a dispatch uses as many of its threads as its backend has. The pool program uses inline asm (arm64 `yield`), so `_target_machine` initializes the native asm parser: without it LLVM aborts the process on Apple silicon instead of raising. Its launch state (function, pack, range, counters, the spans and counts a run leaves) is one set of JIT'd globals, so a run is a transaction under `CPool._txn`, held from the ctypes call through the read of its report: two Python threads dispatching at once each wrote the other's run and read its results (TA-45). A start whose `pthread_create` fails part way sets `quit`, wakes the workers it did make and joins them before returning failure, since they were waiting in code the constructor was about to free (TA-46, a SIGSEGV). Its workers, like the executor's (`_get_pool`, which starts them all at once), are made under the interleave policy, or keep a bound task's binding, so the pages of a new field they first-touch are spread the way a buffer filled under the policy was. Through `ThreadPoolExecutor` a fan-out cost ~60 µs per worker on a 2 GHz Xeon (490 µs for 8, 1.2 ms after an idle gap), because every worker's wake-up and GIL handoff serialized; through the pool it is 3–5 µs hot and ~100 µs after an idle gap, and the dataset filters at 1M cells went from 1.05× to 1.9× on 8 threads there. `TACK_CPU_POOL=python` keeps the executor path, which is also the fallback on Windows or if the pool cannot be made (`CPUBackend.pool_kind`). Tests that simulate workers through `call_range` or `_get_pool` must set the Python path; `test_cpu_threading.py` does so for its whole module.
+- The fan-out itself is one ctypes call into a pool JIT'd by `runtime/cpu_pool.py` (LLVM IR built with `llvmlite.ir`, no C compiler): `N - 1` detached pthreads each wait on their own mailbox, a launch count (spinning briefly, then blocking on a futex on Linux or `os_sync_wait_on_address` on macOS 14.4+, woken only if asleep; `nanosleep` polls backing off to 1 ms elsewhere, which on the Mac made every launch wait for its slowest sleeper and kept mid-size launches serial); a launch of `k` threads posts to workers `0 .. k - 2` only and runs as worker `k - 1` itself, so the others are not woken and the `k` of every launch are the same `k` (the hot fan-out is 3 + 0.3k µs on a 2 GHz Xeon, where waking all 16 for a launch of 2 cost 11; workers are not pinned: pinning lost on a two-socket Xeon and on jura's EPYC, since a pinned worker cannot move off a busy core); the workers and the caller claim chunks from a counter (`GRAIN` per worker, at least `MIN_CHUNK` elements) and run them through a per-kernel wrapper that unpacks the arguments from 8-byte slots (`chunk_wrapper`, `pack_args`); a worker on a busy core's sibling hyperthread, or over the dear part of an uneven range, simply takes fewer (one equal chunk per worker made a compute-bound 1M-cell kernel take 29 or 50 ms as the scheduler placed the workers). The pool is one per process, sized by the CPUs the process may run on (on Apple silicon the performance cores, `hw.perflevel0.physicalcpu`, so no idle efficiency-core workers are woken and waited for), and a dispatch uses as many of its threads as its backend has. The pool program uses inline asm (arm64 `yield`), so `_target_machine` initializes the native asm parser: without it LLVM aborts the process on Apple silicon instead of raising. Its launch state (function, pack, range, counters, the spans and counts a run leaves) is one set of JIT'd globals, so a run is a transaction under `CPool._txn`, held from the ctypes call through the read of its report: two Python threads dispatching at once each wrote the other's run and read its results (TA-45). A start whose `pthread_create` fails part way sets `quit`, wakes the workers it did make and joins them before returning failure, since they were waiting in code the constructor was about to free (TA-46, a SIGSEGV). Its workers, like the executor's (`_get_pool`, which starts them all at once), are made under the interleave policy, or keep a bound task's binding, so the pages of a new array they first-touch are spread the way a buffer filled under the policy was. Through `ThreadPoolExecutor` a fan-out cost ~60 µs per worker on a 2 GHz Xeon (490 µs for 8, 1.2 ms after an idle gap), because every worker's wake-up and GIL handoff serialized; through the pool it is 3–5 µs hot and ~100 µs after an idle gap, and the dataset filters at 1M cells went from 1.05× to 1.9× on 8 threads there. `TACK_CPU_POOL=python` keeps the executor path, which is also the fallback on Windows or if the pool cannot be made (`CPUBackend.pool_kind`). Tests that simulate workers through `call_range` or `_get_pool` must set the Python path; `test_cpu_threading.py` does so for its whole module.
 
 - Each `CompiledKernel` carries `ns_per_elem`, a smoothed estimate of its serial cost, updated on every serial dispatch. From it the backend precomputes `parallel_min_elems`, so the dispatch hot path is one integer compare.
 - The backend measures its own fan-out cost by dispatching *empty* ranges through the real path — no loop iterations, so the probe has no side effects. Under the default policy (v2; `TACK_CPU_POLICY=v1` opts out) that is a curve over idle gaps, interpolated on the actual idleness at dispatch, refined from real fan-outs, and re-measured directly at most every 100 ms. Only its hot end is measured at the first fan-out; each idle knot starts as a pessimistic prior (`_FAN_OUT_IDLE_PRIOR`, 4× hot, applied as a step) and is replaced, and moved, by the first fan-out measured at a pause the program actually took — measured at once rather than on the 100 ms clock. Nothing sleeps: calibrating by sleeping through each gap cost 180 ms inside whichever dispatch first looked worth threading (P8). v1 measures it once.
@@ -671,11 +671,11 @@ A fixed element count cannot work here: the crossover moves ~1000× with arithme
 - **Masks**: comparisons of vectors give a vector of `0`/`1` per component; `any(mask)`, `all(mask)`, `tack.select(mask, a, b)`
 - **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max` (two or more values), `pow`; all apply to each component of a vector
 - **Types**: `int()`, `float()` casts, plus explicit `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`, `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`
-- **Atomics**: `tack.atomic_add(field, idx, val)`, `tack.atomic_min(...)`, `tack.atomic_max(...)`
-- **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(field, size)`, `tack.barrier()`, `tack.thread_id()`
+- **Atomics**: `tack.atomic_add(array, idx, val)`, `tack.atomic_min(...)`, `tack.atomic_max(...)`
+- **GPU primitives**: `tack.shared(dtype, size)`, `tack.shared_like(array, size)`, `tack.barrier()`, `tack.thread_id()`
 - **Debug**: `print("label:", value)` — emits printf on CPU/CUDA/HIP, no-op on Metal
-- **Fields**: `field[i]`, `field[i, j]`, `field[None]`, `field.shape[k]`, `len(field)` — usable anywhere in a kernel (loop bounds, conditions, arithmetic, indices), not just as the outer loop bound. The dimension index must be a literal. See "Field dimensions" below for what specializes.
-- **Reductions**: `field.sum()`, `field.min()`, `field.max()`, `field.mean()` return Python floats. Eligible f32 fields reduce on GPU; CPU and other dtypes use shared NumPy semantics. f32/f64 sums retain their precision; signed/unsigned integer sums use wrapping i64/u64 accumulators before float conversion. Floating extrema propagate NaNs and use negative-zero min / positive-zero max ties. Empty sum is +0, empty mean NaN, empty extrema raise. Floating addition order may vary; see the absolute error budget in `docs/reference/language-contract.md`. Runtime kernels and GPU block extrema share `codegen/reductions.py`; block arguments/results are f32, requiring explicit casts for other inputs. CPU rejects cooperative kernels; GPU participation and atomic target/order/scope domains are defined in the language contract. See `test_reduction_semantics.py`.
+- **Arrays**: `array[i]`, `array[i, j]`, `array[None]`, `array.shape[k]`, `len(array)` — usable anywhere in a kernel (loop bounds, conditions, arithmetic, indices), not just as the outer loop bound. The dimension index must be a literal. See "Array dimensions" below for what specializes.
+- **Reductions**: `array.sum()`, `array.min()`, `array.max()`, `array.mean()` return Python floats. Eligible f32 arrays reduce on GPU; CPU and other dtypes use shared NumPy semantics. f32/f64 sums retain their precision; signed/unsigned integer sums use wrapping i64/u64 accumulators before float conversion. Floating extrema propagate NaNs and use negative-zero min / positive-zero max ties. Empty sum is +0, empty mean NaN, empty extrema raise. Floating addition order may vary; see the absolute error budget in `docs/reference/language-contract.md`. Runtime kernels and GPU block extrema share `codegen/reductions.py`; block arguments/results are f32, requiring explicit casts for other inputs. CPU rejects cooperative kernels; GPU participation and atomic target/order/scope domains are defined in the language contract. See `test_reduction_semantics.py`.
 
 ## Platform-specific dependencies
 
@@ -705,7 +705,7 @@ Then: `tack.init(arch=tack.hip)`.
 
 **Known issue**: `hiprtcDestroyProgram` segfaults in hip-python. The backend skips the call (minor leak, mitigated by kernel caching). Recorded against **7.1**; **checked on 2026-08-11 against hip-python 7.2.2 / ROCm 7.0.2 on an MI300X and it still segfaults** — SIGSEGV on the first call, after a successful compile. The documented calling convention is the one that crashes: `hiprtcDestroyProgram(prog)` takes the program directly, and passing a pointer to it is rejected by the binding as a type error. The workaround stays.
 
-**hip-python 7.x struct wrappers are incomplete.** `make_hipExtent`/`make_hipPos`/`make_hipPitchedPtr` are gone (construct `hipExtent(width=...)` etc.), `hipCreateChannelDesc` returns `(err, desc)`, nested struct members are read-only attributes that are views into the parent (set their fields in place), and array handles (`res.array.array`, `hipMemcpy3DParms.dstArray`) and fixed-size arrays (`hipTextureDesc.addressMode`) are not exposed at all. `HIPTextureImage` writes those through ctypes, locating them from neighbouring views. MI300X has no texture hardware, so this path went untested until an MI210 (gfx90a), 2026-10-07; there it can only be run with point filtering.
+**hip-python 7.x struct wrappers are incomplete.** `make_hipExtent`/`make_hipPos`/`make_hipPitchedPtr` are gone (construct `hipExtent(width=...)` etc.), `hipCreateChannelDesc` returns `(err, desc)`, nested struct members are read-only attributes that are views into the parent (set their arrays in place), and array handles (`res.array.array`, `hipMemcpy3DParms.dstArray`) and fixed-size arrays (`hipTextureDesc.addressMode`) are not exposed at all. `HIPTextureImage` writes those through ctypes, locating them from neighbouring views. MI300X has no texture hardware, so this path went untested until an MI210 (gfx90a), 2026-10-07; there it can only be run with point filtering.
 
 ## Level Zero backend notes
 
@@ -724,7 +724,7 @@ adopts another library's handles instead of creating a context (all three
 are required; `Backend.init_options` declares accepted keywords and
 `tack.init` rejects others). `tack.interop.vtk.init_level_zero()` takes them
 from VTK's Viskores/Kokkos SYCL queue, and the VTK interop refuses Level Zero
-fields from any other context. Intel's driver resolves pointers from any
+arrays from any other context. Intel's driver resolves pointers from any
 context, so this check is the only one that catches the mistake. The
 backend reports `device_memory_spaces = {"level_zero"}` via
 `zeMemGetAllocProperties`. See `test_level_zero_context.py`.

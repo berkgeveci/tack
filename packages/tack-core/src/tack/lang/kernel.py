@@ -27,20 +27,20 @@ def _verified_transform(*args, **kwargs):
 _transform_lock = threading.RLock()
 
 
-def _fields_from_another_backend(args, backend) -> set:
-    """Names of backends that allocated the field arguments, minus this one.
+def _arrays_from_another_backend(args, backend) -> set:
+    """Names of backends that allocated the array arguments, minus this one.
 
     Empty when nothing is out of place, which is the only answer the happy
     path ever needs — this runs after an AttributeError has already been
     raised, never before one.
     """
-    from tack.lang.field import Field, Texture3D
+    from tack.lang.array import Array, Texture3D
     stale = set()
     for arg in args:
-        field = arg.field if isinstance(arg, Texture3D) else arg
-        if not isinstance(field, Field):
+        array = arg.array if isinstance(arg, Texture3D) else arg
+        if not isinstance(array, Array):
             continue
-        origin = getattr(field._buffer, "backend_name", "")
+        origin = getattr(array._buffer, "backend_name", "")
         if origin and origin != backend.name:
             stale.add(origin)
     return stale
@@ -84,7 +84,7 @@ def _template_key(obj):
         template_func_attrs,
         template_structure,
     )
-    scalars, fields, runtime = classify_template_attrs(obj)
+    scalars, arrays, runtime = classify_template_attrs(obj)
     # Only class-level scalars (constants) are part of the cache key.
     # Instance scalars are runtime parameters — changing them does
     # not trigger recompilation.
@@ -94,14 +94,14 @@ def _template_key(obj):
         # NaN constants a stable key despite NaN != NaN.
         tuple((k, type(v), struct.pack('!d', v) if isinstance(v, float) else v)
               for k, v in sorted(scalars.items())),
-        # A field's rank, not its size: the sizes the code bakes in (a row
+        # An array's rank, not its size: the sizes the code bakes in (a row
         # stride, a dimension used in arithmetic) are in the variant key's
-        # shape signature, which covers a template's fields as it covers
+        # shape signature, which covers a template's arrays as it covers
         # plain ones. Keying on the size compiled a template kernel anew for
-        # every length of every field it held.
+        # every length of every array it held.
         tuple((k, f.dtype, len(getattr(f, '_logical_shape', None) or f.shape),
                getattr(f, '_vector_n', None), getattr(f, '_matrix_shape', None))
-              for k, f in sorted(fields.items())),
+              for k, f in sorted(arrays.items())),
         tuple(sorted(runtime)),
         # Which device function each function-valued attribute
         # holds is compiled in, so it identifies the IR.
@@ -153,72 +153,72 @@ class Kernel:
             self._ast = ast.Module(body=[funcdef], type_ignores=[])
             self._funcdef = funcdef
         self.name = self._funcdef.name
-        # Lazy IR: defer transform until first dispatch (vector fields may be needed)
+        # Lazy IR: defer transform until first dispatch (vector arrays may be needed)
         self._ir = None
-        self._ir_cache = {}  # vector_fields key → IRModule
+        self._ir_cache = {}  # vector_arrays key → IRModule
         # A kernel ending in `return expr` has the expression computed by a
-        # one-thread epilogue kernel into a hidden field; see _split_result.
+        # one-thread epilogue kernel into a hidden array; see _split_result.
         self._result = None if funcdef is not None else _split_result(self, func)
-        self._result_field = None
+        self._result_array = None
 
-    def get_ir(self, vector_fields=None, template_args=None, texture_fields=None, debug=False):
-        """Get IR, re-transforming if vector/texture field or template metadata is provided.
+    def get_ir(self, vector_arrays=None, template_args=None, texture_arrays=None, debug=False):
+        """Get IR, re-transforming if vector/texture array or template metadata is provided.
 
         ``debug`` lowers with bounds checks (see ``ir_bounds``), cached apart.
         """
         if template_args:
-            key = self._make_cache_key(vector_fields, template_args, texture_fields, debug)
+            key = self._make_cache_key(vector_arrays, template_args, texture_arrays, debug)
             cached = self._ir_cache.get(key)
             if cached is not None:
                 return cached
             with _transform_lock:
                 # Re-check: another thread may have built it while we waited.
                 if key not in self._ir_cache:
-                    self._ir_cache[key] = self._lower(vector_fields, texture_fields,
+                    self._ir_cache[key] = self._lower(vector_arrays, texture_arrays,
                                                       template_args, debug)
                     for token in _key_tokens(key):
                         token.kernels.add(self)
                 return self._ir_cache[key]
-        if not vector_fields and not texture_fields and not debug:
+        if not vector_arrays and not texture_arrays and not debug:
             if self._ir is None:
                 with _transform_lock:
                     if self._ir is None:
                         self._ir = self._lower(None, None, None)
             return self._ir
-        key = self._make_cache_key(vector_fields, None, texture_fields, debug)
+        key = self._make_cache_key(vector_arrays, None, texture_arrays, debug)
         cached = self._ir_cache.get(key)
         if cached is not None:
             return cached
         with _transform_lock:
             if key not in self._ir_cache:
-                self._ir_cache[key] = self._lower(vector_fields, texture_fields, None, debug)
+                self._ir_cache[key] = self._lower(vector_arrays, texture_arrays, None, debug)
             return self._ir_cache[key]
 
-    def _lower(self, vector_fields, texture_fields, template_args, debug=False):
+    def _lower(self, vector_arrays, texture_arrays, template_args, debug=False):
         """Lower one specialization, or read it from the disk cache."""
         from tack.runtime.disk_cache import lowered
 
         def lower():
             if not template_args:
                 return _verified_transform(
-                    self._ast, vector_fields=vector_fields,
-                    texture_fields=texture_fields, python_func=self.func, debug=debug)
+                    self._ast, vector_arrays=vector_arrays,
+                    texture_arrays=texture_arrays, python_func=self.func, debug=debug)
             from tack.lang.template_rewrite import rewrite_templates
             rewritten_ast, resolved_funcs = rewrite_templates(self._ast, template_args)
             return _verified_transform(
-                rewritten_ast, vector_fields=vector_fields,
-                texture_fields=texture_fields, python_func=self.func,
+                rewritten_ast, vector_arrays=vector_arrays,
+                texture_arrays=texture_arrays, python_func=self.func,
                 template_funcs=resolved_funcs, debug=debug)
 
-        return lowered(self, vector_fields, texture_fields, template_args, lower, debug)
+        return lowered(self, vector_arrays, texture_arrays, template_args, lower, debug)
 
-    def _make_cache_key(self, vector_fields, template_args, texture_fields=None, debug=False):
+    def _make_cache_key(self, vector_arrays, template_args, texture_arrays=None, debug=False):
         """Build a cache key that distinguishes different specializations."""
         parts = [("debug",)] if debug else []
-        if vector_fields:
-            parts.append(("vec", tuple(sorted(vector_fields.items()))))
-        if texture_fields:
-            parts.append(("tex", tuple(sorted(texture_fields.items()))))
+        if vector_arrays:
+            parts.append(("vec", tuple(sorted(vector_arrays.items()))))
+        if texture_arrays:
+            parts.append(("tex", tuple(sorted(texture_arrays.items()))))
         if template_args:
             from tack.lang.template_rewrite import memoized
 
@@ -230,12 +230,12 @@ class Kernel:
 
     def _run_result(self, backend, args, kwargs):
         """Run the epilogue kernel and read the result it stored."""
-        from tack.lang.field import empty
+        from tack.lang.array import empty
         dtype, epilogue = self._result
-        result = self._result_field
+        result = self._result_array
         if result is None or result._buffer.backend_name != backend.name:
             result = empty((1,), dtype)
-            self._result_field = result
+            self._result_array = result
         backend.execute(epilogue, (*args, result), kwargs)
         if dispatch._debug:
             debug_bounds.check()
@@ -263,21 +263,21 @@ class Kernel:
                 return None
             return self._run_result(backend, args, kwargs)
         except AttributeError as e:
-            # Almost always one thing: a field allocated before `tack.init()`
+            # Almost always one thing: an array allocated before `tack.init()`
             # switched backends, so its buffer is the old backend's type and
             # the new one reaches for an attribute that was never there. The
             # raw error is `'NumpyBuffer' object has no attribute
             # 'metal_buffer'`, which names neither the cause nor the fix.
             # Diagnosed here rather than checked per dispatch: the check
             # costs nothing on the path that works.
-            stale = _fields_from_another_backend(args, backend)
+            stale = _arrays_from_another_backend(args, backend)
             if not stale:
                 raise
             raise RuntimeError(
                 f"Kernel '{self.name}' was called on the {backend.label} "
-                f"backend with {len(stale)} field(s) allocated by another "
+                f"backend with {len(stale)} array(s) allocated by another "
                 f"backend ({', '.join(sorted(stale))}). `tack.init()` replaces "
-                f"the active backend; fields allocated before it still belong "
+                f"the active backend; arrays allocated before it still belong "
                 f"to the old one and cannot be dispatched on the new one. "
                 f"Re-allocate them after switching, and do not re-initialize "
                 f"while another thread is dispatching."
@@ -340,12 +340,12 @@ def _split_result(kernel, func):
     so a value returned there has no single meaning on the device. The
     return is instead computed after the launch by an epilogue kernel of
     one thread: the statements before and after the loop (which may only
-    bind locals, load fields and declare arrays) followed by a store of
-    the expression into a hidden one-element field, which the host reads.
-    So a returned expression may read fields and the kernel's arguments
+    bind locals, load arrays and declare arrays) followed by a store of
+    the expression into a hidden one-element array, which the host reads.
+    So a returned expression may read arrays and the kernel's arguments
     and constants, but not a local the loop assigns. The type comes from
     the return annotation: ``-> tack.f32``, ``-> float`` (f32) or ``-> int``
-    (i32), which the hidden field is allocated with.
+    (i32), which the hidden array is allocated with.
 
     Returns ``(dtype, epilogue Kernel)``, or None for a kernel without one.
     Other returns are left for the validator to reject.
@@ -372,7 +372,7 @@ def _split_result(kernel, func):
             raise UnsupportedSyntaxError(
                 f"Kernel '{funcdef.name}': return at line {returned.lineno} reads '{n.id}', "
                 f"which the parallel loop assigns and so has a value per thread; a returned "
-                f"expression may read fields, arguments, constants and locals assigned "
+                f"expression may read arrays, arguments, constants and locals assigned "
                 f"outside the loop")
     once = ast.For(
         target=ast.Name(id="__tack_once__", ctx=ast.Store()),
@@ -409,4 +409,4 @@ def _result_dtype(func, funcdef, returned):
     raise UnsupportedSyntaxError(
         f"Kernel '{funcdef.name}': return at line {returned.lineno} needs a return "
         f"annotation naming the result's type (-> tack.f32, -> float, -> int, ...); "
-        f"the hidden field it is written to is allocated with that type")
+        f"the hidden array it is written to is allocated with that type")

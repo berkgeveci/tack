@@ -11,7 +11,7 @@ def vector_add(x, y, out):
         out[i] = x[i] + y[i]
 
 
-def _make_fields():
+def _make_arrays():
     n = 64
     x = tack.empty((n,))
     y = tack.empty((n,))
@@ -20,7 +20,7 @@ def _make_fields():
 
 
 def test_inspect_ir(backend):
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     result = tack.inspect(vector_add, x, y, out, mode="ir")
     assert isinstance(result, str)
     assert "Function" in result
@@ -42,7 +42,7 @@ _ENTRY_POINT = {
 
 
 def test_inspect_source(backend):
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     result = tack.inspect(vector_add, x, y, out, mode="source")
     assert isinstance(result, str)
     assert len(result) > 50
@@ -57,20 +57,20 @@ def test_hip_source_carries_its_runtime_header(backend):
     """HIP shares the CUDA codegen and differs by exactly this include."""
     if backend != "hip":
         pytest.skip("HIP only")
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     result = tack.inspect(vector_add, x, y, out, mode="source")
     assert "#include <hip/hip_runtime.h>" in result
 
 
 def test_inspect_default_mode(backend):
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     result = tack.inspect(vector_add, x, y, out)
     assert isinstance(result, str)
     assert len(result) > 50
 
 
 def test_inspect_invalid_mode(backend):
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     with pytest.raises(ValueError, match="Unknown inspect mode"):
         tack.inspect(vector_add, x, y, out, mode="bad")
 
@@ -99,7 +99,7 @@ def test_optimized_mode_is_cpu_only(backend):
 
     It used to hand back the unoptimized source under the optimized name.
     """
-    x, y, out = _make_fields()
+    x, y, out = _make_arrays()
     if backend == "cpu":
         assert "define" in tack.inspect(vector_add, x, y, out, mode="optimized")
         return

@@ -29,7 +29,7 @@ tack.init(arch=_arch)
 n = 10000
 
 
-# A kernel with many scalar parameters: 3 fields + 30 float scalars + 3 int scalars
+# A kernel with many scalar parameters: 3 arrays + 30 float scalars + 3 int scalars
 # On Metal this would require 36 buffer bindings without packing (over the 31 limit).
 # Tack automatically packs all 33 scalars into 2 constant buffers (one f32, one i32).
 @tack.kernel
@@ -47,7 +47,7 @@ def weighted_sum(out, a, b,
         out[idx] = total_w * a[idx] + b[idx] + offset
 
 
-# Set up fields
+# Set up arrays
 out = tack.empty((n,))
 a = tack.empty((n,))
 b = tack.empty((n,))

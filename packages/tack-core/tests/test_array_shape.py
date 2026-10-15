@@ -1,4 +1,4 @@
-"""`field.shape[k]` and `len(field)` anywhere in a kernel.
+"""`array.shape[k]` and `len(array)` anywhere in a kernel.
 
 Both are documented as general kernel-language features, but they used to
 resolve only as the outermost parallel loop bound — dispatch evaluated
@@ -291,7 +291,7 @@ def _calls_func_len(x, out):
 
 
 def test_shape_inside_an_inlined_func(backend):
-    """Inlining renames the field, so the dimension query must follow it."""
+    """Inlining renames the array, so the dimension query must follow it."""
     src, got = _run(_calls_func)
     np.testing.assert_array_equal(got, np.full(N, src[-1]))
 
@@ -317,8 +317,8 @@ def _calls_template(h: tack.template(), out):
         out[i] = h.scaled(i)
 
 
-def test_shape_of_a_template_field(backend):
-    """Template rewriting also renames the field."""
+def test_shape_of_a_template_array(backend):
+    """Template rewriting also renames the array."""
     data = tack.empty((N,))
     out = tack.empty((N,))
     src = np.arange(N, dtype=np.float32)

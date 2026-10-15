@@ -5,17 +5,17 @@
 Every backend subclasses `Backend` (`runtime/backend.py`), which declares
 what a backend must implement and what callers may ask it.
 
-Required: `allocate_field()`, `wrap_ptr()`, `execute()`.
+Required: `allocate_array()`, `wrap_ptr()`, `execute()`.
 
 Optional, with defaults that suit a backend lacking the feature:
 
 | Method | Default | Overridden by |
 |---|---|---|
-| `fill_field(field, value)` | `False`: `Field.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more as a kernel through its dispatch, so the threads first-touch the pages |
+| `fill_array(array, value)` | `False`: `Array.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more as a kernel through its dispatch, so the threads first-touch the pages |
 | `synchronize()` | Nothing to wait for | Metal, CUDA, HIP and Level Zero, which queue launches (`tack.sync()` calls it) |
 | `memory_space(ptr)` | `"cpu"` | Backends with device memory |
 | `cache_target()`, `variant_artifact()`, `load_variant()` | `None`: compiled variants are not stored on disk | Every backend; see [The disk cache](#the-disk-cache) |
-| `reduce_field()`, `texture_in_hardware()`, `create_texture_image()` | Host reductions, software sampling | Backends with device reductions or texture units |
+| `reduce_array()`, `texture_in_hardware()`, `create_texture_image()` | Host reductions, software sampling | Backends with device reductions or texture units |
 
 Declared capabilities — read these instead of probing with `hasattr`:
 
@@ -23,9 +23,9 @@ Declared capabilities — read these instead of probing with `hasattr`:
 |---|---|
 | `name` | Arch identifier, matching `tack.init(arch=...)` |
 | `display_name` / `label` | How to write the backend in a message |
-| `supported_dtypes` | Scalar types accepted as field dtypes |
+| `supported_dtypes` | Scalar types accepted as array dtypes |
 | `supports_f64` | Derived from `supported_dtypes` — never declared separately |
-| `supports_device_reductions` | Whether `reduce_field()` runs on device; otherwise `Field.sum()` and friends fall back to numpy |
+| `supports_device_reductions` | Whether `reduce_array()` runs on device; otherwise `Array.sum()` and friends fall back to numpy |
 | `supports_workgroups` | Native workgroup execution for shared memory, barriers, local thread IDs and block reductions; false on CPU |
 | `device_memory_spaces` | Memory spaces a pointer must be in for `array_from_ptr()`; empty means no check |
 
@@ -60,7 +60,7 @@ Every backend uses `resolve_variant()` in `runtime/kernel_utils.py` to
 find or build a specialization. A call first tries the dispatch fast path
 (below); otherwise:
 
-1. Expand template arguments and detect vector and texture fields.
+1. Expand template arguments and detect vector and texture arrays.
 2. Obtain the pristine IR template for this specialization (lowered, or read
    from the disk cache) and check required
    workgroup primitives against the backend's `supports_workgroups`. CPU
@@ -78,10 +78,10 @@ find or build a specialization. A call first tries the dispatch fast path
    and workgroup participation, and run conservative copy propagation. The
    backend build callback then packs scalars where needed, annotates types,
    generates code, and compiles. The `KernelVariant` records the atomic
-   targets and the field arguments the kernel may write. `_store_variant`
+   targets and the array arguments the kernel may write. `_store_variant`
    then writes it to disk.
-6. On every call, check atomic alignment and refuse read-only fields bound
-   to written parameters (`check_writable_fields`), and record the call's
+6. On every call, check atomic alignment and refuse read-only arrays bound
+   to written parameters (`check_writable_arrays`), and record the call's
    signature for the fast path.
 7. Resolve the launch range from the variant's IR for this dispatch; GPU
    backends refuse a range past their launch limit (`check_launch_size`).
@@ -94,23 +94,23 @@ find or build a specialization. A call first tries the dispatch fast path
 ### The dispatch fast path
 
 `resolve_variant` first reads the call's *signature* off its arguments
-(`_call_signature`): each field's dtype, shape and element layout, each
+(`_call_signature`): each array's dtype, shape and element layout, each
 scalar's kind and integer width, and for a template its class token, its
 class constants' current values and what the key and the expansion read of
 each attribute (nested templates by path). Equal signatures imply an equal
 variant key, so a signature seen before (`_fast_resolve`) expands the
 templates through a stored plan, decides disjointness over precomputed
-field slots, runs the per-call checks of step 6 (`_check_call`) and returns
+array slots, runs the per-call checks of step 6 (`_check_call`) and returns
 the variant the entry holds, without the template scope, IR lookup or key.
 `drop_variants` drops the entries with the variants. Debug mode and keyword
-arguments never use or record entries. A warm CPU dispatch with eight field
+arguments never use or record entries. A warm CPU dispatch with eight array
 arguments costs about 34 µs of host time on a 2 GHz Xeon. Anything that
 changes the variant key must change the signature too, or a call will run
 the wrong variant; `test_dispatch_fast_path.py` covers what the signature
 must separate (integer widths, the float context, class constants, template
 structure) and what a hit must still check.
 
-The compiled key includes dtypes, field/scalar/texture categories, vector
+The compiled key includes dtypes, array/scalar/texture categories, vector
 widths, texture extents, template structure/constants, and baked-in dimension
 sizes. Template structure includes actual class identity and runtime scalar
 attribute names. Changing scalar values alone does not recompile; changing
@@ -118,16 +118,16 @@ an attribute layout or a vector width does.
 
 Passes run only on a cache miss and never mutate the pristine template.
 Parameter probing is private to each dispatch so concurrent calls cannot
-observe another call's types. Fields may overlap in storage; generated field
+observe another call's types. Arrays may overlap in storage; generated array
 parameters therefore carry no unconditional `noalias` or `restrict` promise.
 
-The CPU backend adds one more key element: whether this call's fields are
-disjoint. `fields_disjoint()` compares the byte ranges of the field arguments
-on every dispatch and passes when no field the kernel writes overlaps another
-field. Qualifying calls use a variant compiled with `noalias` on its field
+The CPU backend adds one more key element: whether this call's arrays are
+disjoint. `arrays_disjoint()` compares the byte ranges of the array arguments
+on every dispatch and passes when no array the kernel writes overlaps another
+array. Qualifying calls use a variant compiled with `noalias` on its array
 pointers; the rest use the variant without it. Without the promise LLVM must
 reload after every store, which matters for kernels that accumulate through a
-field in an inner loop. Measured on 2026-10-03, single-threaded: on a 2012
+array in an inner loop. Measured on 2026-10-03, single-threaded: on a 2012
 Xeon E5-2650 the store-accumulator kernel at 2^20 elements ran in 2465 µs
 without the promise and 736 µs with it, and a stencil in 776 µs and 604 µs;
 the check added about 3–4 µs per 16-element dispatch there and about 1–1.6 µs
@@ -191,9 +191,9 @@ CUDA, HIP and Level Zero queue launches in program order (an open Metal
 command buffer, one stream per CUDA context or HIP device, one asynchronous
 immediate command list with a barrier after each command on Level Zero)
 and return; CUDA, HIP and Level Zero queue fills and host-to-device copies
-in the same order. The host waits where it reads field memory (`numpy()`,
+in the same order. The host waits where it reads array memory (`numpy()`,
 `read_range`, reductions; on Metal every host access to a buffer) or calls
-`tack.sync()`, which is `Backend.synchronize()`. A field dropped
+`tack.sync()`, which is `Backend.synchronize()`. An array dropped
 while a queued launch still uses it is freed after that launch
 (stream-ordered allocation, Level Zero's deferred free, Metal's
 per-launch references). Memory handed outside Tack (`wrap_ptr`, DLPack
@@ -222,9 +222,9 @@ appear in the generated code; the grid bound does not — codegen reads the
 depend on the array's length and force a recompile for every new size.
 `ir_shape_deps()` excludes it from the variant key for the same reason.
 
-## Field Allocation
+## Array Allocation
 
-Each backend implements `allocate_field(dtype, shape)` returning a
+Each backend implements `allocate_array(dtype, shape)` returning a
 backend-specific buffer:
 
 | Backend | Buffer type | Memory model |
@@ -235,18 +235,18 @@ backend-specific buffer:
 | HIP | `HIPBuffer` | Stream-ordered device pointer (`hipMallocAsync`; `hipMalloc` without memory pools) |
 | Level Zero | `L0Buffer` | Device pointer (`zeMemAllocDevice`) |
 
-`Field` (`tack.Array`) wraps a buffer with dtype and shape metadata.
+`Array` (`tack.Array`) wraps a buffer with dtype and shape metadata.
 `tack.copyto()` and `numpy()` handle host-device transfers through the
 buffer's `from_numpy()` / `to_numpy()` (on Metal this is a memcpy
 within unified memory; on CUDA/HIP/L0 it involves explicit copies).
 
-A new field's contents are unspecified on every backend; nothing fills it.
-`tack.zeros`, `ones` and `full` call `Field.fill`, which first offers the
-fill to `Backend.fill_field`. The CPU backend takes a fill of 256 KiB or
+A new array's contents are unspecified on every backend; nothing fills it.
+`tack.zeros`, `ones` and `full` call `Array.fill`, which first offers the
+fill to `Backend.fill_array`. The CPU backend takes a fill of 256 KiB or
 more and runs `tack.algorithms.copy._fill_kernel` through its dispatch, so
 the threads that will use the pages touch them first; GPU buffers fill on
 the device. Metal's new buffers are already zero (`starts_zeroed`), so
-`tack.zeros` skips the fill there. Code that reads a field before writing
+`tack.zeros` skips the fill there. Code that reads an array before writing
 it must make it with `tack.zeros`.
 
 ## Kernel Dispatch
@@ -263,7 +263,7 @@ per-kernel wrapper, and none of them touches Python. Workers and the
 caller claim chunks from a counter rather than taking one equal share
 each, so a slow worker takes fewer. Idle workers block on a futex (Linux)
 or `os_sync_wait_on_address` (macOS 14.4+) and poll elsewhere. Arguments
-reach the wrapper as field addresses packed into 8-byte slots with one
+reach the wrapper as array addresses packed into 8-byte slots with one
 `struct.pack_into`. `TACK_CPU_POOL=python` uses a `ThreadPoolExecutor`
 instead, which is also the fallback on Windows and wherever the pool
 cannot be built; tests that simulate workers through the Python path's
@@ -281,7 +281,7 @@ resolution still establish that the complete dispatch was short.
 
 ### Metal
 
-Encodes a compute command: the field pointers go into one argument buffer
+Encodes a compute command: the array pointers go into one argument buffer
 (declared resident with `useResource`), and `dispatchThreads` covers the
 grid. Textures use a separate binding namespace (`setTexture_atIndex_`) and
 bind the `MetalTextureImage` the `Texture3D` owns. Each launch owns a fresh
@@ -307,8 +307,8 @@ their `Texture3D` owns on devices with sampler hardware.
 
 ## Scalar Packing at Dispatch
 
-Pack field buffers are allocated once during compilation and cached.
-On subsequent calls, `_update_pack_fields()` just writes the new scalar
+Pack array buffers are allocated once during compilation and cached.
+On subsequent calls, `_update_pack_arrays()` just writes the new scalar
 values into the existing device buffers via `from_numpy()`. This avoids
 per-dispatch allocation overhead. With queued launches this stays correct
 because the copy is queued too: on CUDA, HIP and Level Zero the next
@@ -317,7 +317,7 @@ launches carry their own copy of the scalars (`_Uniforms`) instead.
 
 ## Device Pointer Interop
 
-`tack.array_from_ptr()` wraps an existing device pointer as a Field without
+`tack.array_from_ptr()` wraps an existing device pointer as an Array without
 allocation or copy. Each backend implements `wrap_ptr(ptr, dtype, shape)`:
 
 | Backend | `ptr` type | Implementation |
@@ -346,13 +346,13 @@ def __del__(self):
 
 ### Read-Only Protection
 
-`Field._writable` defaults to `True` for allocated fields and `False` for
+`Array._writable` defaults to `True` for allocated arrays and `False` for
 `array_from_ptr()`; a read-only DLPack import is also not writable. The
 `_check_writable()` method guards `tack.copyto()` and `fill()`. For kernels,
-the variant records which field arguments the kernel may store to
-(`KernelVariant.written_fields`, from `written_field_params`, all of them
-when a store can't be traced), and `check_writable_fields()` raises
-`ValueError` on every dispatch that binds a read-only field to one of
+the variant records which array arguments the kernel may store to
+(`KernelVariant.written_arrays`, from `written_array_params`, all of them
+when a store can't be traced), and `check_writable_arrays()` raises
+`ValueError` on every dispatch that binds a read-only array to one of
 them.
 
 ## Error Handling

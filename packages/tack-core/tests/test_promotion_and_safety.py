@@ -111,7 +111,7 @@ def test_codegen_escapes_reserved_name():
     out = tack.empty((4,))
 
     p = ir.IRParam("out")
-    store = ir.IRFieldStore(ir.IRName("out"), ir.IRName("i"), ir.IRConstant(1.0))
+    store = ir.IRArrayStore(ir.IRName("out"), ir.IRName("i"), ir.IRConstant(1.0))
     pfor = ir.IRParallelFor("i", ir.IRConstant(0), ir.IRConstant(4), [store])
     func = ir.IRFunction("double", [p], [pfor])
     infer_param_types(func, (out,))

@@ -383,7 +383,7 @@ cheap region is corrected on the first fan-out. The floor is still `P_eff`
 below the true serial rate; it only stops a range the kernel has shown to
 thread well from flipping to "too small to thread".
 
-**Retiring the floor.** Runtime scalars and field contents can change the
+**Retiring the floor.** Runtime scalars and array contents can change the
 work without a new compiled variant. When a whole-range fan-out
 (`whole_range=True`) finishes with *every* worker span below `trusted_span` —
 including spans too short to yield a rate — `_record_parallel_cost` clears
@@ -568,7 +568,7 @@ asked for physical cores, falling back to `os.cpu_count()`:
 | `_macos_core_count` | `sysctlbyname("hw.perflevel0.physicalcpu")`, then `hw.physicalcpu` | Performance cores only: with equal chunks an efficiency core paced the whole dispatch (the docstring: 8 threads beat 10 on an 8+2 machine). The JIT'd pool is sized the same way (`cpu_pool._performance_cores`): a pool of `os.cpu_count()` had two workers more than any launch used |
 | `_windows_core_count` | `GetLogicalProcessorInformationEx(RelationProcessorCore)` | Never run on Windows; any failure returns `None` |
 
-A new field is not filled: `allocate_field` returns uninitialized
+A new array is not filled: `allocate_array` returns uninitialized
 storage, and its pages are first touched by the kernel that writes it, in
 parallel when the policy fans that kernel out. Filling at allocation was
 serial, and dearer after a fan-out, while the workers' caches owned the
@@ -576,7 +576,7 @@ lines: at 5M cells on eight threads of a 2 GHz Xeon it was 130 of
 threshold's 276 ms and 77 of cell-to-point's 135. A fill of 256 KiB or
 more (`_PARALLEL_FILL_MIN_BYTES`; `tack.zeros`, `ones` and `full` among
 them) runs `tack.algorithms.copy._fill_kernel` through the normal dispatch
-(`CPUBackend.fill_field`, offered first by `Field.fill`), after NumPy has
+(`CPUBackend.fill_array`, offered first by `Array.fill`), after NumPy has
 converted the value, so it stores and refuses what `ndarray.fill` would.
 Smaller fills, a one-thread backend and another backend's buffers fill in
 place.
@@ -590,7 +590,7 @@ one), so the pages they first touch spread across nodes.
 stays off unless the kernel confirms it; wrapped external memory is not
 affected. Only a thread whose policy is the default is changed, and the
 policy found is put back: a process started under `numactl --membind` (or
-bound through libnuma) keeps its binding and its fields stay on its nodes.
+bound through libnuma) keeps its binding and its arrays stay on its nodes.
 The threading
 policy has no NUMA term — remote-memory effects show up in the measured
 rates — and workers are not pinned.
@@ -615,9 +615,9 @@ iteration fresh copies of the outer locals it assigns (see
 So for any program that meets the
 [execution contract](../reference/language-contract.md#execution-and-ordering)
 — no conflicting cross-iteration accesses — serial execution, a fan-out, and
-every split between them produce the same field contents. Atomic updates are
+every split between them produce the same array contents. Atomic updates are
 applied once per iteration under every decision. The contract leaves
-[atomic accumulation order](../reference/language-contract.md#atomic-field-updates)
+[atomic accumulation order](../reference/language-contract.md#atomic-array-updates)
 unspecified and a fan-out changes it, so floating-point atomic sums may round
 differently between dispatches.
 

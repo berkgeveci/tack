@@ -1,4 +1,4 @@
-"""Tests for sequential for-loops with runtime bounds from field loads.
+"""Tests for sequential for-loops with runtime bounds from array loads.
 
 This validates the pattern used by Viskores-style variable-length cell
 connectivity: for i in range(offsets[c], offsets[c+1]).
@@ -10,7 +10,7 @@ import tack
 
 
 def test_sum_variable_length(backend):
-    """Sum variable-length segments using offsets from a field."""
+    """Sum variable-length segments using offsets from an array."""
 
     @tack.kernel
     def sum_segments(offsets, data, output, n):
@@ -38,8 +38,8 @@ def test_sum_variable_length(backend):
     np.testing.assert_allclose(output.numpy(), expected)
 
 
-def test_range_from_single_field_load(backend):
-    """for i in range(count[c]) where count comes from a field."""
+def test_range_from_single_array_load(backend):
+    """for i in range(count[c]) where count comes from an array."""
 
     @tack.kernel
     def fill_counted(counts, output, n):
@@ -94,7 +94,7 @@ def test_indirect_gather(backend):
     np.testing.assert_allclose(cell_data.numpy(), expected)
 
 
-def test_nested_field_access(backend):
+def test_nested_array_access(backend):
     """Direct nested indexing: data[conn[i]] without a temp variable."""
 
     @tack.kernel

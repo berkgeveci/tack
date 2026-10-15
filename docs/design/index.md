@@ -73,7 +73,7 @@ which exception, and whether it runs on a cache hit.
 compiled variant is and exactly what goes into its key: argument types and
 categories, vector widths, texture extents, template structure and
 constants, the shape signature of dimensions baked into code, and the CPU
-disjoint-fields bit, and how debug mode's checked kernels are kept apart.
+disjoint-arrays bit, and how debug mode's checked kernels are kept apart.
 It covers cache structure, lifetime and thread safety, the dispatch fast
 path that skips key derivation for a repeated call, the correctness
 argument behind the key, worked examples of which calls reuse a variant
@@ -90,9 +90,9 @@ top-level parallel iteration space, sequential inner loops, ordering
 within an iteration, workgroups, barriers, block reductions and atomics,
 and how each backend maps them onto threads or grids.
 
-**[Memory and Aliasing](memory-and-aliasing.md).** Fields, views and
+**[Memory and Aliasing](memory-and-aliasing.md).** Arrays, views and
 imported storage that may share memory; why generated code makes no
-unconditional no-alias promise; and how the CPU's disjoint-fields
+unconditional no-alias promise; and how the CPU's disjoint-arrays
 specialization recovers performance safely.
 
 **[CPU Threading Policy](cpu-threading.md).** How the CPU backend decides,

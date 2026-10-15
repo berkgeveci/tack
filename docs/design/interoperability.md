@@ -1,6 +1,6 @@
 # Interoperability
 
-Tack rarely owns a whole application. Its fields have to reach PyTorch,
+Tack rarely owns a whole application. Its arrays have to reach PyTorch,
 CuPy, NumPy and VTK, and their arrays have to reach Tack kernels, without a
 copy through the host. This page describes the three mechanisms — DLPack,
 raw pointers and OS-handle export — then the VTK layer built on DLPack, and
@@ -14,16 +14,16 @@ Aliasing](memory-and-aliasing.md); this page assumes them.
 
 | Mechanism | Direction | Zero-copy | Who keeps the memory alive |
 |---|---|---|---|
-| `field.__dlpack__()` | Tack → other | yes | Tack pins the field until the consumer's deleter runs |
-| `tack.from_dlpack(x)` | other → Tack | yes (unless `copy=True`) | the field holds the producer's capsule and calls its deleter when collected |
+| `array.__dlpack__()` | Tack → other | yes | Tack pins the array until the consumer's deleter runs |
+| `tack.from_dlpack(x)` | other → Tack | yes (unless `copy=True`) | the array holds the producer's capsule and calls its deleter when collected |
 | `tack.array_from_ptr(ptr, ...)` | other → Tack | yes | the caller, by hand |
-| `field.export_memory()` | Tack → another graphics/compute API | Metal: yes; CUDA: yes for `exportable=True` fields, otherwise one copy | the exporting buffer |
+| `array.export_memory()` | Tack → another graphics/compute API | Metal: yes; CUDA: yes for `exportable=True` arrays, otherwise one copy | the exporting buffer |
 | `tack.interop.vtk` | both | yes | as DLPack |
 
 ## DLPack export
 
-`Field.__dlpack__(*, stream=None, max_version=None, dl_device=None,
-copy=None)` (`lang/field.py`) delegates to `field_to_dlpack` in
+`Array.__dlpack__(*, stream=None, max_version=None, dl_device=None,
+copy=None)` (`lang/array.py`) delegates to `array_to_dlpack` in
 `lang/dlpack.py`. `copy=True` raises `BufferError`: an export is always a
 view. `stream` and `dl_device` are accepted and not used. GPU launches
 are queued, so instead of ordering the consumer's stream after Tack's, the
@@ -38,8 +38,8 @@ on. See [Memory and Aliasing](memory-and-aliasing.md#queued-launches-and-memory)
 DLPack 1.0 `DLManagedTensorVersioned` in a `"dltensor_versioned"` capsule;
 otherwise it gets the legacy `DLManagedTensor` in a `"dltensor"` capsule.
 The distinction matters because only the versioned struct has a `flags`
-field, and so only it can carry `DLPACK_FLAG_BITMASK_READ_ONLY`, which Tack
-sets for a non-writable field. Exported the legacy way, a read-only field
+array, and so only it can carry `DLPACK_FLAG_BITMASK_READ_ONLY`, which Tack
+sets for a non-writable array. Exported the legacy way, a read-only array
 arrives as writable — the legacy protocol cannot say otherwise. The two
 structs are never read interchangeably: `dl_tensor` sits at the *end* of
 the versioned struct and at the start of the legacy one.
@@ -56,14 +56,14 @@ the versioned struct and at the start of the legacy one.
 
 The device id is always `0`. Shapes are copied into a `c_int64` array, and
 strides are always C-contiguous element strides with `byte_offset = 0` —
-there is nothing else to describe, since a field has no slicing. Every
-field dtype maps to a DLPack type; anything else raises `TypeError`.
+there is nothing else to describe, since an array has no slicing. Every
+array dtype maps to a DLPack type; anything else raises `TypeError`.
 
 ### Keeping an export alive
 
-An exported capsule points at the field's memory, so the field, the
+An exported capsule points at the array's memory, so the array, the
 managed-tensor struct, and the shape and stride arrays must all outlive the
-consumer. `field_to_dlpack` pins them in the module dictionary `_prevent_gc`
+consumer. `array_to_dlpack` pins them in the module dictionary `_prevent_gc`
 under a fresh integer key, and stores that key in the struct's
 `manager_ctx`. The key is the crux: DLPack calls the deleter with only the
 managed-tensor pointer, so the producer's bookkeeping key has to travel
@@ -89,7 +89,7 @@ arguments**, and `_release` does the same for `ctypes.cast`,
 module: a consumer that failed part-way through an import has been seen
 holding one until interpreter exit, when module globals are already torn
 down. A global lookup in the destructor then raised `NameError` inside an
-ignored ctypes callback, and the field stayed pinned. Defaults are bound
+ignored ctypes callback, and the array stayed pinned. Defaults are bound
 when the function is defined, so they survive the module.
 `test_an_unadopted_capsule_is_released_without_module_globals` in
 `tests/test_dlpack.py` runs the destructor with an empty globals dictionary
@@ -101,10 +101,10 @@ count.
 
 `tack.from_dlpack(source, copy=False)` wraps a tensor without copying. With
 `copy=True` it instead calls `np.from_dlpack(source)` (or uses `source`
-directly if it is a NumPy array) and copies into a new field with
+directly if it is a NumPy array) and copies into a new array with
 `array`, so the copying path accepts host tensors.
 
-The zero-copy path is `dlpack_to_field(source, writable=True)`:
+The zero-copy path is `dlpack_to_array(source, writable=True)`:
 
 1. **Get a capsule.** `_request_capsule` calls
    `source.__dlpack__(max_version=(1, 0))` and falls back to
@@ -115,7 +115,7 @@ The zero-copy path is `dlpack_to_field(source, writable=True)`:
 2. **Check it is unconsumed.** A capsule not named `"dltensor_versioned"`
    or `"dltensor"` has already been taken: `ValueError`.
 3. **Honor read-only.** A versioned tensor with the read-only flag makes
-   the field non-writable, overriding the default. Host writes to it raise
+   the array non-writable, overriding the default. Host writes to it raise
    `RuntimeError`, and a dispatch that binds it where the kernel may store
    raises `ValueError` (see
    [Memory and Aliasing](memory-and-aliasing.md#wrapped-buffers)).
@@ -149,25 +149,25 @@ The zero-copy path is `dlpack_to_field(source, writable=True)`:
    writable=...)`, which runs the backend's
    [memory-space check](memory-and-aliasing.md#memory-space-validation).
 7. **Adopt.** Rename the capsule to its `used_` name, so no one else
-   releases it, and attach a `_CapsuleHold` to the field as
+   releases it, and attach a `_CapsuleHold` to the array as
    `_dlpack_hold`.
 
 *Adopting* is the DLPack term for taking over the producer's deleter.
 `_CapsuleHold` keeps the capsule referenced and calls the managed tensor's
 deleter exactly once — from `release()` or from its own `__del__`, which
 swallows errors because interpreter teardown can remove `ctypes` first. The
-hold is on the `Field`, not the buffer, so `Field.reshape()` copies it to
-the view; the producer is told the memory is free only when the last field
+hold is on the `Array`, not the buffer, so `Array.reshape()` copies it to
+the view; the producer is told the memory is free only when the last array
 over it is collected. The source object itself may be dropped immediately.
 
-Unlike `array_from_ptr`, which defaults to read-only, an imported field is
+Unlike `array_from_ptr`, which defaults to read-only, an imported array is
 writable unless the producer says otherwise: DLPack exchange is meant to
 share memory in both directions, and the versioned flag is how a producer
 opts out.
 
 !!! note "Metal and DLPack"
 
-    A Metal field exports as `kDLCPU`, which is correct — its memory is
+    A Metal array exports as `kDLCPU`, which is correct — its memory is
     host-addressable — but the Metal backend does not import `kDLCPU`
     tensors, including its own. Wrapping a host pointer as an `MTLBuffer`
     without copying needs a page-aligned address, which host allocations
@@ -193,7 +193,7 @@ DLPack whenever the producer speaks it, because then lifetime is handled.
 
 DLPack hands a pointer to another library in the same process and on the
 same API. A renderer on Vulkan or another process needs an OS-level handle
-instead. `Field.export_memory()` returns an `ExportedMemory` record of plain
+instead. `Array.export_memory()` returns an `ExportedMemory` record of plain
 Python values — `backend`, `size`, `allocation_size`, `handle`,
 `handle_type` and `device_uuid` — so the consumer needs no GPU library to
 read it, and dispatches on `handle_type`.
@@ -207,10 +207,10 @@ read it, and dispatches on `handle_type`.
 Other buffers raise `RuntimeError` (`Backend ... does not support memory
 export`). CUDA memory from `cuMemAllocAsync` cannot be exported as an OS handle,
 so `CUDABuffer.export_memory()` waits for the launches queued on the
-field, copies it once, device to device, into a lazily created
+array, copies it once, device to device, into a lazily created
 `ExportableCUDABuffer` and exports that — later kernel writes to the
 original are not reflected in the export. Metal's `export_memory()` calls
-`share()`, as a DLPack export does. A field
+`share()`, as a DLPack export does. An array
 allocated with `tack.empty(..., exportable=True)` is an
 `ExportableCUDABuffer` from the start, and its export is zero-copy. The
 exportable buffer is allocated through CUDA's virtual memory management API
@@ -237,18 +237,18 @@ with any VTK that has it; device arrays need VTK built with Viskores.
 **`vtk_to_array(vtk_array, flatten=False)`** asks VTK for a capsule
 (`dlpack_support.vtk_to_dlpack`) and imports it with `tack.from_dlpack`.
 VTK always exports `(tuples, components)`. A single-component array comes
-back 1-D, and `flatten=True` returns a flat `(tuples * components,)` field —
+back 1-D, and `flatten=True` returns a flat `(tuples * components,)` array —
 the interleaved layout Tack's own visualization algorithms take. Both are
 `reshape()` views, which carry the DLPack hold, so the VTK array may be
 dropped as soon as the call returns.
 
-**`array_to_vtk(field, n_components=None, name=None)`** works out the
+**`array_to_vtk(array, n_components=None, name=None)`** works out the
 layout first, before touching VTK, so a shape mistake is reported as one
 (`ValueError` for a contradictory or non-dividing `n_components`, or for a
-field of three or more dimensions without one). It reshapes the field to
+array of three or more dimensions without one). It reshapes the array to
 `(tuples, components)` if needed and passes it to
-`dlpack_support.dlpack_to_vtk`, which consumes the field's `__dlpack__`.
-Tack's pin keeps the field alive until VTK calls the deleter, which is
+`dlpack_support.dlpack_to_vtk`, which consumes the array's `__dlpack__`.
+Tack's pin keeps the array alive until VTK calls the deleter, which is
 VTK's responsibility when the array is released.
 
 ### CUDA and HIP
@@ -272,10 +272,10 @@ sequenceDiagram
     VTK-->>Tack: capsule (kDLCUDA, device pointer)
     Tack->>Driver: memory_space(pointer) via cuPointerGetAttribute
     Driver-->>Tack: "cuda"
-    Tack-->>App: Field (wrapped, holds the capsule)
-    App->>Tack: kernel(field, ...)
-    App->>Tack: array_to_vtk(field)
-    Tack->>VTK: dlpack_to_vtk(field) — consumes field.__dlpack__()
+    Tack-->>App: Array (wrapped, holds the capsule)
+    App->>Tack: kernel(array, ...)
+    App->>Tack: array_to_vtk(array)
+    Tack->>VTK: dlpack_to_vtk(array) — consumes array.__dlpack__()
     VTK-->>App: vtkDataArray over the same allocation
 ```
 
@@ -288,7 +288,7 @@ it starts and creates its own with `cuCtxCreate` only if there is none; see
 ### Why a pointer is not enough
 
 A Level Zero USM pointer is meaningful only inside the context that
-allocated it, and DLPack has no field for a context. `kDLOneAPI` and an
+allocated it, and DLPack has no array for a context. `kDLOneAPI` and an
 address say *which device*, not *which context*. Two libraries that each
 create their own context therefore cannot legitimately exchange pointers,
 however well DLPack is implemented on both sides.
@@ -386,7 +386,7 @@ sequenceDiagram
     App->>Tack: vtk_to_array(vtk_array)
     Tack->>VTK: same-context check, then vtk_to_dlpack
     Tack->>L0: memory_space(pointer) via zeMemGetAllocProperties
-    Tack-->>App: Field over VTK's allocation
+    Tack-->>App: Array over VTK's allocation
 ```
 
 ### The guard, and why only Tack can enforce it
@@ -419,34 +419,34 @@ Sharing a context couples lifetimes in a direction Tack cannot see.
   with `zeMemAllocDevice` and frees with `zeMemFreeExt` (deferred until
   the queued work is done) or `zeMemFree` in the adopted
   context, and it holds no reference that keeps the context alive. If the
-  owning library destroys the context while Tack fields or the backend
+  owning library destroys the context while Tack arrays or the backend
   still exist, those frees and any further dispatch act on a destroyed
   context. The owning library must keep its context alive until Tack's
-  fields and backend are gone.
-- **Fields from before `init_level_zero()` belong to the old context.** A
-  field allocated under a plain `tack.init(arch=tack.level_zero)` keeps a
+  arrays and backend are gone.
+- **Arrays from before `init_level_zero()` belong to the old context.** A
+  array allocated under a plain `tack.init(arch=tack.level_zero)` keeps a
   reference to the backend that allocated it, so its memory remains valid
   in that private context — but it cannot be exchanged with VTK, and the
-  guard refuses it. Allocate fields after adopting the context.
+  guard refuses it. Allocate arrays after adopting the context.
 
 This design was validated on 2026-10-05 on the Intel Data Center GPU Max
 1100, with a VTK build carrying `level_zero_handles`: Tack's VTK interop,
 Level Zero context and DLPack tests ran their device cases, and Viskores
-operated on a Tack-allocated field with writes through VTK visible to Tack.
+operated on a Tack-allocated array with writes through VTK visible to Tack.
 
 ## Summary of failures
 
 | Situation | Raised by | Exception |
 |---|---|---|
-| `copy=True` passed to `__dlpack__` | `Field.__dlpack__` | `BufferError` |
-| Dtype with no DLPack equivalent on export | `field_to_dlpack` | `TypeError` |
-| Capsule already consumed | `dlpack_to_field` | `ValueError` |
-| Null data, non-contiguous strides, unknown device type | `dlpack_to_field` | `ValueError` |
-| Unknown dtype or `lanes != 1` | `dlpack_to_field` | `TypeError` |
-| Tensor on a device the active backend cannot wrap | `dlpack_to_field` | `RuntimeError` |
+| `copy=True` passed to `__dlpack__` | `Array.__dlpack__` | `BufferError` |
+| Dtype with no DLPack equivalent on export | `array_to_dlpack` | `TypeError` |
+| Capsule already consumed | `dlpack_to_array` | `ValueError` |
+| Null data, non-contiguous strides, unknown device type | `dlpack_to_array` | `ValueError` |
+| Unknown dtype or `lanes != 1` | `dlpack_to_array` | `TypeError` |
+| Tensor on a device the active backend cannot wrap | `dlpack_to_array` | `RuntimeError` |
 | Integer pointer in the wrong memory space | `array_from_ptr` | `ValueError` |
 | Address given to Metal's `wrap_ptr` | `MetalBackend.wrap_ptr` | `TypeError` |
-| Export from HIP, Level Zero or CPU | `Field.export_memory` | `RuntimeError` |
+| Export from HIP, Level Zero or CPU | `Array.export_memory` | `RuntimeError` |
 | Unknown option to `tack.init` | `tack.init` | `ValueError` |
 | Missing or null `external_context` handle | `LevelZeroBackend.__init__` | `ValueError` |
 | VTK lacks `dlpack_support` or `level_zero_handles` | `tack.interop.vtk` | `RuntimeError` |

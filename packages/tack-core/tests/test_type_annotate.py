@@ -12,7 +12,7 @@ def _make_func(params, body):
 
 def test_assign_from_constant_float():
     p = ir.IRParam("x", f32)
-    p._is_field = True
+    p._is_array = True
     assign = ir.IRAssign(target="a", value=ir.IRConstant(3.14))
     func = _make_func([p], [assign])
     annotate_types(func)
@@ -21,18 +21,18 @@ def test_assign_from_constant_float():
 
 def test_assign_from_constant_int():
     p = ir.IRParam("x", f32)
-    p._is_field = True
+    p._is_array = True
     assign = ir.IRAssign(target="a", value=ir.IRConstant(42))
     func = _make_func([p], [assign])
     annotate_types(func)
     assert assign._resolved_type is i32
 
 
-def test_assign_from_field_load():
-    """Loading from an f32 field should give f32."""
+def test_assign_from_array_load():
+    """Loading from an f32 array should give f32."""
     p = ir.IRParam("data", f32)
-    p._is_field = True
-    load = ir.IRFieldLoad(ir.IRName("data"), ir.IRConstant(0))
+    p._is_array = True
+    load = ir.IRArrayLoad(ir.IRName("data"), ir.IRConstant(0))
     assign = ir.IRAssign(target="val", value=load)
     func = _make_func([p], [assign])
     annotate_types(func)
@@ -42,9 +42,9 @@ def test_assign_from_field_load():
 def test_assign_from_binop_promotes():
     """int + float → float."""
     p1 = ir.IRParam("x", f32)
-    p1._is_field = True
+    p1._is_array = True
     p2 = ir.IRParam("n", i32)
-    p2._is_field = False
+    p2._is_array = False
     binop = ir.IRBinOp(op="+", left=ir.IRName("n"), right=ir.IRConstant(1.0))
     assign = ir.IRAssign(target="result", value=binop)
     func = _make_func([p1, p2], [assign])
@@ -77,10 +77,10 @@ def test_assign_from_math_call():
     assert assign._resolved_type is f32
 
 
-def test_field_pointer_not_annotated():
-    """Assigning a field (pointer) should get None, not a scalar type."""
+def test_array_pointer_not_annotated():
+    """Assigning an array (pointer) should get None, not a scalar type."""
     p = ir.IRParam("data", f32)
-    p._is_field = True
+    p._is_array = True
     assign = ir.IRAssign(target="alias", value=ir.IRName("data"))
     func = _make_func([p], [assign])
     annotate_types(func)
@@ -90,8 +90,8 @@ def test_field_pointer_not_annotated():
 def test_type_propagation_chain():
     """Type propagates through a chain of assignments."""
     p = ir.IRParam("data", f32)
-    p._is_field = True
-    a1 = ir.IRAssign(target="a", value=ir.IRFieldLoad(ir.IRName("data"), ir.IRConstant(0)))
+    p._is_array = True
+    a1 = ir.IRAssign(target="a", value=ir.IRArrayLoad(ir.IRName("data"), ir.IRConstant(0)))
     a2 = ir.IRAssign(target="b", value=ir.IRBinOp(op="*", left=ir.IRName("a"), right=ir.IRConstant(2.0)))
     a3 = ir.IRAssign(target="c", value=ir.IRName("b"))
     func = _make_func([p], [a1, a2, a3])

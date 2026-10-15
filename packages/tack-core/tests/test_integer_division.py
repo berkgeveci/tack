@@ -61,11 +61,11 @@ def _pairs(dtype):
     return pairs
 
 
-def _field(values, dtype):
+def _array(values, dtype):
     data = np.asarray(values, dtype=dtype.numpy_dtype)
-    field = tack.empty(data.shape, dtype)
-    tack.copyto(field, data)
-    return field
+    array = tack.empty(data.shape, dtype)
+    tack.copyto(array, data)
+    return array
 
 
 @pytest.mark.parametrize('dtype', INTEGER_TYPES, ids=lambda t: t.name)
@@ -75,8 +75,8 @@ def test_integer_division_matches_python(backend, dtype, nested):
     # A second division could overflow if its first result is the signed
     # minimum and its second divisor -1; the excluded original pair is the
     # only way that can occur with these identical divisors.
-    a = _field([x for x, _ in pairs], dtype)
-    b = _field([y for _, y in pairs], dtype)
+    a = _array([x for x, _ in pairs], dtype)
+    b = _array([y for _, y in pairs], dtype)
     q = tack.empty(a.shape, dtype)
     r = tack.empty(a.shape, dtype)
     (_nested_divmod if nested else _divmod)(a, b, q, r)
@@ -105,7 +105,7 @@ def _literal_divmod(a, q, r):
 def test_integer_literals_use_tack_promotion(backend, dtype):
     info = np.iinfo(dtype.numpy_dtype)
     values = [int(info.min), int(info.min) + 1, 0, 1, int(info.max)]
-    a = _field(values, dtype)
+    a = _array(values, dtype)
     q, r = tack.empty(a.shape, tack.i64), tack.empty(a.shape, tack.i64)
     _literal_divmod(a, q, r)
     np.testing.assert_array_equal(q.numpy(), [x // 3 for x in values])
@@ -126,7 +126,7 @@ def test_lossless_mixed_integer_promotion(backend, left_type, right_type):
         right += [-1, -3]
     pairs = [(x, y) for x in left for y in right if y]
     result_type = promote_types(left_type, right_type)
-    a, b = _field([x for x, _ in pairs], left_type), _field([y for _, y in pairs], right_type)
+    a, b = _array([x for x, _ in pairs], left_type), _array([y for _, y in pairs], right_type)
     q, r = tack.empty(a.shape, result_type), tack.empty(a.shape, result_type)
     _divmod(a, b, q, r)
     np.testing.assert_array_equal(q.numpy(), np.array([x // y for x, y in pairs],
@@ -165,7 +165,7 @@ def _guarded(a, b, q, r):
 
 
 def test_guarded_zero_divisor_is_not_evaluated(backend):
-    a, b = _field([-7, 7, 3, 0], tack.i32), _field([3, -3, 0, 0], tack.i32)
+    a, b = _array([-7, 7, 3, 0], tack.i32), _array([3, -3, 0, 0], tack.i32)
     q, r = tack.empty((4,), tack.i32), tack.empty((4,), tack.i32)
     _guarded(a, b, q, r)
     np.testing.assert_array_equal(q.numpy(), [-3, -3, 99, 99])
@@ -195,7 +195,7 @@ def test_parallel_pixel_coordinates_are_exact(backend, width):
 @pytest.mark.parametrize('dtype', [tack.i32, tack.i64, tack.u32, tack.u64], ids=lambda t: t.name)
 def test_all_gpu_generators_emit_integer_division(generate, dtype):
     tack.init(arch=tack.cpu)
-    a, b, q, r = [_field([3], dtype) for _ in range(4)]
+    a, b, q, r = [_array([3], dtype) for _ in range(4)]
     func = copy.deepcopy(_divmod.get_ir().functions[0])
     resolve_ir(func, {'a': a, 'b': b, 'quotients': q, 'remainders': r})
     infer_param_types(func, (a, b, q, r))

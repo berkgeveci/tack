@@ -5,17 +5,17 @@ Tests:
   2. SAXPY            -- scalar * vector + vector, fused ops
   3. Reduction        -- sum of array (multi-pass)
   4. Mandelbrot       -- nested loops, complex math, 2D output
-  5. N-body           -- multiple fields, distance calculations
-  6. Jacobi iteration -- stencil pattern, read/write fields
+  5. N-body           -- multiple arrays, distance calculations
+  6. Jacobi iteration -- stencil pattern, read/write arrays
   7. Matrix multiply  -- 2D indexing, accumulation
 
-Each test runs four times per backend, on fresh fields, and prints the
+Each test runs four times per backend, on fresh arrays, and prints the
 first call and the fastest of the other three. The first call pays runtime
 compilation: on an MI300X a saxpy's first call is 146 ms and its warm call
 0.05 ms, so a single-call column reported hipRTC rather than the device,
 which is why every test used to read ~145 ms there whatever its workload.
 
-Every call is verified before its fresh fields are discarded. Setup and
+Every call is verified before its fresh arrays are discarded. Setup and
 verification are outside the timed call. "Warm" is the minimum of the later
 three calls because CPU threading estimates adapt across dispatches; the
 idle curve is learned from real pauses, without sleep-based calibration.
@@ -64,12 +64,12 @@ def _available_backends():
 
 
 def _time_call(setup_fn, call_fn):
-    """Run `call_fn` over fresh fields, returning its wall time and the fields."""
-    fields = setup_fn()
+    """Run `call_fn` over fresh arrays, returning its wall time and the arrays."""
+    arrays = setup_fn()
     t0 = time.perf_counter()
-    call_fn(*fields)
+    call_fn(*arrays)
     t1 = time.perf_counter()
-    return (t1 - t0) * 1000, fields
+    return (t1 - t0) * 1000, arrays
 
 
 def _report(name, backend, setup_fn, call_fn, verify_fn):
@@ -79,8 +79,8 @@ def _report(name, backend, setup_fn, call_fn, verify_fn):
         kind = 'cold' if index == 0 else 'warm'
         context = f'{name} on {backend}, call {index + 1} ({kind})'
         try:
-            elapsed, fields = _time_call(setup_fn, call_fn)
-            ok = verify_fn(*fields)
+            elapsed, arrays = _time_call(setup_fn, call_fn)
+            ok = verify_fn(*arrays)
         except Exception as exc:
             raise RuntimeError(f'{context} raised an error') from exc
         if not ok:

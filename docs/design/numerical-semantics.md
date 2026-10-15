@@ -61,23 +61,23 @@ helper depends on is part of the variant key through the argument types.
 
 ### Parameters and literals
 
-`infer_param_types` gives fields their element type. Python `int`
+`infer_param_types` gives arrays their element type. Python `int`
 arguments and integer literals go through `integer_type_for_value`
 (`lang/types.py`): i32 if the value fits, else i64, else u64; anything
 outside `[-2^63, 2^64 - 1]` raises `TypeError`. Python `float` arguments are
-f32, unless *any* field argument is f64, in which case they are f64. (A
-texture is always f32: `tack.texture3d()` rejects other fields.) Float
+f32, unless *any* array argument is f64, in which case they are f64. (A
+texture is always f32: `tack.texture3d()` rejects other arrays.) Float
 literals in the kernel body are weakly typed; see
 [Float literals](#float-literals).
 
 That float-context rule has a consequence worth knowing. An f64 output
-field does not widen an f32 *field* computation, but it does make a Python
+array does not widen an f32 *array* computation, but it does make a Python
 float scalar argument f64, and the scalar then widens the expression it
 appears in:
 
 ```python
 @tack.kernel
-def scale(a, out, s):          # a: f32 field, out: f64 field, s: Python float
+def scale(a, out, s):          # a: f32 array, out: f64 array, s: Python float
     for i in range(a.shape[0]):
         out[i] = a[i] * s      # s is f64 here, so the product is f64
 ```
@@ -107,7 +107,7 @@ integer value (`i * 0.1` is f32). A local assigned once to a literal-only
 expression, as in `a = 0.1`, is propagated as a weak expression wherever
 it is read, so `x * a` retains the literal's full precision when `x` is f64.
 A local assigned only literals more than once uses f64 when the kernel has
-an f64 field, as a Python float argument does. An expression without f64
+an f64 array, as a Python float argument does. An expression without f64
 operands annotates exactly as it would with f32 literals, and its
 generated code is unchanged.
 
@@ -177,7 +177,7 @@ variable elsewhere. `annotate_types` therefore runs a fixpoint over all
 assignments (at most `_MAX_JOIN_ROUNDS` rounds; the join only widens, so it
 settles quickly) and gives each local the promotion of every type assigned
 to it. The motivating bug was `total = 0.0` followed by additions from an
-f64 field: the first assignment typed `total` as f32 and every later
+f64 array: the first assignment typed `total` as f32 and every later
 addition was narrowed. Loop variables, parameters and allocations are
 pinned and do not join. An impossible join (signed with u64) raises
 rather than being dropped.
@@ -266,7 +266,7 @@ exactly once. Only the helpers a kernel uses are emitted.
 
 ### Conversions
 
-Integer-to-integer casts and integer field stores reduce the value modulo
+Integer-to-integer casts and integer array stores reduce the value modulo
 2^N of the destination and reinterpret with the destination's signedness.
 Widening follows the **source** signedness: i8 `-1` to u64 is `2^64 - 1`;
 u8 `255` to i64 is `255`. In LLVM, `_emit_cast` chooses `zext`/`sext` from
@@ -324,7 +324,7 @@ promotions never pick the operation's signedness.
 **Rule:** integer `a / b` converts each operand to f32 and returns an f32
 quotient: `7 / 2 == 3.5`. With a floating operand, `/` uses the promoted
 floating type. Request f64 explicitly with `tack.f64(a) / tack.f64(b)`; an
-f64 destination field alone does not widen the division.
+f64 destination array alone does not widen the division.
 
 **Why f32 and not f64.** Python's `/` is true division, so returning a
 float is the Python-compatible part; truncating integer division (the old
@@ -490,7 +490,7 @@ uses `llvm.minnum`/`llvm.maxnum`, CUDA/HIP `fminf`/`fmaxf` (`fmin`/`fmax` for
 f64), OpenCL `fmin`/`fmax`, Metal `min`/`max` on floats. The rule matches
 IEEE 754's `minNum`/`maxNum` and the native instructions, and it is
 order-independent. Python's built-in `min` is not: `min(nan, 1.0)` is `nan`
-but `min(1.0, nan)` is `1.0`. Field reductions and atomics have their own,
+but `min(1.0, nan)` is `1.0`. Array reductions and atomics have their own,
 different extrema rules (below, and in
 [Parallel Execution](parallel-execution.md)).
 
@@ -514,24 +514,24 @@ bounded transcendental checks), which are not general guarantees.
 
 ## Reductions
 
-`Field.sum()`, `min()`, `max()` and `mean()` (`lang/field.py`) reduce all
+`Array.sum()`, `min()`, `max()` and `mean()` (`lang/array.py`) reduce all
 logical elements regardless of shape and return a Python `float`. The
 contract section is
-[Field and parallel reductions](../reference/language-contract.md#field-and-parallel-reductions).
+[Array and parallel reductions](../reference/language-contract.md#array-and-parallel-reductions).
 
 ```mermaid
 flowchart TD
-    A["Field._reduce(op)"] --> B{size == 0?}
+    A["Array._reduce(op)"] --> B{size == 0?}
     B -->|yes| C["empty_reduction: sum 0.0,<br/>min/max raise ValueError"]
     B -->|no| D{backend.supports_device_reductions?}
     D -->|no: CPU| E[reduce_numpy]
-    D -->|yes| F["backend.reduce_field"]
+    D -->|yes| F["backend.reduce_array"]
     F --> G{"f32? (Level Zero: and device<br/>admits 256-lane groups)"}
     G -->|no| E
-    G -->|yes| H["native kernel from<br/>field_reduction_source"]
+    G -->|yes| H["native kernel from<br/>array_reduction_source"]
 ```
 
-`mean()` returns NaN for an empty field and otherwise `sum() / size` in
+`mean()` returns NaN for an empty array and otherwise `sum() / size` in
 host binary64.
 
 | Input | `sum` | `min` / `max` |
@@ -549,7 +549,7 @@ explicit i64 or u64 NumPy accumulator, independent of the platform's
 default integer, and wrap. Extrema use NumPy's NaN-propagating `min`/`max`
 and then fix zero ties from the sign bits.
 
-**Native path** (`codegen/reductions.py`, `field_reduction_source`): one
+**Native path** (`codegen/reductions.py`, `array_reduction_source`): one
 256-lane tree per workgroup in shared memory, then one atomic combine per
 group into the output (native `atomicAdd` or `atomic_float` for sums, a
 compare-and-swap loop for extrema). Out-of-range lanes contribute the
@@ -586,11 +586,11 @@ deterministic sum mode.
 
 **Limits.** CUDA, HIP and Level Zero pass the element count to the native
 kernel as a 64-bit (`long long`) argument, and the CUDA/HIP kernel forms
-its index in 64 bits, so fields of 2^32 or more elements reduce on the
+its index in 64 bits, so arrays of 2^32 or more elements reduce on the
 device. Each checks the count against its launch limit with
-`check_launch_size()` first, and raises `ValueError` ("Field sum(): ...")
+`check_launch_size()` first, and raises `ValueError` ("Array sum(): ...")
 past it. Metal's reduction kernel holds the count, packed as 32-bit
-unsigned bits, and its thread position in 32 bits, so Metal reduces a field
+unsigned bits, and its thread position in 32 bits, so Metal reduces an array
 of 2^32 or more elements with NumPy over the shared buffer instead. Level
 Zero also falls back to the host when its device cannot run 256-lane
 groups, because the tree is written for exactly 256 lanes.
@@ -643,7 +643,7 @@ for i in range(n):
 | `test_float_division.py` | floating `//`/`%`: signs, boundaries, overflow, NaN/inf/signed zero, every float/int type pair | NumPy's typed `divmod` after explicit conversion; exact zeros and classes, four ULP otherwise |
 | `test_float_literals.py` | weak float literals: f64 expressions, casts, atomics, conditional arms and locals; f32 kernels unchanged; exact double literals in LLVM, CUDA, HIP and OpenCL source | NumPy f64 results for the same expressions; generated C++ compiled and run on the host |
 | `test_float_semantics.py` | safe math without `//`, exceptional classes, unsafe folds, comparisons, scalar min/max, grouping, contraction, math builtins | NumPy at the same precision; an exact `fractions.Fraction` oracle accepts either the separate or the fused multiply-add result; generated C++ run under UBSan on the host |
-| `test_reduction_semantics.py` | extrema classes and zero ties across groups and tails, exact and bounded sums, integer accumulators, empty fields, block f32 requirement | exact expected values; `math.fsum` with the `gamma_n` budget; C++/OpenCL syntax checks and UBSan-run helpers |
+| `test_reduction_semantics.py` | extrema classes and zero ties across groups and tails, exact and bounded sums, integer accumulators, empty arrays, block f32 requirement | exact expected values; `math.fsum` with the `gamma_n` budget; C++/OpenCL syntax checks and UBSan-run helpers |
 | `test_integer_expression_differential.py` | compositions where an intermediate wrap, cast or promotion decides a later operation | an independent oracle written from the contract text with Python integers, sharing no code with the compiler; a deliberately naive wrap-only-at-the-end oracle is shown to disagree |
 
 The integer tests compare exactly: a defined integer program has one answer

@@ -62,7 +62,7 @@ def test_an_external_context_is_adopted_not_replaced(foreign):
     assert backend._driver == foreign["driver"]
 
 
-def test_kernels_run_on_fields_allocated_in_the_adopted_context(foreign):
+def test_kernels_run_on_arrays_allocated_in_the_adopted_context(foreign):
     tack.init(arch=tack.level_zero, external_context=foreign)
 
     @tack.kernel
@@ -90,10 +90,10 @@ def test_every_handle_is_required(foreign, missing):
 def test_device_memory_is_told_apart_from_host_memory(foreign):
     tack.init(arch=tack.level_zero, external_context=foreign)
     backend = get_backend()
-    field = tack.empty((8,))
+    array = tack.empty((8,))
     host = np.zeros(8, dtype=np.float32)
 
-    assert backend.memory_space(field._buffer._device_ptr.value) == "level_zero"
+    assert backend.memory_space(array._buffer._device_ptr.value) == "level_zero"
     assert backend.memory_space(host.ctypes.data) == "cpu"
     with pytest.raises(ValueError, match="'cpu' memory"):
         tack.array_from_ptr(host.ctypes.data, (8,), tack.f32)

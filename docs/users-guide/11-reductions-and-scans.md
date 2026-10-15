@@ -20,7 +20,7 @@ device has finished; the next read of an array waits for it (see
 
 The behavior below is stated per backend. Where it is the current
 implementation rather than a promise, the page says so; the
-[reduction contract](../reference/language-contract.md#field-and-parallel-reductions)
+[reduction contract](../reference/language-contract.md#array-and-parallel-reductions)
 is the normative text.
 
 ## Array reductions
@@ -91,7 +91,7 @@ The NumPy paths currently give the same answer on every call, but the
 contract does not promise that floating sums are reproducible on any
 backend. The accuracy that *is* promised is an absolute error budget,
 stated in the
-[reduction contract](../reference/language-contract.md#field-and-parallel-reductions).
+[reduction contract](../reference/language-contract.md#array-and-parallel-reductions).
 
 !!! note "What crosses to the host"
     On a GPU backend an `f32` reduction reads back one value. Any other

@@ -13,7 +13,7 @@ def workgroup_features(ir_func):
     features = set()
     for node in walk_ir(ir_func.body):
         if isinstance(node, ir.IRSharedAlloc):
-            features.add('shared_like' if node.field_name else 'shared')
+            features.add('shared_like' if node.array_name else 'shared')
         elif isinstance(node, ir.IRBarrier):
             features.add('barrier')
         elif isinstance(node, ir.IRThreadId):

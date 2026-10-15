@@ -85,7 +85,7 @@ class _SourceValidator(ast.NodeVisitor):
     def visit_Subscript(self, node):
         self.visit(node.value)
         if isinstance(node.slice, ast.Constant) and node.slice.value is None:
-            return  # scalar field[None]
+            return  # scalar array[None]
         self.visit(node.slice)
 
     def visit_IfExp(self, node):
@@ -179,7 +179,7 @@ class _SourceValidator(ast.NodeVisitor):
     def visit_Return(self, node):
         if self.kind == 'Kernel':
             self.reject(node, "a kernel returns only as its last statement, after the parallel "
-                              "loop, with a return annotation; elsewhere results go to fields")
+                              "loop, with a return annotation; elsewhere results go to arrays")
         if self.loops:
             self.reject(node, "return inside a loop is not supported")
         if node.value is not None:
