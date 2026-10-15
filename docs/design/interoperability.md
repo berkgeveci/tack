@@ -16,7 +16,7 @@ Aliasing](memory-and-aliasing.md); this page assumes them.
 |---|---|---|---|
 | `field.__dlpack__()` | Tack → other | yes | Tack pins the field until the consumer's deleter runs |
 | `tack.from_dlpack(x)` | other → Tack | yes (unless `copy=True`) | the field holds the producer's capsule and calls its deleter when collected |
-| `tack.field_from_ptr(ptr, ...)` | other → Tack | yes | the caller, by hand |
+| `tack.array_from_ptr(ptr, ...)` | other → Tack | yes | the caller, by hand |
 | `field.export_memory()` | Tack → another graphics/compute API | Metal: yes; CUDA: yes for `exportable=True` fields, otherwise one copy | the exporting buffer |
 | `tack.interop.vtk` | both | yes | as DLPack |
 
@@ -178,7 +178,7 @@ opts out.
 
 ## Raw pointers
 
-`tack.field_from_ptr(ptr, dtype, shape, writable=False)` is the lowest
+`tack.array_from_ptr(ptr, dtype, shape, writable=False)` is the lowest
 level: no capsule, no deleter, no device type. Tack validates every
 pointer with `as_address()` and `memory_space()` where the backend
 distinguishes device memory, wraps them without taking ownership, and leaves lifetime entirely to
@@ -211,7 +211,7 @@ field, copies it once, device to device, into a lazily created
 `ExportableCUDABuffer` and exports that — later kernel writes to the
 original are not reflected in the export. Metal's `export_memory()` calls
 `share()`, as a DLPack export does. A field
-allocated with `tack.field(..., exportable=True)` is an
+allocated with `tack.empty(..., exportable=True)` is an
 `ExportableCUDABuffer` from the start, and its export is zero-copy. The
 exportable buffer is allocated through CUDA's virtual memory management API
 (`cuMemCreate`, `cuMemAddressReserve`, `cuMemMap`, `cuMemSetAccess`),
@@ -332,7 +332,7 @@ or device found separately need not be the one the context was created
 against. With the handles adopted, `_query_device` runs against the given
 device, `self._context` wraps the given context, and `_create_queues`
 creates Tack's command list *in* that context. Every later
-`zeMemAllocDevice` — every `tack.field()` — allocates there.
+`zeMemAllocDevice` — every `tack.empty()` — allocates there.
 `LevelZeroBackend.shares_external_context` reports whether this happened.
 
 The rejection of unknown options lives in `tack.init()`
@@ -377,7 +377,7 @@ sequenceDiagram
     VTK-->>Tack: {driver, device, context}
     Tack->>L0: queries on that device; queues in that context
     Note over Tack: shares_external_context is True
-    App->>Tack: f = tack.field(...)
+    App->>Tack: f = tack.empty(...)
     Tack->>L0: zeMemAllocDevice(shared context)
     App->>Tack: field_to_vtk(f)
     Tack->>VTK: level_zero_handles() — same context? yes

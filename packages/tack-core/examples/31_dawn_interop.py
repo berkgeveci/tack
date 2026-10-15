@@ -37,9 +37,9 @@ tack.init(arch=args.arch)
 
 N = 1024
 
-x = tack.field(dtype=tack.f32, shape=(N,))
-y = tack.field(dtype=tack.f32, shape=(N,))
-out = tack.field(dtype=tack.f32, shape=(N,))
+x = tack.empty(dtype=tack.f32, shape=(N,))
+y = tack.empty(dtype=tack.f32, shape=(N,))
+out = tack.empty(dtype=tack.f32, shape=(N,))
 
 x.from_numpy(np.arange(N, dtype=np.float32))
 y.from_numpy(np.ones(N, dtype=np.float32) * 2.0)

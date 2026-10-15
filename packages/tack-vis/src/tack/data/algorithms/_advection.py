@@ -380,7 +380,7 @@ def _velocity(data, field):
 
 
 def _as_vectors(values, dtype):
-    if values.dtype == dtype:
+    if values.scalar_dtype == dtype:
         return values
     out = tack.Vector.field(3, dtype, shape=(arrays.size_of(values),))
     if arrays.size_of(values):

@@ -35,8 +35,8 @@ def make_test_image(img, w, h):
         img[i, j] = 0.5 + 0.5 * sin(r * 0.3) * exp(0.0 - r * 0.005)
 
 
-src = tack.field(dtype=tack.f32, shape=(H, W))
-dst = tack.field(dtype=tack.f32, shape=(H, W))
+src = tack.empty(dtype=tack.f32, shape=(H, W))
+dst = tack.empty(dtype=tack.f32, shape=(H, W))
 
 make_test_image(src, W, H)
 test_img = src.to_numpy().reshape(H, W)
@@ -94,7 +94,7 @@ print(f"   Edge strength: max={edges.max():.3f}, mean={edges.mean():.3f}")
 
 # --- 3. Gaussian blur (box blur approximation) ---
 
-tmp = tack.field(dtype=tack.f32, shape=(H, W))
+tmp = tack.empty(dtype=tack.f32, shape=(H, W))
 
 
 @tack.kernel

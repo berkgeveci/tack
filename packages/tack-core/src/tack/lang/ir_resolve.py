@@ -129,7 +129,7 @@ def _resolve(node, fields, slots=None):
                 if field is None:
                     kind = 'shared_like' if isinstance(node, ir.IRSharedAlloc) else 'local_array_like'
                     raise RuntimeError(f"Cannot resolve {kind}: unknown field '{node.field_name}'")
-                node.dtype = field.dtype
+                node.dtype = field.scalar_dtype
             # A size written as arithmetic on constants (MAX_HITS * 4, a
             # resolved dimension + 2) is one constant: the GPU generators
             # need a constant expression for an array size, and this

@@ -58,7 +58,7 @@ never needs `tack.sync()`: it is for timing kernels (see
 and for memory another library reads without Tack. An error in a queued
 launch is raised at that wait rather than at the call. A launch that uses
 memory shared with another library (exported through DLPack, or wrapped
-with `tack.field_from_ptr`) completes before the call returns. In an
+with `tack.array_from_ptr`) completes before the call returns. In an
 `asyncio` program, `await tack.sync_async()` and
 `await field.to_numpy_async()` do the waiting in a worker thread, so the
 event loop keeps running (see

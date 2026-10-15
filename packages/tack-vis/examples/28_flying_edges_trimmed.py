@@ -418,17 +418,17 @@ class MCTables:
     """Marching cubes lookup tables as tack fields."""
 
     def __init__(self):
-        self.tri_table = tack.field(dtype=tack.i32, shape=(4096,))
+        self.tri_table = tack.empty(dtype=tack.i32, shape=(4096,))
         self.tri_table.from_numpy(TRI_TABLE)
-        self.num_tris = tack.field(dtype=tack.i32, shape=(256,))
+        self.num_tris = tack.empty(dtype=tack.i32, shape=(256,))
         self.num_tris.from_numpy(NUM_TRIS)
-        self.edge_corners = tack.field(dtype=tack.i32, shape=(24,))
+        self.edge_corners = tack.empty(dtype=tack.i32, shape=(24,))
         self.edge_corners.from_numpy(EDGE_CORNERS)
-        self.corner_x = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_x = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_x.from_numpy(CORNER_X)
-        self.corner_y = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_y = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_y.from_numpy(CORNER_Y)
-        self.corner_z = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_z = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_z.from_numpy(CORNER_Z)
 
 
@@ -1115,7 +1115,7 @@ grid = UniformGrid(nx, ny, nz, x0, y0, z0, dx, dy, dz)
 tables = MCTables()
 
 # Compute scalar field
-scalar = tack.field(dtype=tack.f32, shape=(n_points,))
+scalar = tack.empty(dtype=tack.f32, shape=(n_points,))
 compute_scalar_field(scalar, grid, n_points)
 
 results = {}
@@ -1126,9 +1126,9 @@ results = {}
 # ================================================================
 print("Flying Edges (untrimmed)...")
 
-row_xc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_yc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_zc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+row_xc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_yc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_zc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 fe_count_edges_xyz(scalar, row_xc, row_yc, row_zc, grid, isovalue, n_node_rows)
 
 xc_np = row_xc.to_numpy()
@@ -1148,31 +1148,31 @@ yo_np += total_x
 zo_np[1:] = np.cumsum(zc_np[:-1])
 zo_np += total_x + total_y
 
-row_xo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_yo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_zo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+row_xo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_yo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_zo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 row_xo.from_numpy(xo_np)
 row_yo.from_numpy(yo_np)
 row_zo.from_numpy(zo_np)
 
-row_tri_count = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+row_tri_count = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 fe_count_rows(scalar, row_tri_count, grid, tables, isovalue, n_cell_rows)
 
 tri_counts_np = row_tri_count.to_numpy()
 tri_offsets_np = np.zeros(n_cell_rows, dtype=np.int32)
 tri_offsets_np[1:] = np.cumsum(tri_counts_np[:-1])
 total_tris = int(np.sum(tri_counts_np))
-row_tri_offset = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+row_tri_offset = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 row_tri_offset.from_numpy(tri_offsets_np)
 
 print(f"  Unique points: {total_points:,}, Triangles: {total_tris:,}")
 
-pt_x = tack.field(dtype=tack.f32, shape=(total_points,))
-pt_y = tack.field(dtype=tack.f32, shape=(total_points,))
-pt_z = tack.field(dtype=tack.f32, shape=(total_points,))
-tri_v0 = tack.field(dtype=tack.i32, shape=(total_tris,))
-tri_v1 = tack.field(dtype=tack.i32, shape=(total_tris,))
-tri_v2 = tack.field(dtype=tack.i32, shape=(total_tris,))
+pt_x = tack.empty(dtype=tack.f32, shape=(total_points,))
+pt_y = tack.empty(dtype=tack.f32, shape=(total_points,))
+pt_z = tack.empty(dtype=tack.f32, shape=(total_points,))
+tri_v0 = tack.empty(dtype=tack.i32, shape=(total_tris,))
+tri_v1 = tack.empty(dtype=tack.i32, shape=(total_tris,))
+tri_v2 = tack.empty(dtype=tack.i32, shape=(total_tris,))
 
 
 def _fe_prefix_sums():
@@ -1227,13 +1227,13 @@ results["FE"] = fe_time
 print("\nFlying Edges (trimmed)...")
 
 # Trim range fields
-row_xmin = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-row_xmax = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+row_xmin = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+row_xmax = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 
 # Pass 1: count + trim
-t_row_xc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-t_row_yc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-t_row_zc = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+t_row_xc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+t_row_yc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+t_row_zc = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 fe_count_edges_xyz_trim(scalar, t_row_xc, t_row_yc, t_row_zc,
                         row_xmin, row_xmax, grid, isovalue, n_node_rows)
 
@@ -1254,14 +1254,14 @@ tyo_np += t_total_x
 tzo_np[1:] = np.cumsum(tzc_np[:-1])
 tzo_np += t_total_x + t_total_y
 
-t_row_xo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-t_row_yo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
-t_row_zo = tack.field(dtype=tack.i32, shape=(n_node_rows,))
+t_row_xo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+t_row_yo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
+t_row_zo = tack.empty(dtype=tack.i32, shape=(n_node_rows,))
 t_row_xo.from_numpy(txo_np)
 t_row_yo.from_numpy(tyo_np)
 t_row_zo.from_numpy(tzo_np)
 
-t_row_tri_count = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+t_row_tri_count = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 fe_count_rows_trim(scalar, t_row_tri_count, row_xmin, row_xmax,
                    grid, tables, isovalue, n_cell_rows)
 
@@ -1269,7 +1269,7 @@ t_tri_counts_np = t_row_tri_count.to_numpy()
 t_tri_offsets_np = np.zeros(n_cell_rows, dtype=np.int32)
 t_tri_offsets_np[1:] = np.cumsum(t_tri_counts_np[:-1])
 t_total_tris = int(np.sum(t_tri_counts_np))
-t_row_tri_offset = tack.field(dtype=tack.i32, shape=(n_cell_rows,))
+t_row_tri_offset = tack.empty(dtype=tack.i32, shape=(n_cell_rows,))
 t_row_tri_offset.from_numpy(t_tri_offsets_np)
 
 # Validate trimmed counts match untrimmed
@@ -1292,12 +1292,12 @@ print(f"  Active node-rows: {active_rows:,}/{n_node_rows:,}"
 print(f"  Avg trim range: {avg_range:.1f}/{nx+1} nodes"
       f" ({avg_range/(nx+1)*100:.1f}% of row)")
 
-t_pt_x = tack.field(dtype=tack.f32, shape=(t_total_points,))
-t_pt_y = tack.field(dtype=tack.f32, shape=(t_total_points,))
-t_pt_z = tack.field(dtype=tack.f32, shape=(t_total_points,))
-t_tri_v0 = tack.field(dtype=tack.i32, shape=(t_total_tris,))
-t_tri_v1 = tack.field(dtype=tack.i32, shape=(t_total_tris,))
-t_tri_v2 = tack.field(dtype=tack.i32, shape=(t_total_tris,))
+t_pt_x = tack.empty(dtype=tack.f32, shape=(t_total_points,))
+t_pt_y = tack.empty(dtype=tack.f32, shape=(t_total_points,))
+t_pt_z = tack.empty(dtype=tack.f32, shape=(t_total_points,))
+t_tri_v0 = tack.empty(dtype=tack.i32, shape=(t_total_tris,))
+t_tri_v1 = tack.empty(dtype=tack.i32, shape=(t_total_tris,))
+t_tri_v2 = tack.empty(dtype=tack.i32, shape=(t_total_tris,))
 
 
 def _fe_trim_prefix_sums():

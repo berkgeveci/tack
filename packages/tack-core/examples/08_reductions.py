@@ -20,7 +20,7 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 n = 100_000
-x = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
 
 np.random.seed(42)
 data = np.random.randn(n).astype(np.float32) * 50.0

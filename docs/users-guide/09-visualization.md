@@ -52,9 +52,9 @@ A *space* says where a field's values live and how they are read between
 them. `H1` is point data, continuous and interpolated in each cell;
 `Constant` is cell data; `L2` holds each cell's own corner values, a
 discontinuous field. `Values(data, on)` is data about points, edges, faces or
-cells with no interpolation. A field's values are a `tack.field`, a
-`tack.Vector.field`, or an implicit array that computes them on demand: a
-grid's coordinates take no memory.
+cells with no interpolation. A field's values are a `tack.Array`, scalar or
+vector-valued, or an implicit array that computes them on demand. Uniform
+coordinates need only dimensions, origin, spacing and direction metadata.
 
 Geometry may also live in L2, giving each cell its own positions. Contour and
 slice preserve the resulting gaps; clipping requires shared H1 geometry.

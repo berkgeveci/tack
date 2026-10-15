@@ -58,7 +58,7 @@ def mandelbrot(pixels, max_iter, width, height):
             pixels[idx] = float(max_iter)
 
 
-pixels = tack.field(dtype=tack.f32, shape=(WIDTH * HEIGHT,))
+pixels = tack.empty(dtype=tack.f32, shape=(WIDTH * HEIGHT,))
 mandelbrot(pixels, MAX_ITER, WIDTH, HEIGHT)
 
 data = pixels.to_numpy().reshape(HEIGHT, WIDTH)

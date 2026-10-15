@@ -14,7 +14,7 @@ for installation and the relationship to released APIs.
 
 Read [Getting Started](01-getting-started.md),
 [From Python to a Tack program](12-execution-model.md), and
-[Fields and Types](02-fields-and-types.md). Then run
+[Arrays and Types](02-fields-and-types.md). Then run
 [Heat diffusion](tutorials/heat.md): it is a complete program with a small
 independent numerical check and a figure showing its output.
 
@@ -28,7 +28,7 @@ If you already write GPU kernels, focus on [Kernels](03-kernels.md),
 |---|---|
 | [Getting Started](01-getting-started.md) | Install and run the first kernel |
 | [From Python to a Tack program](12-execution-model.md) | Host/device boundary, stages and compilation |
-| [Fields and Types](02-fields-and-types.md) | Storage, NumPy exchange, scalar types and precision |
+| [Arrays and Types](02-fields-and-types.md) | Storage, NumPy exchange, scalar types and precision |
 | [Vectors and matrices](14-vectors-and-matrices.md) | Component values, masks, products and fields |
 | [Kernels](03-kernels.md) | Parallel ranges, constants, returns and specialization |
 | [Control Flow and Math](04-control-flow.md) | Conditions, sequential loops, casts and numerical helpers |

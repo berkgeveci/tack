@@ -90,7 +90,7 @@ class Interpolate:
 def _like(values, n):
     width = width_of(values)
     if width:
-        return tack.Vector.field(width, values.dtype, shape=(n,))
+        return tack.Vector.field(width, arrays.dtype_of(values), shape=(n,))
     return tack.field(values.dtype, shape=(n,))
 
 

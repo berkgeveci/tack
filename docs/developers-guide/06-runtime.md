@@ -316,7 +316,7 @@ launches carry their own copy of the scalars (`_Uniforms`) instead.
 
 ## Device Pointer Interop
 
-`tack.field_from_ptr()` wraps an existing device pointer as a Field without
+`tack.array_from_ptr()` wraps an existing device pointer as a Field without
 allocation or copy. Each backend implements `wrap_ptr(ptr, dtype, shape)`:
 
 | Backend | `ptr` type | Implementation |

@@ -118,8 +118,10 @@ def _width(values):
 
 
 def _count(values):
-    """The number of keys: a vector field's host shape counts its components."""
-    return int(values.shape[0]) // _width(values)
+    """The number of keys, including legacy vectors with flat host metadata."""
+    if getattr(values, '_legacy_layout', False):
+        return int(values.shape[0]) // _width(values)
+    return values.size
 
 
 def keys_of(values):
@@ -192,7 +194,7 @@ def _radix_order(values, n, indices):
         return argsort(values, index_dtype=indices)
     order = None
     for c in reversed(range(width)):
-        component = tack.field(values.dtype, shape=(n,))
+        component = tack.field(values.scalar_dtype, shape=(n,))
         _component(values, c, component)
         if order is None:
             order = argsort(component, index_dtype=indices)

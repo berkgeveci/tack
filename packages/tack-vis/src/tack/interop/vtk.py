@@ -164,6 +164,15 @@ def field_to_vtk(field, n_components=None, name=None):
     """
     # Work out the layout before reaching for VTK, so a shape mistake
     # reports itself rather than being masked by a missing-VTK error.
+    if hasattr(field, '_vector_n') and not field._legacy_layout:
+        width = field._vector_n
+        if n_components is not None and n_components != width:
+            raise ValueError(
+                f"n_components={n_components} contradicts the element width {width}")
+        if len(field.shape) > 1:
+            raise ValueError("reshape a typed array to one array dimension for VTK tuples")
+        field = field._scalar_view().reshape((field.size, width))
+        n_components = width
     ndim = len(field.shape)
 
     if n_components is None:

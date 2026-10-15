@@ -19,8 +19,8 @@ _arch = getattr(tack, _parser.parse_args().arch)
 tack.init(arch=_arch)
 
 n = 256
-x = tack.field(dtype=tack.f32, shape=(n,))
-out = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty(dtype=tack.f32, shape=(n,))
 
 data = np.arange(n, dtype=np.float32) - 128.0  # [-128, ..., 127]
 x.from_numpy(data)
@@ -80,7 +80,7 @@ print("3. Clamp (ternary): OK")
 # --- Example 4: nested loops ---
 
 n2 = 16
-mat = tack.field(dtype=tack.f32, shape=(n2 * n2,))
+mat = tack.empty(dtype=tack.f32, shape=(n2 * n2,))
 
 @tack.kernel
 def fill_checkerboard(mat):

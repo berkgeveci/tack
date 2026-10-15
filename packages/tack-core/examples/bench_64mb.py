@@ -138,32 +138,32 @@ def main():
 
     # -- Define benchmarks --
     def setup_2in_1out():
-        x = tack.field(dtype=tack.f32, shape=(N,))
-        y = tack.field(dtype=tack.f32, shape=(N,))
-        out = tack.field(dtype=tack.f32, shape=(N,))
+        x = tack.empty(dtype=tack.f32, shape=(N,))
+        y = tack.empty(dtype=tack.f32, shape=(N,))
+        out = tack.empty(dtype=tack.f32, shape=(N,))
         x.from_numpy(np.random.randn(N).astype(np.float32).clip(0.1, 10.0))
         y.from_numpy(np.random.randn(N).astype(np.float32))
         return (x, y, out)
 
     def setup_1in_1out():
-        x = tack.field(dtype=tack.f32, shape=(N,))
-        out = tack.field(dtype=tack.f32, shape=(N,))
+        x = tack.empty(dtype=tack.f32, shape=(N,))
+        out = tack.empty(dtype=tack.f32, shape=(N,))
         x.from_numpy(np.abs(np.random.randn(N).astype(np.float32)) + 0.1)
         return (x, out)
 
     def setup_copy():
-        src = tack.field(dtype=tack.f32, shape=(N,))
-        dst = tack.field(dtype=tack.f32, shape=(N,))
+        src = tack.empty(dtype=tack.f32, shape=(N,))
+        dst = tack.empty(dtype=tack.f32, shape=(N,))
         src.from_numpy(np.random.randn(N).astype(np.float32))
         return (src, dst)
 
     def setup_fill():
-        out = tack.field(dtype=tack.f32, shape=(N,))
+        out = tack.empty(dtype=tack.f32, shape=(N,))
         return (out,)
 
     def setup_reduce():
-        data = tack.field(dtype=tack.f32, shape=(N,))
-        out = tack.field(dtype=tack.f32, shape=(N_BLOCKS,))
+        data = tack.empty(dtype=tack.f32, shape=(N,))
+        out = tack.empty(dtype=tack.f32, shape=(N_BLOCKS,))
         data.from_numpy(np.random.randn(N).astype(np.float32))
         return (data, out)
 

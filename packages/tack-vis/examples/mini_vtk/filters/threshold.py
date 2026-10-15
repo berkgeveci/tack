@@ -41,11 +41,11 @@ def threshold(dataset, cell_array_name, lo, hi):
     cell_arr = dataset.get_cell_array(cell_array_name)
 
     # Pass 1: classify
-    mask = tack.field(dtype=tack.i32, shape=(n_cells,))
+    mask = tack.empty(dtype=tack.i32, shape=(n_cells,))
     _classify(cell_arr.data, mask, lo, hi, n_cells)
 
     # Exclusive scan for scatter offsets
-    offsets = tack.field(dtype=tack.i32, shape=(n_cells,))
+    offsets = tack.empty(dtype=tack.i32, shape=(n_cells,))
     mask_np = mask.to_numpy()
     offsets_np = np.zeros(n_cells, dtype=np.int32)
     offsets_np[1:] = np.cumsum(mask_np[:-1])
@@ -53,12 +53,12 @@ def threshold(dataset, cell_array_name, lo, hi):
     n_out = int(offsets_np[-1] + mask_np[-1])
 
     if n_out == 0:
-        conn = tack.field(dtype=tack.i32, shape=(1,))
+        conn = tack.empty(dtype=tack.i32, shape=(1,))
         cell_set = CellSetExplicit(conn, ppc)
         return Dataset(dataset.coordinates, cell_set, dataset.num_points, 0)
 
     # Pass 2: scatter qualifying cells
-    out_conn = tack.field(dtype=tack.i32, shape=(n_out * ppc,))
+    out_conn = tack.empty(dtype=tack.i32, shape=(n_out * ppc,))
     _scatter(dataset.cell_set, mask, offsets, out_conn, n_cells)
 
     cell_set = CellSetExplicit(out_conn, ppc)

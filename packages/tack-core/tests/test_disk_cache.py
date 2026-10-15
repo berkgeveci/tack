@@ -693,3 +693,20 @@ def test_settings_from_the_environment(monkeypatch, tmp_path):
         disk_cache.settings()
     with pytest.raises(ValueError, match="cache mode"):
         disk_cache.configure(mode="sometimes")
+
+
+def test_typed_arrays_reuse_kernels_in_a_second_process(tmp_path, backend):
+    _cache_dir(tmp_path)
+    moddir = tmp_path / "src"
+    moddir.mkdir()
+    kernels = _KERNELS.replace(
+        "tack.Vector.field(3, tack.f32, (n,))",
+        "tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))")
+    _write(moddir / "kernels.py", kernels)
+    first = _run(tmp_path, backend)
+    second = _run(tmp_path, backend)
+    assert first["result"] == second["result"]
+    assert first["stats"].get("variant_write", 0) >= 5
+    assert second["stats"].get("ir_miss", 0) == 0
+    assert second["stats"].get("variant_miss", 0) == 0
+    assert second["stats"].get("variant_hit", 0) == first["stats"]["variant_write"]

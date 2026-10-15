@@ -49,6 +49,9 @@ flowchart LR
 
 ## Pages
 
+**[Array API](array-api.md).** Typed backend storage, element dtypes, logical
+array shape, NumPy transfer semantics, and the distinction from dataset fields.
+
 **[Principles](principles.md).** The ideas the rest of the system follows:
 Python syntax with Tack's own semantics; translate or reject, never
 silently drop; one kernel source with backend capabilities declared rather

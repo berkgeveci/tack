@@ -93,16 +93,16 @@ def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
     n, steps = (128, 10) if check else (2048, 900)
     initial = (np.random.default_rng(0).random((n, 2)) * 0.3 + [0.35, 0.45]).astype(np.float32)
-    x = tack.Vector.field(2, dtype=tack.f32, shape=(n,))
-    v = tack.Vector.field(2, dtype=tack.f32, shape=(n,))
-    C = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))
-    J = tack.field(dtype=tack.f32, shape=(n,))
+    x = tack.empty(dtype=tack.vec2(tack.f32), shape=(n,))
+    v = tack.empty(dtype=tack.vec2(tack.f32), shape=(n,))
+    C = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))
+    J = tack.empty(dtype=tack.f32, shape=(n,))
     x.from_numpy(initial)
     v.fill(0.0)       # read by the first scatter, before anything writes them
     C.fill(0.0)
     J.fill(1.0)
-    momentum = tack.Vector.field(2, dtype=tack.f32, shape=(GRID, GRID))
-    mass = tack.field(dtype=tack.f32, shape=(GRID, GRID))
+    momentum = tack.empty(dtype=tack.vec2(tack.f32), shape=(GRID, GRID))
+    mass = tack.empty(dtype=tack.f32, shape=(GRID, GRID))
     snapshots = [initial.copy()]
     # --8<-- [start:loop]
     for step in range(steps):
@@ -111,11 +111,11 @@ def run(arch="cpu", check=False):
         grid_update(momentum, mass)
         grid_to_particle(x, v, C, J, momentum, n)
         if (step + 1) % (steps // 3 if not check else steps) == 0:
-            snapshots.append(x.to_numpy(vectors=True))
+            snapshots.append(x.to_numpy())
     # --8<-- [end:loop]
     if check:
-        positions = x.to_numpy(vectors=True)
-        velocity = v.to_numpy(vectors=True)
+        positions = x.to_numpy()
+        velocity = v.to_numpy()
         # The weights partition unity, so scatter must conserve particle mass.
         np.testing.assert_allclose(mass.to_numpy().sum(dtype=np.float64), n * float(MASS), rtol=2e-6)
         assert np.all(np.isfinite(positions)) and np.all((positions > 0) & (positions < 1))

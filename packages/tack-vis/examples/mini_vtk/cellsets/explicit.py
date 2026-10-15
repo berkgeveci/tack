@@ -38,6 +38,6 @@ def from_structured(cell_set_structured, n_cells):
             for v in range(struct.points_per_cell):
                 conn[c * struct.points_per_cell + v] = struct.get_point_id(c, v)
 
-    conn = tack.field(dtype=tack.i32, shape=(n_cells * ppc,))
+    conn = tack.empty(dtype=tack.i32, shape=(n_cells * ppc,))
     _expand(cell_set_structured, conn, n_cells)
     return CellSetExplicit(conn, ppc)

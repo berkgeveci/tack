@@ -38,7 +38,7 @@ tack.init(arch=_arch)
 
 n = 100_000
 np.random.seed(42)
-data = tack.field(dtype=tack.f32, shape=(n,))
+data = tack.empty(dtype=tack.f32, shape=(n,))
 data.from_numpy(np.random.randn(n).astype(np.float32))
 
 print(f"Data: {n:,} elements from standard normal distribution")
@@ -71,8 +71,8 @@ print(f"  |max| = {absmax(data):.4f}")
 # DOT PRODUCT
 # ================================================================
 
-a = tack.field(dtype=tack.f32, shape=(1000,))
-b = tack.field(dtype=tack.f32, shape=(1000,))
+a = tack.empty(dtype=tack.f32, shape=(1000,))
+b = tack.empty(dtype=tack.f32, shape=(1000,))
 a.from_numpy(np.ones(1000, dtype=np.float32))
 b.from_numpy(np.arange(1000, dtype=np.float32))
 
@@ -85,7 +85,7 @@ assert abs(d - 499500.0) < 1.0
 # COUNT NON-ZERO
 # ================================================================
 
-sparse = tack.field(dtype=tack.f32, shape=(10000,))
+sparse = tack.empty(dtype=tack.f32, shape=(10000,))
 sparse_np = np.zeros(10000, dtype=np.float32)
 sparse_np[::10] = 1.0  # every 10th element is 1
 sparse.from_numpy(sparse_np)
@@ -122,9 +122,9 @@ print(f"  Total in range: {total_in_range:,} / {n:,}")
 
 print("\nResidual norm example:")
 # Simulate solving Ax = b: compute residual r = b - Ax
-x = tack.field(dtype=tack.f32, shape=(1000,))
-b_field = tack.field(dtype=tack.f32, shape=(1000,))
-residual = tack.field(dtype=tack.f32, shape=(1000,))
+x = tack.empty(dtype=tack.f32, shape=(1000,))
+b_field = tack.empty(dtype=tack.f32, shape=(1000,))
+residual = tack.empty(dtype=tack.f32, shape=(1000,))
 
 x.from_numpy(np.ones(1000, dtype=np.float32))
 b_field.from_numpy(np.ones(1000, dtype=np.float32) * 1.001)

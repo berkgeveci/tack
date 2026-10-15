@@ -29,7 +29,7 @@ def run(arch="cpu", check=False):
     # --8<-- [start:extract]
     grid = td.uniform_grid((n + 1, n + 1, n + 1), origin=(-1.0, -1.0, -1.0),
                            spacing=(2.0 / n, 2.0 / n, 2.0 / n))
-    scalar = tack.field(tack.f32, shape=(grid.num_points,))
+    scalar = tack.empty(tack.f32, shape=(grid.num_points,))
     sphere(grid.geometry.values, scalar, 0.7)
     grid.fields["s"] = td.Field(td.H1(grid), scalar)
     surface = td.contour(grid, "s", 0.0)

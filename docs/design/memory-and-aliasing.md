@@ -113,8 +113,8 @@ three origins, and the backends encode them slightly differently.
 
 ```mermaid
 flowchart TD
-    A["tack.field() / empty_like() / field_from_numpy() / zeros()"] -->|backend.allocate_field| OWN["Owned buffer<br/>(_owned absent, read as True)"]
-    B["tack.field_from_ptr(ptr, ...)"] -->|"memory_space() check,<br/>backend.wrap_ptr()"| WRAP["Wrapped buffer<br/>_owned = False"]
+    A["tack.empty() / empty_like() / field_from_numpy() / zeros()"] -->|backend.allocate_field| OWN["Owned buffer<br/>(_owned absent, read as True)"]
+    B["tack.array_from_ptr(ptr, ...)"] -->|"memory_space() check,<br/>backend.wrap_ptr()"| WRAP["Wrapped buffer<br/>_owned = False"]
     C["tack.from_dlpack(x)"] -->|"dlpack_to_field()<br/>→ field_from_ptr()"| WRAP
     C -->|attaches| HOLD["_CapsuleHold<br/>on the Field"]
     OWN --> F["Field"]
@@ -127,7 +127,7 @@ flowchart TD
 
 ### Owned buffers
 
-Fields from `tack.field()` and its helpers own their storage. On CPU and
+Fields from `tack.empty()` and its helpers own their storage. On CPU and
 Metal, Python reference counting does the work: the NumPy array or the
 `MTLBuffer` object goes away with the buffer. The device backends free
 explicitly in `__del__`:
@@ -154,7 +154,7 @@ gone.
 
 ### Wrapped buffers
 
-`tack.field_from_ptr(ptr, dtype, shape, writable=False)` wraps memory Tack
+`tack.array_from_ptr(ptr, dtype, shape, writable=False)` wraps memory Tack
 did not allocate. Each backend's `wrap_ptr()` builds the buffer with
 `__new__`, skipping allocation:
 
@@ -245,7 +245,7 @@ Tack could check. The usual way to get there is switching backends:
 
 ```python
 tack.init(arch=tack.cuda)
-f = tack.field(dtype=tack.f32, shape=(64,))
+f = tack.empty(dtype=tack.f32, shape=(64,))
 tack.init(arch=tack.cpu)   # the CUDA backend, and its context, are dropped
 f.to_numpy()               # must not touch the dead pointer
 ```

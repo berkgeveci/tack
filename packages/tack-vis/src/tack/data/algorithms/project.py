@@ -7,7 +7,7 @@ from tack.data import ids
 from tack.data.algorithms._common import _field
 from tack.data.algorithms._links import _average_links
 from tack.data.algorithms.traces import traces
-from tack.data.arrays import materialize
+from tack.data.arrays import dtype_of, materialize
 from tack.data.buckets import bucket_order
 from tack.data.carry import _like, _take
 from tack.data.dataset import Field, for_each
@@ -197,9 +197,9 @@ def project(data, field, space):
     values = field.values
     if space is source:
         return Field(space, _take(values, tack.arange(space.size, data.id_dtype)))
-    if values.dtype not in (tack.f32, tack.f64):
+    if dtype_of(values) not in (tack.f32, tack.f64):
         raise TypeError(f"project averages and interpolates floating-point values, not "
-                        f"{values.dtype.name}")
+                        f"{dtype_of(values).name}")
     if isinstance(space, SideTraces):
         return traces(data, field)
     if not getattr(data.topology, "reference_cells", True):

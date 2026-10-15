@@ -276,20 +276,22 @@ def field_to_dlpack(field, versioned=False):
     """
     device_type, device_id, data_ptr = _get_device_info(field)
 
-    dl_dtype = _DTYPE_TO_DLPACK.get(field.dtype)
+    dl_dtype = _DTYPE_TO_DLPACK.get(field.scalar_dtype)
     if dl_dtype is None:
         raise TypeError(f"DLPack does not support dtype: {field.dtype}")
     code, bits, lanes = dl_dtype
 
-    ndim = len(field.shape)
-    shape_arr = (ctypes.c_int64 * ndim)(*field.shape)
+    shape = field._vector_shape() if not field._legacy_layout else None
+    shape = field.shape if shape is None else shape
+    ndim = len(shape)
+    shape_arr = (ctypes.c_int64 * ndim)(*shape)
 
     # Contiguous C-order strides (in elements, not bytes)
     strides_arr = (ctypes.c_int64 * ndim)()
     stride = 1
     for i in range(ndim - 1, -1, -1):
         strides_arr[i] = stride
-        stride *= field.shape[i]
+        stride *= shape[i]
 
     if versioned:
         managed = DLManagedTensorVersioned()

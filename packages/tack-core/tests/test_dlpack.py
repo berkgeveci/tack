@@ -389,7 +389,8 @@ def test_a_metal_tensor_is_refused_before_wrap_ptr(monkeypatch):
 def test_unsupported_dtype_is_rejected_clearly():
     """A dtype with no DLPack equivalent must say so, not produce garbage."""
     field = _field(np.zeros(4, dtype=np.float32), tack.f32)
-    field.dtype = "not-a-dtype"
+    # Deliberately corrupt private storage metadata; public dtype is read-only.
+    field._dtype = "not-a-dtype"
     with pytest.raises(TypeError, match="DLPack"):
         field.__dlpack__()
 

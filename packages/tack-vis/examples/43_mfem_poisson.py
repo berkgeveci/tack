@@ -94,7 +94,7 @@ print(f"tack: {data.num_cells} cells, {data.topology.faces().num_faces} faces, "
 
 # The same function: values and gradients at element centers, against MFEM.
 values = alg.values_at_centers(data, field).values.to_numpy()
-gradients = alg.gradients(data, field).values.to_numpy(vectors=True)
+gradients = alg.gradients(data, field).values.to_numpy()
 value_error = gradient_error = 0.0
 g = mfem.Vector(3)
 for e in range(mesh.GetNE()):

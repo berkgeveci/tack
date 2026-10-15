@@ -64,18 +64,18 @@ def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
     n = 24 if check else 48
     axis = np.linspace(-1, 1, n + 1, dtype=np.float32)
-    scalar = tack.field_from_numpy(axis[:, None] ** 2 + axis[None, :] ** 2 - np.float32(0.7**2))
+    scalar = tack.array(axis[:, None] ** 2 + axis[None, :] ** 2 - np.float32(0.7**2))
     # --8<-- [start:allocate]
-    counts = tack.field(dtype=tack.i32, shape=(n * n,))
-    offsets = tack.field(dtype=tack.i32, shape=(n * n,))
+    counts = tack.empty(dtype=tack.i32, shape=(n * n,))
+    offsets = tack.empty(dtype=tack.i32, shape=(n * n,))
     count_segments(scalar, counts, n)
     total = exclusive_scan(counts, offsets, n * n)
     if total == 0:
         return np.empty((0, 2, 2), dtype=np.float32), n
-    lines = tack.Vector.field(2, dtype=tack.f32, shape=(total, 2))
+    lines = tack.empty(dtype=tack.vec2(tack.f32), shape=(total, 2))
     write_segments(scalar, offsets, lines, n)
     # --8<-- [end:allocate]
-    points = lines.to_numpy(vectors=True)
+    points = lines.to_numpy()
     if check:
         assert points.shape == (total, 2, 2) and total > 0
         assert np.isfinite(points).all()

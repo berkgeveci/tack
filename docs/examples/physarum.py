@@ -25,8 +25,8 @@ class Agents:
     def __init__(self, n, size):
         self.n = n
         self.size = size
-        self.pos = tack.Vector.field(2, dtype=tack.f32, shape=(n,))
-        self.heading = tack.field(dtype=tack.f32, shape=(n,))
+        self.pos = tack.empty(dtype=tack.vec2(tack.f32), shape=(n,))
+        self.heading = tack.empty(dtype=tack.f32, shape=(n,))
 
     @tack.func
     def sense(self, trail, p, angle):
@@ -104,7 +104,7 @@ def run(arch="cpu", check=False):
     # --8<-- [end:loop]
     if check:
         trail = old.to_numpy()
-        pos = agents.pos.to_numpy(vectors=True)
+        pos = agents.pos.to_numpy()
         assert np.all(np.isfinite(trail)) and trail.min() >= 0
         assert np.all((pos >= 0) & (pos < size))
         # Every deposit adds one, and periodic averaging preserves mass.

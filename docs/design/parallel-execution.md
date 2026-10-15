@@ -556,7 +556,7 @@ code, or in a kernel launched with an empty range, is still checked.
 
 An atomic target must be naturally aligned: 1, 2, 4 or 8 bytes for its
 width. Fields Tack allocates always are; imported pointers
-(`tack.field_from_ptr`, DLPack) need not be. `check_atomic_support` returns
+(`tack.array_from_ptr`, DLPack) need not be. `check_atomic_support` returns
 `(parameter index, alignment)` pairs, which the variant stores as
 `atomic_targets`. `check_atomic_alignment` checks each target's
 `_buffer.address` before the cold compile and again on every cached

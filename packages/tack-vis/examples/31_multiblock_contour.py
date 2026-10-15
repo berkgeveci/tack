@@ -69,7 +69,7 @@ def make_blocks(nblocks, block_size):
                           domain_lo + bk * n * dz)
                 block = td.uniform_grid((n + 1, n + 1, n + 1), origin=origin,
                                         spacing=(dx, dy, dz))
-                scalar = tack.field(dtype=tack.f32, shape=(block.num_points,))
+                scalar = tack.empty(dtype=tack.f32, shape=(block.num_points,))
                 compute_gyroid(block.geometry.values, scalar)
                 block.fields["gyroid"] = td.Field(td.H1(block), scalar)
                 blocks.append(block)

@@ -70,10 +70,10 @@ print("-" * 60)
 for backend in BACKENDS:
     tack.init(arch=backend)
 
-    x = tack.field(dtype=tack.f32, shape=(N,))
-    y = tack.field(dtype=tack.f32, shape=(N,))
-    out = tack.field(dtype=tack.f32, shape=(N,))
-    dot_result = tack.field(dtype=tack.f32, shape=(1,))
+    x = tack.empty(dtype=tack.f32, shape=(N,))
+    y = tack.empty(dtype=tack.f32, shape=(N,))
+    out = tack.empty(dtype=tack.f32, shape=(N,))
+    dot_result = tack.empty(dtype=tack.f32, shape=(1,))
 
     x.from_numpy(np_x)
     y.from_numpy(np_y)

@@ -45,10 +45,10 @@ def remap(value, in_lo, in_hi, out_lo, out_hi):
 # --- Kernel using device functions ---
 
 n = 100
-x = tack.field(dtype=tack.f32, shape=(n,))
-out_lerp = tack.field(dtype=tack.f32, shape=(n,))
-out_smooth = tack.field(dtype=tack.f32, shape=(n,))
-out_remap = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
+out_lerp = tack.empty(dtype=tack.f32, shape=(n,))
+out_smooth = tack.empty(dtype=tack.f32, shape=(n,))
+out_remap = tack.empty(dtype=tack.f32, shape=(n,))
 
 x.from_numpy(np.linspace(0.0, 1.0, n, dtype=np.float32))
 

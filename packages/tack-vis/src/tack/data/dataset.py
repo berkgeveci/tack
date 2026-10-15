@@ -208,7 +208,7 @@ class DataSet:
     @property
     def dtype(self):
         """The geometry's floating-point type."""
-        return self.geometry.values.dtype
+        return arrays.dtype_of(self.geometry.values)
 
     @property
     def id_dtype(self):

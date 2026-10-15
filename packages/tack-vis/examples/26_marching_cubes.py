@@ -387,17 +387,17 @@ class MCTables:
     """Marching cubes lookup tables stored as tack fields."""
 
     def __init__(self):
-        self.tri_table = tack.field(dtype=tack.i32, shape=(4096,))
+        self.tri_table = tack.empty(dtype=tack.i32, shape=(4096,))
         self.tri_table.from_numpy(TRI_TABLE)
-        self.num_tris = tack.field(dtype=tack.i32, shape=(256,))
+        self.num_tris = tack.empty(dtype=tack.i32, shape=(256,))
         self.num_tris.from_numpy(NUM_TRIS)
-        self.edge_corners = tack.field(dtype=tack.i32, shape=(24,))
+        self.edge_corners = tack.empty(dtype=tack.i32, shape=(24,))
         self.edge_corners.from_numpy(EDGE_CORNERS)
-        self.corner_x = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_x = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_x.from_numpy(CORNER_X)
-        self.corner_y = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_y = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_y.from_numpy(CORNER_Y)
-        self.corner_z = tack.field(dtype=tack.f32, shape=(8,))
+        self.corner_z = tack.empty(dtype=tack.f32, shape=(8,))
         self.corner_z.from_numpy(CORNER_Z)
 
 
@@ -533,15 +533,15 @@ grid = UniformGrid3D(nx, ny, nz, x0, y0, z0, dx, dy, dz)
 tables = MCTables()
 
 # Compute scalar field
-scalar = tack.field(dtype=tack.f32, shape=(n_points,))
+scalar = tack.empty(dtype=tack.f32, shape=(n_points,))
 compute_scalar_field(scalar, grid, n_points)
 
 # Classify
-num_tri = tack.field(dtype=tack.i32, shape=(n_cells,))
+num_tri = tack.empty(dtype=tack.i32, shape=(n_cells,))
 classify_cells(scalar, num_tri, grid, tables, n_cells, isovalue)
 
 # Prefix sum -> scatter offsets
-offsets = tack.field(dtype=tack.i32, shape=(n_cells,))
+offsets = tack.empty(dtype=tack.i32, shape=(n_cells,))
 total_tris = algorithms.exclusive_scan(num_tri, offsets, n_cells)
 total_verts = total_tris * 3
 print(f"Triangles: {total_tris:,}")
@@ -549,9 +549,9 @@ print(f"Vertices:  {total_verts:,}")
 print()
 
 # Allocate output
-out_x = tack.field(dtype=tack.f32, shape=(total_verts,))
-out_y = tack.field(dtype=tack.f32, shape=(total_verts,))
-out_z = tack.field(dtype=tack.f32, shape=(total_verts,))
+out_x = tack.empty(dtype=tack.f32, shape=(total_verts,))
+out_y = tack.empty(dtype=tack.f32, shape=(total_verts,))
+out_z = tack.empty(dtype=tack.f32, shape=(total_verts,))
 
 # Benchmark: full pipeline (classify + scan + emit)
 print("Tack marching cubes...")

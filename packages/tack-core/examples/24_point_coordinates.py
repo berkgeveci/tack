@@ -148,14 +148,14 @@ results = {}
 
 # --- Product Points ---
 print("Product Points...")
-xc = tack.field(dtype=tack.f32, shape=(N,))
-yc = tack.field(dtype=tack.f32, shape=(N,))
-zc = tack.field(dtype=tack.f32, shape=(N,))
+xc = tack.empty(dtype=tack.f32, shape=(N,))
+yc = tack.empty(dtype=tack.f32, shape=(N,))
+zc = tack.empty(dtype=tack.f32, shape=(N,))
 xc.from_numpy(x1d)
 yc.from_numpy(y1d)
 zc.from_numpy(z1d)
 product = ProductPoints(xc, yc, zc)
-output = tack.field(dtype=tack.f32, shape=(num_points,))
+output = tack.empty(dtype=tack.f32, shape=(num_points,))
 
 coord_mem = (N + N + N) * 4
 print(f"  Coordinate memory: {coord_mem:,} bytes ({coord_mem/1024:.1f} KB)")
@@ -182,14 +182,14 @@ gc.collect()
 
 # --- SOA Points ---
 print("\nSOA Points...")
-sx = tack.field(dtype=tack.f32, shape=(num_points,))
-sy = tack.field(dtype=tack.f32, shape=(num_points,))
-sz = tack.field(dtype=tack.f32, shape=(num_points,))
+sx = tack.empty(dtype=tack.f32, shape=(num_points,))
+sy = tack.empty(dtype=tack.f32, shape=(num_points,))
+sz = tack.empty(dtype=tack.f32, shape=(num_points,))
 
 # Build SOA coordinates using a Product -> SOA expansion kernel
-xc = tack.field(dtype=tack.f32, shape=(N,))
-yc = tack.field(dtype=tack.f32, shape=(N,))
-zc = tack.field(dtype=tack.f32, shape=(N,))
+xc = tack.empty(dtype=tack.f32, shape=(N,))
+yc = tack.empty(dtype=tack.f32, shape=(N,))
+zc = tack.empty(dtype=tack.f32, shape=(N,))
 xc.from_numpy(x1d)
 yc.from_numpy(y1d)
 zc.from_numpy(z1d)
@@ -257,12 +257,12 @@ gc.collect()
 
 # --- AOS Points ---
 print("\nAOS Points...")
-aos_field = tack.field(dtype=tack.f32, shape=(num_points * 3,))
+aos_field = tack.empty(dtype=tack.f32, shape=(num_points * 3,))
 
 # Build AOS coordinates via Product -> AOS expansion
-xc = tack.field(dtype=tack.f32, shape=(N,))
-yc = tack.field(dtype=tack.f32, shape=(N,))
-zc = tack.field(dtype=tack.f32, shape=(N,))
+xc = tack.empty(dtype=tack.f32, shape=(N,))
+yc = tack.empty(dtype=tack.f32, shape=(N,))
+zc = tack.empty(dtype=tack.f32, shape=(N,))
 xc.from_numpy(x1d)
 yc.from_numpy(y1d)
 zc.from_numpy(z1d)

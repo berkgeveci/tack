@@ -20,9 +20,9 @@ import numpy as np
 import tack
 
 tack.init(arch=tack.cpu)
-x = tack.field_from_numpy(np.arange(8, dtype=np.float32))
-y = tack.field_from_numpy(np.ones(8, dtype=np.float32))
-out = tack.field(dtype=tack.f32, shape=(8,))
+x = tack.array(np.arange(8, dtype=np.float32))
+y = tack.array(np.ones(8, dtype=np.float32))
+out = tack.empty(dtype=tack.f32, shape=(8,))
 
 @tack.kernel
 def saxpy(x, y, out, alpha):
@@ -168,7 +168,7 @@ initial state with NumPy on the host, upload it, then work on the field:
 ```python
 rng = np.random.default_rng(42)
 initial = rng.normal(size=1024).astype(np.float32)  # Python / NumPy
-data = tack.field_from_numpy(initial)
+data = tack.array(initial)
 ```
 
 Use `tack.random` for random draws within a kernel. Use `@tack.func` for reusable

@@ -23,9 +23,9 @@ def compact_positive(values, out, count, n) -> int:
 def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
     # --8<-- [start:run]
-    values = tack.field_from_numpy(np.array([-2, 1, -0.5, 3, 0, 2], dtype=np.float32))
-    out = tack.field(dtype=tack.f32, shape=values.shape)  # capacity for every input
-    count = tack.field(dtype=tack.i32, shape=(1,))
+    values = tack.array(np.array([-2, 1, -0.5, 3, 0, 2], dtype=np.float32))
+    out = tack.empty(dtype=tack.f32, shape=values.shape)  # capacity for every input
+    count = tack.empty(dtype=tack.i32, shape=(1,))
     count.fill(0)
     length = compact_positive(values, out, count, values.size)
     result = out.to_numpy()[:length]

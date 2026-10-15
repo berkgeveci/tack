@@ -94,7 +94,7 @@ class _Explicit(_Implicit):
 
     def __init__(self, values):
         self.values = values
-        _metadata(self, size_of(values), width_of(values), values.dtype)
+        _metadata(self, size_of(values), width_of(values), dtype_of(values))
 
     @tack.func
     def get(self, k):
@@ -519,6 +519,8 @@ def size_of(values):
     """The number of values."""
     if isinstance(values, _Implicit):
         return values.size
+    if not getattr(values, '_legacy_layout', False):
+        return values.size
     return values.shape[0] if not width_of(values) else values.shape[0] // width_of(values)
 
 
@@ -531,7 +533,7 @@ def width_of(values):
 
 def dtype_of(values):
     """The type of each component."""
-    return values.dtype
+    return values.scalar_dtype if isinstance(values, _DeviceField) else values.dtype
 
 
 def to_host(values):

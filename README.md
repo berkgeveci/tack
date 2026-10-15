@@ -12,9 +12,9 @@ import numpy as np
 tack.init(arch=tack.metal)  # or tack.cpu, tack.cuda, tack.hip, tack.level_zero
 
 n = 1_000_000
-x = tack.field(dtype=tack.f32, shape=(n,))
-y = tack.field(dtype=tack.f32, shape=(n,))
-out = tack.field(dtype=tack.f32, shape=(n,))
+x = tack.empty(dtype=tack.f32, shape=(n,))
+y = tack.empty(dtype=tack.f32, shape=(n,))
+out = tack.empty(dtype=tack.f32, shape=(n,))
 
 x.from_numpy(np.random.randn(n).astype(np.float32))
 y.from_numpy(np.random.randn(n).astype(np.float32))
@@ -104,26 +104,28 @@ Compiled kernels are also kept on disk, so a later process starts warm; see
 | `tack.f32` | 32-bit float |
 | `tack.f64` | 64-bit float (not on Metal; on Level Zero, where the device has it) |
 
-## Fields
+## Arrays
 
-Fields are n-dimensional arrays that live on the backend device.
+`tack.Array` is typed storage on a backend. Array shape counts elements;
+the dtype describes a scalar, vector or matrix element. A dataset
+`tack.data.Field` combines a function space with coefficient values.
 
 ```python
-# tack.field leaves the contents unspecified until a kernel or a host write sets them
-x = tack.field(dtype=tack.f32, shape=(1024,))         # 1D
-img = tack.field(dtype=tack.f32, shape=(512, 512))     # 2D
-vol = tack.field(dtype=tack.f32, shape=(64, 64, 64))   # 3D
+# empty leaves contents unspecified until a kernel or host write sets them
+x = tack.empty(dtype=tack.f32, shape=(1024,))         # 1D
+img = tack.empty(dtype=tack.f32, shape=(512, 512))     # 2D
+vol = tack.empty(dtype=tack.f32, shape=(64, 64, 64))   # 3D
 
-# Vector and matrix fields
-pixels = tack.Vector.field(3, dtype=tack.f32, shape=(width, height))   # a 3-vector per element
-F = tack.Matrix.field(2, 2, dtype=tack.f32, shape=(n,))                # a 2x2 matrix per element
+# Vector and matrix elements use the same array constructor
+pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(width, height))
+F = tack.empty(dtype=tack.mat2(tack.f32), shape=(n,))
 
 # Data transfer
 x.from_numpy(np_array)    # host → device
 result = x.to_numpy()     # device → host
 x.fill(0.0)               # fill with scalar
 pixels.from_numpy(rgb)                    # (width, height, 3), or the flat array
-rgb = pixels.to_numpy(vectors=True)       # (width, height, 3); plain to_numpy() is flat
+rgb = pixels.to_numpy()                   # (width, height, 3)
 x[7], pixels[3, 4]                        # read one element from the host (not written this way)
 
 # Reductions (on the device for f32 fields on GPU backends)
@@ -132,6 +134,8 @@ lo = x.min()
 hi = x.max()
 
 # Convenience constructors
+copied = tack.array(np_array)             # independent storage, copies values
+scratch = tack.empty_like(pixels)         # same shape and element type, no copy
 z = tack.zeros(dtype=tack.f32, shape=(1024,))
 o = tack.ones(dtype=tack.i32, shape=(256,))
 idx = tack.arange(100)

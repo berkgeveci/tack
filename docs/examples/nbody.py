@@ -59,8 +59,8 @@ def run(arch="cpu", check=False):
     tack.init(arch=getattr(tack, arch))
     n = 256 if check else 512
     xyz = np.random.default_rng(42).normal(size=(n, 3)).astype(np.float32)
-    pos = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
-    acceleration = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+    pos = tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))
+    acceleration = tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))
     pos.from_numpy(xyz)
     # --8<-- [start:choose]
     if get_backend().supports_workgroups:
@@ -70,16 +70,16 @@ def run(arch="cpu", check=False):
     else:
         acceleration_plain(pos, acceleration, n)
     # --8<-- [end:choose]
-    result = acceleration.to_numpy(vectors=True)
+    result = acceleration.to_numpy()
     if check:
         r = xyz.astype(np.float64)[None, :, :] - xyz.astype(np.float64)[:, None, :]
         distance_sq = (r * r).sum(axis=-1) + 0.01
         reference = (r / distance_sq[..., None] ** 1.5).sum(axis=1)
         np.testing.assert_allclose(result, reference, atol=8e-4, rtol=3e-5)
         if get_backend().supports_workgroups:
-            baseline = tack.Vector.field(3, dtype=tack.f32, shape=(n,))
+            baseline = tack.empty(dtype=tack.vec3(tack.f32), shape=(n,))
             acceleration_plain(pos, baseline, n)
-            np.testing.assert_allclose(result, baseline.to_numpy(vectors=True), atol=8e-4, rtol=3e-5)
+            np.testing.assert_allclose(result, baseline.to_numpy(), atol=8e-4, rtol=3e-5)
     return xyz, result
 
 

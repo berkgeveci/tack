@@ -127,7 +127,7 @@ def make_fields(n, count):
     """Create `count` f32 fields of size n, filled with test data."""
     fields = []
     for j in range(count):
-        f = tack.field(dtype=tack.f32, shape=(n,))
+        f = tack.empty(dtype=tack.f32, shape=(n,))
         # Use different data per field to avoid trivial patterns
         f.from_numpy(np.random.randn(n).astype(np.float32) + (j + 1.0))
         fields.append(f)

@@ -209,8 +209,8 @@ class Rasterizer:
     def __init__(self, n, width, height):
         self.n = n
         self.width, self.height = width, height
-        self.vertices = tack.Vector.field(2, dtype=tack.f32, shape=(n, 3))
-        self.pixels = tack.Vector.field(3, dtype=tack.f32, shape=(width, height))
+        self.vertices = tack.empty(dtype=tack.vec2(tack.f32), shape=(n, 3))
+        self.pixels = tack.empty(dtype=tack.vec3(tack.f32), shape=(width, height))
         self.pixels.fill(0.0)              # draw writes only covered pixels
 
     @staticmethod

@@ -12,7 +12,7 @@ from pathlib import Path
 EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody", "isosurface",
             "kernel_results", "array_sizes", "datasets")
 QUICKSTARTS = (
-    "01-getting-started", "12-execution-model", "14-vectors-and-matrices",
+    "01-getting-started", "02-fields-and-types", "12-execution-model", "14-vectors-and-matrices",
     "09-visualization", "10-rendering", "15-debugging-and-timing", "16-interoperability",
 )
 

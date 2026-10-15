@@ -479,7 +479,7 @@ def _take_scalar(values, ids):
 
 
 def _take_vector(values, ids):
-    out = tack.Vector.field(values._vector_n, values.dtype, shape=(ids.shape[0],))
+    out = tack.Vector.field(values._vector_n, values.scalar_dtype, shape=(ids.shape[0],))
     if ids.shape[0]:
         _take_scalar_kernel(values, ids, out)
     return out

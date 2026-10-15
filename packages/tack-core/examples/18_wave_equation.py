@@ -27,9 +27,9 @@ DX = 1.0 / N
 DT = 0.5 * DX / C  # CFL: c*dt/dx < 1
 STEPS = 2000
 
-u_prev = tack.field(dtype=tack.f32, shape=(N,))
-u_curr = tack.field(dtype=tack.f32, shape=(N,))
-u_next = tack.field(dtype=tack.f32, shape=(N,))
+u_prev = tack.empty(dtype=tack.f32, shape=(N,))
+u_curr = tack.empty(dtype=tack.f32, shape=(N,))
+u_next = tack.empty(dtype=tack.f32, shape=(N,))
 
 
 @tack.kernel

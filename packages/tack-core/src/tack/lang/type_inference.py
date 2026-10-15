@@ -24,6 +24,10 @@ from tack.lang.types import (
 )
 
 
+def _storage_dtype(arg):
+    return arg.scalar_dtype if isinstance(arg, Field) else arg.dtype
+
+
 def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
     """Infer parameter types from actual call arguments.
 
@@ -40,7 +44,7 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
     # Python float scalars should be f64 to avoid silent precision loss.
     float_context = f32
     for arg in args:
-        if isinstance(arg, (Field, Texture3D)) and arg.dtype is f64:
+        if isinstance(arg, (Field, Texture3D)) and _storage_dtype(arg) is f64:
             float_context = f64
             break
 
@@ -52,9 +56,9 @@ def infer_param_types(ir_func: ir.IRFunction, args: tuple) -> list[ScalarType]:
             param._is_texture = True
             types.append(arg.dtype)
         elif isinstance(arg, Field):
-            param.type_annotation = arg.dtype
+            param.type_annotation = arg.scalar_dtype
             param._is_field = True
-            types.append(arg.dtype)
+            types.append(arg.scalar_dtype)
         elif isinstance(arg, (float, np.floating)):
             param.type_annotation = float_context
             param._is_field = False
@@ -88,7 +92,7 @@ def check_dispatch_types(ir_func: ir.IRFunction, args: tuple,
     """
     for param, arg in zip(ir_func.params, args):
         if isinstance(arg, (Field, Texture3D)):
-            dtype = arg.dtype
+            dtype = _storage_dtype(arg)
             if supported_dtypes is not None and dtype not in supported_dtypes:
                 raise TypeError(
                     f"Kernel '{ir_func.name}': parameter '{param.name}' has dtype "

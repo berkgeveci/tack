@@ -92,14 +92,14 @@ def show(name, data):
     # Geometry is evaluated through the cells' shape functions; an H1 field too.
     x = data.positions()
     data.fields["height"] = td.Field(td.H1(data), _scalars(x[:, 2] + 0.25 * x[:, 0]))
-    centers = alg.cell_centers(data).values.to_numpy(vectors=True)
+    centers = alg.cell_centers(data).values.to_numpy()
     data.fields["cell id"] = td.Field(td.Constant(data),
                                       _scalars(np.arange(data.num_cells, dtype=float)))
     at_centers = alg.values_at_centers(data, data.fields["height"]).values.to_numpy()
     print(f"  H1 'height' at the cell centers matches the centers' own height: "
           f"{np.allclose(at_centers, centers[:, 2] + 0.25 * centers[:, 0], atol=1e-5)}")
     # Its gradient: its own basis, and the geometry field's Jacobian.
-    gradient = alg.gradients(data, data.fields["height"]).values.to_numpy(vectors=True)
+    gradient = alg.gradients(data, data.fields["height"]).values.to_numpy()
     print(f"  its gradient is (0.25, 0, 1) in every cell: "
           f"{np.allclose(gradient, [0.25, 0, 1], atol=1e-5)}")
 
@@ -113,10 +113,10 @@ def show(name, data):
     jump = alg.jump(data, data.fields["cell id"])
     print(f"  'cell id' jumps across {np.count_nonzero(jump.values.to_numpy())} "
           f"interior faces")
-    area_vectors = normals.values.to_numpy(vectors=True) * areas.values.to_numpy()[:, None]
+    area_vectors = normals.values.to_numpy() * areas.values.to_numpy()[:, None]
     closed = alg.divergence(data, td.Field(td.Values(data, "faces"), _vectors(area_vectors)))
     print(f"  every cell's outward area vectors sum to zero: "
-          f"{np.allclose(closed.values.to_numpy(vectors=True), 0, atol=1e-5)}")
+          f"{np.allclose(closed.values.to_numpy(), 0, atol=1e-5)}")
 
     # The boundary, a face set (a side set).
     boundary = alg.boundary_faces(data)
@@ -198,13 +198,13 @@ def _write(grid, stem):
 
 
 def _scalars(values):
-    f = tack.field(tack.f32, shape=(len(values),))
+    f = tack.empty(tack.f32, shape=(len(values),))
     f.from_numpy(np.asarray(values, np.float32))
     return f
 
 
 def _vectors(values):
-    f = tack.Vector.field(3, tack.f32, shape=(len(values),))
+    f = tack.empty(dtype=tack.vec3(tack.f32), shape=(len(values),))
     f.from_numpy(np.asarray(values, np.float32))
     return f
 
@@ -252,7 +252,7 @@ print(f"  an order per cell (0 or 1): {adaptive.size} values; "
 # corners, pulled toward its center. The topology is the same, so the cells
 # still know their faces and neighbours; the faces just have no single
 # position any more, which is what per-side traces will be for.
-centers = alg.cell_centers(mixed).values.to_numpy(vectors=True)
+centers = alg.cell_centers(mixed).values.to_numpy()
 connectivity = mixed.topology.connectivity.to_numpy()
 corners = mixed.positions()[connectivity]
 for c in range(mixed.num_cells):
@@ -260,7 +260,7 @@ for c in range(mixed.num_cells):
     corners[rows] = centers[c] + 0.7 * (corners[rows] - centers[c])
 shrunk = td.DataSet(mixed.topology, td.Field(td.L2(mixed), _vectors(corners)),
                     fields={"height": mixed.fields["height"]})
-gradient = alg.gradients(shrunk, shrunk.fields["height"]).values.to_numpy(vectors=True)
+gradient = alg.gradients(shrunk, shrunk.fields["height"]).values.to_numpy()
 print(f"\nshrunk: the mixed grid with an L2 geometry, cells at 70%: "
       f"{shrunk.topology.faces().num_faces} faces, the same; 'height' over the "
       f"smaller cells has gradient (0.25, 0, 1) / 0.7 in every cell: "

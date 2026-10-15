@@ -173,7 +173,7 @@ attributes become parameters, and method calls become inlined function
 bodies. The IR and codegens never see
 templates.
 
-**Non-owning pointer interop.** `tack.field_from_ptr()` wraps external
+**Non-owning pointer interop.** `tack.array_from_ptr()` wraps external
 device memory without allocation or copy. Each backend implements
 `wrap_ptr()` so that the wrapped memory is never freed by Tack (the
 CUDA, HIP and Level Zero buffers carry an `_owned = False` flag).
