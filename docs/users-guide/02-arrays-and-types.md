@@ -218,6 +218,49 @@ pos.fill(0.0)                            # every component to this scalar
 A flat `(n * 3,)` array is not accepted by `copyto` for a vector array;
 reshape it to `(n, 3)` first.
 
+### Structure of Arrays
+
+A vector or matrix array can instead keep each component in an array of
+its own: the structure-of-arrays layout, as a simulation often hands over
+its coordinates. `tack.soa(x, y, z)` makes a `vec3` array from three
+arrays that exist already, without copying, so they can come from another
+library (`tack.from_dlpack`, `tack.array_from_ptr`) on the CPU or a GPU;
+`layout="soa"` on a constructor makes new ones:
+
+<!-- tack-check: soa-arrays -->
+```python
+import numpy as np
+
+import tack
+
+tack.set_default_device("cpu")
+
+
+@tack.kernel
+def advance(pos, vel, dt):
+    for i in range(len(pos)):
+        pos[i] += vel[i] * dt
+
+
+x, y, z = (np.zeros(4, np.float32) for _ in range(3))   # someone else's arrays
+pos = tack.soa(tack.from_dlpack(x), tack.from_dlpack(y), tack.from_dlpack(z))
+vel = tack.full((4,), [1.0, 2.0, 3.0], tack.vec3(), layout="soa")
+advance(pos, vel, 0.5)
+assert np.allclose(y, 1.0)                     # written through to their memory
+assert pos.layout == "soa" and pos.components[1].size == 4
+assert np.allclose(pos.numpy(), [[0.5, 1.0, 1.5]] * 4)
+```
+
+Kernels index an SOA array exactly as an interleaved one (`pos[i]`,
+`pos[i].y`, `pos[i] += v`, atomics with a vector), and the same kernel
+takes either layout, compiling one variant for each; only a scalar
+atomic at a flat component index is interleaved-only. On the host it
+reads and writes as any vector array (`numpy()`, `copyto`, `fill`,
+reductions); `a.components` gives the component arrays back, and
+`tack.array(a, layout="aos")` copies it into one interleaved buffer. With
+no one buffer, it is not exported whole through DLPack or to VTK; its
+components are.
+
 ### Reading One Element from the Host
 
 `f[i]`, `f[i, j]` and `f[()]` (for a zero-dimensional array) read one
@@ -383,7 +426,8 @@ array inlines to the expression you would write by hand.
 Arrays that wrap stored ones can also be written through: a store into a
 `View`, `Strided` or `Permutation` (a scatter) lands in the array it wraps,
 `Components(x, y, z)` takes a vector and writes each component to its own
-array (a structure of arrays), `Concatenate` writes into the part that
+array (a structure of arrays, which `tack.soa` also stores; see
+[Structure of Arrays](#structure-of-arrays)), `Concatenate` writes into the part that
 holds the index, and `ExtractComponent` writes one component. An array is
 writable exactly when what it writes through is: a store into a
 `CountingArray`, a `Function`, or a `Permutation` of one, is refused when

@@ -12,6 +12,7 @@ import ast
 import copy
 
 from tack.lang import ir, ir_bounds, parallel_dims
+from tack.lang.array import soa_param_names
 from tack.lang.constant import constant_components, constant_ir, constant_table
 from tack.lang.ir_names import fresh_name
 from tack.lang.ir_traversal import LIST_ROLES, child_fields, walk_ir
@@ -141,7 +142,15 @@ class KernelTransformer(ast.NodeVisitor):
         # kept beside the component count.
         self._vector_arrays: dict[str, int] = {}
         self._matrix_arrays: dict[str, tuple] = {}
+        # An array stored one component per array (``("soa", width)``):
+        # name -> the parameters standing for its components, in order.
+        # The name itself is no parameter and never a value in the IR.
+        self._soa_arrays: dict[str, tuple] = {}
         for name, width in (vector_arrays or {}).items():
+            if isinstance(width, tuple) and width[0] == "soa":
+                width = width[1]
+                self._soa_arrays[name] = soa_param_names(
+                    name, _size(width) if isinstance(width, tuple) else width)
             if isinstance(width, tuple):
                 self._matrix_arrays[name] = width
                 width = _size(width)
@@ -201,10 +210,14 @@ class KernelTransformer(ast.NodeVisitor):
         self._used_names.update(arg.arg for arg in node.args.args)
         params = []
         for arg in node.args.args:
-            params.append(ir.IRParam(
-                name=arg.arg,
-                type_annotation=None,  # resolved during type inference
-            ))
+            # An SOA array is one parameter per component, in its place;
+            # dispatch passes the component arrays there.
+            for name in self._soa_arrays.get(arg.arg, (arg.arg,)):
+                self._used_names.add(name)
+                params.append(ir.IRParam(
+                    name=name,
+                    type_annotation=None,  # resolved during type inference
+                ))
         self._kernel_body = node.body
         body = self._visit_body(node.body)
         if not self._parallel_loop_seen:
@@ -1169,20 +1182,18 @@ class KernelTransformer(ast.NodeVisitor):
 
         # Compute the linearized index (handles multi-dim, None, etc.)
         index = self._visit_subscript_index(node)
-        array_ir = self.visit(node.value)
 
         # Vector array load: expand to n component loads
         if is_vector_array:
-            ndim = self._vector_arrays[array_name]
             # Cast index to int before computing component offsets so that
             # a float index like 127.7 maps to element 127, not a fractional
             # position that shifts the component access.
-            int_index = self._element_index(index)
+            locations = self._element_locations(array_name, self._element_index(index))
             return VectorValue(
-                (ir.IRArrayLoad(array=array_ir, index=self._component_index(int_index, ndim, c))
-                 for c in range(ndim)), self._matrix_arrays.get(array_name))
+                (ir.IRArrayLoad(array=array, index=at) for array, at in locations),
+                self._matrix_arrays.get(array_name))
 
-        return ir.IRArrayLoad(array=array_ir, index=index)
+        return ir.IRArrayLoad(array=self.visit(node.value), index=index)
 
     def _as_dim_size(self, node: ast.Subscript) -> ir.IRDimSize | None:
         """`f.shape[k]` on an array → IRDimSize, which resolve_ir folds.
@@ -1204,7 +1215,7 @@ class KernelTransformer(ast.NodeVisitor):
                 f"'{value.value.id}.shape[...]' needs a constant dimension "
                 f"index; the shape is resolved when the kernel is compiled."
             )
-        return ir.IRDimSize(array_name=value.value.id, dim=index.value)
+        return ir.IRDimSize(array_name=self._shape_name(value.value.id), dim=index.value)
 
     def visit_Attribute(self, node: ast.Attribute) -> ir.IRAttribute:
         # module.NAME bound to a tack.constant reads as its value
@@ -1293,6 +1304,11 @@ class KernelTransformer(ast.NodeVisitor):
         # If this name is a vector variable, return its components as a list
         if node.id in self._vector_vars:
             return self._variable_value(node.id)
+        if node.id in self._soa_arrays:
+            raise self._source_error(
+                node, "name", f"'{node.id}' is an SOA array (one array per component), "
+                f"which a kernel indexes ({node.id}[i]), measures ({node.id}.shape, "
+                f"len({node.id})) or passes to a device function, but cannot use as a value")
         name = ir.IRName(name=node.id)
         # This read's position and source spelling, for scope errors.
         name._source = source
@@ -1406,7 +1422,7 @@ class KernelTransformer(ast.NodeVisitor):
                 raise NotImplementedError("len() takes exactly one argument")
             target = node.args[0]
             if isinstance(target, ast.Name) and target.id not in self._vector_vars:
-                return ir.IRDimSize(array_name=target.id, dim=0)
+                return ir.IRDimSize(array_name=self._shape_name(target.id), dim=0)
             arg = self.visit(target)
             return ir.IRAttribute(obj=arg, attr="__len__")
 
@@ -1529,7 +1545,12 @@ class KernelTransformer(ast.NodeVisitor):
         op = func_name.replace("atomic_", "")  # "add", "min", "max"
         array_node = node.args[0]
         array_name = array_node.id if isinstance(array_node, ast.Name) else None
-        array, index, value = self._visit_ordered(node.args)
+        soa = array_name in self._soa_arrays
+        if soa:
+            array = None                     # each component is its own parameter
+            index, value = self._visit_ordered(node.args[1:])
+        else:
+            array, index, value = self._visit_ordered(node.args)
         by_dimension = isinstance(index, list)
         if by_dimension:
             if array_name is None:
@@ -1547,6 +1568,11 @@ class KernelTransformer(ast.NodeVisitor):
                 raise self._source_error(
                     node, f"{func_name}()", f"names an element of an array of {ndim}-vectors; "
                     f"give it a {ndim}-vector, or the flat index of one component")
+            if soa:
+                raise self._source_error(
+                    node, f"{func_name}()", f"gives a scalar to '{array_name}', an SOA array "
+                    f"of {ndim}-vectors, which has no flat component index; give it a "
+                    f"{ndim}-vector")
             atomic = ir.IRAtomicOp(op=op, array=array, index=index, value=value)
             if as_statement:
                 return atomic
@@ -1563,10 +1589,9 @@ class KernelTransformer(ast.NodeVisitor):
         element = self._element_index(self._capture_value(index, self._pre_stmts))
         value = self._settle_components(value, self._pre_stmts)
         olds = []
-        for c, component in enumerate(value):
-            atomic = ir.IRAtomicOp(
-                op=op, array=array, index=self._component_index(element, ndim, c),
-                value=component)
+        locations = self._element_locations(array_name, element, array)
+        for (target, at), component in zip(locations, value, strict=True):
+            atomic = ir.IRAtomicOp(op=op, array=target, index=at, value=component)
             if as_statement:
                 self._pre_stmts.append(atomic)
             else:
@@ -1711,6 +1736,10 @@ class KernelTransformer(ast.NodeVisitor):
                     # A vector array passed in: `fld[i]` in the body must
                     # expand to its components, as it does in the caller.
                     self._vector_arrays[renamed] = self._vector_arrays[arg_name]
+                    if arg_name in self._soa_arrays:
+                        # ...from the caller's component parameters, with no
+                        # binding of its own (skipped below).
+                        self._soa_arrays[renamed] = self._soa_arrays[arg_name]
                     if arg_name in self._matrix_arrays:
                         self._matrix_arrays[renamed] = self._matrix_arrays[arg_name]
                 if arg_name in self._texture_arrays:
@@ -1726,6 +1755,8 @@ class KernelTransformer(ast.NodeVisitor):
             if renamed in self._texture_arrays:
                 continue
             if renamed in self._shared_vars:
+                continue
+            if renamed in self._soa_arrays:
                 continue
             arg_val = self.visit(arg_ast)
             # Capture any stmts from visiting this arg (e.g. nested inlines)
@@ -2158,12 +2189,10 @@ class KernelTransformer(ast.NodeVisitor):
         # array is read before the first store can change it.
         if any(isinstance(n, ir.IRArrayLoad) for n in walk_ir(index_node)):
             index_node = self._capture_value(index_node, stmts)
-        int_index = self._element_index(index_node)
+        locations = self._element_locations(name, self._element_index(index_node), array_node)
         components = self._settle_components(components, stmts)
-        for c in range(ndim):
-            stmts.append(ir.IRArrayStore(
-                array=array_node, index=self._component_index(int_index, ndim, c),
-                value=components[c]))
+        for (array, at), component in zip(locations, components, strict=True):
+            stmts.append(ir.IRArrayStore(array=array, index=at, value=component))
         return stmts
 
     @staticmethod
@@ -2176,6 +2205,25 @@ class KernelTransformer(ast.NodeVisitor):
         array of more than 2**31 components.
         """
         return ir.IRCast(value=index, dtype=i64)
+
+    def _shape_name(self, name):
+        """The parameter whose shape is array ``name``'s: an SOA array's first
+        component, which has the array's shape; ``name`` itself otherwise."""
+        components = self._soa_arrays.get(name)
+        return components[0] if components else name
+
+    def _element_locations(self, name: str, element, array=None) -> list:
+        """``(array, index)`` of each component of element ``element`` of the
+        vector array ``name``: ``element * n + c`` of the array, or for an SOA
+        array ``element`` of the component's own parameter. ``array`` is the
+        array's lowered name, if visited already."""
+        components = self._soa_arrays.get(name)
+        if components is not None:
+            return [(ir.IRName(component), element) for component in components]
+        if array is None:
+            array = ir.IRName(name)
+        ndim = self._vector_arrays[name]
+        return [(array, self._component_index(element, ndim, c)) for c in range(ndim)]
 
     def _component_index(self, element, ndim: int, c: int):
         """Where component ``c`` of element ``element`` is stored: element * ndim + c."""
@@ -2226,27 +2274,26 @@ class KernelTransformer(ast.NodeVisitor):
                 and isinstance(target.value.value, ast.Name)
                 and target.value.value.id in self._vector_arrays)
 
-    def _array_element(self, node: ast.Subscript):
-        """The array and the component indices of the vector array element ``vf[i]``.
+    def _array_element(self, node: ast.Subscript) -> list:
+        """Where each component of the vector array element ``vf[i]`` is:
+        ``(array, index)`` pairs (`_element_locations`).
 
         The element index is evaluated once, so a load and a store of the
         element can share it.
         """
-        ndim = self._vector_arrays[node.value.id]
         index = self._capture_value(self._visit_subscript_index(node), self._pre_stmts)
-        array = self.visit(node.value)
-        element = self._element_index(index)
-        return array, [self._component_index(element, ndim, c) for c in range(ndim)]
+        return self._element_locations(node.value.id, self._element_index(index))
 
-    def _component_stores(self, array, indices: list, selector, value):
+    def _component_stores(self, locations: list, selector, value):
         """Store ``value`` to the component of an array element ``selector`` picks."""
         if isinstance(selector, int):
-            return ir.IRArrayStore(array=array, index=indices[selector], value=value)
+            array, index = locations[selector]
+            return ir.IRArrayStore(array=array, index=index, value=value)
         value = self._capture_value(value, self._pre_stmts)
         return [
             ir.IRIf(ir.IRCompare(op="==", left=selector, right=ir.IRConstant(c)),
                     [ir.IRArrayStore(array=array, index=index, value=value)], [])
-            for c, index in enumerate(indices)
+            for c, (array, index) in enumerate(locations)
         ]
 
     def _assign_array_component(self, target: ast.Subscript, value):
@@ -2262,22 +2309,22 @@ class KernelTransformer(ast.NodeVisitor):
         # The value is evaluated before the target's indices.
         saved = self._pre_stmts
         self._pre_stmts = []
-        array, indices = self._array_element(target.value)
+        locations = self._array_element(target.value)
         selector = self._component_selector(
-            target, len(indices), self._matrix_arrays.get(target.value.value.id))
+            target, len(locations), self._matrix_arrays.get(target.value.value.id))
         statements = self._pre_stmts
         self._pre_stmts = saved
         if statements:
             value = self._capture_value(value, self._pre_stmts)
             self._pre_stmts.extend(statements)
-        return self._component_stores(array, indices, selector, value)
+        return self._component_stores(locations, selector, value)
 
     def _augment_array_component(self, target: ast.Subscript, op: str, value_node):
         """``vf[i][c] op= value``: indices once, the old value read first."""
-        array, indices = self._array_element(target.value)
+        locations = self._array_element(target.value)
         selector = self._component_selector(
-            target, len(indices), self._matrix_arrays.get(target.value.value.id))
-        loads = [ir.IRArrayLoad(array=array, index=index) for index in indices]
+            target, len(locations), self._matrix_arrays.get(target.value.value.id))
+        loads = [ir.IRArrayLoad(array=array, index=index) for array, index in locations]
         if isinstance(selector, int):
             read = loads[selector]
         else:
@@ -2290,12 +2337,13 @@ class KernelTransformer(ast.NodeVisitor):
             read = self._capture_value(read, self._pre_stmts)
             self._pre_stmts.extend(statements)
         return self._component_stores(
-            array, indices, selector, ir.IRBinOp(op=op, left=read, right=right))
+            locations, selector, ir.IRBinOp(op=op, left=read, right=right))
 
     def _augment_vector_array(self, target: ast.Subscript, op: str, value_node):
         """``vf[i] op= value`` for a vector or a scalar ``value``."""
-        array, indices = self._array_element(target)
-        loads = VectorValue((ir.IRArrayLoad(array=array, index=index) for index in indices),
+        locations = self._array_element(target)
+        loads = VectorValue((ir.IRArrayLoad(array=array, index=index)
+                             for array, index in locations),
                             self._matrix_arrays.get(target.value.id))
         right, statements = self._visit_expression(value_node)
         if statements:
@@ -2306,7 +2354,7 @@ class KernelTransformer(ast.NodeVisitor):
         values = self._settle_components(
             [ir.IRBinOp(op=op, left=old, right=new) for old, new in rows], stmts)
         stmts.extend(ir.IRArrayStore(array=array, index=index, value=value)
-                     for index, value in zip(indices, values))
+                     for (array, index), value in zip(locations, values))
         return stmts
 
     def _visit_as_vector(self, value_node, ndim: int) -> list:
@@ -2557,7 +2605,8 @@ class KernelTransformer(ast.NodeVisitor):
         """Evaluate an assignment RHS before side effects in its target."""
         saved = self._pre_stmts
         self._pre_stmts = []
-        array = self.visit(target.value)
+        soa = isinstance(target.value, ast.Name) and target.value.id in self._soa_arrays
+        array = None if soa else self.visit(target.value)
         index = self._visit_subscript_index(target)
         statements = self._pre_stmts
         self._pre_stmts = saved
@@ -2610,7 +2659,7 @@ class KernelTransformer(ast.NodeVisitor):
                   self._inline_stack[-1] if self._inline_stack else None)
         result = flat[0]
         for d in range(1, len(flat)):
-            dim_size = ir.IRDimSize(array_name=array_name, dim=d)
+            dim_size = ir.IRDimSize(array_name=self._shape_name(array_name), dim=d)
             dim_size.index_count = len(flat)
             dim_size.index_source = source
             result = ir.IRBinOp(
@@ -2654,6 +2703,7 @@ class KernelTransformer(ast.NodeVisitor):
         """
         if not self._debug or name is None:
             return flat
+        name = self._shape_name(name)
         if name in self._shared_vars:
             size = self._array_sizes.get(name)
             if size is None or len(indices) != 1:

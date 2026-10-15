@@ -993,7 +993,8 @@ element addressed by that index with one atomic operation per component;
 the element as a whole is not updated atomically, and the element index
 and any component that loads from an array are evaluated before the first
 of them. A scalar value on such an array addresses one component by its
-flat index.
+flat index, except on a structure-of-arrays array (`layout="soa"`), whose
+components have no common flat index; there it is refused.
 `Backend.supported_atomic_dtypes` declares the implemented add/min/max domain,
 independently of the ordinary array types or workgroup capability:
 
@@ -1099,7 +1100,8 @@ scalars retain their distinct roles.
 
 The current key includes argument dtypes and array/scalar/texture categories,
 vector widths and matrix shapes (a 2×2 matrix array and a 4-vector array
-compile separately), texture extents, and resolved shape dependencies.
+compile separately), each vector or matrix array's layout (interleaved or
+structure of arrays), texture extents, and resolved shape dependencies.
 Template identity includes the actual class, typed constants (inherited
 ones included), array metadata, runtime scalar attribute names, and the
 identity of each device function held as an attribute. A `tack.constant`

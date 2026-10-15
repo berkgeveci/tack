@@ -25,6 +25,7 @@ del _NotInstalled, _installed_version
 from tack.lang.array import (
     Array,
     ExportedMemory,
+    SoaArray,
     Texture3D,
     arange,
     array,
@@ -40,6 +41,7 @@ from tack.lang.array import (
     memory_space,
     ones,
     ones_like,
+    soa,
     zeros,
     zeros_like,
 )

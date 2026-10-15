@@ -171,6 +171,11 @@ def array_to_vtk(array, n_components=None, name=None):
     """
     # Work out the layout before reaching for VTK, so a shape mistake
     # reports itself rather than being masked by a missing-VTK error.
+    if getattr(array, 'layout', 'aos') == 'soa':
+        raise TypeError(
+            "array_to_vtk() shares one buffer with VTK, and an SOA array has one per "
+            "component; share each of its components, or copy it to one buffer with "
+            "tack.array(a, layout='aos')")
     if hasattr(array, '_vector_n'):
         width = array._vector_n
         if n_components is not None and n_components != width:

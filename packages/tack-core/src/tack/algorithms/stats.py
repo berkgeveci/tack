@@ -83,15 +83,24 @@ def _histogram_kernel(data, counts, lo, inv_bin_width, n_bins, n):
 # PUBLIC API
 # ================================================================
 
+def _storage_view(a):
+    if a.layout == "soa":
+        from tack.lang.array import array
+        a = array(a, layout="aos")
+    return a._scalar_view()
+
+
 def _count(n, *arrays):
     """Resolve and check the element count, and flatten vector arrays.
 
     Every kernel reads [0, n) scalar elements. A vector array is reduced
     over all its scalar components in storage order through a storage view, since the kernels index scalars and a
     vector element in `a[i] * b[i]` has no scalar meaning.
+    An SOA array is first copied to one interleaved buffer, so its
+    components pair with another array's as an interleaved array's do.
     Returns ``(n, *arrays)`` with the views substituted.
     """
-    flat = tuple(f._scalar_view() if hasattr(f, '_vector_n') else f for f in arrays)
+    flat = tuple(_storage_view(f) if hasattr(f, '_vector_n') else f for f in arrays)
     if n is None:
         n = flat[0].size
     n = int(n)

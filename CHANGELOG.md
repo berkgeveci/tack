@@ -39,6 +39,22 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   writable when what it writes through is; a store into a computed array
   is refused when the kernel compiles, and a read-only stored array stays
   read-only behind a wrapper.
+- Structure-of-arrays storage. `tack.soa(x, y, z)` makes a vector array
+  (a matrix array with `dtype=tack.mat2()`...) whose components are
+  existing arrays of scalars, without copying, so data that arrives one
+  array per component (another library's tensors through `from_dlpack`,
+  a device pointer through `array_from_ptr`, on the CPU or a GPU) is a
+  `tack.Array` as it is. `layout="soa"` on `empty`, `zeros`, `ones`,
+  `full`, `array`, `asarray` and the `*_like` constructors (which keep a
+  prototype's layout) makes new ones; `a.layout` is `"aos"` or `"soa"`
+  and `a.components` gives the component arrays. Kernels index an SOA
+  array exactly as an interleaved one, loads, stores, components,
+  augmented stores and vector atomics, each component its own kernel
+  parameter; one kernel takes either layout, compiled once for each. On
+  the host it reads and writes as any vector array, and `copyto` and
+  `tack.array(a, layout=...)` convert between layouts. Not available for
+  an SOA array: a scalar atomic at a flat component index, and export as
+  one buffer (DLPack, `export_memory`, VTK), which its components do.
 - `tack.__version__`, the installed tack-core's version, and a docstring
   for `tack` (`help(tack)` said nothing: the docstring followed code).
 - NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`

@@ -95,6 +95,15 @@ See [Arrays and Types](../users-guide/02-arrays-and-types.md) for examples.
 
 ::: tack.concat
 
+### Structure of arrays
+
+A vector or matrix array stored one scalar array per component
+(`layout="soa"`); kernels index it as any vector array.
+
+::: tack.soa
+
+::: tack.SoaArray
+
 ### Copying values
 
 ::: tack.copyto

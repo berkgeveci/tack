@@ -28,7 +28,7 @@ import weakref
 import numpy as np
 
 from tack.lang import ir
-from tack.lang.array import Array, Texture3D
+from tack.lang.array import Array, SoaArray, Texture3D
 from tack.lang.atomic_support import check_atomic_alignment, check_atomic_support
 from tack.lang.ir_traversal import clone_ir
 from tack.lang.ir_traversal import walk_ir as _walk_ir
@@ -524,7 +524,12 @@ def check_writable_arrays(kernel_name, written_arrays, args):
 def _source_name(name, held):
     """A parameter as the source wrote it: ``parameter 'out'``, or for an array a
     device-class argument holds (``__tmpl_dst_base__values__``, found in the
-    lowered function's ``held``) ``'dst.base.values'``."""
+    lowered function's ``held``) ``'dst.base.values'``, or for a component of
+    an SOA array ``component 0 of parameter 'out'``."""
+    from tack.lang.array import soa_component
+    component = soa_component(name)
+    if component is not None:
+        return f"component {component[1]} of {_source_name(component[0], held)}"
     source = held.get(name)
     return f"parameter '{name}'" if source is None else f"'{source}'"
 
@@ -616,7 +621,8 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
     sig = _call_signature(args)
 
     template_args = _detect_template_args(kernel, args)
-    effective_args = _expand_template_args(args, template_args)
+    expanded = _expand_templates(args, template_args)
+    effective_args = _flatten_soa(expanded)
     if template_args:
         # Plain arrays chose the backend (dispatch.launch_backend); a device
         # class's arrays must agree.
@@ -711,7 +717,7 @@ def _resolve_variant(backend, kernel, args, kwargs, build, store_texture_shapes,
         if entry is None:
             if len(fast) >= _FAST_CAP:
                 fast.clear()
-            entry = fast[sig] = (_expansion_plan(template_args), {},
+            entry = fast[sig] = (_expansion_plan(template_args, expanded), {},
                                  _array_slots(template, effective_args))
         entry[1][disjoint] = variant
 
@@ -831,12 +837,7 @@ def _call_signature(args):
             try:
                 sig.append(arg._sig)
             except AttributeError:
-                # Computed once per array: its dtype, shape and element layout
-                # are set when it is made and never change (a reshape is a
-                # new Array over the same buffer).
-                arg._sig = (0, arg.dtype, arg.shape, getattr(arg, '_logical_shape', None),
-                            getattr(arg, '_vector_n', None), getattr(arg, '_matrix_shape', None))
-                sig.append(arg._sig)
+                sig.append(_array_signature(arg))
         elif isinstance(arg, Texture3D):
             sig.append((1, arg.dtype, arg.shape_3d))
         elif isinstance(arg, float):
@@ -855,6 +856,16 @@ def _call_signature(args):
         else:
             return None
     return tuple(sig)
+
+
+def _array_signature(array):
+    """An array's part of a signature, computed once per array: its dtype,
+    shape and element layout are set when it is made and never change (a
+    reshape is a new Array over the same buffer)."""
+    array._sig = (0, array.dtype, array.shape, getattr(array, '_logical_shape', None),
+                  getattr(array, '_vector_n', None), getattr(array, '_matrix_shape', None),
+                  array.layout)
+    return array._sig
 
 
 def _scalar_bits(value):
@@ -936,10 +947,7 @@ def _template_signature(obj, path, seen):
                 try:
                     own.append((name, *value._sig))
                 except AttributeError:
-                    own.append((name, 0, value.dtype, value.shape,
-                                getattr(value, '_logical_shape', None),
-                                getattr(value, '_vector_n', None),
-                                getattr(value, '_matrix_shape', None)))
+                    own.append((name, *_array_signature(value)))
             elif kind == _LAYOUT_CONSTANT:
                 own.append((name, typ, _scalar_bits(value)))
             elif kind == _LAYOUT_INT:
@@ -996,10 +1004,7 @@ def _template_signature(obj, path, seen):
                 own.append((name, 7, tuple(_scalar_bits(v) for v in value)))
             elif isinstance(value, Array):
                 kinds.append(_LAYOUT_ARRAY)
-                own.append((name, 0, value.dtype, value.shape,
-                            getattr(value, '_logical_shape', None),
-                            getattr(value, '_vector_n', None),
-                            getattr(value, '_matrix_shape', None)))
+                own.append((name, *_array_signature(value)))
             elif isinstance(value, int):
                 kinds.append(_LAYOUT_INT)
                 own.append((name, 3, integer_type_for_value(value)))
@@ -1034,10 +1039,19 @@ def _template_signature(obj, path, seen):
     return parts
 
 
-def _expansion_plan(template_args) -> tuple:
-    """How `_expand_template_args` turns these template arguments into
-    arguments: for each template, highest index first, the attribute paths
-    it appends, arrays then runtime scalars, each sorted by flattened name."""
+def _expansion_plan(template_args, expanded) -> tuple:
+    """How `_expand_template_args` turns these arguments into a kernel's
+    arguments: empty when it leaves them as they are, else the template
+    plan (for each template, highest index first, the attribute paths it
+    appends, arrays then runtime scalars, each sorted by flattened name)
+    and whether SOA arrays among the ``expanded`` arguments are flattened."""
+    soa = any(type(arg) is SoaArray for arg in expanded)
+    if not template_args and not soa:
+        return ()
+    return (_template_plan(template_args), soa)
+
+
+def _template_plan(template_args) -> tuple:
     from tack.lang.template_rewrite import _classify_own, _prefix, scalar_path, template_tree
 
     plan = []
@@ -1057,8 +1071,11 @@ def _expansion_plan(template_args) -> tuple:
 
 
 def _expand_with_plan(args, plan) -> tuple:
+    plan, soa = plan
     templates = {idx for idx, _ in plan}
     new_args = [arg for i, arg in enumerate(args) if i not in templates]
+    if soa:
+        new_args = _flatten_soa(new_args)    # a template's own arrays are flattened below
     for idx, paths in plan:
         obj = args[idx]
         for path in paths:
@@ -1066,7 +1083,10 @@ def _expand_with_plan(args, plan) -> tuple:
             for name in path:
                 # An int is an entry of a tuple attribute (`shape`, then 0).
                 value = value[name] if type(name) is int else getattr(value, name)
-            new_args.append(value)
+            if soa and type(value) is SoaArray:
+                new_args.extend(value._components)
+            else:
+                new_args.append(value)
     return tuple(new_args)
 
 
@@ -1136,6 +1156,27 @@ def _detect_template_args(kernel, args) -> dict[int, tuple[str, object]]:
 
 
 def _expand_template_args(args, template_args) -> tuple:
+    """The arguments a kernel's lowered parameters take: templates expanded
+    (`_expand_templates`), then SOA arrays flattened (`_flatten_soa`)."""
+    return _flatten_soa(_expand_templates(args, template_args))
+
+
+def _flatten_soa(args) -> tuple:
+    """Each SOA array among ``args`` replaced, in its place, by its component
+    arrays, as lowering replaces its parameter by one per component
+    (`array.soa_param_names`)."""
+    if not any(type(arg) is SoaArray for arg in args):
+        return args
+    flat = []
+    for arg in args:
+        if type(arg) is SoaArray:
+            flat.extend(arg._components)
+        else:
+            flat.append(arg)
+    return tuple(flat)
+
+
+def _expand_templates(args, template_args) -> tuple:
     """Replace template args with their array and runtime scalar attributes.
 
     Returns new args tuple with template objects removed and their
@@ -1183,8 +1224,10 @@ def _detect_vector_arrays(kernel, args) -> dict[str, int] | None:
 
 def _element_shape(array):
     """What lowering needs to know about a vector or matrix array's elements:
-    the component count, or ``(rows, columns)`` for a matrix array."""
-    return getattr(array, '_matrix_shape', None) or array._vector_n
+    the component count, or ``(rows, columns)`` for a matrix array; either
+    as ``("soa", ...)`` for an array stored one component per array."""
+    shape = getattr(array, '_matrix_shape', None) or array._vector_n
+    return ("soa", shape) if array.layout == "soa" else shape
 
 
 def _detect_vector_arrays_from_args(kernel, args, template_args) -> dict[str, int] | None:

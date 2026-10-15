@@ -81,7 +81,7 @@ def _template_key(obj):
         # plain ones. Keying on the size compiled a template kernel anew for
         # every length of every array it held.
         tuple((k, f.dtype, len(getattr(f, '_logical_shape', None) or f.shape),
-               getattr(f, '_vector_n', None), getattr(f, '_matrix_shape', None))
+               getattr(f, '_vector_n', None), getattr(f, '_matrix_shape', None), f.layout)
               for k, f in sorted(arrays.items())),
         tuple(sorted(runtime)),
         # Which device function each function-valued attribute
