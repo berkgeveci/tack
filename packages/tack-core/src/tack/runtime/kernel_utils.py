@@ -514,9 +514,17 @@ def check_writable_arrays(kernel_name, written_arrays, args):
     for index, name in written_arrays:
         if not args[index]._writable:
             raise ValueError(
-                f"Kernel '{kernel_name}': parameter '{name}' may be written, "
+                f"Kernel '{kernel_name}': {_source_name(name)} may be written, "
                 f"but its array is read-only. Pass writable=True to "
                 f"array_from_ptr() if the memory may be modified.")
+
+
+def _source_name(name):
+    """A parameter as the source wrote it: ``parameter 'out'``, or for an array a
+    device-class argument holds (``__tmpl_dst_base__values__``) ``'dst.base.values'``."""
+    from tack.lang.template_rewrite import held_array_name
+    held = held_array_name(name)
+    return f"parameter '{name}'" if held is None else f"'{held}'"
 
 
 def resolve_variant(backend, kernel, args, kwargs, build,

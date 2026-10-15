@@ -108,6 +108,8 @@ class _SourceValidator(ast.NodeVisitor):
             self.reject(node, f"{name}() is only supported as a statement")
         if intrinsic and name in ('barrier', 'thread_id') and node.args:
             self.reject(node, f"{name}() takes no arguments")
+        if intrinsic and name == '__tack_refuse__':
+            return              # the template rewrite's deferred error: its message
         for arg in node.args:
             if intrinsic and name == 'print' and isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                 continue

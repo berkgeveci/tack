@@ -31,6 +31,13 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   `mean` with a stored array's semantics (computed into a temporary, then
   reduced). An implicit array is on the device of the arrays it holds
   (`a.device`), so these run and allocate there.
+- Writable implicit arrays: a kernel's store into a `View`, `Strided` or
+  `Permutation` lands in the array it wraps (a permutation's is a scatter),
+  `Components(x, y, z)` writes each component to its own array, and
+  `Concatenate` and `ExtractComponent` write through too. An array is
+  writable when what it writes through is; a store into a computed array
+  is refused when the kernel compiles, and a read-only stored array stays
+  read-only behind a wrapper.
 - `tack.__version__`, the installed tack-core's version, and a docstring
   for `tack` (`help(tack)` said nothing: the docstring followed code).
 - NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`

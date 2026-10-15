@@ -1332,6 +1332,11 @@ class KernelTransformer(ast.NodeVisitor):
             return self._inline_func_call(func_obj, node)
         func_name = self._resolve_call_name(node)
 
+        # A refusal the template rewrite left in a method body: raised only when
+        # the method is used (template_rewrite._Indexing).
+        if func_name == "__tack_refuse__":
+            raise TypeError(node.args[0].value)
+
         # Vector constructors: tack.vec3(x, y, z), tack.vec3(s), tack.vec3(v)
         if func_name in _VECTOR_CONSTRUCTORS:
             return self._visit_vector_construct(node, _VECTOR_CONSTRUCTORS[func_name])

@@ -158,6 +158,10 @@ class _Explicit(_Implicit):
     def get(self, k):
         return self.values[k]
 
+    @tack.func
+    def __setitem__(self, k, v):
+        self.values[k] = v
+
 
 def _operand(values):
     """``values`` as an array another array can hold: an implicit array as it is, a
@@ -348,6 +352,10 @@ class Permutation(_Implicit):
     def get(self, k):
         return self.base.get(self.ids.get(k))
 
+    @tack.func
+    def __setitem__(self, k, v):
+        self.base[self.ids[k]] = v           # a scatter: repeated ids race
+
 
 @tack.device_class
 class _Concatenation(_Implicit):
@@ -359,6 +367,13 @@ class _Concatenation(_Implicit):
     @tack.func
     def get(self, k):
         return self.first.get(k) if k < self.split else self.second.get(k - self.split)
+
+    @tack.func
+    def __setitem__(self, k, v):
+        if k < self.split:
+            self.first[k] = v
+        else:
+            self.second[k - self.split] = v
 
 
 def Concatenate(*arrays):
@@ -392,6 +407,10 @@ class Strided(_Implicit):
     def get(self, k):
         return self.values[self.offset + self.stride * k]
 
+    @tack.func
+    def __setitem__(self, k, v):
+        self.values[self.offset + self.stride * k] = v
+
 
 @tack.device_class
 class View(_Implicit):
@@ -405,6 +424,10 @@ class View(_Implicit):
     @tack.func
     def get(self, k):
         return self.base.get(self.start + k)
+
+    @tack.func
+    def __setitem__(self, k, v):
+        self.base[self.start + k] = v
 
 
 @tack.device_class
@@ -425,12 +448,23 @@ class ExtractComponent(_Implicit):
     def get(self, k):
         return self.base.get(k)[self.COMPONENT]
 
+    @tack.func
+    def __setitem__(self, k, v):
+        element = self.base[k]
+        element[self.COMPONENT] = v
+        self.base[k] = element
+
 
 @tack.device_class
 class _Components2(_Implicit):
     @tack.func
     def get(self, k):
         return [self.c0.get(k), self.c1.get(k)]
+
+    @tack.func
+    def __setitem__(self, k, v):
+        self.c0[k] = v[0]
+        self.c1[k] = v[1]
 
 
 @tack.device_class
@@ -439,12 +473,25 @@ class _Components3(_Implicit):
     def get(self, k):
         return [self.c0.get(k), self.c1.get(k), self.c2.get(k)]
 
+    @tack.func
+    def __setitem__(self, k, v):
+        self.c0[k] = v[0]
+        self.c1[k] = v[1]
+        self.c2[k] = v[2]
+
 
 @tack.device_class
 class _Components4(_Implicit):
     @tack.func
     def get(self, k):
         return [self.c0.get(k), self.c1.get(k), self.c2.get(k), self.c3.get(k)]
+
+    @tack.func
+    def __setitem__(self, k, v):
+        self.c0[k] = v[0]
+        self.c1[k] = v[1]
+        self.c2[k] = v[2]
+        self.c3[k] = v[3]
 
 
 def Components(*arrays):

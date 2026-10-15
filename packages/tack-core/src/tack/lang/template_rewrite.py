@@ -389,10 +389,14 @@ class _Indexing(ast.NodeTransformer):
     A stored array, ``root.values[i]``, is left alone.
     """
 
-    def __init__(self, root_name, root_node, used_names):
+    def __init__(self, root_name, root_node, used_names, lazy=False):
         self.root_name = root_name
         self.root_node = root_node
         self.used_names = used_names
+        # In a method, a refusal waits until the method is used: every method
+        # of an object is resolved, and a read-only one's __setitem__ is fine
+        # until a kernel stores. The call lowers to the error.
+        self.lazy = lazy
 
     def _template(self, expr):
         """The template node ``expr`` names (``root`` or ``root.a.b``), or None."""
@@ -424,10 +428,17 @@ class _Indexing(ast.NodeTransformer):
                         args=args, keywords=[])
 
     def _require(self, node, name, expr, what):
-        if name not in node.methods:
-            cls = type(node.obj).__name__
-            raise TypeError(f"{ast.unparse(expr)}: {what} a {cls}, whose class defines no "
-                            f"@tack.func {name}")
+        """None if ``node``'s class defines ``name``; else, in a method, the call
+        that refuses when lowered, and in a kernel the error at once."""
+        if name in node.methods:
+            return None
+        cls = type(node.obj).__name__
+        message = (f"{ast.unparse(expr)}: {what} a {cls}, whose class defines no "
+                   f"@tack.func {name}")
+        if not self.lazy:
+            raise TypeError(message)
+        return ast.Call(func=ast.Name(id="__tack_refuse__", ctx=ast.Load()),
+                        args=[ast.Constant(value=message)], keywords=[])
 
     def _tuple_entries(self, expr):
         """``(owner, name, count)`` if ``expr`` is ``root...name`` for a tuple
@@ -466,7 +477,9 @@ class _Indexing(ast.NodeTransformer):
         owner = self._template(node.value)
         if owner is None or not isinstance(node.ctx, ast.Load):
             return node
-        self._require(owner, "__getitem__", node, "indexing")
+        refusal = self._require(owner, "__getitem__", node, "indexing")
+        if refusal is not None:
+            return ast.copy_location(refusal, node)
         return ast.copy_location(
             self._method(node.value, "__getitem__", [self._key(node)]), node)
 
@@ -483,7 +496,9 @@ class _Indexing(ast.NodeTransformer):
             return self.generic_visit(node)
         target = templated[0]
         owner = self._template(target.value)
-        self._require(owner, "__setitem__", target, "storing into")
+        refusal = self._require(owner, "__setitem__", target, "storing into")
+        if refusal is not None:
+            return ast.copy_location(ast.Expr(value=refusal), node)
         value = self.visit(node.value)
         key = self.visit(self._key(target))
         call = self._method(target.value, "__setitem__", [key, value])
@@ -494,8 +509,10 @@ class _Indexing(ast.NodeTransformer):
         owner = self._template(target.value) if isinstance(target, ast.Subscript) else None
         if owner is None:
             return self.generic_visit(node)
-        self._require(owner, "__getitem__", target, "updating")
-        self._require(owner, "__setitem__", target, "updating")
+        for name in ("__getitem__", "__setitem__"):
+            refusal = self._require(owner, name, target, "updating")
+            if refusal is not None:
+                return ast.copy_location(ast.Expr(value=refusal), node)
         value = self.visit(node.value)
         key = self.visit(self._key(target))
         statements = []
@@ -524,8 +541,9 @@ class _Indexing(ast.NodeTransformer):
                 return ast.copy_location(ast.Constant(value=entries[2]), node)
             owner = self._template(node.args[0])
             if owner is not None:
-                self._require(owner, "__len__", node, "len() of")
-                return ast.copy_location(self._method(node.args[0], "__len__", []), node)
+                refusal = self._require(owner, "__len__", node, "len() of")
+                return ast.copy_location(
+                    refusal or self._method(node.args[0], "__len__", []), node)
         if name in _ATOMICS and node.args and self._template(node.args[0]) is not None:
             cls = type(self._template(node.args[0]).obj).__name__
             raise TypeError(f"{ast.unparse(node)}: an atomic updates an array's memory, "
@@ -533,9 +551,9 @@ class _Indexing(ast.NodeTransformer):
         return node
 
 
-def _desugar_indexing(funcdef, root_name, root_node, used_names):
+def _desugar_indexing(funcdef, root_name, root_node, used_names, lazy=False):
     """Apply `_Indexing` to a function's body."""
-    transformer = _Indexing(root_name, root_node, used_names)
+    transformer = _Indexing(root_name, root_node, used_names, lazy)
     body = []
     for statement in funcdef.body:
         result = transformer.visit(statement)
@@ -560,6 +578,18 @@ class _Node:
         self.children = {}
 
 
+# The synthetic parameter of an array a device-class argument holds, by the
+# path the source wrote: ``__tmpl_dst_base__values__`` -> ``dst.base.values``.
+# Names are made from the parameter and the attribute path, so the map
+# stays as small as the set of distinct paths.
+_HELD_ARRAY_NAMES = {}
+
+
+def held_array_name(synthetic):
+    """``dst.base.values`` for the synthetic name of an array ``dst`` holds, or None."""
+    return _HELD_ARRAY_NAMES.get(synthetic)
+
+
 def _template_nodes(param_name, obj, used_names, resolved_funcs):
     """The resolved tree of one template argument: ``(root, extra)``, ``extra`` the
     synthetic parameters every resolved method takes, in the runtime's order --
@@ -567,6 +597,8 @@ def _template_nodes(param_name, obj, used_names, resolved_funcs):
     _, arrays, runtime = classify_template_attrs(obj)
     array_names = {key: fresh_name(template_array_param_name(param_name, key), used_names)
                    for key in sorted(arrays)}
+    for key, synthetic in array_names.items():
+        _HELD_ARRAY_NAMES[synthetic] = f"{param_name}.{key.replace(_NESTED, '.')}"
     runtime_names = {key: fresh_name(f"__tmpl_{param_name}_{key}__", used_names)
                      for key in sorted(runtime)}
     extra = [array_names[k] for k in sorted(array_names)] + \
@@ -695,7 +727,7 @@ def _resolve_method(func_obj, resolved_name, node, extra):
 
     # self[i], self.base[i] and len(self) as the protocol's method calls
     names = {n.id for n in ast.walk(funcdef) if isinstance(n, ast.Name)}
-    _desugar_indexing(funcdef, 'self', node, names)
+    _desugar_indexing(funcdef, 'self', node, names, lazy=True)
 
     # Resolve self.attr and self.method(args) references in the body
     resolver = _SelfResolver(node, extra)

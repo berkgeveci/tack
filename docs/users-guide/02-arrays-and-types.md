@@ -378,7 +378,17 @@ assert np.allclose(out.numpy(), [30, 0, 20, 10])
 ```
 
 Each kind of array compiles its own variant of the kernel, and a composed
-array inlines to the expression you would write by hand. Your own classes
+array inlines to the expression you would write by hand.
+
+Arrays that wrap stored ones can also be written through: a store into a
+`View`, `Strided` or `Permutation` (a scatter) lands in the array it wraps,
+`Components(x, y, z)` takes a vector and writes each component to its own
+array (a structure of arrays), `Concatenate` writes into the part that
+holds the index, and `ExtractComponent` writes one component. An array is
+writable exactly when what it writes through is: a store into a
+`CountingArray`, a `Function`, or a `Permutation` of one, is refused when
+the kernel compiles, and a read-only stored array stays read-only behind
+any wrapper. Your own classes
 join the same way: see [Indexable Objects](06-templates.md#indexable-objects).
 The [dataset reference](../reference/dataset-api.md#fields-and-arrays) lists
 every implicit array with its VTK and Viskores counterparts.

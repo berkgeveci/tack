@@ -126,3 +126,59 @@ def test_reductions_of_implicit_arrays_are_a_stored_arrays(backend):
     assert soa.sum() == 30 and soa.mean() == 5           # every component, as Array
     wide = arrays.CountingArray(3, 2**40, 2**40, tack.i64)
     assert wide.sum() == 6 * 2**40
+
+
+@tack.kernel
+def _fill(dst, n):
+    for i in range(n):
+        dst[i] = tack.f32(i) + 1.0
+
+
+@tack.kernel
+def _fill3(dst, n):
+    for i in range(n):
+        dst[i] = tack.vec3(tack.f32(i), 10.0 + i, 20.0 + i)
+
+
+@tack.kernel
+def _bump(dst, n):
+    for i in range(n):
+        dst[i] += 100.0
+
+
+def test_writes_go_through_to_stored_arrays(backend):
+    x, y, z = (tack.zeros((4,)) for _ in range(3))
+    _fill3(arrays.Components(x, y, z), 4)                   # structure of arrays
+    np.testing.assert_allclose([x.numpy(), y.numpy(), z.numpy()],
+                               [np.arange(4), 10 + np.arange(4), 20 + np.arange(4)])
+    b = tack.zeros((6,))
+    _fill(arrays.View(b, 2, 3), 3)
+    np.testing.assert_allclose(b.numpy(), [0, 0, 1, 2, 3, 0])
+    b = tack.zeros((6,))
+    _fill(arrays.Strided(b, 2, 1), 3)
+    np.testing.assert_allclose(b.numpy(), [0, 1, 0, 2, 0, 3])
+    b = tack.zeros((4,))
+    _fill(arrays.Permutation(tack.array([3, 1, 0, 2]), b), 4)    # a scatter
+    np.testing.assert_allclose(b.numpy(), [3, 2, 4, 1])
+    first, second = tack.zeros((2,)), tack.zeros((3,))
+    _fill(arrays.Concatenate(first, second), 5)
+    np.testing.assert_allclose([*first.numpy(), *second.numpy()], [1, 2, 3, 4, 5])
+    v = tack.zeros((3,), tack.vec3())
+    _fill(arrays.ExtractComponent(v, 1), 3)
+    np.testing.assert_allclose(v.numpy(), [[0, 1, 0], [0, 2, 0], [0, 3, 0]])
+    _bump(arrays.Permutation(tack.array([1, 0]), arrays.Components(x, y)), 2)
+    np.testing.assert_allclose(x.numpy(), [100, 101, 2, 3])
+    np.testing.assert_allclose(y.numpy(), [110, 111, 12, 13])
+
+
+def test_computed_and_read_only_arrays_refuse_writes(backend):
+    with pytest.raises(TypeError, match="storing into a CountingArray"):
+        _fill(arrays.CountingArray(3), 3)
+    with pytest.raises(TypeError, match="storing into a CountingArray"):
+        _fill(arrays.Permutation(tack.array([0, 1]), arrays.CountingArray(3)), 2)
+    if backend == "cpu":
+        host = np.zeros(4, np.float32)
+        read_only = tack.array_from_ptr(host, (4,), tack.f32)
+        with pytest.raises(ValueError, match="'dst.base.values' may be written, but its "
+                                             "array is read-only"):
+            _fill(arrays.View(read_only, 0, 4), 4)
