@@ -7,6 +7,8 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Added
 
+- `tack.__version__`, the installed tack-core's version, and a docstring
+  for `tack` (`help(tack)` said nothing: the docstring followed code).
 - NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`
   is a function space plus coefficients, and "field" means only that now.
   Constructors take the shape first, as NumPy's do: `tack.empty(shape,
