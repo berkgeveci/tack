@@ -853,7 +853,8 @@ def _scalar_bits(value):
 
 # Per template class, how `_template_signature` last read an instance: the
 # attribute names in order, each one's kind (constant, array, int, float,
-# function, child template) and its value's type. An instance with the same
+# function, child template), its value's type, and which attributes drop a
+# class constant by holding something other than a number. An instance with the same
 # names and types is read by kind, one attribute access each, instead of
 # the type tests per attribute that cost 25 µs a dataset view on a 2 GHz
 # Xeon; one that differs is walked in full and the layout replaced.
@@ -875,8 +876,12 @@ def _template_signature(obj, path, seen):
         layout = None                         # another attribute set: walk and relearn
     if layout is not None:
         from tack.lang.template_rewrite import _class_constants
-        constants = _class_constants(cls)     # current values: a class constant can change
-        _names, kinds, types = layout
+        _names, kinds, types, dropped = layout
+        # Current values (a class constant can change), less those this
+        # instance drops, as the key's constants are.
+        constants = _class_constants(cls)
+        for name in dropped:
+            constants.pop(name, None)
         own = []
         children = []
         for (name, value), kind, typ in zip(attributes.items(), kinds, types):
@@ -905,6 +910,12 @@ def _template_signature(obj, path, seen):
         from tack.lang.func import Func
         from tack.lang.template_rewrite import _class_constants
         constants = _class_constants(cls)
+        # An instance attribute holding something other than a number drops
+        # the class constant it shadows (`template_rewrite._classify_own`).
+        dropped = tuple(name for name, value in attributes.items()
+                        if name in constants and not isinstance(value, (int, float)))
+        for name in dropped:
+            del constants[name]
         own = []
         children = []
         kinds = []
@@ -937,7 +948,7 @@ def _template_signature(obj, path, seen):
         # `isinstance` admitted subclasses above; the layout holds the exact
         # types and is used only for an instance whose types match.
         _template_layouts[cls] = (tuple(attributes), tuple(kinds),
-                                  tuple(type(v) for v in attributes.values()))
+                                  tuple(type(v) for v in attributes.values()), dropped)
     from tack.lang.kernel import _class_token
     parts = [(path, _class_token(cls),
               tuple((n, type(v), _scalar_bits(v)) for n, v in constants.items()),

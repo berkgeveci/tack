@@ -158,12 +158,18 @@ def _classify_own(obj):
     for name in vars(obj):
         if name.startswith('_'):
             continue
-        if name in scalars:
-            # Instance overrides a class variable — use the instance value
-            # but keep it as a compile-time constant (class-level declaration wins)
-            scalars[name] = getattr(obj, name)
-            continue
         val = getattr(obj, name)
+        if name in scalars:
+            if isinstance(val, (int, float)):
+                # Instance overrides a class variable — use the instance value
+                # but keep it as a compile-time constant (class-level declaration wins)
+                scalars[name] = val
+                continue
+            # Replaced by something that is not a number: no longer a
+            # constant, as for a subclass that does the same, and classified
+            # like any other attribute. Kept, it reached the cache keys, where
+            # a list made dispatch fail with "unhashable type".
+            del scalars[name]
         if isinstance(val, (int, float)):
             runtime_scalars[name] = val
         elif isinstance(val, Array):
