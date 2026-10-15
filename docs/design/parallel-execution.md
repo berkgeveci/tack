@@ -606,6 +606,14 @@ enough for updates from different workgroups to the same element. The C11
 `*_explicit` forms with `memory_scope_device` state the required scope;
 the native array reduction's final combine uses them too.
 
+## Library algorithms: scans and sorts
+
+How `tack.algorithms` parallelizes, with the measurements that shaped it.
+
+`exclusive_scan` and `inclusive_scan` (`algorithms/scan.py`) reduce, then scan, by chunks of `_CHUNK` (256): one thread per chunk copies it into the output (converting to the output's dtype on the store, so sums form in that dtype) and totals it, the chunk totals are scanned recursively the same way, and each chunk then writes its running sums from its offset. A level of at most `_SERIAL_MAX` (4096) elements on the CPU, or one tile on GPU backends, is one launch that one thread scans in order (`_scan_serial`, which also leaves the total in a one-element array): a million elements take three launches on the CPU, where the two levels below the chunk totals took five launches of microseconds of work each and most of a contour's host time between launches; the Blelloch scan before that made two launches per factor of two. In place (`input is output`) works; the total is read as one element (`array[n - 1]`, no launch). On backends with workgroups the chunk is a 2048-element tile scanned by a workgroup (`_tile_sums`/`_tile_apply`: eight per lane, lane totals Hillis-Steele in shared memory, a lane's exclusive prefix read from its neighbour rather than subtracted), since one thread per chunk is slow on GPUs (Metal, 1M elements: 4.6 -> 1.1 ms); floating sums then combine lanes in tree order.
+
+`argsort`/`sort_by_key` (`algorithms/sort.py`) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped. On the CPU, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. On backends with workgroups (`supports_workgroups`) a pass instead sorts 4096-key tiles in shared memory (`_sort_tiles`: eight stable one-bit splits by workgroup prefix sums, no shared atomics, u8 digits and u16 positions to fit Metal's 32 KB), takes each tile's digit counts from the runs, scans them and scatters runs (`_scatter_tiles`); per-lane private tables spilled on GPUs, which made Metal's sort 3.5x slower than 8 CPU threads. The pass count follows the key spread (min subtracted on the fly), found by a chunked min/max reduction over the full u64 keys (`_key_range`). Not with atomics: four per key on one address made the sort four times slower on eight CPU threads than on one. `unique`/`reduce_by_key` flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty arrays (`shape=(0,)`) are valid outputs and allocate on every backend.
+
 ## Exceptions summary
 
 | Situation | Exception | Raised by |
