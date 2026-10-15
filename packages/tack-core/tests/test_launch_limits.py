@@ -29,13 +29,11 @@ def _mark_past(out, n, base):
 
 
 def _limit_launches(monkeypatch, items):
-    """Make one launch of the active backend index at most `items` iterations."""
-    backend = get_backend()
-    if backend.name == 'metal':
-        import tack.runtime.metal as metal
-        monkeypatch.setattr(metal, '_MAX_LAUNCH', items)
-    else:
-        monkeypatch.setattr(backend, '_max_launch', items)
+    """Make one launch of the active backend index at most `items` iterations.
+
+    Every GPU backend's dispatch reads `_max_launch` (`GPUBackend.execute`);
+    Metal's used to read its module's `_MAX_LAUNCH` directly."""
+    monkeypatch.setattr(get_backend(), '_max_launch', items)
 
 
 def test_launch_size_check_names_the_operation_and_limit():
