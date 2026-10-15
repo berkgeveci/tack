@@ -166,13 +166,14 @@ def _pairs(cells, out):
         out[c] = d
 
 
-@pytest.mark.parametrize("obj, message", [
-    (Undeclared(), "declares no __tack_iterate__"),
-    (TooMany(), "must name one to three attributes"),
-    (NotAScalar(), "'values', which is not a scalar attribute"),
+@pytest.mark.parametrize("make, message", [
+    (Undeclared, "declares no __tack_iterate__"),
+    (TooMany, "must name one to three attributes"),
+    (NotAScalar, "'values', which is not a scalar attribute"),
 ], ids=["undeclared", "too-many", "not-a-scalar"])
-def test_what_cannot_be_iterated(obj, message):
+def test_what_cannot_be_iterated(make, message):
     tack.set_default_device("cpu")
+    obj = make()            # its arrays on the CPU, beside the output's
     with pytest.raises(TypeError, match=message):
         _label(obj, tack.empty((16,), tack.i32))
 

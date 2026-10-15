@@ -73,6 +73,11 @@ for _arch in _ALL_ARCHES:
     if _be.supports_workgroups:
         workgroup_backends.append(_arch)
 
+# Probing left the last backend found as the default; arrays a test module
+# makes at import (parametrize lists, module globals) go to the CPU instead,
+# whatever this machine has.
+tack.set_default_device("cpu")
+
 
 def pytest_addoption(parser):
     parser.addoption("--ids", choices=("i32", "i64"), default="i32",
