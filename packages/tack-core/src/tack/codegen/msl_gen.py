@@ -11,6 +11,7 @@ with more than 2^31 elements.  Apple GPUs do not support double precision.
 """
 
 from tack.codegen.bounds import bounds_check_expr, bounds_helpers
+from tack.codegen.c_family import CFamilyCodeGen
 from tack.codegen.float_division import float_division_expr, float_division_helpers
 from tack.codegen.identifiers import kernel_entry_name, rename_gpu_bindings
 from tack.codegen.integer_division import integer_division_expr, integer_division_helpers
@@ -68,9 +69,6 @@ _BINOP_MAP = {
     "<<": "<<", ">>": ">>", "&": "&", "|": "|", "^": "^",
 }
 
-_CMP_MAP = {
-    "==": "==", "!=": "!=", "<": "<", "<=": "<=", ">": ">", ">=": ">=",
-}
 
 
 def _float_atomic_extrema_helpers(ops) -> list:
@@ -114,8 +112,12 @@ def _stores_inside_sequential_loop(body) -> bool:
     return False
 
 
-class MSLCodeGen:
+class MSLCodeGen(CFamilyCodeGen):
     """Generates MSL source from a Tack IR function."""
+
+    _LABEL = "MSL"
+    _INDEX_TYPE = _INT
+    _HAS_F64 = False
 
     _integer_type_map = _MSL_TYPE_MAP
 
@@ -291,19 +293,12 @@ class MSLCodeGen:
         return "\n".join(self._lines[:preamble_end] + helpers
                          + self._lines[preamble_end:]) + "\n"
 
-    def _emit(self, line: str):
-        self._lines.append("    " * self._indent + line)
-
     def _declare_workgroup_array(self, msl_type: str, name: str, size: str):
         """Declare a threadgroup array where MSL allows it: in the kernel function."""
         if self._body_function:
             self._workgroup_arrays.append((msl_type, name, size))
         else:
             self._emit(f"threadgroup {msl_type} {name}[{size}];")
-
-    def _emit_body(self, stmts: list):
-        for stmt in stmts:
-            self._emit_stmt(stmt)
 
     def _emit_stmt(self, node):
         if isinstance(node, ir.IRParallelFor):
@@ -397,70 +392,6 @@ class MSLCodeGen:
         self._emit("}")
         self._leave_loop_scope(var, outer)
 
-    def _leave_loop_scope(self, var, outer):
-        """Forget a for-header declaration once its block closes."""
-        was_declared, outer_type = outer
-        if was_declared:
-            self._local_vars[var] = outer_type
-        else:
-            self._declared_vars.discard(var)
-            self._local_vars.pop(var, None)
-
-    def _emit_while(self, node: ir.IRWhile):
-        cond = self._expr(node.condition)
-        self._emit(f"while ({cond}) {{")
-        self._indent += 1
-        self._emit_body(node.body)
-        self._indent -= 1
-        self._emit("}")
-
-    def _emit_if(self, node: ir.IRIf):
-        # Pre-declare variables assigned in branches for outer scope visibility.
-        # Two-pass hoisting to handle forward references (e.g. tuple swap temps
-        # referencing variables that are also being hoisted in the same scope).
-        then_new = self._collect_new_assigns(node.then_body)
-        else_new = self._collect_new_assigns(node.else_body) if node.else_body else set()
-        needs_hoist = then_new | else_new
-        hoist_types = {}
-        for var_name in sorted(needs_hoist):
-            if var_name not in self._declared_vars:
-                c_type = self._find_assign_type(var_name, node.then_body) or \
-                         self._find_assign_type(var_name, node.else_body or []) or "float"
-                hoist_types[var_name] = c_type
-                self._local_vars[var_name] = c_type
-        for var_name in list(hoist_types):
-            if hoist_types[var_name] not in ("float", "double"):
-                c_type = self._find_assign_type(var_name, node.then_body) or \
-                         self._find_assign_type(var_name, node.else_body or []) or hoist_types[var_name]
-                hoist_types[var_name] = c_type
-                self._local_vars[var_name] = c_type
-        for var_name in sorted(hoist_types):
-            self._emit(f"{hoist_types[var_name]} {var_name};")
-            self._declared_vars.add(var_name)
-
-        cond = self._expr(node.condition)
-        self._emit(f"if ({cond}) {{")
-        self._indent += 1
-        self._emit_body(node.then_body)
-        self._indent -= 1
-        if node.else_body:
-            self._emit("} else {")
-            self._indent += 1
-            self._emit_body(node.else_body)
-            self._indent -= 1
-        self._emit("}")
-
-    def _collect_new_assigns(self, stmts: list) -> set[str]:
-        result = set()
-        for stmt in stmts:
-            if isinstance(stmt, ir.IRAssign) and stmt.target not in self._declared_vars:
-                result.add(stmt.target)
-            elif isinstance(stmt, ir.IRIf):
-                result |= self._collect_new_assigns(stmt.then_body)
-                if stmt.else_body:
-                    result |= self._collect_new_assigns(stmt.else_body)
-        return result
-
     def _find_assign_type(self, var_name: str, stmts: list) -> str | None:
         for stmt in stmts:
             if isinstance(stmt, ir.IRAssign) and stmt.target == var_name:
@@ -476,10 +407,6 @@ class MSLCodeGen:
                     if t:
                         return t
         return None
-
-    def _emit_atomic_op(self, node: ir.IRAtomicOp):
-        """Emit a Metal atomic as a statement; its old value is dropped."""
-        self._emit(f"{self._expr_atomic(node)};")
 
     def _expr_atomic(self, node: ir.IRAtomicOp) -> str:
         """The atomic as an expression whose value is the element's old value.
@@ -516,16 +443,6 @@ class MSLCodeGen:
                     f"(volatile device {atomic_type}*)&{array}[{index}], "
                     f"{value}, memory_order_relaxed)")
         raise NotImplementedError(f"MSL atomic op: {node.op}")
-
-    def _emit_array_store(self, node: ir.IRArrayStore):
-        array = self._expr(node.array)
-        index = self._expr(node.index)
-        value = self._expr(node.value)
-        value = self._integers.convert(value, getattr(node.value, 'dtype', None), getattr(node, 'dtype', None))
-        idx_type = self._infer_expr_type(node.index)
-        if idx_type in ("float", "double"):
-            index = f"(({_INT})({index}))"
-        self._emit(f"{array}[{index}] = {value};")
 
     def _emit_assign(self, node: ir.IRAssign):
         previous = self._opaque_integer_add
@@ -565,11 +482,6 @@ class MSLCodeGen:
 
     def _infer_expr_type(self, node) -> str:
         return self._infer_type(node)
-
-    def _get_array_name(self, node) -> str | None:
-        if isinstance(node, ir.IRName):
-            return node.name
-        return None
 
     # --- Expression codegen ---
 
@@ -656,20 +568,6 @@ class MSLCodeGen:
         self._declared_vars.add(result)
         return result
 
-    def _expr_constant(self, node: ir.IRConstant) -> str:
-        if isinstance(node.value, float):
-            return f"{node.value!r}f"
-        if isinstance(node.value, bool):
-            return "1" if node.value else "0"
-        if isinstance(node.value, int) and -(2**31) < node.value < 2**31:
-            return str(node.value)
-        if isinstance(node.value, int) and getattr(node, 'dtype', None) is not None:
-            ctype = self._integer_type_map[node.dtype]
-            # Spell signed minimum using representable tokens.
-            literal = f'(-{-(node.value + 1)}LL - 1LL)' if node.value < 0 else f'{node.value}ULL'
-            return f'(({ctype})({literal}))'
-        return str(node.value)
-
     def _expr_binop(self, node: ir.IRBinOp) -> str:
         left = self._expr(node.left)
         right = self._expr(node.right)
@@ -706,50 +604,6 @@ class MSLCodeGen:
         if node.op in _BINOP_MAP:
             return f"({left} {_BINOP_MAP[node.op]} {right})"
         raise NotImplementedError(f"MSL binop: {node.op}")
-
-    def _expr_unaryop(self, node: ir.IRUnaryOp) -> str:
-        operand = self._expr(node.operand)
-        if node.op == "+":
-            # Before the integer helpers, which know '+' only as addition
-            # and would emit a one-argument call to the two-argument add.
-            return operand
-        op = 'neg' if node.op == '-' else node.op
-        fixed = self._integers.operation(op, getattr(node, 'dtype', None), operand)
-        if fixed is not None:
-            return fixed
-        if node.op == "-":
-            return f"(-{operand})"
-        if node.op == "not":
-            return f"(!{operand})"
-        if node.op == "~":
-            return f"(~{operand})"
-        raise NotImplementedError(f"MSL unaryop: {node.op}")
-
-    def _expr_compare(self, node: ir.IRCompare) -> str:
-        left = self._expr(node.left)
-        right = self._expr(node.right)
-        dtype = node._operand_type
-        left = self._integers.convert(left, getattr(node.left, 'dtype', None), dtype)
-        right = self._integers.convert(right, getattr(node.right, 'dtype', None), dtype)
-        return f"({left} {_CMP_MAP[node.op]} {right})"
-
-    def _expr_boolop(self, node: ir.IRBoolOp) -> str:
-        c_op = "&&" if node.op == "and" else "||"
-        parts = [self._expr(v) for v in node.values]
-        return "(" + f" {c_op} ".join(parts) + ")"
-
-    def _expr_array_load(self, node: ir.IRArrayLoad) -> str:
-        array = self._expr(node.array)
-        index = self._expr(node.index)
-        idx_type = self._infer_expr_type(node.index)
-        if idx_type in ("float",):
-            index = f"(({_INT})({index}))"
-        return f"{array}[{index}]"
-
-    def _expr_attribute(self, node: ir.IRAttribute) -> str:
-        raise NotImplementedError(
-            f"Attribute access '{node.attr}' should be resolved before MSL codegen."
-        )
 
     def _pre_scan_textures(self, stmts):
         """Pre-scan IR to discover all IRTextureSample nodes and register helpers."""
@@ -890,15 +744,6 @@ inline float {name}(device float* data, float u, float v, float w) {{
         if node.dtype == "float":
             return f"((float)({val}))"
         raise NotImplementedError(f"MSL cast: {node.dtype}")
-
-    def _expr_ifexp(self, node: ir.IRIfExp) -> str:
-        cond = self._expr(node.condition)
-        then = self._expr(node.then_value)
-        else_ = self._expr(node.else_value)
-        dtype = getattr(node, 'dtype', None)
-        then = self._integers.convert(then, getattr(node.then_value, 'dtype', None), dtype)
-        else_ = self._integers.convert(else_, getattr(node.else_value, 'dtype', None), dtype)
-        return f"({cond} ? {then} : {else_})"
 
 
 
