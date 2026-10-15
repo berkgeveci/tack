@@ -123,7 +123,7 @@ cell data, with the same local function meaning as L2 order 0. It is useful
 for cell averages and material parameters and works on topologies that do
 not have reference elements.
 
-This is different from `td.ConstantArray(value, size)`, which is a storage
+This is different from `tack.arrays.ConstantArray(value, size)`, which is a storage
 representation returning the **same value at every index**. A field in
 `Constant(data)` can have different values in every cell. Conversely, a
 `ConstantArray` can supply all coefficients of an H1 field or an L2 field

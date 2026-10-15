@@ -1,6 +1,6 @@
 """``threshold_points``: the points whose ``field`` (point data: ``H1``, values on points) lies in ``[lower, upper]``, as vertex cells."""
 
-from tack.dataset import arrays
+from tack import arrays
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _keep_points, _point_flags
 from tack.dataset.carry import _point_values

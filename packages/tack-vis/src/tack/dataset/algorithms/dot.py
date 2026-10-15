@@ -1,9 +1,9 @@
 """``dot``: ``a . b`` at every value of two vector fields of one width and space."""
 
 import tack
-from tack.dataset import arrays
+from tack import arrays
+from tack.arrays import materialize, width_of
 from tack.dataset.algorithms._common import _field, _same_dtype, _same_space, _scalars
-from tack.dataset.arrays import materialize, width_of
 from tack.dataset.dataset import Field
 
 __all__ = ['dot']

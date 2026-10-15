@@ -3,9 +3,9 @@
 from typing import NamedTuple
 
 import tack
-from tack.dataset import arrays
+from tack import arrays
+from tack.arrays import materialize, size_of, width_of
 from tack.dataset.algorithms._common import _field
-from tack.dataset.arrays import materialize, size_of, width_of
 from tack.dataset.dataset import Field
 
 __all__ = ['FlowQuantities', 'flow_quantities']

@@ -1,12 +1,12 @@
 """``perot``: a vector per cell from each face's normal component -- Perot's reconstruction, ``u_c = (1/V) sum_f A_f u_f (r_f - r_c)``, as C-grid models (MPAS, ICON) need to show their face-normal velocity at cells."""
 
 import tack
+from tack.arrays import materialize
 from tack.dataset.algorithms._common import _field, _vectors
 from tack.dataset.algorithms._faces import _on_faces
 from tack.dataset.algorithms.cell_geometry import cell_geometry
 from tack.dataset.algorithms.face_centers import face_centers
 from tack.dataset.algorithms.face_geometry import face_geometry
-from tack.dataset.arrays import materialize
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import Values
 

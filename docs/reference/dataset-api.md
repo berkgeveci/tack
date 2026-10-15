@@ -202,8 +202,11 @@ and `discontinuous` into `L2(data)`.
 ## Fields and arrays
 
 `Field(space, values)`: the values are a `tack.Array` with a scalar or vector
-element dtype, or an implicit array. An array's shape counts coefficient values;
-its dtype controls components. The space supplies their mesh association and basis:
+element dtype, or an implicit array from `tack.arrays` (in tack-core). An
+array's shape counts coefficient values; its dtype controls components. The
+space supplies their mesh association and basis. The implicit arrays, all
+in `tack.arrays`, are indexable in any kernel as a stored array is (`a[k]`,
+`len(a)`), not only through a field:
 
 | Array | Value `k` | VTK | Viskores |
 |---|---|---|---|

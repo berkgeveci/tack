@@ -344,6 +344,45 @@ v = tack.empty((4,), tack.vec3())
 v.size, v.ndim, v.nbytes   # 4, 1, 48: elements, not components
 ```
 
+## Implicit Arrays
+
+`tack.arrays` has arrays that compute each value from its index instead of
+storing it: `CountingArray`, `ConstantArray`, `CartesianProduct`,
+`UniformCoordinates`, `Permutation`, `Concatenate`, `View`, `Strided`,
+`Components`, `Function`, `Transform`, `Cast` and random arrays. They
+compose, and a kernel indexes them as it indexes a stored array, so a
+kernel written for stored arrays takes them unchanged:
+
+<!-- tack-check: implicit-arrays -->
+```python
+import numpy as np
+
+import tack
+from tack import arrays
+
+tack.set_default_device("cpu")
+
+
+@tack.kernel
+def scaled(a, out, s):
+    for i in range(len(a)):
+        out[i] = a[i] * s
+
+
+out = tack.zeros((4,))
+scaled(tack.array([1.0, 2.0, 3.0, 4.0]), out, 2)       # a stored array
+scaled(arrays.CountingArray(4, 1.0, 1.0), out, 2)       # 1, 2, 3, 4 computed
+ids = tack.array([3, 0, 2, 1])
+scaled(arrays.Permutation(ids, arrays.CountingArray(4, 0.0, 10.0)), out, 1)
+assert np.allclose(out.numpy(), [30, 0, 20, 10])
+```
+
+Each kind of array compiles its own variant of the kernel, and a composed
+array inlines to the expression you would write by hand. Your own classes
+join the same way: see [Indexable Objects](06-templates.md#indexable-objects).
+The [dataset reference](../reference/dataset-api.md#fields-and-arrays) lists
+every implicit array with its VTK and Viskores counterparts.
+
 ## Scalar Types
 
 Tack provides these scalar types:

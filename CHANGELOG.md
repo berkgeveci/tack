@@ -17,6 +17,14 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   as `obj.shape[k]` with a literal `k`; a new shape does not recompile. A
   store without `__setitem__`, and an atomic on an indexable object, are
   refused when the kernel compiles.
+- `tack.arrays`: the implicit arrays (`CountingArray`, `ConstantArray`,
+  `CartesianProduct`, `UniformCoordinates`, `Permutation`, `Concatenate`,
+  `View`, `Strided`, `ExtractComponent`, `Components`, `Function`,
+  `Transform`, `Cast`, `RandomUniform`, `RandomNormal`) move from
+  `tack.dataset.arrays` into tack-core and are indexable objects: any
+  kernel takes them as it takes a stored array, `a[k]` and `len(a)`, not
+  only through a dataset field. **Breaking:** import them from
+  `tack.arrays`; `tack.dataset` no longer re-exports them.
 - `tack.__version__`, the installed tack-core's version, and a docstring
   for `tack` (`help(tack)` said nothing: the docstring followed code).
 - NumPy-style arrays. `tack.Array` is backend storage; `tack.dataset.Field`

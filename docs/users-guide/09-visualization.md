@@ -69,7 +69,7 @@ dataset, a field, or Python values. Nothing changes its input.
 
 Fields passed to an algorithm belong to that dataset's topology. `dot`,
 `cross` and `composite` require matching value types; an explicit
-`td.Cast(field.values, tack.f32)` converts values when needed. Integer
+`tack.arrays.Cast(field.values, tack.f32)` converts values when needed. Integer
 inputs to magnitude, logarithms and statistics compute in floating point.
 
 ## The model

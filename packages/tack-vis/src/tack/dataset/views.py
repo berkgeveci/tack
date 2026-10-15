@@ -20,7 +20,7 @@ every compiled kernel is specialized to it (``docs/design/dataset-api.md``
 
 Geometry and spaces read values through a *storage* mixin, ``get(k)``, so
 a field's values may be a device array or an implicit array
-(``tack.dataset.arrays``), which the view holds as a nested template. Values shared by points are read through
+(``tack.arrays``), which the view holds as a nested template. Values shared by points are read through
 ``point_value(i, j)``, which an *addressing* mixin defines: by the flat
 point id, or -- for a structured grid's cells over a storage that has
 ``get_ijk`` -- by the corner's (i, j, k), with no division.
@@ -692,7 +692,7 @@ class _ExplicitStorage:
 
 
 class _ArrayStorage:
-    """An implicit array (``tack.dataset.arrays``), a template the view holds: value ``k``
+    """An implicit array (``tack.arrays``), a template the view holds: value ``k``
     is ``array.get(k)``, however the array is composed."""
 
     @tack.func
@@ -945,3 +945,16 @@ class DomainGroup:
                                      "an attribute of that name would hide it")
             setattr(view, name, value)
         return view
+
+
+def storage(values):
+    """The storage mixin that reads ``values``, and the attributes it needs."""
+    from tack.arrays import _DeviceArray, _Implicit
+
+    if isinstance(values, _Implicit):
+        mixin = _ArrayIJKStorage if hasattr(values, "get_ijk") else _ArrayStorage
+        return mixin, {"array": values}
+    if isinstance(values, _DeviceArray):
+        return _ExplicitStorage, {"values": values}
+    raise TypeError(f"field values must be a Tack array or an implicit array, "
+                    f"not {type(values).__name__}")

@@ -382,10 +382,10 @@ def test_geometry_is_a_field_kept_apart(backend):
     assert not any(f is data.geometry for f in data.fields.values())
     grid = td.rectilinear_grid([0, 1, 2], [0, 1], [0, 1])
     assert grid.geometry.space is td.H1(grid)
-    assert isinstance(grid.geometry.values, td.CartesianProduct)
+    assert isinstance(grid.geometry.values, tack.arrays.CartesianProduct)
     # "shape" is an ordinary name now, and the geometry can be replaced in place.
     named = td.DataSet(data.topology, data.positions(),
-                       fields={"shape": td.Field(td.Constant(data), td.ConstantArray(1.0, 3))})
+                       fields={"shape": td.Field(td.Constant(data), tack.arrays.ConstantArray(1.0, 3))})
     assert named.fields["shape"].space is td.Constant(data)
     moved = data.positions() + 1.0
     named.geometry = moved
@@ -511,15 +511,15 @@ def test_implicit_values_match_explicit(backend, make):
             else td.rectilinear_grid([0, 1, 3], [0, 2, 3], [0, 1, 1.5]))
     n, m = data.num_points, data.num_cells
     pairs = [
-        (td.Field(td.H1(data), td.ConstantArray(3.0, n)), td.Field(td.H1(data), _scalars(np.full(n, 3.0)))),
-        (td.Field(td.H1(data), td.CountingArray(n, 0.0, 0.5)),
+        (td.Field(td.H1(data), tack.arrays.ConstantArray(3.0, n)), td.Field(td.H1(data), _scalars(np.full(n, 3.0)))),
+        (td.Field(td.H1(data), tack.arrays.CountingArray(n, 0.0, 0.5)),
          td.Field(td.H1(data), _scalars(0.5 * np.arange(n)))),
     ]
     for implicit, explicit in pairs:
         for algorithm in (alg.values_at_centers, alg.gradients):
             np.testing.assert_allclose(algorithm(data, implicit).values.numpy(),
                                        algorithm(data, explicit).values.numpy(), atol=1e-5)
-    ids = td.Field(td.Constant(data), td.CountingArray(m, 0.0, 1.0))
+    ids = td.Field(td.Constant(data), tack.arrays.CountingArray(m, 0.0, 1.0))
     np.testing.assert_allclose(alg.jump(data, ids).values.numpy(),
                                alg.jump(data, td.Field(td.Constant(data), _scalars(np.arange(m))))
                                .values.numpy())
@@ -563,7 +563,7 @@ def test_spaces_own_their_layout(backend):
     assert td.Values(data, "faces").size == 15 and td.Values(data, "edges").size == 24
     # Two fields on one space share it, and its layout, entirely.
     a = td.Field(td.L2(data), _scalars(np.zeros(21)))
-    b = td.Field(td.L2(data), td.ConstantArray(1.0, 21))
+    b = td.Field(td.L2(data), tack.arrays.ConstantArray(1.0, 21))
     assert a.space is b.space
 
 
@@ -685,8 +685,8 @@ def test_subgroups_keep_their_cells_incidence(backend, make):
     data.topology.faces()
     n = data.num_cells
     orders = np.arange(n) % 2
-    varying = td.Field(td.L2(data, order=orders), td.ConstantArray(0.0, td.L2(data, order=orders).size))
-    uniform = td.Field(td.L2(data), td.ConstantArray(0.0, td.L2(data).size))
+    varying = td.Field(td.L2(data, order=orders), tack.arrays.ConstantArray(0.0, td.L2(data, order=orders).size))
+    uniform = td.Field(td.L2(data), tack.arrays.ConstantArray(0.0, td.L2(data).size))
     got, expected = tack.zeros((n,), tack.i32), tack.zeros((n,), tack.i32)
     td.for_each(_face_ids_seen, data, "cells", varying, got)
     td.for_each(_face_ids_seen, data, "cells", uniform, expected)
@@ -846,7 +846,7 @@ def test_upwind_flux(backend, make):
     data = _grids()[make]
     velocity = (1.0, 0.5, -0.25)
     # A constant is carried through every closed cell unchanged: no net outflow.
-    constant = td.Field(td.Constant(data), td.ConstantArray(2.0, data.num_cells))
+    constant = td.Field(td.Constant(data), tack.arrays.ConstantArray(2.0, data.num_cells))
     net = alg.divergence(data, alg.upwind_flux(data, constant, velocity))
     np.testing.assert_allclose(net.values.numpy(), 0, atol=1e-4)
     # Each face carries the value of the cell the flow leaves.

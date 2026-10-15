@@ -9,7 +9,7 @@ As ``docs/design/dataset-api.md`` §3 describes them:
   Galerkin field); ``Values(data, on)`` one value per point, edge, face or
   cell, with no basis -- data *about* the entity;
 - a *field* is a space and its values, which are any array: a device
-  field, or an implicit array from ``tack.dataset.arrays`` (a
+  field, or an implicit array from ``tack.arrays`` (a
   ``CartesianProduct`` of three axes, a ``ConstantArray``, a
   ``CountingArray``);
 - the *geometry* is a field too, kept apart from the named fields
@@ -30,9 +30,10 @@ launch specialized to its keys.
 import numpy as np
 
 import tack
+from tack import arrays
 from tack.algorithms.sort import _run_offsets, argsort, gather
-from tack.dataset import arrays, shapes, views
-from tack.dataset.arrays import CartesianProduct, UniformCoordinates
+from tack.arrays import CartesianProduct, UniformCoordinates
+from tack.dataset import shapes, views
 from tack.dataset.sets import Sets
 from tack.dataset.spaces import H1, L2, Space
 
@@ -47,7 +48,7 @@ class Field:
     def __init__(self, space, values):
         if not isinstance(space, Space):
             raise TypeError(f"a field's space is a Space on a topology, not {space!r}")
-        arrays.storage(values)                       # refuses what is not an array
+        views.storage(values)                       # refuses what is not an array
         if arrays.size_of(values) != space.size:
             raise ValueError(f"{space!r} holds {space.size} values, not "
                              f"{arrays.size_of(values)}")
@@ -75,7 +76,7 @@ def _space_parts(field, group, space_mixin=None, corners_only=False):
     """The mixins and attributes that read ``field`` for ``group``: its space's (or
     ``space_mixin``, for the geometry), an addressing mixin for values shared by
     points, and its storage's."""
-    storage, attributes = arrays.storage(field.values)
+    storage, attributes = views.storage(field.values)
     space = field.space
     if space.varies and space not in group.keys:
         raise ValueError(f"{space!r} varies from cell to cell: its views come from the "
@@ -113,7 +114,7 @@ def _as_geometry(geometry, topology, dtype):
     a ``Field`` is checked."""
     if not isinstance(geometry, Field):
         try:
-            arrays.storage(geometry)
+            views.storage(geometry)
         except TypeError:
             positions = np.ascontiguousarray(geometry)
             geometry = tack.empty((positions.shape[0],), tack.vec(3, dtype))

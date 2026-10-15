@@ -1,9 +1,9 @@
 """``divergence``: each cell's outward sum of ``flux``, values on faces measured out of side 0 (``Values(data, "faces", oriented=True)``, or plain face values taken so): a face's value counts plus for its side-0 cell and minus for its side-1 cell."""
 
 import tack
+from tack.arrays import materialize
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._faces import _on_faces
-from tack.dataset.arrays import materialize
 from tack.dataset.carry import _like
 from tack.dataset.dataset import Field, for_each
 from tack.dataset.spaces import Values

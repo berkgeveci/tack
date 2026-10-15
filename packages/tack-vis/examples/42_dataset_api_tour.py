@@ -182,7 +182,7 @@ def explode(data, dg):
     grid = vtkUnstructuredGrid()
     points = vtkPoints()
     if isinstance(data.geometry.space, td.L2):
-        corners = td.arrays.to_host(data.geometry.values)
+        corners = tack.arrays.to_host(data.geometry.values)
     else:
         corners = data.positions()[connectivity]
     points.SetData(numpy_to_vtk(corners, deep=1))
@@ -242,7 +242,7 @@ print(f"  each cell shifted by up to 0.3: the point averages now differ by up to
 dg_jump = alg.jump(mixed, dg).values.numpy()
 height_jump = alg.jump(mixed, mixed.fields["height"]).values.numpy()
 net = alg.divergence(mixed, alg.upwind_flux(mixed, td.Field(td.Constant(mixed),
-                     td.ConstantArray(1.0, mixed.num_cells)), (1.0, 0.5, 0.0)))
+                     tack.arrays.ConstantArray(1.0, mixed.num_cells)), (1.0, 0.5, 0.0)))
 print(f"  traces: the DG field jumps by up to {np.abs(dg_jump).max():.3f} across faces, "
       f"the continuous one by {np.abs(height_jump).max():.1e}; an upwind flux of a "
       f"constant leaves every cell with no net outflow: "

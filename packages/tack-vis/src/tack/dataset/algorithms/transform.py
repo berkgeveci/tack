@@ -3,9 +3,9 @@
 import numpy as np
 
 import tack
+from tack.arrays import materialize, size_of
 from tack.dataset.algorithms._common import _vectors
 from tack.dataset.algorithms._moving import _moved
-from tack.dataset.arrays import materialize, size_of
 
 __all__ = ['transform']
 

@@ -100,7 +100,7 @@ def test_clip_by_a_field_carries_fields(backend, kind):
     assert values.min() >= 1.1 - 1e-5            # the kept side, edge points at the value
     # Every piece lies inside the cell it came from.
     centers = td.algorithms.cell_centers(data).values.numpy()
-    ids = np.asarray(td.arrays.to_host(out.fields["id"].values)).astype(int)
+    ids = np.asarray(tack.arrays.to_host(out.fields["id"].values)).astype(int)
     pieces = out.positions()[out.topology.connectivity.numpy()]
     offsets = out.topology.offsets.numpy()
     for k in range(0, out.num_cells, 7):

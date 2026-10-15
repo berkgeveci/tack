@@ -113,7 +113,7 @@ def test_tetrahedralize_keeps_the_volume(backend, cell_type, per_cell):
     sizes.SetInputData(dataset_to_vtk(out))
     sizes.Update()
     assert (vtk_to_numpy(sizes.GetOutput().GetCellData().GetArray("Volume")) > 0).all()
-    np.testing.assert_array_equal(np.asarray(td.arrays.to_host(out.fields["id"].values)),
+    np.testing.assert_array_equal(np.asarray(tack.arrays.to_host(out.fields["id"].values)),
                                   np.repeat(np.arange(data.num_cells), per_cell))
 
 

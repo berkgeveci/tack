@@ -244,12 +244,12 @@ includes them and runs independently.
 | `data.fields["temperature"].space` | Its space, including the topology |
 | `data.fields["temperature"].values` | The stored or implicit value array |
 | `data.positions()` | A host array of corner positions for H1 geometry |
-| `td.arrays.to_host(field.values)` | A host snapshot; vectors have one row per value |
-| `td.arrays.materialize(field.values)` | Device storage; computes implicit values if necessary |
+| `tack.arrays.to_host(field.values)` | A host snapshot; vectors have one row per value |
+| `tack.arrays.materialize(field.values)` | Device storage; computes implicit values if necessary |
 
 `positions()` returns the topological corners, including when H1 geometry has
 higher-order nodes; it refuses L2 geometry. Use
-`td.arrays.to_host(data.geometry.values)` to inspect all of geometry's
+`tack.arrays.to_host(data.geometry.values)` to inspect all of geometry's
 coefficients in their space's ordering.
 
 Use host snapshots for diagnostics, independent checks and file output. Keep

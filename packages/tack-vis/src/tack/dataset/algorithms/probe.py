@@ -3,7 +3,8 @@
 import numpy as np
 
 import tack
-from tack.dataset import arrays, ids
+from tack import arrays
+from tack.dataset import ids
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _vertices
 from tack.dataset.buckets import bucket_order

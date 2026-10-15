@@ -5,8 +5,8 @@ import math
 import numpy as np
 
 import tack
+from tack.arrays import materialize, size_of, width_of
 from tack.dataset.algorithms._common import _converted, _field, _floating_dtype
-from tack.dataset.arrays import materialize, size_of, width_of
 
 __all__ = ['statistics']
 

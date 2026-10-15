@@ -167,7 +167,7 @@ def test_streamlines_are_the_paths(backend):
 
 def test_refusals(backend):
     data = _two_hexes_and_a_pyramid()
-    data.fields["s"] = td.Field(td.H1(data), td.ConstantArray(1.0, data.num_points))
+    data.fields["s"] = td.Field(td.H1(data), tack.arrays.ConstantArray(1.0, data.num_points))
     with pytest.raises(TypeError, match="3-vectors"):
         td.advect(data, "s", [[0.5, 0.5, 0.5]], 0.1, 3)
     with pytest.raises(ValueError, match="steps"):
@@ -181,8 +181,8 @@ def test_advection_keeps_the_input_id_type(backend):
     """A pipeline that starts in i64 stays there: advect's and streamlines' outputs
     chose their id type from their own sizes alone."""
     topology = td.StructuredTopology((2, 2, 2), id_dtype=tack.i64)
-    data = td.DataSet(topology, td.UniformCoordinates((2, 2, 2)))
-    data.fields["v"] = td.Field(td.H1(data), td.ConstantArray([1.0, 0.0, 0.0], data.num_points))
+    data = td.DataSet(topology, tack.arrays.UniformCoordinates((2, 2, 2)))
+    data.fields["v"] = td.Field(td.H1(data), tack.arrays.ConstantArray([1.0, 0.0, 0.0], data.num_points))
     for algorithm in (td.advect, td.streamlines):
         assert algorithm(data, "v", [[0.2, 0.5, 0.5]], 0.1, 1).id_dtype is tack.i64
     assert td.probe(data, [[0.5, 0.5, 0.5]]).id_dtype is tack.i64
@@ -191,7 +191,7 @@ def test_advection_keeps_the_input_id_type(backend):
 def test_advection_preserves_f64_positions(f64_backend):
     data = td.uniform_grid((2, 2, 2), dtype=tack.f64)
     data.fields["v"] = td.Field(td.H1(data),
-                                 td.ConstantArray([0., 0., 0.], data.num_points, dtype=tack.f64))
+                                 tack.arrays.ConstantArray([0., 0., 0.], data.num_points, dtype=tack.f64))
     seed = np.array([[0.5 + 1e-9, 0.5, 0.5]], np.float64)
     out = td.advect(data, "v", seed, 0.1, 1)
     assert out.dtype is tack.f64

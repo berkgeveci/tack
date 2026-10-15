@@ -8,7 +8,7 @@ import numpy as np
 
 import tack
 import tack.dataset as td
-from tack.dataset.arrays import to_host
+from tack.arrays import to_host
 
 
 # --8<-- [start:sample]
@@ -43,9 +43,9 @@ def run(arch="cpu", check=False):
     gradient = td.gradients(data, "temperature")
     # --8<-- [end:spaces]
     # --8<-- [start:implicit]
-    data.fields["constant"] = td.Field(td.H1(data), td.ConstantArray(5.0, data.num_points))
-    explicit = td.arrays.materialize(data.fields["constant"].values)
-    snapshot = td.arrays.to_host(data.fields["constant"].values)
+    data.fields["constant"] = td.Field(td.H1(data), tack.arrays.ConstantArray(5.0, data.num_points))
+    explicit = tack.arrays.materialize(data.fields["constant"].values)
+    snapshot = tack.arrays.to_host(data.fields["constant"].values)
     # --8<-- [end:implicit]
     # --8<-- [start:traces]
     face_values = td.traces(data, "material")

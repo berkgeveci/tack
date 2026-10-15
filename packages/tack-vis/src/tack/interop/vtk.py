@@ -323,15 +323,8 @@ def vtk_to_dataset(grid, dtype=tack.f32, polyhedral=None, orient=False, id_dtype
     import numpy as np
     from vtkmodules.util.numpy_support import vtk_to_numpy
 
-    from tack.dataset import (
-        H1,
-        CartesianProduct,
-        Constant,
-        DataSet,
-        PolylineTopology,
-        UniformCoordinates,
-        UnstructuredTopology,
-    )
+    from tack.arrays import CartesianProduct, UniformCoordinates
+    from tack.dataset import H1, Constant, DataSet, PolylineTopology, UnstructuredTopology
     from tack.dataset.dataset import grid_topology
 
     if grid.IsA("vtkUnstructuredGrid") and polyhedral is None:
@@ -406,7 +399,7 @@ def _vtk_points(grid):
 def _field_to_array(name, field):
     from vtkmodules.util.numpy_support import numpy_to_vtk
 
-    from tack.dataset.arrays import to_host
+    from tack.arrays import to_host
 
     values = to_host(field)
     array = numpy_to_vtk(values, deep=1)
@@ -441,15 +434,14 @@ def dataset_to_vtk(data):
         vtkUnstructuredGrid,
     )
 
+    from tack.arrays import CartesianProduct, UniformCoordinates
     from tack.dataset import (
         H1,
-        CartesianProduct,
         Constant,
         PolygonalTopology,
         PolyhedralTopology,
         PolylineTopology,
         StructuredTopology,
-        UniformCoordinates,
         UnstructuredTopology,
         Values,
     )

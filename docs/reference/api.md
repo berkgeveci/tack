@@ -99,6 +99,51 @@ See [Arrays and Types](../users-guide/02-arrays-and-types.md) for examples.
 
 ::: tack.copyto
 
+### Implicit arrays
+
+Arrays that compute each value from its index, in `tack.arrays`; a kernel
+indexes any of them as it does a stored array (`a[k]`, `len(a)`).
+
+::: tack.arrays.CountingArray
+
+::: tack.arrays.ConstantArray
+
+::: tack.arrays.CartesianProduct
+
+::: tack.arrays.UniformCoordinates
+
+::: tack.arrays.Permutation
+
+::: tack.arrays.Concatenate
+
+::: tack.arrays.View
+
+::: tack.arrays.Strided
+
+::: tack.arrays.ExtractComponent
+
+::: tack.arrays.Components
+
+::: tack.arrays.Function
+
+::: tack.arrays.Transform
+
+::: tack.arrays.Cast
+
+::: tack.arrays.RandomUniform
+
+::: tack.arrays.RandomNormal
+
+::: tack.arrays.materialize
+
+::: tack.arrays.size_of
+
+::: tack.arrays.width_of
+
+::: tack.arrays.dtype_of
+
+::: tack.arrays.to_host
+
 ### Element types
 
 ::: tack.ElementType

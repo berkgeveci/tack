@@ -1,7 +1,7 @@
 """``traces``: ``field`` -- any field with a basis on the cells: ``H1``, ``L2`` (an order per cell too), ``Constant`` -- evaluated by each 3D cell at each of its faces' points: a ``SideTraces`` field. Each cell writes its own side, at the face's points in the face's own order (``face_position``), so the two sides of a face line up point by point. Boundary faces leave side 1 zero."""
 
 import tack
-from tack.dataset import arrays
+from tack import arrays
 from tack.dataset.algorithms._common import _field
 from tack.dataset.dataset import Field
 from tack.dataset.spaces import SideTraces, reference_cells

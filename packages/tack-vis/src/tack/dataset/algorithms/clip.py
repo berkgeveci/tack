@@ -3,9 +3,10 @@
 import numpy as np
 
 import tack
+from tack import arrays
 from tack.algorithms.scan import exclusive_scan
 from tack.dataset import _clip_tables as tables
-from tack.dataset import arrays, ids, shapes
+from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import (
     _close,
     _converted,

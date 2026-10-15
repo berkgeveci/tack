@@ -1,10 +1,12 @@
-"""Arrays: what a field's values are, apart from how they are stored.
+"""Arrays: values apart from how they are stored -- stored, or computed from the index.
 
-A ``Field``'s ``values`` is any array: a Tack array (``tack.empty``,
-``tack.array``), stored explicitly, or an implicit array, which
-computes each value from its index and stores next to nothing. Implicit
-arrays compose: a permutation of a concatenation of a counting array is an
-array, to any depth.
+An array is a Tack array (``tack.empty``, ``tack.array``), stored
+explicitly, or an implicit array, which computes each value from its index
+and stores next to nothing. Implicit arrays compose: a permutation of a
+concatenation of a counting array is an array, to any depth. Every one is
+indexable in kernels as a stored array is -- ``a[k]``, ``len(a)`` -- so a
+kernel written for stored arrays takes them as they are, compiled for each;
+``tack.dataset`` fields hold them as their values.
 
 =======================================  ========================  ====================================
 Tack                                     VTK                       Viskores
@@ -28,7 +30,8 @@ spacing, direction)``                    (image data)
 =======================================  ========================  ====================================
 
 An implicit array is a ``@tack.device_class`` template with ``get(k)``,
-value ``k``, and grid points also with ``get_ijk(ijk)``, the point at
+value ``k`` (``__getitem__`` calls it, and ``__len__`` reads ``length``),
+and grid points also with ``get_ijk(ijk)``, the point at
 ``(i, j, k)``, which a structured grid's cells use to skip splitting a flat
 index. An array holding arrays reaches them as ``self.base.get(k)``; the
 templates nest, so a composed array compiles to the expression one would
@@ -38,7 +41,8 @@ Unlike VTK's ``std::function`` arrays, a ``Function`` or ``Transform`` is a
 ``@tack.func``, so it runs in the kernel on every backend.
 
 An array's size, width (components per value, or None) and dtype are kept
-beside it, not as attributes a kernel would receive: ``size_of``,
+beside it, not as attributes a kernel would receive (only ``length``, for
+``len(a)``, is one): ``size_of``,
 ``width_of``, ``dtype_of`` and ``to_host`` answer for any array, explicit or
 implicit, and ``materialize`` stores one, by a kernel.
 """
@@ -75,6 +79,16 @@ class _Implicit:
     def dtype(self):
         return self._dtype
 
+    # Python's indexing protocol, so a kernel indexes any array as it does a
+    # stored one: ``a[k]`` is ``get(k)``, ``len(a)`` its length.
+    @tack.func
+    def __getitem__(self, k):
+        return self.get(k)
+
+    @tack.func
+    def __len__(self):
+        return self.length
+
     def numpy(self):
         """The values as a host array: ``(size,)``, or ``(size, width)`` for vectors."""
         return to_host(materialize(self))
@@ -92,6 +106,8 @@ class _Implicit:
 
 def _metadata(array, size, width, dtype):
     array._size, array._width, array._dtype = int(size), width, dtype
+    # The length again, as an attribute a kernel receives, for `len(a)`.
+    array.length = int(size)
 
 
 @tack.device_class
@@ -562,16 +578,3 @@ def materialize(values):
     if values.size:
         _fill(values, out)
     return out
-
-
-def storage(values):
-    """The storage mixin that reads ``values``, and the attributes it needs."""
-    from tack.dataset import views
-
-    if isinstance(values, _Implicit):
-        mixin = views._ArrayIJKStorage if hasattr(values, "get_ijk") else views._ArrayStorage
-        return mixin, {"array": values}
-    if isinstance(values, _DeviceArray):
-        return views._ExplicitStorage, {"values": values}
-    raise TypeError(f"field values must be a Tack array or an implicit array, "
-                    f"not {type(values).__name__}")

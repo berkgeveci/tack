@@ -1,7 +1,7 @@
 """``threshold``: the cells whose ``field`` lies in ``[lower, upper]``, with only the points they use."""
 
 import tack
-from tack.dataset import arrays
+from tack import arrays
 from tack.dataset.algorithms._common import _field
 from tack.dataset.algorithms._extract import _keep_cells
 from tack.dataset.dataset import Field

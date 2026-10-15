@@ -4,8 +4,9 @@ which keeps the used points, renumbers them and carries fields -- and on a
 polyhedral topology keeps the kept cells' faces once."""
 
 import tack
+from tack import arrays
 from tack.algorithms.scan import exclusive_scan
-from tack.dataset import arrays, ids, shapes
+from tack.dataset import ids, shapes
 from tack.dataset.algorithms._common import _close, _compact, _kept_ids
 from tack.dataset.carry import Take, carry
 from tack.dataset.dataset import DataSet
