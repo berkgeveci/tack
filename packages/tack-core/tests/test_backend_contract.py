@@ -259,19 +259,21 @@ def test_cpu_declares_num_threads():
         tack.set_default_device("cpu")
 
 
-@pytest.mark.parametrize("policy", ["v1", "v2"])
-def test_cpu_policy_accepts_its_values(monkeypatch, policy):
+@pytest.mark.parametrize("policy", ["", "v2"])
+def test_cpu_policy_v2_is_still_accepted(monkeypatch, policy):
+    """The policy is no longer selectable; scripts that name the one left keep working."""
     from tack.runtime.cpu import CPUBackend
     monkeypatch.setenv("TACK_CPU_POLICY", policy)
-    assert CPUBackend(num_threads=2).policy == policy
+    CPUBackend(num_threads=2)
 
 
-@pytest.mark.parametrize("policy", ["V2", "v3", "2"])
+@pytest.mark.parametrize("policy", ["v1", "V2", "v3", "2"])
 def test_cpu_policy_refuses_anything_else(monkeypatch, policy):
-    """Any value but "v2" used to select v1 without a word."""
+    """v1 is gone, and a script that asks for it is told so rather than
+    silently given v2; before that, any value but "v2" selected v1."""
     from tack.runtime.cpu import CPUBackend
     monkeypatch.setenv("TACK_CPU_POLICY", policy)
-    with pytest.raises(ValueError, match="Accepted: v1, v2"):
+    with pytest.raises(ValueError, match="no longer selectable"):
         CPUBackend(num_threads=2)
 
 

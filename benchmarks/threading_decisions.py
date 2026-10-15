@@ -72,6 +72,11 @@ import numpy as np
 
 import tack
 from tack.runtime.cpu import _NEVER, _PARALLEL_BREAK_EVEN, _physical_core_count
+
+# The backend's policy. Saved reports record theirs, and the snapshot
+# reconstruction still reads v1 reports; the backend itself has had only
+# this one since v1 was removed (2026-10-15).
+_LIVE_POLICY = "v2"
 from tack.runtime.dispatch import get_backend
 
 
@@ -669,7 +674,7 @@ def _score(args, backend, x, out, biggest):
                 "faster": faster, "chose": chose, "regret_us": regret,
             }
             # Pure postprocessing; no additional timing/calibration reads.
-            row.update(_threshold_snapshot(row, backend.policy, backend.num_threads))
+            row.update(_threshold_snapshot(row, _LIVE_POLICY, backend.num_threads))
             rows.append(row)
             flag = "" if faster == chose else (
                 "   <-- fanned out and lost" if chose == "parallel"
@@ -735,15 +740,16 @@ def _report(args, backend, machine, result):
                 "load_procs": args.load,
                 "conditions_before": before, "conditions_after": after,
                 "break_even": _PARALLEL_BREAK_EVEN,
-                "policy": getattr(backend, "policy", "v1"),
-                "margin": getattr(backend, "margin", _PARALLEL_BREAK_EVEN),
+                "policy": getattr(backend, "policy", _LIVE_POLICY),
+                "margin": backend._margin() if hasattr(backend, "_margin")
+                else getattr(backend, "margin", _PARALLEL_BREAK_EVEN),
                 "fan_out_probe_ns": backend._fan_out_ns,
                 "fan_out_floor": {str(k): v for k, v in floor.items()},
                 "model_points": result["model_pts"],
                 "score": s,
                 "rows": rows, "fits": fits,
                 "threshold_diagnostics": _threshold_snapshot_summary(
-                    rows, backend.policy, backend.num_threads),
+                    rows, getattr(backend, "policy", _LIVE_POLICY), backend.num_threads),
             }, fh, indent=2)
         print(f"\nwrote {args.json}")
 

@@ -139,10 +139,12 @@ serial ≈ n · r_s      parallel ≈ F + n · r_p      crossover n* = F / (r_s 
 
 ```
 parallel_min_elems = max(num_threads, int(F · M / rate))
-    v1: rate = r_s        v2: rate = r_s − min(r_p, 0.9 · r_s)
+    rate = r_s − min(r_p, 0.9 · r_s)
 ```
 
-**v1** assumes perfect division of the work, `parallel ≈ F + T_serial / P`,
+The rate keeps `r_p` because real kernels do not divide perfectly. The
+removed policy v1 (see [History](#history-policy-v1)) used `rate = r_s`: it
+assumed perfect division of the work, `parallel ≈ F + T_serial / P`,
 and drops `r_p`. Its margin of 2.0 (`_PARALLEL_BREAK_EVEN`) covers the
 break-even factor `P / (P − 1)` for any thread count. But real kernels do not
 reach speedup `P`: the effective speedup `P_eff = r_s / r_p` ranged from 1.5
@@ -151,39 +153,36 @@ v1 really applies is `M · (1 − 1/P_eff)`. For a bandwidth-bound kernel with
 `P_eff ≈ 1.5` that is 0.67 — below break-even, so the fan-outs it permits
 near the crossover lose.
 
-**v2** keeps `r_p`. Until a fan-out has measured it, `r_p` is 0.0 and the
-expression is exactly v1's, so "not measured yet" needs no special case. The
-`0.9 · r_s` clamp keeps the denominator positive when a noisy `r_p`
-approaches `r_s`, and caps a v2 threshold at ten times v1's for the same
-inputs.
+Until a fan-out has measured it, `r_p` is 0.0 and the rate is `r_s`, so
+"not measured yet" needs no special case. The `0.9 · r_s` clamp keeps the
+denominator positive when a noisy `r_p` approaches `r_s`, and caps the
+threshold at ten times the serial-rate-only one for the same inputs.
 
 The `max(num_threads, …)` floor keeps chunks at one element or more. An
 unmeasured kernel, or a one-thread backend, gets `_NEVER` (`1 << 62`).
 
 ### The margin
 
-| Policy | `_margin()` |
+| Case | `_margin()` |
 |---|---|
-| v1 | `_PARALLEL_BREAK_EVEN` = 2.0 |
-| v2 | `clamp(1 + _MARGIN_K · cv, _MARGIN_MIN, _MARGIN_MAX)` = `clamp(1 + 1.3 · cv, 1.0, 2.5)` |
-| either, with `TACK_CPU_MARGIN` set | that value |
+| default | `clamp(1 + _MARGIN_K · cv, _MARGIN_MIN, _MARGIN_MAX)` = `clamp(1 + 1.3 · cv, 1.0, 2.5)` |
+| `TACK_CPU_MARGIN` set | that value |
 
-A margin insures against mis-estimates, so v2 sizes it by how unreliable the
+A margin insures against mis-estimates, so it is sized by how unreliable the
 estimates currently are. `cv` is a smoothed relative deviation of new fan-out
 samples from the stored estimate (`_update_fan_out_knot`; weight
 `_CV_SMOOTHING` = 0.10, one sample capped at `_CV_SAMPLE_CAP` = 3.0).
 `_margin()`'s docstring records why: on one machine, a quiet run wanted the
 smallest margin tried while a loaded run needed at least 1.5.
 
-Before any fan-out sample has been compared, `cv` is 0 and v2's margin is
-1.0. `_V2_MARGIN` (1.5) is stored as `CPUBackend.margin` under v2, but
-`_margin()` returns that attribute only under v1.
+Before any fan-out sample has been compared, `cv` is 0 and the margin is
+1.0. (v1 used a constant 2.0, `_PARALLEL_BREAK_EVEN`.)
 
 ### One integer compare on the hot path
 
 `parallel_min_elems` is stored on the `CompiledKernel`, so the common case in
 `_run` is a single `loop_end >= compiled.parallel_min_elems`. `_set_serial_cost`
-recomputes it after every timed serial run and every v2 fan-out (through
+recomputes it after every timed serial run and every fan-out (through
 `_record_parallel_cost`); `_run` recomputes it after the first calibration.
 
 Being cached, the threshold is priced with the fan-out estimate *at the
@@ -222,7 +221,7 @@ with weight `_COST_SMOOTHING` (0.25) and outlier ratio `_MAX_SAMPLE_RATIO` (8):
 | more than 8x lower | the sample, outright | easing down from a far-too-high estimate would keep losing fan-outs for thousands of dispatches |
 | otherwise | `prev + 0.25 · (sample − prev)` | ordinary smoothing |
 
-Under v2, two more rules depend on whether the range was **scattered**.
+Two more rules depend on whether the range was **scattered**.
 `CompiledKernel.scattered` is true initially and after any fan-out, and is
 cleared when a serial run covers the whole range. A serial run over a
 scattered range first pulls data back from other cores' caches, or faults in
@@ -269,20 +268,20 @@ guards override the target:
 and stores the minimum as `_fan_out_ns`. A pure-Python no-op probe would
 understate it (the docstring: 122 µs against the real path's 223 µs). Until
 then `_DEFAULT_FAN_OUT_NS` (200 µs) stands in, high on purpose so being wrong
-only delays the first fan-out. Under v1, `_fan_out_ns` is the fan-out cost
-for the life of the backend.
+only delays the first fan-out. (Under the removed v1, `_fan_out_ns` was the
+fan-out cost for the life of the backend.)
 
-**The idle curve (v2).** A dispatch after a pause pays more than one after
+**The idle curve.** A dispatch after a pause pays more than one after
 another fan-out, because idle cores descend into deeper sleep states, and the
 shape differs by machine. The comment on `_FAN_OUT_GAPS_MS` records idle
 fan-outs at 2.45x the back-to-back cost on a 2-socket Xeon and 3.81x on an
 M1 Max (August 2026), the Xeon's penalty complete by 10 ms and the M1 Max's
 still growing at 50 ms; `_FAN_OUT_IDLE_PRIOR`'s comment adds 2.1x on a
-1-socket Xeon (October 2026). So v2 keeps the cost as a curve over
+1-socket Xeon (October 2026). So the backend keeps the cost as a curve over
 *idleness*, with knots at 0, 10 and 50 ms.
 
 `_fan_out_estimate()` takes the gap since `_last_dispatch_ns` — set at the end
-of every v2 fan-out and refresh, and not by serial runs, which leave the
+of every fan-out and refresh, and not by serial runs, which leave the
 workers idle — and interpolates piecewise-linearly with two rules on read:
 
 - **Monotone.** A longer pause cannot make threads wake faster. This is
@@ -305,12 +304,12 @@ first looked worth threading.
 **Keeping it current.** A startup measurement records whatever the machine
 was doing at startup, so two paths refine the curve:
 
-- **Free samples:** `_record_fan_out`, after every v2 fan-out, takes elapsed
+- **Free samples:** `_record_fan_out`, after every fan-out, takes elapsed
   time minus the slowest worker's span — both measured — when the work is at
   most `_FAN_OUT_MAX_WORK_SHARE` (35%) of the dispatch, where the subtraction
   is well conditioned. It updates the nearest knot with weight
   `_FAN_OUT_SMOOTHING` (0.15).
-- **Scheduled samples:** `_refresh_fan_out`, after every v2 dispatch once a
+- **Scheduled samples:** `_refresh_fan_out`, after every dispatch once a
   curve exists. If `_FAN_OUT_REFRESH_NS` (100 ms) has passed since the last
   measurement, or the knot nearest the current gap still holds its prior, it
   times one empty fan-out at the current gap. If the dispatch arrived cold
@@ -326,7 +325,7 @@ disturbs what the dispatch measures.
 
 ### Parallel rate: `ns_per_elem_parallel`
 
-Under v2, each worker is timed *inside* the worker, around its kernel calls
+Each worker is timed *inside* the worker, around its kernel calls
 only: through the JIT'd pool every worker reports its span and the
 elements it claimed (`CPool.run(..., measure=True)`, read in
 `_pool_execute`), and through the executor each task times its own
@@ -398,7 +397,7 @@ or a fast head or tail of a recheck, cannot retire it.
 estimate alone; the docstring records two dearer prices that each switched
 the mechanism off for the kernel it was built for.
 
-`_needs_confirmation` (v2) uses it: while a kernel has never had a clean
+`_needs_confirmation` uses it: while a kernel has never had a clean
 sample, an affordable range above the threshold runs serially instead. A
 first sample is never clean, and `_CONFIRM_BAND`'s comment records such
 samples reading a bandwidth-bound kernel 3–4x dear on a 1-socket Xeon, a
@@ -408,7 +407,7 @@ sample never pays to calibrate a fan-out it will not use.
 
 ## The decision procedure
 
-`_dispatch` binds the arguments once, calls `_run`, and afterwards (v2, once
+`_dispatch` binds the arguments once, calls `_run`, and afterwards (once
 a curve exists) calls `_refresh_fan_out`. `_run` decides:
 
 ```mermaid
@@ -426,7 +425,7 @@ flowchart TD
     F -- yes --> G{"_sample_elems covers the range?"}
     G -- yes --> WS
     G -- no --> H["head: _run_untimed(0, start)<br/>slice: _run_serial(start, start + probe)"]
-    H --> I{"v2, slice over 8x below the estimate,<br/>and room for two more slices?"}
+    H --> I{"slice over 8x below the estimate,<br/>and room for two more slices?"}
     I -- yes --> J["_second_opinion"]
     I -- no --> K["_parallel_execute(rest of range)"]
     J --> K
@@ -458,7 +457,7 @@ flowchart TD
       `start · r_s` exceeds the current fan-out estimate, otherwise untimed on
       this thread;
     - times the slice with `_run_serial`;
-    - under v2, calls `_second_opinion` if the slice read more than 8x below
+    - calls `_second_opinion` if the slice read more than 8x below
       the previous estimate and two slices' worth of range remain;
     - fans out the remainder.
 4. **Otherwise** fan out the whole range (`whole_range=True`).
@@ -472,7 +471,7 @@ quarter of the way from the old value toward the mean of the two slices.
 
 ### Below the threshold
 
-1. **Parallel recheck (v2).** `_parallel_recheck_due` fires when the kernel is
+1. **Parallel recheck.** `_parallel_recheck_due` fires when the kernel is
    confirmed, `r_p` and the fan-out have been measured, and the range *would*
    fan out on the serial rate alone (`loop_end · r_s ≥ margin · fan_out`) —
    when `r_p` is what keeps it serial. It uses the same 1, 2, 4 … 1024
@@ -513,15 +512,16 @@ Each mechanism above exists because a specific failure was measured:
 
 ## Policies, environment and hardware
 
-### v1 and v2
+### History: policy v1
 
-`TACK_CPU_POLICY` is read once, when the backend is created. `v2` is the
-default (since 2026-08-10), selected when the variable is unset or empty;
-`v1` selects the earlier policy. Any other value raises `ValueError` from
-the constructor, naming the accepted values (`_CPU_POLICIES`), so a
-misspelling cannot select a policy silently.
+The policy described here was "v2" while an earlier one, v1, could still be
+selected with `TACK_CPU_POLICY=v1`. v2 became the default on 2026-08-10 and
+v1 was removed on 2026-10-15. `TACK_CPU_POLICY` is still read once, when the
+backend is created: unset, empty or `v2` is accepted, and anything else,
+`v1` included, raises `ValueError`, so a script that relied on v1 says so.
+What v1 lacked:
 
-| Mechanism | v1 | v2 |
+| Mechanism | v1 | v2 (now the policy) |
 |---|---|---|
 | Serial rate: overhead subtraction, outlier cap, far-lower samples believed | yes | yes |
 | Serial rechecks at rotating positions | yes | yes |
@@ -546,8 +546,8 @@ speedups not taken. The module docstring keeps that reasoning.
 | Variable | Effect |
 |---|---|
 | `TACK_CPU_THREADS` | Worker count, parsed as an integer; values below 1 become 1. With one thread the pool is never created and every threshold is `_NEVER`. An explicit `num_threads`, from `tack.device("cpu", num_threads=…)` or `CPUBackend(num_threads=…)`, takes precedence. |
-| `TACK_CPU_POLICY` | `v2` (default, also when unset or empty) or `v1`. Anything else raises `ValueError`. |
-| `TACK_CPU_MARGIN` | A float that replaces the margin under either policy, switching off v2's derived margin. For experiments. |
+| `TACK_CPU_POLICY` | Accepted for old scripts only: unset, empty or `v2`. Anything else, `v1` included, raises `ValueError`. |
+| `TACK_CPU_MARGIN` | A float that replaces the derived margin. For experiments. |
 | `TACK_CPU_POOL` | `python` (also `0`, `off`, `no`, `false`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool. Anything else, or unset, uses the pool where it can be made. |
 | `TACK_CPU_POOL_SPIN` | How many pause iterations a pool worker spins before sleeping (default 20000). For experiments. |
 | `TACK_CPU_MALLOC` | Linux only, off by default (read by `dispatch.env_flag`). When on, the first CPU backend tells glibc to keep freed pages (`_tune_malloc`: `mallopt` sets the mmap threshold to its 32 MiB cap, the trim threshold to 4 GiB and the top pad to 256 MiB), process-wide. A filter that frees and reallocates the same temporaries otherwise takes their page faults on every call: threshold at 5M cells on 8 threads of one bound NUMA node 126 → 104 ms. Opt-in because it changes `malloc` for NumPy and every other library, and unbound on a 28-core EPYC it gained nothing (6–8% slower, within noise); a reused block also keeps the placement of its first touch. |
@@ -627,7 +627,7 @@ No dispatch is promised the faster path, nor the same choice across runs,
 processes or machines; decisions near a crossover flip on noise. Some
 dispatches take a slower path on purpose: rechecks run part of a range
 serially, and parallel rechecks fan out a range the policy believes is better
-serial. Under v2, refreshes add about one empty fan-out per 100 ms of
+serial. Refreshes add about one empty fan-out per 100 ms of
 dispatching, plus the hot knot's probe at most once a second. The policy
 promises to keep measuring, not to be right.
 
