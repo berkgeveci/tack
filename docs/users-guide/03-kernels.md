@@ -155,7 +155,7 @@ def reverse(x, out):
 
 @tack.kernel
 def normalize_rows(a, out):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         out[i, j] = a[i, j] / float(a.shape[1])
 ```
 
@@ -178,12 +178,12 @@ def reverse(x, out, n):     # one compiled kernel for every n
 
 ## Multi-Dimensional Iteration
 
-Use `tack.ndrange` for 2D or 3D parallel iteration:
+Use `tack.ndindex` for 2D or 3D parallel iteration:
 
 ```python
 @tack.kernel
 def fill_2d(grid, height, width):
-    for row, column in tack.ndrange(height, width):
+    for row, column in tack.ndindex(height, width):
         grid[row, column] = float(row + column)
 ```
 
@@ -196,7 +196,7 @@ visits the interior of a grid and leaves the boundary alone:
 ```python
 @tack.kernel
 def smooth(u, out, n, m):
-    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+    for i, j in tack.ndindex((1, n - 1), (1, m - 1)):
         out[i, j] = 0.25 * (u[i - 1, j] + u[i + 1, j] + u[i, j - 1] + u[i, j + 1])
 ```
 

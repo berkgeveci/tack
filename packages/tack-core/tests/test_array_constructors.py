@@ -85,7 +85,7 @@ def test_empty_like_preserves_component_arrays_in_kernels(backend, shape, compon
         # Use multidimensional indexing for a multidimensional logical array.
         @tack.kernel
         def double_grid(src, dst):
-            for row, column in tack.ndrange(src.shape[0], src.shape[1]):
+            for row, column in tack.ndindex(src.shape[0], src.shape[1]):
                 dst[row, column] = src[row, column] * 2
 
         double_grid(source, output)
@@ -93,7 +93,7 @@ def test_empty_like_preserves_component_arrays_in_kernels(backend, shape, compon
         @tack.kernel
         def double_scalar(src, dst):
             for _ in range(1):
-                dst[None] = src[None] * 2
+                dst[()] = src[()] * 2
 
         double_scalar(source, output)
     else:

@@ -1,4 +1,4 @@
-"""tack.Matrix: small fixed-size matrices, scalarized like vectors."""
+"""Matrices: small fixed-size matrices, scalarized like vectors."""
 
 import numpy as np
 import pytest
@@ -93,7 +93,7 @@ def test_transpose_trace_determinant_inverse(backend):
 
 @tack.func
 def deformation_update(F, C, dt):
-    return (tack.Matrix.identity(2) + dt * C) @ F
+    return (tack.identity(2) + dt * C) @ F
 
 
 @tack.func
@@ -107,14 +107,14 @@ def polar_parts(M):
 def construct_and_call(a, b, v, built, updated, sym, outer, traces, n):
     for i in range(n):
         p = v[i]
-        m = tack.Matrix([[p[0], 2.0], [3, p[1]]])
-        rows = tack.Matrix([p, p * 2.0])
-        built[i] = m * rows - tack.Matrix.identity(2)        # '*' is entry by entry
+        m = tack.mat2([p[0], 2.0], [3, p[1]])
+        rows = tack.mat2(p, p * 2.0)
+        built[i] = m * rows - tack.identity(2)        # '*' is entry by entry
         updated[i] = deformation_update(a[i], b[i], 0.5)
         s, t = polar_parts(a[i])
         sym[i] = s
         traces[i] = t
-        outer[i] = p.outer_product(tack.Vector([1.0, -1.0]))
+        outer[i] = p.outer_product(tack.vec2(1.0, -1.0))
 
 
 def test_constructors_device_functions_and_entrywise_arithmetic(backend):
@@ -174,7 +174,7 @@ def test_matrix_entries_read_and_written(backend):
 def accumulate(a, total, n):
     for i in range(n):
         tack.atomic_add(total, 0, a[i])
-        a[i] += tack.Matrix.identity(2)
+        a[i] += tack.identity(2)
         a[i] *= 2.0
 
 
@@ -205,7 +205,7 @@ def _product_shape_mismatch():
     @tack.kernel
     def bad(m, v, out, n):
         for i in range(n):
-            out[i] = m[i] @ tack.Vector([1.0, 2.0, 3.0])
+            out[i] = m[i] @ tack.vec3(1.0, 2.0, 3.0)
     return bad
 
 
@@ -222,7 +222,7 @@ def _one_index():
     def bad(m, v, out, n):
         for i in range(n):
             a = m[i]
-            out[i] = tack.Vector([a[0], a[1]])
+            out[i] = tack.vec2(a[0], a[1])
     return bad
 
 
@@ -230,7 +230,7 @@ def _vector_into_matrix_array():
     @tack.kernel
     def bad(m, v, out, n):
         for i in range(n):
-            m[i] = tack.Vector([1.0, 2.0, 3.0, 4.0])
+            m[i] = tack.vec4(1.0, 2.0, 3.0, 4.0)
     return bad
 
 
@@ -238,7 +238,7 @@ def _matrix_plus_vector():
     @tack.kernel
     def bad(m, v, out, n):
         for i in range(n):
-            m[i] = m[i] + tack.Vector([1.0, 2.0, 3.0, 4.0])
+            m[i] = m[i] + tack.vec4(1.0, 2.0, 3.0, 4.0)
     return bad
 
 
@@ -246,7 +246,7 @@ def _inverse_of_a_rectangle():
     @tack.kernel
     def bad(m, v, out, n):
         for i in range(n):
-            r = tack.Matrix([[1.0, 2.0, 3.0], [4.0, 5.0, 6.0]])
+            r = tack.mat([1.0, 2.0, 3.0], [4.0, 5.0, 6.0])
             m[i] = (r @ r.transpose()) + r.inverse()
     return bad
 
@@ -263,7 +263,7 @@ def _ragged_rows():
     @tack.kernel
     def bad(m, v, out, n):
         for i in range(n):
-            m[i] = tack.Matrix([[1.0, 2.0], [3.0]])
+            m[i] = tack.mat([1.0, 2.0], [3.0])
     return bad
 
 

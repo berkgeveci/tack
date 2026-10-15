@@ -3,7 +3,7 @@
 Transforms a @kernel-decorated Python function's AST into Tack's internal IR.
 Supports: parallel/sequential for-range loops, while loops, if/else, comparisons,
 boolean ops, unary ops, math builtins, array indexing, type inference,
-@tack.func inlining, multi-dimensional indexing, ndrange, and vector operations.
+@tack.func inlining, multi-dimensional indexing, ndindex, and vector operations.
 
 Inspired by Taichi's AST transformer (Apache 2.0), simplified for Tack's needs.
 """
@@ -92,6 +92,11 @@ def _describe_value(value) -> str:
     return describe() if describe is not None else f"a list of {len(value)} values"
 
 
+# Kernel value constructors and the shape each builds.
+_VECTOR_CONSTRUCTORS = {"vec2": 2, "vec3": 3, "vec4": 4}
+_MATRIX_CONSTRUCTORS = {"mat": None, "mat2": 2, "mat3": 3, "mat4": 4}
+
+
 class KernelTransformer(ast.NodeVisitor):
     """Transforms a Python AST (from a @kernel function) into Tack IR.
 
@@ -101,8 +106,8 @@ class KernelTransformer(ast.NodeVisitor):
     Supports:
       - @tack.func inlining at call sites
       - Multi-dimensional array indexing: array[i, j] → array[i * shape1 + j]
-      - array[None] → array[0] for scalar arrays
-      - ndrange(w, h) → 1D parallel loop with index decomposition
+      - array[()] → array[0] for zero-dimensional arrays
+      - ndindex(w, h) → 1D parallel loop with index decomposition
       - Vector scalarization: Vector([a, b, c]) → 3 scalar variables
     """
 
@@ -206,7 +211,7 @@ class KernelTransformer(ast.NodeVisitor):
             raise self._source_error(
                 node, "definition", "has no parallel loop: a kernel's work is "
                 "the body of one top-level `for` loop over `range(...)` or "
-                "`tack.ndrange(...)`")
+                "`tack.ndindex(...)`")
         for stmt in body:
             if isinstance(stmt, ir.IRParallelFor):
                 _mark_outermost_continues(stmt.body)
@@ -481,9 +486,9 @@ class KernelTransformer(ast.NodeVisitor):
         if node.orelse:
             raise NotImplementedError("'else' clause on for-loop not supported in kernels")
 
-        # Handle tuple targets: for i, j in ndrange(w, h)
+        # Handle tuple targets: for i, j in ndindex(w, h)
         if isinstance(target, ast.Tuple):
-            return self._visit_ndrange_for(node)
+            return self._visit_ndindex_for(node)
 
         if not isinstance(target, ast.Name):
             raise NotImplementedError("Only simple loop variables supported")
@@ -545,35 +550,35 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRSequentialFor(var=target.id, start=start, end=end,
                                   body=body, step=step)
 
-    def _visit_ndrange_for(self, node: ast.For):
-        """Handle: for i, j in ndrange(w, h) or for i, j in tack.ndrange(w, h).
+    def _visit_ndindex_for(self, node: ast.For):
+        """Handle: for i, j in ndindex(w, h) or for i, j in tack.ndindex(w, h).
 
         Each argument is a size, counting from zero, or a ``(start, end)``
-        pair: ``ndrange((1, n - 1), (1, m - 1))`` visits the interior. An
+        pair: ``ndindex((1, n - 1), (1, m - 1))`` visits the interior. An
         empty or reversed pair makes the whole loop empty.
         """
         target = node.target
         if not isinstance(target, ast.Tuple):
-            raise NotImplementedError("ndrange requires tuple target")
+            raise NotImplementedError("ndindex requires tuple target")
 
         names = []
         for elt in target.elts:
             if not isinstance(elt, ast.Name):
-                raise NotImplementedError("ndrange targets must be simple names")
+                raise NotImplementedError("ndindex targets must be simple names")
             names.append(elt.id)
 
-        # Parse ndrange call
+        # Parse ndindex call
         call = node.iter
         if not isinstance(call, ast.Call):
-            raise NotImplementedError("Expected ndrange() call")
+            raise NotImplementedError("Expected ndindex() call")
 
         func_name = self._resolve_call_name(call)
-        if func_name != "ndrange":
-            raise NotImplementedError(f"Expected ndrange(), got {func_name}()")
+        if func_name != "ndindex":
+            raise NotImplementedError(f"Expected ndindex(), got {func_name}()")
 
         if len(call.args) != len(names):
             raise NotImplementedError(
-                f"ndrange() dimension count ({len(call.args)}) must match "
+                f"ndindex() dimension count ({len(call.args)}) must match "
                 f"target count ({len(names)})"
             )
 
@@ -583,7 +588,7 @@ class KernelTransformer(ast.NodeVisitor):
             if isinstance(arg, ast.Tuple):
                 if len(arg.elts) != 2:
                     raise NotImplementedError(
-                        "an ndrange() range is a (start, end) pair")
+                        "an ndindex() range is a (start, end) pair")
                 start, end = self._visit_ordered(arg.elts)
                 starts.append(start)
                 # Clamp at zero: a reversed pair must not turn into a count
@@ -650,7 +655,7 @@ class KernelTransformer(ast.NodeVisitor):
 
     @staticmethod
     def _offset_index(start, index):
-        """An ndrange index counted from its range's start, if it has one."""
+        """An ndindex index counted from its range's start, if it has one."""
         return index if start is None else ir.IRBinOp(op="+", left=start, right=index)
 
     def visit_While(self, node: ast.While) -> ir.IRWhile:
@@ -778,7 +783,7 @@ class KernelTransformer(ast.NodeVisitor):
                 f"'{value.id}'; index '{value.id}' directly, or pass it to "
                 f"a @tack.func")
 
-        # Check for vector construction: v = tack.Vector([a, b, c])
+        # Check for vector construction: v = tack.vec3(a, b, c)
         vec_elts = self._try_parse_vector_construct(value)
         if vec_elts is not None and isinstance(target, ast.Name):
             return self._assign_vector(target.id, vec_elts)
@@ -1298,7 +1303,7 @@ class KernelTransformer(ast.NodeVisitor):
         return TupleValue(self._visit_ordered(node.elts))
 
     def visit_List(self, node: ast.List) -> VectorValue:
-        """A list of scalars is a vector: ``[x, y]`` is ``tack.Vector([x, y])``."""
+        """A list of scalars is a vector: ``[x, y]`` is ``tack.vec2(x, y)``."""
         return VectorValue(self._visit_ordered(node.elts))
 
     def _variable_value(self, name: str) -> VectorValue:
@@ -1327,14 +1332,15 @@ class KernelTransformer(ast.NodeVisitor):
             return self._inline_func_call(func_obj, node)
         func_name = self._resolve_call_name(node)
 
-        # Vector constructor: Vector([a, b, c]) or tack.Vector([a, b, c])
-        if func_name == "Vector":
-            return self._visit_vector_construct(node)
+        # Vector constructors: tack.vec3(x, y, z), tack.vec3(s), tack.vec3(v)
+        if func_name in _VECTOR_CONSTRUCTORS:
+            return self._visit_vector_construct(node, _VECTOR_CONSTRUCTORS[func_name])
 
-        # Matrix constructors: Matrix([[a, b], [c, d]]), Matrix.identity(n)
-        if func_name == "Matrix":
-            return self._visit_matrix_construct(node)
-        if func_name == "identity" and self._names_matrix(node.func):
+        # Matrix constructors: tack.mat2([a, b], [c, d]), tack.mat2(a, b, c, d),
+        # tack.mat(row, ...), tack.identity(n)
+        if func_name in _MATRIX_CONSTRUCTORS:
+            return self._visit_matrix_construct(node, _MATRIX_CONSTRUCTORS[func_name])
+        if func_name == "identity":
             return self._visit_matrix_identity(node)
 
         # v.min(), v.max(), v.sum(): a vector's own reduction, which shares
@@ -1399,9 +1405,9 @@ class KernelTransformer(ast.NodeVisitor):
         if func_name == "range":
             raise NotImplementedError("range() outside of for-loop not supported")
 
-        # ndrange() outside of for-loop
-        if func_name == "ndrange":
-            raise NotImplementedError("ndrange() outside of for-loop not supported")
+        # ndindex() outside of for-loop
+        if func_name == "ndindex":
+            raise NotImplementedError("ndindex() outside of for-loop not supported")
 
         # Shared memory: tack.shared(dtype, size) or tack.shared_like(array, size)
         if func_name == "shared":
@@ -1765,7 +1771,7 @@ class KernelTransformer(ast.NodeVisitor):
         """Collect all variable names assigned in a list of AST statements.
 
         Every binding counts, including the names inside a tuple target
-        (`t, u = f()`, `for i, j in ndrange(...)`): a callee local that is
+        (`t, u = f()`, `for i, j in ndindex(...)`): a callee local that is
         not collected is not renamed, and the inlined body then writes
         the caller's variable of the same name.
         """
@@ -1913,44 +1919,55 @@ class KernelTransformer(ast.NodeVisitor):
         return ir.IRLocalAlloc(name=target_name, dtype=None, size=size, array_name=array_name)
 
     def _try_parse_vector_construct(self, value_node: ast.expr) -> list | None:
-        """Try to parse a Vector([a, b, c]) constructor. Returns list of AST element nodes or None."""
+        """The component nodes of ``tack.vecN(a, b, ...)`` with N scalar arguments
+        written out, or None."""
         if not isinstance(value_node, ast.Call):
             return None
         try:
             name = self._resolve_call_name(value_node)
         except (NotImplementedError, AttributeError):
             return None
-        if name != "Vector":
+        width = _VECTOR_CONSTRUCTORS.get(name)
+        if width is None or len(value_node.args) != width or width == 1:
             return None
-        if len(value_node.args) != 1:
+        if any(isinstance(arg, (ast.List, ast.Starred)) for arg in value_node.args):
             return None
-        arg = value_node.args[0]
-        if isinstance(arg, ast.List):
-            return arg.elts
-        return None
+        return value_node.args
 
-    def _visit_vector_construct(self, node: ast.Call):
-        """Handle Vector([a, b, c]) → list of IR expressions."""
-        if len(node.args) != 1:
-            raise NotImplementedError("Vector() takes exactly one argument (a list)")
-        arg = node.args[0]
-        if not isinstance(arg, ast.List):
-            raise NotImplementedError("Vector() argument must be a list literal")
-        return VectorValue(self._visit_ordered(arg.elts))
+    def _visit_vector_construct(self, node: ast.Call, width: int):
+        """``tack.vecN(...)``: N scalars, one scalar for every component, or
+        one vector of N components."""
+        what = f"tack.vec{width}()"
+        values = self._visit_ordered(node.args)
+        if len(values) == width and not any(isinstance(v, list) for v in values):
+            return VectorValue(values)
+        if len(values) == 1:
+            value = values[0]
+            if isinstance(value, VectorValue):
+                if value.shape != (width,):
+                    raise self._source_error(
+                        node, what, f"takes a vector of {width} components, not one of "
+                        f"shape {value.shape}")
+                return value
+            if not isinstance(value, list):
+                value = self._capture_value(value, self._pre_stmts)
+                return VectorValue([value] * width)
+        raise self._source_error(
+            node, what, f"takes {width} scalars, one scalar or one {width}-vector")
 
-    @staticmethod
-    def _names_matrix(func) -> bool:
-        """``Matrix.identity`` or ``tack.Matrix.identity``."""
-        owner = getattr(func, 'value', None)
-        return getattr(owner, 'id', getattr(owner, 'attr', None)) == "Matrix"
-
-    def _visit_matrix_construct(self, node: ast.Call) -> VectorValue:
-        """``Matrix([[a, b], [c, d]])``: rows of scalars, or rows that are vectors."""
-        if len(node.args) != 1 or not isinstance(node.args[0], ast.List) or not node.args[0].elts:
-            raise NotImplementedError(
-                "Matrix() takes one list of rows: Matrix([[a, b], [c, d]])")
+    def _visit_matrix_construct(self, node: ast.Call, extent: int | None) -> VectorValue:
+        """``tack.mat(row, ...)`` and ``tack.matN(...)``: rows that are lists of
+        scalars or vectors, or (``matN``) N*N scalars in row-major order."""
+        what = f"tack.mat{extent}()" if extent else "tack.mat()"
+        if not node.args:
+            raise self._source_error(node, what, "needs its rows")
+        if extent and len(node.args) == extent * extent and not any(
+                isinstance(arg, ast.List) for arg in node.args):
+            values = self._visit_ordered(node.args)
+            if not any(isinstance(v, list) for v in values):
+                return VectorValue(values, (extent, extent))
         rows = []
-        for row in node.args[0].elts:
+        for row in node.args:
             if isinstance(row, ast.List):
                 rows.append(VectorValue(self._visit_ordered(row.elts)))
             else:
@@ -1963,24 +1980,28 @@ class KernelTransformer(ast.NodeVisitor):
             if (not isinstance(row, VectorValue) or len(row.shape) != 1
                     or any(isinstance(entry, list) for entry in row)):
                 raise self._source_error(
-                    node, "Matrix()", "needs each row to be a list of scalars or a vector")
+                    node, what, "needs each row to be a list of scalars or a vector")
         widths = {len(row) for row in rows}
         if len(widths) != 1:
-            raise self._source_error(node, "Matrix()", "has rows of different lengths")
+            raise self._source_error(node, what, "has rows of different lengths")
         shape = (len(rows), widths.pop())
         if max(shape) > MAX_MATRIX_EXTENT:
             raise self._source_error(
-                node, "Matrix()", f"is {shape[0]}x{shape[1]}; matrices are at most "
+                node, what, f"is {shape[0]}x{shape[1]}; matrices are at most "
                 f"{MAX_MATRIX_EXTENT}x{MAX_MATRIX_EXTENT}")
+        if extent and shape != (extent, extent):
+            raise self._source_error(
+                node, what, f"needs {extent} rows of {extent}, or {extent * extent} scalars; "
+                f"got {shape[0]} rows of {shape[1]}")
         return VectorValue([entry for row in rows for entry in row], shape)
 
     def _visit_matrix_identity(self, node: ast.Call) -> VectorValue:
-        """``Matrix.identity(n)`` for a literal ``n``."""
+        """``tack.identity(n)`` for a literal ``n``, as ``np.identity``."""
         if (len(node.args) != 1 or not isinstance(node.args[0], ast.Constant)
                 or not isinstance(node.args[0].value, int)
                 or not 1 <= node.args[0].value <= MAX_MATRIX_EXTENT):
             raise NotImplementedError(
-                f"Matrix.identity() takes a literal size from 1 to {MAX_MATRIX_EXTENT}")
+                f"tack.identity() takes a literal size from 1 to {MAX_MATRIX_EXTENT}")
         n = node.args[0].value
         return VectorValue(
             [ir.IRConstant(1.0 if i == j else 0.0) for i in range(n) for j in range(n)], (n, n))
@@ -2541,12 +2562,11 @@ class KernelTransformer(ast.NodeVisitor):
 
         Handles:
         - array[i] → i
-        - array[None] → 0
+        - array[()] → 0, the one element of a zero-dimensional array
         - array[i, j] → i * DimSize(array, 1) + j
         - array[i, j, k] → (i * DimSize(array, 1) + j) * DimSize(array, 2) + k
         """
-        # array[None] → 0
-        if isinstance(node.slice, ast.Constant) and node.slice.value is None:
+        if isinstance(node.slice, ast.Tuple) and not node.slice.elts:
             return ir.IRConstant(0)
 
         # Multi-dimensional: array[i, j, k]

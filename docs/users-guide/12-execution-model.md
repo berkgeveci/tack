@@ -58,7 +58,7 @@ between threads. Sequential statement order inside an iteration is preserved;
 it does not establish an order between rows.
 
 For a serial recurrence, use `for _ in range(1)` with an ordinary loop inside it.
-For multidimensional work, use `tack.ndrange`. See [Kernels](03-kernels.md) for
+For multidimensional work, use `tack.ndindex`. See [Kernels](03-kernels.md) for
 stepped ranges, interior ranges and variable-length inner loops.
 
 ## Separate stages into separate kernels

@@ -77,16 +77,16 @@ class AffineArray:
 # ---------------------------------------------------------------------------
 
 @tack.kernel
-def add_arrays(input1: tack.template(), input2: tack.template(),
-               output: tack.template(), n):
+def add_arrays(input1, input2,
+               output, n):
     """output[i] = input1[i] + input2[i] for any array types."""
     for i in range(n):
         output.set_value(i, input1.get_value(i) + input2.get_value(i))
 
 
 @tack.kernel
-def scale_array(input1: tack.template(), scalar: tack.template(),
-                output: tack.template(), n):
+def scale_array(input1, scalar,
+                output, n):
     """output[i] = input1[i] * scalar[i] -- scalar can be a ConstantArray."""
     for i in range(n):
         output.set_value(i, input1.get_value(i) * scalar.get_value(i))

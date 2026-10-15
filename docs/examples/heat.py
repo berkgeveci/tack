@@ -15,7 +15,7 @@ import tack
 # --8<-- [start:step]
 @tack.kernel
 def heat_step(old, new, r, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         if 0 < i < n - 1 and 0 < j < n - 1:
             lap = old[i - 1, j] + old[i + 1, j] + old[i, j - 1] + old[i, j + 1]
             new[i, j] = old[i, j] + r * (lap - 4.0 * old[i, j])

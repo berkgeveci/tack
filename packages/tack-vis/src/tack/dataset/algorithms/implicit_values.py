@@ -9,7 +9,7 @@ __all__ = ['implicit_values']
 
 
 @tack.kernel
-def _implicit_values(positions, function: tack.template(), out):
+def _implicit_values(positions, function, out):
     for i in range(out.shape[0]):
         out[i] = function.value(positions[i])
 

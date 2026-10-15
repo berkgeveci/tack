@@ -224,7 +224,7 @@ def test_template_method_source_is_preserved():
             return self.val
 
     @tack.kernel
-    def kern(obj: tack.template(), out):
+    def kern(obj, out):
         for i in range(out.shape[0]):
             out[i] = obj.get_val()
 
@@ -254,7 +254,7 @@ def test_repeated_templates_preserve_method_source():
             return x + self.step
 
     @tack.kernel
-    def kern(c: tack.template(), data, out):
+    def kern(c, data, out):
         for i in range(data.shape[0]):
             out[i] = c.apply(data[i])
 

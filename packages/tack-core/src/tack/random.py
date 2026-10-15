@@ -77,7 +77,7 @@ def normal(state):
 def direction2(state):
     """A unit 2-vector with uniformly distributed direction, and the next state."""
     a = TWO_PI * tack.f32(state >> S8) * SCALE
-    return tack.Vector([cos(a), sin(a)]), advance(state)
+    return tack.vec2(cos(a), sin(a)), advance(state)
 
 
 @tack.func
@@ -87,7 +87,7 @@ def direction3(state):
     state = advance(state)
     z = tack.f32(state >> S8) * SCALE * 2.0 - 1.0
     r = sqrt(1.0 - z * z)
-    return tack.Vector([r * cos(a), r * sin(a), z]), advance(state)
+    return tack.vec3(r * cos(a), r * sin(a), z), advance(state)
 
 
 # NumPy mirrors: the same functions over arrays of states, for references.

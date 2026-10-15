@@ -85,7 +85,9 @@ class _SourceValidator(ast.NodeVisitor):
     def visit_Subscript(self, node):
         self.visit(node.value)
         if isinstance(node.slice, ast.Constant) and node.slice.value is None:
-            return  # scalar array[None]
+            self.reject(node.slice, "a zero-dimensional array's element is a[()], as in NumPy")
+        if isinstance(node.slice, ast.Tuple) and not node.slice.elts:
+            return  # a[()]
         self.visit(node.slice)
 
     def visit_IfExp(self, node):
@@ -109,20 +111,7 @@ class _SourceValidator(ast.NodeVisitor):
         for arg in node.args:
             if intrinsic and name == 'print' and isinstance(arg, ast.Constant) and isinstance(arg.value, str):
                 continue
-            if intrinsic and name == 'Vector' and isinstance(arg, ast.List):
-                if not arg.elts:
-                    self.reject(arg, "Vector() requires at least one component")
-                for element in arg.elts:
-                    self.visit(element)
-            elif intrinsic and name == 'Matrix' and isinstance(arg, ast.List):
-                # Rows are lists of scalars, or expressions that are vectors.
-                if not arg.elts:
-                    self.reject(arg, "Matrix() requires at least one row")
-                for row in arg.elts:
-                    for element in (row.elts if isinstance(row, ast.List) else [row]):
-                        self.visit(element)
-            else:
-                self.visit(arg)
+            self.visit(arg)
 
     def visit_List(self, node):
         """A list of scalars is a vector, as in ``pos[i] = [x, y]``."""
@@ -133,14 +122,14 @@ class _SourceValidator(ast.NodeVisitor):
         for element in node.elts:
             if isinstance(element, ast.List):
                 self.reject(element, "a list of lists is not a matrix here; "
-                                     "write tack.Matrix([[...], [...]])")
+                                     "write tack.mat([...], [...])")
             self.visit(element)
 
     def visit_For(self, node):
         if node.orelse:
             self.reject(node, "for-else is not supported")
         if isinstance(node.iter, ast.List):
-            self.reject(node.iter, "a loop iterates over range() or tack.ndrange(), not a list")
+            self.reject(node.iter, "a loop iterates over range() or tack.ndindex(), not a list")
         self.visit(node.target)
         self.visit(node.iter)
         if isinstance(node.iter, ast.Call) and isinstance(node.iter.func, ast.Name) \

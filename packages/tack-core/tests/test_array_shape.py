@@ -171,14 +171,14 @@ def _rows_and_cols(a, out):
 
 
 @tack.kernel
-def _ndrange_shape(a, out):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+def _ndindex_shape(a, out):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         out[i, j] = a[i, j] * 2.0
 
 
 @tack.kernel
 def _transpose_index(a, out):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         out[i, j] = a[a.shape[0] - 1 - i, a.shape[1] - 1 - j]
 
 
@@ -199,9 +199,9 @@ def test_shape_of_each_dimension(backend, rows, cols):
 
 
 @pytest.mark.parametrize("rows,cols", [(4, 8), (8, 4), (3, 5)])
-def test_ndrange_over_shape(backend, rows, cols):
-    """The audit's original repro: ndrange(a.shape[0], a.shape[1])."""
-    src, got = _run2d(_ndrange_shape, rows, cols)
+def test_ndindex_over_shape(backend, rows, cols):
+    """The audit's original repro: ndindex(a.shape[0], a.shape[1])."""
+    src, got = _run2d(_ndindex_shape, rows, cols)
     np.testing.assert_array_equal(got, src * 2.0)
 
 
@@ -312,7 +312,7 @@ class _Holder:
 
 
 @tack.kernel
-def _calls_template(h: tack.template(), out):
+def _calls_template(h, out):
     for i in range(out.shape[0]):
         out[i] = h.scaled(i)
 

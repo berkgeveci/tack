@@ -115,9 +115,9 @@ also sequential. Literal zero and negative steps are rejected; dynamic
 steps must be positive. A `break` from the outer parallel loop is rejected,
 while nested sequential `break` and both forms of `continue` are supported.
 
-### ndrange
+### ndindex
 
-A top-level `for i, j in tack.ndrange(w, h)` (or three dimensions) becomes
+A top-level `for i, j in tack.ndindex(w, h)` (or three dimensions) becomes
 one `IRParallelFor` that keeps its dimensions: `dims` names one index
 variable per dimension, slowest first, and `extents` holds their sizes as
 host-evaluated expressions, like the loop's `end` (their product). The body
@@ -127,7 +127,7 @@ dimension variables from a launch of the same shape (see
 `lang/parallel_dims.py`).
 
 A kernel that uses workgroup primitives, a loop of four or more dimensions,
-and an `ndrange` nested inside the parallel loop keep the flat form, a loop
+and an `ndindex` nested inside the parallel loop keep the flat form, a loop
 over the product whose body recovers the indices:
 
 ```

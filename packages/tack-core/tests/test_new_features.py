@@ -1,5 +1,5 @@
-"""Tests for new Tack features: @tack.func, ndrange, multi-dim indexing,
-array[None], Vector types, and vector methods."""
+"""Tests for new Tack features: @tack.func, ndindex, multi-dim indexing,
+array[()], Vector types, and vector methods."""
 
 import numpy as np
 import pytest
@@ -84,7 +84,7 @@ def test_func_inline_nested(backend):
     assert np.allclose(result, expected)
 
 
-# ─── array[None] (scalar arrays) ──────────────────────────────────────
+# ─── array[()] (scalar arrays) ──────────────────────────────────────
 
 @tack.kernel
 def scale_array(x, factor, out):
@@ -105,17 +105,17 @@ def test_scalar_array(backend):
     assert np.allclose(result, 7.5)
 
 
-# ─── ndrange (2D parallel iteration) ──────────────────────────────────
+# ─── ndindex (2D parallel iteration) ──────────────────────────────────
 
 @tack.kernel
 def fill_2d(out, w_array):
     w = w_array[0]
-    for i, j in tack.ndrange(4, 4):
+    for i, j in tack.ndindex(4, 4):
         out[i * 4 + j] = float(i * 10 + j)
 
 
-def test_ndrange_2d(backend):
-    """2D parallel iteration with ndrange."""
+def test_ndindex_2d(backend):
+    """2D parallel iteration with ndindex."""
     out = tack.empty((16,))
     w_array = tack.empty((1,))
     tack.copyto(w_array, np.array([4.0], dtype=np.float32))
@@ -131,8 +131,8 @@ def test_ndrange_2d(backend):
 @tack.kernel
 def vec_add(ax, ay, az, bx, by, bz, cx, cy, cz):
     for i in range(ax.shape[0]):
-        a = tack.Vector([ax[i], ay[i], az[i]])
-        b = tack.Vector([bx[i], by[i], bz[i]])
+        a = tack.vec3(ax[i], ay[i], az[i])
+        b = tack.vec3(bx[i], by[i], bz[i])
         c = a + b
         cx[i] = c[0]
         cy[i] = c[1]
@@ -165,7 +165,7 @@ def test_vector_add(backend):
 @tack.kernel
 def vec_scalar_mul(ax, ay, az, cx, cy, cz):
     for i in range(ax.shape[0]):
-        a = tack.Vector([ax[i], ay[i], az[i]])
+        a = tack.vec3(ax[i], ay[i], az[i])
         c = 2.0 * a
         cx[i] = c[0]
         cy[i] = c[1]
@@ -198,8 +198,8 @@ def test_vector_scalar_mul(backend):
 @tack.kernel
 def vec_dot(ax, ay, az, bx, by, bz, out):
     for i in range(ax.shape[0]):
-        a = tack.Vector([ax[i], ay[i], az[i]])
-        b = tack.Vector([bx[i], by[i], bz[i]])
+        a = tack.vec3(ax[i], ay[i], az[i])
+        b = tack.vec3(bx[i], by[i], bz[i])
         out[i] = a.dot(b)
 
 
@@ -230,8 +230,8 @@ def test_vector_dot(backend):
 @tack.kernel
 def vec_cross(ax, ay, az, bx, by, bz, cx, cy, cz):
     for i in range(ax.shape[0]):
-        a = tack.Vector([ax[i], ay[i], az[i]])
-        b = tack.Vector([bx[i], by[i], bz[i]])
+        a = tack.vec3(ax[i], ay[i], az[i])
+        b = tack.vec3(bx[i], by[i], bz[i])
         c = a.cross(b)
         cx[i] = c[0]
         cy[i] = c[1]
@@ -269,7 +269,7 @@ def test_vector_cross(backend):
 @tack.kernel
 def vec_normalize(ax, ay, az, cx, cy, cz):
     for i in range(ax.shape[0]):
-        a = tack.Vector([ax[i], ay[i], az[i]])
+        a = tack.vec3(ax[i], ay[i], az[i])
         n = a.normalized()
         cx[i] = n[0]
         cy[i] = n[1]
@@ -328,7 +328,7 @@ def test_func_with_multiple_locals(backend):
 
 @tack.kernel
 def fill_2d_array(out):
-    for i, j in tack.ndrange(4, 3):
+    for i, j in tack.ndindex(4, 3):
         out[i, j] = float(i * 10 + j)
 
 
@@ -385,7 +385,7 @@ def _element_2d(vf, i, j):
 def _guarded_element(vf, i, n):
     # Two returns, one a literal vector: both must carry the width.
     if i < 0 or i >= n:
-        return tack.Vector([0.0, 0.0, 0.0])
+        return tack.vec3(0.0, 0.0, 0.0)
     return vf[i]
 
 
@@ -405,7 +405,7 @@ def vec_array_through_func(vf, out, blended, n):
 
 @tack.kernel
 def vec_array_2d_through_func(vf, out, w, h):
-    for i, j in tack.ndrange(w, h):
+    for i, j in tack.ndindex(w, h):
         out[i, j] = _element_2d(vf, i, j)
 
 
@@ -444,7 +444,7 @@ def test_vector_array_2d_element_returned_from_func(backend):
 @tack.kernel
 def vec_array_store(in_x, in_y, in_z, vf):
     for i in range(in_x.shape[0]):
-        v = tack.Vector([in_x[i], in_y[i], in_z[i]])
+        v = tack.vec3(in_x[i], in_y[i], in_z[i])
         vf[i] = v
 
 
@@ -469,14 +469,14 @@ def test_vector_array_store(backend):
 @tack.kernel
 def scalar_vec_array_load(cam, out_x, out_y, out_z):
     for i in range(out_x.shape[0]):
-        c = cam[None]
+        c = cam[()]
         out_x[i] = c[0]
         out_y[i] = c[1]
         out_z[i] = c[2]
 
 
 def test_scalar_vector_array(backend):
-    """Scalar vector array (shape=()) load with array[None]."""
+    """Scalar vector array (shape=()) load with array[()]."""
     cam = tack.empty((), tack.vec(3, tack.f32))
     tack.copyto(cam, np.array([1.0, 2.0, 3.0], dtype=np.float32))
 
@@ -577,7 +577,7 @@ def vec_chained_subscripts(vf, sel, out, n):
 
 @tack.func
 def _pair(x):
-    return tack.Vector([x, x * 2.0])
+    return tack.vec2(x, x * 2.0)
 
 
 @tack.kernel
@@ -666,7 +666,7 @@ def vec_assign_from_itself(a, b, crossed, rotated, augmented, n):
         v = v.cross(b[i])
         crossed[i] = v
         r = a[i]
-        r = tack.Vector([r[1], r[2], r[0]])
+        r = tack.vec3(r[1], r[2], r[0])
         rotated[i] = r
         g = a[i]
         g += g.cross(b[i])
@@ -677,14 +677,14 @@ def vec_assign_from_itself(a, b, crossed, rotated, augmented, n):
 def vec_array_store_from_itself(a, b, c, n):
     for i in range(n):
         a[i] = a[i].cross(b[i])
-        c[i] = tack.Vector([c[i][1], c[i][2], c[i][0]])
+        c[i] = tack.vec3(c[i][1], c[i][2], c[i][0])
 
 
 @tack.kernel
 def vec_array_store_through_alias(src, dst, n):
     for i in range(n):
         v = src[i]
-        dst[i] = tack.Vector([v[2], src[i][0], src[i][1]])
+        dst[i] = tack.vec3(v[2], src[i][0], src[i][1])
 
 
 @tack.kernel
@@ -693,7 +693,7 @@ def vec_unpack_from_itself(a, out, n):
         p = a[i]
         x = p[0]
         y = p[1]
-        x, y = tack.Vector([x, y]) * 2.0 + tack.Vector([y, x])
+        x, y = tack.vec2(x, y) * 2.0 + tack.vec2(y, x)
         out[i] = x * 10.0 + y
 
 
@@ -754,7 +754,7 @@ def vec_math_builtins(a, rounded, clamped, powered, n):
     for i in range(n):
         v = a[i]
         rounded[i] = floor(v) + sqrt(abs(v)) + ceil(v)
-        clamped[i] = min(max(v, -1.0), tack.Vector([0.5, 1.5, 2.5])) + max(0, v)
+        clamped[i] = min(max(v, -1.0), tack.vec3(0.5, 1.5, 2.5)) + max(0, v)
         powered[i] = pow(abs(v), 2.0) + atan2(v, 1.0)
 
 
@@ -842,7 +842,7 @@ def vec_array_element_components(a, b, sel, n):
 @tack.kernel
 def vec_array_augmented(a, b, n):
     for i in range(n):
-        a[i] -= 0.5 * tack.Vector([a[i][1], a[i][2], a[i][0]])
+        a[i] -= 0.5 * tack.vec3(a[i][1], a[i][2], a[i][0])
         b[i] *= 2.0
         b[i] += a[i]
 
@@ -850,7 +850,7 @@ def vec_array_augmented(a, b, n):
 @tack.kernel
 def array_indexed_by_vector(grid, out, n):
     for i in range(n):
-        cell = tack.Vector([i, 2 - i % 3])
+        cell = tack.vec2(i, 2 - i % 3)
         out[i] = grid[cell] + grid[cell + 1]
 
 
@@ -913,7 +913,7 @@ def _vector_width_mismatch():
     @tack.kernel
     def bad(vf, s, out, n):
         for i in range(n):
-            out[i] = max(vf[i], tack.Vector([1.0, 2.0]))
+            out[i] = max(vf[i], tack.vec2(1.0, 2.0))
     return bad
 
 
@@ -956,7 +956,7 @@ def _augmented_width_mismatch():
     @tack.kernel
     def bad(vf, s, out, n):
         for i in range(n):
-            vf[i] += tack.Vector([1.0, 2.0])
+            vf[i] += tack.vec2(1.0, 2.0)
     return bad
 
 
@@ -987,7 +987,7 @@ def _sum_and_difference(a, b):
 def tuple_assign_to_subscripts(pos, heading, lo, hi, n):
     for i in range(n):
         p, h = pos[i], heading[i]
-        p += tack.Vector([h, -h, 1.0])
+        p += tack.vec3(h, -h, 1.0)
         pos[i], heading[i] = p, h * 2.0
         lo[i], hi[i] = hi[i], lo[i]
         lo[i], hi[i] = _sum_and_difference(lo[i], hi[i])
@@ -1040,8 +1040,8 @@ def atomic_scatter(cells, grid, layers, momentum, bias, n):
         tack.atomic_add(grid, (cell[0], cell[1]), 1.0)
         tack.atomic_add(layers, (1, cell), 2.0)
         tack.atomic_max(layers, (0, cell[0], cell[1]), float(i))
-        tack.atomic_add(momentum, cell, tack.Vector([1.0, float(i)]))
-        tack.atomic_add(momentum, (cell[0], 0), tack.Vector([0.0, 1.0]) + bias[0])
+        tack.atomic_add(momentum, cell, tack.vec2(1.0, float(i)))
+        tack.atomic_add(momentum, (cell[0], 0), tack.vec2(0.0, 1.0) + bias[0])
 
 
 def test_atomics_take_an_index_per_dimension(backend):
@@ -1096,7 +1096,7 @@ def _atomic_width_mismatch():
     @tack.kernel
     def bad(vf, s, out, n):
         for i in range(n):
-            tack.atomic_add(vf, i, tack.Vector([1.0, 2.0]))
+            tack.atomic_add(vf, i, tack.vec2(1.0, 2.0))
     return bad
 
 
@@ -1116,8 +1116,8 @@ def test_mismatched_atomics_are_rejected(define, message):
 @tack.func
 def _closest_hit(v, scale):
     closest = v.norm() * scale
-    normal = tack.Vector([0.0, 0.0, 0.0])
-    color = tack.Vector([0.0, 0.0, 0.0])
+    normal = tack.vec3(0.0, 0.0, 0.0)
+    color = tack.vec3(0.0, 0.0, 0.0)
     if closest > 2.0:
         normal = v.normalized()
         color = abs(v) * 0.5
@@ -1136,8 +1136,8 @@ def tuple_return_with_vectors(a, shaded, normals, n):
 def vec_reductions(a, out, safe, n):
     for i in range(n):
         v = a[i]
-        out[i] = tack.Vector([min(v[0], v[1], v[2]), max(v[0], 0.5, v[2], v[1]),
-                              v.max() + v.min() + v.sum()])
+        out[i] = tack.vec3(min(v[0], v[1], v[2]), max(v[0], 0.5, v[2], v[1]),
+                           v.max() + v.min() + v.sum())
         safe[i] = v.normalized(1e-3) + (v * 0.0).normalized(1e-3) + max(v, 0.0, -v) * 0.0
 
 
@@ -1196,30 +1196,30 @@ def test_misused_results_and_reductions_are_rejected(define, message):
         define().get_ir(vector_arrays={"vf": 3, "out": 3})
 
 
-# --- ndrange with (start, end) ranges ---
+# --- ndindex with (start, end) ranges ---
 
 @tack.kernel
-def ndrange_interior(a, n, m):
-    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+def ndindex_interior(a, n, m):
+    for i, j in tack.ndindex((1, n - 1), (1, m - 1)):
         a[i, j] = i * 10 + j
 
 
 @tack.kernel
-def ndrange_mixed(a, n, lo, hi, d):
-    for i, j, k in tack.ndrange(n, (lo, hi), d):
+def ndindex_mixed(a, n, lo, hi, d):
+    for i, j, k in tack.ndindex(n, (lo, hi), d):
         a[i, j, k] += 1
 
 
 @tack.kernel
-def ndrange_two_reversed(a, n):
-    for i, j in tack.ndrange((3, 1), (4, 2)):
+def ndindex_two_reversed(a, n):
+    for i, j in tack.ndindex((3, 1), (4, 2)):
         a[i, j] += 1
 
 
 @tack.kernel
-def ndrange_inner(a, n, m):
+def ndindex_inner(a, n, m):
     for i in range(n):
-        for j, k in tack.ndrange((2, m), (i, i + 2)):
+        for j, k in tack.ndindex((2, m), (i, i + 2)):
             a[j, k] += 1
 
 
@@ -1230,8 +1230,8 @@ def range_from_negative(a, n):
 
 
 @tack.kernel
-def ndrange_from_negative(a, n, m):
-    for i, j in tack.ndrange((-n, n + 1), (-m, +m)):
+def ndindex_from_negative(a, n, m):
+    for i, j in tack.ndindex((-n, n + 1), (-m, +m)):
         a[i + n, j + m] = i * 10 + j
 
 
@@ -1270,45 +1270,45 @@ def test_parallel_range_may_start_at_a_negated_argument(backend):
 
     b = _zeros_i32((5, 6))
     b.fill(99)
-    ndrange_from_negative(b, 2, 3)
+    ndindex_from_negative(b, 2, 3)
     rows, cols = np.mgrid[-2:3, -3:3]
     np.testing.assert_array_equal(b.numpy(), rows * 10 + cols)
 
 
-def test_ndrange_takes_start_end_ranges(backend):
-    """`ndrange((1, n - 1), (1, m - 1))` visits the interior; a size and a
+def test_ndindex_takes_start_end_ranges(backend):
+    """`ndindex((1, n - 1), (1, m - 1))` visits the interior; a size and a
     range can be mixed."""
     a = _zeros_i32((5, 7))
-    ndrange_interior(a, 5, 7)
+    ndindex_interior(a, 5, 7)
     want = np.zeros((5, 7), np.int32)
     rows, cols = np.mgrid[1:4, 1:6]
     want[1:4, 1:6] = rows * 10 + cols
     np.testing.assert_array_equal(a.numpy(), want)
 
     b = _zeros_i32((3, 6, 2))
-    ndrange_mixed(b, 3, 2, 5, 2)
+    ndindex_mixed(b, 3, 2, 5, 2)
     want = np.zeros((3, 6, 2), np.int32)
     want[:, 2:5, :] = 1
     np.testing.assert_array_equal(b.numpy(), want)
 
 
 @pytest.mark.parametrize("lo, hi", [(4, 4), (5, 2)])
-def test_empty_or_reversed_ndrange_range_runs_nothing(backend, lo, hi):
+def test_empty_or_reversed_ndindex_range_runs_nothing(backend, lo, hi):
     b = _zeros_i32((3, 6, 2))
-    ndrange_mixed(b, 3, lo, hi, 2)
+    ndindex_mixed(b, 3, lo, hi, 2)
     assert not b.numpy().any()
 
 
-def test_two_reversed_ndrange_ranges_run_nothing(backend):
+def test_two_reversed_ndindex_ranges_run_nothing(backend):
     """Two negative extents must not multiply into a positive count."""
     a = _zeros_i32((5, 5))
-    ndrange_two_reversed(a, 5)
+    ndindex_two_reversed(a, 5)
     assert not a.numpy().any()
 
 
-def test_sequential_ndrange_ranges_may_use_the_outer_index(backend):
+def test_sequential_ndindex_ranges_may_use_the_outer_index(backend):
     a = _zeros_i32((5, 8))
-    ndrange_inner(a, 3, 5)
+    ndindex_inner(a, 3, 5)
     want = np.zeros((5, 8), np.int32)
     for i in range(3):
         want[2:5, i:i + 2] += 1
@@ -1367,7 +1367,7 @@ def _vector_into_another_width():
     @tack.kernel
     def bad(vf, s, out, n):
         for i in range(n):
-            vf[i] = tack.Vector([1.0, 2.0])
+            vf[i] = tack.vec2(1.0, 2.0)
     return bad
 
 
@@ -1490,7 +1490,7 @@ def tuple_targets_in_order(a, b, c, d, t, n):
         b[j], j = _doubled_and_next(float(t[k]))
         m = k
         m, c[m] = t[k] + 1, 7.0          # rebinds first, so stores at the new m
-        d[k], y = tack.Vector([d[k] + 1.0, d[k]])
+        d[k], y = tack.vec2(d[k] + 1.0, d[k])
         d[k + 4] = y                     # the value read before the store to d[k]
 
 
@@ -1523,7 +1523,7 @@ def two_indices(grid, out, n):
 @tack.kernel
 def vector_index_and_atomic(grid, out, n):
     for k in range(n):
-        cell = tack.Vector([1, 2])
+        cell = tack.vec2(1, 2)
         out[k] = grid[cell]
         tack.atomic_add(grid, cell, 1.0)
 
@@ -1610,7 +1610,7 @@ def list_vectors(vf, m, out, n):
 
 def test_a_list_of_scalars_is_a_vector(backend):
     """`pos[i] = [x, y]`, as Taichi programs write it, is
-    `pos[i] = tack.Vector([x, y])` wherever a vector is accepted. It was
+    `pos[i] = tack.vec2(x, y)` wherever a vector is accepted. It was
     "unsupported List"."""
     n = 4
     vf = tack.empty((n,), tack.vec(2, tack.f32))

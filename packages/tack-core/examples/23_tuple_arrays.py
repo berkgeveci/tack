@@ -125,7 +125,7 @@ class SOATupleArray{nc}:
 # ================================================================
 
 @tack.kernel
-def compute_magnitude(arr: tack.template(), output, n):
+def compute_magnitude(arr, output, n):
     """Compute 3D vector magnitude: sqrt(x^2 + y^2 + z^2)."""
     for i in range(n):
         x = arr.get_value(i, 0)
@@ -135,8 +135,8 @@ def compute_magnitude(arr: tack.template(), output, n):
 
 
 @tack.kernel
-def add_tuple_arrays(a: tack.template(), b: tack.template(),
-                     out: tack.template(), n, nc):
+def add_tuple_arrays(a, b,
+                     out, n, nc):
     """Component-wise addition: out[i,c] = a[i,c] + b[i,c]."""
     for i in range(n):
         for c in range(nc):
@@ -144,7 +144,7 @@ def add_tuple_arrays(a: tack.template(), b: tack.template(),
 
 
 @tack.kernel
-def scale_tuple_array(arr: tack.template(), factor, out: tack.template(), n, nc):
+def scale_tuple_array(arr, factor, out, n, nc):
     """Scale every component: out[i,c] = arr[i,c] * factor."""
     for i in range(n):
         for c in range(nc):
@@ -152,7 +152,7 @@ def scale_tuple_array(arr: tack.template(), factor, out: tack.template(), n, nc)
 
 
 @tack.kernel
-def dot_product(a: tack.template(), b: tack.template(), output, n, nc):
+def dot_product(a, b, output, n, nc):
     """Per-tuple dot product: output[i] = sum_c(a[i,c] * b[i,c])."""
     for i in range(n):
         s = 0.0

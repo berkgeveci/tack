@@ -345,7 +345,7 @@ def test_arrays_own_their_buffers_alone():
     retain too many and was never freed."""
 
     @tack.kernel
-    def fill(a: tack.template()):
+    def fill(a):
         for i in range(a.shape[0]):
             a[i] = i * 0.5
 
@@ -365,7 +365,7 @@ def test_arrays_own_their_buffers_alone():
 # --- Queued launches ---
 
 @tack.kernel
-def _add_into(acc: tack.template(), k: tack.i32):
+def _add_into(acc, k: tack.i32):
     for i in range(acc.shape[0]):
         acc[i] = acc[i] + k + i
 
@@ -402,9 +402,9 @@ def test_host_writes_wait_for_the_launches_before_them():
 
 
 @tack.kernel
-def _record_value(value: tack.template(), out: tack.template(), k: int, n: int):
+def _record_value(value, out, k: int, n: int):
     for i in range(n):
-        out[k * n + i] = value[None] + 0.0 * float(i)
+        out[k * n + i] = value[()] + 0.0 * float(i)
 
 
 def test_host_writes_wait_after_tack_init_runs_again():
@@ -441,7 +441,7 @@ def test_zeros_do_not_wait_for_queued_launches(monkeypatch):
     from tack.runtime import metal
 
     @tack.kernel
-    def dirty(a: tack.template()):
+    def dirty(a):
         for i in range(a.shape[0]):
             a[i] = 7
 
@@ -469,7 +469,7 @@ def test_new_arrays_are_zero():
     import gc
 
     @tack.kernel
-    def dirty(a: tack.template()):
+    def dirty(a):
         for i in range(a.shape[0]):
             a[i] = 7
 

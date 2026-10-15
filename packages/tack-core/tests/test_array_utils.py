@@ -399,19 +399,19 @@ def test_fill_stays_on_the_device(backend):
 @tack.kernel
 def _add_offset(offset, x, out, n):
     for i in range(n):
-        out[i] = x[i] + offset[None]
+        out[i] = x[i] + offset[()]
 
 
 @tack.kernel
 def _bump_scalar(offset):
     for _ in range(1):
-        offset[None] = offset[None] + 7
+        offset[()] = offset[()] + 7
 
 
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32])
 def test_zero_dimensional_scalar_array(backend, dtype):
     """`tack.empty((), dtype)` is one value, read and written as
-    `f[None]`. Metal could not allocate it: its buffer zeroed the view
+    `f[()]`. Metal could not allocate it: its buffer zeroed the view
     with `[:]`, which a zero-dimensional array rejects. A zero-dimensional
     vector array has a flat shape of `(n,)` and was not affected."""
     assert tack.empty((), dtype).numpy().shape == ()
@@ -435,7 +435,7 @@ def test_zero_dimensional_scalar_array(backend, dtype):
 # --- Reading one element from the host ---
 
 def test_host_reads_one_element(backend):
-    """`f[i]`, `f[i, j]`, `f[None]` read an element from the host: a Python
+    """`f[i]`, `f[i, j]`, `f[()]` read an element from the host: a Python
     number from an array of scalars, a NumPy array from a vector or matrix
     array. Negative indices count from the end."""
     f = tack.empty((3, 4))
@@ -455,7 +455,7 @@ def test_host_reads_one_element(backend):
 
     z = tack.empty((), tack.i32)
     z.fill(9)
-    assert z[None] == 9 and isinstance(z[None], int)
+    assert z[()] == 9 and isinstance(z[()], int)
 
 
 @pytest.mark.parametrize("dt", ["i8", "u16", "i32", "i64", "f32"])
@@ -490,7 +490,7 @@ def test_host_reads_are_checked_and_writes_refused(backend):
     with pytest.raises(IndexError, match="out of range"):
         f[0, 4]
     with pytest.raises(TypeError, match="takes 2 integer indices"):
-        f[None]
+        f[()]
     with pytest.raises(TypeError, match="not written by element"):
         f[0, 0] = 1.0
     with pytest.raises(TypeError, match="not iterated"):

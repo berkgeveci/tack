@@ -349,10 +349,10 @@ def test_stepped_range_checks_logical_count(workgroup_backend):
     np.testing.assert_array_equal(out.numpy(), np.full(768, -7))
 
 
-def test_ndrange_checks_flattened_count(workgroup_backend):
+def test_ndindex_checks_flattened_count(workgroup_backend):
     @tack.kernel
     def kernel(out, width):
-        for i, j in tack.ndrange(16, width):
+        for i, j in tack.ndindex(16, width):
             tack.barrier()
             out[i, j] = i * 1000 + j
 

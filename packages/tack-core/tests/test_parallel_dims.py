@@ -1,6 +1,6 @@
-"""Multi-dimensional parallel loops: ``tack.ndrange`` without division.
+"""Multi-dimensional parallel loops: ``tack.ndindex`` without division.
 
-A kernel's parallel loop over a two- or three-dimensional ``ndrange``
+A kernel's parallel loop over a two- or three-dimensional ``ndindex``
 keeps one index variable per dimension, and each backend binds them from
 a launch of the same shape: CPU workers walk their chunk of the flat range
 row by row, GPUs launch a 2D or 3D grid. Workgroup kernels and loops of
@@ -28,25 +28,25 @@ pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
 
 @tack.kernel
 def _fill2(a):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         a[i, j] = i * 1000 + j
 
 
 @tack.kernel
 def _fill3(a, lo):
-    for i, j, k in tack.ndrange((lo, a.shape[0]), a.shape[1], (1, a.shape[2])):
+    for i, j, k in tack.ndindex((lo, a.shape[0]), a.shape[1], (1, a.shape[2])):
         a[i, j, k] = i * 1_000_000 + j * 1000 + k
 
 
 @tack.kernel
 def _scalar_extents(a, rows, cols):
-    for i, j in tack.ndrange(rows, cols):
+    for i, j in tack.ndindex(rows, cols):
         a[i * cols + j] = i * cols + j + 1
 
 
 @tack.kernel
 def _skip_odd_columns(a):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         if j % 2 == 1:
             continue
         a[i, j] = 1
@@ -54,20 +54,20 @@ def _skip_odd_columns(a):
 
 @tack.kernel
 def _row_sums(a, sums):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         tack.atomic_add(sums, i, a[i, j])
 
 
 @tack.kernel
 def _fill4(a):
-    for i, j, k, m in tack.ndrange(a.shape[0], a.shape[1], a.shape[2], a.shape[3]):
+    for i, j, k, m in tack.ndindex(a.shape[0], a.shape[1], a.shape[2], a.shape[3]):
         a[i, j, k, m] = i * 1000 + j * 100 + k * 10 + m
 
 
 @tack.kernel
 def _nested(a):
     for r in range(a.shape[0]):
-        for j, k in tack.ndrange(a.shape[1], a.shape[2]):
+        for j, k in tack.ndindex(a.shape[1], a.shape[2]):
             a[r, j, k] = r * 100 + j * 10 + k
 
 
@@ -136,7 +136,7 @@ def test_one_variant_for_every_extent(backend):
 
 @tack.kernel
 def _accumulate(a, n):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         for k in range(n):
             a[i, j] += i + j
 
@@ -149,7 +149,7 @@ def test_a_sequential_loop_storing_inside(backend):
     np.testing.assert_array_equal(a.numpy(), 5 * (i + j))
 
 
-def test_four_dimensions_and_nested_ndrange_stay_flat(backend):
+def test_four_dimensions_and_nested_ndindex_stay_flat(backend):
     a = _i32((2, 3, 4, 5))
     _fill4(a)
     i, j, k, m = np.indices((2, 3, 4, 5))
@@ -184,7 +184,7 @@ def _walk(stmts):
 
 @tack.kernel
 def _shared_rows(a):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         scratch = tack.shared(tack.i32, 256)
         scratch[tack.thread_id()] = i * 1000 + j
         tack.barrier()

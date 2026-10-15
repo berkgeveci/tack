@@ -47,7 +47,7 @@ class Agents:
 
 # --8<-- [start:move]
 @tack.kernel
-def move(agents: tack.template(), trail, frame):
+def move(agents, trail, frame):
     for i in range(agents.n):
         p, angle = agents.pos[i], agents.heading[i]
         left = agents.sense(trail, p, angle - agents.sense_angle)
@@ -60,12 +60,12 @@ def move(agents: tack.template(), trail, frame):
         elif center < left and center < right:
             coin, state = random.uniform(random.seed(i, frame + 1))
             angle += agents.turn_angle * (2 * int(coin < 0.5) - 1)
-        agents.pos[i] = (p + tack.Vector([cos(angle), sin(angle)])) % agents.size
+        agents.pos[i] = (p + tack.vec2(cos(angle), sin(angle))) % agents.size
         agents.heading[i] = angle
 
 
 @tack.kernel
-def deposit(agents: tack.template(), trail):
+def deposit(agents, trail):
     for i in range(agents.n):
         cell = int(agents.pos[i]) % agents.size
         tack.atomic_add(trail, cell, 1.0)
@@ -73,7 +73,7 @@ def deposit(agents: tack.template(), trail):
 
 @tack.kernel
 def diffuse(old, new, size, evaporation):
-    for i, j in tack.ndrange(size, size):
+    for i, j in tack.ndindex(size, size):
         total = 0.0
         for di in range(-1, 2):
             for dj in range(-1, 2):

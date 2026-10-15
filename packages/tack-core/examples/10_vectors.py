@@ -44,7 +44,7 @@ tack.copyto(az, np.linspace(0, 1, n, dtype=np.float32))
 def normalize_vectors(ax, ay, az, nx_out, ny_out, nz_out):
     """Normalize each vector to unit length."""
     for i in range(ax.shape[0]):
-        v = tack.Vector([ax[i], ay[i], az[i]])
+        v = tack.vec3(ax[i], ay[i], az[i])
         n = v.normalized()
         nx_out[i] = n[0]
         ny_out[i] = n[1]
@@ -78,8 +78,8 @@ tack.copyto(bz, np.zeros(n, dtype=np.float32))
 def compute_dot(ax, ay, az, bx, by, bz, dot_out):
     """Compute dot product of two vector arrays."""
     for i in range(ax.shape[0]):
-        a = tack.Vector([ax[i], ay[i], az[i]])
-        b = tack.Vector([bx[i], by[i], bz[i]])
+        a = tack.vec3(ax[i], ay[i], az[i])
+        b = tack.vec3(bx[i], by[i], bz[i])
         dot_out[i] = a.dot(b)
 
 
@@ -101,8 +101,8 @@ cz_out = tack.empty((n,))
 def compute_cross(ax, ay, az, bx, by, bz, cx, cy, cz):
     """Cross product of two vector arrays."""
     for i in range(ax.shape[0]):
-        a = tack.Vector([ax[i], ay[i], az[i]])
-        b = tack.Vector([bx[i], by[i], bz[i]])
+        a = tack.vec3(ax[i], ay[i], az[i])
+        b = tack.vec3(bx[i], by[i], bz[i])
         c = a.cross(b)
         cx[i] = c[0]
         cy[i] = c[1]

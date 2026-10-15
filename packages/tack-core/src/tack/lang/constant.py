@@ -44,7 +44,7 @@ class ArrayConstant:
     """A vector or matrix that kernels may read by name.
 
     ``SUN = tack.constant((0.5, 0.5, 0.0))`` is the vector
-    ``tack.Vector([0.5, 0.5, 0.0])`` in a kernel, and
+    ``tack.vec3(0.5, 0.5, 0.0)`` in a kernel, and
     ``tack.constant(((1, 0), (0, 1)))`` the matrix with those rows, each
     component a constant with the rules of ``tack.constant``. On the host
     it indexes and iterates like a tuple of its rows and converts to a

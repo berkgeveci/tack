@@ -181,8 +181,8 @@ def test_vector_components_cannot_overwrite_scalar_bindings(backend):
         for i in range(out.shape[0]):
             v__0 = tack.i32(100)
             v__1 = tack.i32(200)
-            v = tack.Vector([i, 2, 3])
-            v += tack.Vector([1, 2, 3])
+            v = tack.vec3(i, 2, 3)
+            v += tack.vec3(1, 2, 3)
             out[i] = v[0] + v[1] + v[2] + v__0 + v__1
 
     out = tack.empty((7,), tack.i32)

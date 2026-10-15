@@ -319,7 +319,7 @@ To avoid that, pass the length as a scalar argument (`def reverse(x, out, n)`) â
 
 ### Multi-dimensional parallel loops
 
-A top-level `tack.ndrange` of two or three dimensions lowers to one
+A top-level `tack.ndindex` of two or three dimensions lowers to one
 `IRParallelFor` with `dims` (one index variable per dimension, slowest
 first) and `extents` (host-evaluated sizes, like `end`, their product;
 not a traversed child, so no pass folds them). Nothing divides: CPU
@@ -330,7 +330,7 @@ position; CUDA/HIP/OpenCL take `__flat__` and `__ext_k__` after `__n__`
 and launch the grid `launch_geometry` picks (block up to 256 along x,
 then y, then z), or a flat one with `__flat__` set when the device's
 grid limits are exceeded. `ast_transform` flattens workgroup kernels
-(`parallel_dims.flatten`); 4+ dimensions and nested `ndrange` keep the
+(`parallel_dims.flatten`); 4+ dimensions and nested `ndindex` keep the
 flat form. `_get_launch` returns `(items, extents)` and treats any
 non-positive extent as empty. Every pass that knows `var` knows `dims`.
 See `test_parallel_dims.py`.
@@ -526,7 +526,7 @@ The parallel loop must be a `for` directly in the kernel body, exactly once. Sta
 
 ### @tack.device_class templates
 
-Classes decorated with `@tack.device_class` can be passed as template arguments. A kernel defined in the class body binds the instance it is called on (`Kernel.__get__` returns a bound method), so `model.step(dt)` passes `model` as the first argument; template detection is by argument type, so nothing else changes. `template_func_methods` unwraps `@staticmethod` over `@tack.func`. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), array attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`. `for c in obj:` over a template is rewritten in `_KernelTemplateRewriter.visit_For` to `range` (one name in the class's `__tack_iterate__`) or to an `ndrange` over its names reversed, binding `c` to the index vector fastest first (`iteration_space`, `test_template_iteration.py`).
+Classes decorated with `@tack.device_class` can be passed as template arguments. A kernel defined in the class body binds the instance it is called on (`Kernel.__get__` returns a bound method), so `model.step(dt)` passes `model` as the first argument; template detection is by argument type, so nothing else changes. `template_func_methods` unwraps `@staticmethod` over `@tack.func`. Methods and class constants are collected along the MRO when a kernel is lowered (`template_func_methods`, `classify_template_attrs`), so subclasses inherit and override them. An instance attribute holding a `@tack.func` (`template_func_attrs`) is called as that plain function, with no synthetic parameters, and its identity is part of the template cache key. Class-level scalar attributes become compile-time constants (part of cache key), instance scalar attributes become runtime kernel parameters (no recompilation on change), array attributes become kernel buffer parameters, and `@tack.func` methods are inlined with `self` resolved. Methods can call sibling methods on `self`. `for c in obj:` over a template is rewritten in `_KernelTemplateRewriter.visit_For` to `range` (one name in the class's `__tack_iterate__`) or to an `ndindex` over its names reversed, binding `c` to the index vector fastest first (`iteration_space`, `test_template_iteration.py`).
 
 A template may hold templates as attributes, to any depth (`self.base.get(k)`, `obj.base.step` in a kernel). `template_tree` lists the tree (cycles refused); `classify_template_attrs` flattens it, nested names joined by `__` (`base__step`), so expansion and vector detection are unchanged; `rewrite_templates` resolves chains through `_Node`s, every method of the tree taking the tree's synthetic parameters; a chain stops at the first non-template attribute (`self.data.shape[0]`). Nested paths and classes are in the cache key (`template_structure`) and their class tokens retire variants. `resolve_variant` runs in a `template_scope` that memoizes each object's tree, classification and key part for the call: walking a tree per use cost 20 us a level per dispatch, now about 8. Composed code inlines to what one would write by hand (identical optimized LLVM IR). See `test_nested_templates.py`.
 
@@ -667,7 +667,7 @@ A fixed element count cannot work here: the crossover moves ~1000Ã— with arithme
 
 ## Kernel language features
 
-- **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndrange(w, h)` (each argument a size or a `(start, end)` pair, whose extent is clamped at zero; the host evaluates `max`/`min` in the launch size), `while`, `break`, `continue`
+- **Loops**: `for i in range(n)`, `for i in range(start, end)`, `for i in range(start, end, step)`, `for i, j in tack.ndindex(w, h)` (each argument a size or a `(start, end)` pair, whose extent is clamped at zero; the host evaluates `max`/`min` in the launch size), `while`, `break`, `continue`
 - **Masks**: comparisons of vectors give a vector of `0`/`1` per component; `any(mask)`, `all(mask)`, `tack.select(mask, a, b)`
 - **Math**: `sqrt`, `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `atan2`, `sinh`, `cosh`, `tanh`, `exp`, `exp2`, `log`, `log2`, `log10`, `floor`, `ceil`, `abs`, `min`, `max` (two or more values), `pow`; all apply to each component of a vector
 - **Types**: `int()`, `float()` casts, plus explicit `tack.i8()`, `tack.u8()`, `tack.i16()`, `tack.u16()`, `tack.i32()`, `tack.u32()`, `tack.i64()`, `tack.u64()`, `tack.f32()`, `tack.f64()`

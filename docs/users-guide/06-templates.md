@@ -36,7 +36,7 @@ A single kernel works with both:
 
 ```python
 @tack.kernel
-def add_arrays(a: tack.template(), b: tack.template(), out, n):
+def add_arrays(a, b, out, n):
     for i in range(n):
         out[i] = a.get_value(i) + b.get_value(i)
 
@@ -90,7 +90,7 @@ parameter. Other changing parameters can be instance variables.
 
 ```python
 @tack.kernel
-def process(filt: tack.template(), out):
+def process(filt, out):
     for i in range(filt.width):              # runtime — OK as instance var
         buf = tack.local_array(tack.f32, filt.block_size)  # must be class constant
         # ...
@@ -181,7 +181,7 @@ class Permuted:
         return self.base.get(self.ids[k])
 
 @tack.kernel
-def read(arr: tack.template(), out):
+def read(arr, out):
     for i in range(out.shape[0]):
         out[i] = arr.get(i)
 
@@ -239,7 +239,7 @@ class Rasterizer:
 
     @tack.kernel
     def draw(self, shade):
-        for row, column in tack.ndrange(self.height, self.width):
+        for row, column in tack.ndindex(self.height, self.width):
             for t in range(self.n):
                 if self.inside([column + 0.5, row + 0.5], t):
                     self.pixels[row, column] = [shade, shade, shade]
@@ -287,7 +287,7 @@ def label(cells, out):
 ```
 
 With one name, `for c in cells` is `for c in range(cells.n)` and `c` is an
-integer. With two or three, it is a `tack.ndrange` over them, slowest
+integer. With two or three, it is a `tack.ndindex` over them, slowest
 first, and `c` is the vector of indices with `c[0]` running fastest; as the
 kernel's parallel loop it launches in that shape, so recovering the
 indices costs no division. The object's methods receive `c` as it comes,
@@ -341,7 +341,7 @@ One kernel, two cell set types:
 
 ```python
 @tack.kernel
-def cell_average(cs: tack.template(), point_data, cell_data, n_cells):
+def cell_average(cs, point_data, cell_data, n_cells):
     for c in range(n_cells):
         total = 0.0
         for v in range(cs.points_per_cell):    # loop count is a constant
@@ -386,7 +386,7 @@ A generic interpolation kernel takes both:
 
 ```python
 @tack.kernel
-def interpolate_to_center(cs: tack.template(), ct: tack.template(),
+def interpolate_to_center(cs, ct,
                           point_data, cell_data, n_cells):
     for c in range(n_cells):
         pc0 = ct.center(0)

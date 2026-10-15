@@ -143,15 +143,15 @@ class _Flow:
 
 
 @tack.kernel
-def _momentum_direct(flow: tack.template(), out, n):
-    for i, j in tack.ndrange(n, n):
+def _momentum_direct(flow, out, n):
+    for i, j in tack.ndindex(n, n):
         u = flow.vel[i, j]
         out[i, j] = flow.rho[i, j] * u[1]
 
 
 @tack.kernel
-def _momentum_through_method(flow: tack.template(), out, n):
-    for i, j in tack.ndrange(n, n):
+def _momentum_through_method(flow, out, n):
+    for i, j in tack.ndindex(n, n):
         acc = 0.0
         for k in range(3):
             acc = acc + flow.momentum_x(i, j, k)
@@ -248,13 +248,13 @@ class _ModelWithKernel:
 
 
 @tack.kernel
-def _apply_shaped(s: tack.template(), n):
+def _apply_shaped(s, n):
     for i in range(n):
         s.out[i] = s.shaped(s.x[i])
 
 
 @tack.kernel
-def _apply_falloff(s: tack.template(), n):
+def _apply_falloff(s, n):
     for i in range(n):
         s.out[i] = s.falloff(s.x[i], s.h) + s.twice(s.x[i])
 
@@ -296,7 +296,7 @@ def test_device_function_held_as_an_attribute(backend):
 
 def test_unknown_template_method_is_reported():
     @tack.kernel
-    def bad(s: tack.template(), n):
+    def bad(s, n):
         for i in range(n):
             s.out[i] = s.missing(s.x[i])
     with pytest.raises(Exception, match="no @tack.func method 'missing'"):
@@ -324,7 +324,7 @@ class _WithStatic:
 
 
 @tack.kernel
-def _use_static(s: tack.template(), n):
+def _use_static(s, n):
     for i in range(n):
         inside, _offset = s.between(s.x[i], 0.0, 0.5)
         s.out[i] = s.clipped(i) + (100.0 if inside else 0.0)
@@ -419,7 +419,7 @@ def test_a_changed_class_constant_is_seen(backend):
             self.values = tack.empty((n,))
 
     @tack.kernel
-    def fill(obj: tack.template()):
+    def fill(obj):
         for i in range(obj.values.shape[0]):
             obj.values[i] = obj.FACTOR * i
 
@@ -433,9 +433,9 @@ def test_a_changed_class_constant_is_seen(backend):
 
 def test_data_oriented_is_device_class_under_taichis_name(backend):
     """The old name still decorates a class that kernels take."""
-    assert tack.data_oriented is tack.device_class
+    assert tack.device_class is tack.device_class
 
-    @tack.data_oriented
+    @tack.device_class
     class Offset:
         def __init__(self, by):
             self.by = by

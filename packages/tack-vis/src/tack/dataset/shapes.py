@@ -9,7 +9,7 @@ specialized to one shape and contains no dispatch on the shape::
     def centers(cell, conn, xyz, out):
         for c in range(out.shape[0]):
             pc = cell.parametric_center()
-            x = tack.Vector([0.0, 0.0, 0.0])
+            x = tack.vec3(0.0, 0.0, 0.0)
             for j in range(cell.NUM_POINTS):
                 x += cell.shape_function(j, pc) * xyz[conn[c, j]]
             out[c] = x
@@ -220,7 +220,7 @@ def _nearest_on_triangle(a, b, c, p):
 @tack.func
 def _point(pts, j):
     """Point ``j`` of a local array of x, y, z triples, as a 3-vector."""
-    return tack.Vector([pts[3 * j], pts[3 * j + 1], pts[3 * j + 2]])
+    return tack.vec3(pts[3 * j], pts[3 * j + 1], pts[3 * j + 2])
 
 
 # ── The algorithms every shape shares ───────────────────────────────
@@ -317,7 +317,7 @@ class Shape:
 
         ``pts`` is a local array holding each point's x, y and z in turn.
         """
-        x = tack.Vector([0.0, 0.0, 0.0])
+        x = tack.vec3(0.0, 0.0, 0.0)
         for j in range(self.NUM_POINTS):
             x += self.shape_function(j, pc) * _point(pts, j)
         return x
@@ -330,7 +330,7 @@ class Shape:
         are zero. Its determinant is positive for a well-formed 3D cell in
         VTK's point order.
         """
-        m = tack.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
         for j in range(self.NUM_POINTS):
             m += _point(pts, j).outer_product(self.shape_gradient(j, pc))
         return m
@@ -372,8 +372,8 @@ class Shape:
         target = x - p0
         for _ in range(NEWTON_ITERATIONS):
             # Position and Jacobian at pc, relative to the first point.
-            here = tack.Vector([0.0, 0.0, 0.0])
-            m = tack.Matrix([[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+            here = tack.vec3(0.0, 0.0, 0.0)
+            m = tack.mat3([0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0])
             for j in range(self.NUM_POINTS):
                 p = _point(pts, j) - p0
                 here += self.shape_function(j, pc) * p
@@ -416,8 +416,8 @@ class _Surface(Shape):
     def _newton_step(self, m, residual):
         # Complete the frame with the unit normal; the step along it is the
         # distance off the surface, and is dropped.
-        n = tack.Vector([m[0, 0], m[1, 0], m[2, 0]]).cross(
-            tack.Vector([m[0, 1], m[1, 1], m[2, 1]])).normalized()
+        n = tack.vec3(m[0, 0], m[1, 0], m[2, 0]).cross(
+            tack.vec3(m[0, 1], m[1, 1], m[2, 1])).normalized()
         m[0, 2] = n[0]
         m[1, 2] = n[1]
         m[2, 2] = n[2]
@@ -438,11 +438,11 @@ class Vertex(Shape):
 
     @tack.func
     def parametric_point(self, j):
-        return tack.Vector([0.0, 0.0, 0.0])
+        return tack.vec3(0.0, 0.0, 0.0)
 
     @tack.func
     def parametric_center(self):
-        return tack.Vector([0.0, 0.0, 0.0])
+        return tack.vec3(0.0, 0.0, 0.0)
 
     @tack.func
     def shape_function(self, j, pc):
@@ -450,7 +450,7 @@ class Vertex(Shape):
 
     @tack.func
     def shape_gradient(self, j, pc):
-        return tack.Vector([0.0, 0.0, 0.0])
+        return tack.vec3(0.0, 0.0, 0.0)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -462,7 +462,7 @@ class Vertex(Shape):
 
     @tack.func
     def world_to_parametric(self, pts, x):
-        return tack.Vector([0.0, 0.0, 0.0]), 1
+        return tack.vec3(0.0, 0.0, 0.0), 1
 
 
 @tack.device_class
@@ -475,11 +475,11 @@ class Line(Shape):
 
     @tack.func
     def parametric_point(self, j):
-        return tack.Vector([tack.f32(j), 0.0, 0.0])
+        return tack.vec3(tack.f32(j), 0.0, 0.0)
 
     @tack.func
     def parametric_center(self):
-        return tack.Vector([0.5, 0.0, 0.0])
+        return tack.vec3(0.5, 0.0, 0.0)
 
     @tack.func
     def shape_function(self, j, pc):
@@ -487,7 +487,7 @@ class Line(Shape):
 
     @tack.func
     def shape_gradient(self, j, pc):
-        return tack.Vector([2.0 * j - 1.0, 0.0, 0.0])
+        return tack.vec3(2.0 * j - 1.0, 0.0, 0.0)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -495,12 +495,12 @@ class Line(Shape):
 
     @tack.func
     def _clamp(self, pc):
-        return tack.Vector([min(max(pc[0], 0.0), 1.0), pc[1], pc[2]])
+        return tack.vec3(min(max(pc[0], 0.0), 1.0), pc[1], pc[2])
 
     @tack.func
     def _newton_step(self, m, residual):
-        a = tack.Vector([m[0, 0], m[1, 0], m[2, 0]])
-        return tack.Vector([a.dot(residual) / a.dot(a), 0.0, 0.0])
+        a = tack.vec3(m[0, 0], m[1, 0], m[2, 0])
+        return tack.vec3(a.dot(residual) / a.dot(a), 0.0, 0.0)
 
 
 @tack.device_class
@@ -514,11 +514,11 @@ class Triangle(_Surface):
 
     @tack.func
     def parametric_point(self, j):
-        return tack.Vector([1.0 if j == 1 else 0.0, 1.0 if j == 2 else 0.0, 0.0])
+        return tack.vec3(1.0 if j == 1 else 0.0, 1.0 if j == 2 else 0.0, 0.0)
 
     @tack.func
     def parametric_center(self):
-        return tack.Vector([1.0 / 3.0, 1.0 / 3.0, 0.0])
+        return tack.vec3(1.0 / 3.0, 1.0 / 3.0, 0.0)
 
     @tack.func
     def shape_function(self, j, pc):
@@ -529,7 +529,7 @@ class Triangle(_Surface):
     @tack.func
     def shape_gradient(self, j, pc):
         if j == 0:
-            return tack.Vector([-1.0, -1.0, 0.0])
+            return tack.vec3(-1.0, -1.0, 0.0)
         return self.parametric_point(j)
 
     @tack.func
@@ -541,7 +541,7 @@ class Triangle(_Surface):
         r = max(pc[0], 0.0)
         s = max(pc[1], 0.0)
         scale = 1.0 / max(r + s, 1.0)
-        return tack.Vector([r * scale, s * scale, pc[2]])
+        return tack.vec3(r * scale, s * scale, pc[2])
 
     @tack.func
     def nearest_point(self, pts, x, pc):
@@ -563,11 +563,11 @@ class _Quadrilateral(_Surface):
     @tack.func
     def parametric_point(self, j):
         a, b = self._corner(j)
-        return tack.Vector([tack.f32(a), tack.f32(b), 0.0])
+        return tack.vec3(tack.f32(a), tack.f32(b), 0.0)
 
     @tack.func
     def parametric_center(self):
-        return tack.Vector([0.5, 0.5, 0.0])
+        return tack.vec3(0.5, 0.5, 0.0)
 
     @tack.func
     def shape_function(self, j, pc):
@@ -578,8 +578,8 @@ class _Quadrilateral(_Surface):
     def shape_gradient(self, j, pc):
         a, b = self._corner(j)
         # d/dx of _linear(a, x) is +1 at the end a = 1 and -1 at a = 0.
-        return tack.Vector([(2.0 * a - 1.0) * _linear(b, pc[1]),
-                            _linear(a, pc[0]) * (2.0 * b - 1.0), 0.0])
+        return tack.vec3((2.0 * a - 1.0) * _linear(b, pc[1]),
+                         _linear(a, pc[0]) * (2.0 * b - 1.0), 0.0)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -589,7 +589,7 @@ class _Quadrilateral(_Surface):
 
     @tack.func
     def _clamp(self, pc):
-        return tack.Vector([min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0), pc[2]])
+        return tack.vec3(min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0), pc[2])
 
 
 @tack.device_class
@@ -647,12 +647,12 @@ class Tetra(_Solid):
 
     @tack.func
     def parametric_point(self, j):
-        return tack.Vector([1.0 if j == 1 else 0.0, 1.0 if j == 2 else 0.0,
-                            1.0 if j == 3 else 0.0])
+        return tack.vec3(1.0 if j == 1 else 0.0, 1.0 if j == 2 else 0.0,
+                         1.0 if j == 3 else 0.0)
 
     @tack.func
     def parametric_center(self):
-        return tack.Vector([0.25, 0.25, 0.25])
+        return tack.vec3(0.25, 0.25, 0.25)
 
     @tack.func
     def shape_function(self, j, pc):
@@ -663,7 +663,7 @@ class Tetra(_Solid):
     @tack.func
     def shape_gradient(self, j, pc):
         if j == 0:
-            return tack.Vector([-1.0, -1.0, -1.0])
+            return tack.vec3(-1.0, -1.0, -1.0)
         return self.parametric_point(j)
 
     NUM_QUADRATIC = 10
@@ -684,9 +684,9 @@ class Tetra(_Solid):
         f2 = _p2(n[1], pc[1])
         f3 = _p2(n[2], pc[2])
         d0 = _p2_derivative(m0, x0) * f1 * f2 * f3          # by x0, which falls with r, s, t
-        return tack.Vector([f0 * _p2_derivative(n[0], pc[0]) * f2 * f3 - d0,
-                            f0 * f1 * _p2_derivative(n[1], pc[1]) * f3 - d0,
-                            f0 * f1 * f2 * _p2_derivative(n[2], pc[2]) - d0])
+        return tack.vec3(f0 * _p2_derivative(n[0], pc[0]) * f2 * f3 - d0,
+                         f0 * f1 * _p2_derivative(n[1], pc[1]) * f3 - d0,
+                         f0 * f1 * f2 * _p2_derivative(n[2], pc[2]) - d0)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -699,7 +699,7 @@ class Tetra(_Solid):
         s = max(pc[1], 0.0)
         t = max(pc[2], 0.0)
         scale = 1.0 / max(r + s + t, 1.0)
-        return tack.Vector([r * scale, s * scale, t * scale])
+        return tack.vec3(r * scale, s * scale, t * scale)
 
     @tack.func
     def nearest_point(self, pts, x, pc):
@@ -743,11 +743,11 @@ class _Box(_Solid):
     @tack.func
     def parametric_point(self, j):
         a, b, c = self._corner(j)
-        return tack.Vector([tack.f32(a), tack.f32(b), tack.f32(c)])
+        return tack.vec3(tack.f32(a), tack.f32(b), tack.f32(c))
 
     @tack.func
     def parametric_center(self):
-        return tack.Vector([0.5, 0.5, 0.5])
+        return tack.vec3(0.5, 0.5, 0.5)
 
     @tack.func
     def shape_function(self, j, pc):
@@ -760,8 +760,8 @@ class _Box(_Solid):
         fa = _linear(a, pc[0])
         fb = _linear(b, pc[1])
         fc = _linear(c, pc[2])
-        return tack.Vector([(2.0 * a - 1.0) * fb * fc, fa * (2.0 * b - 1.0) * fc,
-                            fa * fb * (2.0 * c - 1.0)])
+        return tack.vec3((2.0 * a - 1.0) * fb * fc, fa * (2.0 * b - 1.0) * fc,
+                         fa * fb * (2.0 * c - 1.0))
 
     NUM_QUADRATIC = 27
     QUADRATIC_FACES = 6
@@ -778,9 +778,9 @@ class _Box(_Solid):
         fa = _q1d(n[0], pc[0])
         fb = _q1d(n[1], pc[1])
         fc = _q1d(n[2], pc[2])
-        return tack.Vector([_q1d_derivative(n[0], pc[0]) * fb * fc,
-                            fa * _q1d_derivative(n[1], pc[1]) * fc,
-                            fa * fb * _q1d_derivative(n[2], pc[2])])
+        return tack.vec3(_q1d_derivative(n[0], pc[0]) * fb * fc,
+                         fa * _q1d_derivative(n[1], pc[1]) * fc,
+                         fa * fb * _q1d_derivative(n[2], pc[2]))
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -791,8 +791,8 @@ class _Box(_Solid):
 
     @tack.func
     def _clamp(self, pc):
-        return tack.Vector([min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0),
-                            min(max(pc[2], 0.0), 1.0)])
+        return tack.vec3(min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0),
+                         min(max(pc[2], 0.0), 1.0))
 
 
 @tack.device_class
@@ -883,12 +883,12 @@ class Wedge(_Solid):
     @tack.func
     def parametric_point(self, j):
         k = j % 3
-        return tack.Vector([1.0 if k == 1 else 0.0, 1.0 if k == 2 else 0.0,
-                            tack.f32(j // 3)])
+        return tack.vec3(1.0 if k == 1 else 0.0, 1.0 if k == 2 else 0.0,
+                         tack.f32(j // 3))
 
     @tack.func
     def parametric_center(self):
-        return tack.Vector([1.0 / 3.0, 1.0 / 3.0, 0.5])
+        return tack.vec3(1.0 / 3.0, 1.0 / 3.0, 0.5)
 
     @tack.func
     def _triangle(self, k, pc):
@@ -909,7 +909,7 @@ class Wedge(_Solid):
         w, wr, ws = self._triangle(j % 3, pc)
         c = j // 3
         fc = _linear(c, pc[2])
-        return tack.Vector([wr * fc, ws * fc, w * (2.0 * c - 1.0)])
+        return tack.vec3(wr * fc, ws * fc, w * (2.0 * c - 1.0))
 
     NUM_QUADRATIC = 18
     QUADRATIC_FACES = 3
@@ -930,9 +930,9 @@ class Wedge(_Solid):
         f2 = _p2(n[1], pc[1])
         ft = _q1d(n[2], pc[2])
         d0 = _p2_derivative(m0, x0) * f1 * f2
-        return tack.Vector([(f0 * _p2_derivative(n[0], pc[0]) * f2 - d0) * ft,
-                            (f0 * f1 * _p2_derivative(n[1], pc[1]) - d0) * ft,
-                            f0 * f1 * f2 * _q1d_derivative(n[2], pc[2])])
+        return tack.vec3((f0 * _p2_derivative(n[0], pc[0]) * f2 - d0) * ft,
+                         (f0 * f1 * _p2_derivative(n[1], pc[1]) - d0) * ft,
+                         f0 * f1 * f2 * _q1d_derivative(n[2], pc[2]))
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -944,7 +944,7 @@ class Wedge(_Solid):
         r = max(pc[0], 0.0)
         s = max(pc[1], 0.0)
         scale = 1.0 / max(r + s, 1.0)
-        return tack.Vector([r * scale, s * scale, min(max(pc[2], 0.0), 1.0)])
+        return tack.vec3(r * scale, s * scale, min(max(pc[2], 0.0), 1.0))
 
     @tack.func
     def edge_corner(self, e, k):
@@ -985,13 +985,13 @@ class Pyramid(_Solid):
     @tack.func
     def parametric_point(self, j):
         if j == 4:
-            return tack.Vector([0.0, 0.0, 1.0])
+            return tack.vec3(0.0, 0.0, 1.0)
         a, b = self._corner(j)
-        return tack.Vector([tack.f32(a), tack.f32(b), 0.0])
+        return tack.vec3(tack.f32(a), tack.f32(b), 0.0)
 
     @tack.func
     def parametric_center(self):
-        return tack.Vector([0.4, 0.4, 0.2])
+        return tack.vec3(0.4, 0.4, 0.2)
 
     @tack.func
     def shape_function(self, j, pc):
@@ -1003,12 +1003,12 @@ class Pyramid(_Solid):
     @tack.func
     def shape_gradient(self, j, pc):
         if j == 4:
-            return tack.Vector([0.0, 0.0, 1.0])
+            return tack.vec3(0.0, 0.0, 1.0)
         a, b = self._corner(j)
         fa = _linear(a, pc[0])
         fb = _linear(b, pc[1])
-        return tack.Vector([(2.0 * a - 1.0) * fb * (1.0 - pc[2]),
-                            fa * (2.0 * b - 1.0) * (1.0 - pc[2]), -fa * fb])
+        return tack.vec3((2.0 * a - 1.0) * fb * (1.0 - pc[2]),
+                         fa * (2.0 * b - 1.0) * (1.0 - pc[2]), -fa * fb)
 
     @tack.func
     def is_inside(self, pc, tol):
@@ -1019,8 +1019,8 @@ class Pyramid(_Solid):
 
     @tack.func
     def _clamp(self, pc):
-        return tack.Vector([min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0),
-                            min(max(pc[2], 0.0), 1.0)])
+        return tack.vec3(min(max(pc[0], 0.0), 1.0), min(max(pc[1], 0.0), 1.0),
+                         min(max(pc[2], 0.0), 1.0))
 
     @tack.func
     def edge_corner(self, e, k):

@@ -41,8 +41,8 @@ def write_segments(scalar, offsets, lines, n):
     for c in range(n * n):
         i, j = c // n, c % n
         s = corners(scalar, i, j)
-        x = tack.Vector([float(i), float(i + 1), float(i + 1), float(i)])
-        y = tack.Vector([float(j), float(j), float(j + 1), float(j + 1)])
+        x = tack.vec4(float(i), float(i + 1), float(i + 1), float(i))
+        y = tack.vec4(float(j), float(j), float(j + 1), float(j + 1))
         px = tack.local_array(tack.f32, 4)
         py = tack.local_array(tack.f32, 4)
         hits = 0

@@ -34,8 +34,8 @@ def _corner_gradients(cells, u, start, out):
             elif cells.ID == shapes.PYRAMID and j == 4:
                 # The Jacobian is singular at a pyramid's apex. Extrapolate from
                 # two points just below it on the axis, as vtkPyramid does.
-                a = tack.Vector([0.5, 0.5, 0.998])
-                b = tack.Vector([0.5, 0.5, 0.996])
+                a = tack.vec3(0.5, 0.5, 0.998)
+                b = tack.vec3(0.5, 0.5, 0.996)
                 ga = (cells.geometry_jacobian(c, a).inverse().transpose()
                       @ u.parametric_gradient(c, a))
                 gb = (cells.geometry_jacobian(c, b).inverse().transpose()

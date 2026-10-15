@@ -23,7 +23,7 @@ STIFFNESS = tack.constant(400.0)
 
 @tack.kernel
 def clear_grid(momentum, mass):
-    for i, j in tack.ndrange(GRID, GRID):
+    for i, j in tack.ndindex(GRID, GRID):
         momentum[i, j] = 0.0
         mass[i, j] = 0.0
 
@@ -35,12 +35,12 @@ def particle_to_grid(x, v, C, J, momentum, mass, n):
         xp = x[p] / DX
         base = int(xp - 0.5)
         fx = xp - base
-        weights = tack.Matrix([0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2,
-                               0.5 * (fx - 0.5) ** 2])
+        weights = tack.mat(0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2,
+                           0.5 * (fx - 0.5) ** 2)
         stress = -DT * 4.0 * STIFFNESS * VOLUME * (J[p] - 1.0) / DX**2
-        affine = tack.Matrix([[stress, 0.0], [0.0, stress]]) + MASS * C[p]
-        for i, j in tack.ndrange(3, 3):
-            offset = tack.Vector([i, j])
+        affine = tack.mat2([stress, 0.0], [0.0, stress]) + MASS * C[p]
+        for i, j in tack.ndindex(3, 3):
+            offset = tack.vec2(i, j)
             dpos = (offset - fx) * DX
             weight = weights[i, 0] * weights[j, 1]
             tack.atomic_add(momentum, base + offset, weight * (MASS * v[p] + affine @ dpos))
@@ -50,7 +50,7 @@ def particle_to_grid(x, v, C, J, momentum, mass, n):
 
 @tack.kernel
 def grid_update(momentum, mass):
-    for i, j in tack.ndrange(GRID, GRID):
+    for i, j in tack.ndindex(GRID, GRID):
         if mass[i, j] > 0:
             momentum[i, j] /= mass[i, j]  # momentum becomes velocity
             momentum[i, j].y -= DT * 9.8
@@ -71,12 +71,12 @@ def grid_to_particle(x, v, C, J, grid_v, n):
         xp = x[p] / DX
         base = int(xp - 0.5)
         fx = xp - base
-        weights = tack.Matrix([0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2,
-                               0.5 * (fx - 0.5) ** 2])
-        new_v = tack.Vector([0.0, 0.0])
-        new_C = tack.Matrix([[0.0, 0.0], [0.0, 0.0]])
-        for i, j in tack.ndrange(3, 3):
-            offset = tack.Vector([i, j])
+        weights = tack.mat(0.5 * (1.5 - fx) ** 2, 0.75 - (fx - 1.0) ** 2,
+                           0.5 * (fx - 0.5) ** 2)
+        new_v = tack.vec2(0.0, 0.0)
+        new_C = tack.mat2([0.0, 0.0], [0.0, 0.0])
+        for i, j in tack.ndindex(3, 3):
+            offset = tack.vec2(i, j)
             dpos = (offset - fx) * DX
             weight = weights[i, 0] * weights[j, 1]
             gv = grid_v[base + offset]

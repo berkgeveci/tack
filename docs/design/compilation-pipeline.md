@@ -211,7 +211,7 @@ rest of the pipeline are these:
   launches its grid over `[0, n)` and never sees the start (regression
   **LC5**). Nested loops become `IRSequentialFor`, and their `range`
   arguments are captured into temporaries so they are evaluated once, on
-  entry. `tack.ndrange(a, b)` or `(a, b, c)` becomes one parallel loop
+  entry. `tack.ndindex(a, b)` or `(a, b, c)` becomes one parallel loop
   that keeps its dimensions (`dims`, `extents`), which each backend binds
   from a launch of that shape; workgroup kernels and four or more
   dimensions use a loop over the product with the indices recovered by
@@ -534,7 +534,7 @@ the same result as a deep copy, faster for this kind of data:
   graph.
 - One identity memo spans the whole graph, so shared nodes stay shared and
   cycles are preserved rather than duplicated. The sharing is real: an
-  `ndrange` dimension node appears both in the loop's end and in its
+  `ndindex` dimension node appears both in the loop's end and in its
   `extents`, and a range's start both in an extent and in the body.
 - `ScalarType` instances keep their identity, because type maps compare by
   identity. This matches `ScalarType.__deepcopy__`. Other metadata falls

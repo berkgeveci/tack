@@ -79,7 +79,7 @@ Use distinct input/output arrays:
 ```python
 @tack.kernel
 def smooth(old, new, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         if 0 < i < n - 1 and 0 < j < n - 1:
             new[i, j] = 0.25 * (old[i - 1, j] + old[i + 1, j]
                                + old[i, j - 1] + old[i, j + 1])
@@ -93,7 +93,7 @@ for step in range(steps):
 
 The swap changes Python references and costs no array copy. Both buffers must
 have the same layout. Write every output that the next step will read, including
-the boundary. When using an interior-only `ndrange`, initialize or explicitly
+the boundary. When using an interior-only `ndindex`, initialize or explicitly
 maintain the unwritten border of **both** buffers: a new array's contents are
 unspecified, and `tack.zeros` is the allocation that starts at zero.
 

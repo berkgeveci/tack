@@ -37,7 +37,7 @@ def initialize_pressure(cells, offsets, values):
 def sample_profiles(cells, temperature, pressure, linearized, xs, ts, ps, ls, count):
     for c in cells:
         for j in range(count):
-            pc = tack.Vector([j / (count - 1), 0.5, 0.5])
+            pc = tack.vec3(j / (count - 1), 0.5, 0.5)
             k = cells.entity_id(c) * count + j
             xs[k] = cells.position(c, pc).x
             ts[k] = temperature.value(c, pc)

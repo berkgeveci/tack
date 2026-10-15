@@ -18,7 +18,7 @@ def _perot(cells, flux, areas, centers, centroids, volumes, out):
     for c in cells:
         e = cells.entity_id(c)
         r = centroids[e]
-        u = tack.Vector([0.0, 0.0, 0.0])
+        u = tack.vec3(0.0, 0.0, 0.0)
         for k in range(cells.num_faces(c)):
             f = cells.face_id(c, k)
             outward = 1.0 - 2.0 * cells.face_side(c, k)

@@ -120,7 +120,7 @@ def test_math_module_constants(backend):
 
 @tack.kernel
 def scaled_rows(grid, out, n, scale):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         out[i, j] = grid[i, j] * scale + grid.shape[1]
 
 
@@ -211,7 +211,7 @@ def wrapping_vector_constant(out, n):
 
 
 def test_vector_and_matrix_constants_in_kernels(backend):
-    """`tack.constant((0.5, 0.25, 0.0))` is `tack.Vector([0.5, 0.25, 0.0])`
+    """`tack.constant((0.5, 0.25, 0.0))` is `tack.vec3(0.5, 0.25, 0.0)`
     in a kernel and a matrix constant the matrix with those rows: as
     operands, by component (`SUN.y`, `SUN[2]`, `ROT[1, 0]`), as an array
     index, and inside device functions."""

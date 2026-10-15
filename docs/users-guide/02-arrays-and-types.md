@@ -19,7 +19,7 @@ out = tack.empty(host.shape)                       # every output will be writte
 
 @tack.kernel
 def add_one(source, out):
-    for row, column in tack.ndrange(source.shape[0], source.shape[1]):
+    for row, column in tack.ndindex(source.shape[0], source.shape[1]):
         out[row, column] = source[row, column] + 1.0
 
 add_one(source, out)
@@ -224,7 +224,7 @@ element in host code: a Python number from an array of scalars, a NumPy
 array from a vector or matrix array. Negative indices count from the end.
 
 ```python
-head = queue[None]                 # a counter a kernel maintains
+head = queue[()]                 # a counter a kernel maintains
 comet = pos[0]                     # a 3-vector, as a NumPy array
 if temperature[i, j] > melting:    # a host-side decision on one value
     ...
@@ -249,7 +249,7 @@ strength.fill(2.0)
 @tack.kernel
 def add_strength(data, strength):
     for i in range(data.shape[0]):
-        data[i] += strength[None]
+        data[i] += strength[()]
 ```
 
 Use a scalar argument for a host-supplied value that simply changes per call.

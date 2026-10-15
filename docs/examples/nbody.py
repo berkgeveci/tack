@@ -27,7 +27,7 @@ def interaction(p, q):
 @tack.kernel
 def acceleration_plain(pos, acceleration, n):
     for i in range(n):
-        a = tack.Vector([0.0, 0.0, 0.0])
+        a = tack.vec3(0.0, 0.0, 0.0)
         for j in range(n):
             a += interaction(pos[i], pos[j])
         acceleration[i] = a
@@ -43,7 +43,7 @@ def acceleration_tiled(pos, acceleration, n):
     for i in range(n):
         xyz = tack.shared(tack.f32, TILE * 3)  # folded to 768 scalar components
         lane = tack.thread_id()
-        a = tack.Vector([0.0, 0.0, 0.0])
+        a = tack.vec3(0.0, 0.0, 0.0)
         for tile in range(n // TILE):
             q = pos[tile * TILE + lane]
             xyz[3 * lane], xyz[3 * lane + 1], xyz[3 * lane + 2] = q.x, q.y, q.z

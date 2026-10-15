@@ -183,7 +183,7 @@ kernel, would compile a new variant for every array length.
 | `for i in range(x.shape[0]): out[i] = x[i] * 2` | none |
 | `for i in range(1, x.shape[0] - 1): …x[i-1] + x[i+1]…` | none (the start moves into the body as a constant) |
 | `out[i] = x[x.shape[0] - 1 - i]` | `x.shape[0]` |
-| `for i, j in tack.ndrange(a.shape[0], a.shape[1]): out[i, j] = a[i, j]` | `a.shape[1]`, `out.shape[1]` (the row count only sets the launch) |
+| `for i, j in tack.ndindex(a.shape[0], a.shape[1]): out[i, j] = a[i, j]` | `a.shape[1]`, `out.shape[1]` (the row count only sets the launch) |
 | `v = tex.sample(u, v, w)` | all three extents of `tex` |
 
 ### `disjoint`: the CPU no-overlap bit
@@ -424,7 +424,7 @@ def scale(x, out, a):
 |--------|-------|:-------:|
 | `out[i] = x[x.shape[0] - 1 - i]` | lengths 8, 16, 32 | 3 |
 | the same with `n` passed as a scalar: `out[i] = x[n - 1 - i]` | lengths 8, 16, 32 | 1 |
-| `tack.ndrange(a.shape[0], a.shape[1])` over 2-D arrays | shapes `(4, 8)`, `(16, 8)`, `(4, 9)` | 2 |
+| `tack.ndindex(a.shape[0], a.shape[1])` over 2-D arrays | shapes `(4, 8)`, `(16, 8)`, `(4, 9)` | 2 |
 | `range(1, x.shape[0] - 1)` stencil | lengths 8, 16, 32 | 1 |
 | `out[i] = v[i].dot(v[i])` with `tack.Array` with a vector element dtype | widths 2, then 3 | 2 (and 2 IR templates) |
 

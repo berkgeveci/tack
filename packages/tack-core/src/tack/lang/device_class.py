@@ -8,9 +8,6 @@ inlined, with ``self`` resolved:
 - an instance ``int`` or ``float`` → a runtime kernel parameter
 - an instance array → an extra kernel parameter
 - an instance device-class object → nested: its methods and attributes too
-
-``data_oriented`` is the same decorator under Taichi's name, kept so code
-written for Taichi, or for earlier Tack, still works.
 """
 
 
@@ -30,6 +27,3 @@ def device_class(cls):
 
     return cls
 
-
-#: Taichi's name for ``device_class``.
-data_oriented = device_class

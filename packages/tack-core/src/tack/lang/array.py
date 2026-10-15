@@ -416,8 +416,8 @@ class Array:
         return self.shape[0]
 
     def __getitem__(self, index):
-        """Read one element from the host: ``a[i]``, ``a[i, j]``, ``a[()]`` (or
-        ``a[None]``) for a zero-dimensional array.
+        """Read one element from the host: ``a[i]``, ``a[i, j]``, or ``a[()]`` for a
+        zero-dimensional array.
 
         An array of scalars gives a Python number; a vector or matrix array
         gives a NumPy array of the element. Negative indices count from
@@ -428,8 +428,6 @@ class Array:
         and ``fill``.
         """
         shape = self.shape
-        if index is None and not shape:
-            index = ()
         indices = index if isinstance(index, tuple) else (index,)
         if len(indices) != len(shape) or not all(
                 isinstance(i, (int, np.integer)) and not isinstance(i, bool) for i in indices):
@@ -877,28 +875,6 @@ def array_from_ptr(ptr, shape, dtype, *, writable: bool = False) -> Array:
 
     buf = backend.wrap_ptr(ptr, scalar, storage)
     return _array_view(dtype, shape, buf, writable=writable)
-
-
-class Vector:
-    """Vector values in kernels: ``tack.Vector([x, y, z])``.
-
-    In kernels a vector is scalarized; ``v.dot(w)``, ``v.cross(w)``,
-    ``v.norm()`` and ``v.normalized()`` operate on its components. Arrays of
-    vectors have an element dtype: ``tack.empty((n,), tack.vec3())``.
-    """
-
-
-class Matrix:
-    """Small fixed-size matrix values in kernels.
-
-    In kernels a matrix is scalarized, like a vector:
-      A = tack.Matrix([[a, b], [c, d]])      rows of scalars, or of vectors
-      I = tack.Matrix.identity(2)
-      F[p] = (I + dt * C) @ F[p]             '@' multiplies; '*' is elementwise
-      A[i, j], A.transpose(), A.trace(), A.determinant(), A.inverse()
-
-    Arrays of matrices have an element dtype: ``tack.empty((n,), tack.mat2())``.
-    """
 
 
 class Texture3D:

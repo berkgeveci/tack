@@ -76,7 +76,7 @@ def test_local_array_with_template_size(backend):
         size = 5  # class variable → compile-time constant (needed for local_array size)
 
     @tack.kernel
-    def tmpl_local(cfg: tack.template(), out, n):
+    def tmpl_local(cfg, out, n):
         for i in range(n):
             buf = tack.local_array(tack.f32, cfg.size)
             for k in range(cfg.size):
@@ -139,7 +139,7 @@ def test_local_array_in_template_method(backend):
     tack.copyto(data, data_np)
 
     @tack.kernel
-    def avg(cs: tack.template(), data, out, n_cells):
+    def avg(cs, data, out, n_cells):
         for c in range(n_cells):
             pts = tack.local_array(tack.i32, cs.points_per_cell)
             cs.get_cell_points(c, pts)

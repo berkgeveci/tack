@@ -103,15 +103,6 @@ def as_dtype(dtype):
     return from_numpy_dtype(numpy_dtype)
 
 
-class TemplateType:
-    """Marker for template (generic) kernel arguments — resolved at call time."""
-
-
-def template() -> TemplateType:
-    """Type annotation for kernel arguments that are resolved at call time."""
-    return TemplateType()
-
-
 @dataclass(frozen=True)
 class ElementType:
     """A fixed-size vector or matrix element, independent of an array's shape.

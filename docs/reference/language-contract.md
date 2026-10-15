@@ -46,7 +46,7 @@ all corner cases have been validated.
 | Values | Numeric literals, scalar parameters, array loads, local variables, `tack.constant` names (scalars, vectors, matrices), vectors and matrices up to 4×4 | Fixed-width Tack types, not arbitrary Python objects. Assigning to a scalar parameter makes it a per-iteration local (LC6). Vectors and matrices are scalarized; see *Vectors and matrices* |
 | Arithmetic | Arithmetic, comparisons, Boolean expressions, explicit casts, listed math builtins, `@` on vectors and matrices | Numerical and evaluation rules below. Comparisons and Boolean expressions of vectors act per component |
 | Assignments | Local assignment, augmented assignment, array stores, tuple assignment to names, array elements and components | Storage and ordering rules below |
-| Control flow | `range`, `tack.ndrange` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load arrays and declare arrays |
+| Control flow | `range`, `tack.ndindex` over sizes or `(start, end)` pairs, nested sequential loops, `while`, `if`/`elif`/`else`, conditional expressions, `break`, `continue` | One top-level parallel loop; statements outside it only bind locals, load arrays and declare arrays |
 | Composition | `@tack.func` inlining, returning one or several values; a kernel's trailing `return`; `@tack.device_class` templates, with inheritance, device functions held as attributes or under `@staticmethod`, and kernels as methods | Static source transformation, not arbitrary Python calls. A `return` ends the function on its path; one inside a loop is rejected (LC7) |
 | Storage | Scalar arrays, vector arrays, matrix arrays, local arrays, shared memory, 3D textures | Backend capability restrictions apply |
 | Parallel primitives | Atomics, barriers, thread index, block reductions | Workgroup requirements below |
@@ -126,7 +126,7 @@ functions can return supported scalar, vector or tuple values for inlining.
 ## Execution and ordering
 
 **Required:** the portable baseline has one top-level parallel `range` or
-`ndrange` iteration space. Each iteration owns its local variables. There
+`ndindex` iteration space. Each iteration owns its local variables. There
 is no defined order among different parallel iterations. Algorithms must
 avoid conflicting cross-iteration memory accesses unless they use the
 appropriate supported synchronization or atomic operation.
@@ -918,7 +918,7 @@ scalar kernels, host array reductions and supported atomic operations.
 
 **GPU launch domain:** barriers and block reductions require complete
 **256-lane workgroups**. Positive logical iteration counts must be divisible
-by 256, including normalized stepped ranges and `ndrange`. Cold dispatch
+by 256, including normalized stepped ranges and `ndindex`. Cold dispatch
 rejects partial groups before compilation; cached dispatch rechecks every
 count before execution without repeating analysis. Zero/negative counts
 run nothing. Metal pipeline limits and Level Zero X/total device limits

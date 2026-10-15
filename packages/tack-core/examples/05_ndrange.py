@@ -1,11 +1,11 @@
-"""05 -- Multi-dimensional parallel iteration with tack.ndrange.
+"""05 -- Multi-dimensional parallel iteration with tack.ndindex.
 
-Instead of computing linear indices manually, use tack.ndrange(w, h) to
+Instead of computing linear indices manually, use tack.ndindex(w, h) to
 iterate over a 2D grid in parallel.  Each (i, j) pair maps to a separate
 GPU thread.
 
 Usage:
-  uv run python examples/05_ndrange.py
+  uv run python examples/05_ndindex.py
 """
 
 import argparse
@@ -26,7 +26,7 @@ pixels = tack.empty((width, height))
 @tack.kernel
 def distance_array(pixels):
     """Compute distance from center for each pixel."""
-    for i, j in tack.ndrange(64, 64):
+    for i, j in tack.ndindex(64, 64):
         dx = float(i) - 32.0
         dy = float(j) - 32.0
         pixels[i, j] = sqrt(dx * dx + dy * dy)
@@ -56,7 +56,7 @@ tack.copyto(src, img)
 @tack.kernel
 def blur_3x3(src, dst):
     """Simple 3x3 box blur, skipping borders."""
-    for i, j in tack.ndrange(64, 64):
+    for i, j in tack.ndindex(64, 64):
         if i > 0:
             if i < 63:
                 if j > 0:
@@ -72,4 +72,4 @@ blur_3x3(src, dst)
 blurred = dst.numpy().reshape(64, 64)
 print(f"\nBlur: center pixel {blurred[32,32]:.2f} (was 100.00)")
 print(f"Blur: neighbor    {blurred[32,33]:.2f} (was 0.00)")
-print("2D ndrange + stencil: OK")
+print("2D ndindex + stencil: OK")

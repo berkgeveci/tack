@@ -48,13 +48,13 @@ def _shift(x, y, k):
 
 @tack.kernel
 def _right(a, b):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         b[i, j] = a[i, j + 1]  # right load
 
 
 @tack.kernel
 def _down(a, b, k):
-    for i, j in tack.ndrange(b.shape[0], b.shape[1]):
+    for i, j in tack.ndindex(b.shape[0], b.shape[1]):
         b[i, j] = a[i + k, j]  # down load
 
 
@@ -159,7 +159,7 @@ def test_atomics_are_checked_as_statements_and_as_values(debug):
 @tack.kernel
 def _bump(v, k):
     for i in range(v.shape[0]):
-        v[i + k] += tack.Vector([1.0, 2.0, 3.0])
+        v[i + k] += tack.vec3(1.0, 2.0, 3.0)
 
 
 @tack.kernel
@@ -207,7 +207,7 @@ def _tap(a, i, j):
 
 @tack.kernel
 def _through_device(a, b):
-    for i, j in tack.ndrange(a.shape[0], a.shape[1]):
+    for i, j in tack.ndindex(a.shape[0], a.shape[1]):
         b[i, j] = _tap(a, i, j)
 
 

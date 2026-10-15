@@ -171,13 +171,13 @@ def evens(out):
 # Multi-dimensional parallel iteration
 @tack.kernel
 def fill(img):
-    for i, j in tack.ndrange(img.shape[0], img.shape[1]):
+    for i, j in tack.ndindex(img.shape[0], img.shape[1]):
         img[i, j] = float(i * j)
 
 # A (start, end) pair instead of a size: the interior of a grid
 @tack.kernel
 def smooth(u, out, n, m):
-    for i, j in tack.ndrange((1, n - 1), (1, m - 1)):
+    for i, j in tack.ndindex((1, n - 1), (1, m - 1)):
         out[i, j] = 0.25 * (u[i - 1, j] + u[i + 1, j] + u[i, j - 1] + u[i, j + 1])
 
 # While loops with break/continue
@@ -332,7 +332,7 @@ def step(pos, vel, F, C, grid, out, dt, n):
         pos[p] += v * dt                        # update an array element in place
         vel[p], out[p] = v, v.dot(v)            # tuple assignment to array elements
 
-        F[p] = (tack.Matrix.identity(2) + dt * C[p]) @ F[p]     # '@' multiplies
+        F[p] = (tack.identity(2) + dt * C[p]) @ F[p]     # '@' multiplies
         J = F[p].determinant()
         stress = (F[p] - F[p].inverse().transpose()) * J        # '*' is entry by entry
         C[p] = v.outer_product(stress @ v)
@@ -363,7 +363,7 @@ class Grid:
         return self.data[i] * self.dx
 
 @tack.kernel
-def process(grid: tack.template(), out):
+def process(grid, out):
     for i in range(out.shape[0]):
         out[i] = grid.sample(i)
 

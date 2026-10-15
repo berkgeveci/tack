@@ -7,7 +7,7 @@ memory on CPU and private/register memory on GPU:
 
 ```python
 @tack.kernel
-def cached_interp(cs: tack.template(), ct: tack.template(),
+def cached_interp(cs, ct,
                   array1, array2, out1, out2, n_cells):
     for c in range(n_cells):
         # Compute weights once, reuse for both arrays
@@ -91,7 +91,7 @@ class CellSetExplicit:
             pts[v] = self.connectivity[cell_id * self.points_per_cell + v]
 
 @tack.kernel
-def cell_average(cs: tack.template(), data, out, n_cells):
+def cell_average(cs, data, out, n_cells):
     for c in range(n_cells):
         pts = tack.local_array(tack.i32, cs.points_per_cell)
         cs.get_cell_points(c, pts)      # fills pts in one call

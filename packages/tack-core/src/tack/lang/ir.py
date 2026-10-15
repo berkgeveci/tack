@@ -34,7 +34,7 @@ class IRParam(IRNode):
 class IRParallelFor(IRNode):
     """A parallel for-loop over a range (top-level for in range()).
 
-    ``var`` runs over ``[start, end)``. A loop over ``tack.ndrange`` of two
+    ``var`` runs over ``[start, end)``. A loop over ``tack.ndindex`` of two
     or three dimensions also has ``dims``, one index variable per
     dimension (slowest first), and ``extents``, their sizes as expressions
     the host evaluates at dispatch like ``end``, whose product they are.

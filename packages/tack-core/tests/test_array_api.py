@@ -81,7 +81,7 @@ def test_typed_matrix_operations_and_multidimensional_views(backend):
 
     @tack.kernel
     def multiply(matrices, vectors, out):
-        for i, j in tack.ndrange(out.shape[0], out.shape[1]):
+        for i, j in tack.ndindex(out.shape[0], out.shape[1]):
             out[i, j] = matrices[i, j] @ vectors[i, j]
 
     multiply(matrices, vectors, out)
@@ -104,11 +104,11 @@ def test_zero_dimensional_vector_in_kernel(backend):
     @tack.kernel
     def double_one(source, out):
         for _ in range(1):
-            out[None] = source[None] * 2
+            out[()] = source[()] * 2
 
     double_one(source, out)
     assert out.shape == () and out.size == 1
-    np.testing.assert_array_equal(out[None], [2, 4, 6])
+    np.testing.assert_array_equal(out[()], [2, 4, 6])
 
 
 def test_empty_like_reads_only_metadata(backend, monkeypatch):

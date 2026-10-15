@@ -1,6 +1,6 @@
 """Multi-dimensional parallel loops: lowering helpers and launch geometry.
 
-A kernel's parallel loop over ``tack.ndrange`` of two or three dimensions
+A kernel's parallel loop over ``tack.ndindex`` of two or three dimensions
 keeps its dimensions (``IRParallelFor.dims``/``extents``) instead of
 recovering them from one flat index by division. Each backend binds them
 from a launch of the same shape: CPU workers walk their chunk row by row,

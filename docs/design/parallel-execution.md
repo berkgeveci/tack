@@ -20,7 +20,7 @@ page, [CPU Threading Policy](cpu-threading.md).
 ### One top-level parallel loop
 
 A kernel has exactly one top-level `for` loop over `range(...)` or
-`tack.ndrange(...)`, a statement directly in the kernel body.
+`tack.ndindex(...)`, a statement directly in the kernel body.
 `KernelTransformer.visit_For` (`lang/ast_transform.py`) lowers the first
 `for` it meets outside a loop through `_visit_parallel_for` to
 `IRParallelFor`; every loop nested inside it becomes an `IRSequentialFor`.
@@ -62,10 +62,10 @@ other range into that form before code generation:
 | `for i in range(n)` | `ParallelFor i in [0, n)` |
 | `for i in range(3, 7)` | `ParallelFor t in [0, 7 - 3)`; body starts with `i = 3 + t` |
 | `for i in range(1, 8, 3)` | `ParallelFor t in [0, ((8 - 1) + (3 - 1)) // 3)`; body starts with `i = 1 + t * 3` |
-| `for i, j in tack.ndrange(w, h)` | `ParallelFor (d0 < w x d1 < h)`; body starts with `i = d0`, `j = d1` |
+| `for i, j in tack.ndindex(w, h)` | `ParallelFor (d0 < w x d1 < h)`; body starts with `i = d0`, `j = d1` |
 | the same in a workgroup kernel, or over 4+ dimensions | `ParallelFor t in [0, w * h)`; `i = t // h`, `j = t % h` |
 
-A two- or three-dimensional `ndrange` keeps its dimensions, and each
+A two- or three-dimensional `ndindex` keeps its dimensions, and each
 backend launches in that shape instead of dividing a flat index: CPU
 workers split the flat range into chunks as before, decompose a chunk's
 first index once, and walk the rest row by row with a carry; CUDA, HIP and
@@ -288,7 +288,7 @@ final groups and device-chosen smaller groups.
 `IRBarrier` or `IRBlockReduce`. `check_workgroup_launch` raises
 `ValueError` when the selected group size is not 256 or when a positive
 iteration count is not a multiple of 256. The count is the normalized one,
-so `range(0, 1024, 2)` (512 iterations) passes and `ndrange(16, 16)` (256)
+so `range(0, 1024, 2)` (512 iterations) passes and `ndindex(16, 16)` (256)
 passes; zero or negative counts run nothing and pass.
 
 | Check | Where |
@@ -400,7 +400,7 @@ for i in range(n):
 **Why `i // 256` is rejected.** With complete 256-lane groups, every lane of
 one group has the same `i // 256`, so the branch is in fact uniform. Proving
 it requires knowing how loop indices map onto groups, including after range
-normalization (`i = start + t * step`) and `ndrange` flattening, and doing
+normalization (`i = start + t * step`) and `ndindex` flattening, and doing
 arithmetic reasoning over the expression. The analysis deliberately tracks
 only "derived from a lane value or not". It can be extended without changing
 any accepted program. Until then, restructure so that every lane reaches
@@ -631,7 +631,7 @@ per-iteration outer locals), `test_launch_limits.py`,
 `test_workgroup_contract.py` (CPU rejection in dispatch, every inspection
 mode and direct LLVM, before any side effect), `test_workgroup_participation.py`
 (every rejected pattern above on all four generators and on dispatch,
-partial-group rejection cold and cached, stepped and `ndrange` counts,
+partial-group rejection cold and cached, stepped and `ndindex` counts,
 Metal and Level Zero group-limit enforcement, repeated reductions in loops),
 `test_block_reduce.py`, `test_shared_like.py`, and `test_atomic_contract.py`
 (unsigned boundaries, wrapping, contended CPU workers, updates across groups

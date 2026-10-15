@@ -249,7 +249,7 @@ int main(int argc, char** argv) {{
 
 @tack.func
 def _center():
-    return tack.Vector([1.0 / 3.0, 0.1, 0.5])
+    return tack.vec3(1.0 / 3.0, 0.1, 0.5)
 
 
 @tack.func

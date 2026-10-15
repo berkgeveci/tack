@@ -271,7 +271,7 @@ def iteration_space(cls) -> tuple:
     three names of its scalar attributes, class constants or instance
     values. One name makes ``for c in obj`` the loop ``for c in
     range(obj.name)``, with ``c`` an integer. Two or three make it an
-    ``ndrange`` over them, with ``c`` the vector of indices, ``c[0]``
+    ``ndindex`` over them, with ``c`` the vector of indices, ``c[0]``
     running fastest; at the top of a kernel that loop is launched in its
     own shape, so nothing divides to recover the indices. The object's
     methods take ``c`` as it comes, so a kernel written ``for c in obj:``
@@ -563,7 +563,7 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
         return node
 
     def visit_For(self, node):
-        # for c in obj: becomes a range or ndrange loop over its iteration
+        # for c in obj: becomes a range or ndindex loop over its iteration
         # space; generic_visit then resolves the obj.attr extents.
         if isinstance(node.iter, ast.Name) and node.iter.id == self.param_name:
             node = self._iteration_loop(node)
@@ -590,11 +590,11 @@ class _KernelTemplateRewriter(ast.NodeTransformer):
             return node
         index = node.target.id
         dims = [fresh_name(f"__{index}_{k}__", self.used_names) for k in range(len(names))]
-        # ndrange runs slowest first; the index vector is fastest first.
+        # ndindex runs slowest first; the index vector is fastest first.
         loop = ast.For(
             target=ast.Tuple(elts=[ast.Name(id=d, ctx=ast.Store()) for d in reversed(dims)],
                              ctx=ast.Store()),
-            iter=ast.Call(func=ast.Name(id='ndrange', ctx=ast.Load()),
+            iter=ast.Call(func=ast.Name(id='ndindex', ctx=ast.Load()),
                           args=[extent(n) for n in reversed(names)], keywords=[]),
             body=[ast.Assign(targets=[ast.Name(id=index, ctx=ast.Store())],
                              value=ast.List(elts=[ast.Name(id=d, ctx=ast.Load())

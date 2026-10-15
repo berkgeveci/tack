@@ -45,7 +45,7 @@ def _number(out):
 
 @tack.kernel
 def _grid(out, scale: tack.i32):
-    for i, j in tack.ndrange(300, 257):
+    for i, j in tack.ndindex(300, 257):
         out[i * 257 + j] = i * scale + j
 
 

@@ -3,7 +3,7 @@
 The class declares ``__tack_iterate__``, one to three of its scalar
 attributes, fastest first. One makes ``c`` an integer index over
 ``range``; two or three make ``c`` the vector of indices over an
-``ndrange``, which at the top of a kernel launches in its own shape. The
+``ndindex``, which at the top of a kernel launches in its own shape. The
 object's methods take ``c`` as it comes, so one kernel source runs over
 objects that iterate differently -- which is what lets a cell set iterate
 structured cells as (i, j, k) without dividing.

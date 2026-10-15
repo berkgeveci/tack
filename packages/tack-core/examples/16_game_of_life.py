@@ -6,7 +6,7 @@ Rules applied simultaneously to all cells:
   - A dead cell with exactly 3 neighbors becomes alive
   - All other cells die
 
-Uses 2D array indexing and ndrange for parallel update.
+Uses 2D array indexing and ndindex for parallel update.
 
 Usage:
   uv run python examples/16_game_of_life.py
@@ -34,7 +34,7 @@ new_alive = tack.empty((N, N), tack.i32)
 @tack.kernel
 def count_neighbors(alive, count, n):
     """Count live neighbors for each cell (no wrapping)."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         c = 0
         # Check all 8 neighbors with boundary checks
         for di in range(-1, 2):
@@ -62,7 +62,7 @@ def count_neighbors(alive, count, n):
 @tack.kernel
 def apply_rules(alive, count, new_alive, n):
     """Apply Conway's rules to produce the next generation."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         c = count[i, j]
         a = alive[i, j]
         if a == 1:
@@ -84,7 +84,7 @@ def apply_rules(alive, count, new_alive, n):
 
 @tack.kernel
 def copy_grid(src, dst, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         dst[i, j] = src[i, j]
 
 

@@ -465,7 +465,7 @@ has the full conservative domain; in short:
   explicit f32 cast") on the first call. Write `tack.block_sum(tack.f32(x))`
   for an integer or `f64` value.
 - **Complete groups.** A positive iteration count must be a multiple of
-  256, including stepped ranges and the total of a `tack.ndrange`.
+  256, including stepped ranges and the total of a `tack.ndindex`.
   Otherwise the call raises `ValueError` ("... require complete 256-lane
   groups; iteration count 1000 would create a partial workgroup") before
   anything runs. A count of zero runs nothing. Tack does not pad; pad the

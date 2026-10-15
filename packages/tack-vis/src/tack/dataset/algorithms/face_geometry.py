@@ -15,7 +15,7 @@ def _face_geometry(faces, normals, areas):
     for f in faces:
         size = faces.num_points(f)                # the shape's constant, or a polygon's
         origin = faces.corner_position(f, 0)
-        n = tack.Vector([0.0, 0.0, 0.0])
+        n = tack.vec3(0.0, 0.0, 0.0)
         for j in range(1, size - 1):
             # Newell's normal, from the face's first point: a fan of triangles.
             n += (faces.corner_position(f, j) - origin).cross(faces.corner_position(f, j + 1) - origin)

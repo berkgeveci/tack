@@ -40,7 +40,7 @@ Given a kernel:
 
 ```python
 @tack.kernel
-def avg(cs: tack.template(), data, out, n):
+def avg(cs, data, out, n):
     for c in range(n):
         total = 0.0
         for v in range(cs.points_per_cell):

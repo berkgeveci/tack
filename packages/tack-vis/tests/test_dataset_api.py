@@ -864,7 +864,7 @@ def test_upwind_flux(backend, make):
 # ── Quadratic bases ─────────────────────────────────────────────────
 
 @tack.kernel
-def _quadratic_at(shape: tack.template(), pcs, values, gradients, nodes, n):
+def _quadratic_at(shape, pcs, values, gradients, nodes, n):
     for i in range(n):
         for k in range(shape.NUM_QUADRATIC):
             values[i * 27 + k] = shape.quadratic_function(k, pcs[i])

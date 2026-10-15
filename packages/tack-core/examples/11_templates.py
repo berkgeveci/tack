@@ -58,14 +58,14 @@ grid = Grid(data, dx)
 
 
 @tack.kernel
-def process(grid: tack.template(), out):
+def process(grid, out):
     """Sample every grid point."""
     for i in range(out.shape[0]):
         out[i] = grid.sample(i)
 
 
 @tack.kernel
-def compute_gradient(grid: tack.template(), grad_out):
+def compute_gradient(grid, grad_out):
     """Compute gradient at interior points."""
     for i in range(grad_out.shape[0]):
         if i > 0:

@@ -28,7 +28,7 @@ W, H = 256, 256
 @tack.kernel
 def make_test_image(img, w, h):
     """Concentric rings + gradient."""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         dx = float(j) - float(w) / 2.0
         dy = float(i) - float(h) / 2.0
         r = sqrt(dx * dx + dy * dy)
@@ -47,7 +47,7 @@ test_img = src.numpy().reshape(H, W)
 @tack.kernel
 def adjust_brightness_contrast(src, dst, brightness, contrast, w, h):
     """Apply brightness and contrast: out = contrast * (in - 0.5) + 0.5 + brightness"""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         v = contrast * (src[i, j] - 0.5) + 0.5 + brightness
         v = max(0.0, min(1.0, v))
         dst[i, j] = v
@@ -65,7 +65,7 @@ print(f"   Output range: [{result.min():.3f}, {result.max():.3f}]")
 @tack.kernel
 def sobel(src, dst, w, h):
     """Sobel edge detection (gradient magnitude)."""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         if i > 0:
             if i < h - 1:
                 if j > 0:
@@ -100,7 +100,7 @@ tmp = tack.empty((H, W))
 @tack.kernel
 def blur_horizontal(src, dst, w, h):
     """Horizontal pass of a 5-tap box filter."""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         if j >= 2:
             if j < w - 2:
                 dst[i, j] = (
@@ -116,7 +116,7 @@ def blur_horizontal(src, dst, w, h):
 @tack.kernel
 def blur_vertical(src, dst, w, h):
     """Vertical pass of a 5-tap box filter."""
-    for i, j in tack.ndrange(h, w):
+    for i, j in tack.ndindex(h, w):
         if i >= 2:
             if i < h - 2:
                 dst[i, j] = (

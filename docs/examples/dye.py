@@ -35,10 +35,10 @@ def bilerp(dye, p, n):
 # --8<-- [start:advect]
 @tack.kernel
 def advect(old, new, angular_speed, dt, n):
-    for i, j in tack.ndrange(n, n):
-        p = tack.Vector([float(i), float(j)])
+    for i, j in tack.ndindex(n, n):
+        p = tack.vec2(float(i), float(j))
         r = p - (n - 1) * 0.5
-        velocity = angular_speed * tack.Vector([-r.y, r.x])
+        velocity = angular_speed * tack.vec2(-r.y, r.x)
         departure = p - dt * velocity
         new[i, j] = bilerp(old, departure, n)
 # --8<-- [end:advect]

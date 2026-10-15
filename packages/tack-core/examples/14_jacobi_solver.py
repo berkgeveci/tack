@@ -28,7 +28,7 @@ STEPS = 10000
 @tack.kernel
 def jacobi_step(src, dst, n):
     """One Jacobi iteration: dst[i,j] = average of 4 neighbors in src."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         if i > 0 and i < n - 1 and j > 0 and j < n - 1:
             dst[i, j] = 0.25 * (
                 src[i - 1, j] + src[i + 1, j] +
@@ -39,7 +39,7 @@ def jacobi_step(src, dst, n):
 @tack.kernel
 def copy_array(src, dst, n):
     """Copy src into dst."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         dst[i, j] = src[i, j]
 
 

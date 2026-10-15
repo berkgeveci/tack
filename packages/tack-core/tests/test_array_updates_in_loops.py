@@ -169,9 +169,9 @@ def test_array_updates_in_a_sequential_loop(backend, kernel, pick, want, dtype):
 @tack.kernel
 def _drain_queue(counter, total, x, n):
     for _ in range(1):
-        while counter[None] < n:
-            total[None] += x[counter[None]]
-            counter[None] += 1
+        while counter[()] < n:
+            total[()] += x[counter[()]]
+            counter[()] += 1
 
 
 @pytest.mark.parametrize("dtype", [tack.i32, tack.f32], ids=["i32", "f32"])

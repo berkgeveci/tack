@@ -247,7 +247,7 @@ def test_template_float_constants_preserve_signed_zero(backend, values):
 
 
 @tack.kernel
-def _scale_by_template(x, out, cfg: tack.template()):
+def _scale_by_template(x, out, cfg):
     for i in range(out.shape[0]):
         out[i] = cfg.apply(x[i])
 

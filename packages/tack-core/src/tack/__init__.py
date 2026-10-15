@@ -8,9 +8,7 @@ __path__ = extend_path(__path__, __name__)
 from tack.lang.array import (
     Array,
     ExportedMemory,
-    Matrix,
     Texture3D,
-    Vector,
     arange,
     array,
     array_from_ptr,
@@ -29,7 +27,7 @@ from tack.lang.array import (
     zeros_like,
 )
 from tack.lang.constant import constant
-from tack.lang.device_class import data_oriented, device_class
+from tack.lang.device_class import device_class
 from tack.lang.func import func
 from tack.lang.inspect_kernel import inspect
 from tack.lang.kernel import kernel
@@ -45,7 +43,6 @@ from tack.lang.types import (
     mat2,
     mat3,
     mat4,
-    template,
     u8,
     u16,
     u32,
@@ -98,14 +95,19 @@ def atomic_max(array, index, value):
     """Atomic max: array[index] = max(array[index], value). Only usable inside a @tack.kernel."""
     raise RuntimeError("atomic_max() can only be used inside a @tack.kernel")
 
-# ndrange for multi-dimensional parallel iteration
-def ndrange(*args):
-    """Multi-dimensional parallel iteration range.
+# ndindex for multi-dimensional parallel iteration
+def ndindex(*args):
+    """Multi-dimensional parallel iteration, as ``np.ndindex``.
 
-    Used in kernels: for i, j in tack.ndrange(w, h)
-    Cannot be called from Python directly.
+    Used in kernels: ``for i, j in tack.ndindex(w, h)``; each argument is a
+    size or a ``(start, end)`` pair. Cannot be called from Python directly.
     """
-    raise RuntimeError("ndrange() can only be used inside a @tack.kernel")
+    raise RuntimeError("ndindex() can only be used inside a @tack.kernel")
+
+
+def identity(n):
+    """The n-by-n identity matrix, as ``np.identity``. Only usable inside a @tack.kernel."""
+    raise RuntimeError("identity() can only be used inside a @tack.kernel")
 
 def block_sum(value):
     """Sum a value across all threads in the workgroup. Only usable inside a @tack.kernel."""

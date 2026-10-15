@@ -127,7 +127,7 @@ def fill_weights(w, ct, pc0, pc1, pc2):
         w[v] = ct.weight(v, pc0, pc1, pc2)
 
 @tack.kernel
-def interp(ct: tack.template(), data, out, n):
+def interp(ct, data, out, n):
     for i in range(n):
         w = tack.local_array(tack.f32, ct.num_points)
         fill_weights(w, ct, 0.5, 0.5, 0.5)  # fills w in place

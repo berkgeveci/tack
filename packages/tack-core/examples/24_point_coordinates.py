@@ -113,7 +113,7 @@ class ProductPoints:
 # ================================================================
 
 @tack.kernel
-def compute_wavelet(pts: tack.template(), output, kx, ky, kz, n):
+def compute_wavelet(pts, output, kx, ky, kz, n):
     """f(x,y,z) = sin(kx*x) * cos(ky*y) * sin(kz*z + x*y)"""
     for id in range(n):
         x = pts.get_x(id)
@@ -221,7 +221,7 @@ class _WritableSOA:
         return self.z[id]
 
 @tack.kernel
-def _expand(src: tack.template(), dst: tack.template(), n):
+def _expand(src, dst, n):
     for id in range(n):
         dst.set_x(id, src.get_x(id))
         dst.set_y(id, src.get_y(id))

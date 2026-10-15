@@ -163,10 +163,10 @@ C = tack.empty((n,), tack.mat2(tack.f32))
 @tack.kernel
 def update(F, C, x, dt, n):
     for p in range(n):
-        F[p] = (tack.Matrix.identity(2) + dt * C[p]) @ F[p]   # '@' multiplies
+        F[p] = (tack.identity(2) + dt * C[p]) @ F[p]   # '@' multiplies
         J = F[p].determinant()
         stress = (F[p] - F[p].inverse().transpose()) * J      # '*' is entry by entry
-        x[p] += stress @ tack.Vector([0.0, -1.0]) * dt        # matrix @ vector
+        x[p] += stress @ tack.vec2(0.0, -1.0) * dt        # matrix @ vector
 ```
 
 - **Building one.** `tack.Matrix([[a, b], [c, d]])` from rows of scalars,

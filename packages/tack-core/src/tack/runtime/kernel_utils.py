@@ -1180,7 +1180,7 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
         if node.op in ops:
             return ops[node.op](left, right)
 
-    # A negated bound: range(-n, n + 1), ndrange((-n, n + 1), ...)
+    # A negated bound: range(-n, n + 1), ndindex((-n, n + 1), ...)
     if isinstance(node, ir.IRUnaryOp) and node.op in ("-", "+"):
         value = _resolve_range_expr(node.operand, name_to_arg)
         return -value if node.op == "-" else value
@@ -1191,7 +1191,7 @@ def _resolve_range_expr(node: ir.IRNode, name_to_arg: dict) -> int:
         if arg is not None:
             return int(arg)
 
-    # The extent of an ndrange (start, end) pair: max(end - start, 0)
+    # The extent of an ndindex (start, end) pair: max(end - start, 0)
     if (isinstance(node, ir.IRCall) and node.func_name in ("min", "max")
             and len(node.args) == 2):
         left = _resolve_range_expr(node.args[0], name_to_arg)

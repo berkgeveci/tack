@@ -32,7 +32,7 @@ u_new = tack.empty((N, N))
 @tack.kernel
 def heat_step(u, u_new, alpha_dt_dx2, n):
     """One explicit Euler step of the heat equation."""
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         if i > 0:
             if i < n - 1:
                 if j > 0:
@@ -55,13 +55,13 @@ def heat_step(u, u_new, alpha_dt_dx2, n):
 
 @tack.kernel
 def copy_array(src, dst, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         dst[i, j] = src[i, j]
 
 
 @tack.kernel
 def init_hotspots(u, n):
-    for i, j in tack.ndrange(n, n):
+    for i, j in tack.ndindex(n, n):
         r1 = sqrt(float((i - n // 3) * (i - n // 3) + (j - n // 3) * (j - n // 3)))
         r2 = sqrt(float((i - 2 * n // 3) * (i - 2 * n // 3) + (j - 2 * n // 3) * (j - 2 * n // 3)))
         if r1 < float(n // 8):
