@@ -106,34 +106,23 @@ packages/
                 copy.py          # copy, fill_value
                 stats.py         # Statistics and histograms
 
-    tack-rendering/               # Path tracing renderer
-        src/tack/
-            rendering/
-                camera.py        # PerspectiveCamera, OrthographicCamera
-                canvas.py        # Canvas (framebuffer)
-                scene.py         # Scene, Actor, PointLight
-                bvh.py           # GPU BVH construction
-                pathtrace.py     # Path tracing kernel
-
     tack-vis/                     # Scientific visualization algorithms
         src/tack/
             dataset/             # Datasets, spaces, views and their algorithms
                 algorithms/      # contour, clip, threshold, gradients, ... (one per file)
-            deprecated/          # Superseded by tack.dataset, kept for reference
-                algorithms/      # flying_edges, compute_normals, cell_to_point, amr_blanking
-                fe/              # Lagrange bases, geometry maps, accessors
             interop/             # External framework interop
                 vtk.py           # VTK ↔ Tack zero-copy exchange
 ```
 
-All three packages share the `tack` namespace via `pkgutil.extend_path`.
-`tack-rendering` and `tack-vis` depend on `tack-core` but not on each other.
+Both packages share the `tack` namespace via `pkgutil.extend_path`;
+`tack-vis` depends on `tack-core`. The path tracer that was `tack-rendering`
+is archived under `archive/tack-rendering` until the dataset API settles.
 
 ## Code Size
 
 `tack-core` is about 25,100 lines of Python, including docstrings and
 comments (`wc -l` over `packages/tack-core/src`, October 2026);
-`tack-rendering` and `tack-vis` add about 3,800 and 14,200:
+`tack-vis` adds about 12,400:
 
 | Directory | Lines | Role |
 |-----------|-------|------|

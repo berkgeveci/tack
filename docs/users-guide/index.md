@@ -5,8 +5,8 @@ and write the kernels that extend them. Tack's mesh algorithms and your own
 kernels run on CPU, Metal, CUDA, HIP and Level Zero, within
 [each backend's capabilities](08-backends.md#capabilities).
 
-`tack-core` provides the language, fields and algorithms; `tack-vis` adds
-scientific visualization; `tack-rendering` adds surface and volume rendering.
+`tack-core` provides the language, arrays and algorithms; `tack-vis` adds
+datasets and scientific visualization.
 The guide describes the current checkout. See [Getting Started](01-getting-started.md)
 for installation and the relationship to released APIs.
 
@@ -34,7 +34,6 @@ the [quick reference](quick-reference.md) nearby as you write your own program.
 | Combine contributions from many particles | [Gather and scatter](13-memory-and-parallelism.md#gather-and-scatter), then [MPM](tutorials/mpm.md) |
 | Filter items into a variable-size output | [Count, scan, write](tutorials/contours.md) |
 | Organize several kernels around shared state | [Templates](06-templates.md) and [trail-following agents](tutorials/physarum.md) |
-| Extract and render a surface | [Isosurface to image](tutorials/isosurface.md) |
 | Understand a discontinuous solution or a face flux | [Fields and Spaces](data/03-fields-and-spaces.md) |
 | Sample a mesh at measurement locations | [Probing](data/06-pipelines.md#sample-at-physical-positions) |
 | Share memory with another library | [Sharing arrays](16-interoperability.md) |
@@ -82,8 +81,7 @@ fields so you can check what each filter means, as well as view its output.
 | [Fields and Spaces](data/03-fields-and-spaces.md) | Continuous and discontinuous values, projection, traces and implicit arrays |
 | [Filter and Analyze](data/04-filters.md) | Selection versus cutting, field propagation, gradients and statistics |
 | [Write Mesh Algorithms](data/05-mesh-kernels.md) | Per-shape cell kernels, subsets, faces and oriented flux balances |
-| [Sample, Render and Connect Simulations](data/06-pipelines.md) | Probes, streamlines, retained geometry, VTK/MFEM and repeated pipelines |
-| [Rendering](10-rendering.md) | Scenes, cameras, scalar colouring, volumes and image output |
+| [Sample and Connect Simulations](data/06-pipelines.md) | Probes, streamlines, retained geometry, VTK/MFEM and repeated pipelines |
 
 Read the kernel chapters when you want to initialize data on the device, write
 a custom operation, or connect a simulation's working fields to the dataset.

@@ -82,6 +82,18 @@ All notable changes to Tack are recorded here. Rules cited by name live in
 
 ### Changed
 
+- **Breaking:** `tack.deprecated` is gone: the first vis worklets
+  (`flying_edges`, `compute_normals`, `cell_to_point`, `amr_blanking`) and
+  the finite-element helpers in `tack.fe`, with the examples written on
+  them (contour, marching cubes, flying edges, point-to-cell, `mini_vtk`,
+  the `tack.fe` isolines and isosurfaces). `tack.dataset` supersedes them:
+  `contour` for `flying_edges`, `to_points` for `cell_to_point`,
+  `gradients` and `project` for the finite-element helpers.
+- **Breaking:** `tack-rendering` (path tracer, rasterizer, volume renderer)
+  is archived in `archive/tack-rendering` and no longer part of the
+  workspace, the tests or the documentation, until the dataset API and its
+  implementation settle. Its user-guide chapter, the isosurface tutorial,
+  the two cross-package examples and the rendering benchmarks moved with it.
 - **Breaking:** the dataset package is now `tack.dataset`, replacing
   `tack.data`. Use `import tack.dataset as td`; submodules move with it
   (for example, `tack.dataset.algorithms` and `tack.dataset.arrays`).

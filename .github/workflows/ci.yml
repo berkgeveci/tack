@@ -6,7 +6,7 @@
 #   tests      — the suite on Python 3.11/3.12/3.13 (Linux, CPU backend)
 #   ids-i64    — the dataset tests again, every topology with 64-bit ids
 #   packaging  — proves a GPU install works without llvmlite
-#   examples   — runs all 51 shipped examples (deselected from the suite)
+#   examples   — runs every shipped example (deselected from the suite)
 #   metal      — the suite on an Apple Silicon runner, with a real GPU
 #
 # The runners have no NVIDIA or AMD GPU. That is less limiting than it
@@ -298,14 +298,14 @@ jobs:
             packages/tack-core/tests/test_backend_isolation.py
 
   # ── Examples ───────────────────────────────────────────────────────
-  # The 51 shipped examples are the code new users copy, and they exercise
-  # combinations the unit tests do not — templates feeding a path tracer,
-  # a contour into a renderer. They are deselected from the default
+  # The shipped examples are the code new users copy, and they exercise
+  # combinations the unit tests do not — templates feeding a solver, a
+  # dataset filter into VTK. They are deselected from the default
   # suite because the sweep takes about a minute against an 18-second
   # suite, so this is where they actually get run.
   #
-  # Examples needing an optional package (matplotlib, vtk, oidn,
-  # imgui_bundle) skip themselves with the reason; -rs prints those, so
+  # Examples needing an optional package (matplotlib, vtk, mfem,
+  # pydawn) skip themselves with the reason; -rs prints those, so
   # the log says what was really checked rather than just "green".
   examples:
     name: examples

@@ -3,7 +3,7 @@
 A scientific visualization pipeline starts with a mesh and values that mean
 something on that mesh: temperature at points, material per cell, flux through
 faces. `tack.dataset` keeps those relationships explicit so the same field can be
-interpolated, filtered, sampled and rendered without each stage inventing its
+interpolated, filtered and sampled without each stage inventing its
 own connectivity and indexing rules.
 
 Start with the [visualization quick start](../09-visualization.md#quick-start)
@@ -268,7 +268,7 @@ visible through more than one dataset that refers to it.
 For a time-dependent simulation, retain the mesh and update its working fields.
 Run the analysis stages again for the new values; an old contour is a previous
 result, not a live view that recomputes itself. Rebuild spatial locators after
-moving geometry, and prepare a new rendering scene when its geometry changes.
+moving geometry.
 The [pipeline chapter](06-pipelines.md) makes these boundaries explicit.
 
 ## Run and check

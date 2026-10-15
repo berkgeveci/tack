@@ -1,4 +1,4 @@
-# Enable namespace package merging across tack-core, tack-rendering, tack-vis
+# Enable namespace package merging across tack-core and tack-vis
 from pkgutil import extend_path
 
 __path__ = extend_path(__path__, __name__)

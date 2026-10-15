@@ -8,7 +8,7 @@ choice explicit for each field.
 
 This chapter introduces the finite-element vocabulary used by Tack. You do
 not need to assemble a finite-element system to use it: the same choices
-determine what a contour, probe, gradient or rendering can mean.
+determine what a contour, probe or gradient can mean.
 
 ## An array becomes a function through a basis
 

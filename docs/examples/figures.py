@@ -12,7 +12,6 @@ from pathlib import Path
 import contours
 import dye
 import heat
-import isosurface
 import mpm
 import nbody
 import physarum
@@ -24,7 +23,7 @@ def main():
                         default=Path(__file__).resolve().parents[1] / "assets" / "tutorials")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=True)
-    for module in (heat, dye, physarum, contours, mpm, nbody, isosurface):
+    for module in (heat, dye, physarum, contours, mpm, nbody):
         print(f"Generating {module.__name__} on cpu", flush=True)
         result = module.run("cpu")
         module.save_figure(result, args.output / f"{module.__name__}.png")

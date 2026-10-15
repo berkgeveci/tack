@@ -1,32 +1,17 @@
-"""The ``tack.algorithms`` and ``tack.deprecated`` namespaces.
+"""The ``tack`` namespace as tack-vis extends it.
 
-tack-core and tack-vis both used to ship a ``tack/algorithms/`` directory.
-``extend_path`` merges the directories' *contents*, but only one
-``__init__.py`` runs -- tack-core's -- so tack-vis's worklets reached
-``tack.algorithms`` only through a guarded re-export there. The worklets now
-live in ``tack.deprecated.algorithms`` (superseded by ``tack.dataset``), tack-vis
-ships no ``tack/algorithms/`` at all, and ``tack.algorithms`` is tack-core's
-primitives alone. These tests pin both halves.
+tack-core and tack-vis share the ``tack`` namespace through ``extend_path``,
+which merges the directories' *contents* but runs only one ``__init__.py``,
+so only one package may ship a given ``tack/<name>/``. ``tack.algorithms`` is
+tack-core's primitives alone; tack-vis's algorithms are ``tack.dataset``.
+These tests pin that, and that retired packages stay gone.
 """
 
 import pathlib
-import types
 
 import pytest
 
 pytestmark = pytest.mark.quick      # the inner-loop set; see CLAUDE.md, Tests
-
-
-def test_the_worklets_import_from_tack_deprecated():
-    from tack.deprecated.algorithms import (
-        cell_to_point,
-        compute_normals,
-        flying_edges,
-        flying_edges_multiblock,
-    )
-    for f in (cell_to_point, compute_normals, flying_edges, flying_edges_multiblock):
-        assert callable(f) and not isinstance(f, types.ModuleType)
-    from tack.deprecated.fe import HexBasis, QuadBasis  # noqa: F401
 
 
 def test_tack_algorithms_is_core_alone():
@@ -39,7 +24,7 @@ def test_tack_algorithms_is_core_alone():
 def test_tack_vis_ships_no_algorithms_directory():
     """A second ``tack/algorithms/__init__.py`` would be dead code: only the
     first one found on the path runs. A directory left holding only
-    ``__pycache__`` (a checkout from before the worklets moved) ships nothing."""
+    ``__pycache__`` (an old checkout) ships nothing."""
     src = pathlib.Path(__file__).resolve().parents[1] / "src" / "tack"
     assert not list((src / "algorithms").glob("**/*.py"))
 
@@ -60,9 +45,10 @@ def test_dataset_package_exports_the_canonical_model():
         assert hasattr(dataset, name), name
 
 
-def test_retired_data_package_is_not_shipped():
+@pytest.mark.parametrize("name", ["data", "deprecated", "fe"])
+def test_retired_packages_are_not_shipped(name):
     import importlib.util
 
     src = pathlib.Path(__file__).resolve().parents[1] / "src" / "tack"
-    assert not list((src / "data").glob("**/*.py"))
-    assert importlib.util.find_spec("tack.data") is None
+    assert not list((src / name).glob("**/*.py"))
+    assert importlib.util.find_spec(f"tack.{name}") is None

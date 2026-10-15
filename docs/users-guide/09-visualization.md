@@ -54,7 +54,7 @@ an approximation to a sphere. This example needs no VTK installation.
 | [Fields and Spaces](data/03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
 | [Filter and Analyze](data/04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
 | [Write Mesh Algorithms](data/05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
-| [Sample, Render and Connect Simulations](data/06-pipelines.md) | Probe a solution, integrate paths, render a surface or exchange datasets |
+| [Sample and Connect Simulations](data/06-pipelines.md) | Probe a solution, integrate paths or exchange datasets |
 
 For a first reading, follow the fundamentals, dataset and mesh chapters,
 then the field and filter chapters.
@@ -292,22 +292,10 @@ A topology keeps its ids in `i32` unless it is too large or asked for `i64`
 pays nothing for large ones. VTK's 64-bit ids come in as the narrowest type
 that holds them.
 
-## Rendering a result
+## Running the examples
 
-`tack.rendering` draws triangles from flat point and connectivity fields. A
-field of 3-vectors is stored interleaved, so `reshape` gives that flat view
-without a copy:
-
-```python
---8<-- "docs/examples/datasets.py:render"
-```
-
-![The wavelet's isosurface at 157, colored by height](../assets/datasets-contour.png)
-
-The whole example is [`docs/examples/datasets.py`](../examples/datasets.py).
-`--check` runs its assertions, and `--output image.png` saves the picture.
-Saving this particular image uses Pillow: from a checkout, run
-`uv run --with pillow python docs/examples/datasets.py --output image.png`.
+The whole example is [`docs/examples/datasets.py`](../examples/datasets.py);
+`--check` runs its assertions.
 
 The new chapter examples can be checked together with the rest of the guide:
 
@@ -365,14 +353,3 @@ The VTK DLPack support must provide `level_zero_handles()`. Fields created in a
 separate Tack context cannot be exchanged through this path. For another library,
 `tack.init(arch=tack.level_zero, external_context={"driver": ..., "device": ...,
 "context": ...})` adopts its context; Tack never destroys an adopted context.
-
-## Earlier algorithms
-
-The first vis worklets, `flying_edges`, `compute_normals`, `cell_to_point`
-and `amr_blanking`, and the finite-element helpers in `tack.fe` are kept
-for reference in `tack.deprecated`. `tack.dataset` supersedes them:
-- `contour` replaces `flying_edges`;
-- `to_points` replaces `cell_to_point`;
-- `gradients` and `project` replace the finite-element helpers.
-
-Some examples still use the old modules until they are ported.

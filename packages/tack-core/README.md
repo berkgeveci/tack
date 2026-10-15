@@ -52,8 +52,7 @@ pip install tack-core[level_zero]   # Intel — needs the system Level Zero runt
 
 ## Related packages
 
-- `tack-rendering` — path tracer, volume rendering, rasterization
-- `tack-vis` — flying edges, normals, cell↔point, VTK interop
+- `tack-vis` — `tack.dataset`: meshes, fields and visualization algorithms; VTK and MFEM interop
 
 Full documentation, examples and the kernel-language reference are in the
 [repository](https://github.com/berkgeveci/tack).

@@ -30,7 +30,7 @@ result = out.to_numpy()
 
 ## Installation
 
-Tack is split into three packages: **tack-core** (compute framework), **tack-rendering** (path tracer), and **tack-vis** (datasets and visualization: `tack.dataset`).
+Tack is split into two packages: **tack-core** (compute framework) and **tack-vis** (datasets and visualization: `tack.dataset`).
 
 ```bash
 # Install everything from source with uv
@@ -46,7 +46,6 @@ pip install tack-core[metal]       # core + Metal backend (macOS)
 pip install tack-core[cuda]        # core + CUDA backend
 pip install tack-core[hip]         # core + HIP backend (see note below)
 pip install tack-core[level_zero]  # core + Level Zero backend (Intel)
-pip install tack-rendering         # path tracer (pulls in tack-core)
 pip install tack-vis               # datasets and visualization (pulls in tack-core)
 ```
 
@@ -398,25 +397,21 @@ User's Guide and the [Dataset API reference](docs/reference/dataset-api.md).
 
 ## Examples
 
-49 progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip|level_zero`.
+32 progressive examples split across packages. All accept `--arch cpu|metal|cuda|hip|level_zero`.
 
 ```bash
 uv run python packages/tack-core/examples/01_hello_tack.py              # simplest kernel
 uv run python packages/tack-core/examples/12_mandelbrot.py --arch metal # fractal on GPU
 uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # tack.dataset
-uv run python examples/32_pathtrace.py --arch metal                    # path tracing
 ```
 
 | Location | Count | Covers |
 |----------|------:|--------|
 | `packages/tack-core/examples/` | 28 | Kernels, fields, math, control flow, vectors, templates, atomics, shared memory; then Mandelbrot, N-body, Jacobi, matmul, Game of Life, heat/wave, textures, DLPack |
-| `packages/tack-vis/examples/` | 9 | A tour of `tack.dataset`, an MFEM solution through it, multi-block contour, VTK interop; and contour, marching cubes, flying edges and point-to-cell written from scratch. `deprecated/` holds the `tack.fe` isolines and isosurfaces |
-| `packages/tack-rendering/examples/` | 10 | GPU BVH, path tracing, denoising, materials, multiple lights, scalar colouring, volume rendering, annotations |
-| `examples/` | 2 | Cross-package pipelines that need both tack-vis and tack-rendering |
+| `packages/tack-vis/examples/` | 4 | A tour of `tack.dataset`, an MFEM solution through it, multi-block contour, VTK interop |
 
 Numbers are unique within a package but repeat across packages — `tack-vis/31_multiblock_contour.py`
-and `tack-core/31_dawn_interop.py` both exist. The cross-package examples live at the
-repository root because neither package depends on the other, so neither can own them.
+and `tack-core/31_dawn_interop.py` both exist.
 
 ## Testing
 
@@ -449,7 +444,7 @@ uv run pytest packages/tack-core/tests/test_hip.py -v
 
 ## Project Structure
 
-Tack is a monorepo with three packages sharing the `tack` namespace:
+Tack is a monorepo with two packages sharing the `tack` namespace:
 
 ```
 packages/
@@ -463,20 +458,15 @@ packages/
     tests/                  # Core tests (CPU, Metal, CUDA, HIP, codegen)
     examples/               # Core examples
 
-  tack-rendering/            # Path tracing renderer
-    src/tack/rendering/      # Camera, BVH, scene, pathtrace kernels
-    examples/               # Rendering examples
-
   tack-vis/                  # Datasets and visualization
     src/tack/
       dataset/              # tack.dataset: topologies, spaces, fields, sets, views
         algorithms/         # Every algorithm, one module each
       interop/              # VTK and MFEM interop
-      deprecated/           # The first vis worklets and tack.fe, for reference
     tests/                  # Dataset and algorithm tests
     examples/               # Vis examples
 
-examples/                   # Cross-package examples (need vis + rendering)
+archive/                    # Retired packages kept for reference (tack-rendering)
 benchmarks/                 # Performance benchmarks
 docs/                       # Users guide, developers guide, performance notes
 ```

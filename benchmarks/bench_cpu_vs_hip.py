@@ -157,11 +157,6 @@ def main():
                 speedup = cpu_t / hip_t
                 print(f"  {bench_name:>12s}  {size_tag:>6s}  {cpu_t*1000:>10.3f}  {hip_t*1000:>10.3f}  {speedup:>7.1f}x")
 
-    # Volrender comparison (already measured externally, just print note)
-    print(f"\n{'='*90}")
-    print("  VOLUME RENDER: see --bench output from packages/tack-rendering/examples/tack_volrender.py")
-    print(f"{'='*90}")
-
 
 if __name__ == "__main__":
     main()

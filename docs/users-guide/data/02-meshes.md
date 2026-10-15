@@ -253,10 +253,6 @@ Call them before a kernel that needs those relations. First-use derivation can
 be a substantial part of a filter's first call; distinguish it from steady
 execution when measuring a repeated pipeline.
 
-Rendering currently requires `i32` triangle connectivity. A cast from `i64`
-is valid only when every referenced id fits; it cannot make an oversized mesh
-fit that interface.
-
 ## Run and check
 
 ```bash

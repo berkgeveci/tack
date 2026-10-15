@@ -5,8 +5,7 @@ scan, sort, segmented reductions, copy, fill, stats. All operate on
 tack.field objects and run as kernels on the active backend (CPU, Metal,
 CUDA, HIP, Level Zero), reading back at most a scalar result.
 
-Visualization algorithms are in ``tack.dataset`` (tack-vis); the first vis
-worklets, which used to join this namespace, are in ``tack.deprecated``.
+Visualization algorithms are in ``tack.dataset`` (tack-vis).
 """
 
 from pkgutil import extend_path

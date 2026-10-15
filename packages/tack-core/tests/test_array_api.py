@@ -208,23 +208,6 @@ def test_typed_pointer_and_dlpack_views(backend):
     np.testing.assert_array_equal(round_trip.to_numpy(), values.to_numpy())
 
 
-def test_render_actor_accepts_typed_components_without_copy(backend):
-    from tack.rendering import Actor
-    points = tack.array(np.array([[0, 0, 0], [1, 0, 0], [0, 1, 0]], np.float32),
-                        dtype=tack.vec3())
-    triangles = tack.array(np.array([[0, 1, 2]], np.int32), dtype=tack.vec3(tack.i32))
-    colors = tack.ones(shape=(3,), dtype=tack.vec3())
-    normals = tack.empty_like(points)
-    normals.fill([0, 0, 1])
-    actor = Actor(points, triangles, point_colors=colors, normals=normals)
-    assert actor.n_verts == 3 and actor.n_tris == 1
-    assert actor.points._buffer is points._buffer
-    assert actor.connectivity._buffer is triangles._buffer
-    assert actor.point_colors._buffer is colors._buffer
-    assert actor.normals._buffer is normals._buffer
-    np.testing.assert_array_equal(actor.points.to_numpy(), points.to_numpy().ravel())
-
-
 def test_vtk_layout_understands_element_types(backend, monkeypatch):
     from types import SimpleNamespace
 

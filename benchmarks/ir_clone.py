@@ -1,18 +1,16 @@
-"""Compare generic deepcopy with specialized cloning on example 33's IR.
+"""Compare generic deepcopy with specialized cloning on dataset filters' IR.
 
     uv run --no-sync python benchmarks/ir_clone.py --output /tmp/ir-clone.json
 
-Capture real pristine templates and typed CPU variants by rendering the same
-32-square scene after warming scene preparation and clearing the variant cache.
-Then alternate copy methods on each unchanged graph.
-Setup, compilation and rendering are excluded from the clone timings. This
+Capture real pristine templates and typed CPU variants by running a contour
+and a clip of VTK's wavelet after a warm-up run and clearing the variant
+cache. Then alternate copy methods on each unchanged graph.
+Setup, compilation and filtering are excluded from the clone timings. This
 is a component benchmark, not an end-to-end or GPU performance claim.
 """
 
 import argparse
-import contextlib
 import copy
-import io
 import json
 import platform
 import statistics
@@ -31,7 +29,7 @@ def main():
         parser.error('--rounds must be at least 3 and --copies must be positive')
     root = Path(__file__).resolve().parents[1]
     sys.path[:0] = [str(root / 'packages' / package / 'src')
-                    for package in ('tack-core', 'tack-rendering', 'tack-vis')]
+                    for package in ('tack-core', 'tack-vis')]
 
     import llvmlite
     import numpy as np
@@ -54,26 +52,26 @@ def main():
         records.append(('typed', function))
         return original_compile(function)
 
-    example = root / 'packages/tack-rendering/examples/33_pathtrace_primitives.py'
-    setup = example.read_text().split('# Warmup (JIT compile)')[0]
-    scope = {'__name__': '__main__', '__file__': str(example)}
-    original_argv = sys.argv
+    tack.init(arch=tack.cpu)
+    import tack.dataset as td
+
+    def filters():
+        data = td.wavelet(extent=10)
+        td.contour(data, "RTData", 157.0)
+        td.clip(data, td.Plane(origin=(0, 0, 0), normal=(1, 0, 0)))
+
     kernel_utils.clone_ir = capture_clone
     cpu._compile_kernel = capture_compile
     try:
-        sys.argv = [str(example), '--arch', 'cpu', '--resolution', '32']
-        with contextlib.redirect_stdout(io.StringIO()):
-            exec(compile(setup, str(example), 'exec'), scope)
-            scope['render'](scope['canvas'], scope['scene'], scope['camera'],
-                            samples=4, max_bounces=2)
-            get_backend()._cache.clear()
-            records.clear()  # Exclude geometry/BVH setup; recapture render kernels.
-            scope['render'](scope['canvas'], scope['scene'], scope['camera'],
-                            samples=4, max_bounces=2)
+        filters()
+        get_backend()._cache.clear()
+        for per_backend in kernel_utils._fast_caches.values():
+            per_backend.clear()                # the dispatch fast path's variants
+        records.clear()  # Exclude the warm-up; recapture the filters' kernels.
+        filters()
     finally:
         cpu._compile_kernel = original_compile
         kernel_utils.clone_ir = original_clone
-        sys.argv = original_argv
 
     results = []
     for stage, function in records:
@@ -100,7 +98,7 @@ def main():
     output = {'host': platform.node(), 'platform': platform.platform(),
               'python': platform.python_version(), 'numpy': np.__version__,
               'llvmlite': llvmlite.__version__, 'tack_source': tack.__file__,
-              'resolution': 32, 'samples': 4, 'bounces': 2,
+              'workload': 'wavelet extent 10: contour at 157, clip by x = 0',
               'rounds': args.rounds, 'copies_per_round': args.copies,
               'kernels': results}
     text = json.dumps(output, indent=2) + '\n'

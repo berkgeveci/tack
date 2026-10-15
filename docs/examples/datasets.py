@@ -113,32 +113,6 @@ def run(arch="cpu", check=False):
     lengths = td.cell_geometry(paths).measure        # a polyline's length
     # --8<-- [end:lines]
 
-    # --8<-- [start:render]
-    from tack.rendering import (
-        Actor,
-        Canvas,
-        ColorTable,
-        PerspectiveCamera,
-        PointLight,
-        Scene,
-        render,
-    )
-
-    positions = surface.geometry.values              # 3-vectors, stored interleaved
-    points = positions.reshape(positions.size)       # a flat view: nothing copied
-    heights = tack.empty(tack.f32, shape=(surface.num_points,))
-    heights.from_numpy(surface.positions()[:, 2].copy())
-    scene = Scene()
-    scene.add(Actor(points, surface.topology.connectivity, scalars=heights,
-                    color_table=ColorTable("viridis"), smooth=True))
-    scene.add(PointLight(position=(30, 40, 50), intensity=6000.0))
-    size = 64 if check else 400
-    camera = PerspectiveCamera((25, 20, 30), (0, 0, 0), width=size, height=size)
-    canvas = Canvas(size, size)
-    render(canvas, scene, camera, samples=1 if check else 8, max_bounces=1)
-    image = canvas.to_numpy()                        # (size, size, 4) uint8
-    # --8<-- [end:render]
-
     if check:
         assert surface.num_cells > 0 and inside.num_cells > 0 and skin.num_cells > 0
         assert set(skin.topology.types.to_numpy()) <= {9}               # quads
@@ -160,20 +134,12 @@ def run(arch="cpu", check=False):
         assert isinstance(paths.topology, td.PolylineTopology) and paths.num_cells == 2
         # Circles at unit angular speed for 40 steps of 0.05: 2 r long.
         np.testing.assert_allclose(lengths.values.to_numpy(), [2 * 0.5, 2 * 0.75], rtol=2e-3)
-        assert image.shape == (size, size, 4)
-        assert np.count_nonzero(canvas.depth_to_numpy() >= 0) > 100     # the surface is in view
-    return image
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--arch", default="cpu", choices=["cpu", "metal", "cuda", "hip", "level_zero"])
     parser.add_argument("--check", action="store_true")
-    parser.add_argument("--output", help="Save the rendered image (requires Pillow)")
     args = parser.parse_args()
-    image = run(args.arch, args.check)
-    if args.output:
-        from PIL import Image
-
-        Image.fromarray(image).save(args.output)
+    run(args.arch, args.check)
     print("Datasets: check passed" if args.check else "Datasets: done")

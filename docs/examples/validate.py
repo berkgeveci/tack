@@ -9,13 +9,13 @@ import sys
 import tempfile
 from pathlib import Path
 
-EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody", "isosurface",
+EXAMPLES = ("heat", "dye", "physarum", "contours", "mpm", "nbody",
             "kernel_results", "array_sizes", "datasets", "data_fields", "data_meshes",
             "data_analysis", "data_mesh_kernels", "data_spaces")
 QUICKSTARTS = (
     "01-getting-started", "02-fields-and-types", "11-reductions-and-scans",
     "12-execution-model", "14-vectors-and-matrices",
-    "09-visualization", "10-rendering", "15-debugging-and-timing", "16-interoperability",
+    "09-visualization", "15-debugging-and-timing", "16-interoperability",
 )
 
 

@@ -85,15 +85,14 @@ named.
 | IR structure and passes | `test_ir_verify.py`, `test_ir_clone.py`, `test_ir_traversal.py`, `test_ir_optimize.py`, `test_ast_transform.py`, `test_type_annotate.py`, `test_type_annotate_expr.py`, `test_type_inference.py` |
 | Backend capability declarations | `test_backend_contract.py`, `test_dispatch_types.py`, `test_backend_isolation.py` |
 | Runtime API: fields, inspection, local arrays | `test_field_utils.py`, `test_inspect.py`, `test_local_array.py`, `test_vector_add.py`, `test_cpu_jit.py` |
-| Texture snapshots and storage | `test_texture_snapshot.py`, `test_texture_inline.py`, `test_gpu_dispatch_paths.py`, `tack-rendering/tests/test_volume.py` |
+| Texture snapshots and storage | `test_texture_snapshot.py`, `test_texture_inline.py`, `test_gpu_dispatch_paths.py` |
 | Interop | `test_dlpack.py`, `test_level_zero_context.py`, `tack-vis/tests/test_vtk_interop.py` |
 | Code generators (host-side, no device) | `test_llvm_gen.py`, `test_msl_gen.py`, `test_cuda_gen.py`, `test_hip_gen.py`, `test_opencl_gen.py`, `test_opencl_compilation.py`, `test_scalar_packing.py` |
 | GPU dispatch paths without a GPU | `test_gpu_dispatch_paths.py` |
 | Per-backend runtime behavior | `test_metal.py`, `test_cuda.py`, `test_hip.py` |
 | CPU threading, the JIT'd pool, fills and NUMA | `test_cpu_threading.py`, `test_threading_benchmark.py`, `test_cpu_pool.py`, `test_cpu_fill.py`, `test_numa.py` |
-| Rendering correctness | `tack-rendering/tests/test_raster_differential.py`, `test_raster_winners.py`, `test_rasterize.py`, `test_mixed_render.py`, `test_bvh.py`, and the remaining rendering modules |
 | Datasets (`tack.dataset`) | `tack-vis/tests/test_dataset_api.py`, `test_dataset_filters.py`, `test_shapes.py`, `test_polyhedra.py`, `test_faces_2d.py`, `test_polylines.py`, `test_project.py`, `test_sets.py`, `test_carry.py`, `test_arrays.py`, `test_ids.py`, `test_buckets.py`, `test_clip.py`, `test_gradients.py`, `test_transforms.py`, `test_implicit.py`, `test_probe.py`, `test_flow.py`, `test_refinement_and_sources.py`, `test_vtk_interop.py`, `test_mfem_interop.py`; most compare with VTK where it is installed, and `pytest --ids=i64` reruns them with 64-bit ids |
-| Deprecated visualization worklets | `tack-vis/tests/test_flying_edges.py`, `test_compute_normals.py`, `test_cell_to_point.py`, `test_amr_blanking.py`, `test_fe.py`, `test_algorithms.py` |
+| Core algorithms (`tack.algorithms`) from tack-vis | `tack-vis/tests/test_algorithms.py` |
 | Package namespace | `tack-vis/tests/test_namespace.py` |
 | Validation tooling | `test_examples.py`, `test_validation_harness.py`, `test_compiler_tools.py` |
 
@@ -115,9 +114,8 @@ code under test. The suite uses these kinds of oracle:
 | Serial Python execution of the same source | Differential testing: the kernel body runs as ordinary Python over independent NumPy arrays, and every field is compared | `test_differential.py` |
 | Python big integers | Fixed-width wrapping, division, remainder, power and casts, computed exactly and then reduced modulo the width | `test_integer_semantics.py`, `test_integer_division.py`, `test_integer_expression_differential.py`, `test_division_and_power.py` |
 | Exact rationals and correctly rounded sums | Contraction and rounding (`fractions.Fraction`), and reduction error budgets (`math.fsum`) | `test_float_semantics.py`, `test_reduction_semantics.py` |
-| Structural invariants | Properties that must hold whatever the output, such as BVH containment, surface watertightness and analytic surfaces | `tack-rendering/tests/test_bvh.py`, `tack-vis/tests/test_flying_edges.py` |
-| Reference renders | Raster output checked against an oracle composed from renders of each candidate alone, with an index-coded palette | `tack-rendering/tests/test_raster_differential.py`, `test_raster_winners.py` |
-| Negative controls | Show that an oracle can fail: planted wrong pixels, a mutation reference with Tack's IR optimizations bypassed, a final-only wrapping oracle that a late-wrapping compiler would satisfy, and generator shapes that a device previously rejected | `test_raster_differential.py`, `test_compiler_contract.py`, `test_integer_expression_differential.py`, `test_opencl_compilation.py` |
+| Structural invariants | Properties that must hold whatever the output, such as surface watertightness and analytic surfaces | `tack-vis/tests/test_dataset_filters.py`, `test_polyhedra.py` |
+| Negative controls | Show that an oracle can fail: a mutation reference with Tack's IR optimizations bypassed, a final-only wrapping oracle that a late-wrapping compiler would satisfy, and generator shapes that a device previously rejected | `test_compiler_contract.py`, `test_integer_expression_differential.py`, `test_opencl_compilation.py` |
 
 Generated cases use fixed grammars and reproducible seeds. A failure
 report names the seed, backend and input, so it can be reproduced without

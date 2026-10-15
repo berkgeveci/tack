@@ -4,17 +4,20 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Monorepo Structure
 
-Tack is split into 3 packages under `packages/`:
+Tack is split into 2 packages under `packages/`:
 
 | Package | Path | Contents |
 |---------|------|----------|
-| `tack-core` | `packages/tack-core/` | Kernels, fields, types, IR, codegen, backends, scan/copy |
-| `tack-rendering` | `packages/tack-rendering/` | Path tracer (BVH, camera, scene, ColorTable) |
-| `tack-vis` | `packages/tack-vis/` | Visualization algorithms (flying edges, normals, VTK interop) |
+| `tack-core` | `packages/tack-core/` | Kernels, arrays, types, IR, codegen, backends, scan/sort/copy |
+| `tack-vis` | `packages/tack-vis/` | `tack.dataset` (data model and algorithms), VTK/MFEM interop |
+
+The path tracer that was `tack-rendering` is archived in `archive/tack-rendering/`
+(outside the workspace, CI and docs; its design notes are in its `NOTES.md`)
+until the dataset API settles. Ruff excludes `archive/`.
 
 All share the `tack` namespace via `pkgutil.extend_path`.
 
-**One catch worth knowing.** `extend_path` merges the *contents* of same-named directories, but only one `__init__.py` runs — the first found on the path. So only one package may ship a given `tack/<name>/` subpackage: `tack/algorithms/` is tack-core's alone (scan, sort, stats, copy). tack-vis's visualization algorithms are `tack.dataset.algorithms`; its first worklets (flying edges, normals, cell-to-point, AMR blanking) and `tack.fe` live in `tack.deprecated`, superseded by `tack.dataset` and kept for reference. `packages/tack-vis/tests/test_namespace.py` checks tack-vis ships no `tack/algorithms/`.
+**One catch worth knowing.** `extend_path` merges the *contents* of same-named directories, but only one `__init__.py` runs — the first found on the path. So only one package may ship a given `tack/<name>/` subpackage: `tack/algorithms/` is tack-core's alone (scan, sort, stats, copy). tack-vis's visualization algorithms are `tack.dataset.algorithms`. `packages/tack-vis/tests/test_namespace.py` checks tack-vis ships no `tack/algorithms/` and that the retired `tack.data`, `tack.deprecated` and `tack.fe` stay gone.
 
 ## Build & Test Commands
 
@@ -39,7 +42,7 @@ validation round or a merge gate, once per machine, not for iteration.
 1. **The files the change touches.** Seconds to a minute.
 2. **`-m quick`**: a module per area of the code (dispatch, the variant
    cache, each backend's main file, templates, the dataset API and its
-   algorithms, rendering's dispatch), marked `pytestmark = pytest.mark.quick`
+   algorithms), marked `pytestmark = pytest.mark.quick`
    at module level; about 1900 tests, ~300 s of test time, 80 s on four
    workers (a 16-thread Xeon with an RTX 4060 Ti). When a new area gets a
    test module, mark it quick if it runs in under ten seconds; the heavy
@@ -153,15 +156,6 @@ system-scope operations. Floating extrema support finite values and numeric
 zeros, with unspecified result sign on a zero tie; NaNs/infinities remain
 outside their domain.
 See `test_atomic_contract.py` and the language contract.
-
-Rasterized points and wireframes use three completed passes per actor:
-atomic depth reduction, atomic lowest-ID selection at the completed depth,
-and one color writer per pixel. Never combine atomic depth updates with
-ordinary depth reads and competing RGB stores in one geometry dispatch.
-`rendering/rasterize.py` uses cached i32 winner scratch; equal-depth
-primitives select the lowest index, while equal-depth actors overwrite in
-scene order. See `test_raster_winners.py` for contention across workgroups,
-forced CPU workers, ties, repeated frames and compositing.
 
 Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, so the two cannot disagree. Level Zero sets `supported_dtypes` in `__init__` because f64 depends on the device.
 
@@ -353,9 +347,7 @@ Dispatch binds that storage through `bind_textures()`; the grid bound still
 reads the source field. No compiled kernel caches texture objects, and none
 is keyed by device address: images free their device objects when the
 texture is collected. Only f32 fields of exactly W*H*D elements and
-`interp='linear'` are accepted. Volume rendering calls `update()` per
-`render_volume()`, since the path tracer reads `scalar_field` directly. See
-`test_texture_snapshot.py`.
+`interp='linear'` are accepted. See `test_texture_snapshot.py`.
 
 ### Kernel code inspection
 
@@ -655,40 +647,6 @@ Each GPU backend's `execute` and native `reduce_field` call `check_launch_size` 
 `exclusive_scan` and `inclusive_scan` (`algorithms/scan.py`) reduce, then scan, by chunks of `_CHUNK` (256): one thread per chunk copies it into the output (converting to the output's dtype on the store, so sums form in that dtype) and totals it, the chunk totals are scanned recursively the same way, and each chunk then writes its running sums from its offset. A level of at most `_SERIAL_MAX` (4096) elements on the CPU, or one tile on GPU backends, is one launch that one thread scans in order (`_scan_serial`, which also leaves the total in a one-element field): a million elements take three launches on the CPU, where the two levels below the chunk totals took five launches of microseconds of work each and most of a contour's host time between launches; the Blelloch scan before that made two launches per factor of two. In place (`input is output`) works; the total is read as one element (`field[n - 1]`, no launch). On backends with workgroups the chunk is a 2048-element tile scanned by a workgroup (`_tile_sums`/`_tile_apply`: eight per lane, lane totals Hillis-Steele in shared memory, a lane's exclusive prefix read from its neighbour rather than subtracted), since one thread per chunk is slow on GPUs (Metal, 1M elements: 4.6 -> 1.1 ms); floating sums then combine lanes in tree order.
 
 `argsort`/`sort_by_key` (`algorithms/sort.py`) are a stable LSD radix sort over 8-bit digits for i32/u32/i64/u64 keys: keys map to u64 with the sign bit flipped. On the CPU, one thread per 256-element chunk builds a private histogram, the exclusive scan assigns slots, and a second kernel scatters each chunk in order. On backends with workgroups (`supports_workgroups`) a pass instead sorts 4096-key tiles in shared memory (`_sort_tiles`: eight stable one-bit splits by workgroup prefix sums, no shared atomics, u8 digits and u16 positions to fit Metal's 32 KB), takes each tile's digit counts from the runs, scans them and scatters runs (`_scatter_tiles`); per-lane private tables spilled on GPUs, which made Metal's sort 3.5x slower than 8 CPU threads. The pass count follows the key spread (min subtracted on the fly), found by a chunked min/max reduction over the full u64 keys (`_key_range`). Not with atomics: four per key on one address made the sort four times slower on eight CPU threads than on one. `unique`/`reduce_by_key` flag run starts, scan them, and reduce one thread per run serially, so results are reproducible. Portable: no workgroup primitives. Empty fields (`shape=(0,)`) are valid outputs and allocate on every backend.
-
-### ColorTable (tack.rendering)
-
-`ColorTable` maps per-vertex scalar fields to RGB colors via a sampled lookup table. Presets: `viridis`, `cool_to_warm`, `inferno`, `plasma`, `grayscale`, `rainbow`. The `Actor` class accepts `scalars` (tack.field or numpy) + `color_table` (ColorTable) to enable scalar field coloring. During `Scene._prepare()`, scalars are mapped to per-vertex colors on GPU via linear interpolation into the lookup table. The pathtrace kernel's existing per-vertex color interpolation handles the rest — no kernel changes needed.
-
-### Multiple lights (tack.rendering)
-
-Multiple `PointLight` instances can be added to a `Scene`. Each light contributes independently with its own shadow ray. Light data is packed into a flat field (7 floats per light: x, y, z, intensity, r, g, b) and passed to the pathtrace kernel, which loops over all lights in the direct-illumination section. Light color (previously ignored) is now applied to each light's contribution. The `render()` function's `light_position` kwarg still works as a single-light override for backward compatibility.
-
-### Volume rendering (tack.rendering)
-
-`Volume` represents a uniform-grid scalar field for ray-casting volume rendering. `TransferFunction` maps scalars to RGBA (reuses ColorTable preset colors + user-defined opacity function). `render_volume(canvas, volume, camera)` ray marches through the volume with front-to-back compositing, trilinear interpolation via `tack.texture3d`, and opacity-corrected compositing.
-
-### Unified render dispatcher (tack.rendering)
-
-`render()` in `render.py` is the unified entry point. When a scene has both surfaces and volumes, the path tracer integrates volume ray marching directly — for each primary ray, after BVH traversal finds the closest surface hit, the volume is marched from the ray origin to the hit distance with front-to-back compositing. Volume opacity attenuates the throughput so surfaces are correctly visible through semi-transparent volumes. Volume-only scenes use the standalone ray caster. `render_volume()` remains available for direct single-volume rendering without a Scene.
-
-### Annotations (tack.rendering)
-
-`annotate(image, annotations)` draws overlays on `(H, W, 4) uint8` numpy arrays (from `Canvas.to_numpy()`). Three annotation types: `ColorBar` (gradient strip + tick labels from ColorTable/TransferFunction), `AxisIndicator` (projected XYZ axes from camera orientation), `TextOverlay` (arbitrary text). Lines and rectangles use pure numpy; text requires Pillow (soft dependency, gracefully skipped if absent). Camera stores `_right`, `_up`, `_forward` basis vectors for the axis indicator.
-
-### Orthographic camera (tack.rendering)
-
-`OrthographicCamera` generates parallel rays — all rays have the same direction, but origins vary per pixel. Uses the same scalar attribute pattern as `PerspectiveCamera` with added `odx_x/y/z` and `ody_x/y/z` origin-per-pixel deltas. `PerspectiveCamera` sets these to zero for backward compatibility. Works with both path tracer and volume renderer. The `view_height` parameter controls the world-space height of the view rectangle.
-
-### Material system (tack.rendering)
-
-`Material` class with three types: `MATTE` (Lambertian diffuse, default), `SPECULAR` (perfect mirror reflection), `TRANSPARENT` (glass with Snell's law refraction + Schlick Fresnel). Set per-actor via `Actor(..., material=Material(Material.SPECULAR))`. Per-triangle material IDs (`mat_ids` i32 field) index into a flat material table (`mat_table` f32 field, stride 4: type, ior, reserved, reserved). Direct lighting is only computed for matte surfaces. Specular bounces reflect perfectly; transparent surfaces refract or reflect based on Fresnel probability using Halton random numbers.
-
-### Wireframe and point rendering (tack.rendering)
-
-`Actor` accepts `render_mode="solid"` (default, path traced), `"wireframe"` (triangle edges), or `"points"` (vertex discs). Wireframe and point actors are dispatched to GPU rasterization kernels in `rasterize.py` instead of the path tracer. Uses an MVP projection matrix passed as a flat f32 field, Bresenham line rasterization for wireframe, disc rasterization for points, and `tack.atomic_min` depth testing. Supports perspective and orthographic cameras, per-actor colors, scalar coloring, and configurable point size.
-
-In a scene that also has solid actors or volumes, `render()` path traces a solid-only sub-scene (cached on the parent so the BVH survives across frames) and then calls `render_raster(..., composite=True)`: wireframe and point actors are drawn into scratch buffers and laid over the existing image instead of clearing it. With solids, the path tracer's primary-ray distances are converted to the rasterizer's clip-space depth (rebuilding each pixel's jittered first-sample ray) so surfaces hide rasterized geometry behind them; `_SURFACE_DEPTH_BIAS` pushes surfaces back 0.5% so a wireframe lying on its own surface is drawn. A ray-cast volume has no depth, so rasterized actors are drawn over it. `canvas.depth` keeps the path tracer's ray distances in a mixed scene.
 
 ### CPU threading decision
 

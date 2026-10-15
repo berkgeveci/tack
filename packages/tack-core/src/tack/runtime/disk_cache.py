@@ -225,7 +225,7 @@ def _cache():
 # ── What Tack itself is ─────────────────────────────────────────────────
 
 _TACK_FINGERPRINT = None
-_DISTRIBUTIONS = ("tack-core", "tack-vis", "tack-rendering")
+_DISTRIBUTIONS = ("tack-core", "tack-vis")
 
 
 def tack_fingerprint() -> str:

@@ -19,9 +19,9 @@ cd tack
 uv sync --extra cpu
 ```
 
-Run Python with `uv run python` from this directory. All three Tack packages
-are installed: `tack-core` for compute, `tack-vis` for datasets and scientific
-visualization, and `tack-rendering` for rendering.
+Run Python with `uv run python` from this directory. Both Tack packages are
+installed: `tack-core` for compute and `tack-vis` for datasets and scientific
+visualization.
 
 ### Use a released package
 
@@ -32,8 +32,8 @@ need from PyPI:
 python -m venv .venv
 source .venv/bin/activate
 python -m pip install 'tack-core[cpu]'
-# Optional: datasets and rendering
-python -m pip install tack-vis tack-rendering
+# Optional: datasets and visualization
+python -m pip install tack-vis
 ```
 
 On Windows, activate with `.venv\Scripts\Activate.ps1` in PowerShell. Run scripts
