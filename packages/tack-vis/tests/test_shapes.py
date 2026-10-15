@@ -587,6 +587,6 @@ def test_the_contour_tables_are_the_generators():
     package = pathlib.Path(__file__).resolve().parents[1]
     made = subprocess.run([sys.executable, str(package / "tools" / "make_contour_tables.py")],
                           capture_output=True, text=True, check=True).stdout
-    kept = (package / "src" / "tack" / "data" / "_contour_tables.py").read_text()
+    kept = (package / "src" / "tack" / "dataset" / "_contour_tables.py").read_text()
     version = re.compile(r"VTK \d+(\.\d+)*")
     assert version.sub("VTK", made) == version.sub("VTK", kept)
