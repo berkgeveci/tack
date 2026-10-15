@@ -46,6 +46,8 @@ address them, otherwise theirs. See [Backends: Devices](../users-guide/08-backen
 
 ::: tack.Device
 
+::: tack.device_count
+
 ::: tack.set_default_device
 
 ::: tack.get_default_device

@@ -74,6 +74,7 @@ from tack.lang.types import (
 from tack.runtime.dispatch import (
     Device,
     device,
+    device_count,
     get_default_device,
     set_debug,
     set_default_device,

@@ -12,6 +12,7 @@ Arrays are device-resident: ``tack.empty()`` allocates a device buffer via
 No per-dispatch copies — data stays on the GPU between kernel calls.
 """
 
+import contextlib
 import ctypes
 import functools
 import os
@@ -123,13 +124,14 @@ class _ContextToken:
     Tack adopts those but never destroys them, so their token never dies here.
     """
 
-    __slots__ = ("alive", "handle", "owned", "stream", "users")
+    __slots__ = ("alive", "device", "handle", "owned", "stream", "users")
 
-    def __init__(self, handle, owned):
+    def __init__(self, handle, owned, device):
         self.handle = handle
         self.users = 1
         self.alive = True
         self.owned = owned
+        self.device = device            # the device's ordinal
         # The context's queue: every launch, fill and copy Tack makes in the
         # context goes through this one stream, in order, and returns once
         # it is queued. Made on first use, in the context.
@@ -137,8 +139,10 @@ class _ContextToken:
 
     def queue(self):
         if self.stream is None:
-            err, self.stream = driver.cuStreamCreate(0)   # ordered with the legacy stream
+            with _BoundContext(self.handle):
+                err, stream = driver.cuStreamCreate(0)   # ordered with the legacy stream
             _check(err)
+            self.stream = stream
         return self.stream
 
 
@@ -146,6 +150,41 @@ class _ContextToken:
 # embedding application created are in here too, marked ``owned=False``, so
 # that buffers allocated in them still get a token to hold.
 _CONTEXTS: dict[int, _ContextToken] = {}
+
+# Whether every operation makes its context current for its duration
+# (`_in_context`). The driver works in the thread's current context, and a
+# backend's context is current on the thread that made it, as long as it is
+# the only one: then nothing is switched and nothing is paid. Set for good
+# once a backend's context is not current where it was made (a second
+# device, or a context shared from another thread), since from then on some
+# thread works in a context it did not make current.
+_switching = False
+
+
+def _in_context(token):
+    """``token``'s context, current for a block once Tack switches contexts,
+    and the thread's own after it."""
+    if not _switching or token is None:
+        return _NO_SWITCH
+    return _BoundContext(token.handle)
+
+
+_NO_SWITCH = contextlib.nullcontext()
+
+
+def _current_context():
+    """The context current on this thread, or None."""
+    err, ctx = driver.cuCtxGetCurrent()
+    if err != driver.CUresult.CUDA_SUCCESS or int(ctx) == 0:
+        return None
+    return ctx
+
+
+def _current_device():
+    """The ordinal of the device the current context is on."""
+    err, dev = driver.cuCtxGetDevice()
+    _check(err)
+    return int(dev)
 
 
 class _BoundContext:
@@ -267,17 +306,18 @@ class CUDABuffer(DeviceBuffer):
     # returning, as on Metal.
     _shared = False
 
-    def __init__(self, numpy_dtype, shape):
+    def __init__(self, numpy_dtype, shape, token=None):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
-        self._token = _current_context_token()
-        stream = self._token.queue()
-        # A zero-byte request is rejected; an empty array gets one byte it
-        # never reads, as on Level Zero.
-        err, self._device_ptr = driver.cuMemAllocAsync(max(self._nbytes, 1), stream)
-        _check(err)
-        _check(driver.cuMemsetD8Async(self._device_ptr, 0, self._nbytes, stream))
+        self._token = token = token or _current_context_token()
+        stream = token.queue()
+        with _in_context(token):
+            # A zero-byte request is rejected; an empty array gets one byte
+            # it never reads, as on Level Zero.
+            err, self._device_ptr = driver.cuMemAllocAsync(max(self._nbytes, 1), stream)
+            _check(err)
+            _check(driver.cuMemsetD8Async(self._device_ptr, 0, self._nbytes, stream))
 
     @property
     def _stream(self):
@@ -297,7 +337,8 @@ class CUDABuffer(DeviceBuffer):
     def synchronize(self):
         """Wait for every queued launch, fill and copy in this context."""
         self._live("wait for")
-        _check(driver.cuStreamSynchronize(self._stream))
+        with _in_context(self._token):
+            _check(driver.cuStreamSynchronize(self._stream))
 
     def share(self):
         """Hand this memory outside Tack: wait for the queued work now, and
@@ -328,7 +369,9 @@ class CUDABuffer(DeviceBuffer):
         # before this returns and the array may go.
         self._live("write to")
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        _check(driver.cuMemcpyHtoDAsync(self._device_ptr, src, self._nbytes, self._stream))
+        with _in_context(self._token):
+            _check(driver.cuMemcpyHtoDAsync(self._device_ptr, src, self._nbytes,
+                                            self._stream))
 
     def to_numpy(self) -> np.ndarray:
         self._live("read")
@@ -336,22 +379,28 @@ class CUDABuffer(DeviceBuffer):
         # Through a flat view: cuda-python does not take a zero-dimensional
         # array as a host buffer (CUDA_ERROR_INVALID_VALUE, or a crash).
         stream = self._stream
-        _drain(stream)
-        _check(driver.cuMemcpyDtoHAsync(out.reshape(-1), self._device_ptr, self._nbytes,
-                                        stream))
-        _check(driver.cuStreamSynchronize(stream))
+        with _in_context(self._token):
+            _drain(stream)
+            _check(driver.cuMemcpyDtoHAsync(out.reshape(-1), self._device_ptr, self._nbytes,
+                                            stream))
+            _check(driver.cuStreamSynchronize(stream))
         return out
 
     def read_range(self, start: int, count: int) -> np.ndarray:
         self._live("read")
-        return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
-                                  start, count, self._stream)
+        with _in_context(self._token):
+            return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
+                                      start, count, self._stream)
 
     def fill(self, value):
         self.fill_bytes(device_fill.scalar_pattern(value, self._numpy_dtype))
 
     def fill_bytes(self, pattern):
         self._live("write to")
+        with _in_context(self._token):
+            return self._fill_bytes(pattern)
+
+    def _fill_bytes(self, pattern):
         base = int(self._device_ptr)
         stream = self._stream
 
@@ -387,10 +436,12 @@ class CUDABuffer(DeviceBuffer):
         """Export as ExportedMemory. Lazily copies into exportable memory."""
         self._live("export")
         if not hasattr(self, '_export_buf'):
-            self._export_buf = ExportableCUDABuffer(self._numpy_dtype, self._shape)
+            self._export_buf = ExportableCUDABuffer(self._numpy_dtype, self._shape,
+                                                    self._token)
             self.synchronize()
-            _check(driver.cuMemcpyDtoD(
-                self._export_buf._device_ptr, self._device_ptr, self._nbytes))
+            with _in_context(self._token):
+                _check(driver.cuMemcpyDtoD(
+                    self._export_buf._device_ptr, self._device_ptr, self._nbytes))
         return self._export_buf.export_memory()
 
     def __del__(self):
@@ -403,7 +454,9 @@ class CUDABuffer(DeviceBuffer):
             try:
                 # In stream order: after every launch queued so far, which
                 # may still be using this memory.
-                driver.cuMemFreeAsync(self._device_ptr, token.queue())
+                stream = token.queue()
+                with _in_context(token):
+                    driver.cuMemFreeAsync(self._device_ptr, stream)
             except Exception:
                 pass
 
@@ -420,7 +473,7 @@ class ExportableCUDABuffer(DeviceBuffer):
     ``_EXPORT_HANDLE_TYPES``.
     """
 
-    def __init__(self, numpy_dtype, shape):
+    def __init__(self, numpy_dtype, shape, token=None):
         self._numpy_dtype = np.dtype(numpy_dtype)
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
@@ -430,8 +483,11 @@ class ExportableCUDABuffer(DeviceBuffer):
         self._device_ptr = None
         self._exported_handle = None
         self._handle_type_name = None
-        self._token = _current_context_token()
+        self._token = token = token or _current_context_token()
+        with _in_context(token):
+            self._map()
 
+    def _map(self):
         err, self._cuda_device = driver.cuCtxGetDevice()
         _check(err)
 
@@ -517,12 +573,15 @@ class ExportableCUDABuffer(DeviceBuffer):
 
     def from_numpy(self, arr: np.ndarray):
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        _check(driver.cuMemcpyHtoD(self._device_ptr, src, self._nbytes))
+        with _in_context(self._token):
+            _check(driver.cuMemcpyHtoD(self._device_ptr, src, self._nbytes))
 
     def to_numpy(self) -> np.ndarray:
         out = np.empty(self._shape, dtype=self._numpy_dtype)
-        _drain(self._queued_stream)
-        _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
+        stream = self._queued_stream
+        with _in_context(self._token):
+            _drain(stream)
+            _check(driver.cuMemcpyDtoH(out.reshape(-1), self._device_ptr, self._nbytes))
         return out
 
     # A copy on the legacy stream waits for the context's stream, which is
@@ -541,9 +600,11 @@ class ExportableCUDABuffer(DeviceBuffer):
         return super().thread_binding() if token is None else _BoundContext(token.handle)
 
     def read_range(self, start: int, count: int) -> np.ndarray:
-        _drain(self._queued_stream)
-        return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
-                                  start, count)
+        stream = self._queued_stream
+        with _in_context(self._token):
+            _drain(stream)
+            return _read_device_range(self._device_ptr, self._numpy_dtype, self._nbytes,
+                                      start, count)
 
     def fill(self, value):
         arr = np.full(self._shape, value, dtype=self._numpy_dtype)
@@ -585,11 +646,12 @@ class ExportableCUDABuffer(DeviceBuffer):
             token = getattr(self, "_token", None)
             if token is not None and not token.alive:
                 return
-            if self._device_ptr is not None:
-                driver.cuMemUnmap(self._device_ptr, self._alloc_size)
-                driver.cuMemAddressFree(self._device_ptr, self._alloc_size)
-            if self._mem_handle is not None:
-                driver.cuMemRelease(self._mem_handle)
+            with _in_context(token):
+                if self._device_ptr is not None:
+                    driver.cuMemUnmap(self._device_ptr, self._alloc_size)
+                    driver.cuMemAddressFree(self._device_ptr, self._alloc_size)
+                if self._mem_handle is not None:
+                    driver.cuMemRelease(self._mem_handle)
         except Exception:
             pass
 
@@ -699,11 +761,14 @@ class CUDATextureImage:
     served one that was made from someone else's memory.
     """
 
-    def __init__(self, shape_3d):
-        W, H, D = shape_3d
+    def __init__(self, shape_3d, token=None):
         self._shape = shape_3d
-        self._token = _current_context_token()
+        self._token = token = token or _current_context_token()
+        with _in_context(token):
+            self._create()
 
+    def _create(self):
+        W, H, D = self._shape
         # Create a CUDA array descriptor for a 3D float texture
         array_desc = driver.CUDA_ARRAY3D_DESCRIPTOR()
         array_desc.Width = W
@@ -767,7 +832,9 @@ class CUDATextureImage:
         copy_params.Height = H
         copy_params.Depth = D
 
-        _check(driver.cuMemcpy3DAsync(copy_params, array._buffer._stream))
+        stream = array._buffer._stream
+        with _in_context(self._token):
+            _check(driver.cuMemcpy3DAsync(copy_params, stream))
 
     def __del__(self):
         # Same rule as CUDABuffer: the context took these with it.
@@ -775,10 +842,11 @@ class CUDATextureImage:
         if token is not None and not token.alive:
             return
         try:
-            if hasattr(self, '_tex_obj'):
-                driver.cuTexObjectDestroy(self._tex_obj)
-            if hasattr(self, '_array'):
-                driver.cuArrayDestroy(self._array)
+            with _in_context(token):
+                if hasattr(self, '_tex_obj'):
+                    driver.cuTexObjectDestroy(self._tex_obj)
+                if hasattr(self, '_array'):
+                    driver.cuArrayDestroy(self._array)
         except Exception:
             pass
 
@@ -849,48 +917,42 @@ class CUDABackend(GPUBackend):
     supports_device_reductions = True
     supports_workgroups = True
     device_memory_spaces = frozenset({"cuda", "cuda_pinned", "cuda_managed"})
+    multi_device = True
 
-
-    def __init__(self):
+    @classmethod
+    def device_count(cls) -> int:
         _check(driver.cuInit(0))
-        err, self._device = driver.cuDeviceGet(0)
+        err, count = driver.cuDeviceGetCount()
         _check(err)
+        return int(count)
 
-        # Reuse an existing CUDA context if one is already active (e.g. from
-        # a simulation framework like AMReX).  Only create a new context when
-        # no current context exists.
-        #
-        # Whether the context may be destroyed is a property of the context,
-        # not of the backend that happens to hold it: a backend made beside the
-        # registry's one
-        # is a second backend on the context, so two
-        # CUDABackend objects routinely share one context for a moment. When
-        # that context is ours, both must agree that the *last* one out
-        # destroys it -- an adopter that recorded `_owns_context = False`
-        # would be left holding a destroyed context as soon as its creator
-        # was collected, and every later call would fail with
-        # CUDA_ERROR_INVALID_CONTEXT. Refcounting the context gets that
-        # right while leaving a foreign context untouched, which is the
-        # whole point of adopting one.
-        err, ctx = driver.cuCtxGetCurrent()
-        if err == driver.CUresult.CUDA_SUCCESS and int(ctx) != 0:
-            self._context = ctx
-            token = _CONTEXTS.get(int(ctx))
-            if token is None:
-                # Nobody here created this one, so it belongs to the embedding
-                # application: adopt it, but never destroy it.
-                token = _ContextToken(ctx, owned=False)
-                _CONTEXTS[int(ctx)] = token
-            else:
-                token.users += 1
-            self._token = token
-            self._owns_context = token.owned
-        else:
-            err, self._context = driver.cuCtxCreate(None, 0, self._device)
-            _check(err)
-            self._token = _ContextToken(self._context, owned=True)
-            _CONTEXTS[int(self._context)] = self._token
-            self._owns_context = True
+    @classmethod
+    def current_ordinal(cls) -> int:
+        """The device of a context another library made current on this
+        thread (an embedding framework's), else 0. A context Tack made and
+        left current is not a choice the thread made."""
+        ctx = _current_context()
+        if ctx is None:
+            return 0
+        token = _CONTEXTS.get(int(ctx))
+        if token is not None and token.owned:
+            return 0
+        return _current_device()
+
+    def __init__(self, ordinal=None):
+        _check(driver.cuInit(0))
+        if ordinal is None:
+            ordinal = self.current_ordinal()
+        count = self.device_count()
+        if not 0 <= ordinal < count:
+            raise ValueError(f"cuda:{ordinal}: this machine has {count} CUDA "
+                             f"device{'s' if count != 1 else ''}")
+        self.ordinal = ordinal
+        err, self._device = driver.cuDeviceGet(ordinal)
+        _check(err)
+        self._token = self._context_for(ordinal)
+        self._context = self._token.handle
+        self._owns_context = self._token.owned
 
         # A flat launch is one-dimensional, so gridDim.x bounds its size.
         # A multi-dimensional loop also needs the y/z grid limits (65535 on
@@ -921,6 +983,73 @@ class CUDABackend(GPUBackend):
         except Exception:
             pass                            # the pool releases at syncs; still correct
 
+    def _context_for(self, ordinal):
+        """The token of the context this backend works in, on device ``ordinal``.
+
+        Reuse an existing CUDA context if one is already active on the
+        device (e.g. from a simulation framework like AMReX), or one Tack
+        holds for it already; only create a new context when there is none.
+
+        Whether the context may be destroyed is a property of the context,
+        not of the backend that happens to hold it: a backend made beside the
+        registry's one is a second backend on the context, so two
+        CUDABackend objects routinely share one context for a moment. When
+        that context is ours, both must agree that the *last* one out
+        destroys it -- an adopter that recorded `_owns_context = False`
+        would be left holding a destroyed context as soon as its creator
+        was collected, and every later call would fail with
+        CUDA_ERROR_INVALID_CONTEXT. Refcounting the context gets that
+        right while leaving a foreign context untouched, which is the
+        whole point of adopting one.
+        """
+        global _switching
+        current = _current_context()
+        token = None
+        if current is not None and _current_device() == ordinal:
+            token = _CONTEXTS.get(int(current))
+            if token is None:
+                # Nobody here created this one, so it belongs to the embedding
+                # application: adopt it, but never destroy it.
+                token = _CONTEXTS[int(current)] = _ContextToken(current, False, ordinal)
+            else:
+                token.users += 1
+        else:
+            token = next((t for t in _CONTEXTS.values()
+                          if t.device == ordinal and t.alive), None)
+            if token is not None:
+                token.users += 1
+            else:
+                err, ctx = driver.cuCtxCreate(None, 0, self._device)
+                _check(err)
+                if current is not None:
+                    # cuCtxCreate made it current: leave the thread's own.
+                    driver.cuCtxPopCurrent()
+                token = _CONTEXTS[int(ctx)] = _ContextToken(ctx, True, ordinal)
+        # A context is current only on the thread that made or adopted it.
+        # Once this one is not current here, or there are two, some thread
+        # works in a context it did not make current: from now on every
+        # operation makes its own current (`_in_context`).
+        made_current = _current_context()
+        if (made_current is None or int(made_current) != int(token.handle)
+                or len(_CONTEXTS) > 1):
+            _switching = True
+        return token
+
+    @property
+    def _token_or_none(self):
+        """The context's token; None for a backend built without one (the
+        dispatch-path tests make one with ``__new__``)."""
+        return getattr(self, "_token", None)
+
+    @property
+    def memory_domain(self) -> tuple:
+        # A pointer belongs to the context it was allocated in, and two
+        # backends on one device may hold different contexts (one adopted).
+        token = self._token_or_none
+        if token is None:
+            return (self.name, self.ordinal)
+        return (self.name, self.ordinal, int(token.handle))
+
     @property
     def _stream(self):
         """The context's queue; None for a backend built without a context
@@ -935,7 +1064,8 @@ class CUDABackend(GPUBackend):
         at its call."""
         stream = self._stream
         if stream is not None:
-            _check(driver.cuStreamSynchronize(stream))
+            with _in_context(self._token_or_none):
+                _check(driver.cuStreamSynchronize(stream))
 
     def async_marker(self):
         """An event after the work queued so far in this context, for
@@ -948,14 +1078,14 @@ class CUDABackend(GPUBackend):
     def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> CUDABuffer:
         if exportable:
-            return ExportableCUDABuffer(dtype.numpy_dtype, shape)
-        return CUDABuffer(dtype.numpy_dtype, shape)
+            return ExportableCUDABuffer(dtype.numpy_dtype, shape, self._token_or_none)
+        return CUDABuffer(dtype.numpy_dtype, shape, self._token_or_none)
 
     def texture_in_hardware(self, shape_3d) -> bool:
         return True
 
     def create_texture_image(self, shape_3d) -> CUDATextureImage:
-        return CUDATextureImage(shape_3d)
+        return CUDATextureImage(shape_3d, self._token_or_none)
 
     def memory_space(self, ptr) -> str:
         """Query where a pointer resides: 'cpu', 'cuda', or 'cuda_managed'.
@@ -976,8 +1106,9 @@ class CUDABackend(GPUBackend):
             # and a mistaken one is a traceback rather than a quiet "cpu".
             return "cpu"
 
-        err, mem_type = driver.cuPointerGetAttribute(
-            driver.CUpointer_attribute.CU_POINTER_ATTRIBUTE_MEMORY_TYPE, addr)
+        with _in_context(self._token_or_none):
+            err, mem_type = driver.cuPointerGetAttribute(
+                driver.CUpointer_attribute.CU_POINTER_ATTRIBUTE_MEMORY_TYPE, addr)
         if err != driver.CUresult.CUDA_SUCCESS:
             # The documented reply for memory the driver does not know --
             # CUDA_ERROR_INVALID_VALUE for an ordinary host allocation.
@@ -997,7 +1128,7 @@ class CUDABackend(GPUBackend):
         buf._nbytes = int(np.prod(shape)) * buf._numpy_dtype.itemsize
         buf._device_ptr = ptr  # integer or CUdeviceptr
         buf._owned = False
-        buf._token = _current_context_token()
+        buf._token = self._token_or_none or _current_context_token()
         buf._shared = True      # someone else's memory: launches on it complete
         return buf
 
@@ -1005,6 +1136,9 @@ class CUDABackend(GPUBackend):
 
     def _launch(self, compiled, kernel_args, loop_end, extents):
         compiled(kernel_args, loop_end, extents, self._launch_limits, self._stream)
+
+    def _device_scope(self):
+        return _in_context(self._token_or_none)
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledCUDAKernel:
         """Compile Tack IR → CUDA C → PTX → CUfunction."""
@@ -1069,6 +1203,10 @@ class CUDABackend(GPUBackend):
 
     def reduce_array(self, array, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
+        with _in_context(self._token_or_none):
+            return self._reduce_array(array, op)
+
+    def _reduce_array(self, array, op: str) -> float:
         from tack.lang.types import f32
         if array.size == 0:
             return empty_reduction(op)
@@ -1084,7 +1222,7 @@ class CUDABackend(GPUBackend):
 
         func, module = self._reduce_cache[op]
 
-        out_buf = CUDABuffer(np.float32, (1,))
+        out_buf = CUDABuffer(np.float32, (1,), self._token_or_none)
         out_buf.from_numpy(np.array([REDUCTION_IDENTITIES[op]], dtype=np.float32))
 
         block_dim = 256
@@ -1136,8 +1274,9 @@ class CUDABackend(GPUBackend):
                 return
             _CONTEXTS.pop(int(token.handle), None)
             if token.stream is not None:
-                driver.cuStreamSynchronize(token.stream)
-                driver.cuStreamDestroy(token.stream)
+                with _in_context(token):
+                    driver.cuStreamSynchronize(token.stream)
+                    driver.cuStreamDestroy(token.stream)
                 token.stream = None
             if token.owned:
                 # Mark dead before destroying, so any buffer still holding

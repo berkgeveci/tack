@@ -481,6 +481,10 @@ class MetalBackend(GPUBackend):
         "tack.from_dlpack(source, copy=True)."
     )
 
+    @classmethod
+    def device_count(cls) -> int:
+        """1 where there is a Metal GPU to start on, else 0."""
+        return int(Metal is not None and Metal.MTLCreateSystemDefaultDevice() is not None)
 
     def __init__(self):
         if Metal is None:

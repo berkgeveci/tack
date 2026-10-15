@@ -178,6 +178,12 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   on two devices are refused, by `tack.algorithms`, `copyto` and `concat`
   under their own names. `tack.algorithms` run on their inputs' device,
   and `tack.sync()` and `tack.sync_async()` wait for every device.
+  `"cuda:N"`, `"hip:N"` and `"level_zero:N"` reach every GPU, and
+  `tack.device_count(type)` counts them; a bare `"cuda"` or `"hip"` is the
+  device the thread already uses (a framework's current CUDA context, HIP's
+  current device), else 0. With a second device in use, every CUDA or HIP
+  operation makes its own context or device current and restores the
+  thread's. DLPack carries the device number both ways.
   `tack.from_dlpack(x)` keeps memory on its own device when the default
   cannot wrap it, as the array API's does: CUDA memory with the CPU as
   default is a CUDA array, host memory with Metal as default a CPU array;

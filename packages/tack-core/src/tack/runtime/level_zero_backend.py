@@ -1391,6 +1391,25 @@ class CompiledL0Kernel:
             None, 0, None), "zeCommandListAppendLaunchKernel")
 
 
+def _driver_devices(ze, driver=None):
+    """A driver (the first, unless given) and its devices, in the order that
+    numbers them: ``level_zero:N`` is the Nth."""
+    if driver is None:
+        count = ctypes.c_uint32(0)
+        _check_ze(ze.zeDriverGet(ctypes.byref(count), None), "zeDriverGet (count)")
+        if count.value == 0:
+            raise RuntimeError("No Level Zero drivers found")
+        drivers = (ze_driver_handle_t * count.value)()
+        _check_ze(ze.zeDriverGet(ctypes.byref(count), drivers), "zeDriverGet")
+        driver = drivers[0]
+    count = ctypes.c_uint32(0)
+    _check_ze(ze.zeDeviceGet(driver, ctypes.byref(count), None), "zeDeviceGet (count)")
+    devices = (ze_device_handle_t * count.value)()
+    if count.value:
+        _check_ze(ze.zeDeviceGet(driver, ctypes.byref(count), devices), "zeDeviceGet")
+    return driver, [int(d or 0) for d in devices]
+
+
 # ---------------------------------------------------------------------------
 # LevelZeroBackend
 # ---------------------------------------------------------------------------
@@ -1412,8 +1431,15 @@ class LevelZeroBackend(GPUBackend):
         # two backends (one adopting another library's context) can differ.
         return (self.name, self.ordinal, self._context.value)
     device_memory_spaces = frozenset({"level_zero"})
+    multi_device = True
 
-    def __init__(self, external_context=None):
+    @classmethod
+    def device_count(cls) -> int:
+        ze = _get_ze()
+        _check_ze(ze.zeInit(0), "zeInit")
+        return len(_driver_devices(ze)[1])
+
+    def __init__(self, external_context=None, ordinal=None):
         ze = _get_ze()
 
         # Initialize Level Zero
@@ -1427,7 +1453,7 @@ class LevelZeroBackend(GPUBackend):
         # separately need not be the one that context was created against.
         self._owns_context = external_context is None
         if external_context is None:
-            self._init_own_driver_and_device(ze)
+            self._init_own_driver_and_device(ze, 0 if ordinal is None else ordinal)
         else:
             missing = [k for k in ("driver", "device", "context")
                        if not external_context.get(k)]
@@ -1437,6 +1463,14 @@ class LevelZeroBackend(GPUBackend):
                     f"'context' handles; missing or null: {', '.join(missing)}")
             self._driver = int(external_context["driver"])
             self._device = int(external_context["device"])
+            # The context's device numbers this one, among its driver's.
+            devices = _driver_devices(ze, self._driver)[1]
+            found = devices.index(self._device) if self._device in devices else 0
+            if ordinal is not None and ordinal != found:
+                raise ValueError(
+                    f"level_zero:{ordinal}: the external_context's device is "
+                    f"level_zero:{found}; name it, or write 'level_zero'")
+            self.ordinal = found
 
         self._query_device(ze)
 
@@ -1482,26 +1516,17 @@ class LevelZeroBackend(GPUBackend):
             return "level_zero"
         return "cpu"
 
-    def _init_own_driver_and_device(self, ze):
-        # Get first driver
-        count = ctypes.c_uint32(0)
-        _check_ze(ze.zeDriverGet(ctypes.byref(count), None), "zeDriverGet (count)")
-        if count.value == 0:
-            raise RuntimeError("No Level Zero drivers found")
-        drivers = (ze_driver_handle_t * count.value)()
-        _check_ze(ze.zeDriverGet(ctypes.byref(count), drivers), "zeDriverGet")
-        self._driver = drivers[0]
-
-        # Get first device
-        count = ctypes.c_uint32(0)
-        _check_ze(ze.zeDeviceGet(self._driver, ctypes.byref(count), None),
-                   "zeDeviceGet (count)")
-        if count.value == 0:
+    def _init_own_driver_and_device(self, ze, ordinal):
+        # The first driver's devices; each backend makes its own context.
+        self._driver, devices = _driver_devices(ze)
+        if not devices:
             raise RuntimeError("No Level Zero devices found")
-        devices = (ze_device_handle_t * count.value)()
-        _check_ze(ze.zeDeviceGet(self._driver, ctypes.byref(count), devices),
-                   "zeDeviceGet")
-        self._device = devices[0]
+        if not 0 <= ordinal < len(devices):
+            raise ValueError(f"level_zero:{ordinal}: the first Level Zero driver has "
+                             f"{len(devices)} "
+                             f"device{'s' if len(devices) != 1 else ''}")
+        self.ordinal = ordinal
+        self._device = devices[ordinal]
 
     def _query_device(self, ze):
         # Get device properties (for device ID and name)

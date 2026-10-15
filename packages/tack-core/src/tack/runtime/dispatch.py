@@ -148,7 +148,8 @@ def as_device(backend) -> Device:
 
 
 def _parse(spec):
-    """``(type, index)`` from a device spec: ``"cuda"``, ``"cuda:1"``, ``"cpu"``."""
+    """``(type, index)`` from a device spec: ``"cuda"``, ``"cuda:1"``, ``"cpu"``.
+    The index is None for a bare numbered type: `_current_index` decides."""
     if not isinstance(spec, str):
         raise TypeError(f"a device is a Device or a string such as 'cpu' or 'cuda:0', "
                         f"not {spec!r}")
@@ -157,7 +158,7 @@ def _parse(spec):
         available = ", ".join(sorted(_CONSTRUCTORS))
         raise ValueError(f"Unknown device type: '{kind}'. Available: {available}")
     if not number:
-        return kind, 0
+        return kind, (None if kind in _NUMBERED else 0)
     if kind not in _NUMBERED or not number.isdigit():
         raise ValueError(f"'{spec}' is not a device: write '{kind}'"
                          + (f" or '{kind}:N'" if kind in _NUMBERED else ""))
@@ -174,8 +175,14 @@ def device(spec="cpu", **options) -> Device:
     `Backend.device_options`; they make a new device each call. The CPU
     takes ``num_threads``; Level Zero takes ``external_context``, the
     driver, device and context handles of a context owned by another
-    library, so both can address the same memory. Only device 0 of each
-    type is reachable for now.
+    library, so both can address the same memory.
+
+    ``"cuda:N"`` is device N as the runtime numbers it (CUDA's ordinal,
+    HIP's device id, the index among the first Level Zero driver's
+    devices); `device_count` says how many there are. A bare ``"cuda"`` or
+    ``"hip"`` is the device the calling thread already uses: the one of a
+    CUDA context another library made current, HIP's current device, else
+    device 0. ``"level_zero"`` is device 0.
 
     ``with tack.device("cuda"):`` makes it the default device in the block.
     """
@@ -184,31 +191,61 @@ def device(spec="cpu", **options) -> Device:
             raise TypeError("options make a new device: pass a device spec, not a Device")
         return spec
     kind, index = _parse(spec)
-    if index != 0:
-        raise ValueError(f"device {index} of '{kind}': Tack reaches device 0 only, for now")
     if options:
-        return as_device(_construct(kind, options))
+        return as_device(_construct(kind, options, index))
+    if index is None:
+        index = _current_index(kind)
     with _lock:
         found = _devices.get((kind, index))
         if found is None:
-            found = _devices[(kind, index)] = _construct(kind, {})
+            found = _devices[(kind, index)] = _construct(kind, {}, index)
         return as_device(found)
 
 
-def _construct(kind, options):
+def device_count(kind: str) -> int:
+    """How many devices of type ``kind`` this machine has: 0 where it cannot start.
+
+    Counting makes no device: ``tack.device(f"cuda:{n}")`` for ``n`` below
+    the count does.
+    """
+    if kind not in _CONSTRUCTORS:
+        available = ", ".join(sorted(_CONSTRUCTORS))
+        raise ValueError(f"Unknown device type: '{kind}'. Available: {available}")
+    try:
+        return _backend_class(kind).device_count()
+    except (ImportError, RuntimeError, OSError):
+        return 0
+
+
+def _backend_class(kind):
+    import importlib
     module_name, class_name = _CONSTRUCTORS[kind]
+    return getattr(importlib.import_module(module_name), class_name)
+
+
+def _current_index(kind):
+    """The index a bare numbered spec means; 0 where the runtime cannot say,
+    and `_construct` reports why it cannot start."""
+    try:
+        return _backend_class(kind).current_ordinal()
+    except (ImportError, RuntimeError, OSError):
+        return 0
+
+
+def _construct(kind, options, index=None):
     help_msg = _BACKEND_HELP[kind]
     try:
-        import importlib
-        mod = importlib.import_module(module_name)
-        cls = getattr(mod, class_name)
+        cls = _backend_class(kind)
         unknown = sorted(set(options) - cls.device_options)
         if unknown:
             accepted = ", ".join(sorted(cls.device_options)) or "none"
             raise ValueError(
                 f"The '{kind}' device does not accept the option(s) "
                 f"{', '.join(unknown)}. Accepted: {accepted}.")
-        backend = cls(**options)
+        if cls.multi_device:
+            backend = cls(ordinal=index, **options)
+        else:
+            backend = cls(**options)
     except ImportError as e:
         raise RuntimeError(
             f"Cannot start the '{kind}' device: missing dependency.\n"

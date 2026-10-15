@@ -64,14 +64,22 @@ def test_a_device_is_one_value(cpu):
     # A device made with options is its own.
     serial = tack.device("cpu", num_threads=1)
     assert serial != cpu and serial != tack.device("cpu", num_threads=1)
-    with pytest.raises(ValueError, match="device 0 only"):
-        tack.device("cuda:1")
     with pytest.raises(ValueError, match="Unknown device type"):
         tack.device("vulkan")
+    assert tack.device_count("cpu") == 1
+    with pytest.raises(ValueError, match="Unknown device type"):
+        tack.device_count("vulkan")
     with pytest.raises(ValueError, match="not a device"):
         tack.device("cpu:0")
     with pytest.raises(ValueError, match="does not accept"):
         tack.device("cpu", contxt=1)
+
+
+def test_a_type_that_cannot_start_has_no_devices(monkeypatch):
+    def missing(kind):
+        raise ImportError(f"no {kind} bindings here")
+    monkeypatch.setattr(dispatch, "_backend_class", missing)
+    assert tack.device_count("cuda") == 0
 
 
 def test_set_default_device_keeps_arrays_and_compiled_kernels(cpu):

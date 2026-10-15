@@ -23,6 +23,7 @@ waits, so no other thread could launch on it meanwhile.
 Requires: hip-python (the ``[hip]`` extra)
 """
 
+import contextlib
 import ctypes
 import inspect
 import threading
@@ -215,6 +216,33 @@ class _BoundDevice:
             hip.hipSetDevice(self._previous)
 
 
+# Whether every operation makes its device current for its duration
+# (`_on_device`). HIP allocates, copies, compiles (for the current device's
+# architecture), loads modules and launches on the thread's current device,
+# which is the backend's own as long as Tack uses only device 0 and it is
+# the current device where the backend was made (every thread starts on
+# device 0): then nothing is switched and nothing is paid. Set for good
+# once a backend drives another device, or there are two.
+_switching = False
+_devices_used = set()
+_NO_SWITCH = contextlib.nullcontext()
+
+
+def _on_device(device):
+    """``device`` current for a block once Tack switches devices, and the
+    thread's own after it."""
+    if not _switching or device is None:
+        return _NO_SWITCH
+    return _BoundDevice(device)
+
+
+def _use_device(device, current):
+    global _switching
+    _devices_used.add(device)
+    if device != 0 or device != current or len(_devices_used) > 1:
+        _switching = True
+
+
 class _StreamMarker:
     """An event recorded on a device's stream after the work queued so far,
     waited on from any thread (`Backend.async_marker`). The event sleeps
@@ -252,7 +280,8 @@ class _Queue:
 
     def __init__(self, device):
         self.device = device
-        err, self.stream = hip.hipStreamCreate()
+        with _BoundDevice(device):          # a stream belongs to the current device
+            err, self.stream = hip.hipStreamCreate()
         _check_hip(err)
         err, pools = hip.hipDeviceGetAttribute(
             hip.hipDeviceAttribute_t.hipDeviceAttributeMemoryPoolsSupported, device)
@@ -318,23 +347,29 @@ class HIPBuffer(DeviceBuffer):
         self._shape = shape
         self._nbytes = int(np.prod(shape)) * self._numpy_dtype.itemsize
         self._queue = queue = queue or _queue()
-        # hip-python returns None for a zero-byte request, which a launch
-        # cannot pass as a pointer; an empty array gets one byte it never
-        # reads, as on CUDA and Level Zero.
-        if queue.pooled:
-            err, self._device_ptr = hip.hipMallocAsync(max(self._nbytes, 1), queue.stream)
-        else:
-            err, self._device_ptr = hip.hipMalloc(max(self._nbytes, 1))
-        _check_hip(err)
-        _check_hip(hip.hipMemsetAsync(self._device_ptr, 0, self._nbytes, queue.stream))
+        with _on_device(queue.device):
+            # hip-python returns None for a zero-byte request, which a launch
+            # cannot pass as a pointer; an empty array gets one byte it never
+            # reads, as on CUDA and Level Zero.
+            if queue.pooled:
+                err, self._device_ptr = hip.hipMallocAsync(max(self._nbytes, 1),
+                                                           queue.stream)
+            else:
+                err, self._device_ptr = hip.hipMalloc(max(self._nbytes, 1))
+            _check_hip(err)
+            _check_hip(hip.hipMemsetAsync(self._device_ptr, 0, self._nbytes, queue.stream))
 
     @property
     def _stream(self):
         return self._queue.stream
 
+    def _on_device(self):
+        return _on_device(self._queue.device)
+
     def synchronize(self):
         """Wait for every queued launch, fill and copy on this device."""
-        _wait_stream(self._stream)
+        with self._on_device():
+            _wait_stream(self._stream)
 
     # Reading waits for the stream, so `Array.numpy_async` reads in a
     # worker thread, with the buffer's device made current there.
@@ -361,22 +396,24 @@ class HIPBuffer(DeviceBuffer):
         # Queued after the launches before it, which may still read the old
         # contents.
         src = np.ascontiguousarray(arr, dtype=self._numpy_dtype)
-        _check_hip(hip.hipMemcpyAsync(
-            self._device_ptr, src, self._nbytes,
-            hip.hipMemcpyKind.hipMemcpyHostToDevice, self._stream,
-        ))
+        with self._on_device():
+            _check_hip(hip.hipMemcpyAsync(
+                self._device_ptr, src, self._nbytes,
+                hip.hipMemcpyKind.hipMemcpyHostToDevice, self._stream,
+            ))
 
     def to_numpy(self) -> np.ndarray:
         out = np.empty(self._shape, dtype=self._numpy_dtype)
         stream = self._stream
-        # A copy to pageable memory waits for the stream inside the call,
-        # holding the GIL and the stream: wait first, on an event.
-        _wait_stream(stream)
-        _check_hip(hip.hipMemcpyAsync(
-            out, self._device_ptr, self._nbytes,
-            hip.hipMemcpyKind.hipMemcpyDeviceToHost, stream,
-        ))
-        _check_hip(hip.hipStreamSynchronize(stream))
+        with self._on_device():
+            # A copy to pageable memory waits for the stream inside the call,
+            # holding the GIL and the stream: wait first, on an event.
+            _wait_stream(stream)
+            _check_hip(hip.hipMemcpyAsync(
+                out, self._device_ptr, self._nbytes,
+                hip.hipMemcpyKind.hipMemcpyDeviceToHost, stream,
+            ))
+            _check_hip(hip.hipStreamSynchronize(stream))
         return out
 
     def read_range(self, start: int, count: int) -> np.ndarray:
@@ -395,18 +432,23 @@ class HIPBuffer(DeviceBuffer):
         out = np.empty(count, dtype=self._numpy_dtype)
         if count:
             stream = self._stream
-            _wait_stream(stream)                  # as in to_numpy
-            _check_hip(hip.hipMemcpyAsync(
-                out, self.address + start * itemsize, count * itemsize,
-                hip.hipMemcpyKind.hipMemcpyDeviceToHost, stream,
-            ))
-            _check_hip(hip.hipStreamSynchronize(stream))
+            with self._on_device():
+                _wait_stream(stream)              # as in to_numpy
+                _check_hip(hip.hipMemcpyAsync(
+                    out, self.address + start * itemsize, count * itemsize,
+                    hip.hipMemcpyKind.hipMemcpyDeviceToHost, stream,
+                ))
+                _check_hip(hip.hipStreamSynchronize(stream))
         return out
 
     def fill(self, value):
         self.fill_bytes(device_fill.scalar_pattern(value, self._numpy_dtype))
 
     def fill_bytes(self, pattern):
+        with self._on_device():
+            return self._fill_bytes(pattern)
+
+    def _fill_bytes(self, pattern):
         base = self.address
         stream = self._stream
 
@@ -443,12 +485,13 @@ class HIPBuffer(DeviceBuffer):
     def __del__(self):
         if hasattr(self, '_device_ptr') and getattr(self, '_owned', True):
             try:
-                if self._queue.pooled:
-                    # In stream order: after every launch queued so far,
-                    # which may still be using this memory.
-                    hip.hipFreeAsync(self._device_ptr, self._stream)
-                else:
-                    hip.hipFree(self._device_ptr)
+                with self._on_device():
+                    if self._queue.pooled:
+                        # In stream order: after every launch queued so far,
+                        # which may still be using this memory.
+                        hip.hipFreeAsync(self._device_ptr, self._stream)
+                    else:
+                        hip.hipFree(self._device_ptr)
             except Exception:
                 pass
 
@@ -525,10 +568,14 @@ class HIPTextureImage:
     served one that was made from someone else's memory.
     """
 
-    def __init__(self, shape_3d):
-        W, H, D = shape_3d
+    def __init__(self, shape_3d, device=None):
         self._shape = shape_3d
+        self._hip_device = device
+        with _on_device(device):
+            self._create()
 
+    def _create(self):
+        W, H, D = self._shape
         # Create channel format descriptor: 1 channel, 32-bit float
         err, channel_desc = hip.hipCreateChannelDesc(
             32, 0, 0, 0, hip.hipChannelFormatKind.hipChannelFormatKindFloat)
@@ -588,14 +635,16 @@ class HIPTextureImage:
         ext = copy_params.extent
         ext.width, ext.height, ext.depth = W, H, D
         copy_params.kind = hip.hipMemcpyKind.hipMemcpyDeviceToDevice
-        _check_hip(hip.hipMemcpy3DAsync(copy_params, array._buffer._stream))
+        with _on_device(self._hip_device):
+            _check_hip(hip.hipMemcpy3DAsync(copy_params, array._buffer._stream))
 
     def __del__(self):
         try:
-            if hasattr(self, '_tex_obj'):
-                hip.hipDestroyTextureObject(self._tex_obj)
-            if hasattr(self, '_array'):
-                hip.hipFreeArray(self._array)
+            with _on_device(getattr(self, "_hip_device", None)):
+                if hasattr(self, '_tex_obj'):
+                    hip.hipDestroyTextureObject(self._tex_obj)
+                if hasattr(self, '_array'):
+                    hip.hipFreeArray(self._array)
         except Exception:
             pass
 
@@ -668,14 +717,41 @@ class HIPBackend(GPUBackend):
     supports_device_reductions = True
     supports_workgroups = True
     device_memory_spaces = frozenset({"hip", "hip_pinned", "hip_managed"})
+    multi_device = True
 
-
-    def __init__(self):
+    @classmethod
+    def device_count(cls) -> int:
         _check_hip(hip.hipInit(0))
-        err, device = hip.hipGetDevice()
+        err, count = hip.hipGetDeviceCount()
         _check_hip(err)
-        self._device = device
+        return int(count)
 
+    @classmethod
+    def current_ordinal(cls) -> int:
+        """The thread's current device, which another library may have set."""
+        err, device = hip.hipGetDevice()
+        return int(device) if err == hip.hipError_t.hipSuccess else 0
+
+    def __init__(self, ordinal=None):
+        _check_hip(hip.hipInit(0))
+        err, current = hip.hipGetDevice()
+        _check_hip(err)
+        if ordinal is None:
+            ordinal = current
+        count = self.device_count()
+        if not 0 <= ordinal < count:
+            raise ValueError(f"hip:{ordinal}: this machine has {count} HIP "
+                             f"device{'s' if count != 1 else ''}")
+        self.ordinal = self._device = ordinal
+        _use_device(ordinal, current)
+        # The queries make a texture, and the queue a stream, on the
+        # current device.
+        with _BoundDevice(ordinal):
+            self._query_device()
+        self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledHIPKernel}
+
+    def _query_device(self):
+        """The device's capabilities, limits and queue, with it current."""
         # Whether this device has texture/image hardware. CDNA parts
         # (gfx940/941/942 — MI300 and friends) have none: hipRTC marks
         # tex3D "unavailable: The image/texture API not supported on the
@@ -693,9 +769,10 @@ class HIPBackend(GPUBackend):
             self._query_max_image_3d() if self._has_image_support else 0)
         self._max_launch = self._query_max_launch()
         self._launch_limits = self._query_launch_limits()
-        self._queue = _queue(device)
+        self._queue = _queue(self._device)
 
-        self._cache = new_kernel_cache()  # Kernel -> {variant_key: CompiledHIPKernel}
+    def _on_device(self):
+        return _on_device(getattr(self, "_device", None))
 
     @property
     def _stream(self):
@@ -711,7 +788,8 @@ class HIPBackend(GPUBackend):
         at its call."""
         stream = self._stream
         if stream is not None:
-            _wait_stream(stream)
+            with self._on_device():
+                _wait_stream(stream)
 
     def async_marker(self):
         """An event after the work queued so far on this device's stream,
@@ -719,7 +797,8 @@ class HIPBackend(GPUBackend):
         stream = self._stream
         if stream is None:
             return None                      # the null stream: wait inline
-        return _StreamMarker(stream)
+        with self._on_device():
+            return _StreamMarker(stream)
 
     def _query_image_support(self) -> bool:
         """True when the device exposes the texture/image API."""
@@ -794,7 +873,7 @@ class HIPBackend(GPUBackend):
             max_dim == 0 or all(s <= max_dim for s in shape_3d))
 
     def create_texture_image(self, shape_3d) -> HIPTextureImage:
-        return HIPTextureImage(shape_3d)
+        return HIPTextureImage(shape_3d, getattr(self, "_device", None))
 
     def allocate_array(self, dtype: ScalarType, shape: tuple[int, ...],
                         exportable: bool = False) -> HIPBuffer:
@@ -833,9 +912,10 @@ class HIPBackend(GPUBackend):
         # allocates nothing for you and returns only the error code; 10
         # returns it. Getting this wrong is how this function came to answer
         # "cpu" for every pointer it was ever given -- see the note above.
-        err, attrs = _call_with_output(hip.hipPointerGetAttributes,
-                                       hip.hipPointerAttribute_t,
-                                       hip.hipDeviceptr_t(addr))
+        with self._on_device():
+            err, attrs = _call_with_output(hip.hipPointerGetAttributes,
+                                           hip.hipPointerAttribute_t,
+                                           hip.hipDeviceptr_t(addr))
         if int(err) != int(hip.hipError_t.hipSuccess):
             # Documented outcome for a pointer HIP does not recognise, which
             # is what an ordinary host allocation is.
@@ -867,6 +947,9 @@ class HIPBackend(GPUBackend):
 
     def _launch(self, compiled, kernel_args, loop_end, extents):
         compiled(kernel_args, loop_end, extents, self._launch_limits, self._stream)
+
+    def _device_scope(self):
+        return self._on_device()
 
     def _compile_kernel(self, ir_func: ir.IRFunction) -> CompiledHIPKernel:
         """Compile Tack IR → HIP C → code object → hipFunction."""
@@ -931,6 +1014,10 @@ class HIPBackend(GPUBackend):
 
     def reduce_array(self, array, op: str) -> float:
         """GPU-side reduction: sum, min, or max."""
+        with self._on_device():
+            return self._reduce_array(array, op)
+
+    def _reduce_array(self, array, op: str) -> float:
         from tack.lang.types import f32
         if array.size == 0:
             return empty_reduction(op)

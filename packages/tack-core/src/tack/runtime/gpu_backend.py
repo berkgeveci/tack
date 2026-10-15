@@ -43,36 +43,39 @@ class GPUBackend(Backend):
         """
         from tack.lang.array import Texture3D
 
-        variant, effective_args = resolve_variant(
-            self, kernel, args, kwargs,
-            build=self._build_variant,
-            store_texture_shapes=self._store_texture_shapes,
-        )
-        compiled, pack_info, pack_arrays = variant.payload
+        # The device is current for the whole call: compiling the variant,
+        # making its scalar buffers and queueing the launch all address it.
+        with self._device_scope():
+            variant, effective_args = resolve_variant(
+                self, kernel, args, kwargs,
+                build=self._build_variant,
+                store_texture_shapes=self._store_texture_shapes,
+            )
+            compiled, pack_info, pack_arrays = variant.payload
 
-        # Loop range comes from the pre-packing IR: packing rewrites the
-        # parameter list, and the range expression names the original args.
-        kernel_args = [a.array if isinstance(a, Texture3D) else a
-                       for a in effective_args]
-        loop_end, extents = _get_launch(variant.ir, kernel_args)
-        if loop_end <= 0:
-            # range(0) runs nothing. No driver takes an empty grid, and
-            # Level Zero's group count, a uint32, would wrap a negative one.
-            return
-        check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
+            # Loop range comes from the pre-packing IR: packing rewrites the
+            # parameter list, and the range expression names the original args.
+            kernel_args = [a.array if isinstance(a, Texture3D) else a
+                           for a in effective_args]
+            loop_end, extents = _get_launch(variant.ir, kernel_args)
+            if loop_end <= 0:
+                # range(0) runs nothing. No driver takes an empty grid, and
+                # Level Zero's group count, a uint32, would wrap a negative one.
+                return
+            check_launch_size(f"Kernel '{kernel.name}'", loop_end, self._max_launch, self.label)
 
-        # Textures bind their own snapshot, not the array they came from.
-        kernel_args = bind_textures(effective_args)
+            # Textures bind their own snapshot, not the array they came from.
+            kernel_args = bind_textures(effective_args)
 
-        with self._launch_guard(variant):
-            if pack_info:
-                from tack.lang.ir_pack_scalars import split_args
-                kept_args = split_args(effective_args, pack_info)
-                kernel_args = bind_textures(kept_args) + self._scalar_buffers(
-                    pack_info, pack_arrays, effective_args)
-            self._launch(compiled, kernel_args, loop_end, extents)
-        if self._must_complete(kernel_args):
-            self.synchronize()
+            with self._launch_guard(variant):
+                if pack_info:
+                    from tack.lang.ir_pack_scalars import split_args
+                    kept_args = split_args(effective_args, pack_info)
+                    kernel_args = bind_textures(kept_args) + self._scalar_buffers(
+                        pack_info, pack_arrays, effective_args)
+                self._launch(compiled, kernel_args, loop_end, extents)
+            if self._must_complete(kernel_args):
+                self.synchronize()
 
     def _build_variant(self, ir_func, effective_args):
         """Pack scalars, annotate, compile. Runs once per variant.
@@ -138,6 +141,13 @@ class GPUBackend(Backend):
         from tack.runtime.kernel_utils import _update_pack_arrays
         _update_pack_arrays(pack_arrays, pack_info, effective_args)
         return pack_arrays
+
+    def _device_scope(self):
+        """Entered around the whole of `execute`, making this backend's
+        device current on the calling thread: CUDA its context, HIP its
+        device. Nothing by default (Metal and Level Zero address a device
+        through their own handles)."""
+        return _no_guard
 
     def _launch_guard(self, variant):
         """Held from the scalar write through the launch. By default the
