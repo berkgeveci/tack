@@ -104,7 +104,7 @@ on the shared template (see [Concurrency](#concurrency)).
 ### `vec_sig`: vector widths
 
 `tuple(sorted(vector_fields.items()))`: the component count of each
-`tack.Vector.field` argument. Width determines how many component loads
+`tack.Array` with a vector element dtype argument. Width determines how many component loads
 the frontend emits and the stride between vectors, so two widths need two
 lowerings and two compiled kernels. Leaving width out of the key once let a
 width-2 variant serve a width-3 call and return wrong norms; that is
@@ -426,7 +426,7 @@ def scale(x, out, a):
 | the same with `n` passed as a scalar: `out[i] = x[n - 1 - i]` | lengths 8, 16, 32 | 1 |
 | `tack.ndrange(a.shape[0], a.shape[1])` over 2-D fields | shapes `(4, 8)`, `(16, 8)`, `(4, 9)` | 2 |
 | `range(1, x.shape[0] - 1)` stencil | lengths 8, 16, 32 | 1 |
-| `out[i] = v[i].dot(v[i])` with `tack.Vector.field` | widths 2, then 3 | 2 (and 2 IR templates) |
+| `out[i] = v[i].dot(v[i])` with `tack.Array` with a vector element dtype | widths 2, then 3 | 2 (and 2 IR templates) |
 
 For a `@tack.device_class` class with a class constant `factor`, an
 instance scalar `offset` and an instance field `data`:

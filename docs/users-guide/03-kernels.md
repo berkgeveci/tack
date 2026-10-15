@@ -37,8 +37,8 @@ def integrate(rho, e, n, dx):
 
 Code before or after the parallel loop may run any number of times per
 launch (once per GPU thread, once per CPU chunk), so it may only assign
-local variables, read fields, and declare `tack.shared` or
-`tack.local_array` arrays. Field stores, atomics, barriers, block
+local variables, read arrays, and declare `tack.shared` or
+`tack.local_array` arrays. Array stores, atomics, barriers, block
 reductions and `print` there are rejected; move them into the loop body.
 Each iteration starts from the values the code before the loop assigned:
 
@@ -52,7 +52,7 @@ def scale(x, out, k):
 
 The loop bound can come from:
 - A scalar argument: `range(n)`
-- A field shape: `range(data.shape[0])`
+- An array shape: `range(data.shape[0])`
 - `len(data)`
 
 ## Constants
@@ -142,9 +142,9 @@ The definitions are GLSL's (`mix(x, y, a)` is `x * (1 - a) + y * a`, and
 `smoothstep` with its edges reversed reverses the step). They are only
 callable from kernels and device functions.
 
-## Field Dimensions
+## Array Dimensions
 
-`field.shape[k]` and `len(field)` work anywhere in a kernel — not only as
+`array.shape[k]` and `len(array)` work anywhere in a kernel — not only as
 the loop bound:
 
 ```python
@@ -182,9 +182,9 @@ Use `tack.ndrange` for 2D or 3D parallel iteration:
 
 ```python
 @tack.kernel
-def fill_2d(grid, width, height):
-    for i, j in tack.ndrange(width, height):
-        grid[j * width + i] = float(i + j)
+def fill_2d(grid, height, width):
+    for row, column in tack.ndrange(height, width):
+        grid[row, column] = float(row + column)
 ```
 
 This launches `width * height` threads. Each thread gets its `(i, j)` pair
@@ -218,13 +218,13 @@ def reduction_per_row(data, out, width, height):
 ```
 
 Sequential loops support:
-- `range(n)` with runtime bounds (including field loads)
+- `range(n)` with runtime bounds (including array loads)
 - `range(start, end)`
 - `range(start, end, step)`
 
 ### Variable-Length Inner Loops
 
-The loop bound can come from a field load, enabling variable-length
+The loop bound can come from an array load, enabling variable-length
 iteration patterns like Viskores-style connectivity:
 
 ```python
@@ -256,10 +256,10 @@ live = count_live(cells, count, n)        # a Python int
 ```
 
 The expression is evaluated once, after the launch, by a one-thread
-epilogue kernel that stores it into a hidden field the call reads back.
-So it may use fields, arguments, constants and locals bound before the
+epilogue kernel that stores it into a hidden array the call reads back.
+So it may use arrays, arguments, constants and locals bound before the
 loop, but not a local the loop assigns, which has a value per thread.
-This replaces writing a one-element field and reading it with
+This replaces writing a one-element array and reading it with
 `to_numpy()` or `f[0]`; the cost is one extra, tiny launch and one
 element's transfer.
 
@@ -295,14 +295,14 @@ uv run python docs/examples/kernel_results.py --arch metal --check
 
 Kernels are compiled on first call. A compiled *variant* is reused by later
 calls that agree on everything the generated code depends on: argument
-dtypes, which arguments are fields, scalars or textures, vector widths,
-texture extents, `@tack.device_class` class constants and layout, any field
+dtypes, which arguments are arrays, scalars or textures, vector widths,
+texture extents, `@tack.device_class` class constants and layout, any array
 dimensions the kernel bakes in (for example `x.shape[1]` used as a row
-stride), and on CPU whether the fields overlap. Anything else is a runtime
+stride), and on CPU whether the arrays overlap. Anything else is a runtime
 parameter.
 
 So changing scalar values (passing `alpha=2.5`, then `alpha=3.0`) does
-**not** recompile, and neither does changing the length of a 1-D field
+**not** recompile, and neither does changing the length of a 1-D array
 used only as the parallel loop bound. Changing a dtype, a vector width or a
 baked-in dimension does. If a kernel recompiles for every array size, pass
 the size as a scalar argument instead of reading it from `shape` inside the
@@ -352,7 +352,7 @@ The three modes are:
 You must pass the same arguments the kernel would receive at runtime, since
 type inference, dimension resolution, and template expansion all depend on
 them. Inspection applies the same checks as a call, so arguments a call
-would reject (an `f64` field on Metal, for example) raise here too, and
+would reject (an `f64` array on Metal, for example) raise here too, and
 on GPUs without texture hardware the source shows the software sampling
 the call would use. Templates and scalar arguments work as expected:
 

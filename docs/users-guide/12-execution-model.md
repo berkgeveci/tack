@@ -1,7 +1,7 @@
 # From Python to a Tack program
 
 A Tack application contains two kinds of code. **Host code** is ordinary Python:
-it allocates fields, prepares data, chooses which kernels to run, repeats timesteps,
+it allocates arrays, prepares data, chooses which kernels to run, repeats timesteps,
 and displays the results. **Device code** is the body of a `@tack.kernel` or
 `@tack.func`: Tack reads that source and compiles its supported numerical operations
 for the selected backend. On the CPU, device code still means compiled code.
@@ -85,9 +85,9 @@ for step in range(100):                    # Python controls the simulation
 ```
 
 Every launch sees the results of the launches before it, and every host
-access to a field -- `to_numpy`, `from_numpy`, indexing, reductions -- sees
+access to an array -- `to_numpy`, `from_numpy`, indexing, reductions -- sees
 the results of every launch before it. So the second kernel sees the
-completed force field, and so does a read after the loop. On the CPU a
+completed force array, and so does a read after the loop. On the CPU a
 call completes before Python continues; on CUDA, HIP, Metal and Level Zero
 it is queued and returns at once, and the host access waits. The program
 above behaves the same either way, and there is no stream or event to
@@ -130,14 +130,14 @@ There are three common ways to give device code a numerical value:
 |---|---|---|
 | A coefficient changing each call | Scalar argument | `advance(pos, vel, dt, n)` |
 | A fixed model parameter | `tack.constant` | `GRAVITY = tack.constant(9.8)` |
-| An array of state | Field argument or device-class attribute | Particle positions, a grid, a counter |
+| An array of state | Array argument or device-class attribute | Particle positions, a grid, a counter |
 
 An ordinary Python global such as `gravity = 9.8` is not captured in device code.
 Declare a constant or pass it. Changing a runtime argument changes the next call
 without changing the kernel source. Constants are fixed when the specialization
 is first lowered; rebinding a Python name later does not update cached code.
 
-`@tack.device_class` gathers fields and parameters into an object. Its instance
+`@tack.device_class` gathers arrays and parameters into an object. Its instance
 scalars are runtime arguments; its class constants and method structure help
 define the compiled specialization. The [Templates](06-templates.md) chapter
 shows how to use this to organize a solver.
@@ -146,13 +146,13 @@ shows how to use this to organize a solver.
 
 The first call includes compilation. Later compatible calls reuse the compiled
 variant. Changing a scalar value usually reuses it. Changing the scalar's dtype,
-field dtype, vector width, template structure or a baked-in dimension may create
+array dtype, vector width, template structure or a baked-in dimension may create
 another variant.
 
 This distinction matters for a grid. A 1-D length used only as the launch bound
 can vary without recompilation; multidimensional indexing uses row strides that
 depend on the shape. Two grids with different shapes may need different code
-even when the Python kernel is identical. Prefer fixed working fields during a
+even when the Python kernel is identical. Prefer fixed working arrays during a
 simulation; allocate once and update them each frame.
 
 See [Kernel Caching](03-kernels.md#kernel-caching) for examples and
@@ -163,7 +163,7 @@ See [Kernel Caching](03-kernels.md#kernel-caching) for examples and
 Many familiar constructs work: arithmetic, `if`, sequential `for` and `while`,
 vectors, matrices and device-function calls. Arbitrary Python objects, NumPy
 calls and file operations do not run inside a kernel. For example, generate an
-initial state with NumPy on the host, upload it, then work on the field:
+initial state with NumPy on the host, upload it, then work on the array:
 
 ```python
 rng = np.random.default_rng(42)

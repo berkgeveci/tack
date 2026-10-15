@@ -4,18 +4,18 @@ Tack has five ways to combine many values into a few:
 
 | Family | Entry points | Where it runs |
 |---|---|---|
-| [Field reductions](#field-reductions) | `field.sum()`, `.min()`, `.max()`, `.mean()` | Called from Python; the device or NumPy, depending on backend and dtype |
-| [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; terms formed on the active backend and reduced as fields are |
+| [Array reductions](#array-reductions) | `array.sum()`, `.min()`, `.max()`, `.mean()` | Called from Python; the device or NumPy, depending on backend and dtype |
+| [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; terms formed on the active backend and reduced as arrays are |
 | [Prefix scans](#prefix-scans) | `exclusive_scan`, `inclusive_scan` (plus `copy`, `fill_value`) in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
 | [Sorting and segmented reductions](#sorting-and-segmented-reductions) | `argsort`, `sort_by_key`, `gather`, `unique`, `reduce_by_key` in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
 | [Block reductions](#block-reductions-inside-kernels) | `tack.block_sum`, `block_min`, `block_max` | Inside a kernel; GPU backends only |
 
 Every family runs on all five backends except block reductions, which need
 a workgroup execution model and are rejected on CPU. A call that returns a
-Python value (a field reduction, a statistic, a scan's total) waits for the
+Python value (an array reduction, a statistic, a scan's total) waits for the
 work it reads. On GPU backends launches are queued, so a scan without its
 total, a sort, or a kernel using block reductions may return before the
-device has finished; the next read of a field waits for it (see
+device has finished; the next read of an array waits for it (see
 [When a call returns](08-backends.md#when-a-call-returns)).
 
 The behavior below is stated per backend. Where it is the current
@@ -23,32 +23,34 @@ implementation rather than a promise, the page says so; the
 [reduction contract](../reference/language-contract.md#field-and-parallel-reductions)
 is the normative text.
 
-## Field reductions
+## Array reductions
 
 ```python
 import numpy as np
 import tack
 
-tack.init(arch=tack.cuda)
+tack.init(arch=tack.cpu)   # or a configured GPU backend
 
-data = tack.empty(dtype=tack.f32, shape=(1024,))
-data.from_numpy(np.linspace(-1.0, 1.0, 1024, dtype=np.float32))
+data = tack.array(np.arange(8, dtype=np.float32))
 
 total = data.sum()       # Python float
 lo = data.min()
 hi = data.max()
 average = data.mean()    # data.sum() / data.size
+assert (total, lo, hi, average) == (28.0, 0.0, 7.0, 3.5)
 ```
 
-Each method reduces **every element** of the field, whatever its shape; a
-reshaped field reduces the same elements, and there is no axis argument.
-The result is always a Python `float`, including for integer fields.
+Each method reduces **every scalar component**, whatever the array's shape
+or element dtype. A reshape preserves the result; there is no axis argument.
+For a `(n,)` array with dtype `vec3(f32)`, `size` is `n`, but the reduction
+includes `3 * n` components.
+The result is always a Python `float`, including for integer arrays.
 
 **Where it runs.** CPU always reduces with NumPy. Metal, CUDA, HIP and Level
-Zero reduce `f32` fields on the device with a 256-lane tree per group and an
+Zero reduce `f32` arrays on the device with a 256-lane tree per group and an
 atomic combine of the group results. Every other dtype is copied to the
 host with `to_numpy()` and reduced with NumPy. Two further host fallbacks
-exist for `f32`: Metal reduces fields of 2^32 or more elements with NumPy
+exist for `f32`: Metal reduces arrays of 2^32 or more elements with NumPy
 over its shared buffer, and Level Zero uses NumPy when the device cannot
 run 256-lane groups.
 
@@ -63,7 +65,7 @@ run 256-lane groups.
 
 The accumulated value is then converted to a Python `float`, so integer
 results beyond 2^53 can round. `mean()` divides the returned sum by
-`field.size` in Python (binary64); it does not use a wider accumulator, and
+`array.scalar_size` in Python (binary64); it does not use a wider accumulator, and
 an integer mean inherits any wrapping of the integer sum.
 
 **NaN, infinities and zeros.** A NaN anywhere makes `sum()`, `min()` and
@@ -71,10 +73,10 @@ an integer mean inherits any wrapping of the integer sum.
 `inf + 1` is `inf`, `inf + -inf` is NaN. `min()` of `0.0` and `-0.0` is
 `-0.0`, `max()` is `0.0`, whatever their order.
 
-**Empty fields.** `sum()` returns `0.0`, `mean()` returns NaN, and `min()`
-and `max()` raise `ValueError` ("min reduction requires a nonempty field").
+**Empty arrays.** `sum()` returns `0.0`, `mean()` returns NaN, and `min()`
+and `max()` raise `ValueError` ("min reduction requires a nonempty array").
 None of these launches anything. Every backend allocates a zero-element
-field.
+array.
 
 **Run-to-run repeatability.**
 
@@ -93,7 +95,7 @@ stated in the
 
 !!! note "What crosses to the host"
     On a GPU backend an `f32` reduction reads back one value. Any other
-    dtype copies the whole field to the host first, on every call.
+    dtype copies the whole array to the host first, on every call.
 
 ## Statistics
 
@@ -108,7 +110,7 @@ linf = norm(data, ord=float("inf"))   # max |x|
 m = absmax(data)                      # same as norm(data, ord=float("inf"))
 nz = count_nonzero(data)
 d = dot(data, data)
-counts, edges = histogram(data, bins=50, range=(-1.0, 1.0))
+counts, edges = histogram(data, bins=8, range=(0.0, 8.0))
 ```
 
 These functions live in the `tack.algorithms` package, which `import tack`
@@ -116,11 +118,11 @@ does not load. Import them as above, or `import tack.algorithms` before
 writing `tack.algorithms.var(...)`.
 
 Each statistic forms its terms -- |x|, x², (x − mean)², a·b -- in a
-temporary field of the inputs' precision, f64 if any input is f64 and
+temporary array of the inputs' precision, f64 if any input is f64 and
 otherwise f32 (an integer input converts before any arithmetic), and
-reduces that field with `Field.sum()` or `Field.max()`. So the
-[field-reduction rules](#field-reductions) apply to them: their accuracy,
-repeatability and host traffic are those of field reductions.
+reduces that array with `Array.sum()` or `Array.max()`. So the
+[array-reduction rules](#array-reductions) apply to them: their accuracy,
+repeatability and host traffic are those of array reductions.
 `count_nonzero` scans its 0/1 flags into `i64` on the device and reads only
 the total. `histogram` bins with `tack.atomic_add`, which gives exact
 counts in any order.
@@ -129,74 +131,94 @@ counts in any order.
 
 | Function | Accumulator | Returns | Notes |
 |---|---|---|---|
-| `var(data, n=None)` | the data's precision, `Field.sum()` | Python `float` | Mean is `data.sum() / n`, then Σ(x − mean)² / n; NaN when empty |
+| `var(data, n=None)` | the data's precision, `Array.sum()` | Python `float` | Mean of the first `n` values, then Σ(x − mean)² / n; integers convert to floating point first; NaN when empty |
 | `std(data, n=None)` | as `var` | Python `float` | `math.sqrt(var(data, n))` |
-| `norm(data, ord=2, n=None)` | the data's precision; `Field.sum()` for `ord` 1 and 2, `Field.max()` for infinity | Python `float` | `ord` must equal `1`, `2` or `float("inf")`; anything else raises `ValueError: Unsupported norm order` before any launch. `0.0` when empty |
-| `absmax(data, n=None)` | as `norm(data, float("inf"))` | Python `float` | `0.0` when empty; a NaN propagates, as in `Field.max()` |
+| `norm(data, ord=2, n=None)` | the data's precision; `Array.sum()` for `ord` 1 and 2, `Array.max()` for infinity | Python `float` | `ord` must equal `1`, `2` or `float("inf")`; anything else raises `ValueError: Unsupported norm order` before any launch. `0.0` when empty |
+| `absmax(data, n=None)` | as `norm(data, float("inf"))` | Python `float` | `0.0` when empty; a NaN propagates, as in `Array.max()` |
 | `count_nonzero(data, n=None)` | `i64`, a scan of 0/1 flags | Python `int` | Tests `x != 0.0`: `-0.0` counts as zero, NaN as nonzero. Exact past 2^31 |
-| `dot(a, b, n=None)` | f64 if either input is f64, otherwise f32; `Field.sum()` | Python `float` | Σ a[i]·b[i]; `0.0` when empty |
-| `histogram(data, bins=10, range=None, n=None)` | `i32` per bin, `atomic_add` | `(counts, edges)`: an `i32` **field** of `bins` counts, still on the device, and a NumPy `float64` array of `bins + 1` edges | See below |
+| `dot(a, b, n=None)` | f64 if either input is f64, otherwise f32; `Array.sum()` | Python `float` | Σ a[i]·b[i]; `0.0` when empty |
+| `histogram(data, bins=10, range=None, n=None)` | `i32` per bin, `atomic_add` | `(counts, edges)`: an `i32` **array** of `bins` counts, still on the device, and a NumPy `float64` array of `bins + 1` edges | See below |
 
 **`n`** is the number of elements to read, in flat (row-major) order, so
-multi-dimensional fields work. `n=None` means `data.size` (for `dot`,
-`a.size`). Every function checks `n` against each field it reads and
-raises `ValueError` when `n` is negative or larger than a field, so
+multi-dimensional arrays work. `n=None` means `data.size` (for `dot`,
+`a.size`). Every function checks `n` against each array it reads and
+raises `ValueError` when `n` is negative or larger than an array, so
 `dot(a, b)` with a shorter `b` is refused rather than reading past it.
 
-With an `n` smaller than the field, everything covers the first `n`
+With an `n` smaller than the array, everything covers the first `n`
 elements only: `var` and `std` take the mean of those elements, and
 `histogram` without `range` takes its range from them. To do that they copy
-the first `n` elements into a temporary field and reduce it with
-`Field.sum()`, `min()` and `max()`, so the mean and range follow the
-[field-reduction rules](#field-reductions).
+the first `n` elements into a temporary array and reduce it with
+`Array.sum()`, `min()` and `max()`, so the mean and range follow the
+[array-reduction rules](#array-reductions).
 
 ### Dtypes on each backend
 
-Every input dtype the backend can allocate works. The accumulators are
-always `f32` or `i32`, which are inside every backend's
-[atomic domain](../reference/language-contract.md#atomic-field-updates),
-so no backend rejects a statistics call because of the input dtype —
-Metal and Level Zero, which have no 64-bit atomics, included.
+Every input dtype the backend can allocate works. `var`, `std`, `norm`,
+`absmax` and `dot` form terms in a temporary array, then use array reductions.
+They do not require floating-point atomics in the input's dtype.
 
 | Input | CPU | CUDA / HIP | Metal | Level Zero |
 |---|---|---|---|---|
 | `f32` | supported | supported | supported | supported |
-| `f64` | runs, accumulates in `f32` | runs, accumulates in `f32` | no `f64` fields | runs where the device has `f64`, accumulates in `f32`; elsewhere the field cannot be allocated |
+| `f64` | `f64` terms and sums | `f64` terms and sums; host reduction | no `f64` arrays | `f64` terms and sums where supported; host reduction |
 | integers | runs | runs | runs | runs |
 
-So an `f64` input does not give an `f64` result: each term is rounded to
-`f32` before it is added. For example `dot` of `[1.0, 1e-9, 1e-9, 1e-9]`
-with itself returns exactly `1.0`.
+Integer inputs convert to the accumulation precision **before** products,
+subtraction or absolute values. This avoids integer overflow in a product
+such as `100000 * 100000`, though large integers can round on conversion
+to floating point. `dot` uses `f64` if either input is `f64`; otherwise these
+statistics use `f32`.
 
-Integer inputs follow the kernel language's integer rules before the value
-reaches the accumulator. Products in `dot` and `norm(ord=2)` are computed
-in the input's integer type and wrap: for an `i32` field holding `100000`,
-`dot(x, x)` is `1410065408.0`, not `1e10`. `var`, `norm(ord=1)` and
-`absmax` subtract or negate in floating point and do not wrap.
+### Complete example: check accumulation precision
+
+This CPU example checks both conversion before multiplication and double-precision
+accumulation. Save it as a `.py` file:
+
+<!-- tack-check: statistics-precision -->
+```python
+import numpy as np
+import tack
+from tack.algorithms import absmax, dot
+
+tack.init(arch=tack.cpu)
+integers = tack.array(np.array([100000], dtype=np.int32))
+assert dot(integers, integers) == 10_000_000_000.0
+
+precise = tack.array(np.array([1.0, 1e-4, 1e-4, 1e-4], dtype=np.float64))
+actual = dot(precise, precise)
+np.testing.assert_allclose(actual, 1.00000003, rtol=0, atol=1e-15)
+print(actual)                              # approximately 1.00000003
+
+with_nan = tack.array(np.array([1.0, np.nan], dtype=np.float32))
+assert np.isnan(absmax(with_nan))
+```
+
+The same `f64` calculation requires a backend that supports `f64` arrays.
+On a GPU it currently copies the temporary `f64` terms to the host for the sum,
+as described under [array reductions](#array-reductions).
 
 ### NaN, infinity and empty inputs
 
 | Function | NaN in input | Infinity in input | `n == 0` |
 |---|---|---|---|
-| `var`, `std` | NaN | NaN | NaN, as `Field.mean()` of an empty field |
+| `var`, `std` | NaN | NaN | NaN, as `Array.mean()` of an empty array |
 | `norm(ord=1)`, `norm(ord=2)`, `dot` | NaN | `inf`, or NaN when opposite infinities are added or, in `dot`, an infinity meets a zero | `0.0` |
-| `norm(ord=inf)`, `absmax` | not supported (see below) | not supported (see below) | `0.0` |
+| `norm(ord=inf)`, `absmax` | NaN | `inf` | `0.0` |
 | `count_nonzero` | counted as nonzero | counted | `0` |
 | `histogram` | not supported (see below) | not supported (see below) | all-zero counts with an explicit `range`; `ValueError` without one |
 
-`absmax` and `norm(ord=inf)` use atomic maximum, whose portable domain is
-finite values: NaNs and infinities are outside it. In probes on CPU and
-CUDA a NaN was skipped and an infinity gave `inf`, but no backend promises
-that.
-Use `field.max()` on `abs` values written by a kernel when NaNs must
-propagate.
+`absmax` and `norm(ord=inf)` reduce absolute values with `Array.max()`, including
+its NaN propagation. Histogram inputs still need finite, representable bin
+coordinates. With no explicit range, a nonfinite autodetected range raises
+`ValueError`; passing a finite range does not make a NaN input valid.
 
-An empty field (`data.size == 0`) behaves like `n == 0`.
+An empty array (`data.size == 0`) behaves like `n == 0`.
 
 ### Histogram binning
 
 The bin of each value is `int((x - lo) * (1 / width))`, computed in `f32`
-(`f64` for an `f64` field), where `width = (hi - lo) / bins`, then clamped
+(`f64` for an `f64` array), where `width = (hi - lo) / bins`, then clamped
 into `[0, bins - 1]`:
 
 - values below `lo` are counted in the **first** bin and values above `hi`
@@ -209,26 +231,25 @@ into `[0, bins - 1]`:
   backend-dependent: a value of `1e12` with `range=(0, 1)` lands in the first
   bin on CPU and in the last on CUDA. Filter such values first.
 
-`bins` must be at least 1 (`bins=0` raises `ZeroDivisionError`), and
-`range` is not checked: `lo > hi` produces meaningless counts. Because the
-bin index is computed in `f32` while `edges` is `float64`, a value lying
-exactly on an interior edge can land on either side of it. `counts` stays
-on the device; call `counts.to_numpy()` to read it.
+Use an integer `bins` of at least 1. `bins=0` raises `ValueError`, as does a
+range with a nonfinite endpoint or `lo > hi`. Equal endpoints are expanded
+by setting `hi = lo + 1`. For an `f32` input the bin arithmetic uses `f32`
+while `edges` is `float64`, so a value lying exactly on an interior edge can
+land on either side of it. `counts` stays on the device; call
+`counts.to_numpy()` to read it. Counts must fit in each bin's `i32` accumulator.
 
 ### Accuracy and repeatability
 
-Every term is added into a single `f32` value, in whatever order the
-iterations reach the atomic. Two consequences:
+The sum's order and error budget are those of [array reductions](#array-reductions).
+On GPUs, the `f32` tree sums combine group results atomically, so their low bits
+can vary. The current CPU and `f64` host reductions use NumPy; portable code
+should still compare floating sums with a suitable tolerance.
 
-- **The low bits can change from run to run** for `var`, `std`,
-  `norm(ord=1)`, `norm(ord=2)` and `dot`, on CPU when it uses worker
-  threads as well as on GPUs. `count_nonzero`, `histogram` counts,
-  `absmax` and `norm(ord=inf)` on finite inputs are exact and repeatable.
-- **Error grows with `n`.** These are not compensated or tree sums. In a
-  2^20-element `dot` of normally distributed `f32` values, the relative error
-  against a `float64` reference was about 4·10⁻⁴. When accuracy matters,
-  write the terms into a field with a kernel and call `field.sum()`, whose
-  error budget is stated in the contract.
+The reduction budget covers summing the terms. Rounding when forming products,
+squares or deviations from a mean also contributes to a statistic's error.
+Check against an independent reference in the precision appropriate for the
+problem. `count_nonzero` is exact, and histogram counts are exact while they fit
+their `i32` bins. Extrema are order-independent and propagate NaNs as above.
 
 ## Prefix scans
 
@@ -245,7 +266,7 @@ total = inclusive_scan(counts, offsets, n)  # offsets[i] = counts[0] + ... + cou
 
 The classic use is stream compaction: one kernel counts how many outputs
 each item produces, an exclusive scan turns the counts into write offsets,
-and the returned total sizes the output field. When the output can exceed
+and the returned total sizes the output array. When the output can exceed
 2^31 − 1 elements, keep the counts `i32` but make the offsets `i64`: the
 scan runs in the output's dtype, so the running sums are formed in `i64`
 and the total comes back exact.
@@ -266,19 +287,19 @@ launches. On GPU backends a chunk is a tile of 2048 elements scanned by
 one workgroup -- eight elements to each of its 256 lanes, the lane totals
 scanned in shared memory -- so a million elements take a tiled level and
 a serial one. Launches on the CPU complete before returning; Metal, CUDA,
-HIP and Level Zero queue them and wait when the host next reads a field.
+HIP and Level Zero queue them and wait when the host next reads an array.
 For small arrays, copying to NumPy, calling `np.cumsum` and copying
 back can still be faster.
 
 **Return value.** Both return the sum of the first `n` inputs, in the
-output field's dtype, as a Python `int` (integer outputs) or `float`
+output array's dtype, as a Python `int` (integer outputs) or `float`
 (floating outputs). It is read as one element from the device, so only
 that element comes back to the host, not the whole output.
 
 **Behavior.**
 
 - Any dtype the backend allocates works. The scan runs in the **output**
-  field's dtype; input values convert to it on the copy, as
+  array's dtype; input values convert to it on the copy, as
   `numpy.cumsum` does with an output dtype (an `i32` input scanned into an
   `f32` output gives `f32` sums). Integer sums wrap at the output's width,
   and so does the returned total.
@@ -286,17 +307,17 @@ that element comes back to the host, not the whole output.
   work **in place**: `exclusive_scan(f, f, n)` and `inclusive_scan(f, f, n)`
   are correct.
 - Only the first `n` elements are read and written; later output elements
-  are left alone. `n` must be at most the size of both fields; a larger or
+  are left alone. `n` must be at most the size of both arrays; a larger or
   negative `n` raises `ValueError`. `n = 0` writes nothing and returns `0`,
   the empty sum.
 - Returning the total means reading it to the host, which waits for the
   device (on GPU backends, for every launch queued so far). A caller that needs
   only the offsets passes `total=False`: the scan returns `None`, reads
   nothing, and stays queued with whatever follows.
-- Each call allocates two fields of the output's dtype per chunked level,
+- Each call allocates two arrays of the output's dtype per chunked level,
   the chunk totals and their offsets, one element per chunk: about
   `n / 128` elements in all on the CPU, `n / 1024` on GPUs, not a copy of
-  the input, and a one-element field for the total.
+  the input, and a one-element array for the total.
 - Integer results are exact (modulo wrapping) and identical on every
   backend and every run.
 - Floating results are deterministic for a given `n` and backend. Through
@@ -318,18 +339,18 @@ fill_value(dst, 0, n)      # dst[i] = 0 for i < n
 
 Both are single kernels on the active backend and return `None`. They work
 on the first `n` elements in flat order and do not check `n` against either
-field.
+array.
 
 - `copy` converts on store into `dst`'s dtype with the kernel language's
   rules: floats truncate toward zero (`2.7` → `2`, `-2.7` → `-2`) and must
-  fit the target; integers wrap. Unlike `field.copy()`, it writes into an
-  existing field rather than allocating one.
+  fit the target; integers wrap. Unlike `array.copy()`, it writes into an
+  existing array rather than allocating one.
 - `fill_value` passes `value` as a kernel scalar argument (a Python float is
   `f32`, or `f64` when `dst` is `f64`; an int is `i32`, or `i64`/`u64` by
-  magnitude) and converts it on store: `2.5` fills an `i32` field with `2`,
-  and `300` fills a `u8` field with `44`. Unlike `field.fill(value)`, which
+  magnitude) and converts it on store: `2.5` fills an `i32` array with `2`,
+  and `300` fills a `u8` array with `44`. Unlike `array.fill(value)`, which
   converts the value as NumPy's `ndarray.fill` does and fills the whole
-  field, it fills a prefix.
+  array, it fills a prefix.
 - `copy_with_offset(src, dst, dst_offset, n)` writes
   `dst[dst_offset + i] = src[i]`. It is not re-exported from
   `tack.algorithms`; write `from tack.algorithms.copy import copy_with_offset`.
@@ -341,8 +362,8 @@ field.
 ```python
 from tack.algorithms import argsort, gather, reduce_by_key, sort_by_key, unique
 
-perm = argsort(keys)                           # index field: keys[perm] ascending, stable
-skeys, svals = sort_by_key(keys, values)       # new fields, values carried along
+perm = argsort(keys)                           # index array: keys[perm] ascending, stable
+skeys, svals = sort_by_key(keys, values)       # new arrays, values carried along
 ukeys, counts = unique(skeys)                  # each distinct key once, and its run length
 ukeys, sums = reduce_by_key(skeys, svals)      # one value per distinct key; op="sum"|"min"|"max"
 picked = gather(values, perm)                  # picked[i] = values[perm[i]]
@@ -363,13 +384,13 @@ offsets = tack.empty(dtype=tack.i32, shape=(upoints.size,))
 exclusive_scan(counts, offsets, upoints.size)  # cells[offsets[p]:offsets[p]+counts[p]]
 ```
 
-All five functions allocate and return new fields rather than writing into
-the caller's, and take an optional `n` (default: the whole field) with the
-same bounds check as the scans: `n` past any field involved raises
-`ValueError`, and `n = 0` returns empty fields.
+All five functions allocate and return new arrays rather than writing into
+the caller's, and take an optional `n` (default: the whole array) with the
+same bounds check as the scans: `n` past any array involved raises
+`ValueError`, and `n = 0` returns empty arrays.
 
 **Sorting** (`argsort`, `sort_by_key`). Keys are `i32`, `u32`, `i64` or
-`u64` fields; any other key dtype raises `TypeError`. The sort is
+`u64` arrays; any other key dtype raises `TypeError`. The sort is
 **stable**, so equal keys keep their original order, and `sort_by_key`'s
 values keep theirs. Values can be any dtype; they are gathered once by the
 final permutation, so `sort_by_key(keys, values)` costs an `argsort` plus
@@ -396,8 +417,8 @@ are already grouped — sorted, or merely with equal keys adjacent — and
 work on any key dtype that supports `!=`, floats included. They return the
 first key of each run in order of appearance, so an unsorted input such as
 `[7, 7, 2, 2, 7]` gives `[7, 2, 7]`; sort first for a true set of distinct
-keys. `unique` returns the run lengths as an `i32` field. `reduce_by_key`
-reduces each run's values with `"sum"`, `"min"` or `"max"` into a field of
+keys. `unique` returns the run lengths as an `i32` array. `reduce_by_key`
+reduces each run's values with `"sum"`, `"min"` or `"max"` into an array of
 the values' dtype, running one thread per run **serially in element
 order**: integer sums are exact modulo the values' width, and floating
 results are reproducible and equal to a sequential sum of the run. The
@@ -434,7 +455,7 @@ never runs: calling it raises `RuntimeError` ("Kernel 'group_sums' failed
 on CPUBackend: CPU backend does not support workgroup execution required
 by block_sum, thread_id ..."), and `tack.inspect` raises
 `NotImplementedError`. Check `get_backend().supports_workgroups` to choose
-a path, and use the field reductions or statistics above on CPU.
+a path, and use the array reductions or statistics above on CPU.
 
 **Rules.** The [workgroup contract](../reference/language-contract.md#workgroups-and-synchronization)
 has the full conservative domain; in short:
@@ -452,7 +473,7 @@ has the full conservative domain; in short:
   `inf` for a minimum, `-inf` for a maximum).
 - **Every lane participates.** The reduction must be reached by all lanes
   of the group: not under a condition that depends on the loop index, a
-  field value or `thread_id()`, not after a lane-dependent `break` or
+  array value or `thread_id()`, not after a lane-dependent `break` or
   `continue`, and not in a conditional expression, the second operand of
   `and`/`or`, or a `while` condition. Conditions on scalar arguments and
   on earlier block-reduction results are fine. Violations raise
@@ -462,9 +483,9 @@ has the full conservative domain; in short:
 - The generated reduction includes its own barriers, including one after
   the result is read, so no extra `tack.barrier()` is needed around it.
 
-**Values.** `block_min` and `block_max` follow the field-reduction rules: a
+**Values.** `block_min` and `block_max` follow the array-reduction rules: a
 NaN in the group gives NaN, and zero ties give `-0.0` for the minimum and
 `0.0` for the maximum. `block_sum` adds in a tree whose order may vary, with
-the same error budget as field sums over the group's terms. Combining the
+the same error budget as array sums over the group's terms. Combining the
 group sums with `tack.atomic_add` adds in arrival order, so such a total
 can change in its low bits from run to run.

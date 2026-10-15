@@ -103,9 +103,11 @@ So with an f64 `x`, `x * 0.1`, `x * -0.1` and `x * (1.0 / 3.0)` equal
 NumPy's f64 results, and `tack.f64(0.1)` is the f64 nearest 0.1 rather
 than a widened f32. A weak expression that meets none of these keeps the
 f32 default: alone, beside only literals or integers, or combined with an
-integer value (`i * 0.1` is f32). A local assigned only literals, as in
-`a = 0.1`, is an f32 local; write `tack.f64(0.1)`, or use the literal in
-the f64 expression, to keep full precision. An expression without f64
+integer value (`i * 0.1` is f32). A local assigned once to a literal-only
+expression, as in `a = 0.1`, is propagated as a weak expression wherever
+it is read, so `x * a` retains the literal's full precision when `x` is f64.
+A local assigned only literals more than once uses f64 when the kernel has
+an f64 field, as a Python float argument does. An expression without f64
 operands annotates exactly as it would with f32 literals, and its
 generated code is unchanged.
 

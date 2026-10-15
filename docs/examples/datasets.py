@@ -15,20 +15,26 @@ def run(arch="cpu", check=False):
     import tack.dataset as td
 
     # --8<-- [start:build]
+    # --8<-- [start:unstructured]
     # A hexahedron with a pyramid on top: VTK cell types, offsets, connectivity.
     positions = np.array([[0, 0, 0], [1, 0, 0], [1, 1, 0], [0, 1, 0],
                           [0, 0, 1], [1, 0, 1], [1, 1, 1], [0, 1, 1],
                           [0.5, 0.5, 1.6]], np.float32)
     topology = td.UnstructuredTopology(types=[12, 14], offsets=[0, 8, 13],
                                        connectivity=[0, 1, 2, 3, 4, 5, 6, 7, 4, 5, 6, 7, 8])
-    mesh = td.DataSet(topology, positions)
+    coordinate_values = tack.array(positions, dtype=tack.vec3())
+    geometry = td.Field(td.H1(topology), coordinate_values)
+    mesh = td.DataSet(topology, geometry)
+    # --8<-- [end:unstructured]
 
+    # --8<-- [start:fields]
     height = tack.empty(tack.f32, shape=(mesh.num_points,))
     height.from_numpy(positions[:, 2].copy())
     mesh.fields["height"] = td.Field(td.H1(mesh), height)            # point data
     material = tack.empty(tack.f32, shape=(mesh.num_cells,))
     material.from_numpy(np.array([1.0, 2.0], np.float32))
     mesh.fields["material"] = td.Field(td.Constant(mesh), material)  # cell data
+    # --8<-- [end:fields]
     # --8<-- [end:build]
 
     # --8<-- [start:pipeline]

@@ -102,7 +102,7 @@ count.
 `tack.from_dlpack(source, copy=False)` wraps a tensor without copying. With
 `copy=True` it instead calls `np.from_dlpack(source)` (or uses `source`
 directly if it is a NumPy array) and copies into a new field with
-`field_from_numpy`, so the copying path accepts host tensors.
+`array`, so the copying path accepts host tensors.
 
 The zero-copy path is `dlpack_to_field(source, writable=True)`:
 

@@ -1,8 +1,9 @@
 # Dataset API
 
 `tack.dataset`, in the `tack-vis` package. This page describes the API as it
-stands; the [User's Guide chapter](../users-guide/09-visualization.md) is a
-tour of it. For why it is shaped this way and how it got here, see the
+stands; the [Datasets and Visualization guide](../users-guide/09-visualization.md)
+develops the model, mesh construction, field spaces, filters, mesh kernels and
+complete pipelines with checked examples. For why it is shaped this way and how it got here, see the
 design records: [Dataset API](../design/dataset-api.md) and
 [Polyhedra](../design/polyhedra.md). They are history; this page is the
 current state. What is missing is listed with each part, and under
@@ -35,7 +36,7 @@ gradient = alg.gradients(data, data.fields["height"])     # a field on the cells
 ```
 
 Here `scalars` stands for any function that puts a host array in a
-`tack.field`.
+`tack.Array`.
 
 ## Import path migration
 
@@ -200,8 +201,9 @@ and `discontinuous` into `L2(data)`.
 
 ## Fields and arrays
 
-`Field(space, values)`: the values are a `tack.field` (scalars) or a
-`tack.Vector.field` (vectors), or an implicit array:
+`Field(space, values)`: the values are a `tack.Array` with a scalar or vector
+element dtype, or an implicit array. An array's shape counts coefficient values;
+its dtype controls components. The space supplies their mesh association and basis:
 
 | Array | Value `k` | VTK | Viskores |
 |---|---|---|---|
@@ -230,7 +232,7 @@ each level of nesting costs about 8 us per kernel launch on the host. VTK's
 `vtkStdFunctionArray` runs a C++ function on the CPU; a `Function` or
 `Transform` is a `@tack.func`, so it runs in the kernel on every backend.
 `materialize(array)` stores one, by a kernel; `to_host` reads one back. A
-NumPy array is refused as values: put it in a `tack.field` first.
+NumPy array is refused as values: copy it with `tack.array(host, dtype=...)` first.
 
 `uniform_grid(dims, origin, spacing, direction=None)` is a dataset on
 `UniformCoordinates`, as `rectilinear_grid(x, y, z)` is on a

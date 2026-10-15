@@ -30,7 +30,7 @@
     5. **The CPU thread pool (2026-10-14).** CPU fan-outs go through a
        thread pool JIT-compiled from LLVM IR: 3–5 µs per hot fan-out on a
        2 GHz Xeon, where the executor cost about 60 µs per worker. A new
-       `tack.field` is no longer filled. See [CPU Threading Policy](design/cpu-threading.md).
+       `tack.Array` is no longer filled. See [CPU Threading Policy](design/cpu-threading.md).
 
     Re-measurement is planned. Until then, read the tables below as a
     historical record. They have not been edited.

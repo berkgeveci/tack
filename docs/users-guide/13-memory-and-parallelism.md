@@ -6,9 +6,20 @@ Start with independent writes. Add sharing only when the algorithm requires it.
 
 ## Describe your layout explicitly
 
-A scalar field with `shape=(height, width)` stores `height * width` values in
+A scalar array with `shape=(height, width)` stores `height * width` values in
 row-major order: the last index varies fastest. `image[row, column]` is the same
 scalar as `image[row * width + column]` in a kernel.
+
+For a two-row, three-column array, the last index runs fastest:
+
+```mermaid
+flowchart TB
+    A["Logical grid: shape = (2, 3)"] --> B["Row 0: a[0,0] · a[0,1] · a[0,2]"]
+    A --> C["Row 1: a[1,0] · a[1,1] · a[1,2]"]
+    B --> D["Flat storage: row 0, then row 1"]
+    C --> D
+    D --> E["Scalar offsets: 0 · 1 · 2 · 3 · 4 · 5"]
+```
 
 A vector array adds components to each logical element:
 
@@ -23,11 +34,16 @@ the component dimensions, which are appended to the array shape in NumPy.
 Host indexing reads a logical element; flat component indexing is an internal
 storage convention.
 
-Some examples instead use `(width, height)` and index `[x, y]`. Both conventions
-are valid. State yours, and transpose for an image library expecting `[row, column]`.
+For an RGB array, the flat order is `R00, G00, B00, R01, G01, B01, …`:
+components stay together, then the column advances, then the row.
+
+The introductory grid examples use `(height, width)` and `[row, column]`.
+The [dye tutorial](tutorials/dye.md) instead uses `(width, height)` and `[x, y]`
+to match its coordinate arithmetic; it transposes for image output. Both
+conventions are valid, but conversions must respect which one was used.
 Uniform-grid visualization uses x-fast flat indexing:
 `i + nx_points * (j + ny_points * k)`. That is a different convention from a
-scalar field with shape `(nx_points, ny_points, nz_points)`; do not interchange
+scalar array with shape `(nx_points, ny_points, nz_points)`; do not interchange
 the layouts without arranging the data accordingly.
 
 ## One writer per output
@@ -46,19 +62,19 @@ per-particle velocity updates when each iteration reads completed forces and
 writes only its own particle.
 
 Tack does not establish race freedom for you. A kernel compiling successfully
-does not mean two iterations cannot interfere. Field accesses are not
+does not mean two iterations cannot interfere. Array accesses are not
 bounds-checked either: keep indices within the storage you allocated.
 [Debug mode](15-debugging-and-timing.md#check-every-index-with-debug-mode)
-(`tack.init(..., debug=True)` or `TACK_DEBUG=1`) checks every field and array
+(`tack.init(..., debug=True)` or `TACK_DEBUG=1`) checks every array and array
 index and raises `IndexError` naming the access, for finding such a bug.
 Negative host indices count from the end; do not assume that rule for kernel
-field loads.
+array loads.
 
 ## Neighbour reads need a stable input
 
 A smoothing stencil reads the old values around every cell. Updating the same
-field allows one iteration to see a neighbour already changed by another.
-Use distinct input/output fields:
+array allows one iteration to see a neighbour already changed by another.
+Use distinct input/output arrays:
 
 ```python
 @tack.kernel
@@ -75,10 +91,10 @@ for step in range(steps):
     old, new = new, old
 ```
 
-The swap changes Python references and costs no field copy. Both buffers must
+The swap changes Python references and costs no array copy. Both buffers must
 have the same layout. Write every output that the next step will read, including
 the boundary. When using an interior-only `ndrange`, initialize or explicitly
-maintain the unwritten border of **both** buffers: a new field's contents are
+maintain the unwritten border of **both** buffers: a new array's contents are
 unspecified, and `tack.zeros` is the allocation that starts at zero.
 
 The [heat tutorial](tutorials/heat.md) develops this pattern. In-place numerical
@@ -157,17 +173,17 @@ input its own output interval and tells Python the exact allocation size. See
 
 ## Host access and ownership
 
-Allocate fields after `tack.init`. Fields belong to the backend that created
+Allocate arrays after `tack.init`. Arrays belong to the backend that created
 them; selecting another backend does not migrate their storage. Start a fresh
-set of fields when changing the backend.
+set of arrays when changing the backend.
 
 `from_numpy` and `to_numpy` transfer complete arrays. On CPU and Metal storage is
-host-addressable, but these methods still copy values. A host read `field[i]`
+host-addressable, but these methods still copy values. A host read `array[i]`
 reads one logical element; CUDA, HIP and Level Zero copy just that range, one
 transfer per read. Avoid making it the inner loop of an application. On
 GPU backends launches are queued, and each of these reads first waits for
 the launches before it; see [When a call returns](08-backends.md#when-a-call-returns).
 
-For shared storage, `field_from_ptr` and DLPack have distinct lifetime and
+For shared storage, `array_from_ptr` and DLPack have distinct lifetime and
 writability rules. Keep an external pointer's owner alive for as long as its
 Tack view is used. See [Interoperability](16-interoperability.md).

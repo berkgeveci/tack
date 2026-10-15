@@ -1,32 +1,43 @@
 # API
 
-Generated from the source. Tack's docstrings are prose rather than
-`Args:`/`Returns:` tables — they tend to explain why something is the way it
-is, which is usually the part that is hard to recover later. Read them as
-notes, not as a specification.
+Look up the functions you call from Python here. The signatures and detailed
+descriptions below are generated from the source. For a complete program, use
+the [User's Guide](../users-guide/index.md); for a reminder of which operations
+belong on the host or in a kernel, use the [quick reference](../users-guide/quick-reference.md).
 
-For how these pieces fit together, start with the
-[Developer's Guide](../developers-guide/01-architecture.md).
+| Task | Call | Result or effect |
+|---|---|---|
+| Select a backend | `tack.init(arch=tack.cpu, debug=False)` | Initializes the runtime; allocate arrays afterwards |
+| Allocate an output | `tack.empty(tack.f32, shape=(n,))` | New array with unspecified contents |
+| Match storage without copying | `tack.empty_like(prototype)` | Same shape and element dtype; no values read or initialized |
+| Allocate zeros | `tack.zeros(tack.f32, shape=(n,))` | New array initialized to zero |
+| Upload NumPy data | `tack.array(host)` | New array with an independent copy of the array |
+| Download data | `values.to_numpy()` | Independent NumPy array; waits for earlier writes |
+| Allocate vector elements | `tack.empty(shape=(n,), dtype=tack.vec3())` | Array of n 3-vectors; NumPy download shape `(n, 3)` |
+| Wait for device work | `tack.sync()` | Waits for queued launches; returns `None` |
+| Inspect a kernel | `tack.inspect(kernel, *args, mode="source")` | Generated source as a string; does not execute the kernel |
 
-For the guarantees, caller constraints and errors of these entry points,
-see the [Runtime API contract](../contracts/runtime-api.md). Where a
-docstring and the contract disagree, the contract describes the current
-behavior.
+For ownership, errors and precise guarantees, see the
+[Runtime API contract](../contracts/runtime-api.md) and the
+[Kernel Language Contract](language-contract.md). Compiler internals are in
+the [Developer's Guide](../developers-guide/01-architecture.md).
 
 ## Initialization
 
-::: tack.runtime.dispatch.init
+::: tack.init
 
 ::: tack.runtime.dispatch.get_backend
 
-::: tack.runtime.dispatch.sync
+::: tack.sync
 
-::: tack.runtime.dispatch.sync_async
+::: tack.sync_async
 
 ## Arrays
 
-The container everything else operates on: an n-dimensional array bound to
-whichever backend was active when it was allocated.
+`tack.Array` holds storage on the backend active at allocation. Its shape
+counts elements; its dtype describes one scalar, vector or matrix element.
+`tack.dataset.Field` instead couples coefficient values with a space on a topology.
+See [Arrays and Types](../users-guide/02-fields-and-types.md) for examples.
 
 ::: tack.Array
 
@@ -40,15 +51,15 @@ whichever backend was active when it was allocated.
 
 ::: tack.empty_like
 
-::: tack.lang.field.zeros
+::: tack.zeros
 
-::: tack.lang.field.ones
+::: tack.ones
 
-::: tack.lang.field.full
+::: tack.full
 
-::: tack.lang.field.arange
+::: tack.arange
 
-::: tack.lang.field.concat
+::: tack.concat
 
 ### Element types
 
@@ -72,7 +83,9 @@ whichever backend was active when it was allocated.
 
 ### Kernel values and textures
 
-::: tack.lang.field.Vector
+::: tack.Vector
+
+::: tack.Matrix
 
 ::: tack.select
 
@@ -85,16 +98,16 @@ whichever backend was active when it was allocated.
 
 ### Sharing memory
 
-::: tack.lang.field.field_from_ptr
+::: tack.array_from_ptr
     options:
       docstring_options:
         warn_missing_types: false
 
-::: tack.lang.field.memory_space
+::: tack.memory_space
 
-::: tack.lang.field.from_dlpack
+::: tack.from_dlpack
 
-::: tack.lang.field.ExportedMemory
+::: tack.ExportedMemory
 
 ::: tack.lang.dlpack.field_to_dlpack
 
@@ -104,19 +117,19 @@ whichever backend was active when it was allocated.
 
 ## Kernels and device functions
 
-::: tack.lang.kernel.kernel
+::: tack.kernel
 
 ::: tack.lang.kernel.Kernel
 
-::: tack.lang.func.func
+::: tack.func
 
 ::: tack.lang.func.Func
 
-::: tack.lang.device_class.device_class
+::: tack.device_class
 
-::: tack.lang.types.template
+::: tack.template
 
-::: tack.lang.constant.constant
+::: tack.constant
 
 ::: tack.lang.constant.ArrayConstant
 
@@ -128,13 +141,11 @@ whichever backend was active when it was allocated.
 
 ::: tack.random
 
-::: tack.lang.field.Matrix
-
 ::: tack.lang.source_validation.UnsupportedSyntaxError
 
 ## Inspection
 
-::: tack.lang.inspect_kernel.inspect
+::: tack.inspect
     options:
       docstring_options:
         warn_missing_types: false

@@ -101,7 +101,7 @@ field's shape). `reshape` is the
 only view operation; there is no slicing, so every view of a buffer covers
 all of it.
 
-`tack.Vector.field(n, dtype, shape)` allocates a flat buffer of
+`tack.empty(dtype=tack.vec(n, dtype), shape=shape)` allocates a flat buffer of
 `prod(shape) * n` elements and records `_vector_n` and `_logical_shape` on
 the field. The storage is ordinary; the vector-ness is metadata that kernel
 dispatch uses for scalarization.
@@ -113,7 +113,7 @@ three origins, and the backends encode them slightly differently.
 
 ```mermaid
 flowchart TD
-    A["tack.empty() / empty_like() / field_from_numpy() / zeros()"] -->|backend.allocate_field| OWN["Owned buffer<br/>(_owned absent, read as True)"]
+    A["tack.empty() / empty_like() / array() / zeros()"] -->|backend.allocate_field| OWN["Owned buffer<br/>(_owned absent, read as True)"]
     B["tack.array_from_ptr(ptr, ...)"] -->|"memory_space() check,<br/>backend.wrap_ptr()"| WRAP["Wrapped buffer<br/>_owned = False"]
     C["tack.from_dlpack(x)"] -->|"dlpack_to_field()<br/>→ field_from_ptr()"| WRAP
     C -->|attaches| HOLD["_CapsuleHold<br/>on the Field"]
@@ -570,7 +570,7 @@ would avoid the per-dispatch check, has not been tried.
 
 | Topic | Guarantee | Enforced in | On violation |
 |---|---|---|---|
-| Fresh allocation | Contents unspecified until written; `tack.zeros`, `ones`, `full` fill | `tack.field`, `Field.fill` | — |
+| Fresh allocation | Contents unspecified until written; `tack.zeros`, `ones`, `full` fill | `tack.Array`, `Field.fill` | — |
 | Queued launches | A field outlives the queued launches that use it; memory handed outside Tack completes its launches before they return | stream-ordered or deferred frees, `DeviceBuffer.share()` | — |
 | Host transfer shape | `from_numpy` shape must equal `field.shape` | `Field.from_numpy` | `ValueError` |
 | Read-only host writes | `from_numpy`/`fill` refused when `_writable` is false | `Field._check_writable` | `RuntimeError` |

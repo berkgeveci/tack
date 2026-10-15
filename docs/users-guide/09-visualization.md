@@ -12,10 +12,16 @@ yourself see a mesh the way the built-in ones do.
 pip install 'tack-core[cpu]' tack-vis
 ```
 
-This chapter is a tour. The [Dataset API reference](../reference/dataset-api.md)
-has every class and algorithm, and what each topology supports.
+This overview is a tour; the chapters below develop the data model and complete
+workflows. The [Dataset API reference](../reference/dataset-api.md) has the
+signatures and full support tables.
 
 ## Quick start
+
+For this first example, use `uniform_grid`, a **shortcut factory** that
+assembles a structured topology and uniform geometry for you. Add a scalar
+field, then extract an isosurface. [Building a dataset](#building-a-dataset)
+below shows how to construct these pieces explicitly for several mesh types.
 
 ```python
 import tack
@@ -23,11 +29,40 @@ import tack.dataset as td
 
 tack.init(arch=tack.cpu)
 
-data = td.wavelet(extent=10)                    # VTK's wavelet: 21^3 points
-surface = td.contour(data, "RTData", 157.0)     # an isosurface, as triangles
+data = td.uniform_grid((17, 17, 17), origin=(-1, -1, -1), spacing=(0.125, 0.125, 0.125))
+positions = data.positions()                   # corner positions as a NumPy array
+values = tack.array((positions * positions).sum(axis=1), dtype=tack.f32)
+data.fields["radius_squared"] = td.Field(td.H1(data), values)
+
+surface = td.contour(data, "radius_squared", 0.5)
 print(surface.num_cells, "triangles,", surface.num_points, "points")
-print(td.statistics(data, "RTData")["mean"])
+print(td.statistics(data, "radius_squared")["mean"])
 ```
+
+Save this as a `.py` file and run it after installing the packages above, or use
+`uv run python` from a checkout installed as in [Getting Started](01-getting-started.md).
+The scalar coefficients are sampled from `x*x + y*y + z*z`; the contour is
+an approximation to a sphere. This example needs no VTK installation.
+
+## Learn data and visualization
+
+| Chapter | Start here when you want to… |
+|---|---|
+| [Function Space Fundamentals](data/00-function-spaces.md) | Understand H1, H2, L2, polynomial order and degrees of freedom |
+| [Understand a Dataset](data/01-datasets.md) | Connect raw storage to topology, geometry and field meaning |
+| [Build Meshes](data/02-meshes.md) | Construct grids, mixed cells, polyhedra, polygons or paths |
+| [Fields and Spaces](data/03-fields-and-spaces.md) | Preserve a discontinuity, project a field or use implicit values |
+| [Filter and Analyze](data/04-filters.md) | Choose between threshold, clip, contour and slice; carry fields and compute derivatives |
+| [Write Mesh Algorithms](data/05-mesh-kernels.md) | Add cell and face kernels with correct ids, subsets and orientation |
+| [Sample, Render and Connect Simulations](data/06-pipelines.md) | Probe a solution, integrate paths, render a surface or exchange datasets |
+
+For a first reading, follow the fundamentals, dataset and mesh chapters,
+then the field and filter chapters.
+The [field-space comparison](data/03-fields-and-spaces.md#a-material-interface-exposes-the-difference)
+and [filter comparison](data/04-filters.md#select-cells-cut-cells-or-extract-a-surface)
+show why two plausible images can represent different numerical operations.
+
+## Common conventions
 
 Every algorithm takes the dataset first and returns something new: a
 dataset, a field, or Python values. Nothing changes its input.
@@ -48,13 +83,18 @@ A `DataSet` is four things:
 | `fields` | named fields, each a *space* and its values | `Field(H1(data), values)` |
 | `sets` | named selections of points, cells or faces | the boundary faces |
 
-A *space* says where a field's values live and how they are read between
-them. `H1` is point data, continuous and interpolated in each cell;
-`Constant` is cell data; `L2` holds each cell's own corner values, a
-discontinuous field. `Values(data, on)` is data about points, edges, faces or
-cells with no interpolation. A field's values are a `tack.Array`, scalar or
-vector-valued, or an implicit array that computes them on demand. Uniform
-coordinates need only dimensions, origin, spacing and direction metadata.
+A *space* says which degrees of freedom define a field and how to evaluate
+it. H1 order 1 shares corner values; H1 order 2 adds shared higher-order
+nodes. `Constant` is a separate constant per cell; L2 can keep each cell's
+own coefficients. `Values(data, on)` describes attributes without a basis.
+Every field chooses its own space on the common topology, including geometry.
+The [dataset chapter](data/01-datasets.md#each-field-has-its-own-space) demonstrates
+12 corner positions, 45 quadratic temperature values and 16 discontinuous
+pressure values on the same two cells.
+
+A field's values are a `tack.Array` with a scalar or vector element dtype,
+or an implicit array that computes values on demand. Uniform coordinates
+need only dimensions, origin, spacing and direction metadata.
 
 Geometry may also live in L2, giving each cell its own positions. Contour and
 slice preserve the resulting gaps; clipping requires shared H1 geometry.
@@ -62,30 +102,90 @@ Changing an L2 geometry's values refreshes subsequent face-geometry results.
 
 ## Building a dataset
 
-Grids come from `uniform_grid` and `rectilinear_grid`, and the test sources
-from `wavelet` and `tangle`. A grid size of 1 adds no cells, in any
-position: `uniform_grid((1, 3))` is a line of three points. A grid with no
-axis of two or more points, such as `(1, 1, 1)` or any grid with a size of
-0, has no cells. An unstructured mesh takes VTK's cell types, offsets and
-connectivity:
+A dataset can be assembled from simulation arrays, a file reader, generated
+coordinates, or another source. The construction follows the same pattern:
+
+1. Create a topology describing cells and their corner incidence.
+2. Create a geometry field: a space on that topology plus coordinate values.
+3. Pass both to `td.DataSet`, then attach solution fields and named sets.
+
+The following recipes build their topology and geometry explicitly. They
+assume `import numpy as np`, `import tack`, `import tack.dataset as td`, and
+an initialized backend. The complete [mesh-construction program](../examples/data_meshes.py)
+and [unstructured tour](../examples/datasets.py) include that setup.
+
+=== "Uniform image"
+
+    Construct structured incidence and compute corner positions from origin,
+    spacing and logical indices. The geometry is an H1 field whose values
+    are implicit `UniformCoordinates`.
+
+    ```python
+    --8<-- "docs/examples/data_meshes.py:uniform"
+    ```
+
+=== "Rectilinear"
+
+    Construct structured incidence and compute corner positions from three
+    coordinate axes. The geometry uses `CartesianProduct` values in H1.
+
+    ```python
+    --8<-- "docs/examples/data_meshes.py:rectilinear"
+    ```
+
+=== "Curvilinear"
+
+    Construct structured incidence and supply explicit positions at its
+    corners. These positions bend the grid while retaining logical connectivity.
+
+    ```python
+    --8<-- "docs/examples/data_meshes.py:curvilinear"
+    ```
+
+=== "Unstructured"
+
+    Supply the cell types, offsets and corner ids explicitly, along with an
+    H1 coordinate field. This example has a hexahedron and a pyramid sharing
+    a face. The cell type numbers follow VTK's convention; VTK is not required.
+
+    ```python
+    --8<-- "docs/examples/datasets.py:unstructured"
+    ```
+
+All four recipes use the same `DataSet(topology, geometry)` constructor.
+The [mesh chapter](data/02-meshes.md#image-rectilinear-and-curvilinear-data)
+explains their coordinate representations and also builds
+[polyhedral](data/02-meshes.md#construct-polyhedra-from-face-rings),
+[polygonal and polyline](data/02-meshes.md#polygons-and-polylines-are-different-objects)
+datasets from their own connectivity and geometry.
+
+The rest of this tour uses `mesh`, the hex-and-pyramid dataset from the
+Unstructured tab. Attach height in H1 and a material constant per cell:
 
 ```python
---8<-- "docs/examples/datasets.py:build"
+--8<-- "docs/examples/datasets.py:fields"
 ```
 
-The other topologies are built from their own arrays:
-- `PolyhedralTopology.from_cell_faces` takes each cell's faces as VTK and
-  most readers give them;
-- `PolygonalTopology` takes each polygon's loop of points;
-- `PolylineTopology` takes each polyline's chain.
+### Factory methods are shortcuts
 
-`vtk_to_dataset` and `tack.interop.mfem` bring datasets in from VTK and MFEM.
-Neither library is a dependency of `tack-vis`: install `vtk` and `mfem`
-(PyMFEM) yourself, or, in a checkout of the repository, add the `interop`
-extra (`uv sync --extra cpu --extra interop`), which installs both from the
-lock and keeps them through later syncs with the same extras. PyMFEM has
-wheels only for macOS on Apple silicon and Linux x86_64, so elsewhere the
-extra leaves MFEM out.
+Once the pieces are familiar, `uniform_grid` and `rectilinear_grid` save the
+repeated topology and geometry setup. These calls construct the same uniform
+and rectilinear datasets as the explicit recipes above:
+
+```python
+--8<-- "docs/examples/data_meshes.py:grids"
+```
+
+`DataSet(topology, positions)` is another convenience: when given coordinate
+values rather than a `Field`, it wraps them in H1 order-1 geometry.
+`wavelet` and `tangle` are sample-data factories that also initialize known
+scalar fields, useful for trying filters. They are examples of data sources;
+a dataset's topology and geometry do not depend on where its values originated.
+
+`vtk_to_dataset` and `tack.interop.mfem` import datasets from VTK and MFEM.
+Neither library is required for the constructions above. In a checkout,
+`uv sync --extra cpu --extra interop` installs the optional readers where
+supported. See [dataset interoperability](data/06-pipelines.md#exchange-whole-datasets-with-vtk).
 
 ## Algorithms
 
@@ -206,6 +306,18 @@ without a copy:
 
 The whole example is [`docs/examples/datasets.py`](../examples/datasets.py).
 `--check` runs its assertions, and `--output image.png` saves the picture.
+Saving this particular image uses Pillow: from a checkout, run
+`uv run --with pillow python docs/examples/datasets.py --output image.png`.
+
+The new chapter examples can be checked together with the rest of the guide:
+
+```bash
+uv run python docs/examples/validate.py --arch cpu
+```
+
+They cover mesh counts and measures, continuous/discontinuous fields, analytic
+gradients, flux balance, exact clipping volumes and flow integration. Their
+optional comparison figures use Matplotlib, independently of VTK.
 
 ## VTK interop
 

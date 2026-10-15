@@ -1,10 +1,16 @@
 # Tack
 
-A Python-first GPU compute framework. Write compute kernels as decorated Python
-functions; Tack compiles them at runtime and dispatches them to whichever
-backend is active. **The same kernel source runs on five backends**, within
+A Python framework for scientific data analysis, visualization and GPU compute.
+Build pipelines over structured grids, mixed meshes and polyhedra: associate
+fields, derive quantities, extract surfaces, sample solutions and render results.
+The dataset algorithms are Tack kernels, and you can write your own as decorated
+Python functions. **The same supported kernel source runs on five backends**, within
 each backend's [capabilities](contracts/backend-capabilities.md). Metal has
 no `f64`, for example, and the CPU has no workgroup primitives.
+
+Start with [Datasets and Visualization](users-guide/09-visualization.md) for a
+mesh-to-image workflow, or [Getting Started](users-guide/01-getting-started.md)
+to write a first kernel. A small compute example is:
 
 ```python
 import tack, numpy as np
@@ -82,11 +88,17 @@ scalar types each backend supports.
 
 <div class="grid cards" markdown>
 
+-   **[Datasets and Visualization](users-guide/09-visualization.md)**
+
+    Meshes and field spaces, scientific filters, custom cell and face kernels,
+    probing and streamlines, then simulation and rendering pipelines. Start
+    with complete programs whose results are checked independently.
+
 -   **[User's Guide](users-guide/index.md)**
 
     Writing kernels, fields and types, control flow, device functions,
-    templates, atomics and shared memory, reductions and scans, then the
-    visualization and rendering packages.
+    templates, atomics and shared memory, reductions and scans, alongside
+    the data and visualization chapters.
 
 -   **[Developer's Guide](developers-guide/index.md)**
 

@@ -141,16 +141,31 @@ noise, while more bounces allow additional indirect light paths.
 
 ## Retain geometry between pipeline stages
 
-After a nonempty flying-edges extraction:
+Use `tack.dataset` to extract a surface and pass its geometry fields directly to
+`Actor`. This fragment follows the scene imports in the first example:
 
 ```python
+import tack.dataset as td
+
+data = td.wavelet(extent=10)
+surface = td.contour(data, "RTData", 157.0)
+positions = surface.geometry.values                   # a field of 3-vectors
+points = positions.reshape(positions.size)            # flat view of the same storage
+triangles = surface.topology.connectivity             # i32 for a mesh this size
 scene = Scene()
-scene.add(Actor(mesh["points_field"], mesh["conn_field"], smooth=True))
+if surface.num_cells > 0:
+    scene.add(Actor(points, triangles, smooth=True))
 ```
 
-This avoids uploading the already-retained geometry fields. Flying edges, one of the
-[earlier algorithms](09-visualization.md#earlier-algorithms), still reads
-counts and downloads its NumPy results.
+This avoids downloading and uploading geometry between extraction and rendering.
+Contour reads counts on the host to allocate output; points and triangles remain
+in fields. The [isosurface tutorial](tutorials/isosurface.md) includes the complete
+calculation, scene, image and depth checks.
+
+`Actor` requires `i32` connectivity. If another source produces `i64` ids,
+convert only after checking that every id fits in `i32`; a cast can otherwise
+wrap. A mesh beyond that index range needs a different representation or partitioning.
+
 Scene preparation and BVH construction operate on fields, while small material
 and light tables are prepared on the host. Final image readback is another
 explicit boundary. Describe these costs when measuring an end-to-end pipeline.

@@ -1,12 +1,14 @@
 # Worked examples
 
 These examples develop a complete application from its data layout to the host
-loop and a check of the result. Start with heat diffusion, then choose the subject
-that interests you. Every script is included below its explanation and available
+loop and a check of the result. Start with the data examples below for scientific
+analysis, or heat diffusion for a first simulation. Every script is included with
+its explanation and available
 as a download; it needs no separate examples repository.
 
 The scripts target the current Tack checkout. They use NumPy and the selected
-backend, with VTK needed only for `--output`. Install from source as in
+backend. The simulation and rendering tutorials use VTK for optional figures;
+the new data comparisons use Matplotlib. Install from source as in
 [Getting Started](../01-getting-started.md), then run from the repository root:
 
 ```bash
@@ -38,6 +40,31 @@ geometry and image-panel rendering needs a working VTK rendering backend.
 | [Particle-to-grid simulation](mpm.md) | Matrix fields, interpolation and atomic scatter | Vectors, matrices and atomics |
 | [Tiled N-body forces](nbody.md) | Shared memory and barriers, with a CPU path | Sequential loops and workgroups |
 | [Isosurface to image](isosurface.md) | Connect compute, visualization and rendering | Fields and templates |
+
+## Datasets and visualization examples
+
+These programs develop the dataset API with analytic answers, independently of
+a simulation solver. They run with NumPy and a Tack backend; figures are optional.
+
+| Example | Numerical check | Chapter |
+|---|---|---|
+| [data_spaces.py](../../examples/data_spaces.py) | Construct L2 and quadratic H1 fields; node diagrams, a DG jump and basis profiles | [Field construction](../data/03-fields-and-spaces.md#construct-an-l2-field) |
+| [data_meshes.py](../../examples/data_meshes.py) | Grid counts, cube volume, polygon area and chain length | [Build Meshes](../data/02-meshes.md) |
+| [data_fields.py](../../examples/data_fields.py) | Point/cell projection, a material jump and exact affine gradients | [Fields and Spaces](../data/03-fields-and-spaces.md) |
+| [data_analysis.py](../../examples/data_analysis.py) | Threshold/clip volumes, contour area, sampled values and analytic rotation | [Filter and Analyze](../data/04-filters.md) |
+| [data_mesh_kernels.py](../../examples/data_mesh_kernels.py) | A selected-cell output and an oriented face flux balance | [Write Mesh Algorithms](../data/05-mesh-kernels.md) |
+
+[![Point, cell and discontinuous fields](../../assets/data-spaces.png)](../data/03-fields-and-spaces.md)
+
+[![Whole-cell selection versus clipping and contouring](../../assets/data-filters.png)](../data/04-filters.md)
+
+```bash
+uv run python docs/examples/data_analysis.py --arch cpu --check
+uv run --with matplotlib python docs/examples/data_analysis.py --output filters.png
+```
+
+The [pipeline chapter](../data/06-pipelines.md) connects these operations to
+probing, streamline integration, rendering and external tools.
 
 ## Images from the examples
 
