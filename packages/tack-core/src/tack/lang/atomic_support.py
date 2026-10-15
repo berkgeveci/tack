@@ -59,8 +59,8 @@ def check_atomic_support(func, *, backend_name, supported_dtypes=None):
         name = node.array.name if isinstance(node.array, ir.IRName) else None
         origins = sources.get(name, set())
         entry = params.get(next(iter(origins))) if len(origins) == 1 else None
-        if (entry is None or not getattr(entry[1], '_is_array', True)
-                or getattr(entry[1], '_is_texture', False)):
+        if (entry is None or not entry[1]._is_array
+                or entry[1]._is_texture):
             raise TypeError(f'{context} requires a global array parameter target')
         index, param = entry
         dtype = param.type_annotation

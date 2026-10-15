@@ -26,7 +26,7 @@ def pack_scalars(ir_func: ir.IRFunction, args: tuple):
     # Collect scalar params grouped by type
     groups = {}  # dtype -> [(param_index, param)]
     for i, param in enumerate(ir_func.params):
-        if not getattr(param, '_is_array', True):
+        if not param._is_array:
             dtype = param.type_annotation
             groups.setdefault(dtype, []).append((i, param))
 

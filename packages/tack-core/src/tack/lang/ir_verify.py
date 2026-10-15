@@ -190,7 +190,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
         if kind is ir.IRParam and inferred:
             require(node, path, isinstance(node.type_annotation, ScalarType),
                     'parameter type must be a ScalarType')
-            require(node, path, type(getattr(node, '_is_array', None)) is bool,
+            require(node, path, type(node._is_array) is bool,
                     'parameter array/scalar category is missing')
 
         try:
@@ -231,7 +231,7 @@ def verify_ir(function: ir.IRFunction, stage: str):
     # Function-wide binding existence, not definite assignment. Loop-carried
     # and branch-defined variables require a separate control-flow analysis.
     bound = set(params)
-    buffers = {p.name for p in function.params if getattr(p, '_is_array', False)}
+    buffers = {p.name for p in function.params if p._is_array}
     for node, _, _ in nodes:
         if isinstance(node, ir.IRAssign):
             bound.add(node.target)
@@ -272,6 +272,6 @@ def verify_ir(function: ir.IRFunction, stage: str):
                 require(node, path, node.dtype is i32, 'logical result must have i32 dtype')
             if isinstance(node, ir.IRAssign):
                 pointer_copy = isinstance(node.value, ir.IRName) and node.value.name in buffers
-                require(node, path, hasattr(node, '_resolved_type') and
-                        (pointer_copy or isinstance(node._resolved_type, ScalarType)),
+                require(node, path,
+                        pointer_copy or isinstance(node._resolved_type, ScalarType),
                         'assignment storage type is missing')

@@ -390,8 +390,8 @@ def _compile_kernel(device, command_queue, ir_func: ir.IRFunction,
         print(f"[Tack] Dumped MSL to {path}")
 
     param_types = [p.type_annotation for p in ir_func.params]
-    param_is_array = [getattr(p, '_is_array', True) for p in ir_func.params]
-    param_is_texture = [getattr(p, '_is_texture', False) for p in ir_func.params]
+    param_is_array = [p._is_array for p in ir_func.params]
+    param_is_texture = [p._is_texture for p in ir_func.params]
     return _load_kernel(device, command_queue, msl_source, kernel_name, param_types,
                         param_is_array, param_is_texture, requires_full_workgroups(ir_func),
                         backend)

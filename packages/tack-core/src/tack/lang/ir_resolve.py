@@ -109,7 +109,7 @@ def _resolve(node, arrays, slots=None):
             if array is None:
                 raise RuntimeError(f"Cannot resolve dimension size: unknown array '{node.array_name}'")
             shape = getattr(array, '_logical_shape', None) or array.shape
-            count = getattr(node, 'index_count', None)
+            count = node.index_count
             if count is not None and count != len(shape):
                 # array[i, j] linearizes with the sizes of dimensions 1..,
                 # so with too few indices it would address some other

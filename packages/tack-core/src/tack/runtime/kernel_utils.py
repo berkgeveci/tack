@@ -146,8 +146,8 @@ def kernel_variant_key(ir_func, kernel, vector_arrays, template_args,
     # One pass over the params: this runs on every dispatch, and a separate
     # walk per property cost a measurable few microseconds.
     param_sig = tuple(
-        (p.type_annotation, getattr(p, '_is_array', True),
-         getattr(p, '_is_texture', False), getattr(p, '_texture_shape', None))
+        (p.type_annotation, p._is_array,
+         p._is_texture, p._texture_shape)
         for p in ir_func.params)
     vec_sig = tuple(sorted(vector_arrays.items())) if vector_arrays else ()
     tmpl_key = ()
@@ -1020,7 +1020,7 @@ def _localize_outer_scalars(ir_func):
 
     used_names = ir_names(ir_func)
     scalars = {p.name for p in ir_func.params
-               if not getattr(p, '_is_array', True)}
+               if not p._is_array}
     for stmt in ir_func.body:
         if not isinstance(stmt, ir.IRParallelFor):
             scalars.update(n.target for n in _walk_ir(stmt) if isinstance(n, ir.IRAssign))

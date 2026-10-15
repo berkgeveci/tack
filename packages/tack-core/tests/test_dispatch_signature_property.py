@@ -126,6 +126,9 @@ def _slow(backend, args):
 
 
 def test_equal_signatures_resolve_to_the_same_variant_and_arguments():
+    from tack.runtime import dispatch
+    if dispatch._debug:
+        pytest.skip("debug mode never takes the fast path")
     tack.set_default_device("cpu")
     backend = get_backend()
     rng = random.Random(20261015)
