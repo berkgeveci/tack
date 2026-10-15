@@ -338,6 +338,8 @@ by another is indexed the same way, `self.base[k]`.
 An instance tuple of numbers is one runtime scalar per entry, read with a
 literal index: `self.shape = (nx, ny)` gives `obj.shape[0]` and
 `obj.shape[1]`, and `len(obj.shape)` is 2. A new shape does not recompile.
+A tuple on the class, `shape = (4, 4)`, is read the same way but compiled
+in, as a class's numbers are: a fixed tile size the compiler can unroll.
 
 ```python
 @tack.device_class

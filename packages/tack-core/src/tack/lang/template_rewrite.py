@@ -58,7 +58,7 @@ def _class_constants(cls):
             for name, val in vars(klass).items():
                 if name.startswith('_'):
                     continue
-                if isinstance(val, (int, float)):
+                if isinstance(val, (int, float)) or _number_tuple(val):
                     found[name] = val
                 else:
                     found.pop(name, None)   # replaced by something that is not a constant
@@ -68,6 +68,11 @@ def _class_constants(cls):
         val = getattr(cls, name)
         if isinstance(val, (int, float)):
             constants[name] = val
+        elif _number_tuple(val):
+            # A class tuple of numbers: one constant per entry, read as
+            # obj.shape[k] as an instance tuple is, but compiled in.
+            for k, entry in enumerate(val):
+                constants[f"{name}{_NESTED}{k}"] = entry
     return constants
 
 
@@ -190,6 +195,18 @@ def _classify_own(obj):
             # like any other attribute. Kept, it reached the cache keys, where
             # a list made dispatch fail with "unhashable type".
             del scalars[name]
+        entries = [key for key in scalars
+                   if scalar_path(key)[0] == name and len(scalar_path(key)) == 2]
+        if entries:
+            # A class tuple of numbers, one constant per entry: an instance
+            # tuple of numbers replacing it is still compiled in; anything
+            # else drops it, as for a number above.
+            for key in entries:
+                del scalars[key]
+            if _number_tuple(val):
+                for k, entry in enumerate(val):
+                    scalars[f"{name}{_NESTED}{k}"] = entry
+                continue
         if isinstance(val, (int, float)):
             runtime_scalars[name] = val
         elif isinstance(val, Array):
@@ -449,7 +466,7 @@ class _Indexing(ast.NodeTransformer):
         if owner is None:
             return None
         prefix = f"{expr.attr}{_NESTED}"
-        count = sum(1 for key in owner.runtime
+        count = sum(1 for key in (*owner.runtime, *owner.scalars)
                     if key.startswith(prefix) and key[len(prefix):].isdigit())
         return (owner, expr.attr, count) if count else None
 
@@ -470,9 +487,10 @@ class _Indexing(ast.NodeTransformer):
                                 f"index from {-count} to {count - 1}")
             if not isinstance(node.ctx, ast.Load):
                 raise TypeError(f"{ast.unparse(node)}: a tuple attribute is read-only")
-            return ast.copy_location(
-                ast.Name(id=owner.runtime[f"{name}{_NESTED}{literal % count}"],
-                         ctx=ast.Load()), node)
+            key = f"{name}{_NESTED}{literal % count}"
+            entry = ast.Constant(value=owner.scalars[key]) if key in owner.scalars \
+                else ast.Name(id=owner.runtime[key], ctx=ast.Load())
+            return ast.copy_location(entry, node)
         node = self.generic_visit(node)
         owner = self._template(node.value)
         if owner is None or not isinstance(node.ctx, ast.Load):

@@ -255,3 +255,35 @@ def test_entry_names_are_reserved():
 
     with pytest.raises(TypeError, match="how a tuple's entries are named"):
         touch(Clash(), tack.zeros((1,)))
+
+
+@tack.device_class
+class Tile:
+    shape = (4, 2)                            # a class tuple: compiled in
+
+    def __init__(self, values):
+        self.values = values
+
+    @tack.func
+    def __getitem__(self, k):
+        return self.values[k[1] * self.shape[0] + k[0]]
+
+
+@tack.kernel
+def _tile_total(t, out):
+    for i, j in tack.ndindex(t.shape[0], t.shape[1]):
+        tack.atomic_add(out, 0, t[i, j] * tack.f32(i + 10 * j))
+
+
+def test_class_tuples_are_constants(backend):
+    out = tack.zeros((1,))
+    _tile_total(Tile(tack.ones((8,))), out)
+    assert out[0] == sum(i + 10 * j for i in range(4) for j in range(2))
+    if backend == "cpu":
+        ir = tack.inspect(_tile_total, Tile(tack.ones((8,))), out, mode="ir")
+        assert "* 4" in ir                    # the row length is a literal
+    swapped = Tile(tack.ones((8,)))
+    swapped.shape = (2, 4)                    # an instance override, still compiled in
+    out.fill(0)
+    _tile_total(swapped, out)
+    assert out[0] == sum(i + 10 * j for i in range(2) for j in range(4))

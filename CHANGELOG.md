@@ -15,6 +15,7 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   any indexable object, compiled once for each. An instance tuple of
   numbers, `self.shape = (nx, ny)`, is one runtime scalar per entry, read
   as `obj.shape[k]` with a literal `k`; a new shape does not recompile. A
+  class tuple, `shape = (4, 4)`, is read the same way and compiled in. A
   store without `__setitem__`, and an atomic on an indexable object, are
   refused when the kernel compiles.
 - `tack.arrays`: the implicit arrays (`CountingArray`, `ConstantArray`,
