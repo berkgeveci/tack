@@ -408,8 +408,8 @@ def _record_value(value, out, k: int, n: int):
 
 
 def test_host_writes_wait_after_tack_init_runs_again():
-    """An array made before another tack.init is still written by the host and
-    read by launches, which now queue on the new backend: the host's write has
+    """An array made on one Metal backend is still written by the host and read
+    by launches queued on another: the host's write has
     to wait for those, not for its first backend's (empty) queue. mpm128 in
     tack-examples rewrote its gravity under queued launches that way, 299 of
     300 launches here reading a later value."""

@@ -38,7 +38,7 @@ They allocate no backend storage and do not define a finite-element space.
 
 | Operation | Values | Allocation and ownership |
 |---|---|---|
-| `empty(shape, dtype=f32)` | Uninitialized | Independent storage on the active backend |
+| `empty(shape, dtype=f32, *, device=None)` | Uninitialized | Independent storage on `device`, by default the default device |
 | `array(values, dtype=None)` | Copies input values | Independent storage; scalar dtype inferred if omitted |
 | `empty_like(prototype, dtype=None)` | Does not read or initialize values | Independent storage matching metadata |
 | `zeros`, `ones`, `full`, and their `_like` forms | Initialized | Same element types as `empty` |
@@ -51,8 +51,11 @@ Specifying `dtype=vec3()` consumes a trailing dimension of size three and
 gives array shape `(n,)`. Matrix dtypes similarly consume two matching
 trailing dimensions. Wrong component dimensions raise `ValueError`.
 
-`array(existing_tack_array)` copies on the device. `empty_like` reads only
-metadata, including for a prototype on another backend. A scalar dtype
+`array(existing_tack_array)` copies on that array's device, or through the
+host when `device=` names another. `empty_like` reads only metadata and
+allocates on the prototype's device unless `device=` says otherwise. Every
+array records its device (`a.device`); `a.to_device(d)` returns the array
+itself when its memory is usable on `d`, else a copy. A scalar dtype
 override preserves vector/matrix dimensions and changes component precision;
 an element dtype override selects another element type at the same array shape.
 

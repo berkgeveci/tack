@@ -107,9 +107,10 @@ Level Zero device pointer. A declaration states what *is* supported.
 **Where it shows.**
 
 - `Backend` (`packages/tack-core/src/tack/runtime/backend.py`) declares
-  `name`, `display_name`/`label`, `supported_dtypes`,
-  `supports_device_reductions`, `supports_workgroups`, `init_options`,
-  `device_memory_spaces` and `dlpack_refusal_note`.
+  `name`, `ordinal`, `display_name`/`label`, `supported_dtypes`,
+  `supports_device_reductions`, `supports_workgroups`, `device_options`,
+  `device_memory_spaces` and `dlpack_refusal_note`, and derives
+  `memory_domain`.
 - Anything derivable is derived, so it cannot disagree with its source:
   `supports_f64` is `f64 in supported_dtypes`, and
   `supported_atomic_dtypes` intersects a per-target table with

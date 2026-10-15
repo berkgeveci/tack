@@ -232,7 +232,7 @@ when it has the same number of values. The field length must also match the
 space's size; matching a shape alone does not establish the association.
 
 The example assumes the imports `numpy as np`, `tack`, and `tack.dataset as td`,
-with `tack.init(arch=tack.cpu)` before construction. The complete source below
+with `tack.set_default_device("cpu")` before construction. The complete source below
 includes them and runs independently.
 
 ## Inspect without losing track of transfers

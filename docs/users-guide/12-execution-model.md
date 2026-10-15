@@ -91,7 +91,7 @@ completed force array, and so does a read after the loop. On the CPU a
 call completes before Python continues; on CUDA, HIP, Metal and Level Zero
 it is queued and returns at once, and the host access waits. The program
 above behaves the same either way, and there is no stream or event to
-manage. `tack.sync()` waits for everything launched so far, for timing
+manage. `tack.sync()` waits for everything launched so far on every device, for timing
 kernels or for memory another library reads without Tack.
 
 ### Waiting from `asyncio`
@@ -109,8 +109,8 @@ async def frame():
     return pixels
 ```
 
-`tack.sync_async()` waits for the launches made before the call, not for
-ones another task queues while it waits. `numpy_async` returns every
+`tack.sync_async()` waits for the launches made on the default device
+before the call, not for ones another task queues while it waits. `numpy_async` returns every
 write queued before the call; one queued later by another task may or may
 not be in it, so order the two with `await` if it matters. A launch's error
 is raised at the `await`. On CUDA, HIP, Metal and Level Zero the wait runs

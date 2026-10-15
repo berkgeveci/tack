@@ -12,7 +12,7 @@ Optional, with defaults that suit a backend lacking the feature:
 | Method | Default | Overridden by |
 |---|---|---|
 | `fill_array(array, value)` | `False`: `Array.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more as a kernel through its dispatch, so the threads first-touch the pages |
-| `synchronize()` | Nothing to wait for | Metal, CUDA, HIP and Level Zero, which queue launches (`tack.sync()` calls it) |
+| `synchronize()` | Nothing to wait for | Metal, CUDA, HIP and Level Zero, which queue launches (`tack.sync()` calls it on every backend, `Device.synchronize()` on one) |
 | `memory_space(ptr)` | `"cpu"` | Backends with device memory |
 | `cache_target()`, `variant_artifact()`, `load_variant()` | `None`: compiled variants are not stored on disk | Every backend; see [The disk cache](#the-disk-cache) |
 | `reduce_array()`, `texture_in_hardware()`, `create_texture_image()` | Host reductions, software sampling | Backends with device reductions or texture units |
@@ -21,13 +21,16 @@ Declared capabilities — read these instead of probing with `hasattr`:
 
 | Attribute | Meaning |
 |---|---|
-| `name` | Arch identifier, matching `tack.init(arch=...)` |
+| `name` | Device type, as a spec writes it (`tack.device("metal")`) |
+| `ordinal` | Which of the type's devices; 0 for now (`Device.index`) |
 | `display_name` / `label` | How to write the backend in a message |
 | `supported_dtypes` | Scalar types accepted as array dtypes |
 | `supports_f64` | Derived from `supported_dtypes` — never declared separately |
 | `supports_device_reductions` | Whether `reduce_array()` runs on device; otherwise `Array.sum()` and friends fall back to numpy |
 | `supports_workgroups` | Native workgroup execution for shared memory, barriers, local thread IDs and block reductions; false on CPU |
 | `device_memory_spaces` | Memory spaces a pointer must be in for `array_from_ptr()`; empty means no check |
+| `device_options` | Keyword options `tack.device()` passes to the constructor; any other is refused |
+| `memory_domain` | Derived: `(name, ordinal)`, plus the context on Level Zero. Backends with one domain run kernels on each other's arrays |
 
 Anything derivable is derived. `supports_f64` used to be declared
 independently, existed on Level Zero alone, and so
@@ -44,15 +47,23 @@ attribute, and `supports_f64` follows automatically.
 Each backend follows the same lifecycle:
 
 ```
-tack.init(arch=tack.metal)
-    → dispatch.py creates MetalBackend()
+tack.device("metal")            (or set_default_device, or device="metal")
+    → dispatch.py creates MetalBackend() on first use, kept in _devices
     → Backend discovers device, creates command queue / context
+    → as_device(backend) wraps it as the tack.Device users see
 
 kernel(x, y, out, alpha, n)
     → Kernel.__call__
+    → dispatch.launch_backend(name, args): the default device if it can
+      address the arrays, else the arrays' own device
     → backend.execute(kernel, args, kwargs)
     → Template expansion + IR pipeline + codegen + dispatch
 ```
+
+A backend made without options lives for the process, in the registry
+`dispatch._devices`; one made with options lives while its `Device` or any
+of its arrays does (every `Array` holds its backend). Switching the
+default device builds nothing and invalidates nothing.
 
 ## Backend.execute() Flow
 
@@ -369,5 +380,5 @@ In debug mode, `Kernel.__call__` (and the result epilogue) calls
 backend that queues launches, any other launch's error surfaces at the
 next wait rather than at its call.
 
-`tack.init()` wraps backend initialization errors with the architecture
-name, platform, and install instructions.
+`tack.device()` wraps backend start-up errors with the device type,
+platform, and install instructions.

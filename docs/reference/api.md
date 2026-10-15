@@ -7,7 +7,11 @@ belong on the host or in a kernel, use the [quick reference](../users-guide/quic
 
 | Task | Call | Result or effect |
 |---|---|---|
-| Select a backend | `tack.init(arch=tack.cpu, debug=False)` | Initializes the runtime; allocate arrays afterwards |
+| Choose the default device | `tack.set_default_device("cuda")` | Arrays are allocated there; with nothing set it is the CPU |
+| Name a device | `tack.device("cuda")`, `with tack.device("cuda"):` | The same `Device` every time; `with` makes it the default in the block |
+| Allocate on a device | `tack.empty((n,), device="cuda")` | Every constructor takes `device=` |
+| Move an array | `a.to_device("cpu")`, `a.device` | `a` itself if its memory is usable there, else a copy |
+| Check indices | `tack.set_debug(True)` | Every kernel launched afterwards checks its indices |
 | Allocate an output | `tack.empty((n,))` | New f32 array with unspecified contents |
 | Allocate with another dtype | `tack.empty((n,), tack.i32)` | Any Tack type or NumPy dtype (`np.int32`, `"int32"`) |
 | Allocate zeros, ones or a value | `tack.zeros((n,))`, `tack.ones((n,))`, `tack.full((n,), 2.5)` | New array, filled on the device |
@@ -21,7 +25,7 @@ belong on the host or in a kernel, use the [quick reference](../users-guide/quic
 | Allocate vector elements | `tack.empty((n,), tack.vec3())` | Array of n 3-vectors; NumPy download shape `(n, 3)` |
 | Inspect shape and size | `a.shape`, `a.ndim`, `a.size`, `a.nbytes` | Element counts (components excluded) and storage bytes |
 | Reshape without copying | `a.reshape(rows, -1)` | Shares storage; one dimension may be `-1` |
-| Wait for device work | `tack.sync()` | Waits for queued launches; returns `None` |
+| Wait for device work | `tack.sync()` | Waits for queued launches on every device; returns `None` |
 | Inspect a kernel | `tack.inspect(kernel, *args, mode="source")` | Generated source as a string; does not execute the kernel |
 
 Without a `dtype`, an allocation is f32; values from Python make f32 from
@@ -33,9 +37,20 @@ For ownership, errors and precise guarantees, see the
 [Kernel Language Contract](language-contract.md). Compiler internals are in
 the [Developer's Guide](../developers-guide/01-architecture.md).
 
-## Initialization
+## Devices
 
-::: tack.init
+A kernel runs on its arrays' device: the default device when that can
+address them, otherwise theirs. See [Backends: Devices](../users-guide/08-backends.md#devices).
+
+::: tack.device
+
+::: tack.Device
+
+::: tack.set_default_device
+
+::: tack.get_default_device
+
+::: tack.set_debug
 
 ::: tack.runtime.dispatch.get_backend
 
@@ -45,7 +60,7 @@ the [Developer's Guide](../developers-guide/01-architecture.md).
 
 ## Arrays
 
-`tack.Array` holds storage on the backend active at allocation. Its shape
+`tack.Array` holds storage on one device (`a.device`), chosen at allocation. Its shape
 counts elements; its dtype describes one scalar, vector or matrix element.
 `tack.dataset.Field` instead couples coefficient values with a space on a topology.
 See [Arrays and Types](../users-guide/02-arrays-and-types.md) for examples.

@@ -545,7 +545,7 @@ speedups not taken. The module docstring keeps that reasoning.
 
 | Variable | Effect |
 |---|---|
-| `TACK_CPU_THREADS` | Worker count, parsed as an integer; values below 1 become 1. With one thread the pool is never created and every threshold is `_NEVER`. An explicit `num_threads`, from `tack.init(arch="cpu", num_threads=…)` or `CPUBackend(num_threads=…)`, takes precedence. |
+| `TACK_CPU_THREADS` | Worker count, parsed as an integer; values below 1 become 1. With one thread the pool is never created and every threshold is `_NEVER`. An explicit `num_threads`, from `tack.device("cpu", num_threads=…)` or `CPUBackend(num_threads=…)`, takes precedence. |
 | `TACK_CPU_POLICY` | `v2` (default, also when unset or empty) or `v1`. Anything else raises `ValueError`. |
 | `TACK_CPU_MARGIN` | A float that replaces the margin under either policy, switching off v2's derived margin. For experiments. |
 | `TACK_CPU_POOL` | `python` (also `0`, `off`, `no`, `false`) fans out through a `ThreadPoolExecutor` instead of the JIT'd pool. Anything else, or unset, uses the pool where it can be made. |

@@ -134,9 +134,8 @@ def test_one_thread_fills_in_place(monkeypatch):
 
 
 def test_a_array_of_another_backend_fills_in_place(monkeypatch, backend):
-    """An array made before `tack.init` switched to this backend has a buffer
-    the CPU kernel must not touch: `Array.fill` asks the current backend,
-    and the CPU backend answers only for its own buffers."""
+    """An array of another device has a buffer the CPU kernel must not touch:
+    the CPU backend answers `fill_array` only for its own buffers."""
     from tack.lang.array import NumpyBuffer
 
     class ForeignBuffer(NumpyBuffer):

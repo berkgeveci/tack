@@ -234,8 +234,9 @@ or matrix element) and may not write one; `DeviceBuffer.read_range`
 defines the copy, which is a slice of host-visible memory on CPU and
 Metal and a copy of just the element on CUDA, HIP and Level Zero. Object identity
 does not establish that two arrays have different backing allocations.
-Callers must keep external storage alive for its use and must use arrays
-compatible with the active backend.
+Callers must keep external storage alive for its use and must pass, in one
+launch, arrays in one device's memory; a launch runs on that device (the
+default device when it can address them).
 
 **Required:** support overlapping array arguments by default, preserving
 program order within each iteration. This includes passing the same array
@@ -280,7 +281,7 @@ atomically; when a store cannot be traced to a parameter, every array
 argument counts as written. That is a check of the binding, not of accesses:
 writable arrays aliasing read-only storage are not detected. Indices are
 not checked, and an out-of-bounds access has no defined result. Debug mode
-(`tack.init(debug=True)` or `TACK_DEBUG=1`) is the exception: it checks
+(`tack.set_debug(True)` or `TACK_DEBUG=1`) is the exception: it checks
 every index of every array and array access against its extent, one
 dimension at a time (so `a[i, j + 1]` past the last column is caught even
 when its flat index lands inside the array), skips an access outside it (a
@@ -1246,11 +1247,11 @@ must show that backend's cases; deselection or a skip is not validation.
 For example, after installing the CUDA extra and runtime:
 
 ```bash
-uv run --no-sync python -c 'import tack; tack.init(arch=tack.cuda)' && \
+uv run --no-sync python -c 'import tack; tack.set_default_device("cuda")' && \
   uv run --no-sync pytest packages/tack-core/tests/test_compiler_contract.py packages/tack-core/tests/test_differential.py -k cuda -v -rxX
 ```
 
-Use `tack.hip` / `-k hip` or `tack.level_zero` / `-k level_zero` for those
+Use `"hip"` / `-k hip` or `"level_zero"` / `-k level_zero` for those
 backends. `--no-sync` preserves the existing environment's backend extras.
 The shared-frontend LC4 test runs in the unfiltered command. Record backend,
 device, runtime/binding versions, pass/fail/xfail counts, and numerical

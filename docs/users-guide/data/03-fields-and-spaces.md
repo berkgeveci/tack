@@ -55,7 +55,7 @@ The [complete independent-spaces example](../../examples/data_spaces.py) builds
 L2 pressure and quadratic H1 temperature on the same two hexes. This section
 constructs pressure directly; [the next section](#construct-a-quadratic-h1-field)
 constructs temperature. The snippets assume NumPy, Tack and `tack.dataset`
-imported as `np`, `tack` and `td`, with a backend initialized.
+imported as `np`, `tack` and `td`, with a default device set.
 
 Use `uniform_grid` as a shortcut for the mesh setup here; [Build Meshes](02-meshes.md)
 shows its explicit topology and geometry construction:
@@ -325,7 +325,7 @@ choices, with a check that the value count matches the space.
 ```
 
 Here `ConstantArray` stores the constant and count, not 12 separate values.
-`materialize` computes storage on the active backend. `to_host` evaluates and
+`materialize` computes storage on the default device. `to_host` evaluates and
 downloads a snapshot. Neither changes the original field's representation.
 
 | Implicit array | Useful when |

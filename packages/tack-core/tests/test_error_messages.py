@@ -198,7 +198,7 @@ def test_unavailable_backend_raises_with_the_guidance_attached():
     from tack.runtime.dispatch import _BACKEND_HELP
     first_line = _BACKEND_HELP[arch].splitlines()[0]
     assert first_line in message, \
-        f"init() error for '{arch}' did not carry its install guidance"
+        f"the error for '{arch}' did not carry its install guidance"
 
 
 def test_unknown_arch_lists_the_real_ones():

@@ -74,7 +74,7 @@ workgroup execution model.
 On this Mac, sandboxed processes cannot discover the Apple M1 Max GPU:
 `MTLCreateSystemDefaultDevice()` returns `None` even with the bindings installed.
 Run Metal hardware validation with GPU access outside that sandbox and explicitly
-initialize `tack.metal` first. A sandboxed CPU-only pytest collection does not
+make the Metal device (`tack.set_default_device("metal")`) first. A sandboxed CPU-only pytest collection does not
 validate Metal. Keep `TACK_NO_REINIT` unset for multi-backend runs.
 
 No build step — pure Python with JIT compilation at runtime.
@@ -116,7 +116,13 @@ Tack is a Python-first GPU compute framework inspired by Taichi. Kernels are dec
 
 ### Backend contract
 
-All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_array`, `wrap_ptr`, `execute`), the hooks with defaults (`fill_array`, `synchronize` for backends that queue launches, `memory_space`, `reduce_array`, the texture hooks, and the disk cache's `cache_target`/`variant_artifact`/`load_variant`), and the capability attributes callers read instead of probing with `hasattr`: `name`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `supports_workgroups`, `device_memory_spaces`.
+All five backends subclass `Backend` (`runtime/backend.py`), which declares the required methods (`allocate_array`, `wrap_ptr`, `execute`), the hooks with defaults (`fill_array`, `synchronize` for backends that queue launches, `memory_space`, `reduce_array`, the texture hooks, and the disk cache's `cache_target`/`variant_artifact`/`load_variant`), and the capability attributes callers read instead of probing with `hasattr`: `name`, `ordinal`, `display_name`/`label`, `supported_dtypes`, `supports_f64`, `supports_device_reductions`, `supports_workgroups`, `device_options`, `device_memory_spaces`, `memory_domain`.
+
+### Devices
+
+A device is a backend wrapped as a value (`runtime/dispatch.py`). `tack.device(spec, **options)` takes `"cpu"`, `"metal"`, `"cuda"`/`"cuda:0"`, `"hip"`, `"level_zero"` (numbered types take `:N`; only 0 is reachable). Without options it comes from the registry `_devices`, one backend per `(type, index)`, made on first use and the same afterwards, so arrays and compiled kernels survive a change of default; options (`Backend.device_options`: CPU `num_threads`, Level Zero `external_context`) construct a new backend each call. `tack.Device` (`.type`, `.index`, `.synchronize()`, `str` → `"cuda:0"`, equality by backend identity) is one per backend, `dispatch.as_device(backend)`, cached on the backend. `with device:` pushes onto a per-thread stack (`_scope`, checked only while `_open_scopes` is nonzero); `set_default_device` sets the process default (`_current_backend`, the CPU if unset; `TACK_NO_REINIT` keeps an existing one); `get_backend()` reads stack then default. `set_debug` replaces `init(debug=)`; `TACK_DEBUG` is read at import. There is no `tack.init` and no `tack.cpu`/`tack.cuda` constants.
+
+An `Array` records its backend (`_device`; `a.device`, `a.to_device()`, `device=` on every constructor, `*_like` default to the prototype's); copies, astype, reshape, reductions, fill, concat and textures use it. `Kernel.__call__` asks `dispatch.launch_backend(name, args)`: the default backend if it can address every array (equal `Backend.memory_domain`, `(name, ordinal)`, Level Zero adding its context; two CPU backends with different thread counts share one) or there are none, else the arrays' own; two domains raise `ValueError`. A device class's arrays choose only when no plain array does; `check_devices` verifies expanded template arrays on the slow path (`_resolve_variant`) and the fast path (`_fast_resolve`, when the plan expands templates). `tack.inspect` uses `launch_backend` too. Library functions that allocate (`tack.algorithms` scans, sorts, stats) are wrapped in `on_inputs_device`, which makes the first array argument's device the default for the call. `tack.sync()` synchronizes every live backend (`_live`); `sync_async` the default. An array holds its backend, so a CUDA context outlives every array in it. See `test_devices.py`, which simulates a second device with a CPU backend of another memory domain.
 
 `supports_workgroups` is false on CPU and true on GPU backends. CPU rejects
 shared allocations, barriers, thread IDs and block reductions before variant
@@ -164,7 +170,7 @@ Anything derivable is derived — `supports_f64` comes from `supported_dtypes`, 
 All five backends share one entry point: `resolve_variant()` in `runtime/kernel_utils.py`. It turns a call into a compiled variant, running the IR pass pipeline **only when that variant is new**.
 
 Every dispatch:
-1. `Kernel.__call__` → `backend.execute(kernel, args)` → `resolve_variant(...)`, which first tries the dispatch fast path (below; skipped with keyword arguments or in debug mode); a miss runs `_resolve_variant` inside a `template_scope`:
+1. `Kernel.__call__` → `dispatch.launch_backend(name, args)` picks the backend (see Devices) → `backend.execute(kernel, args)` → `resolve_variant(...)`, which first tries the dispatch fast path (below; skipped with keyword arguments or in debug mode); a miss runs `_resolve_variant` inside a `template_scope`:
 2. Detect template arguments (`@tack.device_class` classes) and expand them
 3. Detect vector arrays and set up scalarization metadata
 4. `kernel.get_ir(..., debug=...)` returns the **pristine IR template** for this specialization (lowered, or read from the disk cache); in debug mode append the two hidden arguments (`debug_bounds.hidden_args`); check required workgroup support against the backend
@@ -215,8 +221,8 @@ reductions, texture uploads) or calls `tack.sync()`; `tack.zeros` takes a
 new buffer as Metal cleared it (`starts_zeroed`), without waiting. Bindings
 are resolved before an encoder opens, since committing an open encoder aborts. A
 buffer's host access waits for every live Metal backend (`_backends`,
-`_synchronize_all`), not the one it was made on: `tack.init` makes a new
-backend each call and earlier arrays keep working on it. Memory
+`_synchronize_all`), not the one it was made on, in case more than one
+exists (a backend constructed directly, as tests do). Memory
 handed outside Tack (DLPack, `export_memory`, `wrap_ptr`) is `_shared`: a
 launch using it completes before returning. Waiting after every launch cost
 about 0.3 ms each. `test_metal.py` covers order across batches, per-launch
@@ -259,7 +265,7 @@ argument state are backend-wide; a kernel's arguments are captured when
 its launch is appended, so the next call may set them at once. Unlocked, half of the CUDA dispatches from four threads
 computed with another thread's scalars (`test_concurrent_dispatch.py`).
 CUDA's context comes from `cuCtxCreate` and is current only on the thread
-that called `tack.init`; another thread must make it current first, or
+that made the device (its first `tack.device("cuda")`); another thread must make it current first, or
 its dispatch fails with `CUDA_ERROR_INVALID_CONTEXT`.
 
 ### Disk cache
@@ -363,7 +369,7 @@ localization/packing allocate generated bindings through `fresh_name`
 
 ### Debug mode (bounds checks)
 
-`tack.init(debug=True)` or `TACK_DEBUG` (read at `init`) sets
+`tack.set_debug(True)` or `TACK_DEBUG` (read when `tack` is imported) sets
 `dispatch._debug`. `Kernel.get_ir(debug=True)` lowers separately (a
 `("debug",)` key part): `_visit_subscript_index`/`_linearize_index` and flat
 atomic indices go through `_checked`, which wraps the flat index in
@@ -668,7 +674,7 @@ The CPU backend fans a loop range out to its thread pool only when the serial ru
 
 A fixed element count cannot work here: the crossover moves ~1000× with arithmetic intensity (~4M elements for `out[i] = x[i]*2+1`, ~130K for a `sqrt`/`sin` expression, ~4K for a 20-iteration inner loop). The previous constant of 1024 sat below all of them, making mid-size dispatches of cheap kernels 3–10× slower than running them serially.
 
-`TACK_CPU_THREADS` overrides the thread count, as does `tack.init(arch="cpu", num_threads=N)`; `1` keeps everything on the calling thread. `TACK_CPU_POLICY` accepts `v1` or `v2` (unset or empty means v2); anything else raises. Boolean variables such as `TACK_NO_REINIT` go through `dispatch.env_flag`: `0`, `false`, `no`, `off` and empty mean off.
+`TACK_CPU_THREADS` overrides the thread count, as does `tack.device("cpu", num_threads=N)` (a new device, sharing CPU memory with the others); `1` keeps everything on the calling thread. `TACK_CPU_POLICY` accepts `v1` or `v2` (unset or empty means v2); anything else raises. Boolean variables such as `TACK_NO_REINIT` go through `dispatch.env_flag`: `0`, `false`, `no`, `off` and empty mean off.
 
 ## Kernel language features
 
@@ -707,7 +713,7 @@ manylinux x86_64 wheels only, so the dependency carries a platform marker and is
 
 That mismatch is not always fatal, which is worth knowing before pinning on principle: the lower bound resolves to the newest wheel, so **ROCm 7.0.2 got hip-python 7.2.2 — two minor versions ahead — and the whole suite passed on it**, MI300X, 2026-08-11. Treat the pin as the fix for an actual failure rather than a precaution.
 
-Then: `tack.init(arch=tack.hip)`.
+Then: `tack.set_default_device("hip")`, or `device="hip"` per array.
 
 **Known issue**: `hiprtcDestroyProgram` segfaults in hip-python. The backend skips the call (minor leak, mitigated by kernel caching). Recorded against **7.1**; **checked on 2026-08-11 against hip-python 7.2.2 / ROCm 7.0.2 on an MI300X and it still segfaults** — SIGSEGV on the first call, after a successful compile. The documented calling convention is the one that crashes: `hiprtcDestroyProgram(prog)` takes the program directly, and passing a pointer to it is rejected by the binding as a type error. The workaround stays.
 
@@ -721,16 +727,18 @@ Compilation pipeline: OpenCL C source → `libocloc.so` (in-process, via `oclocI
 
 Requires: `libze_loader.so` (Level Zero runtime), `libocloc.so` (Intel offline compiler). No Python packages needed.
 
-Then: `tack.init(arch=tack.level_zero)`.
+Then: `tack.set_default_device("level_zero")`, or `device="level_zero"` per array.
 
 **Sharing memory needs a shared context.** A Level Zero USM pointer is only
 meaningful in the context that allocated it, and DLPack carries none.
-`tack.init(arch=tack.level_zero, external_context={driver, device, context})`
-adopts another library's handles instead of creating a context (all three
-are required; `Backend.init_options` declares accepted keywords and
-`tack.init` rejects others). `tack.interop.vtk.init_level_zero()` takes them
-from VTK's Viskores/Kokkos SYCL queue, and the VTK interop refuses Level Zero
-arrays from any other context. Intel's driver resolves pointers from any
+`tack.device("level_zero", external_context={driver, device, context})`
+makes a device that adopts another library's handles instead of creating a
+context (all three are required; `Backend.device_options` declares accepted
+keywords and `tack.device` rejects others). Its `memory_domain` includes the
+context, so its arrays and the plain Level Zero device's do not mix in a
+launch. `tack.interop.vtk.init_level_zero()` takes the handles from VTK's
+Viskores/Kokkos SYCL queue and returns the device it made the default, and
+the VTK interop refuses Level Zero arrays from any other context. Intel's driver resolves pointers from any
 context, so this check is the only one that catches the mistake. The
 backend reports `device_memory_spaces = {"level_zero"}` via
 `zeMemGetAllocProperties`. See `test_level_zero_context.py`.

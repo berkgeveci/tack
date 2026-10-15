@@ -265,7 +265,7 @@ sequenceDiagram
     participant Tack
     participant VTK
     participant Driver as CUDA / HIP driver
-    App->>Tack: tack.init(arch=tack.cuda)
+    App->>Tack: tack.set_default_device("cuda")
     App->>VTK: run a Viskores filter (device array)
     App->>Tack: vtk_to_array(vtk_array)
     Tack->>VTK: dlpack_support.vtk_to_dlpack(vtk_array)
@@ -317,7 +317,7 @@ itself is unchanged.
 
 ### Adopting a context
 
-`LevelZeroBackend` declares `init_options = frozenset({"external_context"})`,
+`LevelZeroBackend` declares `device_options = frozenset({"external_context"})`,
 so
 
 ```python
@@ -331,13 +331,18 @@ or device found separately need not be the one the context was created
 against. With the handles adopted, `_query_device` runs against the given
 device, `self._context` wraps the given context, and `_create_queues`
 creates Tack's command list *in* that context. Every later
-`zeMemAllocDevice` — every `tack.empty()` — allocates there.
+`zeMemAllocDevice` — every `tack.empty()` on that device — allocates there.
+`tack.device("level_zero", external_context=...)` makes the same device
+without making it the default. Either way it is a device of its own, not
+the registry's plain `tack.device("level_zero")`: its `memory_domain`
+includes the context handle, so its arrays and the plain device's never
+meet in one launch (`ValueError`).
 `LevelZeroBackend.shares_external_context` reports whether this happened.
 
-The rejection of unknown options lives in `tack.init()`
+The rejection of unknown options lives in `tack.device()`
 (`runtime/dispatch.py`), which compares the keywords against the
-constructor class's `init_options` before constructing it. The reason is
-specific to this feature: if `tack.init(arch=tack.cpu,
+constructor class's `device_options` before constructing it. The reason is
+specific to this feature: if `tack.device("cpu",
 external_context=...)` or a misspelled keyword were silently ignored, Tack
 would start a private context while the caller believed memory was shared —
 exactly the failure no runtime check can detect later.
@@ -350,8 +355,9 @@ Tack created inside the adopted context is likewise left alone.
 ### From VTK
 
 `tack.interop.vtk.init_level_zero()` is the convenience form. It calls
-`dlpack_support.level_zero_handles()` and passes the result to
-`tack.init(arch=tack.level_zero, external_context=handles)`. If that
+`dlpack_support.level_zero_handles()`, passes the result to
+`tack.set_default_device("level_zero", external_context=handles)` and
+returns that device. If that
 function is absent or returns nothing, it raises `RuntimeError`: the VTK is
 too old, was built without Viskores on Kokkos' SYCL backend, or is not
 running on a Level Zero device.
@@ -391,12 +397,14 @@ sequenceDiagram
 ### The guard, and why only Tack can enforce it
 
 Both `vtk_to_array` and `array_to_vtk` call
-`_require_shared_level_zero_context` before exchanging anything. When the
-active backend is Level Zero, it asks VTK for its handles again and compares
-the context with `backend._context`. If VTK has no handles, or the contexts
-differ, it raises `RuntimeError` and tells the caller to start Tack with
-`init_level_zero()` instead of `tack.init(arch=tack.level_zero)`. On other
-backends it does nothing.
+`_require_shared_level_zero_context` before exchanging anything, with the
+backend whose memory is exchanged: the exported array's device for
+`array_to_vtk`, the default device for `vtk_to_array`. When that backend is
+Level Zero, it asks VTK for its handles again and compares the context with
+`backend._context`. If VTK has no handles, or the contexts differ, it
+raises `RuntimeError` and tells the caller to start Tack with
+`init_level_zero()` instead of `tack.set_default_device('level_zero')`. On
+other backends it does nothing.
 
 The check has to live in Tack. VTK cannot detect the mistake, because the
 driver vouches for a pointer from any context, so VTK's own pointer-type
@@ -422,11 +430,13 @@ Sharing a context couples lifetimes in a direction Tack cannot see.
   still exist, those frees and any further dispatch act on a destroyed
   context. The owning library must keep its context alive until Tack's
   arrays and backend are gone.
-- **Arrays from before `init_level_zero()` belong to the old context.** A
-  array allocated under a plain `tack.init(arch=tack.level_zero)` keeps a
-  reference to the backend that allocated it, so its memory remains valid
-  in that private context — but it cannot be exchanged with VTK, and the
-  guard refuses it. Allocate arrays after adopting the context.
+- **Arrays from before `init_level_zero()` belong to the old context.** An
+  array allocated on the plain `tack.device("level_zero")` keeps its
+  device, so its memory remains valid in that private context and kernels
+  given it run there — but it cannot be exchanged with VTK (the guard
+  refuses it) or passed to one launch with the shared device's arrays.
+  Allocate arrays after adopting the context, or copy one over with
+  `a.to_device(shared)`, which goes through the host.
 
 This design was validated on 2026-10-05 on the Intel Data Center GPU Max
 1100, with a VTK build carrying `level_zero_handles`: Tack's VTK interop,
@@ -442,11 +452,11 @@ operated on a Tack-allocated array with writes through VTK visible to Tack.
 | Capsule already consumed | `dlpack_to_array` | `ValueError` |
 | Null data, non-contiguous strides, unknown device type | `dlpack_to_array` | `ValueError` |
 | Unknown dtype or `lanes != 1` | `dlpack_to_array` | `TypeError` |
-| Tensor on a device the active backend cannot wrap | `dlpack_to_array` | `RuntimeError` |
+| Tensor on a device that the importing device cannot wrap | `dlpack_to_array` | `RuntimeError` |
 | Integer pointer in the wrong memory space | `array_from_ptr` | `ValueError` |
 | Address given to Metal's `wrap_ptr` | `MetalBackend.wrap_ptr` | `TypeError` |
 | Export from HIP, Level Zero or CPU | `Array.export_memory` | `RuntimeError` |
-| Unknown option to `tack.init` | `tack.init` | `ValueError` |
+| Unknown option to `tack.device` | `tack.device` | `ValueError` |
 | Missing or null `external_context` handle | `LevelZeroBackend.__init__` | `ValueError` |
 | VTK lacks `dlpack_support` or `level_zero_handles` | `tack.interop.vtk` | `RuntimeError` |
 | Level Zero contexts differ during VTK exchange | `_require_shared_level_zero_context` | `RuntimeError` |

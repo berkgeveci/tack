@@ -88,8 +88,8 @@ def new_kernel_cache():
 def drop_variants(kernel, is_stale):
     """Remove `kernel`'s compiled variants whose key satisfies `is_stale`.
 
-    Applies to every live backend cache, not only the active one: a variant
-    compiled before a `tack.init()` switch is retained by the old backend.
+    Applies to every live backend cache, not only the default device's: each
+    device keeps the variants compiled on it.
     """
     for ref in list(_kernel_caches):
         cache = ref()

@@ -9,7 +9,7 @@ A Python-first GPU compute framework. Write compute kernels as decorated Python 
 import tack
 import numpy as np
 
-tack.set_default_device("metal")  # or tack.cpu, tack.cuda, tack.hip, tack.level_zero
+tack.set_default_device("metal")  # or "cpu", "cuda", "hip", "level_zero"
 
 n = 1_000_000
 x = tack.empty((n,))
@@ -51,13 +51,19 @@ pip install tack-vis               # datasets and visualization (pulls in tack-c
 
 ## Backends
 
-| Backend | Platform | Init | Dependencies |
+| Backend | Platform | Device | Dependencies |
 |---------|----------|------|-------------|
-| CPU | Any | `tack.init(arch=tack.cpu)` | `llvmlite`, `numpy` |
-| Metal | macOS (Apple Silicon) | `tack.init(arch=tack.metal)` | `pyobjc-framework-Metal` |
-| CUDA | Linux/Windows (NVIDIA) | `tack.init(arch=tack.cuda)` | `cuda-python>=13.2`, CUDA toolkit |
-| HIP | Linux (AMD) | `tack.init(arch=tack.hip)` | `hip-python`, ROCm toolkit |
-| Level Zero | Linux (Intel) | `tack.init(arch=tack.level_zero)` | `libze_loader.so`, `libocloc.so` |
+| CPU | Any | `tack.device("cpu")` | `llvmlite`, `numpy` |
+| Metal | macOS (Apple Silicon) | `tack.device("metal")` | `pyobjc-framework-Metal` |
+| CUDA | Linux/Windows (NVIDIA) | `tack.device("cuda")` | `cuda-python>=13.2`, CUDA toolkit |
+| HIP | Linux (AMD) | `tack.device("hip")` | `hip-python`, ROCm toolkit |
+| Level Zero | Linux (Intel) | `tack.device("level_zero")` | `libze_loader.so`, `libocloc.so` |
+
+`tack.set_default_device("cuda")` makes a device the default, where arrays
+are allocated; `with tack.device("cuda"):` does so for a block, and
+`device=` on any constructor picks one for an array. Every array records its
+device (`a.device`, `a.to_device(...)`), and a kernel runs where its arrays
+are. With nothing set, the default is the CPU.
 
 `hip-python` is on PyPI, so `pip install tack-core[hip]` is enough. It ships
 manylinux x86_64 wheels only, so the dependency carries a platform marker and
@@ -295,7 +301,7 @@ def debug_kern(x, out):
         out[i] = abs(x[i])
 ```
 
-To find an index out of bounds, run in debug mode: `tack.init(arch=..., debug=True)`
+To find an index out of bounds, run in debug mode: `tack.set_debug(True)`
 or `TACK_DEBUG=1` checks every array index and raises `IndexError` naming
 the access. See [Debugging and timing](docs/users-guide/15-debugging-and-timing.md).
 

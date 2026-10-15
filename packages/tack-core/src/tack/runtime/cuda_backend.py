@@ -119,7 +119,8 @@ class _ContextToken:
     and consult it before touching device memory.
 
     ``users`` counts the live CUDABackend objects sharing the context.
-    A device made with options is a second backend on the same context, so two
+    A backend made beside the registry's one (directly, as tests do) shares
+    the context, so two
     of them can overlap, and the context must survive until the last one
     goes. ``owned`` is False for a context an embedding application created:
     Tack adopts those but never destroys them, so their token never dies here.
@@ -863,7 +864,8 @@ class CUDABackend(Backend):
         # no current context exists.
         #
         # Whether the context may be destroyed is a property of the context,
-        # not of the backend that happens to hold it: a device made with options
+        # not of the backend that happens to hold it: a backend made beside the
+        # registry's one
         # is a second backend on the context, so two
         # CUDABackend objects routinely share one context for a moment. When
         # that context is ours, both must agree that the *last* one out

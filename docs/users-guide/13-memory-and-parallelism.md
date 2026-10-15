@@ -65,7 +65,7 @@ Tack does not establish race freedom for you. A kernel compiling successfully
 does not mean two iterations cannot interfere. Array accesses are not
 bounds-checked either: keep indices within the storage you allocated.
 [Debug mode](15-debugging-and-timing.md#check-every-index-with-debug-mode)
-(`tack.init(..., debug=True)` or `TACK_DEBUG=1`) checks every array and array
+(`tack.set_debug(True)` or `TACK_DEBUG=1`) checks every array and array
 index and raises `IndexError` naming the access, for finding such a bug.
 Negative host indices count from the end; do not assume that rule for kernel
 array loads.
@@ -173,9 +173,10 @@ input its own output interval and tells Python the exact allocation size. See
 
 ## Host access and ownership
 
-Allocate arrays after `tack.init`. Arrays belong to the backend that created
-them; selecting another backend does not migrate their storage. Start a fresh
-set of arrays when changing the backend.
+Every array belongs to the device it was allocated on (`a.device`), and a
+kernel runs on its arrays' device. Changing the default device does not move
+existing arrays; they keep working where they are. Use `a.to_device(d)` to
+copy one to another device. See [Devices](08-backends.md#devices).
 
 `tack.copyto` and `numpy()` transfer complete arrays. On CPU and Metal storage is
 host-addressable, but these calls still copy values. A host read `array[i]`

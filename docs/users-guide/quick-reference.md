@@ -8,6 +8,7 @@ Use this page while writing a kernel. For a first complete program, start with
 | Task | In Python, outside a kernel | In a kernel or `@tack.func` |
 |---|---|---|
 | Allocate storage | `tack.empty`, `tack.zeros`, `tack.full`, `tack.array` | Fixed-size scratch with `tack.local_array` |
+| Choose a device | `tack.set_default_device("cuda")`, `with tack.device("cuda"):`, `device=` on a constructor, `data.to_device(d)` | Runs on its arrays' device |
 | Access values | `data.numpy()` or `np.asarray(data)` (copies), or `data[i]` for one element | `data[i]`, `grid[row, column]` |
 | Write values | `tack.copyto(data, a)`, `data.fill(value)` | `data[i] = value` |
 | Repeat work | Python timestep loop calling kernels | One parallel `for` in a kernel; sequential nested loops |
@@ -88,7 +89,7 @@ See [Control Flow and Math](04-control-flow.md),
 
 ## Check, then time
 
-Use `tack.init(arch=tack.cpu, debug=True)` to find invalid indices. Compare a small
+Use `tack.set_debug(True)` to find invalid indices. Compare a small
 case with a NumPy reference before increasing the input size. For timing, disable
 debug mode, warm the kernel, reuse allocations, and call `tack.sync()` before
 stopping the clock. Measure transfers separately when studying kernel execution.

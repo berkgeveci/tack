@@ -103,6 +103,21 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   The dataset model and algorithm signatures are unchanged. `tack.data_oriented`
   is a separate kernel decorator and keeps its name.
 
+- **Breaking:** devices are values, spelled as the array API spells them,
+  and `tack.init` is gone with the `tack.cpu`/`metal`/`cuda`/`hip`/
+  `level_zero` constants. `tack.device("cuda")` (or `"cuda:0"`, `"cpu"`,
+  `"metal"`, `"hip"`, `"level_zero"`) is a `tack.Device`, the same one
+  every time; options (`num_threads`, `external_context`) make a new one.
+  `tack.set_default_device(...)` chooses the default, `get_default_device()`
+  reads it, and `with tack.device(...):` sets it in a block, per thread.
+  `tack.set_debug()` replaces `init(debug=...)`; `TACK_DEBUG` is read at
+  import. Arrays know their device (`a.device`, `a.to_device(...)`, and
+  `device=` on every constructor), and a kernel runs where its arrays are,
+  so changing the default no longer strands arrays made before it; arrays
+  on two devices are refused. `tack.algorithms` run on their inputs'
+  device, and `tack.sync()` waits for every device. `Backend.init_options`
+  is `Backend.device_options`. A warm dispatch costs about 0.4 µs more
+  (6.7 to 7.1 µs on an M1 Max) for reading its arrays' devices.
 - **Breaking:** kernel values and loops are spelled as NumPy and GLSL
   spell them, and Taichi's names are gone. Vectors are `tack.vec2`,
   `vec3`, `vec4` (N scalars, one scalar for every component, or one

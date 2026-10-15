@@ -46,12 +46,12 @@ with `supported_dtypes`, so neither can disagree with the array types.
 | `supports_workgroups` | no | yes | yes | yes | yes |
 | `supported_atomic_dtypes` (derived) | all ten | `i32`, `u32`, `f32` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` | as CUDA | `i32`, `u32`, `f32` |
 | `device_memory_spaces` | — | — | `cuda`, `cuda_pinned`, `cuda_managed` | `hip`, `hip_pinned`, `hip_managed` | `level_zero` |
-| `init_options` | `num_threads` | — | — | — | `external_context` |
+| `device_options` | `num_threads` | — | — | — | `external_context` |
 | `dlpack_refusal_note` | — | set | — | — | — |
 
 "All ten" is `i8`, `u8`, `i16`, `u16`, `i32`, `u32`, `i64`, `u64`, `f32`,
-`f64`. `supported_dtypes` is a `frozenset` on every backend. `init_options` lists the keyword arguments `tack.init()` forwards to
-the backend's constructor; `tack.init()` (`runtime/dispatch.py`) raises
+`f64`. `supported_dtypes` is a `frozenset` on every backend. `device_options` lists the keyword arguments `tack.device()` forwards to
+the backend's constructor; `tack.device()` (`runtime/dispatch.py`) raises
 `ValueError` for any other keyword before constructing anything, so a
 misspelled option cannot be silently dropped. The user-facing summary of
 these capabilities is in [Backends](../reference/backends.md); the
@@ -200,7 +200,8 @@ explains why.
 
 !!! note "One thread's context"
 
-    The context is current on the thread that called `tack.init()`. The
+    The context is current on the thread that made the device (the first
+    `tack.device("cuda")`, whichever call made it). The
     launch path does not make it current on other threads, so a thread that
     dispatches must first call `cuCtxSetCurrent` with the backend's
     context, or its launch fails with `CUDA_ERROR_INVALID_CONTEXT`.
@@ -229,7 +230,7 @@ tack-examples' lattice Boltzmann example on an H100 (density off by up to
 1.6e-2; 2.3e-6 with 13.2), and was not reduced to a kernel, so there is no
 workaround to apply. It also left the compiling thread in the C locale,
 which `_compile_keeping_thread_locale` undoes. The check runs at the first
-compile rather than at `tack.init`, so a machine without NVRTC fails where
+compile rather than when the device is made, so a machine without NVRTC fails where
 it did before.
 
 **Launch.** Block size is `WORKGROUP_SIZE` (256, from
@@ -393,9 +394,11 @@ about 50 ms a kernel, unless the driver's own persistent cache, which lives
 outside `TACK_CACHE_DIR` and is off or unwritable on many clusters, held
 the result. The cache target therefore names the device and its IP version
 (which names its stepping), the driver, ocloc's version and options, the
-module build flags and f64 support. With the disk cache off, a program
-that re-initializes recompiles the same sources, because the in-memory
-variant cache belongs to a backend instance.
+module build flags and f64 support. With the disk cache off, a device made
+with options recompiles the same sources, because the in-memory variant
+cache belongs to a backend instance; the plain `tack.device("level_zero")`
+is one backend for the process, so switching the default away and back
+keeps its variants.
 
 **Launch.** The group size is `min(256, maxGroupSizeX, maxTotalGroupSize)`.
 Each argument is set with `zeKernelSetArgumentValue`, followed by the loop
@@ -444,10 +447,9 @@ a hundred small launches went from 8.7 to 2.6 ms.
   before touching the shared memory.
 - **Waits.** The host waits where it reads an array (`to_numpy`,
   `read_range` and so host indexing, reductions), where memory leaves
-  Tack (`share()`, below), when `tack.init()` replaces the backend (the old
-  one is synchronized first), after each launch in debug mode (its check
-  reads the errors array), and at `tack.sync()`, which calls the active
-  backend's `synchronize()`. A launch's error surfaces at the next wait
+  Tack (`share()`, below), after each launch in debug mode (its check
+  reads the errors array), at `Device.synchronize()`, and at `tack.sync()`,
+  which calls every live backend's `synchronize()`. A launch's error surfaces at the next wait
   rather than at its call.
 - **Lifetimes.** An array Python drops while a queued launch still uses it
   outlives that launch: CUDA and HIP allocate and free in stream order,

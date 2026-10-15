@@ -97,7 +97,7 @@ check which backends were found:
 uv run python -c "
 import tack
 for a in ('cpu','metal','cuda','hip','level_zero'):
-    try: tack.init(arch=getattr(tack, a)); print(a, 'available')
+    try: tack.device(a); print(a, 'available')
     except Exception: pass"
 ```
 

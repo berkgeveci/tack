@@ -114,7 +114,7 @@ def _mempolicy_interleaves() -> bool:
 
     The policy the thread had is put back afterwards, whatever it was: under
     ``numactl --membind`` this probe used to leave the process with the
-    default policy, so the binding was gone after ``tack.init``.
+    default policy, so the binding was gone once a CPU device was made.
     """
     saved = _read_mempolicy()
     mask = (ctypes.c_ulong * 1)(_numa_node_mask)
@@ -956,8 +956,7 @@ class CPUBackend(Backend):
         buf = array._buffer
         if (buf.backend_name != self.name or self.num_threads <= 1
                 or buf.nbytes < _PARALLEL_FILL_MIN_BYTES):
-            # An array another backend allocated (made before a `tack.init`
-            # that switched to this one) is filled by its own buffer.
+            # An array another device allocated is filled by its own buffer.
             return False
         from tack.algorithms.copy import _fill_kernel
         from tack.lang.array import Array

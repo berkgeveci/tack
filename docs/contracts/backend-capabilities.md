@@ -9,7 +9,7 @@ the language that runs everywhere.
 
 All statements describe release candidate `23d6e1d`, updated for the
 queued launches, disk cache, debug mode and CPU pool merged through
-`b94af23`. The declarations live
+`b94af23`, and for the device model of `bba0846`. The declarations live
 in `packages/tack-core/src/tack/runtime/backend.py` (class `Backend`) and in
 the five subclasses in `runtime/cpu.py`, `runtime/metal.py`,
 `runtime/cuda_backend.py`, `runtime/hip_backend.py` and
@@ -40,7 +40,7 @@ The base class raises `NotImplementedError` for all three.
 
 | Method | Default | Overridden by |
 |---|---|---|
-| `synchronize()` | Does nothing, which is correct for a backend whose launches complete before `execute()` returns. Otherwise it waits for every launch, fill and copy queued so far, and a queued launch's error is raised here. `tack.sync()` calls it on the active backend | Metal, CUDA, HIP and Level Zero, which queue launches (see [Launches](#launches)) |
+| `synchronize()` | Does nothing, which is correct for a backend whose launches complete before `execute()` returns. Otherwise it waits for every launch, fill and copy queued so far, and a queued launch's error is raised here. `tack.sync()` calls it on every backend, `Device.synchronize()` on one | Metal, CUDA, HIP and Level Zero, which queue launches (see [Launches](#launches)) |
 | `fill_array(array, value)` | Returns `False`, and `Array.fill` fills the buffer in place | CPU, which runs a fill of 256 KiB or more of its own buffers as a kernel through its dispatch, so the threads first-touch the pages |
 | `cache_target()` | Returns `None`: compiled variants are not stored on disk, only lowered IR. Otherwise a string naming what compiled code depends on besides the kernel (the device, the compiler and driver versions, the compile options) | all five |
 | `variant_artifact(payload)`, `load_variant(ir_func, artifact, effective_args)` | Raise `NotImplementedError`. Called only when `cache_target()` is not `None`: the picklable part of a compiled variant, and the payload rebuilt from it in another process. `effective_args` lets a GPU backend remake its scalar pack buffers | all five |
@@ -54,7 +54,8 @@ The base class raises `NotImplementedError` for all three.
 
 | Attribute | Kind | Meaning |
 |---|---|---|
-| `name` | declared | Arch identifier, matching `tack.init(arch=...)`: `cpu`, `metal`, `cuda`, `hip` or `level_zero` |
+| `name` | declared | Device type, as a device spec writes it (`tack.device("cuda")`) and `Device.type` reports it: `cpu`, `metal`, `cuda`, `hip` or `level_zero` |
+| `ordinal` | declared | Which of the type's devices the backend drives (`Device.index`). Always 0 for now |
 | `display_name` | declared | How messages spell the backend, if different from `name` |
 | `label` | derived | `display_name or name`. Use it in messages |
 | `supported_dtypes` | declared | A `frozenset` of the scalar types accepted as array argument dtypes. Dispatch checks every array argument against this set |
@@ -62,7 +63,8 @@ The base class raises `NotImplementedError` for all three.
 | `supports_device_reductions` | declared | True when `Array.sum()`, `min()` and `max()` can run on the device. When false they run in NumPy on the host. It selects a path and never rejects anything |
 | `supports_workgroups` | declared | Native workgroup execution for `shared`, `shared_like`, `barrier`, `thread_id` and `block_sum`/`block_min`/`block_max`. It does **not** promise uniform participation, atomic support or safe partial workgroups |
 | `supported_atomic_dtypes` | derived | Array dtypes that support `atomic_add`, `atomic_min` and `atomic_max`. This is the backend's entry in `ATOMIC_DTYPES` (`lang/atomic_support.py`) intersected with `supported_dtypes` |
-| `init_options` | declared | Keyword options that `tack.init()` forwards to the constructor. `tack.init()` rejects any other option |
+| `device_options` | declared | Keyword options that `tack.device()` forwards to the constructor. `tack.device()` rejects any other option |
+| `memory_domain` | derived | What the backend's arrays are valid in, `(name, ordinal)`. Level Zero adds its context handle. A backend runs kernels on another backend's arrays when the domains are equal (two CPU devices with different thread counts); arrays from two domains in one launch are refused |
 | `device_memory_spaces` | declared | `memory_space()` results that `array_from_ptr()` accepts. When the set is non-empty, every pointer must be an address (anything `int()` accepts) and is checked. An empty set means that the backend doesn't distinguish memory spaces and nothing is checked |
 | `dlpack_refusal_note` | declared | Text appended to the error when a DLPack import is refused, for backends whose reason the device type doesn't convey |
 
@@ -83,7 +85,7 @@ Read from the backend classes at `23d6e1d`. "All ten" means `i8`, `u8`,
 | `supports_device_reductions` | no (NumPy) | yes | yes | yes | yes |
 | `supports_workgroups` | no | yes | yes | yes | yes |
 | `supported_atomic_dtypes` | All ten | `i32`, `u32`, `f32` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` | `i32`, `u32`, `i64`, `u64`, `f32`, `f64` | `i32`, `u32`, `f32` |
-| `init_options` | `num_threads` | none | none | none | `external_context` |
+| `device_options` | `num_threads` | none | none | none | `external_context` |
 | `device_memory_spaces` | none (unchecked) | none (unchecked) | `cuda`, `cuda_pinned`, `cuda_managed` | `hip`, `hip_pinned`, `hip_managed` | `level_zero` |
 | `dlpack_refusal_note` | none | set | none | none | none |
 | 3D textures | software trilinear over a private copy | hardware | hardware | hardware if the device has image support and the extents fit, else software | hardware if the device has samplers and the extents fit, else software |
@@ -179,7 +181,7 @@ before launch.
 
 | Capability | Checked by | When | Rejection |
 |---|---|---|---|
-| `init_options` | `tack.init()` in `runtime/dispatch.py` | At initialization, after the backend module imports and before construction | `ValueError`: "The '`metal`' backend does not accept the option(s) `num_threads`. Accepted: none." The previous backend stays active |
+| `device_options` | `tack.device()` in `runtime/dispatch.py` | When a device is made with options, after the backend module imports and before construction | `ValueError`: "The '`metal`' device does not accept the option(s) `num_threads`. Accepted: none." The default device is unchanged |
 | `supported_dtypes` | `check_dispatch_types()` in `lang/type_inference.py` | Cold dispatch and inspection. A new dtype always produces a new key | `TypeError` naming the kernel once: "Kernel '`k`': parameter '`data`' has dtype `tack.f64`, which is not supported on Metal. Supported dtypes: ..." |
 | `supports_workgroups` | `check_workgroup_support()` in `lang/workgroup_support.py` | Every dispatch, before the key lookup. The feature scan is memoized on the IR template. Also runs during inspection and direct LLVM generation | `NotImplementedError` naming the kernel, backend and primitives, with the hint "use `local_array` or `local_array_like`". Dispatch wraps it in `RuntimeError` ("Kernel '`k`' failed on CPUBackend: ..."). Inspection raises it directly |
 | Workgroup participation | `check_workgroup_participation()` in `lang/workgroup_participation.py` | Cold dispatch and inspection, on backends with `supports_workgroups` | `ValueError`: "Kernel '`k`': `barrier` at `<IR path>` requires uniform workgroup participation: ..." |
@@ -189,7 +191,7 @@ before launch.
 | Atomic alignment | `check_atomic_alignment()` | Every dispatch and inspection | `ValueError`: "Kernel '`k`': atomic target parameter `i` requires `n`-byte alignment" |
 | Read-only arrays | `check_writable_arrays()` in `runtime/kernel_utils.py`, over the indices the variant recorded in `KernelVariant.written_arrays` | Every dispatch | `ValueError`: "Kernel '`k`': parameter '`out`' may be written, but its array is read-only. ..." |
 | Launch size | `check_launch_size()` in `runtime/kernel_utils.py`, against the limit in the [capability matrix](#capability-matrix) | Every GPU dispatch, and every native `f32` reduction on CUDA, HIP and Level Zero | `ValueError`: "Kernel '`k`': `N` iterations exceed the `M` that one CUDA launch can index; split the work across several launches." A reduction is named "Array sum()" and so on. Metal reduces arrays of 2^32 or more elements through NumPy instead |
-| `device_memory_spaces` | `array_from_ptr()` in `lang/array.py` | When wrapping, for any `ptr`, on backends with a non-empty set | `TypeError` if `ptr` isn't an address. `ValueError`: "Pointer is in '`cpu`' memory but the active backend is '`CUDA`'. array_from_ptr() requires a device pointer. ..." |
+| `device_memory_spaces` | `array_from_ptr()` in `lang/array.py` | When wrapping, for any `ptr`, on backends with a non-empty set | `TypeError` if `ptr` isn't an address. `ValueError`: "Pointer is in '`cpu`' memory but the device is '`CUDA`'. array_from_ptr() requires a device pointer. ..." |
 | DLPack device type | `dlpack_to_array()` in `lang/dlpack.py` | On import | `RuntimeError` naming the backend and DLPack device type, followed by `dlpack_refusal_note` if set. `ValueError` for an unknown device type and for `kDLMetal` |
 | `supports_device_reductions` | `Array._reduce()` | Never rejects | Selects the device or NumPy path. See [Reductions](runtime-api.md#reductions) |
 | Texture hardware | `texture_in_hardware()`, at `texture3d()` and in `_store_texture_shapes()` (HIP, Level Zero) | At texture creation, and before the key is built | Never rejects. Falls back to software sampling |
@@ -229,7 +231,8 @@ defines results, precision and ordering for both paths.
 ## Backend notes
 
 **CPU.** There is no workgroup model, and the CPU doesn't emulate one.
-`tack.init(arch="cpu", num_threads=n)` sets the worker count.
+`tack.device("cpu", num_threads=n)` makes a CPU device with that worker count;
+it shares memory with the other CPU devices.
 Kernels that use shared memory, barriers, `thread_id` or block reductions
 are rejected even when the primitive is unreachable. For private scratch
 storage, use `local_array` or `local_array_like`. Parallelism comes from a
@@ -262,7 +265,8 @@ initialization (see [Textures](#textures)).
 mapping with non-null `driver`, `device` and `context` handles, so that
 Tack allocates in a context that another library owns. A missing or null
 handle raises `ValueError`. For VTK, call
-`tack.interop.vtk.init_level_zero()` instead of `tack.init()`. See
+`tack.interop.vtk.init_level_zero()` instead of
+`tack.set_default_device("level_zero")`. See
 [Interoperability](../design/interoperability.md).
 
 ## Portable subset

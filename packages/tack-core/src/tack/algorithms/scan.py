@@ -205,7 +205,7 @@ def _scan(src, dst, n, inclusive, want_total=True):
 
 @on_inputs_device
 def exclusive_scan(input_array, output_array, n, total=True):
-    """Compute exclusive prefix sum on the active backend.
+    """Compute exclusive prefix sum on the inputs' device.
 
     output[i] = sum(input[0..i-1]), output[0] = 0.
 
@@ -237,7 +237,7 @@ def exclusive_scan(input_array, output_array, n, total=True):
 
 @on_inputs_device
 def inclusive_scan(input_array, output_array, n, total=True):
-    """Compute inclusive prefix sum on the active backend.
+    """Compute inclusive prefix sum on the inputs' device.
 
     output[i] = sum(input[0..i]).
 

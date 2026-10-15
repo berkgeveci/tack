@@ -1,4 +1,4 @@
-"""Array copy and fill utilities, each a kernel on the active backend.
+"""Array copy and fill utilities, each a kernel on its arrays' device.
 
 Usage:
     from tack import algorithms

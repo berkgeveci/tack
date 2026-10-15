@@ -96,15 +96,15 @@ separate thread on the GPU (or is split across CPU cores).
 ## Choosing a Backend
 
 After the CPU example works, install your backend's extra and replace the
-single `tack.init` line. For a checkout, keep `--extra cpu` if you want both:
+single `tack.set_default_device` line. For a checkout, keep `--extra cpu` if you want both:
 
-| Hardware | Checkout installation | Initialization |
+| Hardware | Checkout installation | Default device |
 |---|---|---|
-| CPU | `uv sync --extra cpu` | `tack.init(arch=tack.cpu)` |
-| Apple silicon GPU | `uv sync --extra cpu --extra metal` | `tack.init(arch=tack.metal)` |
-| NVIDIA GPU | `uv sync --extra cpu --extra cuda` | `tack.init(arch=tack.cuda)` |
-| AMD GPU | `uv sync --extra cpu --extra hip` | `tack.init(arch=tack.hip)` |
-| Intel GPU | `uv sync --extra cpu --extra level_zero` | `tack.init(arch=tack.level_zero)` |
+| CPU | `uv sync --extra cpu` | `tack.set_default_device("cpu")` |
+| Apple silicon GPU | `uv sync --extra cpu --extra metal` | `tack.set_default_device("metal")` |
+| NVIDIA GPU | `uv sync --extra cpu --extra cuda` | `tack.set_default_device("cuda")` |
+| AMD GPU | `uv sync --extra cpu --extra hip` | `tack.set_default_device("hip")` |
+| Intel GPU | `uv sync --extra cpu --extra level_zero` | `tack.set_default_device("level_zero")` |
 
 For released packages, use the matching extra, such as `tack-core[cuda]`.
 GPU extras also require compatible system runtimes; see [Backends](08-backends.md).

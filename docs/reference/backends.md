@@ -42,7 +42,7 @@ before the call returns. See
 Guide and [The Kernel Cache](../users-guide/17-kernel-cache.md).
 
 [Debug mode](../users-guide/15-debugging-and-timing.md#check-every-index-with-debug-mode)
-(`tack.init(..., debug=True)` or `TACK_DEBUG=1`) checks every index on all five.
+(`tack.set_debug(True)` or `TACK_DEBUG=1`) checks every index on all five.
 
 ## Scalar types
 
@@ -58,7 +58,7 @@ Guide and [The Kernel Cache](../users-guide/17-kernel-cache.md).
 is a hardware fact rather than a gap in Tack.
 
 **Level Zero decides at runtime.** Some Intel parts implement `f64` and some do
-not, so the backend queries `zeDeviceGetModuleProperties` during `init()` and
+not, so the backend queries `zeDeviceGetModuleProperties` when the device starts and
 builds its supported set from the answer. Ask the backend rather than assuming:
 
 ```python

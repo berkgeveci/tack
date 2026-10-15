@@ -33,12 +33,12 @@ vector_add(x, y, out)
 print(out.numpy()[:4])         # [1. 2. 3. 4.]
 ```
 
-Only the `tack.init()` line changes between backends:
+Only the `tack.set_default_device()` line changes between backends:
 
 === "CPU"
 
     ```python
-    tack.init(arch=tack.cpu)
+    tack.set_default_device("cpu")
     ```
     LLVM IR through llvmlite, dispatched with ctypes. Threads are used only
     when a measurement says they pay — see [Backends](users-guide/08-backends.md).
@@ -46,7 +46,7 @@ Only the `tack.init()` line changes between backends:
 === "Metal"
 
     ```python
-    tack.init(arch=tack.metal)
+    tack.set_default_device("metal")
     ```
     MSL compiled by the Metal API. Buffers are shared memory on Apple silicon,
     so host and device see the same allocation.
@@ -54,14 +54,14 @@ Only the `tack.init()` line changes between backends:
 === "CUDA"
 
     ```python
-    tack.init(arch=tack.cuda)
+    tack.set_default_device("cuda")
     ```
     CUDA C through NVRTC to PTX, launched with `cuLaunchKernel`.
 
 === "HIP"
 
     ```python
-    tack.init(arch=tack.hip)
+    tack.set_default_device("hip")
     ```
     HIP C through hipRTC. The code generator is the CUDA one with a different
     `#include` — device syntax is shared.
@@ -69,7 +69,7 @@ Only the `tack.init()` line changes between backends:
 === "Level Zero"
 
     ```python
-    tack.init(arch=tack.level_zero)
+    tack.set_default_device("level_zero")
     ```
     OpenCL C compiled to SPIR-V by `libocloc`, launched through Level Zero.
 

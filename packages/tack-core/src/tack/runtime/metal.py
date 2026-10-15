@@ -93,12 +93,12 @@ if Metal is not None:
 # dispatch can index 2^32 threads; past that the position would wrap.
 _MAX_LAUNCH = 2**32
 
-# Every live Metal backend. tack.init makes a new backend each time it is
-# called, but arrays made before it remain usable, and their launches now
-# queue on the new one: a buffer's host access has to wait for whichever
-# backend may be using it, not for the one it was made with. Holding the
-# buffer to its first backend's queue let mpm128's host write gravity while
-# launches queued on the second still had to read the old value.
+# Every live Metal backend. There is one Metal device, but a backend can be
+# made beside it (directly, as tests do), and a buffer's host access has to
+# wait for whichever backend may be using it, not only the one it was made
+# with. Holding the buffer to its first backend's queue once let mpm128's
+# host write gravity while launches queued on a second backend still had
+# to read the old value.
 _backends = weakref.WeakSet()
 
 

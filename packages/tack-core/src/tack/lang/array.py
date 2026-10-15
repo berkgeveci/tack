@@ -918,8 +918,8 @@ def array_from_ptr(ptr, shape, dtype, *, device=None, writable: bool = False) ->
         space = backend.memory_space(ptr)
         if space not in backend.device_memory_spaces:
             raise ValueError(
-                f"Pointer is in '{space}' memory but the active backend "
-                f"is '{backend.label}'. array_from_ptr() requires a device "
+                f"Pointer is in '{space}' memory but the device is "
+                f"'{backend.label}'. array_from_ptr() requires a device "
                 f"pointer. Use tack.array() to copy host data to the device.")
 
     buf = backend.wrap_ptr(ptr, scalar, storage)

@@ -116,7 +116,8 @@ A mismatch raises `ValueError`. Lists are accepted too.
 array of the requested dtype (or any, without one) as it is, without a copy.
 
 `tack.empty_like(prototype)` reads only shape and type metadata, allocates
-independent storage on the active backend, and leaves values uninitialized.
+independent storage on the prototype's device (or `device=`), and leaves
+values uninitialized.
 It preserves a Tack array's element type. A scalar dtype override changes the
 component type; an element dtype override selects a new element type:
 
@@ -283,7 +284,8 @@ grid_out = tack.empty_like(np.empty((4, 8), dtype=np.float32))  # no upload
 ```
 
 The prototype may be a NumPy array or Tack array. Storage is independent,
-writable and allocated on the active backend. Vector and matrix array
+writable and allocated on a Tack prototype's device, a NumPy prototype's on
+the default device. Vector and matrix array
 prototypes retain their logical shape and component dimensions. A NumPy array
 produces a scalar array of the same shape, including any trailing dimensions.
 No values are copied or initialized; write every value before reading it.

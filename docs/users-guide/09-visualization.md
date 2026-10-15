@@ -347,10 +347,10 @@ VTK/Viskores Kokkos-SYCL build, initialize before allocating arrays:
 ```python
 from tack.interop.vtk import init_level_zero
 
-init_level_zero()                       # instead of tack.init(arch=tack.level_zero)
+init_level_zero()     # instead of tack.set_default_device("level_zero")
 ```
 
 The VTK DLPack support must provide `level_zero_handles()`. Fields created in a
 separate Tack context cannot be exchanged through this path. For another library,
-`tack.init(arch=tack.level_zero, external_context={"driver": ..., "device": ...,
-"context": ...})` adopts its context; Tack never destroys an adopted context.
+`tack.device("level_zero", external_context={"driver": ..., "device": ...,
+"context": ...})` makes a device in its context; Tack never destroys an adopted context.

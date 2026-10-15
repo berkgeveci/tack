@@ -93,7 +93,7 @@ packages/
                 kernel_utils.py  # resolve_variant(), the fast path, variant keys, kernel caches
                 disk_cache.py    # Lowered IR and compiled variants on disk (tack.cache)
                 debug_bounds.py  # Debug mode's hidden arguments and IndexError
-                dispatch.py      # tack.init(), tack.sync(), backend selection
+                dispatch.py      # devices, the default device, launch placement, tack.sync()
                 cpu.py           # CPU backend (llvmlite JIT, threading policy)
                 cpu_pool.py      # CPU thread pool, JIT-compiled from LLVM IR
                 metal.py         # Metal backend (pyobjc)

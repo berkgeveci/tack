@@ -250,7 +250,7 @@ def test_integers_too_big_or_negative_to_be_addresses_are_refused(value):
 # ── Initialization options and environment ───────────────────────────
 
 def test_cpu_declares_num_threads():
-    """CPUBackend takes num_threads; tack.init used to refuse to pass it."""
+    """CPUBackend takes num_threads, and tack.device passes it."""
     from tack.runtime.dispatch import get_backend
     try:
         tack.set_default_device("cpu", num_threads=3)

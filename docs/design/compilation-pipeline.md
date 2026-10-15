@@ -70,8 +70,14 @@ function and chaining the `OSError`. A kernel is compiled from its source
 text, so there is nothing to fall back on. `@tack.func` reads device
 functions through the same helper.
 
-**`Kernel.__call__`** asks `tack.runtime.dispatch.get_backend()` for the
-active backend (initializing the CPU backend if none was chosen) and calls
+**`Kernel.__call__`** asks `tack.runtime.dispatch.launch_backend(name, args)`
+which backend runs the launch: the default device's (`get_backend()`, the
+CPU if none was chosen) when it can address every array argument (an equal
+`Backend.memory_domain`) or there are none, otherwise the arrays' own
+device's. Arrays in two memory domains raise `ValueError` naming both. A
+`@tack.device_class` argument's arrays decide only when no plain array
+does, and `resolve_variant` checks them all against the chosen backend
+(`check_devices`, on the slow and the fast path). It then calls
 `backend.execute(self, args, kwargs)`. Every backend's `execute` begins with
 `resolve_variant()` in `packages/tack-core/src/tack/runtime/kernel_utils.py`
 and passes it a backend-specific `build` callback. The CPU backend also
@@ -86,7 +92,6 @@ translates them by exception type:
 | `UnsupportedSyntaxError` | unchanged (it already names the kernel and source position) |
 | `TypeError` | `TypeError("Kernel '<name>': …")`, chained to the original. A message that already starts with the kernel's name (argument count, backend dtypes, atomic targets) keeps it, so the name appears once |
 | other `RuntimeError`, including `NotImplementedError` and `IRVerificationError` | `RuntimeError("Kernel '<name>' failed on <BackendClass>: …")`, chained, with any inner `Kernel '<name>': ` prefix removed. A message containing "compilation failed" is shortened to its `error:` lines |
-| `AttributeError` caused by arrays allocated by a different backend | `RuntimeError` explaining that `tack.init()` replaced the backend |
 | anything else (`NameError`, `ValueError`, …) | unchanged |
 
 ## Stage 2: argument classification
@@ -128,7 +133,7 @@ a template once. Building is `Kernel._lower`, which asks the disk cache
 `verify_ir(function, 'lowered')`. A template that fails verification
 raises before it is stored, so it is never cached, in memory or on disk.
 
-In debug mode (`tack.init(debug=True)` or `TACK_DEBUG=1`) lowering wraps
+In debug mode (`tack.set_debug(True)` or `TACK_DEBUG=1`) lowering wraps
 each array and array access's flat index in an `IRBoundsCheck`, which is
 `-1` when an index is out of bounds, after recording the first violation
 in a hidden errors array; leading and flat extents are `IRArrayExtent`

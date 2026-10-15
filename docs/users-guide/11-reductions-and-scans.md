@@ -4,10 +4,10 @@ Tack has five ways to combine many values into a few:
 
 | Family | Entry points | Where it runs |
 |---|---|---|
-| [Array reductions](#array-reductions) | `array.sum()`, `.min()`, `.max()`, `.mean()` | Called from Python; the device or NumPy, depending on backend and dtype |
-| [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; terms formed on the active backend and reduced as arrays are |
-| [Prefix scans](#prefix-scans) | `exclusive_scan`, `inclusive_scan` (plus `copy`, `fill_value`) in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
-| [Sorting and segmented reductions](#sorting-and-segmented-reductions) | `argsort`, `sort_by_key`, `gather`, `unique`, `reduce_by_key` in `tack.algorithms` | Called from Python; a sequence of kernels on the active backend |
+| [Array reductions](#array-reductions) | `array.sum()`, `.min()`, `.max()`, `.mean()` | Called from Python; the array's device or NumPy, depending on backend and dtype |
+| [Statistics](#statistics) | `var`, `std`, `norm`, `absmax`, `count_nonzero`, `dot`, `histogram` in `tack.algorithms` | Called from Python; terms formed on the inputs' device and reduced as arrays are |
+| [Prefix scans](#prefix-scans) | `exclusive_scan`, `inclusive_scan` (plus `copy`, `fill_value`) in `tack.algorithms` | Called from Python; a sequence of kernels on the inputs' device |
+| [Sorting and segmented reductions](#sorting-and-segmented-reductions) | `argsort`, `sort_by_key`, `gather`, `unique`, `reduce_by_key` in `tack.algorithms` | Called from Python; a sequence of kernels on the inputs' device |
 | [Block reductions](#block-reductions-inside-kernels) | `tack.block_sum`, `block_min`, `block_max` | Inside a kernel; GPU backends only |
 
 Every family runs on all five backends except block reductions, which need
@@ -337,7 +337,7 @@ copy(src, dst, n)          # dst[i] = src[i] for i < n
 fill_value(dst, 0, n)      # dst[i] = 0 for i < n
 ```
 
-Both are single kernels on the active backend and return `None`. They work
+Both are single kernels on their arrays' device and return `None`. They work
 on the first `n` elements in flat order and do not check `n` against either
 array.
 

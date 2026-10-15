@@ -241,24 +241,28 @@ import.
 CUDA device pointers do not outlive their context: `cuCtxDestroy`
 invalidates every allocation in it, and a later copy through one of those
 pointers faults inside the driver — a segmentation fault, not a `CUresult`
-Tack could check. The usual way to get there is switching backends:
+Tack could check. Tack keeps its own contexts alive for as long as they are
+used: every array holds its device's backend (`Array._device`), and the
+backend holds the context, so switching the default device does not drop
+it:
 
 ```python
-tack.set_default_device("cuda")
-f = tack.empty((64,))
-tack.set_default_device("cpu")   # the CUDA backend, and its context, are dropped
-f.numpy()                  # must not touch the dead pointer
+f = tack.empty((64,), device="cuda")
+tack.set_default_device("cpu")   # the CUDA device, and its context, stay
+f.numpy()                        # reads through a live context
 ```
 
-A buffer cannot discover this from its own pointer, so it has to be told.
+Before devices were values, `tack.init` replaced the backend and dropped
+the context under arrays allocated in it. A context can still be destroyed
+outside Tack (by an embedding application, for instance), and a buffer
+cannot discover this from its own pointer, so it has to be told.
 `runtime/cuda_backend.py` keeps a module-level registry, `_CONTEXTS`, of
 `_ContextToken` objects — one per context Tack knows about — with three
 arrays:
 
 - `users` — how many live `CUDABackend` objects share the context.
-  `tack.init()` constructs the new backend before dropping the old one, so
-  two backends routinely overlap; only the last one out may destroy the
-  context.
+  Several can (a backend constructed directly beside the device registry's
+  one, say); only the last one out may destroy the context.
 - `owned` — `False` for a context an embedding application made current
   before Tack started. Tack adopts such a context and never destroys it.
 - `alive` — set to `False` by `CUDABackend.__del__` immediately *before*

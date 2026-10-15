@@ -62,7 +62,7 @@ more parameters, the hidden errors and extents arrays, so its parameter
 signature differs). Two calls that share a variant therefore always share
 an IR template.
 
-**Debug mode.** `tack.init(debug=True)` (or `TACK_DEBUG=1`) lowers every
+**Debug mode.** `tack.set_debug(True)` (or `TACK_DEBUG=1`) lowers every
 kernel with bounds checks (`lang/ir_bounds.py`): `("debug",)` leads the IR
 template key, and the two hidden array parameters follow the kernel's own.
 The extents are read from an array at run time rather than resolved, so a
@@ -259,14 +259,16 @@ holding it weakly releases compiled code and its device modules when the
 kernel goes away. Most kernels are module-level objects that live as long
 as the process, and so do their variants.
 
-**One cache per backend instance.** `tack.init()` constructs a new backend
-with a new, empty cache. Variants compiled before the switch stay with the
-old backend object, and arrays allocated by the old backend are rejected
-with a `RuntimeError` when dispatched on the new one.
+**One cache per backend instance.** Each device is one backend with its
+own cache. `tack.device(spec)` without options returns the same backend
+every time, so switching the default device away and back keeps its
+compiled variants, and arrays made before a switch run on their own device
+with its variants. A device made with options (`tack.device("cpu",
+num_threads=1)`) is a new backend with a new, empty cache.
 
 **Every cache is registered.** `new_kernel_cache` appends a weak reference
 to the module-level `_kernel_caches` list. `drop_variants(kernel, is_stale)`
-walks every live cache, not only the active backend's, which matters for
+walks every live cache, not only the default device's, which matters for
 template-class retirement.
 
 ### Template-class lifetime: `_ClassToken`

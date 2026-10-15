@@ -7,7 +7,7 @@ model, or arrays you wrote yourself. [Factory methods](#factory-methods-as-short
 then provide shortcuts for common combinations.
 
 The snippets assume NumPy, Tack and `tack.dataset` imported as `np`, `tack`
-and `td`, with a backend initialized. The [complete mesh-construction program](../../examples/data_meshes.py)
+and `td`, with a default device set. The [complete mesh-construction program](../../examples/data_meshes.py)
 and [mixed-cell tour](../../examples/datasets.py) can be downloaded and run.
 
 ## Topology defines corners, geometry defines positions

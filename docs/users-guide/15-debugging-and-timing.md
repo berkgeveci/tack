@@ -101,11 +101,10 @@ so `a[i, j + 1]` at the last column quietly reads the first element of the
 next row. Turn on debug mode to find it:
 
 ```python
-tack.set_debug(True)    # or TACK_DEBUG=1 in the environment
-tack.set_default_device("cpu")    # or TACK_DEBUG=1 in the environment
+tack.set_debug(True)    # or run with TACK_DEBUG=1 in the environment
 ```
 
-Every array and array index is then checked, one dimension at a time. An
+Every array index is then checked, one dimension at a time. An
 access out of bounds is skipped (a load gives 0) and the call raises
 `IndexError` naming the first one:
 
@@ -118,6 +117,8 @@ dimension 1 is outside [0, 64). The access was skipped (a load gives 0).
 An access in a `@tack.func` names the device function and its line. Debug
 mode works on every backend and compiles kernels anew, so it is for finding
 bugs, not for timing: each launch waits for its result.
+`tack.set_debug(False)` turns it off again. `TACK_DEBUG` is read once, when
+Tack is imported.
 
 To inspect compilation without running the kernel:
 
@@ -172,7 +173,7 @@ The 32-element diagnostic example is intentionally small; use a larger array
 when studying throughput. Keep its shape and dtype fixed during measurement.
 On CPU the scheduler measures whether worker threads help; several warm calls
 allow that policy to settle. A single-thread run can help distinguish scheduling
-cost from compiled arithmetic: `tack.init(arch=tack.cpu, num_threads=1)`.
+cost from compiled arithmetic: `tack.set_default_device("cpu", num_threads=1)`.
 
 Measure end-to-end application time separately, including upload, preprocessing,
 kernel stages and readback. Allocate working arrays outside the timed loop when

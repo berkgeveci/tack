@@ -259,7 +259,7 @@ print("ok")
 
 @requires_numa
 def test_the_init_probe_restores_the_policy():
-    """`_mempolicy_interleaves` is the first thing `tack.init` runs that
+    """`_mempolicy_interleaves` is the first thing making a CPU device runs that
     touches the policy; it must hand back what it found."""
     _set_policy(_MPOL_BIND, 1)
     try:

@@ -59,7 +59,7 @@ Two more conventions apply on every contract page:
 |---|---|---|
 | [Kernel language contract](../reference/language-contract.md) | What a kernel means: supported constructs, execution and ordering, memory and aliasing, integer and floating-point semantics, reductions, workgroups, atomics and specialization identity. Regression IDs LC1–LC8 | Draft under review, normative for the compiler hardening work |
 | [Backend capabilities](backend-capabilities.md) | The `Backend` base class, the meaning of each capability attribute, the capability matrix for each backend, how launches are queued, and what each capability rejects and when | Describes `23d6e1d`, updated through `b94af23` |
-| [Runtime API](runtime-api.md) | `tack.init` and debug mode, arrays and their host operations, `tack.sync`, reductions, pointer and DLPack interop, `tack.inspect`, the decorators, kernel call rules, environment variables, `tack.cache` and exception types | Describes `23d6e1d`, updated through `b94af23` |
+| [Runtime API](runtime-api.md) | Devices (`tack.device`, the default device, launch placement) and debug mode, arrays and their host operations, `tack.sync`, reductions, pointer and DLPack interop, `tack.inspect`, the decorators, kernel call rules, environment variables, `tack.cache` and exception types | Describes `23d6e1d`, updated through `b94af23` and the device model of `bba0846` |
 | [Conformance and validation](conformance.md) | How each contract area is tested, which oracles the tests use, how a hardware validation is run and recorded, and the most recent status of each backend | Describes `23d6e1d`, with validation status recorded at `745e01f` |
 
 The language contract is long because it defines semantics. The other three

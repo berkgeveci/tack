@@ -187,11 +187,10 @@ a time.
     ```bash
     uv run --no-sync python - cuda <<'PYTEST'
     import sys, pytest, tack
-    from tack.runtime.dispatch import get_backend
     arch = sys.argv[1]
-    tack.init(arch=getattr(tack, arch))
-    assert get_backend().name == arch
-    print('Required hardware backend:', get_backend().name, flush=True)
+    device = tack.set_default_device(arch)
+    assert device.type == arch
+    print('Required hardware backend:', device, flush=True)
     raise SystemExit(pytest.main(['-q', '-ra']))
     PYTEST
     ```

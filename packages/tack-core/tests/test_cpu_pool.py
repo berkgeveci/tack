@@ -341,7 +341,7 @@ def test_a_pool_that_cannot_be_made_falls_back(monkeypatch):
 
 
 def test_a_kernel_through_init_and_call(monkeypatch):
-    """The ordinary path: tack.init, a kernel call big enough to thread."""
+    """The ordinary path: a default device, a kernel call big enough to thread."""
     monkeypatch.delenv("TACK_CPU_POOL", raising=False)
     tack.set_default_device("cpu", num_threads=4)
     n = 2_000_000
