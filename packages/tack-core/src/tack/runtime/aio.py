@@ -7,7 +7,7 @@ with an event loop (a trame server, a Jupyter kernel, a web service) is
 the loop. The two coroutines here wait in a worker thread instead and
 resume the caller when the device is done:
 
-    await tack.sync_async()               # the launches queued so far
+    await tack.sync_async()               # the launches queued so far, everywhere
     values = await array.numpy_async()    # wait, then copy to the host
 
 A backend opts in with two hooks on `Backend` (`async_marker`) and on
@@ -53,21 +53,44 @@ async def _off_loop(fn):
 
 async def sync_async(backend=None):
     """Wait, without blocking the event loop, until every kernel launched so
-    far on ``backend`` (the default device's by default) has finished.
+    far on ``backend`` (by default on every device) has finished.
 
     The ``asyncio`` form of `tack.sync`: launches made after the call, by
     this task or another, are not waited for. A launch's error is raised
-    here, as `tack.sync` raises it. On a backend whose launches complete
-    before returning (the CPU) it returns at once.
+    here, as `tack.sync` raises it; with several devices, after waiting for
+    all of them. A backend whose launches complete before returning (the
+    CPU) is waited for inline, at once.
     """
     if backend is None:
-        from tack.runtime.dispatch import get_backend
-        backend = get_backend()
-    marker = backend.async_marker()
-    if marker is None:
-        backend.synchronize()
+        from tack.runtime.dispatch import live_backends
+        backends = live_backends()
+    else:
+        backends = [backend]
+    markers = []
+    for each in backends:       # every mark is taken here, at the call
+        marker = each.async_marker()
+        if marker is None:
+            each.synchronize()
+        else:
+            markers.append(marker)
+    if not markers:
         return
-    await _off_loop(marker.wait)
+    if len(markers) == 1:
+        await _off_loop(markers[0].wait)
+        return
+
+    def wait_all():
+        error = None
+        for marker in markers:
+            try:
+                marker.wait()
+            except BaseException as e:      # wait for the rest, then raise the first
+                if error is None:
+                    error = e
+        if error is not None:
+            raise error
+
+    await _off_loop(wait_all)
 
 
 async def numpy_async(array):

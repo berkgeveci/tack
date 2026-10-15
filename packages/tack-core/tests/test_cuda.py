@@ -623,12 +623,15 @@ def test_host_element_reads_copy_one_element():
         f._buffer.read_range(-1, 1)
 
 
-def test_importing_device_memory_on_the_cpu_says_how_to_import_it():
-    """The refusal names the fix (it used to say to initialize a backend)."""
+def test_device_memory_imported_with_the_cpu_as_default_stays_on_its_device():
+    """As the array API's from_dlpack does: CUDA memory is a CUDA array,
+    sharing the allocation, whatever the default device. Asked onto the
+    CPU, the refusal names the fix."""
     g = tack.arange(4, dtype=tack.f32)              # on CUDA, the default here
     with tack.device("cpu"):
+        wrapped = tack.from_dlpack(g)
         with pytest.raises(RuntimeError, match=r"from_dlpack\(x, device='cuda'\)"):
-            tack.from_dlpack(g)
-        wrapped = tack.from_dlpack(g, device="cuda")
+            tack.from_dlpack(g, device="cpu")
     assert wrapped.device == tack.device("cuda")
+    assert int(wrapped._buffer.device_ptr) == int(g._buffer.device_ptr)
     assert np.array_equal(wrapped.numpy(), np.arange(4, dtype=np.float32))

@@ -108,10 +108,11 @@ else the one `set_default_device` chose, else the CPU.
 
 - Every array records its device: `a.device` is a `tack.Device`. Every
   constructor takes `device=` (a `Device` or a spec): `empty`, `zeros`,
-  `ones`, `full`, `arange`, `array`, `asarray`, `array_from_ptr`,
-  `from_dlpack` and `memory_space`, which default to the default device,
-  and `empty_like`, `zeros_like`, `ones_like` and `full_like`, which
-  default to a Tack prototype's device.
+  `ones`, `full`, `arange`, `array`, `asarray`, `array_from_ptr` and
+  `memory_space`, which default to the default device; `empty_like`,
+  `zeros_like`, `ones_like` and `full_like`, which default to a Tack
+  prototype's device; and `from_dlpack`, which defaults to the default
+  device when that can wrap the tensor, else the tensor's own device.
 - `a.to_device(device)` returns `a` itself when its memory is usable on
   `device`, else a copy made through the host. `tack.array(a, device=...)`
   and `tack.asarray(a, device=...)` move a Tack array the same way.
@@ -277,10 +278,10 @@ It is for timing kernels, and for memory shared with another library that
 reads it without Tack. It raises the error of a queued launch that
 failed.
 
-`tack.sync_async()` (`runtime/aio.py`) is the `asyncio` form for the
-default device: awaited, it waits in one of Tack's worker threads for the launches made before the
+`tack.sync_async()` (`runtime/aio.py`) is the `asyncio` form, for every
+device as `tack.sync` is: awaited, it waits in one of Tack's worker threads for the launches made before the
 call, not for later ones, and raises a queued launch's error at the
-`await`; `await a.numpy_async()` does the same for a read. A backend
+`await`, after waiting for the other devices; `await a.numpy_async()` does the same for a read. A backend
 waits off the loop through `Backend.async_marker()`; without one (the
 CPU), the wait is inline.
 
@@ -369,7 +370,11 @@ and `Array.__dlpack_device__()`.
   may read the memory at once and after later launches.
 
 **Import:** `tack.from_dlpack(source, *, device=None, copy=False)`. The array
-belongs to `device`, by default the default device.
+belongs to `device`. By default that is the default device when it can wrap
+the tensor, else the tensor's own device, as the array API's `from_dlpack`
+keeps an array on its device: CUDA memory imported with the CPU as default
+is a CUDA array, and host memory imported with Metal as default (which
+cannot wrap a host pointer) is a CPU array. Neither is copied.
 
 - `source` is a capsule or an object with `__dlpack__`. A versioned
   capsule is requested first.

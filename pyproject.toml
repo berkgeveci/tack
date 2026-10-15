@@ -49,7 +49,9 @@ tack-core = { workspace = true }
 tack-vis = { workspace = true }
 
 [tool.uv.workspace]
-members = ["packages/*"]
+# Listed, not globbed: a package directory left behind by a move (holding
+# only ignored __pycache__ files) would otherwise stop `uv sync`.
+members = ["packages/tack-core", "packages/tack-vis"]
 
 [tool.ruff]
 line-length = 100

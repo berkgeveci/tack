@@ -480,7 +480,7 @@ def test_importing_host_memory_on_metal_is_refused_with_a_reason(metal):
     the CPU-pinned tests above, so it had never run.
     """
     with pytest.raises(RuntimeError) as excinfo:
-        tack.from_dlpack(np.arange(8, dtype=np.float32))
+        tack.from_dlpack(np.arange(8, dtype=np.float32), device="metal")
 
     message = str(excinfo.value)
     assert "page-aligned" in message, \
@@ -488,17 +488,33 @@ def test_importing_host_memory_on_metal_is_refused_with_a_reason(metal):
     assert "copy=True" in message, "and what to do instead"
 
 
+def test_host_memory_imported_with_metal_as_default_is_a_cpu_array(metal):
+    """With no device asked for, host memory stays on its device, the CPU,
+    as the array API's from_dlpack keeps an array where it is; still
+    without a copy."""
+    values = np.arange(8, dtype=np.float32)
+    f = tack.from_dlpack(values)
+    assert f.device == tack.device("cpu")
+    values[0] = 99.0
+    assert f.numpy()[0] == 99.0, "the import must alias, not copy"
+
+
 def test_a_metal_array_does_not_round_trip_through_dlpack(metal):
     """The same refusal, reached from the array's own capsule.
 
     A Metal array exports as kDLCPU — correctly, its memory is
-    host-addressable — so re-importing it takes the host path and hits
-    the same wall. Worth pinning separately: it is the case that looks
-    like it obviously ought to work.
+    host-addressable — so re-importing it onto Metal takes the host path
+    and hits the same wall. Worth pinning separately: it is the case that
+    looks like it obviously ought to work. Without a device it comes back
+    as a CPU array over the same memory.
     """
     f = tack.empty((8,))
     with pytest.raises(RuntimeError, match="page-aligned"):
-        tack.from_dlpack(f)
+        tack.from_dlpack(f, device="metal")
+    f.fill(3.0)
+    host = tack.from_dlpack(f)
+    assert host.device == tack.device("cpu")
+    np.testing.assert_array_equal(host.numpy(), np.full(8, 3.0, np.float32))
 
 
 def test_copying_is_still_offered_on_metal(metal):

@@ -109,7 +109,7 @@ async def frame():
     return pixels
 ```
 
-`tack.sync_async()` waits for the launches made on the default device
+`tack.sync_async()` waits for the launches made on every device
 before the call, not for ones another task queues while it waits. `numpy_async` returns every
 write queued before the call; one queued later by another task may or may
 not be in it, so order the two with `await` if it matters. A launch's error

@@ -124,17 +124,23 @@ def vtk_to_array(vtk_array, flatten=False):
         held for as long as the array lives, so it may be dropped
         immediately.
 
+    The array is on the default device when that can address the memory,
+    else on the memory's own device: a CUDA array with the CPU as default is
+    a CUDA array.
+
     Raises:
-        RuntimeError: if the array lives somewhere the default Tack device
-            cannot address -- a CUDA array with the CPU as default, say.
+        RuntimeError: for Level Zero memory from another context than
+            Tack's (see `init_level_zero`).
         ValueError: for an array with no memory to share (implicit and
             computed arrays have none) or a non-contiguous layout.
     """
     dlpack_support = _dlpack_support()
-    _require_shared_level_zero_context(dlpack_support)
 
-    # VTK always exports 2-D, (tuples, components).
+    # VTK always exports 2-D, (tuples, components). The array lands on the
+    # default device if that can wrap the memory, else on the memory's own
+    # device, whose context is the one to check.
     array = tack.from_dlpack(dlpack_support.vtk_to_dlpack(vtk_array))
+    _require_shared_level_zero_context(dlpack_support, array._backend)
 
     if flatten:
         return array.reshape((array.size,))

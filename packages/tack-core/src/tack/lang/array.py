@@ -829,13 +829,15 @@ def from_dlpack(x, *, device=None, copy: bool = False) -> Array:
 
     Zero-copy: the array shares memory with the source, and the source is
     held alive for as long as the array lives. Works for device tensors as
-    well as host ones, provided ``device`` (by default the default device)
-    can wrap them.
+    well as host ones. ``device`` must be able to wrap the tensor; by
+    default the array goes on the default device when that can, else on the
+    tensor's own device, as the array API's ``from_dlpack`` does.
 
     Wrap, not address: the Metal backend reads host memory perfectly well
-    but cannot turn a host pointer into the MTLBuffer an array needs, so it
-    refuses host tensors and says so. Pass ``copy=True`` for an independent
-    array instead.
+    but cannot turn a host pointer into the MTLBuffer an array needs, so
+    with Metal as the default a host tensor becomes a CPU array, and
+    ``device="metal"`` refuses it and says so. Pass ``copy=True`` for an
+    independent array instead.
 
     Usage:
         a = tack.from_dlpack(torch_tensor)
@@ -848,9 +850,7 @@ def from_dlpack(x, *, device=None, copy: bool = False) -> Array:
         return array(host, device=device)
 
     from tack.lang.dlpack import dlpack_to_array
-    from tack.runtime.dispatch import as_device
-    with as_device(_target(device)):
-        return dlpack_to_array(x)
+    return dlpack_to_array(x, device=device)
 
 
 def memory_space(ptr, *, device=None) -> str:

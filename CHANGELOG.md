@@ -116,7 +116,11 @@ All notable changes to Tack are recorded here. Rules cited by name live in
   so changing the default no longer strands arrays made before it; arrays
   on two devices are refused, by `tack.algorithms`, `copyto` and `concat`
   under their own names. `tack.algorithms` run on their inputs' device,
-  and `tack.sync()` waits for every device. `Backend.init_options`
+  and `tack.sync()` and `tack.sync_async()` wait for every device.
+  `tack.from_dlpack(x)` keeps memory on its own device when the default
+  cannot wrap it, as the array API's does: CUDA memory with the CPU as
+  default is a CUDA array, host memory with Metal as default a CPU array;
+  `device=` still refuses what it cannot wrap. `Backend.init_options`
   is `Backend.device_options`. A warm dispatch costs about 0.4 µs more
   (6.7 to 7.1 µs on an M1 Max) for reading its arrays' devices.
 - **Breaking:** kernel values and loops are spelled as NumPy and GLSL

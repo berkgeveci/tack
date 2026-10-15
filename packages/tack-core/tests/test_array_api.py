@@ -204,9 +204,11 @@ def test_typed_pointer_and_dlpack_views(backend):
         shared.fill(0)
     if backend == 'metal':
         # Metal exports host-addressable memory but cannot wrap arbitrary
-        # host pointers as MTLBuffers; the explicit copying import works.
+        # host pointers as MTLBuffers; the explicit copying import works,
+        # and without a device the memory comes back as a CPU array.
         with pytest.raises(RuntimeError, match='cannot wrap without copying'):
-            tack.from_dlpack(values)
+            tack.from_dlpack(values, device='metal')
+        np.testing.assert_array_equal(tack.from_dlpack(values).numpy(), values.numpy())
         round_trip = tack.from_dlpack(values, copy=True)
     else:
         round_trip = tack.from_dlpack(values)

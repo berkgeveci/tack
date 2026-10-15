@@ -374,6 +374,15 @@ _DEVICE_BACKENDS = {
 }
 
 
+def _tensor_device(kind, device_id):
+    """The backend of the Tack device a DLPack tensor's memory is on: ``kind``
+    is the backend name `_DEVICE_BACKENDS` gives, ``device_id`` the
+    tensor's device number (meaningless for host memory)."""
+    from tack.runtime.dispatch import device
+    spec = kind if kind == "cpu" else f"{kind}:{device_id}"
+    return device(spec)._backend
+
+
 def _request_capsule(source):
     """Get a capsule from *source*, preferring the versioned protocol.
 
@@ -423,7 +432,7 @@ class _CapsuleHold:
             pass
 
 
-def dlpack_to_array(source, writable=True):
+def dlpack_to_array(source, writable=True, device=None):
     """Wrap a DLPack tensor as a Tack array, without copying.
 
     `source` may be a capsule or anything implementing ``__dlpack__`` -- a
@@ -434,13 +443,17 @@ def dlpack_to_array(source, writable=True):
     dropped immediately. The array does not copy, so the two share memory
     and a write through either is visible to the other.
 
-    Raises RuntimeError if the tensor lives somewhere the active backend
-    cannot wrap -- importing CUDA memory while running on the CPU backend
-    is a mistake, not something to paper over with a copy. Metal refuses
-    host tensors for a different reason, and says which: it can read that
-    memory, it just cannot make an MTLBuffer out of it.
+    ``device`` is where the array goes. By default it is the default
+    device when that can wrap the tensor, else the tensor's own device, as
+    the array API's ``from_dlpack`` keeps an array on its device: CUDA
+    memory imported with the CPU as default is a CUDA array, not a copy.
+
+    Raises RuntimeError if ``device`` is given and cannot wrap the tensor --
+    CUDA memory imported onto the CPU device. Metal refuses host tensors for
+    a different reason, and says which: it can read that memory, it just
+    cannot make an MTLBuffer out of it.
     """
-    from tack.lang.array import array_from_ptr
+    from tack.lang.array import _target, array_from_ptr
     from tack.runtime.dispatch import get_backend
 
     capsule = _request_capsule(source)
@@ -494,7 +507,6 @@ def dlpack_to_array(source, writable=True):
                 f"only C-contiguous tensors can be wrapped without copying; "
                 f"strides {tuple(actual)} != {tuple(expected)}")
 
-    backend = get_backend()
     allowed = _DEVICE_BACKENDS.get(tensor.device.device_type)
     if tensor.device.device_type == kDLMetal:
         raise ValueError(
@@ -505,6 +517,12 @@ def dlpack_to_array(source, writable=True):
     if allowed is None:
         raise ValueError(
             f"unsupported DLPack device type {tensor.device.device_type}")
+    if device is not None:
+        backend = _target(device)
+    else:
+        backend = get_backend()
+        if backend.name not in allowed:
+            backend = _tensor_device(allowed[0], tensor.device.device_id)
     if backend.name not in allowed:
         message = (
             f"the tensor is on a device the '{backend.name}' device cannot "
@@ -516,7 +534,8 @@ def dlpack_to_array(source, writable=True):
         raise RuntimeError(message)
 
     array = array_from_ptr(
-        (tensor.data or 0) + tensor.byte_offset, shape, dtype, writable=writable)
+        (tensor.data or 0) + tensor.byte_offset, shape, dtype, device=backend,
+        writable=writable)
 
     # Adopt the capsule: rename it so nobody else releases it, and attach the
     # hold to the array so the producer is told when the array is gone.

@@ -486,9 +486,12 @@ def test_dlpack_round_trip_aliases():
 
 
 def test_dlpack_refuses_host_tensor():
-    """A host tensor cannot be wrapped without copying, and says so."""
+    """A host tensor cannot be wrapped on HIP without copying, and says so;
+    with no device asked for it stays on the CPU, uncopied."""
+    values = np.arange(8, dtype=np.float32)
     with pytest.raises(RuntimeError, match="cannot wrap without copying"):
-        tack.from_dlpack(np.arange(8, dtype=np.float32))
+        tack.from_dlpack(values, device="hip")
+    assert tack.from_dlpack(values).device == tack.device("cpu")
 
 
 # --- Texture capability ---

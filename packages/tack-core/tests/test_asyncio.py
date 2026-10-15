@@ -235,9 +235,40 @@ def test_without_a_marker_the_wait_is_inline(backend, monkeypatch):
     monkeypatch.setattr(aio, "_workers", lambda: pytest.fail("a worker was started"))
     out = tack.empty((100,))
     _ramp(out, 1.0)
-    asyncio.run(tack.sync_async())
+    asyncio.run(aio.sync_async(get_backend()))
     assert calls == [1]
     np.testing.assert_array_equal(out.numpy(), np.arange(100, dtype=np.float32))
+
+
+def test_sync_async_waits_for_every_device(monkeypatch):
+    """As `tack.sync` does: every device's mark is taken at the call and
+    waited for, and a failed one is raised after the others are waited for."""
+    tack.set_default_device("cpu")
+    serial = tack.device("cpu", num_threads=1)
+    waited = []
+
+    class Marker:
+        def __init__(self, device, error=None):
+            self.device, self.error = device, error
+
+        def wait(self):
+            waited.append(self.device)
+            if self.error:
+                raise RuntimeError(self.error)
+
+    devices = (tack.device("cpu"), serial)
+    for device in devices:
+        monkeypatch.setattr(device._backend, "async_marker",
+                            lambda d=device: Marker(d))
+    asyncio.run(tack.sync_async())
+    assert set(devices) <= set(waited)
+
+    waited.clear()
+    monkeypatch.setattr(serial._backend, "async_marker",
+                        lambda: Marker(serial, "device error on serial"))
+    with pytest.raises(RuntimeError, match="device error on serial"):
+        asyncio.run(tack.sync_async())
+    assert set(devices) <= set(waited)
 
 
 def test_the_cpu_reads_inline():

@@ -371,13 +371,18 @@ def sync():
     before it, so most code never needs this. It is for timing kernels, and
     for memory shared with another library that reads it without Tack.
     """
-    for backend in list(_live):
+    for backend in live_backends():
         backend.synchronize()
+
+
+def live_backends() -> list:
+    """Every backend made so far that is still alive."""
+    return list(_live)
 
 
 async def sync_async():
     """`sync` for ``asyncio``: ``await tack.sync_async()`` waits for every
-    kernel launched so far on the default device without blocking the event
+    kernel launched so far, on every device, without blocking the event
     loop.
 
     On CUDA, HIP, Metal and Level Zero the wait runs in a worker thread and
@@ -386,7 +391,7 @@ async def sync_async():
     before returning, it returns at once. See `tack.runtime.aio`.
     """
     from tack.runtime.aio import sync_async as _sync_async
-    await _sync_async(get_backend())
+    await _sync_async()
 
 
 def get_backend():

@@ -99,12 +99,12 @@ count.
 
 ## DLPack import
 
-`tack.from_dlpack(source, copy=False)` wraps a tensor without copying. With
+`tack.from_dlpack(source, *, device=None, copy=False)` wraps a tensor without copying. With
 `copy=True` it instead calls `np.from_dlpack(source)` (or uses `source`
 directly if it is a NumPy array) and copies into a new array with
 `array`, so the copying path accepts host tensors.
 
-The zero-copy path is `dlpack_to_array(source, writable=True)`:
+The zero-copy path is `dlpack_to_array(source, writable=True, device=None)`:
 
 1. **Get a capsule.** `_request_capsule` calls
    `source.__dlpack__(max_version=(1, 0))` and falls back to
@@ -141,10 +141,14 @@ The zero-copy path is `dlpack_to_array(source, writable=True)`:
     and the argument-buffer binding, neither of which exists. So a
     `kDLMetal` tensor raises `ValueError` up front, on any backend, with a
     message saying to move the tensor to host memory and import it with
-    `copy=True`. Any other unknown device type raises `ValueError`. A known one on the wrong
-    backend raises `RuntimeError` — importing CUDA memory while running the
-    CPU backend is a mistake, not something to paper over with a copy. The
-    tensor's device id is not compared.
+    `copy=True`. Any other unknown device type raises `ValueError`.
+    Without `device=`, the default device imports the tensor when it can
+    wrap it, and otherwise the tensor's own device does (the first backend
+    in the table, numbered by the tensor's device id), as the array API's
+    `from_dlpack` keeps an array where it is: CUDA memory with the CPU as
+    default is a CUDA array, host memory with Metal as default a CPU array.
+    A `device=` that cannot wrap the tensor raises `RuntimeError` naming
+    the device to import it on; it never copies.
 6. **Wrap.** `array_from_ptr(data + byte_offset, shape, dtype,
    writable=...)`, which runs the backend's
    [memory-space check](memory-and-aliasing.md#memory-space-validation).
@@ -399,7 +403,8 @@ sequenceDiagram
 Both `vtk_to_array` and `array_to_vtk` call
 `_require_shared_level_zero_context` before exchanging anything, with the
 backend whose memory is exchanged: the exported array's device for
-`array_to_vtk`, the default device for `vtk_to_array`. When that backend is
+`array_to_vtk`, the device the imported array landed on for
+`vtk_to_array`. When that backend is
 Level Zero, it asks VTK for its handles again and compares the context with
 `backend._context`. If VTK has no handles, or the contexts differ, it
 raises `RuntimeError` and tells the caller to start Tack with
