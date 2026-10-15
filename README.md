@@ -416,7 +416,7 @@ User's Guide and the [Dataset API reference](docs/reference/dataset-api.md).
 ```bash
 uv run python packages/tack-core/examples/01_hello_tack.py              # simplest kernel
 uv run python packages/tack-core/examples/12_mandelbrot.py --arch metal # fractal on GPU
-uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # tack.dataset
+uv run python packages/tack-vis/examples/42_dataset_api_tour.py --arch cuda # tack.dataset; needs --extra interop
 ```
 
 | Location | Count | Covers |

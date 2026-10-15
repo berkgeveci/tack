@@ -26,6 +26,9 @@ With --output DIR it writes, for ParaView:
                          corners pulled toward its center, over the same
                          topology
 
+Needs VTK, which builds the mixed grid and writes the files: install the
+`interop` extra (`uv sync --extra cpu --extra interop`).
+
 Usage:
   python packages/tack-vis/examples/42_dataset_api_tour.py
       [--arch cpu|metal|cuda|hip|level_zero] [--output DIR]
@@ -37,6 +40,12 @@ import os
 import numpy as np
 
 import tack
+
+try:
+    import vtkmodules  # noqa: F401
+except ImportError:
+    raise SystemExit("This example builds its mixed grid with VTK; install the interop "
+                     "extra: uv sync --extra cpu --extra interop") from None
 
 parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
 parser.add_argument("--arch", default="cpu",
