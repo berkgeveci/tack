@@ -868,7 +868,29 @@ def _scalar_bits(value):
 # Xeon; one that differs is walked in full and the layout replaced.
 _template_layouts = weakref.WeakKeyDictionary()
 _LAYOUT_CONSTANT, _LAYOUT_ARRAY, _LAYOUT_INT, _LAYOUT_FLOAT, _LAYOUT_FUNC, _LAYOUT_CHILD, \
-    _LAYOUT_TUPLE, _LAYOUT_SKIP = range(8)
+    _LAYOUT_TUPLE, _LAYOUT_SKIP, _LAYOUT_TUPLE_CONSTANT = range(9)
+
+
+def _shadowed(constants, name) -> tuple:
+    """The class constants an instance attribute ``name`` shadows: the
+    constant of that name, or a class tuple's entries (``shape__0``...)."""
+    if name in constants:
+        return (name,)
+    prefix = name + "__"
+    return tuple(key for key in constants
+                 if key.startswith(prefix) and key[len(prefix):].isdigit())
+
+
+def _drops_constant(constants, name, value) -> bool:
+    """Whether ``value`` drops the class constant(s) ``name`` shadows, as
+    `template_rewrite._classify_own` decides: a number keeps a number
+    constant, a tuple of numbers a class tuple; anything else drops it."""
+    keys = _shadowed(constants, name)
+    if not keys:
+        return False
+    if keys == (name,):
+        return not isinstance(value, (int, float))
+    return not _number_tuple(value)
 
 
 def _number_tuple(value):
@@ -900,7 +922,8 @@ def _template_signature(obj, path, seen):
         # instance drops, as the key's constants are.
         constants = _class_constants(cls)
         for name in dropped:
-            constants.pop(name, None)
+            for key in _shadowed(constants, name):
+                del constants[key]
         own = []
         children = []
         for (name, value), kind, typ in zip(attributes.items(), kinds, types):
@@ -928,18 +951,33 @@ def _template_signature(obj, path, seen):
                     layout = None
                     break
                 own.append((name, 6, _tuple_signature(value)))
+            elif kind == _LAYOUT_TUPLE_CONSTANT:
+                if not _number_tuple(value):
+                    layout = None
+                    break
+                own.append((name, 7, tuple(_scalar_bits(v) for v in value)))
             elif kind == _LAYOUT_CHILD:
                 children.append((name, value))
+            elif typ is tuple and _number_tuple(value):
+                # Learned from a tuple of something else; a tuple of numbers
+                # is another kind (runtime entries, or a replaced constant).
+                layout = None
+                break
+            elif name in dropped and typ is tuple:
+                layout = None                 # whether it drops depends on the contents
+                break
     if layout is None:
         from tack.lang.func import Func
         from tack.lang.template_rewrite import _class_constants
         constants = _class_constants(cls)
-        # An instance attribute holding something other than a number drops
-        # the class constant it shadows (`template_rewrite._classify_own`).
+        # An instance attribute of another kind drops the class constant it
+        # shadows (`template_rewrite._classify_own`, `_drops_constant`).
         dropped = tuple(name for name, value in attributes.items()
-                        if name in constants and not isinstance(value, (int, float)))
+                        if not name.startswith('_')
+                        and _drops_constant(constants, name, value))
         for name in dropped:
-            del constants[name]
+            for key in _shadowed(constants, name):
+                del constants[key]
         own = []
         children = []
         kinds = []
@@ -949,6 +987,11 @@ def _template_signature(obj, path, seen):
             elif name in constants:
                 kinds.append(_LAYOUT_CONSTANT)
                 own.append((name, type(value), _scalar_bits(value)))
+            elif _shadowed(constants, name):
+                # A tuple of numbers replacing a class tuple: compiled in,
+                # so its values are part of the key.
+                kinds.append(_LAYOUT_TUPLE_CONSTANT)
+                own.append((name, 7, tuple(_scalar_bits(v) for v in value)))
             elif isinstance(value, Array):
                 kinds.append(_LAYOUT_ARRAY)
                 own.append((name, 0, value.dtype, value.shape,
